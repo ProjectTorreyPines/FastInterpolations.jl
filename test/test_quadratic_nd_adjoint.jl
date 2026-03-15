@@ -107,6 +107,8 @@ end
             ("Right(Deriv1(-0.3))", Right(Deriv1(-0.3))),
             ("Left(Deriv2(0.0))", Left(Deriv2(0.0))),
             ("Right(Deriv2(0.0))", Right(Deriv2(0.0))),
+            ("Left(Deriv2(1.0))", Left(Deriv2(1.0))),
+            ("Right(Deriv2(-0.5))", Right(Deriv2(-0.5))),
             ("Left(CubicFit)", Left(CubicFit())),
             ("Right(CubicFit)", Right(CubicFit())),
             ("Left(LinearFit)", Left(LinearFit())),
@@ -522,6 +524,26 @@ end
     end
 
     # ========================================
+    # Mixed-precision y_bar (T6)
+    # ========================================
+    @testset "Mixed-precision — Float32 y_bar with Float64 adjoint" begin
+        adj = quadratic_adjoint((x_uniform, y_uniform), (xq, yq))
+        yb32 = randn(Float32, n_query)
+
+        # Allocating
+        f_bar = adj(yb32)
+        @test eltype(f_bar) == Float64
+        @test size(f_bar) == (nx, ny)
+
+        # Dot-product correctness
+        f_test = randn(nx, ny)
+        _, _, ok = quadratic_nd_dot_product_test(
+            (x_uniform, y_uniform), (xq, yq), f_test, yb32
+        )
+        @test ok
+    end
+
+    # ========================================
     # Dimension validation
     # ========================================
     @testset "Dimension mismatch errors" begin
@@ -651,6 +673,7 @@ end
             ("Right(QuadraticFit)", Right(QuadraticFit())),
             ("Left(Deriv1(0.0))", Left(Deriv1(0.0))),
             ("Right(Deriv2(0.0))", Right(Deriv2(0.0))),
+            ("Left(Deriv2(1.0))", Left(Deriv2(1.0))),
             ("MinCurvFit", MinCurvFit()),
         ]
 
@@ -741,15 +764,21 @@ end
         @test adj_aos3(yb3) ≈ adj_soa3(yb3)
     end
 
-    @testset "OOB — ExtendExtrap (N=3)" begin
-        xq_oob3 = vcat(-0.1, xq3[1:5], 1.1)
-        yq_oob3 = vcat(-0.3, yq3[1:5], 2.1)
-        zq_oob3 = vcat(-0.05, zq3[1:5], 0.55)
-        yb_oob3 = randn(length(xq_oob3))
-        f_oob3 = randn(nx3, ny3, nz3)
+    xq_oob3 = vcat(-0.1, xq3[1:5], 1.1)
+    yq_oob3 = vcat(-0.3, yq3[1:5], 2.1)
+    zq_oob3 = vcat(-0.05, zq3[1:5], 0.55)
+    yb_oob3 = randn(length(xq_oob3))
+    f_oob3 = randn(nx3, ny3, nz3)
+
+    @testset "OOB — $ext_name (N=3)" for (ext_name, ext) in [
+            ("ExtendExtrap", ExtendExtrap()),
+            ("ClampExtrap", ClampExtrap()),
+            ("FillExtrap", FillExtrap(0.0)),
+        ]
+
         _, _, ok = quadratic_nd_dot_product_test(
             (x3, y3, z3), (xq_oob3, yq_oob3, zq_oob3), f_oob3, yb_oob3;
-            extrap = ExtendExtrap()
+            extrap = ext
         )
         @test ok
     end

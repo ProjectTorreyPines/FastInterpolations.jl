@@ -97,7 +97,7 @@ end
 # Forward: y_q = (1-α)·f[i] + α·f[i+1]
 # Adjoint: f̄[i] += (1-α)·ȳ_q, f̄[i+1] += α·ȳ_q
 
-function _scatter_linear_adjoint!(
+@inline function _scatter_linear_adjoint!(
         f_bar::AbstractVector,
         anchors::Vector{<:_LinearAnchoredQuery},
         y_bar,
@@ -118,7 +118,7 @@ end
 # Forward: dy/dx = (f[i+1] - f[i]) / h = f[i+1]·inv_h - f[i]·inv_h
 # Adjoint: f̄[i] += (-inv_h)·ȳ_q, f̄[i+1] += inv_h·ȳ_q
 
-function _scatter_linear_adjoint!(
+@inline function _scatter_linear_adjoint!(
         f_bar::AbstractVector,
         anchors::Vector{<:_LinearAnchoredQuery},
         y_bar,
@@ -138,7 +138,7 @@ end
 # ── EvalDeriv2 / EvalDeriv3 scatter ──────────────────────────────────────
 # Linear interpolation has zero 2nd+ derivative → no scatter needed
 
-function _scatter_linear_adjoint!(
+@inline function _scatter_linear_adjoint!(
         ::AbstractVector,
         ::Vector{<:_LinearAnchoredQuery},
         ::Any,

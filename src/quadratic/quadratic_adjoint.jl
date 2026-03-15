@@ -159,7 +159,7 @@ Constructed from a grid and query points (query-baked, data-free).
 
 # Usage
 ```julia
-adj = quadratic_adjoint(x_grid, x_query; bc=QuadraticFit())
+adj = quadratic_adjoint(x_grid, x_query; bc=Left(QuadraticFit()))
 
 # Value adjoint (default)
 f_bar = adj(y_bar)
@@ -223,7 +223,7 @@ end
 # Forward: S = y_L·(1-t²) + y_R·t² + d·h·t·(1-t)
 # Adjoint: f̄[idx] += w_fL·ȳ, f̄[idx+1] += w_fR·ȳ, d̄[idx] += w_d·ȳ
 
-function _scatter_eval_adjoint_quadratic!(
+@inline function _scatter_eval_adjoint_quadratic!(
         f_bar::AbstractVector, d_bar::AbstractVector,
         anchors::Vector{<:_QuadraticAdjointAnchor1D}, y_bar,
         ::EvalValue
@@ -240,7 +240,7 @@ function _scatter_eval_adjoint_quadratic!(
 end
 
 # ── EvalDeriv1 scatter ────────────────────────────────────────────────────
-function _scatter_eval_adjoint_quadratic!(
+@inline function _scatter_eval_adjoint_quadratic!(
         f_bar::AbstractVector, d_bar::AbstractVector,
         anchors::Vector{<:_QuadraticAdjointAnchor1D}, y_bar,
         ::EvalDeriv1
@@ -257,7 +257,7 @@ function _scatter_eval_adjoint_quadratic!(
 end
 
 # ── EvalDeriv2 scatter ────────────────────────────────────────────────────
-function _scatter_eval_adjoint_quadratic!(
+@inline function _scatter_eval_adjoint_quadratic!(
         f_bar::AbstractVector, d_bar::AbstractVector,
         anchors::Vector{<:_QuadraticAdjointAnchor1D}, y_bar,
         ::EvalDeriv2
@@ -275,7 +275,7 @@ end
 
 # ── EvalDeriv3 scatter ────────────────────────────────────────────────────
 # 3rd derivative of quadratic is always zero → no scatter needed
-function _scatter_eval_adjoint_quadratic!(
+@inline function _scatter_eval_adjoint_quadratic!(
         ::AbstractVector, ::AbstractVector,
         ::Vector{<:_QuadraticAdjointAnchor1D}, ::Any,
         ::EvalDeriv3
@@ -293,11 +293,39 @@ end
 # After this step, s_bar contains all secant sensitivities and
 # f_bar may be updated for PolyFit BC endpoints.
 
-# ── Left BC: forward recurrence d[i+1] = 2s[i] - d[i] ───────────────────
-# Adjoint reverse sweep: i = n-1 down to 1
-# Then dispatch on BC type for residual d̄[1].
+# ── Shared sweep helpers ──────────────────────────────────────────────────
+# Factor the hot loops that are common across all Left/Right BC variants.
 
-function _recurrence_adjoint!(
+"""
+Reverse sweep for Left BC (forward recurrence d[i+1] = 2s[i] - d[i]).
+After this, d̄[1] holds the residual for BC endpoint adjoint.
+"""
+@inline function _recurrence_sweep_left!(s_bar, d_bar)
+    n = length(d_bar)
+    @inbounds for i in (n - 1):-1:1
+        s_bar[i] += 2 * d_bar[i + 1]
+        d_bar[i] -= d_bar[i + 1]
+    end
+    return nothing
+end
+
+"""
+Forward sweep for Right BC (backward recurrence d[i] = 2s[i] - d[i+1]).
+After this, d̄[n] holds the residual for BC endpoint adjoint.
+"""
+@inline function _recurrence_sweep_right!(s_bar, d_bar)
+    n = length(d_bar)
+    @inbounds for i in 1:(n - 1)
+        s_bar[i] += 2 * d_bar[i]
+        d_bar[i + 1] -= d_bar[i]
+    end
+    return nothing
+end
+
+# ── Left BC: forward recurrence d[i+1] = 2s[i] - d[i] ───────────────────
+# Adjoint reverse sweep, then dispatch on BC type for residual d̄[1].
+
+@inline function _recurrence_adjoint!(
         s_bar::AbstractVector{Tv},
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
@@ -305,16 +333,12 @@ function _recurrence_adjoint!(
         spacing::AbstractGridSpacing,
         grid::AbstractVector
     ) where {Tv}
-    n = length(d_bar)
-    @inbounds for i in (n - 1):-1:1
-        s_bar[i] += 2 * d_bar[i + 1]
-        d_bar[i] -= d_bar[i + 1]
-    end
+    _recurrence_sweep_left!(s_bar, d_bar)
     # d̄[1] remains: Deriv1 → d[1] = constant → discard d̄[1]
     return nothing
 end
 
-function _recurrence_adjoint!(
+@inline function _recurrence_adjoint!(
         s_bar::AbstractVector{Tv},
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
@@ -322,17 +346,13 @@ function _recurrence_adjoint!(
         spacing::AbstractGridSpacing,
         grid::AbstractVector
     ) where {Tv}
-    n = length(d_bar)
-    @inbounds for i in (n - 1):-1:1
-        s_bar[i] += 2 * d_bar[i + 1]
-        d_bar[i] -= d_bar[i + 1]
-    end
+    _recurrence_sweep_left!(s_bar, d_bar)
     # d̄[1] remains: Deriv2 → d[1] = s[1] - κ·h[1]/2 → s̄[1] += d̄[1]
     @inbounds s_bar[1] += d_bar[1]
     return nothing
 end
 
-function _recurrence_adjoint!(
+@inline function _recurrence_adjoint!(
         s_bar::AbstractVector{Tv},
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
@@ -340,13 +360,8 @@ function _recurrence_adjoint!(
         spacing::AbstractGridSpacing{Tg},
         grid::AbstractVector{Tg}
     ) where {Tv, Tg, D}
-    n = length(d_bar)
-    @inbounds for i in (n - 1):-1:1
-        s_bar[i] += 2 * d_bar[i + 1]
-        d_bar[i] -= d_bar[i + 1]
-    end
+    _recurrence_sweep_left!(s_bar, d_bar)
     # d̄[1] remains: PolyFit → d[1] = Σ coeffs[k]·y[k]
-    # Compute polyfit stencil coefficients on the fly (O(D), grid-only)
     coeffs = _precompute_polyfit_coeffs(bc.bc, grid, LeftSide())
     db1 = @inbounds d_bar[1]
     @inbounds for k in eachindex(coeffs)
@@ -356,9 +371,9 @@ function _recurrence_adjoint!(
 end
 
 # ── Right BC: backward recurrence d[i] = 2s[i] - d[i+1] ─────────────────
-# Adjoint forward sweep: i = 1 to n-1
+# Adjoint forward sweep, then dispatch on BC type for residual d̄[n].
 
-function _recurrence_adjoint!(
+@inline function _recurrence_adjoint!(
         s_bar::AbstractVector{Tv},
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
@@ -366,16 +381,12 @@ function _recurrence_adjoint!(
         spacing::AbstractGridSpacing,
         grid::AbstractVector
     ) where {Tv}
-    n = length(d_bar)
-    @inbounds for i in 1:(n - 1)
-        s_bar[i] += 2 * d_bar[i]
-        d_bar[i + 1] -= d_bar[i]
-    end
+    _recurrence_sweep_right!(s_bar, d_bar)
     # d̄[n] remains: Deriv1 → d[n] = constant → discard d̄[n]
     return nothing
 end
 
-function _recurrence_adjoint!(
+@inline function _recurrence_adjoint!(
         s_bar::AbstractVector{Tv},
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
@@ -383,17 +394,14 @@ function _recurrence_adjoint!(
         spacing::AbstractGridSpacing,
         grid::AbstractVector
     ) where {Tv}
+    _recurrence_sweep_right!(s_bar, d_bar)
     n = length(d_bar)
-    @inbounds for i in 1:(n - 1)
-        s_bar[i] += 2 * d_bar[i]
-        d_bar[i + 1] -= d_bar[i]
-    end
     # d̄[n] remains: Deriv2 → d[n] = s[n-1] + κ·h[n-1]/2 → s̄[n-1] += d̄[n]
     @inbounds s_bar[n - 1] += d_bar[n]
     return nothing
 end
 
-function _recurrence_adjoint!(
+@inline function _recurrence_adjoint!(
         s_bar::AbstractVector{Tv},
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
@@ -401,11 +409,8 @@ function _recurrence_adjoint!(
         spacing::AbstractGridSpacing{Tg},
         grid::AbstractVector{Tg}
     ) where {Tv, Tg, D}
+    _recurrence_sweep_right!(s_bar, d_bar)
     n = length(d_bar)
-    @inbounds for i in 1:(n - 1)
-        s_bar[i] += 2 * d_bar[i]
-        d_bar[i + 1] -= d_bar[i]
-    end
     # d̄[n] remains: PolyFit → d[n] = Σ coeffs[k]·y[stencil_k]
     coeffs = _precompute_polyfit_coeffs(bc.bc, grid, RightSide())
     dbn = @inbounds d_bar[n]
@@ -424,7 +429,7 @@ end
 # Adjoint: 1) Forward recurrence adjoint (same as Left) → residual d̄[1]
 #          2) MinCurvFit d[1] adjoint: d̄[1] → s̄ contributions
 
-function _recurrence_adjoint!(
+@inline function _recurrence_adjoint!(
         s_bar::AbstractVector{Tv},
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
@@ -435,11 +440,8 @@ function _recurrence_adjoint!(
     n = length(d_bar)
     nm1 = n - 1
 
-    # Part 1: Forward recurrence adjoint (d[i+1] = 2s[i] - d[i])
-    @inbounds for i in (n - 1):-1:1
-        s_bar[i] += 2 * d_bar[i + 1]
-        d_bar[i] -= d_bar[i + 1]
-    end
+    # Part 1: Forward recurrence adjoint (same sweep as Left BCs)
+    _recurrence_sweep_left!(s_bar, d_bar)
 
     # Part 2: MinCurvFit d[1] adjoint
     # Forward: d[1] = numerator * C where C = inv(inv_h_sum)
@@ -485,7 +487,7 @@ end
 # Reverse: s[i] = (y[i+1] - y[i]) * inv_h[i]
 # Adjoint: f̄[i] -= s̄[i] * inv_h[i], f̄[i+1] += s̄[i] * inv_h[i]
 
-function _secant_adjoint!(
+@inline function _secant_adjoint!(
         f_bar::AbstractVector{Tv},
         s_bar::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg}

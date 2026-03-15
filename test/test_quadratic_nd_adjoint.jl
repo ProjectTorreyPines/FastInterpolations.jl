@@ -466,6 +466,44 @@ end
             (x_uniform, y_uniform), ([0.5, 1.1], [0.5, 0.5])
         )
     end
+
+    # ========================================
+    # Zero-allocation tests
+    # ========================================
+    function _test_quadratic_nd_adjoint_alloc_inplace(
+            grids, queries, f_bar, y_bar;
+            bc = Left(QuadraticFit()), extrap = NoExtrap(), deriv = EvalValue()
+        )
+        adj = quadratic_adjoint(grids, queries; bc = bc, extrap = extrap)
+        adj(f_bar, y_bar; deriv = deriv)  # warmup
+        adj(f_bar, y_bar; deriv = deriv)  # warmup
+        return @allocated adj(f_bar, y_bar; deriv = deriv)
+    end
+
+    @testset "Zero-alloc: in-place — $bc_name" for (bc_name, bc) in [
+            ("Left(QuadraticFit)", Left(QuadraticFit())),
+            ("Right(QuadraticFit)", Right(QuadraticFit())),
+            ("MinCurvFit", MinCurvFit()),
+        ]
+        fb = zeros(nx, ny)
+        allocs = _test_quadratic_nd_adjoint_alloc_inplace(
+            (x_uniform, y_uniform), (xq, yq), fb, y_bar; bc = bc
+        )
+        @test allocs <= ND_ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place Float32" begin
+        x32 = Float32.(collect(x_uniform))
+        y32 = Float32.(collect(y_uniform))
+        xq32 = Float32.(xq)
+        yq32 = Float32.(yq)
+        fb32 = zeros(Float32, nx, ny)
+        yb32 = randn(Float32, n_query)
+        allocs = _test_quadratic_nd_adjoint_alloc_inplace(
+            (x32, y32), (xq32, yq32), fb32, yb32
+        )
+        @test allocs <= ND_ALLOC_THRESHOLD
+    end
 end
 
 # ========================================

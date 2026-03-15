@@ -185,12 +185,24 @@ struct QuadraticAdjoint{
         Tg <: AbstractFloat,
         S <: AbstractGridSpacing{Tg},
         BC <: QuadraticBC,
+        X <: AbstractVector{Tg},
     } <: AbstractAdjoint1D{Tg}
     spacing::S
     anchors::Vector{_QuadraticAdjointAnchor1D{Tg}}
     bc::BC
     grid_size::Int
-    grid::Vector{Tg}  # Needed for PolyFit BC adjoint
+    grid::X  # Needed for PolyFit BC adjoint
+
+    # Inner constructor: copy() for mutation safety.
+    # copy() on immutable Range types is a no-op (zero allocation).
+    # typeof() rebinds X after copy (e.g. SubArray → Vector).
+    function QuadraticAdjoint(
+            spacing::S, anchors::Vector{_QuadraticAdjointAnchor1D{Tg}},
+            bc::BC, grid_size::Int, grid::AbstractVector{Tg}
+        ) where {Tg <: AbstractFloat, S <: AbstractGridSpacing{Tg}, BC <: QuadraticBC}
+        gc = copy(grid)
+        return new{Tg, S, BC, typeof(gc)}(spacing, anchors, bc, grid_size, gc)
+    end
 end
 
 # ========================================
@@ -588,9 +600,8 @@ function quadratic_adjoint(
     # Build spacing and anchors
     spacing = _create_spacing(x_p)
     anchors = _bake_quadratic_adjoint_anchors(x_p, spacing, xq_p, extrap)
-    grid = x_p isa Vector{Tg} ? x_p : collect(Tg, x_p)
 
-    return QuadraticAdjoint(spacing, anchors, bc, length(x_p), grid)
+    return QuadraticAdjoint(spacing, anchors, bc, length(x_p), x_p)
 end
 
 # Scalar query convenience

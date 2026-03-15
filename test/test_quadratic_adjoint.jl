@@ -352,4 +352,85 @@ end
         fb = adj(y_bar; deriv = DerivOp(3))
         @test all(iszero, fb)
     end
+
+    # ========================================
+    # Mutation safety — grid mutation after construction
+    # ========================================
+    @testset "Mutation safety — grid mutation" begin
+        x = collect(range(0.0, 1.0, n_grid))
+        adj = quadratic_adjoint(x, xq; bc = Left(QuadraticFit()))
+        result_before = adj(y_bar)
+        x[5] = 100.0
+        result_after = adj(y_bar)
+        @test result_before == result_after
+    end
+
+    # ========================================
+    # Allocation tests (zero-alloc in-place)
+    # ========================================
+
+    # Function barriers: @testset wraps body in try/catch → type-unstable locals.
+    # All setup + warmup + @allocated must be inside ONE function for accurate results.
+
+    function _test_quadratic_adjoint_alloc_inplace(
+            x, xq, f_bar, y_bar; bc = Left(QuadraticFit()), deriv = EvalValue()
+        )
+        adj = quadratic_adjoint(x, xq; bc = bc)
+        adj(f_bar, y_bar; deriv = deriv)  # warmup
+        adj(f_bar, y_bar; deriv = deriv)  # warmup
+        return @allocated adj(f_bar, y_bar; deriv = deriv)
+    end
+
+    @testset "Zero-alloc: in-place QuadraticFit" begin
+        fb = zeros(n_grid)
+        allocs = _test_quadratic_adjoint_alloc_inplace(x_uniform, xq, fb, y_bar)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place non-uniform" begin
+        fb = zeros(n_grid)
+        allocs = _test_quadratic_adjoint_alloc_inplace(x_nonuniform, xq, fb, y_bar)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place Deriv1(0.5)" begin
+        fb = zeros(n_grid)
+        allocs = _test_quadratic_adjoint_alloc_inplace(
+            x_uniform, xq, fb, y_bar; bc = Left(Deriv1(0.5))
+        )
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place Deriv2(0.0)" begin
+        fb = zeros(n_grid)
+        allocs = _test_quadratic_adjoint_alloc_inplace(
+            x_uniform, xq, fb, y_bar; bc = Left(Deriv2(0.0))
+        )
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place MinCurvFit" begin
+        fb = zeros(n_grid)
+        allocs = _test_quadratic_adjoint_alloc_inplace(
+            x_uniform, xq, fb, y_bar; bc = MinCurvFit()
+        )
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place deriv=$d" for (d, op) in [
+            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+        ]
+        fb = zeros(n_grid)
+        allocs = _test_quadratic_adjoint_alloc_inplace(x_uniform, xq, fb, y_bar; deriv = op)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place Float32" begin
+        x32 = Float32.(x_uniform)
+        xq32 = Float32.(xq)
+        fb32 = zeros(Float32, n_grid)
+        yb32 = randn(Float32, n_query)
+        allocs = _test_quadratic_adjoint_alloc_inplace(x32, xq32, fb32, yb32)
+        @test allocs <= ALLOC_THRESHOLD
+    end
 end

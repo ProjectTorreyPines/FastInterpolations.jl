@@ -5,7 +5,7 @@
 # Constructor and callable methods are in linear_interpolant.jl.
 
 """
-    LinearInterpolant{Tg,Tv,X,Y,E,P}
+    LinearInterpolant{Tg,Tv,X,Y,S,E,P}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `linear_interp(x, y)` (2-argument form).
@@ -15,12 +15,14 @@ Returned by `linear_interp(x, y)` (2-argument form).
 - `Tv`: Value type (unconstrained)
 - `X<:AbstractVector{Tg}`: Grid vector type (preserves Range for O(1) lookup)
 - `Y<:AbstractVector{Tv}`: Values vector type
+- `S<:AbstractGridSpacing{Tg}`: Grid spacing type (ScalarSpacing or VectorSpacing)
 - `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
 - `P<:AbstractSearchPolicy`: Search policy type
 
 # Fields
 - `x::X`: x-coordinates (sorted)
 - `y::Y`: y-values
+- `spacing::S`: Precomputed grid spacing (avoids TwicePrecision overhead on Range grids)
 - `extrap::E`: Extrapolation mode (NoExtrap(), ExtendExtrap(), ClampExtrap(), or WrapExtrap())
 - `search_policy::P`: Default search policy for interval lookup
 
@@ -58,25 +60,27 @@ struct LinearInterpolant{
         Tv,
         X <: AbstractVector{Tg},
         Y <: AbstractVector{Tv},
+        S <: AbstractGridSpacing{Tg},
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
     } <: AbstractInterpolant1D{Tg, Tv}
     x::X
     y::Y
+    spacing::S  # Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
     extrap::E  # Extrapolation mode (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
     # Inner constructor: parametric, only calls new (handles validation only)
-    function LinearInterpolant{Tg, Tv, X, Y, E, P}(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, ev::E, search::P
-        ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+    function LinearInterpolant{Tg, Tv, X, Y, S, E, P}(
+            x::AbstractVector{Tg}, y::AbstractVector{Tv}, spacing::S, ev::E, search::P
+        ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         # Copy to ensure immutability: once constructed, the interpolant owns
         # its data and returns identical results regardless of external mutation.
         # copy() on immutable Range types is a no-op (zero allocation).
         # typeof() rebinds X/Y to the post-copy concrete type (e.g. SubArray → Vector).
         xc, yc = copy(x), copy(y)
-        return new{Tg, Tv, typeof(xc), typeof(yc), E, P}(xc, yc, ev, search)
+        return new{Tg, Tv, typeof(xc), typeof(yc), S, E, P}(xc, yc, spacing, ev, search)
     end
 end
 
@@ -93,7 +97,9 @@ end
         search::P = AutoSearch()
     ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
     E = typeof(extrap)
-    return LinearInterpolant{Tg, Tv, X, Y, E, P}(x, y, extrap, search)
+    spacing = _create_spacing(x)
+    S = typeof(spacing)
+    return LinearInterpolant{Tg, Tv, X, Y, S, E, P}(x, y, spacing, extrap, search)
 end
 
 # ========================================

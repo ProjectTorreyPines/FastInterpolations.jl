@@ -31,7 +31,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 - `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
 - `a::Matrix{Tv}`: Quadratic coefficients (n_points × n_series) series-contiguous
 - `d::Matrix{Tv}`: Slope coefficients (n_points × n_series) series-contiguous
-- `h::Vector{Tg}`: Grid spacing (shared across all series, always real)
+- `spacing::S`: Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
 - `_transpose::LazyTransposeTriple{Tv}`: Lazy point-contiguous layout for SIMD
 - `extrap::E`: Extrapolation mode (compile-time specialized via type parameter)
 
@@ -70,18 +70,18 @@ sitp_complex = quadratic_interp(x, y_complex)
 # Performance
 - Vector queries use series-contiguous layout directly
 - Scalar queries trigger lazy transpose on first call
-- All series share same h[] array (O(1) memory overhead)
+- All series share same grid spacing (O(1) memory overhead)
 
 # Implementation Note: `mutable struct` with `const` fields
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct QuadraticSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct QuadraticSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, S <: AbstractGridSpacing{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                                # Grid points (Range or Vector)
     const y::Matrix{Tv}                       # Series-contiguous y (n_points × n_series)
     const a::Matrix{Tv}                       # Series-contiguous a (n_points × n_series)
     const d::Matrix{Tv}                       # Series-contiguous d (n_points × n_series)
-    const h::Vector{Tg}                       # Grid spacing (shared, always real)
+    const spacing::S                          # Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
     const _transpose::LazyTransposeTriple{Tv} # Lazy point-contiguous layout
     const extrap::E                           # Extrapolation mode (compile-time specialized)
     const search_policy::P                    # Default search policy
@@ -91,15 +91,15 @@ mutable struct QuadraticSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: Abstract
             y::Matrix{Tv},
             a::Matrix{Tv},
             d::Matrix{Tv},
-            h::Vector{Tg},
+            spacing::S,
             extrap::E,
             search::P = AutoSearch()
-        ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+        ) where {Tg <: AbstractFloat, Tv, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         # copy(x) for mutation safety; copy() on Range is identity (zero alloc)
         # typeof(xc) rebinds X after copy (view → Vector)
         # y/a/d are NOT copied here — factory function provides owned matrices.
         xc = copy(x)
-        return new{Tg, Tv, E, P, typeof(xc)}(xc, y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
+        return new{Tg, Tv, E, P, typeof(xc), S}(xc, y, a, d, spacing, LazyTransposeTriple{Tv}(), extrap, search)
     end
 end
 
@@ -396,7 +396,9 @@ function quadratic_interp(
     # Allocate coefficient matrices
     a_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
     d_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
-    h = Vector{Tg}(undef, n_pts - 1)
+
+    # Compute spacing once — shared across all series
+    spacing = _create_spacing(x)
 
     # Promote BC values to Tv_out for convert(Tv, bc.val) compatibility
     bc_promoted = _normalize_bc(bc, first(y_mat))
@@ -405,7 +407,7 @@ function quadratic_interp(
     # Compute coefficients for each series from y_mat columns
     for k in 1:n_ser
         y_col = @view y_mat[:, k]
-        h_k, d_k, a_k = _compute_quadratic_coeffs(x, y_col, bc_promoted)
+        d_k, a_k = _compute_quadratic_coeffs(x, y_col, bc_promoted, spacing)
 
         @inbounds for i in 1:n_pts
             d_mat[i, k] = d_k[i]
@@ -414,14 +416,10 @@ function quadratic_interp(
             a_mat[i, k] = a_k[i]
         end
         a_mat[n_pts, k] = _typed_zero
-
-        if k == 1
-            copyto!(h, h_k)
-        end
     end
 
     extrap_p = _promote_extrap(extrap, eltype(y_mat))
-    return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, h, extrap_p, search)
+    return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, spacing, extrap_p, search)
 end
 
 # Real grid promotion (Int, etc.) → convert to float and delegate

@@ -213,14 +213,16 @@ end
 @testset "Quadratic Interpolation - Coefficient Computation" begin
     using FastInterpolations: _compute_quadratic_secants!, _fill_slopes!,
         _forward_recurrence!, _backward_recurrence!,
-        _compute_quadratic_coefficients!
+        _compute_quadratic_coefficients!, VectorSpacing
 
     @testset "secant computation" begin
         y = [0.0, 1.0, 4.0, 9.0]  # x²
-        inv_h = [1.0, 1.0, 1.0]   # uniform grid h=1
+        h = [1.0, 1.0, 1.0]       # uniform grid h=1
+        inv_h = [1.0, 1.0, 1.0]
+        spacing = VectorSpacing{Float64}(h, inv_h)
         s = zeros(3)
 
-        _compute_quadratic_secants!(s, y, inv_h)
+        _compute_quadratic_secants!(s, y, spacing)
 
         # s[i] = (y[i+1] - y[i]) * inv_h[i]
         @test s[1] ≈ 1.0   # (1-0)/1
@@ -233,12 +235,13 @@ end
         bc = Left(Deriv1(3.0))
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
+        spacing = VectorSpacing{Float64}(h, inv.(h))
         d = zeros(4)
         # Dummy x, y (unused by Deriv1)
         x_dummy = [0.0, 1.0, 2.0, 3.0]
         y_dummy = [0.0, 1.0, 4.0, 9.0]
 
-        _fill_slopes!(d, s, h, bc, x_dummy, y_dummy)
+        _fill_slopes!(d, s, spacing, bc, x_dummy, y_dummy)
 
         # d[1] = 3 (given)
         # d[2] = 2*1 - 3 = -1
@@ -255,12 +258,13 @@ end
         bc = Left(Deriv2(2.0))
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
+        spacing = VectorSpacing{Float64}(h, inv.(h))
         d = zeros(4)
         # Dummy x, y (unused by Deriv2)
         x_dummy = [0.0, 1.0, 2.0, 3.0]
         y_dummy = [0.0, 1.0, 4.0, 9.0]
 
-        _fill_slopes!(d, s, h, bc, x_dummy, y_dummy)
+        _fill_slopes!(d, s, spacing, bc, x_dummy, y_dummy)
 
         # d[1] = 1 - (2/2)*1 = 0
         # d[2] = 2*1 - 0 = 2
@@ -277,12 +281,13 @@ end
         bc = Right(Deriv1(7.0))
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
+        spacing = VectorSpacing{Float64}(h, inv.(h))
         d = zeros(4)
         # Dummy x, y (unused by Deriv1)
         x_dummy = [0.0, 1.0, 2.0, 3.0]
         y_dummy = [0.0, 1.0, 4.0, 9.0]
 
-        _fill_slopes!(d, s, h, bc, x_dummy, y_dummy)
+        _fill_slopes!(d, s, spacing, bc, x_dummy, y_dummy)
 
         # d[4] = 7 (given)
         # d[3] = 2*5 - 7 = 3
@@ -299,12 +304,13 @@ end
         bc = Right(Deriv2(2.0))
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
+        spacing = VectorSpacing{Float64}(h, inv.(h))
         d = zeros(4)
         # Dummy x, y (unused by Deriv2)
         x_dummy = [0.0, 1.0, 2.0, 3.0]
         y_dummy = [0.0, 1.0, 4.0, 9.0]
 
-        _fill_slopes!(d, s, h, bc, x_dummy, y_dummy)
+        _fill_slopes!(d, s, spacing, bc, x_dummy, y_dummy)
 
         # d[4] = 5 + (2/2)*1 = 6
         # d[3] = 2*5 - 6 = 4
@@ -354,10 +360,12 @@ end
         # a[i] = (s[i] - d[i]) * inv_h[i]
         s = [1.0, 3.0, 5.0]
         d = [0.0, 2.0, 4.0, 6.0]
+        h = [1.0, 1.0, 1.0]
         inv_h = [1.0, 1.0, 1.0]
+        spacing = VectorSpacing{Float64}(h, inv_h)
         a = zeros(3)
 
-        _compute_quadratic_coefficients!(a, d, s, inv_h)
+        _compute_quadratic_coefficients!(a, d, s, spacing)
 
         # a[1] = (1 - 0) * 1 = 1
         # a[2] = (3 - 2) * 1 = 1
@@ -374,12 +382,13 @@ end
             # Optimal d[1] = 1/3 (gives lower curvature than d[1]=0)
             s = [1.0, 3.0, 5.0]
             h = [1.0, 1.0, 1.0]
+            spacing = VectorSpacing{Float64}(h, inv.(h))
             d = zeros(4)
             # Dummy x, y (unused by MinCurvFit)
             x_dummy = [0.0, 1.0, 2.0, 3.0]
             y_dummy = [0.0, 1.0, 4.0, 9.0]
 
-            _fill_slopes!(d, s, h, MinCurvFit(), x_dummy, y_dummy)
+            _fill_slopes!(d, s, spacing, MinCurvFit(), x_dummy, y_dummy)
 
             # Verify recurrence relation is satisfied: d[i+1] = 2*s[i] - d[i]
             for i in 1:3
@@ -398,12 +407,13 @@ end
             # Test that optimization produces finite values on non-uniform grid
             s = [2.0, 1.0, 3.0]  # varying secants
             h = [0.5, 1.5, 1.0]  # non-uniform spacing
+            spacing = VectorSpacing{Float64}(h, inv.(h))
             d = zeros(4)
             # Dummy x, y (unused by MinCurvFit)
             x_dummy = [0.0, 0.5, 2.0, 3.0]
             y_dummy = [0.0, 1.0, 2.5, 5.5]
 
-            _fill_slopes!(d, s, h, MinCurvFit(), x_dummy, y_dummy)
+            _fill_slopes!(d, s, spacing, MinCurvFit(), x_dummy, y_dummy)
 
             @test all(isfinite, d)
             # Verify recurrence relation: d[i+1] = 2*s[i] - d[i]
@@ -416,12 +426,13 @@ end
             # n=2: only one segment
             s = [2.0]  # single secant
             h = [1.0]
+            spacing = VectorSpacing{Float64}(h, inv.(h))
             d = zeros(2)
             # Dummy x, y (unused by MinCurvFit)
             x_dummy = [0.0, 1.0]
             y_dummy = [0.0, 2.0]
 
-            _fill_slopes!(d, s, h, MinCurvFit(), x_dummy, y_dummy)
+            _fill_slopes!(d, s, spacing, MinCurvFit(), x_dummy, y_dummy)
 
             # For single segment, minimizing curvature means a = 0
             # a = (s - d[1]) / h => d[1] = s[1] for a = 0
@@ -433,12 +444,13 @@ end
         @testset "Float32 support" begin
             s = Float32[1.0, 3.0, 5.0]
             h = Float32[1.0, 1.0, 1.0]
+            spacing = VectorSpacing{Float32}(h, inv.(h))
             d = zeros(Float32, 4)
             # Dummy x, y (unused by MinCurvFit)
             x_dummy = Float32[0.0, 1.0, 2.0, 3.0]
             y_dummy = Float32[0.0, 1.0, 4.0, 9.0]
 
-            _fill_slopes!(d, s, h, MinCurvFit(), x_dummy, y_dummy)
+            _fill_slopes!(d, s, spacing, MinCurvFit(), x_dummy, y_dummy)
 
             # Verify finite values and recurrence
             @test all(isfinite, d)
@@ -452,6 +464,7 @@ end
             # compared to Left(Deriv2(0)) which forces first interval linear
             s = [1.0, 3.0, 5.0]
             h = [1.0, 1.0, 1.0]
+            spacing = VectorSpacing{Float64}(h, inv.(h))
             # Dummy x, y (unused by MinCurvFit and Deriv2)
             x_dummy = [0.0, 1.0, 2.0, 3.0]
             y_dummy = [0.0, 1.0, 4.0, 9.0]
@@ -459,8 +472,8 @@ end
             d_smooth = zeros(4)
             d_left = zeros(4)
 
-            _fill_slopes!(d_smooth, s, h, MinCurvFit(), x_dummy, y_dummy)
-            _fill_slopes!(d_left, s, h, Left(Deriv2(0.0)), x_dummy, y_dummy)
+            _fill_slopes!(d_smooth, s, spacing, MinCurvFit(), x_dummy, y_dummy)
+            _fill_slopes!(d_left, s, spacing, Left(Deriv2(0.0)), x_dummy, y_dummy)
 
             # Compute total curvature: Σ (s[i] - d[i])² / h[i]
             curvature_smooth = sum((s[i] - d_smooth[i])^2 / h[i] for i in 1:3)
@@ -1570,11 +1583,12 @@ end
         @testset "uniform grid" begin
             s = [1.0, 3.0, 5.0]  # secants for x² on [0,1,2,3]
             h = [1.0, 1.0, 1.0]
+            spacing = VectorSpacing{Float64}(h, inv.(h))
             d_opt = zeros(4)
             x_dummy = [0.0, 1.0, 2.0, 3.0]
             y_dummy = x_dummy .^ 2
 
-            _fill_slopes!(d_opt, s, h, MinCurvFit(), x_dummy, y_dummy)
+            _fill_slopes!(d_opt, s, spacing, MinCurvFit(), x_dummy, y_dummy)
 
             # Compute optimal curvature
             curvature_opt = sum((s[i] - d_opt[i])^2 / h[i] for i in 1:3)
@@ -1597,12 +1611,13 @@ end
         @testset "non-uniform grid" begin
             s = [2.0, 1.0, 3.0, 0.5]  # varying secants
             h = [0.5, 1.5, 1.0, 2.0]  # non-uniform spacing
+            spacing = VectorSpacing{Float64}(h, inv.(h))
             n = length(h) + 1
             d_opt = zeros(n)
             x_dummy = cumsum([0.0; h])  # [0, 0.5, 2.0, 3.0, 5.0]
             y_dummy = zeros(n)
 
-            _fill_slopes!(d_opt, s, h, MinCurvFit(), x_dummy, y_dummy)
+            _fill_slopes!(d_opt, s, spacing, MinCurvFit(), x_dummy, y_dummy)
 
             # Compute optimal curvature
             curvature_opt = sum((s[i] - d_opt[i])^2 / h[i] for i in 1:length(s))
@@ -1626,12 +1641,13 @@ end
             # df/d(d[1]) = -2 * Σ α[i]*(s[i] - d[i])/h[i] where α[i] = (-1)^(i+1)
             s = [1.0, 3.0, 5.0, 7.0]
             h = [0.5, 1.0, 1.5, 0.8]
+            spacing = VectorSpacing{Float64}(h, inv.(h))
             n = length(h) + 1
             d_opt = zeros(n)
             x_dummy = cumsum([0.0; h])
             y_dummy = zeros(n)
 
-            _fill_slopes!(d_opt, s, h, MinCurvFit(), x_dummy, y_dummy)
+            _fill_slopes!(d_opt, s, spacing, MinCurvFit(), x_dummy, y_dummy)
 
             # Compute gradient at optimal point
             gradient = 0.0
@@ -1685,17 +1701,18 @@ end
             # Compute secants and spacing
             h = diff(x)
             inv_h = 1.0 ./ h
+            spacing = VectorSpacing{Float64}(h, inv_h)
             s = diff(y) .* inv_h
             n = length(x)
 
             # MinCurvFit curvature
             d_smooth = zeros(n)
-            _fill_slopes!(d_smooth, s, h, MinCurvFit(), x, y)
+            _fill_slopes!(d_smooth, s, spacing, MinCurvFit(), x, y)
             curvature_smooth = sum((s[i] - d_smooth[i])^2 / h[i] for i in 1:length(s))
 
             # Exact BC (Left(Deriv1)) curvature - uses correct d[1] = f'(x[1])
             d_exact = zeros(n)
-            _fill_slopes!(d_exact, s, h, Left(Deriv1(f_d1(first(x)))), x, y)
+            _fill_slopes!(d_exact, s, spacing, Left(Deriv1(f_d1(first(x)))), x, y)
             curvature_exact = sum((s[i] - d_exact[i])^2 / h[i] for i in 1:length(s))
 
             # MinCurvFit should have lower or equal curvature
@@ -1883,22 +1900,23 @@ end
 
         h = diff(x)
         inv_h = 1.0 ./ h
+        spacing = VectorSpacing{Float64}(h, inv_h)
         s = diff(y) .* inv_h
         n = length(x)
 
         # MinCurvFit curvature
         d_smooth = zeros(n)
-        _fill_slopes!(d_smooth, s, h, MinCurvFit(), x, y)
+        _fill_slopes!(d_smooth, s, spacing, MinCurvFit(), x, y)
         curvature_smooth = sum((s[i] - d_smooth[i])^2 / h[i] for i in 1:length(s))
 
         # Left(Deriv2(0)) curvature
         d_left = zeros(n)
-        _fill_slopes!(d_left, s, h, Left(Deriv2(0.0)), x, y)
+        _fill_slopes!(d_left, s, spacing, Left(Deriv2(0.0)), x, y)
         curvature_left = sum((s[i] - d_left[i])^2 / h[i] for i in 1:length(s))
 
         # Right(Deriv2(0)) curvature
         d_right = zeros(n)
-        _fill_slopes!(d_right, s, h, Right(Deriv2(0.0)), x, y)
+        _fill_slopes!(d_right, s, spacing, Right(Deriv2(0.0)), x, y)
         curvature_right = sum((s[i] - d_right[i])^2 / h[i] for i in 1:length(s))
 
         # MinCurvFit should have minimal curvature
@@ -2090,10 +2108,11 @@ end
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y = x .^ 2
         h = diff(x)
+        spacing = VectorSpacing{Float64}(h, inv.(h))
         s = diff(y) ./ h  # [1, 3, 5, 7]
         d = zeros(5)
 
-        _fill_slopes!(d, s, h, Left(QuadraticFit()), x, y)
+        _fill_slopes!(d, s, spacing, Left(QuadraticFit()), x, y)
 
         # For x², the derivative at x=0 is 0
         @test d[1] ≈ 0.0 atol = 1.0e-12
@@ -2112,10 +2131,11 @@ end
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y = x .^ 2
         h = diff(x)
+        spacing = VectorSpacing{Float64}(h, inv.(h))
         s = diff(y) ./ h  # [1, 3, 5, 7]
         d = zeros(5)
 
-        _fill_slopes!(d, s, h, Right(QuadraticFit()), x, y)
+        _fill_slopes!(d, s, spacing, Right(QuadraticFit()), x, y)
 
         # For x², the derivative at x=4 is 8
         @test d[5] ≈ 8.0 atol = 1.0e-12
@@ -2135,15 +2155,16 @@ end
         x = [0.0, 0.5, 1.5]
         y = x .^ 2  # [0, 0.25, 2.25]
         h = diff(x)  # [0.5, 1.0]
+        spacing = VectorSpacing{Float64}(h, inv.(h))
         s = diff(y) ./ h  # [0.5, 2.0]
         d = zeros(3)
 
-        _fill_slopes!(d, s, h, Left(QuadraticFit()), x, y)
+        _fill_slopes!(d, s, spacing, Left(QuadraticFit()), x, y)
         @test d[1] ≈ 0.0 atol = 1.0e-12
 
         # Test Right as well
         d_right = zeros(3)
-        _fill_slopes!(d_right, s, h, Right(QuadraticFit()), x, y)
+        _fill_slopes!(d_right, s, spacing, Right(QuadraticFit()), x, y)
         @test d_right[3] ≈ 3.0 atol = 1.0e-12
     end
 end

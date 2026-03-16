@@ -67,9 +67,10 @@ sitp_complex = linear_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct LinearSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct LinearSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, S <: AbstractGridSpacing{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                            # Shared x-grid (Range or Vector)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
+    const spacing::S                      # Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
     const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
     const extrap::E                        # Extrapolation mode (compile-time specialized)
     const search_policy::P                # Default search policy (immutable, thread-safe)
@@ -84,7 +85,8 @@ mutable struct LinearSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExt
         # typeof(xc) rebinds X after copy (view → Vector)
         # y is NOT copied here — _build_series_mat() already provides an owned matrix.
         xc = copy(x)
-        return new{Tg, Tv, E, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), extrap, search)
+        spacing = _create_spacing(xc)
+        return new{Tg, Tv, E, P, typeof(xc), typeof(spacing)}(xc, y, spacing, LazyTranspose{Tv}(), extrap, search)
     end
 end
 
@@ -273,12 +275,8 @@ while `xq` is used directly in arithmetic to preserve derivative information.
     idx = aq.idx
     idx1 = idx + 1
 
-    @inbounds begin
-        xL = sitp.x[idx]
-        xR = sitp.x[idx1]
-    end
-    inv_h = inv(xR - xL)
-    dL = xq - xL  # Original xq preserves Dual for AD
+    inv_h = aq.inv_h
+    dL = xq - aq.xL  # Original xq preserves Dual for AD
 
     @inbounds @simd for k in axes(output, 1)
         yL = y_point[k, idx]

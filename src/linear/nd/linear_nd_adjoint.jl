@@ -43,10 +43,10 @@ function _bake_linear_nd_anchors(
         idx_and_weights = ntuple(Val(N)) do d
             xq_raw = Tg(query_q[d])
             xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
-            idx, _, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
+            idx, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
             h = _get_h(spacings[d], idx)
             inv_h = _get_inv_h(spacings[d], idx)
-            α = (xq_d - grids[d][idx]) * inv_h
+            α = (xq_d - xL) * inv_h
             is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])
             w_val = (one(Tg) - α, α)
             w_der = (-inv_h, inv_h)

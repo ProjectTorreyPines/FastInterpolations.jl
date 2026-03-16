@@ -173,7 +173,7 @@ function _fixup_linear_anchor_sides!(
         side = xq_i < x_lo ? 0x01 : 0x02
         aq = anchors[i]
         anchors[i] = _LinearAnchoredQuery{Tg, Tg}(
-            aq.idx, aq.xq, side, aq.h, aq.inv_h, aq.alpha
+            aq.idx, aq.xq, side, aq.xL, aq.h, aq.inv_h, aq.alpha
         )
     end
     return nothing

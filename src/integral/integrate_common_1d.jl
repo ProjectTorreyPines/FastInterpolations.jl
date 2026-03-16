@@ -100,9 +100,9 @@ end
 # Generic 1D split-accumulate: split [a,b] into cells, call partial/full kernels.
 # `partial_fn(i, xL, h, a2, b2)` — integrate cell i from a2 to b2, with cell width h
 # `full_fn(i, h)` — integrate full cell i with cell width h
-# Uses no-spacing search_interval variant (avoids VectorSpacing allocation).
+# `spacing` provides `_get_h(spacing, i)` to avoid TwicePrecision x indexing on Range grids.
 @inline function _integrate_1d_cellwise(
-        x::AbstractVector, a::Real, b::Real,
+        x::AbstractVector, spacing::AbstractGridSpacing, a::Real, b::Real,
         searcher::S, partial_fn::PF, full_fn::FF, ::Type{Tout}
     ) where {S <: Searcher, PF, FF, Tout}
     sign, lo, hi = _normalize_bounds_1d(a, b)
@@ -112,16 +112,16 @@ end
     i1, xL1, _ = search_interval(searcher, x, hi)
 
     if i0 == i1
-        @inbounds h = x[i0 + 1] - x[i0]
+        h = _get_h(spacing, i0)
         return sign * partial_fn(i0, xL0, h, lo, hi)
     end
 
-    @inbounds h0 = x[i0 + 1] - x[i0]
+    h0 = _get_h(spacing, i0)
     total = partial_fn(i0, xL0, h0, lo, xL0 + h0)
     @inbounds for i in (i0 + 1):(i1 - 1)
-        total += full_fn(i, x[i + 1] - x[i])
+        total += full_fn(i, _get_h(spacing, i))
     end
-    @inbounds h1 = x[i1 + 1] - x[i1]
+    h1 = _get_h(spacing, i1)
     total += partial_fn(i1, xL1, h1, xL1, hi)
 
     return sign * total
@@ -134,12 +134,12 @@ end
 # Scalar accumulator: ∫ over entire grid using full-cell kernel only.
 # `full_fn(i, h)` — same closure signature as _integrate_1d_cellwise.
 @inline function _integrate_1d_fulldomain(
-        x::AbstractVector, full_fn::F, ::Type{Tout}
+        x::AbstractVector, spacing::AbstractGridSpacing, full_fn::F, ::Type{Tout}
     ) where {F, Tout}
     n = length(x)
     total = zero(Tout)
     @inbounds for i in 1:(n - 1)
-        total += full_fn(i, x[i + 1] - x[i])
+        total += full_fn(i, _get_h(spacing, i))
     end
     return total
 end
@@ -147,20 +147,20 @@ end
 # Prefix-sum (in-place): write cumulative integral into pre-allocated buffer.
 # `out` must have length ≥ length(x). Works with Vector or @view(matrix[:, k]).
 function _cumulative_integrate_1d!(
-        out::AbstractVector, x::AbstractVector, full_fn::F
+        out::AbstractVector, x::AbstractVector, spacing::AbstractGridSpacing, full_fn::F
     ) where {F}
     n = length(x)
     out[1] = zero(eltype(out))
     @inbounds for i in 1:(n - 1)
-        out[i + 1] = out[i] + full_fn(i, x[i + 1] - x[i])
+        out[i + 1] = out[i] + full_fn(i, _get_h(spacing, i))
     end
     return out
 end
 
 # Allocating wrapper: creates a fresh Vector and fills it.
 function _cumulative_integrate_1d(
-        x::AbstractVector, full_fn::F, ::Type{Tout}
+        x::AbstractVector, spacing::AbstractGridSpacing, full_fn::F, ::Type{Tout}
     ) where {F, Tout}
     result = Vector{Tout}(undef, length(x))
-    return _cumulative_integrate_1d!(result, x, full_fn)
+    return _cumulative_integrate_1d!(result, x, spacing, full_fn)
 end

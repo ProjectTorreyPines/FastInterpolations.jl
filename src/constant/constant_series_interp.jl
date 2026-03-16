@@ -64,10 +64,11 @@ sitp_complex = constant_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct ConstantSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct ConstantSeriesInterpolant{Tg <: AbstractFloat, Tv, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                            # Shared x-grid (Range or Vector)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
+    const spacing::S                      # Grid spacing (ScalarSpacing or VectorSpacing)
     const extrap::E                        # Extrapolation mode (compile-time specialized)
     const side::SD                        # Side selection (compile-time specialized)
     const search_policy::P                # Default search policy
@@ -83,7 +84,8 @@ mutable struct ConstantSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractE
         # typeof(xc) rebinds X after copy (view → Vector)
         # y is NOT copied here — _build_series_mat() already provides an owned matrix.
         xc = copy(x)
-        return new{Tg, Tv, E, SD, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), extrap, side, search)
+        spacing = _create_spacing(xc)
+        return new{Tg, Tv, typeof(spacing), E, SD, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), spacing, extrap, side, search)
     end
 end
 

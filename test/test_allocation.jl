@@ -1145,8 +1145,9 @@ import FastInterpolations: _get_cubic_cache
         # All modes should have same allocation
         @test allocs_ext == allocs_const
         @test allocs_ext == allocs_wrap
-        # Construction allocates: struct + defensive copy(x), copy(y) for mutation safety
-        n_copy_bytes = sizeof(eltype(x)) * (length(x) + length(y)) + 256  # data + headers + struct
+        # Construction allocates: struct + defensive copy(x), copy(y) + spacing (h, inv_h vectors)
+        n_spacing_bytes = 2 * sizeof(eltype(x)) * (length(x) - 1)  # VectorSpacing h + inv_h
+        n_copy_bytes = sizeof(eltype(x)) * (length(x) + length(y)) + n_spacing_bytes + 384  # data + spacing + headers(×4 vectors) + struct
         @test allocs_ext <= ALLOC_THRESHOLD + n_copy_bytes
     end
 

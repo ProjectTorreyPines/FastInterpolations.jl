@@ -324,6 +324,19 @@ Fill pre-allocated h and inv_h arrays with grid spacing and inverse.
     return nothing
 end
 
+# Specialized path for uniform grids — avoids per-element subtraction
+@inline function _compute_grid_spacing!(
+        h::AbstractVector{T},
+        inv_h::AbstractVector{T},
+        x::AbstractRange{T}
+    ) where {T <: AbstractFloat}
+    s = step(x)
+    inv_s = inv(s)
+    fill!(h, s)
+    fill!(inv_h, inv_s)
+    return nothing
+end
+
 # ========================================
 # Coefficient Computation (In-Place)
 # ========================================

@@ -64,7 +64,7 @@ end
     ) where {Tg <: AbstractFloat, Tv}
     x = _grid_1d(itp)
     Tout = promote_type(Tv, Tg)
-    return _integrate_1d_fulldomain(x, _full_cell_fn(itp), Tout)
+    return _integrate_1d_fulldomain(x, _spacing(itp), _full_cell_fn(itp), Tout)
 end
 
 # Constant override: side is parametric → compiler knows concrete type
@@ -74,7 +74,7 @@ end
     ) where {Tg <: AbstractFloat, Tv}
     x = itp.x
     Tout = promote_type(Tv, Tg)
-    return _integrate_1d_fulldomain(x, _full_cell_fn(itp, itp.side), Tout)
+    return _integrate_1d_fulldomain(x, _spacing(itp), _full_cell_fn(itp, itp.side), Tout)
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -91,7 +91,7 @@ end
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
     @inbounds for k in 1:n
-        results[k] = _integrate_1d_fulldomain(x, _full_cell_fn(sitp, k), Tout)
+        results[k] = _integrate_1d_fulldomain(x, _spacing(sitp), _full_cell_fn(sitp, k), Tout)
     end
     return results
 end
@@ -106,7 +106,7 @@ end
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
     @inbounds for k in 1:n
-        results[k] = _integrate_1d_fulldomain(x, _full_cell_fn(sitp, k, sitp.side), Tout)
+        results[k] = _integrate_1d_fulldomain(x, _spacing(sitp), _full_cell_fn(sitp, k, sitp.side), Tout)
     end
     return results
 end
@@ -180,7 +180,7 @@ function cumulative_integrate(
     ) where {Tg <: AbstractFloat, Tv}
     x = _grid_1d(itp)
     Tout = promote_type(Tv, Tg)
-    return _cumulative_integrate_1d(x, _full_cell_fn(itp), Tout)
+    return _cumulative_integrate_1d(x, _spacing(itp), _full_cell_fn(itp), Tout)
 end
 
 # Constant override: side is parametric → compiler knows concrete type
@@ -189,7 +189,7 @@ function cumulative_integrate(
     ) where {Tg <: AbstractFloat, Tv}
     x = itp.x
     Tout = promote_type(Tv, Tg)
-    return _cumulative_integrate_1d(x, _full_cell_fn(itp, itp.side), Tout)
+    return _cumulative_integrate_1d(x, _spacing(itp), _full_cell_fn(itp, itp.side), Tout)
 end
 
 # Generic Series: catches Cubic, Linear, Quadratic series
@@ -202,7 +202,7 @@ function cumulative_integrate(
     n_ser = n_series(sitp)
     result = Matrix{Tout}(undef, n_pts, n_ser)
     @inbounds for k in 1:n_ser
-        _cumulative_integrate_1d!(@view(result[:, k]), x, _full_cell_fn(sitp, k))
+        _cumulative_integrate_1d!(@view(result[:, k]), x, _spacing(sitp), _full_cell_fn(sitp, k))
     end
     return result
 end
@@ -217,7 +217,7 @@ function cumulative_integrate(
     n_ser = n_series(sitp)
     result = Matrix{Tout}(undef, n_pts, n_ser)
     @inbounds for k in 1:n_ser
-        _cumulative_integrate_1d!(@view(result[:, k]), x, _full_cell_fn(sitp, k, sitp.side))
+        _cumulative_integrate_1d!(@view(result[:, k]), x, _spacing(sitp), _full_cell_fn(sitp, k, sitp.side))
     end
     return result
 end

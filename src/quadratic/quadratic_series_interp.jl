@@ -76,12 +76,13 @@ sitp_complex = quadratic_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct QuadraticSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct QuadraticSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, S <: AbstractGridSpacing{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                                # Grid points (Range or Vector)
     const y::Matrix{Tv}                       # Series-contiguous y (n_points × n_series)
     const a::Matrix{Tv}                       # Series-contiguous a (n_points × n_series)
     const d::Matrix{Tv}                       # Series-contiguous d (n_points × n_series)
     const h::Vector{Tg}                       # Grid spacing (shared, always real)
+    const spacing::S                          # Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
     const _transpose::LazyTransposeTriple{Tv} # Lazy point-contiguous layout
     const extrap::E                           # Extrapolation mode (compile-time specialized)
     const search_policy::P                    # Default search policy
@@ -99,7 +100,8 @@ mutable struct QuadraticSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: Abstract
         # typeof(xc) rebinds X after copy (view → Vector)
         # y/a/d are NOT copied here — factory function provides owned matrices.
         xc = copy(x)
-        return new{Tg, Tv, E, P, typeof(xc)}(xc, y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
+        spacing = _create_spacing(xc)
+        return new{Tg, Tv, E, P, typeof(xc), typeof(spacing)}(xc, y, a, d, h, spacing, LazyTransposeTriple{Tv}(), extrap, search)
     end
 end
 

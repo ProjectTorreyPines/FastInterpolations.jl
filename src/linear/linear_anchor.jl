@@ -26,6 +26,7 @@ matches the interpolant grid.
 - `idx`: Interval index where xq falls
 - `xq`: Original query point (or wrapped value for periodic), preserves original precision
 - `side`: Domain position (0=inside, 1=below, 2=above)
+- `xL`: Left grid point of the interval (avoids re-indexing x[idx] which triggers TwicePrecision on Range)
 - `h`: Interval width (xR - xL)
 - `inv_h`: Precomputed reciprocal (1/h) for fast derivative computation
 - `alpha`: Normalized position within interval: (xq - xL) / h, preserves precision
@@ -54,6 +55,7 @@ struct _LinearAnchoredQuery{Tg <: AbstractFloat, Tq <: Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), original precision
     side::UInt8                # 0=inside, 1=below_min, 2=above_max
+    xL::Tg                     # left grid point (avoids TwicePrecision re-indexing on Range)
     h::Tg                      # interval width
     inv_h::Tg                  # precomputed 1/h
     alpha::Tq                  # normalized position: (xq - xL) / h, preserves precision
@@ -284,7 +286,7 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
     # alpha preserves Dual type when xq is Dual
     alpha = (xq - xL) * inv_h
 
-    return _LinearAnchoredQuery{Tg, Tq}(idx, xq, side, h, inv_h, alpha)
+    return _LinearAnchoredQuery{Tg, Tq}(idx, xq, side, xL, h, inv_h, alpha)
 end
 
 # ========================================

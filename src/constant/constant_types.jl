@@ -6,7 +6,7 @@
 # Internal evaluation functions are in constant_oneshot.jl.
 
 """
-    ConstantInterpolant{Tg,Tv,X,Y,E,SD,P}
+    ConstantInterpolant{Tg,Tv,X,Y,S,E,SD,P}
 
 Lightweight callable interpolant for constant (step) interpolation.
 Returned by `constant_interp(x, y)` (2-argument form).
@@ -16,6 +16,7 @@ Returned by `constant_interp(x, y)` (2-argument form).
 - `Tv`: Value type (unconstrained)
 - `X<:AbstractVector{Tg}`: Type of x-coordinates
 - `Y<:AbstractVector{Tv}`: Type of y-values
+- `S<:AbstractGridSpacing{Tg}`: Grid spacing type (ScalarSpacing for Range, VectorSpacing for Vector)
 - `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
 - `SD<:AbstractSide`: Side selection type (compile-time specialized)
 - `P<:AbstractSearchPolicy`: Search policy type
@@ -23,6 +24,7 @@ Returned by `constant_interp(x, y)` (2-argument form).
 # Fields
 - `x::X`: x-coordinates (sorted)
 - `y::Y`: y-values
+- `spacing::S`: Precomputed grid spacing (avoids TwicePrecision overhead on Range grids)
 - `extrap::E`: Extrapolation mode (NoExtrap(), ExtendExtrap(), ClampExtrap(), or WrapExtrap())
 - `side::SD`: Side selection (NearestSide(), LeftSide(), RightSide())
 - `search_policy::P`: Default search policy for interval lookup
@@ -50,17 +52,18 @@ itp = constant_interp(x, y; search=LinearBinarySearch())  # explicit override
 val = itp(0.5; search=BinarySearch())  # per-call override
 ```
 """
-struct ConstantInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy} <: AbstractInterpolant1D{Tg, Tv}
+struct ConstantInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy} <: AbstractInterpolant1D{Tg, Tv}
     x::X
     y::Y
+    spacing::S       # Grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
     extrap::E        # Extrapolation mode (compile-time specialized)
     side::SD         # Side selection (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
     # Inner constructor: parametric, only calls new (handles validation only)
-    function ConstantInterpolant{Tg, Tv, X, Y, E, SD, P}(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, ev::E, sv::SD, search::P
-        ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
+    function ConstantInterpolant{Tg, Tv, X, Y, S, E, SD, P}(
+            x::AbstractVector{Tg}, y::AbstractVector{Tv}, spacing::S, ev::E, sv::SD, search::P
+        ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || _throw_grid_too_small(length(x))
         # Copy to ensure immutability: once constructed, the interpolant owns
@@ -68,7 +71,7 @@ struct ConstantInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <
         # copy() on immutable Range types is a no-op (zero allocation).
         # typeof() rebinds X/Y to the post-copy concrete type (e.g. SubArray → Vector).
         xc, yc = copy(x), copy(y)
-        return new{Tg, Tv, typeof(xc), typeof(yc), E, SD, P}(xc, yc, ev, sv, search)
+        return new{Tg, Tv, typeof(xc), typeof(yc), S, E, SD, P}(xc, yc, spacing, ev, sv, search)
     end
 end
 
@@ -88,5 +91,7 @@ end
     ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
     E = typeof(extrap)
     SD = typeof(side)
-    return ConstantInterpolant{Tg, Tv, X, Y, E, SD, P}(x, y, extrap, side, search)
+    spacing = _create_spacing(x)
+    S = typeof(spacing)
+    return ConstantInterpolant{Tg, Tv, X, Y, S, E, SD, P}(x, y, spacing, extrap, side, search)
 end

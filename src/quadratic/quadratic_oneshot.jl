@@ -113,20 +113,18 @@ end
 end
 
 """
-    _quadratic_eval_at_point(x, y, h, a, d, xq, extrap, op, searcher)
+    _quadratic_eval_at_point(x, y, a, d, xq, extrap, op, searcher)
 
 Entry point for quadratic spline evaluation with extrapolation dispatch and search policy.
-Note: `h` parameter kept for API compatibility but not used (interval info from x).
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type for x, h
+- `Tg<:AbstractFloat`: Grid type for x
 - `Tq`: Query type (can be Tg or ForwardDiff.Dual for AD)
 - `Tv`: Value type for y, a, d (unconstrained)
 """
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        ::AbstractVector{Tg},  # h - unused, kept for API compatibility
         a::AbstractVector{Tv},
         d::AbstractVector{Tv},
         xq::Tq,
@@ -209,16 +207,16 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
     # Compute coefficients using temporary arrays from pool
-    # h is grid-typed (Tg), d and a are value-typed (Tv)
+    # spacing is pooled (zero-alloc for Range, pool-acquired for Vector)
     nx = length(x)
-    h = acquire!(pool, Tg, nx - 1)
+    spacing = _create_spacing_pooled(pool, x)
     d = acquire!(pool, Tv, nx)
     a = acquire!(pool, Tv, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
-    _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
+    _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
 
     searcher = _resolve_search(x, xq, search, hint)
-    _quadratic_eval_at_point(x, y, h, a, d, xq, extrap, deriv, searcher)
+    _quadratic_eval_at_point(x, y, a, d, xq, extrap, deriv, searcher)
 end
 
 # ========================================
@@ -263,16 +261,16 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     @assert length(x) >= 2 "x must have at least 2 elements"
 
     # Compute coefficients using temporary arrays from pool
-    # h is grid-typed (Tg), d and a are value-typed (Tv)
+    # spacing is pooled (zero-alloc for Range, pool-acquired for Vector)
     nx = length(x)
-    h = acquire!(pool, Tg, nx - 1)
+    spacing = _create_spacing_pooled(pool, x)
     d = acquire!(pool, Tv, nx)
     a = acquire!(pool, Tv, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
-    _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
+    _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
 
     searcher = _resolve_search(x, x_targets, search, nothing)
-    _quadratic_vector_loop!(output, x, y, h, a, d, x_targets, extrap, deriv, searcher)
+    _quadratic_vector_loop!(output, x, y, a, d, x_targets, extrap, deriv, searcher)
     return output
 end
 

@@ -30,23 +30,23 @@ const QuadraticBC = Union{Left, Right, MinCurvFit}
 # ========================================
 
 """
-    _compute_quadratic_secants!(s, y, inv_h)
+    _compute_quadratic_secants!(s, y, spacing)
 
 Compute secant slopes: s[i] = (y[i+1] - y[i]) * inv_h[i]
 
 # Arguments
 - `s::Vector{Tv}`: Output vector (length n-1, value-derived)
 - `y::AbstractVector{Tv}`: Values at grid points (length n)
-- `inv_h::Vector{Tg}`: Inverse grid spacing (length n-1, grid-derived)
+- `spacing::AbstractGridSpacing{Tg}`: Grid spacing (ScalarSpacing or VectorSpacing)
 
 # Type Parameters
 - `Tv`: Value type (unconstrained)
 - `Tg<:AbstractFloat`: Grid type
 """
-@inline function _compute_quadratic_secants!(s::AbstractVector{Tv}, y::AbstractVector{Tv}, inv_h::AbstractVector{Tg}) where {Tv, Tg <: AbstractFloat}
+@inline function _compute_quadratic_secants!(s::AbstractVector{Tv}, y::AbstractVector{Tv}, spacing::AbstractGridSpacing{Tg}) where {Tv, Tg <: AbstractFloat}
     n = length(y) - 1
     @inbounds for i in 1:n
-        s[i] = (y[i + 1] - y[i]) * inv_h[i]  # Tv * Tg → Tv
+        s[i] = (y[i + 1] - y[i]) * _get_inv_h(spacing, i)  # Tv * Tg → Tv
     end
     return s
 end
@@ -106,7 +106,7 @@ end
 # ========================================
 
 """
-    _fill_slopes!(d, s, h, bc, x, y)
+    _fill_slopes!(d, s, spacing, bc, x, y)
 
 Fill slope array d[] based on boundary condition type.
 Dispatches at compile time to use optimal recurrence direction:
@@ -118,12 +118,12 @@ derivatives from data. For other BC types, they are ignored.
 
 # Type Parameters
 - `Tv`: Value type for d, s (unconstrained)
-- `Tg<:AbstractFloat`: Grid type for h, x
+- `Tg<:AbstractFloat`: Grid type for spacing, x
 """
 # Left(Deriv1): d[1] given directly, forward recurrence
 # convert() is a no-op when types match (optimized away at compile time)
 @inline function _fill_slopes!(
-        d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
+        d::AbstractVector{Tv}, s::AbstractVector{Tv}, spacing::AbstractGridSpacing{Tg},
         bc::Left{<:Deriv1}, ::AbstractVector{Tg}, ::AbstractVector{Tv}
     ) where {Tv, Tg <: AbstractFloat}
     d1 = convert(Tv, bc.bc.val)
@@ -132,17 +132,17 @@ end
 
 # Left(Deriv2): d[1] = s[1] - (κ/2)*h[1], forward recurrence
 @inline function _fill_slopes!(
-        d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
+        d::AbstractVector{Tv}, s::AbstractVector{Tv}, spacing::AbstractGridSpacing{Tg},
         bc::Left{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector{Tv}
     ) where {Tv, Tg <: AbstractFloat}
     κ = convert(Tv, bc.bc.val)
-    d1 = s[1] - κ * (h[1] / 2)  # Tv - Tv*Tg → Tv (no /(Tv,Int) needed)
+    d1 = s[1] - κ * (_get_h(spacing, 1) / 2)  # Tv - Tv*Tg → Tv (no /(Tv,Int) needed)
     return _forward_recurrence!(d, s, d1)
 end
 
 # Right(Deriv1): d[n] given directly, backward recurrence
 @inline function _fill_slopes!(
-        d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
+        d::AbstractVector{Tv}, s::AbstractVector{Tv}, spacing::AbstractGridSpacing{Tg},
         bc::Right{<:Deriv1}, ::AbstractVector{Tg}, ::AbstractVector{Tv}
     ) where {Tv, Tg <: AbstractFloat}
     dn = convert(Tv, bc.bc.val)
@@ -152,17 +152,18 @@ end
 # Right(Deriv2): compute d[n] from curvature, backward recurrence
 # d[n] = s[n-1] + (κ/2)*h[n-1]  (derived from a[n-1] = κ/2)
 @inline function _fill_slopes!(
-        d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
+        d::AbstractVector{Tv}, s::AbstractVector{Tv}, spacing::AbstractGridSpacing{Tg},
         bc::Right{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector{Tv}
     ) where {Tv, Tg <: AbstractFloat}
     κ = convert(Tv, bc.bc.val)
-    dn = s[end] + κ * (h[end] / 2)  # Tv + Tv*Tg → Tv (no /(Tv,Int) needed)
+    n_intervals = length(s)
+    dn = s[end] + κ * (_get_h(spacing, n_intervals) / 2)  # Tv + Tv*Tg → Tv (no /(Tv,Int) needed)
     return _backward_recurrence!(d, s, dn)
 end
 
 # MinCurvFit: minimize total curvature via closed-form optimization
 """
-    _fill_slopes!(d, s, h, ::MinCurvFit, x, y)
+    _fill_slopes!(d, s, spacing, ::MinCurvFit, x, y)
 
 Fill slope array using global curvature minimization.
 
@@ -183,11 +184,11 @@ element-wise on real and imaginary parts.
 O(n) time, O(1) extra space (on-the-fly β computation).
 """
 @inline function _fill_slopes!(
-        d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
+        d::AbstractVector{Tv}, s::AbstractVector{Tv}, spacing::AbstractGridSpacing{Tg},
         ::MinCurvFit, ::AbstractVector{Tg}, ::AbstractVector{Tv}
     ) where {Tv, Tg <: AbstractFloat}
     n = length(d)
-    n_intervals = n - 1  # = length(s) = length(h)
+    n_intervals = n - 1  # = length(s)
 
     # Edge case: single segment (n=2)
     # For single segment, minimize a² = (s-d[1])²/h
@@ -218,7 +219,7 @@ O(n) time, O(1) extra space (on-the-fly β computation).
     sign = one(Tg)  # α[1] = (-1)^(1+1) = +1
 
     @inbounds for i in 1:n_intervals
-        inv_h_i = inv(h[i])
+        inv_h_i = _get_inv_h(spacing, i)  # precomputed — no inv() needed
         inv_h_sum += inv_h_i
         numerator += sign * (s[i] - β) * inv_h_i  # Tg * Tv * Tg → Tv
         β = 2 * s[i] - β  # Tv operations
@@ -234,7 +235,7 @@ end
 # ========================================
 
 """
-    _fill_slopes!(d, s, h, bc::Left{PolyFit{D}}, x, y)
+    _fill_slopes!(d, s, spacing, bc::Left{PolyFit{D}}, x, y)
 
 Fill slope array using generic polynomial fit at left endpoint.
 
@@ -245,7 +246,7 @@ QuadraticFit (D=2), CubicFit (D=3), etc.
 For Complex y values, materialize_bc returns Deriv1{ComplexF64} naturally.
 """
 @inline function _fill_slopes!(
-        d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
+        d::AbstractVector{Tv}, s::AbstractVector{Tv}, ::AbstractGridSpacing{Tg},
         bc::Left{PolyFit{D}}, x::AbstractVector{Tg}, y::AbstractVector{Tv}
     ) where {D, Tv, Tg <: AbstractFloat}
     # Materialize PolyFit{D} → Deriv1{Tv} using estimated derivative
@@ -255,7 +256,7 @@ For Complex y values, materialize_bc returns Deriv1{ComplexF64} naturally.
 end
 
 """
-    _fill_slopes!(d, s, h, bc::Right{PolyFit{D}}, x, y)
+    _fill_slopes!(d, s, spacing, bc::Right{PolyFit{D}}, x, y)
 
 Fill slope array using generic polynomial fit at right endpoint.
 
@@ -263,7 +264,7 @@ Materializes PolyFit{D} to Deriv1{Tv} using `materialize_bc`, then uses the
 estimated derivative directly.
 """
 @inline function _fill_slopes!(
-        d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
+        d::AbstractVector{Tv}, s::AbstractVector{Tv}, ::AbstractGridSpacing{Tg},
         bc::Right{PolyFit{D}}, x::AbstractVector{Tg}, y::AbstractVector{Tv}
     ) where {D, Tv, Tg <: AbstractFloat}
     # Materialize PolyFit{D} → Deriv1{Tv} using estimated derivative
@@ -277,7 +278,7 @@ end
 # ========================================
 
 """
-    _compute_quadratic_coefficients!(a, d, s, inv_h)
+    _compute_quadratic_coefficients!(a, d, s, spacing)
 
 Compute quadratic coefficients: a[i] = (s[i] - d[i]) * inv_h[i]
 
@@ -285,56 +286,17 @@ Compute quadratic coefficients: a[i] = (s[i] - d[i]) * inv_h[i]
 - `a::Vector{Tv}`: Output coefficient array (length n-1, value-derived)
 - `d::Vector{Tv}`: Slope array (length n, value-derived)
 - `s::Vector{Tv}`: Secant slopes (length n-1, value-derived)
-- `inv_h::Vector{Tg}`: Inverse grid spacing (length n-1, grid-derived)
+- `spacing::AbstractGridSpacing{Tg}`: Grid spacing (ScalarSpacing or VectorSpacing)
 
 # Type Parameters
 - `Tv`: Value type (unconstrained)
 - `Tg<:AbstractFloat`: Grid type
 """
-@inline function _compute_quadratic_coefficients!(a::AbstractVector{Tv}, d::AbstractVector{Tv}, s::AbstractVector{Tv}, inv_h::AbstractVector{Tg}) where {Tv, Tg <: AbstractFloat}
+@inline function _compute_quadratic_coefficients!(a::AbstractVector{Tv}, d::AbstractVector{Tv}, s::AbstractVector{Tv}, spacing::AbstractGridSpacing{Tg}) where {Tv, Tg <: AbstractFloat}
     @inbounds for i in eachindex(a)
-        a[i] = (s[i] - d[i]) * inv_h[i]  # (Tv - Tv) * Tg → Tv
+        a[i] = (s[i] - d[i]) * _get_inv_h(spacing, i)  # (Tv - Tv) * Tg → Tv
     end
     return a
-end
-
-# ========================================
-# Grid Spacing Computation
-# ========================================
-
-"""
-    _compute_grid_spacing!(h, inv_h, x)
-
-Fill pre-allocated h and inv_h arrays with grid spacing and inverse.
-
-# Arguments
-- `h::AbstractVector{T}`: Output grid spacing (length n-1)
-- `inv_h::AbstractVector{T}`: Output inverse grid spacing (length n-1)
-- `x::AbstractVector{T}`: x-coordinates (length n)
-"""
-@inline function _compute_grid_spacing!(
-        h::AbstractVector{T},
-        inv_h::AbstractVector{T},
-        x::AbstractVector{T}
-    ) where {T <: AbstractFloat}
-    @inbounds for i in eachindex(h, inv_h)
-        h[i] = x[i + 1] - x[i]
-        inv_h[i] = inv(h[i])
-    end
-    return nothing
-end
-
-# Specialized path for uniform grids — avoids per-element subtraction
-@inline function _compute_grid_spacing!(
-        h::AbstractVector{T},
-        inv_h::AbstractVector{T},
-        x::AbstractRange{T}
-    ) where {T <: AbstractFloat}
-    s = step(x)
-    inv_s = inv(s)
-    fill!(h, s)
-    fill!(inv_h, inv_s)
-    return nothing
 end
 
 # ========================================
@@ -342,51 +304,43 @@ end
 # ========================================
 
 """
-    _compute_quadratic_coeffs!(h, d, a, x, y, bc)
+    _compute_quadratic_coeffs!(d, a, spacing, x, y, bc)
 
 Fill pre-allocated coefficient arrays for quadratic spline.
-Uses AdaptiveArrayPools internally for temporary arrays (`inv_h`, `secant`).
+Uses AdaptiveArrayPools internally for temporary `secant` array.
 
 # Arguments (outputs first, then inputs)
-- `h::AbstractVector{Tg}`: Grid spacing (length n-1, grid-derived)
 - `d::AbstractVector{Tv}`: Slope coefficients (length n, value-derived)
 - `a::AbstractVector{Tv}`: Quadratic coefficients (length n-1, value-derived)
+- `spacing::AbstractGridSpacing{Tg}`: Precomputed grid spacing
 - `x::AbstractVector{Tg}`: x-coordinates (length n)
 - `y::AbstractVector{Tv}`: y-values (length n)
-- `bc::QuadraticBC{Tg}`: Boundary condition (Left, Right, or MinCurvFit)
+- `bc::QuadraticBC`: Boundary condition (Left, Right, or MinCurvFit)
 
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type
 - `Tv`: Value type (unconstrained)
-
-# Note
-Intermediate arrays (`inv_h`, `secant`) are acquired from thread-local pool
-and automatically released when the function returns.
 """
 @with_pool pool function _compute_quadratic_coeffs!(
-        h::AbstractVector{Tg},
         d::AbstractVector{Tv},
         a::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg},
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         bc::QuadraticBC
     ) where {Tg <: AbstractFloat, Tv}
     nx = length(x)
 
-    inv_h = acquire!(pool, Tg, nx - 1)  # Inverse grid spacing (Tg)
     secant = acquire!(pool, Tv, nx - 1) # secant slopes (Tv)
 
-    # 1. Compute grid spacing
-    _compute_grid_spacing!(h, inv_h, x)
+    # 1. Compute secants using spacing
+    _compute_quadratic_secants!(secant, y, spacing)
 
-    # 2. Compute secants
-    _compute_quadratic_secants!(secant, y, inv_h)
+    # 2. Fill slopes d[] (BC-dispatched: Left→forward, Right→backward)
+    _fill_slopes!(d, secant, spacing, bc, x, y)
 
-    # 3. Fill slopes d[] (BC-dispatched: Left→forward, Right→backward)
-    _fill_slopes!(d, secant, h, bc, x, y)
-
-    # 4. Compute quadratic coefficients a[]
-    _compute_quadratic_coefficients!(a, d, secant, inv_h)
+    # 3. Compute quadratic coefficients a[]
+    _compute_quadratic_coefficients!(a, d, secant, spacing)
 
     return nothing
 end
@@ -396,22 +350,20 @@ end
 # ========================================
 
 """
-    _compute_quadratic_coeffs(x, y, bc) -> (h, d, a)
+    _compute_quadratic_coeffs(x, y, bc, spacing) -> (d, a)
 
 Compute quadratic spline coefficients (allocating version).
-Returns only the arrays needed for evaluation: `h`, `d`, `a`.
+Returns only the arrays needed for evaluation: `d`, `a`.
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type for x and h
+- `Tg<:AbstractFloat`: Grid type for x
 - `Tv`: Value type for y, d, a (unconstrained)
 
 # Returns
-- `h::Vector{Tg}`: Grid spacing (geometry)
 - `d::Vector{Tv}`: Slope coefficients (value-derived)
 - `a::Vector{Tv}`: Quadratic coefficients (value-derived)
 
-Intermediate arrays (`inv_h`, `secant`) are handled internally via
-AdaptiveArrayPools and not returned.
+Intermediate `secant` array is handled internally via AdaptiveArrayPools.
 
 For repeated interpolation on the same grid, use `QuadraticInterpolant`
 which stores precomputed coefficients.
@@ -419,17 +371,17 @@ which stores precomputed coefficients.
 function _compute_quadratic_coeffs(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        bc::QuadraticBC
+        bc::QuadraticBC,
+        spacing::AbstractGridSpacing{Tg}
     ) where {Tg <: AbstractFloat, Tv}
     nx = length(x)
 
     # Allocate arrays with appropriate types
-    h = Vector{Tg}(undef, nx - 1)   # Grid spacing (geometry)
     d = Vector{Tv}(undef, nx)     # Slopes (value-derived)
     a = Vector{Tv}(undef, nx - 1)   # Quadratic coefficients (value-derived)
 
     # Fill using in-place version
-    _compute_quadratic_coeffs!(h, d, a, x, y, bc)
+    _compute_quadratic_coeffs!(d, a, spacing, x, y, bc)
 
-    return h, d, a
+    return d, a
 end

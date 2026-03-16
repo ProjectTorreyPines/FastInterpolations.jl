@@ -47,24 +47,20 @@ spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
     @assert n == length(grid) "values and grid must have same length"
     @assert n >= 2 "Need at least 2 points"
 
-    nm1 = n - 1
-    h = acquire!(pool, Tg, nm1)
-    inv_h = acquire!(pool, Tg, nm1)
-    secant = acquire!(pool, Tv, nm1)
+    # spacing: ScalarSpacing for Range (zero-alloc), pool-acquired VectorSpacing for Vector
+    spacing = _create_spacing_pooled(pool, grid)
+    secant = acquire!(pool, Tv, n - 1)
 
-    # 1. Compute grid spacing
-    _compute_grid_spacing!(h, inv_h, grid)
+    # 1. Compute secant slopes using spacing
+    _compute_quadratic_secants!(secant, values, spacing)
 
-    # 2. Compute secant slopes
-    _compute_quadratic_secants!(secant, values, inv_h)
-
-    # 3. Normalize BC values to Tv (lazy normalization — Tv is known here)
+    # 2. Normalize BC values to Tv (lazy normalization — Tv is known here)
     # This ensures _fill_slopes! always receives Tv-typed values,
     # making convert(Tv, bc.val) an identity operation.
     bc_typed = _normalize_bc(bc, first(values))
 
-    # 4. Fill slopes via BC-dispatched recurrence
-    _fill_slopes!(d_out, secant, h, bc_typed, grid, values)
+    # 3. Fill slopes via BC-dispatched recurrence
+    _fill_slopes!(d_out, secant, spacing, bc_typed, grid, values)
 
     return d_out
 end

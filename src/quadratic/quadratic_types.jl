@@ -28,7 +28,6 @@ Returned by `quadratic_interp(x, y)` (2-argument form).
 # Fields
 - `x::X`: x-coordinates (sorted)
 - `y::Y`: y-values
-- `h::Vector{Tg}`: Grid spacing (precomputed, geometry)
 - `spacing::S`: Precomputed grid spacing (avoids TwicePrecision overhead on Range grids)
 - `a::Vector{Tv}`: Quadratic coefficients (value-derived)
 - `d::Vector{Tv}`: Slope coefficients (value-derived)
@@ -63,7 +62,6 @@ val = itp(0.5; search=BinarySearch())  # per-call override
 struct QuadraticInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC} <: AbstractInterpolant1D{Tg, Tv}
     x::X
     y::Y
-    h::Vector{Tg}   # Grid spacing (geometry, always Tg)
     spacing::S       # Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
     a::Vector{Tv}   # Quadratic coefficients (value-derived)
     d::Vector{Tv}   # Slope coefficients (value-derived)
@@ -73,7 +71,7 @@ struct QuadraticInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y 
 
     # Inner constructor: parametric, only calls new (handles validation only)
     function QuadraticInterpolant{Tg, Tv, X, Y, S, E, P, BC}(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, h::Vector{Tg}, spacing::S, a::Vector{Tv}, d::Vector{Tv}, ev::E, search::P, bc::BC
+            x::AbstractVector{Tg}, y::AbstractVector{Tv}, spacing::S, a::Vector{Tv}, d::Vector{Tv}, ev::E, search::P, bc::BC
         ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || _throw_grid_too_small(length(x))
@@ -82,7 +80,7 @@ struct QuadraticInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y 
         # copy() on immutable Range types is a no-op (zero allocation).
         # typeof() rebinds X/Y to the post-copy concrete type (e.g. SubArray → Vector).
         xc, yc = copy(x), copy(y)
-        return new{Tg, Tv, typeof(xc), typeof(yc), S, E, P, BC}(xc, yc, h, spacing, a, d, ev, search, bc)
+        return new{Tg, Tv, typeof(xc), typeof(yc), S, E, P, BC}(xc, yc, spacing, a, d, ev, search, bc)
     end
 end
 
@@ -96,16 +94,14 @@ end
 @inline function QuadraticInterpolant(
         x::X,
         y::Y,
-        h::Vector{Tg},
+        spacing::S,
         a::Vector{Tv},
         d::Vector{Tv};
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         search::P = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
+    ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, P <: AbstractSearchPolicy}
     E = typeof(extrap)
     BC = typeof(bc)
-    spacing = _create_spacing(x)
-    S = typeof(spacing)
-    return QuadraticInterpolant{Tg, Tv, X, Y, S, E, P, BC}(x, y, h, spacing, a, d, extrap, search, bc)
+    return QuadraticInterpolant{Tg, Tv, X, Y, S, E, P, BC}(x, y, spacing, a, d, extrap, search, bc)
 end

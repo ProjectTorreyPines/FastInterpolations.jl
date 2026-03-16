@@ -13,11 +13,11 @@
 # _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
 
 @inline function _itp_eval_scalar(itp::QuadraticInterpolant, xq, extrap, op, searcher)
-    return _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xq, extrap, op, searcher)
+    return _quadratic_eval_at_point(itp.x, itp.y, itp.a, itp.d, xq, extrap, op, searcher)
 end
 
 @inline function _itp_vector_loop!(output, itp::QuadraticInterpolant, xq, extrap, op, searcher)
-    return _quadratic_vector_loop!(output, itp.x, itp.y, itp.h, itp.a, itp.d, xq, extrap, op, searcher)
+    return _quadratic_vector_loop!(output, itp.x, itp.y, itp.a, itp.d, xq, extrap, op, searcher)
 end
 
 # ─────────────────────────────────────────────────────────────
@@ -31,7 +31,6 @@ end
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        h::AbstractVector{Tg},
         a::AbstractVector{Tv},
         d::AbstractVector{Tv},
         xq::AbstractVector{<:Real},
@@ -41,7 +40,7 @@ end
     ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
-        output[i] = _quadratic_eval_at_point(x, y, h, a, d, xq[i], extrap, deriv, searcher)
+        output[i] = _quadratic_eval_at_point(x, y, a, d, xq[i], extrap, deriv, searcher)
     end
 end
 
@@ -119,9 +118,12 @@ end
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
     validate_polyfit_points(bc_p, length(x_p))
 
-    # Compute coefficients (h::Tg, d::Tv, a::Tv)
-    h, d, a = _compute_quadratic_coeffs(x_p, y_p, bc_p)
+    # Compute spacing once: used for both coefficients and struct storage
+    spacing = _create_spacing(x_p)
+
+    # Compute coefficients (d::Tv, a::Tv)
+    d, a = _compute_quadratic_coeffs(x_p, y_p, bc_p, spacing)
 
     extrap_p = _promote_extrap(extrap, eltype(y_p))
-    return QuadraticInterpolant(x_p, y_p, h, a, d; bc = bc_p, extrap = extrap_p, search)
+    return QuadraticInterpolant(x_p, y_p, spacing, a, d; bc = bc_p, extrap = extrap_p, search)
 end

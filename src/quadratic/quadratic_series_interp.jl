@@ -91,15 +91,15 @@ mutable struct QuadraticSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: Abstract
             y::Matrix{Tv},
             a::Matrix{Tv},
             d::Matrix{Tv},
+            spacing::S,
             extrap::E,
             search::P = AutoSearch()
-        ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+        ) where {Tg <: AbstractFloat, Tv, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         # copy(x) for mutation safety; copy() on Range is identity (zero alloc)
         # typeof(xc) rebinds X after copy (view → Vector)
         # y/a/d are NOT copied here — factory function provides owned matrices.
         xc = copy(x)
-        spacing = _create_spacing(xc)
-        return new{Tg, Tv, E, P, typeof(xc), typeof(spacing)}(xc, y, a, d, spacing, LazyTransposeTriple{Tv}(), extrap, search)
+        return new{Tg, Tv, E, P, typeof(xc), S}(xc, y, a, d, spacing, LazyTransposeTriple{Tv}(), extrap, search)
     end
 end
 
@@ -419,7 +419,7 @@ function quadratic_interp(
     end
 
     extrap_p = _promote_extrap(extrap, eltype(y_mat))
-    return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, extrap_p, search)
+    return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, spacing, extrap_p, search)
 end
 
 # Real grid promotion (Int, etc.) → convert to float and delegate

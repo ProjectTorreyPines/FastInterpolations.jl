@@ -527,7 +527,7 @@ end
 
         # CRITICAL: x must remain AbstractRange for O(1) lookup
         @test itp.x isa AbstractRange
-        @test itp.x isa _CachedRange{Float64}
+        @test itp.x isa FastInterpolations._CachedRange{Float64}
 
         # Verify correctness
         @test itp(0.5) ≈ sin(0.5) atol = 0.01

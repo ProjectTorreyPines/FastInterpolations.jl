@@ -1,11 +1,12 @@
 # Core module aggregator - shared foundations
-# Order: types → ops → bc → grid → search → utils → periodic → nd_utils → series
+# Order: types → ops → bc → grid → cached_range → search → utils → periodic → nd_utils → series
 
 include("abstract_types.jl")   # 1. AbstractInterpolant, AbstractSeriesInterpolant
 include("eval_ops.jl")         # 2. AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
 include("bc_types.jl")         # 3. Boundary condition types
 include("polyfit_kernels.jl")       # 4. Boundary condition computation kernels (Lagrange, etc.)
 include("grid_spacing.jl")     # 5. ScalarSpacing, VectorSpacing
+include("cached_range.jl")     # 5b. _CachedRange struct + _to_float (Range → _CachedRange normalizer)
 include("search.jl")           # 6. Search policy + interval search
 include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)
 include("utils.jl")            # 7. Shared utilities (1D)

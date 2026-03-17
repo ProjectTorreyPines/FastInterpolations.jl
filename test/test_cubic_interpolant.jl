@@ -236,7 +236,7 @@ end
         # Range-preserving cache: Range is kept as Range for O(1) index lookup!
         # This provides significant performance benefit over Vector (binary search)
         itp = cubic_interp(x_range, y; autocache = true)
-        @test itp.cache.x isa StepRangeLen  # Range preserved for O(1) index calculation
+        @test itp.cache.x isa _CachedRange  # Range preserved for O(1) index calculation
 
         # Verify correctness
         @test itp(0.5) ≈ sin(2π * 0.5) atol = 0.01

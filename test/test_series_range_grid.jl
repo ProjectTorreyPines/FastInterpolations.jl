@@ -38,7 +38,7 @@ const FI = FastInterpolations
         sitp_vector = linear_interp(x_vector, Series(ys))
 
         @testset "grid type preservation" begin
-            @test sitp_range.x isa StepRangeLen
+            @test sitp_range.x isa _CachedRange
             @test sitp_vector.x isa Vector
         end
 
@@ -79,7 +79,7 @@ const FI = FastInterpolations
         sitp_vector = constant_interp(x_vector, Series(ys))
 
         @testset "grid type preservation" begin
-            @test sitp_range.x isa StepRangeLen
+            @test sitp_range.x isa _CachedRange
             @test sitp_vector.x isa Vector
         end
 
@@ -113,7 +113,7 @@ const FI = FastInterpolations
         sitp_vector = quadratic_interp(x_vector, Series(ys))
 
         @testset "grid type preservation" begin
-            @test sitp_range.x isa StepRangeLen
+            @test sitp_range.x isa _CachedRange
             @test sitp_vector.x isa Vector
         end
 

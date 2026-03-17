@@ -490,7 +490,7 @@ function _build_cubic_adjoint_periodic(
         period = _resolve_exclusive_period(x, bc)
         x_end = first(x) + Tg(period)
         if x isa AbstractRange
-            range(first(x), step = step(x), length = length(x) + 1)
+            _to_float_adding_endpoint(x, Tg)
         else
             vcat(x, x_end)
         end

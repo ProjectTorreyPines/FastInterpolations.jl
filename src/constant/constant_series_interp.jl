@@ -80,10 +80,11 @@ mutable struct ConstantSeriesInterpolant{Tg <: AbstractFloat, Tv, S <: AbstractG
             side::SD,
             search::P = AutoSearch()
         ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
-        # copy(x) for mutation safety; copy() on Range is identity (zero alloc)
-        # typeof(xc) rebinds X after copy (view → Vector)
+        # _to_float(copy(x), Tg): Range → _CachedRange (O(1) search + no TwicePrecision overhead);
+        # Vector → defensive copy. copy() on Range is identity (zero alloc).
+        # typeof(xc) rebinds X after conversion (view → Vector, TwicePrecision → _CachedRange).
         # y is NOT copied here — _build_series_mat() already provides an owned matrix.
-        xc = copy(x)
+        xc = _to_float(copy(x), Tg)
         spacing = _create_spacing(xc)
         return new{Tg, Tv, typeof(spacing), E, SD, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), spacing, extrap, side, search)
     end

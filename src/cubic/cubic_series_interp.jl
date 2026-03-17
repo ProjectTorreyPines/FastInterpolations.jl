@@ -595,6 +595,10 @@ function cubic_interp(
         )
     end
 
+    # Normalize early: Range → _CachedRange, Vector → identity.
+    # All downstream code sees only _CachedRange{Tg} or Vector{Tg}.
+    x = _to_float(x, Tg)
+
     n_pts = length(x)
     Tv_out = _value_type(Tv, Tg)
     y_mat, n_ser = _build_series_mat(s, n_pts, Tv_out)

@@ -281,10 +281,9 @@ function _prepare_periodic_nd(
             )
         )
 
-        # Type-stable grid extension: isa branch for compile-time type narrowing
-        # (Range → Range, Vector → Vector — concrete type preserved per element)
+        # Type-stable grid extension: Range → _CachedRange, Vector → Vector
         grid_ext = if grid_d isa AbstractRange
-            StepRangeLen(first(grid_d), step(grid_d), length(grid_d) + 1)
+            _to_float_adding_endpoint(grid_d, Tg)
         else
             vcat(grid_d, x_end)
         end
@@ -377,12 +376,9 @@ via `acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
             )
         )
 
-        # Extend grid: Range → direct construction (O(1)), Vector → pool
-        # IMPORTANT: Range branch returns Range unconditionally to prevent Union return type.
-        # _resolve_exclusive_period already validates period ≈ step(x)*length(x) for Range grids,
-        # so the extended Range always has the correct step and endpoint.
+        # Extend grid: Range → _CachedRange (O(1)), Vector → pool
         if grid_d isa AbstractRange
-            return range(first(grid_d), step = step(grid_d), length = length(grid_d) + 1)
+            return _to_float_adding_endpoint(grid_d, Tg)
         else
             n = length(grid_d)
             g_ext = acquire!(pool, Tg, n + 1)

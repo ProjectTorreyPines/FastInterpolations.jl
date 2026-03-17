@@ -152,7 +152,7 @@ manages their lifetime. Follows the `_create_spacing_pooled(pool, ...)` pattern.
         # Note: _resolve_exclusive_period guarantees period = step(x) * length(x) for Range,
         # so x_end == last(x) + step(x) and direct Range extension is always valid.
         if x isa AbstractRange
-            x_p = range(first(x), step = step(x), length = n + 1)
+            x_p = _to_float_adding_endpoint(x, Tg)
         else
             x_p = acquire!(pool, Tg, n + 1)
             @inbounds copyto!(x_p, 1, x, 1, n)

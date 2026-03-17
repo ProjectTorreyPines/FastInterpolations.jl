@@ -197,7 +197,7 @@ function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     # runtime ≈ check. _resolve_exclusive_period already validates period ≈ step(x)*length(x)
     # for Range grids, so Range → Range extension is always safe.
     x_ext = if x isa AbstractRange
-        range(first(x), step = step(x), length = length(x) + 1)
+        _to_float_adding_endpoint(x, Tg)
     else
         vcat(x, x_end)
     end
@@ -219,7 +219,7 @@ function _extend_exclusive(x::AbstractVector, y_mat::AbstractMatrix, bc::Periodi
     )
 
     x_ext = if x isa AbstractRange
-        range(first(x), step = step(x), length = length(x) + 1)
+        _to_float_adding_endpoint(x, Tg)
     else
         vcat(x, x_end)
     end
@@ -284,7 +284,7 @@ function _prepare_periodic_nd(
         # Type-stable grid extension: isa branch for compile-time type narrowing
         # (Range → Range, Vector → Vector — concrete type preserved per element)
         grid_ext = if grid_d isa AbstractRange
-            range(first(grid_d), step = step(grid_d), length = length(grid_d) + 1)
+            StepRangeLen(first(grid_d), step(grid_d), length(grid_d) + 1)
         else
             vcat(grid_d, x_end)
         end

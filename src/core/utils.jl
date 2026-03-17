@@ -26,12 +26,34 @@
 Convert a Range to a float type while preserving Range structure for O(1) index lookup.
 Using `FT.(x)` would convert Range to Vector, losing the O(1) optimization.
 """
-# General conversion: rebuild as StepRangeLen to preserve O(1) indexing
-_to_float(x::AbstractRange, ::Type{FT}) where {FT <: AbstractFloat} =
-    range(FT(first(x)), FT(last(x)), length(x))
-
-# Fast-path: already Float Range (StepRangeLen, LinRange, etc.) - return as-is
+# Float AbstractRange with same target type (StepRangeLen, LinRange, TwicePrecision, etc.): pass through as-is.
 _to_float(x::AbstractRange{FT}, ::Type{FT}) where {FT <: AbstractFloat} = x
+
+# OrdinalRange with non-float element (e.g. UnitRange{Int}, StepRange{Int,Int}):
+# Int→FT conversion is exact, so we can build plain StepRangeLen{FT,FT,FT} directly
+# without going through range() which would create an unnecessary TwicePrecision range.
+_to_float(x::OrdinalRange, ::Type{FT}) where {FT <: AbstractFloat} =
+    StepRangeLen(FT(first(x)), FT(step(x)), length(x))
+
+"""
+    _to_float_adding_endpoint(x::AbstractRange, ::Type{FT}) -> AbstractRange{FT}
+
+Extend `x` by one step (for exclusive periodic grids: length n → n+1),
+converting to float type `FT` while avoiding unnecessary TwicePrecision creation.
+
+Dispatch:
+- `StepRangeLen{FT,FT,FT}`: direct field copy + `length+1` — zero arithmetic, no `first()`/`step()` calls
+- `OrdinalRange`: exact int→FT, build plain `StepRangeLen` extended by one
+- Other `AbstractRange` (TwicePrecision, LinRange, ...): preserve via `range()` — maintains TwicePrecision structure
+"""
+@inline _to_float_adding_endpoint(x::StepRangeLen{FT, FT, FT}, ::Type{FT}) where {FT <: AbstractFloat} =
+    StepRangeLen(x.ref, x.step, length(x) + 1, x.offset)
+
+@inline _to_float_adding_endpoint(x::OrdinalRange, ::Type{FT}) where {FT <: AbstractFloat} =
+    StepRangeLen(FT(first(x)), FT(step(x)), length(x) + 1)
+
+@inline _to_float_adding_endpoint(x::AbstractRange, ::Type{FT}) where {FT <: AbstractFloat} =
+    range(FT(first(x)), step = step(x), length = length(x) + 1)
 
 """
     _to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT<:AbstractFloat}
@@ -362,6 +384,17 @@ _promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
     return nothing
 end
 
+# AbstractRange override: 1-ULP slack at both endpoints.
+# After TwicePrecision→plain Float64 normalization in _to_float, last() is computed via
+# plain muladd from `first`, which may be 1 ULP below the original endpoint `b` (since
+# TwicePrecision range stores `b` as ref while our normalized range stores `a` as ref).
+# prevfloat/nextfloat prevents false DomainError when querying the exact original endpoint.
+@inline function _check_domain(x::AbstractRange, xi::Real, ::NoExtrap)
+    x_min, x_max = prevfloat(first(x)), nextfloat(last(x))
+    (xi < x_min || xi > x_max) && throw(DomainError(xi, "query point outside interpolation domain [$(first(x)), $(last(x))]"))
+    return nothing
+end
+
 "No-op scalar domain check for non-NoExtrap modes."
 @inline _check_domain(::AbstractVector, ::Real, ::AbstractExtrap) = nothing
 
@@ -373,6 +406,19 @@ end
         DomainError(
             xq_min < x_min ? xq_min : xq_max,
             "query point outside interpolation domain [$x_min, $x_max]"
+        )
+    )
+    return nothing
+end
+
+# AbstractRange override for vector queries: same 1-ULP slack as scalar version.
+@inline function _check_domain(x::AbstractRange, xi::AbstractVector{<:Real}, ::NoExtrap)
+    x_min, x_max = prevfloat(first(x)), nextfloat(last(x))
+    xq_min, xq_max = minimum(xi), maximum(xi)
+    (xq_min < x_min || xq_max > x_max) && throw(
+        DomainError(
+            xq_min < x_min ? xq_min : xq_max,
+            "query point outside interpolation domain [$(first(x)), $(last(x))]"
         )
     )
     return nothing

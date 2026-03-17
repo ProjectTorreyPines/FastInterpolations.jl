@@ -806,7 +806,7 @@ Used by all ND interpolation methods via `_convert_grids_typed`.
 """
 function _convert_grid(x::AbstractRange, ::Type{Tg}) where {Tg}
     eltype(x) === Tg && return x
-    return range(Tg(first(x)), Tg(last(x)), length(x))
+    return _to_float(x, Tg)
 end
 
 function _convert_grid(x::AbstractVector, ::Type{Tg}) where {Tg}

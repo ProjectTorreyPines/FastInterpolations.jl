@@ -17,111 +17,12 @@
 
 # Note: _constant_extrap_result helper is defined in cubic_eval.jl (shared)
 
-"""
-    _quadratic_eval_core(x, y, a, d, xq, op, searcher)
-
-Core quadratic spline evaluation at a single point with search policy.
-Uses interval clamping for extension extrapolation (matches cubic pattern).
-
-# Type Parameters
-- `Tg<:AbstractFloat`: Grid type for x
-- `Tq`: Query type (can be Tg or ForwardDiff.Dual for AD)
-- `Tv`: Value type for y, a, d (unconstrained)
-"""
-@inline function _quadratic_eval_core(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
-        xq::Tq,
-        op::AbstractEvalOp,
-        searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, S <: Searcher}
-    # search_interval clamps idx to [1, n-1]
-    # This handles both normal evaluation and extension extrapolation
-    idx, xL, _ = search_interval(searcher, x, xq)
-    # Use original xq for arithmetic to preserve AD
-    dt = xq - xL  # Can be Dual for AD
-    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
-end
-
 # ========================================
-# Extrapolation-aware Evaluation (matches cubic pattern)
+# Core eval: extrap dispatch → search → kernel (no intermediate layers)
 # ========================================
 
-"Evaluate with no extrapolation - throws DomainError if outside domain."
-@inline function _quadratic_eval_with_extrap(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
-        xq::Tq,
-        ::NoExtrap,
-        op::AbstractEvalOp,
-        searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, S <: Searcher}
-    return _quadratic_eval_core(x, y, a, d, xq, op, searcher)
-end
-
-"Evaluate with constant extrapolation - returns boundary values outside domain."
-@inline function _quadratic_eval_with_extrap(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
-        xq::Tq,
-        extrap::_ClampOrFill,
-        op::AbstractEvalOp,
-        searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, S <: Searcher}
-    # Use primal for boundary comparisons (Dual needs real value for comparison)
-    xq_primal = _extract_primal(xq)
-    xq_primal < first(x) && return _constant_extrap_result(op, @inbounds(y[1]), extrap, xq)
-    xq_primal > last(x) && return _constant_extrap_result(op, @inbounds(y[end]), extrap, xq)
-    return _quadratic_eval_core(x, y, a, d, xq, op, searcher)
-end
-
-"Evaluate with extension extrapolation - extends boundary polynomial."
-@inline function _quadratic_eval_with_extrap(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
-        xq::Tq,
-        ::ExtendExtrap,
-        op::AbstractEvalOp,
-        searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, S <: Searcher}
-    # Interval clamping in search_interval handles extension
-    return _quadratic_eval_core(x, y, a, d, xq, op, searcher)
-end
-
-"Evaluate with wrap extrapolation - wraps query to domain using mod()."
-@inline function _quadratic_eval_with_extrap(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
-        xq::Tq,
-        ::WrapExtrap,
-        op::AbstractEvalOp,
-        searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, S <: Searcher}
-    # Wrap query to domain, then evaluate with extension
-    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    return _quadratic_eval_core(x, y, a, d, xq_wrapped, op, searcher)
-end
-
-"""
-    _quadratic_eval_at_point(x, y, a, d, xq, extrap, op, searcher)
-
-Entry point for quadratic spline evaluation with extrapolation dispatch and search policy.
-
-# Type Parameters
-- `Tg<:AbstractFloat`: Grid type for x
-- `Tq`: Query type (can be Tg or ForwardDiff.Dual for AD)
-- `Tv`: Value type for y, a, d (unconstrained)
-"""
+# NoExtrap / ExtendExtrap / other: direct search + kernel.
+# _check_domain(::NoExtrap) throws if OOB; search_interval clamps idx for ExtendExtrap.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -133,7 +34,45 @@ Entry point for quadratic spline evaluation with extrapolation dispatch and sear
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, Tq, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
-    return _quadratic_eval_with_extrap(x, y, a, d, xq, extrap, op, searcher)
+    idx, xL, _ = search_interval(searcher, x, xq)
+    dt = xq - xL  # Can be Dual for AD
+    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
+end
+
+# ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
+@inline function _quadratic_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        a::AbstractVector{Tv},
+        d::AbstractVector{Tv},
+        xq::Tq,
+        extrap::_ClampOrFill,
+        op::AbstractEvalOp,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, S <: Searcher}
+    xq_primal = _extract_primal(xq)
+    xq_primal < first(x) && return _constant_extrap_result(op, @inbounds(y[1]), extrap, xq)
+    xq_primal > last(x) && return _constant_extrap_result(op, @inbounds(y[end]), extrap, xq)
+    idx, xL, _ = search_interval(searcher, x, xq)
+    dt = xq - xL
+    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
+end
+
+# WrapExtrap: wrap query to domain → search + kernel.
+@inline function _quadratic_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        a::AbstractVector{Tv},
+        d::AbstractVector{Tv},
+        xq::Tq,
+        ::WrapExtrap,
+        op::AbstractEvalOp,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, S <: Searcher}
+    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
+    idx, xL, _ = search_interval(searcher, x, xq_wrapped)
+    dt = xq_wrapped - xL
+    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
 

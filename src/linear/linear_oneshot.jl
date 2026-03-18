@@ -121,31 +121,9 @@ end
     return output
 end
 
-# Same optimization for AbstractRange (O(1) indexing path)
-@inline function _linear_interp_loop!(
-        output::AbstractVector{Tv},
-        x::AbstractRange{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tg},
-        ::WrapExtrap,
-        op::O,
-        searcher::S
-    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, S <: Searcher}
-    x_min, x_max = first(x), last(x)
-    qmin, qmax = minimum(x_targets), maximum(x_targets)
-
-    if qmin >= x_min && qmax < x_max
-        @inbounds for i in eachindex(x_targets, output)
-            output[i] = _linear_eval_at_point(x, y, x_targets[i], ExtendExtrap(), op, searcher)
-        end
-    else
-        @inbounds for i in eachindex(x_targets, output)
-            xi_wrapped = _wrap_to_domain(x_targets[i], x_min, x_max)
-            output[i] = _linear_eval_at_point(x, y, xi_wrapped, ExtendExtrap(), op, searcher)
-        end
-    end
-    return output
-end
+# AbstractRange WrapExtrap specialization removed — identical logic to the
+# AbstractVector version above.  _CachedRange <: AbstractRange <: AbstractVector,
+# so the AbstractVector dispatch handles all Range inputs.
 
 # Specific method for AbstractRange{Tg} - resolves ambiguity with Real wrappers
 # Unified via Tv parameter

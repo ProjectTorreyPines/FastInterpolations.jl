@@ -855,7 +855,6 @@ Pool-aware spacing for Range grids. Delegates to `_create_spacing` since
 ScalarSpacing is already zero-allocation (two scalar values).
 """
 @inline _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractRange{T}) where {T <: AbstractFloat} = _create_spacing(x)
-@inline _create_spacing_pooled(pool::AbstractArrayPool, x::LinRange{T}) where {T <: AbstractFloat} = _create_spacing(x)
 
 """
     _create_spacing_pooled(pool, x::AbstractVector{T}) -> VectorSpacing{T}

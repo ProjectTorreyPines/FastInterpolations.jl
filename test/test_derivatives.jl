@@ -1900,8 +1900,8 @@ end # DerivativeView Wrapper
     end
 
     @testset "Linear/Constant oneshot deriv=DerivOp(3) with constant extrapolation" begin
-        # This tests the _linear_eval_constant_extrap and _constant_eval_extrap
-        # dispatch for EvalDeriv3, which returns zero outside domain
+        # This tests _eval_extrapolation dispatch for DerivOp{3} (ClampExtrap path),
+        # which returns zero outside domain for any derivative order
         x = collect(range(0.0, 1.0, 11))
         y_linear = 2.0 .* x
         y_const = fill(5.0, length(x))

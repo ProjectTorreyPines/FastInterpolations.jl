@@ -101,15 +101,8 @@ end
 # Extrapolation-aware Evaluation
 # ========================================
 
-# Helper: result for constant/fill extrapolation outside domain
-# For value: return boundary y (ClampExtrap) or fill value (FillExtrap)
-# For derivatives: always return zero from y_bnd (constant function has no slope/curvature)
-# Uses y_bnd (not fill value) for derivatives to avoid 0 * NaN = NaN
-#
-# 4th arg `xq` enables type promotion for mixed-precision (Float32 data + Float64 query).
-# For Number types: zero(xq)*zero(val) promotes to promote_type(typeof(val), typeof(xq)).
-# For duck types (non-Number): fallback returns raw val/0*val, since the kernel also
-# returns the same Tv when data and query share the same arithmetic type.
+# Extrapolation value helpers (_eval_extrapolation, _promote_extrap_val/zero)
+# are defined in core/utils.jl — shared by all interpolation methods.
 
 # ========================================
 # Core eval: extrap dispatch → search → kernel (no intermediate layers)

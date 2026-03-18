@@ -1,5 +1,5 @@
-# Import internal function for testing
-import FastInterpolations: _get_cubic_cache
+# Import internal functions for testing
+import FastInterpolations: _get_cubic_cache, _get_derivative_cache_impl
 
 # =============================================================================
 # TESTSET 1: Basic Cache Operations
@@ -915,4 +915,30 @@ end
         fresh2 = cubic_interp(x, y, xq; bc = PeriodicBC(), autocache = false)
         @test result2 ≈ fresh2 atol = 1.0e-14
     end
+end
+
+# =============================================================================
+# _get_derivative_cache_impl: AbstractRange fallback normalizes to _CachedRange
+# =============================================================================
+@testset "Cubic Cache: _get_derivative_cache_impl AbstractRange fallback" begin
+    clear_cubic_cache!()
+
+    x_range = range(-1.0, 2.0, 31)   # StepRangeLen, NOT _CachedRange
+    bc_pair = BCPair(Deriv1(0.0), Deriv1(0.0))
+
+    # Direct call with raw StepRangeLen triggers AbstractRange fallback
+    cache = _get_derivative_cache_impl(x_range, bc_pair)
+    @test cache isa CubicSplineCache
+    @test cache.x isa FastInterpolations._CachedRange{Float64}
+    @test collect(cache.x) ≈ collect(x_range) rtol = 8eps(Float64)
+
+    # Second call with same range params → cache hit via _CachedRange bank
+    cache2 = _get_derivative_cache_impl(range(-1.0, 2.0, 31), bc_pair)
+    @test cache2 === cache  # same cached object
+
+    # Different BC type → different cache
+    bc_pair2 = BCPair(Deriv2(0.0), Deriv2(0.0))
+    cache3 = _get_derivative_cache_impl(x_range, bc_pair2)
+    @test cache3 !== cache
+    @test cache3.x isa FastInterpolations._CachedRange{Float64}
 end

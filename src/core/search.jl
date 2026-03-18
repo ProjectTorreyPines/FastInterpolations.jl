@@ -528,6 +528,17 @@ compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
 end
 
 """
+    _search_direct(x::_CachedRange{T}, ::ScalarSpacing{T}, xq::T)
+
+_CachedRange already has inv_h built in — delegate to 2-arg version.
+"""
+@inline function _search_direct(
+        x::_CachedRange{T}, ::ScalarSpacing{T}, xq::T
+    ) where {T <: AbstractFloat}
+    return _search_direct(x, xq)
+end
+
+"""
     _search_direct(x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::T)
 
 Spacing-aware O(1) direct calculation for ScalarSpacing.

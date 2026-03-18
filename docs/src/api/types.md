@@ -104,6 +104,7 @@ ClampExtrap
 FillExtrap
 ExtendExtrap
 WrapExtrap
+InBounds
 ConstExtrap
 ```
 

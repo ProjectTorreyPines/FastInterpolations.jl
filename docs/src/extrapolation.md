@@ -32,6 +32,7 @@ All interpolation methods (`linear_interp`, `quadratic_interp`, `cubic_interp`, 
 | [`ExtendExtrap()`](@ref ExtendExtrap) | Extends boundary polynomial |
 | [`WrapExtrap()`](@ref WrapExtrap) | Wraps coordinates periodically (no smoothness enforced) |
 | [`FillExtrap(value)`](@ref FillExtrap) | Returns a constant fill value (e.g. `0.0`, `NaN`) |
+| [`InBounds()`](@ref InBounds) | Skip domain checks (caller guarantees in-domain) |
 
 ```
 AbstractExtrap
@@ -39,7 +40,8 @@ AbstractExtrap
 ├── ClampExtrap      # clamp to y[1] / y[end]
 ├── ExtendExtrap     # continue boundary polynomial
 ├── WrapExtrap       # modular coordinate mapping
-└── FillExtrap{T}    # return constant fill value
+├── FillExtrap{T}    # return constant fill value
+└── InBounds         # skip domain checks (advanced/internal)
 ```
 
 ## Examples
@@ -189,6 +191,7 @@ vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
 | `ExtendExtrap()` | Continues boundary polynomial | Smooth continuation |
 | `WrapExtrap()` | Wraps coordinates (no smoothness) | Cyclic data (see [`PeriodicBC`](interpolation/cubic.md) for C² continuity) |
 | `FillExtrap(v)` | Returns constant `v` outside domain | Masking (`NaN`), zero-padding, sentinel values |
+| `InBounds()` | Skip domain checks | Pre-validated queries, batch inner loops |
 
 ## See Also
 

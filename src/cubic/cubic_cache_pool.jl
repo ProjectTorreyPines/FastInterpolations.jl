@@ -530,7 +530,7 @@ not RHS values (y-data + BC values).
     bc_pair = _normalize_bc(bc, FT)
 
     # Get bank and lookup
-    return _get_derivative_cache_impl(x, bc_pair)
+    return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)
 end
 
 # ===============================================================
@@ -542,18 +542,20 @@ end
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_pair = BCPair(Deriv2(zero(FT)), Deriv2(zero(FT)))
-    return _get_derivative_cache_impl(x, bc_pair)
+    return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)
 end
 
 @inline function _get_cubic_cache(x, ::ZeroSlopeBC)
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_pair = BCPair(Deriv1(zero(FT)), Deriv1(zero(FT)))
-    return _get_derivative_cache_impl(x, bc_pair)
+    return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)
 end
 
 @inline function _get_cubic_cache(x, ::PeriodicBC)
-    return _get_periodic_cache_impl(x)
+    T = eltype(x)
+    FT = T <: AbstractFloat ? T : Float64
+    return _get_periodic_cache_impl(_to_float(x, FT))
 end
 
 # BCPair API - converts to cache-compatible form via _cache_bc_pair
@@ -561,7 +563,7 @@ end
 @inline function _get_cubic_cache(x::AbstractVector{T}, bc::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
     # Convert to cache-compatible form (PolyFit → Deriv1 for same matrix structure)
     bc_cache = _cache_bc_pair(bc, T)
-    return _get_derivative_cache_impl(x, bc_cache)
+    return _get_derivative_cache_impl(_to_float(x, T), bc_cache)
 end
 
 # Fallback for non-float vectors (e.g., Int) - promotes to appropriate float type
@@ -583,7 +585,7 @@ end
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_c = _cache_pointbc(bc, FT)
-    return _get_derivative_cache_impl(x, BCPair(bc_c, bc_c))
+    return _get_derivative_cache_impl(_to_float(x, FT), BCPair(bc_c, bc_c))
 end
 
 # BCPair + autocache API.

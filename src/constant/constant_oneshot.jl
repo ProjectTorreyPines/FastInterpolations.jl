@@ -11,63 +11,12 @@
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
-# Internal Evaluation Functions
+# Core eval: extrap dispatch → search → kernel (no intermediate layers)
 # ========================================
+# _eval_extrapolation helper is defined in core/utils.jl (shared by all methods).
+# _get_h(x, xR, xL) dispatches to x.h (_CachedRange) or xR-xL (Vector).
 
-"""
-    _constant_eval_extrap(y, xi, x_min, x_max, extrap, side, op)
-
-Handle extrapolation for constant interpolation.
-- EvalValue: returns boundary value (y[1] or y[end])
-- EvalDeriv1/EvalDeriv2: returns zero (constant function)
-
-Note: NoExtrap and WrapExtrap modes never reach this function.
-- NoExtrap throws DomainError via _check_domain
-- WrapExtrap is handled in _constant_eval_at_point before extrap check
-
-Type parameters:
-- Tg: Grid type (AbstractFloat) for xi, x_min, x_max
-- Tv: Value type (unconstrained)
-"""
-@inline function _constant_eval_extrap(
-        y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
-        extrap::_ClampOrFill, ::AbstractSide, op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
-    y_bnd = xi < x_min ? first(y) : last(y)
-    return _eval_extrapolation(op, y_bnd, extrap, xi)
-end
-
-# ExtendExtrap delegates to ClampExtrap (slope=0 for constant function)
-@inline function _constant_eval_extrap(
-        y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
-        ::ExtendExtrap, side::AbstractSide, op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
-    return _constant_eval_extrap(y, xi, x_min, x_max, ClampExtrap(), side, op)
-end
-
-
-"""
-    _constant_eval_at_point(x, y, xi, extrap, side, op, searcher)
-
-Core constant interpolation evaluation with search policy.
-
-Evaluation flow:
-1. Domain check (NoExtrap → DomainError if outside)
-2. WrapExtrap → wrap to [x_min, x_max) and evaluate
-3. Boundary check (xi == x_max → y[end] for non-wrap modes)
-4. Extrapolation check (xi outside domain → extrap handling)
-5. Interval search → kernel evaluation
-
-Type parameters:
-- Tg: Grid type (AbstractFloat) for x
-- Tv: Value type (unconstrained)
-
-AD Support:
-- xi can be any Real (including ForwardDiff.Dual)
-- Comparisons use _extract_primal(xi) for Float value
-- Original xi is passed to kernel for AD compatibility
-"""
-# Unified eval: _get_h(x, xR, xL) dispatches to x.h (_CachedRange) or xR-xL (Vector).
+# NoExtrap / ExtendExtrap / InBounds: domain check + search + kernel.
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -80,27 +29,51 @@ AD Support:
     xi_primal = _extract_primal(xi)
     xi_typed = Tg(xi_primal)
     @boundscheck _check_domain(x, xi_typed, extrap)
-    x_min, x_max = first(x), last(x)
-
-    if extrap isa WrapExtrap
-        xi_wrapped = _wrap_to_domain(xi_typed, x_min, x_max)
-        idx, xL, xR = search_interval(searcher, x, xi_wrapped)
-        dL = xi_wrapped - xL
-        @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
-    end
-
-    # Boundary special case: xi == x[end] → y[end] directly
-    # (avoids _search_interval returning idx=n-1, dL=h)
-    if xi_typed == x_max
+    if xi_typed == last(x)
         return op isa EvalValue ? last(y) : 0 * first(y)
     end
-
-    if xi_typed < x_min || xi_typed > x_max
-        return _constant_eval_extrap(y, xi_typed, x_min, x_max, extrap, side, op)
-    end
-
     idx, xL, xR = search_interval(searcher, x, xi_typed)
-    dL = xi - xL  # Use original xi for AD
+    dL = xi - xL
+    @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
+end
+
+# ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
+@inline function _constant_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xi::Tq,
+        extrap::_ClampOrFill,
+        side::AbstractSide,
+        op::AbstractEvalOp,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real, S <: Searcher}
+    xi_primal = _extract_primal(xi)
+    xi_typed = Tg(xi_primal)
+    xi_typed < first(x) && return _eval_extrapolation(op, first(y), extrap, xi)
+    xi_typed > last(x) && return _eval_extrapolation(op, last(y), extrap, xi)
+    if xi_typed == last(x)
+        return op isa EvalValue ? last(y) : 0 * first(y)
+    end
+    idx, xL, xR = search_interval(searcher, x, xi_typed)
+    dL = xi - xL
+    @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
+end
+
+# WrapExtrap: wrap query to domain → search + kernel.
+@inline function _constant_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xi::Tq,
+        ::WrapExtrap,
+        side::AbstractSide,
+        op::AbstractEvalOp,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real, S <: Searcher}
+    xi_primal = _extract_primal(xi)
+    xi_typed = Tg(xi_primal)
+    xi_wrapped = _wrap_to_domain(xi_typed, first(x), last(x))
+    idx, xL, xR = search_interval(searcher, x, xi_wrapped)
+    dL = xi_wrapped - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
 end
 

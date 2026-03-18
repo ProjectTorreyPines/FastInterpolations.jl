@@ -12,7 +12,8 @@
     _CachedRange{T <: AbstractFloat} <: AbstractRange{T}
 
 `AbstractRange` subtype that pre-caches `first`, `last`, `step`, and `inv(step)` as
-plain `T` fields, avoiding TwicePrecision arithmetic overhead on Intel CPUs.
+plain `T` fields, enabling multiply-instead-of-divide search and avoiding
+TwicePrecision dispatch overhead.
 
 All `AbstractRange` inputs are normalized to `_CachedRange` via `_to_float` at public
 API boundaries. This means downstream code only needs to handle two grid types:

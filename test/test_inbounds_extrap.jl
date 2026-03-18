@@ -12,13 +12,13 @@ using FastInterpolations
     # ========================================
     @testset "Scalar in-domain: all methods" begin
         @test linear_interp(x, y, xq_scalar; extrap = InBounds()) ≈
-              linear_interp(x, y, xq_scalar; extrap = NoExtrap())
+            linear_interp(x, y, xq_scalar; extrap = NoExtrap())
         @test quadratic_interp(x, y, xq_scalar; extrap = InBounds()) ≈
-              quadratic_interp(x, y, xq_scalar; extrap = NoExtrap())
+            quadratic_interp(x, y, xq_scalar; extrap = NoExtrap())
         @test cubic_interp(x, y, xq_scalar; extrap = InBounds()) ≈
-              cubic_interp(x, y, xq_scalar; extrap = NoExtrap())
+            cubic_interp(x, y, xq_scalar; extrap = NoExtrap())
         @test constant_interp(x, y, xq_scalar; extrap = InBounds()) ≈
-              constant_interp(x, y, xq_scalar; extrap = NoExtrap())
+            constant_interp(x, y, xq_scalar; extrap = NoExtrap())
     end
 
     # ========================================
@@ -26,13 +26,13 @@ using FastInterpolations
     # ========================================
     @testset "Vector in-domain: all methods" begin
         @test linear_interp(x, y, xq_vec; extrap = InBounds()) ≈
-              linear_interp(x, y, xq_vec; extrap = NoExtrap())
+            linear_interp(x, y, xq_vec; extrap = NoExtrap())
         @test quadratic_interp(x, y, xq_vec; extrap = InBounds()) ≈
-              quadratic_interp(x, y, xq_vec; extrap = NoExtrap())
+            quadratic_interp(x, y, xq_vec; extrap = NoExtrap())
         @test cubic_interp(x, y, xq_vec; extrap = InBounds()) ≈
-              cubic_interp(x, y, xq_vec; extrap = NoExtrap())
+            cubic_interp(x, y, xq_vec; extrap = NoExtrap())
         @test constant_interp(x, y, xq_vec; extrap = InBounds()) ≈
-              constant_interp(x, y, xq_vec; extrap = NoExtrap())
+            constant_interp(x, y, xq_vec; extrap = NoExtrap())
     end
 
     # ========================================

@@ -316,9 +316,9 @@ end
         extrap::_ClampOrFill
     ) where {T <: AbstractFloat, O <: AbstractEvalOp}
     if aq.side == 0x01  # below domain
-        return _constant_extrap_result(op, @inbounds(itp.y[1]), extrap, aq.xq)
+        return _eval_extrapolation(op, first(itp.y), extrap, aq.xq)
     elseif aq.side == 0x02  # above domain
-        return _constant_extrap_result(op, @inbounds(itp.y[end]), extrap, aq.xq)
+        return _eval_extrapolation(op, last(itp.y), extrap, aq.xq)
     else
         # Inside domain
         if aq.xq == last(itp.x)

@@ -383,3 +383,25 @@ end
 
 "No-op vector domain check for non-NoExtrap modes."
 @inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, ::AbstractExtrap) = nothing
+
+# ========================================
+# Extrapolation value helpers (shared by all interpolation methods)
+# ========================================
+# _eval_extrapolation: return the appropriate value for an OOB query with ClampExtrap/FillExtrap.
+# Dispatches on op (EvalValue vs derivatives) and extrap type (Clamp vs Fill).
+#
+# _promote_extrap_val:  promotes an extrap result value to match kernel return type.
+# _promote_extrap_zero: promotes a zero result (derivative of constant) to match kernel type.
+# Named _promote_extrap_val (not _promote_extrap) to avoid collision with the struct
+# promoter in eval_ops.jl which promotes FillExtrap fill_value at construction time.
+@inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * zero(val)
+@inline _promote_extrap_val(val, xq) = val
+@inline _promote_extrap_zero(val::Number, xq::Number) = zero(xq) * zero(val)
+@inline _promote_extrap_zero(val, xq) = 0 * val
+
+# Generic: any derivative order → zero (flat extrapolation has zero derivatives)
+@inline _eval_extrapolation(::DerivOp, y_bnd, ::ClampExtrap, xq) = _promote_extrap_zero(y_bnd, xq)
+@inline _eval_extrapolation(::DerivOp, y_bnd, ::FillExtrap, xq) = _promote_extrap_zero(y_bnd, xq)
+# Specific: EvalValue (= DerivOp{0}) → return boundary or fill value
+@inline _eval_extrapolation(::EvalValue, y_bnd, ::ClampExtrap, xq) = _promote_extrap_val(y_bnd, xq)
+@inline _eval_extrapolation(::EvalValue, _, e::FillExtrap, xq) = _promote_extrap_val(e.fill_value, xq)

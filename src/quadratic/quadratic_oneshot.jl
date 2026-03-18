@@ -15,7 +15,7 @@
 # Internal Evaluation Functions
 # ========================================
 
-# Note: _constant_extrap_result helper is defined in cubic_eval.jl (shared)
+# Note: _eval_extrapolation helper is defined in cubic_eval.jl (shared)
 
 # ========================================
 # Core eval: extrap dispatch → search → kernel (no intermediate layers)
@@ -51,8 +51,8 @@ end
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, Tq, S <: Searcher}
     xq_primal = _extract_primal(xq)
-    xq_primal < first(x) && return _constant_extrap_result(op, @inbounds(y[1]), extrap, xq)
-    xq_primal > last(x) && return _constant_extrap_result(op, @inbounds(y[end]), extrap, xq)
+    xq_primal < first(x) && return _eval_extrapolation(op, first(y), extrap, xq)
+    xq_primal > last(x) && return _eval_extrapolation(op, last(y), extrap, xq)
     idx, xL, _ = search_interval(searcher, x, xq)
     dt = xq - xL
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)

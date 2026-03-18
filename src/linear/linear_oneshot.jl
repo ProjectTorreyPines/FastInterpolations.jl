@@ -285,8 +285,8 @@ Handle constant extrapolation: returns boundary/fill value for EvalValue, zero f
         extrap::_ClampOrFill,
         xq
     ) where {Tv}
-    y_bnd = @inbounds is_left ? y[1] : y[end]
-    return _constant_extrap_result(op, y_bnd, extrap, xq)
+    y_bnd = is_left ? first(y) : last(y)
+    return _eval_extrapolation(op, y_bnd, extrap, xq)
 end
 
 # Public API - AbstractExtrap dispatch

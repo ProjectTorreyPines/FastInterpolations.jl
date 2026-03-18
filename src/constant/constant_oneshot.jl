@@ -33,8 +33,8 @@ Type parameters:
         y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
         extrap::_ClampOrFill, ::AbstractSide, op::AbstractEvalOp
     ) where {Tg <: AbstractFloat, Tv}
-    y_bnd = xi < x_min ? @inbounds(y[1]) : @inbounds(y[end])
-    return _constant_extrap_result(op, y_bnd, extrap, xi)
+    y_bnd = xi < x_min ? first(y) : last(y)
+    return _eval_extrapolation(op, y_bnd, extrap, xi)
 end
 
 # ExtendExtrap delegates to ClampExtrap (slope=0 for constant function)
@@ -92,7 +92,7 @@ AD Support:
     # Boundary special case: xi == x[end] → y[end] directly
     # (avoids _search_interval returning idx=n-1, dL=h)
     if xi_typed == x_max
-        return op isa EvalValue ? (@inbounds y[end]) : 0 * first(y)
+        return op isa EvalValue ? last(y) : 0 * first(y)
     end
 
     if xi_typed < x_min || xi_typed > x_max

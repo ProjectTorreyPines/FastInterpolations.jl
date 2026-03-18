@@ -90,7 +90,7 @@ end
             ::Type{FT}
         ) where {FT <: AbstractFloat}
         h = FT(x.step)
-        lo = muladd(x.offset - 1, h, FT(x.ref))
+        lo = muladd(1 - x.offset, h, FT(x.ref))
         hi = muladd(x.len - x.offset, h, FT(x.ref))
 
         domain_lo = prevfloat(lo)

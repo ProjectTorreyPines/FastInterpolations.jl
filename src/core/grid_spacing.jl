@@ -117,8 +117,8 @@ Uses `@propagate_inbounds` to enable bounds-check elision in hot loops.
 # ----------------------------------------
 # For non-uniform grids, compute from the search result endpoints.
 # _CachedRange overloads are in cached_range.jl (loaded after this file).
-@inline _get_h(::AbstractVector, xR, xL) = xR - xL
-@inline _get_inv_h(::AbstractVector, xR, xL) = inv(xR - xL)
+@inline _get_h(::AbstractVector, xR::Real, xL::Real) = xR - xL
+@inline _get_inv_h(::AbstractVector, xR::Real, xL::Real) = inv(xR - xL)
 
 # ========================================
 # Factory Functions

@@ -15,7 +15,7 @@
 # Internal Evaluation Functions
 # ========================================
 
-# Note: _eval_extrapolation helper is defined in cubic_eval.jl (shared)
+# Note: _eval_extrapolation helper is defined in core/utils.jl (shared)
 
 # ========================================
 # Core eval: extrap dispatch → search → kernel (no intermediate layers)

@@ -248,9 +248,9 @@ end
     ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_primal = _extract_primal(xq)
     if xq_primal < first(x)
-        return _linear_eval_constant_extrap(y, true, op, extrap, xq)
+        return _eval_extrapolation(op, first(y), extrap, xq)
     elseif xq_primal > last(x)
-        return _linear_eval_constant_extrap(y, false, op, extrap, xq)
+        return _eval_extrapolation(op, last(y), extrap, xq)
     end
     idx, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL
@@ -271,22 +271,6 @@ end
     idx, xL, xR = search_interval(searcher, x, xq_wrapped)
     dL = xq_wrapped - xL
     @inbounds return _linear_kernel(op, y[idx], y[idx + 1], _get_inv_h(x, xR, xL), dL)
-end
-
-"""
-    _linear_eval_constant_extrap(y, is_left, op, extrap, xq) -> promoted Tv
-
-Handle constant extrapolation: returns boundary/fill value for EvalValue, zero for derivatives.
-"""
-@inline function _linear_eval_constant_extrap(
-        y::AbstractVector{Tv},
-        is_left::Bool,
-        op::AbstractEvalOp,
-        extrap::_ClampOrFill,
-        xq
-    ) where {Tv}
-    y_bnd = is_left ? first(y) : last(y)
-    return _eval_extrapolation(op, y_bnd, extrap, xq)
 end
 
 # Public API - AbstractExtrap dispatch

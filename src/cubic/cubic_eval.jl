@@ -109,26 +109,39 @@ end
 # 4th arg `xq` enables type promotion for mixed-precision (Float32 data + Float64 query).
 # For Number types: zero(xq)*zero(val) promotes to promote_type(typeof(val), typeof(xq)).
 # For duck types (non-Number): fallback returns raw val/0*val, since the kernel also
-# _eval_extrapolation and _promote_extrap_* helpers moved to core/utils.jl (shared by all methods)
+# returns the same Tv when data and query share the same arithmetic type.
 
-# --- Searcher-aware versions ---
+# ========================================
+# Core eval: extrap dispatch → search → kernel (no intermediate layers)
+# ========================================
 
-"Evaluate with no extrapolation and search policy."
-@inline function _eval_cubic_with_extrap(
+# NoExtrap / ExtendExtrap / other: direct search + kernel.
+# _check_domain(::NoExtrap) throws if OOB; search_interval clamps idx for ExtendExtrap.
+@inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
         z::AbstractVector{Tv},
         xq::Tq,
-        ::NoExtrap,
+        extrap::AbstractExtrap,
         op::O,
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
+    @boundscheck _check_domain(x, xq, extrap)
+    idx, xL, xR = search_interval(searcher, x, spacing, xq)
+    dL = xq - xL
+    dR = xR - xq
+    h = _get_h(spacing, idx)
+    inv_h = _get_inv_h(spacing, idx)
+    @inbounds begin
+        zL = z[idx]; zR = z[idx + 1]
+        yL = y[idx]; yR = y[idx + 1]
+    end
+    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
-"Evaluate with constant/fill extrapolation and search policy."
-@inline function _eval_cubic_with_extrap(
+# ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
+@inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
@@ -138,29 +151,23 @@ end
         op::O,
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    # Use primal for boundary comparisons (Dual needs real value for comparison)
     xq_primal = _extract_primal(xq)
     xq_primal < first(x) && return _eval_extrapolation(op, first(y), extrap, xq)
     xq_primal > last(x) && return _eval_extrapolation(op, last(y), extrap, xq)
-    return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
+    idx, xL, xR = search_interval(searcher, x, spacing, xq)
+    dL = xq - xL
+    dR = xR - xq
+    h = _get_h(spacing, idx)
+    inv_h = _get_inv_h(spacing, idx)
+    @inbounds begin
+        zL = z[idx]; zR = z[idx + 1]
+        yL = y[idx]; yR = y[idx + 1]
+    end
+    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
-"Evaluate with extension extrapolation and search policy."
-@inline function _eval_cubic_with_extrap(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        spacing::AbstractGridSpacing{Tg},
-        z::AbstractVector{Tv},
-        xq::Tq,
-        ::ExtendExtrap,
-        op::O,
-        searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
-end
-
-"Evaluate with coordinate wrapping and search policy."
-@inline function _eval_cubic_with_extrap(
+# WrapExtrap: wrap query to domain → search + kernel.
+@inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
@@ -171,7 +178,16 @@ end
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    return _eval_cubic_at_point(x, y, spacing, z, xq_wrapped, op, searcher)
+    idx, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
+    dL = xq_wrapped - xL
+    dR = xR - xq_wrapped
+    h = _get_h(spacing, idx)
+    inv_h = _get_inv_h(spacing, idx)
+    @inbounds begin
+        zL = z[idx]; zR = z[idx + 1]
+        yL = y[idx]; yR = y[idx + 1]
+    end
+    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
 
@@ -204,7 +220,7 @@ end
         op::O,
         searcher::P
     ) where {Tg <: AbstractFloat, Tv, Tq, X, F, L <: PointBC, R <: PointBC, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
-    return _eval_cubic_with_extrap(cache.x, y, cache.spacing, z, xq, extrap, op, searcher)
+    return _eval_cubic_at_point(cache.x, y, cache.spacing, z, xq, extrap, op, searcher)
 end
 
 

@@ -226,6 +226,24 @@ itp = cubic_interp((x, y), data; extrap=WrapExtrap())
 """
 struct WrapExtrap <: AbstractExtrap end
 
+"""
+    InBounds <: AbstractExtrap
+
+Caller guarantees all queries are within the interpolation domain.
+Skips domain validation for maximum performance.
+
+Used internally by vector loops after batch `_check_domain` validation
+(NoExtrap → InBounds conversion), and available to advanced users who
+have pre-validated their query points.
+
+# Example
+```julia
+# Skip domain check when you know queries are in-domain
+linear_interp(x, y, xq; extrap=InBounds())
+```
+"""
+struct InBounds <: AbstractExtrap end
+
 # ========================================
 # Typed Side Selection Tags (Constant Interpolation)
 # ========================================

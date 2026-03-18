@@ -80,12 +80,13 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_targets::AbstractVector{Tg},
-        extrap_val::AbstractExtrap,
+        extrap::AbstractExtrap,
         op::O,
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, S <: Searcher}
+    extrap = _check_domain(x, x_targets, extrap)
     @inbounds for i in eachindex(x_targets, output)
-        output[i] = _linear_eval_at_point(x, y, x_targets[i], extrap_val, op, searcher)
+        output[i] = _linear_eval_at_point(x, y, x_targets[i], extrap, op, searcher)
     end
     return output
 end

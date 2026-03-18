@@ -63,7 +63,7 @@ export AbstractEvalOp, DerivOp, deriv_order
 export EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3  # backward-compat aliases
 
 # Extrapolation mode types (typed API for ND extrap)
-export AbstractExtrap, NoExtrap, ConstExtrap, ClampExtrap, FillExtrap, ExtendExtrap, WrapExtrap
+export AbstractExtrap, NoExtrap, ConstExtrap, ClampExtrap, FillExtrap, ExtendExtrap, WrapExtrap, InBounds
 
 # Side selection types (constant interpolation)
 export AbstractSide, NearestSide, LeftSide, RightSide

@@ -361,28 +361,39 @@ end
     return nothing
 end
 
-"No-op scalar domain check for non-NoExtrap modes."
+"No-op scalar domain check for non-NoExtrap modes (including InBounds)."
 @inline _check_domain(::AbstractVector, ::Real, ::AbstractExtrap) = nothing
 
-"Vector domain check for NoExtrap: throws DomainError if any point out of domain."
+# ----------------------------------------
+# Vector domain checks: validate batch, return InBounds() for per-element elision.
+# The @boundscheck wraps only the validation logic; `return InBounds()` always
+# executes to maintain type stability. With --check-bounds=no, the O(n) min/max
+# scan is skipped but the extrap conversion still happens.
+# ----------------------------------------
+
+"Vector domain check for NoExtrap: validate batch, return InBounds()."
 @inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap)
-    x_min, x_max = first(x), last(x)
-    xq_min, xq_max = minimum(xi), maximum(xi)
-    (xq_min < x_min || xq_max > x_max) &&
-        _throw_domain_error(xq_min < x_min ? xq_min : xq_max, x_min, x_max)
-    return nothing
+    @boundscheck begin
+        x_min, x_max = first(x), last(x)
+        xq_min, xq_max = minimum(xi), maximum(xi)
+        (xq_min < x_min || xq_max > x_max) &&
+            _throw_domain_error(xq_min < x_min ? xq_min : xq_max, x_min, x_max)
+    end
+    return InBounds()
 end
 
 # _CachedRange: use domain_lo/domain_hi for vector domain checks.
 @inline function _check_domain(x::_CachedRange, xi::AbstractVector{<:Real}, ::NoExtrap)
-    xq_min, xq_max = minimum(xi), maximum(xi)
-    (xq_min < x.domain_lo || xq_max > x.domain_hi) &&
-        _throw_domain_error(xq_min < x.domain_lo ? xq_min : xq_max, x.lo, x.hi)
-    return nothing
+    @boundscheck begin
+        xq_min, xq_max = minimum(xi), maximum(xi)
+        (xq_min < x.domain_lo || xq_max > x.domain_hi) &&
+            _throw_domain_error(xq_min < x.domain_lo ? xq_min : xq_max, x.lo, x.hi)
+    end
+    return InBounds()
 end
 
-"No-op vector domain check for non-NoExtrap modes."
-@inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, ::AbstractExtrap) = nothing
+"No-op vector domain check for non-NoExtrap modes: pass-through extrap."
+@inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, extrap::AbstractExtrap) = extrap
 
 # ========================================
 # Extrapolation value helpers (shared by all interpolation methods)

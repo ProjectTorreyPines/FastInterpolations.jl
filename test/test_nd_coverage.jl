@@ -171,8 +171,8 @@ import FastInterpolations:
             itp = cubic_interp((x, y), data)
 
             # Test _grid accessor
-            @test _grid(itp, Val(1)) == collect(x)
-            @test _grid(itp, Val(2)) == collect(y)
+            @test collect(_grid(itp, Val(1))) ≈ collect(x) rtol = 8eps(Float64)
+            @test collect(_grid(itp, Val(2))) ≈ collect(y) rtol = 8eps(Float64)
 
             # Test _spacing accessor (this was uncovered!)
             sp1 = _spacing(itp, Val(1))

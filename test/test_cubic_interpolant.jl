@@ -218,10 +218,10 @@ end
         x_range = range(0.0, 1.0, 11)  # StepRangeLen{Float64}
         y = sin.(2π .* collect(x_range))
 
-        # Direct CubicSplineCache preserves Range for O(1) lookup
+        # Direct CubicSplineCache normalizes Range → _CachedRange for O(1) lookup
         cache = CubicSplineCache(x_range)
         @test cache.x isa AbstractRange
-        @test cache.x === x_range  # Same object preserved
+        @test collect(cache.x) ≈ collect(x_range) rtol = 8eps(Float64)
 
         # Verify correctness
         result = cubic_interp(cache, y, [0.5])

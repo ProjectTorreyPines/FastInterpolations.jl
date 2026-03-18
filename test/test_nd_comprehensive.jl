@@ -534,10 +534,7 @@ using FastInterpolations
         @testset "Basic type queries" begin
             @test ndims(itp) == 2
             @test size(itp) == (11, 6)
-            ax = axes(itp)
-            @test all(first.(ax) .== first.((x, y)))
-            @test all(last.(ax) .== last.((x, y)))
-            @test all(length.(ax) .== length.((x, y)))
+            @test all(collect.(axes(itp)) .≈ collect.((x, y)))
             @test grid_type(itp) == Float64
             @test value_type(itp) == Float64
         end

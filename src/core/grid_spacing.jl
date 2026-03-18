@@ -112,6 +112,14 @@ Uses `@propagate_inbounds` to enable bounds-check elision in hot loops.
 @inline @Base.propagate_inbounds _get_inv_h(s::ScalarSpacing, ::Int) = s.inv_h
 @inline @Base.propagate_inbounds _get_inv_h(s::VectorSpacing, i::Int) = @inbounds s.inv_h[i]
 
+# ----------------------------------------
+# 3-arg: grid-based accessors (no spacing object needed)
+# ----------------------------------------
+# For non-uniform grids, compute from the search result endpoints.
+# _CachedRange overloads are in cached_range.jl (loaded after this file).
+@inline _get_h(::AbstractVector, xR, xL) = xR - xL
+@inline _get_inv_h(::AbstractVector, xR, xL) = inv(xR - xL)
+
 # ========================================
 # Factory Functions
 # ========================================

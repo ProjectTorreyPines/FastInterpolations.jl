@@ -67,6 +67,7 @@ AD Support:
 - Comparisons use _extract_primal(xi) for Float value
 - Original xi is passed to kernel for AD compatibility
 """
+# Unified eval: _get_h(x, xR, xL) dispatches to x.h (_CachedRange) or xR-xL (Vector).
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -76,24 +77,16 @@ AD Support:
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real, S <: Searcher}
-    # Extract primal for comparisons and search (supports ForwardDiff.Dual)
     xi_primal = _extract_primal(xi)
     xi_typed = Tg(xi_primal)
-
-    # Domain check for NoExtrap mode (throws DomainError)
     @boundscheck _check_domain(x, xi_typed, extrap)
-
     x_min, x_max = first(x), last(x)
 
-    # WrapExtrap mode handles all cases (inside and outside domain)
-    # For WrapExtrap, the query is wrapped to domain, so use wrapped position for dL
-    # (AD derivative is zero for constant interp regardless)
     if extrap isa WrapExtrap
         xi_wrapped = _wrap_to_domain(xi_typed, x_min, x_max)
         idx, xL, xR = search_interval(searcher, x, xi_wrapped)
-        h = xR - xL
-        dL = xi_wrapped - xL  # Use wrapped position for correct interval calculation
-        @inbounds return _constant_kernel(op, y[idx], y[idx + 1], h, dL, side)
+        dL = xi_wrapped - xL
+        @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
     end
 
     # Boundary special case: xi == x[end] → y[end] directly
@@ -102,16 +95,13 @@ AD Support:
         return op isa EvalValue ? (@inbounds y[end]) : 0 * first(y)
     end
 
-    # Extrapolation handling (ClampExtrap, ExtendExtrap)
     if xi_typed < x_min || xi_typed > x_max
         return _constant_eval_extrap(y, xi_typed, x_min, x_max, extrap, side, op)
     end
 
-    # Normal case: interval search and kernel evaluation
     idx, xL, xR = search_interval(searcher, x, xi_typed)
-    h = xR - xL
     dL = xi - xL  # Use original xi for AD
-    @inbounds return _constant_kernel(op, y[idx], y[idx + 1], h, dL, side)
+    @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
 end
 
 

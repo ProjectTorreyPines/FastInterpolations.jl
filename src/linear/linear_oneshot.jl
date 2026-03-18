@@ -216,6 +216,7 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
 - Search uses `_extract_primal(xq)` to find interval index
 - Interpolation arithmetic uses original `xq` to propagate derivatives
 """
+# Unified eval: _get_inv_h(x, xR, xL) dispatches to x.inv_h (_CachedRange) or inv(xR-xL) (Vector).
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -226,10 +227,8 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, xR = search_interval(searcher, x, xq)
-    # Use original xq for interpolation (preserves Dual for AD)
-    inv_h = inv(xR - xL)
-    dL = xq - xL  # xq can be Dual here
-    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], inv_h, dL)
+    dL = xq - xL  # xq can be Dual here (preserves AD)
+    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], _get_inv_h(x, xR, xL), dL)
 end
 
 

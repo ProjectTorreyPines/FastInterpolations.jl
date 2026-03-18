@@ -19,11 +19,17 @@ API boundaries. This means downstream code only needs to handle two grid types:
 `_CachedRange{T}` (uniform) and `Vector{T}` (non-uniform).
 
 # Fields
-- `lo::T`     — `first(x)`, cached as plain `T`
-- `hi::T`     — `last(x)`, cached as plain `T`
-- `h::T`      — `step(x)`, cached as plain `T`
-- `inv_h::T`  — precomputed `1/step(x)`, enables multiply-not-divide in `_search_direct`
-- `len::Int`  — `length(x)`
+- `lo::T`       — `first(x)`, cached as plain `T` (used for index computation)
+- `hi::T`       — `last(x)`, cached as plain `T` (used for index computation)
+- `h::T`        — `step(x)`, cached as plain `T`
+- `inv_h::T`    — precomputed `1/step(x)`, enables multiply-not-divide in `_search_direct`
+- `len::Int`    — `length(x)`
+- `domain_lo::T` — safe lower bound for domain checks (≤ lo, prevents false DomainError)
+- `domain_hi::T` — safe upper bound for domain checks (≥ hi, prevents false DomainError)
+
+The `domain_lo`/`domain_hi` fields equal `lo`/`hi` in the exact path (ARM, non-TwicePrecision).
+On x86_64 with TwicePrecision fast path, they are widened by 1 ULP to account for
+possible rounding difference between fast plain-T arithmetic and exact TwicePrecision.
 
 Because `_CachedRange <: AbstractRange`, all existing `AbstractRange` dispatch
 (DirectSearch routing, `_resolve_search_policy`, `search_interval`, etc.) propagates
@@ -35,6 +41,13 @@ struct _CachedRange{T <: AbstractFloat} <: AbstractRange{T}
     h::T
     inv_h::T
     len::Int
+    domain_lo::T
+    domain_hi::T
+end
+
+# Exact constructor: domain_lo == lo, domain_hi == hi (default for non-TwicePrecision paths)
+@inline function _CachedRange{T}(lo::T, hi::T, h::T, inv_h::T, len::Int) where {T <: AbstractFloat}
+    return _CachedRange{T}(lo, hi, h, inv_h, len, lo, hi)
 end
 
 Base.length(r::_CachedRange) = r.len
@@ -61,6 +74,24 @@ function _to_float(x::AbstractRange, ::Type{FT}) where {FT <: AbstractFloat}
     return _CachedRange{FT}(FT(first(x)), FT(last(x)), h, inv(h), length(x))
 end
 
+# x86_64: TwicePrecision first()/last() ~9ns each on Intel — bypass via plain-T muladd.
+# lo/hi may be ±1 ULP vs exact; domain_lo/domain_hi widened for safe _check_domain.
+# ARM: TwicePrecision is fast, so generic AbstractRange path above is used instead.
+@static if Sys.ARCH === :x86_64
+    function _to_float(
+            x::StepRangeLen{FT, Base.TwicePrecision{FT}, Base.TwicePrecision{FT}},
+            ::Type{FT}
+        ) where {FT <: AbstractFloat}
+        h = FT(x.step)
+        lo = muladd(x.offset - 1, h, FT(x.ref))
+        hi = muladd(x.len - x.offset, h, FT(x.ref))
+
+        domain_lo = prevfloat(lo)
+        domain_hi = nextfloat(hi)
+        return _CachedRange{FT}(lo, hi, h, inv(h), length(x), domain_lo, domain_hi)
+    end
+end
+
 # _CachedRange same-type pass-through: already normalized, return as-is.
 _to_float(x::_CachedRange{T}, ::Type{T}) where {T <: AbstractFloat} = x
 
@@ -81,7 +112,11 @@ Dispatch:
 - Other `AbstractRange` (OrdinalRange, StepRangeLen, LinRange, ...): convert + extend
 """
 @inline function _to_float_adding_endpoint(x::_CachedRange{FT}, ::Type{FT}) where {FT <: AbstractFloat}
-    return _CachedRange{FT}(x.lo, x.hi + x.h, x.h, x.inv_h, x.len + 1)
+    hi_new = x.hi + x.h
+    return _CachedRange{FT}(
+        x.lo, hi_new, x.h, x.inv_h, x.len + 1,
+        x.domain_lo, hi_new
+    )
 end
 
 @inline function _to_float_adding_endpoint(x::AbstractRange, ::Type{FT}) where {FT <: AbstractFloat}

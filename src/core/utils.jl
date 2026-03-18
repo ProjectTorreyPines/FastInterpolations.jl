@@ -352,6 +352,12 @@ _promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
     return nothing
 end
 
+# _CachedRange: use domain_lo/domain_hi for domain checks (wider bracket on x86_64 fast path).
+@inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap)
+    (xi < x.domain_lo || xi > x.domain_hi) && throw(DomainError(xi, "query point outside interpolation domain [$(x.lo), $(x.hi)]"))
+    return nothing
+end
+
 "No-op scalar domain check for non-NoExtrap modes."
 @inline _check_domain(::AbstractVector, ::Real, ::AbstractExtrap) = nothing
 
@@ -363,6 +369,18 @@ end
         DomainError(
             xq_min < x_min ? xq_min : xq_max,
             "query point outside interpolation domain [$x_min, $x_max]"
+        )
+    )
+    return nothing
+end
+
+# _CachedRange: use domain_lo/domain_hi for vector domain checks.
+@inline function _check_domain(x::_CachedRange, xi::AbstractVector{<:Real}, ::NoExtrap)
+    xq_min, xq_max = minimum(xi), maximum(xi)
+    (xq_min < x.domain_lo || xq_max > x.domain_hi) && throw(
+        DomainError(
+            xq_min < x.domain_lo ? xq_min : xq_max,
+            "query point outside interpolation domain [$(x.lo), $(x.hi)]"
         )
     )
     return nothing

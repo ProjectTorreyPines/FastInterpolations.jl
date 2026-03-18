@@ -79,7 +79,7 @@ struct VectorSpacing{T <: AbstractFloat} <: AbstractGridSpacing{T}
     inv_h::Vector{T}
 end
 
-# _CachedRange is defined in cached_range.jl (included before this file).
+# _CachedRange is defined in cached_range.jl (included after this file).
 
 # ========================================
 # Accessor Functions

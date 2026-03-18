@@ -51,6 +51,7 @@ end
 end
 
 Base.length(r::_CachedRange) = r.len
+Base.size(r::_CachedRange) = (r.len,)
 Base.first(r::_CachedRange) = r.lo
 Base.last(r::_CachedRange) = r.hi
 Base.step(r::_CachedRange) = r.h
@@ -96,6 +97,9 @@ end
 _to_float(x::_CachedRange{T}, ::Type{T}) where {T <: AbstractFloat} = x
 
 # _CachedRange type-mismatch (e.g. Float32 → Float64 via _convert_grid):
+# Uses 5-arg constructor (domain = exact). Any x86_64 domain widening from the source
+# is intentionally dropped: the type conversion itself introduces fresh rounding,
+# so re-widening would need to be based on the new FT, not the old T.
 function _to_float(x::_CachedRange, ::Type{FT}) where {FT <: AbstractFloat}
     h = FT(x.h)
     return _CachedRange{FT}(FT(x.lo), FT(x.hi), h, inv(h), x.len)
@@ -111,6 +115,8 @@ Dispatch:
 - `_CachedRange{FT}`: pure field copy + one addition — zero recomputation
 - Other `AbstractRange` (OrdinalRange, StepRangeLen, LinRange, ...): convert + extend
 """
+# domain_hi = hi_new (exact): the extension uses cached plain-T fields only
+# (no TwicePrecision involved), so no additional rounding uncertainty.
 @inline function _to_float_adding_endpoint(x::_CachedRange{FT}, ::Type{FT}) where {FT <: AbstractFloat}
     hi_new = x.hi + x.h
     return _CachedRange{FT}(

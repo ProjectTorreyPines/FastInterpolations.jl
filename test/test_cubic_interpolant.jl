@@ -233,18 +233,17 @@ end
         x_range = range(0.0, 1.0, 11)
         y = sin.(2π .* collect(x_range))
 
-        # Range-preserving cache: Range is kept as Range for O(1) index lookup!
-        # This provides significant performance benefit over Vector (binary search)
+        # Range normalized to _CachedRange for O(1) index lookup (cached inv_h)
         itp = cubic_interp(x_range, y; autocache = true)
-        @test itp.cache.x isa FastInterpolations._CachedRange  # Range preserved for O(1) index calculation
+        @test itp.cache.x isa FastInterpolations._CachedRange
 
         # Verify correctness
         @test itp(0.5) ≈ sin(2π * 0.5) atol = 0.01
 
-        # Verify cache hit works with same Range (Julia interns Ranges)
+        # Verify cache hit works with equal _CachedRange (isbits → isequal comparison)
         clear_cubic_cache!()
         result1 = cubic_interp(x_range, y, 0.5; autocache = true)  # First call: miss
-        result2 = cubic_interp(range(0.0, 1.0, 11), y, 0.5; autocache = true)  # Same params → same objectid → hit!
+        result2 = cubic_interp(range(0.0, 1.0, 11), y, 0.5; autocache = true)  # Same params → isequal hit
         @test result1 ≈ result2  # Same results from cache hit
     end
 

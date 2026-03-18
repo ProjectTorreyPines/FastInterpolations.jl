@@ -56,7 +56,12 @@ Base.size(r::_CachedRange) = (r.len,)
 Base.first(r::_CachedRange) = r.lo
 Base.last(r::_CachedRange) = r.hi
 Base.step(r::_CachedRange) = r.h
-Base.getindex(r::_CachedRange, i::Int) = muladd(i - 1, r.h, r.lo)
+function Base.getindex(r::_CachedRange, i::Int)
+    @boundscheck checkbounds(r, i)
+    i == 1 && return r.lo
+    i == r.len && return r.hi
+    return muladd(i - 1, r.h, r.lo)
+end
 
 # ========================================
 # _to_float: Range → _CachedRange conversion
@@ -127,9 +132,8 @@ Dispatch:
 end
 
 @inline function _to_float_adding_endpoint(x::AbstractRange, ::Type{FT}) where {FT <: AbstractFloat}
-    h = FT(step(x))
-    lo = FT(first(x))
-    return _CachedRange{FT}(lo, FT(last(x)) + h, h, inv(h), length(x) + 1)
+    r = _to_float(x, FT)
+    return _to_float_adding_endpoint(r, FT)
 end
 
 # ========================================

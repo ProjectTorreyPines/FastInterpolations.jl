@@ -640,7 +640,7 @@ Type-Free design: bc_pair should already be cache-compatible (via _cache_bc_pair
     return _lookup_or_insert!(bank, x, bc_pair)
 end
 
-# _CachedRange: bank keyed on _CachedRange{T}. objectid is content-based (isbits) → fast hit.
+# _CachedRange: bank keyed on _CachedRange{T}. objectid is deterministic for isbits → fast hit.
 @inline function _get_derivative_cache_impl(x::_CachedRange{T}, bc_pair::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
     bank = _get_derivative_bank(_CachedRange{T}, bc_pair)
     return _lookup_or_insert!(bank, x, bc_pair)

@@ -301,7 +301,7 @@ end
 
         @test ndims(itp) == 2
         @test size(itp) == (5, 5)
-        @test axes(itp) == (x, y)
+        @test all(collect.(axes(itp)) .≈ collect.((x, y)))
     end
 
     # ========================================

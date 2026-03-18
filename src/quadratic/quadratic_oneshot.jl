@@ -206,6 +206,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
+    x = _to_float(x, Tg)
     # Compute coefficients using temporary arrays from pool
     # spacing is pooled (zero-alloc for Range, pool-acquired for Vector)
     nx = length(x)
@@ -260,6 +261,8 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert length(x) >= 2 "x must have at least 2 elements"
 
+    x = _to_float(x, Tg)
+    x_targets = _to_float(x_targets, Tg)
     # Compute coefficients using temporary arrays from pool
     # spacing is pooled (zero-alloc for Range, pool-acquired for Vector)
     nx = length(x)

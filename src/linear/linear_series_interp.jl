@@ -81,10 +81,11 @@ mutable struct LinearSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExt
             extrap::E,
             search::P = AutoSearch()
         ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
-        # copy(x) for mutation safety; copy() on Range is identity (zero alloc)
-        # typeof(xc) rebinds X after copy (view → Vector)
+        # _to_float(copy(x), Tg): Range → _CachedRange (O(1) search + no TwicePrecision overhead);
+        # Vector → defensive copy (copy is identity for immutable Range, alloc for Vector).
+        # typeof(xc) rebinds X after conversion (view → Vector, TwicePrecision → _CachedRange).
         # y is NOT copied here — _build_series_mat() already provides an owned matrix.
-        xc = copy(x)
+        xc = _to_float(copy(x), Tg)
         spacing = _create_spacing(xc)
         return new{Tg, Tv, E, P, typeof(xc), typeof(spacing)}(xc, y, spacing, LazyTranspose{Tv}(), extrap, search)
     end

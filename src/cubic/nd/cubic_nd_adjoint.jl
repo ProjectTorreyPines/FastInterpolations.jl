@@ -572,7 +572,7 @@ function _build_nd_adjoint(
         period = _resolve_exclusive_period(grid_d, bc_d)
         x_end = first(grid_d) + Tg(period)
         if grid_d isa AbstractRange
-            range(first(grid_d); step = step(grid_d), length = length(grid_d) + 1)
+            _to_float_adding_endpoint(grid_d, Tg)
         else
             vcat(grid_d, x_end)
         end

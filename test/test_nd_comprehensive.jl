@@ -534,7 +534,7 @@ using FastInterpolations
         @testset "Basic type queries" begin
             @test ndims(itp) == 2
             @test size(itp) == (11, 6)
-            @test axes(itp) == (x, y)
+            @test all(collect.(axes(itp)) .≈ collect.((x, y)))
             @test grid_type(itp) == Float64
             @test value_type(itp) == Float64
         end
@@ -554,8 +554,8 @@ using FastInterpolations
 
         @testset "Val-based accessors" begin
             # These use Val{D} dispatch
-            @test FastInterpolations._grid(itp, Val(1)) === x
-            @test FastInterpolations._grid(itp, Val(2)) === y
+            @test FastInterpolations._grid(itp, Val(1)) isa FastInterpolations._CachedRange
+            @test FastInterpolations._grid(itp, Val(2)) isa FastInterpolations._CachedRange
             @test FastInterpolations._bc(itp, Val(1)) isa FastInterpolations.AbstractBC
             @test FastInterpolations._extrap(itp, Val(1)) === FastInterpolations.NoExtrap()
             @test FastInterpolations._search(itp, Val(1)) isa FastInterpolations.AbstractSearchPolicy

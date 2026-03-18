@@ -445,6 +445,33 @@ end
         itp_lin = linear_interp(x_int, y_int)
         @test itp_lin(5.0) ≈ 25.0 atol = 1
     end
+
+    @testset "_to_float _CachedRange type-mismatch path" begin
+        FI = FastInterpolations
+        # _CachedRange{Float64} → _CachedRange{Float32} (type-mismatch conversion)
+        r64 = FI._to_float(range(0.0, 10.0, 51), Float64)
+        @test r64 isa FI._CachedRange{Float64}
+
+        r32 = FI._to_float(r64, Float32)
+        @test r32 isa FI._CachedRange{Float32}
+        @test first(r32) === Float32(first(r64))
+        @test last(r32) === Float32(last(r64))
+        @test step(r32) === Float32(step(r64))
+        @test length(r32) == length(r64)
+        # x86_64 domain widening intentionally dropped on type conversion
+        @test r32.domain_lo == first(r32)
+        @test r32.domain_hi == last(r32)
+
+        # Same-type pass-through: returns identical object
+        r64_same = FI._to_float(r64, Float64)
+        @test r64_same === r64
+
+        # _CachedRange{Float32} → _CachedRange{Float64} (upcast)
+        r64_up = FI._to_float(r32, Float64)
+        @test r64_up isa FI._CachedRange{Float64}
+        @test first(r64_up) === Float64(first(r32))
+        @test length(r64_up) == length(r32)
+    end
 end
 
 @testset "Cubic Spline - Uncovered Paths" begin

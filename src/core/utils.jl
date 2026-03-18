@@ -20,18 +20,8 @@
 # Type Conversion Helpers
 # ========================================
 
-"""
-    _to_float(x::AbstractRange, ::Type{FT}) where {FT<:AbstractFloat}
-
-Convert a Range to a float type while preserving Range structure for O(1) index lookup.
-Using `FT.(x)` would convert Range to Vector, losing the O(1) optimization.
-"""
-# General conversion: rebuild as StepRangeLen to preserve O(1) indexing
-_to_float(x::AbstractRange, ::Type{FT}) where {FT <: AbstractFloat} =
-    range(FT(first(x)), FT(last(x)), length(x))
-
-# Fast-path: already Float Range (StepRangeLen, LinRange, etc.) - return as-is
-_to_float(x::AbstractRange{FT}, ::Type{FT}) where {FT <: AbstractFloat} = x
+# _to_float for Range types (→ _CachedRange) is defined in cached_range.jl.
+# _to_float_adding_endpoint is also defined in cached_range.jl.
 
 """
     _to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT<:AbstractFloat}
@@ -355,10 +345,19 @@ _promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
 # Domain Validation Helpers
 # ========================================
 
+@noinline _throw_domain_error(xi, x_min, x_max) =
+    throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
+
 "Scalar domain check for NoExtrap: throws DomainError if out of domain."
 @inline function _check_domain(x::AbstractVector, xi::Real, ::NoExtrap)
     x_min, x_max = first(x), last(x)
-    (xi < x_min || xi > x_max) && throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
+    (xi < x_min || xi > x_max) && _throw_domain_error(xi, x_min, x_max)
+    return nothing
+end
+
+# _CachedRange: use domain_lo/domain_hi (wider bracket on x86_64 fast path).
+@inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap)
+    (xi < x.domain_lo || xi > x.domain_hi) && _throw_domain_error(xi, x.lo, x.hi)
     return nothing
 end
 
@@ -369,12 +368,16 @@ end
 @inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap)
     x_min, x_max = first(x), last(x)
     xq_min, xq_max = minimum(xi), maximum(xi)
-    (xq_min < x_min || xq_max > x_max) && throw(
-        DomainError(
-            xq_min < x_min ? xq_min : xq_max,
-            "query point outside interpolation domain [$x_min, $x_max]"
-        )
-    )
+    (xq_min < x_min || xq_max > x_max) &&
+        _throw_domain_error(xq_min < x_min ? xq_min : xq_max, x_min, x_max)
+    return nothing
+end
+
+# _CachedRange: use domain_lo/domain_hi for vector domain checks.
+@inline function _check_domain(x::_CachedRange, xi::AbstractVector{<:Real}, ::NoExtrap)
+    xq_min, xq_max = minimum(xi), maximum(xi)
+    (xq_min < x.domain_lo || xq_max > x.domain_hi) &&
+        _throw_domain_error(xq_min < x.domain_lo ? xq_min : xq_max, x.lo, x.hi)
     return nothing
 end
 

@@ -79,6 +79,8 @@ struct VectorSpacing{T <: AbstractFloat} <: AbstractGridSpacing{T}
     inv_h::Vector{T}
 end
 
+# _CachedRange is defined in cached_range.jl (included after this file).
+
 # ========================================
 # Accessor Functions
 # ========================================
@@ -128,6 +130,8 @@ function _create_spacing(x::AbstractRange{T}) where {T <: AbstractFloat}
     inv_h = inv(h)
     return ScalarSpacing{T}(h, inv_h)
 end
+
+# _create_spacing(::_CachedRange) is defined in cached_range.jl
 
 # LinRange needs special handling - step() works but we compute explicitly for clarity
 function _create_spacing(x::LinRange{T}) where {T <: AbstractFloat}

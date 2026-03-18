@@ -95,10 +95,11 @@ mutable struct QuadraticSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: Abstract
             extrap::E,
             search::P = AutoSearch()
         ) where {Tg <: AbstractFloat, Tv, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
-        # copy(x) for mutation safety; copy() on Range is identity (zero alloc)
-        # typeof(xc) rebinds X after copy (view → Vector)
+        # _to_float(copy(x), Tg): Range → _CachedRange (O(1) search + no TwicePrecision overhead);
+        # Vector → defensive copy. copy() on Range is identity (zero alloc).
+        # typeof(xc) rebinds X after conversion (view → Vector, TwicePrecision → _CachedRange).
         # y/a/d are NOT copied here — factory function provides owned matrices.
-        xc = copy(x)
+        xc = _to_float(copy(x), Tg)
         return new{Tg, Tv, E, P, typeof(xc), S}(xc, y, a, d, spacing, LazyTransposeTriple{Tv}(), extrap, search)
     end
 end

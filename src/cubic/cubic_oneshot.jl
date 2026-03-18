@@ -152,7 +152,7 @@ manages their lifetime. Follows the `_create_spacing_pooled(pool, ...)` pattern.
         # Note: _resolve_exclusive_period guarantees period = step(x) * length(x) for Range,
         # so x_end == last(x) + step(x) and direct Range extension is always valid.
         if x isa AbstractRange
-            x_p = range(first(x), step = step(x), length = n + 1)
+            x_p = _to_float_adding_endpoint(x, Tg)
         else
             x_p = acquire!(pool, Tg, n + 1)
             @inbounds copyto!(x_p, 1, x, 1, n)
@@ -234,6 +234,8 @@ In-place cubic spline interpolation with optional automatic caching.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tv}
+    x = _to_float(x, Tg)
+    x_query = _to_float(x_query, Tg)
     searcher = _resolve_search(x, x_query, search, nothing)
     # Periodic BC
     if _is_periodic_bc(bc)
@@ -377,6 +379,7 @@ function cubic_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    x = _to_float(x, Tg)
     searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, deriv, searcher)

@@ -530,7 +530,7 @@ not RHS values (y-data + BC values).
     bc_pair = _normalize_bc(bc, FT)
 
     # Get bank and lookup
-    return _get_derivative_cache_impl(x, bc_pair)
+    return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)
 end
 
 # ===============================================================
@@ -542,18 +542,20 @@ end
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_pair = BCPair(Deriv2(zero(FT)), Deriv2(zero(FT)))
-    return _get_derivative_cache_impl(x, bc_pair)
+    return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)
 end
 
 @inline function _get_cubic_cache(x, ::ZeroSlopeBC)
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_pair = BCPair(Deriv1(zero(FT)), Deriv1(zero(FT)))
-    return _get_derivative_cache_impl(x, bc_pair)
+    return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)
 end
 
 @inline function _get_cubic_cache(x, ::PeriodicBC)
-    return _get_periodic_cache_impl(x)
+    T = eltype(x)
+    FT = T <: AbstractFloat ? T : Float64
+    return _get_periodic_cache_impl(_to_float(x, FT))
 end
 
 # BCPair API - converts to cache-compatible form via _cache_bc_pair
@@ -561,7 +563,7 @@ end
 @inline function _get_cubic_cache(x::AbstractVector{T}, bc::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
     # Convert to cache-compatible form (PolyFit → Deriv1 for same matrix structure)
     bc_cache = _cache_bc_pair(bc, T)
-    return _get_derivative_cache_impl(x, bc_cache)
+    return _get_derivative_cache_impl(_to_float(x, T), bc_cache)
 end
 
 # Fallback for non-float vectors (e.g., Int) - promotes to appropriate float type
@@ -583,22 +585,25 @@ end
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_c = _cache_pointbc(bc, FT)
-    return _get_derivative_cache_impl(x, BCPair(bc_c, bc_c))
+    return _get_derivative_cache_impl(_to_float(x, FT), BCPair(bc_c, bc_c))
 end
 
 # BCPair + autocache API.
 # Keep cache representation structural (PolyFit → Deriv1) regardless of autocache.
 # Solve/eval still use original bc from caller via _solve_system!.
+#
+# _to_float normalizes Range → _CachedRange; identity for Vector/_CachedRange.
 @inline function _get_cubic_cache(
         x::AbstractVector{T},
         bc::BCPair{L, R},
         autocache::Bool
     ) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
     bc_cache = _cache_bc_pair(bc, T)
+    x_norm = _to_float(x, T)
     if autocache
-        return _get_derivative_cache_impl(x, bc_cache)
+        return _get_derivative_cache_impl(x_norm, bc_cache)
     else
-        return _build_derivative_bc_cache(x, bc_cache.left, bc_cache.right)
+        return _build_derivative_bc_cache(x_norm, bc_cache.left, bc_cache.right)
     end
 end
 
@@ -607,22 +612,21 @@ end
         bc::AbstractBC,
         autocache::Bool
     ) where {T <: AbstractFloat}
+    x_norm = _to_float(x, T)
     if autocache
-        cache = _get_cubic_cache(x, bc)
+        return _get_cubic_cache(x_norm, bc)
     else
-        cache = CubicSplineCache(x; bc = bc)
+        return CubicSplineCache(x_norm; bc = bc)
     end
-    return cache
 end
 
 
 # ===============================================================
 # Internal: Cache Implementation
 # ===============================================================
-
-# StepRangeLen concrete types (from `range(a, b, n)`)
-const _StepRangeLen_F64 = StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
-const _StepRangeLen_F32 = StepRangeLen{Float32, Float64, Float64, Int64}
+#
+# After _to_float normalization, x is always _CachedRange{T} (from Range) or Vector{T}.
+# Bank type X matches: _CachedRange{T} bank or Vector{T} bank — no Union, no dispatch explosion.
 
 """
 Internal implementation for derivative BC cache lookup.
@@ -636,25 +640,21 @@ Type-Free design: bc_pair should already be cache-compatible (via _cache_bc_pair
     return _lookup_or_insert!(bank, x, bc_pair)
 end
 
+# _CachedRange: bank keyed on _CachedRange{T}. objectid is deterministic for isbits → fast hit.
+@inline function _get_derivative_cache_impl(x::_CachedRange{T}, bc_pair::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
+    bank = _get_derivative_bank(_CachedRange{T}, bc_pair)
+    return _lookup_or_insert!(bank, x, bc_pair)
+end
+
+# AbstractRange fallback: normalize via _to_float → _CachedRange dispatch above.
 @inline function _get_derivative_cache_impl(x::AbstractRange{T}, bc_pair::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
-    # Normalize to StepRangeLen for consistent cache key type.
-    # LinRange and other Range types are converted (minor overhead on first call).
-    x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
-    bank = _get_derivative_bank(typeof(x_normalized), bc_pair)
-    return _lookup_or_insert!(bank, x_normalized, bc_pair)
+    return _get_derivative_cache_impl(_to_float(x, T), bc_pair)
 end
 
 # Fallback: other Real types → convert to appropriate float type
 # Uses _cache_bc_pair to handle lazy types (PolyFit → Deriv1)
-# float.(x) preserves Float32 precision; Int → Float64
 @inline function _get_derivative_cache_impl(x::AbstractVector{<:Real}, bc_pair::BCPair)
-    x_float = float.(x)
-    bc_cache = _cache_bc_pair(bc_pair, eltype(x_float))
-    return _get_derivative_cache_impl(x_float, bc_cache)
-end
-
-@inline function _get_derivative_cache_impl(x::AbstractRange{<:Real}, bc_pair::BCPair)
-    x_float = range(float(first(x)), float(last(x)), length(x))
+    x_float = _to_float(x, float(eltype(x)))
     bc_cache = _cache_bc_pair(bc_pair, eltype(x_float))
     return _get_derivative_cache_impl(x_float, bc_cache)
 end
@@ -667,20 +667,18 @@ Internal implementation for periodic BC cache lookup.
     return _lookup_or_insert!(bank, x, nothing)
 end
 
+# _CachedRange: bank keyed on _CachedRange{T}.
+@inline function _get_periodic_cache_impl(x::_CachedRange{T}) where {T <: AbstractFloat}
+    bank = _get_periodic_bank(_CachedRange{T})
+    return _lookup_or_insert!(bank, x, nothing)
+end
+
+# AbstractRange fallback: normalize via _to_float → _CachedRange dispatch above.
 @inline function _get_periodic_cache_impl(x::AbstractRange{T}) where {T <: AbstractFloat}
-    # Normalize to StepRangeLen for consistent cache key type.
-    # LinRange and other Range types are converted (minor overhead on first call).
-    x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
-    bank = _get_periodic_bank(typeof(x_normalized))
-    return _lookup_or_insert!(bank, x_normalized, nothing)
+    return _get_periodic_cache_impl(_to_float(x, T))
 end
 
 # Fallback: other Real types → convert to appropriate float type
-# float.(x) preserves Float32 precision; Int → Float64
 @inline function _get_periodic_cache_impl(x::AbstractVector{<:Real})
-    return _get_periodic_cache_impl(float.(x))
-end
-
-@inline function _get_periodic_cache_impl(x::AbstractRange{<:Real})
-    return _get_periodic_cache_impl(range(float(first(x)), float(last(x)), length(x)))
+    return _get_periodic_cache_impl(_to_float(x, float(eltype(x))))
 end

@@ -480,6 +480,19 @@ via arithmetic rather than iterative search, exploiting uniform grid spacing.
 end
 
 """
+    _search_direct(x::_CachedRange{T}, xq::T)
+
+`_CachedRange` specialization: all fields are plain `T` — no TwicePrecision arithmetic.
+Uses precomputed `inv_h` (multiply instead of divide) for the index calculation.
+"""
+@inline function _search_direct(x::_CachedRange{T}, xq::T) where {T <: AbstractFloat}
+    idx = clamp(unsafe_trunc(Int, (xq - x.lo) * x.inv_h + 1), 1, x.len - 1)
+    xL = muladd(idx - 1, x.h, x.lo)
+    xR = xL + x.h
+    return idx, xL, xR
+end
+
+"""
     _search_binary(x::AbstractVector{T}, xq::T) where {T<:Real}
 
 O(log n) binary search for non-uniform grids (AbstractVector).
@@ -512,6 +525,17 @@ compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
     end
     @inbounds xL, xR = x[idx], x[idx + 1]
     return idx, xL, xR
+end
+
+"""
+    _search_direct(x::_CachedRange{T}, ::ScalarSpacing{T}, xq::T)
+
+_CachedRange already has inv_h built in — delegate to 2-arg version.
+"""
+@inline function _search_direct(
+        x::_CachedRange{T}, ::ScalarSpacing{T}, xq::T
+    ) where {T <: AbstractFloat}
+    return _search_direct(x, xq)
 end
 
 """

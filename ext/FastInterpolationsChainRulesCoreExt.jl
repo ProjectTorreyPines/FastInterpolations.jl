@@ -190,75 +190,36 @@ end
 _adjoint_func(::typeof(linear_interp)) = linear_adjoint
 _adjoint_func(::typeof(quadratic_interp)) = quadratic_adjoint
 _adjoint_func(::typeof(constant_interp)) = constant_adjoint
+_adjoint_func(::typeof(cubic_interp)) = cubic_adjoint
 
-# Trait: xq cotangent — constant_interp derivative = 0 by API convention;
-# return ZeroTangent() (not Δu .* d which would be a Float64 zero, not the type).
-_xq_tangent(::typeof(constant_interp), _, _) = ZeroTangent()
-_xq_tangent(::Any, Δu, d) = Δu .* d
+# ── All 1D one-shot interpolants — unified rule ────────────────────────────────────────────
+# Single rule for all 4 interpolant types, any f element type Tv.
+# Julia specializes per (func, Tv) pair at compile time — no runtime overhead.
+#
+# ∂/∂f:  via adjoint operator (works for any Tv)
+# ∂/∂xq: real.(conj.(Δu) .* d) — Wirtinger formula, correct for Real and Complex Tv
 
-# ── linear_interp | quadratic_interp | constant_interp ───────────────────────
-# Unified rule: Julia specializes per concrete func type in the Union,
-# so this is equivalent to 3 separate rules with no runtime overhead.
-
-const _RealInterp1D = Union{typeof(linear_interp), typeof(quadratic_interp), typeof(constant_interp)}
+const _OneShot1D = Union{
+    typeof(linear_interp), typeof(quadratic_interp),
+    typeof(constant_interp), typeof(cubic_interp),
+}
 
 function ChainRulesCore.rrule(
-        func::_RealInterp1D,
+        func::_OneShot1D,
         x::AbstractVector,
-        f::AbstractVector{<:Real},
+        f::AbstractVector{Tv},
         xq::Union{Real, AbstractVector};
         kwargs...
-    )
+    ) where {Tv}
     y = func(x, f, xq; kwargs...)
     adj = _adjoint_func(func)(x, xq; kwargs...)
     d = func(x, f, xq; deriv = DerivOp(1), kwargs...)
     function _interp1d_pb(Δy)
         Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
         Δu = unthunk(Δy)
-        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; kwargs...), _xq_tangent(func, Δu, d))
+        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; kwargs...), real.(conj.(Δu) .* d))
     end
     return y, _interp1d_pb
-end
-
-# ── cubic_interp ─────────────────────────────────────────────────────────────
-# Kept separate: x::AbstractVector{Tg} is needed to disambiguate the
-# real-f rule (∂/∂xq computed) from the complex-f rule (Wirtinger calculus).
-
-# Real f: ∂/∂f + ∂/∂xq both computed.
-function ChainRulesCore.rrule(
-        ::typeof(cubic_interp),
-        x::AbstractVector{Tg},
-        f::AbstractVector{<:Real},
-        xq::Union{Real, AbstractVector};
-        kwargs...
-    ) where {Tg <: AbstractFloat}
-    y = cubic_interp(x, f, xq; kwargs...)
-    adj = cubic_adjoint(x, xq; kwargs...)
-    d = cubic_interp(x, f, xq; deriv = DerivOp(1), kwargs...)
-    function cubic_real_pb(Δy)
-        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
-        Δu = unthunk(Δy)
-        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; kwargs...), Δu .* d)
-    end
-    return y, cubic_real_pb
-end
-
-# Complex f: ∂/∂f only (Wirtinger ∂/∂xq left to Zygote source tracing).
-function ChainRulesCore.rrule(
-        ::typeof(cubic_interp),
-        x::AbstractVector{Tg},
-        f::AbstractVector{Tv},
-        xq::Union{Real, AbstractVector};
-        kwargs...
-    ) where {Tg <: AbstractFloat, Tv}
-    y = cubic_interp(x, f, xq; kwargs...)
-    adj = cubic_adjoint(x, xq; kwargs...)
-    function cubic_complex_pb(Δy)
-        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), NoTangent())
-        Δu = unthunk(Δy)
-        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; kwargs...), NoTangent())
-    end
-    return y, cubic_complex_pb
 end
 
 # ════════════════════════════════════════
@@ -293,7 +254,7 @@ function ChainRulesCore.rrule(
         queries;
         kwargs...
     ) where {Tv, N}
-    y   = cubic_interp(grids, data, queries; kwargs...)
+    y = cubic_interp(grids, data, queries; kwargs...)
     adj = cubic_adjoint(grids, queries; kwargs...)
 
     function cubic_interp_nd_pb(Δy)

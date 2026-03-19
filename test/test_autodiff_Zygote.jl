@@ -1178,4 +1178,109 @@ end
         @test g_zy ≈ cos.(xq_vec) atol = 0.01
     end
 
+    # ════════════════════════════════════════════════════════════════════════
+    # Non-Cubic ND interpolant API — ∂/∂data via rrule chain
+    # ════════════════════════════════════════════════════════════════════════
+    # Validates that generalized rrules (constructor + eval + gradient +
+    # hessian + laplacian + value_gradient) work for all 4 interpolant types.
+
+    @testset "Non-cubic ND interpolant API — ∂/∂data via rrule chain" begin
+        x = range(0.0, 2.0, 15)
+        y = range(0.0, 2.0, 15)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        x0 = (0.7, 0.9)
+
+        for (interp_fn, adj_fn, label) in [
+                (linear_interp, linear_adjoint, "Linear"),
+                (quadratic_interp, quadratic_adjoint, "Quadratic"),
+                (constant_interp, constant_adjoint, "Constant"),
+            ]
+            @testset "$label" begin
+                # ── constructor + eval: ∂/∂data of itp(x0) ──
+                @testset "eval — ∂/∂data" begin
+                    function f_eval(d)
+                        itp = interp_fn((x, y), d)
+                        return itp(x0)
+                    end
+                    result = Zygote.withgradient(f_eval, data)
+                    @test result.val ≈ f_eval(data)
+
+                    # Cross-validate with one-shot adjoint
+                    adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
+                    expected = adj([1.0])
+                    @test result.grad[1] ≈ expected atol = 1.0e-10
+                end
+
+                # ── eval: L2 loss ──
+                @testset "eval — L2 loss" begin
+                    target_val = 0.5
+                    function f_l2(d)
+                        itp = interp_fn((x, y), d)
+                        return (itp(x0) - target_val)^2
+                    end
+                    result = Zygote.withgradient(f_l2, data)
+                    y_val = interp_fn((x, y), data, x0)
+                    adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
+                    expected = adj([2.0 * (y_val - target_val)])
+                    @test result.grad[1] ≈ expected atol = 1.0e-10
+                end
+
+                # ── gradient: ∂/∂data of ‖∇f(x0)‖² ──
+                @testset "gradient — ‖∇f‖² loss" begin
+                    function f_grad_norm(d)
+                        itp = interp_fn((x, y), d)
+                        g = FastInterpolations.gradient(itp, x0)
+                        return g[1]^2 + g[2]^2
+                    end
+                    result = Zygote.withgradient(f_grad_norm, data)
+                    @test isfinite(result.val)
+                    @test size(result.grad[1]) == size(data)
+
+                    # Cross-validate: adjoint with DerivOp
+                    fx = interp_fn((x, y), data, x0; deriv = (DerivOp(1), EvalValue()))
+                    fy = interp_fn((x, y), data, x0; deriv = (EvalValue(), DerivOp(1)))
+                    adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
+                    expected = adj([2fx]; deriv = (DerivOp(1), EvalValue())) .+
+                        adj([2fy]; deriv = (EvalValue(), DerivOp(1)))
+                    @test result.grad[1] ≈ expected atol = 1.0e-10
+                end
+
+                # ── hessian: ∂/∂data of ‖H(f)‖²_F ──
+                @testset "hessian — ∂/∂data" begin
+                    function f_hess(d)
+                        itp = interp_fn((x, y), d)
+                        H = FastInterpolations.hessian(itp, x0)
+                        return sum(abs2, H)
+                    end
+                    result = Zygote.withgradient(f_hess, data)
+                    @test isfinite(result.val)
+                    @test size(result.grad[1]) == size(data)
+                end
+
+                # ── laplacian: ∂/∂data of (∇²f)² ──
+                @testset "laplacian — ∂/∂data" begin
+                    function f_lap(d)
+                        itp = interp_fn((x, y), d)
+                        return FastInterpolations.laplacian(itp, x0)^2
+                    end
+                    result = Zygote.withgradient(f_lap, data)
+                    @test isfinite(result.val)
+                    @test size(result.grad[1]) == size(data)
+                end
+
+                # ── value_gradient: ∂/∂data ──
+                @testset "value_gradient — ∂/∂data" begin
+                    function f_vg(d)
+                        itp = interp_fn((x, y), d)
+                        v, g = FastInterpolations.value_gradient(itp, x0)
+                        return v^2 + g[1]^2 + g[2]^2
+                    end
+                    result = Zygote.withgradient(f_vg, data)
+                    @test isfinite(result.val)
+                    @test size(result.grad[1]) == size(data)
+                end
+            end
+        end
+    end
+
 end  # testset "Zygote AD Support"

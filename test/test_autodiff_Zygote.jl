@@ -288,12 +288,12 @@ end
             end
         end
 
-        @testset "One-shot API (broken - Zygote compilation)" begin
+        @testset "One-shot API — scalar xq via rrule" begin
             xq = 2.25
-            @test_broken begin
-                zy_grad = Zygote.gradient(q -> cubic_interp(x, y_cubic, q), xq)[1]
-                isfinite(zy_grad)
-            end
+            zy_grad = Zygote.gradient(q -> cubic_interp(x, y_cubic, q), xq)[1]
+            @test isfinite(zy_grad)
+            # Analytic: derivative of x³ interpolant at xq = 3xq²
+            @test zy_grad ≈ 3.0 * xq^2 rtol = 0.05
         end
 
         @testset "Series Interpolant (broken - array mutation)" begin

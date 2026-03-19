@@ -199,13 +199,13 @@ _adjoint_func(::typeof(cubic_interp)) = cubic_adjoint
 # ∂/∂f:  via adjoint operator (works for any Tv)
 # ∂/∂xq: real.(conj.(Δu) .* d) — Wirtinger formula, correct for Real and Complex Tv
 
-const _OneShot1D = Union{
+const _OneShotInterp = Union{
     typeof(linear_interp), typeof(quadratic_interp),
     typeof(constant_interp), typeof(cubic_interp),
 }
 
 function ChainRulesCore.rrule(
-        func::_OneShot1D,
+        func::_OneShotInterp,
         x::AbstractVector,
         f::AbstractVector{Tv},
         xq::Union{Real, AbstractVector};
@@ -223,47 +223,30 @@ function ChainRulesCore.rrule(
 end
 
 # ════════════════════════════════════════
-# Cubic ND one-shot — data adjoint (∂/∂data)
+# All ND one-shot interpolants — data adjoint (∂/∂data)
 # ════════════════════════════════════════
-# Enables Zygote.gradient(data -> ...(cubic_interp(grids, data, queries; ...))..., data)
-# by using the pre-built CubicAdjointND operator for the pullback.
+# Unified rule for all 4 interpolant types, any query format (ND).
+# Delegating to *_adjoint(grids, queries) means new query protocol types
+# are supported automatically with no rrule changes.
 #
-# All extrap modes are supported — the ND adjoint handles OOB weight zeroing
-# internally via _bake_nd_anchors.
-#
-# Unified rule: duck-typed `queries` covers all query formats.
-# cubic_interp already accepts any query-protocol type; cubic_adjoint has its own
-# dispatch tree per format (SoA Tuple, single Tuple{Real...}, AbstractVector, generic).
-# Delegating to cubic_adjoint(grids, queries) instead of pre-wrapping here means
-# new query protocol types are supported automatically with no rrule changes.
+# ∂/∂data:   via adjoint operator (works for any Tv)
+# ∂/∂queries: NoTangent() — queries are not differentiated
 
-"""
-Reverse-mode rule for `cubic_interp(grids, data, queries; ...)` — any query format (ND).
-
-Accepts any query type supported by the query protocol: a single `Tuple{Vararg{Real,N}}`
-point, the SoA format `Tuple{AbstractVector,...}`, `Vector{NTuple}`, `Vector{SVector}`,
-or any other protocol-implementing type. `cubic_adjoint` dispatches per query type internally.
-
-The pullback computes `∂L/∂data = Wᵀ · ∂L/∂y` via `CubicAdjointND`.
-Grids and queries are not differentiated.
-"""
 function ChainRulesCore.rrule(
-        ::typeof(cubic_interp),
+        func::_OneShotInterp,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;
         kwargs...
     ) where {Tv, N}
-    y = cubic_interp(grids, data, queries; kwargs...)
-    adj = cubic_adjoint(grids, queries; kwargs...)
-
-    function cubic_interp_nd_pb(Δy)
+    y = func(grids, data, queries; kwargs...)
+    adj = _adjoint_func(func)(grids, queries; kwargs...)
+    function _interp_nd_pb(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
         f_bar = adj(unthunk(Δy); kwargs...)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
-
-    return y, cubic_interp_nd_pb
+    return y, _interp_nd_pb
 end
 
 # ════════════════════════════════════════

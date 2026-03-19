@@ -135,7 +135,7 @@ function EnzymeRules.reverse(
         kwargs...
     ) where {Tg <: AbstractFloat}
     d = tape
-    return (nothing, nothing, dret.val * d)
+    return (nothing, nothing, real(conj(dret.val) * d))
 end
 
 # ════════════════════════════════════════
@@ -170,7 +170,7 @@ function EnzymeRules.reverse(
     ) where {Tg <: AbstractFloat, RT}
     d, dy = tape
     if dy !== nothing
-        xq.dval .+= dy .* d
+        xq.dval .+= real.(conj.(dy) .* d)
         dy .= zero(eltype(dy))
     end
     return (nothing, nothing, nothing)

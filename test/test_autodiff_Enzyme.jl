@@ -585,6 +585,36 @@ else
             end
 
             # ════════════════════════════════════════════════════════════════
+            # ND struct eval — ∂/∂query via Enzyme
+            # ════════════════════════════════════════════════════════════════
+
+            @testset "ND struct eval — ∂/∂query via Enzyme" begin
+                x = range(0.0, 2.0, 15)
+                y = range(0.0, 2.0, 15)
+                data = [sin(xi) * cos(yj) for xi in x, yj in y]
+
+                for (interp_fn, label) in [
+                        (linear_interp, "Linear"),
+                        (quadratic_interp, "Quadratic"),
+                        (cubic_interp, "Cubic"),
+                    ]
+                    @testset "$label" begin
+                        itp = interp_fn((x, y), data)
+                        q = [0.7, 0.9]
+                        dq = zero(q)
+                        Enzyme.autodiff(
+                            Enzyme.Reverse,
+                            Enzyme.Const(v -> itp(v)),
+                            Enzyme.Active,
+                            Enzyme.Duplicated(q, dq),
+                        )
+                        fd_grad = ForwardDiff.gradient(v -> itp(Tuple(v)), q)
+                        @test dq ≈ fd_grad atol = 1.0e-8
+                    end
+                end
+            end
+
+            # ════════════════════════════════════════════════════════════════
             # 1D Vector ∂/∂xq — f::Const, xq::Duplicated
             # ════════════════════════════════════════════════════════════════
 

@@ -354,6 +354,38 @@ function EnzymeRules.reverse(
     return (nothing,)
 end
 
+# ── Eval: itp(query) → scalar, ∂/∂query only (itp::Const, query::Duplicated) ──
+
+function EnzymeRules.augmented_primal(
+        config::EnzymeRules.RevConfig,
+        itp::Const{<:FastInterpolations.AbstractInterpolantND{Tg, Tv, N}},
+        RT::Type{<:Annotation},
+        query::Duplicated{<:AbstractVector{<:Real}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    q_tuple = ntuple(i -> @inbounds(query.val[i]), Val(N))
+    y = itp.val(q_tuple; kwargs...)
+    primal = EnzymeRules.needs_primal(config) ? y : nothing
+    shadow = EnzymeRules.needs_shadow(config) ? zero(y) : nothing
+    grad = FastInterpolations.gradient(itp.val, q_tuple)
+    return EnzymeRules.AugmentedReturn(primal, shadow, grad)
+end
+
+function EnzymeRules.reverse(
+        config::EnzymeRules.RevConfig,
+        itp::Const{<:FastInterpolations.AbstractInterpolantND{Tg, Tv, N}},
+        dret::Active,
+        tape,
+        query::Duplicated{<:AbstractVector{<:Real}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    grad = tape
+    for i in 1:N
+        query.dval[i] += real(conj(dret.val) * grad[i])
+    end
+    return (nothing,)
+end
+
 # ── gradient(itp, query) → NTuple{N} ──
 
 function EnzymeRules.augmented_primal(

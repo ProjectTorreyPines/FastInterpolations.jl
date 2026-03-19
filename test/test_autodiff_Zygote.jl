@@ -206,12 +206,10 @@ end
             @test zy_imag ≈ 2.0 * xq atol = 1.0e-10
         end
 
-        @testset "One-shot API (broken - array mutation)" begin
+        @testset "One-shot API - Real scalar (∂/∂xq via rrule)" begin
             xq = 2.25
-            @test_broken begin
-                zy_grad = Zygote.gradient(q -> quadratic_interp(x, y_quad, q), xq)[1]
-                zy_grad ≈ 2.0 * xq
-            end
+            zy_grad = Zygote.gradient(q -> quadratic_interp(x, y_quad, q), xq)[1]
+            @test zy_grad ≈ 2.0 * xq atol = 1.0e-10
         end
 
         @testset "Series Interpolant (broken - array mutation)" begin
@@ -1011,6 +1009,173 @@ end
             grad_ref = Zygote.gradient(q -> sum(abs2, FastInterpolations.gradient(itp, q)), x0)[1]
             @test collect(grad) ≈ collect(grad_ref) atol = 1.0e-8
         end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # LINEAR DATA-ADJOINT (∂f/∂y) via LinearAdjoint rrule
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "Linear data-adjoint (∂f/∂y) — Zygote via rrule" begin
+        x = collect(0.0:0.5:5.0)
+        f_data = 2.0 .* x .+ 1.0
+        xq_vec = [0.75, 1.25, 2.75, 3.5, 4.25]
+        y_obs = 2.0 .* xq_vec .+ 0.5  # different from f_data values
+
+        @testset "Scalar query — ∂f/∂y" begin
+            g_zy = Zygote.gradient(y -> linear_interp(x, y, 1.25), f_data)[1]
+            g_fd = ForwardDiff.gradient(y -> linear_interp(x, y, 1.25), f_data)
+            @test g_zy ≈ g_fd atol = 1.0e-10
+        end
+
+        @testset "Vector query — ∂f/∂y" begin
+            g_zy = Zygote.gradient(y -> sum(linear_interp(x, y, xq_vec)), f_data)[1]
+            g_fd = ForwardDiff.gradient(y -> sum(linear_interp(x, y, xq_vec)), f_data)
+            @test g_zy ≈ g_fd atol = 1.0e-10
+        end
+
+        @testset "L2 loss function" begin
+            loss(y) = sum(abs2, linear_interp(x, y, xq_vec) .- y_obs)
+            g_zy = Zygote.gradient(loss, f_data)[1]
+            g_fd = ForwardDiff.gradient(loss, f_data)
+            @test g_zy ≈ g_fd atol = 1.0e-10
+        end
+
+        @testset "Float32" begin
+            x32 = Float32.(x)
+            f32 = Float32.(f_data)
+            xq32 = Float32.(xq_vec)
+            g_zy = Zygote.gradient(y -> sum(linear_interp(x32, y, xq32)), f32)[1]
+            g_fd = ForwardDiff.gradient(y -> sum(linear_interp(x32, y, xq32)), f32)
+            @test g_zy ≈ g_fd atol = 1.0e-4
+        end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # QUADRATIC DATA-ADJOINT (∂f/∂y) via QuadraticAdjoint rrule
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "Quadratic data-adjoint (∂f/∂y) — Zygote via rrule" begin
+        x = collect(0.0:0.5:5.0)
+        f_data = x .^ 2
+        xq_vec = [0.75, 1.25, 2.75, 3.5, 4.25]
+        y_obs = xq_vec .^ 2 .+ 0.1  # different from interpolated values
+
+        @testset "Scalar query — ∂f/∂y" begin
+            g_zy = Zygote.gradient(y -> quadratic_interp(x, y, 1.25), f_data)[1]
+            g_fd = ForwardDiff.gradient(y -> quadratic_interp(x, y, 1.25), f_data)
+            @test g_zy ≈ g_fd atol = 1.0e-10
+        end
+
+        @testset "Vector query — ∂f/∂y" begin
+            g_zy = Zygote.gradient(y -> sum(quadratic_interp(x, y, xq_vec)), f_data)[1]
+            g_fd = ForwardDiff.gradient(y -> sum(quadratic_interp(x, y, xq_vec)), f_data)
+            @test g_zy ≈ g_fd atol = 1.0e-10
+        end
+
+        @testset "L2 loss function" begin
+            loss(y) = sum(abs2, quadratic_interp(x, y, xq_vec) .- y_obs)
+            g_zy = Zygote.gradient(loss, f_data)[1]
+            g_fd = ForwardDiff.gradient(loss, f_data)
+            @test g_zy ≈ g_fd atol = 1.0e-10
+        end
+
+        @testset "Float32" begin
+            x32 = Float32.(x)
+            f32 = Float32.(f_data)
+            xq32 = Float32.(xq_vec)
+            g_zy = Zygote.gradient(y -> sum(quadratic_interp(x32, y, xq32)), f32)[1]
+            g_fd = ForwardDiff.gradient(y -> sum(quadratic_interp(x32, y, xq32)), f32)
+            @test g_zy ≈ g_fd atol = 1.0e-4
+        end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # CONSTANT DATA-ADJOINT (∂f/∂y) via ConstantAdjoint rrule
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "Constant data-adjoint (∂f/∂y) — Zygote via rrule" begin
+        x = collect(0.0:1.0:5.0)
+        f_data = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+        xq_vec = [0.3, 0.8, 1.7, 2.5, 3.9]
+        y_obs = [5.0, 15.0, 25.0, 35.0, 45.0]  # arbitrary target
+
+        @testset "Scalar query — ∂f/∂y" begin
+            g_zy = Zygote.gradient(y -> constant_interp(x, y, 1.7), f_data)[1]
+            g_fd = ForwardDiff.gradient(y -> constant_interp(x, y, 1.7), f_data)
+            @test g_zy ≈ g_fd atol = 1.0e-10
+        end
+
+        @testset "Vector query — ∂f/∂y" begin
+            g_zy = Zygote.gradient(y -> sum(constant_interp(x, y, xq_vec)), f_data)[1]
+            g_fd = ForwardDiff.gradient(y -> sum(constant_interp(x, y, xq_vec)), f_data)
+            @test g_zy ≈ g_fd atol = 1.0e-10
+        end
+
+        @testset "All side modes" begin
+            for side in [LeftSide(), RightSide(), NearestSide()]
+                g_zy = Zygote.gradient(y -> sum(constant_interp(x, y, xq_vec; side = side)), f_data)[1]
+                g_fd = ForwardDiff.gradient(y -> sum(constant_interp(x, y, xq_vec; side = side)), f_data)
+                @test g_zy ≈ g_fd atol = 1.0e-10
+            end
+        end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # VEC QUERY ∂/∂xq — one-shot API (linear / quadratic / cubic)
+    # ════════════════════════════════════════════════════════════════════════
+    # For y = interp(x, f, xq_vec), ∂L/∂xq[i] = ∂L/∂y[i] * d[i]
+    # where d[i] = derivative of the interpolant at xq[i].
+    # This is element-wise (diagonal Jacobian) since y[i] only depends on xq[i].
+    # Validated against ForwardDiff.
+
+    # NOTE: ForwardDiff.gradient is NOT used here — the one-shot vec API has a
+    # Float64 type barrier that rejects Dual numbers. Instead, validate against
+    # the analytical derivative (interp(...; deriv=DerivOp(1))), which is what
+    # the rrule computes internally, plus finite differences for the L2 loss case.
+
+    @testset "Vec query ∂/∂xq — one-shot (linear)" begin
+        x = collect(0.0:0.5:5.0)
+        f_data = sin.(x)
+        xq_vec = [0.3, 1.1, 2.4, 3.7, 4.2]
+
+        # sum loss: ∂/∂xq[i] = d[i] where d = derivative of interpolant
+        g_zy = Zygote.gradient(q -> sum(linear_interp(x, f_data, q)), xq_vec)[1]
+        d_expected = linear_interp(x, f_data, xq_vec; deriv = DerivOp(1))
+        @test g_zy ≈ d_expected atol = 1.0e-10
+
+        # L2 loss: ∂/∂xq[i] = 2*(y[i] - y_obs[i]) * d[i]
+        y_obs = zeros(length(xq_vec))
+        y_pred = linear_interp(x, f_data, xq_vec)
+        loss(q) = sum(abs2, linear_interp(x, f_data, q) .- y_obs)
+        g_zy2 = Zygote.gradient(loss, xq_vec)[1]
+        g_expected = 2 .* (y_pred .- y_obs) .* d_expected
+        @test g_zy2 ≈ g_expected atol = 1.0e-10
+    end
+
+    @testset "Vec query ∂/∂xq — one-shot (quadratic)" begin
+        x = collect(0.0:0.5:5.0)
+        f_data = x .^ 2
+        xq_vec = [0.3, 1.1, 2.4, 3.7, 4.2]
+
+        g_zy = Zygote.gradient(q -> sum(quadratic_interp(x, f_data, q)), xq_vec)[1]
+        d_expected = quadratic_interp(x, f_data, xq_vec; deriv = DerivOp(1))
+        @test g_zy ≈ d_expected atol = 1.0e-10
+
+        # Analytic: d/dxq of x^2 interpolant = 2*xq
+        @test g_zy ≈ 2.0 .* xq_vec atol = 0.05
+    end
+
+    @testset "Vec query ∂/∂xq — one-shot (cubic)" begin
+        x = collect(0.0:0.5:5.0)
+        f_data = sin.(x)
+        xq_vec = [0.3, 1.1, 2.4, 3.7, 4.2]
+
+        g_zy = Zygote.gradient(q -> sum(cubic_interp(x, f_data, q)), xq_vec)[1]
+        d_expected = cubic_interp(x, f_data, xq_vec; deriv = DerivOp(1))
+        @test g_zy ≈ d_expected atol = 1.0e-10
+
+        # Analytic: d/dxq of sin interpolant ≈ cos(xq)
+        @test g_zy ≈ cos.(xq_vec) atol = 0.01
     end
 
 end  # testset "Zygote AD Support"

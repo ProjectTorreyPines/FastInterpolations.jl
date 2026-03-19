@@ -166,25 +166,51 @@ function ChainRulesCore.rrule(
 end
 
 # ════════════════════════════════════════
-# Cubic one-shot — data adjoint (∂/∂f)
+# 1D one-shot — data adjoint (∂/∂f)
 # ════════════════════════════════════════
-# Enables Zygote.gradient(f -> ...(cubic_interp(x, f, xq; ...))..., f)
-# by using the pre-built CubicAdjoint operator for the pullback.
-#
-# ForwardDiff already works via Dual propagation; these rrules exist
-# solely to unblock reverse-mode backends (Zygote) that cannot trace
-# through the in-place tridiagonal solve in the one-shot path.
+# Shared pullback helpers for all interpolant types.
+# Vec rules: linear/quadratic/cubic also return ∂/∂xq = Δu .* d (element-wise
+#   chain rule; valid because y[i] only depends on xq[i] — diagonal Jacobian).
+#   constant vec returns NoTangent() for xq (piecewise-constant → ∂/∂xq = 0 a.e.).
+# Scalar rules: cubic/constant return NoTangent() for xq; linear/quadratic
+#               compute the analytical ∂/∂xq so one-shot scalar AD works end-to-end.
+# Complex f is intentionally excluded: those paths use Zygote source tracing
+# which handles Wirtinger calculus correctly without custom rules.
 
-"""
-Reverse-mode rule for `cubic_interp(x, f, xq; ...)` — vector query.
+# Used by linear/quadratic/cubic vec: returns both ∂/∂f and ∂/∂xq.
+@inline function _1d_full_pb_vec(adj, d, Δy; kwargs...)
+    Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
+    Δu = unthunk(Δy)
+    return (NoTangent(), NoTangent(), adj(Δu; kwargs...), Δu .* d)
+end
 
-The pullback computes `∂L/∂f = Wᵀ · ∂L/∂y` via `CubicAdjoint`, where
-`W = Eᵧ + E_z · A⁻¹ · R` is the full interpolation operator.
+# Used by constant vec (∂/∂xq = 0) and any rule that doesn't differentiate xq.
+@inline function _1d_data_pb_vec(adj, Δy; kwargs...)
+    Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), NoTangent())
+    return (NoTangent(), NoTangent(), adj(unthunk(Δy); kwargs...), NoTangent())
+end
 
-All extrap modes are supported. For `WrapExtrap`/`ClampExtrap`, queries
-are preprocessed before adjoint construction. For `FillExtrap`, OOB
-query sensitivities are zeroed (constant fill has zero gradient w.r.t. data).
-"""
+@inline function _1d_data_pb_scalar(adj, ::Type{Tg}, Δy; kwargs...) where {Tg}
+    Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), NoTangent())
+    return (NoTangent(), NoTangent(), adj(Tg[unthunk(Δy)]; kwargs...), NoTangent())
+end
+
+# ── cubic_interp ─────────────────────────────────────────────────────────────
+
+function ChainRulesCore.rrule(
+        ::typeof(cubic_interp),
+        x::AbstractVector{Tg},
+        f::AbstractVector{<:Real},
+        xq::AbstractVector{Tg};
+        kwargs...
+    ) where {Tg <: AbstractFloat}
+    y   = cubic_interp(x, f, xq; kwargs...)
+    adj = cubic_adjoint(x, xq; kwargs...)
+    d   = cubic_interp(x, f, xq; deriv = DerivOp(1), kwargs...)
+    return y, Δy -> _1d_full_pb_vec(adj, d, Δy; kwargs...)
+end
+
+# Complex f: ∂/∂xq skipped (Wirtinger territory); Zygote handles via source tracing.
 function ChainRulesCore.rrule(
         ::typeof(cubic_interp),
         x::AbstractVector{Tg},
@@ -192,26 +218,11 @@ function ChainRulesCore.rrule(
         xq::AbstractVector{Tg};
         kwargs...
     ) where {Tg <: AbstractFloat, Tv}
-    y = cubic_interp(x, f, xq; kwargs...)
+    y   = cubic_interp(x, f, xq; kwargs...)
     adj = cubic_adjoint(x, xq; kwargs...)
-
-    function cubic_interp_vec_pullback(Δy)
-        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        f_bar = adj(unthunk(Δy); kwargs...)
-        return NoTangent(), NoTangent(), f_bar, NoTangent()
-    end
-
-    return y, cubic_interp_vec_pullback
+    return y, Δy -> _1d_data_pb_vec(adj, Δy; kwargs...)
 end
 
-"""
-Reverse-mode rule for `cubic_interp(x, f, xq; ...)` — scalar query.
-
-Wraps the scalar query into a 1-element vector for `CubicAdjoint`,
-then unwraps the scalar cotangent for the pullback.
-
-All extrap modes are supported.
-"""
 function ChainRulesCore.rrule(
         ::typeof(cubic_interp),
         x::AbstractVector{Tg},
@@ -219,16 +230,101 @@ function ChainRulesCore.rrule(
         xq::Real;
         kwargs...
     ) where {Tg <: AbstractFloat, Tv}
-    y = cubic_interp(x, f, xq; kwargs...)
+    y   = cubic_interp(x, f, xq; kwargs...)
     adj = cubic_adjoint(x, Tg[xq]; kwargs...)
+    return y, Δy -> _1d_data_pb_scalar(adj, Tg, Δy; kwargs...)
+end
 
-    function cubic_interp_scalar_pullback(Δy)
-        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        f_bar = adj(Tg[unthunk(Δy)]; kwargs...)
-        return NoTangent(), NoTangent(), f_bar, NoTangent()
+# ── linear_interp ────────────────────────────────────────────────────────────
+
+function ChainRulesCore.rrule(
+        ::typeof(linear_interp),
+        x::AbstractVector{Tg},
+        f::AbstractVector{<:Real},
+        xq::AbstractVector{Tg};
+        kwargs...
+    ) where {Tg <: AbstractFloat}
+    y   = linear_interp(x, f, xq; kwargs...)
+    adj = linear_adjoint(x, xq; kwargs...)
+    d   = linear_interp(x, f, xq; deriv = DerivOp(1), kwargs...)
+    return y, Δy -> _1d_full_pb_vec(adj, d, Δy; kwargs...)
+end
+
+function ChainRulesCore.rrule(
+        ::typeof(linear_interp),
+        x::AbstractVector{Tg},
+        f::AbstractVector{<:Real},
+        xq::Real;
+        kwargs...
+    ) where {Tg <: AbstractFloat}
+    y   = linear_interp(x, f, xq; kwargs...)
+    adj = linear_adjoint(x, Tg[xq]; kwargs...)
+    d   = linear_interp(x, f, Tg(xq); deriv = DerivOp(1), kwargs...)
+    function linear_scalar_pb(Δy)
+        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
+        Δu = unthunk(Δy)
+        return (NoTangent(), NoTangent(), adj(Tg[Δu]; kwargs...), Δu * d)
     end
+    return y, linear_scalar_pb
+end
 
-    return y, cubic_interp_scalar_pullback
+# ── quadratic_interp ─────────────────────────────────────────────────────────
+
+function ChainRulesCore.rrule(
+        ::typeof(quadratic_interp),
+        x::AbstractVector{Tg},
+        f::AbstractVector{<:Real},
+        xq::AbstractVector{Tg};
+        kwargs...
+    ) where {Tg <: AbstractFloat}
+    y   = quadratic_interp(x, f, xq; kwargs...)
+    adj = quadratic_adjoint(x, xq; kwargs...)
+    d   = quadratic_interp(x, f, xq; deriv = DerivOp(1), kwargs...)
+    return y, Δy -> _1d_full_pb_vec(adj, d, Δy; kwargs...)
+end
+
+function ChainRulesCore.rrule(
+        ::typeof(quadratic_interp),
+        x::AbstractVector{Tg},
+        f::AbstractVector{<:Real},
+        xq::Real;
+        kwargs...
+    ) where {Tg <: AbstractFloat}
+    y   = quadratic_interp(x, f, xq; kwargs...)
+    adj = quadratic_adjoint(x, Tg[xq]; kwargs...)
+    d   = quadratic_interp(x, f, Tg(xq); deriv = DerivOp(1), kwargs...)
+    function quadratic_scalar_pb(Δy)
+        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
+        Δu = unthunk(Δy)
+        return (NoTangent(), NoTangent(), adj(Tg[Δu]; kwargs...), Δu * d)
+    end
+    return y, quadratic_scalar_pb
+end
+
+# ── constant_interp ──────────────────────────────────────────────────────────
+
+function ChainRulesCore.rrule(
+        ::typeof(constant_interp),
+        x::AbstractVector{Tg},
+        f::AbstractVector{<:Real},
+        xq::AbstractVector{Tg};
+        kwargs...
+    ) where {Tg <: AbstractFloat}
+    y   = constant_interp(x, f, xq; kwargs...)
+    adj = constant_adjoint(x, xq; kwargs...)
+    return y, Δy -> _1d_data_pb_vec(adj, Δy; kwargs...)
+end
+
+function ChainRulesCore.rrule(
+        ::typeof(constant_interp),
+        x::AbstractVector{Tg},
+        f::AbstractVector{<:Real},
+        xq::Real;
+        kwargs...
+    ) where {Tg <: AbstractFloat}
+    y   = constant_interp(x, f, xq; kwargs...)
+    adj = constant_adjoint(x, Tg[xq]; kwargs...)
+    return y, Δy -> _1d_data_pb_scalar(adj, Tg, Δy; kwargs...)
 end
 
 # ════════════════════════════════════════

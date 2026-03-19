@@ -16,7 +16,8 @@
 # _eval_extrapolation helper is defined in core/utils.jl (shared by all methods).
 # _get_h(x, xR, xL) dispatches to x.h (_CachedRange) or xR-xL (Vector).
 
-# NoExtrap / ExtendExtrap / InBounds: domain check + search + kernel.
+# NoExtrap / InBounds: domain check + search + kernel.
+# (OOB impossible: NoExtrap throws, InBounds guarantees in-domain)
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -35,6 +36,20 @@
     idx, xL, xR = search_interval(searcher, x, xi_typed)
     dL = xi - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
+end
+
+# ExtendExtrap: constant function has zero slope → extend = clamp.
+# Cannot use catch-all because kernel is side-dependent and OOB dL > h gives wrong side.
+@inline function _constant_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xi::Tq,
+        ::ExtendExtrap,
+        side::AbstractSide,
+        op::AbstractEvalOp,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real, S <: Searcher}
+    return _constant_eval_at_point(x, y, xi, ClampExtrap(), side, op, searcher)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel.

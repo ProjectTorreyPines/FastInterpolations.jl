@@ -139,6 +139,44 @@ function EnzymeRules.reverse(
 end
 
 # ════════════════════════════════════════
+# 1D Vector query — ∂/∂xq (f::Const, xq::Duplicated)
+# ════════════════════════════════════════
+
+function EnzymeRules.augmented_primal(
+        config::EnzymeRules.RevConfig,
+        func::Const{<:_InterpMethod},
+        RT::Type{<:Annotation},
+        x::Const{<:AbstractVector{Tg}},
+        f::Const{<:AbstractVector},
+        xq::Duplicated{<:AbstractVector{Tg}};
+        kwargs...
+    ) where {Tg <: AbstractFloat}
+    y = func.val(x.val, f.val, xq.val; kwargs...)
+    primal = EnzymeRules.needs_primal(config) ? y : nothing
+    shadow = EnzymeRules.needs_shadow(config) ? zero(y) : nothing
+    d = func.val(x.val, f.val, xq.val; deriv = DerivOp(1), kwargs...)
+    return EnzymeRules.AugmentedReturn(primal, shadow, (d, shadow))
+end
+
+function EnzymeRules.reverse(
+        config::EnzymeRules.RevConfig,
+        func::Const{<:_InterpMethod},
+        ::Type{RT},
+        tape,
+        x::Const{<:AbstractVector{Tg}},
+        f::Const{<:AbstractVector},
+        xq::Duplicated{<:AbstractVector{Tg}};
+        kwargs...
+    ) where {Tg <: AbstractFloat, RT}
+    d, dy = tape
+    if dy !== nothing
+        xq.dval .+= dy .* d
+        dy .= zero(eltype(dy))
+    end
+    return (nothing, nothing, nothing)
+end
+
+# ════════════════════════════════════════
 # ND SoA batch: func(grids, data, queries_soa) → Vector
 # ════════════════════════════════════════
 
@@ -314,6 +352,134 @@ function EnzymeRules.reverse(
     data_bar = adj(dret.val; deriv = EvalValue())
     _data_field(_get_shadow(itp)) .+= data_bar
     return (nothing,)
+end
+
+# ── gradient(itp, query) → NTuple{N} ──
+
+function EnzymeRules.augmented_primal(
+        config::EnzymeRules.RevConfig,
+        func::Const{typeof(FastInterpolations.gradient)},
+        RT::Type{<:Annotation},
+        itp::_DupItp{<:FastInterpolations.AbstractInterpolantND{Tg, Tv, N}},
+        query::Const{<:Tuple{Vararg{Real, N}}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    grad = FastInterpolations.gradient(itp.val, query.val; kwargs...)
+    primal = EnzymeRules.needs_primal(config) ? grad : nothing
+    shadow = EnzymeRules.needs_shadow(config) ? ntuple(_ -> zero(Tg), Val(N)) : nothing
+    adj_fn = _adjoint_func_from_itp(itp.val)
+    adj = adj_fn(itp.val.grids, (query.val,); _adjoint_kwargs_from_itp(itp.val)...)
+    return EnzymeRules.AugmentedReturn(primal, shadow, adj)
+end
+
+function EnzymeRules.reverse(
+        config::EnzymeRules.RevConfig,
+        func::Const{typeof(FastInterpolations.gradient)},
+        dret::Active,
+        tape,
+        itp::_DupItp{<:FastInterpolations.AbstractInterpolantND{Tg, Tv, N}},
+        query::Const{<:Tuple{Vararg{Real, N}}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    adj = tape
+    Δgrad = dret.val
+    shadow = _get_shadow(itp)
+    buf = _data_field(shadow)
+    for i in 1:N
+        dg_i = Δgrad[i]
+        iszero(dg_i) && continue
+        ops_i = ntuple(j -> j == i ? DerivOp(1) : EvalValue(), Val(N))
+        buf .+= adj(dg_i; deriv = ops_i)
+    end
+    return (nothing, nothing)
+end
+
+# ── hessian(itp, query) → Matrix{N×N} ──
+
+function EnzymeRules.augmented_primal(
+        config::EnzymeRules.RevConfig,
+        func::Const{typeof(FastInterpolations.hessian)},
+        RT::Type{<:Annotation},
+        itp::_DupItp{<:FastInterpolations.AbstractInterpolantND{Tg, Tv, N}},
+        query::Const{<:Tuple{Vararg{Real, N}}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    H = FastInterpolations.hessian(itp.val, query.val; kwargs...)
+    primal = EnzymeRules.needs_primal(config) ? H : nothing
+    shadow = EnzymeRules.needs_shadow(config) ? zero(H) : nothing
+    adj_fn = _adjoint_func_from_itp(itp.val)
+    adj = adj_fn(itp.val.grids, (query.val,); _adjoint_kwargs_from_itp(itp.val)...)
+    return EnzymeRules.AugmentedReturn(primal, shadow, (adj, shadow))
+end
+
+function EnzymeRules.reverse(
+        config::EnzymeRules.RevConfig,
+        func::Const{typeof(FastInterpolations.hessian)},
+        ::Type{RT},
+        tape,
+        itp::_DupItp{<:FastInterpolations.AbstractInterpolantND{Tg, Tv, N}},
+        query::Const{<:Tuple{Vararg{Real, N}}};
+        kwargs...
+    ) where {Tg, Tv, N, RT}
+    adj, ΔH = tape
+    if ΔH !== nothing
+        shadow = _get_shadow(itp)
+        buf = _data_field(shadow)
+        # Diagonal
+        for i in 1:N
+            dh_ii = ΔH[i, i]
+            iszero(dh_ii) && continue
+            ops = ntuple(j -> j == i ? DerivOp(2) : EvalValue(), Val(N))
+            buf .+= adj(dh_ii; deriv = ops)
+        end
+        # Off-diagonal (symmetry)
+        for i in 1:N, j in (i + 1):N
+            dh_ij = ΔH[i, j] + ΔH[j, i]
+            iszero(dh_ij) && continue
+            ops = ntuple(k -> (k == i || k == j) ? DerivOp(1) : EvalValue(), Val(N))
+            buf .+= adj(dh_ij; deriv = ops)
+        end
+        ΔH .= zero(eltype(ΔH))
+    end
+    return (nothing, nothing)
+end
+
+# ── laplacian(itp, query) → scalar ──
+
+function EnzymeRules.augmented_primal(
+        config::EnzymeRules.RevConfig,
+        func::Const{typeof(FastInterpolations.laplacian)},
+        RT::Type{<:Annotation},
+        itp::_DupItp{<:FastInterpolations.AbstractInterpolantND{Tg, Tv, N}},
+        query::Const{<:Tuple{Vararg{Real, N}}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    lap = FastInterpolations.laplacian(itp.val, query.val; kwargs...)
+    primal = EnzymeRules.needs_primal(config) ? lap : nothing
+    shadow = EnzymeRules.needs_shadow(config) ? zero(lap) : nothing
+    adj_fn = _adjoint_func_from_itp(itp.val)
+    adj = adj_fn(itp.val.grids, (query.val,); _adjoint_kwargs_from_itp(itp.val)...)
+    return EnzymeRules.AugmentedReturn(primal, shadow, adj)
+end
+
+function EnzymeRules.reverse(
+        config::EnzymeRules.RevConfig,
+        func::Const{typeof(FastInterpolations.laplacian)},
+        dret::Active,
+        tape,
+        itp::_DupItp{<:FastInterpolations.AbstractInterpolantND{Tg, Tv, N}},
+        query::Const{<:Tuple{Vararg{Real, N}}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    adj = tape
+    Δlap = dret.val
+    shadow = _get_shadow(itp)
+    buf = _data_field(shadow)
+    for i in 1:N
+        ops = ntuple(j -> j == i ? DerivOp(2) : EvalValue(), Val(N))
+        buf .+= adj(Δlap; deriv = ops)
+    end
+    return (nothing, nothing)
 end
 
 end # module

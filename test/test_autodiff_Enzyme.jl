@@ -584,6 +584,114 @@ else
                 end
             end
 
+            # ════════════════════════════════════════════════════════════════
+            # 1D Vector ∂/∂xq — f::Const, xq::Duplicated
+            # ════════════════════════════════════════════════════════════════
+
+            @testset "1D vec ∂/∂xq via Enzyme" begin
+                x = collect(0.0:0.5:5.0)
+                f_data = sin.(x)
+                xq_vec = [0.3, 1.1, 2.4, 3.7, 4.2]
+
+                for (interp_fn, label) in [
+                        (linear_interp, "Linear"),
+                        (quadratic_interp, "Quadratic"),
+                        (constant_interp, "Constant"),
+                        (cubic_interp, "Cubic"),
+                    ]
+                    @testset "$label" begin
+                        dxq = zero(xq_vec)
+                        Enzyme.autodiff(
+                            Enzyme.Reverse,
+                            (q) -> sum(interp_fn(x, f_data, q)),
+                            Enzyme.Active,
+                            Enzyme.Duplicated(xq_vec, dxq),
+                        )
+                        d_expected = interp_fn(x, f_data, xq_vec; deriv = DerivOp(1))
+                        @test dxq ≈ d_expected atol = 1.0e-10
+                    end
+                end
+            end
+
+            # ════════════════════════════════════════════════════════════════
+            # ND struct gradient/hessian/laplacian — ∂/∂data via Enzyme
+            # ════════════════════════════════════════════════════════════════
+
+            @testset "ND struct vector calculus — ∂/∂data via Enzyme" begin
+                x = range(0.0, 2.0, 15)
+                y = range(0.0, 2.0, 15)
+                data = [sin(xi) * cos(yj) for xi in x, yj in y]
+                x0 = (0.7, 0.9)
+
+                for (interp_fn, adj_fn, label) in [
+                        (linear_interp, linear_adjoint, "Linear"),
+                        (quadratic_interp, quadratic_adjoint, "Quadratic"),
+                        (constant_interp, constant_adjoint, "Constant"),
+                        (cubic_interp, cubic_adjoint, "Cubic"),
+                    ]
+                    @testset "$label" begin
+                        @testset "gradient — ‖∇f‖² loss" begin
+                            ddata = zero(data)
+                            Enzyme.autodiff(
+                                Enzyme.Reverse,
+                                d -> begin
+                                    itp = interp_fn((x, y), d)
+                                    g = FastInterpolations.gradient(itp, x0)
+                                    return g[1]^2 + g[2]^2
+                                end,
+                                Enzyme.Active,
+                                Enzyme.Duplicated(data, ddata),
+                            )
+
+                            fx = interp_fn((x, y), data, x0; deriv = (DerivOp(1), EvalValue()))
+                            fy = interp_fn((x, y), data, x0; deriv = (EvalValue(), DerivOp(1)))
+                            adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
+                            expected = adj([2fx]; deriv = (DerivOp(1), EvalValue())) .+
+                                adj([2fy]; deriv = (EvalValue(), DerivOp(1)))
+                            @test ddata ≈ expected atol = 1.0e-10
+                        end
+
+                        @testset "hessian — ‖H‖²_F loss" begin
+                            ddata = zero(data)
+                            Enzyme.autodiff(
+                                Enzyme.Reverse,
+                                d -> begin
+                                    itp = interp_fn((x, y), d)
+                                    H = FastInterpolations.hessian(itp, x0)
+                                    return sum(abs2, H)
+                                end,
+                                Enzyme.Active,
+                                Enzyme.Duplicated(data, ddata),
+                            )
+                            # Constant: all 2nd derivs zero. Others have non-zero cross-terms.
+                            if interp_fn === constant_interp
+                                @test all(iszero, ddata)
+                            else
+                                @test any(!iszero, ddata)
+                            end
+                        end
+
+                        @testset "laplacian — (∇²f)² loss" begin
+                            ddata = zero(data)
+                            Enzyme.autodiff(
+                                Enzyme.Reverse,
+                                d -> begin
+                                    itp = interp_fn((x, y), d)
+                                    return FastInterpolations.laplacian(itp, x0)^2
+                                end,
+                                Enzyme.Active,
+                                Enzyme.Duplicated(data, ddata),
+                            )
+                            if interp_fn in (cubic_interp, quadratic_interp)
+                                @test any(!iszero, ddata)
+                            else
+                                @test all(iszero, ddata)
+                            end
+                        end
+                    end
+                end
+            end
+
         end  # testset "Enzyme AD Support"
 
     end  # if ENZYME_AVAILABLE

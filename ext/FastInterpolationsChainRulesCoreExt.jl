@@ -223,15 +223,47 @@ function ChainRulesCore.rrule(
 end
 
 # ════════════════════════════════════════
-# All ND one-shot interpolants — data adjoint (∂/∂data)
+# All ND one-shot interpolants — unified rules
 # ════════════════════════════════════════
-# Unified rule for all 4 interpolant types, any query format (ND).
-# Delegating to *_adjoint(grids, queries) means new query protocol types
-# are supported automatically with no rrule changes.
+# Two dispatches by query type:
 #
-# ∂/∂data:   via adjoint operator (works for any Tv)
-# ∂/∂queries: NoTangent() — queries are not differentiated
+# 1. Single-point queries::Tuple{Vararg{Real,N}}
+#    ∂/∂data via adjoint + ∂/∂queries via value_gradient (1 cell search, N+1 values)
+#
+# 2. Batch queries (SoA, Vector{NTuple}, etc.)
+#    ∂/∂data via adjoint only; queries → NoTangent() (batch query-grad not supported)
 
+# Single-point: build itp once, value_gradient for efficient ∂/∂queries.
+# `deriv` extracted explicitly — constructor does not accept it; adjoint needs it.
+# ∂/∂queries only when deriv == EvalValue (higher-order query-grad not yet supported).
+function ChainRulesCore.rrule(
+        func::_InterpMethod,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries::Tuple{Vararg{Real, N}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        kwargs...
+    ) where {Tv, N}
+    eval_value = deriv isa DerivOp{0} || (deriv isa Tuple && all(d -> d isa DerivOp{0}, deriv))
+    if eval_value
+        itp = func(grids, data; kwargs...)
+        y, ds = value_gradient(itp, queries)
+    else
+        y = func(grids, data, queries; deriv = deriv, kwargs...)
+        ds = nothing
+    end
+    adj = _adjoint_func(func)(grids, queries; deriv = deriv, kwargs...)
+    function _interp_nd_scalar_pb(Δy)
+        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
+        Δu = unthunk(Δy)
+        f_bar = adj(Δu; deriv = deriv, kwargs...)
+        ∂queries = eval_value ? ntuple(i -> real(conj(Δu) * ds[i]), Val(N)) : NoTangent()
+        return NoTangent(), NoTangent(), f_bar, ∂queries
+    end
+    return y, _interp_nd_scalar_pb
+end
+
+# Batch queries: ∂/∂data only
 function ChainRulesCore.rrule(
         func::_InterpMethod,
         grids::NTuple{N, AbstractVector},
@@ -241,12 +273,12 @@ function ChainRulesCore.rrule(
     ) where {Tv, N}
     y = func(grids, data, queries; kwargs...)
     adj = _adjoint_func(func)(grids, queries; kwargs...)
-    function _interp_nd_pb(Δy)
-        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
+    function _interp_nd_batch_pb(Δy)
+        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
         f_bar = adj(unthunk(Δy); kwargs...)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
-    return y, _interp_nd_pb
+    return y, _interp_nd_batch_pb
 end
 
 # ════════════════════════════════════════

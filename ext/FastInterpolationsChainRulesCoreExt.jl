@@ -177,15 +177,52 @@ end
 # callable (which requires AbstractVector input); AbstractVector → passes through.
 # Δu .* d works for both: scalar .* scalar = scalar, vector .* vector = vector.
 #
-# ∂/∂xq: linear/quadratic/cubic (real f) compute it via deriv=DerivOp(1).
-#         constant: NoTangent() (piecewise-constant → zero derivative a.e.).
-# Complex f (cubic only): excluded from ∂/∂xq (Wirtinger calculus);
-#   Zygote source tracing handles those paths correctly.
+# linear/quadratic/constant share one unified rule (_RealInterp1D Union).
+# cubic_interp: kept separate (real/complex disambiguation via Tg constraint).
+# ∂/∂xq: linear/quadratic/cubic (real f) → Δu .* d via deriv=DerivOp(1).
+#         constant → ZeroTangent() (API convention: derivative = 0).
+#         cubic complex f → NoTangent() (Wirtinger; Zygote handles via source tracing).
 
 @inline _adj_pullback(adj, Δu::Number; kwargs...) = adj([Δu]; kwargs...)
 @inline _adj_pullback(adj, Δu; kwargs...) = adj(Δu; kwargs...)
 
+# Trait: func → adjoint constructor (compile-time dispatch, zero runtime cost)
+_adjoint_func(::typeof(linear_interp))    = linear_adjoint
+_adjoint_func(::typeof(quadratic_interp)) = quadratic_adjoint
+_adjoint_func(::typeof(constant_interp))  = constant_adjoint
+
+# Trait: xq cotangent — constant_interp derivative = 0 by API convention;
+# return ZeroTangent() (not Δu .* d which would be a Float64 zero, not the type).
+_xq_tangent(::typeof(constant_interp), _, _) = ZeroTangent()
+_xq_tangent(::Any, Δu, d)                     = Δu .* d
+
+# ── linear_interp | quadratic_interp | constant_interp ───────────────────────
+# Unified rule: Julia specializes per concrete func type in the Union,
+# so this is equivalent to 3 separate rules with no runtime overhead.
+
+const _RealInterp1D = Union{typeof(linear_interp), typeof(quadratic_interp), typeof(constant_interp)}
+
+function ChainRulesCore.rrule(
+        func::_RealInterp1D,
+        x::AbstractVector,
+        f::AbstractVector{<:Real},
+        xq::Union{Real, AbstractVector};
+        kwargs...
+    )
+    y   = func(x, f, xq; kwargs...)
+    adj = _adjoint_func(func)(x, xq; kwargs...)
+    d   = func(x, f, xq; deriv = DerivOp(1), kwargs...)
+    function _interp1d_pb(Δy)
+        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
+        Δu = unthunk(Δy)
+        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; kwargs...), _xq_tangent(func, Δu, d))
+    end
+    return y, _interp1d_pb
+end
+
 # ── cubic_interp ─────────────────────────────────────────────────────────────
+# Kept separate: x::AbstractVector{Tg} is needed to disambiguate the
+# real-f rule (∂/∂xq computed) from the complex-f rule (Wirtinger calculus).
 
 # Real f: ∂/∂f + ∂/∂xq both computed.
 function ChainRulesCore.rrule(
@@ -222,65 +259,6 @@ function ChainRulesCore.rrule(
         return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; kwargs...), NoTangent())
     end
     return y, cubic_complex_pb
-end
-
-# ── linear_interp ────────────────────────────────────────────────────────────
-
-function ChainRulesCore.rrule(
-        ::typeof(linear_interp),
-        x::AbstractVector,
-        f::AbstractVector{<:Real},
-        xq::Union{Real, AbstractVector};
-        kwargs...
-    )
-    y   = linear_interp(x, f, xq; kwargs...)
-    adj = linear_adjoint(x, xq; kwargs...)
-    d   = linear_interp(x, f, xq; deriv = DerivOp(1), kwargs...)
-    function linear_pb(Δy)
-        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
-        Δu = unthunk(Δy)
-        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; kwargs...), Δu .* d)
-    end
-    return y, linear_pb
-end
-
-# ── quadratic_interp ─────────────────────────────────────────────────────────
-
-function ChainRulesCore.rrule(
-        ::typeof(quadratic_interp),
-        x::AbstractVector,
-        f::AbstractVector{<:Real},
-        xq::Union{Real, AbstractVector};
-        kwargs...
-    )
-    y   = quadratic_interp(x, f, xq; kwargs...)
-    adj = quadratic_adjoint(x, xq; kwargs...)
-    d   = quadratic_interp(x, f, xq; deriv = DerivOp(1), kwargs...)
-    function quadratic_pb(Δy)
-        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
-        Δu = unthunk(Δy)
-        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; kwargs...), Δu .* d)
-    end
-    return y, quadratic_pb
-end
-
-# ── constant_interp ──────────────────────────────────────────────────────────
-
-function ChainRulesCore.rrule(
-        ::typeof(constant_interp),
-        x::AbstractVector,
-        f::AbstractVector{<:Real},
-        xq::Union{Real, AbstractVector};
-        kwargs...
-    )
-    y   = constant_interp(x, f, xq; kwargs...)
-    adj = constant_adjoint(x, xq; kwargs...)
-    function constant_pb(Δy)
-        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
-        Δu = unthunk(Δy)
-        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; kwargs...), ZeroTangent())
-    end
-    return y, constant_pb
 end
 
 # ════════════════════════════════════════

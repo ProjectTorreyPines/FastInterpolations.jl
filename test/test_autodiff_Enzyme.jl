@@ -416,6 +416,123 @@ else
                 end
             end
 
+            # ════════════════════════════════════════════════════════════════════════
+            # LINEAR DATA-ADJOINT (∂f/∂y) via EnzymeRules
+            # ════════════════════════════════════════════════════════════════════════
+
+            @testset "Linear data-adjoint (∂f/∂y) — Enzyme via EnzymeRules" begin
+                using ForwardDiff
+
+                x = collect(0.0:0.5:5.0)
+                f_data = 2.0 .* x .+ 1.0
+                xq_vec = [0.75, 1.25, 2.75, 3.5, 4.25]
+                y_obs = 2.0 .* xq_vec .+ 0.5
+
+                @testset "Vector query — L2 loss" begin
+                    loss_enz(y, y_obs, x, xq) = sum(abs2, linear_interp(x, y, xq) .- y_obs)
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_enz, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(y_obs), Enzyme.Const(x), Enzyme.Const(xq_vec)
+                    )
+                    g_fd = ForwardDiff.gradient(
+                        y -> sum(abs2, linear_interp(x, y, xq_vec) .- y_obs), f_data
+                    )
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+
+                @testset "Scalar query" begin
+                    loss_scalar(y, x, xq) = linear_interp(x, y, xq)
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_scalar, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(x), Enzyme.Const(1.25)
+                    )
+                    g_fd = ForwardDiff.gradient(y -> linear_interp(x, y, 1.25), f_data)
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+            end
+
+            # ════════════════════════════════════════════════════════════════════════
+            # QUADRATIC DATA-ADJOINT (∂f/∂y) via EnzymeRules
+            # ════════════════════════════════════════════════════════════════════════
+
+            @testset "Quadratic data-adjoint (∂f/∂y) — Enzyme via EnzymeRules" begin
+                using ForwardDiff
+
+                x = collect(0.0:0.5:5.0)
+                f_data = x .^ 2
+                xq_vec = [0.75, 1.25, 2.75, 3.5, 4.25]
+                y_obs = xq_vec .^ 2 .+ 0.1
+
+                @testset "Vector query — L2 loss" begin
+                    loss_enz(y, y_obs, x, xq) = sum(abs2, quadratic_interp(x, y, xq) .- y_obs)
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_enz, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(y_obs), Enzyme.Const(x), Enzyme.Const(xq_vec)
+                    )
+                    g_fd = ForwardDiff.gradient(
+                        y -> sum(abs2, quadratic_interp(x, y, xq_vec) .- y_obs), f_data
+                    )
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+
+                @testset "Scalar query" begin
+                    loss_scalar(y, x, xq) = quadratic_interp(x, y, xq)
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_scalar, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(x), Enzyme.Const(1.25)
+                    )
+                    g_fd = ForwardDiff.gradient(y -> quadratic_interp(x, y, 1.25), f_data)
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+            end
+
+            # ════════════════════════════════════════════════════════════════════════
+            # CONSTANT DATA-ADJOINT (∂f/∂y) via EnzymeRules
+            # ════════════════════════════════════════════════════════════════════════
+
+            @testset "Constant data-adjoint (∂f/∂y) — Enzyme via EnzymeRules" begin
+                using ForwardDiff
+
+                x = collect(0.0:1.0:5.0)
+                f_data = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+                xq_vec = [0.3, 0.8, 1.7, 2.5, 3.9]
+                y_obs = [5.0, 15.0, 25.0, 35.0, 45.0]
+
+                @testset "Vector query — L2 loss" begin
+                    loss_enz(y, y_obs, x, xq) = sum(abs2, constant_interp(x, y, xq) .- y_obs)
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_enz, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(y_obs), Enzyme.Const(x), Enzyme.Const(xq_vec)
+                    )
+                    g_fd = ForwardDiff.gradient(
+                        y -> sum(abs2, constant_interp(x, y, xq_vec) .- y_obs), f_data
+                    )
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+
+                @testset "Scalar query" begin
+                    loss_scalar(y, x, xq) = constant_interp(x, y, xq)
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_scalar, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(x), Enzyme.Const(1.7)
+                    )
+                    g_fd = ForwardDiff.gradient(y -> constant_interp(x, y, 1.7), f_data)
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+            end
+
         end  # testset "Enzyme AD Support"
 
     end  # if ENZYME_AVAILABLE

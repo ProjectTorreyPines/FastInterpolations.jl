@@ -112,6 +112,14 @@ Uses `@propagate_inbounds` to enable bounds-check elision in hot loops.
 @inline @Base.propagate_inbounds _get_inv_h(s::ScalarSpacing, ::Int) = s.inv_h
 @inline @Base.propagate_inbounds _get_inv_h(s::VectorSpacing, i::Int) = @inbounds s.inv_h[i]
 
+# ----------------------------------------
+# 3-arg: grid-based accessors (no spacing object needed)
+# ----------------------------------------
+# For non-uniform grids, compute from the search result endpoints.
+# _CachedRange overloads are in cached_range.jl (loaded after this file).
+@inline _get_h(::AbstractVector, xR::Real, xL::Real) = xR - xL
+@inline _get_inv_h(::AbstractVector, xR::Real, xL::Real) = inv(xR - xL)
+
 # ========================================
 # Factory Functions
 # ========================================
@@ -122,7 +130,8 @@ Uses `@propagate_inbounds` to enable bounds-check elision in hot loops.
 Create scalar spacing for uniform grids (Range inputs).
 
 Extracts the constant step size and precomputes its reciprocal.
-For `LinRange`, computes the step explicitly since it's not stored.
+Defensive fallback for non-normalized Range inputs; the primary path
+uses `_create_spacing(::_CachedRange)` in `cached_range.jl`.
 """
 function _create_spacing(x::AbstractRange{T}) where {T <: AbstractFloat}
     # step(x) already returns T for AbstractRange{T}, avoid redundant conversion
@@ -133,13 +142,9 @@ end
 
 # _create_spacing(::_CachedRange) is defined in cached_range.jl
 
-# LinRange needs special handling - step() works but we compute explicitly for clarity
-function _create_spacing(x::LinRange{T}) where {T <: AbstractFloat}
-    n_intervals = length(x) - 1
-    h = (last(x) - first(x)) / n_intervals
-    inv_h = inv(h)
-    return ScalarSpacing{T}(h, inv_h)
-end
+# LinRange specialization removed — LinRange is always normalized to _CachedRange
+# via _to_float() before reaching _create_spacing.  The AbstractRange fallback
+# above handles any non-normalized Range if needed.
 
 """
     _create_spacing(x::AbstractVector{T}) -> VectorSpacing{T}

@@ -99,11 +99,7 @@ Use concrete subtypes at the API boundary for compile-time dispatch.
 - [`FillExtrap`](@ref): Return a user-specified constant for out-of-domain queries
 - [`ExtendExtrap`](@ref): Extend interpolation polynomial beyond domain
 - [`WrapExtrap`](@ref): Wrap queries into domain (periodic)
-
-!!! warning "Union-splitting invariant"
-    Keep exactly 5 concrete subtypes. Julia's compiler union-splits up to 4 types;
-    ND heterogeneous tuples with all 5 types in one tuple may see dynamic dispatch.
-    In practice, interpolants store concrete type parameters so this rarely matters.
+- [`InBounds`](@ref): Caller guarantees in-domain; skip domain checks (advanced/internal)
 
 See also: `ConstExtrap()` (deprecated factory, forwards to `ClampExtrap()`).
 """
@@ -225,6 +221,24 @@ itp = cubic_interp((x, y), data; extrap=WrapExtrap())
 ```
 """
 struct WrapExtrap <: AbstractExtrap end
+
+"""
+    InBounds <: AbstractExtrap
+
+Caller guarantees all queries are within the interpolation domain.
+Skips domain validation for maximum performance.
+
+Used internally by vector loops after batch `_check_domain` validation
+(NoExtrap → InBounds conversion), and available to advanced users who
+have pre-validated their query points.
+
+# Example
+```julia
+# Skip domain check when you know queries are in-domain
+linear_interp(x, y, xq; extrap=InBounds())
+```
+"""
+struct InBounds <: AbstractExtrap end
 
 # ========================================
 # Typed Side Selection Tags (Constant Interpolation)

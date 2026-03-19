@@ -206,7 +206,8 @@ end
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap)
 end
 
-# ExtendExtrap - extend linear polynomial
+# ExtendExtrap - extend linear polynomial using boundary interval.
+# _get_inv_h(x, xR, xL) dispatches to x.inv_h (_CachedRange) or inv(xR-xL) (Vector).
 @inline function _eval_linear_series_point_extrap!(
         out::AbstractVector{Tv},
         y_point::Matrix{Tv},
@@ -219,17 +220,14 @@ end
         op::AbstractEvalOp,
         side::UInt8
     ) where {Tg <: AbstractFloat, Tv}
-    # Use boundary interval for extension
     idx = side == 0x01 ? 1 : (n_pts - 1)
     idx1 = idx + 1
-
     @inbounds begin
         xL = x[idx]
         xR = x[idx1]
     end
-    inv_h = inv(xR - xL)
+    inv_h = _get_inv_h(x, xR, xL)
     dL = aq.xq - xL
-
     @inbounds @simd for k in axes(out, 1)
         yL = y_point[k, idx]
         yR = y_point[k, idx1]

@@ -101,48 +101,40 @@ end
 # Extrapolation-aware Evaluation
 # ========================================
 
-# Helper: result for constant/fill extrapolation outside domain
-# For value: return boundary y (ClampExtrap) or fill value (FillExtrap)
-# For derivatives: always return zero from y_bnd (constant function has no slope/curvature)
-# Uses y_bnd (not fill value) for derivatives to avoid 0 * NaN = NaN
-#
-# 4th arg `xq` enables type promotion for mixed-precision (Float32 data + Float64 query).
-# For Number types: zero(xq)*zero(val) promotes to promote_type(typeof(val), typeof(xq)).
-# For duck types (non-Number): fallback returns raw val/0*val, since the kernel also
-# returns the same Tv when data and query share the same arithmetic type.
-# Named _promote_extrap_val (not _promote_extrap) to avoid collision with the struct
-# promoter in eval_ops.jl which promotes FillExtrap fill_value at construction time.
-# _promote_extrap_val:  promotes an extrap result value to match kernel return type.
-# _promote_extrap_zero: promotes a zero result (derivative of constant) to match kernel type.
-@inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * zero(val)
-@inline _promote_extrap_val(val, xq) = val
-@inline _promote_extrap_zero(val::Number, xq::Number) = zero(xq) * zero(val)
-@inline _promote_extrap_zero(val, xq) = 0 * val
+# Extrapolation value helpers (_eval_extrapolation, _promote_extrap_val/zero)
+# are defined in core/utils.jl — shared by all interpolation methods.
 
-@inline _constant_extrap_result(::EvalValue, y_bnd, ::ClampExtrap, xq) = _promote_extrap_val(y_bnd, xq)
-@inline _constant_extrap_result(::EvalValue, _, e::FillExtrap, xq) = _promote_extrap_val(e.fill_value, xq)
-@inline _constant_extrap_result(::EvalDeriv1, y_bnd, ::_ClampOrFill, xq) = _promote_extrap_zero(y_bnd, xq)
-@inline _constant_extrap_result(::EvalDeriv2, y_bnd, ::_ClampOrFill, xq) = _promote_extrap_zero(y_bnd, xq)
-@inline _constant_extrap_result(::EvalDeriv3, y_bnd, ::_ClampOrFill, xq) = _promote_extrap_zero(y_bnd, xq)
+# ========================================
+# Core eval: extrap dispatch → search → kernel (no intermediate layers)
+# ========================================
 
-# --- Searcher-aware versions ---
-
-"Evaluate with no extrapolation and search policy."
-@inline function _eval_cubic_with_extrap(
+# NoExtrap / ExtendExtrap / other: direct search + kernel.
+# _check_domain(::NoExtrap) throws if OOB; search_interval clamps idx for ExtendExtrap.
+@inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
         z::AbstractVector{Tv},
         xq::Tq,
-        ::NoExtrap,
+        extrap::AbstractExtrap,
         op::O,
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
+    @boundscheck _check_domain(x, xq, extrap)
+    idx, xL, xR = search_interval(searcher, x, spacing, xq)
+    dL = xq - xL
+    dR = xR - xq
+    h = _get_h(spacing, idx)
+    inv_h = _get_inv_h(spacing, idx)
+    @inbounds begin
+        zL = z[idx]; zR = z[idx + 1]
+        yL = y[idx]; yR = y[idx + 1]
+    end
+    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
-"Evaluate with constant/fill extrapolation and search policy."
-@inline function _eval_cubic_with_extrap(
+# ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
+@inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
@@ -152,29 +144,23 @@ end
         op::O,
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    # Use primal for boundary comparisons (Dual needs real value for comparison)
     xq_primal = _extract_primal(xq)
-    xq_primal < first(x) && return _constant_extrap_result(op, @inbounds(y[1]), extrap, xq)
-    xq_primal > last(x) && return _constant_extrap_result(op, @inbounds(y[end]), extrap, xq)
-    return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
+    xq_primal < first(x) && return _eval_extrapolation(op, first(y), extrap, xq)
+    xq_primal > last(x) && return _eval_extrapolation(op, last(y), extrap, xq)
+    idx, xL, xR = search_interval(searcher, x, spacing, xq)
+    dL = xq - xL
+    dR = xR - xq
+    h = _get_h(spacing, idx)
+    inv_h = _get_inv_h(spacing, idx)
+    @inbounds begin
+        zL = z[idx]; zR = z[idx + 1]
+        yL = y[idx]; yR = y[idx + 1]
+    end
+    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
-"Evaluate with extension extrapolation and search policy."
-@inline function _eval_cubic_with_extrap(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        spacing::AbstractGridSpacing{Tg},
-        z::AbstractVector{Tv},
-        xq::Tq,
-        ::ExtendExtrap,
-        op::O,
-        searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
-end
-
-"Evaluate with coordinate wrapping and search policy."
-@inline function _eval_cubic_with_extrap(
+# WrapExtrap: wrap query to domain → search + kernel.
+@inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
@@ -185,7 +171,16 @@ end
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    return _eval_cubic_at_point(x, y, spacing, z, xq_wrapped, op, searcher)
+    idx, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
+    dL = xq_wrapped - xL
+    dR = xR - xq_wrapped
+    h = _get_h(spacing, idx)
+    inv_h = _get_inv_h(spacing, idx)
+    @inbounds begin
+        zL = z[idx]; zR = z[idx + 1]
+        yL = y[idx]; yR = y[idx + 1]
+    end
+    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
 
@@ -218,7 +213,7 @@ end
         op::O,
         searcher::P
     ) where {Tg <: AbstractFloat, Tv, Tq, X, F, L <: PointBC, R <: PointBC, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
-    return _eval_cubic_with_extrap(cache.x, y, cache.spacing, z, xq, extrap, op, searcher)
+    return _eval_cubic_at_point(cache.x, y, cache.spacing, z, xq, extrap, op, searcher)
 end
 
 
@@ -237,7 +232,7 @@ end
         op::O,
         searcher::P
     ) where {Tg <: AbstractFloat, Tv, X, F, BC, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    @boundscheck _check_domain(cache.x, x_query, ev)
+    ev = _check_domain(cache.x, x_query, ev)
     return @inbounds for k in eachindex(x_query, output)
         output[k] = _eval_with_bc(cache, y, z, x_query[k], ev, op, searcher)
     end

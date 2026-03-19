@@ -6,7 +6,7 @@
 #
 # Bug: OOB path returned Float32 fill_value/y_bnd while in-domain kernel
 # promoted to Float64 via arithmetic → Union{Float32, Float64} return type.
-# Fix: _constant_extrap_result now promotes via _promote_extrap_val idiom.
+# Fix: _eval_extrapolation now promotes via _promote_extrap_val idiom.
 #
 # Note: Constant interpolation is intentionally excluded — it converts query
 # to grid type (Tg) before evaluation, so both in-domain and OOB return Tv

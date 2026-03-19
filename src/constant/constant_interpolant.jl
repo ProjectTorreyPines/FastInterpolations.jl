@@ -37,7 +37,7 @@ end
         deriv::O,
         searcher::P
     ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, SD <: AbstractSide, O <: AbstractEvalOp, P <: Searcher}
-    @boundscheck _check_domain(x, xq, extrap)
+    extrap = _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
         output[i] = _constant_eval_at_point(x, y, xq[i], extrap, side, deriv, searcher)
     end

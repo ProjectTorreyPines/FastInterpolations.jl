@@ -486,7 +486,7 @@ end
 Uses precomputed `inv_h` (multiply instead of divide) for the index calculation.
 """
 @inline function _search_direct(x::_CachedRange{T}, xq::T) where {T <: AbstractFloat}
-    idx = clamp(unsafe_trunc(Int, (xq - x.lo) * x.inv_h + 1), 1, x.len - 1)
+    idx = clamp(unsafe_trunc(Int, muladd(xq - x.lo, x.inv_h, 1)), 1, x.len - 1)
     xL = muladd(idx - 1, x.h, x.lo)
     xR = xL + x.h
     return idx, xL, xR
@@ -549,7 +549,7 @@ Uses pre-computed `inv_h` for multiplication instead of division.
     ) where {T <: AbstractFloat}
     n = length(x)
     x_min = first(x)
-    idx = clamp(unsafe_trunc(Int, (xq - x_min) * spacing.inv_h + 1), 1, n - 1)
+    idx = clamp(unsafe_trunc(Int, muladd(xq - x_min, spacing.inv_h, 1)), 1, n - 1)
     xL = muladd(idx - 1, spacing.h, x_min)
     xR = xL + spacing.h
     return idx, xL, xR

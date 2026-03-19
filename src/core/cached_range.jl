@@ -144,3 +144,8 @@ end
 function _create_spacing(x::_CachedRange{T}) where {T <: AbstractFloat}
     return ScalarSpacing{T}(x.h, x.inv_h)
 end
+
+# 3-arg grid-based accessors: _CachedRange has h/inv_h cached in the struct.
+# AbstractVector fallbacks are in grid_spacing.jl.
+@inline _get_h(x::_CachedRange, ::Real, ::Real) = x.h
+@inline _get_inv_h(x::_CachedRange, ::Real, ::Real) = x.inv_h

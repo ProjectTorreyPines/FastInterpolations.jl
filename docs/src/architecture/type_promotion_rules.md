@@ -118,8 +118,8 @@ preserve the complex structure while adapting only the float precision.
 ### Why `FillExtrap` is parametric
 
 `FillExtrap{T}` stores `fill_value::T`. The `{T}` parameter is required for **eval-path type
-stability**: `_constant_extrap_result` returns `e.fill_value` directly, and the compiler must
-know its type at compile time to avoid heap allocation. Without `{T}`, `fill_value::Any` would
+stability**: `_eval_extrapolation` returns `e.fill_value` (promoted to the kernel return type
+via `_promote_extrap_val`), and the compiler must know its type at compile time to avoid heap allocation. Without `{T}`, `fill_value::Any` would
 cause boxing on every out-of-domain query.
 
 !!! note "Historical context"

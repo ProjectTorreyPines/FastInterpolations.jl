@@ -38,7 +38,7 @@ end
         deriv::O,
         searcher::P
     ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    @boundscheck _check_domain(x, xq, extrap)
+    extrap = _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
         output[i] = _quadratic_eval_at_point(x, y, a, d, xq[i], extrap, deriv, searcher)
     end

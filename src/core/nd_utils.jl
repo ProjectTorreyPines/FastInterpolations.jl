@@ -130,7 +130,7 @@ end
 # FillExtrap result dispatch: value for EvalValue, zero for any derivative.
 # Uses `0 * zero_ref` (not `0 * fill_val`) to handle NaN fill values correctly.
 # 4th arg `qe` (query element) promotes result to kernel return type for mixed-precision.
-# Uses _promote_extrap_val/_promote_extrap_zero from cubic_eval.jl (Number dispatch).
+# Uses _promote_extrap_val/_promote_extrap_zero from core/utils.jl (Number dispatch).
 @inline _fill_extrap_result(::EvalValue, fill_val, _, qe) = _promote_extrap_val(fill_val, qe)
 @inline _fill_extrap_result(::AbstractEvalOp, _, zero_ref, qe) = _promote_extrap_zero(zero_ref, qe)
 @inline function _fill_extrap_result(ops::Tuple{Vararg{AbstractEvalOp}}, fill_val, zero_ref, qe)
@@ -855,7 +855,6 @@ Pool-aware spacing for Range grids. Delegates to `_create_spacing` since
 ScalarSpacing is already zero-allocation (two scalar values).
 """
 @inline _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractRange{T}) where {T <: AbstractFloat} = _create_spacing(x)
-@inline _create_spacing_pooled(pool::AbstractArrayPool, x::LinRange{T}) where {T <: AbstractFloat} = _create_spacing(x)
 
 """
     _create_spacing_pooled(pool, x::AbstractVector{T}) -> VectorSpacing{T}

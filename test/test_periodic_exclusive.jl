@@ -360,6 +360,7 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         y_incl = sin.(x_incl)
         y_incl[end] = y_incl[1]
         @test @inferred(cubic_interp(x_incl, y_incl; bc = PeriodicBC())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x_incl, y_incl; bc = PeriodicBC(endpoint = :exclusive))) isa CubicInterpolant
 
         # Exclusive: isa-based grid extension → construction and evaluation are type-stable
         x_excl = range(0.0, step = dx, length = N)

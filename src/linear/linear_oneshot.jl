@@ -80,12 +80,13 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_targets::AbstractVector{Tg},
-        extrap_val::AbstractExtrap,
+        extrap::AbstractExtrap,
         op::O,
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, S <: Searcher}
+    extrap = _check_domain(x, x_targets, extrap)
     @inbounds for i in eachindex(x_targets, output)
-        output[i] = linear_interp(x, y, x_targets[i], extrap_val, op, searcher)
+        output[i] = _linear_eval_at_point(x, y, x_targets[i], extrap, op, searcher)
     end
     return output
 end
@@ -121,31 +122,9 @@ end
     return output
 end
 
-# Same optimization for AbstractRange (O(1) indexing path)
-@inline function _linear_interp_loop!(
-        output::AbstractVector{Tv},
-        x::AbstractRange{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tg},
-        ::WrapExtrap,
-        op::O,
-        searcher::S
-    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, S <: Searcher}
-    x_min, x_max = first(x), last(x)
-    qmin, qmax = minimum(x_targets), maximum(x_targets)
-
-    if qmin >= x_min && qmax < x_max
-        @inbounds for i in eachindex(x_targets, output)
-            output[i] = _linear_eval_at_point(x, y, x_targets[i], ExtendExtrap(), op, searcher)
-        end
-    else
-        @inbounds for i in eachindex(x_targets, output)
-            xi_wrapped = _wrap_to_domain(x_targets[i], x_min, x_max)
-            output[i] = _linear_eval_at_point(x, y, xi_wrapped, ExtendExtrap(), op, searcher)
-        end
-    end
-    return output
-end
+# AbstractRange WrapExtrap specialization removed — identical logic to the
+# AbstractVector version above.  _CachedRange <: AbstractRange <: AbstractVector,
+# so the AbstractVector dispatch handles all Range inputs.
 
 # Specific method for AbstractRange{Tg} - resolves ambiguity with Real wrappers
 # Unified via Tv parameter
@@ -238,6 +217,13 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
 - Search uses `_extract_primal(xq)` to find interval index
 - Interpolation arithmetic uses original `xq` to propagate derivatives
 """
+# ========================================
+# Core eval: extrap dispatch → search → kernel (no intermediate layers)
+# ========================================
+# _get_inv_h(x, xR, xL) dispatches to x.inv_h (_CachedRange) or inv(xR-xL) (Vector).
+
+# NoExtrap / ExtendExtrap / other: direct search + kernel.
+# _check_domain(::NoExtrap) throws if OOB; all others are no-ops.
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -248,65 +234,12 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, xR = search_interval(searcher, x, xq)
-    # Use original xq for interpolation (preserves Dual for AD)
-    inv_h = inv(xR - xL)
-    dL = xq - xL  # xq can be Dual here
-    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], inv_h, dL)
+    dL = xq - xL  # xq can be Dual here (preserves AD)
+    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], _get_inv_h(x, xR, xL), dL)
 end
 
-
-"""
-    _linear_eval_constant_extrap(y, is_left, op, extrap, xq) -> promoted Tv
-
-Handle constant extrapolation: returns boundary/fill value for EvalValue, zero for derivatives.
-Works with any value type Tv (duck typing). The `xq` argument ensures the result type
-is promoted to match the kernel's return type for mixed-precision queries.
-"""
-@inline function _linear_eval_constant_extrap(
-        y::AbstractVector{Tv},
-        is_left::Bool,
-        op::AbstractEvalOp,
-        extrap::_ClampOrFill,
-        xq
-    ) where {Tv}
-    y_bnd = @inbounds is_left ? y[1] : y[end]
-    return _constant_extrap_result(op, y_bnd, extrap, xq)
-end
-
-"""
-    _linear_with_extrap(x, y, xq, extrap, op, searcher)
-
-Linear interpolation with extrapolation handling, op parameter, and search policy.
-Supports any value type via duck typing, plus AD via Dual types.
-
-# AD Support
-Query type `Tq` is unconstrained to support ForwardDiff.Dual:
-- Comparisons use `_extract_primal(xq)` for domain checks
-- Arithmetic uses original `xq` to preserve derivative propagation
-"""
-@inline function _linear_with_extrap(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        xq::Tq,
-        ::NoExtrap,
-        op::O,
-        searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    return _linear_eval_at_point(x, y, xq, NoExtrap(), op, searcher)
-end
-
-@inline function _linear_with_extrap(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        xq::Tq,
-        ::ExtendExtrap,
-        op::O,
-        searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    return _linear_eval_at_point(x, y, xq, ExtendExtrap(), op, searcher)
-end
-
-@inline function _linear_with_extrap(
+# ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
+@inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq,
@@ -314,19 +247,20 @@ end
         op::O,
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    x_min, x_max = first(x), last(x)
-    # Use primal for comparisons (AD types need Float comparison)
     xq_primal = _extract_primal(xq)
-    if xq_primal < x_min
-        return _linear_eval_constant_extrap(y, true, op, extrap, xq)
-    elseif xq_primal > x_max
-        return _linear_eval_constant_extrap(y, false, op, extrap, xq)
-    else
-        return _linear_eval_at_point(x, y, xq, ExtendExtrap(), op, searcher)
+    if xq_primal < first(x)
+        return _eval_extrapolation(op, first(y), extrap, xq)
+    elseif xq_primal > last(x)
+        return _eval_extrapolation(op, last(y), extrap, xq)
     end
+    idx, xL, xR = search_interval(searcher, x, xq)
+    dL = xq - xL
+    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], _get_inv_h(x, xR, xL), dL)
 end
 
-@inline function _linear_with_extrap(
+# WrapExtrap: wrap query to domain → search + kernel.
+# Pass original xq (may be Dual) to _wrap_to_domain to preserve AD derivatives.
+@inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq,
@@ -334,26 +268,10 @@ end
         op::O,
         searcher::S
     ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xi_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    return _linear_eval_at_point(x, y, xi_wrapped, ExtendExtrap(), op, searcher)
-end
-
-
-# ========================================
-# Core implementation with AbstractExtrap dispatch
-# ========================================
-
-# Core implementation with AbstractExtrap + op + searcher dispatch
-# Supports mixed types: Tg for grid, Tv for values, Tq for query (including Dual)
-@inline function linear_interp(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        xq::Tq,
-        extrap::AbstractExtrap,
-        op::O,
-        searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    return _linear_with_extrap(x, y, xq, extrap, op, searcher)
+    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
+    idx, xL, xR = search_interval(searcher, x, xq_wrapped)
+    dL = xq_wrapped - xL
+    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], _get_inv_h(x, xR, xL), dL)
 end
 
 # Public API - AbstractExtrap dispatch
@@ -373,7 +291,7 @@ end
 
     x = _to_float(x, Tg)
     searcher = _resolve_search(x, xq, search, hint)
-    return linear_interp(x, y, xq, extrap, deriv, searcher)
+    return _linear_eval_at_point(x, y, xq, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗

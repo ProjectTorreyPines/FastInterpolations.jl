@@ -56,7 +56,6 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     grid = _itp_grid(itp)
     extrap = _itp_extrap(itp)
-    @boundscheck _check_domain(grid, xq, extrap)
     T_out = promote_type(Tv, Tq)
     output = Vector{T_out}(undef, length(xq))
     searcher = _resolve_search(grid, xq, search, hint)
@@ -78,7 +77,6 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     @assert length(output) == length(xq) "output length must match xq length"
     grid = _itp_grid(itp)
     extrap = _itp_extrap(itp)
-    @boundscheck _check_domain(grid, xq, extrap)
     searcher = _resolve_search(grid, xq, search, hint)
     _itp_vector_loop!(output, itp, xq, extrap, deriv, searcher)
     return output

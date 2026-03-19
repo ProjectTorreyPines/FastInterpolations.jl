@@ -12,7 +12,7 @@
 # _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
 
 @inline function _itp_eval_scalar(itp::LinearInterpolant, xq, extrap, op, searcher)
-    return _linear_with_extrap(itp.x, itp.y, xq, extrap, op, searcher)
+    return _linear_eval_at_point(itp.x, itp.y, xq, extrap, op, searcher)
 end
 
 @inline function _itp_vector_loop!(output, itp::LinearInterpolant, xq, extrap, op, searcher)
@@ -35,9 +35,9 @@ end
         deriv::O,
         searcher::P
     ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    @boundscheck _check_domain(x, xq, extrap)
+    extrap = _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
-        output[i] = _linear_with_extrap(x, y, xq[i], extrap, deriv, searcher)
+        output[i] = _linear_eval_at_point(x, y, xq[i], extrap, deriv, searcher)
     end
 end
 

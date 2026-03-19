@@ -276,9 +276,9 @@ function ChainRulesCore.rrule(
     y   = constant_interp(x, f, xq; kwargs...)
     adj = constant_adjoint(x, xq; kwargs...)
     function constant_pb(Δy)
-        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), NoTangent())
+        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
         Δu = unthunk(Δy)
-        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; kwargs...), NoTangent())
+        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; kwargs...), ZeroTangent())
     end
     return y, constant_pb
 end

@@ -187,14 +187,14 @@ end
 @inline _adj_pullback(adj, Δu; kwargs...) = adj(Δu; kwargs...)
 
 # Trait: func → adjoint constructor (compile-time dispatch, zero runtime cost)
-_adjoint_func(::typeof(linear_interp))    = linear_adjoint
+_adjoint_func(::typeof(linear_interp)) = linear_adjoint
 _adjoint_func(::typeof(quadratic_interp)) = quadratic_adjoint
-_adjoint_func(::typeof(constant_interp))  = constant_adjoint
+_adjoint_func(::typeof(constant_interp)) = constant_adjoint
 
 # Trait: xq cotangent — constant_interp derivative = 0 by API convention;
 # return ZeroTangent() (not Δu .* d which would be a Float64 zero, not the type).
 _xq_tangent(::typeof(constant_interp), _, _) = ZeroTangent()
-_xq_tangent(::Any, Δu, d)                     = Δu .* d
+_xq_tangent(::Any, Δu, d) = Δu .* d
 
 # ── linear_interp | quadratic_interp | constant_interp ───────────────────────
 # Unified rule: Julia specializes per concrete func type in the Union,
@@ -209,9 +209,9 @@ function ChainRulesCore.rrule(
         xq::Union{Real, AbstractVector};
         kwargs...
     )
-    y   = func(x, f, xq; kwargs...)
+    y = func(x, f, xq; kwargs...)
     adj = _adjoint_func(func)(x, xq; kwargs...)
-    d   = func(x, f, xq; deriv = DerivOp(1), kwargs...)
+    d = func(x, f, xq; deriv = DerivOp(1), kwargs...)
     function _interp1d_pb(Δy)
         Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
         Δu = unthunk(Δy)
@@ -232,9 +232,9 @@ function ChainRulesCore.rrule(
         xq::Union{Real, AbstractVector};
         kwargs...
     ) where {Tg <: AbstractFloat}
-    y   = cubic_interp(x, f, xq; kwargs...)
+    y = cubic_interp(x, f, xq; kwargs...)
     adj = cubic_adjoint(x, xq; kwargs...)
-    d   = cubic_interp(x, f, xq; deriv = DerivOp(1), kwargs...)
+    d = cubic_interp(x, f, xq; deriv = DerivOp(1), kwargs...)
     function cubic_real_pb(Δy)
         Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
         Δu = unthunk(Δy)
@@ -251,7 +251,7 @@ function ChainRulesCore.rrule(
         xq::Union{Real, AbstractVector};
         kwargs...
     ) where {Tg <: AbstractFloat, Tv}
-    y   = cubic_interp(x, f, xq; kwargs...)
+    y = cubic_interp(x, f, xq; kwargs...)
     adj = cubic_adjoint(x, xq; kwargs...)
     function cubic_complex_pb(Δy)
         Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), NoTangent())
@@ -269,9 +269,19 @@ end
 #
 # All extrap modes are supported — the ND adjoint handles OOB weight zeroing
 # internally via _bake_nd_anchors.
+#
+# Unified rule: duck-typed `queries` covers all query formats.
+# cubic_interp already accepts any query-protocol type; cubic_adjoint has its own
+# dispatch tree per format (SoA Tuple, single Tuple{Real...}, AbstractVector, generic).
+# Delegating to cubic_adjoint(grids, queries) instead of pre-wrapping here means
+# new query protocol types are supported automatically with no rrule changes.
 
 """
-Reverse-mode rule for `cubic_interp(grids, data, queries; ...)` — SoA batch (ND).
+Reverse-mode rule for `cubic_interp(grids, data, queries; ...)` — any query format (ND).
+
+Accepts any query type supported by the query protocol: a single `Tuple{Vararg{Real,N}}`
+point, the SoA format `Tuple{AbstractVector,...}`, `Vector{NTuple}`, `Vector{SVector}`,
+or any other protocol-implementing type. `cubic_adjoint` dispatches per query type internally.
 
 The pullback computes `∂L/∂data = Wᵀ · ∂L/∂y` via `CubicAdjointND`.
 Grids and queries are not differentiated.
@@ -280,46 +290,19 @@ function ChainRulesCore.rrule(
         ::typeof(cubic_interp),
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
+        queries;
         kwargs...
     ) where {Tv, N}
-    y = cubic_interp(grids, data, queries; kwargs...)
+    y   = cubic_interp(grids, data, queries; kwargs...)
     adj = cubic_adjoint(grids, queries; kwargs...)
 
-    function cubic_interp_nd_soa_pullback(Δy)
+    function cubic_interp_nd_pb(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
         f_bar = adj(unthunk(Δy); kwargs...)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 
-    return y, cubic_interp_nd_soa_pullback
-end
-
-"""
-Reverse-mode rule for `cubic_interp(grids, data, query; ...)` — single point (ND).
-
-Wraps the scalar query tuple into 1-element vectors for `CubicAdjointND`,
-then unwraps the scalar cotangent for the pullback.
-"""
-function ChainRulesCore.rrule(
-        ::typeof(cubic_interp),
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{Tv, N},
-        query::Tuple{Vararg{Real, N}};
-        kwargs...
-    ) where {Tv, N}
-    y = cubic_interp(grids, data, query; kwargs...)
-
-    # Single query point → 1-element tuple (zero-alloc)
-    adj = cubic_adjoint(grids, (query,); kwargs...)
-
-    function cubic_interp_nd_scalar_pullback(Δy)
-        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        f_bar = adj(unthunk(Δy); kwargs...)
-        return NoTangent(), NoTangent(), f_bar, NoTangent()
-    end
-
-    return y, cubic_interp_nd_scalar_pullback
+    return y, cubic_interp_nd_pb
 end
 
 # ════════════════════════════════════════

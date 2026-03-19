@@ -199,13 +199,13 @@ _adjoint_func(::typeof(cubic_interp)) = cubic_adjoint
 # ∂/∂f:  via adjoint operator (works for any Tv)
 # ∂/∂xq: real.(conj.(Δu) .* d) — Wirtinger formula, correct for Real and Complex Tv
 
-const _OneShotInterp = Union{
+const _InterpMethod = Union{
     typeof(linear_interp), typeof(quadratic_interp),
     typeof(constant_interp), typeof(cubic_interp),
 }
 
 function ChainRulesCore.rrule(
-        func::_OneShotInterp,
+        func::_InterpMethod,
         x::AbstractVector,
         f::AbstractVector{Tv},
         xq::Union{Real, AbstractVector};
@@ -233,7 +233,7 @@ end
 # ∂/∂queries: NoTangent() — queries are not differentiated
 
 function ChainRulesCore.rrule(
-        func::_OneShotInterp,
+        func::_InterpMethod,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;

@@ -533,6 +533,57 @@ else
                 end
             end
 
+            # ════════════════════════════════════════════════════════════════
+            # ND struct API — ∂/∂data via constructor + eval EnzymeRules
+            # ════════════════════════════════════════════════════════════════
+
+            @testset "ND struct API — ∂/∂data via Enzyme" begin
+                x = range(0.0, 2.0, 15)
+                y = range(0.0, 2.0, 15)
+                data = [sin(xi) * cos(yj) for xi in x, yj in y]
+                x0 = (0.7, 0.9)
+
+                for (interp_fn, adj_fn, label) in [
+                        (linear_interp, linear_adjoint, "Linear"),
+                        (quadratic_interp, quadratic_adjoint, "Quadratic"),
+                        (constant_interp, constant_adjoint, "Constant"),
+                        (cubic_interp, cubic_adjoint, "Cubic"),
+                    ]
+                    @testset "$label" begin
+                        @testset "eval — ∂/∂data" begin
+                            ddata = zero(data)
+                            Enzyme.autodiff(
+                                Enzyme.Reverse,
+                                d -> interp_fn((x, y), d)(x0),
+                                Enzyme.Active,
+                                Enzyme.Duplicated(data, ddata),
+                            )
+
+                            # Cross-validate with one-shot adjoint
+                            adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
+                            expected = adj([1.0])
+                            @test ddata ≈ expected atol = 1.0e-10
+                        end
+
+                        @testset "eval — L2 loss" begin
+                            target = 0.5
+                            ddata = zero(data)
+                            val = Enzyme.autodiff(
+                                Enzyme.Reverse,
+                                d -> (interp_fn((x, y), d)(x0) - target)^2,
+                                Enzyme.Active,
+                                Enzyme.Duplicated(data, ddata),
+                            )
+
+                            y_val = interp_fn((x, y), data, x0)
+                            adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
+                            expected = adj([2.0 * (y_val - target)])
+                            @test ddata ≈ expected atol = 1.0e-10
+                        end
+                    end
+                end
+            end
+
         end  # testset "Enzyme AD Support"
 
     end  # if ENZYME_AVAILABLE

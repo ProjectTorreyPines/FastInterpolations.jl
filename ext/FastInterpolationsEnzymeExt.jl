@@ -215,4 +215,105 @@ function EnzymeRules.reverse(
     return (nothing, nothing, nothing)
 end
 
+# ════════════════════════════════════════
+# ND struct API — constructor + eval rules
+# ════════════════════════════════════════
+# Enables: itp = func(grids, data); loss(itp(query))
+#
+# Mechanism: shadow struct as communication buffer between eval and constructor.
+#   eval reverse:  data_bar = adj(dy) → stored in shadow's data-sized field
+#   ctor reverse:  data.dval .+= shadow's data-sized field
+#
+# The adjoint operator returns ∂L/∂data directly, bypassing all internal
+# transforms (tridiag solve, slope recurrence). The shadow field is just a buffer.
+
+# Trait: struct → adjoint constructor + kwargs (same as CRC ext)
+_adjoint_func_from_itp(::FastInterpolations.CubicInterpolantND) = cubic_adjoint
+_adjoint_func_from_itp(::FastInterpolations.QuadraticInterpolantND) = quadratic_adjoint
+_adjoint_func_from_itp(::FastInterpolations.LinearInterpolantND) = linear_adjoint
+_adjoint_func_from_itp(::FastInterpolations.ConstantInterpolantND) = constant_adjoint
+
+_adjoint_kwargs_from_itp(itp::FastInterpolations.CubicInterpolantND) = (bc = itp.bcs, extrap = itp.extraps)
+_adjoint_kwargs_from_itp(itp::FastInterpolations.QuadraticInterpolantND) = (bc = itp.bcs, extrap = itp.extraps)
+_adjoint_kwargs_from_itp(itp::FastInterpolations.LinearInterpolantND) = (extrap = itp.extraps,)
+_adjoint_kwargs_from_itp(itp::FastInterpolations.ConstantInterpolantND) = (side = itp.sides, extrap = itp.extraps)
+
+# Trait: data-sized mutable buffer inside shadow struct for accumulating data_bar.
+# Linear/Constant: .data is same size as input data.
+# Cubic/Quadratic: .nodal_derivs.partials is (2^N, n1, n2, ...); use first slice as buffer.
+_data_field(itp::FastInterpolations.LinearInterpolantND) = itp.data
+_data_field(itp::FastInterpolations.ConstantInterpolantND) = itp.data
+_data_field(itp::FastInterpolations.CubicInterpolantND) = selectdim(itp.nodal_derivs.partials, 1, 1)
+_data_field(itp::FastInterpolations.QuadraticInterpolantND) = selectdim(itp.nodal_derivs.partials, 1, 1)
+
+# ── Constructor: func(grids, data) → itp ──
+
+function EnzymeRules.augmented_primal(
+        config::EnzymeRules.RevConfig,
+        func::Const{<:_InterpMethod},
+        RT::Type{<:Annotation},
+        grids::Const{<:NTuple{N, AbstractVector}},
+        data::Duplicated{<:AbstractArray{<:Any, N}};
+        kwargs...
+    ) where {N}
+    itp = func.val(grids.val, data.val; kwargs...)
+    primal = EnzymeRules.needs_primal(config) ? itp : nothing
+    shadow = EnzymeRules.needs_shadow(config) ? Enzyme.make_zero(itp) : nothing
+    return EnzymeRules.AugmentedReturn(primal, shadow, shadow)
+end
+
+function EnzymeRules.reverse(
+        config::EnzymeRules.RevConfig,
+        func::Const{<:_InterpMethod},
+        ::Type{RT},
+        tape,
+        grids::Const{<:NTuple{N, AbstractVector}},
+        data::Duplicated{<:AbstractArray{<:Any, N}};
+        kwargs...
+    ) where {N, RT}
+    shadow_itp = tape
+    if shadow_itp !== nothing
+        data.dval .+= _data_field(shadow_itp)
+    end
+    return (nothing, nothing)
+end
+
+# ── Eval: itp(query) → scalar ──
+# Enzyme uses MixedDuplicated for immutable structs with mutable fields.
+# Shadow access: Duplicated → itp.dval, MixedDuplicated → itp.dval[] (Ref).
+
+const _DupItp{T} = Union{Duplicated{T}, MixedDuplicated{T}}
+
+@inline _get_shadow(itp::Duplicated) = itp.dval
+@inline _get_shadow(itp::MixedDuplicated) = itp.dval[]
+
+function EnzymeRules.augmented_primal(
+        config::EnzymeRules.RevConfig,
+        itp::_DupItp{<:FastInterpolations.AbstractInterpolantND{Tg, Tv, N}},
+        RT::Type{<:Annotation},
+        query::Const{<:Tuple{Vararg{Real, N}}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    y = itp.val(query.val; kwargs...)
+    primal = EnzymeRules.needs_primal(config) ? y : nothing
+    shadow = EnzymeRules.needs_shadow(config) ? zero(y) : nothing
+    adj_fn = _adjoint_func_from_itp(itp.val)
+    adj = adj_fn(itp.val.grids, (query.val,); _adjoint_kwargs_from_itp(itp.val)...)
+    return EnzymeRules.AugmentedReturn(primal, shadow, adj)
+end
+
+function EnzymeRules.reverse(
+        config::EnzymeRules.RevConfig,
+        itp::_DupItp{<:FastInterpolations.AbstractInterpolantND{Tg, Tv, N}},
+        dret::Active,
+        tape,
+        query::Const{<:Tuple{Vararg{Real, N}}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    adj = tape
+    data_bar = adj(dret.val; deriv = EvalValue())
+    _data_field(_get_shadow(itp)) .+= data_bar
+    return (nothing,)
+end
+
 end # module

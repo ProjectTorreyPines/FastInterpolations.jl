@@ -719,6 +719,21 @@ function NodalDerivativesND{Tv, N}(partials::Array{Tv, NP1}) where {Tv, N, NP1}
     return NodalDerivativesND{Tv, N, NP1}(partials)
 end
 
+# Array-like interface (required by Enzyme's shadow machinery)
+Base.length(nd::NodalDerivativesND) = length(nd.partials)
+Base.size(nd::NodalDerivativesND) = size(nd.partials)
+Base.ndims(::Type{<:NodalDerivativesND{Tv, N, NP1}}) where {Tv, N, NP1} = NP1
+Base.eltype(::Type{<:NodalDerivativesND{Tv}}) where {Tv} = Tv
+Base.iterate(nd::NodalDerivativesND) = iterate(nd.partials)
+Base.iterate(nd::NodalDerivativesND, state) = iterate(nd.partials, state)
+Base.getindex(nd::NodalDerivativesND, i...) = nd.partials[i...]
+Base.setindex!(nd::NodalDerivativesND, v, i...) = (nd.partials[i...] = v)
+Base.similar(nd::NodalDerivativesND) = NodalDerivativesND{eltype(nd.partials), ndims(nd.partials) - 1}(similar(nd.partials))
+Base.similar(nd::NodalDerivativesND, ::Type{T}) where {T} = NodalDerivativesND{T, ndims(nd.partials) - 1}(similar(nd.partials, T))
+Base.zero(nd::NodalDerivativesND) = NodalDerivativesND{eltype(nd.partials), ndims(nd.partials) - 1}(zero(nd.partials))
+Base.fill!(nd::NodalDerivativesND, x) = (fill!(nd.partials, x); nd)
+Base.copyto!(dst::NodalDerivativesND, src::NodalDerivativesND) = (copyto!(dst.partials, src.partials); dst)
+
 # ========================================
 # Shared ND Local Parameter Computation
 # ========================================

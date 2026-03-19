@@ -78,6 +78,21 @@ struct QuadraticAdjointND{
     anchors::Vector{_NDAdjointAnchor{Tg, N}}
     grid_size::NTuple{N, Int}
     mincurv_Cs::NTuple{N, Tg}  # Precomputed inv(Σ inv_h) per axis; only used for MinCurvFit BCs
+
+    # Inner constructor: copy() for mutation safety.
+    # copy() on immutable Range types is a no-op (zero allocation).
+    # typeof() rebinds G after copy (e.g. SubArray → Vector).
+    function QuadraticAdjointND(
+            grids::NTuple{N, AbstractVector{Tg}}, spacings::S, bcs::BP,
+            anchors::Vector{_NDAdjointAnchor{Tg, N}}, grid_size::NTuple{N, Int},
+            mincurv_Cs::NTuple{N, Tg}
+        ) where {
+            Tg <: AbstractFloat, N, S <: NTuple{N, AbstractGridSpacing{Tg}},
+            BP <: NTuple{N, AbstractBC},
+        }
+        grids_c = map(copy, grids)
+        return new{Tg, N, typeof(grids_c), S, BP}(grids_c, spacings, bcs, anchors, grid_size, mincurv_Cs)
+    end
 end
 
 # ========================================

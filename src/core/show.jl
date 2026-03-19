@@ -309,29 +309,70 @@ function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolant{Tg, Tv}) wh
     return _show_row(io, true, "BC:    ", _format_bc(itp.bc))
 end
 
-# --- CubicAdjoint ---
+# ========================================
+# Generic Adjoint Show Methods (1D)
+# ========================================
+#
+# Protocol methods that each 1D adjoint subtype implements:
+#   _adjoint_compact_summary(adj) → String  (BC/extrap/side summary for compact display)
+#   _adjoint_grid(adj)            → Union{AbstractVector, Nothing}  (grid for text/plain)
+#   _adjoint_show_detail_rows(io, adj) → nothing  (prints BC/extrap/side detail rows)
+#
+# Generic show is defined on AbstractAdjoint1D — subtypes only need the protocol methods.
 
-function Base.show(io::IO, adj::CubicAdjoint{Tg}) where {Tg}
-    n, nq = size(adj)
-    bc_name = _short_bc_name(adj.bc)
-    _show_print(io, "CubicAdjoint", :cyan; bold = true)
+# --- Protocol: compact summary ---
+_adjoint_compact_summary(adj::CubicAdjoint) = _short_bc_name(adj.bc)
+_adjoint_compact_summary(adj::LinearAdjoint) = _format_extrap(adj.extrap)
+_adjoint_compact_summary(adj::ConstantAdjoint) = _format_side(adj.side) * "/" * _format_extrap(adj.extrap)
+_adjoint_compact_summary(adj::QuadraticAdjoint) = _short_bc_name(adj.bc)
+
+# --- Protocol: grid accessor (nothing = no grid to display) ---
+_adjoint_grid(::AbstractAdjoint1D) = nothing
+_adjoint_grid(adj::CubicAdjoint) = adj.cache.x
+_adjoint_grid(adj::QuadraticAdjoint) = adj.grid
+
+# --- Protocol: detail rows for text/plain ---
+_adjoint_show_detail_rows(io::IO, adj::CubicAdjoint) =
+    _show_row(io, true, "BC:    ", _format_bc(adj.bc))
+_adjoint_show_detail_rows(io::IO, adj::LinearAdjoint) =
+    _show_row(io, true, "Extrap:", _format_extrap(adj.extrap))
+function _adjoint_show_detail_rows(io::IO, adj::ConstantAdjoint)
+    _show_row(io, false, "Side:  ", _format_side(adj.side))
+    println(io)
+    return _show_row(io, true, "Extrap:", _format_extrap(adj.extrap))
+end
+_adjoint_show_detail_rows(io::IO, adj::QuadraticAdjoint) =
+    _show_row(io, true, "BC:    ", _format_bc(adj.bc))
+
+# --- Generic compact show (AbstractAdjoint1D) ---
+function Base.show(io::IO, adj::AbstractAdjoint1D{Tg}) where {Tg}
+    n = _adjoint_output_length(adj)
+    nq = _n_queries(adj)
+    summary = _adjoint_compact_summary(adj)
+    typename = string(nameof(typeof(adj)))
+    _show_print(io, typename, :cyan; bold = true)
     _show_print(io, "{", :light_black)
     _show_print(io, string(Tg), :light_blue)
     _show_print(io, "}", :light_black)
-    return print(io, "($nq → $n pts, $bc_name)")
+    return print(io, "($nq → $n pts, $summary)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", adj::CubicAdjoint{Tg}) where {Tg}
-    _show_print(io, "CubicAdjoint", :cyan; bold = true)
+# --- Generic text/plain show (AbstractAdjoint1D) ---
+function Base.show(io::IO, ::MIME"text/plain", adj::AbstractAdjoint1D{Tg}) where {Tg}
+    typename = string(nameof(typeof(adj)))
+    _show_print(io, typename, :cyan; bold = true)
     _show_print(io, "{", :light_black)
     _show_print(io, string(Tg), :light_blue)
     _show_print(io, "}", :light_black)
     println(io)
-    _show_grid_row(io, false, adj.cache.x)
+    grid = _adjoint_grid(adj)
+    if grid !== nothing
+        _show_grid_row(io, false, grid)
+        println(io)
+    end
+    _show_row(io, false, "Query: ", "$(_n_queries(adj)) points")
     println(io)
-    _show_row(io, false, "Query: ", "$(length(adj.anchors)) points")
-    println(io)
-    return _show_row(io, true, "BC:    ", _format_bc(adj.bc))
+    return _adjoint_show_detail_rows(io, adj)
 end
 
 # Short BC name for compact display
@@ -870,34 +911,80 @@ function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolantND{Tg, T
 end
 
 # ========================================
-# CubicAdjointND Show Methods
+# Generic Adjoint Show Methods (ND)
 # ========================================
+#
+# Protocol methods that each ND adjoint subtype implements:
+#   _adjoint_compact_summary(adj) → String  (BC/extrap/side summary for compact display)
+#   _adjoint_grids(adj)           → Tuple   (grids tuple for text/plain display)
+#   _adjoint_show_detail_rows(io, adj) → nothing  (prints BC/extrap/side detail rows)
+#
+# Generic show is defined on AbstractAdjointND — subtypes only need the protocol methods.
 
-function Base.show(io::IO, adj::CubicAdjointND{Tg, N}) where {Tg, N}
-    out_size = _adjoint_output_size(adj)
-    sizes = join([string(s) for s in out_size], "×")
-    nq = length(adj.anchors)
-    bc_name = _short_bc_name_nd(adj.bcs)
-    _show_print(io, "CubicAdjointND", :cyan; bold = true)
-    _show_print(io, "{", :light_black)
-    _show_print(io, string(Tg), :light_blue)
-    _show_print(io, ", ", :light_black)
-    _show_print(io, string(N), :light_blue)
-    _show_print(io, "}", :light_black)
-    return print(io, "($nq → $sizes, $bc_name)")
+# --- Protocol: compact summary ---
+_adjoint_compact_summary(adj::CubicAdjointND) = _short_bc_name_nd(adj.bcs)
+_adjoint_compact_summary(adj::QuadraticAdjointND) = _short_bc_name_nd(adj.bcs)
+_adjoint_compact_summary(adj::LinearAdjointND) = _short_extrap_name_nd(adj.extraps)
+_adjoint_compact_summary(adj::ConstantAdjointND) =
+    _short_side_name_nd(adj.sides) * "/" * _short_extrap_name_nd(adj.extraps)
+
+# --- Protocol: grids accessor ---
+_adjoint_grids(adj::CubicAdjointND) = map(c -> c.x, adj.caches)
+_adjoint_grids(adj::LinearAdjointND) = adj.grids
+_adjoint_grids(adj::ConstantAdjointND) = adj.grids
+_adjoint_grids(adj::QuadraticAdjointND) = adj.grids
+
+# --- Protocol: detail rows for text/plain ---
+_adjoint_show_detail_rows(io::IO, adj::CubicAdjointND) =
+    _show_nd_bc_summary(io, true, adj.bcs)
+_adjoint_show_detail_rows(io::IO, adj::QuadraticAdjointND) =
+    _show_nd_bc_summary(io, true, adj.bcs)
+function _adjoint_show_detail_rows(io::IO, adj::LinearAdjointND)
+    return _show_nd_config_row(io, true, "Extrap:", adj.extraps, _format_extrap)
+end
+function _adjoint_show_detail_rows(io::IO, adj::ConstantAdjointND)
+    _show_nd_config_row(io, false, "Side:  ", adj.sides, _format_side; value_color = :magenta)
+    println(io)
+    return _show_nd_config_row(io, true, "Extrap:", adj.extraps, _format_extrap)
 end
 
-function Base.show(io::IO, ::MIME"text/plain", adj::CubicAdjointND{Tg, N}) where {Tg, N}
-    _show_print(io, "CubicAdjointND", :cyan; bold = true)
+# Compact extrap name for ND (analogous to _short_bc_name_nd / _short_side_name_nd)
+function _short_extrap_name_nd(extraps::Tuple)
+    N = length(extraps)
+    formatted = ntuple(d -> _format_extrap(extraps[d]), Val(N))
+    all_same = all(f -> f == formatted[1], formatted)
+    return all_same ? formatted[1] : join(formatted, ",")
+end
+
+# --- Generic compact show (AbstractAdjointND) ---
+function Base.show(io::IO, adj::AbstractAdjointND{Tg, N}) where {Tg, N}
+    out_size = _adjoint_output_size(adj)
+    sizes = join([string(s) for s in out_size], "×")
+    nq = _n_queries(adj)
+    summary = _adjoint_compact_summary(adj)
+    typename = string(nameof(typeof(adj)))
+    _show_print(io, typename, :cyan; bold = true)
+    _show_print(io, "{", :light_black)
+    _show_print(io, string(Tg), :light_blue)
+    _show_print(io, ", ", :light_black)
+    _show_print(io, string(N), :light_blue)
+    _show_print(io, "}", :light_black)
+    return print(io, "($nq → $sizes, $summary)")
+end
+
+# --- Generic text/plain show (AbstractAdjointND) ---
+function Base.show(io::IO, ::MIME"text/plain", adj::AbstractAdjointND{Tg, N}) where {Tg, N}
+    typename = string(nameof(typeof(adj)))
+    _show_print(io, typename, :cyan; bold = true)
     _show_print(io, "{", :light_black)
     _show_print(io, string(Tg), :light_blue)
     _show_print(io, ", ", :light_black)
     _show_print(io, string(N), :light_blue)
     _show_print(io, "}", :light_black)
     println(io)
-    _show_nd_grids_summary(io, false, map(c -> c.x, adj.caches))
+    _show_nd_grids_summary(io, false, _adjoint_grids(adj))
     println(io)
-    _show_row(io, false, "Query: ", "$(length(adj.anchors)) points")
+    _show_row(io, false, "Query: ", "$(_n_queries(adj)) points")
     println(io)
-    return _show_nd_bc_summary(io, true, adj.bcs)
+    return _adjoint_show_detail_rows(io, adj)
 end

@@ -253,15 +253,7 @@ function _build_constant_nd_adjoint(
     anchors = _bake_constant_nd_anchors(grids, spacings, queries, extraps)
     grid_size = ntuple(d -> length(grids[d]), Val(N))
 
-    # copy() for mutation safety; typeof(grids_c) rebinds G after copy (view → Vector).
-    # copy() on immutable Range types is a no-op (zero allocation).
-    grids_c = map(copy, grids)
-    return ConstantAdjointND{
-        Tg, N,
-        typeof(grids_c), typeof(spacings), typeof(extraps), typeof(sides),
-    }(
-        grids_c, spacings, extraps, sides, anchors, grid_size
-    )
+    return ConstantAdjointND(grids, spacings, extraps, sides, anchors, grid_size)
 end
 
 # Matrix materialization inherited from AbstractAdjointND (adjoint_protocol.jl)

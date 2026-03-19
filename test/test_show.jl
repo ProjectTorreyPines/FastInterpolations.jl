@@ -119,6 +119,55 @@
         @test occursin("CubicAdjoint", output)
     end
 
+    @testset "LinearAdjoint show" begin
+        x_vec = collect(range(0.0, 1.0, 20))
+        xq = [0.2, 0.5, 0.8]
+        adj = linear_adjoint(x_vec, xq)
+
+        compact_str = sprint(show, adj)
+        @test occursin("LinearAdjoint", compact_str)
+        @test occursin("Float64", compact_str)
+        @test occursin("3", compact_str)
+
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("LinearAdjoint", verbose_str)
+        @test occursin("Query:", verbose_str)
+        @test occursin("3 points", verbose_str)
+        @test occursin("Extrap:", verbose_str)
+    end
+
+    @testset "ConstantAdjoint show" begin
+        x_vec = collect(range(0.0, 1.0, 20))
+        xq = [0.2, 0.5, 0.8]
+        adj = constant_adjoint(x_vec, xq; side = LeftSide())
+
+        compact_str = sprint(show, adj)
+        @test occursin("ConstantAdjoint", compact_str)
+        @test occursin("Float64", compact_str)
+        @test occursin("Left", compact_str)
+
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("ConstantAdjoint", verbose_str)
+        @test occursin("Query:", verbose_str)
+        @test occursin("Side:", verbose_str)
+        @test occursin("Extrap:", verbose_str)
+    end
+
+    @testset "QuadraticAdjoint show" begin
+        x_vec = collect(range(0.0, 1.0, 20))
+        xq = [0.2, 0.5, 0.8]
+        adj = quadratic_adjoint(x_vec, xq)
+
+        compact_str = sprint(show, adj)
+        @test occursin("QuadraticAdjoint", compact_str)
+        @test occursin("Float64", compact_str)
+
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("QuadraticAdjoint", verbose_str)
+        @test occursin("Query:", verbose_str)
+        @test occursin("BC:", verbose_str)
+    end
+
     @testset "LinearSeriesInterpolant show" begin
         sitp = linear_interp(x, Series(y_matrix))
 
@@ -1114,5 +1163,74 @@
         output = String(take!(io_color.io))
         @test occursin("CubicAdjointND", output)
         @test occursin("Query:", output)
+    end
+
+    # ========================================
+    # Non-Cubic ND Adjoint Show Methods
+    # (generic AbstractAdjointND protocol)
+    # ========================================
+
+    @testset "LinearAdjointND show" begin
+        x1 = collect(range(0.0, 1.0, 11))
+        x2 = collect(range(0.0, 2.0, 15))
+        xq1 = [0.2, 0.5, 0.8]
+        xq2 = [0.5, 1.0, 1.5]
+        adj = linear_adjoint((x1, x2), (xq1, xq2))
+
+        compact_str = sprint(show, adj)
+        @test occursin("LinearAdjointND", compact_str)
+        @test occursin("Float64", compact_str)
+        @test occursin("2", compact_str)
+        @test occursin("3", compact_str)
+        @test occursin("11×15", compact_str)
+
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("LinearAdjointND", verbose_str)
+        @test occursin("Grids:", verbose_str)
+        @test occursin("Query:", verbose_str)
+        @test occursin("3 points", verbose_str)
+        @test occursin("Extrap:", verbose_str)
+    end
+
+    @testset "ConstantAdjointND show" begin
+        x1 = collect(range(0.0, 1.0, 11))
+        x2 = collect(range(0.0, 2.0, 15))
+        xq1 = [0.2, 0.5, 0.8]
+        xq2 = [0.5, 1.0, 1.5]
+        adj = constant_adjoint((x1, x2), (xq1, xq2); side = LeftSide())
+
+        compact_str = sprint(show, adj)
+        @test occursin("ConstantAdjointND", compact_str)
+        @test occursin("Float64", compact_str)
+        @test occursin("3", compact_str)
+        @test occursin("11×15", compact_str)
+
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("ConstantAdjointND", verbose_str)
+        @test occursin("Grids:", verbose_str)
+        @test occursin("Query:", verbose_str)
+        @test occursin("Side:", verbose_str)
+        @test occursin("Extrap:", verbose_str)
+    end
+
+    @testset "QuadraticAdjointND show" begin
+        x1 = collect(range(0.0, 1.0, 11))
+        x2 = collect(range(0.0, 2.0, 15))
+        xq1 = [0.2, 0.5, 0.8]
+        xq2 = [0.5, 1.0, 1.5]
+        adj = quadratic_adjoint((x1, x2), (xq1, xq2))
+
+        compact_str = sprint(show, adj)
+        @test occursin("QuadraticAdjointND", compact_str)
+        @test occursin("Float64", compact_str)
+        @test occursin("3", compact_str)
+        @test occursin("11×15", compact_str)
+
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("QuadraticAdjointND", verbose_str)
+        @test occursin("Grids:", verbose_str)
+        @test occursin("Query:", verbose_str)
+        @test occursin("3 points", verbose_str)
+        @test occursin("BC:", verbose_str)
     end
 end

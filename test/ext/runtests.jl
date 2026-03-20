@@ -1,5 +1,5 @@
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                    EXTENSION TESTS (AD / Symbolics)                      ║
+# ║                    EXTENSION TESTS (AD / Recipes / Symbolics)            ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
 # Entrypoint for extension tests, run in a SEPARATE CI job (clean Julia process)
@@ -24,3 +24,4 @@ include("test_autodiff_Enzyme.jl")
 include("test_autodiff_ForwardDiff.jl")
 include("test_autodiff_Zygote.jl")
 include("test_symbolics.jl")
+include("test_recipes.jl")

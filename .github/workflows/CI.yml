@@ -85,7 +85,7 @@ jobs:
 
       - uses: julia-actions/julia-buildpkg@v1
 
-      - name: Extension Tests (AD / Symbolics)
+      - name: Extension Tests (AD / Recipes / Symbolics)
         run: julia --project -e 'using Pkg; Pkg.test(; coverage=true, test_args=["ext/runtests.jl"])'
 
       - uses: julia-actions/julia-processcoverage@v1

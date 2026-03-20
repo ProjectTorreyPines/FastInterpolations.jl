@@ -75,7 +75,6 @@ else
     include("test_rcu.jl")
     include("test_nonuniform_grid.jl")
     include("test_show.jl")
-    include("test_recipes.jl")
     include("test_mutation_safety.jl")
     include("test_precision_vector_queries.jl")
 

@@ -12,19 +12,9 @@ using FastInterpolations
 using Enzyme
 using Enzyme.EnzymeRules
 
-# ════════════════════════════════════════
-# Trait dispatch — same pattern as CRC extension
-# ════════════════════════════════════════
-
-const _InterpMethod = Union{
-    typeof(linear_interp), typeof(quadratic_interp),
-    typeof(constant_interp), typeof(cubic_interp),
-}
-
-_adjoint_func(::typeof(linear_interp)) = linear_adjoint
-_adjoint_func(::typeof(quadratic_interp)) = quadratic_adjoint
-_adjoint_func(::typeof(constant_interp)) = constant_adjoint
-_adjoint_func(::typeof(cubic_interp)) = cubic_adjoint
+# AD traits imported from main module (shared with CRC extension)
+const _InterpMethod = FastInterpolations._InterpMethod
+const _adjoint_func = FastInterpolations._adjoint_func
 
 # ════════════════════════════════════════
 # 1D Vector query: func(x, f, xq_vec) → Vector
@@ -265,16 +255,8 @@ end
 # The adjoint operator returns ∂L/∂data directly, bypassing all internal
 # transforms (tridiag solve, slope recurrence). The shadow field is just a buffer.
 
-# Trait: struct → adjoint constructor + kwargs (same as CRC ext)
-_adjoint_func_from_itp(::FastInterpolations.CubicInterpolantND) = cubic_adjoint
-_adjoint_func_from_itp(::FastInterpolations.QuadraticInterpolantND) = quadratic_adjoint
-_adjoint_func_from_itp(::FastInterpolations.LinearInterpolantND) = linear_adjoint
-_adjoint_func_from_itp(::FastInterpolations.ConstantInterpolantND) = constant_adjoint
-
-_adjoint_kwargs_from_itp(itp::FastInterpolations.CubicInterpolantND) = (bc = itp.bcs, extrap = itp.extraps)
-_adjoint_kwargs_from_itp(itp::FastInterpolations.QuadraticInterpolantND) = (bc = itp.bcs, extrap = itp.extraps)
-_adjoint_kwargs_from_itp(itp::FastInterpolations.LinearInterpolantND) = (extrap = itp.extraps,)
-_adjoint_kwargs_from_itp(itp::FastInterpolations.ConstantInterpolantND) = (side = itp.sides, extrap = itp.extraps)
+const _adjoint_func_from_itp = FastInterpolations._adjoint_func_from_itp
+const _adjoint_kwargs_from_itp = FastInterpolations._adjoint_kwargs_from_itp
 
 # Trait: data-sized mutable buffer inside shadow struct for accumulating data_bar.
 # Linear/Constant: .data is same size as input data.

@@ -700,7 +700,7 @@ For N=3 (8 partials per point):
 - `partials[7, i, j, k]` = ∂²f/∂y∂z       (p=7, binary 110)
 - `partials[8, i, j, k]` = ∂³f/∂x∂y∂z     (p=8, binary 111)
 """
-struct NodalDerivativesND{Tv, N, NP1}
+struct NodalDerivativesND{Tv, N, NP1} <: AbstractArray{Tv, NP1}
     partials::Array{Tv, NP1}
 
     function NodalDerivativesND{Tv, N, NP1}(partials::Array{Tv, NP1}) where {Tv, N, NP1}
@@ -719,20 +719,12 @@ function NodalDerivativesND{Tv, N}(partials::Array{Tv, NP1}) where {Tv, N, NP1}
     return NodalDerivativesND{Tv, N, NP1}(partials)
 end
 
-# Array-like interface (required by Enzyme's shadow machinery)
-Base.length(nd::NodalDerivativesND) = length(nd.partials)
+# AbstractArray interface — size + getindex + setindex! gives everything else for free
 Base.size(nd::NodalDerivativesND) = size(nd.partials)
-Base.ndims(::Type{<:NodalDerivativesND{Tv, N, NP1}}) where {Tv, N, NP1} = NP1
-Base.eltype(::Type{<:NodalDerivativesND{Tv}}) where {Tv} = Tv
-Base.iterate(nd::NodalDerivativesND) = iterate(nd.partials)
-Base.iterate(nd::NodalDerivativesND, state) = iterate(nd.partials, state)
 Base.getindex(nd::NodalDerivativesND, i...) = nd.partials[i...]
 Base.setindex!(nd::NodalDerivativesND, v, i...) = (nd.partials[i...] = v)
 Base.similar(nd::NodalDerivativesND) = NodalDerivativesND{eltype(nd.partials), ndims(nd.partials) - 1}(similar(nd.partials))
-Base.similar(nd::NodalDerivativesND, ::Type{T}) where {T} = NodalDerivativesND{T, ndims(nd.partials) - 1}(similar(nd.partials, T))
-Base.zero(nd::NodalDerivativesND) = NodalDerivativesND{eltype(nd.partials), ndims(nd.partials) - 1}(zero(nd.partials))
-Base.fill!(nd::NodalDerivativesND, x) = (fill!(nd.partials, x); nd)
-Base.copyto!(dst::NodalDerivativesND, src::NodalDerivativesND) = (copyto!(dst.partials, src.partials); dst)
+Base.similar(nd::NodalDerivativesND, ::Type{T}, dims::Dims) where {T} = similar(nd.partials, T, dims)
 
 # ========================================
 # Shared ND Local Parameter Computation

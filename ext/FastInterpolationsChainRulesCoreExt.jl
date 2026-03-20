@@ -164,34 +164,11 @@ end
 @inline _adj_pullback(adj, Δu::Number; kwargs...) = adj([Δu]; kwargs...)
 @inline _adj_pullback(adj, Δu; kwargs...) = adj(Δu; kwargs...)
 
-# Trait: func → adjoint constructor (compile-time dispatch, zero runtime cost)
-_adjoint_func(::typeof(linear_interp)) = linear_adjoint
-_adjoint_func(::typeof(quadratic_interp)) = quadratic_adjoint
-_adjoint_func(::typeof(constant_interp)) = constant_adjoint
-_adjoint_func(::typeof(cubic_interp)) = cubic_adjoint
-
-# Trait: interpolant struct → adjoint constructor + kwargs
-_adjoint_func_from_itp(::FastInterpolations.CubicInterpolantND) = cubic_adjoint
-_adjoint_func_from_itp(::FastInterpolations.QuadraticInterpolantND) = quadratic_adjoint
-_adjoint_func_from_itp(::FastInterpolations.LinearInterpolantND) = linear_adjoint
-_adjoint_func_from_itp(::FastInterpolations.ConstantInterpolantND) = constant_adjoint
-
-_adjoint_kwargs_from_itp(itp::FastInterpolations.CubicInterpolantND) = (bc = itp.bcs, extrap = itp.extraps)
-_adjoint_kwargs_from_itp(itp::FastInterpolations.QuadraticInterpolantND) = (bc = itp.bcs, extrap = itp.extraps)
-_adjoint_kwargs_from_itp(itp::FastInterpolations.LinearInterpolantND) = (extrap = itp.extraps,)
-_adjoint_kwargs_from_itp(itp::FastInterpolations.ConstantInterpolantND) = (side = itp.sides, extrap = itp.extraps)
-
-# ── All 1D one-shot interpolants — unified rule ────────────────────────────────────────────
-# Single rule for all 4 interpolant types, any f element type Tv.
-# Julia specializes per (func, Tv) pair at compile time — no runtime overhead.
-#
-# ∂/∂f:  via adjoint operator (works for any Tv)
-# ∂/∂xq: real.(conj.(Δu) .* d) — Wirtinger formula, correct for Real and Complex Tv
-
-const _InterpMethod = Union{
-    typeof(linear_interp), typeof(quadratic_interp),
-    typeof(constant_interp), typeof(cubic_interp),
-}
+# AD traits imported from main module (shared with Enzyme extension)
+const _InterpMethod = FastInterpolations._InterpMethod
+const _adjoint_func = FastInterpolations._adjoint_func
+const _adjoint_func_from_itp = FastInterpolations._adjoint_func_from_itp
+const _adjoint_kwargs_from_itp = FastInterpolations._adjoint_kwargs_from_itp
 
 # `deriv` extracted explicitly — must not leak into adjoint or derivative computation.
 # When deriv is non-EvalValue (evaluating a derivative), query gradient requires

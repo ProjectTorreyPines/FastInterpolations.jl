@@ -1,0 +1,270 @@
+using Test
+using FastInterpolations
+
+@testset "TensorProductInterpolantND" begin
+    # ========================================
+    # Test Setup — separable functions for exact verification
+    # ========================================
+    x = range(0.0, 2π, 30)
+    y = range(0.0, π, 25)
+    z = range(0.0, 1.0, 20)
+
+    g(xi) = sin(xi)
+    h(yj) = cos(yj)
+    k(zk) = zk^2 + 1.0
+
+    data_2d = [g(xi) * h(yj) for xi in x, yj in y]
+    data_3d = [g(xi) * h(yj) * k(zk) for xi in x, yj in y, zk in z]
+
+    qx, qy, qz = 1.7, 0.8, 0.45
+
+    # ========================================
+    # 1. Homogeneous equivalence — all-cubic
+    # ========================================
+    @testset "Homogeneous: all-cubic matches CubicInterpolantND" begin
+        itp_ref = cubic_interp((x, y), data_2d)
+        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), CubicInterp()))
+
+        @test itp_tp isa TensorProductInterpolantND
+        @test itp_tp((qx, qy)) ≈ itp_ref((qx, qy)) rtol = 1.0e-12
+    end
+
+    # ========================================
+    # 2. Homogeneous equivalence — all-linear
+    # ========================================
+    @testset "Homogeneous: all-linear matches LinearInterpolantND" begin
+        itp_ref = linear_interp((x, y), data_2d)
+        itp_tp = interp_nd((x, y), data_2d; methods = (LinearInterp(), LinearInterp()))
+
+        @test itp_tp((qx, qy)) ≈ itp_ref((qx, qy)) rtol = 1.0e-12
+    end
+
+    # ========================================
+    # 3. Homogeneous equivalence — all-quadratic
+    # ========================================
+    @testset "Homogeneous: all-quadratic matches QuadraticInterpolantND" begin
+        itp_ref = quadratic_interp((x, y), data_2d)
+        itp_tp = interp_nd((x, y), data_2d; methods = (QuadraticInterp(), QuadraticInterp()))
+
+        @test itp_tp((qx, qy)) ≈ itp_ref((qx, qy)) rtol = 1.0e-12
+    end
+
+    # ========================================
+    # 4. Homogeneous equivalence — all-constant
+    # ========================================
+    @testset "Homogeneous: all-constant matches ConstantInterpolantND" begin
+        itp_ref = constant_interp((x, y), data_2d)
+        itp_tp = interp_nd((x, y), data_2d; methods = (ConstantInterp(), ConstantInterp()))
+
+        @test itp_tp((qx, qy)) ≈ itp_ref((qx, qy)) rtol = 1.0e-12
+    end
+
+    # ========================================
+    # 5. Heterogeneous: Cubic × Linear (2D)
+    # ========================================
+    @testset "Heterogeneous: Cubic × Linear on separable function" begin
+        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+
+        # For separable f(x,y) = g(x)*h(y), tensor product gives:
+        # itp(qx,qy) = cubic_interp(x,g)(qx) * linear_interp(y,h)(qy)
+        g_vals = [g(xi) for xi in x]
+        h_vals = [h(yj) for yj in y]
+        expected = cubic_interp(x, g_vals)(qx) * linear_interp(y, h_vals)(qy)
+
+        @test itp_tp((qx, qy)) ≈ expected rtol = 1.0e-12
+    end
+
+    # ========================================
+    # 6. Heterogeneous: Linear × Cubic (2D, swapped)
+    # ========================================
+    @testset "Heterogeneous: Linear × Cubic (swapped axes)" begin
+        itp_tp = interp_nd((x, y), data_2d; methods = (LinearInterp(), CubicInterp()))
+
+        g_vals = [g(xi) for xi in x]
+        h_vals = [h(yj) for yj in y]
+        expected = linear_interp(x, g_vals)(qx) * cubic_interp(y, h_vals)(qy)
+
+        @test itp_tp((qx, qy)) ≈ expected rtol = 1.0e-12
+    end
+
+    # ========================================
+    # 7. Heterogeneous: 3D Cubic × Linear × Quadratic
+    # ========================================
+    @testset "Heterogeneous: 3D Cubic × Linear × Quadratic" begin
+        itp_tp = interp_nd(
+            (x, y, z), data_3d;
+            methods = (CubicInterp(), LinearInterp(), QuadraticInterp()),
+        )
+
+        g_vals = [g(xi) for xi in x]
+        h_vals = [h(yj) for yj in y]
+        k_vals = [k(zk) for zk in z]
+        expected = cubic_interp(x, g_vals)(qx) *
+            linear_interp(y, h_vals)(qy) *
+            quadratic_interp(z, k_vals)(qz)
+
+        @test itp_tp((qx, qy, qz)) ≈ expected rtol = 1.0e-10
+    end
+
+    # ========================================
+    # 8-9. Derivatives on heterogeneous (Cubic × Linear)
+    # ========================================
+    @testset "Derivatives: ∂f/∂x on Cubic × Linear" begin
+        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+
+        g_vals = [g(xi) for xi in x]
+        h_vals = [h(yj) for yj in y]
+        # ∂f/∂x = g'(x) * h(y) via cubic derivative × linear value
+        expected = cubic_interp(x, g_vals)(qx; deriv = DerivOp(1)) *
+            linear_interp(y, h_vals)(qy)
+
+        result = itp_tp((qx, qy); deriv = (DerivOp(1), DerivOp(0)))
+        @test result ≈ expected rtol = 1.0e-10
+    end
+
+    @testset "Derivatives: ∂f/∂y on Cubic × Linear" begin
+        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+
+        g_vals = [g(xi) for xi in x]
+        h_vals = [h(yj) for yj in y]
+        # ∂f/∂y = g(x) * h'(y) via cubic value × linear derivative
+        expected = cubic_interp(x, g_vals)(qx) *
+            linear_interp(y, h_vals)(qy; deriv = DerivOp(1))
+
+        result = itp_tp((qx, qy); deriv = (DerivOp(0), DerivOp(1)))
+        @test result ≈ expected rtol = 1.0e-10
+    end
+
+    # ========================================
+    # 10. gradient() compatibility
+    # ========================================
+    @testset "gradient() on TensorProductInterpolantND" begin
+        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+
+        grad = gradient(itp_tp, (qx, qy))
+
+        dfdx = itp_tp((qx, qy); deriv = (DerivOp(1), DerivOp(0)))
+        dfdy = itp_tp((qx, qy); deriv = (DerivOp(0), DerivOp(1)))
+
+        @test grad[1] ≈ dfdx rtol = 1.0e-12
+        @test grad[2] ≈ dfdy rtol = 1.0e-12
+    end
+
+    # ========================================
+    # 11. Extrapolation per axis
+    # ========================================
+    @testset "Per-axis extrapolation" begin
+        itp_clamp_noextrap = interp_nd(
+            (x, y), data_2d;
+            methods = (CubicInterp(), LinearInterp()),
+            extrap = (ClampExtrap(), NoExtrap()),
+        )
+
+        # OOB on axis 1 → clamps (no error)
+        @test itp_clamp_noextrap((-1.0, qy)) isa Float64
+
+        # OOB on axis 2 → throws (NoExtrap)
+        @test_throws Exception itp_clamp_noextrap((qx, -1.0))
+    end
+
+    # ========================================
+    # 12. Minimum grid size validation
+    # ========================================
+    @testset "Grid size validation" begin
+        tiny_grid = range(0.0, 1.0, 2)
+        tiny_data = [1.0, 2.0]
+
+        # Cubic needs ≥4 points
+        @test_throws ArgumentError interp_nd(
+            (tiny_grid,), reshape(tiny_data, 2);
+            methods = (CubicInterp(),),
+        )
+
+        # Linear needs ≥2 points — should work
+        itp = interp_nd((tiny_grid,), reshape(tiny_data, 2); methods = (LinearInterp(),))
+        @test itp((0.5,)) isa Float64
+    end
+
+    # ========================================
+    # 13. Vararg callable
+    # ========================================
+    @testset "Vararg callable form" begin
+        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+
+        # itp(qx, qy) == itp((qx, qy))
+        @test itp_tp(qx, qy) ≈ itp_tp((qx, qy)) rtol = 1.0e-15
+    end
+
+    # ========================================
+    # 14. Show method
+    # ========================================
+    @testset "Show method" begin
+        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+        str = sprint(show, itp_tp)
+        @test occursin("TensorProductInterpolantND", str)
+        @test occursin("Cubic", str)
+        @test occursin("Linear", str)
+    end
+
+    # ========================================
+    # 15-17. Analytic Exactness Tests
+    # ========================================
+    # Cubic reproduces ≤3rd-order polynomials exactly,
+    # Linear reproduces ≤1st-order exactly,
+    # Quadratic reproduces ≤2nd-order exactly.
+    # For separable f(x,y) = pₘ(x) * pₙ(y), the tensor product
+    # must be exact when each axis method matches its polynomial degree.
+
+    @testset "Exactness: Cubic × Linear on p3(x) * p1(y)" begin
+        p3(xi) = 2xi^3 - 3xi^2 + xi - 1
+        p1(yj) = 4yj + 7
+        dp3(xi) = 6xi^2 - 6xi + 1
+
+        xg = range(-1.0, 3.0, 20)
+        yg = range(0.0, 5.0, 15)
+        data_exact = [p3(xi) * p1(yj) for xi in xg, yj in yg]
+        itp_e = interp_nd((xg, yg), data_exact; methods = (CubicInterp(), LinearInterp()))
+
+        for qxi in range(-0.9, 2.9, 15), qyj in range(0.1, 4.9, 15)
+            @test itp_e((qxi, qyj)) ≈ p3(qxi) * p1(qyj) atol = 1.0e-10
+            @test itp_e((qxi, qyj); deriv = (DerivOp(1), DerivOp(0))) ≈
+                dp3(qxi) * p1(qyj) atol = 1.0e-8
+            @test itp_e((qxi, qyj); deriv = (DerivOp(0), DerivOp(1))) ≈
+                p3(qxi) * 4.0 atol = 1.0e-10
+        end
+    end
+
+    @testset "Exactness: Linear × Cubic on p1(x) * p3(y)" begin
+        p1(xi) = 3xi + 2
+        p3(yj) = yj^3 - 2yj^2 + yj
+
+        xg = range(-1.0, 3.0, 20)
+        yg = range(0.0, 5.0, 15)
+        data_exact = [p1(xi) * p3(yj) for xi in xg, yj in yg]
+        itp_e = interp_nd((xg, yg), data_exact; methods = (LinearInterp(), CubicInterp()))
+
+        for qxi in range(-0.9, 2.9, 12), qyj in range(0.1, 4.9, 12)
+            @test itp_e((qxi, qyj)) ≈ p1(qxi) * p3(qyj) atol = 1.0e-10
+        end
+    end
+
+    @testset "Exactness: 3D Cubic × Linear × Quadratic" begin
+        p3(xi) = xi^3 - xi
+        p1(yj) = 2yj + 1
+        p2(zk) = zk^2 - zk
+        f3d(xi, yj, zk) = p3(xi) * p1(yj) * p2(zk)
+
+        xg = range(-1.0, 3.0, 20)
+        yg = range(0.0, 5.0, 15)
+        zg = range(0.0, 2.0, 12)
+        data_3d_exact = [f3d(xi, yj, zk) for xi in xg, yj in yg, zk in zg]
+        itp_e = interp_nd(
+            (xg, yg, zg), data_3d_exact;
+            methods = (CubicInterp(), LinearInterp(), QuadraticInterp()),
+        )
+
+        for qxi in range(-0.5, 2.5, 8), qyj in range(0.5, 4.5, 8), qzk in range(0.1, 1.9, 8)
+            @test itp_e((qxi, qyj, qzk)) ≈ f3d(qxi, qyj, qzk) atol = 1.0e-8
+        end
+    end
+end

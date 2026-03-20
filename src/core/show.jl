@@ -988,3 +988,42 @@ function Base.show(io::IO, ::MIME"text/plain", adj::AbstractAdjointND{Tg, N}) wh
     println(io)
     return _adjoint_show_detail_rows(io, adj)
 end
+
+# ========================================
+# TensorProductInterpolantND Show Methods
+# ========================================
+
+_short_method_name(::CubicInterp) = "Cubic"
+_short_method_name(::LinearInterp) = "Linear"
+_short_method_name(::QuadraticInterp) = "Quadratic"
+_short_method_name(::ConstantInterp) = "Constant"
+
+function Base.show(io::IO, itp::TensorProductInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
+    sizes = join([string(length(g)) for g in itp.grids], "×")
+    meths = join([_short_method_name(m) for m in itp.methods], ", ")
+    _show_type_header_nd(io, "TensorProductInterpolantND", Tg, Tv, N)
+    return print(io, " ($sizes) [$meths]")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", itp::TensorProductInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
+    _show_type_header_nd(io, "TensorProductInterpolantND", Tg, Tv, N)
+    println(io)
+
+    # Grid info
+    _show_nd_grids_summary(io, false, itp.grids)
+    println(io)
+
+    # Per-axis methods
+    for d in 1:N
+        is_last = d == N
+        prefix = is_last ? " └─ " : " ├─ "
+        _show_print(io, prefix, :light_black)
+        print(io, "Axis $d: $(_short_method_name(itp.methods[d]))")
+        extrap_d = itp.extraps[d]
+        if !(extrap_d isa NoExtrap)
+            print(io, " ")
+            _show_print(io, string(nameof(typeof(extrap_d))), :magenta)
+        end
+        d < N && println(io)
+    end
+end

@@ -35,7 +35,7 @@ end
 @inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg <: AbstractFloat}
     xi_primal = _extract_primal(xi)
     # Fast path: already in domain, return original xi (preserves Dual type for AD)
-    if xi_primal >= x_min && xi_primal < x_max
+    if xi_primal >= x_min   && xi_primal < x_max
         return xi
     end
     # Slow path: outside domain, wrap using mod (preserves Dual type for AD)

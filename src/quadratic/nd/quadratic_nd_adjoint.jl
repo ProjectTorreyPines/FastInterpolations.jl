@@ -372,11 +372,5 @@ function _build_nd_quadratic_adjoint(
     # Precompute per-axis MinCurvFit constants (dispatch-based, no runtime isa check)
     mincurv_Cs = map(_mincurv_C_for_bc, bcs, spacings, grid_size)
 
-    # copy() for mutation safety; typeof(grids_c) rebinds G after copy (view → Vector).
-    grids_c = map(copy, grids)
-
-    return QuadraticAdjointND{
-        Tg, N,
-        typeof(grids_c), typeof(spacings), typeof(bcs),
-    }(grids_c, spacings, bcs, anchors, grid_size, mincurv_Cs)
+    return QuadraticAdjointND(grids, spacings, bcs, anchors, grid_size, mincurv_Cs)
 end

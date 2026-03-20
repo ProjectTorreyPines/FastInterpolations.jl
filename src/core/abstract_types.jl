@@ -133,6 +133,8 @@ gradient(itp, (0.5, 0.5))          # (∂f/∂x, ∂f/∂y)
 """
 abstract type AbstractInterpolantND{Tg <: AbstractFloat, Tv, N} <: AbstractInterpolant{Tg, Tv} end
 
+Base.size(itp::AbstractInterpolantND) = map(length, itp.grids)
+
 """
     AbstractAdjoint{Tg<:AbstractFloat}
 

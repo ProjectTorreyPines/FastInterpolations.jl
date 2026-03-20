@@ -58,6 +58,20 @@ struct ConstantAdjointND{
     sides::SD
     anchors::Vector{NTuple{N, _ConstantAnchoredQuery{Tg}}}
     grid_size::NTuple{N, Int}
+
+    # Inner constructor: copy() for mutation safety.
+    # copy() on immutable Range types is a no-op (zero allocation).
+    # typeof() rebinds G after copy (e.g. SubArray → Vector).
+    function ConstantAdjointND(
+            grids::NTuple{N, AbstractVector{Tg}}, spacings::S, extraps::EP, sides::SD,
+            anchors::Vector{NTuple{N, _ConstantAnchoredQuery{Tg}}}, grid_size::NTuple{N, Int}
+        ) where {
+            Tg <: AbstractFloat, N, S <: NTuple{N, AbstractGridSpacing{Tg}},
+            EP <: Tuple{Vararg{AbstractExtrap, N}}, SD <: Tuple{Vararg{AbstractSide, N}},
+        }
+        grids_c = map(copy, grids)
+        return new{Tg, N, typeof(grids_c), S, EP, SD}(grids_c, spacings, extraps, sides, anchors, grid_size)
+    end
 end
 
 # ========================================

@@ -700,7 +700,7 @@ For N=3 (8 partials per point):
 - `partials[7, i, j, k]` = ∂²f/∂y∂z       (p=7, binary 110)
 - `partials[8, i, j, k]` = ∂³f/∂x∂y∂z     (p=8, binary 111)
 """
-struct NodalDerivativesND{Tv, N, NP1}
+struct NodalDerivativesND{Tv, N, NP1} <: AbstractArray{Tv, NP1}
     partials::Array{Tv, NP1}
 
     function NodalDerivativesND{Tv, N, NP1}(partials::Array{Tv, NP1}) where {Tv, N, NP1}
@@ -718,6 +718,13 @@ end
 function NodalDerivativesND{Tv, N}(partials::Array{Tv, NP1}) where {Tv, N, NP1}
     return NodalDerivativesND{Tv, N, NP1}(partials)
 end
+
+# AbstractArray interface — size + getindex + setindex! gives everything else for free
+Base.size(nd::NodalDerivativesND) = size(nd.partials)
+Base.getindex(nd::NodalDerivativesND, i...) = nd.partials[i...]
+Base.setindex!(nd::NodalDerivativesND, v, i...) = (nd.partials[i...] = v)
+Base.similar(nd::NodalDerivativesND) = NodalDerivativesND{eltype(nd.partials), ndims(nd.partials) - 1}(similar(nd.partials))
+Base.similar(nd::NodalDerivativesND, ::Type{T}, dims::Dims) where {T} = similar(nd.partials, T, dims)
 
 # ========================================
 # Shared ND Local Parameter Computation

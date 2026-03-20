@@ -108,6 +108,6 @@ hessian!(H, itp, (0.5, 1.0, 0.3))
 ## See Also
 
 - **[1D Derivatives](../interpolation/derivatives.md)** — 1D derivative reference
-- **[AD Support (ND)](../guides/autodiff_nd.md)** — ForwardDiff / Zygote integration
+- **[AD Support (ND)](../guides/autodiff_nd.md)** — ForwardDiff / Zygote / Enzyme integration
 - **[Optimization](../guides/optimization.md)** - Seamless Optimization with Optim.jl
 - **[Overview](overview.md)** — ND API introduction

@@ -14,11 +14,11 @@ Interpolation is a **linear operation** on data values: the output is a weighted
 | **Forward** (gather) | `y_interp = A * y_data` | Weighted sum of nearby data → interpolated value |
 | **Adjoint** (scatter) | `∇y_data = Aᵀ * δ` | Distribute residuals back to data nodes |
 
-!!! tip "Zygote & Enzyme support for cubic splines (1D and ND)"
-    `cubic_interp(x, y, xq; ...)` and `cubic_interp(grids, data, queries; ...)` provide
-    analytical adjoint rules via [`CubicAdjoint`](@ref) / [`CubicAdjointND`](@ref),
-    so **Zygote** and **Enzyme** can differentiate `∂f/∂y` for cubic splines without
-    tracing through the tridiagonal solve. See [Backend Support](@ref) below for details.
+!!! tip "Zygote & Enzyme support for all interpolant types (1D and ND)"
+    All four one-shot functions (`constant_interp`, `linear_interp`, `quadratic_interp`,
+    `cubic_interp`) provide analytical adjoint rules via their respective native adjoint
+    operators, so **Zygote** and **Enzyme** can differentiate `∂f/∂y` without tracing
+    through internal solves. See [Backend Support](@ref) below for details.
 
 ## Quick Start
 
@@ -105,18 +105,11 @@ This gradient tells you how to adjust each data point to reduce the loss — the
 
 ## Performance
 
-`ForwardDiff` processes `y` in chunks (default chunk size = 8), reusing the existing optimized interpolation code paths. Because `FastInterpolations` is highly optimized for forward evaluation, the Dual number overhead remains modest.
+**ForwardDiff** processes `y` in chunks (default chunk size = 8), reusing the existing optimized interpolation code paths. Because `FastInterpolations` is highly optimized for forward evaluation, the Dual number overhead remains modest.
 
-Representative timings (Apple M1 Pro, single query `∂f/∂y`, Julia 1.12):
+**Zygote and Enzyme** use the native adjoint operators (e.g., `CubicAdjoint`, `LinearAdjoint`) internally — no Dual number chunking, no source transformation. This makes reverse-mode AD via Zygote/Enzyme significantly faster than ForwardDiff for large data vectors, since the adjoint apply is $O(n + m)$ regardless of data size (compared to ForwardDiff's $O(n/8)$ chunk passes through the full construction path).
 
-| N (grid points) | linear | cubic |
-|:---:|:---:|:---:|
-| 11 | 0.4 μs | 0.6 μs |
-| 51 | 1.4 μs | 4.6 μs |
-| 201 | 10 μs | 67 μs |
-| 1001 | 203 μs | 1.7 ms |
-
-Cubic is slower per chunk because each chunk re-runs the tridiagonal forward/backward substitution with Dual-valued data. The LU structure (grid spacing, cache) is reused, but the solve itself must execute for each chunk of Dual numbers.
+For **cubic** and **quadratic** splines, ForwardDiff is slower per chunk because each chunk re-runs the tridiagonal or slope solve with Dual-valued data. For **linear** and **constant** splines, the forward pass is simpler, so ForwardDiff overhead is lower.
 
 ## Backend Support
 
@@ -126,18 +119,16 @@ calling `gradient(itp, xq)` then gives `∂f/∂xq` (coordinate sensitivity), no
 To differentiate with respect to data, the AD backend must see `y` as a live variable, which means
 it must trace through the entire construction path: `f(y) = cubic_interp(x, y, xq)`.
 
-This construction path includes in-place array mutations (tridiagonal solve for cubic/quadratic,
-slope recurrence for quadratic), which limits backend compatibility:
+All four interpolant types now have registered analytical adjoint rules for both Zygote and Enzyme,
+so the AD backend never traces through internal solves — it uses the native adjoint operator directly:
 
-| Backend | constant | linear | quadratic | cubic (1D) | cubic (ND) |
-|---------|:--------:|:------:|:---------:|:----------:|:----------:|
-| **ForwardDiff** | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) | ✅ |
-| **Zygote** | ✅ | ✅ | ❌¹ | ✅² | ✅² |
-| **Enzyme** | ❌³ | ❌³ | ❌³ | ✅² | ✅² |
+| Backend | constant | linear | quadratic | cubic |
+|---------|:--------:|:------:|:---------:|:-----:|
+| **ForwardDiff** | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) |
+| **Zygote** | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) |
+| **Enzyme** | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) |
 
-¹ Quadratic one-shot mutates arrays during the spline solve, which Zygote's source-to-source transformation cannot differentiate through.
-² Cubic uses an analytical adjoint via [`CubicAdjoint`](@ref) / [`CubicAdjointND`](@ref) — the AD backend never traces through the tridiagonal solve.
-³ Enzyme encounters LLVM codegen errors on the one-shot construction path.
+All Zygote/Enzyme rules use the respective native adjoint operator ([`ConstantAdjoint`](@ref), [`LinearAdjoint`](@ref), [`QuadraticAdjoint`](@ref), [`CubicAdjoint`](@ref) and their ND counterparts) — the AD backend never traces through internal array mutations.
 
 ## How It Works
 
@@ -148,11 +139,12 @@ slope recurrence for quadratic), which limits backend compatibility:
 | | `∂f/∂xq` (coordinate) | `∂f/∂y` (data) |
 |---|---|---|
 | **Use for** | Position optimization, sensitivity | Inverse problems, data fitting |
-| **Fastest method** | `deriv` keyword (analytical) | Cubic: `CubicAdjoint`; others: `ForwardDiff` |
+| **Fastest method** | `deriv` keyword (analytical) | Native adjoint operator (all types) |
 | **Docs** | [1D](autodiff_support.md), [ND](autodiff_nd.md) | This page |
 
 ## See Also
 
 - **[Adjoint Operators](../adjoint/overview.md)**: Conceptual overview — what adjoints are, where they appear, and the mathematical formulation
+- **[Adjoint API Reference](../api/adjoint.md)**: Native adjoint operators for all four interpolant types
 - **[Cubic Adjoint (1D)](../adjoint/cubic_1d_adjoint.md)**: Native `CubicAdjoint` API for zero-allocation, matrix-free adjoint computation
 - **[Cubic Adjoint (ND)](../adjoint/cubic_nd_adjoint.md)**: Native `CubicAdjointND` API for N-dimensional adjoint computation

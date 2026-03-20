@@ -20,15 +20,22 @@ if !isempty(ARGS)
 else
     # Default behavior: run all tests
     include("test_aqua.jl")
+    include("test_abstract_types.jl")
     include("test_grid_spacing.jl")
     include("test_search.jl")
+    include("test_search_anchor_integration.jl")
+    include("test_search_context_normalization.jl")
     include("test_factory.jl")
     include("test_constant.jl")
     include("test_constextrap_fill.jl")
     include("test_complex_constant.jl")
+    include("test_inbounds_extrap.jl")
     include("test_linear.jl")
+    include("test_complex_linear.jl")
     include("test_quadratic.jl")
+    include("test_complex_quadratic.jl")
     include("test_cubic.jl")
+    include("test_complex_cubic.jl")
     include("test_cubic_autocache.jl")
     include("test_cubic_interpolant.jl")
     include("test_cubic_anchor.jl")
@@ -49,6 +56,7 @@ else
     include("test_complex_cubic_series.jl")
     include("test_series_range_grid.jl")
     include("test_series_wrapper.jl")
+    include("test_series_matrix.jl")
     include("test_series_utils.jl")
     include("test_allocation.jl")
     include("test_random_grid.jl")
@@ -67,8 +75,8 @@ else
     include("test_rcu.jl")
     include("test_nonuniform_grid.jl")
     include("test_show.jl")
-    include("test_recipes.jl")
     include("test_mutation_safety.jl")
+    include("test_precision_vector_queries.jl")
 
     # ND Interpolation
     include("test_nd_utils_shared.jl")  # Shared ND utilities (phase 1)
@@ -111,18 +119,13 @@ else
     include("test_cumulative_integrate.jl")
 
     # ── Extension tests (AD / Symbolics) ──────────────────────────────
-    # Heavy package loads (~5 min compile). Always in CI, skip locally by default.
-    # Run individually via ARGS: Pkg.test(test_args=["test_autodiff_Zygote.jl"])
-    # NOTE: Enzyme MUST run before Zygote. Zygote loads ChainRulesCore, which
-    # triggers FastInterpolationsChainRulesCoreExt (rrule fallback). Enzyme then
-    # silently uses the rrule instead of our custom EnzymeRules, leaving the
-    # Enzyme extension with 0% body coverage.
-    if get(ENV, "CI", nothing) !== nothing
-        include("test_autodiff_Enzyme.jl")
-        include("test_autodiff_ForwardDiff.jl")
-        include("test_autodiff_Zygote.jl")
-        include("test_symbolics.jl")
-    else
-        @info "Skipping extension tests (run in CI, or use cc-julia-test-runner for individual files)"
+    # In CI, extensions run in a SEPARATE job (clean Julia process) to prevent
+    # ChainRulesCore contamination from Interpolations.jl (test_packages_comparison).
+    # See test/ext/runtests.jl for the extension entrypoint.
+    # Locally, run via: cc-julia-test-runner . ext/runtests.jl
+    if get(ENV, "CI", nothing) !== nothing && get(ENV, "SKIP_EXTENSIONS", nothing) === nothing
+        include("ext/runtests.jl")
+    elseif get(ENV, "CI", nothing) === nothing
+        @info "Skipping extension tests (run via: cc-julia-test-runner . ext/runtests.jl)"
     end
 end

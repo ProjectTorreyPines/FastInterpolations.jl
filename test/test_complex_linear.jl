@@ -324,9 +324,9 @@ using FastInterpolations
             result = itp(0.5)  # 0.5 is Float64
             @test result isa Float64  # wider type wins
 
-            # 3-arg oneshot scalar - still uses internal Tv
+            # 3-arg oneshot scalar - Float64 query promotes output
             result_oneshot = linear_interp(x32, y32, 0.5)
-            @test result_oneshot isa Float32  # oneshot uses internal Tv
+            @test result_oneshot isa Float64  # wider type wins, same as callable
 
             # Vector query with Float64 elements → Float64 output
             xq = [0.25, 0.5, 0.75]  # Vector{Float64}

@@ -1,6 +1,6 @@
 # AD Support for N-Dimensional Interpolants
 
-This page covers automatic differentiation for `CubicInterpolantND` (2D, 3D, and higher dimensions).
+This page covers automatic differentiation for all ND interpolant types (`CubicInterpolantND`, `QuadraticInterpolantND`, `LinearInterpolantND`, `ConstantInterpolantND`) in 2D, 3D, and higher dimensions.
 
 For 1D interpolants, see [Automatic Differentiation Support](autodiff_support.md).
 
@@ -14,10 +14,11 @@ For 1D interpolants, see [Automatic Differentiation Support](autodiff_support.md
     FastInterpolations.hessian(itp, pt)        # Hessian matrix
     ```
 
-    AD (ForwardDiff, Zygote) is useful for:
+    AD (ForwardDiff, Zygote, Enzyme) is useful for:
     - **Adjoint computation** (`df/dy`): differentiating w.r.t. *data values*, not query points.
-      See [`CubicAdjointND`](@ref) for the native matrix-free adjoint operator, or use
-      Zygote/Enzyme which call it internally via registered AD rules.
+      Native adjoint operators are available for all four interpolant types — see
+      [Adjoint Operators](../adjoint/overview.md). Zygote and Enzyme use them internally
+      via registered AD rules.
     - **Composite pipelines**: when the interpolant is embedded inside a larger differentiable function.
 
     For query-coordinate derivatives, the built-in analytical functions are the recommended approach.
@@ -147,7 +148,9 @@ nothing  # hide
 
 ## Zygote Integration
 
-Zygote requires `ChainRulesCore` for efficient differentiation:
+Zygote uses ChainRulesCore for efficient differentiation. Registered `rrule`s are provided
+for all four ND interpolant types — eval, `gradient`, `hessian`, `laplacian`, and
+`value_gradient` — with both `∂/∂query` and `∂/∂data` support:
 
 ```julia
 using Zygote
@@ -236,11 +239,9 @@ For a complete real-world example using `gradient!`/`hessian!` with Optim.jl (in
 FDM vs AD vs analytical comparison on the Rosenbrock function), see the
 [**Optimization with Optim.jl**](@ref optimization_guide) guide.
 
-## Implementation Notes
+## See Also
 
-For detailed implementation information including:
-- Type signature changes for AD compatibility
-- ChainRulesCore frule/rrule implementation
-- Performance analysis details
-
-See the design document: `docs/design/nd_cubic_autodiff_support.md`
+- [AD Support (1D)](autodiff_support.md) — ForwardDiff, Zygote, Enzyme backend details for 1D
+- [Adjoint via AD (∂f/∂y)](adjoint_ad.md) — Data sensitivity via AD backends
+- [Adjoint Operators](../adjoint/overview.md) — Native matrix-free adjoint operators for all types
+- [Optimization with Optim.jl](optimization.md) — Using AD and analytical derivatives with Optim.jl

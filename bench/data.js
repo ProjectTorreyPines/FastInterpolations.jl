@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1773884715613,
+  "lastUpdate": 1774027537226,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -32710,6 +32710,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1640.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d55653ee24dc4a5291dfaa49f281b9879d4ac57d",
+          "message": "(feat): Full Zygote/Enzyme Support for All Interpolant Types (#89)\n\n* (refac): move ND adjoint grid copy into inner constructors + generalize show methods\n\nND adjoint types (Constant/Linear/QuadraticAdjointND) previously copied grids\nat the call site with an explicit type application:\n  grids_c = map(copy, grids)\n  return XxxAdjointND{Tg, N, typeof(grids_c), ...}(grids_c, ...)\n\nThis is moved into inner constructors matching the pattern used by all 1D types\nand ND interpolants — mutation safety is now enforced regardless of construction path.\n\nAlso generalizes 1D and ND adjoint show methods onto AbstractAdjoint1D/ND via a\nsmall protocol (compact_summary / grid / detail_rows), replacing the previous\nconcrete CubicAdjoint/CubicAdjointND-specific implementations. All four 1D adjoint\ntypes and all four ND adjoint types now get show coverage automatically.\n\n* (test): add missing test files to runtests.jl + adjoint show coverage\n\nruntests.jl:\n- test_abstract_types.jl        — abstract type hierarchy checks\n- test_inbounds_extrap.jl       — InBounds() extrap type (added in PR 88, was missing)\n- test_complex_linear/quadratic/cubic.jl — single-interpolant complex Tg/Tv separation\n- test_search_anchor_integration.jl     — anchor/search integration paths\n- test_search_context_normalization.jl  — _resolve_searcher_for_grid normalization\n- test_series_matrix.jl                 — LazyTranspose infrastructure\n- test_precision_vector_queries.jl      — Float32 grid + Float64 query precision regression\n\ntest_show.jl:\n- LinearAdjoint, ConstantAdjoint, QuadraticAdjoint (1D) show tests\n- LinearAdjointND, ConstantAdjointND, QuadraticAdjointND (ND) show tests\n  (all 6 now covered by generic AbstractAdjoint1D/ND protocol)\n\n* (test): fix wrong Float32 expectation in test_complex_linear — one-shot with Float64 query promotes to Float64\n\n* (test): mark cubic series Float32+Float64 vector path as @test_broken\n\n_eval_series_vector! requires out::Vector{Tv} and data::Matrix{Tv} to share\nthe same Tv. Float32 series + Float64 query produces out::Vector{Float64} vs\ndata::Matrix{Float32} → MethodError. Pre-existing limitation, not a regression.\nAdded comment describing the fix needed (decouple output type from data type).\n\n* (feat): add Zygote rrules for linear/quadratic/constant — data adjoint + ∂/∂xq\n\nChainRulesCoreExt:\n- Add shared @inline helpers: _1d_full_pb_vec (∂/∂f + ∂/∂xq) and\n  _1d_data_pb_vec / _1d_data_pb_scalar (∂/∂f only, for constant)\n- Add rrule for linear_interp vec+scalar: ∂/∂f via LinearAdjoint,\n  ∂/∂xq via deriv=DerivOp(1) (scalar only for real f)\n- Add rrule for quadratic_interp vec+scalar: same pattern\n- Add rrule for constant_interp vec+scalar: ∂/∂f only (∂/∂xq = 0 a.e.)\n- Refactor cubic rrules to use shared helpers; split cubic vec into\n  real-f method (includes ∂/∂xq) and Tv method (complex f, NoTangent xq)\n- Vec query ∂/∂xq now supported for linear/quadratic/cubic:\n  ∂L/∂xq[i] = Δu[i] * d[i], element-wise diagonal Jacobian\n\nTests (test_autodiff_Zygote.jl):\n- Add \"Linear data-adjoint (∂f/∂y)\" testset: scalar, vector, L2, Float32\n- Add \"Quadratic data-adjoint (∂f/∂y)\" testset: same coverage\n- Add \"Constant data-adjoint (∂f/∂y)\" testset: scalar, vector, all sides\n- Un-break quadratic one-shot scalar ∂/∂xq test (was @test_broken)\n- Add \"Vec query ∂/∂xq\" testsets for linear, quadratic, cubic\n  (validated against deriv=DerivOp(1) — ForwardDiff not usable due to\n  Float64 type barrier in one-shot vec path)\n\n* (feat): add native EnzymeRules for linear/quadratic/constant — data adjoint + ∂/∂xq\n\nEnzymeRulesExt:\n- Add augmented_primal + reverse for linear_interp (vec + scalar xq):\n  ∂/∂f via LinearAdjoint; tape stores (adj, deriv, shadow)\n- Add augmented_primal + reverse for quadratic_interp (vec + scalar xq):\n  same pattern; bc kwarg forwarded to quadratic_adjoint\n- Add augmented_primal + reverse for constant_interp (vec + scalar xq):\n  same pattern; side kwarg forwarded to constant_adjoint\n- Add augmented_primal + reverse for linear_interp (f::Const, xq::Active):\n  handles ∂/∂xq case — tape stores d = linear_interp(...; deriv=DerivOp(1));\n  required because once ANY EnzymeRule is defined for a function, Enzyme\n  commits to rule dispatch for ALL calling patterns (no implicit fallback)\n- All new rules exclude autocache kwarg (only cubic_interp accepts it)\n\nTests (test_autodiff_Enzyme.jl):\n- Add \"Linear data-adjoint (∂f/∂y)\" testset: L2 loss vec + scalar xq\n- Add \"Quadratic data-adjoint (∂f/∂y)\" testset: same\n- Add \"Constant data-adjoint (∂f/∂y)\" testset: same\n- All cross-validated against ForwardDiff.gradient\n\n* (refac): unify 1D CRC rrules — duck-typed xq, Union{Real,AbstractVector}, shared helper\n\n- Add @inline _adj_pullback(adj, Δu::Number) / _adj_pullback(adj, Δu):\n  dispatch-based helper that wraps scalar Δu → [Δu] for adj callable\n  (which requires AbstractVector input), or passes vector through unchanged\n- Replace 8 per-type per-query-kind rrules with 5 unified rules:\n  each type now has one rrule covering Union{Real, AbstractVector} xq\n  instead of separate scalar/vec methods\n- Drop Tg-typed wrapping (Tg[xq], Tg[Δu], Tg(xq)) — adjoint functions\n  already have scalar convenience overloads and internal _promote_grid_float\n- Loosen xq::AbstractVector{Tg} → Union{Real, AbstractVector} (duck-typed)\n- Drop x::AbstractVector{Tg} constraint for linear/quadratic/constant\n  (adjoint functions handle type promotion internally)\n- Retain x::AbstractVector{Tg} on cubic to resolve dispatch ambiguity\n  between real-f and complex-f cubic methods\n- Use Δu .* d uniformly: scalar .* scalar = scalar, vector .* vector = vector\n- Un-break cubic one-shot scalar ∂/∂xq test (was @test_broken — now works\n  via unified Union{Real, AbstractVector} rrule); fix analytic check\n  (y_cubic = x³ → derivative = 3xq², not cos(xq))\n\n* (fix): use ZeroTangent() for constant_interp xq gradient in CRC rrule\n\nNoTangent() signals \"not in the tangent space\" (non-differentiable arg).\nZeroTangent() signals \"tangent exists but gradient = 0\".\n\nconstant_interp is piecewise-constant: xq is a real-valued argument with\na well-defined (if degenerate) tangent space. Our API convention defines\nderivative at discontinuous points as the left-side value, which evaluates\nto zero for the constant case. ZeroTangent() matches this convention and\nis consistent with how we handle higher-order derivatives elsewhere.\n\n* (refac): unify linear/quadratic/constant rrules into single Union dispatch\n\nReplace 3 separate rrule methods with one unified rule over\n_RealInterp1D = Union{typeof(linear_interp), typeof(quadratic_interp), typeof(constant_interp)}.\n\nTwo trait dispatch helpers handle the per-type variation:\n- _adjoint_func(func): maps func → its *_adjoint constructor (compile-time constant)\n- _xq_tangent(func, Δu, d): returns ZeroTangent() for constant_interp (API convention:\n  derivative = 0), Δu .* d for all others\n\nJulia specializes the unified rule per concrete func type in the Union, so this is\nequivalent to 3 separate rules with no runtime overhead. cubic_interp kept separate\nsince x::AbstractVector{Tg} is needed to disambiguate its real-f and complex-f variants.\n\n* (refac): unify ND one-shot rrules into single duck-typed queries rule\n\nReplace 2 separate ND rrules (SoA batch + single point) with one unified rule\nusing duck-typed `queries` — matching what cubic_interp itself already accepts.\n\nThe key: cubic_adjoint already has its own dispatch tree per query format:\n- Tuple{Vararg{Real,N}}        → wraps as (query,) internally (single point)\n- Tuple{AbstractVector,...}    → SoA batch\n- AbstractVector{<:Real}       → wraps as ntuple query\n- anything else                → generic query protocol fallback\n\nBy calling cubic_adjoint(grids, queries) without pre-wrapping in the rrule,\nall current and future query protocol types (Vector{SVector}, AoS, etc.)\nare automatically supported with no further rrule changes.\n\n* (refac): absorb cubic 1D into _OneShot1D — Wirtinger formula for Real+Complex Tv\n\n- Extend _OneShot1D Union to include cubic_interp (all 4 one-shot interpolants)\n- Add _adjoint_func(::typeof(cubic_interp)) = cubic_adjoint trait dispatch\n- Replace f::AbstractVector{<:Real} with f::AbstractVector{Tv} where {Tv}\n- Replace Tv <: Real conditional with unconditional d = func(x, f, xq; deriv=DerivOp(1))\n- Replace _xq_tangent dispatch with inlined real.(conj.(Δu) .* d)\n  - Tv <: Real: conj/real are identity → reduces to Δu .* d, zero overhead\n  - Tv <: Complex: correct Wirtinger formula Re(conj(Δu) · d)\n  - constant_interp: d = 0.0 by API → xq gradient = 0 naturally\n- Remove separate cubic real-f and complex-f 1D rrules (now covered by _OneShot1D)\n\n* (refac): extend _OneShotInterp rrule to ND — unify all 4 interpolants for 1D and ND\n\n- Generalize cubic-only ND rrule to _OneShotInterp Union (linear/quadratic/constant/cubic)\n- Reuse existing _adjoint_func trait dispatch: _adjoint_func(func)(grids, queries)\n- Rename _OneShot1D → _OneShotInterp: same Union covers both 1D and ND rrules\n  (1D vs ND disambiguated by arg2: AbstractVector vs NTuple{N,AbstractVector})\n- ND rule: ∂/∂data via adjoint, queries → NoTangent() (not differentiated)\n- All 159 Zygote tests pass\n\n* (refac): rename _OneShotInterp → _InterpMethod\n\n* (refac): add ND single-point rrule with ∂/∂queries via value_gradient\n\nSplit ND rrule into two dispatches:\n- Single-point (Tuple{Vararg{Real,N}}): value_gradient for query gradient\n  when deriv==EvalValue; NoTangent for higher-order deriv\n- Batch (generic queries): data adjoint only, NoTangent for queries\n\n* (refac): generalize all struct rrules from CubicInterpolantND to AbstractInterpolantND\n\n- Add _adjoint_func_from_itp / _adjoint_kwargs_from_itp traits for all 4 types\n- Constructor rrule: typeof(cubic_interp) → _InterpMethod\n- Eval/gradient/hessian/laplacian/value_gradient: CubicInterpolantND → AbstractInterpolantND\n- Delete redundant Tuple-query generic eval rrule (subsumed by generalized version)\n- Delete query-only value_gradient rrule (subsumed by ∂/∂data version)\n\n* (refac): add Base.size for AbstractInterpolantND + non-cubic ND struct tests\n\n- Add generic Base.size(::AbstractInterpolantND) via map(length, grids)\n- Add ND struct rrule tests for linear, quadratic, constant:\n  eval, gradient, hessian, laplacian, value_gradient (∂/∂data)\n\n* (refac): unify Enzyme rules via _InterpMethod + kwargs dispatch\n\n- 11 per-type rules → 5 generic rules (1D vec, 1D scalar, 1D ∂/∂xq, ND SoA, ND scalar)\n- All 4 interpolant types now supported in all paths (was: cubic-only for ND)\n- ∂/∂xq generalized from linear-only to all 4 methods\n- kwargs... absorbs per-type differences (bc, side, autocache)\n\n* (feat): Enzyme struct API — ND constructor + eval rules for all 4 types\n\n- Constructor rule: func(grids, data) with shadow as data-bar buffer\n- Eval rule: itp(query) via adjoint operator, MixedDuplicated support\n- Shadow communication: eval writes data_bar into shadow field,\n  constructor reverse copies to data.dval\n- Add array-like interface for NodalDerivativesND (Enzyme requirement)\n- Tests for all 4 types: eval ∂/∂data + L2 loss\n\n* (feat): Enzyme rules — 1D vec ∂/∂xq + ND struct gradient/hessian/laplacian\n\n- 1D vec query ∂/∂xq: f::Const, xq::Duplicated for all 4 methods\n- ND struct gradient: N adjoint calls with per-axis DerivOp(1)\n- ND struct hessian: diagonal DerivOp(2) + off-diagonal mixed DerivOp(1)\n- ND struct laplacian: N adjoint calls with DerivOp(2)\n- Tests for all 4 types with cross-validation\n\n* (fix): Wirtinger formula for Enzyme ∂/∂xq with complex data\n\n* (feat): Enzyme ND struct eval ∂/∂query via vector query dispatch\n\n- Rule for itp::Const + query::Duplicated{AbstractVector} → gradient\n- Wirtinger formula for complex compatibility\n- Tests for linear, quadratic, cubic cross-validated with ForwardDiff\n\n* (fix): extract deriv kwarg in 1D rrule to prevent collision\n\nSame pattern as ND rule: extract deriv explicitly, pass to forward/adjoint\nseparately. When deriv != EvalValue, return NoTangent for ∂/∂xq\n(higher-order query gradient not supported).\n\n* (refac): move AD traits to main module + NodalDerivativesND <: AbstractArray\n\n- Move _InterpMethod, _adjoint_func, _adjoint_func_from_itp,\n  _adjoint_kwargs_from_itp to src/ad_traits.jl (shared by CRC + Enzyme exts)\n- Both extensions now import via const alias instead of duplicate definitions\n- NodalDerivativesND <: AbstractArray{Tv, NP1} — replaces 12 manual Base methods\n  with 3 (size, getindex, setindex!); rest inherited from AbstractArray\n- Verified Base.size(::AbstractInterpolantND) matches size(data) for all types\n  including periodic grids\n\n* fix: update allocation tests to use ALLOC_THRESHOLD for zero allocation checks\n\n* (docs): update AD/adjoint support matrices to reflect all 4 interpolant types\n\nAll four one-shot functions (constant, linear, quadratic, cubic) now have\nregistered Zygote and Enzyme rules — update support matrices, remove stale\ncubic-only references, replace unverified timing table with qualitative\nForward vs Reverse comparison, and fix stale docstrings in CRC extension.\n\n* (feat): Enzyme ND struct eval ∂/∂data via vector query dispatch\n\nAdd augmented_primal/reverse rules for AbstractVector query on ND struct\neval (mirrors existing Tuple query rule). Tests verify vector and tuple\nquery paths produce identical ∂/∂data, cross-validated with one-shot\nadjoint for both Enzyme and Zygote.\n\n* fix: address Copilot review — mixed-precision AD + @thunk + LTS guard\n\nEnzyme: widen vector query types from AbstractVector{Tg} to\nAbstractVector{<:Real} for mixed-precision support; remove Tg casts\nthat truncated query/cotangent precision in scalar rules.\n\nCRC: wrap data_bar in @thunk to avoid eager adjoint computation\nwhen only ∂/∂query is needed.\n\nTests: guard ND struct Enzyme tests on Julia ≥ 1.11 (Enzyme 0.13.x\non LTS throws MixedReturnException for mixed-activity structs).\n\n* Runic formatting\n\n* ci: split extension tests into separate CI job with dedicated entrypoint\n\nMove extension tests to test/ext/ with its own runtests.jl entrypoint.\nCore CI job (3 OS x 2 Julia) sets SKIP_EXTENSIONS=true; new test-extensions\njob (ubuntu x 2 Julia) runs ext/runtests.jl in a clean process where Enzyme\nloads before ChainRulesCore, ensuring EnzymeRules coverage.\n\nRemove ext/**/* from codecov ignore so all extension code is tracked.\nAdding new extension tests only requires editing test/ext/runtests.jl.\n\n* ci: move test_recipes.jl to test/ext/ and ignore EnzymeExt in codecov\n\n- Move test_recipes.jl into test/ext/ alongside other extension tests\n- Remove test_recipes.jl include from core runtests.jl\n- Add EnzymeExt to codecov ignore (Enzyme's LLVM-level code transform\n  bypasses Julia's source-level coverage counters, resulting in 0%\n  coverage despite tests passing)\n\n* ci: post Runic format diffs as PR review suggestions\n\nUse reviewdog/action-suggester to surface formatting issues as\ninline suggestions on PRs instead of just failing CI silently.\n\n* test: intentional whitespace changes to verify Runic CI suggestion workflow\n\n* Apply suggestions from code review\n\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>\n\n---------\n\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-03-20T10:17:37-07:00",
+          "tree_id": "5859a7577d5a9b4f4250ddbd6569c4de8119fe38",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/d55653ee24dc4a5291dfaa49f281b9879d4ac57d"
+        },
+        "date": 1774027530646,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 36609,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 580.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 357809,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1713.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1569.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 15.72,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 11.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3304.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=272\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 32.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 18.73,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4235.32,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4224.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9412.98,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3214.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 450.24,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 61674.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1304.84,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12570.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 17.73,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 442.24,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 42649.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 22.24,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 18605.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 36.87,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 250.37,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 9.81,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 194.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 18486.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.51,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 579.88,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4357.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 39622,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 1042.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 2037.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2564.18,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11767,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3532.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 36564.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 1005.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 360407.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1645,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

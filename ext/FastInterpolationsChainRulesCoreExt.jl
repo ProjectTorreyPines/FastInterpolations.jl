@@ -193,20 +193,26 @@ const _InterpMethod = Union{
     typeof(constant_interp), typeof(cubic_interp),
 }
 
+# `deriv` extracted explicitly — must not leak into adjoint or derivative computation.
+# When deriv is non-EvalValue (evaluating a derivative), query gradient requires
+# higher-order derivatives — not supported; returns NoTangent() in that case.
 function ChainRulesCore.rrule(
         func::_InterpMethod,
         x::AbstractVector,
         f::AbstractVector{Tv},
         xq::Union{Real, AbstractVector};
+        deriv::DerivOp = EvalValue(),
         kwargs...
     ) where {Tv}
-    y = func(x, f, xq; kwargs...)
-    adj = _adjoint_func(func)(x, xq; kwargs...)
-    d = func(x, f, xq; deriv = DerivOp(1), kwargs...)
+    y = func(x, f, xq; deriv = deriv, kwargs...)
+    adj = _adjoint_func(func)(x, xq; deriv = deriv, kwargs...)
+    eval_value = deriv isa DerivOp{0}
+    d = eval_value ? func(x, f, xq; deriv = DerivOp(1), kwargs...) : nothing
     function _interp1d_pb(Δy)
         Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
         Δu = unthunk(Δy)
-        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; kwargs...), real.(conj.(Δu) .* d))
+        ∂xq = eval_value ? real.(conj.(Δu) .* d) : NoTangent()
+        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; deriv = deriv, kwargs...), ∂xq)
     end
     return y, _interp1d_pb
 end

@@ -6,6 +6,11 @@ on:
     paths:
       - "**/*.jl"
       - ".github/workflows/Runic.yml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   runic:
     name: Runic
@@ -16,3 +21,11 @@ jobs:
         with:
           version: "1"
       - uses: fredrikekre/runic-action@v1
+        with:
+          format_files: true
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+      - uses: reviewdog/action-suggester@v1
+        if: github.event_name == 'pull_request'
+        with:
+          tool_name: Runic
+          fail_level: error

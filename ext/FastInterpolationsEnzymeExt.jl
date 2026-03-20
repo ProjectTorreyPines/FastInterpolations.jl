@@ -336,6 +336,39 @@ function EnzymeRules.reverse(
     return (nothing,)
 end
 
+# ── Eval: itp(query) → scalar, ∂/∂data (vector query) ──
+# Mirrors the tuple rule above for AbstractVector queries (vector → tuple conversion).
+
+function EnzymeRules.augmented_primal(
+        config::EnzymeRules.RevConfig,
+        itp::_DupItp{<:FastInterpolations.AbstractInterpolantND{Tg, Tv, N}},
+        RT::Type{<:Annotation},
+        query::Const{<:AbstractVector{<:Real}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    q_tuple = ntuple(i -> @inbounds(query.val[i]), Val(N))
+    y = itp.val(q_tuple; kwargs...)
+    primal = EnzymeRules.needs_primal(config) ? y : nothing
+    shadow = EnzymeRules.needs_shadow(config) ? zero(y) : nothing
+    adj_fn = _adjoint_func_from_itp(itp.val)
+    adj = adj_fn(itp.val.grids, (q_tuple,); _adjoint_kwargs_from_itp(itp.val)...)
+    return EnzymeRules.AugmentedReturn(primal, shadow, adj)
+end
+
+function EnzymeRules.reverse(
+        config::EnzymeRules.RevConfig,
+        itp::_DupItp{<:FastInterpolations.AbstractInterpolantND{Tg, Tv, N}},
+        dret::Active,
+        tape,
+        query::Const{<:AbstractVector{<:Real}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    adj = tape
+    data_bar = adj(dret.val; deriv = EvalValue())
+    _data_field(_get_shadow(itp)) .+= data_bar
+    return (nothing,)
+end
+
 # ── Eval: itp(query) → scalar, ∂/∂query only (itp::Const, query::Duplicated) ──
 
 function EnzymeRules.augmented_primal(

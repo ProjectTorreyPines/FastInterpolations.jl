@@ -580,6 +580,35 @@ else
                             expected = adj([2.0 * (y_val - target)])
                             @test ddata ≈ expected atol = 1.0e-10
                         end
+
+                        # ── eval: ∂/∂data via vector query (must match tuple query) ──
+                        @testset "eval — ∂/∂data via vector query" begin
+                            x0_vec = [x0[1], x0[2]]
+
+                            # Vector query
+                            ddata_vec = zero(data)
+                            Enzyme.autodiff(
+                                Enzyme.Reverse,
+                                d -> interp_fn((x, y), d)(x0_vec),
+                                Enzyme.Active,
+                                Enzyme.Duplicated(data, ddata_vec),
+                            )
+
+                            # Must match tuple query
+                            ddata_tuple = zero(data)
+                            Enzyme.autodiff(
+                                Enzyme.Reverse,
+                                d -> interp_fn((x, y), d)(x0),
+                                Enzyme.Active,
+                                Enzyme.Duplicated(data, ddata_tuple),
+                            )
+                            @test ddata_vec ≈ ddata_tuple atol = 1.0e-12
+
+                            # Cross-validate with one-shot adjoint
+                            adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
+                            expected = adj([1.0])
+                            @test ddata_vec ≈ expected atol = 1.0e-10
+                        end
                     end
                 end
             end

@@ -900,6 +900,29 @@ end
             fd_grad = ForwardDiff.gradient(itp, [q...])
             @test collect(grad) ≈ fd_grad atol = 1.0e-8
         end
+
+        # ── eval: ∂/∂data via vector query matches tuple query ──
+        @testset "eval — ∂/∂data via vector query" begin
+            x0_vec = [x0[1], x0[2]]
+            function f_eval_vec(d)
+                itp = cubic_interp((x, y), d)
+                return itp(x0_vec)
+            end
+            result_vec = Zygote.withgradient(f_eval_vec, data)
+
+            # Must match tuple query result
+            function f_eval_tuple(d)
+                itp = cubic_interp((x, y), d)
+                return itp(x0)
+            end
+            result_tuple = Zygote.withgradient(f_eval_tuple, data)
+            @test result_vec.grad[1] ≈ result_tuple.grad[1] atol = 1.0e-12
+
+            # Cross-validate with one-shot adjoint
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            expected = adj([1.0])
+            @test result_vec.grad[1] ≈ expected atol = 1.0e-10
+        end
     end
 
     # ════════════════════════════════════════════════════════════════════════
@@ -1223,6 +1246,30 @@ end
                     adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
                     expected = adj([2.0 * (y_val - target_val)])
                     @test result.grad[1] ≈ expected atol = 1.0e-10
+                end
+
+                # ── eval: ∂/∂data via vector query (must match tuple query) ──
+                @testset "eval — ∂/∂data via vector query" begin
+                    x0_vec = [x0[1], x0[2]]
+                    function f_eval_vec(d)
+                        itp = interp_fn((x, y), d)
+                        return itp(x0_vec)
+                    end
+                    result_vec = Zygote.withgradient(f_eval_vec, data)
+                    @test result_vec.val ≈ f_eval_vec(data)
+
+                    # Must match tuple query ∂/∂data exactly
+                    function f_eval_tuple(d)
+                        itp = interp_fn((x, y), d)
+                        return itp(x0)
+                    end
+                    result_tuple = Zygote.withgradient(f_eval_tuple, data)
+                    @test result_vec.grad[1] ≈ result_tuple.grad[1] atol = 1.0e-12
+
+                    # Cross-validate with one-shot adjoint
+                    adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
+                    expected = adj([1.0])
+                    @test result_vec.grad[1] ≈ expected atol = 1.0e-10
                 end
 
                 # ── gradient: ∂/∂data of ‖∇f(x0)‖² ──

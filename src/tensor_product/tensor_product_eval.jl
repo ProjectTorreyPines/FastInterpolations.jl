@@ -87,18 +87,30 @@ end
 # Core Eval Entry Point
 # ========================================
 
+# OnTheFly path: sequential 1D interpolation (builds 1D interps per query)
 @inline function _eval_tensor_product_nd(
-        itp::TensorProductInterpolantND{Tg, Tv, N},
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
         searches::NTuple{N, AbstractSearchPolicy},
         hints,
-    ) where {Tg, Tv, N}
-    # Handle extrapolation (clamping, wrapping, OOB)
+    ) where {Tg, Tv, N, G, S, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-
-    # Sequential dimension collapse
     return _collapse_dims(itp.data, itp.grids, itp.methods, itp.extraps, q_eval, ops)
+end
+
+# PreCompute path: precomputed partials + local kernel eval (O(1) per query)
+@inline function _eval_tensor_product_nd(
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:NodalDerivativesND},
+        query::Tuple{Vararg{Real, N}},
+        ops::NTuple{N, AbstractEvalOp},
+        searches::NTuple{N, AbstractSearchPolicy},
+        hints,
+    ) where {Tg, Tv, N, G, S, M, E, P}
+    return _eval_tensor_product_precomputed(
+        itp.data, itp.grids, itp.spacings, itp.methods, itp.extraps,
+        query, ops, searches, hints
+    )
 end
 
 # ========================================
@@ -129,33 +141,56 @@ end
 # _locate_cell / _eval_at_cell Protocol
 # ========================================
 # Enables vector_calculus.jl functions (gradient, hessian, laplacian).
-# The "cell" stores all state needed to re-evaluate with different ops.
-# Note: locate-once optimization is not applicable here (each eval does
-# its own sequential collapse), but correctness is preserved.
 
+# OnTheFly: cell stores everything needed for re-collapse
 @inline function _locate_cell(
-        itp::TensorProductInterpolantND{Tg, Tv, N},
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing,
-    ) where {Tg, Tv, N}
+    ) where {Tg, Tv, N, G, S, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
     return (itp.data, itp.grids, itp.methods, itp.extraps, q_eval)
 end
 
 @inline function _eval_at_cell(
-        ::TensorProductInterpolantND{Tg, Tv, N},
+        ::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp},
-    ) where {Tg, Tv, N}
+    ) where {Tg, Tv, N, G, S, M, E, P}
     data, grids, methods, extraps, q_eval = cell
     return _collapse_dims(data, grids, methods, extraps, q_eval, ops)
+end
+
+# PreCompute: cell stores precomputed cell location (locate-once optimization)
+@inline function _locate_cell(
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:NodalDerivativesND},
+        query::Tuple{Vararg{Real, N}},
+        search_tuple::NTuple{N, AbstractSearchPolicy},
+        hints = nothing,
+    ) where {Tg, Tv, N, G, S, M, E, P}
+    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple, hints)
+    hs, inv_hs, dLs = _compute_all_local_params(q_eval, itp.spacings, indices, Ls)
+    return (itp.data.partials, indices, hs, inv_hs, dLs)
+end
+
+@inline function _eval_at_cell(
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:NodalDerivativesND},
+        cell::Tuple,
+        ops::NTuple{N, AbstractEvalOp},
+    ) where {Tg, Tv, N, G, S, M, E, P}
+    partials, indices, hs, inv_hs, dLs = cell
+    return _eval_hetero_nd_cell(partials, indices, hs, inv_hs, dLs, ops, itp.methods)
 end
 
 # ========================================
 # Required Traits
 # ========================================
 
-@inline _zero_ref(itp::TensorProductInterpolantND) = @inbounds first(itp.data)
+@inline _zero_ref(itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array}) where {Tg, Tv, N, G, S, M, E, P} =
+    @inbounds first(itp.data)
+@inline _zero_ref(itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:NodalDerivativesND}) where {Tg, Tv, N, G, S, M, E, P} =
+    @inbounds itp.data.partials[1]
 
 @inline _deriv_zero_fill(::TensorProductInterpolantND, ::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} = false

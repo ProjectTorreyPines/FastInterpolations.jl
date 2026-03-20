@@ -98,7 +98,8 @@ else
     include("test_nd_autosearch_peraxis.jl")
     include("test_nd_batch_inplace.jl")
     include("test_gradient_hessian.jl")
-    include("test_tensor_product_nd.jl")  # Tensor product ND (per-axis methods)
+    include("test_tensor_product_nd.jl")  # Tensor product ND (per-axis methods, on-the-fly)
+    include("test_tensor_product_precomputed.jl")  # Tensor product ND (precomputed partials)
 
     # Duck typing (custom value types)
     include("test_duck_typing_comprehensive.jl")

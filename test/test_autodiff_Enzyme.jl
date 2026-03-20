@@ -543,81 +543,81 @@ else
             # ════════════════════════════════════════════════════════════════
 
             if ENZYME_ND_STRUCT_SUPPORTED
-            @testset "ND struct API — ∂/∂data via Enzyme" begin
-                x = range(0.0, 2.0, 15)
-                y = range(0.0, 2.0, 15)
-                data = [sin(xi) * cos(yj) for xi in x, yj in y]
-                x0 = (0.7, 0.9)
+                @testset "ND struct API — ∂/∂data via Enzyme" begin
+                    x = range(0.0, 2.0, 15)
+                    y = range(0.0, 2.0, 15)
+                    data = [sin(xi) * cos(yj) for xi in x, yj in y]
+                    x0 = (0.7, 0.9)
 
-                for (interp_fn, adj_fn, label) in [
-                        (linear_interp, linear_adjoint, "Linear"),
-                        (quadratic_interp, quadratic_adjoint, "Quadratic"),
-                        (constant_interp, constant_adjoint, "Constant"),
-                        (cubic_interp, cubic_adjoint, "Cubic"),
-                    ]
-                    @testset "$label" begin
-                        @testset "eval — ∂/∂data" begin
-                            ddata = zero(data)
-                            Enzyme.autodiff(
-                                Enzyme.Reverse,
-                                d -> interp_fn((x, y), d)(x0),
-                                Enzyme.Active,
-                                Enzyme.Duplicated(data, ddata),
-                            )
+                    for (interp_fn, adj_fn, label) in [
+                            (linear_interp, linear_adjoint, "Linear"),
+                            (quadratic_interp, quadratic_adjoint, "Quadratic"),
+                            (constant_interp, constant_adjoint, "Constant"),
+                            (cubic_interp, cubic_adjoint, "Cubic"),
+                        ]
+                        @testset "$label" begin
+                            @testset "eval — ∂/∂data" begin
+                                ddata = zero(data)
+                                Enzyme.autodiff(
+                                    Enzyme.Reverse,
+                                    d -> interp_fn((x, y), d)(x0),
+                                    Enzyme.Active,
+                                    Enzyme.Duplicated(data, ddata),
+                                )
 
-                            # Cross-validate with one-shot adjoint
-                            adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
-                            expected = adj([1.0])
-                            @test ddata ≈ expected atol = 1.0e-10
-                        end
+                                # Cross-validate with one-shot adjoint
+                                adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
+                                expected = adj([1.0])
+                                @test ddata ≈ expected atol = 1.0e-10
+                            end
 
-                        @testset "eval — L2 loss" begin
-                            target = 0.5
-                            ddata = zero(data)
-                            val = Enzyme.autodiff(
-                                Enzyme.Reverse,
-                                d -> (interp_fn((x, y), d)(x0) - target)^2,
-                                Enzyme.Active,
-                                Enzyme.Duplicated(data, ddata),
-                            )
+                            @testset "eval — L2 loss" begin
+                                target = 0.5
+                                ddata = zero(data)
+                                val = Enzyme.autodiff(
+                                    Enzyme.Reverse,
+                                    d -> (interp_fn((x, y), d)(x0) - target)^2,
+                                    Enzyme.Active,
+                                    Enzyme.Duplicated(data, ddata),
+                                )
 
-                            y_val = interp_fn((x, y), data, x0)
-                            adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
-                            expected = adj([2.0 * (y_val - target)])
-                            @test ddata ≈ expected atol = 1.0e-10
-                        end
+                                y_val = interp_fn((x, y), data, x0)
+                                adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
+                                expected = adj([2.0 * (y_val - target)])
+                                @test ddata ≈ expected atol = 1.0e-10
+                            end
 
-                        # ── eval: ∂/∂data via vector query (must match tuple query) ──
-                        @testset "eval — ∂/∂data via vector query" begin
-                            x0_vec = [x0[1], x0[2]]
+                            # ── eval: ∂/∂data via vector query (must match tuple query) ──
+                            @testset "eval — ∂/∂data via vector query" begin
+                                x0_vec = [x0[1], x0[2]]
 
-                            # Vector query
-                            ddata_vec = zero(data)
-                            Enzyme.autodiff(
-                                Enzyme.Reverse,
-                                d -> interp_fn((x, y), d)(x0_vec),
-                                Enzyme.Active,
-                                Enzyme.Duplicated(data, ddata_vec),
-                            )
+                                # Vector query
+                                ddata_vec = zero(data)
+                                Enzyme.autodiff(
+                                    Enzyme.Reverse,
+                                    d -> interp_fn((x, y), d)(x0_vec),
+                                    Enzyme.Active,
+                                    Enzyme.Duplicated(data, ddata_vec),
+                                )
 
-                            # Must match tuple query
-                            ddata_tuple = zero(data)
-                            Enzyme.autodiff(
-                                Enzyme.Reverse,
-                                d -> interp_fn((x, y), d)(x0),
-                                Enzyme.Active,
-                                Enzyme.Duplicated(data, ddata_tuple),
-                            )
-                            @test ddata_vec ≈ ddata_tuple atol = 1.0e-12
+                                # Must match tuple query
+                                ddata_tuple = zero(data)
+                                Enzyme.autodiff(
+                                    Enzyme.Reverse,
+                                    d -> interp_fn((x, y), d)(x0),
+                                    Enzyme.Active,
+                                    Enzyme.Duplicated(data, ddata_tuple),
+                                )
+                                @test ddata_vec ≈ ddata_tuple atol = 1.0e-12
 
-                            # Cross-validate with one-shot adjoint
-                            adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
-                            expected = adj([1.0])
-                            @test ddata_vec ≈ expected atol = 1.0e-10
+                                # Cross-validate with one-shot adjoint
+                                adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
+                                expected = adj([1.0])
+                                @test ddata_vec ≈ expected atol = 1.0e-10
+                            end
                         end
                     end
                 end
-            end
             end # ENZYME_ND_STRUCT_SUPPORTED
 
             # ════════════════════════════════════════════════════════════════
@@ -684,80 +684,80 @@ else
             # ════════════════════════════════════════════════════════════════
 
             if ENZYME_ND_STRUCT_SUPPORTED
-            @testset "ND struct vector calculus — ∂/∂data via Enzyme" begin
-                x = range(0.0, 2.0, 15)
-                y = range(0.0, 2.0, 15)
-                data = [sin(xi) * cos(yj) for xi in x, yj in y]
-                x0 = (0.7, 0.9)
+                @testset "ND struct vector calculus — ∂/∂data via Enzyme" begin
+                    x = range(0.0, 2.0, 15)
+                    y = range(0.0, 2.0, 15)
+                    data = [sin(xi) * cos(yj) for xi in x, yj in y]
+                    x0 = (0.7, 0.9)
 
-                for (interp_fn, adj_fn, label) in [
-                        (linear_interp, linear_adjoint, "Linear"),
-                        (quadratic_interp, quadratic_adjoint, "Quadratic"),
-                        (constant_interp, constant_adjoint, "Constant"),
-                        (cubic_interp, cubic_adjoint, "Cubic"),
-                    ]
-                    @testset "$label" begin
-                        @testset "gradient — ‖∇f‖² loss" begin
-                            ddata = zero(data)
-                            Enzyme.autodiff(
-                                Enzyme.Reverse,
-                                d -> begin
-                                    itp = interp_fn((x, y), d)
-                                    g = FastInterpolations.gradient(itp, x0)
-                                    return g[1]^2 + g[2]^2
-                                end,
-                                Enzyme.Active,
-                                Enzyme.Duplicated(data, ddata),
-                            )
+                    for (interp_fn, adj_fn, label) in [
+                            (linear_interp, linear_adjoint, "Linear"),
+                            (quadratic_interp, quadratic_adjoint, "Quadratic"),
+                            (constant_interp, constant_adjoint, "Constant"),
+                            (cubic_interp, cubic_adjoint, "Cubic"),
+                        ]
+                        @testset "$label" begin
+                            @testset "gradient — ‖∇f‖² loss" begin
+                                ddata = zero(data)
+                                Enzyme.autodiff(
+                                    Enzyme.Reverse,
+                                    d -> begin
+                                        itp = interp_fn((x, y), d)
+                                        g = FastInterpolations.gradient(itp, x0)
+                                        return g[1]^2 + g[2]^2
+                                    end,
+                                    Enzyme.Active,
+                                    Enzyme.Duplicated(data, ddata),
+                                )
 
-                            fx = interp_fn((x, y), data, x0; deriv = (DerivOp(1), EvalValue()))
-                            fy = interp_fn((x, y), data, x0; deriv = (EvalValue(), DerivOp(1)))
-                            adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
-                            expected = adj([2fx]; deriv = (DerivOp(1), EvalValue())) .+
-                                adj([2fy]; deriv = (EvalValue(), DerivOp(1)))
-                            @test ddata ≈ expected atol = 1.0e-10
-                        end
-
-                        @testset "hessian — ‖H‖²_F loss" begin
-                            ddata = zero(data)
-                            Enzyme.autodiff(
-                                Enzyme.Reverse,
-                                d -> begin
-                                    itp = interp_fn((x, y), d)
-                                    H = FastInterpolations.hessian(itp, x0)
-                                    return sum(abs2, H)
-                                end,
-                                Enzyme.Active,
-                                Enzyme.Duplicated(data, ddata),
-                            )
-                            # Constant: all 2nd derivs zero. Others have non-zero cross-terms.
-                            if interp_fn === constant_interp
-                                @test all(iszero, ddata)
-                            else
-                                @test any(!iszero, ddata)
+                                fx = interp_fn((x, y), data, x0; deriv = (DerivOp(1), EvalValue()))
+                                fy = interp_fn((x, y), data, x0; deriv = (EvalValue(), DerivOp(1)))
+                                adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
+                                expected = adj([2fx]; deriv = (DerivOp(1), EvalValue())) .+
+                                    adj([2fy]; deriv = (EvalValue(), DerivOp(1)))
+                                @test ddata ≈ expected atol = 1.0e-10
                             end
-                        end
 
-                        @testset "laplacian — (∇²f)² loss" begin
-                            ddata = zero(data)
-                            Enzyme.autodiff(
-                                Enzyme.Reverse,
-                                d -> begin
-                                    itp = interp_fn((x, y), d)
-                                    return FastInterpolations.laplacian(itp, x0)^2
-                                end,
-                                Enzyme.Active,
-                                Enzyme.Duplicated(data, ddata),
-                            )
-                            if interp_fn in (cubic_interp, quadratic_interp)
-                                @test any(!iszero, ddata)
-                            else
-                                @test all(iszero, ddata)
+                            @testset "hessian — ‖H‖²_F loss" begin
+                                ddata = zero(data)
+                                Enzyme.autodiff(
+                                    Enzyme.Reverse,
+                                    d -> begin
+                                        itp = interp_fn((x, y), d)
+                                        H = FastInterpolations.hessian(itp, x0)
+                                        return sum(abs2, H)
+                                    end,
+                                    Enzyme.Active,
+                                    Enzyme.Duplicated(data, ddata),
+                                )
+                                # Constant: all 2nd derivs zero. Others have non-zero cross-terms.
+                                if interp_fn === constant_interp
+                                    @test all(iszero, ddata)
+                                else
+                                    @test any(!iszero, ddata)
+                                end
+                            end
+
+                            @testset "laplacian — (∇²f)² loss" begin
+                                ddata = zero(data)
+                                Enzyme.autodiff(
+                                    Enzyme.Reverse,
+                                    d -> begin
+                                        itp = interp_fn((x, y), d)
+                                        return FastInterpolations.laplacian(itp, x0)^2
+                                    end,
+                                    Enzyme.Active,
+                                    Enzyme.Duplicated(data, ddata),
+                                )
+                                if interp_fn in (cubic_interp, quadratic_interp)
+                                    @test any(!iszero, ddata)
+                                else
+                                    @test all(iszero, ddata)
+                                end
                             end
                         end
                     end
                 end
-            end
             end # ENZYME_ND_STRUCT_SUPPORTED
 
         end  # testset "Enzyme AD Support"

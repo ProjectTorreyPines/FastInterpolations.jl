@@ -15,7 +15,7 @@ and $\mathbf{c}$ is a constant offset determined by the boundary condition **val
 !!! note "Matrix-free implementation"
     $W$ is a mathematical abstraction — FastInterpolations never forms this matrix explicitly.
     Both $W \mathbf{f}$ (forward) and $W^\top \bar{\mathbf{y}}$ (adjoint) are computed via
-    **matrix-free** algorithms that exploit the spline's tridiagonal structure.
+    **matrix-free** algorithms that exploit each spline's structure.
 
 The **adjoint** (transpose) operator maps query-space sensitivities back to data-space:
 
@@ -48,24 +48,21 @@ The adjoint arises naturally in any workflow that needs **gradients with respect
 
 ## Computing the Adjoint
 
-There are two approaches:
-
 ### Automatic Differentiation
 
 Pass `f` as a live variable through the one-shot API and let an AD backend differentiate.
 See [Adjoint via AD](../guides/adjoint_ad.md) for details and backend compatibility.
 
 ```julia
-# Zygote — uses the native adjoint operator internally via rrule
 using Zygote
 ∇f = Zygote.gradient(f -> sum(cubic_interp(x, f, xq)), f)[1]
-# Works with all types: linear_interp, quadratic_interp, constant_interp too
+# Works with all types: linear_interp, quadratic_interp, constant_interp
 ```
 
 ### Native Adjoint Operator
 
-FastInterpolations provides a **matrix-free adjoint operator** that computes $W^\top \bar{\mathbf{y}}$
-directly in $O(n + m)$ time — one transpose Thomas solve plus one scatter pass:
+FastInterpolations provides **matrix-free adjoint operators** for every interpolant type.
+Construct once from grid + queries, then apply to any $\bar{\mathbf{y}}$:
 
 ```julia
 adj = cubic_adjoint(x, xq; bc=CubicFit())
@@ -73,36 +70,32 @@ f̄ = adj(ȳ)                  # allocating
 adj(f̄, ȳ)                   # in-place, zero-allocation
 ```
 
-The native operator exploits the spline structure and is the recommended approach
-for performance-critical code. **Zygote** and **Enzyme** use the native adjoint operators
-internally via registered AD rules for all four interpolant types,
+**Zygote** and **Enzyme** use these native operators internally via registered AD rules,
 so you get native performance through the standard AD interface.
 
-See [Cubic Adjoint (1D)](cubic_1d_adjoint.md) and [Cubic Adjoint (ND)](cubic_nd_adjoint.md) for the full API reference.
-
-!!! tip "Mathematical Derivation"
-    For the detailed mathematical formulation of how the cubic adjoint decomposes into
-    scatter, transpose-solve, and RHS-adjoint steps,
-    see [Cubic Adjoint Derivation](cubic_adjoint_derivation.md) in the Internals section.
+See [Adjoint 1D](adjoint_1d.md) and [Adjoint ND](adjoint_nd.md) for the full API.
 
 ---
 
-## Currently Supported
+## Supported Methods
 
-| Method | Native Adjoint | AD-based $\partial f / \partial y$ |
-|--------|:--------------:|:------------------------------------:|
-| **Cubic (1D)** | [`CubicAdjoint`](@ref) | ForwardDiff, Zygote, Enzyme |
-| **Cubic (ND)** | [`CubicAdjointND`](@ref) | ForwardDiff, Zygote, Enzyme |
-| **Quadratic (1D)** | [`QuadraticAdjoint`](@ref) | ForwardDiff, Zygote, Enzyme |
-| **Quadratic (ND)** | [`QuadraticAdjointND`](@ref) | ForwardDiff, Zygote, Enzyme |
-| **Linear (1D)** | [`LinearAdjoint`](@ref) | ForwardDiff, Zygote, Enzyme |
-| **Linear (ND)** | [`LinearAdjointND`](@ref) | ForwardDiff, Zygote, Enzyme |
-| **Constant (1D)** | [`ConstantAdjoint`](@ref) | ForwardDiff, Zygote, Enzyme |
-| **Constant (ND)** | [`ConstantAdjointND`](@ref) | ForwardDiff, Zygote, Enzyme |
+All four interpolant types have full native adjoint support in both 1D and ND:
+
+| Method | Native Adjoint | AD (ForwardDiff / Zygote / Enzyme) |
+|--------|:--------------:|:----------------------------------:|
+| **Constant** | [`ConstantAdjoint`](@ref) / [`ConstantAdjointND`](@ref) | ✅ |
+| **Linear** | [`LinearAdjoint`](@ref) / [`LinearAdjointND`](@ref) | ✅ |
+| **Quadratic** | [`QuadraticAdjoint`](@ref) / [`QuadraticAdjointND`](@ref) | ✅ |
+| **Cubic** | [`CubicAdjoint`](@ref) / [`CubicAdjointND`](@ref) | ✅ |
+
+!!! note "Enzyme compatibility"
+    Enzyme support is fully tested on Julia ≥ 1.10 with standard platforms.
+    On some OS/architecture combinations or older Julia versions, Enzyme may
+    encounter edge cases. See [Adjoint via AD](../guides/adjoint_ad.md) for details.
 
 ## See Also
 
-- **[Cubic Adjoint (1D)](cubic_1d_adjoint.md)**: 1D API reference and examples
-- **[Cubic Adjoint (ND)](cubic_nd_adjoint.md)**: ND API reference and examples
+- **[Adjoint 1D](adjoint_1d.md)**: 1D adjoint operators — API, examples, and performance
+- **[Adjoint ND](adjoint_nd.md)**: ND adjoint operators — API, examples, and performance
 - **[Adjoint via AD](../guides/adjoint_ad.md)**: Using AD backends for `∂f/∂y`
 - **[Cubic Adjoint Derivation](cubic_adjoint_derivation.md)**: Mathematical formulation (internals)

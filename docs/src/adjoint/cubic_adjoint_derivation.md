@@ -2,7 +2,7 @@
 
 !!! note "Internal Documentation"
     This page documents the mathematical derivation of the cubic adjoint operator.
-    For the user-facing API, see [Cubic Adjoint (1D)](cubic_1d_adjoint.md).
+    For the user-facing API, see [Adjoint 1D](adjoint_1d.md).
 
 ## Forward Operator Decomposition
 

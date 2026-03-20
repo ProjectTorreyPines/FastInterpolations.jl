@@ -179,8 +179,8 @@ makedocs(
         ],
         "Adjoint" => [
             "Overview" => "adjoint/overview.md",
-            "Cubic (1D)" => "adjoint/cubic_1d_adjoint.md",
-            "Cubic (ND)" => "adjoint/cubic_nd_adjoint.md",
+            "1D Operators" => "adjoint/adjoint_1d.md",
+            "ND Operators" => "adjoint/adjoint_nd.md",
         ],
         "Factory Functions" => "guides/factory_functions.md",
         "Advanced Usage" => [

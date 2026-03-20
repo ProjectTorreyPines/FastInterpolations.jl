@@ -146,5 +146,5 @@ All Zygote/Enzyme rules use the respective native adjoint operator ([`ConstantAd
 
 - **[Adjoint Operators](../adjoint/overview.md)**: Conceptual overview — what adjoints are, where they appear, and the mathematical formulation
 - **[Adjoint API Reference](../api/adjoint.md)**: Native adjoint operators for all four interpolant types
-- **[Cubic Adjoint (1D)](../adjoint/cubic_1d_adjoint.md)**: Native `CubicAdjoint` API for zero-allocation, matrix-free adjoint computation
-- **[Cubic Adjoint (ND)](../adjoint/cubic_nd_adjoint.md)**: Native `CubicAdjointND` API for N-dimensional adjoint computation
+- **[Adjoint 1D](../adjoint/adjoint_1d.md)**: Native 1D adjoint operators for all interpolant types
+- **[Adjoint ND](../adjoint/adjoint_nd.md)**: Native ND adjoint operators for all interpolant types

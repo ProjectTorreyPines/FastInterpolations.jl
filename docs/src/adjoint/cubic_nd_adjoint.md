@@ -95,8 +95,9 @@ f̄ = adj(ȳ; deriv=(DerivOp(1), EvalValue()))        # mixed partial ∂/∂x�
 
 ### AD Integration (Zygote / Enzyme)
 
-Zygote and Enzyme use `CubicAdjointND` internally via registered `rrule`s.
-You get native adjoint performance through the standard AD interface:
+Zygote and Enzyme use the native adjoint operators internally via registered AD rules.
+This works for **all four interpolant types** — not just cubic. You get native adjoint
+performance through the standard AD interface:
 
 ```julia
 using Zygote
@@ -104,6 +105,11 @@ using Zygote
 # ∂loss/∂data — uses CubicAdjointND internally
 ∇data = Zygote.gradient(
     d -> sum(abs2, cubic_interp((x, y), d, (xq, yq)) .- y_obs), data
+)[1]
+
+# Works with all types:
+∇data = Zygote.gradient(
+    d -> sum(abs2, linear_interp((x, y), d, (xq, yq)) .- y_obs), data
 )[1]
 
 # Derivative adjoint also works through AD

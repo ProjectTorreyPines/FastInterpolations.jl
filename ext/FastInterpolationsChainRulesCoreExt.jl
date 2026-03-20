@@ -116,10 +116,11 @@ end
 # ════════════════════════════════════════
 
 """
-Reverse-mode rule for all ND interpolants with Tuple input.
+Reverse-mode rule for all ND interpolants with Vector input.
 
-Enables `Zygote.gradient(x -> itp((x[1], x[2])), ...)` to use
-analytical derivatives via pullback.
+Enables `Zygote.gradient(itp, [0.5, 0.5])` to use analytical derivatives via pullback.
+Also computes ∂/∂data (returned as the itp tangent) so that the struct API path
+`data -> func(grids, data)(query_vec)` correctly propagates data gradients.
 """
 function ChainRulesCore.rrule(
         itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
@@ -133,11 +134,16 @@ function ChainRulesCore.rrule(
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
     y = itp(query_tuple)
 
+    adj_fn = _adjoint_func_from_itp(itp)
+    adj = adj_fn(itp.grids, (query_tuple,); _adjoint_kwargs_from_itp(itp)...)
+
     function itp_nd_vec_pb(Δy)
-        Δy isa AbstractZero && return NoTangent(), ZeroTangent()
+        Δy isa AbstractZero && return ZeroTangent(), ZeroTangent()
+        Δy_val = unthunk(Δy)
         grad = FastInterpolations.gradient(itp, query_tuple)
-        ∂query = [real(conj(Δy) * grad[i]) for i in 1:N]
-        return NoTangent(), ∂query
+        ∂query = [real(conj(Δy_val) * grad[i]) for i in 1:N]
+        data_bar = adj(Δy_val; deriv = EvalValue())
+        return data_bar, ∂query
     end
 
     return y, itp_nd_vec_pb
@@ -254,19 +260,19 @@ function ChainRulesCore.rrule(
 end
 
 # ════════════════════════════════════════
-# CubicInterpolantND — constructor rrule (∂/∂data via interpolant API)
+# AbstractInterpolantND — constructor rrule (∂/∂data via interpolant API)
 # ════════════════════════════════════════
-# Enables the natural API pattern:
-#   itp = cubic_interp((x, y), data)
+# Enables the natural API pattern for all four types:
+#   itp = func((x, y), data)        # func ∈ {cubic_interp, linear_interp, ...}
 #   loss = f(itp(x0))
-#   Zygote.gradient(data -> f(cubic_interp((x,y), data)(x0)), data)
+#   Zygote.gradient(data -> f(func((x,y), data)(x0)), data)
 #
 # The constructor pullback simply passes through the incoming tangent
 # (computed by the eval/gradient/hessian/laplacian rrules below) as Δdata.
 # This works because ChainRulesCore allows non-structural tangents.
 
 """
-Constructor rrule for `cubic_interp(grids, data; ...)` → `CubicInterpolantND`.
+Constructor rrule for `func(grids, data; ...)` → `AbstractInterpolantND`.
 
 The pullback receives the tangent accumulated from downstream eval/gradient/hessian
 rrules (an Array of same shape as `data`) and passes it through as `Δdata`.
@@ -288,11 +294,10 @@ function ChainRulesCore.rrule(
 end
 
 # ════════════════════════════════════════
-# CubicInterpolantND — eval rrule with ∂/∂data
+# AbstractInterpolantND — eval rrule with ∂/∂data
 # ════════════════════════════════════════
-# More specific than the generic AbstractInterpolantND rrule (lines 140-155),
-# so Julia dispatches here for CubicInterpolantND.
-# Returns both ∂/∂query AND ∂/∂data (as the itp tangent).
+# Tuple query dispatch: returns both ∂/∂query AND ∂/∂data (as the itp tangent).
+# Works for all four ND interpolant types via _adjoint_func_from_itp dispatch.
 
 """
 Eval rrule for `itp::AbstractInterpolantND(query)` with ∂/∂data support.

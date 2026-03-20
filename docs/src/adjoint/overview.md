@@ -56,9 +56,10 @@ Pass `f` as a live variable through the one-shot API and let an AD backend diffe
 See [Adjoint via AD](../guides/adjoint_ad.md) for details and backend compatibility.
 
 ```julia
-# Zygote — uses CubicAdjoint internally via rrule
+# Zygote — uses the native adjoint operator internally via rrule
 using Zygote
 ∇f = Zygote.gradient(f -> sum(cubic_interp(x, f, xq)), f)[1]
+# Works with all types: linear_interp, quadratic_interp, constant_interp too
 ```
 
 ### Native Adjoint Operator
@@ -72,8 +73,9 @@ f̄ = adj(ȳ)                  # allocating
 adj(f̄, ȳ)                   # in-place, zero-allocation
 ```
 
-The native operator exploits the cubic spline structure and is the recommended approach
-for performance-critical code. **Zygote** and **Enzyme** use it internally via registered AD rules,
+The native operator exploits the spline structure and is the recommended approach
+for performance-critical code. **Zygote** and **Enzyme** use the native adjoint operators
+internally via registered AD rules for all four interpolant types,
 so you get native performance through the standard AD interface.
 
 See [Cubic Adjoint (1D)](cubic_1d_adjoint.md) and [Cubic Adjoint (ND)](cubic_nd_adjoint.md) for the full API reference.
@@ -91,12 +93,12 @@ See [Cubic Adjoint (1D)](cubic_1d_adjoint.md) and [Cubic Adjoint (ND)](cubic_nd_
 |--------|:--------------:|:------------------------------------:|
 | **Cubic (1D)** | [`CubicAdjoint`](@ref) | ForwardDiff, Zygote, Enzyme |
 | **Cubic (ND)** | [`CubicAdjointND`](@ref) | ForwardDiff, Zygote, Enzyme |
-| **Linear (1D)** | [`LinearAdjoint`](@ref) | ForwardDiff, Zygote |
-| **Linear (ND)** | [`LinearAdjointND`](@ref) | ForwardDiff, Zygote |
-| **Quadratic (1D)** | [`QuadraticAdjoint`](@ref) | ForwardDiff |
-| **Quadratic (ND)** | [`QuadraticAdjointND`](@ref) | ForwardDiff |
-| **Constant (1D)** | [`ConstantAdjoint`](@ref) | ForwardDiff, Zygote |
-| **Constant (ND)** | [`ConstantAdjointND`](@ref) | ForwardDiff, Zygote |
+| **Quadratic (1D)** | [`QuadraticAdjoint`](@ref) | ForwardDiff, Zygote, Enzyme |
+| **Quadratic (ND)** | [`QuadraticAdjointND`](@ref) | ForwardDiff, Zygote, Enzyme |
+| **Linear (1D)** | [`LinearAdjoint`](@ref) | ForwardDiff, Zygote, Enzyme |
+| **Linear (ND)** | [`LinearAdjointND`](@ref) | ForwardDiff, Zygote, Enzyme |
+| **Constant (1D)** | [`ConstantAdjoint`](@ref) | ForwardDiff, Zygote, Enzyme |
+| **Constant (ND)** | [`ConstantAdjointND`](@ref) | ForwardDiff, Zygote, Enzyme |
 
 ## See Also
 

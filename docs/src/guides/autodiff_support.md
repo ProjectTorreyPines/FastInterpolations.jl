@@ -13,8 +13,7 @@ FastInterpolations.jl supports multiple AD (Automatic Differentiation) backends,
 
     AD (ForwardDiff, Zygote, Enzyme) is useful for:
     - **Adjoint computation** (`df/dy`): differentiating w.r.t. *data values*, not query points.
-      For cubic splines, use the native [`CubicAdjoint`](@ref) operator for maximum performance
-      — see [Adjoint Operators](../adjoint/overview.md).
+      Native adjoint operators are available for all four types — see [Adjoint Operators](../adjoint/overview.md).
     - **Composite pipelines**: when the interpolant is embedded inside a larger differentiable function.
 
     For query-coordinate derivatives, the `deriv` keyword is the recommended approach.
@@ -47,7 +46,9 @@ For **simple derivatives** of the interpolant itself, use the built-in `deriv` k
 | Quadratic | ✅ | ✅ | ✅ |
 | Cubic | ✅ | ✅ | ✅ |
 | Series | ✅ | — | — |
-| One-shot | ✅ | ✅ | Linear |
+| One-shot `∂f/∂y` | ✅ | ✅ (all types) | ✅ (all types) |
+| One-shot `∂f/∂xq` | ✅ | ✅ (all types) | ✅ (all types) |
+| ND struct `∂f/∂data` | ✅ | ✅ | ✅ |
 | Complex | ✅ | `real()`/`imag()` | `real()`/`imag()` |
 
 ## ForwardDiff.jl (Recommended)
@@ -124,7 +125,6 @@ nothing #hide
   nothing #hide
   ```
 - **Series interpolants**: Not supported (array mutation)
-- **Constant interpolation**: Returns `nothing` instead of `0.0`
 
 ## Enzyme.jl
 
@@ -145,8 +145,9 @@ nothing #hide
 ```
 
 **Supported:**
-- Single interpolants (Linear, Constant, Quadratic, Cubic)
-- Linear one-shot API
+- Single interpolants (all types: Constant, Linear, Quadratic, Cubic)
+- One-shot API for all types — `∂f/∂y` (data adjoint) and `∂f/∂xq` (query gradient)
+- ND struct API — `itp(query)`, `gradient(itp, query)`, `hessian(itp, query)`, `laplacian(itp, query)` with `∂/∂data`
 - Complex values via `real()`/`imag()`
 
 **Not Supported:**
@@ -158,5 +159,7 @@ nothing #hide
 
 ## See Also
 
-- [AD Support for N-Dimensional Interpolants](autodiff_nd.md) - ForwardDiff, Zygote, and optimization with `CubicInterpolantND`
+- [AD Support for N-Dimensional Interpolants](autodiff_nd.md) — ForwardDiff, Zygote, Enzyme for all ND interpolant types
+- [Adjoint via AD (∂f/∂y)](adjoint_ad.md) — Data sensitivity via AD backends
+- [Adjoint Operators](../adjoint/overview.md) — Native matrix-free adjoint operators
 

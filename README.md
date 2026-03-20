@@ -23,14 +23,14 @@ A high-performance **N-dimensional** interpolation package for Julia, optimized 
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
 ## Supported Methods
-`FastInterpolations.jl` provides four interpolation methods (1D and ND) and their corresponding **native adjoint operators** ($W^\top \bar{y}$) for gradient-based workflows.
+`FastInterpolations.jl` supports four interpolation methods — **Constant**, **Linear**, **Quadratic**, and **Cubic** splines (1D and ND) — each with a corresponding **native adjoint operator** ($W^\top \bar{y}$) for gradient-based workflows.
 
-| Method | Interpolation | Adjoint | Continuity | Best For |
-|:-------|:-------------|:--------|:-----------|:---------|
-| Constant | `constant_interp` | `constant_adjoint` | C⁻¹ | Step functions |
-| Linear | `linear_interp` | `linear_adjoint` | C⁰ | Fast, lightweight, no overshoot |
-| Quadratic | `quadratic_interp` | `quadratic_adjoint` | C¹ | Smooth derivatives at low cost |
-| Cubic | `cubic_interp` | `cubic_adjoint` | C² | High-accuracy splines |
+| Interpolation | Adjoint | Continuity | Best For |
+|:-------------|:--------|:-----------|:---------|
+| `constant_interp` | `constant_adjoint` | C⁻¹ | Step functions |
+| `linear_interp` | `linear_adjoint` | C⁰ | Fast, lightweight, no overshoot |
+| `quadratic_interp` | `quadratic_adjoint` | C¹ | Smooth derivatives at low cost |
+| `cubic_interp` | `cubic_adjoint` | C² | High-accuracy splines |
 
 📖 [Interpolation Overview](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/overview/) 
 📖 [Adjoint Overview](https://projecttorreypines.github.io/FastInterpolations.jl/dev/adjoint/overview/)

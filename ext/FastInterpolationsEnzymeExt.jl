@@ -26,7 +26,7 @@ function EnzymeRules.augmented_primal(
         RT::Type{<:Annotation},
         x::Const{<:AbstractVector{Tg}},
         f::Duplicated{<:AbstractVector},
-        xq::Const{<:AbstractVector{Tg}};
+        xq::Const{<:AbstractVector{<:Real}};
         kwargs...
     ) where {Tg <: AbstractFloat}
     y = func.val(x.val, f.val, xq.val; kwargs...)
@@ -44,7 +44,7 @@ function EnzymeRules.reverse(
         tape,
         x::Const{<:AbstractVector{Tg}},
         f::Duplicated{<:AbstractVector},
-        xq::Const{<:AbstractVector{Tg}};
+        xq::Const{<:AbstractVector{<:Real}};
         kwargs...
     ) where {Tg <: AbstractFloat, RT}
     adj, deriv_op, dy = tape
@@ -72,7 +72,7 @@ function EnzymeRules.augmented_primal(
     y = func.val(x.val, f.val, xq.val; kwargs...)
     primal = EnzymeRules.needs_primal(config) ? y : nothing
     shadow = EnzymeRules.needs_shadow(config) ? zero(y) : nothing
-    adj = _adjoint_func(func.val)(x.val, Tg[xq.val]; kwargs...)
+    adj = _adjoint_func(func.val)(x.val, [xq.val]; kwargs...)
     deriv = get(kwargs, :deriv, EvalValue())
     return EnzymeRules.AugmentedReturn(primal, shadow, (adj, deriv))
 end
@@ -88,7 +88,7 @@ function EnzymeRules.reverse(
         kwargs...
     ) where {Tg <: AbstractFloat}
     adj, deriv_op = tape
-    f_bar = adj(Tg[dret.val]; deriv = deriv_op)
+    f_bar = adj([dret.val]; deriv = deriv_op)
     f.dval .+= f_bar
     return (nothing, nothing, nothing)
 end
@@ -110,7 +110,7 @@ function EnzymeRules.augmented_primal(
     y = func.val(x.val, f.val, xq.val; kwargs...)
     primal = EnzymeRules.needs_primal(config) ? y : nothing
     shadow = nothing
-    d = func.val(x.val, f.val, Tg(xq.val); deriv = DerivOp(1), kwargs...)
+    d = func.val(x.val, f.val, xq.val; deriv = DerivOp(1), kwargs...)
     return EnzymeRules.AugmentedReturn(primal, shadow, d)
 end
 
@@ -138,7 +138,7 @@ function EnzymeRules.augmented_primal(
         RT::Type{<:Annotation},
         x::Const{<:AbstractVector{Tg}},
         f::Const{<:AbstractVector},
-        xq::Duplicated{<:AbstractVector{Tg}};
+        xq::Duplicated{<:AbstractVector{<:Real}};
         kwargs...
     ) where {Tg <: AbstractFloat}
     y = func.val(x.val, f.val, xq.val; kwargs...)
@@ -155,7 +155,7 @@ function EnzymeRules.reverse(
         tape,
         x::Const{<:AbstractVector{Tg}},
         f::Const{<:AbstractVector},
-        xq::Duplicated{<:AbstractVector{Tg}};
+        xq::Duplicated{<:AbstractVector{<:Real}};
         kwargs...
     ) where {Tg <: AbstractFloat, RT}
     d, dy = tape

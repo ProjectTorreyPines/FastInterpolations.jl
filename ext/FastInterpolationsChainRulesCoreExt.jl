@@ -142,7 +142,7 @@ function ChainRulesCore.rrule(
         Δy_val = unthunk(Δy)
         grad = FastInterpolations.gradient(itp, query_tuple)
         ∂query = [real(conj(Δy_val) * grad[i]) for i in 1:N]
-        data_bar = adj(Δy_val; deriv = EvalValue())
+        data_bar = @thunk(adj(Δy_val; deriv = EvalValue()))
         return data_bar, ∂query
     end
 
@@ -323,7 +323,7 @@ function ChainRulesCore.rrule(
         grad = FastInterpolations.gradient(itp, query)
         ∂query = ntuple(i -> real(conj(Δy_val) * grad[i]), Val(N))
 
-        data_bar = adj(Δy_val; deriv = EvalValue())
+        data_bar = @thunk(adj(Δy_val; deriv = EvalValue()))
 
         return data_bar, ∂query
     end

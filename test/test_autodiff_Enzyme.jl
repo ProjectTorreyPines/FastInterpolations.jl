@@ -28,6 +28,11 @@ using FastInterpolations
 # Skip Enzyme tests on Windows + Julia 1.12 due to LLVM codegen issues
 const SKIP_ENZYME = Sys.iswindows() && VERSION >= v"1.12"
 
+# Enzyme on Julia 1.10 (LTS) throws MixedReturnException for ND struct API rules
+# because interpolant structs have mixed mutable/immutable fields.
+# These tests require Julia ≥ 1.11 where Enzyme handles MixedDuplicated correctly.
+const ENZYME_ND_STRUCT_SUPPORTED = VERSION >= v"1.11"
+
 if SKIP_ENZYME
     @testset "Enzyme AD Support (skipped on Windows + Julia 1.12)" begin
         @test_skip "Enzyme has known LLVM issues on Windows + Julia 1.12 - verify manually if needed"
@@ -537,6 +542,7 @@ else
             # ND struct API — ∂/∂data via constructor + eval EnzymeRules
             # ════════════════════════════════════════════════════════════════
 
+            if ENZYME_ND_STRUCT_SUPPORTED
             @testset "ND struct API — ∂/∂data via Enzyme" begin
                 x = range(0.0, 2.0, 15)
                 y = range(0.0, 2.0, 15)
@@ -612,6 +618,7 @@ else
                     end
                 end
             end
+            end # ENZYME_ND_STRUCT_SUPPORTED
 
             # ════════════════════════════════════════════════════════════════
             # ND struct eval — ∂/∂query via Enzyme
@@ -676,6 +683,7 @@ else
             # ND struct gradient/hessian/laplacian — ∂/∂data via Enzyme
             # ════════════════════════════════════════════════════════════════
 
+            if ENZYME_ND_STRUCT_SUPPORTED
             @testset "ND struct vector calculus — ∂/∂data via Enzyme" begin
                 x = range(0.0, 2.0, 15)
                 y = range(0.0, 2.0, 15)
@@ -750,6 +758,7 @@ else
                     end
                 end
             end
+            end # ENZYME_ND_STRUCT_SUPPORTED
 
         end  # testset "Enzyme AD Support"
 

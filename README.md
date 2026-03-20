@@ -23,14 +23,17 @@ A high-performance **N-dimensional** interpolation package for Julia, optimized 
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
 ## Supported Methods
-`FastInterpolations.jl` supports four interpolation methods: `Constant`, `Linear`, `Quadratic`, and `Cubic` splines.
+`FastInterpolations.jl` provides four interpolation methods (1D and ND) and their corresponding **native adjoint operators** ($W^\top \bar{y}$) for gradient-based workflows.
 
-| Method | Continuity | Best For |
-|:-------|:-----------|:---------|
-| `constant_interp` | C⁻¹ | Step functions |
-| `linear_interp` | C⁰ | Fast, lightweight, no overshoot |
-| `quadratic_interp` | C¹ | Smooth derivatives at low cost |
-| `cubic_interp` | C² | High-accuracy splines |
+| Method | Interpolation | Adjoint | Continuity | Best For |
+|:-------|:-------------|:--------|:-----------|:---------|
+| Constant | `constant_interp` | `constant_adjoint` | C⁻¹ | Step functions |
+| Linear | `linear_interp` | `linear_adjoint` | C⁰ | Fast, lightweight, no overshoot |
+| Quadratic | `quadratic_interp` | `quadratic_adjoint` | C¹ | Smooth derivatives at low cost |
+| Cubic | `cubic_interp` | `cubic_adjoint` | C² | High-accuracy splines |
+
+📖 [Interpolation Overview](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/overview/) 
+📖 [Adjoint Overview](https://projecttorreypines.github.io/FastInterpolations.jl/dev/adjoint/overview/)
 
 ## Quick Start
 
@@ -149,7 +152,7 @@ itp2d(point; deriv=DerivOp(1, 1))        # ∂²f/∂x∂y (mixed partial)
 gradient(itp2d, point)                   # (∂f/∂x, ∂f/∂y)
 hessian(itp2d, point)                    # 2×2 Hessian matrix
 ```
-→ [1D Derivatives](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/derivatives/) · [ND Derivatives](https://projecttorreypines.github.io/FastInterpolations.jl/dev/nd/derivatives/)
+📖 [1D Derivatives](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/derivatives/) · [ND Derivatives](https://projecttorreypines.github.io/FastInterpolations.jl/dev/nd/derivatives/)
 
 ### Analytic Integration
 Exact definite integration from spline coefficients — no numerical quadrature.
@@ -161,7 +164,7 @@ itp2d = cubic_interp((x, y), data2D)
 integrate(itp2d, (0.0, 0.0), (1.0, 1.0))    # 2D: ∫∫ f dA over [0,1]²
 integrate(itp2d)                              # 2D: full-domain integral
 ```
-→ [1D Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/integration/) · [ND Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/nd/integration/)
+📖 [1D Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/integration/) · [ND Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/nd/integration/)
 
 ### Boundary Conditions
 Rich type system for physical BCs — Neumann, periodic, polynomial fit, and custom per-endpoint.
@@ -171,7 +174,7 @@ cubic_interp(x, y, xq; bc=PeriodicBC())                      # C²-continuous pe
 cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv1(0.0)))  # Neumann: specify f' at each end
 cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv2(0.0)))  # mixed: slope left, curvature right
 ```
-→ [Boundary Conditions Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/boundary-conditions/overview/)
+📖 [Boundary Conditions Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/boundary-conditions/overview/)
 
 ### Extrapolation
 Queries outside the data domain throw `DomainError` by default. Use `Extrap()` to allow them:
@@ -181,7 +184,7 @@ cubic_interp(x, y; extrap=Extrap(:extend))            # extend boundary polynomi
 cubic_interp(x, y; extrap=Extrap(:fill; fill_value=NaN)) # fill with constant value
 # also :wrap (periodic) and :none (default, throws DomainError)
 ```
-→ [Extrapolation Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/extrapolation/) · 
+📖 [Extrapolation Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/extrapolation/) · 
 
 ### Search
 Non-uniform (`Vector`) grids require an interval search. The default `AutoSearch()` picks the best strategy per-call:
@@ -192,7 +195,7 @@ itp(sorted_xq)    # sorted detected → linear walk + binary fallback
 itp(rand_xq)      # random detected → binary search
 itp(0.5; search=BinarySearch())  # manual override (rarely needed)
 ```
-→ [Search Policies](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/search/policies/)
+📖 [Search Policies](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/search/policies/)
 
 ### Hints
 Give the search a positional hint to speed up lookup — enables O(1) sequential access (ODE solvers, streaming):
@@ -203,7 +206,7 @@ for t in time_steps  # monotonic or streaming
     val = itp(t; hint=hint)  # hint is reused & updated each call
 end
 ```
-→ [Using Hints](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/search/hints/)
+📖 [Using Hints](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/search/hints/)
 
 **See also:** [Factory Functions](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/factory_functions/) · [Complex Numbers](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/complex_number_support/) · [AutoDiff](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/autodiff_support/) · [Thread Safety](https://projecttorreypines.github.io/FastInterpolations.jl/dev/architecture/thread_safety/) · [Optim.jl Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/optimization/)
 

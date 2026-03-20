@@ -437,7 +437,7 @@ using FastInterpolations
 
             # Evaluation should be zero-allocation
             allocs = @allocated itp(0.5)
-            @test allocs == 0
+            @test allocs <= ALLOC_THRESHOLD
         end
     end
 

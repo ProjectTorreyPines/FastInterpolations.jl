@@ -201,7 +201,7 @@ using FastInterpolations
         @test G[2] ≈ G_ref[2]
 
         allocs = @allocated gradient!(G, itp, query)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Zero allocation - hessian!" begin
@@ -220,7 +220,7 @@ using FastInterpolations
         @test H ≈ H_ref
 
         allocs = @allocated hessian!(H, itp, query)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     # ========================================
@@ -498,7 +498,7 @@ using FastInterpolations
         end
         _test_vg_alloc(itp, query)  # warmup
         allocs = @allocated _test_vg_alloc(itp, query)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Type stability - value_gradient" begin

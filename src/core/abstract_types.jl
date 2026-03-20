@@ -36,7 +36,7 @@ Abstract supertype for all interpolant objects.
 - `AbstractSeriesInterpolant{Tg, Tv}`: Multi-series interpolants
 - `AbstractInterpolantND{Tg, Tv, N}`: N-dimensional interpolants
 """
-abstract type AbstractInterpolant{Tg <: AbstractFloat, Tv} end
+abstract type AbstractInterpolant{Tg<:AbstractFloat, Tv} end
 
 """
     AbstractInterpolant1D{Tg<:AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv}

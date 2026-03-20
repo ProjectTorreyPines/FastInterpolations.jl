@@ -8,9 +8,6 @@ coverage:
       default:
         target: 95%
 
-ignore:
-  - "ext/**/*"
-
 comment:
   layout: "reach,diff,flags,files"
   behavior: default

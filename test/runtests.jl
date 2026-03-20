@@ -120,18 +120,13 @@ else
     include("test_cumulative_integrate.jl")
 
     # ── Extension tests (AD / Symbolics) ──────────────────────────────
-    # Heavy package loads (~5 min compile). Always in CI, skip locally by default.
-    # Run individually via ARGS: Pkg.test(test_args=["test_autodiff_Zygote.jl"])
-    # NOTE: Enzyme MUST run before Zygote. Zygote loads ChainRulesCore, which
-    # triggers FastInterpolationsChainRulesCoreExt (rrule fallback). Enzyme then
-    # silently uses the rrule instead of our custom EnzymeRules, leaving the
-    # Enzyme extension with 0% body coverage.
-    if get(ENV, "CI", nothing) !== nothing
-        include("test_autodiff_Enzyme.jl")
-        include("test_autodiff_ForwardDiff.jl")
-        include("test_autodiff_Zygote.jl")
-        include("test_symbolics.jl")
-    else
-        @info "Skipping extension tests (run in CI, or use cc-julia-test-runner for individual files)"
+    # In CI, extensions run in a SEPARATE job (clean Julia process) to prevent
+    # ChainRulesCore contamination from Interpolations.jl (test_packages_comparison).
+    # See test/ext/runtests.jl for the extension entrypoint.
+    # Locally, run via: cc-julia-test-runner . ext/runtests.jl
+    if get(ENV, "CI", nothing) !== nothing && get(ENV, "SKIP_EXTENSIONS", nothing) === nothing
+        include("ext/runtests.jl")
+    elseif get(ENV, "CI", nothing) === nothing
+        @info "Skipping extension tests (run via: cc-julia-test-runner . ext/runtests.jl)"
     end
 end

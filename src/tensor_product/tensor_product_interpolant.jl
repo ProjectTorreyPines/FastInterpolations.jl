@@ -141,9 +141,9 @@ across dimensions (e.g., cubic on axis 1, linear on axis 2).
 
 # Keyword Arguments
 - `methods::Tuple{Vararg{AbstractInterpMethod, N}}`: Method per axis (**required**)
-- `coeffs=OnTheFly()`: Coefficient strategy
+- `coeffs=PreCompute()`: Coefficient strategy
+  - `PreCompute()`: Precompute partial derivatives (O(n^N) build, O(1) eval) — **recommended**
   - `OnTheFly()`: Build 1D interpolants per query (zero build cost, O(n) eval)
-  - `PreCompute()`: Precompute partial derivatives (O(n^N) build, O(1) eval)
 - `extrap=NoExtrap()`: Extrapolation mode(s) — single or per-axis tuple
 - `search=AutoSearch()`: Search policy(ies) — single or per-axis tuple
 
@@ -152,11 +152,11 @@ across dimensions (e.g., cubic on axis 1, linear on axis 2).
 x, y = range(0, 1, 50), range(0, 1, 30)
 data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
-# On-the-fly (default, zero build cost)
+# Default (precomputed, fast eval)
 itp = interp_nd((x, y), data; methods=(CubicInterp(), LinearInterp()))
 
-# Precomputed (fast eval, recommended for many queries)
-itp = interp_nd((x, y), data; methods=(CubicInterp(), LinearInterp()), coeffs=PreCompute())
+# On-the-fly (zero build cost, slower eval)
+itp = interp_nd((x, y), data; methods=(CubicInterp(), LinearInterp()), coeffs=OnTheFly())
 itp((0.5, 0.3))
 
 # Derivatives
@@ -168,7 +168,7 @@ function interp_nd(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N};
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
-        coeffs::AbstractCoeffStrategy = OnTheFly(),
+        coeffs::AbstractCoeffStrategy = PreCompute(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     ) where {N}

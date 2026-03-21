@@ -64,3 +64,19 @@ struct TensorProductInterpolantND{
     extraps::E
     searches::P
 end
+
+"""
+    HeteroPartials{Tv, N, NP1}
+
+Compact storage for heterogeneous partial derivatives.
+
+Stores `prod(sizes)` partials per grid point using mixed-radix indexing,
+where `sizes[d] = 2` for derivative axes (Cubic/Quadratic), `1` for others.
+Saves memory vs `NodalDerivativesND` (which always stores `2^N`) when some
+axes don't require derivatives.
+
+Layout: `partials[p, i₁, i₂, ..., iₙ]` where `p ∈ 1:prod(sizes)`.
+"""
+struct HeteroPartials{Tv, N, NP1}
+    partials::Array{Tv, NP1}
+end

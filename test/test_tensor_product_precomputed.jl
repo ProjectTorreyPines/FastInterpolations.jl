@@ -248,4 +248,51 @@ using FastInterpolations
         end
         @test _test_alloc_gradient() == 0
     end
+
+    # ========================================
+    # 12. Compact storage memory verification
+    # ========================================
+    @testset "Compact storage: memory savings" begin
+        ng = 50
+        xg = range(0.0, 2π, ng)
+        yg = range(0.0, π, ng)
+        zg = range(0.0, 1.0, ng)
+        data2 = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+        data3 = [sin(xi) * cos(yj) * zk for xi in xg, yj in yg, zk in zg]
+
+        # 2D Cubic×Cubic: all derivative → prod(sizes) = 2×2 = 4 = 2^N (no savings)
+        itp_cc = interp_nd(
+            (xg, yg), data2;
+            methods = (CubicInterp(), CubicInterp()), coeffs = PreCompute()
+        )
+        @test size(itp_cc.data.partials, 1) == 4   # 2^2
+
+        # 2D Cubic×Linear: prod(sizes) = 2×1 = 2 (vs 2^2 = 4, 2× savings)
+        itp_cl = interp_nd(
+            (xg, yg), data2;
+            methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+        )
+        @test size(itp_cl.data.partials, 1) == 2   # compact!
+
+        # 2D Linear×Linear: prod(sizes) = 1×1 = 1 (vs 2^2 = 4, 4× savings)
+        itp_ll = interp_nd(
+            (xg, yg), data2;
+            methods = (LinearInterp(), LinearInterp()), coeffs = PreCompute()
+        )
+        @test size(itp_ll.data.partials, 1) == 1   # just f, no derivatives
+
+        # 3D Cubic×Linear×Linear: prod(sizes) = 2×1×1 = 2 (vs 2^3 = 8, 4× savings)
+        itp_cll = interp_nd(
+            (xg, yg, zg), data3;
+            methods = (CubicInterp(), LinearInterp(), LinearInterp()), coeffs = PreCompute()
+        )
+        @test size(itp_cll.data.partials, 1) == 2   # 4× savings
+
+        # 3D Cubic×Linear×Quadratic: prod(sizes) = 2×1×2 = 4 (vs 2^3 = 8, 2× savings)
+        itp_clq = interp_nd(
+            (xg, yg, zg), data3;
+            methods = (CubicInterp(), LinearInterp(), QuadraticInterp()), coeffs = PreCompute()
+        )
+        @test size(itp_clq.data.partials, 1) == 4   # 2× savings
+    end
 end

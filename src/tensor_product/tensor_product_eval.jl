@@ -101,7 +101,7 @@ end
 
 # PreCompute path: precomputed partials + local kernel eval (O(1) per query)
 @inline function _eval_tensor_product_nd(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:NodalDerivativesND},
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
         query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
         searches::NTuple{N, AbstractSearchPolicy},
@@ -164,7 +164,7 @@ end
 
 # PreCompute: cell stores precomputed cell location (locate-once optimization)
 @inline function _locate_cell(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:NodalDerivativesND},
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
         query::Tuple{Vararg{Real, N}},
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing,
@@ -176,7 +176,7 @@ end
 end
 
 @inline function _eval_at_cell(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:NodalDerivativesND},
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp},
     ) where {Tg, Tv, N, G, S, M, E, P}
@@ -190,7 +190,7 @@ end
 
 @inline _zero_ref(itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array}) where {Tg, Tv, N, G, S, M, E, P} =
     @inbounds first(itp.data)
-@inline _zero_ref(itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:NodalDerivativesND}) where {Tg, Tv, N, G, S, M, E, P} =
+@inline _zero_ref(itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials}) where {Tg, Tv, N, G, S, M, E, P} =
     @inbounds itp.data.partials[1]
 
 @inline _deriv_zero_fill(::TensorProductInterpolantND, ::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} = false

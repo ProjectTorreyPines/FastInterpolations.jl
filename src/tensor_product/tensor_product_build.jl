@@ -1,12 +1,32 @@
 # ========================================
 # Heterogeneous ND Partial Derivative Build
 # ========================================
-# Precomputes all 2^N partial derivatives using the bit-encoding build-up algorithm,
+# Precomputes partial derivatives using the bit-encoding build-up algorithm,
 # dispatching per-axis differentiation functions based on the interpolation method.
 #
-# - CubicInterp axes: Thomas tridiagonal solve (_differentiate_nd_along_dim_batch!)
-# - QuadraticInterp axes: slope recurrence (_differentiate_nd_along_dim_quadratic!)
-# - LinearInterp / ConstantInterp axes: identity copy (no differentiation needed)
+# Uses compact storage: prod(sizes) partials instead of 2^N, where
+# sizes[d] = 2 for derivative axes (Cubic/Quadratic), 1 for others.
+# Non-derivative axes are skipped entirely in the build (no identity copy).
+
+# ========================================
+# Compile-Time Helpers
+# ========================================
+
+# Per-axis derivative sizes: 2 if derivative-based, 1 otherwise
+@inline _deriv_size(::CubicInterp) = 2
+@inline _deriv_size(::QuadraticInterp) = 2
+@inline _deriv_size(::LinearInterp) = 1
+@inline _deriv_size(::ConstantInterp) = 1
+
+# For @generated: extract sizes from methods tuple TYPE
+_is_deriv_method(::Type{<:CubicInterp}) = true
+_is_deriv_method(::Type{<:QuadraticInterp}) = true
+_is_deriv_method(::Type) = false
+
+function _deriv_sizes(::Type{M}) where {M <: Tuple{Vararg{AbstractInterpMethod}}}
+    N = length(M.parameters)
+    return ntuple(d -> _is_deriv_method(M.parameters[d]) ? 2 : 1, N)
+end
 
 # ========================================
 # Per-Axis Differentiation Dispatch
@@ -20,13 +40,7 @@ end
     return _differentiate_nd_along_dim_quadratic!(dst, src, grid, bc, d)
 end
 
-@inline function _differentiate_axis!(dst, src, ::Any, ::Any, ::Int, ::LinearInterp)
-    return copyto!(dst, src)
-end
-
-@inline function _differentiate_axis!(dst, src, ::Any, ::Any, ::Int, ::ConstantInterp)
-    return copyto!(dst, src)
-end
+# LinearInterp / ConstantInterp: no differentiation (not called in compact build)
 
 # ========================================
 # Per-Axis Effective BC Dispatch
@@ -38,71 +52,65 @@ end
 @inline _get_effective_bc_hetero(bc, p_src, grid, ::QuadraticInterp) =
     _get_effective_bc_quadratic(bc, p_src, grid)
 
-@inline _get_effective_bc_hetero(bc, _, _, ::LinearInterp) = bc
-@inline _get_effective_bc_hetero(bc, _, _, ::ConstantInterp) = bc
-
 # ========================================
 # BC Extraction from Method Types
 # ========================================
 
 @inline _extract_bc(m::CubicInterp) = m.bc
 @inline _extract_bc(m::QuadraticInterp) = m.bc
-@inline _extract_bc(::LinearInterp) = CubicFit()      # placeholder, not used by identity copy
-@inline _extract_bc(::ConstantInterp) = CubicFit()     # placeholder, not used by identity copy
+@inline _extract_bc(::LinearInterp) = CubicFit()      # placeholder, not used
+@inline _extract_bc(::ConstantInterp) = CubicFit()     # placeholder, not used
 
 @inline _extract_bcs(methods::Tuple{Vararg{AbstractInterpMethod}}) = map(_extract_bc, methods)
 
 # ========================================
-# Heterogeneous Build-Up Algorithm
+# Compact Build-Up Algorithm (Mixed-Radix)
 # ========================================
-# Same bit-encoding as _build_nd_partials_dim! (cubic) / _build_nd_partials_dim_quadratic!,
-# but dispatches per-axis differentiation function based on method type.
-
-@inline _build_nd_partials_dim_hetero!(
-    partials::AbstractArray{Tv, NP1},
-    grids::NTuple{N, AbstractVector{Tg}},
-    methods::Tuple{Vararg{AbstractInterpMethod, N}},
-    bcs::Tuple{Vararg{AbstractBC, N}},
-    ::Val{N},
-) where {Tv, Tg <: AbstractFloat, N, NP1} =
-    _build_nd_partials_dim_hetero!(partials, grids, methods, bcs, Val(1), Val(N))
+# Uses compact strides: stride_d = prod(sizes[1:d-1]).
+# Non-derivative axes (sizes[d]=1) are skipped entirely — no identity copy needed.
+# Derivative axes are differentiated using the appropriate per-method solver.
 
 @inline function _build_nd_partials_dim_hetero!(
         partials::AbstractArray{Tv, NP1},
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         bcs::Tuple{Vararg{AbstractBC, N}},
+        sizes::NTuple{N, Int},
         ::Val{D},
         ::Val{N},
-    ) where {Tv, Tg <: AbstractFloat, D, N, NP1}
-    bit_d = 1 << (D - 1)
-    method_d = methods[D]
-    @inbounds for p_src in 1:bit_d
-        p_dst = p_src + bit_d
-        effective_bc = _get_effective_bc_hetero(bcs[D], p_src, grids[D], method_d)
-        src_view = selectdim(partials, 1, p_src)
-        dst_view = selectdim(partials, 1, p_dst)
-        _differentiate_axis!(dst_view, src_view, grids[D], effective_bc, D, method_d)
+    ) where {Tv, D, N, NP1}
+    if sizes[D] == 2
+        # Derivative axis: differentiate using compact stride
+        stride_d = D == 1 ? 1 : prod(sizes[1:(D - 1)])
+        method_d = methods[D]
+        @inbounds for p_src_offset in 0:(stride_d - 1)
+            p_src = p_src_offset + 1
+            p_dst = p_src_offset + stride_d + 1
+            effective_bc = _get_effective_bc_hetero(bcs[D], p_src, grids[D], method_d)
+            src_view = selectdim(partials, 1, p_src)
+            dst_view = selectdim(partials, 1, p_dst)
+            _differentiate_axis!(dst_view, src_view, grids[D], effective_bc, D, method_d)
+        end
     end
+    # Non-derivative axis (sizes[D]=1): skip — no entries to compute
+
     if D < N
-        _build_nd_partials_dim_hetero!(partials, grids, methods, bcs, Val(D + 1), Val(N))
+        _build_nd_partials_dim_hetero!(partials, grids, methods, bcs, sizes, Val(D + 1), Val(N))
     end
     return partials
 end
 
 # ========================================
-# Top-Level: Compute All Heterogeneous Partials
+# Top-Level: Compute Compact Heterogeneous Partials
 # ========================================
 
 """
-    _compute_nd_partials_hetero!(partials, grids, data, methods, bcs)
+    _compute_nd_partials_hetero!(partials, grids, data, methods, bcs, sizes)
 
-Compute all 2^N partial derivatives for heterogeneous ND interpolation.
+Compute compact partial derivatives for heterogeneous ND interpolation.
 
-Uses the bit-encoding build-up algorithm with per-axis dispatch:
-- CubicInterp: Thomas tridiagonal solve (global cubic spline slopes)
-- QuadraticInterp: slope recurrence (quadratic slopes)
-- LinearInterp/ConstantInterp: identity copy (derivative slots = value slots)
+Uses mixed-radix indexing: `sizes[d] = 2` for derivative axes, `1` for others.
+Total entries = `prod(sizes)` ≤ 2^N. Non-derivative axes are skipped entirely.
 """
 function _compute_nd_partials_hetero!(
         partials::AbstractArray{Tv, NP1},
@@ -110,14 +118,14 @@ function _compute_nd_partials_hetero!(
         data::AbstractArray{Tv, N},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         bcs::Tuple{Vararg{AbstractBC, N}},
+        sizes::NTuple{N, Int},
     ) where {Tv, Tg <: AbstractFloat, N, NP1}
-    # Validate dimensions
     @boundscheck begin
         NP1 == N + 1 || throw(DimensionMismatch("partials must have N+1 dimensions"))
-        n_partials = 1 << N
+        n_partials = prod(sizes)
         size(partials, 1) == n_partials || throw(
             DimensionMismatch(
-                "partials first dimension must be 2^N=$(n_partials), got $(size(partials, 1))"
+                "partials first dimension must be prod(sizes)=$(n_partials), got $(size(partials, 1))"
             )
         )
     end
@@ -127,15 +135,16 @@ function _compute_nd_partials_hetero!(
     copyto!(f_partial, data)
 
     # Build up higher-order partials stage by stage
-    _build_nd_partials_dim_hetero!(partials, grids, methods, bcs, Val(N))
+    _build_nd_partials_dim_hetero!(partials, grids, methods, bcs, sizes, Val(1), Val(N))
 
     return partials
 end
 
 """
-    _build_nd_coeffs_hetero(grids, data, methods) -> NodalDerivativesND
+    _build_nd_coeffs_hetero(grids, data, methods) -> HeteroPartials
 
-Allocate and compute heterogeneous partial derivatives. Returns NodalDerivativesND.
+Allocate and compute compact heterogeneous partial derivatives.
+Memory = `prod(sizes) × grid_size` instead of `2^N × grid_size`.
 """
 function _build_nd_coeffs_hetero(
         grids::NTuple{N, AbstractVector{Tg}},
@@ -143,14 +152,15 @@ function _build_nd_coeffs_hetero(
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
     ) where {Tg <: AbstractFloat, Tv, N}
     bcs = _extract_bcs(methods)
+    sizes = map(_deriv_size, methods)
 
-    # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
-    n_partials = 1 << N
+    # Allocate compact partials array: (prod(sizes), n₁, n₂, ..., nₙ)
+    n_partials = prod(sizes)
     partials_shape = (n_partials, size(data)...)
     partials = Array{Tv, N + 1}(undef, partials_shape)
 
-    # Compute all partial derivatives in-place
-    _compute_nd_partials_hetero!(partials, grids, data, methods, bcs)
+    # Compute partial derivatives in-place
+    _compute_nd_partials_hetero!(partials, grids, data, methods, bcs, sizes)
 
-    return NodalDerivativesND{Tv, N, N + 1}(partials)
+    return HeteroPartials{Tv, N, N + 1}(partials)
 end

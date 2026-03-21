@@ -99,27 +99,25 @@ function _build_tensor_product_precomputed(
         extrap,
         search,
     ) where {N, Tv_raw}
-    # 1-6: same validation + promotion as on-the-fly
     _validate_nd_grids(grids, data)
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
     spacings = _create_spacings_typed(grids_typed)
     Tv = _value_type(Tv_raw, Tg)
-    data_typed = Tv === Tv_raw ? Array(data) : Array{Tv}(data)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N))
     _validate_axis_methods(grids_typed, methods, extraps)
 
-    # 7. Build precomputed partials
-    nodal_derivs = _build_nd_coeffs_hetero(grids_typed, data_typed, methods)
+    # Build partials: data is copied directly into partials[1,...] (no intermediate)
+    hetero_partials = _build_nd_coeffs_hetero(grids_typed, Tv, data, methods)
 
     return TensorProductInterpolantND{
         Tg, Tv, N,
         typeof(grids_typed), typeof(spacings), typeof(methods),
-        typeof(extraps), typeof(searches), typeof(nodal_derivs),
+        typeof(extraps), typeof(searches), typeof(hetero_partials),
     }(
-        grids_typed, spacings, nodal_derivs, methods, extraps, searches
+        grids_typed, spacings, hetero_partials, methods, extraps, searches
     )
 end
 

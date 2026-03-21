@@ -141,26 +141,29 @@ function _compute_nd_partials_hetero!(
 end
 
 """
-    _build_nd_coeffs_hetero(grids, data, methods) -> HeteroPartials
+    _build_nd_coeffs_hetero(grids, Tv, data, methods) -> HeteroPartials
 
 Allocate and compute compact heterogeneous partial derivatives.
+Data is copied directly into `partials[1, ...]` with type promotion to `Tv` —
+no intermediate `data_typed` allocation needed.
 Memory = `prod(sizes) × grid_size` instead of `2^N × grid_size`.
 """
 function _build_nd_coeffs_hetero(
         grids::NTuple{N, AbstractVector{Tg}},
-        data::AbstractArray{Tv, N},
+        ::Type{Tv},
+        data::AbstractArray{<:Any, N},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
     ) where {Tg <: AbstractFloat, Tv, N}
     bcs = _extract_bcs(methods)
     sizes = map(_deriv_size, methods)
 
-    # Allocate compact partials array: (prod(sizes), n₁, n₂, ..., nₙ)
+    # Single allocation: (prod(sizes), n₁, n₂, ..., nₙ)
     n_partials = prod(sizes)
-    partials_shape = (n_partials, size(data)...)
-    partials = Array{Tv, N + 1}(undef, partials_shape)
+    partials = Array{Tv, N + 1}(undef, n_partials, size(data)...)
 
-    # Compute partial derivatives in-place
-    _compute_nd_partials_hetero!(partials, grids, data, methods, bcs, sizes)
+    # Promote data to Tv if needed, then copy into partials[1, ...]
+    data_tv = eltype(data) === Tv ? data : Tv.(data)
+    _compute_nd_partials_hetero!(partials, grids, data_tv, methods, bcs, sizes)
 
     return HeteroPartials{Tv, N, N + 1}(partials)
 end

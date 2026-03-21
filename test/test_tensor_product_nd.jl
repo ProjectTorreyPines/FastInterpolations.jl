@@ -25,7 +25,7 @@ using FastInterpolations
         itp_ref = cubic_interp((x, y), data_2d)
         itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), CubicInterp()))
 
-        @test itp_tp isa TensorProductInterpolantND
+        @test itp_tp isa CubicInterpolantND  # auto-dispatched to existing type
         @test itp_tp((qx, qy)) ≈ itp_ref((qx, qy)) rtol = 1.0e-12
     end
 
@@ -266,5 +266,50 @@ using FastInterpolations
         for qxi in range(-0.5, 2.5, 8), qyj in range(0.5, 4.5, 8), qzk in range(0.1, 1.9, 8)
             @test itp_e((qxi, qyj, qzk)) ≈ f3d(qxi, qyj, qzk) atol = 1.0e-8
         end
+    end
+
+    # ========================================
+    # 18. Auto-dispatch: homogeneous → existing types
+    # ========================================
+    @testset "Auto-dispatch: homo → existing types" begin
+        @test interp_nd((x, y), data_2d; methods = (CubicInterp(), CubicInterp())) isa
+            CubicInterpolantND
+        @test interp_nd((x, y), data_2d; methods = (LinearInterp(), LinearInterp())) isa
+            LinearInterpolantND
+        @test interp_nd((x, y), data_2d; methods = (QuadraticInterp(), QuadraticInterp())) isa
+            QuadraticInterpolantND
+        @test interp_nd((x, y), data_2d; methods = (ConstantInterp(), ConstantInterp())) isa
+            ConstantInterpolantND
+
+        # Hetero → TensorProductInterpolantND
+        @test interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp())) isa
+            TensorProductInterpolantND
+    end
+
+    # ========================================
+    # 19. Single broadcast: methods=CubicInterp()
+    # ========================================
+    @testset "Single broadcast: methods=single value" begin
+        @test interp_nd((x, y), data_2d; methods = CubicInterp()) isa CubicInterpolantND
+        @test interp_nd((x, y), data_2d; methods = LinearInterp()) isa LinearInterpolantND
+
+        # Result equivalence
+        itp_nd = interp_nd((x, y), data_2d; methods = CubicInterp())
+        itp_direct = cubic_interp((x, y), data_2d)
+        @test itp_nd((qx, qy)) ≈ itp_direct((qx, qy))
+    end
+
+    # ========================================
+    # 20. Per-axis BC forwarding
+    # ========================================
+    @testset "Per-axis BC forwarding" begin
+        itp_nd = interp_nd(
+            (x, y), data_2d;
+            methods = (CubicInterp(CubicFit()), CubicInterp(ZeroCurvBC())),
+        )
+        itp_direct = cubic_interp((x, y), data_2d; bc = (CubicFit(), ZeroCurvBC()))
+
+        @test itp_nd isa CubicInterpolantND
+        @test itp_nd((qx, qy)) ≈ itp_direct((qx, qy))
     end
 end

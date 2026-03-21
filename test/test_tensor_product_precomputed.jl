@@ -260,12 +260,8 @@ using FastInterpolations
         data2 = [sin(xi) * cos(yj) for xi in xg, yj in yg]
         data3 = [sin(xi) * cos(yj) * zk for xi in xg, yj in yg, zk in zg]
 
-        # 2D Cubic×Cubic: all derivative → prod(sizes) = 2×2 = 4 = 2^N (no savings)
-        itp_cc = interp_nd(
-            (xg, yg), data2;
-            methods = (CubicInterp(), CubicInterp()), coeffs = PreCompute()
-        )
-        @test size(itp_cc.data.partials, 1) == 4   # 2^2
+        # Only heterogeneous combos produce TensorProductInterpolantND with HeteroPartials.
+        # Homogeneous (Cubic×Cubic, Linear×Linear) auto-dispatch to existing ND types.
 
         # 2D Cubic×Linear: prod(sizes) = 2×1 = 2 (vs 2^2 = 4, 2× savings)
         itp_cl = interp_nd(
@@ -273,13 +269,6 @@ using FastInterpolations
             methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
         )
         @test size(itp_cl.data.partials, 1) == 2   # compact!
-
-        # 2D Linear×Linear: prod(sizes) = 1×1 = 1 (vs 2^2 = 4, 4× savings)
-        itp_ll = interp_nd(
-            (xg, yg), data2;
-            methods = (LinearInterp(), LinearInterp()), coeffs = PreCompute()
-        )
-        @test size(itp_ll.data.partials, 1) == 1   # just f, no derivatives
 
         # 3D Cubic×Linear×Linear: prod(sizes) = 2×1×1 = 2 (vs 2^3 = 8, 4× savings)
         itp_cll = interp_nd(

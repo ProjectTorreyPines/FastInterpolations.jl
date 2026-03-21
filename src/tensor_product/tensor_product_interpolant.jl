@@ -5,6 +5,52 @@
 # Internal:   _build_tensor_product_nd(grids, data, methods, extrap, search)
 
 # ========================================
+# Homogeneous Auto-Dispatch
+# ========================================
+# When all axes use the same method type, delegate to the existing optimized
+# ND constructors (cubic_interp, linear_interp, etc.) which have richer features
+# (adjoint, oneshot, AD). Per-axis options (bc, side) are forwarded as tuples —
+# the existing constructors already accept Union{Single, NTuple} for these kwargs.
+
+function _interp_nd_dispatch(
+        grids, data, methods::Tuple{<:CubicInterp, Vararg{<:CubicInterp}}, coeffs, extrap, search
+    )
+    bcs = map(m -> m.bc, methods)
+    return cubic_interp(grids, data; bc = bcs, extrap = extrap, search = search, coeffs = coeffs)
+end
+
+function _interp_nd_dispatch(
+        grids, data, ::Tuple{LinearInterp, Vararg{LinearInterp}}, ::Any, extrap, search
+    )
+    return linear_interp(grids, data; extrap = extrap, search = search)
+end
+
+function _interp_nd_dispatch(
+        grids, data, methods::Tuple{<:QuadraticInterp, Vararg{<:QuadraticInterp}}, ::Any, extrap, search
+    )
+    bcs = map(m -> m.bc, methods)
+    return quadratic_interp(grids, data; bc = bcs, extrap = extrap, search = search)
+end
+
+function _interp_nd_dispatch(
+        grids, data, methods::Tuple{<:ConstantInterp, Vararg{<:ConstantInterp}}, ::Any, extrap, search
+    )
+    sides = map(m -> m.side, methods)
+    return constant_interp(grids, data; side = sides, extrap = extrap, search = search)
+end
+
+# Heterogeneous (fallback) → TensorProductInterpolantND
+function _interp_nd_dispatch(
+        grids, data, methods::Tuple{Vararg{AbstractInterpMethod, N}}, coeffs, extrap, search
+    ) where {N}
+    if coeffs isa PreCompute
+        return _build_tensor_product_precomputed(grids, data, methods, extrap, search)
+    else
+        return _build_tensor_product_nd(grids, data, methods, extrap, search)
+    end
+end
+
+# ========================================
 # Per-Axis Validation
 # ========================================
 
@@ -126,22 +172,27 @@ end
 # ========================================
 
 """
-    interp_nd(grids, data; methods, coeffs=OnTheFly(), extrap=NoExtrap(), search=AutoSearch())
+    interp_nd(grids, data; methods, coeffs=PreCompute(), extrap=NoExtrap(), search=AutoSearch())
 
-Create an N-dimensional interpolant with per-axis method specification.
+Unified N-dimensional interpolation constructor with per-axis method specification.
 
-Constructs a [`TensorProductInterpolantND`](@ref) supporting heterogeneous methods
-across dimensions (e.g., cubic on axis 1, linear on axis 2).
+Automatically dispatches to the optimal implementation:
+- **Homogeneous** (all axes same method): delegates to existing optimized types
+  (`CubicInterpolantND`, `LinearInterpolantND`, etc.) with full feature support
+  (adjoint, oneshot, AD)
+- **Heterogeneous** (mixed methods): creates `TensorProductInterpolantND`
 
 # Arguments
 - `grids::NTuple{N, AbstractVector}`: Grid vectors per dimension
 - `data::AbstractArray{<:Any, N}`: N-dimensional data array
 
 # Keyword Arguments
-- `methods::Tuple{Vararg{AbstractInterpMethod, N}}`: Method per axis (**required**)
-- `coeffs=PreCompute()`: Coefficient strategy
-  - `PreCompute()`: Precompute partial derivatives (O(n^N) build, O(1) eval) — **recommended**
-  - `OnTheFly()`: Build 1D interpolants per query (zero build cost, O(n) eval)
+- `methods`: Interpolation method(s) (**required**)
+  - Single `AbstractInterpMethod`: broadcast to all axes (e.g., `methods=CubicInterp()`)
+  - `Tuple{Vararg{AbstractInterpMethod, N}}`: per-axis (e.g., `methods=(CubicInterp(), LinearInterp())`)
+- `coeffs=PreCompute()`: Coefficient strategy (heterogeneous only)
+  - `PreCompute()`: Precompute partial derivatives (O(1) eval)
+  - `OnTheFly()`: Build 1D per query (zero build cost, O(n) eval)
 - `extrap=NoExtrap()`: Extrapolation mode(s) — single or per-axis tuple
 - `search=AutoSearch()`: Search policy(ies) — single or per-axis tuple
 
@@ -150,12 +201,14 @@ across dimensions (e.g., cubic on axis 1, linear on axis 2).
 x, y = range(0, 1, 50), range(0, 1, 30)
 data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
-# Default (precomputed, fast eval)
+# Single method → all axes (dispatches to CubicInterpolantND)
+itp = interp_nd((x, y), data; methods=CubicInterp())
+
+# Heterogeneous → TensorProductInterpolantND
 itp = interp_nd((x, y), data; methods=(CubicInterp(), LinearInterp()))
 
-# On-the-fly (zero build cost, slower eval)
-itp = interp_nd((x, y), data; methods=(CubicInterp(), LinearInterp()), coeffs=OnTheFly())
-itp((0.5, 0.3))
+# Per-axis BCs
+itp = interp_nd((x, y), data; methods=(CubicInterp(CubicFit()), CubicInterp(ZeroCurvBC())))
 
 # Derivatives
 itp((0.5, 0.3); deriv=(DerivOp(1), DerivOp(0)))  # ∂f/∂x
@@ -165,14 +218,11 @@ gradient(itp, (0.5, 0.3))                          # (∂f/∂x, ∂f/∂y)
 function interp_nd(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N};
-        methods::Tuple{Vararg{AbstractInterpMethod, N}},
+        methods::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
         coeffs::AbstractCoeffStrategy = PreCompute(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     ) where {N}
-    if coeffs isa PreCompute
-        return _build_tensor_product_precomputed(grids, data, methods, extrap, search)
-    else
-        return _build_tensor_product_nd(grids, data, methods, extrap, search)
-    end
+    methods_tuple = methods isa AbstractInterpMethod ? ntuple(_ -> methods, Val(N)) : methods
+    return _interp_nd_dispatch(grids, data, methods_tuple, coeffs, extrap, search)
 end

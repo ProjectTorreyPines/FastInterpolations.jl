@@ -162,4 +162,90 @@ using FastInterpolations
         @test grad[1] ≈ dfdx rtol = 1.0e-12
         @test grad[2] ≈ dfdy rtol = 1.0e-12
     end
+
+    # ========================================
+    # 11. Zero-allocation eval (PreCompute)
+    # ========================================
+    # Function barrier pattern: setup + warmup + @allocated inside ONE function
+    # to avoid @testset try/catch type instability artifacts.
+
+    @testset "Zero-allocation: PreCompute Cubic×Cubic" begin
+        function _test_alloc_cubic_cubic()
+            xg = range(0.0, 2π, 30)
+            yg = range(0.0, π, 25)
+            d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+            itp = interp_nd(
+                (xg, yg), d;
+                methods = (CubicInterp(), CubicInterp()), coeffs = PreCompute()
+            )
+            itp((1.0, 0.5))
+            itp((1.0, 0.5))
+            return @allocated itp((1.0, 0.5))
+        end
+        @test _test_alloc_cubic_cubic() == 0
+    end
+
+    @testset "Zero-allocation: PreCompute Cubic×Linear" begin
+        function _test_alloc_cubic_linear()
+            xg = range(0.0, 2π, 30)
+            yg = range(0.0, π, 25)
+            d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+            itp = interp_nd(
+                (xg, yg), d;
+                methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+            )
+            itp((1.0, 0.5))
+            itp((1.0, 0.5))
+            return @allocated itp((1.0, 0.5))
+        end
+        @test _test_alloc_cubic_linear() == 0
+    end
+
+    @testset "Zero-allocation: PreCompute Linear×Linear" begin
+        function _test_alloc_linear_linear()
+            xg = range(0.0, 2π, 30)
+            yg = range(0.0, π, 25)
+            d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+            itp = interp_nd(
+                (xg, yg), d;
+                methods = (LinearInterp(), LinearInterp()), coeffs = PreCompute()
+            )
+            itp((1.0, 0.5))
+            itp((1.0, 0.5))
+            return @allocated itp((1.0, 0.5))
+        end
+        @test _test_alloc_linear_linear() == 0
+    end
+
+    @testset "Zero-allocation: PreCompute Cubic×Quadratic" begin
+        function _test_alloc_cubic_quadratic()
+            xg = range(0.0, 2π, 30)
+            yg = range(0.0, π, 25)
+            d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+            itp = interp_nd(
+                (xg, yg), d;
+                methods = (CubicInterp(), QuadraticInterp()), coeffs = PreCompute()
+            )
+            itp((1.0, 0.5))
+            itp((1.0, 0.5))
+            return @allocated itp((1.0, 0.5))
+        end
+        @test _test_alloc_cubic_quadratic() == 0
+    end
+
+    @testset "Zero-allocation: PreCompute gradient" begin
+        function _test_alloc_gradient()
+            xg = range(0.0, 2π, 30)
+            yg = range(0.0, π, 25)
+            d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+            itp = interp_nd(
+                (xg, yg), d;
+                methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+            )
+            gradient(itp, (1.0, 0.5))
+            gradient(itp, (1.0, 0.5))
+            return @allocated gradient(itp, (1.0, 0.5))
+        end
+        @test _test_alloc_gradient() == 0
+    end
 end

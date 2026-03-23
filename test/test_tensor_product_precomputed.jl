@@ -463,4 +463,85 @@ using FastInterpolations
             @test itp_pre((qxi, qyj)) ≈ itp_otf((qxi, qyj)) rtol = 1.0e-12
         end
     end
+
+    # ========================================
+    # 18. hessian() / laplacian() on PreCompute
+    # ========================================
+    @testset "hessian/laplacian on PreCompute Cubic × Linear" begin
+        xg = range(0.0, 2π, 30)
+        yg = range(0.0, π, 25)
+        data_hl = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+
+        itp_pre = interp_nd(
+            (xg, yg), data_hl;
+            methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+        )
+
+        qxi, qyj = 1.7, 0.8
+        H = hessian(itp_pre, (qxi, qyj))
+        @test size(H) == (2, 2)
+        @test H[1, 2] ≈ H[2, 1] rtol = 1.0e-12    # symmetry
+
+        # H[2,2] = ∂²f/∂y² on linear axis → must be 0
+        @test H[2, 2] == 0.0
+
+        # H[1,1] = ∂²f/∂x² on cubic axis → non-zero
+        @test H[1, 1] != 0.0
+
+        # laplacian = tr(H) = H[1,1] + H[2,2]
+        lap = laplacian(itp_pre, (qxi, qyj))
+        @test lap ≈ H[1, 1] + H[2, 2] rtol = 1.0e-12
+
+        # PreCompute hessian matches OnTheFly
+        itp_otf = interp_nd(
+            (xg, yg), data_hl;
+            methods = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
+        )
+        H_otf = hessian(itp_otf, (qxi, qyj))
+        for i in 1:2, j in 1:2
+            @test H[i, j] ≈ H_otf[i, j] rtol = 1.0e-10
+        end
+    end
+
+    # ========================================
+    # 19. Float32 data and grids (PreCompute)
+    # ========================================
+    @testset "Float32 PreCompute" begin
+        x32 = range(0.0f0, 2.0f0 * Float32(π), 30)
+        y32 = range(0.0f0, Float32(π), 25)
+        data32 = [sin(xi) * cos(yj) for xi in x32, yj in y32]
+
+        itp32 = interp_nd(
+            (x32, y32), data32;
+            methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+        )
+        val = itp32((1.0f0, 0.5f0))
+        @test val isa Float32
+        @test val ≈ sin(1.0f0) * cos(0.5f0) atol = 0.01f0
+
+        # Gradient should also be Float32
+        grad = gradient(itp32, (1.0f0, 0.5f0))
+        @test eltype(grad) == Float32
+    end
+
+    # ========================================
+    # 20. Mixed grid types: Range × Vector (PreCompute)
+    # ========================================
+    @testset "Mixed grids: Range × Vector PreCompute" begin
+        x_range = range(0.0, 2π, 30)
+        y_vec = collect(range(0.0, π, 25))
+        data_mixed = [sin(xi) * cos(yj) for xi in x_range, yj in y_vec]
+
+        itp_pre = interp_nd(
+            (x_range, y_vec), data_mixed;
+            methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+        )
+        itp_otf = interp_nd(
+            (x_range, y_vec), data_mixed;
+            methods = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
+        )
+
+        qxi, qyj = 1.7, 0.8
+        @test itp_pre((qxi, qyj)) ≈ itp_otf((qxi, qyj)) rtol = 1.0e-12
+    end
 end

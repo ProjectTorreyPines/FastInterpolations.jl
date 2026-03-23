@@ -312,4 +312,79 @@ using FastInterpolations
         @test itp_nd isa CubicInterpolantND
         @test itp_nd((qx, qy)) ≈ itp_direct((qx, qy))
     end
+
+    # ========================================
+    # 21. hessian() / laplacian() on OnTheFly
+    # ========================================
+    @testset "hessian/laplacian on OnTheFly Cubic × Linear" begin
+        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+
+        H = hessian(itp_tp, (qx, qy))
+        @test size(H) == (2, 2)
+        @test H[1, 2] ≈ H[2, 1] rtol = 1.0e-12   # symmetry
+
+        # H[2,2] = ∂²f/∂y² on linear axis → must be 0
+        @test H[2, 2] == 0.0
+
+        # H[1,1] = ∂²f/∂x² on cubic axis → non-zero
+        @test H[1, 1] != 0.0
+
+        # laplacian = tr(H)
+        lap = laplacian(itp_tp, (qx, qy))
+        @test lap ≈ H[1, 1] + H[2, 2] rtol = 1.0e-12
+    end
+
+    # ========================================
+    # 22. 1D interp_nd (N=1 edge case)
+    # ========================================
+    @testset "1D interp_nd dispatches to existing 1D types" begin
+        x1d = range(0.0, 5.0, 20)
+        data_1d = [sin(xi) for xi in x1d]
+
+        # Cubic
+        itp_c = interp_nd((x1d,), reshape(data_1d, :); methods = (CubicInterp(),))
+        itp_ref = cubic_interp(x1d, data_1d)
+        @test itp_c((2.3,)) ≈ itp_ref(2.3) rtol = 1.0e-14
+
+        # Linear
+        itp_l = interp_nd((x1d,), reshape(data_1d, :); methods = (LinearInterp(),))
+        itp_lref = linear_interp(x1d, data_1d)
+        @test itp_l((2.3,)) ≈ itp_lref(2.3) rtol = 1.0e-14
+    end
+
+    # ========================================
+    # 23. Float32 data and grids
+    # ========================================
+    @testset "Float32 data and grids" begin
+        x32 = range(0.0f0, 2.0f0 * Float32(π), 30)
+        y32 = range(0.0f0, Float32(π), 25)
+        data32 = [sin(xi) * cos(yj) for xi in x32, yj in y32]
+
+        itp32 = interp_nd((x32, y32), data32; methods = (CubicInterp(), LinearInterp()))
+        val = itp32((1.0f0, 0.5f0))
+        @test val isa Float32
+        @test val ≈ sin(1.0f0) * cos(0.5f0) atol = 0.01f0
+    end
+
+    # ========================================
+    # 24. Mixed grid types (Range + Vector)
+    # ========================================
+    @testset "Mixed grid types: Range × Vector" begin
+        x_range = range(0.0, 2π, 30)                         # AbstractRange
+        y_vec = collect(range(0.0, π, 25))                    # Vector{Float64}
+
+        data_mixed = [sin(xi) * cos(yj) for xi in x_range, yj in y_vec]
+
+        itp_mixed = interp_nd(
+            (x_range, y_vec), data_mixed;
+            methods = (CubicInterp(), LinearInterp())
+        )
+
+        # Reference: separate 1D interps
+        g_vals = [sin(xi) for xi in x_range]
+        h_vals = [cos(yj) for yj in y_vec]
+        expected = cubic_interp(x_range, g_vals)(qx) * linear_interp(y_vec, h_vals)(qy)
+
+        @test itp_mixed((qx, qy)) ≈ expected rtol = 1.0e-12
+    end
 end

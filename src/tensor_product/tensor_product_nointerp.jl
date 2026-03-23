@@ -378,110 +378,36 @@ end
 # Simpler than adding _locate_cell/_eval_at_cell overloads at the cost of
 # repeated search per component (acceptable: NoInterp reduces N, so N_r is small).
 #
-# Disambiguation: We define methods for (TensorProductInterpolantND, Tuple{Vararg{Union{Real,GridIdx},N}}).
-# This overlaps with the standard (AbstractInterpolantND, Tuple{Vararg{Real,N}}) methods.
-# Julia resolves this via explicit disambiguating methods for (TensorProductInterpolantND, Tuple{Vararg{Real,N}})
-# that delegate to the standard vector_calculus implementations.
+# The Union{Real,GridIdx} dispatch methods live in vector_calculus.jl at the
+# AbstractInterpolantND level (gradient, hessian, laplacian). They call
+# _gradient_with_grididx / _hessian_with_grididx / _laplacian_with_grididx.
+#
+# The generic fallback (AbstractInterpolantND) converts GridIdx → grid value and
+# delegates to the standard all-Real method. TensorProductInterpolantND overrides
+# to call _gradient_nointerp / _hessian_nointerp / _laplacian_nointerp, which use
+# the optimized pre-slice path for NoInterp axes.
+#
+# No disambiguation methods needed: both the NTuple{N,Real} and the
+# Union{Real,GridIdx} methods share the same arg1 type (AbstractInterpolantND),
+# so Julia resolves by arg2 specificity alone (NTuple{N,Real} wins for all-Real).
 
-# --- Disambiguation methods (all-Real query on TensorProductInterpolantND) ---
-# These are more specific than BOTH the generic (AbstractInterpolantND, NTuple{N,Real})
-# and our (TensorProductInterpolantND, NTuple{N, Union{Real,GridIdx}}) methods.
-@generated function gradient(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
-        query::Q;
-        hint = nothing,
-    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
-    # Delegate to standard gradient via _locate_cell/_eval_at_cell
-    deriv_calls = [
-        begin
-                ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
-                :(_eval_at_cell(itp, cell, $ops))
-            end for i in 1:N
-    ]
-    zero_tuple = [:(0 * zref) for _ in 1:N]
-    return quote
-        search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _is_fill_oob(query, itp.grids, itp.extraps)
-            zref = _zero_ref(itp)
-            return tuple($(zero_tuple...))
-        end
-        cell = _locate_cell(itp, query, search, hint)
-        return tuple($(deriv_calls...))
-    end
-end
-
-@generated function hessian(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
-        query::Q;
-        hint = nothing,
-    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
-    stmts = Expr[]
-    for i in 1:N
-        ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
-        push!(stmts, :(H[$i, $i] = _eval_at_cell(itp, cell, $ops)))
-    end
-    for i in 1:N, j in (i + 1):N
-        ops = ntuple(k -> (k == i || k == j) ? DerivOp{1}() : DerivOp{0}(), N)
-        push!(
-            stmts, quote
-                val = _eval_at_cell(itp, cell, $ops)
-                H[$i, $j] = val
-                H[$j, $i] = val
-            end
-        )
-    end
-    return quote
-        Tq = promote_type(eltype(query), $Tg, $Tv)
-        H = Matrix{Tq}(undef, $N, $N)
-        search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _is_fill_oob(query, itp.grids, itp.extraps)
-            fill!(H, zero(Tq))
-            return H
-        end
-        cell = _locate_cell(itp, query, search, hint)
-        @inbounds begin
-            $(stmts...)
-        end
-        return H
-    end
-end
-
-@generated function laplacian(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
-        query::Q;
-        hint = nothing,
-    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
-    deriv_calls = [
-        begin
-                ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
-                :(_eval_at_cell(itp, cell, $ops))
-            end for i in 1:N
-    ]
-    return quote
-        search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _is_fill_oob(query, itp.grids, itp.extraps)
-            return 0 * _zero_ref(itp)
-        end
-        cell = _locate_cell(itp, query, search, hint)
-        return +($(deriv_calls...))
-    end
-end
+# --- TensorProductInterpolantND overrides: redirect to _*_nointerp ---
+@inline _gradient_with_grididx(itp::TensorProductInterpolantND, query, hint) =
+    _gradient_nointerp(itp, query, hint)
+@inline _hessian_with_grididx(itp::TensorProductInterpolantND, query, hint) =
+    _hessian_nointerp(itp, query, hint)
+@inline _laplacian_with_grididx(itp::TensorProductInterpolantND, query, hint) =
+    _laplacian_nointerp(itp, query, hint)
 
 """
-    gradient(itp::TensorProductInterpolantND, query::Tuple{..., GridIdx, ...})
+    _gradient_nointerp(itp::TensorProductInterpolantND, query, hint)
 
 Gradient with NoInterp support. Returns N-tuple with zeros at NoInterp positions.
-
-# Examples
-```julia
-itp = interp((x, y), data; method=(CubicInterp(), NoInterp()))
-gradient(itp, (0.5, GridIdx(3)))  # → (∂f/∂x, 0.0)
-```
+Uses the pre-slice strategy: slices data at GridIdx positions, evaluates on reduced dims.
 """
-@generated function gradient(
+@generated function _gradient_nointerp(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
-        query::Q;
-        hint = nothing,
+        query::Q, hint,
     ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
@@ -507,14 +433,13 @@ gradient(itp, (0.5, GridIdx(3)))  # → (∂f/∂x, 0.0)
 end
 
 """
-    hessian(itp::TensorProductInterpolantND, query::Tuple{..., GridIdx, ...})
+    _hessian_nointerp(itp::TensorProductInterpolantND, query, hint)
 
 Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoInterp positions.
 """
-@generated function hessian(
+@generated function _hessian_nointerp(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
-        query::Q;
-        hint = nothing,
+        query::Q, hint,
     ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
@@ -554,14 +479,13 @@ Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoI
 end
 
 """
-    laplacian(itp::TensorProductInterpolantND, query::Tuple{..., GridIdx, ...})
+    _laplacian_nointerp(itp::TensorProductInterpolantND, query, hint)
 
 Laplacian with NoInterp support. Sums ∂²f/∂xᵢ² only over interpolated axes.
 """
-@generated function laplacian(
+@generated function _laplacian_nointerp(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
-        query::Q;
-        hint = nothing,
+        query::Q, hint,
     ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 

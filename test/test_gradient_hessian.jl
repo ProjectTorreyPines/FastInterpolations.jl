@@ -553,4 +553,84 @@ using FastInterpolations
         @test lap ≈ 4.0 atol = 1.0e-1
     end
 
+    # ========================================
+    # GridIdx support for non-TensorProduct interpolants
+    # ========================================
+    # GridIdx(k) on axis d → evaluate at grids[d][k], treat axis as discrete (deriv=0).
+    # This works generically for CubicInterpolantND, LinearInterpolantND, etc.
+
+    @testset "GridIdx gradient: CubicInterpolantND" begin
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        k = 15
+        g = gradient(itp, (1.7, GridIdx(k)))
+        g_ref = gradient(itp, (1.7, y[k]))
+        # GridIdx is just index-based query — ALL derivatives are real
+        @test g[1] ≈ g_ref[1] rtol = 1.0e-14
+        @test g[2] ≈ g_ref[2] rtol = 1.0e-14
+    end
+
+    @testset "GridIdx gradient: LinearInterpolantND" begin
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = linear_interp((x, y), data)
+
+        g = gradient(itp, (1.7, GridIdx(15)))
+        g_ref = gradient(itp, (1.7, y[15]))
+        @test g[1] ≈ g_ref[1] rtol = 1.0e-14
+        @test g[2] ≈ g_ref[2] rtol = 1.0e-14
+    end
+
+    @testset "GridIdx hessian: CubicInterpolantND" begin
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        H = hessian(itp, (1.7, GridIdx(15)))
+        H_ref = hessian(itp, (1.7, y[15]))
+        @test size(H) == (2, 2)
+        # Full hessian matches standard eval at grid point
+        @test H ≈ H_ref rtol = 1.0e-14
+    end
+
+    @testset "GridIdx laplacian: CubicInterpolantND" begin
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        L = laplacian(itp, (1.7, GridIdx(15)))
+        L_ref = laplacian(itp, (1.7, y[15]))
+        # Full laplacian (all axes) matches standard
+        @test L ≈ L_ref rtol = 1.0e-14
+    end
+
+    @testset "GridIdx OOB: CubicInterpolantND" begin
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        @test_throws ArgumentError gradient(itp, (1.0, GridIdx(32)))   # y has 31 points
+        @test_throws ArgumentError hessian(itp, (1.0, GridIdx(32)))
+        @test_throws ArgumentError laplacian(itp, (1.0, GridIdx(32)))
+    end
+
+    @testset "GridIdx gradient: QuadraticInterpolantND" begin
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = quadratic_interp((x, y), data)
+
+        g = gradient(itp, (1.7, GridIdx(15)))
+        g_ref = gradient(itp, (1.7, y[15]))
+        @test g[1] ≈ g_ref[1] rtol = 1.0e-14
+        @test g[2] ≈ g_ref[2] rtol = 1.0e-14
+    end
+
 end

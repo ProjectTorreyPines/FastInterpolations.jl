@@ -368,4 +368,99 @@ using FastInterpolations
         @test val_right ≈ 12.0 atol = 1.0e-12
         @test val_left != val_right   # Side must make a difference
     end
+
+    # ========================================
+    # 15. Custom BC: ZeroCurvBC on cubic axis in hetero combo
+    # ========================================
+    @testset "Custom BC: ZeroCurvBC Cubic × Linear" begin
+        xg = range(0.0, 2π, 30)
+        yg = range(0.0, π, 25)
+        data_bc = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+
+        itp_pre = interp_nd(
+            (xg, yg), data_bc;
+            methods = (CubicInterp(bc = ZeroCurvBC()), LinearInterp()), coeffs = PreCompute()
+        )
+        itp_otf = interp_nd(
+            (xg, yg), data_bc;
+            methods = (CubicInterp(bc = ZeroCurvBC()), LinearInterp()), coeffs = OnTheFly()
+        )
+
+        # PreCompute must match OnTheFly for all interior points
+        for qxi in range(0.5, 5.5, 8), qyj in range(0.2, 2.8, 8)
+            @test itp_pre((qxi, qyj)) ≈ itp_otf((qxi, qyj)) rtol = 1.0e-12
+        end
+
+        # ZeroCurvBC must produce different results from CubicFit near boundaries
+        itp_fit = interp_nd(
+            (xg, yg), data_bc;
+            methods = (CubicInterp(bc = CubicFit()), LinearInterp()), coeffs = PreCompute()
+        )
+        @test itp_pre((0.05, 0.8)) != itp_fit((0.05, 0.8))
+    end
+
+    # ========================================
+    # 16. Custom BC: PeriodicBC (exclusive) on cubic axis in hetero combo
+    # ========================================
+    @testset "Custom BC: PeriodicBC(exclusive) Cubic × Linear" begin
+        xp = range(0.0, step = 2π / 30, length = 30)  # [0, 2π) exclusive endpoint
+        yp = range(0.0, 5.0, 20)
+        data_per = [sin(xi) * (2yj + 1) for xi in xp, yj in yp]
+
+        itp_pre = interp_nd(
+            (xp, yp), data_per;
+            methods = (CubicInterp(bc = PeriodicBC(endpoint = :exclusive)), LinearInterp()),
+            extrap = (WrapExtrap(), NoExtrap()), coeffs = PreCompute()
+        )
+        itp_otf = interp_nd(
+            (xp, yp), data_per;
+            methods = (CubicInterp(bc = PeriodicBC(endpoint = :exclusive)), LinearInterp()),
+            extrap = (WrapExtrap(), NoExtrap()), coeffs = OnTheFly()
+        )
+
+        # Separable reference: cubic_periodic(x, sin) * linear(y, 2y+1)
+        g_vals = [sin(xi) for xi in xp]
+        h_vals = [(2yj + 1) for yj in yp]
+        itp_g = cubic_interp(xp, g_vals; bc = PeriodicBC(endpoint = :exclusive), extrap = WrapExtrap())
+        itp_h = linear_interp(yp, h_vals)
+
+        for qxi in range(0.3, 5.8, 10), qyj in range(0.3, 4.5, 8)
+            ref = itp_g(qxi) * itp_h(qyj)
+            @test itp_pre((qxi, qyj)) ≈ ref rtol = 1.0e-12
+            @test itp_pre((qxi, qyj)) ≈ itp_otf((qxi, qyj)) rtol = 1.0e-12
+        end
+
+        # WrapExtrap: f(x + 2π) == f(x)
+        @test itp_pre((1.5 + 2π, 2.3)) ≈ itp_pre((1.5, 2.3)) rtol = 1.0e-12
+
+        # Gradient on periodic axis
+        grad = gradient(itp_pre, (1.5, 2.3))
+        dfdx_ref = itp_g(1.5; deriv = DerivOp(1)) * itp_h(2.3)
+        @test grad[1] ≈ dfdx_ref rtol = 1.0e-10
+    end
+
+    # ========================================
+    # 17. Custom BC: PeriodicBC (inclusive) on cubic axis in hetero combo
+    # ========================================
+    @testset "Custom BC: PeriodicBC(inclusive) Cubic × Linear" begin
+        xp = range(0.0, 2π, 31)   # 31 points, inclusive endpoint
+        yp = range(0.0, 5.0, 20)
+        data_per = [sin(xi) * (2yj + 1) for xi in xp, yj in yp]
+        data_per[end, :] .= data_per[1, :]   # enforce exact periodicity
+
+        itp_pre = interp_nd(
+            (xp, yp), data_per;
+            methods = (CubicInterp(bc = PeriodicBC()), LinearInterp()),
+            extrap = (WrapExtrap(), NoExtrap()), coeffs = PreCompute()
+        )
+        itp_otf = interp_nd(
+            (xp, yp), data_per;
+            methods = (CubicInterp(bc = PeriodicBC()), LinearInterp()),
+            extrap = (WrapExtrap(), NoExtrap()), coeffs = OnTheFly()
+        )
+
+        for qxi in range(0.3, 5.8, 8), qyj in range(0.3, 4.5, 6)
+            @test itp_pre((qxi, qyj)) ≈ itp_otf((qxi, qyj)) rtol = 1.0e-12
+        end
+    end
 end

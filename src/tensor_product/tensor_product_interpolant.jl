@@ -149,14 +149,19 @@ function _build_tensor_product_precomputed(
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
-    spacings = _create_spacings_typed(grids_typed)
     Tv = _value_type(Tv_raw, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N))
     _validate_axis_methods(grids_typed, methods, extraps)
 
-    # Build partials: data is copied directly into partials[1,...] (no intermediate)
-    hetero_partials = _build_nd_coeffs_hetero(grids_typed, Tv, data, methods)
+    # Extend exclusive periodic axes to inclusive form (same as CubicInterpolantND).
+    # Must happen before spacings + partials so the stored grid matches the data.
+    bcs_periodic = map(_bc_for_periodic_check, methods)
+    grids_typed, data_ext, _ = _prepare_periodic_nd(grids_typed, data, bcs_periodic)
+    spacings = _create_spacings_typed(grids_typed)
+
+    # Build partials on the (possibly extended) data
+    hetero_partials = _build_nd_coeffs_hetero(grids_typed, Tv, data_ext, methods)
 
     return TensorProductInterpolantND{
         Tg, Tv, N,

@@ -55,13 +55,17 @@ end
 # ========================================
 # BC Extraction from Method Types
 # ========================================
+# Only defined for derivative methods (Cubic/Quadratic).
+# Linear/Constant have no BC and are never differentiated (sizes[D]=1).
 
 @inline _extract_bc(m::CubicInterp) = m.bc
 @inline _extract_bc(m::QuadraticInterp) = m.bc
-@inline _extract_bc(::LinearInterp) = CubicFit()      # placeholder, not used
-@inline _extract_bc(::ConstantInterp) = CubicFit()     # placeholder, not used
 
-@inline _extract_bcs(methods::Tuple{Vararg{AbstractInterpMethod}}) = map(_extract_bc, methods)
+# For _prepare_periodic_nd: extract BC to detect exclusive periodic axes.
+# Non-BC methods return a non-periodic placeholder (never triggers extension).
+@inline _bc_for_periodic_check(m::CubicInterp) = m.bc
+@inline _bc_for_periodic_check(m::QuadraticInterp) = m.bc
+@inline _bc_for_periodic_check(::AbstractInterpMethod) = CubicFit()
 
 # ========================================
 # Compact Build-Up Algorithm (Mixed-Radix)
@@ -74,7 +78,6 @@ end
         partials::AbstractArray{Tv, NP1},
         grids,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
-        bcs::Tuple{Vararg{AbstractBC, N}},
         sizes::NTuple{N, Int},
         ::Val{D},
         ::Val{N},
@@ -83,10 +86,11 @@ end
         # Derivative axis: differentiate using compact stride
         stride_d = D == 1 ? 1 : prod(sizes[1:(D - 1)])
         method_d = methods[D]
+        bc_d = _extract_bc(method_d)
         @inbounds for p_src_offset in 0:(stride_d - 1)
             p_src = p_src_offset + 1
             p_dst = p_src_offset + stride_d + 1
-            effective_bc = _get_effective_bc_hetero(bcs[D], p_src, grids[D], method_d)
+            effective_bc = _get_effective_bc_hetero(bc_d, p_src, grids[D], method_d)
             src_view = selectdim(partials, 1, p_src)
             dst_view = selectdim(partials, 1, p_dst)
             _differentiate_axis!(dst_view, src_view, grids[D], effective_bc, D, method_d)
@@ -95,7 +99,7 @@ end
     # Non-derivative axis (sizes[D]=1): skip — no entries to compute
 
     if D < N
-        _build_nd_partials_dim_hetero!(partials, grids, methods, bcs, sizes, Val(D + 1), Val(N))
+        _build_nd_partials_dim_hetero!(partials, grids, methods, sizes, Val(D + 1), Val(N))
     end
     return partials
 end
@@ -105,19 +109,19 @@ end
 # ========================================
 
 """
-    _compute_nd_partials_hetero!(partials, grids, data, methods, bcs, sizes)
+    _compute_nd_partials_hetero!(partials, grids, data, methods, sizes)
 
 Compute compact partial derivatives for heterogeneous ND interpolation.
 
 Uses mixed-radix indexing: `sizes[d] = 2` for derivative axes, `1` for others.
 Total entries = `prod(sizes)` ≤ 2^N. Non-derivative axes are skipped entirely.
+BCs are extracted from method types only for derivative axes (Cubic/Quadratic).
 """
 function _compute_nd_partials_hetero!(
         partials::AbstractArray{Tv, NP1},
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
-        bcs::Tuple{Vararg{AbstractBC, N}},
         sizes::NTuple{N, Int},
     ) where {Tv, Tg <: AbstractFloat, N, NP1}
     @boundscheck begin
@@ -135,7 +139,7 @@ function _compute_nd_partials_hetero!(
     copyto!(f_partial, data)
 
     # Build up higher-order partials stage by stage
-    _build_nd_partials_dim_hetero!(partials, grids, methods, bcs, sizes, Val(1), Val(N))
+    _build_nd_partials_dim_hetero!(partials, grids, methods, sizes, Val(1), Val(N))
 
     return partials
 end
@@ -154,7 +158,6 @@ function _build_nd_coeffs_hetero(
         data::AbstractArray{<:Any, N},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
     ) where {Tg <: AbstractFloat, Tv, N}
-    bcs = _extract_bcs(methods)
     sizes = map(_deriv_size, methods)
 
     # Single allocation: (prod(sizes), n₁, n₂, ..., nₙ)
@@ -163,7 +166,7 @@ function _build_nd_coeffs_hetero(
 
     # Promote data to Tv if needed, then copy into partials[1, ...]
     data_tv = eltype(data) === Tv ? data : Tv.(data)
-    _compute_nd_partials_hetero!(partials, grids, data_tv, methods, bcs, sizes)
+    _compute_nd_partials_hetero!(partials, grids, data_tv, methods, sizes)
 
     return HeteroPartials{Tv, N, N + 1}(partials)
 end

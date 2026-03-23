@@ -23,7 +23,7 @@ Dispatches per-axis 1D kernel at compile time based on the methods tuple type.
 Non-derivative axes (Linear/Constant) produce fewer intermediates (no derivative entries).
 """
 @inline @generated function _eval_hetero_nd_cell(
-        partials::Array{Tv, NP1},
+        partials::AbstractArray{Tv, NP1},
         indices::NTuple{N, Int},
         hs::NTuple{N, Tg},
         inv_hs::NTuple{N, Tg},

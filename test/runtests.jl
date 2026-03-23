@@ -121,6 +121,8 @@ else
     include("test_integral_fulldomain.jl")
     include("test_cumulative_integrate.jl")
 
+    include("test_nointerp.jl")
+
     # ── Extension tests (AD / Symbolics) ──────────────────────────────
     # In CI, extensions run in a SEPARATE job (clean Julia process) to prevent
     # ChainRulesCore contamination from Interpolations.jl (test_packages_comparison).

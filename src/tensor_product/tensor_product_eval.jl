@@ -156,6 +156,25 @@ end
     return itp(q; kw...)
 end
 
+# GridIdx tuple query form: itp((0.5, GridIdx(3))) — dispatches to NoInterp eval
+# Only matches when at least one GridIdx (all-Real → more specific Tuple{Vararg{Real,N}} above)
+@inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
+        query::Q;
+        deriv = EvalValue(),
+        search = itp.searches,
+        hint = nothing,
+    ) where {Tg, Tv, N, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    _validate_nointerp_grididx(itp.methods, query)
+    return _eval_nointerp(itp, query, ops, search, hint)
+end
+
+# GridIdx vararg form: itp(0.5, GridIdx(3)) → itp((0.5, GridIdx(3)))
+# Uses a separate method to avoid ambiguity with Vararg{Real, N}
+@inline function _call_with_grididx(itp::TensorProductInterpolantND{Tg, Tv, N}, q::Tuple; kw...) where {Tg, Tv, N}
+    return itp(q; kw...)
+end
+
 # ========================================
 # _locate_cell / _eval_at_cell Protocol
 # ========================================

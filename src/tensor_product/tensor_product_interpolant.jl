@@ -107,6 +107,30 @@ function _validate_axis_method(grid, ::ConstantInterp, _, d)
     return nothing
 end
 
+function _validate_axis_method(grid, ::NoInterp, _, d)
+    n = length(grid)
+    n < 1 && throw(ArgumentError("Axis $d: NoInterp needs ≥1 grid point, got $n"))
+    return nothing
+end
+
+# ========================================
+# NoInterp Config Override
+# ========================================
+# NoInterp axes get InBounds() extrap (no domain check) and BinarySearch() (dummy, never used).
+# Called at build time so the stored config tuples have correct types.
+
+@generated function _has_nointerp_method(::Type{M}) where {M <: Tuple}
+    result = any(i -> fieldtype(M, i) <: NoInterp, 1:fieldcount(M))
+    return :($result)
+end
+
+@generated function _override_nointerp_config(methods::M, extraps, searches) where {M <: Tuple}
+    N = fieldcount(M)
+    ext_exprs = [fieldtype(M, d) <: NoInterp ? :(InBounds()) : :(extraps[$d]) for d in 1:N]
+    src_exprs = [fieldtype(M, d) <: NoInterp ? :(BinarySearch()) : :(searches[$d]) for d in 1:N]
+    return :((tuple($(ext_exprs...)), tuple($(src_exprs...))))
+end
+
 # ========================================
 # Internal Builder
 # ========================================
@@ -139,6 +163,11 @@ function _build_tensor_product_nd(
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N))
 
+    # 6b. Override extrap/search for NoInterp axes (no domain check, no search)
+    if _has_nointerp_method(typeof(methods))
+        extraps, searches = _override_nointerp_config(methods, extraps, searches)
+    end
+
     # 7. Per-axis method validation
     _validate_axis_methods(grids_typed, methods, extraps)
 
@@ -169,6 +198,12 @@ function _build_tensor_product_precomputed(
     Tv = _value_type(Tv_raw, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N))
+
+    # Override extrap/search for NoInterp axes (no domain check, no search)
+    if _has_nointerp_method(typeof(methods))
+        extraps, searches = _override_nointerp_config(methods, extraps, searches)
+    end
+
     _validate_axis_methods(grids_typed, methods, extraps)
 
     # Extend exclusive periodic axes to inclusive form (same as CubicInterpolantND).

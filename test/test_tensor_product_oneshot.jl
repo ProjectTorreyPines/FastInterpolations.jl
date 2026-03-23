@@ -104,10 +104,20 @@ using FastInterpolations
             @test vals[k] ≈ itp((queries[1][k], queries[2][k])) rtol = 1.0e-14
         end
 
-        # In-place batch
+        # In-place batch (SoA)
         output = zeros(5)
         interp!(output, (x, y), data_2d, queries; method = methods_cl)
         @test output ≈ vals rtol = 1.0e-14
+
+        # AoS format: Vector{Tuple}
+        queries_aos = [(queries[1][k], queries[2][k]) for k in 1:5]
+        vals_aos = interp((x, y), data_2d, queries_aos; method = methods_cl)
+        @test vals_aos ≈ vals rtol = 1.0e-14
+
+        # AoS in-place
+        output_aos = zeros(5)
+        interp!(output_aos, (x, y), data_2d, queries_aos; method = methods_cl)
+        @test output_aos ≈ vals rtol = 1.0e-14
     end
 
     # ========================================

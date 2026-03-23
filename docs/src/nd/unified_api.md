@@ -131,6 +131,16 @@ A scalar value is broadcast to all axes: `method=CubicInterp()` is equivalent to
 
 ---
 
+## Visual Comparison
+
+Per-axis method mixing on a 6x7 non-uniform grid for $f(x,y) = \sin(2\pi x)\cos(2\pi y)$:
+
+![Heterogeneous 2D Comparison](../images/hetero_2d_comparison.png)
+
+Linear x Linear (top-left) shows faceted cells. Adding cubic smoothing per axis progressively improves the result — Cubic x Cubic (bottom-right) captures the extrema accurately.
+
+---
+
 ## Examples
 
 ### 3D Mixed Methods

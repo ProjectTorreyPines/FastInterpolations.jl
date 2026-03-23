@@ -161,8 +161,53 @@ Custom options: `show_nodes`, `show_gridlines`, `resolution`, `node_color`, `gri
 
 ---
 
+## Unified API: `interp` / `interp!`
+
+The `interp` function provides a **single entry point** for N-dimensional interpolation with per-axis method specification. It supports both homogeneous (all axes same method) and heterogeneous (mixed methods per axis) interpolation.
+
+```julia
+# Homogeneous: auto-dispatches to CubicInterpolantND (same as cubic_interp)
+itp = interp((x, y), data; method=CubicInterp())
+
+# Heterogeneous: cubic on axis 1, linear on axis 2
+itp = interp((x, y), data; method=(CubicInterp(), LinearInterp()))
+itp((0.5, 0.3))  # evaluate
+gradient(itp, (0.5, 0.3))  # analytical gradient works
+```
+
+### One-Shot (Zero-Allocation)
+
+Evaluate without creating an interpolant — ideal for hot loops with changing data:
+
+```julia
+# Scalar one-shot
+val = interp((x, y), data, (0.5, 0.3); method=(CubicInterp(), LinearInterp()))
+
+# Batch one-shot
+vals = interp((x, y), data, (xqs, yqs); method=CubicInterp())
+
+# In-place batch
+interp!(output, (x, y), data, (xqs, yqs); method=CubicInterp())
+```
+
+### Per-Axis Options
+
+Each axis can have its own method, boundary condition, and extrapolation:
+
+```julia
+itp = interp((x, y, z), data3d;
+    method = (CubicInterp(bc=PeriodicBC()), LinearInterp(), QuadraticInterp()),
+    extrap = (WrapExtrap(), ClampExtrap(), NoExtrap()),
+)
+```
+
+For full details, see the dedicated **[Unified API Guide](unified_api.md)**.
+
+---
+
 ## See Also
 
+- **[Unified API (`interp`)](unified_api.md)** — Heterogeneous per-axis methods
 - **[Boundary Conditions](boundary_conditions.md)** — Per-axis BC configuration
 - **[Derivatives](derivatives.md)** — Partial derivatives, gradient, hessian
 - **[Extrapolation](extrapolation.md)** — Per-axis extrapolation modes

@@ -113,6 +113,23 @@ itp((xq, yq)) # vector query
 - **Full Parity:** Every 1D feature (BCs, derivatives, extrapolation) works in ND via Tuples.
 - **Zero-Allocation:** Optimized tensor-product evaluation for high-performance loops.
 
+### Unified API: `interp` — Per-Axis Methods
+Mix different interpolation methods per axis with the `interp` unified API:
+
+```julia
+# Cubic on x-axis, linear on y-axis
+itp = interp((x, y), data; method=(CubicInterp(), LinearInterp()))
+itp((0.5, 0.3))
+gradient(itp, (0.5, 0.3))  # analytical gradient
+
+# Zero-allocation one-shot (no interpolant created)
+val = interp((x, y), data, (0.5, 0.3); method=(CubicInterp(), LinearInterp()))
+```
+
+Homogeneous methods (all same type) auto-dispatch to the optimized type — no performance penalty.
+
+📖 [Unified API Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/nd/unified_api/)
+
 ### 2D Visualization Example
 Comparison on a non-uniform 2D rectilinear grid for $f(x, y) = \sin(2\pi x) \cos(2\pi y)$. Cubic interpolation maintains high accuracy and captures extrema even on coarse, non-uniform grids. The gray dots in the image below represent the given node points (6x7 grid), and the dashed lines illustrate the grid structure.
 ![2D Interpolation Example](docs/images/readme_2d_comparison.png)

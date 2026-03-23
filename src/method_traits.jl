@@ -1,8 +1,8 @@
 # ========================================
-# AD Extension Traits
+# Method Traits
 # ========================================
-# Shared trait dispatch for ChainRulesCore and Enzyme extensions.
-# Defined in main module so both extensions import the same definitions.
+# Trait dispatch for mapping between interpolation methods, constructors, and adjoint operators.
+# Used by: AD extensions (ChainRulesCore, Enzyme), interp auto-dispatch.
 
 # Union of all 4 one-shot interpolation functions
 const _InterpMethod = Union{

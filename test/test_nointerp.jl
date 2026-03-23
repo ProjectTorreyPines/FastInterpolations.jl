@@ -420,4 +420,59 @@ using FastInterpolations
         ]
         @test output ≈ ref rtol = 1.0e-13
     end
+
+    # ========================================
+    # 15. Regression: DerivOp on NoInterp axis returns 0
+    # ========================================
+    @testset "Regression: deriv on NoInterp axis returns 0 (interpolant)" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        @test itp((qx, GridIdx(5)); deriv = (DerivOp(0), DerivOp(1))) == 0.0
+        @test itp((qx, GridIdx(5)); deriv = (DerivOp(0), DerivOp(2))) == 0.0
+    end
+
+    @testset "Regression: deriv on NoInterp axis returns 0 (one-shot)" begin
+        @test interp(
+            (x, y), data_2d, (qx, GridIdx(5));
+            method = (CubicInterp(), NoInterp()), deriv = (DerivOp(0), DerivOp(1))
+        ) == 0.0
+    end
+
+    @testset "Regression: all-NoInterp deriv returns 0" begin
+        itp = interp((x, y), data_2d; method = (NoInterp(), NoInterp()))
+        @test itp((GridIdx(3), GridIdx(5)); deriv = (DerivOp(1), DerivOp(0))) == 0.0
+    end
+
+    # ========================================
+    # 16. Regression: OnTheFly FillExtrap OOB
+    # ========================================
+    @testset "Regression: OnTheFly FillExtrap returns fill value on OOB" begin
+        itp = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), NoInterp()), coeffs = OnTheFly(),
+            extrap = (FillExtrap(-99.0), NoExtrap())
+        )
+        @test itp((99.0, GridIdx(5))) == -99.0
+        @test itp((-99.0, GridIdx(5))) == -99.0
+    end
+
+    # ========================================
+    # 17. Regression: search=BinarySearch() scalar
+    # ========================================
+    @testset "Regression: scalar search kwarg works with GridIdx" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        ref = itp((qx, GridIdx(5)))
+        @test itp((qx, GridIdx(5)); search = BinarySearch()) == ref
+        @test itp((qx, GridIdx(5)); search = AutoSearch()) == ref
+    end
+
+    # ========================================
+    # 18. Regression: Singleton NoInterp grid
+    # ========================================
+    @testset "Regression: singleton grid for NoInterp axis" begin
+        data_single = rand(30, 1)
+        itp = interp((x, [0.0]), data_single; method = (LinearInterp(), NoInterp()))
+        val = itp((qx, GridIdx(1)))
+        ref = linear_interp(x, data_single[:, 1], qx)
+        @test val ≈ ref rtol = 1.0e-14
+    end
 end

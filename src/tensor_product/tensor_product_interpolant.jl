@@ -124,6 +124,45 @@ end
     return :($result)
 end
 
+"""
+    _validate_nd_grids_nointerp(grids, data, methods)
+
+Like `_validate_nd_grids` but skips the 2-point minimum for NoInterp axes.
+NoInterp axes only need `length(grid) == size(data, d)` (≥1 points).
+"""
+@generated function _validate_nd_grids_nointerp(
+        grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}, methods::M,
+    ) where {N, M <: Tuple}
+    checks = [
+        quote
+                ng = length(grids[$i])
+                nd = size(data, $i)
+                if ng != nd
+                    throw(
+                        DimensionMismatch(
+                            "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
+                        )
+                    )
+            end
+                $(
+                    if !(fieldtype(M, i) <: NoInterp)
+                        :(
+                            if ng < 2
+                                throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
+                        end
+                        )
+                else
+                        :()
+                end
+                )
+            end for i in 1:N
+    ]
+    return quote
+        $(checks...)
+        nothing
+    end
+end
+
 @generated function _override_nointerp_config(methods::M, extraps, searches) where {M <: Tuple}
     N = fieldcount(M)
     ext_exprs = [fieldtype(M, d) <: NoInterp ? :(InBounds()) : :(extraps[$d]) for d in 1:N]
@@ -142,8 +181,12 @@ function _build_tensor_product_nd(
         extrap,
         search,
     ) where {N, Tv_raw}
-    # 1. Validate grid dimensions
-    _validate_nd_grids(grids, data)
+    # 1. Validate grid dimensions (NoInterp axes exempt from 2-point minimum)
+    if _has_nointerp_method(typeof(methods))
+        _validate_nd_grids_nointerp(grids, data, methods)
+    else
+        _validate_nd_grids(grids, data)
+    end
 
     # 2. Promote grid type (Int → Float64)
     Tg = _promote_grid_eltype(grids)
@@ -191,7 +234,11 @@ function _build_tensor_product_precomputed(
         extrap,
         search,
     ) where {N, Tv_raw}
-    _validate_nd_grids(grids, data)
+    if _has_nointerp_method(typeof(methods))
+        _validate_nd_grids_nointerp(grids, data, methods)
+    else
+        _validate_nd_grids(grids, data)
+    end
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)

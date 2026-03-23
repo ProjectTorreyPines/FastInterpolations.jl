@@ -174,8 +174,9 @@ end
         hint = nothing,
     ) where {Tg, Tv, N, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
     ops = _resolve_deriv_nd(deriv, Val(N))
+    search_tuple = _resolve_search_nd(search, Val(N))
     _validate_nointerp_grididx(itp.methods, query)
-    return _eval_nointerp(itp, query, ops, search, hint)
+    return _eval_nointerp(itp, query, ops, search_tuple, hint)
 end
 
 # ========================================

@@ -65,6 +65,19 @@ end
 # Validation Helpers
 # ========================================
 
+"""
+    _any_grididx_has_nonzero_deriv(query, deriv_tuple) -> Bool
+
+Runtime check: returns true if any GridIdx axis has a non-zero DerivOp.
+Used to short-circuit to zero for derivatives on discrete axes.
+"""
+@generated function _any_grididx_has_nonzero_deriv(query::Q, deriv_tuple::Tuple{Vararg{DerivOp, N}}) where {Q, N}
+    checks = [:(deriv_order(deriv_tuple[$d]) != 0) for d in 1:N if fieldtype(Q, d) <: GridIdx]
+    isempty(checks) && return :(false)
+    cond = length(checks) == 1 ? checks[1] : Expr(:||, checks...)
+    return :($cond)
+end
+
 @noinline _throw_grididx_oob(d, idx, n) =
     throw(ArgumentError("GridIdx axis $d: index $idx out of range 1:$n"))
 
@@ -172,18 +185,35 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
     r_query = [:(query[$d]) for d in real_dims]
     r_ops = [:(ops_full[$d]) for d in real_dims]
 
+    # Check if any NoInterp axis has a non-zero DerivOp → return zero
+    # (discrete axes have zero derivatives by definition)
+    nointerp_deriv_checks = [:(deriv_order(ops_full[$d]) != 0) for d in nointerp_dims]
+    nointerp_deriv_guard = if isempty(nointerp_deriv_checks)
+        :()
+    else
+        cond = length(nointerp_deriv_checks) == 1 ? nointerp_deriv_checks[1] :
+            Expr(:||, nointerp_deriv_checks...)
+        :(
+            if $cond
+                return 0 * _zero_ref(itp)
+            end
+        )
+    end
+
     if N_r == 0
-        # All-NoInterp: pure table lookup
+        # All-NoInterp: pure table lookup (or zero if any deriv requested)
         if D <: HeteroPartials
             return quote
                 Base.@_inline_meta
                 $(bounds_checks...)
+                $nointerp_deriv_guard
                 @inbounds itp.data.partials[1, $(slice_args...)]
             end
         else
             return quote
                 Base.@_inline_meta
                 $(bounds_checks...)
+                $nointerp_deriv_guard
                 @inbounds itp.data[$(slice_args...)]
             end
         end
@@ -193,6 +223,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         return quote
             Base.@_inline_meta
             $(bounds_checks...)
+            $nointerp_deriv_guard
             # Slice partials at GridIdx positions
             p_sliced = @inbounds @view itp.data.partials[:, $(slice_args...)]
 
@@ -221,12 +252,19 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         return quote
             Base.@_inline_meta
             $(bounds_checks...)
+            $nointerp_deriv_guard
             d_sliced = @inbounds @view itp.data[$(slice_args...)]
             rq = ($(r_query...),)
             rg = ($(r_grids...),)
             rm = ($(r_methods...),)
             re = ($(r_extraps...),)
             ro = ($(r_ops...),)
+
+            # FillExtrap check (same as PreCompute path)
+            _validate_nd_domain(rg, rq, re)
+            oob = _try_fill_oob(rq, rg, re, ro, @inbounds d_sliced[1])
+            oob !== nothing && return oob
+
             q_eval = _handle_all_extraps(rq, rg, re)
             rsrc = ($(r_searches...),)
             search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
@@ -279,6 +317,15 @@ function interp(
     # Only reach here when at least one GridIdx (all-Real → more specific existing method)
     _validate_grididx_query_oneshot(query, data)
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+
+    # Check if any GridIdx axis has non-zero deriv → return zero
+    # (discrete axes have zero derivatives by definition)
+    deriv_t = deriv isa DerivOp ? ntuple(_ -> deriv, Val(N)) : deriv
+    if _any_grididx_has_nonzero_deriv(query, deriv_t)
+        Tg = _promote_grid_eltype(grids)
+        Tg = Tg <: AbstractFloat ? Tg : Float64
+        return zero(_output_eltype(eltype(data), Tg, typeof(first(query))))
+    end
 
     # Pre-slice data and filter all tuples to Real-only axes
     QT = typeof(query)

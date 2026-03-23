@@ -21,8 +21,8 @@ include("derivative_view.jl")
 # Vector calculus operations (depends on ND interpolant types)
 include("vector_calculus.jl")
 
-# AD extension traits (depends on all interpolant + adjoint types)
-include("ad_traits.jl")
+# Method traits: constructor/adjoint dispatch mappings (shared by AD extensions)
+include("method_traits.jl")
 
 # Custom show methods (depends on all interpolant types and DerivativeView)
 include("core/show.jl")

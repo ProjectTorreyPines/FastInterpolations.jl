@@ -306,3 +306,334 @@ function interp(
         search = search_r, hint = nothing
     )
 end
+
+# ========================================
+# Vector Calculus: gradient / hessian / laplacian with NoInterp
+# ========================================
+#
+# Strategy: reuse `_eval_nointerp` for each derivative component.
+# NoInterp axes contribute 0 to all derivatives.
+# Simpler than adding _locate_cell/_eval_at_cell overloads at the cost of
+# repeated search per component (acceptable: NoInterp reduces N, so N_r is small).
+#
+# Disambiguation: We define methods for (TensorProductInterpolantND, Tuple{Vararg{Union{Real,GridIdx},N}}).
+# This overlaps with the standard (AbstractInterpolantND, Tuple{Vararg{Real,N}}) methods.
+# Julia resolves this via explicit disambiguating methods for (TensorProductInterpolantND, Tuple{Vararg{Real,N}})
+# that delegate to the standard vector_calculus implementations.
+
+# --- Disambiguation methods (all-Real query on TensorProductInterpolantND) ---
+# These are more specific than BOTH the generic (AbstractInterpolantND, NTuple{N,Real})
+# and our (TensorProductInterpolantND, NTuple{N, Union{Real,GridIdx}}) methods.
+@generated function gradient(
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        query::Q;
+        hint = nothing,
+    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    # Delegate to standard gradient via _locate_cell/_eval_at_cell
+    deriv_calls = [
+        begin
+                ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+                :(_eval_at_cell(itp, cell, $ops))
+            end for i in 1:N
+    ]
+    zero_tuple = [:(0 * zref) for _ in 1:N]
+    return quote
+        search = _resolve_search_nd(itp.searches, Val($N), query)
+        if _is_fill_oob(query, itp.grids, itp.extraps)
+            zref = _zero_ref(itp)
+            return tuple($(zero_tuple...))
+        end
+        cell = _locate_cell(itp, query, search, hint)
+        return tuple($(deriv_calls...))
+    end
+end
+
+@generated function hessian(
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        query::Q;
+        hint = nothing,
+    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    stmts = Expr[]
+    for i in 1:N
+        ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+        push!(stmts, :(H[$i, $i] = _eval_at_cell(itp, cell, $ops)))
+    end
+    for i in 1:N, j in (i + 1):N
+        ops = ntuple(k -> (k == i || k == j) ? DerivOp{1}() : DerivOp{0}(), N)
+        push!(
+            stmts, quote
+                val = _eval_at_cell(itp, cell, $ops)
+                H[$i, $j] = val
+                H[$j, $i] = val
+            end
+        )
+    end
+    return quote
+        Tq = promote_type(eltype(query), $Tg, $Tv)
+        H = Matrix{Tq}(undef, $N, $N)
+        search = _resolve_search_nd(itp.searches, Val($N), query)
+        if _is_fill_oob(query, itp.grids, itp.extraps)
+            fill!(H, zero(Tq))
+            return H
+        end
+        cell = _locate_cell(itp, query, search, hint)
+        @inbounds begin
+            $(stmts...)
+        end
+        return H
+    end
+end
+
+@generated function laplacian(
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        query::Q;
+        hint = nothing,
+    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    deriv_calls = [
+        begin
+                ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+                :(_eval_at_cell(itp, cell, $ops))
+            end for i in 1:N
+    ]
+    return quote
+        search = _resolve_search_nd(itp.searches, Val($N), query)
+        if _is_fill_oob(query, itp.grids, itp.extraps)
+            return 0 * _zero_ref(itp)
+        end
+        cell = _locate_cell(itp, query, search, hint)
+        return +($(deriv_calls...))
+    end
+end
+
+"""
+    gradient(itp::TensorProductInterpolantND, query::Tuple{..., GridIdx, ...})
+
+Gradient with NoInterp support. Returns N-tuple with zeros at NoInterp positions.
+
+# Examples
+```julia
+itp = interp((x, y), data; method=(CubicInterp(), NoInterp()))
+gradient(itp, (0.5, GridIdx(3)))  # → (∂f/∂x, 0.0)
+```
+"""
+@generated function gradient(
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        query::Q;
+        hint = nothing,
+    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
+    nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
+
+    grad_exprs = []
+    for i in 1:N
+        if i in nointerp_dims
+            push!(grad_exprs, :(0 * zref))
+        else
+            ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+            push!(grad_exprs, :(_eval_nointerp(itp, query, $ops, itp.searches, hint)))
+        end
+    end
+
+    return quote
+        Base.@_inline_meta
+        _validate_nointerp_grididx(itp.methods, query)
+        zref = _zero_ref(itp)
+        return tuple($(grad_exprs...))
+    end
+end
+
+"""
+    hessian(itp::TensorProductInterpolantND, query::Tuple{..., GridIdx, ...})
+
+Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoInterp positions.
+"""
+@generated function hessian(
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        query::Q;
+        hint = nothing,
+    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
+    nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
+
+    stmts = Expr[]
+    for i in 1:N
+        i in nointerp_dims && continue
+        # Diagonal: ∂²f/∂xᵢ²
+        ops_diag = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+        push!(stmts, :(H[$i, $i] = _eval_nointerp(itp, query, $ops_diag, itp.searches, hint)))
+        # Off-diagonal: ∂²f/∂xᵢ∂xⱼ (only Real×Real pairs)
+        for j in (i + 1):N
+            j in nointerp_dims && continue
+            ops_mixed = ntuple(k -> (k == i || k == j) ? DerivOp{1}() : DerivOp{0}(), N)
+            push!(
+                stmts, quote
+                    val = _eval_nointerp(itp, query, $ops_mixed, itp.searches, hint)
+                    H[$i, $j] = val
+                    H[$j, $i] = val
+                end
+            )
+        end
+    end
+
+    # Compute output type from Real query elements only (GridIdx is not numeric)
+    real_query_types = [fieldtype(Q, d) for d in 1:N if !(d in nointerp_dims)]
+    Tq_expr = isempty(real_query_types) ? Tv : :(promote_type($(real_query_types...), $Tg, $Tv))
+
+    return quote
+        _validate_nointerp_grididx(itp.methods, query)
+        Tq = $Tq_expr
+        H = zeros(Tq, $N, $N)
+        @inbounds begin
+            $(stmts...)
+        end
+        return H
+    end
+end
+
+"""
+    laplacian(itp::TensorProductInterpolantND, query::Tuple{..., GridIdx, ...})
+
+Laplacian with NoInterp support. Sums ∂²f/∂xᵢ² only over interpolated axes.
+"""
+@generated function laplacian(
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        query::Q;
+        hint = nothing,
+    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
+    nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
+
+    terms = [
+        begin
+                ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+                :(_eval_nointerp(itp, query, $ops, itp.searches, hint))
+            end for i in 1:N if !(i in nointerp_dims)
+    ]
+
+    isempty(terms) && return :(0 * _zero_ref(itp))
+    return quote
+        Base.@_inline_meta
+        _validate_nointerp_grididx(itp.methods, query)
+        return +($(terms...))
+    end
+end
+
+# ========================================
+# Batch interp! / interp with GridIdx (Fixed-Slice)
+# ========================================
+#
+# Supports SoA queries with scalar GridIdx at NoInterp positions:
+#   (xvec, GridIdx(5), yvec) — all queries share the same GridIdx indices
+#
+# Strategy: pre-slice data once at GridIdx positions, filter all per-axis tuples
+# to Real-only axes, then delegate to existing batch `interp!`.
+
+"""
+    _filter_grididx_batch(queries, ::Type{Q}) -> (queries_real, grididx_template)
+
+For SoA batch queries with GridIdx, extract:
+- `queries_real`: tuple of vectors (only Real axes)
+- Used to build the pre-slice query template
+"""
+@generated function _build_grididx_template(queries::Q) where {Q <: Tuple}
+    N = fieldcount(Q)
+    # Build a template query: vectors → first element as Real, GridIdx → as-is
+    template_exprs = [
+        fieldtype(Q, d) <: GridIdx ? :(queries[$d]) : :(queries[$d][1])
+            for d in 1:N
+    ]
+    return :(tuple($(template_exprs...)))
+end
+
+@generated function _filter_real_batch_queries(queries::Q) where {Q <: Tuple}
+    kept = [i for i in 1:fieldcount(Q) if !(fieldtype(Q, i) <: GridIdx)]
+    isempty(kept) && return :(())
+    return :(tuple($([:(queries[$i]) for i in kept]...)))
+end
+
+@generated function _has_grididx_in_batch(::Type{Q}) where {Q <: Tuple}
+    has_vec = any(i -> fieldtype(Q, i) <: AbstractVector, 1:fieldcount(Q))
+    has_gidx = any(i -> fieldtype(Q, i) <: GridIdx, 1:fieldcount(Q))
+    return :($(has_vec && has_gidx))
+end
+
+"""
+    _interp_batch_grididx!(output, grids, data, queries; method, ...)
+
+Internal: batch one-shot with fixed GridIdx slice. Pre-slices data once,
+filters all tuples to Real-only axes, then delegates to existing `interp!`.
+Separated from `interp!` to avoid dispatch conflicts with the standard batch path.
+"""
+function _interp_batch_grididx!(
+        output::AbstractVector,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
+        queries;
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp}}} = EvalValue(),
+        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap}}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy}}} = AutoSearch(),
+        hint = nothing,
+    ) where {N}
+    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+
+    # Build a template query point for data slicing
+    template = _build_grididx_template(queries)
+    QT = typeof(template)
+
+    # Pre-slice data at GridIdx positions (ONE-TIME)
+    _validate_grididx_query_oneshot(template, data)
+    data_r = _slice_grididx(data, template)
+
+    # Filter to Real-only axes
+    grids_r = _filter_real_axes(grids, QT)
+    methods_r = _filter_real_axes(method_tuple, QT)
+    queries_r = _filter_real_batch_queries(queries)
+
+    # Resolve and filter kwargs
+    deriv_t = deriv isa DerivOp ? ntuple(_ -> deriv, Val(N)) : deriv
+    extrap_t = extrap isa AbstractExtrap ? ntuple(_ -> extrap, Val(N)) : extrap
+    search_t = search isa AbstractSearchPolicy ? ntuple(_ -> search, Val(N)) : search
+    deriv_r = _filter_real_axes(deriv_t, QT)
+    extrap_r = _filter_real_axes(extrap_t, QT)
+    search_r = _filter_real_axes(search_t, QT)
+
+    return interp!(
+        output, grids_r, data_r, queries_r;
+        method = methods_r, deriv = deriv_r, extrap = extrap_r,
+        search = search_r, hint = nothing
+    )
+end
+
+"""
+    interp_batch_grididx!(output, grids, data, (xvec, GridIdx(k), yvec); method, ...)
+
+Batch one-shot with fixed GridIdx slice. All query points share the same GridIdx indices.
+Query format (SoA): `(xvec, GridIdx(5), yvec)` — vectors for interpolated axes,
+scalar `GridIdx` for NoInterp axes.
+
+Pre-slices data once at GridIdx positions, then delegates to existing `interp!` on reduced dims.
+
+# Examples
+```julia
+x, y, z = range(0,1,50), range(0,1,30), range(0,1,20)
+data = rand(50, 30, 20)
+xq, zq = rand(100), rand(100)
+output = zeros(100)
+interp_batch_grididx!(output, (x, y, z), data, (xq, GridIdx(5), zq);
+    method=(CubicInterp(), NoInterp(), LinearInterp()))
+```
+"""
+function interp_batch_grididx!(
+        output::AbstractVector,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
+        queries;
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp}}} = EvalValue(),
+        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap}}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy}}} = AutoSearch(),
+        hint = nothing,
+    ) where {N}
+    return _interp_batch_grididx!(
+        output, grids, data, queries;
+        method = method, deriv = deriv, extrap = extrap, search = search, hint = hint
+    )
+end

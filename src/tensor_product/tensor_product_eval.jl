@@ -156,6 +156,15 @@ end
     return itp(q; kw...)
 end
 
+# GridIdx vararg form: itp(0.5, GridIdx(3)) → itp((0.5, GridIdx(3)))
+# Vararg{Real, N} is more specific when all args are Real → no ambiguity.
+@inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
+        q::Vararg{Union{Real, GridIdx}, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return itp(q; kw...)
+end
+
 # GridIdx tuple query form: itp((0.5, GridIdx(3))) — dispatches to NoInterp eval
 # Only matches when at least one GridIdx (all-Real → more specific Tuple{Vararg{Real,N}} above)
 @inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(

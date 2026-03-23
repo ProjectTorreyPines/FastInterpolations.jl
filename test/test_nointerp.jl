@@ -325,4 +325,99 @@ using FastInterpolations
         end
         @test _test_alloc_onthefly() == 0
     end
+
+    # ========================================
+    # 12. Vararg Callable
+    # ========================================
+    @testset "Vararg callable: itp(0.5, GridIdx(k))" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        val_vararg = itp(qx, GridIdx(5))
+        val_tuple = itp((qx, GridIdx(5)))
+        @test val_vararg == val_tuple
+    end
+
+    @testset "Vararg callable: 3D" begin
+        itp3 = interp(
+            (x, y, z), data_3d;
+            method = (CubicInterp(), NoInterp(), LinearInterp())
+        )
+        val_vararg = itp3(qx, GridIdx(5), qz)
+        val_tuple = itp3((qx, GridIdx(5), qz))
+        @test val_vararg == val_tuple
+    end
+
+    # ========================================
+    # 13. gradient / hessian / laplacian
+    # ========================================
+    @testset "gradient: Cubic×NoInterp 2D" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        g = gradient(itp, (qx, GridIdx(5)))
+        ref = cubic_interp(x, data_2d[:, 5], qx; deriv = DerivOp(1))
+        @test g[1] ≈ ref rtol = 1.0e-12
+        @test g[2] == 0.0
+        @test length(g) == 2
+    end
+
+    @testset "gradient: 3D Cubic×NoInterp×Linear" begin
+        itp = interp(
+            (x, y, z), data_3d;
+            method = (CubicInterp(), NoInterp(), LinearInterp())
+        )
+        g = gradient(itp, (qx, GridIdx(5), qz))
+        @test g[2] == 0.0  # NoInterp axis
+        @test length(g) == 3
+        # g[1] and g[3] should be non-zero (interp axes)
+        @test g[1] != 0.0
+        @test g[3] != 0.0
+    end
+
+    @testset "hessian: Cubic×NoInterp 2D" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        H = hessian(itp, (qx, GridIdx(5)))
+        ref_d2 = cubic_interp(x, data_2d[:, 5], qx; deriv = DerivOp(2))
+        @test size(H) == (2, 2)
+        @test H[1, 1] ≈ ref_d2 rtol = 1.0e-10
+        @test H[1, 2] == 0.0  # NoInterp column
+        @test H[2, 1] == 0.0  # NoInterp row
+        @test H[2, 2] == 0.0  # NoInterp diagonal
+    end
+
+    @testset "laplacian: Cubic×NoInterp 2D" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        L = laplacian(itp, (qx, GridIdx(5)))
+        ref_d2 = cubic_interp(x, data_2d[:, 5], qx; deriv = DerivOp(2))
+        @test L ≈ ref_d2 rtol = 1.0e-10
+    end
+
+    # ========================================
+    # 14. Batch interp_batch_grididx!
+    # ========================================
+    @testset "Batch: interp_batch_grididx! 2D" begin
+        xq_batch = collect(range(0.5, 5.0, 50))
+        output = zeros(50)
+        interp_batch_grididx!(
+            output, (x, y), data_2d, (xq_batch, GridIdx(5));
+            method = (CubicInterp(), NoInterp())
+        )
+        ref = [cubic_interp(x, data_2d[:, 5], xqi) for xqi in xq_batch]
+        @test output ≈ ref rtol = 1.0e-14
+    end
+
+    @testset "Batch: interp_batch_grididx! 3D" begin
+        xq_batch = collect(range(0.5, 5.0, 30))
+        zq_batch = collect(range(0.1, 0.9, 30))
+        output = zeros(30)
+        interp_batch_grididx!(
+            output, (x, y, z), data_3d, (xq_batch, GridIdx(10), zq_batch);
+            method = (CubicInterp(), NoInterp(), LinearInterp())
+        )
+        ref = [
+            interp(
+                    (x, z), data_3d[:, 10, :], (xq_batch[i], zq_batch[i]);
+                    method = (CubicInterp(), LinearInterp())
+                )
+                for i in 1:30
+        ]
+        @test output ≈ ref rtol = 1.0e-13
+    end
 end

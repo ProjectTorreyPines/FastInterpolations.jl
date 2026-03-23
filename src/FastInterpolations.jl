@@ -48,7 +48,7 @@ export cubic_adjoint, CubicAdjoint, CubicAdjointND  # Cubic adjoint operators (W
 export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly  # ND cubic types
 export interp, interp!, TensorProductInterpolantND  # Tensor product ND (per-axis methods)
 export AbstractInterpMethod, CubicInterp, LinearInterp, QuadraticInterp, ConstantInterp, NoInterp
-export GridIdx
+export GridIdx, interp_batch_grididx!
 export gradient, gradient!, value_gradient, hessian, hessian!, laplacian  # Analytical vector calculus for ND
 export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar queries
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!

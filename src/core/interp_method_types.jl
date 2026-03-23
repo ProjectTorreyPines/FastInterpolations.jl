@@ -90,9 +90,9 @@ At build time, no differentiation or precomputation is performed for `NoInterp` 
 At eval time, the axis is sliced at the given `GridIdx` index — no search, no kernel.
 
 !!! note
-    Queries must use **tuple form**: `itp((0.5, 0.3, GridIdx(10)))`.
-    The `gradient`/`hessian`/`laplacian` functions do not support `NoInterp` axes directly;
-    use the `deriv` keyword argument instead: `itp((q...,); deriv=(DerivOp(1), DerivOp(0)))`.
+    Both tuple and vararg forms work: `itp((0.5, GridIdx(10)))` or `itp(0.5, GridIdx(10))`.
+    `gradient`, `hessian`, and `laplacian` are supported — NoInterp axes return zero derivatives.
+    Batch queries use `interp_batch_grididx!` with SoA format: `(xvec, GridIdx(5), yvec)`.
 
 # Examples
 ```julia

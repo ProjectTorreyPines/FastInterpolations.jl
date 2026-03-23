@@ -25,6 +25,19 @@ OnTheFly
 CubicInterpolantND
 ```
 
+### Unified API Types
+
+```@docs
+TensorProductInterpolantND
+AbstractInterpMethod
+CubicInterp
+LinearInterp
+QuadraticInterp
+ConstantInterp
+interp
+interp!
+```
+
 ### Type Accessors
 
 ```@docs

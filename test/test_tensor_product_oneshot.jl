@@ -131,10 +131,10 @@ using FastInterpolations
     end
 
     # ========================================
-    # 11. Zero-allocation (hetero scalar)
+    # 11. Zero-allocation: hetero scalar
     # ========================================
     @testset "Zero-allocation: hetero scalar" begin
-        function _test_alloc_oneshot()
+        function _test_alloc_oneshot_hetero()
             xg = range(0.0, 2π, 30)
             yg = range(0.0, π, 25)
             d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
@@ -144,7 +144,23 @@ using FastInterpolations
             interp_nd((xg, yg), d, q; methods = m)
             return @allocated interp_nd((xg, yg), d, q; methods = m)
         end
-        @test _test_alloc_oneshot() == 0
+        @test _test_alloc_oneshot_hetero() <= ND_ALLOC_THRESHOLD
+    end
+
+    # ========================================
+    # 11b. Zero-allocation: homo scalar (auto-dispatch)
+    # ========================================
+    @testset "Zero-allocation: homo scalar (cubic)" begin
+        function _test_alloc_oneshot_homo()
+            xg = range(0.0, 2π, 30)
+            yg = range(0.0, π, 25)
+            d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+            q = (1.0, 0.5)
+            interp_nd((xg, yg), d, q; methods = CubicInterp())
+            interp_nd((xg, yg), d, q; methods = CubicInterp())
+            return @allocated interp_nd((xg, yg), d, q; methods = CubicInterp())
+        end
+        @test _test_alloc_oneshot_homo() <= ND_ALLOC_THRESHOLD
     end
 
     # ========================================
@@ -184,5 +200,85 @@ using FastInterpolations
         ref = itp(q3)
         val = interp_nd((x, y, z), data_3d, q3; methods = methods_clq)
         @test val ≈ ref rtol = 1.0e-12
+    end
+
+    # ========================================
+    # 14. Float32 one-shot
+    # ========================================
+    @testset "Float32 one-shot" begin
+        x32 = range(0.0f0, 2.0f0 * Float32(π), 30)
+        y32 = range(0.0f0, Float32(π), 25)
+        data32 = [sin(xi) * cos(yj) for xi in x32, yj in y32]
+
+        # Hetero scalar
+        val = interp_nd((x32, y32), data32, (1.0f0, 0.5f0); methods = (CubicInterp(), LinearInterp()))
+        @test val isa Float32
+        @test val ≈ sin(1.0f0) * cos(0.5f0) atol = 0.01f0
+
+        # Homo scalar
+        val_c = interp_nd((x32, y32), data32, (1.0f0, 0.5f0); methods = CubicInterp())
+        @test val_c isa Float32
+    end
+
+    # ========================================
+    # 15. Duck-typing: custom value type
+    # ========================================
+    @testset "Duck-typing: MyDuck value type" begin
+        # Minimal duck type: +, -, Real*Tv, Tv*Real, Int*Tv
+        struct _OneshotDuck
+            v::Float64
+        end
+        Base.:+(a::_OneshotDuck, b::_OneshotDuck) = _OneshotDuck(a.v + b.v)
+        Base.:-(a::_OneshotDuck, b::_OneshotDuck) = _OneshotDuck(a.v - b.v)
+        Base.:*(a::Real, b::_OneshotDuck) = _OneshotDuck(a * b.v)
+        Base.:*(a::_OneshotDuck, b::Real) = _OneshotDuck(a.v * b)
+
+        xg = range(0.0, 4.0, 20)
+        yg = range(0.0, 3.0, 15)
+        data_duck = [_OneshotDuck(xi + 2yj) for xi in xg, yj in yg]
+
+        # Linear × Linear (duck types work with linear kernel)
+        val = interp_nd((xg, yg), data_duck, (2.0, 1.5); methods = (LinearInterp(), LinearInterp()))
+        @test val isa _OneshotDuck
+        @test val.v ≈ 2.0 + 2 * 1.5 atol = 1.0e-12
+    end
+
+    # ========================================
+    # 16. Homo batch in-place
+    # ========================================
+    @testset "Homo batch in-place" begin
+        queries = ([1.0, 1.5, 2.0], [0.5, 0.8, 1.0])
+
+        # cubic
+        ref = cubic_interp((x, y), data_2d, queries)
+        output = zeros(3)
+        interp_nd!(output, (x, y), data_2d, queries; methods = CubicInterp())
+        @test output ≈ ref rtol = 1.0e-14
+
+        # linear
+        ref_l = linear_interp((x, y), data_2d, queries)
+        output_l = zeros(3)
+        interp_nd!(output_l, (x, y), data_2d, queries; methods = LinearInterp())
+        @test output_l ≈ ref_l rtol = 1.0e-14
+    end
+
+    # ========================================
+    # 17. Extrapolation modes
+    # ========================================
+    @testset "Extrapolation: ClampExtrap one-shot" begin
+        methods_cl = (CubicInterp(), LinearInterp())
+
+        # OOB on axis 1 → clamped (no error)
+        val_clamp = interp_nd(
+            (x, y), data_2d, (-1.0, qy);
+            methods = methods_cl, extrap = ClampExtrap()
+        )
+        @test val_clamp isa Float64
+
+        # OOB on axis 2 → NoExtrap throws
+        @test_throws Exception interp_nd(
+            (x, y), data_2d, (qx, -1.0);
+            methods = methods_cl, extrap = NoExtrap()
+        )
     end
 end

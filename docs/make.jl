@@ -172,6 +172,7 @@ makedocs(
         "Visualization" => "visualization.md",
         "Multi-Dimensional Interpolation" => [
             "Overview" => "nd/overview.md",
+            "Unified API (interp)" => "nd/unified_api.md",
             "Boundary Conditions" => "nd/boundary_conditions.md",
             "Derivatives" => "nd/derivatives.md",
             "Integration" => "nd/integration.md",

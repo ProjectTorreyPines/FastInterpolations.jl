@@ -79,3 +79,22 @@ struct ConstantInterp{SD <: AbstractSide} <: AbstractInterpMethod
     side::SD
 end
 ConstantInterp(; side::AbstractSide = NearestSide()) = ConstantInterp(side)
+
+"""
+    NoInterp()
+
+No-interpolation method for one axis. Declares that this axis is discrete and will
+be queried via [`GridIdx`](@ref) at evaluation time.
+
+At build time, no differentiation or precomputation is performed for `NoInterp` axes.
+At eval time, the axis is sliced at the given `GridIdx` index — no search, no kernel.
+
+# Examples
+```julia
+# 3D data: interpolate x,y; select z by index
+itp = interp((x, y, z), data; method=(CubicInterp(), LinearInterp(), NoInterp()))
+itp(0.5, 0.3, GridIdx(10))    # cubic×linear on the z=10 slice
+itp(0.5, 0.3, GridIdx(1))     # same interpolant, different slice
+```
+"""
+struct NoInterp <: AbstractInterpMethod end

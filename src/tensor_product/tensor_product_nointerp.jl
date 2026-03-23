@@ -581,11 +581,14 @@ Laplacian with NoInterp support. Sums ∂²f/∂xᵢ² only over interpolated ax
                 )
                 for d in nointerp_dims
         ]
+        # Use promoted type for zero (handles Float32 data + Float64 query)
+        real_query_types_lap = [fieldtype(Q, d) for d in 1:N if !(d in nointerp_dims)]
+        Tz_lap = isempty(real_query_types_lap) ? Tv : :(promote_type($(real_query_types_lap...), $Tg, $Tv))
         return quote
             Base.@_inline_meta
             _validate_nointerp_grididx(itp.methods, query)
             $(bounds_checks_lap...)
-            return 0 * _zero_ref(itp)
+            return zero($Tz_lap)
         end
     end
     return quote
@@ -606,11 +609,11 @@ end
 # to Real-only axes, then delegate to existing batch `interp!`.
 
 """
-    _filter_grididx_batch(queries, ::Type{Q}) -> (queries_real, grididx_template)
+    _build_grididx_template(queries) -> template_tuple
 
-For SoA batch queries with GridIdx, extract:
-- `queries_real`: tuple of vectors (only Real axes)
-- Used to build the pre-slice query template
+Build a scalar template query point from SoA batch queries.
+Vectors → first element (as Real), GridIdx → passed through.
+Used for data slicing and type-based dispatch.
 """
 @generated function _build_grididx_template(queries::Q) where {Q <: Tuple}
     N = fieldcount(Q)
@@ -628,20 +631,27 @@ end
     return :(tuple($([:(queries[$i]) for i in kept]...)))
 end
 
-@generated function _has_grididx_in_batch(::Type{Q}) where {Q <: Tuple}
-    has_vec = any(i -> fieldtype(Q, i) <: AbstractVector, 1:fieldcount(Q))
-    has_gidx = any(i -> fieldtype(Q, i) <: GridIdx, 1:fieldcount(Q))
-    return :($(has_vec && has_gidx))
-end
-
 """
-    _interp_batch_grididx!(output, grids, data, queries; method, ...)
+    interp_batch_grididx!(output, grids, data, (xvec, GridIdx(k), yvec); method, ...)
 
-Internal: batch one-shot with fixed GridIdx slice. Pre-slices data once,
-filters all tuples to Real-only axes, then delegates to existing `interp!`.
+Batch one-shot with fixed GridIdx slice. All query points share the same GridIdx indices.
+Query format (SoA): `(xvec, GridIdx(5), yvec)` — vectors for interpolated axes,
+scalar `GridIdx` for NoInterp axes.
+
+Pre-slices data once at GridIdx positions, then delegates to existing `interp!` on reduced dims.
 Separated from `interp!` to avoid dispatch conflicts with the standard batch path.
+
+# Examples
+```julia
+x, y, z = range(0,1,50), range(0,1,30), range(0,1,20)
+data = rand(50, 30, 20)
+xq, zq = rand(100), rand(100)
+output = zeros(100)
+interp_batch_grididx!(output, (x, y, z), data, (xq, GridIdx(5), zq);
+    method=(CubicInterp(), NoInterp(), LinearInterp()))
+```
 """
-function _interp_batch_grididx!(
+function interp_batch_grididx!(
         output::AbstractVector,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
@@ -671,63 +681,33 @@ function _interp_batch_grididx!(
     _validate_grididx_query_oneshot(template, data)
     data_r = _slice_grididx(data, template)
 
-    # Resolve deriv to N-tuple and check for GridIdx axis derivatives → zero fill
+    # Filter to Real-only axes
+    grids_r = _filter_real_axes(grids, QT)
+    methods_r = _filter_real_axes(method_tuple, QT)
+
+    # Resolve deriv/extrap to N-tuples and filter to Real axes
     deriv_t = deriv isa DerivOp ? ntuple(_ -> deriv, Val(N)) : deriv
+    extrap_t = extrap isa AbstractExtrap ? ntuple(_ -> extrap, Val(N)) : extrap
+    extrap_r = _filter_real_axes(extrap_t, QT)
+
+    # Domain validation on Real axes BEFORE deriv zero check
+    # (so OOB on Real axes raises DomainError even when NoInterp axis has deriv)
+    _validate_nd_domain(grids_r, queries_r, extrap_r)
+
+    # Check for GridIdx axis derivatives → zero fill
     if _any_grididx_has_nonzero_deriv(template, deriv_t)
         fill!(output, zero(eltype(output)))
         return output
     end
 
-    # Filter to Real-only axes
-    grids_r = _filter_real_axes(grids, QT)
-    methods_r = _filter_real_axes(method_tuple, QT)
-
     # Resolve and filter remaining kwargs
-    extrap_t = extrap isa AbstractExtrap ? ntuple(_ -> extrap, Val(N)) : extrap
     search_t = search isa AbstractSearchPolicy ? ntuple(_ -> search, Val(N)) : search
     deriv_r = _filter_real_axes(deriv_t, QT)
-    extrap_r = _filter_real_axes(extrap_t, QT)
     search_r = _filter_real_axes(search_t, QT)
 
     return interp!(
         output, grids_r, data_r, queries_r;
         method = methods_r, deriv = deriv_r, extrap = extrap_r,
         search = search_r, hint = nothing
-    )
-end
-
-"""
-    interp_batch_grididx!(output, grids, data, (xvec, GridIdx(k), yvec); method, ...)
-
-Batch one-shot with fixed GridIdx slice. All query points share the same GridIdx indices.
-Query format (SoA): `(xvec, GridIdx(5), yvec)` — vectors for interpolated axes,
-scalar `GridIdx` for NoInterp axes.
-
-Pre-slices data once at GridIdx positions, then delegates to existing `interp!` on reduced dims.
-
-# Examples
-```julia
-x, y, z = range(0,1,50), range(0,1,30), range(0,1,20)
-data = rand(50, 30, 20)
-xq, zq = rand(100), rand(100)
-output = zeros(100)
-interp_batch_grididx!(output, (x, y, z), data, (xq, GridIdx(5), zq);
-    method=(CubicInterp(), NoInterp(), LinearInterp()))
-```
-"""
-function interp_batch_grididx!(
-        output::AbstractVector,
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N},
-        queries;
-        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp}}} = EvalValue(),
-        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap}}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy}}} = AutoSearch(),
-        hint = nothing,
-    ) where {N}
-    return _interp_batch_grididx!(
-        output, grids, data, queries;
-        method = method, deriv = deriv, extrap = extrap, search = search, hint = hint
     )
 end

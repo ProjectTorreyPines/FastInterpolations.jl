@@ -518,5 +518,264 @@ using FastInterpolations
         @test typeof(val_norm) == typeof(val_deriv)  # both Float64
         g = gradient(itp32, (GridIdx(2), Float64(2.3)))
         @test typeof(g[1]) == typeof(g[2])  # both Float64
+        # Laplacian type promotion (BUG 2 regression)
+        L = laplacian(itp32, (GridIdx(2), Float64(2.3)))
+        @test typeof(L) == Float64
+    end
+
+    # ========================================
+    # 20. Regression: batch OOB + deriv zero (BUG 1)
+    # ========================================
+    @testset "Edge: batch OOB Real axis + NoInterp deriv → DomainError (not zeros)" begin
+        out = zeros(1)
+        @test_throws DomainError interp_batch_grididx!(
+            out, (x, y), data_2d, ([99.0], GridIdx(5));
+            method = (CubicInterp(), NoInterp()), deriv = (DerivOp(0), DerivOp(1))
+        )
+    end
+
+    # ========================================
+    # 21. All-NoInterp gradient and hessian
+    # ========================================
+    @testset "gradient: all-NoInterp returns all zeros" begin
+        itp = interp((x, y), data_2d; method = (NoInterp(), NoInterp()))
+        g = gradient(itp, (GridIdx(3), GridIdx(5)))
+        @test all(g .== 0.0)
+        @test length(g) == 2
+    end
+
+    @testset "hessian: all-NoInterp returns zero matrix" begin
+        itp = interp((x, y), data_2d; method = (NoInterp(), NoInterp()))
+        H = hessian(itp, (GridIdx(3), GridIdx(5)))
+        @test all(H .== 0.0)
+        @test size(H) == (2, 2)
+    end
+
+    # ========================================
+    # 22. Type inference for gradient/hessian/laplacian
+    # ========================================
+    @testset "Type inference: gradient with NoInterp" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        @test @inferred(gradient(itp, (qx, GridIdx(5)))) isa NTuple{2, Float64}
+    end
+
+    @testset "Type inference: laplacian with NoInterp" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        @test @inferred(laplacian(itp, (qx, GridIdx(5)))) isa Float64
+    end
+
+    # ========================================
+    # 23. Batch with FillExtrap
+    # ========================================
+    @testset "Batch: FillExtrap with GridIdx" begin
+        xq_b = collect(range(-1.0, 10.0, 20))  # some OOB
+        out = zeros(20)
+        interp_batch_grididx!(
+            out, (x, y), data_2d, (xq_b, GridIdx(5));
+            method = (CubicInterp(), NoInterp()), extrap = (FillExtrap(-99.0), NoExtrap())
+        )
+        # OOB queries should get fill value
+        @test out[1] == -99.0   # -1.0 is OOB (x starts at 0.0)
+        @test out[end] == -99.0 # 10.0 is OOB (x ends at 2π ≈ 6.28)
+        # In-range queries should be valid interpolation
+        in_range = findall(xi -> 0.0 <= xi <= 2π, xq_b)
+        @test all(out[in_range] .!= -99.0)
+    end
+
+    # ========================================
+    # 24. QuadraticInterp × NoInterp
+    # ========================================
+    @testset "One-shot: Quadratic×NoInterp 2D" begin
+        for k in [1, 10, 25]
+            val = interp((x, y), data_2d, (qx, GridIdx(k)); method = (QuadraticInterp(), NoInterp()))
+            ref = quadratic_interp(x, data_2d[:, k], qx)
+            @test val ≈ ref rtol = 1.0e-13
+        end
+    end
+
+    @testset "Interpolant PreCompute: Quadratic×NoInterp 2D" begin
+        itp = interp((x, y), data_2d; method = (QuadraticInterp(), NoInterp()))
+        for k in [1, 10, 25]
+            val = itp((qx, GridIdx(k)))
+            ref = quadratic_interp(x, data_2d[:, k], qx)
+            @test val ≈ ref rtol = 1.0e-13
+        end
+        # Derivative on quadratic axis
+        val_d = itp((qx, GridIdx(5)); deriv = (DerivOp(1), DerivOp(0)))
+        ref_d = quadratic_interp(x, data_2d[:, 5], qx; deriv = DerivOp(1))
+        @test val_d ≈ ref_d rtol = 1.0e-10
+    end
+
+    # ========================================
+    # 25. ConstantInterp × NoInterp
+    # ========================================
+    @testset "One-shot: Constant×NoInterp 2D" begin
+        for k in [1, 10, 25]
+            val = interp((x, y), data_2d, (qx, GridIdx(k)); method = (ConstantInterp(), NoInterp()))
+            ref = constant_interp(x, data_2d[:, k], qx)
+            @test val ≈ ref rtol = 1.0e-14
+        end
+    end
+
+    @testset "Interpolant PreCompute: Constant×NoInterp 2D" begin
+        itp = interp((x, y), data_2d; method = (ConstantInterp(), NoInterp()))
+        for k in [1, 10, 25]
+            val = itp((qx, GridIdx(k)))
+            ref = constant_interp(x, data_2d[:, k], qx)
+            @test val ≈ ref rtol = 1.0e-14
+        end
+    end
+
+    # ========================================
+    # 26. OnTheFly gradient / hessian / laplacian
+    # ========================================
+    @testset "OnTheFly gradient: Cubic×NoInterp 2D" begin
+        itp = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), NoInterp()), coeffs = OnTheFly()
+        )
+        g = gradient(itp, (qx, GridIdx(5)))
+        ref = cubic_interp(x, data_2d[:, 5], qx; deriv = DerivOp(1))
+        @test g[1] ≈ ref rtol = 1.0e-12
+        @test g[2] == 0.0
+    end
+
+    @testset "OnTheFly hessian: Cubic×NoInterp 2D" begin
+        itp = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), NoInterp()), coeffs = OnTheFly()
+        )
+        H = hessian(itp, (qx, GridIdx(5)))
+        ref_d2 = cubic_interp(x, data_2d[:, 5], qx; deriv = DerivOp(2))
+        @test H[1, 1] ≈ ref_d2 rtol = 1.0e-10
+        @test H[1, 2] == 0.0
+        @test H[2, 1] == 0.0
+        @test H[2, 2] == 0.0
+    end
+
+    @testset "OnTheFly laplacian: Cubic×NoInterp 2D" begin
+        itp = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), NoInterp()), coeffs = OnTheFly()
+        )
+        L = laplacian(itp, (qx, GridIdx(5)))
+        ref_d2 = cubic_interp(x, data_2d[:, 5], qx; deriv = DerivOp(2))
+        @test L ≈ ref_d2 rtol = 1.0e-10
+    end
+
+    # ========================================
+    # 27. 3D hessian with NoInterp (mixed-partial correctness)
+    # ========================================
+    @testset "hessian: 3D Cubic×NoInterp×Linear" begin
+        itp3 = interp(
+            (x, y, z), data_3d;
+            method = (CubicInterp(), NoInterp(), LinearInterp())
+        )
+        H = hessian(itp3, (qx, GridIdx(5), qz))
+        @test size(H) == (3, 3)
+        # NoInterp row/column (axis 2) must be all zeros
+        @test H[2, 1] == 0.0
+        @test H[1, 2] == 0.0
+        @test H[2, 3] == 0.0
+        @test H[3, 2] == 0.0
+        @test H[2, 2] == 0.0
+        # Diagonal on interpolated axes should be non-trivial
+        # H[1,1] = ∂²f/∂x² on the k=5 slice
+        ref_d2x = interp(
+            (x, z), data_3d[:, 5, :], (qx, qz);
+            method = (CubicInterp(), LinearInterp()), deriv = (DerivOp(2), DerivOp(0))
+        )
+        @test H[1, 1] ≈ ref_d2x rtol = 1.0e-10
+        # Mixed partial H[1,3] = ∂²f/∂x∂z on the k=5 slice
+        ref_dxdz = interp(
+            (x, z), data_3d[:, 5, :], (qx, qz);
+            method = (CubicInterp(), LinearInterp()), deriv = (DerivOp(1), DerivOp(1))
+        )
+        @test H[1, 3] ≈ ref_dxdz rtol = 1.0e-10
+        @test H[3, 1] ≈ ref_dxdz rtol = 1.0e-10  # symmetry
+    end
+
+    # ========================================
+    # 28. ClampExtrap × NoInterp
+    # ========================================
+    @testset "ClampExtrap: interpolant with NoInterp" begin
+        itp = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), NoInterp()), extrap = (ClampExtrap(), NoExtrap())
+        )
+        # Query mid-grid interior reference for high/low OOB → clamped to boundary
+        # Use mid-grid k to avoid near-zero sin boundary values
+        val_hi = itp((99.0, GridIdx(12)))
+        ref_hi = cubic_interp(x, data_2d[:, 12], last(x))  # clamped to x[end]
+        @test val_hi ≈ ref_hi atol = 1.0e-14
+        val_lo = itp((-1.0, GridIdx(12)))
+        ref_lo = cubic_interp(x, data_2d[:, 12], first(x))  # clamped to x[1]
+        @test val_lo ≈ ref_lo atol = 1.0e-14
+    end
+
+    @testset "ClampExtrap: one-shot with NoInterp" begin
+        val = interp(
+            (x, y), data_2d, (99.0, GridIdx(12));
+            method = (CubicInterp(), NoInterp()), extrap = (ClampExtrap(), NoExtrap())
+        )
+        ref = cubic_interp(x, data_2d[:, 12], last(x))
+        @test val ≈ ref atol = 1.0e-14
+    end
+
+    # ========================================
+    # 29. show() for NoInterp interpolant
+    # ========================================
+    @testset "show: interpolant with NoInterp" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        s = sprint(show, itp)
+        @test occursin("NoInterp", s)
+        @test occursin("Cubic", s)
+        @test occursin("30×25", s)
+    end
+
+    # ========================================
+    # 30. Batch with multiple GridIdx axes (3D, 2 NoInterp)
+    # ========================================
+    @testset "Batch: 3D with 2 GridIdx axes" begin
+        # (NoInterp, NoInterp, Cubic) → batch over z axis only
+        zq_batch = collect(range(0.1, 0.9, 20))
+        out = zeros(20)
+        interp_batch_grididx!(
+            out, (x, y, z), data_3d, (GridIdx(5), GridIdx(10), zq_batch);
+            method = (NoInterp(), NoInterp(), CubicInterp())
+        )
+        ref = [cubic_interp(z, data_3d[5, 10, :], zqi) for zqi in zq_batch]
+        @test out ≈ ref rtol = 1.0e-14
+    end
+
+    # ========================================
+    # 31. One-shot deriv + FillExtrap combined edge case
+    # ========================================
+    @testset "One-shot: FillExtrap OOB + deriv on Real axis" begin
+        # OOB query with deriv on the Real axis → zero (derivative of constant fill = 0)
+        val = interp(
+            (x, y), data_2d, (99.0, GridIdx(5));
+            method = (CubicInterp(), NoInterp()),
+            deriv = (DerivOp(1), DerivOp(0)),
+            extrap = (FillExtrap(-99.0), NoExtrap())
+        )
+        @test val == 0.0
+        # EvalValue on OOB → fill value (baseline check)
+        val0 = interp(
+            (x, y), data_2d, (99.0, GridIdx(5));
+            method = (CubicInterp(), NoInterp()),
+            extrap = (FillExtrap(-99.0), NoExtrap())
+        )
+        @test val0 == -99.0
+    end
+
+    @testset "One-shot: FillExtrap OOB + deriv on NoInterp axis → DomainError" begin
+        # OOB on Real axis + deriv on NoInterp axis → DomainError (domain check first)
+        @test_throws DomainError interp(
+            (x, y), data_2d, (99.0, GridIdx(5));
+            method = (CubicInterp(), NoInterp()),
+            deriv = (DerivOp(0), DerivOp(1))
+            # NoExtrap() default → DomainError on OOB Real axis
+        )
     end
 end

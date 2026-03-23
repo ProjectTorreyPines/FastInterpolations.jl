@@ -997,6 +997,7 @@ _short_method_name(::CubicInterp) = "Cubic"
 _short_method_name(::LinearInterp) = "Linear"
 _short_method_name(::QuadraticInterp) = "Quadratic"
 _short_method_name(::ConstantInterp) = "Constant"
+_short_method_name(::NoInterp) = "NoInterp"
 
 function Base.show(io::IO, itp::TensorProductInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
     sizes = join([string(length(g)) for g in itp.grids], "×")

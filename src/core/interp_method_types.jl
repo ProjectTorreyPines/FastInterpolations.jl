@@ -89,12 +89,17 @@ be queried via [`GridIdx`](@ref) at evaluation time.
 At build time, no differentiation or precomputation is performed for `NoInterp` axes.
 At eval time, the axis is sliced at the given `GridIdx` index — no search, no kernel.
 
+!!! note
+    Queries must use **tuple form**: `itp((0.5, 0.3, GridIdx(10)))`.
+    The `gradient`/`hessian`/`laplacian` functions do not support `NoInterp` axes directly;
+    use the `deriv` keyword argument instead: `itp((q...,); deriv=(DerivOp(1), DerivOp(0)))`.
+
 # Examples
 ```julia
 # 3D data: interpolate x,y; select z by index
 itp = interp((x, y, z), data; method=(CubicInterp(), LinearInterp(), NoInterp()))
-itp(0.5, 0.3, GridIdx(10))    # cubic×linear on the z=10 slice
-itp(0.5, 0.3, GridIdx(1))     # same interpolant, different slice
+itp((0.5, 0.3, GridIdx(10)))    # cubic×linear on the z=10 slice
+itp((0.5, 0.3, GridIdx(1)))     # same interpolant, different slice
 ```
 """
 struct NoInterp <: AbstractInterpMethod end

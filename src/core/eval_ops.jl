@@ -87,7 +87,7 @@ interp((x, y), data, (0.5, GridIdx(5)); method=(CubicInterp(), NoInterp()))
 
 # Interpolant: query-time slicing
 itp = interp((x, y), data; method=(CubicInterp(), NoInterp()))
-itp(0.5, GridIdx(5))
+itp((0.5, GridIdx(5)))
 ```
 """
 struct GridIdx

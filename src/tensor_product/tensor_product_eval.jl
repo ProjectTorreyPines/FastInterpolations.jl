@@ -169,12 +169,6 @@ end
     return _eval_nointerp(itp, query, ops, search, hint)
 end
 
-# GridIdx vararg form: itp(0.5, GridIdx(3)) → itp((0.5, GridIdx(3)))
-# Uses a separate method to avoid ambiguity with Vararg{Real, N}
-@inline function _call_with_grididx(itp::TensorProductInterpolantND{Tg, Tv, N}, q::Tuple; kw...) where {Tg, Tv, N}
-    return itp(q; kw...)
-end
-
 # ========================================
 # _locate_cell / _eval_at_cell Protocol
 # ========================================

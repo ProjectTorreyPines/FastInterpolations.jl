@@ -184,8 +184,8 @@ using FastInterpolations
     @testset "Error: GridIdx out of bounds" begin
         # GridIdx(0) → ArgumentError from GridIdx constructor (i >= 1 check)
         @test_throws ArgumentError GridIdx(0)
-        # GridIdx(26) on a 25-point grid → BoundsError from _slice_grididx
-        @test_throws BoundsError interp(
+        # GridIdx(26) on a 25-point grid → ArgumentError from bounds check
+        @test_throws ArgumentError interp(
             (x, y), data_2d, (qx, GridIdx(26));
             method = (CubicInterp(), NoInterp())
         )
@@ -247,5 +247,82 @@ using FastInterpolations
                 method = (CubicInterp(), NoInterp())
             )
         ) isa Float64
+    end
+
+    # ========================================
+    # 9. OOB GridIdx on Interpolant Path
+    # ========================================
+    @testset "Error: OOB GridIdx on PreCompute interpolant" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        @test_throws ArgumentError itp((qx, GridIdx(26)))  # y has 25 points
+        @test_throws ArgumentError itp((qx, GridIdx(100)))
+    end
+
+    @testset "Error: OOB GridIdx on OnTheFly interpolant" begin
+        itp = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), NoInterp()), coeffs = OnTheFly()
+        )
+        @test_throws ArgumentError itp((qx, GridIdx(26)))
+    end
+
+    @testset "Error: OOB GridIdx on All-NoInterp interpolant" begin
+        itp = interp((x, y), data_2d; method = (NoInterp(), NoInterp()))
+        @test_throws ArgumentError itp((GridIdx(31), GridIdx(5)))  # x has 30 points
+        @test_throws ArgumentError itp((GridIdx(5), GridIdx(26)))  # y has 25 points
+    end
+
+    # ========================================
+    # 10. Float32 Support
+    # ========================================
+    @testset "Float32: PreCompute interpolant" begin
+        x32 = range(0.0f0, Float32(2π), 30)
+        y32 = range(0.0f0, Float32(π), 25)
+        data32 = [sin(xi) * cos(yj) for xi in x32, yj in y32]
+        itp32 = interp((x32, y32), data32; method = (CubicInterp(), NoInterp()))
+        val = itp32((1.7f0, GridIdx(5)))
+        ref = cubic_interp(x32, data32[:, 5], 1.7f0)
+        @test val isa Float32
+        @test val ≈ ref rtol = 1.0f-6
+    end
+
+    @testset "Float32: one-shot" begin
+        x32 = range(0.0f0, Float32(2π), 30)
+        y32 = range(0.0f0, Float32(π), 25)
+        data32 = [sin(xi) * cos(yj) for xi in x32, yj in y32]
+        val = interp((x32, y32), data32, (1.7f0, GridIdx(5)); method = (CubicInterp(), NoInterp()))
+        ref = cubic_interp(x32, data32[:, 5], 1.7f0)
+        @test val isa Float32
+        @test val ≈ ref rtol = 1.0f-6
+    end
+
+    # ========================================
+    # 11. Zero-Allocation Tests
+    # ========================================
+    @testset "Zero-allocation: PreCompute interpolant eval" begin
+        function _test_alloc_precompute()
+            itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+            itp((1.7, GridIdx(5)))  # warmup
+            return @allocated itp((1.7, GridIdx(5)))
+        end
+        @test _test_alloc_precompute() == 0
+    end
+
+    @testset "Zero-allocation: PreCompute interpolant eval with deriv" begin
+        function _test_alloc_deriv()
+            itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+            itp((1.7, GridIdx(5)); deriv = (DerivOp(1), DerivOp(0)))  # warmup
+            return @allocated itp((1.7, GridIdx(5)); deriv = (DerivOp(1), DerivOp(0)))
+        end
+        @test _test_alloc_deriv() == 0
+    end
+
+    @testset "Zero-allocation: OnTheFly interpolant eval" begin
+        function _test_alloc_onthefly()
+            itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()), coeffs = OnTheFly())
+            itp((1.7, GridIdx(5)))  # warmup
+            return @allocated itp((1.7, GridIdx(5)))
+        end
+        @test _test_alloc_onthefly() == 0
     end
 end

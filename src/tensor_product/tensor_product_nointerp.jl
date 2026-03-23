@@ -16,16 +16,6 @@
 # Compile-Time Traits
 # ========================================
 
-"""
-    _has_grididx(::Type{Q}) -> Bool
-
-Compile-time trait: does the query tuple type contain any `GridIdx` element?
-"""
-@generated function _has_grididx(::Type{Q}) where {Q <: Tuple}
-    result = any(i -> fieldtype(Q, i) <: GridIdx, 1:fieldcount(Q))
-    return :($result)
-end
-
 # _has_nointerp_method is defined in tensor_product_interpolant.jl (included before this file)
 
 # ========================================
@@ -76,7 +66,7 @@ end
 # ========================================
 
 @noinline _throw_grididx_oob(d, idx, n) =
-    throw(BoundsError("GridIdx axis $d: index $idx out of range 1:$n"))
+    throw(ArgumentError("GridIdx axis $d: index $idx out of range 1:$n"))
 
 @noinline _throw_nointerp_needs_grididx(d) =
     throw(ArgumentError("Axis $d uses NoInterp but query provides Real; use GridIdx(k) for NoInterp axes"))
@@ -163,6 +153,16 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
     # Build slice expressions: `:` for Real axes, `query[d].idx` for NoInterp
     slice_args = [d in nointerp_dims ? :(query[$d].idx) : :(:) for d in 1:N]
 
+    # Bounds checks for GridIdx on NoInterp axes (before @inbounds slicing)
+    # Use grid length as the canonical size (works for both HeteroPartials and raw Array)
+    bounds_checks = [
+        :(
+                1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
+            )
+            for d in nointerp_dims
+    ]
+
     # Build reduced tuple expressions
     r_grids = [:(itp.grids[$d]) for d in real_dims]
     r_spacings = [:(itp.spacings[$d]) for d in real_dims]
@@ -177,11 +177,13 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         if D <: HeteroPartials
             return quote
                 Base.@_inline_meta
+                $(bounds_checks...)
                 @inbounds itp.data.partials[1, $(slice_args...)]
             end
         else
             return quote
                 Base.@_inline_meta
+                $(bounds_checks...)
                 @inbounds itp.data[$(slice_args...)]
             end
         end
@@ -190,6 +192,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
     if D <: HeteroPartials
         return quote
             Base.@_inline_meta
+            $(bounds_checks...)
             # Slice partials at GridIdx positions
             p_sliced = @inbounds @view itp.data.partials[:, $(slice_args...)]
 
@@ -217,6 +220,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         # OnTheFly: slice data, delegate to reduced-dim _collapse_dims
         return quote
             Base.@_inline_meta
+            $(bounds_checks...)
             d_sliced = @inbounds @view itp.data[$(slice_args...)]
             rq = ($(r_query...),)
             rg = ($(r_grids...),)

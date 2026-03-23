@@ -200,10 +200,38 @@ using FastInterpolations
     # ========================================
     @testset "Show method" begin
         itp_tp = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
+
+        # 1-arg show (compact)
         str = sprint(show, itp_tp)
         @test occursin("TensorProductInterpolantND", str)
         @test occursin("Cubic", str)
         @test occursin("Linear", str)
+        @test occursin("30×25", str)
+
+        # 2-arg show (REPL text/plain)
+        str_full = sprint(show, MIME("text/plain"), itp_tp)
+        @test occursin("TensorProductInterpolantND", str_full)
+        @test occursin("Axis 1: Cubic", str_full)
+        @test occursin("Axis 2: Linear", str_full)
+
+        # With non-default extrap (shows extrap label)
+        itp_ext = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), LinearInterp()),
+            extrap = (ClampExtrap(), NoExtrap()),
+        )
+        str_ext = sprint(show, MIME("text/plain"), itp_ext)
+        @test occursin("ClampExtrap", str_ext)
+        @test !occursin("NoExtrap", str_ext)   # NoExtrap is hidden
+
+        # All 4 method name variants
+        itp_q = interp(
+            (x, y), data_2d;
+            method = (QuadraticInterp(), ConstantInterp()),
+        )
+        str_q = sprint(show, itp_q)
+        @test occursin("Quadratic", str_q)
+        @test occursin("Constant", str_q)
     end
 
     # ========================================

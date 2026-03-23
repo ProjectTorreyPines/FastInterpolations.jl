@@ -284,4 +284,88 @@ using FastInterpolations
         )
         @test size(itp_clq.data.partials, 1) == 4   # 2× savings
     end
+
+    # ========================================
+    # 13. BUG-1: ConstantInterp derivative must return zero (PreCompute)
+    # ========================================
+    # The @generated kernel for ConstantInterp must respect the `op` parameter.
+    # Constant interpolation has zero derivative at all orders.
+    # OnTheFly handles this correctly; PreCompute must match.
+
+    @testset "BUG-1: ConstantInterp derivative returns zero (PreCompute)" begin
+        xg = range(0.0, 2π, 30)
+        yg = range(0.0, π, 25)
+        data_cc = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+
+        itp_pre = interp_nd(
+            (xg, yg), data_cc;
+            methods = (CubicInterp(), ConstantInterp()), coeffs = PreCompute()
+        )
+        itp_otf = interp_nd(
+            (xg, yg), data_cc;
+            methods = (CubicInterp(), ConstantInterp()), coeffs = OnTheFly()
+        )
+
+        qxi, qyj = 1.7, 0.8
+
+        # ∂f/∂y on Constant axis must be zero
+        deriv_y_pre = itp_pre((qxi, qyj); deriv = (DerivOp(0), DerivOp(1)))
+        deriv_y_otf = itp_otf((qxi, qyj); deriv = (DerivOp(0), DerivOp(1)))
+        @test deriv_y_otf == 0.0                    # OnTheFly reference (known correct)
+        @test deriv_y_pre == 0.0                    # PreCompute must match
+
+        # ∂²f/∂y² on Constant axis must be zero
+        deriv2_y_pre = itp_pre((qxi, qyj); deriv = (DerivOp(0), DerivOp(2)))
+        @test deriv2_y_pre == 0.0
+
+        # ∂f/∂x on Cubic axis must be non-zero (sanity check: not all zeros)
+        deriv_x_pre = itp_pre((qxi, qyj); deriv = (DerivOp(1), DerivOp(0)))
+        @test deriv_x_pre != 0.0
+
+        # gradient: 2nd component (Constant axis) must be zero
+        grad = gradient(itp_pre, (qxi, qyj))
+        @test grad[2] == 0.0
+        @test grad[1] != 0.0
+    end
+
+    # ========================================
+    # 14. BUG-2: ConstantInterp `side` field must be respected (PreCompute)
+    # ========================================
+    # ConstantInterp(side=LeftSide()) must always return the left neighbor,
+    # ConstantInterp(side=RightSide()) always the right, and NearestSide the nearest.
+    # The @generated kernel must dispatch on the side type, not hard-code NearestSide.
+
+    @testset "BUG-2: ConstantInterp side parameter respected (PreCompute)" begin
+        # Use a simple step function where left ≠ right in each cell
+        xg = range(0.0, 4.0, 5)   # [0, 1, 2, 3, 4]
+        yg = range(0.0, 3.0, 4)   # [0, 1, 2, 3]
+        # Monotonically increasing in y so left ≠ right in every cell
+        data_step = [Float64(xi + 10yj) for xi in xg, yj in yg]
+
+        itp_left = interp_nd(
+            (xg, yg), data_step;
+            methods = (LinearInterp(), ConstantInterp(side = LeftSide())),
+            coeffs = PreCompute()
+        )
+        itp_right = interp_nd(
+            (xg, yg), data_step;
+            methods = (LinearInterp(), ConstantInterp(side = RightSide())),
+            coeffs = PreCompute()
+        )
+
+        # Query at y = 0.7 — between yg[1]=0 and yg[2]=1
+        # LeftSide → use y=0 data, RightSide → use y=1 data
+        qxi = 2.0
+        qyj = 0.7  # interior of first y-cell
+
+        val_left = itp_left((qxi, qyj))
+        val_right = itp_right((qxi, qyj))
+
+        # Left: interp x at data[:, 1] (y=0 row), Right: interp x at data[:, 2] (y=1 row)
+        # data[:, 1] = [0, 1, 2, 3, 4], data[:, 2] = [10, 11, 12, 13, 14]
+        # linear_interp at x=2.0 → 2.0 (left) vs 12.0 (right)
+        @test val_left ≈ 2.0 atol = 1.0e-12
+        @test val_right ≈ 12.0 atol = 1.0e-12
+        @test val_left != val_right   # Side must make a difference
+    end
 end

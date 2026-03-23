@@ -102,7 +102,8 @@ Non-derivative axes (Linear/Constant) produce fewer intermediates (no derivative
                 elseif method_type <: LinearInterp
                     :(_linear_kernel($op, $fL, $fR, $inv_h, $dL))
                 elseif method_type <: ConstantInterp
-                    :(ifelse($dL < $h * $(Tg(0.5)), $fL, $fR))
+                    side_inst = fieldtype(method_type, :side)()
+                    :(_constant_kernel($op, $fL, $fR, $h, $dL, $side_inst))
                 else
                     error("Unsupported method type: $method_type")
                 end

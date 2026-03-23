@@ -218,6 +218,7 @@ function _interp_nd_oneshot_batch_dispatch!(
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
+    _query_check_ndims(queries, Val(N))
     Tv = _value_type(eltype(data), Tg)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)

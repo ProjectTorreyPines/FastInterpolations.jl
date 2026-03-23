@@ -1,7 +1,7 @@
 # ========================================
 # TensorProductInterpolantND — Constructor
 # ========================================
-# Public API: interp_nd(grids, data; methods, ...)
+# Public API: interp(grids, data; method, ...)
 # Internal:   _build_tensor_product_nd(grids, data, methods, extrap, search)
 
 # ========================================

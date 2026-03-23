@@ -141,6 +141,9 @@ end
         hint = nothing,
     ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
+    _validate_nd_domain(itp.grids, query, itp.extraps)
+    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
+    oob_result !== nothing && return oob_result
     search_tuple = _resolve_search_nd(search, Val(N), query)
     return _eval_tensor_product_nd(itp, query, ops, search_tuple, hint)
 end
@@ -158,7 +161,7 @@ end
 # ========================================
 # Enables vector_calculus.jl functions (gradient, hessian, laplacian).
 
-# OnTheFly: cell stores everything needed for re-collapse (including searches)
+# OnTheFly: cell stores everything needed for re-collapse (including searches + hints)
 @inline function _locate_cell(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
@@ -166,7 +169,7 @@ end
         hints = nothing,
     ) where {Tg, Tv, N, G, S, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-    return (itp.data, itp.grids, itp.methods, itp.extraps, q_eval, search_tuple)
+    return (itp.data, itp.grids, itp.methods, itp.extraps, q_eval, search_tuple, hints)
 end
 
 @inline function _eval_at_cell(
@@ -174,8 +177,8 @@ end
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp},
     ) where {Tg, Tv, N, G, S, M, E, P}
-    data, grids, methods, extraps, q_eval, searches = cell
-    return _collapse_dims(data, grids, methods, extraps, q_eval, ops, searches, nothing)
+    data, grids, methods, extraps, q_eval, searches, hints = cell
+    return _collapse_dims(data, grids, methods, extraps, q_eval, ops, searches, hints)
 end
 
 # PreCompute: cell stores precomputed cell location (locate-once optimization)

@@ -15,14 +15,14 @@
 
 @with_pool pool function _interp_nd_hetero_oneshot(
         grids::NTuple{N, AbstractVector{Tg}},
-        data::AbstractArray{Tv, N},
+        data::AbstractArray{<:Any, N},
         query::Tuple{Vararg{Real, N}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg <: AbstractFloat, N}
     # 0. Domain check + FillExtrap short-circuit
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
@@ -32,7 +32,8 @@
     bcs_periodic = map(_bc_for_periodic_check, methods)
     grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
 
-    # 2. Pool-allocate compact partials
+    # 2. Pool-allocate compact partials (promoted Tv, matching constructor path)
+    Tv = _value_type(eltype(data), Tg)
     sizes = map(_deriv_size, methods)
     n_partials = prod(sizes)
     partials = acquire!(pool, Tv, (n_partials, size(data_p)...))
@@ -59,14 +60,14 @@ end
 @with_pool pool function _interp_nd_hetero_oneshot_batch!(
         output::AbstractVector,
         grids::NTuple{N, AbstractVector{Tg}},
-        data::AbstractArray{Tv, N},
+        data::AbstractArray{<:Any, N},
         queries,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg <: AbstractFloat, N}
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
@@ -76,6 +77,7 @@ end
     bcs_periodic = map(_bc_for_periodic_check, methods)
     grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
 
+    Tv = _value_type(eltype(data), Tg)
     sizes = map(_deriv_size, methods)
     n_partials = prod(sizes)
     partials = acquire!(pool, Tv, (n_partials, size(data_p)...))

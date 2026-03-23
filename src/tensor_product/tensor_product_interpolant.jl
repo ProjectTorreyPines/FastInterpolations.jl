@@ -54,7 +54,24 @@ end
 # Per-Axis Validation
 # ========================================
 
+function _validate_method_concreteness(methods::Tuple{Vararg{AbstractInterpMethod, N}}) where {N}
+    M = typeof(methods)
+    for i in 1:N
+        p = M.parameters[i]
+        if !isconcretetype(p)
+            throw(
+                ArgumentError(
+                    "`method` tuple element $i has abstract type $p. " *
+                        "Use concrete types, e.g. `(CubicInterp(), LinearInterp())`."
+                )
+            )
+        end
+    end
+    return nothing
+end
+
 function _validate_axis_methods(grids, methods, extraps)
+    _validate_method_concreteness(methods)
     for d in eachindex(grids)
         _validate_axis_method(grids[d], methods[d], extraps[d], d)
     end

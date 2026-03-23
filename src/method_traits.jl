@@ -2,7 +2,7 @@
 # Method Traits
 # ========================================
 # Trait dispatch for mapping between interpolation methods, constructors, and adjoint operators.
-# Used by: AD extensions (ChainRulesCore, Enzyme), interp_nd auto-dispatch.
+# Used by: AD extensions (ChainRulesCore, Enzyme), interp auto-dispatch.
 
 # Union of all 4 one-shot interpolation functions
 const _InterpMethod = Union{

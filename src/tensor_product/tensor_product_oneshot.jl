@@ -1,7 +1,7 @@
 # ========================================
 # TensorProductInterpolantND — One-Shot API
 # ========================================
-# Zero-allocation one-shot evaluation: interp_nd(grids, data, query; methods=...)
+# Zero-allocation one-shot evaluation: interp(grids, data, query; method=...)
 # Bypasses interpolant construction — builds partials in pool, evaluates, releases.
 #
 # Homogeneous methods → dispatch to existing one-shot APIs (cubic_interp, etc.)
@@ -233,7 +233,7 @@ end
 # ========================================
 
 """
-    interp_nd(grids, data, query; methods, deriv=EvalValue(), extrap=NoExtrap(), search=AutoSearch(), hint=nothing)
+    interp(grids, data, query; method, deriv=EvalValue(), extrap=NoExtrap(), search=AutoSearch(), hint=nothing)
 
 One-shot N-dimensional interpolation at a single point.
 Zero-allocation after warmup. No interpolant object is created.
@@ -247,25 +247,25 @@ x, y = range(0, 1, 50), range(0, 1, 30)
 data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
 # One-shot (no interpolant created)
-val = interp_nd((x, y), data, (0.5, 0.3); methods=(CubicInterp(), LinearInterp()))
+val = interp((x, y), data, (0.5, 0.3); method=(CubicInterp(), LinearInterp()))
 
 # With derivative
-dfdx = interp_nd((x, y), data, (0.5, 0.3);
-    methods=(CubicInterp(), LinearInterp()), deriv=(DerivOp(1), DerivOp(0)))
+dfdx = interp((x, y), data, (0.5, 0.3);
+    method=(CubicInterp(), LinearInterp()), deriv=(DerivOp(1), DerivOp(0)))
 ```
 """
-function interp_nd(
+function interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
         query::Tuple{Vararg{Real, N}};
-        methods::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {N}
-    methods_tuple = methods isa AbstractInterpMethod ? ntuple(_ -> methods, Val(N)) : methods
-    return _interp_nd_oneshot_dispatch(grids, data, query, methods_tuple, deriv, extrap, search, hint)
+    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    return _interp_nd_oneshot_dispatch(grids, data, query, method_tuple, deriv, extrap, search, hint)
 end
 
 # ========================================
@@ -273,24 +273,24 @@ end
 # ========================================
 
 """
-    interp_nd!(output, grids, data, queries; methods, kwargs...)
+    interp!(output, grids, data, queries; method, kwargs...)
 
 In-place one-shot N-dimensional interpolation at multiple points.
 Builds partials once, evaluates at all query points.
 """
-function interp_nd!(
+function interp!(
         output::AbstractVector,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
         queries;
-        methods::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {N}
-    methods_tuple = methods isa AbstractInterpMethod ? ntuple(_ -> methods, Val(N)) : methods
-    return _interp_nd_oneshot_batch_dispatch!(output, grids, data, queries, methods_tuple, deriv, extrap, search, hint)
+    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    return _interp_nd_oneshot_batch_dispatch!(output, grids, data, queries, method_tuple, deriv, extrap, search, hint)
 end
 
 # ========================================
@@ -298,16 +298,16 @@ end
 # ========================================
 
 """
-    interp_nd(grids, data, queries; methods, kwargs...)
+    interp(grids, data, queries; method, kwargs...)
 
 Allocating one-shot N-dimensional interpolation at multiple points.
 Returns a `Vector` of interpolated values.
 """
-function interp_nd(
+function interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;
-        methods::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
@@ -318,6 +318,6 @@ function interp_nd(
     Tq = _query_eltype(queries)
     Tr = _output_eltype(Tv, Tg, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
-    interp_nd!(output, grids, data, queries; methods = methods, deriv = deriv, extrap = extrap, search = search, hint = hint)
+    interp!(output, grids, data, queries; method = method, deriv = deriv, extrap = extrap, search = search, hint = hint)
     return output
 end

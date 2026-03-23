@@ -39,10 +39,10 @@ x, y = range(0, 1, 50), range(0, 1, 30)
 data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
 # On-the-fly (default)
-itp = interp_nd((x, y), data; methods=(CubicInterp(), LinearInterp()))
+itp = interp((x, y), data; method=(CubicInterp(), LinearInterp()))
 
 # Precomputed (fast eval)
-itp = interp_nd((x, y), data; methods=(CubicInterp(), LinearInterp()), coeffs=PreCompute())
+itp = interp((x, y), data; method=(CubicInterp(), LinearInterp()), coeffs=PreCompute())
 itp((0.5, 0.3))
 ```
 """

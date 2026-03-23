@@ -17,9 +17,9 @@ using FastInterpolations
     # 1. All-cubic PreCompute == CubicInterpolantND
     # ========================================
     @testset "All-cubic PreCompute matches CubicInterpolantND" begin
-        itp_pre = interp_nd(
+        itp_pre = interp(
             (x, y), data_2d;
-            methods = (CubicInterp(), CubicInterp()), coeffs = PreCompute()
+            method = (CubicInterp(), CubicInterp()), coeffs = PreCompute()
         )
         itp_ref = cubic_interp((x, y), data_2d)
 
@@ -30,9 +30,9 @@ using FastInterpolations
     # 2. All-quadratic PreCompute == QuadraticInterpolantND
     # ========================================
     @testset "All-quadratic PreCompute matches QuadraticInterpolantND" begin
-        itp_pre = interp_nd(
+        itp_pre = interp(
             (x, y), data_2d;
-            methods = (QuadraticInterp(), QuadraticInterp()), coeffs = PreCompute()
+            method = (QuadraticInterp(), QuadraticInterp()), coeffs = PreCompute()
         )
         itp_ref = quadratic_interp((x, y), data_2d)
 
@@ -44,8 +44,8 @@ using FastInterpolations
     # ========================================
     @testset "Cubic×Linear: PreCompute matches OnTheFly" begin
         methods_cl = (CubicInterp(), LinearInterp())
-        itp_pre = interp_nd((x, y), data_2d; methods = methods_cl, coeffs = PreCompute())
-        itp_otf = interp_nd((x, y), data_2d; methods = methods_cl)
+        itp_pre = interp((x, y), data_2d; method = methods_cl, coeffs = PreCompute())
+        itp_otf = interp((x, y), data_2d; method = methods_cl)
 
         for qxi in range(0.2, 6.0, 20), qyj in range(0.1, 3.0, 15)
             @test itp_pre((qxi, qyj)) ≈ itp_otf((qxi, qyj)) rtol = 1.0e-12
@@ -57,8 +57,8 @@ using FastInterpolations
     # ========================================
     @testset "Cubic×Quadratic: PreCompute matches OnTheFly" begin
         methods_cq = (CubicInterp(), QuadraticInterp())
-        itp_pre = interp_nd((x, y), data_2d; methods = methods_cq, coeffs = PreCompute())
-        itp_otf = interp_nd((x, y), data_2d; methods = methods_cq)
+        itp_pre = interp((x, y), data_2d; method = methods_cq, coeffs = PreCompute())
+        itp_otf = interp((x, y), data_2d; method = methods_cq)
 
         for qxi in range(0.2, 6.0, 10), qyj in range(0.1, 3.0, 10)
             @test itp_pre((qxi, qyj)) ≈ itp_otf((qxi, qyj)) rtol = 1.0e-12
@@ -70,8 +70,8 @@ using FastInterpolations
     # ========================================
     @testset "Linear×Cubic: PreCompute matches OnTheFly" begin
         methods_lc = (LinearInterp(), CubicInterp())
-        itp_pre = interp_nd((x, y), data_2d; methods = methods_lc, coeffs = PreCompute())
-        itp_otf = interp_nd((x, y), data_2d; methods = methods_lc)
+        itp_pre = interp((x, y), data_2d; method = methods_lc, coeffs = PreCompute())
+        itp_otf = interp((x, y), data_2d; method = methods_lc)
 
         for qxi in range(0.2, 6.0, 10), qyj in range(0.1, 3.0, 10)
             @test itp_pre((qxi, qyj)) ≈ itp_otf((qxi, qyj)) rtol = 1.0e-12
@@ -84,8 +84,8 @@ using FastInterpolations
     @testset "3D Cubic×Linear×Quadratic: PreCompute matches OnTheFly" begin
         data_3d = [sin(xi) * cos(yj) * (zk^2 + 1) for xi in x, yj in y, zk in z]
         methods_clq = (CubicInterp(), LinearInterp(), QuadraticInterp())
-        itp_pre = interp_nd((x, y, z), data_3d; methods = methods_clq, coeffs = PreCompute())
-        itp_otf = interp_nd((x, y, z), data_3d; methods = methods_clq)
+        itp_pre = interp((x, y, z), data_3d; method = methods_clq, coeffs = PreCompute())
+        itp_otf = interp((x, y, z), data_3d; method = methods_clq)
 
         for qxi in range(0.5, 5.5, 5), qyj in range(0.2, 2.8, 5), qzk in range(0.1, 0.9, 5)
             @test itp_pre((qxi, qyj, qzk)) ≈ itp_otf((qxi, qyj, qzk)) rtol = 1.0e-10
@@ -101,9 +101,9 @@ using FastInterpolations
         xg = range(-1.0, 3.0, 20)
         yg = range(0.0, 5.0, 15)
         data_poly = [p3(xi) * p1(yj) for xi in xg, yj in yg]
-        itp_pre = interp_nd(
+        itp_pre = interp(
             (xg, yg), data_poly;
-            methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+            method = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
         )
 
         for qxi in range(-0.9, 2.9, 15), qyj in range(0.1, 4.9, 15)
@@ -120,9 +120,9 @@ using FastInterpolations
         xg = range(-1.0, 3.0, 20)
         yg = range(0.0, 5.0, 15)
         data_poly = [p3(xi) * p2(yj) for xi in xg, yj in yg]
-        itp_pre = interp_nd(
+        itp_pre = interp(
             (xg, yg), data_poly;
-            methods = (CubicInterp(), QuadraticInterp()), coeffs = PreCompute()
+            method = (CubicInterp(), QuadraticInterp()), coeffs = PreCompute()
         )
 
         for qxi in range(-0.9, 2.9, 10), qyj in range(0.1, 4.9, 10)
@@ -135,8 +135,8 @@ using FastInterpolations
     # ========================================
     @testset "Derivatives: PreCompute df/dx matches OnTheFly" begin
         methods_cl = (CubicInterp(), LinearInterp())
-        itp_pre = interp_nd((x, y), data_2d; methods = methods_cl, coeffs = PreCompute())
-        itp_otf = interp_nd((x, y), data_2d; methods = methods_cl)
+        itp_pre = interp((x, y), data_2d; method = methods_cl, coeffs = PreCompute())
+        itp_otf = interp((x, y), data_2d; method = methods_cl)
 
         for qxi in range(0.5, 5.5, 10), qyj in range(0.2, 2.8, 10)
             @test itp_pre((qxi, qyj); deriv = (DerivOp(1), DerivOp(0))) ≈
@@ -150,9 +150,9 @@ using FastInterpolations
     # 10. gradient() works with PreCompute
     # ========================================
     @testset "gradient() with PreCompute" begin
-        itp_pre = interp_nd(
+        itp_pre = interp(
             (x, y), data_2d;
-            methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+            method = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
         )
         grad = gradient(itp_pre, (qx, qy))
 
@@ -174,9 +174,9 @@ using FastInterpolations
             xg = range(0.0, 2π, 30)
             yg = range(0.0, π, 25)
             d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
-            itp = interp_nd(
+            itp = interp(
                 (xg, yg), d;
-                methods = (CubicInterp(), CubicInterp()), coeffs = PreCompute()
+                method = (CubicInterp(), CubicInterp()), coeffs = PreCompute()
             )
             itp((1.0, 0.5))
             itp((1.0, 0.5))
@@ -190,9 +190,9 @@ using FastInterpolations
             xg = range(0.0, 2π, 30)
             yg = range(0.0, π, 25)
             d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
-            itp = interp_nd(
+            itp = interp(
                 (xg, yg), d;
-                methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+                method = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
             )
             itp((1.0, 0.5))
             itp((1.0, 0.5))
@@ -206,9 +206,9 @@ using FastInterpolations
             xg = range(0.0, 2π, 30)
             yg = range(0.0, π, 25)
             d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
-            itp = interp_nd(
+            itp = interp(
                 (xg, yg), d;
-                methods = (LinearInterp(), LinearInterp()), coeffs = PreCompute()
+                method = (LinearInterp(), LinearInterp()), coeffs = PreCompute()
             )
             itp((1.0, 0.5))
             itp((1.0, 0.5))
@@ -222,9 +222,9 @@ using FastInterpolations
             xg = range(0.0, 2π, 30)
             yg = range(0.0, π, 25)
             d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
-            itp = interp_nd(
+            itp = interp(
                 (xg, yg), d;
-                methods = (CubicInterp(), QuadraticInterp()), coeffs = PreCompute()
+                method = (CubicInterp(), QuadraticInterp()), coeffs = PreCompute()
             )
             itp((1.0, 0.5))
             itp((1.0, 0.5))
@@ -238,9 +238,9 @@ using FastInterpolations
             xg = range(0.0, 2π, 30)
             yg = range(0.0, π, 25)
             d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
-            itp = interp_nd(
+            itp = interp(
                 (xg, yg), d;
-                methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+                method = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
             )
             gradient(itp, (1.0, 0.5))
             gradient(itp, (1.0, 0.5))
@@ -264,23 +264,23 @@ using FastInterpolations
         # Homogeneous (Cubic×Cubic, Linear×Linear) auto-dispatch to existing ND types.
 
         # 2D Cubic×Linear: prod(sizes) = 2×1 = 2 (vs 2^2 = 4, 2× savings)
-        itp_cl = interp_nd(
+        itp_cl = interp(
             (xg, yg), data2;
-            methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+            method = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
         )
         @test size(itp_cl.data.partials, 1) == 2   # compact!
 
         # 3D Cubic×Linear×Linear: prod(sizes) = 2×1×1 = 2 (vs 2^3 = 8, 4× savings)
-        itp_cll = interp_nd(
+        itp_cll = interp(
             (xg, yg, zg), data3;
-            methods = (CubicInterp(), LinearInterp(), LinearInterp()), coeffs = PreCompute()
+            method = (CubicInterp(), LinearInterp(), LinearInterp()), coeffs = PreCompute()
         )
         @test size(itp_cll.data.partials, 1) == 2   # 4× savings
 
         # 3D Cubic×Linear×Quadratic: prod(sizes) = 2×1×2 = 4 (vs 2^3 = 8, 2× savings)
-        itp_clq = interp_nd(
+        itp_clq = interp(
             (xg, yg, zg), data3;
-            methods = (CubicInterp(), LinearInterp(), QuadraticInterp()), coeffs = PreCompute()
+            method = (CubicInterp(), LinearInterp(), QuadraticInterp()), coeffs = PreCompute()
         )
         @test size(itp_clq.data.partials, 1) == 4   # 2× savings
     end
@@ -297,13 +297,13 @@ using FastInterpolations
         yg = range(0.0, π, 25)
         data_cc = [sin(xi) * cos(yj) for xi in xg, yj in yg]
 
-        itp_pre = interp_nd(
+        itp_pre = interp(
             (xg, yg), data_cc;
-            methods = (CubicInterp(), ConstantInterp()), coeffs = PreCompute()
+            method = (CubicInterp(), ConstantInterp()), coeffs = PreCompute()
         )
-        itp_otf = interp_nd(
+        itp_otf = interp(
             (xg, yg), data_cc;
-            methods = (CubicInterp(), ConstantInterp()), coeffs = OnTheFly()
+            method = (CubicInterp(), ConstantInterp()), coeffs = OnTheFly()
         )
 
         qxi, qyj = 1.7, 0.8
@@ -342,14 +342,14 @@ using FastInterpolations
         # Monotonically increasing in y so left ≠ right in every cell
         data_step = [Float64(xi + 10yj) for xi in xg, yj in yg]
 
-        itp_left = interp_nd(
+        itp_left = interp(
             (xg, yg), data_step;
-            methods = (LinearInterp(), ConstantInterp(side = LeftSide())),
+            method = (LinearInterp(), ConstantInterp(side = LeftSide())),
             coeffs = PreCompute()
         )
-        itp_right = interp_nd(
+        itp_right = interp(
             (xg, yg), data_step;
-            methods = (LinearInterp(), ConstantInterp(side = RightSide())),
+            method = (LinearInterp(), ConstantInterp(side = RightSide())),
             coeffs = PreCompute()
         )
 
@@ -377,13 +377,13 @@ using FastInterpolations
         yg = range(0.0, π, 25)
         data_bc = [sin(xi) * cos(yj) for xi in xg, yj in yg]
 
-        itp_pre = interp_nd(
+        itp_pre = interp(
             (xg, yg), data_bc;
-            methods = (CubicInterp(bc = ZeroCurvBC()), LinearInterp()), coeffs = PreCompute()
+            method = (CubicInterp(bc = ZeroCurvBC()), LinearInterp()), coeffs = PreCompute()
         )
-        itp_otf = interp_nd(
+        itp_otf = interp(
             (xg, yg), data_bc;
-            methods = (CubicInterp(bc = ZeroCurvBC()), LinearInterp()), coeffs = OnTheFly()
+            method = (CubicInterp(bc = ZeroCurvBC()), LinearInterp()), coeffs = OnTheFly()
         )
 
         # PreCompute must match OnTheFly for all interior points
@@ -392,9 +392,9 @@ using FastInterpolations
         end
 
         # ZeroCurvBC must produce different results from CubicFit near boundaries
-        itp_fit = interp_nd(
+        itp_fit = interp(
             (xg, yg), data_bc;
-            methods = (CubicInterp(bc = CubicFit()), LinearInterp()), coeffs = PreCompute()
+            method = (CubicInterp(bc = CubicFit()), LinearInterp()), coeffs = PreCompute()
         )
         @test itp_pre((0.05, 0.8)) != itp_fit((0.05, 0.8))
     end
@@ -407,14 +407,14 @@ using FastInterpolations
         yp = range(0.0, 5.0, 20)
         data_per = [sin(xi) * (2yj + 1) for xi in xp, yj in yp]
 
-        itp_pre = interp_nd(
+        itp_pre = interp(
             (xp, yp), data_per;
-            methods = (CubicInterp(bc = PeriodicBC(endpoint = :exclusive)), LinearInterp()),
+            method = (CubicInterp(bc = PeriodicBC(endpoint = :exclusive)), LinearInterp()),
             extrap = (WrapExtrap(), NoExtrap()), coeffs = PreCompute()
         )
-        itp_otf = interp_nd(
+        itp_otf = interp(
             (xp, yp), data_per;
-            methods = (CubicInterp(bc = PeriodicBC(endpoint = :exclusive)), LinearInterp()),
+            method = (CubicInterp(bc = PeriodicBC(endpoint = :exclusive)), LinearInterp()),
             extrap = (WrapExtrap(), NoExtrap()), coeffs = OnTheFly()
         )
 
@@ -448,14 +448,14 @@ using FastInterpolations
         data_per = [sin(xi) * (2yj + 1) for xi in xp, yj in yp]
         data_per[end, :] .= data_per[1, :]   # enforce exact periodicity
 
-        itp_pre = interp_nd(
+        itp_pre = interp(
             (xp, yp), data_per;
-            methods = (CubicInterp(bc = PeriodicBC()), LinearInterp()),
+            method = (CubicInterp(bc = PeriodicBC()), LinearInterp()),
             extrap = (WrapExtrap(), NoExtrap()), coeffs = PreCompute()
         )
-        itp_otf = interp_nd(
+        itp_otf = interp(
             (xp, yp), data_per;
-            methods = (CubicInterp(bc = PeriodicBC()), LinearInterp()),
+            method = (CubicInterp(bc = PeriodicBC()), LinearInterp()),
             extrap = (WrapExtrap(), NoExtrap()), coeffs = OnTheFly()
         )
 
@@ -472,9 +472,9 @@ using FastInterpolations
         yg = range(0.0, π, 25)
         data_hl = [sin(xi) * cos(yj) for xi in xg, yj in yg]
 
-        itp_pre = interp_nd(
+        itp_pre = interp(
             (xg, yg), data_hl;
-            methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+            method = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
         )
 
         qxi, qyj = 1.7, 0.8
@@ -493,9 +493,9 @@ using FastInterpolations
         @test lap ≈ H[1, 1] + H[2, 2] rtol = 1.0e-12
 
         # PreCompute hessian matches OnTheFly
-        itp_otf = interp_nd(
+        itp_otf = interp(
             (xg, yg), data_hl;
-            methods = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
+            method = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
         )
         H_otf = hessian(itp_otf, (qxi, qyj))
         for i in 1:2, j in 1:2
@@ -511,9 +511,9 @@ using FastInterpolations
         y32 = range(0.0f0, Float32(π), 25)
         data32 = [sin(xi) * cos(yj) for xi in x32, yj in y32]
 
-        itp32 = interp_nd(
+        itp32 = interp(
             (x32, y32), data32;
-            methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+            method = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
         )
         val = itp32((1.0f0, 0.5f0))
         @test val isa Float32
@@ -532,13 +532,13 @@ using FastInterpolations
         y_vec = collect(range(0.0, π, 25))
         data_mixed = [sin(xi) * cos(yj) for xi in x_range, yj in y_vec]
 
-        itp_pre = interp_nd(
+        itp_pre = interp(
             (x_range, y_vec), data_mixed;
-            methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+            method = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
         )
-        itp_otf = interp_nd(
+        itp_otf = interp(
             (x_range, y_vec), data_mixed;
-            methods = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
+            method = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
         )
 
         qxi, qyj = 1.7, 0.8

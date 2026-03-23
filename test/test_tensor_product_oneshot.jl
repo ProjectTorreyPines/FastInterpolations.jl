@@ -1,7 +1,7 @@
 using Test
 using FastInterpolations
 
-@testset "interp_nd One-Shot API" begin
+@testset "interp One-Shot API" begin
     # ========================================
     # Test Setup
     # ========================================
@@ -15,7 +15,7 @@ using FastInterpolations
     # ========================================
     @testset "Homo scalar: all-cubic" begin
         ref = cubic_interp((x, y), data_2d, (qx, qy))
-        val = interp_nd((x, y), data_2d, (qx, qy); methods = CubicInterp())
+        val = interp((x, y), data_2d, (qx, qy); method = CubicInterp())
         @test val ≈ ref rtol = 1.0e-14
     end
 
@@ -24,7 +24,7 @@ using FastInterpolations
     # ========================================
     @testset "Homo scalar: all-linear" begin
         ref = linear_interp((x, y), data_2d, (qx, qy))
-        val = interp_nd((x, y), data_2d, (qx, qy); methods = LinearInterp())
+        val = interp((x, y), data_2d, (qx, qy); method = LinearInterp())
         @test val ≈ ref rtol = 1.0e-14
     end
 
@@ -33,7 +33,7 @@ using FastInterpolations
     # ========================================
     @testset "Homo scalar: all-quadratic" begin
         ref = quadratic_interp((x, y), data_2d, (qx, qy))
-        val = interp_nd((x, y), data_2d, (qx, qy); methods = QuadraticInterp())
+        val = interp((x, y), data_2d, (qx, qy); method = QuadraticInterp())
         @test val ≈ ref rtol = 1.0e-14
     end
 
@@ -42,7 +42,7 @@ using FastInterpolations
     # ========================================
     @testset "Homo scalar: all-constant" begin
         ref = constant_interp((x, y), data_2d, (qx, qy))
-        val = interp_nd((x, y), data_2d, (qx, qy); methods = ConstantInterp())
+        val = interp((x, y), data_2d, (qx, qy); method = ConstantInterp())
         @test val ≈ ref rtol = 1.0e-14
     end
 
@@ -52,7 +52,7 @@ using FastInterpolations
     @testset "Homo batch: all-cubic" begin
         queries = ([1.0, 1.5, 2.0], [0.5, 0.8, 1.0])
         ref = cubic_interp((x, y), data_2d, queries)
-        vals = interp_nd((x, y), data_2d, queries; methods = CubicInterp())
+        vals = interp((x, y), data_2d, queries; method = CubicInterp())
         @test vals ≈ ref rtol = 1.0e-14
     end
 
@@ -60,9 +60,9 @@ using FastInterpolations
     # 6. Heterogeneous scalar: Cubic × Linear
     # ========================================
     @testset "Hetero scalar: Cubic × Linear" begin
-        itp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()), coeffs = PreCompute())
+        itp = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()), coeffs = PreCompute())
         ref = itp((qx, qy))
-        val = interp_nd((x, y), data_2d, (qx, qy); methods = (CubicInterp(), LinearInterp()))
+        val = interp((x, y), data_2d, (qx, qy); method = (CubicInterp(), LinearInterp()))
         @test val ≈ ref rtol = 1.0e-14
     end
 
@@ -70,9 +70,9 @@ using FastInterpolations
     # 7. Heterogeneous scalar: Linear × Cubic
     # ========================================
     @testset "Hetero scalar: Linear × Cubic" begin
-        itp = interp_nd((x, y), data_2d; methods = (LinearInterp(), CubicInterp()), coeffs = PreCompute())
+        itp = interp((x, y), data_2d; method = (LinearInterp(), CubicInterp()), coeffs = PreCompute())
         ref = itp((qx, qy))
-        val = interp_nd((x, y), data_2d, (qx, qy); methods = (LinearInterp(), CubicInterp()))
+        val = interp((x, y), data_2d, (qx, qy); method = (LinearInterp(), CubicInterp()))
         @test val ≈ ref rtol = 1.0e-14
     end
 
@@ -80,12 +80,12 @@ using FastInterpolations
     # 8. Heterogeneous scalar: Cubic × Quadratic
     # ========================================
     @testset "Hetero scalar: Cubic × Quadratic" begin
-        itp = interp_nd(
+        itp = interp(
             (x, y), data_2d;
-            methods = (CubicInterp(), QuadraticInterp()), coeffs = PreCompute()
+            method = (CubicInterp(), QuadraticInterp()), coeffs = PreCompute()
         )
         ref = itp((qx, qy))
-        val = interp_nd((x, y), data_2d, (qx, qy); methods = (CubicInterp(), QuadraticInterp()))
+        val = interp((x, y), data_2d, (qx, qy); method = (CubicInterp(), QuadraticInterp()))
         @test val ≈ ref rtol = 1.0e-14
     end
 
@@ -94,19 +94,19 @@ using FastInterpolations
     # ========================================
     @testset "Hetero batch + in-place" begin
         methods_cl = (CubicInterp(), LinearInterp())
-        itp = interp_nd((x, y), data_2d; methods = methods_cl, coeffs = PreCompute())
+        itp = interp((x, y), data_2d; method = methods_cl, coeffs = PreCompute())
 
         queries = ([1.0, 1.5, 2.0, 2.5, 3.0], [0.5, 0.8, 1.0, 1.2, 1.5])
 
         # Allocating batch
-        vals = interp_nd((x, y), data_2d, queries; methods = methods_cl)
+        vals = interp((x, y), data_2d, queries; method = methods_cl)
         for k in 1:5
             @test vals[k] ≈ itp((queries[1][k], queries[2][k])) rtol = 1.0e-14
         end
 
         # In-place batch
         output = zeros(5)
-        interp_nd!(output, (x, y), data_2d, queries; methods = methods_cl)
+        interp!(output, (x, y), data_2d, queries; method = methods_cl)
         @test output ≈ vals rtol = 1.0e-14
     end
 
@@ -115,7 +115,7 @@ using FastInterpolations
     # ========================================
     @testset "Derivatives: ∂f/∂x on Cubic × Linear" begin
         methods_cl = (CubicInterp(), LinearInterp())
-        itp = interp_nd((x, y), data_2d; methods = methods_cl, coeffs = PreCompute())
+        itp = interp((x, y), data_2d; method = methods_cl, coeffs = PreCompute())
 
         d10 = (DerivOp(1), DerivOp(0))
         d01 = (DerivOp(0), DerivOp(1))
@@ -123,8 +123,8 @@ using FastInterpolations
         ref_dx = itp((qx, qy); deriv = d10)
         ref_dy = itp((qx, qy); deriv = d01)
 
-        val_dx = interp_nd((x, y), data_2d, (qx, qy); methods = methods_cl, deriv = d10)
-        val_dy = interp_nd((x, y), data_2d, (qx, qy); methods = methods_cl, deriv = d01)
+        val_dx = interp((x, y), data_2d, (qx, qy); method = methods_cl, deriv = d10)
+        val_dy = interp((x, y), data_2d, (qx, qy); method = methods_cl, deriv = d01)
 
         @test val_dx ≈ ref_dx rtol = 1.0e-12
         @test val_dy ≈ ref_dy rtol = 1.0e-12
@@ -140,9 +140,9 @@ using FastInterpolations
             d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
             m = (CubicInterp(), LinearInterp())
             q = (1.0, 0.5)
-            interp_nd((xg, yg), d, q; methods = m)
-            interp_nd((xg, yg), d, q; methods = m)
-            return @allocated interp_nd((xg, yg), d, q; methods = m)
+            interp((xg, yg), d, q; method = m)
+            interp((xg, yg), d, q; method = m)
+            return @allocated interp((xg, yg), d, q; method = m)
         end
         @test _test_alloc_oneshot_hetero() <= ND_ALLOC_THRESHOLD
     end
@@ -156,9 +156,9 @@ using FastInterpolations
             yg = range(0.0, π, 25)
             d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
             q = (1.0, 0.5)
-            interp_nd((xg, yg), d, q; methods = CubicInterp())
-            interp_nd((xg, yg), d, q; methods = CubicInterp())
-            return @allocated interp_nd((xg, yg), d, q; methods = CubicInterp())
+            interp((xg, yg), d, q; method = CubicInterp())
+            interp((xg, yg), d, q; method = CubicInterp())
+            return @allocated interp((xg, yg), d, q; method = CubicInterp())
         end
         @test _test_alloc_oneshot_homo() <= ND_ALLOC_THRESHOLD
     end
@@ -174,12 +174,12 @@ using FastInterpolations
         methods_pl = (CubicInterp(bc = PeriodicBC(endpoint = :exclusive)), LinearInterp())
         ext = (WrapExtrap(), NoExtrap())
 
-        itp = interp_nd(
+        itp = interp(
             (xp, yp), data_per;
-            methods = methods_pl, extrap = ext, coeffs = PreCompute()
+            method = methods_pl, extrap = ext, coeffs = PreCompute()
         )
         ref = itp((1.5, 2.3))
-        val = interp_nd((xp, yp), data_per, (1.5, 2.3); methods = methods_pl, extrap = ext)
+        val = interp((xp, yp), data_per, (1.5, 2.3); method = methods_pl, extrap = ext)
         @test val ≈ ref rtol = 1.0e-12
     end
 
@@ -191,14 +191,14 @@ using FastInterpolations
         data_3d = [sin(xi) * cos(yj) * (zk^2 + 1) for xi in x, yj in y, zk in z]
 
         methods_clq = (CubicInterp(), LinearInterp(), QuadraticInterp())
-        itp = interp_nd(
+        itp = interp(
             (x, y, z), data_3d;
-            methods = methods_clq, coeffs = PreCompute()
+            method = methods_clq, coeffs = PreCompute()
         )
 
         q3 = (1.7, 0.8, 0.45)
         ref = itp(q3)
-        val = interp_nd((x, y, z), data_3d, q3; methods = methods_clq)
+        val = interp((x, y, z), data_3d, q3; method = methods_clq)
         @test val ≈ ref rtol = 1.0e-12
     end
 
@@ -211,12 +211,12 @@ using FastInterpolations
         data32 = [sin(xi) * cos(yj) for xi in x32, yj in y32]
 
         # Hetero scalar
-        val = interp_nd((x32, y32), data32, (1.0f0, 0.5f0); methods = (CubicInterp(), LinearInterp()))
+        val = interp((x32, y32), data32, (1.0f0, 0.5f0); method = (CubicInterp(), LinearInterp()))
         @test val isa Float32
         @test val ≈ sin(1.0f0) * cos(0.5f0) atol = 0.01f0
 
         # Homo scalar
-        val_c = interp_nd((x32, y32), data32, (1.0f0, 0.5f0); methods = CubicInterp())
+        val_c = interp((x32, y32), data32, (1.0f0, 0.5f0); method = CubicInterp())
         @test val_c isa Float32
     end
 
@@ -238,7 +238,7 @@ using FastInterpolations
         data_duck = [_OneshotDuck(xi + 2yj) for xi in xg, yj in yg]
 
         # Linear × Linear (duck types work with linear kernel)
-        val = interp_nd((xg, yg), data_duck, (2.0, 1.5); methods = (LinearInterp(), LinearInterp()))
+        val = interp((xg, yg), data_duck, (2.0, 1.5); method = (LinearInterp(), LinearInterp()))
         @test val isa _OneshotDuck
         @test val.v ≈ 2.0 + 2 * 1.5 atol = 1.0e-12
     end
@@ -252,13 +252,13 @@ using FastInterpolations
         # cubic
         ref = cubic_interp((x, y), data_2d, queries)
         output = zeros(3)
-        interp_nd!(output, (x, y), data_2d, queries; methods = CubicInterp())
+        interp!(output, (x, y), data_2d, queries; method = CubicInterp())
         @test output ≈ ref rtol = 1.0e-14
 
         # linear
         ref_l = linear_interp((x, y), data_2d, queries)
         output_l = zeros(3)
-        interp_nd!(output_l, (x, y), data_2d, queries; methods = LinearInterp())
+        interp!(output_l, (x, y), data_2d, queries; method = LinearInterp())
         @test output_l ≈ ref_l rtol = 1.0e-14
     end
 
@@ -269,16 +269,16 @@ using FastInterpolations
         methods_cl = (CubicInterp(), LinearInterp())
 
         # OOB on axis 1 → clamped (no error)
-        val_clamp = interp_nd(
+        val_clamp = interp(
             (x, y), data_2d, (-1.0, qy);
-            methods = methods_cl, extrap = ClampExtrap()
+            method = methods_cl, extrap = ClampExtrap()
         )
         @test val_clamp isa Float64
 
         # OOB on axis 2 → NoExtrap throws
-        @test_throws Exception interp_nd(
+        @test_throws Exception interp(
             (x, y), data_2d, (qx, -1.0);
-            methods = methods_cl, extrap = NoExtrap()
+            method = methods_cl, extrap = NoExtrap()
         )
     end
 end

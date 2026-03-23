@@ -177,7 +177,7 @@ end
 # ========================================
 
 """
-    interp_nd(grids, data; methods, coeffs=PreCompute(), extrap=NoExtrap(), search=AutoSearch())
+    interp(grids, data; method, coeffs=PreCompute(), extrap=NoExtrap(), search=AutoSearch())
 
 Unified N-dimensional interpolation constructor with per-axis method specification.
 
@@ -192,9 +192,9 @@ Automatically dispatches to the optimal implementation:
 - `data::AbstractArray{<:Any, N}`: N-dimensional data array
 
 # Keyword Arguments
-- `methods`: Interpolation method(s) (**required**)
-  - Single `AbstractInterpMethod`: broadcast to all axes (e.g., `methods=CubicInterp()`)
-  - `Tuple{Vararg{AbstractInterpMethod, N}}`: per-axis (e.g., `methods=(CubicInterp(), LinearInterp())`)
+- `method`: Interpolation method(s) (**required**)
+  - Single `AbstractInterpMethod`: broadcast to all axes (e.g., `method=CubicInterp()`)
+  - `Tuple{Vararg{AbstractInterpMethod, N}}`: per-axis (e.g., `method=(CubicInterp(), LinearInterp())`)
 - `coeffs=PreCompute()`: Coefficient strategy (heterogeneous only)
   - `PreCompute()`: Precompute partial derivatives (O(1) eval)
   - `OnTheFly()`: Build 1D per query (zero build cost, O(n) eval)
@@ -207,27 +207,27 @@ x, y = range(0, 1, 50), range(0, 1, 30)
 data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
 # Single method → all axes (dispatches to CubicInterpolantND)
-itp = interp_nd((x, y), data; methods=CubicInterp())
+itp = interp((x, y), data; method=CubicInterp())
 
 # Heterogeneous → TensorProductInterpolantND
-itp = interp_nd((x, y), data; methods=(CubicInterp(), LinearInterp()))
+itp = interp((x, y), data; method=(CubicInterp(), LinearInterp()))
 
 # Per-axis BCs
-itp = interp_nd((x, y), data; methods=(CubicInterp(CubicFit()), CubicInterp(ZeroCurvBC())))
+itp = interp((x, y), data; method=(CubicInterp(CubicFit()), CubicInterp(ZeroCurvBC())))
 
 # Derivatives
 itp((0.5, 0.3); deriv=(DerivOp(1), DerivOp(0)))  # ∂f/∂x
 gradient(itp, (0.5, 0.3))                          # (∂f/∂x, ∂f/∂y)
 ```
 """
-function interp_nd(
+function interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N};
-        methods::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
         coeffs::AbstractCoeffStrategy = PreCompute(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     ) where {N}
-    methods_tuple = methods isa AbstractInterpMethod ? ntuple(_ -> methods, Val(N)) : methods
-    return _interp_nd_dispatch(grids, data, methods_tuple, coeffs, extrap, search)
+    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    return _interp_nd_dispatch(grids, data, method_tuple, coeffs, extrap, search)
 end

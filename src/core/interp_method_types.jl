@@ -24,7 +24,7 @@ Used by [`TensorProductInterpolantND`](@ref) to specify interpolation method per
 # Example
 ```julia
 methods = (CubicInterp(), LinearInterp())  # cubic on axis 1, linear on axis 2
-itp = interp_nd((x, y), data; methods=methods)
+itp = interp((x, y), data; method=methods)
 ```
 """
 abstract type AbstractInterpMethod end

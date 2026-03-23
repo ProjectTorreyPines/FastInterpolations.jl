@@ -23,7 +23,7 @@ using FastInterpolations
     # ========================================
     @testset "Homogeneous: all-cubic matches CubicInterpolantND" begin
         itp_ref = cubic_interp((x, y), data_2d)
-        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), CubicInterp()))
+        itp_tp = interp((x, y), data_2d; method = (CubicInterp(), CubicInterp()))
 
         @test itp_tp isa CubicInterpolantND  # auto-dispatched to existing type
         @test itp_tp((qx, qy)) ≈ itp_ref((qx, qy)) rtol = 1.0e-12
@@ -34,7 +34,7 @@ using FastInterpolations
     # ========================================
     @testset "Homogeneous: all-linear matches LinearInterpolantND" begin
         itp_ref = linear_interp((x, y), data_2d)
-        itp_tp = interp_nd((x, y), data_2d; methods = (LinearInterp(), LinearInterp()))
+        itp_tp = interp((x, y), data_2d; method = (LinearInterp(), LinearInterp()))
 
         @test itp_tp((qx, qy)) ≈ itp_ref((qx, qy)) rtol = 1.0e-12
     end
@@ -44,7 +44,7 @@ using FastInterpolations
     # ========================================
     @testset "Homogeneous: all-quadratic matches QuadraticInterpolantND" begin
         itp_ref = quadratic_interp((x, y), data_2d)
-        itp_tp = interp_nd((x, y), data_2d; methods = (QuadraticInterp(), QuadraticInterp()))
+        itp_tp = interp((x, y), data_2d; method = (QuadraticInterp(), QuadraticInterp()))
 
         @test itp_tp((qx, qy)) ≈ itp_ref((qx, qy)) rtol = 1.0e-12
     end
@@ -54,7 +54,7 @@ using FastInterpolations
     # ========================================
     @testset "Homogeneous: all-constant matches ConstantInterpolantND" begin
         itp_ref = constant_interp((x, y), data_2d)
-        itp_tp = interp_nd((x, y), data_2d; methods = (ConstantInterp(), ConstantInterp()))
+        itp_tp = interp((x, y), data_2d; method = (ConstantInterp(), ConstantInterp()))
 
         @test itp_tp((qx, qy)) ≈ itp_ref((qx, qy)) rtol = 1.0e-12
     end
@@ -63,7 +63,7 @@ using FastInterpolations
     # 5. Heterogeneous: Cubic × Linear (2D)
     # ========================================
     @testset "Heterogeneous: Cubic × Linear on separable function" begin
-        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+        itp_tp = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
 
         # For separable f(x,y) = g(x)*h(y), tensor product gives:
         # itp(qx,qy) = cubic_interp(x,g)(qx) * linear_interp(y,h)(qy)
@@ -78,7 +78,7 @@ using FastInterpolations
     # 6. Heterogeneous: Linear × Cubic (2D, swapped)
     # ========================================
     @testset "Heterogeneous: Linear × Cubic (swapped axes)" begin
-        itp_tp = interp_nd((x, y), data_2d; methods = (LinearInterp(), CubicInterp()))
+        itp_tp = interp((x, y), data_2d; method = (LinearInterp(), CubicInterp()))
 
         g_vals = [g(xi) for xi in x]
         h_vals = [h(yj) for yj in y]
@@ -91,9 +91,9 @@ using FastInterpolations
     # 7. Heterogeneous: 3D Cubic × Linear × Quadratic
     # ========================================
     @testset "Heterogeneous: 3D Cubic × Linear × Quadratic" begin
-        itp_tp = interp_nd(
+        itp_tp = interp(
             (x, y, z), data_3d;
-            methods = (CubicInterp(), LinearInterp(), QuadraticInterp()),
+            method = (CubicInterp(), LinearInterp(), QuadraticInterp()),
         )
 
         g_vals = [g(xi) for xi in x]
@@ -110,7 +110,7 @@ using FastInterpolations
     # 8-9. Derivatives on heterogeneous (Cubic × Linear)
     # ========================================
     @testset "Derivatives: ∂f/∂x on Cubic × Linear" begin
-        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+        itp_tp = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
 
         g_vals = [g(xi) for xi in x]
         h_vals = [h(yj) for yj in y]
@@ -123,7 +123,7 @@ using FastInterpolations
     end
 
     @testset "Derivatives: ∂f/∂y on Cubic × Linear" begin
-        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+        itp_tp = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
 
         g_vals = [g(xi) for xi in x]
         h_vals = [h(yj) for yj in y]
@@ -139,7 +139,7 @@ using FastInterpolations
     # 10. gradient() compatibility
     # ========================================
     @testset "gradient() on TensorProductInterpolantND" begin
-        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+        itp_tp = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
 
         grad = gradient(itp_tp, (qx, qy))
 
@@ -154,9 +154,9 @@ using FastInterpolations
     # 11. Extrapolation per axis
     # ========================================
     @testset "Per-axis extrapolation" begin
-        itp_clamp_noextrap = interp_nd(
+        itp_clamp_noextrap = interp(
             (x, y), data_2d;
-            methods = (CubicInterp(), LinearInterp()),
+            method = (CubicInterp(), LinearInterp()),
             extrap = (ClampExtrap(), NoExtrap()),
         )
 
@@ -175,13 +175,13 @@ using FastInterpolations
         tiny_data = [1.0, 2.0]
 
         # Cubic needs ≥4 points
-        @test_throws ArgumentError interp_nd(
+        @test_throws ArgumentError interp(
             (tiny_grid,), reshape(tiny_data, 2);
-            methods = (CubicInterp(),),
+            method = (CubicInterp(),),
         )
 
         # Linear needs ≥2 points — should work
-        itp = interp_nd((tiny_grid,), reshape(tiny_data, 2); methods = (LinearInterp(),))
+        itp = interp((tiny_grid,), reshape(tiny_data, 2); method = (LinearInterp(),))
         @test itp((0.5,)) isa Float64
     end
 
@@ -189,7 +189,7 @@ using FastInterpolations
     # 13. Vararg callable
     # ========================================
     @testset "Vararg callable form" begin
-        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+        itp_tp = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
 
         # itp(qx, qy) == itp((qx, qy))
         @test itp_tp(qx, qy) ≈ itp_tp((qx, qy)) rtol = 1.0e-15
@@ -199,7 +199,7 @@ using FastInterpolations
     # 14. Show method
     # ========================================
     @testset "Show method" begin
-        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+        itp_tp = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
         str = sprint(show, itp_tp)
         @test occursin("TensorProductInterpolantND", str)
         @test occursin("Cubic", str)
@@ -223,7 +223,7 @@ using FastInterpolations
         xg = range(-1.0, 3.0, 20)
         yg = range(0.0, 5.0, 15)
         data_exact = [p3(xi) * p1(yj) for xi in xg, yj in yg]
-        itp_e = interp_nd((xg, yg), data_exact; methods = (CubicInterp(), LinearInterp()))
+        itp_e = interp((xg, yg), data_exact; method = (CubicInterp(), LinearInterp()))
 
         for qxi in range(-0.9, 2.9, 15), qyj in range(0.1, 4.9, 15)
             @test itp_e((qxi, qyj)) ≈ p3(qxi) * p1(qyj) atol = 1.0e-10
@@ -241,7 +241,7 @@ using FastInterpolations
         xg = range(-1.0, 3.0, 20)
         yg = range(0.0, 5.0, 15)
         data_exact = [p1(xi) * p3(yj) for xi in xg, yj in yg]
-        itp_e = interp_nd((xg, yg), data_exact; methods = (LinearInterp(), CubicInterp()))
+        itp_e = interp((xg, yg), data_exact; method = (LinearInterp(), CubicInterp()))
 
         for qxi in range(-0.9, 2.9, 12), qyj in range(0.1, 4.9, 12)
             @test itp_e((qxi, qyj)) ≈ p1(qxi) * p3(qyj) atol = 1.0e-10
@@ -258,9 +258,9 @@ using FastInterpolations
         yg = range(0.0, 5.0, 15)
         zg = range(0.0, 2.0, 12)
         data_3d_exact = [f3d(xi, yj, zk) for xi in xg, yj in yg, zk in zg]
-        itp_e = interp_nd(
+        itp_e = interp(
             (xg, yg, zg), data_3d_exact;
-            methods = (CubicInterp(), LinearInterp(), QuadraticInterp()),
+            method = (CubicInterp(), LinearInterp(), QuadraticInterp()),
         )
 
         for qxi in range(-0.5, 2.5, 8), qyj in range(0.5, 4.5, 8), qzk in range(0.1, 1.9, 8)
@@ -272,17 +272,17 @@ using FastInterpolations
     # 18. Auto-dispatch: homogeneous → existing types
     # ========================================
     @testset "Auto-dispatch: homo → existing types" begin
-        @test interp_nd((x, y), data_2d; methods = (CubicInterp(), CubicInterp())) isa
+        @test interp((x, y), data_2d; method = (CubicInterp(), CubicInterp())) isa
             CubicInterpolantND
-        @test interp_nd((x, y), data_2d; methods = (LinearInterp(), LinearInterp())) isa
+        @test interp((x, y), data_2d; method = (LinearInterp(), LinearInterp())) isa
             LinearInterpolantND
-        @test interp_nd((x, y), data_2d; methods = (QuadraticInterp(), QuadraticInterp())) isa
+        @test interp((x, y), data_2d; method = (QuadraticInterp(), QuadraticInterp())) isa
             QuadraticInterpolantND
-        @test interp_nd((x, y), data_2d; methods = (ConstantInterp(), ConstantInterp())) isa
+        @test interp((x, y), data_2d; method = (ConstantInterp(), ConstantInterp())) isa
             ConstantInterpolantND
 
         # Hetero → TensorProductInterpolantND
-        @test interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp())) isa
+        @test interp((x, y), data_2d; method = (CubicInterp(), LinearInterp())) isa
             TensorProductInterpolantND
     end
 
@@ -290,11 +290,11 @@ using FastInterpolations
     # 19. Single broadcast: methods=CubicInterp()
     # ========================================
     @testset "Single broadcast: methods=single value" begin
-        @test interp_nd((x, y), data_2d; methods = CubicInterp()) isa CubicInterpolantND
-        @test interp_nd((x, y), data_2d; methods = LinearInterp()) isa LinearInterpolantND
+        @test interp((x, y), data_2d; method = CubicInterp()) isa CubicInterpolantND
+        @test interp((x, y), data_2d; method = LinearInterp()) isa LinearInterpolantND
 
         # Result equivalence
-        itp_nd = interp_nd((x, y), data_2d; methods = CubicInterp())
+        itp_nd = interp((x, y), data_2d; method = CubicInterp())
         itp_direct = cubic_interp((x, y), data_2d)
         @test itp_nd((qx, qy)) ≈ itp_direct((qx, qy))
     end
@@ -303,9 +303,9 @@ using FastInterpolations
     # 20. Per-axis BC forwarding
     # ========================================
     @testset "Per-axis BC forwarding" begin
-        itp_nd = interp_nd(
+        itp_nd = interp(
             (x, y), data_2d;
-            methods = (CubicInterp(CubicFit()), CubicInterp(ZeroCurvBC())),
+            method = (CubicInterp(CubicFit()), CubicInterp(ZeroCurvBC())),
         )
         itp_direct = cubic_interp((x, y), data_2d; bc = (CubicFit(), ZeroCurvBC()))
 
@@ -317,7 +317,7 @@ using FastInterpolations
     # 21. hessian() / laplacian() on OnTheFly
     # ========================================
     @testset "hessian/laplacian on OnTheFly Cubic × Linear" begin
-        itp_tp = interp_nd((x, y), data_2d; methods = (CubicInterp(), LinearInterp()))
+        itp_tp = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
 
         H = hessian(itp_tp, (qx, qy))
         @test size(H) == (2, 2)
@@ -335,19 +335,19 @@ using FastInterpolations
     end
 
     # ========================================
-    # 22. 1D interp_nd (N=1 edge case)
+    # 22. 1D interp (N=1 edge case)
     # ========================================
-    @testset "1D interp_nd dispatches to existing 1D types" begin
+    @testset "1D interp dispatches to existing 1D types" begin
         x1d = range(0.0, 5.0, 20)
         data_1d = [sin(xi) for xi in x1d]
 
         # Cubic
-        itp_c = interp_nd((x1d,), reshape(data_1d, :); methods = (CubicInterp(),))
+        itp_c = interp((x1d,), reshape(data_1d, :); method = (CubicInterp(),))
         itp_ref = cubic_interp(x1d, data_1d)
         @test itp_c((2.3,)) ≈ itp_ref(2.3) rtol = 1.0e-14
 
         # Linear
-        itp_l = interp_nd((x1d,), reshape(data_1d, :); methods = (LinearInterp(),))
+        itp_l = interp((x1d,), reshape(data_1d, :); method = (LinearInterp(),))
         itp_lref = linear_interp(x1d, data_1d)
         @test itp_l((2.3,)) ≈ itp_lref(2.3) rtol = 1.0e-14
     end
@@ -360,7 +360,7 @@ using FastInterpolations
         y32 = range(0.0f0, Float32(π), 25)
         data32 = [sin(xi) * cos(yj) for xi in x32, yj in y32]
 
-        itp32 = interp_nd((x32, y32), data32; methods = (CubicInterp(), LinearInterp()))
+        itp32 = interp((x32, y32), data32; method = (CubicInterp(), LinearInterp()))
         val = itp32((1.0f0, 0.5f0))
         @test val isa Float32
         @test val ≈ sin(1.0f0) * cos(0.5f0) atol = 0.01f0
@@ -375,9 +375,9 @@ using FastInterpolations
 
         data_mixed = [sin(xi) * cos(yj) for xi in x_range, yj in y_vec]
 
-        itp_mixed = interp_nd(
+        itp_mixed = interp(
             (x_range, y_vec), data_mixed;
-            methods = (CubicInterp(), LinearInterp())
+            method = (CubicInterp(), LinearInterp())
         )
 
         # Reference: separate 1D interps

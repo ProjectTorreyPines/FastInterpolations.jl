@@ -475,4 +475,48 @@ using FastInterpolations
         ref = linear_interp(x, data_single[:, 1], qx)
         @test val ≈ ref rtol = 1.0e-14
     end
+
+    # ========================================
+    # 19. Edge cases: domain/OOB before deriv zero, batch deriv, etc.
+    # ========================================
+    @testset "Edge: OOB Real axis + NoInterp deriv → DomainError (not zero)" begin
+        itp = interp((x, y), data_2d; method = (LinearInterp(), NoInterp()))
+        @test_throws DomainError itp((99.0, GridIdx(2)); deriv = (DerivOp(0), DerivOp(1)))
+    end
+
+    @testset "Edge: batch deriv on GridIdx axis → zeros" begin
+        xq_b = collect(range(0.5, 5.0, 10))
+        out = zeros(10)
+        interp_batch_grididx!(
+            out, (x, y), data_2d, (xq_b, GridIdx(5));
+            method = (CubicInterp(), NoInterp()), deriv = (DerivOp(0), DerivOp(1))
+        )
+        @test all(out .== 0.0)
+    end
+
+    @testset "Edge: all-NoInterp laplacian OOB → error" begin
+        itp = interp((x, y), data_2d; method = (NoInterp(), NoInterp()))
+        @test_throws ArgumentError laplacian(itp, (GridIdx(99), GridIdx(1)))
+    end
+
+    @testset "Edge: empty batch" begin
+        out = Float64[]
+        interp_batch_grididx!(
+            out, (x, y), data_2d, (Float64[], GridIdx(5));
+            method = (CubicInterp(), NoInterp())
+        )
+        @test isempty(out)
+    end
+
+    @testset "Edge: Float32 type promotion on zero deriv" begin
+        x32 = range(0.0f0, Float32(2π), 30)
+        y32 = range(0.0f0, Float32(π), 25)
+        data32 = Float32[sin(xi) * cos(yj) for xi in x32, yj in y32]
+        itp32 = interp((x32, y32), data32; method = (NoInterp(), CubicInterp()))
+        val_norm = itp32((GridIdx(2), Float64(2.3)))
+        val_deriv = itp32((GridIdx(2), Float64(2.3)); deriv = (DerivOp(1), DerivOp(0)))
+        @test typeof(val_norm) == typeof(val_deriv)  # both Float64
+        g = gradient(itp32, (GridIdx(2), Float64(2.3)))
+        @test typeof(g[1]) == typeof(g[2])  # both Float64
+    end
 end

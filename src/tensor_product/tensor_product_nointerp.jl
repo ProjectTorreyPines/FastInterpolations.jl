@@ -187,18 +187,24 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
 
     # Check if any NoInterp axis has a non-zero DerivOp → return zero
     # (discrete axes have zero derivatives by definition)
+    # NOTE: guard runs AFTER domain validation so OOB queries still error.
     nointerp_deriv_checks = [:(deriv_order(ops_full[$d]) != 0) for d in nointerp_dims]
-    nointerp_deriv_guard = if isempty(nointerp_deriv_checks)
-        :()
+    nointerp_deriv_cond = if isempty(nointerp_deriv_checks)
+        nothing
+    elseif length(nointerp_deriv_checks) == 1
+        nointerp_deriv_checks[1]
     else
-        cond = length(nointerp_deriv_checks) == 1 ? nointerp_deriv_checks[1] :
-            Expr(:||, nointerp_deriv_checks...)
-        :(
-            if $cond
-                return 0 * _zero_ref(itp)
-            end
-        )
+        Expr(:||, nointerp_deriv_checks...)
     end
+    # Use promoted type for zero (fixes Float32 data + Float64 query type mismatch)
+    real_query_types = [fieldtype(Q, d) for d in real_dims]
+    Tz_expr = isempty(real_query_types) ? Tv : :(promote_type($(real_query_types...), $Tg, $Tv))
+    nointerp_deriv_guard = nointerp_deriv_cond === nothing ? :() :
+        :(
+            if $nointerp_deriv_cond
+                return zero($Tz_expr)
+        end
+        )
 
     if N_r == 0
         # All-NoInterp: pure table lookup (or zero if any deriv requested)
@@ -223,7 +229,6 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         return quote
             Base.@_inline_meta
             $(bounds_checks...)
-            $nointerp_deriv_guard
             # Slice partials at GridIdx positions
             p_sliced = @inbounds @view itp.data.partials[:, $(slice_args...)]
 
@@ -235,10 +240,11 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             ro = ($(r_ops...),)
             rm = ($(r_methods...),)
 
-            # Standard eval pipeline on reduced dims
+            # Domain validation BEFORE deriv zero check
             _validate_nd_domain(rg, rq, re)
             oob = _try_fill_oob(rq, rg, re, ro, @inbounds p_sliced[1])
             oob !== nothing && return oob
+            $nointerp_deriv_guard
 
             q_eval = _handle_all_extraps(rq, rg, re)
             rsrc = ($(r_searches...),)
@@ -252,7 +258,6 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         return quote
             Base.@_inline_meta
             $(bounds_checks...)
-            $nointerp_deriv_guard
             d_sliced = @inbounds @view itp.data[$(slice_args...)]
             rq = ($(r_query...),)
             rg = ($(r_grids...),)
@@ -260,10 +265,11 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             re = ($(r_extraps...),)
             ro = ($(r_ops...),)
 
-            # FillExtrap check (same as PreCompute path)
+            # Domain validation + FillExtrap BEFORE deriv zero check
             _validate_nd_domain(rg, rq, re)
             oob = _try_fill_oob(rq, rg, re, ro, @inbounds d_sliced[1])
             oob !== nothing && return oob
+            $nointerp_deriv_guard
 
             q_eval = _handle_all_extraps(rq, rg, re)
             rsrc = ($(r_searches...),)
@@ -318,15 +324,6 @@ function interp(
     _validate_grididx_query_oneshot(query, data)
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
 
-    # Check if any GridIdx axis has non-zero deriv → return zero
-    # (discrete axes have zero derivatives by definition)
-    deriv_t = deriv isa DerivOp ? ntuple(_ -> deriv, Val(N)) : deriv
-    if _any_grididx_has_nonzero_deriv(query, deriv_t)
-        Tg = _promote_grid_eltype(grids)
-        Tg = Tg <: AbstractFloat ? Tg : Float64
-        return zero(_output_eltype(eltype(data), Tg, typeof(first(query))))
-    end
-
     # Pre-slice data and filter all tuples to Real-only axes
     QT = typeof(query)
     data_r = _slice_grididx(data, query)
@@ -334,17 +331,35 @@ function interp(
     query_r = _filter_real_axes(query, QT)
     methods_r = _filter_real_axes(method_tuple, QT)
 
-    # All-GridIdx edge case: pure table lookup (0-dim view → extract scalar)
+    # Resolve per-axis kwargs to N-tuples
+    deriv_t = deriv isa DerivOp ? ntuple(_ -> deriv, Val(N)) : deriv
+
+    # All-GridIdx edge case: pure table lookup (or zero if any deriv requested)
     if grids_r === ()
+        if _any_grididx_has_nonzero_deriv(query, deriv_t)
+            Tg = _promote_grid_eltype(grids)
+            Tg = Tg <: AbstractFloat ? Tg : Float64
+            return zero(_output_eltype(eltype(data), Tg))
+        end
         return data_r[]
     end
 
-    # Resolve remaining per-axis kwargs to N-tuples, then filter to Real axes
-    deriv_t = deriv isa DerivOp ? ntuple(_ -> deriv, Val(N)) : deriv
+    # Domain validation on Real axes BEFORE deriv zero check
+    # (so OOB on Real axes raises DomainError even when NoInterp axis has deriv)
     extrap_t = extrap isa AbstractExtrap ? ntuple(_ -> extrap, Val(N)) : extrap
+    extrap_r = _filter_real_axes(extrap_t, QT)
+    _validate_nd_domain(grids_r, query_r, extrap_r)
+
+    # Check if any GridIdx axis has non-zero deriv → return zero (with promoted type)
+    if _any_grididx_has_nonzero_deriv(query, deriv_t)
+        Tg = _promote_grid_eltype(grids)
+        Tg = Tg <: AbstractFloat ? Tg : Float64
+        return zero(_output_eltype(eltype(data), Tg, typeof.(query_r)...))
+    end
+
+    # Filter remaining kwargs to Real axes
     search_t = search isa AbstractSearchPolicy ? ntuple(_ -> search, Val(N)) : search
     deriv_r = _filter_real_axes(deriv_t, QT)
-    extrap_r = _filter_real_axes(extrap_t, QT)
     search_r = _filter_real_axes(search_t, QT)
 
     return interp(
@@ -470,10 +485,14 @@ gradient(itp, (0.5, GridIdx(3)))  # → (∂f/∂x, 0.0)
     ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
+    # Use promoted type for zero (handles Float32 data + Float64 query)
+    real_query_types_g = [fieldtype(Q, d) for d in 1:N if !(d in nointerp_dims)]
+    Tz_g = isempty(real_query_types_g) ? Tv : :(promote_type($(real_query_types_g...), $Tg, $Tv))
+
     grad_exprs = []
     for i in 1:N
         if i in nointerp_dims
-            push!(grad_exprs, :(0 * zref))
+            push!(grad_exprs, :(zero($Tz_g)))
         else
             ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
             push!(grad_exprs, :(_eval_nointerp(itp, query, $ops, itp.searches, hint)))
@@ -483,7 +502,6 @@ gradient(itp, (0.5, GridIdx(3)))  # → (∂f/∂x, 0.0)
     return quote
         Base.@_inline_meta
         _validate_nointerp_grididx(itp.methods, query)
-        zref = _zero_ref(itp)
         return tuple($(grad_exprs...))
     end
 end
@@ -554,7 +572,22 @@ Laplacian with NoInterp support. Sums ∂²f/∂xᵢ² only over interpolated ax
             end for i in 1:N if !(i in nointerp_dims)
     ]
 
-    isempty(terms) && return :(0 * _zero_ref(itp))
+    if isempty(terms)
+        # All-NoInterp: validate query before returning zero
+        bounds_checks_lap = [
+            :(
+                    1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                    _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
+                )
+                for d in nointerp_dims
+        ]
+        return quote
+            Base.@_inline_meta
+            _validate_nointerp_grididx(itp.methods, query)
+            $(bounds_checks_lap...)
+            return 0 * _zero_ref(itp)
+        end
+    end
     return quote
         Base.@_inline_meta
         _validate_nointerp_grididx(itp.methods, query)
@@ -621,6 +654,15 @@ function _interp_batch_grididx!(
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
 
+    # Filter queries to Real-only axes first (for length check)
+    queries_r = _filter_real_batch_queries(queries)
+
+    # Empty batch fast path
+    nq = _query_length(queries_r)
+    if nq == 0
+        return output
+    end
+
     # Build a template query point for data slicing
     template = _build_grididx_template(queries)
     QT = typeof(template)
@@ -629,13 +671,18 @@ function _interp_batch_grididx!(
     _validate_grididx_query_oneshot(template, data)
     data_r = _slice_grididx(data, template)
 
+    # Resolve deriv to N-tuple and check for GridIdx axis derivatives → zero fill
+    deriv_t = deriv isa DerivOp ? ntuple(_ -> deriv, Val(N)) : deriv
+    if _any_grididx_has_nonzero_deriv(template, deriv_t)
+        fill!(output, zero(eltype(output)))
+        return output
+    end
+
     # Filter to Real-only axes
     grids_r = _filter_real_axes(grids, QT)
     methods_r = _filter_real_axes(method_tuple, QT)
-    queries_r = _filter_real_batch_queries(queries)
 
-    # Resolve and filter kwargs
-    deriv_t = deriv isa DerivOp ? ntuple(_ -> deriv, Val(N)) : deriv
+    # Resolve and filter remaining kwargs
     extrap_t = extrap isa AbstractExtrap ? ntuple(_ -> extrap, Val(N)) : extrap
     search_t = search isa AbstractSearchPolicy ? ntuple(_ -> search, Val(N)) : search
     deriv_r = _filter_real_axes(deriv_t, QT)

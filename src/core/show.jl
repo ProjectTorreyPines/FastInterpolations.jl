@@ -1026,4 +1026,5 @@ function Base.show(io::IO, ::MIME"text/plain", itp::TensorProductInterpolantND{T
         end
         d < N && println(io)
     end
+    return
 end

@@ -51,53 +51,36 @@ nothing  # hide
 
 ---
 
-## `GridIdx`: Index-Based Queries
+## `GridIdx`: Fast Axis Slicing
 
-`GridIdx(k)` queries an axis by grid index instead of coordinate value. It works with **any interpolant type** — no special construction needed.
+`GridIdx(k)` fixes an axis at its k-th grid point and interpolates only the remaining axes. Works with **any interpolant and any method** — no special construction needed.
+
+For example, to interpolate on the (x, z) slice at `y[15]`, you might write `y[15]` as the coordinate. `GridIdx(15)` gives the same result but **much faster** — it slices the data first and skips one-shot construction (tridiagonal solve, etc.) on the fixed axis:
 
 ```@example unified
-# Any interpolant: query axis 2 at its 10th grid point
-itp = cubic_interp((x, y), data)
-itp((0.5, GridIdx(10)))
+# Both interpolate (x, z) at the y=y[15] slice — same result:
+val_full = interp((x, y, z), data3d, (1.5, y[15], 3.2); method=CubicInterp())    # full 3D construction: slow
+val_fast = interp((x, y, z), data3d, (1.5, GridIdx(15), 3.2); method=CubicInterp()) # 2D construction only: ~224× faster
+val_full ≈ val_fast
 nothing  # hide
 ```
 
-### One-Shot Slicing
-
-`GridIdx` is especially powerful in one-shot evaluation. Each `GridIdx` axis is sliced out of the data first — reducing the problem to fewer dimensions with **no interpolant construction** on those axes.
+Multiple axes can be sliced — each one further reduces the dimension:
 
 ```@example unified
-# One-shot: slice axis 2 at index 10, cubic on axis 1
-interp((x, y), data, (0.5, GridIdx(10)); method=CubicInterp())
+# Fix y and z, interpolate x only (1D construction: ~6200× faster than full 3D)
+interp((x, y, z), data3d, (1.5, GridIdx(15), GridIdx(5)); method=CubicInterp())
 nothing  # hide
 ```
 
-For a 50×100×20 cubic interpolation, the speedup from slicing is dramatic:
-
-```julia
-# Full 3D cubic: ~2.7 ms (one-shot construction + eval on all axes)
-interp(grids, data3D, (20.5, 5.0, 1.0); method=CubicInterp())
-
-# Slice 1 axis → 2D cubic: ~12 μs (224× faster)
-interp(grids, data3D, (20.5, GridIdx(5), 1.0); method=CubicInterp())
-
-# Slice 2 axes → 1D cubic: ~430 ns (6200× faster)
-interp(grids, data3D, (20.5, GridIdx(5), GridIdx(1)); method=CubicInterp())
-```
-
-This works because `GridIdx` bypasses the one-shot construction (e.g., tridiagonal solve for cubic) on sliced axes. Any single method works — `GridIdx` pre-slices the data and delegates to the appropriate lower-dimensional one-shot.
-
-### Derivatives and Vector Calculus
-
-`gradient`, `hessian`, and `laplacian` also accept `GridIdx`:
+`GridIdx` also works on pre-built interpolants and with `gradient` / `hessian` / `laplacian`:
 
 ```@example unified
 itp = cubic_interp((x, y), data)
-gradient(itp, (0.5, GridIdx(10)))   # full (df/dx, df/dy) at grid point
+itp((0.5, GridIdx(10)))                  # eval at grid point
+gradient(itp, (0.5, GridIdx(10)))        # full (df/dx, df/dy)
 nothing  # hide
 ```
-
-### Batch Queries
 
 Batch queries with `GridIdx` work through the standard `interp!`:
 
@@ -110,34 +93,25 @@ nothing  # hide
 
 ---
 
-## `NoInterp`: Discrete Axes
+## `NoInterp`: Axes That Aren't Meant to Be Interpolated
 
-`NoInterp()` declares an axis as discrete at build time — no interpolation is performed on that axis, ever. It must be paired with `GridIdx` queries.
+While `GridIdx` is a query-time optimization (you can always use a plain coordinate instead), `NoInterp()` is a stronger, **build-time declaration**: this axis is inherently discrete and interpolation on it is undefined. The axis is excluded from precomputation entirely — no tridiagonal solve, no derivative storage, smaller memory footprint.
 
-```@example unified
-# Axis 2 is discrete: no interpolation, queried by grid index
-itp = interp((x, y), data; method=(CubicInterp(), NoInterp()))
-itp((0.5, GridIdx(10)))
-nothing  # hide
-```
-
-### Why use `NoInterp` over plain `GridIdx`?
-
-Plain `GridIdx` (previous section) slices at query time but still builds the full interpolant. `NoInterp` goes further:
-
-- **Skipped precomputation**: no tridiagonal solve, no derivative storage on discrete axes
-- **Smaller memory footprint**: HeteroPartials array is reduced
-- **One build, many slices**: build once, vary the slice index at query time
+Typical use cases: ensemble runs, parameter scans, time snapshots, species indices — axes that index independent datasets rather than continuous coordinates. `NoInterp` axes must always be queried with `GridIdx(k)`:
 
 ```@example unified
-# 3D data: interpolate x+z, select y by index
-itp = interp((x, y, z), data3d;
-    method = (CubicInterp(), NoInterp(), LinearInterp()))
+# pressure(radius, angle, run_id) — 200 independent simulation runs
+# run_id is not a physical coordinate; interpolating between runs is meaningless
+radius = range(0.0, 10.0, 100)
+angle  = range(0.0, 2pi, 60)
+run_id = 1:200
+pressure = randn(100, 60, 200)
 
-# Loop over all y-slices — no rebuild
-for k in 1:5
-    itp((1.0, GridIdx(k), 2.0))
-end
+itp = interp((radius, angle, run_id), pressure;
+    method = (CubicInterp(), CubicInterp(bc=PeriodicBC()), NoInterp()))
+
+# Query run #42 at (r=3.5, θ=1.2) — only 2D interpolation is performed
+itp((3.5, 1.2, GridIdx(42)))
 nothing  # hide
 ```
 

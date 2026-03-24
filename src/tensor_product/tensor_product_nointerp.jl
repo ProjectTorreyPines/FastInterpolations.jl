@@ -113,85 +113,9 @@ No-op when `hint === nothing`. Used by one-shot and batch paths.
     end
 end
 
-"""
-    _convert_non_nointerp_grididx(methods, grids, query) -> resolved_query
-
-Convert GridIdx on non-NoInterp axes to `grids[d][k]` (Real values).
-GridIdx on NoInterp axes are kept as-is. Returns a tuple that may be all-Real
-(if no NoInterp axes have GridIdx) or mixed (if NoInterp axes remain GridIdx).
-
-Used by TensorProductInterpolantND callable to accept GridIdx on ANY axis,
-while routing NoInterp axes through the optimized pre-slice path.
-"""
-@generated function _convert_non_nointerp_grididx(
-        methods::M, grids, query::Q,
-    ) where {M, Q}
-    N = fieldcount(Q)
-    bounds_checks = Expr[]
-    query_exprs = Expr[]
-    for d in 1:N
-        if fieldtype(Q, d) <: GridIdx
-            push!(
-                bounds_checks, :(
-                    1 <= query[$d].idx <= length(grids[$d]) ||
-                        _throw_grididx_oob($d, query[$d].idx, length(grids[$d]))
-                )
-            )
-            if fieldtype(M, d) <: NoInterp
-                push!(query_exprs, :(query[$d]))  # keep GridIdx for NoInterp
-            else
-                push!(query_exprs, :(@inbounds grids[$d][query[$d].idx]))  # convert to Real
-            end
-        else
-            push!(query_exprs, :(query[$d]))
-        end
-    end
-    return quote
-        Base.@_inline_meta
-        $(bounds_checks...)
-        return ($(query_exprs...),)
-    end
-end
-
-"""
-    _check_nointerp_needs_grididx(methods, query)
-
-Check at the all-Real callable entry point: if any axis has NoInterp,
-the query must use GridIdx for that axis (not a plain Real value).
-Generates a clear error message instead of the cryptic InBounds MethodError.
-"""
-@generated function _check_nointerp_needs_grididx(methods::M, ::Tuple{Vararg{Real, N}}) where {M, N}
-    nointerp_dims = [d for d in 1:N if fieldtype(M, d) <: NoInterp]
-    isempty(nointerp_dims) && return :(nothing)
-    dims_tuple = Expr(:tuple, nointerp_dims...)
-    return :(_throw_nointerp_needs_grididx($dims_tuple, $N))
-end
-
-# --- Dispatch helpers for resolved GridIdx queries ---
-# After _convert_non_nointerp_grididx, the resolved query is either:
-# (a) all-Real (no NoInterp axes, or NoInterp axes also got Real → will error)
-# (b) mixed with GridIdx only on NoInterp axes → _eval_nointerp
-#
-# Julia dispatch resolves this at compile time (Tuple{Vararg{Real,N}} is more specific).
-
-@inline function _eval_grididx_resolved(
-        itp::TensorProductInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}}, deriv, search, hint,
-    ) where {Tg, Tv, N}
-    # All GridIdx converted to Real → delegate to standard all-Real callable
-    return itp(query; deriv = deriv, search = search, hint = hint)
-end
-
-@inline function _eval_grididx_resolved(
-        itp::TensorProductInterpolantND{Tg, Tv, N},
-        query::Q, deriv, search, hint,
-    ) where {Tg, Tv, N, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
-    # Still has GridIdx on NoInterp axes → resolve kwargs, validate, and eval
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N))
-    _validate_nointerp_grididx(itp.methods, query)
-    return _eval_nointerp(itp, query, ops, search_tuple, hint)
-end
+# _convert_non_nointerp_grididx, _check_nointerp_needs_grididx, _eval_grididx_resolved
+# removed: GridIdx <: Real makes Union dispatch unnecessary.
+# NoInterp validation uses _validate_nointerp_grididx (fieldtype check) instead.
 
 @noinline _throw_grididx_on_interp_axis(d, method) =
     throw(
@@ -424,19 +348,20 @@ val = interp((x, y), data, (0.5, GridIdx(5)); method=(CubicInterp(), LinearInter
 val = interp((x, y), data, (GridIdx(3), GridIdx(5)); method=(NoInterp(), NoInterp()))
 ```
 """
-function interp(
+# Internal: one-shot with NoInterp/GridIdx pre-slicing.
+# Called from unified interp() when _has_nointerp_method is true.
+# Query is already resolved (_resolve_grididx applied at entry).
+function _interp_nointerp_oneshot(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
-        query::Q;
-        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = AutoSearch(),
-        hint = nothing,
-    ) where {N, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
-    # Only reach here when at least one GridIdx (all-Real → more specific existing method)
+        query::Q,
+        method_tuple::Tuple{Vararg{AbstractInterpMethod, N}},
+        deriv,
+        extrap,
+        search,
+        hint,
+    ) where {N, Q <: Tuple{Vararg{Real, N}}}
     _validate_grididx_query_oneshot(query, data)
-    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
 
     # Pre-slice data and filter all tuples to Real-only axes
     QT = typeof(query)
@@ -496,18 +421,9 @@ end
 # Simpler than adding _locate_cell/_eval_at_cell overloads at the cost of
 # repeated search per component (acceptable: NoInterp reduces N, so N_r is small).
 #
-# The Union{Real,GridIdx} dispatch methods live in vector_calculus.jl at the
-# AbstractInterpolantND level (gradient, hessian, laplacian). They call
-# _gradient_with_grididx / _hessian_with_grididx / _laplacian_with_grididx.
-#
-# The generic fallback (AbstractInterpolantND) converts GridIdx → grid value and
-# delegates to the standard all-Real method. TensorProductInterpolantND overrides
-# to call _gradient_nointerp / _hessian_nointerp / _laplacian_nointerp, which use
-# the optimized pre-slice path for NoInterp axes.
-#
-# No disambiguation methods needed: both the NTuple{N,Real} and the
-# Union{Real,GridIdx} methods share the same arg1 type (AbstractInterpolantND),
-# so Julia resolves by arg2 specificity alone (NTuple{N,Real} wins for all-Real).
+# GridIdx <: Real: no separate Union dispatch needed.
+# TensorProduct overrides vector_calculus.jl methods (more specific arg1 type)
+# and delegates to _*_nointerp for the optimized pre-slice path.
 
 # --- TensorProduct gradient/hessian/laplacian: NoInterp-aware via _*_nointerp ---
 # These override the generic @generated methods in vector_calculus.jl.
@@ -515,7 +431,7 @@ end
 # non-NoInterp axes (delegates to _eval_nointerp which runs the full pipeline).
 @inline function gradient(
         itp::TensorProductInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}};
+        query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     resolved = map(_resolve_grididx, query, itp.grids)
@@ -524,7 +440,7 @@ end
 
 @inline function hessian(
         itp::TensorProductInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}};
+        query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     resolved = map(_resolve_grididx, query, itp.grids)
@@ -534,7 +450,7 @@ end
 @inline function hessian!(
         H::AbstractMatrix,
         itp::TensorProductInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}};
+        query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     resolved = map(_resolve_grididx, query, itp.grids)
@@ -543,7 +459,7 @@ end
 
 @inline function laplacian(
         itp::TensorProductInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}};
+        query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     resolved = map(_resolve_grididx, query, itp.grids)
@@ -552,7 +468,7 @@ end
 
 @inline function value_gradient(
         itp::TensorProductInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}};
+        query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     resolved = map(_resolve_grididx, query, itp.grids)
@@ -564,7 +480,7 @@ end
 @inline function gradient!(
         G::AbstractVector,
         itp::TensorProductInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}};
+        query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
     g = gradient(itp, query; hint = hint)
@@ -583,7 +499,7 @@ Uses the pre-slice strategy: slices data at GridIdx positions, evaluates on redu
 @generated function _gradient_nointerp(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
+    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     # Use promoted type for zero (handles Float32 data + Float64 query)
@@ -615,7 +531,7 @@ Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoI
 @generated function _hessian_nointerp(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
+    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     stmts = Expr[]
@@ -662,7 +578,7 @@ In-place Hessian with NoInterp support. Fills H with zeros at NoInterp positions
         H::AbstractMatrix,
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
+    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     stmts = Expr[]
@@ -712,7 +628,7 @@ Laplacian with NoInterp support. Sums ∂²f/∂xᵢ² only over interpolated ax
 @generated function _laplacian_nointerp(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
+    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     terms = [

@@ -141,10 +141,10 @@ end
 # ND Scalar: Vararg convenience
 # ========================================
 # Converts vararg calls to tuple form: itp(0.5, GridIdx(3)) → itp((0.5, GridIdx(3)))
-# Per-type callables (Cubic, Linear, etc.) accept Tuple{Vararg{ScalarCoord, N}} directly,
-# resolving GridIdx via _resolve_grididx internally.
+# Per-type callables (Cubic, Linear, etc.) accept Tuple{Vararg{Real, N}} directly,
+# resolving GridIdx via _resolve_grididx internally. GridIdx <: Real, so Vararg{Real,N} matches.
 @inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
-        q::Vararg{Union{Real, GridIdx}, N};
+        q::Vararg{Real, N};
         kw...,
     ) where {Tg, Tv, N}
     return itp(q; kw...)

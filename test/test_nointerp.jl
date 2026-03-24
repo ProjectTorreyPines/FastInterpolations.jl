@@ -24,7 +24,7 @@ using FastInterpolations
         @test sprint(show, g) == "GridIdx(5)"
         @test_throws ArgumentError GridIdx(0)
         @test_throws ArgumentError GridIdx(-1)
-        @test !(GridIdx <: Real)
+        @test GridIdx <: Real
     end
 
     # ========================================

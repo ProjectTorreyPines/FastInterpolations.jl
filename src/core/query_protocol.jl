@@ -123,7 +123,7 @@ end
 # avoiding Union boxing on heterogeneous extrap tuples.
 @inline function _validate_nd_domain(
         grids::NTuple{N, AbstractVector},
-        query::Tuple{Vararg{ScalarCoord, N}},
+        query::Tuple{Vararg{Real, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
     map(_check_domain, grids, query, extraps)

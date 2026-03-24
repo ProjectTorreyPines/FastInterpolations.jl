@@ -97,7 +97,7 @@ itp_hetero = interp((x, y), data; method=(CubicInterp(), LinearInterp()))
 itp_hetero((0.5, GridIdx(10)))   # search short-circuited on axis 2
 ```
 """
-struct GridIdx{T <: Real}
+struct GridIdx{T <: Real} <: Real
     idx::Int
     val::T
     function GridIdx(i::Integer)
@@ -111,21 +111,13 @@ end
 
 Base.show(io::IO, g::GridIdx) = print(io, "GridIdx(", g.idx, ")")
 
-# ========================================
-# Scalar Coordinate Protocol
-# ========================================
-# Minimal protocol for query coordinates. Enables GridIdx (and future types)
-# to flow through the pipeline via duck-typing.
-#
-# Real values pass through unchanged. GridIdx carries idx + resolved val.
-# Each pipeline component uses these functions instead of assuming `<: Real`.
-
-"""Query coordinate type: either a plain `Real` or a resolved `GridIdx`."""
-const ScalarCoord = Union{Real, GridIdx}
-
-"""Extract the numeric coordinate value from a query coordinate."""
-@inline scalar_value(q::Real) = q
-@inline scalar_value(g::GridIdx) = g.val
+# GridIdx <: Real: arithmetic works transparently via promotion.
+# promote(GridIdx{T}, S) → promote_type(T, S), stripping the GridIdx wrapper.
+# Zero overhead — LLVM compiles to identical code as manual g.val extraction.
+Base.promote_rule(::Type{GridIdx{T}}, ::Type{S}) where {T, S <: Real} = promote_type(T, S)
+Base.convert(::Type{T}, g::GridIdx) where {T <: Number} = convert(T, g.val)
+Base.float(g::GridIdx) = float(g.val)
+(::Type{T})(g::GridIdx) where {T <: AbstractFloat} = T(g.val)
 
 """
     _resolve_grididx(q, grid) -> resolved coordinate

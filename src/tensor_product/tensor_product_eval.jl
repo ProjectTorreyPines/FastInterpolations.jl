@@ -106,7 +106,7 @@ end
 # OnTheFly path: sequential 1D one-shot interpolation per query
 @inline function _eval_tensor_product_nd(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
-        query::Tuple{Vararg{ScalarCoord, N}},
+        query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
         searches::NTuple{N, AbstractSearchPolicy},
         hints,
@@ -118,7 +118,7 @@ end
 # PreCompute path: precomputed partials + local kernel eval (O(1) per query)
 @inline function _eval_tensor_product_nd(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
-        query::Tuple{Vararg{ScalarCoord, N}},
+        query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
         searches::NTuple{N, AbstractSearchPolicy},
         hints,
@@ -133,58 +133,21 @@ end
 # Callable Interface
 # ========================================
 
-# Tuple query form
+# Tuple query form — unified entry for Real and GridIdx (GridIdx <: Real).
+# Resolves GridIdx at entry (no-op for plain Real), then routes:
+# - NoInterp in methods → _eval_nointerp (pre-slice strategy)
+# - Normal → standard tensor product eval (GridIdx search short-circuits via dispatch)
 @inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv = EvalValue(),
         search = itp.searches,
         hint = nothing,
     ) where {Tg, Tv, N}
-    # Early check: NoInterp axes require GridIdx, not Real values
-    if _has_nointerp_method(typeof(itp.methods))
-        _check_nointerp_needs_grididx(itp.methods, query)
-    end
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
-    oob_result !== nothing && return oob_result
-    search_tuple = _resolve_search_nd(search, Val(N), query)
-    return _eval_tensor_product_nd(itp, query, ops, search_tuple, hint)
-end
-
-# Vararg form: itp(0.5, 0.3) → itp((0.5, 0.3))
-@inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
-        q::Vararg{Real, N};
-        kw...,
-    ) where {Tg, Tv, N}
-    return itp(q; kw...)
-end
-
-# GridIdx vararg form: itp(0.5, GridIdx(3)) → itp((0.5, GridIdx(3)))
-# Vararg{Real, N} is more specific when all args are Real → no ambiguity.
-@inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
-        q::Vararg{Union{Real, GridIdx}, N};
-        kw...,
-    ) where {Tg, Tv, N}
-    return itp(q; kw...)
-end
-
-# GridIdx tuple query form: itp((0.5, GridIdx(3)))
-# Only matches when at least one GridIdx (all-Real → more specific Tuple{Vararg{Real,N}} above).
-# Resolves all GridIdx via scalar coordinate protocol, then routes:
-# - NoInterp axes: _eval_nointerp (pre-slice strategy)
-# - No NoInterp: _eval_tensor_product_nd (search short-circuits for GridIdx)
-@inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
-        query::Q;
-        deriv = EvalValue(),
-        search = itp.searches,
-        hint = nothing,
-    ) where {Tg, Tv, N, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
     resolved = map(_resolve_grididx, query, itp.grids)
     ops = _resolve_deriv_nd(deriv, Val(N))
     if _has_nointerp_method(typeof(itp.methods))
-        search_tuple = _resolve_search_nd(search, Val(N))
         _validate_nointerp_grididx(itp.methods, resolved)
+        search_tuple = _resolve_search_nd(search, Val(N))
         return _eval_nointerp(itp, resolved, ops, search_tuple, hint)
     end
     _validate_nd_domain(itp.grids, resolved, itp.extraps)
@@ -192,6 +155,15 @@ end
     oob_result !== nothing && return oob_result
     search_tuple = _resolve_search_nd(search, Val(N), resolved)
     return _eval_tensor_product_nd(itp, resolved, ops, search_tuple, hint)
+end
+
+# Vararg form: itp(0.5, 0.3) or itp(0.5, GridIdx(3)) → itp((0.5, ...))
+# GridIdx <: Real, so Vararg{Real, N} matches both.
+@inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return itp(q; kw...)
 end
 
 # ========================================
@@ -202,7 +174,7 @@ end
 # OnTheFly: cell stores everything needed for re-collapse (including searches + hints)
 @inline function _locate_cell(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
-        query::Tuple{Vararg{ScalarCoord, N}},
+        query::Tuple{Vararg{Real, N}},
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing,
     ) where {Tg, Tv, N, G, S, M, E, P}
@@ -222,7 +194,7 @@ end
 # PreCompute: cell stores precomputed cell location (locate-once optimization)
 @inline function _locate_cell(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
-        query::Tuple{Vararg{ScalarCoord, N}},
+        query::Tuple{Vararg{Real, N}},
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing,
     ) where {Tg, Tv, N, G, S, M, E, P}

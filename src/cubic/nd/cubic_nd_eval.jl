@@ -34,7 +34,7 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))  # ∂f/∂x only
 """
 # Single-point evaluation
 @inline function (itp::CubicInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{ScalarCoord, N}};  # Allow Real, Dual (AD), and GridIdx
+        query::Tuple{Vararg{Real, N}};  # Allow Real, Dual (AD), and GridIdx
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
@@ -64,7 +64,7 @@ end
 # Generic N-dimensional
 @inline function _locate_cell(
         itp::CubicInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}},
+        query::Tuple{Vararg{Real, N}},
         search::SEARCH,
         hints = nothing
     ) where {Tg, Tv, N, SEARCH <: NTuple{N, AbstractSearchPolicy}}
@@ -78,7 +78,7 @@ end
 # N=2 specialization: direct destructuring eliminates ntuple closure overhead
 @inline function _locate_cell(
         itp::CubicInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{ScalarCoord, 2}},
+        query::Tuple{Vararg{Real, 2}},
         search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
         hints = nothing
     ) where {Tg, Tv}
@@ -88,7 +88,7 @@ end
 
     hx = _get_h(itp.spacings[1], ix);  hy = _get_h(itp.spacings[2], iy)
     inv_hx = _get_inv_h(itp.spacings[1], ix); inv_hy = _get_inv_h(itp.spacings[2], iy)
-    dLx = scalar_value(x_eval) - xL;  dLy = scalar_value(y_eval) - yL
+    dLx = x_eval - xL;  dLy = y_eval - yL
 
     return (itp.nodal_derivs.partials, (ix, iy), (hx, hy), (inv_hx, inv_hy), (dLx, dLy))
 end
@@ -113,7 +113,7 @@ end
 # Generic N-dimensional (uses _locate_cell + _eval_at_cell)
 @inline function _eval_nd_hermite(
         itp::CubicInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}},
+        query::Tuple{Vararg{Real, N}},
         ops::OPS,
         search::SEARCH,
         hints = nothing
@@ -128,7 +128,7 @@ end
 # N=2 specialization: dispatches to N=2 _locate_cell via type
 @inline function _eval_nd_hermite(
         itp::CubicInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{ScalarCoord, 2}},
+        query::Tuple{Vararg{Real, 2}},
         ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp},
         search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
         hints = nothing

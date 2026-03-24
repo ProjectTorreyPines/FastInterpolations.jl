@@ -268,11 +268,13 @@ function interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
-    # NoInterp axes require GridIdx queries, not plain Real values
+    resolved_query = map(_resolve_grididx, query, grids)
+    # NoInterp routing: method-based (not query-type-based)
     if _has_nointerp_method(typeof(method_tuple))
-        _check_nointerp_needs_grididx(method_tuple, query)
+        _validate_nointerp_grididx(method_tuple, resolved_query)
+        return _interp_nointerp_oneshot(grids, data, resolved_query, method_tuple, deriv, extrap, search, hint)
     end
-    return _interp_nd_oneshot_dispatch(grids, data, query, method_tuple, deriv, extrap, search, hint)
+    return _interp_nd_oneshot_dispatch(grids, data, resolved_query, method_tuple, deriv, extrap, search, hint)
 end
 
 # ========================================

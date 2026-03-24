@@ -41,7 +41,7 @@ See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`la
 """
 @generated function gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}};
+        query::Tuple{Vararg{Real, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     deriv_calls = [
@@ -103,7 +103,7 @@ See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
 @generated function gradient!(
         G::AbstractVector,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}};
+        query::Tuple{Vararg{Real, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     stmts = [
@@ -193,7 +193,7 @@ See also: [`gradient`](@ref), [`gradient!`](@ref)
 """
 @generated function value_gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}};
+        query::Tuple{Vararg{Real, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     value_ops = ntuple(_ -> EvalValue(), N)
@@ -266,7 +266,7 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
 """
 @generated function hessian(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}};
+        query::Tuple{Vararg{Real, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     stmts = Expr[]
@@ -345,7 +345,7 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
 @generated function hessian!(
         H::AbstractMatrix,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}};
+        query::Tuple{Vararg{Real, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     stmts = Expr[]
@@ -437,7 +437,7 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
 """
 @generated function laplacian(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{ScalarCoord, N}};
+        query::Tuple{Vararg{Real, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     deriv_calls = [

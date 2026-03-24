@@ -97,6 +97,63 @@ end
 end
 
 """
+    _update_grididx_hints!(hint, query)
+
+Write `hint[d][] = query[d].idx` for each GridIdx position in `query`.
+No-op when `hint === nothing`. Used by one-shot and batch paths.
+"""
+@generated function _update_grididx_hints!(hint, query::Q) where {Q}
+    grididx_dims = [d for d in 1:fieldcount(Q) if fieldtype(Q, d) <: GridIdx]
+    isempty(grididx_dims) && return :(nothing)
+    writes = [:(hint[$d][] = query[$d].idx) for d in grididx_dims]
+    return quote
+        Base.@_inline_meta
+        $(writes...)
+        return nothing
+    end
+end
+
+"""
+    _convert_non_nointerp_grididx(methods, grids, query) -> resolved_query
+
+Convert GridIdx on non-NoInterp axes to `grids[d][k]` (Real values).
+GridIdx on NoInterp axes are kept as-is. Returns a tuple that may be all-Real
+(if no NoInterp axes have GridIdx) or mixed (if NoInterp axes remain GridIdx).
+
+Used by TensorProductInterpolantND callable to accept GridIdx on ANY axis,
+while routing NoInterp axes through the optimized pre-slice path.
+"""
+@generated function _convert_non_nointerp_grididx(
+        methods::M, grids, query::Q,
+    ) where {M, Q}
+    N = fieldcount(Q)
+    bounds_checks = Expr[]
+    query_exprs = Expr[]
+    for d in 1:N
+        if fieldtype(Q, d) <: GridIdx
+            push!(
+                bounds_checks, :(
+                    1 <= query[$d].idx <= length(grids[$d]) ||
+                        _throw_grididx_oob($d, query[$d].idx, length(grids[$d]))
+                )
+            )
+            if fieldtype(M, d) <: NoInterp
+                push!(query_exprs, :(query[$d]))  # keep GridIdx for NoInterp
+            else
+                push!(query_exprs, :(@inbounds grids[$d][query[$d].idx]))  # convert to Real
+            end
+        else
+            push!(query_exprs, :(query[$d]))
+        end
+    end
+    return quote
+        Base.@_inline_meta
+        $(bounds_checks...)
+        return ($(query_exprs...),)
+    end
+end
+
+"""
     _check_nointerp_needs_grididx(methods, query)
 
 Check at the all-Real callable entry point: if any axis has NoInterp,
@@ -108,6 +165,32 @@ Generates a clear error message instead of the cryptic InBounds MethodError.
     isempty(nointerp_dims) && return :(nothing)
     dims_tuple = Expr(:tuple, nointerp_dims...)
     return :(_throw_nointerp_needs_grididx($dims_tuple, $N))
+end
+
+# --- Dispatch helpers for resolved GridIdx queries ---
+# After _convert_non_nointerp_grididx, the resolved query is either:
+# (a) all-Real (no NoInterp axes, or NoInterp axes also got Real → will error)
+# (b) mixed with GridIdx only on NoInterp axes → _eval_nointerp
+#
+# Julia dispatch resolves this at compile time (Tuple{Vararg{Real,N}} is more specific).
+
+@inline function _eval_grididx_resolved(
+        itp::TensorProductInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}}, deriv, search, hint,
+    ) where {Tg, Tv, N}
+    # All GridIdx converted to Real → delegate to standard all-Real callable
+    return itp(query; deriv = deriv, search = search, hint = hint)
+end
+
+@inline function _eval_grididx_resolved(
+        itp::TensorProductInterpolantND{Tg, Tv, N},
+        query::Q, deriv, search, hint,
+    ) where {Tg, Tv, N, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
+    # Still has GridIdx on NoInterp axes → resolve kwargs, validate, and eval
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    search_tuple = _resolve_search_nd(search, Val(N))
+    _validate_nointerp_grididx(itp.methods, query)
+    return _eval_nointerp(itp, query, ops, search_tuple, hint)
 end
 
 @noinline _throw_grididx_on_interp_axis(d, method) =
@@ -154,13 +237,16 @@ Bounds checking on GridIdx values is deferred to `_eval_nointerp` / `_slice_grid
 """
 @generated function _validate_nointerp_grididx(methods::M, query::Q) where {M <: Tuple, Q <: Tuple}
     N = fieldcount(M)
+    missing_nointerp_dims = [d for d in 1:N if fieldtype(M, d) <: NoInterp && !(fieldtype(Q, d) <: GridIdx)]
     checks = Expr[]
+    # NoInterp axes missing GridIdx → clear error with usage hint
+    isempty(missing_nointerp_dims) || push!(
+        checks,
+        :(_throw_nointerp_needs_grididx($(Expr(:tuple, missing_nointerp_dims...)), $N))
+    )
+    # Non-NoInterp axes with GridIdx → error (should have been resolved by _convert_non_nointerp_grididx)
     for d in 1:N
-        is_nointerp = fieldtype(M, d) <: NoInterp
-        is_grididx = fieldtype(Q, d) <: GridIdx
-        if is_nointerp && !is_grididx
-            push!(checks, :(_throw_nointerp_needs_grididx($d)))
-        elseif !is_nointerp && is_grididx
+        if !(fieldtype(M, d) <: NoInterp) && fieldtype(Q, d) <: GridIdx
             push!(checks, :(_throw_grididx_on_interp_axis($d, methods[$d])))
         end
     end
@@ -232,12 +318,22 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         end
         )
 
+    # Write GridIdx index into hint for NoInterp axes (consistent hint semantics)
+    hint_nointerp_writes = [:(hint[$d][] = query[$d].idx) for d in nointerp_dims]
+    hint_nointerp_update = isempty(hint_nointerp_writes) ? :() :
+        :(
+            if hint !== nothing
+                $(hint_nointerp_writes...)
+        end
+        )
+
     if N_r == 0
         # All-NoInterp: pure table lookup (or zero if any deriv requested)
         if D <: HeteroPartials
             return quote
                 Base.@_inline_meta
                 $(bounds_checks...)
+                $hint_nointerp_update
                 $nointerp_deriv_guard
                 @inbounds itp.data.partials[1, $(slice_args...)]
             end
@@ -245,6 +341,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             return quote
                 Base.@_inline_meta
                 $(bounds_checks...)
+                $hint_nointerp_update
                 $nointerp_deriv_guard
                 @inbounds itp.data[$(slice_args...)]
             end
@@ -255,6 +352,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         return quote
             Base.@_inline_meta
             $(bounds_checks...)
+            $hint_nointerp_update
             # Slice partials at GridIdx positions
             p_sliced = @inbounds @view itp.data.partials[:, $(slice_args...)]
 
@@ -285,6 +383,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         return quote
             Base.@_inline_meta
             $(bounds_checks...)
+            $hint_nointerp_update
             d_sliced = @inbounds @view itp.data[$(slice_args...)]
             rq = ($(r_query...),)
             rg = ($(r_grids...),)
@@ -390,7 +489,8 @@ function interp(
     deriv_r = _filter_real_axes(deriv_t, QT)
     search_r = _filter_real_axes(search_t, QT)
 
-    # Forward hint filtered to Real axes (if provided)
+    # Update hints for GridIdx axes, then filter to Real axes
+    hint !== nothing && _update_grididx_hints!(hint, query)
     hint_r = hint === nothing ? nothing : _filter_real_axes(hint, QT)
 
     return interp(
@@ -510,6 +610,83 @@ Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoI
 end
 
 """
+    _hessian_nointerp!(H, itp::TensorProductInterpolantND, query, hint)
+
+In-place Hessian with NoInterp support. Fills H with zeros at NoInterp positions.
+"""
+@generated function _hessian_nointerp!(
+        H::AbstractMatrix,
+        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        query::Q, hint,
+    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
+    nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
+
+    stmts = Expr[]
+    for i in 1:N
+        if i in nointerp_dims
+            # Zero out entire NoInterp row/column
+            push!(stmts, :(H[$i, $i] = zero(eltype(H))))
+            for j in 1:N
+                i == j && continue
+                push!(stmts, :(H[$i, $j] = zero(eltype(H))))
+                push!(stmts, :(H[$j, $i] = zero(eltype(H))))
+            end
+            continue
+        end
+        # Diagonal: ∂²f/∂xᵢ²
+        ops_diag = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+        push!(stmts, :(H[$i, $i] = _eval_nointerp(itp, query, $ops_diag, itp.searches, hint)))
+        # Off-diagonal: ∂²f/∂xᵢ∂xⱼ (only Real×Real pairs)
+        for j in (i + 1):N
+            j in nointerp_dims && continue
+            ops_mixed = ntuple(k -> (k == i || k == j) ? DerivOp{1}() : DerivOp{0}(), N)
+            push!(
+                stmts, quote
+                    val = _eval_nointerp(itp, query, $ops_mixed, itp.searches, hint)
+                    H[$i, $j] = val
+                    H[$j, $i] = val
+                end
+            )
+        end
+    end
+
+    return quote
+        _validate_nointerp_grididx(itp.methods, query)
+        @inbounds begin
+            $(stmts...)
+        end
+        return H
+    end
+end
+
+# TensorProduct override: use in-place NoInterp-aware path
+@inline _hessian_with_grididx!(H::AbstractMatrix, itp::TensorProductInterpolantND, query, hint) =
+    _hessian_nointerp!(H, itp, query, hint)
+
+# Generic fallback: convert GridIdx(k) → grids[d][k], delegate to all-Real hessian!
+@generated function _hessian_with_grididx!(
+        H::AbstractMatrix,
+        itp::AbstractInterpolantND{Tg, Tv, N}, query::Q, hint,
+    ) where {Tg, Tv, N, Q}
+    grididx_dims = [d for d in 1:N if fieldtype(Q, d) <: GridIdx]
+    bounds_checks = [
+        :(
+                1 <= query[$d].idx <= length(itp.grids[$d]) ||
+                _throw_grididx_oob($d, query[$d].idx, length(itp.grids[$d]))
+            )
+            for d in grididx_dims
+    ]
+    real_query_exprs = [
+        d in grididx_dims ? :(@inbounds itp.grids[$d][query[$d].idx]) : :(query[$d])
+            for d in 1:N
+    ]
+    return quote
+        $(bounds_checks...)
+        return hessian!(H, itp, ($(real_query_exprs...),); hint = hint)
+    end
+end
+
+"""
     _laplacian_nointerp(itp::TensorProductInterpolantND, query, hint)
 
 Laplacian with NoInterp support. Sums ∂²f/∂xᵢ² only over interpolated axes.
@@ -598,26 +775,15 @@ end
 end
 
 """
-    interp_batch_grididx!(output, grids, data, (xvec, GridIdx(k), yvec); method, ...)
+    _interp_batch_with_grididx!(output, grids, data, queries; method, ...)
 
-Batch one-shot with fixed GridIdx slice. All query points share the same GridIdx indices.
-Query format (SoA): `(xvec, GridIdx(5), yvec)` — vectors for interpolated axes,
-scalar `GridIdx` for NoInterp axes.
+Internal batch path for queries containing `GridIdx` elements.
+Called by `interp!` when it detects `GridIdx` in the query tuple.
 
-Pre-slices data once at GridIdx positions, then delegates to existing `interp!` on reduced dims.
-Separated from `interp!` to avoid dispatch conflicts with the standard batch path.
-
-# Examples
-```julia
-x, y, z = range(0,1,50), range(0,1,30), range(0,1,20)
-data = rand(50, 30, 20)
-xq, zq = rand(100), rand(100)
-output = zeros(100)
-interp_batch_grididx!(output, (x, y, z), data, (xq, GridIdx(5), zq);
-    method=(CubicInterp(), NoInterp(), LinearInterp()))
-```
+Pre-slices data once at GridIdx positions, filters all per-axis tuples
+to Real-only axes, then delegates to existing `interp!` on reduced dims.
 """
-function interp_batch_grididx!(
+function _interp_batch_with_grididx!(
         output::AbstractVector,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
@@ -675,6 +841,8 @@ function interp_batch_grididx!(
     search_t = search isa AbstractSearchPolicy ? ntuple(_ -> search, Val(N)) : search
     deriv_r = _filter_real_axes(deriv_t, QT)
     search_r = _filter_real_axes(search_t, QT)
+    # Update hints for GridIdx axes, then filter to Real axes
+    hint !== nothing && _update_grididx_hints!(hint, template)
     hint_r = hint === nothing ? nothing : _filter_real_axes(hint, QT)
 
     return interp!(

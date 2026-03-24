@@ -92,7 +92,7 @@ At eval time, the axis is sliced at the given `GridIdx` index — no search, no 
 !!! note
     Both tuple and vararg forms work: `itp((0.5, GridIdx(10)))` or `itp(0.5, GridIdx(10))`.
     `gradient`, `hessian`, and `laplacian` are supported — NoInterp axes return zero derivatives.
-    Batch queries use `interp_batch_grididx!` with SoA format: `(xvec, GridIdx(5), yvec)`.
+    Batch queries use `interp!` with SoA format: `(xvec, GridIdx(5), yvec)`.
 
 # Examples
 ```julia

@@ -211,6 +211,9 @@ using FastInterpolations
         end
         @test occursin("NoInterp on axis 2", err.msg)
         @test occursin("x1::Real, GridIdx(k2::Int)", err.msg)
+        # Regression: GridIdx on non-NoInterp + Real on NoInterp → ArgumentError (not MethodError)
+        # GridIdx(2) converts to x[2], but axis 2 (NoInterp) still has Real → error
+        @test_throws ArgumentError itp((GridIdx(2), qy))
     end
 
     # ========================================
@@ -1006,47 +1009,85 @@ using FastInterpolations
     # ========================================
     # 35. Hints with NoInterp (Gap 5)
     # ========================================
-    @testset "Hints: Cubic×NoInterp 2D interpolant" begin
+    # Hint = NTuple{N, Ref{Int}}, N-element (full dims).
+    # @generated _eval_nointerp filters by real_dims: hint_r = (hint[d] for d in real_dims).
+    # After search, hint Ref is updated to the found interval index.
+    # NoInterp axis hints must NOT be touched.
+
+    @testset "Hints: all axes updated (real=interval, NoInterp=GridIdx)" begin
         itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
-        # Hint is 1-element (for the single real axis after NoInterp reduction)
-        # But the interpolant expects N-dim hints; internal filtering reduces to real dims
-        hint = (Ref(1),)  # hint for axis 1 only (NoInterp axis 2 is filtered out)
-        # Multiple sequential queries to exercise hint locality
-        for qi in range(0.5, 5.0, 10)
+        hint = (Ref(1), Ref(1))
+        val = itp((qx, GridIdx(5)); hint = hint)
+        ref = cubic_interp(x, data_2d[:, 5], qx)
+        @test val ≈ ref rtol = 1.0e-14
+        # Real axis: updated to correct interval index
+        @test hint[1][] > 1
+        @test 1 <= hint[1][] <= length(x) - 1
+        @test x[hint[1][]] <= qx < x[hint[1][] + 1]
+        # NoInterp axis: updated to GridIdx value
+        @test hint[2][] == 5
+    end
+
+    @testset "Hints: NoInterp hint tracks GridIdx across queries" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        hint = (Ref(1), Ref(1))
+        itp((qx, GridIdx(3)); hint = hint)
+        @test hint[2][] == 3
+        itp((qx, GridIdx(20)); hint = hint)
+        @test hint[2][] == 20
+        itp((qx, GridIdx(1)); hint = hint)
+        @test hint[2][] == 1
+    end
+
+    @testset "Hints: sequential queries update progressively" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        hint = (Ref(1), Ref(1))
+        prev_idx = 0
+        for qi in range(0.5, 5.5, 10)
             val = itp((qi, GridIdx(5)); hint = hint)
             ref = cubic_interp(x, data_2d[:, 5], qi)
             @test val ≈ ref rtol = 1.0e-14
+            @test hint[1][] >= prev_idx
+            @test x[hint[1][]] <= qi < x[hint[1][] + 1]
+            prev_idx = hint[1][]
         end
+        @test hint[2][] == 5  # NoInterp axis reflects last GridIdx
     end
 
     @testset "Hints: one-shot with GridIdx" begin
-        hint = (Ref(1),)  # 1 hint for the single real axis
+        hint = (Ref(1), Ref(1))
         for qi in range(0.5, 5.0, 5)
             val = interp(
-                (x, y), data_2d, (qi, GridIdx(5));
+                (x, y), data_2d, (qi, GridIdx(12));
                 method = (CubicInterp(), NoInterp()), hint = hint
             )
-            ref = cubic_interp(x, data_2d[:, 5], qi)
+            ref = cubic_interp(x, data_2d[:, 12], qi)
             @test val ≈ ref rtol = 1.0e-14
         end
+        @test hint[1][] > 1
+        @test hint[2][] == 12
     end
 
-    @testset "Hints: 3D Cubic×NoInterp×Linear" begin
+    @testset "Hints: 3D Cubic×NoInterp×Linear, all axes updated" begin
         itp3 = interp(
             (x, y, z), data_3d;
             method = (CubicInterp(), NoInterp(), LinearInterp())
         )
-        # Hints must be N-element tuple (full dims), @generated code indexes by real_dims:
-        # real_dims = [1, 3] → hint_r = (hint[1], hint[3])
         hint = (Ref(1), Ref(1), Ref(1))
-        for qi in range(0.5, 5.0, 5)
-            val = itp3((qi, GridIdx(10), 0.5); hint = hint)
-            ref = interp(
-                (x, z), data_3d[:, 10, :], (qi, 0.5);
-                method = (CubicInterp(), LinearInterp())
-            )
-            @test val ≈ ref rtol = 1.0e-13
-        end
+        val = itp3((qx, GridIdx(10), qz); hint = hint)
+        ref = interp(
+            (x, z), data_3d[:, 10, :], (qx, qz);
+            method = (CubicInterp(), LinearInterp())
+        )
+        @test val ≈ ref rtol = 1.0e-13
+        # Axis 1 (Cubic): interval index
+        @test hint[1][] > 1
+        @test x[hint[1][]] <= qx < x[hint[1][] + 1]
+        # Axis 2 (NoInterp): GridIdx value
+        @test hint[2][] == 10
+        # Axis 3 (Linear): interval index
+        @test hint[3][] >= 1
+        @test z[hint[3][]] <= qz < z[hint[3][] + 1]
     end
 
     # ========================================

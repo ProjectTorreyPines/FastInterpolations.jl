@@ -169,18 +169,18 @@ end
     return itp(q; kw...)
 end
 
-# GridIdx tuple query form: itp((0.5, GridIdx(3))) — dispatches to NoInterp eval
-# Only matches when at least one GridIdx (all-Real → more specific Tuple{Vararg{Real,N}} above)
+# GridIdx tuple query form: itp((0.5, GridIdx(3)))
+# Only matches when at least one GridIdx (all-Real → more specific Tuple{Vararg{Real,N}} above).
+# GridIdx on non-NoInterp axes → converted to grids[d][k], then standard eval.
+# GridIdx on NoInterp axes → kept as GridIdx, routed to _eval_nointerp (pre-slice).
 @inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
         query::Q;
         deriv = EvalValue(),
         search = itp.searches,
         hint = nothing,
     ) where {Tg, Tv, N, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N))
-    _validate_nointerp_grididx(itp.methods, query)
-    return _eval_nointerp(itp, query, ops, search_tuple, hint)
+    resolved = _convert_non_nointerp_grididx(itp.methods, itp.grids, query)
+    return _eval_grididx_resolved(itp, resolved, deriv, search, hint)
 end
 
 # ========================================

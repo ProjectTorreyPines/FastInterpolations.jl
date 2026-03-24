@@ -168,6 +168,20 @@ See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
     end
 end
 
+# GridIdx query: delegate to out-of-place gradient (which has NoInterp-aware dispatch)
+@inline function gradient!(
+        G::AbstractVector,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
+        hint = nothing,
+    ) where {Tg, Tv, N}
+    g = gradient(itp, query; hint = hint)
+    @inbounds for i in 1:N
+        G[i] = g[i]
+    end
+    return G
+end
+
 # Vector query API
 @inline function gradient!(
         G::AbstractVector,
@@ -251,6 +265,17 @@ See also: [`gradient`](@ref), [`gradient!`](@ref)
         grad = tuple($(deriv_calls...))
         return (val, grad)
     end
+end
+
+# GridIdx query: compute value + gradient using NoInterp-aware dispatch
+@inline function value_gradient(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
+        hint = nothing,
+    ) where {Tg, Tv, N}
+    val = itp(query; hint = hint)
+    g = gradient(itp, query; hint = hint)
+    return (val, g)
 end
 
 # Vector API
@@ -445,6 +470,16 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
         end
         return H
     end
+end
+
+# GridIdx query: delegate to type-specific in-place handler
+@inline function hessian!(
+        H::AbstractMatrix,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
+        hint = nothing,
+    ) where {Tg, Tv, N}
+    return _hessian_with_grididx!(H, itp, query, hint)
 end
 
 # Vector query API

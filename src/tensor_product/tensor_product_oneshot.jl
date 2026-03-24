@@ -298,7 +298,7 @@ function interp!(
     ) where {N}
     # Mixed queries with GridIdx → delegate to GridIdx batch path
     if queries isa Tuple && _has_grididx(typeof(queries))
-        return interp_batch_grididx!(
+        return _interp_batch_with_grididx!(
             output, grids, data, queries;
             method = method, deriv = deriv, extrap = extrap, search = search, hint = hint
         )

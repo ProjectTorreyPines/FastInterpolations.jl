@@ -78,7 +78,7 @@ Used to guard GridIdx → NoInterp auto-promotion (safe only when no derivatives
 _all_eval_value(::EvalValue) = true
 _all_eval_value(::DerivOp) = false
 @generated function _all_eval_value(::D) where {D <: Tuple}
-    all(d -> fieldtype(D, d) <: EvalValue, 1:fieldcount(D)) ? :(true) : :(false)
+    return all(d -> fieldtype(D, d) <: EvalValue, 1:fieldcount(D)) ? :(true) : :(false)
 end
 
 """
@@ -735,9 +735,9 @@ expand to standard batch format and let the normal path handle them.
     N = fieldcount(Q)
     exprs = [
         if fieldtype(Q, d) <: GridIdx && !(fieldtype(M, d) <: NoInterp)
-            :(fill(grids[$d][queries[$d].idx], nq))
+                :(fill(grids[$d][queries[$d].idx], nq))
         else
-            :(queries[$d])
+                :(queries[$d])
         end
             for d in 1:N
     ]

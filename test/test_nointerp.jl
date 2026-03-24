@@ -1330,9 +1330,11 @@ using FastInterpolations
     # 44. ForwardDiff AD + GridIdx (Gap 4)
     # ========================================
     @testset "ForwardDiff: Dual + GridIdx in same query (interpolant)" begin
-        ForwardDiff = Base.require(Base.PkgId(
-            Base.UUID("f6369f11-7733-5829-9624-2563aa707210"), "ForwardDiff"
-        ))
+        ForwardDiff = Base.require(
+            Base.PkgId(
+                Base.UUID("f6369f11-7733-5829-9624-2563aa707210"), "ForwardDiff"
+            )
+        )
         itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
         # Differentiate w.r.t. Real axis (axis 1) while NoInterp axis uses GridIdx
         df = ForwardDiff.derivative(t -> itp((t, GridIdx(10))), qx)
@@ -1341,9 +1343,11 @@ using FastInterpolations
     end
 
     @testset "ForwardDiff: Dual + GridIdx on non-NoInterp axis" begin
-        ForwardDiff = Base.require(Base.PkgId(
-            Base.UUID("f6369f11-7733-5829-9624-2563aa707210"), "ForwardDiff"
-        ))
+        ForwardDiff = Base.require(
+            Base.PkgId(
+                Base.UUID("f6369f11-7733-5829-9624-2563aa707210"), "ForwardDiff"
+            )
+        )
         # TensorProduct with Cubic×Linear, GridIdx on axis 2 (not NoInterp)
         itp_h = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
         df_grididx = ForwardDiff.derivative(t -> itp_h((t, GridIdx(10))), qx)
@@ -1465,9 +1469,9 @@ using FastInterpolations
         )
         ref = [
             interp(
-                (x, y), data_2d, (xqi, y[10]);
-                method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(0), DerivOp(1))
-            ) for xqi in xq_b
+                    (x, y), data_2d, (xqi, y[10]);
+                    method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(0), DerivOp(1))
+                ) for xqi in xq_b
         ]
         @test out ≈ ref rtol = 1.0e-14
         @test any(!iszero, out)  # must NOT be all zeros
@@ -1482,9 +1486,9 @@ using FastInterpolations
         )
         ref = [
             interp(
-                (x, y), data_2d, (xqi, y[10]);
-                method = (CubicInterp(), CubicInterp())
-            ) for xqi in xq_b
+                    (x, y), data_2d, (xqi, y[10]);
+                    method = (CubicInterp(), CubicInterp())
+                ) for xqi in xq_b
         ]
         @test out ≈ ref rtol = 1.0e-14
     end
@@ -1499,9 +1503,9 @@ using FastInterpolations
         )
         ref = [
             interp(
-                (x, y), data_2d, (xqi, y[10]);
-                method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(1), DerivOp(0))
-            ) for xqi in xq_b
+                    (x, y), data_2d, (xqi, y[10]);
+                    method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(1), DerivOp(0))
+                ) for xqi in xq_b
         ]
         @test out ≈ ref rtol = 1.0e-14
     end
@@ -1518,10 +1522,10 @@ using FastInterpolations
         )
         ref = [
             interp(
-                (x, y, z), data_3d, (xqi, GridIdx(10), z[5]);
-                method = (CubicInterp(), NoInterp(), LinearInterp()),
-                deriv = (DerivOp(0), DerivOp(0), DerivOp(1))
-            ) for xqi in xq_b
+                    (x, y, z), data_3d, (xqi, GridIdx(10), z[5]);
+                    method = (CubicInterp(), NoInterp(), LinearInterp()),
+                    deriv = (DerivOp(0), DerivOp(0), DerivOp(1))
+                ) for xqi in xq_b
         ]
         @test out ≈ ref rtol = 1.0e-12
     end

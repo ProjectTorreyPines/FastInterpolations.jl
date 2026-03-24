@@ -450,15 +450,16 @@ end
 # TensorProduct overrides vector_calculus.jl methods (more specific arg1 type)
 # and delegates to _*_nointerp for the optimized pre-slice path.
 
-# --- TensorProduct gradient/hessian/laplacian: NoInterp-aware via _*_nointerp ---
-# These override the generic @generated methods in vector_calculus.jl.
-# _*_nointerp handles both NoInterp (pre-slice, zero derivatives) and
-# non-NoInterp axes (delegates to _eval_nointerp which runs the full pipeline).
+# --- TensorProduct vector calculus: NoInterp-aware overrides ---
+# Only override when NoInterp is present (compile-time _has_nointerp_method check).
+# Without NoInterp, delegate to _*_generic helpers in vector_calculus.jl which use
+# the optimal locate-once path (_locate_cell once → _eval_at_cell per component).
 @inline function gradient(
         itp::TensorProductInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
+    _has_nointerp_method(typeof(itp.methods)) || return _gradient_generic(itp, query, hint)
     resolved = map(_resolve_grididx, query, itp.grids)
     return _gradient_nointerp(itp, resolved, hint)
 end
@@ -468,6 +469,7 @@ end
         query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
+    _has_nointerp_method(typeof(itp.methods)) || return _hessian_generic(itp, query, hint)
     resolved = map(_resolve_grididx, query, itp.grids)
     return _hessian_nointerp(itp, resolved, hint)
 end
@@ -478,6 +480,7 @@ end
         query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
+    _has_nointerp_method(typeof(itp.methods)) || return _hessian_generic!(H, itp, query, hint)
     resolved = map(_resolve_grididx, query, itp.grids)
     return _hessian_nointerp!(H, itp, resolved, hint)
 end
@@ -487,6 +490,7 @@ end
         query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
+    _has_nointerp_method(typeof(itp.methods)) || return _laplacian_generic(itp, query, hint)
     resolved = map(_resolve_grididx, query, itp.grids)
     return _laplacian_nointerp(itp, resolved, hint)
 end
@@ -496,6 +500,7 @@ end
         query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
+    _has_nointerp_method(typeof(itp.methods)) || return _value_gradient_generic(itp, query, hint)
     resolved = map(_resolve_grididx, query, itp.grids)
     val = itp(resolved; hint = hint)
     g = _gradient_nointerp(itp, resolved, hint)
@@ -508,7 +513,9 @@ end
         query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
-    g = gradient(itp, query; hint = hint)
+    _has_nointerp_method(typeof(itp.methods)) || return _gradient_generic!(G, itp, query, hint)
+    resolved = map(_resolve_grididx, query, itp.grids)
+    g = _gradient_nointerp(itp, resolved, hint)
     @inbounds for i in 1:N
         G[i] = g[i]
     end

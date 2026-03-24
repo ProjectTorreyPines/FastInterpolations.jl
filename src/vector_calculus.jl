@@ -39,10 +39,14 @@ gradient(itp, [0.5, 0.5])    # Vector input also supported
 
 See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
 """
-@generated function gradient(
+# --- Internal helpers (locate-once, @generated) ---
+# Factored out so TensorProductInterpolantND can call them directly
+# when NoInterp is absent, bypassing the override without `invoke`.
+
+@generated function _gradient_generic(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        query::Tuple{Vararg{Real, N}},
+        hint,
     ) where {Tg, Tv, N}
     deriv_calls = [
         begin
@@ -62,6 +66,14 @@ See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`la
         cell = _locate_cell(itp, query_r, search, hint)
         return tuple($(deriv_calls...))
     end
+end
+
+@inline function gradient(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    return _gradient_generic(itp, query, hint)
 end
 
 # Vector API for compatibility with ForwardDiff patterns
@@ -100,11 +112,11 @@ result = optimize(f, grad!, x0, LBFGS())
 
 See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
 """
-@generated function gradient!(
+@generated function _gradient_generic!(
         G::AbstractVector,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        query::Tuple{Vararg{Real, N}},
+        hint,
     ) where {Tg, Tv, N}
     stmts = [
         begin
@@ -134,6 +146,15 @@ See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
         end
         return G
     end
+end
+
+@inline function gradient!(
+        G::AbstractVector,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    return _gradient_generic!(G, itp, query, hint)
 end
 
 # Vector query API
@@ -191,10 +212,10 @@ result = optimize(Optim.only_fg!(fg!), x0, LBFGS())
 
 See also: [`gradient`](@ref), [`gradient!`](@ref)
 """
-@generated function value_gradient(
+@generated function _value_gradient_generic(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        query::Tuple{Vararg{Real, N}},
+        hint,
     ) where {Tg, Tv, N}
     value_ops = ntuple(_ -> EvalValue(), N)
     value_call = :(_eval_at_cell(itp, cell, $value_ops))
@@ -220,6 +241,14 @@ See also: [`gradient`](@ref), [`gradient!`](@ref)
         grad = tuple($(deriv_calls...))
         return (val, grad)
     end
+end
+
+@inline function value_gradient(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    return _value_gradient_generic(itp, query, hint)
 end
 
 # Vector API
@@ -264,10 +293,10 @@ H = hessian(itp, (0.5, 0.5))
 
 See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
 """
-@generated function hessian(
+@generated function _hessian_generic(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        query::Tuple{Vararg{Real, N}},
+        hint,
     ) where {Tg, Tv, N}
     stmts = Expr[]
 
@@ -306,6 +335,14 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
     end
 end
 
+@inline function hessian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    return _hessian_generic(itp, query, hint)
+end
+
 # Vector API
 function hessian(
         itp::AbstractInterpolantND{Tg, Tv, N},
@@ -342,11 +379,11 @@ result = optimize(f, grad!, hess!, x0, NewtonTrustRegion())
 
 See also: [`hessian`](@ref), [`gradient!`](@ref)
 """
-@generated function hessian!(
+@generated function _hessian_generic!(
         H::AbstractMatrix,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        query::Tuple{Vararg{Real, N}},
+        hint,
     ) where {Tg, Tv, N}
     stmts = Expr[]
 
@@ -386,6 +423,15 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
         end
         return H
     end
+end
+
+@inline function hessian!(
+        H::AbstractMatrix,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    return _hessian_generic!(H, itp, query, hint)
 end
 
 # Vector query API
@@ -435,10 +481,10 @@ itp = cubic_interp((x, y), data)
 
 See also: [`gradient`](@ref), [`hessian`](@ref)
 """
-@generated function laplacian(
+@generated function _laplacian_generic(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        query::Tuple{Vararg{Real, N}},
+        hint,
     ) where {Tg, Tv, N}
     deriv_calls = [
         begin
@@ -456,6 +502,14 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
         cell = _locate_cell(itp, query_r, search, hint)
         return +($(deriv_calls...))
     end
+end
+
+@inline function laplacian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    return _laplacian_generic(itp, query, hint)
 end
 
 # Vector API

@@ -290,8 +290,15 @@ function interp!(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
+        hint = nothing,
     ) where {N}
+    # Mixed queries with GridIdx → delegate to GridIdx batch path
+    if queries isa Tuple && _has_grididx(typeof(queries))
+        return interp_batch_grididx!(
+            output, grids, data, queries;
+            method = method, deriv = deriv, extrap = extrap, search = search, hint = hint
+        )
+    end
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
     return _interp_nd_oneshot_batch_dispatch!(output, grids, data, queries, method_tuple, deriv, extrap, search, hint)
 end

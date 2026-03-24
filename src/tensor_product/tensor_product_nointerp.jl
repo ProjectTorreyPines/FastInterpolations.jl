@@ -554,6 +554,17 @@ Used for data slicing and type-based dispatch.
     return :(tuple($(template_exprs...)))
 end
 
+"""
+    _has_grididx(queries) -> Bool
+
+Compile-time check: returns true if any element of the tuple type is `GridIdx`.
+Used by `interp!` to detect mixed batch queries and delegate to the GridIdx path.
+"""
+@generated function _has_grididx(::Type{Q}) where {Q <: Tuple}
+    result = any(i -> fieldtype(Q, i) <: GridIdx, 1:fieldcount(Q))
+    return :($result)
+end
+
 @generated function _filter_real_batch_queries(queries::Q) where {Q <: Tuple}
     kept = [i for i in 1:fieldcount(Q) if !(fieldtype(Q, i) <: GridIdx)]
     isempty(kept) && return :(())

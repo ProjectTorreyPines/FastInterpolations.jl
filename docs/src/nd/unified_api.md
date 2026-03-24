@@ -57,11 +57,11 @@ Some axes represent discrete indices (ensemble member, vertical level, time snap
 
 ```@example unified
 # Axis 2 is discrete: no interpolation, queried by grid index
-itp_ni = interp((x, y), data; method=(CubicInterp(), NoInterp()))
+itp = interp((x, y), data; method=(CubicInterp(), NoInterp()))
 
 # Query: real coordinate for interpolated axes, GridIdx(k) for discrete axes
-itp_ni((0.5, GridIdx(10)))
-itp_ni(0.5, GridIdx(10))  # vararg form also works
+itp((0.5, GridIdx(10)))
+itp(0.5, GridIdx(10))  # vararg form also works
 nothing  # hide
 ```
 
@@ -75,12 +75,12 @@ nothing  # hide
 
 ```@example unified
 # 3D data: interpolate x+z, select y by index
-itp_3ni = interp((x, y, z), data3d;
+itp = interp((x, y, z), data3d;
     method = (CubicInterp(), NoInterp(), LinearInterp()))
 
 # Loop over all y-slices — no rebuild
 for k in 1:5
-    itp_3ni((1.0, GridIdx(k), 2.0))
+    itp((1.0, GridIdx(k), 2.0))
 end
 nothing  # hide
 ```
@@ -90,9 +90,9 @@ nothing  # hide
 Derivatives on `NoInterp` axes return zero (the axis has no spatial interpolation). All other axes compute real derivatives:
 
 ```@example unified
-itp_ni((0.5, GridIdx(10)); deriv=(DerivOp(1), DerivOp(0)))  # df/dx on the slice
-gradient(itp_ni, (0.5, GridIdx(10)))   # → (df/dx, 0.0)
-laplacian(itp_ni, (0.5, GridIdx(10)))  # → d²f/dx²
+itp((0.5, GridIdx(10)); deriv=(DerivOp(1), DerivOp(0)))  # df/dx on the slice
+gradient(itp, (0.5, GridIdx(10)))   # → (df/dx, 0.0)
+laplacian(itp, (0.5, GridIdx(10)))  # → d²f/dx²
 nothing  # hide
 ```
 
@@ -105,12 +105,12 @@ nothing  # hide
 
 ### Batch Queries
 
-For batch evaluation with fixed `GridIdx` slices, use `interp_batch_grididx!`:
+Batch queries with `GridIdx` work through the standard `interp!` — just pass vectors for interpolated axes and `GridIdx` for discrete axes:
 
 ```@example unified
 output = zeros(5)
 xq = collect(range(0.5, 5.0, 5))
-interp_batch_grididx!(output, (x, y), data, (xq, GridIdx(10));
+interp!(output, (x, y), data, (xq, GridIdx(10));
     method=(CubicInterp(), NoInterp()))
 nothing  # hide
 ```

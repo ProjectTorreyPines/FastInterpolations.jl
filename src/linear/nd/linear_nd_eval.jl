@@ -15,14 +15,15 @@
 
 # Scalar tuple query
 @inline function (itp::LinearInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{ScalarCoord, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
+    resolved = map(_resolve_grididx, query, itp.grids)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
-    return _eval_linear_nd(itp, query, ops, search_tuple, hint)
+    search_tuple = _resolve_search_nd(search, Val(N), resolved)
+    return _eval_linear_nd(itp, resolved, ops, search_tuple, hint)
 end
 
 # In-place batch evaluation (SoA + AoS) is handled by the unified
@@ -40,7 +41,7 @@ end
 # Generic N-dimensional
 @inline function _locate_cell(
         itp::LinearInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{ScalarCoord, N}},
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing
     ) where {Tg, Tv, N}
@@ -53,7 +54,7 @@ end
 # N=2 specialization: direct destructuring eliminates ntuple closure overhead
 @inline function _locate_cell(
         itp::LinearInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{Real, 2}},
+        query::Tuple{Vararg{ScalarCoord, 2}},
         search_tuple::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
         hints = nothing
     ) where {Tg, Tv}
@@ -63,8 +64,8 @@ end
 
     hx = _get_h(itp.spacings[1], ix)
     hy = _get_h(itp.spacings[2], iy)
-    αx = (x_eval - xL) / hx
-    αy = (y_eval - yL) / hy
+    αx = (scalar_value(x_eval) - xL) / hx
+    αy = (scalar_value(y_eval) - yL) / hy
 
     return (itp.data, (ix, iy), (hx, hy), (αx, αy))
 end
@@ -92,7 +93,7 @@ end
 # Generic N-dimensional version (uses _locate_cell + _eval_at_cell)
 @inline function _eval_linear_nd(
         itp::LinearInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{ScalarCoord, N}},
         ops::NTuple{N, AbstractEvalOp},
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing
@@ -110,7 +111,7 @@ end
 # N=2 specialization: dispatches to N=2 _locate_cell via type
 @inline function _eval_linear_nd(
         itp::LinearInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{Real, 2}},
+        query::Tuple{Vararg{ScalarCoord, 2}},
         ops::NTuple{2, AbstractEvalOp},
         search_tuple::NTuple{2, AbstractSearchPolicy},
         hints = nothing

@@ -257,6 +257,9 @@ end
 # 1D scalar: no hint locality → pure binary search
 @inline _resolve_search_policy(::AutoSearch, ::Real) = BinarySearch()
 
+# GridIdx: search short-circuits anyway; BinarySearch as placeholder policy
+@inline _resolve_search_policy(::AutoSearch, ::GridIdx) = BinarySearch()
+
 # 1D vector: sorted locality → linear window with binary fallback
 @inline _resolve_search_policy(::AutoSearch, ::AbstractVector) = LinearBinarySearch()
 

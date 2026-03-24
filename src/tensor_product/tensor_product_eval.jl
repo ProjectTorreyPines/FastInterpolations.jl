@@ -106,7 +106,7 @@ end
 # OnTheFly path: sequential 1D one-shot interpolation per query
 @inline function _eval_tensor_product_nd(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{ScalarCoord, N}},
         ops::NTuple{N, AbstractEvalOp},
         searches::NTuple{N, AbstractSearchPolicy},
         hints,
@@ -118,7 +118,7 @@ end
 # PreCompute path: precomputed partials + local kernel eval (O(1) per query)
 @inline function _eval_tensor_product_nd(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{ScalarCoord, N}},
         ops::NTuple{N, AbstractEvalOp},
         searches::NTuple{N, AbstractSearchPolicy},
         hints,
@@ -191,7 +191,7 @@ end
 # OnTheFly: cell stores everything needed for re-collapse (including searches + hints)
 @inline function _locate_cell(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{ScalarCoord, N}},
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing,
     ) where {Tg, Tv, N, G, S, M, E, P}
@@ -211,7 +211,7 @@ end
 # PreCompute: cell stores precomputed cell location (locate-once optimization)
 @inline function _locate_cell(
         itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{ScalarCoord, N}},
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing,
     ) where {Tg, Tv, N, G, S, M, E, P}

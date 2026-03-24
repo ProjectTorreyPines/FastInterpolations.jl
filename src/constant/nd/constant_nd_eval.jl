@@ -11,14 +11,15 @@
 
 # Scalar tuple query
 @inline function (itp::ConstantInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{ScalarCoord, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
+    resolved = map(_resolve_grididx, query, itp.grids)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
-    return _eval_constant_nd(itp, query, ops, search_tuple, hint)
+    search_tuple = _resolve_search_nd(search, Val(N), resolved)
+    return _eval_constant_nd(itp, resolved, ops, search_tuple, hint)
 end
 
 # In-place batch evaluation (SoA + AoS) is handled by the unified
@@ -48,7 +49,7 @@ For constant interpolation:
 # Generic N-dimensional version (uses _locate_cell + _eval_at_cell)
 @inline function _eval_constant_nd(
         itp::ConstantInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{ScalarCoord, N}},
         ops::NTuple{N, AbstractEvalOp},
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing
@@ -66,7 +67,7 @@ end
 # N=2 specialization: dispatches to N=2 _locate_cell via type
 @inline function _eval_constant_nd(
         itp::ConstantInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{Real, 2}},
+        query::Tuple{Vararg{ScalarCoord, 2}},
         ops::NTuple{2, AbstractEvalOp},
         search_tuple::NTuple{2, AbstractSearchPolicy},
         hints = nothing
@@ -90,7 +91,7 @@ end
 # Generic N-dimensional
 @inline function _locate_cell(
         itp::ConstantInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{ScalarCoord, N}},
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing
     ) where {Tg, Tv, N}
@@ -102,7 +103,7 @@ end
 # N=2 specialization: direct destructuring eliminates ntuple closure overhead
 @inline function _locate_cell(
         itp::ConstantInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{Real, 2}},
+        query::Tuple{Vararg{ScalarCoord, 2}},
         search_tuple::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
         hints = nothing
     ) where {Tg, Tv}

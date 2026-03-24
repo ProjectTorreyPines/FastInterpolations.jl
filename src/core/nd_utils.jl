@@ -515,6 +515,7 @@ end
 
 # GridIdx passthrough: in-domain by construction, no extrapolation handling needed
 @inline _handle_axis_extrap(q::GridIdx, ::AbstractVector, ::AbstractExtrap) = q
+@inline _handle_axis_extrap(q::GridIdx, ::AbstractVector, ::NoExtrap) = q  # disambiguation
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::NoExtrap)
     @boundscheck _check_domain(axis, q, NoExtrap())

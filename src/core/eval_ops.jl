@@ -69,6 +69,38 @@ The type-level method is used inside `@generated` functions where only types are
 Base.show(io::IO, ::DerivOp{N}) where {N} = print(io, "DerivOp{", N, "}()")
 
 # ========================================
+# Grid Index Wrapper (NoInterp query element)
+# ========================================
+
+"""
+    GridIdx(k::Integer)
+
+Thin wrapper for grid index queries on `NoInterp` axes.
+
+`GridIdx` is NOT `<: Real` — it forces explicit handling at every query signature.
+Used in query tuples to indicate "slice at this grid index, do not interpolate".
+
+# Examples
+```julia
+# One-shot: slice axis 2 at index 5, interpolate axis 1
+interp((x, y), data, (0.5, GridIdx(5)); method=(CubicInterp(), NoInterp()))
+
+# Interpolant: query-time slicing
+itp = interp((x, y), data; method=(CubicInterp(), NoInterp()))
+itp((0.5, GridIdx(5)))
+```
+"""
+struct GridIdx
+    idx::Int
+    function GridIdx(i::Integer)
+        i >= 1 || throw(ArgumentError("GridIdx index must be ≥ 1, got $i"))
+        return new(Int(i))
+    end
+end
+
+Base.show(io::IO, g::GridIdx) = print(io, "GridIdx(", g.idx, ")")
+
+# ========================================
 # Typed Extrapolation Mode Tags
 # ========================================
 # Promotable Value Type

@@ -222,7 +222,7 @@ using FastInterpolations
         )
         str_ext = sprint(show, MIME("text/plain"), itp_ext)
         @test occursin("ClampExtrap", str_ext)
-        @test !occursin("NoExtrap", str_ext)   # NoExtrap is hidden
+        @test occursin("NoExtrap", str_ext)   # Per-axis detail shows all extraps
 
         # All 4 method name variants
         itp_q = interp(

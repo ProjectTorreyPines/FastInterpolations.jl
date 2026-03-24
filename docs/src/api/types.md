@@ -34,6 +34,8 @@ CubicInterp
 LinearInterp
 QuadraticInterp
 ConstantInterp
+NoInterp
+GridIdx
 interp
 interp!
 ```

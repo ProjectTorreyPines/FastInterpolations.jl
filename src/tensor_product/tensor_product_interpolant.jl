@@ -107,6 +107,69 @@ function _validate_axis_method(grid, ::ConstantInterp, _, d)
     return nothing
 end
 
+function _validate_axis_method(grid, ::NoInterp, _, d)
+    n = length(grid)
+    n < 1 && throw(ArgumentError("Axis $d: NoInterp needs ≥1 grid point, got $n"))
+    return nothing
+end
+
+# ========================================
+# NoInterp Config Override
+# ========================================
+# NoInterp axes get InBounds() extrap (no domain check) and BinarySearch() (dummy, never used).
+# Called at build time so the stored config tuples have correct types.
+
+@generated function _has_nointerp_method(::Type{M}) where {M <: Tuple}
+    result = any(i -> fieldtype(M, i) <: NoInterp, 1:fieldcount(M))
+    return :($result)
+end
+
+"""
+    _validate_nd_grids_nointerp(grids, data, methods)
+
+Like `_validate_nd_grids` but skips the 2-point minimum for NoInterp axes.
+NoInterp axes only need `length(grid) == size(data, d)` (≥1 points).
+"""
+@generated function _validate_nd_grids_nointerp(
+        grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}, methods::M,
+    ) where {N, M <: Tuple}
+    checks = [
+        quote
+                ng = length(grids[$i])
+                nd = size(data, $i)
+                if ng != nd
+                    throw(
+                        DimensionMismatch(
+                            "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
+                        )
+                    )
+            end
+                $(
+                    if !(fieldtype(M, i) <: NoInterp)
+                        :(
+                            if ng < 2
+                                throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
+                        end
+                        )
+                else
+                        :()
+                end
+                )
+            end for i in 1:N
+    ]
+    return quote
+        $(checks...)
+        nothing
+    end
+end
+
+@generated function _override_nointerp_config(methods::M, extraps, searches) where {M <: Tuple}
+    N = fieldcount(M)
+    ext_exprs = [fieldtype(M, d) <: NoInterp ? :(InBounds()) : :(extraps[$d]) for d in 1:N]
+    src_exprs = [fieldtype(M, d) <: NoInterp ? :(BinarySearch()) : :(searches[$d]) for d in 1:N]
+    return :((tuple($(ext_exprs...)), tuple($(src_exprs...))))
+end
+
 # ========================================
 # Internal Builder
 # ========================================
@@ -118,8 +181,12 @@ function _build_tensor_product_nd(
         extrap,
         search,
     ) where {N, Tv_raw}
-    # 1. Validate grid dimensions
-    _validate_nd_grids(grids, data)
+    # 1. Validate grid dimensions (NoInterp axes exempt from 2-point minimum)
+    if _has_nointerp_method(typeof(methods))
+        _validate_nd_grids_nointerp(grids, data, methods)
+    else
+        _validate_nd_grids(grids, data)
+    end
 
     # 2. Promote grid type (Int → Float64)
     Tg = _promote_grid_eltype(grids)
@@ -135,9 +202,15 @@ function _build_tensor_product_nd(
     Tv = _value_type(Tv_raw, Tg)
     data_typed = Tv === Tv_raw ? Array(data) : Array{Tv}(data)
 
-    # 6. Resolve per-axis configuration
-    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    # 6. Resolve per-axis configuration (pass BCs so PeriodicBC auto-gets WrapExtrap)
+    bcs = map(_bc_for_periodic_check, methods)
+    extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N))
+
+    # 6b. Override extrap/search for NoInterp axes (no domain check, no search)
+    if _has_nointerp_method(typeof(methods))
+        extraps, searches = _override_nointerp_config(methods, extraps, searches)
+    end
 
     # 7. Per-axis method validation
     _validate_axis_methods(grids_typed, methods, extraps)
@@ -162,18 +235,28 @@ function _build_tensor_product_precomputed(
         extrap,
         search,
     ) where {N, Tv_raw}
-    _validate_nd_grids(grids, data)
+    if _has_nointerp_method(typeof(methods))
+        _validate_nd_grids_nointerp(grids, data, methods)
+    else
+        _validate_nd_grids(grids, data)
+    end
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
     Tv = _value_type(Tv_raw, Tg)
-    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    bcs_periodic = map(_bc_for_periodic_check, methods)
+    extraps = _resolve_extrap_nd(extrap, bcs_periodic, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N))
+
+    # Override extrap/search for NoInterp axes (no domain check, no search)
+    if _has_nointerp_method(typeof(methods))
+        extraps, searches = _override_nointerp_config(methods, extraps, searches)
+    end
+
     _validate_axis_methods(grids_typed, methods, extraps)
 
     # Extend exclusive periodic axes to inclusive form (same as CubicInterpolantND).
     # Must happen before spacings + partials so the stored grid matches the data.
-    bcs_periodic = map(_bc_for_periodic_check, methods)
     grids_typed, data_ext, _ = _prepare_periodic_nd(grids_typed, data, bcs_periodic)
     spacings = _create_spacings_typed(grids_typed)
 

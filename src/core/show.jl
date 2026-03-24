@@ -997,6 +997,7 @@ _short_method_name(::CubicInterp) = "Cubic"
 _short_method_name(::LinearInterp) = "Linear"
 _short_method_name(::QuadraticInterp) = "Quadratic"
 _short_method_name(::ConstantInterp) = "Constant"
+_short_method_name(::NoInterp) = "NoInterp"
 
 function Base.show(io::IO, itp::TensorProductInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
     sizes = join([string(length(g)) for g in itp.grids], "×")
@@ -1013,18 +1014,50 @@ function Base.show(io::IO, ::MIME"text/plain", itp::TensorProductInterpolantND{T
     _show_nd_grids_summary(io, false, itp.grids)
     println(io)
 
-    # Per-axis methods
+    # Per-axis detail block
     for d in 1:N
         is_last = d == N
-        prefix = is_last ? " └─ " : " ├─ "
+        prefix = is_last ? "└─ " : "├─ "
+        indent = is_last ? "   " : "│  "
+        m = itp.methods[d]
+        e = itp.extraps[d]
+        has_bc = m isa CubicInterp || m isa QuadraticInterp
+        has_side = m isa ConstantInterp
+
+        # Method name
         _show_print(io, prefix, :light_black)
-        print(io, "Axis $d: $(_short_method_name(itp.methods[d]))")
-        extrap_d = itp.extraps[d]
-        if !(extrap_d isa NoExtrap)
-            print(io, " ")
-            _show_print(io, string(nameof(typeof(extrap_d))), :magenta)
+        print(io, "Axis $d: ")
+        _show_print(io, _short_method_name(m), :cyan)
+
+        if m isa NoInterp
+            # NoInterp: nothing more to show
+            d < N && println(io)
+        elseif !has_bc && !has_side
+            # Linear: extrap only (no BC)
+            println(io)
+            _show_print(io, indent, :light_black)
+            _show_print(io, "└─ ", :light_black)
+            _show_print(io, "Extrap: ", :light_black)
+            print(io, _format_extrap(e))
+            d < N && println(io)
+        else
+            # Cubic/Quadratic/Constant: extrap + BC/side
+            println(io)
+            _show_print(io, indent, :light_black)
+            _show_print(io, "├─ ", :light_black)
+            _show_print(io, "Extrap: ", :light_black)
+            println(io, _format_extrap(e))
+            _show_print(io, indent, :light_black)
+            _show_print(io, "└─ ", :light_black)
+            if has_bc
+                _show_print(io, "BC: ", :light_black)
+                print(io, _format_bc(m.bc))
+            else
+                _show_print(io, "Side: ", :light_black)
+                print(io, _format_side(m.side))
+            end
+            d < N && println(io)
         end
-        d < N && println(io)
     end
     return
 end

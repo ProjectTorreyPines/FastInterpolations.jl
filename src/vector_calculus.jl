@@ -63,6 +63,40 @@ See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`la
     end
 end
 
+# GridIdx query: dispatch to type-specific handler (e.g. NoInterp for TensorProductInterpolantND).
+# Defined at AbstractInterpolantND level to avoid dispatch ambiguity with the NTuple{N,Real} method above.
+@inline function gradient(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
+        hint = nothing,
+    ) where {Tg, Tv, N}
+    return _gradient_with_grididx(itp, query, hint)
+end
+
+# Generic GridIdx: convert GridIdx(k) → grids[d][k], then delegate to standard method.
+# GridIdx is purely an index-based query convenience — all derivatives are real.
+# TensorProductInterpolantND overrides this for NoInterp axes (where derivatives don't exist).
+@generated function _gradient_with_grididx(
+        itp::AbstractInterpolantND{Tg, Tv, N}, query::Q, hint,
+    ) where {Tg, Tv, N, Q}
+    grididx_dims = [d for d in 1:N if fieldtype(Q, d) <: GridIdx]
+    bounds_checks = [
+        :(
+                1 <= query[$d].idx <= length(itp.grids[$d]) ||
+                _throw_grididx_oob($d, query[$d].idx, length(itp.grids[$d]))
+            )
+            for d in grididx_dims
+    ]
+    real_query_exprs = [
+        d in grididx_dims ? :(@inbounds itp.grids[$d][query[$d].idx]) : :(query[$d])
+            for d in 1:N
+    ]
+    return quote
+        $(bounds_checks...)
+        return gradient(itp, ($(real_query_exprs...),); hint = hint)
+    end
+end
+
 # Vector API for compatibility with ForwardDiff patterns
 @inline function gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
@@ -302,6 +336,36 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
     end
 end
 
+# GridIdx query: dispatch to type-specific handler
+@inline function hessian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
+        hint = nothing,
+    ) where {Tg, Tv, N}
+    return _hessian_with_grididx(itp, query, hint)
+end
+
+@generated function _hessian_with_grididx(
+        itp::AbstractInterpolantND{Tg, Tv, N}, query::Q, hint,
+    ) where {Tg, Tv, N, Q}
+    grididx_dims = [d for d in 1:N if fieldtype(Q, d) <: GridIdx]
+    bounds_checks = [
+        :(
+                1 <= query[$d].idx <= length(itp.grids[$d]) ||
+                _throw_grididx_oob($d, query[$d].idx, length(itp.grids[$d]))
+            )
+            for d in grididx_dims
+    ]
+    real_query_exprs = [
+        d in grididx_dims ? :(@inbounds itp.grids[$d][query[$d].idx]) : :(query[$d])
+            for d in 1:N
+    ]
+    return quote
+        $(bounds_checks...)
+        return hessian(itp, ($(real_query_exprs...),); hint = hint)
+    end
+end
+
 # Vector API
 function hessian(
         itp::AbstractInterpolantND{Tg, Tv, N},
@@ -449,6 +513,36 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
         end
         cell = _locate_cell(itp, query, search, hint)
         return +($(deriv_calls...))
+    end
+end
+
+# GridIdx query: dispatch to type-specific handler
+@inline function laplacian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
+        hint = nothing,
+    ) where {Tg, Tv, N}
+    return _laplacian_with_grididx(itp, query, hint)
+end
+
+@generated function _laplacian_with_grididx(
+        itp::AbstractInterpolantND{Tg, Tv, N}, query::Q, hint,
+    ) where {Tg, Tv, N, Q}
+    grididx_dims = [d for d in 1:N if fieldtype(Q, d) <: GridIdx]
+    bounds_checks = [
+        :(
+                1 <= query[$d].idx <= length(itp.grids[$d]) ||
+                _throw_grididx_oob($d, query[$d].idx, length(itp.grids[$d]))
+            )
+            for d in grididx_dims
+    ]
+    real_query_exprs = [
+        d in grididx_dims ? :(@inbounds itp.grids[$d][query[$d].idx]) : :(query[$d])
+            for d in 1:N
+    ]
+    return quote
+        $(bounds_checks...)
+        return laplacian(itp, ($(real_query_exprs...),); hint = hint)
     end
 end
 

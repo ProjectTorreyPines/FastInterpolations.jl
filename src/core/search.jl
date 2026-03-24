@@ -915,6 +915,27 @@ end
 @inline search_interval(p::Searcher{DirectSearch, RefHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
     _search_direct!(x, spacing, xq, p.hint.idx)
 
+# --- GridIdx short-circuit (zero search cost) ---
+# GridIdx carries a pre-resolved index: skip search entirely, just return the interval.
+# Two variants: NoHint (stateless) and RefHint (updates persistent hint).
+
+@inline function search_interval(::Searcher{<:AbstractSearchPolicy, NoHint}, x::AbstractVector, xq::GridIdx)
+    idx = xq.idx
+    return idx, @inbounds(x[idx]), @inbounds(x[idx + 1])
+end
+
+@inline function search_interval(p::Searcher{<:AbstractSearchPolicy, RefHint}, x::AbstractVector, xq::GridIdx)
+    idx = xq.idx
+    p.hint.idx[] = idx
+    return idx, @inbounds(x[idx]), @inbounds(x[idx + 1])
+end
+
+# Spacing-aware variants: ignore spacing, delegate to 3-arg form above
+@inline search_interval(s::Searcher{<:AbstractSearchPolicy, NoHint}, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) =
+    search_interval(s, x, xq)
+@inline search_interval(s::Searcher{<:AbstractSearchPolicy, RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) =
+    search_interval(s, x, xq)
+
 # ========================================
 # 5. Internal Aliases (for module-internal use)
 # ========================================

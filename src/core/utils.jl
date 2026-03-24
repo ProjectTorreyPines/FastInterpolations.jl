@@ -309,6 +309,7 @@ ForwardDiff support is added via:
 ```
 """
 @inline _extract_primal(x) = x  # identity fallback; ForwardDiff ext specializes for Dual
+@inline _extract_primal(g::GridIdx) = g.val  # GridIdx: extract resolved coordinate value
 
 """
     _promote_for_anchor(xq::Tq, ::Type{Tg}) -> promoted_xq
@@ -363,6 +364,9 @@ end
 
 "No-op scalar domain check for non-NoExtrap modes (including InBounds)."
 @inline _check_domain(::AbstractVector, ::Real, ::AbstractExtrap) = nothing
+
+"GridIdx is in-domain by construction (bounds-checked at resolution time)."
+@inline _check_domain(::AbstractVector, ::GridIdx, ::AbstractExtrap) = nothing
 
 # ----------------------------------------
 # Vector domain checks: validate batch, return InBounds() for per-element elision.

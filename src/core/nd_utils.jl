@@ -65,7 +65,7 @@ Compile-time selective OOB check for FillExtrap axes only.
 Returns `false` at compile time when no axis has FillExtrap (dead-code eliminated).
 """
 @generated function _is_fill_oob(
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{ScalarCoord, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         extraps::E
     ) where {N, E <: Tuple{Vararg{AbstractExtrap, N}}}
@@ -98,7 +98,7 @@ Compile-time eliminated when no axis has FillExtrap.
 Accepts both scalar `ops::AbstractEvalOp` and tuple `ops::Tuple{Vararg{AbstractEvalOp}}`.
 """
 @generated function _try_fill_oob(
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{ScalarCoord, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         extraps::E,
         ops,
@@ -507,11 +507,14 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 @inline _extrap_axis(q, grid, extrap) = @inbounds _handle_axis_extrap(q, grid, extrap)
 
 @inline function _handle_all_extraps(
-        queries::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
+        queries::Tuple{Vararg{ScalarCoord, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
     return map(_extrap_axis, queries, grids, extraps)
 end
+
+# GridIdx passthrough: in-domain by construction, no extrapolation handling needed
+@inline _handle_axis_extrap(q::GridIdx, ::AbstractVector, ::AbstractExtrap) = q
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::NoExtrap)
     @boundscheck _check_domain(axis, q, NoExtrap())
@@ -564,7 +567,7 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 @inline _getR(r) = r[3]
 
 @inline function _search_all_intervals(
-        q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
+        q_evals::Tuple{Vararg{ScalarCoord, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}}
     ) where {N}
     results = map(_search_axis, q_evals, grids, spacings, searches)
@@ -586,7 +589,7 @@ Used by N=2 specializations that destructure manually.
 
 # Nothing hint → delegate to existing 4-arg (zero overhead)
 @inline function _search_all_intervals(
-        q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
+        q_evals::Tuple{Vararg{ScalarCoord, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         ::Nothing
     ) where {N}
@@ -595,7 +598,7 @@ end
 
 # Tuple hint → use 2-arg _to_searcher(policy, hint) per axis
 @inline function _search_all_intervals(
-        q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
+        q_evals::Tuple{Vararg{ScalarCoord, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}}
     ) where {N}
@@ -621,7 +624,7 @@ Returns `(x_eval, y_eval, ix, iy, xL, yL)` — the 6 raw values that each
 interpolant type then post-processes into its kernel-specific cell tuple.
 """
 @inline function _locate_cell_2d_preamble(
-        query::Tuple{Vararg{Real, 2}},
+        query::Tuple{Vararg{ScalarCoord, 2}},
         grids, spacings, extraps,
         search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
         hints
@@ -739,7 +742,7 @@ Returns tuples of: hs (cell widths), inv_hs (reciprocals), dLs (left deltas).
 Used by both CubicInterpolantND and QuadraticInterpolantND evaluation.
 """
 @inline function _compute_all_local_params(
-        q_evals::Tuple{Vararg{Real, N}},  # Allow heterogeneous/AD types (Dual)
+        q_evals::Tuple{Vararg{ScalarCoord, N}},  # Allow heterogeneous/AD types (Dual) and GridIdx
         spacings::Tuple{Vararg{AbstractGridSpacing, N}},  # Allow heterogeneous spacing types (VectorSpacing, ScalarSpacing)
         indices::NTuple{N, Int},
         Ls::Tuple{Vararg{Real, N}}  # Grid boundary (allow heterogeneous Real types)
@@ -751,7 +754,7 @@ Used by both CubicInterpolantND and QuadraticInterpolantND evaluation.
         @inbounds _get_inv_h(spacings[d], indices[d])
     end
     dLs = ntuple(Val(N)) do d
-        @inbounds q_evals[d] - Ls[d]
+        @inbounds scalar_value(q_evals[d]) - Ls[d]
     end
     return (hs, inv_hs, dLs)
 end

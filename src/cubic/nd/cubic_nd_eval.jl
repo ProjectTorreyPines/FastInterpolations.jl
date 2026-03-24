@@ -147,7 +147,7 @@ end
 
 # _varname, _partial_index, _corner_offset_expr → core/nd_utils.jl (shared with quadratic)
 @inline @generated function _eval_nd_cell(
-        partials::Array{Tv, NP1},
+        partials::AbstractArray{Tv, NP1},
         indices::NTuple{N, Int},
         hs::NTuple{N, Tg},
         inv_hs::NTuple{N, Tg},

@@ -1,133 +1,131 @@
 # Unified API: `interp` / `interp!`
 
-The `interp` function is a **unified entry point** for N-dimensional interpolation. It combines per-axis method specification with automatic optimization dispatch.
+`interp` is a **unified entry point** for N-dimensional interpolation with per-axis method control.
 
-## Why `interp`?
-
-Method-specific functions (`cubic_interp`, `linear_interp`, etc.) require the same method on all axes. `interp` removes this restriction:
-
-| API | Use Case |
-|:----|:---------|
-| `cubic_interp((x,y), data)` | All axes cubic (fastest, full feature set) |
-| `linear_interp((x,y), data)` | All axes linear |
-| `interp((x,y), data; method=CubicInterp())` | Same as `cubic_interp` (auto-dispatched) |
-| `interp((x,y), data; method=(CubicInterp(), LinearInterp()))` | **Mixed methods per axis** |
-
-When all axes use the same method, `interp` delegates to the existing optimized type (e.g., `CubicInterpolantND`). No performance penalty.
-
----
-
-## Interpolant Construction
-
-```julia
+```@example unified
 using FastInterpolations
 
 x = range(0.0, 2pi, 50)
 y = range(0.0, 1.0, 30)
 data = [sin(xi) * cos(yj) for xi in x, yj in y]
-
-# Single method broadcast to all axes
-itp = interp((x, y), data; method=CubicInterp())  # returns CubicInterpolantND
-
-# Per-axis methods
-itp = interp((x, y), data; method=(CubicInterp(), LinearInterp()))  # TensorProductInterpolantND
-
-# With per-axis BCs
-itp = interp((x, y), data; method=(CubicInterp(bc=ZeroCurvBC()), CubicInterp(bc=CubicFit())))
+nothing  # hide
 ```
 
-### Coefficient Strategy
+## Homogeneous Methods
 
-For heterogeneous methods, two build strategies are available:
+When all axes use the same method, `interp` delegates to the existing optimized type. No performance penalty — identical to calling `cubic_interp`, `linear_interp`, etc. directly.
 
-| Strategy | Build Cost | Eval Cost | When to Use |
-|:---------|:-----------|:----------|:------------|
-| `PreCompute()` (default) | O(n) | O(1) | Repeated queries on fixed data |
-| `OnTheFly()` | O(1) | O(n) | Few queries, or data changes frequently |
+```@example unified
+# These are equivalent:
+itp1 = cubic_interp((x, y), data)
+itp2 = interp((x, y), data; method=CubicInterp())
 
-```julia
-itp_fast = interp((x, y), data; method=(CubicInterp(), LinearInterp()), coeffs=PreCompute())
-itp_lazy = interp((x, y), data; method=(CubicInterp(), LinearInterp()), coeffs=OnTheFly())
+itp1((1.0, 0.5)) ≈ itp2((1.0, 0.5))
 ```
 
----
+A scalar `method` is broadcast to all axes.
 
-## One-Shot Evaluation
+## Heterogeneous Methods
 
-Evaluate directly from grids + data without constructing an interpolant. Uses pool-based memory management for **zero allocation** after warmup.
+Specify a tuple to use different methods per axis:
 
-### Scalar
-
-```julia
-val = interp((x, y), data, (0.5, 0.3); method=(CubicInterp(), LinearInterp()))
-```
-
-### Batch (Allocating)
-
-```julia
-queries = ([0.5, 1.0, 1.5], [0.2, 0.4, 0.6])  # SoA format
-vals = interp((x, y), data, queries; method=CubicInterp())
-```
-
-### Batch (In-Place)
-
-```julia
-output = zeros(3)
-interp!(output, (x, y), data, queries; method=CubicInterp())
-```
-
-Both SoA (`(xqs, yqs)`) and AoS (`[(x1,y1), (x2,y2), ...]`) query formats are supported.
-
----
-
-## Derivatives and Vector Calculus
-
-All derivative features work with `interp`-constructed interpolants:
-
-```julia
+```@example unified
 itp = interp((x, y), data; method=(CubicInterp(), LinearInterp()))
+itp((1.0, 0.5))
+```
 
-# Per-axis derivative specification
-itp((0.5, 0.3); deriv=(DerivOp(1), DerivOp(0)))  # df/dx
+All existing keywords (`extrap`, `search`, `deriv`, `hint`) work the same way — pass a scalar to broadcast or a tuple for per-axis control.
 
-# Vector calculus
-gradient(itp, (0.5, 0.3))   # (df/dx, df/dy)
-hessian(itp, (0.5, 0.3))    # 2x2 Hessian matrix
-laplacian(itp, (0.5, 0.3))  # d^2f/dx^2 + d^2f/dy^2
+```@example unified
+z = range(0.0, 5.0, 20)
+data3d = [sin(xi) * cos(yj) * exp(-zk) for xi in x, yj in y, zk in z]
 
-# One-shot derivative
-interp((x, y), data, (0.5, 0.3);
-    method=(CubicInterp(), LinearInterp()),
-    deriv=(DerivOp(1), DerivOp(0)))
+itp3d = interp((x, y, z), data3d;
+    method = (CubicInterp(bc=PeriodicBC()), QuadraticInterp(), LinearInterp()),
+    extrap = (WrapExtrap(), ClampExtrap(), NoExtrap()))
+itp3d((1.0, 0.5, 2.0))
 ```
 
 ---
 
-## Keyword Arguments
+## `NoInterp` and `GridIdx`: Discrete Axes
 
-All keywords follow the **singular name, tuple-or-scalar value** convention:
+Some axes represent discrete indices (ensemble member, vertical level, time snapshot) rather than continuous coordinates. `NoInterp()` skips interpolation on that axis — at build time and eval time.
 
-| Keyword | Type | Default | Description |
-|:--------|:-----|:--------|:------------|
-| `method` | `AbstractInterpMethod` or `Tuple` | *required* | Interpolation method per axis |
-| `coeffs` | `AbstractCoeffStrategy` | `PreCompute()` | Build strategy (constructor only) |
-| `extrap` | `AbstractExtrap` or `Tuple` | `NoExtrap()` | Extrapolation mode per axis |
-| `search` | `AbstractSearchPolicy` or `Tuple` | `AutoSearch()` | Search algorithm per axis |
-| `deriv` | `DerivOp` or `Tuple` | `EvalValue()` | Derivative order per axis (one-shot) |
-| `hint` | `Nothing` or `NTuple{N, RefValue{Int}}` | `nothing` | Persistent search hints (one-shot) |
+```@example unified
+# Axis 2 is discrete: no interpolation, queried by grid index
+itp_ni = interp((x, y), data; method=(CubicInterp(), NoInterp()))
 
-A scalar value is broadcast to all axes: `method=CubicInterp()` is equivalent to `method=(CubicInterp(), CubicInterp())` in 2D.
+# Query: real coordinate for interpolated axes, GridIdx(k) for discrete axes
+itp_ni((0.5, GridIdx(10)))
+```
+
+**`GridIdx(k)`** wraps an integer grid index. `NoInterp` axes must be queried with `GridIdx`; interpolated axes take real-valued coordinates as usual.
+
+```@example unified
+itp_ni(0.5, GridIdx(10))  # vararg form also works
+```
+
+### Why use `NoInterp`?
+
+- **One build, many slices**: build the interpolant once, vary the slice index at query time
+- **Dimension reduction**: the eval pipeline operates on fewer dimensions (e.g., 3D → 2D), reducing both compute and memory
+- **Skipped precomputation**: no tridiagonal solve or derivative storage on discrete axes
+
+```@example unified
+# 3D data: interpolate x+z, select y by index
+itp_3ni = interp((x, y, z), data3d;
+    method = (CubicInterp(), NoInterp(), LinearInterp()))
+
+# Loop over all y-slices — no rebuild
+[itp_3ni((1.0, GridIdx(k), 2.0)) for k in 1:5]
+```
+
+### Derivatives and Vector Calculus
+
+Derivatives on `NoInterp` axes return zero (the axis has no spatial interpolation). All other axes compute real derivatives:
+
+```@example unified
+itp_ni((0.5, GridIdx(10)); deriv=(DerivOp(1), DerivOp(0)))  # df/dx on the slice
+```
+
+```@example unified
+gradient(itp_ni, (0.5, GridIdx(10)))
+```
+
+```@example unified
+laplacian(itp_ni, (0.5, GridIdx(10)))
+```
+
+### One-Shot
+
+```@example unified
+interp((x, y), data, (0.5, GridIdx(10)); method=(CubicInterp(), NoInterp()))
+```
+
+### Batch Queries
+
+For batch evaluation with fixed `GridIdx` slices, use `interp_batch_grididx!`:
+
+```@example unified
+output = zeros(5)
+xq = collect(range(0.5, 5.0, 5))
+interp_batch_grididx!(output, (x, y), data, (xq, GridIdx(10));
+    method=(CubicInterp(), NoInterp()))
+output
+```
 
 ---
 
 ## Available Methods
 
-| Type | Constructor | Has BC? | Derivative Kernel |
-|:-----|:-----------|:--------|:------------------|
-| `CubicInterp(; bc=CubicFit())` | C2 cubic spline | Yes | Up to 3rd order |
-| `LinearInterp()` | C0 piecewise linear | No | 1st order (2nd+ = 0) |
-| `QuadraticInterp(; bc=Left(QuadraticFit()))` | C1 quadratic spline | Yes | Up to 2nd order |
-| `ConstantInterp(; side=NearestSide())` | Step function | No (side only) | Always 0 |
+| Method | Description | Derivative Order |
+|:-------|:-----------|:----------------|
+| `CubicInterp(; bc=CubicFit())` | C2 cubic spline | Up to 3rd |
+| `QuadraticInterp(; bc=...)` | C1 quadratic spline | Up to 2nd |
+| `LinearInterp()` | Piecewise linear | 1st (2nd+ = 0) |
+| `ConstantInterp(; side=NearestSide())` | Step function | Always 0 |
+| `NoInterp()` | Discrete axis — index-based, no interpolation | N/A |
 
 ---
 
@@ -138,36 +136,3 @@ Per-axis method mixing on a 6x7 non-uniform grid for $f(x,y) = \sin(2\pi x)\cos(
 ![Heterogeneous 2D Comparison](../images/hetero_2d_comparison.png)
 
 Linear x Linear (top-left) shows faceted cells. Adding cubic smoothing per axis progressively improves the result — Cubic x Cubic (bottom-right) captures the extrema accurately.
-
----
-
-## Examples
-
-### 3D Mixed Methods
-
-```julia
-x = range(0, 2pi, 40)
-y = range(0, 1, 20)
-z = range(0, 5, 30)
-data3d = [sin(xi) * yj^2 * exp(-zk) for xi in x, yj in y, zk in z]
-
-itp = interp((x, y, z), data3d;
-    method = (CubicInterp(bc=PeriodicBC()), QuadraticInterp(), LinearInterp()),
-    extrap = (WrapExtrap(), ClampExtrap(), NoExtrap()),
-)
-
-itp((1.0, 0.5, 2.0))
-gradient(itp, (1.0, 0.5, 2.0))
-```
-
-### Hot Loop with One-Shot
-
-```julia
-x, y = range(0, 1, 100), range(0, 1, 50)
-method = (CubicInterp(), LinearInterp())
-
-for t in 1:10_000
-    data = [f(xi, yj, t) for xi in x, yj in y]  # data changes each step
-    val = interp((x, y), data, (0.5, 0.3); method=method)  # zero-alloc
-end
-```

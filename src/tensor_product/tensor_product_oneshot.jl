@@ -268,6 +268,10 @@ function interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    # NoInterp axes require GridIdx queries, not plain Real values
+    if _has_nointerp_method(typeof(method_tuple))
+        _check_nointerp_needs_grididx(method_tuple, query)
+    end
     return _interp_nd_oneshot_dispatch(grids, data, query, method_tuple, deriv, extrap, search, hint)
 end
 

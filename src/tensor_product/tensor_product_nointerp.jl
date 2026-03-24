@@ -62,6 +62,31 @@ Keep only elements of `vals` at positions where `Q` has a `Real` (non-GridIdx) f
 end
 
 # ========================================
+# GridIdx → NoInterp Auto-Promotion (one-shot only)
+# ========================================
+# When all derivs are EvalValue, GridIdx axes need no interpolation —
+# pre-slicing at the grid point gives the exact value. Replacing the
+# method with NoInterp() triggers dimension reduction, avoiding the
+# full ND build (e.g., 3D cubic spline build → 1D: ~5000x speedup).
+
+"""
+    _promote_grididx_to_nointerp(methods, query) -> promoted_methods
+
+Replace methods at GridIdx query positions with `NoInterp()`.
+Compile-time: inspects query tuple field types, zero runtime cost.
+Returns `methods` unchanged if no GridIdx is present.
+"""
+@generated function _promote_grididx_to_nointerp(
+        methods::M, query::Q,
+    ) where {M <: Tuple, Q <: Tuple}
+    N = fieldcount(Q)
+    any_grididx = any(d -> fieldtype(Q, d) <: GridIdx, 1:N)
+    !any_grididx && return :(methods)
+    exprs = [fieldtype(Q, d) <: GridIdx ? :(NoInterp()) : :(methods[$d]) for d in 1:N]
+    return :(tuple($(exprs...)))
+end
+
+# ========================================
 # Validation Helpers
 # ========================================
 

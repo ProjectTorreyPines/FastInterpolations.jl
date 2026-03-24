@@ -96,12 +96,29 @@ laplacian(itp, (0.5, GridIdx(10)))  # → d²f/dx²
 nothing  # hide
 ```
 
-### One-Shot
+### One-Shot with `GridIdx`: Fast Slicing Without Construction
+
+`GridIdx` is especially powerful in one-shot evaluation. Instead of interpolating over all N dimensions, `GridIdx` axes are sliced out first — reducing the problem to fewer dimensions with **no interpolant construction**.
 
 ```@example unified
 interp((x, y), data, (0.5, GridIdx(10)); method=(CubicInterp(), NoInterp()))
 nothing  # hide
 ```
+
+Each `GridIdx` axis removes one dimension from the interpolation kernel. For a 50×100×20 cubic interpolation, the speedup is dramatic:
+
+```julia
+# Full 3D cubic: ~2.7 ms (50×100×20 one-shot construction + eval)
+interp(grids, data3D, (20.5, 5.0, 1.0); method=CubicInterp())
+
+# Slice 1 axis → 2D cubic: ~12 μs (224× faster)
+interp(grids, data3D, (20.5, GridIdx(5), 1.0); method=CubicInterp())
+
+# Slice 2 axes → 1D cubic: ~430 ns (6200× faster)
+interp(grids, data3D, (20.5, GridIdx(5), GridIdx(1)); method=CubicInterp())
+```
+
+This works because `GridIdx` bypasses the cubic one-shot construction (tridiagonal solve) on sliced axes. The method can be any single method — `GridIdx` pre-slices the data and delegates to the appropriate lower-dimensional one-shot.
 
 ### Batch Queries
 

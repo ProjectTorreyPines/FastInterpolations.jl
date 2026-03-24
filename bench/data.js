@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1774262339759,
+  "lastUpdate": 1774356536210,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -33814,6 +33814,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1657,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1120e31839188ceb084bd77d43c36c3e28d1bdeb",
+          "message": "(feat): Add `NoInterp()` and `GridIdx` for per-axis discrete slicing (#92)\n\n* Add `GridIdx` and `NoInterp` types for per-axis interpolation control (#55)\n\nIntroduce two independent types for discrete-axis support:\n- `GridIdx(k)`: query-time wrapper meaning \"slice at grid index k\"\n- `NoInterp <: AbstractInterpMethod`: build-time signal to skip differentiation\n\nAlso adds build traits (`_deriv_size`, `_is_deriv_method`) and exports.\n\n* Implement NoInterp one-shot + interpolant eval via pre-slice strategy (#55)\n\nCore implementation of NoInterp/GridIdx support:\n\nOne-shot: @generated `_slice_grididx` pre-slices data at GridIdx positions,\n`_filter_real_axes` reduces all per-axis tuples, then delegates to existing\nreduced-dim `interp()`. Works with any method, not just NoInterp.\n\nInterpolant: NoInterp axes have `_deriv_size=1` so existing build code skips\ndifferentiation. At eval time, `_eval_nointerp` (@generated) slices the\npartials array at GridIdx positions → reduced-dim `_eval_hetero_nd_cell`.\nOnly change to kernel: `Array{Tv,NP1}` → `AbstractArray{Tv,NP1}` (1 line).\n\nAlso adds: validation helpers, `_override_nointerp_config` for build-time\nextrap/search override, and 52 tests covering correctness (2D/3D/multi-axis),\ntype inference, derivatives, error handling, and PreCompute/OnTheFly paths.\n\n* Fix code review issues: bounds safety, dead code, test gaps\n\n- Add GridIdx bounds checks in `_eval_nointerp` before `@inbounds` slicing\n  (prevents silent OOB memory access on interpolant path)\n- Change `_throw_grididx_oob` from BoundsError to ArgumentError\n  (BoundsError with String arg was semantically incorrect)\n- Remove dead code: `_call_with_grididx`, `_has_grididx`\n- Add tests: OOB GridIdx on interpolant (PreCompute, OnTheFly, All-NoInterp),\n  Float32 support, zero-allocation verification\n\n* Fix show() crash for NoInterp, fix docstring examples to use tuple form\n\n- Add `_short_method_name(::NoInterp) = \"NoInterp\"` to prevent MethodError\n  when displaying TensorProductInterpolantND with NoInterp axes\n- Fix docstring examples: vararg `itp(0.5, GridIdx(5))` → tuple `itp((0.5, GridIdx(5)))`\n  (GridIdx is not <: Real, so vararg form is not dispatched)\n- Document gradient/hessian limitation for NoInterp in the NoInterp docstring\n\n* Add vararg callable, gradient/hessian/laplacian, and batch API for NoInterp\n\n- Vararg callable: `itp(0.5, GridIdx(5))` now works via\n  `Vararg{Union{Real, GridIdx}, N}` (no dispatch ambiguity with Real)\n- gradient/hessian/laplacian: @generated methods on TensorProductInterpolantND\n  with NoInterp axes. Uses _eval_nointerp per derivative component,\n  zero-fills NoInterp positions. Hessian zeros NoInterp rows/columns.\n- Disambiguation methods for TensorProductInterpolantND + NTuple{N,Real} resolve\n  Aqua.jl ambiguity between (AbstractInterpolantND, Real) and (TensorProduct, Union)\n- Batch: `interp_batch_grididx!` pre-slices data once at GridIdx positions,\n  delegates to existing reduced-dim `interp!` for the loop.\n- Update NoInterp docstring to reflect resolved limitations.\n- 12 new tests covering vararg, gradient, hessian, laplacian, and batch paths.\n\n* Fix 5 correctness issues found by Codex review\n\n- P1: DerivOp on NoInterp axis now returns 0 (interpolant + one-shot)\n  Was silently dropping the deriv op and returning the value instead\n- P1: OnTheFly + FillExtrap OOB now returns fill value correctly\n  Was missing _validate_nd_domain/_try_fill_oob in OnTheFly branch\n- P2: search=BinarySearch() scalar no longer crashes\n  Was forwarding raw scalar to _eval_nointerp; now normalizes via _resolve_search_nd\n- P2: Singleton NoInterp grid (1 point) now constructible\n  Was rejected by _validate_nd_grids 2-point minimum; added _validate_nd_grids_nointerp\n- P1: One-shot deriv on GridIdx axis returns 0 via _any_grididx_has_nonzero_deriv guard\n- 9 regression tests covering all 5 fixes\n\n* Fix 6 edge cases: domain ordering, batch deriv, laplacian validation, etc.\n\n- Domain check before deriv zero: OOB Real axis + NoInterp deriv now raises\n  DomainError instead of silently returning 0\n- Batch deriv on GridIdx axis: interp_batch_grididx! now zeros output when\n  any GridIdx axis has non-zero deriv (was returning interpolated values)\n- All-NoInterp laplacian: validates query + bounds before returning 0\n  (was skipping all validation)\n- Empty batch: early return for zero-length queries (was BoundsError)\n- Type promotion: zero returns use promote_type(Tg, Tv, query_types...)\n  instead of 0 * _zero_ref(itp) (was returning Float32 for Float64 queries)\n- 5 regression tests for the edge cases\n\n* Fix 3 bugs, fill testing gaps, remove dead code\n\nBugs fixed:\n- Batch deriv-zero path skipped domain validation (OOB silently returned zeros)\n- All-NoInterp laplacian returned wrong type (Float32 instead of promoted Float64)\n- Stale docstring on _build_grididx_template\n\nRefactoring:\n- Remove dead _has_grididx_in_batch function\n- Merge _interp_batch_grididx! wrapper into interp_batch_grididx! (identical sigs)\n\nNew tests (testsets 20-31, +55 assertions):\n- Batch OOB + deriv zero regression, all-NoInterp gradient/hessian\n- Type inference for gradient/laplacian, batch FillExtrap\n- QuadraticInterp/ConstantInterp × NoInterp, OnTheFly vector calculus\n- 3D hessian mixed-partial correctness, ClampExtrap × NoInterp\n- show() for NoInterp interpolant, multi-GridIdx batch, deriv+FillExtrap edge\n\n* Lift GridIdx vector calculus to AbstractInterpolantND, eliminate disambiguators\n\nRefactoring:\n- Move gradient/hessian/laplacian Union{Real,GridIdx} methods from\n  TensorProductInterpolantND to AbstractInterpolantND level in vector_calculus.jl\n- Eliminates 3 x 25-line disambiguating @generated methods (dispatch ambiguity gone)\n- Generic _*_with_grididx: converts GridIdx(k) → grids[d][k], delegates to standard\n  method — all derivatives are real (GridIdx = index-based query, not discrete axis)\n- TensorProductInterpolantND overrides via _gradient_nointerp/_hessian_nointerp/\n  _laplacian_nointerp for the optimized pre-slice path (NoInterp axes → zero deriv)\n\nNew capability:\n- CubicInterpolantND, LinearInterpolantND, QuadraticInterpolantND now accept\n  GridIdx in gradient/hessian/laplacian (full real derivatives at grid point)\n\nTests:\n- 6 new testsets in test_gradient_hessian.jl: GridIdx on Cubic/Linear/Quadratic,\n  hessian, laplacian, OOB bounds checking\n\n* Widen _eval_nd_cell to AbstractArray, rewrite unified API docs with @example\n\nBug fix:\n- _eval_nd_cell: Array{Tv,NP1} → AbstractArray{Tv,NP1} so GridIdx one-shot\n  path works (pre-slice produces SubArray view, not dense Array)\n\nDocs:\n- Rewrite docs/src/nd/unified_api.md: simpler structure, drop coeffs section,\n  add NoInterp/GridIdx section with executable @example blocks\n- All @example blocks verified via Documenter build\n\n* Add NoInterp, GridIdx, interp_batch_grididx! to API docs\n\n* Fix Copilot review issues: kwargs type safety, hint forwarding, batch crash\n\nFixes from PR #92 Copilot review (all 7 valid):\n- Constrain deriv/extrap/search tuple kwargs to length N (one-shot + batch)\n- Forward hint filtered to Real axes in one-shot, batch, and @generated\n  _eval_nointerp (PreCompute + OnTheFly paths)\n- Guard all-GridIdx batch: early return before _query_length(()) crash\n- Docs: add nothing #hide to all @example blocks for clean output\n\n* Route GridIdx batch queries through standard interp! API\n\n- interp! now detects GridIdx in queries and delegates to\n  interp_batch_grididx! automatically — no separate API needed\n- Docs: use interp! for batch GridIdx examples, clean up variable names\n\n* Improve TensorProductInterpolantND show, unify batch API, clean up exports\n\nShow:\n- Per-axis detail: method + extrap + BC (where applicable)\n- Linear: extrap only (no BC line)\n- NoInterp: method name only (no extrap/BC)\n- Fix tree indentation alignment\n\nAPI cleanup:\n- Remove interp_batch_grididx! from exports (use interp! instead)\n- Update tests: interp_batch_grididx! → interp!\n- Update docs/api/types.md\n\n* Fix PeriodicBC auto-enforce WrapExtrap for TensorProductInterpolantND\n\nBoth _build_tensor_product_nd and _build_tensor_product_precomputed\npassed bcs=nothing to _resolve_extrap_nd, bypassing the automatic\nPeriodicBC → WrapExtrap enforcement. Now extracts BCs from methods\nvia _bc_for_periodic_check before resolving extraps.\n\nBefore: interp((x,y), data; method=(LinearInterp(), CubicInterp(bc=PeriodicBC())))\n        → ArgumentError \"PeriodicBC requires WrapExtrap\"\nAfter:  → auto-enforces WrapExtrap on axis 2\n\n* Add clear error when Real value is passed to NoInterp axis\n\nBefore: cryptic MethodError on _handle_axis_extrap(::Float64, ..., ::InBounds)\nAfter:  ArgumentError \"Axis 2 uses NoInterp but query provides Real; use GridIdx(k)\"\n\nCheck runs at the all-Real callable entry point via _check_nointerp_needs_grididx.\n\n* Add GridIdx callable for all AbstractInterpolantND types\n\nGridIdx queries now work on CubicInterpolantND, LinearInterpolantND, etc.\nvia generic Union{Real, GridIdx} callable at AbstractInterpolantND level.\nConverts GridIdx(k) → grids[d][k] at the entry point, then delegates to\nthe standard NTuple{N,Real} callable. TensorProductInterpolantND's more\nspecific method still takes priority for NoInterp optimization.\n\n* Add NoInterp+Real guard to one-shot interp entry point\n\n* Docs: highlight GridIdx one-shot slicing performance in unified API\n\n* Docs: reorder GridIdx before NoInterp, clarify general vs discrete usage\n\n* Docs: rename GridIdx section to Fast Axis Slicing, streamline examples\n\n* Fix show test: per-axis detail now displays all extraps including NoExtrap\n\n* Add 11 tests to fill coverage gaps from Codecov report",
+          "timestamp": "2026-03-24T05:40:57-07:00",
+          "tree_id": "280756533441760293e15a4e03b3dc52d293cd14",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/1120e31839188ceb084bd77d43c36c3e28d1bdeb"
+        },
+        "date": 1774356530660,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 37380,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 607.12,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 356225,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1663.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1577.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 15.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 11.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3319.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=272\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 32.46,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 18.53,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4232.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4220.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9458.44,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3224.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 448.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 61647,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1313.46,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12671.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 17.83,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 443.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 42621.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 22.65,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 18695.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 33.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 265.79,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.11,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 197.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 18583.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.52,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 582.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4363.94,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 39620.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 1048.96,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 2026.18,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2563.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11793.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3479.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 37363.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 1005.28,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 367125.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1659.1,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

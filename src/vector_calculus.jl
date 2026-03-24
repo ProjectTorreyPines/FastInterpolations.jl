@@ -291,7 +291,7 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
-        Tq = promote_type(eltype(query_r), $Tg, $Tv)
+        Tq = promote_type(eltype(map(float, query_r)), $Tg, $Tv)
         H = Matrix{Tq}(undef, $N, $N)
         search = _resolve_search_nd(itp.searches, Val($N), query_r)
         if _is_fill_oob(query_r, itp.grids, itp.extraps)

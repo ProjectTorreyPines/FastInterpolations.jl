@@ -1222,4 +1222,189 @@ using FastInterpolations
         ref = itp_mix((x[15], GridIdx(10), z[5]))
         @test val ≈ ref rtol = 1.0e-14
     end
+
+    # ========================================
+    # 41. Tuple-deriv auto-promotion (Gap 1)
+    # ========================================
+    # _all_eval_value must accept both scalar EvalValue() and tuple of EvalValue().
+    # Both forms should trigger GridIdx → NoInterp auto-promotion in one-shot path.
+    @testset "Auto-promotion: tuple deriv (EvalValue(), EvalValue())" begin
+        # One-shot with explicit tuple of all-EvalValue — should match scalar default
+        val_scalar = interp(
+            (x, y), data_2d, (qx, GridIdx(5));
+            method = (CubicInterp(), CubicInterp()), deriv = EvalValue()
+        )
+        val_tuple = interp(
+            (x, y), data_2d, (qx, GridIdx(5));
+            method = (CubicInterp(), CubicInterp()), deriv = (EvalValue(), EvalValue())
+        )
+        @test val_scalar ≈ val_tuple rtol = 1.0e-14
+        # Reference: GridIdx(5) → y[5], both should match full 2D eval
+        ref = interp(
+            (x, y), data_2d, (qx, y[5]);
+            method = (CubicInterp(), CubicInterp())
+        )
+        @test val_tuple ≈ ref rtol = 1.0e-14
+    end
+
+    @testset "Auto-promotion: tuple deriv with non-EvalValue skips promotion" begin
+        # deriv=(DerivOp(1), EvalValue()) — NOT all EvalValue → no auto-promotion
+        # GridIdx on axis 2 with CubicInterp should still work (search short-circuit)
+        val = interp(
+            (x, y), data_2d, (qx, GridIdx(5));
+            method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(1), EvalValue())
+        )
+        ref = interp(
+            (x, y), data_2d, (qx, y[5]);
+            method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(1), EvalValue())
+        )
+        @test val ≈ ref rtol = 1.0e-14
+    end
+
+    @testset "Auto-promotion: scalar DerivOp(1) skips promotion" begin
+        # Scalar deriv (not tuple) — _all_eval_value(::DerivOp) = false
+        # GridIdx on non-NoInterp axis → search short-circuit, no auto-promotion
+        val = interp(
+            (x, y), data_2d, (qx, GridIdx(5));
+            method = (CubicInterp(), CubicInterp()), deriv = DerivOp(1)
+        )
+        ref = interp(
+            (x, y), data_2d, (qx, y[5]);
+            method = (CubicInterp(), CubicInterp()), deriv = DerivOp(1)
+        )
+        @test val ≈ ref rtol = 1.0e-14
+    end
+
+    # ========================================
+    # 42. Float32 grids + GridIdx resolution (Gap 2)
+    # ========================================
+    @testset "Float32: GridIdx resolves to GridIdx{Float32}" begin
+        x32 = range(0.0f0, Float32(2π), 30)
+        y32 = range(0.0f0, Float32(π), 25)
+        data32 = Float32[sin(xi) * cos(yj) for xi in x32, yj in y32]
+        # Bare GridIdx has Float64 NaN sentinel; after resolution, val should be Float32
+        resolved = FastInterpolations._resolve_grididx(GridIdx(5), y32)
+        @test resolved isa FastInterpolations.GridIdx{Float32}
+        @test resolved.val == y32[5]
+        @test resolved.val isa Float32
+        # Full pipeline: Float32 grid + GridIdx → Float32 result
+        itp32 = interp((x32, y32), data32; method = (CubicInterp(), NoInterp()))
+        val = itp32((1.7f0, GridIdx(10)))
+        @test val isa Float32
+        ref = cubic_interp(x32, data32[:, 10], 1.7f0)
+        @test val ≈ ref rtol = 1.0f-5
+    end
+
+    @testset "Float32: one-shot GridIdx on non-NoInterp axis" begin
+        x32 = range(0.0f0, Float32(2π), 30)
+        y32 = range(0.0f0, Float32(π), 25)
+        data32 = Float32[sin(xi) * cos(yj) for xi in x32, yj in y32]
+        val = interp(
+            (x32, y32), data32, (1.7f0, GridIdx(10));
+            method = (CubicInterp(), CubicInterp())
+        )
+        ref = interp(
+            (x32, y32), data32, (1.7f0, y32[10]);
+            method = (CubicInterp(), CubicInterp())
+        )
+        @test val ≈ ref rtol = 1.0f-5
+        @test val isa Float32
+    end
+
+    # ========================================
+    # 43. Unresolved GridIdx arithmetic (Gap 3)
+    # ========================================
+    @testset "Unresolved GridIdx: NaN sentinel" begin
+        g = GridIdx(5)
+        # Before resolution, val is NaN (poison sentinel)
+        @test isnan(convert(Float64, g))
+        @test isnan(float(g))
+        @test isnan(Float64(g))
+        # After resolution, val is valid
+        resolved = FastInterpolations._resolve_grididx(g, x)
+        @test !isnan(convert(Float64, resolved))
+        @test convert(Float64, resolved) ≈ x[5]
+    end
+
+    # ========================================
+    # 44. ForwardDiff AD + GridIdx (Gap 4)
+    # ========================================
+    @testset "ForwardDiff: Dual + GridIdx in same query (interpolant)" begin
+        ForwardDiff = Base.require(Base.PkgId(
+            Base.UUID("f6369f11-7733-5829-9624-2563aa707210"), "ForwardDiff"
+        ))
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        # Differentiate w.r.t. Real axis (axis 1) while NoInterp axis uses GridIdx
+        df = ForwardDiff.derivative(t -> itp((t, GridIdx(10))), qx)
+        ref = cubic_interp(x, data_2d[:, 10], qx; deriv = DerivOp(1))
+        @test df ≈ ref rtol = 1.0e-10
+    end
+
+    @testset "ForwardDiff: Dual + GridIdx on non-NoInterp axis" begin
+        ForwardDiff = Base.require(Base.PkgId(
+            Base.UUID("f6369f11-7733-5829-9624-2563aa707210"), "ForwardDiff"
+        ))
+        # TensorProduct with Cubic×Linear, GridIdx on axis 2 (not NoInterp)
+        itp_h = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
+        df_grididx = ForwardDiff.derivative(t -> itp_h((t, GridIdx(10))), qx)
+        df_real = ForwardDiff.derivative(t -> itp_h((t, y[10])), qx)
+        @test df_grididx ≈ df_real rtol = 1.0e-12
+    end
+
+    # ========================================
+    # 45. Batch interp! with GridIdx correctness (Gap 5)
+    # ========================================
+    @testset "Batch interp!: GridIdx on non-NoInterp axis" begin
+        # interp! with GridIdx in batch queries (no NoInterp method)
+        xq_b = collect(range(0.5, 5.0, 20))
+        out = zeros(20)
+        interp!(
+            out, (x, y), data_2d, (xq_b, GridIdx(5));
+            method = (CubicInterp(), NoInterp())
+        )
+        ref = [cubic_interp(x, data_2d[:, 5], xqi) for xqi in xq_b]
+        @test out ≈ ref rtol = 1.0e-14
+    end
+
+    @testset "Batch interp!: GridIdx with CubicInterp (no NoInterp)" begin
+        # Both axes are CubicInterp, GridIdx on axis 2 — batch path correctness
+        xq_b = collect(range(0.5, 5.0, 15))
+        out = zeros(15)
+        interp!(
+            out, (x, y), data_2d, (xq_b, GridIdx(10));
+            method = (CubicInterp(), CubicInterp())
+        )
+        ref = [interp((x, y), data_2d, (xqi, y[10]); method = (CubicInterp(), CubicInterp())) for xqi in xq_b]
+        @test out ≈ ref rtol = 1.0e-14
+    end
+
+    # ========================================
+    # 46. Laplacian with GridIdx (Gap 6)
+    # ========================================
+    @testset "laplacian: Cubic×NoInterp 2D correctness" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        L = laplacian(itp, (qx, GridIdx(5)))
+        # Laplacian = sum of 2nd derivs; NoInterp axis contributes 0
+        ref_d2 = cubic_interp(x, data_2d[:, 5], qx; deriv = DerivOp(2))
+        @test L ≈ ref_d2 rtol = 1.0e-10
+    end
+
+    @testset "laplacian: 3D Cubic×NoInterp×Linear" begin
+        itp3 = interp(
+            (x, y, z), data_3d;
+            method = (CubicInterp(), NoInterp(), LinearInterp())
+        )
+        L = laplacian(itp3, (qx, GridIdx(10), qz))
+        # Laplacian = ∂²f/∂x² + 0 (NoInterp) + ∂²f/∂z²
+        # Linear 2nd deriv is zero, so laplacian = just ∂²f/∂x²
+        ref = itp3((qx, GridIdx(10), qz); deriv = (DerivOp(2), DerivOp(0), DerivOp(0)))
+        @test L ≈ ref rtol = 1.0e-10
+    end
+
+    @testset "laplacian: non-NoInterp with GridIdx (generic path)" begin
+        itp_c = cubic_interp((x, y), data_2d)
+        L_grididx = laplacian(itp_c, (qx, GridIdx(10)))
+        L_real = laplacian(itp_c, (qx, y[10]))
+        @test L_grididx ≈ L_real rtol = 1.0e-14
+    end
 end

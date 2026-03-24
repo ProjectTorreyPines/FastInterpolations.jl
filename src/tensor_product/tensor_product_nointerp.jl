@@ -150,18 +150,6 @@ No-op when `hint === nothing`. Used by one-shot and batch paths.
     end
 end
 
-# _convert_non_nointerp_grididx, _check_nointerp_needs_grididx, _eval_grididx_resolved
-# removed: GridIdx <: Real makes Union dispatch unnecessary.
-# NoInterp validation uses _validate_nointerp_grididx (fieldtype check) instead.
-
-@noinline _throw_grididx_on_interp_axis(d, method) =
-    throw(
-    ArgumentError(
-        "Axis $d uses $method but query provides GridIdx; " *
-            "GridIdx is only valid for NoInterp axes in interpolant queries"
-    )
-)
-
 """
     _validate_grididx_query_oneshot(query, data)
 

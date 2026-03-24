@@ -390,12 +390,12 @@ using FastInterpolations
     end
 
     # ========================================
-    # 14. Batch interp_batch_grididx!
+    # 14. Batch interp!
     # ========================================
-    @testset "Batch: interp_batch_grididx! 2D" begin
+    @testset "Batch: interp! 2D" begin
         xq_batch = collect(range(0.5, 5.0, 50))
         output = zeros(50)
-        interp_batch_grididx!(
+        interp!(
             output, (x, y), data_2d, (xq_batch, GridIdx(5));
             method = (CubicInterp(), NoInterp())
         )
@@ -403,11 +403,11 @@ using FastInterpolations
         @test output ≈ ref rtol = 1.0e-14
     end
 
-    @testset "Batch: interp_batch_grididx! 3D" begin
+    @testset "Batch: interp! 3D" begin
         xq_batch = collect(range(0.5, 5.0, 30))
         zq_batch = collect(range(0.1, 0.9, 30))
         output = zeros(30)
-        interp_batch_grididx!(
+        interp!(
             output, (x, y, z), data_3d, (xq_batch, GridIdx(10), zq_batch);
             method = (CubicInterp(), NoInterp(), LinearInterp())
         )
@@ -487,7 +487,7 @@ using FastInterpolations
     @testset "Edge: batch deriv on GridIdx axis → zeros" begin
         xq_b = collect(range(0.5, 5.0, 10))
         out = zeros(10)
-        interp_batch_grididx!(
+        interp!(
             out, (x, y), data_2d, (xq_b, GridIdx(5));
             method = (CubicInterp(), NoInterp()), deriv = (DerivOp(0), DerivOp(1))
         )
@@ -501,7 +501,7 @@ using FastInterpolations
 
     @testset "Edge: empty batch" begin
         out = Float64[]
-        interp_batch_grididx!(
+        interp!(
             out, (x, y), data_2d, (Float64[], GridIdx(5));
             method = (CubicInterp(), NoInterp())
         )
@@ -528,7 +528,7 @@ using FastInterpolations
     # ========================================
     @testset "Edge: batch OOB Real axis + NoInterp deriv → DomainError (not zeros)" begin
         out = zeros(1)
-        @test_throws DomainError interp_batch_grididx!(
+        @test_throws DomainError interp!(
             out, (x, y), data_2d, ([99.0], GridIdx(5));
             method = (CubicInterp(), NoInterp()), deriv = (DerivOp(0), DerivOp(1))
         )
@@ -570,7 +570,7 @@ using FastInterpolations
     @testset "Batch: FillExtrap with GridIdx" begin
         xq_b = collect(range(-1.0, 10.0, 20))  # some OOB
         out = zeros(20)
-        interp_batch_grididx!(
+        interp!(
             out, (x, y), data_2d, (xq_b, GridIdx(5));
             method = (CubicInterp(), NoInterp()), extrap = (FillExtrap(-99.0), NoExtrap())
         )
@@ -740,7 +740,7 @@ using FastInterpolations
         # (NoInterp, NoInterp, Cubic) → batch over z axis only
         zq_batch = collect(range(0.1, 0.9, 20))
         out = zeros(20)
-        interp_batch_grididx!(
+        interp!(
             out, (x, y, z), data_3d, (GridIdx(5), GridIdx(10), zq_batch);
             method = (NoInterp(), NoInterp(), CubicInterp())
         )

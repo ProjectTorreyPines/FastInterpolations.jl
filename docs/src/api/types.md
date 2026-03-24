@@ -38,7 +38,6 @@ NoInterp
 GridIdx
 interp
 interp!
-interp_batch_grididx!
 ```
 
 ### Type Accessors

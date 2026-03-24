@@ -785,4 +785,92 @@ using FastInterpolations
             # NoExtrap() default → DomainError on OOB Real axis
         )
     end
+
+    # ========================================
+    # 32. Coverage gap tests
+    # ========================================
+
+    @testset "Coverage: GridIdx callable on CubicInterpolantND" begin
+        itp_c = cubic_interp((x, y), data_2d)
+        # Tuple form
+        val = itp_c((qx, GridIdx(10)))
+        ref = itp_c((qx, y[10]))
+        @test val ≈ ref rtol = 1.0e-14
+        # Vararg form
+        @test itp_c(qx, GridIdx(10)) ≈ ref rtol = 1.0e-14
+    end
+
+    @testset "Coverage: GridIdx callable on LinearInterpolantND" begin
+        itp_l = linear_interp((x, y), data_2d)
+        val = itp_l((qx, GridIdx(10)))
+        ref = itp_l((qx, y[10]))
+        @test val ≈ ref rtol = 1.0e-14
+    end
+
+    @testset "Coverage: All-NoInterp OnTheFly pure lookup" begin
+        itp = interp((x, y), data_2d; method = (NoInterp(), NoInterp()), coeffs = OnTheFly())
+        @test itp((GridIdx(3), GridIdx(7))) == data_2d[3, 7]
+    end
+
+    @testset "Coverage: All-GridIdx one-shot with deriv → zero" begin
+        val = interp(
+            (x, y), data_2d, (GridIdx(3), GridIdx(7));
+            method = (NoInterp(), NoInterp()), deriv = (DerivOp(1), DerivOp(0))
+        )
+        @test val == 0.0
+    end
+
+    @testset "Coverage: All-GridIdx batch early return" begin
+        out = [0.0]
+        interp!(
+            out, (x, y), data_2d, (GridIdx(3), GridIdx(7));
+            method = (NoInterp(), NoInterp())
+        )
+        @test out == [0.0]  # returned unchanged (no Real axes to batch)
+    end
+
+    @testset "Coverage: Invalid query element type in one-shot" begin
+        @test_throws ArgumentError interp(
+            (x, y), data_2d, (qx, "not_a_number");
+            method = (CubicInterp(), NoInterp())
+        )
+    end
+
+    @testset "Coverage: One-shot NoInterp guard (all-Real query + NoInterp method)" begin
+        @test_throws ArgumentError interp(
+            (x, y), data_2d, (qx, qy);
+            method = (CubicInterp(), NoInterp())
+        )
+    end
+
+    @testset "Coverage: show NoInterp on non-last axis" begin
+        itp = interp((x, y), data_2d; method = (NoInterp(), CubicInterp()))
+        s = sprint(show, MIME("text/plain"), itp)
+        @test occursin("Axis 1: NoInterp", s)
+        @test occursin("Axis 2: Cubic", s)
+        @test occursin("BC: CubicFit", s)
+    end
+
+    @testset "Coverage: show ConstantInterp side in TensorProduct" begin
+        itp = interp((x, y), data_2d; method = (ConstantInterp(), NoInterp()))
+        s = sprint(show, MIME("text/plain"), itp)
+        @test occursin("Side:", s)
+        @test occursin("NearestSide", s)
+    end
+
+    @testset "Coverage: NoInterp grid/data dimension mismatch" begin
+        bad_data = rand(29, 25)  # x has 30 points, data has 29
+        @test_throws DimensionMismatch interp(
+            (x, y), bad_data; method = (CubicInterp(), NoInterp())
+        )
+    end
+
+    @testset "Coverage: Non-NoInterp axis with 1-point grid (NoInterp sibling)" begin
+        tiny_grid = [0.0]
+        big_data = rand(1, 25)
+        # Axis 1 has 1 point but is NOT NoInterp → should error
+        @test_throws ArgumentError interp(
+            (tiny_grid, y), big_data; method = (CubicInterp(), NoInterp())
+        )
+    end
 end

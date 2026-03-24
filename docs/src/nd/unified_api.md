@@ -21,6 +21,7 @@ itp1 = cubic_interp((x, y), data)
 itp2 = interp((x, y), data; method=CubicInterp())
 
 itp1((1.0, 0.5)) ≈ itp2((1.0, 0.5))
+nothing  # hide
 ```
 
 A scalar `method` is broadcast to all axes.
@@ -32,6 +33,7 @@ Specify a tuple to use different methods per axis:
 ```@example unified
 itp = interp((x, y), data; method=(CubicInterp(), LinearInterp()))
 itp((1.0, 0.5))
+nothing  # hide
 ```
 
 All existing keywords (`extrap`, `search`, `deriv`, `hint`) work the same way — pass a scalar to broadcast or a tuple for per-axis control.
@@ -44,6 +46,7 @@ itp3d = interp((x, y, z), data3d;
     method = (CubicInterp(bc=PeriodicBC()), QuadraticInterp(), LinearInterp()),
     extrap = (WrapExtrap(), ClampExtrap(), NoExtrap()))
 itp3d((1.0, 0.5, 2.0))
+nothing  # hide
 ```
 
 ---
@@ -58,13 +61,11 @@ itp_ni = interp((x, y), data; method=(CubicInterp(), NoInterp()))
 
 # Query: real coordinate for interpolated axes, GridIdx(k) for discrete axes
 itp_ni((0.5, GridIdx(10)))
+itp_ni(0.5, GridIdx(10))  # vararg form also works
+nothing  # hide
 ```
 
 **`GridIdx(k)`** wraps an integer grid index. `NoInterp` axes must be queried with `GridIdx`; interpolated axes take real-valued coordinates as usual.
-
-```@example unified
-itp_ni(0.5, GridIdx(10))  # vararg form also works
-```
 
 ### Why use `NoInterp`?
 
@@ -78,7 +79,10 @@ itp_3ni = interp((x, y, z), data3d;
     method = (CubicInterp(), NoInterp(), LinearInterp()))
 
 # Loop over all y-slices — no rebuild
-[itp_3ni((1.0, GridIdx(k), 2.0)) for k in 1:5]
+for k in 1:5
+    itp_3ni((1.0, GridIdx(k), 2.0))
+end
+nothing  # hide
 ```
 
 ### Derivatives and Vector Calculus
@@ -87,20 +91,16 @@ Derivatives on `NoInterp` axes return zero (the axis has no spatial interpolatio
 
 ```@example unified
 itp_ni((0.5, GridIdx(10)); deriv=(DerivOp(1), DerivOp(0)))  # df/dx on the slice
-```
-
-```@example unified
-gradient(itp_ni, (0.5, GridIdx(10)))
-```
-
-```@example unified
-laplacian(itp_ni, (0.5, GridIdx(10)))
+gradient(itp_ni, (0.5, GridIdx(10)))   # → (df/dx, 0.0)
+laplacian(itp_ni, (0.5, GridIdx(10)))  # → d²f/dx²
+nothing  # hide
 ```
 
 ### One-Shot
 
 ```@example unified
 interp((x, y), data, (0.5, GridIdx(10)); method=(CubicInterp(), NoInterp()))
+nothing  # hide
 ```
 
 ### Batch Queries
@@ -112,7 +112,7 @@ output = zeros(5)
 xq = collect(range(0.5, 5.0, 5))
 interp_batch_grididx!(output, (x, y), data, (xq, GridIdx(10));
     method=(CubicInterp(), NoInterp()))
-output
+nothing  # hide
 ```
 
 ---

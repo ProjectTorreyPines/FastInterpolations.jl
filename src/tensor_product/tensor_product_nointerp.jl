@@ -249,7 +249,8 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             q_eval = _handle_all_extraps(rq, rg, re)
             rsrc = ($(r_searches...),)
             search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
-            idxs, Ls, _ = _search_all_intervals(q_eval, rg, rs, search_r, nothing)
+            hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
+            idxs, Ls, _ = _search_all_intervals(q_eval, rg, rs, search_r, hint_r)
             hs, inv_hs, dLs = _compute_all_local_params(q_eval, rs, idxs, Ls)
             return _eval_hetero_nd_cell(p_sliced, idxs, hs, inv_hs, dLs, ro, rm)
         end
@@ -274,7 +275,8 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             q_eval = _handle_all_extraps(rq, rg, re)
             rsrc = ($(r_searches...),)
             search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
-            return _collapse_dims(d_sliced, rg, rm, re, q_eval, ro, search_r, nothing)
+            hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
+            return _collapse_dims(d_sliced, rg, rm, re, q_eval, ro, search_r, hint_r)
         end
     end
 end
@@ -315,9 +317,9 @@ function interp(
         data::AbstractArray{<:Any, N},
         query::Q;
         method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp}}} = EvalValue(),
-        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap}}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy}}} = AutoSearch(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = AutoSearch(),
         hint = nothing,
     ) where {N, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
     # Only reach here when at least one GridIdx (all-Real → more specific existing method)
@@ -362,10 +364,13 @@ function interp(
     deriv_r = _filter_real_axes(deriv_t, QT)
     search_r = _filter_real_axes(search_t, QT)
 
+    # Forward hint filtered to Real axes (if provided)
+    hint_r = hint === nothing ? nothing : _filter_real_axes(hint, QT)
+
     return interp(
         grids_r, data_r, query_r;
         method = methods_r, deriv = deriv_r, extrap = extrap_r,
-        search = search_r, hint = nothing
+        search = search_r, hint = hint_r
     )
 end
 
@@ -581,15 +586,20 @@ function interp_batch_grididx!(
         data::AbstractArray{<:Any, N},
         queries;
         method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp}}} = EvalValue(),
-        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap}}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy}}} = AutoSearch(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = AutoSearch(),
         hint = nothing,
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
 
     # Filter queries to Real-only axes first (for length check)
     queries_r = _filter_real_batch_queries(queries)
+
+    # All-GridIdx: no Real axes to batch over
+    if queries_r === ()
+        return output
+    end
 
     # Empty batch fast path
     nq = _query_length(queries_r)
@@ -628,10 +638,11 @@ function interp_batch_grididx!(
     search_t = search isa AbstractSearchPolicy ? ntuple(_ -> search, Val(N)) : search
     deriv_r = _filter_real_axes(deriv_t, QT)
     search_r = _filter_real_axes(search_t, QT)
+    hint_r = hint === nothing ? nothing : _filter_real_axes(hint, QT)
 
     return interp!(
         output, grids_r, data_r, queries_r;
         method = methods_r, deriv = deriv_r, extrap = extrap_r,
-        search = search_r, hint = nothing
+        search = search_r, hint = hint_r
     )
 end

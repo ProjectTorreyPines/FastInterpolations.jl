@@ -191,9 +191,12 @@ using FastInterpolations
         )
     end
 
-    @testset "Error: GridIdx on non-NoInterp in interpolant" begin
+    @testset "GridIdx on non-NoInterp axis: converts to grids[d][k]" begin
         itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
-        @test_throws ArgumentError itp((GridIdx(3), GridIdx(5)))
+        # GridIdx(3) on CubicInterp axis → converts to x[3], GridIdx(5) on NoInterp stays
+        val = itp((GridIdx(3), GridIdx(5)))
+        ref = itp((x[3], GridIdx(5)))
+        @test val ≈ ref rtol = 1.0e-14
     end
 
     @testset "Error: NoInterp axis missing GridIdx in interpolant" begin
@@ -872,5 +875,310 @@ using FastInterpolations
         @test_throws ArgumentError interp(
             (tiny_grid, y), big_data; method = (CubicInterp(), NoInterp())
         )
+    end
+
+    # ========================================
+    # 33. PeriodicBC + NoInterp (Gap 3)
+    # ========================================
+    @testset "PeriodicBC(exclusive) × NoInterp: interpolant" begin
+        # Periodic on axis 1 (exclusive endpoint), NoInterp on axis 2
+        xp = range(0.0, step = 2π / 30, length = 30)  # exclusive: last ≠ first
+        data_p = [sin(xi) * (k / 25.0) for xi in xp, k in 1:25]
+        itp = interp(
+            (xp, y), data_p;
+            method = (CubicInterp(bc = PeriodicBC(endpoint = :exclusive)), NoInterp()),
+            extrap = (WrapExtrap(), NoExtrap())
+        )
+        for k in [1, 10, 25]
+            val = itp((1.5, GridIdx(k)))
+            ref = cubic_interp(
+                xp, data_p[:, k], 1.5;
+                bc = PeriodicBC(endpoint = :exclusive), extrap = WrapExtrap()
+            )
+            @test val ≈ ref rtol = 1.0e-12
+        end
+        # Periodicity: f(x + 2π) == f(x) with NoInterp axis
+        @test itp((1.5 + 2π, GridIdx(5))) ≈ itp((1.5, GridIdx(5))) rtol = 1.0e-12
+    end
+
+    @testset "PeriodicBC(exclusive) × NoInterp: one-shot" begin
+        xp = range(0.0, step = 2π / 30, length = 30)
+        data_p = [sin(xi) * cos(yj) for xi in xp, yj in y]
+        val = interp(
+            (xp, y), data_p, (1.5, GridIdx(10));
+            method = (CubicInterp(bc = PeriodicBC(endpoint = :exclusive)), NoInterp()),
+            extrap = (WrapExtrap(), NoExtrap())
+        )
+        ref = cubic_interp(
+            xp, data_p[:, 10], 1.5;
+            bc = PeriodicBC(endpoint = :exclusive), extrap = WrapExtrap()
+        )
+        @test val ≈ ref rtol = 1.0e-12
+    end
+
+    @testset "PeriodicBC(inclusive) × NoInterp: interpolant" begin
+        # Inclusive endpoint: first == last, with 31 points spanning [0, 2π]
+        xp_inc = range(0.0, 2π, 31)
+        data_inc = [sin(xi) * (k / 25.0) for xi in xp_inc, k in 1:25]
+        # Enforce exact periodicity: data[end,:] = data[1,:]
+        data_inc[end, :] .= data_inc[1, :]
+        itp = interp(
+            (xp_inc, y), data_inc;
+            method = (CubicInterp(bc = PeriodicBC(endpoint = :inclusive)), NoInterp()),
+            extrap = (WrapExtrap(), NoExtrap())
+        )
+        for k in [1, 12, 25]
+            val = itp((2.0, GridIdx(k)))
+            ref = cubic_interp(
+                xp_inc, data_inc[:, k], 2.0;
+                bc = PeriodicBC(endpoint = :inclusive), extrap = WrapExtrap()
+            )
+            @test val ≈ ref rtol = 1.0e-12
+        end
+    end
+
+    @testset "PeriodicBC × NoInterp: gradient" begin
+        xp = range(0.0, step = 2π / 30, length = 30)
+        data_p = [sin(xi) * (k / 25.0) for xi in xp, k in 1:25]
+        itp = interp(
+            (xp, y), data_p;
+            method = (CubicInterp(bc = PeriodicBC(endpoint = :exclusive)), NoInterp()),
+            extrap = (WrapExtrap(), NoExtrap())
+        )
+        g = gradient(itp, (1.5, GridIdx(10)))
+        ref_d1 = cubic_interp(
+            xp, data_p[:, 10], 1.5;
+            bc = PeriodicBC(endpoint = :exclusive), extrap = WrapExtrap(),
+            deriv = DerivOp(1)
+        )
+        @test g[1] ≈ ref_d1 rtol = 1.0e-10
+        @test g[2] == 0.0  # NoInterp axis
+    end
+
+    # ========================================
+    # 34. Vector grid on NoInterp axis (Gap 4)
+    # ========================================
+    @testset "Vector grid on NoInterp axis: interpolant" begin
+        y_vec = collect(range(0.0, π, 25))  # Vector, not Range
+        data_vy = [sin(xi) * cos(yj) for xi in x, yj in y_vec]
+        itp = interp((x, y_vec), data_vy; method = (CubicInterp(), NoInterp()))
+        for k in [1, 5, 15, 25]
+            val = itp((qx, GridIdx(k)))
+            ref = cubic_interp(x, data_vy[:, k], qx)
+            @test val ≈ ref rtol = 1.0e-14
+        end
+    end
+
+    @testset "Vector grid on NoInterp axis: one-shot" begin
+        y_vec = collect(range(0.0, π, 25))
+        data_vy = [sin(xi) * cos(yj) for xi in x, yj in y_vec]
+        for k in [1, 12, 25]
+            val = interp(
+                (x, y_vec), data_vy, (qx, GridIdx(k));
+                method = (CubicInterp(), NoInterp())
+            )
+            ref = cubic_interp(x, data_vy[:, k], qx)
+            @test val ≈ ref rtol = 1.0e-14
+        end
+    end
+
+    @testset "Vector grid on NoInterp axis: gradient" begin
+        y_vec = collect(range(0.0, π, 25))
+        data_vy = [sin(xi) * cos(yj) for xi in x, yj in y_vec]
+        itp = interp((x, y_vec), data_vy; method = (CubicInterp(), NoInterp()))
+        g = gradient(itp, (qx, GridIdx(5)))
+        ref = cubic_interp(x, data_vy[:, 5], qx; deriv = DerivOp(1))
+        @test g[1] ≈ ref rtol = 1.0e-12
+        @test g[2] == 0.0
+    end
+
+    @testset "Vector grid on interp axis + NoInterp: interpolant" begin
+        x_vec = collect(range(0.0, 2π, 30))  # Vector grid on interpolated axis
+        data_vx = [sin(xi) * cos(yj) for xi in x_vec, yj in y]
+        itp = interp((x_vec, y), data_vx; method = (CubicInterp(), NoInterp()))
+        for k in [1, 10, 25]
+            val = itp((qx, GridIdx(k)))
+            ref = cubic_interp(x_vec, data_vx[:, k], qx)
+            @test val ≈ ref rtol = 1.0e-14
+        end
+    end
+
+    # ========================================
+    # 35. Hints with NoInterp (Gap 5)
+    # ========================================
+    @testset "Hints: Cubic×NoInterp 2D interpolant" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        # Hint is 1-element (for the single real axis after NoInterp reduction)
+        # But the interpolant expects N-dim hints; internal filtering reduces to real dims
+        hint = (Ref(1),)  # hint for axis 1 only (NoInterp axis 2 is filtered out)
+        # Multiple sequential queries to exercise hint locality
+        for qi in range(0.5, 5.0, 10)
+            val = itp((qi, GridIdx(5)); hint = hint)
+            ref = cubic_interp(x, data_2d[:, 5], qi)
+            @test val ≈ ref rtol = 1.0e-14
+        end
+    end
+
+    @testset "Hints: one-shot with GridIdx" begin
+        hint = (Ref(1),)  # 1 hint for the single real axis
+        for qi in range(0.5, 5.0, 5)
+            val = interp(
+                (x, y), data_2d, (qi, GridIdx(5));
+                method = (CubicInterp(), NoInterp()), hint = hint
+            )
+            ref = cubic_interp(x, data_2d[:, 5], qi)
+            @test val ≈ ref rtol = 1.0e-14
+        end
+    end
+
+    @testset "Hints: 3D Cubic×NoInterp×Linear" begin
+        itp3 = interp(
+            (x, y, z), data_3d;
+            method = (CubicInterp(), NoInterp(), LinearInterp())
+        )
+        # Hints must be N-element tuple (full dims), @generated code indexes by real_dims:
+        # real_dims = [1, 3] → hint_r = (hint[1], hint[3])
+        hint = (Ref(1), Ref(1), Ref(1))
+        for qi in range(0.5, 5.0, 5)
+            val = itp3((qi, GridIdx(10), 0.5); hint = hint)
+            ref = interp(
+                (x, z), data_3d[:, 10, :], (qi, 0.5);
+                method = (CubicInterp(), LinearInterp())
+            )
+            @test val ≈ ref rtol = 1.0e-13
+        end
+    end
+
+    # ========================================
+    # 36. Batch deriv on real axis + NoInterp (Gap 7)
+    # ========================================
+    @testset "Batch: deriv on real axis (not NoInterp axis)" begin
+        xq_b = collect(range(0.5, 5.0, 20))
+        out = zeros(20)
+        interp!(
+            out, (x, y), data_2d, (xq_b, GridIdx(5));
+            method = (CubicInterp(), NoInterp()), deriv = (DerivOp(1), DerivOp(0))
+        )
+        ref = [cubic_interp(x, data_2d[:, 5], xqi; deriv = DerivOp(1)) for xqi in xq_b]
+        @test out ≈ ref rtol = 1.0e-12
+    end
+
+    @testset "Batch: 2nd deriv on real axis + NoInterp" begin
+        xq_b = collect(range(0.5, 5.0, 20))
+        out = zeros(20)
+        interp!(
+            out, (x, y), data_2d, (xq_b, GridIdx(5));
+            method = (CubicInterp(), NoInterp()), deriv = (DerivOp(2), DerivOp(0))
+        )
+        ref = [cubic_interp(x, data_2d[:, 5], xqi; deriv = DerivOp(2)) for xqi in xq_b]
+        @test out ≈ ref rtol = 1.0e-10
+    end
+
+    # ========================================
+    # 37. value_gradient with GridIdx (Gap 1)
+    # ========================================
+    @testset "value_gradient: Cubic×NoInterp 2D" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        val, g = value_gradient(itp, (qx, GridIdx(5)))
+        ref_val = cubic_interp(x, data_2d[:, 5], qx)
+        ref_d1 = cubic_interp(x, data_2d[:, 5], qx; deriv = DerivOp(1))
+        @test val ≈ ref_val rtol = 1.0e-14
+        @test g[1] ≈ ref_d1 rtol = 1.0e-12
+        @test g[2] == 0.0  # NoInterp axis
+        @test length(g) == 2
+    end
+
+    @testset "value_gradient: non-NoInterp with GridIdx (generic path)" begin
+        # CubicInterpolantND (not TensorProduct) → generic conversion path
+        itp_c = cubic_interp((x, y), data_2d)
+        val, g = value_gradient(itp_c, (qx, GridIdx(10)))
+        ref_val, ref_g = value_gradient(itp_c, (qx, y[10]))
+        @test val ≈ ref_val rtol = 1.0e-14
+        @test g[1] ≈ ref_g[1] rtol = 1.0e-14
+        @test g[2] ≈ ref_g[2] rtol = 1.0e-14
+    end
+
+    # ========================================
+    # 38. gradient! with GridIdx (Gap 2)
+    # ========================================
+    @testset "gradient!: Cubic×NoInterp 2D" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        G = zeros(2)
+        gradient!(G, itp, (qx, GridIdx(5)))
+        ref_d1 = cubic_interp(x, data_2d[:, 5], qx; deriv = DerivOp(1))
+        @test G[1] ≈ ref_d1 rtol = 1.0e-12
+        @test G[2] == 0.0
+    end
+
+    @testset "gradient!: non-NoInterp with GridIdx (generic path)" begin
+        itp_c = cubic_interp((x, y), data_2d)
+        G1 = zeros(2)
+        G2 = zeros(2)
+        gradient!(G1, itp_c, (qx, GridIdx(10)))
+        gradient!(G2, itp_c, (qx, y[10]))
+        @test G1 ≈ G2 rtol = 1.0e-14
+    end
+
+    # ========================================
+    # 39. hessian! with GridIdx (Gap 2)
+    # ========================================
+    @testset "hessian!: Cubic×NoInterp 2D" begin
+        itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
+        H = zeros(2, 2)
+        hessian!(H, itp, (qx, GridIdx(5)))
+        ref_d2 = cubic_interp(x, data_2d[:, 5], qx; deriv = DerivOp(2))
+        @test H[1, 1] ≈ ref_d2 rtol = 1.0e-10
+        @test H[1, 2] == 0.0
+        @test H[2, 1] == 0.0
+        @test H[2, 2] == 0.0
+    end
+
+    @testset "hessian!: non-NoInterp with GridIdx (generic path)" begin
+        itp_c = cubic_interp((x, y), data_2d)
+        H1 = zeros(2, 2)
+        H2 = zeros(2, 2)
+        hessian!(H1, itp_c, (qx, GridIdx(10)))
+        hessian!(H2, itp_c, (qx, y[10]))
+        @test H1 ≈ H2 rtol = 1.0e-14
+    end
+
+    # ========================================
+    # 40. GridIdx on non-NoInterp axes (universal query protocol)
+    # ========================================
+    @testset "GridIdx universal: hetero-interpolant callable" begin
+        # TensorProductInterpolantND with no NoInterp — GridIdx should convert to grids[d][k]
+        itp_h = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
+        val = itp_h((qx, GridIdx(10)))
+        ref = itp_h((qx, y[10]))
+        @test val ≈ ref rtol = 1.0e-14
+    end
+
+    @testset "GridIdx universal: hetero 3D, multiple GridIdx" begin
+        itp_h3 = interp(
+            (x, y, z), data_3d;
+            method = (CubicInterp(), LinearInterp(), CubicInterp())
+        )
+        val = itp_h3((qx, GridIdx(10), GridIdx(5)))
+        ref = itp_h3((qx, y[10], z[5]))
+        @test val ≈ ref rtol = 1.0e-14
+    end
+
+    @testset "GridIdx universal: hetero with deriv" begin
+        itp_h = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
+        val = itp_h((qx, GridIdx(10)); deriv = (DerivOp(1), DerivOp(0)))
+        ref = itp_h((qx, y[10]); deriv = (DerivOp(1), DerivOp(0)))
+        @test val ≈ ref rtol = 1.0e-14
+    end
+
+    @testset "GridIdx universal: mixed NoInterp + non-NoInterp GridIdx" begin
+        # 3D: axis 1 Cubic (GridIdx converts to Real), axis 2 NoInterp, axis 3 Linear (GridIdx converts)
+        itp_mix = interp(
+            (x, y, z), data_3d;
+            method = (CubicInterp(), NoInterp(), LinearInterp())
+        )
+        # GridIdx on all 3 axes: axis 1,3 convert to Real, axis 2 stays GridIdx
+        val = itp_mix((GridIdx(15), GridIdx(10), GridIdx(5)))
+        ref = itp_mix((x[15], GridIdx(10), z[5]))
+        @test val ≈ ref rtol = 1.0e-14
     end
 end

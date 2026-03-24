@@ -41,7 +41,7 @@ See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`la
 """
 @generated function gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{ScalarCoord, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     deriv_calls = [
@@ -53,47 +53,14 @@ See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`la
     zero_tuple = [:(0 * zref) for _ in 1:N]
 
     return quote
-        search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _is_fill_oob(query, itp.grids, itp.extraps)
+        query_r = map(_resolve_grididx, query, itp.grids)
+        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
             zref = _zero_ref(itp)
             return tuple($(zero_tuple...))
         end
-        cell = _locate_cell(itp, query, search, hint)
+        cell = _locate_cell(itp, query_r, search, hint)
         return tuple($(deriv_calls...))
-    end
-end
-
-# GridIdx query: dispatch to type-specific handler (e.g. NoInterp for TensorProductInterpolantND).
-# Defined at AbstractInterpolantND level to avoid dispatch ambiguity with the NTuple{N,Real} method above.
-@inline function gradient(
-        itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
-        hint = nothing,
-    ) where {Tg, Tv, N}
-    return _gradient_with_grididx(itp, query, hint)
-end
-
-# Generic GridIdx: convert GridIdx(k) → grids[d][k], then delegate to standard method.
-# GridIdx is purely an index-based query convenience — all derivatives are real.
-# TensorProductInterpolantND overrides this for NoInterp axes (where derivatives don't exist).
-@generated function _gradient_with_grididx(
-        itp::AbstractInterpolantND{Tg, Tv, N}, query::Q, hint,
-    ) where {Tg, Tv, N, Q}
-    grididx_dims = [d for d in 1:N if fieldtype(Q, d) <: GridIdx]
-    bounds_checks = [
-        :(
-                1 <= query[$d].idx <= length(itp.grids[$d]) ||
-                _throw_grididx_oob($d, query[$d].idx, length(itp.grids[$d]))
-            )
-            for d in grididx_dims
-    ]
-    real_query_exprs = [
-        d in grididx_dims ? :(@inbounds itp.grids[$d][query[$d].idx]) : :(query[$d])
-            for d in 1:N
-    ]
-    return quote
-        $(bounds_checks...)
-        return gradient(itp, ($(real_query_exprs...),); hint = hint)
     end
 end
 
@@ -136,7 +103,7 @@ See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
 @generated function gradient!(
         G::AbstractVector,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{ScalarCoord, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     stmts = [
@@ -147,39 +114,26 @@ See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
     ]
 
     return quote
+        query_r = map(_resolve_grididx, query, itp.grids)
         @boundscheck length(G) >= $N || throw(
             DimensionMismatch(
                 "gradient output vector must have at least $($N) elements, got $(length(G))"
             )
         )
-        search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _is_fill_oob(query, itp.grids, itp.extraps)
+        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
             zref = _zero_ref(itp)
             @inbounds for i in 1:$N
                 G[i] = 0 * zref
             end
             return G
         end
-        cell = _locate_cell(itp, query, search, hint)
+        cell = _locate_cell(itp, query_r, search, hint)
         @inbounds begin
             $(stmts...)
         end
         return G
     end
-end
-
-# GridIdx query: delegate to out-of-place gradient (which has NoInterp-aware dispatch)
-@inline function gradient!(
-        G::AbstractVector,
-        itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
-        hint = nothing,
-    ) where {Tg, Tv, N}
-    g = gradient(itp, query; hint = hint)
-    @inbounds for i in 1:N
-        G[i] = g[i]
-    end
-    return G
 end
 
 # Vector query API
@@ -239,7 +193,7 @@ See also: [`gradient`](@ref), [`gradient!`](@ref)
 """
 @generated function value_gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{ScalarCoord, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     value_ops = ntuple(_ -> EvalValue(), N)
@@ -254,28 +208,18 @@ See also: [`gradient`](@ref), [`gradient!`](@ref)
     zero_tuple = [:(0 * zref) for _ in 1:N]
 
     return quote
-        search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _is_fill_oob(query, itp.grids, itp.extraps)
+        query_r = map(_resolve_grididx, query, itp.grids)
+        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
             zref = _zero_ref(itp)
             fill_val = _first_fill_value(itp.extraps)
             return (fill_val, tuple($(zero_tuple...)))
         end
-        cell = _locate_cell(itp, query, search, hint)
+        cell = _locate_cell(itp, query_r, search, hint)
         val = $value_call
         grad = tuple($(deriv_calls...))
         return (val, grad)
     end
-end
-
-# GridIdx query: compute value + gradient using NoInterp-aware dispatch
-@inline function value_gradient(
-        itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
-        hint = nothing,
-    ) where {Tg, Tv, N}
-    val = itp(query; hint = hint)
-    g = gradient(itp, query; hint = hint)
-    return (val, g)
 end
 
 # Vector API
@@ -322,7 +266,7 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
 """
 @generated function hessian(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{ScalarCoord, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     stmts = Expr[]
@@ -346,48 +290,19 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
     end
 
     return quote
-        Tq = promote_type(eltype(query), $Tg, $Tv)
+        query_r = map(_resolve_grididx, query, itp.grids)
+        Tq = promote_type(eltype(query_r), $Tg, $Tv)
         H = Matrix{Tq}(undef, $N, $N)
-        search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _is_fill_oob(query, itp.grids, itp.extraps)
+        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
             fill!(H, zero(Tq))
             return H
         end
-        cell = _locate_cell(itp, query, search, hint)
+        cell = _locate_cell(itp, query_r, search, hint)
         @inbounds begin
             $(stmts...)
         end
         return H
-    end
-end
-
-# GridIdx query: dispatch to type-specific handler
-@inline function hessian(
-        itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
-        hint = nothing,
-    ) where {Tg, Tv, N}
-    return _hessian_with_grididx(itp, query, hint)
-end
-
-@generated function _hessian_with_grididx(
-        itp::AbstractInterpolantND{Tg, Tv, N}, query::Q, hint,
-    ) where {Tg, Tv, N, Q}
-    grididx_dims = [d for d in 1:N if fieldtype(Q, d) <: GridIdx]
-    bounds_checks = [
-        :(
-                1 <= query[$d].idx <= length(itp.grids[$d]) ||
-                _throw_grididx_oob($d, query[$d].idx, length(itp.grids[$d]))
-            )
-            for d in grididx_dims
-    ]
-    real_query_exprs = [
-        d in grididx_dims ? :(@inbounds itp.grids[$d][query[$d].idx]) : :(query[$d])
-            for d in 1:N
-    ]
-    return quote
-        $(bounds_checks...)
-        return hessian(itp, ($(real_query_exprs...),); hint = hint)
     end
 end
 
@@ -430,7 +345,7 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
 @generated function hessian!(
         H::AbstractMatrix,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{ScalarCoord, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     stmts = Expr[]
@@ -454,32 +369,23 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
     end
 
     return quote
+        query_r = map(_resolve_grididx, query, itp.grids)
         @boundscheck size(H) == ($N, $N) || throw(
             DimensionMismatch(
                 "Hessian output matrix must be $($N)×$($N), got $(size(H))"
             )
         )
-        search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _is_fill_oob(query, itp.grids, itp.extraps)
+        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
             fill!(H, zero(eltype(H)))
             return H
         end
-        cell = _locate_cell(itp, query, search, hint)
+        cell = _locate_cell(itp, query_r, search, hint)
         @inbounds begin
             $(stmts...)
         end
         return H
     end
-end
-
-# GridIdx query: delegate to type-specific in-place handler
-@inline function hessian!(
-        H::AbstractMatrix,
-        itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
-        hint = nothing,
-    ) where {Tg, Tv, N}
-    return _hessian_with_grididx!(H, itp, query, hint)
 end
 
 # Vector query API
@@ -531,7 +437,7 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
 """
 @generated function laplacian(
         itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}};
+        query::Tuple{Vararg{ScalarCoord, N}};
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     deriv_calls = [
@@ -542,42 +448,13 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
     ]
 
     return quote
-        search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _is_fill_oob(query, itp.grids, itp.extraps)
+        query_r = map(_resolve_grididx, query, itp.grids)
+        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
             return 0 * _zero_ref(itp)
         end
-        cell = _locate_cell(itp, query, search, hint)
+        cell = _locate_cell(itp, query_r, search, hint)
         return +($(deriv_calls...))
-    end
-end
-
-# GridIdx query: dispatch to type-specific handler
-@inline function laplacian(
-        itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
-        hint = nothing,
-    ) where {Tg, Tv, N}
-    return _laplacian_with_grididx(itp, query, hint)
-end
-
-@generated function _laplacian_with_grididx(
-        itp::AbstractInterpolantND{Tg, Tv, N}, query::Q, hint,
-    ) where {Tg, Tv, N, Q}
-    grididx_dims = [d for d in 1:N if fieldtype(Q, d) <: GridIdx]
-    bounds_checks = [
-        :(
-                1 <= query[$d].idx <= length(itp.grids[$d]) ||
-                _throw_grididx_oob($d, query[$d].idx, length(itp.grids[$d]))
-            )
-            for d in grididx_dims
-    ]
-    real_query_exprs = [
-        d in grididx_dims ? :(@inbounds itp.grids[$d][query[$d].idx]) : :(query[$d])
-            for d in 1:N
-    ]
-    return quote
-        $(bounds_checks...)
-        return laplacian(itp, ($(real_query_exprs...),); hint = hint)
     end
 end
 

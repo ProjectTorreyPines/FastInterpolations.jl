@@ -138,43 +138,11 @@ end
 end
 
 # ========================================
-# ND Scalar: GridIdx query → convert and delegate
+# ND Scalar: Vararg convenience
 # ========================================
-# GridIdx(k) on axis d → grids[d][k]. Converts to all-Real tuple, then calls standard callable.
-# More specific types (TensorProductInterpolantND) may override for optimized NoInterp handling.
-
-@generated function _convert_grididx_query(
-        itp::AbstractInterpolantND{Tg, Tv, N}, query::Q,
-    ) where {Tg, Tv, N, Q}
-    grididx_dims = [d for d in 1:N if fieldtype(Q, d) <: GridIdx]
-    bounds_checks = [
-        :(
-                1 <= query[$d].idx <= length(itp.grids[$d]) ||
-                _throw_grididx_oob($d, query[$d].idx, length(itp.grids[$d]))
-            )
-            for d in grididx_dims
-    ]
-    real_query_exprs = [
-        d in grididx_dims ? :(@inbounds itp.grids[$d][query[$d].idx]) : :(query[$d])
-            for d in 1:N
-    ]
-    return quote
-        $(bounds_checks...)
-        ($(real_query_exprs...),)
-    end
-end
-
-@inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{Union{Real, GridIdx}, N}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
-        hint = nothing,
-    ) where {Tg, Tv, N}
-    real_query = _convert_grididx_query(itp, query)
-    return itp(real_query; deriv = deriv, search = search, hint = hint)
-end
-
-# Vararg form: itp(0.5, GridIdx(3)) → itp((0.5, GridIdx(3)))
+# Converts vararg calls to tuple form: itp(0.5, GridIdx(3)) → itp((0.5, GridIdx(3)))
+# Per-type callables (Cubic, Linear, etc.) accept Tuple{Vararg{ScalarCoord, N}} directly,
+# resolving GridIdx via _resolve_grididx internally.
 @inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
         q::Vararg{Union{Real, GridIdx}, N};
         kw...,

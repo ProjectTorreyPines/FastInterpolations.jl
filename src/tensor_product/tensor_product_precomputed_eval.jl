@@ -135,7 +135,7 @@ end
         spacings,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps,
-        query::Tuple{Vararg{Real, N}},
+        query::Tuple{Vararg{ScalarCoord, N}},
         ops::NTuple{N, AbstractEvalOp},
         searches::NTuple{N, AbstractSearchPolicy},
         hints,

@@ -237,24 +237,11 @@ Bounds checking on GridIdx values is deferred to `_eval_nointerp` / `_slice_grid
 """
 @generated function _validate_nointerp_grididx(methods::M, query::Q) where {M <: Tuple, Q <: Tuple}
     N = fieldcount(M)
-    missing_nointerp_dims = [d for d in 1:N if fieldtype(M, d) <: NoInterp && !(fieldtype(Q, d) <: GridIdx)]
-    checks = Expr[]
     # NoInterp axes missing GridIdx → clear error with usage hint
-    isempty(missing_nointerp_dims) || push!(
-        checks,
-        :(_throw_nointerp_needs_grididx($(Expr(:tuple, missing_nointerp_dims...)), $N))
-    )
-    # Non-NoInterp axes with GridIdx → error (should have been resolved by _convert_non_nointerp_grididx)
-    for d in 1:N
-        if !(fieldtype(M, d) <: NoInterp) && fieldtype(Q, d) <: GridIdx
-            push!(checks, :(_throw_grididx_on_interp_axis($d, methods[$d])))
-        end
-    end
-    isempty(checks) && return :(nothing)
-    return quote
-        $(checks...)
-        nothing
-    end
+    # Non-NoInterp axes with GridIdx are fine (resolved GridIdx flows through search short-circuit)
+    missing_nointerp_dims = [d for d in 1:N if fieldtype(M, d) <: NoInterp && !(fieldtype(Q, d) <: GridIdx)]
+    isempty(missing_nointerp_dims) && return :(nothing)
+    return :(_throw_nointerp_needs_grididx($(Expr(:tuple, missing_nointerp_dims...)), $N))
 end
 
 # ========================================
@@ -522,13 +509,70 @@ end
 # Union{Real,GridIdx} methods share the same arg1 type (AbstractInterpolantND),
 # so Julia resolves by arg2 specificity alone (NTuple{N,Real} wins for all-Real).
 
-# --- TensorProductInterpolantND overrides: redirect to _*_nointerp ---
-@inline _gradient_with_grididx(itp::TensorProductInterpolantND, query, hint) =
-    _gradient_nointerp(itp, query, hint)
-@inline _hessian_with_grididx(itp::TensorProductInterpolantND, query, hint) =
-    _hessian_nointerp(itp, query, hint)
-@inline _laplacian_with_grididx(itp::TensorProductInterpolantND, query, hint) =
-    _laplacian_nointerp(itp, query, hint)
+# --- TensorProduct gradient/hessian/laplacian: NoInterp-aware via _*_nointerp ---
+# These override the generic @generated methods in vector_calculus.jl.
+# _*_nointerp handles both NoInterp (pre-slice, zero derivatives) and
+# non-NoInterp axes (delegates to _eval_nointerp which runs the full pipeline).
+@inline function gradient(
+        itp::TensorProductInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{ScalarCoord, N}};
+        hint = nothing,
+    ) where {Tg, Tv, N}
+    resolved = map(_resolve_grididx, query, itp.grids)
+    return _gradient_nointerp(itp, resolved, hint)
+end
+
+@inline function hessian(
+        itp::TensorProductInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{ScalarCoord, N}};
+        hint = nothing,
+    ) where {Tg, Tv, N}
+    resolved = map(_resolve_grididx, query, itp.grids)
+    return _hessian_nointerp(itp, resolved, hint)
+end
+
+@inline function hessian!(
+        H::AbstractMatrix,
+        itp::TensorProductInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{ScalarCoord, N}};
+        hint = nothing,
+    ) where {Tg, Tv, N}
+    resolved = map(_resolve_grididx, query, itp.grids)
+    return _hessian_nointerp!(H, itp, resolved, hint)
+end
+
+@inline function laplacian(
+        itp::TensorProductInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{ScalarCoord, N}};
+        hint = nothing,
+    ) where {Tg, Tv, N}
+    resolved = map(_resolve_grididx, query, itp.grids)
+    return _laplacian_nointerp(itp, resolved, hint)
+end
+
+@inline function value_gradient(
+        itp::TensorProductInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{ScalarCoord, N}};
+        hint = nothing,
+    ) where {Tg, Tv, N}
+    resolved = map(_resolve_grididx, query, itp.grids)
+    val = itp(resolved; hint = hint)
+    g = _gradient_nointerp(itp, resolved, hint)
+    return (val, g)
+end
+
+@inline function gradient!(
+        G::AbstractVector,
+        itp::TensorProductInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{ScalarCoord, N}};
+        hint = nothing,
+    ) where {Tg, Tv, N}
+    g = gradient(itp, query; hint = hint)
+    @inbounds for i in 1:N
+        G[i] = g[i]
+    end
+    return G
+end
 
 """
     _gradient_nointerp(itp::TensorProductInterpolantND, query, hint)
@@ -659,32 +703,6 @@ In-place Hessian with NoInterp support. Fills H with zeros at NoInterp positions
     end
 end
 
-# TensorProduct override: use in-place NoInterp-aware path
-@inline _hessian_with_grididx!(H::AbstractMatrix, itp::TensorProductInterpolantND, query, hint) =
-    _hessian_nointerp!(H, itp, query, hint)
-
-# Generic fallback: convert GridIdx(k) → grids[d][k], delegate to all-Real hessian!
-@generated function _hessian_with_grididx!(
-        H::AbstractMatrix,
-        itp::AbstractInterpolantND{Tg, Tv, N}, query::Q, hint,
-    ) where {Tg, Tv, N, Q}
-    grididx_dims = [d for d in 1:N if fieldtype(Q, d) <: GridIdx]
-    bounds_checks = [
-        :(
-                1 <= query[$d].idx <= length(itp.grids[$d]) ||
-                _throw_grididx_oob($d, query[$d].idx, length(itp.grids[$d]))
-            )
-            for d in grididx_dims
-    ]
-    real_query_exprs = [
-        d in grididx_dims ? :(@inbounds itp.grids[$d][query[$d].idx]) : :(query[$d])
-            for d in 1:N
-    ]
-    return quote
-        $(bounds_checks...)
-        return hessian!(H, itp, ($(real_query_exprs...),); hint = hint)
-    end
-end
 
 """
     _laplacian_nointerp(itp::TensorProductInterpolantND, query, hint)

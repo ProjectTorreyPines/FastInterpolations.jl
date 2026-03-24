@@ -171,16 +171,27 @@ end
 
 # GridIdx tuple query form: itp((0.5, GridIdx(3)))
 # Only matches when at least one GridIdx (all-Real → more specific Tuple{Vararg{Real,N}} above).
-# GridIdx on non-NoInterp axes → converted to grids[d][k], then standard eval.
-# GridIdx on NoInterp axes → kept as GridIdx, routed to _eval_nointerp (pre-slice).
+# Resolves all GridIdx via scalar coordinate protocol, then routes:
+# - NoInterp axes: _eval_nointerp (pre-slice strategy)
+# - No NoInterp: _eval_tensor_product_nd (search short-circuits for GridIdx)
 @inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
         query::Q;
         deriv = EvalValue(),
         search = itp.searches,
         hint = nothing,
     ) where {Tg, Tv, N, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
-    resolved = _convert_non_nointerp_grididx(itp.methods, itp.grids, query)
-    return _eval_grididx_resolved(itp, resolved, deriv, search, hint)
+    resolved = map(_resolve_grididx, query, itp.grids)
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    if _has_nointerp_method(typeof(itp.methods))
+        search_tuple = _resolve_search_nd(search, Val(N))
+        _validate_nointerp_grididx(itp.methods, resolved)
+        return _eval_nointerp(itp, resolved, ops, search_tuple, hint)
+    end
+    _validate_nd_domain(itp.grids, resolved, itp.extraps)
+    oob_result = _try_fill_oob(resolved, itp.grids, itp.extraps, ops, _zero_ref(itp))
+    oob_result !== nothing && return oob_result
+    search_tuple = _resolve_search_nd(search, Val(N), resolved)
+    return _eval_tensor_product_nd(itp, resolved, ops, search_tuple, hint)
 end
 
 # ========================================

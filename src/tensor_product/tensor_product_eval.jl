@@ -140,6 +140,10 @@ end
         search = itp.searches,
         hint = nothing,
     ) where {Tg, Tv, N}
+    # Early check: NoInterp axes require GridIdx, not Real values
+    if _has_nointerp_method(typeof(itp.methods))
+        _check_nointerp_needs_grididx(itp.methods, query)
+    end
     ops = _resolve_deriv_nd(deriv, Val(N))
     _validate_nd_domain(itp.grids, query, itp.extraps)
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))

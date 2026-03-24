@@ -198,9 +198,16 @@ using FastInterpolations
 
     @testset "Error: NoInterp axis missing GridIdx in interpolant" begin
         itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
-        # The all-Real callable doesn't hit our validation, but it will fail
-        # at InBounds extrap handler — any error is acceptable
-        @test_throws Exception itp((qx, qy))
+        # Clear error: tells user to use GridIdx(k) for NoInterp axes
+        @test_throws ArgumentError itp((qx, qy))
+        @test_throws ArgumentError itp(qx, qy)
+        err = try
+            itp((qx, qy))
+        catch e
+            e
+        end
+        @test occursin("NoInterp on axis 2", err.msg)
+        @test occursin("x1::Real, GridIdx(k2::Int)", err.msg)
     end
 
     # ========================================

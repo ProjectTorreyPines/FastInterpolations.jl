@@ -81,8 +81,34 @@ end
 @noinline _throw_grididx_oob(d, idx, n) =
     throw(ArgumentError("GridIdx axis $d: index $idx out of range 1:$n"))
 
-@noinline _throw_nointerp_needs_grididx(d) =
-    throw(ArgumentError("Axis $d uses NoInterp but query provides Real; use GridIdx(k) for NoInterp axes"))
+@noinline function _throw_nointerp_needs_grididx(nointerp_dims::Tuple, N::Int)
+    parts = [d in nointerp_dims ? "GridIdx(k$d::Int)" : "x$d::Real" for d in 1:N]
+    usage = "itp((" * join(parts, ", ") * "))"
+    nointerp_str = join(["axis $d" for d in nointerp_dims], ", ")
+    throw(
+        ArgumentError(
+            "NoInterp on $nointerp_str — use GridIdx(k) for discrete axes.\n\n" *
+                "  Usage:\n" *
+                "    $usage\n\n" *
+                "  GridIdx(k) selects the k-th grid point on a NoInterp axis.\n" *
+                "  Other axes take real-valued coordinates as usual."
+        )
+    )
+end
+
+"""
+    _check_nointerp_needs_grididx(methods, query)
+
+Check at the all-Real callable entry point: if any axis has NoInterp,
+the query must use GridIdx for that axis (not a plain Real value).
+Generates a clear error message instead of the cryptic InBounds MethodError.
+"""
+@generated function _check_nointerp_needs_grididx(methods::M, ::Tuple{Vararg{Real, N}}) where {M, N}
+    nointerp_dims = [d for d in 1:N if fieldtype(M, d) <: NoInterp]
+    isempty(nointerp_dims) && return :(nothing)
+    dims_tuple = Expr(:tuple, nointerp_dims...)
+    return :(_throw_nointerp_needs_grididx($dims_tuple, $N))
+end
 
 @noinline _throw_grididx_on_interp_axis(d, method) =
     throw(

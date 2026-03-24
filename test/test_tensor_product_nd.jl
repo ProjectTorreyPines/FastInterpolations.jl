@@ -415,4 +415,106 @@ using FastInterpolations
 
         @test itp_mixed((qx, qy)) ≈ expected rtol = 1.0e-12
     end
+
+    # ========================================
+    # OnTheFly TensorProduct Coverage
+    # ========================================
+    # Exercises: _locate_cell/<:Array, _eval_at_cell/<:Array, _first_hint(::Tuple),
+    # _tail_hints(::Tuple), _oneshot_eval_1d(::QuadraticInterp, ...)
+
+    @testset "OnTheFly: gradient (locate_cell + eval_at_cell)" begin
+        itp_otf = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
+        )
+        g = gradient(itp_otf, (qx, qy))
+        # Reference: PreCompute gradient
+        itp_ref = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
+        g_ref = gradient(itp_ref, (qx, qy))
+        @test g[1] ≈ g_ref[1] rtol = 1.0e-10
+        @test g[2] ≈ g_ref[2] rtol = 1.0e-10
+    end
+
+    @testset "OnTheFly: hessian" begin
+        itp_otf = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
+        )
+        H = hessian(itp_otf, (qx, qy))
+        itp_ref = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
+        H_ref = hessian(itp_ref, (qx, qy))
+        @test H ≈ H_ref rtol = 1.0e-8
+    end
+
+    @testset "OnTheFly: laplacian" begin
+        itp_otf = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
+        )
+        L = laplacian(itp_otf, (qx, qy))
+        itp_ref = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
+        L_ref = laplacian(itp_ref, (qx, qy))
+        @test L ≈ L_ref rtol = 1.0e-8
+    end
+
+    @testset "OnTheFly: value_gradient" begin
+        itp_otf = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
+        )
+        val, g = value_gradient(itp_otf, (qx, qy))
+        @test val ≈ itp_otf((qx, qy)) rtol = 1.0e-14
+        g_ref = gradient(itp_otf, (qx, qy))
+        @test g[1] ≈ g_ref[1] rtol = 1.0e-14
+        @test g[2] ≈ g_ref[2] rtol = 1.0e-14
+    end
+
+    @testset "OnTheFly: gradient! in-place" begin
+        itp_otf = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
+        )
+        G = zeros(2)
+        gradient!(G, itp_otf, (qx, qy))
+        g_ref = gradient(itp_otf, (qx, qy))
+        @test G[1] ≈ g_ref[1] rtol = 1.0e-14
+        @test G[2] ≈ g_ref[2] rtol = 1.0e-14
+    end
+
+    @testset "OnTheFly: hessian! in-place" begin
+        itp_otf = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
+        )
+        H = zeros(2, 2)
+        hessian!(H, itp_otf, (qx, qy))
+        H_ref = hessian(itp_otf, (qx, qy))
+        @test H ≈ H_ref rtol = 1.0e-14
+    end
+
+    @testset "OnTheFly: with hints (_first_hint/::Tuple, _tail_hints/::Tuple)" begin
+        itp_otf = interp(
+            (x, y), data_2d;
+            method = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
+        )
+        hint = (Ref(1), Ref(1))
+        val = itp_otf((qx, qy); hint = hint)
+        ref = itp_otf((qx, qy))
+        @test val ≈ ref rtol = 1.0e-14
+        # Hints should be updated
+        @test hint[1][] > 1
+        @test hint[2][] >= 1
+    end
+
+    @testset "OnTheFly: QuadraticInterp fiber eval" begin
+        itp_q = interp(
+            (x, y), data_2d;
+            method = (QuadraticInterp(), LinearInterp()), coeffs = OnTheFly()
+        )
+        val = itp_q((qx, qy))
+        # Reference: separate 1D one-shot interps on separable data
+        ref_x = quadratic_interp(x, [sin(xi) for xi in x])(qx)
+        ref_y = linear_interp(y, [cos(yj) for yj in y])(qy)
+        @test val ≈ ref_x * ref_y rtol = 1.0e-10
+    end
 end

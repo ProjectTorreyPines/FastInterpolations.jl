@@ -1407,4 +1407,122 @@ using FastInterpolations
         L_real = laplacian(itp_c, (qx, y[10]))
         @test L_grididx ≈ L_real rtol = 1.0e-14
     end
+
+    # ========================================
+    # 47. GridIdx on non-NoInterp: full correctness (one-shot + batch + deriv)
+    # ========================================
+    # GridIdx on a non-NoInterp axis must produce the same result as using
+    # the grid coordinate directly. This applies to value, all derivatives,
+    # and both one-shot and batch paths.
+
+    @testset "Non-NoInterp GridIdx: one-shot value matches Real" begin
+        for k in [1, 10, 25]
+            val = interp(
+                (x, y), data_2d, (qx, GridIdx(k));
+                method = (CubicInterp(), CubicInterp())
+            )
+            ref = interp(
+                (x, y), data_2d, (qx, y[k]);
+                method = (CubicInterp(), CubicInterp())
+            )
+            @test val ≈ ref rtol = 1.0e-14
+        end
+    end
+
+    @testset "Non-NoInterp GridIdx: one-shot deriv on GridIdx axis" begin
+        # ∂f/∂y at y[k] — GridIdx should NOT zero this (it's not NoInterp)
+        val = interp(
+            (x, y), data_2d, (qx, GridIdx(10));
+            method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(0), DerivOp(1))
+        )
+        ref = interp(
+            (x, y), data_2d, (qx, y[10]);
+            method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(0), DerivOp(1))
+        )
+        @test val ≈ ref rtol = 1.0e-14
+        @test val != 0.0  # must NOT be zero-filled
+    end
+
+    @testset "Non-NoInterp GridIdx: one-shot scalar deriv" begin
+        val = interp(
+            (x, y), data_2d, (qx, GridIdx(10));
+            method = (CubicInterp(), CubicInterp()), deriv = DerivOp(1)
+        )
+        ref = interp(
+            (x, y), data_2d, (qx, y[10]);
+            method = (CubicInterp(), CubicInterp()), deriv = DerivOp(1)
+        )
+        @test val ≈ ref rtol = 1.0e-14
+    end
+
+    @testset "Non-NoInterp GridIdx: batch deriv on GridIdx axis" begin
+        xq_b = collect(range(0.5, 5.0, 15))
+        out = zeros(15)
+        # ∂f/∂y at y[10] via batch — must NOT zero-fill
+        interp!(
+            out, (x, y), data_2d, (xq_b, GridIdx(10));
+            method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(0), DerivOp(1))
+        )
+        ref = [
+            interp(
+                (x, y), data_2d, (xqi, y[10]);
+                method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(0), DerivOp(1))
+            ) for xqi in xq_b
+        ]
+        @test out ≈ ref rtol = 1.0e-14
+        @test any(!iszero, out)  # must NOT be all zeros
+    end
+
+    @testset "Non-NoInterp GridIdx: batch value (no deriv)" begin
+        xq_b = collect(range(0.5, 5.0, 15))
+        out = zeros(15)
+        interp!(
+            out, (x, y), data_2d, (xq_b, GridIdx(10));
+            method = (CubicInterp(), CubicInterp())
+        )
+        ref = [
+            interp(
+                (x, y), data_2d, (xqi, y[10]);
+                method = (CubicInterp(), CubicInterp())
+            ) for xqi in xq_b
+        ]
+        @test out ≈ ref rtol = 1.0e-14
+    end
+
+    @testset "Non-NoInterp GridIdx: batch deriv on Real axis" begin
+        xq_b = collect(range(0.5, 5.0, 15))
+        out = zeros(15)
+        # ∂f/∂x with GridIdx on axis 2 (non-NoInterp)
+        interp!(
+            out, (x, y), data_2d, (xq_b, GridIdx(10));
+            method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(1), DerivOp(0))
+        )
+        ref = [
+            interp(
+                (x, y), data_2d, (xqi, y[10]);
+                method = (CubicInterp(), CubicInterp()), deriv = (DerivOp(1), DerivOp(0))
+            ) for xqi in xq_b
+        ]
+        @test out ≈ ref rtol = 1.0e-14
+    end
+
+    @testset "Mixed NoInterp + non-NoInterp GridIdx: batch deriv" begin
+        # 3D: axis 1 Cubic (Real batch), axis 2 NoInterp (GridIdx), axis 3 Linear (GridIdx)
+        # deriv on axis 3 (non-NoInterp GridIdx) — must NOT zero-fill
+        xq_b = collect(range(0.5, 5.0, 10))
+        out = zeros(10)
+        interp!(
+            out, (x, y, z), data_3d, (xq_b, GridIdx(10), GridIdx(5));
+            method = (CubicInterp(), NoInterp(), LinearInterp()),
+            deriv = (DerivOp(0), DerivOp(0), DerivOp(1))
+        )
+        ref = [
+            interp(
+                (x, y, z), data_3d, (xqi, GridIdx(10), z[5]);
+                method = (CubicInterp(), NoInterp(), LinearInterp()),
+                deriv = (DerivOp(0), DerivOp(0), DerivOp(1))
+            ) for xqi in xq_b
+        ]
+        @test out ≈ ref rtol = 1.0e-12
+    end
 end

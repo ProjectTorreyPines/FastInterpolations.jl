@@ -202,8 +202,9 @@ function _build_tensor_product_nd(
     Tv = _value_type(Tv_raw, Tg)
     data_typed = Tv === Tv_raw ? Array(data) : Array{Tv}(data)
 
-    # 6. Resolve per-axis configuration
-    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    # 6. Resolve per-axis configuration (pass BCs so PeriodicBC auto-gets WrapExtrap)
+    bcs = map(_bc_for_periodic_check, methods)
+    extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N))
 
     # 6b. Override extrap/search for NoInterp axes (no domain check, no search)
@@ -243,7 +244,8 @@ function _build_tensor_product_precomputed(
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
     Tv = _value_type(Tv_raw, Tg)
-    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    bcs_periodic = map(_bc_for_periodic_check, methods)
+    extraps = _resolve_extrap_nd(extrap, bcs_periodic, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N))
 
     # Override extrap/search for NoInterp axes (no domain check, no search)
@@ -255,7 +257,6 @@ function _build_tensor_product_precomputed(
 
     # Extend exclusive periodic axes to inclusive form (same as CubicInterpolantND).
     # Must happen before spacings + partials so the stored grid matches the data.
-    bcs_periodic = map(_bc_for_periodic_check, methods)
     grids_typed, data_ext, _ = _prepare_periodic_nd(grids_typed, data, bcs_periodic)
     spacings = _create_spacings_typed(grids_typed)
 

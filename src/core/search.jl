@@ -922,64 +922,57 @@ end
 # GridIdx carries a pre-resolved index: skip search entirely, just return the interval.
 # Clamp to valid cell range: grid of N points has N-1 cells (valid idx: 1 to N-1).
 # GridIdx(N) at the right boundary maps to cell N-1.
+#
+# GridIdx <: Real creates method ambiguity with every concrete-policy × Real overload.
+# All disambiguation methods below are structurally necessary; the body logic is
+# factored into _search_grididx / _search_grididx! to avoid duplication.
 
-@inline function search_interval(::Searcher{<:AbstractSearchPolicy, NoHint}, x::AbstractVector, xq::GridIdx)
+@inline function _search_grididx(x::AbstractVector, xq::GridIdx)
     idx = min(xq.idx, length(x) - 1)
-    return idx, @inbounds(x[idx]), @inbounds(x[idx + 1])
-end
-
-@inline function search_interval(p::Searcher{<:AbstractSearchPolicy, RefHint}, x::AbstractVector, xq::GridIdx)
-    idx = min(xq.idx, length(x) - 1)
-    p.hint.idx[] = idx
     return idx, @inbounds(x[idx]), @inbounds(x[idx + 1])
 end
 
-# Spacing-aware variants: ignore spacing, delegate to 3-arg form above.
-# GridIdx <: Real: disambiguation methods for AbstractRange/ScalarSpacing variants
-# that would otherwise conflict with DirectSearch methods.
-@inline search_interval(s::Searcher{<:AbstractSearchPolicy, NoHint}, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) =
-    search_interval(s, x, xq)
-@inline search_interval(s::Searcher{<:AbstractSearchPolicy, RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) =
-    search_interval(s, x, xq)
-# DirectSearch + Range + ScalarSpacing: GridIdx wins over Real.
-@inline search_interval(s::Searcher{DirectSearch, NoHint}, x::AbstractRange{Tg}, ::ScalarSpacing{Tg}, xq::GridIdx) where {Tg} =
-    search_interval(s, x, xq)
-@inline search_interval(s::Searcher{DirectSearch, RefHint}, x::AbstractRange{Tg}, ::ScalarSpacing{Tg}, xq::GridIdx) where {Tg} =
-    search_interval(s, x, xq)
-# DirectSearch + Range (no spacing): GridIdx wins over Real.
-@inline function search_interval(::Searcher{DirectSearch, NoHint}, x::AbstractRange, xq::GridIdx)
+@inline function _search_grididx!(hint::RefHint, x::AbstractVector, xq::GridIdx)
     idx = min(xq.idx, length(x) - 1)
-    return idx, @inbounds(x[idx]), @inbounds(x[idx + 1])
-end
-@inline function search_interval(p::Searcher{DirectSearch, RefHint}, x::AbstractRange, xq::GridIdx)
-    idx = min(xq.idx, length(x) - 1)
-    p.hint.idx[] = idx
+    hint.idx[] = idx
     return idx, @inbounds(x[idx]), @inbounds(x[idx + 1])
 end
 
-# Disambiguation: concrete search policies × GridIdx (GridIdx <: Real creates ambiguity).
-# 3-arg: BinarySearch+NoHint, LinearSearch+RefHint, LinearBinarySearch+RefHint
-@inline function search_interval(::Searcher{BinarySearch, NoHint}, x::AbstractVector, xq::GridIdx)
-    idx = min(xq.idx, length(x) - 1)
-    return idx, @inbounds(x[idx]), @inbounds(x[idx + 1])
-end
-@inline function search_interval(p::Searcher{LinearSearch, RefHint}, x::AbstractVector, xq::GridIdx)
-    idx = min(xq.idx, length(x) - 1)
-    p.hint.idx[] = idx
-    return idx, @inbounds(x[idx]), @inbounds(x[idx + 1])
-end
-@inline function search_interval(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, xq::GridIdx) where {MAX}
-    idx = min(xq.idx, length(x) - 1)
-    p.hint.idx[] = idx
-    return idx, @inbounds(x[idx]), @inbounds(x[idx + 1])
-end
-# 4-arg: BinarySearch+NoHint, LinearSearch+RefHint, LinearBinarySearch+RefHint (with spacing)
-@inline search_interval(s::Searcher{BinarySearch, NoHint}, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) =
-    search_interval(s, x, xq)
-@inline search_interval(s::Searcher{LinearSearch, RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) =
-    search_interval(s, x, xq)
-@inline search_interval(s::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) where {MAX} =
-    search_interval(s, x, xq)
+# 3-arg: abstract policy (fallback for future policies)
+@inline search_interval(::Searcher{<:AbstractSearchPolicy, NoHint}, x::AbstractVector, xq::GridIdx) =
+    _search_grididx(x, xq)
+@inline search_interval(p::Searcher{<:AbstractSearchPolicy, RefHint}, x::AbstractVector, xq::GridIdx) =
+    _search_grididx!(p.hint, x, xq)
+
+# 3-arg: concrete policy disambiguation (BinarySearch, LinearSearch, LinearBinarySearch)
+@inline search_interval(::Searcher{BinarySearch, NoHint}, x::AbstractVector, xq::GridIdx) =
+    _search_grididx(x, xq)
+@inline search_interval(p::Searcher{LinearSearch, RefHint}, x::AbstractVector, xq::GridIdx) =
+    _search_grididx!(p.hint, x, xq)
+@inline search_interval(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, xq::GridIdx) where {MAX} =
+    _search_grididx!(p.hint, x, xq)
+
+# 3-arg: DirectSearch + Range (AbstractRange is not AbstractVector on concrete dispatch)
+@inline search_interval(::Searcher{DirectSearch, NoHint}, x::AbstractRange, xq::GridIdx) =
+    _search_grididx(x, xq)
+@inline search_interval(p::Searcher{DirectSearch, RefHint}, x::AbstractRange, xq::GridIdx) =
+    _search_grididx!(p.hint, x, xq)
+
+# 4-arg: spacing ignored — delegate to helpers directly
+@inline search_interval(::Searcher{<:AbstractSearchPolicy, NoHint}, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) =
+    _search_grididx(x, xq)
+@inline search_interval(p::Searcher{<:AbstractSearchPolicy, RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) =
+    _search_grididx!(p.hint, x, xq)
+@inline search_interval(::Searcher{DirectSearch, NoHint}, x::AbstractRange{Tg}, ::ScalarSpacing{Tg}, xq::GridIdx) where {Tg} =
+    _search_grididx(x, xq)
+@inline search_interval(p::Searcher{DirectSearch, RefHint}, x::AbstractRange{Tg}, ::ScalarSpacing{Tg}, xq::GridIdx) where {Tg} =
+    _search_grididx!(p.hint, x, xq)
+@inline search_interval(::Searcher{BinarySearch, NoHint}, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) =
+    _search_grididx(x, xq)
+@inline search_interval(p::Searcher{LinearSearch, RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) =
+    _search_grididx!(p.hint, x, xq)
+@inline search_interval(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) where {MAX} =
+    _search_grididx!(p.hint, x, xq)
 
 # ========================================
 # 5. Internal Aliases (for module-internal use)

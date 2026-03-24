@@ -80,8 +80,10 @@ Grid-index query coordinate. Wraps an integer index for direct grid-point lookup
 After resolution (internal), carries both the index and the grid coordinate value.
 Search functions short-circuit when they see a `GridIdx` — zero search cost.
 
-`GridIdx` is NOT `<: Real`: it flows through the pipeline via duck-typing,
-with each component using the scalar coordinate protocol to handle it.
+`GridIdx <: Real`: it flows through `Tuple{Vararg{Real, N}}` dispatch transparently.
+Before resolution, `val = NaN` — a poison sentinel that propagates visibly if
+`_resolve_grididx` is ever skipped. After resolution, `val` holds the grid coordinate
+and arithmetic auto-promotes via `promote_rule` (stripping the `GridIdx` wrapper).
 
 # Examples
 ```julia

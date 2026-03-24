@@ -70,6 +70,18 @@ end
 # full ND build (e.g., 3D cubic spline build → 1D: ~5000x speedup).
 
 """
+    _all_eval_value(deriv) -> Bool
+
+Compile-time check: true if `deriv` is `EvalValue()` (scalar) or a tuple of all `EvalValue()`.
+Used to guard GridIdx → NoInterp auto-promotion (safe only when no derivatives requested).
+"""
+_all_eval_value(::EvalValue) = true
+_all_eval_value(::DerivOp) = false
+@generated function _all_eval_value(::D) where {D <: Tuple}
+    all(d -> fieldtype(D, d) <: EvalValue, 1:fieldcount(D)) ? :(true) : :(false)
+end
+
+"""
     _promote_grididx_to_nointerp(methods, query) -> promoted_methods
 
 Replace methods at GridIdx query positions with `NoInterp()`.

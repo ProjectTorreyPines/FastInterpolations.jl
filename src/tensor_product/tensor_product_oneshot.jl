@@ -269,10 +269,10 @@ function interp(
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
     resolved_query = map(_resolve_grididx, query, grids)
-    # GridIdx auto-promotion: when all derivs are EvalValue (default), GridIdx axes
-    # need no interpolation — replace their method with NoInterp() for pre-slice
-    # dimension reduction (e.g., 3D cubic build → 1D: ~5000x speedup).
-    if deriv isa EvalValue
+    # GridIdx auto-promotion: when all derivs are EvalValue (scalar or tuple),
+    # GridIdx axes need no interpolation — replace their method with NoInterp()
+    # for pre-slice dimension reduction (e.g., 3D cubic build → 1D: ~5000x speedup).
+    if _all_eval_value(deriv)
         method_tuple = _promote_grididx_to_nointerp(method_tuple, resolved_query)
     end
     # NoInterp routing: method-based (not query-type-based)

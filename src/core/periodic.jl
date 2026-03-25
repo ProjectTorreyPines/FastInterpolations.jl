@@ -51,18 +51,42 @@ end
 """
     _check_periodic_endpoints(y::AbstractVector)
 
-Validate that `y[1] == y[end]` for periodic boundary conditions (inclusive endpoint).
+Validate that `y[1] ≈ y[end]` for periodic boundary conditions (inclusive endpoint).
 Called once at construction time (zero runtime overhead).
 
-Uses strict `==` equality — no approximate comparison. This is universal for all
-value types (scalars, vectors, duck-typed custom types) without requiring `norm`,
-`isapprox`, or any tolerance parameters.
+Three-tier dispatch based on element type:
 
-If your data is computed (e.g., `sin.(range(0, 2π, n))`), set `y[end] = y[1]`
-explicitly to ensure exact periodicity.
+- **`AbstractFloat`**: `isapprox` with `atol = 8eps(T)` — handles both relative differences
+  (e.g., `cos(0) ≈ cos(2π)`) and near-zero noise floor (e.g., `sin(0)` vs `sin(2π)`).
+  The `8eps` constant is compile-time folded (zero overhead vs plain `isapprox`).
+- **`Complex{<:AbstractFloat}`**: same, using `eps(real(T))`.
+- **Other `_PromotableValue`** (Integer, Rational): `isapprox` with default tolerances.
+- **Duck types** (Dual, SVector, ...): strict `==` (isapprox semantics not guaranteed).
+
+!!! note "Scaled near-zero endpoints"
+    `atol = 8eps` covers direct evaluations (e.g., `sin.(x)`), but not scaled
+    variants (e.g., `1e6 .* sin.(x)` where noise ≈ 1e6·eps). For those cases,
+    set `y[end] = y[1]` explicitly.
 
 Throws `ArgumentError` if endpoints differ.
 """
+@inline function _check_periodic_endpoints(y::AbstractVector{T}) where {T <: AbstractFloat}
+    isapprox(first(y), last(y); atol = 8 * eps(T)) || _throw_periodic_endpoint_error(first(y), last(y))
+    return nothing
+end
+
+@inline function _check_periodic_endpoints(y::AbstractVector{Complex{T}}) where {T <: AbstractFloat}
+    isapprox(first(y), last(y); atol = 8 * eps(T)) || _throw_periodic_endpoint_error(first(y), last(y))
+    return nothing
+end
+
+# Integer, Rational: isapprox with default tolerances (effectively ==)
+@inline function _check_periodic_endpoints(y::AbstractVector{<:_PromotableValue})
+    isapprox(first(y), last(y)) || _throw_periodic_endpoint_error(first(y), last(y))
+    return nothing
+end
+
+# Duck-type fallback: strict == (isapprox not guaranteed for arbitrary types)
 @inline function _check_periodic_endpoints(y::AbstractVector)
     _extract_primal(first(y)) == _extract_primal(last(y)) || _throw_periodic_endpoint_error(first(y), last(y))
     return nothing

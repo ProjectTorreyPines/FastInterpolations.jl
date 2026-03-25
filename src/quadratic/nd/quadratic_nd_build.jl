@@ -274,12 +274,12 @@ end
 # ========================================
 
 """
-    _build_nd_coeffs_quadratic(grids, data, bcs) -> NodalDerivativesND{Tv, N, NP1}
+    _build_nd_coeffs_quadratic(grids, data, bcs) -> _NodalDerivativesND{Tv, N, NP1}
 
 Compute all partial derivatives for N-dimensional quadratic interpolation.
 
 # Returns
-- `NodalDerivativesND{Tv, N, N+1}` containing the partials array
+- `_NodalDerivativesND{Tv, N, N+1}` containing the partials array
 """
 function _build_nd_coeffs_quadratic(
         grids::NTuple{N, AbstractVector{Tg}},
@@ -294,5 +294,5 @@ function _build_nd_coeffs_quadratic(
     # Compute all partial derivatives
     _compute_nd_partials_quadratic!(partials, grids, data, bcs)
 
-    return NodalDerivativesND{Tv, N, N + 1}(partials)
+    return _NodalDerivativesND{Tv, N, N + 1}(partials)
 end

@@ -72,7 +72,7 @@ struct OnTheFly <: AbstractCoeffStrategy end
 # ========================================
 # Generic ND Coefficient Storage
 # ========================================
-# NOTE: NodalDerivativesND has been moved to src/core/nd_utils.jl
+# NOTE: _NodalDerivativesND has been moved to src/core/nd_utils.jl
 # for shared use by both CubicInterpolantND and QuadraticInterpolantND.
 
 # ========================================
@@ -101,7 +101,7 @@ ultra-fast O(1) evaluation via tensor-product Hermite polynomials.
 # Fields
 - `grids`: N-tuple of grid vectors for each dimension
 - `spacings`: N-tuple of grid spacing info (for O(1) h lookup)
-- `nodal_derivs`: NodalDerivativesND containing partial derivatives at grid nodes
+- `nodal_derivs`: _NodalDerivativesND containing partial derivatives at grid nodes
 - `bcs`: N-tuple of boundary conditions used for construction
 - `extraps`: N-tuple of extrapolation modes
 - `searches`: N-tuple of search policies
@@ -138,13 +138,13 @@ struct CubicInterpolantND{
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
     spacings::S
-    nodal_derivs::NodalDerivativesND{Tv, N, NP1}
+    nodal_derivs::_NodalDerivativesND{Tv, N, NP1}
     bcs::B
     extraps::E
     searches::P
 
     function CubicInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}(
-            grids::Tuple{Vararg{AbstractVector, N}}, spacings::S, nodal_derivs::NodalDerivativesND{Tv, N, NP1},
+            grids::Tuple{Vararg{AbstractVector, N}}, spacings::S, nodal_derivs::_NodalDerivativesND{Tv, N, NP1},
             bcs::B, extraps::E, searches::P
         ) where {Tg, Tv, N, NP1, G, S, B, E, P}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))

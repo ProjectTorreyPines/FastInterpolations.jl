@@ -4,7 +4,7 @@
 # N-dimensional interpolant with per-axis method specification.
 # Supports two strategies via the D type parameter:
 # - OnTheFly: D = Array{Tv, N} — stores raw data, builds 1D interps per query
-# - PreCompute: D = NodalDerivativesND{Tv, N, N+1} — precomputed partials, O(1) eval
+# - PreCompute: D = _NodalDerivativesND{Tv, N, N+1} — precomputed partials, O(1) eval
 #
 # Type Parameters Convention:
 # - Tg: Grid/coordinate type (AbstractFloat)
@@ -31,7 +31,7 @@ linear on axis 2) with two evaluation strategies:
 - `M`: Tuple type for per-axis methods (heterogeneous)
 - `E`: Tuple type for extrapolation modes
 - `P`: Tuple type for search policies
-- `D`: Data storage type — `Array{Tv,N}` (OnTheFly) or `NodalDerivativesND` (PreCompute)
+- `D`: Data storage type — `Array{Tv,N}` (OnTheFly) or `_NodalDerivativesND` (PreCompute)
 
 # Example
 ```julia
@@ -66,17 +66,17 @@ struct HeteroInterpolantND{
 end
 
 """
-    HeteroPartials{Tv, N, NP1}
+    _HeteroPartials{Tv, N, NP1}
 
 Compact storage for heterogeneous partial derivatives.
 
 Stores `prod(sizes)` partials per grid point using mixed-radix indexing,
 where `sizes[d] = 2` for derivative axes (Cubic/Quadratic), `1` for others.
-Saves memory vs `NodalDerivativesND` (which always stores `2^N`) when some
+Saves memory vs `_NodalDerivativesND` (which always stores `2^N`) when some
 axes don't require derivatives.
 
 Layout: `partials[p, i₁, i₂, ..., iₙ]` where `p ∈ 1:prod(sizes)`.
 """
-struct HeteroPartials{Tv, N, NP1}
+struct _HeteroPartials{Tv, N, NP1}
     partials::Array{Tv, NP1}
 end

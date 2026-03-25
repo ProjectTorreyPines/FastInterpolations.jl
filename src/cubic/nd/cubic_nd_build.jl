@@ -543,7 +543,7 @@ end
 # ========================================
 
 """
-    _build_nd_coeffs(grids, data, bcs) -> NodalDerivativesND{Tv, N, NP1}
+    _build_nd_coeffs(grids, data, bcs) -> _NodalDerivativesND{Tv, N, NP1}
 
 Compute all partial derivatives for N-dimensional Hermite interpolation.
 
@@ -557,7 +557,7 @@ Compute all partial derivatives for N-dimensional Hermite interpolation.
 - `bcs::NTuple{N, AbstractBC}`: Boundary conditions for each dimension
 
 # Returns
-- `NodalDerivativesND{Tv, N, N+1}` containing the partials array
+- `_NodalDerivativesND{Tv, N, N+1}` containing the partials array
 """
 function _build_nd_coeffs(
         grids::NTuple{N, AbstractVector{Tg}},
@@ -575,5 +575,5 @@ function _build_nd_coeffs(
     # Compute all partial derivatives
     _compute_nd_partials!(partials, grids, data, bcs)
 
-    return NodalDerivativesND{Tv, N, N + 1}(partials)
+    return _NodalDerivativesND{Tv, N, N + 1}(partials)
 end

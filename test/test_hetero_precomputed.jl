@@ -260,7 +260,7 @@ using FastInterpolations
         data2 = [sin(xi) * cos(yj) for xi in xg, yj in yg]
         data3 = [sin(xi) * cos(yj) * zk for xi in xg, yj in yg, zk in zg]
 
-        # Only heterogeneous combos produce HeteroInterpolantND with HeteroPartials.
+        # Only heterogeneous combos produce HeteroInterpolantND with _HeteroPartials.
         # Homogeneous (Cubic×Cubic, Linear×Linear) auto-dispatch to existing ND types.
 
         # 2D Cubic×Linear: prod(sizes) = 2×1 = 2 (vs 2^2 = 4, 2× savings)

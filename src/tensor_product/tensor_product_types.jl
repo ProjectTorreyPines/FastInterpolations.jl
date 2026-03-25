@@ -12,7 +12,7 @@
 # - N:  Number of dimensions
 
 """
-    TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D} <: AbstractInterpolantND{Tg, Tv, N}
+    HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D} <: AbstractInterpolantND{Tg, Tv, N}
 
 N-dimensional interpolant with per-axis method specification.
 
@@ -46,7 +46,7 @@ itp = interp((x, y), data; method=(CubicInterp(), LinearInterp()), coeffs=PreCom
 itp((0.5, 0.3))
 ```
 """
-struct TensorProductInterpolantND{
+struct HeteroInterpolantND{
         Tg <: AbstractFloat,
         Tv,
         N,

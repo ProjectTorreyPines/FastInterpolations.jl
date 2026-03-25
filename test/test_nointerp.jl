@@ -1187,7 +1187,7 @@ using FastInterpolations
     # 40. GridIdx on non-NoInterp axes (universal query protocol)
     # ========================================
     @testset "GridIdx universal: hetero-interpolant callable" begin
-        # TensorProductInterpolantND with no NoInterp — GridIdx should convert to grids[d][k]
+        # HeteroInterpolantND with no NoInterp — GridIdx should convert to grids[d][k]
         itp_h = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
         val = itp_h((qx, GridIdx(10)))
         ref = itp_h((qx, y[10]))

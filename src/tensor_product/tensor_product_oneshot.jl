@@ -1,5 +1,5 @@
 # ========================================
-# TensorProductInterpolantND — One-Shot API
+# HeteroInterpolantND — One-Shot API
 # ========================================
 # Zero-allocation one-shot evaluation: interp(grids, data, query; method=...)
 # Bypasses interpolant construction — builds partials in pool, evaluates, releases.

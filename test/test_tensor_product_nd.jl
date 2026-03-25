@@ -1,7 +1,7 @@
 using Test
 using FastInterpolations
 
-@testset "TensorProductInterpolantND" begin
+@testset "HeteroInterpolantND" begin
     # ========================================
     # Test Setup — separable functions for exact verification
     # ========================================
@@ -138,7 +138,7 @@ using FastInterpolations
     # ========================================
     # 10. gradient() compatibility
     # ========================================
-    @testset "gradient() on TensorProductInterpolantND" begin
+    @testset "gradient() on HeteroInterpolantND" begin
         itp_tp = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
 
         grad = gradient(itp_tp, (qx, qy))
@@ -203,14 +203,14 @@ using FastInterpolations
 
         # 1-arg show (compact)
         str = sprint(show, itp_tp)
-        @test occursin("TensorProductInterpolantND", str)
+        @test occursin("HeteroInterpolantND", str)
         @test occursin("Cubic", str)
         @test occursin("Linear", str)
         @test occursin("30×25", str)
 
         # 2-arg show (REPL text/plain)
         str_full = sprint(show, MIME("text/plain"), itp_tp)
-        @test occursin("TensorProductInterpolantND", str_full)
+        @test occursin("HeteroInterpolantND", str_full)
         @test occursin("Axis 1: Cubic", str_full)
         @test occursin("Axis 2: Linear", str_full)
 
@@ -309,9 +309,9 @@ using FastInterpolations
         @test interp((x, y), data_2d; method = (ConstantInterp(), ConstantInterp())) isa
             ConstantInterpolantND
 
-        # Hetero → TensorProductInterpolantND
+        # Hetero → HeteroInterpolantND
         @test interp((x, y), data_2d; method = (CubicInterp(), LinearInterp())) isa
-            TensorProductInterpolantND
+            HeteroInterpolantND
     end
 
     # ========================================

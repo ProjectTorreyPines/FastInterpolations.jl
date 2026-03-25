@@ -10,13 +10,13 @@
 # pre-slice data and filter all per-axis tuples to Real-only axes,
 # then delegate to existing reduced-dim APIs (zero internal kernel changes).
 #
-# Include order: after tensor_product_oneshot.jl (needs interp, _eval_hetero_nd_cell, etc.)
+# Include order: after hetero_oneshot.jl (needs interp, _eval_hetero_nd_cell, etc.)
 
 # ========================================
 # Compile-Time Traits
 # ========================================
 
-# _has_nointerp_method is defined in tensor_product_interpolant.jl (included before this file)
+# _has_nointerp_method is defined in hetero_interpolant.jl (included before this file)
 
 # ========================================
 # @generated Tuple Operations
@@ -454,10 +454,10 @@ end
 # repeated search per component (acceptable: NoInterp reduces N, so N_r is small).
 #
 # GridIdx <: Real: no separate Union dispatch needed.
-# TensorProduct overrides vector_calculus.jl methods (more specific arg1 type)
+# HeteroInterpolantND overrides vector_calculus.jl methods (more specific arg1 type)
 # and delegates to _*_nointerp for the optimized pre-slice path.
 
-# --- TensorProduct vector calculus: NoInterp-aware overrides ---
+# --- HeteroInterpolantND vector calculus: NoInterp-aware overrides ---
 # Only override when NoInterp is present (compile-time _has_nointerp_method check).
 # Without NoInterp, delegate to _*_generic helpers in vector_calculus.jl which use
 # the optimal locate-once path (_locate_cell once → _eval_at_cell per component).

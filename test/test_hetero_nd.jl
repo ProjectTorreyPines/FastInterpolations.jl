@@ -417,7 +417,7 @@ using FastInterpolations
     end
 
     # ========================================
-    # OnTheFly TensorProduct Coverage
+    # OnTheFly HeteroInterpolantND Coverage
     # ========================================
     # Exercises: _locate_cell/<:Array, _eval_at_cell/<:Array, _first_hint(::Tuple),
     # _tail_hints(::Tuple), _oneshot_eval_1d(::QuadraticInterp, ...)

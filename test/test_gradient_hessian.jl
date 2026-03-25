@@ -554,7 +554,7 @@ using FastInterpolations
     end
 
     # ========================================
-    # GridIdx support for non-TensorProduct interpolants
+    # GridIdx support for non-HeteroInterpolantND interpolants
     # ========================================
     # GridIdx(k) on axis d → evaluate at grids[d][k], treat axis as discrete (deriv=0).
     # This works generically for CubicInterpolantND, LinearInterpolantND, etc.

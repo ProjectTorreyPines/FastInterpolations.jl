@@ -2,7 +2,7 @@
 # HeteroInterpolantND — Constructor
 # ========================================
 # Public API: interp(grids, data; method, ...)
-# Internal:   _build_tensor_product_nd(grids, data, methods, extrap, search)
+# Internal:   _build_hetero_nd(grids, data, methods, extrap, search)
 
 # ========================================
 # Homogeneous Auto-Dispatch
@@ -44,9 +44,9 @@ function _interp_nd_dispatch(
         grids, data, methods::Tuple{Vararg{AbstractInterpMethod, N}}, coeffs, extrap, search
     ) where {N}
     if coeffs isa PreCompute
-        return _build_tensor_product_precomputed(grids, data, methods, extrap, search)
+        return _build_hetero_precomputed(grids, data, methods, extrap, search)
     else
-        return _build_tensor_product_nd(grids, data, methods, extrap, search)
+        return _build_hetero_nd(grids, data, methods, extrap, search)
     end
 end
 
@@ -174,7 +174,7 @@ end
 # Internal Builder
 # ========================================
 
-function _build_tensor_product_nd(
+function _build_hetero_nd(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv_raw, N},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
@@ -228,7 +228,7 @@ end
 # Precomputed Builder
 # ========================================
 
-function _build_tensor_product_precomputed(
+function _build_hetero_precomputed(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv_raw, N},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},

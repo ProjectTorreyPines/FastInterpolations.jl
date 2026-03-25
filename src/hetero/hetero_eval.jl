@@ -104,7 +104,7 @@ end
 # ========================================
 
 # OnTheFly path: sequential 1D one-shot interpolation per query
-@inline function _eval_tensor_product_nd(
+@inline function _eval_hetero_nd(
         itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
@@ -116,14 +116,14 @@ end
 end
 
 # PreCompute path: precomputed partials + local kernel eval (O(1) per query)
-@inline function _eval_tensor_product_nd(
+@inline function _eval_hetero_nd(
         itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
         query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
         searches::NTuple{N, AbstractSearchPolicy},
         hints,
     ) where {Tg, Tv, N, G, S, M, E, P}
-    return _eval_tensor_product_precomputed(
+    return _eval_hetero_precomputed(
         itp.data, itp.grids, itp.spacings, itp.methods, itp.extraps,
         query, ops, searches, hints
     )
@@ -136,7 +136,7 @@ end
 # Tuple query form — unified entry for Real and GridIdx (GridIdx <: Real).
 # Resolves GridIdx at entry (no-op for plain Real), then routes:
 # - NoInterp in methods → _eval_nointerp (pre-slice strategy)
-# - Normal → standard tensor product eval (GridIdx search short-circuits via dispatch)
+# - Normal → standard hetero eval (GridIdx search short-circuits via dispatch)
 @inline function (itp::HeteroInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv = EvalValue(),
@@ -154,7 +154,7 @@ end
     oob_result = _try_fill_oob(resolved, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
     search_tuple = _resolve_search_nd(search, Val(N), resolved)
-    return _eval_tensor_product_nd(itp, resolved, ops, search_tuple, hint)
+    return _eval_hetero_nd(itp, resolved, ops, search_tuple, hint)
 end
 
 # Vararg form: itp(0.5, 0.3) or itp(0.5, GridIdx(3)) → itp((0.5, ...))

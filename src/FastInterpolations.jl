@@ -13,7 +13,7 @@ include("linear/linear.jl")
 include("constant/constant.jl")
 include("quadratic/quadratic.jl")
 include("cubic/cubic.jl")
-include("tensor_product/tensor_product.jl")
+include("hetero/hetero.jl")
 
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")

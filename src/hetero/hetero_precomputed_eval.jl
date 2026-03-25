@@ -129,7 +129,7 @@ end
 # PreCompute Eval Entry Point
 # ========================================
 
-@inline function _eval_tensor_product_precomputed(
+@inline function _eval_hetero_precomputed(
         itp_data::HeteroPartials{Tv, N},
         grids::NTuple{N, AbstractVector{Tg}},
         spacings,

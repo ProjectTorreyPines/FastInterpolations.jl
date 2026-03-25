@@ -44,10 +44,8 @@ jobs:
 
       - name: Enable AdaptiveArrayPools runtime checks
         run: |
-          julia --project -e '
-            using Preferences, UUIDs
-            Preferences.set_preferences!(UUID("4f381ef7-9af0-4cbe-99d4-cf36d7b0f233"), "runtime_check" => true; force=true)
-          '
+          echo '[AdaptiveArrayPools]' > LocalPreferences.toml
+          echo 'runtime_check = true' >> LocalPreferences.toml
 
       - uses: julia-actions/julia-buildpkg@v1
 
@@ -97,10 +95,8 @@ jobs:
 
       - name: Enable AdaptiveArrayPools runtime checks
         run: |
-          julia --project -e '
-            using Preferences, UUIDs
-            Preferences.set_preferences!(UUID("4f381ef7-9af0-4cbe-99d4-cf36d7b0f233"), "runtime_check" => true; force=true)
-          '
+          echo '[AdaptiveArrayPools]' > LocalPreferences.toml
+          echo 'runtime_check = true' >> LocalPreferences.toml
 
       - uses: julia-actions/julia-buildpkg@v1
 

@@ -2,6 +2,11 @@ using Test
 using FastInterpolations
 using Random
 
+# Log AdaptiveArrayPools runtime check status (compile-time constant)
+let AAP = Base.loaded_modules[Base.PkgId(Base.UUID("4f381ef7-9af0-4cbe-99d4-cf36d7b0f233"), "AdaptiveArrayPools")]
+    @info "AdaptiveArrayPools" runtime_check = AAP.RUNTIME_CHECK
+end
+
 # Julia 1.12+ achieves true zero-allocation via improved escape analysis.
 # Older versions have small runtime overhead from mutable struct field access.
 # Note: 4-way Val dispatch (extrap modes) increases overhead on older Julia (~160 bytes).

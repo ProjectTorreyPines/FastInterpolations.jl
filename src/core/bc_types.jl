@@ -173,7 +173,7 @@ BCPair(t::Tuple{L, R}) where {L <: PointBC, R <: PointBC} =
 
 
 """
-    PeriodicBC{E, P} <: AbstractBC
+    PeriodicBC{E, P, C} <: AbstractBC
 
 Periodic boundary condition: S(x_0) = S(x_n), S'(x_0) = S'(x_n), S''(x_0) = S''(x_n)
 
@@ -182,6 +182,7 @@ Internally, periodic BC uses Sherman-Morrison solver with `PeriodicData{T}` for 
 # Type Parameters
 - `E::Symbol`: `:inclusive` or `:exclusive` (compile-time endpoint convention)
 - `P`: `Nothing` (inclusive or auto-infer) or `<:AbstractFloat` (explicit period)
+- `C::Bool`: whether to validate `y[1] ≈ y[end]` at construction time (default `true`)
 
 # Endpoint Conventions
 - **Inclusive** (`endpoint=:inclusive`, default): `y[1] ≈ y[end]` required (standard convention)
@@ -200,22 +201,27 @@ itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive, period=2π))
 # Exclusive with Range grid (period auto-inferred)
 x = range(0, step=2π/64, length=64)
 itp = cubic_interp(x, sin.(x); bc=PeriodicBC(endpoint=:exclusive))
+
+# Skip endpoint check (e.g., scaled data where noise > 8eps)
+itp = cubic_interp(x, 1e6 .* sin.(x); bc=PeriodicBC(check=false))
 ```
 """
-struct PeriodicBC{E, P} <: AbstractBC
+struct PeriodicBC{E, P, C} <: AbstractBC
     period::P         # Nothing or AbstractFloat
-    function PeriodicBC{E, P}(period::P) where {E, P}
+    function PeriodicBC{E, P, C}(period::P) where {E, P, C}
         E isa Symbol || error("PeriodicBC type parameter E must be a Symbol")
         E in (:inclusive, :exclusive) || error("PeriodicBC type parameter E must be :inclusive or :exclusive")
-        return new{E, P}(period)
+        C isa Bool || error("PeriodicBC type parameter C must be a Bool")
+        return new{E, P, C}(period)
     end
 end
 
-# Accessor for endpoint (from type parameter, zero-cost)
+# Accessors (from type parameters, zero-cost)
 @inline endpoint(::PeriodicBC{E}) where {E} = E
+@inline periodic_check(::PeriodicBC{E, P, C}) where {E, P, C} = C
 
 # Keyword constructor with validation (also serves as zero-arg constructor via defaults)
-function PeriodicBC(; endpoint::Symbol = :inclusive, period::Union{Real, Nothing} = nothing)
+function PeriodicBC(; endpoint::Symbol = :inclusive, period::Union{Real, Nothing} = nothing, check::Bool = true)
     endpoint in (:inclusive, :exclusive) || throw(
         ArgumentError(
             "endpoint must be :inclusive or :exclusive, got :$endpoint"
@@ -227,14 +233,14 @@ function PeriodicBC(; endpoint::Symbol = :inclusive, period::Union{Real, Nothing
                 "period is not applicable for endpoint=:inclusive (y[1]≈y[end] convention)"
             )
         )
-        return PeriodicBC{:inclusive, Nothing}(nothing)
+        return PeriodicBC{:inclusive, Nothing, check}(nothing)
     else # :exclusive
         if period !== nothing
             p = float(period)
             p > 0 || throw(ArgumentError("period must be positive, got $period"))
-            return PeriodicBC{:exclusive, typeof(p)}(p)
+            return PeriodicBC{:exclusive, typeof(p), check}(p)
         else
-            return PeriodicBC{:exclusive, Nothing}(nothing)  # infer from Range at build time
+            return PeriodicBC{:exclusive, Nothing, check}(nothing)  # infer from Range at build time
         end
     end
 end

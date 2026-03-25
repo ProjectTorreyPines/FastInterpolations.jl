@@ -369,13 +369,12 @@ using FastInterpolations
 
     @testset "_check_periodic_endpoints validation (Cubic only)" begin
         # NOTE: Linear interpolation with extrap=WrapExtrap() does NOT check endpoints!
-        # Only cubic bc=PeriodicBC() checks that y[1] == y[end] (strict equality)
+        # Only cubic bc=PeriodicBC() checks that y[1] ≈ y[end] (isapprox for _PromotableValue)
         x = range(0.0, 2π, 101)
 
         @testset "Valid periodic data — exact endpoints (Float64)" begin
-            # Periodic data must have y[end] = y[1] set explicitly
             y_sin = collect(sin.(x))
-            y_sin[end] = y_sin[1]  # Ensure exact equality
+            y_sin[end] = y_sin[1]  # Exact equality
             @test y_sin[1] == y_sin[end]
 
             @test linear_interp(x, y_sin, 0.5; extrap = WrapExtrap()) isa Float64
@@ -383,29 +382,61 @@ using FastInterpolations
 
             # cos(0) = cos(2π) = 1.0 exactly in Float64
             y_cos = collect(cos.(x))
-            y_cos[end] = y_cos[1]
             @test cubic_interp(x, y_cos, 0.5; bc = PeriodicBC()) isa Float64
         end
 
         @testset "Valid periodic data — exact endpoints (Float32)" begin
             x_f32 = range(0.0f0, 2.0f0 * Float32(π), 101)
             y_f32 = collect(sin.(x_f32))
-            y_f32[end] = y_f32[1]  # Ensure exact equality
+            y_f32[end] = y_f32[1]  # Exact equality
             @test y_f32[1] == y_f32[end]
 
             @test linear_interp(x_f32, y_f32, 0.5f0; extrap = WrapExtrap()) isa Float32
             @test cubic_interp(x_f32, y_f32, 0.5f0; bc = PeriodicBC()) isa Float32
         end
 
-        @testset "Approximate endpoints now rejected (strict ==)" begin
-            # sin(0) vs sin(2π) are NOT bit-identical — strict == rejects this
-            y_approx = sin.(x)
-            @test y_approx[1] != y_approx[end]  # Different due to floating-point
-            @test_throws ArgumentError cubic_interp(x, y_approx, 0.5; bc = PeriodicBC())
+        @testset "Approximate endpoints accepted via isapprox (_PromotableValue)" begin
+            # cos(0) vs cos(2π) — both 1.0, isapprox passes (non-zero, rtol works)
+            y_cos = cos.(x)
+            @test isapprox(y_cos[1], y_cos[end])
+            @test cubic_interp(x, y_cos, 0.5; bc = PeriodicBC()) isa Float64
 
-            # Even tiny differences are rejected
-            y_tiny = collect(sin.(x))
-            y_tiny[end] = y_tiny[1] + eps(Float64)
+            # Float32 cos — same story
+            x_f32 = range(0.0f0, 2.0f0 * Float32(π), 101)
+            y_cos_f32 = cos.(x_f32)
+            @test isapprox(y_cos_f32[1], y_cos_f32[end])
+            @test cubic_interp(x_f32, y_cos_f32, 0.5f0; bc = PeriodicBC()) isa Float32
+        end
+
+        @testset "Near-zero endpoints accepted via atol = 8eps" begin
+            # sin(0) vs sin(2π): diff ≈ 1.1 eps, covered by atol = 8eps noise floor
+            y_sin_raw = sin.(x)
+            @test !isapprox(y_sin_raw[1], y_sin_raw[end])  # default isapprox fails
+            @test cubic_interp(x, y_sin_raw, 0.5; bc = PeriodicBC()) isa Float64  # but 8eps atol saves it
+
+            # Float32 sin
+            x_f32 = range(0.0f0, 2.0f0 * Float32(π), 101)
+            y_sin_f32 = sin.(x_f32)
+            @test cubic_interp(x_f32, y_sin_f32, 0.5f0; bc = PeriodicBC()) isa Float32
+        end
+
+        @testset "Scaled near-zero — atol=8eps not enough, requires y[end]=y[1] or check=false" begin
+            # 1e6 * sin(x): noise ≈ 1e6 * eps, exceeds 8eps floor
+            y_scaled = 1.0e6 .* sin.(x)
+            @test_throws ArgumentError cubic_interp(x, y_scaled, 0.5; bc = PeriodicBC())
+
+            # Fix 1: set endpoint explicitly
+            y_fixed = copy(y_scaled)
+            y_fixed[end] = y_fixed[1]
+            @test cubic_interp(x, y_fixed, 0.5; bc = PeriodicBC()) isa Float64
+
+            # Fix 2: skip check via check=false
+            @test cubic_interp(x, y_scaled, 0.5; bc = PeriodicBC(check = false)) isa Float64
+        end
+
+        @testset "Clearly different endpoints — rejected" begin
+            y_tiny = collect(cos.(x))
+            y_tiny[end] = y_tiny[1] + 1.0e-6  # Well beyond isapprox tolerance
             @test_throws ArgumentError cubic_interp(x, y_tiny, 0.5; bc = PeriodicBC())
         end
 
@@ -435,8 +466,26 @@ using FastInterpolations
                 @test occursin("PeriodicBC", msg)
                 @test occursin("y[1]", msg)
                 @test occursin("y[end]", msg)
-                @test occursin("y[end] = y[1]", msg)  # Helpful tip
+                @test occursin("check=false", msg)  # Helpful tip
             end
+        end
+
+        @testset "PeriodicBC(check=false) — type stability (@inferred)" begin
+            using Test: @inferred
+            x_r = range(0.0, 2π, 101)
+            y_scaled = 1.0e6 .* sin.(x_r)
+            # check=false must not introduce type instability or allocation
+            bc_nocheck = PeriodicBC(check = false)
+            @test @inferred(cubic_interp(x_r, y_scaled, 0.5; bc = bc_nocheck)) isa Float64
+
+            # check=true (default) with valid data
+            y_cos = cos.(x_r)
+            bc_check = PeriodicBC()
+            @test @inferred(cubic_interp(x_r, y_cos, 0.5; bc = bc_check)) isa Float64
+
+            # Interpolant construction also type-stable
+            @test @inferred(cubic_interp(collect(x_r), y_cos; bc = bc_check)) isa CubicInterpolant
+            @test @inferred(cubic_interp(collect(x_r), y_scaled; bc = bc_nocheck)) isa CubicInterpolant
         end
     end
 

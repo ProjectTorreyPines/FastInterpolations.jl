@@ -290,7 +290,7 @@ so the pool memory can be safely reused after this function returns.
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tv}
     x, y = _prepare_periodic(x, y, bc)
-    _check_periodic_endpoints(y)
+    _check_periodic_endpoints(bc, y)
     cache = _get_cubic_cache(x, PeriodicBC(), autocache)
     tmp_z = similar!(pool, y)
     _solve_system!(tmp_z, cache, y, cache.bc_config)

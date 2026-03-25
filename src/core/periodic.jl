@@ -51,18 +51,49 @@ end
 """
     _check_periodic_endpoints(y::AbstractVector)
 
-Validate that `y[1] == y[end]` for periodic boundary conditions (inclusive endpoint).
+Validate that `y[1] ≈ y[end]` for periodic boundary conditions (inclusive endpoint).
 Called once at construction time (zero runtime overhead).
 
-Uses strict `==` equality — no approximate comparison. This is universal for all
-value types (scalars, vectors, duck-typed custom types) without requiring `norm`,
-`isapprox`, or any tolerance parameters.
+Three-tier dispatch based on element type:
 
-If your data is computed (e.g., `sin.(range(0, 2π, n))`), set `y[end] = y[1]`
-explicitly to ensure exact periodicity.
+- **`AbstractFloat`**: `isapprox` with `atol = 8eps(T)` — handles both relative differences
+  (e.g., `cos(0) ≈ cos(2π)`) and near-zero noise floor (e.g., `sin(0)` vs `sin(2π)`).
+  The `8eps` constant is compile-time folded (zero overhead vs plain `isapprox`).
+- **`Complex{<:AbstractFloat}`**: same, using `eps(real(T))`.
+- **Other `_PromotableValue`** (Integer, Rational): `isapprox` with default tolerances.
+- **Duck types** (Dual, SVector, ...): strict `==` (isapprox semantics not guaranteed).
+
+!!! note "Scaled near-zero endpoints"
+    `atol = 8eps` covers direct evaluations (e.g., `sin.(x)`), but not scaled
+    variants (e.g., `1e6 .* sin.(x)` where noise ≈ 1e6·eps). For those cases,
+    set `y[end] = y[1]` explicitly, or use `PeriodicBC(check=false)` to skip
+    this validation.
 
 Throws `ArgumentError` if endpoints differ.
 """
+@inline function _check_periodic_endpoints(bc::PeriodicBC, y::AbstractVector)
+    periodic_check(bc) || return nothing
+    _check_periodic_endpoints(y)
+    return nothing
+end
+
+@inline function _check_periodic_endpoints(y::AbstractVector{T}) where {T <: AbstractFloat}
+    isapprox(first(y), last(y); atol = 8 * eps(T)) || _throw_periodic_endpoint_error(first(y), last(y))
+    return nothing
+end
+
+@inline function _check_periodic_endpoints(y::AbstractVector{Complex{T}}) where {T <: AbstractFloat}
+    isapprox(first(y), last(y); atol = 8 * eps(T)) || _throw_periodic_endpoint_error(first(y), last(y))
+    return nothing
+end
+
+# Integer, Rational: isapprox with default tolerances (effectively ==)
+@inline function _check_periodic_endpoints(y::AbstractVector{<:_PromotableValue})
+    isapprox(first(y), last(y)) || _throw_periodic_endpoint_error(first(y), last(y))
+    return nothing
+end
+
+# Duck-type fallback: strict == (isapprox not guaranteed for arbitrary types)
 @inline function _check_periodic_endpoints(y::AbstractVector)
     _extract_primal(first(y)) == _extract_primal(last(y)) || _throw_periodic_endpoint_error(first(y), last(y))
     return nothing
@@ -71,10 +102,11 @@ end
 @noinline function _throw_periodic_endpoint_error(y1, yn)
     throw(
         ArgumentError(
-            "PeriodicBC (inclusive endpoint) requires y[1] == y[end], " *
+            "PeriodicBC (inclusive endpoint) requires y[1] ≈ y[end], " *
                 "got y[1]=$y1, y[end]=$yn. " *
-                "Tip: set y[end] = y[1] to ensure exact periodicity, or use " *
-                "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point."
+                "Tip: set y[end] = y[1] explicitly, use " *
+                "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point, " *
+                "or PeriodicBC(check=false) to skip this validation."
         )
     )
 end
@@ -93,9 +125,10 @@ end
 @noinline function _throw_periodic_nd_error(d, v_first, v_last)
     throw(
         ArgumentError(
-            "Periodic BC on dim $d requires data[1,...] == data[end,...], " *
+            "Periodic BC on dim $d requires data[1,...] ≈ data[end,...], " *
                 "but found data[1,...]=$v_first, data[end,...]=$v_last. " *
-                "Tip: set the last slice equal to the first along dim $d."
+                "Tip: set the last slice equal to the first along dim $d, " *
+                "or use PeriodicBC(check=false) to skip this validation."
         )
     )
 end
@@ -170,8 +203,8 @@ Used so that `itp.bc` always carries the actual period for display/introspection
 Uses the inner constructor directly to bypass keyword-constructor validation
 (which rejects `period` for inclusive BCs).
 """
-@inline _with_resolved_period(::PeriodicBC{E}, period::T) where {E, T} =
-    PeriodicBC{E, T}(period)
+@inline _with_resolved_period(::PeriodicBC{E, <:Any, C}, period::T) where {E, T, C} =
+    PeriodicBC{E, T, C}(period)
 
 """
     _extend_exclusive(x, y, bc::PeriodicBC) -> (x_ext, y_ext)

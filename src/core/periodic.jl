@@ -56,9 +56,10 @@ Called once at construction time (zero runtime overhead).
 
 Three-tier dispatch based on element type:
 
-- **`AbstractFloat`**: `isapprox` with `atol = 8eps(T)` — handles both relative differences
-  (e.g., `cos(0) ≈ cos(2π)`) and near-zero noise floor (e.g., `sin(0)` vs `sin(2π)`).
-  The `8eps` constant is compile-time folded (zero overhead vs plain `isapprox`).
+- **`AbstractFloat`**: `isapprox` with `atol = 8eps(T)` and `rtol = √eps(T)` — the atol
+  covers near-zero noise floor (e.g., `sin(0)` vs `sin(2π)`), while rtol handles relative
+  differences at larger magnitudes (e.g., `cos(0) ≈ cos(2π)`).
+  Both constants are compile-time folded (zero overhead vs plain `isapprox`).
 - **`Complex{<:AbstractFloat}`**: same, using `eps(real(T))`.
 - **Other `_PromotableValue`** (Integer, Rational): `isapprox` with default tolerances.
 - **Duck types** (Dual, SVector, ...): strict `==` (isapprox semantics not guaranteed).
@@ -78,12 +79,14 @@ Throws `ArgumentError` if endpoints differ.
 end
 
 @inline function _check_periodic_endpoints(y::AbstractVector{T}) where {T <: AbstractFloat}
-    isapprox(first(y), last(y); atol = 8 * eps(T)) || _throw_periodic_endpoint_error(first(y), last(y))
+    isapprox(first(y), last(y); atol = 8 * eps(T), rtol = sqrt(eps(T))) ||
+        _throw_periodic_endpoint_error(first(y), last(y))
     return nothing
 end
 
 @inline function _check_periodic_endpoints(y::AbstractVector{Complex{T}}) where {T <: AbstractFloat}
-    isapprox(first(y), last(y); atol = 8 * eps(T)) || _throw_periodic_endpoint_error(first(y), last(y))
+    isapprox(first(y), last(y); atol = 8 * eps(T), rtol = sqrt(eps(T))) ||
+        _throw_periodic_endpoint_error(first(y), last(y))
     return nothing
 end
 

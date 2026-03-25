@@ -7,23 +7,9 @@
 # schemes (bit-encoded for homogeneous ND, mixed-radix for heterogeneous ND).
 
 # ========================================
-# Internal Helpers
+# Internal Helpers — Index Computation
 # ========================================
 
-"""
-    _order_to_bitindex(order::NTuple{N, Integer}) -> Int
-
-Convert a binary derivative order tuple to a bit-encoded linear index.
-
-For homogeneous ND (Cubic/Quadratic), partials use bit-encoding:
-`p = 1 + Σ(order[k] × 2^(k-1))`.
-
-# Examples
-- `(0, 0)` → 1 (function value)
-- `(1, 0)` → 2 (∂f/∂x)
-- `(0, 1)` → 3 (∂f/∂y)
-- `(1, 1)` → 4 (∂²f/∂x∂y)
-"""
 @inline function _order_to_bitindex(order::NTuple{N, Integer}) where {N}
     p = 1
     for k in 1:N
@@ -32,14 +18,6 @@ For homogeneous ND (Cubic/Quadratic), partials use bit-encoding:
     return p
 end
 
-"""
-    _order_to_hetero_index(order, methods) -> Int
-
-Convert a binary derivative order tuple to a compact mixed-radix index.
-
-For heterogeneous ND, partials use mixed-radix indexing where non-derivative
-axes (Linear/Constant/NoInterp) have size 1 and are skipped.
-"""
 @inline function _order_to_hetero_index(
         order::NTuple{N, Integer}, methods::Tuple{Vararg{AbstractInterpMethod, N}}
     ) where {N}
@@ -53,16 +31,69 @@ axes (Linear/Constant/NoInterp) have size 1 and are skipped.
 end
 
 # ========================================
-# Validation
+# Internal Helpers — Per-Type Accessors
 # ========================================
+
+# --- Partials array accessor ---
+
+@inline _partials_array(itp::CubicInterpolantND) = itp.nodal_derivs.partials
+@inline _partials_array(itp::QuadraticInterpolantND) = itp.nodal_derivs.partials
+
+@inline function _partials_array(itp::HeteroInterpolantND)
+    if itp.data isa _HeteroPartials
+        return itp.data.partials
+    else
+        throw(
+            ArgumentError(
+                "nodal_partials requires PreCompute() strategy — " *
+                "use `interp(...; coeffs=PreCompute())` to enable nodal derivative storage"
+            )
+        )
+    end
+end
+
+@noinline _partials_array(::LinearInterpolantND) = throw(
+    ArgumentError("LinearInterpolantND does not store nodal partial derivatives")
+)
+
+@noinline _partials_array(::ConstantInterpolantND) = throw(
+    ArgumentError("ConstantInterpolantND does not store nodal partial derivatives")
+)
+
+# --- Validate + compute index ---
+
+@inline function _validate_and_index(
+        ::Union{CubicInterpolantND, QuadraticInterpolantND},
+        order::NTuple{N, Integer},
+    ) where {N}
+    _validate_binary_order(order)
+    return _order_to_bitindex(order)
+end
+
+@inline function _validate_and_index(
+        itp::HeteroInterpolantND, order::NTuple{N, Integer}
+    ) where {N}
+    _validate_hetero_order(order, itp.methods)
+    return _order_to_hetero_index(order, itp.methods)
+end
+
+# Linear/Constant: _partials_array already throws before _validate_and_index is reached,
+# but define a fallback for completeness
+@inline function _validate_and_index(
+        ::Union{LinearInterpolantND, ConstantInterpolantND},
+        order::NTuple{N, Integer},
+    ) where {N}
+    _validate_binary_order(order)
+    return 1
+end
+
+# --- Validation helpers ---
 
 @inline function _validate_binary_order(order::NTuple{N, Integer}) where {N}
     for d in 1:N
         o = order[d]
         (o == 0 || o == 1) || throw(
-            ArgumentError(
-                "derivative order at axis $d must be 0 or 1, got $o"
-            )
+            ArgumentError("derivative order at axis $d must be 0 or 1, got $o")
         )
     end
     return nothing
@@ -99,7 +130,7 @@ differentiation, `1` means first derivative along that axis.
 
 # Examples
 ```julia
-itp = interp((x, y), data)  # CubicInterpolantND (2D)
+itp = interp((x, y), data; method=CubicInterp())
 
 nodal_partials(itp, (0, 0))  # f(xᵢ, yⱼ)      — function values
 nodal_partials(itp, (1, 0))  # ∂f/∂x(xᵢ, yⱼ)  — x-derivative at nodes
@@ -116,68 +147,19 @@ For heterogeneous interpolants, only axes using `CubicInterp` or
 - `QuadraticInterpolantND` — all `2^N` combinations (mixed partials are zero)
 - `HeteroInterpolantND` with `PreCompute()` — per-axis validation
 """
+function nodal_partials end
+
 function nodal_partials(
-        itp::CubicInterpolantND{Tg, Tv, N}, order::NTuple{N, Integer}
+        itp::AbstractInterpolantND{Tg, Tv, N}, order::NTuple{N, Integer}
     ) where {Tg, Tv, N}
-    _validate_binary_order(order)
-    p = _order_to_bitindex(order)
-    return @view itp.nodal_derivs.partials[p, ntuple(_ -> :, Val(N))...]
-end
-
-function nodal_partials(
-        itp::QuadraticInterpolantND{Tg, Tv, N}, order::NTuple{N, Integer}
-    ) where {Tg, Tv, N}
-    _validate_binary_order(order)
-    p = _order_to_bitindex(order)
-    return @view itp.nodal_derivs.partials[p, ntuple(_ -> :, Val(N))...]
-end
-
-# HeteroInterpolantND — PreCompute (D <: _HeteroPartials)
-function nodal_partials(
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D}, order::NTuple{N, Integer}
-    ) where {Tg, Tv, N, G, S, M, E, P, D <: _HeteroPartials}
-    _validate_hetero_order(order, itp.methods)
-    p = _order_to_hetero_index(order, itp.methods)
-    return @view itp.data.partials[p, ntuple(_ -> :, Val(N))...]
-end
-
-# ========================================
-# Error Methods (unsupported types)
-# ========================================
-
-# HeteroInterpolantND — OnTheFly (D <: Array)
-function nodal_partials(
-        ::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array}, ::NTuple{N, Integer}
-    ) where {Tg, Tv, N, G, S, M, E, P}
-    throw(
-        ArgumentError(
-            "nodal_partials requires PreCompute() strategy — " *
-            "use `interp(...; coeffs=PreCompute())` to enable nodal derivative storage"
-        )
-    )
-end
-
-# LinearInterpolantND
-function nodal_partials(::LinearInterpolantND, ::NTuple{N, Integer}) where {N}
-    throw(
-        ArgumentError(
-            "LinearInterpolantND does not store nodal partial derivatives"
-        )
-    )
-end
-
-# ConstantInterpolantND
-function nodal_partials(::ConstantInterpolantND, ::NTuple{N, Integer}) where {N}
-    throw(
-        ArgumentError(
-            "ConstantInterpolantND does not store nodal partial derivatives"
-        )
-    )
+    partials = _partials_array(itp)
+    p = _validate_and_index(itp, order)
+    return @view partials[p, ntuple(_ -> :, Val(N))...]
 end
 
 # DimensionMismatch fallback (M != N)
 function nodal_partials(
-        itp::AbstractInterpolantND{Tg, Tv, N}, order::NTuple{M, Integer}
+        ::AbstractInterpolantND{Tg, Tv, N}, ::NTuple{M, Integer}
     ) where {Tg, Tv, N, M}
     throw(
         DimensionMismatch(

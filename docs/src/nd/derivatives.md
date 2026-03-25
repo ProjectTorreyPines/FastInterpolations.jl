@@ -105,6 +105,32 @@ hessian!(H, itp, (0.5, 1.0, 0.3))
 
 ---
 
+## Nodal Partials — Precomputed Derivatives at Grid Nodes
+
+`nodal_partials` returns a zero-copy view of precomputed partial derivatives stored at grid nodes. Unlike `deriv`/`gradient` which evaluate at arbitrary points, this accesses the raw derivative arrays built during interpolant construction.
+
+```julia
+itp = interp((x, y), data; method=CubicInterp())
+
+nodal_partials(itp, (0, 0))   # f(xᵢ, yⱼ)      — function values
+nodal_partials(itp, (1, 0))   # ∂f/∂x(xᵢ, yⱼ)  — x-derivatives at nodes
+nodal_partials(itp, (0, 1))   # ∂f/∂y(xᵢ, yⱼ)  — y-derivatives at nodes
+nodal_partials(itp, (1, 1))   # ∂²f/∂x∂y        — mixed partials at nodes
+```
+
+For heterogeneous interpolants, only derivative-capable axes (Cubic/Quadratic) support `order=1`:
+
+```julia
+itp = interp((x, y), data; method=(CubicInterp(), LinearInterp()), coeffs=PreCompute())
+
+nodal_partials(itp, (1, 0))   # OK — cubic axis
+nodal_partials(itp, (0, 1))   # ERROR — LinearInterp has no stored derivatives
+```
+
+**Supported types**: `CubicInterpolantND`, `QuadraticInterpolantND`, `HeteroInterpolantND` (with `PreCompute()`).
+
+---
+
 ## See Also
 
 - **[1D Derivatives](../interpolation/derivatives.md)** — 1D derivative reference

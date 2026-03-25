@@ -28,7 +28,7 @@ CubicInterpolantND
 ### Unified API Types
 
 ```@docs
-TensorProductInterpolantND
+HeteroInterpolantND
 AbstractInterpMethod
 CubicInterp
 LinearInterp

@@ -46,7 +46,7 @@ end
         throw(
             ArgumentError(
                 "nodal_partials requires PreCompute() strategy — " *
-                "use `interp(...; coeffs=PreCompute())` to enable nodal derivative storage"
+                    "use `interp(...; coeffs=PreCompute())` to enable nodal derivative storage"
             )
         )
     end
@@ -108,7 +108,7 @@ function _validate_hetero_order(
             throw(
                 ArgumentError(
                     "axis $d uses $(methods[d]) which does not store nodal derivatives — " *
-                    "only CubicInterp/QuadraticInterp axes support derivative extraction"
+                        "only CubicInterp/QuadraticInterp axes support derivative extraction"
                 )
             )
         end

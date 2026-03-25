@@ -48,6 +48,7 @@ export constant_adjoint, ConstantAdjoint, ConstantAdjointND  # Constant adjoint 
 export linear_adjoint, LinearAdjoint, LinearAdjointND  # Linear adjoint operators (W^T)
 export quadratic_adjoint, QuadraticAdjoint, QuadraticAdjointND  # Quadratic adjoint operators (W^T)
 export cubic_adjoint, CubicAdjoint, CubicAdjointND  # Cubic adjoint operators (W^T)
+export hetero_adjoint, HeteroAdjointND  # Heterogeneous ND adjoint operator (W^T)
 export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly  # ND cubic types
 export interp, interp!, HeteroInterpolantND  # Tensor product ND (per-axis methods)
 export AbstractInterpMethod, CubicInterp, LinearInterp, QuadraticInterp, ConstantInterp, NoInterp

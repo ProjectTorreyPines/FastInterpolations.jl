@@ -927,12 +927,15 @@ _adjoint_compact_summary(adj::QuadraticAdjointND) = _short_bc_name_nd(adj.bcs)
 _adjoint_compact_summary(adj::LinearAdjointND) = _short_extrap_name_nd(adj.extraps)
 _adjoint_compact_summary(adj::ConstantAdjointND) =
     _short_side_name_nd(adj.sides) * "/" * _short_extrap_name_nd(adj.extraps)
+_adjoint_compact_summary(adj::HeteroAdjointND) =
+    join(map(m -> _short_method_name(m), adj.methods), "×")
 
 # --- Protocol: grids accessor ---
 _adjoint_grids(adj::CubicAdjointND) = map(c -> c.x, adj.caches)
 _adjoint_grids(adj::LinearAdjointND) = adj.grids
 _adjoint_grids(adj::ConstantAdjointND) = adj.grids
 _adjoint_grids(adj::QuadraticAdjointND) = adj.grids
+_adjoint_grids(adj::HeteroAdjointND) = adj.grids
 
 # --- Protocol: detail rows for text/plain ---
 _adjoint_show_detail_rows(io::IO, adj::CubicAdjointND) =
@@ -946,6 +949,9 @@ function _adjoint_show_detail_rows(io::IO, adj::ConstantAdjointND)
     _show_nd_config_row(io, false, "Side:  ", adj.sides, _format_side; value_color = :magenta)
     println(io)
     return _show_nd_config_row(io, true, "Extrap:", adj.extraps, _format_extrap)
+end
+function _adjoint_show_detail_rows(io::IO, adj::HeteroAdjointND)
+    return _show_nd_config_row(io, true, "Method:", adj.methods, _short_method_name)
 end
 
 # Compact extrap name for ND (analogous to _short_bc_name_nd / _short_side_name_nd)

@@ -1,0 +1,610 @@
+# ========================================
+# ND Heterogeneous Adjoint: Implementation
+# ========================================
+#
+# Computes f̄ = Wᵀ · ȳ for N-dimensional heterogeneous interpolation.
+#
+# Pipeline (adj(y_bar) → f_bar):
+#   Step 0: Scatter — y_bar → partials_bar (mixed-radix compact, per-axis weights)
+#   Step 1: Build adjoint (d=N..1, reverse order, compact strides):
+#           a. CubicInterp axes: moments_to_deriv adjoint + Thomas transpose solve + RHS adjoint
+#           b. QuadraticInterp axes: recurrence adjoint + secant adjoint
+#           c. LinearInterp/ConstantInterp axes: SKIP (sizes[d]=1, no derivative partial)
+#   Step 2: Extract f_bar = partials_bar[1, ...]
+#
+# Dependencies (included before this file):
+# - _NDAdjointAnchor (core/nd_adjoint_scatter.jl)
+# - _HeteroAdjointAnchor weight functions (hetero_adjoint_types.jl)
+# - _adjoint_axis_pair!, _adjoint_axis_pair_periodic! (cubic/nd/cubic_nd_adjoint.jl)
+# - _adjoint_axis_pair_quadratic! (quadratic/nd/quadratic_nd_adjoint.jl)
+# - _deriv_size, _deriv_sizes (hetero_build.jl)
+# - _get_effective_bc, _get_effective_bc_quadratic (cubic_nd_build.jl, hetero_build.jl)
+# - _get_cubic_cache (cubic_cache_pool.jl)
+
+# ========================================
+# Anchor Baking
+# ========================================
+
+"""
+    _bake_hetero_nd_anchors(grids, spacings, queries, extraps, methods)
+
+Precompute cell indices and per-axis 4-tuple weights for each query point.
+Dispatches to per-method weight functions: cubic, quadratic, linear, or constant.
+
+OOB handling per axis (baked at construction):
+- `FillExtrap`: zero ALL weights (fill value independent of f)
+- `ClampExtrap`: zero derivative weights w1-w3 (clamped value IS function of f)
+"""
+function _bake_hetero_nd_anchors(
+        grids::NTuple{N, AbstractVector{Tg}},
+        spacings::NTuple{N, AbstractGridSpacing{Tg}},
+        queries,
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+        methods::Tuple{Vararg{AbstractInterpMethod, N}}
+    ) where {N, Tg <: AbstractFloat}
+    nq = _query_length(queries)
+    _query_validate(queries)
+    _validate_nd_domain(grids, queries, extraps)
+
+    anchors = Vector{_NDAdjointAnchor{Tg, N}}(undef, nq)
+    @inbounds for q in 1:nq
+        query_q = _extract_query_point(queries, q, Val(N))
+        idx_and_weights = ntuple(Val(N)) do d
+            xq_raw = Tg(query_q[d])
+            xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
+            idx, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
+            h = _get_h(spacings[d], idx)
+            inv_h = _get_inv_h(spacings[d], idx)
+            t = (xq_d - xL) * inv_h
+            dL = xq_d - xL
+            is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])
+            return (idx, _compute_hetero_anchor_weights(t, h, inv_h, dL, methods[d]), is_oob)
+        end
+        indices = ntuple(d -> idx_and_weights[d][1], Val(N))
+        w0 = ntuple(d -> idx_and_weights[d][2][1], Val(N))
+        w1 = ntuple(d -> idx_and_weights[d][2][2], Val(N))
+        w2 = ntuple(d -> idx_and_weights[d][2][3], Val(N))
+        w3 = ntuple(d -> idx_and_weights[d][2][4], Val(N))
+
+        # Per-axis OOB weight fixup
+        for d in 1:N
+            idx_and_weights[d][3] || continue  # skip in-bounds axes
+            ext_d = extraps[d]
+            zw = (zero(Tg), zero(Tg), zero(Tg), zero(Tg))
+            if ext_d isa FillExtrap
+                w0 = Base.setindex(w0, zw, d)
+                w1 = Base.setindex(w1, zw, d)
+                w2 = Base.setindex(w2, zw, d)
+                w3 = Base.setindex(w3, zw, d)
+            elseif ext_d isa ClampExtrap
+                w1 = Base.setindex(w1, zw, d)
+                w2 = Base.setindex(w2, zw, d)
+                w3 = Base.setindex(w3, zw, d)
+            end
+        end
+
+        anchors[q] = _NDAdjointAnchor{Tg, N}(indices, w0, w1, w2, w3)
+    end
+    return anchors
+end
+
+# ========================================
+# Mixed-Radix Scatter Codegen
+# ========================================
+
+"""
+    _scatter_hetero_nd_codegen(N, sizes, idx_syms, w_syms) -> Vector{Expr}
+
+Emit compact scatter accumulation statements using mixed-radix partial indexing.
+
+For each partial index p ∈ 1:prod(sizes) and each corner c ∈ 0:2^N-1:
+  partials_bar[p, idx₁+c₁, ..., idxₙ+cₙ] += yb * w₁ⱼ * w₂ⱼ * ... * wₙⱼ
+
+Partial index uses column-major mixed-radix decomposition:
+  p = 1 + d₁ + sizes[1]*(d₂ + sizes[2]*(d₃ + ...))
+  where dₖ ∈ {0, ..., sizes[k]-1}
+
+Per axis d:
+- If sizes[d]=2 (derivative method): corner_d ∈ {0,1}, deriv_d ∈ {0,1}
+  → weight index = 1 + corner_d + 2*deriv_d (4 entries)
+- If sizes[d]=1 (non-derivative method): corner_d ∈ {0,1}, deriv_d = 0
+  → weight index = 1 + corner_d (2 entries only)
+"""
+function _scatter_hetero_nd_codegen(N::Int, sizes::NTuple, idx_syms, w_syms)
+    stmts = Expr[]
+    NP = prod(sizes)  # compact partial count
+    NC = 1 << N       # 2^N corners (spatial, always)
+
+    for p_flat in 0:(NP - 1)
+        # Decompose p_flat into per-axis derivative indices (mixed-radix)
+        deriv_indices = Vector{Int}(undef, N)
+        remainder = p_flat
+        for d in 1:N
+            deriv_indices[d] = remainder % sizes[d]
+            remainder = remainder ÷ sizes[d]
+        end
+
+        for c in 0:(NC - 1)
+            weight_factors = Symbol[]
+            for d in 1:N
+                corner_d = (c >> (d - 1)) & 1
+                deriv_d = deriv_indices[d]
+                # Weight index: 1 + corner + 2*deriv (same convention as _scatter_nd!)
+                w_idx = 1 + corner_d + 2 * deriv_d
+                push!(weight_factors, w_syms[d, w_idx])
+            end
+            # Product of per-axis weights
+            wp_expr = weight_factors[1]
+            for i in 2:length(weight_factors)
+                wp_expr = :($wp_expr * $(weight_factors[i]))
+            end
+            # Corner offsets
+            offsets = _corner_offset_expr(c, N)
+            idx_exprs = [:($(idx_syms[d]) + $(offsets[d])) for d in 1:N]
+            # Mixed-radix partial index (1-based)
+            p_idx = p_flat + 1
+            lhs = :(partials_bar[$p_idx, $(idx_exprs...)])
+            push!(stmts, :($lhs += yb * $wp_expr))
+        end
+    end
+    return stmts
+end
+
+# ========================================
+# @generated Scatter Kernel
+# ========================================
+
+"""
+    _scatter_hetero_nd!(partials_bar, yb, anchor, ops, methods)
+
+@generated tensor-product scatter with mixed-radix partial indexing and per-axis DerivOp dispatch.
+Uses compact partials_bar first dimension (prod(sizes) instead of 2^N).
+"""
+@inline @generated function _scatter_hetero_nd!(
+        partials_bar::AbstractArray{Tv, NP1},
+        yb,
+        anchor::_NDAdjointAnchor{Tg, N},
+        ops::OPS,
+        ::M
+    ) where {Tv, Tg, N, NP1, OPS <: NTuple{N, AbstractEvalOp}, M <: Tuple{Vararg{AbstractInterpMethod, N}}}
+    sizes = _deriv_sizes(M)
+    NP1_expected = N + 1
+    NP1 == NP1_expected || error("NP1 must equal N+1, got NP1=$NP1, N=$N")
+
+    stmts = Expr[]
+
+    # Unpack indices
+    idx_syms = ntuple(d -> Symbol("idx_", d), N)
+    push!(stmts, :($(Expr(:tuple, idx_syms...)) = anchor.indices))
+
+    # Per-axis: select weight field based on DerivOp order from type parameter
+    w_field_names = [:w0, :w1, :w2, :w3]
+    w_syms = Matrix{Symbol}(undef, N, 4)
+    for d in 1:N
+        k_d = deriv_order(fieldtype(OPS, d))
+        wf = w_field_names[k_d + 1]
+        w_syms[d, 1] = Symbol("w_", d, "_fL")
+        w_syms[d, 2] = Symbol("w_", d, "_fR")
+        w_syms[d, 3] = Symbol("w_", d, "_dyL")
+        w_syms[d, 4] = Symbol("w_", d, "_dyR")
+        lhs = Expr(:tuple, w_syms[d, 1], w_syms[d, 2], w_syms[d, 3], w_syms[d, 4])
+        push!(stmts, :($lhs = anchor.$wf[$d]))
+    end
+
+    # Emit mixed-radix scatter
+    append!(stmts, _scatter_hetero_nd_codegen(N, sizes, idx_syms, w_syms))
+
+    return quote
+        Base.@_inline_meta
+        @inbounds begin
+            $(stmts...)
+        end
+        return nothing
+    end
+end
+
+# ========================================
+# Scatter Dispatch Wrappers
+# ========================================
+
+@inline function _adjoint_scatter_hetero_nd!(partials_bar, anchors, y_bar::Real, ops, methods)
+    return @inbounds _scatter_hetero_nd!(partials_bar, y_bar, anchors[1], ops, methods)
+end
+
+@inline function _adjoint_scatter_hetero_nd!(partials_bar, anchors, y_bar, ops, methods)
+    return @inbounds for q in eachindex(y_bar)
+        _scatter_hetero_nd!(partials_bar, y_bar[q], anchors[q], ops, methods)
+    end
+end
+
+# ========================================
+# Build Adjoint — Per-Method Function Barriers
+# ========================================
+
+# CubicInterp: dispatch to existing cubic adjoint axis pair (non-periodic or periodic)
+@inline function _hetero_axis_adjoint!(
+        src_3d, dst_3d,
+        ::CubicInterp,
+        p_src::Int,
+        cache_d, mixed_cache_d,
+        spacing_d::AbstractGridSpacing{Tg},
+        bc_d, mixed_bc_d,
+        grid_d::AbstractVector{Tg},
+        shape_before::Int, n_d::Int, shape_after::Int,
+        z_bar::AbstractVector{Tv},
+        f_contrib::AbstractVector{Tv},
+        dy_bar_slice::AbstractVector{Tv},
+        q_t,   # periodic solve precomputation (or nothing)
+        ::Tg   # mincurv_C (unused for cubic)
+    ) where {Tv, Tg}
+    is_periodic_d = _is_periodic_bc(bc_d)
+    if is_periodic_d
+        _adjoint_axis_pair_periodic!(
+            src_3d, dst_3d, cache_d, spacing_d,
+            shape_before, n_d, shape_after,
+            z_bar, f_contrib, dy_bar_slice, q_t
+        )
+    elseif p_src == 1
+        _adjoint_axis_pair!(
+            src_3d, dst_3d, cache_d, spacing_d,
+            bc_d, grid_d,
+            shape_before, n_d, shape_after,
+            z_bar, f_contrib, dy_bar_slice
+        )
+    else
+        _adjoint_axis_pair!(
+            src_3d, dst_3d, mixed_cache_d, spacing_d,
+            mixed_bc_d, grid_d,
+            shape_before, n_d, shape_after,
+            z_bar, f_contrib, dy_bar_slice
+        )
+    end
+    return nothing
+end
+
+# QuadraticInterp: dispatch to existing quadratic adjoint axis pair
+@inline function _hetero_axis_adjoint!(
+        src_3d, dst_3d,
+        m::QuadraticInterp,
+        p_src::Int,
+        cache_d, mixed_cache_d,
+        spacing_d::AbstractGridSpacing{Tg},
+        bc_d, mixed_bc_d,
+        grid_d::AbstractVector{Tg},
+        shape_before::Int, n_d::Int, shape_after::Int,
+        z_bar::AbstractVector{Tv},  # reused as s_bar (size n_d-1 needed, we use a view)
+        f_contrib::AbstractVector{Tv},
+        dy_bar_slice::AbstractVector{Tv},  # reused as d_bar_work
+        ::Any,    # q_t (unused for quadratic)
+        mincurv_C_d::Tg
+    ) where {Tv, Tg}
+    eff_bc = _get_effective_bc_quadratic(bc_d, p_src, grid_d)
+    bc_q = _to_quadratic_bc_adjoint(eff_bc, Tg)
+
+    # z_bar is size n_d — reuse first n_d-1 elements as s_bar
+    s_bar = view(z_bar, 1:(n_d - 1))
+    _adjoint_axis_pair_quadratic!(
+        src_3d, dst_3d, spacing_d, bc_q, grid_d,
+        shape_before, n_d, shape_after,
+        s_bar, dy_bar_slice, f_contrib, mincurv_C_d
+    )
+    return nothing
+end
+
+# ========================================
+# Build Adjoint — ND Reverse-Axis Iteration
+# ========================================
+
+"""
+    _build_adjoint_nd_hetero!(partials_bar, methods, spacings, caches, mixed_caches,
+                               bcs, mixed_bcs, grids, grid_size, sizes, mincurv_Cs)
+
+Apply the adjoint of the ND heterogeneous build pipeline.
+Processes axes in reverse order (d=N..1), using compact strides.
+
+Non-derivative axes (sizes[d]=1) are skipped entirely.
+Derivative axes dispatch to per-method function barriers.
+"""
+@with_pool pool function _build_adjoint_nd_hetero!(
+        partials_bar::AbstractArray{Tv},
+        methods::Tuple{Vararg{AbstractInterpMethod, N}},
+        spacings,
+        caches,
+        mixed_caches,
+        bcs,
+        mixed_bcs,
+        grids::NTuple{N, AbstractVector{Tg}},
+        grid_size::NTuple{N, Int},
+        sizes::NTuple{N, Int},
+        mincurv_Cs::NTuple{N, Tg}
+    ) where {Tv, Tg <: AbstractFloat, N}
+    for d in N:-1:1
+        sizes[d] == 1 && continue  # Skip non-derivative axes (Linear/Constant)
+
+        # Compact stride: product of sizes for all axes before d
+        stride_d = d == 1 ? 1 : prod(sizes[1:(d - 1)])
+        n_d = grid_size[d]
+        method_d = methods[d]
+        spacing_d = spacings[d]
+
+        # Compute reshape dimensions for axis d
+        shape_before = 1
+        for k in 1:(d - 1)
+            shape_before *= grid_size[k]
+        end
+        shape_after = 1
+        for k in (d + 1):N
+            shape_after *= grid_size[k]
+        end
+
+        # Per-axis work buffers (reused across all slices)
+        z_bar = acquire!(pool, Tv, n_d)
+        f_contrib = acquire!(pool, Tv, n_d)
+        dy_bar_slice = acquire!(pool, Tv, n_d)
+
+        # Precompute q_t for periodic cubic axis
+        q_t = nothing
+        if method_d isa CubicInterp && _is_periodic_bc(bcs[d])
+            n_intervals = n_d - 1
+            q_t = acquire!(pool, Tg, n_intervals)
+            fill!(q_t, zero(Tg))
+            @inbounds q_t[1] = one(Tg)
+            @inbounds q_t[n_intervals] = one(Tg)
+            _ldiv_tridiagonal_transpose!(q_t, caches[d].thomas)
+        end
+
+        for p_src_offset in 0:(stride_d - 1)
+            p_src = p_src_offset + 1
+            p_dst = p_src_offset + stride_d + 1
+
+            # N-dim views via selectdim, then reshape to 3D
+            src_3d = reshape(selectdim(partials_bar, 1, p_src), shape_before, n_d, shape_after)
+            dst_3d = reshape(selectdim(partials_bar, 1, p_dst), shape_before, n_d, shape_after)
+
+            _hetero_axis_adjoint!(
+                src_3d, dst_3d, method_d, p_src,
+                caches[d], mixed_caches[d],
+                spacing_d, bcs[d], mixed_bcs[d], grids[d],
+                shape_before, n_d, shape_after,
+                z_bar, f_contrib, dy_bar_slice,
+                q_t, mincurv_Cs[d]
+            )
+        end
+    end
+
+    return nothing
+end
+
+# ========================================
+# Core Apply Pipeline
+# ========================================
+
+@with_pool pool function _hetero_adjoint_nd_apply!(
+        f_bar::AbstractArray{Tv, N},
+        adj::HeteroAdjointND{Tg, N, M},
+        y_bar,
+        ops::NTuple{N, AbstractEvalOp}
+    ) where {Tv, Tg, N, M}
+    sizes = map(_deriv_size, adj.methods)
+    NP = prod(sizes)
+
+    # Pool-allocate compact partials_bar
+    partials_bar = zeros!(pool, Tv, NP, adj.grid_size...)
+
+    # Step 0: Eval adjoint scatter (mixed-radix)
+    _adjoint_scatter_hetero_nd!(partials_bar, adj.anchors, y_bar, ops, adj.methods)
+
+    # Step 1: Build adjoint (reverse axis order, compact strides)
+    if NP > 1  # Skip build if all axes are non-derivative
+        _build_adjoint_nd_hetero!(
+            partials_bar, adj.methods,
+            adj.spacings, adj.caches, adj.mixed_caches,
+            adj.bcs, adj.mixed_bcs, adj.grids, adj.grid_size,
+            sizes, adj.mincurv_Cs
+        )
+    end
+
+    # Step 2: Extract f_bar = partials_bar[1, ...]
+    src = selectdim(partials_bar, 1, 1)
+    f_bar .+= src
+
+    return f_bar
+end
+
+# ========================================
+# Constructor
+# ========================================
+
+"""
+    hetero_adjoint(grids::NTuple{N}, queries; methods, extrap=NoExtrap())
+
+Construct an N-dimensional heterogeneous adjoint operator.
+
+# Arguments
+- `grids`: N-tuple of grid vectors, one per dimension
+- `queries`: Query points (SoA tuple of vectors, AoS, single tuple, SVector, etc.)
+- `methods`: Per-axis interpolation method tuple (e.g., `(CubicInterp(), LinearInterp())`)
+- `extrap`: Extrapolation mode (single or per-axis tuple)
+
+# Returns
+`HeteroAdjointND` operator that can be called as `adj(y_bar)` or `adj(f_bar, y_bar)`.
+
+# Example
+```julia
+x = range(0.0, 1.0, 20)
+y = range(0.0, 1.0, 15)
+xq = rand(100)
+yq = rand(100)
+
+adj = hetero_adjoint((x, y), (xq, yq); methods=(CubicInterp(), LinearInterp()))
+f_bar = adj(y_bar)   # returns 20×15 matrix
+```
+"""
+function hetero_adjoint(
+        grids::NTuple{N, AbstractVector},
+        queries::Tuple{AbstractVector, Vararg{AbstractVector}};
+        methods::Tuple{Vararg{AbstractInterpMethod, N}},
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        _extra...
+    ) where {N}
+    length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
+    Tg = _promote_grid_eltype(grids)
+    Tg = Tg <: AbstractFloat ? Tg : Float64
+    grids_typed = _convert_grids_typed(grids, Tg)
+    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    return _build_hetero_nd_adjoint(grids_typed, queries, methods, extraps)
+end
+
+# Single-tuple query: hetero_adjoint((x, y), (0.5, 0.5); methods=...)
+function hetero_adjoint(
+        grids::NTuple{N, AbstractVector},
+        query::Tuple{Vararg{Real, N}};
+        methods::Tuple{Vararg{AbstractInterpMethod, N}},
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        _extra...
+    ) where {N}
+    return hetero_adjoint(grids, (query,); methods = methods, extrap = extrap)
+end
+
+# Single-vector query: hetero_adjoint((x, y), SVector(0.5, 0.5); methods=...)
+function hetero_adjoint(
+        grids::NTuple{N, AbstractVector},
+        query::AbstractVector{<:Real};
+        methods::Tuple{Vararg{AbstractInterpMethod, N}},
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        _extra...
+    ) where {N}
+    length(query) == N || _throw_ndims_mismatch("query elements", N, length(query))
+    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
+    return hetero_adjoint(grids, (query_tuple,); methods = methods, extrap = extrap)
+end
+
+# Generic query fallback
+function hetero_adjoint(
+        grids::NTuple{N, AbstractVector},
+        queries;
+        methods::Tuple{Vararg{AbstractInterpMethod, N}},
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        _extra...
+    ) where {N}
+    _query_check_ndims(queries, Val(N))
+    Tg = _promote_grid_eltype(grids)
+    Tg = Tg <: AbstractFloat ? Tg : Float64
+    grids_typed = _convert_grids_typed(grids, Tg)
+    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    return _build_hetero_nd_adjoint(grids_typed, queries, methods, extraps)
+end
+
+# ========================================
+# Internal Builder
+# ========================================
+
+"""
+    _build_hetero_nd_adjoint(grids, queries, methods, extraps)
+
+Internal builder for `HeteroAdjointND`. Separated from the public API so that
+`Tg` is bound via the argument type, making the return type fully inferrable.
+
+Per-axis cache construction:
+- CubicInterp: CubicSplineCache (user BC) + CubicSplineCache (mixed-partial BC)
+- QuadraticInterp: compute MinCurvFit constant, no cache needed
+- LinearInterp/ConstantInterp: nothing (no build step)
+"""
+function _build_hetero_nd_adjoint(
+        grids::NTuple{N, AbstractVector{Tg}},
+        queries,
+        methods::Tuple{Vararg{AbstractInterpMethod, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}}
+    ) where {N, Tg <: AbstractFloat}
+    # Validate all axes have at least 2 grid points
+    @inbounds for d in 1:N
+        length(grids[d]) >= 2 || _throw_adjoint_grid_too_small(d, length(grids[d]))
+    end
+
+    # Extend exclusive periodic grids → inclusive form (cubic axes only)
+    grids_ext = map(grids, methods) do grid_d, method_d
+        method_d isa CubicInterp || return grid_d
+        bc_d = method_d.bc
+        bc_d isa PeriodicBC{:exclusive} || return grid_d
+        period = _resolve_exclusive_period(grid_d, bc_d)
+        x_end = first(grid_d) + Tg(period)
+        if grid_d isa AbstractRange
+            _to_float_adding_endpoint(grid_d, Tg)
+        else
+            vcat(grid_d, x_end)
+        end
+    end
+
+    spacings = _create_spacings_typed(grids_ext)
+
+    # Per-axis BC normalization (for derivative methods only)
+    bcs = map(methods) do method_d
+        if method_d isa CubicInterp
+            bc_d = method_d.bc
+            _is_periodic_bc(bc_d) ? bc_d : _normalize_bc(bc_d, Tg)
+        elseif method_d isa QuadraticInterp
+            bc_d = method_d.bc
+            _normalize_bc(bc_d, Tg)
+        else
+            NoExtrap()  # placeholder for non-BC methods
+        end
+    end
+
+    # Mixed-partial BCs (for derivative methods, p_src > 1)
+    mixed_bcs = map(methods, grids_ext) do method_d, grid_d
+        if method_d isa CubicInterp
+            mixed_bc = _get_effective_bc(method_d.bc, 2, grid_d)
+            _is_periodic_bc(mixed_bc) ? mixed_bc : _normalize_bc(mixed_bc, Tg)
+        elseif method_d isa QuadraticInterp
+            mixed_bc = _get_effective_bc_quadratic(method_d.bc, 2, grid_d)
+            _normalize_bc(mixed_bc, Tg)
+        else
+            NoExtrap()
+        end
+    end
+
+    # Per-axis caches (cubic only)
+    caches = map(methods, grids_ext, bcs) do method_d, grid_d, bp_d
+        method_d isa CubicInterp || return nothing
+        if _is_periodic_bc(bp_d)
+            _get_cubic_cache(grid_d, PeriodicBC())
+        else
+            _get_cubic_cache(grid_d, bp_d)
+        end
+    end
+
+    mixed_caches = map(methods, grids_ext, mixed_bcs) do method_d, grid_d, mbp_d
+        method_d isa CubicInterp || return nothing
+        if _is_periodic_bc(mbp_d)
+            _get_cubic_cache(grid_d, PeriodicBC())
+        else
+            _get_cubic_cache(grid_d, mbp_d)
+        end
+    end
+
+    # Per-axis MinCurvFit constants (quadratic only)
+    mincurv_Cs = map(methods, spacings, grids_ext) do method_d, spacing_d, grid_d
+        if method_d isa QuadraticInterp
+            bc_d = method_d.bc
+            _mincurv_C_for_bc(bc_d, spacing_d, length(grid_d))
+        else
+            zero(Tg)
+        end
+    end
+
+    # Bake per-query anchors
+    anchors = _bake_hetero_nd_anchors(grids_ext, spacings, queries, extraps, methods)
+
+    grid_size = ntuple(d -> length(grids_ext[d]), Val(N))
+
+    return HeteroAdjointND{
+        Tg, N,
+        typeof(methods), typeof(grids_ext), typeof(spacings),
+        typeof(caches), typeof(mixed_caches),
+        typeof(bcs), typeof(mixed_bcs),
+    }(
+        methods, grids_ext, spacings,
+        caches, mixed_caches, bcs, mixed_bcs,
+        anchors, grid_size, mincurv_Cs
+    )
+end

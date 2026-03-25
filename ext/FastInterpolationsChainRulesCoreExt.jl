@@ -293,6 +293,28 @@ function ChainRulesCore.rrule(
     return itp, _interp_nd_ctor_pb
 end
 
+"""
+Constructor rrule for `interp(grids, data; method=..., ...)` → `AbstractInterpolantND`.
+
+Same pass-through pattern as the `_InterpMethod` constructor rrule above.
+Enables `Zygote.gradient(data -> interp(grids, data; method=...)(query), data)`.
+"""
+function ChainRulesCore.rrule(
+        ::typeof(FastInterpolations.interp),
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N};
+        kwargs...
+    ) where {Tv, N}
+    itp = FastInterpolations.interp(grids, data; kwargs...)
+
+    function _interp_unified_ctor_pb(Δitp)
+        Δitp isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent()
+        return NoTangent(), NoTangent(), Δitp
+    end
+
+    return itp, _interp_unified_ctor_pb
+end
+
 # ════════════════════════════════════════
 # AbstractInterpolantND — eval rrule with ∂/∂data
 # ════════════════════════════════════════

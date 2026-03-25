@@ -66,7 +66,8 @@ Three-tier dispatch based on element type:
 !!! note "Scaled near-zero endpoints"
     `atol = 8eps` covers direct evaluations (e.g., `sin.(x)`), but not scaled
     variants (e.g., `1e6 .* sin.(x)` where noise ≈ 1e6·eps). For those cases,
-    set `y[end] = y[1]` explicitly.
+    set `y[end] = y[1]` explicitly, or use `PeriodicBC(check=false)` to skip
+    this validation.
 
 Throws `ArgumentError` if endpoints differ.
 """

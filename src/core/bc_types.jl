@@ -173,7 +173,7 @@ BCPair(t::Tuple{L, R}) where {L <: PointBC, R <: PointBC} =
 
 
 """
-    PeriodicBC{E, P} <: AbstractBC
+    PeriodicBC{E, P, C} <: AbstractBC
 
 Periodic boundary condition: S(x_0) = S(x_n), S'(x_0) = S'(x_n), S''(x_0) = S''(x_n)
 
@@ -182,6 +182,7 @@ Internally, periodic BC uses Sherman-Morrison solver with `PeriodicData{T}` for 
 # Type Parameters
 - `E::Symbol`: `:inclusive` or `:exclusive` (compile-time endpoint convention)
 - `P`: `Nothing` (inclusive or auto-infer) or `<:AbstractFloat` (explicit period)
+- `C::Bool`: whether to validate `y[1] ≈ y[end]` at construction time (default `true`)
 
 # Endpoint Conventions
 - **Inclusive** (`endpoint=:inclusive`, default): `y[1] ≈ y[end]` required (standard convention)

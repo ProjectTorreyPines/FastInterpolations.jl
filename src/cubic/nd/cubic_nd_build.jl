@@ -258,8 +258,8 @@ the index expressions into the method body at specialization time.
             vn = @inbounds data[$(last_idx...)]
             isapprox(v1, vn; atol = 8 * eps($Tv)) || _throw_periodic_nd_error($D, v1, vn)
         end
-    elseif Tv <: Complex && Tv.parameters[1] <: AbstractFloat
-        RT = Tv.parameters[1]
+    elseif Tv <: Complex{<:AbstractFloat}
+        RT = real(Tv)
         check = quote
             v1 = @inbounds data[$(first_idx...)]
             vn = @inbounds data[$(last_idx...)]

@@ -108,6 +108,9 @@ else
     # Coefficients API
     include("test_coeffs.jl")
 
+    # Nodal partials API
+    include("test_nodal_partials.jl")
+
     # Integration API
     include("test_integral_api.jl")
     include("test_integral_cubic_1d.jl")

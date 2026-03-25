@@ -147,7 +147,7 @@ function _compute_nd_partials_hetero!(
 end
 
 """
-    _build_nd_coeffs_hetero(grids, Tv, data, methods) -> HeteroPartials
+    _build_nd_coeffs_hetero(grids, Tv, data, methods) -> _HeteroPartials
 
 Allocate and compute compact heterogeneous partial derivatives.
 Data is copied into `partials[1, ...]` via `copyto!` which handles type promotion —
@@ -169,5 +169,5 @@ function _build_nd_coeffs_hetero(
     # copyto! in _compute_nd_partials_hetero! handles data → Tv promotion
     _compute_nd_partials_hetero!(partials, grids, data, methods, sizes)
 
-    return HeteroPartials{Tv, N, N + 1}(partials)
+    return _HeteroPartials{Tv, N, N + 1}(partials)
 end

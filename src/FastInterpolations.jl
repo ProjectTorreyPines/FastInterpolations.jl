@@ -33,6 +33,9 @@ include("integral/integral.jl")
 # Polynomial coefficient extraction (depends on all interpolant types)
 include("coeffs.jl")
 
+# Nodal partial derivative access (zero-copy views into precomputed partials)
+include("nodal_partials.jl")
+
 # Exports
 export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjoint1D, AbstractAdjointND
 export Series, n_series
@@ -83,6 +86,7 @@ export integrate, cumulative_integrate
 
 # Polynomial coefficient extraction
 export CellPoly, coeffs
+export nodal_partials
 
 # Plot recipe helpers (re-exported from HelpPlots)
 export help_plot, help_plot!

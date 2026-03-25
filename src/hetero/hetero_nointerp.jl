@@ -222,7 +222,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
     slice_args = [d in nointerp_dims ? :(query[$d].idx) : :(:) for d in 1:N]
 
     # Bounds checks for GridIdx on NoInterp axes (before @inbounds slicing)
-    # Use grid length as the canonical size (works for both HeteroPartials and raw Array)
+    # Use grid length as the canonical size (works for both _HeteroPartials and raw Array)
     bounds_checks = [
         :(
                 1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
@@ -272,7 +272,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
 
     if N_r == 0
         # All-NoInterp: pure table lookup (or zero if any deriv requested)
-        if D <: HeteroPartials
+        if D <: _HeteroPartials
             return quote
                 Base.@_inline_meta
                 $(bounds_checks...)
@@ -291,7 +291,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         end
     end
 
-    if D <: HeteroPartials
+    if D <: _HeteroPartials
         return quote
             Base.@_inline_meta
             $(bounds_checks...)

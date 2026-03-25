@@ -9,7 +9,7 @@
 # - Tv: Value type - used for data values, coefficients (can be Complex{Tg}, Dual, etc.)
 # - N:  Number of dimensions
 #
-# Reuses NodalDerivativesND from core/nd_utils.jl for partial derivative storage.
+# Reuses _NodalDerivativesND from core/nd_utils.jl for partial derivative storage.
 # Uses Tuple{Vararg{T, N}} instead of NTuple{N, <:T} to support heterogeneous types.
 
 # ========================================
@@ -38,7 +38,7 @@ ultra-fast O(1) evaluation via tensor-product quadratic polynomials.
 # Fields
 - `grids`: N-tuple of grid vectors for each dimension
 - `spacings`: N-tuple of grid spacing info (for O(1) h lookup)
-- `nodal_derivs`: NodalDerivativesND containing partial derivatives at grid nodes
+- `nodal_derivs`: _NodalDerivativesND containing partial derivatives at grid nodes
 - `bcs`: N-tuple of boundary conditions used for construction
 - `extraps`: N-tuple of extrapolation modes
 - `searches`: N-tuple of search policies
@@ -75,13 +75,13 @@ struct QuadraticInterpolantND{
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
     spacings::S
-    nodal_derivs::NodalDerivativesND{Tv, N, NP1}
+    nodal_derivs::_NodalDerivativesND{Tv, N, NP1}
     bcs::B
     extraps::E
     searches::P
 
     function QuadraticInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}(
-            grids::Tuple{Vararg{AbstractVector, N}}, spacings::S, nodal_derivs::NodalDerivativesND{Tv, N, NP1},
+            grids::Tuple{Vararg{AbstractVector, N}}, spacings::S, nodal_derivs::_NodalDerivativesND{Tv, N, NP1},
             bcs::B, extraps::E, searches::P
         ) where {Tg, Tv, N, NP1, G, S, B, E, P}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))

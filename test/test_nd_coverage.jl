@@ -26,7 +26,7 @@ import FastInterpolations:
     _compute_nd_partials!,
     _build_nd_coeffs,
     # nd_types.jl
-    NodalDerivativesND,
+    _NodalDerivativesND,
     PreCompute,
     OnTheFly,
     _grid,
@@ -147,13 +147,13 @@ import FastInterpolations:
     # ========================================
     @testset "nd_types.jl" begin
 
-        @testset "NodalDerivativesND convenience constructor" begin
-            # The convenience constructor NodalDerivativesND{Tv, N}(partials) infers NP1
+        @testset "_NodalDerivativesND convenience constructor" begin
+            # The convenience constructor _NodalDerivativesND{Tv, N}(partials) infers NP1
             partials_2d = rand(4, 5, 6)  # 2^2=4 partials, 5x6 grid
 
             # Test convenience constructor
-            nd = NodalDerivativesND{Float64, 2}(partials_2d)
-            @test nd isa NodalDerivativesND{Float64, 2, 3}
+            nd = _NodalDerivativesND{Float64, 2}(partials_2d)
+            @test nd isa _NodalDerivativesND{Float64, 2, 3}
             @test nd.partials === partials_2d
         end
 
@@ -355,7 +355,7 @@ import FastInterpolations:
             bcs = (Right(QuadraticFit()), Right(QuadraticFit()))
 
             nd = _build_nd_coeffs_quadratic((x, y), data, bcs)
-            @test nd isa NodalDerivativesND{Float64, 2, 3}
+            @test nd isa _NodalDerivativesND{Float64, 2, 3}
             @test size(nd.partials) == (4, 8, 6)  # 2^2 partials, 8x6 grid
         end
     end
@@ -462,18 +462,18 @@ import FastInterpolations:
             @test num_partials(itp) == 8  # 2^3 = 8
         end
 
-        @testset "NodalDerivativesND validation" begin
+        @testset "_NodalDerivativesND validation" begin
             # NP1 mismatch with array dimension causes MethodError (type constraint in signature)
             partials_3d = rand(4, 5, 6)  # 3D array
-            @test_throws MethodError NodalDerivativesND{Float64, 3, 4}(partials_3d)  # Expects 4D array
+            @test_throws MethodError _NodalDerivativesND{Float64, 3, 4}(partials_3d)  # Expects 4D array
 
             # Correct NP1 but wrong N (N+1 ≠ NP1) should throw ArgumentError
             partials_3d_2 = rand(8, 3, 4, 5)  # 4D array with 8 partials (correct for N=3)
-            @test_throws ArgumentError NodalDerivativesND{Float64, 2, 4}(partials_3d_2)  # N=2 but NP1=4≠3
+            @test_throws ArgumentError _NodalDerivativesND{Float64, 2, 4}(partials_3d_2)  # N=2 but NP1=4≠3
 
             # Wrong number of partials should throw DimensionMismatch
             partials_wrong = rand(3, 5, 6)  # 3 partials but 2D needs 4
-            @test_throws DimensionMismatch NodalDerivativesND{Float64, 2, 3}(partials_wrong)
+            @test_throws DimensionMismatch _NodalDerivativesND{Float64, 2, 3}(partials_wrong)
         end
 
         @testset "Periodic BC with ND construction" begin

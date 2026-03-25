@@ -17,7 +17,7 @@
 # ========================================
 # 1. Core Types
 # ========================================
-include("cubic_nd_types.jl")     # AbstractCoeffStrategy, CubicInterpolantND, NodalDerivativesND
+include("cubic_nd_types.jl")     # AbstractCoeffStrategy, CubicInterpolantND, _NodalDerivativesND
 
 # ========================================
 # 3. Mathematical Functions

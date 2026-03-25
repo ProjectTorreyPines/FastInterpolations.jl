@@ -10,7 +10,7 @@
 #   3. Eval (depends on types + 1D kernels)
 #   4. API (public interface)
 #
-# Note: Shared ND utilities (NodalDerivativesND, _resolve_*_nd, etc.)
+# Note: Shared ND utilities (_NodalDerivativesND, _resolve_*_nd, etc.)
 # are in src/core/nd_utils.jl.
 # 1D quadratic kernels are in src/quadratic/quadratic_kernels.jl.
 # 1D quadratic solver (recurrence) is in src/quadratic/quadratic_solver.jl.

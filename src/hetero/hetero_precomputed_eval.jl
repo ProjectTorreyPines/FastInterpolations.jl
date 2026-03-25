@@ -130,7 +130,7 @@ end
 # ========================================
 
 @inline function _eval_hetero_precomputed(
-        itp_data::HeteroPartials{Tv, N},
+        itp_data::_HeteroPartials{Tv, N},
         grids::NTuple{N, AbstractVector{Tg}},
         spacings,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},

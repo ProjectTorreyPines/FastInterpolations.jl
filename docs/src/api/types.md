@@ -67,6 +67,12 @@ coeffs
 CellPoly
 ```
 
+## Nodal Partials
+
+```@docs
+nodal_partials
+```
+
 ## Vector Calculus (ND)
 
 ```@docs

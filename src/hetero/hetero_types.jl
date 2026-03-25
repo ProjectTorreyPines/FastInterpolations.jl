@@ -4,7 +4,7 @@
 # N-dimensional interpolant with per-axis method specification.
 # Supports two strategies via the D type parameter:
 # - OnTheFly: D = Array{Tv, N} — stores raw data, builds 1D interps per query
-# - PreCompute: D = _NodalDerivativesND{Tv, N, N+1} — precomputed partials, O(1) eval
+# - PreCompute: D = _HeteroPartials{Tv, N, N+1} — precomputed partials, O(1) eval
 #
 # Type Parameters Convention:
 # - Tg: Grid/coordinate type (AbstractFloat)
@@ -31,7 +31,7 @@ linear on axis 2) with two evaluation strategies:
 - `M`: Tuple type for per-axis methods (heterogeneous)
 - `E`: Tuple type for extrapolation modes
 - `P`: Tuple type for search policies
-- `D`: Data storage type — `Array{Tv,N}` (OnTheFly) or `_NodalDerivativesND` (PreCompute)
+- `D`: Data storage type — `Array{Tv,N}` (OnTheFly) or `_HeteroPartials{Tv,N,N+1}` (PreCompute)
 
 # Example
 ```julia

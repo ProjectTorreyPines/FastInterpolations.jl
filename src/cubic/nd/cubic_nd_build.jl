@@ -395,7 +395,7 @@ end
     # in the data (it is added by _prepare_periodic_nd/_prepare_periodic_nd_pooled after
     # this validation).  Checking data[1] ≈ data[end] on unextended exclusive data would
     # produce false positives for perfectly valid periodic inputs.
-    if bcs[D] isa PeriodicBC{:inclusive} && bcs[D].check
+    if bcs[D] isa PeriodicBC{:inclusive} && periodic_check(bcs[D])
         _check_periodic_data_noalloc!(data, Val(D), Tg)
     end
     polyfit_deg = get_polyfit_degree(bcs[D])

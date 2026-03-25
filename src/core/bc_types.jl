@@ -205,18 +205,19 @@ itp = cubic_interp(x, sin.(x); bc=PeriodicBC(endpoint=:exclusive))
 itp = cubic_interp(x, 1e6 .* sin.(x); bc=PeriodicBC(check=false))
 ```
 """
-struct PeriodicBC{E, P} <: AbstractBC
+struct PeriodicBC{E, P, C} <: AbstractBC
     period::P         # Nothing or AbstractFloat
-    check::Bool       # Whether to validate y[1] ≈ y[end] at construction time
-    function PeriodicBC{E, P}(period::P, check::Bool = true) where {E, P}
+    function PeriodicBC{E, P, C}(period::P) where {E, P, C}
         E isa Symbol || error("PeriodicBC type parameter E must be a Symbol")
         E in (:inclusive, :exclusive) || error("PeriodicBC type parameter E must be :inclusive or :exclusive")
-        return new{E, P}(period, check)
+        C isa Bool || error("PeriodicBC type parameter C must be a Bool")
+        return new{E, P, C}(period)
     end
 end
 
-# Accessor for endpoint (from type parameter, zero-cost)
+# Accessors (from type parameters, zero-cost)
 @inline endpoint(::PeriodicBC{E}) where {E} = E
+@inline periodic_check(::PeriodicBC{E, P, C}) where {E, P, C} = C
 
 # Keyword constructor with validation (also serves as zero-arg constructor via defaults)
 function PeriodicBC(; endpoint::Symbol = :inclusive, period::Union{Real, Nothing} = nothing, check::Bool = true)
@@ -231,14 +232,14 @@ function PeriodicBC(; endpoint::Symbol = :inclusive, period::Union{Real, Nothing
                 "period is not applicable for endpoint=:inclusive (y[1]≈y[end] convention)"
             )
         )
-        return PeriodicBC{:inclusive, Nothing}(nothing, check)
+        return PeriodicBC{:inclusive, Nothing, check}(nothing)
     else # :exclusive
         if period !== nothing
             p = float(period)
             p > 0 || throw(ArgumentError("period must be positive, got $period"))
-            return PeriodicBC{:exclusive, typeof(p)}(p, check)
+            return PeriodicBC{:exclusive, typeof(p), check}(p)
         else
-            return PeriodicBC{:exclusive, Nothing}(nothing, check)  # infer from Range at build time
+            return PeriodicBC{:exclusive, Nothing, check}(nothing)  # infer from Range at build time
         end
     end
 end

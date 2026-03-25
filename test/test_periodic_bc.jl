@@ -422,7 +422,7 @@ using FastInterpolations
 
         @testset "Scaled near-zero — atol=8eps not enough, requires y[end]=y[1] or check=false" begin
             # 1e6 * sin(x): noise ≈ 1e6 * eps, exceeds 8eps floor
-            y_scaled = 1e6 .* sin.(x)
+            y_scaled = 1.0e6 .* sin.(x)
             @test_throws ArgumentError cubic_interp(x, y_scaled, 0.5; bc = PeriodicBC())
 
             # Fix 1: set endpoint explicitly
@@ -436,7 +436,7 @@ using FastInterpolations
 
         @testset "Clearly different endpoints — rejected" begin
             y_tiny = collect(cos.(x))
-            y_tiny[end] = y_tiny[1] + 1e-6  # Well beyond isapprox tolerance
+            y_tiny[end] = y_tiny[1] + 1.0e-6  # Well beyond isapprox tolerance
             @test_throws ArgumentError cubic_interp(x, y_tiny, 0.5; bc = PeriodicBC())
         end
 
@@ -473,7 +473,7 @@ using FastInterpolations
         @testset "PeriodicBC(check=false) — type stability (@inferred)" begin
             using Test: @inferred
             x_r = range(0.0, 2π, 101)
-            y_scaled = 1e6 .* sin.(x_r)
+            y_scaled = 1.0e6 .* sin.(x_r)
             # check=false must not introduce type instability or allocation
             bc_nocheck = PeriodicBC(check = false)
             @test @inferred(cubic_interp(x_r, y_scaled, 0.5; bc = bc_nocheck)) isa Float64

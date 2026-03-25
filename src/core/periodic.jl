@@ -71,7 +71,7 @@ Three-tier dispatch based on element type:
 Throws `ArgumentError` if endpoints differ.
 """
 @inline function _check_periodic_endpoints(bc::PeriodicBC, y::AbstractVector)
-    bc.check || return nothing
+    periodic_check(bc) || return nothing
     _check_periodic_endpoints(y)
     return nothing
 end
@@ -202,8 +202,8 @@ Used so that `itp.bc` always carries the actual period for display/introspection
 Uses the inner constructor directly to bypass keyword-constructor validation
 (which rejects `period` for inclusive BCs).
 """
-@inline _with_resolved_period(bc::PeriodicBC{E}, period::T) where {E, T} =
-    PeriodicBC{E, T}(period, bc.check)
+@inline _with_resolved_period(::PeriodicBC{E, <:Any, C}, period::T) where {E, T, C} =
+    PeriodicBC{E, T, C}(period)
 
 """
     _extend_exclusive(x, y, bc::PeriodicBC) -> (x_ext, y_ext)

@@ -12,7 +12,7 @@ These two features sound similar but solve fundamentally different problems:
 |---|---|---|
 | **What it does** | Solves a cyclic tridiagonal system (Sherman-Morrison) so the spline is **C² continuous** at the period boundary | Maps out-of-domain queries back into `[x₁, xₙ]` via modular arithmetic |
 | **Smoothness** | ``S, S', S''`` all match at the wrap point | No smoothness guarantee — may have jumps in value, slope, or curvature |
-| **Data requirement** | `y[1] == y[end]` (inclusive) or `endpoint=:exclusive` | None |
+| **Data requirement** | `y[1] ≈ y[end]` (inclusive) or `endpoint=:exclusive` | None |
 | **Works with** | Cubic splines only | Any interpolation method |
 | **Use case** | Physically periodic signals (angles, phases, Fourier-sampled data) | Quick "repeat" behavior without physical periodicity |
 
@@ -27,15 +27,19 @@ These two features sound similar but solve fundamentally different problems:
 
 ### Inclusive Mode (Default)
 
-The grid includes the repeated start point at the end: `y[1] == y[end]` (exact equality required). This is the standard definition in most spline libraries.
+The grid includes the repeated start point at the end: `y[1] ≈ y[end]` (validated via `isapprox` with `atol = 8eps(T)` noise floor). This is the standard definition in most spline libraries.
 
 ```julia
 # Grid covers [0, 2π], with repeated endpoint
 x = range(0, 2π, 65)  # 65 points, last point is 2π
-y = cos.(x)           # y[1] == y[end] (cos(0) == cos(2π) == 1.0)
+y = sin.(x)           # sin(0) ≈ sin(2π) — passes isapprox check
 
 itp = cubic_interp(x, y; bc=PeriodicBC())
 ```
+
+!!! tip "Scaled data"
+    For scaled data like `1e6 .* sin.(x)` where noise exceeds the `8eps` floor,
+    either set `y[end] = y[1]` explicitly or use `PeriodicBC(check=false)` to skip validation.
 
 ### Exclusive Mode
 

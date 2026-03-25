@@ -19,26 +19,6 @@
 # GRADIENT
 # ========================================
 
-"""
-    gradient(itp::AbstractInterpolantND, query)
-
-Compute the gradient (vector of partial derivatives) at `query`.
-
-Returns an `NTuple{N}` of partial derivatives `(∂f/∂x₁, ∂f/∂x₂, ..., ∂f/∂xₙ)`.
-
-# Performance
-~9x faster than `ForwardDiff.gradient` by using analytical derivatives.
-Uses locate-once optimization: interval search performed only once per query point.
-
-# Examples
-```julia
-itp = cubic_interp((x, y), data)
-gradient(itp, (0.5, 0.5))    # → (∂f/∂x, ∂f/∂y)
-gradient(itp, [0.5, 0.5])    # Vector input also supported
-```
-
-See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
-"""
 # --- Internal helpers (locate-once, @generated) ---
 # Factored out so TensorProductInterpolantND can call them directly
 # when NoInterp is absent, bypassing the override without `invoke`.
@@ -68,6 +48,26 @@ See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`la
     end
 end
 
+"""
+    gradient(itp::AbstractInterpolantND, query)
+
+Compute the gradient (vector of partial derivatives) at `query`.
+
+Returns an `NTuple{N}` of partial derivatives `(∂f/∂x₁, ∂f/∂x₂, ..., ∂f/∂xₙ)`.
+
+# Performance
+~9x faster than `ForwardDiff.gradient` by using analytical derivatives.
+Uses locate-once optimization: interval search performed only once per query point.
+
+# Examples
+```julia
+itp = cubic_interp((x, y), data)
+gradient(itp, (0.5, 0.5))    # → (∂f/∂x, ∂f/∂y)
+gradient(itp, [0.5, 0.5])    # Vector input also supported
+```
+
+See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
+"""
 @inline function gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
@@ -91,27 +91,6 @@ end
     return collect(gradient(itp, query_tuple; hint = hint))
 end
 
-"""
-    gradient!(G, itp::AbstractInterpolantND, query)
-
-Compute the gradient in-place, writing partial derivatives into `G`.
-
-Zero-allocation version of [`gradient`](@ref) for use in optimization loops.
-
-# Examples
-```julia
-itp = cubic_interp((x, y), data)
-G = zeros(2)
-gradient!(G, itp, (0.5, 0.5))    # G .= (∂f/∂x, ∂f/∂y)
-gradient!(G, itp, [0.5, 0.5])    # G .= (∂f/∂x, ∂f/∂y)
-
-# Optim.jl compatible:
-grad!(G, x) = gradient!(G, itp, x)
-result = optimize(f, grad!, x0, LBFGS())
-```
-
-See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
-"""
 @generated function _gradient_generic!(
         G::AbstractVector,
         itp::AbstractInterpolantND{Tg, Tv, N},
@@ -148,6 +127,27 @@ See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
     end
 end
 
+"""
+    gradient!(G, itp::AbstractInterpolantND, query)
+
+Compute the gradient in-place, writing partial derivatives into `G`.
+
+Zero-allocation version of [`gradient`](@ref) for use in optimization loops.
+
+# Examples
+```julia
+itp = cubic_interp((x, y), data)
+G = zeros(2)
+gradient!(G, itp, (0.5, 0.5))    # G .= (∂f/∂x, ∂f/∂y)
+gradient!(G, itp, [0.5, 0.5])    # G .= (∂f/∂x, ∂f/∂y)
+
+# Optim.jl compatible:
+grad!(G, x) = gradient!(G, itp, x)
+result = optimize(f, grad!, x0, LBFGS())
+```
+
+See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
+"""
 @inline function gradient!(
         G::AbstractVector,
         itp::AbstractInterpolantND{Tg, Tv, N},
@@ -176,6 +176,37 @@ end
 # ========================================
 # VALUE + GRADIENT (locate once)
 # ========================================
+
+@generated function _value_gradient_generic(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}},
+        hint,
+    ) where {Tg, Tv, N}
+    value_ops = ntuple(_ -> EvalValue(), N)
+    value_call = :(_eval_at_cell(itp, cell, $value_ops))
+
+    deriv_calls = [
+        begin
+                ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+                :(_eval_at_cell(itp, cell, $ops))
+            end for i in 1:N
+    ]
+    zero_tuple = [:(0 * zref) for _ in 1:N]
+
+    return quote
+        query_r = map(_resolve_grididx, query, itp.grids)
+        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
+            zref = _zero_ref(itp)
+            fill_val = _first_fill_value(itp.extraps)
+            return (fill_val, tuple($(zero_tuple...)))
+        end
+        cell = _locate_cell(itp, query_r, search, hint)
+        val = $value_call
+        grad = tuple($(deriv_calls...))
+        return (val, grad)
+    end
+end
 
 """
     value_gradient(itp::AbstractInterpolantND, query)
@@ -212,37 +243,6 @@ result = optimize(Optim.only_fg!(fg!), x0, LBFGS())
 
 See also: [`gradient`](@ref), [`gradient!`](@ref)
 """
-@generated function _value_gradient_generic(
-        itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
-        hint,
-    ) where {Tg, Tv, N}
-    value_ops = ntuple(_ -> EvalValue(), N)
-    value_call = :(_eval_at_cell(itp, cell, $value_ops))
-
-    deriv_calls = [
-        begin
-                ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
-                :(_eval_at_cell(itp, cell, $ops))
-            end for i in 1:N
-    ]
-    zero_tuple = [:(0 * zref) for _ in 1:N]
-
-    return quote
-        query_r = map(_resolve_grididx, query, itp.grids)
-        search = _resolve_search_nd(itp.searches, Val($N), query_r)
-        if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            zref = _zero_ref(itp)
-            fill_val = _first_fill_value(itp.extraps)
-            return (fill_val, tuple($(zero_tuple...)))
-        end
-        cell = _locate_cell(itp, query_r, search, hint)
-        val = $value_call
-        grad = tuple($(deriv_calls...))
-        return (val, grad)
-    end
-end
-
 @inline function value_gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
@@ -271,28 +271,6 @@ end
 # HESSIAN
 # ========================================
 
-"""
-    hessian(itp::AbstractInterpolantND, query)
-
-Compute the Hessian matrix (matrix of second partial derivatives) at `query`.
-
-Returns an `N×N` matrix where `H[i,j] = ∂²f/∂xᵢ∂xⱼ`.
-
-# Performance
-~9x faster than `ForwardDiff.hessian` by using analytical derivatives.
-Exploits symmetry: computes only `N(N+1)/2` unique elements.
-Uses locate-once optimization: interval search performed only once per query point.
-
-# Examples
-```julia
-itp = cubic_interp((x, y), data)
-H = hessian(itp, (0.5, 0.5))
-# H = [∂²f/∂x²    ∂²f/∂x∂y]
-#     [∂²f/∂x∂y   ∂²f/∂y² ]
-```
-
-See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
-"""
 @generated function _hessian_generic(
         itp::AbstractInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}},
@@ -335,6 +313,28 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
     end
 end
 
+"""
+    hessian(itp::AbstractInterpolantND, query)
+
+Compute the Hessian matrix (matrix of second partial derivatives) at `query`.
+
+Returns an `N×N` matrix where `H[i,j] = ∂²f/∂xᵢ∂xⱼ`.
+
+# Performance
+~9x faster than `ForwardDiff.hessian` by using analytical derivatives.
+Exploits symmetry: computes only `N(N+1)/2` unique elements.
+Uses locate-once optimization: interval search performed only once per query point.
+
+# Examples
+```julia
+itp = cubic_interp((x, y), data)
+H = hessian(itp, (0.5, 0.5))
+# H = [∂²f/∂x²    ∂²f/∂x∂y]
+#     [∂²f/∂x∂y   ∂²f/∂y² ]
+```
+
+See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
+"""
 @inline function hessian(
         itp::AbstractInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
@@ -358,27 +358,6 @@ function hessian(
     return hessian(itp, query_tuple; hint = hint)
 end
 
-"""
-    hessian!(H, itp::AbstractInterpolantND, query)
-
-Compute the Hessian matrix in-place, writing second partial derivatives into `H`.
-
-Zero-allocation version of [`hessian`](@ref) for use in optimization loops.
-Exploits symmetry: computes only `N(N+1)/2` unique elements.
-
-# Examples
-```julia
-itp = cubic_interp((x, y), data)
-H = zeros(2, 2)
-hessian!(H, itp, (0.5, 0.5))
-
-# Optim.jl compatible:
-hess!(H, x) = hessian!(H, itp, x)
-result = optimize(f, grad!, hess!, x0, NewtonTrustRegion())
-```
-
-See also: [`hessian`](@ref), [`gradient!`](@ref)
-"""
 @generated function _hessian_generic!(
         H::AbstractMatrix,
         itp::AbstractInterpolantND{Tg, Tv, N},
@@ -425,6 +404,27 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
     end
 end
 
+"""
+    hessian!(H, itp::AbstractInterpolantND, query)
+
+Compute the Hessian matrix in-place, writing second partial derivatives into `H`.
+
+Zero-allocation version of [`hessian`](@ref) for use in optimization loops.
+Exploits symmetry: computes only `N(N+1)/2` unique elements.
+
+# Examples
+```julia
+itp = cubic_interp((x, y), data)
+H = zeros(2, 2)
+hessian!(H, itp, (0.5, 0.5))
+
+# Optim.jl compatible:
+hess!(H, x) = hessian!(H, itp, x)
+result = optimize(f, grad!, hess!, x0, NewtonTrustRegion())
+```
+
+See also: [`hessian`](@ref), [`gradient!`](@ref)
+"""
 @inline function hessian!(
         H::AbstractMatrix,
         itp::AbstractInterpolantND{Tg, Tv, N},
@@ -454,6 +454,29 @@ end
 # LAPLACIAN
 # ========================================
 
+@generated function _laplacian_generic(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}},
+        hint,
+    ) where {Tg, Tv, N}
+    deriv_calls = [
+        begin
+                ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+                :(_eval_at_cell(itp, cell, $ops))
+            end for i in 1:N
+    ]
+
+    return quote
+        query_r = map(_resolve_grididx, query, itp.grids)
+        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
+            return 0 * _zero_ref(itp)
+        end
+        cell = _locate_cell(itp, query_r, search, hint)
+        return +($(deriv_calls...))
+    end
+end
+
 """
     laplacian(itp::AbstractInterpolantND, query)
 
@@ -481,29 +504,6 @@ itp = cubic_interp((x, y), data)
 
 See also: [`gradient`](@ref), [`hessian`](@ref)
 """
-@generated function _laplacian_generic(
-        itp::AbstractInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
-        hint,
-    ) where {Tg, Tv, N}
-    deriv_calls = [
-        begin
-                ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
-                :(_eval_at_cell(itp, cell, $ops))
-            end for i in 1:N
-    ]
-
-    return quote
-        query_r = map(_resolve_grididx, query, itp.grids)
-        search = _resolve_search_nd(itp.searches, Val($N), query_r)
-        if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            return 0 * _zero_ref(itp)
-        end
-        cell = _locate_cell(itp, query_r, search, hint)
-        return +($(deriv_calls...))
-    end
-end
-
 @inline function laplacian(
         itp::AbstractInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};

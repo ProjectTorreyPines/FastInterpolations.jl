@@ -141,6 +141,7 @@ LinearSearch
 
 ```@docs
 Series
+n_series
 ```
 
 ## Series Interpolant Types

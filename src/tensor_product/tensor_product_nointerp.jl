@@ -551,12 +551,30 @@ Uses the pre-slice strategy: slices data at GridIdx positions, evaluates on redu
     Tz_g = isempty(real_query_types_g) ? Tv : :(promote_type($(real_query_types_g...), $Tg, $Tv))
 
     grad_exprs = []
+    all_nointerp = length(nointerp_dims) == N
     for i in 1:N
         if i in nointerp_dims
             push!(grad_exprs, :(zero($Tz_g)))
         else
             ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
             push!(grad_exprs, :(_eval_nointerp(itp, query, $ops, itp.searches, hint)))
+        end
+    end
+
+    if all_nointerp
+        # All-NoInterp: _eval_nointerp is never called, so validate GridIdx bounds explicitly
+        bounds_checks = [
+            :(
+                    1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                    _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
+                )
+                for d in nointerp_dims
+        ]
+        return quote
+            Base.@_inline_meta
+            _validate_nointerp_grididx(itp.methods, query)
+            $(bounds_checks...)
+            return tuple($(grad_exprs...))
         end
     end
 
@@ -601,6 +619,24 @@ Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoI
     # Compute output type from Real query elements only (GridIdx is not numeric)
     real_query_types = [fieldtype(Q, d) for d in 1:N if !(d in nointerp_dims)]
     Tq_expr = isempty(real_query_types) ? Tv : :(promote_type($(real_query_types...), $Tg, $Tv))
+    all_nointerp = length(nointerp_dims) == N
+
+    if all_nointerp
+        # All-NoInterp: _eval_nointerp is never called, so validate GridIdx bounds explicitly
+        bounds_checks = [
+            :(
+                    1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                    _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
+                )
+                for d in nointerp_dims
+        ]
+        return quote
+            _validate_nointerp_grididx(itp.methods, query)
+            $(bounds_checks...)
+            Tq = $Tq_expr
+            return zeros(Tq, $N, $N)
+        end
+    end
 
     return quote
         _validate_nointerp_grididx(itp.methods, query)
@@ -651,6 +687,29 @@ In-place Hessian with NoInterp support. Fills H with zeros at NoInterp positions
                     H[$j, $i] = val
                 end
             )
+        end
+    end
+
+    all_nointerp = length(nointerp_dims) == N
+    if all_nointerp
+        # All-NoInterp: _eval_nointerp is never called, so validate GridIdx bounds explicitly
+        bounds_checks = [
+            :(
+                    1 <= query[$d].idx <= size(itp.grids[$d], 1) ||
+                    _throw_grididx_oob($d, query[$d].idx, size(itp.grids[$d], 1))
+                )
+                for d in nointerp_dims
+        ]
+        return quote
+            @boundscheck size(H) == ($N, $N) || throw(
+                DimensionMismatch(
+                    "Hessian output matrix must be $($N)×$($N), got $(size(H))"
+                )
+            )
+            _validate_nointerp_grididx(itp.methods, query)
+            $(bounds_checks...)
+            fill!(H, zero(eltype(H)))
+            return H
         end
     end
 

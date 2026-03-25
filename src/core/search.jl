@@ -928,12 +928,16 @@ end
 # factored into _search_grididx / _search_grididx! to avoid duplication.
 
 @inline function _search_grididx(x::AbstractVector, xq::GridIdx)
-    idx = min(xq.idx, length(x) - 1)
+    n = length(x)
+    @boundscheck (n >= 2 && 1 <= xq.idx <= n) || throw(BoundsError(x, xq.idx))
+    idx = min(xq.idx, n - 1)
     return idx, @inbounds(x[idx]), @inbounds(x[idx + 1])
 end
 
 @inline function _search_grididx!(hint::RefHint, x::AbstractVector, xq::GridIdx)
-    idx = min(xq.idx, length(x) - 1)
+    n = length(x)
+    @boundscheck (n >= 2 && 1 <= xq.idx <= n) || throw(BoundsError(x, xq.idx))
+    idx = min(xq.idx, n - 1)
     hint.idx[] = idx
     return idx, @inbounds(x[idx]), @inbounds(x[idx + 1])
 end

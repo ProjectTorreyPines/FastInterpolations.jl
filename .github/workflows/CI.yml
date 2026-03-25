@@ -42,12 +42,12 @@ jobs:
 
       - uses: julia-actions/cache@v2
 
-      - uses: julia-actions/julia-buildpkg@v1
-
       - name: Enable AdaptiveArrayPools runtime checks
         run: |
           echo '[AdaptiveArrayPools]' > LocalPreferences.toml
           echo 'runtime_check = true' >> LocalPreferences.toml
+
+      - uses: julia-actions/julia-buildpkg@v1
 
       - uses: julia-actions/julia-runtest@v1
         env:
@@ -88,12 +88,12 @@ jobs:
 
       - uses: julia-actions/cache@v2
 
-      - uses: julia-actions/julia-buildpkg@v1
-
       - name: Enable AdaptiveArrayPools runtime checks
         run: |
           echo '[AdaptiveArrayPools]' > LocalPreferences.toml
           echo 'runtime_check = true' >> LocalPreferences.toml
+
+      - uses: julia-actions/julia-buildpkg@v1
 
       - name: Extension Tests (AD / Recipes / Symbolics)
         run: julia --project -e 'using Pkg; Pkg.test(; coverage=true, test_args=["ext/runtests.jl"])'

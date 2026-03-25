@@ -7,6 +7,10 @@ let AAP = Base.loaded_modules[Base.PkgId(Base.UUID("4f381ef7-9af0-4cbe-99d4-cf36
     @info "AdaptiveArrayPools" runtime_check = AAP.RUNTIME_CHECK
 end
 
+x = collect(1.0:50.0); y = collect(1.0:100.0);
+data2D = rand(50, 100);
+cubic_interp((x, y), data2D)
+
 # Julia 1.12+ achieves true zero-allocation via improved escape analysis.
 # Older versions have small runtime overhead from mutable struct field access.
 # Note: 4-way Val dispatch (extrap modes) increases overhead on older Julia (~160 bytes).

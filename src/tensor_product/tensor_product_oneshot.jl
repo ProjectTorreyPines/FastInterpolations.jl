@@ -117,7 +117,7 @@ end
 
 function _interp_nd_oneshot_dispatch(
         grids, data, query,
-        methods::Tuple{<:CubicInterp, Vararg{<:CubicInterp}},
+        methods::Tuple{CubicInterp, Vararg{CubicInterp}},
         deriv, extrap, search, hints,
     )
     bcs = map(m -> m.bc, methods)
@@ -134,7 +134,7 @@ end
 
 function _interp_nd_oneshot_dispatch(
         grids, data, query,
-        methods::Tuple{<:QuadraticInterp, Vararg{<:QuadraticInterp}},
+        methods::Tuple{QuadraticInterp, Vararg{QuadraticInterp}},
         deriv, extrap, search, hints,
     )
     bcs = map(m -> m.bc, methods)
@@ -143,7 +143,7 @@ end
 
 function _interp_nd_oneshot_dispatch(
         grids, data, query,
-        methods::Tuple{<:ConstantInterp, Vararg{<:ConstantInterp}},
+        methods::Tuple{ConstantInterp, Vararg{ConstantInterp}},
         deriv, extrap, search, hints,
     )
     sides = map(m -> m.side, methods)
@@ -177,7 +177,7 @@ end
 
 function _interp_nd_oneshot_batch_dispatch!(
         output, grids, data, queries,
-        methods::Tuple{<:CubicInterp, Vararg{<:CubicInterp}},
+        methods::Tuple{CubicInterp, Vararg{CubicInterp}},
         deriv, extrap, search, hints,
     )
     bcs = map(m -> m.bc, methods)
@@ -194,7 +194,7 @@ end
 
 function _interp_nd_oneshot_batch_dispatch!(
         output, grids, data, queries,
-        methods::Tuple{<:QuadraticInterp, Vararg{<:QuadraticInterp}},
+        methods::Tuple{QuadraticInterp, Vararg{QuadraticInterp}},
         deriv, extrap, search, hints,
     )
     bcs = map(m -> m.bc, methods)
@@ -203,7 +203,7 @@ end
 
 function _interp_nd_oneshot_batch_dispatch!(
         output, grids, data, queries,
-        methods::Tuple{<:ConstantInterp, Vararg{<:ConstantInterp}},
+        methods::Tuple{ConstantInterp, Vararg{ConstantInterp}},
         deriv, extrap, search, hints,
     )
     sides = map(m -> m.side, methods)

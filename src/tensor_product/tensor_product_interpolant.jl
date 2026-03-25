@@ -13,7 +13,7 @@
 # the existing constructors already accept Union{Single, NTuple} for these kwargs.
 
 function _interp_nd_dispatch(
-        grids, data, methods::Tuple{<:CubicInterp, Vararg{<:CubicInterp}}, coeffs, extrap, search
+        grids, data, methods::Tuple{CubicInterp, Vararg{CubicInterp}}, coeffs, extrap, search
     )
     bcs = map(m -> m.bc, methods)
     return cubic_interp(grids, data; bc = bcs, extrap = extrap, search = search, coeffs = coeffs)
@@ -26,14 +26,14 @@ function _interp_nd_dispatch(
 end
 
 function _interp_nd_dispatch(
-        grids, data, methods::Tuple{<:QuadraticInterp, Vararg{<:QuadraticInterp}}, ::Any, extrap, search
+        grids, data, methods::Tuple{QuadraticInterp, Vararg{QuadraticInterp}}, ::Any, extrap, search
     )
     bcs = map(m -> m.bc, methods)
     return quadratic_interp(grids, data; bc = bcs, extrap = extrap, search = search)
 end
 
 function _interp_nd_dispatch(
-        grids, data, methods::Tuple{<:ConstantInterp, Vararg{<:ConstantInterp}}, ::Any, extrap, search
+        grids, data, methods::Tuple{ConstantInterp, Vararg{ConstantInterp}}, ::Any, extrap, search
     )
     sides = map(m -> m.side, methods)
     return constant_interp(grids, data; side = sides, extrap = extrap, search = search)

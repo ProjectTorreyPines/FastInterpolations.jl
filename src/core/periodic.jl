@@ -54,7 +54,7 @@ end
 Validate that `y[1] ≈ y[end]` for periodic boundary conditions (inclusive endpoint).
 Called once at construction time (zero runtime overhead).
 
-Three-tier dispatch based on element type:
+Four-tier dispatch based on element type:
 
 - **`AbstractFloat`**: `isapprox` with `atol = 8eps(T)` and `rtol = √eps(T)` — the atol
   covers near-zero noise floor (e.g., `sin(0)` vs `sin(2π)`), while rtol handles relative

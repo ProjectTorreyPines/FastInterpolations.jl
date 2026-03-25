@@ -133,54 +133,37 @@ end
 # Callable Interface
 # ========================================
 
-# Tuple query form
+# Tuple query form — unified entry for Real and GridIdx (GridIdx <: Real).
+# Resolves GridIdx at entry (no-op for plain Real), then routes:
+# - NoInterp in methods → _eval_nointerp (pre-slice strategy)
+# - Normal → standard tensor product eval (GridIdx search short-circuits via dispatch)
 @inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv = EvalValue(),
         search = itp.searches,
         hint = nothing,
     ) where {Tg, Tv, N}
-    # Early check: NoInterp axes require GridIdx, not Real values
-    if _has_nointerp_method(typeof(itp.methods))
-        _check_nointerp_needs_grididx(itp.methods, query)
-    end
+    resolved = map(_resolve_grididx, query, itp.grids)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
+    if _has_nointerp_method(typeof(itp.methods))
+        _validate_nointerp_grididx(itp.methods, resolved)
+        search_tuple = _resolve_search_nd(search, Val(N))
+        return _eval_nointerp(itp, resolved, ops, search_tuple, hint)
+    end
+    _validate_nd_domain(itp.grids, resolved, itp.extraps)
+    oob_result = _try_fill_oob(resolved, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
-    search_tuple = _resolve_search_nd(search, Val(N), query)
-    return _eval_tensor_product_nd(itp, query, ops, search_tuple, hint)
+    search_tuple = _resolve_search_nd(search, Val(N), resolved)
+    return _eval_tensor_product_nd(itp, resolved, ops, search_tuple, hint)
 end
 
-# Vararg form: itp(0.5, 0.3) → itp((0.5, 0.3))
+# Vararg form: itp(0.5, 0.3) or itp(0.5, GridIdx(3)) → itp((0.5, ...))
+# GridIdx <: Real, so Vararg{Real, N} matches both.
 @inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
         q::Vararg{Real, N};
         kw...,
     ) where {Tg, Tv, N}
     return itp(q; kw...)
-end
-
-# GridIdx vararg form: itp(0.5, GridIdx(3)) → itp((0.5, GridIdx(3)))
-# Vararg{Real, N} is more specific when all args are Real → no ambiguity.
-@inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
-        q::Vararg{Union{Real, GridIdx}, N};
-        kw...,
-    ) where {Tg, Tv, N}
-    return itp(q; kw...)
-end
-
-# GridIdx tuple query form: itp((0.5, GridIdx(3))) — dispatches to NoInterp eval
-# Only matches when at least one GridIdx (all-Real → more specific Tuple{Vararg{Real,N}} above)
-@inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
-        query::Q;
-        deriv = EvalValue(),
-        search = itp.searches,
-        hint = nothing,
-    ) where {Tg, Tv, N, Q <: Tuple{Vararg{Union{Real, GridIdx}, N}}}
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N))
-    _validate_nointerp_grididx(itp.methods, query)
-    return _eval_nointerp(itp, query, ops, search_tuple, hint)
 end
 
 # ========================================

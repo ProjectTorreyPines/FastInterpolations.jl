@@ -268,11 +268,19 @@ function interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
-    # NoInterp axes require GridIdx queries, not plain Real values
-    if _has_nointerp_method(typeof(method_tuple))
-        _check_nointerp_needs_grididx(method_tuple, query)
+    resolved_query = map(_resolve_grididx, query, grids)
+    # GridIdx auto-promotion: when all derivs are EvalValue (scalar or tuple),
+    # GridIdx axes need no interpolation — replace their method with NoInterp()
+    # for pre-slice dimension reduction (e.g., 3D cubic build → 1D: ~5000x speedup).
+    if _all_eval_value(deriv)
+        method_tuple = _promote_grididx_to_nointerp(method_tuple, resolved_query)
     end
-    return _interp_nd_oneshot_dispatch(grids, data, query, method_tuple, deriv, extrap, search, hint)
+    # NoInterp routing: method-based (not query-type-based)
+    if _has_nointerp_method(typeof(method_tuple))
+        _validate_nointerp_grididx(method_tuple, resolved_query)
+        return _interp_nointerp_oneshot(grids, data, resolved_query, method_tuple, deriv, extrap, search, hint)
+    end
+    return _interp_nd_oneshot_dispatch(grids, data, resolved_query, method_tuple, deriv, extrap, search, hint)
 end
 
 # ========================================
@@ -298,7 +306,7 @@ function interp!(
     ) where {N}
     # Mixed queries with GridIdx → delegate to GridIdx batch path
     if queries isa Tuple && _has_grididx(typeof(queries))
-        return interp_batch_grididx!(
+        return _interp_batch_with_grididx!(
             output, grids, data, queries;
             method = method, deriv = deriv, extrap = extrap, search = search, hint = hint
         )

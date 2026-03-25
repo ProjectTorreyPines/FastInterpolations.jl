@@ -75,10 +75,15 @@ Base.show(io::IO, ::DerivOp{N}) where {N} = print(io, "DerivOp{", N, "}()")
 """
     GridIdx(k::Integer)
 
-Thin wrapper for grid index queries on `NoInterp` axes.
+Grid-index query coordinate. Wraps an integer index for direct grid-point lookup.
 
-`GridIdx` is NOT `<: Real` — it forces explicit handling at every query signature.
-Used in query tuples to indicate "slice at this grid index, do not interpolate".
+After resolution (internal), carries both the index and the grid coordinate value.
+Search functions short-circuit when they see a `GridIdx` — zero search cost.
+
+`GridIdx <: Real`: it flows through `Tuple{Vararg{Real, N}}` dispatch transparently.
+Before resolution, `val = NaN` — a poison sentinel that propagates visibly if
+`_resolve_grididx` is ever skipped. After resolution, `val` holds the grid coordinate
+and arithmetic auto-promotes via `promote_rule` (stripping the `GridIdx` wrapper).
 
 # Examples
 ```julia
@@ -88,17 +93,48 @@ interp((x, y), data, (0.5, GridIdx(5)); method=(CubicInterp(), NoInterp()))
 # Interpolant: query-time slicing
 itp = interp((x, y), data; method=(CubicInterp(), NoInterp()))
 itp((0.5, GridIdx(5)))
+
+# GridIdx works on ANY axis (not just NoInterp):
+itp_hetero = interp((x, y), data; method=(CubicInterp(), LinearInterp()))
+itp_hetero((0.5, GridIdx(10)))   # search short-circuited on axis 2
 ```
 """
-struct GridIdx
+struct GridIdx{T <: Real} <: Real
     idx::Int
+    val::T
     function GridIdx(i::Integer)
         i >= 1 || throw(ArgumentError("GridIdx index must be ≥ 1, got $i"))
-        return new(Int(i))
+        return new{Float64}(Int(i), NaN64)
+    end
+    function GridIdx{T}(i::Int, v::T) where {T <: Real}
+        return new{T}(i, v)
     end
 end
 
 Base.show(io::IO, g::GridIdx) = print(io, "GridIdx(", g.idx, ")")
+
+# GridIdx <: Real: arithmetic works transparently via promotion.
+# promote(GridIdx{T}, S) → promote_type(T, S), stripping the GridIdx wrapper.
+# Zero overhead — LLVM compiles to identical code as manual g.val extraction.
+Base.promote_rule(::Type{GridIdx{T}}, ::Type{S}) where {T, S <: Real} = promote_type(T, S)
+Base.convert(::Type{T}, g::GridIdx) where {T <: Number} = convert(T, g.val)
+Base.float(g::GridIdx) = float(g.val)
+(::Type{T})(g::GridIdx) where {T <: AbstractFloat} = T(g.val)
+
+"""
+    _resolve_grididx(q, grid) -> resolved coordinate
+
+Resolve a bare `GridIdx(k)` to `GridIdx{T}(k, grid[k])`.
+`Real` values pass through unchanged.
+"""
+@inline _resolve_grididx(q::Real, ::AbstractVector) = q
+@inline function _resolve_grididx(g::GridIdx, grid::AbstractVector{Tg}) where {Tg}
+    @boundscheck (1 <= g.idx <= length(grid) || _throw_grididx_oob_resolve(g.idx, length(grid)))
+    return @inbounds GridIdx{Tg}(g.idx, grid[g.idx])
+end
+
+@noinline _throw_grididx_oob_resolve(idx, n) =
+    throw(ArgumentError("GridIdx index $idx out of range 1:$n"))
 
 # ========================================
 # Typed Extrapolation Mode Tags

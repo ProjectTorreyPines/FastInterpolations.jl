@@ -504,6 +504,8 @@ Accepts heterogeneous tuples (e.g., mixed grid types, per-axis extrap modes).
 Uses map over named helper so each axis receives its concrete type directly,
 avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
+# GridIdx: in-domain by construction (bounds-checked at resolution), skip extrap entirely
+@inline _extrap_axis(q::GridIdx, grid, extrap) = q
 @inline _extrap_axis(q, grid, extrap) = @inbounds _handle_axis_extrap(q, grid, extrap)
 
 @inline function _handle_all_extraps(
@@ -513,6 +515,7 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
     return map(_extrap_axis, queries, grids, extraps)
 end
 
+# Per-extrap type handling (unconstrained q for duck-type compatibility: Dual, etc.)
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::NoExtrap)
     @boundscheck _check_domain(axis, q, NoExtrap())
     return q
@@ -739,7 +742,7 @@ Returns tuples of: hs (cell widths), inv_hs (reciprocals), dLs (left deltas).
 Used by both CubicInterpolantND and QuadraticInterpolantND evaluation.
 """
 @inline function _compute_all_local_params(
-        q_evals::Tuple{Vararg{Real, N}},  # Allow heterogeneous/AD types (Dual)
+        q_evals::Tuple{Vararg{Real, N}},  # Allow heterogeneous/AD types (Dual) and GridIdx
         spacings::Tuple{Vararg{AbstractGridSpacing, N}},  # Allow heterogeneous spacing types (VectorSpacing, ScalarSpacing)
         indices::NTuple{N, Int},
         Ls::Tuple{Vararg{Real, N}}  # Grid boundary (allow heterogeneous Real types)

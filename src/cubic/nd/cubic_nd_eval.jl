@@ -34,15 +34,16 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))  # ∂f/∂x only
 """
 # Single-point evaluation
 @inline function (itp::CubicInterpolantND{Tg, Tv, N})(
-        query::Tuple{Vararg{Real, N}};  # Allow heterogeneous Real types (AD: Dual + Float64)
+        query::Tuple{Vararg{Real, N}};  # Allow Real, Dual (AD), and GridIdx
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
-    # Note: Don't convert to Tg - preserve query type for AD support
+    # Resolve bare GridIdx → GridIdx{Tg}(idx, val). No-op for Real/Dual.
+    resolved = map(_resolve_grididx, query, itp.grids)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
-    return _eval_nd_hermite(itp, query, ops, search_tuple, hint)
+    search_tuple = _resolve_search_nd(search, Val(N), resolved)
+    return _eval_nd_hermite(itp, resolved, ops, search_tuple, hint)
 end
 
 # In-place batch evaluation (SoA + AoS) is handled by the unified

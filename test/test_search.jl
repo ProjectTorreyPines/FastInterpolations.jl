@@ -1,9 +1,10 @@
 using Test
 using FastInterpolations
 using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
+    _search_interval_real,
     Searcher, BinarySearch, LinearSearch, LinearBinarySearch, AutoSearch, DirectSearch,
-    NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, _create_spacing, _to_searcher,
-    _resolve_search_policy, _is_likely_monotone
+    NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, VectorSpacing, _create_spacing, _to_searcher,
+    _resolve_search_policy, _is_likely_monotone, GridIdx
 
 @testset "Search Module" begin
 
@@ -1717,5 +1718,166 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
     end  # @testset "DirectSearch Range Short-Circuit"
+
+    # ========================================
+    # GridIdx Short-Circuit Dispatch Tests
+    # ========================================
+    # GridIdx <: Real creates method ambiguity with every (ConcretePolicy × Real)
+    # overload. These tests verify that every GridIdx disambiguation method:
+    #   1. dispatches correctly (short-circuits search, returns correct interval)
+    #   2. updates hint when RefHint is used
+    #   3. clamps idx at right boundary (GridIdx(N) → cell N-1)
+    #   4. @boundscheck triggers on out-of-range GridIdx
+
+    @testset "GridIdx search_interval dispatch" begin
+        # --- Setup: Vector grid + VectorSpacing ---
+        x_vec = collect(range(0.0, 1.0; length = 11))   # 11 points, 10 cells
+        spacing_vec = VectorSpacing(diff(x_vec), 1.0 ./ diff(x_vec))
+
+        # --- Setup: Range grid + ScalarSpacing ---
+        x_range = range(0.0, 1.0; length = 11)
+        h = step(x_range)
+        spacing_range = ScalarSpacing(h, inv(h))
+
+        # Target: interior cell 5 → x[5]=0.4, x[6]=0.5
+        k = 5
+
+        # --------------------------------------------------------
+        # 3-arg: search_interval(searcher, grid, GridIdx(k))
+        # --------------------------------------------------------
+
+        @testset "3-arg: BinarySearch + NoHint + Vector" begin
+            s = Searcher{BinarySearch, NoHint}(NoHint())
+            idx, lo, hi = @inferred search_interval(s, x_vec, GridIdx(k))
+            @test idx == k
+            @test lo ≈ x_vec[k]
+            @test hi ≈ x_vec[k + 1]
+        end
+
+        @testset "3-arg: LinearSearch + RefHint + Vector" begin
+            hint = RefHint()
+            hint.idx[] = 1  # start far away
+            s = Searcher{LinearSearch, RefHint}(hint)
+            idx, lo, hi = @inferred search_interval(s, x_vec, GridIdx(k))
+            @test idx == k
+            @test lo ≈ x_vec[k]
+            @test hi ≈ x_vec[k + 1]
+            @test hint.idx[] == k  # hint updated
+        end
+
+        @testset "3-arg: LinearBinarySearch + RefHint + Vector" begin
+            hint = RefHint()
+            hint.idx[] = 1
+            s = Searcher{LinearBinarySearch{8}, RefHint}(hint)
+            idx, lo, hi = @inferred search_interval(s, x_vec, GridIdx(k))
+            @test idx == k
+            @test lo ≈ x_vec[k]
+            @test hi ≈ x_vec[k + 1]
+            @test hint.idx[] == k
+        end
+
+        @testset "3-arg: DirectSearch + NoHint + Range" begin
+            s = Searcher{DirectSearch, NoHint}(NoHint())
+            idx, lo, hi = @inferred search_interval(s, x_range, GridIdx(k))
+            @test idx == k
+            @test lo ≈ x_range[k]
+            @test hi ≈ x_range[k + 1]
+        end
+
+        @testset "3-arg: DirectSearch + RefHint + Range" begin
+            hint = RefHint()
+            hint.idx[] = 1
+            s = Searcher{DirectSearch, RefHint}(hint)
+            idx, lo, hi = @inferred search_interval(s, x_range, GridIdx(k))
+            @test idx == k
+            @test lo ≈ x_range[k]
+            @test hi ≈ x_range[k + 1]
+            @test hint.idx[] == k
+        end
+
+        # --------------------------------------------------------
+        # 4-arg: search_interval(searcher, grid, spacing, GridIdx(k))
+        # --------------------------------------------------------
+
+        @testset "4-arg: BinarySearch + NoHint + Vector + VectorSpacing" begin
+            s = Searcher{BinarySearch, NoHint}(NoHint())
+            idx, lo, hi = @inferred search_interval(s, x_vec, spacing_vec, GridIdx(k))
+            @test idx == k
+            @test lo ≈ x_vec[k]
+            @test hi ≈ x_vec[k + 1]
+        end
+
+        @testset "4-arg: LinearSearch + RefHint + Vector + VectorSpacing" begin
+            hint = RefHint()
+            hint.idx[] = 1
+            s = Searcher{LinearSearch, RefHint}(hint)
+            idx, lo, hi = @inferred search_interval(s, x_vec, spacing_vec, GridIdx(k))
+            @test idx == k
+            @test lo ≈ x_vec[k]
+            @test hint.idx[] == k
+        end
+
+        @testset "4-arg: LinearBinarySearch + RefHint + Vector + VectorSpacing" begin
+            hint = RefHint()
+            hint.idx[] = 1
+            s = Searcher{LinearBinarySearch{8}, RefHint}(hint)
+            idx, lo, hi = @inferred search_interval(s, x_vec, spacing_vec, GridIdx(k))
+            @test idx == k
+            @test lo ≈ x_vec[k]
+            @test hint.idx[] == k
+        end
+
+        @testset "4-arg: DirectSearch + NoHint + Range + ScalarSpacing" begin
+            s = Searcher{DirectSearch, NoHint}(NoHint())
+            idx, lo, hi = @inferred search_interval(s, x_range, spacing_range, GridIdx(k))
+            @test idx == k
+            @test lo ≈ x_range[k]
+            @test hi ≈ x_range[k + 1]
+        end
+
+        @testset "4-arg: DirectSearch + RefHint + Range + ScalarSpacing" begin
+            hint = RefHint()
+            hint.idx[] = 1
+            s = Searcher{DirectSearch, RefHint}(hint)
+            idx, lo, hi = @inferred search_interval(s, x_range, spacing_range, GridIdx(k))
+            @test idx == k
+            @test lo ≈ x_range[k]
+            @test hint.idx[] == k
+        end
+
+        # --------------------------------------------------------
+        # Right-boundary clamping: GridIdx(N) → cell N-1
+        # --------------------------------------------------------
+
+        @testset "right-boundary clamping" begin
+            N = length(x_vec)
+            s_nohint = Searcher{BinarySearch, NoHint}(NoHint())
+            idx, lo, hi = search_interval(s_nohint, x_vec, GridIdx(N))
+            @test idx == N - 1
+            @test lo ≈ x_vec[N - 1]
+            @test hi ≈ x_vec[N]
+
+            # Same for Range grid
+            s_direct = Searcher{DirectSearch, NoHint}(NoHint())
+            idx_r, lo_r, hi_r = search_interval(s_direct, x_range, GridIdx(N))
+            @test idx_r == N - 1
+            @test lo_r ≈ x_range[N - 1]
+            @test hi_r ≈ x_range[N]
+        end
+
+        # --------------------------------------------------------
+        # @boundscheck: out-of-range GridIdx
+        # --------------------------------------------------------
+
+        @testset "bounds checking" begin
+            # GridIdx(0) is rejected at construction (ArgumentError), so test idx > length(x)
+            s = Searcher{BinarySearch, NoHint}(NoHint())
+            @test_throws ArgumentError GridIdx(0)  # constructor guard
+            @test_throws BoundsError search_interval(s, x_vec, GridIdx(length(x_vec) + 1))
+
+            s_range = Searcher{DirectSearch, NoHint}(NoHint())
+            @test_throws BoundsError search_interval(s_range, x_range, GridIdx(length(x_range) + 1))
+        end
+    end  # @testset "GridIdx search_interval dispatch"
 
 end  # @testset "Search Module"

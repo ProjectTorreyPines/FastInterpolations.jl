@@ -1,6 +1,7 @@
 using Test
 using FastInterpolations
 using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
+    _search_interval_real,
     Searcher, BinarySearch, LinearSearch, LinearBinarySearch, AutoSearch, DirectSearch,
     NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, VectorSpacing, _create_spacing, _to_searcher,
     _resolve_search_policy, _is_likely_monotone, GridIdx

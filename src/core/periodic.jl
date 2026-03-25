@@ -70,6 +70,12 @@ Three-tier dispatch based on element type:
 
 Throws `ArgumentError` if endpoints differ.
 """
+@inline function _check_periodic_endpoints(bc::PeriodicBC, y::AbstractVector)
+    bc.check || return nothing
+    _check_periodic_endpoints(y)
+    return nothing
+end
+
 @inline function _check_periodic_endpoints(y::AbstractVector{T}) where {T <: AbstractFloat}
     isapprox(first(y), last(y); atol = 8 * eps(T)) || _throw_periodic_endpoint_error(first(y), last(y))
     return nothing
@@ -95,10 +101,11 @@ end
 @noinline function _throw_periodic_endpoint_error(y1, yn)
     throw(
         ArgumentError(
-            "PeriodicBC (inclusive endpoint) requires y[1] == y[end], " *
+            "PeriodicBC (inclusive endpoint) requires y[1] ≈ y[end], " *
                 "got y[1]=$y1, y[end]=$yn. " *
-                "Tip: set y[end] = y[1] to ensure exact periodicity, or use " *
-                "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point."
+                "Tip: set y[end] = y[1] explicitly, use " *
+                "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point, " *
+                "or PeriodicBC(check=false) to skip this validation."
         )
     )
 end
@@ -117,9 +124,10 @@ end
 @noinline function _throw_periodic_nd_error(d, v_first, v_last)
     throw(
         ArgumentError(
-            "Periodic BC on dim $d requires data[1,...] == data[end,...], " *
+            "Periodic BC on dim $d requires data[1,...] ≈ data[end,...], " *
                 "but found data[1,...]=$v_first, data[end,...]=$v_last. " *
-                "Tip: set the last slice equal to the first along dim $d."
+                "Tip: set the last slice equal to the first along dim $d, " *
+                "or use PeriodicBC(check=false) to skip this validation."
         )
     )
 end
@@ -194,8 +202,8 @@ Used so that `itp.bc` always carries the actual period for display/introspection
 Uses the inner constructor directly to bypass keyword-constructor validation
 (which rejects `period` for inclusive BCs).
 """
-@inline _with_resolved_period(::PeriodicBC{E}, period::T) where {E, T} =
-    PeriodicBC{E, T}(period)
+@inline _with_resolved_period(bc::PeriodicBC{E}, period::T) where {E, T} =
+    PeriodicBC{E, T}(period, bc.check)
 
 """
     _extend_exclusive(x, y, bc::PeriodicBC) -> (x_ext, y_ext)

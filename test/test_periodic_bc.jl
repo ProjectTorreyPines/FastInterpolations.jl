@@ -420,14 +420,18 @@ using FastInterpolations
             @test cubic_interp(x_f32, y_sin_f32, 0.5f0; bc = PeriodicBC()) isa Float32
         end
 
-        @testset "Scaled near-zero — atol=8eps not enough, requires y[end]=y[1]" begin
+        @testset "Scaled near-zero — atol=8eps not enough, requires y[end]=y[1] or check=false" begin
             # 1e6 * sin(x): noise ≈ 1e6 * eps, exceeds 8eps floor
             y_scaled = 1e6 .* sin.(x)
             @test_throws ArgumentError cubic_interp(x, y_scaled, 0.5; bc = PeriodicBC())
 
-            # Fix: set endpoint explicitly
-            y_scaled[end] = y_scaled[1]
-            @test cubic_interp(x, y_scaled, 0.5; bc = PeriodicBC()) isa Float64
+            # Fix 1: set endpoint explicitly
+            y_fixed = copy(y_scaled)
+            y_fixed[end] = y_fixed[1]
+            @test cubic_interp(x, y_fixed, 0.5; bc = PeriodicBC()) isa Float64
+
+            # Fix 2: skip check via check=false
+            @test cubic_interp(x, y_scaled, 0.5; bc = PeriodicBC(check = false)) isa Float64
         end
 
         @testset "Clearly different endpoints — rejected" begin
@@ -462,8 +466,26 @@ using FastInterpolations
                 @test occursin("PeriodicBC", msg)
                 @test occursin("y[1]", msg)
                 @test occursin("y[end]", msg)
-                @test occursin("y[end] = y[1]", msg)  # Helpful tip
+                @test occursin("check=false", msg)  # Helpful tip
             end
+        end
+
+        @testset "PeriodicBC(check=false) — type stability (@inferred)" begin
+            using Test: @inferred
+            x_r = range(0.0, 2π, 101)
+            y_scaled = 1e6 .* sin.(x_r)
+            # check=false must not introduce type instability or allocation
+            bc_nocheck = PeriodicBC(check = false)
+            @test @inferred(cubic_interp(x_r, y_scaled, 0.5; bc = bc_nocheck)) isa Float64
+
+            # check=true (default) with valid data
+            y_cos = cos.(x_r)
+            bc_check = PeriodicBC()
+            @test @inferred(cubic_interp(x_r, y_cos, 0.5; bc = bc_check)) isa Float64
+
+            # Interpolant construction also type-stable
+            @test @inferred(cubic_interp(collect(x_r), y_cos; bc = bc_check)) isa CubicInterpolant
+            @test @inferred(cubic_interp(collect(x_r), y_scaled; bc = bc_nocheck)) isa CubicInterpolant
         end
     end
 

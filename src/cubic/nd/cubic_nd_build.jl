@@ -251,11 +251,32 @@ the index expressions into the method body at specialization time.
     first_idx = [d == D ? 1 : idx_vars[d] for d in 1:N]
     last_idx = [d == D ? :n_D : idx_vars[d] for d in 1:N]
 
-    # Inner comparison body: strict == equality, no tolerance parameters
-    check = quote
-        v1 = @inbounds data[$(first_idx...)]
-        vn = @inbounds data[$(last_idx...)]
-        v1 == vn || _throw_periodic_nd_error($D, v1, vn)
+    # Inner comparison body: isapprox for AbstractFloat/Complex, strict == for others
+    if Tv <: AbstractFloat
+        check = quote
+            v1 = @inbounds data[$(first_idx...)]
+            vn = @inbounds data[$(last_idx...)]
+            isapprox(v1, vn; atol = 8 * eps($Tv)) || _throw_periodic_nd_error($D, v1, vn)
+        end
+    elseif Tv <: Complex && Tv.parameters[1] <: AbstractFloat
+        RT = Tv.parameters[1]
+        check = quote
+            v1 = @inbounds data[$(first_idx...)]
+            vn = @inbounds data[$(last_idx...)]
+            isapprox(v1, vn; atol = 8 * eps($RT)) || _throw_periodic_nd_error($D, v1, vn)
+        end
+    elseif Tv <: _PromotableValue
+        check = quote
+            v1 = @inbounds data[$(first_idx...)]
+            vn = @inbounds data[$(last_idx...)]
+            isapprox(v1, vn) || _throw_periodic_nd_error($D, v1, vn)
+        end
+    else
+        check = quote
+            v1 = @inbounds data[$(first_idx...)]
+            vn = @inbounds data[$(last_idx...)]
+            v1 == vn || _throw_periodic_nd_error($D, v1, vn)
+        end
     end
 
     # Wrap in nested loops over all dims except D (outermost = N, innermost = 1)
@@ -374,7 +395,7 @@ end
     # in the data (it is added by _prepare_periodic_nd/_prepare_periodic_nd_pooled after
     # this validation).  Checking data[1] ≈ data[end] on unextended exclusive data would
     # produce false positives for perfectly valid periodic inputs.
-    if bcs[D] isa PeriodicBC{:inclusive}
+    if bcs[D] isa PeriodicBC{:inclusive} && bcs[D].check
         _check_periodic_data_noalloc!(data, Val(D), Tg)
     end
     polyfit_deg = get_polyfit_degree(bcs[D])

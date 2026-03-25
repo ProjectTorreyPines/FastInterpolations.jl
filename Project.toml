@@ -26,7 +26,7 @@ FastInterpolationsRecipesBaseExt = "RecipesBase"
 FastInterpolationsSymbolicsExt = ["Symbolics", "SymbolicUtils"]
 
 [compat]
-AdaptiveArrayPools = "= 0.3.1"
+AdaptiveArrayPools = "0.3"
 ChainRulesCore = "1"
 Enzyme = "0.13"
 ForwardDiff = "1"

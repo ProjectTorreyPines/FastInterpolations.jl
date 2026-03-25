@@ -42,27 +42,17 @@ jobs:
 
       - uses: julia-actions/cache@v2
 
-      - name: Enable AdaptiveArrayPools runtime checks
-        run: |
-          echo '[AdaptiveArrayPools]' > LocalPreferences.toml
-          echo 'runtime_check = true' >> LocalPreferences.toml
-
       - uses: julia-actions/julia-buildpkg@v1
 
       - uses: julia-actions/julia-runtest@v1
         env:
           SKIP_EXTENSIONS: "true"
-          JULIA_LOAD_PATH: "@:@v#.#:@stdlib:."
 
       - name: Thread Safety Tests (2 threads)
         run: julia --project -e 'using Pkg; Pkg.test(; coverage=true, julia_args=["-t", "2"], test_args=["test_thread_safety.jl"])'
-        env:
-          JULIA_LOAD_PATH: "@:@v#.#:@stdlib:."
 
       - name: Thread Safety Tests (Oversubscribe with 16 threads)
         run: julia --project -e 'using Pkg; Pkg.test(; coverage=true, julia_args=["-t", "16"], test_args=["test_thread_safety.jl"])'
-        env:
-          JULIA_LOAD_PATH: "@:@v#.#:@stdlib:."
 
       - uses: julia-actions/julia-processcoverage@v1
         with:
@@ -93,17 +83,10 @@ jobs:
 
       - uses: julia-actions/cache@v2
 
-      - name: Enable AdaptiveArrayPools runtime checks
-        run: |
-          echo '[AdaptiveArrayPools]' > LocalPreferences.toml
-          echo 'runtime_check = true' >> LocalPreferences.toml
-
       - uses: julia-actions/julia-buildpkg@v1
 
       - name: Extension Tests (AD / Recipes / Symbolics)
         run: julia --project -e 'using Pkg; Pkg.test(; coverage=true, test_args=["ext/runtests.jl"])'
-        env:
-          JULIA_LOAD_PATH: "@:@v#.#:@stdlib:."
 
       - uses: julia-actions/julia-processcoverage@v1
         with:

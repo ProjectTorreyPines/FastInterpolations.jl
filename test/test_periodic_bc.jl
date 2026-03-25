@@ -420,6 +420,27 @@ using FastInterpolations
             @test cubic_interp(x_f32, y_sin_f32, 0.5f0; bc = PeriodicBC()) isa Float32
         end
 
+        @testset "Large-magnitude endpoints — rtol covers relative noise" begin
+            # When values are far from zero, the absolute diff can exceed 8eps(T)
+            # while remaining tiny *relative* to the magnitude.  rtol = √eps handles this.
+            #
+            # Inject noise at ~1e-14 relative scale (well within √eps ≈ 1.5e-8,
+            # but 1001 * 1e-14 ≈ 1e-11 >> 8eps ≈ 1.8e-15 so atol alone would reject).
+
+            # Float64
+            y_large = collect(1000.0 .+ cos.(x))
+            y_large[end] = y_large[1] * (1.0 + 1.0e-14)
+            @test abs(y_large[1] - y_large[end]) > 8 * eps(Float64)  # atol alone would reject
+            @test cubic_interp(x, y_large, 0.5; bc = PeriodicBC()) isa Float64
+
+            # Float32: inject noise at ~1e-6 relative scale (within √eps(F32) ≈ 3.5e-4)
+            x_f32 = range(0.0f0, 2.0f0 * Float32(π), 101)
+            y_large_f32 = collect(1000.0f0 .+ cos.(x_f32))
+            y_large_f32[end] = y_large_f32[1] * (1.0f0 + 1.0f-6)
+            @test abs(y_large_f32[1] - y_large_f32[end]) > 8 * eps(Float32)
+            @test cubic_interp(x_f32, y_large_f32, 0.5f0; bc = PeriodicBC()) isa Float32
+        end
+
         @testset "Scaled near-zero — atol=8eps not enough, requires y[end]=y[1] or check=false" begin
             # 1e6 * sin(x): noise ≈ 1e6 * eps, exceeds 8eps floor
             y_scaled = 1.0e6 .* sin.(x)
@@ -468,6 +489,20 @@ using FastInterpolations
                 @test occursin("y[end]", msg)
                 @test occursin("check=false", msg)  # Helpful tip
             end
+        end
+
+        @testset "ND large-magnitude endpoints — rtol covers relative noise" begin
+            # Same as 1D test but for ND _check_periodic_data_noalloc! path
+            x = range(0.0, 2π, 31)
+            y = range(0.0, 2π, 21)
+            data = [1000.0 + cos(xi) * cos(yj) for xi in x, yj in y]
+            # Inject relative noise on periodic boundaries (dim 1: first/last row)
+            for j in axes(data, 2)
+                data[end, j] = data[1, j] * (1.0 + 1.0e-14)
+            end
+            @test abs(data[1, 1] - data[end, 1]) > 8 * eps(Float64)
+            bc = (PeriodicBC(), CubicFit())
+            @test cubic_interp((x, y), data, (0.5, 0.5); bc = bc) isa Float64
         end
 
         @testset "PeriodicBC(check=false) — type stability (@inferred)" begin

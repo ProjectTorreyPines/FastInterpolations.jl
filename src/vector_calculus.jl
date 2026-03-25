@@ -20,7 +20,7 @@
 # ========================================
 
 # --- Internal helpers (locate-once, @generated) ---
-# Factored out so TensorProductInterpolantND can call them directly
+# Factored out so HeteroInterpolantND can call them directly
 # when NoInterp is absent, bypassing the override without `invoke`.
 
 @generated function _gradient_generic(

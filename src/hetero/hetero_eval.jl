@@ -1,5 +1,5 @@
 # ========================================
-# TensorProductInterpolantND — Evaluation
+# HeteroInterpolantND — Evaluation
 # ========================================
 # On-the-fly tensor product via sequential 1D one-shot interpolation.
 #
@@ -104,8 +104,8 @@ end
 # ========================================
 
 # OnTheFly path: sequential 1D one-shot interpolation per query
-@inline function _eval_tensor_product_nd(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+@inline function _eval_hetero_nd(
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
         searches::NTuple{N, AbstractSearchPolicy},
@@ -116,14 +116,14 @@ end
 end
 
 # PreCompute path: precomputed partials + local kernel eval (O(1) per query)
-@inline function _eval_tensor_product_nd(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
+@inline function _eval_hetero_nd(
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
         query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
         searches::NTuple{N, AbstractSearchPolicy},
         hints,
     ) where {Tg, Tv, N, G, S, M, E, P}
-    return _eval_tensor_product_precomputed(
+    return _eval_hetero_precomputed(
         itp.data, itp.grids, itp.spacings, itp.methods, itp.extraps,
         query, ops, searches, hints
     )
@@ -136,8 +136,8 @@ end
 # Tuple query form — unified entry for Real and GridIdx (GridIdx <: Real).
 # Resolves GridIdx at entry (no-op for plain Real), then routes:
 # - NoInterp in methods → _eval_nointerp (pre-slice strategy)
-# - Normal → standard tensor product eval (GridIdx search short-circuits via dispatch)
-@inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
+# - Normal → standard hetero eval (GridIdx search short-circuits via dispatch)
+@inline function (itp::HeteroInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv = EvalValue(),
         search = itp.searches,
@@ -154,12 +154,12 @@ end
     oob_result = _try_fill_oob(resolved, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
     search_tuple = _resolve_search_nd(search, Val(N), resolved)
-    return _eval_tensor_product_nd(itp, resolved, ops, search_tuple, hint)
+    return _eval_hetero_nd(itp, resolved, ops, search_tuple, hint)
 end
 
 # Vararg form: itp(0.5, 0.3) or itp(0.5, GridIdx(3)) → itp((0.5, ...))
 # GridIdx <: Real, so Vararg{Real, N} matches both.
-@inline function (itp::TensorProductInterpolantND{Tg, Tv, N})(
+@inline function (itp::HeteroInterpolantND{Tg, Tv, N})(
         q::Vararg{Real, N};
         kw...,
     ) where {Tg, Tv, N}
@@ -173,7 +173,7 @@ end
 
 # OnTheFly: cell stores everything needed for re-collapse (including searches + hints)
 @inline function _locate_cell(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing,
@@ -183,7 +183,7 @@ end
 end
 
 @inline function _eval_at_cell(
-        ::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        ::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp},
     ) where {Tg, Tv, N, G, S, M, E, P}
@@ -193,7 +193,7 @@ end
 
 # PreCompute: cell stores precomputed cell location (locate-once optimization)
 @inline function _locate_cell(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
         query::Tuple{Vararg{Real, N}},
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing,
@@ -205,7 +205,7 @@ end
 end
 
 @inline function _eval_at_cell(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials},
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp},
     ) where {Tg, Tv, N, G, S, M, E, P}
@@ -217,9 +217,9 @@ end
 # Required Traits
 # ========================================
 
-@inline _zero_ref(itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array}) where {Tg, Tv, N, G, S, M, E, P} =
+@inline _zero_ref(itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array}) where {Tg, Tv, N, G, S, M, E, P} =
     @inbounds first(itp.data)
-@inline _zero_ref(itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials}) where {Tg, Tv, N, G, S, M, E, P} =
+@inline _zero_ref(itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:HeteroPartials}) where {Tg, Tv, N, G, S, M, E, P} =
     @inbounds itp.data.partials[1]
 
-@inline _deriv_zero_fill(::TensorProductInterpolantND, ::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} = false
+@inline _deriv_zero_fill(::HeteroInterpolantND, ::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} = false

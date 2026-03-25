@@ -13,7 +13,7 @@ include("linear/linear.jl")
 include("constant/constant.jl")
 include("quadratic/quadratic.jl")
 include("cubic/cubic.jl")
-include("tensor_product/tensor_product.jl")
+include("hetero/hetero.jl")
 
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")
@@ -46,7 +46,7 @@ export linear_adjoint, LinearAdjoint, LinearAdjointND  # Linear adjoint operator
 export quadratic_adjoint, QuadraticAdjoint, QuadraticAdjointND  # Quadratic adjoint operators (W^T)
 export cubic_adjoint, CubicAdjoint, CubicAdjointND  # Cubic adjoint operators (W^T)
 export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly  # ND cubic types
-export interp, interp!, TensorProductInterpolantND  # Tensor product ND (per-axis methods)
+export interp, interp!, HeteroInterpolantND  # Tensor product ND (per-axis methods)
 export AbstractInterpMethod, CubicInterp, LinearInterp, QuadraticInterp, ConstantInterp, NoInterp
 export GridIdx
 export gradient, gradient!, value_gradient, hessian, hessian!, laplacian  # Analytical vector calculus for ND

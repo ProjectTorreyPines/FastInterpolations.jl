@@ -1,8 +1,8 @@
 # ========================================
-# TensorProductInterpolantND — Constructor
+# HeteroInterpolantND — Constructor
 # ========================================
 # Public API: interp(grids, data; method, ...)
-# Internal:   _build_tensor_product_nd(grids, data, methods, extrap, search)
+# Internal:   _build_hetero_nd(grids, data, methods, extrap, search)
 
 # ========================================
 # Homogeneous Auto-Dispatch
@@ -39,14 +39,14 @@ function _interp_nd_dispatch(
     return constant_interp(grids, data; side = sides, extrap = extrap, search = search)
 end
 
-# Heterogeneous (fallback) → TensorProductInterpolantND
+# Heterogeneous (fallback) → HeteroInterpolantND
 function _interp_nd_dispatch(
         grids, data, methods::Tuple{Vararg{AbstractInterpMethod, N}}, coeffs, extrap, search
     ) where {N}
     if coeffs isa PreCompute
-        return _build_tensor_product_precomputed(grids, data, methods, extrap, search)
+        return _build_hetero_precomputed(grids, data, methods, extrap, search)
     else
-        return _build_tensor_product_nd(grids, data, methods, extrap, search)
+        return _build_hetero_nd(grids, data, methods, extrap, search)
     end
 end
 
@@ -174,7 +174,7 @@ end
 # Internal Builder
 # ========================================
 
-function _build_tensor_product_nd(
+function _build_hetero_nd(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv_raw, N},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
@@ -215,7 +215,7 @@ function _build_tensor_product_nd(
     # 7. Per-axis method validation
     _validate_axis_methods(grids_typed, methods, extraps)
 
-    return TensorProductInterpolantND{
+    return HeteroInterpolantND{
         Tg, Tv, N,
         typeof(grids_typed), typeof(spacings), typeof(methods),
         typeof(extraps), typeof(searches), typeof(data_typed),
@@ -228,7 +228,7 @@ end
 # Precomputed Builder
 # ========================================
 
-function _build_tensor_product_precomputed(
+function _build_hetero_precomputed(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv_raw, N},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
@@ -263,7 +263,7 @@ function _build_tensor_product_precomputed(
     # Build partials on the (possibly extended) data
     hetero_partials = _build_nd_coeffs_hetero(grids_typed, Tv, data_ext, methods)
 
-    return TensorProductInterpolantND{
+    return HeteroInterpolantND{
         Tg, Tv, N,
         typeof(grids_typed), typeof(spacings), typeof(methods),
         typeof(extraps), typeof(searches), typeof(hetero_partials),
@@ -285,7 +285,7 @@ Automatically dispatches to the optimal implementation:
 - **Homogeneous** (all axes same method): delegates to existing optimized types
   (`CubicInterpolantND`, `LinearInterpolantND`, etc.) with full feature support
   (adjoint, oneshot, AD)
-- **Heterogeneous** (mixed methods): creates `TensorProductInterpolantND`
+- **Heterogeneous** (mixed methods): creates `HeteroInterpolantND`
 
 # Arguments
 - `grids::NTuple{N, AbstractVector}`: Grid vectors per dimension
@@ -309,7 +309,7 @@ data = [sin(xi) * cos(yj) for xi in x, yj in y]
 # Single method → all axes (dispatches to CubicInterpolantND)
 itp = interp((x, y), data; method=CubicInterp())
 
-# Heterogeneous → TensorProductInterpolantND
+# Heterogeneous → HeteroInterpolantND
 itp = interp((x, y), data; method=(CubicInterp(), LinearInterp()))
 
 # Per-axis BCs

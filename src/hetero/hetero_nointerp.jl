@@ -10,13 +10,13 @@
 # pre-slice data and filter all per-axis tuples to Real-only axes,
 # then delegate to existing reduced-dim APIs (zero internal kernel changes).
 #
-# Include order: after tensor_product_oneshot.jl (needs interp, _eval_hetero_nd_cell, etc.)
+# Include order: after hetero_oneshot.jl (needs interp, _eval_hetero_nd_cell, etc.)
 
 # ========================================
 # Compile-Time Traits
 # ========================================
 
-# _has_nointerp_method is defined in tensor_product_interpolant.jl (included before this file)
+# _has_nointerp_method is defined in hetero_interpolant.jl (included before this file)
 
 # ========================================
 # @generated Tuple Operations
@@ -211,7 +211,7 @@ end
 positions, filters all per-axis tuples to Real-only axes, delegates to existing pipeline.
 """
 @generated function _eval_nointerp(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
         query::Q, ops_full, search, hint,
     ) where {Tg, Tv, N, G, S, M, E, P, D, Q}
     nointerp_dims = [d for d in 1:N if fieldtype(M, d) <: NoInterp]
@@ -454,15 +454,15 @@ end
 # repeated search per component (acceptable: NoInterp reduces N, so N_r is small).
 #
 # GridIdx <: Real: no separate Union dispatch needed.
-# TensorProduct overrides vector_calculus.jl methods (more specific arg1 type)
+# HeteroInterpolantND overrides vector_calculus.jl methods (more specific arg1 type)
 # and delegates to _*_nointerp for the optimized pre-slice path.
 
-# --- TensorProduct vector calculus: NoInterp-aware overrides ---
+# --- HeteroInterpolantND vector calculus: NoInterp-aware overrides ---
 # Only override when NoInterp is present (compile-time _has_nointerp_method check).
 # Without NoInterp, delegate to _*_generic helpers in vector_calculus.jl which use
 # the optimal locate-once path (_locate_cell once → _eval_at_cell per component).
 @inline function gradient(
-        itp::TensorProductInterpolantND{Tg, Tv, N},
+        itp::HeteroInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
@@ -472,7 +472,7 @@ end
 end
 
 @inline function hessian(
-        itp::TensorProductInterpolantND{Tg, Tv, N},
+        itp::HeteroInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
@@ -483,7 +483,7 @@ end
 
 @inline function hessian!(
         H::AbstractMatrix,
-        itp::TensorProductInterpolantND{Tg, Tv, N},
+        itp::HeteroInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
@@ -493,7 +493,7 @@ end
 end
 
 @inline function laplacian(
-        itp::TensorProductInterpolantND{Tg, Tv, N},
+        itp::HeteroInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
@@ -503,7 +503,7 @@ end
 end
 
 @inline function value_gradient(
-        itp::TensorProductInterpolantND{Tg, Tv, N},
+        itp::HeteroInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
@@ -516,7 +516,7 @@ end
 
 @inline function gradient!(
         G::AbstractVector,
-        itp::TensorProductInterpolantND{Tg, Tv, N},
+        itp::HeteroInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
         hint = nothing,
     ) where {Tg, Tv, N}
@@ -535,13 +535,13 @@ end
 end
 
 """
-    _gradient_nointerp(itp::TensorProductInterpolantND, query, hint)
+    _gradient_nointerp(itp::HeteroInterpolantND, query, hint)
 
 Gradient with NoInterp support. Returns N-tuple with zeros at NoInterp positions.
 Uses the pre-slice strategy: slices data at GridIdx positions, evaluates on reduced dims.
 """
 @generated function _gradient_nointerp(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
         query::Q, hint,
     ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
@@ -586,12 +586,12 @@ Uses the pre-slice strategy: slices data at GridIdx positions, evaluates on redu
 end
 
 """
-    _hessian_nointerp(itp::TensorProductInterpolantND, query, hint)
+    _hessian_nointerp(itp::HeteroInterpolantND, query, hint)
 
 Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoInterp positions.
 """
 @generated function _hessian_nointerp(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
         query::Q, hint,
     ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
@@ -650,13 +650,13 @@ Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoI
 end
 
 """
-    _hessian_nointerp!(H, itp::TensorProductInterpolantND, query, hint)
+    _hessian_nointerp!(H, itp::HeteroInterpolantND, query, hint)
 
 In-place Hessian with NoInterp support. Fills H with zeros at NoInterp positions.
 """
 @generated function _hessian_nointerp!(
         H::AbstractMatrix,
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
         query::Q, hint,
     ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
@@ -729,12 +729,12 @@ end
 
 
 """
-    _laplacian_nointerp(itp::TensorProductInterpolantND, query, hint)
+    _laplacian_nointerp(itp::HeteroInterpolantND, query, hint)
 
 Laplacian with NoInterp support. Sums ∂²f/∂xᵢ² only over interpolated axes.
 """
 @generated function _laplacian_nointerp(
-        itp::TensorProductInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
         query::Q, hint,
     ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)

@@ -2,7 +2,7 @@
 # Per-Axis Interpolation Method Types
 # ========================================
 # Lightweight types specifying which 1D interpolation method to use per axis.
-# Used by TensorProductInterpolantND for heterogeneous per-axis interpolation.
+# Used by HeteroInterpolantND for heterogeneous per-axis interpolation.
 #
 # Design: Method-specific options (BC, side) are stored as type parameters
 # for zero-cost dispatch — no allocation, no type instability.
@@ -13,7 +13,7 @@
     AbstractInterpMethod
 
 Abstract supertype for per-axis interpolation method specification.
-Used by [`TensorProductInterpolantND`](@ref) to specify interpolation method per dimension.
+Used by [`HeteroInterpolantND`](@ref) to specify interpolation method per dimension.
 
 # Subtypes
 - [`CubicInterp`](@ref): Cubic spline interpolation (C² continuous)

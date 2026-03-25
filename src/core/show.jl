@@ -990,7 +990,7 @@ function Base.show(io::IO, ::MIME"text/plain", adj::AbstractAdjointND{Tg, N}) wh
 end
 
 # ========================================
-# TensorProductInterpolantND Show Methods
+# HeteroInterpolantND Show Methods
 # ========================================
 
 _short_method_name(::CubicInterp) = "Cubic"
@@ -999,15 +999,15 @@ _short_method_name(::QuadraticInterp) = "Quadratic"
 _short_method_name(::ConstantInterp) = "Constant"
 _short_method_name(::NoInterp) = "NoInterp"
 
-function Base.show(io::IO, itp::TensorProductInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
+function Base.show(io::IO, itp::HeteroInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
     sizes = join([string(length(g)) for g in itp.grids], "×")
     meths = join([_short_method_name(m) for m in itp.methods], ", ")
-    _show_type_header_nd(io, "TensorProductInterpolantND", Tg, Tv, N)
+    _show_type_header_nd(io, "HeteroInterpolantND", Tg, Tv, N)
     return print(io, " ($sizes) [$meths]")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", itp::TensorProductInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
-    _show_type_header_nd(io, "TensorProductInterpolantND", Tg, Tv, N)
+function Base.show(io::IO, ::MIME"text/plain", itp::HeteroInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
+    _show_type_header_nd(io, "HeteroInterpolantND", Tg, Tv, N)
     println(io)
 
     # Grid info

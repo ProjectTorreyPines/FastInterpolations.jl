@@ -857,7 +857,7 @@ using FastInterpolations
         @test occursin("BC: CubicFit", s)
     end
 
-    @testset "Coverage: show ConstantInterp side in TensorProduct" begin
+    @testset "Coverage: show ConstantInterp side in HeteroInterpolantND" begin
         itp = interp((x, y), data_2d; method = (ConstantInterp(), NoInterp()))
         s = sprint(show, MIME("text/plain"), itp)
         @test occursin("Side:", s)
@@ -1130,7 +1130,7 @@ using FastInterpolations
     end
 
     @testset "value_gradient: non-NoInterp with GridIdx (generic path)" begin
-        # CubicInterpolantND (not TensorProduct) → generic conversion path
+        # CubicInterpolantND (not HeteroInterpolantND) → generic conversion path
         itp_c = cubic_interp((x, y), data_2d)
         val, g = value_gradient(itp_c, (qx, GridIdx(10)))
         ref_val, ref_g = value_gradient(itp_c, (qx, y[10]))
@@ -1187,7 +1187,7 @@ using FastInterpolations
     # 40. GridIdx on non-NoInterp axes (universal query protocol)
     # ========================================
     @testset "GridIdx universal: hetero-interpolant callable" begin
-        # TensorProductInterpolantND with no NoInterp — GridIdx should convert to grids[d][k]
+        # HeteroInterpolantND with no NoInterp — GridIdx should convert to grids[d][k]
         itp_h = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
         val = itp_h((qx, GridIdx(10)))
         ref = itp_h((qx, y[10]))
@@ -1348,7 +1348,7 @@ using FastInterpolations
                 Base.UUID("f6369f11-7733-5829-9624-2563aa707210"), "ForwardDiff"
             )
         )
-        # TensorProduct with Cubic×Linear, GridIdx on axis 2 (not NoInterp)
+        # HeteroInterpolantND with Cubic×Linear, GridIdx on axis 2 (not NoInterp)
         itp_h = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()))
         df_grididx = ForwardDiff.derivative(t -> itp_h((t, GridIdx(10))), qx)
         df_real = ForwardDiff.derivative(t -> itp_h((t, y[10])), qx)

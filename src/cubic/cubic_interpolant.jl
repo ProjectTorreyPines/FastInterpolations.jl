@@ -126,6 +126,13 @@ end
     return muladd(wzR, zR, wzL * zL)
 end
 
+# Generic fallback: N-th derivative of cubic is zero for N ≥ 4
+@inline function _eval_anchored_kernel(
+        ::CubicInterpolant{Tg, Tv}, ::_CubicAnchoredQuery{Tg, Tq}, ::DerivOp{N}
+    ) where {N, Tg <: AbstractFloat, Tv, Tq <: Real}
+    return zero(Tv)
+end
+
 # ========================================
 # Anchored Extrapolation Handlers
 # ========================================

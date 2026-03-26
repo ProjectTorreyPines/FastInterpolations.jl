@@ -191,6 +191,19 @@ Evaluate third derivative: d³P/dx³ = (d³P/dt³) / h³ (constant within interv
     return d3P_dt3 * inv_h3
 end
 
+"""
+    _hermite_kernel_1d(::DerivOp{N}, ...) where {N}
+
+Generic fallback: N-th derivative of cubic Hermite is zero for N ≥ 4.
+"""
+@inline function _hermite_kernel_1d(
+        ::DerivOp{N},
+        yL::Tv, ::Tv, ::Tv, ::Tv,
+        ::Tg, ::Tg, ::Tq
+    ) where {N, Tv, Tg, Tq}
+    return 0 * yL
+end
+
 # ========================================
 # MOMENT-TO-DERIVATIVE CONVERSION (1D)
 # ========================================

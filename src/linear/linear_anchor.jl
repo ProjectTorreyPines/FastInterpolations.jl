@@ -98,6 +98,11 @@ end
     return 0 * yL
 end
 
+"""Generic fallback: N-th derivative of linear (anchored) is zero for N ≥ 2."""
+@inline function _linear_kernel(::DerivOp{N}, yL::Tv, ::Tv, ::_LinearAnchoredQuery{Tg}) where {N, Tg <: AbstractFloat, Tv}
+    return 0 * yL
+end
+
 # ========================================
 # Anchor Construction
 # ========================================

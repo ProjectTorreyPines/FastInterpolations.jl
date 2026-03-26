@@ -89,6 +89,11 @@ Third derivative of constant interpolation is always zero.
     return 0 * y_left
 end
 
+"""Generic fallback: N-th derivative of degree-0 (constant) is zero for N ≥ 1."""
+@inline function _constant_kernel(::DerivOp{N}, y_left::Tv, ::Tv, ::Tg, ::Td, ::AbstractSide) where {N, Tv, Tg <: AbstractFloat, Td <: Real}
+    return 0 * y_left
+end
+
 # ========================================
 # Side Offset Computation
 # ========================================

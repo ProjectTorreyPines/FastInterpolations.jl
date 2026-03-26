@@ -101,6 +101,7 @@ else
     include("test_hetero_nd.jl")  # Hetero ND (per-axis methods, on-the-fly)
     include("test_hetero_precomputed.jl")  # Hetero ND (precomputed partials)
     include("test_hetero_oneshot.jl")  # Hetero ND (one-shot, zero-alloc)
+    include("test_hetero_adjoint.jl")  # Hetero ND (adjoint operator)
 
     # Duck typing (custom value types)
     include("test_duck_typing_comprehensive.jl")

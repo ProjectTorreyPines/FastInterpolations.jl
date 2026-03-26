@@ -266,6 +266,11 @@ _data_field(itp::FastInterpolations.ConstantInterpolantND) = itp.data
 _data_field(itp::FastInterpolations.CubicInterpolantND) = selectdim(itp.nodal_derivs.partials, 1, 1)
 _data_field(itp::FastInterpolations.QuadraticInterpolantND) = selectdim(itp.nodal_derivs.partials, 1, 1)
 
+# HeteroInterpolantND: OnTheFly stores raw Array, PreCompute stores _HeteroPartials
+_data_field(itp::FastInterpolations.HeteroInterpolantND{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Array}) = itp.data
+_data_field(itp::FastInterpolations.HeteroInterpolantND{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:FastInterpolations._HeteroPartials}) =
+    selectdim(itp.data.partials, 1, 1)
+
 # ── Constructor: func(grids, data) → itp ──
 
 function EnzymeRules.augmented_primal(
@@ -285,6 +290,39 @@ end
 function EnzymeRules.reverse(
         config::EnzymeRules.RevConfig,
         func::Const{<:_InterpMethod},
+        ::Type{RT},
+        tape,
+        grids::Const{<:NTuple{N, AbstractVector}},
+        data::Duplicated{<:AbstractArray{<:Any, N}};
+        kwargs...
+    ) where {N, RT}
+    shadow_itp = tape
+    if shadow_itp !== nothing
+        data.dval .+= _data_field(shadow_itp)
+    end
+    return (nothing, nothing)
+end
+
+# ── Constructor: interp(grids, data; method=...) → itp ──
+# Same pattern as _InterpMethod constructor above, for the unified `interp()` API.
+
+function EnzymeRules.augmented_primal(
+        config::EnzymeRules.RevConfig,
+        func::Const{typeof(FastInterpolations.interp)},
+        RT::Type{<:Annotation},
+        grids::Const{<:NTuple{N, AbstractVector}},
+        data::Duplicated{<:AbstractArray{<:Any, N}};
+        kwargs...
+    ) where {N}
+    itp = func.val(grids.val, data.val; kwargs...)
+    primal = EnzymeRules.needs_primal(config) ? itp : nothing
+    shadow = EnzymeRules.needs_shadow(config) ? Enzyme.make_zero(itp) : nothing
+    return EnzymeRules.AugmentedReturn(primal, shadow, shadow)
+end
+
+function EnzymeRules.reverse(
+        config::EnzymeRules.RevConfig,
+        func::Const{typeof(FastInterpolations.interp)},
         ::Type{RT},
         tape,
         grids::Const{<:NTuple{N, AbstractVector}},

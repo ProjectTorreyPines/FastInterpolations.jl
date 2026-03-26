@@ -12,6 +12,7 @@
 | `linear_adjoint(grids, queries)` | ND linear adjoint operator $W^\top$ |
 | `constant_adjoint(x, xq)` | 1D constant adjoint operator $W^\top$ |
 | `constant_adjoint(grids, queries)` | ND constant adjoint operator $W^\top$ |
+| `hetero_adjoint(grids, queries; methods=...)` | ND heterogeneous adjoint operator $W^\top$ |
 | `adj(ȳ)` | Allocating apply: $\bar{f} = W^\top \bar{y}$ |
 | `adj(f̄, ȳ)` | In-place apply (zero allocation) |
 | `adj(ȳ; deriv=DerivOp(1))` | Derivative adjoint |
@@ -39,6 +40,7 @@ LinearAdjoint
 LinearAdjointND
 ConstantAdjoint
 ConstantAdjointND
+HeteroAdjointND
 ```
 
 ## Quadratic Adjoint Constructor
@@ -57,6 +59,12 @@ linear_adjoint
 
 ```@docs
 constant_adjoint
+```
+
+## Heterogeneous Adjoint Constructor
+
+```@docs
+hetero_adjoint
 ```
 
 ## Matrix Materialization

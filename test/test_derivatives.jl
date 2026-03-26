@@ -49,33 +49,83 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
     end
 
     @testset "DerivOp order range validation" begin
-        # _make_derivop rejects orders outside [0, 3]
-        @test_throws ArgumentError DerivOp(4)
+        # _make_derivop rejects negative orders
         @test_throws ArgumentError DerivOp(-1)
-        @test_throws ArgumentError DerivOp(100)
-
-        # ND constructor validates each element
-        @test_throws ArgumentError DerivOp(1, 4)
         @test_throws ArgumentError DerivOp(0, -1)
 
-        # Valid orders still work
+        # Valid orders 0-3 (union-split fast path)
         @test DerivOp(0) === DerivOp{0}()
         @test DerivOp(1) === DerivOp{1}()
         @test DerivOp(2) === DerivOp{2}()
         @test DerivOp(3) === DerivOp{3}()
+
+        # Arbitrary orders ≥ 4 are valid (generic fallback path)
+        @test DerivOp(4) === DerivOp{4}()
+        @test DerivOp(100) === DerivOp{100}()
+        @test DerivOp(1, 4) === (DerivOp{1}(), DerivOp{4}())
     end
 
     @testset "deriv_view order validation" begin
-        # 1D: deriv_view rejects invalid orders (3-point grid needs ZeroCurvBC; CubicFit requires 4+)
+        # 1D: deriv_view rejects negative orders
         x = [0.0, 0.5, 1.0]
         y = [0.0, 0.25, 1.0]
         itp = cubic_interp(x, y; bc = ZeroCurvBC())
-        @test_throws ArgumentError deriv_view(itp, 4)
         @test_throws ArgumentError deriv_view(itp, -1)
 
-        # Valid orders work
+        # Valid orders work (including ≥ 4)
         @test deriv_view(itp, 1) isa FastInterpolations.DerivativeView
         @test deriv_view(itp, 0) isa FastInterpolations.DerivativeView
+        @test deriv_view(itp, 4) isa FastInterpolations.DerivativeView
+    end
+
+    @testset "DerivOp{4+} returns zero" begin
+        x = collect(range(0.0, 1.0, 11))
+        xq = 0.35
+
+        @testset "1D oneshot" begin
+            y_cubic = sin.(2π .* x)
+            y_quad = x .^ 2
+            y_lin = 2.0 .* x .+ 1.0
+            y_const = ones(length(x))
+
+            # Cubic: 4th derivative of degree-3 polynomial is zero
+            @test cubic_interp(x, y_cubic, xq; deriv = DerivOp(4)) == 0.0
+            @test cubic_interp(x, y_cubic, xq; deriv = DerivOp(5)) == 0.0
+            @test cubic_interp(x, y_cubic, xq; deriv = DerivOp(10)) == 0.0
+
+            # Quadratic: 4th derivative is zero (3rd already is)
+            @test quadratic_interp(x, y_quad, xq; deriv = DerivOp(4)) == 0.0
+
+            # Linear: 4th derivative is zero
+            @test linear_interp(x, y_lin, xq; deriv = DerivOp(4)) == 0.0
+
+            # Constant: 4th derivative is zero
+            @test constant_interp(x, y_const, xq; deriv = DerivOp(4)) == 0.0
+        end
+
+        @testset "1D anchored (interpolant)" begin
+            y = sin.(2π .* x)
+            itp = cubic_interp(x, y)
+            @test itp(xq; deriv = DerivOp(4)) == 0.0
+            @test itp(xq; deriv = DerivOp(5)) == 0.0
+        end
+
+        @testset "1D deriv_view" begin
+            y = sin.(2π .* x)
+            itp = cubic_interp(x, y)
+            dv4 = deriv_view(itp, 4)
+            @test dv4(xq) == 0.0
+        end
+
+        @testset "ND cubic" begin
+            data = sin.(x) * cos.(x')
+            itp_nd = cubic_interp((x, x), data)
+            @test itp_nd((0.5, 0.5); deriv = DerivOp(4, 0)) == 0.0
+            @test itp_nd((0.5, 0.5); deriv = DerivOp(0, 4)) == 0.0
+            @test itp_nd((0.5, 0.5); deriv = DerivOp(4, 4)) == 0.0
+            # Mixed: 3rd is valid, 4th is zero
+            @test itp_nd((0.5, 0.5); deriv = DerivOp(4, 3)) == 0.0
+        end
     end
 
 end # Derivative Core

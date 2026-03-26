@@ -23,5 +23,6 @@ const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
 include("test_autodiff_Enzyme.jl")
 include("test_autodiff_ForwardDiff.jl")
 include("test_autodiff_Zygote.jl")
+include("test_autodiff_hetero.jl")
 include("test_symbolics.jl")
 include("test_recipes.jl")

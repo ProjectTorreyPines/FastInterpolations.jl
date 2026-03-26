@@ -143,7 +143,7 @@ end
 @inline _grid_size(adj::HeteroAdjointND) = adj.grid_size
 
 # For periodic finalization: return per-axis BC for derivative methods,
-# NoExtrap() sentinel for non-derivative methods (never matches PeriodicBC{:exclusive}).
+# nothing sentinel for non-derivative methods (never matches PeriodicBC{:exclusive}).
 @inline _adjoint_bcs(adj::HeteroAdjointND) = adj.bcs
 
 @inline _adjoint_nd_apply!(f_bar, adj::HeteroAdjointND, y_bar, ops) =

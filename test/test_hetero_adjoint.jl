@@ -459,6 +459,68 @@ using LinearAlgebra
         end
     end
 
+    # ════════════════════════════════════════════════════════════════════════
+    # ALLOCATION TESTS — in-place path
+    # ════════════════════════════════════════════════════════════════════════
+    # Val(d) recursive dispatch ensures all heterogeneous tuple indexing
+    # (methods[d], caches[d], bcs[d], etc.) uses compile-time d → concrete types.
+    # All combos are zero-alloc on the in-place path (pool warmup excluded).
+
+    @testset "Allocation — in-place apply" begin
+        x_a = range(0.0, 1.0, 15)
+        y_a = range(0.0, 1.0, 12)
+        xq_a = [0.2, 0.5, 0.8]
+        yq_a = [0.3, 0.5, 0.7]
+        y_bar_a = randn(3)
+
+        function _test_hetero_adjoint_alloc(grids, queries, f_bar, y_bar; methods)
+            adj = hetero_adjoint(grids, queries; methods = methods)
+            adj(f_bar, y_bar)  # warmup
+            adj(f_bar, y_bar)  # warmup
+            return @allocated adj(f_bar, y_bar)
+        end
+
+        @testset "Cubic×Linear (zero alloc)" begin
+            fb = zeros(length(x_a), length(y_a))
+            allocs = _test_hetero_adjoint_alloc(
+                (x_a, y_a), (xq_a, yq_a), fb, y_bar_a;
+                methods = (CubicInterp(), LinearInterp())
+            )
+            @test allocs <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "Cubic×Cubic (zero alloc)" begin
+            fb = zeros(length(x_a), length(y_a))
+            allocs = _test_hetero_adjoint_alloc(
+                (x_a, y_a), (xq_a, yq_a), fb, y_bar_a;
+                methods = (CubicInterp(), CubicInterp())
+            )
+            @test allocs <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "Linear×Linear (zero alloc)" begin
+            fb = zeros(length(x_a), length(y_a))
+            allocs = _test_hetero_adjoint_alloc(
+                (x_a, y_a), (xq_a, yq_a), fb, y_bar_a;
+                methods = (LinearInterp(), LinearInterp())
+            )
+            @test allocs <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "Quadratic×Constant (zero alloc)" begin
+            fb = zeros(length(x_a), length(y_a))
+            allocs = _test_hetero_adjoint_alloc(
+                (x_a, y_a), (xq_a, yq_a), fb, y_bar_a;
+                methods = (QuadraticInterp(), ConstantInterp())
+            )
+            @test allocs <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # ANALYTIC COMPARISON
+    # ════════════════════════════════════════════════════════════════════════
+
     @testset "Analytic — cubic f(x,y)=x³y" begin
         # Cubic in x, linear in y: exact for Cubic×Linear
         x = range(0.0, 1.0, 20)

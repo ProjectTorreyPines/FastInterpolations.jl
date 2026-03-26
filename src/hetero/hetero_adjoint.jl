@@ -256,36 +256,41 @@ end
 # ========================================
 
 """
-    _build_adjoint_nd_hetero!(partials_bar, methods, spacings, caches, mixed_caches,
-                               bcs, mixed_bcs, grids, grid_size, sizes, mincurv_Cs)
+    _build_adjoint_nd_hetero!(partials_bar, adj, sizes, pool, ::Val{d})
 
 Apply the adjoint of the ND heterogeneous build pipeline.
 Processes axes in reverse order (d=N..1), using compact strides.
 
+Uses `Val(d)` recursive dispatch so that `methods[d]`, `caches[d]`, etc.
+are indexed at compile time — avoiding Union-type boxing from heterogeneous
+tuple indexing with a runtime `d`.
+
 Non-derivative axes (sizes[d]=1) are skipped entirely.
 Derivative axes dispatch to per-method function barriers.
+Work buffers are pool-acquired per-axis (exact `n_d` size required by inner functions).
 """
-@with_pool pool function _build_adjoint_nd_hetero!(
-        partials_bar::AbstractArray{Tv},
-        methods::Tuple{Vararg{AbstractInterpMethod, N}},
-        spacings,
-        caches,
-        mixed_caches,
-        bcs,
-        mixed_bcs,
-        grids::NTuple{N, AbstractVector{Tg}},
-        grid_size::NTuple{N, Int},
-        sizes::NTuple{N, Int},
-        mincurv_Cs::NTuple{N, Tg}
-    ) where {Tv, Tg <: AbstractFloat, N}
-    for d in N:-1:1
-        sizes[d] == 1 && continue  # Skip non-derivative axes (Linear/Constant)
+@inline function _build_adjoint_nd_hetero!(
+        ::AbstractArray{Tv}, ::HeteroAdjointND{Tg, N},
+        ::NTuple{N, Int}, pool, ::Val{0}
+    ) where {Tv, Tg, N}
+    return nothing
+end
 
+@inline function _build_adjoint_nd_hetero!(
+        partials_bar::AbstractArray{Tv},
+        adj::HeteroAdjointND{Tg, N},
+        sizes::NTuple{N, Int},
+        pool,
+        ::Val{d}
+    ) where {Tv, Tg, N, d}
+    grid_size = adj.grid_size
+
+    if sizes[d] != 1
         # Compact stride: product of sizes for all axes before d
         stride_d = d == 1 ? 1 : prod(sizes[1:(d - 1)])
         n_d = grid_size[d]
-        method_d = methods[d]
-        spacing_d = spacings[d]
+        method_d = adj.methods[d]   # d is compile-time → concrete type
+        spacing_d = adj.spacings[d]
 
         # Compute reshape dimensions for axis d
         shape_before = 1
@@ -297,20 +302,20 @@ Derivative axes dispatch to per-method function barriers.
             shape_after *= grid_size[k]
         end
 
-        # Per-axis work buffers (reused across all slices)
+        # Per-axis work buffers (exact n_d size required by inner functions)
         z_bar = acquire!(pool, Tv, n_d)
         f_contrib = acquire!(pool, Tv, n_d)
         dy_bar_slice = acquire!(pool, Tv, n_d)
 
         # Precompute q_t for periodic cubic axis
         q_t = nothing
-        if method_d isa CubicInterp && _is_periodic_bc(bcs[d])
+        if method_d isa CubicInterp && _is_periodic_bc(adj.bcs[d])
             n_intervals = n_d - 1
             q_t = acquire!(pool, Tg, n_intervals)
             fill!(q_t, zero(Tg))
             @inbounds q_t[1] = one(Tg)
             @inbounds q_t[n_intervals] = one(Tg)
-            _ldiv_tridiagonal_transpose!(q_t, caches[d].thomas)
+            _ldiv_tridiagonal_transpose!(q_t, adj.caches[d].thomas)
         end
 
         for p_src_offset in 0:(stride_d - 1)
@@ -323,15 +328,17 @@ Derivative axes dispatch to per-method function barriers.
 
             _hetero_axis_adjoint!(
                 src_3d, dst_3d, method_d, p_src,
-                caches[d], mixed_caches[d],
-                spacing_d, bcs[d], mixed_bcs[d], grids[d],
+                adj.caches[d], adj.mixed_caches[d],
+                spacing_d, adj.bcs[d], adj.mixed_bcs[d], adj.grids[d],
                 shape_before, n_d, shape_after,
                 z_bar, f_contrib, dy_bar_slice,
-                q_t, mincurv_Cs[d]
+                q_t, adj.mincurv_Cs[d]
             )
         end
     end
 
+    # Recurse to lower axis (d-1 → ... → 0 base case)
+    _build_adjoint_nd_hetero!(partials_bar, adj, sizes, pool, Val(d - 1))
     return nothing
 end
 
@@ -355,13 +362,10 @@ end
     _adjoint_scatter_hetero_nd!(partials_bar, adj.anchors, y_bar, ops, adj.methods)
 
     # Step 1: Build adjoint (reverse axis order, compact strides)
+    # Uses Val(d) recursive dispatch for zero-alloc heterogeneous tuple indexing.
+    # Pool is passed so each axis acquires exact-size work buffers (inner functions use length()).
     if NP > 1  # Skip build if all axes are non-derivative
-        _build_adjoint_nd_hetero!(
-            partials_bar, adj.methods,
-            adj.spacings, adj.caches, adj.mixed_caches,
-            adj.bcs, adj.mixed_bcs, adj.grids, adj.grid_size,
-            sizes, adj.mincurv_Cs
-        )
+        _build_adjoint_nd_hetero!(partials_bar, adj, sizes, pool, Val(N))
     end
 
     # Step 2: Extract f_bar = partials_bar[1, ...]
@@ -498,6 +502,8 @@ function _build_hetero_nd_adjoint(
     spacings = _create_spacings_typed(grids_ext)
 
     # Per-axis BC normalization (for derivative methods only)
+    # Non-BC methods (Linear/Constant) use `nothing` sentinel — never matched
+    # against PeriodicBC or BCPair in protocol functions.
     bcs = map(methods) do method_d
         if method_d isa CubicInterp
             bc_d = method_d.bc
@@ -506,7 +512,7 @@ function _build_hetero_nd_adjoint(
             bc_d = method_d.bc
             _normalize_bc(bc_d, Tg)
         else
-            NoExtrap()  # placeholder for non-BC methods
+            nothing
         end
     end
 
@@ -519,7 +525,7 @@ function _build_hetero_nd_adjoint(
             mixed_bc = _get_effective_bc_quadratic(method_d.bc, 2, grid_d)
             _normalize_bc(mixed_bc, Tg)
         else
-            NoExtrap()
+            nothing
         end
     end
 

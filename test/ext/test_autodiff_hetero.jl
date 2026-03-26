@@ -296,12 +296,11 @@ using LinearAlgebra
     end
 
     # ════════════════════════════════════════════════════════════════════════
-    # ENZYME ∂/∂data — not tested here
+    # ENZYME ∂/∂data — tested in test_autodiff_Enzyme.jl
     # ════════════════════════════════════════════════════════════════════════
-    # Enzyme ND struct API tests are in test_autodiff_Enzyme.jl under
-    # ENZYME_ND_STRUCT_SUPPORTED guard. The hetero path uses the same
-    # EnzymeRules (interp() constructor + eval rules) as homogeneous types.
-    # No separate hetero Enzyme test needed — if Enzyme works for the base
-    # types, it works for hetero via the same code path.
+    # Enzyme ND struct API tests (including hetero) are in test_autodiff_Enzyme.jl
+    # under the ENZYME_ND_STRUCT_SUPPORTED guard (Julia ≥ 1.11, Linux x64).
+    # The hetero path uses the same EnzymeRules (interp() constructor + eval)
+    # as homogeneous types — see "Hetero (Cubic×Linear)" testset there.
 
 end # @testset "Hetero ND — AD Integration"

@@ -618,6 +618,37 @@ else
                         end
                     end
                 end
+
+                # ── Heterogeneous: interp(grids, data; method=Tuple) ──
+                @testset "Hetero (Cubic×Linear)" begin
+                    methods_h = (CubicInterp(), LinearInterp())
+
+                    @testset "eval — ∂/∂data" begin
+                        ddata = zero(data)
+                        Enzyme.autodiff(
+                            Enzyme.Reverse,
+                            d -> interp((x, y), d; method = methods_h)(x0),
+                            Enzyme.Active,
+                            Enzyme.Duplicated(data, ddata),
+                        )
+                        adj = hetero_adjoint((x, y), (x0,); methods = methods_h)
+                        @test ddata ≈ adj(1.0) atol = 1.0e-10
+                    end
+
+                    @testset "eval — L2 loss" begin
+                        target = 0.5
+                        ddata = zero(data)
+                        Enzyme.autodiff(
+                            Enzyme.Reverse,
+                            d -> (interp((x, y), d; method = methods_h)(x0) - target)^2,
+                            Enzyme.Active,
+                            Enzyme.Duplicated(data, ddata),
+                        )
+                        y_val = interp((x, y), data; method = methods_h)(x0)
+                        adj = hetero_adjoint((x, y), (x0,); methods = methods_h)
+                        @test ddata ≈ adj(2.0 * (y_val - target)) atol = 1.0e-10
+                    end
+                end
             end # ENZYME_ND_STRUCT_SUPPORTED
 
             # ════════════════════════════════════════════════════════════════

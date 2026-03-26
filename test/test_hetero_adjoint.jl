@@ -591,4 +591,168 @@ using LinearAlgebra
         end
     end
 
+    # ════════════════════════════════════════════════════════════════════════
+    # COVERAGE: show methods
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "show — HeteroAdjointND" begin
+        x = range(0.0, 1.0, 10)
+        y = range(0.0, 1.0, 8)
+        adj = hetero_adjoint((x, y), ([0.5], [0.5]); methods = (CubicInterp(), LinearInterp()))
+
+        compact_str = sprint(show, adj)
+        @test occursin("HeteroAdjointND", compact_str)
+        @test occursin("Float64", compact_str)
+        @test occursin("Cubic×Linear", compact_str)
+
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("HeteroAdjointND", verbose_str)
+        @test occursin("Grids:", verbose_str)
+        @test occursin("Method:", verbose_str)
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # COVERAGE: scalar y_bar → ND adjoint (scalar dispatch path)
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "Scalar y_bar (single query)" begin
+        x = range(0.0, 1.0, 10)
+        y = range(0.0, 1.0, 8)
+        methods = (CubicInterp(), LinearInterp())
+        adj = hetero_adjoint((x, y), ((0.5, 0.5),); methods = methods)
+
+        f_bar_scalar = adj(1.0)
+        f_bar_vec = adj([1.0])
+        @test f_bar_scalar ≈ f_bar_vec atol = 1.0e-14
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # COVERAGE: OOB weight fixup — FillExtrap zeros ALL weights
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "FillExtrap — per-axis OOB baking" begin
+        x = range(0.0, 1.0, 10)
+        y = range(0.0, 1.0, 8)
+        methods = (CubicInterp(), LinearInterp())
+
+        # Both axes OOB (x=-0.1, y=1.5) with FillExtrap → all weights zero
+        adj = hetero_adjoint(
+            (x, y), ((-0.1, 1.5),);
+            methods = methods, extrap = FillExtrap(0.0)
+        )
+        W_T = Matrix(adj)
+        @test maximum(abs.(W_T)) < 1.0e-15
+
+        # Only one axis OOB (x in-bounds, y OOB)
+        adj2 = hetero_adjoint(
+            (x, y), ((0.5, 1.5),);
+            methods = methods, extrap = FillExtrap(0.0)
+        )
+        W_T2 = Matrix(adj2)
+        @test maximum(abs.(W_T2)) < 1.0e-15
+
+        # ClampExtrap — derivative weights zeroed, value weight preserved
+        adj_clamp = hetero_adjoint(
+            (x, y), ((1.5, 0.5),);
+            methods = methods, extrap = ClampExtrap()
+        )
+        W_T_clamp = Matrix(adj_clamp)
+        @test sum(abs.(W_T_clamp)) > 0  # value weights non-zero
+
+        # Derivative at clamped OOB → all zero (w1 zeroed)
+        W_T_dx = Matrix(adj_clamp; deriv = (DerivOp(1), EvalValue()))
+        @test maximum(abs.(W_T_dx)) < 1.0e-15
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # COVERAGE: ConstantInterp weight functions (all side types)
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "ConstantInterp sides — weight coverage" begin
+        x = range(0.0, 1.0, 10)
+        y = range(0.0, 1.0, 8)
+        data = [xi + yj for xi in x, yj in y]
+        f_vec = vec(data)
+
+        for side in [LeftSide(), RightSide(), NearestSide()]
+            @testset "$(typeof(side))" begin
+                methods = (LinearInterp(), ConstantInterp(side = side))
+                itp = interp((x, y), data; method = methods)
+                adj = hetero_adjoint((x, y), ([0.5], [0.5]); methods = methods)
+                W_T = Matrix(adj)
+                @test itp((0.5, 0.5)) ≈ dot(W_T[:, 1], f_vec) atol = 1.0e-12
+            end
+        end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # COVERAGE: PeriodicBC{:exclusive} with Vector grids (vcat branch)
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "PeriodicBC{:exclusive} — Vector grid (non-Range)" begin
+        n_p = 12
+        x_p_range = range(0.0, 2π, n_p + 1)[1:n_p]
+        x_p = collect(x_p_range)  # Vector, not Range → triggers vcat branch
+        y = range(0.0, 1.0, 8)
+        data = [sin(xi) * yj for xi in x_p, yj in y]
+        f_vec = vec(data)
+
+        bc_excl = PeriodicBC(endpoint = :exclusive, period = 2π)
+        methods = (CubicInterp(bc = bc_excl), LinearInterp())
+        itp = interp((x_p, y), data; method = methods)
+        adj = hetero_adjoint((x_p, y), ([1.0], [0.5]); methods = methods)
+        W_T = Matrix(adj)
+        @test size(adj(1.0)) == size(data)
+        @test itp((1.0, 0.5)) ≈ dot(W_T[:, 1], f_vec) atol = 1.0e-10
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # COVERAGE: PolyFit BC validation error path
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "PolyFit BC validation" begin
+        # CubicFit needs 4 points, QuadraticFit needs 3, LinearFit needs 2
+        y = range(0.0, 1.0, 10)
+
+        # Too few points for CubicFit (need 4, give 3)
+        x_small = range(0.0, 1.0, 3)
+        @test_throws ArgumentError hetero_adjoint(
+            (x_small, y), ([0.5], [0.5]);
+            methods = (CubicInterp(bc = CubicFit()), LinearInterp())
+        )
+
+        # Enough points — should work
+        x_ok = range(0.0, 1.0, 5)
+        adj = hetero_adjoint(
+            (x_ok, y), ([0.5], [0.5]);
+            methods = (CubicInterp(bc = CubicFit()), LinearInterp())
+        )
+        @test adj(1.0) isa Matrix
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # COVERAGE: Cubic×Cubic mixed-partial path (p_src > 1, mixed_cache_d)
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "Mixed-partial path (Cubic×Cubic, p_src > 1)" begin
+        x = range(0.0, 1.0, 12)
+        y = range(0.0, 1.0, 10)
+        data = [sin(2π * xi) * cos(2π * yj) for xi in x, yj in y]
+        f_vec = vec(data)
+
+        # Cubic×Cubic triggers sizes=(2,2) → stride_d=2 → p_src ∈ {1,2}
+        methods = (CubicInterp(), CubicInterp())
+        itp = interp((x, y), data; method = methods)
+        adj = hetero_adjoint((x, y), ([0.37], [0.63]); methods = methods)
+
+        # Forward-adjoint consistency (exercises p_src=1 AND p_src=2)
+        W_T = Matrix(adj)
+        @test itp((0.37, 0.63)) ≈ dot(W_T[:, 1], f_vec) atol = 1.0e-12
+
+        # Mixed partial: ∂²f/∂x∂y (requires p_src=2 for mixed cache)
+        W_T_dxdy = Matrix(adj; deriv = (DerivOp(1), DerivOp(1)))
+        H = FastInterpolations.hessian(itp, (0.37, 0.63))
+        @test dot(W_T_dxdy[:, 1], f_vec) ≈ H[1, 2] atol = 1.0e-9
+    end
+
 end # @testset "HeteroAdjointND"

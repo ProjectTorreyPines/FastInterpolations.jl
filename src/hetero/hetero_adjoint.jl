@@ -480,9 +480,23 @@ function _build_hetero_nd_adjoint(
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N, Tg <: AbstractFloat}
-    # Validate all axes have at least 2 grid points
+    # Validate grid size and cubic PolyFit BC support requirements
     @inbounds for d in 1:N
-        length(grids[d]) >= 2 || _throw_adjoint_grid_too_small(d, length(grids[d]))
+        len_d = length(grids[d])
+        len_d >= 2 || _throw_adjoint_grid_too_small(d, len_d)
+        if methods[d] isa CubicInterp
+            bc_d = methods[d].bc
+            if !(bc_d isa PeriodicBC)
+                deg = get_polyfit_degree(bc_d)
+                if deg > 0 && len_d < deg + 1
+                    throw(
+                        ArgumentError(
+                            "PolyFit BC on dimension $d requires at least $(deg + 1) grid points, got $len_d"
+                        )
+                    )
+                end
+            end
+        end
     end
 
     # Extend exclusive periodic grids → inclusive form (cubic axes only)

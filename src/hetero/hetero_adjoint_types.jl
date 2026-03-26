@@ -95,8 +95,11 @@ The same adjoint can be applied to any `ȳ` vector.
 - `S`:   Spacing tuple type
 - `C`:   Per-axis cache tuple (CubicSplineCache for cubic, Nothing for others)
 - `MC`:  Per-axis mixed-partial cache tuple
-- `BP`:  Per-axis BC tuple (BCPair/PeriodicBC for cubic/quadratic, NoExtrap for others)
-- `MBP`: Per-axis mixed BC tuple
+- `BP`:  Per-axis adjoint-BC tuple. For cubic axes: `BCPair`/`PeriodicBC`;
+         for quadratic axes: normalized `AbstractBC` (e.g. `Left`, `Right`, `MinCurvFit`);
+         for non-derivative axes (Linear/Constant): `nothing` sentinel.
+- `MBP`: Per-axis mixed-BC tuple, analogous to `BP` but for mixed-partial
+         directions; `nothing` when no mixed-partial BC is required.
 
 # Architecture — Mixed-Radix Compact Storage
 Uses `prod(sizes)` partials instead of `2^N`, where `sizes[d] = _deriv_size(methods[d])`.
@@ -133,6 +136,19 @@ struct HeteroAdjointND{
     anchors::Vector{_NDAdjointAnchor{Tg, N}}
     grid_size::NTuple{N, Int}
     mincurv_Cs::NTuple{N, Tg}
+
+    # Defensive copy of grids to prevent mutation safety issues
+    # (matches LinearAdjointND / QuadraticAdjointND / ConstantAdjointND convention)
+    function HeteroAdjointND{Tg, N, M, G, S, C, MC, BP, MBP}(
+            methods, grids, spacings, caches, mixed_caches,
+            bcs, mixed_bcs, anchors, grid_size, mincurv_Cs
+        ) where {Tg, N, M, G, S, C, MC, BP, MBP}
+        grids_c = map(copy, grids)
+        return new{Tg, N, M, typeof(grids_c), S, C, MC, BP, MBP}(
+            methods, grids_c, spacings, caches, mixed_caches,
+            bcs, mixed_bcs, anchors, grid_size, mincurv_Cs
+        )
+    end
 end
 
 # ========================================

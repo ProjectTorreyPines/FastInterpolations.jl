@@ -295,4 +295,13 @@ using LinearAlgebra
         end
     end
 
+    # ════════════════════════════════════════════════════════════════════════
+    # ENZYME ∂/∂data — not tested here
+    # ════════════════════════════════════════════════════════════════════════
+    # Enzyme ND struct API tests are in test_autodiff_Enzyme.jl under
+    # ENZYME_ND_STRUCT_SUPPORTED guard. The hetero path uses the same
+    # EnzymeRules (interp() constructor + eval rules) as homogeneous types.
+    # No separate hetero Enzyme test needed — if Enzyme works for the base
+    # types, it works for hetero via the same code path.
+
 end # @testset "Hetero ND — AD Integration"

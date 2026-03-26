@@ -540,4 +540,55 @@ using LinearAlgebra
         @test dot(W_T_dy[:, 1], f_vec) ≈ q[1]^3 atol = 1.0e-8
     end
 
+    # ════════════════════════════════════════════════════════════════════════
+    # 4D FORWARD-ADJOINT CONSISTENCY
+    # ════════════════════════════════════════════════════════════════════════
+    # Validates mixed-radix decomposition for higher dimensions (prod(sizes)
+    # with sizes = (2,1,2,1) for Cubic×Linear×Quadratic×Constant).
+
+    @testset "4D forward-adjoint consistency" begin
+        g1 = range(0.0, 1.0, 6)
+        g2 = range(0.0, 1.0, 5)
+        g3 = range(0.0, 1.0, 5)
+        g4 = range(0.0, 1.0, 4)
+        data4 = randn(6, 5, 5, 4)
+        f_vec = vec(data4)
+        q1 = [0.3, 0.7]
+        q2 = [0.4, 0.6]
+        q3 = [0.2, 0.8]
+        q4 = [0.3, 0.7]
+        nq = 2
+
+        methods_4d = (CubicInterp(), LinearInterp(), QuadraticInterp(), ConstantInterp())
+        itp = interp((g1, g2, g3, g4), data4; method = methods_4d)
+        adj = hetero_adjoint((g1, g2, g3, g4), (q1, q2, q3, q4); methods = methods_4d)
+        W_T = Matrix(adj)
+
+        @testset "Forward-adjoint per query" begin
+            for q in 1:nq
+                fwd = itp((q1[q], q2[q], q3[q], q4[q]))
+                mat_fwd = dot(W_T[:, q], f_vec)
+                @test fwd ≈ mat_fwd atol = 1.0e-12
+            end
+        end
+
+        @testset "Golden rule: ⟨Wf, ȳ⟩ = ⟨f, W^Tȳ⟩" begin
+            Wf = [itp((q1[q], q2[q], q3[q], q4[q])) for q in 1:nq]
+            y_bar = randn(nq)
+            lhs = dot(Wf, y_bar)
+            rhs = dot(f_vec, vec(adj(y_bar)))
+            @test lhs ≈ rhs atol = 1.0e-10
+        end
+
+        @testset "Zero alloc — in-place" begin
+            function _test_4d_alloc(adj, f_bar, y_bar)
+                adj(f_bar, y_bar)
+                adj(f_bar, y_bar)
+                return @allocated adj(f_bar, y_bar)
+            end
+            fb = zeros(6, 5, 5, 4)
+            @test _test_4d_alloc(adj, fb, [1.0, 2.0]) <= ND_ALLOC_THRESHOLD
+        end
+    end
+
 end # @testset "HeteroAdjointND"

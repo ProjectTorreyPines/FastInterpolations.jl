@@ -42,50 +42,10 @@ function _bake_hetero_nd_anchors(
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}}
     ) where {N, Tg <: AbstractFloat}
-    nq = _query_length(queries)
-    _query_validate(queries)
-    _validate_nd_domain(grids, queries, extraps)
-
-    anchors = Vector{_NDAdjointAnchor{Tg, N}}(undef, nq)
-    @inbounds for q in 1:nq
-        query_q = _extract_query_point(queries, q, Val(N))
-        idx_and_weights = ntuple(Val(N)) do d
-            xq_raw = Tg(query_q[d])
-            xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
-            idx, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
-            h = _get_h(spacings[d], idx)
-            inv_h = _get_inv_h(spacings[d], idx)
-            t = (xq_d - xL) * inv_h
-            dL = xq_d - xL
-            is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])
-            return (idx, _compute_hetero_anchor_weights(t, h, inv_h, dL, methods[d]), is_oob)
-        end
-        indices = ntuple(d -> idx_and_weights[d][1], Val(N))
-        w0 = ntuple(d -> idx_and_weights[d][2][1], Val(N))
-        w1 = ntuple(d -> idx_and_weights[d][2][2], Val(N))
-        w2 = ntuple(d -> idx_and_weights[d][2][3], Val(N))
-        w3 = ntuple(d -> idx_and_weights[d][2][4], Val(N))
-
-        # Per-axis OOB weight fixup
-        for d in 1:N
-            idx_and_weights[d][3] || continue  # skip in-bounds axes
-            ext_d = extraps[d]
-            zw = (zero(Tg), zero(Tg), zero(Tg), zero(Tg))
-            if ext_d isa FillExtrap
-                w0 = Base.setindex(w0, zw, d)
-                w1 = Base.setindex(w1, zw, d)
-                w2 = Base.setindex(w2, zw, d)
-                w3 = Base.setindex(w3, zw, d)
-            elseif ext_d isa ClampExtrap
-                w1 = Base.setindex(w1, zw, d)
-                w2 = Base.setindex(w2, zw, d)
-                w3 = Base.setindex(w3, zw, d)
-            end
-        end
-
-        anchors[q] = _NDAdjointAnchor{Tg, N}(indices, w0, w1, w2, w3)
-    end
-    return anchors
+    return _bake_nd_anchors_generic(
+        grids, spacings, queries, extraps,
+        (d, t, h, inv_h, dL) -> _compute_hetero_anchor_weights(t, h, inv_h, dL, methods[d])
+    )
 end
 
 # ========================================

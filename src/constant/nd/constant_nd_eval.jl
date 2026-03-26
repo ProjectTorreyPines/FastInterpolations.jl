@@ -76,8 +76,7 @@ end
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
     op_x, op_y = ops
-    if op_x isa EvalDeriv1 || op_x isa EvalDeriv2 || op_x isa EvalDeriv3 ||
-            op_y isa EvalDeriv1 || op_y isa EvalDeriv2 || op_y isa EvalDeriv3
+    if !(op_x isa EvalValue) || !(op_y isa EvalValue)
         return 0 * first(itp.data)
     end
     cell = _locate_cell(itp, query, search_tuple, hints)
@@ -133,7 +132,7 @@ end
 
 @inline function _has_any_derivative(ops::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N}
     for d in 1:N
-        @inbounds if ops[d] isa EvalDeriv1 || ops[d] isa EvalDeriv2 || ops[d] isa EvalDeriv3
+        @inbounds if !(ops[d] isa EvalValue)
             return true
         end
     end

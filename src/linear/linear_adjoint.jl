@@ -148,6 +148,14 @@ end
     return nothing
 end
 
+# Generic fallback: 2nd+ derivative of linear is zero → no scatter
+@inline function _scatter_linear_adjoint!(
+        ::AbstractVector, ::Vector{<:_LinearAnchoredQuery}, ::Any,
+        ::DerivOp{N}, ::AbstractExtrap
+    ) where {N}
+    return nothing
+end
+
 # OOB skip helpers (_is_oob_skip, _is_oob_skip_deriv) are defined in
 # src/core/adjoint_protocol.jl and shared by all adjoint types.
 

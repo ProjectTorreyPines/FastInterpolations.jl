@@ -286,6 +286,15 @@ end
     return nothing
 end
 
+# Generic fallback: 3rd+ derivative of quadratic is zero → no scatter
+@inline function _scatter_eval_adjoint_quadratic!(
+        ::AbstractVector, ::AbstractVector,
+        ::Vector{<:_QuadraticAdjointAnchor1D}, ::Any,
+        ::DerivOp{N}
+    ) where {N}
+    return nothing
+end
+
 # ========================================
 # Step 2: Recurrence Adjoint
 # ========================================

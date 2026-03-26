@@ -232,6 +232,15 @@ end
     return nothing
 end
 
+# Generic fallback: 4th+ derivative of cubic is zero → no scatter
+@inline function _scatter_eval_adjoint!(
+        ::AbstractVector, ::AbstractVector,
+        ::Vector{<:_CubicAnchoredQuery}, ::Any,
+        ::DerivOp{N}
+    ) where {N}
+    return nothing
+end
+
 # ========================================
 # Step 3: RHS Adjoint (Rᵀ)
 # ========================================

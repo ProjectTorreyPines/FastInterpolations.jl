@@ -67,8 +67,8 @@ Dispatches to the type-specific weight function based on the axis's interpolatio
     _compute_nd_anchor_weights(t, h, inv_h)
 @inline _compute_hetero_anchor_weights(t::Tg, h::Tg, inv_h::Tg, ::Tg, ::QuadraticInterp) where {Tg} =
     _compute_nd_quadratic_anchor_weights(t, h, inv_h)
-@inline _compute_hetero_anchor_weights(::Tg, ::Tg, inv_h::Tg, dL::Tg, m::ConstantInterp) where {Tg} =
-    _compute_nd_constant_anchor_weights(dL, inv(inv_h), m.side)
+@inline _compute_hetero_anchor_weights(::Tg, h::Tg, ::Tg, dL::Tg, m::ConstantInterp) where {Tg} =
+    _compute_nd_constant_anchor_weights(dL, h, m.side)
 @inline function _compute_hetero_anchor_weights(t::Tg, ::Tg, inv_h::Tg, ::Tg, ::LinearInterp) where {Tg}
     return _compute_nd_linear_anchor_weights(t, inv_h)
 end

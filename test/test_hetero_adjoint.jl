@@ -276,6 +276,99 @@ using LinearAlgebra
         end
     end
 
+    @testset "PeriodicBC{:exclusive} — Cubic(periodic_excl)×Quadratic" begin
+        # Exclusive periodic: grid does NOT include right endpoint → adjoint must extend grid
+        # and _adjoint_output_size must truncate (n → n-1 on periodic axis)
+        n_p = 20
+        x_p = range(0.0, 2π, n_p + 1)[1:n_p]  # exclusive: omits endpoint
+        y = range(0.0, 1.0, 8)
+        data = [sin(xi) * (1 + yj) for xi in x_p, yj in y]
+        f_vec = vec(data)
+        xq = [0.5, 2.0, 4.0, 5.5]
+        yq = [0.2, 0.4, 0.6, 0.8]
+
+        methods = (CubicInterp(bc = PeriodicBC(endpoint = :exclusive)), QuadraticInterp())
+        itp = interp((x_p, y), data; method = methods)
+        adj = hetero_adjoint((x_p, y), (xq, yq); methods = methods)
+
+        # Output size should match input data size (exclusive periodic shrinks by 1)
+        f_bar = adj(ones(length(xq)))
+        @test size(f_bar) == size(data)
+
+        # Forward-adjoint consistency
+        W_T = Matrix(adj)
+        for q in eachindex(xq)
+            fwd = itp((xq[q], yq[q]))
+            mat_fwd = dot(W_T[:, q], f_vec)
+            @test fwd ≈ mat_fwd atol = 1.0e-10
+        end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # MINCURVFIT BC (Quadratic axis with MinCurvFit in hetero context)
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "QuadraticInterp(bc=MinCurvFit()) in hetero" begin
+        x = range(0.0, 1.0, 12)
+        y = range(0.0, 1.0, 10)
+        data = [sin(2π * xi) * cos(2π * yj) for xi in x, yj in y]
+        f_vec = vec(data)
+        xq = [0.2, 0.5, 0.8]
+        yq = [0.3, 0.5, 0.7]
+
+        methods = (CubicInterp(), QuadraticInterp(bc = MinCurvFit()))
+        itp = interp((x, y), data; method = methods)
+        adj = hetero_adjoint((x, y), (xq, yq); methods = methods)
+        W_T = Matrix(adj)
+
+        for q in eachindex(xq)
+            fwd = itp((xq[q], yq[q]))
+            mat_fwd = dot(W_T[:, q], f_vec)
+            @test fwd ≈ mat_fwd atol = 1.0e-10
+        end
+
+        # Golden rule with random y_bar
+        Wf = [itp((xq[q], yq[q])) for q in eachindex(xq)]
+        y_bar = randn(length(xq))
+        @test dot(Wf, y_bar) ≈ dot(f_vec, vec(adj(y_bar))) atol = 1.0e-10
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # DERIVATIVE ON NON-DERIVATIVE AXES (DerivOp on Linear/Constant axis)
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "DerivOp on linear/constant axis" begin
+        x = range(0.0, 1.0, 12)
+        y = range(0.0, 1.0, 10)
+        data = [xi * yj for xi in x, yj in y]  # f(x,y) = xy — exact for linear
+        f_vec = vec(data)
+        xq = [0.2, 0.5, 0.8]
+        yq = [0.3, 0.5, 0.7]
+
+        @testset "DerivOp(1) on Linear axis — Cubic×Linear" begin
+            methods = (CubicInterp(), LinearInterp())
+            itp = interp((x, y), data; method = methods)
+            adj = hetero_adjoint((x, y), (xq, yq); methods = methods)
+
+            # ∂f/∂y on the LINEAR axis: for f=xy, ∂f/∂y = x
+            W_T_dy = Matrix(adj; deriv = (EvalValue(), DerivOp(1)))
+            for q in eachindex(xq)
+                grad = FastInterpolations.gradient(itp, (xq[q], yq[q]))
+                @test dot(W_T_dy[:, q], f_vec) ≈ grad[2] atol = 1.0e-10
+                @test dot(W_T_dy[:, q], f_vec) ≈ xq[q] atol = 1.0e-10  # analytic
+            end
+        end
+
+        @testset "DerivOp(1) on Constant axis — Linear×Constant (zero derivative)" begin
+            methods = (LinearInterp(), ConstantInterp())
+            adj = hetero_adjoint((x, y), (xq, yq); methods = methods)
+
+            # Constant axis: derivative is zero → all weights should be zero
+            W_T_dy = Matrix(adj; deriv = (EvalValue(), DerivOp(1)))
+            @test maximum(abs.(W_T_dy)) < 1.0e-15
+        end
+    end
+
     # ════════════════════════════════════════════════════════════════════════
     # OOB / EXTRAPOLATION
     # ════════════════════════════════════════════════════════════════════════

@@ -293,6 +293,20 @@ end
     return out
 end
 
+@inline function _eval_series_point!(
+        out::AbstractVector,
+        y_point::Matrix{Tv},
+        z_point::Matrix{Tv},
+        aq::_CubicAnchoredQuery{Tg, Tq},
+        ::DerivOp{N}
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real, N}
+    z = 0 * (@inbounds y_point[1, aq.idx])
+    @inbounds @simd for k in axes(out, 1)
+        out[k] = z
+    end
+    return out
+end
+
 """
     _eval_series_point_with_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op)
 
@@ -450,6 +464,26 @@ end
         zL = z_point[k, idx]
         zR = z_point[k, idx1]
         out[k] = muladd(wzR, zR, wzL * zL)
+    end
+    return out
+end
+
+# ExtendExtrap - 4th+ derivative of cubic is zero → fill zeros
+@inline function _eval_series_point_extrap!(
+        out::AbstractVector,
+        y_point::Matrix{Tv},
+        ::Matrix{Tv},
+        ::Int,
+        ::Tg,
+        ::Tg,
+        ::_CubicAnchoredQuery{Tg, Tq},
+        ::ExtendExtrap,
+        ::DerivOp{N},
+        ::UInt8
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real, N}
+    z = 0 * first(y_point)
+    @inbounds @simd for k in axes(out, 1)
+        out[k] = z
     end
     return out
 end
@@ -1034,6 +1068,17 @@ end
         zR = z[idx + 1, k]
     end
     return muladd(wzR, zR, wzL * zL)
+end
+
+@inline function _eval_series_anchored(
+        y::Matrix{Tv},
+        z::Matrix{Tv},
+        k::Int,
+        aq::_CubicAnchoredQuery{Tg},
+        ::DerivOp{N}
+    ) where {Tg <: AbstractFloat, Tv, N}
+    @inbounds yL = y[aq.idx, k]
+    return 0 * yL
 end
 
 # EvalDeriv3: Optimized 2-term evaluation (no y-loads)

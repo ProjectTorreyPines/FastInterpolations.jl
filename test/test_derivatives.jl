@@ -131,6 +131,86 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
             @test dv4(xq) == 0.0
         end
 
+        @testset "Series interpolants" begin
+            ys = Series(sin.(2π .* x), cos.(2π .* x))
+            z2 = zeros(2)
+
+            # --- ClampExtrap: in-domain + OOB ---
+            @testset "ClampExtrap" begin
+                sitp_c = cubic_interp(x, ys; extrap = ClampExtrap())
+                @test sitp_c(xq; deriv = DerivOp(4)) == z2
+                @test sitp_c(-0.1; deriv = DerivOp(4)) == z2
+
+                sitp_q = quadratic_interp(x, ys; extrap = ClampExtrap())
+                @test sitp_q(xq; deriv = DerivOp(4)) == z2
+                @test sitp_q(-0.1; deriv = DerivOp(4)) == z2
+
+                sitp_l = linear_interp(x, ys; extrap = ClampExtrap())
+                @test sitp_l(xq; deriv = DerivOp(4)) == z2     # in-domain
+                @test sitp_l(-0.1; deriv = DerivOp(4)) == z2
+
+                sitp_k = constant_interp(x, ys; extrap = ClampExtrap())
+                @test sitp_k(xq; deriv = DerivOp(4)) == z2
+                @test sitp_k(-0.1; deriv = DerivOp(4)) == z2
+            end
+
+            # --- ExtendExtrap: OOB exercises _eval_series_point_extrap! ---
+            @testset "ExtendExtrap" begin
+                sitp_c = cubic_interp(x, ys; extrap = ExtendExtrap())
+                @test sitp_c(xq; deriv = DerivOp(4)) == z2     # in-domain
+                @test sitp_c(-0.1; deriv = DerivOp(4)) == z2   # OOB left
+                @test sitp_c(1.1; deriv = DerivOp(4)) == z2    # OOB right
+
+                sitp_q = quadratic_interp(x, ys; extrap = ExtendExtrap())
+                @test sitp_q(xq; deriv = DerivOp(4)) == z2
+                @test sitp_q(-0.1; deriv = DerivOp(4)) == z2
+
+                sitp_l = linear_interp(x, ys; extrap = ExtendExtrap())
+                @test sitp_l(-0.1; deriv = DerivOp(4)) == z2
+            end
+
+            # --- FillExtrap: OOB exercises _fill_constant_extrap_simd! ---
+            @testset "FillExtrap" begin
+                sitp_c = cubic_interp(x, ys; extrap = FillExtrap(NaN))
+                @test sitp_c(xq; deriv = DerivOp(4)) == z2
+                @test sitp_c(-0.1; deriv = DerivOp(4)) == z2   # deriv → zero, not fill
+
+                sitp_q = quadratic_interp(x, ys; extrap = FillExtrap(NaN))
+                @test sitp_q(-0.1; deriv = DerivOp(4)) == z2
+            end
+
+            # --- WrapExtrap: maps OOB back into domain ---
+            @testset "WrapExtrap" begin
+                # Periodic data: y[end] == y[1] required (force exact match)
+                x_p = collect(range(0.0, 1.0, 11))
+                y1_p = sin.(2π .* x_p); y1_p[end] = y1_p[1]
+                y2_p = cos.(2π .* x_p); y2_p[end] = y2_p[1]
+                ys_p = Series(y1_p, y2_p)
+
+                sitp_c = cubic_interp(x_p, ys_p; bc = PeriodicBC(), extrap = WrapExtrap())
+                @test sitp_c(xq; deriv = DerivOp(4)) == z2
+                @test sitp_c(1.5; deriv = DerivOp(4)) == z2    # wraps to 0.5
+
+                sitp_l = linear_interp(x_p, ys_p; extrap = WrapExtrap())
+                @test sitp_l(1.5; deriv = DerivOp(4)) == z2
+            end
+
+            # --- Vector eval path (anchored) ---
+            @testset "vector eval" begin
+                xqs = [-0.1, xq, 1.1]
+
+                sitp_c = cubic_interp(x, ys; extrap = ClampExtrap())
+                for series_out in sitp_c(xqs; deriv = DerivOp(4))
+                    @test all(iszero, series_out)
+                end
+
+                sitp_q = quadratic_interp(x, ys; extrap = ClampExtrap())
+                for series_out in sitp_q(xqs; deriv = DerivOp(4))
+                    @test all(iszero, series_out)
+                end
+            end
+        end
+
         @testset "ND cubic" begin
             data = sin.(x) * cos.(x')
             itp_nd = cubic_interp((x, x), data)

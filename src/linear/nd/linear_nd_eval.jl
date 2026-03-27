@@ -133,7 +133,7 @@ end
 
 @inline function _has_second_or_higher_derivative(ops::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N}
     for d in 1:N
-        @inbounds if ops[d] isa EvalDeriv2 || ops[d] isa EvalDeriv3
+        @inbounds if !(ops[d] isa EvalValue) && !(ops[d] isa EvalDeriv1)
             return true
         end
     end
@@ -244,3 +244,6 @@ end
 # But define them for completeness if somehow called
 @inline _linear_weight(::EvalDeriv2, α, h, ::Val{B}) where {B} = zero(α)
 @inline _linear_weight(::EvalDeriv3, α, h, ::Val{B}) where {B} = zero(α)
+
+# Generic fallback: N-th derivative weight is zero for N ≥ 2
+@inline _linear_weight(::DerivOp{N}, α, h, ::Val{B}) where {N, B} = zero(α)

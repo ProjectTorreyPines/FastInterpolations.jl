@@ -49,33 +49,205 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
     end
 
     @testset "DerivOp order range validation" begin
-        # _make_derivop rejects orders outside [0, 3]
-        @test_throws ArgumentError DerivOp(4)
+        # _make_derivop rejects negative orders
         @test_throws ArgumentError DerivOp(-1)
-        @test_throws ArgumentError DerivOp(100)
-
-        # ND constructor validates each element
-        @test_throws ArgumentError DerivOp(1, 4)
         @test_throws ArgumentError DerivOp(0, -1)
 
-        # Valid orders still work
+        # Valid orders 0-3 (union-split fast path)
         @test DerivOp(0) === DerivOp{0}()
         @test DerivOp(1) === DerivOp{1}()
         @test DerivOp(2) === DerivOp{2}()
         @test DerivOp(3) === DerivOp{3}()
+
+        # Arbitrary orders ≥ 4 are valid (generic fallback path)
+        @test DerivOp(4) === DerivOp{4}()
+        @test DerivOp(100) === DerivOp{100}()
+        @test DerivOp(1, 4) === (DerivOp{1}(), DerivOp{4}())
     end
 
     @testset "deriv_view order validation" begin
-        # 1D: deriv_view rejects invalid orders (3-point grid needs ZeroCurvBC; CubicFit requires 4+)
+        # 1D: deriv_view rejects negative orders
         x = [0.0, 0.5, 1.0]
         y = [0.0, 0.25, 1.0]
         itp = cubic_interp(x, y; bc = ZeroCurvBC())
-        @test_throws ArgumentError deriv_view(itp, 4)
         @test_throws ArgumentError deriv_view(itp, -1)
 
-        # Valid orders work
+        # Valid orders work (including ≥ 4)
         @test deriv_view(itp, 1) isa FastInterpolations.DerivativeView
         @test deriv_view(itp, 0) isa FastInterpolations.DerivativeView
+        @test deriv_view(itp, 4) isa FastInterpolations.DerivativeView
+    end
+
+    @testset "DerivOp{4+} returns zero" begin
+        x = collect(range(0.0, 1.0, 11))
+        xq = 0.35
+
+        @testset "1D oneshot" begin
+            y_cubic = sin.(2π .* x)
+            y_quad = x .^ 2
+            y_lin = 2.0 .* x .+ 1.0
+            y_const = ones(length(x))
+
+            # Cubic: 4th derivative of degree-3 polynomial is zero
+            @test cubic_interp(x, y_cubic, xq; deriv = DerivOp(4)) == 0.0
+            @test cubic_interp(x, y_cubic, xq; deriv = DerivOp(5)) == 0.0
+            @test cubic_interp(x, y_cubic, xq; deriv = DerivOp(10)) == 0.0
+
+            # Quadratic: 4th derivative is zero (3rd already is)
+            @test quadratic_interp(x, y_quad, xq; deriv = DerivOp(4)) == 0.0
+
+            # Linear: 4th derivative is zero
+            @test linear_interp(x, y_lin, xq; deriv = DerivOp(4)) == 0.0
+
+            # Constant: 4th derivative is zero
+            @test constant_interp(x, y_const, xq; deriv = DerivOp(4)) == 0.0
+        end
+
+        @testset "1D anchored (interpolant) — all types" begin
+            y = sin.(2π .* x)
+
+            # Cubic anchored (uses _eval_anchored_kernel fallback)
+            itp_c = cubic_interp(x, y)
+            @test itp_c(xq; deriv = DerivOp(4)) == 0.0
+            @test itp_c(xq; deriv = DerivOp(5)) == 0.0
+
+            # Quadratic anchored (uses _quadratic_kernel fallback)
+            itp_q = quadratic_interp(x, y)
+            @test itp_q(xq; deriv = DerivOp(4)) == 0.0
+
+            # Linear anchored (uses _linear_kernel anchored fallback)
+            itp_l = linear_interp(x, y)
+            @test itp_l(xq; deriv = DerivOp(4)) == 0.0
+
+            # Constant anchored (uses _constant_kernel fallback)
+            itp_k = constant_interp(x, y)
+            @test itp_k(xq; deriv = DerivOp(4)) == 0.0
+        end
+
+        @testset "1D deriv_view" begin
+            y = sin.(2π .* x)
+            itp = cubic_interp(x, y)
+            dv4 = deriv_view(itp, 4)
+            @test dv4(xq) == 0.0
+        end
+
+        @testset "ND cubic" begin
+            data = sin.(x) * cos.(x')
+            itp_nd = cubic_interp((x, x), data)
+            @test itp_nd((0.5, 0.5); deriv = DerivOp(4, 0)) == 0.0
+            @test itp_nd((0.5, 0.5); deriv = DerivOp(0, 4)) == 0.0
+            @test itp_nd((0.5, 0.5); deriv = DerivOp(4, 4)) == 0.0
+            # Mixed: 3rd is valid, 4th is zero
+            @test itp_nd((0.5, 0.5); deriv = DerivOp(4, 3)) == 0.0
+        end
+
+        @testset "ND non-cubic" begin
+            data = sin.(x) * cos.(x')
+            q = (0.5, 0.5)
+
+            # Quadratic ND (exercises _quadratic_kernel_nd → _quadratic_kernel fallback)
+            itp_q = quadratic_interp((x, x), data)
+            @test itp_q(q; deriv = DerivOp(4, 0)) == 0.0
+            @test itp_q(q; deriv = DerivOp(0, 4)) == 0.0
+
+            # Linear ND (exercises _linear_kernel fallback via ND path)
+            itp_l = linear_interp((x, x), data)
+            @test itp_l(q; deriv = DerivOp(4, 0)) == 0.0
+            @test itp_l(q; deriv = DerivOp(0, 4)) == 0.0
+
+            # Constant ND (exercises _constant_kernel fallback via ND path)
+            itp_k = constant_interp((x, x), data)
+            @test itp_k(q; deriv = DerivOp(4, 0)) == 0.0
+            @test itp_k(q; deriv = DerivOp(0, 4)) == 0.0
+        end
+
+        @testset "ND deriv_view" begin
+            data = sin.(x) * cos.(x')
+            itp_nd = cubic_interp((x, x), data)
+            dv = deriv_view(itp_nd, DerivOp(4, 0))
+            @test dv((0.5, 0.5)) == 0.0
+            dv2 = deriv_view(itp_nd, (4, 4))
+            @test dv2((0.5, 0.5)) == 0.0
+        end
+
+        @testset "1D adjoint" begin
+            xq_vec = [0.2, 0.5, 0.8]
+            y = sin.(2π .* x)
+            y_bar = randn(length(xq_vec))
+
+            # Cubic adjoint with DerivOp(4) — exercises 1D adjoint scatter with deriv
+            adj_c = cubic_adjoint(x, xq_vec)
+            f_bar = adj_c(y_bar; deriv = DerivOp(4))
+            @test all(iszero, f_bar)
+
+            # Quadratic adjoint
+            adj_q = quadratic_adjoint(x, xq_vec)
+            f_bar_q = adj_q(y_bar; deriv = DerivOp(4))
+            @test all(iszero, f_bar_q)
+
+            # Linear adjoint
+            adj_l = linear_adjoint(x, xq_vec)
+            f_bar_l = adj_l(y_bar; deriv = DerivOp(4))
+            @test all(iszero, f_bar_l)
+
+            # Constant adjoint
+            adj_k = constant_adjoint(x, xq_vec)
+            f_bar_k = adj_k(y_bar; deriv = DerivOp(4))
+            @test all(iszero, f_bar_k)
+        end
+
+        @testset "ND adjoint — _scatter_nd! zero weights path" begin
+            data = sin.(x) * cos.(x')
+            xq_vec = [0.2, 0.5, 0.8]
+            yq_vec = [0.3, 0.5, 0.7]
+            y_bar = randn(length(xq_vec))
+
+            # Cubic ND adjoint: DerivOp(4,0) → axis 1 gets zero weights in _scatter_nd!
+            adj_c = cubic_adjoint((x, x), (xq_vec, yq_vec))
+            f_bar = adj_c(y_bar; deriv = DerivOp(4, 0))
+            @test all(iszero, f_bar)
+
+            # Both axes zero
+            f_bar2 = adj_c(y_bar; deriv = DerivOp(4, 4))
+            @test all(iszero, f_bar2)
+
+            # Quadratic ND adjoint
+            adj_q = quadratic_adjoint((x, x), (xq_vec, yq_vec))
+            f_bar_q = adj_q(y_bar; deriv = DerivOp(4, 0))
+            @test all(iszero, f_bar_q)
+
+            # Linear ND adjoint
+            adj_l = linear_adjoint((x, x), (xq_vec, yq_vec))
+            f_bar_l = adj_l(y_bar; deriv = DerivOp(4, 0))
+            @test all(iszero, f_bar_l)
+
+            # Constant ND adjoint
+            adj_k = constant_adjoint((x, x), (xq_vec, yq_vec))
+            f_bar_k = adj_k(y_bar; deriv = DerivOp(4, 0))
+            @test all(iszero, f_bar_k)
+        end
+
+        @testset "Hetero adjoint — _scatter_hetero_nd! zero weights path" begin
+            data = sin.(x) * cos.(x')
+            xq_vec = [0.2, 0.5, 0.8]
+            yq_vec = [0.3, 0.5, 0.7]
+            y_bar = randn(length(xq_vec))
+
+            methods = (CubicInterp(), LinearInterp())
+            adj_h = hetero_adjoint((x, x), (xq_vec, yq_vec); methods = methods)
+
+            # DerivOp(4,0): axis 1 (cubic) gets zero weights
+            f_bar = adj_h(y_bar; deriv = (DerivOp(4), EvalValue()))
+            @test all(iszero, f_bar)
+
+            # DerivOp(0,4): axis 2 (linear) gets zero weights
+            f_bar2 = adj_h(y_bar; deriv = (EvalValue(), DerivOp(4)))
+            @test all(iszero, f_bar2)
+
+            # Both axes 4+
+            f_bar3 = adj_h(y_bar; deriv = (DerivOp(4), DerivOp(5)))
+            @test all(iszero, f_bar3)
+        end
     end
 
 end # Derivative Core

@@ -221,7 +221,7 @@ end
     # Derivative adjoint: in-place == allocating
     # ========================================
     @testset "In-place == allocating — deriv=$d" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+            (1, DerivOp(1)), (2, DerivOp(2)), (3, DerivOp(3)), (4, DerivOp(4)),
         ]
         adj = quadratic_adjoint(x_uniform, xq; bc = Left(QuadraticFit()))
         fb_oop = adj(y_bar; deriv = op)
@@ -272,7 +272,7 @@ end
     end
 
     @testset "Complex — derivative adjoint — deriv=$d" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+            (1, DerivOp(1)), (2, DerivOp(2)), (3, DerivOp(3)), (4, DerivOp(4)),
         ]
         f_c = randn(ComplexF64, n_grid)
         yb_c = randn(ComplexF64, n_query)
@@ -506,7 +506,7 @@ end
     end
 
     @testset "Zero-alloc: in-place deriv=$d" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+            (1, DerivOp(1)), (2, DerivOp(2)), (3, DerivOp(3)), (4, DerivOp(4)),
         ]
         fb = zeros(n_grid)
         allocs = _test_quadratic_adjoint_alloc_inplace(x_uniform, xq, fb, y_bar; deriv = op)

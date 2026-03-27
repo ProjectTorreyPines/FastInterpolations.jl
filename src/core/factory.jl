@@ -27,11 +27,12 @@
     n == 1 && return DerivOp{1}()
     n == 2 && return DerivOp{2}()
     n == 3 && return DerivOp{3}()
+    n >= 4 && return DerivOp{n}()
     _derivop_order_error(n)
 end
 
 @noinline _derivop_order_error(n::Int) =
-    throw(ArgumentError("unsupported derivative order $n; must be 0, 1, 2, or 3"))
+    throw(ArgumentError("derivative order must be non-negative, got $n"))
 
 # ────────────────────────────────────────
 # Search Factory

@@ -64,3 +64,8 @@ Uses `0 * a` for duck-typing support and NaN propagation.
 @inline function _quadratic_kernel(::EvalDeriv3, a::Tv, ::Tv, ::Tv, ::Td) where {Tv, Td <: Real}
     return 0 * a
 end
+
+"""Generic fallback: N-th derivative of degree-2 polynomial is zero for N ≥ 3."""
+@inline function _quadratic_kernel(::DerivOp{N}, a::Tv, ::Tv, ::Tv, ::Td) where {N, Tv, Td <: Real}
+    return 0 * a
+end

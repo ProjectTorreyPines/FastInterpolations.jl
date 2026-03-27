@@ -143,6 +143,14 @@ end
     return nothing
 end
 
+# Generic fallback: any derivative of constant is zero → no scatter
+@inline function _scatter_constant_adjoint!(
+        ::AbstractVector, ::Vector{<:_ConstantAnchoredQuery}, ::Any,
+        ::DerivOp{N}, ::AbstractSide, ::AbstractExtrap, ::Int, ::Any
+    ) where {N}
+    return nothing
+end
+
 # ========================================
 # ClampExtrap / FillExtrap OOB Side Fixup
 # ========================================

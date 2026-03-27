@@ -15,6 +15,7 @@ Subtypes:
 - `DerivOp{1}` (alias `EvalDeriv1`): Evaluate first derivative f'(x)
 - `DerivOp{2}` (alias `EvalDeriv2`): Evaluate second derivative f''(x)
 - `DerivOp{3}` (alias `EvalDeriv3`): Evaluate third derivative f'''(x)
+- `DerivOp{N}` for N ≥ 4: Returns zero (beyond polynomial degree of supported interpolants)
 """
 abstract type AbstractEvalOp end
 
@@ -23,10 +24,12 @@ abstract type AbstractEvalOp end
 
 Parametric singleton for derivative order dispatch.
 `N` is the derivative order (0 = value, 1 = first derivative, etc.).
+Any non-negative integer is valid; orders beyond the interpolant's polynomial
+degree (e.g., `DerivOp{4}` for cubic) return zero automatically.
 
 # Construction
 - `DerivOp{0}()`, `DerivOp{1}()` — direct parametric construction
-- `DerivOp(n::Int)` — convenience: `DerivOp(1)` → `DerivOp{1}()`
+- `DerivOp(n::Int)` — convenience: `DerivOp(1)` → `DerivOp{1}()` (any n ≥ 0)
 - `DerivOp(n1, n2, ...)` — ND: `DerivOp(1, 0)` → `(DerivOp{1}(), DerivOp{0}())`
 
 # Backward-compatible aliases

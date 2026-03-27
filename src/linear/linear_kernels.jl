@@ -73,3 +73,8 @@ Linear functions have constant first derivative (slope), zero second and third d
 @inline function _linear_kernel(::EvalDeriv3, yL::Tv, ::Tv, inv_h::Tg, dL) where {Tg <: AbstractFloat, Tv}
     return 0 * yL
 end
+
+"""Generic fallback: N-th derivative of degree-1 polynomial is zero for N ≥ 2."""
+@inline function _linear_kernel(::DerivOp{N}, yL::Tv, ::Tv, ::Tg, dL) where {N, Tg <: AbstractFloat, Tv}
+    return 0 * yL
+end

@@ -144,3 +144,17 @@ Third derivative (constant, independent of x within interval):
     ) where {Tg <: AbstractFloat, Tv, Td <: Real}
     return (zR - zL) * inv_h
 end
+
+"""
+    _cubic_kernel(::DerivOp{N}, ...) where {N}
+
+Generic fallback: N-th derivative of a degree-3 polynomial is zero for N ≥ 4.
+Julia dispatch ensures `DerivOp{0..3}` methods (more specific) are selected first.
+"""
+@inline function _cubic_kernel(
+        ::DerivOp{N},
+        zL::Tv, ::Tv, ::Tv, ::Tv,
+        ::Tg, ::Tg, ::Td, ::Td
+    ) where {N, Tg <: AbstractFloat, Tv, Td <: Real}
+    return 0 * zL
+end

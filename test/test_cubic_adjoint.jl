@@ -357,7 +357,7 @@ end
     end
 
     @testset "Complex — derivative adjoint — deriv=$d" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+            (1, DerivOp(1)), (2, DerivOp(2)), (3, DerivOp(3)), (4, DerivOp(4)),
         ]
         f_c = randn(ComplexF64, n_grid)
         yb_c = randn(ComplexF64, n_query)
@@ -415,7 +415,7 @@ end
     # Derivative adjoint: in-place == allocating
     # ========================================
     @testset "In-place == allocating — deriv=$d" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+            (1, DerivOp(1)), (2, DerivOp(2)), (3, DerivOp(3)), (4, DerivOp(4)),
         ]
         adj = cubic_adjoint(x_uniform, xq; bc = CubicFit())
         fb_oop = adj(y_bar; deriv = op)
@@ -440,7 +440,7 @@ end
         f_excl = sin.(collect(x_excl))
 
         @testset "$d_name — inclusive" for (d_name, op) in [
-                ("deriv=1", EvalDeriv1()), ("deriv=2", EvalDeriv2()), ("deriv=3", EvalDeriv3()),
+                ("deriv=1", DerivOp(1)), ("deriv=2", DerivOp(2)), ("deriv=3", DerivOp(3)), ("deriv=4", DerivOp(4)),
             ]
             _, _, ok = dot_product_test(
                 x_incl, xq_p, f_incl, yb_p;
@@ -450,7 +450,7 @@ end
         end
 
         @testset "$d_name — exclusive" for (d_name, op) in [
-                ("deriv=1", EvalDeriv1()), ("deriv=2", EvalDeriv2()), ("deriv=3", EvalDeriv3()),
+                ("deriv=1", DerivOp(1)), ("deriv=2", DerivOp(2)), ("deriv=3", DerivOp(3)), ("deriv=4", DerivOp(4)),
             ]
             _, _, ok = dot_product_test(
                 x_excl, xq_p, f_excl, yb_p;
@@ -502,7 +502,7 @@ end
     @testset "Matrix — deriv keyword" begin
         adj = cubic_adjoint(x_uniform, xq; bc = CubicFit())
         itp = cubic_interp(x_uniform, f; bc = CubicFit())
-        for (name, op) in [("d1", EvalDeriv1()), ("d2", EvalDeriv2()), ("d3", EvalDeriv3())]
+        for (name, op) in [("d1", DerivOp(1)), ("d2", DerivOp(2)), ("d3", DerivOp(3)), ("d4", DerivOp(4))]
             W_T = Matrix(adj; deriv = op)
             @test W_T * y_bar ≈ adj(y_bar; deriv = op)
             W = Matrix(itp, xq; deriv = op)
@@ -614,7 +614,7 @@ end
     end
 
     @testset "Zero-alloc: in-place deriv=$d" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+            (1, DerivOp(1)), (2, DerivOp(2)), (3, DerivOp(3)), (4, DerivOp(4)),
         ]
         fb = zeros(n_grid)
         allocs = _test_adjoint_alloc_inplace(x_uniform, xq, fb, y_bar; deriv = op)

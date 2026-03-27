@@ -142,13 +142,20 @@ Uses compact partials_bar first dimension (prod(sizes) instead of 2^N).
     w_syms = Matrix{Symbol}(undef, N, 4)
     for d in 1:N
         k_d = deriv_order(fieldtype(OPS, d))
-        wf = w_field_names[k_d + 1]
         w_syms[d, 1] = Symbol("w_", d, "_fL")
         w_syms[d, 2] = Symbol("w_", d, "_fR")
         w_syms[d, 3] = Symbol("w_", d, "_dyL")
         w_syms[d, 4] = Symbol("w_", d, "_dyR")
-        lhs = Expr(:tuple, w_syms[d, 1], w_syms[d, 2], w_syms[d, 3], w_syms[d, 4])
-        push!(stmts, :($lhs = anchor.$wf[$d]))
+        if k_d > 3
+            # DerivOp{4+}: zero kernel → zero adjoint contribution
+            for j in 1:4
+                push!(stmts, :($(w_syms[d, j]) = zero(Tg)))
+            end
+        else
+            wf = w_field_names[k_d + 1]
+            lhs = Expr(:tuple, w_syms[d, 1], w_syms[d, 2], w_syms[d, 3], w_syms[d, 4])
+            push!(stmts, :($lhs = anchor.$wf[$d]))
+        end
     end
 
     # Emit mixed-radix scatter

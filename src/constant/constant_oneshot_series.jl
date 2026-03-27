@@ -4,73 +4,7 @@
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
 # Include order: ... → constant_anchor.jl → constant_oneshot_series.jl → ...
-
-# ─── Decoupled anchor dispatch (reads raw y, not interpolant) ────────────────
-
-# Inside domain or extension mode → kernel
-@inline function _constant_series_eval_at_anchor(
-        y::AbstractVector{Tv},
-        x_last::Tg,
-        aq::_ConstantAnchoredQuery{Tg},
-        op::AbstractEvalOp,
-        side_param::AbstractSide,
-        ::AbstractExtrap
-    ) where {Tg <: AbstractFloat, Tv}
-    if aq.xq == x_last
-        return op isa EvalValue ? (@inbounds y[end]) : 0 * first(y)
-    end
-    @inbounds return _constant_kernel(op, y[aq.idx], y[aq.idx + 1], aq.h, aq.dL, side_param)
-end
-
-# NoExtrap → throw if OOB
-@inline function _constant_series_eval_at_anchor(
-        y::AbstractVector{Tv},
-        x_last::Tg,
-        aq::_ConstantAnchoredQuery{Tg},
-        op::AbstractEvalOp,
-        side_param::AbstractSide,
-        ::NoExtrap
-    ) where {Tg <: AbstractFloat, Tv}
-    if aq.side != 0x00
-        throw(DomainError(aq.xq, "query point outside domain"))
-    end
-    if aq.xq == x_last
-        return op isa EvalValue ? (@inbounds y[end]) : 0 * first(y)
-    end
-    @inbounds return _constant_kernel(op, y[aq.idx], y[aq.idx + 1], aq.h, aq.dL, side_param)
-end
-
-# ClampExtrap / FillExtrap → boundary value if OOB
-@inline function _constant_series_eval_at_anchor(
-        y::AbstractVector{Tv},
-        x_last::Tg,
-        aq::_ConstantAnchoredQuery{Tg},
-        op::AbstractEvalOp,
-        side_param::AbstractSide,
-        extrap::_ClampOrFill
-    ) where {Tg <: AbstractFloat, Tv}
-    if aq.side == 0x01
-        return _eval_extrapolation(op, first(y), extrap, aq.xq)
-    elseif aq.side == 0x02
-        return _eval_extrapolation(op, last(y), extrap, aq.xq)
-    end
-    if aq.xq == x_last
-        return op isa EvalValue ? (@inbounds y[end]) : 0 * first(y)
-    end
-    @inbounds return _constant_kernel(op, y[aq.idx], y[aq.idx + 1], aq.h, aq.dL, side_param)
-end
-
-# ExtendExtrap → ClampExtrap for constant (zero slope → extend = clamp)
-@inline function _constant_series_eval_at_anchor(
-        y::AbstractVector{Tv},
-        x_last::Tg,
-        aq::_ConstantAnchoredQuery{Tg},
-        op::AbstractEvalOp,
-        side_param::AbstractSide,
-        ::ExtendExtrap
-    ) where {Tg <: AbstractFloat, Tv}
-    return _constant_series_eval_at_anchor(y, x_last, aq, op, side_param, ClampExtrap())
-end
+# Shared anchor eval: _constant_eval_at_anchor(y, x_last, aq, op, side, extrap) in constant_anchor.jl
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                         SCALAR ONE-SHOT API                              ║
@@ -100,7 +34,7 @@ One-shot constant interpolation of multiple y-series at a single query point.
     x_last = Tg(last(x))
     vecs = _series_vectors(s)
     K = n_series(s)
-    return ntuple(k -> _constant_series_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap), Val(K))
+    return ntuple(k -> _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap), Val(K))
 end
 
 # ─── Dynamic Series → Vector return ──────────────────────────────────────────
@@ -125,7 +59,7 @@ end
     Tv = _series_eltype(s)
     output = Vector{Tv}(undef, K)
     @inbounds for k in 1:K
-        output[k] = _constant_series_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap)
+        output[k] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap)
     end
     return output
 end
@@ -151,7 +85,7 @@ end
     x_last = Tg(last(x))
     vecs = _series_vectors(s)
     @inbounds for k in eachindex(output)
-        output[k] = _constant_series_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap)
+        output[k] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap)
     end
     return output
 end
@@ -181,7 +115,7 @@ function constant_interp!(
     @inbounds for j in eachindex(xqs)
         aq = _anchor_query(x, xqs[j], Val(:constant), wrap, searcher)
         for k in 1:K
-            outputs[k][j] = _constant_series_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap)
+            outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap)
         end
     end
     return outputs

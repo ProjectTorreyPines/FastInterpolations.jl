@@ -4,39 +4,7 @@
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
 # Include order: ... → quadratic_anchor.jl → quadratic_oneshot_series.jl → ...
-
-# ─── Decoupled anchor dispatch (reads raw y, a, d vectors) ──────────────────
-
-# Inside domain or ExtendExtrap → just kernel
-@inline function _quadratic_series_eval_at_anchor(
-        y::AbstractVector, a::AbstractVector, d::AbstractVector,
-        aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ::AbstractExtrap
-    )
-    @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
-end
-
-# NoExtrap → throw if OOB
-@inline function _quadratic_series_eval_at_anchor(
-        y::AbstractVector, a::AbstractVector, d::AbstractVector,
-        aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ::NoExtrap
-    )
-    if aq.side != 0x00
-        throw(DomainError(aq.xq, "query point outside domain"))
-    end
-    @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
-end
-
-# ClampExtrap / FillExtrap → boundary value if OOB
-@inline function _quadratic_series_eval_at_anchor(
-        y::AbstractVector, a::AbstractVector, d::AbstractVector,
-        aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill
-    )
-    if aq.side != 0x00
-        y_bnd = aq.side == 0x01 ? first(y) : last(y)
-        return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
-    end
-    @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
-end
+# Shared anchor eval: _quadratic_eval_at_anchor(y, a, d, aq, op, extrap) in quadratic_anchor.jl
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                         SCALAR ONE-SHOT API                              ║
@@ -73,7 +41,7 @@ One-shot quadratic interpolation of multiple y-series at a single query point.
     return ntuple(Val(K)) do k
         bc_promoted = _normalize_bc(bc, first(vecs[k]))
         _compute_quadratic_coeffs!(d, a, spacing, x, vecs[k], bc_promoted)
-        _quadratic_series_eval_at_anchor(vecs[k], a, d, aq, deriv, extrap)
+        _quadratic_eval_at_anchor(vecs[k], a, d, aq, deriv, extrap)
     end
 end
 
@@ -104,7 +72,7 @@ end
     @inbounds for k in 1:K
         bc_promoted = _normalize_bc(bc, first(vecs[k]))
         _compute_quadratic_coeffs!(d, a, spacing, x, vecs[k], bc_promoted)
-        output[k] = _quadratic_series_eval_at_anchor(vecs[k], a, d, aq, deriv, extrap)
+        output[k] = _quadratic_eval_at_anchor(vecs[k], a, d, aq, deriv, extrap)
     end
     return output
 end
@@ -136,7 +104,7 @@ end
     @inbounds for k in eachindex(output)
         bc_promoted = _normalize_bc(bc, first(vecs[k]))
         _compute_quadratic_coeffs!(d, a, spacing, x, vecs[k], bc_promoted)
-        output[k] = _quadratic_series_eval_at_anchor(vecs[k], a, d, aq, deriv, extrap)
+        output[k] = _quadratic_eval_at_anchor(vecs[k], a, d, aq, deriv, extrap)
     end
     return output
 end
@@ -177,7 +145,7 @@ end
     @inbounds for j in eachindex(xqs)
         aq = _anchor_query(x, xqs[j], Val(:quadratic), wrap, searcher)
         for k in 1:K
-            outputs[k][j] = _quadratic_series_eval_at_anchor(vecs[k], as[k], ds[k], aq, deriv, extrap)
+            outputs[k][j] = _quadratic_eval_at_anchor(vecs[k], as[k], ds[k], aq, deriv, extrap)
         end
     end
     return outputs

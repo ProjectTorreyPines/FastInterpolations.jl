@@ -367,3 +367,96 @@ while preserving the full Dual value for weight computation.
 
     return _CubicAnchoredQuery{Tg, Tq}(idx, xq, side, w0, w1, w2, w3)
 end
+
+# ========================================
+# Shared Raw-Vector Anchor Eval
+# ========================================
+# Canonical kernel + extrap dispatch that takes raw y, z vectors.
+# Used by both CubicInterpolant anchor dispatch AND cubic series one-shot.
+
+# ─── Kernel: dispatches on DerivOp, returns scalar ───────────────────────────
+
+# EvalValue: Full 4-term dot product
+@inline function _cubic_eval_kernel(
+        y::AbstractVector, z::AbstractVector,
+        aq::_CubicAnchoredQuery, ::EvalValue
+    )
+    wyL, wyR, wzL, wzR = aq.w0
+    @inbounds return muladd(
+        wyR, y[aq.idx + 1], muladd(
+            wyL, y[aq.idx],
+            muladd(wzR, z[aq.idx + 1], wzL * z[aq.idx])
+        )
+    )
+end
+
+# EvalDeriv1: Full 4-term with w1
+@inline function _cubic_eval_kernel(
+        y::AbstractVector, z::AbstractVector,
+        aq::_CubicAnchoredQuery, ::EvalDeriv1
+    )
+    wyL, wyR, wzL, wzR = aq.w1
+    @inbounds return muladd(
+        wyR, y[aq.idx + 1], muladd(
+            wyL, y[aq.idx],
+            muladd(wzR, z[aq.idx + 1], wzL * z[aq.idx])
+        )
+    )
+end
+
+# EvalDeriv2: Optimized 2-term (z-only, no y-loads)
+@inline function _cubic_eval_kernel(
+        ::AbstractVector, z::AbstractVector,
+        aq::_CubicAnchoredQuery, ::EvalDeriv2
+    )
+    wzL, wzR = aq.w2
+    @inbounds return muladd(wzR, z[aq.idx + 1], wzL * z[aq.idx])
+end
+
+# EvalDeriv3: Optimized 2-term (z-only, no y-loads)
+@inline function _cubic_eval_kernel(
+        ::AbstractVector, z::AbstractVector,
+        aq::_CubicAnchoredQuery, ::EvalDeriv3
+    )
+    wzL, wzR = aq.w3
+    @inbounds return muladd(wzR, z[aq.idx + 1], wzL * z[aq.idx])
+end
+
+# DerivOp{N≥4}: zero (N-th derivative of cubic is zero for N ≥ 4)
+@inline function _cubic_eval_kernel(
+        y::AbstractVector, ::AbstractVector,
+        aq::_CubicAnchoredQuery, ::DerivOp{N}
+    ) where {N}
+    return 0 * (@inbounds y[aq.idx])
+end
+
+# ─── Extrap dispatch: handles OOB logic ──────────────────────────────────────
+
+# Default (ExtendExtrap, WrapExtrap, InBounds): just kernel
+@inline function _cubic_eval_at_anchor(
+        y::AbstractVector, z::AbstractVector,
+        aq::_CubicAnchoredQuery, op::AbstractEvalOp, ::AbstractExtrap
+    )
+    return _cubic_eval_kernel(y, z, aq, op)
+end
+
+# NoExtrap: throw if OOB
+@inline function _cubic_eval_at_anchor(
+        y::AbstractVector, z::AbstractVector,
+        aq::_CubicAnchoredQuery, op::AbstractEvalOp, ::NoExtrap
+    )
+    aq.side != 0x00 && throw(DomainError(aq.xq, "query point outside domain"))
+    return _cubic_eval_kernel(y, z, aq, op)
+end
+
+# ClampExtrap / FillExtrap: boundary value if OOB
+@inline function _cubic_eval_at_anchor(
+        y::AbstractVector, z::AbstractVector,
+        aq::_CubicAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill
+    )
+    if aq.side != 0x00
+        y_bnd = aq.side == 0x01 ? first(y) : last(y)
+        return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
+    end
+    return _cubic_eval_kernel(y, z, aq, op)
+end

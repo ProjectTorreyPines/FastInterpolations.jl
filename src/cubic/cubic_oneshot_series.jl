@@ -7,95 +7,8 @@
 # a CubicSeriesInterpolant. Uses pool allocation for z-buffer reuse.
 #
 # Include order: ... → cubic_anchor.jl → cubic_oneshot_series.jl → ...
-
-# ─── Decoupled anchor kernel (reads raw y, z vectors) ───────────────────────
-
-# EvalValue: 4-term dot product
-@inline function _cubic_series_eval_kernel(
-        y::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, ::EvalValue
-    )
-    wyL, wyR, wzL, wzR = aq.w0
-    @inbounds return muladd(
-        wyR, y[aq.idx + 1], muladd(
-            wyL, y[aq.idx],
-            muladd(wzR, z[aq.idx + 1], wzL * z[aq.idx])
-        )
-    )
-end
-
-# EvalDeriv1: 4-term with w1
-@inline function _cubic_series_eval_kernel(
-        y::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, ::EvalDeriv1
-    )
-    wyL, wyR, wzL, wzR = aq.w1
-    @inbounds return muladd(
-        wyR, y[aq.idx + 1], muladd(
-            wyL, y[aq.idx],
-            muladd(wzR, z[aq.idx + 1], wzL * z[aq.idx])
-        )
-    )
-end
-
-# EvalDeriv2: 2-term with w2 (z-only)
-@inline function _cubic_series_eval_kernel(
-        ::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, ::EvalDeriv2
-    )
-    wzL, wzR = aq.w2
-    @inbounds return muladd(wzR, z[aq.idx + 1], wzL * z[aq.idx])
-end
-
-# EvalDeriv3: 2-term with w3 (z-only)
-@inline function _cubic_series_eval_kernel(
-        ::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, ::EvalDeriv3
-    )
-    wzL, wzR = aq.w3
-    @inbounds return muladd(wzR, z[aq.idx + 1], wzL * z[aq.idx])
-end
-
-# DerivOp{N≥4}: zero
-@inline function _cubic_series_eval_kernel(
-        y::AbstractVector, ::AbstractVector,
-        aq::_CubicAnchoredQuery, ::DerivOp{N}
-    ) where {N}
-    return 0 * (@inbounds y[aq.idx])
-end
-
-# ─── Decoupled anchor dispatch with extrap ───────────────────────────────────
-
-# Inside domain, ExtendExtrap, WrapExtrap → just kernel
-@inline function _cubic_series_eval_at_anchor(
-        y::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, op::AbstractEvalOp, ::AbstractExtrap
-    )
-    return _cubic_series_eval_kernel(y, z, aq, op)
-end
-
-# NoExtrap → throw if OOB
-@inline function _cubic_series_eval_at_anchor(
-        y::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, op::AbstractEvalOp, ::NoExtrap
-    )
-    if aq.side != 0x00
-        throw(DomainError(aq.xq, "query point outside domain"))
-    end
-    return _cubic_series_eval_kernel(y, z, aq, op)
-end
-
-# ClampExtrap / FillExtrap → boundary value if OOB
-@inline function _cubic_series_eval_at_anchor(
-        y::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill
-    )
-    if aq.side != 0x00
-        y_bnd = aq.side == 0x01 ? first(y) : last(y)
-        return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
-    end
-    return _cubic_series_eval_kernel(y, z, aq, op)
-end
+# Shared kernel: _cubic_eval_kernel(y, z, aq, op) in cubic_anchor.jl
+# Shared extrap: _cubic_eval_at_anchor(y, z, aq, op, extrap) in cubic_anchor.jl
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                      INTERNAL: NON-PERIODIC CORE                         ║
@@ -119,7 +32,7 @@ end
     z = similar!(pool, first(vecs))
     @inbounds for k in eachindex(output)
         _solve_system!(z, cache, vecs[k], bc)
-        output[k] = _cubic_series_eval_at_anchor(vecs[k], z, aq, op, extrap)
+        output[k] = _cubic_eval_at_anchor(vecs[k], z, aq, op, extrap)
     end
     return output
 end
@@ -142,7 +55,7 @@ end
     K = n_series(s)
     return ntuple(Val(K)) do k
         _solve_system!(z, cache, vecs[k], bc)
-        _cubic_series_eval_at_anchor(vecs[k], z, aq, op, extrap)
+        _cubic_eval_at_anchor(vecs[k], z, aq, op, extrap)
     end
 end
 
@@ -167,12 +80,12 @@ end
     cache, y_p_first, z_first = _cubic_periodic_solve!(pool, x, first(vecs), bc, autocache)
     # Build anchor on the extended (inclusive) grid
     aq = _anchor_query(cache.x, xq, Val(:cubic), true, searcher)
-    output[1] = _cubic_series_eval_kernel(y_p_first, z_first, aq, op)
+    output[1] = _cubic_eval_kernel(y_p_first, z_first, aq, op)
 
     # Solve remaining series reusing same cache
     for k in 2:length(output)
         _, y_p_k, z_k = _cubic_periodic_solve!(pool, x, vecs[k], bc, autocache)
-        @inbounds output[k] = _cubic_series_eval_kernel(y_p_k, z_k, aq, op)
+        @inbounds output[k] = _cubic_eval_kernel(y_p_k, z_k, aq, op)
     end
     return output
 end
@@ -310,7 +223,7 @@ end
     @inbounds for j in eachindex(xqs)
         aq = _anchor_query(cache.x, xqs[j], Val(:cubic), wrap, searcher)
         for k in 1:K
-            outputs[k][j] = _cubic_series_eval_at_anchor(vecs[k], zs[k], aq, deriv, extrap)
+            outputs[k][j] = _cubic_eval_at_anchor(vecs[k], zs[k], aq, deriv, extrap)
         end
     end
     return outputs

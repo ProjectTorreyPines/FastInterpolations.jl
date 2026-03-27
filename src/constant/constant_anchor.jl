@@ -268,69 +268,82 @@ end
     return _constant_anchor_dispatch(itp, aq, op, itp.extrap)
 end
 
+# ========================================
+# Shared Raw-Vector Anchor Eval
+# ========================================
+# Canonical evaluation functions that take raw y vector + explicit params.
+# Used by both interpolant anchor dispatch AND series one-shot evaluation.
+
+# Default case (extension, wrap, inbounds): kernel with right-boundary check
+@inline function _constant_eval_at_anchor(
+        y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
+        op::AbstractEvalOp, side_param::AbstractSide, ::AbstractExtrap
+    )
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
+    @inbounds return _constant_kernel(op, y[aq.idx], y[aq.idx + 1], aq.h, aq.dL, side_param)
+end
+
 # No extrapolation: throw DomainError if outside domain
+@inline function _constant_eval_at_anchor(
+        y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
+        op::AbstractEvalOp, side_param::AbstractSide, ::NoExtrap
+    )
+    aq.side != 0x00 && throw(DomainError(aq.xq, "query point outside domain"))
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
+    @inbounds return _constant_kernel(op, y[aq.idx], y[aq.idx + 1], aq.h, aq.dL, side_param)
+end
+
+# Clamp/Fill extrapolation: boundary value if OOB
+@inline function _constant_eval_at_anchor(
+        y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
+        op::AbstractEvalOp, side_param::AbstractSide, extrap::_ClampOrFill
+    )
+    if aq.side != 0x00
+        y_bnd = aq.side == 0x01 ? first(y) : last(y)
+        return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
+    end
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
+    @inbounds return _constant_kernel(op, y[aq.idx], y[aq.idx + 1], aq.h, aq.dL, side_param)
+end
+
+# ExtendExtrap → ClampExtrap for constant (zero slope → extend = clamp)
+@inline function _constant_eval_at_anchor(
+        y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
+        op::AbstractEvalOp, side_param::AbstractSide, ::ExtendExtrap
+    )
+    return _constant_eval_at_anchor(y, x_last, aq, op, side_param, ClampExtrap())
+end
+
+# ========================================
+# Interpolant Anchor Dispatch (thin wrappers)
+# ========================================
+
+# No extrapolation: enriched error message with domain bounds
 @inline function _constant_anchor_dispatch(
         itp::ConstantInterpolant{T},
         aq::_ConstantAnchoredQuery{T},
         op::O,
         ::NoExtrap
     ) where {T <: AbstractFloat, O <: AbstractEvalOp}
-    if aq.side != 0x00  # outside domain
+    if aq.side != 0x00
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end
-    # Inside domain
     if aq.xq == last(itp.x)
         return op isa EvalValue ? (@inbounds itp.y[end]) : zero(T)
     end
-    @inbounds begin
-        y_left = itp.y[aq.idx]
-        y_right = itp.y[aq.idx + 1]
-        return _constant_kernel(op, y_left, y_right, aq.h, aq.dL, itp.side)
-    end
+    @inbounds return _constant_kernel(op, itp.y[aq.idx], itp.y[aq.idx + 1], aq.h, aq.dL, itp.side)
 end
 
-# Inside domain or extension mode: use interpolation
-@inline function _constant_anchor_dispatch(
-        itp::ConstantInterpolant{T},
-        aq::_ConstantAnchoredQuery{T},
-        op::O,
-        ::AbstractExtrap
-    ) where {T <: AbstractFloat, O <: AbstractEvalOp}
-    # Special case: at right boundary (x_max)
-    if aq.xq == last(itp.x)
-        return op isa EvalValue ? (@inbounds itp.y[end]) : zero(T)
-    end
-    @inbounds begin
-        y_left = itp.y[aq.idx]
-        y_right = itp.y[aq.idx + 1]
-        return _constant_kernel(op, y_left, y_right, aq.h, aq.dL, itp.side)
-    end
-end
+# Inside domain or extension mode: delegate to shared
+@inline _constant_anchor_dispatch(
+    itp::ConstantInterpolant, aq::_ConstantAnchoredQuery, op::AbstractEvalOp, ext::AbstractExtrap
+) = _constant_eval_at_anchor(itp.y, last(itp.x), aq, op, itp.side, ext)
 
-# Constant extrapolation: special handling for outside-domain
-@inline function _constant_anchor_dispatch(
-        itp::ConstantInterpolant{T},
-        aq::_ConstantAnchoredQuery{T},
-        op::O,
-        extrap::_ClampOrFill
-    ) where {T <: AbstractFloat, O <: AbstractEvalOp}
-    if aq.side == 0x01  # below domain
-        return _eval_extrapolation(op, first(itp.y), extrap, aq.xq)
-    elseif aq.side == 0x02  # above domain
-        return _eval_extrapolation(op, last(itp.y), extrap, aq.xq)
-    else
-        # Inside domain
-        if aq.xq == last(itp.x)
-            return op isa EvalValue ? (@inbounds itp.y[end]) : zero(T)
-        end
-        @inbounds begin
-            y_left = itp.y[aq.idx]
-            y_right = itp.y[aq.idx + 1]
-            return _constant_kernel(op, y_left, y_right, aq.h, aq.dL, itp.side)
-        end
-    end
-end
+# Clamp/Fill: delegate to shared
+@inline _constant_anchor_dispatch(
+    itp::ConstantInterpolant, aq::_ConstantAnchoredQuery, op::AbstractEvalOp, ext::_ClampOrFill
+) = _constant_eval_at_anchor(itp.y, last(itp.x), aq, op, itp.side, ext)
 
 # ========================================
 # Vector Evaluation with Anchors

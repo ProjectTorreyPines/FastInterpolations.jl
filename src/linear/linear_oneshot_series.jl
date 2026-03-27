@@ -7,45 +7,7 @@
 # SeriesInterpolant. Zero-allocation for scalar queries.
 #
 # Include order: ... → linear_anchor.jl → linear_oneshot_series.jl → ...
-
-# ─── Decoupled anchor dispatch (reads raw y, not interpolant) ────────────────
-
-# Inside domain or ExtendExtrap → just kernel
-@inline function _linear_series_eval_at_anchor(
-        y::AbstractVector{Tv},
-        aq::_LinearAnchoredQuery{Tg, Tq},
-        op::AbstractEvalOp,
-        ::AbstractExtrap
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    @inbounds return _linear_kernel(op, y[aq.idx], y[aq.idx + 1], aq)
-end
-
-# NoExtrap → throw if OOB
-@inline function _linear_series_eval_at_anchor(
-        y::AbstractVector{Tv},
-        aq::_LinearAnchoredQuery{Tg, Tq},
-        op::AbstractEvalOp,
-        ::NoExtrap
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    if aq.side != 0x00
-        throw(DomainError(aq.xq, "query point outside domain"))
-    end
-    @inbounds return _linear_kernel(op, y[aq.idx], y[aq.idx + 1], aq)
-end
-
-# ClampExtrap / FillExtrap → boundary value if OOB
-@inline function _linear_series_eval_at_anchor(
-        y::AbstractVector{Tv},
-        aq::_LinearAnchoredQuery{Tg, Tq},
-        op::AbstractEvalOp,
-        extrap::_ClampOrFill
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    if aq.side != 0x00
-        y_bnd = aq.side == 0x01 ? first(y) : last(y)
-        return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
-    end
-    @inbounds return _linear_kernel(op, y[aq.idx], y[aq.idx + 1], aq)
-end
+# Shared anchor eval: _linear_eval_at_anchor(y, aq, op, extrap) in linear_anchor.jl
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                         SCALAR ONE-SHOT API                              ║
@@ -85,7 +47,7 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → (sin(0.5), cos(0.5))
     aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     K = n_series(s)
-    return ntuple(k -> _linear_series_eval_at_anchor(vecs[k], aq, deriv, extrap), Val(K))
+    return ntuple(k -> _linear_eval_at_anchor(vecs[k], aq, deriv, extrap), Val(K))
 end
 
 # ─── Dynamic Series → Vector return ──────────────────────────────────────────
@@ -114,7 +76,7 @@ Returns a `Vector` when `Series` wraps a matrix or vector-of-vectors.
     K = n_series(s)
     output = Vector{promote_type(eltype(first(vecs)), typeof(aq.alpha))}(undef, K)
     @inbounds for k in 1:K
-        output[k] = _linear_series_eval_at_anchor(vecs[k], aq, deriv, extrap)
+        output[k] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap)
     end
     return output
 end
@@ -143,7 +105,7 @@ In-place one-shot linear interpolation of multiple y-series at a single query po
     aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     @inbounds for k in eachindex(output)
-        output[k] = _linear_series_eval_at_anchor(vecs[k], aq, deriv, extrap)
+        output[k] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap)
     end
     return output
 end
@@ -177,7 +139,7 @@ function linear_interp!(
     @inbounds for j in eachindex(xqs)
         aq = _anchor_query(x, xqs[j], Val(:linear), wrap, searcher)
         for k in 1:K
-            outputs[k][j] = _linear_series_eval_at_anchor(vecs[k], aq, deriv, extrap)
+            outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap)
         end
     end
     return outputs

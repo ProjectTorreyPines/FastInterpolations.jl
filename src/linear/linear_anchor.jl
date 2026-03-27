@@ -329,55 +329,74 @@ end
     return _linear_anchor_dispatch(itp, aq, op, itp.extrap)
 end
 
-# Default case (extension, wrap): direct anchored kernel evaluation
-@inline function _linear_anchor_dispatch(
-        itp::LinearInterpolant{Tg},
-        aq::_LinearAnchoredQuery{Tg, Tq},
+# ========================================
+# Shared Raw-Vector Anchor Eval
+# ========================================
+# Canonical evaluation functions that take raw y vector (not interpolant struct).
+# Used by both interpolant anchor dispatch AND series one-shot evaluation.
+
+# Default case (extension, wrap, inbounds): direct kernel evaluation
+@inline function _linear_eval_at_anchor(
+        y::AbstractVector,
+        aq::_LinearAnchoredQuery,
         op::AbstractEvalOp,
         ::AbstractExtrap
-    ) where {Tg <: AbstractFloat, Tq <: Real}
-    @inbounds begin
-        yL = itp.y[aq.idx]
-        yR = itp.y[aq.idx + 1]
-    end
-    return _linear_kernel(op, yL, yR, aq)
+    )
+    @inbounds return _linear_kernel(op, y[aq.idx], y[aq.idx + 1], aq)
 end
 
 # No extrapolation: throw DomainError if outside domain
+@inline function _linear_eval_at_anchor(
+        y::AbstractVector,
+        aq::_LinearAnchoredQuery,
+        op::AbstractEvalOp,
+        ::NoExtrap
+    )
+    aq.side != 0x00 && throw(DomainError(aq.xq, "query point outside domain"))
+    @inbounds return _linear_kernel(op, y[aq.idx], y[aq.idx + 1], aq)
+end
+
+# Clamp/Fill extrapolation: boundary value if OOB
+@inline function _linear_eval_at_anchor(
+        y::AbstractVector,
+        aq::_LinearAnchoredQuery,
+        op::AbstractEvalOp,
+        extrap::_ClampOrFill
+    )
+    if aq.side != 0x00
+        y_bnd = aq.side == 0x01 ? first(y) : last(y)
+        return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
+    end
+    @inbounds return _linear_kernel(op, y[aq.idx], y[aq.idx + 1], aq)
+end
+
+# ========================================
+# Interpolant Anchor Dispatch (thin wrappers)
+# ========================================
+
+# Default case (extension, wrap): delegate to shared
+@inline _linear_anchor_dispatch(
+    itp::LinearInterpolant, aq::_LinearAnchoredQuery, op::AbstractEvalOp, ext::AbstractExtrap
+) = _linear_eval_at_anchor(itp.y, aq, op, ext)
+
+# No extrapolation: enriched error message with domain bounds, then delegate
 @inline function _linear_anchor_dispatch(
         itp::LinearInterpolant{Tg},
         aq::_LinearAnchoredQuery{Tg, Tq},
         op::AbstractEvalOp,
         ::NoExtrap
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    if aq.side != 0x00  # outside domain
+    if aq.side != 0x00
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end
-    @inbounds begin
-        yL = itp.y[aq.idx]
-        yR = itp.y[aq.idx + 1]
-    end
-    return _linear_kernel(op, yL, yR, aq)
+    @inbounds return _linear_kernel(op, itp.y[aq.idx], itp.y[aq.idx + 1], aq)
 end
 
-# Constant extrapolation: boundary handling
-@inline function _linear_anchor_dispatch(
-        itp::LinearInterpolant{Tg},
-        aq::_LinearAnchoredQuery{Tg, Tq},
-        op::AbstractEvalOp,
-        extrap::_ClampOrFill
-    ) where {Tg <: AbstractFloat, Tq <: Real}
-    if aq.side != 0x00  # outside domain
-        y_bnd = aq.side == 0x01 ? first(itp.y) : last(itp.y)
-        return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
-    end
-    @inbounds begin
-        yL = itp.y[aq.idx]
-        yR = itp.y[aq.idx + 1]
-    end
-    return _linear_kernel(op, yL, yR, aq)
-end
+# Clamp/Fill: delegate to shared
+@inline _linear_anchor_dispatch(
+    itp::LinearInterpolant, aq::_LinearAnchoredQuery, op::AbstractEvalOp, ext::_ClampOrFill
+) = _linear_eval_at_anchor(itp.y, aq, op, ext)
 
 # ========================================
 # Vector Evaluation with Anchors

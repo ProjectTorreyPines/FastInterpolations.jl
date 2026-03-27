@@ -135,6 +135,24 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
             ys = Series(sin.(2π .* x), cos.(2π .* x))
             z2 = zeros(2)
 
+            # --- DerivOp(0..3) regression: series dispatch matches scalar ---
+            @testset "DerivOp(0..3) series ↔ scalar consistency" begin
+                sitp = cubic_interp(x, ys; extrap = ClampExtrap())
+                itp_sin = cubic_interp(x, sin.(2π .* x); extrap = ClampExtrap())
+                itp_cos = cubic_interp(x, cos.(2π .* x); extrap = ClampExtrap())
+
+                # DerivOp(0) == plain evaluation
+                @test sitp(xq) == sitp(xq; deriv = DerivOp(0))
+                @test sitp(-0.1) == sitp(-0.1; deriv = DerivOp(0))
+
+                # DerivOp(1..3) match component-wise scalar derivatives
+                for k in 1:3
+                    d = DerivOp(k)
+                    @test sitp(xq; deriv = d)[1] ≈ itp_sin(xq; deriv = d)
+                    @test sitp(xq; deriv = d)[2] ≈ itp_cos(xq; deriv = d)
+                end
+            end
+
             # --- ClampExtrap: in-domain + OOB ---
             @testset "ClampExtrap" begin
                 sitp_c = cubic_interp(x, ys; extrap = ClampExtrap())

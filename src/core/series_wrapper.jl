@@ -1,16 +1,37 @@
 # ============================================================================
 # Series input wrapper — dispatch disambiguator for multi-series interpolation
 # ============================================================================
-# Series{D} eliminates dispatch ambiguity between:
+# Series{D, S} eliminates dispatch ambiguity between:
 #   - Vector{<:AbstractVector} as series input (multiple y-series sharing a grid)
 #   - Vector{<:AbstractVector} as vector-valued data (e.g., Vector{SVector{3,Float64}})
 #
 # The wrapper is consumed at construction time and never stored in the interpolant.
+# The strategy parameter S controls evaluation strategy for one-shot vs interpolant paths.
+
+# ─── Strategy types ──────────────────────────────────────────────────────────
+# Zero-size singletons for dispatch.
+# AutoStrategy: one-shot → loop-kernel, interpolant → SIMD matrix (default)
+# LoopStrategy: force loop-kernel in all paths
+# SIMDStrategy: force matrix SIMD in all paths (future)
+
+abstract type AbstractSeriesStrategy end
+
+"""Default strategy: loop-kernel for one-shot evaluation, SIMD matrix for interpolant construction."""
+struct AutoStrategy <: AbstractSeriesStrategy end
+
+"""Force loop-kernel strategy: search once, evaluate kernel per y-vector."""
+struct LoopStrategy <: AbstractSeriesStrategy end
+
+"""Force SIMD matrix strategy: transpose to point-contiguous layout. Reserved for future use."""
+struct SIMDStrategy <: AbstractSeriesStrategy end
+
+# ─── Series type ─────────────────────────────────────────────────────────────
 
 """
     Series(y1, y2, ...)                     # varargs
     Series([y1, y2, ...])                   # vector of vectors
     Series(Y::AbstractMatrix)               # matrix (columns = series)
+    Series(...; strategy=AutoStrategy())    # explicit strategy
 
 Input wrapper for multi-series interpolation. Wraps series data to disambiguate
 from vector-valued interpolation inputs.
@@ -18,37 +39,48 @@ from vector-valued interpolation inputs.
 The wrapped data is not copied or promoted — type promotion is handled by the
 interpolation constructor.
 
+# Strategy
+- `AutoStrategy()` (default): loop-kernel for one-shot, SIMD matrix for interpolant
+- `LoopStrategy()`: force loop-kernel strategy
+- `SIMDStrategy()`: force SIMD matrix strategy (reserved for future use)
+
 # Examples
 ```julia
+# One-shot evaluation (Strategy B: search once, kernel per y)
+linear_interp(x, Series(y_sin, y_cos), 0.5)  # → (sin(0.5), cos(0.5))
+
+# Interpolant construction (SIMD matrix path)
 itp = linear_interp(x, Series(y_sin, y_cos))
 itp(0.5)  # → [sin(0.5), cos(0.5)]
 
-itp = cubic_interp(x, Series(y_density, y_velocity, y_pressure))
-itp(0.5)  # → [ρ, v, p]
+# Explicit strategy override
+cubic_interp(x, Series(y1, y2; strategy=LoopStrategy()), 0.5)
 ```
 """
-struct Series{D}
+struct Series{D, S <: AbstractSeriesStrategy}
     data::D
+    strategy::S
 end
 
 # Single vector: Series(y1) — single series (no element type constraint for duck-typing)
-function Series(y::AbstractVector)
-    return Series{typeof((y,))}((y,))
+function Series(y::AbstractVector; strategy::AbstractSeriesStrategy = AutoStrategy())
+    return Series{typeof((y,)), typeof(strategy)}((y,), strategy)
 end
 
 # Varargs: Series(y1, y2, y3)
-function Series(y1::AbstractVector, y2::AbstractVector, rest::AbstractVector...)
-    return Series{typeof((y1, y2, rest...))}((y1, y2, rest...))
+function Series(y1::AbstractVector, y2::AbstractVector, rest::AbstractVector...; strategy::AbstractSeriesStrategy = AutoStrategy())
+    data = (y1, y2, rest...)
+    return Series{typeof(data), typeof(strategy)}(data, strategy)
 end
 
 # Vector of vectors: Series([y1, y2, y3])
-function Series(ys::AbstractVector{<:AbstractVector})
-    return Series{typeof(ys)}(ys)
+function Series(ys::AbstractVector{<:AbstractVector}; strategy::AbstractSeriesStrategy = AutoStrategy())
+    return Series{typeof(ys), typeof(strategy)}(ys, strategy)
 end
 
 # Matrix: Series(Y) where columns = series
-function Series(Y::AbstractMatrix)
-    return Series{typeof(Y)}(Y)
+function Series(Y::AbstractMatrix; strategy::AbstractSeriesStrategy = AutoStrategy())
+    return Series{typeof(Y), typeof(strategy)}(Y, strategy)
 end
 
 # ─── Series data access helpers ───────────────────────────────────────────────
@@ -79,6 +111,25 @@ Zero-allocation for all forms (Tuple, Vector-of-Vectors, Matrix via `eachcol`).
 @inline _series_eltype(s::Series{<:AbstractVector{<:AbstractVector}}) =
     promote_type(map(eltype, s.data)...)
 @inline _series_eltype(s::Series{<:Tuple}) = promote_type(map(eltype, s.data)...)
+
+# ─── Validation helper for one-shot paths ─────────────────────────────────────
+
+"""
+    _validate_series_lengths(s::Series, n_pts::Int)
+
+Validate that all series vectors have the expected length (matching the grid).
+Throws `DimensionMismatch` on failure.
+"""
+function _validate_series_lengths(s::Series, n_pts::Int)
+    for (k, v) in enumerate(_series_vectors(s))
+        length(v) == n_pts || throw(
+            DimensionMismatch(
+                "Series vector $k has length $(length(v)), expected $n_pts (length of x)"
+            )
+        )
+    end
+    return nothing
+end
 
 # ─── Core builder: Series → owned Matrix ──────────────────────────────────────
 

@@ -9,6 +9,7 @@ include("cubic_cache_pool.jl")   # 5. Ring buffer cache pool
 include("cubic_cache.jl")        # 6. CubicSplineCache constructor
 include("cubic_oneshot.jl")      # 7. 4-arg API (cubic_interp!, cubic_interp)
 include("cubic_anchor.jl")       # 8. Anchored queries
+include("cubic_oneshot_series.jl") # 8a. One-shot Series API (Strategy B)
 include("cubic_interpolant.jl")  # 9. 2-arg API, callable
 include("cubic_adjoint.jl")      # 9b. Adjoint operator (W^T)
 include("cubic_series_interp.jl") # 10. Series interpolation (CubicSeriesInterpolant)

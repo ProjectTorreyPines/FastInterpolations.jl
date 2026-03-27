@@ -1,0 +1,104 @@
+using Test
+using FastInterpolations
+
+@testset "Quadratic One-Shot Series" begin
+    x = collect(range(0.0, 1.0, 101))
+    y_sin = sin.(2π .* x)
+    y_cos = cos.(2π .* x)
+    y_exp = exp.(x)
+
+    @testset "Scalar: Tuple → NTuple" begin
+        vals = quadratic_interp(x, Series(y_sin, y_cos, y_exp), 0.37)
+        ref_sin = quadratic_interp(x, y_sin, 0.37)
+        ref_cos = quadratic_interp(x, y_cos, 0.37)
+        ref_exp = quadratic_interp(x, y_exp, 0.37)
+        @test vals isa NTuple{3, Float64}
+        @test vals[1] ≈ ref_sin
+        @test vals[2] ≈ ref_cos
+        @test vals[3] ≈ ref_exp
+    end
+
+    @testset "Scalar: Matrix → Vector" begin
+        Y = hcat(y_sin, y_cos, y_exp)
+        vals = quadratic_interp(x, Series(Y), 0.37)
+        ref_sin = quadratic_interp(x, y_sin, 0.37)
+        @test vals isa Vector{Float64}
+        @test vals[1] ≈ ref_sin
+    end
+
+    @testset "In-place scalar" begin
+        out = zeros(3)
+        ret = quadratic_interp!(out, x, Series(y_sin, y_cos, y_exp), 0.37)
+        ref_sin = quadratic_interp(x, y_sin, 0.37)
+        @test ret === out
+        @test out[1] ≈ ref_sin
+    end
+
+    @testset "Vector query" begin
+        xqs = [0.1, 0.37, 0.5, 0.9]
+        outs = quadratic_interp(x, Series(y_sin, y_cos), xqs)
+        @test length(outs) == 2
+        for j in eachindex(xqs)
+            ref_sin = quadratic_interp(x, y_sin, xqs[j])
+            ref_cos = quadratic_interp(x, y_cos, xqs[j])
+            @test outs[1][j] ≈ ref_sin
+            @test outs[2][j] ≈ ref_cos
+        end
+    end
+
+    @testset "BC types" begin
+        for bc_val in [Left(QuadraticFit()), Right(QuadraticFit())]
+            vals = quadratic_interp(x, Series(y_sin, y_cos), 0.37; bc=bc_val)
+            ref_sin = quadratic_interp(x, y_sin, 0.37; bc=bc_val)
+            ref_cos = quadratic_interp(x, y_cos, 0.37; bc=bc_val)
+            @test vals[1] ≈ ref_sin
+            @test vals[2] ≈ ref_cos
+        end
+    end
+
+    @testset "Extrapolation modes" begin
+        xq_oob = 1.5
+        @test_throws DomainError quadratic_interp(x, Series(y_sin, y_cos), xq_oob)
+
+        vals_clamp = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=ClampExtrap())
+        ref_sin = quadratic_interp(x, y_sin, xq_oob; extrap=ClampExtrap())
+        @test vals_clamp[1] ≈ ref_sin
+
+        vals_ext = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=ExtendExtrap())
+        ref_sin_ext = quadratic_interp(x, y_sin, xq_oob; extrap=ExtendExtrap())
+        @test vals_ext[1] ≈ ref_sin_ext
+    end
+
+    @testset "Derivative ops" begin
+        for d in 0:3
+            op = DerivOp(d)
+            vals = quadratic_interp(x, Series(y_sin, y_cos), 0.37; deriv=op)
+            ref_sin = quadratic_interp(x, y_sin, 0.37; deriv=op)
+            ref_cos = quadratic_interp(x, y_cos, 0.37; deriv=op)
+            @test vals[1] ≈ ref_sin
+            @test vals[2] ≈ ref_cos
+        end
+    end
+
+    @testset "Integer grid (Real promotion)" begin
+        x_int = collect(0:10)
+        y1 = Float64.(x_int .^ 2)
+        y2 = Float64.(x_int .^ 3)
+        vals = quadratic_interp(x_int, Series(y1, y2), 5.5)
+        ref1 = quadratic_interp(x_int, y1, 5.5)
+        ref2 = quadratic_interp(x_int, y2, 5.5)
+        @test vals[1] ≈ ref1
+        @test vals[2] ≈ ref2
+    end
+
+    @testset "Many series (20)" begin
+        ys = [sin.(k .* 2π .* x) for k in 1:20]
+        Y = hcat(ys...)
+        vals = quadratic_interp(x, Series(Y), 0.5)
+        @test length(vals) == 20
+        for k in 1:20
+            ref = quadratic_interp(x, ys[k], 0.5)
+            @test vals[k] ≈ ref
+        end
+    end
+end

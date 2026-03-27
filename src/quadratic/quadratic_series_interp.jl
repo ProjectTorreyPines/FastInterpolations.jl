@@ -311,40 +311,18 @@ end
     return output
 end
 
-# ========================================
-# Boundary Value Helper
-# ========================================
-
-"""Fill output with boundary values for constant extrapolation."""
-@inline function _fill_boundary_values!(
-        output::AbstractVector{Tv},
+@inline function _eval_quadratic_series_point_kernel!(
+        output::AbstractVector,
         y_point::Matrix{Tv},
-        idx::Int,
-        op::EvalValue
-    ) where {Tv}
+        a_point::Matrix{Tv},
+        d_point::Matrix{Tv},
+        aq::_QuadraticAnchoredQuery{Tg, Tq},
+        op::DerivOp{N}
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real, N}
+    z = 0 * (@inbounds y_point[first(eachindex(output)), aq.idx])
     @inbounds @simd for k in eachindex(output)
-        output[k] = y_point[k, idx]
+        output[k] = z
     end
-    return output
-end
-
-@inline function _fill_boundary_values!(
-        output::AbstractVector{Tv},
-        y_point::Matrix{Tv},
-        idx::Int,
-        op::EvalDeriv1
-    ) where {Tv}
-    fill!(output, 0 * first(y_point))
-    return output
-end
-
-@inline function _fill_boundary_values!(
-        output::AbstractVector{Tv},
-        y_point::Matrix{Tv},
-        idx::Int,
-        op::EvalDeriv2
-    ) where {Tv}
-    fill!(output, 0 * first(y_point))
     return output
 end
 
@@ -646,13 +624,29 @@ end
         aq::_QuadraticAnchoredQuery{Tg, Taq},
         dL::Tq,
         extrap::_ClampOrFill,
-        op::Union{EvalDeriv1, EvalDeriv2}
+        op::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
     ) where {Tg <: AbstractFloat, Tv, Taq <: Real, Tq <: Real}
     if aq.side != 0x00  # outside domain
         return _eval_extrapolation(op, first(y), extrap, aq.xq)
     else
         return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)
     end
+end
+
+# DerivOp{N≥4} + ClampOrFill: zero without loading a/d/y
+@inline function _eval_single_quadratic_with_extrap(
+        y::AbstractVector{Tv},
+        ::AbstractVector{Tv},
+        ::AbstractVector{Tv},
+        ::Int,
+        ::Tg,
+        ::Tg,
+        ::_QuadraticAnchoredQuery{Tg, Taq},
+        ::Tq,
+        ::_ClampOrFill,
+        ::DerivOp{N}
+    ) where {Tg <: AbstractFloat, Tv, Taq <: Real, Tq <: Real, N}
+    return 0 * first(y)
 end
 
 @inline function _eval_single_quadratic_with_extrap(

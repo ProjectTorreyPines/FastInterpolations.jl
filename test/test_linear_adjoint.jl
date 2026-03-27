@@ -162,7 +162,7 @@ end
     end
 
     @testset "In-place == allocating — deriv=$d" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+            (1, DerivOp(1)), (2, DerivOp(2)), (3, DerivOp(3)), (4, DerivOp(4)),
         ]
         adj = linear_adjoint(x_uniform, xq)
         fb_oop = adj(y_bar; deriv = op)
@@ -391,7 +391,7 @@ end
     end
 
     @testset "Zero-alloc: in-place deriv=$d" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+            (1, DerivOp(1)), (2, DerivOp(2)), (3, DerivOp(3)), (4, DerivOp(4)),
         ]
         fb = zeros(n_grid)
         allocs = _test_linear_adjoint_alloc_inplace(x_uniform, xq, fb, y_bar; deriv = op)

@@ -85,7 +85,7 @@ end
     # Derivative adjoint — all derivatives are zero
     # ========================================
     @testset "Derivative adjoint — deriv=$d returns zero" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+            (1, DerivOp(1)), (2, DerivOp(2)), (3, DerivOp(3)), (4, DerivOp(4)),
         ]
         adj = constant_adjoint(x_uniform, xq)
         f_bar = adj(y_bar; deriv = op)
@@ -93,7 +93,7 @@ end
     end
 
     @testset "Derivative dot-product — deriv=$d" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+            (1, DerivOp(1)), (2, DerivOp(2)), (3, DerivOp(3)), (4, DerivOp(4)),
         ]
         # All derivatives of constant interp are zero, so both sides should be zero
         _, _, ok = constant_dot_product_test(x_uniform, xq, f, y_bar; deriv = op, atol = 1.0e-15)
@@ -116,7 +116,7 @@ end
     end
 
     @testset "In-place == allocating — deriv=$d" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+            (1, DerivOp(1)), (2, DerivOp(2)), (3, DerivOp(3)), (4, DerivOp(4)),
         ]
         adj = constant_adjoint(x_uniform, xq)
         fb_oop = adj(y_bar; deriv = op)
@@ -319,7 +319,7 @@ end
     end
 
     @testset "Zero-alloc: in-place deriv=$d" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+            (1, DerivOp(1)), (2, DerivOp(2)), (3, DerivOp(3)), (4, DerivOp(4)),
         ]
         fb = zeros(n_grid)
         allocs = _test_constant_adjoint_alloc_inplace(x_uniform, xq, fb, y_bar; deriv = op)

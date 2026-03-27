@@ -128,9 +128,10 @@ end
 
 # Generic fallback: N-th derivative of cubic is zero for N ≥ 4
 @inline function _eval_anchored_kernel(
-        ::CubicInterpolant{Tg, Tv}, ::_CubicAnchoredQuery{Tg, Tq}, ::DerivOp{N}
+        itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::DerivOp{N}
     ) where {N, Tg <: AbstractFloat, Tv, Tq <: Real}
-    return zero(Tv)
+    @inbounds yL = itp.y[aq.idx]
+    return 0 * yL
 end
 
 # ========================================

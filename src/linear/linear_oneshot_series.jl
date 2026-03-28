@@ -164,7 +164,7 @@ function linear_interp!(
         x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return linear_interp!(outputs, _to_float(x, Tg_float), s, _to_float(xqs, Tg_float); kwargs...)
+    return linear_interp!(outputs, _to_float(x, Tg_float), s, xqs; kwargs...)
 end
 
 # Vector allocating: Real grid
@@ -172,5 +172,5 @@ function linear_interp(
         x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return linear_interp(_to_float(x, Tg_float), s, _to_float(xqs, Tg_float); kwargs...)
+    return linear_interp(_to_float(x, Tg_float), s, xqs; kwargs...)
 end

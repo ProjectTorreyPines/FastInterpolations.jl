@@ -130,12 +130,12 @@ function constant_interp!(
         x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return constant_interp!(outputs, _to_float(x, Tg_float), s, _to_float(xqs, Tg_float); kwargs...)
+    return constant_interp!(outputs, _to_float(x, Tg_float), s, xqs; kwargs...)
 end
 
 function constant_interp(
         x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return constant_interp(_to_float(x, Tg_float), s, _to_float(xqs, Tg_float); kwargs...)
+    return constant_interp(_to_float(x, Tg_float), s, xqs; kwargs...)
 end

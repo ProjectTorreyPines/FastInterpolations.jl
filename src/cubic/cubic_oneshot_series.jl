@@ -269,7 +269,7 @@ function cubic_interp!(
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
     return cubic_interp!(
-        outputs, _to_float(x, Tg_float), s, _to_float(xqs, Tg_float);
+        outputs, _to_float(x, Tg_float), s, xqs;
         bc = _promote_bc(bc, Tg_float), kwargs...
     )
 end
@@ -280,7 +280,7 @@ function cubic_interp(
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
     return cubic_interp(
-        _to_float(x, Tg_float), s, _to_float(xqs, Tg_float);
+        _to_float(x, Tg_float), s, xqs;
         bc = _promote_bc(bc, Tg_float), kwargs...
     )
 end

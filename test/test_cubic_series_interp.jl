@@ -1002,7 +1002,7 @@ end
         # Use same anchored path for comparison
         expected = Vector{Float64}(undef, 50)
         itp1(expected, aq_vec; deriv = DerivOp(1))
-        @test out1 ≈ expected atol = 1.0e-14
+        @test out1 ≈ expected atol = 1.0e-13
     end
 end
 

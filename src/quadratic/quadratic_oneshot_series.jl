@@ -23,6 +23,7 @@
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
+    x = _to_float(x, Tg)
     _check_domain(x, xq, extrap)
     nx = length(x)
     K = n_series(s)
@@ -59,6 +60,7 @@ end
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
+    x = _to_float(x, Tg)
     _check_domain(x, xq, extrap)
     nx = length(x)
     vecs = _series_vectors(s)
@@ -95,6 +97,7 @@ end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
+    x = _to_float(x, Tg)
     K = n_series(s)
     _validate_series_outputs(outputs, K, length(xqs))
     # Domain check: NoExtrap → throws if OOB, returns InBounds(); others → pass-through

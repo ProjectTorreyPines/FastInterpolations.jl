@@ -181,6 +181,7 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
+    x = _to_float(x, Tg)
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     K = n_series(s)
     output = Vector{_series_output_type(_value_type(_series_eltype(s), Tg), Tq)}(undef, K)
@@ -210,6 +211,7 @@ end
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
+    x = _to_float(x, Tg)
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
@@ -239,6 +241,7 @@ end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
+    x = _to_float(x, Tg)
     K = n_series(s)
     _validate_series_outputs(outputs, K, length(xqs))
     vecs = _series_vectors(s)

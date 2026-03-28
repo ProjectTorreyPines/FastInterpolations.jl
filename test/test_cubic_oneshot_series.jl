@@ -55,12 +55,63 @@ using FastInterpolations
         end
     end
 
-    @testset "PeriodicBC" begin
+    @testset "PeriodicBC scalar" begin
         vals = cubic_interp(x, Series(y_sin, y_cos), 0.37; bc=PeriodicBC())
         ref_sin = cubic_interp(x, y_sin, 0.37; bc=PeriodicBC())
         ref_cos = cubic_interp(x, y_cos, 0.37; bc=PeriodicBC())
         @test vals[1] ≈ ref_sin
         @test vals[2] ≈ ref_cos
+    end
+
+    @testset "PeriodicBC vector (inclusive)" begin
+        xqs = [0.1, 0.37, 0.5, 0.9]
+        outs = cubic_interp(x, Series(y_sin, y_cos), xqs; bc=PeriodicBC())
+        @test length(outs) == 2
+        for j in eachindex(xqs)
+            ref_sin = cubic_interp(x, y_sin, xqs[j]; bc=PeriodicBC())
+            ref_cos = cubic_interp(x, y_cos, xqs[j]; bc=PeriodicBC())
+            @test outs[1][j] ≈ ref_sin
+            @test outs[2][j] ≈ ref_cos
+        end
+    end
+
+    @testset "PeriodicBC vector (exclusive)" begin
+        # Exclusive: last point != first point, period = 1.0
+        x_exc = collect(range(0.0, step=0.01, length=100))  # does NOT include 1.0
+        y1_exc = sin.(2π .* x_exc)
+        y2_exc = cos.(2π .* x_exc)
+        bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        xqs = [0.05, 0.37, 0.75, 0.95]
+        outs = cubic_interp(x_exc, Series(y1_exc, y2_exc), xqs; bc=bc_exc)
+        @test length(outs) == 2
+        for j in eachindex(xqs)
+            ref1 = cubic_interp(x_exc, y1_exc, xqs[j]; bc=bc_exc)
+            ref2 = cubic_interp(x_exc, y2_exc, xqs[j]; bc=bc_exc)
+            @test outs[1][j] ≈ ref1
+            @test outs[2][j] ≈ ref2
+        end
+    end
+
+    @testset "PeriodicBC vector in-place" begin
+        xqs = [0.1, 0.37, 0.5, 0.9]
+        outputs = [zeros(length(xqs)) for _ in 1:2]
+        ret = cubic_interp!(outputs, x, Series(y_sin, y_cos), xqs; bc=PeriodicBC())
+        @test ret === outputs
+        outs_alloc = cubic_interp(x, Series(y_sin, y_cos), xqs; bc=PeriodicBC())
+        for k in 1:2
+            @test outputs[k] ≈ outs_alloc[k]
+        end
+    end
+
+    @testset "Zero allocation (in-place vector, PeriodicBC)" begin
+        s = Series(y_sin, y_cos)
+        xqs = [0.1, 0.37, 0.5, 0.9]
+        outputs = [zeros(length(xqs)) for _ in 1:2]
+        f_alloc() = begin
+            cubic_interp!(outputs, x, s, xqs; bc = PeriodicBC())
+            return @allocated cubic_interp!(outputs, x, s, xqs; bc = PeriodicBC())
+        end
+        @test f_alloc() <= ALLOC_THRESHOLD
     end
 
     @testset "Zero allocation (in-place scalar, CubicFit)" begin

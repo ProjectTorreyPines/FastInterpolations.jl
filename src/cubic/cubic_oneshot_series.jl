@@ -90,6 +90,61 @@ end
     return output
 end
 
+# Periodic vector: extend grid once, pre-compute anchors, then solve+eval per series.
+@inline function _cubic_oneshot_series_periodic_vec!(
+        pool::AbstractArrayPool,
+        outputs::AbstractVector{<:AbstractVector},
+        x::AbstractVector{Tg},
+        s::Series,
+        xqs::AbstractVector{Tq},
+        bc::PeriodicBC,
+        op::AbstractEvalOp,
+        autocache::Bool,
+        search::AbstractSearchPolicy
+    ) where {Tg <: AbstractFloat, Tq <: Real}
+    vecs = _series_vectors(s)
+    n = length(x)
+    K = n_series(s)
+    Tv_out = _value_type(eltype(first(vecs)), Tg)
+
+    # Phase 1: Extend grid + solve first series (establishes cache + x_p)
+    cache, y_p_first, z = _cubic_periodic_solve!(pool, x, first(vecs), bc, autocache)
+    n_p = length(y_p_first)
+
+    # Pre-compute anchors on the extended (inclusive) grid — once for all series
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg, Tq}, length(xqs))
+    searcher = _resolve_search(cache.x, xqs, search, nothing)
+    _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), true, searcher)
+
+    # Eval first series (already solved)
+    @inbounds for j in eachindex(xqs)
+        outputs[1][j] = _cubic_eval_kernel(y_p_first, z, aq_vec[j], op)
+    end
+
+    # Phase 2: Reuse z buffer for remaining series
+    is_exclusive = bc isa PeriodicBC{:exclusive}
+    y_p = if is_exclusive
+        y_p_first  # pool buffer, safe to reuse
+    else
+        acquire!(pool, Tv_out, n_p)  # separate buffer for inclusive BC
+    end
+
+    for k in 2:K
+        if is_exclusive
+            @inbounds copyto!(y_p, 1, vecs[k], 1, n)
+            @inbounds y_p[n + 1] = vecs[k][1]
+        else
+            @inbounds copyto!(y_p, 1, vecs[k], 1, n_p)
+        end
+        _check_periodic_endpoints(bc, y_p)
+        _solve_system!(z, cache, y_p, cache.bc_config)
+        @inbounds for j in eachindex(xqs)
+            outputs[k][j] = _cubic_eval_kernel(y_p, z, aq_vec[j], op)
+        end
+    end
+    return outputs
+end
+
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                         SCALAR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
@@ -199,11 +254,13 @@ end
     length(outputs) == K || _throw_series_dim_mismatch(length(outputs), K)
     vecs = _series_vectors(s)
 
-    if _is_periodic_bc(bc)
-        throw(ArgumentError("Vector query with PeriodicBC not yet supported for one-shot Series. Use pre-built interpolant."))
-    end
     Tv_out = _value_type(_series_eltype(s), Tg)
     n = length(first(vecs))
+
+    if _is_periodic_bc(bc)
+        return _cubic_oneshot_series_periodic_vec!(pool, outputs, x, s, xqs, bc, deriv, autocache, search)
+    end
+
     bc_pair = _normalize_bc(bc, _series_eltype(s))
     cache = _get_cubic_cache(x, bc_pair, autocache)
 

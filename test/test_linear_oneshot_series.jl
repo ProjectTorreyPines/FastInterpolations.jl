@@ -14,8 +14,8 @@ using FastInterpolations
         xq = 0.37
         vals = linear_interp(x, Series(y_sin, y_cos, y_exp), xq)
         ref = sitp(xq)
-        @test vals isa NTuple{3, Float64}
-        @test collect(vals) ≈ ref
+        @test vals isa Vector{Float64}
+        @test vals ≈ ref
     end
 
     @testset "Scalar: Matrix → Vector" begin
@@ -71,7 +71,8 @@ using FastInterpolations
 
     @testset "Single series" begin
         vals = linear_interp(x, Series(y_sin), 0.5)
-        @test vals isa Tuple{Float64}
+        @test vals isa Vector{Float64}
+        @test length(vals) == 1
         ref = linear_interp(x, y_sin, 0.5)
         @test vals[1] ≈ ref
     end
@@ -137,7 +138,7 @@ using FastInterpolations
         y32_sin = Float32.(y_sin)
         y32_cos = Float32.(y_cos)
         vals = linear_interp(x32, Series(y32_sin, y32_cos), 0.5f0)
-        @test vals isa NTuple{2, Float32}
+        @test vals isa Vector{Float32}
         ref_sin = linear_interp(x32, y32_sin, 0.5f0)
         ref_cos = linear_interp(x32, y32_cos, 0.5f0)
         @test vals[1] ≈ ref_sin
@@ -174,15 +175,6 @@ using FastInterpolations
         ref_cos = linear_interp(xr, collect(yr_cos), 0.37)
         @test vals[1] ≈ ref_sin
         @test vals[2] ≈ ref_cos
-    end
-
-    @testset "Zero allocation (Tuple scalar)" begin
-        s = Series(y_sin, y_cos)
-        f_alloc() = begin
-            linear_interp(x, s, 0.5)
-            return @allocated linear_interp(x, s, 0.5)
-        end
-        @test f_alloc() == 0
     end
 
     @testset "Zero allocation (in-place scalar)" begin

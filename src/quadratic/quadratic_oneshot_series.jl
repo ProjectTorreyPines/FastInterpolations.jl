@@ -10,14 +10,8 @@
 # ║                         SCALAR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# ─── Tuple Series → NTuple return ────────────────────────────────────────────
-
-"""
-    quadratic_interp(x, Series(y1, y2, ...), xq; bc, extrap, deriv, search, hint) → NTuple
-
-One-shot quadratic interpolation of multiple y-series at a single query point.
-"""
-@inline @with_pool pool function quadratic_interp(
+# ─── Internal: Tuple NTuple return (zero heap alloc) ─────────────────────────
+@inline @with_pool pool function _quadratic_oneshot_series_ntuple(
         x::AbstractVector{Tg},
         s::Series{<:Tuple},
         xq::Tq;
@@ -44,7 +38,7 @@ One-shot quadratic interpolation of multiple y-series at a single query point.
     end
 end
 
-# ─── Dynamic Series → Vector return ──────────────────────────────────────────
+# ─── Scalar Series → Vector return (consistent with SeriesInterpolant) ───────
 
 @inline @with_pool pool function quadratic_interp(
         x::AbstractVector{Tg},

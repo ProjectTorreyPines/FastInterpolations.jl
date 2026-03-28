@@ -12,7 +12,7 @@ using FastInterpolations
         ref_sin = quadratic_interp(x, y_sin, 0.37)
         ref_cos = quadratic_interp(x, y_cos, 0.37)
         ref_exp = quadratic_interp(x, y_exp, 0.37)
-        @test vals isa NTuple{3, Float64}
+        @test vals isa Vector{Float64}
         @test vals[1] ≈ ref_sin
         @test vals[2] ≈ ref_cos
         @test vals[3] ≈ ref_exp
@@ -119,7 +119,7 @@ using FastInterpolations
         y32_sin = Float32.(y_sin)
         y32_cos = Float32.(y_cos)
         vals = quadratic_interp(x32, Series(y32_sin, y32_cos), 0.5f0)
-        @test vals isa NTuple{2, Float32}
+        @test vals isa Vector{Float32}
         ref_sin = quadratic_interp(x32, y32_sin, 0.5f0)
         @test vals[1] ≈ ref_sin
     end

@@ -157,16 +157,8 @@ end
 # ║                         SCALAR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-"""
-    cubic_interp(x, Series(y1, y2, ...), xq; bc, extrap, autocache, deriv, search, hint) → NTuple
-
-One-shot cubic spline interpolation of multiple y-series at a single query point.
-Returns `NTuple{K}` when `Series` is constructed from varargs.
-
-# Strategy
-Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse.
-"""
-@inline function cubic_interp(
+# ─── Internal: Tuple NTuple return (zero heap alloc) ─────────────────────────
+@inline function _cubic_oneshot_series_ntuple(
         x::AbstractVector{Tg},
         s::Series{<:Tuple},
         xq::Tq;
@@ -186,11 +178,17 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
     return _cubic_oneshot_series_bcpair_ntuple(x, s, xq, bc_pair, extrap, autocache, deriv, searcher)
 end
 
+# ─── Scalar Series → Vector return (consistent with SeriesInterpolant) ───────
+
 """
+    cubic_interp(x, Series(y1, y2, ...), xq; ...) → Vector
     cubic_interp(x, Series(Y::Matrix), xq; ...) → Vector
 
 One-shot cubic spline interpolation of multiple y-series at a single query point.
-Returns `Vector` when `Series` wraps a matrix or vector-of-vectors.
+Returns `Vector`, consistent with `SeriesInterpolant` output format.
+
+# Strategy
+Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse.
 """
 @inline function cubic_interp(
         x::AbstractVector{Tg},

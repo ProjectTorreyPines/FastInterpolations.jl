@@ -13,8 +13,8 @@ using FastInterpolations
         xq = 0.37
         vals = cubic_interp(x, Series(y_sin, y_cos, y_exp), xq)
         ref = sitp(xq)
-        @test vals isa NTuple{3, Float64}
-        @test collect(vals) ≈ ref
+        @test vals isa Vector{Float64}
+        @test vals ≈ ref
     end
 
     @testset "Scalar: Matrix → Vector" begin
@@ -63,15 +63,13 @@ using FastInterpolations
         @test vals[2] ≈ ref_cos
     end
 
-    @testset "PeriodicBC Tuple: pool-only allocation (no heap Vector)" begin
-        # The Tuple + PeriodicBC path must NOT allocate a temporary Vector.
-        # It should use ntuple directly, same as BCPair ntuple path.
+    @testset "PeriodicBC in-place: zero internal allocation" begin
         s = Series(y_sin, y_cos)
-        # warmup
-        cubic_interp(x, s, 0.37; bc=PeriodicBC())
+        out = zeros(2)
+        cubic_interp!(out, x, s, 0.37; bc=PeriodicBC())  # warmup
         f_alloc() = begin
-            cubic_interp(x, s, 0.37; bc=PeriodicBC())
-            return @allocated cubic_interp(x, s, 0.37; bc=PeriodicBC())
+            cubic_interp!(out, x, s, 0.37; bc=PeriodicBC())
+            return @allocated cubic_interp!(out, x, s, 0.37; bc=PeriodicBC())
         end
         @test f_alloc() == 0
     end
@@ -149,7 +147,7 @@ using FastInterpolations
         y32_sin = Float32.(y_sin)
         y32_cos = Float32.(y_cos)
         vals = cubic_interp(x32, Series(y32_sin, y32_cos), 0.37f0)
-        @test vals isa NTuple{2, Float32}
+        @test vals isa Vector{Float32}
         ref_sin = cubic_interp(x32, y32_sin, 0.37f0)
         ref_cos = cubic_interp(x32, y32_cos, 0.37f0)
         @test vals[1] ≈ ref_sin

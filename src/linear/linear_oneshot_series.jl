@@ -15,24 +15,9 @@
 
 # ─── Tuple Series → NTuple return (compile-time K) ───────────────────────────
 
-"""
-    linear_interp(x, Series(y1, y2, ...), xq; extrap, deriv, search, hint) → NTuple
-
-One-shot linear interpolation of multiple y-series at a single query point.
-Returns an `NTuple{K}` when `Series` is constructed from varargs (compile-time K).
-
-# Strategy
-Search once → anchor once → evaluate kernel per y-vector.
-Zero allocation for scalar queries.
-
-# Example
-```julia
-x = 0.0:0.01:1.0
-y_sin, y_cos = sin.(x), cos.(x)
-vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → (sin(0.5), cos(0.5))
-```
-"""
-@inline function linear_interp(
+# ─── Internal: Tuple NTuple return (zero heap alloc) ─────────────────────────
+# Not a public API — retained as internal for future NTuple-returning path.
+@inline function _linear_oneshot_series_ntuple(
         x::AbstractVector{Tg},
         s::Series{<:Tuple},
         xq::Tq;
@@ -49,14 +34,24 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → (sin(0.5), cos(0.5))
     return ntuple(k -> _linear_eval_at_anchor(vecs[k], aq, deriv, extrap), Val(K))
 end
 
-# ─── Dynamic Series → Vector return ──────────────────────────────────────────
+# ─── Scalar Series → Vector return (consistent with SeriesInterpolant) ───────
 
 """
+    linear_interp(x, Series(y1, y2, ...), xq; ...) → Vector
     linear_interp(x, Series(Y::Matrix), xq; ...) → Vector
-    linear_interp(x, Series([y1, y2, ...]), xq; ...) → Vector
 
 One-shot linear interpolation of multiple y-series at a single query point.
-Returns a `Vector` when `Series` wraps a matrix or vector-of-vectors.
+Returns a `Vector`, consistent with `SeriesInterpolant` output format.
+
+# Strategy
+Search once → anchor once → evaluate kernel per y-vector.
+
+# Example
+```julia
+x = 0.0:0.01:1.0
+y_sin, y_cos = sin.(x), cos.(x)
+vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
+```
 """
 @inline function linear_interp(
         x::AbstractVector{Tg},

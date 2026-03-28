@@ -10,14 +10,8 @@
 # ║                         SCALAR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# ─── Tuple Series → NTuple return ────────────────────────────────────────────
-
-"""
-    constant_interp(x, Series(y1, y2, ...), xq; side, extrap, deriv, search, hint) → NTuple
-
-One-shot constant interpolation of multiple y-series at a single query point.
-"""
-@inline function constant_interp(
+# ─── Internal: Tuple NTuple return (zero heap alloc) ─────────────────────────
+@inline function _constant_oneshot_series_ntuple(
         x::AbstractVector{Tg},
         s::Series{<:Tuple},
         xq::Tq;
@@ -36,7 +30,7 @@ One-shot constant interpolation of multiple y-series at a single query point.
     return ntuple(k -> _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap), Val(K))
 end
 
-# ─── Dynamic Series → Vector return ──────────────────────────────────────────
+# ─── Scalar Series → Vector return (consistent with SeriesInterpolant) ───────
 
 @inline function constant_interp(
         x::AbstractVector{Tg},

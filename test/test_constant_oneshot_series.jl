@@ -13,8 +13,8 @@ using FastInterpolations
         xq = 0.37
         vals = constant_interp(x, Series(y_sin, y_cos, y_exp), xq)
         ref = sitp(xq)
-        @test vals isa NTuple{3, Float64}
-        @test collect(vals) ≈ ref
+        @test vals isa Vector{Float64}
+        @test vals ≈ ref
     end
 
     @testset "Scalar: Matrix → Vector" begin
@@ -97,7 +97,7 @@ using FastInterpolations
         y32_sin = Float32.(y_sin)
         y32_cos = Float32.(y_cos)
         vals = constant_interp(x32, Series(y32_sin, y32_cos), 0.5f0)
-        @test vals isa NTuple{2, Float32}
+        @test vals isa Vector{Float32}
         ref_sin = constant_interp(x32, y32_sin, 0.5f0)
         @test vals[1] ≈ ref_sin
     end
@@ -116,11 +116,12 @@ using FastInterpolations
     # discontinuous, and _ConstantAnchoredQuery uses Tg(xi_primal) which
     # does not support Dual types)
 
-    @testset "Zero allocation (Tuple scalar)" begin
+    @testset "Zero allocation (in-place scalar)" begin
         s = Series(y_sin, y_cos)
+        out = zeros(2)
         f_alloc() = begin
-            constant_interp(x, s, 0.5)
-            return @allocated constant_interp(x, s, 0.5)
+            constant_interp!(out, x, s, 0.5)
+            return @allocated constant_interp!(out, x, s, 0.5)
         end
         @test f_alloc() == 0
     end

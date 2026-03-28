@@ -125,4 +125,21 @@ using FastInterpolations
         end
         @test f_alloc() == 0
     end
+
+    @testset "Type promotion: Integer series" begin
+        x_f = collect(0.0:1.0:4.0)
+        y1_int = [0, 1, 3, 4, 7]
+        y2_int = [2, 3, 1, 0, 5]
+        vals = constant_interp(x_f, Series(y1_int, y2_int), 1.5)
+        @test vals isa Vector{Float64}
+        ref1 = constant_interp(x_f, Float64.(y1_int), 1.5)
+        @test vals[1] ≈ ref1
+    end
+
+    @testset "Type promotion: FillExtrap with Integer series" begin
+        x_f = collect(0.0:1.0:4.0)
+        y_int = [0, 1, 3, 4, 7]
+        vals = constant_interp(x_f, Series(y_int), 5.0; extrap=FillExtrap(0.5))
+        @test vals[1] ≈ 0.5
+    end
 end

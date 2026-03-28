@@ -195,4 +195,28 @@ using FastInterpolations
         d1 = linear_interp(x, Series(y_sin, y_cos), 0.37; deriv=DerivOp(1))
         @test grad ≈ sum(d1)
     end
+
+    @testset "Type promotion: Integer series" begin
+        x_f = collect(0.0:1.0:4.0)
+        y1_int = [0, 1, 3, 4, 7]
+        y2_int = [2, 3, 1, 0, 5]
+        vals = linear_interp(x_f, Series(y1_int, y2_int), 1.5)
+        @test vals isa Vector{Float64}
+        ref1 = linear_interp(x_f, Float64.(y1_int), 1.5)
+        @test vals[1] ≈ ref1
+    end
+
+    @testset "Type promotion: Mixed Float32/Float64 series" begin
+        y32 = Float32.(y_sin)
+        y64 = y_cos  # Float64
+        vals = linear_interp(x, Series(y32, y64), 0.37)
+        @test vals isa Vector{Float64}
+    end
+
+    @testset "Type promotion: FillExtrap with Integer series" begin
+        x_f = collect(0.0:1.0:4.0)
+        y_int = [0, 1, 3, 4, 7]
+        vals = linear_interp(x_f, Series(y_int), 5.0; extrap=FillExtrap(0.5))
+        @test vals[1] ≈ 0.5
+    end
 end

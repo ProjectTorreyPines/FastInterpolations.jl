@@ -48,8 +48,8 @@ end
     x_last = Tg(last(x))
     vecs = _series_vectors(s)
     K = n_series(s)
-    Tv = _series_eltype(s)
-    output = Vector{Tv}(undef, K)
+    Tv_out = _value_type(_series_eltype(s), Tg)
+    output = Vector{Tv_out}(undef, K)
     @inbounds for k in 1:K
         output[k] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap)
     end
@@ -121,8 +121,8 @@ function constant_interp(
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tq <: Real}
     K = n_series(s)
-    Tv = _series_eltype(s)
-    outputs = [Vector{Tv}(undef, length(xqs)) for _ in 1:K]
+    Tv_out = _value_type(_series_eltype(s), Tg)
+    outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
     constant_interp!(outputs, x, s, xqs; side, extrap, deriv, search)
     return outputs
 end

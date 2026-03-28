@@ -28,13 +28,15 @@
     aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     K = n_series(s)
-    Tv = eltype(first(vecs))
-    d = acquire!(pool, Tv, nx)
-    a = acquire!(pool, Tv, nx - 1)
+    Tv_out = _value_type(eltype(first(vecs)), Tg)
+    d = acquire!(pool, Tv_out, nx)
+    a = acquire!(pool, Tv_out, nx - 1)
+    y_buf = acquire!(pool, Tv_out, nx)
     return ntuple(Val(K)) do k
-        bc_promoted = _normalize_bc(bc, first(vecs[k]))
-        _compute_quadratic_coeffs!(d, a, spacing, x, vecs[k], bc_promoted)
-        _quadratic_eval_at_anchor(vecs[k], a, d, aq, deriv, extrap)
+        copyto!(y_buf, 1, vecs[k], 1, nx)
+        bc_promoted = _normalize_bc(bc, first(y_buf))
+        _compute_quadratic_coeffs!(d, a, spacing, x, y_buf, bc_promoted)
+        _quadratic_eval_at_anchor(y_buf, a, d, aq, deriv, extrap)
     end
 end
 
@@ -57,14 +59,16 @@ end
     spacing = _create_spacing_pooled(pool, x)
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
-    Tv = _series_eltype(s)
-    output = Vector{promote_type(Tv, typeof(aq.dL))}(undef, K)
-    d = acquire!(pool, Tv, nx)
-    a = acquire!(pool, Tv, nx - 1)
+    Tv_out = _value_type(_series_eltype(s), Tg)
+    output = Vector{promote_type(Tv_out, typeof(aq.dL))}(undef, K)
+    d = acquire!(pool, Tv_out, nx)
+    a = acquire!(pool, Tv_out, nx - 1)
+    y_buf = acquire!(pool, Tv_out, nx)
     @inbounds for k in 1:K
-        bc_promoted = _normalize_bc(bc, first(vecs[k]))
-        _compute_quadratic_coeffs!(d, a, spacing, x, vecs[k], bc_promoted)
-        output[k] = _quadratic_eval_at_anchor(vecs[k], a, d, aq, deriv, extrap)
+        copyto!(y_buf, 1, vecs[k], 1, nx)
+        bc_promoted = _normalize_bc(bc, first(y_buf))
+        _compute_quadratic_coeffs!(d, a, spacing, x, y_buf, bc_promoted)
+        output[k] = _quadratic_eval_at_anchor(y_buf, a, d, aq, deriv, extrap)
     end
     return output
 end
@@ -89,13 +93,15 @@ end
     spacing = _create_spacing_pooled(pool, x)
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
-    Tv = _series_eltype(s)
-    d = acquire!(pool, Tv, nx)
-    a = acquire!(pool, Tv, nx - 1)
+    Tv_out = _value_type(_series_eltype(s), Tg)
+    d = acquire!(pool, Tv_out, nx)
+    a = acquire!(pool, Tv_out, nx - 1)
+    y_buf = acquire!(pool, Tv_out, nx)
     @inbounds for k in eachindex(output)
-        bc_promoted = _normalize_bc(bc, first(vecs[k]))
-        _compute_quadratic_coeffs!(d, a, spacing, x, vecs[k], bc_promoted)
-        output[k] = _quadratic_eval_at_anchor(vecs[k], a, d, aq, deriv, extrap)
+        copyto!(y_buf, 1, vecs[k], 1, nx)
+        bc_promoted = _normalize_bc(bc, first(y_buf))
+        _compute_quadratic_coeffs!(d, a, spacing, x, y_buf, bc_promoted)
+        output[k] = _quadratic_eval_at_anchor(y_buf, a, d, aq, deriv, extrap)
     end
     return output
 end
@@ -120,14 +126,16 @@ end
     nx = length(x)
     vecs = _series_vectors(s)
     spacing = _create_spacing_pooled(pool, x)
-    Tv = _series_eltype(s)
+    Tv_out = _value_type(_series_eltype(s), Tg)
 
     # Pre-compute coefficients for all series
-    ds = [acquire!(pool, Tv, nx) for _ in 1:K]
-    as = [acquire!(pool, Tv, nx - 1) for _ in 1:K]
+    ds = [acquire!(pool, Tv_out, nx) for _ in 1:K]
+    as = [acquire!(pool, Tv_out, nx - 1) for _ in 1:K]
+    y_buf = acquire!(pool, Tv_out, nx)
     for k in 1:K
-        bc_promoted = _normalize_bc(bc, first(vecs[k]))
-        _compute_quadratic_coeffs!(ds[k], as[k], spacing, x, vecs[k], bc_promoted)
+        copyto!(y_buf, 1, vecs[k], 1, nx)
+        bc_promoted = _normalize_bc(bc, first(y_buf))
+        _compute_quadratic_coeffs!(ds[k], as[k], spacing, x, y_buf, bc_promoted)
     end
 
     searcher = _resolve_search(x, xqs, search, nothing)
@@ -151,8 +159,8 @@ function quadratic_interp(
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tq <: Real}
     K = n_series(s)
-    Tv = promote_type(_series_eltype(s), Tq)
-    outputs = [Vector{Tv}(undef, length(xqs)) for _ in 1:K]
+    Tv_out = promote_type(_value_type(_series_eltype(s), Tg), Tq)
+    outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
     quadratic_interp!(outputs, x, s, xqs; bc, extrap, deriv, search)
     return outputs
 end

@@ -29,10 +29,14 @@
     cache = _get_cubic_cache(x, bc, autocache)
     aq = _anchor_query(cache.x, xq, Val(:cubic), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
-    z = similar!(pool, first(vecs))
+    Tv_out = _value_type(_series_eltype(s), Tg)
+    n = length(first(vecs))
+    z = acquire!(pool, Tv_out, n)
+    y_buf = acquire!(pool, Tv_out, n)
     @inbounds for k in eachindex(output)
-        _solve_system!(z, cache, vecs[k], bc)
-        output[k] = _cubic_eval_at_anchor(vecs[k], z, aq, op, extrap)
+        copyto!(y_buf, 1, vecs[k], 1, n)
+        _solve_system!(z, cache, y_buf, bc)
+        output[k] = _cubic_eval_at_anchor(y_buf, z, aq, op, extrap)
     end
     return output
 end
@@ -51,11 +55,15 @@ end
     cache = _get_cubic_cache(x, bc, autocache)
     aq = _anchor_query(cache.x, xq, Val(:cubic), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
-    z = similar!(pool, first(vecs))
+    Tv_out = _value_type(_series_eltype(s), Tg)
+    n = length(first(vecs))
+    z = acquire!(pool, Tv_out, n)
+    y_buf = acquire!(pool, Tv_out, n)
     K = n_series(s)
     return ntuple(Val(K)) do k
-        _solve_system!(z, cache, vecs[k], bc)
-        _cubic_eval_at_anchor(vecs[k], z, aq, op, extrap)
+        copyto!(y_buf, 1, vecs[k], 1, n)
+        _solve_system!(z, cache, y_buf, bc)
+        _cubic_eval_at_anchor(y_buf, z, aq, op, extrap)
     end
 end
 
@@ -75,7 +83,7 @@ end
     ) where {Tg <: AbstractFloat}
     vecs = _series_vectors(s)
     n = length(x)
-    Tv = eltype(first(vecs))
+    Tv_out = _value_type(eltype(first(vecs)), Tg)
     K = n_series(s)
 
     # Phase 1: Extend grid + solve first series → establishes cache, x_p, y_p, z
@@ -85,7 +93,7 @@ end
 
     # Phase 2: Solve remaining series reusing y_p + z buffers
     is_exclusive = bc isa PeriodicBC{:exclusive}
-    y_p = is_exclusive ? y_p_first : acquire!(pool, Tv, n_p)
+    y_p = is_exclusive ? y_p_first : acquire!(pool, Tv_out, n_p)
 
     return ntuple(Val(K)) do k
         if k == 1
@@ -119,7 +127,7 @@ end
     ) where {Tg <: AbstractFloat}
     vecs = _series_vectors(s)
     n = length(x)
-    Tv = eltype(first(vecs))
+    Tv_out = _value_type(eltype(first(vecs)), Tg)
 
     # ── Phase 1: Extend grid + solve first series (establishes cache + x_p) ──
     cache, y_p_first, z = _cubic_periodic_solve!(pool, x, first(vecs), bc, autocache)
@@ -136,7 +144,7 @@ end
     y_p = if is_exclusive
         y_p_first  # pool buffer, safe to reuse
     else
-        acquire!(pool, Tv, n_p)  # separate buffer for inclusive BC
+        acquire!(pool, Tv_out, n_p)  # separate buffer for inclusive BC
     end
 
     for k in 2:length(output)
@@ -203,7 +211,7 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
     K = n_series(s)
-    output = Vector{promote_type(_series_eltype(s), Tq)}(undef, K)
+    output = Vector{promote_type(_value_type(_series_eltype(s), Tg), Tq)}(undef, K)
     searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
@@ -262,14 +270,18 @@ end
     searcher = _resolve_search(x, xqs, search, nothing)
 
     # Solve z for each y-vector upfront (need all z for the query loop)
-    zs = [similar!(pool, v) for v in vecs]
     if _is_periodic_bc(bc)
         throw(ArgumentError("Vector query with PeriodicBC not yet supported for one-shot Series. Use pre-built interpolant."))
     end
+    Tv_out = _value_type(_series_eltype(s), Tg)
+    n = length(first(vecs))
+    zs = [acquire!(pool, Tv_out, n) for _ in 1:K]
+    y_buf = acquire!(pool, Tv_out, n)
     bc_pair = _normalize_bc(bc, _series_eltype(s))
     cache = _get_cubic_cache(x, bc_pair, autocache)
     for k in 1:K
-        _solve_system!(zs[k], cache, vecs[k], bc_pair)
+        copyto!(y_buf, 1, vecs[k], 1, n)
+        _solve_system!(zs[k], cache, y_buf, bc_pair)
     end
 
     wrap = extrap isa WrapExtrap
@@ -293,7 +305,7 @@ function cubic_interp(
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tq <: Real}
     K = n_series(s)
-    Tv = promote_type(_series_eltype(s), Tq)
+    Tv = promote_type(_value_type(_series_eltype(s), Tg), Tq)
     outputs = [Vector{Tv}(undef, length(xqs)) for _ in 1:K]
     cubic_interp!(outputs, x, s, xqs; bc, extrap, autocache, deriv, search)
     return outputs

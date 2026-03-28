@@ -42,6 +42,9 @@ function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC = CubicFit()) whe
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
     validate_polyfit_points(bc, length(x))
 
+    # Normalize early: Range → _CachedRange, Vector → identity.
+    x = _to_float(x, T)
+
     # Periodic BC
     if _is_periodic_bc(bc)
         bc isa PeriodicBC{:exclusive} && _throw_periodic_exclusive_cache()

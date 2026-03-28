@@ -51,6 +51,11 @@ end
     return _CachedRange{T}(lo, hi, h, inv_h, len, lo, hi)
 end
 
+# Convenience: construct from any AbstractRange using its own eltype.
+# Internal code should prefer _to_float(x, Tg) when target type differs from eltype.
+_CachedRange(x::AbstractRange{T}) where {T <: AbstractFloat} = _to_float(x, T)
+_CachedRange(x::_CachedRange) = x
+
 Base.length(r::_CachedRange) = r.len
 Base.size(r::_CachedRange) = (r.len,)
 Base.first(r::_CachedRange) = r.lo

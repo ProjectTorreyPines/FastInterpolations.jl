@@ -472,6 +472,17 @@ end
         @test first(r64_up) === Float64(first(r32))
         @test length(r64_up) == length(r32)
     end
+
+    @testset "_CachedRange convenience constructor" begin
+        FI = FastInterpolations
+        x = range(0.0, 2π, 100)
+        cr = FI._CachedRange(x)
+        @test cr isa FI._CachedRange{Float64}
+        @test cr.lo ≈ Float64(first(x))
+        @test cr.len == 100
+        # Identity pass-through for already-normalized input
+        @test FI._CachedRange(cr) === cr
+    end
 end
 
 @testset "Cubic Spline - Uncovered Paths" begin

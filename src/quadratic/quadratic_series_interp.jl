@@ -368,6 +368,9 @@ function quadratic_interp(
         return quadratic_interp(_to_float(x, Tg_new), s; bc = _normalize_bc(bc, Tg_new), extrap, search)
     end
 
+    # Normalize early: Range → _CachedRange, Vector → identity.
+    x = _to_float(x, Tg)
+
     n_pts = length(x)
     Tv_out = _value_type(Tv, Tg)
     y_mat, n_ser = _build_series_mat(s, n_pts, Tv_out)

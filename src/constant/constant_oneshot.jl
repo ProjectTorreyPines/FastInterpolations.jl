@@ -262,18 +262,11 @@ end
 # AD Support: Pass xi directly without Tg conversion to preserve Dual type
 
 @inline function constant_interp(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        xi::Tq;
-        extrap::AbstractExtrap = NoExtrap(),
-        side::AbstractSide = NearestSide(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        x::AbstractVector{Tg}, y::AbstractVector{Tv}, xi::Tq; kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
     # Pass xi directly (not converted) to preserve ForwardDiff.Dual for AD
-    return constant_interp(x_typed, y_typed, xi; extrap, side, deriv, search, hint)
+    return constant_interp(x_typed, y_typed, xi; kwargs...)
 end
 
 # ========================================
@@ -282,18 +275,12 @@ end
 # POLICY: Tg is computed from x/y ONLY, not from x_targets
 
 function constant_interp(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tq};
-        extrap::AbstractExtrap = NoExtrap(),
-        side::AbstractSide = NearestSide(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        x::AbstractVector{Tg}, y::AbstractVector{Tv}, x_targets::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
     Tv_float = eltype(y_typed)
     output = Vector{Tv_float}(undef, length(x_targets))
-    constant_interp!(output, x_typed, y_typed, xq_typed; extrap, side, deriv, search)
+    constant_interp!(output, x_typed, y_typed, xq_typed; kwargs...)
     return output
 end
 
@@ -306,10 +293,7 @@ function constant_interp!(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_targets::AbstractVector{Tq};
-        extrap::AbstractExtrap = NoExtrap(),
-        side::AbstractSide = NearestSide(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -328,5 +312,5 @@ function constant_interp!(
         )
     end
 
-    return constant_interp!(output, x_typed, y_typed, xq_typed; extrap, side, deriv, search)
+    return constant_interp!(output, x_typed, y_typed, xq_typed; kwargs...)
 end

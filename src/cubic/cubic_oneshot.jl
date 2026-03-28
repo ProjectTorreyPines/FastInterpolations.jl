@@ -399,35 +399,20 @@ end
 
 # Allocating - vector query
 function cubic_interp(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_query::AbstractVector{Tq};
-        bc::AbstractBC = CubicFit(),
-        extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        x::AbstractVector{Tg}, y::AbstractVector{Tv}, x_query::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_query)
-    return cubic_interp(x_typed, y_typed, xq_typed; bc, extrap, autocache, deriv, search)
+    return cubic_interp(x_typed, y_typed, xq_typed; kwargs...)
 end
 
 # Allocating - scalar query wrapper
 # Preserves original xq type for AD support (Dual types flow through)
 function cubic_interp(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
-        bc::AbstractBC = CubicFit(),
-        extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        x::AbstractVector{Tg}, y::AbstractVector{Tv}, xq::Tq; kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
     # Pass xq directly to preserve Dual type for AD
-    return cubic_interp(x_typed, y_typed, xq; bc, extrap, autocache, deriv, search, hint)
+    return cubic_interp(x_typed, y_typed, xq; kwargs...)
 end
 
 # In-place - vector query
@@ -436,11 +421,7 @@ function cubic_interp!(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector{Tq};
-        bc::AbstractBC = CubicFit(),
-        extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_query) "output must match x_query length"
@@ -460,25 +441,17 @@ function cubic_interp!(
         )
     end
 
-    return cubic_interp!(output, x_typed, y_typed, xq_typed; bc, extrap, autocache, deriv, search)
+    return cubic_interp!(output, x_typed, y_typed, xq_typed; kwargs...)
 end
 
 # In-place - scalar query
 function cubic_interp!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_query::Tq;
-        bc::AbstractBC = CubicFit(),
-        extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        output::AbstractVector, x::AbstractVector{Tg}, y::AbstractVector{Tv}, x_query::Tq; kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     @assert length(output) >= 1 "output must have at least 1 element"
 
     x_typed, y_typed = _promote_itp_inputs(x, y)
     Tg_float = eltype(x_typed)
-    output[1] = cubic_interp(x_typed, y_typed, Tg_float(x_query); bc, extrap, autocache, deriv, search)
+    output[1] = cubic_interp(x_typed, y_typed, Tg_float(x_query); kwargs...)
     return output
 end

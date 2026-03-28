@@ -331,9 +331,7 @@ function linear_interp!(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_targets::AbstractVector{Tq};
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -352,7 +350,7 @@ function linear_interp!(
         )
     end
 
-    return linear_interp!(output, x_typed, y_typed, xq_typed; extrap, deriv, search)
+    return linear_interp!(output, x_typed, y_typed, xq_typed; kwargs...)
 end
 
 # ========================================
@@ -362,17 +360,11 @@ end
 # POLICY: Tg is computed from x/y ONLY, not from xq
 
 @inline function linear_interp(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        xq::Tq;
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        x::AbstractVector{Tg}, y::AbstractVector{Tv}, xq::Tq; kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
     # Pass xq directly (not converted) to preserve ForwardDiff.Dual for AD
-    return linear_interp(x_typed, y_typed, xq; extrap, deriv, search, hint)
+    return linear_interp(x_typed, y_typed, xq; kwargs...)
 end
 
 # ========================================
@@ -380,16 +372,11 @@ end
 # ========================================
 
 function linear_interp(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tq};
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        x::AbstractVector{Tg}, y::AbstractVector{Tv}, x_targets::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
     Tv_float = eltype(y_typed)
     output = Vector{Tv_float}(undef, length(x_targets))
-    linear_interp!(output, x_typed, y_typed, xq_typed; extrap, deriv, search)
+    linear_interp!(output, x_typed, y_typed, xq_typed; kwargs...)
     return output
 end

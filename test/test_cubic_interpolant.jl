@@ -220,7 +220,7 @@ end
 
         # Direct CubicSplineCache normalizes Range → _CachedRange for O(1) lookup
         cache = CubicSplineCache(x_range)
-        @test cache.x isa AbstractRange
+        @test cache.x isa FastInterpolations._CachedRange
         @test collect(cache.x) ≈ collect(x_range) rtol = 8eps(Float64)
 
         # Verify correctness

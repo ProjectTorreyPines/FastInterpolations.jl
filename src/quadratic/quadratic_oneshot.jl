@@ -268,19 +268,13 @@ end
 # Wrapper for non-AbstractFloat inputs (Int, mixed types, etc.)
 # Preserves original xq type for AD support (Dual types flow through)
 @inline function quadratic_interp(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
-        bc::QuadraticBC = Left(QuadraticFit()),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        x::AbstractVector{Tg}, y::AbstractVector{Tv}, xq::Tq;
+        bc::QuadraticBC = Left(QuadraticFit()), kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
     bc_promoted = _normalize_bc(bc, first(y_typed))
     # Pass xq directly to preserve Dual type for AD
-    return quadratic_interp(x_typed, y_typed, xq; bc = bc_promoted, extrap, deriv, search, hint)
+    return quadratic_interp(x_typed, y_typed, xq; bc = bc_promoted, kwargs...)
 end
 
 # ========================================
@@ -289,19 +283,14 @@ end
 # POLICY: Tg is computed from x/y ONLY, not from x_targets
 
 function quadratic_interp(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tq};
-        bc::QuadraticBC = Left(QuadraticFit()),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        x::AbstractVector{Tg}, y::AbstractVector{Tv}, x_targets::AbstractVector{Tq};
+        bc::QuadraticBC = Left(QuadraticFit()), kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
     Tv_float = eltype(y_typed)
     output = Vector{Tv_float}(undef, length(x_targets))
     bc_promoted = _normalize_bc(bc, first(y_typed))
-    quadratic_interp!(output, x_typed, y_typed, xq_typed; bc = bc_promoted, extrap, deriv, search)
+    quadratic_interp!(output, x_typed, y_typed, xq_typed; bc = bc_promoted, kwargs...)
     return output
 end
 
@@ -314,10 +303,7 @@ function quadratic_interp!(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_targets::AbstractVector{Tq};
-        bc::QuadraticBC = Left(QuadraticFit()),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        bc::QuadraticBC = Left(QuadraticFit()), kwargs...
     ) where {Tg <: Real, Tv, Tq <: Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -337,5 +323,5 @@ function quadratic_interp!(
     end
 
     bc_promoted = _normalize_bc(bc, first(y_typed))
-    return quadratic_interp!(output, x_typed, y_typed, xq_typed; bc = bc_promoted, extrap, deriv, search)
+    return quadratic_interp!(output, x_typed, y_typed, xq_typed; bc = bc_promoted, kwargs...)
 end

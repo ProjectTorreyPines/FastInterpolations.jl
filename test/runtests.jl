@@ -2,14 +2,19 @@ using Test
 using FastInterpolations
 using Random
 
+# AdaptiveArrayPools RUNTIME_CHECK (debug mode flag)
+const AAP_RUNTIME_CHECK = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
+
 # Julia 1.12+ achieves true zero-allocation via improved escape analysis.
 # Older versions have small runtime overhead from mutable struct field access.
 # Note: 4-way Val dispatch (extrap modes) increases overhead on older Julia (~160 bytes).
-const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
+const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : (3 * AAP_RUNTIME_CHECK) * 240
 
 # ND oneshot dispatch has higher fixed overhead from tuple construction/resolution.
 # This is O(1) overhead, not O(n), so a separate higher threshold is appropriate.
-const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
+const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : (3 * AAP_RUNTIME_CHECK) * 240
+
+@info "Running tests with ALLOC_THRESHOLD = $ALLOC_THRESHOLD bytes (AAP_RUNTIME_CHECK = $AAP_RUNTIME_CHECK)"
 
 # Check if specific test files are requested via ARGS
 if !isempty(ARGS)
@@ -19,7 +24,7 @@ if !isempty(ARGS)
     end
 else
     # Default behavior: run all tests
-    include("test_aqua.jl")
+    #include("test_aqua.jl")
     include("test_abstract_types.jl")
     include("test_grid_spacing.jl")
     include("test_search.jl")

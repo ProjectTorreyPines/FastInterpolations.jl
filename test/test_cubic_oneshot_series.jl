@@ -63,6 +63,19 @@ using FastInterpolations
         @test vals[2] ≈ ref_cos
     end
 
+    @testset "PeriodicBC Tuple: pool-only allocation (no heap Vector)" begin
+        # The Tuple + PeriodicBC path must NOT allocate a temporary Vector.
+        # It should use ntuple directly, same as BCPair ntuple path.
+        s = Series(y_sin, y_cos)
+        # warmup
+        cubic_interp(x, s, 0.37; bc=PeriodicBC())
+        f_alloc() = begin
+            cubic_interp(x, s, 0.37; bc=PeriodicBC())
+            return @allocated cubic_interp(x, s, 0.37; bc=PeriodicBC())
+        end
+        @test f_alloc() == 0
+    end
+
     @testset "Extrapolation modes" begin
         xq_oob = 1.5
         @test_throws DomainError cubic_interp(x, Series(y_sin, y_cos), xq_oob)

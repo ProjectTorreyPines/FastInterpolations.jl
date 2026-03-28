@@ -63,6 +63,47 @@ end
 # ║                      INTERNAL: PERIODIC CORE                             ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
+# Core Periodic NTuple: extend grid once, solve+eval per y-vector, return ntuple (zero heap alloc)
+@inline @with_pool pool function _cubic_oneshot_series_periodic_ntuple(
+        x::AbstractVector{Tg},
+        s::Series{<:Tuple},
+        xq,
+        bc::PeriodicBC,
+        op::AbstractEvalOp,
+        autocache::Bool,
+        searcher
+    ) where {Tg <: AbstractFloat}
+    vecs = _series_vectors(s)
+    n = length(x)
+    Tv = eltype(first(vecs))
+    K = n_series(s)
+
+    # Phase 1: Extend grid + solve first series → establishes cache, x_p, y_p, z
+    cache, y_p_first, z = _cubic_periodic_solve!(pool, x, first(vecs), bc, autocache)
+    n_p = length(y_p_first)
+    aq = _anchor_query(cache.x, xq, Val(:cubic), true, searcher)
+
+    # Phase 2: Solve remaining series reusing y_p + z buffers
+    is_exclusive = bc isa PeriodicBC{:exclusive}
+    y_p = is_exclusive ? y_p_first : acquire!(pool, Tv, n_p)
+
+    return ntuple(Val(K)) do k
+        if k == 1
+            _cubic_eval_kernel(y_p_first, z, aq, op)
+        else
+            if is_exclusive
+                @inbounds copyto!(y_p, 1, vecs[k], 1, n)
+                @inbounds y_p[n + 1] = vecs[k][1]
+            else
+                @inbounds copyto!(y_p, 1, vecs[k], 1, n_p)
+            end
+            _check_periodic_endpoints(bc, y_p)
+            _solve_system!(z, cache, y_p, cache.bc_config)
+            _cubic_eval_kernel(y_p, z, aq, op)
+        end
+    end
+end
+
 # Periodic: extend grid ONCE, then solve+eval per y-vector reusing buffers.
 # Phase 1: _cubic_periodic_solve! for first series → establishes cache, x_p, y_p, z
 # Phase 2: reuse y_p + z for remaining series (only y-data changes, no grid re-extension)
@@ -139,11 +180,7 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
     _validate_series_lengths(s, length(x))
     searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
-        # Periodic: use vector path and convert to tuple
-        K = n_series(s)
-        output = Vector{promote_type(_series_eltype(s), Tq)}(undef, K)
-        _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
-        return ntuple(k -> @inbounds(output[k]), Val(K))
+        return _cubic_oneshot_series_periodic_ntuple(x, s, xq, bc, deriv, autocache, searcher)
     end
     bc_pair = _normalize_bc(bc, _series_eltype(s))
     return _cubic_oneshot_series_bcpair_ntuple(x, s, xq, bc_pair, extrap, autocache, deriv, searcher)

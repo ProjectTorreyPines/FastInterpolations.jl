@@ -7,6 +7,8 @@
 #
 # The wrapper is consumed at construction time and never stored in the interpolant.
 
+# ─── Series type ─────────────────────────────────────────────────────────────
+
 """
     Series(y1, y2, ...)                     # varargs
     Series([y1, y2, ...])                   # vector of vectors
@@ -20,11 +22,12 @@ interpolation constructor.
 
 # Examples
 ```julia
+# One-shot evaluation (search once, kernel per y)
+linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
+
+# Interpolant construction
 itp = linear_interp(x, Series(y_sin, y_cos))
 itp(0.5)  # → [sin(0.5), cos(0.5)]
-
-itp = cubic_interp(x, Series(y_density, y_velocity, y_pressure))
-itp(0.5)  # → [ρ, v, p]
 ```
 """
 struct Series{D}
@@ -32,24 +35,19 @@ struct Series{D}
 end
 
 # Single vector: Series(y1) — single series (no element type constraint for duck-typing)
-function Series(y::AbstractVector)
-    return Series{typeof((y,))}((y,))
-end
+Series(y::AbstractVector) = Series{typeof((y,))}((y,))
 
 # Varargs: Series(y1, y2, y3)
 function Series(y1::AbstractVector, y2::AbstractVector, rest::AbstractVector...)
-    return Series{typeof((y1, y2, rest...))}((y1, y2, rest...))
+    data = (y1, y2, rest...)
+    return Series{typeof(data)}(data)
 end
 
 # Vector of vectors: Series([y1, y2, y3])
-function Series(ys::AbstractVector{<:AbstractVector})
-    return Series{typeof(ys)}(ys)
-end
+Series(ys::AbstractVector{<:AbstractVector}) = Series{typeof(ys)}(ys)
 
 # Matrix: Series(Y) where columns = series
-function Series(Y::AbstractMatrix)
-    return Series{typeof(Y)}(Y)
-end
+Series(Y::AbstractMatrix) = Series{typeof(Y)}(Y)
 
 # ─── Series data access helpers ───────────────────────────────────────────────
 #
@@ -79,6 +77,36 @@ Zero-allocation for all forms (Tuple, Vector-of-Vectors, Matrix via `eachcol`).
 @inline _series_eltype(s::Series{<:AbstractVector{<:AbstractVector}}) =
     promote_type(map(eltype, s.data)...)
 @inline _series_eltype(s::Series{<:Tuple}) = promote_type(map(eltype, s.data)...)
+
+# ─── Validation helper for one-shot paths ─────────────────────────────────────
+
+"""
+    _validate_series_lengths(s::Series, n_pts::Int)
+
+Validate that all series vectors have the expected length (matching the grid).
+Throws `DimensionMismatch` on failure.
+"""
+@inline function _validate_series_lengths(s::Series, n_pts::Int)
+    n_series(s) > 0 || throw(ArgumentError("Series data must contain at least one series"))
+    for (k, v) in enumerate(_series_vectors(s))
+        length(v) == n_pts || _throw_series_length_mismatch(k, length(v), n_pts)
+    end
+    return nothing
+end
+
+@noinline function _throw_series_length_mismatch(k::Int, got::Int, expected::Int)
+    throw(
+        DimensionMismatch(
+            "Series vector $k has length $got, expected $expected (length of x)"
+        )
+    )
+end
+
+# ─── @noinline throw helpers (keep cold error paths out of hot code) ──────────
+
+@noinline function _throw_series_dim_mismatch(got::Int, expected::Int)
+    throw(DimensionMismatch("output length $got must match number of series $expected"))
+end
 
 # ─── Core builder: Series → owned Matrix ──────────────────────────────────────
 

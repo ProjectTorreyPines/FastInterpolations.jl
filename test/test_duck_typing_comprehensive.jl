@@ -1782,4 +1782,104 @@ _val(d::MyDuck) = d.v
         end
     end
 
+    # ================================================================
+    # SECTION: ONE-SHOT SERIES — duck-typed values
+    # ================================================================
+    @testset "One-shot Series — duck typed" begin
+        y1 = MyDuck.([1.0, 4.0, 2.0, 5.0, 3.0, 6.0, 2.5])
+        y2 = MyDuck.([2.0, 1.0, 5.0, 3.0, 4.0, 1.0, 3.5])
+        y1_flat = _val.(y1)
+        y2_flat = _val.(y2)
+        s = Series(y1, y2)
+        s_flat = Series(y1_flat, y2_flat)
+
+        for (name, fn, fn!) in [
+                ("constant", constant_interp, constant_interp!),
+                ("linear", linear_interp, linear_interp!),
+                ("quadratic", quadratic_interp, quadratic_interp!),
+                ("cubic", cubic_interp, cubic_interp!),
+            ]
+            @testset "$name" begin
+                # Scalar allocating — container must be typed, not Vector{Any}
+                @testset "scalar" begin
+                    result = fn(x_vec, s, xq)
+                    ref = fn(x_vec, s_flat, xq)
+                    @test length(result) == 2
+                    @test eltype(result) === MyDuck
+                    @test _val.(result) ≈ ref
+                end
+
+                # Scalar in-place — typed output preserved
+                @testset "scalar in-place" begin
+                    out = Vector{MyDuck}(undef, 2)
+                    ret = fn!(out, x_vec, s, xq)
+                    ref = fn(x_vec, s_flat, xq)
+                    @test ret === out
+                    @test eltype(out) === MyDuck
+                    @test _val.(out) ≈ ref
+                end
+
+                # Vector allocating — container must be typed, not Vector{Any}
+                @testset "vector" begin
+                    result = fn(x_vec, s, xq_vec)
+                    ref = fn(x_vec, s_flat, xq_vec)
+                    @test length(result) == 2
+                    for k in 1:2
+                        @test eltype(result[k]) === MyDuck
+                        @test _val.(result[k]) ≈ ref[k]
+                    end
+                end
+
+                # Vector in-place — typed output preserved
+                @testset "vector in-place" begin
+                    outputs = [Vector{MyDuck}(undef, length(xq_vec)) for _ in 1:2]
+                    ret = fn!(outputs, x_vec, s, xq_vec)
+                    ref = fn(x_vec, s_flat, xq_vec)
+                    @test ret === outputs
+                    for k in 1:2
+                        @test eltype(outputs[k]) === MyDuck
+                        @test _val.(outputs[k]) ≈ ref[k]
+                    end
+                end
+
+                # DerivOp(1) — derivative should also return typed container
+                @testset "deriv=1" begin
+                    result = fn(x_vec, s, xq; deriv = DerivOp(1))
+                    ref = fn(x_vec, s_flat, xq; deriv = DerivOp(1))
+                    @test eltype(result) === MyDuck
+                    @test _val.(result) ≈ ref
+                end
+            end
+        end
+
+        # Matrix input form
+        @testset "Matrix Series" begin
+            Y = hcat(y1, y2)
+            Y_flat = hcat(y1_flat, y2_flat)
+            result = linear_interp(x_vec, Series(Y), xq)
+            ref = linear_interp(x_vec, Series(Y_flat), xq)
+            @test eltype(result) === MyDuck
+            @test _val.(result) ≈ ref
+        end
+
+        # @inferred — type stability (complements eltype checks: @inferred
+        # passes even for Vector{Any} since it's concrete, but catches
+        # return-type instability that eltype checks miss)
+        @testset "@inferred" begin
+            @testset "scalar" begin
+                @inferred linear_interp(x_vec, s, xq)
+                @inferred constant_interp(x_vec, s, xq)
+                @inferred quadratic_interp(x_vec, s, xq)
+                @inferred cubic_interp(x_vec, s, xq)
+            end
+            @testset "scalar in-place" begin
+                out = Vector{MyDuck}(undef, 2)
+                @inferred linear_interp!(out, x_vec, s, xq)
+                @inferred constant_interp!(out, x_vec, s, xq)
+                @inferred quadratic_interp!(out, x_vec, s, xq)
+                @inferred cubic_interp!(out, x_vec, s, xq)
+            end
+        end
+    end
+
 end

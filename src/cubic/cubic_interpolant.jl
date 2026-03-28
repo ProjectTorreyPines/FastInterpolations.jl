@@ -72,93 +72,32 @@ end
 """
     _eval_anchored_kernel(itp, aq, op) -> Tv
 
-Core anchored evaluation kernel. Dispatches on concrete EvalOp type for optimal performance.
-
-# Methods:
-- EvalValue, EvalDeriv1: 4-term dot product (wyL*yL + wyR*yR + wzL*zL + wzR*zR)
-- EvalDeriv2, EvalDeriv3: 2-term dot product (wzL*zL + wzR*zR) - optimized, no y-loads
+Thin wrapper: delegates to shared `_cubic_eval_kernel(y, z, aq, op)` in cubic_anchor.jl.
 """
-# EvalValue: Full 4-term evaluation with y and z
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::EvalValue) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    @inbounds begin
-        yL = itp.y[aq.idx]
-        yR = itp.y[aq.idx + 1]
-        zL = itp.z[aq.idx]
-        zR = itp.z[aq.idx + 1]
-    end
-    wyL, wyR, wzL, wzR = aq.w0
-    # Optimal FMA chain: 3 FMAs + 1 mul
-    return muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
-end
-
-# EvalDeriv1: Full 4-term evaluation with y and z
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::EvalDeriv1) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    @inbounds begin
-        yL = itp.y[aq.idx]
-        yR = itp.y[aq.idx + 1]
-        zL = itp.z[aq.idx]
-        zR = itp.z[aq.idx + 1]
-    end
-    wyL, wyR, wzL, wzR = aq.w1
-    # Optimal FMA chain: 3 FMAs + 1 mul
-    return muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
-end
-
-# EvalDeriv2: Optimized 2-term evaluation with only z (no y-loads)
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::EvalDeriv2) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    @inbounds begin
-        zL = itp.z[aq.idx]
-        zR = itp.z[aq.idx + 1]
-    end
-    wzL, wzR = aq.w2
-    # Simple 2-term: 1 FMA
-    return muladd(wzR, zR, wzL * zL)
-end
-
-# EvalDeriv3: Optimized 2-term evaluation with only z (no y-loads)
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::EvalDeriv3) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    @inbounds begin
-        zL = itp.z[aq.idx]
-        zR = itp.z[aq.idx + 1]
-    end
-    wzL, wzR = aq.w3
-    # Simple 2-term: 1 FMA
-    return muladd(wzR, zR, wzL * zL)
-end
-
-# Generic fallback: N-th derivative of cubic is zero for N ≥ 4
-@inline function _eval_anchored_kernel(
-        itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::DerivOp{N}
-    ) where {N, Tg <: AbstractFloat, Tv, Tq <: Real}
-    @inbounds yL = itp.y[aq.idx]
-    return 0 * yL
-end
+@inline _eval_anchored_kernel(itp::CubicInterpolant, aq::_CubicAnchoredQuery, op::AbstractEvalOp) =
+    _cubic_eval_kernel(itp.y, itp.z, aq, op)
 
 # ========================================
-# Anchored Extrapolation Handlers
+# Anchored Extrapolation Handlers (thin wrappers)
 # ========================================
 
-# NoExtrap - throw DomainError
+# NoExtrap - throw DomainError with enriched bounds
 @inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::NoExtrap, ::AbstractEvalOp) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     x_min, x_max = first(itp.cache.x), last(itp.cache.x)
     throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
 end
 
-# ClampExtrap - return fill value (EvalValue) or zero (derivatives)
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, extrap::_ClampOrFill, op::AbstractEvalOp) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    y_bnd = aq.side == 0x01 ? first(itp.y) : last(itp.y)
-    return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
-end
+# ClampExtrap / FillExtrap - delegate to shared
+@inline _eval_anchored_extrap(itp::CubicInterpolant, aq::_CubicAnchoredQuery, extrap::_ClampOrFill, op::AbstractEvalOp) =
+    _cubic_eval_at_anchor(itp.y, itp.z, aq, op, extrap)
 
-# ExtendExtrap - use precomputed weights (boundary polynomial extrapolation)
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::ExtendExtrap, op::AbstractEvalOp) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    return _eval_anchored_kernel(itp, aq, op)
-end
+# ExtendExtrap - delegate to shared kernel
+@inline _eval_anchored_extrap(itp::CubicInterpolant, aq::_CubicAnchoredQuery, ::ExtendExtrap, op::AbstractEvalOp) =
+    _cubic_eval_kernel(itp.y, itp.z, aq, op)
 
-# WrapExtrap - use precomputed weights (already wrapped at anchor construction if needed)
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::WrapExtrap, op::AbstractEvalOp) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    return _eval_anchored_kernel(itp, aq, op)
-end
+# WrapExtrap - delegate to shared kernel
+@inline _eval_anchored_extrap(itp::CubicInterpolant, aq::_CubicAnchoredQuery, ::WrapExtrap, op::AbstractEvalOp) =
+    _cubic_eval_kernel(itp.y, itp.z, aq, op)
 
 # ========================================
 # Vector Anchored Query Evaluation

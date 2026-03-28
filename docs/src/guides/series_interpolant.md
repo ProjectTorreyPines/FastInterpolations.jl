@@ -52,7 +52,41 @@ All interpolation methods support `Series`:
 
 ---
 
-## Scalar Query
+## One-Shot Series (No Construction)
+
+When y-data changes every call (e.g., simulation loops), constructing a `SeriesInterpolant` each time is wasteful. The **one-shot Series API** evaluates directly — search once, anchor once, loop the kernel per y-vector:
+
+```julia
+# Direct evaluation — no interpolant construction
+vals = linear_interp(x, Series(y1, y2), 0.5)   # → Vector{Float64}
+
+# In-place (zero allocation)
+out = zeros(2)
+linear_interp!(out, x, Series(y1, y2), 0.5)
+
+# Vector query (zero allocation, in-place)
+outputs = [zeros(100) for _ in 1:2]
+linear_interp!(outputs, x, Series(y1, y2), xqs)
+```
+
+All keyword arguments work: `bc`, `extrap`, `deriv`, `search`, `hint`.
+
+All interpolation methods support one-shot Series:
+
+| Method | Example |
+|:-------|:--------|
+| `constant_interp` | `constant_interp(x, Series(y1, y2), xq)` |
+| `linear_interp` | `linear_interp(x, Series(y1, y2), xq)` |
+| `quadratic_interp` | `quadratic_interp(x, Series(y1, y2), xq)` |
+| `cubic_interp` | `cubic_interp(x, Series(y1, y2), xq)` |
+
+!!! tip "When to use One-Shot vs SeriesInterpolant"
+    - **One-shot**: y-data changes every call, or you only query once per dataset
+    - **SeriesInterpolant**: same data queried many times — coefficient solve is amortized at construction
+
+---
+
+## SeriesInterpolant: Scalar Query
 
 Evaluate all series at a single point.
 
@@ -71,7 +105,7 @@ sitp(output, 0.5; deriv=DerivOp(2)) # 2nd derivative, in-place
 
 ---
 
-## Vector Query
+## SeriesInterpolant: Vector Query
 
 Evaluate all series at multiple points.
 

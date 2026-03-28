@@ -283,45 +283,68 @@ end
     return _quadratic_anchor_dispatch(itp, aq, op, itp.extrap)
 end
 
+# ========================================
+# Shared Raw-Vector Anchor Eval
+# ========================================
+# Canonical evaluation functions that take raw y, a, d vectors (not interpolant struct).
+# Used by both interpolant anchor dispatch AND series one-shot evaluation.
+
+# Default case (extension, wrap, inbounds): direct kernel evaluation
+@inline function _quadratic_eval_at_anchor(
+        y::AbstractVector, a::AbstractVector, d::AbstractVector,
+        aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ::AbstractExtrap
+    )
+    @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
+end
+
 # No extrapolation: throw DomainError if outside domain
+@inline function _quadratic_eval_at_anchor(
+        y::AbstractVector, a::AbstractVector, d::AbstractVector,
+        aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ::NoExtrap
+    )
+    aq.side != 0x00 && throw(DomainError(aq.xq, "query point outside domain"))
+    @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
+end
+
+# Clamp/Fill extrapolation: boundary value if OOB
+@inline function _quadratic_eval_at_anchor(
+        y::AbstractVector, a::AbstractVector, d::AbstractVector,
+        aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill
+    )
+    if aq.side != 0x00
+        y_bnd = aq.side == 0x01 ? first(y) : last(y)
+        return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
+    end
+    @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
+end
+
+# ========================================
+# Interpolant Anchor Dispatch (thin wrappers)
+# ========================================
+
+# No extrapolation: enriched error message with domain bounds
 @inline function _quadratic_anchor_dispatch(
         itp::QuadraticInterpolant{T},
         aq::_QuadraticAnchoredQuery{T, Tq},
         op::O,
         ::NoExtrap
     ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
-    if aq.side != 0x00  # outside domain
+    if aq.side != 0x00
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end
     @inbounds return _quadratic_kernel(op, itp.a[aq.idx], itp.d[aq.idx], itp.y[aq.idx], aq.dL)
 end
 
-# Inside domain or extension mode: use interpolation
-@inline function _quadratic_anchor_dispatch(
-        itp::QuadraticInterpolant{T},
-        aq::_QuadraticAnchoredQuery{T, Tq},
-        op::O,
-        ::AbstractExtrap
-    ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
-    @inbounds return _quadratic_kernel(op, itp.a[aq.idx], itp.d[aq.idx], itp.y[aq.idx], aq.dL)
-end
+# Inside domain or extension mode: delegate to shared
+@inline _quadratic_anchor_dispatch(
+    itp::QuadraticInterpolant, aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ext::AbstractExtrap
+) = _quadratic_eval_at_anchor(itp.y, itp.a, itp.d, aq, op, ext)
 
-# Constant extrapolation: special handling for outside-domain
-@inline function _quadratic_anchor_dispatch(
-        itp::QuadraticInterpolant{T},
-        aq::_QuadraticAnchoredQuery{T, Tq},
-        op::O,
-        extrap::_ClampOrFill
-    ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
-    if aq.side == 0x01  # below domain
-        return _eval_extrapolation(op, first(itp.y), extrap, aq.xq)
-    elseif aq.side == 0x02  # above domain
-        return _eval_extrapolation(op, last(itp.y), extrap, aq.xq)
-    else
-        @inbounds return _quadratic_kernel(op, itp.a[aq.idx], itp.d[aq.idx], itp.y[aq.idx], aq.dL)
-    end
-end
+# Clamp/Fill: delegate to shared
+@inline _quadratic_anchor_dispatch(
+    itp::QuadraticInterpolant, aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ext::_ClampOrFill
+) = _quadratic_eval_at_anchor(itp.y, itp.a, itp.d, aq, op, ext)
 
 # ========================================
 # Vector Evaluation with Anchors

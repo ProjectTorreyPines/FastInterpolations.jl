@@ -153,4 +153,16 @@ using FastInterpolations
         vals = constant_interp(x_f, Series(y_int), 5.0; extrap=FillExtrap(0.5))
         @test vals[1] ≈ 0.5
     end
+
+    @testset "Scalar: Vector-of-Vectors" begin
+        vals = constant_interp(x, Series([y_sin, y_cos, y_exp]), 0.37)
+        ref = constant_interp(x, Series(y_sin, y_cos, y_exp), 0.37)
+        @test vals ≈ ref
+    end
+
+    @testset "DimensionMismatch on wrong output size" begin
+        s = Series(y_sin, y_cos)
+        out_wrong = zeros(5)
+        @test_throws DimensionMismatch constant_interp!(out_wrong, x, s, 0.5)
+    end
 end

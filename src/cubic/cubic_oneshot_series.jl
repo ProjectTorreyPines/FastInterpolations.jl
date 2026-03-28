@@ -149,27 +149,6 @@ end
 # ║                         SCALAR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# ─── Internal: Tuple NTuple return (zero heap alloc) ─────────────────────────
-@inline function _cubic_oneshot_series_ntuple(
-        x::AbstractVector{Tg},
-        s::Series{<:Tuple},
-        xq::Tq;
-        bc::AbstractBC = CubicFit(),
-        extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tq <: Real}
-    _validate_series_lengths(s, length(x))
-    searcher = _resolve_search(x, xq, search, hint)
-    if _is_periodic_bc(bc)
-        return _cubic_oneshot_series_periodic_ntuple(x, s, xq, bc, deriv, autocache, searcher)
-    end
-    bc_pair = _normalize_bc(bc, _series_eltype(s))
-    return _cubic_oneshot_series_bcpair_ntuple(x, s, xq, bc_pair, extrap, autocache, deriv, searcher)
-end
-
 # ─── Scalar Series → Vector return (consistent with SeriesInterpolant) ───────
 
 """

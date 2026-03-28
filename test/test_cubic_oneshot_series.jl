@@ -259,4 +259,16 @@ using FastInterpolations
         vals = cubic_interp(x, Series(y32, y64), 0.37)
         @test vals isa Vector{Float64}
     end
+
+    @testset "Scalar: Vector-of-Vectors" begin
+        vals = cubic_interp(x, Series([y_sin, y_cos, y_exp]), 0.37)
+        ref = cubic_interp(x, Series(y_sin, y_cos, y_exp), 0.37)
+        @test vals ≈ ref
+    end
+
+    @testset "DimensionMismatch on wrong output size" begin
+        s = Series(y_sin, y_cos)
+        out_wrong = zeros(5)
+        @test_throws DimensionMismatch cubic_interp!(out_wrong, x, s, 0.5)
+    end
 end

@@ -102,6 +102,11 @@ using FastInterpolations
         ref_wrap_cos = linear_interp(x, y_cos, xq_oob; extrap=WrapExtrap())
         @test vals_wrap[1] ≈ ref_wrap_sin
         @test vals_wrap[2] ≈ ref_wrap_cos
+
+        # FillExtrap
+        vals_fill = linear_interp(x, Series(y_sin, y_cos), xq_oob; extrap=FillExtrap(999.0))
+        @test vals_fill[1] ≈ 999.0
+        @test vals_fill[2] ≈ 999.0
     end
 
     @testset "Derivative ops" begin
@@ -188,5 +193,14 @@ using FastInterpolations
             return @allocated linear_interp!(out, x, s, 0.5)
         end
         @test f_alloc() == 0
+    end
+
+    @testset "ForwardDiff AD" begin
+        using ForwardDiff
+        # AD derivative should match DerivOp(1) result (analytic slope)
+        f_ad(t) = sum(linear_interp(x, Series(y_sin, y_cos), t))
+        grad = ForwardDiff.derivative(f_ad, 0.37)
+        d1 = linear_interp(x, Series(y_sin, y_cos), 0.37; deriv=DerivOp(1))
+        @test grad ≈ sum(d1)
     end
 end

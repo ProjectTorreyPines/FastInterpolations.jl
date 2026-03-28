@@ -67,6 +67,18 @@ using FastInterpolations
         vals_ext = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=ExtendExtrap())
         ref_sin_ext = quadratic_interp(x, y_sin, xq_oob; extrap=ExtendExtrap())
         @test vals_ext[1] ≈ ref_sin_ext
+
+        # WrapExtrap
+        vals_wrap = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=WrapExtrap())
+        ref_wrap_sin = quadratic_interp(x, y_sin, xq_oob; extrap=WrapExtrap())
+        ref_wrap_cos = quadratic_interp(x, y_cos, xq_oob; extrap=WrapExtrap())
+        @test vals_wrap[1] ≈ ref_wrap_sin
+        @test vals_wrap[2] ≈ ref_wrap_cos
+
+        # FillExtrap
+        vals_fill = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=FillExtrap(999.0))
+        @test vals_fill[1] ≈ 999.0
+        @test vals_fill[2] ≈ 999.0
     end
 
     @testset "Derivative ops" begin
@@ -100,5 +112,33 @@ using FastInterpolations
             ref = quadratic_interp(x, ys[k], 0.5)
             @test vals[k] ≈ ref
         end
+    end
+
+    @testset "Float32" begin
+        x32 = Float32.(x)
+        y32_sin = Float32.(y_sin)
+        y32_cos = Float32.(y_cos)
+        vals = quadratic_interp(x32, Series(y32_sin, y32_cos), 0.5f0)
+        @test vals isa NTuple{2, Float32}
+        ref_sin = quadratic_interp(x32, y32_sin, 0.5f0)
+        @test vals[1] ≈ ref_sin
+    end
+
+    @testset "Complex values" begin
+        y_c1 = complex.(y_sin, y_cos)
+        y_c2 = complex.(y_exp, -y_exp)
+        vals = quadratic_interp(x, Series(y_c1, y_c2), 0.5)
+        ref1 = quadratic_interp(x, y_c1, 0.5)
+        ref2 = quadratic_interp(x, y_c2, 0.5)
+        @test vals[1] ≈ ref1
+        @test vals[2] ≈ ref2
+    end
+
+    @testset "ForwardDiff AD" begin
+        using ForwardDiff
+        f_ad(t) = sum(quadratic_interp(x, Series(y_sin, y_cos), t))
+        grad = ForwardDiff.derivative(f_ad, 0.37)
+        d1 = quadratic_interp(x, Series(y_sin, y_cos), 0.37; deriv=DerivOp(1))
+        @test grad ≈ sum(d1)
     end
 end

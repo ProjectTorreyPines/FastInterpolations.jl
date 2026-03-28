@@ -1800,12 +1800,12 @@ _val(d::MyDuck) = d.v
                 ("cubic", cubic_interp, cubic_interp!),
             ]
             @testset "$name" begin
-                # Scalar allocating — values must be correct MyDuck instances
+                # Scalar allocating — container must be typed, not Vector{Any}
                 @testset "scalar" begin
                     result = fn(x_vec, s, xq)
                     ref = fn(x_vec, s_flat, xq)
                     @test length(result) == 2
-                    @test all(r -> r isa MyDuck, result)
+                    @test eltype(result) === MyDuck
                     @test _val.(result) ≈ ref
                 end
 
@@ -1819,13 +1819,13 @@ _val(d::MyDuck) = d.v
                     @test _val.(out) ≈ ref
                 end
 
-                # Vector allocating — values correct
+                # Vector allocating — container must be typed, not Vector{Any}
                 @testset "vector" begin
                     result = fn(x_vec, s, xq_vec)
                     ref = fn(x_vec, s_flat, xq_vec)
                     @test length(result) == 2
                     for k in 1:2
-                        @test all(r -> r isa MyDuck, result[k])
+                        @test eltype(result[k]) === MyDuck
                         @test _val.(result[k]) ≈ ref[k]
                     end
                 end
@@ -1842,11 +1842,11 @@ _val(d::MyDuck) = d.v
                     end
                 end
 
-                # DerivOp(1) — derivative should also return duck-typed values
+                # DerivOp(1) — derivative should also return typed container
                 @testset "deriv=1" begin
                     result = fn(x_vec, s, xq; deriv = DerivOp(1))
                     ref = fn(x_vec, s_flat, xq; deriv = DerivOp(1))
-                    @test all(r -> r isa MyDuck, result)
+                    @test eltype(result) === MyDuck
                     @test _val.(result) ≈ ref
                 end
             end
@@ -1858,7 +1858,7 @@ _val(d::MyDuck) = d.v
             Y_flat = hcat(y1_flat, y2_flat)
             result = linear_interp(x_vec, Series(Y), xq)
             ref = linear_interp(x_vec, Series(Y_flat), xq)
-            @test all(r -> r isa MyDuck, result)
+            @test eltype(result) === MyDuck
             @test _val.(result) ≈ ref
         end
     end

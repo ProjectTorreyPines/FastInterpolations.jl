@@ -30,7 +30,7 @@
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
     Tv_out = _value_type(_series_eltype(s), Tg)
-    output = Vector{promote_type(Tv_out, typeof(aq.dL))}(undef, K)
+    output = Vector{_series_output_type(Tv_out, Tq)}(undef, K)
     d = acquire!(pool, Tv_out, nx)
     a = acquire!(pool, Tv_out, nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
@@ -133,7 +133,7 @@ function quadratic_interp(
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tq <: Real}
     K = n_series(s)
-    Tv_out = promote_type(_value_type(_series_eltype(s), Tg), Tq)
+    Tv_out = _series_output_type(_value_type(_series_eltype(s), Tg), Tq)
     outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
     quadratic_interp!(outputs, x, s, xqs; bc, extrap, deriv, search)
     return outputs

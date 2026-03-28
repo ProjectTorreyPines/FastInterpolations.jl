@@ -140,7 +140,7 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
     K = n_series(s)
-    output = Vector{promote_type(_value_type(_series_eltype(s), Tg), Tq)}(undef, K)
+    output = Vector{_series_output_type(_value_type(_series_eltype(s), Tg), Tq)}(undef, K)
     searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
@@ -237,7 +237,7 @@ function cubic_interp(
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tq <: Real}
     K = n_series(s)
-    Tv = promote_type(_value_type(_series_eltype(s), Tg), Tq)
+    Tv = _series_output_type(_value_type(_series_eltype(s), Tg), Tq)
     outputs = [Vector{Tv}(undef, length(xqs)) for _ in 1:K]
     cubic_interp!(outputs, x, s, xqs; bc, extrap, autocache, deriv, search)
     return outputs

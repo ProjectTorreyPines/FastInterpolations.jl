@@ -46,7 +46,7 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
     aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     K = n_series(s)
-    Tv = promote_type(_series_eltype(s), typeof(aq.alpha))
+    Tv = _series_output_type(_value_type(_series_eltype(s), Tg), Tq)
     output = Vector{Tv}(undef, K)
     @inbounds for k in 1:K
         output[k] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap)
@@ -131,8 +131,7 @@ function linear_interp(
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tq <: Real}
     K = n_series(s)
-    Tv = _series_eltype(s)
-    Tv_out = promote_type(Tv, Tq)
+    Tv_out = _series_output_type(_value_type(_series_eltype(s), Tg), Tq)
     outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
     linear_interp!(outputs, x, s, xqs; extrap, deriv, search)
     return outputs

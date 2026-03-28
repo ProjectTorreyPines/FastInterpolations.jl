@@ -1861,6 +1861,25 @@ _val(d::MyDuck) = d.v
             @test eltype(result) === MyDuck
             @test _val.(result) ≈ ref
         end
+
+        # @inferred — type stability (complements eltype checks: @inferred
+        # passes even for Vector{Any} since it's concrete, but catches
+        # return-type instability that eltype checks miss)
+        @testset "@inferred" begin
+            @testset "scalar" begin
+                @inferred linear_interp(x_vec, s, xq)
+                @inferred constant_interp(x_vec, s, xq)
+                @inferred quadratic_interp(x_vec, s, xq)
+                @inferred cubic_interp(x_vec, s, xq)
+            end
+            @testset "scalar in-place" begin
+                out = Vector{MyDuck}(undef, 2)
+                @inferred linear_interp!(out, x_vec, s, xq)
+                @inferred constant_interp!(out, x_vec, s, xq)
+                @inferred quadratic_interp!(out, x_vec, s, xq)
+                @inferred cubic_interp!(out, x_vec, s, xq)
+            end
+        end
     end
 
 end

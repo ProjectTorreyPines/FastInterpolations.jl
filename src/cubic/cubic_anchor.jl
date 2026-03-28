@@ -314,58 +314,23 @@ while preserving the full Dual value for weight computation.
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
     ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
-    x_min, x_max = first(x), last(x)
+    loc = _anchor_loc(x, xq, wrap, policy)
 
-    # Use primal value for comparisons (supports ForwardDiff.Dual)
-    xq_primal = _extract_primal(xq)
-
-    # Handle wrapping (for extrap=WrapExtrap() mode)
-    # Generic _wrap_to_domain handles AD primal extraction and returns Tg
-    if wrap && (xq_primal < x_min || xq_primal >= x_max)
-        xq = _wrap_to_domain(xq, x_min, x_max)
-        xq_primal = xq  # xq is now Tg, no need for _extract_primal
-    end
-
-    # Determine side (domain position)
-    side = if xq_primal < x_min
-        0x01  # below min
-    elseif xq_primal > x_max
-        0x02  # above max
-    else
-        0x00  # inside
-    end
-
-    # Find interval and compute geometry
-    # For outside-domain points, use boundary intervals for weight computation
-    # Note: Convert primal to Tg for search_interval (requires matching types)
-    idx, xL, xR = if xq_primal < x_min
-        # Below domain: use first interval
-        @inbounds (1, x[1], x[2])
-    elseif xq_primal > x_max
-        # Above domain: use last interval
-        n = length(x)
-        @inbounds (n - 1, x[n - 1], x[n])
-    else
-        # Inside domain: use policy-based interval search
-        search_interval(policy, x, xq_primal)
-    end
-
-    # Compute geometry
+    # Compute geometry (cubic-internal concern)
     # h and inv_h are Tg (grid type)
-    # dL and dR are Tq (preserves Dual type for AD)
-    h = xR - xL
-    inv_h = inv(h)
-    dL = xq - xL  # distance from Left endpoint (Tq type)
-    dR = xR - xq  # distance from Right endpoint (Tq type)
+    # dL and dR preserve Dual type for AD (via loc.xq)
+    h = _get_h(x, loc.xR, loc.xL)
+    inv_h = _get_inv_h(x, loc.xR, loc.xL)
+    dL = loc.xq - loc.xL
+    dR = loc.xR - loc.xq
 
     # Compute weights for value and derivatives
-    # Weights will be Tq type (preserves Dual for AD)
     w0 = _compute_anchor_weights(EvalValue(), h, inv_h, dL, dR)
     w1 = _compute_anchor_weights(EvalDeriv1(), h, inv_h, dL, dR)
     w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
     w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
 
-    return _CubicAnchoredQuery{Tg, Tq}(idx, xq, side, w0, w1, w2, w3)
+    return _CubicAnchoredQuery{Tg, typeof(loc.xq)}(loc.idx, loc.xq, loc.side, w0, w1, w2, w3)
 end
 
 # ========================================

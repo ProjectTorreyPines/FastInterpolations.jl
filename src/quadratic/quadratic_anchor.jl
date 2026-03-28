@@ -205,46 +205,12 @@ while preserving the full Dual value for `dL` computation.
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
     ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
-    x_min, x_max = first(x), last(x)
+    loc = _anchor_loc(x, xq, wrap, policy)
 
-    # Use primal value for comparisons (supports ForwardDiff.Dual)
-    xq_primal = _extract_primal(xq)
+    # Compute dL: offset from interval start (preserves Dual type)
+    dL = loc.xq - loc.xL
 
-    # Handle wrapping (for extrap=WrapExtrap() mode)
-    if wrap && (xq_primal < x_min || xq_primal >= x_max)
-        xq = _wrap_to_domain(xq, x_min, x_max)
-        xq_primal = xq  # xq is now Tg, no need for _extract_primal
-    end
-
-    # Determine side (domain position)
-    side = if xq_primal < x_min
-        0x01  # below min
-    elseif xq_primal > x_max
-        0x02  # above max
-    else
-        0x00  # inside
-    end
-
-    # Find interval and compute geometry
-    # For outside-domain points, use boundary intervals
-    # Note: Convert primal to Tg for search_interval (requires matching types)
-    idx, xL, _ = if xq_primal < x_min
-        # Below domain: use first interval
-        @inbounds (1, x[1], x[2])
-    elseif xq_primal > x_max
-        # Above domain: use last interval
-        n = length(x)
-        @inbounds (n - 1, x[n - 1], x[n])
-    else
-        # Inside domain: use policy-based interval search
-        search_interval(policy, x, xq_primal)
-    end
-
-    # Compute dL: offset from interval start
-    # This preserves Dual type when xq is Dual
-    dL = xq - xL
-
-    return _QuadraticAnchoredQuery{Tg, Tq}(idx, xq, side, dL)
+    return _QuadraticAnchoredQuery{Tg, typeof(loc.xq)}(loc.idx, loc.xq, loc.side, dL)
 end
 
 # ========================================

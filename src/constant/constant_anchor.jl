@@ -196,41 +196,13 @@ Internal implementation of _anchor_query for constant interpolation.
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
     ) where {T <: AbstractFloat, P <: Searcher}
-    x_min, x_max = first(x), last(x)
+    loc = _anchor_loc(x, xq, wrap, policy)
 
-    # Handle wrapping (for extrap=WrapExtrap() mode)
-    if wrap && (xq < x_min || xq >= x_max)
-        xq = _wrap_to_domain(xq, x_min, x_max)
-    end
+    # Compute geometry (constant-internal concern)
+    h = _get_h(x, loc.xR, loc.xL)
+    dL = loc.xq - loc.xL
 
-    # Determine side (domain position)
-    side = if xq < x_min
-        0x01  # below min
-    elseif xq > x_max
-        0x02  # above max
-    else
-        0x00  # inside
-    end
-
-    # Find interval and compute geometry
-    # For outside-domain points, use boundary intervals
-    idx, xL, xR = if xq < x_min
-        # Below domain: use first interval
-        @inbounds (1, x[1], x[2])
-    elseif xq > x_max
-        # Above domain: use last interval
-        n = length(x)
-        @inbounds (n - 1, x[n - 1], x[n])
-    else
-        # Inside domain: use policy-based interval search
-        search_interval(policy, x, xq)
-    end
-
-    # Compute geometry
-    h = xR - xL
-    dL = xq - xL
-
-    return _ConstantAnchoredQuery{T}(idx, xq, side, h, dL)
+    return _ConstantAnchoredQuery{T}(loc.idx, loc.xq, loc.side, h, dL)
 end
 
 # ========================================

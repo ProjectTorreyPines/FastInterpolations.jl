@@ -87,6 +87,7 @@ Validate that all series vectors have the expected length (matching the grid).
 Throws `DimensionMismatch` on failure.
 """
 @inline function _validate_series_lengths(s::Series, n_pts::Int)
+    n_series(s) > 0 || throw(ArgumentError("Series data must contain at least one series"))
     for (k, v) in enumerate(_series_vectors(s))
         length(v) == n_pts || _throw_series_length_mismatch(k, length(v), n_pts)
     end

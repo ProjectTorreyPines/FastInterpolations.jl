@@ -56,10 +56,14 @@ end
     ) where {Tg <: AbstractFloat}
     vecs = _series_vectors(s)
     n = length(x)
-    Tv_out = _value_type(eltype(first(vecs)), Tg)
+    Tv_out = _value_type(_series_eltype(s), Tg)
+
+    # Promote first series to Tv_out so z/y_p buffers match all series (mixed-type safety)
+    y1_promoted = acquire!(pool, Tv_out, n)
+    copyto!(y1_promoted, 1, first(vecs), 1, n)
 
     # ── Phase 1: Extend grid + solve first series (establishes cache + x_p) ──
-    cache, y_p_first, z = _cubic_periodic_solve!(pool, x, first(vecs), bc, autocache)
+    cache, y_p_first, z = _cubic_periodic_solve!(pool, x, y1_promoted, bc, autocache)
     n_p = length(y_p_first)  # inclusive length (n or n+1 depending on BC mode)
 
     # Build anchor on the extended (inclusive) grid — once for all series
@@ -105,10 +109,14 @@ end
     vecs = _series_vectors(s)
     n = length(x)
     K = n_series(s)
-    Tv_out = _value_type(eltype(first(vecs)), Tg)
+    Tv_out = _value_type(_series_eltype(s), Tg)
+
+    # Promote first series to Tv_out so z/y_p buffers match all series (mixed-type safety)
+    y1_promoted = acquire!(pool, Tv_out, n)
+    copyto!(y1_promoted, 1, first(vecs), 1, n)
 
     # Phase 1: Extend grid + solve first series (establishes cache + x_p)
-    cache, y_p_first, z = _cubic_periodic_solve!(pool, x, first(vecs), bc, autocache)
+    cache, y_p_first, z = _cubic_periodic_solve!(pool, x, y1_promoted, bc, autocache)
     n_p = length(y_p_first)
 
     # Pre-compute anchors on the extended (inclusive) grid — once for all series
@@ -232,7 +240,7 @@ end
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
     K = n_series(s)
-    length(outputs) == K || _throw_series_dim_mismatch(length(outputs), K)
+    _validate_series_outputs(outputs, K, length(xqs))
     vecs = _series_vectors(s)
 
     Tv_out = _value_type(_series_eltype(s), Tg)

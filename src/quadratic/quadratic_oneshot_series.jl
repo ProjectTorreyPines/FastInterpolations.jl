@@ -96,7 +96,7 @@ end
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
     K = n_series(s)
-    length(outputs) == K || _throw_series_dim_mismatch(length(outputs), K)
+    _validate_series_outputs(outputs, K, length(xqs))
     # Domain check: NoExtrap → throws if OOB, returns InBounds(); others → pass-through
     extrap_eff = _check_domain(x, xqs, extrap)
     nx = length(x)

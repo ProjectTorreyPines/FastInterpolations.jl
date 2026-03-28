@@ -91,9 +91,7 @@ using FastInterpolations
             cubic_interp!(outputs, x, s, xqs)
             return @allocated cubic_interp!(outputs, x, s, xqs)
         end
-        # Vector path has small container allocation for z-buffer array
-        # (pool buffers reused, but [acquire!(...) for _] allocates the Vector container)
-        @test f_alloc() <= 240
+        @test f_alloc() <= ALLOC_THRESHOLD
     end
 
     @testset "Extrapolation modes" begin

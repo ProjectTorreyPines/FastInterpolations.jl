@@ -98,14 +98,16 @@ end
     spacing = _create_spacing_pooled(pool, x)
     Tv_out = _value_type(_series_eltype(s), Tg)
 
-    # Pre-compute coefficients for all series
-    ds = [acquire!(pool, Tv_out, nx) for _ in 1:K]
-    as = [acquire!(pool, Tv_out, nx - 1) for _ in 1:K]
+    # Pre-compute coefficients for all series (single pool matrix each)
+    d_mat = acquire!(pool, Tv_out, nx, K)
+    a_mat = acquire!(pool, Tv_out, nx - 1, K)
     y_buf = acquire!(pool, Tv_out, nx)
     for k in 1:K
         copyto!(y_buf, 1, vecs[k], 1, nx)
         bc_promoted = _normalize_bc(bc, first(y_buf))
-        _compute_quadratic_coeffs!(ds[k], as[k], spacing, x, y_buf, bc_promoted)
+        d_k = @view d_mat[:, k]
+        a_k = @view a_mat[:, k]
+        _compute_quadratic_coeffs!(d_k, a_k, spacing, x, y_buf, bc_promoted)
     end
 
     searcher = _resolve_search(x, xqs, search, nothing)
@@ -113,7 +115,9 @@ end
     @inbounds for j in eachindex(xqs)
         aq = _anchor_query(x, xqs[j], Val(:quadratic), wrap, searcher)
         for k in 1:K
-            outputs[k][j] = _quadratic_eval_at_anchor(vecs[k], as[k], ds[k], aq, deriv, extrap)
+            outputs[k][j] = _quadratic_eval_at_anchor(
+                vecs[k], (@view a_mat[:, k]), (@view d_mat[:, k]), aq, deriv, extrap
+            )
         end
     end
     return outputs

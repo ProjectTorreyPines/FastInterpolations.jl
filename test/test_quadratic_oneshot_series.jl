@@ -160,9 +160,7 @@ using FastInterpolations
             quadratic_interp!(outputs, x, s, xqs)
             return @allocated quadratic_interp!(outputs, x, s, xqs)
         end
-        # Vector path has small container allocation for coefficient arrays
-        # (pool buffers reused, but [acquire!(...) for _] allocates the Vector container)
-        @test f_alloc() <= 240
+        @test f_alloc() <= ALLOC_THRESHOLD
     end
 
     @testset "Type promotion: Integer series" begin

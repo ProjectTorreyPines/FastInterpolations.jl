@@ -204,13 +204,14 @@ end
     end
     Tv_out = _value_type(_series_eltype(s), Tg)
     n = length(first(vecs))
-    zs = [acquire!(pool, Tv_out, n) for _ in 1:K]
+    z_mat = acquire!(pool, Tv_out, n, K)   # single pool matrix for all z vectors
     y_buf = acquire!(pool, Tv_out, n)
     bc_pair = _normalize_bc(bc, _series_eltype(s))
     cache = _get_cubic_cache(x, bc_pair, autocache)
     for k in 1:K
         copyto!(y_buf, 1, vecs[k], 1, n)
-        _solve_system!(zs[k], cache, y_buf, bc_pair)
+        z_k = @view z_mat[:, k]
+        _solve_system!(z_k, cache, y_buf, bc_pair)
     end
 
     # Eval uses original vecs[k] (not y_buf): _solve_system! only needs y for the
@@ -219,7 +220,7 @@ end
     @inbounds for j in eachindex(xqs)
         aq = _anchor_query(cache.x, xqs[j], Val(:cubic), wrap, searcher)
         for k in 1:K
-            outputs[k][j] = _cubic_eval_at_anchor(vecs[k], zs[k], aq, deriv, extrap)
+            outputs[k][j] = _cubic_eval_at_anchor(vecs[k], (@view z_mat[:, k]), aq, deriv, extrap)
         end
     end
     return outputs

@@ -27,7 +27,6 @@ One-shot quadratic interpolation of multiple y-series at a single query point.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
     nx = length(x)
     spacing = _create_spacing_pooled(pool, x)
@@ -57,7 +56,6 @@ end
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
     nx = length(x)
     K = n_series(s)
@@ -90,9 +88,8 @@ end
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
-    @assert length(output) == n_series(s) "output length must match number of series"
+    length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     nx = length(x)
     vecs = _series_vectors(s)
     spacing = _create_spacing_pooled(pool, x)
@@ -123,10 +120,9 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
     K = n_series(s)
-    @assert length(outputs) == K "outputs length must match number of series"
+    length(outputs) == K || _throw_series_dim_mismatch(length(outputs), K)
     nx = length(x)
     vecs = _series_vectors(s)
     spacing = _create_spacing_pooled(pool, x)

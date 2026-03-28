@@ -41,7 +41,6 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → (sin(0.5), cos(0.5))
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
@@ -68,13 +67,13 @@ Returns a `Vector` when `Series` wraps a matrix or vector-of-vectors.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     K = n_series(s)
-    output = Vector{promote_type(eltype(first(vecs)), typeof(aq.alpha))}(undef, K)
+    Tv = promote_type(_series_eltype(s), typeof(aq.alpha))
+    output = Vector{Tv}(undef, K)
     @inbounds for k in 1:K
         output[k] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap)
     end
@@ -98,9 +97,8 @@ In-place one-shot linear interpolation of multiple y-series at a single query po
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
-    @assert length(output) == n_series(s) "output length must match number of series"
+    length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
@@ -129,10 +127,9 @@ function linear_interp!(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
     K = n_series(s)
-    @assert length(outputs) == K "outputs length must match number of series"
+    length(outputs) == K || _throw_series_dim_mismatch(length(outputs), K)
     vecs = _series_vectors(s)
     searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap isa WrapExtrap

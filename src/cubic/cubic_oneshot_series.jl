@@ -136,7 +136,6 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
     searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
@@ -167,7 +166,6 @@ Returns `Vector` when `Series` wraps a matrix or vector-of-vectors.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
     K = n_series(s)
     output = Vector{promote_type(_series_eltype(s), Tq)}(undef, K)
@@ -195,9 +193,8 @@ end
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
-    @assert length(output) == n_series(s) "output length must match number of series"
+    length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
@@ -223,10 +220,9 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
     K = n_series(s)
-    @assert length(outputs) == K "outputs length must match number of series"
+    length(outputs) == K || _throw_series_dim_mismatch(length(outputs), K)
     vecs = _series_vectors(s)
     searcher = _resolve_search(x, xqs, search, nothing)
 

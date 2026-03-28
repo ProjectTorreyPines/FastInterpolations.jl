@@ -131,6 +131,12 @@ Throws `DimensionMismatch` on failure.
     return nothing
 end
 
+# ─── @noinline throw helpers (keep cold error paths out of hot code) ──────────
+
+@noinline function _throw_series_dim_mismatch(got::Int, expected::Int)
+    throw(DimensionMismatch("output length $got must match number of series $expected"))
+end
+
 # ─── Core builder: Series → owned Matrix ──────────────────────────────────────
 
 """

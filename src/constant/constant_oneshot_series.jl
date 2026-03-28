@@ -27,7 +27,6 @@ One-shot constant interpolation of multiple y-series at a single query point.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:constant), extrap isa WrapExtrap, searcher)
@@ -49,7 +48,6 @@ end
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:constant), extrap isa WrapExtrap, searcher)
@@ -77,9 +75,8 @@ end
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
-    @assert length(output) == n_series(s) "output length must match number of series"
+    length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:constant), extrap isa WrapExtrap, searcher)
     x_last = Tg(last(x))
@@ -104,10 +101,9 @@ function constant_interp!(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    x = _to_float(x, Tg)
     _validate_series_lengths(s, length(x))
     K = n_series(s)
-    @assert length(outputs) == K "outputs length must match number of series"
+    length(outputs) == K || _throw_series_dim_mismatch(length(outputs), K)
     vecs = _series_vectors(s)
     searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap isa WrapExtrap

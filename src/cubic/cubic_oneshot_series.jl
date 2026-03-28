@@ -63,8 +63,9 @@ end
 # ║                      INTERNAL: PERIODIC CORE                             ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# Periodic: reuse _cubic_periodic_solve! per y-vector.
-# Each call extends exclusive→inclusive grid, solves, returns (cache, y_p, z).
+# Periodic: extend grid ONCE, then solve+eval per y-vector reusing buffers.
+# Phase 1: _cubic_periodic_solve! for first series → establishes cache, x_p, y_p, z
+# Phase 2: reuse y_p + z for remaining series (only y-data changes, no grid re-extension)
 @inline @with_pool pool function _cubic_oneshot_series_periodic!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -76,16 +77,37 @@ end
         searcher
     ) where {Tg <: AbstractFloat}
     vecs = _series_vectors(s)
-    # Solve first series to get cache and extended grid
-    cache, y_p_first, z_first = _cubic_periodic_solve!(pool, x, first(vecs), bc, autocache)
-    # Build anchor on the extended (inclusive) grid
-    aq = _anchor_query(cache.x, xq, Val(:cubic), true, searcher)
-    output[1] = _cubic_eval_kernel(y_p_first, z_first, aq, op)
+    n = length(x)
+    Tv = eltype(first(vecs))
 
-    # Solve remaining series reusing same cache
+    # ── Phase 1: Extend grid + solve first series (establishes cache + x_p) ──
+    cache, y_p_first, z = _cubic_periodic_solve!(pool, x, first(vecs), bc, autocache)
+    n_p = length(y_p_first)  # inclusive length (n or n+1 depending on BC mode)
+
+    # Build anchor on the extended (inclusive) grid — once for all series
+    aq = _anchor_query(cache.x, xq, Val(:cubic), true, searcher)
+    output[1] = _cubic_eval_kernel(y_p_first, z, aq, op)
+
+    # ── Phase 2: Reuse z buffer for remaining series (no grid re-extension) ──
+    # For exclusive BC: y_p_first is a pool buffer of length n+1, safe to overwrite
+    # For inclusive BC: y_p_first IS the user's vector, must NOT mutate it
+    is_exclusive = bc isa PeriodicBC{:exclusive}
+    y_p = if is_exclusive
+        y_p_first  # pool buffer, safe to reuse
+    else
+        acquire!(pool, Tv, n_p)  # separate buffer for inclusive BC
+    end
+
     for k in 2:length(output)
-        _, y_p_k, z_k = _cubic_periodic_solve!(pool, x, vecs[k], bc, autocache)
-        @inbounds output[k] = _cubic_eval_kernel(y_p_k, z_k, aq, op)
+        if is_exclusive
+            @inbounds copyto!(y_p, 1, vecs[k], 1, n)
+            @inbounds y_p[n + 1] = vecs[k][1]
+        else
+            @inbounds copyto!(y_p, 1, vecs[k], 1, n_p)
+        end
+        _check_periodic_endpoints(bc, y_p)
+        _solve_system!(z, cache, y_p, cache.bc_config)
+        @inbounds output[k] = _cubic_eval_kernel(y_p, z, aq, op)
     end
     return output
 end

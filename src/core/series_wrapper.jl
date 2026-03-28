@@ -120,7 +120,7 @@ Zero-allocation for all forms (Tuple, Vector-of-Vectors, Matrix via `eachcol`).
 Validate that all series vectors have the expected length (matching the grid).
 Throws `DimensionMismatch` on failure.
 """
-function _validate_series_lengths(s::Series, n_pts::Int)
+@inline function _validate_series_lengths(s::Series, n_pts::Int)
     for (k, v) in enumerate(_series_vectors(s))
         length(v) == n_pts || throw(
             DimensionMismatch(

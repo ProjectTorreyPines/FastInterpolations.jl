@@ -1,29 +1,11 @@
 # ============================================================================
 # Series input wrapper — dispatch disambiguator for multi-series interpolation
 # ============================================================================
-# Series{D, S} eliminates dispatch ambiguity between:
+# Series{D} eliminates dispatch ambiguity between:
 #   - Vector{<:AbstractVector} as series input (multiple y-series sharing a grid)
 #   - Vector{<:AbstractVector} as vector-valued data (e.g., Vector{SVector{3,Float64}})
 #
 # The wrapper is consumed at construction time and never stored in the interpolant.
-# The strategy parameter S controls evaluation strategy for one-shot vs interpolant paths.
-
-# ─── Strategy types ──────────────────────────────────────────────────────────
-# Zero-size singletons for dispatch.
-# AutoStrategy: one-shot → loop-kernel, interpolant → SIMD matrix (default)
-# LoopStrategy: force loop-kernel in all paths
-# SIMDStrategy: force matrix SIMD in all paths (future)
-
-abstract type AbstractSeriesStrategy end
-
-"""Default strategy: loop-kernel for one-shot evaluation, SIMD matrix for interpolant construction."""
-struct AutoStrategy <: AbstractSeriesStrategy end
-
-"""Force loop-kernel strategy: search once, evaluate kernel per y-vector."""
-struct LoopStrategy <: AbstractSeriesStrategy end
-
-"""Force SIMD matrix strategy: transpose to point-contiguous layout. Reserved for future use."""
-struct SIMDStrategy <: AbstractSeriesStrategy end
 
 # ─── Series type ─────────────────────────────────────────────────────────────
 
@@ -31,7 +13,6 @@ struct SIMDStrategy <: AbstractSeriesStrategy end
     Series(y1, y2, ...)                     # varargs
     Series([y1, y2, ...])                   # vector of vectors
     Series(Y::AbstractMatrix)               # matrix (columns = series)
-    Series(...; strategy=AutoStrategy())    # explicit strategy
 
 Input wrapper for multi-series interpolation. Wraps series data to disambiguate
 from vector-valued interpolation inputs.
@@ -39,49 +20,34 @@ from vector-valued interpolation inputs.
 The wrapped data is not copied or promoted — type promotion is handled by the
 interpolation constructor.
 
-# Strategy
-- `AutoStrategy()` (default): loop-kernel for one-shot, SIMD matrix for interpolant
-- `LoopStrategy()`: force loop-kernel strategy
-- `SIMDStrategy()`: force SIMD matrix strategy (reserved for future use)
-
 # Examples
 ```julia
-# One-shot evaluation (Strategy B: search once, kernel per y)
-linear_interp(x, Series(y_sin, y_cos), 0.5)  # → (sin(0.5), cos(0.5))
+# One-shot evaluation (search once, kernel per y)
+linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
 
-# Interpolant construction (SIMD matrix path)
+# Interpolant construction
 itp = linear_interp(x, Series(y_sin, y_cos))
 itp(0.5)  # → [sin(0.5), cos(0.5)]
-
-# Explicit strategy override
-cubic_interp(x, Series(y1, y2; strategy=LoopStrategy()), 0.5)
 ```
 """
-struct Series{D, S <: AbstractSeriesStrategy}
+struct Series{D}
     data::D
-    strategy::S
 end
 
 # Single vector: Series(y1) — single series (no element type constraint for duck-typing)
-function Series(y::AbstractVector; strategy::AbstractSeriesStrategy = AutoStrategy())
-    return Series{typeof((y,)), typeof(strategy)}((y,), strategy)
-end
+Series(y::AbstractVector) = Series{typeof((y,))}((y,))
 
 # Varargs: Series(y1, y2, y3)
-function Series(y1::AbstractVector, y2::AbstractVector, rest::AbstractVector...; strategy::AbstractSeriesStrategy = AutoStrategy())
+function Series(y1::AbstractVector, y2::AbstractVector, rest::AbstractVector...)
     data = (y1, y2, rest...)
-    return Series{typeof(data), typeof(strategy)}(data, strategy)
+    return Series{typeof(data)}(data)
 end
 
 # Vector of vectors: Series([y1, y2, y3])
-function Series(ys::AbstractVector{<:AbstractVector}; strategy::AbstractSeriesStrategy = AutoStrategy())
-    return Series{typeof(ys), typeof(strategy)}(ys, strategy)
-end
+Series(ys::AbstractVector{<:AbstractVector}) = Series{typeof(ys)}(ys)
 
 # Matrix: Series(Y) where columns = series
-function Series(Y::AbstractMatrix; strategy::AbstractSeriesStrategy = AutoStrategy())
-    return Series{typeof(Y), typeof(strategy)}(Y, strategy)
-end
+Series(Y::AbstractMatrix) = Series{typeof(Y)}(Y)
 
 # ─── Series data access helpers ───────────────────────────────────────────────
 #

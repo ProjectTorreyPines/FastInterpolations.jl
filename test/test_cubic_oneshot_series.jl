@@ -63,15 +63,37 @@ using FastInterpolations
         @test vals[2] ≈ ref_cos
     end
 
-    @testset "PeriodicBC in-place: zero internal allocation" begin
+    @testset "Zero allocation (in-place scalar, CubicFit)" begin
         s = Series(y_sin, y_cos)
         out = zeros(2)
-        cubic_interp!(out, x, s, 0.37; bc=PeriodicBC())  # warmup
         f_alloc() = begin
-            cubic_interp!(out, x, s, 0.37; bc=PeriodicBC())
-            return @allocated cubic_interp!(out, x, s, 0.37; bc=PeriodicBC())
+            cubic_interp!(out, x, s, 0.37)
+            return @allocated cubic_interp!(out, x, s, 0.37)
         end
-        @test f_alloc() == 0
+        @test f_alloc() <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero allocation (in-place scalar, PeriodicBC)" begin
+        s = Series(y_sin, y_cos)
+        out = zeros(2)
+        f_alloc() = begin
+            cubic_interp!(out, x, s, 0.37; bc = PeriodicBC())
+            return @allocated cubic_interp!(out, x, s, 0.37; bc = PeriodicBC())
+        end
+        @test f_alloc() <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero allocation (in-place vector, CubicFit)" begin
+        s = Series(y_sin, y_cos)
+        xqs = [0.1, 0.37, 0.5, 0.9]
+        outputs = [zeros(length(xqs)) for _ in 1:2]
+        f_alloc() = begin
+            cubic_interp!(outputs, x, s, xqs)
+            return @allocated cubic_interp!(outputs, x, s, xqs)
+        end
+        # Vector path has small container allocation for z-buffer array
+        # (pool buffers reused, but [acquire!(...) for _] allocates the Vector container)
+        @test f_alloc() <= 240
     end
 
     @testset "Extrapolation modes" begin

@@ -13,27 +13,6 @@
 # ║                         SCALAR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# ─── Tuple Series → NTuple return (compile-time K) ───────────────────────────
-
-# ─── Internal: Tuple NTuple return (zero heap alloc) ─────────────────────────
-# Not a public API — retained as internal for future NTuple-returning path.
-@inline function _linear_oneshot_series_ntuple(
-        x::AbstractVector{Tg},
-        s::Series{<:Tuple},
-        xq::Tq;
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tq <: Real}
-    _validate_series_lengths(s, length(x))
-    searcher = _resolve_search(x, xq, search, hint)
-    aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
-    vecs = _series_vectors(s)
-    K = n_series(s)
-    return ntuple(k -> _linear_eval_at_anchor(vecs[k], aq, deriv, extrap), Val(K))
-end
-
 # ─── Scalar Series → Vector return (consistent with SeriesInterpolant) ───────
 
 """

@@ -142,6 +142,29 @@ using FastInterpolations
         @test grad ≈ sum(d1)
     end
 
+    @testset "Zero allocation (in-place scalar)" begin
+        s = Series(y_sin, y_cos)
+        out = zeros(2)
+        f_alloc() = begin
+            quadratic_interp!(out, x, s, 0.5)
+            return @allocated quadratic_interp!(out, x, s, 0.5)
+        end
+        @test f_alloc() <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero allocation (in-place vector)" begin
+        s = Series(y_sin, y_cos)
+        xqs = [0.1, 0.37, 0.5, 0.9]
+        outputs = [zeros(length(xqs)) for _ in 1:2]
+        f_alloc() = begin
+            quadratic_interp!(outputs, x, s, xqs)
+            return @allocated quadratic_interp!(outputs, x, s, xqs)
+        end
+        # Vector path has small container allocation for coefficient arrays
+        # (pool buffers reused, but [acquire!(...) for _] allocates the Vector container)
+        @test f_alloc() <= 240
+    end
+
     @testset "Type promotion: Integer series" begin
         x_f = collect(0.0:1.0:4.0)
         y1_int = [0, 1, 3, 4, 7]

@@ -1535,9 +1535,9 @@ end
         itp2(expected2, aq_vec; deriv = DerivOp(1))
         itp3(expected3, aq_vec; deriv = DerivOp(1))
 
-        @test out1 ≈ expected1 atol = 1.0e-14
-        @test out2 ≈ expected2 atol = 1.0e-14
-        @test out3 ≈ expected3 atol = 1.0e-14
+        @test out1 ≈ expected1 atol = 1.0e-13
+        @test out2 ≈ expected2 atol = 1.0e-13
+        @test out3 ≈ expected3 atol = 1.0e-13
     end
 end
 

@@ -10,26 +10,6 @@
 # ║                         SCALAR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# ─── Internal: Tuple NTuple return (zero heap alloc) ─────────────────────────
-@inline function _constant_oneshot_series_ntuple(
-        x::AbstractVector{Tg},
-        s::Series{<:Tuple},
-        xq::Tq;
-        side::AbstractSide = NearestSide(),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tq <: Real}
-    _validate_series_lengths(s, length(x))
-    searcher = _resolve_search(x, xq, search, hint)
-    aq = _anchor_query(x, xq, Val(:constant), extrap isa WrapExtrap, searcher)
-    x_last = Tg(last(x))
-    vecs = _series_vectors(s)
-    K = n_series(s)
-    return ntuple(k -> _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap), Val(K))
-end
-
 # ─── Scalar Series → Vector return (consistent with SeriesInterpolant) ───────
 
 @inline function constant_interp(

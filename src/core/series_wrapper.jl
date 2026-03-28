@@ -122,13 +122,15 @@ Throws `DimensionMismatch` on failure.
 """
 @inline function _validate_series_lengths(s::Series, n_pts::Int)
     for (k, v) in enumerate(_series_vectors(s))
-        length(v) == n_pts || throw(
-            DimensionMismatch(
-                "Series vector $k has length $(length(v)), expected $n_pts (length of x)"
-            )
-        )
+        length(v) == n_pts || _throw_series_length_mismatch(k, length(v), n_pts)
     end
     return nothing
+end
+
+@noinline function _throw_series_length_mismatch(k::Int, got::Int, expected::Int)
+    throw(DimensionMismatch(
+        "Series vector $k has length $got, expected $expected (length of x)"
+    ))
 end
 
 # ─── @noinline throw helpers (keep cold error paths out of hot code) ──────────

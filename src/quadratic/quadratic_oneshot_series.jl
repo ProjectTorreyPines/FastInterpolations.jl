@@ -10,36 +10,6 @@
 # ║                         SCALAR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# ─── Internal: Tuple NTuple return (zero heap alloc) ─────────────────────────
-@inline @with_pool pool function _quadratic_oneshot_series_ntuple(
-        x::AbstractVector{Tg},
-        s::Series{<:Tuple},
-        xq::Tq;
-        bc::QuadraticBC = Left(QuadraticFit()),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tq <: Real}
-    _validate_series_lengths(s, length(x))
-    nx = length(x)
-    spacing = _create_spacing_pooled(pool, x)
-    searcher = _resolve_search(x, xq, search, hint)
-    aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
-    vecs = _series_vectors(s)
-    K = n_series(s)
-    Tv_out = _value_type(eltype(first(vecs)), Tg)
-    d = acquire!(pool, Tv_out, nx)
-    a = acquire!(pool, Tv_out, nx - 1)
-    y_buf = acquire!(pool, Tv_out, nx)
-    return ntuple(Val(K)) do k
-        copyto!(y_buf, 1, vecs[k], 1, nx)
-        bc_promoted = _normalize_bc(bc, first(y_buf))
-        _compute_quadratic_coeffs!(d, a, spacing, x, y_buf, bc_promoted)
-        _quadratic_eval_at_anchor(y_buf, a, d, aq, deriv, extrap)
-    end
-end
-
 # ─── Scalar Series → Vector return (consistent with SeriesInterpolant) ───────
 
 @inline @with_pool pool function quadratic_interp(

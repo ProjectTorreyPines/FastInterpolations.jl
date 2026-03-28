@@ -14,20 +14,24 @@ FastInterpolations.jl offers several API styles optimized for different **data d
     - Use when `x` and `y` are constant, but you query at many different points over time.
     - Pre-computes coefficients once for faster reuse.
 
+- **One-shot Series** (e.g., `linear_interp(x, Series(y1, y2), xq)`):
+    - **Best for:** Dynamic data with multiple series on the same grid.
+    - No interpolant construction — search once, eval per y-vector.
+    - **Zero allocation** for in-place paths.
+
 - **SeriesInterpolant** (e.g., `sitp = cubic_interp(x, Series(y1, y2))`):
-    - **Best for:** Multiple Series with shared x-grid.
+    - **Best for:** Static data with repeated queries on the same series.
     - Uses unified matrix storage with **SIMD-optimized** point-contiguous layout.
-    - **10-120× faster** for scalar queries due to cache locality.
-    - For vector queries with very small series (n ≤ 2-4), may be marginally slower than manual loop.
+    - **10-120× faster** for repeated scalar queries due to cache locality and amortized coefficient solve.
 
 ### Quick Decision Matrix
 
 | Scenario | Y Changes? | Series Count | Recommended API |
 |:---------|:----------:|:------------:|:----------------|
-| Simulation loop | Yes | 1-3 | **One-shot** |
-| Simulation loop | Yes | 4+ | **SeriesInterpolant** |
+| Simulation loop | Yes | 1 | **One-shot** |
+| Simulation loop | Yes | 2+ | **One-shot Series** |
 | Static lookup | No | 1 | **Interpolant** |
-| Static lookup | No | 2+ | **SeriesInterpolant** |
+| Static lookup, repeated queries | No | 2+ | **SeriesInterpolant** |
 | Scalar-heavy loop | No | 2+ | **SeriesInterpolant** (10-120× faster) |
 
 

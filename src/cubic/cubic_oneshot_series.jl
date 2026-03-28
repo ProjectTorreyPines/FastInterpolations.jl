@@ -181,6 +181,8 @@ end
 # ║                         VECTOR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
+# Series-outer loop: pre-compute anchors once, then solve+eval per series.
+# O(n + Q) memory (single z buffer + anchor vector) — search done once for all series.
 @with_pool pool function cubic_interp!(
         outputs::AbstractVector{<:AbstractVector},
         x::AbstractVector{Tg},
@@ -196,31 +198,31 @@ end
     K = n_series(s)
     length(outputs) == K || _throw_series_dim_mismatch(length(outputs), K)
     vecs = _series_vectors(s)
-    searcher = _resolve_search(x, xqs, search, nothing)
 
-    # Solve z for each y-vector upfront (need all z for the query loop)
     if _is_periodic_bc(bc)
         throw(ArgumentError("Vector query with PeriodicBC not yet supported for one-shot Series. Use pre-built interpolant."))
     end
     Tv_out = _value_type(_series_eltype(s), Tg)
     n = length(first(vecs))
-    z_mat = acquire!(pool, Tv_out, n, K)   # single pool matrix for all z vectors
-    y_buf = acquire!(pool, Tv_out, n)
     bc_pair = _normalize_bc(bc, _series_eltype(s))
     cache = _get_cubic_cache(x, bc_pair, autocache)
-    for k in 1:K
-        copyto!(y_buf, 1, vecs[k], 1, n)
-        z_k = @view z_mat[:, k]
-        _solve_system!(z_k, cache, y_buf, bc_pair)
-    end
 
-    # Eval uses original vecs[k] (not y_buf): _solve_system! only needs y for the
-    # tridiagonal solve scratch; the kernel reads y[idx]/y[idx+1] from the original data.
-    wrap = extrap isa WrapExtrap
-    @inbounds for j in eachindex(xqs)
-        aq = _anchor_query(cache.x, xqs[j], Val(:cubic), wrap, searcher)
-        for k in 1:K
-            outputs[k][j] = _cubic_eval_at_anchor(vecs[k], (@view z_mat[:, k]), aq, deriv, extrap)
+    # Pre-compute anchors once (search Q times, not K×Q)
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg, Tq}, length(xqs))
+    searcher = _resolve_search(cache.x, xqs, search, nothing)
+    _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), extrap isa WrapExtrap, searcher)
+
+    z = acquire!(pool, Tv_out, n)
+    y_buf = acquire!(pool, Tv_out, n)
+
+    # Solve z for series k, then eval at all query points before moving to k+1.
+    # Eval uses original vecs[k] (not y_buf): _solve_system! mutates y_buf as
+    # tridiagonal scratch; the kernel reads y[idx]/y[idx+1] from the original data.
+    @inbounds for k in 1:K
+        copyto!(y_buf, 1, vecs[k], 1, n)
+        _solve_system!(z, cache, y_buf, bc_pair)
+        for j in eachindex(xqs)
+            outputs[k][j] = _cubic_eval_at_anchor(vecs[k], z, aq_vec[j], deriv, extrap)
         end
     end
     return outputs

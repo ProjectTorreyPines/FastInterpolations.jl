@@ -80,6 +80,8 @@ end
 # ║                         VECTOR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
+# Series-outer loop: pre-compute anchors once, then solve+eval per series.
+# O(n + Q) memory (single d/a buffer + anchor vector) — search done once for all series.
 @with_pool pool function quadratic_interp!(
         outputs::AbstractVector{<:AbstractVector},
         x::AbstractVector{Tg},
@@ -98,26 +100,20 @@ end
     spacing = _create_spacing_pooled(pool, x)
     Tv_out = _value_type(_series_eltype(s), Tg)
 
-    # Pre-compute coefficients for all series (single pool matrix each)
-    d_mat = acquire!(pool, Tv_out, nx, K)
-    a_mat = acquire!(pool, Tv_out, nx - 1, K)
+    # Pre-compute anchors once (search Q times, not K×Q)
+    aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg, Tq}, length(xqs))
+    searcher = _resolve_search(x, xqs, search, nothing)
+    _fill_anchors!(aq_vec, x, xqs, Val(:quadratic), extrap isa WrapExtrap, searcher)
+
+    d = acquire!(pool, Tv_out, nx)
+    a = acquire!(pool, Tv_out, nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
-    for k in 1:K
+    @inbounds for k in 1:K
         copyto!(y_buf, 1, vecs[k], 1, nx)
         bc_promoted = _normalize_bc(bc, first(y_buf))
-        d_k = @view d_mat[:, k]
-        a_k = @view a_mat[:, k]
-        _compute_quadratic_coeffs!(d_k, a_k, spacing, x, y_buf, bc_promoted)
-    end
-
-    searcher = _resolve_search(x, xqs, search, nothing)
-    wrap = extrap isa WrapExtrap
-    @inbounds for j in eachindex(xqs)
-        aq = _anchor_query(x, xqs[j], Val(:quadratic), wrap, searcher)
-        for k in 1:K
-            outputs[k][j] = _quadratic_eval_at_anchor(
-                vecs[k], (@view a_mat[:, k]), (@view d_mat[:, k]), aq, deriv, extrap
-            )
+        _compute_quadratic_coeffs!(d, a, spacing, x, y_buf, bc_promoted)
+        for j in eachindex(xqs)
+            outputs[k][j] = _quadratic_eval_at_anchor(vecs[k], a, d, aq_vec[j], deriv, extrap)
         end
     end
     return outputs

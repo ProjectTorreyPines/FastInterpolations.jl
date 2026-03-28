@@ -23,6 +23,7 @@
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
+    _check_domain(x, xq, extrap)
     nx = length(x)
     K = n_series(s)
     vecs = _series_vectors(s)
@@ -58,6 +59,7 @@ end
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
+    _check_domain(x, xq, extrap)
     nx = length(x)
     vecs = _series_vectors(s)
     spacing = _create_spacing_pooled(pool, x)
@@ -95,6 +97,8 @@ end
     _validate_series_lengths(s, length(x))
     K = n_series(s)
     length(outputs) == K || _throw_series_dim_mismatch(length(outputs), K)
+    # Domain check: NoExtrap → throws if OOB, returns InBounds(); others → pass-through
+    extrap_eff = _check_domain(x, xqs, extrap)
     nx = length(x)
     vecs = _series_vectors(s)
     spacing = _create_spacing_pooled(pool, x)
@@ -103,7 +107,7 @@ end
     # Pre-compute anchors once (search Q times, not K×Q)
     aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg, Tq}, length(xqs))
     searcher = _resolve_search(x, xqs, search, nothing)
-    _fill_anchors!(aq_vec, x, xqs, Val(:quadratic), extrap isa WrapExtrap, searcher)
+    _fill_anchors!(aq_vec, x, xqs, Val(:quadratic), extrap_eff isa WrapExtrap, searcher)
 
     d = acquire!(pool, Tv_out, nx)
     a = acquire!(pool, Tv_out, nx - 1)
@@ -113,7 +117,7 @@ end
         bc_promoted = _normalize_bc(bc, first(y_buf))
         _compute_quadratic_coeffs!(d, a, spacing, x, y_buf, bc_promoted)
         for j in eachindex(xqs)
-            outputs[k][j] = _quadratic_eval_at_anchor(vecs[k], a, d, aq_vec[j], deriv, extrap)
+            outputs[k][j] = _quadratic_eval_at_anchor(vecs[k], a, d, aq_vec[j], deriv, extrap_eff)
         end
     end
     return outputs

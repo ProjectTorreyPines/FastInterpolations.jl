@@ -42,6 +42,7 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
+    _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
@@ -73,6 +74,7 @@ In-place one-shot linear interpolation of multiple y-series at a single query po
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
+    _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
@@ -104,13 +106,15 @@ function linear_interp!(
     _validate_series_lengths(s, length(x))
     K = n_series(s)
     length(outputs) == K || _throw_series_dim_mismatch(length(outputs), K)
+    # Domain check: NoExtrap → throws if OOB, returns InBounds(); others → pass-through
+    extrap_eff = _check_domain(x, xqs, extrap)
     vecs = _series_vectors(s)
     searcher = _resolve_search(x, xqs, search, nothing)
-    wrap = extrap isa WrapExtrap
+    wrap = extrap_eff isa WrapExtrap
     @inbounds for j in eachindex(xqs)
         aq = _anchor_query(x, xqs[j], Val(:linear), wrap, searcher)
         for k in 1:K
-            outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap)
+            outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap_eff)
         end
     end
     return outputs

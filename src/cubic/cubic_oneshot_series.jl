@@ -194,6 +194,7 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
+    _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     K = n_series(s)
     output = Vector{_series_output_type(_value_type(_series_eltype(s), Tg), Tq)}(undef, K)
     searcher = _resolve_search(x, xq, search, hint)
@@ -222,6 +223,7 @@ end
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
+    _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
@@ -261,13 +263,16 @@ end
         return _cubic_oneshot_series_periodic_vec!(pool, outputs, x, s, xqs, bc, deriv, autocache, search)
     end
 
+    # Domain check: NoExtrap → throws if OOB, returns InBounds(); others → pass-through
+    extrap_eff = _check_domain(x, xqs, extrap)
+
     bc_pair = _normalize_bc(bc, _series_eltype(s))
     cache = _get_cubic_cache(x, bc_pair, autocache)
 
     # Pre-compute anchors once (search Q times, not K×Q)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg, Tq}, length(xqs))
     searcher = _resolve_search(cache.x, xqs, search, nothing)
-    _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), extrap isa WrapExtrap, searcher)
+    _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), extrap_eff isa WrapExtrap, searcher)
 
     z = acquire!(pool, Tv_out, n)
     y_buf = acquire!(pool, Tv_out, n)
@@ -279,7 +284,7 @@ end
         copyto!(y_buf, 1, vecs[k], 1, n)
         _solve_system!(z, cache, y_buf, bc_pair)
         for j in eachindex(xqs)
-            outputs[k][j] = _cubic_eval_at_anchor(vecs[k], z, aq_vec[j], deriv, extrap)
+            outputs[k][j] = _cubic_eval_at_anchor(vecs[k], z, aq_vec[j], deriv, extrap_eff)
         end
     end
     return outputs

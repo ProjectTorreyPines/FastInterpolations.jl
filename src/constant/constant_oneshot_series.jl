@@ -23,6 +23,7 @@
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
+    _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:constant), extrap isa WrapExtrap, searcher)
     x_last = Tg(last(x))
@@ -51,6 +52,7 @@ end
     ) where {Tg <: AbstractFloat, Tq <: Real}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
+    _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:constant), extrap isa WrapExtrap, searcher)
     x_last = Tg(last(x))
@@ -78,14 +80,16 @@ function constant_interp!(
     _validate_series_lengths(s, length(x))
     K = n_series(s)
     length(outputs) == K || _throw_series_dim_mismatch(length(outputs), K)
+    # Domain check: NoExtrap → throws if OOB, returns InBounds(); others → pass-through
+    extrap_eff = _check_domain(x, xqs, extrap)
     vecs = _series_vectors(s)
     searcher = _resolve_search(x, xqs, search, nothing)
-    wrap = extrap isa WrapExtrap
+    wrap = extrap_eff isa WrapExtrap
     x_last = Tg(last(x))
     @inbounds for j in eachindex(xqs)
         aq = _anchor_query(x, xqs[j], Val(:constant), wrap, searcher)
         for k in 1:K
-            outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap)
+            outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap_eff)
         end
     end
     return outputs

@@ -95,9 +95,11 @@ Throws `DimensionMismatch` on failure.
 end
 
 @noinline function _throw_series_length_mismatch(k::Int, got::Int, expected::Int)
-    throw(DimensionMismatch(
-        "Series vector $k has length $got, expected $expected (length of x)"
-    ))
+    throw(
+        DimensionMismatch(
+            "Series vector $k has length $got, expected $expected (length of x)"
+        )
+    )
 end
 
 # ─── @noinline throw helpers (keep cold error paths out of hot code) ──────────

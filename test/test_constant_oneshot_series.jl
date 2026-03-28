@@ -47,8 +47,8 @@ using FastInterpolations
 
     @testset "Side options" begin
         for side_opt in [NearestSide(), LeftSide(), RightSide()]
-            sitp_s = constant_interp(x, Series(y_sin, y_cos); side=side_opt)
-            vals = constant_interp(x, Series(y_sin, y_cos), 0.37; side=side_opt)
+            sitp_s = constant_interp(x, Series(y_sin, y_cos); side = side_opt)
+            vals = constant_interp(x, Series(y_sin, y_cos), 0.37; side = side_opt)
             ref = sitp_s(0.37)
             @test collect(vals) ≈ ref
         end
@@ -58,25 +58,25 @@ using FastInterpolations
         xq_oob = 1.5
         @test_throws DomainError constant_interp(x, Series(y_sin, y_cos), xq_oob)
 
-        vals_clamp = constant_interp(x, Series(y_sin, y_cos), xq_oob; extrap=ClampExtrap())
-        ref_sin = constant_interp(x, y_sin, xq_oob; extrap=ClampExtrap())
-        ref_cos = constant_interp(x, y_cos, xq_oob; extrap=ClampExtrap())
+        vals_clamp = constant_interp(x, Series(y_sin, y_cos), xq_oob; extrap = ClampExtrap())
+        ref_sin = constant_interp(x, y_sin, xq_oob; extrap = ClampExtrap())
+        ref_cos = constant_interp(x, y_cos, xq_oob; extrap = ClampExtrap())
         @test vals_clamp[1] ≈ ref_sin
         @test vals_clamp[2] ≈ ref_cos
 
-        vals_ext = constant_interp(x, Series(y_sin, y_cos), xq_oob; extrap=ExtendExtrap())
-        ref_sin_ext = constant_interp(x, y_sin, xq_oob; extrap=ExtendExtrap())
+        vals_ext = constant_interp(x, Series(y_sin, y_cos), xq_oob; extrap = ExtendExtrap())
+        ref_sin_ext = constant_interp(x, y_sin, xq_oob; extrap = ExtendExtrap())
         @test vals_ext[1] ≈ ref_sin_ext
 
         # WrapExtrap
-        vals_wrap = constant_interp(x, Series(y_sin, y_cos), xq_oob; extrap=WrapExtrap())
-        ref_wrap_sin = constant_interp(x, y_sin, xq_oob; extrap=WrapExtrap())
-        ref_wrap_cos = constant_interp(x, y_cos, xq_oob; extrap=WrapExtrap())
+        vals_wrap = constant_interp(x, Series(y_sin, y_cos), xq_oob; extrap = WrapExtrap())
+        ref_wrap_sin = constant_interp(x, y_sin, xq_oob; extrap = WrapExtrap())
+        ref_wrap_cos = constant_interp(x, y_cos, xq_oob; extrap = WrapExtrap())
         @test vals_wrap[1] ≈ ref_wrap_sin
         @test vals_wrap[2] ≈ ref_wrap_cos
 
         # FillExtrap
-        vals_fill = constant_interp(x, Series(y_sin, y_cos), xq_oob; extrap=FillExtrap(999.0))
+        vals_fill = constant_interp(x, Series(y_sin, y_cos), xq_oob; extrap = FillExtrap(999.0))
         @test vals_fill[1] ≈ 999.0
         @test vals_fill[2] ≈ 999.0
     end
@@ -84,9 +84,9 @@ using FastInterpolations
     @testset "Derivative ops" begin
         for d in 0:2
             op = DerivOp(d)
-            vals = constant_interp(x, Series(y_sin, y_cos), 0.37; deriv=op)
-            ref_sin = constant_interp(x, y_sin, 0.37; deriv=op)
-            ref_cos = constant_interp(x, y_cos, 0.37; deriv=op)
+            vals = constant_interp(x, Series(y_sin, y_cos), 0.37; deriv = op)
+            ref_sin = constant_interp(x, y_sin, 0.37; deriv = op)
+            ref_cos = constant_interp(x, y_cos, 0.37; deriv = op)
             @test vals[1] ≈ ref_sin
             @test vals[2] ≈ ref_cos
         end
@@ -150,7 +150,7 @@ using FastInterpolations
     @testset "Type promotion: FillExtrap with Integer series" begin
         x_f = collect(0.0:1.0:4.0)
         y_int = [0, 1, 3, 4, 7]
-        vals = constant_interp(x_f, Series(y_int), 5.0; extrap=FillExtrap(0.5))
+        vals = constant_interp(x_f, Series(y_int), 5.0; extrap = FillExtrap(0.5))
         @test vals[1] ≈ 0.5
     end
 

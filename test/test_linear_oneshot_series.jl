@@ -84,28 +84,28 @@ using FastInterpolations
         @test_throws DomainError linear_interp(x, Series(y_sin, y_cos), xq_oob)
 
         # ClampExtrap
-        vals_clamp = linear_interp(x, Series(y_sin, y_cos), xq_oob; extrap=ClampExtrap())
-        ref_clamp_sin = linear_interp(x, y_sin, xq_oob; extrap=ClampExtrap())
-        ref_clamp_cos = linear_interp(x, y_cos, xq_oob; extrap=ClampExtrap())
+        vals_clamp = linear_interp(x, Series(y_sin, y_cos), xq_oob; extrap = ClampExtrap())
+        ref_clamp_sin = linear_interp(x, y_sin, xq_oob; extrap = ClampExtrap())
+        ref_clamp_cos = linear_interp(x, y_cos, xq_oob; extrap = ClampExtrap())
         @test vals_clamp[1] ≈ ref_clamp_sin
         @test vals_clamp[2] ≈ ref_clamp_cos
 
         # ExtendExtrap
-        vals_ext = linear_interp(x, Series(y_sin, y_cos), xq_oob; extrap=ExtendExtrap())
-        ref_ext_sin = linear_interp(x, y_sin, xq_oob; extrap=ExtendExtrap())
-        ref_ext_cos = linear_interp(x, y_cos, xq_oob; extrap=ExtendExtrap())
+        vals_ext = linear_interp(x, Series(y_sin, y_cos), xq_oob; extrap = ExtendExtrap())
+        ref_ext_sin = linear_interp(x, y_sin, xq_oob; extrap = ExtendExtrap())
+        ref_ext_cos = linear_interp(x, y_cos, xq_oob; extrap = ExtendExtrap())
         @test vals_ext[1] ≈ ref_ext_sin
         @test vals_ext[2] ≈ ref_ext_cos
 
         # WrapExtrap
-        vals_wrap = linear_interp(x, Series(y_sin, y_cos), xq_oob; extrap=WrapExtrap())
-        ref_wrap_sin = linear_interp(x, y_sin, xq_oob; extrap=WrapExtrap())
-        ref_wrap_cos = linear_interp(x, y_cos, xq_oob; extrap=WrapExtrap())
+        vals_wrap = linear_interp(x, Series(y_sin, y_cos), xq_oob; extrap = WrapExtrap())
+        ref_wrap_sin = linear_interp(x, y_sin, xq_oob; extrap = WrapExtrap())
+        ref_wrap_cos = linear_interp(x, y_cos, xq_oob; extrap = WrapExtrap())
         @test vals_wrap[1] ≈ ref_wrap_sin
         @test vals_wrap[2] ≈ ref_wrap_cos
 
         # FillExtrap
-        vals_fill = linear_interp(x, Series(y_sin, y_cos), xq_oob; extrap=FillExtrap(999.0))
+        vals_fill = linear_interp(x, Series(y_sin, y_cos), xq_oob; extrap = FillExtrap(999.0))
         @test vals_fill[1] ≈ 999.0
         @test vals_fill[2] ≈ 999.0
     end
@@ -114,9 +114,9 @@ using FastInterpolations
         xq = 0.37
         for d in 0:3
             op = DerivOp(d)
-            vals = linear_interp(x, Series(y_sin, y_cos), xq; deriv=op)
-            ref_sin = linear_interp(x, y_sin, xq; deriv=op)
-            ref_cos = linear_interp(x, y_cos, xq; deriv=op)
+            vals = linear_interp(x, Series(y_sin, y_cos), xq; deriv = op)
+            ref_sin = linear_interp(x, y_sin, xq; deriv = op)
+            ref_cos = linear_interp(x, y_cos, xq; deriv = op)
             @test vals[1] ≈ ref_sin
             @test vals[2] ≈ ref_cos
         end
@@ -203,7 +203,7 @@ using FastInterpolations
         # AD derivative should match DerivOp(1) result (analytic slope)
         f_ad(t) = sum(linear_interp(x, Series(y_sin, y_cos), t))
         grad = ForwardDiff.derivative(f_ad, 0.37)
-        d1 = linear_interp(x, Series(y_sin, y_cos), 0.37; deriv=DerivOp(1))
+        d1 = linear_interp(x, Series(y_sin, y_cos), 0.37; deriv = DerivOp(1))
         @test grad ≈ sum(d1)
     end
 
@@ -227,7 +227,7 @@ using FastInterpolations
     @testset "Type promotion: FillExtrap with Integer series" begin
         x_f = collect(0.0:1.0:4.0)
         y_int = [0, 1, 3, 4, 7]
-        vals = linear_interp(x_f, Series(y_int), 5.0; extrap=FillExtrap(0.5))
+        vals = linear_interp(x_f, Series(y_int), 5.0; extrap = FillExtrap(0.5))
         @test vals[1] ≈ 0.5
     end
 

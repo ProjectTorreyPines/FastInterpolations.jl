@@ -47,29 +47,29 @@ using FastInterpolations
 
     @testset "BC types" begin
         for bc_val in [CubicFit(), FastInterpolations.Deriv2(0.0)]
-            vals = cubic_interp(x, Series(y_sin, y_cos), 0.37; bc=bc_val)
-            ref_sin = cubic_interp(x, y_sin, 0.37; bc=bc_val)
-            ref_cos = cubic_interp(x, y_cos, 0.37; bc=bc_val)
+            vals = cubic_interp(x, Series(y_sin, y_cos), 0.37; bc = bc_val)
+            ref_sin = cubic_interp(x, y_sin, 0.37; bc = bc_val)
+            ref_cos = cubic_interp(x, y_cos, 0.37; bc = bc_val)
             @test vals[1] ≈ ref_sin
             @test vals[2] ≈ ref_cos
         end
     end
 
     @testset "PeriodicBC scalar" begin
-        vals = cubic_interp(x, Series(y_sin, y_cos), 0.37; bc=PeriodicBC())
-        ref_sin = cubic_interp(x, y_sin, 0.37; bc=PeriodicBC())
-        ref_cos = cubic_interp(x, y_cos, 0.37; bc=PeriodicBC())
+        vals = cubic_interp(x, Series(y_sin, y_cos), 0.37; bc = PeriodicBC())
+        ref_sin = cubic_interp(x, y_sin, 0.37; bc = PeriodicBC())
+        ref_cos = cubic_interp(x, y_cos, 0.37; bc = PeriodicBC())
         @test vals[1] ≈ ref_sin
         @test vals[2] ≈ ref_cos
     end
 
     @testset "PeriodicBC vector (inclusive)" begin
         xqs = [0.1, 0.37, 0.5, 0.9]
-        outs = cubic_interp(x, Series(y_sin, y_cos), xqs; bc=PeriodicBC())
+        outs = cubic_interp(x, Series(y_sin, y_cos), xqs; bc = PeriodicBC())
         @test length(outs) == 2
         for j in eachindex(xqs)
-            ref_sin = cubic_interp(x, y_sin, xqs[j]; bc=PeriodicBC())
-            ref_cos = cubic_interp(x, y_cos, xqs[j]; bc=PeriodicBC())
+            ref_sin = cubic_interp(x, y_sin, xqs[j]; bc = PeriodicBC())
+            ref_cos = cubic_interp(x, y_cos, xqs[j]; bc = PeriodicBC())
             @test outs[1][j] ≈ ref_sin
             @test outs[2][j] ≈ ref_cos
         end
@@ -77,16 +77,16 @@ using FastInterpolations
 
     @testset "PeriodicBC vector (exclusive)" begin
         # Exclusive: last point != first point, period = 1.0
-        x_exc = collect(range(0.0, step=0.01, length=100))  # does NOT include 1.0
+        x_exc = collect(range(0.0, step = 0.01, length = 100))  # does NOT include 1.0
         y1_exc = sin.(2π .* x_exc)
         y2_exc = cos.(2π .* x_exc)
         bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.0)
         xqs = [0.05, 0.37, 0.75, 0.95]
-        outs = cubic_interp(x_exc, Series(y1_exc, y2_exc), xqs; bc=bc_exc)
+        outs = cubic_interp(x_exc, Series(y1_exc, y2_exc), xqs; bc = bc_exc)
         @test length(outs) == 2
         for j in eachindex(xqs)
-            ref1 = cubic_interp(x_exc, y1_exc, xqs[j]; bc=bc_exc)
-            ref2 = cubic_interp(x_exc, y2_exc, xqs[j]; bc=bc_exc)
+            ref1 = cubic_interp(x_exc, y1_exc, xqs[j]; bc = bc_exc)
+            ref2 = cubic_interp(x_exc, y2_exc, xqs[j]; bc = bc_exc)
             @test outs[1][j] ≈ ref1
             @test outs[2][j] ≈ ref2
         end
@@ -95,9 +95,9 @@ using FastInterpolations
     @testset "PeriodicBC vector in-place" begin
         xqs = [0.1, 0.37, 0.5, 0.9]
         outputs = [zeros(length(xqs)) for _ in 1:2]
-        ret = cubic_interp!(outputs, x, Series(y_sin, y_cos), xqs; bc=PeriodicBC())
+        ret = cubic_interp!(outputs, x, Series(y_sin, y_cos), xqs; bc = PeriodicBC())
         @test ret === outputs
-        outs_alloc = cubic_interp(x, Series(y_sin, y_cos), xqs; bc=PeriodicBC())
+        outs_alloc = cubic_interp(x, Series(y_sin, y_cos), xqs; bc = PeriodicBC())
         for k in 1:2
             @test outputs[k] ≈ outs_alloc[k]
         end
@@ -149,27 +149,27 @@ using FastInterpolations
         xq_oob = 1.5
         @test_throws DomainError cubic_interp(x, Series(y_sin, y_cos), xq_oob)
 
-        vals_clamp = cubic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=ClampExtrap())
-        ref_sin = cubic_interp(x, y_sin, xq_oob; extrap=ClampExtrap())
-        ref_cos = cubic_interp(x, y_cos, xq_oob; extrap=ClampExtrap())
+        vals_clamp = cubic_interp(x, Series(y_sin, y_cos), xq_oob; extrap = ClampExtrap())
+        ref_sin = cubic_interp(x, y_sin, xq_oob; extrap = ClampExtrap())
+        ref_cos = cubic_interp(x, y_cos, xq_oob; extrap = ClampExtrap())
         @test vals_clamp[1] ≈ ref_sin
         @test vals_clamp[2] ≈ ref_cos
 
-        vals_ext = cubic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=ExtendExtrap())
-        ref_sin_ext = cubic_interp(x, y_sin, xq_oob; extrap=ExtendExtrap())
-        ref_cos_ext = cubic_interp(x, y_cos, xq_oob; extrap=ExtendExtrap())
+        vals_ext = cubic_interp(x, Series(y_sin, y_cos), xq_oob; extrap = ExtendExtrap())
+        ref_sin_ext = cubic_interp(x, y_sin, xq_oob; extrap = ExtendExtrap())
+        ref_cos_ext = cubic_interp(x, y_cos, xq_oob; extrap = ExtendExtrap())
         @test vals_ext[1] ≈ ref_sin_ext
         @test vals_ext[2] ≈ ref_cos_ext
 
         # WrapExtrap
-        vals_wrap = cubic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=WrapExtrap())
-        ref_wrap_sin = cubic_interp(x, y_sin, xq_oob; extrap=WrapExtrap())
-        ref_wrap_cos = cubic_interp(x, y_cos, xq_oob; extrap=WrapExtrap())
+        vals_wrap = cubic_interp(x, Series(y_sin, y_cos), xq_oob; extrap = WrapExtrap())
+        ref_wrap_sin = cubic_interp(x, y_sin, xq_oob; extrap = WrapExtrap())
+        ref_wrap_cos = cubic_interp(x, y_cos, xq_oob; extrap = WrapExtrap())
         @test vals_wrap[1] ≈ ref_wrap_sin
         @test vals_wrap[2] ≈ ref_wrap_cos
 
         # FillExtrap
-        vals_fill = cubic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=FillExtrap(999.0))
+        vals_fill = cubic_interp(x, Series(y_sin, y_cos), xq_oob; extrap = FillExtrap(999.0))
         @test vals_fill[1] ≈ 999.0
         @test vals_fill[2] ≈ 999.0
     end
@@ -177,9 +177,9 @@ using FastInterpolations
     @testset "Derivative ops" begin
         for d in 0:4
             op = DerivOp(d)
-            vals = cubic_interp(x, Series(y_sin, y_cos), 0.37; deriv=op)
-            ref_sin = cubic_interp(x, y_sin, 0.37; deriv=op)
-            ref_cos = cubic_interp(x, y_cos, 0.37; deriv=op)
+            vals = cubic_interp(x, Series(y_sin, y_cos), 0.37; deriv = op)
+            ref_sin = cubic_interp(x, y_sin, 0.37; deriv = op)
+            ref_cos = cubic_interp(x, y_cos, 0.37; deriv = op)
             @test vals[1] ≈ ref_sin
             @test vals[2] ≈ ref_cos
         end
@@ -239,7 +239,7 @@ using FastInterpolations
         using ForwardDiff
         f_ad(t) = sum(cubic_interp(x, Series(y_sin, y_cos), t))
         grad = ForwardDiff.derivative(f_ad, 0.37)
-        d1 = cubic_interp(x, Series(y_sin, y_cos), 0.37; deriv=DerivOp(1))
+        d1 = cubic_interp(x, Series(y_sin, y_cos), 0.37; deriv = DerivOp(1))
         @test grad ≈ sum(d1)
     end
 

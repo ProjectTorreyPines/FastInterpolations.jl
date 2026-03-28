@@ -48,9 +48,9 @@ using FastInterpolations
 
     @testset "BC types" begin
         for bc_val in [Left(QuadraticFit()), Right(QuadraticFit())]
-            vals = quadratic_interp(x, Series(y_sin, y_cos), 0.37; bc=bc_val)
-            ref_sin = quadratic_interp(x, y_sin, 0.37; bc=bc_val)
-            ref_cos = quadratic_interp(x, y_cos, 0.37; bc=bc_val)
+            vals = quadratic_interp(x, Series(y_sin, y_cos), 0.37; bc = bc_val)
+            ref_sin = quadratic_interp(x, y_sin, 0.37; bc = bc_val)
+            ref_cos = quadratic_interp(x, y_cos, 0.37; bc = bc_val)
             @test vals[1] ≈ ref_sin
             @test vals[2] ≈ ref_cos
         end
@@ -60,23 +60,23 @@ using FastInterpolations
         xq_oob = 1.5
         @test_throws DomainError quadratic_interp(x, Series(y_sin, y_cos), xq_oob)
 
-        vals_clamp = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=ClampExtrap())
-        ref_sin = quadratic_interp(x, y_sin, xq_oob; extrap=ClampExtrap())
+        vals_clamp = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap = ClampExtrap())
+        ref_sin = quadratic_interp(x, y_sin, xq_oob; extrap = ClampExtrap())
         @test vals_clamp[1] ≈ ref_sin
 
-        vals_ext = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=ExtendExtrap())
-        ref_sin_ext = quadratic_interp(x, y_sin, xq_oob; extrap=ExtendExtrap())
+        vals_ext = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap = ExtendExtrap())
+        ref_sin_ext = quadratic_interp(x, y_sin, xq_oob; extrap = ExtendExtrap())
         @test vals_ext[1] ≈ ref_sin_ext
 
         # WrapExtrap
-        vals_wrap = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=WrapExtrap())
-        ref_wrap_sin = quadratic_interp(x, y_sin, xq_oob; extrap=WrapExtrap())
-        ref_wrap_cos = quadratic_interp(x, y_cos, xq_oob; extrap=WrapExtrap())
+        vals_wrap = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap = WrapExtrap())
+        ref_wrap_sin = quadratic_interp(x, y_sin, xq_oob; extrap = WrapExtrap())
+        ref_wrap_cos = quadratic_interp(x, y_cos, xq_oob; extrap = WrapExtrap())
         @test vals_wrap[1] ≈ ref_wrap_sin
         @test vals_wrap[2] ≈ ref_wrap_cos
 
         # FillExtrap
-        vals_fill = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap=FillExtrap(999.0))
+        vals_fill = quadratic_interp(x, Series(y_sin, y_cos), xq_oob; extrap = FillExtrap(999.0))
         @test vals_fill[1] ≈ 999.0
         @test vals_fill[2] ≈ 999.0
     end
@@ -84,9 +84,9 @@ using FastInterpolations
     @testset "Derivative ops" begin
         for d in 0:3
             op = DerivOp(d)
-            vals = quadratic_interp(x, Series(y_sin, y_cos), 0.37; deriv=op)
-            ref_sin = quadratic_interp(x, y_sin, 0.37; deriv=op)
-            ref_cos = quadratic_interp(x, y_cos, 0.37; deriv=op)
+            vals = quadratic_interp(x, Series(y_sin, y_cos), 0.37; deriv = op)
+            ref_sin = quadratic_interp(x, y_sin, 0.37; deriv = op)
+            ref_cos = quadratic_interp(x, y_cos, 0.37; deriv = op)
             @test vals[1] ≈ ref_sin
             @test vals[2] ≈ ref_cos
         end
@@ -138,7 +138,7 @@ using FastInterpolations
         using ForwardDiff
         f_ad(t) = sum(quadratic_interp(x, Series(y_sin, y_cos), t))
         grad = ForwardDiff.derivative(f_ad, 0.37)
-        d1 = quadratic_interp(x, Series(y_sin, y_cos), 0.37; deriv=DerivOp(1))
+        d1 = quadratic_interp(x, Series(y_sin, y_cos), 0.37; deriv = DerivOp(1))
         @test grad ≈ sum(d1)
     end
 

@@ -316,71 +316,39 @@ end
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 @inline function cubic_interp(
-        x::AbstractVector{Tg},
-        s::Series,
-        xq::Tq;
-        bc::AbstractBC = CubicFit(),
-        extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        x::AbstractVector{Tg}, s::Series, xq::Tq; bc::AbstractBC = CubicFit(), kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    bc_promoted = _promote_bc(bc, Tg_float)
-    return cubic_interp(x_typed, s, xq; bc = bc_promoted, extrap, autocache, deriv, search, hint)
+    return cubic_interp(_to_float(x, Tg_float), s, xq; bc = _promote_bc(bc, Tg_float), kwargs...)
 end
 
 @inline function cubic_interp!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        s::Series,
-        xq::Tq;
-        bc::AbstractBC = CubicFit(),
-        extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        output::AbstractVector, x::AbstractVector{Tg}, s::Series, xq::Tq;
+        bc::AbstractBC = CubicFit(), kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    bc_promoted = _promote_bc(bc, Tg_float)
-    return cubic_interp!(output, x_typed, s, xq; bc = bc_promoted, extrap, autocache, deriv, search, hint)
+    return cubic_interp!(output, _to_float(x, Tg_float), s, xq; bc = _promote_bc(bc, Tg_float), kwargs...)
 end
 
 function cubic_interp!(
         outputs::AbstractVector{<:AbstractVector},
-        x::AbstractVector{Tg},
-        s::Series,
-        xqs::AbstractVector{Tq};
-        bc::AbstractBC = CubicFit(),
-        extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq};
+        bc::AbstractBC = CubicFit(), kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    xqs_typed = _to_float(xqs, Tg_float)
-    bc_promoted = _promote_bc(bc, Tg_float)
-    return cubic_interp!(outputs, x_typed, s, xqs_typed; bc = bc_promoted, extrap, autocache, deriv, search)
+    return cubic_interp!(
+        outputs, _to_float(x, Tg_float), s, _to_float(xqs, Tg_float);
+        bc = _promote_bc(bc, Tg_float), kwargs...
+    )
 end
 
 function cubic_interp(
-        x::AbstractVector{Tg},
-        s::Series,
-        xqs::AbstractVector{Tq};
-        bc::AbstractBC = CubicFit(),
-        extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq};
+        bc::AbstractBC = CubicFit(), kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    xqs_typed = _to_float(xqs, Tg_float)
-    bc_promoted = _promote_bc(bc, Tg_float)
-    return cubic_interp(x_typed, s, xqs_typed; bc = bc_promoted, extrap, autocache, deriv, search)
+    return cubic_interp(
+        _to_float(x, Tg_float), s, _to_float(xqs, Tg_float);
+        bc = _promote_bc(bc, Tg_float), kwargs...
+    )
 end

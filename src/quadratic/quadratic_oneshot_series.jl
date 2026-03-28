@@ -170,63 +170,30 @@ end
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 @inline function quadratic_interp(
-        x::AbstractVector{Tg},
-        s::Series,
-        xq::Tq;
-        bc::QuadraticBC = Left(QuadraticFit()),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        x::AbstractVector{Tg}, s::Series, xq::Tq; kwargs...
     ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    return quadratic_interp(x_typed, s, xq; bc, extrap, deriv, search, hint)
+    x_typed = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
+    return quadratic_interp(x_typed, s, xq; kwargs...)
 end
 
 @inline function quadratic_interp!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        s::Series,
-        xq::Tq;
-        bc::QuadraticBC = Left(QuadraticFit()),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        output::AbstractVector, x::AbstractVector{Tg}, s::Series, xq::Tq; kwargs...
     ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    return quadratic_interp!(output, x_typed, s, xq; bc, extrap, deriv, search, hint)
+    x_typed = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
+    return quadratic_interp!(output, x_typed, s, xq; kwargs...)
 end
 
 function quadratic_interp!(
         outputs::AbstractVector{<:AbstractVector},
-        x::AbstractVector{Tg},
-        s::Series,
-        xqs::AbstractVector{Tq};
-        bc::QuadraticBC = Left(QuadraticFit()),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    xqs_typed = _to_float(xqs, Tg_float)
-    return quadratic_interp!(outputs, x_typed, s, xqs_typed; bc, extrap, deriv, search)
+    return quadratic_interp!(outputs, _to_float(x, Tg_float), s, _to_float(xqs, Tg_float); kwargs...)
 end
 
 function quadratic_interp(
-        x::AbstractVector{Tg},
-        s::Series,
-        xqs::AbstractVector{Tq};
-        bc::QuadraticBC = Left(QuadraticFit()),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    xqs_typed = _to_float(xqs, Tg_float)
-    return quadratic_interp(x_typed, s, xqs_typed; bc, extrap, deriv, search)
+    return quadratic_interp(_to_float(x, Tg_float), s, _to_float(xqs, Tg_float); kwargs...)
 end

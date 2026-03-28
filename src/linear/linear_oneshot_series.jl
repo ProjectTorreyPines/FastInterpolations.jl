@@ -163,64 +163,35 @@ end
 # ║                     REAL TYPE PROMOTION WRAPPERS                         ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# Scalar: Real grid → promote x, pass xq directly (preserves Dual for AD)
+# Scalar: Real grid → promote x, forward kwargs
 @inline function linear_interp(
-        x::AbstractVector{Tg},
-        s::Series,
-        xq::Tq;
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        x::AbstractVector{Tg}, s::Series, xq::Tq; kwargs...
     ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    return linear_interp(x_typed, s, xq; extrap, deriv, search, hint)
+    x_typed = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
+    return linear_interp(x_typed, s, xq; kwargs...)
 end
 
 # In-place scalar: Real grid
 @inline function linear_interp!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        s::Series,
-        xq::Tq;
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        output::AbstractVector, x::AbstractVector{Tg}, s::Series, xq::Tq; kwargs...
     ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    return linear_interp!(output, x_typed, s, xq; extrap, deriv, search, hint)
+    x_typed = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
+    return linear_interp!(output, x_typed, s, xq; kwargs...)
 end
 
-# Vector: Real grid
+# Vector in-place: Real grid
 function linear_interp!(
         outputs::AbstractVector{<:AbstractVector},
-        x::AbstractVector{Tg},
-        s::Series,
-        xqs::AbstractVector{Tq};
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    xqs_typed = _to_float(xqs, Tg_float)
-    return linear_interp!(outputs, x_typed, s, xqs_typed; extrap, deriv, search)
+    return linear_interp!(outputs, _to_float(x, Tg_float), s, _to_float(xqs, Tg_float); kwargs...)
 end
 
 # Vector allocating: Real grid
 function linear_interp(
-        x::AbstractVector{Tg},
-        s::Series,
-        xqs::AbstractVector{Tq};
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    xqs_typed = _to_float(xqs, Tg_float)
-    return linear_interp(x_typed, s, xqs_typed; extrap, deriv, search)
+    return linear_interp(_to_float(x, Tg_float), s, _to_float(xqs, Tg_float); kwargs...)
 end

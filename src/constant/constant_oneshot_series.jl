@@ -132,63 +132,30 @@ end
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 @inline function constant_interp(
-        x::AbstractVector{Tg},
-        s::Series,
-        xq::Tq;
-        side::AbstractSide = NearestSide(),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        x::AbstractVector{Tg}, s::Series, xq::Tq; kwargs...
     ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    return constant_interp(x_typed, s, xq; side, extrap, deriv, search, hint)
+    x_typed = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
+    return constant_interp(x_typed, s, xq; kwargs...)
 end
 
 @inline function constant_interp!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        s::Series,
-        xq::Tq;
-        side::AbstractSide = NearestSide(),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        output::AbstractVector, x::AbstractVector{Tg}, s::Series, xq::Tq; kwargs...
     ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    return constant_interp!(output, x_typed, s, xq; side, extrap, deriv, search, hint)
+    x_typed = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
+    return constant_interp!(output, x_typed, s, xq; kwargs...)
 end
 
 function constant_interp!(
         outputs::AbstractVector{<:AbstractVector},
-        x::AbstractVector{Tg},
-        s::Series,
-        xqs::AbstractVector{Tq};
-        side::AbstractSide = NearestSide(),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    xqs_typed = _to_float(xqs, Tg_float)
-    return constant_interp!(outputs, x_typed, s, xqs_typed; side, extrap, deriv, search)
+    return constant_interp!(outputs, _to_float(x, Tg_float), s, _to_float(xqs, Tg_float); kwargs...)
 end
 
 function constant_interp(
-        x::AbstractVector{Tg},
-        s::Series,
-        xqs::AbstractVector{Tq};
-        side::AbstractSide = NearestSide(),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
     ) where {Tg <: Real, Tq <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    x_typed = _to_float(x, Tg_float)
-    xqs_typed = _to_float(xqs, Tg_float)
-    return constant_interp(x_typed, s, xqs_typed; side, extrap, deriv, search)
+    return constant_interp(_to_float(x, Tg_float), s, _to_float(xqs, Tg_float); kwargs...)
 end

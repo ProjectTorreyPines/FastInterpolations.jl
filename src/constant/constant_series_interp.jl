@@ -141,7 +141,7 @@ Uses point-contiguous layout for SIMD optimization.
     n_pts = n_points(sitp)
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
-    _eval_constant_series_point_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, sitp.side, op, aq.side)
+    _eval_constant_series_point_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, sitp.side, op, aq.state)
     return output
 end
 
@@ -201,7 +201,7 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
         op::AbstractEvalOp
     ) where {Tg <: AbstractFloat, Tv}
     # Outside domain: delegate to extrapolation handler (trait method)
-    if aq.side != 0x00
+    if aq.state != IN_DOMAIN
         return _eval_series_at_anchor!(output, sitp, aq, op)
     end
 
@@ -565,7 +565,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
     end
 
     # Inside domain: normal evaluation
-    if aq.side == 0x00
+    if aq.state == IN_DOMAIN
         return _eval_constant_series_anchored(y, k, aq, side_val, op)
     end
 
@@ -573,7 +573,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
     if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_constant_series_anchored(y, k, aq, side_val, op)
     elseif extrap isa _ClampOrFill
-        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op, extrap)
+        return _constant_extrap_boundary_value(y, aq.state, n_pts, k, op, extrap)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end

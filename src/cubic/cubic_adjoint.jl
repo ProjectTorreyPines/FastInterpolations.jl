@@ -377,7 +377,7 @@ function _fixup_clampfill_anchors!(
         aq = anchors[i]
         w0_new = keep_w0 ? aq.w0 : (z, z, z, z)
         anchors[i] = _CubicAnchoredQuery{Tg, Tg}(
-            aq.idx, aq.xq, 0x00,
+            aq.idx, aq.xq, IN_DOMAIN,
             w0_new, (z, z, z, z), (z, z), (z, z)
         )
     end

@@ -1923,7 +1923,7 @@ end
     @testset ":extension mode with pre-built anchors" begin
         mitp = cubic_interp(x, Series(y1, y2, y3); extrap = ExtendExtrap())
 
-        # Pre-build anchors (will have side != 0x00 for out-of-domain points)
+        # Pre-build anchors (will have state != IN_DOMAIN for out-of-domain points)
         aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
         outputs = [similar(xq_out) for _ in 1:3]
 

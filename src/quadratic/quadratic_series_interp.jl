@@ -199,7 +199,7 @@ SIMD kernel for evaluating all series at a single anchor point with extrapolatio
         extrap::NoExtrap,
         op::AbstractEvalOp
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    if aq.side != 0x00
+    if aq.state != IN_DOMAIN
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
     return _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
@@ -217,8 +217,8 @@ end
         extrap::_ClampOrFill,
         op::AbstractEvalOp
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    return if aq.side != 0x00  # outside domain
-        _fill_constant_extrap_simd!(output, y_point, aq.side, n_pts, op, extrap)
+    return if aq.state != IN_DOMAIN  # outside domain
+        _fill_constant_extrap_simd!(output, y_point, aq.state, n_pts, op, extrap)
     else
         _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
     end
@@ -591,7 +591,7 @@ Takes `dL` as a parameter to allow caller to compute with original xq precision.
         extrap::NoExtrap,
         op::AbstractEvalOp
     ) where {Tg <: AbstractFloat, Tv, Taq <: Real, Tq <: Real}
-    if aq.side != 0x00
+    if aq.state != IN_DOMAIN
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
     return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)
@@ -609,8 +609,8 @@ end
         extrap::_ClampOrFill,
         op::EvalValue
     ) where {Tg <: AbstractFloat, Tv, Taq <: Real, Tq <: Real}
-    if aq.side != 0x00  # outside domain
-        y_bnd = @inbounds y[_boundary_point_index(aq.side, n_pts)]
+    if aq.state != IN_DOMAIN  # outside domain
+        y_bnd = @inbounds y[_boundary_point_index(aq.state, n_pts)]
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     else
         return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)
@@ -629,7 +629,7 @@ end
         extrap::_ClampOrFill,
         op::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
     ) where {Tg <: AbstractFloat, Tv, Taq <: Real, Tq <: Real}
-    if aq.side != 0x00  # outside domain
+    if aq.state != IN_DOMAIN  # outside domain
         return _eval_extrapolation(op, first(y), extrap, aq.xq)
     else
         return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)

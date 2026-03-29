@@ -9,7 +9,7 @@
 # - idx   → interval index
 # - h     → interval width (for NearestSide offset computation)
 # - dL    → offset from left boundary (for offset computation)
-# - side  → OOB detection: 0x00=inside, 0x01=below, 0x02=above
+# - state → OOB detection: IN_DOMAIN, OOB_LEFT, OOB_RIGHT
 # - xq    → query point (for right-boundary special case)
 #
 # All derivatives of constant interpolation are identically zero.
@@ -115,7 +115,7 @@ end
     )
     @inbounds for q in eachindex(y_bar)
         aq = anchors[q]
-        _is_oob_skip(aq.side, extrap) && continue
+        _is_oob_skip(aq.state, extrap) && continue
         # Right-boundary special case: xq == x_max → always f_bar[end]
         if aq.xq == x_hi
             f_bar[grid_size] += y_bar[q]
@@ -156,10 +156,10 @@ end
 # ========================================
 
 """
-Restore `side` flags for anchors built with clamped query positions.
+Restore `state` flags for anchors built with clamped query positions.
 
 When ClampExtrap/FillExtrap queries are clamped before anchoring, the anchor
-gets `side=0x00` (inside). This restores the correct OOB side flag based on the
+gets `state=IN_DOMAIN` (inside). This restores the correct OOB state flag based on the
 original query position, so scatter can skip OOB contributions.
 """
 function _fixup_constant_anchor_sides!(
@@ -170,10 +170,10 @@ function _fixup_constant_anchor_sides!(
     @inbounds for i in eachindex(anchors)
         xq_i = xq_original[i]
         (x_lo <= xq_i <= x_hi) && continue
-        side = xq_i < x_lo ? 0x01 : 0x02
+        state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
         aq = anchors[i]
         anchors[i] = _ConstantAnchoredQuery{Tg}(
-            aq.idx, aq.xq, side, aq.h, aq.dL
+            aq.idx, aq.xq, state, aq.h, aq.dL
         )
     end
     return nothing

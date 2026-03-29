@@ -24,7 +24,7 @@ matches the interpolant grid.
 # Fields
 - `idx`: Interval index where xq falls
 - `xq`: Original query point (or wrapped value for periodic)
-- `side`: Domain position (0=inside, 1=below, 2=above)
+- `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
 - `h`: Interval width (for :nearest comparison)
 - `dL`: Offset from left boundary (for :nearest comparison)
 
@@ -47,7 +47,7 @@ as it eliminates O(log n) binary search.
 struct _ConstantAnchoredQuery{T <: AbstractFloat}
     idx::Int                   # interval index
     xq::T                      # query point (possibly wrapped)
-    side::UInt8                # 0=inside, 1=below_min, 2=above_max
+    state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     h::T                       # interval width
     dL::T                      # offset from left boundary
 end
@@ -202,7 +202,7 @@ Internal implementation of _anchor_query for constant interpolation.
     h = _get_h(x, loc.xR, loc.xL)
     dL = loc.xq - loc.xL
 
-    return _ConstantAnchoredQuery{T}(loc.idx, loc.xq, loc.side, h, dL)
+    return _ConstantAnchoredQuery{T}(loc.idx, loc.xq, loc.state, h, dL)
 end
 
 # ========================================
@@ -260,7 +260,7 @@ end
         y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
         op::AbstractEvalOp, side_param::AbstractSide, ::NoExtrap
     )
-    aq.side != 0x00 && throw(DomainError(aq.xq, "query point outside domain"))
+    aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
     aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
     @inbounds return _constant_kernel(op, y[aq.idx], y[aq.idx + 1], aq.h, aq.dL, side_param)
 end
@@ -270,8 +270,8 @@ end
         y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
         op::AbstractEvalOp, side_param::AbstractSide, extrap::_ClampOrFill
     )
-    if aq.side != 0x00
-        y_bnd = aq.side == 0x01 ? first(y) : last(y)
+    if aq.state != IN_DOMAIN
+        y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     end
     aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
@@ -297,7 +297,7 @@ end
         op::O,
         ::NoExtrap
     ) where {T <: AbstractFloat, O <: AbstractEvalOp}
-    if aq.side != 0x00
+    if aq.state != IN_DOMAIN
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end

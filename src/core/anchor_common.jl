@@ -2,12 +2,20 @@
 # Shared Per-Axis Anchor Location
 # ========================================
 # Single shared building block for all anchor construction (cubic, linear,
-# quadratic, constant). Extracts the common wrap → side → search logic.
+# quadratic, constant). Extracts the common wrap → state → search logic.
 # Method-specific geometry/weight computation remains in each method's anchor file.
 #
 # Include order: utils.jl → periodic.jl → anchor_common.jl
 # Dependencies: _extract_primal (utils.jl), _wrap_to_domain (periodic.jl),
 #               search_interval + Searcher (search.jl)
+
+# ========================================
+# Domain state constants
+# ========================================
+
+const IN_DOMAIN = 0x00
+const OOB_LEFT = 0x01
+const OOB_RIGHT = 0x02
 
 # ========================================
 # _AnchorLoc: Location-Only Result
@@ -16,8 +24,8 @@
 """
     _AnchorLoc{Tg, Tq}
 
-Result of `_anchor_loc`: interval location + side classification, with NO geometry
-(h, inv_h, dL, dR). Geometry is each method's internal concern.
+Result of `_anchor_loc`: interval location + domain state classification,
+with NO geometry (h, inv_h, dL, dR). Geometry is each method's internal concern.
 
 # Type Parameters
 - `Tg <: AbstractFloat`: grid element type (for `xL`, `xR`)
@@ -26,14 +34,14 @@ Result of `_anchor_loc`: interval location + side classification, with NO geomet
 # Fields
 - `idx::Int`: interval index ∈ 1:(n-1)
 - `xq::Tq`: query point (possibly wrapped), preserves Dual for AD
-- `side::UInt8`: 0x00=inside, 0x01=below, 0x02=above
+- `state::UInt8`: domain state — `IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`
 - `xL::Tg`: left node x[idx]
 - `xR::Tg`: right node x[idx+1]
 """
 struct _AnchorLoc{Tg <: AbstractFloat, Tq <: Real}
     idx::Int
     xq::Tq
-    side::UInt8
+    state::UInt8
     xL::Tg
     xR::Tg
 end
@@ -46,7 +54,7 @@ end
     _anchor_loc(x, xq, wrap, policy) -> _AnchorLoc{Tg, Tq}
 
 Shared interval location for all interpolation methods.
-Performs: wrap → side classification → interval search.
+Performs: wrap → domain state classification → interval search.
 
 Returns `_AnchorLoc` with NO geometry — each method computes its own
 h/inv_h/dL/dR from `xL`, `xR`, `xq` as needed.
@@ -79,28 +87,25 @@ Dual type. The interval search uses `_extract_primal(xq)` for comparisons.
         xq_primal = xq  # xq is now Tg, no need for _extract_primal
     end
 
-    # Determine side (domain position)
-    side = if xq_primal < x_min
-        0x01  # below min
+    # Classify domain state
+    state = if xq_primal < x_min
+        OOB_LEFT
     elseif xq_primal > x_max
-        0x02  # above max
+        OOB_RIGHT
     else
-        0x00  # inside
+        IN_DOMAIN
     end
 
     # Find interval
     # For outside-domain points, use boundary intervals for weight computation
     idx, xL, xR = if xq_primal < x_min
-        # Below domain: use first interval
         @inbounds (1, x[1], x[2])
     elseif xq_primal > x_max
-        # Above domain: use last interval
         n = length(x)
         @inbounds (n - 1, x[n - 1], x[n])
     else
-        # Inside domain: use policy-based interval search
         search_interval(policy, x, xq_primal)
     end
 
-    return _AnchorLoc{Tg, typeof(xq)}(idx, xq, side, xL, xR)
+    return _AnchorLoc{Tg, typeof(xq)}(idx, xq, state, xL, xR)
 end

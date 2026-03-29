@@ -25,7 +25,7 @@ matches the interpolant grid.
 # Fields
 - `idx`: Interval index where xq falls
 - `xq`: Original query point (or wrapped value for periodic), preserves original precision
-- `side`: Domain position (0=inside, 1=below, 2=above)
+- `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
 - `xL`: Left grid point of the interval (avoids re-indexing x[idx] which triggers TwicePrecision on Range)
 - `h`: Interval width (xR - xL)
 - `inv_h`: Precomputed reciprocal (1/h) for fast derivative computation
@@ -54,7 +54,7 @@ as it eliminates O(log n) binary search.
 struct _LinearAnchoredQuery{Tg <: AbstractFloat, Tq <: Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), original precision
-    side::UInt8                # 0=inside, 1=below_min, 2=above_max
+    state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     xL::Tg                     # left grid point (avoids TwicePrecision re-indexing on Range)
     h::Tg                      # interval width
     inv_h::Tg                  # precomputed 1/h
@@ -258,7 +258,7 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
     # alpha preserves Dual type when xq is Dual
     alpha = (loc.xq - loc.xL) * inv_h
 
-    return _LinearAnchoredQuery{Tg, typeof(loc.xq)}(loc.idx, loc.xq, loc.side, loc.xL, h, inv_h, alpha)
+    return _LinearAnchoredQuery{Tg, typeof(loc.xq)}(loc.idx, loc.xq, loc.state, loc.xL, h, inv_h, alpha)
 end
 
 # ========================================
@@ -319,7 +319,7 @@ end
         op::AbstractEvalOp,
         ::NoExtrap
     )
-    aq.side != 0x00 && throw(DomainError(aq.xq, "query point outside domain"))
+    aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
     @inbounds return _linear_kernel(op, y[aq.idx], y[aq.idx + 1], aq)
 end
 
@@ -330,8 +330,8 @@ end
         op::AbstractEvalOp,
         extrap::_ClampOrFill
     )
-    if aq.side != 0x00
-        y_bnd = aq.side == 0x01 ? first(y) : last(y)
+    if aq.state != IN_DOMAIN
+        y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     end
     @inbounds return _linear_kernel(op, y[aq.idx], y[aq.idx + 1], aq)
@@ -353,7 +353,7 @@ end
         op::AbstractEvalOp,
         ::NoExtrap
     ) where {Tg <: AbstractFloat, Tq <: Real}
-    if aq.side != 0x00
+    if aq.state != IN_DOMAIN
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end

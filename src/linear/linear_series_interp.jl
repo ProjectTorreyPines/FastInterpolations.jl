@@ -142,7 +142,7 @@ Uses point-contiguous layout for SIMD optimization.
     n_pts = n_points(sitp)
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
-    _eval_linear_series_point_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, op, aq.side)
+    _eval_linear_series_point_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, op, aq.state)
     return output
 end
 
@@ -220,7 +220,7 @@ end
         op::AbstractEvalOp,
         side::UInt8
     ) where {Tg <: AbstractFloat, Tv}
-    idx = side == 0x01 ? 1 : (n_pts - 1)
+    idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     @inbounds begin
         xL = x[idx]
@@ -265,7 +265,7 @@ while `xq` is used directly in arithmetic to preserve derivative information.
         op::AbstractEvalOp
     ) where {Tg <: AbstractFloat, Tv}
     # Outside domain: delegate to extrapolation handler
-    if aq.side != 0x00
+    if aq.state != IN_DOMAIN
         return _eval_series_at_anchor!(output, sitp, aq, op)
     end
 
@@ -543,7 +543,7 @@ Uses anchor's `xq` for domain error messages.
         op::AbstractEvalOp
     ) where {Tg <: AbstractFloat, Tv}
     # Inside domain: normal evaluation
-    if aq.side == 0x00
+    if aq.state == IN_DOMAIN
         return _eval_linear_series_anchored(y, x, k, aq, op)
     end
 
@@ -551,7 +551,7 @@ Uses anchor's `xq` for domain error messages.
     if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_linear_series_anchored(y, x, k, aq, op)
     elseif extrap isa _ClampOrFill
-        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op, extrap)
+        return _constant_extrap_boundary_value(y, aq.state, n_pts, k, op, extrap)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end

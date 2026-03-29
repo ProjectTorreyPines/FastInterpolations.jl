@@ -25,7 +25,7 @@ matches the interpolant grid.
 # Fields
 - `idx`: Interval index where xq falls
 - `xq`: Original query point (or wrapped value for periodic)
-- `side`: Domain position (0=inside, 1=below, 2=above)
+- `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
 - `dL`: Offset from interval start (xq - x_i)
 
 # Usage
@@ -52,7 +52,7 @@ series interpolant evaluation.
 struct _QuadraticAnchoredQuery{Tg <: AbstractFloat, Tq <: Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), Float or Dual
-    side::UInt8                # 0=inside, 1=below_min, 2=above_max
+    state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     dL::Tq                     # offset from interval start, Float or Dual
 end
 
@@ -210,7 +210,7 @@ while preserving the full Dual value for `dL` computation.
     # Compute dL: offset from interval start (preserves Dual type)
     dL = loc.xq - loc.xL
 
-    return _QuadraticAnchoredQuery{Tg, typeof(loc.xq)}(loc.idx, loc.xq, loc.side, dL)
+    return _QuadraticAnchoredQuery{Tg, typeof(loc.xq)}(loc.idx, loc.xq, loc.state, dL)
 end
 
 # ========================================
@@ -268,7 +268,7 @@ end
         y::AbstractVector, a::AbstractVector, d::AbstractVector,
         aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ::NoExtrap
     )
-    aq.side != 0x00 && throw(DomainError(aq.xq, "query point outside domain"))
+    aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
     @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
 end
 
@@ -277,8 +277,8 @@ end
         y::AbstractVector, a::AbstractVector, d::AbstractVector,
         aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill
     )
-    if aq.side != 0x00
-        y_bnd = aq.side == 0x01 ? first(y) : last(y)
+    if aq.state != IN_DOMAIN
+        y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     end
     @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
@@ -295,7 +295,7 @@ end
         op::O,
         ::NoExtrap
     ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
-    if aq.side != 0x00
+    if aq.state != IN_DOMAIN
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end

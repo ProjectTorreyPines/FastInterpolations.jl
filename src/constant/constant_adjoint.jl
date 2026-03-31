@@ -162,7 +162,7 @@ When ClampExtrap/FillExtrap queries are clamped before anchoring, the anchor
 gets `state=IN_DOMAIN` (inside). This restores the correct OOB state flag based on the
 original query position, so scatter can skip OOB contributions.
 """
-function _fixup_constant_anchor_sides!(
+function _fixup_constant_anchor_state!(
         anchors::Vector{_ConstantAnchoredQuery{Tg}},
         xq_original::AbstractVector{Tg},
         x_lo::Tg, x_hi::Tg
@@ -253,7 +253,7 @@ function constant_adjoint(
         x_lo = first(x_p)
         xq_clamped = clamp.(xq_p, x_lo, x_hi)
         anchors = _anchor_query(x_p, xq_clamped, Val(:constant), false)
-        _fixup_constant_anchor_sides!(anchors, xq_p, x_lo, x_hi)
+        _fixup_constant_anchor_state!(anchors, xq_p, x_lo, x_hi)
     else
         # WrapExtrap: wraps to domain (correct)
         # NoExtrap: already validated in-domain above

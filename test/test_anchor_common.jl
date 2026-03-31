@@ -108,4 +108,32 @@
         @test loc.state == FI.IN_DOMAIN
     end
 
+    # ========================================
+    # Custom Searcher policy
+    # ========================================
+
+    @testset "_anchor_loc — explicit BinarySearch" begin
+        x = collect(range(0.0, 1.0, 101))
+        searcher = FI._to_searcher(BinarySearch())
+        loc = FI._anchor_loc(x, 0.355, false, searcher)
+        @test loc.state == FI.IN_DOMAIN
+        @test loc.xL <= 0.355 <= loc.xR
+    end
+
+    @testset "_anchor_loc — explicit LinearBinarySearch" begin
+        x = collect(range(0.0, 1.0, 101))
+        searcher = FI._to_searcher(LinearBinarySearch())
+        loc = FI._anchor_loc(x, 0.355, false, searcher)
+        @test loc.state == FI.IN_DOMAIN
+        @test loc.xL <= 0.355 <= loc.xR
+
+        # Non-uniform grid
+        x_nu = [0.0, 0.1, 0.4, 0.5, 1.0]
+        loc_nu = FI._anchor_loc(x_nu, 0.25, false, searcher)
+        @test loc_nu.state == FI.IN_DOMAIN
+        @test loc_nu.idx == 2  # interval [0.1, 0.4)
+        @test loc_nu.xL == 0.1
+        @test loc_nu.xR == 0.4
+    end
+
 end

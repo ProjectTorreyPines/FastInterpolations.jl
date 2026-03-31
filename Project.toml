@@ -28,7 +28,7 @@ FastInterpolationsSymbolicsExt = ["Symbolics", "SymbolicUtils"]
 [compat]
 AdaptiveArrayPools = "0.3.4"
 ChainRulesCore = "1"
-Enzyme = "0.13"
+Enzyme = "0.13.0 - 0.13.135"
 ForwardDiff = "1"
 HelpPlots = "1"
 LinearAlgebra = "1"

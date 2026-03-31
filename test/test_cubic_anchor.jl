@@ -188,27 +188,27 @@
         @test aq_right.idx == 10  # last interval
     end
 
-    @testset "Anchor side field" begin
+    @testset "Anchor state field" begin
         x = collect(range(0.0, 1.0, 11))
 
         # Interior: side = 0
         aq_inside = FI._anchor_query(x, 0.5, Val(:cubic))
-        @test aq_inside.side == 0x00
+        @test aq_inside.state == FI.IN_DOMAIN
 
         # At boundaries: side = 0 (still inside domain)
         aq_left_bound = FI._anchor_query(x, 0.0, Val(:cubic))
-        @test aq_left_bound.side == 0x00
+        @test aq_left_bound.state == FI.IN_DOMAIN
 
         aq_right_bound = FI._anchor_query(x, 1.0, Val(:cubic))
-        @test aq_right_bound.side == 0x00
+        @test aq_right_bound.state == FI.IN_DOMAIN
 
         # Below minimum: side = 1
         aq_below = FI._anchor_query(x, -0.5, Val(:cubic))
-        @test aq_below.side == 0x01
+        @test aq_below.state == FI.OOB_LEFT
 
         # Above maximum: side = 2
         aq_above = FI._anchor_query(x, 1.5, Val(:cubic))
-        @test aq_above.side == 0x02
+        @test aq_above.state == FI.OOB_RIGHT
     end
 
     @testset "Anchor xq field preserved" begin
@@ -260,12 +260,12 @@
         aq_wrapped = FI._anchor_query(x, xq_outside, Val(:cubic), true)
 
         # Should be inside after wrapping
-        @test aq_wrapped.side == 0x00
+        @test aq_wrapped.state == FI.IN_DOMAIN
         @test aq_wrapped.xq != xq_outside  # xq is wrapped value
 
         # Without wrap, should be outside
         aq_nowrap = FI._anchor_query(x, xq_outside, Val(:cubic), false)
-        @test aq_nowrap.side == 0x02  # above max
+        @test aq_nowrap.state == FI.OOB_RIGHT  # above max
     end
 
     @testset "Invalid deriv argument" begin
@@ -288,7 +288,7 @@
 
         @test length(aq_vec) == 4
         @test all(aq -> aq isa FI._CubicAnchoredQuery{Float64, Float64}, aq_vec)
-        @test all(aq -> aq.side == 0x00, aq_vec)  # All inside domain
+        @test all(aq -> aq.state == FI.IN_DOMAIN, aq_vec)  # All inside domain
     end
 
     @testset "Vector anchor - type promotion" begin
@@ -304,7 +304,7 @@
         xq = [-0.3, 1.3, 2.5]
         aq_vec = FI._anchor_query(x, xq, Val(:cubic), true)
 
-        @test all(aq -> aq.side == 0x00, aq_vec)  # All wrapped to inside
+        @test all(aq -> aq.state == FI.IN_DOMAIN, aq_vec)  # All wrapped to inside
     end
 
     @testset "Vector anchor - empty input" begin
@@ -547,7 +547,7 @@
             for i in eachindex(xq)
                 @test buffer[i].idx == expected[i].idx
                 @test buffer[i].xq == expected[i].xq
-                @test buffer[i].side == expected[i].side
+                @test buffer[i].state == expected[i].state
                 @test buffer[i].w0 == expected[i].w0
                 @test buffer[i].w1 == expected[i].w1
                 @test buffer[i].w2 == expected[i].w2
@@ -568,7 +568,7 @@
             for i in eachindex(xq)
                 @test buffer[i].idx == expected[i].idx
                 @test buffer[i].xq == expected[i].xq
-                @test buffer[i].side == expected[i].side
+                @test buffer[i].state == expected[i].state
                 @test buffer[i].w0 == expected[i].w0
             end
         end

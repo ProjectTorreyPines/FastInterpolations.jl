@@ -66,19 +66,19 @@ end
 # Used by Linear, Cubic, Constant, and Quadratic series interpolants.
 
 """
-    _boundary_point_index(side::UInt8, n_pts::Int) -> Int
+    _boundary_point_index(state::UInt8, n_pts::Int) -> Int
 
 Return the boundary point index for constant extrapolation.
 
 # Arguments
-- `side::UInt8`: `0x01` for left boundary, `0x02` for right boundary
+- `state::UInt8`: `OOB_LEFT` for left boundary, `OOB_RIGHT` for right boundary
 - `n_pts::Int`: Total number of grid points
 
 # Returns
-- `1` if `side == 0x01` (left boundary)
-- `n_pts` if `side == 0x02` (right boundary)
+- `1` if `state == OOB_LEFT` (left boundary)
+- `n_pts` if `state == OOB_RIGHT` (right boundary)
 """
-@inline _boundary_point_index(side::UInt8, n_pts::Int) = side == 0x01 ? 1 : n_pts
+@inline _boundary_point_index(state::UInt8, n_pts::Int) = state == OOB_LEFT ? 1 : n_pts
 
 """
     _throw_extrap_domain_error(xq::T, x_min::T, x_max::T)

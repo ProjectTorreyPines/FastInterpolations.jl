@@ -50,13 +50,13 @@ function _bake_constant_nd_anchors(
 
             # Determine OOB side flag
             is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])
-            side_flag = if is_oob
-                xq_raw < first(grids[d]) ? 0x01 : 0x02
+            state_flag = if is_oob
+                xq_raw < first(grids[d]) ? OOB_LEFT : OOB_RIGHT
             else
-                0x00
+                IN_DOMAIN
             end
 
-            return _ConstantAnchoredQuery{Tg}(idx, xq_d, side_flag, h, dL)
+            return _ConstantAnchoredQuery{Tg}(idx, xq_d, state_flag, h, dL)
         end
         anchors[q] = per_axis
     end
@@ -99,7 +99,7 @@ skipped (fill value is independent of f → zero gradient).
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
     for d in 1:N
-        @inbounds if extraps[d] isa FillExtrap && per_axis[d].side != 0x00
+        @inbounds if extraps[d] isa FillExtrap && per_axis[d].state != IN_DOMAIN
             return true
         end
     end

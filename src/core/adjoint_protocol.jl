@@ -47,11 +47,11 @@
 # - NoExtrap/ExtendExtrap/WrapExtrap: no OOB skip (NoExtrap throws at construction)
 
 # EvalValue OOB skip: only FillExtrap needs skip (fill value not function of f)
-@inline _is_oob_skip(side::UInt8, ::FillExtrap) = side != 0x00
+@inline _is_oob_skip(state::UInt8, ::FillExtrap) = state != IN_DOMAIN
 @inline _is_oob_skip(::UInt8, ::AbstractExtrap) = false
 
 # EvalDeriv OOB skip: both Clamp and Fill have zero derivative outside domain
-@inline _is_oob_skip_deriv(side::UInt8, ::_ClampOrFill) = side != 0x00
+@inline _is_oob_skip_deriv(state::UInt8, ::_ClampOrFill) = state != IN_DOMAIN
 @inline _is_oob_skip_deriv(::UInt8, ::AbstractExtrap) = false
 
 # ╔══════════════════════════════════════╗

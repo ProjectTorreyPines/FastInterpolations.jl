@@ -69,7 +69,7 @@ end
 # ║                         VECTOR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-function constant_interp!(
+@with_pool pool function constant_interp!(
         outputs::AbstractVector{<:AbstractVector},
         x::AbstractVector{Tg},
         s::Series,
@@ -89,10 +89,12 @@ function constant_interp!(
     searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap_eff isa WrapExtrap
     x_last = Tg(last(x))
-    @inbounds for j in eachindex(xqs)
-        aq = _anchor_query(x, xqs[j], Val(:constant), wrap, searcher)
-        for k in 1:K
-            outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap_eff)
+    # Pre-compute anchors via pool, then K outer × Q inner for cache locality
+    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg}, length(xqs))
+    _fill_anchors!(aq_vec, x, xqs, Val(:constant), wrap, searcher)
+    @inbounds for k in 1:K
+        for j in eachindex(xqs)
+            outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq_vec[j], deriv, side, extrap_eff)
         end
     end
     return outputs

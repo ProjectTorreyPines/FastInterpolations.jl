@@ -96,7 +96,7 @@ end
 In-place one-shot linear interpolation at multiple query points.
 `outputs` is a `Vector{<:AbstractVector}` of length `n_series`, each of length `length(xqs)`.
 """
-function linear_interp!(
+@with_pool pool function linear_interp!(
         outputs::AbstractVector{<:AbstractVector},
         x::AbstractVector{Tg},
         s::Series,
@@ -114,10 +114,12 @@ function linear_interp!(
     vecs = _series_vectors(s)
     searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap_eff isa WrapExtrap
-    @inbounds for j in eachindex(xqs)
-        aq = _anchor_query(x, xqs[j], Val(:linear), wrap, searcher)
-        for k in 1:K
-            outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap_eff)
+    # Pre-compute anchors via pool, then K outer × Q inner for cache locality
+    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tg}, length(xqs))
+    _fill_anchors!(aq_vec, x, xqs, Val(:linear), wrap, searcher)
+    @inbounds for k in 1:K
+        for j in eachindex(xqs)
+            outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq_vec[j], deriv, extrap_eff)
         end
     end
     return outputs

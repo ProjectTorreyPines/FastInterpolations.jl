@@ -8,7 +8,7 @@
 # Reuses _LinearAnchoredQuery from linear_anchor.jl:
 # - alpha  → EvalValue weights: (1-α, α)
 # - inv_h  → EvalDeriv1 weights: (-inv_h, inv_h)
-# - side   → OOB detection: 0x00=inside, 0x01=below, 0x02=above
+# - state  → OOB detection: IN_DOMAIN, OOB_LEFT, OOB_RIGHT
 #
 # 2nd+ derivatives of linear interpolation are identically zero.
 
@@ -106,7 +106,7 @@ end
     )
     @inbounds for q in eachindex(y_bar)
         aq = anchors[q]
-        _is_oob_skip(aq.side, extrap) && continue
+        _is_oob_skip(aq.state, extrap) && continue
         yb = y_bar[q]
         f_bar[aq.idx] += (one(aq.alpha) - aq.alpha) * yb
         f_bar[aq.idx + 1] += aq.alpha * yb
@@ -127,7 +127,7 @@ end
     )
     @inbounds for q in eachindex(y_bar)
         aq = anchors[q]
-        _is_oob_skip_deriv(aq.side, extrap) && continue
+        _is_oob_skip_deriv(aq.state, extrap) && continue
         yb = y_bar[q]
         f_bar[aq.idx] -= aq.inv_h * yb
         f_bar[aq.idx + 1] += aq.inv_h * yb
@@ -164,13 +164,13 @@ end
 # ========================================
 
 """
-Restore `side` flags for anchors built with clamped query positions.
+Restore `state` flags for anchors built with clamped query positions.
 
 When ClampExtrap/FillExtrap queries are clamped before anchoring, the anchor
-gets `side=0x00` (inside). This restores the correct OOB side flag based on the
+gets `state=IN_DOMAIN` (inside). This restores the correct OOB state flag based on the
 original query position, so scatter can skip OOB contributions.
 """
-function _fixup_linear_anchor_sides!(
+function _fixup_linear_anchor_state!(
         anchors::Vector{_LinearAnchoredQuery{Tg, Tg}},
         xq_original::AbstractVector{Tg},
         x_lo::Tg, x_hi::Tg
@@ -178,10 +178,10 @@ function _fixup_linear_anchor_sides!(
     @inbounds for i in eachindex(anchors)
         xq_i = xq_original[i]
         (x_lo <= xq_i <= x_hi) && continue
-        side = xq_i < x_lo ? 0x01 : 0x02
+        state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
         aq = anchors[i]
         anchors[i] = _LinearAnchoredQuery{Tg, Tg}(
-            aq.idx, aq.xq, side, aq.xL, aq.h, aq.inv_h, aq.alpha
+            aq.idx, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha
         )
     end
     return nothing
@@ -260,7 +260,7 @@ function linear_adjoint(
         x_lo, x_hi = first(x_p), last(x_p)
         xq_clamped = clamp.(xq_p, x_lo, x_hi)
         anchors = _anchor_query(x_p, xq_clamped, Val(:linear), false)
-        _fixup_linear_anchor_sides!(anchors, xq_p, x_lo, x_hi)
+        _fixup_linear_anchor_state!(anchors, xq_p, x_lo, x_hi)
     else
         # ExtendExtrap: OOB uses boundary interval with extrapolated alpha (correct)
         # WrapExtrap: wraps to domain (correct)

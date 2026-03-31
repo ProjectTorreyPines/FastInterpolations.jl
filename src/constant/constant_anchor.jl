@@ -24,7 +24,7 @@ matches the interpolant grid.
 # Fields
 - `idx`: Interval index where xq falls
 - `xq`: Original query point (or wrapped value for periodic)
-- `side`: Domain position (0=inside, 1=below, 2=above)
+- `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
 - `h`: Interval width (for :nearest comparison)
 - `dL`: Offset from left boundary (for :nearest comparison)
 
@@ -47,7 +47,7 @@ as it eliminates O(log n) binary search.
 struct _ConstantAnchoredQuery{T <: AbstractFloat}
     idx::Int                   # interval index
     xq::T                      # query point (possibly wrapped)
-    side::UInt8                # 0=inside, 1=below_min, 2=above_max
+    state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     h::T                       # interval width
     dL::T                      # offset from left boundary
 end
@@ -196,41 +196,13 @@ Internal implementation of _anchor_query for constant interpolation.
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
     ) where {T <: AbstractFloat, P <: Searcher}
-    x_min, x_max = first(x), last(x)
+    loc = _anchor_loc(x, xq, wrap, policy)
 
-    # Handle wrapping (for extrap=WrapExtrap() mode)
-    if wrap && (xq < x_min || xq >= x_max)
-        xq = _wrap_to_domain(xq, x_min, x_max)
-    end
+    # Compute geometry (constant-internal concern)
+    h = _get_h(x, loc.xR, loc.xL)
+    dL = loc.xq - loc.xL
 
-    # Determine side (domain position)
-    side = if xq < x_min
-        0x01  # below min
-    elseif xq > x_max
-        0x02  # above max
-    else
-        0x00  # inside
-    end
-
-    # Find interval and compute geometry
-    # For outside-domain points, use boundary intervals
-    idx, xL, xR = if xq < x_min
-        # Below domain: use first interval
-        @inbounds (1, x[1], x[2])
-    elseif xq > x_max
-        # Above domain: use last interval
-        n = length(x)
-        @inbounds (n - 1, x[n - 1], x[n])
-    else
-        # Inside domain: use policy-based interval search
-        search_interval(policy, x, xq)
-    end
-
-    # Compute geometry
-    h = xR - xL
-    dL = xq - xL
-
-    return _ConstantAnchoredQuery{T}(idx, xq, side, h, dL)
+    return _ConstantAnchoredQuery{T}(loc.idx, loc.xq, loc.state, h, dL)
 end
 
 # ========================================
@@ -288,7 +260,7 @@ end
         y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
         op::AbstractEvalOp, side_param::AbstractSide, ::NoExtrap
     )
-    aq.side != 0x00 && throw(DomainError(aq.xq, "query point outside domain"))
+    aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
     aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
     @inbounds return _constant_kernel(op, y[aq.idx], y[aq.idx + 1], aq.h, aq.dL, side_param)
 end
@@ -298,8 +270,8 @@ end
         y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
         op::AbstractEvalOp, side_param::AbstractSide, extrap::_ClampOrFill
     )
-    if aq.side != 0x00
-        y_bnd = aq.side == 0x01 ? first(y) : last(y)
+    if aq.state != IN_DOMAIN
+        y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     end
     aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
@@ -325,7 +297,7 @@ end
         op::O,
         ::NoExtrap
     ) where {T <: AbstractFloat, O <: AbstractEvalOp}
-    if aq.side != 0x00
+    if aq.state != IN_DOMAIN
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end

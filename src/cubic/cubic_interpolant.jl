@@ -61,7 +61,7 @@ itp(aq)  # Ultra-fast evaluation
 """
 @inline function (itp::CubicInterpolant{Tg, Tv})(aq::_CubicAnchoredQuery{Tg, Tq}; deriv::DerivOp = EvalValue()) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     # Fast path: inside domain (most common case)
-    if aq.side == 0x00
+    if aq.state == IN_DOMAIN
         return _eval_anchored_kernel(itp, aq, deriv)
     end
 
@@ -109,8 +109,8 @@ end
 Internal kernel for batch anchored evaluation.
 
 Iterates through anchor vector, dispatching each to existing scalar kernels:
-- `_eval_anchored_kernel` for inside-domain (side == 0x00)
-- `_eval_anchored_extrap` for outside-domain (side != 0x00)
+- `_eval_anchored_kernel` for inside-domain (state == IN_DOMAIN)
+- `_eval_anchored_extrap` for outside-domain (state != IN_DOMAIN)
 
 For extrap=NoExtrap(), throws DomainError on first out-of-domain anchor.
 """
@@ -122,7 +122,7 @@ For extrap=NoExtrap(), throws DomainError on first out-of-domain anchor.
     ) where {Tg <: AbstractFloat, Tv}
     @inbounds for k in eachindex(aq, output)
         aq_k = aq[k]
-        if aq_k.side == 0x00
+        if aq_k.state == IN_DOMAIN
             # Fast path: inside domain
             output[k] = _eval_anchored_kernel(itp, aq_k, op)
         else

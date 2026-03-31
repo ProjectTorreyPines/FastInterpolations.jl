@@ -25,7 +25,7 @@ matches the interpolant grid.
 # Fields
 - `idx`: Interval index where xq falls
 - `xq`: Original query point (or wrapped value for periodic)
-- `side`: Domain position (0=inside, 1=below, 2=above)
+- `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
 - `dL`: Offset from interval start (xq - x_i)
 
 # Usage
@@ -52,7 +52,7 @@ series interpolant evaluation.
 struct _QuadraticAnchoredQuery{Tg <: AbstractFloat, Tq <: Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), Float or Dual
-    side::UInt8                # 0=inside, 1=below_min, 2=above_max
+    state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     dL::Tq                     # offset from interval start, Float or Dual
 end
 
@@ -205,46 +205,12 @@ while preserving the full Dual value for `dL` computation.
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
     ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
-    x_min, x_max = first(x), last(x)
+    loc = _anchor_loc(x, xq, wrap, policy)
 
-    # Use primal value for comparisons (supports ForwardDiff.Dual)
-    xq_primal = _extract_primal(xq)
+    # Compute dL: offset from interval start (preserves Dual type)
+    dL = loc.xq - loc.xL
 
-    # Handle wrapping (for extrap=WrapExtrap() mode)
-    if wrap && (xq_primal < x_min || xq_primal >= x_max)
-        xq = _wrap_to_domain(xq, x_min, x_max)
-        xq_primal = xq  # xq is now Tg, no need for _extract_primal
-    end
-
-    # Determine side (domain position)
-    side = if xq_primal < x_min
-        0x01  # below min
-    elseif xq_primal > x_max
-        0x02  # above max
-    else
-        0x00  # inside
-    end
-
-    # Find interval and compute geometry
-    # For outside-domain points, use boundary intervals
-    # Note: Convert primal to Tg for search_interval (requires matching types)
-    idx, xL, _ = if xq_primal < x_min
-        # Below domain: use first interval
-        @inbounds (1, x[1], x[2])
-    elseif xq_primal > x_max
-        # Above domain: use last interval
-        n = length(x)
-        @inbounds (n - 1, x[n - 1], x[n])
-    else
-        # Inside domain: use policy-based interval search
-        search_interval(policy, x, xq_primal)
-    end
-
-    # Compute dL: offset from interval start
-    # This preserves Dual type when xq is Dual
-    dL = xq - xL
-
-    return _QuadraticAnchoredQuery{Tg, Tq}(idx, xq, side, dL)
+    return _QuadraticAnchoredQuery{Tg, typeof(loc.xq)}(loc.idx, loc.xq, loc.state, dL)
 end
 
 # ========================================
@@ -302,7 +268,7 @@ end
         y::AbstractVector, a::AbstractVector, d::AbstractVector,
         aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ::NoExtrap
     )
-    aq.side != 0x00 && throw(DomainError(aq.xq, "query point outside domain"))
+    aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
     @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
 end
 
@@ -311,8 +277,8 @@ end
         y::AbstractVector, a::AbstractVector, d::AbstractVector,
         aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill
     )
-    if aq.side != 0x00
-        y_bnd = aq.side == 0x01 ? first(y) : last(y)
+    if aq.state != IN_DOMAIN
+        y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     end
     @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
@@ -329,7 +295,7 @@ end
         op::O,
         ::NoExtrap
     ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
-    if aq.side != 0x00
+    if aq.state != IN_DOMAIN
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end

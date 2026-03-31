@@ -324,12 +324,12 @@ SIMD evaluation with extrapolation handling for multi-series.
         op::AbstractEvalOp
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     # Inside domain: normal evaluation
-    if aq.side == 0x00
+    if aq.state == IN_DOMAIN
         return _eval_series_point!(out, y_point, z_point, aq, op)
     end
 
     # Outside domain: dispatch on extrap mode
-    return _eval_series_point_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op, aq.side)
+    return _eval_series_point_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op, aq.state)
 end
 
 # NoExtrap - throw DomainError
@@ -377,7 +377,7 @@ end
         ::EvalValue,
         side::UInt8
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    idx = side == 0x01 ? 1 : (n_pts - 1)
+    idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w0
 
@@ -404,7 +404,7 @@ end
         ::EvalDeriv1,
         side::UInt8
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    idx = side == 0x01 ? 1 : (n_pts - 1)
+    idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w1
 
@@ -431,7 +431,7 @@ end
         ::EvalDeriv2,
         side::UInt8
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    idx = side == 0x01 ? 1 : (n_pts - 1)
+    idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wzL, wzR = aq.w2
 
@@ -456,7 +456,7 @@ end
         ::EvalDeriv3,
         side::UInt8
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    idx = side == 0x01 ? 1 : (n_pts - 1)
+    idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wzL, wzR = aq.w3
 
@@ -993,7 +993,7 @@ Takes matrices as arguments for optimal performance.
         op::AbstractEvalOp
     ) where {Tg <: AbstractFloat, Tv}
     # Inside domain: normal evaluation
-    if aq.side == 0x00
+    if aq.state == IN_DOMAIN
         return _eval_series_anchored(y, z, k, aq, op)
     end
 
@@ -1001,7 +1001,7 @@ Takes matrices as arguments for optimal performance.
     if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_series_anchored(y, z, k, aq, op)
     elseif extrap isa _ClampOrFill
-        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op, extrap)
+        return _constant_extrap_boundary_value(y, aq.state, n_pts, k, op, extrap)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end

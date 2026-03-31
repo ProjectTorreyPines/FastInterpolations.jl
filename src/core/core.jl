@@ -12,6 +12,7 @@ include("search.jl")           # 6. Search policy + interval search
 include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)
 include("utils.jl")            # 7. Shared utilities (1D)
 include("periodic.jl")         # 8. Periodic BC helpers (wrapping, validation, exclusive endpoint)
+include("anchor_common.jl")    # 8b. Shared _AnchorLoc + _anchor_loc (all methods, 1D/ND)
 include("nd_utils.jl")            # 9. ND-specific utilities (shared by constant/linear/cubic ND)
 include("query_protocol.jl")           # 9b. Query protocol (query_length, extract, eltype, validate)
 include("interpolant_protocol.jl")     # 9c. Interpolant callable interface (1D + ND)

@@ -236,4 +236,21 @@ using FastInterpolations
         out_wrong = zeros(5)
         @test_throws DimensionMismatch linear_interp!(out_wrong, x, s, 0.5)
     end
+
+    @testset "Mixed-precision vector query (Float32 queries on Float64 grid)" begin
+        s = Series(y_sin, y_cos)
+        xqs_f32 = Float32[0.1, 0.37, 0.5, 0.9]
+        outputs = [zeros(length(xqs_f32)) for _ in 1:2]
+        # Should not throw — pool buffer type must accommodate promoted Tq
+        @test begin
+            linear_interp!(outputs, x, s, xqs_f32)
+            true
+        end
+        # Results should match Float64 queries
+        xqs_f64 = Float64.(xqs_f32)
+        outputs_ref = [zeros(length(xqs_f64)) for _ in 1:2]
+        linear_interp!(outputs_ref, x, s, xqs_f64)
+        @test outputs[1] ≈ outputs_ref[1]
+        @test outputs[2] ≈ outputs_ref[2]
+    end
 end

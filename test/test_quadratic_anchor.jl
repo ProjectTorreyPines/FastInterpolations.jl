@@ -19,13 +19,13 @@ using FastInterpolations
         @test aq isa FastInterpolations._QuadraticAnchoredQuery{Float64}
         @test hasfield(typeof(aq), :idx)
         @test hasfield(typeof(aq), :xq)
-        @test hasfield(typeof(aq), :side)
+        @test hasfield(typeof(aq), :state)
         @test hasfield(typeof(aq), :dL)
 
         # Verify field types
         @test aq.idx isa Int
         @test aq.xq isa Float64
-        @test aq.side isa UInt8
+        @test aq.state isa UInt8
         @test aq.dL isa Float64
     end
 
@@ -39,19 +39,19 @@ using FastInterpolations
         aq = FastInterpolations._anchor_query(x, 0.35, Val(:quadratic))
         @test aq.idx == 4  # interval [0.3, 0.4]
         @test aq.xq == 0.35
-        @test aq.side == 0x00  # inside
+        @test aq.state == FastInterpolations.IN_DOMAIN  # inside
         @test aq.dL ≈ 0.05  # 0.35 - 0.3
 
         # Query at left boundary
         aq_left = FastInterpolations._anchor_query(x, 0.0, Val(:quadratic))
         @test aq_left.idx == 1
-        @test aq_left.side == 0x00
+        @test aq_left.state == FastInterpolations.IN_DOMAIN
         @test aq_left.dL ≈ 0.0
 
         # Query at right boundary
         aq_right = FastInterpolations._anchor_query(x, 1.0, Val(:quadratic))
         @test aq_right.idx == 10  # last interval
-        @test aq_right.side == 0x00
+        @test aq_right.state == FastInterpolations.IN_DOMAIN
     end
 
     # ========================================
@@ -145,20 +145,20 @@ using FastInterpolations
     # ========================================
     # Domain Boundary Detection Tests
     # ========================================
-    @testset "domain boundary detection (side field)" begin
+    @testset "domain boundary detection (state field)" begin
         x = collect(range(0.0, 1.0, 11))
 
         # Inside domain
         aq_inside = FastInterpolations._anchor_query(x, 0.5, Val(:quadratic))
-        @test aq_inside.side == 0x00
+        @test aq_inside.state == FastInterpolations.IN_DOMAIN
 
         # Below domain
         aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:quadratic))
-        @test aq_below.side == 0x01
+        @test aq_below.state == FastInterpolations.OOB_LEFT
 
         # Above domain
         aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:quadratic))
-        @test aq_above.side == 0x02
+        @test aq_above.state == FastInterpolations.OOB_RIGHT
     end
 
     # ========================================
@@ -396,12 +396,12 @@ using FastInterpolations
         # Query outside domain with wrap=true
         aq_wrap = FastInterpolations._anchor_query(x, 1.5, Val(:quadratic), true)
         @test aq_wrap.xq ≈ 0.5  # 1.5 wraps to 0.5
-        @test aq_wrap.side == 0x00  # inside after wrap
+        @test aq_wrap.state == FastInterpolations.IN_DOMAIN  # inside after wrap
 
         # Below domain with wrap=true
         aq_wrap_neg = FastInterpolations._anchor_query(x, -0.3, Val(:quadratic), true)
         @test aq_wrap_neg.xq ≈ 0.7  # -0.3 + 1.0 = 0.7
-        @test aq_wrap_neg.side == 0x00
+        @test aq_wrap_neg.state == FastInterpolations.IN_DOMAIN
     end
 
     # ========================================
@@ -422,7 +422,7 @@ using FastInterpolations
             for i in eachindex(xq)
                 @test buffer[i].idx == expected[i].idx
                 @test buffer[i].xq == expected[i].xq
-                @test buffer[i].side == expected[i].side
+                @test buffer[i].state == expected[i].state
                 @test buffer[i].dL == expected[i].dL
             end
         end
@@ -438,7 +438,7 @@ using FastInterpolations
             for i in eachindex(xq)
                 @test buffer[i].idx == expected[i].idx
                 @test buffer[i].xq == expected[i].xq
-                @test buffer[i].side == expected[i].side
+                @test buffer[i].state == expected[i].state
             end
         end
 

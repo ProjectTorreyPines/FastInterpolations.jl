@@ -96,32 +96,38 @@
     end
 
     @testset "Extrapolation modes" begin
-        x = collect(range(0.0, 1.0, 10))
-        y = sin.(x)
-        dy = cos.(x)
+        # Use cubic polynomial for exact value checks
+        x = collect(range(0.0, 3.0, 20))
+        y = p.(x)
+        dy = dp.(x)
 
         # NoExtrap — throws outside domain
         @test_throws DomainError cubic_interp(x, Hermite(y, dy), -0.1)
-        @test_throws DomainError cubic_interp(x, Hermite(y, dy), 1.1)
+        @test_throws DomainError cubic_interp(x, Hermite(y, dy), 3.1)
 
-        # ClampExtrap — returns boundary values
-        val_left = cubic_interp(x, Hermite(y, dy), -0.5; extrap = ClampExtrap())
-        val_right = cubic_interp(x, Hermite(y, dy), 1.5; extrap = ClampExtrap())
-        @test val_left ≈ y[1]
-        @test val_right ≈ y[end]
+        # ClampExtrap — returns boundary values (value), zero (derivatives)
+        @test cubic_interp(x, Hermite(y, dy), -0.5; extrap = ClampExtrap()) ≈ y[1]
+        @test cubic_interp(x, Hermite(y, dy), 3.5; extrap = ClampExtrap()) ≈ y[end]
+        @test cubic_interp(x, Hermite(y, dy), -0.5; extrap = ClampExtrap(), deriv = DerivOp(1)) ≈ 0.0 atol = 1e-14
 
-        # ExtendExtrap — no error outside domain
-        val_ext = cubic_interp(x, Hermite(y, dy), 1.2; extrap = ExtendExtrap())
-        @test isfinite(val_ext)
+        # ExtendExtrap — extends boundary polynomial, exact for cubic
+        @test cubic_interp(x, Hermite(y, dy), 3.2; extrap = ExtendExtrap()) ≈ p(3.2) atol = 1e-10
+        @test cubic_interp(x, Hermite(y, dy), -0.3; extrap = ExtendExtrap()) ≈ p(-0.3) atol = 1e-10
+        # ExtendExtrap derivative also exact
+        @test cubic_interp(x, Hermite(y, dy), 3.2; extrap = ExtendExtrap(), deriv = DerivOp(1)) ≈ dp(3.2) atol = 1e-8
+
+        # FillExtrap — returns fill value outside domain
+        @test cubic_interp(x, Hermite(y, dy), -0.5; extrap = FillExtrap(999.0)) ≈ 999.0
+        @test cubic_interp(x, Hermite(y, dy), 3.5; extrap = FillExtrap(NaN)) |> isnan
 
         # WrapExtrap — wraps to domain
-        val_wrap = cubic_interp(x, Hermite(y, dy), 1.2; extrap = WrapExtrap())
+        val_wrap = cubic_interp(x, Hermite(y, dy), 3.2; extrap = WrapExtrap())
         @test isfinite(val_wrap)
 
         # Callable with extrap
         itp = cubic_interp(x, Hermite(y, dy); extrap = ClampExtrap())
         @test itp(-0.5) ≈ y[1]
-        @test itp(1.5) ≈ y[end]
+        @test itp(3.5) ≈ y[end]
     end
 
     @testset "Type stability — @inferred" begin
@@ -250,5 +256,45 @@
         # Both should reproduce the cubic polynomial exactly
         @test hermite_vals ≈ p.(xq) atol = 1e-10
         @test spline_vals ≈ p.(xq) atol = 1e-10
+    end
+
+    @testset "Float32 precision" begin
+        x32 = collect(range(0.0f0, 3.0f0, 20))
+        y32 = Float32.(p.(x32))
+        dy32 = Float32.(dp.(x32))
+
+        val = cubic_interp(x32, Hermite(y32, dy32), 1.5f0)
+        @test val isa Float32
+        @test val ≈ Float32(p(1.5)) atol = 1e-4  # Float32 precision
+
+        itp32 = cubic_interp(x32, Hermite(y32, dy32))
+        @test itp32(1.5f0) isa Float32
+        @test itp32(1.5f0) ≈ Float32(p(1.5)) atol = 1e-4
+    end
+
+    @testset "Broadcast" begin
+        x = collect(range(0.0, 3.0, 20))
+        y = p.(x)
+        dy = dp.(x)
+
+        itp = cubic_interp(x, Hermite(y, dy))
+        xq = [0.5, 1.0, 2.0]
+        broadcast_result = itp.(xq)
+        @test broadcast_result ≈ p.(xq) atol = 1e-12
+    end
+
+    @testset "Search policy override" begin
+        x = collect(range(0.0, 3.0, 50))
+        y = p.(x)
+        dy = dp.(x)
+        xq = 1.5
+
+        # Oneshot with explicit search
+        @test cubic_interp(x, Hermite(y, dy), xq; search = BinarySearch()) ≈ p(xq) atol = 1e-12
+        @test cubic_interp(x, Hermite(y, dy), xq; search = LinearBinarySearch()) ≈ p(xq) atol = 1e-12
+
+        # Callable with search override at call time
+        itp = cubic_interp(x, Hermite(y, dy))
+        @test itp(xq; search = BinarySearch()) ≈ p(xq) atol = 1e-12
     end
 end

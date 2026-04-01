@@ -48,6 +48,7 @@ C\$^1\$ continuous — slopes are used directly, no global spline solve.
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     _reject_hermite_kwargs(bc, autocache)
     @boundscheck length(h.y) == length(x) || _throw_length_mismatch(length(x), length(h.y))
+    @boundscheck length(x) >= 2 || throw(ArgumentError("Hermite interpolation requires at least 2 points, got $(length(x))"))
 
     x = _to_float(x, Tg)
     searcher = _resolve_search(x, xq, search, hint)

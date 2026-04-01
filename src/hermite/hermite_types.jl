@@ -169,6 +169,7 @@ struct CubicHermiteInterpolant1D{
         }
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) == length(dy) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
+        length(x) >= 2 || throw(ArgumentError("Hermite interpolation requires at least 2 points, got $(length(x))"))
         xc, yc, dyc = copy(x), copy(y), copy(dy)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), S, E, P}(
             xc, yc, dyc, spacing, extrap, search

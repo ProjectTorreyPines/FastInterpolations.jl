@@ -173,10 +173,12 @@
         dy = dp.(collect(x))
 
         # Range grid → O(1) direct search
-        @test cubic_interp(collect(x), Hermite(y, dy), 1.5) ≈ p(1.5) atol = 1e-12
+        @test cubic_interp(x, Hermite(y, dy), 1.5) ≈ p(1.5) atol = 1e-12
 
-        # Callable with range grid
-        itp = cubic_interp(collect(x), Hermite(y, dy))
+        # Callable with range grid — verify Range preserved as _CachedRange
+        itp = cubic_interp(x, Hermite(y, dy))
+        @test itp.x isa AbstractRange
+        @test itp.x isa FastInterpolations._CachedRange
         @test itp(1.5) ≈ p(1.5) atol = 1e-12
     end
 

@@ -40,7 +40,7 @@ using Random
             for q in xq
                 fi_val = pchip_interp(x_uniform, y_uniform, q)
                 di_val = di(q)
-                @test fi_val ≈ di_val rtol = 1e-12
+                @test fi_val ≈ di_val rtol = 1.0e-12
             end
         end
 
@@ -49,7 +49,7 @@ using Random
             for q in xq
                 fi_val = pchip_interp(x_nonuniform, y_nonuniform, q)
                 di_val = di(q)
-                @test fi_val ≈ di_val rtol = 1e-12
+                @test fi_val ≈ di_val rtol = 1.0e-12
             end
         end
 
@@ -59,7 +59,7 @@ using Random
             for q in xq_mono
                 fi_val = pchip_interp(x_mono, y_mono, q)
                 di_val = di(q)
-                @test fi_val ≈ di_val rtol = 1e-12
+                @test fi_val ≈ di_val rtol = 1.0e-12
             end
         end
 
@@ -67,7 +67,7 @@ using Random
             di = DI.PCHIPInterpolation(y_uniform, x_uniform)
             fi_vals = pchip_interp(x_uniform, y_uniform, xq)
             di_vals = [di(q) for q in xq]
-            @test fi_vals ≈ di_vals rtol = 1e-12
+            @test fi_vals ≈ di_vals rtol = 1.0e-12
         end
     end
 
@@ -86,7 +86,7 @@ using Random
             for q in xq_interior
                 fi_val = akima_interp(x_uniform, y_uniform, q)
                 di_val = di(q)
-                @test fi_val ≈ di_val rtol = 1e-10
+                @test fi_val ≈ di_val rtol = 1.0e-10
             end
         end
 
@@ -96,7 +96,7 @@ using Random
             for q in xq_interior
                 fi_val = akima_interp(x_nonuniform, y_nonuniform, q)
                 di_val = di(q)
-                @test fi_val ≈ di_val rtol = 1e-10
+                @test fi_val ≈ di_val rtol = 1.0e-10
             end
         end
 
@@ -115,7 +115,7 @@ using Random
             xq_safe = [0.12, 0.27, 0.41, 0.55, 0.68, 0.79, 0.88]
             fi_vals = akima_interp(x_uniform, y_uniform, xq_safe)
             di_vals = [di(q) for q in xq_safe]
-            @test fi_vals ≈ di_vals rtol = 1e-10
+            @test fi_vals ≈ di_vals rtol = 1.0e-10
         end
     end
 
@@ -141,7 +141,7 @@ using Random
         for q in xq
             cardinal_val = cardinal_interp(x, y, q; tension = 0.0)
             hermite_val = cubic_interp(x, Hermite(y, dy_manual), q)
-            @test cardinal_val ≈ hermite_val rtol = 1e-14
+            @test cardinal_val ≈ hermite_val rtol = 1.0e-14
         end
     end
 
@@ -160,13 +160,13 @@ using Random
         akima = akima_interp(x, y, xq_test)
 
         # All should be close to the true function on a dense grid
-        @test spline ≈ ref atol = 1e-4
-        @test pchip ≈ ref atol = 1e-3
-        @test cardinal ≈ ref atol = 1e-2
-        @test akima ≈ ref atol = 1e-3
+        @test spline ≈ ref atol = 1.0e-4
+        @test pchip ≈ ref atol = 1.0e-3
+        @test cardinal ≈ ref atol = 1.0e-2
+        @test akima ≈ ref atol = 1.0e-3
 
         # All methods should agree with each other within reasonable tolerance
-        @test pchip ≈ akima atol = 1e-2
-        @test pchip ≈ spline atol = 1e-2
+        @test pchip ≈ akima atol = 1.0e-2
+        @test pchip ≈ spline atol = 1.0e-2
     end
 end

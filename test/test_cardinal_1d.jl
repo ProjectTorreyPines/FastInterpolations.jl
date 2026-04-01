@@ -119,8 +119,8 @@
         @test cardinal_interp(x, y, -0.5; extrap = FillExtrap(999.0)) ≈ 999.0
         @test cardinal_interp(x, y, 3.5; extrap = FillExtrap(NaN)) |> isnan
         # FillExtrap derivative at OOB → zero
-        @test cardinal_interp(x, y, -0.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1e-14
-        @test cardinal_interp(x, y, 3.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1e-14
+        @test cardinal_interp(x, y, -0.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1.0e-14
+        @test cardinal_interp(x, y, 3.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1.0e-14
 
         # WrapExtrap
         @test isfinite(cardinal_interp(x, y, 3.2; extrap = WrapExtrap()))

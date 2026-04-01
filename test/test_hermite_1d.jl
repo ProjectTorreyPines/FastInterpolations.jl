@@ -19,7 +19,7 @@
         xq_pts = [0.15, 0.7, 1.33, 2.5, 2.99]
         for xq in xq_pts
             val = cubic_interp(x, Hermite(y, dy), xq)
-            @test val ≈ p(xq) atol = 1e-12
+            @test val ≈ p(xq) atol = 1.0e-12
         end
     end
 
@@ -30,7 +30,7 @@
         xq = [0.15, 0.7, 1.33, 2.5, 2.99]
 
         result = cubic_interp(x, Hermite(y, dy), xq)
-        @test result ≈ p.(xq) atol = 1e-12
+        @test result ≈ p.(xq) atol = 1.0e-12
     end
 
     @testset "Cubic polynomial exactness — in-place" begin
@@ -41,7 +41,7 @@
         out = zeros(length(xq))
 
         cubic_interp!(out, x, Hermite(y, dy), xq)
-        @test out ≈ p.(xq) atol = 1e-12
+        @test out ≈ p.(xq) atol = 1.0e-12
     end
 
     @testset "Cubic polynomial exactness — callable interpolant" begin
@@ -54,17 +54,17 @@
 
         xq_pts = [0.15, 0.7, 1.33, 2.5, 2.99]
         for xq in xq_pts
-            @test itp(xq) ≈ p(xq) atol = 1e-12
+            @test itp(xq) ≈ p(xq) atol = 1.0e-12
         end
 
         # Vector call
         xq_vec = [0.15, 0.7, 1.33, 2.5, 2.99]
-        @test itp(xq_vec) ≈ p.(xq_vec) atol = 1e-12
+        @test itp(xq_vec) ≈ p.(xq_vec) atol = 1.0e-12
 
         # In-place call
         out = zeros(length(xq_vec))
         itp(out, xq_vec)
-        @test out ≈ p.(xq_vec) atol = 1e-12
+        @test out ≈ p.(xq_vec) atol = 1.0e-12
     end
 
     @testset "DerivOp correctness" begin
@@ -75,24 +75,24 @@
         xq = 1.5
 
         # Value
-        @test cubic_interp(x, Hermite(y, dy), xq; deriv = EvalValue()) ≈ p(xq) atol = 1e-12
+        @test cubic_interp(x, Hermite(y, dy), xq; deriv = EvalValue()) ≈ p(xq) atol = 1.0e-12
 
         # First derivative
-        @test cubic_interp(x, Hermite(y, dy), xq; deriv = DerivOp(1)) ≈ dp(xq) atol = 1e-10
+        @test cubic_interp(x, Hermite(y, dy), xq; deriv = DerivOp(1)) ≈ dp(xq) atol = 1.0e-10
 
         # Second derivative
-        @test cubic_interp(x, Hermite(y, dy), xq; deriv = DerivOp(2)) ≈ d2p(xq) atol = 1e-8
+        @test cubic_interp(x, Hermite(y, dy), xq; deriv = DerivOp(2)) ≈ d2p(xq) atol = 1.0e-8
 
         # Third derivative (constant 12 for cubic polynomial)
-        @test cubic_interp(x, Hermite(y, dy), xq; deriv = DerivOp(3)) ≈ d3p(xq) atol = 1e-6
+        @test cubic_interp(x, Hermite(y, dy), xq; deriv = DerivOp(3)) ≈ d3p(xq) atol = 1.0e-6
 
         # Fourth+ derivative → zero
-        @test cubic_interp(x, Hermite(y, dy), xq; deriv = DerivOp(4)) ≈ 0.0 atol = 1e-14
+        @test cubic_interp(x, Hermite(y, dy), xq; deriv = DerivOp(4)) ≈ 0.0 atol = 1.0e-14
 
         # Via callable
         itp = cubic_interp(x, Hermite(y, dy))
-        @test itp(xq; deriv = DerivOp(1)) ≈ dp(xq) atol = 1e-10
-        @test itp(xq; deriv = DerivOp(2)) ≈ d2p(xq) atol = 1e-8
+        @test itp(xq; deriv = DerivOp(1)) ≈ dp(xq) atol = 1.0e-10
+        @test itp(xq; deriv = DerivOp(2)) ≈ d2p(xq) atol = 1.0e-8
     end
 
     @testset "Extrapolation modes" begin
@@ -108,20 +108,20 @@
         # ClampExtrap — returns boundary values (value), zero (derivatives)
         @test cubic_interp(x, Hermite(y, dy), -0.5; extrap = ClampExtrap()) ≈ y[1]
         @test cubic_interp(x, Hermite(y, dy), 3.5; extrap = ClampExtrap()) ≈ y[end]
-        @test cubic_interp(x, Hermite(y, dy), -0.5; extrap = ClampExtrap(), deriv = DerivOp(1)) ≈ 0.0 atol = 1e-14
+        @test cubic_interp(x, Hermite(y, dy), -0.5; extrap = ClampExtrap(), deriv = DerivOp(1)) ≈ 0.0 atol = 1.0e-14
 
         # ExtendExtrap — extends boundary polynomial, exact for cubic
-        @test cubic_interp(x, Hermite(y, dy), 3.2; extrap = ExtendExtrap()) ≈ p(3.2) atol = 1e-10
-        @test cubic_interp(x, Hermite(y, dy), -0.3; extrap = ExtendExtrap()) ≈ p(-0.3) atol = 1e-10
+        @test cubic_interp(x, Hermite(y, dy), 3.2; extrap = ExtendExtrap()) ≈ p(3.2) atol = 1.0e-10
+        @test cubic_interp(x, Hermite(y, dy), -0.3; extrap = ExtendExtrap()) ≈ p(-0.3) atol = 1.0e-10
         # ExtendExtrap derivative also exact
-        @test cubic_interp(x, Hermite(y, dy), 3.2; extrap = ExtendExtrap(), deriv = DerivOp(1)) ≈ dp(3.2) atol = 1e-8
+        @test cubic_interp(x, Hermite(y, dy), 3.2; extrap = ExtendExtrap(), deriv = DerivOp(1)) ≈ dp(3.2) atol = 1.0e-8
 
         # FillExtrap — returns fill value outside domain
         @test cubic_interp(x, Hermite(y, dy), -0.5; extrap = FillExtrap(999.0)) ≈ 999.0
         @test cubic_interp(x, Hermite(y, dy), 3.5; extrap = FillExtrap(NaN)) |> isnan
         # FillExtrap derivative at OOB → zero (derivative of constant fill)
-        @test cubic_interp(x, Hermite(y, dy), -0.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1e-14
-        @test cubic_interp(x, Hermite(y, dy), 3.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1e-14
+        @test cubic_interp(x, Hermite(y, dy), -0.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1.0e-14
+        @test cubic_interp(x, Hermite(y, dy), 3.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1.0e-14
 
         # WrapExtrap — wraps to domain
         val_wrap = cubic_interp(x, Hermite(y, dy), 3.2; extrap = WrapExtrap())
@@ -187,13 +187,13 @@
         dy = dp.(collect(x))
 
         # Range grid → O(1) direct search
-        @test cubic_interp(x, Hermite(y, dy), 1.5) ≈ p(1.5) atol = 1e-12
+        @test cubic_interp(x, Hermite(y, dy), 1.5) ≈ p(1.5) atol = 1.0e-12
 
         # Callable with range grid — verify Range preserved as _CachedRange
         itp = cubic_interp(x, Hermite(y, dy))
         @test itp.x isa AbstractRange
         @test itp.x isa FastInterpolations._CachedRange
-        @test itp(1.5) ≈ p(1.5) atol = 1e-12
+        @test itp(1.5) ≈ p(1.5) atol = 1.0e-12
     end
 
     @testset "Non-uniform grid" begin
@@ -202,7 +202,7 @@
         dy = dp.(x)
 
         xq = 1.5
-        @test cubic_interp(x, Hermite(y, dy), xq) ≈ p(xq) atol = 1e-12
+        @test cubic_interp(x, Hermite(y, dy), xq) ≈ p(xq) atol = 1.0e-12
     end
 
     @testset "2-point grid (minimum)" begin
@@ -211,7 +211,7 @@
         dy = dp.(x)
 
         xq = 0.5
-        @test cubic_interp(x, Hermite(y, dy), xq) ≈ p(xq) atol = 1e-12
+        @test cubic_interp(x, Hermite(y, dy), xq) ≈ p(xq) atol = 1.0e-12
     end
 
     @testset "Complex values" begin
@@ -221,7 +221,7 @@
 
         itp = cubic_interp(x, Hermite(y, dy))
         xq = 1.0
-        @test itp(xq) ≈ exp(1im * xq) atol = 1e-4
+        @test itp(xq) ≈ exp(1im * xq) atol = 1.0e-4
     end
 
     @testset "Integer input promotion" begin
@@ -231,7 +231,7 @@
 
         # Should auto-promote to Float
         val = cubic_interp(collect(x_int), Hermite(y_int, dy_int), 5.5)
-        @test val ≈ 5.5^2 atol = 1e-10
+        @test val ≈ 5.5^2 atol = 1.0e-10
     end
 
     @testset "Error conditions" begin
@@ -262,8 +262,8 @@
         spline_vals = cubic_interp(x, y, xq)
 
         # Both should reproduce the cubic polynomial exactly
-        @test hermite_vals ≈ p.(xq) atol = 1e-10
-        @test spline_vals ≈ p.(xq) atol = 1e-10
+        @test hermite_vals ≈ p.(xq) atol = 1.0e-10
+        @test spline_vals ≈ p.(xq) atol = 1.0e-10
     end
 
     @testset "Float32 precision" begin
@@ -273,11 +273,11 @@
 
         val = cubic_interp(x32, Hermite(y32, dy32), 1.5f0)
         @test val isa Float32
-        @test val ≈ Float32(p(1.5)) atol = 1e-4  # Float32 precision
+        @test val ≈ Float32(p(1.5)) atol = 1.0e-4  # Float32 precision
 
         itp32 = cubic_interp(x32, Hermite(y32, dy32))
         @test itp32(1.5f0) isa Float32
-        @test itp32(1.5f0) ≈ Float32(p(1.5)) atol = 1e-4
+        @test itp32(1.5f0) ≈ Float32(p(1.5)) atol = 1.0e-4
     end
 
     @testset "Broadcast" begin
@@ -288,7 +288,7 @@
         itp = cubic_interp(x, Hermite(y, dy))
         xq = [0.5, 1.0, 2.0]
         broadcast_result = itp.(xq)
-        @test broadcast_result ≈ p.(xq) atol = 1e-12
+        @test broadcast_result ≈ p.(xq) atol = 1.0e-12
     end
 
     @testset "Search policy override" begin
@@ -298,12 +298,12 @@
         xq = 1.5
 
         # Oneshot with explicit search
-        @test cubic_interp(x, Hermite(y, dy), xq; search = BinarySearch()) ≈ p(xq) atol = 1e-12
-        @test cubic_interp(x, Hermite(y, dy), xq; search = LinearBinarySearch()) ≈ p(xq) atol = 1e-12
+        @test cubic_interp(x, Hermite(y, dy), xq; search = BinarySearch()) ≈ p(xq) atol = 1.0e-12
+        @test cubic_interp(x, Hermite(y, dy), xq; search = LinearBinarySearch()) ≈ p(xq) atol = 1.0e-12
 
         # Callable with search override at call time
         itp = cubic_interp(x, Hermite(y, dy))
-        @test itp(xq; search = BinarySearch()) ≈ p(xq) atol = 1e-12
+        @test itp(xq; search = BinarySearch()) ≈ p(xq) atol = 1.0e-12
     end
 
     @testset "Show methods" begin
@@ -385,18 +385,18 @@
         # Oneshot scalar
         val = cubic_interp(x, Hermite(y_sv, dy_sv), xq)
         @test val isa SVector{3, Float64}
-        @test val[1] ≈ sin(xq) atol = 1e-3
-        @test val[3] ≈ xq^2 atol = 1e-3
+        @test val[1] ≈ sin(xq) atol = 1.0e-3
+        @test val[3] ≈ xq^2 atol = 1.0e-3
 
         # Callable interpolant
         itp = cubic_interp(x, Hermite(y_sv, dy_sv))
         @test itp(xq) isa SVector{3, Float64}
-        @test itp(xq)[1] ≈ sin(xq) atol = 1e-3
+        @test itp(xq)[1] ≈ sin(xq) atol = 1.0e-3
 
         # DerivOp(1) — should return SVector of derivatives
         d1 = cubic_interp(x, Hermite(y_sv, dy_sv), xq; deriv = DerivOp(1))
         @test d1 isa SVector{3, Float64}
-        @test d1[1] ≈ cos(xq) atol = 1e-2
+        @test d1[1] ≈ cos(xq) atol = 1.0e-2
 
         # Type stability
         @test @inferred(cubic_interp(x, Hermite(y_sv, dy_sv), xq)) isa SVector{3, Float64}

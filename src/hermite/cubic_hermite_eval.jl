@@ -173,7 +173,7 @@ end
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(xq), maximum(xq)
 
-    if qmin >= x_min && qmax <= x_max
+    if qmin >= x_min && qmax < x_max
         @inbounds for i in eachindex(xq, output)
             output[i] = _cubic_hermite_eval_at_point(x, y, dy, xq[i], ExtendExtrap(), deriv, searcher)
         end
@@ -220,7 +220,7 @@ end
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(xq), maximum(xq)
 
-    if qmin >= x_min && qmax <= x_max
+    if qmin >= x_min && qmax < x_max
         @inbounds for i in eachindex(xq, output)
             output[i] = _cubic_hermite_eval_at_point(x, spacing, y, dy, xq[i], ExtendExtrap(), deriv, searcher)
         end

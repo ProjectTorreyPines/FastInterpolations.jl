@@ -21,7 +21,7 @@ Optimized: skips expensive `mod()` when xi is already in domain.
 """
 @inline function _wrap_to_domain(xi::Tg, x_min::Tg, x_max::Tg) where {Tg <: AbstractFloat}
     # Single-branch check: outside domain → slow path
-    if xi < x_min || xi >= x_max
+    if (xi < x_min) || (xi >= x_max)
         period = x_max - x_min
         return x_min + mod(xi - x_min, period)
     end
@@ -35,7 +35,7 @@ end
 @inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg <: AbstractFloat}
     xi_primal = _extract_primal(xi)
     # Fast path: already in domain, return original xi (preserves Dual type for AD)
-    if xi_primal >= x_min   && xi_primal < x_max
+    if (xi_primal >= x_min) && (xi_primal < x_max)
         return xi
     end
     # Slow path: outside domain, wrap using mod (preserves Dual type for AD)

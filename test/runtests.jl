@@ -88,6 +88,7 @@ else
     include("test_mutation_safety.jl")
     include("test_precision_vector_queries.jl")
     include("test_hermite_1d.jl")          # Cubic Hermite 1D (user-supplied slopes)
+    include("test_pchip_1d.jl")            # PCHIP 1D (monotone-preserving slopes)
 
     # ND Interpolation
     include("test_nd_utils_shared.jl")  # Shared ND utilities (phase 1)

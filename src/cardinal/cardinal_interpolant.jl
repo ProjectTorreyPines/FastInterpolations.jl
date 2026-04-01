@@ -46,5 +46,5 @@ itp(0.5)
     dy_p = similar(y_p)
     _cardinal_slopes!(dy_p, x_p, y_p, Tg(tension))
     extrap_p = _promote_extrap(extrap, eltype(y_p))
-    return CardinalInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search)
+    return CardinalInterpolant1D(x_p, y_p, dy_p; tension = Tg(tension), extrap = extrap_p, search)
 end

@@ -214,6 +214,14 @@
         verbose = sprint(show, MIME"text/plain"(), itp)
         @test occursin("CardinalInterpolant1D", verbose)
         @test occursin("cardinal spline", verbose)
+        @test occursin("CatmullRom", verbose)
+
+        # Tension stored and shown
+        @test itp.tension == 0.0
+        itp2 = cardinal_interp(x, y; tension = 0.5)
+        @test itp2.tension == 0.5
+        verbose2 = sprint(show, MIME"text/plain"(), itp2)
+        @test occursin("tension=0.5", verbose2)
     end
 
     @testset "In-place hint forwarding and zero-alloc" begin

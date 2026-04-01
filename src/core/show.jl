@@ -375,7 +375,8 @@ function Base.show(io::IO, ::MIME"text/plain", itp::CardinalInterpolant1D{Tg, Tv
         _show_row(io, false, "Search:", _format_search(itp.search_policy))
     end
     println(io)
-    return _show_row(io, true, "Slopes:", "cardinal spline (C\u00B9)")
+    tension_str = itp.tension == 0 ? "CatmullRom" : "tension=$(itp.tension)"
+    return _show_row(io, true, "Slopes:", "cardinal spline ($tension_str, C\u00B9)")
 end
 
 # --- AkimaInterpolant1D ---

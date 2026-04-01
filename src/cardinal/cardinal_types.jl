@@ -46,10 +46,11 @@ struct CardinalInterpolant1D{
     spacing::S
     extrap::E
     search_policy::P
+    tension::Tg
 
     function CardinalInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}(
             x::AbstractVector{Tg}, y::AbstractVector{Tv}, dy::AbstractVector{Tv},
-            spacing::S, extrap::E, search::P
+            spacing::S, extrap::E, search::P, tension::Tg
         ) where {
             Tg <: AbstractFloat, Tv,
             X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractVector{Tv},
@@ -59,7 +60,7 @@ struct CardinalInterpolant1D{
         length(x) == length(dy) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
         xc, yc, dyc = copy(x), copy(y), copy(dy)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), S, E, P}(
-            xc, yc, dyc, spacing, extrap, search
+            xc, yc, dyc, spacing, extrap, search, tension
         )
     end
 end
@@ -72,6 +73,7 @@ end
         x::X,
         y::Y,
         dy::DY;
+        tension::Tg = zero(Tg),
         extrap::AbstractExtrap = NoExtrap(),
         search::P = AutoSearch()
     ) where {
@@ -83,6 +85,6 @@ end
     spacing = _create_spacing(x)
     S = typeof(spacing)
     return CardinalInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}(
-        x, y, dy, spacing, extrap, search
+        x, y, dy, spacing, extrap, search, tension
     )
 end

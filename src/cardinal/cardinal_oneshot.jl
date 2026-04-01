@@ -14,7 +14,7 @@
 # ========================================
 
 """
-    cardinal_interp(x, y, xq; tension=0.0, extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    cardinal_interp(x, y, xq; tension=0.0, extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 Cardinal spline interpolation at a single query point.
 Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
@@ -43,7 +43,7 @@ end
 # ========================================
 
 """
-    cardinal_interp!(output, x, y, x_query; tension=0.0, extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    cardinal_interp!(output, x, y, x_query; tension=0.0, extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 In-place cardinal spline interpolation.
 """
@@ -97,7 +97,7 @@ end
 # ========================================
 
 """
-    cardinal_interp(x, y, x_query; tension=0.0, extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    cardinal_interp(x, y, x_query; tension=0.0, extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 Cardinal spline interpolation at multiple query points. Returns `Vector{Tv}`.
 """

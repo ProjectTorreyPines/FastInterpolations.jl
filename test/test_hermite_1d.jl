@@ -126,6 +126,11 @@
         # WrapExtrap — wraps to domain
         val_wrap = cubic_interp(x, Hermite(y, dy), 3.2; extrap = WrapExtrap())
         @test isfinite(val_wrap)
+        # WrapExtrap — vector fast-path includes x_max (no unnecessary wrap overhead)
+        xq_boundary = [x[end]]
+        out_boundary = similar(xq_boundary)
+        cubic_interp!(out_boundary, x, Hermite(y, dy), xq_boundary; extrap = WrapExtrap())
+        @test isfinite(out_boundary[1])
 
         # Callable with extrap
         itp = cubic_interp(x, Hermite(y, dy); extrap = ClampExtrap())

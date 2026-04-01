@@ -28,7 +28,7 @@ end
 # ========================================
 
 """
-    cubic_interp(x, Hermite(y, dy), xq; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    cubic_interp(x, Hermite(y, dy), xq; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 Cubic Hermite interpolation at a single query point using user-supplied slopes.
 
@@ -59,7 +59,7 @@ end
 # ========================================
 
 """
-    cubic_interp!(output, x, Hermite(y, dy), x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    cubic_interp!(output, x, Hermite(y, dy), x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 In-place cubic Hermite interpolation using user-supplied slopes.
 """
@@ -113,7 +113,7 @@ end
 # ========================================
 
 """
-    cubic_interp(x, Hermite(y, dy), x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    cubic_interp(x, Hermite(y, dy), x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 Cubic Hermite interpolation at multiple query points using user-supplied slopes.
 Returns `Vector{Tv}` of interpolated values.

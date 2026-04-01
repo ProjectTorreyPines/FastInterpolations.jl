@@ -138,6 +138,11 @@
         # WrapExtrap — wraps to domain
         val_wrap = pchip_interp(x, y, 3.2; extrap = WrapExtrap())
         @test isfinite(val_wrap)
+        # WrapExtrap — vector fast-path includes x_max (no unnecessary wrap overhead)
+        xq_boundary = [x[end]]
+        out_boundary = similar(xq_boundary)
+        pchip_interp!(out_boundary, x, y, xq_boundary; extrap = WrapExtrap())
+        @test isfinite(out_boundary[1])
 
         # Callable with extrap
         itp = pchip_interp(x, y; extrap = ClampExtrap())

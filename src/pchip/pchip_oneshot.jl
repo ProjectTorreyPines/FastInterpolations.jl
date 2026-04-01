@@ -14,7 +14,7 @@
 # ========================================
 
 """
-    pchip_interp(x, y, xq; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    pchip_interp(x, y, xq; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 PCHIP (monotone-preserving) interpolation at a single query point.
 
@@ -44,7 +44,7 @@ end
 # ========================================
 
 """
-    pchip_interp!(output, x, y, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    pchip_interp!(output, x, y, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 In-place PCHIP interpolation with monotone-preserving slopes.
 """
@@ -96,7 +96,7 @@ end
 # ========================================
 
 """
-    pchip_interp(x, y, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    pchip_interp(x, y, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 PCHIP interpolation at multiple query points. Returns `Vector{Tv}`.
 """

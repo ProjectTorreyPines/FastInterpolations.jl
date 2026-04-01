@@ -14,7 +14,7 @@
 # ========================================
 
 """
-    akima_interp(x, y, xq; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    akima_interp(x, y, xq; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 Akima interpolation at a single query point.
 Outlier-robust, C\$^1\$ continuous.
@@ -42,7 +42,7 @@ end
 # ========================================
 
 """
-    akima_interp!(output, x, y, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    akima_interp!(output, x, y, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 In-place Akima interpolation.
 """
@@ -94,7 +94,7 @@ end
 # ========================================
 
 """
-    akima_interp(x, y, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    akima_interp(x, y, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 Akima interpolation at multiple query points. Returns `Vector{Tv}`.
 """

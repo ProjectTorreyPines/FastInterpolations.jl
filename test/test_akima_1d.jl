@@ -97,6 +97,11 @@
         @test akima_interp(x, y, -0.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1e-14
         @test akima_interp(x, y, 3.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1e-14
         @test isfinite(akima_interp(x, y, 3.2; extrap = WrapExtrap()))
+        # WrapExtrap — vector fast-path includes x_max (no unnecessary wrap overhead)
+        xq_boundary = [x[end]]
+        out_boundary = similar(xq_boundary)
+        akima_interp!(out_boundary, x, y, xq_boundary; extrap = WrapExtrap())
+        @test isfinite(out_boundary[1])
 
         itp = akima_interp(x, y; extrap = ClampExtrap())
         @test itp(-0.5) ≈ y[1]

@@ -378,6 +378,29 @@ function Base.show(io::IO, ::MIME"text/plain", itp::CardinalInterpolant1D{Tg, Tv
     return _show_row(io, true, "Slopes:", "cardinal spline (C\u00B9)")
 end
 
+# --- AkimaInterpolant1D ---
+
+function Base.show(io::IO, itp::AkimaInterpolant1D{Tg, Tv}) where {Tg, Tv}
+    n = length(itp.x)
+    _show_type_header_2params(io, "AkimaInterpolant1D", Tg, Tv)
+    return print(io, "($n pts, outlier-robust)")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", itp::AkimaInterpolant1D{Tg, Tv}) where {Tg, Tv}
+    _show_type_header_2params(io, "AkimaInterpolant1D", Tg, Tv)
+    println(io)
+    is_range = itp.x isa AbstractRange
+    _show_grid_row(io, false, itp.x)
+    println(io)
+    _show_row(io, false, "Extrap:", _format_extrap(itp.extrap))
+    if !is_range
+        println(io)
+        _show_row(io, false, "Search:", _format_search(itp.search_policy))
+    end
+    println(io)
+    return _show_row(io, true, "Slopes:", "Akima weighted (C\u00B9)")
+end
+
 # ========================================
 # Generic Adjoint Show Methods (1D)
 # ========================================

@@ -20,7 +20,7 @@ When `tension=0`, this is the **Catmull-Rom** spline (simple central FD).
 # Properties
 - **C\$^1\$ continuous** (continuous first derivative)
 - **Local**: each slope depends only on immediate neighbors
-- **Tension parameter**: controls overshoot (0 = CatmullRom, 1 = flat segments)
+- **Tension parameter**: controls overshoot (0 = CatmullRom, 1 = zero slopes at knots)
 
 # Usage
 ```julia

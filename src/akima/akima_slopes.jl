@@ -34,7 +34,7 @@ The Akima formula uses 4 adjacent secants to compute each interior slope:
         d[k] = (w1 * m[k-1] + w2 * m[k]) / (w1 + w2) (weighted average)
     end
 
-Endpoints use virtual secants computed by quadratic extrapolation of the
+Endpoints use virtual secants computed by linear extrapolation of the
 secant sequence.
 
 # Complexity

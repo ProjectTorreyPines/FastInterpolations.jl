@@ -131,7 +131,7 @@ function cubic_interp(
         autocache::Union{Nothing, Bool} = nothing
     ) where {Tg <: AbstractFloat, Tv}
     _reject_hermite_kwargs(bc, autocache)
-    output = Vector{promote_type(Tg, Tv)}(undef, length(x_query))
+    output = Vector{_value_type(Tv, Tg)}(undef, length(x_query))
     cubic_interp!(output, x, h, x_query; extrap, deriv, search, hint)
     return output
 end

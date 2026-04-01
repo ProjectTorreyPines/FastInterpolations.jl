@@ -25,7 +25,7 @@ end
 Create a callable cardinal spline interpolant.
 
 Default `tension=0` gives **Catmull-Rom** (central finite difference slopes).
-Increasing tension reduces overshoot; `tension=1` gives flat (zero-slope) segments.
+Increasing tension reduces overshoot; `tension=1` gives zero slopes at knots (smooth S-curves between knots).
 
 # Example
 ```julia

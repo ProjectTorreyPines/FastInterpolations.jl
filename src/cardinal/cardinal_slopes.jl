@@ -14,7 +14,7 @@ Compute cardinal spline slopes in-place.
 - `dy::AbstractVector{Tv}`: output slopes (pre-allocated, length n)
 - `x::AbstractVector{Tg}`: grid points (sorted, length n, ≥ 2)
 - `y::AbstractVector{Tv}`: function values (length n)
-- `tension::Tg`: tension parameter (0 = CatmullRom, 1 = flat)
+- `tension::Tg`: tension parameter (0 = CatmullRom, 1 = zero slopes)
 
 # Algorithm
 - Interior (k = 2:n-1): `d_k = (1 - tension) * (y[k+1] - y[k-1]) / (x[k+1] - x[k-1])`

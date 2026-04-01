@@ -62,7 +62,7 @@
         # tension=0.5 → tighter curve
         val_t05 = cardinal_interp(x, y, 2.5; tension = 0.5)
 
-        # tension=1.0 → flat segments (zero slopes → piecewise flat between knots)
+        # tension=1.0 → zero slopes at knots (smooth S-curves between knots)
         itp_t1 = cardinal_interp(x, y; tension = 1.0)
         # At grid point: exact, derivative should be ~0
         @test itp_t1(x[5]) ≈ y[5] atol = 1.0e-12

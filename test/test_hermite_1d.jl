@@ -298,6 +298,23 @@
         @test itp(xq; search = BinarySearch()) ≈ p(xq) atol = 1e-12
     end
 
+    @testset "Show methods" begin
+        x = collect(range(0.0, 3.0, 10))
+        y = sin.(x)
+        dy = cos.(x)
+        itp = cubic_interp(x, Hermite(y, dy))
+
+        # Compact
+        compact = sprint(show, itp)
+        @test occursin("CubicHermiteInterpolant1D", compact)
+        @test occursin("user slopes", compact)
+
+        # Verbose
+        verbose = sprint(show, MIME"text/plain"(), itp)
+        @test occursin("CubicHermiteInterpolant1D", verbose)
+        @test occursin("user-supplied", verbose)
+    end
+
     @testset "Duck typing — minimal DuckFloat5" begin
         # 5-op type: +(Tv,Tv), -(Tv,Tv), *(Real,Tv), *(Tv,Real)
         # Same minimal contract as the comprehensive duck typing suite

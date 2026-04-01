@@ -67,16 +67,28 @@ end
     _promote_itp_inputs(x, h::Hermite) -> (x_typed, h_typed::Hermite)
 
 Promote grid and Hermite data (y, dy) to compatible Float types.
-Mirrors the `_promote_itp_inputs(x, y)` 2-arg pattern but handles
-both `y` and `dy` jointly.
+Grid type `Tg` is determined from all three inputs (x, y, dy) jointly
+via `_promote_grid_float`, so no precision is lost when dy has a wider
+type than y (e.g., `y::Float32, dy::Float64 → Tg = Float64`).
 """
 @inline function _promote_itp_inputs(
         x::AbstractVector{TX},
-        h::Hermite{<:AbstractVector{TY}, <:AbstractVector}
-    ) where {TX <: Real, TY}
-    x_p, y_p = _promote_itp_inputs(x, h.y)
-    Tv = eltype(y_p)
-    dy_p = eltype(h.dy) === Tv ? h.dy : convert(Vector{Tv}, h.dy)
+        h::Hermite{<:AbstractVector{TY}, <:AbstractVector{TDY}}
+    ) where {TX <: Real, TY, TDY}
+    # Grid type considers x, y, AND dy — widest promotable type wins
+    Tg_y = _promote_grid_float(TX, TY)
+    Tg = TDY <: _PromotableValue ? promote_type(Tg_y, float(_real_eltype(TDY))) : Tg_y
+    x_p = _to_float(x, Tg)
+    if TY <: _PromotableValue
+        _, y_p = _promote_value_type(h.y, Tg)
+    else
+        y_p = h.y
+    end
+    if TDY <: _PromotableValue
+        _, dy_p = _promote_value_type(h.dy, Tg)
+    else
+        dy_p = h.dy
+    end
     return x_p, Hermite(y_p, dy_p)
 end
 

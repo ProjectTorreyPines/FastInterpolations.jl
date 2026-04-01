@@ -427,4 +427,85 @@
         end
         @test test_inplace_alloc(output, x, h, xq) <= ALLOC_THRESHOLD
     end
+
+    @testset "Coverage — WrapExtrap vector paths" begin
+        x = collect(range(0.0, 2π, 20))
+        y = sin.(x)
+        dy = cos.(x)
+        h = Hermite(y, dy)
+
+        # Vector fast-path: all queries strictly within (x_min, x_max)
+        xq_inner = collect(range(0.1, 2π - 0.1, 10))
+        out = similar(xq_inner)
+        cubic_interp!(out, x, h, xq_inner; extrap = WrapExtrap())
+        @test all(isfinite, out)
+
+        # Vector slow-path: some queries outside → per-element wrap
+        xq_cross = [0.5, 2π + 0.3, -0.2]
+        result = cubic_interp(x, h, xq_cross; extrap = WrapExtrap())
+        @test all(isfinite, result)
+
+        # Interpolant vector path with WrapExtrap
+        itp = cubic_interp(x, Hermite(y, dy); extrap = WrapExtrap())
+        out2 = itp(xq_inner)
+        @test all(isfinite, out2)
+    end
+
+    @testset "Coverage — Range in-place disambiguation" begin
+        x_range = range(0.0, 3.0, 20)
+        y = sin.(collect(x_range))
+        dy = cos.(collect(x_range))
+        h = Hermite(y, dy)
+        xq = collect(range(0.1, 2.9, 10))
+        out = similar(xq)
+
+        # Calls the AbstractRange{Tg} overload of cubic_interp!
+        cubic_interp!(out, x_range, h, xq)
+        @test out ≈ sin.(xq) atol = 0.1
+    end
+
+    @testset "Coverage — vector DerivOp(2+)" begin
+        x = collect(range(0.0, 3.0, 30))
+        p(t) = 2t^3 + t^2 - t + 1
+        dp(t) = 6t^2 + 2t - 1
+        d2p(t) = 12t + 2
+        y = p.(x)
+        dy = dp.(x)
+        xq = [0.5, 1.0, 2.0]
+
+        # DerivOp(2) through vector path
+        result2 = cubic_interp(x, Hermite(y, dy), xq; deriv = DerivOp(2))
+        @test result2 ≈ d2p.(xq) atol = 1.0e-6
+
+        # DerivOp(3) through vector path
+        result3 = cubic_interp(x, Hermite(y, dy), xq; deriv = DerivOp(3))
+        @test all(r -> abs(r - 12.0) < 1.0e-3, result3)  # constant 12 for cubic
+    end
+
+    @testset "Coverage — show with Range grid" begin
+        x_range = range(0.0, 3.0, 10)
+        y = sin.(collect(x_range))
+        dy = cos.(collect(x_range))
+        itp = cubic_interp(x_range, Hermite(y, dy))
+
+        verbose = sprint(show, MIME"text/plain"(), itp)
+        @test occursin("CubicHermiteInterpolant1D", verbose)
+        # Range grid → no Search row
+        @test !occursin("Search:", verbose)
+    end
+
+    @testset "Coverage — generic wrapper Integer promotion" begin
+        x_int = collect(0:5)
+        y_int = x_int .^ 2
+        dy_int = 2 .* x_int
+
+        # Vector allocating through generic wrapper (Int → Float64)
+        result = cubic_interp(x_int, Hermite(y_int, dy_int), [1.5, 2.5])
+        @test result ≈ [1.5^2, 2.5^2] atol = 1.0e-10
+
+        # In-place through generic wrapper
+        out = Vector{Float64}(undef, 2)
+        cubic_interp!(out, x_int, Hermite(y_int, dy_int), [1.5, 2.5])
+        @test out ≈ [1.5^2, 2.5^2] atol = 1.0e-10
+    end
 end

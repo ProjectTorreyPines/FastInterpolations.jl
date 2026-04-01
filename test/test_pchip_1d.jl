@@ -320,4 +320,71 @@
         end
         @test test_pchip_inplace_alloc(output, x, y, xq) <= ALLOC_THRESHOLD
     end
+
+    @testset "Coverage — Range in-place disambiguation" begin
+        x_range = range(0.0, 3.0, 20)
+        y = sin.(collect(x_range))
+        xq = collect(range(0.1, 2.9, 10))
+        out = similar(xq)
+        pchip_interp!(out, x_range, y, xq)
+        @test out ≈ pchip_interp(collect(x_range), y, xq) atol = 1.0e-12
+    end
+
+    @testset "Coverage — local extrema (mixed-sign secants)" begin
+        # Data with local extremum: y goes up then down
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y = [0.0, 2.0, 1.0, 3.0, 0.5]
+
+        # Monotonicity clamping: at extrema, PCHIP sets slope to zero
+        itp = pchip_interp(x, y)
+        # At x=2 (local min between peaks), slope should be clamped
+        @test isfinite(itp(1.5))
+        @test isfinite(itp(2.5))
+
+        # Verify no overshoots on monotone segments
+        # Between x=0 and x=1, y goes 0→2 (monotone increasing)
+        vals_01 = [itp(t) for t in range(0.0, 1.0, 20)]
+        @test all(diff(vals_01) .>= -1.0e-14)  # non-decreasing
+    end
+
+    @testset "Coverage — n=2 minimum grid" begin
+        x = [0.0, 1.0]
+        y = [1.0, 3.0]
+        @test pchip_interp(x, y, 0.5) ≈ 2.0 atol = 0.1
+    end
+
+    @testset "Coverage — flat region (zero secant)" begin
+        # Flat segment: y[2]==y[3] → δ_curr==0
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = [0.0, 1.0, 1.0, 2.0]
+        @test isfinite(pchip_interp(x, y, 1.5))
+    end
+
+    @testset "Coverage — output eltype validation error" begin
+        # Integer inputs trigger generic wrapper which validates output eltype
+        x_int = collect(0:9)
+        y_int = x_int .^ 2
+        xq_int = [2, 4, 6]
+        out_narrow = Vector{Float32}(undef, length(xq_int))
+        # Int → Float64 result into Float32 output → should throw
+        @test_throws ArgumentError pchip_interp!(out_narrow, x_int, y_int, xq_int)
+    end
+
+    @testset "Coverage — WrapExtrap vector path" begin
+        x = collect(range(0.0, 2π, 20))
+        y = sin.(x)
+        xq_inner = collect(range(0.1, 2π - 0.1, 10))
+        out = similar(xq_inner)
+        pchip_interp!(out, x, y, xq_inner; extrap = WrapExtrap())
+        @test all(isfinite, out)
+    end
+
+    @testset "Coverage — show with Range grid" begin
+        x_range = range(0.0, 3.0, 10)
+        y = sin.(collect(x_range))
+        itp = pchip_interp(x_range, y)
+        verbose = sprint(show, MIME"text/plain"(), itp)
+        @test occursin("PchipInterpolant1D", verbose)
+        @test !occursin("Search:", verbose)  # Range → no Search row
+    end
 end

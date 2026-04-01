@@ -253,4 +253,61 @@
         end
         @test test_cardinal_inplace_alloc(output, x, y, xq) <= ALLOC_THRESHOLD
     end
+
+    @testset "Coverage — Range in-place disambiguation" begin
+        x_range = range(0.0, 3.0, 20)
+        y = sin.(collect(x_range))
+        xq = collect(range(0.1, 2.9, 10))
+        out = similar(xq)
+        cardinal_interp!(out, x_range, y, xq)
+        @test out ≈ cardinal_interp(collect(x_range), y, xq) atol = 1.0e-12
+    end
+
+    @testset "Coverage — vector tension variation" begin
+        x = collect(range(0.0, 3.0, 20))
+        y = sin.(x)
+        xq = [0.5, 1.0, 2.0]
+
+        # Verify tension affects vector output
+        v_t0 = cardinal_interp(x, y, xq; tension = 0.0)
+        v_t05 = cardinal_interp(x, y, xq; tension = 0.5)
+        @test v_t0 != v_t05  # different tension → different results
+
+        # In-place with tension
+        out = similar(xq)
+        cardinal_interp!(out, x, y, xq; tension = 0.3)
+        @test all(isfinite, out)
+    end
+
+    @testset "Coverage — output eltype validation error" begin
+        x_int = collect(0:9)
+        y_int = x_int .^ 2
+        xq_int = [2, 4, 6]
+        out_narrow = Vector{Float32}(undef, length(xq_int))
+        @test_throws ArgumentError cardinal_interp!(out_narrow, x_int, y_int, xq_int)
+    end
+
+    @testset "Coverage — WrapExtrap vector path" begin
+        x = collect(range(0.0, 2π, 20))
+        y = sin.(x)
+        xq_inner = collect(range(0.1, 2π - 0.1, 10))
+        out = similar(xq_inner)
+        cardinal_interp!(out, x, y, xq_inner; extrap = WrapExtrap())
+        @test all(isfinite, out)
+    end
+
+    @testset "Coverage — show with Range grid" begin
+        x_range = range(0.0, 3.0, 10)
+        y = sin.(collect(x_range))
+        itp = cardinal_interp(x_range, y)
+        verbose = sprint(show, MIME"text/plain"(), itp)
+        @test occursin("CardinalInterpolant1D", verbose)
+        @test !occursin("Search:", verbose)
+    end
+
+    @testset "Coverage — n=2 minimum grid" begin
+        x = [0.0, 1.0]
+        y = [1.0, 3.0]
+        @test isfinite(cardinal_interp(x, y, 0.5))
+    end
 end

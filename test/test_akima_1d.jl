@@ -248,4 +248,77 @@
         end
         @test test_akima_inplace_alloc(output, x, y, xq) <= ALLOC_THRESHOLD
     end
+
+    @testset "Coverage — n=2 minimum grid" begin
+        x = [0.0, 1.0]
+        y = [1.0, 3.0]
+        # n=2: single secant, endpoints get that secant as slope
+        @test akima_interp(x, y, 0.5) ≈ 2.0 atol = 0.1
+        itp = akima_interp(x, y)
+        @test isfinite(itp(0.5))
+    end
+
+    @testset "Coverage — n=3 special case" begin
+        x = [0.0, 1.0, 2.0]
+        y = [0.0, 1.0, 0.0]
+        # n=3: arithmetic mean for interior, one-sided for endpoints
+        @test isfinite(akima_interp(x, y, 0.5))
+        @test isfinite(akima_interp(x, y, 1.5))
+        # Midpoint slope should be (m1+m2)/2 = (1 + (-1))/2 = 0
+        @test akima_interp(x, y, 1.0) ≈ y[2] atol = 1.0e-14
+    end
+
+    @testset "Coverage — wsum==0 fallback (equal secant differences)" begin
+        # Equally spaced linear data: all secants identical → w1=w2=0 → fallback
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y = [0.0, 1.0, 2.0, 3.0, 4.0]
+        # All secants = 1.0, differences = 0 → wsum = 0 → arithmetic mean fallback
+        @test akima_interp(x, y, 2.5) ≈ 2.5 atol = 1.0e-12
+        itp = akima_interp(x, y)
+        @test itp(1.5) ≈ 1.5 atol = 1.0e-12
+    end
+
+    @testset "Coverage — Range in-place disambiguation" begin
+        x_range = range(0.0, 3.0, 20)
+        y = sin.(collect(x_range))
+        xq = collect(range(0.1, 2.9, 10))
+        out = similar(xq)
+        akima_interp!(out, x_range, y, xq)
+        @test out ≈ akima_interp(collect(x_range), y, xq) atol = 1.0e-12
+    end
+
+    @testset "Coverage — output eltype validation error" begin
+        x_int = collect(0:9)
+        y_int = x_int .^ 2
+        xq_int = [2, 4, 6]
+        out_narrow = Vector{Float32}(undef, length(xq_int))
+        @test_throws ArgumentError akima_interp!(out_narrow, x_int, y_int, xq_int)
+    end
+
+    @testset "Coverage — WrapExtrap vector path" begin
+        x = collect(range(0.0, 2π, 20))
+        y = sin.(x)
+        xq_inner = collect(range(0.1, 2π - 0.1, 10))
+        out = similar(xq_inner)
+        akima_interp!(out, x, y, xq_inner; extrap = WrapExtrap())
+        @test all(isfinite, out)
+    end
+
+    @testset "Coverage — show with Range grid" begin
+        x_range = range(0.0, 3.0, 10)
+        y = sin.(collect(x_range))
+        itp = akima_interp(x_range, y)
+        verbose = sprint(show, MIME"text/plain"(), itp)
+        @test occursin("AkimaInterpolant1D", verbose)
+        @test !occursin("Search:", verbose)
+    end
+
+    @testset "Coverage — n=4 boundary (loop edge case)" begin
+        # n=4: interior loop runs k=3:2 (empty), boundary code handles all slopes
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = [0.0, 1.0, 0.0, 1.0]
+        @test isfinite(akima_interp(x, y, 0.5))
+        @test isfinite(akima_interp(x, y, 1.5))
+        @test isfinite(akima_interp(x, y, 2.5))
+    end
 end

@@ -87,7 +87,7 @@ else
     include("test_show.jl")
     include("test_mutation_safety.jl")
     include("test_precision_vector_queries.jl")
-    include("test_hermite_1d.jl")          # Cubic Hermite 1D (user-supplied slopes)
+    include("test_cubic_hermite_1d.jl")    # Cubic Hermite 1D (user-supplied slopes)
     include("test_pchip_1d.jl")            # PCHIP 1D (monotone-preserving slopes)
     include("test_cardinal_1d.jl")         # Cardinal 1D (CatmullRom default)
     include("test_akima_1d.jl")            # Akima 1D (outlier-robust slopes)

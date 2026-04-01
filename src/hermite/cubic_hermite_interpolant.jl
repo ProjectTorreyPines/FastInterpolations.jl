@@ -75,24 +75,9 @@ itp(1.0)                          # ≈ sin(1.0)
 itp(1.0; deriv=DerivOp(1))       # ≈ cos(1.0)
 ```
 """
-function cubic_interp(
-        x::AbstractVector{Tg},
-        h::Hermite{<:AbstractVector{Tv}, <:AbstractVector{Tv}};
-        extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        bc::Union{Nothing, AbstractBC} = nothing,
-        autocache::Union{Nothing, Bool} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
-    _reject_hermite_kwargs(bc, autocache)
-    x_f = _to_float(x, Tg)
-    extrap_p = _promote_extrap(extrap, Tv)
-    return CubicHermiteInterpolant1D(x_f, h.y, h.dy; extrap = extrap_p, search)
-end
-
-# Real wrapper for 2-arg form (handles Integer grids, mixed types)
-function cubic_interp(
+@inline function cubic_interp(
         x::AbstractVector{TX},
-        h::Hermite;
+        h::Hermite{<:AbstractVector, <:AbstractVector};
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
         bc::Union{Nothing, AbstractBC} = nothing,
@@ -101,7 +86,7 @@ function cubic_interp(
     _reject_hermite_kwargs(bc, autocache)
     x_p, y_p = _promote_itp_inputs(x, h.y)
     Tv_float = eltype(y_p)
-    dy_p = convert(Vector{Tv_float}, h.dy)
+    dy_p = eltype(h.dy) === Tv_float ? h.dy : convert(Vector{Tv_float}, h.dy)
     extrap_p = _promote_extrap(extrap, Tv_float)
     return CubicHermiteInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search)
 end

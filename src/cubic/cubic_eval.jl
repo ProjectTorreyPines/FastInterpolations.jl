@@ -253,7 +253,7 @@ end
     x_max = x_min + cache.bc_config.period
     qmin, qmax = minimum(x_query), maximum(x_query)
 
-    return if qmin >= x_min && qmax <= x_max
+    return if qmin >= x_min && qmax < x_max
         # Fast path: all queries inside domain
         @inbounds for k in eachindex(x_query, output)
             output[k] = _eval_cubic_at_point(cache.x, y, cache.spacing, z, x_query[k], op, searcher)

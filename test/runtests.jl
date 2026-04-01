@@ -89,6 +89,7 @@ else
     include("test_precision_vector_queries.jl")
     include("test_hermite_1d.jl")          # Cubic Hermite 1D (user-supplied slopes)
     include("test_pchip_1d.jl")            # PCHIP 1D (monotone-preserving slopes)
+    include("test_cardinal_1d.jl")         # Cardinal 1D (CatmullRom default)
 
     # ND Interpolation
     include("test_nd_utils_shared.jl")  # Shared ND utilities (phase 1)

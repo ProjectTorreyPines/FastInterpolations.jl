@@ -26,8 +26,8 @@ abstract type AbstractDataWrapper end
     Hermite(y, dy)
 
 Wrap user-supplied function values and first derivatives for Hermite interpolation.
-Use with `cubic_interp` or `quadratic_interp` to skip the global spline solve
-and use the provided slopes directly.
+Use with `cubic_interp` to skip the global spline solve and use the provided
+slopes directly.
 
 # 1D Usage
 ```julia

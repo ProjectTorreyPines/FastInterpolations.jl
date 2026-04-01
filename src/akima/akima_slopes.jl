@@ -116,19 +116,18 @@ function _akima_slopes!(
         m_k = m_kp1
     end
 
-    # After loop: m_km2 = m[n-4], m_km1 = m[n-3], m_k = m[n-2]
-    # We need m[n-1] for the right boundary
-    @inbounds m_last = (y[n] - y[n - 1]) / (x[n] - x[n - 1])
+    # After loop: m_km2 = m[n-3], m_km1 = m[n-2], m_k = m[n-1]
+    # Note: m_k is already m[n-1] (the last real secant), so no need for m_last.
 
-    # Virtual secants for right boundary
-    m_np1 = 2 * m_last - m_k     # m[n]  = 2*m[n-1] - m[n-2]
-    m_np2 = 3 * m_last - 2 * m_k # m[n+1] = 3*m[n-1] - 2*m[n-2]
+    # Virtual secants for right boundary (linear extrapolation of secant sequence)
+    m_np1 = 2 * m_k - m_km1       # m[n]  = 2*m[n-1] - m[n-2]
+    m_np2 = 3 * m_k - 2 * m_km1   # m[n+1] = 3*m[n-1] - 2*m[n-2]
 
     # k=n-1: uses m[n-3], m[n-2], m[n-1], m[n]
-    @inbounds dy[n - 1] = _akima_weighted_slope(m_km1, m_k, m_last, m_np1)
+    @inbounds dy[n - 1] = _akima_weighted_slope(m_km2, m_km1, m_k, m_np1)
 
     # Right endpoint: k=n, uses m[n-2], m[n-1], m[n], m[n+1]
-    @inbounds dy[n] = _akima_weighted_slope(m_k, m_last, m_np1, m_np2)
+    @inbounds dy[n] = _akima_weighted_slope(m_km1, m_k, m_np1, m_np2)
 
     return dy
 end

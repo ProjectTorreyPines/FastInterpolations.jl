@@ -64,7 +64,7 @@ end
 In-place cubic Hermite interpolation using user-supplied slopes.
 """
 function cubic_interp!(
-        output::AbstractVector{Tv},
+        output::AbstractVector,
         x::AbstractVector{Tg},
         h::Hermite{<:AbstractVector{Tv}, <:AbstractVector{Tv}},
         x_query::AbstractVector{Tg};
@@ -86,7 +86,7 @@ end
 
 # Range disambiguation for in-place
 function cubic_interp!(
-        output::AbstractVector{Tv},
+        output::AbstractVector,
         x::AbstractRange{Tg},
         h::Hermite{<:AbstractVector{Tv}, <:AbstractVector{Tv}},
         x_query::AbstractVector{Tg};

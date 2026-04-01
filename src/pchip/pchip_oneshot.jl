@@ -49,7 +49,7 @@ end
 In-place PCHIP interpolation with monotone-preserving slopes.
 """
 @inline @with_pool pool function pchip_interp!(
-        output::AbstractVector{Tv},
+        output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector{Tg};
@@ -70,7 +70,7 @@ end
 
 # Range disambiguation for in-place
 @inline @with_pool pool function pchip_interp!(
-        output::AbstractVector{Tv},
+        output::AbstractVector,
         x::AbstractRange{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector{Tg};

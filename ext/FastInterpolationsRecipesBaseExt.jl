@@ -21,6 +21,7 @@ import FastInterpolations:
     AbstractInterpolantND, CubicInterpolantND,
     LinearInterpolantND, ConstantInterpolantND, QuadraticInterpolantND,
     LinearInterpolant, ConstantInterpolant, QuadraticInterpolant, CubicInterpolant,
+    CubicHermiteInterpolant1D,
     LinearSeriesInterpolant, ConstantSeriesInterpolant,
     QuadraticSeriesInterpolant, CubicSeriesInterpolant,
     DerivativeView, NoExtrap, ClampExtrap, FillExtrap
@@ -39,6 +40,7 @@ _get_recipe_data(itp::LinearInterpolant) = (itp.x, itp.y, itp.extrap)
 _get_recipe_data(itp::ConstantInterpolant) = (itp.x, itp.y, itp.extrap)
 _get_recipe_data(itp::QuadraticInterpolant) = (itp.x, itp.y, itp.extrap)
 _get_recipe_data(itp::CubicInterpolant) = (itp.cache.x, itp.y, itp.extrap)
+_get_recipe_data(itp::CubicHermiteInterpolant1D) = (itp.x, itp.y, itp.extrap)
 
 """
     compute_marker_size(n; max_size=7.0, min_size=3.0, max_n=100) -> Float64
@@ -96,6 +98,7 @@ _interpolant_label(::LinearInterpolant) = "linear"
 _interpolant_label(::ConstantInterpolant) = "constant"
 _interpolant_label(::QuadraticInterpolant) = "quadratic"
 _interpolant_label(::CubicInterpolant) = "cubic"
+_interpolant_label(::CubicHermiteInterpolant1D) = "cubic hermite"
 _interpolant_label(::LinearSeriesInterpolant) = "linear"
 _interpolant_label(::ConstantSeriesInterpolant) = "constant"
 _interpolant_label(::QuadraticSeriesInterpolant) = "quadratic"

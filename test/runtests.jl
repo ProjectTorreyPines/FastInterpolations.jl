@@ -87,6 +87,7 @@ else
     include("test_show.jl")
     include("test_mutation_safety.jl")
     include("test_precision_vector_queries.jl")
+    include("test_hermite_1d.jl")          # Cubic Hermite 1D (user-supplied slopes)
 
     # ND Interpolation
     include("test_nd_utils_shared.jl")  # Shared ND utilities (phase 1)

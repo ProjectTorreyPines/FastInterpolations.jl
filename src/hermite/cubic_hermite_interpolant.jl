@@ -84,8 +84,9 @@ function cubic_interp(
         autocache::Union{Nothing, Bool} = nothing
     ) where {Tg <: AbstractFloat, Tv}
     _reject_hermite_kwargs(bc, autocache)
+    x_f = _to_float(x, Tg)
     extrap_p = _promote_extrap(extrap, Tv)
-    return CubicHermiteInterpolant1D(x, h.y, h.dy; extrap = extrap_p, search)
+    return CubicHermiteInterpolant1D(x_f, h.y, h.dy; extrap = extrap_p, search)
 end
 
 # Real wrapper for 2-arg form (handles Integer grids, mixed types)

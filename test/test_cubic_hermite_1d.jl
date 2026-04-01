@@ -494,6 +494,40 @@
         @test !occursin("Search:", verbose)
     end
 
+    @testset "Coverage — ClampExtrap in-domain scalar (Vector + Range grid)" begin
+        # Exercises _cubic_hermite_eval_at_point ClampOrFill in-domain path (no-spacing)
+        x = collect(range(0.0, 3.0, 20))
+        y = sin.(x)
+        dy = cos.(x)
+        # Query inside domain with ClampExtrap → takes the kernel path, not the boundary return
+        @test cubic_interp(x, Hermite(y, dy), 1.5; extrap = ClampExtrap()) ≈ sin(1.5) atol = 0.01
+
+        # Same with Range grid (spacing overload) via callable
+        x_range = range(0.0, 3.0, 20)
+        itp = cubic_interp(x_range, Hermite(y, dy); extrap = ClampExtrap())
+        @test itp(1.5) ≈ sin(1.5) atol = 0.01
+    end
+
+    @testset "Coverage — callable Range + WrapExtrap OOB vector" begin
+        # Exercises spacing-based WrapExtrap vector slow-path (lines 228-230)
+        x_range = range(0.0, 2π, 20)
+        y = sin.(collect(x_range))
+        dy = cos.(collect(x_range))
+        itp = cubic_interp(x_range, Hermite(y, dy); extrap = WrapExtrap())
+        # Query with some OOB points → triggers slow path (per-element wrap)
+        xq_oob = [0.5, 2π + 0.3, -0.2]
+        result = itp(xq_oob)
+        @test all(isfinite, result)
+    end
+
+    @testset "Coverage — Hermite output eltype validation error" begin
+        x_int = collect(0:5)
+        y_int = x_int .^ 2
+        dy_int = 2 .* x_int
+        out_narrow = Vector{Float32}(undef, 3)
+        @test_throws ArgumentError cubic_interp!(out_narrow, x_int, Hermite(y_int, dy_int), [1, 2, 3])
+    end
+
     @testset "Coverage — generic wrapper Integer promotion" begin
         x_int = collect(0:5)
         y_int = x_int .^ 2

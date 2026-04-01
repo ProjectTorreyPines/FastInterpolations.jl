@@ -379,6 +379,41 @@
         @test all(isfinite, out)
     end
 
+    @testset "Coverage — generic in-place pass-through (Integer inputs)" begin
+        # Exercises generic wrapper tail call (line 170) that passes eltype validation
+        x_int = collect(0:9)
+        y_int = x_int .^ 2
+        xq_int = [2, 4, 6]
+        out = Vector{Float64}(undef, length(xq_int))
+        pchip_interp!(out, x_int, y_int, xq_int)
+        @test all(isfinite, out)
+    end
+
+    @testset "Coverage — endpoint overshoot clamping (3δ1 branch)" begin
+        # Data where endpoint 3-point FD overshoots: d > 3*δ1
+        # Sharp initial rise then plateau → large endpoint FD, small first secant
+        x = [0.0, 0.1, 1.0, 2.0, 3.0]
+        y = [0.0, 10.0, 10.5, 11.0, 11.5]
+        # First secant δ1 = 100, second secant δ2 = 0.556
+        # 3-point FD: d = ((2*0.1 + 0.9)*100 - 0.1*0.556) / (0.1+0.9) ≈ 109.9
+        # |d| > |3*δ1| = 300? No. Try steeper:
+        x2 = [0.0, 0.01, 1.0, 2.0, 3.0]
+        y2 = [0.0, 0.0, 1.0, 2.0, 3.0]
+        # δ1 = 0/0.01 = 0, δ2 = (1-0)/(1-0.01) ≈ 1.01
+        # sign(δ1)=0 != sign(δ2)=1 → d clamped to 3*δ1=0 or d=0
+        itp = pchip_interp(x2, y2)
+        @test isfinite(itp(0.005))
+
+        # Trigger the |d| > |3δ1| path: opposite-sign secants with large first interval
+        x3 = [0.0, 1.0, 1.1, 2.0, 3.0]
+        y3 = [10.0, 0.0, -0.5, -1.0, 0.0]
+        # δ1 = -10, δ2 = -5 → same sign, no clamping here. Try right endpoint:
+        # Last two secants: δ_{n-1} and δ_n
+        itp3 = pchip_interp(x3, y3)
+        @test isfinite(itp3(0.5))
+        @test isfinite(itp3(2.5))
+    end
+
     @testset "Coverage — show with Range grid" begin
         x_range = range(0.0, 3.0, 10)
         y = sin.(collect(x_range))

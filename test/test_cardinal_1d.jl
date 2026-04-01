@@ -279,6 +279,15 @@
         @test all(isfinite, out)
     end
 
+    @testset "Coverage — generic in-place pass-through (Integer inputs)" begin
+        x_int = collect(0:9)
+        y_int = x_int .^ 2
+        xq_int = [2, 4, 6]
+        out = Vector{Float64}(undef, length(xq_int))
+        cardinal_interp!(out, x_int, y_int, xq_int)
+        @test all(isfinite, out)
+    end
+
     @testset "Coverage — output eltype validation error" begin
         x_int = collect(0:9)
         y_int = x_int .^ 2

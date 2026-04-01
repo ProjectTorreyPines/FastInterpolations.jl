@@ -93,6 +93,9 @@
 
         @test isfinite(akima_interp(x, y, 3.2; extrap = ExtendExtrap()))
         @test akima_interp(x, y, -0.5; extrap = FillExtrap(999.0)) ≈ 999.0
+        # FillExtrap derivative at OOB → zero
+        @test akima_interp(x, y, -0.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1e-14
+        @test akima_interp(x, y, 3.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1e-14
         @test isfinite(akima_interp(x, y, 3.2; extrap = WrapExtrap()))
 
         itp = akima_interp(x, y; extrap = ClampExtrap())

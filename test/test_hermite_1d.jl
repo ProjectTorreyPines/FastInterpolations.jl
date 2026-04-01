@@ -119,6 +119,9 @@
         # FillExtrap — returns fill value outside domain
         @test cubic_interp(x, Hermite(y, dy), -0.5; extrap = FillExtrap(999.0)) ≈ 999.0
         @test cubic_interp(x, Hermite(y, dy), 3.5; extrap = FillExtrap(NaN)) |> isnan
+        # FillExtrap derivative at OOB → zero (derivative of constant fill)
+        @test cubic_interp(x, Hermite(y, dy), -0.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1e-14
+        @test cubic_interp(x, Hermite(y, dy), 3.5; extrap = FillExtrap(999.0), deriv = DerivOp(1)) ≈ 0.0 atol = 1e-14
 
         # WrapExtrap — wraps to domain
         val_wrap = cubic_interp(x, Hermite(y, dy), 3.2; extrap = WrapExtrap())

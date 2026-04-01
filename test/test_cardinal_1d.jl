@@ -212,4 +212,28 @@
         @test occursin("CardinalInterpolant1D", verbose)
         @test occursin("cardinal spline", verbose)
     end
+
+    @testset "In-place hint forwarding and zero-alloc" begin
+        x = collect(range(0.0, 4.0, 50))
+        y = sin.(x)
+        xq = collect(range(0.1, 3.9, 20))
+        output = Vector{Float64}(undef, length(xq))
+
+        # hint gets updated through in-place path
+        hint = Ref(1)
+        cardinal_interp!(output, x, y, xq; hint)
+        @test hint[] > 1
+
+        # Verify correctness with hint
+        ref = cardinal_interp(x, y, xq)
+        @test output ≈ ref
+
+        # Zero-allocation in-place (function barrier)
+        function test_cardinal_inplace_alloc(output, x, y, xq)
+            hint_local = Ref(1)
+            cardinal_interp!(output, x, y, xq; hint = hint_local)
+            return @allocated cardinal_interp!(output, x, y, xq; hint = hint_local)
+        end
+        @test test_cardinal_inplace_alloc(output, x, y, xq) <= ALLOC_THRESHOLD
+    end
 end

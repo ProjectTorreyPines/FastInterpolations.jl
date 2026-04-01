@@ -376,4 +376,30 @@
         # Type stability
         @test @inferred(cubic_interp(x, Hermite(y_sv, dy_sv), xq)) isa SVector{3, Float64}
     end
+
+    @testset "In-place hint forwarding and zero-alloc" begin
+        x = collect(range(0.0, 4.0, 50))
+        y = sin.(x)
+        dy = cos.(x)
+        h = Hermite(y, dy)
+        xq = collect(range(0.1, 3.9, 20))
+        output = Vector{Float64}(undef, length(xq))
+
+        # hint gets updated through in-place path
+        hint = Ref(1)
+        cubic_interp!(output, x, h, xq; hint)
+        @test hint[] > 1  # hint updated after sorted queries
+
+        # Verify correctness with hint
+        ref = cubic_interp(x, h, xq)
+        @test output ≈ ref
+
+        # Zero-allocation in-place (function barrier)
+        function test_inplace_alloc(output, x, h, xq)
+            hint_local = Ref(1)
+            cubic_interp!(output, x, h, xq; hint = hint_local)
+            return @allocated cubic_interp!(output, x, h, xq; hint = hint_local)
+        end
+        @test test_inplace_alloc(output, x, h, xq) <= ALLOC_THRESHOLD
+    end
 end

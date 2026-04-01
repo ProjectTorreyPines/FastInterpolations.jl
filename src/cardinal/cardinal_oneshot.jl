@@ -55,16 +55,17 @@ In-place cardinal spline interpolation.
         tension::Real = zero(Tg),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tv}
-    @assert length(y) == length(x) "y length must match x"
-    @assert length(output) == length(x_query) "output length must match x_query"
+    @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
+    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
 
     x = _to_float(x, Tg)
     x_query = _to_float(x_query, Tg)
     dy = similar!(pool, y)
     _cardinal_slopes!(dy, x, y, Tg(tension))
-    searcher = _resolve_search(x, x_query, search, nothing)
+    searcher = _resolve_search(x, x_query, search, hint)
     return _cubic_hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
 end
 
@@ -77,16 +78,17 @@ end
         tension::Real = zero(Tg),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tv}
-    @assert length(y) == length(x) "y length must match x"
-    @assert length(output) == length(x_query) "output length must match x_query"
+    @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
+    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
 
     x = _to_float(x, Tg)
     x_query = _to_float(x_query, Tg)
     dy = similar!(pool, y)
     _cardinal_slopes!(dy, x, y, Tg(tension))
-    searcher = _resolve_search(x, x_query, search, nothing)
+    searcher = _resolve_search(x, x_query, search, hint)
     return _cubic_hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
 end
 
@@ -106,10 +108,11 @@ function cardinal_interp(
         tension::Real = zero(Tg),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_query))
-    cardinal_interp!(output, x, y, x_query; tension, extrap, deriv, search)
+    cardinal_interp!(output, x, y, x_query; tension, extrap, deriv, search, hint)
     return output
 end
 
@@ -150,8 +153,8 @@ function cardinal_interp!(
         x_query::AbstractVector{Tq};
         kwargs...
     ) where {TX <: Real, TY, Tq <: Real}
-    @assert length(y) == length(x) "y length must match x"
-    @assert length(output) == length(x_query) "output length must match x_query"
+    @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
+    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
 
     x_p, y_p, xq_p = _promote_itp_inputs(x, y, x_query)
     Tv_float = eltype(y_p)

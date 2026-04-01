@@ -71,6 +71,7 @@ function cubic_interp!(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing,
         bc::Union{Nothing, AbstractBC} = nothing,
         autocache::Union{Nothing, Bool} = nothing
     ) where {Tg <: AbstractFloat, Tv}
@@ -80,7 +81,7 @@ function cubic_interp!(
 
     x = _to_float(x, Tg)
     x_query = _to_float(x_query, Tg)
-    searcher = _resolve_search(x, x_query, search, nothing)
+    searcher = _resolve_search(x, x_query, search, hint)
     return _cubic_hermite_vector_loop!(output, x, h.y, h.dy, x_query, extrap, deriv, searcher)
 end
 
@@ -93,6 +94,7 @@ function cubic_interp!(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing,
         bc::Union{Nothing, AbstractBC} = nothing,
         autocache::Union{Nothing, Bool} = nothing
     ) where {Tg <: AbstractFloat, Tv}
@@ -102,7 +104,7 @@ function cubic_interp!(
 
     x = _to_float(x, Tg)
     x_query = _to_float(x_query, Tg)
-    searcher = _resolve_search(x, x_query, search, nothing)
+    searcher = _resolve_search(x, x_query, search, hint)
     return _cubic_hermite_vector_loop!(output, x, h.y, h.dy, x_query, extrap, deriv, searcher)
 end
 
@@ -123,12 +125,13 @@ function cubic_interp(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing,
         bc::Union{Nothing, AbstractBC} = nothing,
         autocache::Union{Nothing, Bool} = nothing
     ) where {Tg <: AbstractFloat, Tv}
     _reject_hermite_kwargs(bc, autocache)
     output = Vector{Tv}(undef, length(x_query))
-    cubic_interp!(output, x, h, x_query; extrap, deriv, search)
+    cubic_interp!(output, x, h, x_query; extrap, deriv, search, hint)
     return output
 end
 
@@ -169,8 +172,8 @@ function cubic_interp!(
         x_query::AbstractVector{Tq};
         kwargs...
     ) where {TX <: Real, Tq <: Real}
-    @assert length(h.y) == length(x) "y length must match x"
-    @assert length(output) == length(x_query) "output length must match x_query"
+    @boundscheck length(h.y) == length(x) || _throw_length_mismatch(length(x), length(h.y))
+    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
 
     x_p, h_p, xq_p = _promote_itp_inputs(x, h, x_query)
     Tv_float = eltype(h_p.y)

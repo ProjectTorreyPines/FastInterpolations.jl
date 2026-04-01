@@ -288,4 +288,28 @@
         @test occursin("PchipInterpolant1D", verbose)
         @test occursin("PCHIP", verbose)
     end
+
+    @testset "In-place hint forwarding and zero-alloc" begin
+        x = collect(range(0.0, 4.0, 50))
+        y = sin.(x)
+        xq = collect(range(0.1, 3.9, 20))
+        output = Vector{Float64}(undef, length(xq))
+
+        # hint gets updated through in-place path
+        hint = Ref(1)
+        pchip_interp!(output, x, y, xq; hint)
+        @test hint[] > 1
+
+        # Verify correctness with hint
+        ref = pchip_interp(x, y, xq)
+        @test output ≈ ref
+
+        # Zero-allocation in-place (function barrier)
+        function test_pchip_inplace_alloc(output, x, y, xq)
+            hint_local = Ref(1)
+            pchip_interp!(output, x, y, xq; hint = hint_local)
+            return @allocated pchip_interp!(output, x, y, xq; hint = hint_local)
+        end
+        @test test_pchip_inplace_alloc(output, x, y, xq) <= ALLOC_THRESHOLD
+    end
 end

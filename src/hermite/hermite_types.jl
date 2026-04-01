@@ -60,6 +60,43 @@ struct Hermite{Y, DY} <: AbstractDataWrapper
 end
 
 # ========================================
+# Type Promotion for Hermite Data
+# ========================================
+
+"""
+    _promote_itp_inputs(x, h::Hermite) -> (x_typed, h_typed::Hermite)
+
+Promote grid and Hermite data (y, dy) to compatible Float types.
+Mirrors the `_promote_itp_inputs(x, y)` 2-arg pattern but handles
+both `y` and `dy` jointly.
+"""
+@inline function _promote_itp_inputs(
+        x::AbstractVector{TX},
+        h::Hermite{<:AbstractVector{TY}, <:AbstractVector}
+    ) where {TX <: Real, TY}
+    x_p, y_p = _promote_itp_inputs(x, h.y)
+    Tv = eltype(y_p)
+    dy_p = eltype(h.dy) === Tv ? h.dy : convert(Vector{Tv}, h.dy)
+    return x_p, Hermite(y_p, dy_p)
+end
+
+"""
+    _promote_itp_inputs(x, h::Hermite, xq) -> (x_typed, h_typed::Hermite, xq_typed)
+
+Promote grid, Hermite data, and vector query to compatible Float types.
+"""
+@inline function _promote_itp_inputs(
+        x::AbstractVector{TX},
+        h::Hermite{<:AbstractVector{TY}, <:AbstractVector},
+        xq::AbstractVector{TQ}
+    ) where {TX <: Real, TY, TQ <: Real}
+    x_p, h_p = _promote_itp_inputs(x, h)
+    Tg = eltype(x_p)
+    xq_p = _to_float(xq, Tg)
+    return x_p, h_p, xq_p
+end
+
+# ========================================
 # Cubic Hermite Interpolant (1D)
 # ========================================
 

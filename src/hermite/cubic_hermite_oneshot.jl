@@ -143,10 +143,8 @@ end
         xq::Tq;
         kwargs...
     ) where {TX <: Real, Tq <: Real}
-    x_p, y_p = _promote_itp_inputs(x, h.y)
-    Tv_float = eltype(y_p)
-    dy_p = convert(Vector{Tv_float}, h.dy)
-    return cubic_interp(x_p, Hermite(y_p, dy_p), xq; kwargs...)
+    x_p, h_p = _promote_itp_inputs(x, h)
+    return cubic_interp(x_p, h_p, xq; kwargs...)
 end
 
 # Vector — allocating
@@ -156,11 +154,10 @@ function cubic_interp(
         x_query::AbstractVector{Tq};
         kwargs...
     ) where {TX <: Real, Tq <: Real}
-    x_p, y_p, xq_p = _promote_itp_inputs(x, h.y, x_query)
-    Tv_float = eltype(y_p)
-    dy_p = convert(Vector{Tv_float}, h.dy)
+    x_p, h_p, xq_p = _promote_itp_inputs(x, h, x_query)
+    Tv_float = eltype(h_p.y)
     output = Vector{Tv_float}(undef, length(x_query))
-    cubic_interp!(output, x_p, Hermite(y_p, dy_p), xq_p; kwargs...)
+    cubic_interp!(output, x_p, h_p, xq_p; kwargs...)
     return output
 end
 
@@ -175,8 +172,8 @@ function cubic_interp!(
     @assert length(h.y) == length(x) "y length must match x"
     @assert length(output) == length(x_query) "output length must match x_query"
 
-    x_p, y_p, xq_p = _promote_itp_inputs(x, h.y, x_query)
-    Tv_float = eltype(y_p)
+    x_p, h_p, xq_p = _promote_itp_inputs(x, h, x_query)
+    Tv_float = eltype(h_p.y)
 
     Tout = eltype(output)
     if promote_type(Tout, Tv_float) !== Tout
@@ -188,6 +185,5 @@ function cubic_interp!(
         )
     end
 
-    dy_p = convert(Vector{Tv_float}, h.dy)
-    return cubic_interp!(output, x_p, Hermite(y_p, dy_p), xq_p; kwargs...)
+    return cubic_interp!(output, x_p, h_p, xq_p; kwargs...)
 end

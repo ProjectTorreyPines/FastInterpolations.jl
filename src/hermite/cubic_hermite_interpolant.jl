@@ -84,9 +84,7 @@ itp(1.0; deriv=DerivOp(1))       # ≈ cos(1.0)
         autocache::Union{Nothing, Bool} = nothing
     ) where {TX <: Real}
     _reject_hermite_kwargs(bc, autocache)
-    x_p, y_p = _promote_itp_inputs(x, h.y)
-    Tv_float = eltype(y_p)
-    dy_p = eltype(h.dy) === Tv_float ? h.dy : convert(Vector{Tv_float}, h.dy)
-    extrap_p = _promote_extrap(extrap, Tv_float)
-    return CubicHermiteInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search)
+    x_p, h_p = _promote_itp_inputs(x, h)
+    extrap_p = _promote_extrap(extrap, eltype(h_p.y))
+    return CubicHermiteInterpolant1D(x_p, h_p.y, h_p.dy; extrap = extrap_p, search)
 end

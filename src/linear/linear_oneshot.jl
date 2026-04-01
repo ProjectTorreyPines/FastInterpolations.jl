@@ -107,7 +107,7 @@ end
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
-    if qmin >= x_min && qmax < x_max
+    if qmin >= x_min && qmax <= x_max
         # Fast path: all queries inside domain - use extension (no wrap overhead)
         @inbounds for i in eachindex(x_targets, output)
             output[i] = _linear_eval_at_point(x, y, x_targets[i], ExtendExtrap(), op, searcher)

@@ -75,8 +75,8 @@ function cubic_interp!(
         autocache::Union{Nothing, Bool} = nothing
     ) where {Tg <: AbstractFloat, Tv}
     _reject_hermite_kwargs(bc, autocache)
-    @assert length(h.y) == length(x) "y length must match x"
-    @assert length(output) == length(x_query) "output length must match x_query"
+    @boundscheck length(h.y) == length(x) || _throw_length_mismatch(length(x), length(h.y))
+    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
 
     x = _to_float(x, Tg)
     x_query = _to_float(x_query, Tg)
@@ -97,8 +97,8 @@ function cubic_interp!(
         autocache::Union{Nothing, Bool} = nothing
     ) where {Tg <: AbstractFloat, Tv}
     _reject_hermite_kwargs(bc, autocache)
-    @assert length(h.y) == length(x) "y length must match x"
-    @assert length(output) == length(x_query) "output length must match x_query"
+    @boundscheck length(h.y) == length(x) || _throw_length_mismatch(length(x), length(h.y))
+    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
 
     x = _to_float(x, Tg)
     x_query = _to_float(x_query, Tg)

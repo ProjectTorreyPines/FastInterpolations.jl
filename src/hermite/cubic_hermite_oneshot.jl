@@ -8,13 +8,14 @@
 # Keyword Rejection Helper
 # ========================================
 
+@noinline _throw_hermite_bc_error() =
+    throw(ArgumentError("bc is not applicable for Hermite data — slopes are user-provided"))
+@noinline _throw_hermite_autocache_error() =
+    throw(ArgumentError("autocache is not applicable for Hermite data — no global solve needed"))
+
 @inline function _reject_hermite_kwargs(bc, autocache)
-    bc !== nothing && throw(
-        ArgumentError("bc is not applicable for Hermite data — slopes are user-provided")
-    )
-    autocache !== nothing && throw(
-        ArgumentError("autocache is not applicable for Hermite data — no global solve needed")
-    )
+    bc !== nothing && _throw_hermite_bc_error()
+    autocache !== nothing && _throw_hermite_autocache_error()
     return nothing
 end
 

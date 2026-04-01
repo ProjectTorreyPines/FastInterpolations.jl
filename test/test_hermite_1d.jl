@@ -297,4 +297,83 @@
         itp = cubic_interp(x, Hermite(y, dy))
         @test itp(xq; search = BinarySearch()) ≈ p(xq) atol = 1e-12
     end
+
+    @testset "Duck typing — minimal DuckFloat5" begin
+        # 5-op type: +(Tv,Tv), -(Tv,Tv), *(Real,Tv), *(Tv,Real)
+        # Same minimal contract as the comprehensive duck typing suite
+        struct HermiteDuck
+            v::Float64
+        end
+        Base.:+(a::HermiteDuck, b::HermiteDuck) = HermiteDuck(a.v + b.v)
+        Base.:-(a::HermiteDuck, b::HermiteDuck) = HermiteDuck(a.v - b.v)
+        Base.:*(a::Real, b::HermiteDuck) = HermiteDuck(a * b.v)
+        Base.:*(a::HermiteDuck, b::Real) = HermiteDuck(a.v * b)
+        _dval(d::HermiteDuck) = d.v
+
+        x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+        y_raw = [1.0, 4.0, 2.0, 5.0, 3.0, 6.0]
+        dy_raw = [0.5, 1.0, -0.5, 0.8, -0.3, 0.7]
+
+        y_duck = HermiteDuck.(y_raw)
+        dy_duck = HermiteDuck.(dy_raw)
+
+        # Reference: plain Float64
+        ref = cubic_interp(x, Hermite(y_raw, dy_raw), 2.5)
+
+        # Oneshot scalar
+        duck_val = cubic_interp(x, Hermite(y_duck, dy_duck), 2.5)
+        @test duck_val isa HermiteDuck
+        @test _dval(duck_val) ≈ ref
+
+        # Oneshot vector
+        xq_vec = [1.5, 2.5, 3.5]
+        ref_vec = cubic_interp(x, Hermite(y_raw, dy_raw), xq_vec)
+        duck_vec = cubic_interp(x, Hermite(y_duck, dy_duck), xq_vec)
+        @test all(d -> d isa HermiteDuck, duck_vec)
+        @test _dval.(duck_vec) ≈ ref_vec
+
+        # Callable interpolant
+        itp = cubic_interp(x, Hermite(y_duck, dy_duck))
+        @test itp(2.5) isa HermiteDuck
+        @test _dval(itp(2.5)) ≈ ref
+
+        # DerivOp(1)
+        ref_d1 = cubic_interp(x, Hermite(y_raw, dy_raw), 2.5; deriv = DerivOp(1))
+        duck_d1 = cubic_interp(x, Hermite(y_duck, dy_duck), 2.5; deriv = DerivOp(1))
+        @test duck_d1 isa HermiteDuck
+        @test _dval(duck_d1) ≈ ref_d1
+
+        # Type stability
+        @test @inferred(cubic_interp(x, Hermite(y_duck, dy_duck), 2.5)) isa HermiteDuck
+    end
+
+    @testset "Duck typing — SVector values" begin
+        using StaticArrays
+
+        x = collect(range(0.0, 5.0, 10))
+        # SVector{3}-valued function and derivatives
+        y_sv = [SVector(sin(xi), cos(xi), xi^2) for xi in x]
+        dy_sv = [SVector(cos(xi), -sin(xi), 2xi) for xi in x]
+
+        xq = 2.3
+
+        # Oneshot scalar
+        val = cubic_interp(x, Hermite(y_sv, dy_sv), xq)
+        @test val isa SVector{3, Float64}
+        @test val[1] ≈ sin(xq) atol = 1e-3
+        @test val[3] ≈ xq^2 atol = 1e-3
+
+        # Callable interpolant
+        itp = cubic_interp(x, Hermite(y_sv, dy_sv))
+        @test itp(xq) isa SVector{3, Float64}
+        @test itp(xq)[1] ≈ sin(xq) atol = 1e-3
+
+        # DerivOp(1) — should return SVector of derivatives
+        d1 = cubic_interp(x, Hermite(y_sv, dy_sv), xq; deriv = DerivOp(1))
+        @test d1 isa SVector{3, Float64}
+        @test d1[1] ≈ cos(xq) atol = 1e-2
+
+        # Type stability
+        @test @inferred(cubic_interp(x, Hermite(y_sv, dy_sv), xq)) isa SVector{3, Float64}
+    end
 end

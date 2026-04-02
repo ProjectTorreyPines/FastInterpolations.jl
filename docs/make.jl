@@ -213,6 +213,7 @@ makedocs(
             "Linear" => "api/linear.md",
             "Quadratic" => "api/quadratic.md",
             "Cubic" => "api/cubic.md",
+            "Hermite Family" => "api/hermite.md",
             "Adjoint" => "api/adjoint.md",
             "Types" => "api/types.md",
         ],

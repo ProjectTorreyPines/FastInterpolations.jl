@@ -13,6 +13,10 @@ include("linear/linear.jl")
 include("constant/constant.jl")
 include("quadratic/quadratic.jl")
 include("cubic/cubic.jl")
+include("hermite/hermite.jl")
+include("pchip/pchip.jl")
+include("cardinal/cardinal.jl")
+include("akima/akima.jl")
 include("hetero/hetero.jl")
 
 # Derivative view wrapper (depends on all interpolant types)
@@ -44,6 +48,10 @@ export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant, ConstantInterpolantND
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticSeriesInterpolant, QuadraticInterpolantND
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, CubicSeriesInterpolant
+export Hermite, CubicHermiteInterpolant1D  # Cubic Hermite with user-supplied slopes
+export pchip_interp, pchip_interp!, PchipInterpolant1D  # PCHIP monotone interpolation
+export cardinal_interp, cardinal_interp!, CardinalInterpolant1D  # Cardinal spline (CatmullRom default)
+export akima_interp, akima_interp!, AkimaInterpolant1D  # Akima outlier-robust interpolation
 export constant_adjoint, ConstantAdjoint, ConstantAdjointND  # Constant adjoint operators (W^T)
 export linear_adjoint, LinearAdjoint, LinearAdjointND  # Linear adjoint operators (W^T)
 export quadratic_adjoint, QuadraticAdjoint, QuadraticAdjointND  # Quadratic adjoint operators (W^T)

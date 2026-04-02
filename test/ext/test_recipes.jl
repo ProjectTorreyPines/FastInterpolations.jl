@@ -42,6 +42,30 @@ using RecipesBase
             recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
         end
+        @testset "CubicHermiteInterpolant1D" begin
+            dy = cos.(2π .* x)
+            itp = cubic_interp(x, Hermite(y, dy))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
+            @test !isempty(recipes)
+        end
+
+        @testset "PchipInterpolant1D" begin
+            itp = pchip_interp(x, y)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
+            @test !isempty(recipes)
+        end
+
+        @testset "CardinalInterpolant1D" begin
+            itp = cardinal_interp(x, y)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
+            @test !isempty(recipes)
+        end
+
+        @testset "AkimaInterpolant1D" begin
+            itp = akima_interp(x, y)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
+            @test !isempty(recipes)
+        end
     end
 
     # ========================================

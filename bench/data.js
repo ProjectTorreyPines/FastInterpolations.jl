@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1774934579245,
+  "lastUpdate": 1775093966366,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -37954,6 +37954,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1611.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "96168bd093f1d1239d5801054ce2245c356c324d",
+          "message": "(feat): Add local cubic Hermite interpolation family (Hermite, PCHIP, Cardinal, Akima) (#106)\n\n* (feat): Add cubic Hermite 1D interpolation with user-supplied slopes\n\nIntroduce `Hermite(y, dy)` data wrapper for `cubic_interp` that bypasses\nthe global spline solve and uses user-provided first derivatives directly.\n\nNew public API:\n- `cubic_interp(x, Hermite(y, dy), xq)` — oneshot (scalar/vector/in-place)\n- `cubic_interp(x, Hermite(y, dy))` → `CubicHermiteInterpolant1D` callable\n- All DerivOp, extrap, and search kwargs supported\n- `bc`/`autocache` kwargs rejected with clear ArgumentError\n\nArchitecture:\n- Reuses existing `_hermite_kernel_1d` from cubic ND (zero new kernel code)\n- Follows `LinearInterpolant` pattern (no cache, no solve)\n- Two eval paths: oneshot (no spacing alloc) / interpolant (precomputed)\n- Files prefixed `cubic_hermite_*` for future `quadratic_hermite_*` support\n\n* (feat): Add show method and plot recipe for CubicHermiteInterpolant1D\n\n- Compact: CubicHermiteInterpolant1D{Float64}(6 pts, user slopes)\n- Verbose: grid, extrap, search, \"user-supplied (C¹ Hermite)\" label\n- Plot recipe: _get_recipe_data + _interpolant_label dispatch\n\n* (fix): Normalize Range to _CachedRange in Hermite 2-arg path, register test\n\n- Add _to_float(x, Tg) in cubic_interp(x::AV{Tg}, h::Hermite) hot path\n  so StepRangeLen is normalized to _CachedRange (avoids TwicePrecision)\n- Add include(\"test_hermite_1d.jl\") to runtests.jl default test list\n\n* (test): Verify Range grid preserved as _CachedRange in Hermite interpolant\n\nPass Range directly (not collect) in uniform grid test, assert itp.x\nis _CachedRange for O(1) direct search path.\n\n* (refactor): Extract @noinline throw helpers for Hermite kwarg rejection\n\nKeep cold error paths out of inlined _reject_hermite_kwargs, matching\nthe existing _throw_length_mismatch / _throw_domain_error pattern.\n\n* (test): Strengthen Hermite extrap tests, add Float32/broadcast/search coverage\n\n- ExtendExtrap: verify actual polynomial values (not just isfinite)\n- ExtendExtrap: test derivative extrapolation\n- FillExtrap: add coverage (fill value + NaN)\n- ClampExtrap: test derivative returns zero\n- Float32: verify return type and precision\n- Broadcast: smoke test itp.(xq)\n- Search policy: test BinarySearch/LinearBinarySearch override\n\n* (test): Add duck typing tests for Hermite (DuckFloat5 + SVector)\n\n- DuckFloat5 (minimal 5-op type): scalar, vector, callable, DerivOp(1),\n  @inferred — verifies Hermite kernel preserves duck-type contract\n- SVector{3,Float64}: vector-valued interpolation with user slopes,\n  callable, DerivOp(1), @inferred type stability\n\n* (fix): Unify 2-arg Hermite constructor to always promote Tv\n\nMerge the AbstractFloat hot path and Real wrapper into a single\nTX<:Real method that always calls _promote_itp_inputs, matching\nthe linear_interp pattern. Fixes InexactError when Int-valued\nHermite data is combined with FillExtrap(0.5) or similar.\n\n* (refactor): Add _promote_itp_inputs(x, h::Hermite) dispatch\n\nCentralize x/y/dy promotion into Hermite-aware overloads of\n_promote_itp_inputs, eliminating manual convert/eltype logic\nfrom all caller sites (2-arg constructor + 3 Real wrappers).\n\n* (fix): Consider dy type in grid promotion for Hermite\n\n_promote_itp_inputs(x, h::Hermite) now computes Tg from x, y, AND dy\njointly via _promote_grid_float + promote_type. Prevents precision\nloss when dy has a wider type than y (e.g., y::Float32, dy::Float64).\nDuck types preserved as-is (same contract as existing promotion).\n\n* (feat): Add PCHIP 1D interpolation with Fritsch-Carlson monotone slopes\n\nNew public API:\n- pchip_interp(x, y, xq) — oneshot (scalar/vector/in-place)\n- pchip_interp(x, y) → PchipInterpolant1D callable\n- All extrap, deriv, search kwargs supported\n\nArchitecture:\n- _pchip_slopes! implements Fritsch-Carlson 1980 (O(n), single pass)\n- Oneshot uses @with_pool for zero-alloc slope buffer\n- 100% eval reuse: _cubic_hermite_eval_at_point / _cubic_hermite_vector_loop!\n- PchipInterpolant1D is separate type for show/plot/future dispatch\n\nProperties:\n- C1 continuous, monotonicity-preserving for monotone input\n- Local: slopes depend only on neighboring data, no global solve\n- O(h^3) accuracy on smooth data\n\n* (feat): Add cardinal spline 1D interpolation (CatmullRom default)\n\nNew public API:\n- cardinal_interp(x, y, xq; tension=0.0) — oneshot (scalar/vector/in-place)\n- cardinal_interp(x, y; tension=0.0) → CardinalInterpolant1D callable\n- tension=0 is CatmullRom, tension=1 gives flat segments\n\nArchitecture:\n- _cardinal_slopes! implements (1-tension) * central FD (O(n), single pass)\n- Oneshot uses @with_pool for zero-alloc slope buffer\n- 100% eval reuse: _cubic_hermite_eval_at_point / _cubic_hermite_vector_loop!\n\n* (feat): Add Akima 1D interpolation with outlier-robust slopes\n\nNew public API:\n- akima_interp(x, y, xq) — oneshot (scalar/vector/in-place)\n- akima_interp(x, y) → AkimaInterpolant1D callable\n- All extrap, deriv, search kwargs supported\n\nArchitecture:\n- _akima_slopes! implements Akima 1970 weighted-average algorithm\n- 5-point stencil with virtual secant extrapolation at boundaries\n- Oneshot uses @with_pool for zero-alloc slope buffer\n- 100% eval reuse: _cubic_hermite_eval_at_point / _cubic_hermite_vector_loop!\n\nProperties:\n- C1 continuous, outlier-robust (deviant secants get less weight)\n- Local: slopes depend on 4 adjacent secants\n- O(h^3) accuracy on smooth data\n- Minimum 2 points (n=2 → linear, n=3 → simple average)\n\n* (test): Cross-validate PCHIP/Akima/Cardinal against DataInterpolations.jl\n\n- PCHIP vs DI.PCHIPInterpolation: exact match (rtol=1e-12) on uniform,\n  non-uniform, and monotone grids\n- Akima vs DI.AkimaInterpolation: match interior points (rtol=1e-10),\n  looser boundary tolerance (virtual secant extrapolation differs)\n- Cardinal (CatmullRom): verified against manual slopes + Hermite (rtol=1e-14)\n- All methods: smooth data agreement sanity check\n\n* (fix): Correct Akima right-boundary stencil off-by-one, fix Hermite docstring\n\n- _akima_slopes! right boundary: rolling window after loop gives\n  m_km2=m[n-3], m_km1=m[n-2], m_k=m[n-1] (not m[n-4],m[n-3],m[n-2]).\n  Fixed dy[n-1] and dy[n] to use correct stencil positions.\n  Removed redundant m_last (m_k already IS the last real secant).\n- Hermite docstring: remove reference to quadratic_interp (not implemented)\n\n* (fix): Allow widened output buffer in in-place interp! methods\n\nRelax hot-path in-place signatures from output::AbstractVector{Tv}\n(tied to data eltype) to output::AbstractVector. Prevents infinite\nrecursion (StackOverflowError) when output is wider than data, e.g.\nFloat64 output buffer with Float32 Hermite/PCHIP/Cardinal/Akima data.\nApplies to all 4 local-slope methods.\n\n* (fix): Correct WrapExtrap fast-path boundary and Hermite boundscheck pattern\n\n- WrapExtrap vector loop: `qmax < x_max` → `qmax <= x_max` so queries\n  exactly at the right boundary use the fast-path instead of being\n  unnecessarily wrapped to x_min (linear, cubic, hermite)\n- Hermite in-place `cubic_interp!`: replace `@assert` with\n  `@boundscheck || _throw_length_mismatch` to match codebase convention\n  and allow `@inbounds` elision\n\n* (fix): Add hint kwarg to all in-place interp! methods, fix @assert pattern\n\n- Add `hint::Union{Nothing, Base.RefValue{Int}}` to all hot-path\n  in-place and allocating vector methods for Hermite, PCHIP, Cardinal,\n  and Akima — enables sorted-query acceleration for batch calls\n- Thread hint through `_resolve_search` (was hardcoded to `nothing`)\n- Replace remaining `@assert` with `@boundscheck || _throw_length_mismatch`\n  in all generic wrapper in-place methods (pchip, cardinal, akima, hermite)\n- Add tests: hint update verification + zero-alloc in-place (ALLOC_THRESHOLD)\n\n* (fix): Use promote_type(Tg, Tv) for Hermite allocating vector output\n\nWhen Tg (grid) and Tv (value) differ in the hot-path allocating\nvector, the output buffer now uses promote_type(Tg, Tv) instead\nof Tv alone. This prevents precision loss when the user passes\ne.g. Float64 grids with Float32 Hermite data directly to the\ntyped overload (bypassing the generic promotion wrapper).\n\n* (test): Add show method tests for CubicHermiteInterpolant1D\n\nVerifies compact and verbose display strings match the expected format\n(type name, \"user slopes\" compact, \"user-supplied\" verbose).\n\n* (test): Add FillExtrap + DerivOp OOB tests for Hermite family\n\nVerify that derivative queries outside the domain with FillExtrap\nreturn zero (derivative of constant fill value) for all four types:\nHermite, PCHIP, Cardinal, Akima.\n\n* (feat): Store tension in CardinalInterpolant1D for introspection\n\n- Add `tension::Tg` field to struct (was discarded after slope computation)\n- Thread tension through inner constructor, outer constructor, and 2-arg API\n- Update verbose show to display \"CatmullRom\" (tension=0) or \"tension=X\"\n- Add tests: `itp.tension` access, show string verification\n\n* (fix): Update docstrings with hint kwarg, add WrapExtrap boundary + FillExtrap NaN tests\n\n- Add hint=nothing to all 12 docstring signatures (scalar, in-place,\n  allocating for Hermite, PCHIP, Cardinal, Akima)\n- Add WrapExtrap vector fast-path test at xq==x_max for all 4 types\n  (verifies the <= boundary fix produces finite results)\n- Add Cardinal FillExtrap(NaN) right-side test for symmetry with\n  Hermite/PCHIP/Akima\n\n* (fix): Guard against single-knot Hermite grids\n\nAdd minimum-point check (n >= 2) to both the Hermite oneshot hot-path\nand the CubicHermiteInterpolant1D constructor. Without this, a single-\npoint grid falls through to the kernel with a zero-width interval and\nreturns NaN instead of a clear error. PCHIP/Cardinal/Akima already\nhave this guard in their slope functions.\n\n* (revert): Restore WrapExtrap fast-path to strict < (half-open domain)\n\nRevert the <= change from 8b5b59f3 for linear and cubic WrapExtrap\nvector fast-paths. The _wrap_to_domain function defines the periodic\ndomain as [x_min, x_max) (half-open), so x_max must go through the\nwrap path to maintain scalar/vector consistency.\n\nThe hermite fast-paths were already reverted. A follow-up PR will\naddress the broader issue of making x_max return y[end] by changing\n_wrap_to_domain itself (see claudedocs/TODO/wrapextrap_xmax_semantics.md).\n\n* (fix): Revert Hermite WrapExtrap fast-path to strict <, apply Runic formatting\n\n- Revert hermite_eval.jl WrapExtrap vector fast-path from <= back to <\n  to match _wrap_to_domain's [x_min, x_max) half-open domain semantics\n- Apply Runic formatting to test files (1e-12 → 1.0e-12)\n- Add parentheses to periodic.jl conditions (Runic)\n\n* (refactor): Rename test_hermite_1d.jl → test_cubic_hermite_1d.jl\n\nAligns with CubicHermiteInterpolant1D type name and the existing\nnaming convention (test_cubic.jl, test_linear.jl, etc.).\n\n* (docs): Add API reference page for Hermite family (PCHIP, Cardinal, Akima)\n\nRegisters all 17 new docstrings (Hermite, CubicHermiteInterpolant1D,\npchip_interp/!, PchipInterpolant1D, cardinal_interp/!,\nCardinalInterpolant1D, akima_interp/!, AkimaInterpolant1D) in the\nDocumenter manual to fix the missing_docs build error.\n\n* (fix): Address Copilot review — docstring accuracy and output type\n\n- Hermite allocating vector: promote_type(Tg, Tv) → _value_type(Tv, Tg)\n  (canonical pattern: PromotableValue→Tg, duck types→Tv as-is)\n- Akima docstring: \"quadratic extrapolation\" → \"linear extrapolation\"\n  (code uses 2m1-m2, not quadratic fit)\n- Cardinal tension=1 descriptions: \"flat segments\" → \"zero slopes at knots\"\n  (Hermite basis with zero slopes produces smooth S-curves, not constants)\n\n* (test): Improve patch coverage for Hermite family\n\nAdd coverage tests targeting uncovered code paths:\n- WrapExtrap vector fast-path/slow-path (all 4 types)\n- Range in-place disambiguation overloads (all 4 types)\n- Vector DerivOp(2+) through vector loop (Hermite)\n- Show verbose with Range grid — verify Search row absent (all 4 types)\n- Generic wrapper Integer promotion path (Hermite)\n- PCHIP: local extrema (mixed-sign secants), flat region (zero secant),\n  n=2 minimum grid\n- Cardinal: vector tension variation, n=2 minimum grid\n- Akima: n=2, n=3, n=4 special cases, wsum==0 fallback (linear data)\n- Output eltype validation error via generic wrapper (PCHIP, Cardinal, Akima)\n\n* (test): Close remaining coverage gaps from codecov patch report\n\nTargets exact uncovered lines identified from .cov files:\n- cubic_hermite_eval.jl:49-53,114-118: ClampExtrap in-domain scalar\n  (Vector + Range grid paths)\n- cubic_hermite_eval.jl:228-230: callable Range WrapExtrap OOB vector\n  slow-path (per-element wrap with spacing)\n- cubic_hermite_oneshot.jl:184: Hermite output eltype validation error\n- pchip/cardinal/akima_oneshot.jl:168-172: generic in-place wrapper\n  tail call (Integer grid pass-through)\n- pchip_slopes.jl:38: endpoint overshoot clamping branch (3*delta1)\n\n* (test): Cover generic wrapper dispatches and plot recipes for Hermite family\n\n- Add generic vector-allocating + scalar wrapper tests with Integer inputs\n  for PCHIP, Cardinal, Akima (exercises Real→Float promotion path)\n- Add plot recipe tests for CubicHermiteInterpolant1D, PchipInterpolant1D,\n  CardinalInterpolant1D, AkimaInterpolant1D in test/ext/test_recipes.jl\n\n* (test): Cover PCHIP endpoint 3*delta1 overshoot clamping branch\n\nConstruct data where h1 >> h2 and sign(delta1) != sign(delta2) to\ntrigger abs(d) > abs(3*delta1) at the left endpoint, exercising\npchip_slopes.jl:38 (the last uncovered line in patch).",
+          "timestamp": "2026-04-01T18:31:35-07:00",
+          "tree_id": "34f483250e6bcbccd1e0f4de77777cac89cb9a15",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/96168bd093f1d1239d5801054ce2245c356c324d"
+        },
+        "date": 1775093959763,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 37109,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 614.34,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 357013,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1701.36,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1580.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 15.63,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 11.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3310.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=272\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 32.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 18.34,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4231.26,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4218.82,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9466.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3226.18,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 443.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 61699.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1307.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12595.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 18.33,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 444.24,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 42593.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 22.33,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 18718.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 37.87,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 266.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.11,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 196.96,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 18526.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 11.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 553.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4328.44,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 39908.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 724.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1782.32,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2294.84,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11465.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3356.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 36915.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 976.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 365387.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1598.9,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

@@ -57,7 +57,7 @@ export linear_adjoint, LinearAdjoint, LinearAdjointND  # Linear adjoint operator
 export quadratic_adjoint, QuadraticAdjoint, QuadraticAdjointND  # Quadratic adjoint operators (W^T)
 export cubic_adjoint, CubicAdjoint, CubicAdjointND  # Cubic adjoint operators (W^T)
 export hetero_adjoint, HeteroAdjointND  # Heterogeneous ND adjoint operator (W^T)
-export hermite_adjoint, HermiteAdjoint1D  # Hermite adjoint (user-supplied slopes)
+export hermite_adjoint, HermiteAdjoint1D, hermite_pullback  # Hermite adjoint (user-supplied slopes)
 export pchip_adjoint, PchipAdjoint1D  # PCHIP adjoint (slope-from-data, data-dependent)
 export cardinal_adjoint, CardinalAdjoint1D  # Cardinal adjoint (slope-from-data)
 export akima_adjoint, AkimaAdjoint1D  # Akima adjoint (slope-from-data, data-dependent)

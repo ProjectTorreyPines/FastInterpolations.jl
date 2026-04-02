@@ -17,6 +17,7 @@ _adjoint_func(::typeof(quadratic_interp)) = quadratic_adjoint
 _adjoint_func(::typeof(constant_interp)) = constant_adjoint
 _adjoint_func(::typeof(cubic_interp)) = cubic_adjoint
 _adjoint_func(::typeof(cardinal_interp)) = cardinal_adjoint
+_adjoint_func(::typeof(hermite_interp)) = hermite_adjoint
 
 # Interpolant struct → adjoint constructor
 _adjoint_func_from_itp(::CubicInterpolantND) = cubic_adjoint

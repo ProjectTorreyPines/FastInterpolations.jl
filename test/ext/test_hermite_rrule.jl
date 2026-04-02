@@ -189,88 +189,82 @@ using ChainRulesCore: rrule, NoTangent, ZeroTangent, Tangent, unthunk
     end
 
     # ════════════════════════════════════════════════════════════════════════
-    # Hermite (cubic_interp with Hermite wrapper)
+    # Hermite (hermite_interp with separate y, dy args)
     # ════════════════════════════════════════════════════════════════════════
+    # rrule returns 5-tuple: (func, x, ∂y, ∂dy, ∂xq)
 
-    @testset "cubic_interp(Hermite) rrule — ∂y and ∂dy" begin
+    @testset "hermite_interp rrule — ∂y and ∂dy" begin
         x = collect(range(0.0, 1.0, 10))
         y = sin.(x)
         dy = cos.(x)
         xq = [0.3, 0.7]
-        h = Hermite(y, dy)
-        val, pb = rrule(cubic_interp, x, h, xq)
-        @test val ≈ cubic_interp(x, h, xq)
+        val, pb = rrule(hermite_interp, x, y, dy, xq)
+        @test val ≈ hermite_interp(x, y, dy, xq)
         Δy = randn(2)
         grads = pb(Δy)
-        # grads[3] should be a Tangent for Hermite with both y and dy fields
-        @test grads[3] isa ChainRulesCore.Tangent
-        @test grads[3].y isa Vector
-        @test grads[3].dy isa Vector
-        @test length(grads[3].y) == length(y)
-        @test length(grads[3].dy) == length(dy)
+        # grads: (func, x, ∂y, ∂dy, ∂xq)
+        @test grads[3] isa Vector     # ∂y
+        @test grads[4] isa Vector     # ∂dy
+        @test length(grads[3]) == length(y)
+        @test length(grads[4]) == length(dy)
     end
 
-    @testset "cubic_interp(Hermite) rrule scalar xq" begin
+    @testset "hermite_interp rrule scalar xq" begin
         x = collect(range(0.0, 1.0, 10))
         y = sin.(x)
         dy = cos.(x)
-        h = Hermite(y, dy)
-        val, pb = rrule(cubic_interp, x, h, 0.5)
-        @test val ≈ cubic_interp(x, h, 0.5)
+        val, pb = rrule(hermite_interp, x, y, dy, 0.5)
+        @test val ≈ hermite_interp(x, y, dy, 0.5)
         grads = pb(1.0)
-        @test grads[3] isa ChainRulesCore.Tangent
-        @test grads[3].y isa Vector
-        @test grads[3].dy isa Vector
+        @test grads[3] isa Vector     # ∂y
+        @test grads[4] isa Vector     # ∂dy
     end
 
-    @testset "cubic_interp(Hermite) rrule ∂xq" begin
+    @testset "hermite_interp rrule ∂xq" begin
         x = collect(range(0.0, 1.0, 10))
         y = sin.(x)
         dy = cos.(x)
         xq = [0.3, 0.7]
-        h = Hermite(y, dy)
-        _, pb = rrule(cubic_interp, x, h, xq)
+        _, pb = rrule(hermite_interp, x, y, dy, xq)
         Δy = randn(2)
         grads = pb(Δy)
-        @test grads[4] isa AbstractVector
-        @test length(grads[4]) == length(xq)
+        @test grads[5] isa AbstractVector   # ∂xq is now index 5
+        @test length(grads[5]) == length(xq)
     end
 
-    @testset "cubic_interp(Hermite) rrule deriv=EvalDeriv1" begin
+    @testset "hermite_interp rrule deriv=EvalDeriv1" begin
         x = collect(range(0.0, 1.0, 10))
         y = sin.(x)
         dy = cos.(x)
         xq = [0.3, 0.7]
-        h = Hermite(y, dy)
-        val, pb = rrule(cubic_interp, x, h, xq; deriv = DerivOp(1))
-        @test val ≈ cubic_interp(x, h, xq; deriv = DerivOp(1))
+        val, pb = rrule(hermite_interp, x, y, dy, xq; deriv = DerivOp(1))
+        @test val ≈ hermite_interp(x, y, dy, xq; deriv = DerivOp(1))
         Δy = randn(2)
         grads = pb(Δy)
-        @test grads[3] isa ChainRulesCore.Tangent
-        @test grads[4] isa NoTangent
+        @test grads[3] isa Vector     # ∂y
+        @test grads[4] isa Vector     # ∂dy
+        @test grads[5] isa NoTangent  # ∂xq not available for non-EvalValue
     end
 
-    @testset "cubic_interp(Hermite) AbstractZero passthrough" begin
+    @testset "hermite_interp AbstractZero passthrough" begin
         x = collect(range(0.0, 1.0, 10))
         y = sin.(x)
         dy = cos.(x)
-        h = Hermite(y, dy)
         xq = [0.3, 0.7]
-        _, pb = rrule(cubic_interp, x, h, xq)
+        _, pb = rrule(hermite_interp, x, y, dy, xq)
         grads = pb(ZeroTangent())
         @test grads[3] isa ZeroTangent
     end
 
-    @testset "cubic_interp(Hermite) ∂y matches finite-diff" begin
+    @testset "hermite_interp ∂y matches finite-diff" begin
         x = sort(vcat(0.0, rand(18), 1.0))
         y = randn(length(x))
         dy = randn(length(x))
         xq = sort(rand(10))
-        h = Hermite(y, dy)
 
-        _, pb = rrule(cubic_interp, x, h, xq)
+        _, pb = rrule(hermite_interp, x, y, dy, xq)
         Δy = randn(length(xq))
-        ∂y_ad = pb(Δy)[3].y
+        ∂y_ad = pb(Δy)[3]
 
         # Finite-difference: perturb y[k] by ε
         ε = 1.0e-7
@@ -278,23 +272,22 @@ using ChainRulesCore: rrule, NoTangent, ZeroTangent, Tangent, unthunk
         for k in eachindex(y)
             y_plus = copy(y); y_plus[k] += ε
             y_minus = copy(y); y_minus[k] -= ε
-            f_plus = cubic_interp(x, Hermite(y_plus, dy), xq)
-            f_minus = cubic_interp(x, Hermite(y_minus, dy), xq)
+            f_plus = hermite_interp(x, y_plus, dy, xq)
+            f_minus = hermite_interp(x, y_minus, dy, xq)
             ∂y_fd[k] = sum(Δy .* (f_plus .- f_minus)) / (2ε)
         end
         @test ∂y_ad ≈ ∂y_fd rtol = 1.0e-5
     end
 
-    @testset "cubic_interp(Hermite) ∂dy matches finite-diff" begin
+    @testset "hermite_interp ∂dy matches finite-diff" begin
         x = sort(vcat(0.0, rand(18), 1.0))
         y = randn(length(x))
         dy = randn(length(x))
         xq = sort(rand(10))
-        h = Hermite(y, dy)
 
-        _, pb = rrule(cubic_interp, x, h, xq)
+        _, pb = rrule(hermite_interp, x, y, dy, xq)
         Δy = randn(length(xq))
-        ∂dy_ad = pb(Δy)[3].dy
+        ∂dy_ad = pb(Δy)[4]
 
         # Finite-difference: perturb dy[k] by ε
         ε = 1.0e-7
@@ -302,8 +295,8 @@ using ChainRulesCore: rrule, NoTangent, ZeroTangent, Tangent, unthunk
         for k in eachindex(dy)
             dy_plus = copy(dy); dy_plus[k] += ε
             dy_minus = copy(dy); dy_minus[k] -= ε
-            f_plus = cubic_interp(x, Hermite(y, dy_plus), xq)
-            f_minus = cubic_interp(x, Hermite(y, dy_minus), xq)
+            f_plus = hermite_interp(x, y, dy_plus, xq)
+            f_minus = hermite_interp(x, y, dy_minus, xq)
             ∂dy_fd[k] = sum(Δy .* (f_plus .- f_minus)) / (2ε)
         end
         @test ∂dy_ad ≈ ∂dy_fd rtol = 1.0e-5

@@ -405,7 +405,7 @@ and do not receive gradient contributions.
 
 This adjoint satisfies the dot-product identity:
 
-    dot(cubic_interp(x, Hermite(y, dy), xq), ȳ) ≈ dot(y, hermite_adjoint(x, xq)(ȳ))
+    dot(hermite_interp(x, y, dy, xq), ȳ) ≈ dot(y, hermite_adjoint(x, xq)(ȳ))
 
 For PCHIP/Cardinal/Akima where slopes are computed from `y`, use their dedicated
 adjoint constructors instead (which scatter to both `y` and `dy`).
@@ -424,7 +424,7 @@ y  = sin.(x)
 dy = cos.(x)
 y_bar = randn(30)
 
-itp = cubic_interp(x, Hermite(y, dy))
+itp = hermite_interp(x, y, dy)
 adj = hermite_adjoint(x, xq)
 f_bar = adj(y_bar)
 
@@ -484,7 +484,7 @@ end
 """
     _hermite_full_pullback(adj, y_bar, deriv) -> (f̄_y, f̄_dy)
 
-Compute gradients w.r.t. both `y` and `dy` for `cubic_interp(x, Hermite(y, dy), xq)`.
+Compute gradients w.r.t. both `y` and `dy` for `hermite_interp(x, y, dy, xq)`.
 
 Uses the full `_scatter_hermite_adjoint!` (not y-only) to populate both vectors.
 This is called by the ChainRulesCore rrule for the Hermite wrapper path.

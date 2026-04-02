@@ -3,7 +3,7 @@
 # ========================================
 # Standalone cardinal_interp / cardinal_interp! functions.
 # Computes cardinal slopes via @with_pool, then delegates to
-# _cubic_hermite_eval_at_point / _cubic_hermite_vector_loop!.
+# _hermite_eval_at_point / _hermite_vector_loop!.
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                         HOT PATH — AbstractFloat grid                     ║
@@ -35,7 +35,7 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
     dy = similar!(pool, y)
     _cardinal_slopes!(dy, x, y, Tg(tension))
     searcher = _resolve_search(x, xq, search, hint)
-    return _cubic_hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
+    return _hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
 end
 
 # ========================================
@@ -66,7 +66,7 @@ In-place cardinal spline interpolation.
     dy = similar!(pool, y)
     _cardinal_slopes!(dy, x, y, Tg(tension))
     searcher = _resolve_search(x, x_query, search, hint)
-    return _cubic_hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
+    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
 end
 
 # Range disambiguation for in-place
@@ -89,7 +89,7 @@ end
     dy = similar!(pool, y)
     _cardinal_slopes!(dy, x, y, Tg(tension))
     searcher = _resolve_search(x, x_query, search, hint)
-    return _cubic_hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
+    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
 end
 
 # ========================================

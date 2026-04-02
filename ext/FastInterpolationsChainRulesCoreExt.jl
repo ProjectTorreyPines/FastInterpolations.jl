@@ -567,29 +567,29 @@ function ChainRulesCore.rrule(
     return y, _akima_pb
 end
 
-# ── Hermite rrule (cubic_interp with Hermite wrapper) ────────────────────
-# Unlike PCHIP/Akima where slopes are derived from y, the Hermite wrapper
-# takes user-supplied (y, dy) independently.  Both receive gradients.
+# ── Hermite rrule (hermite_interp with separate y, dy args) ──────────────
+# User-supplied (y, dy) are independent inputs — both receive gradients.
+# 5-tuple return: (func, x, ∂y, ∂dy, ∂xq)
 
 function ChainRulesCore.rrule(
-        ::typeof(FastInterpolations.cubic_interp),
+        ::typeof(FastInterpolations.hermite_interp),
         x::AbstractVector,
-        h::FastInterpolations.Hermite{<:AbstractVector{Tv}, <:AbstractVector},
+        y::AbstractVector{Tv},
+        dy::AbstractVector,
         xq::Union{Real, AbstractVector};
         deriv::DerivOp = EvalValue(),
         kwargs...
     ) where {Tv}
-    y_out = FastInterpolations.cubic_interp(x, h, xq; deriv = deriv, kwargs...)
+    y_out = FastInterpolations.hermite_interp(x, y, dy, xq; deriv = deriv, kwargs...)
     adj = FastInterpolations.hermite_adjoint(x, xq; kwargs...)
     eval_value = deriv isa DerivOp{0}
-    d = eval_value ? FastInterpolations.cubic_interp(x, h, xq; deriv = DerivOp(1), kwargs...) : nothing
+    d = eval_value ? FastInterpolations.hermite_interp(x, y, dy, xq; deriv = DerivOp(1), kwargs...) : nothing
     function _hermite_pb(Δy)
-        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
+        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent(), ZeroTangent())
         Δu = unthunk(Δy)
         ∂xq = eval_value ? real.(conj.(Δu) .* d) : NoTangent()
         f̄_y, f̄_dy = FastInterpolations._hermite_full_pullback(adj, Δu, deriv)
-        ∂h = Tangent{FastInterpolations.Hermite}(; y = f̄_y, dy = f̄_dy)
-        return (NoTangent(), NoTangent(), ∂h, ∂xq)
+        return (NoTangent(), NoTangent(), f̄_y, f̄_dy, ∂xq)
     end
     return y_out, _hermite_pb
 end

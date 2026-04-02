@@ -13,7 +13,7 @@ function hermite_dot_product_test(
         extrap = NoExtrap(), deriv = EvalValue(),
         atol = 0, rtol = sqrt(eps(eltype(x)))
     )
-    itp = cubic_interp(x, Hermite(y, dy); extrap = extrap)
+    itp = hermite_interp(x, y, dy; extrap = extrap)
     adj = hermite_adjoint(x, xq; extrap = extrap)
 
     Wf = itp.(xq; deriv = deriv)      # forward eval
@@ -234,7 +234,7 @@ end
     end
 
     @testset "Matrix(adj)' -- W * y == itp.(xq) with dy=0" begin
-        itp = cubic_interp(x_uniform, Hermite(y, dy_zero); extrap = NoExtrap())
+        itp = hermite_interp(x_uniform, y, dy_zero; extrap = NoExtrap())
         adj = hermite_adjoint(x_uniform, xq)
         W = Matrix(adj)'
         @test W * y ≈ itp.(xq)
@@ -258,7 +258,7 @@ end
 
     @testset "Matrix -- non-uniform grid" begin
         adj = hermite_adjoint(x_nonuniform, xq)
-        itp = cubic_interp(x_nonuniform, Hermite(y, dy_zero); extrap = NoExtrap())
+        itp = hermite_interp(x_nonuniform, y, dy_zero; extrap = NoExtrap())
         W_T = Matrix(adj)
         @test W_T * y_bar ≈ adj(y_bar)
         @test Matrix(adj)' * y ≈ itp.(xq)
@@ -396,8 +396,8 @@ end
         @test W_T * y_bar ≈ adj(y_bar)
 
         # The forward with dy=0 isolates W_y:
-        itp_dy0 = cubic_interp(x_uniform, Hermite(y, dy_zero))
-        itp_full = cubic_interp(x_uniform, Hermite(y, dy_rand))
+        itp_dy0 = hermite_interp(x_uniform, y, dy_zero)
+        itp_full = hermite_interp(x_uniform, y, dy_rand)
         @test W_T' * y ≈ itp_dy0.(xq)  # W_y * y = forward with dy=0
         # Full forward includes dy contribution:
         # itp_full.(xq) = W_y * y + W_dy * dy != W_T' * y
@@ -1332,7 +1332,7 @@ end
         x = collect(range(0.0, 1.0, 20))
         y = x .^ 3
         dy = 3 .* x .^ 2
-        itp = cubic_interp(x, Hermite(y, dy))
+        itp = hermite_interp(x, y, dy)
         @test integrate(itp, 0.0, 1.0) ≈ 0.25 rtol = 1.0e-12
     end
 
@@ -1350,7 +1350,7 @@ end
 
     # Sign reversal: ∫_a^b = -∫_b^a
     @testset "Sign reversal — $T" for (T, make_itp) in [
-            ("Hermite", (x, y, dy) -> cubic_interp(x, Hermite(y, dy))),
+            ("Hermite", (x, y, dy) -> hermite_interp(x, y, dy)),
             ("PCHIP", (x, y, _) -> pchip_interp(x, y)),
             ("Cardinal", (x, y, _) -> cardinal_interp(x, y)),
             ("Akima", (x, y, _) -> akima_interp(x, y)),
@@ -1364,7 +1364,7 @@ end
 
     # Additivity: ∫_a^b + ∫_b^c = ∫_a^c
     @testset "Additivity — $T" for (T, make_itp) in [
-            ("Hermite", (x, y, dy) -> cubic_interp(x, Hermite(y, dy))),
+            ("Hermite", (x, y, dy) -> hermite_interp(x, y, dy)),
             ("PCHIP", (x, y, _) -> pchip_interp(x, y)),
             ("Cardinal", (x, y, _) -> cardinal_interp(x, y)),
             ("Akima", (x, y, _) -> akima_interp(x, y)),
@@ -1381,7 +1381,7 @@ end
 
     # Partial cell
     @testset "Partial cell — $T" for (T, make_itp) in [
-            ("Hermite", (x, y, dy) -> cubic_interp(x, Hermite(y, dy))),
+            ("Hermite", (x, y, dy) -> hermite_interp(x, y, dy)),
             ("PCHIP", (x, y, _) -> pchip_interp(x, y)),
         ]
         x = collect(range(0.0, 1.0, 10))
@@ -1395,7 +1395,7 @@ end
 
     # Compare with known: ∫₀¹ sin(x) dx = 1 - cos(1) ≈ 0.4597
     @testset "sin(x) integral accuracy — $T" for (T, make_itp) in [
-            ("Hermite", (x, y, dy) -> cubic_interp(x, Hermite(y, dy))),
+            ("Hermite", (x, y, dy) -> hermite_interp(x, y, dy)),
             ("PCHIP", (x, y, _) -> pchip_interp(x, y)),
             ("Cardinal", (x, y, _) -> cardinal_interp(x, y)),
             ("Akima", (x, y, _) -> akima_interp(x, y)),
@@ -1413,7 +1413,7 @@ end
         x = Float32.(collect(range(0.0f0, 1.0f0, 10)))
         y = sin.(x)
         dy = cos.(x)
-        itp = cubic_interp(x, Hermite(y, dy))
+        itp = hermite_interp(x, y, dy)
         result = integrate(itp, 0.0f0, 1.0f0)
         @test result ≈ (1 - cos(1.0)) rtol = 1.0e-3
     end

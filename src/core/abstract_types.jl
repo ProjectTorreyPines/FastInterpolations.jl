@@ -71,12 +71,12 @@ abstract type AbstractInterpolant1D{Tg <: AbstractFloat, Tv} <: AbstractInterpol
 Abstract supertype for 1D cubic Hermite family interpolants.
 
 All subtypes store `(x, y, dy, spacing, extrap, search_policy)` and share
-the same evaluation kernel (`_cubic_hermite_eval_at_point`) and integration
+the same evaluation kernel (`_hermite_eval_at_point`) and integration
 kernel (`_hermite_integral_kernel_1d`). This enables a single dispatch point
 for `_itp_eval_scalar`, `_itp_vector_loop!`, and `integrate`.
 
 # Subtypes
-- `CubicHermiteInterpolant1D`: User-supplied slopes
+- `HermiteInterpolant1D`: User-supplied slopes
 - `PchipInterpolant1D`: Fritsch-Carlson monotone-preserving slopes
 - `CardinalInterpolant1D`: Central finite difference (+ tension parameter)
 - `AkimaInterpolant1D`: Weighted-average outlier-robust slopes

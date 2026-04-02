@@ -140,7 +140,7 @@ using Random
         # Cardinal with tension=0 should match Hermite with manual slopes
         for q in xq
             cardinal_val = cardinal_interp(x, y, q; tension = 0.0)
-            hermite_val = cubic_interp(x, Hermite(y, dy_manual), q)
+            hermite_val = hermite_interp(x, y, dy_manual, q)
             @test cardinal_val ≈ hermite_val rtol = 1.0e-14
         end
     end

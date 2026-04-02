@@ -3,7 +3,7 @@
 # ========================================
 # Standalone akima_interp / akima_interp! functions.
 # Computes Akima slopes via @with_pool, then delegates to
-# _cubic_hermite_eval_at_point / _cubic_hermite_vector_loop!.
+# _hermite_eval_at_point / _hermite_vector_loop!.
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                         HOT PATH — AbstractFloat grid                     ║
@@ -34,7 +34,7 @@ Outlier-robust, C\$^1\$ continuous.
     dy = similar!(pool, y)
     _akima_slopes!(dy, x, y)
     searcher = _resolve_search(x, xq, search, hint)
-    return _cubic_hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
+    return _hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
 end
 
 # ========================================
@@ -64,7 +64,7 @@ In-place Akima interpolation.
     dy = similar!(pool, y)
     _akima_slopes!(dy, x, y)
     searcher = _resolve_search(x, x_query, search, hint)
-    return _cubic_hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
+    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
 end
 
 # Range disambiguation for in-place
@@ -86,7 +86,7 @@ end
     dy = similar!(pool, y)
     _akima_slopes!(dy, x, y)
     searcher = _resolve_search(x, x_query, search, hint)
-    return _cubic_hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
+    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
 end
 
 # ========================================

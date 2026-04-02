@@ -309,16 +309,16 @@ function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolant{Tg, Tv}) wh
     return _show_row(io, true, "BC:    ", _format_bc(itp.bc))
 end
 
-# --- CubicHermiteInterpolant1D ---
+# --- HermiteInterpolant1D ---
 
-function Base.show(io::IO, itp::CubicHermiteInterpolant1D{Tg, Tv}) where {Tg, Tv}
+function Base.show(io::IO, itp::HermiteInterpolant1D{Tg, Tv}) where {Tg, Tv}
     n = length(itp.x)
-    _show_type_header_2params(io, "CubicHermiteInterpolant1D", Tg, Tv)
+    _show_type_header_2params(io, "HermiteInterpolant1D", Tg, Tv)
     return print(io, "($n pts, user slopes)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", itp::CubicHermiteInterpolant1D{Tg, Tv}) where {Tg, Tv}
-    _show_type_header_2params(io, "CubicHermiteInterpolant1D", Tg, Tv)
+function Base.show(io::IO, ::MIME"text/plain", itp::HermiteInterpolant1D{Tg, Tv}) where {Tg, Tv}
+    _show_type_header_2params(io, "HermiteInterpolant1D", Tg, Tv)
     println(io)
     is_range = itp.x isa AbstractRange
     _show_grid_row(io, false, itp.x)

@@ -49,6 +49,7 @@ else
     include("test_linear_adjoint.jl")   # Linear 1D adjoint (W^T * y_bar)
     include("test_constant_adjoint.jl")  # Constant 1D adjoint (W^T * y_bar)
     include("test_quadratic_adjoint.jl") # Quadratic 1D adjoint (W^T * y_bar)
+    include("test_hermite_adjoint.jl")   # Hermite family 1D adjoint (W^T * y_bar)
     include("test_linear_anchor.jl")
     include("test_constant_anchor.jl")
     include("test_quadratic_anchor.jl")

@@ -1,5 +1,11 @@
+# ========================================
+# Hermite Family 1D — Bounded Integration (shared)
+# ========================================
+# Single dispatch for all AbstractHermiteInterpolant1D subtypes.
+# All store (x, y, dy, spacing) and use _hermite_integral_kernel_1d.
+
 @inline function integrate(
-        itp::CubicHermiteInterpolant1D{Tg, Tv},
+        itp::AbstractHermiteInterpolant1D{Tg, Tv},
         x0::Real, x1::Real;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,

@@ -35,7 +35,7 @@ struct AkimaInterpolant1D{
         S <: AbstractGridSpacing{Tg},
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
-    } <: AbstractInterpolant1D{Tg, Tv}
+    } <: AbstractHermiteInterpolant1D{Tg, Tv}
     x::X
     y::Y
     dy::DY

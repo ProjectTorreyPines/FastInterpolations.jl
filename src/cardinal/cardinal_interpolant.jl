@@ -3,17 +3,7 @@
 # ========================================
 # Callable methods for CardinalInterpolant1D and 2-arg API.
 
-# ========================================
-# Protocol Trait Implementations
-# ========================================
-
-@inline function _itp_eval_scalar(itp::CardinalInterpolant1D, xq, extrap, op, searcher)
-    return _cubic_hermite_eval_at_point(itp.x, itp.spacing, itp.y, itp.dy, xq, extrap, op, searcher)
-end
-
-@inline function _itp_vector_loop!(output, itp::CardinalInterpolant1D, xq, extrap, op, searcher)
-    return _cubic_hermite_vector_loop!(output, itp.x, itp.spacing, itp.y, itp.dy, xq, extrap, op, searcher)
-end
+# Protocol traits: inherited from AbstractHermiteInterpolant1D (cubic_hermite_interpolant.jl).
 
 # ========================================
 # 2-Argument Form: Return Callable

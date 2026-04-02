@@ -6,16 +6,17 @@
 # Oneshot API (cubic_interp 3-arg) is in hermite_oneshot.jl.
 
 # ========================================
-# Protocol Trait Implementations
+# Protocol Trait Implementations (shared for all Hermite family)
 # ========================================
-# Generic callables inherited from AbstractInterpolant1D (interpolant_protocol.jl).
+# Dispatches on AbstractHermiteInterpolant1D: covers CubicHermite, PCHIP, Cardinal, Akima.
+# All subtypes store (x, y, dy, spacing) and use the same Hermite kernel.
 # _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
 
-@inline function _itp_eval_scalar(itp::CubicHermiteInterpolant1D, xq, extrap, op, searcher)
+@inline function _itp_eval_scalar(itp::AbstractHermiteInterpolant1D, xq, extrap, op, searcher)
     return _cubic_hermite_eval_at_point(itp.x, itp.spacing, itp.y, itp.dy, xq, extrap, op, searcher)
 end
 
-@inline function _itp_vector_loop!(output, itp::CubicHermiteInterpolant1D, xq, extrap, op, searcher)
+@inline function _itp_vector_loop!(output, itp::AbstractHermiteInterpolant1D, xq, extrap, op, searcher)
     return _cubic_hermite_vector_loop!(output, itp.x, itp.spacing, itp.y, itp.dy, xq, extrap, op, searcher)
 end
 

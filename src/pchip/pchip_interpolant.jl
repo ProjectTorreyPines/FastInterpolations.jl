@@ -5,19 +5,7 @@
 # Type definition is in pchip_types.jl.
 # Oneshot API (pchip_interp 3-arg) is in pchip_oneshot.jl.
 
-# ========================================
-# Protocol Trait Implementations
-# ========================================
-# Generic callables inherited from AbstractInterpolant1D (interpolant_protocol.jl).
-# _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
-
-@inline function _itp_eval_scalar(itp::PchipInterpolant1D, xq, extrap, op, searcher)
-    return _cubic_hermite_eval_at_point(itp.x, itp.spacing, itp.y, itp.dy, xq, extrap, op, searcher)
-end
-
-@inline function _itp_vector_loop!(output, itp::PchipInterpolant1D, xq, extrap, op, searcher)
-    return _cubic_hermite_vector_loop!(output, itp.x, itp.spacing, itp.y, itp.dy, xq, extrap, op, searcher)
-end
+# Protocol traits: inherited from AbstractHermiteInterpolant1D (cubic_hermite_interpolant.jl).
 
 # ========================================
 # 2-Argument Form: Return Callable

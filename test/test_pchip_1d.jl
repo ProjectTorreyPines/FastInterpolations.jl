@@ -421,14 +421,37 @@
         itp = pchip_interp(x2, y2)
         @test isfinite(itp(0.005))
 
-        # Trigger the |d| > |3δ1| path: opposite-sign secants with large first interval
-        x3 = [0.0, 1.0, 1.1, 2.0, 3.0]
-        y3 = [10.0, 0.0, -0.5, -1.0, 0.0]
-        # δ1 = -10, δ2 = -5 → same sign, no clamping here. Try right endpoint:
-        # Last two secants: δ_{n-1} and δ_n
-        itp3 = pchip_interp(x3, y3)
-        @test isfinite(itp3(0.5))
-        @test isfinite(itp3(2.5))
+        # Trigger the |d| > |3δ1| path at LEFT endpoint:
+        # Need sign(δ1) != sign(δ2) AND abs(d) > abs(3*δ1)
+        # d = ((2h1+h2)*δ1 - h1*δ2) / (h1+h2)
+        # With h1 small, h2 large, δ1 small positive, δ2 large negative:
+        # d ≈ (h2*δ1 - h1*δ2)/h2 ≈ δ1 - (h1/h2)*δ2 → if h1<<h2 and δ2 large negative, d >> 3*δ1
+        x4 = [0.0, 0.1, 10.0, 20.0, 30.0]
+        y4 = [0.0, 0.01, -5.0, -4.0, -3.0]
+        # δ1 = 0.01/0.1 = 0.1, δ2 = (-5.0-0.01)/9.9 ≈ -0.506
+        # sign(δ1)=+ != sign(δ2)=- ✓
+        # d = ((0.2+9.9)*0.1 - 0.1*(-0.506)) / (0.1+9.9) = (1.01 + 0.0506)/10 ≈ 0.1061
+        # |d|=0.1061 > |3*δ1|=0.3? No. Need stronger:
+        x5 = [0.0, 0.01, 1.0, 2.0, 3.0]
+        y5 = [0.0, 0.001, -10.0, -9.0, -8.0]
+        # δ1 = 0.001/0.01 = 0.1, δ2 = (-10-0.001)/0.99 ≈ -10.1
+        # d = ((0.02+0.99)*0.1 - 0.01*(-10.1)) / (0.01+0.99) = (0.101 + 0.101)/1.0 = 0.202
+        # |d|=0.202 vs |3*δ1|=0.3 → still no. Need δ2 much larger:
+        x6 = [0.0, 0.001, 1.0, 2.0, 3.0]
+        y6 = [0.0, 0.0001, -100.0, -99.0, -98.0]
+        # δ1 = 0.1, δ2 ≈ -100, h1=0.001, h2=0.999
+        # d = ((0.002+0.999)*0.1 - 0.001*(-100)) / (0.001+0.999) = (0.1001+0.1)/1 = 0.2001
+        # |d|=0.2001 vs |3*δ1|=0.3 → no. The formula inherently bounds d near δ1.
+        # Actually with h1 << h2: d ≈ δ1 + h1*(-δ2)/(h1+h2) → small correction.
+        # To get |d| > 3|δ1|, need h1 >> h2 (large first, small second interval):
+        x7 = [0.0, 10.0, 10.01, 20.0, 30.0]
+        y7 = [0.0, 1.0, -1.0, -2.0, -3.0]
+        # h1=10, h2=0.01, δ1=0.1, δ2=-200
+        # d = ((20+0.01)*0.1 - 10*(-200)) / (10+0.01) = (2.001 + 2000)/10.01 ≈ 200.18
+        # |d|=200.18 > |3*δ1|=0.3 → YES! ✓
+        itp7 = pchip_interp(x7, y7)
+        @test isfinite(itp7(5.0))
+        @test isfinite(itp7(0.5))
     end
 
     @testset "Coverage — show with Range grid" begin

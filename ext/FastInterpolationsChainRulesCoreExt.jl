@@ -567,4 +567,31 @@ function ChainRulesCore.rrule(
     return y, _akima_pb
 end
 
+# ── Hermite rrule (cubic_interp with Hermite wrapper) ────────────────────
+# Unlike PCHIP/Akima where slopes are derived from y, the Hermite wrapper
+# takes user-supplied (y, dy) independently.  Both receive gradients.
+
+function ChainRulesCore.rrule(
+        ::typeof(FastInterpolations.cubic_interp),
+        x::AbstractVector,
+        h::FastInterpolations.Hermite{<:AbstractVector{Tv}, <:AbstractVector},
+        xq::Union{Real, AbstractVector};
+        deriv::DerivOp = EvalValue(),
+        kwargs...
+    ) where {Tv}
+    y_out = FastInterpolations.cubic_interp(x, h, xq; deriv = deriv, kwargs...)
+    adj = FastInterpolations.hermite_adjoint(x, xq; kwargs...)
+    eval_value = deriv isa DerivOp{0}
+    d = eval_value ? FastInterpolations.cubic_interp(x, h, xq; deriv = DerivOp(1), kwargs...) : nothing
+    function _hermite_pb(Δy)
+        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
+        Δu = unthunk(Δy)
+        ∂xq = eval_value ? real.(conj.(Δu) .* d) : NoTangent()
+        f̄_y, f̄_dy = FastInterpolations._hermite_full_pullback(adj, Δu, deriv)
+        ∂h = Tangent{FastInterpolations.Hermite}(; y = f̄_y, dy = f̄_dy)
+        return (NoTangent(), NoTangent(), ∂h, ∂xq)
+    end
+    return y_out, _hermite_pb
+end
+
 end # module

@@ -455,3 +455,37 @@ function hermite_adjoint(
     )
     return hermite_adjoint(x, [x_query]; extrap = extrap)
 end
+
+# ========================================
+# Full Hermite Pullback (for AD — returns both ∂y and ∂dy)
+# ========================================
+
+"""
+    _hermite_full_pullback(adj, y_bar, deriv) -> (f̄_y, f̄_dy)
+
+Compute gradients w.r.t. both `y` and `dy` for `cubic_interp(x, Hermite(y, dy), xq)`.
+
+Uses the full `_scatter_hermite_adjoint!` (not y-only) to populate both vectors.
+This is called by the ChainRulesCore rrule for the Hermite wrapper path.
+"""
+function _hermite_full_pullback(
+        adj::HermiteAdjoint1D{Tg},
+        y_bar,
+        deriv::DerivOp = EvalValue()
+    ) where {Tg}
+    Tv = y_bar isa AbstractVector ? promote_type(eltype(y_bar), Tg) : promote_type(typeof(y_bar), Tg)
+    n = adj.grid_size
+    f_bar_y = zeros(Tv, n)
+    f_bar_dy = zeros(Tv, n)
+    _scatter_hermite_adjoint!(f_bar_y, f_bar_dy, adj.anchors, y_bar, deriv)
+    return f_bar_y, f_bar_dy
+end
+
+# Scalar y_bar: wrap to vector, unpack
+function _hermite_full_pullback(
+        adj::HermiteAdjoint1D,
+        y_bar::Number,
+        deriv::DerivOp = EvalValue()
+    )
+    return _hermite_full_pullback(adj, [y_bar], deriv)
+end

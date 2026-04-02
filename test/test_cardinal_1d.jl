@@ -279,6 +279,22 @@
         @test all(isfinite, out)
     end
 
+    @testset "Coverage — generic vector-allocating wrapper (Integer inputs)" begin
+        x_int = collect(0:9)
+        y_int = x_int .^ 2
+        xq_int = [2, 4, 6]
+        result = cardinal_interp(x_int, y_int, xq_int)
+        @test length(result) == 3
+        @test all(isfinite, result)
+        @test eltype(result) == Float64
+    end
+
+    @testset "Coverage — generic scalar wrapper (Integer inputs)" begin
+        x_int = collect(0:9)
+        y_int = x_int .^ 2
+        @test isfinite(cardinal_interp(x_int, y_int, 3))
+    end
+
     @testset "Coverage — generic in-place pass-through (Integer inputs)" begin
         x_int = collect(0:9)
         y_int = x_int .^ 2

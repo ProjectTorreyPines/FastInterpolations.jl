@@ -192,69 +192,16 @@ using ChainRulesCore: rrule, NoTangent, ZeroTangent, Tangent, unthunk
     # Hermite (cubic_interp with Hermite wrapper)
     # ════════════════════════════════════════════════════════════════════════
 
-    @testset "cubic_interp(Hermite) rrule" begin
+    @testset "cubic_interp(Hermite) has no partial rrule" begin
         x = collect(range(0.0, 1.0, 10))
         y = sin.(x)
         dy = cos.(x)
-        xq = [0.3, 0.7]
         h = Hermite(y, dy)
-        val, pb = rrule(cubic_interp, x, h, xq)
-        @test val ≈ cubic_interp(x, h, xq)
-        Δy = randn(2)
-        grads = pb(Δy)
-        # grads[3] should be a Tangent for Hermite with y and dy fields
-        @test grads[3] isa ChainRulesCore.Tangent
-        adj = hermite_adjoint(x, xq)
-        @test grads[3].y ≈ adj(Δy)
-        @test grads[3].dy isa ZeroTangent
-    end
 
-    @testset "cubic_interp(Hermite) rrule scalar xq" begin
-        x = collect(range(0.0, 1.0, 10))
-        y = sin.(x)
-        dy = cos.(x)
-        h = Hermite(y, dy)
-        val, pb = rrule(cubic_interp, x, h, 0.5)
-        @test val ≈ cubic_interp(x, h, 0.5)
-        grads = pb(1.0)
-        @test grads[3] isa ChainRulesCore.Tangent
-    end
-
-    @testset "cubic_interp(Hermite) rrule ∂xq" begin
-        x = collect(range(0.0, 1.0, 10))
-        y = sin.(x)
-        dy = cos.(x)
-        xq = [0.3, 0.7]
-        h = Hermite(y, dy)
-        _, pb = rrule(cubic_interp, x, h, xq)
-        Δy = randn(2)
-        grads = pb(Δy)
-        @test grads[4] isa AbstractVector
-        @test length(grads[4]) == length(xq)
-    end
-
-    @testset "cubic_interp(Hermite) rrule deriv=EvalDeriv1" begin
-        x = collect(range(0.0, 1.0, 10))
-        y = sin.(x)
-        dy = cos.(x)
-        xq = [0.3, 0.7]
-        h = Hermite(y, dy)
-        val, pb = rrule(cubic_interp, x, h, xq; deriv = DerivOp(1))
-        @test val ≈ cubic_interp(x, h, xq; deriv = DerivOp(1))
-        Δy = randn(2)
-        grads = pb(Δy)
-        @test grads[3] isa ChainRulesCore.Tangent
-        @test grads[4] isa NoTangent
-    end
-
-    @testset "cubic_interp(Hermite) AbstractZero passthrough" begin
-        x = collect(range(0.0, 1.0, 10))
-        y = sin.(x)
-        dy = cos.(x)
-        h = Hermite(y, dy)
-        xq = [0.3, 0.7]
-        _, pb = rrule(cubic_interp, x, h, xq)
-        grads = pb(ZeroTangent())
-        @test grads[3] isa ZeroTangent
+        # The dedicated Hermite adjoint currently covers only the y contribution.
+        # Keep the generic rrule disabled until a structurally correct dy tangent exists.
+        @test rrule(cubic_interp, x, h, [0.3, 0.7]) === nothing
+        @test rrule(cubic_interp, x, h, 0.5) === nothing
+        @test rrule(cubic_interp, x, h, [0.3, 0.7]; deriv = DerivOp(1)) === nothing
     end
 end

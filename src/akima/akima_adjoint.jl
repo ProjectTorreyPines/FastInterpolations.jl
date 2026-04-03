@@ -10,7 +10,7 @@
 #   2. Hermite evaluation: P(t) = h00*yL + h10*h*dyL + h01*yR + h11*h*dyR
 #
 # Adjoint pipeline reverses both stages:
-#   1. Hermite scatter -> (f_bar_direct, dy_bar)  [shared core from cubic_hermite_adjoint.jl]
+#   1. Hermite scatter -> (f_bar_direct, dy_bar)  [shared core from hermite_adjoint.jl]
 #   2. Akima slope J^T * dy_bar -> f_bar_slope    [Akima-specific, this file]
 #   3. Final: f_bar_total = f_bar_direct + f_bar_slope
 #
@@ -21,8 +21,8 @@
 # the given y.
 #
 # Dependencies (already included before this file):
-# - _HermiteAdjointAnchor1D, _bake_hermite_adjoint_anchors (cubic_hermite_adjoint.jl)
-# - _scatter_hermite_adjoint! (cubic_hermite_adjoint.jl)
+# - _HermiteAdjointAnchor1D, _bake_hermite_adjoint_anchors (hermite_adjoint.jl)
+# - _scatter_hermite_adjoint! (hermite_adjoint.jl)
 # - AbstractAdjoint1D, _throw_adjoint_grid_too_small (adjoint_protocol.jl)
 # - _promote_grid_float, _to_float (promotion helpers)
 # - _create_spacing (grid_spacing.jl)

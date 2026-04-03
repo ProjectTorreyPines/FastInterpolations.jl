@@ -2,7 +2,7 @@
 # Akima Interpolant Callable Methods
 # ========================================
 
-# Protocol traits: inherited from AbstractHermiteInterpolant1D (cubic_hermite_interpolant.jl).
+# Protocol traits: inherited from AbstractHermiteInterpolant1D (hermite_interpolant.jl).
 
 # ========================================
 # 2-Argument Form: Return Callable

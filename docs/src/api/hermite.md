@@ -69,7 +69,7 @@ akima_interp!
 ## Interpolant Types
 
 ```@docs
-HermiteInterpolant1D
+CubicHermiteInterpolant1D
 PchipInterpolant1D
 CardinalInterpolant1D
 AkimaInterpolant1D

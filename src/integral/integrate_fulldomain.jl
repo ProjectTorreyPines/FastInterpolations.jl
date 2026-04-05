@@ -26,7 +26,7 @@ end
     return @inline (i, h) -> @inbounds _quadratic_integral_kernel(_EvalIntegralCell(), a[i], d[i], y[i], h)
 end
 
-@inline function _full_cell_fn(itp::AbstractLocalCubicInterpolant1D)
+@inline function _full_cell_fn(itp::AbstractHermiteInterpolant1D)
     y, dy = itp.y, itp.dy
     return @inline (i, h) -> begin
         inv_h = inv(h)

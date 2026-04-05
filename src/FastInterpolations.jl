@@ -41,7 +41,7 @@ include("coeffs.jl")
 include("nodal_partials.jl")
 
 # Exports
-export AbstractInterpolant, AbstractInterpolant1D, AbstractLocalCubicInterpolant1D, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjoint1D, AbstractAdjointND
+export AbstractInterpolant, AbstractInterpolant1D, AbstractHermiteInterpolant1D, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjoint1D, AbstractAdjointND
 export Series, n_series
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
 export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant, LinearInterpolantND

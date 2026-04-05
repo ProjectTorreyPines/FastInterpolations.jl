@@ -8,15 +8,15 @@
 # ========================================
 # Protocol Trait Implementations (shared for all Hermite family)
 # ========================================
-# Dispatches on AbstractLocalCubicInterpolant1D: covers Hermite, PCHIP, Cardinal, Akima.
+# Dispatches on AbstractHermiteInterpolant1D: covers Hermite, PCHIP, Cardinal, Akima.
 # All subtypes store (x, y, dy, spacing) and use the same Hermite kernel.
 # _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
 
-@inline function _itp_eval_scalar(itp::AbstractLocalCubicInterpolant1D, xq, extrap, op, searcher)
+@inline function _itp_eval_scalar(itp::AbstractHermiteInterpolant1D, xq, extrap, op, searcher)
     return _hermite_eval_at_point(itp.x, itp.spacing, itp.y, itp.dy, xq, extrap, op, searcher)
 end
 
-@inline function _itp_vector_loop!(output, itp::AbstractLocalCubicInterpolant1D, xq, extrap, op, searcher)
+@inline function _itp_vector_loop!(output, itp::AbstractHermiteInterpolant1D, xq, extrap, op, searcher)
     return _hermite_vector_loop!(output, itp.x, itp.spacing, itp.y, itp.dy, xq, extrap, op, searcher)
 end
 

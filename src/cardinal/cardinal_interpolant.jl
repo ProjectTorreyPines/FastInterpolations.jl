@@ -3,7 +3,7 @@
 # ========================================
 # Callable methods for CardinalInterpolant1D and 2-arg API.
 
-# Protocol traits: inherited from AbstractLocalCubicInterpolant1D (hermite_interpolant.jl).
+# Protocol traits: inherited from AbstractHermiteInterpolant1D (hermite_interpolant.jl).
 
 # ========================================
 # 2-Argument Form: Return Callable

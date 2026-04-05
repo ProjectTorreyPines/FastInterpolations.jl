@@ -61,12 +61,12 @@ by implementing the required interface:
 - `ConstantInterpolant{Tg, Tv}`: Piecewise constant (step) interpolation
 - `QuadraticInterpolant{Tg, Tv}`: C1 piecewise quadratic spline
 - `CubicInterpolant{Tg, Tv}`: C2 cubic spline
-- `AbstractLocalCubicInterpolant1D{Tg, Tv}`: Cubic Hermite family (see subtypes below)
+- `AbstractHermiteInterpolant1D{Tg, Tv}`: Cubic Hermite family (see subtypes below)
 """
 abstract type AbstractInterpolant1D{Tg <: AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv} end
 
 """
-    AbstractLocalCubicInterpolant1D{Tg, Tv} <: AbstractInterpolant1D{Tg, Tv}
+    AbstractHermiteInterpolant1D{Tg, Tv} <: AbstractInterpolant1D{Tg, Tv}
 
 Abstract supertype for 1D cubic Hermite family interpolants.
 
@@ -81,7 +81,7 @@ for `_itp_eval_scalar`, `_itp_vector_loop!`, and `integrate`.
 - `CardinalInterpolant1D`: Central finite difference (+ tension parameter)
 - `AkimaInterpolant1D`: Weighted-average outlier-robust slopes
 """
-abstract type AbstractLocalCubicInterpolant1D{Tg <: AbstractFloat, Tv} <: AbstractInterpolant1D{Tg, Tv} end
+abstract type AbstractHermiteInterpolant1D{Tg <: AbstractFloat, Tv} <: AbstractInterpolant1D{Tg, Tv} end
 
 """
     AbstractSeriesInterpolant{Tg<:AbstractFloat, Tv}

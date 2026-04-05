@@ -481,9 +481,11 @@ function akima_adjoint(
     spacing = _create_spacing(x_p)
     anchors = _bake_hermite_adjoint_anchors(x_p, spacing, xq_p, extrap)
 
-    Tv = eltype(y)
+    # Promote y to float: slope adjoint computes fractional derivatives (Tv(0.5) would fail for Int)
+    _, y_p = _promote_itp_inputs(x, y)
+    Tv = eltype(y_p)
     return AkimaAdjoint1D{Tg, Tv, typeof(extrap)}(
-        anchors, collect(x_p), collect(Tv, y), length(x_p), extrap
+        anchors, collect(x_p), collect(Tv, y_p), length(x_p), extrap
     )
 end
 

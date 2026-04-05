@@ -41,14 +41,14 @@ include("coeffs.jl")
 include("nodal_partials.jl")
 
 # Exports
-export AbstractInterpolant, AbstractInterpolant1D, AbstractHermiteInterpolant1D, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjoint1D, AbstractAdjointND
+export AbstractInterpolant, AbstractInterpolant1D, AbstractLocalCubicInterpolant1D, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjoint1D, AbstractAdjointND
 export Series, n_series
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
 export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant, LinearInterpolantND
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant, ConstantInterpolantND
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticSeriesInterpolant, QuadraticInterpolantND
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, CubicSeriesInterpolant
-export hermite_interp, hermite_interp!, HermiteInterpolant1D  # Cubic Hermite with user-supplied slopes
+export hermite_interp, hermite_interp!, CubicHermiteInterpolant1D  # Cubic Hermite with user-supplied slopes
 export pchip_interp, pchip_interp!, PchipInterpolant1D  # PCHIP monotone interpolation
 export cardinal_interp, cardinal_interp!, CardinalInterpolant1D  # Cardinal spline (CatmullRom default)
 export akima_interp, akima_interp!, AkimaInterpolant1D  # Akima outlier-robust interpolation

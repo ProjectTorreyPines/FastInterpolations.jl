@@ -3,7 +3,7 @@
 # ========================================
 # Cardinal spline: slopes = (1 - tension) * central finite difference.
 # CatmullRom is the special case with tension=0.
-# Structurally identical to HermiteInterpolant1D / PchipInterpolant1D
+# Structurally identical to CubicHermiteInterpolant1D / PchipInterpolant1D
 # but separate type for dispatch (show, plot, future integrate/adjoint).
 
 """
@@ -39,7 +39,7 @@ struct CardinalInterpolant1D{
         S <: AbstractGridSpacing{Tg},
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
-    } <: AbstractHermiteInterpolant1D{Tg, Tv}
+    } <: AbstractLocalCubicInterpolant1D{Tg, Tv}
     x::X
     y::Y
     dy::DY

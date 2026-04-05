@@ -1,7 +1,7 @@
 # ========================================
 # PCHIP Interpolant Type
 # ========================================
-# PchipInterpolant1D is structurally identical to HermiteInterpolant1D
+# PchipInterpolant1D is structurally identical to CubicHermiteInterpolant1D
 # but exists as a separate type for dispatch (show, plot recipe, future
 # integrate/adjoint). Slopes are computed via Fritsch-Carlson algorithm
 # at construction, then stored in `dy` for O(1) evaluation.
@@ -13,7 +13,7 @@ Callable interpolant for PCHIP (Piecewise Cubic Hermite Interpolating Polynomial
 Returned by `pchip_interp(x, y)` (2-argument form).
 
 Slopes are computed once at construction via the Fritsch-Carlson monotone-preserving
-algorithm. Evaluation uses the same cubic Hermite kernel as `HermiteInterpolant1D`.
+algorithm. Evaluation uses the same cubic Hermite kernel as `CubicHermiteInterpolant1D`.
 
 # Properties
 - **C\$^1\$ continuous** (continuous first derivative, discontinuous second derivative at knots)
@@ -38,7 +38,7 @@ struct PchipInterpolant1D{
         S <: AbstractGridSpacing{Tg},
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
-    } <: AbstractHermiteInterpolant1D{Tg, Tv}
+    } <: AbstractLocalCubicInterpolant1D{Tg, Tv}
     x::X
     y::Y
     dy::DY

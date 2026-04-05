@@ -50,7 +50,7 @@
         dy = dp.(x)
 
         itp = hermite_interp(x, y, dy)
-        @test itp isa HermiteInterpolant1D
+        @test itp isa CubicHermiteInterpolant1D
 
         xq_pts = [0.15, 0.7, 1.33, 2.5, 2.99]
         for xq in xq_pts
@@ -239,7 +239,7 @@
         dy = cos.(x)
 
         # Length mismatch between y and dy
-        @test_throws ArgumentError HermiteInterpolant1D(x, y, cos.(x[1:5]); extrap = NoExtrap())
+        @test_throws ArgumentError CubicHermiteInterpolant1D(x, y, cos.(x[1:5]); extrap = NoExtrap())
     end
 
     @testset "Hermite matches spline on cubic polynomial data" begin
@@ -344,12 +344,12 @@
 
         # Compact
         compact = sprint(show, itp)
-        @test occursin("HermiteInterpolant1D", compact)
+        @test occursin("CubicHermiteInterpolant1D", compact)
         @test occursin("user slopes", compact)
 
         # Verbose
         verbose = sprint(show, MIME"text/plain"(), itp)
-        @test occursin("HermiteInterpolant1D", verbose)
+        @test occursin("CubicHermiteInterpolant1D", verbose)
         @test occursin("user-supplied", verbose)
     end
 
@@ -515,7 +515,7 @@
         itp = hermite_interp(x_range, y, dy)
 
         verbose = sprint(show, MIME"text/plain"(), itp)
-        @test occursin("HermiteInterpolant1D", verbose)
+        @test occursin("CubicHermiteInterpolant1D", verbose)
         # Range grid → no Search row
         @test !occursin("Search:", verbose)
     end

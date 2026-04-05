@@ -21,7 +21,7 @@ import FastInterpolations:
     AbstractInterpolantND, CubicInterpolantND,
     LinearInterpolantND, ConstantInterpolantND, QuadraticInterpolantND,
     LinearInterpolant, ConstantInterpolant, QuadraticInterpolant, CubicInterpolant,
-    HermiteInterpolant1D,
+    CubicHermiteInterpolant1D,
     PchipInterpolant1D,
     CardinalInterpolant1D,
     AkimaInterpolant1D,
@@ -43,7 +43,7 @@ _get_recipe_data(itp::LinearInterpolant) = (itp.x, itp.y, itp.extrap)
 _get_recipe_data(itp::ConstantInterpolant) = (itp.x, itp.y, itp.extrap)
 _get_recipe_data(itp::QuadraticInterpolant) = (itp.x, itp.y, itp.extrap)
 _get_recipe_data(itp::CubicInterpolant) = (itp.cache.x, itp.y, itp.extrap)
-_get_recipe_data(itp::HermiteInterpolant1D) = (itp.x, itp.y, itp.extrap)
+_get_recipe_data(itp::CubicHermiteInterpolant1D) = (itp.x, itp.y, itp.extrap)
 _get_recipe_data(itp::PchipInterpolant1D) = (itp.x, itp.y, itp.extrap)
 _get_recipe_data(itp::CardinalInterpolant1D) = (itp.x, itp.y, itp.extrap)
 _get_recipe_data(itp::AkimaInterpolant1D) = (itp.x, itp.y, itp.extrap)
@@ -104,7 +104,7 @@ _interpolant_label(::LinearInterpolant) = "linear"
 _interpolant_label(::ConstantInterpolant) = "constant"
 _interpolant_label(::QuadraticInterpolant) = "quadratic"
 _interpolant_label(::CubicInterpolant) = "cubic"
-_interpolant_label(::HermiteInterpolant1D) = "hermite"
+_interpolant_label(::CubicHermiteInterpolant1D) = "hermite"
 _interpolant_label(::PchipInterpolant1D) = "pchip"
 _interpolant_label(::CardinalInterpolant1D) = "cardinal"
 _interpolant_label(::AkimaInterpolant1D) = "akima"

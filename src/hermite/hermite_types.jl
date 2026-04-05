@@ -1,7 +1,7 @@
 # ========================================
 # Hermite Interpolant Types
 # ========================================
-# HermiteInterpolant1D is the callable interpolant for cubic Hermite interpolation
+# CubicHermiteInterpolant1D is the callable interpolant for cubic Hermite interpolation
 # with user-supplied slopes. No wrapper type — (x, y, dy) are passed directly.
 
 # ========================================
@@ -9,7 +9,7 @@
 # ========================================
 
 """
-    HermiteInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}
+    CubicHermiteInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}
 
 Callable interpolant for cubic Hermite interpolation with user-supplied slopes.
 Returned by `hermite_interp(x, y, dy)` (interpolant form).
@@ -36,7 +36,7 @@ itp(0.5; deriv=DerivOp(1))       # first derivative
 itp(0.5; search=BinarySearch())  # override search
 ```
 """
-struct HermiteInterpolant1D{
+struct CubicHermiteInterpolant1D{
         Tg <: AbstractFloat,
         Tv,
         X <: AbstractVector{Tg},
@@ -45,7 +45,7 @@ struct HermiteInterpolant1D{
         S <: AbstractGridSpacing{Tg},
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
-    } <: AbstractHermiteInterpolant1D{Tg, Tv}
+    } <: AbstractLocalCubicInterpolant1D{Tg, Tv}
     x::X
     y::Y
     dy::DY
@@ -53,7 +53,7 @@ struct HermiteInterpolant1D{
     extrap::E
     search_policy::P
 
-    function HermiteInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}(
+    function CubicHermiteInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}(
             x::AbstractVector{Tg}, y::AbstractVector{Tv}, dy::AbstractVector{Tv},
             spacing::S, extrap::E, search::P
         ) where {

@@ -5,7 +5,7 @@
 # Type definition is in pchip_types.jl.
 # Oneshot API (pchip_interp 3-arg) is in pchip_oneshot.jl.
 
-# Protocol traits: inherited from AbstractHermiteInterpolant1D (hermite_interpolant.jl).
+# Protocol traits: inherited from AbstractLocalCubicInterpolant1D (hermite_interpolant.jl).
 
 # ========================================
 # 2-Argument Form: Return Callable

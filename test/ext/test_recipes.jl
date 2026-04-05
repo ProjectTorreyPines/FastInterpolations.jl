@@ -42,7 +42,7 @@ using RecipesBase
             recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
         end
-        @testset "HermiteInterpolant1D" begin
+        @testset "CubicCubicHermiteInterpolant1D" begin
             dy = cos.(2π .* x)
             itp = hermite_interp(x, y, dy)
             recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)

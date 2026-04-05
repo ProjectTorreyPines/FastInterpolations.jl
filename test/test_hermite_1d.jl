@@ -271,6 +271,45 @@
         @test itp32(1.5f0) ≈ Float32(p(1.5)) atol = 1.0e-4
     end
 
+    @testset "Mixed precision — y::Float32, dy::Float64" begin
+        x = collect(range(0.0, 3.0, 20))
+        y32 = Float32.(p.(x))
+        dy64 = dp.(x)  # Float64
+
+        # Joint promotion: dy::Float64 widens Tg to Float64
+        val = hermite_interp(x, y32, dy64, 1.5)
+        @test val isa Float64
+        @test val ≈ p(1.5) atol = 1.0e-6
+
+        itp = hermite_interp(x, y32, dy64)
+        @test itp(1.5) isa Float64
+    end
+
+    @testset "Mixed precision — x::Float32, dy::Float64" begin
+        x32 = collect(range(0.0f0, 3.0f0, 20))
+        y32 = Float32.(p.(x32))
+        dy64 = Float64.(dp.(x32))
+
+        # dy::Float64 widens Tg from Float32 → Float64
+        val = hermite_interp(x32, y32, dy64, 1.5)
+        @test val isa Float64
+    end
+
+    @testset "Complex values — hermite_interp" begin
+        x = collect(range(0.0, 2π, 30))
+        y_c = complex.(sin.(x), cos.(x))
+        dy_c = complex.(cos.(x), -sin.(x))
+
+        val = hermite_interp(x, y_c, dy_c, 1.0)
+        @test val isa ComplexF64
+        @test real(val) ≈ sin(1.0) atol = 0.01
+        @test imag(val) ≈ cos(1.0) atol = 0.01
+
+        itp = hermite_interp(x, y_c, dy_c)
+        @test itp(1.0) isa ComplexF64
+        @test itp(1.0) ≈ val
+    end
+
     @testset "Broadcast" begin
         x = collect(range(0.0, 3.0, 20))
         y = p.(x)

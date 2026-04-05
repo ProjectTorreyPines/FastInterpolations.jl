@@ -120,6 +120,21 @@ end
 # ║                  GENERIC WRAPPERS — Real type promotion                   ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
+# Joint promotion of (x, y, dy) — grid type Tg considers all three inputs,
+# so e.g. x::Float32 + y::Float32 + dy::Float64 → Tg=Float64 (no precision loss).
+@inline function _promote_hermite_inputs(
+        x::AbstractVector{TX},
+        y::AbstractVector{TY},
+        dy::AbstractVector{TDY},
+    ) where {TX <: Real, TY, TDY}
+    Tg_y = _promote_grid_float(TX, TY)
+    Tg = TDY <: _PromotableValue ? promote_type(Tg_y, float(_real_eltype(TDY))) : Tg_y
+    x_p = _to_float(x, Tg)
+    y_p = TY <: _PromotableValue ? _promote_value_type(y, Tg)[2] : y
+    dy_p = TDY <: _PromotableValue ? _promote_value_type(dy, Tg)[2] : dy
+    return x_p, y_p, dy_p
+end
+
 # Scalar — promotes x, y, dy to Float; passes xq directly for AD support
 @inline function hermite_interp(
         x::AbstractVector{TX},
@@ -128,9 +143,7 @@ end
         xq::Tq;
         kwargs...
     ) where {TX <: Real, TY, Tq <: Real}
-    x_p, y_p = _promote_itp_inputs(x, y)
-    Tg = eltype(x_p)
-    dy_p = eltype(dy) <: _PromotableValue ? _promote_value_type(dy, eltype(x_p))[2] : dy
+    x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
     return hermite_interp(x_p, y_p, dy_p, xq; kwargs...)
 end
 
@@ -142,9 +155,8 @@ function hermite_interp(
         x_query::AbstractVector{Tq};
         kwargs...
     ) where {TX <: Real, TY, Tq <: Real}
-    x_p, y_p = _promote_itp_inputs(x, y)
+    x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
     Tg = eltype(x_p)
-    dy_p = eltype(dy) <: _PromotableValue ? _promote_value_type(dy, eltype(x_p))[2] : dy
     xq_p = _to_float(x_query, Tg)
     output = Vector{eltype(y_p)}(undef, length(x_query))
     hermite_interp!(output, x_p, y_p, dy_p, xq_p; kwargs...)
@@ -164,9 +176,8 @@ function hermite_interp!(
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
 
-    x_p, y_p = _promote_itp_inputs(x, y)
+    x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
     Tg = eltype(x_p)
-    dy_p = eltype(dy) <: _PromotableValue ? _promote_value_type(dy, eltype(x_p))[2] : dy
     xq_p = _to_float(x_query, Tg)
 
     Tv_float = eltype(y_p)

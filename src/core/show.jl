@@ -443,6 +443,9 @@ _adjoint_compact_summary(adj::PchipAdjoint1D) = _format_extrap(adj.extrap)
 _adjoint_compact_summary(adj::CardinalAdjoint1D) = "τ=$(adj.tension)/" * _format_extrap(adj.extrap)
 _adjoint_compact_summary(adj::AkimaAdjoint1D) = _format_extrap(adj.extrap)
 
+# HermiteAdjoint1D: no _adjoint_grid override — intentionally data-free (no grid stored).
+# Falls back to _adjoint_grid(::AbstractAdjoint1D) = nothing → grid row skipped in show.
+# PCHIP/Cardinal/Akima store grid for their slope adjoint stencils.
 _adjoint_grid(adj::PchipAdjoint1D) = adj.grid
 _adjoint_grid(adj::CardinalAdjoint1D) = adj.grid
 _adjoint_grid(adj::AkimaAdjoint1D) = adj.grid

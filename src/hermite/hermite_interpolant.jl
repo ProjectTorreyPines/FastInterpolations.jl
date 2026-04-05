@@ -84,8 +84,7 @@ itp(1.0; deriv=DerivOp(1))       # ≈ cos(1.0)
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
     ) where {TX <: Real, TY}
-    x_p, y_p = _promote_itp_inputs(x, y)
-    dy_p = eltype(dy) <: _PromotableValue ? _promote_value_type(dy, eltype(x_p))[2] : dy
+    x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
     extrap_p = _promote_extrap(extrap, eltype(y_p))
     return HermiteInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search)
 end

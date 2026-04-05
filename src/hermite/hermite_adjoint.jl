@@ -369,27 +369,6 @@ end
     return nothing
 end
 
-# ── Full pullback callable: returns (∂L/∂y, ∂L/∂dy) ──
-
-"""
-    hermite_pullback(adj, ȳ; deriv=EvalValue()) -> (∂L/∂y, ∂L/∂dy)
-
-Compute gradients w.r.t. both `y` and `dy` for the Hermite interpolant.
-
-Unlike `adj(ȳ)` which returns only `∂L/∂y` (consistent with other adjoint types),
-this function returns both gradient vectors as a tuple.
-
-# Example
-```julia
-adj = hermite_adjoint(x, xq)
-f̄_y = adj(ȳ)                                  # ∂L/∂y only (Vector)
-f̄_y, f̄_dy = hermite_pullback(adj, ȳ)          # both (Tuple)
-```
-"""
-function hermite_pullback(adj::HermiteAdjoint1D, y_bar; deriv::DerivOp = EvalValue())
-    return _hermite_full_pullback(adj, y_bar, deriv)
-end
-
 # ========================================
 # Constructor
 # ========================================

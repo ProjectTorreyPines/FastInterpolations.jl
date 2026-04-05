@@ -1417,4 +1417,39 @@ end
         result = integrate(itp, 0.0f0, 1.0f0)
         @test result ≈ (1 - cos(1.0)) rtol = 1.0e-3
     end
+
+    # ── Akima equal-weight fallback coverage ──────────────────────────
+    # Constant secants → all Δm = 0 → wsum = 0 → fallback to 50/50 average.
+    # This exercises the otherwise-uncovered equal-weight branch in _akima_slope_adjoint!
+
+    @testset "Akima adjoint — equal-weight fallback (wsum=0)" begin
+        # Linear data: constant secants → wsum = 0 at every point
+        x = collect(range(0.0, 5.0, 10))
+        y = 2.0 .* x .+ 1.0   # perfectly linear → all secants equal
+        xq = sort(rand(8) .* 4.0 .+ 0.5)
+        y_bar = randn(length(xq))
+
+        adj = akima_adjoint(x, y, xq)
+        itp = akima_interp(x, y)
+
+        Wf = [itp(q) for q in xq]
+        WTy = adj(y_bar)
+
+        @test dot(Wf, y_bar) ≈ dot(y, WTy) rtol = sqrt(eps())
+    end
+
+    @testset "Akima adjoint — equal-weight fallback deriv=1" begin
+        x = collect(range(0.0, 5.0, 10))
+        y = 2.0 .* x .+ 1.0
+        xq = sort(rand(8) .* 4.0 .+ 0.5)
+        y_bar = randn(length(xq))
+
+        adj = akima_adjoint(x, y, xq)
+        itp = akima_interp(x, y)
+
+        Wf = [itp(q; deriv = DerivOp(1)) for q in xq]
+        WTy = adj(y_bar; deriv = DerivOp(1))
+
+        @test dot(Wf, y_bar) ≈ dot(y, WTy) rtol = sqrt(eps())
+    end
 end

@@ -26,6 +26,14 @@ end
     return @inline (i, h) -> @inbounds _quadratic_integral_kernel(_EvalIntegralCell(), a[i], d[i], y[i], h)
 end
 
+@inline function _full_cell_fn(itp::AbstractHermiteInterpolant1D)
+    y, dy = itp.y, itp.dy
+    return @inline (i, h) -> begin
+        inv_h = inv(h)
+        @inbounds _hermite_integral_kernel_1d(y[i], y[i + 1], dy[i], dy[i + 1], h, inv_h, zero(h), h)
+    end
+end
+
 @inline function _full_cell_fn(itp::ConstantInterpolant{Tg}, side::AbstractSide) where {Tg}
     y = itp.y
     return @inline (i, h) -> @inbounds _constant_integral_kernel(_EvalIntegralPartial(), y[i], y[i + 1], h, zero(Tg), h, side)

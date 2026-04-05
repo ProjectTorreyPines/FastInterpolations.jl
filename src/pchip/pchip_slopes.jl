@@ -10,7 +10,7 @@
 # Note: Requires Tv to support sign(), abs(), zero(), and division.
 # This restricts Tv to Real subtypes (Int, Float32, Float64, etc.).
 # For non-real value types (SVector, Complex, duck types), use
-# Hermite(y, dy) with user-computed slopes instead.
+# hermite_interp(x, y, dy) with user-computed slopes instead.
 
 """
     _pchip_endpoint_slope(h1, h2, δ1, δ2)

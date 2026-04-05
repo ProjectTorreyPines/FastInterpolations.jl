@@ -437,6 +437,31 @@ end
 _adjoint_show_detail_rows(io::IO, adj::QuadraticAdjoint) =
     _show_row(io, true, "BC:    ", _format_bc(adj.bc))
 
+# --- Hermite family adjoint show protocol ---
+_adjoint_compact_summary(adj::HermiteAdjoint1D) = _format_extrap(adj.extrap)
+_adjoint_compact_summary(adj::PchipAdjoint1D) = _format_extrap(adj.extrap)
+_adjoint_compact_summary(adj::CardinalAdjoint1D) = "τ=$(adj.tension)/" * _format_extrap(adj.extrap)
+_adjoint_compact_summary(adj::AkimaAdjoint1D) = _format_extrap(adj.extrap)
+
+# HermiteAdjoint1D: no _adjoint_grid override — intentionally data-free (no grid stored).
+# Falls back to _adjoint_grid(::AbstractAdjoint1D) = nothing → grid row skipped in show.
+# PCHIP/Cardinal/Akima store grid for their slope adjoint stencils.
+_adjoint_grid(adj::PchipAdjoint1D) = adj.grid
+_adjoint_grid(adj::CardinalAdjoint1D) = adj.grid
+_adjoint_grid(adj::AkimaAdjoint1D) = adj.grid
+
+_adjoint_show_detail_rows(io::IO, adj::HermiteAdjoint1D) =
+    _show_row(io, true, "Extrap:", _format_extrap(adj.extrap))
+_adjoint_show_detail_rows(io::IO, adj::PchipAdjoint1D) =
+    _show_row(io, true, "Extrap:", _format_extrap(adj.extrap))
+function _adjoint_show_detail_rows(io::IO, adj::CardinalAdjoint1D)
+    _show_row(io, false, "Tension:", string(adj.tension))
+    println(io)
+    return _show_row(io, true, "Extrap:", _format_extrap(adj.extrap))
+end
+_adjoint_show_detail_rows(io::IO, adj::AkimaAdjoint1D) =
+    _show_row(io, true, "Extrap:", _format_extrap(adj.extrap))
+
 # --- Generic compact show (AbstractAdjoint1D) ---
 function Base.show(io::IO, adj::AbstractAdjoint1D{Tg}) where {Tg}
     n = _adjoint_output_length(adj)

@@ -3,7 +3,7 @@
 # ========================================
 # Standalone pchip_interp / pchip_interp! functions.
 # Computes Fritsch-Carlson slopes via @with_pool, then delegates
-# to _cubic_hermite_eval_at_point / _cubic_hermite_vector_loop! from Phase 1.
+# to _hermite_eval_at_point / _hermite_vector_loop! from Phase 1.
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                         HOT PATH — AbstractFloat grid                     ║
@@ -36,7 +36,7 @@ C\$^1\$ continuous, monotonicity guaranteed for monotone input data.
     dy = similar!(pool, y)
     _pchip_slopes!(dy, x, y)
     searcher = _resolve_search(x, xq, search, hint)
-    return _cubic_hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
+    return _hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
 end
 
 # ========================================
@@ -66,7 +66,7 @@ In-place PCHIP interpolation with monotone-preserving slopes.
     dy = similar!(pool, y)
     _pchip_slopes!(dy, x, y)
     searcher = _resolve_search(x, x_query, search, hint)
-    return _cubic_hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
+    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
 end
 
 # Range disambiguation for in-place
@@ -88,7 +88,7 @@ end
     dy = similar!(pool, y)
     _pchip_slopes!(dy, x, y)
     searcher = _resolve_search(x, x_query, search, hint)
-    return _cubic_hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
+    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
 end
 
 # ========================================

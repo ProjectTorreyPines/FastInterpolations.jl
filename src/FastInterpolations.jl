@@ -41,14 +41,14 @@ include("coeffs.jl")
 include("nodal_partials.jl")
 
 # Exports
-export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjoint1D, AbstractAdjointND
+export AbstractInterpolant, AbstractInterpolant1D, AbstractHermiteInterpolant1D, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjoint1D, AbstractAdjointND
 export Series, n_series
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
 export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant, LinearInterpolantND
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant, ConstantInterpolantND
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticSeriesInterpolant, QuadraticInterpolantND
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, CubicSeriesInterpolant
-export Hermite, CubicHermiteInterpolant1D  # Cubic Hermite with user-supplied slopes
+export hermite_interp, hermite_interp!, CubicHermiteInterpolant1D  # Cubic Hermite with user-supplied slopes
 export pchip_interp, pchip_interp!, PchipInterpolant1D  # PCHIP monotone interpolation
 export cardinal_interp, cardinal_interp!, CardinalInterpolant1D  # Cardinal spline (CatmullRom default)
 export akima_interp, akima_interp!, AkimaInterpolant1D  # Akima outlier-robust interpolation
@@ -57,6 +57,10 @@ export linear_adjoint, LinearAdjoint, LinearAdjointND  # Linear adjoint operator
 export quadratic_adjoint, QuadraticAdjoint, QuadraticAdjointND  # Quadratic adjoint operators (W^T)
 export cubic_adjoint, CubicAdjoint, CubicAdjointND  # Cubic adjoint operators (W^T)
 export hetero_adjoint, HeteroAdjointND  # Heterogeneous ND adjoint operator (W^T)
+export hermite_adjoint, HermiteAdjoint1D  # Hermite adjoint (user-supplied slopes)
+export pchip_adjoint, PchipAdjoint1D  # PCHIP adjoint (slope-from-data, data-dependent)
+export cardinal_adjoint, CardinalAdjoint1D  # Cardinal adjoint (slope-from-data)
+export akima_adjoint, AkimaAdjoint1D  # Akima adjoint (slope-from-data, data-dependent)
 export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly  # ND cubic types
 export interp, interp!, HeteroInterpolantND  # Tensor product ND (per-axis methods)
 export AbstractInterpMethod, CubicInterp, LinearInterp, QuadraticInterp, ConstantInterp, NoInterp

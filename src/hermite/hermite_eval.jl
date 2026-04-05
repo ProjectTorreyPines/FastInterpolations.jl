@@ -13,7 +13,7 @@
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # NoExtrap / ExtendExtrap / generic: direct search + kernel
-@inline function _cubic_hermite_eval_at_point(
+@inline function _hermite_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector{Tv},
@@ -31,7 +31,7 @@
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel
-@inline function _cubic_hermite_eval_at_point(
+@inline function _hermite_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector{Tv},
@@ -54,7 +54,7 @@ end
 end
 
 # WrapExtrap: wrap query to domain → search + kernel
-@inline function _cubic_hermite_eval_at_point(
+@inline function _hermite_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         dy::AbstractVector{Tv},
@@ -76,7 +76,7 @@ end
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # NoExtrap / ExtendExtrap / generic: direct search + kernel
-@inline function _cubic_hermite_eval_at_point(
+@inline function _hermite_eval_at_point(
         x::AbstractVector{Tg},
         spacing::AbstractGridSpacing{Tg},
         y::AbstractVector{Tv},
@@ -95,7 +95,7 @@ end
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel
-@inline function _cubic_hermite_eval_at_point(
+@inline function _hermite_eval_at_point(
         x::AbstractVector{Tg},
         spacing::AbstractGridSpacing{Tg},
         y::AbstractVector{Tv},
@@ -119,7 +119,7 @@ end
 end
 
 # WrapExtrap: wrap query to domain → search + kernel
-@inline function _cubic_hermite_eval_at_point(
+@inline function _hermite_eval_at_point(
         x::AbstractVector{Tg},
         spacing::AbstractGridSpacing{Tg},
         y::AbstractVector{Tv},
@@ -142,7 +142,7 @@ end
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # Oneshot vector loop (no spacing)
-@inline function _cubic_hermite_vector_loop!(
+@inline function _hermite_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -154,13 +154,13 @@ end
     ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap = _check_domain(x, xq, extrap)
     @inbounds for i in eachindex(xq, output)
-        output[i] = _cubic_hermite_eval_at_point(x, y, dy, xq[i], extrap, deriv, searcher)
+        output[i] = _hermite_eval_at_point(x, y, dy, xq[i], extrap, deriv, searcher)
     end
     return output
 end
 
 # Oneshot vector loop — WrapExtrap specialization (2-stage optimization)
-@inline function _cubic_hermite_vector_loop!(
+@inline function _hermite_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -175,19 +175,19 @@ end
 
     if qmin >= x_min && qmax < x_max
         @inbounds for i in eachindex(xq, output)
-            output[i] = _cubic_hermite_eval_at_point(x, y, dy, xq[i], ExtendExtrap(), deriv, searcher)
+            output[i] = _hermite_eval_at_point(x, y, dy, xq[i], ExtendExtrap(), deriv, searcher)
         end
     else
         @inbounds for i in eachindex(xq, output)
             xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max)
-            output[i] = _cubic_hermite_eval_at_point(x, y, dy, xi_wrapped, ExtendExtrap(), deriv, searcher)
+            output[i] = _hermite_eval_at_point(x, y, dy, xi_wrapped, ExtendExtrap(), deriv, searcher)
         end
     end
     return output
 end
 
 # Interpolant vector loop (with spacing)
-@inline function _cubic_hermite_vector_loop!(
+@inline function _hermite_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
         spacing::AbstractGridSpacing{Tg},
@@ -200,13 +200,13 @@ end
     ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap = _check_domain(x, xq, extrap)
     @inbounds for i in eachindex(xq, output)
-        output[i] = _cubic_hermite_eval_at_point(x, spacing, y, dy, xq[i], extrap, deriv, searcher)
+        output[i] = _hermite_eval_at_point(x, spacing, y, dy, xq[i], extrap, deriv, searcher)
     end
     return output
 end
 
 # Interpolant vector loop — WrapExtrap specialization
-@inline function _cubic_hermite_vector_loop!(
+@inline function _hermite_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
         spacing::AbstractGridSpacing{Tg},
@@ -222,12 +222,12 @@ end
 
     if qmin >= x_min && qmax < x_max
         @inbounds for i in eachindex(xq, output)
-            output[i] = _cubic_hermite_eval_at_point(x, spacing, y, dy, xq[i], ExtendExtrap(), deriv, searcher)
+            output[i] = _hermite_eval_at_point(x, spacing, y, dy, xq[i], ExtendExtrap(), deriv, searcher)
         end
     else
         @inbounds for i in eachindex(xq, output)
             xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max)
-            output[i] = _cubic_hermite_eval_at_point(x, spacing, y, dy, xi_wrapped, ExtendExtrap(), deriv, searcher)
+            output[i] = _hermite_eval_at_point(x, spacing, y, dy, xi_wrapped, ExtendExtrap(), deriv, searcher)
         end
     end
     return output

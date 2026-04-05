@@ -8,9 +8,9 @@ Four C^1 interpolation methods sharing the same Hermite basis kernel, differing 
 
 | Function | Description |
 |----------|-------------|
-| `cubic_interp(x, Hermite(y, dy), xq)` | Hermite interpolation at point(s) `xq` |
-| `cubic_interp!(out, x, Hermite(y, dy), xq)` | In-place Hermite interpolation |
-| `itp = cubic_interp(x, Hermite(y, dy))` | Create callable interpolant |
+| `hermite_interp(x, y, dy, xq)` | Hermite interpolation at point(s) `xq` |
+| `hermite_interp!(out, x, y, dy, xq)` | In-place Hermite interpolation |
+| `itp = hermite_interp(x, y, dy)` | Create callable interpolant |
 
 ### PCHIP (monotone-preserving)
 
@@ -38,16 +38,12 @@ Four C^1 interpolation methods sharing the same Hermite basis kernel, differing 
 
 ---
 
-## Data Wrapper
-
-```@docs
-Hermite
-```
-
 ## Functions — Hermite
 
-Hermite interpolation uses `cubic_interp` with a `Hermite(y, dy)` wrapper.
-See the [Cubic API](cubic.md) for the `cubic_interp` / `cubic_interp!` reference.
+```@docs
+hermite_interp
+hermite_interp!
+```
 
 ## Functions — PCHIP
 
@@ -70,6 +66,13 @@ akima_interp
 akima_interp!
 ```
 
+## Abstract Types
+
+```@docs
+AbstractInterpolant1D
+AbstractHermiteInterpolant1D
+```
+
 ## Interpolant Types
 
 ```@docs
@@ -77,4 +80,22 @@ CubicHermiteInterpolant1D
 PchipInterpolant1D
 CardinalInterpolant1D
 AkimaInterpolant1D
+```
+
+## Adjoint Operators
+
+```@docs
+hermite_adjoint
+pchip_adjoint
+cardinal_adjoint
+akima_adjoint
+```
+
+## Adjoint Types
+
+```@docs
+HermiteAdjoint1D
+PchipAdjoint1D
+CardinalAdjoint1D
+AkimaAdjoint1D
 ```

@@ -513,4 +513,85 @@ function ChainRulesCore.rrule(
     return (val, grad), _value_gradient_itp_nd_pb
 end
 
+# ════════════════════════════════════════
+# Hermite family — specialized rrules
+# ════════════════════════════════════════
+# PCHIP and Akima adjoints require `y` at construction (data-dependent slopes),
+# so they cannot use the generic _InterpMethod rrule which calls
+# `_adjoint_func(func)(x, xq; ...)`.  These specialized rrules dispatch on
+# concrete `typeof(...)` and therefore win over the Union-based generic rule.
+
+# ── PCHIP rrule ──────────────────────────────────────────────────────────
+
+function ChainRulesCore.rrule(
+        ::typeof(FastInterpolations.pchip_interp),
+        x::AbstractVector,
+        f::AbstractVector{Tv},
+        xq::Union{Real, AbstractVector};
+        deriv::DerivOp = EvalValue(),
+        kwargs...
+    ) where {Tv}
+    y = FastInterpolations.pchip_interp(x, f, xq; deriv = deriv, kwargs...)
+    adj = FastInterpolations.pchip_adjoint(x, f, xq; kwargs...)
+    eval_value = deriv isa DerivOp{0}
+    d = eval_value ? FastInterpolations.pchip_interp(x, f, xq; deriv = DerivOp(1), kwargs...) : nothing
+    function _pchip_pb(Δy)
+        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
+        Δu = unthunk(Δy)
+        ∂xq = eval_value ? real.(conj.(Δu) .* d) : NoTangent()
+        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; deriv = deriv, kwargs...), ∂xq)
+    end
+    return y, _pchip_pb
+end
+
+# ── Akima rrule ──────────────────────────────────────────────────────────
+
+function ChainRulesCore.rrule(
+        ::typeof(FastInterpolations.akima_interp),
+        x::AbstractVector,
+        f::AbstractVector{Tv},
+        xq::Union{Real, AbstractVector};
+        deriv::DerivOp = EvalValue(),
+        kwargs...
+    ) where {Tv}
+    y = FastInterpolations.akima_interp(x, f, xq; deriv = deriv, kwargs...)
+    adj = FastInterpolations.akima_adjoint(x, f, xq; kwargs...)
+    eval_value = deriv isa DerivOp{0}
+    d = eval_value ? FastInterpolations.akima_interp(x, f, xq; deriv = DerivOp(1), kwargs...) : nothing
+    function _akima_pb(Δy)
+        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent())
+        Δu = unthunk(Δy)
+        ∂xq = eval_value ? real.(conj.(Δu) .* d) : NoTangent()
+        return (NoTangent(), NoTangent(), _adj_pullback(adj, Δu; deriv = deriv, kwargs...), ∂xq)
+    end
+    return y, _akima_pb
+end
+
+# ── Hermite rrule (hermite_interp with separate y, dy args) ──────────────
+# User-supplied (y, dy) are independent inputs — both receive gradients.
+# 5-tuple return: (func, x, ∂y, ∂dy, ∂xq)
+
+function ChainRulesCore.rrule(
+        ::typeof(FastInterpolations.hermite_interp),
+        x::AbstractVector,
+        y::AbstractVector{Tv},
+        dy::AbstractVector,
+        xq::Union{Real, AbstractVector};
+        deriv::DerivOp = EvalValue(),
+        kwargs...
+    ) where {Tv}
+    y_out = FastInterpolations.hermite_interp(x, y, dy, xq; deriv = deriv, kwargs...)
+    adj = FastInterpolations.hermite_adjoint(x, xq; kwargs...)
+    eval_value = deriv isa DerivOp{0}
+    d = eval_value ? FastInterpolations.hermite_interp(x, y, dy, xq; deriv = DerivOp(1), kwargs...) : nothing
+    function _hermite_pb(Δy)
+        Δy isa AbstractZero && return (NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent(), ZeroTangent())
+        Δu = unthunk(Δy)
+        ∂xq = eval_value ? real.(conj.(Δu) .* d) : NoTangent()
+        f̄_y, f̄_dy = FastInterpolations._hermite_full_pullback(adj, Δu, deriv)
+        return (NoTangent(), NoTangent(), f̄_y, f̄_dy, ∂xq)
+    end
+    return y_out, _hermite_pb
+end
+
 end # module

@@ -66,6 +66,13 @@ akima_interp
 akima_interp!
 ```
 
+## Abstract Types
+
+```@docs
+AbstractInterpolant1D
+AbstractHermiteInterpolant1D
+```
+
 ## Interpolant Types
 
 ```@docs
@@ -73,4 +80,22 @@ CubicHermiteInterpolant1D
 PchipInterpolant1D
 CardinalInterpolant1D
 AkimaInterpolant1D
+```
+
+## Adjoint Operators
+
+```@docs
+hermite_adjoint
+pchip_adjoint
+cardinal_adjoint
+akima_adjoint
+```
+
+## Adjoint Types
+
+```@docs
+HermiteAdjoint1D
+PchipAdjoint1D
+CardinalAdjoint1D
+AkimaAdjoint1D
 ```

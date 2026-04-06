@@ -103,3 +103,45 @@ itp((0.5, 0.3, GridIdx(1)))     # same interpolant, different slice
 ```
 """
 struct NoInterp <: AbstractInterpMethod end
+
+# ========================================
+# Hermite Family Methods (local slopes)
+# ========================================
+
+"""
+    PchipInterp <: AbstractInterpMethod
+
+PCHIP (monotone-preserving) interpolation method for one axis.
+Slopes computed via Fritsch-Carlson algorithm. Requires ≥2 grid points.
+"""
+struct PchipInterp <: AbstractInterpMethod end
+
+"""
+    CardinalInterp{T} <: AbstractInterpMethod
+
+Cardinal spline interpolation method for one axis.
+`tension=0` gives Catmull-Rom. Requires ≥2 grid points.
+
+# Arguments
+- `tension`: Tension parameter (0 = CatmullRom, 1 = zero slopes)
+"""
+struct CardinalInterp{T} <: AbstractInterpMethod
+    tension::T
+end
+CardinalInterp(; tension = 0.0) = CardinalInterp(tension)
+
+"""
+    AkimaInterp <: AbstractInterpMethod
+
+Akima (1970) outlier-robust interpolation method for one axis.
+Requires ≥2 grid points.
+"""
+struct AkimaInterp <: AbstractInterpMethod end
+
+"""
+    CubicHermiteInterp <: AbstractInterpMethod
+
+Cubic Hermite interpolation with user-supplied slopes.
+Type-only in Phase 1 — ND support requires separate slope design.
+"""
+struct CubicHermiteInterp <: AbstractInterpMethod end

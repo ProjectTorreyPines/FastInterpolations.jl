@@ -12,6 +12,8 @@
 # (adjoint, oneshot, AD). Per-axis options (bc, side) are forwarded as tuples —
 # the existing constructors already accept Union{Single, NTuple} for these kwargs.
 
+# ── Homogeneous dispatch: PreCompute only (OnTheFly handled in interp() above) ──
+
 function _interp_nd_dispatch(
         grids, data, methods::Tuple{CubicInterp, Vararg{CubicInterp}}, coeffs, extrap, search
     )
@@ -39,15 +41,43 @@ function _interp_nd_dispatch(
     return constant_interp(grids, data; side = sides, extrap = extrap, search = search)
 end
 
+# Hermite family has no specialized ND type — homogeneous Hermite tuples fall through
+# to the heterogeneous fallback below. With AutoCoeffs, they never reach here (OnTheFly
+# is intercepted in interp()). Explicit PreCompute is caught by _validate_nd_coeffs.
+
 # Heterogeneous (fallback) → HeteroInterpolantND
 function _interp_nd_dispatch(
         grids, data, methods::Tuple{Vararg{AbstractInterpMethod, N}}, coeffs, extrap, search
     ) where {N}
+    _validate_nd_coeffs(coeffs, methods)
     if coeffs isa PreCompute
         return _build_hetero_precomputed(grids, data, methods, extrap, search)
     else
         return _build_hetero_nd(grids, data, methods, extrap, search)
     end
+end
+
+# ── ND coeffs validation ──
+# Reject unsupported PreCompute + local Hermite combinations with clear error.
+@inline _has_local_method(methods::Tuple) = any(_is_local_method, methods)
+
+@inline _validate_nd_coeffs(::OnTheFly, _) = nothing
+@inline function _validate_nd_coeffs(::PreCompute, methods)
+    _has_local_method(methods) && _throw_precompute_unsupported(methods)
+    return nothing
+end
+
+@noinline function _throw_precompute_unsupported(methods)
+    local_names = String[]
+    for m in methods
+        _is_local_method(m) && push!(local_names, string(typeof(m)))
+    end
+    throw(
+        ArgumentError(
+            "PreCompute() is not yet supported for $(join(local_names, ", ")) in ND. " *
+                "Use coeffs=OnTheFly() or omit the coeffs kwarg for automatic selection."
+        )
+    )
 end
 
 # ========================================
@@ -110,6 +140,24 @@ end
 function _validate_axis_method(grid, ::NoInterp, _, d)
     n = length(grid)
     n < 1 && throw(ArgumentError("Axis $d: NoInterp needs ≥1 grid point, got $n"))
+    return nothing
+end
+
+function _validate_axis_method(grid, ::PchipInterp, _, d)
+    n = length(grid)
+    n < 2 && throw(ArgumentError("Axis $d: PCHIP needs ≥2 points, got $n"))
+    return nothing
+end
+
+function _validate_axis_method(grid, ::CardinalInterp, _, d)
+    n = length(grid)
+    n < 2 && throw(ArgumentError("Axis $d: Cardinal needs ≥2 points, got $n"))
+    return nothing
+end
+
+function _validate_axis_method(grid, ::AkimaInterp, _, d)
+    n = length(grid)
+    n < 2 && throw(ArgumentError("Axis $d: Akima needs ≥2 points, got $n"))
     return nothing
 end
 
@@ -295,7 +343,8 @@ Automatically dispatches to the optimal implementation:
 - `method`: Interpolation method(s) (**required**)
   - Single `AbstractInterpMethod`: broadcast to all axes (e.g., `method=CubicInterp()`)
   - `Tuple{Vararg{AbstractInterpMethod, N}}`: per-axis (e.g., `method=(CubicInterp(), LinearInterp())`)
-- `coeffs=PreCompute()`: Coefficient strategy (heterogeneous only)
+- `coeffs=AutoCoeffs()`: Coefficient strategy (default: automatic selection)
+  - `AutoCoeffs()`: Automatic — picks best strategy based on methods and dimensionality
   - `PreCompute()`: Precompute partial derivatives (O(1) eval)
   - `OnTheFly()`: Build 1D per query (zero build cost, O(n) eval)
 - `extrap=NoExtrap()`: Extrapolation mode(s) — single or per-axis tuple
@@ -324,10 +373,18 @@ function interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N};
         method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
-    return _interp_nd_dispatch(grids, data, method_tuple, coeffs, extrap, search)
+    coeffs_resolved = _resolve_coeffs(coeffs, Val(N), method_tuple)
+
+    # OnTheFly → always Hetero path (no specialized ND type supports OnTheFly natively)
+    if coeffs_resolved isa OnTheFly
+        return _build_hetero_nd(grids, data, method_tuple, extrap, search)
+    end
+
+    # PreCompute → homogeneous dispatch to specialized ND types
+    return _interp_nd_dispatch(grids, data, method_tuple, coeffs_resolved, extrap, search)
 end

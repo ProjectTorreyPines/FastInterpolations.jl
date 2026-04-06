@@ -25,12 +25,18 @@ itp(0.5; deriv=DerivOp(1))
 @inline function akima_interp(
         x::AbstractVector{TX},
         y::AbstractVector{TY};
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX <: Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
-    dy_p = similar(y_p)
-    _akima_slopes!(dy_p, x_p, y_p)
     extrap_p = _promote_extrap(extrap, eltype(y_p))
-    return AkimaInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search)
+    resolved = _resolve_coeffs(coeffs)
+    if resolved isa OnTheFly
+        return AkimaInterpolant1D(x_p, y_p, AkimaSlopes(); extrap = extrap_p, search)
+    else
+        dy_p = similar(y_p)
+        _akima_slopes!(dy_p, x_p, y_p)
+        return AkimaInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search)
+    end
 end

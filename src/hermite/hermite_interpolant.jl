@@ -38,7 +38,7 @@ end
     E = typeof(extrap)
     spacing = _create_spacing(x)
     S = typeof(spacing)
-    return CubicHermiteInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}(
+    return CubicHermiteInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, PreCompute}(
         x, y, dy, spacing, extrap, search
     )
 end

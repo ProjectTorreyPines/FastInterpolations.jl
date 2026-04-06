@@ -1,35 +1,25 @@
 # ========================================
 # Akima 1D Oneshot API
 # ========================================
-# Standalone akima_interp / akima_interp! functions.
-# Computes Akima slopes via @with_pool, then delegates to
-# _hermite_eval_at_point / _hermite_vector_loop!.
+# Public API: akima_interp(x, y, xq; coeffs=PreCompute(), ...)
+# Routes to internal _akima_interp_precompute (bulk slopes + pool)
+# or _akima_interp_onthefly (local slopes, no pool).
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                         HOT PATH — AbstractFloat grid                     ║
+# ║                 INTERNAL: PreCompute (bulk slopes via @with_pool)          ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# ========================================
-# Scalar oneshot
-# ========================================
-
-"""
-    akima_interp(x, y, xq; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
-
-Akima interpolation at a single query point.
-Outlier-robust, C\$^1\$ continuous.
-"""
-@inline @with_pool pool function akima_interp(
+# Scalar
+@inline @with_pool pool function _akima_interp_precompute(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        xq::Tq;
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        xq::Tq,
+        extrap::AbstractExtrap,
+        deriv::DerivOp,
+        search::AbstractSearchPolicy,
+        hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-
     x = _to_float(x, Tg)
     dy = similar!(pool, y)
     _akima_slopes!(dy, x, y)
@@ -37,28 +27,19 @@ Outlier-robust, C\$^1\$ continuous.
     return _hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
 end
 
-# ========================================
-# Vector oneshot — in-place
-# ========================================
-
-"""
-    akima_interp!(output, x, y, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
-
-In-place Akima interpolation.
-"""
-@inline @with_pool pool function akima_interp!(
+# Vector in-place
+@inline @with_pool pool function _akima_interp_precompute!(
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg};
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        x_query::AbstractVector{Tg},
+        extrap::AbstractExtrap,
+        deriv::DerivOp,
+        search::AbstractSearchPolicy,
+        hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg <: AbstractFloat, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-
     x = _to_float(x, Tg)
     x_query = _to_float(x_query, Tg)
     dy = similar!(pool, y)
@@ -68,19 +49,18 @@ In-place Akima interpolation.
 end
 
 # Range disambiguation for in-place
-@inline @with_pool pool function akima_interp!(
+@inline @with_pool pool function _akima_interp_precompute!(
         output::AbstractVector,
         x::AbstractRange{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg};
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        x_query::AbstractVector{Tg},
+        extrap::AbstractExtrap,
+        deriv::DerivOp,
+        search::AbstractSearchPolicy,
+        hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg <: AbstractFloat, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-
     x = _to_float(x, Tg)
     x_query = _to_float(x_query, Tg)
     dy = similar!(pool, y)
@@ -89,12 +69,122 @@ end
     return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
 end
 
-# ========================================
-# Vector oneshot — allocating
-# ========================================
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║                 INTERNAL: OnTheFly (local slopes, no pool)                ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+# Scalar
+@inline function _akima_interp_onthefly(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq,
+        extrap::AbstractExtrap,
+        deriv::DerivOp,
+        search::AbstractSearchPolicy,
+        hint::Union{Nothing, Base.RefValue{Int}}
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
+    length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
+    x = _to_float(x, Tg)
+    searcher = _resolve_search(x, xq, search, hint)
+    return _hermite_eval_at_point(x, y, AkimaSlopes(), xq, extrap, deriv, searcher)
+end
+
+# Vector in-place
+@inline function _akima_interp_onthefly!(
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_query::AbstractVector{Tg},
+        extrap::AbstractExtrap,
+        deriv::DerivOp,
+        search::AbstractSearchPolicy,
+        hint::Union{Nothing, Base.RefValue{Int}}
+    ) where {Tg <: AbstractFloat, Tv}
+    @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
+    length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
+    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
+    x = _to_float(x, Tg)
+    x_query = _to_float(x_query, Tg)
+    searcher = _resolve_search(x, x_query, search, hint)
+    return _hermite_vector_loop!(output, x, y, AkimaSlopes(), x_query, extrap, deriv, searcher)
+end
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║                    PUBLIC API — typed entry points                         ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
 
 """
-    akima_interp(x, y, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
+    akima_interp(x, y, xq; coeffs=PreCompute(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
+
+Akima interpolation at a single query point.
+
+Outlier-robust, C\$^1\$ continuous.
+
+# Keyword Arguments
+- `coeffs`: Coefficient strategy — `PreCompute()` (bulk slopes) or `OnTheFly()` (local slopes per cell)
+"""
+@inline function akima_interp(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq;
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    resolved = _resolve_coeffs(coeffs, x, xq)
+    if resolved isa OnTheFly
+        return _akima_interp_onthefly(x, y, xq, extrap, deriv, search, hint)
+    end
+    return _akima_interp_precompute(x, y, xq, extrap, deriv, search, hint)
+end
+
+"""
+    akima_interp!(output, x, y, x_query; coeffs=PreCompute(), ...)
+
+In-place Akima interpolation with outlier-robust slopes.
+"""
+@inline function akima_interp!(
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_query::AbstractVector{Tg};
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: AbstractFloat, Tv}
+    resolved = _resolve_coeffs(coeffs, x, x_query)
+    if resolved isa OnTheFly
+        return _akima_interp_onthefly!(output, x, y, x_query, extrap, deriv, search, hint)
+    end
+    return _akima_interp_precompute!(output, x, y, x_query, extrap, deriv, search, hint)
+end
+
+# Range disambiguation for in-place
+@inline function akima_interp!(
+        output::AbstractVector,
+        x::AbstractRange{Tg},
+        y::AbstractVector{Tv},
+        x_query::AbstractVector{Tg};
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: AbstractFloat, Tv}
+    resolved = _resolve_coeffs(coeffs, x, x_query)
+    if resolved isa OnTheFly
+        return _akima_interp_onthefly!(output, x, y, x_query, extrap, deriv, search, hint)
+    end
+    return _akima_interp_precompute!(output, x, y, x_query, extrap, deriv, search, hint)
+end
+
+"""
+    akima_interp(x, y, x_query; coeffs=PreCompute(), ...)
 
 Akima interpolation at multiple query points. Returns `Vector{Tv}`.
 """
@@ -102,13 +192,14 @@ function akima_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector{Tg};
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_query))
-    akima_interp!(output, x, y, x_query; extrap, deriv, search, hint)
+    akima_interp!(output, x, y, x_query; coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end
 
@@ -116,7 +207,7 @@ end
 # ║                  GENERIC WRAPPERS — Real type promotion                   ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# Scalar
+# Scalar — promotes x, y to Float; passes xq directly for AD support
 @inline function akima_interp(
         x::AbstractVector{TX},
         y::AbstractVector{TY},

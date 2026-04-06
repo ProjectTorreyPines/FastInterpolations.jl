@@ -10,6 +10,7 @@
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg <: AbstractFloat, Tv}
+    itp.dy isa AbstractSlopeMethod && _throw_onthefly_unsupported("integrate")
     x = itp.x
     y = itp.y
     dy = itp.dy

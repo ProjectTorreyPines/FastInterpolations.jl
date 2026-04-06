@@ -28,13 +28,19 @@ itp(0.5)
         x::AbstractVector{TX},
         y::AbstractVector{TY};
         tension::Real = 0.0,
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX <: Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     Tg = eltype(x_p)
-    dy_p = similar(y_p)
-    _cardinal_slopes!(dy_p, x_p, y_p, Tg(tension))
     extrap_p = _promote_extrap(extrap, eltype(y_p))
-    return CardinalInterpolant1D(x_p, y_p, dy_p; tension = Tg(tension), extrap = extrap_p, search)
+    resolved = _resolve_coeffs(coeffs)
+    if resolved isa OnTheFly
+        return CardinalInterpolant1D(x_p, y_p, CardinalSlopes(Tg(tension)); tension = Tg(tension), extrap = extrap_p, search)
+    else
+        dy_p = similar(y_p)
+        _cardinal_slopes!(dy_p, x_p, y_p, Tg(tension))
+        return CardinalInterpolant1D(x_p, y_p, dy_p; tension = Tg(tension), extrap = extrap_p, search)
+    end
 end

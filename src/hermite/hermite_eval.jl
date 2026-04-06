@@ -232,3 +232,240 @@ end
     end
     return output
 end
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║              ONTHEFLY PATH — AbstractSlopeMethod overloads                ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+# Mirror of the above paths but with sm::AbstractSlopeMethod instead of dy::AbstractVector.
+# Uses _local_slope(sm, x, y, idx, n) to compute slopes per-cell in O(1).
+
+# ── Oneshot scalar (no spacing) ─────────────────────────────────
+
+@inline function _hermite_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        sm::AbstractSlopeMethod,
+        xq::Tq,
+        extrap::AbstractExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    @boundscheck _check_domain(x, xq, extrap)
+    idx, xL, xR = search_interval(searcher, x, xq)
+    n = length(x)
+    dyL = _local_slope(sm, x, y, idx, n)
+    dyR = _local_slope(sm, x, y, idx + 1, n)
+    dL = xq - xL
+    h = _get_h(x, xR, xL)
+    inv_h = _get_inv_h(x, xR, xL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dyL, dyR, h, inv_h, dL)
+end
+
+@inline function _hermite_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        sm::AbstractSlopeMethod,
+        xq::Tq,
+        extrap::_ClampOrFill,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq_primal = _extract_primal(xq)
+    if xq_primal < first(x)
+        return _eval_extrapolation(op, first(y), extrap, xq)
+    elseif xq_primal > last(x)
+        return _eval_extrapolation(op, last(y), extrap, xq)
+    end
+    idx, xL, xR = search_interval(searcher, x, xq)
+    n = length(x)
+    dyL = _local_slope(sm, x, y, idx, n)
+    dyR = _local_slope(sm, x, y, idx + 1, n)
+    dL = xq - xL
+    h = _get_h(x, xR, xL)
+    inv_h = _get_inv_h(x, xR, xL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dyL, dyR, h, inv_h, dL)
+end
+
+@inline function _hermite_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        sm::AbstractSlopeMethod,
+        xq::Tq,
+        ::WrapExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
+    idx, xL, xR = search_interval(searcher, x, xq_wrapped)
+    n = length(x)
+    dyL = _local_slope(sm, x, y, idx, n)
+    dyR = _local_slope(sm, x, y, idx + 1, n)
+    dL = xq_wrapped - xL
+    h = _get_h(x, xR, xL)
+    inv_h = _get_inv_h(x, xR, xL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dyL, dyR, h, inv_h, dL)
+end
+
+# ── Interpolant scalar (with spacing) ───────────────────────────
+
+@inline function _hermite_eval_at_point(
+        x::AbstractVector{Tg},
+        spacing::AbstractGridSpacing{Tg},
+        y::AbstractVector{Tv},
+        sm::AbstractSlopeMethod,
+        xq::Tq,
+        extrap::AbstractExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    @boundscheck _check_domain(x, xq, extrap)
+    idx, xL, _ = search_interval(searcher, x, spacing, xq)
+    n = length(x)
+    dyL = _local_slope(sm, x, y, idx, n)
+    dyR = _local_slope(sm, x, y, idx + 1, n)
+    dL = xq - xL
+    h = _get_h(spacing, idx)
+    inv_h = _get_inv_h(spacing, idx)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dyL, dyR, h, inv_h, dL)
+end
+
+@inline function _hermite_eval_at_point(
+        x::AbstractVector{Tg},
+        spacing::AbstractGridSpacing{Tg},
+        y::AbstractVector{Tv},
+        sm::AbstractSlopeMethod,
+        xq::Tq,
+        extrap::_ClampOrFill,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq_primal = _extract_primal(xq)
+    if xq_primal < first(x)
+        return _eval_extrapolation(op, first(y), extrap, xq)
+    elseif xq_primal > last(x)
+        return _eval_extrapolation(op, last(y), extrap, xq)
+    end
+    idx, xL, _ = search_interval(searcher, x, spacing, xq)
+    n = length(x)
+    dyL = _local_slope(sm, x, y, idx, n)
+    dyR = _local_slope(sm, x, y, idx + 1, n)
+    dL = xq - xL
+    h = _get_h(spacing, idx)
+    inv_h = _get_inv_h(spacing, idx)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dyL, dyR, h, inv_h, dL)
+end
+
+@inline function _hermite_eval_at_point(
+        x::AbstractVector{Tg},
+        spacing::AbstractGridSpacing{Tg},
+        y::AbstractVector{Tv},
+        sm::AbstractSlopeMethod,
+        xq::Tq,
+        ::WrapExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
+    idx, xL, _ = search_interval(searcher, x, spacing, xq_wrapped)
+    n = length(x)
+    dyL = _local_slope(sm, x, y, idx, n)
+    dyR = _local_slope(sm, x, y, idx + 1, n)
+    dL = xq_wrapped - xL
+    h = _get_h(spacing, idx)
+    inv_h = _get_inv_h(spacing, idx)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dyL, dyR, h, inv_h, dL)
+end
+
+# ── Vector loops (delegate to scalar overloads above) ────────────
+
+# Oneshot vector loop (no spacing)
+@inline function _hermite_vector_loop!(
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        sm::AbstractSlopeMethod,
+        xq::AbstractVector{<:Real},
+        extrap::E,
+        deriv::O,
+        searcher::P
+    ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    extrap = _check_domain(x, xq, extrap)
+    @inbounds for i in eachindex(xq, output)
+        output[i] = _hermite_eval_at_point(x, y, sm, xq[i], extrap, deriv, searcher)
+    end
+    return output
+end
+
+# Oneshot vector loop — WrapExtrap specialization
+@inline function _hermite_vector_loop!(
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        sm::AbstractSlopeMethod,
+        xq::AbstractVector{<:Real},
+        ::WrapExtrap,
+        deriv::O,
+        searcher::P
+    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, P <: Searcher}
+    x_min, x_max = first(x), last(x)
+    qmin, qmax = minimum(xq), maximum(xq)
+
+    if qmin >= x_min && qmax < x_max
+        @inbounds for i in eachindex(xq, output)
+            output[i] = _hermite_eval_at_point(x, y, sm, xq[i], ExtendExtrap(), deriv, searcher)
+        end
+    else
+        @inbounds for i in eachindex(xq, output)
+            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max)
+            output[i] = _hermite_eval_at_point(x, y, sm, xi_wrapped, ExtendExtrap(), deriv, searcher)
+        end
+    end
+    return output
+end
+
+# Interpolant vector loop (with spacing)
+@inline function _hermite_vector_loop!(
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        spacing::AbstractGridSpacing{Tg},
+        y::AbstractVector{Tv},
+        sm::AbstractSlopeMethod,
+        xq::AbstractVector{<:Real},
+        extrap::E,
+        deriv::O,
+        searcher::P
+    ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    extrap = _check_domain(x, xq, extrap)
+    @inbounds for i in eachindex(xq, output)
+        output[i] = _hermite_eval_at_point(x, spacing, y, sm, xq[i], extrap, deriv, searcher)
+    end
+    return output
+end
+
+# Interpolant vector loop — WrapExtrap specialization
+@inline function _hermite_vector_loop!(
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        spacing::AbstractGridSpacing{Tg},
+        y::AbstractVector{Tv},
+        sm::AbstractSlopeMethod,
+        xq::AbstractVector{<:Real},
+        ::WrapExtrap,
+        deriv::O,
+        searcher::P
+    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, P <: Searcher}
+    x_min, x_max = first(x), last(x)
+    qmin, qmax = minimum(xq), maximum(xq)
+
+    if qmin >= x_min && qmax < x_max
+        @inbounds for i in eachindex(xq, output)
+            output[i] = _hermite_eval_at_point(x, spacing, y, sm, xq[i], ExtendExtrap(), deriv, searcher)
+        end
+    else
+        @inbounds for i in eachindex(xq, output)
+            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max)
+            output[i] = _hermite_eval_at_point(x, spacing, y, sm, xi_wrapped, ExtendExtrap(), deriv, searcher)
+        end
+    end
+    return output
+end

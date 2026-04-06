@@ -17,6 +17,7 @@ include("hermite/hermite.jl")
 include("pchip/pchip.jl")
 include("cardinal/cardinal.jl")
 include("akima/akima.jl")
+include("core/coeff_policy.jl")  # AutoCoeffs resolution (after method types + strategy types, before hetero)
 include("hetero/hetero.jl")
 
 # Derivative view wrapper (depends on all interpolant types)
@@ -61,9 +62,10 @@ export hermite_adjoint, HermiteAdjoint1D  # Hermite adjoint (user-supplied slope
 export pchip_adjoint, PchipAdjoint1D  # PCHIP adjoint (slope-from-data, data-dependent)
 export cardinal_adjoint, CardinalAdjoint1D  # Cardinal adjoint (slope-from-data)
 export akima_adjoint, AkimaAdjoint1D  # Akima adjoint (slope-from-data, data-dependent)
-export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly  # ND cubic types
+export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly, AutoCoeffs  # ND cubic types + strategies
 export interp, interp!, HeteroInterpolantND  # Tensor product ND (per-axis methods)
 export AbstractInterpMethod, CubicInterp, LinearInterp, QuadraticInterp, ConstantInterp, NoInterp
+export PchipInterp, CardinalInterp, AkimaInterp, CubicHermiteInterp  # Hermite family ND methods
 export GridIdx
 export gradient, gradient!, value_gradient, hessian, hessian!, laplacian  # Analytical vector calculus for ND
 export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar queries

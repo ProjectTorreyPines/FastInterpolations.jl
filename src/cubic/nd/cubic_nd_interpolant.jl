@@ -84,6 +84,13 @@ function cubic_interp(
     searches = _resolve_search_nd(search, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+
+    # OnTheFly → delegate to HeteroInterpolantND (sequential 1D collapse)
+    if coeffs isa OnTheFly
+        methods = map(CubicInterp, bcs)
+        return _build_hetero_nd(grids, data, methods, extrap, search)
+    end
+
     return _build_nd_interpolant(grids_typed, data_typed, bcs, extraps_val, searches, coeffs)
 end
 
@@ -138,19 +145,5 @@ function _build_nd_interpolant(
     }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)
 end
 
-"""
-    _build_nd_interpolant(..., ::OnTheFly)
-
-Build CubicInterpolantND with on-the-fly coefficient computation.
-Not yet implemented.
-"""
-function _build_nd_interpolant(
-        grids::NTuple{N, AbstractVector{Tg}},
-        data::AbstractArray{Tv, N},
-        bcs::NTuple{N, AbstractBC},
-        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        searches::NTuple{N, AbstractSearchPolicy},
-        ::OnTheFly
-    ) where {Tg <: AbstractFloat, Tv, N}
-    throw(ArgumentError("OnTheFly strategy is not yet implemented for ND. Use PreCompute() (default)."))
-end
+# OnTheFly is handled in cubic_interp() above (delegates to _build_hetero_nd).
+# No _build_nd_interpolant(::OnTheFly) needed.

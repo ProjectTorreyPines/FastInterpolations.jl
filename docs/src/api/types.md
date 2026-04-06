@@ -22,6 +22,7 @@ AbstractAdjointND
 AbstractCoeffStrategy
 PreCompute
 OnTheFly
+AutoCoeffs
 CubicInterpolantND
 ```
 
@@ -30,6 +31,10 @@ CubicInterpolantND
 ```@docs
 HeteroInterpolantND
 AbstractInterpMethod
+PchipInterp
+CardinalInterp
+AkimaInterp
+CubicHermiteInterp
 CubicInterp
 LinearInterp
 QuadraticInterp

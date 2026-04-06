@@ -305,4 +305,46 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
         val_pre_itp = interp((x, y), data_2d; method = PchipInterp(), coeffs = OnTheFly())
         @test val_otf ≈ val_pre_itp((qx, qy)) rtol = 1.0e-12
     end
+
+    # ========================================
+    # E. Regression Fixes (codex review)
+    # ========================================
+
+    @testset "AD: ForwardDiff.Dual scalar query → PreCompute fallback" begin
+        # AutoCoeffs must fall back to PreCompute for Dual queries so AD works.
+        # OnTheFly's Tv-typed _collapse_dims buffers can't hold Dual values.
+        import ForwardDiff
+        g_cubic = ForwardDiff.gradient(v -> cubic_interp((x, y), data_2d, (v[1], v[2])), [qx, qy])
+        @test length(g_cubic) == 2
+        @test all(isfinite, g_cubic)
+
+        g_quad = ForwardDiff.gradient(v -> quadratic_interp((x, y), data_2d, (v[1], v[2])), [qx, qy])
+        @test length(g_quad) == 2
+        @test all(isfinite, g_quad)
+
+        g_interp = ForwardDiff.gradient(
+            v -> interp((x, y), data_2d, (v[1], v[2]); method = CubicInterp()),
+            [qx, qy]
+        )
+        @test length(g_interp) == 2
+        @test all(isfinite, g_interp)
+    end
+
+    @testset "Validation: PreCompute + local Hermite rejected in oneshot" begin
+        # Scalar oneshot with PreCompute + PchipInterp should raise ArgumentError
+        # (not a MethodError from reaching _compute_nd_partials_hetero!).
+        @test_throws ArgumentError interp(
+            (x, y), data_2d, (qx, qy);
+            method = (PchipInterp(), AkimaInterp()), coeffs = PreCompute()
+        )
+        @test_throws ArgumentError interp(
+            (x, y), data_2d, (qx, qy);
+            method = PchipInterp(), coeffs = PreCompute()
+        )
+        # Hetero mixing global + local with PreCompute also rejected
+        @test_throws ArgumentError interp(
+            (x, y), data_2d, (qx, qy);
+            method = (CubicInterp(), PchipInterp()), coeffs = PreCompute()
+        )
+    end
 end

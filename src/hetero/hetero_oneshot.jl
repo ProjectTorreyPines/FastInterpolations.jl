@@ -302,6 +302,9 @@ function interp(
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
     resolved_query = map(_resolve_grididx, query, grids)
     coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, resolved_query, method_tuple)
+    # Reject unsupported strategy/method combinations (e.g., PreCompute + local Hermite ND)
+    # Mirrors the interpolant-construction validation in hetero_interpolant.jl.
+    _validate_nd_coeffs(coeffs_resolved, method_tuple)
     # GridIdx auto-promotion: when all derivs are EvalValue (scalar or tuple),
     # GridIdx axes need no interpolation — replace their method with NoInterp()
     # for pre-slice dimension reduction (e.g., 3D cubic build → 1D: ~5000x speedup).

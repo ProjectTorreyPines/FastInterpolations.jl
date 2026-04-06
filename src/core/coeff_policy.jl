@@ -54,16 +54,22 @@ end
 @inline _all_trivial_methods(methods::Tuple) = all(_is_trivial_method, methods)
 
 # ── ND oneshot resolution (separate from interpolant resolution) ──
-# Scalar query → OnTheFly avoids O(2^N × n^N) partial build (2^N× faster).
+# Scalar AbstractFloat query → OnTheFly avoids O(2^N × n^N) partial build (2^N× faster).
+# Scalar non-AbstractFloat query (Dual, Int, etc.) → PreCompute:
+#   - AD-safe: OnTheFly's _collapse_dims buffers are typed from eltype(data), which breaks
+#     when the query introduces a wider type (e.g., ForwardDiff.Dual over Float64 data).
+#   - PreCompute kernels propagate query type through Dual arithmetic correctly.
 # Batch query → PreCompute amortizes build over many evals.
 # Trivial methods (Linear/Constant) → PreCompute (no global solve, existing paths optimal).
 # Separate function avoids dispatch ambiguity with interpolant-construction overloads.
 # Future: batch overload can add K-threshold crossover without touching other code.
 @inline _resolve_coeffs_nd_oneshot(c::PreCompute, _, _) = c
 @inline _resolve_coeffs_nd_oneshot(c::OnTheFly, _, _) = c
-@inline function _resolve_coeffs_nd_oneshot(::AutoCoeffs, ::Tuple{Vararg{Real}}, methods)
+@inline function _resolve_coeffs_nd_oneshot(::AutoCoeffs, ::Tuple{Vararg{AbstractFloat}}, methods)
     _all_trivial_methods(methods) && return PreCompute()
     return OnTheFly()
 end
+# Scalar fallback: non-AbstractFloat Real elements (ForwardDiff.Dual, Int, etc.) → PreCompute (AD-safe)
+@inline _resolve_coeffs_nd_oneshot(::AutoCoeffs, ::Tuple{Vararg{Real}}, methods) = PreCompute()
 # Fallback for non-scalar (batch) queries — always PreCompute to amortize build
 @inline _resolve_coeffs_nd_oneshot(::AutoCoeffs, queries, methods) = PreCompute()

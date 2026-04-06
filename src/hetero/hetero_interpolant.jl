@@ -12,6 +12,8 @@
 # (adjoint, oneshot, AD). Per-axis options (bc, side) are forwarded as tuples —
 # the existing constructors already accept Union{Single, NTuple} for these kwargs.
 
+# ── Homogeneous dispatch: PreCompute only (OnTheFly handled in interp() above) ──
+
 function _interp_nd_dispatch(
         grids, data, methods::Tuple{CubicInterp, Vararg{CubicInterp}}, coeffs, extrap, search
     )
@@ -39,31 +41,9 @@ function _interp_nd_dispatch(
     return constant_interp(grids, data; side = sides, extrap = extrap, search = search)
 end
 
-# Homogeneous Hermite family → always OnTheFly via HeteroInterpolantND (no PreCompute ND yet)
-function _interp_nd_dispatch(
-        grids, data, methods::Tuple{PchipInterp, Vararg{PchipInterp}}, ::Any, extrap, search
-    )
-    return _build_hetero_nd(grids, data, methods, extrap, search)
-end
-
-function _interp_nd_dispatch(
-        grids, data, methods::Tuple{CardinalInterp, Vararg{CardinalInterp}}, ::Any, extrap, search
-    )
-    return _build_hetero_nd(grids, data, methods, extrap, search)
-end
-
-function _interp_nd_dispatch(
-        grids, data, methods::Tuple{AkimaInterp, Vararg{AkimaInterp}}, ::Any, extrap, search
-    )
-    return _build_hetero_nd(grids, data, methods, extrap, search)
-end
-
-# Homogeneous CubicInterp + OnTheFly → fallback to Hetero path
-function _interp_nd_dispatch(
-        grids, data, methods::Tuple{CubicInterp, Vararg{CubicInterp}}, ::OnTheFly, extrap, search
-    )
-    return _build_hetero_nd(grids, data, methods, extrap, search)
-end
+# Hermite family has no specialized ND type — homogeneous Hermite tuples fall through
+# to the heterogeneous fallback below. With AutoCoeffs, they never reach here (OnTheFly
+# is intercepted in interp()). Explicit PreCompute is caught by _validate_nd_coeffs.
 
 # Heterogeneous (fallback) → HeteroInterpolantND
 function _interp_nd_dispatch(
@@ -399,5 +379,13 @@ function interp(
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
     coeffs_resolved = _resolve_coeffs(coeffs, Val(N), method_tuple)
+
+    # OnTheFly → always Hetero path (no specialized ND type supports OnTheFly natively)
+    if coeffs_resolved isa OnTheFly
+        _validate_nd_coeffs(coeffs_resolved, method_tuple)
+        return _build_hetero_nd(grids, data, method_tuple, extrap, search)
+    end
+
+    # PreCompute → homogeneous dispatch to specialized ND types
     return _interp_nd_dispatch(grids, data, method_tuple, coeffs_resolved, extrap, search)
 end

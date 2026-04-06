@@ -141,8 +141,9 @@ end
 """
     _build_nd_interpolant(..., ::OnTheFly)
 
-Build CubicInterpolantND with on-the-fly coefficient computation.
-Not yet implemented.
+OnTheFly for cubic ND is handled at the `interp()` level — routes to HeteroInterpolantND
+before reaching this point. This method exists only for direct `cubic_interp(...; coeffs=OnTheFly())`
+calls which bypass `interp()`.
 """
 function _build_nd_interpolant(
         grids::NTuple{N, AbstractVector{Tg}},
@@ -152,5 +153,10 @@ function _build_nd_interpolant(
         searches::NTuple{N, AbstractSearchPolicy},
         ::OnTheFly
     ) where {Tg <: AbstractFloat, Tv, N}
-    throw(ArgumentError("OnTheFly strategy is not yet implemented for ND. Use PreCompute() (default)."))
+    throw(
+        ArgumentError(
+            "OnTheFly() is not supported via cubic_interp() directly. " *
+                "Use interp(grids, data; method=CubicInterp(), coeffs=OnTheFly()) instead."
+        )
+    )
 end

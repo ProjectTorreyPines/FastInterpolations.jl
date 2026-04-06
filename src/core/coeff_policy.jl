@@ -28,16 +28,28 @@ end
 @inline _resolve_coeffs(::AutoCoeffs) = PreCompute()
 
 # ── AutoCoeffs: ND → dimensionality + method type check ──
+# Linear/Constant have no slopes — always use specialized ND types (PreCompute is a no-op).
+# For derivative-based methods (Cubic, Quadratic, Hermite family):
+#   N ≥ 3 → OnTheFly (2^N partial storage becomes expensive)
+#   any local method → OnTheFly (no ND PreCompute for Hermite yet)
 @inline function _resolve_coeffs(::AutoCoeffs, ::Val{N}, methods) where {N}
+    _all_trivial_methods(methods) && return PreCompute()  # Linear/Constant: no slopes
     N >= 3 && return OnTheFly()
     _has_any_local_method(methods) && return OnTheFly()
     return PreCompute()
 end
 
-# ── Method traits: local vs global solve ──
+# ── Method traits ──
+# Local methods: slopes computed from local stencil (no global solve)
 @inline _is_local_method(::PchipInterp) = true
 @inline _is_local_method(::CardinalInterp) = true
 @inline _is_local_method(::AkimaInterp) = true
 @inline _is_local_method(::AbstractInterpMethod) = false
 @inline _has_any_local_method(methods::Tuple) = any(_is_local_method, methods)
 @inline _all_local_methods(methods::Tuple) = all(_is_local_method, methods)
+
+# Trivial methods: no slopes/partials needed (Linear, Constant)
+@inline _is_trivial_method(::LinearInterp) = true
+@inline _is_trivial_method(::ConstantInterp) = true
+@inline _is_trivial_method(::AbstractInterpMethod) = false
+@inline _all_trivial_methods(methods::Tuple) = all(_is_trivial_method, methods)

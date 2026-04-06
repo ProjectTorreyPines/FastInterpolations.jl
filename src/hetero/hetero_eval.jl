@@ -44,6 +44,19 @@ end
     return constant_interp(grid, fiber, q; side = m.side, extrap = extrap, deriv = op, search = search, hint = hint)
 end
 
+# Hermite family: local slope methods (PCHIP, Cardinal, Akima)
+@inline function _oneshot_eval_1d(::PchipInterp, grid, fiber, extrap, q, op, search, hint)
+    return pchip_interp(grid, fiber, q; extrap = extrap, deriv = op, search = search, hint = hint)
+end
+
+@inline function _oneshot_eval_1d(m::CardinalInterp, grid, fiber, extrap, q, op, search, hint)
+    return cardinal_interp(grid, fiber, q; tension = m.tension, extrap = extrap, deriv = op, search = search, hint = hint)
+end
+
+@inline function _oneshot_eval_1d(::AkimaInterp, grid, fiber, extrap, q, op, search, hint)
+    return akima_interp(grid, fiber, q; extrap = extrap, deriv = op, search = search, hint = hint)
+end
+
 # ========================================
 # Sequential Dimension Collapse
 # ========================================

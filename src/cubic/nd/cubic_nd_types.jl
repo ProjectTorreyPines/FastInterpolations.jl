@@ -69,6 +69,33 @@ Stores only the original data; computes 1D spline solutions per-axis at each que
 """
 struct OnTheFly <: AbstractCoeffStrategy end
 
+"""
+    AutoCoeffs <: AbstractCoeffStrategy
+
+Automatic coefficient strategy selection based on compile-time information.
+
+# Rules
+- `N ≥ 3` → `OnTheFly()` (2^N memory explosion prevention)
+- All local methods (PCHIP, Cardinal, Akima) → `OnTheFly()` (no global solve needed)
+- Global solve methods (Cubic, Quadratic) in 1D-2D → `PreCompute()`
+"""
+struct AutoCoeffs <: AbstractCoeffStrategy end
+
+# Resolution: compile-time strategy selection
+@inline _resolve_coeffs(c::PreCompute, ::Val, _) = c
+@inline _resolve_coeffs(c::OnTheFly, ::Val, _) = c
+@inline function _resolve_coeffs(::AutoCoeffs, ::Val{N}, methods) where {N}
+    N >= 3 && return OnTheFly()
+    _all_local_methods(methods) && return OnTheFly()
+    return PreCompute()
+end
+
+@inline _is_local_method(::PchipInterp) = true
+@inline _is_local_method(::CardinalInterp) = true
+@inline _is_local_method(::AkimaInterp) = true
+@inline _is_local_method(::AbstractInterpMethod) = false
+@inline _all_local_methods(methods::Tuple) = all(_is_local_method, methods)
+
 # ========================================
 # Generic ND Coefficient Storage
 # ========================================

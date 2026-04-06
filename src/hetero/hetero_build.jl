@@ -18,10 +18,16 @@
 @inline _deriv_size(::LinearInterp) = 1
 @inline _deriv_size(::ConstantInterp) = 1
 @inline _deriv_size(::NoInterp) = 1
+@inline _deriv_size(::PchipInterp) = 2
+@inline _deriv_size(::CardinalInterp) = 2
+@inline _deriv_size(::AkimaInterp) = 2
 
 # For @generated: extract sizes from methods tuple TYPE
 _is_deriv_method(::Type{<:CubicInterp}) = true
 _is_deriv_method(::Type{<:QuadraticInterp}) = true
+_is_deriv_method(::Type{PchipInterp}) = true
+_is_deriv_method(::Type{AkimaInterp}) = true
+_is_deriv_method(::Type{<:CardinalInterp}) = true
 _is_deriv_method(::Type{NoInterp}) = false
 _is_deriv_method(::Type) = false
 

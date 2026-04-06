@@ -39,16 +39,46 @@ function _interp_nd_dispatch(
     return constant_interp(grids, data; side = sides, extrap = extrap, search = search)
 end
 
+# Homogeneous Hermite family → always OnTheFly via HeteroInterpolantND (no PreCompute ND yet)
+function _interp_nd_dispatch(
+        grids, data, methods::Tuple{PchipInterp, Vararg{PchipInterp}}, ::Any, extrap, search
+    )
+    return _build_hetero_nd(grids, data, methods, extrap, search)
+end
+
+function _interp_nd_dispatch(
+        grids, data, methods::Tuple{CardinalInterp, Vararg{CardinalInterp}}, ::Any, extrap, search
+    )
+    return _build_hetero_nd(grids, data, methods, extrap, search)
+end
+
+function _interp_nd_dispatch(
+        grids, data, methods::Tuple{AkimaInterp, Vararg{AkimaInterp}}, ::Any, extrap, search
+    )
+    return _build_hetero_nd(grids, data, methods, extrap, search)
+end
+
+# Homogeneous CubicInterp + OnTheFly → fallback to Hetero path
+function _interp_nd_dispatch(
+        grids, data, methods::Tuple{CubicInterp, Vararg{CubicInterp}}, ::OnTheFly, extrap, search
+    )
+    return _build_hetero_nd(grids, data, methods, extrap, search)
+end
+
 # Heterogeneous (fallback) → HeteroInterpolantND
 function _interp_nd_dispatch(
         grids, data, methods::Tuple{Vararg{AbstractInterpMethod, N}}, coeffs, extrap, search
     ) where {N}
-    if coeffs isa PreCompute
+    if coeffs isa PreCompute && !_has_local_method(methods)
         return _build_hetero_precomputed(grids, data, methods, extrap, search)
     else
+        # OnTheFly, or PreCompute with Hermite methods (no ND PreCompute for Hermite yet)
         return _build_hetero_nd(grids, data, methods, extrap, search)
     end
 end
+
+# Check if any method in the tuple is a local Hermite type (no PreCompute ND support yet)
+@inline _has_local_method(methods::Tuple) = any(_is_local_method, methods)
 
 # ========================================
 # Per-Axis Validation
@@ -110,6 +140,24 @@ end
 function _validate_axis_method(grid, ::NoInterp, _, d)
     n = length(grid)
     n < 1 && throw(ArgumentError("Axis $d: NoInterp needs ≥1 grid point, got $n"))
+    return nothing
+end
+
+function _validate_axis_method(grid, ::PchipInterp, _, d)
+    n = length(grid)
+    n < 2 && throw(ArgumentError("Axis $d: PCHIP needs ≥2 points, got $n"))
+    return nothing
+end
+
+function _validate_axis_method(grid, ::CardinalInterp, _, d)
+    n = length(grid)
+    n < 2 && throw(ArgumentError("Axis $d: Cardinal needs ≥2 points, got $n"))
+    return nothing
+end
+
+function _validate_axis_method(grid, ::AkimaInterp, _, d)
+    n = length(grid)
+    n < 2 && throw(ArgumentError("Axis $d: Akima needs ≥2 points, got $n"))
     return nothing
 end
 
@@ -329,5 +377,6 @@ function interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
-    return _interp_nd_dispatch(grids, data, method_tuple, coeffs, extrap, search)
+    coeffs_resolved = _resolve_coeffs(coeffs, Val(N), method_tuple)
+    return _interp_nd_dispatch(grids, data, method_tuple, coeffs_resolved, extrap, search)
 end

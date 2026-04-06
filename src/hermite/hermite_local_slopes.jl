@@ -74,14 +74,11 @@ end
     end
 
     return if i == 1
-        # Left endpoint: one-sided 2-point FD
-        @inbounds return scale * (y[2] - y[1]) / (x[2] - x[1])
+        @inbounds scale * (y[2] - y[1]) / (x[2] - x[1])
     elseif i == n
-        # Right endpoint: one-sided 2-point FD
-        @inbounds return scale * (y[n] - y[n - 1]) / (x[n] - x[n - 1])
+        @inbounds scale * (y[n] - y[n - 1]) / (x[n] - x[n - 1])
     else
-        # Interior: central finite difference
-        @inbounds return scale * (y[i + 1] - y[i - 1]) / (x[i + 1] - x[i - 1])
+        @inbounds scale * (y[i + 1] - y[i - 1]) / (x[i + 1] - x[i - 1])
     end
 end
 
@@ -154,10 +151,12 @@ end
             return 3 * m1 - 2 * m2
         elseif j == nm1 + 1  # n
             return 2 * _secant(nm1) - _secant(nm1 - 1)
-        else  # j == nm1 + 2 = n+1
+        elseif j == nm1 + 2  # n+1
             m_last = _secant(nm1)
             m_prev = _secant(nm1 - 1)
             return 3 * m_last - 2 * m_prev
+        else
+            error("_safe_secant: j=$j out of expected range [-1, $(nm1 + 2)] for n=$(nm1 + 1)")
         end
     end
 

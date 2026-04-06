@@ -443,4 +443,75 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
         @test typeof(cardinal_interp(x, y; coeffs = OnTheFly())).parameters[end] === OnTheFly
     end
 
+    # ========================================
+    # 14. WrapExtrap with OnTheFly
+    # ========================================
+    @testset "WrapExtrap: OnTheFly" begin
+        x = collect(range(0.0, 2π, 30))
+        y = sin.(x)
+        itp_pre = pchip_interp(x, y; extrap = WrapExtrap())
+        itp_otf = pchip_interp(x, y; extrap = WrapExtrap(), coeffs = OnTheFly())
+
+        # In-domain
+        @test itp_otf(1.0) ≈ itp_pre(1.0) atol = 1.0e-14
+        # Wrap from above
+        @test itp_otf(2 * pi + 1.0) ≈ itp_pre(2 * pi + 1.0) atol = 1.0e-14
+        # Wrap from below
+        @test itp_otf(-1.0) ≈ itp_pre(-1.0) atol = 1.0e-14
+        # Boundary exactly at x_max
+        @test itp_otf(last(x) - eps()) ≈ itp_pre(last(x) - eps()) atol = 1.0e-14
+
+        # Vector WrapExtrap
+        xq_wrap = collect(range(-1.0, 8.0, 20))
+        @test pchip_interp(x, y, xq_wrap; extrap = WrapExtrap(), coeffs = OnTheFly()) ≈
+            pchip_interp(x, y, xq_wrap; extrap = WrapExtrap()) atol = 1.0e-14
+    end
+
+    # ========================================
+    # 15. ND gradient correctness with Hermite OnTheFly
+    # ========================================
+    @testset "ND gradient: Hermite OnTheFly" begin
+        xg = range(0.0, 2π, 20)
+        yg = range(0.0, π, 15)
+        # Separable: f(x,y) = sin(x) * (3y+1) → ∂f/∂x = cos(x)*(3y+1), ∂f/∂y = sin(x)*3
+        data = [sin(xi) * (3 * yj + 1) for xi in xg, yj in yg]
+        itp = interp((xg, yg), data; method = (PchipInterp(), LinearInterp()))
+        qx, qy = 1.0, 0.5
+        g = gradient(itp, (qx, qy))
+        @test length(g) == 2
+        @test g[1] isa Float64
+        @test g[2] isa Float64
+        # Verify against 1D references
+        g_ref = pchip_interp(collect(xg), [sin(xi) for xi in xg])(qx; deriv = DerivOp(1)) * (3 * qy + 1)
+        @test g[1] ≈ g_ref rtol = 1.0e-6
+    end
+
+    # ========================================
+    # 16. Float32 support
+    # ========================================
+    @testset "Float32: OnTheFly" begin
+        x32 = Float32.(collect(range(0.0f0, 2π * 1.0f0, 30)))
+        y32 = sin.(x32)
+
+        # Interpolant
+        itp_pre = pchip_interp(x32, y32)
+        itp_otf = pchip_interp(x32, y32; coeffs = OnTheFly())
+        @test itp_otf(1.0f0) isa Float32
+        @test itp_otf(1.0f0) ≈ itp_pre(1.0f0) atol = 1.0f-6
+
+        # Akima Float32
+        itp_a = akima_interp(x32, y32; coeffs = OnTheFly())
+        @test itp_a(1.0f0) isa Float32
+        @test itp_a(1.0f0) ≈ akima_interp(x32, y32)(1.0f0) atol = 1.0f-6
+
+        # Cardinal Float32
+        itp_c = cardinal_interp(x32, y32; coeffs = OnTheFly())
+        @test itp_c(1.0f0) isa Float32
+        @test itp_c(1.0f0) ≈ cardinal_interp(x32, y32)(1.0f0) atol = 1.0f-6
+
+        # Scalar oneshot Float32
+        v = pchip_interp(x32, y32, 1.0f0; coeffs = OnTheFly())
+        @test v isa Float32
+    end
+
 end # @testset "Hermite OnTheFly"

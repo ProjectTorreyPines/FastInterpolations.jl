@@ -382,7 +382,6 @@ function interp(
 
     # OnTheFly → always Hetero path (no specialized ND type supports OnTheFly natively)
     if coeffs_resolved isa OnTheFly
-        _validate_nd_coeffs(coeffs_resolved, method_tuple)
         return _build_hetero_nd(grids, data, method_tuple, extrap, search)
     end
 

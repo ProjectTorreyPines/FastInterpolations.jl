@@ -46,7 +46,6 @@ end
 @inline _is_local_method(::AkimaInterp) = true
 @inline _is_local_method(::AbstractInterpMethod) = false
 @inline _has_any_local_method(methods::Tuple) = any(_is_local_method, methods)
-@inline _all_local_methods(methods::Tuple) = all(_is_local_method, methods)
 
 # Trivial methods: no slopes/partials needed (Linear, Constant)
 @inline _is_trivial_method(::LinearInterp) = true

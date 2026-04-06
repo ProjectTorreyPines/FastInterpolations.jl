@@ -3,7 +3,8 @@ using FastInterpolations
 using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes,
     _pchip_slopes!, _cardinal_slopes!, _akima_slopes!,
     _resolve_coeffs, _deriv_size, _is_deriv_method,
-    _pchip_interp_onthefly, _akima_interp_onthefly, _cardinal_interp_onthefly
+    _pchip_interp_onthefly, _akima_interp_onthefly, _cardinal_interp_onthefly,
+    _adjoint_func, _throw_onthefly_unsupported
 
 @testset "Hermite OnTheFly" begin
 
@@ -584,6 +585,122 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
         # Scalar oneshot Float32
         v = pchip_interp(x32, y32, 1.0f0; coeffs = OnTheFly())
         @test v isa Float32
+    end
+
+    # ========================================
+    # 17. Coverage: OnTheFly + ClampExtrap in-domain oneshot (no spacing)
+    # ========================================
+    @testset "Coverage: OnTheFly ClampExtrap in-domain oneshot" begin
+        x = collect(range(0.0, 5.0, 20))
+        y = sin.(x)
+        mid = 2.5  # clearly inside [0, 5]
+
+        # These exercise the in-domain fallthrough path in _hermite_eval_at_point
+        # with sm::AbstractSlopeMethod + _ClampOrFill (hermite_eval.jl lines 279-286)
+        for extrap in [ClampExtrap(), FillExtrap(0.0)]
+            v_otf = pchip_interp(x, y, mid; coeffs = OnTheFly(), extrap = extrap)
+            v_pre = pchip_interp(x, y, mid; coeffs = PreCompute(), extrap = extrap)
+            @test v_otf ≈ v_pre atol = 1.0e-14
+
+            v_otf_a = akima_interp(x, y, mid; coeffs = OnTheFly(), extrap = extrap)
+            v_pre_a = akima_interp(x, y, mid; coeffs = PreCompute(), extrap = extrap)
+            @test v_otf_a ≈ v_pre_a atol = 1.0e-14
+
+            v_otf_c = cardinal_interp(x, y, mid; coeffs = OnTheFly(), extrap = extrap)
+            v_pre_c = cardinal_interp(x, y, mid; coeffs = PreCompute(), extrap = extrap)
+            @test v_otf_c ≈ v_pre_c atol = 1.0e-14
+        end
+    end
+
+    # ========================================
+    # 18. Coverage: OnTheFly interpolant vector queries (with spacing)
+    # ========================================
+    @testset "Coverage: OnTheFly interpolant vector eval" begin
+        x = range(0.0, 2π, 30)
+        y = sin.(collect(x))
+        xq_vec = collect(range(0.1, 2π - 0.1, 15))
+
+        for (build_pre, build_otf) in [
+                (() -> pchip_interp(x, y), () -> pchip_interp(x, y; coeffs = OnTheFly())),
+                (() -> akima_interp(x, y), () -> akima_interp(x, y; coeffs = OnTheFly())),
+                (() -> cardinal_interp(x, y), () -> cardinal_interp(x, y; coeffs = OnTheFly())),
+            ]
+            itp_pre = build_pre()
+            itp_otf = build_otf()
+
+            # Vector call on interpolant — exercises interpolant vector loop with spacing + sm
+            @test itp_otf(xq_vec) ≈ itp_pre(xq_vec) atol = 1.0e-13
+
+            # In-place variant
+            out_pre = similar(xq_vec)
+            out_otf = similar(xq_vec)
+            itp_pre(out_pre, xq_vec)
+            itp_otf(out_otf, xq_vec)
+            @test out_otf ≈ out_pre atol = 1.0e-13
+        end
+
+        # WrapExtrap interpolant vector — exercises WrapExtrap specialization with spacing + sm
+        xq_wrap = collect(range(-1.0, 8.0, 20))
+        itp_pre_w = pchip_interp(x, y; extrap = WrapExtrap())
+        itp_otf_w = pchip_interp(x, y; extrap = WrapExtrap(), coeffs = OnTheFly())
+        @test itp_otf_w(xq_wrap) ≈ itp_pre_w(xq_wrap) atol = 1.0e-13
+    end
+
+    # ========================================
+    # 19. Coverage: Range + PreCompute in-place (Range disambiguation)
+    # ========================================
+    @testset "Coverage: Range PreCompute in-place" begin
+        x_range = range(0.0, 2π, 30)
+        y = sin.(collect(x_range))
+        x_query = collect(range(0.1, 6.0, 15))
+        out = similar(x_query)
+
+        # These exercise the Range-disambiguated _*_interp_precompute! overloads
+        # that require x::AbstractRange + explicit PreCompute
+        pchip_interp!(out, x_range, y, x_query; coeffs = PreCompute())
+        @test out ≈ pchip_interp(collect(x_range), y, x_query; coeffs = PreCompute()) atol = 1.0e-14
+
+        akima_interp!(out, x_range, y, x_query; coeffs = PreCompute())
+        @test out ≈ akima_interp(collect(x_range), y, x_query; coeffs = PreCompute()) atol = 1.0e-14
+
+        cardinal_interp!(out, x_range, y, x_query; coeffs = PreCompute())
+        @test out ≈ cardinal_interp(collect(x_range), y, x_query; coeffs = PreCompute()) atol = 1.0e-14
+    end
+
+    # ========================================
+    # 20. Coverage: QuadraticND OnTheFly path
+    # ========================================
+    @testset "Coverage: QuadraticND OnTheFly" begin
+        xg = range(0.0, 2.0, 15)
+        yg = range(0.0, 1.0, 10)
+        data = [xi^2 + yj^2 for xi in xg, yj in yg]
+
+        # OnTheFly delegates to HeteroInterpolantND (quadratic_nd_interpolant.jl lines 55-57)
+        itp_otf = quadratic_interp((xg, yg), data; coeffs = OnTheFly())
+        itp_pre = quadratic_interp((xg, yg), data)
+        @test itp_otf((1.0, 0.5)) ≈ itp_pre((1.0, 0.5)) rtol = 1.0e-8
+    end
+
+    # ========================================
+    # 21. Coverage: _throw_onthefly_unsupported
+    # ========================================
+    @testset "Coverage: _throw_onthefly_unsupported" begin
+        # Direct call
+        @test_throws ArgumentError _throw_onthefly_unsupported("integrate")
+
+        # Via integrate on OnTheFly interpolant
+        x = range(0.0, 2π, 20)
+        y = sin.(collect(x))
+        itp_otf = pchip_interp(x, y; coeffs = OnTheFly())
+        @test_throws ArgumentError integrate(itp_otf, 0.0, 1.0)
+    end
+
+    # ========================================
+    # 22. Coverage: _adjoint_func for pchip/akima
+    # ========================================
+    @testset "Coverage: _adjoint_func pchip/akima" begin
+        @test _adjoint_func(pchip_interp) === pchip_adjoint
+        @test _adjoint_func(akima_interp) === akima_adjoint
     end
 
 end # @testset "Hermite OnTheFly"

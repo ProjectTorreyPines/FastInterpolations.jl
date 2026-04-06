@@ -124,9 +124,7 @@ _format_search(::LinearSearch) = "LinearSearch"
 _format_search(::LinearBinarySearch{MAX}) where {MAX} = "LinearBinarySearch{$MAX}"
 _format_search(::AutoSearch) = "AutoSearch (scalar→BinarySearch, vector→adaptive)"
 
-"""Format coefficient strategy. Returns empty string for PreCompute (default, not shown)."""
-_format_coeffs(::PreCompute) = ""
-_format_coeffs(::OnTheFly) = "on-the-fly"
+"""Format coefficient strategy from `itp.dy` field. Returns empty string for precomputed (default, not shown)."""
 _format_coeffs(::AbstractSlopeMethod) = "on-the-fly"
 _format_coeffs(::AbstractVector) = ""  # precomputed slopes vector → default
 

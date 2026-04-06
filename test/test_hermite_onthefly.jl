@@ -335,7 +335,93 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
     end
 
     # ========================================
-    # 12. CS type parameter is explicit
+    # 12. AutoCoeffs — type stability + zero allocation
+    # ========================================
+    @testset "AutoCoeffs type stability" begin
+        xg = collect(range(0.0, 2π, 100))
+        yg = sin.(xg)
+
+        # _resolve_coeffs itself is type-stable
+        @test @inferred(_resolve_coeffs(AutoCoeffs(), xg, 1.0)) isa OnTheFly
+        # Vector resolve returns Union{OnTheFly, PreCompute} — runtime branch, expected
+        @test _resolve_coeffs(AutoCoeffs(), xg, xg) isa AbstractCoeffStrategy
+        @test @inferred(_resolve_coeffs(AutoCoeffs())) isa PreCompute
+
+        # Scalar oneshot with AutoCoeffs default — type-stable end-to-end
+        @test @inferred(pchip_interp(xg, yg, 1.0)) isa Float64
+        @test @inferred(akima_interp(xg, yg, 1.0)) isa Float64
+        @test @inferred(cardinal_interp(xg, yg, 1.0)) isa Float64
+
+        # Internal onthefly paths — type-stable
+        @test @inferred(_pchip_interp_onthefly(xg, yg, 1.0, NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
+        @test @inferred(_akima_interp_onthefly(xg, yg, 1.0, NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
+        @test @inferred(_cardinal_interp_onthefly(xg, yg, 1.0, 0.0, NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
+    end
+
+    @testset "AutoCoeffs zero allocation — scalar" begin
+        # Function barrier: all setup inside for true allocation measurement
+        function _test_auto_scalar_alloc()
+            x = collect(range(0.0, 2π, 100))
+            y = sin.(x)
+            # Warmup
+            pchip_interp(x, y, 1.0)
+            pchip_interp(x, y, 1.0)
+            return @allocated pchip_interp(x, y, 1.0)
+        end
+        @test _test_auto_scalar_alloc() <= ALLOC_THRESHOLD
+
+        function _test_auto_scalar_alloc_akima()
+            x = collect(range(0.0, 2π, 100))
+            y = sin.(x)
+            akima_interp(x, y, 1.0)
+            akima_interp(x, y, 1.0)
+            return @allocated akima_interp(x, y, 1.0)
+        end
+        @test _test_auto_scalar_alloc_akima() <= ALLOC_THRESHOLD
+
+        function _test_auto_scalar_alloc_cardinal()
+            x = collect(range(0.0, 2π, 100))
+            y = sin.(x)
+            cardinal_interp(x, y, 1.0)
+            cardinal_interp(x, y, 1.0)
+            return @allocated cardinal_interp(x, y, 1.0)
+        end
+        @test _test_auto_scalar_alloc_cardinal() <= ALLOC_THRESHOLD
+    end
+
+    @testset "AutoCoeffs runtime strategy selection" begin
+        xg = collect(range(0.0, 2π, 100))
+        yg = sin.(xg)
+
+        # ── Verify correct strategy is selected based on xq length ──
+        xq_few = collect(range(0.1, 6.0, 10))     # 10 < 100 → OnTheFly
+        xq_equal = collect(range(0.1, 6.0, 100))   # 100 == 100 → OnTheFly (≤ threshold)
+        xq_many = collect(range(0.1, 6.0, 200))    # 200 > 100 → PreCompute
+
+        @test _resolve_coeffs(AutoCoeffs(), xg, xq_few) isa OnTheFly
+        @test _resolve_coeffs(AutoCoeffs(), xg, xq_equal) isa OnTheFly    # == is NOT >
+        @test _resolve_coeffs(AutoCoeffs(), xg, xq_many) isa PreCompute
+
+        # ── Both strategies produce identical results ──
+        for (method_fn, name) in [(pchip_interp, "pchip"), (akima_interp, "akima"), (cardinal_interp, "cardinal")]
+            # Few queries: default=OnTheFly, explicit PreCompute → same result
+            v_auto = method_fn(xg, yg, xq_few)
+            v_pre = method_fn(xg, yg, xq_few; coeffs = PreCompute())
+            v_otf = method_fn(xg, yg, xq_few; coeffs = OnTheFly())
+            @test v_auto ≈ v_pre atol = 1.0e-14
+            @test v_auto ≈ v_otf atol = 1.0e-14
+
+            # Many queries: default=PreCompute, explicit OnTheFly → same result
+            v_auto2 = method_fn(xg, yg, xq_many)
+            v_pre2 = method_fn(xg, yg, xq_many; coeffs = PreCompute())
+            v_otf2 = method_fn(xg, yg, xq_many; coeffs = OnTheFly())
+            @test v_auto2 ≈ v_pre2 atol = 1.0e-14
+            @test v_auto2 ≈ v_otf2 atol = 1.0e-14
+        end
+    end
+
+    # ========================================
+    # 13. CS type parameter is explicit
     # ========================================
     @testset "CS type parameter" begin
         x = range(0.0, 2π, 20)

@@ -127,7 +127,7 @@ C\$^1\$ continuous, monotonicity guaranteed for monotone input data.
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq;
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = OnTheFly(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),

@@ -131,7 +131,7 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq;
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = OnTheFly(),
         tension::Real = zero(Tg),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),

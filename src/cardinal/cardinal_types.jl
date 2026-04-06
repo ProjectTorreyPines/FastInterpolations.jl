@@ -35,10 +35,11 @@ struct CardinalInterpolant1D{
         Tv,
         X <: AbstractVector{Tg},
         Y <: AbstractVector{Tv},
-        DY <: AbstractVector{Tv},
+        DY,
         S <: AbstractGridSpacing{Tg},
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
+        CS <: AbstractCoeffStrategy,
     } <: AbstractHermiteInterpolant1D{Tg, Tv}
     x::X
     y::Y
@@ -48,7 +49,8 @@ struct CardinalInterpolant1D{
     search_policy::P
     tension::Tg
 
-    function CardinalInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}(
+    # PreCompute inner constructor
+    function CardinalInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, PreCompute}(
             x::AbstractVector{Tg}, y::AbstractVector{Tv}, dy::AbstractVector{Tv},
             spacing::S, extrap::E, search::P, tension::Tg
         ) where {
@@ -59,8 +61,25 @@ struct CardinalInterpolant1D{
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) == length(dy) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
         xc, yc, dyc = copy(x), copy(y), copy(dy)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), S, E, P}(
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), S, E, P, PreCompute}(
             xc, yc, dyc, spacing, extrap, search, tension
+        )
+    end
+
+    # OnTheFly inner constructor
+    function CardinalInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, OnTheFly}(
+            x::AbstractVector{Tg}, y::AbstractVector{Tv}, dy::AbstractSlopeMethod,
+            spacing::S, extrap::E, search::P, tension::Tg
+        ) where {
+            Tg <: AbstractFloat, Tv,
+            X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractSlopeMethod,
+            S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy,
+        }
+        length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
+        length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
+        xc, yc = copy(x), copy(y)
+        return new{Tg, Tv, typeof(xc), typeof(yc), DY, S, E, P, OnTheFly}(
+            xc, yc, dy, spacing, extrap, search, tension
         )
     end
 end
@@ -69,6 +88,7 @@ end
 # Outer Constructor
 # ========================================
 
+# Outer constructor: PreCompute (dy is a vector)
 @inline function CardinalInterpolant1D(
         x::X,
         y::Y,
@@ -84,7 +104,28 @@ end
     E = typeof(extrap)
     spacing = _create_spacing(x)
     S = typeof(spacing)
-    return CardinalInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}(
+    return CardinalInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, PreCompute}(
         x, y, dy, spacing, extrap, search, tension
+    )
+end
+
+# Outer constructor: OnTheFly (dy is a slope method tag)
+@inline function CardinalInterpolant1D(
+        x::X,
+        y::Y,
+        sm::DY;
+        tension::Tg = zero(Tg),
+        extrap::AbstractExtrap = NoExtrap(),
+        search::P = AutoSearch()
+    ) where {
+        Tg <: AbstractFloat, Tv,
+        X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractSlopeMethod,
+        P <: AbstractSearchPolicy,
+    }
+    E = typeof(extrap)
+    spacing = _create_spacing(x)
+    S = typeof(spacing)
+    return CardinalInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, OnTheFly}(
+        x, y, sm, spacing, extrap, search, tension
     )
 end

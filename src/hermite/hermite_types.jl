@@ -41,10 +41,11 @@ struct CubicHermiteInterpolant1D{
         Tv,
         X <: AbstractVector{Tg},
         Y <: AbstractVector{Tv},
-        DY <: AbstractVector{Tv},
+        DY,
         S <: AbstractGridSpacing{Tg},
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
+        CS <: AbstractCoeffStrategy,
     } <: AbstractHermiteInterpolant1D{Tg, Tv}
     x::X
     y::Y
@@ -53,7 +54,8 @@ struct CubicHermiteInterpolant1D{
     extrap::E
     search_policy::P
 
-    function CubicHermiteInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}(
+    # PreCompute inner constructor: dy is a precomputed slope vector
+    function CubicHermiteInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, PreCompute}(
             x::AbstractVector{Tg}, y::AbstractVector{Tv}, dy::AbstractVector{Tv},
             spacing::S, extrap::E, search::P
         ) where {
@@ -65,7 +67,7 @@ struct CubicHermiteInterpolant1D{
         length(x) == length(dy) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
         length(x) >= 2 || throw(ArgumentError("Hermite interpolation requires at least 2 points, got $(length(x))"))
         xc, yc, dyc = copy(x), copy(y), copy(dy)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), S, E, P}(
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), S, E, P, PreCompute}(
             xc, yc, dyc, spacing, extrap, search
         )
     end

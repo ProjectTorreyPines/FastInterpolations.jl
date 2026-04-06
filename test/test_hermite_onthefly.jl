@@ -285,32 +285,53 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
     # 11. AutoCoeffs
     # ========================================
     @testset "AutoCoeffs resolution" begin
-        # All local → OnTheFly
+        # ── ND overloads ──
         @test _resolve_coeffs(AutoCoeffs(), Val(2), (PchipInterp(), PchipInterp())) isa OnTheFly
-        @test _resolve_coeffs(AutoCoeffs(), Val(2), (AkimaInterp(), AkimaInterp())) isa OnTheFly
-
-        # Mixed local + global → OnTheFly (any local forces OnTheFly, no ND PreCompute for Hermite)
         @test _resolve_coeffs(AutoCoeffs(), Val(2), (PchipInterp(), CubicInterp())) isa OnTheFly
-
-        # Global 2D → PreCompute
         @test _resolve_coeffs(AutoCoeffs(), Val(2), (CubicInterp(), CubicInterp())) isa PreCompute
-
-        # 3D+ → OnTheFly regardless
         @test _resolve_coeffs(AutoCoeffs(), Val(3), (CubicInterp(), CubicInterp(), CubicInterp())) isa OnTheFly
 
-        # Passthrough
-        @test _resolve_coeffs(PreCompute(), Val(2), (PchipInterp(),)) isa PreCompute
-        @test _resolve_coeffs(OnTheFly(), Val(2), (CubicInterp(),)) isa OnTheFly
+        # ── 1D overloads: scalar, vector, interpolant ──
+        xg = collect(range(0.0, 2π, 100))
 
-        # Explicit PreCompute + Hermite ND → ArgumentError
+        # Scalar → always OnTheFly
+        @test _resolve_coeffs(AutoCoeffs(), xg, 1.0) isa OnTheFly
+
+        # Vector: few queries → OnTheFly, many queries → PreCompute
+        xq_few = collect(range(0.1, 6.0, 10))    # 10 < 100
+        xq_many = collect(range(0.1, 6.0, 200))   # 200 > 100
+        @test _resolve_coeffs(AutoCoeffs(), xg, xq_few) isa OnTheFly
+        @test _resolve_coeffs(AutoCoeffs(), xg, xq_many) isa PreCompute
+
+        # Interpolant (no query) → PreCompute
+        @test _resolve_coeffs(AutoCoeffs()) isa PreCompute
+
+        # ── Passthrough ──
+        @test _resolve_coeffs(PreCompute(), xg, 1.0) isa PreCompute
+        @test _resolve_coeffs(OnTheFly(), xg, xq_many) isa OnTheFly
+
+        # ��─ ND validation ──
         x2d = range(0.0, 2π, 15)
         y2d = range(0.0, π, 10)
         data2d = [sin(xi) * cos(yj) for xi in x2d, yj in y2d]
         @test_throws ArgumentError interp((x2d, y2d), data2d; method = (PchipInterp(), CubicInterp()), coeffs = PreCompute())
-
-        # Default (AutoCoeffs) + mixed → works (auto OnTheFly)
         itp_auto = interp((x2d, y2d), data2d; method = (PchipInterp(), CubicInterp()))
         @test itp_auto((1.0, 0.5)) isa Float64
+
+        # ── Verify runtime smart default in oneshot ──
+        yg = sin.(xg)
+
+        # Scalar oneshot (default AutoCoeffs → OnTheFly): should match explicit OnTheFly
+        @test pchip_interp(xg, yg, 1.0) ≈ pchip_interp(xg, yg, 1.0; coeffs = OnTheFly()) atol = 1.0e-14
+
+        # Vector few (default AutoCoeffs → OnTheFly): should match explicit OnTheFly
+        @test pchip_interp(xg, yg, xq_few) ≈ pchip_interp(xg, yg, xq_few; coeffs = OnTheFly()) atol = 1.0e-14
+
+        # Vector many (default AutoCoeffs → PreCompute): should match explicit PreCompute
+        @test pchip_interp(xg, yg, xq_many) ≈ pchip_interp(xg, yg, xq_many; coeffs = PreCompute()) atol = 1.0e-14
+
+        # Both strategies produce same results (just different performance)
+        @test pchip_interp(xg, yg, xq_many; coeffs = OnTheFly()) ≈ pchip_interp(xg, yg, xq_many; coeffs = PreCompute()) atol = 1.0e-14
     end
 
     # ========================================

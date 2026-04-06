@@ -81,22 +81,7 @@ Automatic coefficient strategy selection based on compile-time information.
 """
 struct AutoCoeffs <: AbstractCoeffStrategy end
 
-# Resolution: compile-time strategy selection
-@inline _resolve_coeffs(c::PreCompute, ::Val, _) = c
-@inline _resolve_coeffs(c::OnTheFly, ::Val, _) = c
-@inline function _resolve_coeffs(::AutoCoeffs, ::Val{N}, methods) where {N}
-    N >= 3 && return OnTheFly()
-    _has_any_local_method(methods) && return OnTheFly()  # any local → OnTheFly (no ND PreCompute for Hermite yet)
-    return PreCompute()
-end
-
-@inline _has_any_local_method(methods::Tuple) = any(_is_local_method, methods)
-
-@inline _is_local_method(::PchipInterp) = true
-@inline _is_local_method(::CardinalInterp) = true
-@inline _is_local_method(::AkimaInterp) = true
-@inline _is_local_method(::AbstractInterpMethod) = false
-@inline _all_local_methods(methods::Tuple) = all(_is_local_method, methods)
+# Resolution logic moved to src/core/coeff_policy.jl
 
 # ========================================
 # Generic ND Coefficient Storage

@@ -127,13 +127,14 @@ C\$^1\$ continuous, monotonicity guaranteed for monotone input data.
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq;
-        coeffs::AbstractCoeffStrategy = OnTheFly(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    if coeffs isa OnTheFly
+    resolved = _resolve_coeffs(coeffs, x, xq)
+    if resolved isa OnTheFly
         return _pchip_interp_onthefly(x, y, xq, extrap, deriv, search, hint)
     end
     return _pchip_interp_precompute(x, y, xq, extrap, deriv, search, hint)
@@ -149,13 +150,14 @@ In-place PCHIP interpolation with monotone-preserving slopes.
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector{Tg};
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tv}
-    if coeffs isa OnTheFly
+    resolved = _resolve_coeffs(coeffs, x, x_query)
+    if resolved isa OnTheFly
         return _pchip_interp_onthefly!(output, x, y, x_query, extrap, deriv, search, hint)
     end
     return _pchip_interp_precompute!(output, x, y, x_query, extrap, deriv, search, hint)
@@ -167,13 +169,14 @@ end
         x::AbstractRange{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector{Tg};
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tv}
-    if coeffs isa OnTheFly
+    resolved = _resolve_coeffs(coeffs, x, x_query)
+    if resolved isa OnTheFly
         return _pchip_interp_onthefly!(output, x, y, x_query, extrap, deriv, search, hint)
     end
     return _pchip_interp_precompute!(output, x, y, x_query, extrap, deriv, search, hint)
@@ -188,7 +191,7 @@ function pchip_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector{Tg};
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),

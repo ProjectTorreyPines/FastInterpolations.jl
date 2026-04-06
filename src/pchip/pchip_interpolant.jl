@@ -45,13 +45,14 @@ itp(1.5; deriv=DerivOp(1))       # first derivative
 @inline function pchip_interp(
         x::AbstractVector{TX},
         y::AbstractVector{TY};
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX <: Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     extrap_p = _promote_extrap(extrap, eltype(y_p))
-    if coeffs isa OnTheFly
+    resolved = _resolve_coeffs(coeffs)
+    if resolved isa OnTheFly
         return PchipInterpolant1D(x_p, y_p, PchipSlopes(); extrap = extrap_p, search)
     else
         dy_p = similar(y_p)

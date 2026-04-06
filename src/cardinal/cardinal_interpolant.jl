@@ -28,14 +28,15 @@ itp(0.5)
         x::AbstractVector{TX},
         y::AbstractVector{TY};
         tension::Real = 0.0,
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX <: Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     Tg = eltype(x_p)
     extrap_p = _promote_extrap(extrap, eltype(y_p))
-    if coeffs isa OnTheFly
+    resolved = _resolve_coeffs(coeffs)
+    if resolved isa OnTheFly
         return CardinalInterpolant1D(x_p, y_p, CardinalSlopes(Tg(tension)); tension = Tg(tension), extrap = extrap_p, search)
     else
         dy_p = similar(y_p)

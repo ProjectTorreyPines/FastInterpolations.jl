@@ -1,7 +1,7 @@
 # ========================================
 # Cardinal Spline 1D Oneshot API
 # ========================================
-# Public API: cardinal_interp(x, y, xq; coeffs=PreCompute(), tension=0.0, ...)
+# Public API: cardinal_interp(x, y, xq; coeffs=AutoCoeffs(), tension=0.0, ...)
 # Routes to internal _cardinal_interp_precompute (bulk slopes + pool)
 # or _cardinal_interp_onthefly (local slopes, no pool).
 
@@ -118,7 +118,7 @@ end
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 """
-    cardinal_interp(x, y, xq; coeffs=PreCompute(), tension=0.0, extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
+    cardinal_interp(x, y, xq; coeffs=AutoCoeffs(), tension=0.0, extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 Cardinal spline interpolation at a single query point.
 Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
@@ -131,21 +131,22 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq;
-        coeffs::AbstractCoeffStrategy = OnTheFly(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         tension::Real = zero(Tg),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    if coeffs isa OnTheFly
+    resolved = _resolve_coeffs(coeffs, x, xq)
+    if resolved isa OnTheFly
         return _cardinal_interp_onthefly(x, y, xq, Tg(tension), extrap, deriv, search, hint)
     end
     return _cardinal_interp_precompute(x, y, xq, Tg(tension), extrap, deriv, search, hint)
 end
 
 """
-    cardinal_interp!(output, x, y, x_query; coeffs=PreCompute(), tension=0.0, ...)
+    cardinal_interp!(output, x, y, x_query; coeffs=AutoCoeffs(), tension=0.0, ...)
 
 In-place cardinal spline interpolation.
 """
@@ -154,14 +155,15 @@ In-place cardinal spline interpolation.
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector{Tg};
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         tension::Real = zero(Tg),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tv}
-    if coeffs isa OnTheFly
+    resolved = _resolve_coeffs(coeffs, x, x_query)
+    if resolved isa OnTheFly
         return _cardinal_interp_onthefly!(output, x, y, x_query, Tg(tension), extrap, deriv, search, hint)
     end
     return _cardinal_interp_precompute!(output, x, y, x_query, Tg(tension), extrap, deriv, search, hint)
@@ -173,21 +175,22 @@ end
         x::AbstractRange{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector{Tg};
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         tension::Real = zero(Tg),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg <: AbstractFloat, Tv}
-    if coeffs isa OnTheFly
+    resolved = _resolve_coeffs(coeffs, x, x_query)
+    if resolved isa OnTheFly
         return _cardinal_interp_onthefly!(output, x, y, x_query, Tg(tension), extrap, deriv, search, hint)
     end
     return _cardinal_interp_precompute!(output, x, y, x_query, Tg(tension), extrap, deriv, search, hint)
 end
 
 """
-    cardinal_interp(x, y, x_query; coeffs=PreCompute(), tension=0.0, ...)
+    cardinal_interp(x, y, x_query; coeffs=AutoCoeffs(), tension=0.0, ...)
 
 Cardinal spline interpolation at multiple query points. Returns `Vector{Tv}`.
 """
@@ -195,7 +198,7 @@ function cardinal_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector{Tg};
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         tension::Real = zero(Tg),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),

@@ -17,6 +17,7 @@ include("hermite/hermite.jl")
 include("pchip/pchip.jl")
 include("cardinal/cardinal.jl")
 include("akima/akima.jl")
+include("core/coeff_policy.jl")  # AutoCoeffs resolution (after method types + strategy types, before hetero)
 include("hetero/hetero.jl")
 
 # Derivative view wrapper (depends on all interpolant types)

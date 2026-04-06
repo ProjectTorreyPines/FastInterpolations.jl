@@ -243,8 +243,10 @@ end
         itp = cubic_interp((x, y), data; coeffs = PreCompute())
         @test itp isa CubicInterpolantND
 
-        # OnTheFly should throw (not implemented)
-        @test_throws ArgumentError cubic_interp((x, y), data; coeffs = OnTheFly())
+        # OnTheFly → delegates to HeteroInterpolantND
+        itp_otf = cubic_interp((x, y), data; coeffs = OnTheFly())
+        @test itp_otf isa HeteroInterpolantND
+        @test itp_otf((0.5, 0.5)) ≈ itp((0.5, 0.5)) rtol = 1.0e-10
     end
 
     @testset "Dimension Mismatch Errors" begin

@@ -18,70 +18,8 @@
 # Coefficient Strategy Types
 # ========================================
 
-"""
-    AbstractCoeffStrategy
-
-Abstract supertype for coefficient computation strategies in ND interpolation.
-
-# Implemented Strategies
-- `PreCompute`: Precompute all partial derivatives at construction (O(1) query)
-- `OnTheFly`: Compute coefficients lazily at query time (O(n) query)
-"""
-abstract type AbstractCoeffStrategy end
-
-"""
-    PreCompute <: AbstractCoeffStrategy
-
-Precompute all partial derivatives at construction time.
-
-For N-dimensional interpolation, stores 2^N partial derivatives per grid point:
-- 2D: 4 partials (f, ∂f/∂x, ∂f/∂y, ∂²f/∂x∂y)
-- 3D: 8 partials (f, ∂f/∂x, ∂f/∂y, ∂f/∂z, ∂²f/∂x∂y, ∂²f/∂x∂z, ∂²f/∂y∂z, ∂³f/∂x∂y∂z)
-
-# Trade-offs
-- **Memory**: O(2^N × n^N) - higher than OnTheFly
-- **Construction**: O(N × n^N) - expensive (N passes of 1D spline solving)
-- **Query**: O(1) - ultra-fast (just polynomial evaluation)
-
-# Best for
-- Static data with many queries
-- Real-time applications requiring fast evaluation
-- Scenarios where construction cost can be amortized
-"""
-struct PreCompute <: AbstractCoeffStrategy end
-
-"""
-    OnTheFly <: AbstractCoeffStrategy
-
-Compute coefficients lazily at query time using tensor-product (separable) approach.
-
-Stores only the original data; computes 1D spline solutions per-axis at each query.
-
-# Trade-offs
-- **Memory**: O(n^N) - minimal (only original data)
-- **Construction**: O(1) - instant (just store data reference)
-- **Query**: O(n) per axis - slower (must solve 1D systems)
-
-# Best for
-- Few queries on large datasets
-- Memory-constrained environments
-- Data that changes frequently
-"""
-struct OnTheFly <: AbstractCoeffStrategy end
-
-"""
-    AutoCoeffs <: AbstractCoeffStrategy
-
-Automatic coefficient strategy selection based on compile-time information.
-
-# Rules
-- `N ≥ 3` → `OnTheFly()` (2^N memory explosion prevention)
-- All local methods (PCHIP, Cardinal, Akima) → `OnTheFly()` (no global solve needed)
-- Global solve methods (Cubic, Quadratic) in 1D-2D → `PreCompute()`
-"""
-struct AutoCoeffs <: AbstractCoeffStrategy end
-
-# Resolution logic moved to src/core/coeff_policy.jl
+# AbstractCoeffStrategy, PreCompute, OnTheFly, AutoCoeffs → moved to src/core/coeff_types.jl
+# Resolution logic → src/core/coeff_policy.jl
 
 # ========================================
 # Generic ND Coefficient Storage

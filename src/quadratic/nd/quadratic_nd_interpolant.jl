@@ -46,8 +46,17 @@ function quadratic_interp(
         data::AbstractArray{Tv_raw, N};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch()
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = PreCompute()
     ) where {N, Tv_raw}
+
+    # OnTheFly → delegate to HeteroInterpolantND (sequential 1D collapse)
+    if coeffs isa OnTheFly
+        bcs_tuple = bc isa AbstractBC ? ntuple(_ -> bc, Val(N)) : bc
+        methods = map(QuadraticInterp, bcs_tuple)
+        return _build_hetero_nd(grids, data, methods, extrap, search)
+    end
+
     # Zero-allocation type promotion
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64

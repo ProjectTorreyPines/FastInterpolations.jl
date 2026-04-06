@@ -84,6 +84,13 @@ function cubic_interp(
     searches = _resolve_search_nd(search, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+
+    # OnTheFly → delegate to HeteroInterpolantND (sequential 1D collapse)
+    if coeffs isa OnTheFly
+        methods = map(CubicInterp, bcs)
+        return _build_hetero_nd(grids, data, methods, extrap, search)
+    end
+
     return _build_nd_interpolant(grids_typed, data_typed, bcs, extraps_val, searches, coeffs)
 end
 

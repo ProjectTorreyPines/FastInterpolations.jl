@@ -70,6 +70,10 @@ end
         itp::AbstractInterpolant{Tg, Tv};
         search = nothing, hint = nothing
     ) where {Tg <: AbstractFloat, Tv}
+    # Guard: OnTheFly Hermite interpolants don't support integrate yet
+    if itp isa AbstractHermiteInterpolant1D && itp.dy isa AbstractSlopeMethod
+        _throw_onthefly_unsupported("integrate")
+    end
     x = _grid_1d(itp)
     Tout = promote_type(Tv, Tg)
     return _integrate_1d_fulldomain(x, _spacing(itp), _full_cell_fn(itp), Tout)

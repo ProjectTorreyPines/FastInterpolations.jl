@@ -289,7 +289,8 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
         @test _resolve_coeffs(AutoCoeffs(), Val(2), (PchipInterp(), PchipInterp())) isa OnTheFly
         @test _resolve_coeffs(AutoCoeffs(), Val(2), (PchipInterp(), CubicInterp())) isa OnTheFly
         @test _resolve_coeffs(AutoCoeffs(), Val(2), (CubicInterp(), CubicInterp())) isa PreCompute
-        @test _resolve_coeffs(AutoCoeffs(), Val(3), (CubicInterp(), CubicInterp(), CubicInterp())) isa OnTheFly
+        # Global methods (Cubic) stay PreCompute even for N≥3 (integrate/adjoint support)
+        @test _resolve_coeffs(AutoCoeffs(), Val(3), (CubicInterp(), CubicInterp(), CubicInterp())) isa PreCompute
 
         # ── 1D overloads: scalar, vector, interpolant ──
         xg = collect(range(0.0, 2π, 100))

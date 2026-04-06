@@ -27,14 +27,14 @@ end
 # Interpolant is built once, called many times — amortize the slope computation.
 @inline _resolve_coeffs(::AutoCoeffs) = PreCompute()
 
-# ── AutoCoeffs: ND → dimensionality + method type check ──
-# Linear/Constant have no slopes — always use specialized ND types (PreCompute is a no-op).
-# For derivative-based methods (Cubic, Quadratic, Hermite family):
-#   N ≥ 3 → OnTheFly (2^N partial storage becomes expensive)
-#   any local method → OnTheFly (no ND PreCompute for Hermite yet)
+# ── AutoCoeffs: ND → method type check ──
+# Linear/Constant have no slopes — always use specialized ND types.
+# Local Hermite methods → OnTheFly (no ND PreCompute for Hermite yet).
+# Global methods (Cubic, Quadratic) → PreCompute (specialized ND types with integrate/adjoint).
+# NOTE: N≥3 rule removed — would route Cubic/Quadratic to HeteroInterpolantND which lacks
+# integrate/adjoint support. Can be re-added when HeteroInterpolantND gains these features.
 @inline function _resolve_coeffs(::AutoCoeffs, ::Val{N}, methods) where {N}
-    _all_trivial_methods(methods) && return PreCompute()  # Linear/Constant: no slopes
-    N >= 3 && return OnTheFly()
+    _all_trivial_methods(methods) && return PreCompute()
     _has_any_local_method(methods) && return OnTheFly()
     return PreCompute()
 end

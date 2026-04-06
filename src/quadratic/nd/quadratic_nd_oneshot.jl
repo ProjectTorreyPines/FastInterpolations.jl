@@ -109,10 +109,30 @@ end
 # ========================================
 
 """
-    quadratic_interp(grids, data, query; deriv=EvalValue(), kwargs...)
+    quadratic_interp(grids, data, query; deriv=EvalValue(), coeffs=AutoCoeffs(), kwargs...)
 
 One-shot ND quadratic interpolation at a single point.
 Zero-allocation after warmup.
+
+# Strategy selection (`coeffs`)
+- `AutoCoeffs()` (default): scalar queries use `OnTheFly()` (2^N× less work
+  than `PreCompute()`); batch and `ForwardDiff.Dual` queries use `PreCompute()`.
+- `PreCompute()`: explicitly build all nodal partial derivatives first, then
+  evaluate. Uses `Right(QuadraticFit())` for mixed partials regardless of the
+  user-specified `bc` (see `_get_effective_bc_quadratic`).
+- `OnTheFly()`: sequential 1D interpolation per fiber via `_collapse_dims`.
+  Applies the user-specified `bc` uniformly at every 1D step, with no
+  mixed-partial BC switch.
+
+!!! note "Strategy discrepancy for non-default BCs"
+    For `bc` that does not match the data's actual boundary curvature
+    (e.g., `ZeroCurvBC()` on data whose `d²f/dy²` at the boundary is
+    non-zero), `PreCompute()` and `OnTheFly()` can produce slightly
+    different results (~1e-6 relative) because the two paths use
+    different effective BCs when forming the mixed partial. Both paths
+    are self-consistent and converge at the expected order. For BCs
+    that match the data's boundary behavior, the results are
+    bit-identical.
 """
 function quadratic_interp(
         grids::NTuple{N, AbstractVector},

@@ -354,13 +354,39 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
 
     @testset "Quadratic OnTheFly with all supported BCs" begin
         # Exercise _to_quadratic_bc for each BC variant.
-        # OnTheFly (1D-per-fiber) and PreCompute (tensor-product nodal derivatives)
-        # are mathematically equivalent but take different numerical paths, so
-        # non-default BCs (Right/MinCurvFit/ZeroSlopeBC) diverge at ~1e-6 relative.
+        #
+        # NOTE: PreCompute and OnTheFly use different effective BCs for MIXED
+        # partials (`d²f/dxdy`). The PreCompute path, in
+        # `_get_effective_bc_quadratic` (quadratic_nd_build.jl), forces
+        # `Right(QuadraticFit())` whenever `p_src > 1` (i.e., computing a
+        # cross-derivative from an already-differentiated array). OnTheFly,
+        # being a sequential 1D composition, cannot replicate that switch
+        # and applies the user's BC uniformly at every 1D step.
+        #
+        # Both paths are self-consistent and converge at the expected order,
+        # but for BCs that don't match the data's actual boundary behavior
+        # (e.g., ZeroCurvBC forcing d²/dy²=0 on smooth non-zero-curvature
+        # data) the two paths diverge at ~1e-6 relative. For BCs that are a
+        # good fit for the data, the paths give bit-identical results.
+        # See brainstorm discussion in plans/keen-jumping-dijkstra.md.
         for bc in (Left(QuadraticFit()), Right(QuadraticFit()), MinCurvFit(), ZeroCurvBC(), ZeroSlopeBC())
             val_otf = quadratic_interp((x, y), data_2d, (qx, qy); bc = bc, coeffs = OnTheFly())
             val_pre = quadratic_interp((x, y), data_2d, (qx, qy); bc = bc, coeffs = PreCompute())
             @test val_otf ≈ val_pre rtol = 1.0e-5
+        end
+    end
+
+    @testset "Quadratic BC-exact data: OnTheFly ≡ PreCompute bit-identical" begin
+        # Proof that OnTheFly/PreCompute divergence is purely due to BC-data
+        # mismatch (PreCompute's mixed-partial BC switch), not a numerical bug.
+        # When the BC exactly matches the data's boundary behavior, both paths
+        # produce bit-identical results even for ZeroCurvBC.
+        # f(x,y) = sin(x)*(y - π) has d²f/dy² = 0 everywhere → ZeroCurvBC exact.
+        data_exact = [sin(xi) * (yj - π) for xi in x, yj in y]
+        for bc in (Left(QuadraticFit()), ZeroCurvBC(), MinCurvFit())
+            val_otf = quadratic_interp((x, y), data_exact, (qx, qy); bc = bc, coeffs = OnTheFly())
+            val_pre = quadratic_interp((x, y), data_exact, (qx, qy); bc = bc, coeffs = PreCompute())
+            @test val_otf == val_pre  # bit-identical
         end
     end
 

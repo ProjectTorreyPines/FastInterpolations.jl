@@ -124,6 +124,12 @@ _format_search(::LinearSearch) = "LinearSearch"
 _format_search(::LinearBinarySearch{MAX}) where {MAX} = "LinearBinarySearch{$MAX}"
 _format_search(::AutoSearch) = "AutoSearch (scalar→BinarySearch, vector→adaptive)"
 
+"""Format coefficient strategy. Returns empty string for PreCompute (default, not shown)."""
+_format_coeffs(::PreCompute) = ""
+_format_coeffs(::OnTheFly) = "on-the-fly"
+_format_coeffs(::AbstractSlopeMethod) = "on-the-fly"
+_format_coeffs(::AbstractVector) = ""  # precomputed slopes vector → default
+
 """Format boundary condition for display."""
 _format_bc(::ZeroCurvBC) = "ZeroCurv (S''=0 at ends)"
 _format_bc(::ZeroSlopeBC) = "ZeroSlope (S'=0 at ends)"
@@ -336,8 +342,10 @@ end
 
 function Base.show(io::IO, itp::PchipInterpolant1D{Tg, Tv}) where {Tg, Tv}
     n = length(itp.x)
+    cs = _format_coeffs(itp.dy)
     _show_type_header_2params(io, "PchipInterpolant1D", Tg, Tv)
-    return print(io, "($n pts, monotone)")
+    suffix = isempty(cs) ? "monotone" : "monotone, $cs"
+    return print(io, "($n pts, $suffix)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", itp::PchipInterpolant1D{Tg, Tv}) where {Tg, Tv}
@@ -351,6 +359,11 @@ function Base.show(io::IO, ::MIME"text/plain", itp::PchipInterpolant1D{Tg, Tv}) 
         println(io)
         _show_row(io, false, "Search:", _format_search(itp.search_policy))
     end
+    cs = _format_coeffs(itp.dy)
+    if !isempty(cs)
+        println(io)
+        _show_row(io, false, "Coeffs:", cs)
+    end
     println(io)
     return _show_row(io, true, "Slopes:", "PCHIP monotone (C\u00B9)")
 end
@@ -359,8 +372,10 @@ end
 
 function Base.show(io::IO, itp::CardinalInterpolant1D{Tg, Tv}) where {Tg, Tv}
     n = length(itp.x)
+    cs = _format_coeffs(itp.dy)
     _show_type_header_2params(io, "CardinalInterpolant1D", Tg, Tv)
-    return print(io, "($n pts, cardinal)")
+    suffix = isempty(cs) ? "cardinal" : "cardinal, $cs"
+    return print(io, "($n pts, $suffix)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", itp::CardinalInterpolant1D{Tg, Tv}) where {Tg, Tv}
@@ -374,6 +389,11 @@ function Base.show(io::IO, ::MIME"text/plain", itp::CardinalInterpolant1D{Tg, Tv
         println(io)
         _show_row(io, false, "Search:", _format_search(itp.search_policy))
     end
+    cs = _format_coeffs(itp.dy)
+    if !isempty(cs)
+        println(io)
+        _show_row(io, false, "Coeffs:", cs)
+    end
     println(io)
     tension_str = itp.tension == 0 ? "CatmullRom" : "tension=$(itp.tension)"
     return _show_row(io, true, "Slopes:", "cardinal spline ($tension_str, C\u00B9)")
@@ -383,8 +403,10 @@ end
 
 function Base.show(io::IO, itp::AkimaInterpolant1D{Tg, Tv}) where {Tg, Tv}
     n = length(itp.x)
+    cs = _format_coeffs(itp.dy)
     _show_type_header_2params(io, "AkimaInterpolant1D", Tg, Tv)
-    return print(io, "($n pts, outlier-robust)")
+    suffix = isempty(cs) ? "outlier-robust" : "outlier-robust, $cs"
+    return print(io, "($n pts, $suffix)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", itp::AkimaInterpolant1D{Tg, Tv}) where {Tg, Tv}
@@ -397,6 +419,11 @@ function Base.show(io::IO, ::MIME"text/plain", itp::AkimaInterpolant1D{Tg, Tv}) 
     if !is_range
         println(io)
         _show_row(io, false, "Search:", _format_search(itp.search_policy))
+    end
+    cs = _format_coeffs(itp.dy)
+    if !isempty(cs)
+        println(io)
+        _show_row(io, false, "Coeffs:", cs)
     end
     println(io)
     return _show_row(io, true, "Slopes:", "Akima weighted (C\u00B9)")

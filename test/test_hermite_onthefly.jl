@@ -289,8 +289,8 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
         @test _resolve_coeffs(AutoCoeffs(), Val(2), (PchipInterp(), PchipInterp())) isa OnTheFly
         @test _resolve_coeffs(AutoCoeffs(), Val(2), (AkimaInterp(), AkimaInterp())) isa OnTheFly
 
-        # Mixed local + global → PreCompute (not all local)
-        @test _resolve_coeffs(AutoCoeffs(), Val(2), (PchipInterp(), CubicInterp())) isa PreCompute
+        # Mixed local + global → OnTheFly (any local forces OnTheFly, no ND PreCompute for Hermite)
+        @test _resolve_coeffs(AutoCoeffs(), Val(2), (PchipInterp(), CubicInterp())) isa OnTheFly
 
         # Global 2D → PreCompute
         @test _resolve_coeffs(AutoCoeffs(), Val(2), (CubicInterp(), CubicInterp())) isa PreCompute
@@ -301,6 +301,16 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
         # Passthrough
         @test _resolve_coeffs(PreCompute(), Val(2), (PchipInterp(),)) isa PreCompute
         @test _resolve_coeffs(OnTheFly(), Val(2), (CubicInterp(),)) isa OnTheFly
+
+        # Explicit PreCompute + Hermite ND → ArgumentError
+        x2d = range(0.0, 2π, 15)
+        y2d = range(0.0, π, 10)
+        data2d = [sin(xi) * cos(yj) for xi in x2d, yj in y2d]
+        @test_throws ArgumentError interp((x2d, y2d), data2d; method = (PchipInterp(), CubicInterp()), coeffs = PreCompute())
+
+        # Default (AutoCoeffs) + mixed → works (auto OnTheFly)
+        itp_auto = interp((x2d, y2d), data2d; method = (PchipInterp(), CubicInterp()))
+        @test itp_auto((1.0, 0.5)) isa Float64
     end
 
     # ========================================

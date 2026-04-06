@@ -69,16 +69,36 @@ end
 function _interp_nd_dispatch(
         grids, data, methods::Tuple{Vararg{AbstractInterpMethod, N}}, coeffs, extrap, search
     ) where {N}
-    if coeffs isa PreCompute && !_has_local_method(methods)
+    _validate_nd_coeffs(coeffs, methods)
+    if coeffs isa PreCompute
         return _build_hetero_precomputed(grids, data, methods, extrap, search)
     else
-        # OnTheFly, or PreCompute with Hermite methods (no ND PreCompute for Hermite yet)
         return _build_hetero_nd(grids, data, methods, extrap, search)
     end
 end
 
-# Check if any method in the tuple is a local Hermite type (no PreCompute ND support yet)
+# ── ND coeffs validation ──
+# Reject unsupported PreCompute + local Hermite combinations with clear error.
 @inline _has_local_method(methods::Tuple) = any(_is_local_method, methods)
+
+@inline _validate_nd_coeffs(::OnTheFly, _) = nothing
+@inline function _validate_nd_coeffs(::PreCompute, methods)
+    _has_local_method(methods) && _throw_precompute_unsupported(methods)
+    return nothing
+end
+
+@noinline function _throw_precompute_unsupported(methods)
+    local_names = String[]
+    for m in methods
+        _is_local_method(m) && push!(local_names, string(typeof(m)))
+    end
+    throw(
+        ArgumentError(
+            "PreCompute() is not yet supported for $(join(local_names, ", ")) in ND. " *
+                "Use coeffs=OnTheFly() or omit the coeffs kwarg for automatic selection."
+        )
+    )
+end
 
 # ========================================
 # Per-Axis Validation
@@ -343,7 +363,8 @@ Automatically dispatches to the optimal implementation:
 - `method`: Interpolation method(s) (**required**)
   - Single `AbstractInterpMethod`: broadcast to all axes (e.g., `method=CubicInterp()`)
   - `Tuple{Vararg{AbstractInterpMethod, N}}`: per-axis (e.g., `method=(CubicInterp(), LinearInterp())`)
-- `coeffs=PreCompute()`: Coefficient strategy (heterogeneous only)
+- `coeffs=AutoCoeffs()`: Coefficient strategy (default: automatic selection)
+  - `AutoCoeffs()`: Automatic — picks best strategy based on methods and dimensionality
   - `PreCompute()`: Precompute partial derivatives (O(1) eval)
   - `OnTheFly()`: Build 1D per query (zero build cost, O(n) eval)
 - `extrap=NoExtrap()`: Extrapolation mode(s) — single or per-axis tuple
@@ -372,7 +393,7 @@ function interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N};
         method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     ) where {N}

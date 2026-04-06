@@ -58,10 +58,11 @@ end
 end
 
 # ========================================
-# Sequential Dimension Collapse
+# Sequential Dimension Collapse (Pool-Based)
 # ========================================
 # Recursive type-stable dispatch: each step removes dim 1 and recurses
 # with Base.tail of all tuples. Julia infers concrete types at each level.
+# Intermediate arrays are pool-allocated via @with_pool (zero heap alloc after warmup).
 
 # Base case: 1D data → one-shot eval final dimension
 @inline function _collapse_dims(
@@ -80,7 +81,7 @@ end
 end
 
 # Recursive case: collapse dim 1 → (M-1)D array, then recurse
-@inline function _collapse_dims(
+@inline @with_pool pool function _collapse_dims(
         data::AbstractArray{Tv, M},
         grids::Tuple{AbstractVector, Vararg{AbstractVector}},
         methods::Tuple{AbstractInterpMethod, Vararg{AbstractInterpMethod}},
@@ -90,9 +91,8 @@ end
         searches::Tuple{AbstractSearchPolicy, Vararg{AbstractSearchPolicy}},
         hints,
     ) where {Tv, M}
-    # Allocate intermediate array for collapsed result
     remaining_size = Base.tail(size(data))
-    result = Array{Tv}(undef, remaining_size...)
+    result = acquire!(pool, Tv, remaining_size)
     hint_1 = _first_hint(hints)
 
     # Collapse first dimension: for each fiber along dim 1, one-shot eval

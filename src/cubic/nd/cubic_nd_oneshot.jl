@@ -33,7 +33,7 @@ function cubic_interp(
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     # Type promotion + validation (same as constructor path)
@@ -51,6 +51,13 @@ function cubic_interp(
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
+
+    # OnTheFly: skip full partials build — use sequential 1D collapse (2^N× less work)
+    coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, query, ntuple(_ -> CubicInterp(), Val(N)))
+    if coeffs_resolved isa OnTheFly
+        methods = map(CubicInterp, bcs)
+        return _interp_nd_oneshot_onthefly(grids_typed, data, query, methods, extraps_val, searches, ops, hint)::Tr
+    end
     return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
 
@@ -70,7 +77,7 @@ function cubic_interp(
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -215,7 +222,7 @@ function cubic_interp!(
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-        coeffs::AbstractCoeffStrategy = PreCompute(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     _query_check_ndims(queries, Val(N))

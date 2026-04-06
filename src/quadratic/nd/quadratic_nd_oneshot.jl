@@ -122,6 +122,7 @@ function quadratic_interp(
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -135,6 +136,16 @@ function quadratic_interp(
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
+
+    # OnTheFly: skip full partials build — use sequential 1D collapse (2^N× less work)
+    # BC must be converted to QuadraticBC for 1D API compatibility
+    # (e.g., ZeroCurvBC → Right(Deriv2(0)), ZeroSlopeBC → Left(Deriv1(0)))
+    coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, query, ntuple(_ -> QuadraticInterp(), Val(N)))
+    if coeffs_resolved isa OnTheFly
+        sample = @inbounds first(data)
+        methods = map(bc_i -> QuadraticInterp(_to_quadratic_bc(bc_i, sample)), bcs)
+        return _interp_nd_oneshot_onthefly(grids_typed, data, query, methods, extraps_val, searches, ops, hint)::Tr
+    end
     return _quadratic_interp_nd_oneshot(
         grids_typed, data, query, bcs, extraps_val, searches, ops, hint
     )::Tr
@@ -155,6 +166,7 @@ function quadratic_interp(
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -162,7 +174,7 @@ function quadratic_interp(
     Tq = _query_eltype(queries)
     Tr = _output_eltype(Tv, Tg, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
-    quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search, hint)
+    quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output
 end
 
@@ -186,6 +198,7 @@ function quadratic_interp!(
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     _query_check_ndims(queries, Val(N))

@@ -103,6 +103,26 @@ function _slope_1d_quadratic!(
 end
 
 # ========================================
+# Abstract BC → QuadraticBC Conversion
+# ========================================
+# Used by OnTheFly oneshot path to convert abstract BCs (ZeroCurvBC, ZeroSlopeBC, etc.)
+# to concrete QuadraticBC types compatible with the 1D quadratic API.
+# QuadraticBC types pass through unchanged.
+# Uses `0 * sample` instead of `zero(Tv)` for duck-type safety.
+@inline _to_quadratic_bc(bc::Left, _) = bc
+@inline _to_quadratic_bc(bc::Right, _) = bc
+@inline _to_quadratic_bc(::MinCurvFit, _) = MinCurvFit()
+@inline _to_quadratic_bc(::ZeroCurvBC, sample) = Right(Deriv2(0 * sample))
+@inline _to_quadratic_bc(::ZeroSlopeBC, sample) = Left(Deriv1(0 * sample))
+@inline _to_quadratic_bc(bc::PolyFit, _) = Right(bc)
+@noinline _to_quadratic_bc(bc::AbstractBC, _) = throw(
+    ArgumentError(
+        "Unsupported BC for quadratic OnTheFly: $(typeof(bc)). " *
+            "Supported: Left(...), Right(...), MinCurvFit, ZeroCurvBC, ZeroSlopeBC, or PolyFit variants."
+    )
+)
+
+# ========================================
 # ND Along-Dimension Differentiation (Quadratic)
 # ========================================
 

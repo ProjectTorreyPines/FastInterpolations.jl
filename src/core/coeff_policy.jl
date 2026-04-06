@@ -7,7 +7,7 @@
 # Pattern mirrors AutoSearch: runtime O(1) check → concrete strategy → zero-cost dispatch.
 # All overloads are @inline for constant propagation and dead branch elimination.
 #
-# Include order: after cubic_nd_types.jl (AutoCoeffs) and interp_method_types.jl (PchipInterp etc.)
+# Include order: after coeff_types.jl (AutoCoeffs) and interp_method_types.jl (PchipInterp etc.)
 
 # ── Passthrough: explicit strategies are never modified ──
 @inline _resolve_coeffs(c::PreCompute, args...) = c

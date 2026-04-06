@@ -828,8 +828,11 @@ using FastInterpolations
             @test_throws DimensionMismatch cubic_interp((x, y), bad_data2)
         end
 
-        @testset "OnTheFly strategy not implemented" begin
-            @test_throws ArgumentError cubic_interp((x, y), data; coeffs = OnTheFly())
+        @testset "OnTheFly strategy delegates to Hetero" begin
+            itp_otf = cubic_interp((x, y), data; coeffs = OnTheFly())
+            @test itp_otf isa HeteroInterpolantND
+            itp_pre = cubic_interp((x, y), data; coeffs = PreCompute())
+            @test itp_otf((0.5, 0.5)) ≈ itp_pre((0.5, 0.5)) rtol = 1.0e-10
         end
     end
 

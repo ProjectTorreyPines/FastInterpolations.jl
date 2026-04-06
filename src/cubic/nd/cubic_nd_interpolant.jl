@@ -145,25 +145,5 @@ function _build_nd_interpolant(
     }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)
 end
 
-"""
-    _build_nd_interpolant(..., ::OnTheFly)
-
-OnTheFly for cubic ND is handled at the `interp()` level — routes to HeteroInterpolantND
-before reaching this point. This method exists only for direct `cubic_interp(...; coeffs=OnTheFly())`
-calls which bypass `interp()`.
-"""
-function _build_nd_interpolant(
-        grids::NTuple{N, AbstractVector{Tg}},
-        data::AbstractArray{Tv, N},
-        bcs::NTuple{N, AbstractBC},
-        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        searches::NTuple{N, AbstractSearchPolicy},
-        ::OnTheFly
-    ) where {Tg <: AbstractFloat, Tv, N}
-    throw(
-        ArgumentError(
-            "OnTheFly() is not supported via cubic_interp() directly. " *
-                "Use interp(grids, data; method=CubicInterp(), coeffs=OnTheFly()) instead."
-        )
-    )
-end
+# OnTheFly is handled in cubic_interp() above (delegates to _build_hetero_nd).
+# No _build_nd_interpolant(::OnTheFly) needed.

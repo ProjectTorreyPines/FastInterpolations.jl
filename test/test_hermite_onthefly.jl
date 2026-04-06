@@ -17,7 +17,7 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
             y_u = sin.(3.0 .* x_u)
 
             # Non-uniform grid
-            x_nu = sort(vcat(0.0, rand(n - 2), 1.0))
+            x_nu = sort(vcat(0.0, [0.1 + 0.8 * i / (n - 1) for i in 1:(n - 2)], 1.0))
             y_nu = sin.(3.0 .* x_nu)
 
             for (x, y) in [(x_u, y_u), (x_nu, y_nu)]
@@ -311,7 +311,7 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
         @test _resolve_coeffs(PreCompute(), xg, 1.0) isa PreCompute
         @test _resolve_coeffs(OnTheFly(), xg, xq_many) isa OnTheFly
 
-        # ��─ ND validation ──
+        # -- ND validation --
         x2d = range(0.0, 2π, 15)
         y2d = range(0.0, π, 10)
         data2d = [sin(xi) * cos(yj) for xi in x2d, yj in y2d]

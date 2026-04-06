@@ -84,6 +84,7 @@ end
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
+    length(x) >= 2 || throw(ArgumentError("PCHIP interpolation requires at least 2 points, got $(length(x))"))
     x = _to_float(x, Tg)
     searcher = _resolve_search(x, xq, search, hint)
     return _hermite_eval_at_point(x, y, PchipSlopes(), xq, extrap, deriv, searcher)

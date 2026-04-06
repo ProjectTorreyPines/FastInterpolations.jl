@@ -347,4 +347,68 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
             method = (CubicInterp(), PchipInterp()), coeffs = PreCompute()
         )
     end
+
+    # ========================================
+    # F. Coverage Gap Closure (from re-audit)
+    # ========================================
+
+    @testset "Quadratic OnTheFly with all supported BCs" begin
+        # Exercise _to_quadratic_bc for each BC variant.
+        # OnTheFly (1D-per-fiber) and PreCompute (tensor-product nodal derivatives)
+        # are mathematically equivalent but take different numerical paths, so
+        # non-default BCs (Right/MinCurvFit/ZeroSlopeBC) diverge at ~1e-6 relative.
+        for bc in (Left(QuadraticFit()), Right(QuadraticFit()), MinCurvFit(), ZeroCurvBC(), ZeroSlopeBC())
+            val_otf = quadratic_interp((x, y), data_2d, (qx, qy); bc = bc, coeffs = OnTheFly())
+            val_pre = quadratic_interp((x, y), data_2d, (qx, qy); bc = bc, coeffs = PreCompute())
+            @test val_otf ≈ val_pre rtol = 1.0e-5
+        end
+    end
+
+    @testset "Error: _to_quadratic_bc fallback on unsupported BC" begin
+        # The @noinline ArgumentError fallback must trigger for BCs that aren't
+        # in the QuadraticBC family (e.g., BCPair with a non-quadratic combination).
+        # Use PeriodicBC which is not a QuadraticBC.
+        @test_throws ArgumentError quadratic_interp(
+            (x, y), data_2d, (qx, qy); bc = PeriodicBC(), coeffs = OnTheFly()
+        )
+    end
+
+    @testset "Vector calculus: hessian + laplacian with OnTheFly interpolant" begin
+        # Only gradient was covered in C6; add hessian and laplacian.
+        itp_otf = interp((x, y), data_2d; method = CubicInterp(), coeffs = OnTheFly())
+        itp_pre = interp((x, y), data_2d; method = CubicInterp(), coeffs = PreCompute())
+        @test hessian(itp_otf, (qx, qy)) ≈ hessian(itp_pre, (qx, qy)) rtol = 1.0e-10
+        @test laplacian(itp_otf, (qx, qy)) ≈ laplacian(itp_pre, (qx, qy)) rtol = 1.0e-10
+    end
+
+    @testset "Trivial methods (Linear/Constant) → PreCompute path" begin
+        # _resolve_coeffs_nd_oneshot with all-trivial methods must return PreCompute
+        # (OnTheFly not beneficial for methods without global solve).
+        # Result should match whichever code path they take.
+        val_linear = interp((x, y), data_2d, (qx, qy); method = LinearInterp())
+        val_linear_ref = linear_interp((x, y), data_2d, (qx, qy))
+        @test val_linear ≈ val_linear_ref rtol = 1.0e-14
+
+        val_const = interp((x, y), data_2d, (qx, qy); method = ConstantInterp())
+        val_const_ref = constant_interp((x, y), data_2d, (qx, qy))
+        @test val_const ≈ val_const_ref rtol = 1.0e-14
+    end
+
+    @testset "Zero-alloc: OnTheFly 3D interpolant callable" begin
+        # Earlier zero-alloc tests covered 2D interpolant callable; add 3D.
+        function _alloc_test_otf_itp_eval_3d()
+            xg = collect(range(0.0, 2π, 15))
+            yg = collect(range(0.0, π, 12))
+            zg = collect(range(0.0, 1.0, 8))
+            d = [sin(xi) * cos(yj) * zk for xi in xg, yj in yg, zk in zg]
+            itp = interp(
+                (xg, yg, zg), d;
+                method = (CubicInterp(), LinearInterp(), QuadraticInterp()), coeffs = OnTheFly()
+            )
+            itp((1.7, 0.8, 0.4))
+            itp((1.7, 0.8, 0.4))
+            return @allocated itp((1.7, 0.8, 0.4))
+        end
+        @test _alloc_test_otf_itp_eval_3d() <= ND_ALLOC_THRESHOLD_LOCAL
+    end
 end

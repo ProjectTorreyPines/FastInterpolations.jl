@@ -2,7 +2,7 @@ using Test
 using FastInterpolations
 using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes,
     _pchip_slopes!, _cardinal_slopes!, _akima_slopes!,
-    _resolve_coeffs,
+    _resolve_coeffs, _deriv_size, _is_deriv_method,
     _pchip_interp_onthefly, _akima_interp_onthefly, _cardinal_interp_onthefly
 
 @testset "Hermite OnTheFly" begin
@@ -284,6 +284,18 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
     # ========================================
     # 11. AutoCoeffs
     # ========================================
+    @testset "Coverage: Hermite method traits" begin
+        # _deriv_size: Hermite methods are derivative-based (size=2)
+        @test _deriv_size(PchipInterp()) == 2
+        @test _deriv_size(CardinalInterp()) == 2
+        @test _deriv_size(AkimaInterp()) == 2
+
+        # _is_deriv_method: used by @generated hetero eval kernel
+        @test _is_deriv_method(PchipInterp) == true
+        @test _is_deriv_method(AkimaInterp) == true
+        @test _is_deriv_method(CardinalInterp{Float64}) == true
+    end
+
     @testset "AutoCoeffs resolution" begin
         # ── ND overloads ──
         @test _resolve_coeffs(AutoCoeffs(), Val(2), (PchipInterp(), PchipInterp())) isa OnTheFly
@@ -445,7 +457,66 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
     end
 
     # ========================================
-    # 14. WrapExtrap with OnTheFly
+    # 14. Coverage: PreCompute internal paths (explicit coeffs=PreCompute())
+    # ========================================
+    @testset "Coverage: explicit PreCompute oneshot" begin
+        x = collect(range(0.0, 2π, 25))
+        y = sin.(x)
+        xq = 1.5
+        xq_vec = collect(range(0.1, 6.0, 10))
+
+        # Scalar PreCompute — exercises _*_interp_precompute paths
+        @test pchip_interp(x, y, xq; coeffs = PreCompute()) ≈ pchip_interp(x, y, xq; coeffs = OnTheFly()) atol = 1.0e-14
+        @test cardinal_interp(x, y, xq; coeffs = PreCompute()) ≈ cardinal_interp(x, y, xq; coeffs = OnTheFly()) atol = 1.0e-14
+        @test akima_interp(x, y, xq; coeffs = PreCompute()) ≈ akima_interp(x, y, xq; coeffs = OnTheFly()) atol = 1.0e-14
+
+        # Vector PreCompute
+        @test pchip_interp(x, y, xq_vec; coeffs = PreCompute()) ≈ pchip_interp(x, y, xq_vec; coeffs = OnTheFly()) atol = 1.0e-14
+
+        # In-place PreCompute
+        out = similar(xq_vec)
+        pchip_interp!(out, x, y, xq_vec; coeffs = PreCompute())
+        @test out ≈ pchip_interp(x, y, xq_vec; coeffs = OnTheFly()) atol = 1.0e-14
+    end
+
+    # ========================================
+    # 15. Coverage: show() display
+    # ========================================
+    @testset "Coverage: show display" begin
+        x = range(0.0, 2π, 20)
+        y = sin.(x)
+
+        # PreCompute show
+        itp_pre = pchip_interp(x, y)
+        str_pre = sprint(show, itp_pre)
+        @test occursin("monotone", str_pre)
+        @test !occursin("on-the-fly", str_pre)
+
+        # OnTheFly show
+        itp_otf = pchip_interp(x, y; coeffs = OnTheFly())
+        str_otf = sprint(show, itp_otf)
+        @test occursin("on-the-fly", str_otf)
+
+        # Detailed show (text/plain)
+        str_detail = sprint(show, MIME("text/plain"), itp_otf)
+        @test occursin("Coeffs:", str_detail)
+        @test occursin("on-the-fly", str_detail)
+
+        # Cardinal + Akima
+        str_c = sprint(show, cardinal_interp(x, y; coeffs = OnTheFly()))
+        @test occursin("on-the-fly", str_c)
+        str_a = sprint(show, akima_interp(x, y; coeffs = OnTheFly()))
+        @test occursin("on-the-fly", str_a)
+
+        # Detailed Cardinal + Akima
+        str_cd = sprint(show, MIME("text/plain"), cardinal_interp(x, y; coeffs = OnTheFly()))
+        @test occursin("Coeffs:", str_cd)
+        str_ad = sprint(show, MIME("text/plain"), akima_interp(x, y; coeffs = OnTheFly()))
+        @test occursin("Coeffs:", str_ad)
+    end
+
+    # ========================================
+    # 16. WrapExtrap with OnTheFly
     # ========================================
     @testset "WrapExtrap: OnTheFly" begin
         x = collect(range(0.0, 2π, 30))

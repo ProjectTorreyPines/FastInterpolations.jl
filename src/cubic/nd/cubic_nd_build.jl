@@ -308,14 +308,20 @@ end
 
 Select the effective boundary condition for computing a mixed partial derivative.
 
-When computing higher-order mixed partials (e.g., ∂²f/∂x∂y from ∂f/∂x), the
-"effective" BC may differ from the user-specified BC for better accuracy.
+The user BC is used unchanged for *every* partial (pure and mixed), so that the
+PreCompute build operator becomes mathematically equivalent to OnTheFly's
+sequential composition `I_y ∘ I_x` and Clairaut's identity
+`∂²f/∂x∂y = ∂²f/∂y∂x` is preserved at the stored nodal level. The previous
+implementation substituted `CubicFit()` for `p_src > 1`, which produced an
+axis-asymmetric tensor product and a ~1e-10 drift versus OnTheFly.
 
 # Selection Rules
-1. `p_src == 1` (pure derivative, source is f): Use specified BC unchanged
-2. `_is_periodic_bc(bc)`: Always propagate periodic BC for consistency
-3. `length(grid) ≥ 4` and PolyFit available: Use CubicFit for better edge accuracy
-4. Fallback: Use ZeroCurvBC
+1. `p_src == 1` (pure derivative, source is f): user BC
+2. `_is_periodic_bc(bc)`: always propagate periodic BC
+3. Default: user BC (was: `CubicFit()`)
+4. Short-grid fallback (`length(grid) < 4` and non-PolyFit BC): emit a one-shot
+   warning and substitute `ZeroCurvBC()` (defensive — the user BC may not be
+   safely applicable to a differentiated nodal array on so few points)
 
 # Arguments
 - `bc::AbstractBC`: User-specified boundary condition
@@ -327,22 +333,32 @@ When computing higher-order mixed partials (e.g., ∂²f/∂x∂y from ∂f/∂x
 """
 @inline function _get_effective_bc(bc::AbstractBC, p_src::Int, grid::AbstractVector)
     # Rule 1: Pure derivative (source is f) - use specified BC
-    if p_src == 1
-        return bc
-    end
+    p_src == 1 && return bc
 
     # Rule 2: Periodic BC always propagates
-    if _is_periodic_bc(bc)
+    _is_periodic_bc(bc) && return bc
+
+    # Rule 3: Mixed partials use the user BC. This makes PreCompute's stored
+    # mixed partial Σ_{k,l} φ_k'(x_i) ψ_l'(y_j) f[k,l] (= OnTheFly composition
+    # formula) and restores ∂²/∂x∂y = ∂²/∂y∂x.
+    if get_polyfit_degree(bc) > 0 || length(grid) >= 4
         return bc
     end
 
-    # Rule 3: For mixed partials with enough grid points, use CubicFit
-    if get_polyfit_degree(bc) > 0 || length(grid) >= 4
-        return CubicFit()
-    end
-
-    # Fallback: ZeroCurvBC
+    # Short-grid defensive fallback: warn user once and substitute ZeroCurvBC.
+    _warn_short_grid_fallback_cubic(bc, length(grid))
     return ZeroCurvBC()
+end
+
+@noinline function _warn_short_grid_fallback_cubic(bc, n::Int)
+    @warn """
+    Cubic ND mixed-partial build: grid has $n points (< 4), too short to safely
+    apply user BC `$(nameof(typeof(bc)))` to a differentiated nodal array.
+    Falling back to `ZeroCurvBC()` for the mixed partial. The result will not
+    be bit-equivalent to the OnTheFly composition. Provide ≥ 4 points per axis
+    to use your BC throughout the mixed-partial build.
+    """ maxlog = 1
+    return nothing
 end
 
 # ========================================

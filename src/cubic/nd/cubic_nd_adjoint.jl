@@ -552,7 +552,12 @@ function _build_nd_adjoint(
     end
 
     # Mixed-partial BC pairs (p_src > 1): _get_effective_bc determines the BC.
-    # For periodic: returns PeriodicBC (propagates). For non-periodic: typically CubicFit.
+    # After the BC consistency fix, this returns the user BC for the common case
+    # (non-periodic, length(grid) >= 4), so `mixed_caches` becomes structurally
+    # identical to `caches`. Only the short-grid fallback (returns ZeroCurvBC)
+    # makes the two diverge. The dual-cache plumbing is retained as a no-op here
+    # for safety; a follow-up PR can collapse `mixed_caches` into `caches` once
+    # the adjoint hot path is verified to never observe them as distinct types.
     mixed_bcs = map(grids_ext, bcs) do grid_d, bc_d
         mixed_bc = _get_effective_bc(bc_d, 2, grid_d)
         _is_periodic_bc(mixed_bc) ? mixed_bc : _normalize_bc(mixed_bc, Tg)

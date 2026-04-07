@@ -385,6 +385,55 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
         )
     end
 
+    @testset "ND batch one-shot with local Hermite (AutoCoeffs → OnTheFly loop)" begin
+        # `_resolve_coeffs_nd_oneshot` returns OnTheFly for batch + local Hermite
+        # because PreCompute backend is not implemented for these methods. The
+        # heterogeneous batch dispatch loops `_interp_nd_oneshot_onthefly` per query
+        # — verify the result matches scalar one-shot per query (the ground truth).
+        qs = [(0.4, 0.7), (1.5, 1.2), (2.9, 0.3)]
+        nq = length(qs)
+        out = zeros(nq)
+
+        # Homogeneous Pchip
+        ref_pchip = [interp((x, y), data_2d, q; method = (PchipInterp(), PchipInterp())) for q in qs]
+        interp!(out, (x, y), data_2d, qs; method = (PchipInterp(), PchipInterp()))
+        @test out ≈ ref_pchip rtol = 1.0e-12
+
+        # Explicit OnTheFly should give the same answer
+        fill!(out, 0.0)
+        interp!(out, (x, y), data_2d, qs; method = (PchipInterp(), PchipInterp()), coeffs = OnTheFly())
+        @test out ≈ ref_pchip rtol = 1.0e-12
+
+        # Homogeneous Akima
+        ref_akima = [interp((x, y), data_2d, q; method = (AkimaInterp(), AkimaInterp())) for q in qs]
+        fill!(out, 0.0)
+        interp!(out, (x, y), data_2d, qs; method = (AkimaInterp(), AkimaInterp()))
+        @test out ≈ ref_akima rtol = 1.0e-12
+
+        # Heterogeneous: global + local
+        ref_mixed = [interp((x, y), data_2d, q; method = (CubicInterp(), PchipInterp())) for q in qs]
+        fill!(out, 0.0)
+        interp!(out, (x, y), data_2d, qs; method = (CubicInterp(), PchipInterp()))
+        @test out ≈ ref_mixed rtol = 1.0e-12
+
+        # Heterogeneous: local + trivial
+        ref_pl = [interp((x, y), data_2d, q; method = (PchipInterp(), LinearInterp())) for q in qs]
+        fill!(out, 0.0)
+        interp!(out, (x, y), data_2d, qs; method = (PchipInterp(), LinearInterp()))
+        @test out ≈ ref_pl rtol = 1.0e-12
+
+        # Explicit `coeffs = PreCompute()` with local Hermite in batch must reject
+        # (mirrors the scalar validation; user-supplied intent is honored as error).
+        @test_throws ArgumentError interp!(
+            out, (x, y), data_2d, qs;
+            method = (PchipInterp(), PchipInterp()), coeffs = PreCompute()
+        )
+        @test_throws ArgumentError interp!(
+            out, (x, y), data_2d, qs;
+            method = (CubicInterp(), PchipInterp()), coeffs = PreCompute()
+        )
+    end
+
     # ========================================
     # F. Coverage Gap Closure (from re-audit)
     # ========================================

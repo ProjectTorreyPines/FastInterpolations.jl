@@ -243,7 +243,10 @@ function _interp_nd_oneshot_batch_dispatch!(
     return constant_interp!(output, grids, data, queries; side = sides, extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
 
-# Heterogeneous fallback → resolve kwargs → function barrier → pool batch
+# Heterogeneous fallback → resolve kwargs → function barrier → pool batch.
+# Branches on the resolved `coeffs`: PreCompute uses the amortized partials build,
+# OnTheFly loops the existing scalar one-shot per query (used when the method tuple
+# contains a local Hermite method with no PreCompute backend).
 function _interp_nd_oneshot_batch_dispatch!(
         output, grids, data, queries,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
@@ -260,6 +263,17 @@ function _interp_nd_oneshot_batch_dispatch!(
     searches = _resolve_search_nd_uniform(search, Val(N), queries, hints)
     ops = _resolve_deriv_nd(deriv, Val(N))
     _validate_axis_methods(grids_typed, methods, extraps_val)
+
+    if coeffs isa OnTheFly
+        nq = _query_length(queries)
+        length(output) == nq || _throw_query_output_mismatch(nq, length(output))
+        _query_validate(queries)
+        @inbounds for k in 1:nq
+            query_k = _extract_query_point(queries, k, Val(N))
+            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, searches, ops, hints)
+        end
+        return output
+    end
 
     return _interp_nd_hetero_batch_dispatch!(output, grids_typed, data, queries, methods, extraps_val, searches, ops, hints)
 end
@@ -352,6 +366,10 @@ function interp!(
     end
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
     coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, queries, method_tuple)
+    # Reject explicit unsupported combinations (PreCompute + local Hermite); the
+    # AutoCoeffs path never trips this because resolution returns OnTheFly for
+    # local methods. Mirrors the scalar `interp` validation at line 309.
+    _validate_nd_coeffs(coeffs_resolved, method_tuple)
     return _interp_nd_oneshot_batch_dispatch!(output, grids, data, queries, method_tuple, deriv, extrap, search, hint, coeffs_resolved)
 end
 

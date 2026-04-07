@@ -116,7 +116,8 @@ Zero-allocation after warmup.
 
 # Strategy selection (`coeffs`)
 - `AutoCoeffs()` (default): scalar queries use `OnTheFly()` (2^N× less work
-  than `PreCompute()`); batch and `ForwardDiff.Dual` queries use `PreCompute()`.
+  than `PreCompute()`), including scalar `ForwardDiff.Dual` queries; batch
+  queries use `PreCompute()`.
 - `PreCompute()`: explicitly build all nodal partial derivatives first, then
   evaluate. Uses `Right(QuadraticFit())` for mixed partials regardless of the
   user-specified `bc` (see `_get_effective_bc_quadratic`).

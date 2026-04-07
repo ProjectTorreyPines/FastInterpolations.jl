@@ -65,11 +65,11 @@ end
 # Intermediate arrays are pool-allocated via @with_pool (zero heap alloc after warmup).
 #
 # The first argument `::Type{Tr}` is the promoted result type, computed once at the
-# entry point via `_output_eltype(eltype(data), typeof.(q_eval)...)`. This is the
-# buffer type for intermediate results — for plain Float64 queries it equals
-# eltype(data) (preserving zero-alloc), while for AD (ForwardDiff.Dual) queries it
-# promotes to the Dual type so the query-dependent intermediate values fit into
-# the pool buffer. `Tr` is plumbed unchanged through the recursion.
+# entry point via `_promote_query_eltype(Tv, q_eval)`. This is the buffer type for
+# intermediate results — for plain Float64 queries it typically equals the data
+# element type (preserving zero-alloc), while for AD (ForwardDiff.Dual) queries it
+# promotes to the Dual-compatible type so the query-dependent intermediate values
+# fit into the pool buffer. `Tr` is plumbed unchanged through the recursion.
 
 # Base case: 1D data → one-shot eval final dimension (Tr is carried but unused —
 # the 1D scalar eval returns a scalar directly, no buffer needed).

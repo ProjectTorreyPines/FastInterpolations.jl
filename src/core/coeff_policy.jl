@@ -54,20 +54,36 @@ end
 @inline _all_trivial_methods(methods::Tuple) = all(_is_trivial_method, methods)
 
 # ── ND oneshot resolution (separate from interpolant resolution) ──
-# Scalar query → OnTheFly avoids the O(2^N × n^N) partials build (2^N× faster).
-# Batch query → PreCompute amortizes build over many evals.
-# Trivial methods (Linear/Constant) → PreCompute (no global solve to skip; existing
-# specialized paths are already optimal).
-# Separate function avoids dispatch ambiguity with interpolant-construction overloads.
-# ForwardDiff.Dual queries are handled by the OnTheFly _collapse_dims path directly —
-# the pool buffer type is promoted via `_output_eltype(eltype(data), typeof.(q_eval)...)`
-# at the entry points (see hetero_eval.jl / hetero_oneshot.jl), so Dual queries work
-# with the regular OnTheFly route without needing a PreCompute fallback.
+# Centralized (method, query)-aware policy: resolved once at the user API entry
+# point alongside the other resolves (extrap/search/deriv) and threaded down.
+# All branches fold at compile time when `methods` is a concrete tuple type.
+#
+# Strategy matrix:
+#   methods\queries          | scalar (Tuple{Vararg{Real}}) | batch
+#   -------------------------|------------------------------|---------
+#   all trivial (Lin/Const)  | PreCompute (no slopes)       | PreCompute
+#   has local Hermite        | OnTheFly (per-fiber 1D)      | OnTheFly (per-query loop)
+#   global only (Cubic/Quad) | OnTheFly (skip 2^N partials) | PreCompute (amortize solve)
+#
+# Rationale for the local-Hermite batch case: PreCompute backend
+# (`_compute_nd_partials_hetero!`) does not implement `_extract_bc(::PchipInterp)`
+# etc., so the only working path for batch + Hermite is a per-query loop calling
+# `_interp_nd_oneshot_onthefly`, dispatched inside `_interp_nd_oneshot_batch_dispatch!`.
+#
+# ForwardDiff.Dual queries (scalar) flow through OnTheFly directly — `_collapse_dims`
+# promotes its pool buffer via `_promote_query_eltype(Tv, q_eval)`.
+#
+# Separate function from `_resolve_coeffs` (1D) avoids dispatch ambiguity with
+# the interpolant-construction overloads.
 @inline _resolve_coeffs_nd_oneshot(c::PreCompute, _, _) = c
 @inline _resolve_coeffs_nd_oneshot(c::OnTheFly, _, _) = c
 @inline function _resolve_coeffs_nd_oneshot(::AutoCoeffs, ::Tuple{Vararg{Real}}, methods)
     _all_trivial_methods(methods) && return PreCompute()
     return OnTheFly()
 end
-# Fallback for non-scalar (batch) queries — always PreCompute to amortize build
-@inline _resolve_coeffs_nd_oneshot(::AutoCoeffs, queries, methods) = PreCompute()
+# Batch (non-scalar) fallback: PreCompute amortizes the build, except when the
+# method tuple contains a local Hermite method which has no PreCompute backend.
+@inline function _resolve_coeffs_nd_oneshot(::AutoCoeffs, queries, methods)
+    _has_any_local_method(methods) && return OnTheFly()
+    return PreCompute()
+end

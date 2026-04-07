@@ -126,6 +126,7 @@ end
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
+        spacings::Union{Nothing, Tuple{Vararg{AbstractGridSpacing, N}}} = nothing,
     ) where {Tg <: AbstractFloat, Tv, N}
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
@@ -133,7 +134,28 @@ end
     q_eval = _handle_all_extraps(query, grids, extraps_val)
     # Tr promotes data eltype with query eltypes → Dual-safe pool buffers for AD.
     Tr = _promote_query_eltype(Tv, q_eval)
-    return _collapse_dims(Tr, data, grids, methods, extraps_val, q_eval, ops, searches, hints)
+
+    if _has_any_local_method(methods)
+        # Resolve spacings: caller-provided (batch dispatcher precomputes once → zero per-query
+        # alloc) or compute inline (scalar one-shot: one-time cost, range grids are free).
+        sp = spacings === nothing ? map(_create_spacing, grids) : spacings
+        indices, _, _ = _search_all_intervals(q_eval, grids, sp, searches, hints)
+        windows = ntuple(
+            d -> _axis_window(methods[d], indices[d], length(grids[d])),
+            Val(N),
+        )
+        data_local = view(data, windows...)
+        grids_local = map(view, grids, windows)
+        rel_windows = map(Base.OneTo ∘ length, windows)
+        return _collapse_dims(
+            Tr, data_local, grids_local, methods, extraps_val,
+            q_eval, ops, searches, nothing, rel_windows,
+        )
+    end
+
+    # Pure global-solve path: no pre-search, full windows, bit-for-bit pre-Phase-3 behavior.
+    full_windows = ntuple(d -> Base.OneTo(size(data, d)), Val(N))
+    return _collapse_dims(Tr, data, grids, methods, extraps_val, q_eval, ops, searches, hints, full_windows)
 end
 
 # ========================================
@@ -268,9 +290,14 @@ function _interp_nd_oneshot_batch_dispatch!(
         nq = _query_length(queries)
         length(output) == nq || _throw_query_output_mismatch(nq, length(output))
         _query_validate(queries)
+        # Phase 5a: precompute per-axis spacings ONCE if any local-Hermite axis is present.
+        # The windowed path inside `_interp_nd_oneshot_onthefly` reuses these across all
+        # `nq` queries, so the cell-local stencil benefit is realized in the batch loop.
+        # For pure global-solve method tuples, `spacings` is left as `nothing` (unused).
+        spacings = _has_any_local_method(methods) ? map(_create_spacing, grids_typed) : nothing
         @inbounds for k in 1:nq
             query_k = _extract_query_point(queries, k, Val(N))
-            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, searches, ops, hints)
+            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, searches, ops, hints, spacings)
         end
         return output
     end

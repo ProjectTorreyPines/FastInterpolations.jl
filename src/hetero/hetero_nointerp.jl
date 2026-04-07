@@ -240,6 +240,25 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
     r_query = [:(query[$d]) for d in real_dims]
     r_ops = [:(ops_full[$d]) for d in real_dims]
 
+    # Per-real-axis full windows (static @generated form — no runtime closure).
+    # Real axis k of d_sliced corresponds to enumerate index, so size(d_sliced, k).
+    r_full_windows = [:(Base.OneTo(size(d_sliced, $k))) for k in 1:N_r]
+
+    # Per-real-axis cell-local window expressions (Phase 5b). Built statically — each
+    # expression closes over the runtime `idxs_r` (computed by `_search_all_intervals`).
+    # Position `k` in idxs_r corresponds to real axis at original dim `d`.
+    r_axis_window_exprs = [
+        :(_axis_window(itp.methods[$d], idxs_r[$k], length(itp.grids[$d])))
+            for (k, d) in enumerate(real_dims)
+    ]
+    # Per-real-axis spacings (already in the PreCompute branch as `rs`; mirror here for OnTheFly).
+    r_spacings_exprs = [:(itp.spacings[$d]) for d in real_dims]
+    # Compile-time check: any local axis remaining in the filtered methods?
+    rm_has_local = any(
+        M -> M <: Union{PchipInterp, CardinalInterp, AkimaInterp},
+        [fieldtype(M, d) for d in real_dims]
+    )
+
     # Check if any NoInterp axis has a non-zero DerivOp → return zero
     # (discrete axes have zero derivatives by definition)
     # NOTE: guard runs AFTER domain validation so OOB queries still error.
@@ -322,7 +341,49 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             return _eval_hetero_nd_cell(p_sliced, idxs, hs, inv_hs, dLs, ro, rm)
         end
     else
-        # OnTheFly: slice data, delegate to reduced-dim _collapse_dims
+        # OnTheFly: slice data, delegate to reduced-dim _collapse_dims.
+        # Phase 5b: when at least one real axis is local-Hermite, pre-search the cell once
+        # in the *real-axis-only* coordinate system, build cell-local windows for the real
+        # axes, slice the already-NoInterp-sliced `d_sliced`/`rg` further, and call the
+        # kernel with relative windows. Pure global-solve real-axis tuples skip the
+        # pre-search and fall through to the existing full-windows path.
+        if rm_has_local
+            return quote
+                Base.@_inline_meta
+                $(bounds_checks...)
+                $hint_nointerp_update
+                d_sliced = @inbounds @view itp.data[$(slice_args...)]
+                rq = ($(r_query...),)
+                rg = ($(r_grids...),)
+                rm = ($(r_methods...),)
+                re = ($(r_extraps...),)
+                ro = ($(r_ops...),)
+                rs = ($(r_spacings_exprs...),)
+
+                _validate_nd_domain(rg, rq, re)
+                oob = _try_fill_oob(rq, rg, re, ro, @inbounds d_sliced[1])
+                oob !== nothing && return oob
+                $nointerp_deriv_guard
+
+                q_eval = _handle_all_extraps(rq, rg, re)
+                rsrc = ($(r_searches...),)
+                search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
+                hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
+                Tr = _promote_query_eltype(eltype(d_sliced), q_eval)
+
+                # Pre-search: mutates user hints (real-axis subset) to absolute indices.
+                idxs_r, _, _ = _search_all_intervals(q_eval, rg, rs, search_r, hint_r)
+                # Per-real-axis cell-local windows. Static tuple literal — no closure.
+                windows_r = ($(r_axis_window_exprs...),)
+                # Slice d_sliced (already NoInterp-sliced) further to the cell-local stencil.
+                d_local = view(d_sliced, windows_r...)
+                rg_local = map(view, rg, windows_r)
+                rel_windows_r = map(Base.OneTo ∘ length, windows_r)
+                return _collapse_dims(Tr, d_local, rg_local, rm, re, q_eval, ro, search_r, nothing, rel_windows_r)
+            end
+        end
+
+        # Pure global-solve real-axis tuple: zero-overhead full-window path.
         return quote
             Base.@_inline_meta
             $(bounds_checks...)
@@ -334,7 +395,6 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             re = ($(r_extraps...),)
             ro = ($(r_ops...),)
 
-            # Domain validation + FillExtrap BEFORE deriv zero check
             _validate_nd_domain(rg, rq, re)
             oob = _try_fill_oob(rq, rg, re, ro, @inbounds d_sliced[1])
             oob !== nothing && return oob
@@ -344,9 +404,9 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             rsrc = ($(r_searches...),)
             search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
             hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
-            # Tr promotes sliced-data eltype with query eltypes → Dual-safe pool buffers for AD
             Tr = _promote_query_eltype(eltype(d_sliced), q_eval)
-            return _collapse_dims(Tr, d_sliced, rg, rm, re, q_eval, ro, search_r, hint_r)
+            full_windows_r = ($(r_full_windows...),)
+            return _collapse_dims(Tr, d_sliced, rg, rm, re, q_eval, ro, search_r, hint_r, full_windows_r)
         end
     end
 end

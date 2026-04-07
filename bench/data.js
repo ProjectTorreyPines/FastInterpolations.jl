@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775594503194,
+  "lastUpdate": 1775598769389,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -39610,6 +39610,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1603,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2c6433ce4e61db029795d03f3bc9f698baef9176",
+          "message": "(fix): ND mixed-partial BC consistency — restore Clairaut symmetry (#111)\n\n* (fix): apply user BC to ND mixed partials (restores Clairaut symmetry)\n\nThe ND PreCompute build helpers `_get_effective_bc` (cubic) and\n`_get_effective_bc_quadratic` previously substituted `CubicFit()` /\n`Right(QuadraticFit())` for the user BC when building mixed partials\n(`p_src > 1`). This produced an axis-asymmetric tensor product and a\nnumerical drift vs. the OnTheFly composition path (~1e-10 cubic,\n~1e-5 quadratic for non-default BCs). PR #110 documented the\ndiscrepancy and relaxed four autodiff test tolerances; this commit\nremoves the substitution at the root.\n\nBoth helpers now return the user BC for every partial. By linearity\nand C^1 continuity of the 1D Hermite build, this makes the stored\nmixed partial exactly Σ_{k,l} φ_k'(x_i) ψ_l'(y_j) f[k,l], which is\nOnTheFly's composition formula, so PreCompute and OnTheFly become\nbit-equivalent (modulo a few ULPs of FP reordering noise) for every\nuser BC. The short-grid defensive fallback (cubic: < 4 points,\nquadratic: < 3 points) is preserved but now emits an informative\none-shot `@warn maxlog=1` via a `@noinline` helper before substituting\nthe default.\n\nSide effects:\n\n- The cubic ND adjoint in `cubic_nd_adjoint.jl` retains its\n  `caches`/`mixed_caches` dual-cache plumbing. After this fix the two\n  are structurally equivalent for the common case (non-periodic,\n  length >= 4); the redundancy is harmless and a follow-up PR can\n  collapse them. An inline comment marks the opportunity.\n\n- The quadratic ND oneshot docstring previously carried a\n  `!!! note \"Strategy discrepancy\"` explaining the ~1e-6 drift. That\n  note is removed and replaced with a plain statement that the two\n  strategies are bit-equivalent, with a pointer to\n  `claudedocs/TODO/00_HIGHEST_PRIORITY_mixed_partial_bc_fix.md`\n  for historical context.\n\nPeriodicBC is cubic-only in this codebase, so the quadratic helper\ndoes not need a Rule-2-equivalent propagation check.\n\n* (test): add ND mixed-partial BC consistency regression suite\n\nNew dedicated test file `test_nd_mixed_partial_bc_consistency.jl`\npins the mathematical invariants that the BC fix in the preceding\ncommit restores. Authored as the RED phase of a TDD cycle: on the\npre-fix commit the math-invariant groups fail by the bug magnitudes\ndocumented in the design doc (~1e-10 cubic, ~1e-5 quadratic); after\nthe fix they pass to `atol = 50*eps(Float64)` (~1.1e-14), which is\ngenerous enough to absorb tridiagonal / recurrence FP reordering but\norders of magnitude tighter than any bug signature.\n\nFive test groups:\n\nA. PreCompute ↔ OnTheFly bit-equivalence across BCs\n   (ZeroCurvBC, ZeroSlopeBC, CubicFit, MinCurvFit, Right(QuadraticFit))\n   and data functions (sin*cos, sin*y^3, sin*(y-π)) in 2D and 3D for\n   both cubic and quadratic.\n\nB. Clairaut / axis-swap symmetry: building on `(xs, ys)` with `data`\n   vs `(ys, xs)` with `permutedims(data)` and querying at swapped\n   coordinates must give the same value. This is the strongest\n   regression guard: the pre-fix PreCompute violated this by up to\n   ~1e-5 for quadratic ZeroSlopeBC and ~1e-9 for cubic.\n\nC. Hessian off-diagonal symmetry (H[1,2] ≈ H[2,1]) for PreCompute\n   interpolants with non-default BCs in both cubic and quadratic.\n   Note: this assertion happens to pass on the buggy code because a\n   single build is internally symmetric; we keep it as a forward\n   regression guard.\n\nD. Cubic periodic-on-one-axis propagation regression-pin. Rule 2 in\n   `_get_effective_bc` already handles this; the test asserts it\n   continues to work after the fix. (Quadratic does not support\n   PeriodicBC in this codebase.)\n\nE. Short-grid fallback warnings. Tests the helpers directly via\n   `FastInterpolations._get_effective_bc` / `_get_effective_bc_quadratic`\n   on very short grids (cubic: 3 points, quadratic: 2 points) with\n   non-PolyFit user BCs. Asserts the `@warn ... maxlog=1` fires and\n   the fallback BC is returned (`ZeroCurvBC()` / `MinCurvFit()`).\n   Uses `@test_logs` for warning capture.\n\nRegistered in `test/runtests.jl` next to `test_nd_oneshot_onthefly.jl`.\n\n* (test): restore tightened atol=1e-10 for ND AD + add bit-exact AD seed check\n\nDownstream verification that the mixed-partial BC consistency fix\nworks end-to-end through the autodiff pipeline.\n\nPR #110 temporarily relaxed four assertions in the ND quadratic\nautodiff tests (two in `test_autodiff_Zygote.jl`, two in\n`test_autodiff_Enzyme.jl`) because Zygote/Enzyme trace the\ninterpolant constructor (`PreCompute`) while the cross-validation\nseed comes from the one-shot API (now `OnTheFly` under `AutoCoeffs`),\nand the two paths disagreed by ~1e-6 for non-default quadratic BCs.\n\nWith the BC consistency fix, PreCompute and OnTheFly produce\nbit-equivalent results, so the original `atol = 1.0e-10` is restored\nat all four sites and the TODO comment blocks are removed:\n\n- test/ext/test_autodiff_Zygote.jl\n  - \"Quadratic eval — L2 loss\"          : rtol=1e-4 → atol=1e-10\n  - \"Quadratic gradient — ‖∇f‖² loss\"   : rtol=1e-3 → atol=1e-10\n\n- test/ext/test_autodiff_Enzyme.jl\n  - \"Quadratic eval — L2 loss\"          : rtol=1e-4 → atol=1e-10\n  - \"Quadratic gradient — ‖∇f‖² loss\"   : rtol=1e-3 → atol=1e-10\n\nAlso adds a new testset \"AutoCoeffs: quadratic AD seed matches\nPreCompute exactly\" in `test_nd_oneshot_onthefly.jl` that uses `==`\n(bit-exact equality, no tolerance) to compare OnTheFly and PreCompute\nfor the exact call patterns autodiff uses — value query, ∂/∂x, ∂/∂y.\nThis is a direct regression pin for the autodiff seed consistency\nand is stronger than the `atol = 50*eps` tolerance used in the new\n`test_nd_mixed_partial_bc_consistency.jl`.\n\nVerified locally:\n- test_autodiff_Zygote.jl    passes (2m 29s)\n- test_autodiff_Enzyme.jl    passes (68 pass, 2 broken pre-existing, 20m 49s)\n- test_nd_oneshot_onthefly.jl passes (1m 24s)\n\n* (test): update characterization tests to match post-fix BC contract\n\nThe full-suite run on the branch uncovered one hard failure and several\npieces of documentation drift that encoded the pre-fix buggy behavior.\nAll are fixed in this commit.\n\n**test/test_nd_coverage.jl**\n\n- `_get_effective_bc edge cases` (cubic, line 141): the test asserted\n  `_get_effective_bc(ZeroCurvBC(), 2, grid_long) isa CubicFit` which\n  was a characterization test on the now-removed substitution.\n  Updated to assert `isa ZeroCurvBC` (the user BC is returned).\n\n- Cubic short-grid edge case (line 138): the fallback branch now emits\n  an informative `@warn maxlog=1`. Wrapped the call in `@test_logs\n  (:warn, r\"Cubic ND mixed-partial build\")` to assert the warning and\n  suppress it from test output.\n\n- `_get_effective_bc_quadratic edge cases` (line 352): symmetric\n  update — the quadratic short-grid branch also now emits\n  `@warn maxlog=1`. Wrapped the call in `@test_logs\n  (:warn, r\"Quadratic ND mixed-partial build\")`.\n\n**test/test_nd_oneshot_onthefly.jl**\n\n- \"Quadratic OnTheFly with all supported BCs\" (line 455): the long\n  NOTE describing the ~1e-6 divergence as expected behavior was\n  rewritten to describe the post-fix reality (PreCompute ≡ OnTheFly\n  bit-equivalent for every user BC). The assertion tolerance is\n  tightened from `rtol = 1e-5` to `atol = 50 * eps(Float64)`\n  (~1.1e-14), matching the new regression suite.\n\n- \"Quadratic BC-exact data\" (line 479): the explanatory comment was\n  rewritten as a historical note. The test is retained as a coarse\n  smoke check; bit-identity now holds for arbitrary smooth data, not\n  only BC-exact data, so the original motivation no longer applies.\n\nVerified locally:\n- test_nd_coverage.jl            passes (30s)\n- test_nd_oneshot_onthefly.jl    passes (1m 19s)\n\n* (test): add direct branch-coverage tests for BC consistency helpers\n\nAdds a new test group F to `test_nd_mixed_partial_bc_consistency.jl`\nthat directly invokes `_get_effective_bc` and\n`_get_effective_bc_quadratic` with inputs hitting every distinct\nreturn statement in both helpers. Groups A–C cover the helpers\nindirectly through the full ND build pipeline, but a few branches\n(e.g., `get_polyfit_degree(bc) > 0` short-circuit; `PeriodicBC` Rule\n2 early return) are not trivially reached that way. Group F exists\nso `src/cubic/nd/cubic_nd_build.jl` and `src/quadratic/nd/\nquadratic_nd_build.jl` land at ≥ 95% line coverage for the patch.\n\nAlso consolidates group E's two `@test_logs` calls into single\n`match_mode = :any` blocks (warning assertion and return-value\nassertion together) so the short-grid fallback emits exactly one\ncaptured log per helper, with no stray stderr output from a second\ncall outside `@test_logs`.\n\nBranches covered by group F:\n\n- Cubic `_get_effective_bc`:\n  - Rule 1 (p_src == 1) for three BC types\n  - Rule 2 (periodic) for long and short grids\n  - Rule 3 left branch (`get_polyfit_degree > 0`) for both lengths\n  - Rule 3 right branch (`length >= 4`) for ZeroSlope/ZeroCurv\n\n- Quadratic `_get_effective_bc_quadratic`:\n  - Rule 1 for Right(QuadraticFit), MinCurvFit, ZeroCurv\n  - Rule 2 (length >= 3) for three BC types\n\nThe short-grid fallback path for both helpers is still covered by\ngroup E's `@test_logs` blocks — those calls execute every line of\nboth the helper body and the `@noinline` warning helper.\n\n* test(nd-bc-consistency): close line-coverage gap in quadratic helper\n\n- Restructure `_get_effective_bc_quadratic` to use explicit `if/end` for the\n  length-≥3 branch, mirroring cubic's `_get_effective_bc` control flow so\n  Julia coverage attribution lands on every executable line.\n- Add direct short-grid invocations to group F (cubic + quadratic). The\n  group E `@test_logs` macro swallows line counters for the wrapped helper\n  body (a known Julia coverage attribution quirk); the unwrapped direct\n  calls give ground-truth line attribution. `maxlog=1` keeps the output\n  silent since group E already fired the warning.\n\nPatch line coverage on this branch: 77/77 = 100.0%.\n\n* docs+test: address review feedback on BC consistency fix\n\nSource:\n- quadratic_nd_oneshot.jl: docstring lied about AutoCoeffs routing for\n  scalar quadratic queries — said \"OnTheFly\" but the implementation\n  unconditionally routes AutoCoeffs to PreCompute (intentional, for\n  bit-exact AD seed agreement with the interpolant constructor). Updated\n  the docstring to reflect actual behavior and explain why cubic differs.\n  Also updated the design-doc reference to its archived location.\n\nTests:\n- Move testset D (cubic periodic propagation) to its declared position\n  between C and E, matching the lettered header comment.\n- Add a second 3D axis-swap permutation in group B (axes 1↔2 in addition\n  to the existing 1↔3) for both cubic and quadratic.\n- Add a `!iszero` Hessian-diagonal sanity assertion to group C so a\n  hypothetical bug zeroing the entire matrix would not silently pass.\n- Clarify the explanatory comment in group F: the second short-grid call\n  is silent because there is no `@test_logs` wrapper, not because\n  `maxlog=1` is exhausted (Test.jl bypasses the maxlog counter).\n\nAll targeted tests still green:\n  - test_nd_mixed_partial_bc_consistency.jl\n  - test_nd_oneshot_onthefly.jl\n\n* fix(grididx): honor explicit coeffs kwarg through GridIdx auto-promotion path\n\nTwo related bugs in the GridIdx + coeffs interaction shipped with PR #110:\n\n1. Scalar `interp` validated `coeffs` against the *un-promoted* method tuple,\n   so `interp((x, y), data, (qx, GridIdx(k)); method=(CubicInterp(),\n   PchipInterp()), coeffs=PreCompute())` rejected the call even though the\n   GridIdx auto-promotion would have replaced PchipInterp with NoInterp,\n   leaving a 1-D cubic problem that PreCompute fully supports. Fix: run\n   `_promote_grididx_to_nointerp` BEFORE `_validate_nd_coeffs` so the\n   validation sees the methods that actually drive dispatch.\n\n2. Batch `interp!` delegating to `_interp_batch_with_grididx!` did not\n   forward the `coeffs` kwarg, so explicit `coeffs=PreCompute()` /\n   `coeffs=OnTheFly()` were silently dropped on the GridIdx batch path and\n   the reduced sub-problem ran with the default AutoCoeffs fallback. Fix:\n   add a `coeffs` kwarg to `_interp_batch_with_grididx!` and forward it at\n   both delegation sites (early-return for fully-expanded queries and the\n   main reduced-problem `interp!` call).\n\nTests cover:\n  - Scalar: GridIdx-on-Pchip + PreCompute now succeeds and matches the\n    manually-sliced 1-D cubic call. The non-EvalValue deriv path (which\n    disables promotion) still correctly rejects.\n  - Batch: NoInterp axis is GridIdx-sliced → reduced 1-D Cubic problem\n    accepts both PreCompute and OnTheFly. Differentiator: non-NoInterp\n    GridIdx (Pchip remains in the method tuple) now correctly REJECTS\n    `coeffs=PreCompute()` instead of silently dropping it.\n\nBoth fixes verified in TDD red→green order. Touched suites all green:\ntest_nointerp.jl, test_nd_mixed_partial_bc_consistency.jl,\ntest_nd_oneshot_onthefly.jl, test_hetero_nd.jl, test_hetero_oneshot.jl,\ntest_hetero_precomputed.jl.\n\n* docs: reword \"bit-equivalent\" → \"agreement to ~ULP\" per Copilot review\n\nCopilot review on PR #111 flagged that docstrings/comments described\nPreCompute ↔ OnTheFly as \"bit-equivalent\" / \"bit-identical\" while the\nactual assertions use `isapprox(...; atol=50*eps(Float64))`. The wording\noverstates the guarantee — the residual difference is FP reordering\nnoise in the tridiagonal/recurrence solver, ~50 ULPs at most, not zero.\n\nReworded all four sites:\n- src/quadratic/nd/quadratic_nd_build.jl:233 — \"bit-equivalence\" →\n  \"numerical equivalence within FP noise\"\n- src/cubic/nd/cubic_nd_build.jl:358 — short-grid warning text now says\n  \"no longer match the OnTheFly composition\" instead of \"not bit-equivalent\"\n- test/test_nd_mixed_partial_bc_consistency.jl header + group-A label —\n  \"bit-equivalence\" → \"agreement to ~ULP / machine epsilon\"\n- test/test_nd_oneshot_onthefly.jl:457 — \"bit-equivalent results\" →\n  \"agree to ~ULP tolerance\"\n\nThe single legitimate \"bit-identical\" usage at test_nd_oneshot_onthefly.jl\nlines 469-481 is preserved because that testset uses `==` (true bit\nequality) on data with `d²f/dy² = 0` everywhere, where both paths agree\nexactly. The \"**not** bit-identical\" wording in\nquadratic_nd_oneshot.jl:131 is also preserved — it correctly negates the\nproperty in the context of explaining why quadratic AutoCoeffs forces\nPreCompute.\n\nNo code logic changed; comment-only commit.",
+          "timestamp": "2026-04-07T14:50:30-07:00",
+          "tree_id": "015ebe403c18b5b1f56a6bb6d2903dc93049d8f9",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/2c6433ce4e61db029795d03f3bc9f698baef9176"
+        },
+        "date": 1775598763138,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 37230,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 575.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 353401,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1637.06,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1581.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 15.53,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 11.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3314.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=272\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 32.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 18.53,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4235.52,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4224.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9627.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3223.82,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 443.82,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 61695.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1303.44,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12588.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 18.53,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 443.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 42608.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 24.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 18600.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 33.57,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 245.06,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 9.82,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 196.98,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 18559.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.51,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 547.82,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4339.12,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 39533.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 728.36,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1713,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2287.26,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11444.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3372.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 37302.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 965.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 361034.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1607,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

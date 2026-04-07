@@ -129,6 +129,20 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
         @test val_auto ≈ val_pre rtol = 1.0e-10
     end
 
+    @testset "AutoCoeffs: quadratic AD seed matches PreCompute exactly" begin
+        xq = range(0.0, 2.0, 15)
+        yq = range(0.0, 2.0, 15)
+        data_q = [sin(xi) * cos(yj) for xi in xq, yj in yq]
+        q = (0.7, 0.9)
+
+        @test quadratic_interp((xq, yq), data_q, q) ==
+            quadratic_interp((xq, yq), data_q, q; coeffs = PreCompute())
+        @test quadratic_interp((xq, yq), data_q, q; deriv = (DerivOp(1), EvalValue())) ==
+            quadratic_interp((xq, yq), data_q, q; deriv = (DerivOp(1), EvalValue()), coeffs = PreCompute())
+        @test quadratic_interp((xq, yq), data_q, q; deriv = (EvalValue(), DerivOp(1))) ==
+            quadratic_interp((xq, yq), data_q, q; deriv = (EvalValue(), DerivOp(1)), coeffs = PreCompute())
+    end
+
     @testset "AutoCoeffs: interp scalar matches PreCompute" begin
         val_auto = interp((x, y), data_2d, (qx, qy); method = CubicInterp())  # AutoCoeffs default
         val_pre = interp((x, y), data_2d, (qx, qy); method = CubicInterp(), coeffs = PreCompute())

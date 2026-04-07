@@ -115,19 +115,23 @@ One-shot ND quadratic interpolation at a single point.
 Zero-allocation after warmup.
 
 # Strategy selection (`coeffs`)
-- `AutoCoeffs()` (default): resolves to `OnTheFly()` for scalar `AbstractFloat`
-  queries (saves the 2^N partial-array build) and to `PreCompute()` for batch
-  queries (amortizes the build cost).
+- `AutoCoeffs()` (default): resolves to `PreCompute()` for both scalar and
+  batch quadratic queries. This matches the interpolant constructor and AD
+  rules **bit-exactly**, at the cost of always building the `2^N` partial
+  array. Cubic `AutoCoeffs()` differs (it routes scalar queries to `OnTheFly`)
+  because cubic OnTheFly↔PreCompute equivalence holds at `≈ rtol=1e-10` and
+  AD seed agreement does not require strict equality there.
 - `PreCompute()`: explicitly build all nodal partial derivatives first, then
   evaluate. The user `bc` is applied uniformly to every partial (pure and
   mixed), so the stored mixed partials match OnTheFly's composition formula.
 - `OnTheFly()`: sequential 1D interpolation per fiber via `_collapse_dims`.
   Applies the user-specified `bc` uniformly at every 1D step.
 
-`PreCompute()` and `OnTheFly()` are bit-equivalent (modulo a few ULPs of FP
-reordering noise) for every user BC. This was not the case prior to the
-mixed-partial BC consistency fix; see
-`claudedocs/TODO/00_HIGHEST_PRIORITY_mixed_partial_bc_fix.md` for the history.
+`PreCompute()` and `OnTheFly()` are equivalent up to a few ULPs of FP
+reordering noise for every user BC, but **not** bit-identical — that is why
+quadratic `AutoCoeffs` defaults to `PreCompute`. This was not the case prior
+to the mixed-partial BC consistency fix; see
+`claudedocs/TODO/DONE/mixed_partial_bc_fix.md` for the history.
 """
 function quadratic_interp(
         grids::NTuple{N, AbstractVector},

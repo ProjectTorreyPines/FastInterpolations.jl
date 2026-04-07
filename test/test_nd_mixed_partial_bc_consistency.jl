@@ -129,18 +129,29 @@ const _MP_ATOL = 50 * eps(Float64)
     end
 
     @testset "B. Axis-swap symmetry (cubic 3D PreCompute)" begin
-        # 3D permutation: (x,y,z) → (z,y,x)
-        data_perm = permutedims(data_3d_sincos, (3, 2, 1))
+        # 3D permutation 1: (x,y,z) → (z,y,x) — swap axes 1 and 3
+        data_zyx = permutedims(data_3d_sincos, (3, 2, 1))
         v_xyz = cubic_interp((xs, ys, zs), data_3d_sincos, (qx, qy, qz); bc = ZeroCurvBC(), coeffs = PreCompute())
-        v_zyx = cubic_interp((zs, ys, xs), data_perm, (qz, qy, qx); bc = ZeroCurvBC(), coeffs = PreCompute())
+        v_zyx = cubic_interp((zs, ys, xs), data_zyx, (qz, qy, qx); bc = ZeroCurvBC(), coeffs = PreCompute())
         @test isapprox(v_xyz, v_zyx; atol = _MP_ATOL)
+
+        # 3D permutation 2: (x,y,z) → (y,x,z) — swap axes 1 and 2
+        data_yxz = permutedims(data_3d_sincos, (2, 1, 3))
+        v_yxz = cubic_interp((ys, xs, zs), data_yxz, (qy, qx, qz); bc = ZeroCurvBC(), coeffs = PreCompute())
+        @test isapprox(v_xyz, v_yxz; atol = _MP_ATOL)
     end
 
     @testset "B. Axis-swap symmetry (quadratic 3D PreCompute)" begin
-        data_perm = permutedims(data_3d_sincos, (3, 2, 1))
+        # 3D permutation 1: (x,y,z) → (z,y,x) — swap axes 1 and 3
+        data_zyx = permutedims(data_3d_sincos, (3, 2, 1))
         v_xyz = quadratic_interp((xs, ys, zs), data_3d_sincos, (qx, qy, qz); bc = ZeroCurvBC(), coeffs = PreCompute())
-        v_zyx = quadratic_interp((zs, ys, xs), data_perm, (qz, qy, qx); bc = ZeroCurvBC(), coeffs = PreCompute())
+        v_zyx = quadratic_interp((zs, ys, xs), data_zyx, (qz, qy, qx); bc = ZeroCurvBC(), coeffs = PreCompute())
         @test isapprox(v_xyz, v_zyx; atol = _MP_ATOL)
+
+        # 3D permutation 2: (x,y,z) → (y,x,z) — swap axes 1 and 2
+        data_yxz = permutedims(data_3d_sincos, (2, 1, 3))
+        v_yxz = quadratic_interp((ys, xs, zs), data_yxz, (qy, qx, qz); bc = ZeroCurvBC(), coeffs = PreCompute())
+        @test isapprox(v_xyz, v_yxz; atol = _MP_ATOL)
     end
 
     # ==========================================================================
@@ -156,6 +167,9 @@ const _MP_ATOL = 50 * eps(Float64)
             itp = interp((xs, ys), data; method = CubicInterp(bc = bc), coeffs = PreCompute())
             H = hessian(itp, (qx, qy))
             @test isapprox(H[1, 2], H[2, 1]; atol = _MP_ATOL)
+            # Sanity: a bug zeroing the entire Hessian would still pass symmetry,
+            # so assert at least one diagonal entry is meaningfully non-zero.
+            @test abs(H[1, 1]) + abs(H[2, 2]) > 1.0e-6
         end
     end
 
@@ -164,6 +178,7 @@ const _MP_ATOL = 50 * eps(Float64)
             itp = interp((xs, ys), data; method = QuadraticInterp(bc = bc), coeffs = PreCompute())
             H = hessian(itp, (qx, qy))
             @test isapprox(H[1, 2], H[2, 1]; atol = _MP_ATOL)
+            @test abs(H[1, 1]) + abs(H[2, 2]) > 1.0e-6
         end
     end
 
@@ -174,6 +189,28 @@ const _MP_ATOL = 50 * eps(Float64)
     # in `_get_effective_bc` already handles this; the test pins the behavior so
     # the upcoming fix does not regress it. PeriodicBC is cubic-only.
     # ==========================================================================
+
+    @testset "D. Cubic periodic-on-one-axis propagation" begin
+        xp = range(0.0, 2π, 30)
+        yp = range(0.0, π, 25)
+        # data periodic in x (axis 1)
+        data_p = [sin(x) * cos(y) for x in xp, y in yp]
+        data_p[end, :] .= data_p[1, :]  # ensure exact periodicity at endpoints
+
+        v_pre = cubic_interp(
+            (xp, yp), data_p, (1.7, 0.8);
+            bc = (PeriodicBC(), ZeroCurvBC()),
+            extrap = (WrapExtrap(), NoExtrap()),
+            coeffs = PreCompute(),
+        )
+        v_otf = cubic_interp(
+            (xp, yp), data_p, (1.7, 0.8);
+            bc = (PeriodicBC(), ZeroCurvBC()),
+            extrap = (WrapExtrap(), NoExtrap()),
+            coeffs = OnTheFly(),
+        )
+        @test isapprox(v_pre, v_otf; atol = _MP_ATOL)
+    end
 
     # ==========================================================================
     # E. Short-grid fallback emits an informative one-shot warning
@@ -239,7 +276,8 @@ const _MP_ATOL = 50 * eps(Float64)
 
         # Short-grid fallback branch — direct call (outside `@test_logs`) so
         # line-coverage counters attribute unambiguously to the helper body.
-        # Group E has already fired the `maxlog=1` warning, so this is silent.
+        # No `@test_logs` wrapper here, so the (`maxlog=1`-throttled) warning
+        # lands on stderr if it fires at all and is otherwise silent.
         @test FastInterpolations._get_effective_bc(ZeroSlopeBC(), 2, short_grid) === ZeroCurvBC()
     end
 
@@ -259,30 +297,9 @@ const _MP_ATOL = 50 * eps(Float64)
 
         # Short-grid fallback branch — direct call (outside `@test_logs`) so
         # line-coverage counters attribute unambiguously to the helper body.
-        # Group E has already fired the `maxlog=1` warning, so this is silent.
+        # No `@test_logs` wrapper here, so the (`maxlog=1`-throttled) warning
+        # lands on stderr if it fires at all and is otherwise silent.
         @test FastInterpolations._get_effective_bc_quadratic(ZeroSlopeBC(), 2, short_grid) === MinCurvFit()
-    end
-
-    @testset "D. Cubic periodic-on-one-axis propagation" begin
-        xp = range(0.0, 2π, 30)
-        yp = range(0.0, π, 25)
-        # data periodic in x (axis 1)
-        data_p = [sin(x) * cos(y) for x in xp, y in yp]
-        data_p[end, :] .= data_p[1, :]  # ensure exact periodicity at endpoints
-
-        v_pre = cubic_interp(
-            (xp, yp), data_p, (1.7, 0.8);
-            bc = (PeriodicBC(), ZeroCurvBC()),
-            extrap = (WrapExtrap(), NoExtrap()),
-            coeffs = PreCompute(),
-        )
-        v_otf = cubic_interp(
-            (xp, yp), data_p, (1.7, 0.8);
-            bc = (PeriodicBC(), ZeroCurvBC()),
-            extrap = (WrapExtrap(), NoExtrap()),
-            coeffs = OnTheFly(),
-        )
-        @test isapprox(v_pre, v_otf; atol = _MP_ATOL)
     end
 
 end

@@ -529,4 +529,172 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
         end
         @test _alloc_test_otf_itp_eval_3d() <= ND_ALLOC_THRESHOLD_LOCAL
     end
+
+    # ========================================
+    # E. Cell-Local Windowed Equivalence (Phase 3)
+    # ========================================
+    # Verify the windowed mini-collapse path produces results numerically identical
+    # to a hand-rolled reference that does sequential 1D oneshot calls on full fibers.
+    # The reference uses the public 1D oneshot APIs and the column-major fiber view
+    # convention — independent of `_collapse_dims` so it cannot share any bug.
+    #
+    # Coverage:
+    #   - Pure local (Pchip, Cardinal, Akima) in 2D and 3D
+    #   - Mixed local × global (Cardinal × Cubic) and local × trivial (Pchip × Linear)
+    #   - Interior cells AND every boundary cell (where the window is asymmetrically clamped)
+    #   - DerivOp{0..3} per axis
+    @testset "Equivalence: cell-local windowed vs reference" begin
+        # ---------- 2D reference helper ----------
+        # Reference: collapse dim 1 over the FULL fiber for each j ∈ 1:ny via the 1D
+        # public API, then collapse the resulting length-ny vector via the 1D public API.
+        function _ref_collapse_2d(grids, data, methods, q, ops)
+            xg, yg = grids
+            mx, my = methods
+            ny = size(data, 2)
+            tmp = Vector{Float64}(undef, ny)
+            for j in 1:ny
+                fiber = @view data[:, j]
+                tmp[j] = _ref_oneshot_1d(mx, xg, fiber, q[1], ops[1])
+            end
+            return _ref_oneshot_1d(my, yg, tmp, q[2], ops[2])
+        end
+
+        function _ref_collapse_3d(grids, data, methods, q, ops)
+            xg, yg, zg = grids
+            mx, my, mz = methods
+            ny, nz = size(data, 2), size(data, 3)
+            tmp_xy = Matrix{Float64}(undef, ny, nz)
+            for k in 1:nz, j in 1:ny
+                fiber = @view data[:, j, k]
+                tmp_xy[j, k] = _ref_oneshot_1d(mx, xg, fiber, q[1], ops[1])
+            end
+            tmp_y = Vector{Float64}(undef, nz)
+            for k in 1:nz
+                fiber = @view tmp_xy[:, k]
+                tmp_y[k] = _ref_oneshot_1d(my, yg, fiber, q[2], ops[2])
+            end
+            return _ref_oneshot_1d(mz, zg, tmp_y, q[3], ops[3])
+        end
+
+        # Per-method dispatch to the public 1D oneshot APIs.
+        _ref_oneshot_1d(::PchipInterp, x, y, q, op) =
+            pchip_interp(x, y, q; deriv = op)
+        _ref_oneshot_1d(m::CardinalInterp, x, y, q, op) =
+            cardinal_interp(x, y, q; tension = m.tension, deriv = op)
+        _ref_oneshot_1d(::AkimaInterp, x, y, q, op) =
+            akima_interp(x, y, q; deriv = op)
+        _ref_oneshot_1d(::LinearInterp, x, y, q, op) =
+            linear_interp(x, y, q; deriv = op)
+        # cubic_interp / quadratic_interp 1D scalar queries default to OnTheFly already
+        # via `_resolve_coeffs` — no need to pass `coeffs` (and the 1D API doesn't accept it).
+        _ref_oneshot_1d(m::CubicInterp, x, y, q, op) =
+            cubic_interp(x, y, q; bc = m.bc, deriv = op)
+        _ref_oneshot_1d(m::QuadraticInterp, x, y, q, op) =
+            quadratic_interp(x, y, q; bc = m.bc, deriv = op)
+
+        # ---------- 2D test data ----------
+        xg = collect(range(0.0, 2π, 30))
+        yg = collect(range(-1.0, 1.0, 25))
+        data2 = [sin(2xi) * exp(-yj^2) + 0.3 * xi * yj for xi in xg, yj in yg]
+
+        # Build a query set: every cell endpoint along each axis (including boundaries),
+        # plus a handful of interior fractional positions.
+        function _cell_queries(grid)
+            qs = Float64[]
+            for i in 1:(length(grid) - 1)
+                push!(qs, 0.5 * (grid[i] + grid[i + 1]))      # cell midpoint
+            end
+            push!(qs, grid[1] + 1.0e-10)                      # left boundary touch
+            push!(qs, grid[end] - 1.0e-10)                    # right boundary touch
+            push!(qs, 0.7 * grid[1] + 0.3 * grid[2])          # near-left interior
+            push!(qs, 0.3 * grid[end - 1] + 0.7 * grid[end])  # near-right interior
+            return qs
+        end
+        qxs = _cell_queries(xg)
+        qys = _cell_queries(yg)
+
+        method_pairs_2d = [
+            (PchipInterp(), PchipInterp()),
+            (CardinalInterp(), CardinalInterp()),
+            (CardinalInterp(tension = 0.4), CardinalInterp(tension = 0.4)),
+            (AkimaInterp(), AkimaInterp()),
+            # Mixed local × global
+            (CardinalInterp(), CubicInterp()),
+            (CubicInterp(), CardinalInterp()),
+            (PchipInterp(), QuadraticInterp()),
+            # Mixed local × trivial
+            (PchipInterp(), LinearInterp()),
+            (LinearInterp(), AkimaInterp()),
+        ]
+
+        @testset "2D equivalence: $(typeof(methods).name.name)" for methods in method_pairs_2d
+            itp = interp((xg, yg), data2; method = methods, coeffs = OnTheFly())
+            for qx in qxs, qy in qys
+                # Value
+                got = itp((qx, qy))
+                ref = _ref_collapse_2d((xg, yg), data2, methods, (qx, qy), (EvalValue(), EvalValue()))
+                # Pchip/Cardinal/Linear/Cubic value path is fully reproducible — bit equal.
+                # Akima has more rounding paths in its 4-secant weighted average → ULP ≤ 2.
+                if any(m isa AkimaInterp for m in methods)
+                    @test abs(got - ref) <= 2 * eps(max(abs(got), abs(ref), 1.0))
+                else
+                    @test got === ref
+                end
+                # Spot-check a derivative op (not all combinations to keep test cheap).
+                # Values are required to be bit-equal (asserted above), but derivatives
+                # can drift by ≤ 4 ULPs because LLVM may inline differently for
+                # `view(Vector, 1:4)` (SubArray) vs the original `Vector` — the basis
+                # function evaluations are mathematically identical but the floating-point
+                # ordering of (1-t)^2 etc. can flip in the JIT'd code.
+                if (qx, qy) === (qxs[1], qys[1])
+                    for ops in (
+                            (DerivOp{1}(), EvalValue()),
+                            (EvalValue(), DerivOp{1}()),
+                            (DerivOp{2}(), EvalValue()),
+                        )
+                        got_d = itp((qx, qy); deriv = ops)
+                        ref_d = _ref_collapse_2d((xg, yg), data2, methods, (qx, qy), ops)
+                        @test abs(got_d - ref_d) <= 4 * eps(max(abs(got_d), abs(ref_d), 1.0))
+                    end
+                end
+            end
+        end
+
+        # ---------- 3D test data ----------
+        xg3 = collect(range(0.0, 2π, 12))
+        yg3 = collect(range(-1.0, 1.0, 10))
+        zg3 = collect(range(0.0, 1.0, 8))
+        data3 = [sin(2xi) * exp(-yj^2) * (1 + zk) for xi in xg3, yj in yg3, zk in zg3]
+
+        method_triples_3d = [
+            (CardinalInterp(), CardinalInterp(), CardinalInterp()),
+            (PchipInterp(), PchipInterp(), PchipInterp()),
+            # Mixed
+            (CardinalInterp(), CubicInterp(), PchipInterp()),
+            (PchipInterp(), LinearInterp(), CardinalInterp()),
+            (AkimaInterp(), AkimaInterp(), LinearInterp()),
+        ]
+
+        # 3D query set: every dim's cell midpoints + boundary touches
+        qxs3 = _cell_queries(xg3)
+        qys3 = _cell_queries(yg3)
+        qzs3 = _cell_queries(zg3)
+
+        @testset "3D equivalence: $(string(typeof(methods).name))" for methods in method_triples_3d
+            itp = interp((xg3, yg3, zg3), data3; method = methods, coeffs = OnTheFly())
+            # Sample a subset of the cartesian product to keep test runtime reasonable
+            for qx in qxs3[1:3:end], qy in qys3[1:3:end], qz in qzs3[1:3:end]
+                got = itp((qx, qy, qz))
+                ref = _ref_collapse_3d(
+                    (xg3, yg3, zg3), data3, methods, (qx, qy, qz),
+                    (EvalValue(), EvalValue(), EvalValue())
+                )
+                if any(m isa AkimaInterp for m in methods)
+                    @test abs(got - ref) <= 4 * eps(max(abs(got), abs(ref), 1.0))
+                else
+                    @test got === ref
+                end
+            end
+        end
+    end
 end

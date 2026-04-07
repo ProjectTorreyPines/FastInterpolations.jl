@@ -703,4 +703,226 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
         @test _adjoint_func(akima_interp) === akima_adjoint
     end
 
+    # ========================================
+    # 24. Phase 6: Hint contract under cell-local windowing
+    # ========================================
+    # Verify the user-facing hint contract is preserved end-to-end through the
+    # windowed OnTheFly path:
+    #   6a. Hint flow: invalid initial state → updated to absolute indices after first query.
+    #   6b. Absolute-coord property: after every query, hint identifies the cell that
+    #       actually contains the query in the ORIGINAL grid (not the windowed view).
+    #   6c. Batch persistence: hint reuse across monotonic queries doesn't drift.
+    @testset "Phase 6: Hint contract under windowing" begin
+        x = collect(range(0.0, 2π, 30))
+        y = collect(range(-1.0, 1.0, 25))
+        z = collect(range(0.0, 1.0, 12))
+        data2 = [sin(2xi) * exp(-yj^2) for xi in x, yj in y]
+        data3 = [sin(2xi) * exp(-yj^2) * (1 + zk) for xi in x, yj in y, zk in z]
+
+        # ── 6a: Hint flow — invalid initial state ──
+        @testset "6a: Invalid initial hint → updated to absolute indices" begin
+            for methods in (
+                    (PchipInterp(), PchipInterp()),
+                    (CardinalInterp(), CardinalInterp()),
+                    (AkimaInterp(), AkimaInterp()),
+                    (CubicInterp(), CardinalInterp()),
+                    (PchipInterp(), LinearInterp()),
+                )
+                itp = interp((x, y), data2; method = methods, coeffs = OnTheFly())
+                hint = (Ref(0), Ref(0))                # deliberately invalid
+                v = itp((1.5, 0.4); hint = hint)
+                @test v isa Float64
+                @test 1 <= hint[1][] <= length(x) - 1   # absolute interval index
+                @test 1 <= hint[2][] <= length(y) - 1
+                # The cell identified by the hint must contain the query in the original grid.
+                @test x[hint[1][]] <= 1.5 <= x[hint[1][] + 1]
+                @test y[hint[2][]] <= 0.4 <= y[hint[2][] + 1]
+            end
+        end
+
+        # ── 6b: Absolute-coord round-trip across many queries ──
+        @testset "6b: Absolute-coord property holds after every query" begin
+            methods = (CardinalInterp(), CardinalInterp())
+            itp = interp((x, y), data2; method = methods, coeffs = OnTheFly())
+            hint = (Ref(1), Ref(1))
+            # Random scattered queries — exercises walk + reseat behavior
+            qs = [(0.5 + 5.5 * rand(), -0.9 + 1.8 * rand()) for _ in 1:100]
+            for q in qs
+                itp(q; hint = hint)
+                # Hint must always be in absolute coords and identify the cell containing q.
+                @test 1 <= hint[1][] <= length(x) - 1
+                @test 1 <= hint[2][] <= length(y) - 1
+                @test x[hint[1][]] <= q[1] <= x[hint[1][] + 1]
+                @test y[hint[2][]] <= q[2] <= y[hint[2][] + 1]
+            end
+        end
+
+        # ── 6b: 3D version ──
+        @testset "6b: 3D absolute-coord property" begin
+            methods = (PchipInterp(), CardinalInterp(), AkimaInterp())
+            itp = interp((x, y, z), data3; method = methods, coeffs = OnTheFly())
+            hint = (Ref(1), Ref(1), Ref(1))
+            qs = [(0.5 + 5.5 * rand(), -0.9 + 1.8 * rand(), 0.05 + 0.9 * rand()) for _ in 1:50]
+            for q in qs
+                itp(q; hint = hint)
+                @test x[hint[1][]] <= q[1] <= x[hint[1][] + 1]
+                @test y[hint[2][]] <= q[2] <= y[hint[2][] + 1]
+                @test z[hint[3][]] <= q[3] <= z[hint[3][] + 1]
+            end
+        end
+
+        # ── 6c: Batch persistence — monotonic sweep ──
+        @testset "6c: Batch persistence (monotonic sweep)" begin
+            methods = (CardinalInterp(), CardinalInterp())
+            itp = interp((x, y), data2; method = methods, coeffs = OnTheFly())
+            hint = (Ref(1), Ref(1))
+            # Sweep diagonally across the grid; hint should walk monotonically.
+            prev_hint_x = 0
+            prev_hint_y = 0
+            for t in range(0.05, 0.95, 50)
+                q = (t * (x[end] - x[1]) + x[1], t * (y[end] - y[1]) + y[1])
+                itp(q; hint = hint)
+                # Strict monotonic non-decrease (sweep is strictly increasing in both dims).
+                @test hint[1][] >= prev_hint_x
+                @test hint[2][] >= prev_hint_y
+                prev_hint_x = hint[1][]
+                prev_hint_y = hint[2][]
+                # And still absolute-correct.
+                @test x[hint[1][]] <= q[1] <= x[hint[1][] + 1]
+                @test y[hint[2][]] <= q[2] <= y[hint[2][] + 1]
+            end
+        end
+
+        # ── 6: Mixed Cubic × Cardinal — hint persistence on the global-solve axis ──
+        @testset "Mixed Cubic×Cardinal: hint contract for both axes" begin
+            methods = (CubicInterp(), CardinalInterp())
+            itp = interp((x, y), data2; method = methods, coeffs = OnTheFly())
+            hint = (Ref(0), Ref(0))
+            for q in ((1.5, 0.4), (3.2, -0.6), (5.0, 0.8), (0.3, -0.9))
+                itp(q; hint = hint)
+                # Cubic axis (global solve): when `_has_any_local_method` is true (Cardinal
+                # is local), the entire windowed entry path runs and the pre-search updates
+                # ALL real-axis hints — including the Cubic axis. So Cubic-axis hint should
+                # also be in absolute coords.
+                @test 1 <= hint[1][] <= length(x) - 1
+                @test 1 <= hint[2][] <= length(y) - 1
+                @test x[hint[1][]] <= q[1] <= x[hint[1][] + 1]
+                @test y[hint[2][]] <= q[2] <= y[hint[2][] + 1]
+            end
+        end
+    end
+
+    # ========================================
+    # 23. _axis_window per-axis trait (cell-local OnTheFly stencil)
+    # ========================================
+    @testset "_axis_window trait" begin
+        using FastInterpolations: _axis_window, _fixed_window_size
+
+        # ── Fixed window sizes ──
+        @test _fixed_window_size(PchipInterp()) == 4
+        @test _fixed_window_size(CardinalInterp()) == 4
+        @test _fixed_window_size(AkimaInterp()) == 6
+        @test _fixed_window_size(LinearInterp()) == 2
+        @test _fixed_window_size(ConstantInterp()) == 2
+
+        # ── Cardinal/PCHIP: 4-point window, n=100 ──
+        @testset "Cardinal/PCHIP 4-point window" begin
+            for m in (CardinalInterp(), PchipInterp())
+                # Interior — symmetric
+                @test _axis_window(m, 50, 100) == 49:52
+                @test _axis_window(m, 25, 100) == 24:27
+                # Left boundary — extended right
+                @test _axis_window(m, 1, 100) == 1:4
+                @test _axis_window(m, 2, 100) == 1:4
+                # Right boundary — extended left (cell endpoints are 99, 100; ix=99)
+                @test _axis_window(m, 99, 100) == 97:100
+                @test _axis_window(m, 98, 100) == 97:100
+                # All windows have length == fixed size
+                for ix in 1:99
+                    @test length(_axis_window(m, ix, 100)) == 4
+                end
+            end
+        end
+
+        # ── Akima: 6-point window, n=100 ──
+        @testset "Akima 6-point window" begin
+            m = AkimaInterp()
+            # Interior — symmetric
+            @test _axis_window(m, 50, 100) == 48:53
+            @test _axis_window(m, 30, 100) == 28:33
+            # Left boundary — extended right
+            @test _axis_window(m, 1, 100) == 1:6
+            @test _axis_window(m, 2, 100) == 1:6
+            @test _axis_window(m, 3, 100) == 1:6
+            # Right boundary — extended left
+            @test _axis_window(m, 99, 100) == 95:100
+            @test _axis_window(m, 97, 100) == 95:100
+            # All windows have length == fixed size
+            for ix in 1:99
+                @test length(_axis_window(m, ix, 100)) == 6
+            end
+        end
+
+        # ── Linear/Constant: 2-point cell only ──
+        @testset "Linear/Constant 2-point cell" begin
+            for m in (LinearInterp(), ConstantInterp())
+                @test _axis_window(m, 50, 100) == 50:51
+                @test _axis_window(m, 1, 100) == 1:2
+                @test _axis_window(m, 99, 100) == 99:100
+                for ix in 1:99
+                    @test length(_axis_window(m, ix, 100)) == 2
+                end
+            end
+        end
+
+        # ── Cubic/Quadratic: full axis (no windowing) ──
+        @testset "Cubic/Quadratic full axis" begin
+            @test _axis_window(CubicInterp(), 50, 100) == 1:100
+            @test _axis_window(QuadraticInterp(), 1, 100) == 1:100
+            @test _axis_window(CubicInterp(), 99, 100) == 1:100
+        end
+
+        # ── Tiny grid fallback ──
+        @testset "Tiny grid fallback (n < fixed_window)" begin
+            # Akima needs 6 points; grid of 4 → fall back to full
+            @test _axis_window(AkimaInterp(), 1, 4) == 1:4
+            @test _axis_window(AkimaInterp(), 2, 4) == 1:4
+            @test _axis_window(AkimaInterp(), 3, 4) == 1:4
+            # Cardinal needs 4 points; grid of 3 → fall back to full
+            @test _axis_window(CardinalInterp(), 1, 3) == 1:3
+            @test _axis_window(CardinalInterp(), 2, 3) == 1:3
+            # Cardinal grid of exactly 4 → fits
+            @test _axis_window(CardinalInterp(), 1, 4) == 1:4
+            @test _axis_window(CardinalInterp(), 2, 4) == 1:4
+            @test _axis_window(CardinalInterp(), 3, 4) == 1:4
+        end
+
+        # ── Window contains both cell endpoints (always) ──
+        @testset "Window contains cell endpoints" begin
+            for m in (CardinalInterp(), PchipInterp(), AkimaInterp(), LinearInterp(), ConstantInterp())
+                for n in (4, 6, 10, 100)
+                    n < _fixed_window_size(m) && continue
+                    for ix in 1:(n - 1)
+                        w = _axis_window(m, ix, n)
+                        @test ix in w
+                        @test ix + 1 in w
+                        @test first(w) >= 1
+                        @test last(w) <= n
+                    end
+                end
+            end
+        end
+
+        # ── _has_any_local_method (reused from coeff_policy.jl) ──
+        @testset "_has_any_local_method gating" begin
+            using FastInterpolations: _has_any_local_method
+            @test _has_any_local_method((CardinalInterp(), CubicInterp())) == true
+            @test _has_any_local_method((CubicInterp(), CardinalInterp())) == true
+            @test _has_any_local_method((PchipInterp(), AkimaInterp())) == true
+            @test _has_any_local_method((CubicInterp(), CubicInterp())) == false
+            @test _has_any_local_method((QuadraticInterp(), CubicInterp())) == false
+            @test _has_any_local_method((LinearInterp(), CubicInterp())) == false
+        end
+    end
+
 end # @testset "Hermite OnTheFly"

@@ -1597,4 +1597,60 @@ using FastInterpolations
             method = (CubicInterp(), PchipInterp()), coeffs = PreCompute(),
         )
     end
+
+    # ========================================
+    # Phase 5b: NoInterp + Hermite OnTheFly with cell-local windowing
+    # ========================================
+    # The Phase 5b path is exercised when `_eval_nointerp` is called on an interpolant
+    # whose method tuple contains BOTH NoInterp axes AND at least one local-Hermite
+    # axis (PCHIP/Cardinal/Akima). The expected behavior:
+    #   1. NoInterp axes are pre-sliced via GridIdx (existing behavior).
+    #   2. The remaining real axes are searched for the cell once, windowed to the
+    #      cell-local stencil, sliced again, then evaluated by `_collapse_dims`.
+    #   3. Result must equal the equivalent call where the NoInterp axis is replaced
+    #      by a real axis at the corresponding grid point.
+    @testset "Phase 5b: NoInterp × Hermite OnTheFly windowed" begin
+        x = collect(range(0.0, 2π, 30))
+        y = collect(range(-1.0, 1.0, 25))
+        z = collect(range(0.0, 1.0, 12))
+        data_3d = [sin(2xi) * exp(-yj^2) * (1 + zk) for xi in x, yj in y, zk in z]
+
+        # 3D interpolant with NoInterp on the middle axis + Hermite on the others.
+        for methods in (
+                (CardinalInterp(), NoInterp(), CardinalInterp()),
+                (PchipInterp(), NoInterp(), AkimaInterp()),
+                (CardinalInterp(), NoInterp(), CubicInterp()),
+                (CubicInterp(), NoInterp(), PchipInterp()),
+            )
+            itp = interp((x, y, z), data_3d; method = methods, coeffs = OnTheFly())
+            for j in (1, 7, 13, 25)            # iterate over y indices, including boundaries
+                for (qx, qz) in ((1.0, 0.4), (3.5, 0.7), (5.5, 0.1))
+                    # GridIdx route — exercises _eval_nointerp Phase 5b path
+                    val_idx = itp((qx, GridIdx(j), qz))
+
+                    # Reference: build a 2D itp on the (x, z) plane sliced at y[j],
+                    # using only the real-axis methods. This avoids any NoInterp logic.
+                    itp_ref = interp(
+                        (x, z), data_3d[:, j, :];
+                        method = (methods[1], methods[3]),
+                        coeffs = OnTheFly(),
+                    )
+                    val_ref = itp_ref((qx, qz))
+                    @test val_idx ≈ val_ref atol = 1.0e-12 rtol = 1.0e-12
+                end
+            end
+        end
+
+        # Hint persistence across Phase 5b path: pre-search must update real-axis hints.
+        let methods = (CardinalInterp(), NoInterp(), CardinalInterp())
+            itp = interp((x, y, z), data_3d; method = methods, coeffs = OnTheFly())
+            hint = (Ref(0), Ref(0), Ref(0))
+            itp((1.5, GridIdx(10), 0.4); hint = hint)
+            # Real axes should have been updated to absolute interval indices.
+            @test 1 <= hint[1][] <= length(x) - 1
+            @test 1 <= hint[3][] <= length(z) - 1
+            # NoInterp axis hint is set to the GridIdx index (existing behavior).
+            @test hint[2][] == 10
+        end
+    end
 end

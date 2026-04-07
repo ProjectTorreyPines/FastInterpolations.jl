@@ -310,10 +310,13 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
     # E. Regression Fixes (codex review)
     # ========================================
 
-    @testset "AD: ForwardDiff.Dual scalar query → PreCompute fallback" begin
-        # AutoCoeffs must fall back to PreCompute for Dual queries so AD works.
-        # OnTheFly's Tv-typed _collapse_dims buffers can't hold Dual values.
+    @testset "AD: ForwardDiff.Dual scalar query (native OnTheFly support)" begin
+        # OnTheFly now natively supports Dual queries: the _collapse_dims pool buffer
+        # type is promoted via `_promote_query_eltype(Tv, q_eval)` at each entry point,
+        # so query-dependent intermediates can be Dual-typed. No PreCompute fallback.
         import ForwardDiff
+
+        # 1. Default path (AutoCoeffs → OnTheFly for scalar)
         g_cubic = ForwardDiff.gradient(v -> cubic_interp((x, y), data_2d, (v[1], v[2])), [qx, qy])
         @test length(g_cubic) == 2
         @test all(isfinite, g_cubic)
@@ -328,6 +331,40 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
         )
         @test length(g_interp) == 2
         @test all(isfinite, g_interp)
+
+        # 2. Explicit coeffs=OnTheFly() must also work (was broken before the _promote_query_eltype fix)
+        g_cubic_otf = ForwardDiff.gradient(
+            v -> cubic_interp((x, y), data_2d, (v[1], v[2]); coeffs = OnTheFly()), [qx, qy]
+        )
+        @test g_cubic_otf ≈ g_cubic rtol = 1.0e-12
+
+        g_quad_otf = ForwardDiff.gradient(
+            v -> quadratic_interp((x, y), data_2d, (v[1], v[2]); coeffs = OnTheFly()), [qx, qy]
+        )
+        @test g_quad_otf ≈ g_quad rtol = 1.0e-12
+
+        # 3. Hetero oneshot with mixed methods
+        g_hetero = ForwardDiff.gradient(
+            v -> interp(
+                (x, y), data_2d, (v[1], v[2]);
+                method = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()
+            ),
+            [qx, qy]
+        )
+        @test length(g_hetero) == 2
+        @test all(isfinite, g_hetero)
+
+        # 4. OnTheFly interpolant callable path (via gradient over query)
+        itp_otf = interp((x, y), data_2d; method = (CubicInterp(), LinearInterp()), coeffs = OnTheFly())
+        g_itp_cbl = ForwardDiff.gradient(v -> itp_otf((v[1], v[2])), [qx, qy])
+        @test length(g_itp_cbl) == 2
+        @test all(isfinite, g_itp_cbl)
+        @test g_itp_cbl ≈ g_hetero rtol = 1.0e-12
+
+        # 5. Accuracy check: cubic gradient vs analytical for sin(x)*cos(y)
+        # ∂f/∂x = cos(x)*cos(y), ∂f/∂y = -sin(x)*sin(y)
+        analytical = [cos(qx) * cos(qy), -sin(qx) * sin(qy)]
+        @test g_cubic ≈ analytical rtol = 1.0e-4  # cubic spline accuracy on 30x25 grid
     end
 
     @testset "Validation: PreCompute + local Hermite rejected in oneshot" begin

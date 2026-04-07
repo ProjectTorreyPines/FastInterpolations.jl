@@ -137,6 +137,25 @@ chains like `promote_type(Tv, Tg, Tq)`.
 end
 
 """
+    _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type
+
+Compute the promoted output element type by folding `promote_type` over `Tv`
+and the element types of the tuple `q`. Recursive on `Base.tail` for compile-time
+type specialization — each step sees concrete types and collapses to a constant
+through Julia's normal inference (no @generated body needed, which would suffer
+from world-age issues when promotion rules for `q`'s types are defined in an
+extension module loaded after FastInterpolations).
+
+Used by the OnTheFly ND `_collapse_dims` entry points where the pool buffer
+type must include the query eltype (for ForwardDiff.Dual compatibility) but
+the computation must remain zero-cost for plain-Float64 queries.
+"""
+@inline _promote_query_eltype(::Type{Tv}, ::Tuple{}) where {Tv} = Tv
+@inline function _promote_query_eltype(::Type{Tv}, q::Tuple) where {Tv}
+    return _promote_query_eltype(promote_type(Tv, typeof(first(q))), Base.tail(q))
+end
+
+"""
     _promote_value_type(y, ::Type{Tg}) -> (Tv, y_converted)
 
 Promote y-values to appropriate type based on grid type Tg.

@@ -344,7 +344,9 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             rsrc = ($(r_searches...),)
             search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
             hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
-            return _collapse_dims(d_sliced, rg, rm, re, q_eval, ro, search_r, hint_r)
+            # Tr promotes sliced-data eltype with query eltypes → Dual-safe pool buffers for AD
+            Tr = _promote_query_eltype(eltype(d_sliced), q_eval)
+            return _collapse_dims(Tr, d_sliced, rg, rm, re, q_eval, ro, search_r, hint_r)
         end
     end
 end

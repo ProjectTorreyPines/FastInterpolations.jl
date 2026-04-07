@@ -119,19 +119,21 @@ end
 
 @inline function _interp_nd_oneshot_onthefly(
         grids::NTuple{N, AbstractVector{Tg}},
-        data::AbstractArray{<:Any, N},
+        data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
-    ) where {Tg <: AbstractFloat, N}
+    ) where {Tg <: AbstractFloat, Tv, N}
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
     q_eval = _handle_all_extraps(query, grids, extraps_val)
-    return _collapse_dims(data, grids, methods, extraps_val, q_eval, ops, searches, hints)
+    # Tr promotes data eltype with query eltypes → Dual-safe pool buffers for AD.
+    Tr = _promote_query_eltype(Tv, q_eval)
+    return _collapse_dims(Tr, data, grids, methods, extraps_val, q_eval, ops, searches, hints)
 end
 
 # ========================================

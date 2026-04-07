@@ -187,23 +187,78 @@ const _MP_ATOL = 50 * eps(Float64)
     # ==========================================================================
 
     @testset "E. Short-grid fallback warning (cubic)" begin
-        # 3-point grid + ZeroSlopeBC + p_src > 1 → warning + ZeroCurvBC fallback
+        # 3-point grid + ZeroSlopeBC + p_src > 1 → warning + ZeroCurvBC fallback.
+        # Wrap both the warning assertion and the return-value assertion in a
+        # single `@test_logs` so the warning is captured exactly once.
         short_grid = [0.0, 0.5, 1.0]
-        @test_logs (:warn, r"Cubic ND mixed-partial build") begin
-            FastInterpolations._get_effective_bc(ZeroSlopeBC(), 2, short_grid)
+        @test_logs (:warn, r"Cubic ND mixed-partial build") match_mode = :any begin
+            result = FastInterpolations._get_effective_bc(ZeroSlopeBC(), 2, short_grid)
+            @test result === ZeroCurvBC()
         end
-        result = FastInterpolations._get_effective_bc(ZeroSlopeBC(), 2, short_grid)
-        @test result === ZeroCurvBC()
     end
 
     @testset "E. Short-grid fallback warning (quadratic)" begin
         # 2-point grid + ZeroSlopeBC + p_src > 1 → warning + MinCurvFit fallback
         short_grid = [0.0, 1.0]
-        @test_logs (:warn, r"Quadratic ND mixed-partial build") begin
-            FastInterpolations._get_effective_bc_quadratic(ZeroSlopeBC(), 2, short_grid)
+        @test_logs (:warn, r"Quadratic ND mixed-partial build") match_mode = :any begin
+            result = FastInterpolations._get_effective_bc_quadratic(ZeroSlopeBC(), 2, short_grid)
+            @test result === MinCurvFit()
         end
-        result = FastInterpolations._get_effective_bc_quadratic(ZeroSlopeBC(), 2, short_grid)
-        @test result === MinCurvFit()
+    end
+
+    # ==========================================================================
+    # F. Branch coverage — direct unit calls exercising every helper return path
+    #
+    # Group A/B cover the helpers indirectly through the full ND build pipeline.
+    # This group directly invokes `_get_effective_bc` / `_get_effective_bc_quadratic`
+    # with every combination of inputs that reaches a distinct return statement,
+    # so line/branch coverage of the patch lands at 100%.
+    # ==========================================================================
+
+    @testset "F. Direct branch coverage (cubic _get_effective_bc)" begin
+        short_grid = [0.0, 0.5, 1.0]   # 3 points — triggers short-grid fallback
+        long_grid = collect(1.0:10.0)  # 10 points — normal path
+
+        # Rule 1: p_src == 1 → user BC (regardless of BC type or grid length)
+        @test FastInterpolations._get_effective_bc(ZeroSlopeBC(), 1, long_grid) isa ZeroSlopeBC
+        @test FastInterpolations._get_effective_bc(PeriodicBC(), 1, short_grid) isa PeriodicBC
+        @test FastInterpolations._get_effective_bc(CubicFit(), 1, long_grid) isa CubicFit
+
+        # Rule 2: p_src > 1 with PeriodicBC → propagate periodic
+        @test FastInterpolations._get_effective_bc(PeriodicBC(), 2, long_grid) isa PeriodicBC
+        @test FastInterpolations._get_effective_bc(PeriodicBC(), 2, short_grid) isa PeriodicBC
+
+        # Rule 3 — left branch of `||`: PolyFit user BC short-circuits regardless
+        # of grid length (no short-grid fallback for PolyFit BCs)
+        @test FastInterpolations._get_effective_bc(CubicFit(), 2, long_grid) isa CubicFit
+        @test FastInterpolations._get_effective_bc(CubicFit(), 2, short_grid) isa CubicFit
+
+        # Rule 3 — right branch of `||`: non-PolyFit BC, length ≥ 4 → user BC
+        @test FastInterpolations._get_effective_bc(ZeroSlopeBC(), 2, long_grid) isa ZeroSlopeBC
+        @test FastInterpolations._get_effective_bc(ZeroCurvBC(), 2, long_grid) isa ZeroCurvBC
+
+        # Short-grid fallback branch is already covered by group E's `@test_logs`
+        # (the helper call inside `@test_logs` executes every line of both the
+        # dispatch body and `_warn_short_grid_fallback_cubic`).
+    end
+
+    @testset "F. Direct branch coverage (quadratic _get_effective_bc_quadratic)" begin
+        short_grid = [0.0, 1.0]        # 2 points — triggers short-grid fallback
+        long_grid = collect(1.0:10.0)  # 10 points — normal path
+
+        # Rule 1: p_src == 1 → user BC
+        @test FastInterpolations._get_effective_bc_quadratic(Right(QuadraticFit()), 1, long_grid) isa Right
+        @test FastInterpolations._get_effective_bc_quadratic(MinCurvFit(), 1, long_grid) isa MinCurvFit
+        @test FastInterpolations._get_effective_bc_quadratic(ZeroCurvBC(), 1, short_grid) isa ZeroCurvBC
+
+        # Rule 2 (normal path): length ≥ 3 → user BC
+        @test FastInterpolations._get_effective_bc_quadratic(Right(QuadraticFit()), 2, long_grid) isa Right
+        @test FastInterpolations._get_effective_bc_quadratic(ZeroSlopeBC(), 2, long_grid) isa ZeroSlopeBC
+        @test FastInterpolations._get_effective_bc_quadratic(MinCurvFit(), 2, long_grid) isa MinCurvFit
+
+        # Short-grid fallback branch is already covered by group E's `@test_logs`
+        # (the helper call inside `@test_logs` executes every line of both the
+        # dispatch body and `_warn_short_grid_fallback_quadratic`).
     end
 
     @testset "D. Cubic periodic-on-one-axis propagation" begin

@@ -73,6 +73,10 @@ end
 
 # Base case: 1D data → one-shot eval final dimension (Tr is carried but unused —
 # the 1D scalar eval returns a scalar directly, no buffer needed).
+#
+# `windows` parameter: per the recursion-alignment invariant, `data` and `grids[1]` are
+# already aligned at this layer (the top-level call site pre-sliced them). `windows[1]`
+# is `1:length(data)` here — passed through for symmetry only.
 @inline function _collapse_dims(
         ::Type,
         data::AbstractVector,
@@ -83,6 +87,7 @@ end
         ops::Tuple{AbstractEvalOp},
         searches::Tuple{AbstractSearchPolicy},
         hints,
+        windows::Tuple{AbstractUnitRange{Int}},
     )
     return _oneshot_eval_1d(
         methods[1], grids[1], data, extraps[1], q_eval[1], ops[1], searches[1], _first_hint(hints)
@@ -90,6 +95,12 @@ end
 end
 
 # Recursive case: collapse dim 1 → (M-1)D array, then recurse
+#
+# `windows` parameter: see hetero_window.jl for how the top-level entry computes per-axis
+# windows. Inside this recursion, `windows[d] == 1:size(data, d)` always (the call site
+# pre-slices `data` and `grids` so they're aligned with the actual cell-local stencil).
+# We thread `windows` through unchanged — the kernel iterates `Base.tail(size(data))`,
+# which equals `length.(Base.tail(windows))` by the alignment invariant.
 @inline @with_pool pool function _collapse_dims(
         ::Type{Tr},
         data::AbstractArray{<:Any, M},
@@ -100,6 +111,7 @@ end
         ops::Tuple{AbstractEvalOp, Vararg{AbstractEvalOp}},
         searches::Tuple{AbstractSearchPolicy, Vararg{AbstractSearchPolicy}},
         hints,
+        windows::NTuple{M, AbstractUnitRange{Int}},
     ) where {Tr, M}
     remaining_size = Base.tail(size(data))
     result = acquire!(pool, Tr, remaining_size)
@@ -114,11 +126,13 @@ end
         )
     end
 
-    # Recurse with remaining dimensions (Tr unchanged — all levels share one buffer type)
+    # Recurse with remaining dimensions (Tr unchanged — all levels share one buffer type).
+    # The result buffer is sized to `remaining_size`, so its windows are 1-based.
+    new_windows = map(Base.OneTo, remaining_size)
     return _collapse_dims(
         Tr, result, Base.tail(grids), Base.tail(methods),
         Base.tail(extraps), Base.tail(q_eval), Base.tail(ops),
-        Base.tail(searches), _tail_hints(hints)
+        Base.tail(searches), _tail_hints(hints), new_windows
     )
 end
 
@@ -126,7 +140,17 @@ end
 # Core Eval Entry Point
 # ========================================
 
-# OnTheFly path: sequential 1D one-shot interpolation per query
+# OnTheFly path: sequential 1D one-shot interpolation per query.
+#
+# Windowing strategy (Phase 3):
+#   - If any axis is a local method (PCHIP/Cardinal/Akima), pre-search the cell once
+#     using the user's hint (which mutates them to absolute indices, preserving the
+#     existing contract), build per-axis cell-local windows via `_axis_window`, and
+#     slice both `data` and `grids` to those windows. The inner `_collapse_dims` then
+#     iterates only over `stencil^(N-1)` fibers — O(1) per query, independent of N.
+#   - Otherwise (pure global-solve tuples like (CubicInterp, CubicInterp)), skip the
+#     pre-search entirely and use full windows. The kernel sees the original data and
+#     grids — bit-for-bit identical to the pre-Phase-3 behavior, zero regression.
 @inline function _eval_hetero_nd(
         itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
@@ -138,7 +162,33 @@ end
     # Tr promotes data eltype with query eltypes → Dual-safe pool buffers for AD.
     # Recursive type fold specializes at compile time for each concrete query tuple.
     Tr = _promote_query_eltype(Tv, q_eval)
-    return _collapse_dims(Tr, itp.data, itp.grids, itp.methods, itp.extraps, q_eval, ops, searches, hints)
+
+    if _has_any_local_method(itp.methods)
+        # Pre-search uses user hints (mutates them to absolute indices, preserving contract).
+        indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, searches, hints)
+        # Per-axis window: cell-local for local methods, full axis for global-solve methods.
+        windows = ntuple(
+            d -> _axis_window(itp.methods[d], indices[d], length(itp.grids[d])),
+            Val(N),
+        )
+        data_local = view(itp.data, windows...)
+        grids_local = map(view, itp.grids, windows)
+        # Inner kernel sees the pre-sliced data + grids. Pass `nothing` as hints — the
+        # tiny inner search on a 4–6 point fiber is negligible, and this prevents any
+        # relative-coordinate hint from leaking back to the user.
+        rel_windows = map(Base.OneTo ∘ length, windows)
+        return _collapse_dims(
+            Tr, data_local, grids_local, itp.methods, itp.extraps,
+            q_eval, ops, searches, nothing, rel_windows,
+        )
+    end
+
+    # Global-solve fallback (no pre-search, no slicing — bit-for-bit current behavior).
+    full_windows = ntuple(d -> Base.OneTo(size(itp.data, d)), Val(N))
+    return _collapse_dims(
+        Tr, itp.data, itp.grids, itp.methods, itp.extraps,
+        q_eval, ops, searches, hints, full_windows,
+    )
 end
 
 # PreCompute path: precomputed partials + local kernel eval (O(1) per query)
@@ -197,7 +247,13 @@ end
 # ========================================
 # Enables vector_calculus.jl functions (gradient, hessian, laplacian).
 
-# OnTheFly: cell stores everything needed for re-collapse (including searches + hints)
+# OnTheFly: cell stores everything needed for re-collapse (including searches + hints + windows).
+#
+# Phase 4: when at least one axis is a local method, compute cell-local windows ONCE here
+# and cache them in the cell tuple. The vector_calculus path (gradient/hessian/laplacian)
+# calls `_eval_at_cell` N or N² times per query — windowing once amortizes the search +
+# `_axis_window` cost across all those evaluations. Pure global-solve tuples skip the
+# pre-search and store full windows (zero regression).
 @inline function _locate_cell(
         itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
@@ -205,7 +261,24 @@ end
         hints = nothing,
     ) where {Tg, Tv, N, G, S, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-    return (itp.data, itp.grids, itp.methods, itp.extraps, q_eval, search_tuple, hints)
+
+    if _has_any_local_method(itp.methods)
+        # Pre-search uses user hints (mutates them to absolute indices, preserving contract).
+        indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple, hints)
+        windows = ntuple(
+            d -> _axis_window(itp.methods[d], indices[d], length(itp.grids[d])),
+            Val(N),
+        )
+        data_local = view(itp.data, windows...)
+        grids_local = map(view, itp.grids, windows)
+        rel_windows = map(Base.OneTo ∘ length, windows)
+        # Cell tuple: pre-sliced data + grids + relative windows + nothing hints
+        # (the inner kernel must not see relative-coord hints — see hetero_window.jl invariant 2).
+        return (data_local, grids_local, itp.methods, itp.extraps, q_eval, search_tuple, nothing, rel_windows)
+    end
+
+    full_windows = ntuple(d -> Base.OneTo(size(itp.data, d)), Val(N))
+    return (itp.data, itp.grids, itp.methods, itp.extraps, q_eval, search_tuple, hints, full_windows)
 end
 
 @inline function _eval_at_cell(
@@ -213,10 +286,10 @@ end
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp},
     ) where {Tg, Tv, N, G, S, M, E, P}
-    data, grids, methods, extraps, q_eval, searches, hints = cell
+    data, grids, methods, extraps, q_eval, searches, hints, windows = cell
     # Tr promotes data eltype with query eltypes → Dual-safe pool buffers for AD.
     Tr = _promote_query_eltype(Tv, q_eval)
-    return _collapse_dims(Tr, data, grids, methods, extraps, q_eval, ops, searches, hints)
+    return _collapse_dims(Tr, data, grids, methods, extraps, q_eval, ops, searches, hints, windows)
 end
 
 # PreCompute: cell stores precomputed cell location (locate-once optimization)

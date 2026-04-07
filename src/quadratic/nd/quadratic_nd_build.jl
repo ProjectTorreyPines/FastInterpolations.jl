@@ -209,16 +209,45 @@ end
 
 Select the effective boundary condition for computing a quadratic mixed partial.
 
+The user BC is used unchanged for *every* partial (pure and mixed), so that the
+PreCompute build operator becomes mathematically equivalent to OnTheFly's
+sequential composition `I_y ∘ I_x` and Clairaut's identity
+`∂²f/∂x∂y = ∂²f/∂y∂x` is preserved at the stored nodal level. The previous
+implementation substituted `Right(QuadraticFit())` for `p_src > 1`, which
+produced an axis-asymmetric tensor product and a ~1e-5 drift versus OnTheFly.
+
+PeriodicBC is cubic-only and not supported by quadratic ND, so no Rule-2
+equivalent is needed here.
+
 # Selection Rules
-1. `p_src == 1` (pure derivative, source is f): Use specified BC unchanged
-2. Periodic BC: Always propagate
-3. With enough grid points (≥3): Use Right(QuadraticFit()) for mixed partials
-4. Fallback: Right(ZeroCurvBC()) → Right(Deriv2(0))
+1. `p_src == 1` (pure derivative, source is f): user BC
+2. Default: user BC (was: `Right(QuadraticFit())`)
+3. Short-grid fallback (`length(grid) < 3`): emit a one-shot warning and
+   substitute `MinCurvFit()`
 """
 @inline function _get_effective_bc_quadratic(bc::AbstractBC, p_src::Int, grid::AbstractVector)
-    p_src == 1 && return bc                       # raw AbstractBC preserved (lazy normalization)
-    length(grid) >= 3 && return Right(QuadraticFit())
+    # Rule 1: Pure derivative (source is f) — raw AbstractBC preserved (lazy normalization)
+    p_src == 1 && return bc
+
+    # Rule 2: Mixed partials use the user BC (was Right(QuadraticFit())). Restores
+    # PreCompute↔OnTheFly numerical equivalence within FP noise and Clairaut symmetry.
+    if length(grid) >= 3
+        return bc
+    end
+
+    # Short-grid defensive fallback: warn user once and substitute MinCurvFit.
+    _warn_short_grid_fallback_quadratic(bc, length(grid))
     return MinCurvFit()                           # 2-point grid: min curvature ≡ zero curvature
+end
+
+@noinline function _warn_short_grid_fallback_quadratic(bc, n::Int)
+    @warn """
+    Quadratic ND mixed-partial build: grid has $n points (< 3), too short to
+    safely apply user BC `$(nameof(typeof(bc)))` to a differentiated nodal
+    array. Falling back to `MinCurvFit()` for the mixed partial. Provide ≥ 3
+    points per axis to use your BC throughout the mixed-partial build.
+    """ maxlog = 1
+    return nothing
 end
 
 # ========================================

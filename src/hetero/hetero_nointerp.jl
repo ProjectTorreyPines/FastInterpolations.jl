@@ -858,6 +858,7 @@ function _interp_batch_with_grididx!(
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = AutoSearch(),
         hint = nothing,
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
 
@@ -884,7 +885,8 @@ function _interp_batch_with_grididx!(
     if !_has_grididx(typeof(queries))
         return interp!(
             output, grids, data, queries;
-            method = method, deriv = deriv, extrap = extrap, search = search, hint = hint
+            method = method, deriv = deriv, extrap = extrap,
+            search = search, hint = hint, coeffs = coeffs,
         )
     end
 
@@ -928,6 +930,6 @@ function _interp_batch_with_grididx!(
     return interp!(
         output, grids_r, data_r, queries_r;
         method = methods_r, deriv = deriv_r, extrap = extrap_r,
-        search = search_r, hint = hint_r
+        search = search_r, hint = hint_r, coeffs = coeffs,
     )
 end

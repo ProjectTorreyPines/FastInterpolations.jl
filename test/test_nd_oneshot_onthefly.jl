@@ -129,6 +129,20 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
         @test val_auto ≈ val_pre rtol = 1.0e-10
     end
 
+    @testset "AutoCoeffs: quadratic AD seed matches PreCompute exactly" begin
+        xq = range(0.0, 2.0, 15)
+        yq = range(0.0, 2.0, 15)
+        data_q = [sin(xi) * cos(yj) for xi in xq, yj in yq]
+        q = (0.7, 0.9)
+
+        @test quadratic_interp((xq, yq), data_q, q) ==
+            quadratic_interp((xq, yq), data_q, q; coeffs = PreCompute())
+        @test quadratic_interp((xq, yq), data_q, q; deriv = (DerivOp(1), EvalValue())) ==
+            quadratic_interp((xq, yq), data_q, q; deriv = (DerivOp(1), EvalValue()), coeffs = PreCompute())
+        @test quadratic_interp((xq, yq), data_q, q; deriv = (EvalValue(), DerivOp(1))) ==
+            quadratic_interp((xq, yq), data_q, q; deriv = (EvalValue(), DerivOp(1)), coeffs = PreCompute())
+    end
+
     @testset "AutoCoeffs: interp scalar matches PreCompute" begin
         val_auto = interp((x, y), data_2d, (qx, qy); method = CubicInterp())  # AutoCoeffs default
         val_pre = interp((x, y), data_2d, (qx, qy); method = CubicInterp(), coeffs = PreCompute())
@@ -438,36 +452,28 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
     # F. Coverage Gap Closure (from re-audit)
     # ========================================
 
-    @testset "Quadratic OnTheFly with all supported BCs" begin
-        # Exercise _to_quadratic_bc for each BC variant.
-        #
-        # NOTE: PreCompute and OnTheFly use different effective BCs for MIXED
-        # partials (`d²f/dxdy`). The PreCompute path, in
-        # `_get_effective_bc_quadratic` (quadratic_nd_build.jl), forces
-        # `Right(QuadraticFit())` whenever `p_src > 1` (i.e., computing a
-        # cross-derivative from an already-differentiated array). OnTheFly,
-        # being a sequential 1D composition, cannot replicate that switch
-        # and applies the user's BC uniformly at every 1D step.
-        #
-        # Both paths are self-consistent and converge at the expected order,
-        # but for BCs that don't match the data's actual boundary behavior
-        # (e.g., ZeroCurvBC forcing d²/dy²=0 on smooth non-zero-curvature
-        # data) the two paths diverge at ~1e-6 relative. For BCs that are a
-        # good fit for the data, the paths give bit-identical results.
-        # See brainstorm discussion in plans/keen-jumping-dijkstra.md.
+    @testset "Quadratic OnTheFly ≡ PreCompute for all supported BCs" begin
+        # After the mixed-partial BC consistency fix, PreCompute and OnTheFly
+        # agree to ~ULP tolerance for every user BC — the residual difference
+        # is FP reordering noise in the tridiagonal solver, not a hidden BC
+        # mismatch. Previously they diverged by ~1e-6 for BCs that did not
+        # match the data's actual boundary behavior, because
+        # `_get_effective_bc_quadratic` substituted `Right(QuadraticFit())`
+        # for the user BC on mixed partials.
         for bc in (Left(QuadraticFit()), Right(QuadraticFit()), MinCurvFit(), ZeroCurvBC(), ZeroSlopeBC())
             val_otf = quadratic_interp((x, y), data_2d, (qx, qy); bc = bc, coeffs = OnTheFly())
             val_pre = quadratic_interp((x, y), data_2d, (qx, qy); bc = bc, coeffs = PreCompute())
-            @test val_otf ≈ val_pre rtol = 1.0e-5
+            @test isapprox(val_otf, val_pre; atol = 50 * eps(Float64))
         end
     end
 
-    @testset "Quadratic BC-exact data: OnTheFly ≡ PreCompute bit-identical" begin
-        # Proof that OnTheFly/PreCompute divergence is purely due to BC-data
-        # mismatch (PreCompute's mixed-partial BC switch), not a numerical bug.
-        # When the BC exactly matches the data's boundary behavior, both paths
-        # produce bit-identical results even for ZeroCurvBC.
-        # f(x,y) = sin(x)*(y - π) has d²f/dy² = 0 everywhere → ZeroCurvBC exact.
+    @testset "Quadratic BC-exact data: OnTheFly == PreCompute bit-identical" begin
+        # Historical regression-pin: when f(x,y) = sin(x)*(y - π) has
+        # d²f/dy² = 0 everywhere, both paths used to agree bit-identically even
+        # pre-fix because the old `Right(QuadraticFit())` substitution
+        # happened to coincide with the exact boundary values. Post-fix the
+        # same bit-identity holds for arbitrary smooth data and any BC — this
+        # test is retained as a coarse smoke check.
         data_exact = [sin(xi) * (yj - π) for xi in x, yj in y]
         for bc in (Left(QuadraticFit()), ZeroCurvBC(), MinCurvFit())
             val_otf = quadratic_interp((x, y), data_exact, (qx, qy); bc = bc, coeffs = OnTheFly())

@@ -584,15 +584,7 @@ else
                                 y_val = interp_fn((x, y), data, x0)
                                 adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
                                 expected = adj([2.0 * (y_val - target)])
-                                # TODO: tighten back to atol=1e-10 after the follow-up PR fixes
-                                # the Quadratic OnTheFly/PreCompute mixed-partial BC inconsistency.
-                                # `interp_fn((x,y),data,x0)` (one-shot) now resolves to OnTheFly
-                                # via AutoCoeffs while `itp(x0)` inside the Enzyme closure uses
-                                # PreCompute, so the seed `y_val` differs from what Enzyme traces
-                                # by ~1e-6 for Quadratic non-default BCs (see PR #110 description).
-                                # Observed min rtol ≈ 1.4e-5; use 1e-4 (~7× margin) for stability.
-                                # Mirrors the Zygote rrule-chain test at test_autodiff_Zygote.jl:1255.
-                                @test ddata ≈ expected rtol = 1.0e-4
+                                @test ddata ≈ expected atol = 1.0e-10
                             end
 
                             # ── eval: ∂/∂data via vector query (must match tuple query) ──
@@ -754,14 +746,7 @@ else
                                 adj = adj_fn((x, y), ([x0[1]], [x0[2]]))
                                 expected = adj([2fx]; deriv = (DerivOp(1), EvalValue())) .+
                                     adj([2fy]; deriv = (EvalValue(), DerivOp(1)))
-                                # TODO: tighten back to atol=1e-10 after the follow-up PR fixes
-                                # the Quadratic OnTheFly/PreCompute mixed-partial BC inconsistency.
-                                # `fx`/`fy` from one-shot now resolve to OnTheFly via AutoCoeffs
-                                # while Enzyme traces `gradient(itp, x0)` through PreCompute, so
-                                # the seed derivatives differ for non-default Quadratic BCs.
-                                # Observed min rtol ≈ 1.6e-4; use 1e-3 (~6× margin) for stability.
-                                # Mirrors the Zygote rrule-chain test at test_autodiff_Zygote.jl:1305.
-                                @test ddata ≈ expected rtol = 1.0e-3
+                                @test ddata ≈ expected atol = 1.0e-10
                             end
 
                             @testset "hessian — ‖H‖²_F loss" begin

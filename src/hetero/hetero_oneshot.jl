@@ -317,16 +317,19 @@ function interp(
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
     resolved_query = map(_resolve_grididx, query, grids)
+    # GridIdx auto-promotion: when all derivs are EvalValue (scalar or tuple),
+    # GridIdx axes need no interpolation — replace their method with NoInterp()
+    # for pre-slice dimension reduction (e.g., 3D cubic build → 1D: ~5000x speedup).
+    # MUST run before `_validate_nd_coeffs` so that `coeffs=PreCompute()` is
+    # validated against the post-promotion methods: a Pchip axis that is
+    # GridIdx-sliced becomes NoInterp and no longer trips the local-Hermite check.
+    if _all_eval_value(deriv)
+        method_tuple = _promote_grididx_to_nointerp(method_tuple, resolved_query)
+    end
     coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, resolved_query, method_tuple)
     # Reject unsupported strategy/method combinations (e.g., PreCompute + local Hermite ND)
     # Mirrors the interpolant-construction validation in hetero_interpolant.jl.
     _validate_nd_coeffs(coeffs_resolved, method_tuple)
-    # GridIdx auto-promotion: when all derivs are EvalValue (scalar or tuple),
-    # GridIdx axes need no interpolation — replace their method with NoInterp()
-    # for pre-slice dimension reduction (e.g., 3D cubic build → 1D: ~5000x speedup).
-    if _all_eval_value(deriv)
-        method_tuple = _promote_grididx_to_nointerp(method_tuple, resolved_query)
-    end
     # NoInterp routing: method-based (not query-type-based)
     if _has_nointerp_method(typeof(method_tuple))
         _validate_nointerp_grididx(method_tuple, resolved_query)
@@ -357,11 +360,14 @@ function interp!(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint = nothing,
     ) where {N}
-    # Mixed queries with GridIdx → delegate to GridIdx batch path
+    # Mixed queries with GridIdx → delegate to GridIdx batch path. Forward
+    # `coeffs` so the reduced (post-slice) sub-problem honors and validates the
+    # caller's strategy choice rather than silently falling back to AutoCoeffs.
     if queries isa Tuple && _has_grididx(typeof(queries))
         return _interp_batch_with_grididx!(
             output, grids, data, queries;
-            method = method, deriv = deriv, extrap = extrap, search = search, hint = hint
+            method = method, deriv = deriv, extrap = extrap,
+            search = search, hint = hint, coeffs = coeffs,
         )
     end
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method

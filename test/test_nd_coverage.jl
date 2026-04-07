@@ -124,7 +124,7 @@ import FastInterpolations:
         end
 
         @testset "_get_effective_bc edge cases" begin
-            grid_short = collect(1.0:3.0)  # 3 points, not enough for CubicFit
+            grid_short = collect(1.0:3.0)  # 3 points, triggers short-grid fallback
             grid_long = collect(1.0:10.0)   # 10 points
 
             # p_src == 1: always return original BC
@@ -134,11 +134,16 @@ import FastInterpolations:
             # p_src > 1 with PeriodicBC: propagate periodic
             @test _get_effective_bc(PeriodicBC(), 2, grid_long) isa PeriodicBC
 
-            # p_src > 1 with short grid (< 4 points): fallback to ZeroCurvBC
-            @test _get_effective_bc(ZeroCurvBC(), 2, grid_short) isa ZeroCurvBC
+            # p_src > 1 with short grid (< 4 points) AND non-PolyFit BC:
+            # emits an informative `@warn maxlog=1` and falls back to ZeroCurvBC.
+            @test_logs (:warn, r"Cubic ND mixed-partial build") begin
+                @test _get_effective_bc(ZeroCurvBC(), 2, grid_short) isa ZeroCurvBC
+            end
 
-            # p_src > 1 with long grid: use CubicFit
-            @test _get_effective_bc(ZeroCurvBC(), 2, grid_long) isa CubicFit
+            # p_src > 1 with long grid: return the user BC unchanged (the
+            # mixed-partial BC consistency fix removed the previous CubicFit
+            # substitution — see commit (fix): apply user BC to ND mixed partials).
+            @test _get_effective_bc(ZeroCurvBC(), 2, grid_long) isa ZeroCurvBC
         end
     end
 
@@ -332,20 +337,25 @@ import FastInterpolations:
             _build_nd_coeffs_quadratic
 
         @testset "_get_effective_bc_quadratic edge cases" begin
-            grid_short = collect(1.0:2.0)   # 2 points, not enough for QuadraticFit
+            grid_short = collect(1.0:2.0)   # 2 points, triggers short-grid fallback
             grid_long = collect(1.0:10.0)  # 10 points
 
             # p_src == 1: always return original BC
             @test _get_effective_bc_quadratic(Right(QuadraticFit()), 1, grid_long) isa Right
             @test _get_effective_bc_quadratic(MinCurvFit(), 1, grid_long) isa MinCurvFit
 
-            # p_src > 1 with long grid: use Right(QuadraticFit())
+            # p_src > 1 with long grid: return the user BC unchanged (the
+            # mixed-partial BC consistency fix removed the previous
+            # Right(QuadraticFit()) substitution).
             result = _get_effective_bc_quadratic(Right(QuadraticFit()), 2, grid_long)
             @test result isa Right
 
-            # p_src > 1 with short grid (< 3 points): fallback
-            result_short = _get_effective_bc_quadratic(Right(QuadraticFit()), 2, grid_short)
-            @test result_short isa FastInterpolations.AbstractBC
+            # p_src > 1 with short grid (< 3 points): emits an informative
+            # `@warn maxlog=1` and falls back to MinCurvFit().
+            @test_logs (:warn, r"Quadratic ND mixed-partial build") begin
+                result_short = _get_effective_bc_quadratic(Right(QuadraticFit()), 2, grid_short)
+                @test result_short isa FastInterpolations.AbstractBC
+            end
         end
 
         @testset "_build_nd_coeffs_quadratic" begin

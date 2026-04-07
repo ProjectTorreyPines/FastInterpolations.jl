@@ -237,9 +237,10 @@ const _MP_ATOL = 50 * eps(Float64)
         @test FastInterpolations._get_effective_bc(ZeroSlopeBC(), 2, long_grid) isa ZeroSlopeBC
         @test FastInterpolations._get_effective_bc(ZeroCurvBC(), 2, long_grid) isa ZeroCurvBC
 
-        # Short-grid fallback branch is already covered by group E's `@test_logs`
-        # (the helper call inside `@test_logs` executes every line of both the
-        # dispatch body and `_warn_short_grid_fallback_cubic`).
+        # Short-grid fallback branch — direct call (outside `@test_logs`) so
+        # line-coverage counters attribute unambiguously to the helper body.
+        # Group E has already fired the `maxlog=1` warning, so this is silent.
+        @test FastInterpolations._get_effective_bc(ZeroSlopeBC(), 2, short_grid) === ZeroCurvBC()
     end
 
     @testset "F. Direct branch coverage (quadratic _get_effective_bc_quadratic)" begin
@@ -256,9 +257,10 @@ const _MP_ATOL = 50 * eps(Float64)
         @test FastInterpolations._get_effective_bc_quadratic(ZeroSlopeBC(), 2, long_grid) isa ZeroSlopeBC
         @test FastInterpolations._get_effective_bc_quadratic(MinCurvFit(), 2, long_grid) isa MinCurvFit
 
-        # Short-grid fallback branch is already covered by group E's `@test_logs`
-        # (the helper call inside `@test_logs` executes every line of both the
-        # dispatch body and `_warn_short_grid_fallback_quadratic`).
+        # Short-grid fallback branch — direct call (outside `@test_logs`) so
+        # line-coverage counters attribute unambiguously to the helper body.
+        # Group E has already fired the `maxlog=1` warning, so this is silent.
+        @test FastInterpolations._get_effective_bc_quadratic(ZeroSlopeBC(), 2, short_grid) === MinCurvFit()
     end
 
     @testset "D. Cubic periodic-on-one-axis propagation" begin

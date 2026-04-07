@@ -226,11 +226,14 @@ equivalent is needed here.
    substitute `MinCurvFit()`
 """
 @inline function _get_effective_bc_quadratic(bc::AbstractBC, p_src::Int, grid::AbstractVector)
-    p_src == 1 && return bc                       # raw AbstractBC preserved (lazy normalization)
+    # Rule 1: Pure derivative (source is f) — raw AbstractBC preserved (lazy normalization)
+    p_src == 1 && return bc
 
-    # Mixed partials use the user BC (was Right(QuadraticFit())). Restores
+    # Rule 2: Mixed partials use the user BC (was Right(QuadraticFit())). Restores
     # PreCompute↔OnTheFly bit-equivalence and Clairaut symmetry.
-    length(grid) >= 3 && return bc
+    if length(grid) >= 3
+        return bc
+    end
 
     # Short-grid defensive fallback: warn user once and substitute MinCurvFit.
     _warn_short_grid_fallback_quadratic(bc, length(grid))

@@ -111,23 +111,51 @@ function _interp_nd_hetero_batch_dispatch!(output, grids, data, queries, methods
 end
 
 # ========================================
+# OnTheFly One-Shot (Scalar)
+# ========================================
+# Scalar evaluation via _collapse_dims (sequential 1D one-shot per fiber).
+# No partials computation — 2^N× less work than PreCompute for a single query.
+# Periodic BC is handled internally by each _oneshot_eval_1d call.
+
+@inline function _interp_nd_oneshot_onthefly(
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        query::Tuple{Vararg{Real, N}},
+        methods::Tuple{Vararg{AbstractInterpMethod, N}},
+        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
+        searches::NTuple{N, AbstractSearchPolicy},
+        ops::NTuple{N, AbstractEvalOp},
+        hints = nothing,
+    ) where {Tg <: AbstractFloat, Tv, N}
+    _validate_nd_domain(grids, query, extraps_val)
+    oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
+    oob_result !== nothing && return oob_result
+    q_eval = _handle_all_extraps(query, grids, extraps_val)
+    # Tr promotes data eltype with query eltypes → Dual-safe pool buffers for AD.
+    Tr = _promote_query_eltype(Tv, q_eval)
+    return _collapse_dims(Tr, data, grids, methods, extraps_val, q_eval, ops, searches, hints)
+end
+
+# ========================================
 # Homogeneous One-Shot Dispatch (Scalar)
 # ========================================
 # Pass user's original kwargs — existing one-shot APIs handle resolution internally.
+# `coeffs` is forwarded to APIs that support it (Cubic, Quadratic).
+# Linear/Constant ignore it (no global solve).
 
 function _interp_nd_oneshot_dispatch(
         grids, data, query,
         methods::Tuple{CubicInterp, Vararg{CubicInterp}},
-        deriv, extrap, search, hints,
+        deriv, extrap, search, hints, coeffs,
     )
     bcs = map(m -> m.bc, methods)
-    return cubic_interp(grids, data, query; bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints)
+    return cubic_interp(grids, data, query; bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints, coeffs = coeffs)
 end
 
 function _interp_nd_oneshot_dispatch(
         grids, data, query,
         ::Tuple{LinearInterp, Vararg{LinearInterp}},
-        deriv, extrap, search, hints,
+        deriv, extrap, search, hints, coeffs,
     )
     return linear_interp(grids, data, query; extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
@@ -135,26 +163,26 @@ end
 function _interp_nd_oneshot_dispatch(
         grids, data, query,
         methods::Tuple{QuadraticInterp, Vararg{QuadraticInterp}},
-        deriv, extrap, search, hints,
+        deriv, extrap, search, hints, coeffs,
     )
     bcs = map(m -> m.bc, methods)
-    return quadratic_interp(grids, data, query; bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints)
+    return quadratic_interp(grids, data, query; bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints, coeffs = coeffs)
 end
 
 function _interp_nd_oneshot_dispatch(
         grids, data, query,
         methods::Tuple{ConstantInterp, Vararg{ConstantInterp}},
-        deriv, extrap, search, hints,
+        deriv, extrap, search, hints, coeffs,
     )
     sides = map(m -> m.side, methods)
     return constant_interp(grids, data, query; side = sides, extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
 
-# Heterogeneous fallback → resolve kwargs → pool core
+# Heterogeneous fallback → resolve kwargs → OnTheFly or PreCompute pool core
 function _interp_nd_oneshot_dispatch(
         grids, data, query,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
-        deriv, extrap, search, hints,
+        deriv, extrap, search, hints, coeffs,
     ) where {N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -168,26 +196,31 @@ function _interp_nd_oneshot_dispatch(
     ops = _resolve_deriv_nd(deriv, Val(N))
     _validate_axis_methods(grids_typed, methods, extraps_val)
 
+    if coeffs isa OnTheFly
+        return _interp_nd_oneshot_onthefly(grids_typed, data, query, methods, extraps_val, searches, ops, hints)::Tr
+    end
     return _interp_nd_hetero_oneshot(grids_typed, data, query, methods, extraps_val, searches, ops, hints)::Tr
 end
 
 # ========================================
 # Homogeneous Batch Dispatch (In-Place)
 # ========================================
+# Batch always uses PreCompute (amortize build over many queries).
+# `coeffs` forwarded to APIs that support it; Linear/Constant ignore.
 
 function _interp_nd_oneshot_batch_dispatch!(
         output, grids, data, queries,
         methods::Tuple{CubicInterp, Vararg{CubicInterp}},
-        deriv, extrap, search, hints,
+        deriv, extrap, search, hints, coeffs,
     )
     bcs = map(m -> m.bc, methods)
-    return cubic_interp!(output, grids, data, queries; bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints)
+    return cubic_interp!(output, grids, data, queries; bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints, coeffs = coeffs)
 end
 
 function _interp_nd_oneshot_batch_dispatch!(
         output, grids, data, queries,
         ::Tuple{LinearInterp, Vararg{LinearInterp}},
-        deriv, extrap, search, hints,
+        deriv, extrap, search, hints, coeffs,
     )
     return linear_interp!(output, grids, data, queries; extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
@@ -195,26 +228,29 @@ end
 function _interp_nd_oneshot_batch_dispatch!(
         output, grids, data, queries,
         methods::Tuple{QuadraticInterp, Vararg{QuadraticInterp}},
-        deriv, extrap, search, hints,
+        deriv, extrap, search, hints, coeffs,
     )
     bcs = map(m -> m.bc, methods)
-    return quadratic_interp!(output, grids, data, queries; bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints)
+    return quadratic_interp!(output, grids, data, queries; bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints, coeffs = coeffs)
 end
 
 function _interp_nd_oneshot_batch_dispatch!(
         output, grids, data, queries,
         methods::Tuple{ConstantInterp, Vararg{ConstantInterp}},
-        deriv, extrap, search, hints,
+        deriv, extrap, search, hints, coeffs,
     )
     sides = map(m -> m.side, methods)
     return constant_interp!(output, grids, data, queries; side = sides, extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
 
-# Heterogeneous fallback → resolve kwargs → function barrier → pool batch
+# Heterogeneous fallback → resolve kwargs → function barrier → pool batch.
+# Branches on the resolved `coeffs`: PreCompute uses the amortized partials build,
+# OnTheFly loops the existing scalar one-shot per query (used when the method tuple
+# contains a local Hermite method with no PreCompute backend).
 function _interp_nd_oneshot_batch_dispatch!(
         output, grids, data, queries,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
-        deriv, extrap, search, hints,
+        deriv, extrap, search, hints, coeffs,
     ) where {N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -228,6 +264,17 @@ function _interp_nd_oneshot_batch_dispatch!(
     ops = _resolve_deriv_nd(deriv, Val(N))
     _validate_axis_methods(grids_typed, methods, extraps_val)
 
+    if coeffs isa OnTheFly
+        nq = _query_length(queries)
+        length(output) == nq || _throw_query_output_mismatch(nq, length(output))
+        _query_validate(queries)
+        @inbounds for k in 1:nq
+            query_k = _extract_query_point(queries, k, Val(N))
+            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, searches, ops, hints)
+        end
+        return output
+    end
+
     return _interp_nd_hetero_batch_dispatch!(output, grids_typed, data, queries, methods, extraps_val, searches, ops, hints)
 end
 
@@ -236,13 +283,13 @@ end
 # ========================================
 
 """
-    interp(grids, data, query; method, deriv=EvalValue(), extrap=NoExtrap(), search=AutoSearch(), hint=nothing)
+    interp(grids, data, query; method, coeffs=AutoCoeffs(), deriv=EvalValue(), extrap=NoExtrap(), search=AutoSearch(), hint=nothing)
 
 One-shot N-dimensional interpolation at a single point.
 Zero-allocation after warmup. No interpolant object is created.
 
-Homogeneous methods auto-dispatch to optimized one-shot APIs (`cubic_interp`, etc.).
-Heterogeneous methods use pool-based compact partial derivative computation.
+With `coeffs=AutoCoeffs()` (default), scalar queries use `OnTheFly()` strategy
+(2^N× less work than `PreCompute()` for a single point).
 
 # Examples
 ```julia
@@ -262,6 +309,7 @@ function interp(
         data::AbstractArray{<:Any, N},
         query::Tuple{Vararg{Real, N}};
         method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
@@ -269,6 +317,10 @@ function interp(
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
     resolved_query = map(_resolve_grididx, query, grids)
+    coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, resolved_query, method_tuple)
+    # Reject unsupported strategy/method combinations (e.g., PreCompute + local Hermite ND)
+    # Mirrors the interpolant-construction validation in hetero_interpolant.jl.
+    _validate_nd_coeffs(coeffs_resolved, method_tuple)
     # GridIdx auto-promotion: when all derivs are EvalValue (scalar or tuple),
     # GridIdx axes need no interpolation — replace their method with NoInterp()
     # for pre-slice dimension reduction (e.g., 3D cubic build → 1D: ~5000x speedup).
@@ -280,7 +332,7 @@ function interp(
         _validate_nointerp_grididx(method_tuple, resolved_query)
         return _interp_nointerp_oneshot(grids, data, resolved_query, method_tuple, deriv, extrap, search, hint)
     end
-    return _interp_nd_oneshot_dispatch(grids, data, resolved_query, method_tuple, deriv, extrap, search, hint)
+    return _interp_nd_oneshot_dispatch(grids, data, resolved_query, method_tuple, deriv, extrap, search, hint, coeffs_resolved)
 end
 
 # ========================================
@@ -288,7 +340,7 @@ end
 # ========================================
 
 """
-    interp!(output, grids, data, queries; method, kwargs...)
+    interp!(output, grids, data, queries; method, coeffs=AutoCoeffs(), kwargs...)
 
 In-place one-shot N-dimensional interpolation at multiple points.
 Builds partials once, evaluates at all query points.
@@ -299,6 +351,7 @@ function interp!(
         data::AbstractArray{<:Any, N},
         queries;
         method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
@@ -312,7 +365,12 @@ function interp!(
         )
     end
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
-    return _interp_nd_oneshot_batch_dispatch!(output, grids, data, queries, method_tuple, deriv, extrap, search, hint)
+    coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, queries, method_tuple)
+    # Reject explicit unsupported combinations (PreCompute + local Hermite); the
+    # AutoCoeffs path never trips this because resolution returns OnTheFly for
+    # local methods. Mirrors the scalar `interp` validation at line 309.
+    _validate_nd_coeffs(coeffs_resolved, method_tuple)
+    return _interp_nd_oneshot_batch_dispatch!(output, grids, data, queries, method_tuple, deriv, extrap, search, hint, coeffs_resolved)
 end
 
 # ========================================
@@ -320,7 +378,7 @@ end
 # ========================================
 
 """
-    interp(grids, data, queries; method, kwargs...)
+    interp(grids, data, queries; method, coeffs=AutoCoeffs(), kwargs...)
 
 Allocating one-shot N-dimensional interpolation at multiple points.
 Returns a `Vector` of interpolated values.
@@ -330,6 +388,7 @@ function interp(
         data::AbstractArray{Tv, N},
         queries;
         method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
@@ -340,6 +399,6 @@ function interp(
     Tq = _query_eltype(queries)
     Tr = _output_eltype(Tv, Tg, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
-    interp!(output, grids, data, queries; method = method, deriv = deriv, extrap = extrap, search = search, hint = hint)
+    interp!(output, grids, data, queries; method = method, coeffs = coeffs, deriv = deriv, extrap = extrap, search = search, hint = hint)
     return output
 end

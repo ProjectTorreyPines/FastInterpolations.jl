@@ -52,3 +52,38 @@ end
 @inline _is_trivial_method(::ConstantInterp) = true
 @inline _is_trivial_method(::AbstractInterpMethod) = false
 @inline _all_trivial_methods(methods::Tuple) = all(_is_trivial_method, methods)
+
+# ── ND oneshot resolution (separate from interpolant resolution) ──
+# Centralized (method, query)-aware policy: resolved once at the user API entry
+# point alongside the other resolves (extrap/search/deriv) and threaded down.
+# All branches fold at compile time when `methods` is a concrete tuple type.
+#
+# Strategy matrix:
+#   methods\queries          | scalar (Tuple{Vararg{Real}}) | batch
+#   -------------------------|------------------------------|---------
+#   all trivial (Lin/Const)  | PreCompute (no slopes)       | PreCompute
+#   has local Hermite        | OnTheFly (per-fiber 1D)      | OnTheFly (per-query loop)
+#   global only (Cubic/Quad) | OnTheFly (skip 2^N partials) | PreCompute (amortize solve)
+#
+# Rationale for the local-Hermite batch case: PreCompute backend
+# (`_compute_nd_partials_hetero!`) does not implement `_extract_bc(::PchipInterp)`
+# etc., so the only working path for batch + Hermite is a per-query loop calling
+# `_interp_nd_oneshot_onthefly`, dispatched inside `_interp_nd_oneshot_batch_dispatch!`.
+#
+# ForwardDiff.Dual queries (scalar) flow through OnTheFly directly — `_collapse_dims`
+# promotes its pool buffer via `_promote_query_eltype(Tv, q_eval)`.
+#
+# Separate function from `_resolve_coeffs` (1D) avoids dispatch ambiguity with
+# the interpolant-construction overloads.
+@inline _resolve_coeffs_nd_oneshot(c::PreCompute, _, _) = c
+@inline _resolve_coeffs_nd_oneshot(c::OnTheFly, _, _) = c
+@inline function _resolve_coeffs_nd_oneshot(::AutoCoeffs, ::Tuple{Vararg{Real}}, methods)
+    _all_trivial_methods(methods) && return PreCompute()
+    return OnTheFly()
+end
+# Batch (non-scalar) fallback: PreCompute amortizes the build, except when the
+# method tuple contains a local Hermite method which has no PreCompute backend.
+@inline function _resolve_coeffs_nd_oneshot(::AutoCoeffs, queries, methods)
+    _has_any_local_method(methods) && return OnTheFly()
+    return PreCompute()
+end

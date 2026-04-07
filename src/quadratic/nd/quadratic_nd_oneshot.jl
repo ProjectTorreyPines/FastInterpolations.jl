@@ -109,10 +109,31 @@ end
 # ========================================
 
 """
-    quadratic_interp(grids, data, query; deriv=EvalValue(), kwargs...)
+    quadratic_interp(grids, data, query; deriv=EvalValue(), coeffs=AutoCoeffs(), kwargs...)
 
 One-shot ND quadratic interpolation at a single point.
 Zero-allocation after warmup.
+
+# Strategy selection (`coeffs`)
+- `AutoCoeffs()` (default): scalar queries use `OnTheFly()` (2^N× less work
+  than `PreCompute()`), including scalar `ForwardDiff.Dual` queries; batch
+  queries use `PreCompute()`.
+- `PreCompute()`: explicitly build all nodal partial derivatives first, then
+  evaluate. Uses `Right(QuadraticFit())` for mixed partials regardless of the
+  user-specified `bc` (see `_get_effective_bc_quadratic`).
+- `OnTheFly()`: sequential 1D interpolation per fiber via `_collapse_dims`.
+  Applies the user-specified `bc` uniformly at every 1D step, with no
+  mixed-partial BC switch.
+
+!!! note "Strategy discrepancy for non-default BCs"
+    For `bc` that does not match the data's actual boundary curvature
+    (e.g., `ZeroCurvBC()` on data whose `d²f/dy²` at the boundary is
+    non-zero), `PreCompute()` and `OnTheFly()` can produce slightly
+    different results (~1e-6 relative) because the two paths use
+    different effective BCs when forming the mixed partial. Both paths
+    are self-consistent and converge at the expected order. For BCs
+    that match the data's boundary behavior, the results are
+    bit-identical.
 """
 function quadratic_interp(
         grids::NTuple{N, AbstractVector},
@@ -122,6 +143,7 @@ function quadratic_interp(
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -135,6 +157,16 @@ function quadratic_interp(
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
+
+    # OnTheFly: skip full partials build — use sequential 1D collapse (2^N× less work)
+    # BC must be converted to QuadraticBC for 1D API compatibility
+    # (e.g., ZeroCurvBC → Right(Deriv2(0)), ZeroSlopeBC → Left(Deriv1(0)))
+    coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, query, ntuple(_ -> QuadraticInterp(), Val(N)))
+    if coeffs_resolved isa OnTheFly
+        sample = @inbounds first(data)
+        methods = map(bc_i -> QuadraticInterp(_to_quadratic_bc(bc_i, sample)), bcs)
+        return _interp_nd_oneshot_onthefly(grids_typed, data, query, methods, extraps_val, searches, ops, hint)::Tr
+    end
     return _quadratic_interp_nd_oneshot(
         grids_typed, data, query, bcs, extraps_val, searches, ops, hint
     )::Tr
@@ -155,6 +187,7 @@ function quadratic_interp(
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -162,7 +195,7 @@ function quadratic_interp(
     Tq = _query_eltype(queries)
     Tr = _output_eltype(Tv, Tg, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
-    quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search, hint)
+    quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output
 end
 
@@ -186,6 +219,7 @@ function quadratic_interp!(
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     _query_check_ndims(queries, Val(N))

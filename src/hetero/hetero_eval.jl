@@ -58,13 +58,23 @@ end
 end
 
 # ========================================
-# Sequential Dimension Collapse
+# Sequential Dimension Collapse (Pool-Based)
 # ========================================
 # Recursive type-stable dispatch: each step removes dim 1 and recurses
 # with Base.tail of all tuples. Julia infers concrete types at each level.
+# Intermediate arrays are pool-allocated via @with_pool (zero heap alloc after warmup).
+#
+# The first argument `::Type{Tr}` is the promoted result type, computed once at the
+# entry point via `_promote_query_eltype(Tv, q_eval)`. This is the buffer type for
+# intermediate results — for plain Float64 queries it typically equals the data
+# element type (preserving zero-alloc), while for AD (ForwardDiff.Dual) queries it
+# promotes to the Dual-compatible type so the query-dependent intermediate values
+# fit into the pool buffer. `Tr` is plumbed unchanged through the recursion.
 
-# Base case: 1D data → one-shot eval final dimension
+# Base case: 1D data → one-shot eval final dimension (Tr is carried but unused —
+# the 1D scalar eval returns a scalar directly, no buffer needed).
 @inline function _collapse_dims(
+        ::Type,
         data::AbstractVector,
         grids::Tuple{AbstractVector},
         methods::Tuple{AbstractInterpMethod},
@@ -80,8 +90,9 @@ end
 end
 
 # Recursive case: collapse dim 1 → (M-1)D array, then recurse
-@inline function _collapse_dims(
-        data::AbstractArray{Tv, M},
+@inline @with_pool pool function _collapse_dims(
+        ::Type{Tr},
+        data::AbstractArray{<:Any, M},
         grids::Tuple{AbstractVector, Vararg{AbstractVector}},
         methods::Tuple{AbstractInterpMethod, Vararg{AbstractInterpMethod}},
         extraps::Tuple{AbstractExtrap, Vararg{AbstractExtrap}},
@@ -89,10 +100,9 @@ end
         ops::Tuple{AbstractEvalOp, Vararg{AbstractEvalOp}},
         searches::Tuple{AbstractSearchPolicy, Vararg{AbstractSearchPolicy}},
         hints,
-    ) where {Tv, M}
-    # Allocate intermediate array for collapsed result
+    ) where {Tr, M}
     remaining_size = Base.tail(size(data))
-    result = Array{Tv}(undef, remaining_size...)
+    result = acquire!(pool, Tr, remaining_size)
     hint_1 = _first_hint(hints)
 
     # Collapse first dimension: for each fiber along dim 1, one-shot eval
@@ -104,9 +114,9 @@ end
         )
     end
 
-    # Recurse with remaining dimensions
+    # Recurse with remaining dimensions (Tr unchanged — all levels share one buffer type)
     return _collapse_dims(
-        result, Base.tail(grids), Base.tail(methods),
+        Tr, result, Base.tail(grids), Base.tail(methods),
         Base.tail(extraps), Base.tail(q_eval), Base.tail(ops),
         Base.tail(searches), _tail_hints(hints)
     )
@@ -125,7 +135,10 @@ end
         hints,
     ) where {Tg, Tv, N, G, S, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-    return _collapse_dims(itp.data, itp.grids, itp.methods, itp.extraps, q_eval, ops, searches, hints)
+    # Tr promotes data eltype with query eltypes → Dual-safe pool buffers for AD.
+    # Recursive type fold specializes at compile time for each concrete query tuple.
+    Tr = _promote_query_eltype(Tv, q_eval)
+    return _collapse_dims(Tr, itp.data, itp.grids, itp.methods, itp.extraps, q_eval, ops, searches, hints)
 end
 
 # PreCompute path: precomputed partials + local kernel eval (O(1) per query)
@@ -201,7 +214,9 @@ end
         ops::NTuple{N, AbstractEvalOp},
     ) where {Tg, Tv, N, G, S, M, E, P}
     data, grids, methods, extraps, q_eval, searches, hints = cell
-    return _collapse_dims(data, grids, methods, extraps, q_eval, ops, searches, hints)
+    # Tr promotes data eltype with query eltypes → Dual-safe pool buffers for AD.
+    Tr = _promote_query_eltype(Tv, q_eval)
+    return _collapse_dims(Tr, data, grids, methods, extraps, q_eval, ops, searches, hints)
 end
 
 # PreCompute: cell stores precomputed cell location (locate-once optimization)

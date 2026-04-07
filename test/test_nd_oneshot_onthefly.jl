@@ -454,11 +454,12 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
 
     @testset "Quadratic OnTheFly ≡ PreCompute for all supported BCs" begin
         # After the mixed-partial BC consistency fix, PreCompute and OnTheFly
-        # produce bit-equivalent results for every user BC (modulo a few ULPs
-        # of FP reordering noise in the tridiagonal solver). Previously they
-        # diverged by ~1e-6 for BCs that did not match the data's actual
-        # boundary behavior, because `_get_effective_bc_quadratic` substituted
-        # `Right(QuadraticFit())` for the user BC on mixed partials.
+        # agree to ~ULP tolerance for every user BC — the residual difference
+        # is FP reordering noise in the tridiagonal solver, not a hidden BC
+        # mismatch. Previously they diverged by ~1e-6 for BCs that did not
+        # match the data's actual boundary behavior, because
+        # `_get_effective_bc_quadratic` substituted `Right(QuadraticFit())`
+        # for the user BC on mixed partials.
         for bc in (Left(QuadraticFit()), Right(QuadraticFit()), MinCurvFit(), ZeroCurvBC(), ZeroSlopeBC())
             val_otf = quadratic_interp((x, y), data_2d, (qx, qy); bc = bc, coeffs = OnTheFly())
             val_pre = quadratic_interp((x, y), data_2d, (qx, qy); bc = bc, coeffs = PreCompute())

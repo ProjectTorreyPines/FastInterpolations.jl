@@ -10,9 +10,11 @@
 #
 # Three groups, each cubic + quadratic, 2D + 3D where applicable:
 #
-#   A. PreCompute ↔ OnTheFly bit-equivalence
-#      The two strategies should produce identical results for every user BC,
-#      because both ultimately apply the user BC to the same composition.
+#   A. PreCompute ↔ OnTheFly agreement to ~ULP / machine epsilon
+#      The two strategies should agree to ~ULP/eps-scale tolerance for every
+#      user BC, because both ultimately apply the user BC to the same
+#      composition. The residual difference is FP reordering noise in the
+#      tridiagonal/recurrence solver, not a hidden BC mismatch.
 #
 #   B. Clairaut / axis-swap symmetry
 #      Building on `(xs, ys)` with `data` and on `(ys, xs)` with `permutedims(data)`
@@ -73,7 +75,7 @@ const _MP_ATOL = 50 * eps(Float64)
     )
 
     # ==========================================================================
-    # A. PreCompute ↔ OnTheFly bit-equivalence
+    # A. PreCompute ↔ OnTheFly agreement to ~ULP / machine epsilon
     # ==========================================================================
 
     @testset "A. PreCompute ≡ OnTheFly (cubic 2D)" begin

@@ -354,9 +354,9 @@ end
     @warn """
     Cubic ND mixed-partial build: grid has $n points (< 4), too short to safely
     apply user BC `$(nameof(typeof(bc)))` to a differentiated nodal array.
-    Falling back to `ZeroCurvBC()` for the mixed partial. The result will not
-    be bit-equivalent to the OnTheFly composition. Provide ≥ 4 points per axis
-    to use your BC throughout the mixed-partial build.
+    Falling back to `ZeroCurvBC()` for the mixed partial. The result will no
+    longer match the OnTheFly composition (which keeps applying your BC). Provide
+    ≥ 4 points per axis to use your BC throughout the mixed-partial build.
     """ maxlog = 1
     return nothing
 end

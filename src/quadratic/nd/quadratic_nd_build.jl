@@ -230,7 +230,7 @@ equivalent is needed here.
     p_src == 1 && return bc
 
     # Rule 2: Mixed partials use the user BC (was Right(QuadraticFit())). Restores
-    # PreCompute↔OnTheFly bit-equivalence and Clairaut symmetry.
+    # PreCompute↔OnTheFly numerical equivalence within FP noise and Clairaut symmetry.
     if length(grid) >= 3
         return bc
     end

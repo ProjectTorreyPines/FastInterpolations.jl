@@ -1529,4 +1529,72 @@ using FastInterpolations
         ]
         @test out ≈ ref rtol = 1.0e-12
     end
+
+    # ========================================
+    # Coeffs kwarg interaction with GridIdx auto-promotion
+    #
+    # When GridIdx(k) is supplied on a Hermite (PchipInterp/CardinalInterp/
+    # AkimaInterp) axis with `deriv=EvalValue()`, the auto-promotion replaces
+    # that axis's method with NoInterp() and pre-slices the data. The reduced
+    # problem no longer contains a Hermite axis, so an explicit
+    # `coeffs=PreCompute()` should be honored on the surviving axes rather
+    # than rejected by the un-promoted method tuple.
+    # ========================================
+
+    @testset "GridIdx auto-promotion: scalar interp + coeffs=PreCompute" begin
+        # Pchip axis is GridIdx'd → after promotion, only the cubic axis remains.
+        # PreCompute() must succeed and match the manually-sliced 1D cubic call.
+        for k in (1, 5, 13, 25)
+            val = interp(
+                (x, y), data_2d, (qx, GridIdx(k));
+                method = (CubicInterp(), PchipInterp()), coeffs = PreCompute(),
+            )
+            @test val ≈ cubic_interp(x, data_2d[:, k], qx) rtol = 1.0e-12
+        end
+        # Non-EvalValue deriv on the Pchip axis disables promotion → must reject.
+        @test_throws ArgumentError interp(
+            (x, y), data_2d, (qx, GridIdx(5));
+            method = (CubicInterp(), PchipInterp()),
+            deriv = (EvalValue(), DerivOp(1)),
+            coeffs = PreCompute(),
+        )
+    end
+
+    @testset "GridIdx auto-promotion: batch interp! forwards coeffs" begin
+        # Batch GridIdx path slices NoInterp axes only; non-NoInterp GridIdx is
+        # expanded to constant Real vectors and the full ND interp still runs.
+        # Coverage: (a) reduced sub-problem honors `coeffs`; (b) the surviving
+        # method tuple's PreCompute compatibility is validated, not silently
+        # bypassed. Both rely on `coeffs` being forwarded through the GridIdx
+        # batch helper.
+
+        # Case (a): NoInterp axis is GridIdx-sliced → reduced 1D cubic problem
+        # supports PreCompute. Both PreCompute and OnTheFly must succeed and
+        # match the manually-sliced 1D cubic call.
+        qx_b = collect(range(0.5, 2.5, 7))
+        out_pre = zeros(7)
+        out_otf = zeros(7)
+        interp!(
+            out_pre, (x, y), data_2d, (qx_b, GridIdx(8));
+            method = (CubicInterp(), NoInterp()), coeffs = PreCompute(),
+        )
+        interp!(
+            out_otf, (x, y), data_2d, (qx_b, GridIdx(8));
+            method = (CubicInterp(), NoInterp()), coeffs = OnTheFly(),
+        )
+        ref = [cubic_interp(x, data_2d[:, 8], q) for q in qx_b]
+        @test out_pre ≈ ref rtol = 1.0e-12
+        @test out_otf ≈ ref rtol = 1.0e-12
+
+        # Case (b): differentiator — non-NoInterp GridIdx gets expanded, so the
+        # Pchip axis remains in the method tuple. PreCompute() must REJECT.
+        # Pre-fix bug: `coeffs` was silently dropped on the GridIdx path, so the
+        # call quietly fell back to AutoCoeffs and ran without error.
+        qy_b = collect(range(0.3, 2.5, 7))
+        out_b = zeros(7)
+        @test_throws ArgumentError interp!(
+            out_b, (x, y), data_2d, (GridIdx(5), qy_b);
+            method = (CubicInterp(), PchipInterp()), coeffs = PreCompute(),
+        )
+    end
 end

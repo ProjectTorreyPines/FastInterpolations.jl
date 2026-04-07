@@ -62,5 +62,13 @@
 end
 
 # ── Global-solve methods: full axis, no windowing ──
+# (Linear/Constant intentionally use the same full-axis fallback when they
+# appear in a tuple WITHOUT any local-Hermite axis — pure Linear/Constant
+# tuples skip the windowing path because the one-shot scalar path would pay
+# a per-call spacings allocation for Vector grids that outweighs the 2-point
+# stencil benefit. They DO get a cell-local window when mixed with a local
+# method, since `_axis_window(LinearInterp, ix, n)` is dispatched per-axis
+# once the gate fires on the Hermite axis — see the mixed-tuple branch in
+# `_eval_hetero_nd`.)
 @inline _axis_window(::CubicInterp, ix::Int, n::Int) = 1:n
 @inline _axis_window(::QuadraticInterp, ix::Int, n::Int) = 1:n

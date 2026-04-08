@@ -168,7 +168,16 @@ end
     # construction — no per-call allocation even when the windowable method is
     # Linear/Constant (which would be a net loss in the scalar oneshot path,
     # hence the asymmetry — see hetero_window.jl for the detailed rationale).
-    if _has_any_windowable_method(itp.methods)
+    #
+    # GridIdx safety gate: `GridIdx(k)` means "evaluate exactly at grid[k]", i.e.
+    # the index is ABSOLUTE into the original grid. The windowed path slices the
+    # grid to a cell-local range (e.g. `view(grid, 7:10)`), at which point
+    # `GridIdx(8)` is out of bounds in the windowed view. The whole cell-local
+    # window is semantically pointless for a GridIdx axis (the kernel's search
+    # is O(1) direct lookup anyway), so we simply fall through to the full-fiber
+    # path whenever ANY query element is a GridIdx. `_has_grididx` is a compile-
+    # time type-level check (zero runtime cost on the common no-GridIdx path).
+    if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
         # Pre-search uses user hints (mutates them to absolute indices, preserving contract).
         indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, searches, hints)
         # Per-axis window: cell-local for windowable methods, full axis for global-solve methods.
@@ -231,6 +240,33 @@ end
         search_tuple = _resolve_search_nd(search, Val(N))
         return _eval_nointerp(itp, resolved, ops, search_tuple, hint)
     end
+    # GridIdx auto-promotion on persistent path (mirrors scalar one-shot,
+    # hetero_oneshot.jl:353-355). Without this, a GridIdx query on a Hermite
+    # persistent interpolant would fall through to the full-fiber path and run
+    # ~20-100× slower than the same query via one-shot interp(). Promoting the
+    # GridIdx axis to NoInterp and re-routing through `_interp_nointerp_oneshot`
+    # pre-slices data/grids and delegates to the pool-backed one-shot fast path.
+    #
+    # Restrictions:
+    #   (a) Only for the OnTheFly/AutoCoeffs layout where `itp.data` is a plain
+    #       N-dim array. PreCompute interpolants store `_HeteroPartials` (an
+    #       (N+1)-dim cache of precomputed slopes/curvatures) which doesn't
+    #       satisfy `_interp_nointerp_oneshot`'s array-rank signature — and the
+    #       PreCompute solve is already amortized, so there's no speedup to
+    #       capture anyway.
+    #   (b) Only for EvalValue. Deriv queries (gradient/hessian) fall through to
+    #       `_eval_hetero_nd`, where the windowing gate keeps them correct via
+    #       the full-fiber fallback. (Option C territory.)
+    # The `isa` check folds at compile time because `typeof(itp.data)` is
+    # statically known from the concrete interpolant type.
+    if itp.data isa AbstractArray{<:Any, N} &&
+            _has_grididx(typeof(resolved)) && _all_eval_value(ops)
+        promoted = _promote_grididx_to_nointerp(itp.methods, resolved)
+        return _interp_nointerp_oneshot(
+            itp.grids, itp.data, resolved, promoted,
+            deriv, itp.extraps, search, hint,
+        )
+    end
     _validate_nd_domain(itp.grids, resolved, itp.extraps)
     oob_result = _try_fill_oob(resolved, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
@@ -267,8 +303,10 @@ end
     ) where {Tg, Tv, N, G, S, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
 
-    # Persistent-path gate — same asymmetric rule as `_eval_hetero_nd` above.
-    if _has_any_windowable_method(itp.methods)
+    # Persistent-path gate — same asymmetric rule as `_eval_hetero_nd` above,
+    # plus the same GridIdx safety gate (windowing would alias GridIdx absolute
+    # indices into a sliced view).
+    if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
         # Pre-search uses user hints (mutates them to absolute indices, preserving contract).
         indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple, hints)
         windows = ntuple(

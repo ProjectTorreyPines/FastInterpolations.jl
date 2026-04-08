@@ -135,7 +135,11 @@ end
     # Tr promotes data eltype with query eltypes → Dual-safe pool buffers for AD.
     Tr = _promote_query_eltype(Tv, q_eval)
 
-    if _has_any_local_method(methods)
+    # GridIdx safety gate: same reason as the persistent path — a GridIdx on a
+    # windowable axis would be aliased to the wrong grid entry once the data
+    # view is sliced to a cell-local stencil. Fall through to the full-fiber
+    # path instead (correct behavior, tiny perf cost on the rare mixed query).
+    if _has_any_local_method(methods) && !_has_grididx(typeof(query))
         # Resolve spacings:
         # - Caller-provided (batch dispatcher precomputes once outside its loop) → reuse.
         # - nothing → this is scalar oneshot. Acquire h/inv_h from the pool so Vector

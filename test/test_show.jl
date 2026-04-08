@@ -1244,9 +1244,9 @@
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
         for (method_pair, expected) in (
-                ((PchipInterp(), PchipInterp()),       "PCHIP"),
+                ((PchipInterp(), PchipInterp()), "PCHIP"),
                 ((CardinalInterp(), CardinalInterp()), "Cardinal"),
-                ((AkimaInterp(), AkimaInterp()),       "Akima"),
+                ((AkimaInterp(), AkimaInterp()), "Akima"),
             )
             itp = interp((x, y), data; method = method_pair, coeffs = OnTheFly())
             s = sprint(show, MIME("text/plain"), itp)
@@ -1260,9 +1260,9 @@
     # yet wired through HeteroInterpolantND, so a direct call is the only way
     # to pin its display string today.
     @testset "Direct test of _short_method_name (Hermite family)" begin
-        @test FastInterpolations._short_method_name(PchipInterp())        == "PCHIP"
-        @test FastInterpolations._short_method_name(CardinalInterp())     == "Cardinal"
-        @test FastInterpolations._short_method_name(AkimaInterp())        == "Akima"
+        @test FastInterpolations._short_method_name(PchipInterp()) == "PCHIP"
+        @test FastInterpolations._short_method_name(CardinalInterp()) == "Cardinal"
+        @test FastInterpolations._short_method_name(AkimaInterp()) == "Akima"
         @test FastInterpolations._short_method_name(CubicHermiteInterp()) == "CubicHermite"
     end
 end

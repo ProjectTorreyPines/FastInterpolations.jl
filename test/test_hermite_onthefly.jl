@@ -120,23 +120,23 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
     @testset "Sweep: OnTheFly ≈ PreCompute (values + 1st derivative)" begin
         # Grid setups — uniform Range + non-uniform Vector
         grids = (
-            ("uniform Range, n=30",      collect(range(0.0, 2π, 30))),
-            ("uniform Range, n=15",      collect(range(-1.0, 3.0, 15))),
+            ("uniform Range, n=30", collect(range(0.0, 2π, 30))),
+            ("uniform Range, n=15", collect(range(-1.0, 3.0, 15))),
             ("non-uniform Vector, n=25", sort!(vcat(0.0, 2π, 0.02 .+ (2π - 0.04) .* sort!(rand(MersenneTwister(7), 23))))),
         )
         # Function shapes — different curvature profiles catch different bug classes
         functions = (
-            ("sin",        x -> sin(3x)),
+            ("sin", x -> sin(3x)),
             ("polynomial", x -> 0.3x^3 - 1.2x^2 + 0.5x - 0.7),
-            ("gaussian",   x -> exp(-(x - 1.5)^2)),
+            ("gaussian", x -> exp(-(x - 1.5)^2)),
         )
         # Methods
         makers = (
-            ("pchip",               (xx, yy; coeffs) -> pchip_interp(xx, yy; coeffs = coeffs)),
-            ("cardinal tension=0",  (xx, yy; coeffs) -> cardinal_interp(xx, yy; tension = 0.0, coeffs = coeffs)),
-            ("cardinal tension=0.3",(xx, yy; coeffs) -> cardinal_interp(xx, yy; tension = 0.3, coeffs = coeffs)),
-            ("cardinal tension=0.7",(xx, yy; coeffs) -> cardinal_interp(xx, yy; tension = 0.7, coeffs = coeffs)),
-            ("akima",               (xx, yy; coeffs) -> akima_interp(xx, yy; coeffs = coeffs)),
+            ("pchip", (xx, yy; coeffs) -> pchip_interp(xx, yy; coeffs = coeffs)),
+            ("cardinal tension=0", (xx, yy; coeffs) -> cardinal_interp(xx, yy; tension = 0.0, coeffs = coeffs)),
+            ("cardinal tension=0.3", (xx, yy; coeffs) -> cardinal_interp(xx, yy; tension = 0.3, coeffs = coeffs)),
+            ("cardinal tension=0.7", (xx, yy; coeffs) -> cardinal_interp(xx, yy; tension = 0.7, coeffs = coeffs)),
+            ("akima", (xx, yy; coeffs) -> akima_interp(xx, yy; coeffs = coeffs)),
         )
 
         for (g_label, x) in grids, (f_label, f) in functions, (m_label, maker) in makers
@@ -679,9 +679,9 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
         q3_64 = (1.7, 0.4, 0.6)
 
         for (m_label, methods_2d, methods_3d) in (
-                ("PCHIP",    (PchipInterp(),    PchipInterp()),    (PchipInterp(),    PchipInterp(),    PchipInterp())),
+                ("PCHIP", (PchipInterp(), PchipInterp()), (PchipInterp(), PchipInterp(), PchipInterp())),
                 ("Cardinal", (CardinalInterp(), CardinalInterp()), (CardinalInterp(), CardinalInterp(), CardinalInterp())),
-                ("Akima",    (AkimaInterp(),    AkimaInterp()),    (AkimaInterp(),    AkimaInterp(),    AkimaInterp())),
+                ("Akima", (AkimaInterp(), AkimaInterp()), (AkimaInterp(), AkimaInterp(), AkimaInterp())),
             )
             # 2D — Float32 eltype + Float64 reference comparison
             itp32_2d = interp((x32, y32), d2_32; method = methods_2d, coeffs = OnTheFly())
@@ -723,12 +723,12 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
             return @allocated itp(q)
         end
 
-        @test _alloc_f32_2d((PchipInterp(),    PchipInterp()))    <= ALLOC_THRESHOLD
+        @test _alloc_f32_2d((PchipInterp(), PchipInterp())) <= ALLOC_THRESHOLD
         @test _alloc_f32_2d((CardinalInterp(), CardinalInterp())) <= ALLOC_THRESHOLD
-        @test _alloc_f32_2d((AkimaInterp(),    AkimaInterp()))    <= ALLOC_THRESHOLD
-        @test _alloc_f32_3d((PchipInterp(),    PchipInterp(),    PchipInterp()))    <= ALLOC_THRESHOLD
+        @test _alloc_f32_2d((AkimaInterp(), AkimaInterp())) <= ALLOC_THRESHOLD
+        @test _alloc_f32_3d((PchipInterp(), PchipInterp(), PchipInterp())) <= ALLOC_THRESHOLD
         @test _alloc_f32_3d((CardinalInterp(), CardinalInterp(), CardinalInterp())) <= ALLOC_THRESHOLD
-        @test _alloc_f32_3d((AkimaInterp(),    AkimaInterp(),    AkimaInterp()))    <= ALLOC_THRESHOLD
+        @test _alloc_f32_3d((AkimaInterp(), AkimaInterp(), AkimaInterp())) <= ALLOC_THRESHOLD
     end
 
     # ========================================

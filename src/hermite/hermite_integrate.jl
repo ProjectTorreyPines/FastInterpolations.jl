@@ -74,7 +74,8 @@ end
     spacing = _spacing(itp)
 
     in_domain = @inline (a, b) -> _integrate_hermite_onthefly_inner(
-        sm, x, y, spacing, a, b, searcher, Tout)
+        sm, x, y, spacing, a, b, searcher, Tout
+    )
 
     return _dispatch_extrap_integrate_1d(itp.extrap, in_domain, x, y[1], y[end], x0, x1, Tout)
 end

@@ -164,6 +164,48 @@ end
 @inline _nd_sample_value(itp::CubicInterpolantND) = @inbounds itp.nodal_derivs.partials[1]
 @inline _nd_sample_value(itp::QuadraticInterpolantND) = @inbounds itp.nodal_derivs.partials[1]
 
+# HeteroInterpolantND: explicit not-implemented error. Beats the MethodError
+# the generic dispatch below would hit inside `_full_cell_integral_nd`, and
+# tells the user about the actual workaround (per-axis 1D integration, or
+# switching to a homogeneous specialized ND type).
+function integrate(
+        itp::HeteroInterpolantND;
+        search = nothing,
+        hint = nothing,
+    )
+    _throw_hetero_nd_integrate_unsupported(itp.methods)
+end
+
+# Bounded ND integrate never existed; add a HeteroInterpolantND-specific
+# overload too so `integrate(itp, a, b)` doesn't surface as a MethodError
+# asking the user about Real vs Tuple bound types. Must use `::Real, ::Real`
+# to win dispatch against the `(::AbstractInterpolant, ::Real, ::Real)`
+# fallback in integrate_api.jl (more specific first arg + equal specificity
+# on bounds).
+function integrate(
+        itp::HeteroInterpolantND, ::Real, ::Real;
+        search = nothing, hint = nothing,
+    )
+    _throw_hetero_nd_integrate_unsupported(itp.methods)
+end
+
+@noinline function _throw_hetero_nd_integrate_unsupported(methods)
+    throw(
+        ArgumentError(
+            "integrate is not yet implemented for HeteroInterpolantND " *
+                "(method tuple: $(methods)). ND tensor-product integration over " *
+                "mixed/Hermite axes is tracked in " *
+                "claudedocs/TODO/hermite_onthefly_integrate_and_nd_adjoint.md (Task 2) " *
+                "and the broader ND-integrate gap. Workarounds: " *
+                "(1) use a homogeneous specialized ND type " *
+                "(`cubic_interp`, `quadratic_interp`, `linear_interp`, `constant_interp`) " *
+                "which do support `integrate`; " *
+                "(2) integrate axis-by-axis via 1D `integrate` calls on per-fiber " *
+                "1D interpolants."
+        )
+    )
+end
+
 # Generic ND full-domain: catches all ND types
 @inline function integrate(
         itp::AbstractInterpolantND{Tg, Tv, N};

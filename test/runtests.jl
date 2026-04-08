@@ -131,6 +131,10 @@ else
     # Nodal partials API
     include("test_nodal_partials.jl")
 
+    # Hermite family ND — graceful not-implemented errors for the release
+    # contract (nodal_partials, integrate, hetero_adjoint / AD)
+    include("test_hermite_nd_graceful_errors.jl")
+
     # Integration API
     include("test_integral_api.jl")
     include("test_integral_cubic_1d.jl")

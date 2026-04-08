@@ -383,6 +383,33 @@ end
 end
 
 # ========================================
+# Graceful-error helper
+# ========================================
+
+@noinline function _throw_hetero_adjoint_hermite_unsupported(methods)
+    local_names = String[]
+    for m in methods
+        if m isa PchipInterp || m isa CardinalInterp || m isa AkimaInterp
+            push!(local_names, string(typeof(m)))
+        end
+    end
+    throw(
+        ArgumentError(
+            "hetero_adjoint / ND reverse-mode AD is not yet implemented for " *
+                "Hermite family methods (found $(join(unique(local_names), ", "))). " *
+                "This also affects `Zygote.gradient` / `ChainRulesCore.rrule` on " *
+                "`HeteroInterpolantND` built with PCHIP / Cardinal / Akima axes. " *
+                "Tracking: claudedocs/TODO/hermite_onthefly_integrate_and_nd_adjoint.md (Task 2). " *
+                "Workarounds: (1) switch Hermite axes to `CubicInterp` for AD support; " *
+                "(2) use `ForwardDiff.gradient` on a scalar-query closure, which works " *
+                "through the forward OnTheFly path without needing an adjoint; " *
+                "(3) for 1D, `pchip_adjoint(x, y, xq)` / `cardinal_adjoint(x, xq)` / " *
+                "`akima_adjoint(x, y, xq)` are fully supported."
+        )
+    )
+end
+
+# ========================================
 # Constructor
 # ========================================
 
@@ -487,6 +514,12 @@ function _build_hetero_nd_adjoint(
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N, Tg <: AbstractFloat}
+    # Reject Hermite family methods upfront with a clear message. Without this
+    # guard, the scatter path below would fail deep in the per-axis weight
+    # computation with an obscure MethodError. Single point of entry for both
+    # direct `hetero_adjoint(...)` calls and the Zygote/ChainRules rrule
+    # (see `_adjoint_func_from_itp(::HeteroInterpolantND) = hetero_adjoint`).
+    _has_any_local_method(methods) && _throw_hetero_adjoint_hermite_unsupported(methods)
     # Validate grid size and cubic PolyFit BC support requirements
     @inbounds for d in 1:N
         len_d = length(grids[d])

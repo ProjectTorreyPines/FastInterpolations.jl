@@ -42,6 +42,8 @@ end
 @inline function _partials_array(itp::HeteroInterpolantND)
     if itp.data isa _HeteroPartials
         return itp.data.partials
+    elseif _has_any_local_method(itp.methods)
+        _throw_nodal_partials_hermite_nd(itp.methods)
     else
         throw(
             ArgumentError(
@@ -50,6 +52,32 @@ end
             )
         )
     end
+end
+
+# Dedicated error for the "local Hermite ND + nodal_partials" combo.
+# Following the user advice to "use PreCompute" would dead-end: PreCompute
+# is rejected upstream by `_validate_nd_coeffs` for Hermite family ND.
+# This message points users at the correct workaround (per-axis 1D access)
+# and the tracking TODO.
+@noinline function _throw_nodal_partials_hermite_nd(methods)
+    local_names = String[]
+    for m in methods
+        if m isa PchipInterp || m isa CardinalInterp || m isa AkimaInterp
+            push!(local_names, string(typeof(m)))
+        end
+    end
+    throw(
+        ArgumentError(
+            "nodal_partials is not yet implemented for Hermite family ND " *
+                "(found $(join(unique(local_names), ", "))). The Hermite ND PreCompute " *
+                "backend has not been written yet — tracked in " *
+                "claudedocs/TODO/hermite_nd_precompute.md. " *
+                "Workaround: compute per-axis 1D slopes via `pchip_interp` / " *
+                "`cardinal_interp` / `akima_interp` with `deriv=DerivOp(1)`, " *
+                "or switch the relevant axes to CubicInterp / QuadraticInterp " *
+                "which do support nodal_partials."
+        )
+    )
 end
 
 @noinline _partials_array(::LinearInterpolantND) = throw(

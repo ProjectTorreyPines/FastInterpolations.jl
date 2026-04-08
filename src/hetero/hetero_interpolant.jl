@@ -102,10 +102,33 @@ end
 
 function _validate_axis_methods(grids, methods, extraps)
     _validate_method_concreteness(methods)
-    for d in eachindex(grids)
-        _validate_axis_method(grids[d], methods[d], extraps[d], d)
-    end
+    # Per-axis validation. A plain `for d in eachindex(grids)` loop boxes on
+    # heterogeneous method tuples because runtime `methods[d]` forces a Union
+    # split (48 B/call on 2-tuples like (CubicInterp, CardinalInterp)).
+    #
+    # `foreach` looked like a one-liner fix and works for 2-tuples, but 3+
+    # element tuples hit a Julia-compiler specialization cliff: certain
+    # heterogeneous orderings (e.g. `(Linear, Cardinal, Linear)` → 48 B)
+    # fall back to runtime dispatch inside `foreach`. The trigger isn't
+    # just "heterogeneous" or "repeating types" — it depends on how Julia's
+    # tuple-splat specialization caches the per-element dispatch.
+    #
+    # `@generated` sidesteps the cliff entirely by emitting straight-line
+    # calls at macro expansion time. Each call is resolved statically from
+    # the tuple field types, so there's no dispatch table to fall off.
+    _validate_axis_methods_unrolled(grids, methods, extraps)
     return nothing
+end
+
+@generated function _validate_axis_methods_unrolled(
+        grids::NTuple{N, Any}, methods::NTuple{N, Any}, extraps::NTuple{N, Any},
+    ) where {N}
+    body = Expr(:block)
+    for d in 1:N
+        push!(body.args, :(_validate_axis_method(grids[$d], methods[$d], extraps[$d], $d)))
+    end
+    push!(body.args, :(return nothing))
+    return body
 end
 
 function _validate_axis_method(grid, ::CubicInterp{BC}, extrap, d) where {BC}

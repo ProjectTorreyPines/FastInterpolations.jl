@@ -9,8 +9,14 @@
 using Test
 using FastInterpolations
 
-const AAP_RUNTIME_CHECK_LOCAL = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
-const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK_LOCAL + 1) * 240
+# `@isdefined` guards prevent const redefinition warnings when this file and
+# test_nointerp.jl are both included from runtests.jl into the same module.
+if !@isdefined(AAP_RUNTIME_CHECK_LOCAL)
+    const AAP_RUNTIME_CHECK_LOCAL = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
+end
+if !@isdefined(ND_ALLOC_THRESHOLD_LOCAL)
+    const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK_LOCAL + 1) * 240
+end
 
 @testset "ND OnTheFly One-Shot + AutoCoeffs" begin
     # ========================================
@@ -212,6 +218,116 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
             return @allocated interp((xg, yg), d, q; method = m, coeffs = OnTheFly())
         end
         @test _alloc_test_otf_hetero() <= ND_ALLOC_THRESHOLD_LOCAL
+    end
+
+    # ========================================================================
+    # Windowed OnTheFly paths — comprehensive zero-alloc coverage
+    # ========================================================================
+    # Every method tuple that exercises the cell-local windowing path in this
+    # PR must be 0-alloc after warmup on all three entry points:
+    #   (1) scalar one-shot   `interp(grids, data, q; method, coeffs=OnTheFly())`
+    #   (2) batch in-place    `interp!(out, grids, data, qs; method, coeffs=OnTheFly())`
+    #   (3) persistent itp    `itp = interp(grids, data; method, coeffs=OnTheFly()); itp(q)`
+    #
+    # Both Vector and Range grid representations are exercised because they
+    # flow through different spacings branches (`VectorSpacing` vs
+    # `ScalarSpacing`). The Vector case is the historical regression magnet —
+    # without pool-backed spacings, `_create_spacing(::Vector)` allocates h and
+    # inv_h per call. The pool-aware `_create_spacings_pooled` path is what
+    # keeps this 0 B.
+    @testset "Zero-alloc: windowed OnTheFly (scalar + batch! + persistent)" begin
+        function _alloc_scalar(grids, data, query, method)
+            interp(grids, data, query; method = method, coeffs = OnTheFly())
+            interp(grids, data, query; method = method, coeffs = OnTheFly())
+            return @allocated interp(grids, data, query; method = method, coeffs = OnTheFly())
+        end
+        function _alloc_batch_inplace(out, grids, data, qs, method)
+            interp!(out, grids, data, qs; method = method, coeffs = OnTheFly())
+            interp!(out, grids, data, qs; method = method, coeffs = OnTheFly())
+            return @allocated interp!(out, grids, data, qs; method = method, coeffs = OnTheFly())
+        end
+        function _alloc_persistent(itp, q)
+            itp(q)
+            itp(q)
+            return @allocated itp(q)
+        end
+
+        xr = range(0.0, 2π, 30)
+        yr = range(0.0, π, 25)
+        xv = collect(xr)
+        yv = collect(yr)
+        data_vv = [sin(xi) * cos(yj) for xi in xv, yj in yv]
+        data_rr = [sin(xi) * cos(yj) for xi in xr, yj in yr]
+        q = (1.7, 0.8)
+        qs = [(0.5 + (i / 20), 0.1 + (i / 25)) for i in 1:50]
+        out = Vector{Float64}(undef, length(qs))
+
+        # Method tuples that exercise the windowed path. Covers:
+        # - pure Hermite (Cardinal/Pchip/Akima) → windowed on both axes
+        # - mixed Cubic × Hermite → windowed on the Hermite axis only
+        # - mixed Cubic × Linear → windowed on the Linear axis via the
+        #   persistent-path asymmetric gate
+        # - pure Linear → windowed on both axes (persistent only)
+        # - pure Cubic → full-fiber fallback (zero regression baseline)
+        for (label, m) in (
+                ("Cardinal × Cardinal", (CardinalInterp(), CardinalInterp())),
+                ("Pchip × Pchip", (PchipInterp(), PchipInterp())),
+                ("Akima × Akima", (AkimaInterp(), AkimaInterp())),
+                ("Cubic × Cardinal", (CubicInterp(), CardinalInterp())),
+                ("Cubic × Linear", (CubicInterp(), LinearInterp())),
+                ("Linear × Pchip", (LinearInterp(), PchipInterp())),
+                ("Linear × Linear", (LinearInterp(), LinearInterp())),
+                ("Cubic × Cubic", (CubicInterp(), CubicInterp())),
+            )
+            # Scalar one-shot: both grid types
+            @test _alloc_scalar((xv, yv), data_vv, q, m) <= ND_ALLOC_THRESHOLD_LOCAL
+            @test _alloc_scalar((xr, yr), data_rr, q, m) <= ND_ALLOC_THRESHOLD_LOCAL
+
+            # Batch in-place: both grid types
+            @test _alloc_batch_inplace(out, (xv, yv), data_vv, qs, m) <= ND_ALLOC_THRESHOLD_LOCAL
+            @test _alloc_batch_inplace(out, (xr, yr), data_rr, qs, m) <= ND_ALLOC_THRESHOLD_LOCAL
+
+            # Persistent interpolant: both grid types
+            itp_v = interp((xv, yv), data_vv; method = m, coeffs = OnTheFly())
+            itp_r = interp((xr, yr), data_rr; method = m, coeffs = OnTheFly())
+            @test _alloc_persistent(itp_v, q) <= ND_ALLOC_THRESHOLD_LOCAL
+            @test _alloc_persistent(itp_r, q) <= ND_ALLOC_THRESHOLD_LOCAL
+        end
+    end
+
+    # ========================================================================
+    # Type stability (@inferred) for the windowed OnTheFly paths
+    # ========================================================================
+    # Parallel to the allocation check — same method tuples, same grid types,
+    # same entry points. `@inferred` fails if the return type isn't fully
+    # inferred, which is the proximate cause of most of the allocation bugs
+    # this PR had to untangle.
+    @testset "Type stability: @inferred windowed OnTheFly" begin
+        xr = range(0.0, 2π, 30)
+        yr = range(0.0, π, 25)
+        xv = collect(xr)
+        yv = collect(yr)
+        data_vv = [sin(xi) * cos(yj) for xi in xv, yj in yv]
+        data_rr = [sin(xi) * cos(yj) for xi in xr, yj in yr]
+        q = (1.7, 0.8)
+
+        for (label, m) in (
+                ("Cardinal × Cardinal", (CardinalInterp(), CardinalInterp())),
+                ("Pchip × Pchip", (PchipInterp(), PchipInterp())),
+                ("Akima × Akima", (AkimaInterp(), AkimaInterp())),
+                ("Cubic × Cardinal", (CubicInterp(), CardinalInterp())),
+                ("Cubic × Linear", (CubicInterp(), LinearInterp())),
+                ("Linear × Pchip", (LinearInterp(), PchipInterp())),
+            )
+            # Scalar one-shot
+            @test (@inferred interp((xv, yv), data_vv, q; method = m, coeffs = OnTheFly())) isa Float64
+            @test (@inferred interp((xr, yr), data_rr, q; method = m, coeffs = OnTheFly())) isa Float64
+            # Persistent interpolant callable
+            itp_v = interp((xv, yv), data_vv; method = m, coeffs = OnTheFly())
+            itp_r = interp((xr, yr), data_rr; method = m, coeffs = OnTheFly())
+            @test (@inferred itp_v(q)) isa Float64
+            @test (@inferred itp_r(q)) isa Float64
+        end
     end
 
     @testset "Zero-alloc: AutoCoeffs default cubic scalar" begin
@@ -528,5 +644,194 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
             return @allocated itp((1.7, 0.8, 0.4))
         end
         @test _alloc_test_otf_itp_eval_3d() <= ND_ALLOC_THRESHOLD_LOCAL
+    end
+
+    # ========================================
+    # E. Cell-Local Windowed Equivalence (Phase 3)
+    # ========================================
+    # Verify the windowed mini-collapse path produces results numerically identical
+    # to a hand-rolled reference that does sequential 1D oneshot calls on full fibers.
+    # The reference uses the public 1D oneshot APIs and the column-major fiber view
+    # convention — independent of `_collapse_dims` so it cannot share any bug.
+    #
+    # Coverage:
+    #   - Pure local (Pchip, Cardinal, Akima) in 2D and 3D
+    #   - Mixed local × global (Cardinal × Cubic) and local × trivial (Pchip × Linear)
+    #   - Interior cells AND every boundary cell (where the window is asymmetrically clamped)
+    #   - DerivOp{0..3} per axis
+    @testset "Equivalence: cell-local windowed vs reference" begin
+        # ---------- 2D reference helper ----------
+        # Reference: collapse dim 1 over the FULL fiber for each j ∈ 1:ny via the 1D
+        # public API, then collapse the resulting length-ny vector via the 1D public API.
+        function _ref_collapse_2d(grids, data, methods, q, ops)
+            xg, yg = grids
+            mx, my = methods
+            ny = size(data, 2)
+            tmp = Vector{Float64}(undef, ny)
+            for j in 1:ny
+                fiber = @view data[:, j]
+                tmp[j] = _ref_oneshot_1d(mx, xg, fiber, q[1], ops[1])
+            end
+            return _ref_oneshot_1d(my, yg, tmp, q[2], ops[2])
+        end
+
+        function _ref_collapse_3d(grids, data, methods, q, ops)
+            xg, yg, zg = grids
+            mx, my, mz = methods
+            ny, nz = size(data, 2), size(data, 3)
+            tmp_xy = Matrix{Float64}(undef, ny, nz)
+            for k in 1:nz, j in 1:ny
+                fiber = @view data[:, j, k]
+                tmp_xy[j, k] = _ref_oneshot_1d(mx, xg, fiber, q[1], ops[1])
+            end
+            tmp_y = Vector{Float64}(undef, nz)
+            for k in 1:nz
+                fiber = @view tmp_xy[:, k]
+                tmp_y[k] = _ref_oneshot_1d(my, yg, fiber, q[2], ops[2])
+            end
+            return _ref_oneshot_1d(mz, zg, tmp_y, q[3], ops[3])
+        end
+
+        # Per-method dispatch to the public 1D oneshot APIs.
+        _ref_oneshot_1d(::PchipInterp, x, y, q, op) =
+            pchip_interp(x, y, q; deriv = op)
+        _ref_oneshot_1d(m::CardinalInterp, x, y, q, op) =
+            cardinal_interp(x, y, q; tension = m.tension, deriv = op)
+        _ref_oneshot_1d(::AkimaInterp, x, y, q, op) =
+            akima_interp(x, y, q; deriv = op)
+        _ref_oneshot_1d(::LinearInterp, x, y, q, op) =
+            linear_interp(x, y, q; deriv = op)
+        # cubic_interp / quadratic_interp 1D scalar queries default to OnTheFly already
+        # via `_resolve_coeffs` — no need to pass `coeffs` (and the 1D API doesn't accept it).
+        _ref_oneshot_1d(m::CubicInterp, x, y, q, op) =
+            cubic_interp(x, y, q; bc = m.bc, deriv = op)
+        _ref_oneshot_1d(m::QuadraticInterp, x, y, q, op) =
+            quadratic_interp(x, y, q; bc = m.bc, deriv = op)
+
+        # ---------- 2D test data ----------
+        xg = collect(range(0.0, 2π, 30))
+        yg = collect(range(-1.0, 1.0, 25))
+        data2 = [sin(2xi) * exp(-yj^2) + 0.3 * xi * yj for xi in xg, yj in yg]
+
+        # Build a query set: every cell endpoint along each axis (including boundaries),
+        # plus a handful of interior fractional positions.
+        function _cell_queries(grid)
+            qs = Float64[]
+            for i in 1:(length(grid) - 1)
+                push!(qs, 0.5 * (grid[i] + grid[i + 1]))      # cell midpoint
+            end
+            push!(qs, grid[1] + 1.0e-10)                      # left boundary touch
+            push!(qs, grid[end] - 1.0e-10)                    # right boundary touch
+            push!(qs, 0.7 * grid[1] + 0.3 * grid[2])          # near-left interior
+            push!(qs, 0.3 * grid[end - 1] + 0.7 * grid[end])  # near-right interior
+            return qs
+        end
+        qxs = _cell_queries(xg)
+        qys = _cell_queries(yg)
+
+        method_pairs_2d = [
+            (PchipInterp(), PchipInterp()),
+            (CardinalInterp(), CardinalInterp()),
+            (CardinalInterp(tension = 0.4), CardinalInterp(tension = 0.4)),
+            (AkimaInterp(), AkimaInterp()),
+            # Mixed local × global
+            (CardinalInterp(), CubicInterp()),
+            (CubicInterp(), CardinalInterp()),
+            (PchipInterp(), QuadraticInterp()),
+            # Mixed local × trivial
+            (PchipInterp(), LinearInterp()),
+            (LinearInterp(), AkimaInterp()),
+        ]
+
+        # Per-method-tuple equivalence: collect all (got, ref) values for the
+        # full cartesian query set, then assert the *worst-case* ULP drift in a
+        # single `@test`. This avoids ~1000 individual `@test` invocations per
+        # method tuple (which slows the runner and floods the failure log with
+        # duplicates), uses an element-wise ULP-tolerant comparison, and gives a
+        # clean "max ULP drift = N" diagnostic on failure.
+        #
+        # Why per-element ULPs (not vector `isapprox`): `isapprox(::Vector,
+        # ::Vector)` reduces to `norm(a - b) <= atol`, which is L2 not
+        # element-wise. With ~900 elements, even tiny per-element drift can
+        # accumulate in the L2 norm and trip a single global atol.
+        #
+        # Why ULP-tolerant: mathematically the windowed and reference paths
+        # evaluate the same expression, but LLVM may reorder/FMA differently
+        # across Julia versions (LTS 1.10 vs stable ≥1.11), producing 1–2 ULP
+        # per-element drift on cross-version CI even though within the same
+        # Julia version they're bit-equal. The 4 ULPs / 8 ULPs (Akima)
+        # tolerances are tight enough to catch real regressions (which would
+        # drift by orders of magnitude more) but loose enough to absorb LLVM
+        # ordering differences.
+        function _max_ulp_diff(got, ref)
+            isempty(got) && return 0.0
+            return maximum(@. abs(got - ref) / eps(max(abs(got), abs(ref), 1.0)))
+        end
+        @testset "2D equivalence: $(typeof(methods).name.name)" for methods in method_pairs_2d
+            itp = interp((xg, yg), data2; method = methods, coeffs = OnTheFly())
+            got_all = [itp((qx, qy)) for qx in qxs, qy in qys]
+            ref_all = [
+                _ref_collapse_2d((xg, yg), data2, methods, (qx, qy), (EvalValue(), EvalValue()))
+                    for qx in qxs, qy in qys
+            ]
+            # Akima has more rounding paths in its 4-secant weighted average
+            value_ulp_budget = any(m isa AkimaInterp for m in methods) ? 8 : 4
+            @test _max_ulp_diff(got_all, ref_all) <= value_ulp_budget
+
+            # Spot-check derivative ops at the first cell-midpoint query.
+            # Derivatives can drift by ≤ 8 ULPs for the same LLVM-ordering reason
+            # as values; mixed-method tuples introduce extra accumulation in the
+            # chain rule, so we use the larger budget here.
+            q_spot = (qxs[1], qys[1])
+            deriv_ops = (
+                (DerivOp{1}(), EvalValue()),
+                (EvalValue(), DerivOp{1}()),
+                (DerivOp{2}(), EvalValue()),
+            )
+            got_derivs = [itp(q_spot; deriv = ops) for ops in deriv_ops]
+            ref_derivs = [_ref_collapse_2d((xg, yg), data2, methods, q_spot, ops) for ops in deriv_ops]
+            @test _max_ulp_diff(got_derivs, ref_derivs) <= 8
+        end
+
+        # ---------- 3D test data ----------
+        xg3 = collect(range(0.0, 2π, 12))
+        yg3 = collect(range(-1.0, 1.0, 10))
+        zg3 = collect(range(0.0, 1.0, 8))
+        data3 = [sin(2xi) * exp(-yj^2) * (1 + zk) for xi in xg3, yj in yg3, zk in zg3]
+
+        method_triples_3d = [
+            (CardinalInterp(), CardinalInterp(), CardinalInterp()),
+            (PchipInterp(), PchipInterp(), PchipInterp()),
+            # Mixed
+            (CardinalInterp(), CubicInterp(), PchipInterp()),
+            (PchipInterp(), LinearInterp(), CardinalInterp()),
+            (AkimaInterp(), AkimaInterp(), LinearInterp()),
+        ]
+
+        # 3D query set: every dim's cell midpoints + boundary touches
+        qxs3 = _cell_queries(xg3)
+        qys3 = _cell_queries(yg3)
+        qzs3 = _cell_queries(zg3)
+
+        # 3D variant of the same collect-then-compare pattern. Strided sampling
+        # (`[1:3:end]`) keeps the cartesian product manageable while still
+        # touching every cell-midpoint type plus boundaries. Same per-element
+        # ULP-tolerance rationale as the 2D testset above.
+        @testset "3D equivalence: $(string(typeof(methods).name))" for methods in method_triples_3d
+            itp = interp((xg3, yg3, zg3), data3; method = methods, coeffs = OnTheFly())
+            qxs3_s = qxs3[1:3:end]
+            qys3_s = qys3[1:3:end]
+            qzs3_s = qzs3[1:3:end]
+            got_all = [itp((qx, qy, qz)) for qx in qxs3_s, qy in qys3_s, qz in qzs3_s]
+            ref_all = [
+                _ref_collapse_3d(
+                        (xg3, yg3, zg3), data3, methods, (qx, qy, qz),
+                        (EvalValue(), EvalValue(), EvalValue())
+                    ) for qx in qxs3_s, qy in qys3_s, qz in qzs3_s
+            ]
+            # 3D has more accumulation steps than 2D → larger ULP budget
+            value_ulp_budget = any(m isa AkimaInterp for m in methods) ? 16 : 8
+            @test _max_ulp_diff(got_all, ref_all) <= value_ulp_budget
+        end
     end
 end

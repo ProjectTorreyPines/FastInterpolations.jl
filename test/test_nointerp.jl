@@ -1,6 +1,19 @@
 using Test
 using FastInterpolations
 
+# LTS Julia 1.10 has small per-call overhead from Val-dispatch boxing on some
+# heterogeneous-method paths that disappears on stable ≥1.12. Use the same
+# threshold pattern as test_nd_oneshot_onthefly.jl so the file stays runnable
+# standalone (without depending on runtests.jl's globals). The `@isdefined`
+# guard prevents const redefinition warnings when both files are included
+# sequentially from runtests.jl into the same module.
+if !@isdefined(AAP_RUNTIME_CHECK_LOCAL)
+    const AAP_RUNTIME_CHECK_LOCAL = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
+end
+if !@isdefined(ND_ALLOC_THRESHOLD_LOCAL)
+    const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK_LOCAL + 1) * 240
+end
+
 @testset "NoInterp + GridIdx" begin
     # ========================================
     # Test Setup
@@ -318,7 +331,7 @@ using FastInterpolations
             itp((1.7, GridIdx(5)))  # warmup
             return @allocated itp((1.7, GridIdx(5)))
         end
-        @test _test_alloc_precompute() == 0
+        @test _test_alloc_precompute() <= ND_ALLOC_THRESHOLD_LOCAL
     end
 
     @testset "Zero-allocation: PreCompute interpolant eval with deriv" begin
@@ -327,7 +340,7 @@ using FastInterpolations
             itp((1.7, GridIdx(5)); deriv = (DerivOp(1), DerivOp(0)))  # warmup
             return @allocated itp((1.7, GridIdx(5)); deriv = (DerivOp(1), DerivOp(0)))
         end
-        @test _test_alloc_deriv() == 0
+        @test _test_alloc_deriv() <= ND_ALLOC_THRESHOLD_LOCAL
     end
 
     @testset "Zero-allocation: OnTheFly interpolant eval" begin
@@ -336,7 +349,7 @@ using FastInterpolations
             itp((1.7, GridIdx(5)))  # warmup
             return @allocated itp((1.7, GridIdx(5)))
         end
-        @test _test_alloc_onthefly() == 0
+        @test _test_alloc_onthefly() <= ND_ALLOC_THRESHOLD_LOCAL
     end
 
     # ========================================
@@ -1561,16 +1574,19 @@ using FastInterpolations
     end
 
     @testset "GridIdx auto-promotion: batch interp! forwards coeffs" begin
-        # Batch GridIdx path slices NoInterp axes only; non-NoInterp GridIdx is
-        # expanded to constant Real vectors and the full ND interp still runs.
-        # Coverage: (a) reduced sub-problem honors `coeffs`; (b) the surviving
-        # method tuple's PreCompute compatibility is validated, not silently
-        # bypassed. Both rely on `coeffs` being forwarded through the GridIdx
-        # batch helper.
+        # Mirrors the scalar auto-promotion test above (line 1544), but for
+        # `interp!` batch. The batch GridIdx helper previously expanded non-
+        # NoInterp GridIdx axes to constant Real vectors and recursed with the
+        # UNPROMOTED method tuple, which (incorrectly) rejected `coeffs=
+        # PreCompute()` for any local-Hermite axis — even though the reduced
+        # 1-D problem after slicing was pure Cubic and fully PreCompute-capable.
+        # Fix: promote GridIdx → NoInterp when `_all_eval_value(deriv)` is true,
+        # mirroring the scalar `interp` GridIdx auto-promotion implemented by
+        # `_promote_grididx_to_nointerp`.
 
-        # Case (a): NoInterp axis is GridIdx-sliced → reduced 1D cubic problem
-        # supports PreCompute. Both PreCompute and OnTheFly must succeed and
-        # match the manually-sliced 1D cubic call.
+        # Case (a): explicit NoInterp axis — `coeffs` must flow to the reduced
+        # sub-problem (pre-existing; verifies `coeffs` isn't silently dropped
+        # on the way down).
         qx_b = collect(range(0.5, 2.5, 7))
         out_pre = zeros(7)
         out_otf = zeros(7)
@@ -1586,15 +1602,102 @@ using FastInterpolations
         @test out_pre ≈ ref rtol = 1.0e-12
         @test out_otf ≈ ref rtol = 1.0e-12
 
-        # Case (b): differentiator — non-NoInterp GridIdx gets expanded, so the
-        # Pchip axis remains in the method tuple. PreCompute() must REJECT.
-        # Pre-fix bug: `coeffs` was silently dropped on the GridIdx path, so the
-        # call quietly fell back to AutoCoeffs and ran without error.
-        qy_b = collect(range(0.3, 2.5, 7))
-        out_b = zeros(7)
-        @test_throws ArgumentError interp!(
-            out_b, (x, y), data_2d, (GridIdx(5), qy_b);
+        # Case (b): Hermite axis is GridIdx'd + EvalValue deriv + PreCompute.
+        # Auto-promotion converts Pchip → NoInterp at the GridIdx position,
+        # leaving a pure Cubic 1-D problem that PreCompute supports. Result
+        # must match the manually-sliced 1-D cubic call element-wise.
+        # Regression guard for the concrete example Codex flagged:
+        #   interp!(out, (x,y), data, (qx_batch, GridIdx(8));
+        #           method=(CubicInterp(), PchipInterp()), coeffs=PreCompute())
+        # used to throw "PreCompute not yet supported for PchipInterp in ND".
+        out_promoted_pre = zeros(7)
+        out_promoted_otf = zeros(7)
+        interp!(
+            out_promoted_pre, (x, y), data_2d, (qx_b, GridIdx(8));
             method = (CubicInterp(), PchipInterp()), coeffs = PreCompute(),
         )
+        interp!(
+            out_promoted_otf, (x, y), data_2d, (qx_b, GridIdx(8));
+            method = (CubicInterp(), PchipInterp()), coeffs = OnTheFly(),
+        )
+        @test out_promoted_pre ≈ ref rtol = 1.0e-12
+        @test out_promoted_otf ≈ ref rtol = 1.0e-12
+        # NOTE: The symmetric swap `(GridIdx(k), qy_b)` + `(CubicInterp,
+        # PchipInterp)` + PreCompute would reduce to a 1-D Pchip problem, which
+        # the dedicated `pchip_interp!` supports but the generic `interp!` ND
+        # validator rejects even at N=1. That's an orthogonal limitation in
+        # `_validate_nd_coeffs`, not part of the batch auto-promotion fix, and
+        # the scalar test at line 1547 avoids it for the same reason. See
+        # follow-up ticket if/when generic N=1 Pchip+PreCompute gets plumbed
+        # through the dedicated 1-D path.
+
+        # Case (c): differentiator — nonzero deriv disables the
+        # `_all_eval_value(deriv)` gate, so method stays `(CubicInterp,
+        # PchipInterp)`, falls through to expand-and-recurse, and PreCompute +
+        # Pchip ND must still reject (mirrors the scalar reject check at
+        # line 1554-1560).
+        out_reject = zeros(7)
+        @test_throws ArgumentError interp!(
+            out_reject, (x, y), data_2d, (qx_b, GridIdx(8));
+            method = (CubicInterp(), PchipInterp()),
+            deriv = (EvalValue(), DerivOp(1)),
+            coeffs = PreCompute(),
+        )
+    end
+
+    # ========================================
+    # Phase 5b: NoInterp + Hermite OnTheFly with cell-local windowing
+    # ========================================
+    # The Phase 5b path is exercised when `_eval_nointerp` is called on an interpolant
+    # whose method tuple contains BOTH NoInterp axes AND at least one local-Hermite
+    # axis (PCHIP/Cardinal/Akima). The expected behavior:
+    #   1. NoInterp axes are pre-sliced via GridIdx (existing behavior).
+    #   2. The remaining real axes are searched for the cell once, windowed to the
+    #      cell-local stencil, sliced again, then evaluated by `_collapse_dims`.
+    #   3. Result must equal the equivalent call where the NoInterp axis is replaced
+    #      by a real axis at the corresponding grid point.
+    @testset "Phase 5b: NoInterp × Hermite OnTheFly windowed" begin
+        x = collect(range(0.0, 2π, 30))
+        y = collect(range(-1.0, 1.0, 25))
+        z = collect(range(0.0, 1.0, 12))
+        data_3d = [sin(2xi) * exp(-yj^2) * (1 + zk) for xi in x, yj in y, zk in z]
+
+        # 3D interpolant with NoInterp on the middle axis + Hermite on the others.
+        for methods in (
+                (CardinalInterp(), NoInterp(), CardinalInterp()),
+                (PchipInterp(), NoInterp(), AkimaInterp()),
+                (CardinalInterp(), NoInterp(), CubicInterp()),
+                (CubicInterp(), NoInterp(), PchipInterp()),
+            )
+            itp = interp((x, y, z), data_3d; method = methods, coeffs = OnTheFly())
+            for j in (1, 7, 13, 25)            # iterate over y indices, including boundaries
+                for (qx, qz) in ((1.0, 0.4), (3.5, 0.7), (5.5, 0.1))
+                    # GridIdx route — exercises _eval_nointerp Phase 5b path
+                    val_idx = itp((qx, GridIdx(j), qz))
+
+                    # Reference: build a 2D itp on the (x, z) plane sliced at y[j],
+                    # using only the real-axis methods. This avoids any NoInterp logic.
+                    itp_ref = interp(
+                        (x, z), data_3d[:, j, :];
+                        method = (methods[1], methods[3]),
+                        coeffs = OnTheFly(),
+                    )
+                    val_ref = itp_ref((qx, qz))
+                    @test val_idx ≈ val_ref atol = 1.0e-12 rtol = 1.0e-12
+                end
+            end
+        end
+
+        # Hint persistence across Phase 5b path: pre-search must update real-axis hints.
+        let methods = (CardinalInterp(), NoInterp(), CardinalInterp())
+            itp = interp((x, y, z), data_3d; method = methods, coeffs = OnTheFly())
+            hint = (Ref(0), Ref(0), Ref(0))
+            itp((1.5, GridIdx(10), 0.4); hint = hint)
+            # Real axes should have been updated to absolute interval indices.
+            @test 1 <= hint[1][] <= length(x) - 1
+            @test 1 <= hint[3][] <= length(z) - 1
+            # NoInterp axis hint is set to the GridIdx index (existing behavior).
+            @test hint[2][] == 10
+        end
     end
 end

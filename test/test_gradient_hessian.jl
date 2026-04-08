@@ -633,4 +633,76 @@ using FastInterpolations
         @test g[2] ≈ g_ref[2] rtol = 1.0e-14
     end
 
+    # ========================================
+    # Phase 4: Cell-local windowed Hermite ND vector calculus
+    # ========================================
+    # The OnTheFly path now uses cell-local stencil windows when at least one axis
+    # is a local-Hermite method. `_locate_cell` caches the windows in the cell tuple
+    # so gradient/hessian/laplacian (which call `_eval_at_cell` N or N² times) only
+    # pay the windowing cost once per query. These tests verify correctness against
+    # ForwardDiff (which goes through the same forward path via Dual numbers, so it
+    # exercises the same windowed kernel — but with a query type promotion).
+    @testset "Hermite ND windowed gradient/hessian (Phase 4)" begin
+        using ForwardDiff
+
+        x = collect(range(0.0, 2π, 30))
+        y = collect(range(-1.0, 1.0, 25))
+        data = [sin(2xi) * exp(-yj^2) for xi in x, yj in y]
+
+        # Sample queries away from boundaries (interior cells) where the Hermite ND
+        # value should match an analytical reference within Hermite truncation error.
+        sample_pts = [(1.0, 0.3), (3.5, -0.4), (5.5, 0.7), (2.0, 0.0)]
+
+        for methods in (
+                (PchipInterp(), PchipInterp()),
+                (CardinalInterp(), CardinalInterp()),
+                (AkimaInterp(), AkimaInterp()),
+                # Mixed local × global — Cubic axis stays full, Cardinal is windowed
+                (CardinalInterp(), CubicInterp()),
+                (CubicInterp(), PchipInterp()),
+            )
+            itp = interp((x, y), data; method = methods, coeffs = OnTheFly())
+
+            for q in sample_pts
+                # gradient via vector_calculus = should equal ForwardDiff of the same itp
+                g = gradient(itp, q)
+                g_fd = ForwardDiff.gradient(p -> itp((p[1], p[2])), [q[1], q[2]])
+                @test g[1] ≈ g_fd[1] rtol = 1.0e-10 atol = 1.0e-12
+                @test g[2] ≈ g_fd[2] rtol = 1.0e-10 atol = 1.0e-12
+
+                # value_gradient: value + gradient via the same locate-once cell tuple
+                v, vg = value_gradient(itp, q)
+                @test v == itp(q)
+                @test vg[1] ≈ g_fd[1] rtol = 1.0e-10 atol = 1.0e-12
+                @test vg[2] ≈ g_fd[2] rtol = 1.0e-10 atol = 1.0e-12
+            end
+        end
+
+        # Hessian (N² eval_at_cell calls per query) — covers locate-once amortization
+        @testset "Hessian: $(string(typeof(methods).name))" for methods in (
+                (CardinalInterp(), CardinalInterp()),
+                (PchipInterp(), CubicInterp()),
+            )
+            itp = interp((x, y), data; method = methods, coeffs = OnTheFly())
+            for q in sample_pts
+                H = hessian(itp, q)
+                H_fd = ForwardDiff.hessian(p -> itp((p[1], p[2])), [q[1], q[2]])
+                @test H[1, 1] ≈ H_fd[1, 1] rtol = 1.0e-9 atol = 1.0e-11
+                @test H[1, 2] ≈ H_fd[1, 2] rtol = 1.0e-9 atol = 1.0e-11
+                @test H[2, 1] ≈ H_fd[2, 1] rtol = 1.0e-9 atol = 1.0e-11
+                @test H[2, 2] ≈ H_fd[2, 2] rtol = 1.0e-9 atol = 1.0e-11
+            end
+        end
+
+        # Laplacian = trace of hessian
+        let methods = (CardinalInterp(), CardinalInterp())
+            itp = interp((x, y), data; method = methods, coeffs = OnTheFly())
+            for q in sample_pts
+                lap = laplacian(itp, q)
+                H = hessian(itp, q)
+                @test lap ≈ (H[1, 1] + H[2, 2]) rtol = 1.0e-12
+            end
+        end
+    end
+
 end

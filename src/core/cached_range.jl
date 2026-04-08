@@ -68,6 +68,37 @@ function Base.getindex(r::_CachedRange, i::Int)
     return muladd(i - 1, r.h, r.lo)
 end
 
+# Range slicing — return a new _CachedRange instead of falling back to a generic
+# `Vector{T}` (from getindex) or `SubArray{T, 1, _CachedRange{T}, ...}` (from view).
+# Both fallbacks would lose the `<: AbstractRange` type tag, breaking trait-based
+# dispatch like `_can_infer_period(::AbstractRange) -> true` (see periodic.jl:161).
+#
+# This matches how Julia's built-in `StepRangeLen` handles `view`/`getindex` with
+# range indices: the result stays a range, preserving uniformity and step caches.
+# Without this method, any code that windows or slices a `_CachedRange` (e.g. the
+# Hermite ND cell-local OnTheFly path in hetero_eval.jl) would silently degrade
+# its grid to a non-range type.
+@inline function Base.getindex(r::_CachedRange{T}, idx::AbstractUnitRange{<:Integer}) where {T <: AbstractFloat}
+    @boundscheck checkbounds(r, idx)
+    new_len = length(idx)
+    # Empty slice: return a length-0 _CachedRange anchored at r.lo (callers that
+    # would dereference this hit the same checkbounds wall they would on r itself).
+    new_len == 0 && return _CachedRange{T}(r.lo, r.lo, r.h, r.inv_h, 0)
+    i_lo = Int(first(idx))
+    i_hi = Int(last(idx))
+    # Reuse cached endpoints when the slice touches them — preserves the exact-bit
+    # value of `r.lo`/`r.hi` for full-axis or boundary-touching slices, which keeps
+    # any downstream Tg-precision comparison stable.
+    new_lo = i_lo == 1 ? r.lo : muladd(i_lo - 1, r.h, r.lo)
+    new_hi = i_hi == r.len ? r.hi : muladd(i_hi - 1, r.h, r.lo)
+    return _CachedRange{T}(new_lo, new_hi, r.h, r.inv_h, new_len)
+end
+
+# `view` follows `getindex` semantics for ranges — both return a fresh range, no
+# parent reference is needed (the struct is small and immutable). This mirrors
+# `Base.view(::StepRangeLen, ::AbstractUnitRange)` from Base.
+@inline Base.view(r::_CachedRange, idx::AbstractUnitRange{<:Integer}) = r[idx]
+
 # ========================================
 # _to_float: Range → _CachedRange conversion
 # ========================================

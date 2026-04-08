@@ -97,7 +97,7 @@ export AbstractSide, NearestSide, LeftSide, RightSide
 export Search, Extrap, Side
 
 # Integration
-export integrate, cumulative_integrate
+export integrate, cumulative_integrate, cumulative_integrate!
 
 # Polynomial coefficient extraction
 export CellPoly, coeffs

@@ -1147,6 +1147,10 @@ _short_method_name(::LinearInterp) = "Linear"
 _short_method_name(::QuadraticInterp) = "Quadratic"
 _short_method_name(::ConstantInterp) = "Constant"
 _short_method_name(::NoInterp) = "NoInterp"
+_short_method_name(::PchipInterp) = "PCHIP"
+_short_method_name(::CardinalInterp) = "Cardinal"
+_short_method_name(::AkimaInterp) = "Akima"
+_short_method_name(::CubicHermiteInterp) = "CubicHermite"
 
 function Base.show(io::IO, itp::HeteroInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
     sizes = join([string(length(g)) for g in itp.grids], "×")

@@ -1,10 +1,11 @@
 using Test
+using Random: MersenneTwister
 using FastInterpolations
 using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes,
     _pchip_slopes!, _cardinal_slopes!, _akima_slopes!,
     _resolve_coeffs, _deriv_size, _is_deriv_method,
     _pchip_interp_onthefly, _akima_interp_onthefly, _cardinal_interp_onthefly,
-    _adjoint_func, _throw_onthefly_unsupported
+    _adjoint_func
 
 @testset "Hermite OnTheFly" begin
 
@@ -102,6 +103,78 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
 
         # Internal API also works
         @test _pchip_interp_onthefly(collect(Float64, x), sin.(x), Float64(xq), NoExtrap(), EvalValue(), AutoSearch(), nothing) ≈ pchip_interp(x, y, xq) atol = 1.0e-14
+    end
+
+    # ========================================
+    # 3b. Extended PreCompute vs OnTheFly regression sweep (item 7)
+    # ========================================
+    # Cross-strategy regression safety net: sweeps grid type, function shape,
+    # query location, method, and derivative order. Any future divergence
+    # between the PreCompute and OnTheFly kernels — even one rounded away on
+    # a single function — will trip this test before release.
+    #
+    # Tolerance: tight but not bit-equal. Both strategies use the same cubic
+    # Hermite kernels (`_hermite_integral_kernel_1d` / `_hermite_eval_kernel`),
+    # but the slope source differs (precomputed Vector lookup vs per-cell
+    # `_local_slope` recomputation), and the resulting SSA order can disagree
+    # by 1-2 ULPs after lowering. The atol=1e-13/1e-12 below leaves ~5 ULPs of
+    # headroom, strict enough to catch real divergence and loose enough to
+    # survive Julia/LLVM version drift.
+    @testset "Sweep: OnTheFly ≈ PreCompute (values + 1st derivative)" begin
+        # Grid setups — keep uniform grids as `range(...)` (NOT collected!) so
+        # they exercise the AbstractRange / ScalarSpacing / direct-stride
+        # search path, distinct from the Vector / VectorSpacing / binary-search
+        # path that the non-uniform case covers.
+        grids = (
+            ("uniform Range, n=30", range(0.0, 2π, 30)),
+            ("uniform Range, n=15", range(-1.0, 3.0, 15)),
+            ("non-uniform Vector, n=25", sort!(vcat(0.0, 2π, 0.02 .+ (2π - 0.04) .* sort!(rand(MersenneTwister(7), 23))))),
+        )
+        # Function shapes — different curvature profiles catch different bug classes
+        functions = (
+            ("sin", x -> sin(3x)),
+            ("polynomial", x -> 0.3x^3 - 1.2x^2 + 0.5x - 0.7),
+            ("gaussian", x -> exp(-(x - 1.5)^2)),
+        )
+        # Methods
+        makers = (
+            ("pchip", (xx, yy; coeffs) -> pchip_interp(xx, yy; coeffs = coeffs)),
+            ("cardinal tension=0", (xx, yy; coeffs) -> cardinal_interp(xx, yy; tension = 0.0, coeffs = coeffs)),
+            ("cardinal tension=0.3", (xx, yy; coeffs) -> cardinal_interp(xx, yy; tension = 0.3, coeffs = coeffs)),
+            ("cardinal tension=0.7", (xx, yy; coeffs) -> cardinal_interp(xx, yy; tension = 0.7, coeffs = coeffs)),
+            ("akima", (xx, yy; coeffs) -> akima_interp(xx, yy; coeffs = coeffs)),
+        )
+
+        for (g_label, x) in grids, (f_label, f) in functions, (m_label, maker) in makers
+            y = f.(x)
+            itp_pre = maker(x, y; coeffs = PreCompute())
+            itp_otf = maker(x, y; coeffs = OnTheFly())
+
+            # 50 scattered queries strictly inside the domain
+            xlo, xhi = first(x), last(x)
+            rng = MersenneTwister(123)
+            scattered = xlo .+ (xhi - xlo) .* (0.01 .+ 0.98 .* rand(rng, 50))
+            # Edge queries: each cell's midpoint + each interior grid point + near-boundary
+            edges = vcat(
+                [0.5 * (x[i] + x[i + 1]) for i in 1:(length(x) - 1)],  # mid-cell
+                [x[i] + 1.0e-9 * (x[i + 1] - x[i]) for i in 1:(length(x) - 1)],  # just after left
+                [x[i + 1] - 1.0e-9 * (x[i + 1] - x[i]) for i in 1:(length(x) - 1)], # just before right
+                [x[2], x[end - 1]],  # near-boundary grid points
+            )
+            all_q = vcat(scattered, edges)
+
+            for q in all_q
+                # Value equivalence
+                v_pre = itp_pre(q)
+                v_otf = itp_otf(q)
+                @test v_otf ≈ v_pre atol = 1.0e-13 rtol = 1.0e-13
+
+                # 1st derivative equivalence — catches slope-source bugs that value tests miss
+                d_pre = itp_pre(q; deriv = DerivOp(1))
+                d_otf = itp_otf(q; deriv = DerivOp(1))
+                @test d_otf ≈ d_pre atol = 1.0e-12 rtol = 1.0e-12
+            end
+        end
     end
 
     # ========================================
@@ -588,6 +661,83 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
     end
 
     # ========================================
+    # 16b. Float32 ND smoke test (item 6) — release regression guard
+    # ========================================
+    # Pins three properties for the cell-local OnTheFly ND path on Float32:
+    #   1. Eval returns Float32 (no silent Float64 promotion through the pool buffers)
+    #   2. Numerical agreement with the Float64-upcast reference within Float32 ULP slack
+    #   3. Zero-alloc after warmup (no Float64 boxing slipping into closure captures)
+    # If any of these regress on a future kernel/pool change, this test will trip
+    # before reaching a release.
+    @testset "Float32 Hermite ND smoke (eval + zero-alloc)" begin
+        x32 = collect(range(0.0f0, Float32(2π), 16))
+        y32 = collect(range(-1.0f0, 1.0f0, 13))
+        z32 = collect(range(0.0f0, 1.0f0, 9))
+        d2_32 = Float32[sin(2 * xi) * cos(yj) for xi in x32, yj in y32]
+        d3_32 = Float32[sin(2 * xi) * cos(yj) * (1 + zk) for xi in x32, yj in y32, zk in z32]
+        # Float64 reference (build interpolant in Float64 to compare against)
+        x64, y64, z64 = Float64.(x32), Float64.(y32), Float64.(z32)
+        d2_64 = Float64.(d2_32)
+        d3_64 = Float64.(d3_32)
+        q2_32 = (1.7f0, 0.4f0)
+        q3_32 = (1.7f0, 0.4f0, 0.6f0)
+        q2_64 = (1.7, 0.4)
+        q3_64 = (1.7, 0.4, 0.6)
+
+        for (m_label, methods_2d, methods_3d) in (
+                ("PCHIP", (PchipInterp(), PchipInterp()), (PchipInterp(), PchipInterp(), PchipInterp())),
+                ("Cardinal", (CardinalInterp(), CardinalInterp()), (CardinalInterp(), CardinalInterp(), CardinalInterp())),
+                ("Akima", (AkimaInterp(), AkimaInterp()), (AkimaInterp(), AkimaInterp(), AkimaInterp())),
+            )
+            # 2D — Float32 eltype + Float64 reference comparison
+            itp32_2d = interp((x32, y32), d2_32; method = methods_2d, coeffs = OnTheFly())
+            itp64_2d = interp((x64, y64), d2_64; method = methods_2d, coeffs = OnTheFly())
+            v32 = itp32_2d(q2_32)
+            v64 = itp64_2d(q2_64)
+            @test v32 isa Float32
+            @test Float64(v32) ≈ v64 atol = 1.0f-5
+
+            # 3D — Float32 eltype + Float64 reference comparison
+            itp32_3d = interp((x32, y32, z32), d3_32; method = methods_3d, coeffs = OnTheFly())
+            itp64_3d = interp((x64, y64, z64), d3_64; method = methods_3d, coeffs = OnTheFly())
+            v3_32 = itp32_3d(q3_32)
+            v3_64 = itp64_3d(q3_64)
+            @test v3_32 isa Float32
+            @test Float64(v3_32) ≈ v3_64 atol = 1.0f-5
+        end
+
+        # Zero-alloc check (function-barrier pattern: setup + warmup + @allocated
+        # all inside one function — required because @testset wraps body in a
+        # try/catch that boxes locals. See test_cubic_nd.jl for the same pattern.)
+        function _alloc_f32_2d(methods)
+            x = collect(range(0.0f0, Float32(2π), 16))
+            y = collect(range(-1.0f0, 1.0f0, 13))
+            data = Float32[sin(2 * xi) * cos(yj) for xi in x, yj in y]
+            itp = interp((x, y), data; method = methods, coeffs = OnTheFly())
+            q = (1.7f0, 0.4f0)
+            itp(q); itp(q)  # warmup
+            return @allocated itp(q)
+        end
+        function _alloc_f32_3d(methods)
+            x = collect(range(0.0f0, Float32(2π), 16))
+            y = collect(range(-1.0f0, 1.0f0, 13))
+            z = collect(range(0.0f0, 1.0f0, 9))
+            data = Float32[sin(2 * xi) * cos(yj) * (1 + zk) for xi in x, yj in y, zk in z]
+            itp = interp((x, y, z), data; method = methods, coeffs = OnTheFly())
+            q = (1.7f0, 0.4f0, 0.6f0)
+            itp(q); itp(q)  # warmup
+            return @allocated itp(q)
+        end
+
+        @test _alloc_f32_2d((PchipInterp(), PchipInterp())) <= ALLOC_THRESHOLD
+        @test _alloc_f32_2d((CardinalInterp(), CardinalInterp())) <= ALLOC_THRESHOLD
+        @test _alloc_f32_2d((AkimaInterp(), AkimaInterp())) <= ALLOC_THRESHOLD
+        @test _alloc_f32_3d((PchipInterp(), PchipInterp(), PchipInterp())) <= ALLOC_THRESHOLD
+        @test _alloc_f32_3d((CardinalInterp(), CardinalInterp(), CardinalInterp())) <= ALLOC_THRESHOLD
+        @test _alloc_f32_3d((AkimaInterp(), AkimaInterp(), AkimaInterp())) <= ALLOC_THRESHOLD
+    end
+
+    # ========================================
     # 17. Coverage: OnTheFly + ClampExtrap in-domain oneshot (no spacing)
     # ========================================
     @testset "Coverage: OnTheFly ClampExtrap in-domain oneshot" begin
@@ -682,17 +832,193 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
     end
 
     # ========================================
-    # 21. Coverage: _throw_onthefly_unsupported
+    # 21. OnTheFly integrate — equivalence with PreCompute
     # ========================================
-    @testset "Coverage: _throw_onthefly_unsupported" begin
-        # Direct call
-        @test_throws ArgumentError _throw_onthefly_unsupported("integrate")
+    # Sliding-window OnTheFly integrate (bounded, full-domain, cumulative)
+    # must produce numerically equivalent results to the PreCompute path on
+    # the same (x, y) data. Both paths share `_hermite_integral_kernel_1d`;
+    # the only difference is how slopes are materialized (bulk vector vs
+    # per-cell `_local_slope`), so differences should be at the ULP level.
+    @testset "OnTheFly integrate — equivalence with PreCompute" begin
+        x = collect(range(0.0, 2π, 25))
+        y = sin.(x)
 
-        # Via integrate on OnTheFly interpolant
-        x = range(0.0, 2π, 20)
-        y = sin.(collect(x))
-        itp_otf = pchip_interp(x, y; coeffs = OnTheFly())
-        @test_throws ArgumentError integrate(itp_otf, 0.0, 1.0)
+        @testset "$label — bounded / full-domain / cumulative" for (label, maker) in [
+                ("PCHIP", (xx, yy; coeffs) -> pchip_interp(xx, yy; coeffs = coeffs)),
+                ("Cardinal", (xx, yy; coeffs) -> cardinal_interp(xx, yy; coeffs = coeffs)),
+                ("Akima", (xx, yy; coeffs) -> akima_interp(xx, yy; coeffs = coeffs)),
+            ]
+            itp_pre = maker(x, y; coeffs = PreCompute())
+            itp_otf = maker(x, y; coeffs = OnTheFly())
+
+            # Bounded — interior, both-ends, single-cell, reversed
+            for (a, b) in [(0.5, 4.0), (x[1], x[end]), (1.3, 1.4), (4.0, 0.5)]
+                ref = integrate(itp_pre, a, b)
+                got = integrate(itp_otf, a, b)
+                @test got ≈ ref rtol = 1.0e-12 atol = 1.0e-14
+            end
+
+            # Full-domain integrate(itp)
+            @test integrate(itp_otf) ≈ integrate(itp_pre) rtol = 1.0e-12 atol = 1.0e-14
+
+            # Cumulative_integrate(itp)
+            cum_pre = cumulative_integrate(itp_pre)
+            cum_otf = cumulative_integrate(itp_otf)
+            @test cum_otf ≈ cum_pre rtol = 1.0e-12 atol = 1.0e-14
+            @test length(cum_otf) == length(x)
+            @test cum_otf[1] == 0
+        end
+
+        # hermite_interp with user slopes — PreCompute only (no OnTheFly for user slopes);
+        # include a smoke test to guard against accidental regression of the user-slope path
+        # when we added the Hermite-family override on integrate.
+        @testset "hermite_interp user slopes still works" begin
+            dy = cos.(x)
+            itp_usr = hermite_interp(x, y, dy)
+            @test integrate(itp_usr, 0.0, π) ≈ 2.0 atol = 1.0e-3   # ∫₀^π sin x dx = 2
+            @test integrate(itp_usr) isa Real
+            @test length(cumulative_integrate(itp_usr)) == length(x)
+        end
+    end
+
+    # ========================================
+    # 21b. OnTheFly integrate — extrap correctness
+    # ========================================
+    # All five extraps must match PreCompute. WrapExtrap is the most subtle
+    # because `_dispatch_extrap_integrate_1d` calls `in_domain_fn` multiple
+    # times for wrap-around cases; each call must start fresh sliding state.
+    @testset "OnTheFly integrate — extrap equivalence" begin
+        x = collect(range(0.0, 2π, 30))
+        y = sin.(x)
+
+        # In-domain queries — all extraps (NoExtrap included)
+        in_domain_bounds = [
+            (0.5, 4.0),
+            (x[1], x[end]),
+            (1.3, 1.4),
+            (4.0, 0.5),   # reversed
+        ]
+
+        # Out-of-domain queries — only for extraps that can handle them
+        out_of_domain_bounds = [
+            (-1.0, 3.0),          # left-extrapolated start
+            (5.0, 2π + 2.0),      # right-extrapolated end
+            (-1.0, 2π + 2.0),     # both ends extrapolated
+            (-5.0, 2π + 5.0),     # spans multiple periods (WrapExtrap)
+        ]
+
+        for (ename, extrap_obj, bounds_list) in [
+                ("NoExtrap", NoExtrap(), in_domain_bounds),
+                ("ClampExtrap", ClampExtrap(), vcat(in_domain_bounds, out_of_domain_bounds)),
+                ("FillExtrap", FillExtrap(0.5), vcat(in_domain_bounds, out_of_domain_bounds)),
+                ("ExtendExtrap", ExtendExtrap(), in_domain_bounds),
+                ("WrapExtrap", WrapExtrap(), vcat(in_domain_bounds, out_of_domain_bounds)),
+            ]
+            @testset "$ename × PCHIP" begin
+                itp_pre = pchip_interp(x, y; coeffs = PreCompute(), extrap = extrap_obj)
+                itp_otf = pchip_interp(x, y; coeffs = OnTheFly(), extrap = extrap_obj)
+
+                for (a, b) in bounds_list
+                    ref = integrate(itp_pre, a, b)
+                    got = integrate(itp_otf, a, b)
+                    @test got ≈ ref rtol = 1.0e-12 atol = 1.0e-14
+                end
+            end
+        end
+    end
+
+    # ========================================
+    # 21c. OnTheFly integrate — zero allocation after warmup
+    # ========================================
+    # Sliding-window path has no pool, no heap allocation — `dy_L`, `dy_R`
+    # are scalar locals. This test pins the "memory O(1)" contract.
+    #
+    # Uses `ALLOC_THRESHOLD` (defined in runtests.jl) to tolerate small LTS
+    # boxing overhead (Julia 1.10: ~240 B; Julia 1.12+: 0 B). See
+    # `test_cubic_nd.jl` for the same pattern on ND alloc tests.
+    @testset "OnTheFly integrate — zero alloc" begin
+        x = collect(range(0.0, 2π, 50))
+        y = sin.(x)
+
+        function _alloc_bounded(maker)
+            itp = maker(x, y; coeffs = OnTheFly())
+            integrate(itp, 0.5, 4.0)   # warmup
+            return @allocated integrate(itp, 0.5, 4.0)
+        end
+        function _alloc_fulldomain(maker)
+            itp = maker(x, y; coeffs = OnTheFly())
+            integrate(itp)             # warmup
+            return @allocated integrate(itp)
+        end
+
+        # Bounded integrate — sliding window, strictly no pool touches
+        @test _alloc_bounded((xx, yy; coeffs) -> pchip_interp(xx, yy; coeffs = coeffs)) <= ALLOC_THRESHOLD
+        @test _alloc_bounded((xx, yy; coeffs) -> cardinal_interp(xx, yy; coeffs = coeffs)) <= ALLOC_THRESHOLD
+        @test _alloc_bounded((xx, yy; coeffs) -> akima_interp(xx, yy; coeffs = coeffs)) <= ALLOC_THRESHOLD
+
+        # Full-domain integrate — same sliding window over all cells
+        @test _alloc_fulldomain((xx, yy; coeffs) -> pchip_interp(xx, yy; coeffs = coeffs)) <= ALLOC_THRESHOLD
+        @test _alloc_fulldomain((xx, yy; coeffs) -> cardinal_interp(xx, yy; coeffs = coeffs)) <= ALLOC_THRESHOLD
+        @test _alloc_fulldomain((xx, yy; coeffs) -> akima_interp(xx, yy; coeffs = coeffs)) <= ALLOC_THRESHOLD
+
+        # cumulative_integrate — allocates the length-n result vector (unavoidable),
+        # so we compare against `n * sizeof(Tout) + small overhead`.
+        # The important invariant is that NO extra pool/scratch beyond the return vector.
+        function _alloc_cumulative_bounded(maker)
+            itp = maker(x, y; coeffs = OnTheFly())
+            cumulative_integrate(itp)  # warmup
+            return @allocated cumulative_integrate(itp)
+        end
+        expected_result_bytes = length(x) * sizeof(Float64)   # result Vector{Float64}
+        # Result array data + Julia Array header (~80 B on x86_64) + LTS threshold slack
+        cumulative_slack = expected_result_bytes + 128 + ALLOC_THRESHOLD
+        @test _alloc_cumulative_bounded((xx, yy; coeffs) -> pchip_interp(xx, yy; coeffs = coeffs)) <= cumulative_slack
+        @test _alloc_cumulative_bounded((xx, yy; coeffs) -> cardinal_interp(xx, yy; coeffs = coeffs)) <= cumulative_slack
+        @test _alloc_cumulative_bounded((xx, yy; coeffs) -> akima_interp(xx, yy; coeffs = coeffs)) <= cumulative_slack
+
+        # ── cumulative_integrate! in-place — TRUE zero-alloc ──
+        # User-supplied buffer means no result vector allocation; sliding window
+        # keeps dy state on the stack. This is the opt-in path for users that
+        # want to drive repeated cumulative integrations with no GC pressure.
+        function _alloc_cumulative_inplace(maker)
+            itp = maker(x, y; coeffs = OnTheFly())
+            out = similar(x)
+            cumulative_integrate!(out, itp)  # warmup
+            return @allocated cumulative_integrate!(out, itp)
+        end
+        @test _alloc_cumulative_inplace((xx, yy; coeffs) -> pchip_interp(xx, yy; coeffs = coeffs)) <= ALLOC_THRESHOLD
+        @test _alloc_cumulative_inplace((xx, yy; coeffs) -> cardinal_interp(xx, yy; coeffs = coeffs)) <= ALLOC_THRESHOLD
+        @test _alloc_cumulative_inplace((xx, yy; coeffs) -> akima_interp(xx, yy; coeffs = coeffs)) <= ALLOC_THRESHOLD
+
+        # Correctness: in-place result must equal allocating variant (bit-equal for
+        # PCHIP/Cardinal, ≤ few ULPs for Akima — but same code path, so bit-equal here).
+        let itp = pchip_interp(x, y; coeffs = OnTheFly())
+            out = similar(x)
+            cumulative_integrate!(out, itp)
+            @test out == cumulative_integrate(itp)
+        end
+        let itp = cardinal_interp(x, y; coeffs = OnTheFly())
+            out = similar(x)
+            cumulative_integrate!(out, itp)
+            @test out == cumulative_integrate(itp)
+        end
+        let itp = akima_interp(x, y; coeffs = OnTheFly())
+            out = similar(x)
+            cumulative_integrate!(out, itp)
+            @test out == cumulative_integrate(itp)
+        end
+        # PreCompute path also accepts the ! variant via the shared entry point.
+        let itp = pchip_interp(x, y; coeffs = PreCompute())
+            out = similar(x)
+            cumulative_integrate!(out, itp)
+            @test out == cumulative_integrate(itp)
+        end
+
+        # Length-mismatch error path
+        let itp = pchip_interp(x, y; coeffs = OnTheFly())
+            bad = similar(x, length(x) - 1)
+            @test_throws DimensionMismatch cumulative_integrate!(bad, itp)
+        end
     end
 
     # ========================================

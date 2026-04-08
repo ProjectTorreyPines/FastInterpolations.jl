@@ -1233,4 +1233,36 @@
         @test occursin("3 points", verbose_str)
         @test occursin("BC:", verbose_str)
     end
+
+    # Covers the _short_method_name dispatch for each local Hermite method when
+    # rendered inside a HeteroInterpolantND. Keeps the show path exercised and
+    # pins the display strings so user-facing output is stable for the three
+    # method types currently wired through the HeteroInterpolantND pipeline.
+    @testset "HeteroInterpolantND show — local Hermite methods" begin
+        x = collect(range(0.0, 1.0, 8))
+        y = collect(range(0.0, 2.0, 9))
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+
+        for (method_pair, expected) in (
+                ((PchipInterp(), PchipInterp()), "PCHIP"),
+                ((CardinalInterp(), CardinalInterp()), "Cardinal"),
+                ((AkimaInterp(), AkimaInterp()), "Akima"),
+            )
+            itp = interp((x, y), data; method = method_pair, coeffs = OnTheFly())
+            s = sprint(show, MIME("text/plain"), itp)
+            @test occursin(expected, s)
+        end
+    end
+
+    # Direct unit tests of _short_method_name for every local Hermite method
+    # type, mirroring the existing "Direct test of _short_bc_name_nd" /
+    # "Direct test of _short_side_name_nd" patterns. CubicHermiteInterp isn't
+    # yet wired through HeteroInterpolantND, so a direct call is the only way
+    # to pin its display string today.
+    @testset "Direct test of _short_method_name (Hermite family)" begin
+        @test FastInterpolations._short_method_name(PchipInterp()) == "PCHIP"
+        @test FastInterpolations._short_method_name(CardinalInterp()) == "Cardinal"
+        @test FastInterpolations._short_method_name(AkimaInterp()) == "Akima"
+        @test FastInterpolations._short_method_name(CubicHermiteInterp()) == "CubicHermite"
+    end
 end

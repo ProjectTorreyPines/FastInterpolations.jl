@@ -214,6 +214,116 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
         @test _alloc_test_otf_hetero() <= ND_ALLOC_THRESHOLD_LOCAL
     end
 
+    # ========================================================================
+    # Windowed OnTheFly paths — comprehensive zero-alloc coverage
+    # ========================================================================
+    # Every method tuple that exercises the cell-local windowing path in this
+    # PR must be 0-alloc after warmup on all three entry points:
+    #   (1) scalar one-shot   `interp(grids, data, q; method, coeffs=OnTheFly())`
+    #   (2) batch in-place    `interp!(out, grids, data, qs; method, coeffs=OnTheFly())`
+    #   (3) persistent itp    `itp = interp(grids, data; method, coeffs=OnTheFly()); itp(q)`
+    #
+    # Both Vector and Range grid representations are exercised because they
+    # flow through different spacings branches (`VectorSpacing` vs
+    # `ScalarSpacing`). The Vector case is the historical regression magnet —
+    # without pool-backed spacings, `_create_spacing(::Vector)` allocates h and
+    # inv_h per call. The pool-aware `_create_spacings_pooled` path is what
+    # keeps this 0 B.
+    @testset "Zero-alloc: windowed OnTheFly (scalar + batch! + persistent)" begin
+        function _alloc_scalar(grids, data, query, method)
+            interp(grids, data, query; method = method, coeffs = OnTheFly())
+            interp(grids, data, query; method = method, coeffs = OnTheFly())
+            return @allocated interp(grids, data, query; method = method, coeffs = OnTheFly())
+        end
+        function _alloc_batch_inplace(out, grids, data, qs, method)
+            interp!(out, grids, data, qs; method = method, coeffs = OnTheFly())
+            interp!(out, grids, data, qs; method = method, coeffs = OnTheFly())
+            return @allocated interp!(out, grids, data, qs; method = method, coeffs = OnTheFly())
+        end
+        function _alloc_persistent(itp, q)
+            itp(q)
+            itp(q)
+            return @allocated itp(q)
+        end
+
+        xr = range(0.0, 2π, 30)
+        yr = range(0.0, π, 25)
+        xv = collect(xr)
+        yv = collect(yr)
+        data_vv = [sin(xi) * cos(yj) for xi in xv, yj in yv]
+        data_rr = [sin(xi) * cos(yj) for xi in xr, yj in yr]
+        q = (1.7, 0.8)
+        qs = [(0.5 + (i / 20), 0.1 + (i / 25)) for i in 1:50]
+        out = Vector{Float64}(undef, length(qs))
+
+        # Method tuples that exercise the windowed path. Covers:
+        # - pure Hermite (Cardinal/Pchip/Akima) → windowed on both axes
+        # - mixed Cubic × Hermite → windowed on the Hermite axis only
+        # - mixed Cubic × Linear → windowed on the Linear axis via the
+        #   persistent-path asymmetric gate
+        # - pure Linear → windowed on both axes (persistent only)
+        # - pure Cubic → full-fiber fallback (zero regression baseline)
+        for (label, m) in (
+                ("Cardinal × Cardinal", (CardinalInterp(), CardinalInterp())),
+                ("Pchip × Pchip", (PchipInterp(), PchipInterp())),
+                ("Akima × Akima", (AkimaInterp(), AkimaInterp())),
+                ("Cubic × Cardinal", (CubicInterp(), CardinalInterp())),
+                ("Cubic × Linear", (CubicInterp(), LinearInterp())),
+                ("Linear × Pchip", (LinearInterp(), PchipInterp())),
+                ("Linear × Linear", (LinearInterp(), LinearInterp())),
+                ("Cubic × Cubic", (CubicInterp(), CubicInterp())),
+            )
+            # Scalar one-shot: both grid types
+            @test _alloc_scalar((xv, yv), data_vv, q, m) <= ND_ALLOC_THRESHOLD_LOCAL
+            @test _alloc_scalar((xr, yr), data_rr, q, m) <= ND_ALLOC_THRESHOLD_LOCAL
+
+            # Batch in-place: both grid types
+            @test _alloc_batch_inplace(out, (xv, yv), data_vv, qs, m) <= ND_ALLOC_THRESHOLD_LOCAL
+            @test _alloc_batch_inplace(out, (xr, yr), data_rr, qs, m) <= ND_ALLOC_THRESHOLD_LOCAL
+
+            # Persistent interpolant: both grid types
+            itp_v = interp((xv, yv), data_vv; method = m, coeffs = OnTheFly())
+            itp_r = interp((xr, yr), data_rr; method = m, coeffs = OnTheFly())
+            @test _alloc_persistent(itp_v, q) <= ND_ALLOC_THRESHOLD_LOCAL
+            @test _alloc_persistent(itp_r, q) <= ND_ALLOC_THRESHOLD_LOCAL
+        end
+    end
+
+    # ========================================================================
+    # Type stability (@inferred) for the windowed OnTheFly paths
+    # ========================================================================
+    # Parallel to the allocation check — same method tuples, same grid types,
+    # same entry points. `@inferred` fails if the return type isn't fully
+    # inferred, which is the proximate cause of most of the allocation bugs
+    # this PR had to untangle.
+    @testset "Type stability: @inferred windowed OnTheFly" begin
+        xr = range(0.0, 2π, 30)
+        yr = range(0.0, π, 25)
+        xv = collect(xr)
+        yv = collect(yr)
+        data_vv = [sin(xi) * cos(yj) for xi in xv, yj in yv]
+        data_rr = [sin(xi) * cos(yj) for xi in xr, yj in yr]
+        q = (1.7, 0.8)
+
+        for (label, m) in (
+                ("Cardinal × Cardinal", (CardinalInterp(), CardinalInterp())),
+                ("Pchip × Pchip", (PchipInterp(), PchipInterp())),
+                ("Akima × Akima", (AkimaInterp(), AkimaInterp())),
+                ("Cubic × Cardinal", (CubicInterp(), CardinalInterp())),
+                ("Cubic × Linear", (CubicInterp(), LinearInterp())),
+                ("Linear × Pchip", (LinearInterp(), PchipInterp())),
+            )
+            # Scalar one-shot
+            @test (@inferred interp((xv, yv), data_vv, q; method = m, coeffs = OnTheFly())) isa Float64
+            @test (@inferred interp((xr, yr), data_rr, q; method = m, coeffs = OnTheFly())) isa Float64
+            # Persistent interpolant callable
+            itp_v = interp((xv, yv), data_vv; method = m, coeffs = OnTheFly())
+            itp_r = interp((xr, yr), data_rr; method = m, coeffs = OnTheFly())
+            @test (@inferred itp_v(q)) isa Float64
+            @test (@inferred itp_r(q)) isa Float64
+        end
+    end
+
     @testset "Zero-alloc: AutoCoeffs default cubic scalar" begin
         function _alloc_test_auto_cubic()
             xg = collect(range(0.0, 2π, 30))

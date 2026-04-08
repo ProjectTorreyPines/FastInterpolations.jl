@@ -117,7 +117,7 @@ end
 # No partials computation — 2^N× less work than PreCompute for a single query.
 # Periodic BC is handled internally by each _oneshot_eval_1d call.
 
-@inline function _interp_nd_oneshot_onthefly(
+@inline @with_pool pool function _interp_nd_oneshot_onthefly(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}},
@@ -136,9 +136,13 @@ end
     Tr = _promote_query_eltype(Tv, q_eval)
 
     if _has_any_local_method(methods)
-        # Resolve spacings: caller-provided (batch dispatcher precomputes once → zero per-query
-        # alloc) or compute inline (scalar one-shot: one-time cost, range grids are free).
-        sp = spacings === nothing ? map(_create_spacing, grids) : spacings
+        # Resolve spacings:
+        # - Caller-provided (batch dispatcher precomputes once outside its loop) → reuse.
+        # - nothing → this is scalar oneshot. Acquire h/inv_h from the pool so Vector
+        #   grids don't heap-allocate per call. Range grids return `ScalarSpacing`
+        #   (struct, no pool touch). Pool scope is this function's `@with_pool`, so
+        #   the acquired buffers are reclaimed when we return.
+        sp = spacings === nothing ? _create_spacings_pooled(pool, grids) : spacings
         indices, _, _ = _search_all_intervals(q_eval, grids, sp, searches, hints)
         windows = ntuple(
             d -> _axis_window(methods[d], indices[d], length(grids[d])),
@@ -269,7 +273,7 @@ end
 # Branches on the resolved `coeffs`: PreCompute uses the amortized partials build,
 # OnTheFly loops the existing scalar one-shot per query (used when the method tuple
 # contains a local Hermite method with no PreCompute backend).
-function _interp_nd_oneshot_batch_dispatch!(
+@with_pool pool function _interp_nd_oneshot_batch_dispatch!(
         output, grids, data, queries,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         deriv, extrap, search, hints, coeffs,
@@ -294,7 +298,12 @@ function _interp_nd_oneshot_batch_dispatch!(
         # The windowed path inside `_interp_nd_oneshot_onthefly` reuses these across all
         # `nq` queries, so the cell-local stencil benefit is realized in the batch loop.
         # For pure global-solve method tuples, `spacings` is left as `nothing` (unused).
-        spacings = _has_any_local_method(methods) ? map(_create_spacing, grids_typed) : nothing
+        # Use `_create_spacings_pooled` so Vector grids acquire h/inv_h from THIS
+        # function's `@with_pool` scope — the buffers outlive the per-query
+        # `_interp_nd_oneshot_onthefly` calls (which have their own inner pool
+        # scope) because nested `@with_pool` scopes don't reclaim the outer
+        # scope's arrays. Range grids return `ScalarSpacing` with zero pool touch.
+        spacings = _has_any_local_method(methods) ? _create_spacings_pooled(pool, grids_typed) : nothing
         @inbounds for k in 1:nq
             query_k = _extract_query_point(queries, k, Val(N))
             output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, searches, ops, hints, spacings)

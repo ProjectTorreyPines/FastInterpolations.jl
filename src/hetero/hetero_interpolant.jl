@@ -102,9 +102,14 @@ end
 
 function _validate_axis_methods(grids, methods, extraps)
     _validate_method_concreteness(methods)
-    for d in eachindex(grids)
-        _validate_axis_method(grids[d], methods[d], extraps[d], d)
-    end
+    # Per-axis validation. The obvious `for d in eachindex(grids)` loop boxes
+    # values on heterogeneous method tuples (e.g. `(CubicInterp, CardinalInterp)`
+    # → 48 B/call) because runtime `methods[d]` indexing forces a Union split.
+    # `foreach` over tuples is unrolled by the Julia compiler into per-element
+    # calls with concrete types, giving the same zero-alloc result without
+    # `@generated`. We pass the axis index via `ntuple(identity, Val(N))` so
+    # `_validate_axis_method` still receives `d::Int` as its fourth argument.
+    foreach(_validate_axis_method, grids, methods, extraps, ntuple(identity, Val(length(grids))))
     return nothing
 end
 

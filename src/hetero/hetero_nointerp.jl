@@ -253,9 +253,14 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
     ]
     # Per-real-axis spacings (already in the PreCompute branch as `rs`; mirror here for OnTheFly).
     r_spacings_exprs = [:(itp.spacings[$d]) for d in real_dims]
-    # Compile-time check: any local axis remaining in the filtered methods?
+    # Compile-time check: any windowable axis remaining in the filtered methods?
+    # `_eval_nointerp` is called on a persistent `HeteroInterpolantND` whose
+    # `itp.spacings` is pre-computed at construction, so the asymmetric
+    # persistent-path rule (use `_has_any_windowable_method`, not the narrower
+    # `_has_any_local_method`) applies — see hetero_window.jl for rationale.
+    # Mirror the `_is_windowable_method` set: PCHIP/Cardinal/Akima/Linear/Constant.
     rm_has_local = any(
-        M -> M <: Union{PchipInterp, CardinalInterp, AkimaInterp},
+        M -> M <: Union{PchipInterp, CardinalInterp, AkimaInterp, LinearInterp, ConstantInterp},
         [fieldtype(M, d) for d in real_dims]
     )
 

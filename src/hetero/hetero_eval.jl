@@ -163,10 +163,15 @@ end
     # Recursive type fold specializes at compile time for each concrete query tuple.
     Tr = _promote_query_eltype(Tv, q_eval)
 
-    if _has_any_local_method(itp.methods)
+    # Persistent-path gate: use `_has_any_windowable_method` (strict superset of
+    # `_has_any_local_method`) because `itp.spacings` is pre-computed at
+    # construction — no per-call allocation even when the windowable method is
+    # Linear/Constant (which would be a net loss in the scalar oneshot path,
+    # hence the asymmetry — see hetero_window.jl for the detailed rationale).
+    if _has_any_windowable_method(itp.methods)
         # Pre-search uses user hints (mutates them to absolute indices, preserving contract).
         indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, searches, hints)
-        # Per-axis window: cell-local for local methods, full axis for global-solve methods.
+        # Per-axis window: cell-local for windowable methods, full axis for global-solve methods.
         windows = ntuple(
             d -> _axis_window(itp.methods[d], indices[d], length(itp.grids[d])),
             Val(N),
@@ -174,7 +179,7 @@ end
         data_local = view(itp.data, windows...)
         grids_local = map(view, itp.grids, windows)
         # Inner kernel sees the pre-sliced data + grids. Pass `nothing` as hints — the
-        # tiny inner search on a 4–6 point fiber is negligible, and this prevents any
+        # tiny inner search on a 2–6 point fiber is negligible, and this prevents any
         # relative-coordinate hint from leaking back to the user.
         rel_windows = map(Base.OneTo ∘ length, windows)
         return _collapse_dims(
@@ -262,7 +267,8 @@ end
     ) where {Tg, Tv, N, G, S, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
 
-    if _has_any_local_method(itp.methods)
+    # Persistent-path gate — same asymmetric rule as `_eval_hetero_nd` above.
+    if _has_any_windowable_method(itp.methods)
         # Pre-search uses user hints (mutates them to absolute indices, preserving contract).
         indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple, hints)
         windows = ntuple(

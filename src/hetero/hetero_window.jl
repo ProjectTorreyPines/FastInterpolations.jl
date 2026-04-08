@@ -62,13 +62,45 @@
 end
 
 # ── Global-solve methods: full axis, no windowing ──
-# (Linear/Constant intentionally use the same full-axis fallback when they
-# appear in a tuple WITHOUT any local-Hermite axis — pure Linear/Constant
-# tuples skip the windowing path because the one-shot scalar path would pay
-# a per-call spacings allocation for Vector grids that outweighs the 2-point
-# stencil benefit. They DO get a cell-local window when mixed with a local
-# method, since `_axis_window(LinearInterp, ix, n)` is dispatched per-axis
-# once the gate fires on the Hermite axis — see the mixed-tuple branch in
-# `_eval_hetero_nd`.)
 @inline _axis_window(::CubicInterp, ix::Int, n::Int) = 1:n
 @inline _axis_window(::QuadraticInterp, ix::Int, n::Int) = 1:n
+
+# ── Windowable-method trait (persistent-path gate) ──
+#
+# A method is "windowable" iff it evaluates from a fixed-size cell-local stencil
+# (i.e. `_axis_window(m, ix, n)` returns a sub-range narrower than `1:n` for
+# large grids). This is a STRICT SUPERSET of `_is_local_method` (which is about
+# "computes local slopes" and is used by the OnTheFly-vs-PreCompute resolver).
+#
+# Linear/Constant are windowable (2-point stencil) even though they're not
+# "local-slope" methods. We use a separate trait for them because extending
+# `_is_local_method` would change the scalar/batch `AutoCoeffs` resolver's
+# behavior, which we want to keep frozen.
+#
+# ⚠️  ASYMMETRY WARNING — read before changing gate sites:
+#
+# This trait is deliberately used ONLY at the persistent-interpolant call
+# sites (`_eval_hetero_nd(<:Array)`, `_locate_cell(<:Array)`, the `@generated
+# _eval_nointerp` path). The scalar-oneshot path (`_interp_nd_oneshot_onthefly`)
+# and the batch dispatcher's spacings pre-compute still use `_has_any_local_method`.
+#
+# Rationale: the windowed path runs `_search_all_intervals(q_eval, grids,
+# spacings, ...)` and needs per-axis spacings to binary-search for the cell
+# index. The persistent path has `itp.spacings` PRE-COMPUTED at construction
+# and stored in the struct — zero per-call allocation. The scalar one-shot
+# path has to build spacings inline via `map(_create_spacing, grids)`, and for
+# Vector grids `_create_spacing` allocates `h` and `inv_h` buffers (~1024 B
+# for a 30×25 grid). For Hermite methods the stencil win (~5-20× for local-
+# slope kernels) justifies that allocation; for pure Linear/Constant with
+# Vector grids it would be a net loss for scalar one-shot, so we leave the
+# one-shot gate narrower.
+#
+# Persistent interpolant + pure Linear/Constant: 667 ns → ~50 ns (13×) for
+# 100×100, no per-call allocation (spacings are cached in itp.spacings).
+@inline _is_windowable_method(::PchipInterp) = true
+@inline _is_windowable_method(::CardinalInterp) = true
+@inline _is_windowable_method(::AkimaInterp) = true
+@inline _is_windowable_method(::LinearInterp) = true
+@inline _is_windowable_method(::ConstantInterp) = true
+@inline _is_windowable_method(::AbstractInterpMethod) = false
+@inline _has_any_windowable_method(methods::Tuple) = any(_is_windowable_method, methods)

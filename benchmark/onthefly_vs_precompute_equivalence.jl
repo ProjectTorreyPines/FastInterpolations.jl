@@ -157,6 +157,13 @@ const hermite_configs = (
     ("Akima × Akima", (AkimaInterp(), AkimaInterp())),
     ("Linear × Linear", (LinearInterp(), LinearInterp())),
     ("Cubic × Cardinal", (CubicInterp(), CardinalInterp())),  # mixed: partial fast path
+    # Asymmetric windowing demos: persistent path uses _has_any_windowable_method,
+    # so Linear/Constant axes trigger the pre-slice + fast-path too, and when
+    # paired with a Cubic axis the windowing indirectly shrinks the Cubic
+    # tridiagonal solve from N fibers to 2.
+    ("Cubic × Linear", (CubicInterp(), LinearInterp())),
+    ("Linear × Cubic", (LinearInterp(), CubicInterp())),
+    ("Constant × Linear", (ConstantInterp(), LinearInterp())),
 )
 
 # Pretty header

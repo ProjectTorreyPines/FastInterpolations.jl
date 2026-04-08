@@ -923,6 +923,34 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
             @test _has_any_local_method((QuadraticInterp(), CubicInterp())) == false
             @test _has_any_local_method((LinearInterp(), CubicInterp())) == false
         end
+
+        # ── _is_windowable_method (persistent-path gate, strict superset of
+        # _has_any_local_method — see hetero_window.jl for the asymmetry rationale)
+        #
+        # These direct-call tests also ensure each `@inline` trait method body
+        # registers in `Coverage.jl`: when the traits are only hit via the
+        # higher-order `any(_is_windowable_method, methods)` call in
+        # `_has_any_windowable_method`, LLVM may inline aggressively enough
+        # that the definition line's hit counter is lost.
+        @testset "_is_windowable_method trait" begin
+            using FastInterpolations: _is_windowable_method, _has_any_windowable_method
+            # Windowable methods (fixed cell-local stencil)
+            @test _is_windowable_method(PchipInterp()) == true
+            @test _is_windowable_method(CardinalInterp()) == true
+            @test _is_windowable_method(CardinalInterp(tension = 0.4)) == true
+            @test _is_windowable_method(AkimaInterp()) == true
+            @test _is_windowable_method(LinearInterp()) == true
+            @test _is_windowable_method(ConstantInterp()) == true
+            # Non-windowable (global-solve) methods
+            @test _is_windowable_method(CubicInterp()) == false
+            @test _is_windowable_method(QuadraticInterp()) == false
+            # Tuple-level predicate
+            @test _has_any_windowable_method((CardinalInterp(), CardinalInterp())) == true
+            @test _has_any_windowable_method((CubicInterp(), CardinalInterp())) == true
+            @test _has_any_windowable_method((LinearInterp(), LinearInterp())) == true
+            @test _has_any_windowable_method((CubicInterp(), CubicInterp())) == false
+            @test _has_any_windowable_method((CubicInterp(), QuadraticInterp())) == false
+        end
     end
 
 end # @testset "Hermite OnTheFly"

@@ -21,7 +21,7 @@
 
     # ── shared 2D fixture ──
     x2 = collect(range(0.0, 2π, 15))
-    y2 = collect(range(0.0, π,  10))
+    y2 = collect(range(0.0, π, 10))
     data2 = [sin(xi) * cos(yj) for xi in x2, yj in y2]
     q2_scalar = (1.234, 0.789)
     q2_batch = [(0.3, 0.4), (1.5, 1.0), (2.0, 2.5), (5.5, 0.1)]
@@ -36,9 +36,9 @@
 
     # ── method list: (forwarder, in-place forwarder, method instance, label) ──
     methods_2d = (
-        (pchip_interp,    pchip_interp!,    PchipInterp(),    "pchip"),
+        (pchip_interp, pchip_interp!, PchipInterp(), "pchip"),
         (cardinal_interp, cardinal_interp!, CardinalInterp(), "cardinal"),
-        (akima_interp,    akima_interp!,    AkimaInterp(),    "akima"),
+        (akima_interp, akima_interp!, AkimaInterp(), "akima"),
     )
 
     @testset "Equivalence with direct `interp` — 2D ($label)" for (fwd, fwd!, m, label) in methods_2d
@@ -94,19 +94,19 @@
         # (0.0 = Catmull-Rom) and produce identical results. We need them to
         # differ to prove `tension` reaches `CardinalInterp(tension)`.
         v_default = cardinal_interp((x2, y2), data2, q2_scalar)
-        v_tense   = cardinal_interp((x2, y2), data2, q2_scalar; tension = 0.5)
+        v_tense = cardinal_interp((x2, y2), data2, q2_scalar; tension = 0.5)
         @test v_default !== v_tense
 
         # Same check on the build path.
         itp_default = cardinal_interp((x2, y2), data2)
-        itp_tense   = cardinal_interp((x2, y2), data2; tension = 0.5)
+        itp_tense = cardinal_interp((x2, y2), data2; tension = 0.5)
         @test itp_default(q2_scalar) !== itp_tense(q2_scalar)
 
         # And on the batch in-place path.
         out_default = zeros(length(q2_batch))
-        out_tense   = zeros(length(q2_batch))
+        out_tense = zeros(length(q2_batch))
         cardinal_interp!(out_default, (x2, y2), data2, q2_batch)
-        cardinal_interp!(out_tense,   (x2, y2), data2, q2_batch; tension = 0.5)
+        cardinal_interp!(out_tense, (x2, y2), data2, q2_batch; tension = 0.5)
         @test out_default != out_tense
 
         # Cross-check: forwarder with `tension=0.5` must equal direct
@@ -130,19 +130,19 @@
         # grid types so ND interpolation results are directly comparable
         # across flavors.
         xr = range(0.0, 2π, 15)              # StepRangeLen
-        yr = range(0.0, π,  10)              # StepRangeLen
+        yr = range(0.0, π, 10)              # StepRangeLen
         xv = collect(xr)                     # Vector{Float64}
         yv = collect(yr)                     # Vector{Float64}
         data_rr = [sin(xi) * cos(yj) for xi in xr, yj in yr]
 
         grid_flavors = (
-            ("all-range",            (xr, yr)),
-            ("range × vector",       (xr, yv)),
-            ("vector × range",       (xv, yr)),
+            ("all-range", (xr, yr)),
+            ("range × vector", (xr, yv)),
+            ("vector × range", (xv, yr)),
         )
 
         @testset "$flavor — $label" for (flavor, grids) in grid_flavors,
-                                        (fwd, fwd!, m, label) in methods_2d
+                (fwd, fwd!, m, label) in methods_2d
 
             # 1. Build path: forwarder must produce the *same concrete type*
             #    as direct `interp` — proves grid eltype/range info is not
@@ -180,7 +180,7 @@
         # here catches the case where a forwarder accidentally promotes
         # `range → Vector` and triggers a different code path.)
         for (fwd, _, _, _) in methods_2d
-            v_range  = fwd((xr, yr), data_rr, q2_scalar)
+            v_range = fwd((xr, yr), data_rr, q2_scalar)
             v_vector = fwd((xv, yv), data_rr, q2_scalar)
             @test v_range ≈ v_vector rtol = 1.0e-12
         end

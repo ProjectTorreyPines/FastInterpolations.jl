@@ -24,105 +24,105 @@
 # ── PCHIP ──
 
 @inline pchip_interp(
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N};
-        kwargs...,
-    ) where {N} =
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{<:Any, N};
+    kwargs...,
+) where {N} =
     interp(grids, data; method = PchipInterp(), kwargs...)
 
 @inline pchip_interp(
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N},
-        query::Tuple{Vararg{Real, N}};
-        kwargs...,
-    ) where {N} =
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{<:Any, N},
+    query::Tuple{Vararg{Real, N}};
+    kwargs...,
+) where {N} =
     interp(grids, data, query; method = PchipInterp(), kwargs...)
 
 @inline pchip_interp(
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N},
-        queries;
-        kwargs...,
-    ) where {N} =
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{<:Any, N},
+    queries;
+    kwargs...,
+) where {N} =
     interp(grids, data, queries; method = PchipInterp(), kwargs...)
 
 @inline pchip_interp!(
-        output::AbstractVector,
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N},
-        queries;
-        kwargs...,
-    ) where {N} =
+    output::AbstractVector,
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{<:Any, N},
+    queries;
+    kwargs...,
+) where {N} =
     interp!(output, grids, data, queries; method = PchipInterp(), kwargs...)
 
 # ── Cardinal (forwards `tension` into `CardinalInterp(tension)`) ──
 
 @inline cardinal_interp(
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N};
-        tension = 0.0,
-        kwargs...,
-    ) where {N} =
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{<:Any, N};
+    tension = 0.0,
+    kwargs...,
+) where {N} =
     interp(grids, data; method = CardinalInterp(tension), kwargs...)
 
 @inline cardinal_interp(
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N},
-        query::Tuple{Vararg{Real, N}};
-        tension = 0.0,
-        kwargs...,
-    ) where {N} =
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{<:Any, N},
+    query::Tuple{Vararg{Real, N}};
+    tension = 0.0,
+    kwargs...,
+) where {N} =
     interp(grids, data, query; method = CardinalInterp(tension), kwargs...)
 
 @inline cardinal_interp(
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N},
-        queries;
-        tension = 0.0,
-        kwargs...,
-    ) where {N} =
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{<:Any, N},
+    queries;
+    tension = 0.0,
+    kwargs...,
+) where {N} =
     interp(grids, data, queries; method = CardinalInterp(tension), kwargs...)
 
 @inline cardinal_interp!(
-        output::AbstractVector,
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N},
-        queries;
-        tension = 0.0,
-        kwargs...,
-    ) where {N} =
+    output::AbstractVector,
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{<:Any, N},
+    queries;
+    tension = 0.0,
+    kwargs...,
+) where {N} =
     interp!(output, grids, data, queries; method = CardinalInterp(tension), kwargs...)
 
 # ── Akima ──
 
 @inline akima_interp(
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N};
-        kwargs...,
-    ) where {N} =
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{<:Any, N};
+    kwargs...,
+) where {N} =
     interp(grids, data; method = AkimaInterp(), kwargs...)
 
 @inline akima_interp(
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N},
-        query::Tuple{Vararg{Real, N}};
-        kwargs...,
-    ) where {N} =
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{<:Any, N},
+    query::Tuple{Vararg{Real, N}};
+    kwargs...,
+) where {N} =
     interp(grids, data, query; method = AkimaInterp(), kwargs...)
 
 @inline akima_interp(
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N},
-        queries;
-        kwargs...,
-    ) where {N} =
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{<:Any, N},
+    queries;
+    kwargs...,
+) where {N} =
     interp(grids, data, queries; method = AkimaInterp(), kwargs...)
 
 @inline akima_interp!(
-        output::AbstractVector,
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N},
-        queries;
-        kwargs...,
-    ) where {N} =
+    output::AbstractVector,
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{<:Any, N},
+    queries;
+    kwargs...,
+) where {N} =
     interp!(output, grids, data, queries; method = AkimaInterp(), kwargs...)

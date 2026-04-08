@@ -1561,16 +1561,18 @@ using FastInterpolations
     end
 
     @testset "GridIdx auto-promotion: batch interp! forwards coeffs" begin
-        # Batch GridIdx path slices NoInterp axes only; non-NoInterp GridIdx is
-        # expanded to constant Real vectors and the full ND interp still runs.
-        # Coverage: (a) reduced sub-problem honors `coeffs`; (b) the surviving
-        # method tuple's PreCompute compatibility is validated, not silently
-        # bypassed. Both rely on `coeffs` being forwarded through the GridIdx
-        # batch helper.
+        # Mirrors the scalar auto-promotion test above (line 1544), but for
+        # `interp!` batch. The batch GridIdx helper previously expanded non-
+        # NoInterp GridIdx axes to constant Real vectors and recursed with the
+        # UNPROMOTED method tuple, which (incorrectly) rejected `coeffs=
+        # PreCompute()` for any local-Hermite axis — even though the reduced
+        # 1-D problem after slicing was pure Cubic and fully PreCompute-capable.
+        # Fix: promote GridIdx → NoInterp when `_all_eval_value(deriv)` is true,
+        # mirroring the scalar path's behavior in hetero_oneshot.jl:353-354.
 
-        # Case (a): NoInterp axis is GridIdx-sliced → reduced 1D cubic problem
-        # supports PreCompute. Both PreCompute and OnTheFly must succeed and
-        # match the manually-sliced 1D cubic call.
+        # Case (a): explicit NoInterp axis — `coeffs` must flow to the reduced
+        # sub-problem (pre-existing; verifies `coeffs` isn't silently dropped
+        # on the way down).
         qx_b = collect(range(0.5, 2.5, 7))
         out_pre = zeros(7)
         out_otf = zeros(7)
@@ -1586,15 +1588,46 @@ using FastInterpolations
         @test out_pre ≈ ref rtol = 1.0e-12
         @test out_otf ≈ ref rtol = 1.0e-12
 
-        # Case (b): differentiator — non-NoInterp GridIdx gets expanded, so the
-        # Pchip axis remains in the method tuple. PreCompute() must REJECT.
-        # Pre-fix bug: `coeffs` was silently dropped on the GridIdx path, so the
-        # call quietly fell back to AutoCoeffs and ran without error.
-        qy_b = collect(range(0.3, 2.5, 7))
-        out_b = zeros(7)
-        @test_throws ArgumentError interp!(
-            out_b, (x, y), data_2d, (GridIdx(5), qy_b);
+        # Case (b): Hermite axis is GridIdx'd + EvalValue deriv + PreCompute.
+        # Auto-promotion converts Pchip → NoInterp at the GridIdx position,
+        # leaving a pure Cubic 1-D problem that PreCompute supports. Result
+        # must match the manually-sliced 1-D cubic call element-wise.
+        # Regression guard for the concrete example Codex flagged:
+        #   interp!(out, (x,y), data, (qx_batch, GridIdx(8));
+        #           method=(CubicInterp(), PchipInterp()), coeffs=PreCompute())
+        # used to throw "PreCompute not yet supported for PchipInterp in ND".
+        out_promoted_pre = zeros(7)
+        out_promoted_otf = zeros(7)
+        interp!(
+            out_promoted_pre, (x, y), data_2d, (qx_b, GridIdx(8));
             method = (CubicInterp(), PchipInterp()), coeffs = PreCompute(),
+        )
+        interp!(
+            out_promoted_otf, (x, y), data_2d, (qx_b, GridIdx(8));
+            method = (CubicInterp(), PchipInterp()), coeffs = OnTheFly(),
+        )
+        @test out_promoted_pre ≈ ref rtol = 1.0e-12
+        @test out_promoted_otf ≈ ref rtol = 1.0e-12
+        # NOTE: The symmetric swap `(GridIdx(k), qy_b)` + `(CubicInterp,
+        # PchipInterp)` + PreCompute would reduce to a 1-D Pchip problem, which
+        # the dedicated `pchip_interp!` supports but the generic `interp!` ND
+        # validator rejects even at N=1. That's an orthogonal limitation in
+        # `_validate_nd_coeffs`, not part of the batch auto-promotion fix, and
+        # the scalar test at line 1547 avoids it for the same reason. See
+        # follow-up ticket if/when generic N=1 Pchip+PreCompute gets plumbed
+        # through the dedicated 1-D path.
+
+        # Case (c): differentiator — nonzero deriv disables the
+        # `_all_eval_value(deriv)` gate, so method stays `(CubicInterp,
+        # PchipInterp)`, falls through to expand-and-recurse, and PreCompute +
+        # Pchip ND must still reject (mirrors the scalar reject check at
+        # line 1554-1560).
+        out_reject = zeros(7)
+        @test_throws ArgumentError interp!(
+            out_reject, (x, y), data_2d, (qx_b, GridIdx(8));
+            method = (CubicInterp(), PchipInterp()),
+            deriv = (EvalValue(), DerivOp(1)),
+            coeffs = PreCompute(),
         )
     end
 

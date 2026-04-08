@@ -936,9 +936,27 @@ function _interp_batch_with_grididx!(
         return output
     end
 
+    # Mirror scalar API's GridIdx auto-promotion (see hetero_oneshot.jl:353-354).
+    # When all requested derivs are EvalValue(), a GridIdx on a non-NoInterp axis
+    # is equivalent to slicing the data at that index and dropping the axis — so
+    # we can promote the method at that position to NoInterp(), keeping the axis
+    # on the pre-slice path below. Without this, the fallback path expands the
+    # GridIdx to a constant Real vector and recurses with the original method
+    # tuple, which would (incorrectly) reject `coeffs=PreCompute()` for any
+    # local-Hermite axis: e.g. `(CubicInterp, PchipInterp)` + `(qx, GridIdx(k))`
+    # + `coeffs=PreCompute()` used to throw "PreCompute not supported for Pchip
+    # in ND" even though the reduced 1-D problem is pure Cubic.
+    if _all_eval_value(deriv)
+        method_tuple = _promote_grididx_to_nointerp(method_tuple, queries)
+    end
+
     # Non-NoInterp GridIdx: convert to Real vectors before pre-slicing.
     # Pre-slice only makes sense for NoInterp axes (discrete, zero derivative).
     # Non-NoInterp GridIdx axes hold valid coordinates that need full interpolation.
+    # After the promotion above, any GridIdx axis with EvalValue deriv is already
+    # NoInterp and will be kept as-is by `_expand_grididx_queries`; only GridIdx
+    # axes with nonzero derivatives (which the pre-slice path can't handle) fall
+    # through to the expansion.
     queries = _expand_grididx_queries(queries, grids, method_tuple, nq)
 
     # After expansion, if no GridIdx remains, delegate to standard batch path

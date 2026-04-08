@@ -1,6 +1,19 @@
 using Test
 using FastInterpolations
 
+# LTS Julia 1.10 has small per-call overhead from Val-dispatch boxing on some
+# heterogeneous-method paths that disappears on stable ≥1.12. Use the same
+# threshold pattern as test_nd_oneshot_onthefly.jl so the file stays runnable
+# standalone (without depending on runtests.jl's globals). The `@isdefined`
+# guard prevents const redefinition warnings when both files are included
+# sequentially from runtests.jl into the same module.
+if !@isdefined(AAP_RUNTIME_CHECK_LOCAL)
+    const AAP_RUNTIME_CHECK_LOCAL = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
+end
+if !@isdefined(ND_ALLOC_THRESHOLD_LOCAL)
+    const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK_LOCAL + 1) * 240
+end
+
 @testset "NoInterp + GridIdx" begin
     # ========================================
     # Test Setup
@@ -318,7 +331,7 @@ using FastInterpolations
             itp((1.7, GridIdx(5)))  # warmup
             return @allocated itp((1.7, GridIdx(5)))
         end
-        @test _test_alloc_precompute() == 0
+        @test _test_alloc_precompute() <= ND_ALLOC_THRESHOLD_LOCAL
     end
 
     @testset "Zero-allocation: PreCompute interpolant eval with deriv" begin
@@ -327,7 +340,7 @@ using FastInterpolations
             itp((1.7, GridIdx(5)); deriv = (DerivOp(1), DerivOp(0)))  # warmup
             return @allocated itp((1.7, GridIdx(5)); deriv = (DerivOp(1), DerivOp(0)))
         end
-        @test _test_alloc_deriv() == 0
+        @test _test_alloc_deriv() <= ND_ALLOC_THRESHOLD_LOCAL
     end
 
     @testset "Zero-allocation: OnTheFly interpolant eval" begin
@@ -336,7 +349,7 @@ using FastInterpolations
             itp((1.7, GridIdx(5)))  # warmup
             return @allocated itp((1.7, GridIdx(5)))
         end
-        @test _test_alloc_onthefly() == 0
+        @test _test_alloc_onthefly() <= ND_ALLOC_THRESHOLD_LOCAL
     end
 
     # ========================================

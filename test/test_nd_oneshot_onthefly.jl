@@ -9,8 +9,14 @@
 using Test
 using FastInterpolations
 
-const AAP_RUNTIME_CHECK_LOCAL = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
-const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK_LOCAL + 1) * 240
+# `@isdefined` guards prevent const redefinition warnings when this file and
+# test_nointerp.jl are both included from runtests.jl into the same module.
+if !@isdefined(AAP_RUNTIME_CHECK_LOCAL)
+    const AAP_RUNTIME_CHECK_LOCAL = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
+end
+if !@isdefined(ND_ALLOC_THRESHOLD_LOCAL)
+    const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK_LOCAL + 1) * 240
+end
 
 @testset "ND OnTheFly One-Shot + AutoCoeffs" begin
     # ========================================

@@ -139,6 +139,13 @@ end
     # windowable axis would be aliased to the wrong grid entry once the data
     # view is sliced to a cell-local stencil. Fall through to the full-fiber
     # path instead (correct behavior, tiny perf cost on the rare mixed query).
+    #
+    # NOTE: this gate is defensive — the public scalar `interp(...)` API and
+    # the public batch `interp!` both promote GridIdx → NoInterp before any
+    # call reaches this function (see hetero_oneshot.jl:366-377 and
+    # hetero_nointerp.jl:_interp_batch_with_grididx!), so under normal use the
+    # `_has_grididx` branch is unreachable. The gate exists to prevent silent
+    # corruption if a future internal caller forgets to strip GridIdx first.
     if _has_any_local_method(methods) && !_has_grididx(typeof(query))
         # Resolve spacings:
         # - Caller-provided (batch dispatcher precomputes once outside its loop) → reuse.
@@ -148,10 +155,8 @@ end
         #   the acquired buffers are reclaimed when we return.
         sp = spacings === nothing ? _create_spacings_pooled(pool, grids) : spacings
         indices, _, _ = _search_all_intervals(q_eval, grids, sp, searches, hints)
-        windows = ntuple(
-            d -> _axis_window(methods[d], indices[d], length(grids[d])),
-            Val(N),
-        )
+        # `map` over heterogeneous tuples for closure-free unrolled per-axis dispatch.
+        windows = map(_axis_window, methods, indices, map(length, grids))
         data_local = view(data, windows...)
         grids_local = map(view, grids, windows)
         rel_windows = map(Base.OneTo ∘ length, windows)
@@ -162,7 +167,7 @@ end
     end
 
     # Pure global-solve path: no pre-search, full windows, bit-for-bit pre-Phase-3 behavior.
-    full_windows = ntuple(d -> Base.OneTo(size(data, d)), Val(N))
+    full_windows = map(Base.OneTo, size(data))
     return _collapse_dims(Tr, data, grids, methods, extraps_val, q_eval, ops, searches, hints, full_windows)
 end
 

@@ -941,7 +941,7 @@ function _interp_batch_with_grididx!(
         return output
     end
 
-    # Mirror scalar API's GridIdx auto-promotion (see hetero_oneshot.jl:353-354).
+    # Mirror scalar API's GridIdx auto-promotion via `_promote_grididx_to_nointerp`.
     # When all requested derivs are EvalValue(), a GridIdx on a non-NoInterp axis
     # is equivalent to slicing the data at that index and dropping the axis — so
     # we can promote the method at that position to NoInterp(), keeping the axis

@@ -137,6 +137,34 @@ end
 end
 
 # ========================================
+# Cell-local window builder
+# ========================================
+#
+# Shared helper for the windowing path: pre-searches the query cell, builds
+# per-axis windows, and slices `data`/`grids` accordingly. Returns the tuple
+# `(data_local, grids_local, rel_windows)` that the windowed `_collapse_dims`
+# kernel needs. Used by both `_eval_hetero_nd` (immediate evaluation) and
+# `_locate_cell` (vector-calculus cell caching).
+#
+# `@inline` is load-bearing: both call sites are hot paths, and the helper
+# threads concrete types (itp.methods, itp.grids, itp.data) through the
+# windowing logic. Inlining lets the compiler specialize on the interpolant's
+# concrete type and unroll the per-axis `map` calls into straight-line code.
+@inline function _build_windowed_cell(itp, q_eval, search_tuple, hints)
+    # Pre-search uses user hints (mutates them to absolute indices, preserving contract).
+    indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple, hints)
+    # Per-axis window: cell-local for windowable methods, full axis for global-solve.
+    # `map` over heterogeneous tuples is unrolled by the compiler with no closure
+    # capture, which is more allocation-robust than `ntuple(d -> ..., Val(N))` for
+    # this kind of zipped per-axis dispatch (see hetero_window.jl `_axis_window`).
+    windows = map(_axis_window, itp.methods, indices, map(length, itp.grids))
+    data_local = view(itp.data, windows...)
+    grids_local = map(view, itp.grids, windows)
+    rel_windows = map(Base.OneTo ∘ length, windows)
+    return data_local, grids_local, rel_windows
+end
+
+# ========================================
 # Core Eval Entry Point
 # ========================================
 
@@ -178,19 +206,10 @@ end
     # path whenever ANY query element is a GridIdx. `_has_grididx` is a compile-
     # time type-level check (zero runtime cost on the common no-GridIdx path).
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
-        # Pre-search uses user hints (mutates them to absolute indices, preserving contract).
-        indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, searches, hints)
-        # Per-axis window: cell-local for windowable methods, full axis for global-solve methods.
-        windows = ntuple(
-            d -> _axis_window(itp.methods[d], indices[d], length(itp.grids[d])),
-            Val(N),
-        )
-        data_local = view(itp.data, windows...)
-        grids_local = map(view, itp.grids, windows)
+        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, searches, hints)
         # Inner kernel sees the pre-sliced data + grids. Pass `nothing` as hints — the
         # tiny inner search on a 2–6 point fiber is negligible, and this prevents any
         # relative-coordinate hint from leaking back to the user.
-        rel_windows = map(Base.OneTo ∘ length, windows)
         return _collapse_dims(
             Tr, data_local, grids_local, itp.methods, itp.extraps,
             q_eval, ops, searches, nothing, rel_windows,
@@ -198,7 +217,7 @@ end
     end
 
     # Global-solve fallback (no pre-search, no slicing — bit-for-bit current behavior).
-    full_windows = ntuple(d -> Base.OneTo(size(itp.data, d)), Val(N))
+    full_windows = map(Base.OneTo, size(itp.data))
     return _collapse_dims(
         Tr, itp.data, itp.grids, itp.methods, itp.extraps,
         q_eval, ops, searches, hints, full_windows,
@@ -240,12 +259,13 @@ end
         search_tuple = _resolve_search_nd(search, Val(N))
         return _eval_nointerp(itp, resolved, ops, search_tuple, hint)
     end
-    # GridIdx auto-promotion on persistent path (mirrors scalar one-shot,
-    # hetero_oneshot.jl:353-355). Without this, a GridIdx query on a Hermite
-    # persistent interpolant would fall through to the full-fiber path and run
-    # ~20-100× slower than the same query via one-shot interp(). Promoting the
-    # GridIdx axis to NoInterp and re-routing through `_interp_nointerp_oneshot`
-    # pre-slices data/grids and delegates to the pool-backed one-shot fast path.
+    # GridIdx auto-promotion on persistent path — mirrors the scalar one-shot
+    # `interp` GridIdx auto-promotion via `_promote_grididx_to_nointerp`. Without
+    # this, a GridIdx query on a Hermite persistent interpolant would fall
+    # through to the full-fiber path and run ~20-100× slower than the same query
+    # via one-shot `interp()`. Promoting the GridIdx axis to NoInterp and
+    # re-routing through `_interp_nointerp_oneshot` pre-slices data/grids and
+    # delegates to the pool-backed one-shot fast path.
     #
     # Restrictions:
     #   (a) Only for the OnTheFly/AutoCoeffs layout where `itp.data` is a plain
@@ -259,6 +279,15 @@ end
     #       the full-fiber fallback. (Option C territory.)
     # The `isa` check folds at compile time because `typeof(itp.data)` is
     # statically known from the concrete interpolant type.
+    #
+    # IMPLICIT COUPLING: `_interp_nointerp_oneshot` recurses into the public
+    # `interp(grids_r, data_r, query_r; method=methods_r, ...)` without
+    # passing `coeffs`, relying on `_resolve_coeffs_nd_oneshot(AutoCoeffs(),
+    # scalar_query, ...)` to return `OnTheFly()`. That holds today for every
+    # scalar one-shot path. If the AutoCoeffs resolver is ever changed to
+    # return PreCompute on some scalar case, GridIdx persistent queries will
+    # silently start building partials per call (heap alloc + perf regression)
+    # — pass `coeffs=OnTheFly()` explicitly here to harden against that.
     if itp.data isa AbstractArray{<:Any, N} &&
             _has_grididx(typeof(resolved)) && _all_eval_value(ops)
         promoted = _promote_grididx_to_nointerp(itp.methods, resolved)
@@ -307,21 +336,13 @@ end
     # plus the same GridIdx safety gate (windowing would alias GridIdx absolute
     # indices into a sliced view).
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
-        # Pre-search uses user hints (mutates them to absolute indices, preserving contract).
-        indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple, hints)
-        windows = ntuple(
-            d -> _axis_window(itp.methods[d], indices[d], length(itp.grids[d])),
-            Val(N),
-        )
-        data_local = view(itp.data, windows...)
-        grids_local = map(view, itp.grids, windows)
-        rel_windows = map(Base.OneTo ∘ length, windows)
+        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, search_tuple, hints)
         # Cell tuple: pre-sliced data + grids + relative windows + nothing hints
         # (the inner kernel must not see relative-coord hints — see hetero_window.jl invariant 2).
         return (data_local, grids_local, itp.methods, itp.extraps, q_eval, search_tuple, nothing, rel_windows)
     end
 
-    full_windows = ntuple(d -> Base.OneTo(size(itp.data, d)), Val(N))
+    full_windows = map(Base.OneTo, size(itp.data))
     return (itp.data, itp.grids, itp.methods, itp.extraps, q_eval, search_tuple, hints, full_windows)
 end
 

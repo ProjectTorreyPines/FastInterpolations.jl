@@ -1568,7 +1568,8 @@ using FastInterpolations
         # PreCompute()` for any local-Hermite axis — even though the reduced
         # 1-D problem after slicing was pure Cubic and fully PreCompute-capable.
         # Fix: promote GridIdx → NoInterp when `_all_eval_value(deriv)` is true,
-        # mirroring the scalar path's behavior in hetero_oneshot.jl:353-354.
+        # mirroring the scalar `interp` GridIdx auto-promotion implemented by
+        # `_promote_grididx_to_nointerp`.
 
         # Case (a): explicit NoInterp axis — `coeffs` must flow to the reduced
         # sub-problem (pre-existing; verifies `coeffs` isn't silently dropped

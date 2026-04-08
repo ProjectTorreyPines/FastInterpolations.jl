@@ -9,17 +9,20 @@
 # turns the dim-1 collapse loop from O(n^(N-1)) into O(stencil^(N-1)).
 #
 # Design invariants enforced here:
-# 1. Each method's window length is FIXED per method type (compile-time
-#    constant), so the pool buffer slot size is identical across queries
-#    of the same interpolant — no resize churn, zero alloc after warmup.
+# 1. Each method's window length is constant per `(method type, axis length)`
+#    pair: for grids large enough to satisfy the stencil, the length is
+#    `_fixed_window_size(m)` (a method-only constant); for tiny grids it
+#    falls back to `1:n` (constant in n). Within a single interpolant n is
+#    fixed, so the pool buffer slot size stays identical across all queries
+#    of that interpolant — no resize churn, zero alloc after warmup.
 # 2. The window contains enough grid points such that the inner 1D oneshot
 #    call on the windowed view is *numerically identical* to the same call
 #    on the full grid. For PCHIP/Cardinal this means n_window ≥ 3; for
 #    Akima ≥ 4 (Akima 1D has a special n==3 branch that diverges from the
-#    general n≥4 formula — see hermite_local_slopes.jl:99-107).
-# 3. Tiny grids (n < fixed_window) fall back to a full-axis range. This
-#    is rare and the size is still compile-time-constant per (method, n_axis).
-# 4. Global-solve methods (Cubic, Quadratic) always return the full axis
+#    general n≥4 formula — see hermite_local_slopes.jl:99-107). On tiny
+#    grids the windowed call and the full-grid call are literally the same
+#    call (both use `1:n`), so equivalence holds trivially.
+# 3. Global-solve methods (Cubic, Quadratic) always return the full axis
 #    — they cannot be windowed because the spline solve is non-local.
 
 # ── Fixed window size per method type ──

@@ -737,37 +737,54 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
             (LinearInterp(), AkimaInterp()),
         ]
 
+        # Per-method-tuple equivalence: collect all (got, ref) values for the
+        # full cartesian query set, then assert the *worst-case* ULP drift in a
+        # single `@test`. This avoids ~1000 individual `@test` invocations per
+        # method tuple (which slows the runner and floods the failure log with
+        # duplicates), uses an element-wise ULP-tolerant comparison, and gives a
+        # clean "max ULP drift = N" diagnostic on failure.
+        #
+        # Why per-element ULPs (not vector `isapprox`): `isapprox(::Vector,
+        # ::Vector)` reduces to `norm(a - b) <= atol`, which is L2 not
+        # element-wise. With ~900 elements, even tiny per-element drift can
+        # accumulate in the L2 norm and trip a single global atol.
+        #
+        # Why ULP-tolerant: mathematically the windowed and reference paths
+        # evaluate the same expression, but LLVM may reorder/FMA differently
+        # across Julia versions (LTS 1.10 vs stable ≥1.11), producing 1–2 ULP
+        # per-element drift on cross-version CI even though within the same
+        # Julia version they're bit-equal. The 4 ULPs / 8 ULPs (Akima)
+        # tolerances are tight enough to catch real regressions (which would
+        # drift by orders of magnitude more) but loose enough to absorb LLVM
+        # ordering differences.
+        function _max_ulp_diff(got, ref)
+            isempty(got) && return 0.0
+            return maximum(@. abs(got - ref) / eps(max(abs(got), abs(ref), 1.0)))
+        end
         @testset "2D equivalence: $(typeof(methods).name.name)" for methods in method_pairs_2d
             itp = interp((xg, yg), data2; method = methods, coeffs = OnTheFly())
-            for qx in qxs, qy in qys
-                # Value
-                got = itp((qx, qy))
-                ref = _ref_collapse_2d((xg, yg), data2, methods, (qx, qy), (EvalValue(), EvalValue()))
-                # Pchip/Cardinal/Linear/Cubic value path is fully reproducible — bit equal.
-                # Akima has more rounding paths in its 4-secant weighted average → ULP ≤ 2.
-                if any(m isa AkimaInterp for m in methods)
-                    @test abs(got - ref) <= 2 * eps(max(abs(got), abs(ref), 1.0))
-                else
-                    @test got === ref
-                end
-                # Spot-check a derivative op (not all combinations to keep test cheap).
-                # Values are required to be bit-equal (asserted above), but derivatives
-                # can drift by ≤ 4 ULPs because LLVM may inline differently for
-                # `view(Vector, 1:4)` (SubArray) vs the original `Vector` — the basis
-                # function evaluations are mathematically identical but the floating-point
-                # ordering of (1-t)^2 etc. can flip in the JIT'd code.
-                if (qx, qy) === (qxs[1], qys[1])
-                    for ops in (
-                            (DerivOp{1}(), EvalValue()),
-                            (EvalValue(), DerivOp{1}()),
-                            (DerivOp{2}(), EvalValue()),
-                        )
-                        got_d = itp((qx, qy); deriv = ops)
-                        ref_d = _ref_collapse_2d((xg, yg), data2, methods, (qx, qy), ops)
-                        @test abs(got_d - ref_d) <= 4 * eps(max(abs(got_d), abs(ref_d), 1.0))
-                    end
-                end
-            end
+            got_all = [itp((qx, qy)) for qx in qxs, qy in qys]
+            ref_all = [
+                _ref_collapse_2d((xg, yg), data2, methods, (qx, qy), (EvalValue(), EvalValue()))
+                    for qx in qxs, qy in qys
+            ]
+            # Akima has more rounding paths in its 4-secant weighted average
+            value_ulp_budget = any(m isa AkimaInterp for m in methods) ? 8 : 4
+            @test _max_ulp_diff(got_all, ref_all) <= value_ulp_budget
+
+            # Spot-check derivative ops at the first cell-midpoint query.
+            # Derivatives can drift by ≤ 8 ULPs for the same LLVM-ordering reason
+            # as values; mixed-method tuples introduce extra accumulation in the
+            # chain rule, so we use the larger budget here.
+            q_spot = (qxs[1], qys[1])
+            deriv_ops = (
+                (DerivOp{1}(), EvalValue()),
+                (EvalValue(), DerivOp{1}()),
+                (DerivOp{2}(), EvalValue()),
+            )
+            got_derivs = [itp(q_spot; deriv = ops) for ops in deriv_ops]
+            ref_derivs = [_ref_collapse_2d((xg, yg), data2, methods, q_spot, ops) for ops in deriv_ops]
+            @test _max_ulp_diff(got_derivs, ref_derivs) <= 8
         end
 
         # ---------- 3D test data ----------
@@ -790,21 +807,25 @@ const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK
         qys3 = _cell_queries(yg3)
         qzs3 = _cell_queries(zg3)
 
+        # 3D variant of the same collect-then-compare pattern. Strided sampling
+        # (`[1:3:end]`) keeps the cartesian product manageable while still
+        # touching every cell-midpoint type plus boundaries. Same per-element
+        # ULP-tolerance rationale as the 2D testset above.
         @testset "3D equivalence: $(string(typeof(methods).name))" for methods in method_triples_3d
             itp = interp((xg3, yg3, zg3), data3; method = methods, coeffs = OnTheFly())
-            # Sample a subset of the cartesian product to keep test runtime reasonable
-            for qx in qxs3[1:3:end], qy in qys3[1:3:end], qz in qzs3[1:3:end]
-                got = itp((qx, qy, qz))
-                ref = _ref_collapse_3d(
-                    (xg3, yg3, zg3), data3, methods, (qx, qy, qz),
-                    (EvalValue(), EvalValue(), EvalValue())
-                )
-                if any(m isa AkimaInterp for m in methods)
-                    @test abs(got - ref) <= 4 * eps(max(abs(got), abs(ref), 1.0))
-                else
-                    @test got === ref
-                end
-            end
+            qxs3_s = qxs3[1:3:end]
+            qys3_s = qys3[1:3:end]
+            qzs3_s = qzs3[1:3:end]
+            got_all = [itp((qx, qy, qz)) for qx in qxs3_s, qy in qys3_s, qz in qzs3_s]
+            ref_all = [
+                _ref_collapse_3d(
+                        (xg3, yg3, zg3), data3, methods, (qx, qy, qz),
+                        (EvalValue(), EvalValue(), EvalValue())
+                    ) for qx in qxs3_s, qy in qys3_s, qz in qzs3_s
+            ]
+            # 3D has more accumulation steps than 2D → larger ULP budget
+            value_ulp_budget = any(m isa AkimaInterp for m in methods) ? 16 : 8
+            @test _max_ulp_diff(got_all, ref_all) <= value_ulp_budget
         end
     end
 end

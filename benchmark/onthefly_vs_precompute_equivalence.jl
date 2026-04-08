@@ -27,7 +27,7 @@
 #         one-shot amortizes the spacings precompute
 #
 # Grid: 100×100, evaluated at interior + boundary sweeps
-# Run: julia --project benchmark/onthefly_vs_precompute_equivalence.jl
+# Run: julia --project=benchmark benchmark/onthefly_vs_precompute_equivalence.jl
 
 using FastInterpolations
 using BenchmarkTools

@@ -57,13 +57,3 @@ Each slope depends on at most 5 neighboring points (4 secants).
 Used as: `akima_interp(x, y; coeffs=OnTheFly())`
 """
 struct AkimaSlopes <: AbstractSlopeMethod end
-
-# Error helper for unsupported operations on OnTheFly interpolants
-@noinline function _throw_onthefly_unsupported(op::String)
-    throw(
-        ArgumentError(
-            "$op is not yet supported for OnTheFly interpolants. " *
-                "Use coeffs=PreCompute() to enable $op."
-        )
-    )
-end

@@ -94,6 +94,7 @@ else
     include("test_akima_1d.jl")            # Akima 1D (outlier-robust slopes)
     include("test_local_slope_comparison.jl") # Cross-validation vs DataInterpolations.jl
     include("test_hermite_onthefly.jl")    # OnTheFly coefficient strategy for Hermite family
+    include("test_local_hermite_nd_forward.jl") # ND forwarders pchip/cardinal/akima → unified `interp`
 
     # ND Interpolation
     include("test_nd_utils_shared.jl")  # Shared ND utilities (phase 1)

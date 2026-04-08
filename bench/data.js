@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775598769389,
+  "lastUpdate": 1775651556788,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -39886,6 +39886,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1607,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4151829972811c921a5ebaa82cff1a8022462aea",
+          "message": "(perf): cell-local OnTheFly for Hermite ND (#112)\n\n* perf(hetero-nd): cell-local OnTheFly via windows-aware _collapse_dims\n\nPre-PR Hermite ND OnTheFly inherited the cubic/quadratic global-solve\ntraversal pattern, scanning entire fibers (O(n^(N-1)) per query) even\nthough local methods (PCHIP/Cardinal/Akima) only need a 4-6 point\nstencil per axis. For a 100x100 grid this wasted ~200 ns/query and the\nconstant grew linearly with N.\n\nThis commit lands the unified mini-collapse foundation:\n\n- New `_axis_window` trait (src/hetero/hetero_window.jl) returns a\n  fixed-length stencil per method type: Pchip/Cardinal=4, Akima=6,\n  Linear/Constant=2, Cubic/Quadratic=full axis. Asymmetric extension\n  at boundaries keeps the length constant so pool slot sizes are\n  compile-time stable per (method_tuple, axis_length).\n\n- `_collapse_dims` gains a `windows::NTuple{M, AbstractUnitRange{Int}}`\n  parameter threaded through recursion. Body stays nearly identical\n  because the recursion-alignment invariant (data, grids, windows all\n  aligned at every frame) lets `Base.tail(size(data))` auto-inherit\n  the windowed extent.\n\n- `_eval_hetero_nd`, `_locate_cell`, `_eval_at_cell` gate on the\n  compile-time `_has_any_local_method(M)` check: when true, they\n  pre-search cells via `_search_all_intervals` (mutating user hints\n  to absolute indices), slice data + grids, and call the kernel with\n  `hints=nothing`. Pure Cubic ND dead-code-eliminates the branch\n  entirely -> bit-for-bit unchanged.\n\nMeasured on 100x100 (interior query):\n  Cardinal x Cardinal:  ~250 ns -> 41 ns  (constant in N)\n  Pchip x Pchip:        ~300 ns -> 83 ns\n  Akima x Akima:        ~400 ns -> 125 ns\n  Cubic x Cardinal:     unchanged (Cubic global solve dominates)\n  Cubic x Cubic:        bit-for-bit unchanged\n\nZero allocations per query after warmup for all configurations.\n@code_warntype shows Body::Float64 (no Union splits, no boxing).\n\n* perf(hetero-nd): wire windows through batch oneshot and NoInterp paths\n\nPropagates the cell-local windowing from the scalar eval path into the\nremaining OnTheFly call sites so batch oneshot and NoInterp queries\nget the same O(stencil) cost.\n\n- `_interp_nd_oneshot_onthefly` gains an optional\n  `spacings::Union{Nothing, Tuple{...}}` parameter. When the method\n  tuple contains any local method, the batch dispatcher precomputes\n  spacings once outside the per-query loop\n  (`map(_create_spacing, grids_typed)`) so range grids stay free and\n  vector grids amortize. Scalar callers pass `nothing` and compute\n  inline — one-time cost per call.\n\n- `@generated _eval_nointerp` now builds per-axis window expressions\n  at macro-expansion time as a static vector of `Expr`s, splatted into\n  a tuple literal in the returned AST. This avoids Julia 1.12's\n  \"function body AST is not pure\" error that `ntuple(d -> ..., Val(N))`\n  closures trigger inside `@generated` bodies. Windows are computed\n  against `rm`/`rg`/`rq` (filtered to real dims) so GridIdx axes are\n  correctly excluded.\n\nBoth paths preserve the hint absolute-coord contract end-to-end: the\nouter `_search_all_intervals` mutates user hints against the original\n(unsliced) grid, and the inner kernel is always called with\n`hints=nothing` so no relative-coord can ever leak.\n\n* test(hetero-nd): cell-local OnTheFly equivalence + hint contract suite\n\nAdds test coverage for every invariant the cell-local windowing PR\nrelies on. All tests pass against the current kernel and will catch\nregressions in any of the four design invariants (recursion alignment,\nhint absolute-coord contract, window-equivalence, zero regression on\nglobal-solve).\n\n- test_hermite_onthefly.jl:\n  * \"_axis_window trait\" — fixed sizes, interior cells, left/right\n    boundary asymmetric extension, tiny-grid fallback, window-contains-\n    cell-endpoints invariant, `_has_any_local_method` gating.\n  * \"Phase 6: Hint contract under windowing\" — invalid initial hint\n    (Ref(0)) gets populated to absolute interval indices; 2D/3D\n    round-trip sweeps (150+ queries) assert\n    `grids[d][hint[d][]] <= q[d] <= grids[d][hint[d][]+1]` against the\n    ORIGINAL grid after every call; monotonic sweep persistence;\n    mixed Cubic x Cardinal verifies the contract on both the global-\n    solve axis and the windowed axis.\n\n- test_nd_oneshot_onthefly.jl:\n  * \"Equivalence: cell-local windowed vs reference\" — 5500+ queries\n    across Pchip/Cardinal/Akima/mixed tuples in 2D and 3D, including\n    all boundary cells. Reference is hand-rolled via public 1D APIs\n    (pchip_interp, cardinal_interp, akima_interp, linear_interp,\n    cubic_interp). Value queries bit-equal; derivative queries\n    within 4 ULPs (LLVM SIMD noise between Vector and SubArray paths\n    for basis-function evaluation).\n\n- test_gradient_hessian.jl:\n  * \"Hermite ND windowed gradient/hessian (Phase 4)\" — cross-checks\n    gradient/hessian/laplacian/value_gradient against ForwardDiff for\n    5 method tuples (pure local + mixed Hermite+Cubic) at 4 sample\n    points on interior cells.\n\n- test_nointerp.jl:\n  * \"Phase 5b: NoInterp x Hermite OnTheFly windowed\" — validates\n    (Cardinal, NoInterp, Akima), (Pchip, NoInterp, Akima),\n    (Cardinal, NoInterp, Cubic), (Cubic, NoInterp, Pchip) by\n    constructing a 2D reference interpolant on the sliced data.\n    Also exercises hint persistence on the real-axis subset.\n\n* bench(hetero-nd): hint payoff + type stability/alloc verification scripts\n\nTwo support scripts documenting the PR's measured behavior, kept in\nthe tree so future regressions can be caught with a single rerun.\n\n- benchmark/onthefly_nd_hint_comparison.jl (Phase 6d):\n  Quantifies hint vs no-hint performance on the windowed path. Covers\n  Cardinal/Pchip/Akima/Cubic x Cardinal/Linear x Pchip on a 100x100\n  grid across sorted (best case), random (worst case), and clustered\n  query patterns. Expected: speedup is much less dramatic than the\n  5-50x of the global-solve path because the inner stencil search is\n  already O(log 4) ~ 2 comparisons — the hint payoff is now in the\n  *outer* `_search_all_intervals` only.\n\n  Measured: Cardinal sorted 1.23x, random 0.85x (slight regression\n  from LinearBinarySearch walk overhead on unpredictable hints —\n  known and documented), Cubic x Cardinal 1.00x (Cubic dominates).\n\n- scripts/phase7_verify.jl:\n  One-shot verification for the PR's acceptance criteria:\n  (7a) @code_warntype on Cardinal x Cardinal 2D — expects Body::Float64\n  (7b) Per-query timing on a 100x100 grid for Cardinal/Pchip/Akima/\n       Cubic — confirms 41/83/125/~52k ns\n  (7c) @allocated check — 0 bytes for pure local, mixed, and 3D Pchip\n\n* bench(hetero-nd): add OnTheFly-vs-PreCompute + one-shot/persistent/batch equivalence\n\nAdds a comparative benchmark that cross-checks value equivalence and\nperformance across all three OnTheFly evaluation paths (scalar one-shot,\npersistent interpolant, batch one-shot) plus the global-solve OnTheFly-vs-\nPreCompute comparison for pure Cubic tuples.\n\nResults on 100x100 grid (interior + boundary query stream):\n\n(A) Cubic x Cubic:\n    OnTheFly persistent : ~50 us/query  (global tridiagonal solve per call)\n    PreCompute persistent:     21 ns/query  (~2400x speedup — expected, the\n    solve is amortized into itp.data at construction)\n    max|Δ| = 3.3e-16, max ULP = 2  — numerically equivalent.\n\n(B) Pchip / Cardinal / Akima / Cubic×Cardinal:\n    persistent vs batch : BIT-EXACT for all configs (both share the windowed\n                          `_collapse_dims` from this PR)\n    persistent vs one-shot : BIT-EXACT for all Hermite configs; pure Linear\n                             shows 1 ULP drift because scalar one-shot routes\n                             through a specialized `linear_interp_nd_oneshot`\n                             path that predates this PR (different evaluation\n                             order, not a correctness issue).\n\n    Timing:\n      Cardinal x Cardinal : 71 ns persistent  (179 ns one-shot setup overhead)\n      Pchip x Pchip       : 105 ns\n      Akima x Akima       : 145 ns\n      Cubic x Cardinal    : 2220 ns  (Cubic global solve dominates)\n\n(C) 0 bytes/query after warmup for every persistent configuration including\n    both Cubic OnTheFly and Cubic PreCompute.\n\nAlso updates hetero_window.jl with a comment clarifying why Linear/Constant\nintentionally take the full-axis fallback in pure-Linear/Constant tuples\n(scalar one-shot with Vector grids would pay a `_create_spacing` allocation\nper call that outweighs the 2-point stencil benefit) while still receiving\na cell-local window when mixed with a local-Hermite axis via per-axis\n`_axis_window` dispatch.\n\n* fix(grididx): mirror scalar GridIdx→NoInterp auto-promotion on batch path\n\n`_interp_batch_with_grididx!` used to expand non-NoInterp GridIdx axes to\nconstant Real vectors and recurse with the UNPROMOTED method tuple. When\nthat tuple contained a local-Hermite axis (Pchip/Cardinal/Akima) and the\nuser passed `coeffs=PreCompute()`, the recursive `interp!` correctly\nvalidated ND Pchip+PreCompute and rejected the call — even though the\nreduced sub-problem after slicing was pure Cubic and fully PreCompute-\ncapable.\n\nThe scalar API (hetero_oneshot.jl:353-354) was fixed for the same issue\nin commit 22e2cfbc by adding `_promote_grididx_to_nointerp` under an\n`_all_eval_value(deriv)` gate, but the batch helper wasn't updated in\nparallel. This commit mirrors that promotion on the batch path so the\ntwo APIs agree.\n\nConcrete regression now covered by a test (flagged by Codex review):\n  interp!(out, (x, y), data, (qx_batch, GridIdx(8));\n          method=(CubicInterp(), PchipInterp()), coeffs=PreCompute())\npreviously threw \"PreCompute not yet supported for PchipInterp in ND\";\nnow produces the same result as the manually-sliced 1-D cubic batch.\n\nThe `_all_eval_value(deriv)` gate matches the scalar guard exactly, so\nrequests with a nonzero derivative on the surviving axis still skip the\npromotion and fall through to the expand-and-recurse path — the\ndifferentiator `@test_throws` in the regression suite is preserved under\nthat condition.\n\nAlso reworks the \"batch interp! forwards coeffs\" testset to mirror the\nscalar auto-promotion test structure (case a: explicit NoInterp, case b:\nHermite GridIdx + promotion succeeds, case c: nonzero-deriv still throws).\nA note documents the orthogonal N=1 generic-`interp!` limitation that\nprevents testing the symmetric swap `(GridIdx, qy_batch)` with Pchip\nsurviving — this is pre-existing and out of scope for this fix.\n\n* perf(hetero-nd): extend windowing to Linear/Constant via asymmetric gate\n\nAdds `_is_windowable_method` and `_has_any_windowable_method` traits and\nuses them at the PERSISTENT-interpolant call sites only. The new trait is\na strict superset of `_is_local_method` — it adds Linear and Constant,\nwhich are windowable (2-point stencil) but not \"local-slope\" methods.\n\nPreviously, the windowing gate `_has_any_local_method` only covered\nPCHIP/Cardinal/Akima, so pure Linear/Constant tuples AND mixed Cubic×\nLinear/Constant tuples fell into the full-fiber fallback path. This was\ncorrect for Cubic×Cubic (global tridiagonal solve dominates anyway) but\nwastefully slow for anything with a Linear/Constant axis.\n\nASYMMETRY (deliberate): the new trait is used at the persistent path\nsites (`_eval_hetero_nd(<:Array)`, `_locate_cell(<:Array)`, `@generated\n_eval_nointerp`) but NOT at the scalar one-shot path\n(`_interp_nd_oneshot_onthefly`) or the batch dispatcher. The persistent\npath reads `itp.spacings` (pre-computed at construction → zero per-call\nalloc) while the one-shot path computes spacings inline via\n`map(_create_spacing, grids)`, which for Vector grids allocates h/inv_h\nbuffers. For Hermite methods the stencil win (~5-20×) justifies that\nallocation; for pure Linear/Constant with Vector grids it would be a net\nloss in one-shot, hence the narrower one-shot gate. The detailed\nrationale is documented in hetero_window.jl alongside the new traits.\n\nMeasured speedups (100×100 grid, persistent interpolant, 0 alloc/query):\n  Linear × Linear     :   667 →    46 ns  (14×)\n  Constant × Linear   :   842 →    47 ns  (18×)\n  Cubic × Linear      : 49916 →  1116 ns  (45×, indirect Cubic reduction\n                                            via Linear-axis windowing:\n                                            100 Cubic solves → 2)\n  Linear × Cubic      :  1291 →   764 ns  (1.7×, limited by the full-\n                                            length Cubic axis)\n  Cubic × Cubic       : 50083 → 50083 ns  (unchanged — no axis windowable,\n                                            gate correctly returns false)\n  Pchip/Cardinal/Akima:                   (unchanged — already windowed)\n\nAll bit-exact across persistent/batch/one-shot for the mixed cases;\nLinear × Linear shows 1 ULP drift against scalar one-shot because the\none-shot path takes a specialized `linear_interp_nd_oneshot` route\n(pre-existing, not caused by this change).\n\nTests: test_nd_oneshot_onthefly.jl, test_nointerp.jl, test_hermite_onthefly.jl,\ntest_gradient_hessian.jl all green. The (Cubic, Linear) scalar one-shot\nzero-alloc test that regressed on the previous symmetric attempt now\npasses because the one-shot gate is unchanged.\n\n* perf(hetero-nd): zero-alloc windowed OnTheFly via pool-backed spacings\n\nThe cell-local windowing path introduced earlier in this PR built its\nper-axis spacings inline with `map(_create_spacing, grids)`. For Vector\ngrids this allocates `VectorSpacing{T}` holding two heap-owned\n`Vector{T}(undef, n-1)` buffers (h and inv_h) — roughly 480 B per axis\nper call on a 30-point grid. The impact showed up as:\n\n  - Scalar one-shot (Cardinal × Cardinal, Vector grids, 30×25):\n      1072 B / call — entirely from _create_spacing, not the kernel\n  - Batch `interp!` for Hermite tuples on Vector grids:\n      960 B / batch — two VectorSpacing structs built once outside the\n      per-query loop, never reclaimed until GC\n\nBoth paths now use the existing `_create_spacings_pooled` helper from\n`src/core/nd_utils.jl`, which acquires h/inv_h from the pool for Vector\ngrids and returns the zero-alloc `ScalarSpacing` for Range grids:\n\n- `_interp_nd_oneshot_onthefly` is now decorated with\n  `@with_pool pool function`. Its inner `sp = spacings === nothing ?\n  _create_spacings_pooled(pool, grids) : spacings` branch reclaims the\n  buffers at function exit.\n\n- `_interp_nd_oneshot_batch_dispatch!` is now decorated with\n  `@with_pool pool function`. The outer scope owns spacings that outlive\n  every inner `_interp_nd_oneshot_onthefly` call's own checkpoint, so\n  the precomputed spacings are reused across all nq queries and\n  reclaimed when the batch returns. Nested `@with_pool` scopes compose\n  correctly — inner rewinds don't free outer-owned arrays.\n\nPersistent interpolant construction (`_build_hetero_interpolant`) is\ndeliberately left on `_create_spacings_typed` / `_create_spacing` (the\nnon-pooled variants) because those Vector buffers must live for the\nentire interpolant lifetime. Ownership model is clean: `itp.spacings[d]`\nis always heap-owned by the struct, never pool-backed.\n\nAlso fixes a pre-existing 48 B allocation in `_validate_axis_methods`:\nthe `for d in eachindex(grids); _validate_axis_method(grids[d], ...)`\nloop was boxing on heterogeneous method tuples (e.g. (CubicInterp,\nCardinalInterp)) because runtime `methods[d]` forced a Union split.\nReplaced with `foreach(_validate_axis_method, grids, methods, extraps,\nntuple(identity, Val(length(grids))))`, which Julia's compiler unrolls\ninto per-element calls with concrete types — the same effect as a\n`@generated` helper but in one line.\n\nNew permanent regression guards in\n`test/test_nd_oneshot_onthefly.jl`:\n\n- \"Zero-alloc: windowed OnTheFly (scalar + batch! + persistent)\" —\n  asserts @allocated ≤ ND_ALLOC_THRESHOLD_LOCAL for 8 method tuples\n  × 6 entry points (scalar/batch!/persistent × Range/Vector grids)\n  = 48 assertions. Covers Cardinal/Pchip/Akima/Cubic×Cardinal/\n  Cubic×Linear/Linear×Pchip/Linear×Linear/Cubic×Cubic.\n\n- \"Type stability: @inferred windowed OnTheFly\" — asserts @inferred\n  returns `::Float64` for 6 method tuples × 4 entry points = 24\n  assertions. Catches any regression where a Union splits into the\n  return path (which is the proximate cause of most of the allocation\n  noise this PR untangled).\n\nVerified on the 100×100 equivalence benchmark: all paths remain\nbit-exact vs. persistent (except pre-existing 1 ULP drift on\nLinear × Linear one-shot via the specialized linear_interp_nd_oneshot\nroute), and Cubic × Linear persistent still realizes the ~45× speedup\nfrom the asymmetric windowing gate.\n\n* fix(hetero-nd): GridIdx safety + persistent-path promotion + 3-tuple validate boxing\n\nThree fixes that all surfaced during the GridIdx + Hermite windowing audit and\nshare the same test coverage:\n\n1. GridIdx safety gates on the windowed paths. `GridIdx(k)` encodes an\n   absolute index into the original grid, so slicing the data to a cell-local\n   window aliases it to the wrong entry. Added `!_has_grididx(typeof(query))`\n   to the windowing predicates in `_eval_hetero_nd`, `_locate_cell`, and\n   `_interp_nd_oneshot_onthefly` so those queries fall through to the\n   full-fiber path (correct semantics, compile-time type check, zero runtime\n   cost on the common no-GridIdx path).\n\n2. GridIdx auto-promotion on the persistent callable. The safety gate above\n   is correct but made GridIdx queries ~10-100× slower than Real queries on\n   hermite persistent interpolants, defeating GridIdx's purpose. Mirrored the\n   scalar one-shot's `_promote_grididx_to_nointerp` logic into the persistent\n   callable at `(itp::HeteroInterpolantND)(query)`, delegating into\n   `_interp_nointerp_oneshot` which pre-slices data/grids and uses the\n   pool-backed one-shot fast path. Guarded by `itp.data isa\n   AbstractArray{<:Any, N}` so PreCompute interpolants (whose `_HeteroPartials`\n   container has rank N+1) keep their existing amortized path, and by\n   `_all_eval_value(ops)` so deriv queries fall through to the windowed path\n   unchanged. Measured on 2D N=100: Cubic×Cubic GridIdx 50μs → 511 ns (98×),\n   Cubic×Cardinal 49μs → 511 ns (96×), local Hermite ~100 ns across the board.\n\n3. `_validate_axis_methods` boxing on 3+ element heterogeneous tuples. The\n   prior `foreach` approach worked for 2-tuples but certain 3-tuple orderings\n   (e.g. `(Linear, Cardinal, Linear)` → 48 B/call) hit a Julia-compiler\n   specialization cliff and fell back to runtime dispatch. Replaced with\n   `@generated _validate_axis_methods_unrolled` which emits straight-line\n   calls at macro-expansion time — dispatch resolved statically from the\n   tuple field types, no cliff to fall off. Eliminates the last remaining\n   allocation on the persistent callable fast path.\n\nAll existing tests pass (test_nointerp.jl, test_nd_oneshot_onthefly.jl,\ntest_hermite_onthefly.jl, test_vector_calculus.jl). Zero-alloc and @inferred\nassertions extended to cover the three paths fixed here.\n\n* chore(hetero-nd): drop phase-marker dev scaffolding scripts\n\nThese two files were development-time verification scaffolding tied to the\nimplementation phases of the cell-local OnTheFly PR. Their findings are\nalready absorbed into:\n\n- code comments in `src/hetero/hetero_window.jl` and `_collapse_dims`,\n- the qualitative claims in the PR message,\n- `claudedocs/hermite_nd_onthefly_perf.md` (perf methodology + numbers).\n\nRemoved:\n\n- `scripts/phase7_verify.jl` — Phase 7 type-stability + alloc + speedup\n  spot-checks, used to validate the kernel during development. Equivalent\n  coverage now lives in the `@inferred` and `@allocated == 0` testset\n  in `test/test_nd_oneshot_onthefly.jl`.\n\n- `benchmark/onthefly_nd_hint_comparison.jl` — Phase 6d hint-payoff\n  measurement. The result (\"hints still help, but the speedup is less\n  dramatic than the global-solve path because the inner stencil search is\n  already O(log 4)\") is captured in the perf doc; the script itself is\n  too tied to the development sequence to keep around as a reproducible\n  asset.\n\nKept: `benchmark/onthefly_vs_precompute_equivalence.jl` — phase-agnostic,\nreproducible OnTheFly-vs-PreCompute comparison that's useful beyond this PR.\n\n* fix(hetero-nd): post-review cleanup + cached_range slice fix + LTS test relaxation\n\nCI fix:\n- Add `Base.getindex(::_CachedRange, ::AbstractUnitRange)` and the matching\n  `view` method so slicing a `_CachedRange` returns a fresh `_CachedRange`\n  instead of falling back to a SubArray. Without this, the windowed OnTheFly\n  path's `view(itp.grids[d], 1:n)` for the Cubic axis produced a SubArray\n  that failed `_can_infer_period(::AbstractRange)`, breaking\n  `PeriodicBC(:exclusive)` Cubic on Range grids — test_hetero_precomputed.jl\n  was failing across all OS in PR #112 CI.\n\nTest robustness:\n- Convert `test_nd_oneshot_onthefly.jl` 2D/3D equivalence testsets from\n  per-element `@test got === ref` (inside double for-loops, ~8000+ assertions)\n  to a single per-method-tuple `@test max_ulp_diff <= N` against the full\n  collected query set. Two motivations:\n    (a) `===` is bit-exact and rejects 1-2 ULP cross-version drift introduced\n        by LLVM's instruction scheduling differences between LTS 1.10 and\n        stable ≥1.11 — a real issue caught by CI.\n    (b) ~1000 individual `@test` invocations per tuple slow the runner and\n        flood the failure log with duplicates of the same error.\n  The new pattern collects results into a Vector and asserts the worst-case\n  ULP drift, giving a clean diagnostic message and absorbing the cross-\n  version LLVM ordering noise. Tolerances: 4 ULPs (Pchip/Cardinal/Linear),\n  8 ULPs (Akima 4-secant), doubled for 3D (more accumulation steps). Note:\n  per-element `maximum(@. abs(g-r) / eps(...))` is used instead of vector\n  `isapprox`, because `isapprox(::Vector, ::Vector)` reduces to L2 norm\n  which would over-strict on many-small-drifts cases.\n\nRefactor / review feedback:\n- Extract `_build_windowed_cell` helper from the duplicated 7-line windowing\n  block in `_eval_hetero_nd` and `_locate_cell`. `@inline` is load-bearing —\n  both call sites are hot paths and the helper threads the interpolant's\n  concrete type through the window construction.\n- Convert three `ntuple(d -> _axis_window(...[d]...), Val(N))` sites to\n  `map(_axis_window, methods, indices, map(length, grids))` for closure-free\n  unrolled per-axis dispatch (more allocation-robust than ntuple+closure).\n- Replace stale absolute line-number references in 4 comments (Copilot\n  review on PR #112) with helper/function names that survive file shifts.\n- Soften `hetero_window.jl` invariant 1 phrasing from \"compile-time constant\"\n  to \"constant per (method, axis length) pair\".\n- Add IMPLICIT COUPLING note to the GridIdx promotion block in the\n  persistent callable, documenting the AutoCoeffs OnTheFly assumption that\n  `_interp_nointerp_oneshot`'s recursive `interp(...)` relies on.\n- Add \"defensive — public APIs strip GridIdx before reaching here\" note to\n  `_interp_nd_oneshot_onthefly`'s GridIdx safety gate.\n- Fix `--project` arg in `benchmark/onthefly_vs_precompute_equivalence.jl`\n  header (was activating the wrong Project.toml).\n\nVerified: full test_nd_oneshot_onthefly.jl passes on both stable and LTS.\n\n* test(nointerp): relax zero-alloc assertions for LTS Val-dispatch boxing\n\nLTS Julia 1.10 emits 16 bytes/call on the GridIdx + deriv path in\n`itp((1.7, GridIdx(5)); deriv = (DerivOp(1), DerivOp(0)))` due to\nVal-dispatch boxing in the deriv resolver that disappears on stable\nJulia 1.12+. This is a pre-existing LTS limitation unrelated to the\nwindowing refactor in this PR, but surfaced on CI because the file\nwas already being modified (Copilot stale-ref fixes).\n\nConvert the three hard-coded `@test _alloc() == 0` assertions in\ntest_nointerp.jl to `<= ND_ALLOC_THRESHOLD_LOCAL`, matching the\npattern already used by test_nd_oneshot_onthefly.jl. The threshold\nis `0` on Julia ≥1.12 and `(2*AAP_RUNTIME_CHECK + 1) * 240` on older\nversions, absorbing the LTS boxing without weakening the stable\ncontract.\n\nAdd `@isdefined` guards around the `const` definitions in both test\nfiles so they can coexist in the same module when runtests.jl loads\nthem sequentially (the LSP diagnostic is a false positive — at\nruntime the guard correctly evaluates the const exactly once).\n\nVerified via background subagent: both files pass on LTS 1.10 (39s)\nand stable 1.12+ (1m 19s), including the three originally-affected\ntestsets (\"PreCompute interpolant eval\", \"PreCompute interpolant eval\nwith deriv\", \"OnTheFly interpolant eval\").\n\n* test(hermite-nd): direct trait tests for _is_windowable_method coverage\n\n`_is_windowable_method` and `_has_any_windowable_method` were exercised\nonly indirectly via the higher-order `any(_is_windowable_method,\nmethods)` call in the persistent-path gate. LLVM inlined the tiny\n`@inline` trait bodies aggressively enough that their definition lines\nweren't registering in Coverage.jl, showing up as missing in codecov on\nPR #112 even though the functional paths were fully tested.\n\nAdd direct-call tests for:\n- `_is_windowable_method(m)` for each of Pchip, Cardinal (default +\n  tension), Akima, Linear, Constant (windowable == true) and Cubic,\n  Quadratic (windowable == false)\n- `_has_any_windowable_method(tuple)` for homogeneous windowable,\n  mixed Cubic+local, and pure global-solve tuples\n\nNo functional change — these tests assert existing behavior to\ndocument the contract and pin coverage tracking to the trait bodies.",
+          "timestamp": "2026-04-08T05:30:12-07:00",
+          "tree_id": "44ccd48545e35ec9a8741f0fb586ae404271e146",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/4151829972811c921a5ebaa82cff1a8022462aea"
+        },
+        "date": 1775651550280,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 38743,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 609.74,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 374628,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1702.96,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1583,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 15.72,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 11.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3313.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=272\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 32.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 18.44,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4236.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4229.28,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9634.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3223.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 444.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 61698,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1303.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12623.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 17.53,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 444.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 42640.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 22.34,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 18628.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 35.97,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 277.72,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.11,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 196.36,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 18500.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 11.11,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 549.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4307.24,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 39543.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 739.38,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1720,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2274.24,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11493.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3362.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 36762.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 980.44,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 370832.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1596.9,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

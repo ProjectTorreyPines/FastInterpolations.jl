@@ -1,6 +1,6 @@
 name = "FastInterpolations"
 uuid = "9ea80cae-fc13-4c00-8066-6eaedb12f34b"
-version = "0.4.7"
+version = "0.4.8"
 authors = ["Min-Gu Yoo <mgyoo86@gmail.com>"]
 
 [deps]
@@ -26,7 +26,7 @@ FastInterpolationsRecipesBaseExt = "RecipesBase"
 FastInterpolationsSymbolicsExt = ["Symbolics", "SymbolicUtils"]
 
 [compat]
-AdaptiveArrayPools = "0.3.4"
+AdaptiveArrayPools = "0.3.6"
 ChainRulesCore = "1"
 Enzyme = "0.13.0 - 0.13.135"
 ForwardDiff = "1"

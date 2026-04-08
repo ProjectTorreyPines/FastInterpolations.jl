@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775651556788,
+  "lastUpdate": 1775688626417,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -40162,6 +40162,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1596.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1d5a38ba4a0e232d8fdb6e4c946fcd1660a5cf26",
+          "message": "(feat): Hermite 1D — OnTheFly integrate + in-place cumulative_integrate! (#113)\n\n* (feat): graceful not-implemented errors for Hermite family ND\n\nReplace MethodError / misleading \"use PreCompute\" advice on the three\nHermite ND gaps with explicit ArgumentError messages pointing at tracking\nTODOs and listing concrete workarounds. These paths are intentionally\ndeferred past the first release; this PR just closes the UX holes.\n\n- nodal_partials(HeteroInterpolantND) with any local-Hermite axis now\n  throws a dedicated error pointing at hermite_nd_precompute.md and\n  suggesting per-axis 1D deriv or switching to Cubic/Quadratic.\n  Previously mis-advised \"use coeffs=PreCompute()\" which dead-ends at\n  _validate_nd_coeffs rejection.\n- integrate(HeteroInterpolantND) / integrate(::HeteroInterpolantND,\n  ::Real, ::Real) now throw explicit errors pointing at\n  hermite_onthefly_integrate_and_nd_adjoint.md (Task 2) instead of\n  MethodError deep in _full_cell_integral_nd or the\n  typeof-interpolation fallback.\n- hetero_adjoint with any PCHIP/Cardinal/Akima axis (including the\n  Zygote/ChainRules rrule path via _adjoint_func_from_itp) rejects\n  upfront in _build_hetero_nd_adjoint with ForwardDiff /\n  1D-adjoint workarounds listed.\n\nSecondary fix discovered by the new tests: _short_method_name was\nmissing overloads for PchipInterp / CardinalInterp / AkimaInterp /\nCubicHermiteInterp, silently breaking any show path that hit the\npretty-printer for a Hermite-containing HeteroInterpolantND.\n\nTests: new test/test_hermite_nd_graceful_errors.jl with 39 assertions\nacross 8 testsets — rejection paths for each entry point plus\npure-Cubic regression guards. All existing tests (test_nodal_partials,\ntest_hetero_adjoint, test_integral_nd) regression-clean.\n\n* (feat): 1D OnTheFly integrate + cumulative_integrate! in-place API\n\nClose the last local-Hermite API gap before release: `integrate`,\n`cumulative_integrate`, and the new `cumulative_integrate!` all work\nuniformly across PreCompute and OnTheFly coefficient strategies for\nPCHIP/Cardinal/Akima, with zero-alloc and bit-for-bit equivalence.\n\nFeature:\n- `cumulative_integrate!(out, itp)` — new exported in-place API. Writes\n  prefix-sum integrals into a caller-supplied buffer for true zero-alloc\n  when the buffer is reused across calls. Throws `DimensionMismatch` on\n  length mismatch. Allocating `cumulative_integrate(itp)` is now a thin\n  wrapper that allocates and forwards.\n- Bounded + full-domain `integrate` and `cumulative_integrate` now\n  support `coeffs=OnTheFly()` for PCHIP/Cardinal/Akima. The bounded path\n  uses a dedicated sliding-window helper that threads two slope scalars\n  (`dy_L`, `dy_R`) through the cell loop, keeping state on the stack.\n\nRefactor (unify OnTheFly into the generic path):\n- `_full_cell_fn(::AbstractHermiteInterpolant1D)` now dispatches\n  internally on `itp.dy` via `_hermite_full_cell_fn(itp, itp.dy)`,\n  so PreCompute and OnTheFly share the generic `_integrate_1d_fulldomain`\n  and `_cumulative_integrate_1d!` pipelines.\n- Deletes ~100 lines of duplicated Hermite-specific kernels from\n  `integrate_fulldomain.jl`: three `_integrate_hermite_*` sliding-window\n  helpers and three top-level overrides collapse into one `_full_cell_fn`\n  trait branch.\n- Normalizes `itp.x`/`sitp.x` → `_grid_1d(itp)` across Constant and\n  Constant Series integrate paths for a single canonical grid accessor.\n\nPerf (cached `inv_h`):\n- Replaces 8 `inv_h = inv(h)` hardware divisions with\n  `_get_inv_h(spacing, i)` reads (cached field on `ScalarSpacing`,\n  indexed load on `VectorSpacing`) across the Hermite 1D bounded and\n  full-domain paths. Saves ~20 cycles per cell on the integrate hot path,\n  mirroring what the ND Cubic/Quadratic integrate paths already do.\n\nCleanup:\n- Deletes the now-unused `_throw_onthefly_unsupported` helper from\n  `hermite_slope_methods.jl`.\n\nTests:\n- `test_hermite_onthefly.jl`: three new testsets (~60 tests) covering\n  (a) PreCompute↔OnTheFly equivalence across bounds/full-domain/cumulative\n  for PCHIP/Cardinal/Akima, (b) extrap equivalence (NoExtrap/ClampExtrap/\n  FillExtrap/WrapExtrap) with in-domain and out-of-domain bound splits,\n  (c) zero-alloc pins via `<= ALLOC_THRESHOLD` (LTS-safe) for bounded,\n  full-domain, and `cumulative_integrate!`, plus correctness and the\n  `DimensionMismatch` error path.\n- `test_show.jl`: closes a patch-coverage gap on the four new\n  `_short_method_name` methods (PCHIP/Cardinal/Akima/CubicHermite) —\n  integration test via `sprint(show, ::HeteroInterpolantND)` for the\n  three wired methods, plus a direct unit test for all four mirroring\n  the existing `_short_bc_name_nd`/`_short_side_name_nd` patterns.\n\nCoverage: full suite green, project 97%, patch coverage 100% on the\nmodified executable lines (94/94).\n\n* (test): Float32 Hermite ND smoke + extended PreCompute↔OnTheFly sweep\n\nTwo release-readiness regression nets for the local Hermite family. Both\nare pure test additions — no src changes — to lock in invariants that\nwould otherwise silently regress between versions.\n\nFloat32 Hermite ND smoke (item 6):\n- Pins three properties for the cell-local OnTheFly ND path on Float32:\n  (1) eval returns Float32 (no silent Float64 promotion through pool buffers),\n  (2) numerical agreement with the Float64-upcast reference within Float32\n  ULP slack (atol=1e-5), (3) zero-alloc after warmup (no Float64 boxing\n  slipping into closure captures).\n- Coverage: PCHIP/Cardinal/Akima × 2D and 3D, both eval correctness and\n  alloc check via the function-barrier pattern (setup + warmup + @allocated\n  inside one function — required because @testset wraps body in try/catch\n  that boxes locals).\n\nExtended PreCompute vs OnTheFly sweep (item 7):\n- Cross-strategy regression net for the 1D forward eval path. Sweeps\n  3 grid types (uniform Range n=30, uniform Range n=15, non-uniform\n  Vector n=25) × 3 function shapes (sin, polynomial, gaussian) ×\n  5 methods (PCHIP + Cardinal at tension∈{0, 0.3, 0.7} + Akima) ×\n  ~150 query points (50 scattered + interior cell midpoints + just-after-\n  left + just-before-right + near-boundary grid points) × 2 metrics\n  (value + 1st derivative).\n- Tolerance atol=1e-13/1e-12 (≈5 ULPs of headroom): PreCompute and\n  OnTheFly use the same cubic Hermite kernel but with different SSA order\n  for the slope source, so a 1-2 ULP drift is expected and bit-equality\n  would be too strict. The derivative test catches slope-source bugs that\n  value tests would mask, since slope-source errors only perturb the\n  cubic basis *coefficients* and leave anchor-point values unchanged.\n\nTest count: Hermite OnTheFly testset grew from 4526 → 15262 cases\n(~10,700 new) — runtime overhead ~100ms, negligible vs CI compile time.\n\nVerified: test_hermite_onthefly.jl, test_pchip_1d.jl, test_cardinal_1d.jl,\ntest_akima_1d.jl, test_nd_oneshot_onthefly.jl all green.\n\n* Runic formatting\n\n* (test): address Copilot review on PR #113\n\nThree fixes for valid Copilot review comments:\n\n- `integrate_fulldomain.jl`: stale doc comment on the generic 1D\n  `integrate(itp)` method said \"not Hermite — see overrides below,\" but\n  the unification refactor in this PR moved Hermite *into* this generic\n  path via `_full_cell_fn`'s internal `itp.dy` dispatch. Updated the\n  comment to reflect actual dispatch behavior.\n\n- `test_hermite_onthefly.jl`: the cross-strategy sweep claimed three\n  grid types (uniform Range × 2, non-uniform Vector) but wrapped the\n  uniform grids in `collect(...)`, so all three branches were exercising\n  `Vector` / `VectorSpacing` / `LinearBinarySearch` and the\n  `AbstractRange` / `ScalarSpacing` / direct-stride codepath went\n  uncovered. Drop the `collect` so the uniform grids stay as\n  `StepRangeLen` and actually exercise the path the labels claim.\n\n- `test_hermite_onthefly.jl`: the same testset's tolerance comment said\n  \"should agree to last few ULPs (1e-14)\" but the `@test` calls below\n  use `atol=1e-13/1e-12`. Updated the comment to explain why ~5 ULPs of\n  headroom is the right tolerance (PreCompute and OnTheFly use the same\n  kernel but disagree at 1-2 ULPs because the slope source differs and\n  SSA order varies after lowering).\n\nTest count unchanged at 15,262; targeted test file green (2m 6s).",
+          "timestamp": "2026-04-08T15:48:00-07:00",
+          "tree_id": "33e5642cd962f4cf64f42aa5d2f2d175d7efcbc9",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/1d5a38ba4a0e232d8fdb6e4c946fcd1660a5cf26"
+        },
+        "date": 1775688620906,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 40251,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 766.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 339098,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 2046.88,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1719.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 16.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 10.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3651.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=272\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 35.45,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 16.92,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4646.98,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4646.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 10125.78,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3199,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 493.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 62899.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1460.98,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 14146.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 20.13,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 481.92,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 47044.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 21.93,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 19321,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 42.37,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 269.81,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 199.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 19169.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 6.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.71,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 604.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4782.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 44035.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 721.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1787.68,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2464.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11802.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3544.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 39472.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 1004.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 337684.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1574.4,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

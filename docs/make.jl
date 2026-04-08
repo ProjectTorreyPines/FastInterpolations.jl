@@ -159,6 +159,7 @@ makedocs(
             "Linear" => "interpolation/linear.md",
             "Quadratic" => "interpolation/quadratic.md",
             "Cubic" => "interpolation/cubic.md",
+            "Local Cubic Hermite" => "interpolation/local_hermite.md",
             "Derivatives" => "interpolation/derivatives.md",
             "Integration" => "interpolation/integration.md",
             "Visual Comparison" => "interpolation/comparison.md",

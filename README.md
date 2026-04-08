@@ -23,16 +23,30 @@ A high-performance **N-dimensional** interpolation package for Julia, optimized 
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
 ## Supported Methods
-`FastInterpolations.jl` supports four interpolation methods — **Constant**, **Linear**, **Quadratic**, and **Cubic** splines (1D and ND) — each with a corresponding **native adjoint operator** ($W^\top \bar{y}$) for gradient-based workflows.
+`FastInterpolations.jl` supports **five interpolation families** — four classical polynomial splines (**Constant**, **Linear**, **Quadratic**, **Cubic**) plus the **Local Cubic Hermite family** (Hermite / PCHIP / Cardinal / Akima), each with a native adjoint operator ($W^\top \bar{y}$) for gradient-based workflows.
+
+### Classical splines
 
 | Interpolation | Adjoint | Continuity | Best For |
 |:-------------|:--------|:-----------|:---------|
 | `constant_interp` | `constant_adjoint` | C⁻¹ | Step functions |
 | `linear_interp` | `linear_adjoint` | C⁰ | Fast, lightweight, no overshoot |
 | `quadratic_interp` | `quadratic_adjoint` | C¹ | Smooth derivatives at low cost |
-| `cubic_interp` | `cubic_adjoint` | C² | High-accuracy splines |
+| `cubic_interp` | `cubic_adjoint` | C² | High-accuracy C² splines |
+
+### Local Cubic Hermite family
+
+One cubic Hermite basis, four choices of slope rule. All C¹-continuous, O(1) per query, no global solve — each cell's slopes come from a small local stencil (or are supplied directly). ND adjoint support is on the roadmap.
+
+| Interpolation | Adjoint (1D) | Slope rule | Best For |
+|:-------------|:-------------|:-----------|:---------|
+| `hermite_interp`  | `hermite_adjoint`  | user-supplied                | Physics-informed, analytical derivatives |
+| `pchip_interp`    | `pchip_adjoint`    | Fritsch-Carlson (3-point)    | Monotone data (CDFs, physical bounds) |
+| `cardinal_interp` | `cardinal_adjoint` | Catmull-Rom with `tension`   | Animation, spline curves through control points |
+| `akima_interp`    | `akima_adjoint`    | Akima (5-point stencil)      | Noisy data, outlier-robust |
 
 📖 [Interpolation Overview](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/overview/) 
+📖 [Local Cubic Hermite](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/local_hermite/) 
 📖 [Adjoint Overview](https://projecttorreypines.github.io/FastInterpolations.jl/dev/adjoint/overview/)
 
 ## Quick Start

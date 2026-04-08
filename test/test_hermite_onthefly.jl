@@ -1,4 +1,5 @@
 using Test
+using Random: MersenneTwister
 using FastInterpolations
 using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes,
     _pchip_slopes!, _cardinal_slopes!, _akima_slopes!,
@@ -102,6 +103,72 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
 
         # Internal API also works
         @test _pchip_interp_onthefly(collect(Float64, x), sin.(x), Float64(xq), NoExtrap(), EvalValue(), AutoSearch(), nothing) ≈ pchip_interp(x, y, xq) atol = 1.0e-14
+    end
+
+    # ========================================
+    # 3b. Extended PreCompute vs OnTheFly regression sweep (item 7)
+    # ========================================
+    # Cross-strategy regression safety net: sweeps grid type, function shape,
+    # query location, method, and derivative order. Any future divergence
+    # between the PreCompute and OnTheFly kernels — even one rounded away on
+    # a single function — will trip this test before release.
+    #
+    # Tolerance: strict `1e-14` because both strategies use the same cubic
+    # Hermite kernel (`_hermite_integral_kernel_1d` / `_hermite_eval_kernel`),
+    # just fed from different slope sources. Their floating-point results
+    # should agree to the last few ULPs.
+    @testset "Sweep: OnTheFly ≈ PreCompute (values + 1st derivative)" begin
+        # Grid setups — uniform Range + non-uniform Vector
+        grids = (
+            ("uniform Range, n=30",      collect(range(0.0, 2π, 30))),
+            ("uniform Range, n=15",      collect(range(-1.0, 3.0, 15))),
+            ("non-uniform Vector, n=25", sort!(vcat(0.0, 2π, 0.02 .+ (2π - 0.04) .* sort!(rand(MersenneTwister(7), 23))))),
+        )
+        # Function shapes — different curvature profiles catch different bug classes
+        functions = (
+            ("sin",        x -> sin(3x)),
+            ("polynomial", x -> 0.3x^3 - 1.2x^2 + 0.5x - 0.7),
+            ("gaussian",   x -> exp(-(x - 1.5)^2)),
+        )
+        # Methods
+        makers = (
+            ("pchip",               (xx, yy; coeffs) -> pchip_interp(xx, yy; coeffs = coeffs)),
+            ("cardinal tension=0",  (xx, yy; coeffs) -> cardinal_interp(xx, yy; tension = 0.0, coeffs = coeffs)),
+            ("cardinal tension=0.3",(xx, yy; coeffs) -> cardinal_interp(xx, yy; tension = 0.3, coeffs = coeffs)),
+            ("cardinal tension=0.7",(xx, yy; coeffs) -> cardinal_interp(xx, yy; tension = 0.7, coeffs = coeffs)),
+            ("akima",               (xx, yy; coeffs) -> akima_interp(xx, yy; coeffs = coeffs)),
+        )
+
+        for (g_label, x) in grids, (f_label, f) in functions, (m_label, maker) in makers
+            y = f.(x)
+            itp_pre = maker(x, y; coeffs = PreCompute())
+            itp_otf = maker(x, y; coeffs = OnTheFly())
+
+            # 50 scattered queries strictly inside the domain
+            xlo, xhi = first(x), last(x)
+            rng = MersenneTwister(123)
+            scattered = xlo .+ (xhi - xlo) .* (0.01 .+ 0.98 .* rand(rng, 50))
+            # Edge queries: each cell's midpoint + each interior grid point + near-boundary
+            edges = vcat(
+                [0.5 * (x[i] + x[i + 1]) for i in 1:(length(x) - 1)],  # mid-cell
+                [x[i] + 1.0e-9 * (x[i + 1] - x[i]) for i in 1:(length(x) - 1)],  # just after left
+                [x[i + 1] - 1.0e-9 * (x[i + 1] - x[i]) for i in 1:(length(x) - 1)], # just before right
+                [x[2], x[end - 1]],  # near-boundary grid points
+            )
+            all_q = vcat(scattered, edges)
+
+            for q in all_q
+                # Value equivalence
+                v_pre = itp_pre(q)
+                v_otf = itp_otf(q)
+                @test v_otf ≈ v_pre atol = 1.0e-13 rtol = 1.0e-13
+
+                # 1st derivative equivalence — catches slope-source bugs that value tests miss
+                d_pre = itp_pre(q; deriv = DerivOp(1))
+                d_otf = itp_otf(q; deriv = DerivOp(1))
+                @test d_otf ≈ d_pre atol = 1.0e-12 rtol = 1.0e-12
+            end
+        end
     end
 
     # ========================================
@@ -585,6 +652,83 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
         # Scalar oneshot Float32
         v = pchip_interp(x32, y32, 1.0f0; coeffs = OnTheFly())
         @test v isa Float32
+    end
+
+    # ========================================
+    # 16b. Float32 ND smoke test (item 6) — release regression guard
+    # ========================================
+    # Pins three properties for the cell-local OnTheFly ND path on Float32:
+    #   1. Eval returns Float32 (no silent Float64 promotion through the pool buffers)
+    #   2. Numerical agreement with the Float64-upcast reference within Float32 ULP slack
+    #   3. Zero-alloc after warmup (no Float64 boxing slipping into closure captures)
+    # If any of these regress on a future kernel/pool change, this test will trip
+    # before reaching a release.
+    @testset "Float32 Hermite ND smoke (eval + zero-alloc)" begin
+        x32 = collect(range(0.0f0, Float32(2π), 16))
+        y32 = collect(range(-1.0f0, 1.0f0, 13))
+        z32 = collect(range(0.0f0, 1.0f0, 9))
+        d2_32 = Float32[sin(2 * xi) * cos(yj) for xi in x32, yj in y32]
+        d3_32 = Float32[sin(2 * xi) * cos(yj) * (1 + zk) for xi in x32, yj in y32, zk in z32]
+        # Float64 reference (build interpolant in Float64 to compare against)
+        x64, y64, z64 = Float64.(x32), Float64.(y32), Float64.(z32)
+        d2_64 = Float64.(d2_32)
+        d3_64 = Float64.(d3_32)
+        q2_32 = (1.7f0, 0.4f0)
+        q3_32 = (1.7f0, 0.4f0, 0.6f0)
+        q2_64 = (1.7, 0.4)
+        q3_64 = (1.7, 0.4, 0.6)
+
+        for (m_label, methods_2d, methods_3d) in (
+                ("PCHIP",    (PchipInterp(),    PchipInterp()),    (PchipInterp(),    PchipInterp(),    PchipInterp())),
+                ("Cardinal", (CardinalInterp(), CardinalInterp()), (CardinalInterp(), CardinalInterp(), CardinalInterp())),
+                ("Akima",    (AkimaInterp(),    AkimaInterp()),    (AkimaInterp(),    AkimaInterp(),    AkimaInterp())),
+            )
+            # 2D — Float32 eltype + Float64 reference comparison
+            itp32_2d = interp((x32, y32), d2_32; method = methods_2d, coeffs = OnTheFly())
+            itp64_2d = interp((x64, y64), d2_64; method = methods_2d, coeffs = OnTheFly())
+            v32 = itp32_2d(q2_32)
+            v64 = itp64_2d(q2_64)
+            @test v32 isa Float32
+            @test Float64(v32) ≈ v64 atol = 1.0f-5
+
+            # 3D — Float32 eltype + Float64 reference comparison
+            itp32_3d = interp((x32, y32, z32), d3_32; method = methods_3d, coeffs = OnTheFly())
+            itp64_3d = interp((x64, y64, z64), d3_64; method = methods_3d, coeffs = OnTheFly())
+            v3_32 = itp32_3d(q3_32)
+            v3_64 = itp64_3d(q3_64)
+            @test v3_32 isa Float32
+            @test Float64(v3_32) ≈ v3_64 atol = 1.0f-5
+        end
+
+        # Zero-alloc check (function-barrier pattern: setup + warmup + @allocated
+        # all inside one function — required because @testset wraps body in a
+        # try/catch that boxes locals. See test_cubic_nd.jl for the same pattern.)
+        function _alloc_f32_2d(methods)
+            x = collect(range(0.0f0, Float32(2π), 16))
+            y = collect(range(-1.0f0, 1.0f0, 13))
+            data = Float32[sin(2 * xi) * cos(yj) for xi in x, yj in y]
+            itp = interp((x, y), data; method = methods, coeffs = OnTheFly())
+            q = (1.7f0, 0.4f0)
+            itp(q); itp(q)  # warmup
+            return @allocated itp(q)
+        end
+        function _alloc_f32_3d(methods)
+            x = collect(range(0.0f0, Float32(2π), 16))
+            y = collect(range(-1.0f0, 1.0f0, 13))
+            z = collect(range(0.0f0, 1.0f0, 9))
+            data = Float32[sin(2 * xi) * cos(yj) * (1 + zk) for xi in x, yj in y, zk in z]
+            itp = interp((x, y, z), data; method = methods, coeffs = OnTheFly())
+            q = (1.7f0, 0.4f0, 0.6f0)
+            itp(q); itp(q)  # warmup
+            return @allocated itp(q)
+        end
+
+        @test _alloc_f32_2d((PchipInterp(),    PchipInterp()))    <= ALLOC_THRESHOLD
+        @test _alloc_f32_2d((CardinalInterp(), CardinalInterp())) <= ALLOC_THRESHOLD
+        @test _alloc_f32_2d((AkimaInterp(),    AkimaInterp()))    <= ALLOC_THRESHOLD
+        @test _alloc_f32_3d((PchipInterp(),    PchipInterp(),    PchipInterp()))    <= ALLOC_THRESHOLD
+        @test _alloc_f32_3d((CardinalInterp(), CardinalInterp(), CardinalInterp())) <= ALLOC_THRESHOLD
+        @test _alloc_f32_3d((AkimaInterp(),    AkimaInterp(),    AkimaInterp()))    <= ALLOC_THRESHOLD
     end
 
     # ========================================

@@ -91,7 +91,10 @@ end
 # integrate(itp) — 1D full-domain fast path
 # ═══════════════════════════════════════════════════════════════
 
-# Generic 1D: catches Cubic, Linear, Quadratic (not Constant, not Hermite — see overrides below)
+# Generic 1D: catches any interpolant whose `_full_cell_fn(itp)` trait is the
+# single-arg form — Cubic, Linear, Quadratic, and the entire Hermite family
+# (PreCompute + OnTheFly via `_full_cell_fn`'s internal dispatch on `itp.dy`).
+# Constant has its own override below because its full-cell trait depends on `side`.
 @inline function integrate(
         itp::AbstractInterpolant{Tg, Tv};
         search = nothing, hint = nothing

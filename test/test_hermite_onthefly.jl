@@ -113,15 +113,21 @@ using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes
     # between the PreCompute and OnTheFly kernels — even one rounded away on
     # a single function — will trip this test before release.
     #
-    # Tolerance: strict `1e-14` because both strategies use the same cubic
-    # Hermite kernel (`_hermite_integral_kernel_1d` / `_hermite_eval_kernel`),
-    # just fed from different slope sources. Their floating-point results
-    # should agree to the last few ULPs.
+    # Tolerance: tight but not bit-equal. Both strategies use the same cubic
+    # Hermite kernels (`_hermite_integral_kernel_1d` / `_hermite_eval_kernel`),
+    # but the slope source differs (precomputed Vector lookup vs per-cell
+    # `_local_slope` recomputation), and the resulting SSA order can disagree
+    # by 1-2 ULPs after lowering. The atol=1e-13/1e-12 below leaves ~5 ULPs of
+    # headroom, strict enough to catch real divergence and loose enough to
+    # survive Julia/LLVM version drift.
     @testset "Sweep: OnTheFly ≈ PreCompute (values + 1st derivative)" begin
-        # Grid setups — uniform Range + non-uniform Vector
+        # Grid setups — keep uniform grids as `range(...)` (NOT collected!) so
+        # they exercise the AbstractRange / ScalarSpacing / direct-stride
+        # search path, distinct from the Vector / VectorSpacing / binary-search
+        # path that the non-uniform case covers.
         grids = (
-            ("uniform Range, n=30", collect(range(0.0, 2π, 30))),
-            ("uniform Range, n=15", collect(range(-1.0, 3.0, 15))),
+            ("uniform Range, n=30", range(0.0, 2π, 30)),
+            ("uniform Range, n=15", range(-1.0, 3.0, 15)),
             ("non-uniform Vector, n=25", sort!(vcat(0.0, 2π, 0.02 .+ (2π - 0.04) .* sort!(rand(MersenneTwister(7), 23))))),
         )
         # Function shapes — different curvature profiles catch different bug classes

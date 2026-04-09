@@ -7,9 +7,10 @@
 # does NOT re-validate ND interpolation accuracy (covered by
 # `test_hermite_onthefly.jl`, `test_hetero_nd.jl`, etc.). Instead it verifies:
 #
-#   1. Equivalence — forwarder result `===` direct `interp` result for every
-#      one of the four ND call shapes (build, scalar oneshot, batch oneshot,
-#      batch in-place).
+#   1. Equivalence — forwarder result matches the direct `interp` result for
+#      every one of the four ND call shapes (build, scalar oneshot, batch
+#      oneshot, batch in-place). Scalar paths use `===` (ULP-exact identity);
+#      batch/array paths use `==` since array identity is meaningless here.
 #   2. Type stability — `@inferred` on the scalar oneshot path through each
 #      forwarder. This is the path where any kwarg-passthrough Union would
 #      surface most visibly.

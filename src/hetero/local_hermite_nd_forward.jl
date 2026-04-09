@@ -10,7 +10,7 @@
 # To avoid forcing users to rewrite `pchip_interp((x, y), data)` as
 # `interp((x, y), data; method=PchipInterp())` by hand, the three per-method
 # functions also accept ND signatures that simply forward to `interp` with the
-# right `method=` kwarg. The forwarders cover all three ND call shapes:
+# right `method=` kwarg. The forwarders cover all four ND call shapes:
 #
 #   1. Interpolant construction: `pchip_interp((x, y), data)`
 #   2. Scalar one-shot:          `pchip_interp((x, y), data, (qx, qy))`

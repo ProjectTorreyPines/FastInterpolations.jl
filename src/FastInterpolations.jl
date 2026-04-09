@@ -19,6 +19,7 @@ include("cardinal/cardinal.jl")
 include("akima/akima.jl")
 include("core/coeff_policy.jl")  # AutoCoeffs resolution (after method types + strategy types, before hetero)
 include("hetero/hetero.jl")
+include("hetero/local_hermite_nd_forward.jl")  # pchip/cardinal/akima ND forwarders to `interp`
 
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")

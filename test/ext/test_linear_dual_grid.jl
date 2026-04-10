@@ -35,11 +35,13 @@ const FI = FastInterpolations
         ad_deriv = ForwardDiff.derivative(t -> linear_interp(t .* x, y, xq), 1.0)
 
         # Centered finite-difference reference
-        h = 1e-6
-        fd_deriv = (linear_interp((1.0 + h) .* x, y, xq) -
-                    linear_interp((1.0 - h) .* x, y, xq)) / (2h)
+        h = 1.0e-6
+        fd_deriv = (
+            linear_interp((1.0 + h) .* x, y, xq) -
+                linear_interp((1.0 - h) .* x, y, xq)
+        ) / (2h)
 
-        @test isapprox(ad_deriv, fd_deriv; atol = 1e-8)
+        @test isapprox(ad_deriv, fd_deriv; atol = 1.0e-8)
     end
 
     @testset "Constructor with Vector{Dual}" begin
@@ -78,10 +80,12 @@ const FI = FastInterpolations
         # Partial reference: centered FD over the SAME uniform-shift parameter,
         # i.e. `linear_interp(x ± h, y, xq)` — NOT `linear_interp((1±h)*x, ...)`,
         # which would correspond to a different parameterization ∂(t*x)/∂t = x[i].
-        h = 1e-6
-        fd = (linear_interp(x .+ h, y, xq) -
-              linear_interp(x .- h, y, xq)) / (2h)
-        @test isapprox(ForwardDiff.partials(r)[1], fd; atol = 1e-8)
+        h = 1.0e-6
+        fd = (
+            linear_interp(x .+ h, y, xq) -
+                linear_interp(x .- h, y, xq)
+        ) / (2h)
+        @test isapprox(ForwardDiff.partials(r)[1], fd; atol = 1.0e-8)
     end
 
     @testset "One-shot scalar matches callable form" begin
@@ -140,7 +144,7 @@ const FI = FastInterpolations
             linear_interp(x_shifted, y, xq)
         end
 
-        @test isapprox(ForwardDiff.partials(r)[1], ad_deriv; atol = 1e-10)
+        @test isapprox(ForwardDiff.partials(r)[1], ad_deriv; atol = 1.0e-10)
     end
 
     # ╔═══════════════════════════════════════════════════════════════════════╗
@@ -164,13 +168,13 @@ const FI = FastInterpolations
         y = [10.0, 20.0, 15.0]  # slope_left = 10, slope_right = -5
 
         for (label, p, expected_slope) in [
-            # positive partial → Dual(2, +p) > 2 → LEFT interval selected
-            ("positive partial", +1.0, 10.0),
-            # negative partial → Dual(2, -p) < 2 → RIGHT interval selected
-            ("negative partial", -1.0, -5.0),
-            # zero partial → same as Float, RIGHT interval (x[mid] <= xq is true)
-            ("zero partial",      0.0, -5.0),
-        ]
+                # positive partial → Dual(2, +p) > 2 → LEFT interval selected
+                ("positive partial", +1.0, 10.0),
+                # negative partial → Dual(2, -p) < 2 → RIGHT interval selected
+                ("negative partial", -1.0, -5.0),
+                # zero partial → same as Float, RIGHT interval (x[mid] <= xq is true)
+                ("zero partial", 0.0, -5.0),
+            ]
             @testset "$label" begin
                 x_dual = [ForwardDiff.Dual{:tag}(xi, p) for xi in x]
                 itp = linear_interp(x_dual, y; extrap = ExtendExtrap())
@@ -180,7 +184,7 @@ const FI = FastInterpolations
 
                 # deriv=1 reveals which interval's slope was used
                 d = itp(2.0; deriv = DerivOp(1))
-                @test ForwardDiff.value(d) ≈ expected_slope atol = 1e-12
+                @test ForwardDiff.value(d) ≈ expected_slope atol = 1.0e-12
             end
         end
     end
@@ -296,14 +300,14 @@ const FI = FastInterpolations
             # dvalue/dε = dα/dε * 3 = -1.85 * 3 = -5.55
             r = itp(2.5)
             @test ForwardDiff.value(r) ≈ 2.5  # 1 + 0.5*3
-            @test isapprox(ForwardDiff.partials(r)[1], -5.55; atol = 1e-12)
+            @test isapprox(ForwardDiff.partials(r)[1], -5.55; atol = 1.0e-12)
         end
 
         @testset "Mid-interval in [x[3], x[4]] — both partials zero → zero derivative" begin
             # Both x[3] and x[4] have partial = 0 → no grid sensitivity here.
             r = itp(3.5)
             @test ForwardDiff.value(r) ≈ 6.5  # 4 + 0.5*5
-            @test isapprox(ForwardDiff.partials(r)[1], 0.0; atol = 1e-12)
+            @test isapprox(ForwardDiff.partials(r)[1], 0.0; atol = 1.0e-12)
         end
 
         @testset "On-grid at x[2] — active partial, interval selection by sign" begin
@@ -316,7 +320,7 @@ const FI = FastInterpolations
             # So partial = -3.7.
             r = itp(2.0)
             @test ForwardDiff.value(r) ≈ 1.0  # y[2]
-            @test isapprox(ForwardDiff.partials(r)[1], -3.7; atol = 1e-12)
+            @test isapprox(ForwardDiff.partials(r)[1], -3.7; atol = 1.0e-12)
         end
 
         @testset "On-grid at x[3] — zero partial, behaves like Float" begin
@@ -325,7 +329,7 @@ const FI = FastInterpolations
             # xL = Dual(3, 0), xR = Dual(4, 0), dL = 0 → α = 0 → partial = 0.
             r = itp(3.0)
             @test ForwardDiff.value(r) ≈ 4.0  # y[3]
-            @test isapprox(ForwardDiff.partials(r)[1], 0.0; atol = 1e-12)
+            @test isapprox(ForwardDiff.partials(r)[1], 0.0; atol = 1.0e-12)
         end
     end
 
@@ -366,7 +370,7 @@ const FI = FastInterpolations
             vv = itp_vec(xq)
             @test ForwardDiff.value(vr) ≈ ForwardDiff.value(vv)
             # Partials may differ by a few ULPs due to TwicePrecision rounding
-            @test isapprox(ForwardDiff.partials(vr)[1], ForwardDiff.partials(vv)[1]; atol = 1e-10)
+            @test isapprox(ForwardDiff.partials(vr)[1], ForwardDiff.partials(vv)[1]; atol = 1.0e-10)
         end
     end
 
@@ -382,13 +386,15 @@ const FI = FastInterpolations
 
         # Cross-check with Vector path
         ad_vec = ForwardDiff.derivative(t -> linear_interp(t .* collect(x_range), y, xq), 1.0)
-        @test isapprox(ad, ad_vec; atol = 1e-10)
+        @test isapprox(ad, ad_vec; atol = 1.0e-10)
 
         # Cross-check with FD
-        h = 1e-6
-        fd = (linear_interp(collect((1+h) .* x_range), y, xq) -
-              linear_interp(collect((1-h) .* x_range), y, xq)) / (2h)
-        @test isapprox(ad, fd; atol = 1e-8)
+        h = 1.0e-6
+        fd = (
+            linear_interp(collect((1 + h) .* x_range), y, xq) -
+                linear_interp(collect((1 - h) .* x_range), y, xq)
+        ) / (2h)
+        @test isapprox(ad, fd; atol = 1.0e-8)
     end
 
     @testset "Range{Dual} — all range source types" begin
@@ -398,12 +404,12 @@ const FI = FastInterpolations
 
         range_cases = [
             # (label,           Dual range expression,        y values)
-            ("StepRangeLen",    d .* (1.0:0.5:5.0),          sin.(collect(1.0:0.5:5.0))),
-            ("LinRange",        d .* range(1.0, 5.0, 9),     sin.(range(1.0, 5.0, 9))),
-            ("UnitRange .*",    d .* (1:5),                   sin.(Float64.(1:5))),
-            ("StepRange .*",    d .* (1:2:9),                 sin.(Float64.(1:2:9))),
-            ("UnitRange *",     d * (1:5),                    sin.(Float64.(1:5))),
-            ("StepRange *",     d * (1:2:9),                  sin.(Float64.(1:2:9))),
+            ("StepRangeLen", d .* (1.0:0.5:5.0), sin.(collect(1.0:0.5:5.0))),
+            ("LinRange", d .* range(1.0, 5.0, 9), sin.(range(1.0, 5.0, 9))),
+            ("UnitRange .*", d .* (1:5), sin.(Float64.(1:5))),
+            ("StepRange .*", d .* (1:2:9), sin.(Float64.(1:2:9))),
+            ("UnitRange *", d * (1:5), sin.(Float64.(1:5))),
+            ("StepRange *", d * (1:2:9), sin.(Float64.(1:2:9))),
         ]
 
         for (label, x_dual, y) in range_cases
@@ -428,7 +434,7 @@ const FI = FastInterpolations
                 itp_vec = linear_interp(collect(x_dual), y; extrap = ExtendExtrap())
                 r_vec = itp_vec(xq)
                 @test ForwardDiff.value(r) ≈ ForwardDiff.value(r_vec)
-                @test isapprox(ForwardDiff.partials(r)[1], ForwardDiff.partials(r_vec)[1]; atol = 1e-10)
+                @test isapprox(ForwardDiff.partials(r)[1], ForwardDiff.partials(r_vec)[1]; atol = 1.0e-10)
             end
         end
     end
@@ -483,18 +489,22 @@ const FI = FastInterpolations
         @test ForwardDiff.partials(r_vec)[1] ≈ -18.0
 
         # One-sided FD cross-check: each AD should match one of the two one-sided FDs.
-        h = 1e-7
+        h = 1.0e-7
         f_base_r = linear_interp(x_range, y, xq_knot; extrap = ExtendExtrap())
-        fd_fwd_r = (linear_interp((1+h) .* x_range, y, xq_knot; extrap = ExtendExtrap()) - f_base_r) / h
-        fd_bwd_r = (f_base_r - linear_interp((1-h) .* x_range, y, xq_knot; extrap = ExtendExtrap())) / h
-        @test (isapprox(ForwardDiff.partials(r_range)[1], fd_fwd_r; atol = 1e-3) ||
-               isapprox(ForwardDiff.partials(r_range)[1], fd_bwd_r; atol = 1e-3))
+        fd_fwd_r = (linear_interp((1 + h) .* x_range, y, xq_knot; extrap = ExtendExtrap()) - f_base_r) / h
+        fd_bwd_r = (f_base_r - linear_interp((1 - h) .* x_range, y, xq_knot; extrap = ExtendExtrap())) / h
+        @test (
+            isapprox(ForwardDiff.partials(r_range)[1], fd_fwd_r; atol = 1.0e-3) ||
+                isapprox(ForwardDiff.partials(r_range)[1], fd_bwd_r; atol = 1.0e-3)
+        )
 
         f_base_v = linear_interp(collect(x_range), y, xq_knot; extrap = ExtendExtrap())
-        fd_fwd_v = (linear_interp(collect((1+h) .* x_range), y, xq_knot; extrap = ExtendExtrap()) - f_base_v) / h
-        fd_bwd_v = (f_base_v - linear_interp(collect((1-h) .* x_range), y, xq_knot; extrap = ExtendExtrap())) / h
-        @test (isapprox(ForwardDiff.partials(r_vec)[1], fd_fwd_v; atol = 1e-3) ||
-               isapprox(ForwardDiff.partials(r_vec)[1], fd_bwd_v; atol = 1e-3))
+        fd_fwd_v = (linear_interp(collect((1 + h) .* x_range), y, xq_knot; extrap = ExtendExtrap()) - f_base_v) / h
+        fd_bwd_v = (f_base_v - linear_interp(collect((1 - h) .* x_range), y, xq_knot; extrap = ExtendExtrap())) / h
+        @test (
+            isapprox(ForwardDiff.partials(r_vec)[1], fd_fwd_v; atol = 1.0e-3) ||
+                isapprox(ForwardDiff.partials(r_vec)[1], fd_bwd_v; atol = 1.0e-3)
+        )
     end
 
     @testset "Range{Dual} one-shot scalar" begin
@@ -580,7 +590,7 @@ const FI = FastInterpolations
         itp = linear_interp(x_dual, f; extrap = ExtendExtrap())
         lhs = dot(ForwardDiff.value.(itp.(xq)), y_bar)
         rhs = dot(f, ForwardDiff.value.(f_bar))
-        @test isapprox(lhs, rhs; atol = 1e-10)
+        @test isapprox(lhs, rhs; atol = 1.0e-10)
     end
 
     @testset "Linear Adjoint with Range{Dual} grid" begin
@@ -692,10 +702,12 @@ const FI = FastInterpolations
         @test ForwardDiff.value(v) ≈ itp_f(q)
 
         # FD cross-check: ∂/∂t of linear_interp((t*x, t*y), data, q) at t=1
-        h = 1e-7
-        fd = (linear_interp((xv .* (1+h), yv .* (1+h)), data, q) -
-              linear_interp((xv .* (1-h), yv .* (1-h)), data, q)) / (2h)
-        @test isapprox(ForwardDiff.partials(v)[1], fd; atol = 1e-5)
+        h = 1.0e-7
+        fd = (
+            linear_interp((xv .* (1 + h), yv .* (1 + h)), data, q) -
+                linear_interp((xv .* (1 - h), yv .* (1 - h)), data, q)
+        ) / (2h)
+        @test isapprox(ForwardDiff.partials(v)[1], fd; atol = 1.0e-5)
     end
 
     @testset "Linear ND 2D: heterogeneous axis (Dual × Float)" begin
@@ -719,13 +731,17 @@ const FI = FastInterpolations
         @test ForwardDiff.partials(v_x)[1] != ForwardDiff.partials(v_y)[1]
 
         # FD per-axis cross-check
-        h = 1e-7
-        fd_x = (linear_interp((xv .* (1+h), yv), data, q) -
-                linear_interp((xv .* (1-h), yv), data, q)) / (2h)
-        fd_y = (linear_interp((xv, yv .* (1+h)), data, q) -
-                linear_interp((xv, yv .* (1-h)), data, q)) / (2h)
-        @test isapprox(ForwardDiff.partials(v_x)[1], fd_x; atol = 1e-5)
-        @test isapprox(ForwardDiff.partials(v_y)[1], fd_y; atol = 1e-5)
+        h = 1.0e-7
+        fd_x = (
+            linear_interp((xv .* (1 + h), yv), data, q) -
+                linear_interp((xv .* (1 - h), yv), data, q)
+        ) / (2h)
+        fd_y = (
+            linear_interp((xv, yv .* (1 + h)), data, q) -
+                linear_interp((xv, yv .* (1 - h)), data, q)
+        ) / (2h)
+        @test isapprox(ForwardDiff.partials(v_x)[1], fd_x; atol = 1.0e-5)
+        @test isapprox(ForwardDiff.partials(v_y)[1], fd_y; atol = 1.0e-5)
     end
 
     @testset "Linear ND 2D: Range{Dual} + Vector{Float} mix" begin
@@ -745,6 +761,39 @@ const FI = FastInterpolations
     # ╔═══════════════════════════════════════════════════════════════════════╗
     # ║          Codex-identified issues: RED phase tests                       ║
     # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "P1-1b: ND one-shot with Range{Dual} axis (ScalarSpacing path)" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        xv = collect(1.0:0.5:5.0)
+        yv = collect(2.0:0.5:6.0)
+        data = [sin(xi) * cos(yi) for xi in xv, yi in yv]
+
+        # Range{Dual} on axis-1 should get ScalarSpacing via _create_spacing_pooled Range overload
+        v = linear_interp((d .* (1.0:0.5:5.0), yv), data, (2.55, 3.55))
+        @test v isa ForwardDiff.Dual
+    end
+
+    @testset "WrapExtrap on Dual grid" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* collect(1.0:0.1:5.0)
+        y = sin.(1.0:0.1:5.0)
+        itp = linear_interp(x_dual, y; extrap = WrapExtrap())
+
+        # Query outside domain — should wrap, not throw
+        v = itp(5.55)
+        @test v isa ForwardDiff.Dual
+        # One-shot WrapExtrap
+        v2 = linear_interp(x_dual, y, 5.55; extrap = WrapExtrap())
+        @test v2 isa ForwardDiff.Dual
+    end
+
+    @testset "Scalar oneshot series output type with Dual grid" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* collect(1.0:0.1:5.0)
+        y1, y2 = sin.(1.0:0.1:5.0), cos.(1.0:0.1:5.0)
+        v = linear_interp(x_dual, FastInterpolations.Series(y1, y2), 2.55)
+        @test eltype(v) <: ForwardDiff.Dual
+    end
 
     @testset "P1-1: ND one-shot with Dual grid (spacing_pooled path)" begin
         d = ForwardDiff.Dual{:tag}(1.0, 1.0)

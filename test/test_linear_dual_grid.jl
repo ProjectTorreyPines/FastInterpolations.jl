@@ -37,8 +37,8 @@ Base.:-(a::TDG, b::TDG) = TDG(a.v - b.v, a.d - b.d)
 Base.:+(a::TDG, b::TDG) = TDG(a.v + b.v, a.d + b.d)
 Base.:*(a::TDG, b::TDG) = TDG(a.v * b.v, a.v * b.d + a.d * b.v)
 Base.:/(a::TDG, b::TDG) = a * inv(b)
-Base.inv(a::TDG)        = (q = inv(a.v); TDG(q, -a.d * q * q))
-Base.:-(a::TDG)         = TDG(-a.v, -a.d)
+Base.inv(a::TDG) = (q = inv(a.v); TDG(q, -a.d * q * q))
+Base.:-(a::TDG) = TDG(-a.v, -a.d)
 
 # Mixed TDG/Real arithmetic (kernel path uses Float y values)
 Base.:+(a::TDG, b::Real) = TDG(a.v + b, a.d)
@@ -51,20 +51,20 @@ Base.:/(a::TDG, b::Real) = TDG(a.v / b, a.d / b)
 
 # zero/one (used by kernel zero-return branches and promotion defaults)
 Base.zero(::Type{TDG}) = TDG(0.0, 0.0)
-Base.zero(::TDG)       = TDG(0.0, 0.0)
-Base.one(::Type{TDG})  = TDG(1.0, 0.0)
-Base.one(::TDG)        = TDG(1.0, 0.0)
+Base.zero(::TDG) = TDG(0.0, 0.0)
+Base.one(::Type{TDG}) = TDG(1.0, 0.0)
+Base.one(::TDG) = TDG(1.0, 0.0)
 
 # Ordering: forward to primal (grid sortedness is a primal concept)
-Base.:<(a::TDG, b::TDG)  = a.v < b.v
+Base.:<(a::TDG, b::TDG) = a.v < b.v
 Base.:<(a::TDG, b::Real) = a.v < b
 Base.:<(a::Real, b::TDG) = a < b.v
-Base.:<=(a::TDG, b::TDG)  = a.v <= b.v
+Base.:<=(a::TDG, b::TDG) = a.v <= b.v
 Base.:<=(a::TDG, b::Real) = a.v <= b
 Base.:<=(a::Real, b::TDG) = a <= b.v
-Base.isless(a::TDG, b::TDG)  = a.v <  b.v
-Base.isless(a::TDG, b::Real) = a.v <  b
-Base.isless(a::Real, b::TDG) = a    <  b.v
+Base.isless(a::TDG, b::TDG) = a.v < b.v
+Base.isless(a::TDG, b::Real) = a.v < b
+Base.isless(a::Real, b::TDG) = a < b.v
 
 # Promotion: TDG + Real → TDG (keeps Real widenings flowing to TDG)
 Base.promote_rule(::Type{TDG}, ::Type{<:Real}) = TDG
@@ -74,8 +74,8 @@ Base.float(::Type{TDG}) = TDG
 Base.float(x::TDG) = x
 
 # isapprox for test comparisons on the primal field
-approx_primal(a::TDG, v::Real; atol = 1e-12) = isapprox(a.v, v; atol = atol)
-approx_partial(a::TDG, d::Real; atol = 1e-12) = isapprox(a.d, d; atol = atol)
+approx_primal(a::TDG, v::Real; atol = 1.0e-12) = isapprox(a.v, v; atol = atol)
+approx_partial(a::TDG, d::Real; atol = 1.0e-12) = isapprox(a.d, d; atol = atol)
 
 # ─── Tests ───────────────────────────────────────────────────────────────────
 

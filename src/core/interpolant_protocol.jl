@@ -53,10 +53,12 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     grid = _itp_grid(itp)
     extrap = _itp_extrap(itp)
-    T_out = promote_type(Tv, Tq)
+    # Include Tg in promotion: when the grid is Dual, interpolation weights
+    # carry grid partials, so the output type must reflect Tg arithmetic.
+    T_out = promote_type(Tv, Tg, Tq)
     output = Vector{T_out}(undef, length(xq))
     searcher = _resolve_search(grid, xq, search, hint)
     _itp_vector_loop!(output, itp, xq, extrap, deriv, searcher)
@@ -73,7 +75,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     @assert length(output) == length(xq) "output length must match xq length"
     grid = _itp_grid(itp)
     extrap = _itp_extrap(itp)

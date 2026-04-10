@@ -34,7 +34,7 @@ end
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap = _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
         output[i] = _linear_eval_at_point(x, y, xq[i], extrap, deriv, searcher)
@@ -130,7 +130,7 @@ function linear_interp end
         y::AbstractVector{TY};
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {TX <: Real, TY}
+    ) where {TX, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     extrap_p = _promote_extrap(extrap, eltype(y_p))
     return LinearInterpolant(x_p, y_p; extrap = extrap_p, search)

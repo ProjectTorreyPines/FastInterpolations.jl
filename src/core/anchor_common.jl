@@ -38,7 +38,7 @@ with NO geometry (h, inv_h, dL, dR). Geometry is each method's internal concern.
 - `xL::Tg`: left node x[idx]
 - `xR::Tg`: right node x[idx+1]
 """
-struct _AnchorLoc{Tg <: AbstractFloat, Tq <: Real}
+struct _AnchorLoc{Tg, Tq <: Real}
     idx::Int
     xq::Tq
     state::UInt8
@@ -74,7 +74,7 @@ Dual type. The interval search uses `_extract_primal(xq)` for comparisons.
         xq::Tq,
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
-    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Real, P <: Searcher}
     x_min, x_max = first(x), last(x)
 
     # Use primal value for comparisons (supports ForwardDiff.Dual)

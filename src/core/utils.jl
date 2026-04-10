@@ -276,10 +276,14 @@ to preserve ForwardDiff.Dual types for automatic differentiation.
         x::AbstractVector{TX},
         y::AbstractVector{TY},
         xq::AbstractVector{TQ}
-    ) where {TX <: Real, TY, TQ <: Real}
+    ) where {TX, TY, TQ <: Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
     Tg = eltype(x_typed)
-    xq_typed = _to_float(xq, Tg)
+    # Query normalization: convert to the grid's float base type, not to Tg itself.
+    # When Tg is a duck type (e.g. Dual{Float64}), queries should stay plain Float —
+    # they don't carry grid-parameter derivatives.
+    Tg_float = Tg <: AbstractFloat ? Tg : float(TQ)
+    xq_typed = _to_float(xq, Tg_float)
     return x_typed, y_typed, xq_typed
 end
 
@@ -363,10 +367,13 @@ _promote_for_anchor(0.5f0, Float32)  # → 0.5f0 (Float32)
 _promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
 ```
 """
-# For AbstractFloat queries: preserve precision using wider type (lossless promotion)
+# For AbstractFloat queries on AbstractFloat grids: preserve precision using wider type
 @inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq <: AbstractFloat, Tg <: AbstractFloat} = convert(promote_type(Tq, Tg), xq)
-# For other Real (Int, Rational): convert to grid type (no precision loss for integers)
+# For other Real queries (Int, Rational) on AbstractFloat grids: convert to grid type
 @inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq <: Real, Tg <: AbstractFloat} = Tg(xq)
+# For duck grids (e.g. Dual): keep xq as-is. Kernel arithmetic auto-promotes via Julia's
+# type system (Float * Dual → Dual). Converting xq to Dual would inject zero partials.
+@inline _promote_for_anchor(xq, ::Type{Tg}) where {Tg} = xq
 
 
 # ========================================

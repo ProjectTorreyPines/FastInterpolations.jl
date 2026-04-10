@@ -187,7 +187,7 @@ Subtypes automatically inherit 6 callable overloads (Vector/Real/Tuple × alloc/
 - [`AbstractAdjoint1D`](@ref): 1D adjoint operators
 - [`AbstractAdjointND`](@ref): N-dimensional adjoint operators
 """
-abstract type AbstractAdjoint{Tg <: AbstractFloat} end
+abstract type AbstractAdjoint{Tg} end
 
 """
     AbstractAdjoint1D{Tg<:AbstractFloat} <: AbstractAdjoint{Tg}
@@ -209,7 +209,7 @@ Subtypes automatically inherit 6 callable overloads (Vector/Real/Tuple × alloc/
 - `LinearAdjoint{Tg, EP}`: Adjoint of linear interpolation (1D, pure scatter)
 - `CubicAdjoint{Tg, C, BC}`: Adjoint of cubic spline interpolation (1D)
 """
-abstract type AbstractAdjoint1D{Tg <: AbstractFloat} <: AbstractAdjoint{Tg} end
+abstract type AbstractAdjoint1D{Tg} <: AbstractAdjoint{Tg} end
 
 """
     AbstractAdjointND{Tg<:AbstractFloat, N} <: AbstractAdjoint{Tg}

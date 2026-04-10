@@ -51,7 +51,7 @@ itp = linear_interp(x, f)
 @assert dot(itp.(xq), y_bar) ≈ dot(f, adj(y_bar))
 ```
 """
-struct LinearAdjoint{Tg <: AbstractFloat, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+struct LinearAdjoint{Tg, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_LinearAnchoredQuery{Tg, Tg}}
     grid_size::Int
     extrap::EP
@@ -237,7 +237,12 @@ function linear_adjoint(
     )
     Tg = _promote_grid_float(eltype(x), eltype(x_query))
     x_p = _to_float(x, Tg)
-    xq_p = _to_float(x_query, Tg)
+    # Query normalization: convert to the grid's float base type, not to Tg itself.
+    # When Tg is a duck type (e.g. Dual), queries stay plain Float — they don't
+    # carry grid-parameter derivatives. The anchor outer constructor handles
+    # widening xq to match alpha's arithmetic type.
+    Tq_float = Tg <: AbstractFloat ? Tg : float(eltype(x_query))
+    xq_p = _to_float(x_query, Tq_float)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 

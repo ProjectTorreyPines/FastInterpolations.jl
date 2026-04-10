@@ -41,9 +41,9 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_primal = _extract_primal(xq)
-    if xq_primal < first(x)
+    if xq_primal < _extract_primal(first(x))
         return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > last(x)
+    elseif xq_primal > _extract_primal(last(x))
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
     idx, xL, xR = search_interval(searcher, x, xq)
@@ -106,9 +106,9 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_primal = _extract_primal(xq)
-    if xq_primal < first(x)
+    if xq_primal < _extract_primal(first(x))
         return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > last(x)
+    elseif xq_primal > _extract_primal(last(x))
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
     idx, xL, _ = search_interval(searcher, x, spacing, xq)
@@ -271,9 +271,9 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_primal = _extract_primal(xq)
-    if xq_primal < first(x)
+    if xq_primal < _extract_primal(first(x))
         return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > last(x)
+    elseif xq_primal > _extract_primal(last(x))
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
     idx, xL, xR = search_interval(searcher, x, xq)
@@ -340,9 +340,9 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_primal = _extract_primal(xq)
-    if xq_primal < first(x)
+    if xq_primal < _extract_primal(first(x))
         return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > last(x)
+    elseif xq_primal > _extract_primal(last(x))
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
     idx, xL, _ = search_interval(searcher, x, spacing, xq)

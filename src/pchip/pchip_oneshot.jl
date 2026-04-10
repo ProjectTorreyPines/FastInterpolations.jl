@@ -42,7 +42,7 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
-    x_query = _to_float(x_query, Tg)
+
     Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
     _pchip_slopes!(dy, x, y)
@@ -64,7 +64,7 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
-    x_query = _to_float(x_query, Tg)
+
     Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
     _pchip_slopes!(dy, x, y)
@@ -107,7 +107,7 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
-    x_query = _to_float(x_query, Tg)
+
     searcher = _resolve_search(x, x_query, search, hint)
     return _hermite_vector_loop!(output, x, y, PchipSlopes(), x_query, extrap, deriv, searcher)
 end
@@ -175,7 +175,7 @@ end
 """
     pchip_interp(x, y, x_query; coeffs=PreCompute(), ...)
 
-PCHIP interpolation at multiple query points. Returns `Vector{Tv}`.
+PCHIP interpolation at multiple query points. Returns `Vector`.
 """
 function pchip_interp(
         x::AbstractVector{Tg},

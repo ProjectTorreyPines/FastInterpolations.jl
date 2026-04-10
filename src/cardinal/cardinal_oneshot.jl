@@ -44,7 +44,7 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
-    x_query = _to_float(x_query, Tg)
+
     Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
     _cardinal_slopes!(dy, x, y, tension)
@@ -67,7 +67,7 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
-    x_query = _to_float(x_query, Tg)
+
     Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
     _cardinal_slopes!(dy, x, y, tension)
@@ -113,7 +113,7 @@ end
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
-    x_query = _to_float(x_query, Tg)
+
     searcher = _resolve_search(x, x_query, search, hint)
     return _hermite_vector_loop!(output, x, y, CardinalSlopes(tension), x_query, extrap, deriv, searcher)
 end
@@ -183,7 +183,7 @@ end
 """
     cardinal_interp(x, y, x_query; coeffs=AutoCoeffs(), tension=0.0, ...)
 
-Cardinal spline interpolation at multiple query points. Returns `Vector{Tv}`.
+Cardinal spline interpolation at multiple query points. Returns `Vector`.
 """
 function cardinal_interp(
         x::AbstractVector{Tg},

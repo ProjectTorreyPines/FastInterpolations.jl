@@ -42,7 +42,7 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
-    x_query = _to_float(x_query, Tg)
+
     Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
     _akima_slopes!(dy, x, y)
@@ -64,7 +64,7 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
-    x_query = _to_float(x_query, Tg)
+
     Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
     _akima_slopes!(dy, x, y)
@@ -108,7 +108,7 @@ end
     length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
-    x_query = _to_float(x_query, Tg)
+
     searcher = _resolve_search(x, x_query, search, hint)
     return _hermite_vector_loop!(output, x, y, AkimaSlopes(), x_query, extrap, deriv, searcher)
 end
@@ -175,7 +175,7 @@ end
 """
     akima_interp(x, y, x_query; coeffs=PreCompute(), ...)
 
-Akima interpolation at multiple query points. Returns `Vector{Tv}`.
+Akima interpolation at multiple query points. Returns `Vector`.
 """
 function akima_interp(
         x::AbstractVector{Tg},

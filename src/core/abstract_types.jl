@@ -153,7 +153,7 @@ itp((0.5, 0.5); deriv=(1, 0))      # ∂f/∂x
 gradient(itp, (0.5, 0.5))          # (∂f/∂x, ∂f/∂y)
 ```
 """
-abstract type AbstractInterpolantND{Tg <: AbstractFloat, Tv, N} <: AbstractInterpolant{Tg, Tv} end
+abstract type AbstractInterpolantND{Tg, Tv, N} <: AbstractInterpolant{Tg, Tv} end
 
 Base.size(itp::AbstractInterpolantND) = map(length, itp.grids)
 
@@ -228,7 +228,7 @@ Subtypes automatically inherit shared callable dispatch from `nd_adjoint_protoco
 - `CubicAdjointND{Tg, N, ...}`: Adjoint of cubic spline interpolation (ND)
 - `LinearAdjointND{Tg, N, ...}`: Adjoint of linear interpolation (ND)
 """
-abstract type AbstractAdjointND{Tg <: AbstractFloat, N} <: AbstractAdjoint{Tg} end
+abstract type AbstractAdjointND{Tg, N} <: AbstractAdjoint{Tg} end
 
 # ========================================
 # Type Helper Functions

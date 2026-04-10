@@ -68,7 +68,7 @@ itp((0.5, 1.0); deriv=Val((1,0)))   # ∂f/∂x at (0.5, 1.0)
 ```
 """
 struct LinearInterpolantND{
-        Tg <: AbstractFloat,
+        Tg,
         Tv,
         N,
         G <: Tuple{Vararg{AbstractVector, N}},

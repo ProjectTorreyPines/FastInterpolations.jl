@@ -672,6 +672,76 @@ const FI = FastInterpolations
         @test measure_oneshot_inplace_alloc() == 0
     end
 
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║                    Linear ND — Dual grid                               ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "Linear ND 2D: homogeneous Dual grids" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        xv = collect(1.0:0.5:5.0)
+        yv = collect(2.0:0.5:6.0)
+        data = [sin(xi) * cos(yi) for xi in xv, yi in yv]
+
+        itp = linear_interp((d .* xv, d .* yv), data; extrap = ExtendExtrap())
+        itp_f = linear_interp((xv, yv), data)
+
+        # Primal matches Float path
+        q = (2.55, 3.55)
+        v = itp(q)
+        @test v isa ForwardDiff.Dual
+        @test ForwardDiff.value(v) ≈ itp_f(q)
+
+        # FD cross-check: ∂/∂t of linear_interp((t*x, t*y), data, q) at t=1
+        h = 1e-7
+        fd = (linear_interp((xv .* (1+h), yv .* (1+h)), data, q) -
+              linear_interp((xv .* (1-h), yv .* (1-h)), data, q)) / (2h)
+        @test isapprox(ForwardDiff.partials(v)[1], fd; atol = 1e-5)
+    end
+
+    @testset "Linear ND 2D: heterogeneous axis (Dual × Float)" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        xv = collect(1.0:0.5:5.0)
+        yv = collect(2.0:0.5:6.0)
+        data = [sin(xi) * cos(yi) for xi in xv, yi in yv]
+
+        # Only axis-1 is sensitive to the parameter
+        itp_x = linear_interp((d .* xv, yv), data; extrap = ExtendExtrap())
+        # Only axis-2 is sensitive
+        itp_y = linear_interp((xv, d .* yv), data; extrap = ExtendExtrap())
+
+        q = (2.55, 3.55)
+        v_x = itp_x(q)
+        v_y = itp_y(q)
+
+        # Both return Dual (promotion), same primal
+        @test ForwardDiff.value(v_x) ≈ ForwardDiff.value(v_y)
+        # Different partials — each axis contributes differently
+        @test ForwardDiff.partials(v_x)[1] != ForwardDiff.partials(v_y)[1]
+
+        # FD per-axis cross-check
+        h = 1e-7
+        fd_x = (linear_interp((xv .* (1+h), yv), data, q) -
+                linear_interp((xv .* (1-h), yv), data, q)) / (2h)
+        fd_y = (linear_interp((xv, yv .* (1+h)), data, q) -
+                linear_interp((xv, yv .* (1-h)), data, q)) / (2h)
+        @test isapprox(ForwardDiff.partials(v_x)[1], fd_x; atol = 1e-5)
+        @test isapprox(ForwardDiff.partials(v_y)[1], fd_y; atol = 1e-5)
+    end
+
+    @testset "Linear ND 2D: Range{Dual} + Vector{Float} mix" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        xv = collect(1.0:0.5:5.0)
+        yv = collect(2.0:0.5:6.0)
+        data = [sin(xi) * cos(yi) for xi in xv, yi in yv]
+
+        itp = linear_interp((d .* (1.0:0.5:5.0), yv), data; extrap = ExtendExtrap())
+        @test itp.grids[1] isa FI._CachedRange{<:ForwardDiff.Dual}
+
+        # Primal matches all-Float
+        itp_f = linear_interp((xv, yv), data)
+        @test ForwardDiff.value(itp((2.55, 3.55))) ≈ itp_f((2.55, 3.55))
+    end
+
     @testset "Regression: Float grid path through the same API" begin
         # After removing the Real wrapper, Float scalar path still flows cleanly
         # through the unified core method and preserves zero-alloc behavior.

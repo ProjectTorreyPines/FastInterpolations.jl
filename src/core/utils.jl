@@ -102,8 +102,11 @@ Determine the output value type from y element type and grid type.
 """
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T <: _PromotableValue, Tg <: AbstractFloat} = Tg
 @inline _value_type(::Type{Complex{T}}, ::Type{Tg}) where {T <: Real, Tg <: AbstractFloat} = Complex{Tg}
-# Duck-typing fallback: custom types preserved as-is (no promotion to grid type)
+# Duck-typing fallback for Tv: custom value types preserved as-is
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg <: AbstractFloat} = T
+# Duck-typing fallback for Tg: when grid is duck-typed (Dual, Measurement, etc.),
+# values are not promoted to grid type (no grid-parameter partials in y).
+@inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg} = T
 
 """
     _series_output_type(::Type{Tv}, ::Type{Tq}) -> Type

@@ -78,7 +78,7 @@ end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                         PUBLIC API - HOT PATH                             ║
-# ║                 Tg<:AbstractFloat grid, Tv value type                     ║
+# ║                 TYPED CORE — all grid types                                ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
@@ -249,7 +249,7 @@ function quadratic_interp(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     x_p, y_p = _promote_itp_inputs(x, y)
     Tr = _output_eltype(eltype(y_p), eltype(x_p), Tq)
     output = Vector{Tr}(undef, length(x_targets))

@@ -19,7 +19,7 @@ Internal API: no runtime grid validation; callers must ensure the anchor
 matches the interpolant grid.
 
 # Type Parameters
-- `T`: Float type (Float32 or Float64)
+- `T`: Grid type (unconstrained)
 
 # Fields
 - `idx`: Interval index where xq falls

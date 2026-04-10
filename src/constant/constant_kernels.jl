@@ -11,7 +11,7 @@
 # - side = NearestSide() | LeftSide() | RightSide()
 #
 # Type parameters:
-# - Tg<:AbstractFloat: Grid type (geometry)
+# - Tg: Grid type (geometry, unconstrained)
 # - Tv: Value type (unconstrained)
 #
 # AD Support:

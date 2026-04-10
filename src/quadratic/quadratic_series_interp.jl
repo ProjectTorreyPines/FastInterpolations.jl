@@ -20,7 +20,7 @@ Multi-series quadratic spline interpolant with unified matrix storage and SIMD o
 Shares a single x-grid across N y-series for efficient batch evaluation.
 
 # Type Parameters
-- `Tg`: Grid type (Float32 or Float64)
+- `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)
 - `E`: Extrapolation mode type (compile-time specialized)
 - `P`: Search policy type

@@ -19,7 +19,7 @@ Internal API: no runtime grid validation; callers must ensure the anchor
 matches the interpolant grid.
 
 # Type Parameters
-- `Tg`: Grid float type (Float32 or Float64)
+- `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `Tq`: Query type (Float or ForwardDiff.Dual for AD support)
 
 # Fields

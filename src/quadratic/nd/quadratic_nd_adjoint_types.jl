@@ -44,7 +44,7 @@ Adjoint (transpose) operator for N-dimensional quadratic spline interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward ND interpolation weight matrix.
 
 # Type Parameters
-- `Tg`: Grid float type (Float32 or Float64)
+- `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `N`: Number of dimensions
 - `G`: Grid tuple type (after copy for mutation safety)
 - `S`: Spacing tuple type

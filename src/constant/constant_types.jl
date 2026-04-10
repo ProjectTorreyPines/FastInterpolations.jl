@@ -12,7 +12,7 @@ Lightweight callable interpolant for constant (step) interpolation.
 Returned by `constant_interp(x, y)` (2-argument form).
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type (Float32, Float64) for x-coordinates
+- `Tg`: Grid type (unconstrained) for x-coordinates
 - `Tv`: Value type (unconstrained)
 - `X<:AbstractVector{Tg}`: Type of x-coordinates
 - `Y<:AbstractVector{Tv}`: Type of y-values

@@ -25,7 +25,7 @@ Stores function values AND all partial derivatives at grid nodes, enabling
 ultra-fast O(1) evaluation via tensor-product quadratic polynomials.
 
 # Type Parameters
-- `Tg`: Grid/coordinate type (Float32 or Float64)
+- `Tg`: Grid/coordinate type (unconstrained)
 - `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
 - `NP1`: N + 1 (partials array dimensionality)

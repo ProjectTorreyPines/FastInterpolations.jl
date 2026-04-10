@@ -25,7 +25,7 @@ Constructed from grids and query points (query-baked, data-free).
 The same adjoint can be applied to any `ȳ` vector.
 
 # Type Parameters
-- `Tg`:  Grid float type (Float32 or Float64)
+- `Tg`: Grid type (unconstrained — supports duck types)
 - `N`:   Number of dimensions
 - `G`:   Grid tuple type
 - `S`:   Spacing tuple type

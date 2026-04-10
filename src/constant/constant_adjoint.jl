@@ -28,7 +28,7 @@ Constructed from grid and query points (query-baked, data-free).
 The same adjoint can be applied to any `ȳ` vector.
 
 # Type Parameters
-- `Tg`: Grid float type (Float32 or Float64)
+- `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `SD`: Side selection mode (`NearestSide`, `LeftSide`, `RightSide`)
 - `EP`: Extrapolation policy type (`NoExtrap`, `ExtendExtrap`, `ClampExtrap`, `FillExtrap`, `WrapExtrap`)
 

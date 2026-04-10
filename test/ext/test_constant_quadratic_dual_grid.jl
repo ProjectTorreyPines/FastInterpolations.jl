@@ -144,6 +144,37 @@ const FI = FastInterpolations
     # (coefficient precomputation per-axis) — deferred to follow-up PR with Cubic ND.
 
     # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║           Extrapolation modes + edge cases with Dual grids             ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "Extrap modes: NoExtrap, ClampExtrap with Dual grid" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* x_base
+        # NoExtrap — endpoint queries should be in-domain (primal-based check)
+        v = quadratic_interp(x_dual, y_base, first(x_base); extrap=NoExtrap())
+        @test ForwardDiff.value(v) ≈ quadratic_interp(x_base, y_base, first(x_base))
+        # ClampExtrap — OOB query clamped to boundary
+        v_clamp = quadratic_interp(x_dual, y_base, -1.0; extrap=ClampExtrap())
+        @test isfinite(ForwardDiff.value(v_clamp))
+    end
+
+    @testset "Quadratic 2-point grid with Dual" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x2 = d .* [1.0, 3.0]
+        y2 = [2.0, 6.0]
+        v = quadratic_interp(x2, y2, 2.0; bc=Left(Deriv1(0.0)), extrap=ExtendExtrap())
+        @test v isa ForwardDiff.Dual
+    end
+
+    @testset "Quadratic derivative with Dual grid" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        v1 = quadratic_interp(d .* x_base, y_base, xq_scalar; deriv=DerivOp(1), extrap=ExtendExtrap())
+        @test v1 isa ForwardDiff.Dual
+        v2 = quadratic_interp(d .* x_base, y_base, xq_scalar; deriv=DerivOp(2), extrap=ExtendExtrap())
+        @test v2 isa ForwardDiff.Dual
+    end
+
+    # ╔═══════════════════════════════════════════════════════════════════════╗
     # ║           Regression: Float path                                       ║
     # ╚═══════════════════════════════════════════════════════════════════════╝
 

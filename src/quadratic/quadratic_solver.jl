@@ -41,7 +41,7 @@ Compute secant slopes: s[i] = (y[i+1] - y[i]) * inv_h[i]
 
 # Type Parameters
 - `Tv`: Value type (unconstrained)
-- `Tg<:AbstractFloat`: Grid type
+- `Tg`: Grid type
 """
 @inline function _compute_quadratic_secants!(s::AbstractVector, y::AbstractVector, spacing::AbstractGridSpacing)
     n = length(y) - 1
@@ -118,7 +118,7 @@ derivatives from data. For other BC types, they are ignored.
 
 # Type Parameters
 - `Tv`: Value type for d, s (unconstrained)
-- `Tg<:AbstractFloat`: Grid type for spacing, x
+- `Tg`: Grid type for spacing, x
 """
 # Left(Deriv1): d[1] given directly, forward recurrence
 # convert() is a no-op when types match (optimized away at compile time)
@@ -290,7 +290,7 @@ Compute quadratic coefficients: a[i] = (s[i] - d[i]) * inv_h[i]
 
 # Type Parameters
 - `Tv`: Value type (unconstrained)
-- `Tg<:AbstractFloat`: Grid type
+- `Tg`: Grid type
 """
 @inline function _compute_quadratic_coefficients!(a::AbstractVector, d::AbstractVector, s::AbstractVector, spacing::AbstractGridSpacing{Tg}) where {Tg}
     @inbounds for i in eachindex(a)
@@ -318,7 +318,7 @@ Uses AdaptiveArrayPools internally for temporary `secant` array.
 - `bc::QuadraticBC`: Boundary condition (Left, Right, or MinCurvFit)
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type
+- `Tg`: Grid type
 - `Tv`: Value type (unconstrained)
 """
 @with_pool pool function _compute_quadratic_coeffs!(
@@ -357,7 +357,7 @@ Compute quadratic spline coefficients (allocating version).
 Returns only the arrays needed for evaluation: `d`, `a`.
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type for x
+- `Tg`: Grid type for x
 - `Tv`: Value type for y, d, a (unconstrained)
 
 # Returns

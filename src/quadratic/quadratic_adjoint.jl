@@ -153,7 +153,7 @@ Computes `f̄ = Wᵀȳ` where `W` is the forward interpolation weight matrix.
 Constructed from a grid and query points (query-baked, data-free).
 
 # Type Parameters
-- `Tg`: Grid float type (Float32 or Float64)
+- `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `S`: Grid spacing type (for fast inv_h access)
 - `X`: Grid vector type (after copy for mutation safety)
 - `BC`: Boundary condition type (Left, Right, or MinCurvFit)

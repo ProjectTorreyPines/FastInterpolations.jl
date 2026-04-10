@@ -234,6 +234,52 @@ const FI = FastInterpolations
     end
 
     # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║           Akima adjoint coverage: small grids + NoExtrap               ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "akima_adjoint — n=2 grid (Dual)" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x2 = d .* [1.0, 2.0]
+        y2 = [3.0, 5.0]
+        adj = akima_adjoint(x2, y2, [1.5]; extrap = ExtendExtrap())
+        f_bar = adj(randn(1))
+        @test length(f_bar) == 2
+        @test eltype(f_bar) <: ForwardDiff.Dual
+    end
+
+    @testset "akima_adjoint — n=3 grid (Dual)" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x3 = d .* [1.0, 2.0, 3.0]
+        y3 = [1.0, 4.0, 2.0]
+        adj = akima_adjoint(x3, y3, [1.5, 2.5]; extrap = ExtendExtrap())
+        f_bar = adj(randn(2))
+        @test length(f_bar) == 3
+        @test eltype(f_bar) <: ForwardDiff.Dual
+    end
+
+    @testset "akima_adjoint — wsum=0 branch (constant data, Dual grid)" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        # Constant y → all secants equal → wsum=0 in Akima weighted average
+        x_flat = d .* collect(1.0:1.0:6.0)
+        y_flat = fill(5.0, 6)
+        adj = akima_adjoint(x_flat, y_flat, [2.5, 3.5, 4.5]; extrap = ExtendExtrap())
+        f_bar = adj(randn(3))
+        @test length(f_bar) == 6
+        @test eltype(f_bar) <: ForwardDiff.Dual
+    end
+
+    @testset "akima_adjoint — NoExtrap domain check (Dual grid)" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* collect(1.0:1.0:5.0)
+        y_data = [1.0, 2.0, 1.5, 3.0, 2.0]
+        # In-domain queries — should not throw
+        adj = akima_adjoint(x_dual, y_data, [1.0, 3.0, 5.0]; extrap = NoExtrap())
+        @test adj isa FI.AkimaAdjoint1D
+        # Out-of-domain query — should throw
+        @test_throws DomainError akima_adjoint(x_dual, y_data, [0.5]; extrap = NoExtrap())
+    end
+
+    # ╔═══════════════════════════════════════════════════════════════════════╗
     # ║           Regression: Float path through same API                      ║
     # ╚═══════════════════════════════════════════════════════════════════════╝
 

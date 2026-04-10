@@ -523,6 +523,155 @@ const FI = FastInterpolations
         @test_nowarn @inferred linear_interp(x_dual, y, 2.55)
     end
 
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║                  Linear Series — Dual grid                             ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "Linear Series with Vector{Dual} grid" begin
+        x_vec = collect(1.0:0.1:5.0)
+        y1, y2 = sin.(x_vec), cos.(x_vec)
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* x_vec
+
+        sitp = linear_interp(x_dual, FastInterpolations.Series(y1, y2); extrap = ExtendExtrap())
+        @test eltype(sitp.x) <: ForwardDiff.Dual
+
+        v = sitp(2.55)
+        @test eltype(v) <: ForwardDiff.Dual
+        # Primal matches Float-grid series
+        sitp_f = linear_interp(x_vec, FastInterpolations.Series(y1, y2))
+        v_f = sitp_f(2.55)
+        @test all(ForwardDiff.value.(v) .≈ v_f)
+    end
+
+    @testset "Linear Series with Range{Dual} grid" begin
+        x_range = 1.0:0.1:5.0
+        y1, y2 = sin.(collect(x_range)), cos.(collect(x_range))
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* x_range
+
+        sitp = linear_interp(x_dual, FastInterpolations.Series(y1, y2); extrap = ExtendExtrap())
+        @test sitp.x isa FI._CachedRange{<:ForwardDiff.Dual}
+
+        v = sitp(2.55)
+        @test eltype(v) <: ForwardDiff.Dual
+    end
+
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║                  Linear Adjoint — Dual grid                            ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "Linear Adjoint with Vector{Dual} grid" begin
+        x_vec = collect(1.0:0.1:5.0)
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* x_vec
+        xq = [1.55, 2.55, 3.55, 4.55]
+        f = sin.(x_vec)
+        y_bar = randn(length(xq))
+
+        adj = linear_adjoint(x_dual, xq; extrap = ExtendExtrap())
+        @test adj isa FI.LinearAdjoint{<:ForwardDiff.Dual}
+
+        f_bar = adj(y_bar)
+        @test eltype(f_bar) <: ForwardDiff.Dual
+
+        # Dot-product identity: ⟨Wf, ȳ⟩ = ⟨f, Wᵀȳ⟩ (on primal)
+        using LinearAlgebra
+        itp = linear_interp(x_dual, f; extrap = ExtendExtrap())
+        lhs = dot(ForwardDiff.value.(itp.(xq)), y_bar)
+        rhs = dot(f, ForwardDiff.value.(f_bar))
+        @test isapprox(lhs, rhs; atol = 1e-10)
+    end
+
+    @testset "Linear Adjoint with Range{Dual} grid" begin
+        x_range = 1.0:0.1:5.0
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* x_range
+        xq = [1.55, 2.55, 3.55, 4.55]
+        y_bar = randn(length(xq))
+
+        adj = linear_adjoint(collect(x_dual), xq; extrap = ExtendExtrap())
+        @test adj isa FI.LinearAdjoint{<:ForwardDiff.Dual}
+
+        f_bar = adj(y_bar)
+        @test eltype(f_bar) <: ForwardDiff.Dual
+    end
+
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║          All paths: Vector{Dual} + Range{Dual} coverage                ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "All paths: Vector{Dual}" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* collect(1.0:0.1:5.0)
+        y = sin.(1.0:0.1:5.0)
+        xq_vec = [1.55, 2.55, 3.55, 4.55]
+
+        itp = linear_interp(x_dual, y; extrap = ExtendExtrap())
+        # Scalar callable
+        @test itp(2.55) isa ForwardDiff.Dual
+        # Vector callable
+        v = itp(xq_vec)
+        @test eltype(v) <: ForwardDiff.Dual
+        # In-place callable
+        out = Vector{eltype(v)}(undef, length(xq_vec))
+        itp(out, xq_vec)
+        @test all(out .== v)
+        # Scalar one-shot
+        @test linear_interp(x_dual, y, 2.55; extrap = ExtendExtrap()) == itp(2.55)
+        # Vector one-shot
+        @test all(linear_interp(x_dual, y, xq_vec; extrap = ExtendExtrap()) .== v)
+        # In-place one-shot
+        out2 = Vector{eltype(v)}(undef, length(xq_vec))
+        linear_interp!(out2, x_dual, y, xq_vec; extrap = ExtendExtrap())
+        @test all(out2 .== v)
+    end
+
+    @testset "All paths: Range{Dual}" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* (1.0:0.1:5.0)
+        y = sin.(collect(1.0:0.1:5.0))
+        xq_vec = [1.55, 2.55, 3.55, 4.55]
+
+        itp = linear_interp(x_dual, y; extrap = ExtendExtrap())
+        @test itp.x isa FI._CachedRange{<:ForwardDiff.Dual}
+        # Scalar callable
+        @test itp(2.55) isa ForwardDiff.Dual
+        # Vector callable
+        v = itp(xq_vec)
+        @test eltype(v) <: ForwardDiff.Dual
+        # In-place callable
+        out = Vector{eltype(v)}(undef, length(xq_vec))
+        itp(out, xq_vec)
+        @test all(out .== v)
+        # Scalar one-shot
+        @test linear_interp(x_dual, y, 2.55; extrap = ExtendExtrap()) == itp(2.55)
+        # Vector one-shot
+        @test all(linear_interp(x_dual, y, xq_vec; extrap = ExtendExtrap()) .== v)
+    end
+
+    @testset "Float in-place zero-alloc preserved" begin
+        # Critical regression: Float paths must stay zero-alloc after all relaxations.
+        x = collect(1.0:0.1:10.0)
+        y = sin.(x)
+        xq_vec = collect(1.5:0.1:9.5)
+
+        function measure_inplace_alloc()
+            itp_l = linear_interp(x, y)
+            out_l = Vector{Float64}(undef, length(xq_vec))
+            itp_l(out_l, xq_vec)  # warmup
+            return @allocations itp_l(out_l, xq_vec)
+        end
+        @test measure_inplace_alloc() == 0
+
+        function measure_oneshot_inplace_alloc()
+            out_l = Vector{Float64}(undef, length(xq_vec))
+            linear_interp!(out_l, x, y, xq_vec)  # warmup
+            return @allocations linear_interp!(out_l, x, y, xq_vec)
+        end
+        @test measure_oneshot_inplace_alloc() == 0
+    end
+
     @testset "Regression: Float grid path through the same API" begin
         # After removing the Real wrapper, Float scalar path still flows cleanly
         # through the unified core method and preserves zero-alloc behavior.

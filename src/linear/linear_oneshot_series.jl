@@ -147,7 +147,7 @@ function linear_interp(
     ) where {Tg, Tq <: Real}
     K = n_series(s)
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
-    Tv_out = _series_output_type(_value_type(_series_eltype(s), Tg_p), Tq)
+    Tv_out = _series_output_type(promote_type(_series_eltype(s), Tg_p), Tq)
     outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
     linear_interp!(outputs, x, s, xqs; extrap, deriv, search)
     return outputs

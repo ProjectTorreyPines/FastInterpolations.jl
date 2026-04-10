@@ -742,6 +742,65 @@ const FI = FastInterpolations
         @test ForwardDiff.value(itp((2.55, 3.55))) ≈ itp_f((2.55, 3.55))
     end
 
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║          Codex-identified issues: RED phase tests                       ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "P1-1: ND one-shot with Dual grid (spacing_pooled path)" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        xv = collect(1.0:0.5:5.0)
+        yv = collect(2.0:0.5:6.0)
+        data = [sin(xi) * cos(yi) for xi in xv, yi in yv]
+
+        # Scalar one-shot (goes through _create_spacings_pooled)
+        v = linear_interp((d .* xv, d .* yv), data, (2.55, 3.55))
+        @test v isa ForwardDiff.Dual
+
+        # Batch one-shot
+        queries = [(2.55, 3.55), (1.55, 4.55)]
+        vb = linear_interp((d .* xv, d .* yv), data, queries)
+        @test eltype(vb) <: ForwardDiff.Dual
+    end
+
+    @testset "P1-2: hinted eval on Range{Dual} grid" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* collect(1.0:0.1:5.0)
+        y = sin.(1.0:0.1:5.0)
+
+        itp = linear_interp(x_dual, y; extrap = ExtendExtrap())
+        hint = Ref(1)
+        xq_vec = [1.55, 2.55, 3.55, 4.55]
+        v = itp(xq_vec; hint = hint)
+        @test eltype(v) <: ForwardDiff.Dual
+
+        # Range{Dual} with hint
+        xr = d .* (1.0:0.1:5.0)
+        itp_r = linear_interp(xr, y; extrap = ExtendExtrap())
+        v_r = itp_r(xq_vec; hint = Ref(1))
+        @test eltype(v_r) <: ForwardDiff.Dual
+    end
+
+    @testset "P2-3: Series vector eval with Dual grid" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* collect(1.0:0.1:5.0)
+        y1, y2 = sin.(1.0:0.1:5.0), cos.(1.0:0.1:5.0)
+        sitp = linear_interp(x_dual, FastInterpolations.Series(y1, y2); extrap = ExtendExtrap())
+
+        # Vector eval (batch queries) — returns Vector{Vector{Dual}}
+        results = sitp([1.55, 2.55, 3.55])
+        @test eltype(first(results)) <: ForwardDiff.Dual
+    end
+
+    @testset "P2-4: Oneshot series vector with Dual grid" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual = d .* collect(1.0:0.1:5.0)
+        y1, y2 = sin.(1.0:0.1:5.0), cos.(1.0:0.1:5.0)
+
+        # Vector one-shot
+        results = linear_interp(x_dual, FastInterpolations.Series(y1, y2), [1.55, 2.55]; extrap = ExtendExtrap())
+        @test eltype(first(results)) <: ForwardDiff.Dual
+    end
+
     @testset "Regression: Float grid path through the same API" begin
         # After removing the Real wrapper, Float scalar path still flows cleanly
         # through the unified core method and preserves zero-alloc behavior.

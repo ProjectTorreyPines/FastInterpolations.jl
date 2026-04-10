@@ -873,7 +873,7 @@ Pool-aware spacing for Vector grids. Acquires `h` and `inv_h` arrays
 from the pool instead of heap-allocating. The pool buffers are released
 automatically when the enclosing `@with_pool` scope exits.
 """
-@inline function _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractVector{T}) where {T <: AbstractFloat}
+@inline function _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractVector{T}) where {T}
     n = length(x)
     h = acquire!(pool, T, n - 1)
     inv_h = acquire!(pool, T, n - 1)

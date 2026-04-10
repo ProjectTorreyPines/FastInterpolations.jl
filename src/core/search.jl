@@ -778,7 +778,7 @@ but updated for correct state tracking in heterogeneous ND grids.
 """
 @inline function _search_direct!(
         x::AbstractRange{T}, xq::Real, hint_ref::Base.RefValue{Int}
-    ) where {T <: AbstractFloat}
+    ) where {T}
     idx, xL, xR = _search_direct(x, xq)
     hint_ref[] = idx
     return idx, xL, xR
@@ -791,7 +791,7 @@ Spacing-aware mutating variant for ND paths: O(1) arithmetic + hint update.
 """
 @inline function _search_direct!(
         x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::Real, hint_ref::Base.RefValue{Int}
-    ) where {T <: AbstractFloat}
+    ) where {T}
     idx, xL, xR = _search_direct(x, spacing, xq)
     hint_ref[] = idx
     return idx, xL, xR

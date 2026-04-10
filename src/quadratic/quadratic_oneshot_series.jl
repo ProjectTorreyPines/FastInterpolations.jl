@@ -141,4 +141,3 @@ function quadratic_interp(
     quadratic_interp!(outputs, x, s, xqs; bc, extrap, deriv, search)
     return outputs
 end
-

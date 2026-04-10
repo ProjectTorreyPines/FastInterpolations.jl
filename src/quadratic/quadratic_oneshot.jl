@@ -256,5 +256,3 @@ function quadratic_interp(
     quadratic_interp!(output, x_p, y_p, x_targets; bc, extrap, deriv, search)
     return output
 end
-
-

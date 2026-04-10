@@ -187,49 +187,28 @@ const FI = FastInterpolations
         end
     end
 
-    @testset "Domain boundary: partial sign determines NoExtrap behavior" begin
+    @testset "Domain boundary: primal-based NoExtrap check (partial-independent)" begin
+        # Domain check uses _extract_primal — partial sign does NOT affect boundary.
+        # Endpoints with matching primal are always in-domain regardless of partials.
         x = [1.0, 2.0, 3.0]
         y = [10.0, 20.0, 15.0]
 
-        @testset "Left boundary (first grid point)" begin
-            # positive partial: Dual(1, +1) > 1.0 → query 1.0 is OOB_LEFT → throw
-            x_pos = [ForwardDiff.Dual{:tag}(xi, +1.0) for xi in x]
-            itp_pos = linear_interp(x_pos, y)  # NoExtrap default
-            @test_throws DomainError itp_pos(1.0)
-
-            # negative partial: Dual(1, -1) < 1.0 → query 1.0 is IN_DOMAIN → works
-            x_neg = [ForwardDiff.Dual{:tag}(xi, -1.0) for xi in x]
-            itp_neg = linear_interp(x_neg, y)
-            r = itp_neg(1.0)
-            @test ForwardDiff.value(r) ≈ 10.0
-
-            # zero partial: Dual(1, 0) == 1.0 → same as Float, IN_DOMAIN → works
-            x_zero = [ForwardDiff.Dual{:tag}(xi, 0.0) for xi in x]
-            itp_zero = linear_interp(x_zero, y)
-            r = itp_zero(1.0)
-            @test ForwardDiff.value(r) ≈ 10.0
+        @testset "Left boundary — all partial signs work" begin
+            for sign in (+1.0, -1.0, 0.0)
+                x_dual = [ForwardDiff.Dual{:tag}(xi, sign) for xi in x]
+                itp = linear_interp(x_dual, y)
+                r = itp(1.0)
+                @test ForwardDiff.value(r) ≈ 10.0
+            end
         end
 
-        @testset "Right boundary (last grid point)" begin
-            # positive partial: Dual(3, +1) > 3.0, so 3.0 > Dual(3, +1) = false
-            # → NOT OOB_RIGHT → domain check passes → works.
-            # (The grid "expanded" rightward in the Dual sense, so query is inside.)
-            x_pos = [ForwardDiff.Dual{:tag}(xi, +1.0) for xi in x]
-            itp_pos = linear_interp(x_pos, y)
-            r = itp_pos(3.0)
-            @test ForwardDiff.value(r) ≈ 15.0
-
-            # negative partial: Dual(3, -1) < 3.0, so 3.0 > Dual(3, -1) = true
-            # → OOB_RIGHT → throw. (The grid "contracted" rightward, query fell outside.)
-            x_neg = [ForwardDiff.Dual{:tag}(xi, -1.0) for xi in x]
-            itp_neg = linear_interp(x_neg, y)
-            @test_throws DomainError itp_neg(3.0)
-
-            # zero partial: same as Float, IN_DOMAIN → works
-            x_zero = [ForwardDiff.Dual{:tag}(xi, 0.0) for xi in x]
-            itp_zero = linear_interp(x_zero, y)
-            r = itp_zero(3.0)
-            @test ForwardDiff.value(r) ≈ 15.0
+        @testset "Right boundary — all partial signs work" begin
+            for sign in (+1.0, -1.0, 0.0)
+                x_dual = [ForwardDiff.Dual{:tag}(xi, sign) for xi in x]
+                itp = linear_interp(x_dual, y)
+                r = itp(3.0)
+                @test ForwardDiff.value(r) ≈ 15.0
+            end
         end
     end
 

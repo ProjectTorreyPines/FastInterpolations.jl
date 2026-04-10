@@ -388,14 +388,15 @@ _promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
 
 "Scalar domain check for NoExtrap: throws DomainError if out of domain."
 @inline function _check_domain(x::AbstractVector, xi::Real, ::NoExtrap)
-    x_min, x_max = first(x), last(x)
+    x_min, x_max = _extract_primal(first(x)), _extract_primal(last(x))
     (xi < x_min || xi > x_max) && _throw_domain_error(xi, x_min, x_max)
     return nothing
 end
 
 # _CachedRange: use domain_lo/domain_hi (wider bracket on x86_64 fast path).
 @inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap)
-    (xi < x.domain_lo || xi > x.domain_hi) && _throw_domain_error(xi, x.lo, x.hi)
+    lo, hi = _extract_primal(x.domain_lo), _extract_primal(x.domain_hi)
+    (xi < lo || xi > hi) && _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi))
     return nothing
 end
 
@@ -419,7 +420,7 @@ end
 "Vector domain check for NoExtrap: validate batch, return InBounds()."
 @inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap)
     @boundscheck begin
-        x_min, x_max = first(x), last(x)
+        x_min, x_max = _extract_primal(first(x)), _extract_primal(last(x))
         xq_min, xq_max = minimum(xi), maximum(xi)
         (xq_min < x_min || xq_max > x_max) &&
             _throw_domain_error(xq_min < x_min ? xq_min : xq_max, x_min, x_max)
@@ -430,9 +431,10 @@ end
 # _CachedRange: use domain_lo/domain_hi for vector domain checks.
 @inline function _check_domain(x::_CachedRange, xi::AbstractVector{<:Real}, ::NoExtrap)
     @boundscheck begin
+        lo, hi = _extract_primal(x.domain_lo), _extract_primal(x.domain_hi)
         xq_min, xq_max = minimum(xi), maximum(xi)
-        (xq_min < x.domain_lo || xq_max > x.domain_hi) &&
-            _throw_domain_error(xq_min < x.domain_lo ? xq_min : xq_max, x.lo, x.hi)
+        (xq_min < lo || xq_max > hi) &&
+            _throw_domain_error(xq_min < lo ? xq_min : xq_max, _extract_primal(x.lo), _extract_primal(x.hi))
     end
     return InBounds()
 end

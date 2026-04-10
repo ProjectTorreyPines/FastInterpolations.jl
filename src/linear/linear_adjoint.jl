@@ -171,16 +171,16 @@ gets `state=IN_DOMAIN` (inside). This restores the correct OOB state flag based 
 original query position, so scatter can skip OOB contributions.
 """
 function _fixup_linear_anchor_state!(
-        anchors::Vector{_LinearAnchoredQuery{Tg, Tg}},
-        xq_original::AbstractVector{Tg},
-        x_lo::Tg, x_hi::Tg
-    ) where {Tg}
+        anchors::Vector{<:_LinearAnchoredQuery},
+        xq_original::AbstractVector,
+        x_lo, x_hi
+    )
     @inbounds for i in eachindex(anchors)
         xq_i = xq_original[i]
         (x_lo <= xq_i <= x_hi) && continue
         state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
         aq = anchors[i]
-        anchors[i] = _LinearAnchoredQuery{Tg, Tg}(
+        anchors[i] = typeof(aq)(
             aq.idx, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha
         )
     end
@@ -246,9 +246,9 @@ function linear_adjoint(
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
-    # NoExtrap: validate all queries in-domain
+    # NoExtrap: validate all queries in-domain (use primal for Dual grid boundaries)
     if extrap isa NoExtrap
-        x_lo, x_hi = first(x_p), last(x_p)
+        x_lo, x_hi = _extract_primal(first(x_p)), _extract_primal(last(x_p))
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
             (x_lo <= xq_i <= x_hi) || throw(
@@ -262,10 +262,10 @@ function linear_adjoint(
     if extrap isa _ClampOrFill
         # Clamp OOB queries to boundary for correct anchor weights (alpha ∈ [0,1]).
         # Then restore side flags so scatter can skip OOB contributions.
-        x_lo, x_hi = first(x_p), last(x_p)
-        xq_clamped = clamp.(xq_p, x_lo, x_hi)
+        x_lo_p, x_hi_p = _extract_primal(first(x_p)), _extract_primal(last(x_p))
+        xq_clamped = clamp.(xq_p, x_lo_p, x_hi_p)
         anchors = _anchor_query(x_p, xq_clamped, Val(:linear), false)
-        _fixup_linear_anchor_state!(anchors, xq_p, x_lo, x_hi)
+        _fixup_linear_anchor_state!(anchors, xq_p, x_lo_p, x_hi_p)
     else
         # ExtendExtrap: OOB uses boundary interval with extrapolated alpha (correct)
         # WrapExtrap: wraps to domain (correct)

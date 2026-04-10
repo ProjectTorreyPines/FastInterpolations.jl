@@ -231,7 +231,7 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
         extrap::AbstractExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL  # xq can be Dual here (preserves AD)
@@ -246,7 +246,7 @@ end
         extrap::_ClampOrFill,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_primal = _extract_primal(xq)
     if xq_primal < first(x)
         return _eval_extrapolation(op, first(y), extrap, xq)
@@ -267,17 +267,23 @@ end
         ::WrapExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
     idx, xL, xR = search_interval(searcher, x, xq_wrapped)
     dL = xq_wrapped - xL
     @inbounds return _linear_kernel(op, y[idx], y[idx + 1], _get_inv_h(x, xR, xL), dL)
 end
 
-# Public API - AbstractExtrap dispatch
-# Unified via Tv parameter (duck typing)
-# AD Support: Tq can be Tg or Dual{Tg} (both are <:Real)
-# Note: Tq<:Real constraint resolves method ambiguity with the generic Real wrapper
+# Public scalar one-shot API.
+# Single unified entry point for every grid eltype:
+#   - _PromotableGrid (Int, Float, Rational): `_promote_itp_inputs` normalizes
+#     the grid to a common Float precision (Range → _CachedRange, Int → Float64,
+#     etc.) AND promotes y to match when Tv is also a standard numeric type.
+#   - Duck grid (ForwardDiff.Dual, Measurement, …): `_promote_itp_inputs` falls
+#     through to a no-op pass, preserving Tg/Tv as-is so derivative partials
+#     carried by the grid propagate through spacing, search, and the kernel.
+# Compile-time `if TX <: _PromotableGrid` inside `_promote_itp_inputs` means the
+# dead branch is eliminated per call site, so the Float fast path pays nothing.
 @inline function linear_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -286,12 +292,12 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    x = _to_float(x, Tg)
-    searcher = _resolve_search(x, xq, search, hint)
-    return _linear_eval_at_point(x, y, xq, extrap, deriv, searcher)
+    x_typed, y_typed = _promote_itp_inputs(x, y)
+    searcher = _resolve_search(x_typed, xq, search, hint)
+    return _linear_eval_at_point(x_typed, y_typed, xq, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
@@ -353,19 +359,14 @@ function linear_interp!(
     return linear_interp!(output, x_typed, y_typed, xq_typed; kwargs...)
 end
 
-# ========================================
-# Scalar interpolation - Real/Mixed type wrapper
-# ========================================
-# Unified wrapper for non-AbstractFloat inputs (Int, mixed types, etc.)
-# POLICY: Tg is computed from x/y ONLY, not from xq
-
-@inline function linear_interp(
-        x::AbstractVector{Tg}, y::AbstractVector{Tv}, xq::Tq; kwargs...
-    ) where {Tg <: Real, Tv, Tq <: Real}
-    x_typed, y_typed = _promote_itp_inputs(x, y)
-    # Pass xq directly (not converted) to preserve ForwardDiff.Dual for AD
-    return linear_interp(x_typed, y_typed, xq; kwargs...)
-end
+# NOTE: the former scalar `linear_interp(x, y, xq) where {Tg<:Real, ...}` wrapper
+# (an Int→Float auto-promotion layer) has been removed. Its `_promote_itp_inputs`
+# call is now performed inline by the unified `linear_interp(x, y, xq::Tq)` core
+# above, which accepts any `Tg` and branches on `_PromotableGrid` inside
+# `_promote_itp_inputs`. Having both methods previously caused a dispatch
+# ambiguity on duck grids (e.g. `Vector{ForwardDiff.Dual}`) that wound up as
+# infinite recursion when the wrapper re-dispatched to itself after a no-op
+# promotion.
 
 # ========================================
 # Vector interpolation - Real/Mixed type wrapper (allocating)

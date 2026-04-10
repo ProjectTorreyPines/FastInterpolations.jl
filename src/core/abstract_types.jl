@@ -17,26 +17,29 @@
 # ========================================
 
 """
-    AbstractInterpolant{Tg<:AbstractFloat, Tv}
+    AbstractInterpolant{Tg, Tv}
 
 Abstract supertype for all interpolant objects.
 
 # Type Parameters
-- `Tg`: Grid/coordinate type (Float32 or Float64) - used for x-coordinates, spacing, search
+- `Tg`: Grid/coordinate type — normally `Float32`/`Float64`, but **unconstrained**
+        at this abstract level to allow duck-typed grid scalars (e.g. `ForwardDiff.Dual`)
+        that satisfy the grid arithmetic/ordering protocol (`-`, `inv`, `*`, `<`).
+        Non-linear concrete subtypes still enforce `Tg<:AbstractFloat` individually.
 - `Tv`: Value type (unconstrained) - used for y-values, coefficients, return values.
         Any type supporting the 5 core operations (+, -, Tg*Tv, Tv*Tg, Int*Tv).
 
 # Design Invariant
-- Grid operations (search, spacing) always use Tg
+- Grid operations (search, spacing) use Tg; duck grids use primal extraction for comparisons
 - Value operations (kernel, coefficients) use Tv
-- Evaluation returns type based on promote_type(Tv, query_type)
+- Evaluation returns type based on promote_type(Tv, Tg, query_type)
 
 # Subtypes
 - `AbstractInterpolant1D{Tg, Tv}`: 1D interpolants (shared callable protocol)
 - `AbstractSeriesInterpolant{Tg, Tv}`: Multi-series interpolants
 - `AbstractInterpolantND{Tg, Tv, N}`: N-dimensional interpolants
 """
-abstract type AbstractInterpolant{Tg <: AbstractFloat, Tv} end
+abstract type AbstractInterpolant{Tg, Tv} end
 
 """
     AbstractInterpolant1D{Tg<:AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv}
@@ -63,7 +66,7 @@ by implementing the required interface:
 - `CubicInterpolant{Tg, Tv}`: C2 cubic spline
 - `AbstractHermiteInterpolant1D{Tg, Tv}`: Cubic Hermite family (see subtypes below)
 """
-abstract type AbstractInterpolant1D{Tg <: AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv} end
+abstract type AbstractInterpolant1D{Tg, Tv} <: AbstractInterpolant{Tg, Tv} end
 
 """
     AbstractHermiteInterpolant1D{Tg, Tv} <: AbstractInterpolant1D{Tg, Tv}

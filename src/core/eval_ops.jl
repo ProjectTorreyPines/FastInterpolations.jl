@@ -150,6 +150,18 @@ end
 """Standard Julia numeric types that should be auto-promoted in convenience wrappers."""
 const _PromotableValue = Union{Integer, AbstractFloat, Rational, Complex}
 
+"""
+Standard Julia numeric types eligible for the Float fast-path as **grid** scalars.
+
+Mirrors `_PromotableValue` but **excludes Complex**: grid scalars must be orderable
+for binary search, and Complex does not define `<`.
+
+Grid scalars outside this union (e.g. `ForwardDiff.Dual`, `Measurement`) take the
+duck-type path in `_promote_itp_inputs`: they bypass `_to_float` normalization,
+are passed through unchanged, and carry their original type through the interpolant.
+"""
+const _PromotableGrid = Union{Integer, AbstractFloat, Rational}
+
 # ========================================
 #
 # Compile-time type tags for extrapolation mode selection.

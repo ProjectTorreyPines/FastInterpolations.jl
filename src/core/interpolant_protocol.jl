@@ -35,7 +35,7 @@
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     grid = _itp_grid(itp)
     extrap = _itp_extrap(itp)
     @boundscheck _check_domain(grid, xq, extrap)

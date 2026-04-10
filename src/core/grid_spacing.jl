@@ -16,9 +16,15 @@ Concrete subtypes:
 - `ScalarSpacing{T}`: Stores uniform spacing as scalars (O(1) memory)
 - `VectorSpacing{T}`: Stores non-uniform spacing as vectors (O(N) memory)
 
-The type parameter `T` is the floating-point type (Float32 or Float64).
+The type parameter `T` is normally a floating-point type (Float32 or Float64),
+but it is **unconstrained** at the abstract level to support duck-typed grids
+whose scalar type satisfies the required arithmetic protocol (`-`, `inv`, `*`)
+— e.g. `ForwardDiff.Dual`. Those grids land in `VectorSpacing{Dual}` via the
+unconstrained `_create_spacing(::AbstractVector)` method below, which uses only
+`Vector{T}(undef, ...)`, subtraction, and `inv` — all of which Dual supports.
+The Float path is unchanged: concrete allocations still specialize per-eltype.
 """
-abstract type AbstractGridSpacing{T <: AbstractFloat} end
+abstract type AbstractGridSpacing{T} end
 
 """
     ScalarSpacing{T} <: AbstractGridSpacing{T}
@@ -43,12 +49,14 @@ x = range(0.0, 1.0, 1001)  # 1000 intervals, uniform spacing
 spacing = _create_spacing(x)  # ScalarSpacing{Float64}(0.001, 1000.0)
 ```
 """
-struct ScalarSpacing{T <: AbstractFloat} <: AbstractGridSpacing{T}
+struct ScalarSpacing{T} <: AbstractGridSpacing{T}
     h::T
     inv_h::T
 end
 
-# Outer constructor for type promotion with mixed Real types
+# Outer constructor for type promotion with mixed Real types.
+# Standard numerics coerce through Float64; duck types (Dual, Measurement, etc.)
+# are never routed here — they reach VectorSpacing via _create_spacing directly.
 function ScalarSpacing(h::Real, inv_h::Real)
     T = promote_type(typeof(h), typeof(inv_h))
     T = T <: AbstractFloat ? T : Float64
@@ -66,15 +74,24 @@ where intervals may have different spacings.
 - `inv_h::Vector{T}`: Precomputed reciprocals inv_h[i] = 1/h[i]
 
 # Memory
-O(N) - stores 2*(n-1) floating-point values.
+O(N) - stores 2*(n-1) values.
+
+# Type parameter
+`T` is normally a float (Float32/Float64) but may also be any scalar type supporting
+`-`, `inv`, and `Vector{T}(undef, n)` — e.g. `ForwardDiff.Dual`. Duck-typed grids
+carry their derivative partials through `h`/`inv_h`, so the cached spacing is
+differentiable and reusable across queries.
 
 # Example
 ```julia
-x = [0.0, 0.3, 0.7, 1.0]  # Non-uniform spacing
-spacing = _create_spacing(x)  # VectorSpacing with h=[0.3, 0.4, 0.3]
+x = [0.0, 0.3, 0.7, 1.0]                 # Non-uniform Float spacing
+spacing = _create_spacing(x)              # VectorSpacing{Float64} with h=[0.3, 0.4, 0.3]
+
+x_dual = ForwardDiff.Dual{:tag}.(x, ...)  # Dual-valued grid
+spacing_d = _create_spacing(x_dual)       # VectorSpacing{Dual{:tag,Float64,1}}
 ```
 """
-struct VectorSpacing{T <: AbstractFloat} <: AbstractGridSpacing{T}
+struct VectorSpacing{T} <: AbstractGridSpacing{T}
     h::Vector{T}
     inv_h::Vector{T}
 end
@@ -153,7 +170,7 @@ Create vector spacing for non-uniform grids (Vector inputs).
 
 Computes h[i] = x[i+1] - x[i] and inv_h[i] = 1/h[i] for each interval.
 """
-function _create_spacing(x::AbstractVector{T}) where {T <: AbstractFloat}
+function _create_spacing(x::AbstractVector{T}) where {T}
     n = length(x)
     h = Vector{T}(undef, n - 1)
     inv_h = Vector{T}(undef, n - 1)

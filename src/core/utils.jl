@@ -231,14 +231,23 @@ x_p, y_p = _promote_itp_inputs(x, custom_y)  # y_p stays custom type
 @inline function _promote_itp_inputs(
         x::AbstractVector{TX},
         y::AbstractVector{TY}
-    ) where {TX <: Real, TY}
-    Tg = _promote_grid_float(TX, TY)
-    x_typed = _to_float(x, Tg)
-    if TY <: _PromotableValue
-        _, y_typed = _promote_value_type(y, Tg)
-        return x_typed, y_typed
+    ) where {TX, TY}
+    if TX <: _PromotableGrid
+        # Standard numerics grid → Float fast path (unchanged)
+        Tg = _promote_grid_float(TX, TY)
+        x_typed = _to_float(x, Tg)
+        if TY <: _PromotableValue
+            _, y_typed = _promote_value_type(y, Tg)
+            return x_typed, y_typed
+        else
+            return x_typed, y
+        end
     else
-        return x_typed, y
+        # Duck grid (e.g. ForwardDiff.Dual, Measurement, custom scalar):
+        # pass through unchanged. The interpolant constructor performs its own
+        # `copy(x)`/`copy(y)` to preserve immutability, so we need not copy here.
+        # Tv is NOT promoted — duck grids do not widen values to a float shadow.
+        return x, y
     end
 end
 

@@ -128,12 +128,13 @@ const FI = FastInterpolations
         @test ForwardDiff.value.(result) ≈ ref
     end
 
-    @testset "pchip_interp — adjoint with Dual grid (construction)" begin
+    @testset "pchip_interp — adjoint with Dual grid" begin
         d = ForwardDiff.Dual{:tag}(1.0, 1.0)
         adj = pchip_adjoint(d .* x_base, y_base, xq_vec; extrap=ExtendExtrap())
         @test adj isa FI.PchipAdjoint1D
-        # Note: adj(y_bar) involves slope adjoint with Tv(inv_h) casts that
-        # need deeper refactoring for duck-typed Tg. Construction works.
+        y_bar = randn(length(xq_vec))
+        f_bar = adj(y_bar)
+        @test eltype(f_bar) <: ForwardDiff.Dual
     end
 
     @testset "pchip_interp — Range{Dual} grid" begin
@@ -223,12 +224,13 @@ const FI = FastInterpolations
         @test ForwardDiff.value(v_pre) ≈ ForwardDiff.value(v_otf)
     end
 
-    @testset "akima_interp — adjoint with Dual grid (construction)" begin
+    @testset "akima_interp — adjoint with Dual grid" begin
         d = ForwardDiff.Dual{:tag}(1.0, 1.0)
         adj = akima_adjoint(d .* x_base, y_base, xq_vec; extrap=ExtendExtrap())
         @test adj isa FI.AkimaAdjoint1D
-        # Note: adj(y_bar) involves slope adjoint with Tv(inv_h) casts that
-        # need deeper refactoring for duck-typed Tg. Construction works.
+        y_bar = randn(length(xq_vec))
+        f_bar = adj(y_bar)
+        @test eltype(f_bar) <: ForwardDiff.Dual
     end
 
     # ╔═══════════════════════════════════════════════════════════════════════╗

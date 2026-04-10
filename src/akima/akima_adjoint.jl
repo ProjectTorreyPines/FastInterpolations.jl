@@ -45,7 +45,7 @@ operating point. The dot-product identity holds exactly at that `y`:
     dot(akima_interp(x, y).(xq), y_bar) == dot(y, adj(y_bar))
 
 # Type Parameters
-- `Tg`: Grid float type (Float32 or Float64)
+- `Tg`: Grid type — normally Float32/Float64, unconstrained for duck-typed grids (e.g. ForwardDiff.Dual)
 - `Tv`: Value type (must support sign, abs, zero, division)
 - `EP`: Extrapolation policy type
 
@@ -58,7 +58,7 @@ f_bar = adj(y_bar; deriv=DerivOp(1))    # derivative adjoint
 adj(f_bar, y_bar)                       # in-place
 ```
 """
-struct AkimaAdjoint1D{Tg <: AbstractFloat, Tv <: Real, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+struct AkimaAdjoint1D{Tg, Tv <: Real, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_HermiteAdjointAnchor1D{Tg}}
     grid::Vector{Tg}       # Grid points (needed for slope adjoint secant computation)
     data::Vector{Tv}       # y values (needed for slope weight conditions)
@@ -201,8 +201,8 @@ end
     if n == 2
         @inbounds begin
             inv_h = one(Tg) / (x[2] - x[1])
-            c1 = Tv(inv_h) * dy_bar[1]
-            c2 = Tv(inv_h) * dy_bar[2]
+            c1 = inv_h * dy_bar[1]
+            c2 = inv_h * dy_bar[2]
             f_bar[1] -= c1 + c2
             f_bar[2] += c1 + c2
         end
@@ -216,21 +216,21 @@ end
             inv_h2 = one(Tg) / (x[3] - x[2])
 
             # dy[1] = m[1]: ∂/∂y[1] = -1/h1, ∂/∂y[2] = +1/h1
-            c1 = Tv(inv_h1) * dy_bar[1]
+            c1 = inv_h1 * dy_bar[1]
             f_bar[1] -= c1
             f_bar[2] += c1
 
             # dy[2] = (m[1]+m[2])/2: ∂/∂m[1] = 1/2, ∂/∂m[2] = 1/2
             db2 = dy_bar[2]
-            c2a = Tv(inv_h1 / 2) * db2
+            c2a = (inv_h1 / 2) * db2
             f_bar[1] -= c2a
             f_bar[2] += c2a
-            c2b = Tv(inv_h2 / 2) * db2
+            c2b = (inv_h2 / 2) * db2
             f_bar[2] -= c2b
             f_bar[3] += c2b
 
             # dy[3] = m[2]: ∂/∂y[2] = -1/h2, ∂/∂y[3] = +1/h2
-            c3 = Tv(inv_h2) * dy_bar[3]
+            c3 = inv_h2 * dy_bar[3]
             f_bar[2] -= c3
             f_bar[3] += c3
         end
@@ -239,9 +239,9 @@ end
 
     # General case: n ≥ 4
     # Recompute secants on the fly (same approach as forward pass)
-    @inbounds m1 = Tv((y[2] - y[1]) / (x[2] - x[1]))
-    @inbounds m2 = Tv((y[3] - y[2]) / (x[3] - x[2]))
-    @inbounds m3 = Tv((y[4] - y[3]) / (x[4] - x[3]))
+    @inbounds m1 = (y[2] - y[1]) / (x[2] - x[1])
+    @inbounds m2 = (y[3] - y[2]) / (x[3] - x[2])
+    @inbounds m3 = (y[4] - y[3]) / (x[4] - x[3])
 
     # Virtual secants for left boundary
     m_neg1 = 3 * m1 - 2 * m2
@@ -256,8 +256,8 @@ end
         if wsum == zero(wsum)
             # Fallback: dy = (m_0 + m1)/2 → ∂/∂m_0 = 1/2, ∂/∂m1 = 1/2
             db = dy_bar[1]
-            _akima_scatter_secant_adjoint!(f_bar, Tv(1 // 2) * db, 0, x, n)
-            _akima_scatter_secant_adjoint!(f_bar, Tv(1 // 2) * db, 1, x, n)
+            _akima_scatter_secant_adjoint!(f_bar, db / 2, 0, x, n)
+            _akima_scatter_secant_adjoint!(f_bar, db / 2, 1, x, n)
         else
             dy_k = (w1 * m_0 + w2 * m1) / wsum
             s1 = sign(m2 - m1)
@@ -280,8 +280,8 @@ end
         wsum = w1 + w2
         if wsum == zero(wsum)
             db = dy_bar[2]
-            _akima_scatter_secant_adjoint!(f_bar, Tv(1 // 2) * db, 1, x, n)
-            _akima_scatter_secant_adjoint!(f_bar, Tv(1 // 2) * db, 2, x, n)
+            _akima_scatter_secant_adjoint!(f_bar, db / 2, 1, x, n)
+            _akima_scatter_secant_adjoint!(f_bar, db / 2, 2, x, n)
         else
             dy_k = (w1 * m1 + w2 * m2) / wsum
             s1 = sign(m3 - m2)
@@ -304,14 +304,14 @@ end
     m_k = m3
 
     @inbounds for k in 3:(n - 2)
-        m_kp1 = Tv((y[k + 2] - y[k + 1]) / (x[k + 2] - x[k + 1]))
+        m_kp1 = (y[k + 2] - y[k + 1]) / (x[k + 2] - x[k + 1])
         w1 = abs(m_kp1 - m_k)
         w2 = abs(m_km1 - m_km2)
         wsum = w1 + w2
         if wsum == zero(wsum)
             db = dy_bar[k]
-            _akima_scatter_secant_adjoint!(f_bar, Tv(1 // 2) * db, k - 1, x, n)
-            _akima_scatter_secant_adjoint!(f_bar, Tv(1 // 2) * db, k, x, n)
+            _akima_scatter_secant_adjoint!(f_bar, db / 2, k - 1, x, n)
+            _akima_scatter_secant_adjoint!(f_bar, db / 2, k, x, n)
         else
             dy_kv = (w1 * m_km1 + w2 * m_k) / wsum
             s1 = sign(m_kp1 - m_k)
@@ -344,8 +344,8 @@ end
         wsum = w1 + w2
         if wsum == zero(wsum)
             db = dy_bar[n - 1]
-            _akima_scatter_secant_adjoint!(f_bar, Tv(1 // 2) * db, n - 2, x, n)
-            _akima_scatter_secant_adjoint!(f_bar, Tv(1 // 2) * db, n - 1, x, n)
+            _akima_scatter_secant_adjoint!(f_bar, db / 2, n - 2, x, n)
+            _akima_scatter_secant_adjoint!(f_bar, db / 2, n - 1, x, n)
         else
             dy_kv = (w1 * m_km1 + w2 * m_k) / wsum
             s1 = sign(m_np1 - m_k)
@@ -368,8 +368,8 @@ end
         wsum = w1 + w2
         if wsum == zero(wsum)
             db = dy_bar[n]
-            _akima_scatter_secant_adjoint!(f_bar, Tv(1 // 2) * db, n - 1, x, n)
-            _akima_scatter_secant_adjoint!(f_bar, Tv(1 // 2) * db, n, x, n)
+            _akima_scatter_secant_adjoint!(f_bar, db / 2, n - 1, x, n)
+            _akima_scatter_secant_adjoint!(f_bar, db / 2, n, x, n)
         else
             dy_kv = (w1 * m_k + w2 * m_np1) / wsum
             s1 = sign(m_np2 - m_np1)
@@ -462,7 +462,8 @@ function akima_adjoint(
     )
     Tg = _promote_grid_float(eltype(x), eltype(x_query))
     x_p = _to_float(x, Tg)
-    xq_p = _to_float(x_query, Tg)
+    Tq_float = Tg <: AbstractFloat ? Tg : float(eltype(x_query))
+    xq_p = _to_float(x_query, Tq_float)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
@@ -471,8 +472,8 @@ function akima_adjoint(
         x_lo, x_hi = first(x_p), last(x_p)
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
-            (x_lo <= xq_i <= x_hi) || throw(
-                DomainError(xq_i, "query point outside domain [$x_lo, $x_hi]")
+            (_extract_primal(x_lo) <= xq_i <= _extract_primal(x_hi)) || throw(
+                DomainError(xq_i, "query point outside domain [$(_extract_primal(x_lo)), $(_extract_primal(x_hi))]")
             )
         end
     end
@@ -481,7 +482,7 @@ function akima_adjoint(
     spacing = _create_spacing(x_p)
     anchors = _bake_hermite_adjoint_anchors(x_p, spacing, xq_p, extrap)
 
-    # Promote y to float: slope adjoint computes fractional derivatives (Tv(0.5) would fail for Int)
+    # Promote y to float: slope adjoint computes fractional derivatives (Int division loses precision)
     _, y_p = _promote_itp_inputs(x, y)
     Tv = eltype(y_p)
     return AkimaAdjoint1D{Tg, Tv, typeof(extrap)}(

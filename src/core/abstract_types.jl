@@ -84,7 +84,7 @@ for `_itp_eval_scalar`, `_itp_vector_loop!`, and `integrate`.
 - `CardinalInterpolant1D`: Central finite difference (+ tension parameter)
 - `AkimaInterpolant1D`: Weighted-average outlier-robust slopes
 """
-abstract type AbstractHermiteInterpolant1D{Tg <: AbstractFloat, Tv} <: AbstractInterpolant1D{Tg, Tv} end
+abstract type AbstractHermiteInterpolant1D{Tg, Tv} <: AbstractInterpolant1D{Tg, Tv} end
 
 """
     AbstractSeriesInterpolant{Tg<:AbstractFloat, Tv}

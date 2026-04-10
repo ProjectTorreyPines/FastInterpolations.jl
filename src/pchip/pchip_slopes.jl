@@ -59,10 +59,10 @@ Compute PCHIP (Fritsch-Carlson) monotone-preserving slopes in-place.
 O(n), single pass, zero allocation (writes into `dy`).
 """
 function _pchip_slopes!(
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         x::AbstractVector{Tg},
-        y::AbstractVector{Tv}
-    ) where {Tg <: AbstractFloat, Tv}
+        y::AbstractVector
+    ) where {Tg}
     n = length(x)
     @assert n >= 2 "PCHIP requires at least 2 points"
     @assert length(y) == n "y length must match x"
@@ -92,7 +92,7 @@ function _pchip_slopes!(
     @inbounds for k in 2:(n - 1)
         if sign(δ_prev) != sign(δ_curr)
             # Local extremum: zero slope preserves monotonicity
-            dy[k] = zero(Tv)
+            dy[k] = zero(eltype(dy))
         else
             # Weighted harmonic mean (Fritsch-Carlson formula)
             w1 = 2 * h_curr + h_prev

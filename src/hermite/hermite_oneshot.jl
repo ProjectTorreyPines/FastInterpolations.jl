@@ -5,7 +5,7 @@
 # No cache, no solve, no wrapper.
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                         HOT PATH — AbstractFloat grid                     ║
+# ║                         TYPED CORE — all grid types                       ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
@@ -23,18 +23,18 @@ C\$^1\$ continuous — slopes are used directly, no global spline solve.
 @inline function hermite_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         xq::Tq;
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
+    x, y, dy = _promote_hermite_inputs(x, y, dy)
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
     @boundscheck length(x) >= 2 || throw(ArgumentError("Hermite interpolation requires at least 2 points, got $(length(x))"))
 
-    x = _to_float(x, Tg)
     searcher = _resolve_search(x, xq, search, hint)
     return _hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
 end
@@ -52,43 +52,23 @@ function hermite_interp!(
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
-        x_query::AbstractVector{Tg};
+        dy::AbstractVector,
+        x_query::AbstractVector{Tq};
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv, Tq <: Real}
+    x, y, dy = _promote_hermite_inputs(x, y, dy)
+    Tg_actual = eltype(x)
+    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
+    xq_p = _to_float(x_query, Tq_float)
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
+    @boundscheck length(output) == length(xq_p) || _throw_length_mismatch(length(xq_p), length(output), "x_query", "output")
 
-    x = _to_float(x, Tg)
-    x_query = _to_float(x_query, Tg)
-    searcher = _resolve_search(x, x_query, search, hint)
-    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
-end
-
-# Range disambiguation for in-place
-function hermite_interp!(
-        output::AbstractVector,
-        x::AbstractRange{Tg},
-        y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
-        x_query::AbstractVector{Tg};
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    ) where {Tg <: AbstractFloat, Tv}
-    @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-
-    x = _to_float(x, Tg)
-    x_query = _to_float(x_query, Tg)
-    searcher = _resolve_search(x, x_query, search, hint)
-    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
+    searcher = _resolve_search(x, xq_p, search, hint)
+    return _hermite_vector_loop!(output, x, y, dy, xq_p, extrap, deriv, searcher)
 end
 
 # ========================================
@@ -99,25 +79,31 @@ end
     hermite_interp(x, y, dy, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch(), hint=nothing)
 
 Cubic Hermite interpolation at multiple query points using user-supplied slopes.
-Returns `Vector{Tv}` of interpolated values.
+Returns `Vector` of interpolated values.
 """
 function hermite_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
-        x_query::AbstractVector{Tg};
+        dy::AbstractVector,
+        x_query::AbstractVector{Tq};
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    ) where {Tg <: AbstractFloat, Tv}
-    output = Vector{_value_type(Tv, Tg)}(undef, length(x_query))
-    hermite_interp!(output, x, y, dy, x_query; extrap, deriv, search, hint)
+    ) where {Tg, Tv, Tq <: Real}
+    x, y, dy = _promote_hermite_inputs(x, y, dy)
+    Tg_actual = eltype(x)
+    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
+    xq_p = _to_float(x_query, Tq_float)
+    Tr = _output_eltype(eltype(y), Tg_actual, Tq)
+    output = Vector{Tr}(undef, length(xq_p))
+    searcher = _resolve_search(x, xq_p, search, hint)
+    _hermite_vector_loop!(output, x, y, dy, xq_p, extrap, deriv, searcher)
     return output
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                  GENERIC WRAPPERS — Real type promotion                   ║
+# ║                  INPUT PROMOTION HELPER                                   ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # Joint promotion of (x, y, dy) — grid type Tg considers all three inputs,
@@ -126,70 +112,21 @@ end
         x::AbstractVector{TX},
         y::AbstractVector{TY},
         dy::AbstractVector{TDY},
-    ) where {TX <: Real, TY, TDY}
+    ) where {TX, TY, TDY}
     Tg_y = _promote_grid_float(TX, TY)
     Tg = TDY <: _PromotableValue ? promote_type(Tg_y, float(_real_eltype(TDY))) : Tg_y
     x_p = _to_float(x, Tg)
-    y_p = TY <: _PromotableValue ? _promote_value_type(y, Tg)[2] : y
-    dy_p = TDY <: _PromotableValue ? _promote_value_type(dy, Tg)[2] : dy
-    return x_p, y_p, dy_p
-end
-
-# Scalar — promotes x, y, dy to Float; passes xq directly for AD support
-@inline function hermite_interp(
-        x::AbstractVector{TX},
-        y::AbstractVector{TY},
-        dy::AbstractVector,
-        xq::Tq;
-        kwargs...
-    ) where {TX <: Real, TY, Tq <: Real}
-    x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
-    return hermite_interp(x_p, y_p, dy_p, xq; kwargs...)
-end
-
-# Vector — allocating
-function hermite_interp(
-        x::AbstractVector{TX},
-        y::AbstractVector{TY},
-        dy::AbstractVector,
-        x_query::AbstractVector{Tq};
-        kwargs...
-    ) where {TX <: Real, TY, Tq <: Real}
-    x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
-    Tg = eltype(x_p)
-    xq_p = _to_float(x_query, Tg)
-    output = Vector{eltype(y_p)}(undef, length(x_query))
-    hermite_interp!(output, x_p, y_p, dy_p, xq_p; kwargs...)
-    return output
-end
-
-# Vector — in-place
-function hermite_interp!(
-        output::AbstractVector,
-        x::AbstractVector{TX},
-        y::AbstractVector{TY},
-        dy::AbstractVector,
-        x_query::AbstractVector{Tq};
-        kwargs...
-    ) where {TX <: Real, TY, Tq <: Real}
-    @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-
-    x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
-    Tg = eltype(x_p)
-    xq_p = _to_float(x_query, Tg)
-
-    Tv_float = eltype(y_p)
-    Tout = eltype(output)
-    if promote_type(Tout, Tv_float) !== Tout
-        throw(
-            ArgumentError(
-                "output eltype $Tout cannot hold interpolation result type $Tv_float. " *
-                    "Use Vector{$Tv_float} or a wider type."
-            )
-        )
+    # Only promote values when Tg is a standard float type — duck-typed Tg (Dual etc.)
+    # leaves y/dy as-is; Julia arithmetic promotion handles the rest in kernels.
+    if TY <: _PromotableValue && Tg <: AbstractFloat
+        y_p = _promote_value_type(y, Tg)[2]
+    else
+        y_p = y
     end
-
-    return hermite_interp!(output, x_p, y_p, dy_p, xq_p; kwargs...)
+    if TDY <: _PromotableValue && Tg <: AbstractFloat
+        dy_p = _promote_value_type(dy, Tg)[2]
+    else
+        dy_p = dy
+    end
+    return x_p, y_p, dy_p
 end

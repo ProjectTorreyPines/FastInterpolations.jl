@@ -16,12 +16,12 @@
 @inline function _hermite_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         xq::Tq,
         extrap::AbstractExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL
@@ -34,16 +34,16 @@ end
 @inline function _hermite_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         xq::Tq,
         extrap::_ClampOrFill,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_primal = _extract_primal(xq)
-    if xq_primal < first(x)
+    if xq_primal < _extract_primal(first(x))
         return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > last(x)
+    elseif xq_primal > _extract_primal(last(x))
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
     idx, xL, xR = search_interval(searcher, x, xq)
@@ -57,12 +57,12 @@ end
 @inline function _hermite_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         xq::Tq,
         ::WrapExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
     idx, xL, xR = search_interval(searcher, x, xq_wrapped)
     dL = xq_wrapped - xL
@@ -80,12 +80,12 @@ end
         x::AbstractVector{Tg},
         spacing::AbstractGridSpacing{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         xq::Tq,
         extrap::AbstractExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, _ = search_interval(searcher, x, spacing, xq)
     dL = xq - xL
@@ -99,16 +99,16 @@ end
         x::AbstractVector{Tg},
         spacing::AbstractGridSpacing{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         xq::Tq,
         extrap::_ClampOrFill,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_primal = _extract_primal(xq)
-    if xq_primal < first(x)
+    if xq_primal < _extract_primal(first(x))
         return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > last(x)
+    elseif xq_primal > _extract_primal(last(x))
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
     idx, xL, _ = search_interval(searcher, x, spacing, xq)
@@ -123,12 +123,12 @@ end
         x::AbstractVector{Tg},
         spacing::AbstractGridSpacing{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         xq::Tq,
         ::WrapExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
     idx, xL, _ = search_interval(searcher, x, spacing, xq_wrapped)
     dL = xq_wrapped - xL
@@ -146,12 +146,12 @@ end
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         xq::AbstractVector{<:Real},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap = _check_domain(x, xq, extrap)
     @inbounds for i in eachindex(xq, output)
         output[i] = _hermite_eval_at_point(x, y, dy, xq[i], extrap, deriv, searcher)
@@ -164,12 +164,12 @@ end
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         xq::AbstractVector{<:Real},
         ::WrapExtrap,
         deriv::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(xq), maximum(xq)
 
@@ -192,12 +192,12 @@ end
         x::AbstractVector{Tg},
         spacing::AbstractGridSpacing{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         xq::AbstractVector{<:Real},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap = _check_domain(x, xq, extrap)
     @inbounds for i in eachindex(xq, output)
         output[i] = _hermite_eval_at_point(x, spacing, y, dy, xq[i], extrap, deriv, searcher)
@@ -211,12 +211,12 @@ end
         x::AbstractVector{Tg},
         spacing::AbstractGridSpacing{Tg},
         y::AbstractVector{Tv},
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         xq::AbstractVector{<:Real},
         ::WrapExtrap,
         deriv::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(xq), maximum(xq)
 
@@ -249,7 +249,7 @@ end
         extrap::AbstractExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, xR = search_interval(searcher, x, xq)
     n = length(x)
@@ -269,11 +269,11 @@ end
         extrap::_ClampOrFill,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_primal = _extract_primal(xq)
-    if xq_primal < first(x)
+    if xq_primal < _extract_primal(first(x))
         return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > last(x)
+    elseif xq_primal > _extract_primal(last(x))
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
     idx, xL, xR = search_interval(searcher, x, xq)
@@ -294,7 +294,7 @@ end
         ::WrapExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
     idx, xL, xR = search_interval(searcher, x, xq_wrapped)
     n = length(x)
@@ -317,7 +317,7 @@ end
         extrap::AbstractExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, _ = search_interval(searcher, x, spacing, xq)
     n = length(x)
@@ -338,11 +338,11 @@ end
         extrap::_ClampOrFill,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_primal = _extract_primal(xq)
-    if xq_primal < first(x)
+    if xq_primal < _extract_primal(first(x))
         return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > last(x)
+    elseif xq_primal > _extract_primal(last(x))
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
     idx, xL, _ = search_interval(searcher, x, spacing, xq)
@@ -364,7 +364,7 @@ end
         ::WrapExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
     idx, xL, _ = search_interval(searcher, x, spacing, xq_wrapped)
     n = length(x)
@@ -388,7 +388,7 @@ end
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap = _check_domain(x, xq, extrap)
     @inbounds for i in eachindex(xq, output)
         output[i] = _hermite_eval_at_point(x, y, sm, xq[i], extrap, deriv, searcher)
@@ -406,7 +406,7 @@ end
         ::WrapExtrap,
         deriv::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(xq), maximum(xq)
 
@@ -434,7 +434,7 @@ end
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap = _check_domain(x, xq, extrap)
     @inbounds for i in eachindex(xq, output)
         output[i] = _hermite_eval_at_point(x, spacing, y, sm, xq[i], extrap, deriv, searcher)
@@ -453,7 +453,7 @@ end
         ::WrapExtrap,
         deriv::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(xq), maximum(xq)
 

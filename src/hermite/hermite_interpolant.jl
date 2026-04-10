@@ -31,8 +31,8 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         search::P = AutoSearch()
     ) where {
-        Tg <: AbstractFloat, Tv,
-        X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractVector{Tv},
+        Tg, Tv,
+        X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractVector,
         P <: AbstractSearchPolicy,
     }
     E = typeof(extrap)
@@ -83,7 +83,7 @@ itp(1.0; deriv=DerivOp(1))       # ≈ cos(1.0)
         dy::AbstractVector;
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
-    ) where {TX <: Real, TY}
+    ) where {TX, TY}
     x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
     extrap_p = _promote_extrap(extrap, eltype(y_p))
     return CubicHermiteInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search)

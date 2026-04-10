@@ -147,7 +147,7 @@ end
         fL, fR, dfL, dfR,
         h::Tg, inv_h::Tg,
         u0::Real, u1::Real
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg}
     t0 = u0 * inv_h
     t1 = u1 * inv_h
     dH00 = _IH00(t1) - _IH00(t0)

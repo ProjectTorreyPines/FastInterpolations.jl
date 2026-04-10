@@ -98,9 +98,9 @@ Returns interpolated function value.
 """
 @inline function _hermite_kernel_1d(
         ::EvalValue,
-        yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
+        yL, yR, dyL, dyR,
         h::Tg, inv_h::Tg, dL::Tq
-    ) where {Tv, Tg, Tq}
+    ) where {Tg, Tq}
     # Promote to output type for intermediate calculations
     t = dL * inv_h
 
@@ -122,9 +122,9 @@ Evaluate first derivative: dP/dx = (dP/dt) / h
 """
 @inline function _hermite_kernel_1d(
         ::EvalDeriv1,
-        yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
+        yL, yR, dyL, dyR,
         h::Tg, inv_h::Tg, dL::Tq
-    ) where {Tv, Tg, Tq}
+    ) where {Tg, Tq}
     # Let t remain in coordinate type - basis derivatives stay real
     t = dL * inv_h
     t_sq = t * t
@@ -150,9 +150,9 @@ Evaluate second derivative: d²P/dx² = (d²P/dt²) / h²
 """
 @inline function _hermite_kernel_1d(
         ::EvalDeriv2,
-        yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
+        yL, yR, dyL, dyR,
         h::Tg, inv_h::Tg, dL::Tq
-    ) where {Tv, Tg, Tq}
+    ) where {Tg, Tq}
     # Let t remain in coordinate type - basis derivatives stay real
     t = dL * inv_h
 
@@ -178,9 +178,9 @@ Evaluate third derivative: d³P/dx³ = (d³P/dt³) / h³ (constant within interv
 """
 @inline function _hermite_kernel_1d(
         ::EvalDeriv3,
-        yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
+        yL, yR, dyL, dyR,
         h::Tg, inv_h::Tg, dL::Tq
-    ) where {Tv, Tg, Tq}
+    ) where {Tg, Tq}
     # Third derivatives are constants: d³h00/dt³=12, d³h10/dt³=6, d³h01/dt³=-12, d³h11/dt³=6
     # Auto-promote naturally through arithmetic with value types
     value_contrib = 12 * (yL - yR)
@@ -198,9 +198,9 @@ Generic fallback: N-th derivative of cubic Hermite is zero for N ≥ 4.
 """
 @inline function _hermite_kernel_1d(
         ::DerivOp{N},
-        yL::Tv, ::Tv, ::Tv, ::Tv,
+        yL, ::Any, ::Any, ::Any,
         ::Tg, ::Tg, ::Tq
-    ) where {N, Tv, Tg, Tq}
+    ) where {N, Tg, Tq}
     return 0 * yL
 end
 

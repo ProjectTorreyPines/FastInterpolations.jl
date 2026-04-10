@@ -11,7 +11,7 @@
         x0::Real, x1::Real;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     return _integrate_hermite_1d(itp.dy, itp, x0, x1, search, hint)
 end
 
@@ -22,7 +22,7 @@ end
         x0::Real, x1::Real,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}},
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     x = itp.x
     y = itp.y
     spacing = _spacing(itp)
@@ -66,7 +66,7 @@ end
         x0::Real, x1::Real,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}},
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     x = itp.x
     y = itp.y
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))

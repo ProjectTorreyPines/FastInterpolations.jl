@@ -45,7 +45,7 @@ operating point. The dot-product identity holds exactly at that `y`:
     dot(pchip_interp(x, y).(xq), y_bar) == dot(y, adj(y_bar))
 
 # Type Parameters
-- `Tg`: Grid float type (Float32 or Float64)
+- `Tg`: Grid type — normally Float32/Float64, unconstrained for duck-typed grids (e.g. ForwardDiff.Dual)
 - `Tv`: Value type (must support sign, abs, zero, division)
 - `EP`: Extrapolation policy type
 
@@ -58,7 +58,7 @@ f_bar = adj(y_bar; deriv=DerivOp(1))    # derivative adjoint
 adj(f_bar, y_bar)                       # in-place
 ```
 """
-struct PchipAdjoint1D{Tg <: AbstractFloat, Tv <: Real, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+struct PchipAdjoint1D{Tg, Tv <: Real, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_HermiteAdjointAnchor1D{Tg}}
     grid::Vector{Tg}       # Grid points (needed for slope adjoint stencil widths)
     data::Vector{Tv}       # y values (needed for slope clamp conditions)
@@ -96,8 +96,8 @@ end
     if n == 2
         @inbounds begin
             inv_h = one(Tg) / (x[2] - x[1])
-            c1 = Tv(inv_h) * dy_bar[1]
-            c2 = Tv(inv_h) * dy_bar[2]
+            c1 = inv_h * dy_bar[1]
+            c2 = inv_h * dy_bar[2]
             f_bar[1] -= c1 + c2
             f_bar[2] += c1 + c2
         end
@@ -128,7 +128,7 @@ end
             # Sat-clamped: dy[1] = 3*δ1
             # ∂dy[1]/∂δ1 = 3, ∂dy[1]/∂δ2 = 0
             # δ1 = (y[2]-y[1])/h1 → ∂δ1/∂y[1] = -1/h1, ∂δ1/∂y[2] = +1/h1
-            c = Tv(3 / h1) * dy_bar[1]
+            c = (3 / h1) * dy_bar[1]
             f_bar[1] -= c
             f_bar[2] += c
         else
@@ -139,11 +139,11 @@ end
             ddy_dδ2 = -h1 / (h1 + h2)
             db = dy_bar[1]
             # δ1: y[1] → -1/h1, y[2] → +1/h1
-            c1 = Tv(ddy_dδ1 / h1) * db
+            c1 = (ddy_dδ1 / h1) * db
             f_bar[1] -= c1
             f_bar[2] += c1
             # δ2: y[2] → -1/h2, y[3] → +1/h2
-            c2 = Tv(ddy_dδ2 / h2) * db
+            c2 = (ddy_dδ2 / h2) * db
             f_bar[2] -= c2
             f_bar[3] += c2
         end
@@ -175,12 +175,12 @@ end
 
             db = dy_bar[k]
             # δ_prev is secant of interval [k-1, k]: ∂/∂y[k-1] = -1/h_prev, ∂/∂y[k] = +1/h_prev
-            c_prev = Tv(ddy_dδ_prev / h_prev) * db
+            c_prev = (ddy_dδ_prev / h_prev) * db
             f_bar[k - 1] -= c_prev
             f_bar[k] += c_prev
 
             # δ_curr is secant of interval [k, k+1]: ∂/∂y[k] = -1/h_curr, ∂/∂y[k+1] = +1/h_curr
-            c_curr = Tv(ddy_dδ_curr / h_curr) * db
+            c_curr = (ddy_dδ_curr / h_curr) * db
             f_bar[k] -= c_curr
             f_bar[k + 1] += c_curr
         end
@@ -210,7 +210,7 @@ end
         elseif sign(δ1_r) != sign(δ2_r) && abs(d_right) > abs(3 * δ1_r)
             # Sat-clamped: dy[n] = 3*δ1_r = 3*δ[n-1]
             # δ[n-1] = (y[n]-y[n-1])/h[n-1] → ∂/∂y[n-1] = -1/h[n-1], ∂/∂y[n] = +1/h[n-1]
-            c = Tv(3 / h1_r) * dy_bar[n]
+            c = (3 / h1_r) * dy_bar[n]
             f_bar[n - 1] -= c
             f_bar[n] += c
         else
@@ -222,12 +222,12 @@ end
             db = dy_bar[n]
             # δ1_r = δ[n-1]: interval [n-1, n]
             # ∂/∂y[n-1] = -1/h[n-1], ∂/∂y[n] = +1/h[n-1]
-            c1 = Tv(ddy_dδ1 / h1_r) * db
+            c1 = (ddy_dδ1 / h1_r) * db
             f_bar[n - 1] -= c1
             f_bar[n] += c1
             # δ2_r = δ[n-2]: interval [n-2, n-1]
             # ∂/∂y[n-2] = -1/h[n-2], ∂/∂y[n-1] = +1/h[n-2]
-            c2 = Tv(ddy_dδ2 / h2_r) * db
+            c2 = (ddy_dδ2 / h2_r) * db
             f_bar[n - 2] -= c2
             f_bar[n - 1] += c2
         end
@@ -310,7 +310,8 @@ function pchip_adjoint(
     )
     Tg = _promote_grid_float(eltype(x), eltype(x_query))
     x_p = _to_float(x, Tg)
-    xq_p = _to_float(x_query, Tg)
+    Tq_float = Tg <: AbstractFloat ? Tg : float(eltype(x_query))
+    xq_p = _to_float(x_query, Tq_float)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
@@ -319,8 +320,8 @@ function pchip_adjoint(
         x_lo, x_hi = first(x_p), last(x_p)
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
-            (x_lo <= xq_i <= x_hi) || throw(
-                DomainError(xq_i, "query point outside domain [$x_lo, $x_hi]")
+            (_extract_primal(x_lo) <= xq_i <= _extract_primal(x_hi)) || throw(
+                DomainError(xq_i, "query point outside domain [$(_extract_primal(x_lo)), $(_extract_primal(x_hi))]")
             )
         end
     end
@@ -329,7 +330,7 @@ function pchip_adjoint(
     spacing = _create_spacing(x_p)
     anchors = _bake_hermite_adjoint_anchors(x_p, spacing, xq_p, extrap)
 
-    # Promote y to float: slope adjoint computes fractional derivatives (Tv(0.666...) would fail for Int)
+    # Promote y to float: slope adjoint computes fractional derivatives (Int division loses precision)
     _, y_p = _promote_itp_inputs(x, y)
     Tv = eltype(y_p)
     return PchipAdjoint1D{Tg, Tv, typeof(extrap)}(

@@ -312,14 +312,6 @@
         @test all(isfinite, out)
     end
 
-    @testset "Coverage — output eltype validation error" begin
-        x_int = collect(0:9)
-        y_int = x_int .^ 2
-        xq_int = [2, 4, 6]
-        out_narrow = Vector{Float32}(undef, length(xq_int))
-        @test_throws ArgumentError akima_interp!(out_narrow, x_int, y_int, xq_int)
-    end
-
     @testset "Coverage — WrapExtrap vector path" begin
         x = collect(range(0.0, 2π, 20))
         y = sin.(x)

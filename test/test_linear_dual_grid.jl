@@ -3,8 +3,7 @@
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
 # Structural verification that LinearInterpolant accepts a homogeneous duck-typed
-# grid scalar (anything `<: Real` that isn't in `_PromotableGrid`), following the
-# same pattern Tv duck-typing uses.
+# grid scalar, following the same pattern Tv duck-typing uses.
 #
 # Uses a minimal local `TDG` (Test Dual Grid) type that mimics ForwardDiff.Dual
 # semantics (primal + single partial) without pulling in ForwardDiff. This lets
@@ -69,6 +68,10 @@ Base.isless(a::Real, b::TDG) = a    <  b.v
 
 # Promotion: TDG + Real → TDG (keeps Real widenings flowing to TDG)
 Base.promote_rule(::Type{TDG}, ::Type{<:Real}) = TDG
+
+# float(): required by _promote_grid_float. TDG is already "float-like" (wraps Float64).
+Base.float(::Type{TDG}) = TDG
+Base.float(x::TDG) = x
 
 # isapprox for test comparisons on the primal field
 approx_primal(a::TDG, v::Real; atol = 1e-12) = isapprox(a.v, v; atol = atol)

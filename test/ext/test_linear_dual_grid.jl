@@ -329,6 +329,189 @@ const FI = FastInterpolations
         end
     end
 
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║              Range{Dual} grid — _CachedRange + DirectSearch O(1)       ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+    #
+    # StepRangeLen{Dual} is created via `t .* range` (broadcast), NOT `t * range`
+    # (scalar mult), because the latter hits a Julia Base MethodError in
+    # `twiceprecision(TwicePrecision{Dual}, Int)` — a Base limitation, not ours.
+
+    @testset "Range{Dual} construction → _CachedRange{Dual}" begin
+        x_range = 1.0:0.1:5.0
+        y = sin.(collect(x_range))
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual_range = d .* x_range  # StepRangeLen{Dual, TwicePrecision{Dual}, ...}
+
+        itp = linear_interp(x_dual_range, y)
+
+        # Stored as _CachedRange{Dual}, not the raw StepRangeLen
+        @test itp.x isa FI._CachedRange{<:ForwardDiff.Dual}
+        # ScalarSpacing{Dual} — uniform grid, O(1) memory
+        @test itp.spacing isa FI.ScalarSpacing{<:ForwardDiff.Dual}
+    end
+
+    @testset "Range{Dual} scalar eval matches Vector{Dual} path" begin
+        x_range = 1.0:0.1:5.0
+        y = sin.(collect(x_range))
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual_range = d .* x_range
+        x_dual_vec = collect(x_dual_range)
+
+        itp_range = linear_interp(x_dual_range, y)
+        itp_vec = linear_interp(x_dual_vec, y)
+
+        for xq in (1.25, 2.55, 3.75, 4.55)
+            vr = itp_range(xq)
+            vv = itp_vec(xq)
+            @test ForwardDiff.value(vr) ≈ ForwardDiff.value(vv)
+            # Partials may differ by a few ULPs due to TwicePrecision rounding
+            @test isapprox(ForwardDiff.partials(vr)[1], ForwardDiff.partials(vv)[1]; atol = 1e-10)
+        end
+    end
+
+    @testset "Range{Dual} MWE: ForwardDiff.derivative through range grid" begin
+        x_range = 1.0:0.1:10.0
+        y = log.(collect(x_range))
+        xq = 2.55
+
+        # t .* range (broadcast) creates StepRangeLen{Dual} — this works.
+        # NOTE: t * range (scalar mult) fails with Julia Base MethodError in
+        # twiceprecision(TwicePrecision{Dual}, Int) — this is a Base limitation.
+        ad = ForwardDiff.derivative(t -> linear_interp(t .* x_range, y, xq; extrap = ExtendExtrap()), 1.0)
+
+        # Cross-check with Vector path
+        ad_vec = ForwardDiff.derivative(t -> linear_interp(t .* collect(x_range), y, xq), 1.0)
+        @test isapprox(ad, ad_vec; atol = 1e-10)
+
+        # Cross-check with FD
+        h = 1e-6
+        fd = (linear_interp(collect((1+h) .* x_range), y, xq) -
+              linear_interp(collect((1-h) .* x_range), y, xq)) / (2h)
+        @test isapprox(ad, fd; atol = 1e-8)
+    end
+
+    @testset "Range{Dual} — all range source types" begin
+        # Every AbstractRange variant that can produce a Dual-eltype range.
+        # All should normalize to _CachedRange{Dual} + ScalarSpacing{Dual}.
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+
+        range_cases = [
+            # (label,           Dual range expression,        y values)
+            ("StepRangeLen",    d .* (1.0:0.5:5.0),          sin.(collect(1.0:0.5:5.0))),
+            ("LinRange",        d .* range(1.0, 5.0, 9),     sin.(range(1.0, 5.0, 9))),
+            ("UnitRange .*",    d .* (1:5),                   sin.(Float64.(1:5))),
+            ("StepRange .*",    d .* (1:2:9),                 sin.(Float64.(1:2:9))),
+            ("UnitRange *",     d * (1:5),                    sin.(Float64.(1:5))),
+            ("StepRange *",     d * (1:2:9),                  sin.(Float64.(1:2:9))),
+        ]
+
+        for (label, x_dual, y) in range_cases
+            @testset "$label" begin
+                itp = linear_interp(x_dual, y; extrap = ExtendExtrap())
+
+                # All normalized to _CachedRange{Dual}
+                @test itp.x isa FI._CachedRange{<:ForwardDiff.Dual}
+                @test itp.spacing isa FI.ScalarSpacing{<:ForwardDiff.Dual}
+
+                # Scalar eval returns Dual.
+                # Use a mid-interval query to avoid exact-knot tiebreak differences
+                # between DirectSearch (primal trunc → RIGHT) and BinarySearch
+                # (lexicographic → LEFT). At mid-interval, both give identical results.
+                lo_p = ForwardDiff.value(first(itp.x))
+                hi_p = ForwardDiff.value(last(itp.x))
+                xq = lo_p + (hi_p - lo_p) * 0.37  # irrational fraction avoids knots
+                r = itp(xq)
+                @test r isa ForwardDiff.Dual
+
+                # Compare with collected Vector{Dual} path
+                itp_vec = linear_interp(collect(x_dual), y; extrap = ExtendExtrap())
+                r_vec = itp_vec(xq)
+                @test ForwardDiff.value(r) ≈ ForwardDiff.value(r_vec)
+                @test isapprox(ForwardDiff.partials(r)[1], ForwardDiff.partials(r_vec)[1]; atol = 1e-10)
+            end
+        end
+    end
+
+    @testset "Range{Dual} — exact-knot behavior" begin
+        # At an exact knot, DirectSearch (Range path, primal-based trunc) always
+        # picks the RIGHT interval, while BinarySearch (Vector path, lexicographic)
+        # picks LEFT when the grid partial is positive.
+        # Both are legitimate sub-gradient choices; we verify each is consistent
+        # with its own one-sided FD reference.
+
+        x_range = 1.0:0.5:5.0
+        y = [0.0, 1.0, 4.0, 2.0, 5.0, 3.0, 7.0, 1.5, 6.0]
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual_range = d .* x_range
+        x_dual_vec = collect(x_dual_range)
+        xq_knot = 3.0  # = x[5], an interior knot
+
+        itp_range = linear_interp(x_dual_range, y; extrap = ExtendExtrap())
+        itp_vec = linear_interp(x_dual_vec, y; extrap = ExtendExtrap())
+
+        # Primal values should be identical (y[5] at the knot)
+        r_range = itp_range(xq_knot)
+        r_vec = itp_vec(xq_knot)
+        @test ForwardDiff.value(r_range) ≈ y[5]
+        @test ForwardDiff.value(r_vec) ≈ y[5]
+
+        # Slopes on either side of the knot
+        slope_left = (y[5] - y[4]) / 0.5    # left interval [x[4], x[5]]
+        slope_right = (y[6] - y[5]) / 0.5   # right interval [x[5], x[6]]
+
+        # deriv=1 reveals which slope each path selected
+        d_range = itp_range(xq_knot; deriv = DerivOp(1))
+        d_vec = itp_vec(xq_knot; deriv = DerivOp(1))
+
+        # Range/DirectSearch → RIGHT interval → right slope
+        @test ForwardDiff.value(d_range) ≈ slope_right
+        # Vector/BinarySearch with positive partial → LEFT interval → left slope
+        @test ForwardDiff.value(d_vec) ≈ slope_left
+
+        # AD partials at exact knots: verify against BOTH analytic chain rule
+        # (exact) and one-sided FD (numerical cross-check).
+        #
+        # Analytic (quotient rule on α(t) = (xq - t*x[k]) / (t*step)):
+        #   dα/dt|_{t=1} = -xq / step = -3.0 / 0.5 = -6
+        #
+        # Range/DirectSearch → RIGHT interval [x[5], x[6]]:
+        #   ∂f/∂t = dα/dt * (y[6]-y[5]) = -6 * (3-5) = 12
+        @test ForwardDiff.partials(r_range)[1] ≈ 12.0
+        # Vector/BinarySearch → LEFT interval [x[4], x[5]]:
+        #   ∂f/∂t = dα/dt * (y[5]-y[4]) = -6 * (5-2) = -18
+        @test ForwardDiff.partials(r_vec)[1] ≈ -18.0
+
+        # One-sided FD cross-check: each AD should match one of the two one-sided FDs.
+        h = 1e-7
+        f_base_r = linear_interp(x_range, y, xq_knot; extrap = ExtendExtrap())
+        fd_fwd_r = (linear_interp((1+h) .* x_range, y, xq_knot; extrap = ExtendExtrap()) - f_base_r) / h
+        fd_bwd_r = (f_base_r - linear_interp((1-h) .* x_range, y, xq_knot; extrap = ExtendExtrap())) / h
+        @test (isapprox(ForwardDiff.partials(r_range)[1], fd_fwd_r; atol = 1e-3) ||
+               isapprox(ForwardDiff.partials(r_range)[1], fd_bwd_r; atol = 1e-3))
+
+        f_base_v = linear_interp(collect(x_range), y, xq_knot; extrap = ExtendExtrap())
+        fd_fwd_v = (linear_interp(collect((1+h) .* x_range), y, xq_knot; extrap = ExtendExtrap()) - f_base_v) / h
+        fd_bwd_v = (f_base_v - linear_interp(collect((1-h) .* x_range), y, xq_knot; extrap = ExtendExtrap())) / h
+        @test (isapprox(ForwardDiff.partials(r_vec)[1], fd_fwd_v; atol = 1e-3) ||
+               isapprox(ForwardDiff.partials(r_vec)[1], fd_bwd_v; atol = 1e-3))
+    end
+
+    @testset "Range{Dual} one-shot scalar" begin
+        x_range = 1.0:0.5:5.0
+        y = cos.(collect(x_range))
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_dual_range = d .* x_range
+
+        itp = linear_interp(x_dual_range, y; extrap = ExtendExtrap())
+        for xq in (1.25, 2.75, 4.5)
+            v_call = itp(xq)
+            v_shot = linear_interp(x_dual_range, y, xq; extrap = ExtendExtrap())
+            @test ForwardDiff.value(v_call) == ForwardDiff.value(v_shot)
+            @test ForwardDiff.partials(v_call) == ForwardDiff.partials(v_shot)
+        end
+    end
+
     @testset "Type stability via @inferred" begin
         x = collect(1.0:0.1:10.0)
         y = sin.(x)

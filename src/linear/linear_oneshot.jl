@@ -275,15 +275,9 @@ end
 end
 
 # Public scalar one-shot API.
-# Single unified entry point for every grid eltype:
-#   - _PromotableGrid (Int, Float, Rational): `_promote_itp_inputs` normalizes
-#     the grid to a common Float precision (Range → _CachedRange, Int → Float64,
-#     etc.) AND promotes y to match when Tv is also a standard numeric type.
-#   - Duck grid (ForwardDiff.Dual, Measurement, …): `_promote_itp_inputs` falls
-#     through to a no-op pass, preserving Tg/Tv as-is so derivative partials
-#     carried by the grid propagate through spacing, search, and the kernel.
-# Compile-time `if TX <: _PromotableGrid` inside `_promote_itp_inputs` means the
-# dead branch is eliminated per call site, so the Float fast path pays nothing.
+# Single unified entry point for every grid eltype. `_promote_itp_inputs` handles
+# grid normalization (Range → _CachedRange, Int → Float64, Dual → Dual{Float64},
+# etc.) and optional y-value promotion for standard numeric types.
 @inline function linear_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -362,8 +356,7 @@ end
 # NOTE: the former scalar `linear_interp(x, y, xq) where {Tg<:Real, ...}` wrapper
 # (an Int→Float auto-promotion layer) has been removed. Its `_promote_itp_inputs`
 # call is now performed inline by the unified `linear_interp(x, y, xq::Tq)` core
-# above, which accepts any `Tg` and branches on `_PromotableGrid` inside
-# `_promote_itp_inputs`. Having both methods previously caused a dispatch
+# above, which accepts any `Tg`. Having both methods previously caused dispatch
 # ambiguity on duck grids (e.g. `Vector{ForwardDiff.Dual}`) that wound up as
 # infinite recursion when the wrapper re-dispatched to itself after a no-op
 # promotion.

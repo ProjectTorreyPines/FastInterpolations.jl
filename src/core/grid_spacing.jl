@@ -150,7 +150,7 @@ Extracts the constant step size and precomputes its reciprocal.
 Defensive fallback for non-normalized Range inputs; the primary path
 uses `_create_spacing(::_CachedRange)` in `cached_range.jl`.
 """
-function _create_spacing(x::AbstractRange{T}) where {T <: AbstractFloat}
+function _create_spacing(x::AbstractRange{T}) where {T}
     # step(x) already returns T for AbstractRange{T}, avoid redundant conversion
     h = step(x)
     inv_h = inv(h)

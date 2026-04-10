@@ -472,12 +472,16 @@ Uses `unsafe_trunc` for ~40% faster index calculation.
 Unlike `_search_binary`, this function computes the interval index directly
 via arithmetic rather than iterative search, exploiting uniform grid spacing.
 """
-@inline function _search_direct(x::AbstractRange{T}, xq::Real) where {T <: AbstractFloat}
+@inline function _search_direct(x::AbstractRange{T}, xq::Real) where {T}
     xq = _to_grid_type(xq, T)
     n = length(x)
     x_min = first(x)
     dx = Base.step(x)
-    idx = clamp(unsafe_trunc(Int, (xq - x_min) / dx + 1), 1, n - 1)
+    # _extract_primal: index calculation is inherently integer (trunc discards fractional
+    # part), so only the primal value matters. Computing the full Dual muladd and then
+    # truncating would give the same idx but waste partial arithmetic.
+    idx = clamp(unsafe_trunc(Int, _extract_primal((xq - x_min) / dx) + 1), 1, n - 1)
+    # xL/xR keep full T (may be Dual) for kernel partial propagation.
     xL = muladd(idx - 1, dx, x_min)
     xR = xL + dx
     return idx, xL, xR
@@ -489,9 +493,10 @@ end
 `_CachedRange` specialization: all fields are plain `T` — no TwicePrecision arithmetic.
 Uses precomputed `inv_h` (multiply instead of divide) for the index calculation.
 """
-@inline function _search_direct(x::_CachedRange{T}, xq::Real) where {T <: AbstractFloat}
+@inline function _search_direct(x::_CachedRange{T}, xq::Real) where {T}
     xq = _to_grid_type(xq, T)
-    idx = clamp(unsafe_trunc(Int, muladd(xq - x.lo, x.inv_h, 1)), 1, x.len - 1)
+    # Primal-based index: see _search_direct(::AbstractRange, ...) comment.
+    idx = clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - x.lo, x.inv_h, 1))), 1, x.len - 1)
     xL = muladd(idx - 1, x.h, x.lo)
     xR = xL + x.h
     return idx, xL, xR
@@ -540,7 +545,7 @@ _CachedRange already has inv_h built in — delegate to 2-arg version.
 """
 @inline function _search_direct(
         x::_CachedRange{T}, ::ScalarSpacing{T}, xq::Real
-    ) where {T <: AbstractFloat}
+    ) where {T}
     return _search_direct(x, xq)
 end
 
@@ -552,11 +557,11 @@ Uses pre-computed `inv_h` for multiplication instead of division.
 """
 @inline function _search_direct(
         x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::Real
-    ) where {T <: AbstractFloat}
+    ) where {T}
     xq = _to_grid_type(xq, T)
     n = length(x)
     x_min = first(x)
-    idx = clamp(unsafe_trunc(Int, muladd(xq - x_min, spacing.inv_h, 1)), 1, n - 1)
+    idx = clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - x_min, spacing.inv_h, 1))), 1, n - 1)
     xL = muladd(idx - 1, spacing.h, x_min)
     xR = xL + spacing.h
     return idx, xL, xR

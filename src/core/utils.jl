@@ -24,23 +24,26 @@
 # _to_float_adding_endpoint is also defined in cached_range.jl.
 
 """
-    _to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT<:AbstractFloat}
+    _to_float(x::AbstractVector{T}, ::Type{T}) where {T}
 
-Identity conversion - return as-is when element type already matches target type.
-This enables zero-allocation for Real→Float wrappers when types already match.
+Identity conversion — return as-is when element type already matches target type.
+Handles both standard Float types and duck types (e.g. `Vector{Dual{Float64}}`
+with target `Dual{Float64}`). Zero-allocation in all cases.
 """
-_to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT <: AbstractFloat} = x
+_to_float(x::AbstractVector{T}, ::Type{T}) where {T} = x
 
 """
-    _to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat}
+    _to_float(x::AbstractVector, ::Type{T}) where {T}
 
-Convert a Vector to a float type (element-wise broadcast).
-Emits a one-time warning since this allocates a new vector.
+Convert a Vector to target type (element-wise broadcast).
+For standard numerics (Int→Float64, Float32→Float64), emits a one-time warning
+since this allocates a new vector. For duck types (e.g. `Dual{Int}→Dual{Float64}`),
+the same broadcast applies — `T.(x)` dispatches to ForwardDiff's `convert`.
 """
-function _to_float(x::AbstractVector, ::Type{FT}) where {FT <: AbstractFloat}
-    @warn "Non-float vector input detected - allocating type conversion. " *
-        "For zero-allocation, pre-convert your data: `x_float = $FT.(x)`" maxlog = 1
-    return FT.(x)
+function _to_float(x::AbstractVector, ::Type{T}) where {T}
+    @warn "Non-matching vector element type detected - allocating type conversion. " *
+        "For zero-allocation, pre-convert your data: `x_typed = $T.(x)`" maxlog = 1
+    return T.(x)
 end
 
 # ========================================
@@ -232,22 +235,17 @@ x_p, y_p = _promote_itp_inputs(x, custom_y)  # y_p stays custom type
         x::AbstractVector{TX},
         y::AbstractVector{TY}
     ) where {TX, TY}
-    if TX <: _PromotableGrid
-        # Standard numerics grid → Float fast path (unchanged)
-        Tg = _promote_grid_float(TX, TY)
-        x_typed = _to_float(x, Tg)
-        if TY <: _PromotableValue
-            _, y_typed = _promote_value_type(y, Tg)
-            return x_typed, y_typed
-        else
-            return x_typed, y
-        end
+    Tg = _promote_grid_float(TX, TY)
+    x_typed = _to_float(x, Tg)
+    # Value promotion: only when BOTH the grid target AND the value type are
+    # standard numerics. When Tg is a duck type (e.g. Dual), promoting y to Tg
+    # would inject derivative partials into values that carry none — semantically
+    # wrong. In that case y passes through unchanged, same as the Tv duck path.
+    if TY <: _PromotableValue && Tg <: AbstractFloat
+        _, y_typed = _promote_value_type(y, Tg)
+        return x_typed, y_typed
     else
-        # Duck grid (e.g. ForwardDiff.Dual, Measurement, custom scalar):
-        # pass through unchanged. The interpolant constructor performs its own
-        # `copy(x)`/`copy(y)` to preserve immutability, so we need not copy here.
-        # Tv is NOT promoted — duck grids do not widen values to a float shadow.
-        return x, y
+        return x_typed, y
     end
 end
 

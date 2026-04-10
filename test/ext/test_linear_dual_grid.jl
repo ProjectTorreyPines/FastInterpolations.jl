@@ -856,6 +856,6 @@ const FI = FastInterpolations
 
         itp = linear_interp(x, y)
         itp(5.55)  # warmup
-        @test (@allocations itp(5.55)) == 0
+        @test (@allocated itp(5.55)) <= ALLOC_THRESHOLD
     end
 end

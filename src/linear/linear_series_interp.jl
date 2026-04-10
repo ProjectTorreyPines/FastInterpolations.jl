@@ -247,7 +247,10 @@ end
 
 Core scalar evaluation for all series at a single query point.
 Uses SIMD-optimized point-contiguous layout for vectorization across series.
-Query information (xq, xL, inv_h) is read from the anchor — no separate xq arg needed.
+
+Query information (`aq.xq`, `aq.xL`, `aq.inv_h`) is read from the anchor.
+For duck grids (Dual), `aq.xq` carries the widened query type (via the outer
+constructor), so `dL = aq.xq - aq.xL` correctly propagates grid-side partials.
 
 # Arguments
 - `output`: Pre-allocated output vector (length = n_series)

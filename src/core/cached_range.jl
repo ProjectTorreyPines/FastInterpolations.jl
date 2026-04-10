@@ -9,7 +9,7 @@
 # Include order: grid_spacing.jl → cached_range.jl → search.jl → utils.jl
 
 """
-    _CachedRange{T <: AbstractFloat} <: AbstractRange{T}
+    _CachedRange{T} <: AbstractRange{T}
 
 `AbstractRange` subtype that pre-caches `first`, `last`, `step`, and `inv(step)` as
 plain `T` fields, enabling multiply-instead-of-divide search and avoiding

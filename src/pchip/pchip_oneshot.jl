@@ -21,7 +21,8 @@
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     x = _to_float(x, Tg)
-    dy = similar!(pool, y)
+    Tdy = _output_eltype(Tv, Tg)
+    dy = acquire!(pool, Tdy, length(y))
     _pchip_slopes!(dy, x, y)
     searcher = _resolve_search(x, xq, search, hint)
     return _hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
@@ -32,7 +33,7 @@ end
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg},
+        x_query::AbstractVector,
         extrap::AbstractExtrap,
         deriv::DerivOp,
         search::AbstractSearchPolicy,
@@ -42,7 +43,8 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
     x_query = _to_float(x_query, Tg)
-    dy = similar!(pool, y)
+    Tdy = _output_eltype(Tv, Tg)
+    dy = acquire!(pool, Tdy, length(y))
     _pchip_slopes!(dy, x, y)
     searcher = _resolve_search(x, x_query, search, hint)
     return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
@@ -53,7 +55,7 @@ end
         output::AbstractVector,
         x::AbstractRange{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg},
+        x_query::AbstractVector,
         extrap::AbstractExtrap,
         deriv::DerivOp,
         search::AbstractSearchPolicy,
@@ -63,7 +65,8 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
     x_query = _to_float(x_query, Tg)
-    dy = similar!(pool, y)
+    Tdy = _output_eltype(Tv, Tg)
+    dy = acquire!(pool, Tdy, length(y))
     _pchip_slopes!(dy, x, y)
     searcher = _resolve_search(x, x_query, search, hint)
     return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
@@ -95,7 +98,7 @@ end
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg},
+        x_query::AbstractVector,
         extrap::AbstractExtrap,
         deriv::DerivOp,
         search::AbstractSearchPolicy,
@@ -135,7 +138,6 @@ C\$^1\$ continuous, monotonicity guaranteed for monotone input data.
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x, y = _promote_itp_inputs(x, y)
-    Tg_actual = eltype(x)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
         return _pchip_interp_onthefly(x, y, xq, extrap, deriv, search, hint)
@@ -161,7 +163,8 @@ In-place PCHIP interpolation with monotone-preserving slopes.
     ) where {Tg, Tv, Tq <: Real}
     x, y = _promote_itp_inputs(x, y)
     Tg_actual = eltype(x)
-    xq_p = _to_float(x_query, Tg_actual)
+    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
+    xq_p = _to_float(x_query, Tq_float)
     resolved = _resolve_coeffs(coeffs, x, xq_p)
     if resolved isa OnTheFly
         return _pchip_interp_onthefly!(output, x, y, xq_p, extrap, deriv, search, hint)
@@ -186,7 +189,8 @@ function pchip_interp(
     ) where {Tg, Tv, Tq <: Real}
     x, y = _promote_itp_inputs(x, y)
     Tg_actual = eltype(x)
-    xq_p = _to_float(x_query, Tg_actual)
+    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
+    xq_p = _to_float(x_query, Tq_float)
     Tr = _output_eltype(eltype(y), Tg_actual, Tq)
     output = Vector{Tr}(undef, length(xq_p))
     pchip_interp!(output, x, y, xq_p; coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)

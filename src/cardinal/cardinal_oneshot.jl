@@ -22,7 +22,8 @@
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     x = _to_float(x, Tg)
-    dy = similar!(pool, y)
+    Tdy = _output_eltype(Tv, Tg)
+    dy = acquire!(pool, Tdy, length(y))
     _cardinal_slopes!(dy, x, y, tension)
     searcher = _resolve_search(x, xq, search, hint)
     return _hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
@@ -33,7 +34,7 @@ end
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg},
+        x_query::AbstractVector,
         tension::Tg,
         extrap::AbstractExtrap,
         deriv::DerivOp,
@@ -44,7 +45,8 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
     x_query = _to_float(x_query, Tg)
-    dy = similar!(pool, y)
+    Tdy = _output_eltype(Tv, Tg)
+    dy = acquire!(pool, Tdy, length(y))
     _cardinal_slopes!(dy, x, y, tension)
     searcher = _resolve_search(x, x_query, search, hint)
     return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
@@ -55,7 +57,7 @@ end
         output::AbstractVector,
         x::AbstractRange{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg},
+        x_query::AbstractVector,
         tension::Tg,
         extrap::AbstractExtrap,
         deriv::DerivOp,
@@ -66,7 +68,8 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
     x_query = _to_float(x_query, Tg)
-    dy = similar!(pool, y)
+    Tdy = _output_eltype(Tv, Tg)
+    dy = acquire!(pool, Tdy, length(y))
     _cardinal_slopes!(dy, x, y, tension)
     searcher = _resolve_search(x, x_query, search, hint)
     return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
@@ -99,7 +102,7 @@ end
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg},
+        x_query::AbstractVector,
         tension::Tg,
         extrap::AbstractExtrap,
         deriv::DerivOp,
@@ -134,7 +137,7 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
         y::AbstractVector{Tv},
         xq::Tq;
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
-        tension::Real = zero(Tg),
+        tension::Real = 0.0,
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
@@ -168,7 +171,8 @@ In-place cardinal spline interpolation.
     ) where {Tg, Tv, Tq <: Real}
     x, y = _promote_itp_inputs(x, y)
     Tg_actual = eltype(x)
-    xq_p = _to_float(x_query, Tg_actual)
+    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
+    xq_p = _to_float(x_query, Tq_float)
     resolved = _resolve_coeffs(coeffs, x, xq_p)
     if resolved isa OnTheFly
         return _cardinal_interp_onthefly!(output, x, y, xq_p, Tg_actual(tension), extrap, deriv, search, hint)
@@ -194,7 +198,8 @@ function cardinal_interp(
     ) where {Tg, Tv, Tq <: Real}
     x, y = _promote_itp_inputs(x, y)
     Tg_actual = eltype(x)
-    xq_p = _to_float(x_query, Tg_actual)
+    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
+    xq_p = _to_float(x_query, Tq_float)
     Tr = _output_eltype(eltype(y), Tg_actual, Tq)
     output = Vector{Tr}(undef, length(xq_p))
     cardinal_interp!(output, x, y, xq_p; coeffs = coeffs, tension = tension, extrap = extrap, deriv = deriv, search = search, hint = hint)

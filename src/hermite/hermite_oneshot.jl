@@ -61,7 +61,8 @@ function hermite_interp!(
     ) where {Tg, Tv, Tq <: Real}
     x, y, dy = _promote_hermite_inputs(x, y, dy)
     Tg_actual = eltype(x)
-    xq_p = _to_float(x_query, Tg_actual)
+    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
+    xq_p = _to_float(x_query, Tq_float)
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
     @boundscheck length(output) == length(xq_p) || _throw_length_mismatch(length(xq_p), length(output), "x_query", "output")
@@ -92,7 +93,8 @@ function hermite_interp(
     ) where {Tg, Tv, Tq <: Real}
     x, y, dy = _promote_hermite_inputs(x, y, dy)
     Tg_actual = eltype(x)
-    xq_p = _to_float(x_query, Tg_actual)
+    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
+    xq_p = _to_float(x_query, Tq_float)
     Tr = _output_eltype(eltype(y), Tg_actual, Tq)
     output = Vector{Tr}(undef, length(xq_p))
     searcher = _resolve_search(x, xq_p, search, hint)

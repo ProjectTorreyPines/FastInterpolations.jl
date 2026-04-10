@@ -45,7 +45,7 @@ operating point. The dot-product identity holds exactly at that `y`:
     dot(akima_interp(x, y).(xq), y_bar) == dot(y, adj(y_bar))
 
 # Type Parameters
-- `Tg`: Grid float type (Float32 or Float64)
+- `Tg`: Grid type — normally Float32/Float64, unconstrained for duck-typed grids (e.g. ForwardDiff.Dual)
 - `Tv`: Value type (must support sign, abs, zero, division)
 - `EP`: Extrapolation policy type
 

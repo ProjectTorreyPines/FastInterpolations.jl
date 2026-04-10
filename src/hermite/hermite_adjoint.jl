@@ -331,7 +331,7 @@ considering only the `y`-dependence (slopes `dy` are treated as fixed).
 Constructed from a grid and query points (query-baked, data-free).
 
 # Type Parameters
-- `Tg`: Grid float type (Float32 or Float64)
+- `Tg`: Grid type — normally Float32/Float64, unconstrained for duck-typed grids (e.g. ForwardDiff.Dual)
 - `EP`: Extrapolation policy type (`NoExtrap`, `ExtendExtrap`, `ClampExtrap`, `FillExtrap`, `WrapExtrap`)
 
 # Usage

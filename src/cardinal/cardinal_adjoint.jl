@@ -41,7 +41,7 @@ and the dot-product identity holds exactly:
     dot(cardinal_interp(x, y; tension=t).(xq), y_bar) == dot(y, adj(y_bar))
 
 # Type Parameters
-- `Tg`: Grid float type (Float32 or Float64)
+- `Tg`: Grid type — normally Float32/Float64, unconstrained for duck-typed grids (e.g. ForwardDiff.Dual)
 - `EP`: Extrapolation policy type
 
 # Usage

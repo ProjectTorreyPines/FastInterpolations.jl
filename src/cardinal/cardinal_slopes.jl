@@ -25,11 +25,11 @@ Compute cardinal spline slopes in-place.
 O(n), single pass, zero allocation (writes into `dy`).
 """
 function _cardinal_slopes!(
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        tension::Tg
-    ) where {Tg <: AbstractFloat, Tv}
+        y::AbstractVector,
+        tension
+    ) where {Tg}
     n = length(x)
     @assert n >= 2 "Cardinal spline requires at least 2 points"
     @assert length(y) == n "y length must match x"

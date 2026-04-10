@@ -37,7 +37,7 @@ itp(0.5; search=BinarySearch())  # override search
 ```
 """
 struct CubicHermiteInterpolant1D{
-        Tg <: AbstractFloat,
+        Tg,
         Tv,
         X <: AbstractVector{Tg},
         Y <: AbstractVector{Tv},
@@ -56,11 +56,11 @@ struct CubicHermiteInterpolant1D{
 
     # PreCompute inner constructor: dy is a precomputed slope vector
     function CubicHermiteInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, PreCompute}(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, dy::AbstractVector{Tv},
+            x::AbstractVector{Tg}, y::AbstractVector{Tv}, dy::AbstractVector,
             spacing::S, extrap::E, search::P
         ) where {
-            Tg <: AbstractFloat, Tv,
-            X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractVector{Tv},
+            Tg, Tv,
+            X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractVector,
             S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy,
         }
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))

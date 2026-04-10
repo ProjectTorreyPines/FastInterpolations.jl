@@ -28,7 +28,7 @@ to `f_bar[idx]`, `f_bar[idx+1]`, `dy_bar[idx]`, `dy_bar[idx+1]` respectively.
 
 Weight tuples for derivative orders 0–3 are pre-baked at construction time.
 """
-struct _HermiteAdjointAnchor1D{Tg <: AbstractFloat}
+struct _HermiteAdjointAnchor1D{Tg}
     idx::Int              # Interval index
     w0::NTuple{4, Tg}     # (w_yL, w_yR, w_dyL, w_dyR) for EvalValue
     w1::NTuple{4, Tg}     # for EvalDeriv1
@@ -98,9 +98,9 @@ OOB handling baked into weights at construction time (no runtime OOB checks).
 function _bake_hermite_adjoint_anchors(
         x::AbstractVector{Tg},
         spacing::AbstractGridSpacing{Tg},
-        xq::AbstractVector{Tg},
+        xq::AbstractVector,
         extrap::AbstractExtrap
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg}
     x_lo, x_hi = first(x), last(x)
 
     need_clamp = extrap isa Union{ClampExtrap, FillExtrap}
@@ -351,7 +351,7 @@ adj(f_bar, y_bar; deriv=DerivOp(1))
 @assert dot(itp.(xq), y_bar) ≈ dot(y, adj(y_bar))
 ```
 """
-struct HermiteAdjoint1D{Tg <: AbstractFloat, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+struct HermiteAdjoint1D{Tg, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_HermiteAdjointAnchor1D{Tg}}
     grid_size::Int
     extrap::EP
@@ -424,7 +424,9 @@ function hermite_adjoint(
     )
     Tg = _promote_grid_float(eltype(x), eltype(x_query))
     x_p = _to_float(x, Tg)
-    xq_p = _to_float(x_query, Tg)
+    # Query stays Float — adjoint queries don't carry grid-parameter partials
+    Tq_float = Tg <: AbstractFloat ? Tg : float(eltype(x_query))
+    xq_p = _to_float(x_query, Tq_float)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
@@ -433,8 +435,8 @@ function hermite_adjoint(
         x_lo, x_hi = first(x_p), last(x_p)
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
-            (x_lo <= xq_i <= x_hi) || throw(
-                DomainError(xq_i, "query point outside domain [$x_lo, $x_hi]")
+            (_extract_primal(x_lo) <= xq_i <= _extract_primal(x_hi)) || throw(
+                DomainError(xq_i, "query point outside domain [$(_extract_primal(x_lo)), $(_extract_primal(x_hi))]")
             )
         end
     end

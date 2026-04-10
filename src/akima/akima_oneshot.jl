@@ -18,7 +18,7 @@
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     x = _to_float(x, Tg)
     dy = similar!(pool, y)
@@ -37,7 +37,7 @@ end
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
@@ -58,7 +58,7 @@ end
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, Tg)
@@ -82,7 +82,7 @@ end
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
     x = _to_float(x, Tg)
@@ -100,7 +100,7 @@ end
         deriv::DerivOp,
         search::AbstractSearchPolicy,
         hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
@@ -133,7 +133,9 @@ Outlier-robust, C\$^1\$ continuous.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
+    x, y = _promote_itp_inputs(x, y)
+    Tg_actual = eltype(x)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
         return _akima_interp_onthefly(x, y, xq, extrap, deriv, search, hint)
@@ -150,37 +152,21 @@ In-place Akima interpolation with outlier-robust slopes.
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg};
+        x_query::AbstractVector{Tq};
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
-    resolved = _resolve_coeffs(coeffs, x, x_query)
+    ) where {Tg, Tv, Tq <: Real}
+    x, y = _promote_itp_inputs(x, y)
+    Tg_actual = eltype(x)
+    xq_p = _to_float(x_query, Tg_actual)
+    resolved = _resolve_coeffs(coeffs, x, xq_p)
     if resolved isa OnTheFly
-        return _akima_interp_onthefly!(output, x, y, x_query, extrap, deriv, search, hint)
+        return _akima_interp_onthefly!(output, x, y, xq_p, extrap, deriv, search, hint)
     end
-    return _akima_interp_precompute!(output, x, y, x_query, extrap, deriv, search, hint)
-end
-
-# Range disambiguation for in-place
-@inline function akima_interp!(
-        output::AbstractVector,
-        x::AbstractRange{Tg},
-        y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg};
-        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
-    resolved = _resolve_coeffs(coeffs, x, x_query)
-    if resolved isa OnTheFly
-        return _akima_interp_onthefly!(output, x, y, x_query, extrap, deriv, search, hint)
-    end
-    return _akima_interp_precompute!(output, x, y, x_query, extrap, deriv, search, hint)
+    return _akima_interp_precompute!(output, x, y, xq_p, extrap, deriv, search, hint)
 end
 
 """
@@ -191,70 +177,19 @@ Akima interpolation at multiple query points. Returns `Vector{Tv}`.
 function akima_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg};
+        x_query::AbstractVector{Tq};
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
-    output = Vector{Tv}(undef, length(x_query))
-    akima_interp!(output, x, y, x_query; coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
+    ) where {Tg, Tv, Tq <: Real}
+    x, y = _promote_itp_inputs(x, y)
+    Tg_actual = eltype(x)
+    xq_p = _to_float(x_query, Tg_actual)
+    Tr = _output_eltype(eltype(y), Tg_actual, Tq)
+    output = Vector{Tr}(undef, length(xq_p))
+    akima_interp!(output, x, y, xq_p; coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end
 
-# ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                  GENERIC WRAPPERS — Real type promotion                   ║
-# ╚═══════════════════════════════════════════════════════════════════════════╝
-
-# Scalar — promotes x, y to Float; passes xq directly for AD support
-@inline function akima_interp(
-        x::AbstractVector{TX},
-        y::AbstractVector{TY},
-        xq::Tq;
-        kwargs...
-    ) where {TX <: Real, TY, Tq <: Real}
-    x_p, y_p = _promote_itp_inputs(x, y)
-    return akima_interp(x_p, y_p, xq; kwargs...)
-end
-
-# Vector — allocating
-function akima_interp(
-        x::AbstractVector{TX},
-        y::AbstractVector{TY},
-        x_query::AbstractVector{Tq};
-        kwargs...
-    ) where {TX <: Real, TY, Tq <: Real}
-    x_p, y_p, xq_p = _promote_itp_inputs(x, y, x_query)
-    Tv_float = eltype(y_p)
-    output = Vector{Tv_float}(undef, length(x_query))
-    akima_interp!(output, x_p, y_p, xq_p; kwargs...)
-    return output
-end
-
-# Vector — in-place
-function akima_interp!(
-        output::AbstractVector,
-        x::AbstractVector{TX},
-        y::AbstractVector{TY},
-        x_query::AbstractVector{Tq};
-        kwargs...
-    ) where {TX <: Real, TY, Tq <: Real}
-    @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-
-    x_p, y_p, xq_p = _promote_itp_inputs(x, y, x_query)
-    Tv_float = eltype(y_p)
-
-    Tout = eltype(output)
-    if promote_type(Tout, Tv_float) !== Tout
-        throw(
-            ArgumentError(
-                "output eltype $Tout cannot hold interpolation result type $Tv_float. " *
-                    "Use Vector{$Tv_float} or a wider type."
-            )
-        )
-    end
-
-    return akima_interp!(output, x_p, y_p, xq_p; kwargs...)
-end

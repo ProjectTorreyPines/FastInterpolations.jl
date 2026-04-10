@@ -41,10 +41,10 @@ secant sequence.
 O(n), single pass, zero allocation (writes into `dy`).
 """
 function _akima_slopes!(
-        dy::AbstractVector{Tv},
+        dy::AbstractVector,
         x::AbstractVector{Tg},
-        y::AbstractVector{Tv}
-    ) where {Tg <: AbstractFloat, Tv}
+        y::AbstractVector
+    ) where {Tg}
     n = length(x)
     @assert n >= 2 "Akima requires at least 2 points"
     @assert length(y) == n "y length must match x"

@@ -31,7 +31,7 @@ itp(0.5)
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {TX <: Real, TY}
+    ) where {TX, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     Tg = eltype(x_p)
     extrap_p = _promote_extrap(extrap, eltype(y_p))
@@ -39,7 +39,8 @@ itp(0.5)
     if resolved isa OnTheFly
         return CardinalInterpolant1D(x_p, y_p, CardinalSlopes(Tg(tension)); tension = Tg(tension), extrap = extrap_p, search)
     else
-        dy_p = similar(y_p)
+        Tdy = _output_eltype(eltype(y_p), Tg)
+        dy_p = Vector{Tdy}(undef, length(y_p))
         _cardinal_slopes!(dy_p, x_p, y_p, Tg(tension))
         return CardinalInterpolant1D(x_p, y_p, dy_p; tension = Tg(tension), extrap = extrap_p, search)
     end

@@ -30,7 +30,7 @@ itp(0.5; deriv=DerivOp(1))       # first derivative
 ```
 """
 struct PchipInterpolant1D{
-        Tg <: AbstractFloat,
+        Tg,
         Tv,
         X <: AbstractVector{Tg},
         Y <: AbstractVector{Tv},
@@ -49,11 +49,11 @@ struct PchipInterpolant1D{
 
     # PreCompute inner constructor: dy is a precomputed slope vector
     function PchipInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, PreCompute}(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, dy::AbstractVector{Tv},
+            x::AbstractVector{Tg}, y::AbstractVector{Tv}, dy::AbstractVector,
             spacing::S, extrap::E, search::P
         ) where {
-            Tg <: AbstractFloat, Tv,
-            X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractVector{Tv},
+            Tg, Tv,
+            X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractVector,
             S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy,
         }
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
@@ -69,7 +69,7 @@ struct PchipInterpolant1D{
             x::AbstractVector{Tg}, y::AbstractVector{Tv}, dy::AbstractSlopeMethod,
             spacing::S, extrap::E, search::P
         ) where {
-            Tg <: AbstractFloat, Tv,
+            Tg, Tv,
             X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractSlopeMethod,
             S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy,
         }
@@ -94,8 +94,8 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         search::P = AutoSearch()
     ) where {
-        Tg <: AbstractFloat, Tv,
-        X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractVector{Tv},
+        Tg, Tv,
+        X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractVector,
         P <: AbstractSearchPolicy,
     }
     E = typeof(extrap)
@@ -114,7 +114,7 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         search::P = AutoSearch()
     ) where {
-        Tg <: AbstractFloat, Tv,
+        Tg, Tv,
         X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractSlopeMethod,
         P <: AbstractSearchPolicy,
     }

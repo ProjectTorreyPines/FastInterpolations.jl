@@ -546,14 +546,6 @@
         @test all(isfinite, result)
     end
 
-    @testset "Coverage — Hermite output eltype validation error" begin
-        x_int = collect(0:5)
-        y_int = x_int .^ 2
-        dy_int = 2 .* x_int
-        out_narrow = Vector{Float32}(undef, 3)
-        @test_throws ArgumentError hermite_interp!(out_narrow, x_int, y_int, dy_int, [1, 2, 3])
-    end
-
     @testset "Coverage — generic wrapper Integer promotion" begin
         x_int = collect(0:5)
         y_int = x_int .^ 2

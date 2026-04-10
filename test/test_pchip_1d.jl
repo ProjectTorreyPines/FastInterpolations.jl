@@ -360,16 +360,6 @@
         @test isfinite(pchip_interp(x, y, 1.5))
     end
 
-    @testset "Coverage — output eltype validation error" begin
-        # Integer inputs trigger generic wrapper which validates output eltype
-        x_int = collect(0:9)
-        y_int = x_int .^ 2
-        xq_int = [2, 4, 6]
-        out_narrow = Vector{Float32}(undef, length(xq_int))
-        # Int → Float64 result into Float32 output → should throw
-        @test_throws ArgumentError pchip_interp!(out_narrow, x_int, y_int, xq_int)
-    end
-
     @testset "Coverage — WrapExtrap vector path" begin
         x = collect(range(0.0, 2π, 20))
         y = sin.(x)

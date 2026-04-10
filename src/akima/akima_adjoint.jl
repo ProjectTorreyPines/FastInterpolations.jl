@@ -58,7 +58,7 @@ f_bar = adj(y_bar; deriv=DerivOp(1))    # derivative adjoint
 adj(f_bar, y_bar)                       # in-place
 ```
 """
-struct AkimaAdjoint1D{Tg <: AbstractFloat, Tv <: Real, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+struct AkimaAdjoint1D{Tg, Tv <: Real, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_HermiteAdjointAnchor1D{Tg}}
     grid::Vector{Tg}       # Grid points (needed for slope adjoint secant computation)
     data::Vector{Tv}       # y values (needed for slope weight conditions)
@@ -462,7 +462,8 @@ function akima_adjoint(
     )
     Tg = _promote_grid_float(eltype(x), eltype(x_query))
     x_p = _to_float(x, Tg)
-    xq_p = _to_float(x_query, Tg)
+    Tq_float = Tg <: AbstractFloat ? Tg : float(eltype(x_query))
+    xq_p = _to_float(x_query, Tq_float)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
@@ -471,8 +472,8 @@ function akima_adjoint(
         x_lo, x_hi = first(x_p), last(x_p)
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
-            (x_lo <= xq_i <= x_hi) || throw(
-                DomainError(xq_i, "query point outside domain [$x_lo, $x_hi]")
+            (_extract_primal(x_lo) <= xq_i <= _extract_primal(x_hi)) || throw(
+                DomainError(xq_i, "query point outside domain [$(_extract_primal(x_lo)), $(_extract_primal(x_hi))]")
             )
         end
     end

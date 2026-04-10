@@ -380,7 +380,7 @@ function (itp::LinearInterpolant{Tg, Tv})(
         aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg, Tq}};
         deriv::DerivOp = EvalValue()
     ) where {Tg, Tv, Tq <: Real}
-    T_out = promote_type(Tv, Tg, Tq)
+    T_out = _output_eltype(Tv, Tg, Tq)
     output = Vector{T_out}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _linear_eval_with_anchor(itp, aq_vec[i], deriv)

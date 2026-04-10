@@ -299,7 +299,7 @@ function linear_interp(
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
     Tg = eltype(x_typed)
     Tv = eltype(y_typed)
-    T_out = promote_type(Tv, Tg)
+    T_out = _output_eltype(Tv, Tg)
     output = Vector{T_out}(undef, length(x_targets))
     linear_interp!(output, x_typed, y_typed, xq_typed; extrap, deriv, search)
     return output

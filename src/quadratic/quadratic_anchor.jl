@@ -49,7 +49,7 @@ When `xq` is a `ForwardDiff.Dual`, the anchor preserves the Dual type
 in both `xq` and `dL` fields, enabling automatic differentiation through
 series interpolant evaluation.
 """
-struct _QuadraticAnchoredQuery{Tg <: AbstractFloat, Tq <: Real}
+struct _QuadraticAnchoredQuery{Tg, Tq <: Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), Float or Dual
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
@@ -93,7 +93,7 @@ itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
         ::Val{:quadratic},
         wrap::Bool = false,
         searcher::P = DEFAULT_SEARCHER
-    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Real, P <: Searcher}
     return _quadratic_anchor_query_impl(x, xq, wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
@@ -171,7 +171,7 @@ When buffer element type is `{Tg, Tq}` and `xq` element type is `S`:
         ::Val{:quadratic},
         wrap::Bool = false,
         searcher::P = _to_searcher(LinearBinarySearch())
-    ) where {Tg <: AbstractFloat, Tq <: Real, S <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Real, S <: Real, P <: Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
@@ -204,7 +204,7 @@ while preserving the full Dual value for `dL` computation.
         xq::Tq,
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
-    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Real, P <: Searcher}
     loc = _anchor_loc(x, xq, wrap, policy)
 
     # Compute dL: offset from interval start (preserves Dual type)

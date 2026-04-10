@@ -30,14 +30,14 @@ end
 @inline function _quadratic_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        y::AbstractVector,
+        a::AbstractVector,
+        d::AbstractVector,
         xq::AbstractVector{<:Real},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap = _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
         output[i] = _quadratic_eval_at_point(x, y, a, d, xq[i], extrap, deriv, searcher)
@@ -111,7 +111,7 @@ end
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {TX <: Real, TY}
+    ) where {TX, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     bc_p = _normalize_bc(bc, first(y_p))
 

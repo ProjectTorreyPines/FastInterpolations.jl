@@ -21,7 +21,7 @@
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
     x = _to_float(x, Tg)
     _check_domain(x, xq, extrap)
@@ -50,7 +50,7 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     x = _to_float(x, Tg)
@@ -78,7 +78,7 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
     x = _to_float(x, Tg)
     K = n_series(s)
@@ -108,7 +108,7 @@ function constant_interp(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     K = n_series(s)
     Tv_out = _value_type(_series_eltype(s), Tg)
     outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
@@ -116,35 +116,7 @@ function constant_interp(
     return outputs
 end
 
-# ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                     REAL TYPE PROMOTION WRAPPERS                         ║
-# ╚═══════════════════════════════════════════════════════════════════════════╝
-
-@inline function constant_interp(
-        x::AbstractVector{Tg}, s::Series, xq::Tq; kwargs...
-    ) where {Tg <: Real, Tq <: Real}
-    x_typed = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
-    return constant_interp(x_typed, s, xq; kwargs...)
-end
-
-@inline function constant_interp!(
-        output::AbstractVector, x::AbstractVector{Tg}, s::Series, xq::Tq; kwargs...
-    ) where {Tg <: Real, Tq <: Real}
-    x_typed = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
-    return constant_interp!(output, x_typed, s, xq; kwargs...)
-end
-
-function constant_interp!(
-        outputs::AbstractVector{<:AbstractVector},
-        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
-    ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return constant_interp!(outputs, _to_float(x, Tg_float), s, xqs; kwargs...)
-end
-
-function constant_interp(
-        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
-    ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return constant_interp(_to_float(x, Tg_float), s, xqs; kwargs...)
-end
+# NOTE: the former Real type promotion wrappers (Tg <: Real) have been removed.
+# The hot-path methods above now use unconstrained Tg, and _to_float handles
+# grid normalization for all types (Int, Float, Dual, etc.), preventing
+# infinite recursion on duck types like ForwardDiff.Dual <: Real.

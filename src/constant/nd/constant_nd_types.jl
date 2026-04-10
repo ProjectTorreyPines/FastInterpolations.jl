@@ -46,7 +46,7 @@ itp = constant_interp((x, y), data; side=(LeftSide(), RightSide()), extrap=(NoEx
 ```
 """
 struct ConstantInterpolantND{
-        Tg <: AbstractFloat,
+        Tg,
         Tv,
         N,
         G <: NTuple{N, AbstractVector{Tg}},
@@ -65,7 +65,7 @@ struct ConstantInterpolantND{
     function ConstantInterpolantND{Tg, Tv, N, G, S, E, SD, P}(
             grids::Tuple{Vararg{AbstractVector, N}}, spacings::S, data::AbstractArray{Tv, N}, extraps::E, sides::SD, searches::P
         ) where {
-            Tg <: AbstractFloat, Tv, N, G <: NTuple{N, AbstractVector{Tg}},
+            Tg, Tv, N, G <: NTuple{N, AbstractVector{Tg}},
             S <: NTuple{N, AbstractGridSpacing{Tg}}, E,
             SD <: Tuple{Vararg{AbstractSide, N}}, P <: NTuple{N, AbstractSearchPolicy},
         }

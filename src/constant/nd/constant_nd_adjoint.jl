@@ -33,7 +33,7 @@ function _bake_constant_nd_anchors(
         spacings::NTuple{N, AbstractGridSpacing{Tg}},
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}}
-    ) where {N, Tg <: AbstractFloat}
+    ) where {N, Tg}
     nq = _query_length(queries)
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps)
@@ -184,7 +184,7 @@ function constant_adjoint(
     ) where {N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
     sides = _resolve_side_nd(side, Val(N))
@@ -225,7 +225,7 @@ function constant_adjoint(
     ) where {N}
     _query_check_ndims(queries, Val(N))
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
     sides = _resolve_side_nd(side, Val(N))
@@ -243,7 +243,7 @@ function _build_constant_nd_adjoint(
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         sides::Tuple{Vararg{AbstractSide, N}}
-    ) where {N, Tg <: AbstractFloat}
+    ) where {N, Tg}
     # Validate all axes have at least 2 points
     @inbounds for d in 1:N
         length(grids[d]) >= 2 || _throw_adjoint_grid_too_small(d, length(grids[d]))

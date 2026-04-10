@@ -26,7 +26,7 @@ Evaluates directly from grids + data without constructing a ConstantInterpolantN
         side_vals::Tuple{Vararg{AbstractSide, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         hints = nothing
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     # NoExtrap domain check must precede FillExtrap short-circuit
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, EvalValue(), @inbounds first(data))
@@ -54,7 +54,7 @@ Writes results into `output`. No heap allocation beyond spacings.
         side_vals::Tuple{Vararg{AbstractSide, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         hints = nothing
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
@@ -86,7 +86,7 @@ function _constant_interp_nd_oneshot_batch(
         side_vals::Tuple{Vararg{AbstractSide, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         hints = nothing
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     output = Vector{Tv}(undef, _query_length(queries))
     return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, extraps_val, side_vals, searches, hints)
 end
@@ -133,7 +133,7 @@ function constant_interp(
     end
 
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
@@ -168,7 +168,7 @@ function constant_interp(
     end
 
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
@@ -210,7 +210,7 @@ function constant_interp!(
     end
 
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 

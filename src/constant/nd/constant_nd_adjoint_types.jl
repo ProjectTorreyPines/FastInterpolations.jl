@@ -45,7 +45,7 @@ adj(f_bar, y_bar)               # in-place (zero-allocation)
 ```
 """
 struct ConstantAdjointND{
-        Tg <: AbstractFloat,
+        Tg,
         N,
         G <: NTuple{N, AbstractVector{Tg}},
         S <: NTuple{N, AbstractGridSpacing{Tg}},
@@ -66,7 +66,7 @@ struct ConstantAdjointND{
             grids::NTuple{N, AbstractVector{Tg}}, spacings::S, extraps::EP, sides::SD,
             anchors::Vector{NTuple{N, _ConstantAnchoredQuery{Tg}}}, grid_size::NTuple{N, Int}
         ) where {
-            Tg <: AbstractFloat, N, S <: NTuple{N, AbstractGridSpacing{Tg}},
+            Tg, N, S <: NTuple{N, AbstractGridSpacing{Tg}},
             EP <: Tuple{Vararg{AbstractExtrap, N}}, SD <: Tuple{Vararg{AbstractSide, N}},
         }
         grids_c = map(copy, grids)

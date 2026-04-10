@@ -42,7 +42,7 @@ spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
         values::AbstractVector{Tv},
         grid::AbstractVector{Tg},
         bc::QuadraticBC
-    ) where {Tv, Tg <: AbstractFloat}
+    ) where {Tv, Tg}
     n = length(values)
     @assert n == length(grid) "values and grid must have same length"
     @assert n >= 2 "Need at least 2 points"
@@ -71,21 +71,21 @@ end
 @inline function _slope_1d_quadratic!(
         d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
         grid::AbstractVector{Tg}, ::ZeroCurvBC
-    ) where {Tv, Tg <: AbstractFloat}
+    ) where {Tv, Tg}
     return _slope_1d_quadratic!(d_out, values, grid, Right(Deriv2(0 * first(values))))
 end
 
 @inline function _slope_1d_quadratic!(
         d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
         grid::AbstractVector{Tg}, ::ZeroSlopeBC
-    ) where {Tv, Tg <: AbstractFloat}
+    ) where {Tv, Tg}
     return _slope_1d_quadratic!(d_out, values, grid, Left(Deriv1(0 * first(values))))
 end
 
 @inline function _slope_1d_quadratic!(
         d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
         grid::AbstractVector{Tg}, bc::PolyFit
-    ) where {Tv, Tg <: AbstractFloat}
+    ) where {Tv, Tg}
     return _slope_1d_quadratic!(d_out, values, grid, Right(bc))
 end
 
@@ -148,7 +148,7 @@ Uses the same "reshape to 3D" trick as the cubic version:
         grid::AbstractVector{Tg},
         bc::AbstractBC,
         d::Int
-    ) where {Tv, Tg <: AbstractFloat, N}
+    ) where {Tv, Tg, N}
     @boundscheck begin
         1 ≤ d ≤ N || throw(ArgumentError("dimension d=$d out of range 1:$N"))
         size(out) == size(data) || throw(DimensionMismatch("out and data must have same size"))
@@ -259,7 +259,7 @@ end
     grids::NTuple{N, AbstractVector{Tg}},
     bcs::NTuple{N, AbstractBC},
     ::Val{N}
-) where {Tv, Tg <: AbstractFloat, N, NP1} =
+) where {Tv, Tg, N, NP1} =
     _build_nd_partials_dim_quadratic!(partials, grids, bcs, Val(1), Val(N))
 
 @inline function _build_nd_partials_dim_quadratic!(
@@ -268,7 +268,7 @@ end
         bcs::NTuple{N, AbstractBC},
         ::Val{D},
         ::Val{N}
-    ) where {Tv, Tg <: AbstractFloat, D, N, NP1}
+    ) where {Tv, Tg, D, N, NP1}
     bit_d = 1 << (D - 1)
     @inbounds for p_src in 1:bit_d
         p_dst = p_src + bit_d
@@ -296,7 +296,7 @@ function _compute_nd_partials_quadratic!(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tv, Tg <: AbstractFloat, N, NP1}
+    ) where {Tv, Tg, N, NP1}
     # Validate dimensions
     @boundscheck begin
         NP1 == N + 1 || throw(DimensionMismatch("partials must have N+1 dimensions"))
@@ -334,7 +334,7 @@ function _build_nd_coeffs_quadratic(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
     n_partials = 1 << N
     partials_shape = (n_partials, size(data)...)

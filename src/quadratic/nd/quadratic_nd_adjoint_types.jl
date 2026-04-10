@@ -66,7 +66,7 @@ f_bar = adj(y_bar)   # returns 20×15 matrix
 ```
 """
 struct QuadraticAdjointND{
-        Tg <: AbstractFloat,
+        Tg,
         N,
         G <: NTuple{N, AbstractVector{Tg}},
         S <: NTuple{N, AbstractGridSpacing{Tg}},
@@ -87,7 +87,7 @@ struct QuadraticAdjointND{
             anchors::Vector{_NDAdjointAnchor{Tg, N}}, grid_size::NTuple{N, Int},
             mincurv_Cs::NTuple{N, Tg}
         ) where {
-            Tg <: AbstractFloat, N, S <: NTuple{N, AbstractGridSpacing{Tg}},
+            Tg, N, S <: NTuple{N, AbstractGridSpacing{Tg}},
             BP <: NTuple{N, AbstractBC},
         }
         grids_c = map(copy, grids)

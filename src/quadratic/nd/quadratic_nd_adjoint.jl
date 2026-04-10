@@ -52,7 +52,7 @@ function _bake_nd_quadratic_anchors(
         spacings::NTuple{N, AbstractGridSpacing{Tg}},
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}}
-    ) where {N, Tg <: AbstractFloat}
+    ) where {N, Tg}
     return _bake_nd_anchors_generic(
         grids, spacings, queries, extraps,
         (d, t, h, inv_h, dL) -> _compute_nd_quadratic_anchor_weights(t, h, inv_h)
@@ -141,7 +141,7 @@ Simpler than cubic: no dual caches, no periodic handling.
         grids::NTuple{N, AbstractVector{Tg}},
         grid_size::NTuple{N, Int},
         mincurv_Cs::NTuple{N, Tg}
-    ) where {Tv, Tg <: AbstractFloat, N}
+    ) where {Tv, Tg, N}
     for d in N:-1:1
         bit_d = 1 << (d - 1)
         n_d = grid_size[d]
@@ -251,7 +251,7 @@ function quadratic_adjoint(
     ) where {N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tg)
@@ -292,7 +292,7 @@ function quadratic_adjoint(
     ) where {N}
     _query_check_ndims(queries, Val(N))
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tg)
@@ -314,7 +314,7 @@ function _build_nd_quadratic_adjoint(
         queries,
         bcs::NTuple{N, AbstractBC},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
-    ) where {N, Tg <: AbstractFloat}
+    ) where {N, Tg}
     # Validate grid sizes
     for d in 1:N
         length(grids[d]) >= 2 || _throw_adjoint_grid_too_small(d, length(grids[d]))

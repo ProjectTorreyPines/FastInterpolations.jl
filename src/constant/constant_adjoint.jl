@@ -55,7 +55,7 @@ itp = constant_interp(x, f; side=NearestSide())
 @assert dot(itp.(xq), y_bar) ≈ dot(f, adj(y_bar))
 ```
 """
-struct ConstantAdjoint{Tg <: AbstractFloat, SD <: AbstractSide, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+struct ConstantAdjoint{Tg, SD <: AbstractSide, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_ConstantAnchoredQuery{Tg}}
     grid_size::Int
     x_hi::Tg
@@ -164,8 +164,8 @@ original query position, so scatter can skip OOB contributions.
 """
 function _fixup_constant_anchor_state!(
         anchors::Vector{_ConstantAnchoredQuery{Tg}},
-        xq_original::AbstractVector{Tg},
-        x_lo::Tg, x_hi::Tg
+        xq_original::AbstractVector,
+        x_lo, x_hi
     ) where {Tg}
     @inbounds for i in eachindex(anchors)
         xq_i = xq_original[i]
@@ -227,19 +227,22 @@ function constant_adjoint(
     )
     Tg = _promote_grid_float(eltype(x), eltype(x_query))
     x_p = _to_float(x, Tg)
-    xq_p = _to_float(x_query, Tg)
+    # Query normalization: convert to the grid's float base type, not to Tg itself.
+    # When Tg is a duck type (e.g. Dual), queries stay plain Float.
+    Tq_float = Tg <: AbstractFloat ? Tg : float(eltype(x_query))
+    xq_p = _to_float(x_query, Tq_float)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
     x_hi = last(x_p)
 
-    # NoExtrap: validate all queries in-domain
+    # NoExtrap: validate all queries in-domain (use primal for Dual grid boundaries)
     if extrap isa NoExtrap
-        x_lo = first(x_p)
+        x_lo_p, x_hi_p = _extract_primal(first(x_p)), _extract_primal(last(x_p))
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
-            (x_lo <= xq_i <= x_hi) || throw(
-                DomainError(xq_i, "query point outside domain [$x_lo, $x_hi]")
+            (x_lo_p <= xq_i <= x_hi_p) || throw(
+                DomainError(xq_i, "query point outside domain [$x_lo_p, $x_hi_p]")
             )
         end
     end
@@ -250,10 +253,10 @@ function constant_adjoint(
         # For constant interp, ExtendExtrap == ClampExtrap (slope=0).
         # Clamp OOB queries to boundary for correct anchor geometry.
         # Then restore side flags so scatter can skip OOB contributions.
-        x_lo = first(x_p)
-        xq_clamped = clamp.(xq_p, x_lo, x_hi)
+        x_lo_p, x_hi_p = _extract_primal(first(x_p)), _extract_primal(last(x_p))
+        xq_clamped = clamp.(xq_p, x_lo_p, x_hi_p)
         anchors = _anchor_query(x_p, xq_clamped, Val(:constant), false)
-        _fixup_constant_anchor_state!(anchors, xq_p, x_lo, x_hi)
+        _fixup_constant_anchor_state!(anchors, xq_p, x_lo_p, x_hi_p)
     else
         # WrapExtrap: wraps to domain (correct)
         # NoExtrap: already validated in-domain above

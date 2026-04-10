@@ -63,7 +63,7 @@ itp((1.0, 0.5); deriv=(1, 0))   # dfdx
 ```
 """
 struct QuadraticInterpolantND{
-        Tg <: AbstractFloat,
+        Tg,
         Tv,
         N,
         NP1,

@@ -59,20 +59,20 @@ itp = quadratic_interp(x, y; search=LinearBinarySearch())  # explicit override
 val = itp(0.5; search=BinarySearch())  # per-call override
 ```
 """
-struct QuadraticInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC} <: AbstractInterpolant1D{Tg, Tv}
+struct QuadraticInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC, A <: AbstractVector, D <: AbstractVector} <: AbstractInterpolant1D{Tg, Tv}
     x::X
     y::Y
     spacing::S       # Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
-    a::Vector{Tv}   # Quadratic coefficients (value-derived)
-    d::Vector{Tv}   # Slope coefficients (value-derived)
+    a::A             # Quadratic coefficients (may be Dual when grid is duck-typed)
+    d::D             # Slope coefficients (may be Dual when grid is duck-typed)
     extrap::E        # Extrapolation mode (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
     bc::BC           # Boundary condition (retained for Matrix(itp, xq) convenience)
 
     # Inner constructor: parametric, only calls new (handles validation only)
-    function QuadraticInterpolant{Tg, Tv, X, Y, S, E, P, BC}(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, spacing::S, a::Vector{Tv}, d::Vector{Tv}, ev::E, search::P, bc::BC
-        ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC}
+    function QuadraticInterpolant{Tg, Tv, X, Y, S, E, P, BC, A, D}(
+            x::AbstractVector{Tg}, y::AbstractVector{Tv}, spacing::S, a::A, d::D, ev::E, search::P, bc::BC
+        ) where {Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC, A <: AbstractVector, D <: AbstractVector}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || _throw_grid_too_small(length(x))
         # Copy to ensure immutability: once constructed, the interpolant owns
@@ -80,7 +80,7 @@ struct QuadraticInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y 
         # copy() on immutable Range types is a no-op (zero allocation).
         # typeof() rebinds X/Y to the post-copy concrete type (e.g. SubArray → Vector).
         xc, yc = copy(x), copy(y)
-        return new{Tg, Tv, typeof(xc), typeof(yc), S, E, P, BC}(xc, yc, spacing, a, d, ev, search, bc)
+        return new{Tg, Tv, typeof(xc), typeof(yc), S, E, P, BC, A, D}(xc, yc, spacing, a, d, ev, search, bc)
     end
 end
 
@@ -95,13 +95,15 @@ end
         x::X,
         y::Y,
         spacing::S,
-        a::Vector{Tv},
-        d::Vector{Tv};
+        a::AbstractVector,
+        d::AbstractVector;
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         search::P = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, P <: AbstractSearchPolicy}
+    ) where {Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, P <: AbstractSearchPolicy}
     E = typeof(extrap)
     BC = typeof(bc)
-    return QuadraticInterpolant{Tg, Tv, X, Y, S, E, P, BC}(x, y, spacing, a, d, extrap, search, bc)
+    A = typeof(a)
+    D = typeof(d)
+    return QuadraticInterpolant{Tg, Tv, X, Y, S, E, P, BC, A, D}(x, y, spacing, a, d, extrap, search, bc)
 end

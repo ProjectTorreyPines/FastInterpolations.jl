@@ -29,7 +29,7 @@ Constant interpolation with left-continuous (floor) convention.
 Always returns the left boundary value `y_left`.
 dL can be any Real (including ForwardDiff.Dual for AD).
 """
-@inline function _constant_kernel(::EvalValue, y_left::Tv, ::Tv, ::Tg, dL::Td, ::LeftSide) where {Tv, Tg <: AbstractFloat, Td <: Real}
+@inline function _constant_kernel(::EvalValue, y_left::Tv, ::Tv, ::Tg, dL::Td, ::LeftSide) where {Tv, Tg, Td <: Real}
     return y_left
 end
 
@@ -40,7 +40,7 @@ Constant interpolation with right-continuous (ceiling) convention.
 Returns `y_left` at grid point (dL == 0), `y_right` otherwise.
 dL can be any Real (including ForwardDiff.Dual for AD).
 """
-@inline function _constant_kernel(::EvalValue, y_left::Tv, y_right::Tv, ::Tg, dL::Td, ::RightSide) where {Tv, Tg <: AbstractFloat, Td <: Real}
+@inline function _constant_kernel(::EvalValue, y_left::Tv, y_right::Tv, ::Tg, dL::Td, ::RightSide) where {Tv, Tg, Td <: Real}
     # Use primal value for comparison (supports ForwardDiff.Dual)
     dL_primal = _extract_primal(dL)
     return iszero(dL_primal) ? y_left : y_right
@@ -53,7 +53,7 @@ Constant interpolation with nearest-neighbor convention and left tie-breaking.
 Returns `y_left` if dL <= h/2 (including midpoint), `y_right` otherwise.
 dL can be any Real (including ForwardDiff.Dual for AD).
 """
-@inline function _constant_kernel(::EvalValue, y_left::Tv, y_right::Tv, h::Tg, dL::Td, ::NearestSide) where {Tv, Tg <: AbstractFloat, Td <: Real}
+@inline function _constant_kernel(::EvalValue, y_left::Tv, y_right::Tv, h::Tg, dL::Td, ::NearestSide) where {Tv, Tg, Td <: Real}
     # Use primal value for comparison (supports ForwardDiff.Dual)
     dL_primal = _extract_primal(dL)
     return dL_primal <= h / 2 ? y_left : y_right
@@ -66,7 +66,7 @@ First derivative of constant interpolation.
 Always returns zero (constant function has no slope).
 Uses `0 * y_left` for duck-typing support and NaN propagation.
 """
-@inline function _constant_kernel(::EvalDeriv1, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg <: AbstractFloat, Td <: Real}
+@inline function _constant_kernel(::EvalDeriv1, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td <: Real}
     return 0 * y_left
 end
 
@@ -76,7 +76,7 @@ end
 Second derivative of constant interpolation.
 Always returns zero (constant function has no curvature).
 """
-@inline function _constant_kernel(::EvalDeriv2, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg <: AbstractFloat, Td <: Real}
+@inline function _constant_kernel(::EvalDeriv2, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td <: Real}
     return 0 * y_left
 end
 
@@ -85,12 +85,12 @@ end
 
 Third derivative of constant interpolation is always zero.
 """
-@inline function _constant_kernel(::EvalDeriv3, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg <: AbstractFloat, Td <: Real}
+@inline function _constant_kernel(::EvalDeriv3, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td <: Real}
     return 0 * y_left
 end
 
 """Generic fallback: N-th derivative of degree-0 (constant) is zero for N ≥ 1."""
-@inline function _constant_kernel(::DerivOp{N}, y_left::Tv, ::Tv, ::Tg, ::Td, ::AbstractSide) where {N, Tv, Tg <: AbstractFloat, Td <: Real}
+@inline function _constant_kernel(::DerivOp{N}, y_left::Tv, ::Tv, ::Tg, ::Td, ::AbstractSide) where {N, Tv, Tg, Td <: Real}
     return 0 * y_left
 end
 

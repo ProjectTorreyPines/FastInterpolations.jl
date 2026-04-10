@@ -50,7 +50,7 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
     vecs = _series_vectors(s)
     K = n_series(s)
     Tg_actual = eltype(x)  # after promotion via _to_float
-    Tv = _series_output_type(_value_type(_series_eltype(s), Tg_actual), Tq)
+    Tv = _series_output_type(promote_type(_series_eltype(s), Tg_actual), Tq)
     output = Vector{Tv}(undef, K)
     @inbounds for k in 1:K
         output[k] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap)

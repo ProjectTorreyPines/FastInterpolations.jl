@@ -19,7 +19,7 @@ Used for periodic boundary conditions and extrap=WrapExtrap().
 
 Optimized: skips expensive `mod()` when xi is already in domain.
 """
-@inline function _wrap_to_domain(xi::Tg, x_min::Tg, x_max::Tg) where {Tg <: AbstractFloat}
+@inline function _wrap_to_domain(xi::Tg, x_min::Tg, x_max::Tg) where {Tg}
     # Single-branch check: outside domain → slow path
     if (xi < x_min) || (xi >= x_max)
         period = x_max - x_min
@@ -32,7 +32,7 @@ end
 # Generic wrapper: handles Dual, Int, Float32 on Float64 grid, etc.
 # IMPORTANT: Preserves AD Dual type through the entire operation.
 # mod() is compatible with ForwardDiff.Dual, so we use it directly on xi.
-@inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg <: AbstractFloat}
+@inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg}
     xi_primal = _extract_primal(xi)
     # Fast path: already in domain, return original xi (preserves Dual type for AD)
     if (xi_primal >= x_min) && (xi_primal < x_max)

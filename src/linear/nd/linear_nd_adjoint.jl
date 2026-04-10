@@ -32,7 +32,7 @@ function _bake_linear_nd_anchors(
         spacings::NTuple{N, AbstractGridSpacing{Tg}},
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}}
-    ) where {N, Tg <: AbstractFloat}
+    ) where {N, Tg}
     nq = _query_length(queries)
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps)
@@ -210,7 +210,7 @@ function linear_adjoint(
     ) where {N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
     return _build_linear_nd_adjoint(grids_typed, queries, extraps)
@@ -247,7 +247,7 @@ function linear_adjoint(
     ) where {N}
     _query_check_ndims(queries, Val(N))
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
     return _build_linear_nd_adjoint(grids_typed, queries, extraps)
@@ -263,7 +263,7 @@ function _build_linear_nd_adjoint(
         grids::NTuple{N, AbstractVector{Tg}},
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}}
-    ) where {N, Tg <: AbstractFloat}
+    ) where {N, Tg}
     # Validate all axes have at least 2 points (scatter writes to idx and idx+1)
     @inbounds for d in 1:N
         length(grids[d]) >= 2 || _throw_adjoint_grid_too_small(d, length(grids[d]))

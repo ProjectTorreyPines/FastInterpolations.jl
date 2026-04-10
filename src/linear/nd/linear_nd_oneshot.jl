@@ -27,7 +27,7 @@ Evaluates directly from grids + data without constructing a LinearInterpolantND.
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     # NoExtrap domain check must precede FillExtrap short-circuit
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
@@ -56,7 +56,7 @@ Writes results into `output`. No heap allocation beyond spacings.
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
@@ -102,7 +102,7 @@ function linear_interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
     Tr = _output_eltype(Tv, Tg, typeof.(query)...)
@@ -131,7 +131,7 @@ function linear_interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     Tq = _query_eltype(queries)
     Tr = _output_eltype(Tv, Tg, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
@@ -162,7 +162,7 @@ function linear_interp!(
     ) where {Tv, N}
     _query_check_ndims(queries, Val(N))
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 

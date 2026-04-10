@@ -24,23 +24,26 @@
 # _to_float_adding_endpoint is also defined in cached_range.jl.
 
 """
-    _to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT<:AbstractFloat}
+    _to_float(x::AbstractVector{T}, ::Type{T}) where {T}
 
-Identity conversion - return as-is when element type already matches target type.
-This enables zero-allocation for Real→Float wrappers when types already match.
+Identity conversion — return as-is when element type already matches target type.
+Handles both standard Float types and duck types (e.g. `Vector{Dual{Float64}}`
+with target `Dual{Float64}`). Zero-allocation in all cases.
 """
-_to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT <: AbstractFloat} = x
+_to_float(x::AbstractVector{T}, ::Type{T}) where {T} = x
 
 """
-    _to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat}
+    _to_float(x::AbstractVector, ::Type{T}) where {T}
 
-Convert a Vector to a float type (element-wise broadcast).
-Emits a one-time warning since this allocates a new vector.
+Convert a Vector to target type (element-wise broadcast).
+For standard numerics (Int→Float64, Float32→Float64), emits a one-time warning
+since this allocates a new vector. For duck types (e.g. `Dual{Int}→Dual{Float64}`),
+the same broadcast applies — `T.(x)` dispatches to ForwardDiff's `convert`.
 """
-function _to_float(x::AbstractVector, ::Type{FT}) where {FT <: AbstractFloat}
-    @warn "Non-float vector input detected - allocating type conversion. " *
-        "For zero-allocation, pre-convert your data: `x_float = $FT.(x)`" maxlog = 1
-    return FT.(x)
+function _to_float(x::AbstractVector, ::Type{T}) where {T}
+    @warn "Non-matching vector element type detected - allocating type conversion. " *
+        "For zero-allocation, pre-convert your data: `x_typed = $T.(x)`" maxlog = 1
+    return T.(x)
 end
 
 # ========================================
@@ -99,8 +102,11 @@ Determine the output value type from y element type and grid type.
 """
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T <: _PromotableValue, Tg <: AbstractFloat} = Tg
 @inline _value_type(::Type{Complex{T}}, ::Type{Tg}) where {T <: Real, Tg <: AbstractFloat} = Complex{Tg}
-# Duck-typing fallback: custom types preserved as-is (no promotion to grid type)
+# Duck-typing fallback for Tv: custom value types preserved as-is
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg <: AbstractFloat} = T
+# Duck-typing fallback for Tg: when grid is duck-typed (Dual, Measurement, etc.),
+# values are not promoted to grid type (no grid-parameter partials in y).
+@inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg} = T
 
 """
     _series_output_type(::Type{Tv}, ::Type{Tq}) -> Type
@@ -231,10 +237,14 @@ x_p, y_p = _promote_itp_inputs(x, custom_y)  # y_p stays custom type
 @inline function _promote_itp_inputs(
         x::AbstractVector{TX},
         y::AbstractVector{TY}
-    ) where {TX <: Real, TY}
+    ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
     x_typed = _to_float(x, Tg)
-    if TY <: _PromotableValue
+    # Value promotion: only when BOTH the grid target AND the value type are
+    # standard numerics. When Tg is a duck type (e.g. Dual), promoting y to Tg
+    # would inject derivative partials into values that carry none — semantically
+    # wrong. In that case y passes through unchanged, same as the Tv duck path.
+    if TY <: _PromotableValue && Tg <: AbstractFloat
         _, y_typed = _promote_value_type(y, Tg)
         return x_typed, y_typed
     else
@@ -269,10 +279,14 @@ to preserve ForwardDiff.Dual types for automatic differentiation.
         x::AbstractVector{TX},
         y::AbstractVector{TY},
         xq::AbstractVector{TQ}
-    ) where {TX <: Real, TY, TQ <: Real}
+    ) where {TX, TY, TQ <: Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
     Tg = eltype(x_typed)
-    xq_typed = _to_float(xq, Tg)
+    # Query normalization: convert to the grid's float base type, not to Tg itself.
+    # When Tg is a duck type (e.g. Dual{Float64}), queries should stay plain Float —
+    # they don't carry grid-parameter derivatives.
+    Tg_float = Tg <: AbstractFloat ? Tg : float(TQ)
+    xq_typed = _to_float(xq, Tg_float)
     return x_typed, y_typed, xq_typed
 end
 
@@ -356,10 +370,13 @@ _promote_for_anchor(0.5f0, Float32)  # → 0.5f0 (Float32)
 _promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
 ```
 """
-# For AbstractFloat queries: preserve precision using wider type (lossless promotion)
+# For AbstractFloat queries on AbstractFloat grids: preserve precision using wider type
 @inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq <: AbstractFloat, Tg <: AbstractFloat} = convert(promote_type(Tq, Tg), xq)
-# For other Real (Int, Rational): convert to grid type (no precision loss for integers)
+# For other Real queries (Int, Rational) on AbstractFloat grids: convert to grid type
 @inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq <: Real, Tg <: AbstractFloat} = Tg(xq)
+# For duck grids (e.g. Dual): keep xq as-is. Kernel arithmetic auto-promotes via Julia's
+# type system (Float * Dual → Dual). Converting xq to Dual would inject zero partials.
+@inline _promote_for_anchor(xq, ::Type{Tg}) where {Tg} = xq
 
 
 # ========================================

@@ -864,7 +864,7 @@ end
 Pool-aware spacing for Range grids. Delegates to `_create_spacing` since
 ScalarSpacing is already zero-allocation (two scalar values).
 """
-@inline _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractRange{T}) where {T <: AbstractFloat} = _create_spacing(x)
+@inline _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractRange{T}) where {T} = _create_spacing(x)
 
 """
     _create_spacing_pooled(pool, x::AbstractVector{T}) -> VectorSpacing{T}
@@ -873,7 +873,7 @@ Pool-aware spacing for Vector grids. Acquires `h` and `inv_h` arrays
 from the pool instead of heap-allocating. The pool buffers are released
 automatically when the enclosing `@with_pool` scope exits.
 """
-@inline function _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractVector{T}) where {T <: AbstractFloat}
+@inline function _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractVector{T}) where {T}
     n = length(x)
     h = acquire!(pool, T, n - 1)
     inv_h = acquire!(pool, T, n - 1)

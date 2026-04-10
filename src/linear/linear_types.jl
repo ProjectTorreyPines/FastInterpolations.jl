@@ -11,7 +11,10 @@ Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `linear_interp(x, y)` (2-argument form).
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type (Float32/Float64) - coordinates and geometry
+- `Tg`: Grid type — normally `Float32`/`Float64`, but **unconstrained** to admit
+        duck-typed grid scalars (e.g. `ForwardDiff.Dual`) that satisfy the grid
+        arithmetic/ordering protocol (`-`, `inv`, `*`, `<`). Duck grids take a
+        pass-through normalization path and build a differentiable `VectorSpacing{Tg}`.
 - `Tv`: Value type (unconstrained)
 - `X<:AbstractVector{Tg}`: Grid vector type (preserves Range for O(1) lookup)
 - `Y<:AbstractVector{Tv}`: Values vector type
@@ -56,7 +59,7 @@ itp(0.5; search=BinarySearch())  # override stored policy
 ```
 """
 struct LinearInterpolant{
-        Tg <: AbstractFloat,
+        Tg,
         Tv,
         X <: AbstractVector{Tg},
         Y <: AbstractVector{Tv},
@@ -73,7 +76,7 @@ struct LinearInterpolant{
     # Inner constructor: parametric, only calls new (handles validation only)
     function LinearInterpolant{Tg, Tv, X, Y, S, E, P}(
             x::AbstractVector{Tg}, y::AbstractVector{Tv}, spacing::S, ev::E, search::P
-        ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+        ) where {Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         # Copy to ensure immutability: once constructed, the interpolant owns
         # its data and returns identical results regardless of external mutation.
@@ -95,7 +98,7 @@ end
         y::Y;
         extrap::AbstractExtrap = NoExtrap(),
         search::P = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
+    ) where {Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
     E = typeof(extrap)
     spacing = _create_spacing(x)
     S = typeof(spacing)

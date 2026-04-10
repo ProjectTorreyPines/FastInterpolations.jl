@@ -30,7 +30,7 @@ For each axis d with normalized position `α = (xq - xL) / h`:
 - `w_deriv[d] = (-inv_h, inv_h)` — first derivative weights
 - 2nd+ derivatives are identically zero (handled by early return)
 """
-struct _LinearNDAdjointAnchor{Tg <: AbstractFloat, N}
+struct _LinearNDAdjointAnchor{Tg, N}
     indices::NTuple{N, Int}
     w_value::NTuple{N, NTuple{2, Tg}}
     w_deriv::NTuple{N, NTuple{2, Tg}}
@@ -68,7 +68,7 @@ adj(f_bar, y_bar)               # in-place (zero-allocation)
 ```
 """
 struct LinearAdjointND{
-        Tg <: AbstractFloat,
+        Tg,
         N,
         G <: NTuple{N, AbstractVector{Tg}},
         S <: NTuple{N, AbstractGridSpacing{Tg}},
@@ -87,7 +87,7 @@ struct LinearAdjointND{
             grids::NTuple{N, AbstractVector{Tg}}, spacings::S, extraps::EP,
             anchors::Vector{_LinearNDAdjointAnchor{Tg, N}}, grid_size::NTuple{N, Int}
         ) where {
-            Tg <: AbstractFloat, N, S <: NTuple{N, AbstractGridSpacing{Tg}},
+            Tg, N, S <: NTuple{N, AbstractGridSpacing{Tg}},
             EP <: Tuple{Vararg{AbstractExtrap, N}},
         }
         grids_c = map(copy, grids)

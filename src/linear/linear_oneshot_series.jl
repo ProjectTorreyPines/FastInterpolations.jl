@@ -40,15 +40,17 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
-    x = _to_float(x, Tg)
+    Tg_p = _promote_grid_float(Tg, _series_eltype(s))
+    x = _to_float(x, Tg_p)
     _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     K = n_series(s)
-    Tv = _series_output_type(_value_type(_series_eltype(s), Tg), Tq)
+    Tg_actual = eltype(x)  # after promotion via _to_float
+    Tv = _series_output_type(_output_eltype(_series_eltype(s), Tg_actual), Tq)
     output = Vector{Tv}(undef, K)
     @inbounds for k in 1:K
         output[k] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap)
@@ -72,10 +74,11 @@ In-place one-shot linear interpolation of multiple y-series at a single query po
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
-    x = _to_float(x, Tg)
+    Tg_p = _promote_grid_float(Tg, _series_eltype(s))
+    x = _to_float(x, Tg_p)
     _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
@@ -104,9 +107,11 @@ In-place one-shot linear interpolation at multiple query points.
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
-    x = _to_float(x, Tg)
+    Tg_p = _promote_grid_float(Tg, _series_eltype(s))
+    x = _to_float(x, Tg_p)
+    Tg_actual = eltype(x)
     K = n_series(s)
     _validate_series_outputs(outputs, K, length(xqs))
     # Domain check: NoExtrap → throws if OOB, returns InBounds(); others → pass-through
@@ -115,7 +120,8 @@ In-place one-shot linear interpolation at multiple query points.
     searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap_eff isa WrapExtrap
     # Pre-compute anchors via pool, then K outer × Q inner for cache locality
-    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tg}, length(xqs))
+    Tq_promoted = promote_type(Tq, Tg_actual)
+    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_actual, Tq_promoted}, length(xqs))
     _fill_anchors!(aq_vec, x, xqs, Val(:linear), wrap, searcher)
     @inbounds for k in 1:K
         for j in eachindex(xqs)
@@ -138,47 +144,17 @@ function linear_interp(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     K = n_series(s)
-    Tv_out = _series_output_type(_value_type(_series_eltype(s), Tg), Tq)
+    Tg_p = _promote_grid_float(Tg, _series_eltype(s))
+    Tv_out = _series_output_type(_output_eltype(_series_eltype(s), Tg_p), Tq)
     outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
     linear_interp!(outputs, x, s, xqs; extrap, deriv, search)
     return outputs
 end
 
-# ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                     REAL TYPE PROMOTION WRAPPERS                          ║
-# ╚═══════════════════════════════════════════════════════════════════════════╝
-
-# Scalar: Real grid → promote x, forward kwargs
-@inline function linear_interp(
-        x::AbstractVector{Tg}, s::Series, xq::Tq; kwargs...
-    ) where {Tg <: Real, Tq <: Real}
-    x_typed = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
-    return linear_interp(x_typed, s, xq; kwargs...)
-end
-
-# In-place scalar: Real grid
-@inline function linear_interp!(
-        output::AbstractVector, x::AbstractVector{Tg}, s::Series, xq::Tq; kwargs...
-    ) where {Tg <: Real, Tq <: Real}
-    x_typed = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
-    return linear_interp!(output, x_typed, s, xq; kwargs...)
-end
-
-# Vector in-place: Real grid
-function linear_interp!(
-        outputs::AbstractVector{<:AbstractVector},
-        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
-    ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return linear_interp!(outputs, _to_float(x, Tg_float), s, xqs; kwargs...)
-end
-
-# Vector allocating: Real grid
-function linear_interp(
-        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq}; kwargs...
-    ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return linear_interp(_to_float(x, Tg_float), s, xqs; kwargs...)
-end
+# NOTE: the former Real type promotion wrappers (scalar, in-place scalar, vector
+# in-place, vector allocating) have been removed. Each typed method above now
+# handles promotion internally via _promote_grid_float + _to_float, same as the
+# non-series linear API. This prevents infinite recursion on duck grids and avoids
+# dispatch ambiguity between {Tg} and {Tg<:Real} signatures on Julia 1.10.

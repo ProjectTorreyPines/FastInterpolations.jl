@@ -22,6 +22,7 @@ const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
 # ── Extension tests (order matters!) ──────────────────────────────────
 include("test_autodiff_Enzyme.jl")
 include("test_autodiff_ForwardDiff.jl")
+include("test_linear_dual_grid.jl")   # Linear 1D grid-side Dual (Phase 1)
 include("test_autodiff_Zygote.jl")
 include("test_autodiff_hetero.jl")
 include("test_hermite_rrule.jl")

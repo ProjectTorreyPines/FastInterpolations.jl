@@ -17,26 +17,29 @@
 # ========================================
 
 """
-    AbstractInterpolant{Tg<:AbstractFloat, Tv}
+    AbstractInterpolant{Tg, Tv}
 
 Abstract supertype for all interpolant objects.
 
 # Type Parameters
-- `Tg`: Grid/coordinate type (Float32 or Float64) - used for x-coordinates, spacing, search
+- `Tg`: Grid/coordinate type — normally `Float32`/`Float64`, but **unconstrained**
+        at this abstract level to allow duck-typed grid scalars (e.g. `ForwardDiff.Dual`)
+        that satisfy the grid arithmetic/ordering protocol (`-`, `inv`, `*`, `<`).
+        Non-linear concrete subtypes still enforce `Tg<:AbstractFloat` individually.
 - `Tv`: Value type (unconstrained) - used for y-values, coefficients, return values.
         Any type supporting the 5 core operations (+, -, Tg*Tv, Tv*Tg, Int*Tv).
 
 # Design Invariant
-- Grid operations (search, spacing) always use Tg
+- Grid operations (search, spacing) use Tg; duck grids use primal extraction for comparisons
 - Value operations (kernel, coefficients) use Tv
-- Evaluation returns type based on promote_type(Tv, query_type)
+- Evaluation returns type based on promote_type(Tv, Tg, query_type)
 
 # Subtypes
 - `AbstractInterpolant1D{Tg, Tv}`: 1D interpolants (shared callable protocol)
 - `AbstractSeriesInterpolant{Tg, Tv}`: Multi-series interpolants
 - `AbstractInterpolantND{Tg, Tv, N}`: N-dimensional interpolants
 """
-abstract type AbstractInterpolant{Tg <: AbstractFloat, Tv} end
+abstract type AbstractInterpolant{Tg, Tv} end
 
 """
     AbstractInterpolant1D{Tg<:AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv}
@@ -63,7 +66,7 @@ by implementing the required interface:
 - `CubicInterpolant{Tg, Tv}`: C2 cubic spline
 - `AbstractHermiteInterpolant1D{Tg, Tv}`: Cubic Hermite family (see subtypes below)
 """
-abstract type AbstractInterpolant1D{Tg <: AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv} end
+abstract type AbstractInterpolant1D{Tg, Tv} <: AbstractInterpolant{Tg, Tv} end
 
 """
     AbstractHermiteInterpolant1D{Tg, Tv} <: AbstractInterpolant1D{Tg, Tv}
@@ -119,7 +122,7 @@ sitp(output, 0.5)           # In-place evaluation
 This is a pure type hierarchy - no methods are defined on `AbstractSeriesInterpolant` itself.
 All functionality is implemented in concrete subtypes.
 """
-abstract type AbstractSeriesInterpolant{Tg <: AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv} end
+abstract type AbstractSeriesInterpolant{Tg, Tv} <: AbstractInterpolant{Tg, Tv} end
 
 """
     AbstractInterpolantND{Tg<:AbstractFloat, Tv, N}
@@ -150,7 +153,7 @@ itp((0.5, 0.5); deriv=(1, 0))      # ∂f/∂x
 gradient(itp, (0.5, 0.5))          # (∂f/∂x, ∂f/∂y)
 ```
 """
-abstract type AbstractInterpolantND{Tg <: AbstractFloat, Tv, N} <: AbstractInterpolant{Tg, Tv} end
+abstract type AbstractInterpolantND{Tg, Tv, N} <: AbstractInterpolant{Tg, Tv} end
 
 Base.size(itp::AbstractInterpolantND) = map(length, itp.grids)
 
@@ -184,7 +187,7 @@ Subtypes automatically inherit 6 callable overloads (Vector/Real/Tuple × alloc/
 - [`AbstractAdjoint1D`](@ref): 1D adjoint operators
 - [`AbstractAdjointND`](@ref): N-dimensional adjoint operators
 """
-abstract type AbstractAdjoint{Tg <: AbstractFloat} end
+abstract type AbstractAdjoint{Tg} end
 
 """
     AbstractAdjoint1D{Tg<:AbstractFloat} <: AbstractAdjoint{Tg}
@@ -206,7 +209,7 @@ Subtypes automatically inherit 6 callable overloads (Vector/Real/Tuple × alloc/
 - `LinearAdjoint{Tg, EP}`: Adjoint of linear interpolation (1D, pure scatter)
 - `CubicAdjoint{Tg, C, BC}`: Adjoint of cubic spline interpolation (1D)
 """
-abstract type AbstractAdjoint1D{Tg <: AbstractFloat} <: AbstractAdjoint{Tg} end
+abstract type AbstractAdjoint1D{Tg} <: AbstractAdjoint{Tg} end
 
 """
     AbstractAdjointND{Tg<:AbstractFloat, N} <: AbstractAdjoint{Tg}
@@ -225,7 +228,7 @@ Subtypes automatically inherit shared callable dispatch from `nd_adjoint_protoco
 - `CubicAdjointND{Tg, N, ...}`: Adjoint of cubic spline interpolation (ND)
 - `LinearAdjointND{Tg, N, ...}`: Adjoint of linear interpolation (ND)
 """
-abstract type AbstractAdjointND{Tg <: AbstractFloat, N} <: AbstractAdjoint{Tg} end
+abstract type AbstractAdjointND{Tg, N} <: AbstractAdjoint{Tg} end
 
 # ========================================
 # Type Helper Functions

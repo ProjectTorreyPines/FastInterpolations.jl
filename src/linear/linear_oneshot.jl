@@ -52,38 +52,36 @@ linear_interp!(output, x_vec, y_vec, sorted_queries; search=LinearBinarySearch(l
 function linear_interp! end
 
 # Unified method for AbstractVector
-# TYPE PARAMETERS:
-# - Tg: Grid type (AbstractFloat) - for x coordinates and x_targets
-# - Tv: Value type (unconstrained) - for y and output
+# Unified in-place entry point. Handles promotion internally via _promote_itp_inputs,
+# so no separate Real/Mixed-type wrapper is needed (same pattern as the scalar API).
 function linear_interp!(
-        output::AbstractVector{Tv},
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tg};
+        output::AbstractVector,
+        x::AbstractVector,
+        y::AbstractVector,
+        x_targets::AbstractVector;
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tv}
+    )
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    x = _to_float(x, Tg)
-    x_targets = _to_float(x_targets, Tg)
-    searcher = _resolve_search(x, x_targets, search, nothing)
-    return _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
+    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
+    searcher = _resolve_search(x_typed, xq_typed, search, nothing)
+    return _linear_interp_loop!(output, x_typed, y_typed, xq_typed, extrap, deriv, searcher)
 end
 
 # Internal loop with AbstractExtrap dispatch and Searcher (type-stable)
 # Supports mixed types: Tg for grid, Tv for values
 @inline function _linear_interp_loop!(
-        output::AbstractVector{Tv},
+        output::AbstractVector,
         x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tg},
+        y::AbstractVector,
+        x_targets::AbstractVector,
         extrap::AbstractExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, O <: AbstractEvalOp, S <: Searcher}
     extrap = _check_domain(x, x_targets, extrap)
     @inbounds for i in eachindex(x_targets, output)
         output[i] = _linear_eval_at_point(x, y, x_targets[i], extrap, op, searcher)
@@ -96,14 +94,14 @@ end
 # Stage 1: Check if ALL queries are inside domain (cheap: ~150ns for 1000 elements)
 # Stage 2: If all inside, use extension path (no wrap needed); otherwise per-element wrap
 @inline function _linear_interp_loop!(
-        output::AbstractVector{Tv},
+        output::AbstractVector,
         x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tg},
+        y::AbstractVector,
+        x_targets::AbstractVector,
         ::WrapExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, O <: AbstractEvalOp, S <: Searcher}
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
@@ -126,25 +124,10 @@ end
 # AbstractVector version above.  _CachedRange <: AbstractRange <: AbstractVector,
 # so the AbstractVector dispatch handles all Range inputs.
 
-# Specific method for AbstractRange{Tg} - resolves ambiguity with Real wrappers
-# Unified via Tv parameter
-@inline function linear_interp!(
-        output::AbstractVector{Tv},
-        x::AbstractRange{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tg};
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tv}
-    @assert length(y) == length(x) "x and y must have same length"
-    @assert length(output) == length(x_targets) "output must match x_targets length"
-
-    x = _to_float(x, Tg)
-    x_targets = _to_float(x_targets, Tg)
-    searcher = _resolve_search(x, x_targets, search, nothing)
-    return _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
-end
+# NOTE: the former AbstractRange{Tg}-specific `linear_interp!` overload (which resolved
+# ambiguity with the old Real wrappers) has been removed. The unified `linear_interp!`
+# above handles promotion for all grid types (Float, Int, Dual, Range) via
+# `_promote_itp_inputs`, eliminating the need for type-specific overloads.
 
 # ========================================
 # Scalar interpolation (zero-allocation)
@@ -231,7 +214,7 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
         extrap::AbstractExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL  # xq can be Dual here (preserves AD)
@@ -246,7 +229,7 @@ end
         extrap::_ClampOrFill,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_primal = _extract_primal(xq)
     if xq_primal < first(x)
         return _eval_extrapolation(op, first(y), extrap, xq)
@@ -267,17 +250,17 @@ end
         ::WrapExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
     idx, xL, xR = search_interval(searcher, x, xq_wrapped)
     dL = xq_wrapped - xL
     @inbounds return _linear_kernel(op, y[idx], y[idx + 1], _get_inv_h(x, xR, xL), dL)
 end
 
-# Public API - AbstractExtrap dispatch
-# Unified via Tv parameter (duck typing)
-# AD Support: Tq can be Tg or Dual{Tg} (both are <:Real)
-# Note: Tq<:Real constraint resolves method ambiguity with the generic Real wrapper
+# Public scalar one-shot API.
+# Single unified entry point for every grid eltype. `_promote_itp_inputs` handles
+# grid normalization (Range → _CachedRange, Int → Float64, Dual → Dual{Float64},
+# etc.) and optional y-value promotion for standard numeric types.
 @inline function linear_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -286,12 +269,12 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    x = _to_float(x, Tg)
-    searcher = _resolve_search(x, xq, search, hint)
-    return _linear_eval_at_point(x, y, xq, extrap, deriv, searcher)
+    x_typed, y_typed = _promote_itp_inputs(x, y)
+    searcher = _resolve_search(x_typed, xq, search, hint)
+    return _linear_eval_at_point(x_typed, y_typed, xq, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
@@ -302,81 +285,28 @@ end
 
 # ========================================
 # Vector interpolation - Allocating hot path
-# ========================================
-# Unified via Tv parameter (duck typing)
-# Works with both AbstractVector and AbstractRange x
+# Unified allocating vector one-shot. Calls the unified linear_interp! which
+# handles promotion internally. Output type includes Tg for duck grids.
 
 function linear_interp(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tg};
+        x::AbstractVector,
+        y::AbstractVector,
+        x_targets::AbstractVector;
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tv}
-    output = Vector{Tv}(undef, length(x_targets))
-    linear_interp!(output, x, y, x_targets; extrap, deriv, search)
+    )
+    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
+    Tg = eltype(x_typed)
+    Tv = eltype(y_typed)
+    T_out = _output_eltype(Tv, Tg)
+    output = Vector{T_out}(undef, length(x_targets))
+    linear_interp!(output, x_typed, y_typed, xq_typed; extrap, deriv, search)
     return output
 end
 
-# ========================================
-# Vector interpolation - Real/Mixed type wrappers (in-place)
-# ========================================
-# Unified wrapper for non-AbstractFloat inputs (Int, mixed types, etc.)
-# Uses _promote_itp_inputs helper for type promotion
-# POLICY: Tg is computed from x/y ONLY, not from x_targets
-
-function linear_interp!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tq};
-        kwargs...
-    ) where {Tg <: Real, Tv, Tq <: Real}
-    @assert length(y) == length(x) "x and y must have same length"
-    @assert length(output) == length(x_targets) "output must match x_targets length"
-
-    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
-    Tv_float = eltype(y_typed)
-
-    # Validate output can hold result type
-    Tout = eltype(output)
-    if promote_type(Tout, Tv_float) !== Tout
-        throw(
-            ArgumentError(
-                "output eltype $Tout cannot hold interpolation result type $Tv_float. " *
-                    "Use Vector{$Tv_float} or a wider type."
-            )
-        )
-    end
-
-    return linear_interp!(output, x_typed, y_typed, xq_typed; kwargs...)
-end
-
-# ========================================
-# Scalar interpolation - Real/Mixed type wrapper
-# ========================================
-# Unified wrapper for non-AbstractFloat inputs (Int, mixed types, etc.)
-# POLICY: Tg is computed from x/y ONLY, not from xq
-
-@inline function linear_interp(
-        x::AbstractVector{Tg}, y::AbstractVector{Tv}, xq::Tq; kwargs...
-    ) where {Tg <: Real, Tv, Tq <: Real}
-    x_typed, y_typed = _promote_itp_inputs(x, y)
-    # Pass xq directly (not converted) to preserve ForwardDiff.Dual for AD
-    return linear_interp(x_typed, y_typed, xq; kwargs...)
-end
-
-# ========================================
-# Vector interpolation - Real/Mixed type wrapper (allocating)
-# ========================================
-
-function linear_interp(
-        x::AbstractVector{Tg}, y::AbstractVector{Tv}, x_targets::AbstractVector{Tq}; kwargs...
-    ) where {Tg <: Real, Tv, Tq <: Real}
-    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
-    Tv_float = eltype(y_typed)
-    output = Vector{Tv_float}(undef, length(x_targets))
-    linear_interp!(output, x_typed, y_typed, xq_typed; kwargs...)
-    return output
-end
+# NOTE: the former in-place and allocating vector wrappers (`linear_interp!` and
+# `linear_interp` with `{Tg<:Real, Tv, Tq<:Real}`) have been removed. Their
+# `_promote_itp_inputs` calls are now performed by the unified `linear_interp!`
+# above and the typed `linear_interp(x, y, x_targets)` below. This prevents
+# dispatch ambiguity and infinite recursion on duck grids.

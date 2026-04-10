@@ -196,4 +196,3 @@ function akima_interp(
     akima_interp!(output, x, y, xq_p; coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end
-

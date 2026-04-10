@@ -67,7 +67,7 @@ sitp_complex = linear_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct LinearSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, S <: AbstractGridSpacing{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct LinearSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, S <: AbstractGridSpacing{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                            # Shared x-grid (Range or Vector)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
     const spacing::S                      # Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
@@ -80,7 +80,7 @@ mutable struct LinearSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExt
             y::Matrix{Tv},
             extrap::E,
             search::P = AutoSearch()
-        ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+        ) where {Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         # _to_float(copy(x), Tg): Range → _CachedRange (O(1) search + no TwicePrecision overhead);
         # Vector → defensive copy (copy is identity for immutable Range, alloc for Vector).
         # typeof(xc) rebinds X after conversion (view → Vector, TwicePrecision → _CachedRange).
@@ -118,11 +118,13 @@ end
 @inline _method_kind(::Type{<:LinearSeriesInterpolant}) = Val(:linear)
 
 """
-    _make_anchor(sitp::LinearSeriesInterpolant, xq::Tg) -> _LinearAnchoredQuery{Tg}
+    _make_anchor(sitp::LinearSeriesInterpolant, xq) -> _LinearAnchoredQuery
 
 Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
+Accepts any query type — `_linear_anchor_query_impl` + the outer constructor of
+`_LinearAnchoredQuery` handle primal extraction for search and type widening.
 """
-@inline function _make_anchor(sitp::LinearSeriesInterpolant{Tg}, xq::Tg, searcher::P = DEFAULT_SEARCHER) where {Tg, P <: Searcher}
+@inline function _make_anchor(sitp::LinearSeriesInterpolant{Tg}, xq, searcher::P = DEFAULT_SEARCHER) where {Tg, P <: Searcher}
     return _linear_anchor_query_impl(sitp.x, xq, _should_wrap(sitp), searcher)
 end
 
@@ -137,7 +139,7 @@ Uses point-contiguous layout for SIMD optimization.
         sitp::LinearSeriesInterpolant{Tg, Tv},
         aq::_LinearAnchoredQuery{Tg},
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     y_point = _ensure_point_layout!(sitp)
     n_pts = n_points(sitp)
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
@@ -186,7 +188,7 @@ end
         ::NoExtrap,
         ::AbstractEvalOp,
         ::UInt8
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
@@ -202,7 +204,7 @@ end
         extrap::_ClampOrFill,
         op::AbstractEvalOp,
         side::UInt8
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap)
 end
 
@@ -219,7 +221,7 @@ end
         ::ExtendExtrap,
         op::AbstractEvalOp,
         side::UInt8
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     @inbounds begin
@@ -241,10 +243,11 @@ end
 # ========================================
 
 """
-    _eval_linear_series_point!(output, sitp, aq, xq, op)
+    _eval_linear_series_point!(output, sitp, aq, op)
 
 Core scalar evaluation for all series at a single query point.
 Uses SIMD-optimized point-contiguous layout for vectorization across series.
+Query information (xq, xL, inv_h) is read from the anchor — no separate xq arg needed.
 
 # Arguments
 - `output`: Pre-allocated output vector (length = n_series)
@@ -261,9 +264,8 @@ while `xq` is used directly in arithmetic to preserve derivative information.
         output::AbstractVector,
         sitp::LinearSeriesInterpolant{Tg, Tv},
         aq::_LinearAnchoredQuery{Tg},
-        xq,  # Original xq (any Real, including Dual)
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     # Outside domain: delegate to extrapolation handler
     if aq.state != IN_DOMAIN
         return _eval_series_at_anchor!(output, sitp, aq, op)
@@ -275,7 +277,7 @@ while `xq` is used directly in arithmetic to preserve derivative information.
     idx1 = idx + 1
 
     inv_h = aq.inv_h
-    dL = xq - aq.xL  # Original xq preserves Dual for AD
+    dL = aq.xq - aq.xL  # aq.xq carries Dual info (widened by outer constructor)
 
     @inbounds @simd for k in axes(output, 1)
         yL = y_point[k, idx]
@@ -327,36 +329,27 @@ y_complex = exp.(2im * π * x)
 sitp = linear_interp(x, Series(y_complex, y1))
 ```
 """
+# Unified Series constructor. Handles grid promotion internally via
+# _promote_grid_float + _to_float, same as the scalar/vector API.
+# The former Real wrapper is absorbed to prevent infinite recursion on duck grids.
 function linear_interp(
         x::AbstractVector{Tg},
         s::Series;
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat}
-    # Type promotion: widen grid if y's float base is wider than Tg
+    ) where {Tg}
     Tv = _series_eltype(s)
     Tg_new = _promote_grid_float(Tg, Tv)
-    if Tg_new !== Tg
-        return linear_interp(_to_float(x, Tg_new), s; extrap, search)
-    end
+    x_typed = _to_float(x, Tg_new)
 
-    n_pts = length(x)
-    Tv_out = _value_type(Tv, Tg)
+    n_pts = length(x_typed)
+    # For duck grids (Dual), Tg_new is not AbstractFloat → _value_type duck fallback
+    # returns Tv unchanged (no widening to grid type).
+    Tv_out = Tg_new <: AbstractFloat ? _value_type(Tv, Tg_new) : Tv
     y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
-    extrap_p = _promote_extrap(extrap, Tv_out)
+    extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(extrap, Tv_out) : extrap
 
-    return LinearSeriesInterpolant(x, y_mat, extrap_p, search)
-end
-
-# Real grid promotion (Int, etc.) → convert to float and delegate
-function linear_interp(
-        x::AbstractVector{Tg},
-        s::Series;
-        extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return linear_interp(_to_float(x, Tg_float), s; extrap, search)
+    return LinearSeriesInterpolant(x_typed, y_mat, extrap_p, search)
 end
 
 # ========================================
@@ -376,8 +369,8 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, P, Tq <: Real}
-    T_out = _series_output_type(Tv, Tq)
+    ) where {Tg, Tv, P, Tq <: Real}
+    T_out = _series_output_type(promote_type(Tv, Tg), Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)
 end
@@ -397,21 +390,17 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Real}
     n_ser = n_series(sitp)
 
     # Validate output length
     _validate_scalar_output(output, n_ser)
 
-    # Extract primal for anchor (search/comparison needs Float)
-    xq_primal = _extract_primal(xq)
-    xq_typed = Tg(xq_primal)
+    # Build anchor — _anchor_loc inside handles primal extraction for search,
+    # outer constructor widens xq to match grid arithmetic type.
+    aq = _make_anchor(sitp, xq, _resolve_search(sitp.x, xq, search, hint))
 
-    # Build anchor from primal
-    aq = _make_anchor(sitp, xq_typed, _resolve_search(sitp.x, xq, search, hint))
-
-    # Dispatch on derivative order with Dual-aware evaluation
-    _eval_linear_series_point!(output, sitp, aq, xq, deriv)  # Pass original xq
+    _eval_linear_series_point!(output, sitp, aq, deriv)
     return output
 end
 
@@ -432,7 +421,7 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
     T_out = _series_output_type(Tv, Tq)
@@ -471,7 +460,7 @@ Pool handles both same-type and mixed-type cases efficiently.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
 
@@ -517,7 +506,7 @@ computed as `(xq - xL) / h` with the query's original precision.
         aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg}},
         extrap::AbstractExtrap,
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     @inbounds for j in eachindex(out, aq_vec)
         out[j] = _eval_linear_series_with_extrap(y, x, n_pts, x_min, x_max, k, aq_vec[j], extrap, op)
     end
@@ -541,7 +530,7 @@ Uses anchor's `xq` for domain error messages.
         aq::_LinearAnchoredQuery{Tg},
         extrap::AbstractExtrap,
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     # Inside domain: normal evaluation
     if aq.state == IN_DOMAIN
         return _eval_linear_series_anchored(y, x, k, aq, op)
@@ -569,7 +558,7 @@ The kernel internally extracts alpha (for EvalValue) or inv_h (for derivatives).
         k::Int,
         aq::_LinearAnchoredQuery{Tg},
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     @inbounds begin
         yL = y[aq.idx, k]
         yR = y[aq.idx + 1, k]

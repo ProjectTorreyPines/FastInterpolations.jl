@@ -40,7 +40,7 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
     x = _to_float(x, Tg)
     _check_domain(x, xq, extrap)
@@ -72,7 +72,7 @@ In-place one-shot linear interpolation of multiple y-series at a single query po
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     x = _to_float(x, Tg)
@@ -104,7 +104,7 @@ In-place one-shot linear interpolation at multiple query points.
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
     x = _to_float(x, Tg)
     K = n_series(s)
@@ -138,7 +138,7 @@ function linear_interp(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     K = n_series(s)
     Tv_out = _series_output_type(_value_type(_series_eltype(s), Tg), Tq)
     outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]

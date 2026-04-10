@@ -122,7 +122,7 @@ sitp(output, 0.5)           # In-place evaluation
 This is a pure type hierarchy - no methods are defined on `AbstractSeriesInterpolant` itself.
 All functionality is implemented in concrete subtypes.
 """
-abstract type AbstractSeriesInterpolant{Tg <: AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv} end
+abstract type AbstractSeriesInterpolant{Tg, Tv} <: AbstractInterpolant{Tg, Tv} end
 
 """
     AbstractInterpolantND{Tg<:AbstractFloat, Tv, N}

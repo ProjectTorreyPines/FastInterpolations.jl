@@ -1,19 +1,17 @@
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║          LINEAR 1D — ForwardDiff.Dual grid support (Phase 1)               ║
+# ║          LINEAR — ForwardDiff.Dual grid support (1D + ND)                  ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
-# ForwardDiff-specific tests for Phase 1 Linear dual-grid support. Verifies that
-# `Vector{ForwardDiff.Dual}` grids work end-to-end through the scalar callable
-# and the scalar one-shot `linear_interp(x, y, xq)` API.
+# ForwardDiff-specific tests for Linear duck-typed grid support. Covers all
+# Linear paths: scalar/vector callable, one-shot, in-place, anchor, series,
+# adjoint (1D), and ND interpolant/oneshot/adjoint — for both Vector{Dual}
+# and Range{Dual} grids.
 #
 # Companion to `test/test_linear_dual_grid.jl` (which uses a custom duck type
 # without ForwardDiff loaded).
 #
 # Run standalone:
 #     cc-julia-test-runner . ext/test_linear_dual_grid.jl
-#
-# Phase 1 scope: scalar-only. Vector queries (`itp.(xq_vec)` that allocates)
-# are Phase 2 territory and are NOT covered here.
 
 using Test
 using FastInterpolations

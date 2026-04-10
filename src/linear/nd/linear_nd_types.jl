@@ -19,7 +19,7 @@ Performs bilinear interpolation in 2D, trilinear in 3D, and n-linear in N dimens
 The interpolation is exact at grid points and linearly blended between them.
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid/coordinate type (Float32 or Float64)
+- `Tg`: Grid/coordinate type — normally Float32/Float64, but unconstrained for duck-typed grids (e.g. ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
 - `G<:Tuple{Vararg{AbstractVector,N}}`: Grid tuple type (supports heterogeneous grids)

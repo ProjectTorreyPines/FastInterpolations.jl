@@ -1,2 +1,2 @@
 [AdaptiveArrayPools]
-runtime_check = true
+runtime_check = false

@@ -29,18 +29,19 @@ Thread-safe: workspaces allocated from task-local pool.
 - `search::AbstractSearchPolicy=AutoSearch()`: Search algorithm for interval finding
 """
 @inline @with_pool pool function cubic_interp!(
-        output::AbstractVector{Tv},
+        output::AbstractVector,
         cache::CubicSplineCache{Tg, X, F, BC},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg};
+        x_query::AbstractVector{Tq};
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv, X, F, BC}
+    ) where {Tg, Tv, Tq <: Real, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
 
-    z = similar!(pool, y)
+    Tz = _output_eltype(Tv, eltype(cache.x))
+    z = acquire!(pool, Tz, length(y))
     _solve_system!(z, cache, y, cache.bc_config)
 
     searcher = _resolve_search(cache.x, x_query, search, nothing)
@@ -311,12 +312,13 @@ vals = cubic_interp(cache, y, sorted_queries; search=LinearBinarySearch(linear_w
 function cubic_interp(
         cache::CubicSplineCache{Tg},
         y::AbstractVector{Tv},
-        x_query::AbstractVector{Tg};
+        x_query::AbstractVector{Tq};
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv}
-    output = Vector{Tv}(undef, length(x_query))
+    ) where {Tg, Tv, Tq <: Real}
+    Tr = _output_eltype(Tv, eltype(cache.x), Tq)
+    output = Vector{Tr}(undef, length(x_query))
     cubic_interp!(output, cache, y, x_query; extrap = extrap, deriv = deriv, search = search)
     return output
 end
@@ -368,8 +370,8 @@ end
 # Scalar query - zero allocation
 cubic_interp(
     cache::CubicSplineCache{Tg}, y::AbstractVector{Tv},
-    x_query::Tg; extrap::AbstractExtrap = NoExtrap(), deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = AutoSearch(), hint::Union{Nothing, Base.RefValue{Int}} = nothing
-) where {Tg, Tv} =
+    x_query::Tq; extrap::AbstractExtrap = NoExtrap(), deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = AutoSearch(), hint::Union{Nothing, Base.RefValue{Int}} = nothing
+) where {Tg, Tv, Tq <: Real} =
     cubic_interp_scalar(cache, y, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)
 
 # Primary scalar method - AD-compatible

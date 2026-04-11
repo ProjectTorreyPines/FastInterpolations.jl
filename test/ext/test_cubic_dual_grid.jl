@@ -152,6 +152,29 @@ const FI = FastInterpolations
         @test all(isfinite, result)
     end
 
+    @testset "cubic adjoint — Dual grid + PeriodicBC" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        x_per = collect(range(0.0, 2π, 33))
+        y_per = sin.(x_per); y_per[end] = y_per[1]
+        adj = cubic_adjoint(d .* x_per, [1.0, 2.0]; bc = PeriodicBC())
+        result = adj(ones(2))
+        @test length(result) == length(x_per)
+        @test all(isfinite, result)
+    end
+
+    @testset "cubic cache-based eval — Dual grid + Float query" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        cache = CubicSplineCache(d .* x_base)
+        # Scalar
+        v = cubic_interp(cache, y_base, xq_scalar)
+        ref = cubic_interp(x_base, y_base, xq_scalar)
+        @test ForwardDiff.value(v) ≈ ref
+        # Vector
+        vv = cubic_interp(cache, y_base, xq_vec)
+        refv = cubic_interp(x_base, y_base, xq_vec)
+        @test ForwardDiff.value.(vv) ≈ refv
+    end
+
     # ╔═══════════════════════════════════════════════════════════════════════╗
     # ║           In-place vector API with Dual grid                             ║
     # ╚═══════════════════════════════════════════════════════════════════════╝
@@ -182,8 +205,7 @@ const FI = FastInterpolations
         @test vals[2] ≈ ref2
     end
 
-    # NOTE: Series interpolant (2-arg form) with Dual grid needs LazyTransposePair
-    # to support Tz≠Tv. Deferred — scalar/vector oneshot Series paths work.
+    # Series interpolant (2-arg form) with Dual grid: covered in test_series_dual_grid.jl
 
     # ╔═══════════════════════════════════════════════════════════════════════╗
     # ║           Float path — zero-alloc regression gate                        ║

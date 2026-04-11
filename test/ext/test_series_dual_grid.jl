@@ -46,7 +46,8 @@ using ForwardDiff
             @test check_primals(vals[1], ref_v[1])
         end
         @testset "Vector grid — in-place scalar" begin
-            output = Vector{Any}(undef, 2)
+            probe = constant_interp(xd_vec, s, xq; extrap = ExtendExtrap())
+            output = similar(probe)
             constant_interp!(output, xd_vec, s, xq; extrap = ExtendExtrap())
             @test check_primals(output, ref_s)
         end
@@ -83,7 +84,8 @@ using ForwardDiff
             @test check_primals(vals[1], ref_v[1])
         end
         @testset "Vector grid — in-place scalar" begin
-            output = Vector{Any}(undef, 2)
+            probe = linear_interp(xd_vec, s, xq; extrap = ExtendExtrap())
+            output = similar(probe)
             linear_interp!(output, xd_vec, s, xq; extrap = ExtendExtrap())
             @test check_primals(output, ref_s)
         end
@@ -114,7 +116,8 @@ using ForwardDiff
             @test check_primals(vals[1], ref_v[1])
         end
         @testset "Vector grid — in-place scalar" begin
-            output = Vector{Any}(undef, 2)
+            probe = quadratic_interp(xd_vec, s, xq; extrap = ExtendExtrap())
+            output = similar(probe)
             quadratic_interp!(output, xd_vec, s, xq; extrap = ExtendExtrap())
             @test check_primals(output, ref_s)
         end

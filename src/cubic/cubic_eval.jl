@@ -280,12 +280,12 @@ Uses task-local pool for workspace allocation.
 @inline @with_pool pool function cubic_interp_scalar(
         cache::CubicSplineCache{Tg, X, F, BC, S},
         y::AbstractVector{Tv},
-        x_query::Tg;
+        x_query::Tq;
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, X, F, BC, S <: AbstractGridSpacing{Tg}}
+    ) where {Tg, Tv, Tq <: Real, X, F, BC, S <: AbstractGridSpacing{Tg}}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
     Tz = _output_eltype(Tv, eltype(cache.x))

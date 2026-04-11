@@ -491,10 +491,10 @@ end
 
 function _build_cubic_adjoint_periodic(
         x::AbstractVector{Tg},
-        xq::AbstractVector{Tg},
+        xq::AbstractVector{Tq},
         bc::PeriodicBC,
         autocache::Bool
-    ) where {Tg}
+    ) where {Tg, Tq <: Real}
 
     # Extend exclusive → inclusive grid (grid-only, no y-data needed)
     x_ext = if bc isa PeriodicBC{:exclusive}

@@ -19,7 +19,7 @@ Internal API: no runtime grid validation; callers must ensure the anchor
 matches the interpolant grid.
 
 # Type Parameters
-- `Tg`: Grid float type (Float32 or Float64)
+- `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `Tq`: Query type (Float or ForwardDiff.Dual for AD support)
 
 # Fields
@@ -49,7 +49,7 @@ When `xq` is a `ForwardDiff.Dual`, the anchor preserves the Dual type
 in both `xq` and `dL` fields, enabling automatic differentiation through
 series interpolant evaluation.
 """
-struct _QuadraticAnchoredQuery{Tg <: AbstractFloat, Tq <: Real}
+struct _QuadraticAnchoredQuery{Tg, Tq <: Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), Float or Dual
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
@@ -93,7 +93,7 @@ itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
         ::Val{:quadratic},
         wrap::Bool = false,
         searcher::P = DEFAULT_SEARCHER
-    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Real, P <: Searcher}
     return _quadratic_anchor_query_impl(x, xq, wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
@@ -171,7 +171,7 @@ When buffer element type is `{Tg, Tq}` and `xq` element type is `S`:
         ::Val{:quadratic},
         wrap::Bool = false,
         searcher::P = _to_searcher(LinearBinarySearch())
-    ) where {Tg <: AbstractFloat, Tq <: Real, S <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Real, S <: Real, P <: Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
@@ -204,7 +204,7 @@ while preserving the full Dual value for `dL` computation.
         xq::Tq,
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
-    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Real, P <: Searcher}
     loc = _anchor_loc(x, xq, wrap, policy)
 
     # Compute dL: offset from interval start (preserves Dual type)
@@ -236,7 +236,7 @@ d1 = itp(aq; deriv=DerivOp(1))   # First derivative
 d2 = itp(aq; deriv=DerivOp(2))   # Second derivative
 ```
 """
-@inline function (itp::QuadraticInterpolant{T})(aq::_QuadraticAnchoredQuery{T, Tq}; deriv::DerivOp = EvalValue()) where {T <: AbstractFloat, Tq <: Real}
+@inline function (itp::QuadraticInterpolant{T})(aq::_QuadraticAnchoredQuery{T, Tq}; deriv::DerivOp = EvalValue()) where {T, Tq <: Real}
     return _quadratic_eval_with_anchor(itp, aq, deriv)
 end
 
@@ -244,7 +244,7 @@ end
         itp::QuadraticInterpolant{T},
         aq::_QuadraticAnchoredQuery{T, Tq},
         op::O
-    ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
+    ) where {T, Tq <: Real, O <: AbstractEvalOp}
     # Handle extrapolation based on mode and side
     return _quadratic_anchor_dispatch(itp, aq, op, itp.extrap)
 end
@@ -257,26 +257,26 @@ end
 
 # Default case (extension, wrap, inbounds): direct kernel evaluation
 @inline function _quadratic_eval_at_anchor(
-        y::AbstractVector, a::AbstractVector, d::AbstractVector,
+        y::AbstractVector{Tv}, a::AbstractVector{Tc}, d::AbstractVector{Tc},
         aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ::AbstractExtrap
-    )
+    ) where {Tv, Tc}
     @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
 end
 
 # No extrapolation: throw DomainError if outside domain
 @inline function _quadratic_eval_at_anchor(
-        y::AbstractVector, a::AbstractVector, d::AbstractVector,
+        y::AbstractVector{Tv}, a::AbstractVector{Tc}, d::AbstractVector{Tc},
         aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ::NoExtrap
-    )
+    ) where {Tv, Tc}
     aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
     @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
 end
 
 # Clamp/Fill extrapolation: boundary value if OOB
 @inline function _quadratic_eval_at_anchor(
-        y::AbstractVector, a::AbstractVector, d::AbstractVector,
+        y::AbstractVector{Tv}, a::AbstractVector{Tc}, d::AbstractVector{Tc},
         aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill
-    )
+    ) where {Tv, Tc}
     if aq.state != IN_DOMAIN
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
@@ -294,7 +294,7 @@ end
         aq::_QuadraticAnchoredQuery{T, Tq},
         op::O,
         ::NoExtrap
-    ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
+    ) where {T, Tq <: Real, O <: AbstractEvalOp}
     if aq.state != IN_DOMAIN
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
@@ -325,7 +325,7 @@ Returns newly allocated vector.
 function (itp::QuadraticInterpolant{T})(
         aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}};
         deriv::DerivOp = EvalValue()
-    ) where {T <: AbstractFloat}
+    ) where {T}
     output = Vector{T}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _quadratic_eval_with_anchor(itp, aq_vec[i], deriv)
@@ -342,7 +342,7 @@ function (itp::QuadraticInterpolant{T})(
         output::AbstractVector{T},
         aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}};
         deriv::DerivOp = EvalValue()
-    ) where {T <: AbstractFloat}
+    ) where {T}
     @assert length(output) == length(aq_vec) "output length must match aq_vec length"
     @inbounds for i in eachindex(aq_vec)
         output[i] = _quadratic_eval_with_anchor(itp, aq_vec[i], deriv)

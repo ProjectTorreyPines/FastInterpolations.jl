@@ -19,7 +19,7 @@ Internal API: no runtime grid validation; callers must ensure the anchor
 matches the interpolant grid.
 
 # Type Parameters
-- `T`: Float type (Float32 or Float64)
+- `T`: Grid type (unconstrained)
 
 # Fields
 - `idx`: Interval index where xq falls
@@ -44,7 +44,7 @@ itp2(aq)              # Reuses same anchor
 Anchored evaluation is faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search.
 """
-struct _ConstantAnchoredQuery{T <: AbstractFloat}
+struct _ConstantAnchoredQuery{T}
     idx::Int                   # interval index
     xq::T                      # query point (possibly wrapped)
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
@@ -83,25 +83,16 @@ itp1(aq)              # Ultra-fast: skips interval search
 itp2(aq)              # Reuses same anchor
 ```
 """
+# Unified scalar anchor construction. _constant_anchor_query_impl handles
+# Tg conversion internally, so no separate Real wrapper is needed.
 @inline function _anchor_query(
         x::AbstractVector{T},
-        xq::T,
+        xq,
         ::Val{:constant},
         wrap::Bool = false,
         searcher::P = DEFAULT_SEARCHER
-    ) where {T <: AbstractFloat, P <: Searcher}
-    return _constant_anchor_query_impl(x, xq, wrap, _resolve_searcher_for_grid(x, searcher))
-end
-
-# Real wrapper for convenience (scalar)
-@inline function _anchor_query(
-        x::AbstractVector{T},
-        xq::Tq,
-        tag::Val{:constant},
-        wrap::Bool = false,
-        searcher::P = DEFAULT_SEARCHER
-    ) where {T <: AbstractFloat, Tq <: Real, P <: Searcher}
-    return _anchor_query(x, T(xq), tag, wrap, searcher)
+    ) where {T, P <: Searcher}
+    return _constant_anchor_query_impl(x, T(xq), wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
 """
@@ -136,7 +127,7 @@ function _anchor_query(
         ::Val{:constant},
         wrap::Bool = false,
         searcher::P = _to_searcher(LinearBinarySearch())
-    ) where {T <: AbstractFloat, S <: Real, P <: Searcher}
+    ) where {T, S <: Real, P <: Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     output = Vector{_ConstantAnchoredQuery{T}}(undef, length(xq))
 
@@ -169,7 +160,7 @@ The same `buffer` object, filled with anchored queries.
         ::Val{:constant},
         wrap::Bool = false,
         searcher::P = _to_searcher(LinearBinarySearch())
-    ) where {T <: AbstractFloat, S <: Real, P <: Searcher}
+    ) where {T, S <: Real, P <: Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
@@ -195,7 +186,7 @@ Internal implementation of _anchor_query for constant interpolation.
         xq::T,
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
-    ) where {T <: AbstractFloat, P <: Searcher}
+    ) where {T, P <: Searcher}
     loc = _anchor_loc(x, xq, wrap, policy)
 
     # Compute geometry (constant-internal concern)
@@ -227,7 +218,7 @@ aq = _anchor_query(x, 0.5, Val(:constant))
 val = itp(aq)           # Value
 ```
 """
-@inline function (itp::ConstantInterpolant{T})(aq::_ConstantAnchoredQuery{T}; deriv::DerivOp = EvalValue()) where {T <: AbstractFloat}
+@inline function (itp::ConstantInterpolant{T})(aq::_ConstantAnchoredQuery{T}; deriv::DerivOp = EvalValue()) where {T}
     return _constant_eval_with_anchor(itp, aq, deriv)
 end
 
@@ -235,7 +226,7 @@ end
         itp::ConstantInterpolant{T},
         aq::_ConstantAnchoredQuery{T},
         op::O
-    ) where {T <: AbstractFloat, O <: AbstractEvalOp}
+    ) where {T, O <: AbstractEvalOp}
     # Handle extrapolation based on mode and side
     return _constant_anchor_dispatch(itp, aq, op, itp.extrap)
 end
@@ -296,7 +287,7 @@ end
         aq::_ConstantAnchoredQuery{T},
         op::O,
         ::NoExtrap
-    ) where {T <: AbstractFloat, O <: AbstractEvalOp}
+    ) where {T, O <: AbstractEvalOp}
     if aq.state != IN_DOMAIN
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
@@ -330,7 +321,7 @@ Returns newly allocated vector.
 function (itp::ConstantInterpolant{T})(
         aq_vec::AbstractVector{_ConstantAnchoredQuery{T}};
         deriv::DerivOp = EvalValue()
-    ) where {T <: AbstractFloat}
+    ) where {T}
     output = Vector{T}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _constant_eval_with_anchor(itp, aq_vec[i], deriv)
@@ -347,7 +338,7 @@ function (itp::ConstantInterpolant{T})(
         output::AbstractVector{T},
         aq_vec::AbstractVector{_ConstantAnchoredQuery{T}};
         deriv::DerivOp = EvalValue()
-    ) where {T <: AbstractFloat}
+    ) where {T}
     @assert length(output) == length(aq_vec) "output length must match aq_vec length"
     @inbounds for i in eachindex(aq_vec)
         output[i] = _constant_eval_with_anchor(itp, aq_vec[i], deriv)

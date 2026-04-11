@@ -20,7 +20,7 @@ Multi-series constant (step) interpolant with unified matrix storage and SIMD op
 Shares a single x-grid across N y-series for efficient batch evaluation.
 
 # Type Parameters
-- `Tg`: Grid type (Float32 or Float64)
+- `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)
 - `P`: Search policy type
 - `X`: Grid container type (Vector or Range)
@@ -64,7 +64,7 @@ sitp_complex = constant_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct ConstantSeriesInterpolant{Tg <: AbstractFloat, Tv, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct ConstantSeriesInterpolant{Tg, Tv, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                            # Shared x-grid (Range or Vector)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
@@ -79,7 +79,7 @@ mutable struct ConstantSeriesInterpolant{Tg <: AbstractFloat, Tv, S <: AbstractG
             extrap::E,
             side::SD,
             search::P = AutoSearch()
-        ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
+        ) where {Tg, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         # _to_float(copy(x), Tg): Range → _CachedRange (O(1) search + no TwicePrecision overhead);
         # Vector → defensive copy. copy() on Range is identity (zero alloc).
         # typeof(xc) rebinds X after conversion (view → Vector, TwicePrecision → _CachedRange).
@@ -136,7 +136,7 @@ Uses point-contiguous layout for SIMD optimization.
         sitp::ConstantSeriesInterpolant{Tg, Tv},
         aq::_ConstantAnchoredQuery{Tg},
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     y_point = _ensure_point_layout!(sitp)
     n_pts = n_points(sitp)
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
@@ -199,7 +199,7 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
         aq::_ConstantAnchoredQuery{Tg},
         xq,  # Original xq (any Real, including Dual)
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     # Outside domain: delegate to extrapolation handler (trait method)
     if aq.state != IN_DOMAIN
         return _eval_series_at_anchor!(output, sitp, aq, op)
@@ -211,7 +211,7 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
 
     # Special case: at right boundary (use primal for comparison)
     xq_primal = _extract_primal(xq)
-    if Tg(xq_primal) == Tg(last(sitp.x))
+    if xq_primal == _extract_primal(last(sitp.x))
         if op isa EvalValue
             @inbounds @simd for k in axes(output, 1)
                 output[k] = y_point[k, n_pts]
@@ -255,7 +255,7 @@ end
         ::AbstractSide,
         ::AbstractEvalOp,
         ::UInt8
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
@@ -272,7 +272,7 @@ end
         ::AbstractSide,
         op::AbstractEvalOp,
         side::UInt8
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap)
 end
 
@@ -289,7 +289,7 @@ end
         side_val::AbstractSide,
         op::AbstractEvalOp,
         ::UInt8
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     # Use boundary interval for extension (inline evaluation, no xq needed)
     idx = aq.idx
     idx1 = idx + 1
@@ -340,7 +340,7 @@ function constant_interp(
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg}
     # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
     Tg_new = _promote_grid_float(Tg, Tv)
@@ -356,17 +356,8 @@ function constant_interp(
     return ConstantSeriesInterpolant(x, y_mat, extrap_p, side, search)
 end
 
-# Real grid promotion (Int, etc.) → convert to float and delegate
-function constant_interp(
-        x::AbstractVector{Tg},
-        s::Series;
-        side::AbstractSide = NearestSide(),
-        extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return constant_interp(_to_float(x, Tg_float), s; side, extrap, search)
-end
+# NOTE: the former Real grid promotion wrapper (Tg <: Real) has been removed.
+# The constructor above now uses unconstrained Tg and handles promotion internally.
 
 # ========================================
 # Scalar Evaluation
@@ -392,7 +383,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Real}
     T_out = _series_output_type(Tv, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)
@@ -409,15 +400,14 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, P, Tq <: Real}
+    ) where {Tg, Tv, P, Tq <: Real}
     n_ser = n_series(sitp)
 
     # Validate output length
     _validate_scalar_output(output, n_ser)
 
-    # AD Support: Extract primal for anchor building, pass original xq for AD
-    xq_primal = _extract_primal(xq)
-    xq_typed = Tg(xq_primal)
+    # AD Support: Convert to grid type for anchor building, pass original xq for AD
+    xq_typed = _to_grid_type(xq, Tg)
 
     # Build anchor using primal value
     aq = _make_anchor(sitp, xq_typed, _resolve_search(sitp.x, xq, search, hint))
@@ -443,8 +433,10 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, P, Tq <: Real}
-    xq_typed = _to_float(xq, Tg)
+    ) where {Tg, Tv, P, Tq <: Real}
+    # Normalize queries to the grid's base float type (not Tg itself, which may be Dual)
+    Tg_float = Tg <: AbstractFloat ? Tg : float(Tq)
+    xq_typed = _to_float(xq, Tg_float)
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
 
@@ -473,21 +465,24 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 """
 @with_pool pool function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         outputs::AbstractVector{<:AbstractVector{Tv}},
-        xq::AbstractVector{Tg};
+        xq::AbstractVector{<:Real};
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, P}
-    n_query = length(xq)
+    ) where {Tg, Tv, P}
+    # Normalize queries to the grid's base float type (not Tg itself, which may be Dual)
+    Tg_float = Tg <: AbstractFloat ? Tg : float(eltype(xq))
+    xq_typed = _to_float(xq, Tg_float)
+    n_query = length(xq_typed)
     n_ser = n_series(sitp)
 
     # Validate dimensions
     _validate_series_outputs(outputs, n_ser, n_query)
 
     # Build anchors from pool (zero allocation after warmup)
-    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg}, length(xq))
-    searcher = _resolve_search(sitp.x, xq, search, hint)
-    _fill_anchors!(aq_vec, sitp.x, xq, Val(:constant), _should_wrap(sitp), searcher)
+    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg}, length(xq_typed))
+    searcher = _resolve_search(sitp.x, xq_typed, search, hint)
+    _fill_anchors!(aq_vec, sitp.x, xq_typed, Val(:constant), _should_wrap(sitp), searcher)
 
     # Extract matrices for argument-passing pattern
     y = sitp.y
@@ -503,18 +498,6 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
         _eval_constant_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, side_val, deriv)
     end
     return outputs
-end
-
-# Real type wrapper for in-place vector
-function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
-        outputs::AbstractVector{<:AbstractVector{Tv}},
-        xq::AbstractVector{Tq};
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = sitp.search_policy,
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, P, Tq <: Real}
-    xq_typed = _to_float(xq, Tg)
-    return sitp(outputs, xq_typed; deriv = deriv, search = search, hint = hint)
 end
 
 """
@@ -533,7 +516,7 @@ Uses argument-passing pattern for optimal performance.
         extrap::AbstractExtrap,
         side_val::AbstractSide,
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     @inbounds for j in eachindex(out, aq_vec)
         out[j] = _eval_constant_series_with_extrap(y, x, n_pts, x_min, x_max, k, aq_vec[j], extrap, side_val, op)
     end
@@ -554,7 +537,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
         extrap::AbstractExtrap,
         side_val::AbstractSide,
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     # Special case: at right boundary (MUST be preserved!)
     if aq.xq == x_max
         if op isa EvalValue
@@ -588,7 +571,7 @@ Internal: Core constant evaluation for series k at anchored query point.
         aq::_ConstantAnchoredQuery{Tg},
         side_val::AbstractSide,
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     # Derivatives of constant (step) function are zero
     if !(op isa EvalValue)
         return 0 * first(y)

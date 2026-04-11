@@ -31,13 +31,13 @@ end
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         xq::AbstractVector{<:Real},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tc, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap = _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
         output[i] = _quadratic_eval_at_point(x, y, a, d, xq[i], extrap, deriv, searcher)
@@ -61,8 +61,8 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `search::AbstractSearchPolicy`: Default search policy (default: `AutoSearch()`)
 
 # Returns
-`QuadraticInterpolant{Tg, Tv}` object for scalar/broadcast evaluation.
-- `Tg`: Grid type (Float32/Float64)
+`QuadraticInterpolant` object for scalar/broadcast evaluation.
+- `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)
 
 # Example
@@ -111,7 +111,7 @@ end
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {TX <: Real, TY}
+    ) where {TX, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     bc_p = _normalize_bc(bc, first(y_p))
 
@@ -121,7 +121,7 @@ end
     # Compute spacing once: used for both coefficients and struct storage
     spacing = _create_spacing(x_p)
 
-    # Compute coefficients (d::Tv, a::Tv)
+    # Compute coefficients (d::Tc, a::Tc where Tc = _output_eltype(Tv, Tg))
     d, a = _compute_quadratic_coeffs(x_p, y_p, bc_p, spacing)
 
     extrap_p = _promote_extrap(extrap, eltype(y_p))

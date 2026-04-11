@@ -33,7 +33,7 @@ Each weight 3-tuple represents: (w_fL, w_fR, w_d) — contributions to
 Forward eval: S(x) = a·dL² + d·dL + y  where a = (s-d)/h, s = (y_{R}-y_{L})/h.
 Rewritten:  S = y_L·(1-t²) + y_R·t² + d·h·t·(1-t)  where t = dL/h.
 """
-struct _QuadraticAdjointAnchor1D{Tg <: AbstractFloat}
+struct _QuadraticAdjointAnchor1D{Tg}
     idx::Int              # Interval index
     w0::NTuple{3, Tg}     # (w_fL, w_fR, w_d) for EvalValue
     w1::NTuple{3, Tg}     # for EvalDeriv1
@@ -88,7 +88,7 @@ function _bake_quadratic_adjoint_anchors(
         spacing::AbstractGridSpacing{Tg},
         xq::AbstractVector{Tg},
         extrap::AbstractExtrap
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg}
     x_lo, x_hi = first(x), last(x)
 
     # For ClampExtrap/FillExtrap, clamp queries to domain before anchoring
@@ -153,7 +153,7 @@ Computes `f̄ = Wᵀȳ` where `W` is the forward interpolation weight matrix.
 Constructed from a grid and query points (query-baked, data-free).
 
 # Type Parameters
-- `Tg`: Grid float type (Float32 or Float64)
+- `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `S`: Grid spacing type (for fast inv_h access)
 - `X`: Grid vector type (after copy for mutation safety)
 - `BC`: Boundary condition type (Left, Right, or MinCurvFit)
@@ -183,7 +183,7 @@ No tridiagonal solve needed (unlike cubic) — the slope recurrence
 `d[i+1] = 2s[i] - d[i]` has a simple O(n) adjoint.
 """
 struct QuadraticAdjoint{
-        Tg <: AbstractFloat,
+        Tg,
         S <: AbstractGridSpacing{Tg},
         BC <: QuadraticBC,
         X <: AbstractVector{Tg},
@@ -201,7 +201,7 @@ struct QuadraticAdjoint{
     function QuadraticAdjoint(
             spacing::S, anchors::Vector{_QuadraticAdjointAnchor1D{Tg}},
             bc::BC, grid_size::Int, grid::AbstractVector{Tg}
-        ) where {Tg <: AbstractFloat, S <: AbstractGridSpacing{Tg}, BC <: QuadraticBC}
+        ) where {Tg, S <: AbstractGridSpacing{Tg}, BC <: QuadraticBC}
         gc = copy(grid)
         C = bc isa MinCurvFit ? _compute_mincurv_C(spacing, grid_size) : zero(Tg)
         return new{Tg, S, BC, typeof(gc)}(spacing, anchors, bc, grid_size, gc, C)

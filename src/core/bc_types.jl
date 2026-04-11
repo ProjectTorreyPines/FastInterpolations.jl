@@ -827,9 +827,9 @@ See also: [`PolyFit`](@ref), [`_estimate_endpoint_derivative`](@ref)
 """
 @inline function materialize_bc(
         ::PolyFit{D}, xs::AbstractVector{Tg}, ys::AbstractVector{Tv}, endpoint::AbstractSide
-    ) where {D, Tg <: AbstractFloat, Tv}
+    ) where {D, Tg, Tv}
     val = _estimate_endpoint_derivative(xs, ys, endpoint, PolyFit{D}())
-    return Deriv1{Tv}(val)  # Natural Deriv1{Tv} return - no workaround needed!
+    return Deriv1(val)
 end
 
 # Passthrough for already-concrete BCs (no materialization needed)

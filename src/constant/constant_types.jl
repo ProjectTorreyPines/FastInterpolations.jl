@@ -12,7 +12,7 @@ Lightweight callable interpolant for constant (step) interpolation.
 Returned by `constant_interp(x, y)` (2-argument form).
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type (Float32, Float64) for x-coordinates
+- `Tg`: Grid type (unconstrained) for x-coordinates
 - `Tv`: Value type (unconstrained)
 - `X<:AbstractVector{Tg}`: Type of x-coordinates
 - `Y<:AbstractVector{Tv}`: Type of y-values
@@ -52,7 +52,7 @@ itp = constant_interp(x, y; search=LinearBinarySearch())  # explicit override
 val = itp(0.5; search=BinarySearch())  # per-call override
 ```
 """
-struct ConstantInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy} <: AbstractInterpolant1D{Tg, Tv}
+struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy} <: AbstractInterpolant1D{Tg, Tv}
     x::X
     y::Y
     spacing::S       # Grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
@@ -63,7 +63,7 @@ struct ConstantInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <
     # Inner constructor: parametric, only calls new (handles validation only)
     function ConstantInterpolant{Tg, Tv, X, Y, S, E, SD, P}(
             x::AbstractVector{Tg}, y::AbstractVector{Tv}, spacing::S, ev::E, sv::SD, search::P
-        ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
+        ) where {Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || _throw_grid_too_small(length(x))
         # Copy to ensure immutability: once constructed, the interpolant owns
@@ -88,7 +88,7 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
         search::P = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
+    ) where {Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
     E = typeof(extrap)
     SD = typeof(side)
     spacing = _create_spacing(x)

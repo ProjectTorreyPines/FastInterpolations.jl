@@ -36,7 +36,7 @@ end
         side::SD,
         deriv::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, SD <: AbstractSide, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, E <: AbstractExtrap, SD <: AbstractSide, O <: AbstractEvalOp, P <: Searcher}
     extrap = _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
         output[i] = _constant_eval_at_point(x, y, xq[i], extrap, side, deriv, searcher)
@@ -108,7 +108,7 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {TX <: Real, TY}
+    ) where {TX, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     extrap_p = _promote_extrap(extrap, eltype(y_p))
     return ConstantInterpolant(x_p, y_p; extrap = extrap_p, side, search)

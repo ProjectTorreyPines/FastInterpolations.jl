@@ -59,7 +59,7 @@ function quadratic_interp(
 
     # Zero-allocation type promotion
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
 
     # Zero-allocation grid conversion
     grids_typed = _convert_grids_typed(grids, Tg)
@@ -89,7 +89,7 @@ function _build_nd_quadratic_interpolant(
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy}
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     # Build nodal derivatives using quadratic recurrence
     nodal_derivs = _build_nd_coeffs_quadratic(grids, data, bcs)
 

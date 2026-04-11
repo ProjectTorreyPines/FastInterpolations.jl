@@ -26,13 +26,13 @@
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         xq::Tq,
         extrap::AbstractExtrap,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, S <: Searcher}
+    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, _ = search_interval(searcher, x, xq)
     dt = xq - xL  # Can be Dual for AD
@@ -43,16 +43,16 @@ end
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         xq::Tq,
         extrap::_ClampOrFill,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, S <: Searcher}
+    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     xq_primal = _extract_primal(xq)
-    xq_primal < first(x) && return _eval_extrapolation(op, first(y), extrap, xq)
-    xq_primal > last(x) && return _eval_extrapolation(op, last(y), extrap, xq)
+    xq_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xq)
+    xq_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xq)
     idx, xL, _ = search_interval(searcher, x, xq)
     dt = xq - xL
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
@@ -62,13 +62,13 @@ end
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         xq::Tq,
         ::WrapExtrap,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, S <: Searcher}
+    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
     idx, xL, _ = search_interval(searcher, x, xq_wrapped)
     dt = xq_wrapped - xL
@@ -78,7 +78,7 @@ end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                         PUBLIC API - HOT PATH                             ║
-# ║                 Tg<:AbstractFloat grid, Tv value type                     ║
+# ║                 TYPED CORE — all grid types                                ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
@@ -141,17 +141,19 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
-    x = _to_float(x, Tg)
+    x = _to_float(x, _promote_grid_float(Tg, Tv))
+    Tg_actual = eltype(x)
     # Compute coefficients using temporary arrays from pool
     # spacing is pooled (zero-alloc for Range, pool-acquired for Vector)
     nx = length(x)
     spacing = _create_spacing_pooled(pool, x)
-    d = acquire!(pool, Tv, nx)
-    a = acquire!(pool, Tv, nx - 1)
+    Tcoeff = _output_eltype(eltype(y), Tg_actual)
+    d = acquire!(pool, Tcoeff, nx)
+    a = acquire!(pool, Tcoeff, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
 
@@ -187,32 +189,34 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
 ```
 """
 @with_pool pool function quadratic_interp!(
-        output::AbstractVector{Tv},
+        output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tg};
+        x_targets::AbstractVector{Tq};
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv, Tq <: Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert length(x) >= 2 "x must have at least 2 elements"
 
-    x = _to_float(x, Tg)
-    x_targets = _to_float(x_targets, Tg)
+    x = _to_float(x, _promote_grid_float(Tg, Tv))
+    Tg_actual = eltype(x)
+    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
+    xq_p = _to_float(x_targets, Tq_float)
     # Compute coefficients using temporary arrays from pool
-    # spacing is pooled (zero-alloc for Range, pool-acquired for Vector)
     nx = length(x)
     spacing = _create_spacing_pooled(pool, x)
-    d = acquire!(pool, Tv, nx)
-    a = acquire!(pool, Tv, nx - 1)
+    Tcoeff = _output_eltype(eltype(y), Tg_actual)
+    d = acquire!(pool, Tcoeff, nx)
+    a = acquire!(pool, Tcoeff, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
 
-    searcher = _resolve_search(x, x_targets, search, nothing)
-    _quadratic_vector_loop!(output, x, y, a, d, x_targets, extrap, deriv, searcher)
+    searcher = _resolve_search(x, xq_p, search, nothing)
+    _quadratic_vector_loop!(output, x, y, a, d, xq_p, extrap, deriv, searcher)
     return output
 end
 
@@ -239,89 +243,16 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
 """
 function quadratic_interp(
         x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tg};
+        y::AbstractVector,
+        x_targets::AbstractVector{Tq};
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tv}
-    output = Vector{Tv}(undef, length(x_targets))
-    quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
+    ) where {Tg, Tq <: Real}
+    x_p, y_p = _promote_itp_inputs(x, y)
+    Tr = _output_eltype(eltype(y_p), eltype(x_p), Tq)
+    output = Vector{Tr}(undef, length(x_targets))
+    quadratic_interp!(output, x_p, y_p, x_targets; bc, extrap, deriv, search)
     return output
-end
-
-
-# ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                     GENERIC WRAPPERS - CONVENIENCE                        ║
-# ║              Auto-promote Real types to Float (type conversion)           ║
-# ╚═══════════════════════════════════════════════════════════════════════════╝
-
-# BC promotion uses _normalize_bc(Left/Right/MinCurvFit, Tv) from core/bc_types.jl
-
-# ========================================
-# Scalar → typed wrappers
-# ========================================
-# Unified wrapper for non-AbstractFloat inputs (Int, mixed types, Complex, etc.)
-# POLICY: Tg is computed from x/y ONLY, not from xq
-
-# Wrapper for non-AbstractFloat inputs (Int, mixed types, etc.)
-# Preserves original xq type for AD support (Dual types flow through)
-@inline function quadratic_interp(
-        x::AbstractVector{Tg}, y::AbstractVector{Tv}, xq::Tq;
-        bc::QuadraticBC = Left(QuadraticFit()), kwargs...
-    ) where {Tg <: Real, Tv, Tq <: Real}
-    x_typed, y_typed = _promote_itp_inputs(x, y)
-    bc_promoted = _normalize_bc(bc, first(y_typed))
-    # Pass xq directly to preserve Dual type for AD
-    return quadratic_interp(x_typed, y_typed, xq; bc = bc_promoted, kwargs...)
-end
-
-# ========================================
-# Vector → typed wrappers (allocating)
-# ========================================
-# POLICY: Tg is computed from x/y ONLY, not from x_targets
-
-function quadratic_interp(
-        x::AbstractVector{Tg}, y::AbstractVector{Tv}, x_targets::AbstractVector{Tq};
-        bc::QuadraticBC = Left(QuadraticFit()), kwargs...
-    ) where {Tg <: Real, Tv, Tq <: Real}
-    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
-    Tv_float = eltype(y_typed)
-    output = Vector{Tv_float}(undef, length(x_targets))
-    bc_promoted = _normalize_bc(bc, first(y_typed))
-    quadratic_interp!(output, x_typed, y_typed, xq_typed; bc = bc_promoted, kwargs...)
-    return output
-end
-
-# ========================================
-# Vector → typed wrappers (in-place)
-# ========================================
-
-function quadratic_interp!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_targets::AbstractVector{Tq};
-        bc::QuadraticBC = Left(QuadraticFit()), kwargs...
-    ) where {Tg <: Real, Tv, Tq <: Real}
-    @assert length(y) == length(x) "x and y must have same length"
-    @assert length(output) == length(x_targets) "output must match x_targets length"
-
-    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
-    Tv_float = eltype(y_typed)
-
-    # Validate output can hold result type
-    Tout = eltype(output)
-    if promote_type(Tout, Tv_float) !== Tout
-        throw(
-            ArgumentError(
-                "output eltype $Tout cannot hold interpolation result type $Tv_float. " *
-                    "Use Vector{$Tv_float} or a wider type."
-            )
-        )
-    end
-
-    bc_promoted = _normalize_bc(bc, first(y_typed))
-    return quadratic_interp!(output, x_typed, y_typed, xq_typed; bc = bc_promoted, kwargs...)
 end

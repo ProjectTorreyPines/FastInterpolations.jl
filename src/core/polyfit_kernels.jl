@@ -44,21 +44,21 @@ coefficients to function values.
 # Operation Count
     N-1 fmadd + 1 fmul = N FP ops
 """
-@inline function _weighted_sum(c::NTuple{2, T}, f::NTuple{2, T}) where {T <: AbstractFloat}
+@inline function _weighted_sum(c::NTuple{2, T}, f::NTuple{2, T}) where {T}
     return muladd(c[1], f[1], c[2] * f[2])
 end
 
-@inline function _weighted_sum(c::NTuple{3, T}, f::NTuple{3, T}) where {T <: AbstractFloat}
+@inline function _weighted_sum(c::NTuple{3, T}, f::NTuple{3, T}) where {T}
     return muladd(c[1], f[1], muladd(c[2], f[2], c[3] * f[3]))
 end
 
-@inline function _weighted_sum(c::NTuple{4, T}, f::NTuple{4, T}) where {T <: AbstractFloat}
+@inline function _weighted_sum(c::NTuple{4, T}, f::NTuple{4, T}) where {T}
     return muladd(c[1], f[1], muladd(c[2], f[2], muladd(c[3], f[3], c[4] * f[4])))
 end
 
 # Generic fallback for N > 4 (PolyFit{D} where D > 3)
 # Uses @generated to produce unrolled muladd chain at compile time
-@generated function _weighted_sum(c::NTuple{N, T}, f::NTuple{N, T}) where {N, T <: AbstractFloat}
+@generated function _weighted_sum(c::NTuple{N, T}, f::NTuple{N, T}) where {N, T}
     # Build muladd chain: muladd(c[1], f[1], muladd(c[2], f[2], ...c[N]*f[N]...))
     expr = :(c[$N] * f[$N])
     for i in (N - 1):-1:1
@@ -73,19 +73,19 @@ end
 # f::NTuple{N,Tv} values (can be Complex)
 # Returns Tv (same as value type)
 # ----------------------------------------
-@inline function _weighted_sum(c::NTuple{2, Tg}, f::NTuple{2, Tv}) where {Tg <: AbstractFloat, Tv}
+@inline function _weighted_sum(c::NTuple{2, Tg}, f::NTuple{2, Tv}) where {Tg, Tv}
     return muladd(c[1], f[1], c[2] * f[2])  # Tg * Tv + Tg * Tv → Tv
 end
 
-@inline function _weighted_sum(c::NTuple{3, Tg}, f::NTuple{3, Tv}) where {Tg <: AbstractFloat, Tv}
+@inline function _weighted_sum(c::NTuple{3, Tg}, f::NTuple{3, Tv}) where {Tg, Tv}
     return muladd(c[1], f[1], muladd(c[2], f[2], c[3] * f[3]))
 end
 
-@inline function _weighted_sum(c::NTuple{4, Tg}, f::NTuple{4, Tv}) where {Tg <: AbstractFloat, Tv}
+@inline function _weighted_sum(c::NTuple{4, Tg}, f::NTuple{4, Tv}) where {Tg, Tv}
     return muladd(c[1], f[1], muladd(c[2], f[2], muladd(c[3], f[3], c[4] * f[4])))
 end
 
-@generated function _weighted_sum(c::NTuple{N, Tg}, f::NTuple{N, Tv}) where {N, Tg <: AbstractFloat, Tv}
+@generated function _weighted_sum(c::NTuple{N, Tg}, f::NTuple{N, Tv}) where {N, Tg, Tv}
     expr = :(c[$N] * f[$N])
     for i in (N - 1):-1:1
         expr = :(muladd(c[$i], f[$i], $expr))
@@ -116,35 +116,35 @@ Compute first derivative on uniform grid using D+1 point stencil.
 - PolyFit{3} (CubicFit): 4 points, O(h³) accuracy
 """
 # PolyFit{1} (LinearFit) - 2 points, O(h)
-@inline function _compute_deriv1(::PolyFit{1}, ::LeftSide, f::NTuple{2, T}, inv_h::T) where {T <: AbstractFloat}
+@inline function _compute_deriv1(::PolyFit{1}, ::LeftSide, f::NTuple{2, T}, inv_h::T) where {T}
     return (f[2] - f[1]) * inv_h
 end
 
-@inline function _compute_deriv1(::PolyFit{1}, ::RightSide, f::NTuple{2, T}, inv_h::T) where {T <: AbstractFloat}
+@inline function _compute_deriv1(::PolyFit{1}, ::RightSide, f::NTuple{2, T}, inv_h::T) where {T}
     return (f[2] - f[1]) * inv_h  # Same as left for linear
 end
 
 # PolyFit{2} (QuadraticFit) - 3 points, O(h²)
-@inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3, T}, inv_h::T) where {T <: AbstractFloat}
+@inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3, T}, inv_h::T) where {T}
     # Coefficients: -(3, -4, 1) / 2
     coeff = -inv_h / 2
     return muladd(3, f[1], muladd(-4, f[2], f[3])) * coeff
 end
 
-@inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3, T}, inv_h::T) where {T <: AbstractFloat}
+@inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3, T}, inv_h::T) where {T}
     # Coefficients: (1, -4, 3) / 2
     coeff = inv_h / 2
     return muladd(1, f[1], muladd(-4, f[2], 3 * f[3])) * coeff
 end
 
 # PolyFit{3} (CubicFit) - 4 points, O(h³)
-@inline function _compute_deriv1(::PolyFit{3}, ::LeftSide, f::NTuple{4, T}, inv_h::T) where {T <: AbstractFloat}
+@inline function _compute_deriv1(::PolyFit{3}, ::LeftSide, f::NTuple{4, T}, inv_h::T) where {T}
     # Coefficients: (-11, 18, -9, 2) / 6
     coeff = inv_h / 6
     return muladd(-11, f[1], muladd(18, f[2], muladd(-9, f[3], 2 * f[4]))) * coeff
 end
 
-@inline function _compute_deriv1(::PolyFit{3}, ::RightSide, f::NTuple{4, T}, inv_h::T) where {T <: AbstractFloat}
+@inline function _compute_deriv1(::PolyFit{3}, ::RightSide, f::NTuple{4, T}, inv_h::T) where {T}
     # Coefficients: (-2, 9, -18, 11) / 6
     coeff = inv_h / 6
     return muladd(-2, f[1], muladd(9, f[2], muladd(-18, f[3], 11 * f[4]))) * coeff
@@ -158,35 +158,35 @@ end
 # ----------------------------------------
 
 # PolyFit{1} (LinearFit) - 2 points, O(h) - Mixed type
-@inline function _compute_deriv1(::PolyFit{1}, ::LeftSide, f::NTuple{2, Tv}, inv_h::Tg) where {Tv, Tg <: AbstractFloat}
+@inline function _compute_deriv1(::PolyFit{1}, ::LeftSide, f::NTuple{2, Tv}, inv_h::Tg) where {Tv, Tg}
     return (f[2] - f[1]) * inv_h  # Tv * Tg → Tv
 end
 
-@inline function _compute_deriv1(::PolyFit{1}, ::RightSide, f::NTuple{2, Tv}, inv_h::Tg) where {Tv, Tg <: AbstractFloat}
+@inline function _compute_deriv1(::PolyFit{1}, ::RightSide, f::NTuple{2, Tv}, inv_h::Tg) where {Tv, Tg}
     return (f[2] - f[1]) * inv_h
 end
 
 # PolyFit{2} (QuadraticFit) - 3 points, O(h²) - Mixed type
-@inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3, Tv}, inv_h::Tg) where {Tv, Tg <: AbstractFloat}
+@inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: -(3, -4, 1) / 2
     coeff = -inv_h / 2
     return muladd(3, f[1], muladd(-4, f[2], f[3])) * coeff
 end
 
-@inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3, Tv}, inv_h::Tg) where {Tv, Tg <: AbstractFloat}
+@inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (1, -4, 3) / 2
     coeff = inv_h / 2
     return muladd(1, f[1], muladd(-4, f[2], 3 * f[3])) * coeff
 end
 
 # PolyFit{3} (CubicFit) - 4 points, O(h³) - Mixed type
-@inline function _compute_deriv1(::PolyFit{3}, ::LeftSide, f::NTuple{4, Tv}, inv_h::Tg) where {Tv, Tg <: AbstractFloat}
+@inline function _compute_deriv1(::PolyFit{3}, ::LeftSide, f::NTuple{4, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (-11, 18, -9, 2) / 6
     coeff = inv_h / 6
     return muladd(-11, f[1], muladd(18, f[2], muladd(-9, f[3], 2 * f[4]))) * coeff
 end
 
-@inline function _compute_deriv1(::PolyFit{3}, ::RightSide, f::NTuple{4, Tv}, inv_h::Tg) where {Tv, Tg <: AbstractFloat}
+@inline function _compute_deriv1(::PolyFit{3}, ::RightSide, f::NTuple{4, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (-2, 9, -18, 11) / 6
     coeff = inv_h / 6
     return muladd(-2, f[1], muladd(9, f[2], muladd(-18, f[3], 11 * f[4]))) * coeff
@@ -196,7 +196,7 @@ end
 # Julia dispatch ensures D=1,2,3 use the specialized methods above.
 @inline @with_pool pool function _compute_deriv1(
         pf::PolyFit{D}, side::AbstractSide, f::NTuple{N, T}, inv_h::T
-    ) where {D, N, T <: AbstractFloat}
+    ) where {D, N, T}
     # Compute coefficients on reference grid t = 0, 1, ..., D
     coeffs = acquire!(pool, T, N)
     β = acquire!(pool, T, N)
@@ -232,18 +232,18 @@ Use with `_weighted_sum(coeffs, f_values)` to compute the derivative.
 - `x::NTuple{D+1,T}`: Grid coordinates at stencil points
 """
 # PolyFit{1} (LinearFit) - 2 points
-@inline function _compute_deriv1_coeffs(::PolyFit{1}, ::LeftSide, x::NTuple{2, T}) where {T <: AbstractFloat}
+@inline function _compute_deriv1_coeffs(::PolyFit{1}, ::LeftSide, x::NTuple{2, T}) where {T}
     inv_dx = inv(x[2] - x[1])
     return (-inv_dx, inv_dx)
 end
 
-@inline function _compute_deriv1_coeffs(::PolyFit{1}, ::RightSide, x::NTuple{2, T}) where {T <: AbstractFloat}
+@inline function _compute_deriv1_coeffs(::PolyFit{1}, ::RightSide, x::NTuple{2, T}) where {T}
     inv_dx = inv(x[2] - x[1])
     return (-inv_dx, inv_dx)  # Same as left for linear
 end
 
 # PolyFit{2} (QuadraticFit) - 3 points
-@inline function _compute_deriv1_coeffs(::PolyFit{2}, ::LeftSide, x::NTuple{3, T}) where {T <: AbstractFloat}
+@inline function _compute_deriv1_coeffs(::PolyFit{2}, ::LeftSide, x::NTuple{3, T}) where {T}
     x1, x2, x3 = x
     d12, d13 = x1 - x2, x1 - x3
     d23 = x2 - x3
@@ -253,7 +253,7 @@ end
     return (c1, c2, c3)
 end
 
-@inline function _compute_deriv1_coeffs(::PolyFit{2}, ::RightSide, x::NTuple{3, T}) where {T <: AbstractFloat}
+@inline function _compute_deriv1_coeffs(::PolyFit{2}, ::RightSide, x::NTuple{3, T}) where {T}
     x1, x2, x3 = x
     d12, d13, d23 = x1 - x2, x1 - x3, x2 - x3
     c1 = (-d23) / (d12 * d13)
@@ -263,7 +263,7 @@ end
 end
 
 # PolyFit{3} (CubicFit) - 4 points
-@inline function _compute_deriv1_coeffs(::PolyFit{3}, ::LeftSide, x::NTuple{4, T}) where {T <: AbstractFloat}
+@inline function _compute_deriv1_coeffs(::PolyFit{3}, ::LeftSide, x::NTuple{4, T}) where {T}
     x1, x2, x3, x4 = x
     d12, d13, d14 = x1 - x2, x1 - x3, x1 - x4
     d23, d24, d34 = x2 - x3, x2 - x4, x3 - x4
@@ -275,7 +275,7 @@ end
     return (c1, c2, c3, c4)
 end
 
-@inline function _compute_deriv1_coeffs(::PolyFit{3}, ::RightSide, x::NTuple{4, T}) where {T <: AbstractFloat}
+@inline function _compute_deriv1_coeffs(::PolyFit{3}, ::RightSide, x::NTuple{4, T}) where {T}
     x1, x2, x3, x4 = x
     d12, d13, d14 = x1 - x2, x1 - x3, x1 - x4
     d23, d24, d34 = x2 - x3, x2 - x4, x3 - x4
@@ -292,7 +292,7 @@ end
 # Julia dispatch ensures D=1,2,3 use the specialized methods above.
 @inline @with_pool pool function _compute_deriv1_coeffs(
         pf::PolyFit{D}, side::Union{LeftSide, RightSide}, x::NTuple{N, T}
-    ) where {D, N, T <: AbstractFloat}
+    ) where {D, N, T}
     c = acquire!(pool, T, N)
     β = acquire!(pool, T, N)
     _compute_deriv1_coeffs!(c, β, pf, side, x)
@@ -328,7 +328,7 @@ In-place computation of barycentric weights β_i = 1 / Π_{j≠i} (x_i - x_j).
 """
 @inline function _barycentric_weights!(
         β::AbstractVector{T}, x::NTuple{N, T}, ::Val{N}
-    ) where {N, T <: AbstractFloat}
+    ) where {N, T}
     @assert length(β) >= N "Buffer β must have length ≥ $N"
     @inbounds for i in 1:N
         xi = x[i]
@@ -363,7 +363,7 @@ Uses barycentric formula:
 """
 @inline function _d1_coeffs_at_node!(
         coeffs::AbstractVector{T}, β::AbstractVector{T}, x::NTuple{N, T}, k::Int, ::Val{N}
-    ) where {N, T <: AbstractFloat}
+    ) where {N, T}
     @assert length(coeffs) >= N "Buffer coeffs must have length ≥ $N"
     @assert length(β) >= N "Buffer β must have length ≥ $N"
     @assert 1 <= k <= N "Node index k=$k must be in 1:$N"
@@ -418,7 +418,7 @@ This is the generic fallback for D > 3. For D = 1, 2, 3, the specialized
 @inline function _compute_deriv1_coeffs!(
         coeffs::AbstractVector{T}, β::AbstractVector{T},
         ::PolyFit{D}, side::Union{LeftSide, RightSide}, x::NTuple{N, T}
-    ) where {D, N, T <: AbstractFloat}
+    ) where {D, N, T}
     k = side isa LeftSide ? 1 : N
     return _d1_coeffs_at_node!(coeffs, β, x, k, Val(N))
 end
@@ -538,7 +538,7 @@ Estimate first derivative at endpoint using D+1 point polynomial fit.
 """
 @inline function _estimate_endpoint_derivative(
         xs::AbstractRange{T}, ys::AbstractVector{T}, side::AbstractSide, pf::PolyFit{D}
-    ) where {T <: AbstractFloat, D}
+    ) where {T, D}
     _check_polyfit_requirements(D, length(ys))
     @inbounds begin
         f = _extract_stencil_values(ys, side, Val(D + 1))
@@ -549,7 +549,7 @@ end
 
 @inline function _estimate_endpoint_derivative(
         xs::AbstractVector{T}, ys::AbstractVector{T}, side::AbstractSide, pf::PolyFit{D}
-    ) where {T <: AbstractFloat, D}
+    ) where {T, D}
     @assert length(xs) == length(ys) "xs and ys must have same length"
     _check_polyfit_requirements(D, length(ys))
     @inbounds begin
@@ -568,7 +568,7 @@ end
 # ----------------------------------------
 @inline function _estimate_endpoint_derivative(
         xs::AbstractRange{Tg}, ys::AbstractVector{Tv}, side::AbstractSide, pf::PolyFit{D}
-    ) where {Tg <: AbstractFloat, Tv, D}
+    ) where {Tg, Tv, D}
     _check_polyfit_requirements(D, length(ys))
     @inbounds begin
         f = _extract_stencil_values(ys, side, Val(D + 1))
@@ -579,7 +579,7 @@ end
 
 @inline function _estimate_endpoint_derivative(
         xs::AbstractVector{Tg}, ys::AbstractVector{Tv}, side::AbstractSide, pf::PolyFit{D}
-    ) where {Tg <: AbstractFloat, Tv, D}
+    ) where {Tg, Tv, D}
     @assert length(xs) == length(ys) "xs and ys must have same length"
     _check_polyfit_requirements(D, length(ys))
     @inbounds begin

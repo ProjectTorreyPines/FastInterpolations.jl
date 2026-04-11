@@ -32,11 +32,12 @@
     bcs_periodic = map(_bc_for_periodic_check, methods)
     grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
 
-    # 2. Pool-allocate compact partials (promoted Tv, matching constructor path)
+    # 2. Pool-allocate compact partials (widened with Tg for Dual grid support)
     Tv = _value_type(eltype(data), Tg)
+    Tz = _output_eltype(Tv, Tg)
     sizes = map(_deriv_size, methods)
     n_partials = prod(sizes)
-    partials = acquire!(pool, Tv, (n_partials, size(data_p)...))
+    partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
 
     # 3. Compute heterogeneous partials in-place (reuses build.jl core)
     _compute_nd_partials_hetero!(partials, grids_p, data_p, methods, sizes)
@@ -78,9 +79,10 @@ end
     grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
 
     Tv = _value_type(eltype(data), Tg)
+    Tz = _output_eltype(Tv, Tg)
     sizes = map(_deriv_size, methods)
     n_partials = prod(sizes)
-    partials = acquire!(pool, Tv, (n_partials, size(data_p)...))
+    partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
     _compute_nd_partials_hetero!(partials, grids_p, data_p, methods, sizes)
     spacings = _create_spacings_pooled(pool, grids_p)
 

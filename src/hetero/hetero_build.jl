@@ -131,7 +131,7 @@ function _compute_nd_partials_hetero!(
         data::AbstractArray{<:Any, N},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         sizes::NTuple{N, Int},
-    ) where {Tv, Tg <: AbstractFloat, N, NP1}
+    ) where {Tv, Tg, N, NP1}
     @boundscheck begin
         NP1 == N + 1 || throw(DimensionMismatch("partials must have N+1 dimensions"))
         n_partials = prod(sizes)
@@ -165,15 +165,17 @@ function _build_nd_coeffs_hetero(
         ::Type{Tv},
         data::AbstractArray{<:Any, N},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     sizes = map(_deriv_size, methods)
 
     # Single allocation: (prod(sizes), n₁, n₂, ..., nₙ)
+    # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
+    Tz = _output_eltype(Tv, Tg)
     n_partials = prod(sizes)
-    partials = Array{Tv, N + 1}(undef, n_partials, size(data)...)
+    partials = Array{Tz, N + 1}(undef, n_partials, size(data)...)
 
-    # copyto! in _compute_nd_partials_hetero! handles data → Tv promotion
+    # copyto! in _compute_nd_partials_hetero! handles data → Tz promotion
     _compute_nd_partials_hetero!(partials, grids, data, methods, sizes)
 
-    return _HeteroPartials{Tv, N, N + 1}(partials)
+    return _HeteroPartials{Tz, N, N + 1}(partials)
 end

@@ -36,8 +36,10 @@ Zero-allocation after warmup (pool reuse).
     oob_result !== nothing && return oob_result
 
     # 1. Pool-allocate partials array (THE KEY: pool instead of heap)
+    # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
+    Tz = _output_eltype(Tv, Tg)
     n_partials = 1 << N
-    partials = acquire!(pool, Tv, (n_partials, size(data)...))
+    partials = acquire!(pool, Tz, (n_partials, size(data)...))
 
     # 2. Compute all partial derivatives in-place
     _compute_nd_partials_quadratic!(partials, grids, data, bcs)
@@ -78,8 +80,9 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     _validate_nd_domain(grids, queries, extraps_val)
 
     # Build phase (done once)
+    Tz = _output_eltype(Tv, Tg)
     n_partials = 1 << N
-    partials = acquire!(pool, Tv, (n_partials, size(data)...))
+    partials = acquire!(pool, Tz, (n_partials, size(data)...))
     _compute_nd_partials_quadratic!(partials, grids, data, bcs)
     spacings = _create_spacings_pooled(pool, grids)
 

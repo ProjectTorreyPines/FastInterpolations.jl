@@ -137,9 +137,11 @@ function _build_nd_interpolant(
     # (via _resolve_extrap_nd in cubic_interp)
 
     # Construct the interpolant
+    # Tz = coefficient type: widens Tv with Tg (Dual grid → Dual coefficients).
+    Tz = eltype(nodal_derivs)
     NP1 = N + 1
     return CubicInterpolantND{
-        Tg, Tv, N, NP1,
+        Tg, Tz, N, NP1,
         typeof(grids), typeof(spacings), typeof(bcs_store),
         typeof(extraps_val), typeof(searches),
     }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)

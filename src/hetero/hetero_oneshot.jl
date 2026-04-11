@@ -22,7 +22,7 @@
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
-    ) where {Tg <: AbstractFloat, N}
+    ) where {Tg, N}
     # 0. Domain check + FillExtrap short-circuit
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
@@ -67,7 +67,7 @@ end
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
-    ) where {Tg <: AbstractFloat, N}
+    ) where {Tg, N}
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
@@ -127,13 +127,15 @@ end
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
         spacings::Union{Nothing, Tuple{Vararg{AbstractGridSpacing, N}}} = nothing,
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
     q_eval = _handle_all_extraps(query, grids, extraps_val)
-    # Tr promotes data eltype with query eltypes → Dual-safe pool buffers for AD.
-    Tr = _promote_query_eltype(Tv, q_eval)
+    # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
+    # Grid eltype included: when grid is Dual, 1D oneshot returns Dual-typed results
+    # that must fit into _collapse_dims intermediate buffers.
+    Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
 
     # GridIdx safety gate: same reason as the persistent path — a GridIdx on a
     # windowable axis would be aliased to the wrong grid entry once the data
@@ -220,7 +222,7 @@ function _interp_nd_oneshot_dispatch(
         deriv, extrap, search, hints, coeffs,
     ) where {N}
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
     Tv = _value_type(eltype(data), Tg)
@@ -288,7 +290,7 @@ end
         deriv, extrap, search, hints, coeffs,
     ) where {N}
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
     _query_check_ndims(queries, Val(N))
@@ -446,7 +448,7 @@ function interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     Tq = _query_eltype(queries)
     Tr = _output_eltype(Tv, Tg, Tq)
     output = Vector{Tr}(undef, _query_length(queries))

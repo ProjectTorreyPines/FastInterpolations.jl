@@ -119,7 +119,7 @@ Zero-allocation after warmup (pool reuse).
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
-    ) where {Tg,Tv, N}
+    ) where {Tg, Tv, N}
     # 0. NoExtrap domain check must precede FillExtrap short-circuit
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
@@ -167,7 +167,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
-    ) where {Tg,Tv, N}
+    ) where {Tg, Tv, N}
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)

@@ -57,7 +57,7 @@ When `xq` is a `ForwardDiff.Dual`, the anchor preserves the Dual type
 in both `xq` and weight fields, enabling automatic differentiation through
 series interpolant evaluation.
 """
-struct _CubicAnchoredQuery{Tg,Tq <: Real}
+struct _CubicAnchoredQuery{Tg, Tq <: Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), Float or Dual
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
@@ -204,7 +204,7 @@ in `xq` and weight fields, enabling automatic differentiation.
         ::Val{:cubic},
         wrap::Bool = false,
         searcher::P = DEFAULT_SEARCHER
-    ) where {Tg,Tq <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Real, P <: Searcher}
     # Promote query for anchor: preserve Dual, promote Int/Rational to grid type
     # Cubic anchors store weight tuples with complex arithmetic that requires Float
     xq_promoted = _promote_for_anchor(xq, Tg)
@@ -323,7 +323,7 @@ while preserving the full Dual value for weight computation.
         xq::Tq,
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
-    ) where {Tg,Tq <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Real, P <: Searcher}
     loc = _anchor_loc(x, xq, wrap, policy)
 
     # Compute geometry (cubic-internal concern)

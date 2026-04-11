@@ -59,7 +59,7 @@ aq = _anchor_query(x, 0.35, Val(:cubic))
 itp(aq)  # Ultra-fast evaluation
 ```
 """
-@inline function (itp::CubicInterpolant{Tg, Tv})(aq::_CubicAnchoredQuery{Tg, Tq}; deriv::DerivOp = EvalValue()) where {Tg,Tv, Tq <: Real}
+@inline function (itp::CubicInterpolant{Tg, Tv})(aq::_CubicAnchoredQuery{Tg, Tq}; deriv::DerivOp = EvalValue()) where {Tg, Tv, Tq <: Real}
     # Fast path: inside domain (most common case)
     if aq.state == IN_DOMAIN
         return _eval_anchored_kernel(itp, aq, deriv)
@@ -82,7 +82,7 @@ Thin wrapper: delegates to shared `_cubic_eval_kernel(y, z, aq, op)` in cubic_an
 # ========================================
 
 # NoExtrap - throw DomainError with enriched bounds
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::NoExtrap, ::AbstractEvalOp) where {Tg,Tv, Tq <: Real}
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::NoExtrap, ::AbstractEvalOp) where {Tg, Tv, Tq <: Real}
     x_min, x_max = first(itp.cache.x), last(itp.cache.x)
     throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
 end
@@ -119,7 +119,7 @@ For extrap=NoExtrap(), throws DomainError on first out-of-domain anchor.
         itp::CubicInterpolant{Tg, Tv},
         aq::AbstractVector{<:_CubicAnchoredQuery{Tg}},
         op::AbstractEvalOp
-    ) where {Tg,Tv}
+    ) where {Tg, Tv}
     @inbounds for k in eachindex(aq, output)
         aq_k = aq[k]
         if aq_k.state == IN_DOMAIN
@@ -157,7 +157,7 @@ derivs = itp(aq_vec; deriv=DerivOp(1)) # First derivative
 function (itp::CubicInterpolant{Tg, Tv})(
         aq::AbstractVector{<:_CubicAnchoredQuery{Tg, Tq}};
         deriv::DerivOp = EvalValue()
-    ) where {Tg,Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss from anchor
     output = Vector{T_out}(undef, length(aq))
     _eval_anchored_vector_loop!(output, itp, aq, deriv)
@@ -179,7 +179,7 @@ function (itp::CubicInterpolant{Tg, Tv})(
         output::AbstractVector{Tv},
         aq::AbstractVector{<:_CubicAnchoredQuery{Tg}};
         deriv::DerivOp = EvalValue()
-    ) where {Tg,Tv}
+    ) where {Tg, Tv}
     @assert length(output) == length(aq) "output length ($(length(output))) must match aq length ($(length(aq)))"
     _eval_anchored_vector_loop!(output, itp, aq, deriv)
     return output
@@ -236,7 +236,7 @@ so the pool memory can be safely reused after this function returns.
         bc::PeriodicBC,
         autocache::Bool,
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg,Tv}
+    ) where {Tg, Tv}
     x, y = _prepare_periodic(x, y, bc)
     _check_periodic_endpoints(bc, y)
     cache = _get_cubic_cache(x, PeriodicBC(), _effective_autocache(autocache, Tg))
@@ -314,7 +314,7 @@ val = itp(0.5)  # returns ComplexF64
         extrap::AbstractExtrap,
         autocache::Bool,
         search::P = AutoSearch()
-    ) where {Tg,Tv, P <: AbstractSearchPolicy}
+    ) where {Tg, Tv, P <: AbstractSearchPolicy}
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x, y, bc, autocache, search)
     else
@@ -361,7 +361,7 @@ so the pool memory can be safely reused after this function returns.
         y::AbstractVector{Tv};
         extrap::AbstractExtrap = NoExtrap(),
         search::P = AutoSearch()
-    ) where {Tg,Tv, P <: AbstractSearchPolicy}
+    ) where {Tg, Tv, P <: AbstractSearchPolicy}
     Tz = _output_eltype(Tv, eltype(cache.x))
     tmp_z = acquire!(pool, Tz, length(y))
     _solve_system!(tmp_z, cache, y, cache.bc_config)

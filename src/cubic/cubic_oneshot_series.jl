@@ -106,7 +106,7 @@ end
         op::AbstractEvalOp,
         autocache::Bool,
         search::AbstractSearchPolicy
-    ) where {Tg,Tq <: Real}
+    ) where {Tg, Tq <: Real}
     vecs = _series_vectors(s)
     n = length(x)
     K = n_series(s)
@@ -182,7 +182,7 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg,Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
@@ -212,7 +212,7 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg,Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
@@ -243,7 +243,7 @@ end
         autocache::Bool = true,
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg,Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     K = n_series(s)
@@ -295,7 +295,7 @@ function cubic_interp(
         autocache::Bool = true,
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg,Tq <: Real}
+    ) where {Tg, Tq <: Real}
     K = n_series(s)
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
     Tv = _series_output_type(_output_eltype(_series_eltype(s), Tg_float), Tq)

@@ -36,7 +36,7 @@ Thread-safe: workspaces allocated from task-local pool.
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg,Tv, X, F, BC}
+    ) where {Tg, Tv, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
 
@@ -110,7 +110,7 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
         autocache::Bool,
         op::O,
         searcher::S
-    ) where {Tg,Tv, Tq <: Real, L <: PointBC, R <: PointBC, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq <: Real, L <: PointBC, R <: PointBC, O <: AbstractEvalOp, S <: Searcher}
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
     Tz = _output_eltype(Tv, eltype(cache.x))
@@ -135,7 +135,7 @@ manages their lifetime. Follows the `_create_spacing_pooled(pool, ...)` pattern.
         y::AbstractVector{Tv},
         bc::PeriodicBC,
         autocache::Bool
-    ) where {Tg,Tv}
+    ) where {Tg, Tv}
     @assert length(x) == length(y) "x and y must have the same length"
 
     # ── Extend exclusive → inclusive (pool-based, zero-alloc after warmup) ──
@@ -214,7 +214,7 @@ Pool-based exclusive extension: zero-alloc after warmup.
         autocache::Bool,
         op::O,
         searcher::S
-    ) where {Tg,Tv, Tq <: Real, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg, Tv, Tq <: Real, O <: AbstractEvalOp, S <: Searcher}
     cache, y_p, z = _cubic_periodic_solve!(pool, x, y, bc, autocache)
 
     _check_domain(cache.x, xq, WrapExtrap())
@@ -261,7 +261,7 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg,Tv, X, F, BC}
+    ) where {Tg, Tv, X, F, BC}
     @assert length(output) >= 1 "output must have at least 1 element"
     output[1] = cubic_interp_scalar(cache, y, x_query; extrap = extrap, deriv = deriv, search = search)
     return output
@@ -315,7 +315,7 @@ function cubic_interp(
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg,Tv}
+    ) where {Tg, Tv}
     output = Vector{Tv}(undef, length(x_query))
     cubic_interp!(output, cache, y, x_query; extrap = extrap, deriv = deriv, search = search)
     return output
@@ -369,7 +369,7 @@ end
 cubic_interp(
     cache::CubicSplineCache{Tg}, y::AbstractVector{Tv},
     x_query::Tg; extrap::AbstractExtrap = NoExtrap(), deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = AutoSearch(), hint::Union{Nothing, Base.RefValue{Int}} = nothing
-) where {Tg,Tv} =
+) where {Tg, Tv} =
     cubic_interp_scalar(cache, y, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)
 
 # Primary scalar method - AD-compatible
@@ -394,7 +394,6 @@ function cubic_interp(
     bc_pair = _normalize_bc(bc, first(y))
     return _cubic_interp_bcpair_scalar(x, y, xq, bc_pair, extrap, autocache, deriv, searcher)
 end
-
 
 
 # Note: Real wrappers (Tg <: Real) removed — duck-typed Tg dispatch handles

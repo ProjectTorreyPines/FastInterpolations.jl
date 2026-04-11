@@ -60,7 +60,7 @@ For a 4D array f(x₁,x₂,x₃,x₄) with shape (10, 20, 30, 40), computing ∂
         grid::AbstractVector{Tg},
         bc::AbstractBC,
         d::Int
-    ) where {Tv, Tg,N}
+    ) where {Tv, Tg, N}
     @boundscheck begin
         1 ≤ d ≤ N || throw(ArgumentError("dimension d=$d out of range 1:$N"))
         size(out) == size(data) || throw(DimensionMismatch("out and data must have same size"))
@@ -143,7 +143,7 @@ slices simultaneously using the batch solver from 2D implementation.
         grid::AbstractVector{Tg},
         bc::AbstractBC,
         d::Int
-    ) where {Tv, Tg,N}
+    ) where {Tv, Tg, N}
     @boundscheck begin
         1 ≤ d ≤ N || throw(ArgumentError("dimension d=$d out of range 1:$N"))
         size(out) == size(data) || throw(DimensionMismatch("out and data must have same size"))
@@ -370,7 +370,7 @@ end
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     ::Val{N}
-) where {Tv, Tg,N} = _validate_nd_partials_dims!(partials, grids, data, Val(1), Val(N))
+) where {Tv, Tg, N} = _validate_nd_partials_dims!(partials, grids, data, Val(1), Val(N))
 
 @inline function _validate_nd_partials_dims!(
         partials::AbstractArray,
@@ -378,7 +378,7 @@ end
         data::AbstractArray{Tv, N},
         ::Val{D},
         ::Val{N}
-    ) where {Tv, Tg,D, N}
+    ) where {Tv, Tg, D, N}
     size(partials, D + 1) == size(data, D) || throw(
         DimensionMismatch(
             "partials dim $(D + 1) must match data dim $D"
@@ -400,7 +400,7 @@ end
     bcs::NTuple{N, AbstractBC},
     data::AbstractArray{Tv, N},
     ::Val{N}
-) where {Tv, Tg,N} = _validate_nd_bcs!(grids, bcs, data, Val(1), Val(N))
+) where {Tv, Tg, N} = _validate_nd_bcs!(grids, bcs, data, Val(1), Val(N))
 
 @inline function _validate_nd_bcs!(
         grids::NTuple{N, AbstractVector{Tg}},
@@ -408,7 +408,7 @@ end
         data::AbstractArray{Tv, N},
         ::Val{D},
         ::Val{N}
-    ) where {Tv, Tg,D, N}
+    ) where {Tv, Tg, D, N}
     # Only validate inclusive PeriodicBC: for exclusive, the endpoint is not yet present
     # in the data (it is added by _prepare_periodic_nd/_prepare_periodic_nd_pooled after
     # this validation).  Checking data[1] ≈ data[end] on unextended exclusive data would
@@ -456,7 +456,7 @@ end
     grids::NTuple{N, AbstractVector{Tg}},
     bcs::NTuple{N, AbstractBC},
     ::Val{N}
-) where {Tv, Tg,N, NP1} = _build_nd_partials_dim!(partials, grids, bcs, Val(1), Val(N))
+) where {Tv, Tg, N, NP1} = _build_nd_partials_dim!(partials, grids, bcs, Val(1), Val(N))
 
 @inline function _build_nd_partials_dim!(
         partials::AbstractArray{Tv, NP1},
@@ -464,7 +464,7 @@ end
         bcs::NTuple{N, AbstractBC},
         ::Val{D},
         ::Val{N}
-    ) where {Tv, Tg,D, N, NP1}
+    ) where {Tv, Tg, D, N, NP1}
     bit_d = 1 << (D - 1)
     @inbounds for p_src in 1:bit_d
         p_dst = p_src + bit_d
@@ -533,7 +533,7 @@ function _compute_nd_partials!(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tv, Tg,N, NP1}
+    ) where {Tv, Tg, N, NP1}
     # Validate dimensions (fast, no allocation)
     @boundscheck begin
         NP1 == N + 1 || throw(DimensionMismatch("partials must have N+1 dimensions"))
@@ -581,7 +581,7 @@ function _build_nd_coeffs(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tg,Tv, N}
+    ) where {Tg, Tv, N}
     # Validate periodic BCs and PolyFit requirements (runs once at construction time)
     _validate_nd_bcs!(grids, bcs, data, Val(N))
 

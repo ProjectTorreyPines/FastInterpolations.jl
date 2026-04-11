@@ -295,7 +295,7 @@ so each branch dispatches on a concrete cache type — no Union boxing.
         mixed_bcs,
         grids::NTuple{N, AbstractVector{Tg}},
         grid_size::NTuple{N, Int}
-    ) where {Tv, Tg,N}
+    ) where {Tv, Tg, N}
     # Process axes in reverse order: d=N, N-1, ..., 1
     for d in N:-1:1
         bit_d = 1 << (d - 1)

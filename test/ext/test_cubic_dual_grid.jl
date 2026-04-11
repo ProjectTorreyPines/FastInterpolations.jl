@@ -23,10 +23,10 @@ const FI = FastInterpolations
     # ╚═══════════════════════════════════════════════════════════════════════╝
 
     @testset "cubic scalar oneshot — ForwardDiff.derivative + FD cross-check" begin
-        f_interp = t -> cubic_interp(t .* x_base, y_base, xq_scalar; extrap=ExtendExtrap())
+        f_interp = t -> cubic_interp(t .* x_base, y_base, xq_scalar; extrap = ExtendExtrap())
         ad_val = ForwardDiff.derivative(f_interp, 1.0)
         fd_val = fd_deriv(f_interp)
-        @test ad_val ≈ fd_val rtol=1e-5
+        @test ad_val ≈ fd_val rtol = 1.0e-5
     end
 
     # ╔═══════════════════════════════════════════════════════════════════════╗
@@ -35,8 +35,8 @@ const FI = FastInterpolations
 
     @testset "cubic vector oneshot — Dual grid primals match Float path" begin
         d = ForwardDiff.Dual{:tag}(1.0, 1.0)
-        result = cubic_interp(d .* x_base, y_base, xq_vec; extrap=ExtendExtrap())
-        ref = cubic_interp(x_base, y_base, xq_vec; extrap=ExtendExtrap())
+        result = cubic_interp(d .* x_base, y_base, xq_vec; extrap = ExtendExtrap())
+        ref = cubic_interp(x_base, y_base, xq_vec; extrap = ExtendExtrap())
         @test ForwardDiff.value.(result) ≈ ref
     end
 
@@ -46,9 +46,9 @@ const FI = FastInterpolations
 
     @testset "cubic interpolant — Dual grid constructs + callable" begin
         d = ForwardDiff.Dual{:tag}(1.0, 1.0)
-        itp = cubic_interp(d .* x_base, y_base; extrap=ExtendExtrap())
+        itp = cubic_interp(d .* x_base, y_base; extrap = ExtendExtrap())
         v = itp(xq_scalar)
-        itp_f = cubic_interp(x_base, y_base; extrap=ExtendExtrap())
+        itp_f = cubic_interp(x_base, y_base; extrap = ExtendExtrap())
         @test ForwardDiff.value(v) ≈ itp_f(xq_scalar)
     end
 
@@ -61,17 +61,17 @@ const FI = FastInterpolations
         xd = d .* x_base
 
         for (name, bc) in [
-            ("CubicFit",    CubicFit()),
-            ("ZeroCurvBC",  ZeroCurvBC()),
-            ("ZeroSlopeBC", ZeroSlopeBC()),
-            ("Deriv1(0)",   Deriv1(0.0)),
-            ("Deriv2(0)",   Deriv2(0.0)),
-            ("Deriv3(0)",   Deriv3(0.0)),
-        ]
+                ("CubicFit", CubicFit()),
+                ("ZeroCurvBC", ZeroCurvBC()),
+                ("ZeroSlopeBC", ZeroSlopeBC()),
+                ("Deriv1(0)", Deriv1(0.0)),
+                ("Deriv2(0)", Deriv2(0.0)),
+                ("Deriv3(0)", Deriv3(0.0)),
+            ]
             @testset "$name" begin
-                v = cubic_interp(xd, y_base, xq_scalar; bc, extrap=ExtendExtrap())
+                v = cubic_interp(xd, y_base, xq_scalar; bc, extrap = ExtendExtrap())
                 @test isfinite(ForwardDiff.value(v))
-                ref = cubic_interp(x_base, y_base, xq_scalar; bc, extrap=ExtendExtrap())
+                ref = cubic_interp(x_base, y_base, xq_scalar; bc, extrap = ExtendExtrap())
                 @test ForwardDiff.value(v) ≈ ref
             end
         end
@@ -87,10 +87,10 @@ const FI = FastInterpolations
         y_per[end] = y_per[1]  # periodic endpoint
         xq_per = 1.5
 
-        f_per = t -> cubic_interp(t .* x_per, y_per, xq_per; bc=PeriodicBC())
+        f_per = t -> cubic_interp(t .* x_per, y_per, xq_per; bc = PeriodicBC())
         ad_val = ForwardDiff.derivative(f_per, 1.0)
         fd_val = fd_deriv(f_per)
-        @test ad_val ≈ fd_val rtol=1e-5
+        @test ad_val ≈ fd_val rtol = 1.0e-5
     end
 
     # ╔═══════════════════════════════════════════════════════════════════════╗
@@ -103,8 +103,8 @@ const FI = FastInterpolations
 
         for n in 1:2
             @testset "DerivOp($n)" begin
-                v = cubic_interp(xd, y_base, xq_scalar; extrap=ExtendExtrap(), deriv=DerivOp(n))
-                ref = cubic_interp(x_base, y_base, xq_scalar; extrap=ExtendExtrap(), deriv=DerivOp(n))
+                v = cubic_interp(xd, y_base, xq_scalar; extrap = ExtendExtrap(), deriv = DerivOp(n))
+                ref = cubic_interp(x_base, y_base, xq_scalar; extrap = ExtendExtrap(), deriv = DerivOp(n))
                 @test ForwardDiff.value(v) ≈ ref
             end
         end
@@ -119,11 +119,11 @@ const FI = FastInterpolations
         xd = d .* x_base
 
         # ClampExtrap
-        v = cubic_interp(xd, y_base, xq_scalar; extrap=ClampExtrap())
+        v = cubic_interp(xd, y_base, xq_scalar; extrap = ClampExtrap())
         @test isfinite(ForwardDiff.value(v))
 
         # NoExtrap in-domain
-        v2 = cubic_interp(xd, y_base, xq_scalar; extrap=NoExtrap())
+        v2 = cubic_interp(xd, y_base, xq_scalar; extrap = NoExtrap())
         @test isfinite(ForwardDiff.value(v2))
     end
 
@@ -134,8 +134,8 @@ const FI = FastInterpolations
     @testset "cubic Range{Dual} grid" begin
         d = ForwardDiff.Dual{:tag}(1.0, 1.0)
         x_range = d .* range(0.0, 5.0, 20)
-        v = cubic_interp(collect(x_range), y_base, xq_scalar; extrap=ExtendExtrap())
-        ref = cubic_interp(x_base, y_base, xq_scalar; extrap=ExtendExtrap())
+        v = cubic_interp(collect(x_range), y_base, xq_scalar; extrap = ExtendExtrap())
+        ref = cubic_interp(x_base, y_base, xq_scalar; extrap = ExtendExtrap())
         @test ForwardDiff.value(v) ≈ ref
     end
 
@@ -145,7 +145,7 @@ const FI = FastInterpolations
 
     @testset "cubic adjoint — Dual grid constructs" begin
         d = ForwardDiff.Dual{:tag}(1.0, 1.0)
-        adj = cubic_adjoint(d .* x_base, xq_vec; extrap=ExtendExtrap())
+        adj = cubic_adjoint(d .* x_base, xq_vec; extrap = ExtendExtrap())
         y_bar = ones(length(xq_vec))
         result = adj(y_bar)
         @test length(result) == length(x_base)
@@ -160,8 +160,8 @@ const FI = FastInterpolations
         d = ForwardDiff.Dual{:tag}(1.0, 1.0)
         xd = d .* x_base
         # Allocating version works (output type inferred)
-        result = cubic_interp(xd, y_base, xq_vec; extrap=ExtendExtrap())
-        ref = cubic_interp(x_base, y_base, xq_vec; extrap=ExtendExtrap())
+        result = cubic_interp(xd, y_base, xq_vec; extrap = ExtendExtrap())
+        ref = cubic_interp(x_base, y_base, xq_vec; extrap = ExtendExtrap())
         @test ForwardDiff.value.(result) ≈ ref
     end
 
@@ -175,9 +175,9 @@ const FI = FastInterpolations
         y1 = sin.(x_base)
         y2 = cos.(x_base)
 
-        vals = cubic_interp(xd, Series(y1, y2), xq_scalar; extrap=ExtendExtrap())
-        ref1 = cubic_interp(xd, y1, xq_scalar; extrap=ExtendExtrap())
-        ref2 = cubic_interp(xd, y2, xq_scalar; extrap=ExtendExtrap())
+        vals = cubic_interp(xd, Series(y1, y2), xq_scalar; extrap = ExtendExtrap())
+        ref1 = cubic_interp(xd, y1, xq_scalar; extrap = ExtendExtrap())
+        ref2 = cubic_interp(xd, y2, xq_scalar; extrap = ExtendExtrap())
         @test vals[1] ≈ ref1
         @test vals[2] ≈ ref2
     end

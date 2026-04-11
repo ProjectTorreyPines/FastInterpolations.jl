@@ -70,39 +70,16 @@ struct QuadraticInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector
     search_policy::P    # Default search policy (immutable, thread-safe)
     bc::BC              # Boundary condition (retained for Matrix(itp, xq) convenience)
 
-    # Inner constructor: parametric, only calls new (handles validation only)
-    function QuadraticInterpolant{Tg, Tv, X, Y, S, E, P, BC, Tc}(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, spacing::S, a::Vector{Tc}, d::Vector{Tc}, ev::E, search::P, bc::BC
-        ) where {Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC, Tc}
+    # Inner constructor: computes Tv, validates, copies with type conversion.
+    function QuadraticInterpolant(
+            x::AbstractVector{Tg}, y::AbstractVector, spacing::S,
+            a::Vector{Tc}, d::Vector{Tc}, ev::E, search::P, bc::BC
+        ) where {Tg, Tc, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || _throw_grid_too_small(length(x))
-        # Copy to ensure immutability: once constructed, the interpolant owns
-        # its data and returns identical results regardless of external mutation.
-        # copy() on immutable Range types is a no-op (zero allocation).
-        # typeof() rebinds X/Y to the post-copy concrete type (e.g. SubArray → Vector).
-        xc, yc = copy(x), copy(y)
+        Tv = _value_type(eltype(y), Tg)
+        xc = copy(x)
+        yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), S, E, P, BC, Tc}(xc, yc, spacing, a, d, ev, search, bc)
     end
-end
-
-# ========================================
-# Outer Constructor: typed inputs only
-# ========================================
-# - Call inner constructor
-#
-# PERFORMANCE: Typed signature + @inline enables compile-time specialization.
-# Use quadratic_interp() for automatic type promotion and coefficient computation.
-@inline function QuadraticInterpolant(
-        x::X,
-        y::Y,
-        spacing::S,
-        a::Vector{Tc},
-        d::Vector{Tc};
-        bc::QuadraticBC = Left(QuadraticFit()),
-        extrap::AbstractExtrap = NoExtrap(),
-        search::P = AutoSearch()
-    ) where {Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, P <: AbstractSearchPolicy, Tc}
-    E = typeof(extrap)
-    BC = typeof(bc)
-    return QuadraticInterpolant{Tg, Tv, X, Y, S, E, P, BC, Tc}(x, y, spacing, a, d, extrap, search, bc)
 end

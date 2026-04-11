@@ -25,22 +25,14 @@ end
 # ========================================
 
 @inline function CubicHermiteInterpolant1D(
-        x::X,
-        y::Y,
-        dy::DY;
+        x::AbstractVector,
+        y::AbstractVector,
+        dy::AbstractVector;
         extrap::AbstractExtrap = NoExtrap(),
-        search::P = AutoSearch()
-    ) where {
-        Tg, Tv,
-        X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractVector,
-        P <: AbstractSearchPolicy,
-    }
-    E = typeof(extrap)
-    spacing = _create_spacing(x)
-    S = typeof(spacing)
-    return CubicHermiteInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, PreCompute}(
-        x, y, dy, spacing, extrap, search
+        search::AbstractSearchPolicy = AutoSearch()
     )
+    spacing = _create_spacing(x)
+    return CubicHermiteInterpolant1D(x, y, dy, spacing, extrap, search)
 end
 
 # ========================================

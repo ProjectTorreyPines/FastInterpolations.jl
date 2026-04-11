@@ -112,8 +112,8 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
-    x_p, y_p = _promote_itp_inputs(x, y)
-    bc_p = _normalize_bc(bc, first(y_p))
+    x_p = _promote_grid_only(x, y)
+    bc_p = _normalize_bc(bc, first(y))
 
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
     validate_polyfit_points(bc_p, length(x_p))
@@ -122,8 +122,8 @@ end
     spacing = _create_spacing(x_p)
 
     # Compute coefficients (d::Tc, a::Tc where Tc = _output_eltype(Tv, Tg))
-    d, a = _compute_quadratic_coeffs(x_p, y_p, bc_p, spacing)
+    d, a = _compute_quadratic_coeffs(x_p, y, bc_p, spacing)
 
-    extrap_p = _promote_extrap(extrap, eltype(y_p))
-    return QuadraticInterpolant(x_p, y_p, spacing, a, d; bc = bc_p, extrap = extrap_p, search)
+    extrap_p = _promote_extrap(extrap, _value_type(TY, eltype(x_p)))
+    return QuadraticInterpolant(x_p, y, spacing, a, d, extrap_p, search, bc_p)
 end

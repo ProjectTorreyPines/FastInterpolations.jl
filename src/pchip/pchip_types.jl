@@ -47,36 +47,33 @@ struct PchipInterpolant1D{
     extrap::E
     search_policy::P
 
-    # PreCompute inner constructor: dy is a precomputed slope vector
-    function PchipInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, PreCompute}(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, dy::AbstractVector,
+    # PreCompute inner: dy is a precomputed slope vector
+    function PchipInterpolant1D(
+            x::AbstractVector{Tg}, y::AbstractVector, dy::AbstractVector,
             spacing::S, extrap::E, search::P
-        ) where {
-            Tg, Tv,
-            X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractVector,
-            S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy,
-        }
+        ) where {Tg, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) == length(dy) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
-        xc, yc, dyc = copy(x), copy(y), copy(dy)
+        Tv = _value_type(eltype(y), Tg)
+        xc = copy(x)
+        yc = _convert_copy(y, Tv)
+        dyc = copy(dy)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), S, E, P, PreCompute}(
             xc, yc, dyc, spacing, extrap, search
         )
     end
 
-    # OnTheFly inner constructor: dy is a slope method tag (no slope data)
-    function PchipInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, OnTheFly}(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, dy::AbstractSlopeMethod,
+    # OnTheFly inner: dy is a slope method tag (no slope data)
+    function PchipInterpolant1D(
+            x::AbstractVector{Tg}, y::AbstractVector, dy::AbstractSlopeMethod,
             spacing::S, extrap::E, search::P
-        ) where {
-            Tg, Tv,
-            X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractSlopeMethod,
-            S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy,
-        }
+        ) where {Tg, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || throw(ArgumentError("PCHIP interpolation requires at least 2 points, got $(length(x))"))
-        xc, yc = copy(x), copy(y)
-        return new{Tg, Tv, typeof(xc), typeof(yc), DY, S, E, P, OnTheFly}(
+        Tv = _value_type(eltype(y), Tg)
+        xc = copy(x)
+        yc = _convert_copy(y, Tv)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), S, E, P, OnTheFly}(
             xc, yc, dy, spacing, extrap, search
         )
     end
@@ -86,42 +83,14 @@ end
 # Outer Constructor
 # ========================================
 
-# Outer constructor: PreCompute (dy is a vector)
+# Outer constructor: computes spacing, dispatches to inner via dy type.
 @inline function PchipInterpolant1D(
-        x::X,
-        y::Y,
-        dy::DY;
+        x::AbstractVector,
+        y::AbstractVector,
+        dy;  # AbstractVector (PreCompute) or AbstractSlopeMethod (OnTheFly)
         extrap::AbstractExtrap = NoExtrap(),
-        search::P = AutoSearch()
-    ) where {
-        Tg, Tv,
-        X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractVector,
-        P <: AbstractSearchPolicy,
-    }
-    E = typeof(extrap)
-    spacing = _create_spacing(x)
-    S = typeof(spacing)
-    return PchipInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, PreCompute}(
-        x, y, dy, spacing, extrap, search
+        search::AbstractSearchPolicy = AutoSearch()
     )
-end
-
-# Outer constructor: OnTheFly (dy is a slope method tag)
-@inline function PchipInterpolant1D(
-        x::X,
-        y::Y,
-        sm::DY;
-        extrap::AbstractExtrap = NoExtrap(),
-        search::P = AutoSearch()
-    ) where {
-        Tg, Tv,
-        X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, DY <: AbstractSlopeMethod,
-        P <: AbstractSearchPolicy,
-    }
-    E = typeof(extrap)
     spacing = _create_spacing(x)
-    S = typeof(spacing)
-    return PchipInterpolant1D{Tg, Tv, X, Y, DY, S, E, P, OnTheFly}(
-        x, y, sm, spacing, extrap, search
-    )
+    return PchipInterpolant1D(x, y, dy, spacing, extrap, search)
 end

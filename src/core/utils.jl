@@ -281,13 +281,86 @@ to preserve ForwardDiff.Dual types for automatic differentiation.
         xq::AbstractVector{TQ}
     ) where {TX, TY, TQ <: Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
-    Tg = eltype(x_typed)
-    # Query normalization: convert to the grid's float base type, not to Tg itself.
-    # When Tg is a duck type (e.g. Dual{Float64}), queries should stay plain Float —
-    # they don't carry grid-parameter derivatives.
-    Tg_float = Tg <: AbstractFloat ? Tg : float(TQ)
-    xq_typed = _to_float(xq, Tg_float)
+    xq_typed = _promote_query_typed(xq, eltype(x_typed))
     return x_typed, y_typed, xq_typed
+end
+
+# ========================================
+# Query & Adjoint Promotion Helpers
+"""
+    _promote_grid_only(x, y) -> x_typed
+
+Promote grid for correctness (Int→Float, Range→CachedRange) without touching y.
+Uses `_promote_grid_float(Tg, Tv)` which widens grid precision to accommodate
+value type (e.g., Float32 grid + Float64 data → Float64 grid).
+
+For one-shot in-place paths where y and query should NOT be heap-allocated.
+"""
+@inline function _promote_grid_only(x::AbstractVector{Tg}, y::AbstractVector{Tv}) where {Tg, Tv}
+    return _to_float(x, _promote_grid_float(Tg, Tv))
+end
+
+"""
+    _convert_copy(v::AbstractVector, ::Type{T}) -> Vector{T}
+
+Copy with optional type conversion in a single allocation.
+Same-type: equivalent to `copy(v)`. Different-type: equivalent to `Vector{T}(v)`.
+
+Used in interpolant inner constructors to merge promotion + immutability copy.
+"""
+@inline _convert_copy(v::AbstractVector{T}, ::Type{T}) where {T} = copy(v)
+@inline _convert_copy(v::AbstractVector, ::Type{T}) where {T} = Vector{T}(v)
+
+# ========================================
+
+"""
+    _promote_query_typed(xq::AbstractVector, ::Type{Tg}) -> AbstractVector
+
+Convert query vector to the appropriate float type for the given grid type `Tg`.
+
+Standard numeric queries (`_PromotableValue`: Integer, AbstractFloat, Rational)
+are promoted to grid precision (or `float(Tq)` if grid is duck-typed).
+Duck-typed queries (e.g. `Dual` for query-side AD) pass through unchanged —
+same `_PromotableValue` guard as value promotion in `_promote_itp_inputs`.
+"""
+@inline function _promote_query_typed(xq::AbstractVector{Tq}, ::Type{Tg}) where {Tq <: Real, Tg}
+    if Tq <: _PromotableValue
+        # Standard numeric: unify precision with grid, or float for duck grids
+        Tq_target = Tg <: AbstractFloat ? Tg : float(Tq)
+        return _to_float(xq, Tq_target)
+    else
+        # Duck type (Dual, Measurement, etc.) — pass through unchanged
+        return xq
+    end
+end
+
+"""
+    _promote_adjoint_inputs(x, xq) -> (x_promoted, xq_promoted, Tg)
+
+Promote grid and query vectors for adjoint construction.
+
+Shared pattern across all 1D adjoint builders: cubic, linear, quadratic,
+constant, pchip, cardinal, akima.
+"""
+@inline function _promote_adjoint_inputs(
+        x::AbstractVector,
+        xq::AbstractVector
+    )
+    Tg = _promote_grid_float(eltype(x), eltype(xq))
+    x_p = _to_float(x, Tg)
+    xq_p = _promote_query_typed(xq, Tg)
+    return x_p, xq_p, Tg
+end
+
+"""
+    _alloc_output(::Type{Tv}, ::Type{Tg}, xq::AbstractVector{Tq}) -> Vector{Tr}
+
+Allocate output vector with the correct promoted element type for 1D batch evaluation.
+`Tr = _output_eltype(Tv, Tg, Tq)`.
+"""
+@inline function _alloc_output(::Type{Tv}, ::Type{Tg}, xq::AbstractVector{Tq}) where {Tv, Tg, Tq}
+    Tr = _output_eltype(Tv, Tg, Tq)
+    return Vector{Tr}(undef, length(xq))
 end
 
 # ========================================

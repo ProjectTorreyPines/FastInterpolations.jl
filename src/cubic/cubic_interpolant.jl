@@ -332,9 +332,10 @@ function cubic_interp(
         autocache::Bool = true,
         search::P = AutoSearch()
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
-    x_p, y_p = _promote_itp_inputs(x, y)
-    bc_promoted = _promote_bc(bc, eltype(y_p))
-    return _cubic_interp_impl(x_p, y_p, bc_promoted, extrap, autocache, search)
+    x_p = _promote_grid_only(x, y)
+    Tv_out = _value_type(Tv, eltype(x_p))
+    bc_promoted = _promote_bc(bc, Tv_out)
+    return _cubic_interp_impl(x_p, y, bc_promoted, extrap, autocache, search)
 end
 
 """

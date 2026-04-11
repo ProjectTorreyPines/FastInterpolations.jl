@@ -78,7 +78,7 @@ cannot be reassigned while allowing heap allocation. This pattern provides:
 Benchmarks show ~15% regression when using plain `struct` instead.
 """
 mutable struct CubicSeriesInterpolant{
-        Tg <: AbstractFloat,
+        Tg,
         Tv,
         C <: CubicSplineCache{Tg},
         B,
@@ -100,7 +100,7 @@ mutable struct CubicSeriesInterpolant{
             z::Matrix{Tv},
             extrap::E,
             search::P = AutoSearch()
-        ) where {Tg <: AbstractFloat, Tv, C <: CubicSplineCache{Tg}, B, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+        ) where {Tg, Tv, C <: CubicSplineCache{Tg}, B, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         # y/z are NOT copied here — factory function provides owned matrices.
         return new{Tg, Tv, C, B, E, P}(
             cache, bc_for_solve, y, z,
@@ -162,7 +162,7 @@ When `aq` has Dual type weights (from Dual query), the output will have promoted
         sitp::CubicSeriesInterpolant{Tg, Tv},
         aq::_CubicAnchoredQuery{Tg, Tq},
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     y_point, z_point = _ensure_point_layout!(sitp)
     n_pts = n_points(sitp)
     x_min, x_max = Tg(first(sitp.cache.x)), Tg(last(sitp.cache.x))
@@ -216,7 +216,7 @@ Dispatches on concrete EvalOp for optimal performance:
         z_point::Matrix{Tv},
         aq::_CubicAnchoredQuery{Tg, Tq},
         ::EvalValue
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     idx = aq.idx
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w0
@@ -238,7 +238,7 @@ end
         z_point::Matrix{Tv},
         aq::_CubicAnchoredQuery{Tg, Tq},
         ::EvalDeriv1
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     idx = aq.idx
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w1
@@ -260,7 +260,7 @@ end
         z_point::Matrix{Tv},
         aq::_CubicAnchoredQuery{Tg, Tq},
         ::EvalDeriv2
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     idx = aq.idx
     idx1 = idx + 1
     wzL, wzR = aq.w2
@@ -280,7 +280,7 @@ end
         z_point::Matrix{Tv},
         aq::_CubicAnchoredQuery{Tg, Tq},
         ::EvalDeriv3
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     idx = aq.idx
     idx1 = idx + 1
     wzL, wzR = aq.w3
@@ -299,7 +299,7 @@ end
         z_point::Matrix{Tv},
         aq::_CubicAnchoredQuery{Tg, Tq},
         ::DerivOp{N}
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real, N}
+    ) where {Tg, Tv, Tq <: Real, N}
     z = 0 * (@inbounds y_point[1, aq.idx])
     @inbounds @simd for k in axes(out, 1)
         out[k] = z
@@ -322,7 +322,7 @@ SIMD evaluation with extrapolation handling for multi-series.
         aq::_CubicAnchoredQuery{Tg, Tq},
         extrap::AbstractExtrap,
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     # Inside domain: normal evaluation
     if aq.state == IN_DOMAIN
         return _eval_series_point!(out, y_point, z_point, aq, op)
@@ -344,7 +344,7 @@ end
         ::NoExtrap,
         ::AbstractEvalOp,
         ::UInt8
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
@@ -360,7 +360,7 @@ end
         extrap::_ClampOrFill,
         op::AbstractEvalOp,
         side::UInt8
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap)
 end
 
@@ -376,7 +376,7 @@ end
         ::ExtendExtrap,
         ::EvalValue,
         side::UInt8
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w0
@@ -403,7 +403,7 @@ end
         ::ExtendExtrap,
         ::EvalDeriv1,
         side::UInt8
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w1
@@ -430,7 +430,7 @@ end
         ::ExtendExtrap,
         ::EvalDeriv2,
         side::UInt8
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wzL, wzR = aq.w2
@@ -455,7 +455,7 @@ end
         ::ExtendExtrap,
         ::EvalDeriv3,
         side::UInt8
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wzL, wzR = aq.w3
@@ -480,7 +480,7 @@ end
         ::ExtendExtrap,
         ::DerivOp{N},
         ::UInt8
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real, N}
+    ) where {Tg, Tv, Tq <: Real, N}
     z = 0 * first(y_point)
     @inbounds @simd for k in axes(out, 1)
         out[k] = z
@@ -502,7 +502,7 @@ Solve cubic spline systems for all series using shared LU factorization.
         y_mat::Matrix{Tv},
         cache::CubicSplineCache{Tg},
         bc_for_solve
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     n_series_count = size(y_mat, 2)
 
     # Solve each series column
@@ -534,7 +534,7 @@ Groups series by BC type for cache efficiency.
         bc_cache_array::AbstractVector{<:BCPair},
         bc_solve_array::AbstractVector{<:BCPair},
         autocache::Bool
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     n_series = size(y_mat, 2)
 
     # Group series by BC type for cache reuse (using Tg-typed BCs for matrix structure)
@@ -550,7 +550,7 @@ Groups series by BC type for cache efficiency.
             push!(type_groups[bc_type][2], k)
         else
             # New BC type → get cache from pool
-            cache = _get_cubic_cache(x, bc, autocache)
+            cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, eltype(x)))
             type_groups[bc_type] = (cache, [k])
         end
     end
@@ -618,7 +618,7 @@ function cubic_interp(
         autocache::Bool = true,
         precompute_transpose::Bool = false,
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg}
     # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
     Tg_new = _promote_grid_float(Tg, Tv)
@@ -651,12 +651,12 @@ function cubic_interp(
         bc_solve_array = _normalize_bc_array(bc, Tv_out, n_ser)
         _solve_series_with_bc_array!(z_mat, y_mat, x, bc_cache_array, bc_solve_array, autocache)
         bc_representative = bc_cache_array[1]
-        cache = _get_cubic_cache(x, bc_representative, autocache)
+        cache = _get_cubic_cache(x, bc_representative, _effective_autocache(autocache, eltype(x)))
     else
         # Uniform BC: Tg-typed for cache matrix, Tv-typed for RHS
         bc_for_cache = _normalize_bc(bc, Tg)
         bc_for_solve = _normalize_bc(bc, first(y_mat))
-        cache = _get_cubic_cache(x, bc_for_cache, autocache)
+        cache = _get_cubic_cache(x, bc_for_cache, _effective_autocache(autocache, eltype(x)))
         _solve_series_coefficients!(z_mat, y_mat, cache, bc_for_solve)
         bc_representative = bc_for_cache
     end
@@ -672,21 +672,9 @@ function cubic_interp(
 end
 
 # Real grid promotion (Int, etc.) → convert to float and delegate
-function cubic_interp(
-        x::AbstractVector{Tg},
-        s::Series;
-        bc::Union{AbstractBC, AbstractVector{<:AbstractBC}} = CubicFit(),
-        extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        precompute_transpose::Bool = false,
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return cubic_interp(
-        _to_float(x, Tg_float), s;
-        bc = _promote_bc(bc, Tg_float), extrap, autocache, precompute_transpose, search
-    )
-end
+
+# Note: Real wrapper (Tg <: Real) removed — typed method above handles
+# all grid types including ForwardDiff.Dual via _to_float + _promote_grid_float.
 
 """
 Internal helper for periodic BC multi-interpolant construction.
@@ -700,7 +688,7 @@ function _build_series_periodic(
         autocache::Bool,
         precompute_transpose::Bool,
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     # Extend data for exclusive endpoint
     x, y_mat = _prepare_periodic(x, y_mat, bc)
     n_pts = size(y_mat, 1)
@@ -713,7 +701,7 @@ function _build_series_periodic(
     end
 
     # Get periodic cache
-    cache = _get_cubic_cache(x, PeriodicBC(), autocache)
+    cache = _get_cubic_cache(x, PeriodicBC(), _effective_autocache(autocache, eltype(x)))
 
     # Build z matrix
     z_mat = Matrix{Tv}(undef, n_pts, n_series_count)
@@ -749,7 +737,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
     T_out = _series_output_type(Tv, typeof(xq_promoted))
@@ -776,7 +764,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     _validate_scalar_output(output, n_series(sitp))
 
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
@@ -809,7 +797,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
     T_out = _series_output_type(Tv, Tq)
@@ -848,7 +836,7 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tq <: Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
 
@@ -895,7 +883,7 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
 end
 
 """
-    (sitp::CubicSeriesInterpolant)(outputs, aq_vec::AbstractVector{<:_CubicAnchoredQuery{Tg,Tq}}; deriv=EvalValue()) where {Tg<:AbstractFloat, Tq<:Real}
+    (sitp::CubicSeriesInterpolant)(outputs, aq_vec::AbstractVector{<:_CubicAnchoredQuery{Tg,Tq}}; deriv=EvalValue()) where {Tg, Tq<:Real}
 
 Evaluate multi-Y interpolant with pre-built anchors (TRUE zero-allocation).
 
@@ -919,7 +907,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
         outputs::AbstractVector{<:AbstractVector{Tv}},
         aq_vec::AbstractVector{<:_CubicAnchoredQuery{Tg}};
         deriv::DerivOp = EvalValue()
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     n_query = length(aq_vec)
     n_ser = n_series(sitp)
 
@@ -970,7 +958,7 @@ Uses argument-passing pattern for optimal performance (avoids struct field acces
         aq_vec::AbstractVector{<:_CubicAnchoredQuery{Tg}},
         extrap::AbstractExtrap,
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     @inbounds for j in eachindex(out, aq_vec)
         out[j] = _eval_series_with_extrap(y, z, n_pts, x_min, x_max, k, aq_vec[j], extrap, op)
     end
@@ -991,7 +979,7 @@ Takes matrices as arguments for optimal performance.
         aq::_CubicAnchoredQuery{Tg},
         extrap::AbstractExtrap,
         op::AbstractEvalOp
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     # Inside domain: normal evaluation
     if aq.state == IN_DOMAIN
         return _eval_series_anchored(y, z, k, aq, op)
@@ -1022,7 +1010,7 @@ Dispatches on concrete EvalOp for optimal performance:
         k::Int,
         aq::_CubicAnchoredQuery{Tg},
         ::EvalValue
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     idx = aq.idx
     wyL, wyR, wzL, wzR = aq.w0
     @inbounds begin
@@ -1041,7 +1029,7 @@ end
         k::Int,
         aq::_CubicAnchoredQuery{Tg},
         ::EvalDeriv1
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     idx = aq.idx
     wyL, wyR, wzL, wzR = aq.w1
     @inbounds begin
@@ -1060,7 +1048,7 @@ end
         k::Int,
         aq::_CubicAnchoredQuery{Tg},
         ::EvalDeriv2
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     idx = aq.idx
     wzL, wzR = aq.w2
     @inbounds begin
@@ -1076,7 +1064,7 @@ end
         k::Int,
         aq::_CubicAnchoredQuery{Tg},
         ::DerivOp{N}
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     @inbounds yL = y[aq.idx, k]
     return 0 * yL
 end
@@ -1088,7 +1076,7 @@ end
         k::Int,
         aq::_CubicAnchoredQuery{Tg},
         ::EvalDeriv3
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     idx = aq.idx
     wzL, wzR = aq.w3
     @inbounds begin

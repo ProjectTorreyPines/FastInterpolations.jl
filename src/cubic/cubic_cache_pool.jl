@@ -682,3 +682,29 @@ end
 @inline function _get_periodic_cache_impl(x::AbstractVector{<:Real})
     return _get_periodic_cache_impl(_to_float(x, float(eltype(x))))
 end
+
+# ===============================================================
+# Duck-typed grid fallback (non-AbstractFloat, e.g. ForwardDiff.Dual)
+# ===============================================================
+# Dual grids bypass the pool entirely — build fresh each time.
+# _effective_autocache ensures autocache=false for these paths,
+# but we still need dispatch targets that accept non-AbstractFloat T.
+# Julia dispatches to the more specific T<:AbstractFloat methods first,
+# so these only fire for duck-typed grid elements (Dual, etc.).
+
+@inline function _get_cubic_cache(
+        x::AbstractVector,
+        bc::BCPair{L, R},
+        autocache::Bool
+    ) where {L <: PointBC, R <: PointBC}
+    bc_cache = _cache_bc_pair(bc, eltype(x))
+    return _build_derivative_bc_cache(x, bc_cache.left, bc_cache.right)
+end
+
+@inline function _get_cubic_cache(
+        x::AbstractVector,
+        bc::AbstractBC,
+        autocache::Bool
+    )
+    return CubicSplineCache(x; bc = bc)
+end

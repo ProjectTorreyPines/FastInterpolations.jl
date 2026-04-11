@@ -13,11 +13,11 @@
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
-        z::AbstractVector{Tv},
+        z::AbstractVector,
         xq::Tq,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg,Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     idx, xL, xR = search_interval(searcher, x, spacing, xq)
 
     # Use original xq for arithmetic to preserve AD
@@ -42,10 +42,10 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
-        z::AbstractVector{Tv},
+        z::AbstractVector,
         xq::Tq,
         op::O
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp}
+    ) where {Tg,Tv, Tq, O <: AbstractEvalOp}
     idx, xL, xR = _search_interval(x, spacing, xq)
 
     # Use original xq for arithmetic to preserve AD
@@ -70,12 +70,12 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
-        z::AbstractVector{Tv},
+        z::AbstractVector,
         xq::Tq,
         period::Tg,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg,Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), first(x) + period)
     idx, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
 
@@ -114,12 +114,12 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
-        z::AbstractVector{Tv},
+        z::AbstractVector,
         xq::Tq,
         extrap::AbstractExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg,Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, xR = search_interval(searcher, x, spacing, xq)
     dL = xq - xL
@@ -138,12 +138,12 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
-        z::AbstractVector{Tv},
+        z::AbstractVector,
         xq::Tq,
         extrap::_ClampOrFill,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg,Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_primal = _extract_primal(xq)
     xq_primal < first(x) && return _eval_extrapolation(op, first(y), extrap, xq)
     xq_primal > last(x) && return _eval_extrapolation(op, last(y), extrap, xq)
@@ -164,12 +164,12 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
-        z::AbstractVector{Tv},
+        z::AbstractVector,
         xq::Tq,
         ::WrapExtrap,
         op::O,
         searcher::S
-    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    ) where {Tg,Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
     idx, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
     dL = xq_wrapped - xL
@@ -194,12 +194,12 @@ end
 @inline function _eval_with_bc(
         cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
         y::AbstractVector{Tv},
-        z::AbstractVector{Tv},
+        z::AbstractVector,
         xq::Tq,
         ::AbstractExtrap,  # extrapolation ignored for periodic
         op::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, Tq, X, F, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg,Tv, Tq, X, F, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
     return _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, xq, cache.bc_config.period, op, searcher)
 end
 
@@ -207,12 +207,12 @@ end
 @inline function _eval_with_bc(
         cache::CubicSplineCache{Tg, X, F, BCPair{L, R}, S},
         y::AbstractVector{Tv},
-        z::AbstractVector{Tv},
+        z::AbstractVector,
         xq::Tq,
         extrap::AbstractExtrap,
         op::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, Tq, X, F, L <: PointBC, R <: PointBC, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg,Tv, Tq, X, F, L <: PointBC, R <: PointBC, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
     return _eval_cubic_at_point(cache.x, y, cache.spacing, z, xq, extrap, op, searcher)
 end
 
@@ -226,12 +226,12 @@ end
         output::AbstractVector,
         cache::CubicSplineCache{Tg, X, F, BC, S},
         y::AbstractVector{Tv},
-        z::AbstractVector{Tv},
+        z::AbstractVector,
         x_query::AbstractVector{<:Real},
         ev::E,
         op::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, X, F, BC, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg,Tv, X, F, BC, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     ev = _check_domain(cache.x, x_query, ev)
     return @inbounds for k in eachindex(x_query, output)
         output[k] = _eval_with_bc(cache, y, z, x_query[k], ev, op, searcher)
@@ -243,12 +243,12 @@ end
         output::AbstractVector,
         cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
         y::AbstractVector{Tv},
-        z::AbstractVector{Tv},
+        z::AbstractVector,
         x_query::AbstractVector{<:Real},
         ::AbstractExtrap,  # extrap ignored for periodic
         op::O,
         searcher::P
-    ) where {Tg <: AbstractFloat, Tv, X, F, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg,Tv, X, F, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
     x_min = first(cache.x)
     x_max = x_min + cache.bc_config.period
     qmin, qmax = minimum(x_query), maximum(x_query)
@@ -285,10 +285,11 @@ Uses task-local pool for workspace allocation.
         deriv::DerivOp = EvalValue(),
         search = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv, X, F, BC, S <: AbstractGridSpacing{Tg}}
+    ) where {Tg,Tv, X, F, BC, S <: AbstractGridSpacing{Tg}}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
-    z = similar!(pool, y)
+    Tz = _output_eltype(Tv, eltype(cache.x))
+    z = acquire!(pool, Tz, length(y))
     _solve_system!(z, cache, y, cache.bc_config)
 
     searcher = _resolve_search(cache.x, x_query, search, hint)

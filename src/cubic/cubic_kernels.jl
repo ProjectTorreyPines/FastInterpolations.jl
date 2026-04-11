@@ -35,9 +35,9 @@ for FMA (Fused Multiply-Add) hardware instructions, reducing total FP operations
 """
 @inline function _cubic_kernel(
         ::EvalValue,
-        zL::Tv, zR::Tv, yL::Tv, yR::Tv,
+        zL, zR, yL, yR,
         h::Tg, inv_h::Tg, dL::Td, dR::Td
-    ) where {Tg <: AbstractFloat, Tv, Td <: Real}
+    ) where {Tg, Td <: Real}
     # Native (ARM64) instruction breakdown:
     div6 = inv(Tg(6))                                   # (const-folded)
     # inv_h passed as parameter (fdiv eliminated)
@@ -71,9 +71,9 @@ Formula:
 """
 @inline function _cubic_kernel(
         ::EvalDeriv1,
-        zL::Tv, zR::Tv, yL::Tv, yR::Tv,
+        zL, zR, yL, yR,
         h::Tg, inv_h::Tg, dL::Td, dR::Td
-    ) where {Tg <: AbstractFloat, Tv, Td <: Real}
+    ) where {Tg, Td <: Real}
     # inv_h passed as parameter (fdiv eliminated)
 
     inv_2h = inv_h * inv(Tg(2))
@@ -108,9 +108,9 @@ Formula:
 """
 @inline function _cubic_kernel(
         ::EvalDeriv2,
-        zL::Tv, zR::Tv, ::Tv, ::Tv,
+        zL, zR, _, _,
         ::Tg, inv_h::Tg, dL::Td, dR::Td
-    ) where {Tg <: AbstractFloat, Tv, Td <: Real}
+    ) where {Tg, Td <: Real}
     return muladd(zL, dR, zR * dL) * inv_h
 end
 
@@ -139,9 +139,9 @@ Third derivative (constant, independent of x within interval):
 """
 @inline function _cubic_kernel(
         ::EvalDeriv3,
-        zL::Tv, zR::Tv, ::Tv, ::Tv,
+        zL, zR, _, _,
         ::Tg, inv_h::Tg, ::Td, ::Td
-    ) where {Tg <: AbstractFloat, Tv, Td <: Real}
+    ) where {Tg, Td <: Real}
     return (zR - zL) * inv_h
 end
 
@@ -153,8 +153,8 @@ Julia dispatch ensures `DerivOp{0..3}` methods (more specific) are selected firs
 """
 @inline function _cubic_kernel(
         ::DerivOp{N},
-        zL::Tv, ::Tv, ::Tv, ::Tv,
+        zL, _, _, _,
         ::Tg, ::Tg, ::Td, ::Td
-    ) where {N, Tg <: AbstractFloat, Tv, Td <: Real}
+    ) where {N, Tg, Td <: Real}
     return 0 * zL
 end

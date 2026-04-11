@@ -72,7 +72,7 @@ adj = cubic_adjoint((x, y), (xq, yq); bc=(PeriodicBC(), CubicFit()))
 ```
 """
 struct CubicAdjointND{
-        Tg <: AbstractFloat,
+        Tg,
         N,
         S <: NTuple{N, AbstractGridSpacing{Tg}},
         C <: NTuple{N, CubicSplineCache{Tg}},

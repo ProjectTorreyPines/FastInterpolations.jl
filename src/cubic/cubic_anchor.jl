@@ -57,7 +57,7 @@ When `xq` is a `ForwardDiff.Dual`, the anchor preserves the Dual type
 in both `xq` and weight fields, enabling automatic differentiation through
 series interpolant evaluation.
 """
-struct _CubicAnchoredQuery{Tg <: AbstractFloat, Tq <: Real}
+struct _CubicAnchoredQuery{Tg,Tq <: Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), Float or Dual
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
@@ -196,7 +196,7 @@ in `xq` and weight fields, enabling automatic differentiation.
         ::Val{:cubic},
         wrap::Bool = false,
         searcher::P = DEFAULT_SEARCHER
-    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
+    ) where {Tg,Tq <: Real, P <: Searcher}
     # Promote query for anchor: preserve Dual, promote Int/Rational to grid type
     # Cubic anchors store weight tuples with complex arithmetic that requires Float
     xq_promoted = _promote_for_anchor(xq, Tg)
@@ -240,7 +240,7 @@ function _anchor_query(
         ::Val{:cubic},
         wrap::Bool = false,
         searcher::P = _to_searcher(LinearBinarySearch())
-    ) where {T <: AbstractFloat, S <: Real, P <: Searcher}
+    ) where {T, S <: Real, P <: Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     output = Vector{_CubicAnchoredQuery{T, T}}(undef, length(xq))
 
@@ -281,7 +281,7 @@ _fill_anchors!(buffer, x, xq, Val(:cubic))
         ::Val{:cubic},
         wrap::Bool = false,
         searcher::P = _to_searcher(LinearBinarySearch())
-    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
+    ) where {Tg,Tq <: Real, P <: Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
@@ -313,7 +313,7 @@ while preserving the full Dual value for weight computation.
         xq::Tq,
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
-    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
+    ) where {Tg,Tq <: Real, P <: Searcher}
     loc = _anchor_loc(x, xq, wrap, policy)
 
     # Compute geometry (cubic-internal concern)

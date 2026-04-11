@@ -38,7 +38,7 @@ result1 = cubic_interp(cache, y1, [0.25, 0.75])
 result2 = cubic_interp(cache, y2, [0.25, 0.75])
 ```
 """
-function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC = CubicFit()) where {T <: AbstractFloat}
+function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC = CubicFit()) where {T}
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
     validate_polyfit_points(bc, length(x))
 

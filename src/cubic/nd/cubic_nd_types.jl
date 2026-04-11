@@ -78,7 +78,7 @@ itp((1.0, 0.5, 0.3))                  # Evaluate at (1.0, 0.5, 0.3)
 ```
 """
 struct CubicInterpolantND{
-        Tg <: AbstractFloat,
+        Tg,
         Tv,
         N,
         NP1,

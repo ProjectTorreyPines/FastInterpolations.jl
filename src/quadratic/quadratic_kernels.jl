@@ -14,8 +14,10 @@
 #   - dL = xq - x_i (offset from interval start)
 #
 # Type parameters:
-# - Td<:Real: Offset type for dL (can be Tg or ForwardDiff.Dual for AD)
-# - Tv: Value type (unconstrained) for a, d, y
+# - Td: Offset type for dL (can be Tg, or promoted Tg×Tq for AD)
+# - Value args (a, d, y) are untyped for duck-type support (Dual coefficients
+#   on duck grids). The typed `dL::Td` provides the LLVM specialization anchor
+#   (same pattern as _hermite_kernel_1d's h::Tg, inv_h::Tg, dL::Tq).
 
 """
     _quadratic_kernel(::EvalValue, a, d, y, dL) -> value
@@ -24,13 +26,13 @@ Evaluate quadratic polynomial at offset dL from interval start.
 
 Formula: S(x) = a*dL² + d*dL + y = muladd(muladd(a, dL, d), dL, y)
 # Arguments
-- `a::Tv`: Quadratic coefficient (value-derived)
-- `d::Tv`: Slope at interval start (value-derived)
-- `y::Tv`: Value at interval start
-- `dL::Td`: Offset from interval start (x - x_i, can be Float or Dual for AD)
+- `a`: Quadratic coefficient (value-derived, may be Dual for duck grids)
+- `d`: Slope at interval start (value-derived)
+- `y`: Value at interval start
+- `dL::Td`: Offset from interval start (x - x_i, typed for specialization)
 """
-@inline function _quadratic_kernel(::EvalValue, a, d, y, dL)
-    return muladd(muladd(a, dL, d), dL, y)  # a*dL² + d*dL + y, returns Tv
+@inline function _quadratic_kernel(::EvalValue, a, d, y, dL::Td) where {Td}
+    return muladd(muladd(a, dL, d), dL, y)  # a*dL² + d*dL + y
 end
 
 """
@@ -40,8 +42,8 @@ Evaluate first derivative of quadratic polynomial.
 
 Formula: S'(x) = 2*a*dL + d = muladd(2*a, dL, d)
 """
-@inline function _quadratic_kernel(::EvalDeriv1, a, d, _, dL)
-    return muladd(2 * a, dL, d)  # 2*a*dL + d, returns Tv (2 promotes naturally)
+@inline function _quadratic_kernel(::EvalDeriv1, a, d, _, dL::Td) where {Td}
+    return muladd(2 * a, dL, d)  # 2*a*dL + d
 end
 
 """
@@ -51,8 +53,8 @@ Evaluate second derivative of quadratic polynomial.
 
 Formula: S''(x) = 2*a (constant within interval)
 """
-@inline function _quadratic_kernel(::EvalDeriv2, a, _, _, _)
-    return a + a  # 2*a, returns Tv (avoids type conversion issues)
+@inline function _quadratic_kernel(::EvalDeriv2, a, _, _, _::Td) where {Td}
+    return a + a  # 2*a (avoids type conversion issues)
 end
 
 """
@@ -61,11 +63,11 @@ end
 Third derivative of quadratic spline is always zero.
 Uses `0 * a` for duck-typing support and NaN propagation.
 """
-@inline function _quadratic_kernel(::EvalDeriv3, a, _, _, _)
+@inline function _quadratic_kernel(::EvalDeriv3, a, _, _, _::Td) where {Td}
     return 0 * a
 end
 
 """Generic fallback: N-th derivative of degree-2 polynomial is zero for N ≥ 3."""
-@inline function _quadratic_kernel(::DerivOp{N}, a, _, _, _) where {N}
+@inline function _quadratic_kernel(::DerivOp{N}, a, _, _, _::Td) where {N, Td}
     return 0 * a
 end

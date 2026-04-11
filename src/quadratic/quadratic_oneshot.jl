@@ -25,14 +25,14 @@
 # _check_domain(::NoExtrap) throws if OOB; search_interval clamps idx for ExtendExtrap.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
-        y::AbstractVector,
-        a::AbstractVector,
-        d::AbstractVector,
+        y::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         xq::Tq,
         extrap::AbstractExtrap,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tq, S <: Searcher}
+    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, _ = search_interval(searcher, x, xq)
     dt = xq - xL  # Can be Dual for AD
@@ -42,14 +42,14 @@ end
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
-        y::AbstractVector,
-        a::AbstractVector,
-        d::AbstractVector,
+        y::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         xq::Tq,
         extrap::_ClampOrFill,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tq, S <: Searcher}
+    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     xq_primal = _extract_primal(xq)
     xq_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xq)
     xq_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xq)
@@ -61,14 +61,14 @@ end
 # WrapExtrap: wrap query to domain → search + kernel.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
-        y::AbstractVector,
-        a::AbstractVector,
-        d::AbstractVector,
+        y::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         xq::Tq,
         ::WrapExtrap,
         op::AbstractEvalOp,
         searcher::S
-    ) where {Tg, Tq, S <: Searcher}
+    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
     idx, xL, _ = search_interval(searcher, x, xq_wrapped)
     dt = xq_wrapped - xL

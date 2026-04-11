@@ -30,14 +30,14 @@ end
 @inline function _quadratic_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
-        y::AbstractVector,
-        a::AbstractVector,
-        d::AbstractVector,
+        y::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         xq::AbstractVector{<:Real},
         extrap::E,
         deriv::O,
         searcher::P
-    ) where {Tg, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    ) where {Tg, Tv, Tc, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     extrap = _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
         output[i] = _quadratic_eval_at_point(x, y, a, d, xq[i], extrap, deriv, searcher)

@@ -257,26 +257,26 @@ end
 
 # Default case (extension, wrap, inbounds): direct kernel evaluation
 @inline function _quadratic_eval_at_anchor(
-        y::AbstractVector, a::AbstractVector, d::AbstractVector,
+        y::AbstractVector{Tv}, a::AbstractVector{Tc}, d::AbstractVector{Tc},
         aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ::AbstractExtrap
-    )
+    ) where {Tv, Tc}
     @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
 end
 
 # No extrapolation: throw DomainError if outside domain
 @inline function _quadratic_eval_at_anchor(
-        y::AbstractVector, a::AbstractVector, d::AbstractVector,
+        y::AbstractVector{Tv}, a::AbstractVector{Tc}, d::AbstractVector{Tc},
         aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, ::NoExtrap
-    )
+    ) where {Tv, Tc}
     aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
     @inbounds return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
 end
 
 # Clamp/Fill extrapolation: boundary value if OOB
 @inline function _quadratic_eval_at_anchor(
-        y::AbstractVector, a::AbstractVector, d::AbstractVector,
+        y::AbstractVector{Tv}, a::AbstractVector{Tc}, d::AbstractVector{Tc},
         aq::_QuadraticAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill
-    )
+    ) where {Tv, Tc}
     if aq.state != IN_DOMAIN
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)

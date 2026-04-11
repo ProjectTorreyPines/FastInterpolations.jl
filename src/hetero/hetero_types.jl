@@ -7,7 +7,7 @@
 # - PreCompute: D = _HeteroPartials{Tv, N, N+1} — precomputed partials, O(1) eval
 #
 # Type Parameters Convention:
-# - Tg: Grid/coordinate type (AbstractFloat)
+# - Tg: Grid/coordinate type (unconstrained — supports duck types like ForwardDiff.Dual)
 # - Tv: Value type (unconstrained)
 # - N:  Number of dimensions
 
@@ -23,7 +23,7 @@ linear on axis 2) with two evaluation strategies:
 - **`PreCompute()`**: Precomputed partial derivatives with local kernel eval (O(1) per query)
 
 # Type Parameters
-- `Tg`: Grid/coordinate type (Float32 or Float64)
+- `Tg`: Grid/coordinate type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
 - `G`: Tuple type for grids
@@ -47,7 +47,7 @@ itp((0.5, 0.3))
 ```
 """
 struct HeteroInterpolantND{
-        Tg <: AbstractFloat,
+        Tg,
         Tv,
         N,
         G <: Tuple{Vararg{AbstractVector, N}},

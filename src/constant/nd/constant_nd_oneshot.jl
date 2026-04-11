@@ -46,7 +46,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
 Writes results into `output`. No heap allocation beyond spacings.
 """
 @with_pool pool function _constant_interp_nd_oneshot_batch!(
-        output::AbstractVector{Tv},
+        output::AbstractVector,
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         queries,

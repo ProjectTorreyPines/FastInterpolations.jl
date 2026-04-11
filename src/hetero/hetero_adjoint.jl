@@ -41,7 +41,7 @@ function _bake_hetero_nd_anchors(
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}}
-    ) where {N, Tg <: AbstractFloat}
+    ) where {N, Tg}
     return _bake_nd_anchors_generic(
         grids, spacings, queries, extraps,
         (d, t, h, inv_h, dL) -> _compute_hetero_anchor_weights(t, h, inv_h, dL, methods[d])
@@ -447,7 +447,7 @@ function hetero_adjoint(
     ) where {N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
     return _build_hetero_nd_adjoint(grids_typed, queries, methods, extraps)
@@ -487,7 +487,7 @@ function hetero_adjoint(
     ) where {N}
     _query_check_ndims(queries, Val(N))
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
     return _build_hetero_nd_adjoint(grids_typed, queries, methods, extraps)
@@ -513,7 +513,7 @@ function _build_hetero_nd_adjoint(
         queries,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
-    ) where {N, Tg <: AbstractFloat}
+    ) where {N, Tg}
     # Reject Hermite family methods upfront with a clear message. Without this
     # guard, the scatter path below would fail deep in the per-axis weight
     # computation with an obscure MethodError. Single point of entry for both
@@ -584,21 +584,23 @@ function _build_hetero_nd_adjoint(
     end
 
     # Per-axis caches (cubic only)
+    # _effective_autocache: bypass cache pool for Dual grids (ephemeral, hit rate ≈ 0%)
+    ac = _effective_autocache(true, Tg)
     caches = map(methods, grids_ext, bcs) do method_d, grid_d, bp_d
         method_d isa CubicInterp || return nothing
         if _is_periodic_bc(bp_d)
-            _get_cubic_cache(grid_d, PeriodicBC())
+            _get_cubic_cache(grid_d, PeriodicBC(), ac)
         else
-            _get_cubic_cache(grid_d, bp_d)
+            _get_cubic_cache(grid_d, bp_d, ac)
         end
     end
 
     mixed_caches = map(methods, grids_ext, mixed_bcs) do method_d, grid_d, mbp_d
         method_d isa CubicInterp || return nothing
         if _is_periodic_bc(mbp_d)
-            _get_cubic_cache(grid_d, PeriodicBC())
+            _get_cubic_cache(grid_d, PeriodicBC(), ac)
         else
-            _get_cubic_cache(grid_d, mbp_d)
+            _get_cubic_cache(grid_d, mbp_d, ac)
         end
     end
 

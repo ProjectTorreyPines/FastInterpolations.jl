@@ -374,7 +374,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
                 rsrc = ($(r_searches...),)
                 search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
                 hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
-                Tr = _promote_query_eltype(eltype(d_sliced), q_eval)
+                Tr = _output_eltype(eltype(d_sliced), $Tg, typeof.(q_eval)...)
 
                 # Pre-search: mutates user hints (real-axis subset) to absolute indices.
                 idxs_r, _, _ = _search_all_intervals(q_eval, rg, rs, search_r, hint_r)
@@ -409,7 +409,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             rsrc = ($(r_searches...),)
             search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
             hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
-            Tr = _promote_query_eltype(eltype(d_sliced), q_eval)
+            Tr = _output_eltype(eltype(d_sliced), $Tg, typeof.(q_eval)...)
             full_windows_r = ($(r_full_windows...),)
             return _collapse_dims(Tr, d_sliced, rg, rm, re, q_eval, ro, search_r, hint_r, full_windows_r)
         end
@@ -475,8 +475,7 @@ function _interp_nointerp_oneshot(
     # All-GridIdx edge case: pure table lookup (or zero if any deriv requested)
     if grids_r === ()
         if _any_nointerp_grididx_has_nonzero_deriv(query, method_tuple, deriv_t)
-            Tg = _promote_grid_eltype(grids)
-            Tg = Tg <: AbstractFloat ? Tg : Float64
+            Tg = float(_promote_grid_eltype(grids))
             return zero(_output_eltype(eltype(data), Tg))
         end
         return data_r[]
@@ -490,8 +489,7 @@ function _interp_nointerp_oneshot(
 
     # Check if any GridIdx axis has non-zero deriv → return zero (with promoted type)
     if _any_nointerp_grididx_has_nonzero_deriv(query, method_tuple, deriv_t)
-        Tg = _promote_grid_eltype(grids)
-        Tg = Tg <: AbstractFloat ? Tg : Float64
+        Tg = float(_promote_grid_eltype(grids))
         return zero(_output_eltype(eltype(data), Tg, typeof.(query_r)...))
     end
 

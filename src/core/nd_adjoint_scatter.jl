@@ -39,7 +39,7 @@ For each axis d:
 - Cubic uses all 4 entries: `(w_fL, w_fR, w_dyL, w_dyR)`
 - Quadratic uses 3 entries: `(w_fL, w_fR, w_dfL, 0)` — 4th always zero
 """
-struct _NDAdjointAnchor{Tg <: AbstractFloat, N}
+struct _NDAdjointAnchor{Tg, N}
     indices::NTuple{N, Int}
     w0::NTuple{N, NTuple{4, Tg}}
     w1::NTuple{N, NTuple{4, Tg}}
@@ -183,7 +183,7 @@ function _bake_nd_anchors_generic(
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         weight_fn
-    ) where {N, Tg <: AbstractFloat}
+    ) where {N, Tg}
     nq = _query_length(queries)
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps)

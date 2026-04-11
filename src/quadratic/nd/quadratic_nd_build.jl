@@ -292,11 +292,11 @@ Uses the same bit-encoding build-up algorithm as cubic, but with quadratic
 recurrence for 1D differentiation instead of Thomas tridiagonal.
 """
 function _compute_nd_partials_quadratic!(
-        partials::AbstractArray{Tv, NP1},
+        partials::AbstractArray{Tz, NP1},
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tv, Tg, N, NP1}
+    ) where {Tz, Tv, Tg, N, NP1}
     # Validate dimensions
     @boundscheck begin
         NP1 == N + 1 || throw(DimensionMismatch("partials must have N+1 dimensions"))
@@ -336,12 +336,14 @@ function _build_nd_coeffs_quadratic(
         bcs::NTuple{N, AbstractBC}
     ) where {Tg, Tv, N}
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
+    # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
+    Tz = _output_eltype(Tv, Tg)
     n_partials = 1 << N
     partials_shape = (n_partials, size(data)...)
-    partials = Array{Tv, N + 1}(undef, partials_shape)
+    partials = Array{Tz, N + 1}(undef, partials_shape)
 
     # Compute all partial derivatives
     _compute_nd_partials_quadratic!(partials, grids, data, bcs)
 
-    return _NodalDerivativesND{Tv, N, N + 1}(partials)
+    return _NodalDerivativesND{Tz, N, N + 1}(partials)
 end

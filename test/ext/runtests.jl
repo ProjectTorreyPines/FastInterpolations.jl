@@ -27,6 +27,7 @@ include("test_hermite_dual_grid.jl")  # Hermite family grid-side Dual
 include("test_constant_quadratic_dual_grid.jl")  # Constant+Quadratic grid-side Dual
 include("test_cubic_dual_grid.jl")              # Cubic grid-side Dual
 include("test_series_dual_grid.jl")             # All methods × Series × Dual grid
+include("test_nd_dual_grid.jl")                 # ND (Cubic/Quadratic/Hetero) Dual grid
 include("test_autodiff_Zygote.jl")
 include("test_autodiff_hetero.jl")
 include("test_hermite_rrule.jl")

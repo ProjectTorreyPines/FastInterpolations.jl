@@ -34,7 +34,7 @@ Create an N-dimensional cubic Hermite interpolant from grid vectors and data arr
 - `CubicInterpolantND{Tg, Tv, N, ...}`: Callable interpolant object
 
 # Type Inference
-- Grid type `Tg`: Promoted from all grid element types (always AbstractFloat)
+- Grid type `Tg`: Promoted from all grid element types (supports duck types like ForwardDiff.Dual)
 - Value type `Tv`: Element type of data (unconstrained)
 
 # Examples
@@ -137,9 +137,11 @@ function _build_nd_interpolant(
     # (via _resolve_extrap_nd in cubic_interp)
 
     # Construct the interpolant
+    # Tz = coefficient type: widens Tv with Tg (Dual grid → Dual coefficients).
+    Tz = eltype(nodal_derivs)
     NP1 = N + 1
     return CubicInterpolantND{
-        Tg, Tv, N, NP1,
+        Tg, Tz, N, NP1,
         typeof(grids), typeof(spacings), typeof(bcs_store),
         typeof(extraps_val), typeof(searches),
     }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)

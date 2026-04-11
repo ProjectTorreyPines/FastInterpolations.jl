@@ -88,7 +88,7 @@ Constructed from grids, query points, and per-axis methods (query-baked, data-fr
 The same adjoint can be applied to any `ȳ` vector.
 
 # Type Parameters
-- `Tg`:  Grid float type (Float32 or Float64)
+- `Tg`:  Grid float type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `N`:   Number of dimensions
 - `M`:   Per-axis methods tuple type
 - `G`:   Grid tuple type
@@ -116,7 +116,7 @@ adj(f_bar, y_bar)               # in-place (zero-allocation)
 ```
 """
 struct HeteroAdjointND{
-        Tg <: AbstractFloat,
+        Tg,
         N,
         M <: Tuple{Vararg{AbstractInterpMethod, N}},
         G <: Tuple{Vararg{AbstractVector, N}},

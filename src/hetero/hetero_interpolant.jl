@@ -259,9 +259,9 @@ function _build_hetero_nd(
         _validate_nd_grids(grids, data)
     end
 
-    # 2. Promote grid type (Int → Float64)
+    # 2. Promote grid type (Int → Float64, Dual preserved via float())
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
 
     # 3. Convert grids to target type (preserving Range structure)
     grids_typed = _convert_grids_typed(grids, Tg)
@@ -312,7 +312,7 @@ function _build_hetero_precomputed(
         _validate_nd_grids(grids, data)
     end
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     Tv = _value_type(Tv_raw, Tg)
     bcs_periodic = map(_bc_for_periodic_check, methods)

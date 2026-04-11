@@ -47,7 +47,7 @@ itp((0.5, 0.3))
 ```
 """
 struct HeteroInterpolantND{
-        Tg <: AbstractFloat,
+        Tg,
         Tv,
         N,
         G <: Tuple{Vararg{AbstractVector, N}},

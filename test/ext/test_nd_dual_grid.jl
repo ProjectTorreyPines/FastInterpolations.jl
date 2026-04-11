@@ -388,6 +388,43 @@ end
     # ║  Regression: Float grid ND path unchanged                           ║
     # ╚═══════════════════════════════════════════════════════════════════════╝
 
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║  Phase 3: HeteroInterpolantND (persistent callable)                 ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "HeteroInterpolantND OnTheFly — Dual grid construct + eval" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        itp = interp((d .* xv_base, d .* yv_base), data_2d;
+            method = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap())
+        v = itp(q_2d)
+        itp_f = interp((xv_base, yv_base), data_2d;
+            method = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap())
+        @test ForwardDiff.value(v) ≈ itp_f(q_2d)
+    end
+
+    @testset "HeteroInterpolantND OnTheFly — ForwardDiff.derivative" begin
+        f_interp = t -> begin
+            itp = interp((t .* xv_base, t .* yv_base), data_2d;
+                method = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap())
+            itp(q_2d)
+        end
+        ad_val = ForwardDiff.derivative(f_interp, 1.0)
+        fd_val = fd_deriv(f_interp)
+        @test ad_val ≈ fd_val rtol = 1.0e-5
+    end
+
+    @testset "HeteroInterpolantND PreCompute — Dual grid construct + eval" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        itp = interp((d .* xv_base, d .* yv_base), data_2d;
+            method = (CubicInterp(), LinearInterp()), coeffs = PreCompute(),
+            extrap = ExtendExtrap())
+        v = itp(q_2d)
+        itp_f = interp((xv_base, yv_base), data_2d;
+            method = (CubicInterp(), LinearInterp()), coeffs = PreCompute(),
+            extrap = ExtendExtrap())
+        @test ForwardDiff.value(v) ≈ itp_f(q_2d)
+    end
+
     @testset "Float regression — Cubic ND OnTheFly still works" begin
         v = cubic_interp(
             (xv_base, yv_base), data_2d, q_2d;

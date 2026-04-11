@@ -35,13 +35,9 @@ const QuadraticBC = Union{Left, Right, MinCurvFit}
 Compute secant slopes: s[i] = (y[i+1] - y[i]) * inv_h[i]
 
 # Arguments
-- `s::Vector{Tv}`: Output vector (length n-1, value-derived)
+- `s::AbstractVector`: Output secant vector (length n-1)
 - `y::AbstractVector`: Values at grid points (length n)
 - `spacing::AbstractGridSpacing{Tg}`: Grid spacing (ScalarSpacing or VectorSpacing)
-
-# Type Parameters
-- `Tv`: Value type (unconstrained)
-- `Tg`: Grid type
 """
 @inline function _compute_quadratic_secants!(s::AbstractVector, y::AbstractVector, spacing::AbstractGridSpacing)
     n = length(y) - 1
@@ -62,12 +58,9 @@ Fill slope array using forward recurrence from d[1].
 d[i+1] = 2*s[i] - d[i]
 
 # Arguments
-- `d::Vector{Tv}`: Output slope array (length n, value-derived)
-- `s::Vector{Tv}`: Secant slopes (length n-1, value-derived)
-- `d1::Tv`: Initial slope d[1]
-
-# Type Parameters
-- `Tv`: Value type (unconstrained)
+- `d::AbstractVector`: Output slope array (length n)
+- `s::AbstractVector`: Secant slopes (length n-1)
+- `d1`: Initial slope d[1]
 """
 @inline function _forward_recurrence!(d::AbstractVector, s::AbstractVector, d1)
     d[1] = d1
@@ -85,12 +78,9 @@ Fill slope array using backward recurrence from d[n].
 d[i] = 2*s[i] - d[i+1]
 
 # Arguments
-- `d::Vector{Tv}`: Output slope array (length n, value-derived)
-- `s::Vector{Tv}`: Secant slopes (length n-1, value-derived)
-- `dn::Tv`: Final slope d[n]
-
-# Type Parameters
-- `Tv`: Value type (unconstrained)
+- `d::AbstractVector`: Output slope array (length n)
+- `s::AbstractVector`: Secant slopes (length n-1)
+- `dn`: Final slope d[n]
 """
 @inline function _backward_recurrence!(d::AbstractVector, s::AbstractVector, dn)
     n = length(d)

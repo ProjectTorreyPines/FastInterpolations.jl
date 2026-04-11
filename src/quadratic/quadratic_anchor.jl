@@ -236,7 +236,7 @@ d1 = itp(aq; deriv=DerivOp(1))   # First derivative
 d2 = itp(aq; deriv=DerivOp(2))   # Second derivative
 ```
 """
-@inline function (itp::QuadraticInterpolant{T})(aq::_QuadraticAnchoredQuery{T, Tq}; deriv::DerivOp = EvalValue()) where {T <: AbstractFloat, Tq <: Real}
+@inline function (itp::QuadraticInterpolant{T})(aq::_QuadraticAnchoredQuery{T, Tq}; deriv::DerivOp = EvalValue()) where {T, Tq <: Real}
     return _quadratic_eval_with_anchor(itp, aq, deriv)
 end
 
@@ -244,7 +244,7 @@ end
         itp::QuadraticInterpolant{T},
         aq::_QuadraticAnchoredQuery{T, Tq},
         op::O
-    ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
+    ) where {T, Tq <: Real, O <: AbstractEvalOp}
     # Handle extrapolation based on mode and side
     return _quadratic_anchor_dispatch(itp, aq, op, itp.extrap)
 end
@@ -294,7 +294,7 @@ end
         aq::_QuadraticAnchoredQuery{T, Tq},
         op::O,
         ::NoExtrap
-    ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
+    ) where {T, Tq <: Real, O <: AbstractEvalOp}
     if aq.state != IN_DOMAIN
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
@@ -325,7 +325,7 @@ Returns newly allocated vector.
 function (itp::QuadraticInterpolant{T})(
         aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}};
         deriv::DerivOp = EvalValue()
-    ) where {T <: AbstractFloat}
+    ) where {T}
     output = Vector{T}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _quadratic_eval_with_anchor(itp, aq_vec[i], deriv)
@@ -342,7 +342,7 @@ function (itp::QuadraticInterpolant{T})(
         output::AbstractVector{T},
         aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}};
         deriv::DerivOp = EvalValue()
-    ) where {T <: AbstractFloat}
+    ) where {T}
     @assert length(output) == length(aq_vec) "output length must match aq_vec length"
     @inbounds for i in eachindex(aq_vec)
         output[i] = _quadratic_eval_with_anchor(itp, aq_vec[i], deriv)

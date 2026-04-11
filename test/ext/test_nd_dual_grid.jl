@@ -579,6 +579,54 @@ end
         @test ad_adj ≈ fd_val rtol = 1.0e-5
     end
 
+    @testset "ConstantAdjointND — Dual grid construct + apply" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        adj = constant_adjoint((d .* xv_base, d .* yv_base), q_2d; extrap = ExtendExtrap())
+        f_bar = adj(1.0)
+        @test f_bar isa Matrix
+        @test eltype(f_bar) <: ForwardDiff.Dual
+
+        adj_f = constant_adjoint((xv_base, yv_base), q_2d; extrap = ExtendExtrap())
+        @test ForwardDiff.value.(f_bar) ≈ adj_f(1.0)
+    end
+
+    @testset "QuadraticAdjointND — adjoint identity: dot(adj(1), data) = interp(data, q)" begin
+        f_adj = t -> begin
+            adj = quadratic_adjoint((t .* xv_base, t .* yv_base), q_2d; extrap = ExtendExtrap())
+            sum(adj(1.0) .* data_2d)
+        end
+        f_fwd = t -> quadratic_interp(
+            (t .* xv_base, t .* yv_base), data_2d, q_2d;
+            coeffs = PreCompute(), extrap = ExtendExtrap(),
+        )
+
+        ad_adj = ForwardDiff.derivative(f_adj, 1.0)
+        ad_fwd = ForwardDiff.derivative(f_fwd, 1.0)
+        fd_val = fd_deriv(f_fwd)
+
+        @test ad_adj ≈ ad_fwd rtol = 1.0e-10
+        @test ad_adj ≈ fd_val rtol = 1.0e-5
+    end
+
+    @testset "HeteroAdjointND (Cubic × Linear) — adjoint identity" begin
+        f_adj = t -> begin
+            adj = hetero_adjoint((t .* xv_base, t .* yv_base), q_2d;
+                methods = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap())
+            sum(adj(1.0) .* data_2d)
+        end
+        f_fwd = t -> interp(
+            (t .* xv_base, t .* yv_base), data_2d, q_2d;
+            method = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap(),
+        )
+
+        ad_adj = ForwardDiff.derivative(f_adj, 1.0)
+        ad_fwd = ForwardDiff.derivative(f_fwd, 1.0)
+        fd_val = fd_deriv(f_fwd)
+
+        @test ad_adj ≈ ad_fwd rtol = 1.0e-10
+        @test ad_adj ≈ fd_val rtol = 1.0e-5
+    end
+
     @testset "Float regression — Cubic ND OnTheFly still works" begin
         v = cubic_interp(
             (xv_base, yv_base), data_2d, q_2d;

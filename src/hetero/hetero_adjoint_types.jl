@@ -116,7 +116,7 @@ adj(f_bar, y_bar)               # in-place (zero-allocation)
 ```
 """
 struct HeteroAdjointND{
-        Tg <: AbstractFloat,
+        Tg,
         N,
         M <: Tuple{Vararg{AbstractInterpMethod, N}},
         G <: Tuple{Vararg{AbstractVector, N}},

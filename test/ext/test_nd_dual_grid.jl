@@ -425,6 +425,90 @@ end
         @test ForwardDiff.value(v) ≈ itp_f(q_2d)
     end
 
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║  PeriodicBC × ND Dual grid                                         ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "Cubic ND PeriodicBC PreCompute — Dual grid" begin
+        xp = collect(range(0.0, 2π, 15))
+        yp = collect(range(0.0, 2π, 12))
+        data_p = [sin(xi) * cos(yi) for xi in xp, yi in yp]
+        f_interp = t -> cubic_interp(
+            (t .* xp, t .* yp), data_p, (1.5, 1.0);
+            coeffs = PreCompute(), bc = PeriodicBC(), extrap = WrapExtrap(),
+        )
+        ad_val = ForwardDiff.derivative(f_interp, 1.0)
+        fd_val = fd_deriv(f_interp)
+        @test ad_val ≈ fd_val rtol = 1.0e-5
+    end
+
+    @testset "Cubic ND PeriodicBC OnTheFly — Dual grid" begin
+        xp = collect(range(0.0, 2π, 15))
+        yp = collect(range(0.0, 2π, 12))
+        data_p = [sin(xi) * cos(yi) for xi in xp, yi in yp]
+        f_interp = t -> cubic_interp(
+            (t .* xp, t .* yp), data_p, (1.5, 1.0);
+            coeffs = OnTheFly(), bc = PeriodicBC(), extrap = WrapExtrap(),
+        )
+        ad_val = ForwardDiff.derivative(f_interp, 1.0)
+        fd_val = fd_deriv(f_interp)
+        @test ad_val ≈ fd_val rtol = 1.0e-5
+    end
+
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║  DerivOp on ND + Dual grid                                         ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "Cubic ND PreCompute DerivOp(1,0) — Dual grid" begin
+        f_interp = t -> cubic_interp(
+            (t .* xv_base, t .* yv_base), data_2d, q_2d;
+            coeffs = PreCompute(), extrap = ExtendExtrap(),
+            deriv = (DerivOp(1), DerivOp(0)),
+        )
+        ad_val = ForwardDiff.derivative(f_interp, 1.0)
+        fd_val = fd_deriv(f_interp)
+        @test ad_val ≈ fd_val rtol = 1.0e-4
+    end
+
+    @testset "Cubic ND OnTheFly DerivOp(1,0) — Dual grid" begin
+        f_interp = t -> cubic_interp(
+            (t .* xv_base, t .* yv_base), data_2d, q_2d;
+            coeffs = OnTheFly(), extrap = ExtendExtrap(),
+            deriv = (DerivOp(1), DerivOp(0)),
+        )
+        ad_val = ForwardDiff.derivative(f_interp, 1.0)
+        fd_val = fd_deriv(f_interp)
+        @test ad_val ≈ fd_val rtol = 1.0e-4
+    end
+
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║  Vector calculus (gradient/hessian) on Dual-grid interpolant        ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "gradient on Dual-grid CubicInterpolantND" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        itp = cubic_interp((d .* xv_base, d .* yv_base), data_2d; extrap = ExtendExtrap())
+        g = FI.gradient(itp, q_2d)
+        @test g isa Tuple{ForwardDiff.Dual, ForwardDiff.Dual}
+
+        # Cross-check: gradient primals match Float-grid gradient
+        itp_f = cubic_interp((xv_base, yv_base), data_2d; extrap = ExtendExtrap())
+        g_f = FI.gradient(itp_f, q_2d)
+        @test ForwardDiff.value(g[1]) ≈ g_f[1]
+        @test ForwardDiff.value(g[2]) ≈ g_f[2]
+    end
+
+    @testset "hessian on Dual-grid CubicInterpolantND" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        itp = cubic_interp((d .* xv_base, d .* yv_base), data_2d; extrap = ExtendExtrap())
+        H = FI.hessian(itp, q_2d)
+        @test H isa Matrix{<:ForwardDiff.Dual}
+
+        itp_f = cubic_interp((xv_base, yv_base), data_2d; extrap = ExtendExtrap())
+        H_f = FI.hessian(itp_f, q_2d)
+        @test ForwardDiff.value.(H) ≈ H_f
+    end
+
     @testset "Float regression — Cubic ND OnTheFly still works" begin
         v = cubic_interp(
             (xv_base, yv_base), data_2d, q_2d;

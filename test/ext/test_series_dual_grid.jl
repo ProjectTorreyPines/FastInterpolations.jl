@@ -58,6 +58,12 @@ using ForwardDiff
             @test any(v -> isapprox(ForwardDiff.value(vals[1]), v; atol=1e-14), y1)
             @test any(v -> isapprox(ForwardDiff.value(vals[2]), v; atol=1e-14), y2)
         end
+        @testset "Range grid — vector query" begin
+            vals = constant_interp(xd_range_vec, s, xq_vec; extrap=ExtendExtrap())
+            # Each result element must be a valid y-value
+            @test all(r -> any(v -> isapprox(ForwardDiff.value(r), v; atol=1e-14), y1), vals[1])
+            @test all(r -> any(v -> isapprox(ForwardDiff.value(r), v; atol=1e-14), y2), vals[2])
+        end
     end
 
     # ╔═══════════════════════════════════════════════════════════════════════╗
@@ -152,6 +158,43 @@ using ForwardDiff
             vals = cubic_interp(xd_range_vec, s, xq_vec; extrap=ExtendExtrap())
             @test check_primals(vals[1], ref_v[1])
         end
+    end
+
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║  SERIES INTERPOLANT (2-arg, persistent) with Dual grid                 ║
+    # ║  Tests LazyTranspose/Pair/Triple with Tz ≠ Tv                          ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "constant Series interpolant — Dual grid" begin
+        sitp = constant_interp(xd_vec, s; extrap=ExtendExtrap())
+        vals = sitp(xq)
+        sitp_f = constant_interp(x_vec, s; extrap=ExtendExtrap())
+        @test check_primals(vals, sitp_f(xq))
+    end
+
+    @testset "linear Series interpolant — Dual grid" begin
+        sitp = linear_interp(xd_vec, s; extrap=ExtendExtrap())
+        vals = sitp(xq)
+        sitp_f = linear_interp(x_vec, s; extrap=ExtendExtrap())
+        @test check_primals(vals, sitp_f(xq))
+    end
+
+    @testset "quadratic Series interpolant — Dual grid" begin
+        sitp = quadratic_interp(xd_vec, s; extrap=ExtendExtrap())
+        vals = sitp(xq)
+        sitp_f = quadratic_interp(x_vec, s; extrap=ExtendExtrap())
+        @test check_primals(vals, sitp_f(xq))
+        @test any(!iszero, ForwardDiff.partials.(vals))
+    end
+
+    @testset "cubic Series interpolant — Dual grid" begin
+        sitp = cubic_interp(xd_vec, s; extrap=ExtendExtrap())
+        vals = sitp(xq)
+        sitp_f = cubic_interp(x_vec, s; extrap=ExtendExtrap())
+        @test check_primals(vals, sitp_f(xq))
+
+        # Verify partials are nonzero — grid sensitivity actually propagates
+        @test any(!iszero, ForwardDiff.partials.(vals))
     end
 
 end

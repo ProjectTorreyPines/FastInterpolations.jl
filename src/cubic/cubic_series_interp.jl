@@ -90,7 +90,7 @@ mutable struct CubicSeriesInterpolant{
     const bc_for_solve::B             # BC config for solving
     const y::Matrix{Tv}               # Series-contiguous y (n_points × n_series)
     const z::Matrix{Tz}               # Series-contiguous z: Tz = _output_eltype(Tv, Tg)
-    const _transpose::LazyTransposePair{Tv}  # Lazy point-contiguous layout (shared infra)
+    const _transpose::LazyTransposePair{Tv, Tz}  # Lazy point-contiguous layout
     const extrap::E                   # Extrapolation mode (compile-time specialized)
     const search_policy::P            # Default search policy (immutable, thread-safe)
 
@@ -106,7 +106,7 @@ mutable struct CubicSeriesInterpolant{
         # y/z are NOT copied here — factory function provides owned matrices.
         return new{Tg, Tv, C, B, E, P, Tz}(
             cache, bc_for_solve, y, z,
-            LazyTransposePair{Tv}(),
+            LazyTransposePair{Tv, Tz}(),
             extrap, search
         )
     end
@@ -215,10 +215,10 @@ Dispatches on concrete EvalOp for optimal performance:
 @inline function _eval_series_point!(
         out::AbstractVector,
         y_point::Matrix{Tv},
-        z_point::Matrix{Tv},
+        z_point::Matrix{Tz},
         aq::_CubicAnchoredQuery{Tg, Tq},
         ::EvalValue
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tz, Tq <: Real}
     idx = aq.idx
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w0
@@ -237,10 +237,10 @@ end
 @inline function _eval_series_point!(
         out::AbstractVector,
         y_point::Matrix{Tv},
-        z_point::Matrix{Tv},
+        z_point::Matrix{Tz},
         aq::_CubicAnchoredQuery{Tg, Tq},
         ::EvalDeriv1
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tz, Tq <: Real}
     idx = aq.idx
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w1
@@ -259,10 +259,10 @@ end
 @inline function _eval_series_point!(
         out::AbstractVector,
         y_point::Matrix{Tv},
-        z_point::Matrix{Tv},
+        z_point::Matrix{Tz},
         aq::_CubicAnchoredQuery{Tg, Tq},
         ::EvalDeriv2
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tz, Tq <: Real}
     idx = aq.idx
     idx1 = idx + 1
     wzL, wzR = aq.w2
@@ -279,10 +279,10 @@ end
 @inline function _eval_series_point!(
         out::AbstractVector,
         y_point::Matrix{Tv},
-        z_point::Matrix{Tv},
+        z_point::Matrix{Tz},
         aq::_CubicAnchoredQuery{Tg, Tq},
         ::EvalDeriv3
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tz, Tq <: Real}
     idx = aq.idx
     idx1 = idx + 1
     wzL, wzR = aq.w3
@@ -298,10 +298,10 @@ end
 @inline function _eval_series_point!(
         out::AbstractVector,
         y_point::Matrix{Tv},
-        z_point::Matrix{Tv},
+        z_point::Matrix{Tz},
         aq::_CubicAnchoredQuery{Tg, Tq},
         ::DerivOp{N}
-    ) where {Tg, Tv, Tq <: Real, N}
+    ) where {Tg, Tv, Tz, Tq <: Real, N}
     z = 0 * (@inbounds y_point[1, aq.idx])
     @inbounds @simd for k in axes(out, 1)
         out[k] = z
@@ -317,14 +317,14 @@ SIMD evaluation with extrapolation handling for multi-series.
 @inline function _eval_series_point_with_extrap!(
         out::AbstractVector,
         y_point::Matrix{Tv},
-        z_point::Matrix{Tv},
+        z_point::Matrix{Tz},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
         aq::_CubicAnchoredQuery{Tg, Tq},
         extrap::AbstractExtrap,
         op::AbstractEvalOp
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tz, Tq <: Real}
     # Inside domain: normal evaluation
     if aq.state == IN_DOMAIN
         return _eval_series_point!(out, y_point, z_point, aq, op)
@@ -370,7 +370,7 @@ end
 @inline function _eval_series_point_extrap!(
         out::AbstractVector,
         y_point::Matrix{Tv},
-        z_point::Matrix{Tv},
+        z_point::Matrix{Tz},
         n_pts::Int,
         ::Tg,
         ::Tg,
@@ -378,7 +378,7 @@ end
         ::ExtendExtrap,
         ::EvalValue,
         side::UInt8
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tz, Tq <: Real}
     idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w0
@@ -397,7 +397,7 @@ end
 @inline function _eval_series_point_extrap!(
         out::AbstractVector,
         y_point::Matrix{Tv},
-        z_point::Matrix{Tv},
+        z_point::Matrix{Tz},
         n_pts::Int,
         ::Tg,
         ::Tg,
@@ -405,7 +405,7 @@ end
         ::ExtendExtrap,
         ::EvalDeriv1,
         side::UInt8
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tz, Tq <: Real}
     idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w1
@@ -424,7 +424,7 @@ end
 @inline function _eval_series_point_extrap!(
         out::AbstractVector,
         y_point::Matrix{Tv},
-        z_point::Matrix{Tv},
+        z_point::Matrix{Tz},
         n_pts::Int,
         ::Tg,
         ::Tg,
@@ -432,7 +432,7 @@ end
         ::ExtendExtrap,
         ::EvalDeriv2,
         side::UInt8
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tz, Tq <: Real}
     idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wzL, wzR = aq.w2
@@ -449,7 +449,7 @@ end
 @inline function _eval_series_point_extrap!(
         out::AbstractVector,
         y_point::Matrix{Tv},
-        z_point::Matrix{Tv},
+        z_point::Matrix{Tz},
         n_pts::Int,
         ::Tg,
         ::Tg,
@@ -457,7 +457,7 @@ end
         ::ExtendExtrap,
         ::EvalDeriv3,
         side::UInt8
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tz, Tq <: Real}
     idx = side == OOB_LEFT ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wzL, wzR = aq.w3
@@ -745,7 +745,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
     ) where {Tg, Tv, Tq <: Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
-    T_out = _series_output_type(Tv, typeof(xq_promoted))
+    T_out = _series_output_type(_output_eltype(Tv, Tg), typeof(xq_promoted))
     output = Vector{T_out}(undef, n_series(sitp))
 
     # Build anchor preserving Dual type in xq

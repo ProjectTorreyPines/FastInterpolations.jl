@@ -805,7 +805,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
     ) where {Tg, Tv, Tq <: Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = _series_output_type(Tv, Tq)
+    T_out = _series_output_type(_output_eltype(Tv, Tg), Tq)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)
@@ -953,9 +953,9 @@ Internal: Evaluate a single series for vector of query points.
 Uses argument-passing pattern for optimal performance (avoids struct field access in loop).
 """
 @inline function _eval_series_vector!(
-        out::AbstractVector{Tv},
+        out::AbstractVector,
         y::Matrix{Tv},
-        z::Matrix{Tv},
+        z::Matrix{Tz},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
@@ -963,7 +963,7 @@ Uses argument-passing pattern for optimal performance (avoids struct field acces
         aq_vec::AbstractVector{<:_CubicAnchoredQuery{Tg}},
         extrap::AbstractExtrap,
         op::AbstractEvalOp
-    ) where {Tg, Tv}
+    ) where {Tg, Tv, Tz}
     @inbounds for j in eachindex(out, aq_vec)
         out[j] = _eval_series_with_extrap(y, z, n_pts, x_min, x_max, k, aq_vec[j], extrap, op)
     end
@@ -976,7 +976,7 @@ Takes matrices as arguments for optimal performance.
 """
 @inline function _eval_series_with_extrap(
         y::Matrix{Tv},
-        z::Matrix{Tv},
+        z::Matrix{Tz},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
@@ -984,7 +984,7 @@ Takes matrices as arguments for optimal performance.
         aq::_CubicAnchoredQuery{Tg},
         extrap::AbstractExtrap,
         op::AbstractEvalOp
-    ) where {Tg, Tv}
+    ) where {Tg, Tv, Tz}
     # Inside domain: normal evaluation
     if aq.state == IN_DOMAIN
         return _eval_series_anchored(y, z, k, aq, op)
@@ -1011,11 +1011,11 @@ Dispatches on concrete EvalOp for optimal performance:
 # EvalValue: Full 4-term evaluation
 @inline function _eval_series_anchored(
         y::Matrix{Tv},
-        z::Matrix{Tv},
+        z::Matrix{Tz},
         k::Int,
         aq::_CubicAnchoredQuery{Tg},
         ::EvalValue
-    ) where {Tg, Tv}
+    ) where {Tg, Tv, Tz}
     idx = aq.idx
     wyL, wyR, wzL, wzR = aq.w0
     @inbounds begin
@@ -1030,11 +1030,11 @@ end
 # EvalDeriv1: Full 4-term evaluation
 @inline function _eval_series_anchored(
         y::Matrix{Tv},
-        z::Matrix{Tv},
+        z::Matrix{Tz},
         k::Int,
         aq::_CubicAnchoredQuery{Tg},
         ::EvalDeriv1
-    ) where {Tg, Tv}
+    ) where {Tg, Tv, Tz}
     idx = aq.idx
     wyL, wyR, wzL, wzR = aq.w1
     @inbounds begin
@@ -1049,11 +1049,11 @@ end
 # EvalDeriv2: Optimized 2-term evaluation (no y-loads)
 @inline function _eval_series_anchored(
         y::Matrix{Tv},
-        z::Matrix{Tv},
+        z::Matrix{Tz},
         k::Int,
         aq::_CubicAnchoredQuery{Tg},
         ::EvalDeriv2
-    ) where {Tg, Tv}
+    ) where {Tg, Tv, Tz}
     idx = aq.idx
     wzL, wzR = aq.w2
     @inbounds begin
@@ -1065,11 +1065,11 @@ end
 
 @inline function _eval_series_anchored(
         y::Matrix{Tv},
-        z::Matrix{Tv},
+        z::Matrix{Tz},
         k::Int,
         aq::_CubicAnchoredQuery{Tg},
         ::DerivOp{N}
-    ) where {Tg, Tv, N}
+    ) where {Tg, Tv, Tz, N}
     @inbounds yL = y[aq.idx, k]
     return 0 * yL
 end
@@ -1077,11 +1077,11 @@ end
 # EvalDeriv3: Optimized 2-term evaluation (no y-loads)
 @inline function _eval_series_anchored(
         y::Matrix{Tv},
-        z::Matrix{Tv},
+        z::Matrix{Tz},
         k::Int,
         aq::_CubicAnchoredQuery{Tg},
         ::EvalDeriv3
-    ) where {Tg, Tv}
+    ) where {Tg, Tv, Tz}
     idx = aq.idx
     wzL, wzR = aq.w3
     @inbounds begin

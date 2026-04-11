@@ -479,7 +479,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
     ) where {Tg, Tv, P, Tq <: Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = _series_output_type(Tv, Tq)
+    T_out = _series_output_type(_output_eltype(Tv, Tg), Tq)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)
@@ -568,8 +568,8 @@ Takes `dL` as a parameter to allow caller to compute with original xq precision.
 """
 @inline function _eval_single_quadratic_with_extrap(
         y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
@@ -577,7 +577,7 @@ Takes `dL` as a parameter to allow caller to compute with original xq precision.
         dL::Tq,  # Passed by caller for precision control
         extrap::NoExtrap,
         op::AbstractEvalOp
-    ) where {Tg, Tv, Taq <: Real, Tq <: Real}
+    ) where {Tg, Tv, Tc, Taq <: Real, Tq <: Real}
     if aq.state != IN_DOMAIN
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
@@ -586,8 +586,8 @@ end
 
 @inline function _eval_single_quadratic_with_extrap(
         y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
@@ -595,7 +595,7 @@ end
         dL::Tq,
         extrap::_ClampOrFill,
         op::EvalValue
-    ) where {Tg, Tv, Taq <: Real, Tq <: Real}
+    ) where {Tg, Tv, Tc, Taq <: Real, Tq <: Real}
     if aq.state != IN_DOMAIN  # outside domain
         y_bnd = @inbounds y[_boundary_point_index(aq.state, n_pts)]
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
@@ -606,8 +606,8 @@ end
 
 @inline function _eval_single_quadratic_with_extrap(
         y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
@@ -615,7 +615,7 @@ end
         dL::Tq,
         extrap::_ClampOrFill,
         op::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
-    ) where {Tg, Tv, Taq <: Real, Tq <: Real}
+    ) where {Tg, Tv, Tc, Taq <: Real, Tq <: Real}
     if aq.state != IN_DOMAIN  # outside domain
         return _eval_extrapolation(op, first(y), extrap, aq.xq)
     else
@@ -635,14 +635,14 @@ end
         ::Tq,
         ::_ClampOrFill,
         ::DerivOp{N}
-    ) where {Tg, Tv, Taq <: Real, Tq <: Real, N}
+    ) where {Tg, Tv, Tc, Taq <: Real, Tq <: Real, N}
     return 0 * first(y)
 end
 
 @inline function _eval_single_quadratic_with_extrap(
         y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
@@ -650,7 +650,7 @@ end
         dL::Tq,
         extrap::AbstractExtrap,  # ExtendExtrap, WrapExtrap, etc.
         op::AbstractEvalOp
-    ) where {Tg, Tv, Taq <: Real, Tq <: Real}
+    ) where {Tg, Tv, Tc, Taq <: Real, Tq <: Real}
     return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)
 end
 

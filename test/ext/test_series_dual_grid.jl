@@ -165,36 +165,66 @@ using ForwardDiff
     # ║  Tests LazyTranspose/Pair/Triple with Tz ≠ Tv                          ║
     # ╚═══════════════════════════════════════════════════════════════════════╝
 
-    @testset "constant Series interpolant — Dual grid" begin
+    # ── Interpolant: scalar query ──────────────────────────────────────
+
+    @testset "constant interpolant — scalar" begin
         sitp = constant_interp(xd_vec, s; extrap = ExtendExtrap())
-        vals = sitp(xq)
         sitp_f = constant_interp(x_vec, s; extrap = ExtendExtrap())
-        @test check_primals(vals, sitp_f(xq))
+        @test check_primals(sitp(xq), sitp_f(xq))
     end
 
-    @testset "linear Series interpolant — Dual grid" begin
+    @testset "linear interpolant — scalar" begin
         sitp = linear_interp(xd_vec, s; extrap = ExtendExtrap())
-        vals = sitp(xq)
         sitp_f = linear_interp(x_vec, s; extrap = ExtendExtrap())
-        @test check_primals(vals, sitp_f(xq))
+        @test check_primals(sitp(xq), sitp_f(xq))
     end
 
-    @testset "quadratic Series interpolant — Dual grid" begin
+    @testset "quadratic interpolant — scalar" begin
         sitp = quadratic_interp(xd_vec, s; extrap = ExtendExtrap())
-        vals = sitp(xq)
         sitp_f = quadratic_interp(x_vec, s; extrap = ExtendExtrap())
-        @test check_primals(vals, sitp_f(xq))
-        @test any(!iszero, ForwardDiff.partials.(vals))
+        @test check_primals(sitp(xq), sitp_f(xq))
+        @test any(!iszero, ForwardDiff.partials.(sitp(xq)))
     end
 
-    @testset "cubic Series interpolant — Dual grid" begin
+    @testset "cubic interpolant — scalar" begin
         sitp = cubic_interp(xd_vec, s; extrap = ExtendExtrap())
-        vals = sitp(xq)
         sitp_f = cubic_interp(x_vec, s; extrap = ExtendExtrap())
-        @test check_primals(vals, sitp_f(xq))
+        @test check_primals(sitp(xq), sitp_f(xq))
+        @test any(!iszero, ForwardDiff.partials.(sitp(xq)))
+    end
 
-        # Verify partials are nonzero — grid sensitivity actually propagates
-        @test any(!iszero, ForwardDiff.partials.(vals))
+    # ── Interpolant: vector query (out-of-place) ─────────────────────
+
+    @testset "constant interpolant — vector query" begin
+        sitp = constant_interp(xd_vec, s; extrap = ExtendExtrap())
+        sitp_f = constant_interp(x_vec, s; extrap = ExtendExtrap())
+        vals = sitp(xq_vec)
+        ref = sitp_f(xq_vec)
+        @test check_primals(vals[1], ref[1])
+    end
+
+    @testset "linear interpolant — vector query" begin
+        sitp = linear_interp(xd_vec, s; extrap = ExtendExtrap())
+        sitp_f = linear_interp(x_vec, s; extrap = ExtendExtrap())
+        vals = sitp(xq_vec)
+        ref = sitp_f(xq_vec)
+        @test check_primals(vals[1], ref[1])
+    end
+
+    @testset "quadratic interpolant — vector query" begin
+        sitp = quadratic_interp(xd_vec, s; extrap = ExtendExtrap())
+        sitp_f = quadratic_interp(x_vec, s; extrap = ExtendExtrap())
+        vals = sitp(xq_vec)
+        ref = sitp_f(xq_vec)
+        @test check_primals(vals[1], ref[1])
+    end
+
+    @testset "cubic interpolant — vector query" begin
+        sitp = cubic_interp(xd_vec, s; extrap = ExtendExtrap())
+        sitp_f = cubic_interp(x_vec, s; extrap = ExtendExtrap())
+        vals = sitp(xq_vec)
+        ref = sitp_f(xq_vec)
+        @test check_primals(vals[1], ref[1])
     end
 
 end

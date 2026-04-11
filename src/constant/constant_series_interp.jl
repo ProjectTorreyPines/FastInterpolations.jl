@@ -211,7 +211,7 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
 
     # Special case: at right boundary (use primal for comparison)
     xq_primal = _extract_primal(xq)
-    if Tg(xq_primal) == Tg(last(sitp.x))
+    if xq_primal == _extract_primal(last(sitp.x))
         if op isa EvalValue
             @inbounds @simd for k in axes(output, 1)
                 output[k] = y_point[k, n_pts]
@@ -406,9 +406,8 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
     # Validate output length
     _validate_scalar_output(output, n_ser)
 
-    # AD Support: Extract primal for anchor building, pass original xq for AD
-    xq_primal = _extract_primal(xq)
-    xq_typed = Tg(xq_primal)
+    # AD Support: Convert to grid type for anchor building, pass original xq for AD
+    xq_typed = _to_grid_type(xq, Tg)
 
     # Build anchor using primal value
     aq = _make_anchor(sitp, xq_typed, _resolve_search(sitp.x, xq, search, hint))
@@ -435,7 +434,9 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    xq_typed = _to_float(xq, Tg)
+    # Normalize queries to the grid's base float type (not Tg itself, which may be Dual)
+    Tg_float = Tg <: AbstractFloat ? Tg : float(Tq)
+    xq_typed = _to_float(xq, Tg_float)
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
 
@@ -469,7 +470,9 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P}
-    xq_typed = _to_float(xq, Tg)
+    # Normalize queries to the grid's base float type (not Tg itself, which may be Dual)
+    Tg_float = Tg <: AbstractFloat ? Tg : float(eltype(xq))
+    xq_typed = _to_float(xq, Tg_float)
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
 

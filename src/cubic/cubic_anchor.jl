@@ -57,7 +57,7 @@ When `xq` is a `ForwardDiff.Dual`, the anchor preserves the Dual type
 in both `xq` and weight fields, enabling automatic differentiation through
 series interpolant evaluation.
 """
-struct _CubicAnchoredQuery{Tg <: AbstractFloat, Tq <: Real}
+struct _CubicAnchoredQuery{Tg, Tq <: Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), Float or Dual
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
@@ -65,6 +65,14 @@ struct _CubicAnchoredQuery{Tg <: AbstractFloat, Tq <: Real}
     w1::NTuple{4, Tq}           # (wyL, wyR, wzL, wzR) for first deriv
     w2::NTuple{2, Tq}           # (wzL, wzR) for second deriv - optimized
     w3::NTuple{2, Tq}           # (wzL, wzR) for third deriv - optimized
+end
+
+# Outer constructor: infer Tq from weight element type (not from input xq).
+# When grid is Dual, weights are Dual even if xq is Float64.
+# Widens xq to match weight type for struct consistency.
+@inline function _CubicAnchoredQuery(idx::Int, xq, state::UInt8, w0::NTuple{4, Tw}, w1::NTuple{4, Tw}, w2::NTuple{2, Tw}, w3::NTuple{2, Tw}, ::Type{Tg}) where {Tg, Tw}
+    xq_p = convert(Tw, xq)
+    return _CubicAnchoredQuery{Tg, Tw}(idx, xq_p, state, w0, w1, w2, w3)
 end
 
 # ========================================
@@ -196,7 +204,7 @@ in `xq` and weight fields, enabling automatic differentiation.
         ::Val{:cubic},
         wrap::Bool = false,
         searcher::P = DEFAULT_SEARCHER
-    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Real, P <: Searcher}
     # Promote query for anchor: preserve Dual, promote Int/Rational to grid type
     # Cubic anchors store weight tuples with complex arithmetic that requires Float
     xq_promoted = _promote_for_anchor(xq, Tg)
@@ -240,12 +248,15 @@ function _anchor_query(
         ::Val{:cubic},
         wrap::Bool = false,
         searcher::P = _to_searcher(LinearBinarySearch())
-    ) where {T <: AbstractFloat, S <: Real, P <: Searcher}
+    ) where {T, S <: Real, P <: Searcher}
+    isempty(xq) && return _CubicAnchoredQuery{T, T}[]
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
-    output = Vector{_CubicAnchoredQuery{T, T}}(undef, length(xq))
-
-    @inbounds for k in eachindex(xq)
-        output[k] = _anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
+    # First anchor determines concrete element type (Tq may widen for duck-typed grids)
+    aq1 = _anchor_query_impl(x, _promote_for_anchor(xq[1], T), wrap, searcher_resolved)
+    output = Vector{typeof(aq1)}(undef, length(xq))
+    @inbounds output[1] = aq1
+    @inbounds for k in 2:length(xq)
+        output[k] = _anchor_query_impl(x, _promote_for_anchor(xq[k], T), wrap, searcher_resolved)
     end
     return output
 end
@@ -277,17 +288,16 @@ _fill_anchors!(buffer, x, xq, Val(:cubic))
 @inline function _fill_anchors!(
         buffer::AbstractVector{_CubicAnchoredQuery{Tg, Tq}},
         x::AbstractVector{Tg},
-        xq::AbstractVector{Tq},
+        xq::AbstractVector{S},
         ::Val{:cubic},
         wrap::Bool = false,
         searcher::P = _to_searcher(LinearBinarySearch())
-    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Real, S <: Real, P <: Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
-    # Use original xq[k] directly (no conversion) to preserve precision in weights
     @inbounds for k in eachindex(xq)
-        buffer[k] = _anchor_query_impl(x, xq[k], wrap, searcher_resolved)
+        buffer[k] = _anchor_query_impl(x, _promote_for_anchor(xq[k], Tg), wrap, searcher_resolved)
     end
     return buffer
 end
@@ -313,7 +323,7 @@ while preserving the full Dual value for weight computation.
         xq::Tq,
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
-    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
+    ) where {Tg, Tq <: Real, P <: Searcher}
     loc = _anchor_loc(x, xq, wrap, policy)
 
     # Compute geometry (cubic-internal concern)
@@ -330,7 +340,7 @@ while preserving the full Dual value for weight computation.
     w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
     w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
 
-    return _CubicAnchoredQuery{Tg, typeof(loc.xq)}(loc.idx, loc.xq, loc.state, w0, w1, w2, w3)
+    return _CubicAnchoredQuery(loc.idx, loc.xq, loc.state, w0, w1, w2, w3, Tg)
 end
 
 # ========================================

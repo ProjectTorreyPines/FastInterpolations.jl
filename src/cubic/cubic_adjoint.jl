@@ -96,7 +96,7 @@ Here `A` is the tridiagonal moment matrix, `R` the finite-difference RHS operato
 PolyFit stencil coefficients and periodic `q_transpose = A'^{-T}u` are computed on the
 fly at each `adj(ȳ)` call (O(D) and O(n) respectively, negligible vs overall pipeline).
 """
-struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}} <: AbstractAdjoint1D{Tg}
+struct CubicAdjoint{Tg, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}} <: AbstractAdjoint1D{Tg}
     cache::C
     anchors::Vector{_CubicAnchoredQuery{Tg, Tg}}
     bc::BC
@@ -440,10 +440,12 @@ function cubic_adjoint(
         autocache::Bool = true,
         _extra...
     )
-    # Promote grid and query to AbstractFloat (handles Integer, Rational, etc.)
+    # Promote grid to float (handles Integer, Rational, duck-typed)
     Tg = _promote_grid_float(eltype(x), eltype(x_query))
     x_p = _to_float(x, Tg)
-    xq_p = _to_float(x_query, Tg)
+    # Query normalization: keep queries as plain Float when grid is duck-typed
+    Tq_float = Tg <: AbstractFloat ? Tg : float(eltype(x_query))
+    xq_p = _to_float(x_query, Tq_float)
 
     # Periodic path (Sherman-Morrison adjoint)
     if _is_periodic_bc(bc)
@@ -454,7 +456,7 @@ function cubic_adjoint(
     bc_pair = _normalize_bc(bc, Tg)
 
     # Get/build cache (reuses existing infrastructure + autocache)
-    cache = _get_cubic_cache(x_p, bc_pair, autocache)
+    cache = _get_cubic_cache(x_p, bc_pair, _effective_autocache(autocache, eltype(x_p)))
 
     # Build anchored queries with extrap-specific preprocessing
     wrap = extrap isa WrapExtrap
@@ -489,10 +491,10 @@ end
 
 function _build_cubic_adjoint_periodic(
         x::AbstractVector{Tg},
-        xq::AbstractVector{Tg},
+        xq::AbstractVector{Tq},
         bc::PeriodicBC,
         autocache::Bool
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg, Tq <: Real}
 
     # Extend exclusive → inclusive grid (grid-only, no y-data needed)
     x_ext = if bc isa PeriodicBC{:exclusive}
@@ -508,7 +510,7 @@ function _build_cubic_adjoint_periodic(
     end
 
     # Get/build periodic cache (Thomas factorization + PeriodicData{q, period})
-    cache = _get_cubic_cache(x_ext, PeriodicBC(), autocache)
+    cache = _get_cubic_cache(x_ext, PeriodicBC(), _effective_autocache(autocache, Tg))
 
     # Build anchored queries with wrapping (queries outside domain → wrap to [x[1], x[end]))
     anchors = _anchor_query(cache.x, xq, Val(:cubic), true)
@@ -574,7 +576,7 @@ function _adjoint_periodic_solve!(
         cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
         q_t::AbstractVector,
         n::Int
-    ) where {Tv, Tg <: AbstractFloat, X, F, S <: AbstractGridSpacing{Tg}}
+    ) where {Tv, Tg, X, F, S <: AbstractGridSpacing{Tg}}
 
     # Transpose Thomas solve on z_bar[1:n]
     _ldiv_tridiagonal_transpose!(z_bar, cache.thomas)

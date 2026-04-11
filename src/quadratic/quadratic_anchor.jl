@@ -56,6 +56,13 @@ struct _QuadraticAnchoredQuery{Tg, Tq <: Real}
     dL::Tq                     # offset from interval start, Float or Dual
 end
 
+# Outer constructor: infer Tq from dL type (not from input xq).
+# When grid is Dual, dL = xq - xL is Dual even if xq is Float64.
+@inline function _QuadraticAnchoredQuery(idx::Int, xq, state::UInt8, dL::Td, ::Type{Tg}) where {Tg, Td}
+    xq_p = convert(Td, xq)
+    return _QuadraticAnchoredQuery{Tg, Td}(idx, xq_p, state, dL)
+end
+
 # ========================================
 # Anchor Construction
 # ========================================
@@ -210,7 +217,7 @@ while preserving the full Dual value for `dL` computation.
     # Compute dL: offset from interval start (preserves Dual type)
     dL = loc.xq - loc.xL
 
-    return _QuadraticAnchoredQuery{Tg, typeof(loc.xq)}(loc.idx, loc.xq, loc.state, dL)
+    return _QuadraticAnchoredQuery(loc.idx, loc.xq, loc.state, dL, Tg)
 end
 
 # ========================================

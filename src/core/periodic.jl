@@ -290,7 +290,7 @@ function _prepare_periodic_nd(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     # Fast path: no exclusive axes
     has_exclusive = false
     for d in 1:N
@@ -383,7 +383,7 @@ via `acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     # Fast path: no exclusive axes
     has_exclusive = false
     for d in 1:N

@@ -52,7 +52,7 @@ thomas = thomas_factorize!(dl, d, du)
 _ldiv_tridiagonal_nopiv!(b, thomas)
 ```
 """
-struct ThomasFactorization{T <: AbstractFloat, V <: AbstractVector{T}}
+struct ThomasFactorization{T, V <: AbstractVector{T}}
     dl::V     # Lower diagonal (L multipliers after factorization)
     du::V     # Upper diagonal (unchanged from input)
     inv_d::V  # Inverse of U diagonal (1/d[i])
@@ -105,7 +105,7 @@ thomas = thomas_factorize!(dl, d, du)
 """
 function thomas_factorize!(
         dl::V, d::V, du::V
-    ) where {T <: AbstractFloat, V <: AbstractVector{T}}
+    ) where {T, V <: AbstractVector{T}}
     n = length(d)
 
     @inbounds begin
@@ -162,7 +162,7 @@ Solves `Ax = b` in-place where `A = L*U` is the pre-computed factorization.
 @inline function _ldiv_tridiagonal_nopiv!(
         b::AbstractVector{Tv},
         thomas::ThomasFactorization{Tg, V},
-    ) where {Tg <: AbstractFloat, Tv, V <: AbstractVector{Tg}}
+    ) where {Tg, Tv, V <: AbstractVector{Tg}}
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d
@@ -205,7 +205,7 @@ correct transpose solve needed by the cubic adjoint operator.
 @inline function _ldiv_tridiagonal_transpose!(
         b::AbstractVector{Tv},
         thomas::ThomasFactorization{Tg, V},
-    ) where {Tg <: AbstractFloat, Tv, V <: AbstractVector{Tg}}
+    ) where {Tg, Tv, V <: AbstractVector{Tg}}
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d
@@ -263,7 +263,7 @@ z[n_batch, n_sys] where:
         z::AbstractMatrix{T},
         thomas::ThomasFactorization{T, V},
         ::Val{2},
-    ) where {T <: AbstractFloat, V <: AbstractVector{T}}
+    ) where {T, V <: AbstractVector{T}}
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d

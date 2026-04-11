@@ -343,6 +343,15 @@ ForwardDiff support is added via:
 """
 @inline _extract_primal(x) = x  # identity fallback; ForwardDiff ext specializes for Dual
 # GridIdx <: Real: _extract_primal(g::GridIdx) returns g (identity fallback).
+
+"""
+    _effective_autocache(autocache, Tg) -> Bool
+
+Disable autocache for non-AbstractFloat grid types (e.g. ForwardDiff.Dual).
+Dual grids are ephemeral (created fresh each AD call), so cache hit rate ≈ 0%.
+Resolves at specialization time — zero runtime cost on the Float hot path.
+"""
+@inline _effective_autocache(ac::Bool, ::Type{Tg}) where {Tg} = ac & (Tg <: AbstractFloat)
 # Arithmetic then auto-promotes GridIdx → g.val via promote_rule.
 
 """

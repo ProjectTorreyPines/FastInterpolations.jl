@@ -67,7 +67,7 @@ function cubic_interp(
     ) where {N, Tv_raw}
     # Zero-allocation type promotion (uses @generated function)
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64  # Ensure AbstractFloat
+    Tg = float(Tg)
 
     # Zero-allocation grid conversion (uses @generated function)
     grids_typed = _convert_grids_typed(grids, Tg)
@@ -110,7 +110,7 @@ function _build_nd_interpolant(
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         ::PreCompute
-    ) where {Tg <: AbstractFloat, Tv, N}
+    ) where {Tg, Tv, N}
     # Extend grids/data for exclusive periodic axes (build-time only)
     # After this, all periodic axes have inclusive-form data.
     grids, data, bcs = _prepare_periodic_nd(grids, data, bcs)

@@ -167,17 +167,15 @@ using FastInterpolations
     @testset "type preservation Real types" begin
         x = collect(range(0.0, 1.0, 11))
 
-        # Int query type is preserved (for AD compatibility)
+        # Int/Rational queries are widened to match dL type (grid arithmetic promotes)
+        # This is consistent with Linear anchor behavior
         aq_int = FastInterpolations._anchor_query(x, 0, Val(:quadratic))
-        @test aq_int.xq isa Int
-        @test aq_int.xq == 0
-        @test aq_int isa FastInterpolations._QuadraticAnchoredQuery{Float64, Int}
+        @test aq_int.xq ≈ 0.0
+        @test aq_int isa FastInterpolations._QuadraticAnchoredQuery{Float64, Float64}
 
-        # Rational query type is preserved (for AD compatibility)
         aq_rat = FastInterpolations._anchor_query(x, 1 // 2, Val(:quadratic))
-        @test aq_rat.xq isa Rational
-        @test aq_rat.xq == 1 // 2
-        @test aq_rat isa FastInterpolations._QuadraticAnchoredQuery{Float64, Rational{Int}}
+        @test aq_rat.xq ≈ 0.5
+        @test aq_rat isa FastInterpolations._QuadraticAnchoredQuery{Float64, Float64}
     end
 
     # ========================================

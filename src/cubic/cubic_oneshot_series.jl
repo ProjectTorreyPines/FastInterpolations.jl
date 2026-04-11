@@ -25,13 +25,14 @@
         autocache::Bool,
         op::AbstractEvalOp,
         searcher
-    ) where {Tg <: AbstractFloat}
-    cache = _get_cubic_cache(x, bc, autocache)
+    ) where {Tg}
+    cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
     aq = _anchor_query(cache.x, xq, Val(:cubic), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     Tv_out = _value_type(_series_eltype(s), Tg)
+    Tz = _output_eltype(_series_eltype(s), eltype(cache.x))
     n = length(first(vecs))
-    z = acquire!(pool, Tv_out, n)
+    z = acquire!(pool, Tz, n)
     y_buf = acquire!(pool, Tv_out, n)
     @inbounds for k in eachindex(output)
         copyto!(y_buf, 1, vecs[k], 1, n)
@@ -53,7 +54,7 @@ end
         op::AbstractEvalOp,
         autocache::Bool,
         searcher
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg}
     vecs = _series_vectors(s)
     n = length(x)
     Tv_out = _value_type(_series_eltype(s), Tg)
@@ -105,7 +106,7 @@ end
         op::AbstractEvalOp,
         autocache::Bool,
         search::AbstractSearchPolicy
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     vecs = _series_vectors(s)
     n = length(x)
     K = n_series(s)
@@ -120,7 +121,9 @@ end
     n_p = length(y_p_first)
 
     # Pre-compute anchors on the extended (inclusive) grid — once for all series
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg, Tq}, length(xqs))
+    # Tq widens when grid is Dual: promote_type(Float64, Dual) = Dual
+    Tq_w = promote_type(Tq, eltype(cache.x))
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{eltype(cache.x), Tq_w}, length(xqs))
     searcher = _resolve_search(cache.x, xqs, search, nothing)
     _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), true, searcher)
 
@@ -179,12 +182,13 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
-    x = _to_float(x, Tg)
+    x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     K = n_series(s)
-    output = Vector{_series_output_type(_value_type(_series_eltype(s), Tg), Tq)}(undef, K)
+    Tg_actual = eltype(x)
+    output = Vector{_series_output_type(_output_eltype(_series_eltype(s), Tg_actual), Tq)}(undef, K)
     searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
@@ -208,10 +212,10 @@ end
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
-    x = _to_float(x, Tg)
+    x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
@@ -239,9 +243,9 @@ end
         autocache::Bool = true,
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
-    x = _to_float(x, Tg)
+    x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     K = n_series(s)
     _validate_series_outputs(outputs, K, length(xqs))
     vecs = _series_vectors(s)
@@ -257,14 +261,16 @@ end
     extrap_eff = _check_domain(x, xqs, extrap)
 
     bc_pair = _normalize_bc(bc, _series_eltype(s))
-    cache = _get_cubic_cache(x, bc_pair, autocache)
+    cache = _get_cubic_cache(x, bc_pair, _effective_autocache(autocache, Tg))
 
     # Pre-compute anchors once (search Q times, not K×Q)
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg, Tq}, length(xqs))
+    Tq_w = promote_type(Tq, eltype(cache.x))
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{eltype(cache.x), Tq_w}, length(xqs))
     searcher = _resolve_search(cache.x, xqs, search, nothing)
     _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), extrap_eff isa WrapExtrap, searcher)
 
-    z = acquire!(pool, Tv_out, n)
+    Tz = _output_eltype(_series_eltype(s), eltype(cache.x))
+    z = acquire!(pool, Tz, n)
     y_buf = acquire!(pool, Tv_out, n)
 
     # Solve z for series k, then eval at all query points before moving to k+1.
@@ -289,52 +295,15 @@ function cubic_interp(
         autocache::Bool = true,
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg <: AbstractFloat, Tq <: Real}
+    ) where {Tg, Tq <: Real}
     K = n_series(s)
-    Tv = _series_output_type(_value_type(_series_eltype(s), Tg), Tq)
+    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
+    Tv = _series_output_type(_output_eltype(_series_eltype(s), Tg_float), Tq)
     outputs = [Vector{Tv}(undef, length(xqs)) for _ in 1:K]
     cubic_interp!(outputs, x, s, xqs; bc, extrap, autocache, deriv, search)
     return outputs
 end
 
-# ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                     REAL TYPE PROMOTION WRAPPERS                         ║
-# ╚═══════════════════════════════════════════════════════════════════════════╝
 
-@inline function cubic_interp(
-        x::AbstractVector{Tg}, s::Series, xq::Tq; bc::AbstractBC = CubicFit(), kwargs...
-    ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return cubic_interp(_to_float(x, Tg_float), s, xq; bc = _promote_bc(bc, Tg_float), kwargs...)
-end
-
-@inline function cubic_interp!(
-        output::AbstractVector, x::AbstractVector{Tg}, s::Series, xq::Tq;
-        bc::AbstractBC = CubicFit(), kwargs...
-    ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return cubic_interp!(output, _to_float(x, Tg_float), s, xq; bc = _promote_bc(bc, Tg_float), kwargs...)
-end
-
-function cubic_interp!(
-        outputs::AbstractVector{<:AbstractVector},
-        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq};
-        bc::AbstractBC = CubicFit(), kwargs...
-    ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return cubic_interp!(
-        outputs, _to_float(x, Tg_float), s, xqs;
-        bc = _promote_bc(bc, Tg_float), kwargs...
-    )
-end
-
-function cubic_interp(
-        x::AbstractVector{Tg}, s::Series, xqs::AbstractVector{Tq};
-        bc::AbstractBC = CubicFit(), kwargs...
-    ) where {Tg <: Real, Tq <: Real}
-    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return cubic_interp(
-        _to_float(x, Tg_float), s, xqs;
-        bc = _promote_bc(bc, Tg_float), kwargs...
-    )
-end
+# Note: Real wrappers (Tg <: Real) removed — typed methods above handle
+# all grid types including ForwardDiff.Dual via _to_float + _promote_grid_float.

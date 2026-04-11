@@ -15,7 +15,7 @@
 # First row - Deriv2 (second derivative specified): z[1] = bc.val
 @inline function _set_first_row!(
         d_diag::AbstractVector{Tg}, du::AbstractVector{Tg}, ::Deriv2, ::AbstractGridSpacing{Tg}
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg}
     d_diag[1] = one(Tg)
     du[1] = zero(Tg)
     return nothing
@@ -24,7 +24,7 @@ end
 # First row - Deriv1 (first derivative specified): 2h₁z₁ + h₁z₂ = 6[(y₂-y₁)/h₁ - S'(x₁)]
 @inline function _set_first_row!(
         d_diag::AbstractVector{Tg}, du::AbstractVector{Tg}, ::Deriv1, spacing::AbstractGridSpacing{Tg}
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg}
     h1 = _get_h(spacing, 1)
     d_diag[1] = 2 * h1
     du[1] = h1
@@ -34,7 +34,7 @@ end
 # Last row - Deriv2 (second derivative specified): matrix row enforces z[end] = bc.val
 @inline function _set_last_row!(
         dl::AbstractVector{Tg}, d_diag::AbstractVector{Tg}, ::Deriv2, ::AbstractGridSpacing{Tg}
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg}
     dl[end] = zero(Tg)
     d_diag[end] = one(Tg)
     return nothing
@@ -43,7 +43,7 @@ end
 # Last row - Deriv1 (first derivative specified): hₙzₙ + 2hₙzₙ₊₁ = 6[S'(xₙ₊₁) - (yₙ₊₁-yₙ)/hₙ]
 @inline function _set_last_row!(
         dl::AbstractVector{Tg}, d_diag::AbstractVector{Tg}, ::Deriv1, spacing::AbstractGridSpacing{Tg}
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg}
     # For the last row, we need h[n] which is the last spacing value
     # The number of spacing values is length(dl) for dl (n elements)
     n = length(dl)
@@ -57,7 +57,7 @@ end
 # Rearranged: -z[1] + z[2] = h[1] * val
 @inline function _set_first_row!(
         d_diag::AbstractVector{Tg}, du::AbstractVector{Tg}, ::Deriv3, ::AbstractGridSpacing{Tg}
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg}
     d_diag[1] = -one(Tg)
     du[1] = one(Tg)
     return nothing
@@ -67,7 +67,7 @@ end
 # Rearranged: -z[n] + z[n+1] = h[n] * val
 @inline function _set_last_row!(
         dl::AbstractVector{Tg}, d_diag::AbstractVector{Tg}, ::Deriv3, ::AbstractGridSpacing{Tg}
-    ) where {Tg <: AbstractFloat}
+    ) where {Tg}
     dl[end] = -one(Tg)
     d_diag[end] = one(Tg)
     return nothing
@@ -77,7 +77,7 @@ end
 # The derivative value is computed from data in RHS, not specified by user
 @inline function _set_first_row!(
         d_diag::AbstractVector{Tg}, du::AbstractVector{Tg}, ::PolyFit{D}, spacing::AbstractGridSpacing{Tg}
-    ) where {D, Tg <: AbstractFloat}
+    ) where {D, Tg}
     h1 = _get_h(spacing, 1)
     d_diag[1] = 2 * h1
     du[1] = h1
@@ -87,7 +87,7 @@ end
 # Last row - PolyFit{D} (auto-estimated first derivative): same matrix structure as Deriv1
 @inline function _set_last_row!(
         dl::AbstractVector{Tg}, d_diag::AbstractVector{Tg}, ::PolyFit{D}, spacing::AbstractGridSpacing{Tg}
-    ) where {D, Tg <: AbstractFloat}
+    ) where {D, Tg}
     n = length(dl)
     h_n = _get_h(spacing, n)
     dl[end] = h_n
@@ -100,7 +100,7 @@ end
 # ========================================
 
 "Build cache for periodic cubic spline using Sherman-Morrison formula."
-function _build_periodic_cache(x::AbstractVector{T}) where {T <: AbstractFloat}
+function _build_periodic_cache(x::AbstractVector{T}) where {T}
     n = length(x) - 1  # Number of intervals
 
     n >= 3 || throw(ArgumentError("Periodic spline requires at least 4 points"))
@@ -167,7 +167,7 @@ function _build_derivative_bc_cache(
         x::AbstractVector{T},
         left_bc::L,
         right_bc::R
-    ) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
+    ) where {T, L <: PointBC, R <: PointBC}
     n = length(x) - 1
 
     # Validate PolyFit requirements: PolyFit{D} requires D+1 points
@@ -222,63 +222,64 @@ end
 # ----------------------------------------
 # All helpers now accept x parameter for consistency; existing BCs ignore it.
 # CubicFit (PolyFit{3}) uses x to compute endpoint derivatives from data.
-# Tg = grid type (x, spacing), Tv = value type (y, d, bc.val)
+# Tg = grid type (x, spacing). d (RHS buffer) may have wider eltype than y
+# when grid is duck-typed (e.g. Dual): d = _output_eltype(Tv, Tg).
 
 # First element - Deriv2: d[1] = bc.val (second derivative value)
 @inline function _compute_rhs_first!(
-        d::AbstractVector{Tv}, bc::Deriv2, ::AbstractVector{Tv}, ::AbstractVector{Tg}, ::AbstractGridSpacing{Tg}
-    ) where {Tg <: AbstractFloat, Tv}
-    d[1] = convert(Tv, bc.val)
+        d::AbstractVector, bc::Deriv2, ::AbstractVector, ::AbstractVector{Tg}, ::AbstractGridSpacing{Tg}
+    ) where {Tg}
+    d[1] = convert(eltype(d), bc.val)
     return nothing
 end
 
 # First element - Deriv1: d[1] = 6[(y₂-y₁)/h₁ - S'(x₁)]
 @inline function _compute_rhs_first!(
-        d::AbstractVector{Tv}, bc::Deriv1, y::AbstractVector{Tv}, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
-    ) where {Tg <: AbstractFloat, Tv}
-    d[1] = 6 * ((y[2] - y[1]) * _get_inv_h(spacing, 1) - convert(Tv, bc.val))
+        d::AbstractVector, bc::Deriv1, y::AbstractVector, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
+    ) where {Tg}
+    d[1] = 6 * ((y[2] - y[1]) * _get_inv_h(spacing, 1) - convert(eltype(d), bc.val))
     return nothing
 end
 
 # Last element - Deriv2: d[end] = bc.val (second derivative value)
 @inline function _compute_rhs_last!(
-        d::AbstractVector{Tv}, bc::Deriv2, ::AbstractVector{Tv}, ::AbstractVector{Tg}, ::AbstractGridSpacing{Tg}
-    ) where {Tg <: AbstractFloat, Tv}
-    d[end] = convert(Tv, bc.val)
+        d::AbstractVector, bc::Deriv2, ::AbstractVector, ::AbstractVector{Tg}, ::AbstractGridSpacing{Tg}
+    ) where {Tg}
+    d[end] = convert(eltype(d), bc.val)
     return nothing
 end
 
 # Last element - Deriv1: d[end] = 6[S'(x_end) - (y_end - y_{end-1}) / h_end]
 @inline function _compute_rhs_last!(
-        d::AbstractVector{Tv}, bc::Deriv1, y::AbstractVector{Tv}, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
-    ) where {Tg <: AbstractFloat, Tv}
+        d::AbstractVector, bc::Deriv1, y::AbstractVector, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
+    ) where {Tg}
     n = length(y) - 1
-    d[end] = 6 * (convert(Tv, bc.val) - (y[end] - y[end - 1]) * _get_inv_h(spacing, n))
+    d[end] = 6 * (convert(eltype(d), bc.val) - (y[end] - y[end - 1]) * _get_inv_h(spacing, n))
     return nothing
 end
 
 # First element - Deriv3: d[1] = h[1] * bc.val (from -z[1] + z[2] = h[1] * val)
 @inline function _compute_rhs_first!(
-        d::AbstractVector{Tv}, bc::Deriv3, ::AbstractVector{Tv}, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
-    ) where {Tg <: AbstractFloat, Tv}
-    d[1] = _get_h(spacing, 1) * convert(Tv, bc.val)
+        d::AbstractVector, bc::Deriv3, ::AbstractVector, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
+    ) where {Tg}
+    d[1] = _get_h(spacing, 1) * convert(eltype(d), bc.val)
     return nothing
 end
 
 # Last element - Deriv3: d[end] = h[n] * bc.val (from -z[n] + z[n+1] = h[n] * val)
 @inline function _compute_rhs_last!(
-        d::AbstractVector{Tv}, bc::Deriv3, ::AbstractVector{Tv}, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
-    ) where {Tg <: AbstractFloat, Tv}
+        d::AbstractVector, bc::Deriv3, ::AbstractVector, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
+    ) where {Tg}
     n = length(d) - 1
-    d[end] = _get_h(spacing, n) * convert(Tv, bc.val)
+    d[end] = _get_h(spacing, n) * convert(eltype(d), bc.val)
     return nothing
 end
 
 # First element - Generic PolyFit{D}: materialize to Deriv1, then delegate
 # Supports all polynomial degrees: LinearFit (D=1), QuadraticFit (D=2), CubicFit (D=3), etc.
 @inline function _compute_rhs_first!(
-        d::AbstractVector{Tv}, bc::PolyFit{D}, y::AbstractVector{Tv}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
-    ) where {D, Tg <: AbstractFloat, Tv}
+        d::AbstractVector, bc::PolyFit{D}, y::AbstractVector, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
+    ) where {D, Tg}
     # Materialize PolyFit{D} → Deriv1 using estimated derivative
     concrete_bc = materialize_bc(bc, x, y, LeftSide())
     # Delegate to existing Deriv1 code path
@@ -288,8 +289,8 @@ end
 
 # Last element - Generic PolyFit{D}: materialize to Deriv1, then delegate
 @inline function _compute_rhs_last!(
-        d::AbstractVector{Tv}, bc::PolyFit{D}, y::AbstractVector{Tv}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
-    ) where {D, Tg <: AbstractFloat, Tv}
+        d::AbstractVector, bc::PolyFit{D}, y::AbstractVector, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
+    ) where {D, Tg}
     # Materialize PolyFit{D} → Deriv1 using estimated derivative
     concrete_bc = materialize_bc(bc, x, y, RightSide())
     # Delegate to existing Deriv1 code path
@@ -308,9 +309,9 @@ Type-Free design: BCPair{L,R} where L, R are PointBC subtypes (Deriv1{Tv}, PolyF
 Tg = grid type (x, spacing), Tv = value type (y, d)
 """
 @inline function compute_rhs!(
-        d::AbstractVector{Tv}, y::AbstractVector{Tv}, x::AbstractVector{Tg},
+        d::AbstractVector, y::AbstractVector, x::AbstractVector{Tg},
         spacing::AbstractGridSpacing{Tg}, bc_config::BCPair{L, R}
-    ) where {Tg <: AbstractFloat, Tv, L <: PointBC, R <: PointBC}
+    ) where {Tg, L <: PointBC, R <: PointBC}
     n = length(y) - 1
     _compute_rhs_first!(d, bc_config.left, y, x, spacing)
     # Use spacing accessors
@@ -326,7 +327,7 @@ end
 # ----------------------------------------
 
 "Compute RHS vector d for periodic cubic spline system in-place."
-@inline function compute_rhs_periodic!(d::AbstractVector{Tv}, y::AbstractVector{Tv}, spacing::AbstractGridSpacing{Tg}) where {Tg <: AbstractFloat, Tv}
+@inline function compute_rhs_periodic!(d::AbstractVector, y::AbstractVector, spacing::AbstractGridSpacing{Tg}) where {Tg}
     n = length(y) - 1
 
     # Use spacing accessors
@@ -349,11 +350,11 @@ end
 
 "Solve periodic cyclic tridiagonal system using Sherman-Morrison formula."
 @inline function _solve_cubic_system_periodic!(
-        z_workspace::AbstractVector{Tv},
-        y_temp::AbstractVector{Tv},
+        z_workspace::AbstractVector,
+        y_temp::AbstractVector,
         cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
-        y::AbstractVector{Tv}
-    ) where {Tg <: AbstractFloat, Tv, X, F, S <: AbstractGridSpacing{Tg}}
+        y::AbstractVector
+    ) where {Tg, X, F, S <: AbstractGridSpacing{Tg}}
     n = length(y) - 1
 
     compute_rhs_periodic!(y_temp, y, cache.spacing)
@@ -410,11 +411,11 @@ Type-Free design:
 - Tg = grid type, Tv = value type (can be Complex)
 """
 @inline function _solve_system!(
-        out_z::AbstractVector{Tv},
+        out_z::AbstractVector,
         cache::CubicSplineCache{Tg, X, F, BCPair{CL, CR}, S},
-        y::AbstractVector{Tv},
+        y::AbstractVector,
         bc_pair::BCPair{L, R}
-    ) where {Tg <: AbstractFloat, Tv, X, F, CL <: PointBC, CR <: PointBC, L <: PointBC, R <: PointBC, S <: AbstractGridSpacing{Tg}}
+    ) where {Tg, X, F, CL <: PointBC, CR <: PointBC, L <: PointBC, R <: PointBC, S <: AbstractGridSpacing{Tg}}
     compute_rhs!(out_z, y, cache.x, cache.spacing, bc_pair)
     _ldiv_tridiagonal_nopiv!(out_z, cache.thomas)
     return out_z
@@ -426,16 +427,16 @@ Thread-safe: workspaces allocated from task-local pool.
 Tg = grid type, Tv = value type (can be Complex)
 """
 @inline @with_pool pool function _solve_system!(
-        out_z::AbstractVector{Tv},
+        out_z::AbstractVector{Tz},
         cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
-        y::AbstractVector{Tv},
+        y::AbstractVector,
         ::PeriodicData{Tg}  # Unused, for API consistency with BCPair version
-    ) where {Tg <: AbstractFloat, Tv, X, F, S <: AbstractGridSpacing{Tg}}
+    ) where {Tz, Tg, X, F, S <: AbstractGridSpacing{Tg}}
     n = length(y) - 1
 
     # Periodic workspaces need n elements (NOT length(y)!)
     # Use pool allocation for zero-allocation hot path
-    y_temp = acquire!(pool, Tv, n)
+    y_temp = acquire!(pool, Tz, n)
 
     _solve_cubic_system_periodic!(out_z, y_temp, cache, y)
     return out_z

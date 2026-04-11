@@ -76,31 +76,28 @@ sitp_complex = quadratic_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct QuadraticSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, S <: AbstractGridSpacing{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
-    const x::X                                # Grid points (Range or Vector)
-    const y::Matrix{Tv}                       # Series-contiguous y (n_points × n_series)
-    const a::Matrix{Tv}                       # Series-contiguous a (n_points × n_series)
-    const d::Matrix{Tv}                       # Series-contiguous d (n_points × n_series)
-    const spacing::S                          # Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
-    const _transpose::LazyTransposeTriple{Tv} # Lazy point-contiguous layout
-    const extrap::E                           # Extrapolation mode (compile-time specialized)
-    const search_policy::P                    # Default search policy
+mutable struct QuadraticSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, S <: AbstractGridSpacing{Tg}, Tc} <: AbstractSeriesInterpolant{Tg, Tv}
+    const x::X                                 # Grid points (Range or Vector)
+    const y::Matrix{Tv}                        # Series-contiguous y (n_points × n_series)
+    const a::Matrix{Tc}                        # Series-contiguous a: Tc = _output_eltype(Tv, Tg)
+    const d::Matrix{Tc}                        # Series-contiguous d: Tc = _output_eltype(Tv, Tg)
+    const spacing::S                           # Precomputed grid spacing
+    const _transpose::LazyTransposeTriple{Tv, Tc} # Lazy point-contiguous layout
+    const extrap::E                            # Extrapolation mode (compile-time specialized)
+    const search_policy::P                     # Default search policy
 
     function QuadraticSeriesInterpolant(
             x::AbstractVector{Tg},
             y::Matrix{Tv},
-            a::Matrix{Tv},
-            d::Matrix{Tv},
+            a::Matrix,
+            d::Matrix,
             spacing::S,
             extrap::E,
             search::P = AutoSearch()
         ) where {Tg, Tv, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
-        # _to_float(copy(x), Tg): Range → _CachedRange (O(1) search + no TwicePrecision overhead);
-        # Vector → defensive copy. copy() on Range is identity (zero alloc).
-        # typeof(xc) rebinds X after conversion (view → Vector, TwicePrecision → _CachedRange).
-        # y/a/d are NOT copied here — factory function provides owned matrices.
+        Tc = eltype(a)
         xc = _to_float(copy(x), Tg)
-        return new{Tg, Tv, E, P, typeof(xc), S}(xc, y, a, d, spacing, LazyTransposeTriple{Tv}(), extrap, search)
+        return new{Tg, Tv, E, P, typeof(xc), S, Tc}(xc, y, a, d, spacing, LazyTransposeTriple{Tv, Tc}(), extrap, search)
     end
 end
 
@@ -190,15 +187,15 @@ SIMD kernel for evaluating all series at a single anchor point with extrapolatio
 @inline function _eval_quadratic_series_point_with_extrap!(
         output::AbstractVector,
         y_point::Matrix{Tv},
-        a_point::Matrix{Tv},
-        d_point::Matrix{Tv},
+        a_point::Matrix{Tc},
+        d_point::Matrix{Tc},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
         aq::_QuadraticAnchoredQuery{Tg, Tq},
         extrap::NoExtrap,
         op::AbstractEvalOp
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tc, Tq <: Real}
     if aq.state != IN_DOMAIN
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
@@ -208,15 +205,15 @@ end
 @inline function _eval_quadratic_series_point_with_extrap!(
         output::AbstractVector,
         y_point::Matrix{Tv},
-        a_point::Matrix{Tv},
-        d_point::Matrix{Tv},
+        a_point::Matrix{Tc},
+        d_point::Matrix{Tc},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
         aq::_QuadraticAnchoredQuery{Tg, Tq},
         extrap::_ClampOrFill,
         op::AbstractEvalOp
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tc, Tq <: Real}
     return if aq.state != IN_DOMAIN  # outside domain
         _fill_constant_extrap_simd!(output, y_point, aq.state, n_pts, op, extrap)
     else
@@ -227,15 +224,15 @@ end
 @inline function _eval_quadratic_series_point_with_extrap!(
         output::AbstractVector,
         y_point::Matrix{Tv},
-        a_point::Matrix{Tv},
-        d_point::Matrix{Tv},
+        a_point::Matrix{Tc},
+        d_point::Matrix{Tc},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
         aq::_QuadraticAnchoredQuery{Tg, Tq},
         extrap::AbstractExtrap,  # ExtendExtrap, WrapExtrap, or anything else
         op::AbstractEvalOp
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tc, Tq <: Real}
     return _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
 end
 
@@ -255,11 +252,11 @@ When `aq.dL` is a ForwardDiff.Dual, the output will also be Dual.
 @inline function _eval_quadratic_series_point_kernel!(
         output::AbstractVector,
         y_point::Matrix{Tv},
-        a_point::Matrix{Tv},
-        d_point::Matrix{Tv},
+        a_point::Matrix{Tc},
+        d_point::Matrix{Tc},
         aq::_QuadraticAnchoredQuery{Tg, Tq},
         op::EvalValue
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tc, Tq <: Real}
     idx = aq.idx
     dL = aq.dL
 
@@ -276,11 +273,11 @@ end
 @inline function _eval_quadratic_series_point_kernel!(
         output::AbstractVector,
         y_point::Matrix{Tv},
-        a_point::Matrix{Tv},
-        d_point::Matrix{Tv},
+        a_point::Matrix{Tc},
+        d_point::Matrix{Tc},
         aq::_QuadraticAnchoredQuery{Tg, Tq},
         op::EvalDeriv1
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tc, Tq <: Real}
     idx = aq.idx
     dL = aq.dL
 
@@ -296,11 +293,11 @@ end
 @inline function _eval_quadratic_series_point_kernel!(
         output::AbstractVector,
         y_point::Matrix{Tv},
-        a_point::Matrix{Tv},
-        d_point::Matrix{Tv},
+        a_point::Matrix{Tc},
+        d_point::Matrix{Tc},
         aq::_QuadraticAnchoredQuery{Tg, Tq},
         op::EvalDeriv2
-    ) where {Tg, Tv, Tq <: Real}
+    ) where {Tg, Tv, Tc, Tq <: Real}
     idx = aq.idx
 
     @inbounds @simd for k in eachindex(output)
@@ -314,11 +311,11 @@ end
 @inline function _eval_quadratic_series_point_kernel!(
         output::AbstractVector,
         y_point::Matrix{Tv},
-        a_point::Matrix{Tv},
-        d_point::Matrix{Tv},
+        a_point::Matrix{Tc},
+        d_point::Matrix{Tc},
         aq::_QuadraticAnchoredQuery{Tg, Tq},
         op::DerivOp{N}
-    ) where {Tg, Tv, Tq <: Real, N}
+    ) where {Tg, Tv, Tc, Tq <: Real, N}
     z = 0 * (@inbounds y_point[first(eachindex(output)), aq.idx])
     @inbounds @simd for k in eachindex(output)
         output[k] = z
@@ -375,9 +372,10 @@ function quadratic_interp(
     Tv_out = _value_type(Tv, Tg)
     y_mat, n_ser = _build_series_mat(s, n_pts, Tv_out)
 
-    # Allocate coefficient matrices
-    a_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
-    d_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
+    # Allocate coefficient matrices (Dual when grid is Dual)
+    Tc = _output_eltype(Tv_out, eltype(x))
+    a_mat = Matrix{Tc}(undef, n_pts, n_ser)
+    d_mat = Matrix{Tc}(undef, n_pts, n_ser)
 
     # Compute spacing once — shared across all series
     spacing = _create_spacing(x)
@@ -427,7 +425,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
     ) where {Tg, Tv, P, Tq <: Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
-    T_out = _series_output_type(Tv, typeof(xq_promoted))
+    T_out = _series_output_type(_output_eltype(Tv, Tg), typeof(xq_promoted))
     aq = _make_anchor(sitp, xq_promoted, _resolve_search(sitp.x, xq, search, hint))
 
     output = Vector{T_out}(undef, n_series(sitp))
@@ -481,7 +479,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
     ) where {Tg, Tv, P, Tq <: Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = _series_output_type(Tv, Tq)
+    T_out = _series_output_type(_output_eltype(Tv, Tg), Tq)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)
@@ -570,8 +568,8 @@ Takes `dL` as a parameter to allow caller to compute with original xq precision.
 """
 @inline function _eval_single_quadratic_with_extrap(
         y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
@@ -579,7 +577,7 @@ Takes `dL` as a parameter to allow caller to compute with original xq precision.
         dL::Tq,  # Passed by caller for precision control
         extrap::NoExtrap,
         op::AbstractEvalOp
-    ) where {Tg, Tv, Taq <: Real, Tq <: Real}
+    ) where {Tg, Tv, Tc, Taq <: Real, Tq <: Real}
     if aq.state != IN_DOMAIN
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
@@ -588,8 +586,8 @@ end
 
 @inline function _eval_single_quadratic_with_extrap(
         y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
@@ -597,7 +595,7 @@ end
         dL::Tq,
         extrap::_ClampOrFill,
         op::EvalValue
-    ) where {Tg, Tv, Taq <: Real, Tq <: Real}
+    ) where {Tg, Tv, Tc, Taq <: Real, Tq <: Real}
     if aq.state != IN_DOMAIN  # outside domain
         y_bnd = @inbounds y[_boundary_point_index(aq.state, n_pts)]
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
@@ -608,8 +606,8 @@ end
 
 @inline function _eval_single_quadratic_with_extrap(
         y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
@@ -617,7 +615,7 @@ end
         dL::Tq,
         extrap::_ClampOrFill,
         op::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
-    ) where {Tg, Tv, Taq <: Real, Tq <: Real}
+    ) where {Tg, Tv, Tc, Taq <: Real, Tq <: Real}
     if aq.state != IN_DOMAIN  # outside domain
         return _eval_extrapolation(op, first(y), extrap, aq.xq)
     else
@@ -637,14 +635,14 @@ end
         ::Tq,
         ::_ClampOrFill,
         ::DerivOp{N}
-    ) where {Tg, Tv, Taq <: Real, Tq <: Real, N}
+    ) where {Tg, Tv, Tc, Taq <: Real, Tq <: Real, N}
     return 0 * first(y)
 end
 
 @inline function _eval_single_quadratic_with_extrap(
         y::AbstractVector{Tv},
-        a::AbstractVector{Tv},
-        d::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
         n_pts::Int,
         x_min::Tg,
         x_max::Tg,
@@ -652,7 +650,7 @@ end
         dL::Tq,
         extrap::AbstractExtrap,  # ExtendExtrap, WrapExtrap, etc.
         op::AbstractEvalOp
-    ) where {Tg, Tv, Taq <: Real, Tq <: Real}
+    ) where {Tg, Tv, Tc, Taq <: Real, Tq <: Real}
     return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)
 end
 

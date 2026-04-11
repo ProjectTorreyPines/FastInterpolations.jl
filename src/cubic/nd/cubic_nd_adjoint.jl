@@ -137,7 +137,7 @@ function _bake_nd_anchors(
         spacings::NTuple{N, AbstractGridSpacing{Tg}},
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}}
-    ) where {N, Tg <: AbstractFloat}
+    ) where {N, Tg}
     return _bake_nd_anchors_generic(
         grids, spacings, queries, extraps,
         (d, t, h, inv_h, dL) -> _compute_nd_anchor_weights(t, h, inv_h)
@@ -295,7 +295,7 @@ so each branch dispatches on a concrete cache type — no Union boxing.
         mixed_bcs,
         grids::NTuple{N, AbstractVector{Tg}},
         grid_size::NTuple{N, Int}
-    ) where {Tv, Tg <: AbstractFloat, N}
+    ) where {Tv, Tg, N}
     # Process axes in reverse order: d=N, N-1, ..., 1
     for d in N:-1:1
         bit_d = 1 << (d - 1)
@@ -443,7 +443,7 @@ function cubic_adjoint(
     ) where {N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tg)
@@ -491,7 +491,7 @@ function cubic_adjoint(
     ) where {N}
     _query_check_ndims(queries, Val(N))
     Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tg)
@@ -520,7 +520,7 @@ function _build_nd_adjoint(
         bcs::NTuple{N, AbstractBC},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         autocache::Bool
-    ) where {N, Tg <: AbstractFloat}
+    ) where {N, Tg}
     # Validate: PolyFit BCs have enough grid points (periodic axes skip this)
     _validate_polyfit_bcs(grids, bcs, Val(N))
 
@@ -545,9 +545,9 @@ function _build_nd_adjoint(
 
     caches = map(grids_ext, norm_bcs) do grid_d, bp_d
         if _is_periodic_bc(bp_d)
-            _get_cubic_cache(grid_d, PeriodicBC(), autocache)
+            _get_cubic_cache(grid_d, PeriodicBC(), _effective_autocache(autocache, Tg))
         else
-            _get_cubic_cache(grid_d, bp_d, autocache)
+            _get_cubic_cache(grid_d, bp_d, _effective_autocache(autocache, Tg))
         end
     end
 
@@ -565,9 +565,9 @@ function _build_nd_adjoint(
 
     mixed_caches = map(grids_ext, mixed_bcs) do grid_d, mbp_d
         if _is_periodic_bc(mbp_d)
-            _get_cubic_cache(grid_d, PeriodicBC(), autocache)
+            _get_cubic_cache(grid_d, PeriodicBC(), _effective_autocache(autocache, Tg))
         else
-            _get_cubic_cache(grid_d, mbp_d, autocache)
+            _get_cubic_cache(grid_d, mbp_d, _effective_autocache(autocache, Tg))
         end
     end
 

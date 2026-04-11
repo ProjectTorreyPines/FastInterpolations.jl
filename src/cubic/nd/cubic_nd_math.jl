@@ -281,7 +281,7 @@ function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::BCPair, args...) wh
     return nothing
 end
 
-function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::PeriodicData{Tg}, args...) where {Tv, Tg <: AbstractFloat}
+function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::PeriodicData{Tg}, args...) where {Tv, Tg}
     # Enforce periodic: dydx[1] == dydx[end]
     avg = inv(Tg(2)) * (dydx[1] + dydx[end])
     @inbounds dydx[1] = avg
@@ -310,15 +310,16 @@ Differentiate 1D vector using cubic splines. BC type determines the method:
 @with_pool pool function _deriv_1d!(
         deriv::AbstractVector{Tv}, values::AbstractVector{Tv},
         grid::AbstractVector{Tg}, bc::AbstractBC
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     n = length(values)
     # Cache construction: _get_cubic_cache internally uses _cache_pointbc (duck-safe,
     # converts BC to structural form with zero(Tg) — no convert(Tg, bc.val) needed).
     # Computation: normalize BC values to Tv via value-based _normalize_bc.
     bc_compute = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, first(values))
-    cache = _get_cubic_cache(grid, bc, true)
+    cache = _get_cubic_cache(grid, bc, _effective_autocache(true, Tg))
     actual_bc = cache.bc_config isa PeriodicData ? cache.bc_config : bc_compute
-    m = acquire!(pool, Tv, n)
+    Tz = _output_eltype(Tv, eltype(cache.x))
+    m = acquire!(pool, Tz, n)
     _solve_system!(m, cache, values, actual_bc)
     _moments_to_derivatives_1d!(deriv, m, values, cache.spacing)
     _apply_derivative_bc!(deriv, actual_bc)
@@ -328,7 +329,7 @@ end
 @with_pool pool function _deriv_1d!(
         deriv::AbstractVector{Tv}, values::AbstractVector{Tv},
         grid::AbstractVector{Tg}, ::CubicFit
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg, Tv}
     n = length(values)
     @assert n >= 4 "Need at least 4 points for CubicFit"
 
@@ -339,8 +340,9 @@ end
     bc = BCPair(Deriv1(deriv_left), Deriv1(deriv_right))
     # Cache uses grid type Tg for matrix structure
     bc_cache = BCPair(Deriv1(zero(Tg)), Deriv1(zero(Tg)))
-    cache = _get_cubic_cache(grid, bc_cache, true)
-    m = acquire!(pool, Tv, n)
+    cache = _get_cubic_cache(grid, bc_cache, _effective_autocache(true, Tg))
+    Tz = _output_eltype(Tv, eltype(cache.x))
+    m = acquire!(pool, Tz, n)
     _solve_system!(m, cache, values, bc)
     _moments_to_derivatives_1d!(deriv, m, values, cache.spacing)
     _apply_derivative_bc!(deriv, bc)
@@ -381,7 +383,7 @@ This enables @simd vectorization over the contiguous dimension.
 @inline function _ldiv_along_dim_vectorized!(
         z::AbstractMatrix{Tv},
         thomas::ThomasFactorization{Tg, V}
-    ) where {Tv, Tg <: AbstractFloat, V <: AbstractVector{Tg}}
+    ) where {Tv, Tg, V <: AbstractVector{Tg}}
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d
@@ -448,7 +450,7 @@ function solve_along_dim!(
         data::AbstractMatrix{Tv},
         bc::BCPair,
         dim::Val{D}
-    ) where {Tv, Tg <: AbstractFloat, X, F, BC_cache, S <: AbstractGridSpacing{Tg}, D}
+    ) where {Tv, Tg, X, F, BC_cache, S <: AbstractGridSpacing{Tg}, D}
     # Step 1: Compute RHS for all systems
     # Note: bc can have different value type than cache.bc_config (e.g., ComplexF64 vs Float64)
     compute_rhs_along_dim!(out_z, data, cache.x, cache.spacing, bc, dim)
@@ -485,7 +487,7 @@ function compute_rhs_along_dim!(
         spacing::AbstractGridSpacing{Tg},
         bc::BCPair,
         ::Val{2}
-    ) where {Tv, Tg <: AbstractFloat}
+    ) where {Tv, Tg}
     n_batch = size(data, 1)
     @inbounds for i in 1:n_batch
         compute_rhs!(view(D, i, :), view(data, i, :), x, spacing, bc)
@@ -519,7 +521,7 @@ function moments_to_derivatives_along_dim!(
         spacing::AbstractGridSpacing{Tg},
         bc,
         ::Val{2}
-    ) where {Tv, Tg <: AbstractFloat}
+    ) where {Tv, Tg}
     n_batch = size(data, 1)
     @inbounds for i in 1:n_batch
         _moments_to_derivatives_1d!(
@@ -570,7 +572,7 @@ Use `compute_rhs!` in a loop for axis 1, or use `Val(2)` for batch computation.
         spacing::AbstractGridSpacing{Tg},
         bc::BCPair,
         ::Val{1}
-    ) where {Tv, Tg <: AbstractFloat}
+    ) where {Tv, Tg}
     throw(
         ArgumentError(
             "Batch RHS computation along axis 1 (Val(1)) is not supported.\n" *

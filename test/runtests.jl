@@ -70,6 +70,7 @@ else
     include("test_quadratic_oneshot_series.jl")
     include("test_cubic_oneshot_series.jl")
     include("test_allocation.jl")
+    include("test_promotion_alloc.jl")
     include("test_random_grid.jl")
     include("test_periodic_bc.jl")
     include("test_periodic_exclusive.jl")

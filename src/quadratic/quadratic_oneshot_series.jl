@@ -32,9 +32,11 @@
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
     Tv_out = _value_type(_series_eltype(s), Tg)
-    output = Vector{_series_output_type(Tv_out, Tq)}(undef, K)
-    d = acquire!(pool, Tv_out, nx)
-    a = acquire!(pool, Tv_out, nx - 1)
+    Tg_actual = eltype(x)
+    Tcoeff = _output_eltype(_series_eltype(s), Tg_actual)
+    output = Vector{_series_output_type(Tcoeff, Tq)}(undef, K)
+    d = acquire!(pool, Tcoeff, nx)
+    a = acquire!(pool, Tcoeff, nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
     @inbounds for k in 1:K
         copyto!(y_buf, 1, vecs[k], 1, nx)
@@ -68,8 +70,10 @@ end
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
     Tv_out = _value_type(_series_eltype(s), Tg)
-    d = acquire!(pool, Tv_out, nx)
-    a = acquire!(pool, Tv_out, nx - 1)
+    Tg_actual = eltype(x)
+    Tcoeff = _output_eltype(_series_eltype(s), Tg_actual)
+    d = acquire!(pool, Tcoeff, nx)
+    a = acquire!(pool, Tcoeff, nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
     @inbounds for k in eachindex(output)
         copyto!(y_buf, 1, vecs[k], 1, nx)
@@ -106,14 +110,17 @@ end
     vecs = _series_vectors(s)
     spacing = _create_spacing_pooled(pool, x)
     Tv_out = _value_type(_series_eltype(s), Tg)
+    Tg_actual = eltype(x)
+    Tcoeff = _output_eltype(_series_eltype(s), Tg_actual)
 
     # Pre-compute anchors once (search Q times, not K×Q)
-    aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg, Tq}, length(xqs))
+    Tq_w = promote_type(Tq, Tg_actual)
+    aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg_actual, Tq_w}, length(xqs))
     searcher = _resolve_search(x, xqs, search, nothing)
     _fill_anchors!(aq_vec, x, xqs, Val(:quadratic), extrap_eff isa WrapExtrap, searcher)
 
-    d = acquire!(pool, Tv_out, nx)
-    a = acquire!(pool, Tv_out, nx - 1)
+    d = acquire!(pool, Tcoeff, nx)
+    a = acquire!(pool, Tcoeff, nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
     @inbounds for k in 1:K
         copyto!(y_buf, 1, vecs[k], 1, nx)
@@ -136,7 +143,8 @@ function quadratic_interp(
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tq <: Real}
     K = n_series(s)
-    Tv_out = _series_output_type(_value_type(_series_eltype(s), Tg), Tq)
+    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
+    Tv_out = _series_output_type(_output_eltype(_series_eltype(s), Tg_float), Tq)
     outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
     quadratic_interp!(outputs, x, s, xqs; bc, extrap, deriv, search)
     return outputs

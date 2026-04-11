@@ -297,7 +297,8 @@ function cubic_interp(
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg,Tq <: Real}
     K = n_series(s)
-    Tv = _series_output_type(_value_type(_series_eltype(s), Tg), Tq)
+    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
+    Tv = _series_output_type(_output_eltype(_series_eltype(s), Tg_float), Tq)
     outputs = [Vector{Tv}(undef, length(xqs)) for _ in 1:K]
     cubic_interp!(outputs, x, s, xqs; bc, extrap, autocache, deriv, search)
     return outputs

@@ -836,6 +836,35 @@ Generates unrolled `(_convert_grid(grids[1], Tg), _convert_grid(grids[2], Tg), .
 end
 
 """
+    _nd_promote_grids(grids, data) -> (grids_typed, Tg, Tv, Tz)
+
+Unified ND type promotion: compute grid type, convert grids, determine value
+and coefficient types in a single call.
+
+Returns:
+- `grids_typed`: grids converted to unified float type
+- `Tg`: promoted grid element type (always a float type; preserves Dual)
+- `Tv`: value type (data eltype promoted to grid precision for standard numerics)
+- `Tz`: coefficient/output type (`data × grid` — equals `Tv` for Float grids, `Dual` for Dual grids)
+
+Callers destructure only what they need:
+```julia
+grids_typed, _, _, _ = _nd_promote_grids(grids, data)   # grid-only (constant/adjoint)
+grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
+```
+"""
+@inline function _nd_promote_grids(
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv_raw, N}
+    ) where {Tv_raw, N}
+    Tg = float(_promote_grid_eltype(grids))
+    grids_typed = _convert_grids_typed(grids, Tg)
+    Tv = _value_type(Tv_raw, Tg)
+    Tz = _output_eltype(Tv, Tg)
+    return grids_typed, Tg, Tv, Tz
+end
+
+"""
     _create_spacings_typed(grids::NTuple{N, AbstractVector}) -> NTuple{N}
 
 Zero-allocation spacing creation from grid tuple.

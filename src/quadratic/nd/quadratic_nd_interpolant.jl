@@ -57,15 +57,8 @@ function quadratic_interp(
         return _build_hetero_nd(grids, data, methods, extrap, search)
     end
 
-    # Zero-allocation type promotion
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-
-    # Zero-allocation grid conversion
-    grids_typed = _convert_grids_typed(grids, Tg)
-
-    # Promote data type (Int→Float64, Complex{T}→Complex{Tg}, custom types preserved)
-    Tv = _value_type(Tv_raw, Tg)
+    # Zero-allocation type promotion and grid conversion
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
     # Validate dimensions

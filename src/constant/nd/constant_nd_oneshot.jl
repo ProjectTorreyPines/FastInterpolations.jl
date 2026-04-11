@@ -132,9 +132,7 @@ function constant_interp(
         return 0 * first(data)
     end
 
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-    grids_typed = _convert_grids_typed(grids, Tg)
+    grids_typed, _, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
@@ -167,9 +165,7 @@ function constant_interp(
         return zeros(Tv, _query_length(queries))
     end
 
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-    grids_typed = _convert_grids_typed(grids, Tg)
+    grids_typed, _, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
@@ -209,9 +205,7 @@ function constant_interp!(
         return output
     end
 
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-    grids_typed = _convert_grids_typed(grids, Tg)
+    grids_typed, _, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))

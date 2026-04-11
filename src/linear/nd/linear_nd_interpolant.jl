@@ -67,18 +67,11 @@ function linear_interp(
     # Validate grid dimensions
     _validate_nd_grids(grids, data)
 
-    # Determine grid type (promote Int → Float64 for consistency with 1D API)
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-
-    # Convert grids to target type (preserving Range structure)
-    grids_typed = _convert_grids_typed(grids, Tg)
+    # Promote grid/data types
+    grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
 
     # Create spacings
     spacings = _create_spacings_typed(grids_typed)
-
-    # Promote data type
-    Tv = _value_type(Tv_raw, Tg)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
     # Resolve per-axis configuration

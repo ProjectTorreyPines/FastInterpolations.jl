@@ -147,9 +147,7 @@ function quadratic_interp(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-    grids_typed = _convert_grids_typed(grids, Tg)
+    grids_typed, Tg, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
     Tr = _output_eltype(Tv, Tg, typeof.(query)...)
 
@@ -190,8 +188,7 @@ function quadratic_interp(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
+    _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
     Tr = _output_eltype(Tv, Tg, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
@@ -223,9 +220,7 @@ function quadratic_interp!(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     _query_check_ndims(queries, Val(N))
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-    grids_typed = _convert_grids_typed(grids, Tg)
+    grids_typed, _, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))

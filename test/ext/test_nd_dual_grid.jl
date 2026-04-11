@@ -394,18 +394,24 @@ end
 
     @testset "HeteroInterpolantND OnTheFly — Dual grid construct + eval" begin
         d = ForwardDiff.Dual{:tag}(1.0, 1.0)
-        itp = interp((d .* xv_base, d .* yv_base), data_2d;
-            method = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap())
+        itp = interp(
+            (d .* xv_base, d .* yv_base), data_2d;
+            method = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap()
+        )
         v = itp(q_2d)
-        itp_f = interp((xv_base, yv_base), data_2d;
-            method = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap())
+        itp_f = interp(
+            (xv_base, yv_base), data_2d;
+            method = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap()
+        )
         @test ForwardDiff.value(v) ≈ itp_f(q_2d)
     end
 
     @testset "HeteroInterpolantND OnTheFly — ForwardDiff.derivative" begin
         f_interp = t -> begin
-            itp = interp((t .* xv_base, t .* yv_base), data_2d;
-                method = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap())
+            itp = interp(
+                (t .* xv_base, t .* yv_base), data_2d;
+                method = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap()
+            )
             itp(q_2d)
         end
         ad_val = ForwardDiff.derivative(f_interp, 1.0)
@@ -415,13 +421,17 @@ end
 
     @testset "HeteroInterpolantND PreCompute — Dual grid construct + eval" begin
         d = ForwardDiff.Dual{:tag}(1.0, 1.0)
-        itp = interp((d .* xv_base, d .* yv_base), data_2d;
+        itp = interp(
+            (d .* xv_base, d .* yv_base), data_2d;
             method = (CubicInterp(), LinearInterp()), coeffs = PreCompute(),
-            extrap = ExtendExtrap())
+            extrap = ExtendExtrap()
+        )
         v = itp(q_2d)
-        itp_f = interp((xv_base, yv_base), data_2d;
+        itp_f = interp(
+            (xv_base, yv_base), data_2d;
             method = (CubicInterp(), LinearInterp()), coeffs = PreCompute(),
-            extrap = ExtendExtrap())
+            extrap = ExtendExtrap()
+        )
         @test ForwardDiff.value(v) ≈ itp_f(q_2d)
     end
 
@@ -610,8 +620,10 @@ end
 
     @testset "HeteroAdjointND (Cubic × Linear) — adjoint identity" begin
         f_adj = t -> begin
-            adj = hetero_adjoint((t .* xv_base, t .* yv_base), q_2d;
-                methods = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap())
+            adj = hetero_adjoint(
+                (t .* xv_base, t .* yv_base), q_2d;
+                methods = (CubicInterp(), LinearInterp()), extrap = ExtendExtrap()
+            )
             sum(adj(1.0) .* data_2d)
         end
         f_fwd = t -> interp(

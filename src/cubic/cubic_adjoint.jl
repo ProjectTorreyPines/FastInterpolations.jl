@@ -440,12 +440,7 @@ function cubic_adjoint(
         autocache::Bool = true,
         _extra...
     )
-    # Promote grid to float (handles Integer, Rational, duck-typed)
-    Tg = _promote_grid_float(eltype(x), eltype(x_query))
-    x_p = _to_float(x, Tg)
-    # Query normalization: keep queries as plain Float when grid is duck-typed
-    Tq_float = Tg <: AbstractFloat ? Tg : float(eltype(x_query))
-    xq_p = _to_float(x_query, Tq_float)
+    x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
 
     # Periodic path (Sherman-Morrison adjoint)
     if _is_periodic_bc(bc)

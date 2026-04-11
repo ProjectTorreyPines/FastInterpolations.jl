@@ -84,11 +84,12 @@ mutable struct CubicSeriesInterpolant{
         B,
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
+        Tz,
     } <: AbstractSeriesInterpolant{Tg, Tv}
     const cache::C                    # Shared cache with LU factorization
     const bc_for_solve::B             # BC config for solving
     const y::Matrix{Tv}               # Series-contiguous y (n_points × n_series)
-    const z::Matrix{Tv}               # Series-contiguous z (n_points × n_series)
+    const z::Matrix{Tz}               # Series-contiguous z: Tz = _output_eltype(Tv, Tg)
     const _transpose::LazyTransposePair{Tv}  # Lazy point-contiguous layout (shared infra)
     const extrap::E                   # Extrapolation mode (compile-time specialized)
     const search_policy::P            # Default search policy (immutable, thread-safe)
@@ -97,12 +98,13 @@ mutable struct CubicSeriesInterpolant{
             cache::C,
             bc_for_solve::B,
             y::Matrix{Tv},
-            z::Matrix{Tv},
+            z::Matrix,
             extrap::E,
             search::P = AutoSearch()
         ) where {Tg, Tv, C <: CubicSplineCache{Tg}, B, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+        Tz = eltype(z)
         # y/z are NOT copied here — factory function provides owned matrices.
-        return new{Tg, Tv, C, B, E, P}(
+        return new{Tg, Tv, C, B, E, P, Tz}(
             cache, bc_for_solve, y, z,
             LazyTransposePair{Tv}(),
             extrap, search
@@ -498,11 +500,11 @@ end
 Solve cubic spline systems for all series using shared LU factorization.
 """
 @with_pool pool function _solve_series_coefficients!(
-        z_mat::Matrix{Tv},
+        z_mat::Matrix{Tz},
         y_mat::Matrix{Tv},
         cache::CubicSplineCache{Tg},
         bc_for_solve
-    ) where {Tg, Tv}
+    ) where {Tz, Tv, Tg}
     n_series_count = size(y_mat, 2)
 
     # Solve each series column
@@ -528,13 +530,13 @@ Groups series by BC type for cache efficiency.
 - `autocache`: Whether to use cache pool
 """
 @with_pool pool function _solve_series_with_bc_array!(
-        z_mat::Matrix{Tv},
+        z_mat::Matrix{Tz},
         y_mat::Matrix{Tv},
         x::AbstractVector{Tg},
         bc_cache_array::AbstractVector{<:BCPair},
         bc_solve_array::AbstractVector{<:BCPair},
         autocache::Bool
-    ) where {Tg, Tv}
+    ) where {Tz, Tv, Tg}
     n_series = size(y_mat, 2)
 
     # Group series by BC type for cache reuse (using Tg-typed BCs for matrix structure)
@@ -643,7 +645,9 @@ function cubic_interp(
     end
 
     # Build z matrix by solving tridiagonal systems
-    z_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
+    # z coefficients mix y (Tv_out) with grid spacing (Tg) → Dual when grid is Dual
+    Tz = _output_eltype(Tv_out, Tg)
+    z_mat = Matrix{Tz}(undef, n_pts, n_ser)
 
     if bc isa AbstractVector
         # Per-series BC array: Tg-typed for cache matrix, Tv-typed for RHS
@@ -703,8 +707,9 @@ function _build_series_periodic(
     # Get periodic cache
     cache = _get_cubic_cache(x, PeriodicBC(), _effective_autocache(autocache, eltype(x)))
 
-    # Build z matrix
-    z_mat = Matrix{Tv}(undef, n_pts, n_series_count)
+    # Build z matrix (Dual when grid is Dual)
+    Tz = _output_eltype(Tv, eltype(cache.x))
+    z_mat = Matrix{Tz}(undef, n_pts, n_series_count)
     _solve_series_coefficients!(z_mat, y_mat, cache, cache.bc_config)
 
     # Periodic BC always uses wrap extrapolation
@@ -858,9 +863,9 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
         end
     end
 
-    # Build anchors - pool handles both Tq===Tg and mixed-type cases
-    # Each unique type combination gets its own pool slot
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg, Tq}, n_query)
+    # Build anchors — Tq widens via promote_type (Float32 on Float64 grid → Float64)
+    Tq_w = promote_type(Tq, Tg)
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg, Tq_w}, n_query)
     searcher = _resolve_search(sitp.cache.x, xq, search, hint)
     _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic), _should_wrap(sitp), searcher)
 

@@ -30,8 +30,9 @@
     aq = _anchor_query(cache.x, xq, Val(:cubic), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     Tv_out = _value_type(_series_eltype(s), Tg)
+    Tz = _output_eltype(_series_eltype(s), eltype(cache.x))
     n = length(first(vecs))
-    z = acquire!(pool, Tv_out, n)
+    z = acquire!(pool, Tz, n)
     y_buf = acquire!(pool, Tv_out, n)
     @inbounds for k in eachindex(output)
         copyto!(y_buf, 1, vecs[k], 1, n)
@@ -120,7 +121,9 @@ end
     n_p = length(y_p_first)
 
     # Pre-compute anchors on the extended (inclusive) grid — once for all series
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg, Tq}, length(xqs))
+    # Tq widens when grid is Dual: promote_type(Float64, Dual) = Dual
+    Tq_w = promote_type(Tq, eltype(cache.x))
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{eltype(cache.x), Tq_w}, length(xqs))
     searcher = _resolve_search(cache.x, xqs, search, nothing)
     _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), true, searcher)
 
@@ -184,7 +187,8 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     K = n_series(s)
-    output = Vector{_series_output_type(_value_type(_series_eltype(s), Tg), Tq)}(undef, K)
+    Tg_actual = eltype(x)
+    output = Vector{_series_output_type(_output_eltype(_series_eltype(s), Tg_actual), Tq)}(undef, K)
     searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
@@ -260,11 +264,13 @@ end
     cache = _get_cubic_cache(x, bc_pair, _effective_autocache(autocache, Tg))
 
     # Pre-compute anchors once (search Q times, not K×Q)
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg, Tq}, length(xqs))
+    Tq_w = promote_type(Tq, eltype(cache.x))
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{eltype(cache.x), Tq_w}, length(xqs))
     searcher = _resolve_search(cache.x, xqs, search, nothing)
     _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), extrap_eff isa WrapExtrap, searcher)
 
-    z = acquire!(pool, Tv_out, n)
+    Tz = _output_eltype(_series_eltype(s), eltype(cache.x))
+    z = acquire!(pool, Tz, n)
     y_buf = acquire!(pool, Tv_out, n)
 
     # Solve z for series k, then eval at all query points before moving to k+1.

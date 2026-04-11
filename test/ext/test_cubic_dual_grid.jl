@@ -169,12 +169,21 @@ const FI = FastInterpolations
     # ║           Series with Dual grid                                          ║
     # ╚═══════════════════════════════════════════════════════════════════════╝
 
-    # NOTE: Cubic Series + Dual grid and Cubic ND + Dual grid require deeper
-    # changes in the anchor/tensor-product infrastructure (_promote_for_anchor,
-    # vector anchor T(xq[k]) conversion). Deferred to a follow-up PR.
-    # The constraint relaxation in cubic_oneshot_series.jl and cubic_nd_*.jl
-    # is still correct — it enables the Float hot path to coexist with
-    # future Dual support without regressions.
+    @testset "cubic Series — Dual grid scalar" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        xd = d .* x_base
+        y1 = sin.(x_base)
+        y2 = cos.(x_base)
+
+        vals = cubic_interp(xd, Series(y1, y2), xq_scalar; extrap=ExtendExtrap())
+        ref1 = cubic_interp(xd, y1, xq_scalar; extrap=ExtendExtrap())
+        ref2 = cubic_interp(xd, y2, xq_scalar; extrap=ExtendExtrap())
+        @test vals[1] ≈ ref1
+        @test vals[2] ≈ ref2
+    end
+
+    # NOTE: Series interpolant (2-arg form) with Dual grid needs LazyTransposePair
+    # to support Tz≠Tv. Deferred — scalar/vector oneshot Series paths work.
 
     # ╔═══════════════════════════════════════════════════════════════════════╗
     # ║           Float path — zero-alloc regression gate                        ║

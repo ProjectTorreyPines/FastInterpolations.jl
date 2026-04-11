@@ -353,8 +353,8 @@ end
         ops::NTuple{N, AbstractEvalOp},
     ) where {Tg, Tv, N, G, S, M, E, P}
     data, grids, methods, extraps, q_eval, searches, hints, windows = cell
-    # Tr promotes data eltype with query eltypes → Dual-safe pool buffers for AD.
-    Tr = _promote_query_eltype(Tv, q_eval)
+    # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
+    Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
     return _collapse_dims(Tr, data, grids, methods, extraps, q_eval, ops, searches, hints, windows)
 end
 

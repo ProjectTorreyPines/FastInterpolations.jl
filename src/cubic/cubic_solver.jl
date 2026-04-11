@@ -222,12 +222,13 @@ end
 # ----------------------------------------
 # All helpers now accept x parameter for consistency; existing BCs ignore it.
 # CubicFit (PolyFit{3}) uses x to compute endpoint derivatives from data.
-# Tg = grid type (x, spacing), Tv = value type (y, d, bc.val)
+# Tg = grid type (x, spacing). d (RHS buffer) may have wider eltype than y
+# when grid is duck-typed (e.g. Dual): d = _output_eltype(Tv, Tg).
 
 # First element - Deriv2: d[1] = bc.val (second derivative value)
 @inline function _compute_rhs_first!(
         d::AbstractVector, bc::Deriv2, ::AbstractVector, ::AbstractVector{Tg}, ::AbstractGridSpacing{Tg}
-    ) where {Tg,Tv}
+    ) where {Tg}
     d[1] = convert(eltype(d), bc.val)
     return nothing
 end
@@ -235,7 +236,7 @@ end
 # First element - Deriv1: d[1] = 6[(y₂-y₁)/h₁ - S'(x₁)]
 @inline function _compute_rhs_first!(
         d::AbstractVector, bc::Deriv1, y::AbstractVector, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
-    ) where {Tg,Tv}
+    ) where {Tg}
     d[1] = 6 * ((y[2] - y[1]) * _get_inv_h(spacing, 1) - convert(eltype(d), bc.val))
     return nothing
 end
@@ -243,7 +244,7 @@ end
 # Last element - Deriv2: d[end] = bc.val (second derivative value)
 @inline function _compute_rhs_last!(
         d::AbstractVector, bc::Deriv2, ::AbstractVector, ::AbstractVector{Tg}, ::AbstractGridSpacing{Tg}
-    ) where {Tg,Tv}
+    ) where {Tg}
     d[end] = convert(eltype(d), bc.val)
     return nothing
 end
@@ -251,7 +252,7 @@ end
 # Last element - Deriv1: d[end] = 6[S'(x_end) - (y_end - y_{end-1}) / h_end]
 @inline function _compute_rhs_last!(
         d::AbstractVector, bc::Deriv1, y::AbstractVector, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
-    ) where {Tg,Tv}
+    ) where {Tg}
     n = length(y) - 1
     d[end] = 6 * (convert(eltype(d), bc.val) - (y[end] - y[end - 1]) * _get_inv_h(spacing, n))
     return nothing
@@ -260,7 +261,7 @@ end
 # First element - Deriv3: d[1] = h[1] * bc.val (from -z[1] + z[2] = h[1] * val)
 @inline function _compute_rhs_first!(
         d::AbstractVector, bc::Deriv3, ::AbstractVector, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
-    ) where {Tg,Tv}
+    ) where {Tg}
     d[1] = _get_h(spacing, 1) * convert(eltype(d), bc.val)
     return nothing
 end
@@ -268,7 +269,7 @@ end
 # Last element - Deriv3: d[end] = h[n] * bc.val (from -z[n] + z[n+1] = h[n] * val)
 @inline function _compute_rhs_last!(
         d::AbstractVector, bc::Deriv3, ::AbstractVector, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
-    ) where {Tg,Tv}
+    ) where {Tg}
     n = length(d) - 1
     d[end] = _get_h(spacing, n) * convert(eltype(d), bc.val)
     return nothing
@@ -278,7 +279,7 @@ end
 # Supports all polynomial degrees: LinearFit (D=1), QuadraticFit (D=2), CubicFit (D=3), etc.
 @inline function _compute_rhs_first!(
         d::AbstractVector, bc::PolyFit{D}, y::AbstractVector, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
-    ) where {D, Tg,Tv}
+    ) where {D, Tg}
     # Materialize PolyFit{D} → Deriv1 using estimated derivative
     concrete_bc = materialize_bc(bc, x, y, LeftSide())
     # Delegate to existing Deriv1 code path
@@ -289,7 +290,7 @@ end
 # Last element - Generic PolyFit{D}: materialize to Deriv1, then delegate
 @inline function _compute_rhs_last!(
         d::AbstractVector, bc::PolyFit{D}, y::AbstractVector, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
-    ) where {D, Tg,Tv}
+    ) where {D, Tg}
     # Materialize PolyFit{D} → Deriv1 using estimated derivative
     concrete_bc = materialize_bc(bc, x, y, RightSide())
     # Delegate to existing Deriv1 code path
@@ -426,16 +427,15 @@ Thread-safe: workspaces allocated from task-local pool.
 Tg = grid type, Tv = value type (can be Complex)
 """
 @inline @with_pool pool function _solve_system!(
-        out_z::AbstractVector,
+        out_z::AbstractVector{Tz},
         cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
         y::AbstractVector,
         ::PeriodicData{Tg}  # Unused, for API consistency with BCPair version
-    ) where {Tg, X, F, S <: AbstractGridSpacing{Tg}}
+    ) where {Tz, Tg, X, F, S <: AbstractGridSpacing{Tg}}
     n = length(y) - 1
 
     # Periodic workspaces need n elements (NOT length(y)!)
     # Use pool allocation for zero-allocation hot path
-    Tz = eltype(out_z)
     y_temp = acquire!(pool, Tz, n)
 
     _solve_cubic_system_periodic!(out_z, y_temp, cache, y)

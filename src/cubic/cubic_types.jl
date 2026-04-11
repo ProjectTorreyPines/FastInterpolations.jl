@@ -36,7 +36,7 @@ end
 Cache structure for cubic spline interpolation with reusable Thomas factorization.
 
 # Type Parameters
-- `T`: Float type (Float32 or Float64)
+- `T`: Grid element type (Float32, Float64, or duck-typed e.g. ForwardDiff.Dual)
 - `X`: Grid type (Vector{T} or AbstractRange{T})
 - `F`: Factorization type (ThomasFactorization{T,V})
 - `BC`: Boundary condition data type (BCPair{L,R} for derivative BC, PeriodicData{T} for periodic)
@@ -106,17 +106,18 @@ Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `cubic_interp(x, y)` (2-argument form).
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type (Float32 or Float64) for x-coordinates
+- `Tg`: Grid element type (Float32, Float64, or duck-typed e.g. ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)
 - `C`: CubicSplineCache type (preserves grid type info for O(1) vs O(log n) lookup)
 - `E`: Extrapolation mode type (compile-time specialized)
 - `P`: Search policy type (AutoSearch, BinarySearch, LinearBinarySearch, etc.)
 - `BC`: Boundary condition type (BCPair or PeriodicBC)
+- `Tz`: Element type of z coefficients (`= _output_eltype(Tv, Tg)` — Dual when grid is Dual)
 
 # Fields
 - `cache::C`: Pre-computed CubicSplineCache (LU factorization)
 - `y::Vector{Tv}`: y-values (function values at grid points)
-- `z::Vector{Tv}`: Pre-computed second derivative coefficients (solves system once!)
+- `z::Vector{Tz}`: Pre-computed second derivative coefficients (solves system once!)
 - `bc::BC`: Boundary condition used for this interpolant
 - `extrap::E`: Extrapolation mode (compile-time specialized via type parameter)
 - `search_policy::P`: Default search policy for interval lookup

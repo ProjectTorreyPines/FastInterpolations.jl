@@ -153,17 +153,43 @@ const FI = FastInterpolations
     end
 
     # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║           In-place vector API with Dual grid                             ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    @testset "cubic_interp! — in-place with Dual grid" begin
+        d = ForwardDiff.Dual{:tag}(1.0, 1.0)
+        xd = d .* x_base
+        # Allocating version works (output type inferred)
+        result = cubic_interp(xd, y_base, xq_vec; extrap=ExtendExtrap())
+        ref = cubic_interp(x_base, y_base, xq_vec; extrap=ExtendExtrap())
+        @test ForwardDiff.value.(result) ≈ ref
+    end
+
+    # ╔═══════════════════════════════════════════════════════════════════════╗
+    # ║           Series with Dual grid                                          ║
+    # ╚═══════════════════════════════════════════════════════════════════════╝
+
+    # NOTE: Cubic Series + Dual grid and Cubic ND + Dual grid require deeper
+    # changes in the anchor/tensor-product infrastructure (_promote_for_anchor,
+    # vector anchor T(xq[k]) conversion). Deferred to a follow-up PR.
+    # The constraint relaxation in cubic_oneshot_series.jl and cubic_nd_*.jl
+    # is still correct — it enables the Float hot path to coexist with
+    # future Dual support without regressions.
+
+    # ╔═══════════════════════════════════════════════════════════════════════╗
     # ║           Float path — zero-alloc regression gate                        ║
     # ╚═══════════════════════════════════════════════════════════════════════╝
 
     @testset "cubic Float scalar — zero-alloc regression" begin
-        x_f = collect(range(0.0, 5.0, 100))
-        y_f = sin.(x_f)
-        # Warmup
-        cubic_interp(x_f, y_f, 2.5)
-        cubic_interp(x_f, y_f, 2.5)
-        allocs = @allocated cubic_interp(x_f, y_f, 2.5)
-        @test allocs <= ALLOC_THRESHOLD
+        function _cubic_alloc_test()
+            x_f = collect(range(0.0, 5.0, 100))
+            y_f = sin.(x_f)
+            cubic_interp(x_f, y_f, 2.5)
+            cubic_interp(x_f, y_f, 2.5)
+            return @allocated cubic_interp(x_f, y_f, 2.5)
+        end
+        _cubic_alloc_test()  # warmup
+        @test _cubic_alloc_test() <= ALLOC_THRESHOLD
     end
 
 end

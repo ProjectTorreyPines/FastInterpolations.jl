@@ -475,8 +475,7 @@ function _interp_nointerp_oneshot(
     # All-GridIdx edge case: pure table lookup (or zero if any deriv requested)
     if grids_r === ()
         if _any_nointerp_grididx_has_nonzero_deriv(query, method_tuple, deriv_t)
-            Tg = _promote_grid_eltype(grids)
-            Tg = Tg <: AbstractFloat ? Tg : Float64
+            Tg = float(_promote_grid_eltype(grids))
             return zero(_output_eltype(eltype(data), Tg))
         end
         return data_r[]
@@ -490,8 +489,7 @@ function _interp_nointerp_oneshot(
 
     # Check if any GridIdx axis has non-zero deriv → return zero (with promoted type)
     if _any_nointerp_grididx_has_nonzero_deriv(query, method_tuple, deriv_t)
-        Tg = _promote_grid_eltype(grids)
-        Tg = Tg <: AbstractFloat ? Tg : Float64
+        Tg = float(_promote_grid_eltype(grids))
         return zero(_output_eltype(eltype(data), Tg, typeof.(query_r)...))
     end
 

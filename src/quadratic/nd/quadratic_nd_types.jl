@@ -5,7 +5,7 @@
 # Generic N-dimensional type definitions for quadratic interpolation.
 #
 # Type Parameters Convention:
-# - Tg: Grid/coordinate type (AbstractFloat) - used for x/y/z coordinates, spacing
+# - Tg: Grid/coordinate type (unconstrained) - used for x/y/z coordinates, spacing
 # - Tv: Value type - used for data values, coefficients (can be Complex{Tg}, Dual, etc.)
 # - N:  Number of dimensions
 #

@@ -36,7 +36,7 @@ This approach is truly N-D generic because:
 - Axis 3 (after): flattened indices for dims d+1 to N
 
 # Type Parameters
-- `Tg`: Grid type (AbstractFloat) for coordinates
+- `Tg`: Grid type (unconstrained) for coordinates
 - `Tv`: Value type for data (unconstrained)
 
 # Arguments
@@ -125,7 +125,7 @@ Uses the same reshape trick but when `shape_before > 1`, processes all "before"
 slices simultaneously using the batch solver from 2D implementation.
 
 # Type Parameters
-- `Tg`: Grid type (AbstractFloat) for coordinates
+- `Tg`: Grid type (unconstrained) for coordinates
 - `Tv`: Value type for data (unconstrained)
 
 # Performance Characteristics
@@ -490,7 +490,7 @@ Uses the **bit-encoding build-up algorithm**:
 - Higher-order partials are built stage-by-stage from lower-order ones
 
 # Type Parameters
-- `Tg`: Grid type (AbstractFloat) for coordinates
+- `Tg`: Grid type (unconstrained) for coordinates
 - `Tv`: Value type for data (unconstrained)
 
 # Algorithm
@@ -566,7 +566,7 @@ end
 Compute all partial derivatives for N-dimensional Hermite interpolation.
 
 # Type Parameters
-- `Tg`: Grid type (AbstractFloat) for coordinates
+- `Tg`: Grid type (unconstrained) for coordinates
 - `Tv`: Value type for data (unconstrained)
 
 # Arguments

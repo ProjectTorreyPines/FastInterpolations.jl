@@ -34,7 +34,7 @@ Create an N-dimensional cubic Hermite interpolant from grid vectors and data arr
 - `CubicInterpolantND{Tg, Tv, N, ...}`: Callable interpolant object
 
 # Type Inference
-- Grid type `Tg`: Promoted from all grid element types (always AbstractFloat)
+- Grid type `Tg`: Promoted from all grid element types (supports duck types like ForwardDiff.Dual)
 - Value type `Tv`: Element type of data (unconstrained)
 
 # Examples

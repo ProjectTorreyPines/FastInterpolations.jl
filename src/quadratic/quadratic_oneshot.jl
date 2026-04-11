@@ -151,10 +151,10 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     # spacing is pooled (zero-alloc for Range, pool-acquired for Vector)
     nx = length(x)
     spacing = _create_spacing_pooled(pool, x)
-    Tcoeff = _output_eltype(eltype(y), Tg_actual)
+    Tcoeff = _output_eltype(eltype(y), eltype(x))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
-    bc_promoted = _normalize_bc(bc, first(y))
+    bc_promoted = _normalize_bc(bc, _value_type(Tv, eltype(x)))
     _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
 
     searcher = _resolve_search(x, xq, search, hint)
@@ -202,21 +202,18 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert length(x) >= 2 "x must have at least 2 elements"
 
-    x = _to_float(x, _promote_grid_float(Tg, Tv))
-    Tg_actual = eltype(x)
-    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
-    xq_p = _to_float(x_targets, Tq_float)
+    x = _promote_grid_only(x, y)
     # Compute coefficients using temporary arrays from pool
     nx = length(x)
     spacing = _create_spacing_pooled(pool, x)
-    Tcoeff = _output_eltype(eltype(y), Tg_actual)
+    Tcoeff = _output_eltype(eltype(y), eltype(x))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
-    bc_promoted = _normalize_bc(bc, first(y))
+    bc_promoted = _normalize_bc(bc, _value_type(Tv, eltype(x)))
     _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
 
-    searcher = _resolve_search(x, xq_p, search, nothing)
-    _quadratic_vector_loop!(output, x, y, a, d, xq_p, extrap, deriv, searcher)
+    searcher = _resolve_search(x, x_targets, search, nothing)
+    _quadratic_vector_loop!(output, x, y, a, d, x_targets, extrap, deriv, searcher)
     return output
 end
 

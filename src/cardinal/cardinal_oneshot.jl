@@ -169,15 +169,12 @@ In-place cardinal spline interpolation.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x, y = _promote_itp_inputs(x, y)
-    Tg_actual = eltype(x)
-    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
-    xq_p = _to_float(x_query, Tq_float)
-    resolved = _resolve_coeffs(coeffs, x, xq_p)
+    x = _promote_grid_only(x, y)
+    resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly
-        return _cardinal_interp_onthefly!(output, x, y, xq_p, Tg_actual(tension), extrap, deriv, search, hint)
+        return _cardinal_interp_onthefly!(output, x, y, x_query, eltype(x)(tension), extrap, deriv, search, hint)
     end
-    return _cardinal_interp_precompute!(output, x, y, xq_p, Tg_actual(tension), extrap, deriv, search, hint)
+    return _cardinal_interp_precompute!(output, x, y, x_query, eltype(x)(tension), extrap, deriv, search, hint)
 end
 
 """
@@ -197,10 +194,8 @@ function cardinal_interp(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x, y = _promote_itp_inputs(x, y)
-    Tg_actual = eltype(x)
-    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
-    xq_p = _to_float(x_query, Tq_float)
-    Tr = _output_eltype(eltype(y), Tg_actual, Tq)
+    xq_p = _promote_query_typed(x_query, eltype(x))
+    Tr = _output_eltype(eltype(y), eltype(x), Tq)
     output = Vector{Tr}(undef, length(xq_p))
     cardinal_interp!(output, x, y, xq_p; coeffs = coeffs, tension = tension, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output

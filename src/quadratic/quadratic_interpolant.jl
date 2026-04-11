@@ -113,7 +113,7 @@ end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     x_p = _promote_grid_only(x, y)
-    bc_p = _normalize_bc(bc, first(y))
+    bc_p = _normalize_bc(bc, _value_type(TY, eltype(x_p)))
 
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
     validate_polyfit_points(bc_p, length(x_p))

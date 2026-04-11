@@ -207,9 +207,9 @@ function constant_interp!(
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
-    searcher = _resolve_search(x_typed, xq_typed, search, nothing)
-    _constant_vector_loop!(output, x_typed, y_typed, xq_typed, extrap, side, deriv, searcher)
+    x_typed = _promote_grid_only(x, y)
+    searcher = _resolve_search(x_typed, x_targets, search, nothing)
+    _constant_vector_loop!(output, x_typed, y, x_targets, extrap, side, deriv, searcher)
     return output
 end
 

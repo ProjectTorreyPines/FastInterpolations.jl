@@ -435,8 +435,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
     # Normalize queries to the grid's base float type (not Tg itself, which may be Dual)
-    Tg_float = Tg <: AbstractFloat ? Tg : float(Tq)
-    xq_typed = _to_float(xq, Tg_float)
+    xq_typed = _promote_query_typed(xq, Tg)
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
 
@@ -471,8 +470,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P}
     # Normalize queries to the grid's base float type (not Tg itself, which may be Dual)
-    Tg_float = Tg <: AbstractFloat ? Tg : float(eltype(xq))
-    xq_typed = _to_float(xq, Tg_float)
+    xq_typed = _promote_query_typed(xq, Tg)
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
 

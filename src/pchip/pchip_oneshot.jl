@@ -161,15 +161,12 @@ In-place PCHIP interpolation with monotone-preserving slopes.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x, y = _promote_itp_inputs(x, y)
-    Tg_actual = eltype(x)
-    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
-    xq_p = _to_float(x_query, Tq_float)
-    resolved = _resolve_coeffs(coeffs, x, xq_p)
+    x = _promote_grid_only(x, y)
+    resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly
-        return _pchip_interp_onthefly!(output, x, y, xq_p, extrap, deriv, search, hint)
+        return _pchip_interp_onthefly!(output, x, y, x_query, extrap, deriv, search, hint)
     end
-    return _pchip_interp_precompute!(output, x, y, xq_p, extrap, deriv, search, hint)
+    return _pchip_interp_precompute!(output, x, y, x_query, extrap, deriv, search, hint)
 end
 
 """
@@ -188,10 +185,8 @@ function pchip_interp(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x, y = _promote_itp_inputs(x, y)
-    Tg_actual = eltype(x)
-    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
-    xq_p = _to_float(x_query, Tq_float)
-    Tr = _output_eltype(eltype(y), Tg_actual, Tq)
+    xq_p = _promote_query_typed(x_query, eltype(x))
+    Tr = _output_eltype(eltype(y), eltype(x), Tq)
     output = Vector{Tr}(undef, length(xq_p))
     pchip_interp!(output, x, y, xq_p; coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output

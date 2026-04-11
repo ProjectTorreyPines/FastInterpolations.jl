@@ -39,7 +39,7 @@ Compute secant slopes: s[i] = (y[i+1] - y[i]) * inv_h[i]
 - `y::AbstractVector`: Values at grid points (length n)
 - `spacing::AbstractGridSpacing{Tg}`: Grid spacing (ScalarSpacing or VectorSpacing)
 """
-@inline function _compute_quadratic_secants!(s::AbstractVector, y::AbstractVector, spacing::AbstractGridSpacing)
+@inline function _compute_quadratic_secants!(s::AbstractVector{Tc}, y::AbstractVector, spacing::AbstractGridSpacing{Tg}) where {Tc, Tg}
     n = length(y) - 1
     @inbounds for i in 1:n
         s[i] = (y[i + 1] - y[i]) * _get_inv_h(spacing, i)  # Tv * Tg → Tv
@@ -62,7 +62,7 @@ d[i+1] = 2*s[i] - d[i]
 - `s::AbstractVector`: Secant slopes (length n-1)
 - `d1`: Initial slope d[1]
 """
-@inline function _forward_recurrence!(d::AbstractVector, s::AbstractVector, d1)
+@inline function _forward_recurrence!(d::AbstractVector{Tc}, s::AbstractVector{Tc}, d1) where {Tc}
     d[1] = d1
     n = length(d)
     @inbounds for i in 1:(n - 1)
@@ -82,7 +82,7 @@ d[i] = 2*s[i] - d[i+1]
 - `s::AbstractVector`: Secant slopes (length n-1)
 - `dn`: Final slope d[n]
 """
-@inline function _backward_recurrence!(d::AbstractVector, s::AbstractVector, dn)
+@inline function _backward_recurrence!(d::AbstractVector{Tc}, s::AbstractVector{Tc}, dn) where {Tc}
     n = length(d)
     d[n] = dn
     @inbounds for i in (n - 1):-1:1
@@ -113,39 +113,39 @@ derivatives from data. For other BC types, they are ignored.
 # Left(Deriv1): d[1] given directly, forward recurrence
 # convert() is a no-op when types match (optimized away at compile time)
 @inline function _fill_slopes!(
-        d::AbstractVector, s::AbstractVector, spacing::AbstractGridSpacing{Tg},
+        d::AbstractVector{Tc}, s::AbstractVector{Tc}, spacing::AbstractGridSpacing{Tg},
         bc::Left{<:Deriv1}, ::AbstractVector{Tg}, ::AbstractVector
-    ) where {Tg}
-    d1 = convert(eltype(d), bc.bc.val)
+    ) where {Tc, Tg}
+    d1 = convert(Tc, bc.bc.val)
     return _forward_recurrence!(d, s, d1)
 end
 
 # Left(Deriv2): d[1] = s[1] - (κ/2)*h[1], forward recurrence
 @inline function _fill_slopes!(
-        d::AbstractVector, s::AbstractVector, spacing::AbstractGridSpacing{Tg},
+        d::AbstractVector{Tc}, s::AbstractVector{Tc}, spacing::AbstractGridSpacing{Tg},
         bc::Left{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector
-    ) where {Tg}
-    κ = convert(eltype(d), bc.bc.val)
+    ) where {Tc, Tg}
+    κ = convert(Tc, bc.bc.val)
     d1 = s[1] - κ * (_get_h(spacing, 1) / 2)  # Tv - Tv*Tg → Tv (no /(Tv,Int) needed)
     return _forward_recurrence!(d, s, d1)
 end
 
 # Right(Deriv1): d[n] given directly, backward recurrence
 @inline function _fill_slopes!(
-        d::AbstractVector, s::AbstractVector, spacing::AbstractGridSpacing{Tg},
+        d::AbstractVector{Tc}, s::AbstractVector{Tc}, spacing::AbstractGridSpacing{Tg},
         bc::Right{<:Deriv1}, ::AbstractVector{Tg}, ::AbstractVector
-    ) where {Tg}
-    dn = convert(eltype(d), bc.bc.val)
+    ) where {Tc, Tg}
+    dn = convert(Tc, bc.bc.val)
     return _backward_recurrence!(d, s, dn)
 end
 
 # Right(Deriv2): compute d[n] from curvature, backward recurrence
 # d[n] = s[n-1] + (κ/2)*h[n-1]  (derived from a[n-1] = κ/2)
 @inline function _fill_slopes!(
-        d::AbstractVector, s::AbstractVector, spacing::AbstractGridSpacing{Tg},
+        d::AbstractVector{Tc}, s::AbstractVector{Tc}, spacing::AbstractGridSpacing{Tg},
         bc::Right{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector
-    ) where {Tg}
-    κ = convert(eltype(d), bc.bc.val)
+    ) where {Tc, Tg}
+    κ = convert(Tc, bc.bc.val)
     n_intervals = length(s)
     dn = s[end] + κ * (_get_h(spacing, n_intervals) / 2)  # Tv + Tv*Tg → Tv (no /(Tv,Int) needed)
     return _backward_recurrence!(d, s, dn)
@@ -174,9 +174,9 @@ element-wise on real and imaginary parts.
 O(n) time, O(1) extra space (on-the-fly β computation).
 """
 @inline function _fill_slopes!(
-        d::AbstractVector, s::AbstractVector, spacing::AbstractGridSpacing{Tg},
+        d::AbstractVector{Tc}, s::AbstractVector{Tc}, spacing::AbstractGridSpacing{Tg},
         ::MinCurvFit, ::AbstractVector{Tg}, ::AbstractVector
-    ) where {Tg}
+    ) where {Tc, Tg}
     n = length(d)
     n_intervals = n - 1  # = length(s)
 
@@ -236,9 +236,9 @@ QuadraticFit (D=2), CubicFit (D=3), etc.
 For Complex y values, materialize_bc returns Deriv1{ComplexF64} naturally.
 """
 @inline function _fill_slopes!(
-        d::AbstractVector, s::AbstractVector, ::AbstractGridSpacing{Tg},
+        d::AbstractVector{Tc}, s::AbstractVector{Tc}, ::AbstractGridSpacing{Tg},
         bc::Left{PolyFit{D}}, x::AbstractVector{Tg}, y::AbstractVector
-    ) where {D, Tg}
+    ) where {D, Tc, Tg}
     # Materialize PolyFit{D} → Deriv1{Tv} using estimated derivative
     concrete_bc = materialize_bc(bc.bc, x, y, LeftSide())
     d1 = concrete_bc.val  # Already Tv type from polynomial fit on y values
@@ -254,9 +254,9 @@ Materializes PolyFit{D} to Deriv1{Tv} using `materialize_bc`, then uses the
 estimated derivative directly.
 """
 @inline function _fill_slopes!(
-        d::AbstractVector, s::AbstractVector, ::AbstractGridSpacing{Tg},
+        d::AbstractVector{Tc}, s::AbstractVector{Tc}, ::AbstractGridSpacing{Tg},
         bc::Right{PolyFit{D}}, x::AbstractVector{Tg}, y::AbstractVector
-    ) where {D, Tg}
+    ) where {D, Tc, Tg}
     # Materialize PolyFit{D} → Deriv1{Tv} using estimated derivative
     concrete_bc = materialize_bc(bc.bc, x, y, RightSide())
     dn = concrete_bc.val  # Already Tv type from polynomial fit on y values
@@ -282,7 +282,7 @@ Compute quadratic coefficients: a[i] = (s[i] - d[i]) * inv_h[i]
 - `Tv`: Value type (unconstrained)
 - `Tg`: Grid type
 """
-@inline function _compute_quadratic_coefficients!(a::AbstractVector, d::AbstractVector, s::AbstractVector, spacing::AbstractGridSpacing{Tg}) where {Tg}
+@inline function _compute_quadratic_coefficients!(a::AbstractVector{Tc}, d::AbstractVector{Tc}, s::AbstractVector{Tc}, spacing::AbstractGridSpacing{Tg}) where {Tc, Tg}
     @inbounds for i in eachindex(a)
         a[i] = (s[i] - d[i]) * _get_inv_h(spacing, i)  # (Tv - Tv) * Tg → Tv
     end
@@ -324,13 +324,8 @@ Uses AdaptiveArrayPools internally for temporary `secant` array.
     Tcoeff = eltype(d)
     secant = acquire!(pool, Tcoeff, nx - 1)
 
-    # 1. Compute secants using spacing
     _compute_quadratic_secants!(secant, y, spacing)
-
-    # 2. Fill slopes d[] (BC-dispatched: Left→forward, Right→backward)
     _fill_slopes!(d, secant, spacing, bc, x, y)
-
-    # 3. Compute quadratic coefficients a[]
     _compute_quadratic_coefficients!(a, d, secant, spacing)
 
     return nothing

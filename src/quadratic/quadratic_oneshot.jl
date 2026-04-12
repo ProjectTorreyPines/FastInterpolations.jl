@@ -202,7 +202,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert length(x) >= 2 "x must have at least 2 elements"
 
-    x = _promote_grid_only(x, y)
+    x = _prepare_grid(x)
     # Compute coefficients using temporary arrays from pool
     nx = length(x)
     spacing = _create_spacing_pooled(pool, x)

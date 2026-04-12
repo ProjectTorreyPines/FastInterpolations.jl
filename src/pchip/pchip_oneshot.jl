@@ -161,7 +161,7 @@ In-place PCHIP interpolation with monotone-preserving slopes.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _promote_grid_only(x, y)
+    x = _prepare_grid(x)
     resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly
         return _pchip_interp_onthefly!(output, x, y, x_query, extrap, deriv, search, hint)

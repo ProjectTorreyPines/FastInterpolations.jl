@@ -238,7 +238,7 @@ In-place cubic spline interpolation with optional automatic caching.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tv}
-    x = _promote_grid_only(x, y)
+    x = _prepare_grid(x)
     searcher = _resolve_search(x, x_query, search, nothing)
     # Periodic BC
     if _is_periodic_bc(bc)

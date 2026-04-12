@@ -169,7 +169,7 @@ In-place cardinal spline interpolation.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _promote_grid_only(x, y)
+    x = _prepare_grid(x)
     resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly
         return _cardinal_interp_onthefly!(output, x, y, x_query, eltype(x)(tension), extrap, deriv, search, hint)

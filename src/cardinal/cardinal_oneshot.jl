@@ -172,9 +172,9 @@ In-place cardinal spline interpolation.
     x = _prepare_grid(x)
     resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly
-        return _cardinal_interp_onthefly!(output, x, y, x_query, eltype(x)(tension), extrap, deriv, search, hint)
+        return _cardinal_interp_onthefly!(output, x, y, x_query, float(eltype(x))(tension), extrap, deriv, search, hint)
     end
-    return _cardinal_interp_precompute!(output, x, y, x_query, eltype(x)(tension), extrap, deriv, search, hint)
+    return _cardinal_interp_precompute!(output, x, y, x_query, float(eltype(x))(tension), extrap, deriv, search, hint)
 end
 
 """

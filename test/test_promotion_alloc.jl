@@ -123,13 +123,23 @@
 
         # In-place batch with PreCompute (Hermite family)
         out = zeros(4)
-        @test begin pchip_interp!(out, x_int, y_int, xq_test; coeffs = PreCompute(), extrap = ExtendExtrap()); true end
-        @test begin cardinal_interp!(out, x_int, y_int, xq_test; coeffs = PreCompute(), extrap = ExtendExtrap()); true end
-        @test begin akima_interp!(out, x_int, y_int, xq_test; coeffs = PreCompute(), extrap = ExtendExtrap()); true end
+        @test begin
+            pchip_interp!(out, x_int, y_int, xq_test; coeffs = PreCompute(), extrap = ExtendExtrap()); true
+        end
+        @test begin
+            cardinal_interp!(out, x_int, y_int, xq_test; coeffs = PreCompute(), extrap = ExtendExtrap()); true
+        end
+        @test begin
+            akima_interp!(out, x_int, y_int, xq_test; coeffs = PreCompute(), extrap = ExtendExtrap()); true
+        end
 
         # Cubic + Quadratic in-place batch
-        @test begin cubic_interp!(out, x_int, y_int, xq_test; bc = ZeroCurvBC(), extrap = ExtendExtrap()); true end
-        @test begin quadratic_interp!(out, x_int, y_int, xq_test; extrap = ExtendExtrap()); true end
+        @test begin
+            cubic_interp!(out, x_int, y_int, xq_test; bc = ZeroCurvBC(), extrap = ExtendExtrap()); true
+        end
+        @test begin
+            quadratic_interp!(out, x_int, y_int, xq_test; extrap = ExtendExtrap()); true
+        end
     end
 
     # ========================================

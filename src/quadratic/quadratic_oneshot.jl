@@ -145,8 +145,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
-    x = _to_float(x, _promote_grid_float(Tg, Tv))
-    Tg_actual = eltype(x)
+    x = _prepare_grid(x)
     # Compute coefficients using temporary arrays from pool
     # spacing is pooled (zero-alloc for Range, pool-acquired for Vector)
     nx = length(x)

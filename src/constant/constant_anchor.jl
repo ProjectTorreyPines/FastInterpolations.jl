@@ -132,7 +132,7 @@ function _anchor_query(
         searcher::P = _to_searcher(LinearBinarySearch())
     ) where {T, S <: Real, P <: Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
-    output = Vector{_ConstantAnchoredQuery{T}}(undef, length(xq))
+    output = Vector{_ConstantAnchoredQuery{T, T}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
         output[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
@@ -157,7 +157,7 @@ In-place version of `_anchor_query(x, xq, Val(:constant))` for zero-allocation p
 The same `buffer` object, filled with anchored queries.
 """
 @inline function _fill_anchors!(
-        buffer::AbstractVector{_ConstantAnchoredQuery{T}},
+        buffer::AbstractVector{_ConstantAnchoredQuery{T, T}},
         x::AbstractVector{T},
         xq::AbstractVector{S},
         ::Val{:constant},

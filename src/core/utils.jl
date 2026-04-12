@@ -335,9 +335,8 @@ same `_PromotableValue` guard as value promotion in `_promote_itp_inputs`.
 """
 @inline function _promote_query_typed(xq::AbstractVector{Tq}, ::Type{Tg}) where {Tq <: Real, Tg}
     if Tq <: _PromotableValue
-        # Standard numeric: unify precision with grid, or float for duck grids
-        Tq_target = Tg <: AbstractFloat ? Tg : float(Tq)
-        return _to_float(xq, Tq_target)
+        # Standard numeric: promote to grid type (duck or float)
+        return _to_float(xq, Tg)
     else
         # Duck type (Dual, Measurement, etc.) — pass through unchanged
         return xq

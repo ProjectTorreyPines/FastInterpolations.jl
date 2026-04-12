@@ -322,7 +322,7 @@ Evaluate constant interpolant at multiple anchored query points.
 Returns newly allocated vector.
 """
 function (itp::ConstantInterpolant{T})(
-        aq_vec::AbstractVector{_ConstantAnchoredQuery{T}};
+        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{T}};
         deriv::DerivOp = EvalValue()
     ) where {T}
     output = Vector{T}(undef, length(aq_vec))
@@ -333,13 +333,13 @@ function (itp::ConstantInterpolant{T})(
 end
 
 """
-    (itp::ConstantInterpolant)(output::AbstractVector{T}, aq_vec::AbstractVector{_ConstantAnchoredQuery{T}}; deriv::DerivOp=EvalValue())
+    (itp::ConstantInterpolant)(output::AbstractVector, aq_vec::AbstractVector{<:_ConstantAnchoredQuery{T}}; deriv::DerivOp=EvalValue())
 
 In-place evaluation at multiple anchored query points. Zero allocation.
 """
 function (itp::ConstantInterpolant{T})(
-        output::AbstractVector{T},
-        aq_vec::AbstractVector{_ConstantAnchoredQuery{T}};
+        output::AbstractVector,
+        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{T}};
         deriv::DerivOp = EvalValue()
     ) where {T}
     @assert length(output) == length(aq_vec) "output length must match aq_vec length"

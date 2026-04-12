@@ -151,7 +151,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     # spacing is pooled (zero-alloc for Range, pool-acquired for Vector)
     nx = length(x)
     spacing = _create_spacing_pooled(pool, x)
-    Tcoeff = _output_eltype(eltype(y), eltype(x))
+    Tcoeff = float(_output_eltype(eltype(y), eltype(x)))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
@@ -206,7 +206,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     # Compute coefficients using temporary arrays from pool
     nx = length(x)
     spacing = _create_spacing_pooled(pool, x)
-    Tcoeff = _output_eltype(eltype(y), eltype(x))
+    Tcoeff = float(_output_eltype(eltype(y), eltype(x)))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))

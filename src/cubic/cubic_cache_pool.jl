@@ -697,8 +697,11 @@ end
         bc::BCPair{L, R},
         autocache::Bool
     ) where {L <: PointBC, R <: PointBC}
-    bc_cache = _cache_bc_pair(bc, eltype(x))
-    return _build_derivative_bc_cache(x, bc_cache.left, bc_cache.right)
+    T = eltype(x)
+    FT = T <: AbstractFloat ? T : Float64
+    x_f = _to_float(x, FT)
+    bc_cache = _cache_bc_pair(bc, FT)
+    return _build_derivative_bc_cache(x_f, bc_cache.left, bc_cache.right)
 end
 
 @inline function _get_cubic_cache(

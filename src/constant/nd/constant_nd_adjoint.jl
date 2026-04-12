@@ -38,7 +38,7 @@ function _bake_constant_nd_anchors(
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps)
 
-    anchors = Vector{NTuple{N, _ConstantAnchoredQuery{Tg}}}(undef, nq)
+    anchors = Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tg}}}(undef, nq)
     @inbounds for q in 1:nq
         query_q = _extract_query_point(queries, q, Val(N))
         per_axis = ntuple(Val(N)) do d
@@ -56,7 +56,7 @@ function _bake_constant_nd_anchors(
                 IN_DOMAIN
             end
 
-            return _ConstantAnchoredQuery{Tg}(idx, xq_d, state_flag, h, dL)
+            return _ConstantAnchoredQuery{Tg, Tg}(idx, xq_d, state_flag, h, dL)
         end
         anchors[q] = per_axis
     end
@@ -75,7 +75,7 @@ Uses `_compute_single_offset` per axis — matches the ND forward kernel exactly
 (no right-boundary special case, unlike the 1D path).
 """
 @inline function _constant_nd_target(
-        per_axis::NTuple{N, _ConstantAnchoredQuery{Tg}},
+        per_axis::NTuple{N, _ConstantAnchoredQuery{Tg, Tg}},
         sides::Tuple{Vararg{AbstractSide, N}}
     ) where {N, Tg}
     return ntuple(Val(N)) do d

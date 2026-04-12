@@ -56,7 +56,7 @@ itp = constant_interp(x, f; side=NearestSide())
 ```
 """
 struct ConstantAdjoint{Tg, SD <: AbstractSide, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
-    anchors::Vector{_ConstantAnchoredQuery{Tg}}
+    anchors::Vector{_ConstantAnchoredQuery{Tg, Tg}}
     grid_size::Int
     x_hi::Tg
     side::SD
@@ -163,7 +163,7 @@ gets `state=IN_DOMAIN` (inside). This restores the correct OOB state flag based 
 original query position, so scatter can skip OOB contributions.
 """
 function _fixup_constant_anchor_state!(
-        anchors::Vector{_ConstantAnchoredQuery{Tg}},
+        anchors::Vector{_ConstantAnchoredQuery{Tg, Tg}},
         xq_original::AbstractVector,
         x_lo, x_hi
     ) where {Tg}
@@ -172,7 +172,7 @@ function _fixup_constant_anchor_state!(
         (x_lo <= xq_i <= x_hi) && continue
         state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
         aq = anchors[i]
-        anchors[i] = _ConstantAnchoredQuery{Tg}(
+        anchors[i] = _ConstantAnchoredQuery{Tg, Tg}(
             aq.idx, aq.xq, state, aq.h, aq.dL
         )
     end

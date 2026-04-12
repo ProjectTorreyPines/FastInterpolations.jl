@@ -108,10 +108,11 @@
     # Int grid + Int y: all methods produce correct Float results
     # ========================================
     @testset "Int grid + Int y correctness" begin
-        x_int = [0, 1, 2, 3]
-        y_int = [0, 2, 3, 5]
-        xq_test = [0.5, 1.5, 2.5]
+        x_int = [0, 1, 2, 3, 4]
+        y_int = [0, 1, 3, 2, 5]
+        xq_test = [0.5, 1.5, 2.5, 3.5]
 
+        # Allocating batch (all methods)
         @test linear_interp(x_int, y_int, xq_test) isa Vector{Float64}
         @test constant_interp(x_int, y_int, xq_test) isa Vector{Float64}
         @test quadratic_interp(x_int, y_int, xq_test) isa Vector{Float64}
@@ -119,6 +120,16 @@
         @test pchip_interp(x_int, y_int, xq_test; extrap = ExtendExtrap()) isa Vector{Float64}
         @test cardinal_interp(x_int, y_int, xq_test; extrap = ExtendExtrap()) isa Vector{Float64}
         @test akima_interp(x_int, y_int, xq_test; extrap = ExtendExtrap()) isa Vector{Float64}
+
+        # In-place batch with PreCompute (Hermite family)
+        out = zeros(4)
+        @test begin pchip_interp!(out, x_int, y_int, xq_test; coeffs = PreCompute(), extrap = ExtendExtrap()); true end
+        @test begin cardinal_interp!(out, x_int, y_int, xq_test; coeffs = PreCompute(), extrap = ExtendExtrap()); true end
+        @test begin akima_interp!(out, x_int, y_int, xq_test; coeffs = PreCompute(), extrap = ExtendExtrap()); true end
+
+        # Cubic + Quadratic in-place batch
+        @test begin cubic_interp!(out, x_int, y_int, xq_test; bc = ZeroCurvBC(), extrap = ExtendExtrap()); true end
+        @test begin quadratic_interp!(out, x_int, y_int, xq_test; extrap = ExtendExtrap()); true end
     end
 
     # ========================================

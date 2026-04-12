@@ -21,8 +21,9 @@
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    x = _to_float(x, Tg)
-    Tdy = _output_eltype(Tv, Tg)
+    Tg_f = float(Tg)
+    x = _to_float(x, Tg_f)
+    Tdy = float(_output_eltype(Tv, Tg_f))
     dy = acquire!(pool, Tdy, length(y))
     _cardinal_slopes!(dy, x, y, tension)
     searcher = _resolve_search(x, xq, search, hint)
@@ -43,9 +44,9 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _to_float(x, Tg)
+    x = _to_float(x, float(Tg))
 
-    Tdy = _output_eltype(Tv, Tg)
+    Tdy = float(_output_eltype(Tv, Tg))
     dy = acquire!(pool, Tdy, length(y))
     _cardinal_slopes!(dy, x, y, tension)
     searcher = _resolve_search(x, x_query, search, hint)
@@ -66,9 +67,9 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _to_float(x, Tg)
+    x = _to_float(x, float(Tg))
 
-    Tdy = _output_eltype(Tv, Tg)
+    Tdy = float(_output_eltype(Tv, Tg))
     dy = acquire!(pool, Tdy, length(y))
     _cardinal_slopes!(dy, x, y, tension)
     searcher = _resolve_search(x, x_query, search, hint)
@@ -92,7 +93,7 @@ end
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
-    x = _to_float(x, Tg)
+    x = _to_float(x, float(Tg))
     searcher = _resolve_search(x, xq, search, hint)
     return _hermite_eval_at_point(x, y, CardinalSlopes(tension), xq, extrap, deriv, searcher)
 end
@@ -112,7 +113,7 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _to_float(x, Tg)
+    x = _to_float(x, float(Tg))
 
     searcher = _resolve_search(x, x_query, search, hint)
     return _hermite_vector_loop!(output, x, y, CardinalSlopes(tension), x_query, extrap, deriv, searcher)

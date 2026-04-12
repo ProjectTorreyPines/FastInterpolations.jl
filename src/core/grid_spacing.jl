@@ -116,7 +116,7 @@ Uses `@propagate_inbounds` to enable bounds-check elision in hot loops
 when called within `@inbounds` blocks.
 """
 @inline @Base.propagate_inbounds _get_h(s::ScalarSpacing, ::Int) = s.h
-@inline @Base.propagate_inbounds _get_h(s::VectorSpacing, i::Int) = @inbounds s.h[i]
+@inline @Base.propagate_inbounds _get_h(s::VectorSpacing, i::Int) = @inbounds float(s.h[i])
 
 """
     _get_inv_h(spacing, i) -> T
@@ -136,8 +136,10 @@ Uses `@propagate_inbounds` to enable bounds-check elision in hot loops.
 # ----------------------------------------
 # For non-uniform grids, compute from the search result endpoints.
 # _CachedRange overloads are in cached_range.jl (loaded after this file).
-@inline _get_h(::AbstractVector, xR::Real, xL::Real) = xR - xL
-@inline _get_inv_h(::AbstractVector, xR::Real, xL::Real) = inv(xR - xL)
+# float(): scalar conversion (0 alloc, register op). Ensures Int grids produce
+# Float h/inv_h for kernel compatibility. No-op for AbstractFloat/Dual grids.
+@inline _get_h(::AbstractVector, xR::Real, xL::Real) = float(xR - xL)
+@inline _get_inv_h(::AbstractVector, xR::Real, xL::Real) = inv(float(xR - xL))
 
 # ========================================
 # Factory Functions

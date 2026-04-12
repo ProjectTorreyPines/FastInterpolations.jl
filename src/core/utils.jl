@@ -288,17 +288,27 @@ end
 # ========================================
 # Query & Adjoint Promotion Helpers
 """
-    _promote_grid_only(x, y) -> x_typed
+    _prepare_grid(x) -> x (or _CachedRange)
 
-Promote grid for correctness (Int→Float, Range→CachedRange) without touching y.
-Uses `_promote_grid_float(Tg, Tv)` which widens grid precision to accommodate
-value type (e.g., Float32 grid + Float64 data → Float64 grid).
+Zero-alloc grid preparation for one-shot evaluation paths.
+- `AbstractVector`: returned as-is (no heap allocation, search handles mixed types)
+- `AbstractRange`: converted to `_CachedRange{float(T)}` (stack allocation)
 
-For one-shot in-place paths where y and query should NOT be heap-allocated.
+Unlike `_promote_grid_only`, this does NOT allocate a new Vector for type promotion.
+Kernel arithmetic auto-promotes Int×Float via Julia's built-in promotion rules.
 """
-@inline function _promote_grid_only(x::AbstractVector{Tg}, y::AbstractVector{Tv}) where {Tg, Tv}
-    return _to_float(x, _promote_grid_float(Tg, Tv))
-end
+@inline _prepare_grid(x::AbstractVector) = x
+@inline _prepare_grid(x::AbstractRange) = _to_float(x, float(eltype(x)))
+
+"""
+    _store_grid(x, ::Type{Tg}) -> stored grid
+
+Single-allocation grid storage for interpolant constructors.
+- `AbstractVector`: `_convert_copy(x, Tg)` — promote + copy in one step (no double alloc)
+- `AbstractRange`: `_to_float(x, Tg)` — `_CachedRange` (stack alloc, preserves O(1) search)
+"""
+@inline _store_grid(x::AbstractVector, ::Type{Tg}) where {Tg} = _convert_copy(x, Tg)
+@inline _store_grid(x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
 
 """
     _convert_copy(v::AbstractVector, ::Type{T}) -> Vector{T}

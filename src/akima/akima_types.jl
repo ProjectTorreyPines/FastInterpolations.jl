@@ -44,7 +44,26 @@ struct AkimaInterpolant1D{
     extrap::E
     search_policy::P
 
-    # PreCompute inner: promotes x/y, creates spacing, stores everything.
+    # PreCompute inner: promotes x/y, computes slopes, creates spacing — all in one place.
+    function AkimaInterpolant1D(
+            x::AbstractVector, y::AbstractVector, ::Type{PreCompute}, extrap::E, search::P
+        ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
+        length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
+        length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
+        Tg = _promote_grid_float(eltype(x), eltype(y))
+        Tv = _value_type(eltype(y), Tg)
+        xc = _store_grid(x, Tg)
+        yc = _convert_copy(y, Tv)
+        spacing = _create_spacing(xc)
+        Tdy = _output_eltype(Tv, Tg)
+        dy = Vector{Tdy}(undef, length(yc))
+        _akima_slopes!(dy, xc, yc)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), typeof(spacing), E, P, PreCompute}(
+            xc, yc, dy, spacing, extrap, search
+        )
+    end
+
+    # User-provided slopes inner: promotes x/y, creates spacing, stores given dy.
     function AkimaInterpolant1D(
             x::AbstractVector, y::AbstractVector, dy::AbstractVector, extrap::E, search::P
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}

@@ -33,12 +33,8 @@ itp(0.5; deriv=DerivOp(1))
     extrap_p = _promote_extrap(extrap, _value_type(TY, Tg))
     resolved = _resolve_coeffs(coeffs)
     if resolved isa OnTheFly
-        return AkimaInterpolant1D(x, y, AkimaSlopes(); extrap = extrap_p, search)
+        return AkimaInterpolant1D(x, y, AkimaSlopes(), extrap_p, search)
     else
-        xc = _store_grid(x, Tg)
-        Tdy = _output_eltype(eltype(y), Tg)
-        dy_p = Vector{Tdy}(undef, length(y))
-        _akima_slopes!(dy_p, xc, y)
-        return AkimaInterpolant1D(xc, y, dy_p; extrap = extrap_p, search)
+        return AkimaInterpolant1D(x, y, PreCompute, extrap_p, search)
     end
 end

@@ -53,12 +53,8 @@ itp(1.5; deriv=DerivOp(1))       # first derivative
     extrap_p = _promote_extrap(extrap, _value_type(TY, Tg))
     resolved = _resolve_coeffs(coeffs)
     if resolved isa OnTheFly
-        return PchipInterpolant1D(x, y, PchipSlopes(); extrap = extrap_p, search)
+        return PchipInterpolant1D(x, y, PchipSlopes(), extrap_p, search)
     else
-        xc = _store_grid(x, Tg)
-        Tdy = _output_eltype(eltype(y), Tg)
-        dy_p = Vector{Tdy}(undef, length(y))
-        _pchip_slopes!(dy_p, xc, y)
-        return PchipInterpolant1D(xc, y, dy_p; extrap = extrap_p, search)
+        return PchipInterpolant1D(x, y, PreCompute, extrap_p, search)
     end
 end

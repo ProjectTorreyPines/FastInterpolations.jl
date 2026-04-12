@@ -36,12 +36,8 @@ itp(0.5)
     extrap_p = _promote_extrap(extrap, _value_type(TY, Tg))
     resolved = _resolve_coeffs(coeffs)
     if resolved isa OnTheFly
-        return CardinalInterpolant1D(x, y, CardinalSlopes(Tg(tension)); tension = Tg(tension), extrap = extrap_p, search)
+        return CardinalInterpolant1D(x, y, CardinalSlopes(Tg(tension)), extrap_p, search, Tg(tension))
     else
-        xc = _store_grid(x, Tg)
-        Tdy = _output_eltype(eltype(y), Tg)
-        dy_p = Vector{Tdy}(undef, length(y))
-        _cardinal_slopes!(dy_p, xc, y, Tg(tension))
-        return CardinalInterpolant1D(xc, y, dy_p; tension = Tg(tension), extrap = extrap_p, search)
+        return CardinalInterpolant1D(x, y, PreCompute, extrap_p, search, Tg(tension))
     end
 end

@@ -22,7 +22,7 @@
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     Tg_f = float(Tg)
     x = _to_float(x, Tg_f)
-    Tdy = float(_output_eltype(Tv, Tg))
+    Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
     _pchip_slopes!(dy, x, y)
     searcher = _resolve_search(x, xq, search, hint)
@@ -45,7 +45,7 @@ end
     Tg_f = float(Tg)
     x = _to_float(x, Tg_f)
 
-    Tdy = float(_output_eltype(Tv, Tg))
+    Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
     _pchip_slopes!(dy, x, y)
     searcher = _resolve_search(x, x_query, search, hint)
@@ -68,7 +68,7 @@ end
     Tg_f = float(Tg)
     x = _to_float(x, Tg_f)
 
-    Tdy = float(_output_eltype(Tv, Tg))
+    Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
     _pchip_slopes!(dy, x, y)
     searcher = _resolve_search(x, x_query, search, hint)

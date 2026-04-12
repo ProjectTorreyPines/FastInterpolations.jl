@@ -139,7 +139,10 @@ chains like `promote_type(Tv, Tg, Tq)`.
 """
 @inline function _output_eltype(::Type{Tv}, types::Type...) where {Tv}
     Tr = promote_type(Tv, types...)
-    return isconcretetype(Tr) ? Tr : Tv
+    Tc = isconcretetype(Tr) ? Tr : Tv
+    # Ensure standard numerics produce Float coefficients (Int→Float64).
+    # Duck types (MyStruct etc.) pass through — float() would MethodError.
+    return (Tc <: _PromotableValue && !(Tc <: AbstractFloat)) ? float(Tc) : Tc
 end
 
 """

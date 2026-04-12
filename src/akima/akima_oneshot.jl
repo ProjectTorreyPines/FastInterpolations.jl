@@ -22,7 +22,7 @@
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     Tg_f = float(Tg)
     x = _to_float(x, Tg_f)
-    Tdy = float(_output_eltype(Tv, Tg_f))
+    Tdy = _output_eltype(Tv, Tg_f)
     dy = acquire!(pool, Tdy, length(y))
     _akima_slopes!(dy, x, y)
     searcher = _resolve_search(x, xq, search, hint)
@@ -44,7 +44,7 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, float(Tg))
 
-    Tdy = float(_output_eltype(Tv, Tg))
+    Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
     _akima_slopes!(dy, x, y)
     searcher = _resolve_search(x, x_query, search, hint)
@@ -66,7 +66,7 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _to_float(x, float(Tg))
 
-    Tdy = float(_output_eltype(Tv, Tg))
+    Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
     _akima_slopes!(dy, x, y)
     searcher = _resolve_search(x, x_query, search, hint)

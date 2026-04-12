@@ -105,6 +105,23 @@
     end
 
     # ========================================
+    # Int grid + Int y: all methods produce correct Float results
+    # ========================================
+    @testset "Int grid + Int y correctness" begin
+        x_int = [0, 1, 2, 3]
+        y_int = [0, 2, 3, 5]
+        xq_test = [0.5, 1.5, 2.5]
+
+        @test linear_interp(x_int, y_int, xq_test) isa Vector{Float64}
+        @test constant_interp(x_int, y_int, xq_test) isa Vector{Float64}
+        @test quadratic_interp(x_int, y_int, xq_test) isa Vector{Float64}
+        @test cubic_interp(x_int, y_int, xq_test; extrap = ExtendExtrap()) isa Vector{Float64}
+        @test pchip_interp(x_int, y_int, xq_test; extrap = ExtendExtrap()) isa Vector{Float64}
+        @test cardinal_interp(x_int, y_int, xq_test; extrap = ExtendExtrap()) isa Vector{Float64}
+        @test akima_interp(x_int, y_int, xq_test; extrap = ExtendExtrap()) isa Vector{Float64}
+    end
+
+    # ========================================
     # Interpolant construction: no double-copy
     # ========================================
     @testset "Interpolant construction: single-copy for type conversion" begin

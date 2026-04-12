@@ -117,7 +117,7 @@ end
 @inline _method_kind(::Type{<:ConstantSeriesInterpolant}) = Val(:constant)
 
 """
-    _make_anchor(sitp::ConstantSeriesInterpolant, xq::Tg, searcher) -> _ConstantAnchoredQuery{Tg}
+    _make_anchor(sitp::ConstantSeriesInterpolant, xq::Tg, searcher) -> _ConstantAnchoredQuery{Tg, Tg}
 
 Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
 """
@@ -134,7 +134,7 @@ Uses point-contiguous layout for SIMD optimization.
 @inline function _eval_series_at_anchor!(
         output::AbstractVector{Tv},
         sitp::ConstantSeriesInterpolant{Tg, Tv},
-        aq::_ConstantAnchoredQuery{Tg},
+        aq::_ConstantAnchoredQuery{Tg, Tg},
         op::AbstractEvalOp
     ) where {Tg, Tv}
     y_point = _ensure_point_layout!(sitp)
@@ -196,7 +196,7 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
 @inline function _eval_constant_series_point!(
         output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
         sitp::ConstantSeriesInterpolant{Tg, Tv},
-        aq::_ConstantAnchoredQuery{Tg},
+        aq::_ConstantAnchoredQuery{Tg, Tg},
         xq,  # Original xq (any Real, including Dual)
         op::AbstractEvalOp
     ) where {Tg, Tv}
@@ -250,7 +250,7 @@ end
         ::Int,
         x_min::Tg,
         x_max::Tg,
-        aq::_ConstantAnchoredQuery{Tg},
+        aq::_ConstantAnchoredQuery{Tg, Tg},
         ::NoExtrap,
         ::AbstractSide,
         ::AbstractEvalOp,
@@ -267,7 +267,7 @@ end
         n_pts::Int,
         ::Tg,
         ::Tg,
-        ::_ConstantAnchoredQuery{Tg},
+        ::_ConstantAnchoredQuery{Tg, Tg},
         extrap::_ClampOrFill,
         ::AbstractSide,
         op::AbstractEvalOp,
@@ -284,7 +284,7 @@ end
         n_pts::Int,
         ::Tg,
         ::Tg,
-        aq::_ConstantAnchoredQuery{Tg},
+        aq::_ConstantAnchoredQuery{Tg, Tg},
         ::ExtendExtrap,
         side_val::AbstractSide,
         op::AbstractEvalOp,
@@ -475,7 +475,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     _validate_series_outputs(outputs, n_ser, n_query)
 
     # Build anchors from pool (zero allocation after warmup)
-    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg}, length(xq_typed))
+    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg, Tg}, length(xq_typed))
     searcher = _resolve_search(sitp.x, xq_typed, search, hint)
     _fill_anchors!(aq_vec, sitp.x, xq_typed, Val(:constant), _should_wrap(sitp), searcher)
 
@@ -507,7 +507,7 @@ Uses argument-passing pattern for optimal performance.
         x_min::Tg,
         x_max::Tg,
         k::Int,
-        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{Tg}},
+        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{Tg, Tg}},
         extrap::AbstractExtrap,
         side_val::AbstractSide,
         op::AbstractEvalOp
@@ -528,7 +528,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
         x_min::Tg,
         x_max::Tg,
         k::Int,
-        aq::_ConstantAnchoredQuery{Tg},
+        aq::_ConstantAnchoredQuery{Tg, Tg},
         extrap::AbstractExtrap,
         side_val::AbstractSide,
         op::AbstractEvalOp
@@ -563,7 +563,7 @@ Internal: Core constant evaluation for series k at anchored query point.
 @inline function _eval_constant_series_anchored(
         y::Matrix{Tv},
         k::Int,
-        aq::_ConstantAnchoredQuery{Tg},
+        aq::_ConstantAnchoredQuery{Tg, Tg},
         side_val::AbstractSide,
         op::AbstractEvalOp
     ) where {Tg, Tv}

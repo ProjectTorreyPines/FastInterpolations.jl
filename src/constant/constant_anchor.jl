@@ -44,13 +44,16 @@ itp2(aq)              # Reuses same anchor
 Anchored evaluation is faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search.
 """
-struct _ConstantAnchoredQuery{T}
+struct _ConstantAnchoredQuery{Tg, Tq <: Real}
     idx::Int                   # interval index
-    xq::T                      # query point (possibly wrapped)
+    xq::Tq                     # query point (possibly wrapped, may be Dual for AD)
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
-    h::T                       # interval width
-    dL::T                      # offset from left boundary
+    h::Tg                      # interval width
+    dL::Tq                     # offset from left boundary (same type as xq for AD)
 end
+
+# Convenience: single type param for backward compat (non-AD paths)
+_ConstantAnchoredQuery{T}(idx, xq, state, h, dL) where {T} = _ConstantAnchoredQuery{T, T}(idx, xq, state, h, dL)
 
 # ========================================
 # Anchor Construction
@@ -193,7 +196,7 @@ Internal implementation of _anchor_query for constant interpolation.
     h = _get_h(x, loc.xR, loc.xL)
     dL = loc.xq - loc.xL
 
-    return _ConstantAnchoredQuery{T}(loc.idx, loc.xq, loc.state, h, dL)
+    return _ConstantAnchoredQuery(loc.idx, loc.xq, loc.state, h, dL)
 end
 
 # ========================================

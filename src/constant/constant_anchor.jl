@@ -183,10 +183,10 @@ Internal implementation of _anchor_query for constant interpolation.
 """
 @inline function _constant_anchor_query_impl(
         x::AbstractVector{T},
-        xq::T,
+        xq::Tq,
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
-    ) where {T, P <: Searcher}
+    ) where {T, Tq <: Real, P <: Searcher}
     loc = _anchor_loc(x, xq, wrap, policy)
 
     # Compute geometry (constant-internal concern)

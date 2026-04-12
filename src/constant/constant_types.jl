@@ -60,20 +60,22 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
     side::SD         # Side selection (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    # Inner constructor: computes Tv, validates, copies with type conversion.
+    # Inner constructor: promotes x/y, creates spacing, stores everything.
     function ConstantInterpolant(
-            x::AbstractVector{Tg}, y::AbstractVector, spacing::S, ev::E, sv::SD, search::P
-        ) where {Tg, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
+            x::AbstractVector, y::AbstractVector, ev::E, sv::SD, search::P
+        ) where {E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || _throw_grid_too_small(length(x))
+        Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = copy(x)
+        xc = _store_grid(x, Tg)
         yc = _convert_copy(y, Tv)
-        return new{Tg, Tv, typeof(xc), typeof(yc), S, E, SD, P}(xc, yc, spacing, ev, sv, search)
+        spacing = _create_spacing(xc)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(spacing), E, SD, P}(xc, yc, spacing, ev, sv, search)
     end
 end
 
-# Outer constructor: computes spacing, then delegates to inner.
+# Outer constructor: convenience kwarg wrapper.
 @inline function ConstantInterpolant(
         x::AbstractVector,
         y::AbstractVector;
@@ -81,6 +83,5 @@ end
         side::AbstractSide = NearestSide(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    spacing = _create_spacing(x)
-    return ConstantInterpolant(x, y, spacing, extrap, side, search)
+    return ConstantInterpolant(x, y, extrap, side, search)
 end

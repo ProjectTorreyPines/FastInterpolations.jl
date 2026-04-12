@@ -332,10 +332,11 @@ function cubic_interp(
         autocache::Bool = true,
         search::P = AutoSearch()
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
-    x_p = _promote_grid_only(x, y)
-    Tv_out = _value_type(Tv, eltype(x_p))
+    Tg_f = _promote_grid_float(Tg, Tv)
+    xc = _store_grid(x, Tg_f)
+    Tv_out = _value_type(Tv, Tg_f)
     bc_promoted = _promote_bc(bc, Tv_out)
-    return _cubic_interp_impl(x_p, y, bc_promoted, extrap, autocache, search)
+    return _cubic_interp_impl(xc, y, bc_promoted, extrap, autocache, search)
 end
 
 """

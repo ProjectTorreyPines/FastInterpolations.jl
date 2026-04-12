@@ -73,30 +73,30 @@ struct LinearInterpolant{
     extrap::E  # Extrapolation mode (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    # Inner constructor: computes Tv, validates, copies with type conversion.
-    # _convert_copy: same-type → copy(), different-type → Vector{T}(v) (single alloc).
-    # copy() on immutable Range types is a no-op (zero allocation).
+    # Inner constructor: promotes x/y, creates spacing, stores everything.
+    # _store_grid: Vector → _convert_copy (single alloc), Range → _CachedRange (stack).
+    # _convert_copy: same-type → copy(), different-type → Vector{T}(v).
     function LinearInterpolant(
-            x::AbstractVector{Tg}, y::AbstractVector, spacing::S, ev::E, search::P
-        ) where {Tg, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+            x::AbstractVector, y::AbstractVector, ev::E, search::P
+        ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
+        Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = copy(x)
+        xc = _store_grid(x, Tg)
         yc = _convert_copy(y, Tv)
-        return new{Tg, Tv, typeof(xc), typeof(yc), S, E, P}(xc, yc, spacing, ev, search)
+        spacing = _create_spacing(xc)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(spacing), E, P}(xc, yc, spacing, ev, search)
     end
 end
 
 # ========================================
-# Outer Constructor: convenience wrapper
+# Outer Constructor: convenience kwarg wrapper
 # ========================================
-# Computes spacing from grid, then delegates to inner constructor.
 @inline function LinearInterpolant(
         x::AbstractVector,
         y::AbstractVector;
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    spacing = _create_spacing(x)
-    return LinearInterpolant(x, y, spacing, extrap, search)
+    return LinearInterpolant(x, y, extrap, search)
 end

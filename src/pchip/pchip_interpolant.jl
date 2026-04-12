@@ -49,15 +49,16 @@ itp(1.5; deriv=DerivOp(1))       # first derivative
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
-    x_p = _promote_grid_only(x, y)
-    extrap_p = _promote_extrap(extrap, _value_type(TY, eltype(x_p)))
+    Tg = _promote_grid_float(TX, TY)
+    extrap_p = _promote_extrap(extrap, _value_type(TY, Tg))
     resolved = _resolve_coeffs(coeffs)
     if resolved isa OnTheFly
-        return PchipInterpolant1D(x_p, y, PchipSlopes(); extrap = extrap_p, search)
+        return PchipInterpolant1D(x, y, PchipSlopes(); extrap = extrap_p, search)
     else
-        Tdy = _output_eltype(eltype(y), eltype(x_p))
+        xc = _store_grid(x, Tg)
+        Tdy = _output_eltype(eltype(y), Tg)
         dy_p = Vector{Tdy}(undef, length(y))
-        _pchip_slopes!(dy_p, x_p, y)
-        return PchipInterpolant1D(x_p, y, dy_p; extrap = extrap_p, search)
+        _pchip_slopes!(dy_p, xc, y)
+        return PchipInterpolant1D(xc, y, dy_p; extrap = extrap_p, search)
     end
 end

@@ -131,7 +131,7 @@ function linear_interp end
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
-    x_p = _promote_grid_only(x, y)
-    extrap_p = _promote_extrap(extrap, _value_type(TY, eltype(x_p)))
-    return LinearInterpolant(x_p, y; extrap = extrap_p, search)
+    Tg = _promote_grid_float(TX, TY)
+    extrap_p = _promote_extrap(extrap, _value_type(TY, Tg))
+    return LinearInterpolant(x, y; extrap = extrap_p, search)
 end

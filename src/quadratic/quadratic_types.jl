@@ -70,16 +70,14 @@ struct QuadraticInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector
     search_policy::P    # Default search policy (immutable, thread-safe)
     bc::BC              # Boundary condition (retained for Matrix(itp, xq) convenience)
 
-    # Inner constructor: computes Tv, validates, copies with type conversion.
+    # Inner constructor: stores pre-promoted data from *_interp / outer callers.
+    # Callers provide fresh copies via _store_grid/_convert_copy — no re-copy here.
     function QuadraticInterpolant(
-            x::AbstractVector{Tg}, y::AbstractVector, spacing::S,
+            x::AbstractVector{Tg}, y::AbstractVector{Tv}, spacing::S,
             a::Vector{Tc}, d::Vector{Tc}, ev::E, search::P, bc::BC
-        ) where {Tg, Tc, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC}
+        ) where {Tg, Tv, Tc, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || _throw_grid_too_small(length(x))
-        Tv = _value_type(eltype(y), Tg)
-        xc = copy(x)
-        yc = _convert_copy(y, Tv)
-        return new{Tg, Tv, typeof(xc), typeof(yc), S, E, P, BC, Tc}(xc, yc, spacing, a, d, ev, search, bc)
+        return new{Tg, Tv, typeof(x), typeof(y), S, E, P, BC, Tc}(x, y, spacing, a, d, ev, search, bc)
     end
 end

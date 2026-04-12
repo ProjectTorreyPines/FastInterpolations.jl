@@ -44,39 +44,40 @@ struct AkimaInterpolant1D{
     extrap::E
     search_policy::P
 
-    # PreCompute inner: dy is a precomputed slope vector
+    # PreCompute inner: promotes x/y, creates spacing, stores everything.
     function AkimaInterpolant1D(
-            x::AbstractVector{Tg}, y::AbstractVector, dy::AbstractVector,
-            spacing::S, extrap::E, search::P
-        ) where {Tg, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+            x::AbstractVector, y::AbstractVector, dy::AbstractVector, extrap::E, search::P
+        ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) == length(dy) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
+        Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = copy(x)
+        xc = _store_grid(x, Tg)
         yc = _convert_copy(y, Tv)
-        dyc = copy(dy)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), S, E, P, PreCompute}(
-            xc, yc, dyc, spacing, extrap, search
+        spacing = _create_spacing(xc)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), typeof(spacing), E, P, PreCompute}(
+            xc, yc, dy, spacing, extrap, search
         )
     end
 
-    # OnTheFly inner: dy is a slope method tag
+    # OnTheFly inner: promotes x/y, creates spacing, dy is a slope method tag.
     function AkimaInterpolant1D(
-            x::AbstractVector{Tg}, y::AbstractVector, dy::AbstractSlopeMethod,
-            spacing::S, extrap::E, search::P
-        ) where {Tg, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+            x::AbstractVector, y::AbstractVector, dy::AbstractSlopeMethod, extrap::E, search::P
+        ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
+        Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = copy(x)
+        xc = _store_grid(x, Tg)
         yc = _convert_copy(y, Tv)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), S, E, P, OnTheFly}(
+        spacing = _create_spacing(xc)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), typeof(spacing), E, P, OnTheFly}(
             xc, yc, dy, spacing, extrap, search
         )
     end
 end
 
-# Outer constructor: computes spacing, dispatches to inner via dy type.
+# Outer: kwarg wrapper.
 @inline function AkimaInterpolant1D(
         x::AbstractVector,
         y::AbstractVector,
@@ -84,6 +85,5 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    spacing = _create_spacing(x)
-    return AkimaInterpolant1D(x, y, dy, spacing, extrap, search)
+    return AkimaInterpolant1D(x, y, dy, extrap, search)
 end

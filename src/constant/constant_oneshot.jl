@@ -27,12 +27,11 @@
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
-    xi_typed = _to_grid_type(xi, Tg)
-    @boundscheck _check_domain(x, xi_typed, extrap)
-    if xi_typed == last(x)
+    @boundscheck _check_domain(x, xi, extrap)
+    if _extract_primal(xi) == _extract_primal(last(x))
         return op isa EvalValue ? last(y) : 0 * first(y)
     end
-    idx, xL, xR = search_interval(searcher, x, xi_typed)
+    idx, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
 end
@@ -61,13 +60,13 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
-    xi_typed = _to_grid_type(xi, Tg)
-    xi_typed < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xi)
-    xi_typed > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xi)
-    if xi_typed == last(x)
+    xi_primal = _extract_primal(xi)
+    xi_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xi)
+    xi_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xi)
+    if xi_primal == _extract_primal(last(x))
         return op isa EvalValue ? last(y) : 0 * first(y)
     end
-    idx, xL, xR = search_interval(searcher, x, xi_typed)
+    idx, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
 end
@@ -82,8 +81,7 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
-    xi_typed = _to_grid_type(xi, Tg)
-    xi_wrapped = _wrap_to_domain(xi_typed, first(x), last(x))
+    xi_wrapped = _wrap_to_domain(xi, first(x), last(x))
     idx, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)

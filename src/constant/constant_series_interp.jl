@@ -406,11 +406,8 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
     # Validate output length
     _validate_scalar_output(output, n_ser)
 
-    # AD Support: Convert to grid type for anchor building, pass original xq for AD
-    xq_typed = _to_grid_type(xq, Tg)
-
-    # Build anchor using primal value
-    aq = _make_anchor(sitp, xq_typed, _resolve_search(sitp.x, xq, search, hint))
+    # Build anchor (search handles mixed types internally)
+    aq = _make_anchor(sitp, xq, _resolve_search(sitp.x, xq, search, hint))
 
     # Dispatch on derivative order - pass original xq for AD support
     _eval_constant_series_point!(output, sitp, aq, xq, deriv)

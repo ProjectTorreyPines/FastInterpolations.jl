@@ -904,15 +904,16 @@ automatically when the enclosing `@with_pool` scope exits.
 """
 @inline function _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractVector{T}) where {T}
     n = length(x)
+    Tinv = typeof(inv(oneunit(T)))
     h = acquire!(pool, T, n - 1)
-    inv_h = acquire!(pool, T, n - 1)
+    inv_h = acquire!(pool, Tinv, n - 1)
 
     @inbounds for i in 1:(n - 1)
         h[i] = x[i + 1] - x[i]
         inv_h[i] = inv(h[i])
     end
 
-    return VectorSpacing{T}(h, inv_h)
+    return VectorSpacing(h, inv_h)
 end
 
 """

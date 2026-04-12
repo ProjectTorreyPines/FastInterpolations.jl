@@ -64,37 +64,39 @@ function ScalarSpacing(h::Real, inv_h::Real)
 end
 
 """
-    VectorSpacing{T} <: AbstractGridSpacing{T}
+    VectorSpacing{T, Tinv} <: AbstractGridSpacing{T}
 
 Stores non-uniform grid spacing as vectors. Used for `AbstractVector` inputs
 where intervals may have different spacings.
 
 # Fields
 - `h::Vector{T}`: Grid spacings h[i] = x[i+1] - x[i] (length n-1 for n grid points)
-- `inv_h::Vector{T}`: Precomputed reciprocals inv_h[i] = 1/h[i]
+- `inv_h::Vector{Tinv}`: Precomputed reciprocals inv_h[i] = 1/h[i]
 
 # Memory
 O(N) - stores 2*(n-1) values.
 
-# Type parameter
-`T` is normally a float (Float32/Float64) but may also be any scalar type supporting
-`-`, `inv`, and `Vector{T}(undef, n)` — e.g. `ForwardDiff.Dual`. Duck-typed grids
-carry their derivative partials through `h`/`inv_h`, so the cached spacing is
-differentiable and reusable across queries.
+# Type parameters
+- `T`: Grid difference type — matches `eltype(x)`. Can be Int, Float64, Dual, etc.
+- `Tinv`: Reciprocal type — `typeof(inv(oneunit(T)))`. For Float grids `Tinv == T`;
+  for Int grids `Tinv == Float64` (since `inv(::Int)` returns Float64).
 
 # Example
 ```julia
 x = [0.0, 0.3, 0.7, 1.0]                 # Non-uniform Float spacing
-spacing = _create_spacing(x)              # VectorSpacing{Float64} with h=[0.3, 0.4, 0.3]
+spacing = _create_spacing(x)              # VectorSpacing{Float64,Float64}
 
-x_dual = ForwardDiff.Dual{:tag}.(x, ...)  # Dual-valued grid
-spacing_d = _create_spacing(x_dual)       # VectorSpacing{Dual{:tag,Float64,1}}
+x_int = [0, 1, 3, 6]                     # Int grid
+spacing_i = _create_spacing(x_int)        # VectorSpacing{Int,Float64}
 ```
 """
-struct VectorSpacing{T} <: AbstractGridSpacing{T}
+struct VectorSpacing{T, Tinv} <: AbstractGridSpacing{T}
     h::Vector{T}
-    inv_h::Vector{T}
+    inv_h::Vector{Tinv}
 end
+
+# Convenience: VectorSpacing{T}(h, inv_h) when both vectors share the same type
+VectorSpacing{T}(h::Vector{T}, inv_h::Vector{T}) where {T} = VectorSpacing{T, T}(h, inv_h)
 
 # _CachedRange is defined in cached_range.jl (included after this file).
 
@@ -172,13 +174,14 @@ Computes h[i] = x[i+1] - x[i] and inv_h[i] = 1/h[i] for each interval.
 """
 function _create_spacing(x::AbstractVector{T}) where {T}
     n = length(x)
+    Tinv = typeof(inv(oneunit(T)))
     h = Vector{T}(undef, n - 1)
-    inv_h = Vector{T}(undef, n - 1)
+    inv_h = Vector{Tinv}(undef, n - 1)
 
     @inbounds for i in 1:(n - 1)
         h[i] = x[i + 1] - x[i]
         inv_h[i] = inv(h[i])
     end
 
-    return VectorSpacing{T}(h, inv_h)
+    return VectorSpacing(h, inv_h)
 end

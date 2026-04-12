@@ -335,7 +335,7 @@ end
 
 # Helper to determine spacing type from grid type
 @inline _spacing_type(::Type{X}) where {T, X <: AbstractRange{T}} = ScalarSpacing{T}
-@inline _spacing_type(::Type{X}) where {T, X <: AbstractVector{T}} = VectorSpacing{T}
+@inline _spacing_type(::Type{X}) where {T, X <: AbstractVector{T}} = VectorSpacing{T, T}
 
 """
 Get or create a derivative BC cache bank for the given (T, L, R, X, S) combination.

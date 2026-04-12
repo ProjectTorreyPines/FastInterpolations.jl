@@ -96,12 +96,12 @@
         # Float32 query — slightly different due to Float32→Float64 per-element promotion
         out_f32q = similar(out)
         linear_interp!(out_f32q, x_f64, y_f64, xq_f32; extrap = ExtendExtrap())
-        @test out_f32q ≈ ref_linear rtol = 1e-6
+        @test out_f32q ≈ ref_linear rtol = 1.0e-6
 
         # Float32 data
         out_f32d = similar(out)
         linear_interp!(out_f32d, x_f64, y_f32, xq_f64; extrap = ExtendExtrap())
-        @test out_f32d ≈ ref_linear rtol = 1e-6  # Float32 data has less precision
+        @test out_f32d ≈ ref_linear rtol = 1.0e-6  # Float32 data has less precision
     end
 
     # ========================================

@@ -8,11 +8,13 @@ const AAP_RUNTIME_CHECK = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
 # Julia 1.12+ achieves true zero-allocation via improved escape analysis.
 # Older versions have small runtime overhead from mutable struct field access.
 # Note: 4-way Val dispatch (extrap modes) increases overhead on older Julia (~160 bytes).
-const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240
+# +16: --code-coverage instrumentation adds one pointer-sized allocation per @allocated call.
+const _COV_OVERHEAD = 16
+const ALLOC_THRESHOLD = (VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240) + _COV_OVERHEAD
 
 # ND oneshot dispatch has higher fixed overhead from tuple construction/resolution.
 # This is O(1) overhead, not O(n), so a separate higher threshold is appropriate.
-const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240
+const ND_ALLOC_THRESHOLD = (VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240) + _COV_OVERHEAD
 
 @info "Running tests with ALLOC_THRESHOLD = $ALLOC_THRESHOLD bytes (AAP_RUNTIME_CHECK = $AAP_RUNTIME_CHECK)"
 

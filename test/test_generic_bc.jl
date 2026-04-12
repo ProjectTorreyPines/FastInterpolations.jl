@@ -115,24 +115,22 @@ const ATOL = 1.0e-14
         # Note: PeriodicBC is handled via _is_periodic_bc() before _normalize_bc is called.
         # No _normalize_bc(::PeriodicBC, T) method exists (dead code was removed).
 
-        # BCPair with type promotion (Float64 BC → Float32 target)
-        # Type-Free design: BCPair{L, R} without Tv parameter
+        # BCPair: shape-only normalization (no type promotion)
+        # _normalize_bc returns BCPair as-is; 2nd arg is ignored via fallback.
         bc_f64 = BCPair(Deriv1(0.5), Deriv2(1.0))  # Float64
-        bc_promoted = FastInterpolations._normalize_bc(bc_f64, Float32)
-        @test bc_promoted isa BCPair{Deriv1{Float32}, Deriv2{Float32}}
-        @test bc_promoted.left.val == Float32(0.5)
-        @test bc_promoted.right.val == Float32(1.0)
+        bc_out = FastInterpolations._normalize_bc(bc_f64, Float32)
+        @test bc_out === bc_f64  # same object, no conversion
 
-        # PointBC with type promotion
+        # PointBC → symmetric BCPair (no type promotion)
         d1_f64 = Deriv1(0.25)  # Float64
         bc_from_d1 = FastInterpolations._normalize_bc(d1_f64, Float32)
-        @test bc_from_d1 isa BCPair{Deriv1{Float32}, Deriv1{Float32}}
-        @test bc_from_d1.left.val == Float32(0.25)
-        @test bc_from_d1.right.val == Float32(0.25)
+        @test bc_from_d1 isa BCPair{Deriv1{Float64}, Deriv1{Float64}}
+        @test bc_from_d1.left.val == 0.25
+        @test bc_from_d1.right.val == 0.25
 
         d2_f64 = Deriv2(0.75)  # Float64
         bc_from_d2 = FastInterpolations._normalize_bc(d2_f64, Float32)
-        @test bc_from_d2 isa BCPair{Deriv2{Float32}, Deriv2{Float32}}
+        @test bc_from_d2 isa BCPair{Deriv2{Float64}, Deriv2{Float64}}
     end
 
     # ========================================

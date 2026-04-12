@@ -296,12 +296,10 @@ function linear_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
-    Tg = eltype(x_typed)
-    Tv = eltype(y_typed)
-    T_out = _output_eltype(Tv, Tg)
+    Tg = _promote_grid_float(eltype(x), eltype(y))
+    T_out = _output_eltype(eltype(y), Tg)
     output = Vector{T_out}(undef, length(x_targets))
-    linear_interp!(output, x_typed, y_typed, xq_typed; extrap, deriv, search)
+    linear_interp!(output, x, y, x_targets; extrap, deriv, search)
     return output
 end
 

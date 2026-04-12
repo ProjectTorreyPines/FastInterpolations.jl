@@ -247,9 +247,8 @@ function quadratic_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tq <: Real}
-    x_p, y_p = _promote_itp_inputs(x, y)
-    Tr = _output_eltype(eltype(y_p), eltype(x_p), Tq)
+    Tr = _output_eltype(eltype(y), _promote_grid_float(Tg, eltype(y)), Tq)
     output = Vector{Tr}(undef, length(x_targets))
-    quadratic_interp!(output, x_p, y_p, x_targets; bc, extrap, deriv, search)
+    quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
     return output
 end

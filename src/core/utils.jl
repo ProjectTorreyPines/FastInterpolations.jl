@@ -352,16 +352,6 @@ constant, pchip, cardinal, akima.
     return x_p, xq_p, Tg
 end
 
-"""
-    _alloc_output(::Type{Tv}, ::Type{Tg}, xq::AbstractVector{Tq}) -> Vector{Tr}
-
-Allocate output vector with the correct promoted element type for 1D batch evaluation.
-`Tr = _output_eltype(Tv, Tg, Tq)`.
-"""
-@inline function _alloc_output(::Type{Tv}, ::Type{Tg}, xq::AbstractVector{Tq}) where {Tv, Tg, Tq}
-    Tr = _output_eltype(Tv, Tg, Tq)
-    return Vector{Tr}(undef, length(xq))
-end
 
 # ========================================
 # AD Support Helpers

@@ -88,12 +88,9 @@ function hermite_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg, Tv, Tq <: Real}
-    x, y, dy = _promote_hermite_inputs(x, y, dy)
-    xq_p = _promote_query_typed(x_query, eltype(x))
-    Tr = _output_eltype(eltype(y), eltype(x), Tq)
-    output = Vector{Tr}(undef, length(xq_p))
-    searcher = _resolve_search(x, xq_p, search, hint)
-    _hermite_vector_loop!(output, x, y, dy, xq_p, extrap, deriv, searcher)
+    Tr = _output_eltype(Tv, _promote_grid_float(Tg, Tv), Tq)
+    output = Vector{Tr}(undef, length(x_query))
+    hermite_interp!(output, x, y, dy, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end
 

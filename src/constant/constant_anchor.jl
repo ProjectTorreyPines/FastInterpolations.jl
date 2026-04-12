@@ -195,8 +195,10 @@ Internal implementation of _anchor_query for constant interpolation.
     # Compute geometry (constant-internal concern)
     h = _get_h(x, loc.xR, loc.xL)
     dL = loc.xq - loc.xL
+    # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual)
+    xq_promoted = oftype(dL, loc.xq)
 
-    return _ConstantAnchoredQuery(loc.idx, loc.xq, loc.state, h, dL)
+    return _ConstantAnchoredQuery(loc.idx, xq_promoted, loc.state, h, dL)
 end
 
 # ========================================

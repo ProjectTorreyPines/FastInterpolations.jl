@@ -257,7 +257,7 @@ end
 Promote BC to target value type Tv for cubic splines.
 Handles conversion of Real BC values to Complex when needed.
 """
-@inline _promote_bc(bc::BCPair, ::Type{Tv}) where {Tv} = _normalize_bc(bc, Tv)
+@inline _promote_bc(bc::BCPair, ::Type{Tv}) where {Tv} = _normalize_bc(bc)
 @inline _promote_bc(::ZeroCurvBC, ::Type{Tv}) where {Tv} = ZeroCurvBC()
 @inline _promote_bc(::ZeroSlopeBC, ::Type{Tv}) where {Tv} = ZeroSlopeBC()
 @inline _promote_bc(bc::PeriodicBC, ::Type{Tv}) where {Tv} = bc
@@ -318,7 +318,7 @@ val = itp(0.5)  # returns ComplexF64
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x, y, bc, autocache, search)
     else
-        bc_pair = _normalize_bc(bc, _value_type(Tv, Tg))
+        bc_pair = _normalize_bc(bc, first(y))
         return _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache, search)
     end
 end

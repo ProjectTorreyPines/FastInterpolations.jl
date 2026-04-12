@@ -527,7 +527,7 @@ not RHS values (y-data + BC values).
     FT = T <: AbstractFloat ? T : Float64
 
     # Normalize BC to BCPair
-    bc_pair = _normalize_bc(bc, FT)
+    bc_pair = _normalize_bc(bc)
 
     # Get bank and lookup
     return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)

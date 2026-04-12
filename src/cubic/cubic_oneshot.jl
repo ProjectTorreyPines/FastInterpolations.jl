@@ -245,7 +245,7 @@ In-place cubic spline interpolation with optional automatic caching.
         return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, deriv, searcher)
     end
 
-    bc_pair = _normalize_bc(bc, _value_type(Tv, eltype(x)))
+    bc_pair = _normalize_bc(bc, first(y))
     return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache, deriv, searcher)
 end
 
@@ -390,7 +390,7 @@ function cubic_interp(
         return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, deriv, searcher)
     end
 
-    bc_pair = _normalize_bc(bc, _value_type(Tv, eltype(x)))
+    bc_pair = _normalize_bc(bc, first(y))
     return _cubic_interp_bcpair_scalar(x, y, xq, bc_pair, extrap, autocache, deriv, searcher)
 end
 

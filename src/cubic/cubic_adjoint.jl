@@ -448,7 +448,7 @@ function cubic_adjoint(
     end
 
     # Normalize BC → BCPair (ZeroCurvBC → BCPair(Deriv2(0), Deriv2(0)), etc.)
-    bc_pair = _normalize_bc(bc, Tg)
+    bc_pair = _normalize_bc(bc)
 
     # Get/build cache (reuses existing infrastructure + autocache)
     cache = _get_cubic_cache(x_p, bc_pair, _effective_autocache(autocache, eltype(x_p)))

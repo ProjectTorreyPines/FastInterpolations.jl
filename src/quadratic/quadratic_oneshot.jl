@@ -154,7 +154,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     Tcoeff = _output_eltype(eltype(y), eltype(x))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
-    bc_promoted = _normalize_bc(bc, _value_type(Tv, eltype(x)))
+    bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
 
     searcher = _resolve_search(x, xq, search, hint)
@@ -209,7 +209,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     Tcoeff = _output_eltype(eltype(y), eltype(x))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
-    bc_promoted = _normalize_bc(bc, _value_type(Tv, eltype(x)))
+    bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
 
     searcher = _resolve_search(x, x_targets, search, nothing)

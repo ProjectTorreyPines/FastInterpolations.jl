@@ -561,10 +561,10 @@ function _build_hetero_nd_adjoint(
     bcs = map(methods) do method_d
         if method_d isa CubicInterp
             bc_d = method_d.bc
-            _is_periodic_bc(bc_d) ? bc_d : _normalize_bc(bc_d, Tg)
+            _is_periodic_bc(bc_d) ? bc_d : _normalize_bc(bc_d)
         elseif method_d isa QuadraticInterp
             bc_d = method_d.bc
-            _normalize_bc(bc_d, Tg)
+            _normalize_bc(bc_d)
         else
             nothing
         end
@@ -574,10 +574,10 @@ function _build_hetero_nd_adjoint(
     mixed_bcs = map(methods, grids_ext) do method_d, grid_d
         if method_d isa CubicInterp
             mixed_bc = _get_effective_bc(method_d.bc, 2, grid_d)
-            _is_periodic_bc(mixed_bc) ? mixed_bc : _normalize_bc(mixed_bc, Tg)
+            _is_periodic_bc(mixed_bc) ? mixed_bc : _normalize_bc(mixed_bc)
         elseif method_d isa QuadraticInterp
             mixed_bc = _get_effective_bc_quadratic(method_d.bc, 2, grid_d)
-            _normalize_bc(mixed_bc, Tg)
+            _normalize_bc(mixed_bc)
         else
             nothing
         end

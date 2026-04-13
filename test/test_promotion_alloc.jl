@@ -182,8 +182,10 @@
         xq_s = 1.5
 
         # Warmup
-        for f in (_bench_linear_int, _bench_constant_int, _bench_quadratic_int,
-                  _bench_pchip_int, _bench_cardinal_int, _bench_akima_int)
+        for f in (
+                _bench_linear_int, _bench_constant_int, _bench_quadratic_int,
+                _bench_pchip_int, _bench_cardinal_int, _bench_akima_int,
+            )
             f(x_int, y_flt, xq_s); f(x_int, y_flt, xq_s)
         end
         _bench_hermite_int(x_int, y_flt, dy_flt, xq_s)
@@ -234,8 +236,10 @@
         xq_v = [0.5, 1.5, 2.5, 3.5]
         out4 = Vector{Float64}(undef, 4)
 
-        for f in (_bench_linear_int!, _bench_constant_int!, _bench_quadratic_int!,
-                  _bench_pchip_int!, _bench_cardinal_int!, _bench_akima_int!)
+        for f in (
+                _bench_linear_int!, _bench_constant_int!, _bench_quadratic_int!,
+                _bench_pchip_int!, _bench_cardinal_int!, _bench_akima_int!,
+            )
             f(out4, x_int, y_flt, xq_v); f(out4, x_int, y_flt, xq_v)
         end
         _bench_hermite_int!(out4, x_int, y_flt, dy_flt, xq_v)

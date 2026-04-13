@@ -674,4 +674,3 @@ end
     bank = _get_periodic_bank(Vector{float(T)})
     return _lookup_or_insert!(bank, x, nothing)
 end
-

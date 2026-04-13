@@ -141,9 +141,8 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 ```
 """
 # Public scalar one-shot API.
-# Single unified entry point for every grid eltype. `_promote_itp_inputs` handles
-# grid normalization (Range -> _CachedRange, Int -> Float64, Dual -> Dual{Float64},
-# etc.) and optional y-value promotion for standard numeric types.
+# Zero-alloc: _prepare_grid returns Vector as-is, Range → _CachedRange (stack).
+# Kernel arithmetic auto-promotes Int×Float via _get_h float() wrappers.
 @inline function constant_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -156,9 +155,9 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    x_typed, y_typed = _promote_itp_inputs(x, y)
+    x_typed = _prepare_grid(x)
     searcher = _resolve_search(x_typed, xi, search, hint)
-    return _constant_eval_at_point(x_typed, y_typed, xi, extrap, side, deriv, searcher)
+    return _constant_eval_at_point(x_typed, y, xi, extrap, side, deriv, searcher)
 end
 
 # ========================================

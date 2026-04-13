@@ -41,9 +41,14 @@ since this allocates a new vector. For duck types (e.g. `Dual{Int}→Dual{Float6
 the same broadcast applies — `T.(x)` dispatches to ForwardDiff's `convert`.
 """
 function _to_float(x::AbstractVector, ::Type{T}) where {T}
-    @warn "Non-matching vector element type detected - allocating type conversion. " *
-        "For zero-allocation, pre-convert your data: `x_typed = $T.(x)`" maxlog = 1
+    _warn_type_conversion(T)
     return T.(x)
+end
+
+@noinline function _warn_type_conversion(::Type{T}) where {T}
+    @warn "Non-matching vector element type detected — allocating type conversion. " *
+        "For zero-allocation, pre-convert your data: `x_typed = $T.(x)`" maxlog = 1
+    return nothing
 end
 
 # ========================================

@@ -143,6 +143,114 @@
     end
 
     # ========================================
+    # Int grid: zero-alloc scalar and in-place batch one-shot
+    # ========================================
+    @testset "Int grid one-shot: zero-alloc scalar" begin
+        # Function barriers with typed args — avoid closure capture boxing
+        function _bench_linear_int(x, y, xq)
+            linear_interp(x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_constant_int(x, y, xq)
+            constant_interp(x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_quadratic_int(x, y, xq)
+            quadratic_interp(x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_pchip_int(x, y, xq)
+            pchip_interp(x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_cardinal_int(x, y, xq)
+            cardinal_interp(x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_akima_int(x, y, xq)
+            akima_interp(x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_hermite_int(x, y, dy, xq)
+            hermite_interp(x, y, dy, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+
+        x_int = [0, 1, 2, 3, 4]
+        y_flt = sin.(Float64.(x_int))
+        dy_flt = cos.(Float64.(x_int))
+        xq_s = 1.5
+
+        # Warmup
+        for f in (_bench_linear_int, _bench_constant_int, _bench_quadratic_int,
+                  _bench_pchip_int, _bench_cardinal_int, _bench_akima_int)
+            f(x_int, y_flt, xq_s); f(x_int, y_flt, xq_s)
+        end
+        _bench_hermite_int(x_int, y_flt, dy_flt, xq_s)
+        _bench_hermite_int(x_int, y_flt, dy_flt, xq_s)
+
+        @test (@allocated _bench_linear_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_constant_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_quadratic_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_pchip_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_cardinal_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_akima_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_hermite_int(x_int, y_flt, dy_flt, xq_s)) <= ALLOC_THRESHOLD
+    end
+
+    @testset "Int grid one-shot: zero-alloc in-place batch" begin
+        function _bench_linear_int!(out, x, y, xq)
+            linear_interp!(out, x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_constant_int!(out, x, y, xq)
+            constant_interp!(out, x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_quadratic_int!(out, x, y, xq)
+            quadratic_interp!(out, x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_pchip_int!(out, x, y, xq)
+            pchip_interp!(out, x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_cardinal_int!(out, x, y, xq)
+            cardinal_interp!(out, x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_akima_int!(out, x, y, xq)
+            akima_interp!(out, x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_hermite_int!(out, x, y, dy, xq)
+            hermite_interp!(out, x, y, dy, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+
+        x_int = [0, 1, 2, 3, 4]
+        y_flt = sin.(Float64.(x_int))
+        dy_flt = cos.(Float64.(x_int))
+        xq_v = [0.5, 1.5, 2.5, 3.5]
+        out4 = Vector{Float64}(undef, 4)
+
+        for f in (_bench_linear_int!, _bench_constant_int!, _bench_quadratic_int!,
+                  _bench_pchip_int!, _bench_cardinal_int!, _bench_akima_int!)
+            f(out4, x_int, y_flt, xq_v); f(out4, x_int, y_flt, xq_v)
+        end
+        _bench_hermite_int!(out4, x_int, y_flt, dy_flt, xq_v)
+        _bench_hermite_int!(out4, x_int, y_flt, dy_flt, xq_v)
+
+        @test (@allocated _bench_linear_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_constant_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_quadratic_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_pchip_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_cardinal_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_akima_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_hermite_int!(out4, x_int, y_flt, dy_flt, xq_v)) <= ALLOC_THRESHOLD
+    end
+
+    # ========================================
     # Interpolant construction: no double-copy
     # ========================================
     @testset "Interpolant construction: single-copy for type conversion" begin

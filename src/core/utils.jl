@@ -400,8 +400,10 @@ ForwardDiff support is added via:
 """
     _effective_autocache(autocache, Tg) -> Bool
 
-Disable autocache for non-AbstractFloat grid types (e.g. ForwardDiff.Dual).
-Dual grids are ephemeral (created fresh each AD call), so cache hit rate ≈ 0%.
+Disable autocache for non-standard grid types (e.g. ForwardDiff.Dual).
+Enabled for `_PromotableValue` types (AbstractFloat, Integer, Rational) which
+have stable grid identity (cache hit rate > 0). Dual grids are ephemeral
+(created fresh each AD call), so autocache is disabled for them.
 Resolves at specialization time — zero runtime cost on the Float hot path.
 """
 @inline _effective_autocache(ac::Bool, ::Type{Tg}) where {Tg} = ac & (Tg <: _PromotableValue)

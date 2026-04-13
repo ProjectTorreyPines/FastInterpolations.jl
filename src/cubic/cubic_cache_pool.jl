@@ -640,13 +640,25 @@ end
     return _get_derivative_cache_impl(_to_float(x, T), bc_pair)
 end
 
-# Non-AbstractFloat Real (Int, Rational): look up in the Float64 bank directly.
+# Integer grids: look up in the Float64 bank directly.
 # isequal(Float64_entry, Int_input) = true, so cache hit works cross-type.
 # On miss, _build_cache converts to float via CubicSplineCache constructor.
-@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L, R}) where {T <: Real, L <: PointBC, R <: PointBC}
-    FT = float(T)
-    bank = _get_derivative_bank(Vector{FT}, bc_pair)
+@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L, R}) where {T <: Integer, L <: PointBC, R <: PointBC}
+    bank = _get_derivative_bank(Vector{float(T)}, bc_pair)
     return _lookup_or_insert!(bank, x, bc_pair)
+end
+
+# Rational grids: same cross-type lookup pattern.
+@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L, R}) where {T <: Rational, L <: PointBC, R <: PointBC}
+    bank = _get_derivative_bank(Vector{float(T)}, bc_pair)
+    return _lookup_or_insert!(bank, x, bc_pair)
+end
+
+# Duck-typed grids (Dual, etc.): build fresh, no caching.
+# These are ephemeral — cache hit rate ≈ 0%.
+@inline function _get_derivative_cache_impl(x::AbstractVector, bc_pair::BCPair{L, R}) where {L <: PointBC, R <: PointBC}
+    FT = _cache_float_type(eltype(x))
+    return _build_derivative_bc_cache(_to_float(x, FT), bc_pair.left, bc_pair.right)
 end
 
 """
@@ -668,8 +680,19 @@ end
     return _get_periodic_cache_impl(_to_float(x, T))
 end
 
-# Non-AbstractFloat Real (Int, Rational): look up in the Float64 bank directly.
-@inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T <: Real}
+# Integer grids: look up in the Float64 bank directly.
+@inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T <: Integer}
     bank = _get_periodic_bank(Vector{float(T)})
     return _lookup_or_insert!(bank, x, nothing)
+end
+
+# Rational grids: same pattern.
+@inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T <: Rational}
+    bank = _get_periodic_bank(Vector{float(T)})
+    return _lookup_or_insert!(bank, x, nothing)
+end
+
+# Duck-typed grids (Dual, etc.): build fresh, no caching.
+@inline function _get_periodic_cache_impl(x::AbstractVector)
+    return _build_periodic_cache(_to_float(x, _cache_float_type(eltype(x))))
 end

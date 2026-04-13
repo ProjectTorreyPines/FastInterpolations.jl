@@ -159,6 +159,10 @@
             quadratic_interp(x, y, xq; extrap = ExtendExtrap())
             return nothing
         end
+        function _bench_cubic_int(x, y, xq)
+            cubic_interp(x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
         function _bench_pchip_int(x, y, xq)
             pchip_interp(x, y, xq; extrap = ExtendExtrap())
             return nothing
@@ -184,7 +188,7 @@
         # Warmup
         for f in (
                 _bench_linear_int, _bench_constant_int, _bench_quadratic_int,
-                _bench_pchip_int, _bench_cardinal_int, _bench_akima_int,
+                _bench_cubic_int, _bench_pchip_int, _bench_cardinal_int, _bench_akima_int,
             )
             f(x_int, y_flt, xq_s); f(x_int, y_flt, xq_s)
         end
@@ -194,6 +198,7 @@
         @test (@allocated _bench_linear_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
         @test (@allocated _bench_constant_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
         @test (@allocated _bench_quadratic_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_cubic_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
         @test (@allocated _bench_pchip_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
         @test (@allocated _bench_cardinal_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
         @test (@allocated _bench_akima_int(x_int, y_flt, xq_s)) <= ALLOC_THRESHOLD
@@ -211,6 +216,10 @@
         end
         function _bench_quadratic_int!(out, x, y, xq)
             quadratic_interp!(out, x, y, xq; extrap = ExtendExtrap())
+            return nothing
+        end
+        function _bench_cubic_int!(out, x, y, xq)
+            cubic_interp!(out, x, y, xq; extrap = ExtendExtrap())
             return nothing
         end
         function _bench_pchip_int!(out, x, y, xq)
@@ -238,7 +247,7 @@
 
         for f in (
                 _bench_linear_int!, _bench_constant_int!, _bench_quadratic_int!,
-                _bench_pchip_int!, _bench_cardinal_int!, _bench_akima_int!,
+                _bench_cubic_int!, _bench_pchip_int!, _bench_cardinal_int!, _bench_akima_int!,
             )
             f(out4, x_int, y_flt, xq_v); f(out4, x_int, y_flt, xq_v)
         end
@@ -248,6 +257,7 @@
         @test (@allocated _bench_linear_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD
         @test (@allocated _bench_constant_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD
         @test (@allocated _bench_quadratic_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD
+        @test (@allocated _bench_cubic_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD
         @test (@allocated _bench_pchip_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD
         @test (@allocated _bench_cardinal_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD
         @test (@allocated _bench_akima_int!(out4, x_int, y_flt, xq_v)) <= ALLOC_THRESHOLD

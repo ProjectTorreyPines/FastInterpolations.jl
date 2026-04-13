@@ -157,7 +157,10 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 
     x_typed = _prepare_grid(x)
     searcher = _resolve_search(x_typed, xi, search, hint)
-    return _constant_eval_at_point(x_typed, y, xi, extrap, side, deriv, searcher)
+    result = _constant_eval_at_point(x_typed, y, xi, extrap, side, deriv, searcher)
+    # Constant returns y[idx] directly — promote Int/Rational to Float for
+    # consistency with batch path and other methods (which auto-promote via arithmetic).
+    return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
 end
 
 # ========================================

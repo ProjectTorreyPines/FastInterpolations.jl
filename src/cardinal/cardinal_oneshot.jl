@@ -121,11 +121,12 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x = _prepare_grid(x)
+    tension_f = float(eltype(x))(tension)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
-        return _cardinal_interp_onthefly(x, y, xq, float(tension), extrap, deriv, search, hint)
+        return _cardinal_interp_onthefly(x, y, xq, tension_f, extrap, deriv, search, hint)
     end
-    return _cardinal_interp_precompute(x, y, xq, float(tension), extrap, deriv, search, hint)
+    return _cardinal_interp_precompute(x, y, xq, tension_f, extrap, deriv, search, hint)
 end
 
 """

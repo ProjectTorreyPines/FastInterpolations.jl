@@ -528,14 +528,15 @@ LU factorization depends only on matrix structure (x-grid + BC type),
 not RHS values (y-data + BC values).
 """
 @inline function _get_cubic_cache(x; bc::AbstractBC = CubicFit())
+    xp = _prepare_grid(x)
     # Handle periodic BC
     if _is_periodic_bc(bc)
-        return _get_periodic_cache_impl(x)
+        return _get_periodic_cache_impl(xp)
     end
 
     # Normalize BC to BCPair and route to cache
     bc_pair = _normalize_bc(bc)
-    return _get_derivative_cache_impl(x, bc_pair)
+    return _get_derivative_cache_impl(xp, bc_pair)
 end
 
 # ===============================================================
@@ -548,35 +549,33 @@ end
     T <: _PromotableValue ? float(T) : T
 
 # Typed BC API - direct path, no Union
+# _prepare_grid: Vector as-is, Range → _CachedRange{float(T)} (normalizes Int Range).
 @inline function _get_cubic_cache(x, ::ZeroCurvBC)
     FT = _cache_float_type(eltype(x))
-    return _get_derivative_cache_impl(x, BCPair(Deriv2(zero(FT)), Deriv2(zero(FT))))
+    return _get_derivative_cache_impl(_prepare_grid(x), BCPair(Deriv2(zero(FT)), Deriv2(zero(FT))))
 end
 
 @inline function _get_cubic_cache(x, ::ZeroSlopeBC)
     FT = _cache_float_type(eltype(x))
-    return _get_derivative_cache_impl(x, BCPair(Deriv1(zero(FT)), Deriv1(zero(FT))))
+    return _get_derivative_cache_impl(_prepare_grid(x), BCPair(Deriv1(zero(FT)), Deriv1(zero(FT))))
 end
 
 @inline function _get_cubic_cache(x, ::PeriodicBC)
-    return _get_periodic_cache_impl(x)
+    return _get_periodic_cache_impl(_prepare_grid(x))
 end
 
-# BCPair API - converts to cache-compatible form via _cache_bc_pair
-# Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types
 # BCPair: convert to cache-compatible form, route to cache impl.
-# _cache_float_type: AbstractFloat→T, Int→Float64, Dual→Dual (duck passthrough).
 @inline function _get_cubic_cache(x::AbstractVector, bc::BCPair{L, R}) where {L <: PointBC, R <: PointBC}
     FT = _cache_float_type(eltype(x))
     bc_cache = _cache_bc_pair(bc, FT)
-    return _get_derivative_cache_impl(x, bc_cache)
+    return _get_derivative_cache_impl(_prepare_grid(x), bc_cache)
 end
 
 # PointBC convenience - convert to symmetric BCPair
 @inline function _get_cubic_cache(x, bc::PointBC)
     FT = _cache_float_type(eltype(x))
     bc_c = _cache_pointbc(bc, FT)
-    return _get_derivative_cache_impl(x, BCPair(bc_c, bc_c))
+    return _get_derivative_cache_impl(_prepare_grid(x), BCPair(bc_c, bc_c))
 end
 
 # BCPair + autocache API.

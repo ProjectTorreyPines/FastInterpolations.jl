@@ -258,9 +258,8 @@ end
 end
 
 # Public scalar one-shot API.
-# Single unified entry point for every grid eltype. `_promote_itp_inputs` handles
-# grid normalization (Range → _CachedRange, Int → Float64, Dual → Dual{Float64},
-# etc.) and optional y-value promotion for standard numeric types.
+# Zero-alloc: _prepare_grid returns Vector as-is, Range → _CachedRange (stack).
+# Kernel arithmetic auto-promotes Int×Float via _get_h float() wrappers.
 @inline function linear_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -272,9 +271,9 @@ end
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    x_typed, y_typed = _promote_itp_inputs(x, y)
+    x_typed = _prepare_grid(x)
     searcher = _resolve_search(x_typed, xq, search, hint)
-    return _linear_eval_at_point(x_typed, y_typed, xq, extrap, deriv, searcher)
+    return _linear_eval_at_point(x_typed, y, xq, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗

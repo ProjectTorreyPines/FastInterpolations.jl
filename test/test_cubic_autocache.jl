@@ -366,6 +366,68 @@ end
         @test cache_f16 isa CubicSplineCache{Float16}
     end
 
+    @testset "Non-float grid cache: Integer, Rational, Periodic, Duck-type" begin
+        clear_cubic_cache!()
+
+        # ── Integer Vector: derivative + periodic cache ──
+        x_int_v = [0, 1, 2, 3, 4]
+        y_int = sin.(Float64.(x_int_v))
+
+        # Derivative cache (Integer dispatch)
+        cache_int_d = _get_cubic_cache(x_int_v, ZeroCurvBC())
+        @test cache_int_d isa CubicSplineCache{Float64}
+
+        # Cache hit on repeat (cross-type isequal: Float64 entry vs Int input)
+        cache_int_d2 = _get_cubic_cache(x_int_v, ZeroCurvBC())
+        @test cache_int_d2 === cache_int_d
+
+        # Periodic cache (Integer dispatch)
+        x_periodic_int = [0, 1, 2, 3, 4, 5, 6]
+        y_periodic = sin.(2π .* Float64.(x_periodic_int) ./ 6)
+        cache_int_p = _get_cubic_cache(x_periodic_int, PeriodicBC())
+        @test cache_int_p isa CubicSplineCache{Float64}
+
+        # ── Rational Vector: derivative + periodic cache ──
+        x_rat = Rational{Int}[0 // 1, 1 // 1, 2 // 1, 3 // 1, 4 // 1]
+
+        cache_rat_d = _get_cubic_cache(x_rat, ZeroCurvBC())
+        @test cache_rat_d isa CubicSplineCache{Float64}
+
+        x_rat_periodic = Rational{Int}[0 // 1, 1 // 1, 2 // 1, 3 // 1, 4 // 1, 5 // 1, 6 // 1]
+        cache_rat_p = _get_cubic_cache(x_rat_periodic, PeriodicBC())
+        @test cache_rat_p isa CubicSplineCache{Float64}
+
+        # ── Integer with BCPair, PointBC, ZeroSlopeBC ──
+        cache_int_bp = _get_cubic_cache(x_int_v, BCPair(Deriv2(0.0), Deriv2(0.0)))
+        @test cache_int_bp isa CubicSplineCache{Float64}
+
+        cache_int_pb = _get_cubic_cache(x_int_v, Deriv2(0.0))
+        @test cache_int_pb isa CubicSplineCache{Float64}
+
+        cache_int_zs = _get_cubic_cache(x_int_v, ZeroSlopeBC())
+        @test cache_int_zs isa CubicSplineCache{Float64}
+
+        # ── Integer with autocache=true (3-arg path) ──
+        clear_cubic_cache!()
+        bc_pair = BCPair(Deriv2(0.0), Deriv2(0.0))
+        cache_int_ac = _get_cubic_cache(x_int_v, bc_pair, true)
+        @test cache_int_ac isa CubicSplineCache{Float64}
+        # Second call should hit cache
+        cache_int_ac2 = _get_cubic_cache(x_int_v, bc_pair, true)
+        @test cache_int_ac2 === cache_int_ac
+
+        # ── Integer with autocache=false (3-arg, build fresh) ──
+        cache_int_no = _get_cubic_cache(x_int_v, bc_pair, false)
+        @test cache_int_no isa CubicSplineCache{Float64}
+        @test cache_int_no !== cache_int_ac  # fresh, not cached
+
+        # ── Correctness: Int grid cubic_interp matches Float grid ──
+        x_flt = Float64.(x_int_v)
+        ref = cubic_interp(x_flt, y_int, 1.5; extrap = ExtendExtrap())
+        val = cubic_interp(x_int_v, y_int, 1.5; extrap = ExtendExtrap())
+        @test val ≈ ref
+    end
+
     @testset "_get_cubic_cache keyword API" begin
         clear_cubic_cache!()
 

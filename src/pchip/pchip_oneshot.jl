@@ -20,9 +20,8 @@
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    Tg_f = float(Tg)
-    x = _to_float(x, Tg_f)
-    Tdy = _output_eltype(Tv, Tg)
+    x = _prepare_grid(x)
+    Tdy = _output_eltype(Tv, float(eltype(x)))
     dy = acquire!(pool, Tdy, length(y))
     _pchip_slopes!(dy, x, y)
     searcher = _resolve_search(x, xq, search, hint)
@@ -42,33 +41,9 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    Tg_f = float(Tg)
-    x = _to_float(x, Tg_f)
+    x = _prepare_grid(x)
 
-    Tdy = _output_eltype(Tv, Tg)
-    dy = acquire!(pool, Tdy, length(y))
-    _pchip_slopes!(dy, x, y)
-    searcher = _resolve_search(x, x_query, search, hint)
-    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
-end
-
-# Range disambiguation for in-place
-@inline @with_pool pool function _pchip_interp_precompute!(
-        output::AbstractVector,
-        x::AbstractRange{Tg},
-        y::AbstractVector{Tv},
-        x_query::AbstractVector,
-        extrap::AbstractExtrap,
-        deriv::DerivOp,
-        search::AbstractSearchPolicy,
-        hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg, Tv}
-    @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    Tg_f = float(Tg)
-    x = _to_float(x, Tg_f)
-
-    Tdy = _output_eltype(Tv, Tg)
+    Tdy = _output_eltype(Tv, float(eltype(x)))
     dy = acquire!(pool, Tdy, length(y))
     _pchip_slopes!(dy, x, y)
     searcher = _resolve_search(x, x_query, search, hint)
@@ -91,7 +66,7 @@ end
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("PCHIP interpolation requires at least 2 points, got $(length(x))"))
-    x = _to_float(x, Tg)
+    x = _prepare_grid(x)
     searcher = _resolve_search(x, xq, search, hint)
     return _hermite_eval_at_point(x, y, PchipSlopes(), xq, extrap, deriv, searcher)
 end
@@ -109,7 +84,7 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _to_float(x, Tg)
+    x = _prepare_grid(x)
 
     searcher = _resolve_search(x, x_query, search, hint)
     return _hermite_vector_loop!(output, x, y, PchipSlopes(), x_query, extrap, deriv, searcher)
@@ -140,7 +115,7 @@ C\$^1\$ continuous, monotonicity guaranteed for monotone input data.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x, y = _promote_itp_inputs(x, y)
+    x = _prepare_grid(x)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
         return _pchip_interp_onthefly(x, y, xq, extrap, deriv, search, hint)

@@ -21,9 +21,8 @@
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    Tg_f = float(Tg)
-    x = _to_float(x, Tg_f)
-    Tdy = _output_eltype(Tv, Tg_f)
+    x = _prepare_grid(x)
+    Tdy = _output_eltype(Tv, float(eltype(x)))
     dy = acquire!(pool, Tdy, length(y))
     _cardinal_slopes!(dy, x, y, tension)
     searcher = _resolve_search(x, xq, search, hint)
@@ -44,32 +43,9 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _to_float(x, float(Tg))
+    x = _prepare_grid(x)
 
-    Tdy = _output_eltype(Tv, Tg)
-    dy = acquire!(pool, Tdy, length(y))
-    _cardinal_slopes!(dy, x, y, tension)
-    searcher = _resolve_search(x, x_query, search, hint)
-    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
-end
-
-# Range disambiguation for in-place
-@inline @with_pool pool function _cardinal_interp_precompute!(
-        output::AbstractVector,
-        x::AbstractRange{Tg},
-        y::AbstractVector{Tv},
-        x_query::AbstractVector,
-        tension::Real,
-        extrap::AbstractExtrap,
-        deriv::DerivOp,
-        search::AbstractSearchPolicy,
-        hint::Union{Nothing, Base.RefValue{Int}}
-    ) where {Tg, Tv}
-    @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _to_float(x, float(Tg))
-
-    Tdy = _output_eltype(Tv, Tg)
+    Tdy = _output_eltype(Tv, float(eltype(x)))
     dy = acquire!(pool, Tdy, length(y))
     _cardinal_slopes!(dy, x, y, tension)
     searcher = _resolve_search(x, x_query, search, hint)
@@ -93,7 +69,7 @@ end
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
-    x = _to_float(x, float(Tg))
+    x = _prepare_grid(x)
     searcher = _resolve_search(x, xq, search, hint)
     return _hermite_eval_at_point(x, y, CardinalSlopes(tension), xq, extrap, deriv, searcher)
 end
@@ -113,7 +89,7 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _to_float(x, float(Tg))
+    x = _prepare_grid(x)
 
     searcher = _resolve_search(x, x_query, search, hint)
     return _hermite_vector_loop!(output, x, y, CardinalSlopes(tension), x_query, extrap, deriv, searcher)
@@ -144,13 +120,13 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x, y = _promote_itp_inputs(x, y)
-    Tg_actual = eltype(x)
+    x = _prepare_grid(x)
+    tension_f = float(eltype(x))(tension)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
-        return _cardinal_interp_onthefly(x, y, xq, Tg_actual(tension), extrap, deriv, search, hint)
+        return _cardinal_interp_onthefly(x, y, xq, tension_f, extrap, deriv, search, hint)
     end
-    return _cardinal_interp_precompute(x, y, xq, Tg_actual(tension), extrap, deriv, search, hint)
+    return _cardinal_interp_precompute(x, y, xq, tension_f, extrap, deriv, search, hint)
 end
 
 """

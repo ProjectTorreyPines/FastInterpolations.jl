@@ -41,9 +41,14 @@ since this allocates a new vector. For duck types (e.g. `Dual{Int}→Dual{Float6
 the same broadcast applies — `T.(x)` dispatches to ForwardDiff's `convert`.
 """
 function _to_float(x::AbstractVector, ::Type{T}) where {T}
-    @warn "Non-matching vector element type detected - allocating type conversion. " *
-        "For zero-allocation, pre-convert your data: `x_typed = $T.(x)`" maxlog = 1
+    _warn_type_conversion(T)
     return T.(x)
+end
+
+@noinline function _warn_type_conversion(::Type{T}) where {T}
+    @warn "Non-matching vector element type detected — allocating type conversion. " *
+        "For zero-allocation, pre-convert your data: `x_typed = $T.(x)`" maxlog = 1
+    return nothing
 end
 
 # ========================================
@@ -395,11 +400,13 @@ ForwardDiff support is added via:
 """
     _effective_autocache(autocache, Tg) -> Bool
 
-Disable autocache for non-AbstractFloat grid types (e.g. ForwardDiff.Dual).
-Dual grids are ephemeral (created fresh each AD call), so cache hit rate ≈ 0%.
+Disable autocache for non-standard grid types (e.g. ForwardDiff.Dual).
+Enabled for `_PromotableValue` types (AbstractFloat, Integer, Rational) which
+have stable grid identity (cache hit rate > 0). Dual grids are ephemeral
+(created fresh each AD call), so autocache is disabled for them.
 Resolves at specialization time — zero runtime cost on the Float hot path.
 """
-@inline _effective_autocache(ac::Bool, ::Type{Tg}) where {Tg} = ac & (Tg <: AbstractFloat)
+@inline _effective_autocache(ac::Bool, ::Type{Tg}) where {Tg} = ac & (Tg <: _PromotableValue)
 # Arithmetic then auto-promotes GridIdx → g.val via promote_rule.
 
 """

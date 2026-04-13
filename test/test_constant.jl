@@ -165,8 +165,8 @@ end
         x_int = [0, 1, 2, 3, 4]
         y_int = [10, 20, 30, 40, 50]
         result = constant_interp(x_int, y_int, 1.5)
-        @test result isa Float64
-        @test result == 20.0
+        # constant returns y[idx] directly — Int y stays Int (no unnecessary promotion)
+        @test result == 20
     end
 
     @testset "Real→Float wrappers (coverage)" begin

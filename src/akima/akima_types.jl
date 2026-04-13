@@ -63,25 +63,9 @@ struct AkimaInterpolant1D{
         )
     end
 
-    # User-provided slopes inner: promotes x/y, creates spacing, stores given dy.
+    # OnTheFly inner: promotes x/y, creates spacing, slope_strategy is a slope method tag.
     function AkimaInterpolant1D(
-            x::AbstractVector, y::AbstractVector, dy::AbstractVector, extrap::E, search::P
-        ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
-        length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
-        length(x) == length(dy) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
-        Tg = _promote_grid_float(eltype(x), eltype(y))
-        Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid(x, Tg)
-        yc = _convert_copy(y, Tv)
-        spacing = _create_spacing(xc)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), typeof(spacing), E, P, PreCompute}(
-            xc, yc, dy, spacing, extrap, search
-        )
-    end
-
-    # OnTheFly inner: promotes x/y, creates spacing, dy is a slope method tag.
-    function AkimaInterpolant1D(
-            x::AbstractVector, y::AbstractVector, dy::AbstractSlopeMethod, extrap::E, search::P
+            x::AbstractVector, y::AbstractVector, slope_strategy::AbstractSlopeMethod, extrap::E, search::P
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
@@ -90,8 +74,8 @@ struct AkimaInterpolant1D{
         xc = _store_grid(x, Tg)
         yc = _convert_copy(y, Tv)
         spacing = _create_spacing(xc)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), typeof(spacing), E, P, OnTheFly}(
-            xc, yc, dy, spacing, extrap, search
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), typeof(spacing), E, P, OnTheFly}(
+            xc, yc, slope_strategy, spacing, extrap, search
         )
     end
 end
@@ -100,9 +84,9 @@ end
 @inline function AkimaInterpolant1D(
         x::AbstractVector,
         y::AbstractVector,
-        dy;  # AbstractVector (PreCompute) or AbstractSlopeMethod (OnTheFly)
+        slope_strategy::AbstractSlopeMethod;
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    return AkimaInterpolant1D(x, y, dy, extrap, search)
+    return AkimaInterpolant1D(x, y, slope_strategy, extrap, search)
 end

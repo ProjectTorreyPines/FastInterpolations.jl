@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1775947293768,
+  "lastUpdate": 1776102161499,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -42370,6 +42370,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1627,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a1171000ca0b18e6e0a9675f2dc629b843e0c2fc",
+          "message": "(refac): Refactor type promotion — eliminate unnecessary allocations (#121)\n\n* (refactor): Unify interpolant constructors — inner computes Tv, outer is convenience only\n\nInner constructors now compute Tv via _value_type and use _convert_copy for\nsingle-alloc type conversion + immutability copy (eliminates double-copy when\ndata eltype differs from grid type). Outer constructors simplified to just\ncompute spacing and delegate.\n\nNew helpers in core/utils.jl:\n- _promote_grid_only(x, y): grid-only promotion for one-shot paths\n- _convert_copy(v, T): same-type→copy, diff-type→Vector{T}(v)\n- _promote_query_typed: now uses _PromotableValue guard for duck-type queries\n- _promote_adjoint_inputs: shared grid+query promotion for all adjoint builders\n\n* (refactor): Consolidate ND type promotion with _nd_promote_grids helper\n\nReplace the 3-line pattern (promote_grid_eltype + float + convert_grids_typed)\nat 21 ND call sites with a single _nd_promote_grids(grids, data) call that\nreturns (grids_typed, Tg, Tv, Tz). Unused returns are DCE'd by LLVM.\n\n* (refactor): Remove query/data promotion from one-shot in-place paths\n\nOne-shot in-place (*_interp!) no longer pre-converts query or data vectors,\neliminating heap allocation on type mismatch (e.g. Float32 query on Float64\ngrid). Search internals handle mixed types via _to_grid_type per-element.\n\nAlso fixes _normalize_bc to use _value_type(Tv, Tg) instead of first(y),\npreventing InexactError when raw data type (e.g. Complex{Int}) can't represent\nBC values (e.g. Deriv2(0.5)).\n\n* (refactor): Consolidate adjoint grid+query promotion with _promote_adjoint_inputs\n\nReplace the 4-line pattern (promote_grid_float + to_float + query ternary +\nto_float) in all 8 adjoint builders with a single _promote_adjoint_inputs(x, xq)\ncall returning (x_p, xq_p, Tg).\n\n* (test): Add mixed-type promotion allocation tests\n\nVerifies zero-alloc for one-shot in-place with mismatched query/data types\nand single-copy for interpolant construction with type conversion.\n\n* (refactor): Simplify _normalize_bc — shape-only, no type promotion\n\nRemove BC value type promotion from _normalize_bc. It is now a pure shape\nnormalizer (ZeroCurvBC → BCPair, PointBC → symmetric BCPair, etc.).\n\nZeroCurvBC/ZeroSlopeBC retain duck-safe 2-arg overloads using 0*sample and\nType-based overloads using zero(Tv). All other BCs ignore the 2nd arg via\nfallback. Solver RHS auto-promotes BC values via Julia arithmetic.\n\nFixes InexactError with Complex{Int} data + Deriv2(0.5) and MethodError\nwith duck types lacking zero(::Type).\n\n* (test): Update BC tests for shape-only _normalize_bc\n\nBC type conversion tests now verify that _normalize_bc preserves original\nBC value types (no Float32→Float64 promotion). Matches the new design where\ntype promotion is removed from _normalize_bc.\n\n* (refactor): Remove promotion from allocating batch — compute Tr from raw types\n\nAllocating batch paths (*_interp without !) now compute output eltype directly\nfrom raw where-clause types via _output_eltype(Tv, _promote_grid_float(Tg,Tv), Tq)\nand delegate to the in-place version. No pre-promotion of x, y, or xq.\n\nAlso removes unused _alloc_output helper.\n\n* (refactor): Remove _to_grid_type — let search handle mixed types natively\n\nSearch functions no longer force-convert query to grid eltype. Julia's\nbuilt-in promotion handles Int-Float and Dual-Float comparisons with\nnegligible overhead (~1-3 cycles). _extract_primal before unsafe_trunc\nwas already in place for CachedRange paths. The ForwardDiff ext Dual\noverload is no longer needed.\n\n* (refactor): VectorSpacing{T,Tinv} — separate h/inv_h types for Int grids\n\nh::Vector{T} keeps original grid difference type, inv_h::Vector{Tinv}\nuses typeof(inv(oneunit(T))). For Float grids Tinv==T (no change);\nfor Int grids Tinv=Float64 (inv(::Int) returns Float64). Adds\nconvenience constructor VectorSpacing{T}(h,inv_h) for backward compat.\n\n* (refactor): Add _prepare_grid, _store_grid helpers + float() in _get_h\n\n_prepare_grid: one-shot zero-alloc grid prep (Vector pass-through,\nRange → CachedRange). Replaces _promote_grid_only in batch paths.\n\n_store_grid: interpolant single-alloc grid storage (Vector →\n_convert_copy, Range → CachedRange). Eliminates double allocation\nin constructors.\n\n_get_h 3-arg and VectorSpacing 2-arg accessors now apply float()\nfor Int grid compatibility — scalar conversion (0 alloc, ~1 cycle),\nno-op for Float/Dual grids.\n\nRemoves _promote_grid_only (replaced by the two new helpers).\nRemoves redundant float() wrapping _promote_grid_float (already\ncalls float() internally).\n\n* (refactor): One-shot batch paths use _prepare_grid — zero-alloc for Vector grids\n\nAll 7 *_interp! batch paths now call _prepare_grid(x) instead of\n_promote_grid_only(x, y). Vector grids pass through as-is (zero heap\nalloc); Range grids convert to _CachedRange (stack alloc). Int grid\nvalues are converted to Float at the scalar level via _get_h/float().\n\n* (refactor): Interpolant constructors use _store_grid — single-alloc promotion\n\nInner constructors now compute Tg, Tv, and create spacing internally\nfrom raw x/y. Uses _store_grid(x, Tg) for single-allocation grid\nstorage (promote + copy in one step, eliminating the previous\ndouble-alloc from _promote_grid_only + copy).\n\nSimple types (Linear, Constant): inner does everything.\nComplex types (Quadratic, Pchip, Cardinal, Akima): *_interp functions\npass raw x/y; inner handles promotion. PreCompute paths pass promoted\ngrid for slope computation.\nCubic: *_interp uses _store_grid, cache system handles storage.\n\nOuter constructors are now thin kwarg wrappers.\n\n* Runic formatting\n\n* (test): Add coverage instrumentation overhead to ALLOC_THRESHOLD\n\n--code-coverage adds 16 bytes (one pointer) per @allocated measurement.\nThis is a JIT instrumentation artifact, not a real allocation — verified\nwith julia --project (no coverage) showing 0 bytes.\n\n* (fix): ConstantSeries _make_anchor — pass xq directly instead of Tg(xq)\n\nTg(xq) crashes when xq is ForwardDiff.Dual (Float64(Dual) has no method).\nPreviously hidden by _to_grid_type which extracted primal, but that was\nremoved. Now xq passes through directly — search handles mixed types.\n\n* (fix): Cardinal oneshot — use float(eltype(x)) for tension conversion\n\neltype(x)(tension) crashes on Int grids (Int(0.5) → InexactError).\nUse float(eltype(x)) to ensure tension is converted to Float type.\n\n* (fix): Compute Hermite slopes from promoted y to match stored precision\n\nPreCompute paths for pchip/akima/cardinal_interp now promote y before\ncomputing slopes, matching master's behavior where _promote_itp_inputs\npromoted both x and y before slope computation. Without this, Float32 y\non Float64 grid would compute slopes at Float32 precision while storing\nFloat64 y values — a precision mismatch regression.\n\n* (fix): Constant anchor — relax xq::T to xq::Tq for mixed-type queries\n\n_constant_anchor_query_impl required xq to match grid eltype exactly.\nFloat32 grid + Float64 query caused MethodError. Now accepts any\nReal query type, consistent with linear/cubic/quadratic anchors.\n\n* (fix): Cardinal oneshot — relax tension::Tg to tension::Real for Int grids\n\nAll internal cardinal functions (_precompute, _precompute!, _onthefly)\nrequired tension to match grid eltype. With Int grids passing through\nvia _prepare_grid, Float64 tension mismatches Int Tg. Now accepts any\nReal tension, consistent with the public API signature.\n\n* (fix): ConstantAnchoredQuery{Tg,Tq} — match Linear/Cubic/Quadratic anchor pattern\n\nConstantAnchoredQuery was the only anchor struct with a single type param,\nforcing xq::T and dL::T to match grid type. This crashed on Dual queries\n(Float64(Dual) has no method) and was inconsistent with the other anchors\nwhich all use {Tg, Tq} to support mixed grid/query types and AD.\n\nAdds backward-compat convenience constructor for single-param callers.\nRelaxes _constant_anchor_query_impl signature to accept any Real query.\n\n* (fix): Int grid + Int y support — float coefficients + cubic cache promotion\n\n- Quadratic oneshot: float(Tcoeff) ensures coefficient buffers are Float\n  even when both grid and data are Int (prevents InexactError)\n- Cubic cache pool: _get_cubic_cache(x, bc, autocache) now promotes Int\n  grids to Float before Thomas solver (non-autocache path was missing\n  the _to_float call that other overloads already had)\n\n* (test): Add Int grid + Int y correctness test for all 7 methods\n\nVerifies that all interpolation methods (linear, constant, quadratic,\ncubic, pchip, cardinal, akima) accept Int grid + Int y inputs and\nreturn Vector{Float64} results.\n\n* (fix): Int grid support — float coefficients/slopes in all PreCompute paths\n\nHermite PreCompute oneshot (pchip/cardinal/akima): _to_float(x, float(Tg))\nensures grid is promoted, float(Tdy) ensures slope buffers are Float.\nQuadratic oneshot: float(Tcoeff) for coefficient buffers.\nCubic cache: non-autocache path now promotes Int grids via _to_float.\n\nAdded comprehensive Int grid + Int y tests for all 7 methods including\nPreCompute batch paths.\n\n* (fix): Quadratic scalar oneshot — use _prepare_grid instead of _to_float\n\nRemoves last remaining _to_float(x, _promote_grid_float(...)) call in\noneshot paths. Consistent with all other oneshot entry points.\n\n* (fix): ConstantAnchoredQuery — fix _fill_anchors! and Vector alloc for {Tg,Tq} struct\n\n_fill_anchors! signature uses {T,T} to match concrete pool buffer type.\nVector allocation uses {T,T} for concrete element type.\nConsistent with Linear/Cubic/Quadratic anchor patterns.\n\n* Runic formatting\n\n* (fix): Update buffer type in Vector Query test for Constant Anchored Query\n\n* (fix): ConstantAnchoredQuery{Tg,Tq} — update all remaining {Tg} refs\n\nAdjoint (1D + ND), _fill_anchors!, and test files all updated to use\nconcrete {Tg, Tg} instead of UnionAll {Tg} for Vector container types\nand function signatures.\n\n* (fix): Update _ConstantAnchoredQuery type parameters to remove redundant Tg reference\n\n* (fix): ConstantInterpolant anchor vector eval — use <: for flexible dispatch\n\nVector evaluation methods used exact AbstractVector{_ConstantAnchoredQuery{T}}\nwhich fails with concrete {T, T} elements. Changed to\nAbstractVector{<:_ConstantAnchoredQuery{T}} matching Linear/Cubic pattern.\n\n* (fix): _promote_query_typed — promote standard queries to grid type (duck grids)\n\nFor duck-typed grids (Dual, Measurement), standard numeric queries\n(Float64) must be promoted to grid type for adjoint anchor compatibility.\nPrevious logic used float(Tq) which left Float64 unchanged on Dual grids.\nNow uses _to_float(xq, Tg) matching master's behavior.\n\n* (fix): _output_eltype — duck-safe Int→Float promotion\n\nMove float() guard into _output_eltype: standard numerics (Int, Rational)\nget promoted to Float for coefficient buffers, duck types (MyStruct etc.)\npass through unchanged. Removes outer float() calls from all oneshot paths.\nFixes Documenter @example crash: float(MyStruct) → MethodError.\n\n* (fix): Cubic cache pool — duck-safe FT detection for Dual grids\n\nFT = T <: AbstractFloat ? T : Float64 fails for Dual (not AbstractFloat).\nNow checks _PromotableValue first: standard numerics get Float64, duck\ntypes (Dual, Measurement) pass through as-is. Fixes Float64(Dual) crash\nin cubic scalar/vector/interpolant oneshot with Dual grids.\n\n* (fix): ConstantAnchoredQuery — promote xq to match dL type on Dual grids\n\nFloat64 query + Dual grid produces dL::Dual (from xq - xL_dual), but\nxq stays Float64. The struct requires xq::Tq and dL::Tq to unify.\nUses oftype(dL, xq) to promote xq, matching Linear anchor's pattern\n(convert(typeof(alpha), xq) at linear_anchor.jl:73).\n\n* (refactor): Remove unused user-provided slopes constructors from Hermite types\n\nPchip/Cardinal/Akima had dy::AbstractVector inner constructors that were\nnever called — user-provided slopes go through hermite_interp(x, y, dy).\nRemoved dead code, typed outer dy param as AbstractSlopeMethod, renamed\ndy → slope_strategy for clarity.",
+          "timestamp": "2026-04-13T10:34:39-07:00",
+          "tree_id": "ba793f5377fbd9842dc673415c6e273e05ed33a2",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/a1171000ca0b18e6e0a9675f2dc629b843e0c2fc"
+        },
+        "date": 1776102154276,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 37740,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 592.52,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 355393,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1780.52,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1582.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 15.63,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 11.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3314.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=272\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 32.96,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 18.83,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4222.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4216.68,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9083.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3203.98,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 446.84,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 61828.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1312.44,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12637.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 18.33,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 443.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 42612.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 25.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 18733,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 36.07,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 261.29,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 9.81,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 196.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 18572.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 543.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4325.28,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 40158.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 725.94,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1689.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2281.46,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11350.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3346.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 39264.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 974.82,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 382835.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1612,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

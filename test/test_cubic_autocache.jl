@@ -388,12 +388,12 @@ end
         @test cache_int_p isa CubicSplineCache{Float64}
 
         # ── Rational Vector: derivative + periodic cache ──
-        x_rat = Rational{Int}[0//1, 1//1, 2//1, 3//1, 4//1]
+        x_rat = Rational{Int}[0 // 1, 1 // 1, 2 // 1, 3 // 1, 4 // 1]
 
         cache_rat_d = _get_cubic_cache(x_rat, ZeroCurvBC())
         @test cache_rat_d isa CubicSplineCache{Float64}
 
-        x_rat_periodic = Rational{Int}[0//1, 1//1, 2//1, 3//1, 4//1, 5//1, 6//1]
+        x_rat_periodic = Rational{Int}[0 // 1, 1 // 1, 2 // 1, 3 // 1, 4 // 1, 5 // 1, 6 // 1]
         cache_rat_p = _get_cubic_cache(x_rat_periodic, PeriodicBC())
         @test cache_rat_p isa CubicSplineCache{Float64}
 

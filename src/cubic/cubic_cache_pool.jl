@@ -425,9 +425,20 @@ end
     return _build_derivative_bc_cache(x, bc.left, bc.right)
 end
 
+# Non-AbstractFloat Real input (Int, Rational): convert to float, build cache.
+# Only called on cache miss — subsequent hits are zero-alloc.
+@inline function _build_cache(::Type{<:CacheEntry{T, L, R}}, x::AbstractVector, bc::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
+    return _build_derivative_bc_cache(_to_float(x, T), bc.left, bc.right)
+end
+
 # Build cache for periodic BC entry
 @inline function _build_cache(::Type{<:PeriodicCacheEntry{T}}, x::AbstractVector{T}, ::Nothing) where {T <: AbstractFloat}
     return _build_periodic_cache(x)
+end
+
+# Non-AbstractFloat Real input: convert to float for periodic cache.
+@inline function _build_cache(::Type{<:PeriodicCacheEntry{T}}, x::AbstractVector, ::Nothing) where {T <: AbstractFloat}
+    return _build_periodic_cache(_to_float(x, T))
 end
 
 # ---------------------------------------------------------------
@@ -522,101 +533,81 @@ not RHS values (y-data + BC values).
         return _get_periodic_cache_impl(x)
     end
 
-    # Determine target type: Float grids → identity, Int → Float64, duck (Dual) → pass through
-    T = eltype(x)
-    FT = T <: _PromotableValue ? (T <: AbstractFloat ? T : Float64) : T
-
-    # Normalize BC to BCPair
+    # Normalize BC to BCPair and route to cache
     bc_pair = _normalize_bc(bc)
-
-    # Get bank and lookup
-    return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)
+    return _get_derivative_cache_impl(x, bc_pair)
 end
 
 # ===============================================================
 # Type-Stable Direct API (Internal - bypasses Union for zero-allocation)
 # ===============================================================
 
+# Helper: resolve cache float type.
+# Float64→Float64, Float32→Float32, Int→Float64, Dual→Dual (duck passthrough).
+@inline _cache_float_type(::Type{T}) where {T} =
+    T <: _PromotableValue ? float(T) : T
+
 # Typed BC API - direct path, no Union
 @inline function _get_cubic_cache(x, ::ZeroCurvBC)
-    T = eltype(x)
-    FT = T <: _PromotableValue ? (T <: AbstractFloat ? T : Float64) : T
-    bc_pair = BCPair(Deriv2(zero(FT)), Deriv2(zero(FT)))
-    return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)
+    FT = _cache_float_type(eltype(x))
+    return _get_derivative_cache_impl(x, BCPair(Deriv2(zero(FT)), Deriv2(zero(FT))))
 end
 
 @inline function _get_cubic_cache(x, ::ZeroSlopeBC)
-    T = eltype(x)
-    FT = T <: _PromotableValue ? (T <: AbstractFloat ? T : Float64) : T
-    bc_pair = BCPair(Deriv1(zero(FT)), Deriv1(zero(FT)))
-    return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)
+    FT = _cache_float_type(eltype(x))
+    return _get_derivative_cache_impl(x, BCPair(Deriv1(zero(FT)), Deriv1(zero(FT))))
 end
 
 @inline function _get_cubic_cache(x, ::PeriodicBC)
-    T = eltype(x)
-    FT = T <: _PromotableValue ? (T <: AbstractFloat ? T : Float64) : T
-    return _get_periodic_cache_impl(_to_float(x, FT))
+    return _get_periodic_cache_impl(x)
 end
 
 # BCPair API - converts to cache-compatible form via _cache_bc_pair
 # Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types
-@inline function _get_cubic_cache(x::AbstractVector{T}, bc::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
-    # Convert to cache-compatible form (PolyFit → Deriv1 for same matrix structure)
-    bc_cache = _cache_bc_pair(bc, T)
-    return _get_derivative_cache_impl(_to_float(x, T), bc_cache)
-end
-
-# Fallback for non-float vectors (e.g., Int) - promotes to appropriate float type
-# NOTE: Convert x first to avoid redundant conversion in _get_derivative_cache_impl
+# BCPair: convert to cache-compatible form, route to cache impl.
+# _cache_float_type: AbstractFloat→T, Int→Float64, Dual→Dual (duck passthrough).
 @inline function _get_cubic_cache(x::AbstractVector, bc::BCPair{L, R}) where {L <: PointBC, R <: PointBC}
-    T = eltype(x)
-    T <: AbstractFloat && error("Should dispatch to typed method")
-    # Convert x once here, then call typed implementation directly
-    # float.(x) preserves Float32 precision; Int → Float64
-    x_float = float.(x)
-    bc_cache = _cache_bc_pair(bc, eltype(x_float))
-    return _get_derivative_cache_impl(x_float, bc_cache)
+    FT = _cache_float_type(eltype(x))
+    bc_cache = _cache_bc_pair(bc, FT)
+    return _get_derivative_cache_impl(x, bc_cache)
 end
 
 # PointBC convenience - convert to symmetric BCPair
-# Uses _cache_pointbc (not _promote_pointbc) to avoid convert(Tg, bc.val)
-# which fails for duck-typed Tv values. Cache only needs structural BC type.
 @inline function _get_cubic_cache(x, bc::PointBC)
-    T = eltype(x)
-    FT = T <: _PromotableValue ? (T <: AbstractFloat ? T : Float64) : T
+    FT = _cache_float_type(eltype(x))
     bc_c = _cache_pointbc(bc, FT)
-    return _get_derivative_cache_impl(_to_float(x, FT), BCPair(bc_c, bc_c))
+    return _get_derivative_cache_impl(x, BCPair(bc_c, bc_c))
 end
 
 # BCPair + autocache API.
-# Keep cache representation structural (PolyFit → Deriv1) regardless of autocache.
-# Solve/eval still use original bc from caller via _solve_system!.
-#
-# _to_float normalizes Range → _CachedRange; identity for Vector/_CachedRange.
+# _prepare_grid normalizes Range → _CachedRange (stack); Vector passes as-is.
+# autocache=true → pool lookup, false → build fresh.
 @inline function _get_cubic_cache(
-        x::AbstractVector{T},
+        x::AbstractVector,
         bc::BCPair{L, R},
         autocache::Bool
-    ) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
-    bc_cache = _cache_bc_pair(bc, T)
-    x_norm = _to_float(x, T)
+    ) where {L <: PointBC, R <: PointBC}
+    FT = _cache_float_type(eltype(x))
+    bc_cache = _cache_bc_pair(bc, FT)
+    x_norm = _prepare_grid(x)
     if autocache
         return _get_derivative_cache_impl(x_norm, bc_cache)
     else
-        return _build_derivative_bc_cache(x_norm, bc_cache.left, bc_cache.right)
+        return _build_derivative_bc_cache(_to_float(x_norm, FT), bc_cache.left, bc_cache.right)
     end
 end
 
 @inline function _get_cubic_cache(
-        x::AbstractVector{T},
+        x::AbstractVector,
         bc::AbstractBC,
         autocache::Bool
-    ) where {T <: AbstractFloat}
-    x_norm = _to_float(x, T)
+    )
+    x_norm = _prepare_grid(x)
     if autocache
         return _get_cubic_cache(x_norm, bc)
     else
-        return CubicSplineCache(x_norm; bc = bc)
+        FT = _cache_float_type(eltype(x))
+        return CubicSplineCache(_to_float(x_norm, FT); bc = bc)
     end
 end
 
@@ -625,7 +616,6 @@ end
 # Internal: Cache Implementation
 # ===============================================================
 #
-# After _to_float normalization, x is always _CachedRange{T} (from Range) or Vector{T}.
 # Bank type X matches: _CachedRange{T} bank or Vector{T} bank — no Union, no dispatch explosion.
 
 """
@@ -651,12 +641,13 @@ end
     return _get_derivative_cache_impl(_to_float(x, T), bc_pair)
 end
 
-# Fallback: other Real types → convert to appropriate float type
-# Uses _cache_bc_pair to handle lazy types (PolyFit → Deriv1)
-@inline function _get_derivative_cache_impl(x::AbstractVector{<:Real}, bc_pair::BCPair)
-    x_float = _to_float(x, float(eltype(x)))
-    bc_cache = _cache_bc_pair(bc_pair, eltype(x_float))
-    return _get_derivative_cache_impl(x_float, bc_cache)
+# Non-AbstractFloat Real (Int, Rational): look up in the Float64 bank directly.
+# isequal(Float64_entry, Int_input) = true, so cache hit works cross-type.
+# On miss, _build_cache converts to float via CubicSplineCache constructor.
+@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L, R}) where {T <: Real, L <: PointBC, R <: PointBC}
+    FT = float(T)
+    bank = _get_derivative_bank(Vector{FT}, bc_pair)
+    return _lookup_or_insert!(bank, x, bc_pair)
 end
 
 """
@@ -678,36 +669,9 @@ end
     return _get_periodic_cache_impl(_to_float(x, T))
 end
 
-# Fallback: other Real types → convert to appropriate float type
-@inline function _get_periodic_cache_impl(x::AbstractVector{<:Real})
-    return _get_periodic_cache_impl(_to_float(x, float(eltype(x))))
+# Non-AbstractFloat Real (Int, Rational): look up in the Float64 bank directly.
+@inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T <: Real}
+    bank = _get_periodic_bank(Vector{float(T)})
+    return _lookup_or_insert!(bank, x, nothing)
 end
 
-# ===============================================================
-# Duck-typed grid fallback (non-AbstractFloat, e.g. ForwardDiff.Dual)
-# ===============================================================
-# Dual grids bypass the pool entirely — build fresh each time.
-# _effective_autocache ensures autocache=false for these paths,
-# but we still need dispatch targets that accept non-AbstractFloat T.
-# Julia dispatches to the more specific T<:AbstractFloat methods first,
-# so these only fire for duck-typed grid elements (Dual, etc.).
-
-@inline function _get_cubic_cache(
-        x::AbstractVector,
-        bc::BCPair{L, R},
-        autocache::Bool
-    ) where {L <: PointBC, R <: PointBC}
-    T = eltype(x)
-    FT = T <: _PromotableValue ? (T <: AbstractFloat ? T : Float64) : T
-    x_f = _to_float(x, FT)
-    bc_cache = _cache_bc_pair(bc, FT)
-    return _build_derivative_bc_cache(x_f, bc_cache.left, bc_cache.right)
-end
-
-@inline function _get_cubic_cache(
-        x::AbstractVector,
-        bc::AbstractBC,
-        autocache::Bool
-    )
-    return CubicSplineCache(x; bc = bc)
-end

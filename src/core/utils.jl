@@ -404,7 +404,7 @@ Disable autocache for non-AbstractFloat grid types (e.g. ForwardDiff.Dual).
 Dual grids are ephemeral (created fresh each AD call), so cache hit rate ≈ 0%.
 Resolves at specialization time — zero runtime cost on the Float hot path.
 """
-@inline _effective_autocache(ac::Bool, ::Type{Tg}) where {Tg} = ac & (Tg <: AbstractFloat)
+@inline _effective_autocache(ac::Bool, ::Type{Tg}) where {Tg} = ac & (Tg <: _PromotableValue)
 # Arithmetic then auto-promotes GridIdx → g.val via promote_rule.
 
 """

@@ -20,7 +20,8 @@
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    x = _to_float(x, Tg)
+    Tg_f = float(Tg)
+    x = _to_float(x, Tg_f)
     Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
     _pchip_slopes!(dy, x, y)
@@ -41,7 +42,8 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _to_float(x, Tg)
+    Tg_f = float(Tg)
+    x = _to_float(x, Tg_f)
 
     Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
@@ -63,7 +65,8 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _to_float(x, Tg)
+    Tg_f = float(Tg)
+    x = _to_float(x, Tg_f)
 
     Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
@@ -161,15 +164,12 @@ In-place PCHIP interpolation with monotone-preserving slopes.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x, y = _promote_itp_inputs(x, y)
-    Tg_actual = eltype(x)
-    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
-    xq_p = _to_float(x_query, Tq_float)
-    resolved = _resolve_coeffs(coeffs, x, xq_p)
+    x = _prepare_grid(x)
+    resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly
-        return _pchip_interp_onthefly!(output, x, y, xq_p, extrap, deriv, search, hint)
+        return _pchip_interp_onthefly!(output, x, y, x_query, extrap, deriv, search, hint)
     end
-    return _pchip_interp_precompute!(output, x, y, xq_p, extrap, deriv, search, hint)
+    return _pchip_interp_precompute!(output, x, y, x_query, extrap, deriv, search, hint)
 end
 
 """
@@ -187,12 +187,8 @@ function pchip_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x, y = _promote_itp_inputs(x, y)
-    Tg_actual = eltype(x)
-    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
-    xq_p = _to_float(x_query, Tq_float)
-    Tr = _output_eltype(eltype(y), Tg_actual, Tq)
-    output = Vector{Tr}(undef, length(xq_p))
-    pchip_interp!(output, x, y, xq_p; coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
+    Tr = _output_eltype(Tv, _promote_grid_float(Tg, Tv), Tq)
+    output = Vector{Tr}(undef, length(x_query))
+    pchip_interp!(output, x, y, x_query; coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end

@@ -20,8 +20,9 @@
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    x = _to_float(x, Tg)
-    Tdy = _output_eltype(Tv, Tg)
+    Tg_f = float(Tg)
+    x = _to_float(x, Tg_f)
+    Tdy = _output_eltype(Tv, Tg_f)
     dy = acquire!(pool, Tdy, length(y))
     _akima_slopes!(dy, x, y)
     searcher = _resolve_search(x, xq, search, hint)
@@ -41,7 +42,7 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _to_float(x, Tg)
+    x = _to_float(x, float(Tg))
 
     Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
@@ -63,7 +64,7 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _to_float(x, Tg)
+    x = _to_float(x, float(Tg))
 
     Tdy = _output_eltype(Tv, Tg)
     dy = acquire!(pool, Tdy, length(y))
@@ -88,7 +89,7 @@ end
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
-    x = _to_float(x, Tg)
+    x = _to_float(x, float(Tg))
     searcher = _resolve_search(x, xq, search, hint)
     return _hermite_eval_at_point(x, y, AkimaSlopes(), xq, extrap, deriv, searcher)
 end
@@ -107,7 +108,7 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _to_float(x, Tg)
+    x = _to_float(x, float(Tg))
 
     searcher = _resolve_search(x, x_query, search, hint)
     return _hermite_vector_loop!(output, x, y, AkimaSlopes(), x_query, extrap, deriv, searcher)
@@ -161,15 +162,12 @@ In-place Akima interpolation with outlier-robust slopes.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x, y = _promote_itp_inputs(x, y)
-    Tg_actual = eltype(x)
-    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
-    xq_p = _to_float(x_query, Tq_float)
-    resolved = _resolve_coeffs(coeffs, x, xq_p)
+    x = _prepare_grid(x)
+    resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly
-        return _akima_interp_onthefly!(output, x, y, xq_p, extrap, deriv, search, hint)
+        return _akima_interp_onthefly!(output, x, y, x_query, extrap, deriv, search, hint)
     end
-    return _akima_interp_precompute!(output, x, y, xq_p, extrap, deriv, search, hint)
+    return _akima_interp_precompute!(output, x, y, x_query, extrap, deriv, search, hint)
 end
 
 """
@@ -187,12 +185,8 @@ function akima_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x, y = _promote_itp_inputs(x, y)
-    Tg_actual = eltype(x)
-    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
-    xq_p = _to_float(x_query, Tq_float)
-    Tr = _output_eltype(eltype(y), Tg_actual, Tq)
-    output = Vector{Tr}(undef, length(xq_p))
-    akima_interp!(output, x, y, xq_p; coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
+    Tr = _output_eltype(Tv, _promote_grid_float(Tg, Tv), Tq)
+    output = Vector{Tr}(undef, length(x_query))
+    akima_interp!(output, x, y, x_query; coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end

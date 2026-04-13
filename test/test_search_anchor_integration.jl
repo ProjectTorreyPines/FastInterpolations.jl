@@ -63,7 +63,7 @@ using FastInterpolations: _anchor_query, _fill_anchors!,
 
         @testset "Vector Query" begin
             xq = collect(range(0.1, 0.9, 9))
-            buffer = Vector{_ConstantAnchoredQuery{Float64}}(undef, length(xq))
+            buffer = Vector{_ConstantAnchoredQuery{Float64, Float64}}(undef, length(xq))
 
             _fill_anchors!(buffer, x, xq, Val(:constant))
 

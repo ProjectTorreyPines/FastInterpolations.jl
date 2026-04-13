@@ -73,44 +73,30 @@ struct LinearInterpolant{
     extrap::E  # Extrapolation mode (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    # Inner constructor: parametric, only calls new (handles validation only)
-    function LinearInterpolant{Tg, Tv, X, Y, S, E, P}(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, spacing::S, ev::E, search::P
-        ) where {Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+    # Inner constructor: promotes x/y, creates spacing, stores everything.
+    # _store_grid: Vector → _convert_copy (single alloc), Range → _CachedRange (stack).
+    # _convert_copy: same-type → copy(), different-type → Vector{T}(v).
+    function LinearInterpolant(
+            x::AbstractVector, y::AbstractVector, ev::E, search::P
+        ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
-        # Copy to ensure immutability: once constructed, the interpolant owns
-        # its data and returns identical results regardless of external mutation.
-        # copy() on immutable Range types is a no-op (zero allocation).
-        # typeof() rebinds X/Y to the post-copy concrete type (e.g. SubArray → Vector).
-        xc, yc = copy(x), copy(y)
-        return new{Tg, Tv, typeof(xc), typeof(yc), S, E, P}(xc, yc, spacing, ev, search)
+        Tg = _promote_grid_float(eltype(x), eltype(y))
+        Tv = _value_type(eltype(y), Tg)
+        xc = _store_grid(x, Tg)
+        yc = _convert_copy(y, Tv)
+        spacing = _create_spacing(xc)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(spacing), E, P}(xc, yc, spacing, ev, search)
     end
 end
 
 # ========================================
-# Outer Constructor: typed inputs only
+# Outer Constructor: convenience kwarg wrapper
 # ========================================
-#
-# PERFORMANCE: Typed signature + @inline enables compile-time specialization.
-# Use linear_interp() for automatic type promotion from Real inputs.
 @inline function LinearInterpolant(
-        x::X,
-        y::Y;
+        x::AbstractVector,
+        y::AbstractVector;
         extrap::AbstractExtrap = NoExtrap(),
-        search::P = AutoSearch()
-    ) where {Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
-    E = typeof(extrap)
-    spacing = _create_spacing(x)
-    S = typeof(spacing)
-    return LinearInterpolant{Tg, Tv, X, Y, S, E, P}(x, y, spacing, extrap, search)
+        search::AbstractSearchPolicy = AutoSearch()
+    )
+    return LinearInterpolant(x, y, extrap, search)
 end
-
-# ========================================
-# Type Aliases for Common Cases
-# ========================================
-
-"""Real-valued linear interpolant (matches original behavior)."""
-const RealLinearInterpolant{T} = LinearInterpolant{T, T} where {T <: AbstractFloat}
-
-"""Complex-valued linear interpolant."""
-const ComplexLinearInterpolant{T} = LinearInterpolant{T, Complex{T}} where {T <: AbstractFloat}

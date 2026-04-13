@@ -362,7 +362,7 @@ function quadratic_interp(
     Tv = _series_eltype(s)
     Tg_new = _promote_grid_float(Tg, Tv)
     if Tg_new !== Tg
-        return quadratic_interp(_to_float(x, Tg_new), s; bc = _normalize_bc(bc, Tg_new), extrap, search)
+        return quadratic_interp(_to_float(x, Tg_new), s; bc = _normalize_bc(bc), extrap, search)
     end
 
     # Normalize early: Range → _CachedRange, Vector → identity.

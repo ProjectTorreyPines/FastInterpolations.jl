@@ -610,9 +610,7 @@ function quadratic_adjoint(
         extrap::AbstractExtrap = NoExtrap(),
         _extra...
     )
-    Tg = _promote_grid_float(eltype(x), eltype(x_query))
-    x_p = _to_float(x, Tg)
-    xq_p = _to_float(x_query, Tg)
+    x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 

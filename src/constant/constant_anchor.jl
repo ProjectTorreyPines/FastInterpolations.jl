@@ -44,13 +44,16 @@ itp2(aq)              # Reuses same anchor
 Anchored evaluation is faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search.
 """
-struct _ConstantAnchoredQuery{T}
+struct _ConstantAnchoredQuery{Tg, Tq <: Real}
     idx::Int                   # interval index
-    xq::T                      # query point (possibly wrapped)
+    xq::Tq                     # query point (possibly wrapped, may be Dual for AD)
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
-    h::T                       # interval width
-    dL::T                      # offset from left boundary
+    h::Tg                      # interval width
+    dL::Tq                     # offset from left boundary (same type as xq for AD)
 end
+
+# Convenience: single type param for backward compat (non-AD paths)
+_ConstantAnchoredQuery{T}(idx, xq, state, h, dL) where {T} = _ConstantAnchoredQuery{T, T}(idx, xq, state, h, dL)
 
 # ========================================
 # Anchor Construction
@@ -129,7 +132,7 @@ function _anchor_query(
         searcher::P = _to_searcher(LinearBinarySearch())
     ) where {T, S <: Real, P <: Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
-    output = Vector{_ConstantAnchoredQuery{T}}(undef, length(xq))
+    output = Vector{_ConstantAnchoredQuery{T, T}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
         output[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
@@ -154,7 +157,7 @@ In-place version of `_anchor_query(x, xq, Val(:constant))` for zero-allocation p
 The same `buffer` object, filled with anchored queries.
 """
 @inline function _fill_anchors!(
-        buffer::AbstractVector{_ConstantAnchoredQuery{T}},
+        buffer::AbstractVector{_ConstantAnchoredQuery{T, T}},
         x::AbstractVector{T},
         xq::AbstractVector{S},
         ::Val{:constant},
@@ -183,17 +186,19 @@ Internal implementation of _anchor_query for constant interpolation.
 """
 @inline function _constant_anchor_query_impl(
         x::AbstractVector{T},
-        xq::T,
+        xq::Tq,
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
-    ) where {T, P <: Searcher}
+    ) where {T, Tq <: Real, P <: Searcher}
     loc = _anchor_loc(x, xq, wrap, policy)
 
     # Compute geometry (constant-internal concern)
     h = _get_h(x, loc.xR, loc.xL)
     dL = loc.xq - loc.xL
+    # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual)
+    xq_promoted = oftype(dL, loc.xq)
 
-    return _ConstantAnchoredQuery{T}(loc.idx, loc.xq, loc.state, h, dL)
+    return _ConstantAnchoredQuery(loc.idx, xq_promoted, loc.state, h, dL)
 end
 
 # ========================================
@@ -319,7 +324,7 @@ Evaluate constant interpolant at multiple anchored query points.
 Returns newly allocated vector.
 """
 function (itp::ConstantInterpolant{T})(
-        aq_vec::AbstractVector{_ConstantAnchoredQuery{T}};
+        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{T}};
         deriv::DerivOp = EvalValue()
     ) where {T}
     output = Vector{T}(undef, length(aq_vec))
@@ -330,13 +335,13 @@ function (itp::ConstantInterpolant{T})(
 end
 
 """
-    (itp::ConstantInterpolant)(output::AbstractVector{T}, aq_vec::AbstractVector{_ConstantAnchoredQuery{T}}; deriv::DerivOp=EvalValue())
+    (itp::ConstantInterpolant)(output::AbstractVector, aq_vec::AbstractVector{<:_ConstantAnchoredQuery{T}}; deriv::DerivOp=EvalValue())
 
 In-place evaluation at multiple anchored query points. Zero allocation.
 """
 function (itp::ConstantInterpolant{T})(
-        output::AbstractVector{T},
-        aq_vec::AbstractVector{_ConstantAnchoredQuery{T}};
+        output::AbstractVector,
+        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{T}};
         deriv::DerivOp = EvalValue()
     ) where {T}
     @assert length(output) == length(aq_vec) "output length must match aq_vec length"

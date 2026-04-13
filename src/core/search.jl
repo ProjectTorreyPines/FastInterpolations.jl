@@ -473,7 +473,6 @@ Unlike `_search_binary`, this function computes the interval index directly
 via arithmetic rather than iterative search, exploiting uniform grid spacing.
 """
 @inline function _search_direct(x::AbstractRange{T}, xq::Real) where {T}
-    xq = _to_grid_type(xq, T)
     n = length(x)
     x_min = first(x)
     dx = Base.step(x)
@@ -494,7 +493,6 @@ end
 Uses precomputed `inv_h` (multiply instead of divide) for the index calculation.
 """
 @inline function _search_direct(x::_CachedRange{T}, xq::Real) where {T}
-    xq = _to_grid_type(xq, T)
     # Primal-based index: see _search_direct(::AbstractRange, ...) comment.
     idx = clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - x.lo, x.inv_h, 1))), 1, x.len - 1)
     xL = muladd(idx - 1, x.h, x.lo)
@@ -512,7 +510,6 @@ for predictable loop exit on modern CPUs. The inner comparison uses `ifelse` to
 compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
 """
 @inline function _search_binary(x::AbstractVector{T}, xq::Real) where {T <: Real}
-    xq = _to_grid_type(xq, T)
     n = length(x)
     @inbounds begin
         if xq <= x[1]
@@ -558,7 +555,6 @@ Uses pre-computed `inv_h` for multiplication instead of division.
 @inline function _search_direct(
         x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::Real
     ) where {T}
-    xq = _to_grid_type(xq, T)
     n = length(x)
     x_min = first(x)
     idx = clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - x_min, spacing.inv_h, 1))), 1, n - 1)
@@ -605,7 +601,6 @@ No bounds checking (except initial clamp), no binary fallback.
         xq::Real,
         hint_ref::Base.RefValue{Int},
     ) where {T <: Real}
-    xq = _to_grid_type(xq, T)
     ix = hint_ref[]
     n = length(x)
     @inbounds begin
@@ -738,7 +733,6 @@ Optimal for monotonic query sequences.
         hint_ref::Base.RefValue{Int},
         ::Val{MAX},
     ) where {T <: Real, MAX}
-    xq = _to_grid_type(xq, T)
     ix = hint_ref[]
     n = length(x)
     ix = clamp(ix, 1, n - 1)  # guard against user-provided bad hints (e.g. Ref(0), stale)

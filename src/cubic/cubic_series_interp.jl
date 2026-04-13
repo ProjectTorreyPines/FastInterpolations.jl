@@ -658,7 +658,7 @@ function cubic_interp(
         cache = _get_cubic_cache(x, bc_representative, _effective_autocache(autocache, eltype(x)))
     else
         # Uniform BC: Tg-typed for cache matrix, Tv-typed for RHS
-        bc_for_cache = _normalize_bc(bc, Tg)
+        bc_for_cache = _normalize_bc(bc)
         bc_for_solve = _normalize_bc(bc, first(y_mat))
         cache = _get_cubic_cache(x, bc_for_cache, _effective_autocache(autocache, eltype(x)))
         _solve_series_coefficients!(z_mat, y_mat, cache, bc_for_solve)

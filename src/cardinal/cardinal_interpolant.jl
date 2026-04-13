@@ -32,16 +32,12 @@ itp(0.5)
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
-    x_p, y_p = _promote_itp_inputs(x, y)
-    Tg = eltype(x_p)
-    extrap_p = _promote_extrap(extrap, eltype(y_p))
+    Tg = _promote_grid_float(TX, TY)
+    extrap_p = _promote_extrap(extrap, _value_type(TY, Tg))
     resolved = _resolve_coeffs(coeffs)
     if resolved isa OnTheFly
-        return CardinalInterpolant1D(x_p, y_p, CardinalSlopes(Tg(tension)); tension = Tg(tension), extrap = extrap_p, search)
+        return CardinalInterpolant1D(x, y, CardinalSlopes(Tg(tension)), extrap_p, search, Tg(tension))
     else
-        Tdy = _output_eltype(eltype(y_p), Tg)
-        dy_p = Vector{Tdy}(undef, length(y_p))
-        _cardinal_slopes!(dy_p, x_p, y_p, Tg(tension))
-        return CardinalInterpolant1D(x_p, y_p, dy_p; tension = Tg(tension), extrap = extrap_p, search)
+        return CardinalInterpolant1D(x, y, PreCompute, extrap_p, search, Tg(tension))
     end
 end

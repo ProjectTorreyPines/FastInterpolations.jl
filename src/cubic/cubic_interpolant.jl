@@ -257,7 +257,7 @@ end
 Promote BC to target value type Tv for cubic splines.
 Handles conversion of Real BC values to Complex when needed.
 """
-@inline _promote_bc(bc::BCPair, ::Type{Tv}) where {Tv} = _normalize_bc(bc, Tv)
+@inline _promote_bc(bc::BCPair, ::Type{Tv}) where {Tv} = _normalize_bc(bc)
 @inline _promote_bc(::ZeroCurvBC, ::Type{Tv}) where {Tv} = ZeroCurvBC()
 @inline _promote_bc(::ZeroSlopeBC, ::Type{Tv}) where {Tv} = ZeroSlopeBC()
 @inline _promote_bc(bc::PeriodicBC, ::Type{Tv}) where {Tv} = bc
@@ -332,9 +332,11 @@ function cubic_interp(
         autocache::Bool = true,
         search::P = AutoSearch()
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
-    x_p, y_p = _promote_itp_inputs(x, y)
-    bc_promoted = _promote_bc(bc, eltype(y_p))
-    return _cubic_interp_impl(x_p, y_p, bc_promoted, extrap, autocache, search)
+    Tg_f = _promote_grid_float(Tg, Tv)
+    xc = _store_grid(x, Tg_f)
+    Tv_out = _value_type(Tv, Tg_f)
+    bc_promoted = _promote_bc(bc, Tv_out)
+    return _cubic_interp_impl(xc, y, bc_promoted, extrap, autocache, search)
 end
 
 """

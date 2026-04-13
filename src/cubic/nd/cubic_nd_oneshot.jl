@@ -37,11 +37,9 @@ function cubic_interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     # Type promotion + validation (same as constructor path)
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-    grids_typed = _convert_grids_typed(grids, Tg)
+    grids_typed, Tg, Tv_p, Tz = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
-    Tr = _output_eltype(Tv, Tg, typeof.(query)...)
+    Tr = _output_eltype(Tv_p, Tg, typeof.(query)...)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
@@ -49,7 +47,7 @@ function cubic_interp(
     # Validate BC requirements (once, before dispatch).
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv_p)
     ops = _resolve_deriv_nd(deriv, Val(N))
 
     # OnTheFly: skip full partials build — use sequential 1D collapse (2^N× less work)
@@ -80,8 +78,7 @@ function cubic_interp(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
+    _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
     Tr = _output_eltype(Tv, Tg, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
@@ -229,9 +226,7 @@ function cubic_interp!(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     _query_check_ndims(queries, Val(N))
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-    grids_typed = _convert_grids_typed(grids, Tg)
+    grids_typed, _, Tv_p, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
@@ -239,7 +234,7 @@ function cubic_interp!(
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv_p)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _cubic_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops, hint)
 end

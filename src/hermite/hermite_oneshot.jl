@@ -60,15 +60,12 @@ function hermite_interp!(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg, Tv, Tq <: Real}
     x, y, dy = _promote_hermite_inputs(x, y, dy)
-    Tg_actual = eltype(x)
-    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
-    xq_p = _to_float(x_query, Tq_float)
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
-    @boundscheck length(output) == length(xq_p) || _throw_length_mismatch(length(xq_p), length(output), "x_query", "output")
+    @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
 
-    searcher = _resolve_search(x, xq_p, search, hint)
-    return _hermite_vector_loop!(output, x, y, dy, xq_p, extrap, deriv, searcher)
+    searcher = _resolve_search(x, x_query, search, hint)
+    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
 end
 
 # ========================================
@@ -91,14 +88,9 @@ function hermite_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg, Tv, Tq <: Real}
-    x, y, dy = _promote_hermite_inputs(x, y, dy)
-    Tg_actual = eltype(x)
-    Tq_float = Tg_actual <: AbstractFloat ? Tg_actual : float(Tq)
-    xq_p = _to_float(x_query, Tq_float)
-    Tr = _output_eltype(eltype(y), Tg_actual, Tq)
-    output = Vector{Tr}(undef, length(xq_p))
-    searcher = _resolve_search(x, xq_p, search, hint)
-    _hermite_vector_loop!(output, x, y, dy, xq_p, extrap, deriv, searcher)
+    Tr = _output_eltype(Tv, _promote_grid_float(Tg, Tv), Tq)
+    output = Vector{Tr}(undef, length(x_query))
+    hermite_interp!(output, x, y, dy, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end
 

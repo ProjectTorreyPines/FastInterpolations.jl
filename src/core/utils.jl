@@ -139,7 +139,10 @@ chains like `promote_type(Tv, Tg, Tq)`.
 """
 @inline function _output_eltype(::Type{Tv}, types::Type...) where {Tv}
     Tr = promote_type(Tv, types...)
-    return isconcretetype(Tr) ? Tr : Tv
+    Tc = isconcretetype(Tr) ? Tr : Tv
+    # Ensure standard numerics produce Float coefficients (Int→Float64).
+    # Duck types (MyStruct etc.) pass through — float() would MethodError.
+    return (Tc <: _PromotableValue && !(Tc <: AbstractFloat)) ? float(Tc) : Tc
 end
 
 """
@@ -281,46 +284,91 @@ to preserve ForwardDiff.Dual types for automatic differentiation.
         xq::AbstractVector{TQ}
     ) where {TX, TY, TQ <: Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
-    Tg = eltype(x_typed)
-    # Query normalization: convert to the grid's float base type, not to Tg itself.
-    # When Tg is a duck type (e.g. Dual{Float64}), queries should stay plain Float —
-    # they don't carry grid-parameter derivatives.
-    Tg_float = Tg <: AbstractFloat ? Tg : float(TQ)
-    xq_typed = _to_float(xq, Tg_float)
+    xq_typed = _promote_query_typed(xq, eltype(x_typed))
     return x_typed, y_typed, xq_typed
 end
+
+# ========================================
+# Query & Adjoint Promotion Helpers
+"""
+    _prepare_grid(x) -> x (or _CachedRange)
+
+Zero-alloc grid preparation for one-shot evaluation paths.
+- `AbstractVector`: returned as-is (no heap allocation, search handles mixed types)
+- `AbstractRange`: converted to `_CachedRange{float(T)}` (stack allocation)
+
+Unlike `_promote_grid_only`, this does NOT allocate a new Vector for type promotion.
+Kernel arithmetic auto-promotes Int×Float via Julia's built-in promotion rules.
+"""
+@inline _prepare_grid(x::AbstractVector) = x
+@inline _prepare_grid(x::AbstractRange) = _to_float(x, float(eltype(x)))
+
+"""
+    _store_grid(x, ::Type{Tg}) -> stored grid
+
+Single-allocation grid storage for interpolant constructors.
+- `AbstractVector`: `_convert_copy(x, Tg)` — promote + copy in one step (no double alloc)
+- `AbstractRange`: `_to_float(x, Tg)` — `_CachedRange` (stack alloc, preserves O(1) search)
+"""
+@inline _store_grid(x::AbstractVector, ::Type{Tg}) where {Tg} = _convert_copy(x, Tg)
+@inline _store_grid(x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+
+"""
+    _convert_copy(v::AbstractVector, ::Type{T}) -> Vector{T}
+
+Copy with optional type conversion in a single allocation.
+Same-type: equivalent to `copy(v)`. Different-type: equivalent to `Vector{T}(v)`.
+
+Used in interpolant inner constructors to merge promotion + immutability copy.
+"""
+@inline _convert_copy(v::AbstractVector{T}, ::Type{T}) where {T} = copy(v)
+@inline _convert_copy(v::AbstractVector, ::Type{T}) where {T} = Vector{T}(v)
+
+# ========================================
+
+"""
+    _promote_query_typed(xq::AbstractVector, ::Type{Tg}) -> AbstractVector
+
+Convert query vector to the appropriate float type for the given grid type `Tg`.
+
+Standard numeric queries (`_PromotableValue`: Integer, AbstractFloat, Rational)
+are promoted to grid precision (or `float(Tq)` if grid is duck-typed).
+Duck-typed queries (e.g. `Dual` for query-side AD) pass through unchanged —
+same `_PromotableValue` guard as value promotion in `_promote_itp_inputs`.
+"""
+@inline function _promote_query_typed(xq::AbstractVector{Tq}, ::Type{Tg}) where {Tq <: Real, Tg}
+    if Tq <: _PromotableValue
+        # Standard numeric: promote to grid type (duck or float)
+        return _to_float(xq, Tg)
+    else
+        # Duck type (Dual, Measurement, etc.) — pass through unchanged
+        return xq
+    end
+end
+
+"""
+    _promote_adjoint_inputs(x, xq) -> (x_promoted, xq_promoted, Tg)
+
+Promote grid and query vectors for adjoint construction.
+
+Shared pattern across all 1D adjoint builders: cubic, linear, quadratic,
+constant, pchip, cardinal, akima.
+"""
+@inline function _promote_adjoint_inputs(
+        x::AbstractVector,
+        xq::AbstractVector
+    )
+    Tg = _promote_grid_float(eltype(x), eltype(xq))
+    x_p = _to_float(x, Tg)
+    xq_p = _promote_query_typed(xq, Tg)
+    return x_p, xq_p, Tg
+end
+
 
 # ========================================
 # AD Support Helpers
 # ========================================
 
-"""
-    _to_grid_type(xq, ::Type{Tg}) -> Tg
-
-Convert query point to grid type for index search.
-Extracts primal value from AD types (via `_extract_primal`), then converts to Tg.
-
-# Zero-overhead paths (compile-time dispatch)
-- `xq::Tg` → returns as-is (identity method selected)
-- `xq` after primal extraction equals Tg → `Tg(Tg_value)` optimized away
-
-# Conversion paths
-- `xq::Float32` on `Float64` grid → converts to Float64
-- `xq::Int` → directly to Tg (no intermediate Float64)
-- `xq::Dual{...}` → extracts primal via `_extract_primal` → converts to Tg
-
-# Usage in Search
-```julia
-# Before (2 lines):
-xq_primal = _extract_primal(xq)
-xq_conv = Tg(xq_primal)
-
-# After (1 line):
-xq_conv = _to_grid_type(xq, Tg)
-```
-"""
-@inline _to_grid_type(xq::Tg, ::Type{Tg}) where {Tg <: Real} = xq  # identity: already correct type
-@inline _to_grid_type(xq::Real, ::Type{Tg}) where {Tg <: Real} = Tg(_extract_primal(xq))  # convert via primal extraction
 
 """
     _extract_primal(xq) -> AbstractFloat

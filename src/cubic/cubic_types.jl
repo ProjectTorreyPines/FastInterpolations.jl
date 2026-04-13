@@ -156,16 +156,17 @@ struct CubicInterpolant{Tg, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, 
     search_policy::P  # Default search policy (immutable, thread-safe)
     function CubicInterpolant(
             cache::C,
-            y::AbstractVector{Tv},
+            y::AbstractVector,
             z::AbstractVector,
             bc::BC,
             extrap::E,
             search::P = AutoSearch()
-        ) where {Tg, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC}
+        ) where {Tg, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC}
         length(cache.x) == length(y) || _throw_length_mismatch(length(cache.x), length(y))
         length(cache.x) == length(z) || _throw_length_mismatch(length(cache.x), length(z), "grid", "z")
+        Tv = _value_type(eltype(y), Tg)
         Tz = eltype(z)
-        return new{Tg, Tv, C, E, P, BC, Tz}(cache, Vector{Tv}(y), Vector{Tz}(z), bc, extrap, search)
+        return new{Tg, Tv, C, E, P, BC, Tz}(cache, _convert_copy(y, Tv), Vector{Tz}(z), bc, extrap, search)
     end
 end
 

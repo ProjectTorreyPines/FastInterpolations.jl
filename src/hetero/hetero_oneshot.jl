@@ -223,11 +223,8 @@ function _interp_nd_oneshot_dispatch(
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         deriv, extrap, search, hints, coeffs,
     ) where {N}
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-    grids_typed = _convert_grids_typed(grids, Tg)
+    grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
-    Tv = _value_type(eltype(data), Tg)
     Tr = _output_eltype(eltype(data), Tg, typeof.(query)...)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
@@ -291,12 +288,9 @@ end
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         deriv, extrap, search, hints, coeffs,
     ) where {N}
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-    grids_typed = _convert_grids_typed(grids, Tg)
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
     _query_check_ndims(queries, Val(N))
-    Tv = _value_type(eltype(data), Tg)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     searches = _resolve_search_nd_uniform(search, Val(N), queries, hints)
@@ -449,8 +443,7 @@ function interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {Tv, N}
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
+    _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
     Tr = _output_eltype(Tv, Tg, Tq)
     output = Vector{Tr}(undef, _query_length(queries))

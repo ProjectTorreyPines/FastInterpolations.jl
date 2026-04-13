@@ -65,15 +65,10 @@ function cubic_interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         coeffs::AbstractCoeffStrategy = PreCompute()
     ) where {N, Tv_raw}
-    # Zero-allocation type promotion (uses @generated function)
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-
-    # Zero-allocation grid conversion (uses @generated function)
-    grids_typed = _convert_grids_typed(grids, Tg)
+    # Zero-allocation type promotion + grid conversion
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
 
     # Promote data type (Int→Float64, Complex{T}→Complex{Tg}, custom types preserved)
-    Tv = _value_type(Tv_raw, Tg)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
     # Validate dimensions

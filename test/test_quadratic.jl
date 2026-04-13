@@ -922,29 +922,27 @@ end
         @test _normalize_bc(bc_right32, Float32) === bc_right32
     end
 
-    @testset "_normalize_bc type conversion" begin
-        # Float32 → Float64 conversion
+    @testset "_normalize_bc shape-only (no type promotion)" begin
+        # _normalize_bc is now pure shape normalization — no type conversion.
+        # BC values retain their original types; Julia auto-promotes in arithmetic.
         bc_left32 = Left(Deriv1(1.0f0))
         bc_right32 = Right(Deriv2(0.0f0))
 
-        bc_left64 = _normalize_bc(bc_left32, Float64)
-        bc_right64 = _normalize_bc(bc_right32, Float64)
+        # 2nd arg is ignored for Left/Right (fallback to 1-arg)
+        bc_left_out = _normalize_bc(bc_left32, Float64)
+        bc_right_out = _normalize_bc(bc_right32, Float64)
 
-        # Left/Right now only have B parameter (the inner BC type)
-        @test bc_left64 isa Left{Deriv1{Float64}}
-        @test bc_right64 isa Right{Deriv2{Float64}}
-        @test bc_left64.bc.val ≈ 1.0
-        @test bc_right64.bc.val ≈ 0.0
+        @test bc_left_out === bc_left32   # same object, no conversion
+        @test bc_right_out === bc_right32
 
-        # Float64 → Float32 conversion
         bc_left_f64 = Left(Deriv2(2.0))
         bc_right_f64 = Right(Deriv1(3.0))
 
-        bc_left_f32 = _normalize_bc(bc_left_f64, Float32)
-        bc_right_f32 = _normalize_bc(bc_right_f64, Float32)
+        bc_left_out2 = _normalize_bc(bc_left_f64, Float32)
+        bc_right_out2 = _normalize_bc(bc_right_f64, Float32)
 
-        @test bc_left_f32 isa Left{Deriv2{Float32}}
-        @test bc_right_f32 isa Right{Deriv1{Float32}}
+        @test bc_left_out2 === bc_left_f64   # no conversion
+        @test bc_right_out2 === bc_right_f64
     end
 
     @testset "_normalize_bc for QuadraticFit" begin

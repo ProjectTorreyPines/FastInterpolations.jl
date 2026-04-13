@@ -335,7 +335,7 @@ end
 
 # Helper to determine spacing type from grid type
 @inline _spacing_type(::Type{X}) where {T, X <: AbstractRange{T}} = ScalarSpacing{T}
-@inline _spacing_type(::Type{X}) where {T, X <: AbstractVector{T}} = VectorSpacing{T}
+@inline _spacing_type(::Type{X}) where {T, X <: AbstractVector{T}} = VectorSpacing{T, T}
 
 """
 Get or create a derivative BC cache bank for the given (T, L, R, X, S) combination.
@@ -522,12 +522,12 @@ not RHS values (y-data + BC values).
         return _get_periodic_cache_impl(x)
     end
 
-    # Determine float type (convert Int to Float64)
+    # Determine target type: Float grids → identity, Int → Float64, duck (Dual) → pass through
     T = eltype(x)
-    FT = T <: AbstractFloat ? T : Float64
+    FT = T <: _PromotableValue ? (T <: AbstractFloat ? T : Float64) : T
 
     # Normalize BC to BCPair
-    bc_pair = _normalize_bc(bc, FT)
+    bc_pair = _normalize_bc(bc)
 
     # Get bank and lookup
     return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)
@@ -540,21 +540,21 @@ end
 # Typed BC API - direct path, no Union
 @inline function _get_cubic_cache(x, ::ZeroCurvBC)
     T = eltype(x)
-    FT = T <: AbstractFloat ? T : Float64
+    FT = T <: _PromotableValue ? (T <: AbstractFloat ? T : Float64) : T
     bc_pair = BCPair(Deriv2(zero(FT)), Deriv2(zero(FT)))
     return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)
 end
 
 @inline function _get_cubic_cache(x, ::ZeroSlopeBC)
     T = eltype(x)
-    FT = T <: AbstractFloat ? T : Float64
+    FT = T <: _PromotableValue ? (T <: AbstractFloat ? T : Float64) : T
     bc_pair = BCPair(Deriv1(zero(FT)), Deriv1(zero(FT)))
     return _get_derivative_cache_impl(_to_float(x, FT), bc_pair)
 end
 
 @inline function _get_cubic_cache(x, ::PeriodicBC)
     T = eltype(x)
-    FT = T <: AbstractFloat ? T : Float64
+    FT = T <: _PromotableValue ? (T <: AbstractFloat ? T : Float64) : T
     return _get_periodic_cache_impl(_to_float(x, FT))
 end
 
@@ -583,7 +583,7 @@ end
 # which fails for duck-typed Tv values. Cache only needs structural BC type.
 @inline function _get_cubic_cache(x, bc::PointBC)
     T = eltype(x)
-    FT = T <: AbstractFloat ? T : Float64
+    FT = T <: _PromotableValue ? (T <: AbstractFloat ? T : Float64) : T
     bc_c = _cache_pointbc(bc, FT)
     return _get_derivative_cache_impl(_to_float(x, FT), BCPair(bc_c, bc_c))
 end
@@ -697,8 +697,11 @@ end
         bc::BCPair{L, R},
         autocache::Bool
     ) where {L <: PointBC, R <: PointBC}
-    bc_cache = _cache_bc_pair(bc, eltype(x))
-    return _build_derivative_bc_cache(x, bc_cache.left, bc_cache.right)
+    T = eltype(x)
+    FT = T <: _PromotableValue ? (T <: AbstractFloat ? T : Float64) : T
+    x_f = _to_float(x, FT)
+    bc_cache = _cache_bc_pair(bc, FT)
+    return _build_derivative_bc_cache(x_f, bc_cache.left, bc_cache.right)
 end
 
 @inline function _get_cubic_cache(

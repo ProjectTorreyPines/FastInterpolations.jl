@@ -238,16 +238,13 @@ In-place cubic spline interpolation with optional automatic caching.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tv}
-    x = _to_float(x, _promote_grid_float(Tg, Tv))
-    Tq_float = eltype(x) <: AbstractFloat ? eltype(x) : float(eltype(x_query))
-    x_query = _to_float(x_query, Tq_float)
+    x = _prepare_grid(x)
     searcher = _resolve_search(x, x_query, search, nothing)
     # Periodic BC
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, deriv, searcher)
     end
 
-    # Normalize to BCPair and dispatch to core
     bc_pair = _normalize_bc(bc, first(y))
     return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache, deriv, searcher)
 end

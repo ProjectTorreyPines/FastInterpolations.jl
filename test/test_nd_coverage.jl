@@ -407,13 +407,16 @@ import FastInterpolations:
         @testset "_normalize_bc for quadratic BC types" begin
             import FastInterpolations: _normalize_bc
             # Left/Right promote inner PointBC values to Tv
+            # _normalize_bc is shape-only: no type promotion, values stay as-is.
+            # Deriv2(5) outer constructor auto-promotes Int to Float64.
             bc_l = _normalize_bc(Left(Deriv2(5)), Float64)
             @test bc_l isa Left
             @test bc_l.bc.val === 5.0
 
+            # Deriv1(3) → Float64 via outer constructor; 2nd arg ignored (fallback)
             bc_r = _normalize_bc(Right(Deriv1(3)), Float32)
             @test bc_r isa Right
-            @test bc_r.bc.val === 3.0f0
+            @test bc_r.bc.val === 3.0  # Float64, not Float32 — no promotion
 
             # MinCurvFit is passthrough
             @test _normalize_bc(MinCurvFit(), Float64) === MinCurvFit()

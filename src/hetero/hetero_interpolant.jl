@@ -259,18 +259,9 @@ function _build_hetero_nd(
         _validate_nd_grids(grids, data)
     end
 
-    # 2. Promote grid type (Int → Float64, Dual preserved via float())
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-
-    # 3. Convert grids to target type (preserving Range structure)
-    grids_typed = _convert_grids_typed(grids, Tg)
-
-    # 4. Create spacings
+    # 2-5. Promote grid + data types
+    grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
     spacings = _create_spacings_typed(grids_typed)
-
-    # 5. Promote data type
-    Tv = _value_type(Tv_raw, Tg)
     data_typed = Tv === Tv_raw ? Array(data) : Array{Tv}(data)
 
     # 6. Resolve per-axis configuration (pass BCs so PeriodicBC auto-gets WrapExtrap)
@@ -311,10 +302,7 @@ function _build_hetero_precomputed(
     else
         _validate_nd_grids(grids, data)
     end
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-    grids_typed = _convert_grids_typed(grids, Tg)
-    Tv = _value_type(Tv_raw, Tg)
+    grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
     bcs_periodic = map(_bc_for_periodic_check, methods)
     extraps = _resolve_extrap_nd(extrap, bcs_periodic, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N))

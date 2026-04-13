@@ -60,38 +60,28 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
     side::SD         # Side selection (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    # Inner constructor: parametric, only calls new (handles validation only)
-    function ConstantInterpolant{Tg, Tv, X, Y, S, E, SD, P}(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, spacing::S, ev::E, sv::SD, search::P
-        ) where {Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
+    # Inner constructor: promotes x/y, creates spacing, stores everything.
+    function ConstantInterpolant(
+            x::AbstractVector, y::AbstractVector, ev::E, sv::SD, search::P
+        ) where {E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || _throw_grid_too_small(length(x))
-        # Copy to ensure immutability: once constructed, the interpolant owns
-        # its data and returns identical results regardless of external mutation.
-        # copy() on immutable Range types is a no-op (zero allocation).
-        # typeof() rebinds X/Y to the post-copy concrete type (e.g. SubArray → Vector).
-        xc, yc = copy(x), copy(y)
-        return new{Tg, Tv, typeof(xc), typeof(yc), S, E, SD, P}(xc, yc, spacing, ev, sv, search)
+        Tg = _promote_grid_float(eltype(x), eltype(y))
+        Tv = _value_type(eltype(y), Tg)
+        xc = _store_grid(x, Tg)
+        yc = _convert_copy(y, Tv)
+        spacing = _create_spacing(xc)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(spacing), E, SD, P}(xc, yc, spacing, ev, sv, search)
     end
 end
 
-# ========================================
-# Outer Constructor: typed inputs only
-# ========================================
-# - Call inner constructor
-#
-# PERFORMANCE: Typed signature + @inline enables compile-time specialization.
-# Use constant_interp() for automatic type promotion from Real inputs.
+# Outer constructor: convenience kwarg wrapper.
 @inline function ConstantInterpolant(
-        x::X,
-        y::Y;
+        x::AbstractVector,
+        y::AbstractVector;
         extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
-        search::P = AutoSearch()
-    ) where {Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
-    E = typeof(extrap)
-    SD = typeof(side)
-    spacing = _create_spacing(x)
-    S = typeof(spacing)
-    return ConstantInterpolant{Tg, Tv, X, Y, S, E, SD, P}(x, y, spacing, extrap, side, search)
+        search::AbstractSearchPolicy = AutoSearch()
+    )
+    return ConstantInterpolant(x, y, extrap, side, search)
 end

@@ -27,12 +27,11 @@
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
-    xi_typed = _to_grid_type(xi, Tg)
-    @boundscheck _check_domain(x, xi_typed, extrap)
-    if xi_typed == last(x)
+    @boundscheck _check_domain(x, xi, extrap)
+    if _extract_primal(xi) == _extract_primal(last(x))
         return op isa EvalValue ? last(y) : 0 * first(y)
     end
-    idx, xL, xR = search_interval(searcher, x, xi_typed)
+    idx, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
 end
@@ -61,13 +60,13 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
-    xi_typed = _to_grid_type(xi, Tg)
-    xi_typed < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xi)
-    xi_typed > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xi)
-    if xi_typed == last(x)
+    xi_primal = _extract_primal(xi)
+    xi_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xi)
+    xi_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xi)
+    if xi_primal == _extract_primal(last(x))
         return op isa EvalValue ? last(y) : 0 * first(y)
     end
-    idx, xL, xR = search_interval(searcher, x, xi_typed)
+    idx, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
 end
@@ -82,8 +81,7 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
-    xi_typed = _to_grid_type(xi, Tg)
-    xi_wrapped = _wrap_to_domain(xi_typed, first(x), last(x))
+    xi_wrapped = _wrap_to_domain(xi, first(x), last(x))
     idx, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
@@ -207,9 +205,9 @@ function constant_interp!(
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
-    searcher = _resolve_search(x_typed, xq_typed, search, nothing)
-    _constant_vector_loop!(output, x_typed, y_typed, xq_typed, extrap, side, deriv, searcher)
+    x_typed = _prepare_grid(x)
+    searcher = _resolve_search(x_typed, x_targets, search, nothing)
+    _constant_vector_loop!(output, x_typed, y, x_targets, extrap, side, deriv, searcher)
     return output
 end
 
@@ -245,11 +243,9 @@ function constant_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
-    Tg = eltype(x_typed)
-    Tv = eltype(y_typed)
-    T_out = _output_eltype(Tv, Tg)
+    Tg = _promote_grid_float(eltype(x), eltype(y))
+    T_out = _output_eltype(eltype(y), Tg)
     output = Vector{T_out}(undef, length(x_targets))
-    constant_interp!(output, x_typed, y_typed, xq_typed; extrap, side, deriv, search)
+    constant_interp!(output, x, y, x_targets; extrap, side, deriv, search)
     return output
 end

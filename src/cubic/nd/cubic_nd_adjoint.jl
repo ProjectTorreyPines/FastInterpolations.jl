@@ -540,7 +540,7 @@ function _build_nd_adjoint(
     # Per-axis: normalize BC for cache + polyfit construction
     # Periodic axes store PeriodicBC as-is; non-periodic normalize to BCPair
     norm_bcs = map(bcs) do bc_d
-        _is_periodic_bc(bc_d) ? bc_d : _normalize_bc(bc_d, Tg)
+        _is_periodic_bc(bc_d) ? bc_d : _normalize_bc(bc_d)
     end
 
     caches = map(grids_ext, norm_bcs) do grid_d, bp_d
@@ -560,7 +560,7 @@ function _build_nd_adjoint(
     # the adjoint hot path is verified to never observe them as distinct types.
     mixed_bcs = map(grids_ext, bcs) do grid_d, bc_d
         mixed_bc = _get_effective_bc(bc_d, 2, grid_d)
-        _is_periodic_bc(mixed_bc) ? mixed_bc : _normalize_bc(mixed_bc, Tg)
+        _is_periodic_bc(mixed_bc) ? mixed_bc : _normalize_bc(mixed_bc)
     end
 
     mixed_caches = map(grids_ext, mixed_bcs) do grid_d, mbp_d

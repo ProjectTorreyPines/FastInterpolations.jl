@@ -52,7 +52,7 @@ function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC = CubicFit()) whe
     end
 
     # Normalize BC to BCPair (ZeroCurvBC/ZeroSlopeBC → BCPair, PointBC → symmetric BCPair)
-    bc_normalized = _normalize_bc(bc, T)
+    bc_normalized = _normalize_bc(bc)
 
     # All non-periodic BC use unified BCPair path
     return _build_derivative_bc_cache(x, bc_normalized.left, bc_normalized.right)

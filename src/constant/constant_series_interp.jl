@@ -122,7 +122,7 @@ end
 Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
 """
 @inline function _make_anchor(sitp::ConstantSeriesInterpolant{Tg}, xq, searcher::P = DEFAULT_SEARCHER) where {Tg, P <: Searcher}
-    return _constant_anchor_query_impl(sitp.x, Tg(xq), _should_wrap(sitp), searcher)
+    return _constant_anchor_query_impl(sitp.x, xq, _should_wrap(sitp), searcher)
 end
 
 """
@@ -406,11 +406,8 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
     # Validate output length
     _validate_scalar_output(output, n_ser)
 
-    # AD Support: Convert to grid type for anchor building, pass original xq for AD
-    xq_typed = _to_grid_type(xq, Tg)
-
-    # Build anchor using primal value
-    aq = _make_anchor(sitp, xq_typed, _resolve_search(sitp.x, xq, search, hint))
+    # Build anchor (search handles mixed types internally)
+    aq = _make_anchor(sitp, xq, _resolve_search(sitp.x, xq, search, hint))
 
     # Dispatch on derivative order - pass original xq for AD support
     _eval_constant_series_point!(output, sitp, aq, xq, deriv)
@@ -435,8 +432,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
     # Normalize queries to the grid's base float type (not Tg itself, which may be Dual)
-    Tg_float = Tg <: AbstractFloat ? Tg : float(Tq)
-    xq_typed = _to_float(xq, Tg_float)
+    xq_typed = _promote_query_typed(xq, Tg)
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
 
@@ -471,8 +467,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P}
     # Normalize queries to the grid's base float type (not Tg itself, which may be Dual)
-    Tg_float = Tg <: AbstractFloat ? Tg : float(eltype(xq))
-    xq_typed = _to_float(xq, Tg_float)
+    xq_typed = _promote_query_typed(xq, Tg)
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
 
@@ -480,7 +475,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     _validate_series_outputs(outputs, n_ser, n_query)
 
     # Build anchors from pool (zero allocation after warmup)
-    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg}, length(xq_typed))
+    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg, Tg}, length(xq_typed))
     searcher = _resolve_search(sitp.x, xq_typed, search, hint)
     _fill_anchors!(aq_vec, sitp.x, xq_typed, Val(:constant), _should_wrap(sitp), searcher)
 

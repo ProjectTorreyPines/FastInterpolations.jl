@@ -109,7 +109,7 @@ end
         side::AbstractSide = NearestSide(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
-    x_p, y_p = _promote_itp_inputs(x, y)
-    extrap_p = _promote_extrap(extrap, eltype(y_p))
-    return ConstantInterpolant(x_p, y_p; extrap = extrap_p, side, search)
+    Tg = _promote_grid_float(TX, TY)
+    extrap_p = _promote_extrap(extrap, _value_type(TY, Tg))
+    return ConstantInterpolant(x, y; extrap = extrap_p, side, search)
 end

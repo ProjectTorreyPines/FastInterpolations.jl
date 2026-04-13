@@ -497,52 +497,34 @@ Extensible: add methods for new PointBC subtypes.
 # ========================================
 
 """
-    _normalize_bc(bc::AbstractBC, ::Type{Tv}) -> BCPair
+    _normalize_bc(bc::AbstractBC) -> BCPair or Left/Right/MinCurvFit
 
-Convert BC specification to normalized BCPair form for solver construction.
-The type parameter Tv is the **value type** (unconstrained).
+Pure shape normalization: convert BC specification to solver-compatible form.
+No type promotion — Julia's arithmetic auto-promotes BC values in the solver RHS.
 
 Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 `_normalize_bc` is called. This function only handles derivative BCs.
 
 # Accepted Input Types
-- `ZeroCurvBC()`: Zero curvature → BCPair(Deriv2(0), Deriv2(0))
-- `ZeroSlopeBC()`: Zero slope → BCPair(Deriv1(0), Deriv1(0))
-- `BCPair`: Left/right BC pair (passed through with type promotion)
-- `PointBC` (Deriv1/Deriv2): Single BC applied symmetrically to both ends
-
-# Returns
-- `BCPair{L,R}`: Normalized boundary condition pair
+- `ZeroCurvBC()` → `BCPair(Deriv2(0.0), Deriv2(0.0))`
+- `ZeroSlopeBC()` → `BCPair(Deriv1(0.0), Deriv1(0.0))`
+- `BCPair` → returned as-is
+- `PointBC` (Deriv1/Deriv2) → `BCPair(bc, bc)` (symmetric)
+- `Left`/`Right`/`MinCurvFit` → returned as-is (quadratic BC wrappers)
 """
-# ZeroCurvBC() → BCPair(Deriv2(0), Deriv2(0))
+@inline _normalize_bc(::ZeroCurvBC) = BCPair(Deriv2(0.0), Deriv2(0.0))
+@inline _normalize_bc(::ZeroSlopeBC) = BCPair(Deriv1(0.0), Deriv1(0.0))
+# Type overloads: when a Type is passed, use zero(Tv) for standard numerics.
 @inline _normalize_bc(::ZeroCurvBC, ::Type{Tv}) where {Tv} = BCPair(Deriv2(zero(Tv)), Deriv2(zero(Tv)))
-
-# ZeroSlopeBC() → BCPair(Deriv1(0), Deriv1(0))
 @inline _normalize_bc(::ZeroSlopeBC, ::Type{Tv}) where {Tv} = BCPair(Deriv1(zero(Tv)), Deriv1(zero(Tv)))
-
-# BCPair with type promotion (general case - promotes inner BCs to Tv)
-@inline function _normalize_bc(bc::BCPair, ::Type{Tv}) where {Tv}
-    left_t = _promote_pointbc(bc.left, Tv)
-    right_t = _promote_pointbc(bc.right, Tv)
-    return BCPair(left_t, right_t)
-end
-
-# Single PointBC → symmetric BCPair (same BC at both ends, with type promotion)
-@inline function _normalize_bc(bc::PointBC, ::Type{Tv}) where {Tv}
-    bc_t = _promote_pointbc(bc, Tv)
-    return BCPair(bc_t, bc_t)
-end
-
-# Value-based overloads: use 0 * sample instead of zero(Tv).
-# Enables Tv types where zero(::Type) is undefined (e.g. Vector{Float64}).
-# Julia dispatch: ::Type{Tv} is more specific than untyped `sample`, so type-based
-# methods are still selected when a Type is passed (Tg cache paths).
+# Duck-safe overloads: use 0 * sample to produce the correct zero type.
+# Needed when data type (e.g. MyDuck) doesn't support convert(MyDuck, Float64).
 @inline _normalize_bc(::ZeroCurvBC, sample) = (z = 0 * sample; BCPair(Deriv2(z), Deriv2(z)))
 @inline _normalize_bc(::ZeroSlopeBC, sample) = (z = 0 * sample; BCPair(Deriv1(z), Deriv1(z)))
-
-# Generic value→type fallback: extract type from sample, delegate to type-based methods.
-# Covers BCPair, PointBC, Left, Right, MinCurvFit — none of which need zero().
-@inline _normalize_bc(bc::AbstractBC, sample) = _normalize_bc(bc, typeof(sample))
+@inline _normalize_bc(bc::BCPair) = bc
+@inline _normalize_bc(bc::PointBC) = BCPair(bc, bc)
+# Fallback: ignore second arg for all other BC types (only ZeroCurv/ZeroSlope need it)
+@inline _normalize_bc(bc::AbstractBC, _sample) = _normalize_bc(bc)
 
 # NOTE: _normalize_bc methods for Left/Right/MinCurvFit are defined after Left/Right structs below.
 
@@ -648,8 +630,7 @@ function _normalize_bc_array(
         _is_periodic_bc(bc) && _throw_periodic_in_bc_array(i)
     end
 
-    # Create new Vector with normalized BCs (type inferred from Tv)
-    return [_normalize_bc(bc, Tv) for bc in bcs]
+    return [_normalize_bc(bc) for bc in bcs]
 end
 
 
@@ -785,11 +766,10 @@ end
 @inline bc_structure(bc::Left) = bc_structure(bc.bc)
 @inline bc_structure(bc::Right) = bc_structure(bc.bc)
 
-# Quadratic BC normalization (Left/Right/MinCurvFit → same type with Tv-promoted values)
-# Used by both 1D quadratic (interpolant construction) and ND quadratic (lazy normalization)
-@inline _normalize_bc(bc::Left, ::Type{Tv}) where {Tv} = Left(_promote_pointbc(bc.bc, Tv))
-@inline _normalize_bc(bc::Right, ::Type{Tv}) where {Tv} = Right(_promote_pointbc(bc.bc, Tv))
-@inline _normalize_bc(::MinCurvFit, ::Type{Tv}) where {Tv} = MinCurvFit()
+# Quadratic BC normalization (shape only — no type promotion)
+@inline _normalize_bc(bc::Left) = bc
+@inline _normalize_bc(bc::Right) = bc
+@inline _normalize_bc(::MinCurvFit) = MinCurvFit()
 
 
 # ========================================

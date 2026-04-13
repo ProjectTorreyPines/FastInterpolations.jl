@@ -235,14 +235,7 @@ function linear_adjoint(
         extrap::AbstractExtrap = NoExtrap(),
         _extra...
     )
-    Tg = _promote_grid_float(eltype(x), eltype(x_query))
-    x_p = _to_float(x, Tg)
-    # Query normalization: convert to the grid's float base type, not to Tg itself.
-    # When Tg is a duck type (e.g. Dual), queries stay plain Float — they don't
-    # carry grid-parameter derivatives. The anchor outer constructor handles
-    # widening xq to match alpha's arithmetic type.
-    Tq_float = Tg <: AbstractFloat ? Tg : float(eltype(x_query))
-    xq_p = _to_float(x_query, Tq_float)
+    x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 

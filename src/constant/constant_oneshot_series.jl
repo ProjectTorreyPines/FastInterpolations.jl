@@ -90,7 +90,7 @@ end
     wrap = extrap_eff isa WrapExtrap
     x_last = Tg(last(x))
     # Pre-compute anchors via pool, then K outer × Q inner for cache locality
-    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg}, length(xqs))
+    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg, Tg}, length(xqs))
     _fill_anchors!(aq_vec, x, xqs, Val(:constant), wrap, searcher)
     @inbounds for k in 1:K
         for j in eachindex(xqs)

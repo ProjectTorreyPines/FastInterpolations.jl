@@ -1372,4 +1372,35 @@ const FI = FastInterpolations
         end
     end
 
+    # =========================================================================
+    # Duck-typed grid cache fallback (Dual grid → 2-arg _get_cubic_cache)
+    # =========================================================================
+    @testset "Dual grid 2-arg cache API (duck-type fallback)" begin
+        using FastInterpolations: _get_cubic_cache, clear_cubic_cache!
+        clear_cubic_cache!()
+
+        x_dual = ForwardDiff.Dual.(Float64[0, 1, 2, 3, 4], 1.0)
+
+        # Derivative BC — duck-type fallback builds fresh (no caching).
+        # Cache stores Dual grid as-is (partials needed for AD correctness).
+        DualT = eltype(x_dual)
+        cache_d = _get_cubic_cache(x_dual, ZeroCurvBC())
+        @test cache_d isa CubicSplineCache{DualT}
+
+        cache_d2 = _get_cubic_cache(x_dual, ZeroCurvBC())
+        @test cache_d2 !== cache_d  # fresh build each time, not cached
+
+        # Periodic BC — duck-type periodic fallback
+        x_dual_p = ForwardDiff.Dual.(Float64[0, 1, 2, 3, 4, 5, 6], 1.0)
+        cache_p = _get_cubic_cache(x_dual_p, PeriodicBC())
+        @test cache_p isa CubicSplineCache{DualT}
+
+        # ZeroSlopeBC, PointBC
+        cache_zs = _get_cubic_cache(x_dual, ZeroSlopeBC())
+        @test cache_zs isa CubicSplineCache{DualT}
+
+        cache_pb = _get_cubic_cache(x_dual, Deriv2(0.0))
+        @test cache_pb isa CubicSplineCache{DualT}
+    end
+
 end  # testset "AutoDiff Support"

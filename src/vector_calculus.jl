@@ -38,12 +38,14 @@
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
-        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
+        hints = _ensure_hint_nd(hint, Val($N))
+        mono = ntuple(_true_flag, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             zref = _zero_ref(itp)
             return tuple($(zero_tuple...))
         end
-        cell = _locate_cell(itp, query_r, search, hint)
+        cell = _locate_cell(itp, query_r, policies, hints, mono)
         return tuple($(deriv_calls...))
     end
 end
@@ -111,7 +113,9 @@ end
                 "gradient output vector must have at least $($N) elements, got $(length(G))"
             )
         )
-        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
+        hints = _ensure_hint_nd(hint, Val($N))
+        mono = ntuple(_true_flag, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             zref = _zero_ref(itp)
             @inbounds for i in 1:$N
@@ -119,7 +123,7 @@ end
             end
             return G
         end
-        cell = _locate_cell(itp, query_r, search, hint)
+        cell = _locate_cell(itp, query_r, policies, hints, mono)
         @inbounds begin
             $(stmts...)
         end
@@ -195,13 +199,15 @@ end
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
-        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
+        hints = _ensure_hint_nd(hint, Val($N))
+        mono = ntuple(_true_flag, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             zref = _zero_ref(itp)
             fill_val = _first_fill_value(itp.extraps)
             return (fill_val, tuple($(zero_tuple...)))
         end
-        cell = _locate_cell(itp, query_r, search, hint)
+        cell = _locate_cell(itp, query_r, policies, hints, mono)
         val = $value_call
         grad = tuple($(deriv_calls...))
         return (val, grad)
@@ -300,12 +306,14 @@ end
         query_r = map(_resolve_grididx, query, itp.grids)
         Tq = promote_type(eltype(map(float, query_r)), $Tg, $Tv)
         H = Matrix{Tq}(undef, $N, $N)
-        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
+        hints = _ensure_hint_nd(hint, Val($N))
+        mono = ntuple(_true_flag, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             fill!(H, zero(Tq))
             return H
         end
-        cell = _locate_cell(itp, query_r, search, hint)
+        cell = _locate_cell(itp, query_r, policies, hints, mono)
         @inbounds begin
             $(stmts...)
         end
@@ -391,12 +399,14 @@ end
                 "Hessian output matrix must be $($N)×$($N), got $(size(H))"
             )
         )
-        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
+        hints = _ensure_hint_nd(hint, Val($N))
+        mono = ntuple(_true_flag, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             fill!(H, zero(eltype(H)))
             return H
         end
-        cell = _locate_cell(itp, query_r, search, hint)
+        cell = _locate_cell(itp, query_r, policies, hints, mono)
         @inbounds begin
             $(stmts...)
         end
@@ -468,11 +478,13 @@ end
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
-        search = _resolve_search_nd(itp.searches, Val($N), query_r)
+        policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
+        hints = _ensure_hint_nd(hint, Val($N))
+        mono = ntuple(_true_flag, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             return 0 * _zero_ref(itp)
         end
-        cell = _locate_cell(itp, query_r, search, hint)
+        cell = _locate_cell(itp, query_r, policies, hints, mono)
         return +($(deriv_calls...))
     end
 end

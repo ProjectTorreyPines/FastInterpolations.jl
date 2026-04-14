@@ -42,8 +42,10 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))  # ∂f/∂x only
     # Resolve bare GridIdx → GridIdx{Tg}(idx, val). No-op for Real/Dual.
     resolved = map(_resolve_grididx, query, itp.grids)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), resolved)
-    return _eval_nd_hermite(itp, resolved, ops, search_tuple, hint)
+    policies = _resolve_search_nd(search, Val(N))
+    hints = _ensure_hint_nd(hint, Val(N))
+    mono = ntuple(_ -> true, Val(N))
+    return _eval_nd_hermite(itp, resolved, ops, policies, hints, mono)
 end
 
 # In-place batch evaluation (SoA + AoS) is handled by the unified
@@ -65,11 +67,12 @@ end
 @inline function _locate_cell(
         itp::CubicInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}},
-        search::SEARCH,
-        hints = nothing
-    ) where {Tg, Tv, N, SEARCH <: NTuple{N, AbstractSearchPolicy}}
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
+    ) where {Tg, Tv, N}
     q_evals = _handle_all_extraps(query, itp.grids, itp.extraps)
-    indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, itp.spacings, search, hints)
+    indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, itp.spacings, policies, hints, mono)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.spacings, indices, Ls)
 
     return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)
@@ -79,11 +82,12 @@ end
 @inline function _locate_cell(
         itp::CubicInterpolantND{Tg, Tv, 2},
         query::Tuple{Vararg{Real, 2}},
-        search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints = nothing
+        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
+        mono::Tuple{Bool, Bool},
     ) where {Tg, Tv}
     x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, itp.grids, itp.spacings, itp.extraps, search, hints
+        query, itp.grids, itp.spacings, itp.extraps, policies, hints, mono
     )
 
     hx = _get_h(itp.spacings[1], ix);  hy = _get_h(itp.spacings[2], iy)
@@ -114,14 +118,15 @@ end
 @inline function _eval_nd_hermite(
         itp::CubicInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}},
-        ops::OPS,
-        search::SEARCH,
-        hints = nothing
-    ) where {Tg, Tv, N, OPS <: NTuple{N, AbstractEvalOp}, SEARCH <: NTuple{N, AbstractSearchPolicy}}
+        ops::NTuple{N, AbstractEvalOp},
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
+    ) where {Tg, Tv, N}
     _validate_nd_domain(itp.grids, query, itp.extraps)
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
-    cell = _locate_cell(itp, query, search, hints)
+    cell = _locate_cell(itp, query, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
 end
 
@@ -130,13 +135,14 @@ end
         itp::CubicInterpolantND{Tg, Tv, 2},
         query::Tuple{Vararg{Real, 2}},
         ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp},
-        search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints = nothing
+        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
+        mono::Tuple{Bool, Bool},
     ) where {Tg, Tv}
     _validate_nd_domain(itp.grids, query, itp.extraps)
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
-    cell = _locate_cell(itp, query, search, hints)
+    cell = _locate_cell(itp, query, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
 end
 

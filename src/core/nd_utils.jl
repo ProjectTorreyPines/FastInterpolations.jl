@@ -699,41 +699,7 @@ end
 # Extracts query, handles extrapolation, and performs interval search.
 # Returns raw (x_eval, y_eval, ix, iy, xL, yL) for type-specific post-processing.
 
-"""
-    _locate_cell_2d_preamble(query, grids, spacings, extraps, search, hints)
-
-Shared preamble for all N=2 `_locate_cell` specializations.
-Destructures 2D query, applies per-axis extrapolation, and performs interval search.
-
-Returns `(x_eval, y_eval, ix, iy, xL, yL)` — the 6 raw values that each
-interpolant type then post-processes into its kernel-specific cell tuple.
-"""
-@inline function _locate_cell_2d_preamble(
-        query::Tuple{Vararg{Real, 2}},
-        grids, spacings, extraps,
-        search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints
-    )
-    xq, yq = query
-    grid_x, grid_y = grids
-    spacing_x, spacing_y = spacings
-    extrap_x, extrap_y = extraps
-    search_x, search_y = search
-
-    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
-    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
-
-    hint_x = _get_axis_hint(hints, 1)
-    hint_y = _get_axis_hint(hints, 2)
-    searcher_x = _resolve_search(grid_x, x_eval, search_x, hint_x)
-    searcher_y = _resolve_search(grid_y, y_eval, search_y, hint_y)
-    ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
-    iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
-
-    return (x_eval, y_eval, ix, iy, xL, yL)
-end
-
-# Mono-flag overload: per-axis adaptive search inside function barrier
+# N=2 preamble: per-axis adaptive search inside function barrier
 @inline function _locate_cell_2d_preamble(
         query::Tuple{Vararg{Real, 2}},
         grids, spacings, extraps,

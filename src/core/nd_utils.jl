@@ -579,15 +579,6 @@ end
 # ----------------------------------------
 
 """
-    _get_axis_hint(hints, d) -> Nothing or Base.RefValue{Int}
-
-Extract per-axis hint from a hint tuple or Nothing.
-Used by N=2 specializations that destructure manually.
-"""
-@inline _get_axis_hint(::Nothing, d) = nothing
-@inline _get_axis_hint(hints::Tuple, d) = @inbounds hints[d]
-
-"""
     _ensure_hint_nd(hint, Val(N)) -> NTuple{N, Base.RefValue{Int}}
 
 Create persistent hint tuple for ND evaluation. User-provided hints pass
@@ -646,10 +637,8 @@ policies always return `true` (the flag is ignored by `_search_axis_adaptive`).
 # is resolved by Julia's union-splitting INSIDE the barrier — the concrete
 # return type (Int, Tg, Tg) never escapes as Union.
 #
-# mono=true → LB{8} with persistent hint (walk + locality)
-# mono=false → Binary+RefHint DIRECTLY (bypass _to_searcher auto-upgrade to avoid
-#   LB{8} overhead on random queries; auto-created hints from _ensure_hint_nd would
-#   otherwise trigger the _to_searcher(Binary, hint) → LB{8} auto-upgrade path)
+# mono=true  → LB{8} with persistent hint (walk + locality)
+# mono=false → Binary+RefHint (pure binary search + hint write-back, no walk overhead)
 
 # Range grid: always DirectSearch O(1) regardless of policy/mono
 @inline function _search_axis_adaptive(q, grid::AbstractRange, spacing, ::AbstractSearchPolicy, hint, _)
@@ -667,7 +656,7 @@ end
 @inline function _search_axis_adaptive(q, grid::AbstractVector, spacing, ::AutoSearch, hint, is_mono)
     searcher = is_mono ?
         _to_searcher(LinearBinarySearch(), hint) :
-        Searcher{BinarySearch, RefHint}(RefHint(hint))
+        _to_searcher(BinarySearch(), hint)
     return @inbounds search_interval(searcher, grid, spacing, q)
 end
 

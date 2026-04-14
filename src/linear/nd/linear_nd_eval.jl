@@ -24,7 +24,7 @@
     ops = _resolve_deriv_nd(deriv, Val(N))
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
-    mono = ntuple(_ -> true, Val(N))
+    mono = _scalar_mono(hint, Val(N))
     return _eval_linear_nd(itp, resolved, ops, policies, hints, mono)
 end
 

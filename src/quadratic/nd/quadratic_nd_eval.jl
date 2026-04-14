@@ -69,7 +69,7 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))      # ∂f/∂x only
     ops = _resolve_deriv_nd(deriv, Val(N))
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
-    mono = ntuple(_ -> true, Val(N))
+    mono = _scalar_mono(hint, Val(N))
     return _eval_nd_quadratic(itp, resolved, ops, policies, hints, mono)
 end
 

@@ -601,6 +601,10 @@ are forbidden.
 @inline _true_flag(_) = true
 @inline _false_flag(_) = false
 
+# Scalar mono flag: hint provided → assume locality (LB), no hint → stateless (Binary)
+@inline _scalar_mono(::Nothing, ::Val{N}) where {N} = ntuple(_false_flag, Val(N))
+@inline _scalar_mono(::NTuple{N, Base.RefValue{Int}}, ::Val{N}) where {N} = ntuple(_true_flag, Val(N))
+
 # ----------------------------------------
 # Monotonicity Flags (batch-level, once per call)
 # ----------------------------------------
@@ -647,14 +651,28 @@ policies always return `true` (the flag is ignored by `_search_axis_adaptive`).
 #   LB{8} overhead on random queries; auto-created hints from _ensure_hint_nd would
 #   otherwise trigger the _to_searcher(Binary, hint) → LB{8} auto-upgrade path)
 
-@inline function _search_axis_adaptive(q, grid, spacing, ::AutoSearch, hint, is_mono)
+# Range grid: always DirectSearch O(1) regardless of policy/mono
+@inline function _search_axis_adaptive(q, grid::AbstractRange, spacing, ::AbstractSearchPolicy, hint, _)
+    searcher = _to_searcher(DirectSearch(), hint)
+    return @inbounds search_interval(searcher, grid, spacing, q)
+end
+
+# Disambiguate: Range + AutoSearch (AbstractRange <: AbstractVector, AutoSearch <: AbstractSearchPolicy)
+@inline function _search_axis_adaptive(q, grid::AbstractRange, spacing, ::AutoSearch, hint, _)
+    searcher = _to_searcher(DirectSearch(), hint)
+    return @inbounds search_interval(searcher, grid, spacing, q)
+end
+
+# Vector grid + AutoSearch: per-axis adaptive
+@inline function _search_axis_adaptive(q, grid::AbstractVector, spacing, ::AutoSearch, hint, is_mono)
     searcher = is_mono ?
         _to_searcher(LinearBinarySearch(), hint) :
         Searcher{BinarySearch, RefHint}(RefHint(hint))
     return @inbounds search_interval(searcher, grid, spacing, q)
 end
 
-@inline function _search_axis_adaptive(q, grid, spacing, policy::AbstractSearchPolicy, hint, _)
+# Vector grid + explicit policy
+@inline function _search_axis_adaptive(q, grid::AbstractVector, spacing, policy::AbstractSearchPolicy, hint, _)
     searcher = _to_searcher(policy, hint)
     return @inbounds search_interval(searcher, grid, spacing, q)
 end

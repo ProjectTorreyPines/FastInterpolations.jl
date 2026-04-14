@@ -40,7 +40,7 @@
         query_r = map(_resolve_grididx, query, itp.grids)
         policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
         hints = _ensure_hint_nd(hint, Val($N))
-        mono = ntuple(_true_flag, Val($N))
+        mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             zref = _zero_ref(itp)
             return tuple($(zero_tuple...))
@@ -115,7 +115,7 @@ end
         )
         policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
         hints = _ensure_hint_nd(hint, Val($N))
-        mono = ntuple(_true_flag, Val($N))
+        mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             zref = _zero_ref(itp)
             @inbounds for i in 1:$N
@@ -201,7 +201,7 @@ end
         query_r = map(_resolve_grididx, query, itp.grids)
         policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
         hints = _ensure_hint_nd(hint, Val($N))
-        mono = ntuple(_true_flag, Val($N))
+        mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             zref = _zero_ref(itp)
             fill_val = _first_fill_value(itp.extraps)
@@ -308,7 +308,7 @@ end
         H = Matrix{Tq}(undef, $N, $N)
         policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
         hints = _ensure_hint_nd(hint, Val($N))
-        mono = ntuple(_true_flag, Val($N))
+        mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             fill!(H, zero(Tq))
             return H
@@ -401,7 +401,7 @@ end
         )
         policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
         hints = _ensure_hint_nd(hint, Val($N))
-        mono = ntuple(_true_flag, Val($N))
+        mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             fill!(H, zero(eltype(H)))
             return H
@@ -480,7 +480,7 @@ end
         query_r = map(_resolve_grididx, query, itp.grids)
         policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
         hints = _ensure_hint_nd(hint, Val($N))
-        mono = ntuple(_true_flag, Val($N))
+        mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
             return 0 * _zero_ref(itp)
         end

@@ -316,23 +316,20 @@ end
     ) where {N, K}
     nq = _query_length(queries)
     nq < K && return false
+    # Single-pass direction tracking (same algorithm as _is_likely_monotone).
+    state = 0
     @inbounds begin
-        v1 = _query_extract(queries, 1)[d]
-        v2 = _query_extract(queries, 2)[d]
-        ascending = v2 >= v1
-        prev = v2
-        if ascending
-            for i in 3:K
-                curr = _query_extract(queries, i)[d]
-                curr < prev && return false
-                prev = curr
+        prev = _query_extract(queries, 1)[d]
+        for i in 2:K
+            curr = _query_extract(queries, i)[d]
+            diff = curr - prev
+            s = (diff > 0) - (diff < 0)
+            if state == 0
+                state = s
+            else
+                diff * state < 0 && return false
             end
-        else
-            for i in 3:K
-                curr = _query_extract(queries, i)[d]
-                curr > prev && return false
-                prev = curr
-            end
+            prev = curr
         end
     end
     return true

@@ -1500,13 +1500,25 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             # Exactly K=8 elements → false if not sorted
             @test !_is_likely_monotone([1.0, 3.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0])
 
-            # Flat (all equal) → ascending path returns true
+            # Flat (all equal) → trivially monotone
             @test _is_likely_monotone(fill(5.0, 10))
 
             # Monotone prefix but unsorted later → still true (only checks first K)
             v = collect(1.0:20.0)
             v[15] = 0.0  # break monotonicity beyond K=8
             @test _is_likely_monotone(v)
+
+            # Equal-valued prefix followed by descending → true (non-increasing)
+            @test _is_likely_monotone([0.0, 0.0, 0.0, -1.0, -1.0, -2.0, -2.0, -3.0])
+
+            # Equal-valued prefix followed by ascending → true (non-decreasing)
+            @test _is_likely_monotone([0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 3.0, 4.0])
+
+            # Equal prefix then direction reversal → false
+            @test !_is_likely_monotone([0.0, 0.0, 0.0, 0.0, 3.0, 1.0, 4.0, 2.0])
+
+            # Ascending then descending → false
+            @test !_is_likely_monotone([1.0, 2.0, 3.0, 4.0, 3.0, 2.0, 1.0, 0.0])
         end
 
         # ========================================

@@ -232,16 +232,18 @@ False positive rate: 1/K! ≈ 2.5e-5 for K=8 (random data appearing sorted in fi
 @inline function _is_likely_monotone(xq::AbstractVector{<:Real}, ::Val{K} = Val(8)) where {K}
     n = length(xq)
     n < K && return false
-    @inbounds begin
-        ascending = xq[2] >= xq[1]
-        if ascending
-            for i in 2:K
-                xq[i] < xq[i - 1] && return false
-            end
+    # Single-pass direction tracking: state ∈ {-1, 0, 1}.
+    # state=0 (undecided) adopts the first non-zero diff's sign.
+    # Any diff that opposes state → not monotone.
+    # Equal consecutive values (diff=0) are always compatible.
+    state = 0
+    @inbounds for i in 2:K
+        diff = xq[i] - xq[i - 1]
+        s = (diff > 0) - (diff < 0)
+        if state == 0
+            state = s
         else
-            for i in 2:K
-                xq[i] > xq[i - 1] && return false
-            end
+            diff * state < 0 && return false
         end
     end
     return true

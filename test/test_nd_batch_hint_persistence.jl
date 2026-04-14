@@ -341,8 +341,8 @@
     end
 
     # ── AoS batch queries — correctness ─────────────────────────
-    # Array-of-Structs queries: Vector{Tuple}. _check_mono_nd falls back
-    # to all-false (Binary), but should still produce correct results.
+    # Array-of-Structs queries: Vector{Tuple}. _check_mono_nd uses protocol-based
+    # _is_axis_likely_monotone for per-axis monotonicity check (no allocation).
 
     @testset "Correctness — AoS batch queries" begin
         x = _make_vector_grid(21, 0.0, 2π)
@@ -364,5 +364,22 @@
         itp(out_aos, qs_aos)
 
         @test out_aos == out_soa  # bitwise identical
+    end
+
+    @testset "Zero-alloc — AoS batch queries" begin
+        function _alloc_aos()
+            x = _make_vector_grid(101, 0.0, 2π)
+            y = _make_vector_grid(51, 0.0, π)
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            itp = cubic_interp((x, y), data)
+            nq = 20
+            xqs = collect(range(0.1, 6.0, length = nq))
+            yqs = collect(range(0.1, 3.0, length = nq))
+            qs = [(xqs[i], yqs[i]) for i in 1:nq]
+            out = Vector{Float64}(undef, nq)
+            itp(out, qs); itp(out, qs)
+            return @allocated itp(out, qs)
+        end
+        @test _alloc_aos() <= ND_ALLOC_THRESHOLD
     end
 end

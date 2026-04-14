@@ -606,6 +606,11 @@ are forbidden.
 @inline _check_axis_mono(::AutoSearch, q) = _is_likely_monotone(q)
 @inline _check_axis_mono(::AbstractSearchPolicy, _) = true  # explicit policies: flag unused
 
+# AoS per-axis helper: dispatches on policy type (concrete per-element via map).
+@inline _check_axis_mono_aos(::AutoSearch, d, queries, vn) =
+    _is_axis_likely_monotone(queries, d, vn)
+@inline _check_axis_mono_aos(::AbstractSearchPolicy, _, __, ___) = true
+
 """
     _check_mono_nd(policies, queries) -> NTuple{N, Bool}
 
@@ -621,9 +626,25 @@ policies always return `true` (the flag is ignored by `_search_axis_adaptive`).
 ) where {N} =
     map(_check_axis_mono, policies, queries)
 
-# Non-SoA queries (AoS, scalar tuples, etc.): can't check per-axis monotonicity.
-# Default to false (Binary/LB{0}) — conservative, avoids LB{8} walk overhead on
-# unknown query order. Future: extract first K points for per-axis mono check.
+# AoS queries (Vector of point-like elements: Tuple, SVector, etc.):
+# per-axis monotonicity via protocol-based _query_extract (no allocation).
+# Wraps queries + Val(N) in _AoSMonoChecker to avoid closure capture in map.
+struct _AoSMonoChecker{Q, VN}
+    queries::Q
+    vn::VN
+end
+@inline (c::_AoSMonoChecker)(p, d) = _check_axis_mono_aos(p, d, c.queries, c.vn)
+
+@inline function _check_mono_nd(
+    policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+    queries::AbstractVector
+) where {N}
+    checker = _AoSMonoChecker(queries, Val(N))
+    map(checker, policies, ntuple(identity, Val(N)))
+end
+
+# Non-SoA queries (scalar tuples, etc.): can't check per-axis monotonicity.
+# Default to false (Binary) — conservative, avoids LB{8} walk overhead.
 @inline _check_mono_nd(
     policies::Tuple{Vararg{AbstractSearchPolicy, N}},
     queries

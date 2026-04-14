@@ -353,41 +353,6 @@ end
 # Return type is Union{ConcreteA, ConcreteB} — a 2-way Union of concrete tuple
 # types that Julia union-splits at the function barrier.
 
-# Named helpers for map — avoid closure capture.
-@inline _autosearch_to_lb(::AutoSearch) = LinearBinarySearch()
-@inline _autosearch_to_lb(p::AbstractSearchPolicy) = p
-@inline _autosearch_to_binary(::AutoSearch) = BinarySearch()
-@inline _autosearch_to_binary(p::AbstractSearchPolicy) = p
-# _check_axis_mono is defined below (line ~606) — shared by both
-# _resolve_search_nd_uniform (oneshot) and _check_mono_nd (persistent batch).
-
-# SoA Real vectors + no hint → all-or-nothing adaptive resolution.
-@inline function _resolve_search_nd_uniform(
-        s, ::Val{N},
-        queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-        ::Nothing
-    ) where {N}
-    tuple = _resolve_search_nd(s, Val(N))  # broadcast only, no resolution
-    all_mono = all(map(_check_axis_mono, tuple, queries))
-    return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
-end
-
-# Generic queries + no hint → protocol-based all-or-nothing adaptive resolution.
-# Fallback for non-SoA queries — SoA has a more specific method above (line ~365).
-@inline function _resolve_search_nd_uniform(s, vn::Val{N}, queries, ::Nothing) where {N}
-    tuple = _resolve_search_nd(s, vn)
-    any(p -> p isa AutoSearch, tuple) || return tuple
-    all_mono = all(
-        ntuple(Val(N)) do d
-            p = tuple[d]
-            !isa(p, AutoSearch) || _is_axis_likely_monotone(queries, d, vn)
-        end
-    )
-    return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
-end
-
-# Hinted → standard 3-arg type-based (already concrete, no monotonicity check).
-@inline _resolve_search_nd_uniform(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
 
 # ========================================
 # Boundary Condition Resolution

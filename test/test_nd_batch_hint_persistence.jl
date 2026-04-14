@@ -222,8 +222,10 @@
             data = [sin(xi) * cos(yj) for xi in x, yj in y]
             itp = cubic_interp((x, y), data)
             nq = 20
-            qs = (collect(range(0.1, 6.0, length = nq)),
-                  collect(range(0.1, 3.0, length = nq)))
+            qs = (
+                collect(range(0.1, 6.0, length = nq)),
+                collect(range(0.1, 3.0, length = nq)),
+            )
             out = Vector{Float64}(undef, nq)
             if hint_mode == :hint
                 h = (Ref(1), Ref(1))
@@ -237,12 +239,12 @@
             end
         end
 
-        @test _alloc_override(BinarySearch(), :nohint)             <= ND_ALLOC_THRESHOLD
-        @test _alloc_override(BinarySearch(), :hint)               <= ND_ALLOC_THRESHOLD
-        @test _alloc_override(LinearBinarySearch(), :nohint)       <= ND_ALLOC_THRESHOLD
-        @test _alloc_override(LinearBinarySearch(), :hint)         <= ND_ALLOC_THRESHOLD
-        @test _alloc_override(AutoSearch(), :nohint)               <= ND_ALLOC_THRESHOLD
-        @test _alloc_override(AutoSearch(), :hint)                 <= ND_ALLOC_THRESHOLD
+        @test _alloc_override(BinarySearch(), :nohint) <= ND_ALLOC_THRESHOLD
+        @test _alloc_override(BinarySearch(), :hint) <= ND_ALLOC_THRESHOLD
+        @test _alloc_override(LinearBinarySearch(), :nohint) <= ND_ALLOC_THRESHOLD
+        @test _alloc_override(LinearBinarySearch(), :hint) <= ND_ALLOC_THRESHOLD
+        @test _alloc_override(AutoSearch(), :nohint) <= ND_ALLOC_THRESHOLD
+        @test _alloc_override(AutoSearch(), :hint) <= ND_ALLOC_THRESHOLD
     end
 
     # ── Range grid — zero-alloc + correctness ───────────────────
@@ -259,8 +261,10 @@
             data = [sin(xi) * cos(yj) for xi in x, yj in y]
             itp = builder((x, y), data)
             nq = 20
-            qs = (collect(range(0.1, 6.0, length = nq)),
-                  collect(range(0.1, 3.0, length = nq)))
+            qs = (
+                collect(range(0.1, 6.0, length = nq)),
+                collect(range(0.1, 3.0, length = nq)),
+            )
             out = Vector{Float64}(undef, nq)
             itp(out, qs); itp(out, qs)
             return @allocated itp(out, qs)
@@ -278,13 +282,15 @@
         itp_v = cubic_interp((xv, yv), data)
 
         nq = 20
-        qs = (collect(range(0.1, 6.0, length = nq)),
-              collect(range(0.1, 3.0, length = nq)))
+        qs = (
+            collect(range(0.1, 6.0, length = nq)),
+            collect(range(0.1, 3.0, length = nq)),
+        )
         out_r = Vector{Float64}(undef, nq)
         out_v = Vector{Float64}(undef, nq)
         itp_r(out_r, qs)
         itp_v(out_v, qs)
-        @test out_r ≈ out_v  atol = 1e-12  # Range vs Vector may differ at ULP level
+        @test out_r ≈ out_v  atol = 1.0e-12  # Range vs Vector may differ at ULP level
     end
 
     @testset "Hint mutation — Range grid" begin
@@ -294,8 +300,10 @@
         itp = cubic_interp((xr, yr), data)
 
         nq = 50
-        qs = (collect(range(0.01, 0.99, length = nq)),
-              collect(range(0.01, 0.99, length = nq)))
+        qs = (
+            collect(range(0.01, 0.99, length = nq)),
+            collect(range(0.01, 0.99, length = nq)),
+        )
         out = Vector{Float64}(undef, nq)
         hints = (Ref(1), Ref(1))
         itp(out, qs; hint = hints)
@@ -313,8 +321,10 @@
             data = [sin(xi) * cos(yj) for xi in xr, yj in yv]
             itp = cubic_interp((xr, yv), data)
             nq = 20
-            qs = (collect(range(0.1, 6.0, length = nq)),
-                  collect(range(0.1, 3.0, length = nq)))
+            qs = (
+                collect(range(0.1, 6.0, length = nq)),
+                collect(range(0.1, 3.0, length = nq)),
+            )
             out = Vector{Float64}(undef, nq)
             itp(out, qs); itp(out, qs)
             return @allocated itp(out, qs)
@@ -330,9 +340,11 @@
             data = [sin(xi) * cos(yj) * (1 + zk) for xi in xr, yj in yv, zk in zr]
             itp = cubic_interp((xr, yv, zr), data)
             nq = 10
-            qs = (collect(range(0.1, 6.0, length = nq)),
-                  collect(range(0.1, 3.0, length = nq)),
-                  collect(range(0.1, 0.9, length = nq)))
+            qs = (
+                collect(range(0.1, 6.0, length = nq)),
+                collect(range(0.1, 3.0, length = nq)),
+                collect(range(0.1, 0.9, length = nq)),
+            )
             out = Vector{Float64}(undef, nq)
             itp(out, qs); itp(out, qs)
             return @allocated itp(out, qs)
@@ -394,8 +406,10 @@
         itp = interp((x, y), data; method = (CubicInterp(), CubicInterp()), coeffs = OnTheFly())
 
         nq = 50
-        qs = (collect(range(0.01, 0.99, length = nq)),
-              collect(range(0.01, 0.99, length = nq)))
+        qs = (
+            collect(range(0.01, 0.99, length = nq)),
+            collect(range(0.01, 0.99, length = nq)),
+        )
         out = Vector{Float64}(undef, nq)
         hints = (Ref(1), Ref(1))
         itp(out, qs; hint = hints)

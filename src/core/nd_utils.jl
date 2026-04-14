@@ -602,23 +602,23 @@ end
 @inline (c::_AoSMonoChecker)(p, d) = _check_axis_mono_aos(p, d, c.queries, c.vn)
 
 @inline function _check_mono_nd(
-    policies::Tuple{Vararg{AbstractSearchPolicy, N}},
-    queries::AbstractVector
-) where {N}
+        policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+        queries::AbstractVector
+    ) where {N}
     checker = _AoSMonoChecker(queries, Val(N))
-    map(checker, policies, ntuple(identity, Val(N)))
+    return map(checker, policies, ntuple(identity, Val(N)))
 end
 
 # Generic queries (custom protocol containers): per-axis monotonicity via
 # _is_axis_likely_monotone (same protocol-based check as AoS).
 # Covers any container implementing _query_length/_query_extract.
 @inline function _check_mono_nd(
-    policies::Tuple{Vararg{AbstractSearchPolicy, N}},
-    queries
-) where {N}
+        policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+        queries
+    ) where {N}
     _query_length(queries) < 8 && return ntuple(_false_flag, Val(N))
     checker = _AoSMonoChecker(queries, Val(N))
-    map(checker, policies, ntuple(identity, Val(N)))
+    return map(checker, policies, ntuple(identity, Val(N)))
 end
 
 # ----------------------------------------

@@ -201,11 +201,12 @@ end
     end
 
     # Global-solve fallback (no pre-search, no slicing).
-    # Pass hints for persistent hint update in per-fiber 1D search.
+    # Pass nothing for hints — full-fiber 1D searches are O(n) anyway,
+    # hint write-back is negligible and avoids Ref allocation on scalar calls.
     full_windows = map(Base.OneTo, size(itp.data))
     return _collapse_dims(
         Tr, itp.data, itp.grids, itp.methods, itp.extraps,
-        q_eval, ops, policies, hints, full_windows,
+        q_eval, ops, policies, nothing, full_windows,
     )
 end
 
@@ -328,7 +329,7 @@ end
     end
 
     full_windows = map(Base.OneTo, size(itp.data))
-    return (itp.data, itp.grids, itp.methods, itp.extraps, q_eval, policies, hints, full_windows)
+    return (itp.data, itp.grids, itp.methods, itp.extraps, q_eval, policies, nothing, full_windows)
 end
 
 @inline function _eval_at_cell(

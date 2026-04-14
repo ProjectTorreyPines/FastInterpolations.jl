@@ -65,9 +65,10 @@ end
         queries,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        searches::NTuple{N, AbstractSearchPolicy},
+        policies::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
-        hints = nothing,
+        hints,  # Nothing or NTuple{N, Ref{Int}}
+        mono::NTuple{N, Bool},
     ) where {Tg, N}
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
@@ -95,7 +96,7 @@ end
             continue
         end
         q_eval = _handle_all_extraps(query_k, grids_p, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches, hints)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, policies, hints, mono)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
         output[k] = _eval_hetero_nd_cell(partials, indices, hs, inv_hs, dLs, ops, methods)
     end
@@ -108,8 +109,8 @@ end
 # Forces search type specialization before entering @with_pool boundary.
 # NOT @inline — specialization requires real call.
 
-function _interp_nd_hetero_batch_dispatch!(output, grids, data, queries, methods, extraps, searches, ops, hints)
-    return _interp_nd_hetero_oneshot_batch!(output, grids, data, queries, methods, extraps, searches, ops, hints)
+function _interp_nd_hetero_batch_dispatch!(output, grids, data, queries, methods, extraps, policies, ops, hints, mono)
+    return _interp_nd_hetero_oneshot_batch!(output, grids, data, queries, methods, extraps, policies, ops, hints, mono)
 end
 
 # ========================================
@@ -293,7 +294,8 @@ end
     _query_check_ndims(queries, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
-    searches = _resolve_search_nd_uniform(search, Val(N), queries, hints)
+    policies = _resolve_search_nd(search, Val(N))
+    mono = _check_mono_nd(policies, queries)
     ops = _resolve_deriv_nd(deriv, Val(N))
     _validate_axis_methods(grids_typed, methods, extraps_val)
 
@@ -313,12 +315,12 @@ end
         spacings = _has_any_local_method(methods) ? _create_spacings_pooled(pool, grids_typed) : nothing
         @inbounds for k in 1:nq
             query_k = _extract_query_point(queries, k, Val(N))
-            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, searches, ops, hints, spacings)
+            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, policies, ops, hints, spacings)
         end
         return output
     end
 
-    return _interp_nd_hetero_batch_dispatch!(output, grids_typed, data, queries, methods, extraps_val, searches, ops, hints)
+    return _interp_nd_hetero_batch_dispatch!(output, grids_typed, data, queries, methods, extraps_val, policies, ops, hints, mono)
 end
 
 # ========================================

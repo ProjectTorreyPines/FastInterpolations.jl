@@ -701,7 +701,16 @@ end
     return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
 
-# Nothing hint → delegate to existing 4-arg (zero overhead)
+# Nothing hint + mono → delegate to 4-arg (zero Ref alloc)
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
+        spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing, ::NTuple{N, Bool},
+    ) where {N}
+    return _search_all_intervals(q_evals, grids, spacings, searches)
+end
+
+# Nothing hint (no mono) → delegate to 4-arg (zero Ref alloc)
 @inline function _search_all_intervals(
         q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}},

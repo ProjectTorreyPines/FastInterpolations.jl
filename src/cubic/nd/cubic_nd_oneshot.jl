@@ -163,9 +163,10 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
         queries,
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        searches::NTuple{N, AbstractSearchPolicy},
+        policies::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
-        hints = nothing
+        hints,  # Nothing or NTuple{N, Ref{Int}}
+        mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
@@ -188,7 +189,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
             output[k] = oob_val; continue
         end
         q_evals = _handle_all_extraps(query_k, grids_p, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_evals, grids_p, spacings, searches, hints)
+        indices, Ls, _ = _search_all_intervals(q_evals, grids_p, spacings, policies, hints, mono)
         hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
         output[k] = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
     end
@@ -198,8 +199,8 @@ end
 # Function barrier: forces Julia to runtime-dispatch on the concrete
 # searches tuple type, resolving per-element Union{BinarySearch,LinearBinarySearch} before
 # entering the @with_pool boundary. NOT @inline — specialization requires real call.
-function _cubic_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps, searches, ops, hints)
-    return _cubic_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps, searches, ops, hints)
+function _cubic_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps, policies, ops, hints, mono)
+    return _cubic_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps, policies, ops, hints, mono)
 end
 
 # ========================================
@@ -230,11 +231,13 @@ function cubic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)
+    policies = _resolve_search_nd(search, Val(N))
+    hints_nd = hint  # pass user hints as-is (nothing or NTuple{N,Ref{Int}})
+    mono = _check_mono_nd(policies, queries)
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv_p)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _cubic_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops, hint)
+    return _cubic_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, policies, ops, hints_nd, mono)
 end

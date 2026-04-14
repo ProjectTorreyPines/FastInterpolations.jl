@@ -53,9 +53,10 @@ Writes results into `output`. No heap allocation beyond spacings.
         data::AbstractArray{Tv, N},
         queries,
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        searches::NTuple{N, AbstractSearchPolicy},
+        policies::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
-        hints = nothing
+        hints,  # Nothing or NTuple{N, Ref{Int}}
+        mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
@@ -69,7 +70,7 @@ Writes results into `output`. No heap allocation beyond spacings.
             output[k] = oob_val; continue
         end
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, policies, hints, mono)
         hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
         output[k] = _multilinear_sum(data, indices, hs, αs, ops, Val(N))
     end
@@ -78,8 +79,8 @@ end
 
 # Function barrier: forces Julia to runtime-dispatch on the concrete
 # searches tuple type before entering the @with_pool boundary.
-function _linear_nd_batch_dispatch!(output, grids, data, queries, extraps, searches, ops, hints)
-    return _linear_interp_nd_oneshot_batch!(output, grids, data, queries, extraps, searches, ops, hints)
+function _linear_nd_batch_dispatch!(output, grids, data, queries, extraps, policies, ops, hints, mono)
+    return _linear_interp_nd_oneshot_batch!(output, grids, data, queries, extraps, policies, ops, hints, mono)
 end
 
 # ========================================
@@ -161,9 +162,11 @@ function linear_interp!(
     grids_typed, _, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
 
-    searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)
+    policies = _resolve_search_nd(search, Val(N))
+    hints_nd = hint
+    mono = _check_mono_nd(policies, queries)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _linear_nd_batch_dispatch!(output, grids_typed, data, queries, extraps_val, searches, ops, hint)
+    return _linear_nd_batch_dispatch!(output, grids_typed, data, queries, extraps_val, policies, ops, hints_nd, mono)
 end

@@ -244,4 +244,125 @@
         @test _alloc_override(AutoSearch(), :nohint)               <= ND_ALLOC_THRESHOLD
         @test _alloc_override(AutoSearch(), :hint)                 <= ND_ALLOC_THRESHOLD
     end
+
+    # ── Range grid — zero-alloc + correctness ───────────────────
+    # Range grids dispatch to DirectSearch O(1). Verify they still work
+    # through the (policies, hints, mono) infrastructure without allocating.
+
+    @testset "Zero-alloc — Range grid $label" for (label, builder) in [
+            ("Cubic", (g, d) -> cubic_interp(g, d)),
+            ("Linear", (g, d) -> linear_interp(g, d)),
+        ]
+        function _alloc_range(builder)
+            x = range(0.0, 2π, 101)
+            y = range(0.0, π, 51)
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            itp = builder((x, y), data)
+            nq = 20
+            qs = (collect(range(0.1, 6.0, length = nq)),
+                  collect(range(0.1, 3.0, length = nq)))
+            out = Vector{Float64}(undef, nq)
+            itp(out, qs); itp(out, qs)
+            return @allocated itp(out, qs)
+        end
+        @test _alloc_range(builder) <= ND_ALLOC_THRESHOLD
+    end
+
+    @testset "Correctness — Range vs Vector — batch" begin
+        xr = range(0.0, 2π, 101)
+        yr = range(0.0, π, 51)
+        xv = collect(xr)
+        yv = collect(yr)
+        data = [sin(xi) * cos(yj) for xi in xr, yj in yr]
+        itp_r = cubic_interp((xr, yr), data)
+        itp_v = cubic_interp((xv, yv), data)
+
+        nq = 20
+        qs = (collect(range(0.1, 6.0, length = nq)),
+              collect(range(0.1, 3.0, length = nq)))
+        out_r = Vector{Float64}(undef, nq)
+        out_v = Vector{Float64}(undef, nq)
+        itp_r(out_r, qs)
+        itp_v(out_v, qs)
+        @test out_r ≈ out_v  atol = 1e-12  # Range vs Vector may differ at ULP level
+    end
+
+    @testset "Hint mutation — Range grid" begin
+        xr = range(0.0, 1.0, 100)
+        yr = range(0.0, 1.0, 50)
+        data = [sin(2π * xi) * cos(2π * yj) for xi in xr, yj in yr]
+        itp = cubic_interp((xr, yr), data)
+
+        nq = 50
+        qs = (collect(range(0.01, 0.99, length = nq)),
+              collect(range(0.01, 0.99, length = nq)))
+        out = Vector{Float64}(undef, nq)
+        hints = (Ref(1), Ref(1))
+        itp(out, qs; hint = hints)
+
+        @test hints[1][] > length(xr) ÷ 2
+        @test hints[2][] > length(yr) ÷ 2
+    end
+
+    # ── Mixed grid (Range × Vector) — zero-alloc + correctness ──
+
+    @testset "Zero-alloc — Mixed grid Range×Vector" begin
+        function _alloc_mixed_grid()
+            xr = range(0.0, 2π, 101)
+            yv = _make_vector_grid(51, 0.0, π)
+            data = [sin(xi) * cos(yj) for xi in xr, yj in yv]
+            itp = cubic_interp((xr, yv), data)
+            nq = 20
+            qs = (collect(range(0.1, 6.0, length = nq)),
+                  collect(range(0.1, 3.0, length = nq)))
+            out = Vector{Float64}(undef, nq)
+            itp(out, qs); itp(out, qs)
+            return @allocated itp(out, qs)
+        end
+        @test _alloc_mixed_grid() <= ND_ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc — Mixed grid 3D Range×Vector×Range" begin
+        function _alloc_mixed_3d()
+            xr = range(0.0, 2π, 21)
+            yv = _make_vector_grid(11, 0.0, π)
+            zr = range(0.0, 1.0, 7)
+            data = [sin(xi) * cos(yj) * (1 + zk) for xi in xr, yj in yv, zk in zr]
+            itp = cubic_interp((xr, yv, zr), data)
+            nq = 10
+            qs = (collect(range(0.1, 6.0, length = nq)),
+                  collect(range(0.1, 3.0, length = nq)),
+                  collect(range(0.1, 0.9, length = nq)))
+            out = Vector{Float64}(undef, nq)
+            itp(out, qs); itp(out, qs)
+            return @allocated itp(out, qs)
+        end
+        @test _alloc_mixed_3d() <= ND_ALLOC_THRESHOLD
+    end
+
+    # ── AoS batch queries — correctness ─────────────────────────
+    # Array-of-Structs queries: Vector{Tuple}. _check_mono_nd falls back
+    # to all-false (Binary), but should still produce correct results.
+
+    @testset "Correctness — AoS batch queries" begin
+        x = _make_vector_grid(21, 0.0, 2π)
+        y = _make_vector_grid(11, 0.0, π)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        nq = 10
+        xqs = collect(range(0.1, 6.0, length = nq))
+        yqs = collect(range(0.1, 3.0, length = nq))
+
+        # SoA reference
+        out_soa = Vector{Float64}(undef, nq)
+        itp(out_soa, (xqs, yqs))
+
+        # AoS query
+        qs_aos = [(xqs[i], yqs[i]) for i in 1:nq]
+        out_aos = Vector{Float64}(undef, nq)
+        itp(out_aos, qs_aos)
+
+        @test out_aos == out_soa  # bitwise identical
+    end
 end

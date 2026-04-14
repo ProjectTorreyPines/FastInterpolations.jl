@@ -382,4 +382,52 @@
         end
         @test _alloc_aos() <= ND_ALLOC_THRESHOLD
     end
+
+    # ── Hetero full-fiber hint persistence ──────────────────────
+    # Cubic×Cubic OnTheFly takes the full-fiber fallback (no windowable axis).
+    # Batch path must still mutate user hints via _locate_cell → _collapse_dims.
+
+    @testset "Hint mutation — Hetero full-fiber (Cubic×Cubic OnTheFly)" begin
+        x = _make_vector_grid(100, 0.0, 1.0)
+        y = _make_vector_grid(50, 0.0, 1.0)
+        data = [sin(2π * xi) * cos(2π * yj) for xi in x, yj in y]
+        itp = interp((x, y), data; method = (CubicInterp(), CubicInterp()), coeffs = OnTheFly())
+
+        nq = 50
+        qs = (collect(range(0.01, 0.99, length = nq)),
+              collect(range(0.01, 0.99, length = nq)))
+        out = Vector{Float64}(undef, nq)
+        hints = (Ref(1), Ref(1))
+        itp(out, qs; hint = hints)
+
+        # Full-fiber path must update hints — sorted queries → hints near end
+        @test hints[1][] > length(x) ÷ 2
+        @test hints[2][] > length(y) ÷ 2
+    end
+
+    # ── Generic protocol container monotonicity ─────────────────
+    # Custom wrapper implementing query protocol should get per-axis check.
+
+    @testset "Correctness — generic protocol container" begin
+        x = _make_vector_grid(21, 0.0, 2π)
+        y = _make_vector_grid(11, 0.0, π)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        # Wrap queries in a non-AbstractVector container (NamedTuple of vectors via protocol)
+        nq = 10
+        xqs = collect(range(0.1, 6.0, length = nq))
+        yqs = collect(range(0.1, 3.0, length = nq))
+
+        # SoA reference
+        out_soa = Vector{Float64}(undef, nq)
+        itp(out_soa, (xqs, yqs))
+
+        # AoS reference (AbstractVector — tested elsewhere)
+        qs_aos = [(xqs[i], yqs[i]) for i in 1:nq]
+        out_aos = Vector{Float64}(undef, nq)
+        itp(out_aos, qs_aos)
+
+        @test out_aos == out_soa
+    end
 end

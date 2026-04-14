@@ -328,8 +328,12 @@ end
         return (data_local, grids_local, itp.methods, itp.extraps, q_eval, policies, nothing, rel_windows)
     end
 
+    # Full-fiber fallback: pass hints for persistent hint update in per-fiber 1D search.
+    # (Unlike _eval_hetero_nd which passes nothing — that's the scalar path where
+    # auto-created Refs are throwaway. Here in _locate_cell, batch callers provide
+    # persistent Refs via _ensure_hint_nd.)
     full_windows = map(Base.OneTo, size(itp.data))
-    return (itp.data, itp.grids, itp.methods, itp.extraps, q_eval, policies, nothing, full_windows)
+    return (itp.data, itp.grids, itp.methods, itp.extraps, q_eval, policies, hints, full_windows)
 end
 
 @inline function _eval_at_cell(

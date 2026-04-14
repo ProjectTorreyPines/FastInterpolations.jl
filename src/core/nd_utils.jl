@@ -609,13 +609,17 @@ end
     map(checker, policies, ntuple(identity, Val(N)))
 end
 
-# Non-SoA queries (scalar tuples, etc.): can't check per-axis monotonicity.
-# Default to false (Binary) — conservative, avoids LB{8} walk overhead.
-@inline _check_mono_nd(
+# Generic queries (custom protocol containers): per-axis monotonicity via
+# _is_axis_likely_monotone (same protocol-based check as AoS).
+# Covers any container implementing _query_length/_query_extract.
+@inline function _check_mono_nd(
     policies::Tuple{Vararg{AbstractSearchPolicy, N}},
     queries
-) where {N} =
-    ntuple(_false_flag, Val(N))
+) where {N}
+    _query_length(queries) < 8 && return ntuple(_false_flag, Val(N))
+    checker = _AoSMonoChecker(queries, Val(N))
+    map(checker, policies, ntuple(identity, Val(N)))
+end
 
 # ----------------------------------------
 # Per-axis adaptive search (function barrier)

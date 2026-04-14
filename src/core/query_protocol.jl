@@ -142,7 +142,9 @@ end
     return nothing
 end
 
-# Generic queries: per-query per-axis scalar check
+# Generic queries (AoS, etc.): per-query per-axis scalar check.
+# Uses map over (grids, extraps, axes) to avoid runtime-Int indexing of
+# heterogeneous grid tuples — prevents Union boxing on mixed-grid combos.
 function _validate_nd_domain(
         grids::NTuple{N, AbstractVector},
         queries,
@@ -150,11 +152,12 @@ function _validate_nd_domain(
     ) where {N}
     any(e -> e isa NoExtrap, extraps) || return nothing
     nq = _query_length(queries)
+    axes = ntuple(identity, Val(N))
     for q in 1:nq
         query_q = _extract_query_point(queries, q, Val(N))
-        for d in 1:N
-            extraps[d] isa NoExtrap || continue
-            _check_domain(grids[d], query_q[d], NoExtrap())
+        map(grids, extraps, axes) do grid, extrap, d
+            extrap isa NoExtrap && _check_domain(grid, query_q[d], NoExtrap())
+            nothing
         end
     end
     return nothing

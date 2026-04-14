@@ -38,7 +38,7 @@
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
-        policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
+        policies = _resolve_search_nd(itp.searches, Val($N))
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
@@ -113,7 +113,7 @@ end
                 "gradient output vector must have at least $($N) elements, got $(length(G))"
             )
         )
-        policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
+        policies = _resolve_search_nd(itp.searches, Val($N))
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
@@ -199,7 +199,7 @@ end
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
-        policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
+        policies = _resolve_search_nd(itp.searches, Val($N))
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
@@ -306,7 +306,7 @@ end
         query_r = map(_resolve_grididx, query, itp.grids)
         Tq = promote_type(eltype(map(float, query_r)), $Tg, $Tv)
         H = Matrix{Tq}(undef, $N, $N)
-        policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
+        policies = _resolve_search_nd(itp.searches, Val($N))
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
@@ -399,7 +399,7 @@ end
                 "Hessian output matrix must be $($N)×$($N), got $(size(H))"
             )
         )
-        policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
+        policies = _resolve_search_nd(itp.searches, Val($N))
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
@@ -478,7 +478,7 @@ end
 
     return quote
         query_r = map(_resolve_grididx, query, itp.grids)
-        policies = _resolve_search_nd(itp.searches, Val($N), query_r, hint)
+        policies = _resolve_search_nd(itp.searches, Val($N))
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)

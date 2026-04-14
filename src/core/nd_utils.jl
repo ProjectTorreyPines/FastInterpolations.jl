@@ -582,8 +582,14 @@ are forbidden.
 
 Check per-axis monotonicity for AutoSearch axes.  Returns `NTuple{N, Bool}`,
 a concrete tuple type that avoids the `Union{BinarySearch, LinearBinarySearch}`
-boxing that per-axis policy resolution would produce.  Explicit (non-AutoSearch)
-policies always return `true` (the flag is ignored by `_search_axis_adaptive`).
+boxing that per-axis policy resolution would produce.
+
+For explicit (non-AutoSearch) policies, the returned flag is ignored by
+`_search_axis_adaptive`; callers should not rely on it having any particular
+value.  Short queries (< 8 elements) return all-false as a conservative
+fallback.  The mono flags are only effective when hints are present —
+without hints, `_search_all_intervals` delegates to the stateless 4-arg
+path regardless of mono values.
 """
 # SoA queries: per-axis monotonicity check (each query vector checked independently)
 @inline _check_mono_nd(
@@ -670,7 +676,10 @@ end
     return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
 
-# Nothing hint + mono → delegate to 4-arg (zero Ref alloc)
+# Nothing hint + mono → delegate to stateless 4-arg (zero Ref alloc).
+# mono is accepted but ignored: without hints, no LB walk benefit → Binary always.
+# Callers (oneshot batch with hint=nothing) compute mono for API uniformity;
+# the cost is negligible (one-time _check_mono_nd vs nq search_interval calls).
 @inline function _search_all_intervals(
         q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}},

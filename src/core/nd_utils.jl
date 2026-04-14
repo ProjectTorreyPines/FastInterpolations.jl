@@ -358,8 +358,8 @@ end
 @inline _autosearch_to_lb(p::AbstractSearchPolicy) = p
 @inline _autosearch_to_binary(::AutoSearch) = BinarySearch()
 @inline _autosearch_to_binary(p::AbstractSearchPolicy) = p
-@inline _check_axis_monotone(::AutoSearch, q) = _is_likely_monotone(q)
-@inline _check_axis_monotone(::AbstractSearchPolicy, _) = true
+# _check_axis_mono is defined below (line ~606) — shared by both
+# _resolve_search_nd_uniform (oneshot) and _check_mono_nd (persistent batch).
 
 # SoA Real vectors + no hint → all-or-nothing adaptive resolution.
 @inline function _resolve_search_nd_uniform(
@@ -368,7 +368,7 @@ end
         ::Nothing
     ) where {N}
     tuple = _resolve_search_nd(s, Val(N))  # broadcast only, no resolution
-    all_mono = all(map(_check_axis_monotone, tuple, queries))
+    all_mono = all(map(_check_axis_mono, tuple, queries))
     return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
 end
 
@@ -555,12 +555,13 @@ Uses map over named helpers so each axis receives its concrete type directly,
 avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
 
-# Named helpers for map-based search — each receives concrete types per axis.
+# Named helpers for oneshot map-based search — each receives concrete types per axis.
 # search_interval returns (idx, L, R) with the same concrete element type regardless
 # of spacing type (ScalarSpacing or VectorSpacing), so results is homogeneous.
-@inline _search_axis(q, grid, spacing, search) =
+# Persistent batch paths use _search_axis_adaptive instead (Bool-flag, no Union boxing).
+@inline _search_axis_oneshot(q, grid, spacing, search) =
     @inbounds search_interval(_resolve_search(grid, q, search, nothing), grid, spacing, q)
-@inline _search_axis_hint(q, grid, spacing, search, hint) =
+@inline _search_axis_oneshot_hint(q, grid, spacing, search, hint) =
     @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, spacing, q)
 @inline _getidx(r) = r[1]
 @inline _getL(r) = r[2]
@@ -570,7 +571,7 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
         q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}}
     ) where {N}
-    results = map(_search_axis, q_evals, grids, spacings, searches)
+    results = map(_search_axis_oneshot, q_evals, grids, spacings, searches)
     return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
 
@@ -609,7 +610,7 @@ are forbidden.
 # AoS per-axis helper: dispatches on policy type (concrete per-element via map).
 @inline _check_axis_mono_aos(::AutoSearch, d, queries, vn) =
     _is_axis_likely_monotone(queries, d, vn)
-@inline _check_axis_mono_aos(::AbstractSearchPolicy, _, __, ___) = true
+@inline _check_axis_mono_aos(::AbstractSearchPolicy, _d, _queries, _vn) = true
 
 """
     _check_mono_nd(policies, queries) -> NTuple{N, Bool}
@@ -715,7 +716,7 @@ end
         spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}}
     ) where {N}
-    results = map(_search_axis_hint, q_evals, grids, spacings, searches, hints)
+    results = map(_search_axis_oneshot_hint, q_evals, grids, spacings, searches, hints)
     return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
 

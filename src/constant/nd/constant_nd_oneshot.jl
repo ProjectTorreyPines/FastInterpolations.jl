@@ -22,6 +22,7 @@ Evaluates directly from grids + data without constructing a ConstantInterpolantN
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}},
+        bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         side_vals::Tuple{Vararg{AbstractSide, N}},
         searches::NTuple{N, AbstractSearchPolicy},
@@ -32,10 +33,11 @@ Evaluates directly from grids + data without constructing a ConstantInterpolantN
     oob_result = _try_fill_oob(query, grids, extraps_val, EvalValue(), @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    spacings = _create_spacings_pooled(pool, grids)
-    q_eval = _handle_all_extraps(query, grids, extraps_val)
-    indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
-    return _constant_nd_kernel(data, spacings, side_vals, indices, q_eval, Ls)
+    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
+    spacings = _create_spacings_pooled(pool, grids_p)
+    q_eval = _handle_all_extraps(query, grids_p, extraps_val)
+    indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches, hints)
+    return _constant_nd_kernel(data_p, spacings, side_vals, indices, q_eval, Ls)
 end
 
 """
@@ -50,6 +52,7 @@ Writes results into `output`. No heap allocation beyond spacings.
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         queries,
+        bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         side_vals::Tuple{Vararg{AbstractSide, N}},
         policies::NTuple{N, AbstractSearchPolicy},
@@ -60,22 +63,23 @@ Writes results into `output`. No heap allocation beyond spacings.
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps_val)
-    spacings = _create_spacings_pooled(pool, grids)
+    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
+    spacings = _create_spacings_pooled(pool, grids_p)
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids, extraps_val, EvalValue(), first(data))
+        oob_val = _try_fill_oob(query_k, grids_p, extraps_val, EvalValue(), first(data_p))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end
-        q_eval = _handle_all_extraps(query_k, grids, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, policies, hints, mono)
-        output[k] = _constant_nd_kernel(data, spacings, side_vals, indices, q_eval, Ls)
+        q_eval = _handle_all_extraps(query_k, grids_p, extraps_val)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, policies, hints, mono)
+        output[k] = _constant_nd_kernel(data_p, spacings, side_vals, indices, q_eval, Ls)
     end
     return output
 end
 
 """
-    _constant_interp_nd_oneshot_batch(grids, data, queries, extraps_val, side_vals, searches, hints=nothing)
+    _constant_interp_nd_oneshot_batch(grids, data, queries, bcs, extraps_val, side_vals, searches, hints=nothing)
 
 Allocating wrapper: creates output vector, delegates to in-place batch.
 """
@@ -83,6 +87,7 @@ function _constant_interp_nd_oneshot_batch(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         queries,
+        bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         side_vals::Tuple{Vararg{AbstractSide, N}},
         policies::NTuple{N, AbstractSearchPolicy},
@@ -90,7 +95,7 @@ function _constant_interp_nd_oneshot_batch(
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     output = Vector{Tv}(undef, _query_length(queries))
-    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, extraps_val, side_vals, policies, hints, mono)
+    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, policies, hints, mono)
 end
 
 # ========================================
@@ -102,11 +107,11 @@ end
 
 # Function barrier: forces Julia to runtime-dispatch on the concrete
 # searches tuple type before entering the @with_pool boundary.
-function _constant_nd_batch_dispatch!(output, grids, data, queries, extraps, sides, policies, hints, mono)
-    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, extraps, sides, policies, hints, mono)
+function _constant_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps, sides, policies, hints, mono)
+    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps, sides, policies, hints, mono)
 end
-function _constant_nd_batch_dispatch(grids, data, queries, extraps, sides, policies, hints, mono)
-    return _constant_interp_nd_oneshot_batch(grids, data, queries, extraps, sides, policies, hints, mono)
+function _constant_nd_batch_dispatch(grids, data, queries, bcs, extraps, sides, policies, hints, mono)
+    return _constant_interp_nd_oneshot_batch(grids, data, queries, bcs, extraps, sides, policies, hints, mono)
 end
 
 # ========================================
@@ -123,6 +128,7 @@ function constant_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}};
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
@@ -137,12 +143,13 @@ function constant_interp(
     grids_typed, _, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
 
+    bcs = _resolve_bcs_nd(bc, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     return _constant_interp_nd_oneshot(
-        grids_typed, data, query, extraps_val, sides, searches, hint
+        grids_typed, data, query, bcs, extraps_val, sides, searches, hint
     )::Tv
 end
 
@@ -157,6 +164,7 @@ function constant_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
@@ -170,13 +178,14 @@ function constant_interp(
     grids_typed, _, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
 
+    bcs = _resolve_bcs_nd(bc, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     policies = _resolve_search_nd(search, Val(N))
     mono = _check_mono_nd(policies, queries)
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     return _constant_nd_batch_dispatch(
-        grids_typed, data, queries, extraps_val, sides, policies, hint, mono
+        grids_typed, data, queries, bcs, extraps_val, sides, policies, hint, mono
     )::Vector{Tv}
 end
 
@@ -196,6 +205,7 @@ function constant_interp!(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
@@ -211,12 +221,13 @@ function constant_interp!(
     grids_typed, _, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
 
+    bcs = _resolve_bcs_nd(bc, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     policies = _resolve_search_nd(search, Val(N))
     mono = _check_mono_nd(policies, queries)
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     return _constant_nd_batch_dispatch!(
-        output, grids_typed, data, queries, extraps_val, sides, policies, hint, mono
+        output, grids_typed, data, queries, bcs, extraps_val, sides, policies, hint, mono
     )
 end

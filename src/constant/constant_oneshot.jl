@@ -11,6 +11,47 @@
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
+# PeriodicBC pool-based grid/value extension
+# ========================================
+# Structurally identical to `_linear_periodic_extend!` (linear_oneshot.jl) and
+# the extension block of `_cubic_periodic_solve!` — extension logic is
+# method-agnostic. Each method keeps its own helper to keep dispatch simple and
+# avoid cross-method coupling; consolidation into core/periodic.jl is a future
+# refactor once Phase 2/3 methods land.
+@inline function _constant_periodic_extend!(
+        pool::AbstractArrayPool,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        bc::PeriodicBC
+    ) where {Tg, Tv}
+    if bc isa PeriodicBC{:exclusive}
+        period = _resolve_exclusive_period(x, bc)
+        x_end = first(x) + Tg(period)
+        last(x) < x_end || throw(
+            ArgumentError(
+                "period=$period places virtual endpoint at $x_end, " *
+                    "not after last grid point x[end]=$(last(x))"
+            )
+        )
+        n = length(x)
+        if x isa AbstractRange
+            x_p = _to_float_adding_endpoint(x, Tg)
+        else
+            x_p = acquire!(pool, Tg, n + 1)
+            @inbounds copyto!(x_p, 1, x, 1, n)
+            @inbounds x_p[n + 1] = x_end
+        end
+        y_p = acquire!(pool, Tv, n + 1)
+        @inbounds copyto!(y_p, 1, y, 1, n)
+        @inbounds y_p[n + 1] = y[1]
+    else
+        x_p, y_p = x, y
+    end
+    _check_periodic_endpoints(bc, y_p)
+    return x_p, y_p
+end
+
+# ========================================
 # Core eval: extrap dispatch → search → kernel (no intermediate layers)
 # ========================================
 # _eval_extrapolation helper is defined in core/utils.jl (shared by all methods).
@@ -143,10 +184,11 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 # Public scalar one-shot API.
 # Zero-alloc: _prepare_grid returns Vector as-is, Range → _CachedRange (stack).
 # Kernel arithmetic auto-promotes Int×Float via _get_h float() wrappers.
-@inline function constant_interp(
+@inline @with_pool pool function constant_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xi::Tq;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
         deriv::DerivOp = EvalValue(),
@@ -156,6 +198,12 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     x_typed = _prepare_grid(x)
+    if _is_periodic_bc(bc)
+        x_p, y_p = _constant_periodic_extend!(pool, x_typed, y, bc)
+        searcher = _resolve_search(x_p, xi, search, hint)
+        result = _constant_eval_at_point(x_p, y_p, xi, WrapExtrap(), side, deriv, searcher)
+        return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
+    end
     searcher = _resolve_search(x_typed, xi, search, hint)
     result = _constant_eval_at_point(x_typed, y, xi, extrap, side, deriv, searcher)
     # Constant returns y[idx] directly — promote Int/Rational to Float for
@@ -194,11 +242,12 @@ constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_
 """
 # Unified in-place entry point. Handles promotion internally via _promote_itp_inputs,
 # so no separate Real/Mixed-type wrapper is needed (same pattern as the scalar API).
-function constant_interp!(
+@with_pool pool function constant_interp!(
         output::AbstractVector,
         x::AbstractVector,
         y::AbstractVector,
         x_targets::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
         deriv::DerivOp = EvalValue(),
@@ -208,6 +257,12 @@ function constant_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     x_typed = _prepare_grid(x)
+    if _is_periodic_bc(bc)
+        x_p, y_p = _constant_periodic_extend!(pool, x_typed, y, bc)
+        searcher = _resolve_search(x_p, x_targets, search, nothing)
+        _constant_vector_loop!(output, x_p, y_p, x_targets, WrapExtrap(), side, deriv, searcher)
+        return output
+    end
     searcher = _resolve_search(x_typed, x_targets, search, nothing)
     _constant_vector_loop!(output, x_typed, y, x_targets, extrap, side, deriv, searcher)
     return output
@@ -240,6 +295,7 @@ function constant_interp(
         x::AbstractVector,
         y::AbstractVector,
         x_targets::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
         deriv::DerivOp = EvalValue(),
@@ -248,6 +304,6 @@ function constant_interp(
     Tg = _promote_grid_float(eltype(x), eltype(y))
     T_out = _output_eltype(eltype(y), Tg)
     output = Vector{T_out}(undef, length(x_targets))
-    constant_interp!(output, x, y, x_targets; extrap, side, deriv, search)
+    constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)
     return output
 end

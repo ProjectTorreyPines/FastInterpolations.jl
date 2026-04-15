@@ -48,13 +48,16 @@ end
 # ========================================
 
 """
-    constant_interp(x, y; extrap=NoExtrap(), side=NearestSide(), search=AutoSearch()) -> ConstantInterpolant
+    constant_interp(x, y; bc=NoBC(), extrap=NoExtrap(), side=NearestSide(), search=AutoSearch()) -> ConstantInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values
+- `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
+  `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
+  to build a periodic interpolant (extrap is forced to `WrapExtrap()`).
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `side::AbstractSide`: Side selection (NearestSide(), LeftSide(), RightSide())
 - `search::AbstractSearchPolicy`: Default search policy (default: `AutoSearch()`)
@@ -105,11 +108,18 @@ end
 @inline function constant_interp(
         x::AbstractVector{TX},
         y::AbstractVector{TY};
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
+    if _is_periodic_bc(bc)
+        x_ext, y_ext = _prepare_periodic(x, y, bc)
+        _check_periodic_endpoints(bc, y_ext)
+        extrap_p = _promote_extrap(WrapExtrap(), _value_type(TY, Tg))
+        return ConstantInterpolant(x_ext, y_ext; extrap = extrap_p, side, search)
+    end
     extrap_p = _promote_extrap(extrap, _value_type(TY, Tg))
     return ConstantInterpolant(x, y; extrap = extrap_p, side, search)
 end

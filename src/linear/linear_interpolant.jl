@@ -46,13 +46,17 @@ end
 # ========================================
 
 """
-    linear_interp(x, y; extrap=NoExtrap(), search=AutoSearch()) -> LinearInterpolant
+    linear_interp(x, y; bc=NoBC(), extrap=NoExtrap(), search=AutoSearch()) -> LinearInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values
+- `bc::AbstractBC`: Boundary condition. Default `NoBC()` means "use the built-in
+  linear-interpolation behavior (no BC needed)". Pass `PeriodicBC(endpoint=:inclusive)`
+  or `PeriodicBC(endpoint=:exclusive, period=L)` to build a periodic interpolant
+  (extrap is forced to `WrapExtrap()` in that case).
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `search::AbstractSearchPolicy`: Default search policy for interval lookup (default: `AutoSearch()`)
 
@@ -128,10 +132,19 @@ function linear_interp end
 @inline function linear_interp(
         x::AbstractVector{TX},
         y::AbstractVector{TY};
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
+    if _is_periodic_bc(bc)
+        # Periodic path: extend grid/data (for :exclusive) or validate (for :inclusive),
+        # then build a normal LinearInterpolant on the extended arrays with WrapExtrap.
+        x_ext, y_ext = _prepare_periodic(x, y, bc)
+        _check_periodic_endpoints(bc, y_ext)
+        extrap_p = _promote_extrap(WrapExtrap(), _value_type(TY, Tg))
+        return LinearInterpolant(x_ext, y_ext; extrap = extrap_p, search)
+    end
     extrap_p = _promote_extrap(extrap, _value_type(TY, Tg))
     return LinearInterpolant(x, y; extrap = extrap_p, search)
 end

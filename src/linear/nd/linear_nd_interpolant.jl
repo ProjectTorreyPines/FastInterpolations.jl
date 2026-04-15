@@ -61,6 +61,7 @@ itp = linear_interp((x, y), data;
 function linear_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv_raw, N};
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch()
     ) where {N, Tv_raw}
@@ -69,15 +70,20 @@ function linear_interp(
 
     # Promote grid/data types
     grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
-
-    # Create spacings
-    spacings = _create_spacings_typed(grids_typed)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
     # Resolve per-axis configuration
+    bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    # Extend grids/data for exclusive periodic axes (build-time only).
+    # After this, all periodic axes have inclusive-form data and WrapExtrap handles queries.
+    grids_typed, data_typed, _ = _prepare_periodic_nd(grids_typed, data_typed, bcs)
+    spacings = _create_spacings_typed(grids_typed)
+
+    # _resolve_extrap_nd(extrap, bcs, ...) validates periodic/extrap compatibility
+    # and auto-overrides per-axis extrap to WrapExtrap() on periodic axes.
+    extrap_vals = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     return LinearInterpolantND{
         Tg, Tv, N,
         typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches),

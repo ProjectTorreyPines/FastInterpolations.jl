@@ -12,6 +12,48 @@
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
+# PeriodicBC pool-based grid/value extension
+# ========================================
+# Mirrors the extension block of `_cubic_periodic_solve!` (cubic_oneshot.jl:133),
+# but without any solve step — Linear has no coefficient system.
+#
+# `:inclusive`: no-op pass-through.
+# `:exclusive`: extend grid by 1 endpoint (pool for Vector, direct for Range) and
+#   append y[1] as y[n+1]. Caller's @with_pool scope owns the buffer lifetimes.
+@inline function _linear_periodic_extend!(
+        pool::AbstractArrayPool,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        bc::PeriodicBC
+    ) where {Tg, Tv}
+    if bc isa PeriodicBC{:exclusive}
+        period = _resolve_exclusive_period(x, bc)
+        x_end = first(x) + Tg(period)
+        last(x) < x_end || throw(
+            ArgumentError(
+                "period=$period places virtual endpoint at $x_end, " *
+                    "not after last grid point x[end]=$(last(x))"
+            )
+        )
+        n = length(x)
+        if x isa AbstractRange
+            x_p = _to_float_adding_endpoint(x, Tg)
+        else
+            x_p = acquire!(pool, Tg, n + 1)
+            @inbounds copyto!(x_p, 1, x, 1, n)
+            @inbounds x_p[n + 1] = x_end
+        end
+        y_p = acquire!(pool, Tv, n + 1)
+        @inbounds copyto!(y_p, 1, y, 1, n)
+        @inbounds y_p[n + 1] = y[1]
+    else
+        x_p, y_p = x, y
+    end
+    _check_periodic_endpoints(bc, y_p)
+    return x_p, y_p
+end
+
+# ========================================
 # Vector interpolation (in-place, zero-allocation)
 # ========================================
 
@@ -54,11 +96,12 @@ function linear_interp! end
 # Unified method for AbstractVector
 # Unified in-place entry point. Handles promotion internally via _promote_itp_inputs,
 # so no separate Real/Mixed-type wrapper is needed (same pattern as the scalar API).
-function linear_interp!(
+@with_pool pool function linear_interp!(
         output::AbstractVector,
         x::AbstractVector,
         y::AbstractVector,
         x_targets::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
@@ -67,6 +110,11 @@ function linear_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     x_typed = _prepare_grid(x)
+    if _is_periodic_bc(bc)
+        x_p, y_p = _linear_periodic_extend!(pool, x_typed, y, bc)
+        searcher = _resolve_search(x_p, x_targets, search, nothing)
+        return _linear_interp_loop!(output, x_p, y_p, x_targets, WrapExtrap(), deriv, searcher)
+    end
     searcher = _resolve_search(x_typed, x_targets, search, nothing)
     return _linear_interp_loop!(output, x_typed, y, x_targets, extrap, deriv, searcher)
 end
@@ -260,10 +308,11 @@ end
 # Public scalar one-shot API.
 # Zero-alloc: _prepare_grid returns Vector as-is, Range → _CachedRange (stack).
 # Kernel arithmetic auto-promotes Int×Float via _get_h float() wrappers.
-@inline function linear_interp(
+@inline @with_pool pool function linear_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
@@ -272,6 +321,11 @@ end
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     x_typed = _prepare_grid(x)
+    if _is_periodic_bc(bc)
+        x_p, y_p = _linear_periodic_extend!(pool, x_typed, y, bc)
+        searcher = _resolve_search(x_p, xq, search, hint)
+        return _linear_eval_at_point(x_p, y_p, xq, WrapExtrap(), deriv, searcher)
+    end
     searcher = _resolve_search(x_typed, xq, search, hint)
     return _linear_eval_at_point(x_typed, y, xq, extrap, deriv, searcher)
 end
@@ -291,6 +345,7 @@ function linear_interp(
         x::AbstractVector,
         y::AbstractVector,
         x_targets::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
@@ -298,7 +353,7 @@ function linear_interp(
     Tg = _promote_grid_float(eltype(x), eltype(y))
     T_out = _output_eltype(eltype(y), Tg)
     output = Vector{T_out}(undef, length(x_targets))
-    linear_interp!(output, x, y, x_targets; extrap, deriv, search)
+    linear_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
     return output
 end
 

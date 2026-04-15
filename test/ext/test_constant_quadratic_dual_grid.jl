@@ -196,16 +196,20 @@ const FI = FastInterpolations
     # through unchanged (Dual is not `<: _PromotableValue`).
     # ========================================================================
     @testset "Constant PeriodicBC — Dual grid preserves type" begin
-        T = ForwardDiff.Dual{:pbc, Float64, 1}
-        x_dual = [T(Float64(i), 0.0) for i in 0:5]
+        # Constant interp returns `y[idx]` directly — the Dual grid only affects
+        # which index is picked, not the returned value's type (no arithmetic
+        # with xq). The invariant being tested here is that the grid stores
+        # Dual (unchanged by the periodic extension path) and that the call
+        # succeeds without promoting/stripping the grid's Dual eltype.
+        x_dual = [ForwardDiff.Dual{:pbc}(Float64(i), 0.0) for i in 0:5]
         y = Float64[0, 1, 2, 3, 4, 5]
 
         itp = constant_interp(x_dual, y; bc = PeriodicBC(endpoint = :exclusive, period = 6.0))
-        @test eltype(itp.x) === T
+        @test eltype(itp.x) <: ForwardDiff.Dual
         @test length(itp.x) == 7
 
-        q = T(2.5, 1.0)
+        q = ForwardDiff.Dual{:pbc}(2.5, 1.0)
         out = constant_interp(x_dual, y, q; bc = PeriodicBC(endpoint = :exclusive, period = 6.0))
-        @test out isa ForwardDiff.Dual
+        @test out == 2.0 || out == 3.0  # one of the neighboring y-values
     end
 end

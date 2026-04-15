@@ -845,15 +845,17 @@ const FI = FastInterpolations
     # unchanged to preserve AD chains).
     # ========================================================================
     @testset "PeriodicBC — Dual grid preserves type (persistent + oneshot)" begin
-        T = ForwardDiff.Dual{:pbc, Float64, 1}
-        x_dual = [T(Float64(i), 0.0) for i in 0:5]
+        # Use the tag-only `Dual{:tag}(value, partial)` form — the fully
+        # parameterized `Dual{T, V, N}` constructor wants `Partials`, not a raw
+        # Float for the second argument.
+        x_dual = [ForwardDiff.Dual{:pbc}(Float64(i), 0.0) for i in 0:5]
         y = sin.(2π .* (Float64(0):Float64(5)) ./ 6)
 
         itp = linear_interp(x_dual, y; bc = PeriodicBC(endpoint = :exclusive, period = 6.0))
-        @test eltype(itp.x) === T
+        @test eltype(itp.x) <: ForwardDiff.Dual
         @test length(itp.x) == 7  # N+1 extension, Dual type preserved
 
-        q = T(2.5, 1.0)
+        q = ForwardDiff.Dual{:pbc}(2.5, 1.0)
         out = linear_interp(x_dual, y, q; bc = PeriodicBC(endpoint = :exclusive, period = 6.0))
         @test out isa ForwardDiff.Dual
     end

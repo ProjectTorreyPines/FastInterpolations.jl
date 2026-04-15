@@ -59,10 +59,12 @@ abstract type AbstractBC end
     NoBC <: AbstractBC
 
 Sentinel boundary-condition value meaning "no BC requested; use the method's
-built-in endpoint rule". Used as the default `bc` kwarg for methods that have a
-natural endpoint rule (Constant, Linear, PCHIP, Cardinal, Akima).
+built-in endpoint rule". Currently the default `bc` kwarg for **Constant and
+Linear** interpolation (the only non-cubic methods wired for `bc` in this
+release). PCHIP / Cardinal / Akima will adopt the same default when their
+`bc` kwarg is added (planned next phase).
 
-For these methods, `bc=NoBC()` preserves existing behavior, and
+For supported methods, `bc=NoBC()` preserves existing behavior, and
 `bc=PeriodicBC(...)` engages the periodic build path.
 
 Cubic and Quadratic do not use `NoBC` because their coefficient systems are

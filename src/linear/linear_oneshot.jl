@@ -20,7 +20,7 @@
 # ========================================
 
 """
-    linear_interp!(output, x, y, x_targets; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    linear_interp!(output, x, y, x_targets; bc=NoBC(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
 
 Zero-allocation linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -28,6 +28,9 @@ Zero-allocation linear interpolation with automatic dispatch:
 
 # Arguments
 - `output`: Pre-allocated output vector (must be floating-point type)
+- `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
+  `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
+  for periodic interpolation (extrap is forced to `WrapExtrap()` in that case).
 - `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative, `DerivOp(2)` second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
@@ -139,7 +142,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xq::Real; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch()) -> AbstractFloat
+    linear_interp(x, y, xq::Real; bc=NoBC(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch()) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -147,6 +150,9 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 
 # Arguments
 - `xq::Real`: Single interpolation query point
+- `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
+  `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
+  for periodic interpolation (extrap is forced to `WrapExtrap()` in that case).
 - `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding

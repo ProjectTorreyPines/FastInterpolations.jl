@@ -19,6 +19,13 @@
 Multi-series constant (step) interpolant with unified matrix storage and SIMD optimization.
 Shares a single x-grid across N y-series for efficient batch evaluation.
 
+!!! note "PeriodicBC on Series inputs"
+    `PeriodicBC` is not yet wired for the Series path — the `constant_interp(x, ys; ...)`
+    / `constant_interp(x, Series(...), xq; ...)` signatures have no `bc` kwarg. Build
+    one `ConstantInterpolant` per series with `bc=PeriodicBC(...)` if you need
+    periodic semantics on multi-series data. Series `bc` support is planned for a
+    later phase.
+
 # Type Parameters
 - `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)

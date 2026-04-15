@@ -19,6 +19,12 @@
 Multi-series linear interpolant with unified matrix storage and SIMD optimization.
 Shares a single x-grid across N y-series for efficient batch evaluation.
 
+!!! note "PeriodicBC on Series inputs"
+    `PeriodicBC` is not yet wired for the Series path — the `linear_interp(x, ys; ...)`
+    / `linear_interp(x, Series(...), xq; ...)` signatures have no `bc` kwarg. If you
+    need periodic semantics on multi-series data, build one `LinearInterpolant` per
+    series with `bc=PeriodicBC(...)`. Series `bc` support is planned for a later phase.
+
 # Type Parameters
 - `Tg`: Grid type (Float32 or Float64)
 - `Tv`: Value type (unconstrained)

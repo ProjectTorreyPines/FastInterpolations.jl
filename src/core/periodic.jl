@@ -386,7 +386,9 @@ periodicity, not just on the grid representation.
     )
     _is_periodic_bc(bc) || return x, y, extrap
     x_ext, y_ext = _prepare_periodic(x, y, bc)
-    _check_periodic_endpoints(bc, y_ext)
+    # Endpoint validation is meaningful only for `:inclusive` — `:exclusive` sets
+    # `y_ext[end] = y_ext[1]` by construction so the check is trivially true.
+    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_ext)
     return x_ext, y_ext, WrapExtrap()
 end
 
@@ -443,7 +445,9 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
     else
         x_p, y_p = x, y
     end
-    _check_periodic_endpoints(bc, y_p)
+    # `:exclusive` path constructs `y_p[end] = y_p[1]` by extension, so the check
+    # is trivially satisfied. Run validation only for `:inclusive`.
+    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_p)
     return x_p, y_p, WrapExtrap()
 end
 

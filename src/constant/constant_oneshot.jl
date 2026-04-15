@@ -101,7 +101,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, xi; extrap=NoExtrap(), side=NearestSide(), deriv=EvalValue(), search=AutoSearch())
+    constant_interp(x, y, xi; bc=NoBC(), side=NearestSide(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
 
 Constant (step/piecewise constant) interpolation at a single point.
 
@@ -109,6 +109,9 @@ Constant (step/piecewise constant) interpolation at a single point.
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (same length as x)
 - `xi::Real`: Query point
+- `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
+  `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
+  for periodic interpolation (extrap is forced to `WrapExtrap()` in that case).
 - `extrap::AbstractExtrap`: Extrapolation mode
   - `NoExtrap()` (default): throws DomainError if outside domain
   - `ClampExtrap()`: clamp to boundary values
@@ -151,8 +154,8 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
         y::AbstractVector{Tv},
         xi::Tq;
         bc::AbstractBC = NoBC(),
-        extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
+        extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
@@ -172,14 +175,14 @@ end
 # ========================================
 
 """
-    constant_interp!(output, x, y, x_targets; extrap=NoExtrap(), side=NearestSide(), deriv=EvalValue(), search=AutoSearch())
+    constant_interp!(output, x, y, x_targets; bc=NoBC(), side=NearestSide(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
 
 Zero-allocation constant interpolation for multiple query points.
 
 # Arguments
 - `output`: Pre-allocated output vector
 - `x, y, x_targets`: Grid and query points
-- `extrap, side, deriv`: Same as `constant_interp`
+- `bc, extrap, side, deriv`: Same as `constant_interp`
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
 
 # Example
@@ -204,8 +207,8 @@ constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_
         y::AbstractVector,
         x_targets::AbstractVector;
         bc::AbstractBC = NoBC(),
-        extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
+        extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
@@ -246,8 +249,8 @@ function constant_interp(
         y::AbstractVector,
         x_targets::AbstractVector;
         bc::AbstractBC = NoBC(),
-        extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
+        extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )

@@ -445,4 +445,33 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
     # `test/ext/test_linear_dual_grid.jl` alongside the existing Dual tests,
     # so base test runs do not pull in ForwardDiff.
 
+    # ============================================================
+    # Float32 + Complex smoke tests (precision/value-type coverage).
+    # ============================================================
+    @testset "Float32 Range + PeriodicBC(:exclusive)" begin
+        x = range(0.0f0, step = Float32(2π / 16), length = 16)
+        y = sin.(x)                                                # Vector{Float32}
+        itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
+        @test eltype(itp.x) === Float32
+        @test itp(1.0f0) isa Float32
+        # Wrap equivalence at the seam
+        @test itp(0.0f0) ≈ itp(Float32(step(x) * length(x))) atol = Float32(1.0e-6)
+    end
+
+    @testset "ComplexF64 values + PeriodicBC(:exclusive)" begin
+        x = collect(range(0.0, 2π, length = 17))
+        y = @. exp(im * x)                                         # Vector{ComplexF64}, y[1] == y[end]
+        # :inclusive path
+        itp_inc = linear_interp(x, y; bc = PeriodicBC())
+        @test itp_inc(0.0) ≈ itp_inc(2π) atol = 1.0e-12
+        @test itp_inc(2π + 0.5) ≈ itp_inc(0.5) atol = 1.0e-12
+
+        # :exclusive path, Vector of length 16 (drop repeated endpoint)
+        x_ex = collect(range(0.0, step = 2π / 16, length = 16))
+        y_ex = @. exp(im * x_ex)
+        itp_ex = linear_interp(x_ex, y_ex; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
+        @test eltype(itp_ex.y) <: Complex
+        @test itp_ex(0.5) isa Complex
+    end
+
 end

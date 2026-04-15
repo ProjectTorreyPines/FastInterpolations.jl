@@ -382,4 +382,23 @@ using FastInterpolations: _CachedRange
     # Dual-grid + PeriodicBC coverage lives in
     # `test/ext/test_constant_quadratic_dual_grid.jl`.
 
+    # ============================================================
+    # Float32 + Complex smoke tests.
+    # ============================================================
+    @testset "Float32 Range + PeriodicBC(:exclusive)" begin
+        x = range(0.0f0, step = Float32(2π / 8), length = 8)
+        y = sin.(x)
+        itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
+        @test eltype(itp.x) === Float32
+        @test itp(1.0f0) isa Float32
+    end
+
+    @testset "ComplexF64 values + PeriodicBC(:exclusive)" begin
+        x = collect(range(0.0, step = 2π / 8, length = 8))
+        y = @. exp(im * x)
+        itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
+        @test eltype(itp.y) <: Complex
+        @test itp(0.5) isa Complex
+    end
+
 end

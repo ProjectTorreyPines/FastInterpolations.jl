@@ -48,7 +48,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y; bc=NoBC(), extrap=NoExtrap(), side=NearestSide(), search=AutoSearch()) -> ConstantInterpolant
+    constant_interp(x, y; bc=NoBC(), side=NearestSide(), extrap=NoExtrap(), search=AutoSearch()) -> ConstantInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -109,8 +109,8 @@ end
         x::AbstractVector{TX},
         y::AbstractVector{TY};
         bc::AbstractBC = NoBC(),
-        extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
+        extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)

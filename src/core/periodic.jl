@@ -124,21 +124,23 @@ end
 # Dispatch mirrors the 1D element-type split (Float / Complex / Integer-Rational /
 # duck). Uses array-level `isapprox` (norm-based) for Float/Complex, element-wise
 # `==` for the fallback. `atol = 8eps(T)` + `rtol = sqrt(eps(T))` matches 1D.
+# Element-wise (NOT norm-based) comparison matching 1D scalar semantics.
+# Array-`isapprox` accumulates near-zero noise across slice elements (e.g.
+# `sin(0)` vs `sin(2π)` on a fine y/z mesh: per-element noise ~eps, slice norm
+# ~√N·eps) and would reject legitimate periodic data.
+#
+# Using `all(splat, zip(...))` is stack-only and short-circuits on the first
+# mismatch. A broadcasted `isapprox.(a, b; atol, rtol)` would allocate a
+# BitArray and evaluate every element — strictly worse.
+
 @inline function _check_periodic_slice_inclusive(data::AbstractArray{T}, d::Int) where {T <: AbstractFloat}
-    # Element-wise (NOT norm-based) comparison matching the 1D scalar semantics.
-    # Array-`isapprox` with the same atol/rtol accumulates near-zero noise across
-    # slice elements and would reject legitimate periodic data (e.g. `sin(0)` vs
-    # `sin(2π)` across a fine y/z mesh, where per-element noise is ~eps but the
-    # slice norm scales with √N).
     n = size(data, d)
     first_s = selectdim(data, d, 1)
     last_s = selectdim(data, d, n)
     atol = 8 * eps(T)
     rtol = sqrt(eps(T))
-    @inbounds for I in eachindex(first_s, last_s)
-        isapprox(first_s[I], last_s[I]; atol = atol, rtol = rtol) ||
-            _throw_periodic_nd_slice_mismatch(d)
-    end
+    all(((a, b),) -> isapprox(a, b; atol = atol, rtol = rtol), zip(first_s, last_s)) ||
+        _throw_periodic_nd_slice_mismatch(d)
     return nothing
 end
 
@@ -148,10 +150,8 @@ end
     last_s = selectdim(data, d, n)
     atol = 8 * eps(T)
     rtol = sqrt(eps(T))
-    @inbounds for I in eachindex(first_s, last_s)
-        isapprox(first_s[I], last_s[I]; atol = atol, rtol = rtol) ||
-            _throw_periodic_nd_slice_mismatch(d)
-    end
+    all(((a, b),) -> isapprox(a, b; atol = atol, rtol = rtol), zip(first_s, last_s)) ||
+        _throw_periodic_nd_slice_mismatch(d)
     return nothing
 end
 
@@ -159,9 +159,8 @@ end
     n = size(data, d)
     first_s = selectdim(data, d, 1)
     last_s = selectdim(data, d, n)
-    @inbounds for I in eachindex(first_s, last_s)
-        isapprox(first_s[I], last_s[I]) || _throw_periodic_nd_slice_mismatch(d)
-    end
+    all(((a, b),) -> isapprox(a, b), zip(first_s, last_s)) ||
+        _throw_periodic_nd_slice_mismatch(d)
     return nothing
 end
 

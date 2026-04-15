@@ -11,47 +11,9 @@
 # ║                      Zero type conversion overhead                        ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# ========================================
-# PeriodicBC pool-based grid/value extension
-# ========================================
-# Mirrors the extension block of `_cubic_periodic_solve!` (cubic_oneshot.jl:133),
-# but without any solve step — Linear has no coefficient system.
-#
-# `:inclusive`: no-op pass-through.
-# `:exclusive`: extend grid by 1 endpoint (pool for Vector, direct for Range) and
-#   append y[1] as y[n+1]. Caller's @with_pool scope owns the buffer lifetimes.
-@inline function _linear_periodic_extend!(
-        pool::AbstractArrayPool,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        bc::PeriodicBC
-    ) where {Tg, Tv}
-    if bc isa PeriodicBC{:exclusive}
-        period = _resolve_exclusive_period(x, bc)
-        x_end = first(x) + Tg(period)
-        last(x) < x_end || throw(
-            ArgumentError(
-                "period=$period places virtual endpoint at $x_end, " *
-                    "not after last grid point x[end]=$(last(x))"
-            )
-        )
-        n = length(x)
-        if x isa AbstractRange
-            x_p = _to_float_adding_endpoint(x, Tg)
-        else
-            x_p = acquire!(pool, Tg, n + 1)
-            @inbounds copyto!(x_p, 1, x, 1, n)
-            @inbounds x_p[n + 1] = x_end
-        end
-        y_p = acquire!(pool, Tv, n + 1)
-        @inbounds copyto!(y_p, 1, y, 1, n)
-        @inbounds y_p[n + 1] = y[1]
-    else
-        x_p, y_p = x, y
-    end
-    _check_periodic_endpoints(bc, y_p)
-    return x_p, y_p
-end
+# PeriodicBC 1D extension uses the shared `_extend_exclusive_pooled!` helper
+# from core/periodic.jl (no method-specific logic needed — Linear has no
+# coefficient system, so extension alone suffices).
 
 # ========================================
 # Vector interpolation (in-place, zero-allocation)
@@ -111,7 +73,7 @@ function linear_interp! end
 
     x_typed = _prepare_grid(x)
     if _is_periodic_bc(bc)
-        x_p, y_p = _linear_periodic_extend!(pool, x_typed, y, bc)
+        x_p, y_p = _extend_exclusive_pooled!(pool, x_typed, y, bc)
         searcher = _resolve_search(x_p, x_targets, search, nothing)
         return _linear_interp_loop!(output, x_p, y_p, x_targets, WrapExtrap(), deriv, searcher)
     end
@@ -322,7 +284,7 @@ end
 
     x_typed = _prepare_grid(x)
     if _is_periodic_bc(bc)
-        x_p, y_p = _linear_periodic_extend!(pool, x_typed, y, bc)
+        x_p, y_p = _extend_exclusive_pooled!(pool, x_typed, y, bc)
         searcher = _resolve_search(x_p, xq, search, hint)
         return _linear_eval_at_point(x_p, y_p, xq, WrapExtrap(), deriv, searcher)
     end

@@ -266,6 +266,60 @@ end
 # Value extension: append first element
 _extend_values(y::AbstractVector) = vcat(y, first(y))
 
+"""
+    _extend_exclusive_pooled!(pool, x, y, bc::PeriodicBC) -> (x_p, y_p)
+
+Pool-based sibling of `_extend_exclusive`. Returns extended grid/value pair for
+the 1D one-shot hot path:
+- `:inclusive`: passthrough `(x, y)` (caller still holds the originals).
+- `:exclusive`: extend by one endpoint at `x[1] + period`, with value `y[1]`.
+  - Grid: `Range → _CachedRange` via `_to_float_adding_endpoint` (no heap);
+          `Vector → acquire!(pool, ...)` (zero-alloc after warmup).
+  - Values: always pool-acquired (even for Range grids, since `y` may be Vector).
+
+Calls `_check_periodic_endpoints(bc, y_p)` before returning — for `:inclusive`
+this validates `y[1] ≈ y[end]`; for `:exclusive` it is trivially satisfied by
+construction.
+
+Shared by `linear_interp` / `constant_interp` / `cubic_interp` one-shot paths;
+all three previously inlined a near-identical copy of this extension block.
+Lifetime of returned buffers is tied to the caller's `@with_pool` scope.
+"""
+@inline function _extend_exclusive_pooled!(
+        pool::AbstractArrayPool,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        bc::PeriodicBC
+    ) where {Tg, Tv}
+    if bc isa PeriodicBC{:exclusive}
+        period = _resolve_exclusive_period(x, bc)
+        x_end = first(x) + Tg(period)
+        last(x) < x_end || throw(
+            ArgumentError(
+                "period=$period places virtual endpoint at $x_end, " *
+                    "not after last grid point x[end]=$(last(x))"
+            )
+        )
+        n = length(x)
+        # _resolve_exclusive_period guarantees period = step(x)*length(x) for Range,
+        # so Range → _CachedRange extension is always valid and heap-free.
+        if x isa AbstractRange
+            x_p = _to_float_adding_endpoint(x, Tg)
+        else
+            x_p = acquire!(pool, Tg, n + 1)
+            @inbounds copyto!(x_p, 1, x, 1, n)
+            @inbounds x_p[n + 1] = x_end
+        end
+        y_p = acquire!(pool, Tv, n + 1)
+        @inbounds copyto!(y_p, 1, y, 1, n)
+        @inbounds y_p[n + 1] = y[1]
+    else
+        x_p, y_p = x, y
+    end
+    _check_periodic_endpoints(bc, y_p)
+    return x_p, y_p
+end
+
 # ========================================
 # ND Exclusive Endpoint Extension
 # ========================================
@@ -403,14 +457,18 @@ via `acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
     # return type as Union{Vector{Tg}, _CachedRange{Tg}, ...} → every tuple slot
     # becomes a heap-boxed Ref, causing ~2 KB/query allocation on mixed grids.
     # See MEMORY.md "ND Constructor Inferrability Pattern".
-    processed = map(grids, bcs) do grid_d, bc_d
+    # 3-arg `map` with `ntuple(identity, Val(N))` threads the axis index `d` into
+    # the closure so error messages can name the failing axis, while still keeping
+    # per-element concrete-type dispatch (no runtime Union boxing). Matches the
+    # pattern used by the non-pooled sibling `_prepare_periodic_nd`.
+    processed = map(ntuple(identity, Val(N)), grids, bcs) do d, grid_d, bc_d
         bc_d isa PeriodicBC{:exclusive} || return (grid_d, bc_d)
 
         period = _resolve_exclusive_period(grid_d, bc_d)
         x_end = first(grid_d) + Tg(period)
         last(grid_d) < x_end || throw(
             ArgumentError(
-                "PeriodicBC(endpoint=:exclusive): period=$period places " *
+                "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
                     "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"
             )
         )

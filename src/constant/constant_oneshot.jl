@@ -10,46 +10,8 @@
 # ║              Piecewise constant interpolation with side options           ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# ========================================
-# PeriodicBC pool-based grid/value extension
-# ========================================
-# Structurally identical to `_linear_periodic_extend!` (linear_oneshot.jl) and
-# the extension block of `_cubic_periodic_solve!` — extension logic is
-# method-agnostic. Each method keeps its own helper to keep dispatch simple and
-# avoid cross-method coupling; consolidation into core/periodic.jl is a future
-# refactor once Phase 2/3 methods land.
-@inline function _constant_periodic_extend!(
-        pool::AbstractArrayPool,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        bc::PeriodicBC
-    ) where {Tg, Tv}
-    if bc isa PeriodicBC{:exclusive}
-        period = _resolve_exclusive_period(x, bc)
-        x_end = first(x) + Tg(period)
-        last(x) < x_end || throw(
-            ArgumentError(
-                "period=$period places virtual endpoint at $x_end, " *
-                    "not after last grid point x[end]=$(last(x))"
-            )
-        )
-        n = length(x)
-        if x isa AbstractRange
-            x_p = _to_float_adding_endpoint(x, Tg)
-        else
-            x_p = acquire!(pool, Tg, n + 1)
-            @inbounds copyto!(x_p, 1, x, 1, n)
-            @inbounds x_p[n + 1] = x_end
-        end
-        y_p = acquire!(pool, Tv, n + 1)
-        @inbounds copyto!(y_p, 1, y, 1, n)
-        @inbounds y_p[n + 1] = y[1]
-    else
-        x_p, y_p = x, y
-    end
-    _check_periodic_endpoints(bc, y_p)
-    return x_p, y_p
-end
+# PeriodicBC 1D extension uses the shared `_extend_exclusive_pooled!` helper
+# from core/periodic.jl (same path Linear and Cubic oneshot use).
 
 # ========================================
 # Core eval: extrap dispatch → search → kernel (no intermediate layers)
@@ -199,7 +161,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 
     x_typed = _prepare_grid(x)
     if _is_periodic_bc(bc)
-        x_p, y_p = _constant_periodic_extend!(pool, x_typed, y, bc)
+        x_p, y_p = _extend_exclusive_pooled!(pool, x_typed, y, bc)
         searcher = _resolve_search(x_p, xi, search, hint)
         result = _constant_eval_at_point(x_p, y_p, xi, WrapExtrap(), side, deriv, searcher)
         return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
@@ -258,7 +220,7 @@ constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_
 
     x_typed = _prepare_grid(x)
     if _is_periodic_bc(bc)
-        x_p, y_p = _constant_periodic_extend!(pool, x_typed, y, bc)
+        x_p, y_p = _extend_exclusive_pooled!(pool, x_typed, y, bc)
         searcher = _resolve_search(x_p, x_targets, search, nothing)
         _constant_vector_loop!(output, x_p, y_p, x_targets, WrapExtrap(), side, deriv, searcher)
         return output

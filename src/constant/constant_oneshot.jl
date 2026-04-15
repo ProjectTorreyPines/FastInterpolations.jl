@@ -149,7 +149,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 # Public scalar one-shot API.
 # Zero-alloc: _prepare_grid returns Vector as-is, Range → _CachedRange (stack).
 # Kernel arithmetic auto-promotes Int×Float via _get_h float() wrappers.
-@inline @with_pool pool function constant_interp(
+@inline function constant_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xi::Tq;
@@ -162,12 +162,24 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    x_eff, y_eff, extrap_eff = _prepare_1d_oneshot!(pool, x, y, bc, extrap)
-    searcher = _resolve_search(x_eff, xi, search, hint)
-    result = _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
+    x_typed = _prepare_grid(x)
+    if _is_periodic_bc(bc)
+        result = _constant_interp_periodic_scalar(x_typed, y, xi, bc, extrap, side, deriv, search, hint)
+        return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
+    end
+    searcher = _resolve_search(x_typed, xi, search, hint)
+    result = _constant_eval_at_point(x_typed, y, xi, extrap, side, deriv, searcher)
     # Constant returns y[idx] directly — promote Int/Rational to Float for
     # consistency with batch path and other methods (which auto-promote via arithmetic).
     return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
+end
+
+@inline @with_pool pool function _constant_interp_periodic_scalar(
+        x, y, xi, bc, extrap, side, deriv, search, hint
+    )
+    x_eff, y_eff, extrap_eff = _periodic_extend_1d_pooled!(pool, x, y, bc, extrap)
+    searcher = _resolve_search(x_eff, xi, search, hint)
+    return _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
 end
 
 # ========================================
@@ -201,7 +213,7 @@ constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_
 """
 # Unified in-place entry point. Handles promotion internally via _promote_itp_inputs,
 # so no separate Real/Mixed-type wrapper is needed (same pattern as the scalar API).
-@with_pool pool function constant_interp!(
+function constant_interp!(
         output::AbstractVector,
         x::AbstractVector,
         y::AbstractVector,
@@ -215,7 +227,19 @@ constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    x_eff, y_eff, extrap_eff = _prepare_1d_oneshot!(pool, x, y, bc, extrap)
+    x_typed = _prepare_grid(x)
+    if _is_periodic_bc(bc)
+        return _constant_interp_periodic_vector!(output, x_typed, y, x_targets, bc, extrap, side, deriv, search)
+    end
+    searcher = _resolve_search(x_typed, x_targets, search, nothing)
+    _constant_vector_loop!(output, x_typed, y, x_targets, extrap, side, deriv, searcher)
+    return output
+end
+
+@inline @with_pool pool function _constant_interp_periodic_vector!(
+        output, x, y, x_targets, bc, extrap, side, deriv, search
+    )
+    x_eff, y_eff, extrap_eff = _periodic_extend_1d_pooled!(pool, x, y, bc, extrap)
     searcher = _resolve_search(x_eff, x_targets, search, nothing)
     _constant_vector_loop!(output, x_eff, y_eff, x_targets, extrap_eff, side, deriv, searcher)
     return output

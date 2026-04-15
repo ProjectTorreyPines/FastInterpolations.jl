@@ -503,6 +503,25 @@ letting user-facing oneshot entry points use a single, non-misleading call.
 # ND Exclusive Endpoint Extension
 # ========================================
 
+# Compile-time predicates on the `bcs` tuple. `@generated` inspects the
+# concrete tuple type at specialization time and collapses to `true`/`false`,
+# so non-periodic callers (CubicFit, QuadraticFit, NoBC, ...) pay ZERO runtime
+# cost — no loop, no per-axis check, no validation. Crucial for the ND oneshot
+# hot path where `_prepare_periodic_nd_pooled` is called per query.
+@generated function _has_any_periodic_bc(bcs::NTuple{N, AbstractBC}, ::Val{N}) where {N}
+    for d in 1:N
+        fieldtype(bcs, d) <: PeriodicBC && return :(true)
+    end
+    return :(false)
+end
+
+@generated function _has_any_exclusive_bc(bcs::NTuple{N, AbstractBC}, ::Val{N}) where {N}
+    for d in 1:N
+        fieldtype(bcs, d) <: PeriodicBC{:exclusive} && return :(true)
+    end
+    return :(false)
+end
+
 """
     _prepare_periodic_nd(grids, data, bcs) -> (grids_ext, data_ext, bcs_resolved)
 
@@ -524,21 +543,20 @@ function _prepare_periodic_nd(
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
     ) where {Tg, Tv, N}
+    # Ultra-fast path: if no axis is periodic at all, skip everything.
+    # `@generated` predicate collapses to a literal `true`/`false` at compile
+    # time, so common non-periodic ND calls (CubicFit, NoBC, etc.) pay zero
+    # cost — no validation, no extension, no loop.
+    _has_any_periodic_bc(bcs, Val(N)) || return (grids, data, bcs)
+
     # Validate :inclusive axes: for each periodic axis with endpoint=:inclusive,
     # the first and last slices of `data` along that axis must match within
     # tolerance. `:exclusive` axes do not need this — extension constructs the
     # matching slice by definition.
     _validate_periodic_slices_nd(data, bcs, Val(N))
 
-    # Fast path: no exclusive axes
-    has_exclusive = false
-    for d in 1:N
-        if bcs[d] isa PeriodicBC{:exclusive}
-            has_exclusive = true
-            break
-        end
-    end
-    has_exclusive || return (grids, data, bcs)
+    # Fast path: no exclusive axes (but some inclusive ones — validation done above)
+    _has_any_exclusive_bc(bcs, Val(N)) || return (grids, data, bcs)
 
     # Per-axis grid extension + BC resolution via map (preserves concrete types per-element,
     # unlike Vector{AbstractVector} intermediary which erases concrete grid types)
@@ -623,18 +641,10 @@ via `acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
     ) where {Tg, Tv, N}
-    # See `_prepare_periodic_nd` for validation semantics — mirrored here.
+    # Ultra-fast path — see `_prepare_periodic_nd` for rationale.
+    _has_any_periodic_bc(bcs, Val(N)) || return (grids, data, bcs)
     _validate_periodic_slices_nd(data, bcs, Val(N))
-
-    # Fast path: no exclusive axes
-    has_exclusive = false
-    for d in 1:N
-        if bcs[d] isa PeriodicBC{:exclusive}
-            has_exclusive = true
-            break
-        end
-    end
-    has_exclusive || return (grids, data, bcs)
+    _has_any_exclusive_bc(bcs, Val(N)) || return (grids, data, bcs)
 
     # Build (extended_grid, resolved_bc) pair per axis.
     #

@@ -61,7 +61,12 @@ function linear_interp! end
 # Unified method for AbstractVector
 # Unified in-place entry point. Handles promotion internally via _promote_itp_inputs,
 # so no separate Real/Mixed-type wrapper is needed (same pattern as the scalar API).
-@with_pool pool function linear_interp!(
+#
+# Hot-path (non-periodic) stays pool-free — `@with_pool` is hoisted into the
+# periodic helper below. Directly wrapping the whole entry point added ~5-25 ns
+# per call on small queries even when the pool was unused, a measurable
+# regression vs master on the `4_linear_oneshot/q00001` benchmark.
+function linear_interp!(
         output::AbstractVector,
         x::AbstractVector,
         y::AbstractVector,
@@ -74,7 +79,20 @@ function linear_interp! end
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    x_eff, y_eff, extrap_eff = _prepare_1d_oneshot!(pool, x, y, bc, extrap)
+    x_typed = _prepare_grid(x)
+    if _is_periodic_bc(bc)
+        return _linear_interp_periodic_vector!(output, x_typed, y, x_targets, bc, extrap, deriv, search)
+    end
+    searcher = _resolve_search(x_typed, x_targets, search, nothing)
+    return _linear_interp_loop!(output, x_typed, y, x_targets, extrap, deriv, searcher)
+end
+
+# Pool-scoped helper for the periodic oneshot vector path. Isolated so the
+# common non-periodic path above doesn't pay the `@with_pool` overhead.
+@inline @with_pool pool function _linear_interp_periodic_vector!(
+        output, x, y, x_targets, bc, extrap, deriv, search
+    )
+    x_eff, y_eff, extrap_eff = _periodic_extend_1d_pooled!(pool, x, y, bc, extrap)
     searcher = _resolve_search(x_eff, x_targets, search, nothing)
     return _linear_interp_loop!(output, x_eff, y_eff, x_targets, extrap_eff, deriv, searcher)
 end
@@ -271,7 +289,7 @@ end
 # Public scalar one-shot API.
 # Zero-alloc: _prepare_grid returns Vector as-is, Range → _CachedRange (stack).
 # Kernel arithmetic auto-promotes Int×Float via _get_h float() wrappers.
-@inline @with_pool pool function linear_interp(
+@inline function linear_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq;
@@ -283,7 +301,19 @@ end
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    x_eff, y_eff, extrap_eff = _prepare_1d_oneshot!(pool, x, y, bc, extrap)
+    x_typed = _prepare_grid(x)
+    if _is_periodic_bc(bc)
+        return _linear_interp_periodic_scalar(x_typed, y, xq, bc, extrap, deriv, search, hint)
+    end
+    searcher = _resolve_search(x_typed, xq, search, hint)
+    return _linear_eval_at_point(x_typed, y, xq, extrap, deriv, searcher)
+end
+
+# Pool-scoped scalar periodic helper — kept out of the hot non-periodic path.
+@inline @with_pool pool function _linear_interp_periodic_scalar(
+        x, y, xq, bc, extrap, deriv, search, hint
+    )
+    x_eff, y_eff, extrap_eff = _periodic_extend_1d_pooled!(pool, x, y, bc, extrap)
     searcher = _resolve_search(x_eff, xq, search, hint)
     return _linear_eval_at_point(x_eff, y_eff, xq, extrap_eff, deriv, searcher)
 end

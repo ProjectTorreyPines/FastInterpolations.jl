@@ -11,7 +11,7 @@
 # ║                      Zero type conversion overhead                        ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# PeriodicBC 1D extension uses the shared `_extend_exclusive_pooled!` helper
+# PeriodicBC 1D dispatch uses the shared `_periodic_extend_1d_pooled!` helper
 # from core/periodic.jl (no method-specific logic needed — Linear has no
 # coefficient system, so extension alone suffices).
 
@@ -71,14 +71,9 @@ function linear_interp! end
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    x_typed = _prepare_grid(x)
-    if _is_periodic_bc(bc)
-        x_p, y_p = _extend_exclusive_pooled!(pool, x_typed, y, bc)
-        searcher = _resolve_search(x_p, x_targets, search, nothing)
-        return _linear_interp_loop!(output, x_p, y_p, x_targets, WrapExtrap(), deriv, searcher)
-    end
-    searcher = _resolve_search(x_typed, x_targets, search, nothing)
-    return _linear_interp_loop!(output, x_typed, y, x_targets, extrap, deriv, searcher)
+    x_eff, y_eff, extrap_eff = _prepare_1d_oneshot!(pool, x, y, bc, extrap)
+    searcher = _resolve_search(x_eff, x_targets, search, nothing)
+    return _linear_interp_loop!(output, x_eff, y_eff, x_targets, extrap_eff, deriv, searcher)
 end
 
 # Internal loop with AbstractExtrap dispatch and Searcher (type-stable)
@@ -282,14 +277,9 @@ end
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    x_typed = _prepare_grid(x)
-    if _is_periodic_bc(bc)
-        x_p, y_p = _extend_exclusive_pooled!(pool, x_typed, y, bc)
-        searcher = _resolve_search(x_p, xq, search, hint)
-        return _linear_eval_at_point(x_p, y_p, xq, WrapExtrap(), deriv, searcher)
-    end
-    searcher = _resolve_search(x_typed, xq, search, hint)
-    return _linear_eval_at_point(x_typed, y, xq, extrap, deriv, searcher)
+    x_eff, y_eff, extrap_eff = _prepare_1d_oneshot!(pool, x, y, bc, extrap)
+    searcher = _resolve_search(x_eff, xq, search, hint)
+    return _linear_eval_at_point(x_eff, y_eff, xq, extrap_eff, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗

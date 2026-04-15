@@ -10,7 +10,7 @@
 # ║              Piecewise constant interpolation with side options           ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# PeriodicBC 1D extension uses the shared `_extend_exclusive_pooled!` helper
+# PeriodicBC 1D dispatch uses the shared `_periodic_extend_1d_pooled!` helper
 # from core/periodic.jl (same path Linear and Cubic oneshot use).
 
 # ========================================
@@ -159,15 +159,9 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    x_typed = _prepare_grid(x)
-    if _is_periodic_bc(bc)
-        x_p, y_p = _extend_exclusive_pooled!(pool, x_typed, y, bc)
-        searcher = _resolve_search(x_p, xi, search, hint)
-        result = _constant_eval_at_point(x_p, y_p, xi, WrapExtrap(), side, deriv, searcher)
-        return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
-    end
-    searcher = _resolve_search(x_typed, xi, search, hint)
-    result = _constant_eval_at_point(x_typed, y, xi, extrap, side, deriv, searcher)
+    x_eff, y_eff, extrap_eff = _prepare_1d_oneshot!(pool, x, y, bc, extrap)
+    searcher = _resolve_search(x_eff, xi, search, hint)
+    result = _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
     # Constant returns y[idx] directly — promote Int/Rational to Float for
     # consistency with batch path and other methods (which auto-promote via arithmetic).
     return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
@@ -218,15 +212,9 @@ constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    x_typed = _prepare_grid(x)
-    if _is_periodic_bc(bc)
-        x_p, y_p = _extend_exclusive_pooled!(pool, x_typed, y, bc)
-        searcher = _resolve_search(x_p, x_targets, search, nothing)
-        _constant_vector_loop!(output, x_p, y_p, x_targets, WrapExtrap(), side, deriv, searcher)
-        return output
-    end
-    searcher = _resolve_search(x_typed, x_targets, search, nothing)
-    _constant_vector_loop!(output, x_typed, y, x_targets, extrap, side, deriv, searcher)
+    x_eff, y_eff, extrap_eff = _prepare_1d_oneshot!(pool, x, y, bc, extrap)
+    searcher = _resolve_search(x_eff, x_targets, search, nothing)
+    _constant_vector_loop!(output, x_eff, y_eff, x_targets, extrap_eff, side, deriv, searcher)
     return output
 end
 

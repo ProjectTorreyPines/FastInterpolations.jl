@@ -267,30 +267,60 @@ end
 _extend_values(y::AbstractVector) = vcat(y, first(y))
 
 """
-    _extend_exclusive_pooled!(pool, x, y, bc::PeriodicBC) -> (x_p, y_p)
+    _periodic_extend_1d(x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)
 
-Pool-based sibling of `_extend_exclusive`. Returns extended grid/value pair for
-the 1D one-shot hot path:
-- `:inclusive`: passthrough `(x, y)` (caller still holds the originals).
-- `:exclusive`: extend by one endpoint at `x[1] + period`, with value `y[1]`.
-  - Grid: `Range → _CachedRange` via `_to_float_adding_endpoint` (no heap);
-          `Vector → acquire!(pool, ...)` (zero-alloc after warmup).
-  - Values: always pool-acquired (even for Range grids, since `y` may be Vector).
+Non-pool 1D periodic dispatch for the **persistent-interpolant path**.
+Returns a single `(grid, values, extrap)` triple whether or not `bc` is
+periodic — callers invoke this once and feed the result into their normal
+build flow without branching on `_is_periodic_bc`:
 
-Calls `_check_periodic_endpoints(bc, y_p)` before returning — for `:inclusive`
-this validates `y[1] ≈ y[end]`; for `:exclusive` it is trivially satisfied by
-construction.
+- Non-periodic `bc` → `(x, y, extrap)` passthrough.
+- `PeriodicBC{:inclusive}` → `(x, y, WrapExtrap())` (validates `y[1] ≈ y[end]`).
+- `PeriodicBC{:exclusive}` → `(x_ext, y_ext, WrapExtrap())` where the grid/values
+  are extended by one virtual endpoint via `_extend_exclusive` (heap copy
+  consistent with existing non-periodic persistent-path copy semantics).
 
-Shared by `linear_interp` / `constant_interp` / `cubic_interp` one-shot paths;
-all three previously inlined a near-identical copy of this extension block.
-Lifetime of returned buffers is tied to the caller's `@with_pool` scope.
+Intended consumers: Linear, Constant, and (future Phase 2/3) PCHIP/Cardinal/
+Akima/Quadratic persistent interpolant constructors. Cubic stays on its
+dedicated `_build_interpolant_periodic` path because its solver branches on
+periodicity, not just on the grid representation.
 """
-@inline function _extend_exclusive_pooled!(
+@inline function _periodic_extend_1d(
+        x::AbstractVector,
+        y::AbstractVector,
+        bc::AbstractBC,
+        extrap::AbstractExtrap
+    )
+    _is_periodic_bc(bc) || return x, y, extrap
+    x_ext, y_ext = _prepare_periodic(x, y, bc)
+    _check_periodic_endpoints(bc, y_ext)
+    return x_ext, y_ext, WrapExtrap()
+end
+
+"""
+    _periodic_extend_1d_pooled!(pool, x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)
+
+Pool-based sibling of `_periodic_extend_1d` for the **one-shot hot path**.
+Same contract as the non-pool variant, but the `:exclusive` extension uses
+`acquire!(pool, …)` for the extended buffers (zero-alloc after warmup, caller's
+`@with_pool` scope owns the lifetime).
+
+Range grids are extended to `_CachedRange` via `_to_float_adding_endpoint`
+(heap-free); Vector grids go through the pool. Value buffers are always
+pool-acquired when extending.
+
+Intended consumers: Linear, Constant, and (future Phase 2/3) PCHIP/Cardinal/
+Akima/Quadratic oneshot paths. Cubic oneshot uses this via
+`_cubic_periodic_solve!`, which wraps the extension + tridiagonal solve.
+"""
+@inline function _periodic_extend_1d_pooled!(
         pool::AbstractArrayPool,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
-        bc::PeriodicBC
+        bc::AbstractBC,
+        extrap::AbstractExtrap
     ) where {Tg, Tv}
+    _is_periodic_bc(bc) || return x, y, extrap
     if bc isa PeriodicBC{:exclusive}
         period = _resolve_exclusive_period(x, bc)
         x_end = first(x) + Tg(period)
@@ -301,8 +331,6 @@ Lifetime of returned buffers is tied to the caller's `@with_pool` scope.
             )
         )
         n = length(x)
-        # _resolve_exclusive_period guarantees period = step(x)*length(x) for Range,
-        # so Range → _CachedRange extension is always valid and heap-free.
         if x isa AbstractRange
             x_p = _to_float_adding_endpoint(x, Tg)
         else
@@ -317,8 +345,22 @@ Lifetime of returned buffers is tied to the caller's `@with_pool` scope.
         x_p, y_p = x, y
     end
     _check_periodic_endpoints(bc, y_p)
-    return x_p, y_p
+    return x_p, y_p, WrapExtrap()
 end
+
+"""
+    _prepare_1d_oneshot!(pool, x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)
+
+Thin oneshot-API convenience that fuses `_prepare_grid(x)` with
+`_periodic_extend_1d_pooled!(pool, …, bc, extrap)`. Call once per 1D oneshot
+entry point; the return triple feeds directly into searcher + eval kernel.
+
+Separating this from `_periodic_extend_1d_pooled!` keeps the latter's name
+semantically accurate — it really only does work on periodic `bc` — while
+letting user-facing oneshot entry points use a single, non-misleading call.
+"""
+@inline _prepare_1d_oneshot!(pool, x, y, bc, extrap) =
+    _periodic_extend_1d_pooled!(pool, _prepare_grid(x), y, bc, extrap)
 
 # ========================================
 # ND Exclusive Endpoint Extension

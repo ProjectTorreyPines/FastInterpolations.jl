@@ -114,12 +114,7 @@ end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    if _is_periodic_bc(bc)
-        x_ext, y_ext = _prepare_periodic(x, y, bc)
-        _check_periodic_endpoints(bc, y_ext)
-        extrap_p = _promote_extrap(WrapExtrap(), _value_type(TY, Tg))
-        return ConstantInterpolant(x_ext, y_ext; extrap = extrap_p, side, search)
-    end
-    extrap_p = _promote_extrap(extrap, _value_type(TY, Tg))
-    return ConstantInterpolant(x, y; extrap = extrap_p, side, search)
+    x_eff, y_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
+    extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
+    return ConstantInterpolant(x_eff, y_eff; extrap = extrap_p, side, search)
 end

@@ -140,8 +140,10 @@ manages their lifetime. Follows the `_create_spacing_pooled(pool, ...)` pattern.
     @assert length(x) == length(y) "x and y must have the same length"
 
     # ── Extend exclusive → inclusive (pool-based, zero-alloc after warmup) ──
-    # Shared helper also calls _check_periodic_endpoints on y_p.
-    x_p, y_p = _extend_exclusive_pooled!(pool, x, y, bc)
+    # Shared helper also calls _check_periodic_endpoints on y_p. `extrap` slot is
+    # vestigial for cubic (we always return WrapExtrap here), so pass WrapExtrap()
+    # and ignore the returned extrap.
+    x_p, y_p, _ = _periodic_extend_1d_pooled!(pool, x, y, bc, WrapExtrap())
 
     # ── Solve periodic tridiagonal system ──
     cache = _get_cubic_cache(x_p, PeriodicBC(), _effective_autocache(autocache, Tg))

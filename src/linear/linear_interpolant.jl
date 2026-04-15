@@ -137,14 +137,9 @@ function linear_interp end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    if _is_periodic_bc(bc)
-        # Periodic path: extend grid/data (for :exclusive) or validate (for :inclusive),
-        # then build a normal LinearInterpolant on the extended arrays with WrapExtrap.
-        x_ext, y_ext = _prepare_periodic(x, y, bc)
-        _check_periodic_endpoints(bc, y_ext)
-        extrap_p = _promote_extrap(WrapExtrap(), _value_type(TY, Tg))
-        return LinearInterpolant(x_ext, y_ext; extrap = extrap_p, search)
-    end
-    extrap_p = _promote_extrap(extrap, _value_type(TY, Tg))
-    return LinearInterpolant(x, y; extrap = extrap_p, search)
+    # Single code path — helper returns (x, y, extrap) passthrough for non-periodic,
+    # or (extended x, extended y, WrapExtrap()) for PeriodicBC (inclusive/exclusive).
+    x_eff, y_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
+    extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
+    return LinearInterpolant(x_eff, y_eff; extrap = extrap_p, search)
 end

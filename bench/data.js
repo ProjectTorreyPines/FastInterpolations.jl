@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776113391531,
+  "lastUpdate": 1776212353824,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -43198,6 +43198,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1636.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "821fc85cb5127f8ad7b525d30c0b7c4b2849e8a4",
+          "message": "(feat): Unified Searcher Path — Per-Axis Adaptive ND Search (#123)\n\n* (refac): Unified Searcher infrastructure — Bool-flag adaptive + Binary+RefHint\n\nCore infrastructure for the ND search refactoring:\n\nsearch.jl:\n- _to_searcher(Binary, hint) → Searcher{Binary, RefHint} (pure binary +\n  hint write-back, respects explicit policy choice)\n- _resolve_search_policy(AutoSearch, xq, ::Ref) → LB{8} (hint implies locality)\n- New _search_interval_real(::Searcher{Binary, RefHint}, ...) dispatch:\n  standard binary search + hint[] = idx write-back (0% overhead vs stateless)\n\nnd_utils.jl:\n- _ensure_hint_nd: create persistent NTuple{N, Ref{Int}} for batch hint reuse\n- _check_mono_nd: per-axis monotonicity → NTuple{N, Bool} (concrete, no Union)\n- _search_axis_adaptive: function-barrier per-axis search — AutoSearch+mono=true\n  → LB{8}+RefHint, AutoSearch+mono=false → Binary+RefHint directly (bypasses\n  _to_searcher auto-upgrade). Union{LB{8}, Binary} resolved inside barrier →\n  concrete (Int, Tg, Tg) return, zero boxing\n- _search_all_intervals 6-arg overload for (policies, hints, mono) dispatch\n- _locate_cell_2d_preamble mono-flag overload\n\ninterpolant_protocol.jl:\n- _interp_nd_batch! accepts (policies, hints, mono) instead of (search, hints)\n- Batch entry: policies from _resolve_search_nd (2-arg broadcast only),\n  hints from _ensure_hint_nd, mono from _check_mono_nd — all concrete tuples\n\n* (refac): Unified Searcher path — all ND callers use (policies, hints, mono)\n\nMigrate all ND eval paths from policy+hints to the unified Searcher interface:\n\nPer-type scalar callables (cubic/linear/quadratic/constant_nd_eval.jl):\n- Build persistent hints + mono flags at entry, pass to _eval_*_nd\n- _locate_cell accepts (policies, hints, mono), calls 6-arg _search_all_intervals\n\nHetero eval (hetero_eval.jl, hetero_precomputed_eval.jl):\n- _eval_hetero_nd, _locate_cell, _build_windowed_cell all use (policies, hints, mono)\n- OnTheFly inner kernel still uses policies for fiber re-search (policies pass-through)\n\nVector calculus (vector_calculus.jl):\n- All 6 @generated gradient/hessian/laplacian sites updated\n- Uses _ensure_hint_nd + _check_mono_nd (named functions for @generated purity)\n\nTests:\n- test_nd_batch_hint_persistence.jl: zero-alloc contract for 7 methods × 2D/3D,\n  hetero combos, mixed search policies, search override + hint combos,\n  hint mutation, batch vs scalar correctness\n- test_search.jl: updated _to_searcher + _resolve_search_policy expectations\n- test_search_context_normalization.jl: Binary+hint → Binary+RefHint\n\n* (fix): Range DirectSearch, hetero hint passthrough, scalar mono flag\n\nThree fixes for issues found by Codex code review:\n\n1. Range grid DirectSearch (P2-1): _search_axis_adaptive now dispatches\n   on grid::AbstractRange → DirectSearch() O(1), preventing fallback to\n   O(log n) binary search. Includes AutoSearch ambiguity resolution.\n\n2. Hetero full-fiber hint passthrough (P2-2): _eval_hetero_nd OnTheFly\n   global-solve fallback now passes `hints` (not `nothing`) to\n   _collapse_dims, restoring persistent hint updates on Cubic×Cubic\n   OnTheFly paths. Same fix in _locate_cell OnTheFly full-fiber path.\n\n3. Scalar mono flag (P2-3): scalar callables use _scalar_mono(hint, Val(N))\n   — hint=nothing → mono=false (Binary, stateless), hint provided →\n   mono=true (LB{8}, locality). Prevents unnecessary LB{8} linear probe\n   on scalar calls without user hint. Also applied to vector_calculus.jl\n   @generated gradient/hessian/laplacian sites.\n\n* (fix): vector_calculus.jl — use 2-arg _resolve_search_nd for per-axis adaptive\n\nAll 6 gradient/hessian/laplacian call sites were using the old 4-arg\n_resolve_search_nd which eagerly resolves AutoSearch → concrete policy,\nbypassing _search_axis_adaptive's mono-flag dispatch. Now uses the 2-arg\nform (passthrough) so AutoSearch reaches _search_axis_adaptive and the\nper-axis adaptive logic (sorted→LB{8}, random→Binary) applies correctly.\n\n* (cleanup): nd_utils.jl — simplify comment, use _to_searcher, remove dead code\n\n- Update _search_axis_adaptive comment: remove stale reference to\n  _to_searcher auto-upgrade (no longer exists)\n- Use _to_searcher(BinarySearch(), hint) instead of direct\n  Searcher{BinarySearch, RefHint} construction (now equivalent)\n- Remove dead _get_axis_hint helper (no callers after 2D preamble refactor)\n\n* (test): Range grid, mixed grid, and AoS batch test coverage\n\nAdd test coverage for paths identified in code review:\n- Range grid zero-alloc (2D Cubic/Linear)\n- Range vs Vector correctness (approx comparison)\n- Range grid hint mutation\n- Mixed grid Range×Vector zero-alloc (2D and 3D)\n- AoS batch query correctness (Vector{Tuple} input)\n\n* (fix): Restore AoS per-axis monotonicity check for sorted batch queries\n\nAdd _check_mono_nd overload for AbstractVector (AoS: Tuple, SVector, etc.)\nthat uses protocol-based _is_axis_likely_monotone for per-axis monotonicity\ncheck without allocating. Uses map + callable struct (_AoSMonoChecker) to\navoid closure capture — matches the SoA path's map(_check_axis_mono) pattern.\n\nPreviously AoS fell through to the all-false fallback, forcing Binary\nsearch even on sorted AoS batches — losing the LB{8} locality benefit.\n\nAdd AoS zero-alloc test to verify no allocation.\n\n* (fix): Hetero full-fiber _collapse_dims — pass nothing for hints\n\nRevert full-fiber fallback in _eval_hetero_nd and _locate_cell (OnTheFly\nArray path) to pass nothing as hints to _collapse_dims. This path is only\nreached from scalar calls — batch uses _locate_cell → _eval_at_cell which\nhas its own hint handling via _search_all_intervals 6-arg. Passing\nauto-created Refs caused 32 bytes allocation on scalar no-hint calls\n(Cubic×Cubic OnTheFly persistent), regressing the zero-alloc contract.\n\n* (fix): _validate_nd_domain — use map for AoS to avoid Union boxing\n\nGeneric _validate_nd_domain (AoS queries) used `for d in 1:N` with\nruntime indexing of `grids[d]` on heterogeneous grid tuples — causing\nUnion boxing (224 bytes/query on mixed Range×Vector grids).\n\nReplace inner `for d in 1:N` loop with `map(grids, extraps, axes)`\nfor per-element concrete dispatch, matching the SoA/scalar overloads'\npattern. Now zero-alloc for all AoS + mixed-grid combos.\n\n* (cleanup): Unify naming — consolidate _check_axis_monotone, rename oneshot helpers\n\n- Remove duplicate _check_axis_monotone (identical to _check_axis_mono).\n  _resolve_search_nd_uniform (oneshot) now shares _check_axis_mono with\n  _check_mono_nd (persistent batch).\n- Rename _search_axis → _search_axis_oneshot, _search_axis_hint →\n  _search_axis_oneshot_hint to distinguish from _search_axis_adaptive\n  (persistent path). Makes the oneshot vs persistent boundary explicit.\n- Fix triple-underscore style in _check_axis_mono_aos fallback.\n\n* (refac): Unified Searcher path — oneshot batch paths\n\nReplace _resolve_search_nd_uniform (all-or-nothing) with per-axis\nadaptive (policies, hints, mono) pattern in all 6 oneshot batch paths:\ncubic, linear, quadratic, constant, hetero PreCompute, hetero OnTheFly.\n\nKey design: oneshot passes user `hint` as-is (Nothing or NTuple{N,Ref}),\nnot through _ensure_hint_nd. The 6-arg _search_all_intervals with\nNothing hints falls back to stateless 4-arg search — zero Ref allocation\nwhen no user hint is provided. When user provides hints, per-axis\nadaptive (LB for sorted, Binary for random) applies with persistent\nhint write-back, matching the persistent batch path's behavior.\n\nAdds Nothing+mono overload to _search_all_intervals for the fallback.\n\n* (cleanup): Remove dead _resolve_search_nd_uniform and helpers\n\nRemove _resolve_search_nd_uniform (3 overloads), _autosearch_to_lb,\n_autosearch_to_binary — all callers migrated to per-axis _check_mono_nd\n+ _search_axis_adaptive in the previous commit.\n\nUpdate test_nd_autosearch_peraxis.jl: replace _resolve_search_nd_uniform\ntests with _check_mono_nd tests. Key behavioral change: mixed\nsorted/random queries now get per-axis (true, false) instead of\nall-or-nothing (false, false).\n\n* (fix): Restore full-fiber hint persistence + generic protocol monotonicity\n\nTwo fixes from Codex review:\n\n1. _locate_cell full-fiber path: restore hints passthrough to _collapse_dims\n   (batch callers provide persistent Refs via _ensure_hint_nd — unlike the\n   scalar _eval_hetero_nd path which correctly passes nothing to avoid\n   32-byte throwaway Ref allocation).\n\n2. _check_mono_nd generic fallback: use protocol-based _is_axis_likely_monotone\n   (via _AoSMonoChecker) instead of all-false. Custom containers implementing\n   _query_length/_query_extract now get per-axis adaptive monotonicity check,\n   matching the old _resolve_search_nd behavior.\n\nAdd tests: hetero full-fiber hint mutation, generic protocol container\ncorrectness.\n\n* Runic formatting\n\n* (docs): Clarify _check_mono_nd + Nothing-hint mono semantics\n\nAddress Copilot PR review comments:\n- Update _check_mono_nd docstring: explicit policies' flag value is\n  unspecified (not always true); short queries return all-false; mono\n  flags only effective when hints are present.\n- Add comment to _search_all_intervals(Nothing, mono) explaining why\n  mono is accepted but ignored (API uniformity, negligible cost).\n\n* (fix): Monotonicity check — handle equal-valued prefix correctly\n\nReplace ascending/descending branch with single-pass direction tracking:\nstate accumulates sign of first non-zero diff, subsequent diffs check\n`diff * state < 0` for direction reversal. Equal values (diff=0) are\nalways compatible with any direction.\n\nFixes: [0,0,0,-1,-2,-3,...] was misclassified as non-monotone because\nthe first two equal elements forced the ascending branch, then the\ndescending tail triggered a false violation.\n\nBoth _is_likely_monotone (SoA) and _is_axis_likely_monotone (AoS/protocol)\nupdated. ~1 ns overhead vs master on ascending (4.1 vs 3.1 ns), faster on\nrandom early-exit (2.5 vs 2.9 ns).\n\nAdd tests: equal prefix + descending, equal prefix + ascending,\nequal prefix + direction reversal, ascending-then-descending.",
+          "timestamp": "2026-04-14T17:15:55-07:00",
+          "tree_id": "37e9b3ba54f84d9499c647e9b8aed2d25bce9ec6",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/821fc85cb5127f8ad7b525d30c0b7c4b2849e8a4"
+        },
+        "date": 1776212347406,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 37049,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 559.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 326996,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1661.94,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1581.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 15.63,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 11.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3001.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 32.96,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 18.33,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4229.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4215.72,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9839.12,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3226.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 443.84,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 61676,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1303.46,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12577.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 17.63,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 451.84,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 42607.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 25.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 18651.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 38.67,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 243.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.11,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 198.38,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 18558.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 11.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 541.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4310.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 39555.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 725.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1717.84,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2298.72,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11396.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3338.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 38765,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 993.88,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 376311.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1640,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

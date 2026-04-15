@@ -401,4 +401,62 @@ using FastInterpolations: _CachedRange
         @test itp(0.5) isa Complex
     end
 
+    # ============================================================
+    # Series + PeriodicBC
+    # ============================================================
+    @testset "Series persistent + PeriodicBC — matches per-series interpolants" begin
+        x = collect(range(0.0, step = 2π / 16, length = 16))
+        y1 = sin.(x)
+        y2 = cos.(x)
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        sitp = constant_interp(x, Series(y1, y2); bc = bc)
+        itp1 = constant_interp(x, y1; bc = bc)
+        itp2 = constant_interp(x, y2; bc = bc)
+        for xq in (0.3, 1.7, 2π + 0.5, -0.2)
+            out = sitp(xq)
+            @test out[1] ≈ itp1(xq) atol = 1e-12
+            @test out[2] ≈ itp2(xq) atol = 1e-12
+        end
+    end
+
+    @testset "Series persistent + PeriodicBC :inclusive mismatch raises" begin
+        x = collect(range(0.0, 2π, length = 17))
+        y1 = sin.(x)
+        y2 = collect(0.0:16)             # mismatched endpoints
+        @test_throws ArgumentError constant_interp(x, Series(y1, y2); bc = PeriodicBC())
+    end
+
+    @testset "Series oneshot scalar + PeriodicBC agrees with persistent" begin
+        x = collect(range(0.0, step = 2π / 16, length = 16))
+        y1 = sin.(x)
+        y2 = cos.(x)
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        sitp = constant_interp(x, Series(y1, y2); bc = bc)
+        for xq in (0.0, 0.5, 2.0, -0.1, 2π + 0.1)
+            oneshot = constant_interp(x, Series(y1, y2), xq; bc = bc)
+            @test oneshot ≈ sitp(xq) atol = 1e-12
+        end
+    end
+
+    @testset "Series oneshot vector + PeriodicBC" begin
+        x = collect(range(0.0, step = 2π / 16, length = 16))
+        y1 = sin.(x)
+        y2 = cos.(x)
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        sitp = constant_interp(x, Series(y1, y2); bc = bc)
+
+        xqs = [0.0, 0.5, 2.0, -0.1]
+        out_vec = constant_interp(x, Series(y1, y2), xqs; bc = bc)
+        @test length(out_vec) == 2
+        for j in eachindex(xqs)
+            ref = sitp(xqs[j])
+            @test out_vec[1][j] ≈ ref[1] atol = 1e-12
+            @test out_vec[2][j] ≈ ref[2] atol = 1e-12
+        end
+
+        outs = [similar(xqs) for _ in 1:2]
+        constant_interp!(outs, x, Series(y1, y2), xqs; bc = bc)
+        @test outs[1] ≈ out_vec[1] atol = 1e-12
+    end
+
 end

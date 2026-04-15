@@ -474,4 +474,79 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         @test itp_ex(0.5) isa Complex
     end
 
+    # ============================================================
+    # Series + PeriodicBC
+    # ============================================================
+    @testset "Series persistent + PeriodicBC — matches per-series interpolants" begin
+        x = collect(range(0.0, 2π, length = 17))
+        y1 = sin.(x)
+        y2 = cos.(x)
+        y3 = @. sin(2 * x)
+        # :inclusive (endpoints match for sin/cos/sin(2x) at 0, 2π)
+        sitp = linear_interp(x, Series(y1, y2, y3); bc = PeriodicBC())
+        itp1 = linear_interp(x, y1; bc = PeriodicBC())
+        itp2 = linear_interp(x, y2; bc = PeriodicBC())
+        itp3 = linear_interp(x, y3; bc = PeriodicBC())
+        for xq in (0.3, 1.7, 2π + 0.5, -0.2)
+            out = sitp(xq)
+            @test out[1] ≈ itp1(xq) atol = 1e-12
+            @test out[2] ≈ itp2(xq) atol = 1e-12
+            @test out[3] ≈ itp3(xq) atol = 1e-12
+        end
+    end
+
+    @testset "Series persistent + PeriodicBC(:exclusive)" begin
+        # Drop the repeated endpoint — both series, same length as x
+        x = collect(range(0.0, step = 2π / 16, length = 16))
+        y1 = sin.(x)
+        y2 = cos.(x)
+        sitp = linear_interp(x, Series(y1, y2); bc = PeriodicBC(endpoint = :exclusive, period = 2π))
+        # Wrap test: query past the domain should equal the wrapped query
+        @test sitp(0.3)[1] ≈ sitp(2π + 0.3)[1] atol = 1e-12
+        @test sitp(0.3)[2] ≈ sitp(2π + 0.3)[2] atol = 1e-12
+    end
+
+    @testset "Series persistent + PeriodicBC :inclusive mismatch raises" begin
+        x = collect(range(0.0, 2π, length = 17))
+        y1 = sin.(x)
+        y2 = collect(0.0:16)             # y2[1] != y2[end]
+        @test_throws ArgumentError linear_interp(x, Series(y1, y2); bc = PeriodicBC())
+    end
+
+    @testset "Series oneshot scalar + PeriodicBC agrees with persistent" begin
+        x = collect(range(0.0, step = 2π / 16, length = 16))
+        y1 = sin.(x)
+        y2 = cos.(x)
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        sitp = linear_interp(x, Series(y1, y2); bc = bc)
+        for xq in (0.0, 0.5, 2.0, 5.0, -0.1, 2π + 0.1)
+            oneshot = linear_interp(x, Series(y1, y2), xq; bc = bc)
+            @test oneshot ≈ sitp(xq) atol = 1e-12
+        end
+    end
+
+    @testset "Series oneshot vector + PeriodicBC" begin
+        x = collect(range(0.0, step = 2π / 16, length = 16))
+        y1 = sin.(x)
+        y2 = cos.(x)
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        sitp = linear_interp(x, Series(y1, y2); bc = bc)
+
+        xqs = [0.0, 0.5, 2.0, -0.1]
+        out_vec = linear_interp(x, Series(y1, y2), xqs; bc = bc)
+        @test length(out_vec) == 2
+        @test length(out_vec[1]) == length(xqs)
+        for j in eachindex(xqs)
+            ref = sitp(xqs[j])
+            @test out_vec[1][j] ≈ ref[1] atol = 1e-12
+            @test out_vec[2][j] ≈ ref[2] atol = 1e-12
+        end
+
+        # In-place variant
+        outs = [similar(xqs) for _ in 1:2]
+        linear_interp!(outs, x, Series(y1, y2), xqs; bc = bc)
+        @test outs[1] ≈ out_vec[1] atol = 1e-12
+        @test outs[2] ≈ out_vec[2] atol = 1e-12
+    end
+
 end

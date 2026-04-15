@@ -19,13 +19,6 @@
 Multi-series constant (step) interpolant with unified matrix storage and SIMD optimization.
 Shares a single x-grid across N y-series for efficient batch evaluation.
 
-!!! note "PeriodicBC on Series inputs"
-    `PeriodicBC` is not yet wired for the Series path — the `constant_interp(x, ys; ...)`
-    / `constant_interp(x, Series(...), xq; ...)` signatures have no `bc` kwarg. Build
-    one `ConstantInterpolant` per series with `bc=PeriodicBC(...)` if you need
-    periodic semantics on multi-series data. Series `bc` support is planned for a
-    later phase.
-
 # Type Parameters
 - `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)
@@ -232,12 +225,16 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
         return output
     end
 
-    # Inside domain: compute dL from original xq for AD support
+    # Inside domain: use the anchor's (already wrap-aware, Dual-preserving) dL.
+    # Recomputing `dL = xq - xL` from the original `xq` breaks when the anchor
+    # wrapped `xq` into the domain (e.g. PeriodicBC oneshot query past the seam):
+    # the kernel would see the unwrapped distance and pick the wrong side/index.
+    # `aq.dL` is `loc.xq - loc.xL` where `loc.xq` is the wrapped query — Dual is
+    # preserved through `_wrap_to_domain`, so AD chains survive.
     idx = aq.idx
     idx1 = idx + 1
     h = aq.h
-    @inbounds xL = sitp.x[idx]
-    dL = xq - xL  # Use original xq to preserve Dual for AD
+    dL = aq.dL
 
     # SIMD loop over series
     @inbounds @simd for k in axes(output, 1)
@@ -344,6 +341,7 @@ sitp = constant_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
 function constant_interp(
         x::AbstractVector{Tg},
         s::Series;
+        bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
@@ -352,14 +350,23 @@ function constant_interp(
     Tv = _series_eltype(s)
     Tg_new = _promote_grid_float(Tg, Tv)
     if Tg_new !== Tg
-        return constant_interp(_to_float(x, Tg_new), s; side, extrap, search)
+        return constant_interp(_to_float(x, Tg_new), s; bc, side, extrap, search)
     end
 
     n_pts = length(x)
     Tv_out = _value_type(Tv, Tg)
     y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
-    extrap_p = _promote_extrap(extrap, Tv_out)
 
+    # Periodic path: extend x + y_mat, validate :inclusive endpoints per series,
+    # force WrapExtrap.
+    if _is_periodic_bc(bc)
+        x_ext, y_mat_ext = _prepare_periodic(x, y_mat, bc)
+        _validate_series_endpoints(bc, y_mat_ext)
+        extrap_p = _promote_extrap(WrapExtrap(), Tv_out)
+        return ConstantSeriesInterpolant(x_ext, y_mat_ext, extrap_p, side, search)
+    end
+
+    extrap_p = _promote_extrap(extrap, Tv_out)
     return ConstantSeriesInterpolant(x, y_mat, extrap_p, side, search)
 end
 

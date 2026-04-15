@@ -125,11 +125,20 @@ end
 # duck). Uses array-level `isapprox` (norm-based) for Float/Complex, element-wise
 # `==` for the fallback. `atol = 8eps(T)` + `rtol = sqrt(eps(T))` matches 1D.
 @inline function _check_periodic_slice_inclusive(data::AbstractArray{T}, d::Int) where {T <: AbstractFloat}
+    # Element-wise (NOT norm-based) comparison matching the 1D scalar semantics.
+    # Array-`isapprox` with the same atol/rtol accumulates near-zero noise across
+    # slice elements and would reject legitimate periodic data (e.g. `sin(0)` vs
+    # `sin(2π)` across a fine y/z mesh, where per-element noise is ~eps but the
+    # slice norm scales with √N).
     n = size(data, d)
     first_s = selectdim(data, d, 1)
     last_s = selectdim(data, d, n)
-    isapprox(first_s, last_s; atol = 8 * eps(T), rtol = sqrt(eps(T))) ||
-        _throw_periodic_nd_slice_mismatch(d)
+    atol = 8 * eps(T)
+    rtol = sqrt(eps(T))
+    @inbounds for I in eachindex(first_s, last_s)
+        isapprox(first_s[I], last_s[I]; atol = atol, rtol = rtol) ||
+            _throw_periodic_nd_slice_mismatch(d)
+    end
     return nothing
 end
 
@@ -137,8 +146,12 @@ end
     n = size(data, d)
     first_s = selectdim(data, d, 1)
     last_s = selectdim(data, d, n)
-    isapprox(first_s, last_s; atol = 8 * eps(T), rtol = sqrt(eps(T))) ||
-        _throw_periodic_nd_slice_mismatch(d)
+    atol = 8 * eps(T)
+    rtol = sqrt(eps(T))
+    @inbounds for I in eachindex(first_s, last_s)
+        isapprox(first_s[I], last_s[I]; atol = atol, rtol = rtol) ||
+            _throw_periodic_nd_slice_mismatch(d)
+    end
     return nothing
 end
 
@@ -146,7 +159,9 @@ end
     n = size(data, d)
     first_s = selectdim(data, d, 1)
     last_s = selectdim(data, d, n)
-    isapprox(first_s, last_s) || _throw_periodic_nd_slice_mismatch(d)
+    @inbounds for I in eachindex(first_s, last_s)
+        isapprox(first_s[I], last_s[I]) || _throw_periodic_nd_slice_mismatch(d)
+    end
     return nothing
 end
 
@@ -202,6 +217,26 @@ end
                 "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point."
         )
     )
+end
+
+"""
+    _validate_series_endpoints(bc::PeriodicBC, y_mat::AbstractMatrix) -> Nothing
+
+Series analog of `_check_periodic_endpoints`. For `:inclusive` BC with
+`check=true`, validate that each column's first and last elements match
+within the usual tolerance (dispatch-driven, reuses 1D helper on column
+views). `:exclusive` is a no-op here because the extension phase writes
+`y_mat[end, :] = y_mat[1, :]` by construction.
+
+Used by Linear / Constant Series persistent + oneshot paths.
+"""
+@inline function _validate_series_endpoints(bc::PeriodicBC, y_mat::AbstractMatrix)
+    periodic_check(bc) || return nothing
+    bc isa PeriodicBC{:inclusive} || return nothing
+    @inbounds for k in axes(y_mat, 2)
+        _check_periodic_endpoints(bc, view(y_mat, :, k))
+    end
+    return nothing
 end
 
 @noinline function _throw_periodic_nd_error(d, v_first, v_last)

@@ -77,7 +77,7 @@ export AbstractSearchPolicy, BinarySearch, LinearSearch, LinearBinarySearch, Aut
 
 # Boundary condition types
 export AbstractBC, PointBC, Deriv1, Deriv2, Deriv3, BCPair
-export ZeroCurvBC, ZeroSlopeBC, PeriodicBC, MinCurvFit
+export NoBC, ZeroCurvBC, ZeroSlopeBC, PeriodicBC, MinCurvFit
 export PolyFit, LinearFit, QuadraticFit, CubicFit  # Polynomial fitting BCs
 export Left, Right
 

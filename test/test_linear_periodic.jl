@@ -489,9 +489,9 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         itp3 = linear_interp(x, y3; bc = PeriodicBC())
         for xq in (0.3, 1.7, 2π + 0.5, -0.2)
             out = sitp(xq)
-            @test out[1] ≈ itp1(xq) atol = 1e-12
-            @test out[2] ≈ itp2(xq) atol = 1e-12
-            @test out[3] ≈ itp3(xq) atol = 1e-12
+            @test out[1] ≈ itp1(xq) atol = 1.0e-12
+            @test out[2] ≈ itp2(xq) atol = 1.0e-12
+            @test out[3] ≈ itp3(xq) atol = 1.0e-12
         end
     end
 
@@ -502,8 +502,8 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         y2 = cos.(x)
         sitp = linear_interp(x, Series(y1, y2); bc = PeriodicBC(endpoint = :exclusive, period = 2π))
         # Wrap test: query past the domain should equal the wrapped query
-        @test sitp(0.3)[1] ≈ sitp(2π + 0.3)[1] atol = 1e-12
-        @test sitp(0.3)[2] ≈ sitp(2π + 0.3)[2] atol = 1e-12
+        @test sitp(0.3)[1] ≈ sitp(2π + 0.3)[1] atol = 1.0e-12
+        @test sitp(0.3)[2] ≈ sitp(2π + 0.3)[2] atol = 1.0e-12
     end
 
     @testset "Series persistent + PeriodicBC :inclusive mismatch raises" begin
@@ -521,7 +521,7 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         sitp = linear_interp(x, Series(y1, y2); bc = bc)
         for xq in (0.0, 0.5, 2.0, 5.0, -0.1, 2π + 0.1)
             oneshot = linear_interp(x, Series(y1, y2), xq; bc = bc)
-            @test oneshot ≈ sitp(xq) atol = 1e-12
+            @test oneshot ≈ sitp(xq) atol = 1.0e-12
         end
     end
 
@@ -538,15 +538,15 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         @test length(out_vec[1]) == length(xqs)
         for j in eachindex(xqs)
             ref = sitp(xqs[j])
-            @test out_vec[1][j] ≈ ref[1] atol = 1e-12
-            @test out_vec[2][j] ≈ ref[2] atol = 1e-12
+            @test out_vec[1][j] ≈ ref[1] atol = 1.0e-12
+            @test out_vec[2][j] ≈ ref[2] atol = 1.0e-12
         end
 
         # In-place variant
         outs = [similar(xqs) for _ in 1:2]
         linear_interp!(outs, x, Series(y1, y2), xqs; bc = bc)
-        @test outs[1] ≈ out_vec[1] atol = 1e-12
-        @test outs[2] ≈ out_vec[2] atol = 1e-12
+        @test outs[1] ≈ out_vec[1] atol = 1.0e-12
+        @test outs[2] ≈ out_vec[2] atol = 1.0e-12
     end
 
 end

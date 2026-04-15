@@ -414,8 +414,8 @@ using FastInterpolations: _CachedRange
         itp2 = constant_interp(x, y2; bc = bc)
         for xq in (0.3, 1.7, 2π + 0.5, -0.2)
             out = sitp(xq)
-            @test out[1] ≈ itp1(xq) atol = 1e-12
-            @test out[2] ≈ itp2(xq) atol = 1e-12
+            @test out[1] ≈ itp1(xq) atol = 1.0e-12
+            @test out[2] ≈ itp2(xq) atol = 1.0e-12
         end
     end
 
@@ -434,7 +434,7 @@ using FastInterpolations: _CachedRange
         sitp = constant_interp(x, Series(y1, y2); bc = bc)
         for xq in (0.0, 0.5, 2.0, -0.1, 2π + 0.1)
             oneshot = constant_interp(x, Series(y1, y2), xq; bc = bc)
-            @test oneshot ≈ sitp(xq) atol = 1e-12
+            @test oneshot ≈ sitp(xq) atol = 1.0e-12
         end
     end
 
@@ -450,13 +450,13 @@ using FastInterpolations: _CachedRange
         @test length(out_vec) == 2
         for j in eachindex(xqs)
             ref = sitp(xqs[j])
-            @test out_vec[1][j] ≈ ref[1] atol = 1e-12
-            @test out_vec[2][j] ≈ ref[2] atol = 1e-12
+            @test out_vec[1][j] ≈ ref[1] atol = 1.0e-12
+            @test out_vec[2][j] ≈ ref[2] atol = 1.0e-12
         end
 
         outs = [similar(xqs) for _ in 1:2]
         constant_interp!(outs, x, Series(y1, y2), xqs; bc = bc)
-        @test outs[1] ≈ out_vec[1] atol = 1e-12
+        @test outs[1] ≈ out_vec[1] atol = 1.0e-12
     end
 
 end

@@ -163,14 +163,17 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     x_typed = _prepare_grid(x)
-    if _is_periodic_bc(bc)
-        result = _constant_interp_periodic_scalar(x_typed, y, xi, bc, extrap, side, deriv, search, hint)
-        return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
+    # Single-exit "compute → coerce" pattern: Constant returns `y[idx]`
+    # directly (no arithmetic auto-promotion), so Int/Rational results are
+    # promoted to Float once, regardless of which branch produced them.
+    # Other methods (Linear/Hermite/Quadratic) auto-promote via kernel
+    # arithmetic and use the simpler early-return template.
+    result = if _is_periodic_bc(bc)
+        _constant_interp_periodic_scalar(x_typed, y, xi, bc, extrap, side, deriv, search, hint)
+    else
+        searcher = _resolve_search(x_typed, xi, search, hint)
+        _constant_eval_at_point(x_typed, y, xi, extrap, side, deriv, searcher)
     end
-    searcher = _resolve_search(x_typed, xi, search, hint)
-    result = _constant_eval_at_point(x_typed, y, xi, extrap, side, deriv, searcher)
-    # Constant returns y[idx] directly — promote Int/Rational to Float for
-    # consistency with batch path and other methods (which auto-promote via arithmetic).
     return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
 end
 

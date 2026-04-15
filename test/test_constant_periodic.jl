@@ -14,7 +14,7 @@ using FastInterpolations: _CachedRange
         y = sin.(2π .* x)
 
         itp_default = constant_interp(x, y)
-        itp_nobc    = constant_interp(x, y; bc = NoBC())
+        itp_nobc = constant_interp(x, y; bc = NoBC())
 
         @test typeof(itp_default) === typeof(itp_nobc)
         for xq in (0.0, 0.25, 0.5, 0.75, 1.0)
@@ -35,11 +35,11 @@ using FastInterpolations: _CachedRange
         itp = constant_interp(x, y; bc = bc, side = LeftSide())
 
         # LeftSide with extended endpoint: segment [2.5, 3.5] has left-value = 30.0
-        @test itp(2.6) ≈ 30.0 atol = 1e-12
-        @test itp(3.4) ≈ 30.0 atol = 1e-12   # still within [2.5, 3.5] → 30.0
+        @test itp(2.6) ≈ 30.0 atol = 1.0e-12
+        @test itp(3.4) ≈ 30.0 atol = 1.0e-12   # still within [2.5, 3.5] → 30.0
 
         # Wrap: query outside [0.5, 3.5) wraps back
-        @test itp(3.6) ≈ itp(0.6) atol = 1e-12
+        @test itp(3.6) ≈ itp(0.6) atol = 1.0e-12
     end
 
     @testset "Exclusive — RightSide" begin
@@ -49,7 +49,7 @@ using FastInterpolations: _CachedRange
         itp = constant_interp(x, y; bc = bc, side = RightSide())
 
         # RightSide on segment [2.5, 3.5] → right endpoint value = y[n+1] = y[1] = 10.0
-        @test itp(2.6) ≈ 10.0 atol = 1e-12
+        @test itp(2.6) ≈ 10.0 atol = 1.0e-12
     end
 
     @testset "Exclusive — Vector grid (allocating path)" begin
@@ -58,8 +58,8 @@ using FastInterpolations: _CachedRange
         itp = constant_interp(x_vec, y; bc = PeriodicBC(endpoint = :exclusive, period = 3.0))
 
         # NearestSide default — closest cell center
-        @test itp(2.5) ≈ 30.0 atol = 1e-12
-        @test itp(3.4) ≈ 10.0 atol = 1e-12   # closer to virtual x=3.5 (value=10) than to 2.5
+        @test itp(2.5) ≈ 30.0 atol = 1.0e-12
+        @test itp(3.4) ≈ 10.0 atol = 1.0e-12   # closer to virtual x=3.5 (value=10) than to 2.5
     end
 
     @testset "Extrap is forced to WrapExtrap on periodic path" begin
@@ -76,15 +76,15 @@ using FastInterpolations: _CachedRange
         itp = constant_interp(x, y; bc = bc)
 
         for xq in (0.5, 1.5, 2.5, 3.0, 3.4, 0.0, -0.5)
-            @test constant_interp(x, y, xq; bc = bc) ≈ itp(xq) atol = 1e-12
+            @test constant_interp(x, y, xq; bc = bc) ≈ itp(xq) atol = 1.0e-12
         end
 
         xq = [0.5, 1.0, 2.5, 3.0, 3.4]
-        @test constant_interp(x, y, xq; bc = bc) ≈ itp.(xq) atol = 1e-12
+        @test constant_interp(x, y, xq; bc = bc) ≈ itp.(xq) atol = 1.0e-12
 
         out = zeros(length(xq))
         constant_interp!(out, x, y, xq; bc = bc)
-        @test out ≈ itp.(xq) atol = 1e-12
+        @test out ≈ itp.(xq) atol = 1.0e-12
     end
 
     # ============================================================
@@ -106,7 +106,7 @@ using FastInterpolations: _CachedRange
         @test size(itp.data) == (4, 5)
 
         q = (1.2, 0.8)
-        @test itp(q) ≈ constant_interp((x, y), data, q; bc = bc) atol = 1e-12
+        @test itp(q) ≈ constant_interp((x, y), data, q; bc = bc) atol = 1.0e-12
     end
 
     @testset "ND — per-axis mix (periodic + non-periodic)" begin
@@ -116,7 +116,7 @@ using FastInterpolations: _CachedRange
         bc = (PeriodicBC(endpoint = :exclusive, period = 3.0), NoBC())
         itp = constant_interp((x, y), data; bc = bc)
 
-        @test itp((0.5, 0.5)) ≈ itp((3.5, 0.5)) atol = 1e-12
+        @test itp((0.5, 0.5)) ≈ itp((3.5, 0.5)) atol = 1.0e-12
     end
 
     @testset "ND — NoBC default is no-op" begin

@@ -19,7 +19,7 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         y = sin.(2π .* x)
 
         itp_default = linear_interp(x, y)                       # no bc kwarg
-        itp_nobc    = linear_interp(x, y; bc = NoBC())          # explicit NoBC
+        itp_nobc = linear_interp(x, y; bc = NoBC())          # explicit NoBC
 
         @test typeof(itp_default) === typeof(itp_nobc)
         for xq in (0.0, 0.25, 0.5, 0.75, 1.0)
@@ -33,11 +33,11 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         itp = linear_interp(x, y; bc = PeriodicBC())
 
         # Round-trip at domain endpoints
-        @test itp(0.0) ≈ itp(2π) atol = 1e-12
+        @test itp(0.0) ≈ itp(2π) atol = 1.0e-12
 
         # Query outside base domain wraps by `period = 2π`
-        @test itp(2π + 0.5) ≈ itp(0.5) atol = 1e-12
-        @test itp(-0.3)     ≈ itp(2π - 0.3) atol = 1e-12
+        @test itp(2π + 0.5) ≈ itp(0.5) atol = 1.0e-12
+        @test itp(-0.3) ≈ itp(2π - 0.3) atol = 1.0e-12
     end
 
     @testset "Inclusive — endpoint mismatch raises" begin
@@ -54,12 +54,12 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
 
         # Extended virtual endpoint: x[end+1] = 0.5 + 3.0 = 3.5, y = 10.0 (wraps to y[1])
         # So segment [2.5, 3.5] interpolates linearly between 30.0 → 10.0.
-        @test itp(2.5) ≈ 30.0 atol = 1e-12
-        @test itp(3.0) ≈ 20.0 atol = 1e-12    # midpoint of [2.5,3.5]: (30+10)/2 = 20
-        @test itp(3.5) ≈ 10.0 atol = 1e-12    # wraps to x=0.5 via WrapExtrap
+        @test itp(2.5) ≈ 30.0 atol = 1.0e-12
+        @test itp(3.0) ≈ 20.0 atol = 1.0e-12    # midpoint of [2.5,3.5]: (30+10)/2 = 20
+        @test itp(3.5) ≈ 10.0 atol = 1.0e-12    # wraps to x=0.5 via WrapExtrap
 
         # Query to the left of x[1] wraps into the extended segment
-        @test itp(0.0) ≈ 20.0 atol = 1e-12    # 0.0 wraps to 3.0 → midpoint of [2.5, 3.5]
+        @test itp(0.0) ≈ 20.0 atol = 1.0e-12    # 0.0 wraps to 3.0 → midpoint of [2.5, 3.5]
     end
 
     @testset "Exclusive — Vector grid (allocating path)" begin
@@ -67,9 +67,9 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         y = [10.0, 20.0, 30.0]
         itp = linear_interp(x_vec, y; bc = PeriodicBC(endpoint = :exclusive, period = 3.0))
 
-        @test itp(2.5) ≈ 30.0 atol = 1e-12
-        @test itp(3.0) ≈ 20.0 atol = 1e-12
-        @test itp(3.5) ≈ 10.0 atol = 1e-12
+        @test itp(2.5) ≈ 30.0 atol = 1.0e-12
+        @test itp(3.0) ≈ 20.0 atol = 1.0e-12
+        @test itp(3.5) ≈ 10.0 atol = 1.0e-12
     end
 
     @testset "Exclusive — auto-infer period from Range" begin
@@ -78,7 +78,7 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         y = [10.0, 20.0, 30.0]
         itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
 
-        @test itp(3.0) ≈ 20.0 atol = 1e-12
+        @test itp(3.0) ≈ 20.0 atol = 1.0e-12
     end
 
     @testset "Extrap is forced to WrapExtrap on periodic path" begin
@@ -96,7 +96,7 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         itp = linear_interp(x, y; bc = bc)
 
         for xq in (0.5, 1.5, 2.5, 3.0, 3.4, 0.0, -0.5)
-            @test linear_interp(x, y, xq; bc = bc) ≈ itp(xq) atol = 1e-12
+            @test linear_interp(x, y, xq; bc = bc) ≈ itp(xq) atol = 1.0e-12
         end
     end
 
@@ -109,7 +109,7 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         xq = [0.5, 1.0, 2.5, 3.0, 3.4]
         out_oneshot = linear_interp(x, y, xq; bc = bc)
         out_itp = itp.(xq)
-        @test out_oneshot ≈ out_itp atol = 1e-12
+        @test out_oneshot ≈ out_itp atol = 1.0e-12
     end
 
     @testset "Oneshot in-place — matches persistent interpolant" begin
@@ -121,7 +121,7 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         xq = [0.5, 1.0, 2.5, 3.0, 3.4]
         out = zeros(length(xq))
         linear_interp!(out, x, y, xq; bc = bc)
-        @test out ≈ itp.(xq) atol = 1e-12
+        @test out ≈ itp.(xq) atol = 1.0e-12
     end
 
     @testset "Oneshot NoBC default — regression guard" begin
@@ -154,7 +154,7 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
 
         # Interior query agrees between persistent and oneshot
         q = (1.2, 0.5)
-        @test itp(q) ≈ linear_interp((x, y), data, q; bc = bc) atol = 1e-12
+        @test itp(q) ≈ linear_interp((x, y), data, q; bc = bc) atol = 1.0e-12
     end
 
     @testset "ND — per-axis bc tuple (periodic + non-periodic mix)" begin
@@ -165,7 +165,7 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         itp = linear_interp((x, y), data; bc = bc)
 
         # Query at y=0.5 should wrap correctly on axis 1 when xq goes past x[end]
-        @test itp((0.5, 0.5)) ≈ itp((3.5, 0.5)) atol = 1e-12  # same by periodicity
+        @test itp((0.5, 0.5)) ≈ itp((3.5, 0.5)) atol = 1.0e-12  # same by periodicity
     end
 
     @testset "ND — NoBC default is no-op" begin

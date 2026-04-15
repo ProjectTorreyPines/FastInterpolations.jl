@@ -143,6 +143,42 @@ using FastInterpolations: _CachedRange
         )
     end
 
+    @testset "ND — :inclusive slice mismatch raises on build" begin
+        x = collect(range(0.0, 2π, length = 5))
+        y = collect(range(0.0, 2π, length = 5))
+        good = [sin(xi) * cos(yj) for xi in x, yj in y]
+        bad = copy(good)
+        bad[end, :] .+= 1.0
+
+        @test_throws ArgumentError constant_interp((x, y), bad; bc = PeriodicBC())
+        @test constant_interp((x, y), good; bc = PeriodicBC()) isa ConstantInterpolantND
+    end
+
+    @testset "ND — :inclusive slice mismatch raises on oneshot" begin
+        x = collect(range(0.0, 2π, length = 5))
+        y = collect(range(0.0, 2π, length = 5))
+        bad = [sin(xi) * cos(yj) for xi in x, yj in y]
+        bad[:, end] .+= 1.0
+
+        q = (1.0, 1.0)
+        @test_throws ArgumentError constant_interp((x, y), bad, q; bc = PeriodicBC())
+    end
+
+    @testset "ND — :inclusive + check=false skips validation" begin
+        x = range(0.0, 2π, length = 5)
+        y = range(0.0, 2π, length = 5)
+        bad = [sin(xi) * cos(yj) for xi in x, yj in y]
+        bad[end, :] .+= 1.0
+        itp = constant_interp(
+            (x, y), bad;
+            bc = (
+                PeriodicBC(endpoint = :inclusive, check = false),
+                PeriodicBC(endpoint = :inclusive, check = false),
+            )
+        )
+        @test itp isa ConstantInterpolantND
+    end
+
     # ============================================================
     # Edge cases
     # ============================================================
@@ -307,5 +343,43 @@ using FastInterpolations: _CachedRange
             bc = (PeriodicBC(endpoint = :exclusive), NoBC())
         )
     end
+
+    # ============================================================
+    # Integer grid + duck-type (Dual) smoke tests. See
+    # test_linear_periodic.jl for the rationale — same `_PromotableValue`
+    # gating in `_extend_exclusive` / `_periodic_extend_1d_pooled!`.
+    # ============================================================
+    @testset "Int Range + PeriodicBC(:exclusive) — persistent" begin
+        x = 0:10
+        y = Float64.(0:10)
+        itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
+        @test itp.x isa _CachedRange{Float64}
+        @test length(itp.x) == 12
+        ref = constant_interp(Float64.(0:10), y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
+        for xq in (0.5, 5.5, 10.5)
+            @test itp(xq) ≈ ref(xq) atol = 1.0e-12
+        end
+    end
+
+    @testset "Int Range + PeriodicBC(:exclusive) — oneshot" begin
+        x = 0:10
+        y = Float64.(0:10)
+        bc = PeriodicBC(endpoint = :exclusive, period = 11.0)
+        for xq in (0.5, 5.5, 10.5)
+            @test constant_interp(x, y, xq; bc = bc) isa Float64
+        end
+    end
+
+    @testset "Int Vector + PeriodicBC(:exclusive) with Float period — oneshot" begin
+        x = [0, 1, 2, 3]
+        y = [10.0, 20.0, 30.0, 40.0]
+        bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+        @test constant_interp(x, y, 1.5; bc = bc) isa Float64
+        ref = constant_interp(Float64.(x), y, 1.5; bc = bc)
+        @test constant_interp(x, y, 1.5; bc = bc) ≈ ref atol = 1.0e-12
+    end
+
+    # Dual-grid + PeriodicBC coverage lives in
+    # `test/ext/test_constant_quadratic_dual_grid.jl`.
 
 end

@@ -102,6 +102,85 @@ end
     return nothing
 end
 
+@noinline function _throw_periodic_nd_slice_mismatch(d::Int)
+    throw(
+        ArgumentError(
+            "PeriodicBC(endpoint=:inclusive) on dim $d: first and last slices of " *
+                "`data` along that axis differ beyond tolerance. Either make the " *
+                "endpoint slices match, switch to PeriodicBC(endpoint=:exclusive) " *
+                "if your data does not repeat the first slice, or pass " *
+                "PeriodicBC(check=false) on that axis to skip this validation."
+        )
+    )
+end
+
+# ND per-axis :inclusive slice equality check.
+#
+# Mirrors 1D `_check_periodic_endpoints(y)` but on the first vs last slice along
+# axis `d`. `:exclusive` axes do not need this — extension constructs
+# `data[...,n+1,...] = data[...,1,...]` by construction, so the check is
+# trivially satisfied post-extension.
+#
+# Dispatch mirrors the 1D element-type split (Float / Complex / Integer-Rational /
+# duck). Uses array-level `isapprox` (norm-based) for Float/Complex, element-wise
+# `==` for the fallback. `atol = 8eps(T)` + `rtol = sqrt(eps(T))` matches 1D.
+@inline function _check_periodic_slice_inclusive(data::AbstractArray{T}, d::Int) where {T <: AbstractFloat}
+    n = size(data, d)
+    first_s = selectdim(data, d, 1)
+    last_s = selectdim(data, d, n)
+    isapprox(first_s, last_s; atol = 8 * eps(T), rtol = sqrt(eps(T))) ||
+        _throw_periodic_nd_slice_mismatch(d)
+    return nothing
+end
+
+@inline function _check_periodic_slice_inclusive(data::AbstractArray{Complex{T}}, d::Int) where {T <: AbstractFloat}
+    n = size(data, d)
+    first_s = selectdim(data, d, 1)
+    last_s = selectdim(data, d, n)
+    isapprox(first_s, last_s; atol = 8 * eps(T), rtol = sqrt(eps(T))) ||
+        _throw_periodic_nd_slice_mismatch(d)
+    return nothing
+end
+
+@inline function _check_periodic_slice_inclusive(data::AbstractArray{<:_PromotableValue}, d::Int)
+    n = size(data, d)
+    first_s = selectdim(data, d, 1)
+    last_s = selectdim(data, d, n)
+    isapprox(first_s, last_s) || _throw_periodic_nd_slice_mismatch(d)
+    return nothing
+end
+
+# Fallback: strict element-wise ==
+@inline function _check_periodic_slice_inclusive(data::AbstractArray, d::Int)
+    n = size(data, d)
+    first_s = selectdim(data, d, 1)
+    last_s = selectdim(data, d, n)
+    first_s == last_s || _throw_periodic_nd_slice_mismatch(d)
+    return nothing
+end
+
+# Per-axis inclusive check with compile-time `d` and runtime `check` flag.
+# No-op unless axis `d` is PeriodicBC{:inclusive} AND `check=true`.
+@inline function _check_periodic_axis_nd(data, bcs::NTuple{N, AbstractBC}, ::Val{d}) where {N, d}
+    @inbounds bc = bcs[d]
+    bc isa PeriodicBC{:inclusive} || return nothing
+    periodic_check(bc) || return nothing
+    _check_periodic_slice_inclusive(data, d)
+    return nothing
+end
+
+# Compile-time unroll over axes. Emits N straight-line calls so each `bcs[d]`
+# indexes into the heterogeneous tuple at a compile-time-known position,
+# avoiding runtime Union boxing (same pattern as `_extend_all_slices!`).
+@generated function _validate_periodic_slices_nd(
+        data::AbstractArray{Tv, N},
+        bcs::NTuple{N, AbstractBC},
+        ::Val{N}
+    ) where {Tv, N}
+    calls = [:(_check_periodic_axis_nd(data, bcs, Val($d))) for d in 1:N]
+    return Expr(:block, calls..., :(return nothing))
+end
+
 @noinline function _throw_periodic_endpoint_error(y1, yn)
     throw(
         ArgumentError(
@@ -175,7 +254,11 @@ function _resolve_exclusive_period(x, bc::PeriodicBC)
         # User provided period — cross-validate against Range inference.
         # Compare in grid precision (Tg) to avoid mixed-type ≈ using Float32's
         # generous rtol (~3e-4) when a Float32 period is given on a Float64 grid.
-        Tg = eltype(x)
+        # Duck-safe promotion: Integer/Rational grids lack a meaningful `eps`,
+        # so lift to `float(Tg)` for the tolerance math. Duck grids (Dual,
+        # Measurement, ...) keep their own eltype and use their own `eps`.
+        Tg_raw = eltype(x)
+        Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
         if inferred !== nothing && !isapprox(Tg(bc.period), Tg(inferred); rtol = sqrt(eps(Tg)))
             x0 = first(x); x1 = x0 + inferred
             throw(
@@ -218,7 +301,15 @@ Preserves Range type for Range inputs (step consistency guaranteed by `_resolve_
 """
 function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     period = _resolve_exclusive_period(x, bc)
-    Tg = eltype(x)
+    # Duck-safe grid promotion. `_PromotableValue` (Integer / AbstractFloat /
+    # Rational / Complex) is promoted via `float(...)` so Int-typed Ranges can
+    # form a valid `_CachedRange{Float}` (otherwise `inv(step::Int)::Float64`
+    # cannot be stored in the `Int`-typed `inv_h` field → InexactError).
+    # Duck grids (Dual, Measurement, SVector, ...) fall through with their
+    # original type; they handle their own `inv`/arithmetic within their type.
+    # Mirrors `_promote_grid_float` and `_check_periodic_endpoints` dispatch.
+    Tg_raw = eltype(x)
+    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
     x_end = first(x) + Tg(period)
 
     # Validate: virtual endpoint must be strictly after last grid point
@@ -244,7 +335,9 @@ end
 # Matrix overload for CubicSeriesInterpolant
 function _extend_exclusive(x::AbstractVector, y_mat::AbstractMatrix, bc::PeriodicBC)
     period = _resolve_exclusive_period(x, bc)
-    Tg = eltype(x)
+    # Duck-safe grid promotion — see the Vector overload above for rationale.
+    Tg_raw = eltype(x)
+    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
     x_end = first(x) + Tg(period)
 
     last(x) < x_end || throw(
@@ -321,9 +414,15 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
         extrap::AbstractExtrap
     ) where {Tg, Tv}
     _is_periodic_bc(bc) || return x, y, extrap
+    # Duck-safe extension buffer type: promote Integer / Complex{Integer} grids
+    # to float so the extended pool buffer and `_CachedRange` `inv_h` field can
+    # hold `inv(step)`. Duck grids (Dual, Measurement, ...) keep their type so
+    # AD / uncertainty chains survive. Tv (value type) is never promoted here —
+    # user y-vector semantics are preserved.
+    Tg_ext = Tg <: _PromotableValue ? float(Tg) : Tg
     if bc isa PeriodicBC{:exclusive}
         period = _resolve_exclusive_period(x, bc)
-        x_end = first(x) + Tg(period)
+        x_end = first(x) + Tg_ext(period)
         last(x) < x_end || throw(
             ArgumentError(
                 "period=$period places virtual endpoint at $x_end, " *
@@ -332,9 +431,9 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
         )
         n = length(x)
         if x isa AbstractRange
-            x_p = _to_float_adding_endpoint(x, Tg)
+            x_p = _to_float_adding_endpoint(x, Tg_ext)
         else
-            x_p = acquire!(pool, Tg, n + 1)
+            x_p = acquire!(pool, Tg_ext, n + 1)
             @inbounds copyto!(x_p, 1, x, 1, n)
             @inbounds x_p[n + 1] = x_end
         end
@@ -387,6 +486,12 @@ function _prepare_periodic_nd(
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
     ) where {Tg, Tv, N}
+    # Validate :inclusive axes: for each periodic axis with endpoint=:inclusive,
+    # the first and last slices of `data` along that axis must match within
+    # tolerance. `:exclusive` axes do not need this — extension constructs the
+    # matching slice by definition.
+    _validate_periodic_slices_nd(data, bcs, Val(N))
+
     # Fast path: no exclusive axes
     has_exclusive = false
     for d in 1:N
@@ -480,6 +585,9 @@ via `acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
     ) where {Tg, Tv, N}
+    # See `_prepare_periodic_nd` for validation semantics — mirrored here.
+    _validate_periodic_slices_nd(data, bcs, Val(N))
+
     # Fast path: no exclusive axes
     has_exclusive = false
     for d in 1:N

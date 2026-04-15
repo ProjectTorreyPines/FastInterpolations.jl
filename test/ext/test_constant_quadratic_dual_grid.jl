@@ -189,4 +189,23 @@ const FI = FastInterpolations
         @test (@allocated itp_c(2.5)) <= ALLOC_THRESHOLD
         @test (@allocated itp_q(2.5)) <= ALLOC_THRESHOLD
     end
+
+    # ========================================================================
+    # PeriodicBC + Dual grid — verifies `_PromotableValue` guard in
+    # `_extend_exclusive` / `_periodic_extend_1d_pooled!` passes Dual eltype
+    # through unchanged (Dual is not `<: _PromotableValue`).
+    # ========================================================================
+    @testset "Constant PeriodicBC — Dual grid preserves type" begin
+        T = ForwardDiff.Dual{:pbc, Float64, 1}
+        x_dual = [T(Float64(i), 0.0) for i in 0:5]
+        y = Float64[0, 1, 2, 3, 4, 5]
+
+        itp = constant_interp(x_dual, y; bc = PeriodicBC(endpoint = :exclusive, period = 6.0))
+        @test eltype(itp.x) === T
+        @test length(itp.x) == 7
+
+        q = T(2.5, 1.0)
+        out = constant_interp(x_dual, y, q; bc = PeriodicBC(endpoint = :exclusive, period = 6.0))
+        @test out isa ForwardDiff.Dual
+    end
 end

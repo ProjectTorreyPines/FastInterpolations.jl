@@ -193,6 +193,44 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         )
     end
 
+    @testset "ND — :inclusive slice mismatch raises on build" begin
+        # `:inclusive` default requires data[1,...] ≈ data[end,...] along each
+        # periodic axis. Mismatched endpoint slices must raise, mirroring 1D.
+        x = collect(range(0.0, 2π, length = 5))
+        y = collect(range(0.0, 2π, length = 5))
+        good = [sin(xi) * cos(yj) for xi in x, yj in y]  # endpoints match
+        bad = copy(good)
+        bad[end, :] .+= 1.0  # break periodicity along axis 1
+
+        @test_throws ArgumentError linear_interp((x, y), bad; bc = PeriodicBC())
+        @test linear_interp((x, y), good; bc = PeriodicBC()) isa LinearInterpolantND
+    end
+
+    @testset "ND — :inclusive slice mismatch raises on oneshot" begin
+        x = collect(range(0.0, 2π, length = 5))
+        y = collect(range(0.0, 2π, length = 5))
+        bad = [sin(xi) * cos(yj) for xi in x, yj in y]
+        bad[:, end] .+= 1.0  # break along axis 2
+
+        q = (1.0, 1.0)
+        @test_throws ArgumentError linear_interp((x, y), bad, q; bc = PeriodicBC())
+    end
+
+    @testset "ND — :inclusive + check=false skips validation" begin
+        x = range(0.0, 2π, length = 5)
+        y = range(0.0, 2π, length = 5)
+        bad = [sin(xi) * cos(yj) for xi in x, yj in y]
+        bad[end, :] .+= 1.0
+        itp = linear_interp(
+            (x, y), bad;
+            bc = (
+                PeriodicBC(endpoint = :inclusive, check = false),
+                PeriodicBC(endpoint = :inclusive, check = false),
+            )
+        )
+        @test itp isa LinearInterpolantND
+    end
+
     # ============================================================
     # Edge cases (mirrors test_periodic_exclusive.jl for cubic)
     # ============================================================
@@ -363,5 +401,48 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
             bc = (PeriodicBC(endpoint = :exclusive), NoBC())
         )
     end
+
+    # ============================================================
+    # Integer grid + duck-type (Dual) smoke tests.
+    # The periodic extension helpers use `_PromotableValue` to decide whether
+    # to `float(Tg)`-promote. Integer grids must work (previously threw
+    # InexactError on `_CachedRange{Int}`), duck grids must pass through
+    # with their original type (AD chains preserved).
+    # ============================================================
+    @testset "Int Range + PeriodicBC(:exclusive) — persistent" begin
+        x = 0:10                                       # UnitRange{Int}
+        y = sin.(2π .* (x ./ 10))
+        itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
+        @test itp.x isa _CachedRange{Float64}          # Int Range → Float _CachedRange
+        @test length(itp.x) == 12                      # N+1 extension
+        # Query agrees with Float-equivalent grid
+        ref = linear_interp(Float64.(0:10), y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
+        for xq in (0.5, 5.5, 10.5)
+            @test itp(xq) ≈ ref(xq) atol = 1.0e-12
+        end
+    end
+
+    @testset "Int Range + PeriodicBC(:exclusive) — oneshot" begin
+        x = 0:10
+        y = sin.(2π .* (x ./ 10))
+        bc = PeriodicBC(endpoint = :exclusive, period = 11.0)
+        for xq in (0.5, 5.5, 10.5)
+            @test linear_interp(x, y, xq; bc = bc) isa Float64
+        end
+    end
+
+    @testset "Int Vector + PeriodicBC(:exclusive) with Float period — oneshot" begin
+        # The edge case: Vector{Int} without Range-auto-promotion, Float period.
+        x = [0, 1, 2, 3]
+        y = [0.0, 1.0, 0.0, -1.0]
+        bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+        @test linear_interp(x, y, 1.5; bc = bc) isa Float64
+        ref = linear_interp(Float64.(x), y, 1.5; bc = bc)
+        @test linear_interp(x, y, 1.5; bc = bc) ≈ ref atol = 1.0e-12
+    end
+
+    # Duck-type grid (ForwardDiff.Dual) + PeriodicBC coverage lives in
+    # `test/ext/test_linear_dual_grid.jl` alongside the existing Dual tests,
+    # so base test runs do not pull in ForwardDiff.
 
 end

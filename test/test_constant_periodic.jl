@@ -294,9 +294,8 @@ using FastInterpolations: _CachedRange
     @testset "One-shot :exclusive zero-alloc — ND Vector grids (pool)" begin
         @test _alloc_const_nd_vector() <= ND_ALLOC_THRESHOLD
     end
-    # See test_linear_periodic.jl for the full note — same shared-infrastructure issue.
-    @testset "One-shot :exclusive — ND mixed alloc (known non-zero, @test_broken)" begin
-        @test_broken _alloc_const_nd_mixed() <= ND_ALLOC_THRESHOLD
+    @testset "One-shot :exclusive zero-alloc — ND mixed (periodic Vector + non-periodic Range)" begin
+        @test _alloc_const_nd_mixed() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "ND — Vector grid :exclusive without period raises" begin

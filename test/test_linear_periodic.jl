@@ -350,13 +350,8 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
     @testset "One-shot :exclusive zero-alloc — ND Vector grids (pool)" begin
         @test _alloc_linear_nd_vector() <= ND_ALLOC_THRESHOLD
     end
-    # Known issue: heterogeneous grids (periodic Vector + non-periodic Range) trigger
-    # ~2.3 KB allocation inside `_prepare_periodic_nd_pooled` — likely from closure
-    # type-instability in the `ntuple do d ... end` that returns different grid types
-    # per axis. Homogeneous cases (all Range, all Vector) are zero-alloc. Functional
-    # correctness is unaffected. Tracked as follow-up optimization in shared core helper.
-    @testset "One-shot :exclusive — ND mixed alloc (known non-zero, @test_broken)" begin
-        @test_broken _alloc_linear_nd_mixed() <= ND_ALLOC_THRESHOLD
+    @testset "One-shot :exclusive zero-alloc — ND mixed (periodic Vector + non-periodic Range)" begin
+        @test _alloc_linear_nd_mixed() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "ND — Vector grid :exclusive without period raises" begin

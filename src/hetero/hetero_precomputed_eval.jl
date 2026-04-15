@@ -137,14 +137,15 @@ end
         extraps,
         query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
-        searches::NTuple{N, AbstractSearchPolicy},
-        hints,
+        policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
     ) where {Tv, Tg, N}
     # Handle extrapolation
     q_eval = _handle_all_extraps(query, grids, extraps)
 
     # Cell location
-    indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
+    indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, policies, hints, mono)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
 
     # Evaluate kernel with compact partials

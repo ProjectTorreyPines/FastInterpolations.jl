@@ -150,9 +150,9 @@ end
 # threads concrete types (itp.methods, itp.grids, itp.data) through the
 # windowing logic. Inlining lets the compiler specialize on the interpolant's
 # concrete type and unroll the per-axis `map` calls into straight-line code.
-@inline function _build_windowed_cell(itp, q_eval, search_tuple, hints)
-    # Pre-search uses user hints (mutates them to absolute indices, preserving contract).
-    indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple, hints)
+@inline function _build_windowed_cell(itp, q_eval, policies, hints, mono)
+    # Pre-search via per-axis adaptive function barriers (hint state mutated in-place).
+    indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, policies, hints, mono)
     # Per-axis window: cell-local for windowable methods, full axis for global-solve.
     # `map` over heterogeneous tuples is unrolled by the compiler with no closure
     # capture, which is more allocation-robust than `ntuple(d -> ..., Val(N))` for
@@ -183,45 +183,30 @@ end
         itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
-        searches::NTuple{N, AbstractSearchPolicy},
-        hints,
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, S, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-    # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
-    # Grid eltype included: when grid is Dual, 1D oneshot returns Dual-typed results
-    # that must fit into _collapse_dims intermediate buffers.
     Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
 
-    # Persistent-path gate: use `_has_any_windowable_method` (strict superset of
-    # `_has_any_local_method`) because `itp.spacings` is pre-computed at
-    # construction — no per-call allocation even when the windowable method is
-    # Linear/Constant (which would be a net loss in the scalar oneshot path,
-    # hence the asymmetry — see hetero_window.jl for the detailed rationale).
-    #
-    # GridIdx safety gate: `GridIdx(k)` means "evaluate exactly at grid[k]", i.e.
-    # the index is ABSOLUTE into the original grid. The windowed path slices the
-    # grid to a cell-local range (e.g. `view(grid, 7:10)`), at which point
-    # `GridIdx(8)` is out of bounds in the windowed view. The whole cell-local
-    # window is semantically pointless for a GridIdx axis (the kernel's search
-    # is O(1) direct lookup anyway), so we simply fall through to the full-fiber
-    # path whenever ANY query element is a GridIdx. `_has_grididx` is a compile-
-    # time type-level check (zero runtime cost on the common no-GridIdx path).
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
-        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, searches, hints)
-        # Inner kernel sees the pre-sliced data + grids. Pass `nothing` as hints — the
-        # tiny inner search on a 2–6 point fiber is negligible, and this prevents any
-        # relative-coordinate hint from leaking back to the user.
+        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)
+        # Inner kernel uses policies for fiber re-search on sliced grids.
+        # Pass `nothing` as hints — tiny inner search on 2–6 point fibers is negligible.
         return _collapse_dims(
             Tr, data_local, grids_local, itp.methods, itp.extraps,
-            q_eval, ops, searches, nothing, rel_windows,
+            q_eval, ops, policies, nothing, rel_windows,
         )
     end
 
-    # Global-solve fallback (no pre-search, no slicing — bit-for-bit current behavior).
+    # Global-solve fallback (no pre-search, no slicing).
+    # Pass nothing for hints — full-fiber 1D searches are O(n) anyway,
+    # hint write-back is negligible and avoids Ref allocation on scalar calls.
     full_windows = map(Base.OneTo, size(itp.data))
     return _collapse_dims(
         Tr, itp.data, itp.grids, itp.methods, itp.extraps,
-        q_eval, ops, searches, hints, full_windows,
+        q_eval, ops, policies, nothing, full_windows,
     )
 end
 
@@ -230,12 +215,13 @@ end
         itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:_HeteroPartials},
         query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
-        searches::NTuple{N, AbstractSearchPolicy},
-        hints,
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, S, M, E, P}
     return _eval_hetero_precomputed(
         itp.data, itp.grids, itp.spacings, itp.methods, itp.extraps,
-        query, ops, searches, hints
+        query, ops, policies, hints, mono,
     )
 end
 
@@ -300,8 +286,10 @@ end
     _validate_nd_domain(itp.grids, resolved, itp.extraps)
     oob_result = _try_fill_oob(resolved, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
-    search_tuple = _resolve_search_nd(search, Val(N), resolved)
-    return _eval_hetero_nd(itp, resolved, ops, search_tuple, hint)
+    policies = _resolve_search_nd(search, Val(N))
+    hints = _ensure_hint_nd(hint, Val(N))
+    mono = _scalar_mono(hint, Val(N))
+    return _eval_hetero_nd(itp, resolved, ops, policies, hints, mono)
 end
 
 # Vararg form: itp(0.5, 0.3) or itp(0.5, GridIdx(3)) → itp((0.5, ...))
@@ -328,23 +316,24 @@ end
 @inline function _locate_cell(
         itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
-        search_tuple::NTuple{N, AbstractSearchPolicy},
-        hints = nothing,
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, S, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
 
-    # Persistent-path gate — same asymmetric rule as `_eval_hetero_nd` above,
-    # plus the same GridIdx safety gate (windowing would alias GridIdx absolute
-    # indices into a sliced view).
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
-        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, search_tuple, hints)
-        # Cell tuple: pre-sliced data + grids + relative windows + nothing hints
-        # (the inner kernel must not see relative-coord hints — see hetero_window.jl invariant 2).
-        return (data_local, grids_local, itp.methods, itp.extraps, q_eval, search_tuple, nothing, rel_windows)
+        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)
+        # Inner kernel uses policies for fiber re-search on sliced grids.
+        return (data_local, grids_local, itp.methods, itp.extraps, q_eval, policies, nothing, rel_windows)
     end
 
+    # Full-fiber fallback: pass hints for persistent hint update in per-fiber 1D search.
+    # (Unlike _eval_hetero_nd which passes nothing — that's the scalar path where
+    # auto-created Refs are throwaway. Here in _locate_cell, batch callers provide
+    # persistent Refs via _ensure_hint_nd.)
     full_windows = map(Base.OneTo, size(itp.data))
-    return (itp.data, itp.grids, itp.methods, itp.extraps, q_eval, search_tuple, hints, full_windows)
+    return (itp.data, itp.grids, itp.methods, itp.extraps, q_eval, policies, hints, full_windows)
 end
 
 @inline function _eval_at_cell(
@@ -362,11 +351,12 @@ end
 @inline function _locate_cell(
         itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:_HeteroPartials},
         query::Tuple{Vararg{Real, N}},
-        search_tuple::NTuple{N, AbstractSearchPolicy},
-        hints = nothing,
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, S, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple, hints)
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, policies, hints, mono)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, itp.spacings, indices, Ls)
     return (itp.data.partials, indices, hs, inv_hs, dLs)
 end

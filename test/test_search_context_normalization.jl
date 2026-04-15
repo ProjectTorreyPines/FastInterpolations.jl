@@ -84,9 +84,9 @@ using FastInterpolations: search_interval, Searcher, BinarySearch, LinearSearch,
             @test s isa Searcher{BinarySearch, NoHint}
         end
 
-        @testset "Vector grid + explicit BinarySearch + hint → auto-upgrade to LinearBinarySearch" begin
+        @testset "Vector grid + explicit BinarySearch + hint → Binary + RefHint" begin
             s = _resolve_search(x_vec, xq_scalar, BinarySearch(), Ref(1))
-            @test s isa Searcher{LinearBinarySearch{8}, RefHint}
+            @test s isa Searcher{BinarySearch, RefHint}
         end
 
         @testset "Vector grid + AutoSearch + scalar → BinarySearch" begin

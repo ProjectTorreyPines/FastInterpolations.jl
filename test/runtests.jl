@@ -118,6 +118,7 @@ else
     include("test_nd_oneshot_hint.jl")
     include("test_nd_autosearch_peraxis.jl")
     include("test_nd_batch_inplace.jl")
+    include("test_nd_batch_hint_persistence.jl")  # Unified Searcher path: zero-alloc + hint persistence
     include("test_gradient_hessian.jl")
     include("test_hetero_nd.jl")  # Hetero ND (per-axis methods, on-the-fly)
     include("test_hetero_precomputed.jl")  # Hetero ND (precomputed partials)

@@ -778,17 +778,17 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test hint[] >= 540 && hint[] <= 570
         end
 
-        @testset "Override with BinarySearch + hint auto-upgrades to LinearBinarySearch{2}" begin
+        @testset "Override with BinarySearch + hint → LB{0} (hint tracks)" begin
             # Create with LinearBinarySearch default, but override with BinarySearch at call time
             itp = linear_interp(x, y; search = LinearBinarySearch())
             hint = Ref(100)
 
-            # Override with BinarySearch + hint → auto-upgrades to LinearBinarySearch{2}
+            # Override with BinarySearch + hint → LB{0}: direct-hit check + binary + hint write-back
             for xi in range(0.5, 0.6, 10)
                 yi = itp(xi; search = BinarySearch(), hint = hint)
             end
 
-            # hint should be updated (auto-upgraded to LinearBinarySearch{2})
+            # hint should be updated (LB{0} writes back after binary search)
             @test hint[] >= 500 && hint[] <= 610
         end
 
@@ -865,14 +865,14 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test length(outputs[1]) == 100
         end
 
-        @testset "Series override with BinarySearch + hint auto-upgrades" begin
+        @testset "Series override with BinarySearch + hint → LB{0} (hint tracks)" begin
             sitp = linear_interp(x, Series(y1, y2); search = LinearBinarySearch())
             hint = Ref(250)
 
-            # Override with BinarySearch + hint → auto-upgrades to LinearBinarySearch{2}
+            # Override with BinarySearch + hint → LB{0}: hint write-back
             yi = sitp(0.75; search = BinarySearch(), hint = hint)
 
-            # hint should be updated (auto-upgraded to LinearBinarySearch{2})
+            # hint should be updated (LB{0} writes back after binary search)
             @test hint[] >= 740 && hint[] <= 760
         end
     end
@@ -918,10 +918,11 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test s2.hint.idx[] == 75
         end
 
-        @testset "BinarySearch with hint auto-upgrades to LinearBinarySearch{2}" begin
-            # BinarySearch policy with hint auto-upgrades to LinearBinarySearch{2}
+        @testset "BinarySearch with hint → Binary + RefHint (write-back)" begin
+            # BinarySearch + hint → Binary stays Binary, hint used for write-back only
             ext_ref = Ref(100)
             s1 = _to_searcher(BinarySearch(), ext_ref)
+            @test s1 isa Searcher{BinarySearch, RefHint}
             @test s1.hint isa RefHint
             @test s1.hint.idx === ext_ref  # Uses external Ref
 
@@ -1188,7 +1189,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             # y = x^2, so itp(0.5) ≈ 0.25
             @test itp(0.5) ≈ 0.25 atol = 1.0e-6
 
-            # Scalar call with hint: BinarySearch+hint auto-upgrades to LinearBinarySearch{2} → hint updates
+            # Scalar call with hint: BinarySearch+hint → LB{0} → hint updated via write-back
             hint_scalar = Ref(1)
             itp(0.5; hint = hint_scalar)
             @test hint_scalar[] >= 490 && hint_scalar[] <= 510  # hint moved to ~500
@@ -1499,13 +1500,25 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             # Exactly K=8 elements → false if not sorted
             @test !_is_likely_monotone([1.0, 3.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0])
 
-            # Flat (all equal) → ascending path returns true
+            # Flat (all equal) → trivially monotone
             @test _is_likely_monotone(fill(5.0, 10))
 
             # Monotone prefix but unsorted later → still true (only checks first K)
             v = collect(1.0:20.0)
             v[15] = 0.0  # break monotonicity beyond K=8
             @test _is_likely_monotone(v)
+
+            # Equal-valued prefix followed by descending → true (non-increasing)
+            @test _is_likely_monotone([0.0, 0.0, 0.0, -1.0, -1.0, -2.0, -2.0, -3.0])
+
+            # Equal-valued prefix followed by ascending → true (non-decreasing)
+            @test _is_likely_monotone([0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 3.0, 4.0])
+
+            # Equal prefix then direction reversal → false
+            @test !_is_likely_monotone([0.0, 0.0, 0.0, 0.0, 3.0, 1.0, 4.0, 2.0])
+
+            # Ascending then descending → false
+            @test !_is_likely_monotone([1.0, 2.0, 3.0, 4.0, 3.0, 2.0, 1.0, 0.0])
         end
 
         # ========================================
@@ -1543,9 +1556,10 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             end
 
             @testset "Scalar query → fallback to _resolve_search" begin
-                # Scalar: _resolve_search_policy(AutoSearch(), scalar) → BinarySearch
+                # Scalar + no hint: AutoSearch → BinarySearch
                 @test _resolve_search_policy(auto, 0.5, nothing) isa BinarySearch
-                @test _resolve_search_policy(auto, 0.5, Ref(1)) isa BinarySearch
+                # Scalar + hint: AutoSearch → LB (hint implies locality intent)
+                @test _resolve_search_policy(auto, 0.5, Ref(1)) isa LinearBinarySearch
             end
         end
 

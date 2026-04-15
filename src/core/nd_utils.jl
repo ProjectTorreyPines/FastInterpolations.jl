@@ -316,23 +316,20 @@ end
     ) where {N, K}
     nq = _query_length(queries)
     nq < K && return false
+    # Single-pass direction tracking (same algorithm as _is_likely_monotone).
+    state = 0
     @inbounds begin
-        v1 = _query_extract(queries, 1)[d]
-        v2 = _query_extract(queries, 2)[d]
-        ascending = v2 >= v1
-        prev = v2
-        if ascending
-            for i in 3:K
-                curr = _query_extract(queries, i)[d]
-                curr < prev && return false
-                prev = curr
+        prev = _query_extract(queries, 1)[d]
+        for i in 2:K
+            curr = _query_extract(queries, i)[d]
+            diff = curr - prev
+            s = (diff > 0) - (diff < 0)
+            if state == 0
+                state = s
+            else
+                diff * state < 0 && return false
             end
-        else
-            for i in 3:K
-                curr = _query_extract(queries, i)[d]
-                curr > prev && return false
-                prev = curr
-            end
+            prev = curr
         end
     end
     return true
@@ -353,41 +350,6 @@ end
 # Return type is Union{ConcreteA, ConcreteB} — a 2-way Union of concrete tuple
 # types that Julia union-splits at the function barrier.
 
-# Named helpers for map — avoid closure capture.
-@inline _autosearch_to_lb(::AutoSearch) = LinearBinarySearch()
-@inline _autosearch_to_lb(p::AbstractSearchPolicy) = p
-@inline _autosearch_to_binary(::AutoSearch) = BinarySearch()
-@inline _autosearch_to_binary(p::AbstractSearchPolicy) = p
-@inline _check_axis_monotone(::AutoSearch, q) = _is_likely_monotone(q)
-@inline _check_axis_monotone(::AbstractSearchPolicy, _) = true
-
-# SoA Real vectors + no hint → all-or-nothing adaptive resolution.
-@inline function _resolve_search_nd_uniform(
-        s, ::Val{N},
-        queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-        ::Nothing
-    ) where {N}
-    tuple = _resolve_search_nd(s, Val(N))  # broadcast only, no resolution
-    all_mono = all(map(_check_axis_monotone, tuple, queries))
-    return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
-end
-
-# Generic queries + no hint → protocol-based all-or-nothing adaptive resolution.
-# Fallback for non-SoA queries — SoA has a more specific method above (line ~365).
-@inline function _resolve_search_nd_uniform(s, vn::Val{N}, queries, ::Nothing) where {N}
-    tuple = _resolve_search_nd(s, vn)
-    any(p -> p isa AutoSearch, tuple) || return tuple
-    all_mono = all(
-        ntuple(Val(N)) do d
-            p = tuple[d]
-            !isa(p, AutoSearch) || _is_axis_likely_monotone(queries, d, vn)
-        end
-    )
-    return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
-end
-
-# Hinted → standard 3-arg type-based (already concrete, no monotonicity check).
-@inline _resolve_search_nd_uniform(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
 
 # ========================================
 # Boundary Condition Resolution
@@ -555,12 +517,13 @@ Uses map over named helpers so each axis receives its concrete type directly,
 avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
 
-# Named helpers for map-based search — each receives concrete types per axis.
+# Named helpers for oneshot map-based search — each receives concrete types per axis.
 # search_interval returns (idx, L, R) with the same concrete element type regardless
 # of spacing type (ScalarSpacing or VectorSpacing), so results is homogeneous.
-@inline _search_axis(q, grid, spacing, search) =
+# Persistent batch paths use _search_axis_adaptive instead (Bool-flag, no Union boxing).
+@inline _search_axis_oneshot(q, grid, spacing, search) =
     @inbounds search_interval(_resolve_search(grid, q, search, nothing), grid, spacing, q)
-@inline _search_axis_hint(q, grid, spacing, search, hint) =
+@inline _search_axis_oneshot_hint(q, grid, spacing, search, hint) =
     @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, spacing, q)
 @inline _getidx(r) = r[1]
 @inline _getL(r) = r[2]
@@ -570,7 +533,7 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
         q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}}
     ) where {N}
-    results = map(_search_axis, q_evals, grids, spacings, searches)
+    results = map(_search_axis_oneshot, q_evals, grids, spacings, searches)
     return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
 
@@ -579,15 +542,150 @@ end
 # ----------------------------------------
 
 """
-    _get_axis_hint(hints, d) -> Nothing or Base.RefValue{Int}
+    _ensure_hint_nd(hint, Val(N)) -> NTuple{N, Base.RefValue{Int}}
 
-Extract per-axis hint from a hint tuple or Nothing.
-Used by N=2 specializations that destructure manually.
+Create persistent hint tuple for ND evaluation. User-provided hints pass
+through; `nothing` creates N fresh `Ref(1)` objects. Must be a named function
+(not a lambda) because callers include `@generated` bodies where closures
+are forbidden.
 """
-@inline _get_axis_hint(::Nothing, d) = nothing
-@inline _get_axis_hint(hints::Tuple, d) = @inbounds hints[d]
+@inline _ensure_hint_nd(hint::NTuple{N, Base.RefValue{Int}}, ::Val{N}) where {N} = hint
+@inline _ensure_hint_nd(::Nothing, ::Val{N}) where {N} = ntuple(_ref1, Val(N))
+@inline _ref1(_) = Ref(1)
+@inline _true_flag(_) = true
+@inline _false_flag(_) = false
 
-# Nothing hint → delegate to existing 4-arg (zero overhead)
+# Scalar mono flag: hint provided → assume locality (LB), no hint → stateless (Binary)
+@inline _scalar_mono(::Nothing, ::Val{N}) where {N} = ntuple(_false_flag, Val(N))
+@inline _scalar_mono(::NTuple{N, Base.RefValue{Int}}, ::Val{N}) where {N} = ntuple(_true_flag, Val(N))
+
+# ----------------------------------------
+# Monotonicity Flags (batch-level, once per call)
+# ----------------------------------------
+# Pre-compute per-axis monotonicity as NTuple{N, Bool} — concrete, zero-alloc.
+# Used by _search_axis_adaptive to select LB vs Binary inside a function barrier,
+# avoiding Union boxing from materializing a Tuple{Union{Binary,LB},...} policy tuple.
+
+@inline _check_axis_mono(::AutoSearch, q) = _is_likely_monotone(q)
+@inline _check_axis_mono(::AbstractSearchPolicy, _) = true  # explicit policies: flag unused
+
+# AoS per-axis helper: dispatches on policy type (concrete per-element via map).
+@inline _check_axis_mono_aos(::AutoSearch, d, queries, vn) =
+    _is_axis_likely_monotone(queries, d, vn)
+@inline _check_axis_mono_aos(::AbstractSearchPolicy, _d, _queries, _vn) = true
+
+"""
+    _check_mono_nd(policies, queries) -> NTuple{N, Bool}
+
+Check per-axis monotonicity for AutoSearch axes.  Returns `NTuple{N, Bool}`,
+a concrete tuple type that avoids the `Union{BinarySearch, LinearBinarySearch}`
+boxing that per-axis policy resolution would produce.
+
+For explicit (non-AutoSearch) policies, the returned flag is ignored by
+`_search_axis_adaptive`; callers should not rely on it having any particular
+value.  Short queries (< 8 elements) return all-false as a conservative
+fallback.  The mono flags are only effective when hints are present —
+without hints, `_search_all_intervals` delegates to the stateless 4-arg
+path regardless of mono values.
+"""
+# SoA queries: per-axis monotonicity check (each query vector checked independently)
+@inline _check_mono_nd(
+    policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+    queries::Tuple{Vararg{AbstractVector, N}}
+) where {N} =
+    map(_check_axis_mono, policies, queries)
+
+# AoS queries (Vector of point-like elements: Tuple, SVector, etc.):
+# per-axis monotonicity via protocol-based _query_extract (no allocation).
+# Wraps queries + Val(N) in _AoSMonoChecker to avoid closure capture in map.
+struct _AoSMonoChecker{Q, VN}
+    queries::Q
+    vn::VN
+end
+@inline (c::_AoSMonoChecker)(p, d) = _check_axis_mono_aos(p, d, c.queries, c.vn)
+
+@inline function _check_mono_nd(
+        policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+        queries::AbstractVector
+    ) where {N}
+    checker = _AoSMonoChecker(queries, Val(N))
+    return map(checker, policies, ntuple(identity, Val(N)))
+end
+
+# Generic queries (custom protocol containers): per-axis monotonicity via
+# _is_axis_likely_monotone (same protocol-based check as AoS).
+# Covers any container implementing _query_length/_query_extract.
+@inline function _check_mono_nd(
+        policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+        queries
+    ) where {N}
+    _query_length(queries) < 8 && return ntuple(_false_flag, Val(N))
+    checker = _AoSMonoChecker(queries, Val(N))
+    return map(checker, policies, ntuple(identity, Val(N)))
+end
+
+# ----------------------------------------
+# Per-axis adaptive search (function barrier)
+# ----------------------------------------
+# Creates Searcher per-axis inside a function barrier. The Union{LB{8}, Binary+RefHint}
+# is resolved by Julia's union-splitting INSIDE the barrier — the concrete
+# return type (Int, Tg, Tg) never escapes as Union.
+#
+# mono=true  → LB{8} with persistent hint (walk + locality)
+# mono=false → Binary+RefHint (pure binary search + hint write-back, no walk overhead)
+
+# Range grid: always DirectSearch O(1) regardless of policy/mono
+@inline function _search_axis_adaptive(q, grid::AbstractRange, spacing, ::AbstractSearchPolicy, hint, _)
+    searcher = _to_searcher(DirectSearch(), hint)
+    return @inbounds search_interval(searcher, grid, spacing, q)
+end
+
+# Disambiguate: Range + AutoSearch (AbstractRange <: AbstractVector, AutoSearch <: AbstractSearchPolicy)
+@inline function _search_axis_adaptive(q, grid::AbstractRange, spacing, ::AutoSearch, hint, _)
+    searcher = _to_searcher(DirectSearch(), hint)
+    return @inbounds search_interval(searcher, grid, spacing, q)
+end
+
+# Vector grid + AutoSearch: per-axis adaptive
+@inline function _search_axis_adaptive(q, grid::AbstractVector, spacing, ::AutoSearch, hint, is_mono)
+    searcher = is_mono ?
+        _to_searcher(LinearBinarySearch(), hint) :
+        _to_searcher(BinarySearch(), hint)
+    return @inbounds search_interval(searcher, grid, spacing, q)
+end
+
+# Vector grid + explicit policy
+@inline function _search_axis_adaptive(q, grid::AbstractVector, spacing, policy::AbstractSearchPolicy, hint, _)
+    searcher = _to_searcher(policy, hint)
+    return @inbounds search_interval(searcher, grid, spacing, q)
+end
+
+# Mono-flag overload of _search_all_intervals: per-axis adaptive, zero boxing
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        spacings::Tuple{Vararg{AbstractGridSpacing, N}},
+        policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
+    ) where {N}
+    results = map(_search_axis_adaptive, q_evals, grids, spacings, policies, hints, mono)
+    return (map(_getidx, results), map(_getL, results), map(_getR, results))
+end
+
+# Nothing hint + mono → delegate to stateless 4-arg (zero Ref alloc).
+# mono is accepted but ignored: without hints, no LB walk benefit → Binary always.
+# Callers (oneshot batch with hint=nothing) compute mono for API uniformity;
+# the cost is negligible (one-time _check_mono_nd vs nq search_interval calls).
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
+        spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing, ::NTuple{N, Bool},
+    ) where {N}
+    return _search_all_intervals(q_evals, grids, spacings, searches)
+end
+
+# Nothing hint (no mono) → delegate to 4-arg (zero Ref alloc)
 @inline function _search_all_intervals(
         q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}},
@@ -602,7 +700,7 @@ end
         spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}}
     ) where {N}
-    results = map(_search_axis_hint, q_evals, grids, spacings, searches, hints)
+    results = map(_search_axis_oneshot_hint, q_evals, grids, spacings, searches, hints)
     return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
 
@@ -614,36 +712,26 @@ end
 # Extracts query, handles extrapolation, and performs interval search.
 # Returns raw (x_eval, y_eval, ix, iy, xL, yL) for type-specific post-processing.
 
-"""
-    _locate_cell_2d_preamble(query, grids, spacings, extraps, search, hints)
-
-Shared preamble for all N=2 `_locate_cell` specializations.
-Destructures 2D query, applies per-axis extrapolation, and performs interval search.
-
-Returns `(x_eval, y_eval, ix, iy, xL, yL)` — the 6 raw values that each
-interpolant type then post-processes into its kernel-specific cell tuple.
-"""
+# N=2 preamble: per-axis adaptive search inside function barrier
 @inline function _locate_cell_2d_preamble(
         query::Tuple{Vararg{Real, 2}},
         grids, spacings, extraps,
-        search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints
+        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
+        mono::Tuple{Bool, Bool},
     )
     xq, yq = query
     grid_x, grid_y = grids
     spacing_x, spacing_y = spacings
     extrap_x, extrap_y = extraps
-    search_x, search_y = search
+    policy_x, policy_y = policies
+    hint_x, hint_y = hints
+    mono_x, mono_y = mono
 
     x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
     y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
-
-    hint_x = _get_axis_hint(hints, 1)
-    hint_y = _get_axis_hint(hints, 2)
-    searcher_x = _resolve_search(grid_x, x_eval, search_x, hint_x)
-    searcher_y = _resolve_search(grid_y, y_eval, search_y, hint_y)
-    ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
-    iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
+    ix, xL, _ = _search_axis_adaptive(x_eval, grid_x, spacing_x, policy_x, hint_x, mono_x)
+    iy, yL, _ = _search_axis_adaptive(y_eval, grid_y, spacing_y, policy_y, hint_y, mono_y)
 
     return (x_eval, y_eval, ix, iy, xL, yL)
 end

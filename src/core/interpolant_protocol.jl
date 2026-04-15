@@ -106,8 +106,9 @@ end
         itp::AbstractInterpolantND{Tg, Tv, N},
         queries,
         ops::NTuple{N, AbstractEvalOp},
-        search::Tuple{Vararg{AbstractSearchPolicy, N}},
-        hints = nothing
+        policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     zref = _zero_ref(itp)
     @inbounds for k in 1:_query_length(queries)
@@ -117,7 +118,7 @@ end
             output[k] = oob_val
             continue
         end
-        cell = _locate_cell(itp, query_k, search, hints)
+        cell = _locate_cell(itp, query_k, policies, hints, mono)
         output[k] = _eval_at_cell(itp, cell, ops)
     end
     return output
@@ -172,12 +173,14 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     _validate_nd_domain(itp.grids, queries, itp.extraps)
-    search_tuple = _resolve_search_nd(search, Val(N), queries, hint)
+    policies = _resolve_search_nd(search, Val(N))
+    hints = _ensure_hint_nd(hint, Val(N))
+    mono = _check_mono_nd(policies, queries)
     if _deriv_zero_fill(itp, ops, Val(N))
         fill!(output, zero(eltype(output)))
         return output
     end
-    _interp_nd_batch!(output, itp, queries, ops, search_tuple, hint)
+    _interp_nd_batch!(output, itp, queries, ops, policies, hints, mono)
     return output
 end
 

@@ -52,8 +52,9 @@ Writes results into `output`. No heap allocation beyond spacings.
         queries,
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         side_vals::Tuple{Vararg{AbstractSide, N}},
-        searches::NTuple{N, AbstractSearchPolicy},
-        hints = nothing
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints,  # Nothing or NTuple{N, Ref{Int}}
+        mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
@@ -67,7 +68,7 @@ Writes results into `output`. No heap allocation beyond spacings.
             output[k] = oob_val; continue
         end
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, policies, hints, mono)
         output[k] = _constant_nd_kernel(data, spacings, side_vals, indices, q_eval, Ls)
     end
     return output
@@ -84,11 +85,12 @@ function _constant_interp_nd_oneshot_batch(
         queries,
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         side_vals::Tuple{Vararg{AbstractSide, N}},
-        searches::NTuple{N, AbstractSearchPolicy},
-        hints = nothing
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints,  # Nothing or NTuple{N, Ref{Int}}
+        mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     output = Vector{Tv}(undef, _query_length(queries))
-    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, extraps_val, side_vals, searches, hints)
+    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, extraps_val, side_vals, policies, hints, mono)
 end
 
 # ========================================
@@ -100,11 +102,11 @@ end
 
 # Function barrier: forces Julia to runtime-dispatch on the concrete
 # searches tuple type before entering the @with_pool boundary.
-function _constant_nd_batch_dispatch!(output, grids, data, queries, extraps, sides, searches, hints)
-    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, extraps, sides, searches, hints)
+function _constant_nd_batch_dispatch!(output, grids, data, queries, extraps, sides, policies, hints, mono)
+    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, extraps, sides, policies, hints, mono)
 end
-function _constant_nd_batch_dispatch(grids, data, queries, extraps, sides, searches, hints)
-    return _constant_interp_nd_oneshot_batch(grids, data, queries, extraps, sides, searches, hints)
+function _constant_nd_batch_dispatch(grids, data, queries, extraps, sides, policies, hints, mono)
+    return _constant_interp_nd_oneshot_batch(grids, data, queries, extraps, sides, policies, hints, mono)
 end
 
 # ========================================
@@ -169,11 +171,12 @@ function constant_interp(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)
+    policies = _resolve_search_nd(search, Val(N))
+    mono = _check_mono_nd(policies, queries)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return _constant_nd_batch_dispatch(
-        grids_typed, data, queries, extraps_val, sides, searches, hint
+        grids_typed, data, queries, extraps_val, sides, policies, hint, mono
     )::Vector{Tv}
 end
 
@@ -209,10 +212,11 @@ function constant_interp!(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)
+    policies = _resolve_search_nd(search, Val(N))
+    mono = _check_mono_nd(policies, queries)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return _constant_nd_batch_dispatch!(
-        output, grids_typed, data, queries, extraps_val, sides, searches, hint
+        output, grids_typed, data, queries, extraps_val, sides, policies, hint, mono
     )
 end

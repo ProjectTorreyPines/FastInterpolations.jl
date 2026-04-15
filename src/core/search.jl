@@ -232,16 +232,18 @@ False positive rate: 1/K! ≈ 2.5e-5 for K=8 (random data appearing sorted in fi
 @inline function _is_likely_monotone(xq::AbstractVector{<:Real}, ::Val{K} = Val(8)) where {K}
     n = length(xq)
     n < K && return false
-    @inbounds begin
-        ascending = xq[2] >= xq[1]
-        if ascending
-            for i in 2:K
-                xq[i] < xq[i - 1] && return false
-            end
+    # Single-pass direction tracking: state ∈ {-1, 0, 1}.
+    # state=0 (undecided) adopts the first non-zero diff's sign.
+    # Any diff that opposes state → not monotone.
+    # Equal consecutive values (diff=0) are always compatible.
+    state = 0
+    @inbounds for i in 2:K
+        diff = xq[i] - xq[i - 1]
+        s = (diff > 0) - (diff < 0)
+        if state == 0
+            state = s
         else
-            for i in 2:K
-                xq[i] > xq[i - 1] && return false
-            end
+            diff * state < 0 && return false
         end
     end
     return true
@@ -285,8 +287,13 @@ end
 # strategy, so we skip adaptive resolution and defer to the 2-arg form —
 # AutoSearch+vector already resolves to LinearBinarySearch there, which is correct
 # because hinted callers expect walk-based locality.
+# Explicit policy (non-Auto) + any hint → policy unchanged.
 @inline _resolve_search_policy(search, xq, hint) = _resolve_search_policy(search, xq)
 
+# AutoSearch + hint present → caller wants locality, resolve to LB regardless of query type.
+@inline _resolve_search_policy(::AutoSearch, xq, ::Base.RefValue{Int}) = LinearBinarySearch()
+
+# AutoSearch + no hint + vector → adaptive per prefix monotonicity check.
 @inline function _resolve_search_policy(::AutoSearch, xq::AbstractVector{<:Real}, ::Nothing)
     return _is_likely_monotone(xq) ? LinearBinarySearch() : BinarySearch()
 end
@@ -396,7 +403,7 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 # When hint=Ref{Int}, stateful policies use the external Ref for persistence.
 
 @inline _to_searcher(::BinarySearch, ::Nothing) = Searcher{BinarySearch, NoHint}(NoHint())
-@inline _to_searcher(::BinarySearch, hint::Base.RefValue{Int}) = _to_searcher(LinearBinarySearch(), hint)  # auto-upgrade to default LinearBinarySearch
+@inline _to_searcher(::BinarySearch, hint::Base.RefValue{Int}) = Searcher{BinarySearch, RefHint}(RefHint(hint))  # Binary + hint write-back (respects explicit policy choice)
 @inline _to_searcher(::LinearSearch, ::Nothing) = Searcher{LinearSearch, RefHint}(RefHint())
 @inline _to_searcher(::LinearSearch, hint::Base.RefValue{Int}) = Searcher{LinearSearch, RefHint}(RefHint(hint))
 @inline _to_searcher(::LinearBinarySearch{MAX}, ::Nothing) where {MAX} = Searcher{LinearBinarySearch{MAX}, RefHint}(RefHint())
@@ -849,6 +856,18 @@ end
     _search_binary(x, xq)
 @inline _search_interval_real(::Searcher{BinarySearch, NoHint}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg} =
     _search_binary(x, spacing, xq)
+
+# BinarySearch + RefHint (pure binary + hint write-back, zero search overhead)
+@inline function _search_interval_real(p::Searcher{BinarySearch, RefHint}, x::AbstractVector, xq::Real)
+    idx, xL, xR = _search_binary(x, xq)
+    p.hint.idx[] = idx
+    return idx, xL, xR
+end
+@inline function _search_interval_real(p::Searcher{BinarySearch, RefHint}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg}
+    idx, xL, xR = _search_binary(x, spacing, xq)
+    p.hint.idx[] = idx
+    return idx, xL, xR
+end
 
 # LinearSearch + RefHint
 @inline _search_interval_real(p::Searcher{LinearSearch, RefHint}, x::AbstractVector, xq::Real) =

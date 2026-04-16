@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776212353824,
+  "lastUpdate": 1776304358798,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -43474,6 +43474,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1640,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0c86763deb1e4dfee50a72e686c5d7da2ffd1315",
+          "message": "# (feat): PeriodicBC for Linear and Constant  (#124)\n\n* feat(bc): Add NoBC sentinel for methods with built-in endpoint rules\n\nIntroduce `NoBC <: AbstractBC` as a default-kwarg sentinel for methods\nthat do not require a boundary condition (Linear, Constant, PCHIP,\nCardinal, Akima). It falls through the default `_is_periodic_bc`\ndispatch (returns `false`), so it has zero runtime effect until\nmethods start consuming it.\n\nThis is a pure no-op addition: no dispatch paths use `NoBC` yet. It\nunblocks subsequent per-method `bc` kwarg additions.\n\nExported from the main module and documented in the AbstractBC\nhierarchy alongside PeriodicBC, ZeroCurvBC, etc.\n\n* feat(linear): Support PeriodicBC on Linear interpolation (Phase 1)\n\nExtend PeriodicBC support (previously Cubic-only) to Linear, closing\nthe symmetry gap for FVM cell-centered grids and other periodic use\ncases. Linear inherits C0 continuity at the seam automatically from\ngrid extension; no slopes, no solver.\n\nPublic API (1D + ND):\n- `linear_interp(x, y; bc=NoBC())`, `linear_interp(x, y, xq; bc=...)`,\n  `linear_interp!`, and the ND tuple-grid variants now accept\n  `bc::AbstractBC` (scalar) or `NTuple{N,AbstractBC}` (per-axis).\n- `bc=PeriodicBC(endpoint=:inclusive)`: no-op build on matched-endpoint\n  data (validates via `_check_periodic_endpoints`).\n- `bc=PeriodicBC(endpoint=:exclusive, period=L)`: extend grid/data by\n  one virtual endpoint, force `extrap=WrapExtrap()` on periodic axes.\n\nImplementation:\n- Persistent path: extend once at construction, store as a normal\n  `LinearInterpolant` on extended arrays — no struct changes.\n- Oneshot path: new `_linear_periodic_extend!` helper mirrors the\n  extension block of `_cubic_periodic_solve!`; buffers acquired inside\n  `@with_pool` keep the hot path zero-alloc after warmup.\n- ND: reuses existing `_prepare_periodic_nd` (persistent) and\n  `_prepare_periodic_nd_pooled` (oneshot) + `_resolve_bcs_nd` /\n  `_resolve_extrap_nd` per-axis validation helpers.\n- Range grids: extended grid preserved as `_CachedRange` via\n  `_to_float_adding_endpoint` — no heap allocation.\n- Vector grids: require explicit `period=L` (non-inferrable);\n  `_resolve_exclusive_period` raises ArgumentError otherwise.\n\nTests (test/test_linear_periodic.jl, 30+ testsets):\n- Inclusive: round-trip, endpoint-mismatch raises.\n- Exclusive: FVM cell-centered correctness (Range + Vector), auto-\n  inferred period, extrap override, Vector-without-period error,\n  Range + conflicting-period error.\n- Interpolant storage: extended length N+1, original arrays untouched,\n  Range input → `itp.x isa _CachedRange` (1D and ND).\n- Oneshot scalar/vector/in-place agreement with persistent interpolant.\n- ND: per-axis `bc` tuple, mixed periodic/non-periodic axes, extrap\n  incompatibility raises, NoBC default is a pure no-op.\n- Zero-alloc (function-barrier pattern, double warmup): 1D Range +\n  Vector, ND Range, ND Vector. ND mixed (periodic Vector + non-\n  periodic Range) marked `@test_broken` — 2336-byte alloc in the\n  shared `_prepare_periodic_nd_pooled` helper is a latent type-\n  stability issue cubic also exhibits; tracked as follow-up.\n\nCubic, Quadratic, and Hermite-family methods are unchanged. This is\nPhase 1 of a three-phase rollout (next: Hermite family for C0→C1\nupgrade; then Quadratic with odd-n constraint).\n\n* feat(constant): Support PeriodicBC on Constant interpolation (Phase 1)\n\nMirror the Linear PeriodicBC wiring for Constant interpolation. Same\ndesign: periodic is a build-time contract that reduces to extended-\ngrid + `WrapExtrap()`, with the existing `ConstantInterpolant` struct\nunchanged. The `side::AbstractSide` kwarg (NearestSide/Left/Right) is\nthreaded through both the persistent and oneshot periodic paths.\n\nPublic API (1D + ND):\n- `constant_interp(x, y; bc=NoBC(), side=NearestSide())`, oneshot\n  scalar/vector/in-place variants, and the ND tuple-grid forms all\n  accept `bc::AbstractBC` or `NTuple{N,AbstractBC}`.\n- Per-axis `side` tuple is preserved when threaded alongside a\n  per-axis `bc` tuple.\n\nImplementation:\n- New `_constant_periodic_extend!` helper parallels the Linear one\n  (extension logic is method-agnostic; consolidation into a shared\n  core helper is deferred until more methods need it — likely Phase 2\n  when PCHIP/Cardinal/Akima land and five near-duplicates justify the\n  refactor).\n- ND oneshot: `bcs::NTuple{N,AbstractBC}` threaded through the two\n  function barriers (`_constant_nd_batch_dispatch`/`_batch_dispatch!`)\n  in addition to the two internal oneshot helpers.\n\nTests (test/test_constant_periodic.jl, 30+ testsets):\n- Full functional coverage mirroring test_linear_periodic.jl.\n- Per-side coverage: NearestSide, LeftSide, RightSide each validated\n  for correctness and zero-alloc in the 1D Range path.\n- Exclusive boundary semantics checked explicitly: LeftSide on the\n  virtual segment [x_n, x_1+period] returns y[n]; RightSide returns\n  y[n+1]=y[1]; NearestSide picks whichever center is closer.\n- ND persistent `_CachedRange` preservation on periodic Range axes.\n- Zero-alloc function-barrier tests for 1D/ND Range + Vector paths;\n  ND mixed grid-type case marked `@test_broken` (same shared-helper\n  issue noted in the Linear commit).\n\n* fix(core): Zero-alloc PeriodicBC on heterogeneous ND grids\n\n`_prepare_periodic_nd_pooled` (shared by Linear/Constant/Cubic/Hetero\nND oneshot paths) leaked ~2.3 KB per query when the grids tuple mixed\ntypes — typically periodic Vector + non-periodic Range. Homogeneous\ncombinations (all-Range, all-Vector) were zero-alloc as designed.\nLatent bug never exposed by cubic/hetero tests because they don't\nexercise mixed grid-type ND oneshot.\n\nRoot cause: two runtime-indexed patterns over heterogeneous tuples\nforced Julia to infer a Union return type and heap-box each slot:\n\n  1. Grid extension used `ntuple(Val(N)) do d ... end` with a closure\n     that returned different concrete types per axis (Vector for\n     extended Vector grids, _CachedRange for extended Range grids).\n  2. Data extension used `for d in 1:N` with runtime `d`, then nested\n     `ntuple do i` closures indexing `bcs[d]` on the heterogeneous bcs\n     tuple.\n\nFix is two complementary rewrites in the same helper:\n\n  1. Replace the `ntuple do d` closure with `map(f, grids, bcs)`,\n     which dispatches `f` per-element with concrete (grid, bc) types.\n     Each call compiles to a specialization with a concrete return.\n     Mirrors the pattern already used in the non-pooled sibling\n     `_prepare_periodic_nd` and documented in MEMORY.md (\"ND\n     Constructor Inferrability Pattern\").\n  2. Extract the per-axis data-extension into `_extend_slice_along!`\n     parameterized on `Val{d}`, and call it from a new `@generated\n     _extend_all_slices!` that emits N straight-line calls. `d` is a\n     compile-time literal in each expansion, so `bcs[d]` resolves to\n     the concrete per-axis BC type — no runtime Union.\n\nVerification (function-barrier + double-warmup, Julia 1.12):\n\n  Linear ND, periodic Vector + non-periodic Range:  2336 B → 0 B\n  Linear ND, periodic Range + non-periodic Vector:  2192 B → 0 B\n  Constant ND equivalents:                          same result\n  Homogeneous cases (all-Range, all-Vector):        0 B → 0 B\n  Cubic/hetero ND oneshot tests:                    unchanged, pass\n\nFlips the two `@test_broken` zero-alloc tests in\n`test_linear_periodic.jl` and `test_constant_periodic.jl` (which\ndocumented this as a known follow-up) to `@test`. Cubic and hetero ND\noneshot automatically benefit from the fix since they call the same\nhelper.\n\n* Runic formatting\n\n* refactor(core): Consolidate 1D periodic extension + restore ND error axis\n\nTwo fixes bundled in one commit since they touch overlapping code:\n\n1. Shared `_extend_exclusive_pooled!` helper in `core/periodic.jl`\n   Three near-identical pool-based extension blocks existed in\n   `_linear_periodic_extend!`, `_constant_periodic_extend!`, and the\n   extension block of `_cubic_periodic_solve!`. All three pursued the\n   same contract: `:inclusive` passthrough, `:exclusive` extend by one\n   endpoint with Range→_CachedRange or Vector→pool-acquired, then\n   `_check_periodic_endpoints` on the extended y.\n\n   Extracted to a single helper next to its non-pool sibling\n   `_extend_exclusive`. The three callers now delegate in one line:\n   - Linear oneshot (both scalar and in-place entry points).\n   - Constant oneshot (both scalar and in-place entry points).\n   - Cubic oneshot via `_cubic_periodic_solve!` — extension block +\n     redundant post-block `_check_periodic_endpoints` removed (shared\n     helper handles it). Cubic series paths auto-inherit since they\n     route through `_cubic_periodic_solve!`.\n\n   Net: ~90 duplicated lines removed, single point of maintenance.\n\n2. Restore `on dim $d` in ND periodic ArgumentError\n   `_prepare_periodic_nd_pooled` switched from `ntuple do d` to\n   `map(grids, bcs) do ...` in an earlier commit to get zero-alloc on\n   heterogeneous grids, but the closure lost access to the axis index\n   — error message dropped `on dim $d`, making ND period-mismatch\n   diagnostics harder to act on.\n\n   Fix: use the 3-arg form `map(ntuple(identity, Val(N)), grids, bcs)\n   do d, grid_d, bc_d` — the same pattern the non-pool sibling\n   `_prepare_periodic_nd` already uses. Threading `d` this way keeps\n   per-element concrete-type dispatch (zero-alloc preserved: verified\n   0 bytes on all homogeneous + heterogeneous combinations).\n\n3. Register `NoBC` docstring in `docs/src/api/types.md`\n   `NoBC` was exported with a docstring but not listed in the\n   `@docs` block, causing a Documenter `missing_docs` build failure.\n   Added alongside `AbstractBC`/`PeriodicBC`/etc.\n\nVerification:\n- `test_linear_periodic.jl`, `test_constant_periodic.jl`,\n  `test_periodic_exclusive.jl`, `test_allocation.jl` all pass\n  (cc-julia-test-runner, 1m 53s on Julia 1.12).\n- Zero-alloc diagnostic: mixed ND (0 B), all-Range (0 B), all-Vector\n  (0 B), NoBC baseline (0 B).\n\n* refactor(core): Introduce _prepare_1d_oneshot! + _periodic_extend_1d pair\n\nConsolidate the four `if _is_periodic_bc(bc) ... else ... end` preludes in\nLinear/Constant 1D oneshot + the analogous block in the persistent path\ninto single straight-line `(x, y, bc, extrap) → (x_eff, y_eff, extrap_eff)`\ncalls. Two helpers introduced in `core/periodic.jl`, layered by concern:\n\n- `_periodic_extend_1d(x, y, bc, extrap)` (non-pool, persistent path)\n- `_periodic_extend_1d_pooled!(pool, x, y, bc, extrap)` (pool, oneshot path)\n  — both return an `extrap_eff` alongside `(x_eff, y_eff)`: passthrough for\n  non-periodic, `WrapExtrap()` for PeriodicBC.\n- `_prepare_1d_oneshot!(pool, x, y, bc, extrap)` (outer convenience wrapper)\n  — fuses `_prepare_grid(x)` with `_periodic_extend_1d_pooled!`; the name\n  reflects *intent* (1D oneshot input preparation) rather than *mechanism*,\n  so API-level call sites no longer expose a `_periodic_...` name that's\n  only meaningful on the periodic branch.\n\nLayering after this change:\n  outer (intent)      : _prepare_1d_oneshot!       ← Linear/Constant oneshot API\n  inner (mechanism)   : _periodic_extend_1d_pooled! ← shared with Cubic oneshot\n  non-pool sibling    : _periodic_extend_1d         ← Linear/Constant persistent\n\nPhase 2 Hermite family (PCHIP/Cardinal/Akima) oneshot paths will drop in with\na single call to `_prepare_1d_oneshot!` — no per-method extension helper, no\nper-method `if _is_periodic_bc` branch.\n\nCubic `_cubic_periodic_solve!` switched to `_periodic_extend_1d_pooled!` via\nthe 5-arg signature with `WrapExtrap()` placeholder for the extrap slot\n(cubic is always in the periodic branch by dispatch and ignores the returned\nextrap).\n\nVerification:\n- test_linear_periodic.jl, test_constant_periodic.jl, test_periodic_exclusive.jl,\n  test_allocation.jl — all pass (cc-julia-test-runner, 1m 51s).\n- Zero-alloc diagnostic: 0 B on homogeneous, heterogeneous, and NoBC baselines\n  (function-barrier + double warmup).\n\n* fix(core): Duck-safe periodic extension + ND :inclusive slice validation\n\nTwo correctness fixes bundled together — both live in `core/periodic.jl`,\nboth fix latent issues exposed by Phase 1 (Linear/Constant PeriodicBC).\n\n1. ND `:inclusive` slice validation (Codex P1)\n   -----------------------------------------------------------------\n   `_prepare_periodic_nd` / `_prepare_periodic_nd_pooled` previously\n   extended `:exclusive` axes but silently accepted mismatched endpoint\n   slices on `:inclusive` axes, unlike the 1D path and cubic ND build.\n   Consumers (Linear / Constant / Cubic / Hetero ND) would build a\n   non-periodic interpolant and produce a jump at the wrap point.\n\n   Fix: new helpers in `core/periodic.jl` perform per-axis element-type\n   dispatched validation:\n   - `_check_periodic_slice_inclusive(data, d)` — 4-tier dispatch\n     matching the 1D `_check_periodic_endpoints`: `AbstractFloat` and\n     `Complex{<:AbstractFloat}` use `isapprox` with `atol=8eps(T)` +\n     `rtol=sqrt(eps(T))`; other `_PromotableValue` use default\n     `isapprox`; fallback uses strict `==`.\n   - `_check_periodic_axis_nd(data, bcs, Val(d))` — per-axis gate\n     honoring `periodic_check(bc)` (lets users opt out via\n     `PeriodicBC(check=false)`).\n   - `_validate_periodic_slices_nd(data, bcs, Val(N))` — `@generated`\n     unroll of the N per-axis calls so `bcs[d]` indexes the\n     heterogeneous tuple at a compile-time-known position, avoiding\n     the Union-box pattern already documented in MEMORY.md.\n\n   Wired in at the top of both `_prepare_periodic_nd` and\n   `_prepare_periodic_nd_pooled`, before the \"no exclusive axes\" fast\n   path. Cubic / hetero ND automatically inherit the check — they share\n   the same helpers and were silently missing this validation too.\n\n2. Duck-safe grid promotion for periodic extension (Copilot #4, #5)\n   -----------------------------------------------------------------\n   `_extend_exclusive` and `_periodic_extend_1d_pooled!` used\n   `Tg = eltype(x)` when constructing the extended grid. For\n   `Integer`-typed grids (e.g. `0:10`), this produced a\n   `_CachedRange{Int}` whose `inv_h::Int` field cannot hold\n   `inv(step::Int)::Float64` — throws `InexactError`. The persistent\n   path hits this directly; the oneshot path avoids it for Range\n   inputs via `_prepare_grid` but still hit the bug for\n   `Vector{Int}` + non-integer period (e.g. `2π`).\n\n   Same issue in `_resolve_exclusive_period`, which called\n   `sqrt(eps(Tg))` for cross-validation tolerance — fails on\n   `eps(::Int)`.\n\n   Fix: mirror the `<: _PromotableValue` gating already used by\n   `_promote_grid_float` and `_check_periodic_endpoints`. Promote\n   `Integer / AbstractFloat / Rational / Complex` grids via\n   `float(Tg)`. Duck grids (ForwardDiff.Dual, Measurement, ...) are\n   NOT in `_PromotableValue` and pass through with their original\n   eltype, preserving AD and uncertainty semantics. The value-type\n   `Tv` is untouched throughout — user y-vector semantics preserved.\n\n   Cubic was avoiding this bug by pre-promoting via\n   `_store_grid(x, Tg_f)` in its outer API before reaching\n   `_extend_exclusive`. The Linear/Constant persistent paths do not\n   do this pre-promotion, which exposed the latent bug. Fixing it at\n   the helper root means future Phase 2 methods (PCHIP/Cardinal/Akima)\n   do not need to replicate cubic's pre-promote discipline.\n\nTests\n-----\nBase suite (`test/test_linear_periodic.jl`, `test/test_constant_periodic.jl`):\n- ND `:inclusive` slice mismatch → throws on both build and oneshot.\n- ND `:inclusive + check=false` → skips validation (opt-out).\n- Int Range + PeriodicBC(:exclusive) — persistent and oneshot, both\n  verify `_CachedRange{Float64}` storage.\n- Int Vector + PeriodicBC(:exclusive) with Float period — oneshot.\n\nExtension suite (`test/ext/test_linear_dual_grid.jl`,\n`test/ext/test_constant_quadratic_dual_grid.jl`):\n- Dual grid + PeriodicBC — eltype preserved as `Dual`, result is Dual.\n- ForwardDiff.derivative through Int-Range + PeriodicBC oneshot —\n  no InexactError, FD cross-check within tolerance.\n\nVerification: base + ext suites pass locally.\n\n* docs+polish(bc): Tighten docstrings, normalize Constant kwarg order, Float32/Complex smoke tests\n\nBundles the remaining low-priority review items from the code review.\n\nDocstrings\n----------\n- `NoBC` (core/bc_types.jl): narrow the \"natural endpoint rule\" claim from\n  \"Constant, Linear, PCHIP, Cardinal, Akima\" to \"Constant and Linear\" —\n  the only methods actually wired for `bc` in this PR. Note that PCHIP /\n  Cardinal / Akima will adopt the same default in the next phase. Fixes\n  Copilot review item #1.\n- `linear_interp!` / `linear_interp(x, y, xq)` / `constant_interp(x, y, xi)` /\n  `constant_interp!` docstring signatures were missing the new `bc` kwarg.\n  Added `bc=NoBC()` to each signature line with a short \"PeriodicBC engages\n  the periodic build path\" note. Fixes Copilot review item #3.\n- `LinearSeriesInterpolant` / `ConstantSeriesInterpolant` docstrings now\n  carry a `!!! note` block stating that `PeriodicBC` is NOT yet wired on\n  Series inputs (no `bc` kwarg in the Series public API) and recommend\n  building one `LinearInterpolant` / `ConstantInterpolant` per series with\n  `bc=PeriodicBC(...)` when periodic semantics are needed on Series data.\n  Series `bc` support is a planned later-phase item.\n\nConstant kwarg ordering (normalization)\n---------------------------------------\nThe 1D Constant entry points had `bc, extrap, side, deriv, search` while the\nND entry points had `bc, side, extrap, search, deriv`. Normalized all 1D\nsignatures (persistent interpolant, scalar oneshot, in-place oneshot,\nallocating vector oneshot) to the ND ordering: `bc, side, extrap, ...`.\nKwargs are name-matched so this is not a behavior change for existing\ncallers; it only improves docstring/API consistency.\n\nTrivial endpoint check skip on `:exclusive`\n-------------------------------------------\n`_periodic_extend_1d` and `_periodic_extend_1d_pooled!` both called\n`_check_periodic_endpoints(bc, y_p)` unconditionally after extension.\nFor `:exclusive`, extension constructs `y_p[end] = y_p[1]` by definition,\nso the check is trivially true. Guarded with `bc isa PeriodicBC{:inclusive}`\nso the validation only runs where it can actually fail.\n\nSmoke tests (base suite)\n------------------------\nAdded four small smoke tests at the tail of the periodic test files\ncovering precision/value-type axes the earlier tests didn't touch:\n- Linear: Float32 Range + PeriodicBC(:exclusive), ComplexF64 values\n  (both `:inclusive` and `:exclusive` variants).\n- Constant: Float32 Range + PeriodicBC(:exclusive), ComplexF64 values.\n\nVerification\n------------\n- `test_linear_periodic.jl` + `test_constant_periodic.jl` +\n  `test_periodic_exclusive.jl` + `test_allocation.jl` all pass\n  (cc-julia-test-runner, 2m 1s, Julia 1.12).\n- No production behavior changes — docs, kwarg order normalization (names\n  unchanged), a trivial-branch skip, plus new tests.\n\n* test(ext): Fix Dual+PeriodicBC test constructor syntax\n\nThe two PeriodicBC+Dual tests added in 62f7e53e used the fully\nparameterized `Dual{T, V, N}(V, Float)` constructor form, which\nrequires a `ForwardDiff.Partials{N, V}` as the second argument — not\na raw scalar. Passing `0.0`/`1.0` threw `MethodError`.\n\nSwitched to the tag-only `Dual{:tag}(value, partial)` form (matches\nthe pattern used by every other Dual test in the file).\n\nAlso relaxed the Constant assertion: constant interpolation returns\n`y[idx]` directly with no arithmetic on `xq`, so a Dual query does\nnot propagate Dual into the output — the grid stores Dual (which is\nwhat the periodic extension path must preserve), but the returned\nvalue is Float. Updated the test docstring to explain this and check\nthat the returned value matches one of the neighboring y-values.\n\nVerified by ext run: both test files pass (cc-julia-test-runner\next/test_linear_dual_grid.jl ext/test_constant_quadratic_dual_grid.jl,\n38s, Julia 1.12).\n\n* feat(series): PeriodicBC on Linear and Constant Series (persistent + oneshot)\n\nExtends PeriodicBC support to the Series API on Linear and Constant,\nmatching the Cubic Series level. Both `:inclusive` and `:exclusive`\nendpoint modes work across:\n\n- `linear_interp(x, Series; bc=...)` / `linear_interp(x, Series, xq; bc=...)`\n  (scalar, in-place scalar, allocating vector, in-place vector)\n- `constant_interp(x, Series; bc=...)` + the corresponding oneshot variants.\n\nImplementation\n--------------\nPersistent path: `_prepare_periodic(x, y_mat, bc)` already had a matrix\noverload (used by `CubicSeriesInterpolant` periodic build). Linear/Constant\nseries persistent now route through it, with a new\n`_validate_series_endpoints(bc, y_mat)` helper for per-series `:inclusive`\nvalidation that reuses the dispatched `_check_periodic_endpoints` on column\nviews (same tolerance as 1D, not strict `==` like cubic series — cubic\nrequires strict match for its tridiagonal solver; Linear/Constant don't).\n\nOneshot path: new `_linear_oneshot_series_periodic!` and\n`_constant_oneshot_series_periodic!` internal helpers mirror cubic's\npattern — extend x once via `_periodic_extend_1d_pooled!` bound to the\nfirst series, build an anchor on the extended grid, then reuse a single\npool buffer for remaining series (`:exclusive`) or the raw vecs\n(`:inclusive`) in the eval loop. Vector-xqs variants inline the same\npattern with K×Q loop ordering for cache locality.\n\nLatent fix (exposed by new Series+wrap tests)\n---------------------------------------------\n`_eval_constant_series_point!` recomputed `dL = xq - xL` from the original\n(unwrapped) xq, which breaks when the anchor wrapped xq into the domain\n(e.g. `sitp(2π + 0.5)` on a `[0, 2π]` grid). The kernel then saw the\nfull unwrapped distance and picked the wrong side/index. Fixed by using\n`aq.dL` directly — it's `loc.xq - loc.xL` where `loc.xq` is the wrapped\nvalue (and `_wrap_to_domain` preserves Dual, so AD chains still survive).\nLinear's series eval already routes through `_linear_eval_at_anchor`\nwhich uses the anchor directly, so no analogous bug there.\n\nND `:inclusive` validation: element-wise tolerance\n--------------------------------------------------\nThe earlier `_check_periodic_slice_inclusive` used array-`isapprox` which\nis norm-based — near-zero-per-element noise accumulates to\n`~√N · eps` across the slice and rejects legitimate periodic data (e.g.\n`sin(0)` vs `sin(2π)` on a dense mesh: the per-element noise is ~eps but\nthe slice norm scales with √N). Changed to element-wise `isapprox` with\nthe same `atol=8eps(T)` / `rtol=√eps(T)` as the 1D check — each element\npasses the scalar tolerance independently. Also caught by the\n`docs/src/nd/unified_api.md` @example block (sin·cos·exp product on\n`range(0, 2π)`) which we now keep working. The second example in that\nfile uses `randn` on a \"periodic\" axis for illustration; we add an\nexplicit `PeriodicBC(check=false)` with a comment pointing this out.\n\nDocstrings\n----------\nRemoved the \"PeriodicBC not yet wired on Series\" notes from the Linear /\nConstant `SeriesInterpolant` docstrings — the feature is now supported.\n\nTests\n-----\n- Linear / Constant persistent Series + PeriodicBC match per-series 1D\n  interpolant results.\n- `:inclusive` slice mismatch on Series raises `ArgumentError`.\n- Oneshot scalar and vector variants agree with persistent.\n- `:exclusive` wrap test: `sitp(xq + period) ≈ sitp(xq)`.\n- All existing periodic + allocation + series tests pass\n  (cc-julia-test-runner test_linear_periodic.jl test_constant_periodic.jl\n   test_periodic_exclusive.jl test_allocation.jl test_linear_oneshot_series.jl\n   test_constant_oneshot_series.jl test_linear_series_interp.jl\n   test_constant_series_interp.jl — 2m 19s, Julia 1.12).\n\n* refactor(core): ND :inclusive slice check uses `all(splat, zip)` idiom\n\nReplaces the explicit `@inbounds for I ... isapprox(...) || throw` loop in\n`_check_periodic_slice_inclusive` with `all(((a,b),) -> isapprox(a, b; ...), zip(first_s, last_s))`.\n\nRationale: same semantics, more idiomatic, one line per dispatch branch.\nVerified both forms are 0-byte allocating with short-circuit on first\nmismatch (via `@allocated` inside function barriers). The alternative\nbroadcast form `all(isapprox.(a, b; atol, rtol))` allocates a BitArray\n(~224 B for 1000 elements) and does not short-circuit — strictly worse.\n\nTests unchanged; full sweep passes (1m 58s).\n\n* test: Update tolerance values in PeriodicBC tests to 1.0e-12\n\n* perf(oneshot): hoist @with_pool out of Linear/Constant hot path + @generated ND BC predicates\n\nTwo independent fixes that together restore master-level performance on\nnon-periodic 1D/ND oneshot queries:\n\n1. `@with_pool` hoist (src/linear/linear_oneshot.jl,\n   src/constant/constant_oneshot.jl)\n\n   Previously `linear_interp(x, y, xq; ...)`, `linear_interp!`, and the\n   two Constant analogues were wrapped in `@with_pool pool function`.\n   That pays task-local pool acquire/release on every call (~30 ns),\n   even when `bc=NoBC()` and the pool is never used — roughly 3x\n   regression on the 12 ns 4_linear_oneshot/q00001 benchmark vs master.\n\n   Hoisted the wrapper into periodic-only helpers\n   (`_linear_interp_periodic_{scalar,vector}!`,\n   `_constant_interp_periodic_{scalar,vector}!`). The common\n   non-periodic path is now byte-equivalent to master; periodic path\n   still gets pool semantics via the helper.\n\n2. `@generated` ND BC predicates (src/core/periodic.jl)\n\n   Replaced the runtime `for d in 1:N; if bcs[d] isa PeriodicBC{...}`\n   scans in `_prepare_periodic_nd` and `_prepare_periodic_nd_pooled`\n   with two @generated predicates (`_has_any_periodic_bc`,\n   `_has_any_exclusive_bc`). These inspect the concrete tuple type at\n   specialization time and fold to a literal `true`/`false`, so\n   non-periodic ND calls (CubicFit, QuadraticFit, NoBC, ...) pay zero\n   cost — no loop, no per-axis isa check, no validation call.\n\n* refactor(constant): single-exit compute→coerce pattern for scalar oneshot\n\nCollapse the duplicated Int/Rational→Float promotion into one trailing\napplication using `if…else…end`-as-expression. Removes 4 lines and\ndocuments the two-template split for future Hermite/Quadratic periodic\nwork: auto-promoting methods (Linear/Hermite/Quadratic) use the simpler\nearly-return template; coercion-required methods (Constant) use this\nsingle-exit \"compute → coerce\" pattern.\n\n* test(constant_adjoint): loosen Float32 dot-product rtol by 10× for Windows\n\nThe ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩ identity has mathematically identical LHS and\nRHS but accumulates in different orders (by query vs regrouped by grid),\ngiving a few-ULP Float32 divergence on Windows+Julia 1.12 x86_64 that\ncrossed the previous `sqrt(eps(Float32))` bound on the LeftSide random\ninstance. 10× margin is still tight enough to catch real adjoint bugs\n(which fail by O(1) relative error, not ULP-scale). Test unchanged on\nmacOS/Linux.\n\n* test(periodic): add coverage for Series oneshot periodic paths + pool-extend error throw\n\nCodecov patch coverage on the PR flagged three files below 95%:\n- src/linear/linear_oneshot_series.jl   80.95%\n- src/constant/constant_oneshot_series.jl   80.95%\n- src/core/periodic.jl   87.39%\n\nRoot cause: Series oneshot tests (`test_{linear,constant}_oneshot_series.jl`)\nhad no PeriodicBC coverage at all — the periodic branches inside\n`_linear_oneshot_series_periodic!` /\n`_constant_oneshot_series_periodic!` (scalar + vector × inclusive +\nexclusive) were never exercised. The pooled-extend throw path at\n`_periodic_extend_1d_pooled!` (period-too-small arithmetic guard) was\nalso untested on non-Series oneshot.\n\nAdded testsets (16 total):\n- Series scalar + in-place scalar, :inclusive and :exclusive FVM\n- Series vector in-place, :inclusive and :exclusive (covers pool\n  acquire per-series and `_check_periodic_endpoints` loop respectively)\n- Series vector allocating\n- Series :inclusive endpoint-mismatch and :exclusive period-too-small\n  error paths (both via ArgumentError)\n- Non-Series linear/constant oneshot: period-too-small raises on\n  scalar and vector query paths (hits `_periodic_extend_1d_pooled!`\n  throw at periodic.jl:462-466)\n\nAll tests pass locally in 34s.",
+          "timestamp": "2026-04-15T18:44:44-07:00",
+          "tree_id": "2c36042d137c8589f9ec990de8e1f171b6ae4812",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/0c86763deb1e4dfee50a72e686c5d7da2ffd1315"
+        },
+        "date": 1776304351714,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 38121,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 615.36,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 358328,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1751.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1576.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 15.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 11.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3232.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 33.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 18.74,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4228.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4216.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9802.32,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3222.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 455.84,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 61679.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1320.88,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12587.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 17.83,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 440.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 42612.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 25.25,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 18730,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 37.38,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 248.77,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 9.81,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 196.36,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 18524.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 547.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4304.66,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 39436.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 722.14,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1690.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2280.26,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11518.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3380.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 38775.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 976.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 382147.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1618,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

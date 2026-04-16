@@ -107,8 +107,10 @@ angle  = range(0.0, 2pi, 60)
 run_id = 1:200
 pressure = randn(100, 60, 200)
 
+# `check=false` skips the endpoint-match validation for this illustrative
+# random data (a real pressure(r, θ) field would have matching θ endpoints).
 itp = interp((radius, angle, run_id), pressure;
-    method = (CubicInterp(), CubicInterp(bc=PeriodicBC()), NoInterp()))
+    method = (CubicInterp(), CubicInterp(bc=PeriodicBC(check=false)), NoInterp()))
 
 # Query run #42 at (r=3.5, θ=1.2) — only 2D interpolation is performed
 itp((3.5, 1.2, GridIdx(42)))

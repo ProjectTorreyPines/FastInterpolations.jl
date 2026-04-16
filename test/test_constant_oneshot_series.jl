@@ -165,4 +165,67 @@ using FastInterpolations
         out_wrong = zeros(5)
         @test_throws DimensionMismatch constant_interp!(out_wrong, x, s, 0.5)
     end
+
+    @testset "PeriodicBC — scalar, :inclusive" begin
+        s = Series(y_sin, y_cos)
+        vals = constant_interp(x, s, 0.37; bc = PeriodicBC())
+        vals_wrap = constant_interp(x, s, 0.37 + 1.0; bc = PeriodicBC())
+        @test vals ≈ vals_wrap atol = 1.0e-12
+    end
+
+    @testset "PeriodicBC — scalar, :exclusive FVM" begin
+        xc = [0.5, 1.5, 2.5]
+        s = Series([10.0, 20.0, 30.0], [1.0, 2.0, 3.0])
+        bc = PeriodicBC(endpoint = :exclusive, period = 3.0)
+        vals_in = constant_interp(xc, s, 2.4; bc)
+        @test vals_in[1] ≈ 30.0
+        @test vals_in[2] ≈ 3.0
+    end
+
+    @testset "PeriodicBC — scalar in-place" begin
+        s = Series(y_sin, y_cos)
+        out = zeros(2)
+        constant_interp!(out, x, s, 0.37; bc = PeriodicBC())
+        @test out ≈ constant_interp(x, s, 0.37; bc = PeriodicBC())
+    end
+
+    @testset "PeriodicBC — vector in-place, :inclusive" begin
+        s = Series(y_sin, y_cos)
+        xqs = [0.1, 0.37, 0.9]
+        outputs = [zeros(length(xqs)) for _ in 1:2]
+        constant_interp!(outputs, x, s, xqs; bc = PeriodicBC())
+        outputs_wrap = [zeros(length(xqs)) for _ in 1:2]
+        constant_interp!(outputs_wrap, x, s, xqs .+ 1.0; bc = PeriodicBC())
+        @test outputs[1] ≈ outputs_wrap[1] atol = 1.0e-12
+        @test outputs[2] ≈ outputs_wrap[2] atol = 1.0e-12
+    end
+
+    @testset "PeriodicBC — vector in-place, :exclusive" begin
+        xc = [0.5, 1.5, 2.5]
+        s = Series([10.0, 20.0, 30.0], [1.0, 2.0, 3.0])
+        bc = PeriodicBC(endpoint = :exclusive, period = 3.0)
+        xqs = [0.6, 1.4, 2.4]
+        outputs = [zeros(3), zeros(3)]
+        constant_interp!(outputs, xc, s, xqs; bc)
+        @test outputs[1] ≈ [10.0, 20.0, 30.0]   # NearestSide picks closest cell center
+        @test outputs[2] ≈ [1.0, 2.0, 3.0]
+    end
+
+    @testset "PeriodicBC — vector allocating" begin
+        s = Series(y_sin, y_cos)
+        outs = constant_interp(x, s, [0.1, 0.37]; bc = PeriodicBC())
+        @test length(outs) == 2 && length(outs[1]) == 2
+    end
+
+    @testset "PeriodicBC — :inclusive endpoint mismatch raises" begin
+        s = Series(y_sin, y_exp)
+        @test_throws ArgumentError constant_interp(x, s, 0.37; bc = PeriodicBC())
+    end
+
+    @testset "PeriodicBC — :exclusive period too small raises" begin
+        xv = [0.0, 1.0, 2.0, 3.0]
+        s = Series([0.0, 1.0, 2.0, 3.0])
+        bc_bad = PeriodicBC(endpoint = :exclusive, period = 2.5)
+        @test_throws ArgumentError constant_interp(xv, s, 1.5; bc = bc_bad)
+    end
 end

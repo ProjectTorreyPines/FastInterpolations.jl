@@ -140,36 +140,12 @@ manages their lifetime. Follows the `_create_spacing_pooled(pool, ...)` pattern.
     @assert length(x) == length(y) "x and y must have the same length"
 
     # ── Extend exclusive → inclusive (pool-based, zero-alloc after warmup) ──
-    if bc isa PeriodicBC{:exclusive}
-        period = _resolve_exclusive_period(x, bc)
-        x_end = first(x) + Tg(period)
-        last(x) < x_end || throw(
-            ArgumentError(
-                "period=$period places virtual endpoint at $x_end, " *
-                    "not after last grid point x[end]=$(last(x))"
-            )
-        )
-
-        n = length(x)
-        # Grid: Range → direct construction (type-stable, O(1)), Vector → pool
-        # Note: _resolve_exclusive_period guarantees period = step(x) * length(x) for Range,
-        # so x_end == last(x) + step(x) and direct Range extension is always valid.
-        if x isa AbstractRange
-            x_p = _to_float_adding_endpoint(x, Tg)
-        else
-            x_p = acquire!(pool, Tg, n + 1)
-            @inbounds copyto!(x_p, 1, x, 1, n)
-            @inbounds x_p[n + 1] = x_end
-        end
-        y_p = acquire!(pool, Tv, n + 1)
-        @inbounds copyto!(y_p, 1, y, 1, n)
-        @inbounds y_p[n + 1] = y[1]
-    else
-        x_p, y_p = x, y
-    end
+    # Shared helper also calls _check_periodic_endpoints on y_p. `extrap` slot is
+    # vestigial for cubic (we always return WrapExtrap here), so pass WrapExtrap()
+    # and ignore the returned extrap.
+    x_p, y_p, _ = _periodic_extend_1d_pooled!(pool, x, y, bc, WrapExtrap())
 
     # ── Solve periodic tridiagonal system ──
-    _check_periodic_endpoints(bc, y_p)
     cache = _get_cubic_cache(x_p, PeriodicBC(), _effective_autocache(autocache, Tg))
     Tz = _output_eltype(Tv, eltype(cache.x))
     z = acquire!(pool, Tz, length(y_p))

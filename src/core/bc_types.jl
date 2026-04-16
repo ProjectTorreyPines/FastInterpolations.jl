@@ -19,6 +19,7 @@
 #
 # Type Hierarchy:
 #   AbstractBC                    # No type parameter
+#   ├── NoBC                      # Sentinel: "use the method's built-in endpoint rule"
 #   ├── PointBC                   # No type parameter (abstract)
 #   │   ├── Deriv1{Tv}            # User-specified first derivative (has Tv)
 #   │   ├── Deriv2{Tv}            # User-specified second derivative (has Tv)
@@ -43,6 +44,7 @@ Type-free design: no type parameter on the abstract type.
 Concrete subtypes with values (Deriv1, Deriv2, Deriv3) carry their own Tv parameter.
 
 # Subtypes
+- `NoBC`: Sentinel meaning "use the method's built-in endpoint rule" - singleton
 - `ZeroCurvBC`: Zero-Curvature BC (zero curvature at both ends) - singleton
 - `ZeroSlopeBC`: Zero-Slope BC (zero slope at both ends) - singleton
 - `PeriodicBC{E,P}`: Periodic boundary condition (inclusive/exclusive endpoint)
@@ -52,6 +54,27 @@ Concrete subtypes with values (Deriv1, Deriv2, Deriv3) carry their own Tv parame
 - `Right{B}`: Endpoint wrapper for BC at right (x[end]) - used by quadratic splines
 """
 abstract type AbstractBC end
+
+"""
+    NoBC <: AbstractBC
+
+Sentinel boundary-condition value meaning "no BC requested; use the method's
+built-in endpoint rule". Currently the default `bc` kwarg for **Constant and
+Linear** interpolation (the only non-cubic methods wired for `bc` in this
+release). PCHIP / Cardinal / Akima will adopt the same default when their
+`bc` kwarg is added (planned next phase).
+
+For supported methods, `bc=NoBC()` preserves existing behavior, and
+`bc=PeriodicBC(...)` engages the periodic build path.
+
+Cubic and Quadratic do not use `NoBC` because their coefficient systems are
+under-determined without a concrete closure condition (they default to
+`CubicFit()` and `Left(QuadraticFit())` respectively).
+
+`_is_periodic_bc(::NoBC)` falls through the `AbstractBC` default and returns
+`false`, so `NoBC` never triggers periodic dispatch.
+"""
+struct NoBC <: AbstractBC end
 
 """
     PointBC <: AbstractBC

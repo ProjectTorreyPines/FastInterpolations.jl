@@ -338,6 +338,7 @@ sitp = linear_interp(x, Series(y_complex, y1))
 function linear_interp(
         x::AbstractVector{Tg},
         s::Series;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg}
@@ -350,8 +351,17 @@ function linear_interp(
     # returns Tv unchanged (no widening to grid type).
     Tv_out = Tg_new <: AbstractFloat ? _value_type(Tv, Tg_new) : Tv
     y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
-    extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(extrap, Tv_out) : extrap
 
+    # Periodic path: extend x + y_mat once (matrix overload of `_prepare_periodic`),
+    # validate `:inclusive` endpoints per series, force WrapExtrap.
+    if _is_periodic_bc(bc)
+        x_typed, y_mat = _prepare_periodic(x_typed, y_mat, bc)
+        _validate_series_endpoints(bc, y_mat)
+        extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(WrapExtrap(), Tv_out) : WrapExtrap()
+        return LinearSeriesInterpolant(x_typed, y_mat, extrap_p, search)
+    end
+
+    extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(extrap, Tv_out) : extrap
     return LinearSeriesInterpolant(x_typed, y_mat, extrap_p, search)
 end
 

@@ -23,6 +23,7 @@ Evaluates directly from grids + data without constructing a LinearInterpolantND.
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}},
+        bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
@@ -33,11 +34,15 @@ Evaluates directly from grids + data without constructing a LinearInterpolantND.
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    spacings = _create_spacings_pooled(pool, grids)
-    q_eval = _handle_all_extraps(query, grids, extraps_val)
-    indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
+    # Extend exclusive periodic axes (pool-based, zero heap alloc).
+    # Non-periodic axes pass through unchanged.
+    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
+
+    spacings = _create_spacings_pooled(pool, grids_p)
+    q_eval = _handle_all_extraps(query, grids_p, extraps_val)
+    indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches, hints)
     hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
-    return _multilinear_sum(data, indices, hs, αs, ops, Val(N))
+    return _multilinear_sum(data_p, indices, hs, αs, ops, Val(N))
 end
 
 """
@@ -52,6 +57,7 @@ Writes results into `output`. No heap allocation beyond spacings.
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         queries,
+        bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
@@ -62,25 +68,26 @@ Writes results into `output`. No heap allocation beyond spacings.
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps_val)
-    spacings = _create_spacings_pooled(pool, grids)
+    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
+    spacings = _create_spacings_pooled(pool, grids_p)
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids, extraps_val, ops, first(data))
+        oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end
-        q_eval = _handle_all_extraps(query_k, grids, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, policies, hints, mono)
+        q_eval = _handle_all_extraps(query_k, grids_p, extraps_val)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, policies, hints, mono)
         hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
-        output[k] = _multilinear_sum(data, indices, hs, αs, ops, Val(N))
+        output[k] = _multilinear_sum(data_p, indices, hs, αs, ops, Val(N))
     end
     return output
 end
 
 # Function barrier: forces Julia to runtime-dispatch on the concrete
 # searches tuple type before entering the @with_pool boundary.
-function _linear_nd_batch_dispatch!(output, grids, data, queries, extraps, policies, ops, hints, mono)
-    return _linear_interp_nd_oneshot_batch!(output, grids, data, queries, extraps, policies, ops, hints, mono)
+function _linear_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps, policies, ops, hints, mono)
+    return _linear_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps, policies, ops, hints, mono)
 end
 
 # ========================================
@@ -97,6 +104,7 @@ function linear_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}};
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
@@ -108,9 +116,10 @@ function linear_interp(
 
     searches = _resolve_search_nd(search, Val(N), query)  # scalar: type-based (no monotonicity check)
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    bcs = _resolve_bcs_nd(bc, Val(N))
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops, hint)::Tr
+    return _linear_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
 
 """
@@ -124,6 +133,7 @@ function linear_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
@@ -133,7 +143,7 @@ function linear_interp(
     Tq = _query_eltype(queries)
     Tr = _output_eltype(Tv, Tg, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
-    linear_interp!(output, grids, data, queries; extrap, search, deriv, hint)
+    linear_interp!(output, grids, data, queries; bc, extrap, search, deriv, hint)
     return output
 end
 
@@ -153,6 +163,7 @@ function linear_interp!(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
@@ -166,7 +177,8 @@ function linear_interp!(
     hints_nd = hint
     mono = _check_mono_nd(policies, queries)
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    bcs = _resolve_bcs_nd(bc, Val(N))
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _linear_nd_batch_dispatch!(output, grids_typed, data, queries, extraps_val, policies, ops, hints_nd, mono)
+    return _linear_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, policies, ops, hints_nd, mono)
 end

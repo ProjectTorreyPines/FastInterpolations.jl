@@ -10,6 +10,9 @@
 # ║              Piecewise constant interpolation with side options           ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
+# PeriodicBC 1D dispatch uses the shared `_periodic_extend_1d_pooled!` helper
+# from core/periodic.jl (same path Linear and Cubic oneshot use).
+
 # ========================================
 # Core eval: extrap dispatch → search → kernel (no intermediate layers)
 # ========================================
@@ -98,7 +101,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, xi; extrap=NoExtrap(), side=NearestSide(), deriv=EvalValue(), search=AutoSearch())
+    constant_interp(x, y, xi; bc=NoBC(), side=NearestSide(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
 
 Constant (step/piecewise constant) interpolation at a single point.
 
@@ -106,6 +109,9 @@ Constant (step/piecewise constant) interpolation at a single point.
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (same length as x)
 - `xi::Real`: Query point
+- `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
+  `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
+  for periodic interpolation (extrap is forced to `WrapExtrap()` in that case).
 - `extrap::AbstractExtrap`: Extrapolation mode
   - `NoExtrap()` (default): throws DomainError if outside domain
   - `ClampExtrap()`: clamp to boundary values
@@ -147,8 +153,9 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xi::Tq;
-        extrap::AbstractExtrap = NoExtrap(),
+        bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
+        extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
@@ -156,11 +163,26 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     x_typed = _prepare_grid(x)
-    searcher = _resolve_search(x_typed, xi, search, hint)
-    result = _constant_eval_at_point(x_typed, y, xi, extrap, side, deriv, searcher)
-    # Constant returns y[idx] directly — promote Int/Rational to Float for
-    # consistency with batch path and other methods (which auto-promote via arithmetic).
+    # Single-exit "compute → coerce" pattern: Constant returns `y[idx]`
+    # directly (no arithmetic auto-promotion), so Int/Rational results are
+    # promoted to Float once, regardless of which branch produced them.
+    # Other methods (Linear/Hermite/Quadratic) auto-promote via kernel
+    # arithmetic and use the simpler early-return template.
+    result = if _is_periodic_bc(bc)
+        _constant_interp_periodic_scalar(x_typed, y, xi, bc, extrap, side, deriv, search, hint)
+    else
+        searcher = _resolve_search(x_typed, xi, search, hint)
+        _constant_eval_at_point(x_typed, y, xi, extrap, side, deriv, searcher)
+    end
     return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
+end
+
+@inline @with_pool pool function _constant_interp_periodic_scalar(
+        x, y, xi, bc, extrap, side, deriv, search, hint
+    )
+    x_eff, y_eff, extrap_eff = _periodic_extend_1d_pooled!(pool, x, y, bc, extrap)
+    searcher = _resolve_search(x_eff, xi, search, hint)
+    return _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
 end
 
 # ========================================
@@ -168,14 +190,14 @@ end
 # ========================================
 
 """
-    constant_interp!(output, x, y, x_targets; extrap=NoExtrap(), side=NearestSide(), deriv=EvalValue(), search=AutoSearch())
+    constant_interp!(output, x, y, x_targets; bc=NoBC(), side=NearestSide(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
 
 Zero-allocation constant interpolation for multiple query points.
 
 # Arguments
 - `output`: Pre-allocated output vector
 - `x, y, x_targets`: Grid and query points
-- `extrap, side, deriv`: Same as `constant_interp`
+- `bc, extrap, side, deriv`: Same as `constant_interp`
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
 
 # Example
@@ -199,8 +221,9 @@ function constant_interp!(
         x::AbstractVector,
         y::AbstractVector,
         x_targets::AbstractVector;
-        extrap::AbstractExtrap = NoExtrap(),
+        bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
+        extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
@@ -208,8 +231,20 @@ function constant_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     x_typed = _prepare_grid(x)
+    if _is_periodic_bc(bc)
+        return _constant_interp_periodic_vector!(output, x_typed, y, x_targets, bc, extrap, side, deriv, search)
+    end
     searcher = _resolve_search(x_typed, x_targets, search, nothing)
     _constant_vector_loop!(output, x_typed, y, x_targets, extrap, side, deriv, searcher)
+    return output
+end
+
+@inline @with_pool pool function _constant_interp_periodic_vector!(
+        output, x, y, x_targets, bc, extrap, side, deriv, search
+    )
+    x_eff, y_eff, extrap_eff = _periodic_extend_1d_pooled!(pool, x, y, bc, extrap)
+    searcher = _resolve_search(x_eff, x_targets, search, nothing)
+    _constant_vector_loop!(output, x_eff, y_eff, x_targets, extrap_eff, side, deriv, searcher)
     return output
 end
 
@@ -240,14 +275,15 @@ function constant_interp(
         x::AbstractVector,
         y::AbstractVector,
         x_targets::AbstractVector;
-        extrap::AbstractExtrap = NoExtrap(),
+        bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
+        extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
     T_out = _output_eltype(eltype(y), Tg)
     output = Vector{T_out}(undef, length(x_targets))
-    constant_interp!(output, x, y, x_targets; extrap, side, deriv, search)
+    constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)
     return output
 end

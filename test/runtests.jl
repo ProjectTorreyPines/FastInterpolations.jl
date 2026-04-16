@@ -76,6 +76,8 @@ else
     include("test_random_grid.jl")
     include("test_periodic_bc.jl")
     include("test_periodic_exclusive.jl")
+    include("test_linear_periodic.jl")
+    include("test_constant_periodic.jl")
     include("test_thomas_lu_solver.jl")
     include("test_generic_bc.jl")
     include("test_polyfit_bc.jl")

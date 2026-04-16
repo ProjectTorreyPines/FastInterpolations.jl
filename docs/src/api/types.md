@@ -95,6 +95,7 @@ laplacian
 
 ```@docs
 AbstractBC
+NoBC
 PointBC
 Deriv1
 Deriv2

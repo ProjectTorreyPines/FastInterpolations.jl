@@ -837,4 +837,42 @@ const FI = FastInterpolations
         itp(5.55)  # warmup
         @test (@allocated itp(5.55)) <= ALLOC_THRESHOLD
     end
+
+    # ========================================================================
+    # PeriodicBC + Dual grid — verifies the `_PromotableValue` guard in
+    # `_extend_exclusive` and `_periodic_extend_1d_pooled!` does NOT misfire on
+    # duck grids (Dual is not `<: _PromotableValue`, so eltype passes through
+    # unchanged to preserve AD chains).
+    # ========================================================================
+    @testset "PeriodicBC — Dual grid preserves type (persistent + oneshot)" begin
+        # Use the tag-only `Dual{:tag}(value, partial)` form — the fully
+        # parameterized `Dual{T, V, N}` constructor wants `Partials`, not a raw
+        # Float for the second argument.
+        x_dual = [ForwardDiff.Dual{:pbc}(Float64(i), 0.0) for i in 0:5]
+        y = sin.(2π .* (Float64(0):Float64(5)) ./ 6)
+
+        itp = linear_interp(x_dual, y; bc = PeriodicBC(endpoint = :exclusive, period = 6.0))
+        @test eltype(itp.x) <: ForwardDiff.Dual
+        @test length(itp.x) == 7  # N+1 extension, Dual type preserved
+
+        q = ForwardDiff.Dual{:pbc}(2.5, 1.0)
+        out = linear_interp(x_dual, y, q; bc = PeriodicBC(endpoint = :exclusive, period = 6.0))
+        @test out isa ForwardDiff.Dual
+    end
+
+    @testset "PeriodicBC — AD through Int-grid oneshot derivative" begin
+        # Int Range + PeriodicBC + ForwardDiff.derivative: Int→Float promotion
+        # on the grid side must not interfere with the query's Dual AD path.
+        x = 0:10
+        y = sin.(2π .* (x ./ 10))
+        bc = PeriodicBC(endpoint = :exclusive, period = 11.0)
+        f(xq) = linear_interp(x, y, xq; bc = bc)
+        d = ForwardDiff.derivative(f, 2.5)
+        @test d isa Float64
+        @test isfinite(d)
+
+        h = 1.0e-6
+        fd = (f(2.5 + h) - f(2.5 - h)) / (2h)
+        @test isapprox(d, fd; atol = 1.0e-5)
+    end
 end

@@ -11,12 +11,16 @@
 # ║                      Zero type conversion overhead                        ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
+# PeriodicBC 1D dispatch uses the shared `_periodic_extend_1d_pooled!` helper
+# from core/periodic.jl (no method-specific logic needed — Linear has no
+# coefficient system, so extension alone suffices).
+
 # ========================================
 # Vector interpolation (in-place, zero-allocation)
 # ========================================
 
 """
-    linear_interp!(output, x, y, x_targets; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
+    linear_interp!(output, x, y, x_targets; bc=NoBC(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
 
 Zero-allocation linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -24,6 +28,9 @@ Zero-allocation linear interpolation with automatic dispatch:
 
 # Arguments
 - `output`: Pre-allocated output vector (must be floating-point type)
+- `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
+  `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
+  for periodic interpolation (extrap is forced to `WrapExtrap()` in that case).
 - `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative, `DerivOp(2)` second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
@@ -54,11 +61,17 @@ function linear_interp! end
 # Unified method for AbstractVector
 # Unified in-place entry point. Handles promotion internally via _promote_itp_inputs,
 # so no separate Real/Mixed-type wrapper is needed (same pattern as the scalar API).
+#
+# Hot-path (non-periodic) stays pool-free — `@with_pool` is hoisted into the
+# periodic helper below. Directly wrapping the whole entry point added ~5-25 ns
+# per call on small queries even when the pool was unused, a measurable
+# regression vs master on the `4_linear_oneshot/q00001` benchmark.
 function linear_interp!(
         output::AbstractVector,
         x::AbstractVector,
         y::AbstractVector,
         x_targets::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
@@ -67,8 +80,21 @@ function linear_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     x_typed = _prepare_grid(x)
+    if _is_periodic_bc(bc)
+        return _linear_interp_periodic_vector!(output, x_typed, y, x_targets, bc, extrap, deriv, search)
+    end
     searcher = _resolve_search(x_typed, x_targets, search, nothing)
     return _linear_interp_loop!(output, x_typed, y, x_targets, extrap, deriv, searcher)
+end
+
+# Pool-scoped helper for the periodic oneshot vector path. Isolated so the
+# common non-periodic path above doesn't pay the `@with_pool` overhead.
+@inline @with_pool pool function _linear_interp_periodic_vector!(
+        output, x, y, x_targets, bc, extrap, deriv, search
+    )
+    x_eff, y_eff, extrap_eff = _periodic_extend_1d_pooled!(pool, x, y, bc, extrap)
+    searcher = _resolve_search(x_eff, x_targets, search, nothing)
+    return _linear_interp_loop!(output, x_eff, y_eff, x_targets, extrap_eff, deriv, searcher)
 end
 
 # Internal loop with AbstractExtrap dispatch and Searcher (type-stable)
@@ -134,7 +160,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xq::Real; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch()) -> AbstractFloat
+    linear_interp(x, y, xq::Real; bc=NoBC(), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch()) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -142,6 +168,9 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 
 # Arguments
 - `xq::Real`: Single interpolation query point
+- `bc::AbstractBC`: Boundary condition. Default `NoBC()` (no BC). Pass
+  `PeriodicBC(endpoint=:inclusive)` or `PeriodicBC(endpoint=:exclusive, period=L)`
+  for periodic interpolation (extrap is forced to `WrapExtrap()` in that case).
 - `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
@@ -264,6 +293,7 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch(),
@@ -272,8 +302,20 @@ end
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     x_typed = _prepare_grid(x)
+    if _is_periodic_bc(bc)
+        return _linear_interp_periodic_scalar(x_typed, y, xq, bc, extrap, deriv, search, hint)
+    end
     searcher = _resolve_search(x_typed, xq, search, hint)
     return _linear_eval_at_point(x_typed, y, xq, extrap, deriv, searcher)
+end
+
+# Pool-scoped scalar periodic helper — kept out of the hot non-periodic path.
+@inline @with_pool pool function _linear_interp_periodic_scalar(
+        x, y, xq, bc, extrap, deriv, search, hint
+    )
+    x_eff, y_eff, extrap_eff = _periodic_extend_1d_pooled!(pool, x, y, bc, extrap)
+    searcher = _resolve_search(x_eff, xq, search, hint)
+    return _linear_eval_at_point(x_eff, y_eff, xq, extrap_eff, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
@@ -291,6 +333,7 @@ function linear_interp(
         x::AbstractVector,
         y::AbstractVector,
         x_targets::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
@@ -298,7 +341,7 @@ function linear_interp(
     Tg = _promote_grid_float(eltype(x), eltype(y))
     T_out = _output_eltype(eltype(y), Tg)
     output = Vector{T_out}(undef, length(x_targets))
-    linear_interp!(output, x, y, x_targets; extrap, deriv, search)
+    linear_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
     return output
 end
 

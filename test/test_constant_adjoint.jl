@@ -174,9 +174,18 @@ end
         xq32 = Float32.(xq)
         f32 = randn(Float32, n_grid)
         yb32 = randn(Float32, n_query)
+        # The dot-product identity LHS = Σᵢ f[W_idx[i]]·ȳ[i] (30 terms, ordered
+        # by query) vs RHS = Σⱼ f[j]·(Σ_{i:W_idx[i]=j} ȳ[i]) (50 terms, ordered
+        # by grid with regrouped ȳ sums) is mathematically exact but at Float32
+        # the different accumulation orders diverge by a few ULP when signs
+        # cancel. Platforms differ in their FMA / BLAS reduction lane choices
+        # (Windows+Julia 1.12 x86_64 observed to cross `sqrt(eps(Float32))`
+        # on the LeftSide random instance). Use a looser tolerance that is
+        # still tight enough to catch real adjoint-operator bugs (which fail
+        # by `O(1)` relative error, not a few ULP).
         _, _, ok = constant_dot_product_test(
             x32, xq32, f32, yb32;
-            side = side_mode, rtol = sqrt(eps(Float32))
+            side = side_mode, rtol = 10 * sqrt(eps(Float32))
         )
         @test ok
     end

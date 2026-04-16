@@ -253,4 +253,68 @@ using FastInterpolations
         @test outputs[1] ≈ outputs_ref[1]
         @test outputs[2] ≈ outputs_ref[2]
     end
+
+    @testset "PeriodicBC — scalar, :inclusive" begin
+        s = Series(y_sin, y_cos)   # y[1] == y[end] = 0
+        vals = linear_interp(x, s, 0.37; bc = PeriodicBC())
+        vals_wrap = linear_interp(x, s, 0.37 + 1.0; bc = PeriodicBC())
+        @test vals ≈ vals_wrap atol = 1.0e-12
+    end
+
+    @testset "PeriodicBC — scalar, :exclusive FVM" begin
+        xc = [0.5, 1.5, 2.5]
+        s = Series([10.0, 20.0, 30.0], [1.0, 2.0, 3.0])
+        bc = PeriodicBC(endpoint = :exclusive, period = 3.0)
+        @test linear_interp(xc, s, 3.0; bc)[1] ≈ 20.0 atol = 1.0e-12   # midpoint of extended [2.5, 3.5]
+        @test linear_interp(xc, s, 3.0; bc)[2] ≈ 2.0 atol = 1.0e-12
+    end
+
+    @testset "PeriodicBC — scalar in-place" begin
+        s = Series(y_sin, y_cos)
+        out = zeros(2)
+        linear_interp!(out, x, s, 0.37; bc = PeriodicBC())
+        @test out ≈ linear_interp(x, s, 0.37; bc = PeriodicBC())
+    end
+
+    @testset "PeriodicBC — vector in-place, :inclusive" begin
+        s = Series(y_sin, y_cos)
+        xqs = [0.1, 0.37, 0.9]
+        outputs = [zeros(length(xqs)) for _ in 1:2]
+        linear_interp!(outputs, x, s, xqs; bc = PeriodicBC())
+        outputs_wrap = [zeros(length(xqs)) for _ in 1:2]
+        linear_interp!(outputs_wrap, x, s, xqs .+ 1.0; bc = PeriodicBC())
+        @test outputs[1] ≈ outputs_wrap[1] atol = 1.0e-12
+        @test outputs[2] ≈ outputs_wrap[2] atol = 1.0e-12
+    end
+
+    @testset "PeriodicBC — vector in-place, :exclusive" begin
+        xc = [0.5, 1.5, 2.5]
+        s = Series([10.0, 20.0, 30.0], [1.0, 2.0, 3.0])
+        bc = PeriodicBC(endpoint = :exclusive, period = 3.0)
+        xqs = [0.5, 2.5, 3.0]
+        outputs = [zeros(3), zeros(3)]
+        linear_interp!(outputs, xc, s, xqs; bc)
+        @test outputs[1][2] ≈ 30.0 atol = 1.0e-12
+        @test outputs[1][3] ≈ 20.0 atol = 1.0e-12   # midpoint
+        @test outputs[2][3] ≈ 2.0 atol = 1.0e-12
+    end
+
+    @testset "PeriodicBC — vector allocating" begin
+        s = Series(y_sin, y_cos)
+        outs = linear_interp(x, s, [0.1, 0.37]; bc = PeriodicBC())
+        @test length(outs) == 2 && length(outs[1]) == 2
+    end
+
+    @testset "PeriodicBC — :inclusive endpoint mismatch raises" begin
+        s = Series(y_sin, y_exp)   # y_exp[1] != y_exp[end]
+        @test_throws ArgumentError linear_interp(x, s, 0.37; bc = PeriodicBC())
+    end
+
+    @testset "PeriodicBC — :exclusive period too small raises" begin
+        # Vector grid span = 3.0, period = 2.5 → virtual endpoint < last(x) → throw
+        xv = [0.0, 1.0, 2.0, 3.0]
+        s = Series([0.0, 1.0, 2.0, 3.0])
+        bc_bad = PeriodicBC(endpoint = :exclusive, period = 2.5)
+        @test_throws ArgumentError linear_interp(xv, s, 1.5; bc = bc_bad)
+    end
 end

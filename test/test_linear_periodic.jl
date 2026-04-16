@@ -254,6 +254,15 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         @test_throws ArgumentError linear_interp(x, y, 1.5; bc = PeriodicBC(endpoint = :exclusive))
     end
 
+    @testset "Edge — oneshot Vector grid :exclusive period too small raises" begin
+        # first(x) + period = 0 + 2.5 = 2.5 < last(x) = 3.0 → virtual endpoint not beyond grid
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = sin.(x)
+        bc_bad = PeriodicBC(endpoint = :exclusive, period = 2.5)
+        @test_throws ArgumentError linear_interp(x, y, 1.5; bc = bc_bad)
+        @test_throws ArgumentError linear_interp(x, y, [1.5, 2.5]; bc = bc_bad)   # vector oneshot path
+    end
+
     # ============================================================
     # Interpolant path — extended copy storage
     # ============================================================

@@ -353,96 +353,128 @@ RefHint(idx::Int) = RefHint(Ref(idx))
 # ----------------------------------------
 
 """
-    Searcher{P<:AbstractSearchPolicy, H<:AbstractHint}
+    Searcher{P<:AbstractSearchPolicy, H<:AbstractHint, BC<:AbstractBC}
 
-Internal searcher type combining search policy with hint state.
+Internal searcher type combining search policy with hint state and (optional) BC context.
 Type parameters enable compile-time dispatch with zero runtime overhead.
 
 # Type Parameters
 - `P`: Search policy type (`BinarySearch`, `LinearBinarySearch{N}`)
 - `H`: Hint type (`NoHint`, `RefHint`)
+- `BC`: Boundary condition type (`NoBC` default — zero-size singleton, compiler-elided;
+  `PeriodicBC{:exclusive, ...}` enables seam-cell wrap in `search_interval` for the
+  oneshot exclusive periodic path with zero data copy)
 
 # Fields
 - `hint::H`: The hint instance (NoHint singleton or RefHint with mutable Ref)
+- `bc::BC`: BC context (`NoBC()` for non-periodic paths; `PeriodicBC(...)` for oneshot
+  exclusive periodic where query-time seam wrap is required)
 
 # Note
 Users should not construct Searcher directly. Use the policy types (`BinarySearch()`,
-`LinearBinarySearch()`) with the `search` keyword argument instead.
+`LinearBinarySearch()`) with the `search` keyword argument instead. The `bc` field is
+populated by `_resolve_search(grid, q, search, hint, bc)` at interpolant construction
+or oneshot entry.
 """
-struct Searcher{P <: AbstractSearchPolicy, H <: AbstractHint}
+struct Searcher{P <: AbstractSearchPolicy, H <: AbstractHint, BC <: AbstractBC}
     hint::H
+    bc::BC
 end
+
+# Outer constructors: default BC to NoBC so existing 2-type-param `Searcher{P, H}(hint)`
+# call sites continue to work unchanged. The BC type param is only specified explicitly
+# when a periodic BC context is being threaded (oneshot exclusive periodic path).
+@inline Searcher{P, H}(hint::H) where {P <: AbstractSearchPolicy, H <: AbstractHint} =
+    Searcher{P, H, NoBC}(hint, NoBC())
+@inline Searcher{P, H}(hint::H, bc::BC) where {P <: AbstractSearchPolicy, H <: AbstractHint, BC <: AbstractBC} =
+    Searcher{P, H, BC}(hint, bc)
 
 """
     DEFAULT_SEARCHER
 
-Default internal searcher: stateless binary search with no hint.
+Default internal searcher: stateless binary search with no hint and no BC.
 Compiles to identical code as direct `_search_interval` call.
 """
-const DEFAULT_SEARCHER = Searcher{BinarySearch, NoHint}(NoHint())
+const DEFAULT_SEARCHER = Searcher{BinarySearch, NoHint, NoBC}(NoHint(), NoBC())
 
 # ----------------------------------------
 # Policy → Searcher Conversion (Thread-Safe)
 # ----------------------------------------
 
 """
-    _to_searcher(policy::AbstractSearchPolicy) -> Searcher
+    _to_searcher(policy::AbstractSearchPolicy, hint=nothing, bc=NoBC()) -> Searcher
 
-Convert user-facing policy to internal Searcher with fresh hint state.
-Creates a new RefHint for stateful policies, ensuring thread safety.
+Convert user-facing policy + optional external hint + optional BC context into an
+internal Searcher. Creates a new RefHint for stateful policies, ensuring thread safety.
+
+# Arguments
+- `hint=nothing` (default): stateless search, Searcher has `NoHint` type param.
+- `hint::Base.RefValue{Int}`: persistent hint write-back (ODE/streaming).
+- `bc=NoBC()` (default): non-periodic search, Searcher has `NoBC` type param (zero size,
+  compiler-elided — bit-identical codegen to pre-BC-refactor path).
+- `bc::PeriodicBC{...}`: threads BC into Searcher so that `search_interval` dispatches
+  to the exclusive-periodic seam-wrap path at query time (oneshot entry points only).
+
+Via Julia's default-arg expansion, each policy has 2 source methods (`::Nothing` vs
+`Base.RefValue{Int}`) that Julia auto-expands to cover all {1, 2, 3}-arity combinations.
 """
-@inline _to_searcher(::BinarySearch) = Searcher{BinarySearch, NoHint}(NoHint())
-@inline _to_searcher(::LinearSearch) = Searcher{LinearSearch, RefHint}(RefHint())
-@inline _to_searcher(::LinearBinarySearch{MAX}) where {MAX} = Searcher{LinearBinarySearch{MAX}, RefHint}(RefHint())
+@inline _to_searcher(::BinarySearch, ::Nothing = nothing, bc::AbstractBC = NoBC()) =
+    Searcher{BinarySearch, NoHint, typeof(bc)}(NoHint(), bc)
+@inline _to_searcher(::BinarySearch, hint::Base.RefValue{Int}, bc::AbstractBC = NoBC()) =
+    Searcher{BinarySearch, RefHint, typeof(bc)}(RefHint(hint), bc)
 
-# ----------------------------------------
-# 2-arg overloads: Policy + External Hint
-# ----------------------------------------
-# Enables persistent hint across scalar calls (ODE/streaming pattern).
-# When hint=nothing, behaves identically to 1-arg version.
-# When hint=Ref{Int}, stateful policies use the external Ref for persistence.
+@inline _to_searcher(::LinearSearch, ::Nothing = nothing, bc::AbstractBC = NoBC()) =
+    Searcher{LinearSearch, RefHint, typeof(bc)}(RefHint(), bc)
+@inline _to_searcher(::LinearSearch, hint::Base.RefValue{Int}, bc::AbstractBC = NoBC()) =
+    Searcher{LinearSearch, RefHint, typeof(bc)}(RefHint(hint), bc)
 
-@inline _to_searcher(::BinarySearch, ::Nothing) = Searcher{BinarySearch, NoHint}(NoHint())
-@inline _to_searcher(::BinarySearch, hint::Base.RefValue{Int}) = Searcher{BinarySearch, RefHint}(RefHint(hint))  # Binary + hint write-back (respects explicit policy choice)
-@inline _to_searcher(::LinearSearch, ::Nothing) = Searcher{LinearSearch, RefHint}(RefHint())
-@inline _to_searcher(::LinearSearch, hint::Base.RefValue{Int}) = Searcher{LinearSearch, RefHint}(RefHint(hint))
-@inline _to_searcher(::LinearBinarySearch{MAX}, ::Nothing) where {MAX} = Searcher{LinearBinarySearch{MAX}, RefHint}(RefHint())
-@inline _to_searcher(::LinearBinarySearch{MAX}, hint::Base.RefValue{Int}) where {MAX} = Searcher{LinearBinarySearch{MAX}, RefHint}(RefHint(hint))
+@inline _to_searcher(::LinearBinarySearch{MAX}, ::Nothing = nothing, bc::AbstractBC = NoBC()) where {MAX} =
+    Searcher{LinearBinarySearch{MAX}, RefHint, typeof(bc)}(RefHint(), bc)
+@inline _to_searcher(::LinearBinarySearch{MAX}, hint::Base.RefValue{Int}, bc::AbstractBC = NoBC()) where {MAX} =
+    Searcher{LinearBinarySearch{MAX}, RefHint, typeof(bc)}(RefHint(hint), bc)
 
 # AutoSearch fallbacks: _resolve_search_policy should be called first, but if any
 # code path misses resolution, fall back to BinarySearch (safe stateless default).
-@inline _to_searcher(::AutoSearch) = Searcher{BinarySearch, NoHint}(NoHint())
-@inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{BinarySearch, NoHint}(NoHint())
-@inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = _to_searcher(LinearBinarySearch(), hint)  # auto-upgrade to default LinearBinarySearch
+# Hinted form auto-upgrades to default LinearBinarySearch to exploit locality.
+@inline _to_searcher(::AutoSearch, ::Nothing = nothing, bc::AbstractBC = NoBC()) =
+    Searcher{BinarySearch, NoHint, typeof(bc)}(NoHint(), bc)
+@inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}, bc::AbstractBC = NoBC()) =
+    _to_searcher(LinearBinarySearch(), hint, bc)
 
 # DirectSearch: Range grids only. Carries DirectSearch through to Searcher
 # so search_interval dispatches on policy type alone (no grid-type branching).
-@inline _to_searcher(::DirectSearch) = Searcher{DirectSearch, NoHint}(NoHint())
-@inline _to_searcher(::DirectSearch, ::Nothing) = Searcher{DirectSearch, NoHint}(NoHint())
-@inline _to_searcher(::DirectSearch, hint::Base.RefValue{Int}) = Searcher{DirectSearch, RefHint}(RefHint(hint))
+@inline _to_searcher(::DirectSearch, ::Nothing = nothing, bc::AbstractBC = NoBC()) =
+    Searcher{DirectSearch, NoHint, typeof(bc)}(NoHint(), bc)
+@inline _to_searcher(::DirectSearch, hint::Base.RefValue{Int}, bc::AbstractBC = NoBC()) =
+    Searcher{DirectSearch, RefHint, typeof(bc)}(RefHint(hint), bc)
 
 # ----------------------------------------
 # Canonical resolver APIs
 # ----------------------------------------
 # Resolution pipeline:
 #   _resolve_search_policy     — AutoSearch/tuple → concrete policy (BinarySearch, LinearBinarySearch, DirectSearch)
-#   _resolve_search            — policy + grid + hint → concrete Searcher (THE entry point)
+#   _resolve_search            — policy + grid + hint [+ bc] → concrete Searcher (THE entry point)
 #   _resolve_searcher_for_grid — pre-built Searcher → grid-adapted Searcher (Range → DirectSearch)
 #
-# _to_searcher is preserved as the policy→Searcher converter used internally.
+# _to_searcher is the policy→Searcher converter used internally.
 
 # _resolve_searcher_for_grid: adapt pre-built Searcher to grid type.
 # Converts any Searcher to DirectSearch variant when grid is AbstractRange.
+# Preserves the BC type param across adaptation (critical for oneshot periodic path
+# where bc carries the period for seam wrap).
 # P<:AbstractSearchPolicy bound required to avoid method ambiguity with the catchall.
-@inline _resolve_searcher_for_grid(::AbstractRange, ::Searcher{P, NoHint}) where {P <: AbstractSearchPolicy} = Searcher{DirectSearch, NoHint}(NoHint())
-@inline _resolve_searcher_for_grid(::AbstractRange, s::Searcher{P, RefHint}) where {P <: AbstractSearchPolicy} = Searcher{DirectSearch, RefHint}(s.hint)
+@inline _resolve_searcher_for_grid(::AbstractRange, s::Searcher{P, NoHint, BC}) where {P <: AbstractSearchPolicy, BC <: AbstractBC} =
+    Searcher{DirectSearch, NoHint, BC}(NoHint(), s.bc)
+@inline _resolve_searcher_for_grid(::AbstractRange, s::Searcher{P, RefHint, BC}) where {P <: AbstractSearchPolicy, BC <: AbstractBC} =
+    Searcher{DirectSearch, RefHint, BC}(s.hint, s.bc)
 @inline _resolve_searcher_for_grid(_, s::Searcher) = s
 
-# _resolve_search: one-liner entry point for all eval paths.
-# Composes policy resolution + searcher creation + grid adaptation.
-# User API accepts AbstractSearchPolicy only (enforced by kwarg type constraints).
-@inline _resolve_search(grid, q, search, hint) =
-    _to_searcher(_resolve_search_policy(grid, q, search, hint), hint)
+# _resolve_search: single entry point for all eval paths.
+# Composes policy resolution + searcher creation + (optional) BC threading.
+# `bc=NoBC()` (default) is used by the 99% non-periodic path — bit-identical codegen to
+# pre-BC-refactor. `bc::PeriodicBC(...)` is supplied only by oneshot periodic entries.
+@inline _resolve_search(grid, q, search, hint, bc::AbstractBC = NoBC()) =
+    _to_searcher(_resolve_search_policy(grid, q, search, hint), hint, bc)
 
 # ========================================
 # 2. Base Implementations
@@ -838,59 +870,108 @@ end
 @inline _search_grididx_dispatch(::NoHint, x::AbstractVector, xq::GridIdx) = _search_grididx(x, xq)
 @inline _search_grididx_dispatch(h::RefHint, x::AbstractVector, xq::GridIdx) = _search_grididx!(h, x, xq)
 
-# Layer 1: search_interval entry points (GridIdx vs Real)
-# Only 4 methods — unparameterized Searcher avoids ambiguity with Layer 2.
-@inline search_interval(s::Searcher, x::AbstractVector, xq::GridIdx) =
-    _search_grididx_dispatch(s.hint, x, xq)
-@inline search_interval(s::Searcher, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx) =
-    _search_grididx_dispatch(s.hint, x, xq)
-@inline search_interval(s::Searcher, x::AbstractVector, xq::Real) =
-    _search_interval_real(s, x, xq)
-@inline search_interval(s::Searcher, x::AbstractVector, spacing::AbstractGridSpacing, xq::Real) =
-    _search_interval_real(s, x, spacing, xq)
+# Layer 1: search_interval entry points (GridIdx vs Real, with BC-aware dispatch for Real).
+#
+# Return shape: 4-tuple `(idx_L, idx_R, xL, xR)` uniformly across all dispatches.
+# - NoBC (default, non-periodic): `idx_R = idx_L + 1`, `xR = x[idx_R]` — pure packaging.
+# - PeriodicBC{:inclusive}: same as NoBC (matched endpoints, no seam wrap needed at query).
+# - PeriodicBC{:exclusive}: when `xq >= x[end]`, return seam-cell tuple `(n, 1, x[n], x[1]+period)`
+#   — the ONE optimized dispatch that wraps `idx_R=1` with period-shifted `xR` without any
+#   data copy. Internal `_search_interval_real` / `_search_binary` / `_search_direct` are
+#   not touched; the seam branch is a single compare at the dispatcher level.
+#
+# GridIdx path is BC-agnostic (user-supplied explicit index semantics — no wrap).
 
-# --- Layer 2: Policy-specific Real dispatch ---
+# --- GridIdx dispatchers: BC-agnostic, pack 4-tuple ---
+@inline function search_interval(s::Searcher, x::AbstractVector, xq::GridIdx)
+    idx, xL, xR = _search_grididx_dispatch(s.hint, x, xq)
+    return idx, idx + 1, xL, xR
+end
+@inline function search_interval(s::Searcher, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx)
+    idx, xL, xR = _search_grididx_dispatch(s.hint, x, xq)
+    return idx, idx + 1, xL, xR
+end
+
+# --- Real + NoBC: pure 3→4 tuple packaging, no seam wrap ---
+@inline function search_interval(s::Searcher{P, H, NoBC}, x::AbstractVector, xq::Real) where {P, H}
+    idx, xL, xR = _search_interval_real(s, x, xq)
+    return idx, idx + 1, xL, xR
+end
+@inline function search_interval(s::Searcher{P, H, NoBC}, x::AbstractVector, spacing::AbstractGridSpacing, xq::Real) where {P, H}
+    idx, xL, xR = _search_interval_real(s, x, spacing, xq)
+    return idx, idx + 1, xL, xR
+end
+
+# --- Real + PeriodicBC{:inclusive}: same as NoBC (matched endpoints, no wrap) ---
+@inline function search_interval(s::Searcher{P, H, <:PeriodicBC{:inclusive}}, x::AbstractVector, xq::Real) where {P, H}
+    idx, xL, xR = _search_interval_real(s, x, xq)
+    return idx, idx + 1, xL, xR
+end
+@inline function search_interval(s::Searcher{P, H, <:PeriodicBC{:inclusive}}, x::AbstractVector, spacing::AbstractGridSpacing, xq::Real) where {P, H}
+    idx, xL, xR = _search_interval_real(s, x, spacing, xq)
+    return idx, idx + 1, xL, xR
+end
+
+# --- Real + PeriodicBC{:exclusive}: seam wrap at x[n] → x[1]+period ---
+@inline function search_interval(s::Searcher{P, H, <:PeriodicBC{:exclusive}}, x::AbstractVector, xq::Real) where {P, H}
+    n = length(x)
+    @inbounds if xq >= x[n]
+        return n, 1, x[n], x[1] + s.bc.period
+    end
+    idx, xL, xR = _search_interval_real(s, x, xq)
+    return idx, idx + 1, xL, xR
+end
+@inline function search_interval(s::Searcher{P, H, <:PeriodicBC{:exclusive}}, x::AbstractVector, spacing::AbstractGridSpacing, xq::Real) where {P, H}
+    n = length(x)
+    @inbounds if xq >= x[n]
+        return n, 1, x[n], x[1] + s.bc.period
+    end
+    idx, xL, xR = _search_interval_real(s, x, spacing, xq)
+    return idx, idx + 1, xL, xR
+end
+
+# --- Layer 2: Policy-specific Real dispatch (BC widened via `where {BC}`; body unchanged) ---
 
 # BinarySearch + NoHint (zero-overhead)
-@inline _search_interval_real(::Searcher{BinarySearch, NoHint}, x::AbstractVector, xq::Real) =
+@inline _search_interval_real(::Searcher{BinarySearch, NoHint, BC}, x::AbstractVector, xq::Real) where {BC} =
     _search_binary(x, xq)
-@inline _search_interval_real(::Searcher{BinarySearch, NoHint}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg} =
+@inline _search_interval_real(::Searcher{BinarySearch, NoHint, BC}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg, BC} =
     _search_binary(x, spacing, xq)
 
 # BinarySearch + RefHint (pure binary + hint write-back, zero search overhead)
-@inline function _search_interval_real(p::Searcher{BinarySearch, RefHint}, x::AbstractVector, xq::Real)
+@inline function _search_interval_real(p::Searcher{BinarySearch, RefHint, BC}, x::AbstractVector, xq::Real) where {BC}
     idx, xL, xR = _search_binary(x, xq)
     p.hint.idx[] = idx
     return idx, xL, xR
 end
-@inline function _search_interval_real(p::Searcher{BinarySearch, RefHint}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg}
+@inline function _search_interval_real(p::Searcher{BinarySearch, RefHint, BC}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg, BC}
     idx, xL, xR = _search_binary(x, spacing, xq)
     p.hint.idx[] = idx
     return idx, xL, xR
 end
 
 # LinearSearch + RefHint
-@inline _search_interval_real(p::Searcher{LinearSearch, RefHint}, x::AbstractVector, xq::Real) =
+@inline _search_interval_real(p::Searcher{LinearSearch, RefHint, BC}, x::AbstractVector, xq::Real) where {BC} =
     _search_linear!(x, xq, p.hint.idx)
-@inline _search_interval_real(p::Searcher{LinearSearch, RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) =
+@inline _search_interval_real(p::Searcher{LinearSearch, RefHint, BC}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) where {BC} =
     _search_linear!(x, xq, p.hint.idx)
 
 # LinearBinarySearch{MAX} + RefHint
-@inline _search_interval_real(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, xq::Real) where {MAX} =
+@inline _search_interval_real(p::Searcher{LinearBinarySearch{MAX}, RefHint, BC}, x::AbstractVector, xq::Real) where {MAX, BC} =
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
-@inline _search_interval_real(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) where {MAX} =
+@inline _search_interval_real(p::Searcher{LinearBinarySearch{MAX}, RefHint, BC}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) where {MAX, BC} =
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 
 # DirectSearch + NoHint (Range grids, zero-overhead)
-@inline _search_interval_real(::Searcher{DirectSearch, NoHint}, x::AbstractRange, xq::Real) =
+@inline _search_interval_real(::Searcher{DirectSearch, NoHint, BC}, x::AbstractRange, xq::Real) where {BC} =
     _search_direct(x, xq)
-@inline _search_interval_real(::Searcher{DirectSearch, NoHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
+@inline _search_interval_real(::Searcher{DirectSearch, NoHint, BC}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg, BC} =
     _search_direct(x, spacing, xq)
 
 # DirectSearch + RefHint (Range grids with persistent hint)
-@inline _search_interval_real(p::Searcher{DirectSearch, RefHint}, x::AbstractRange, xq::Real) =
+@inline _search_interval_real(p::Searcher{DirectSearch, RefHint, BC}, x::AbstractRange, xq::Real) where {BC} =
     _search_direct!(x, xq, p.hint.idx)
-@inline _search_interval_real(p::Searcher{DirectSearch, RefHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
+@inline _search_interval_real(p::Searcher{DirectSearch, RefHint, BC}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg, BC} =
     _search_direct!(x, spacing, xq, p.hint.idx)
 
 # ========================================
@@ -899,7 +980,19 @@ end
 # For module-internal use without explicit policy.
 # Pure delegation to _search_binary/_search_direct which have generic wrappers.
 
-@inline _search_interval(x::AbstractVector, xq::Real) = _search_binary(x, xq)
-@inline _search_interval(x::AbstractRange, xq::Real) = _search_direct(x, xq)
-@inline _search_interval(x::AbstractVector, spacing::AbstractGridSpacing, xq::Real) = _search_binary(x, spacing, xq)
-@inline _search_interval(x::AbstractRange, spacing::ScalarSpacing, xq::Real) = _search_direct(x, spacing, xq)
+@inline function _search_interval(x::AbstractVector, xq::Real)
+    idx, xL, xR = _search_binary(x, xq)
+    return idx, idx + 1, xL, xR
+end
+@inline function _search_interval(x::AbstractRange, xq::Real)
+    idx, xL, xR = _search_direct(x, xq)
+    return idx, idx + 1, xL, xR
+end
+@inline function _search_interval(x::AbstractVector, spacing::AbstractGridSpacing, xq::Real)
+    idx, xL, xR = _search_binary(x, spacing, xq)
+    return idx, idx + 1, xL, xR
+end
+@inline function _search_interval(x::AbstractRange, spacing::ScalarSpacing, xq::Real)
+    idx, xL, xR = _search_direct(x, spacing, xq)
+    return idx, idx + 1, xL, xR
+end

@@ -282,17 +282,59 @@ itp = cubic_interp((x, y), data; extrap=ExtendExtrap())
 struct ExtendExtrap <: AbstractExtrap end
 
 """
-    WrapExtrap <: AbstractExtrap
+    WrapExtrap{T} <: AbstractExtrap
 
 Wrap extrapolation — wraps queries into the domain using modular arithmetic.
 For periodic data.
 
+# Type Parameters
+- `T`: Either `Nothing` (default, domain inferred from grid span at query time) or
+  `<:AbstractFloat` (explicit domain stored in `_x_min`, `_x_max` fields).
+
+# Fields
+- `_x_min::T`, `_x_max::T`: Physical wrap domain `[_x_min, _x_max)`. Underscore
+  prefix signals advisory internal use — user code should **not** set these
+  directly via `WrapExtrap(x_min, x_max)` (that constructor emits a warning);
+  prefer `bc=PeriodicBC(...)` on the interpolant, which auto-configures the
+  wrap domain via `_resolve_periodic_extrap`.
+
 # Example
 ```julia
+# Canonical usage — domain auto-configured from bc:
+itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive, period=2π))
+
+# Backward-compat singleton (domain inferred from grid first/last):
 itp = cubic_interp((x, y), data; extrap=WrapExtrap())
 ```
 """
-struct WrapExtrap <: AbstractExtrap end
+struct WrapExtrap{T} <: AbstractExtrap
+    _x_min::T
+    _x_max::T
+end
+
+# Public default: backward-compat (no domain → grid fallback via dispatch on WrapExtrap{Nothing})
+WrapExtrap() = WrapExtrap{Nothing}(nothing, nothing)
+
+"""
+    WrapExtrap(x_min::Real, x_max::Real)
+
+Construct a `WrapExtrap` carrying an explicit physical wrap domain `[x_min, x_max)`.
+
+**Advisory: advanced/internal API.** For periodic interpolation, prefer specifying
+`bc=PeriodicBC(...)` on the interpolant — the wrap domain will be auto-configured
+consistently with the BC's periodicity convention. Direct use of this constructor
+emits a warning.
+
+Throws `ArgumentError` if `x_max <= x_min`.
+"""
+function WrapExtrap(x_min::Real, x_max::Real)
+    @warn "WrapExtrap(x_min, x_max): explicit domain is advanced/internal API. " *
+          "For periodic interpolation, prefer `bc=PeriodicBC(...)` on the interpolant — " *
+          "the wrap domain is auto-configured correctly there." maxlog=1
+    x_max > x_min || throw(ArgumentError("WrapExtrap: require x_max > x_min, got ($x_min, $x_max)"))
+    p_min, p_max = promote(x_min, x_max)
+    return WrapExtrap{typeof(p_min)}(p_min, p_max)
+end
 
 """
     InBounds <: AbstractExtrap

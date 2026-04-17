@@ -34,9 +34,9 @@
     if _extract_primal(xi) == _extract_primal(last(x))
         return op isa EvalValue ? last(y) : 0 * first(y)
     end
-    idx, xL, xR = search_interval(searcher, x, xi)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
+    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xR, xL), dL, side)
 end
 
 # ExtendExtrap: constant function has zero slope → extend = clamp.
@@ -69,25 +69,27 @@ end
     if xi_primal == _extract_primal(last(x))
         return op isa EvalValue ? last(y) : 0 * first(y)
     end
-    idx, xL, xR = search_interval(searcher, x, xi)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
+    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xR, xL), dL, side)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
+# 4-arg `_wrap_to_domain` with `extrap::WrapExtrap` picks stored domain (typed variant)
+# or grid-span fallback (WrapExtrap{Nothing}) via multiple dispatch.
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xi::Tq,
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
-    xi_wrapped = _wrap_to_domain(xi, first(x), last(x))
-    idx, xL, xR = search_interval(searcher, x, xi_wrapped)
+    xi_wrapped = _wrap_to_domain(xi, first(x), last(x), extrap)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx + 1], _get_h(x, xR, xL), dL, side)
+    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xR, xL), dL, side)
 end
 
 
@@ -165,24 +167,13 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     x_typed = _prepare_grid(x)
     # Single-exit "compute → coerce" pattern: Constant returns `y[idx]`
     # directly (no arithmetic auto-promotion), so Int/Rational results are
-    # promoted to Float once, regardless of which branch produced them.
-    # Other methods (Linear/Hermite/Quadratic) auto-promote via kernel
-    # arithmetic and use the simpler early-return template.
-    result = if _is_periodic_bc(bc)
-        _constant_interp_periodic_scalar(x_typed, y, xi, bc, extrap, side, deriv, search, hint)
-    else
-        searcher = _resolve_search(x_typed, xi, search, hint)
-        _constant_eval_at_point(x_typed, y, xi, extrap, side, deriv, searcher)
-    end
+    # promoted to Float once. Periodic path: no pool, no extension —
+    # `_resolve_periodic_extrap` projects bc into a typed WrapExtrap carrying
+    # the physical wrap domain, BC-aware search (Phase 1) handles the seam.
+    extrap_eff = _resolve_periodic_extrap(bc, extrap, x_typed)
+    searcher = _resolve_search(x_typed, xi, search, hint, bc)
+    result = _constant_eval_at_point(x_typed, y, xi, extrap_eff, side, deriv, searcher)
     return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
-end
-
-@inline @with_pool pool function _constant_interp_periodic_scalar(
-        x, y, xi, bc, extrap, side, deriv, search, hint
-    )
-    x_eff, y_eff, extrap_eff = _periodic_extend_1d_pooled!(pool, x, y, bc, extrap)
-    searcher = _resolve_search(x_eff, xi, search, hint)
-    return _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
 end
 
 # ========================================
@@ -231,20 +222,9 @@ function constant_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     x_typed = _prepare_grid(x)
-    if _is_periodic_bc(bc)
-        return _constant_interp_periodic_vector!(output, x_typed, y, x_targets, bc, extrap, side, deriv, search)
-    end
-    searcher = _resolve_search(x_typed, x_targets, search, nothing)
-    _constant_vector_loop!(output, x_typed, y, x_targets, extrap, side, deriv, searcher)
-    return output
-end
-
-@inline @with_pool pool function _constant_interp_periodic_vector!(
-        output, x, y, x_targets, bc, extrap, side, deriv, search
-    )
-    x_eff, y_eff, extrap_eff = _periodic_extend_1d_pooled!(pool, x, y, bc, extrap)
-    searcher = _resolve_search(x_eff, x_targets, search, nothing)
-    _constant_vector_loop!(output, x_eff, y_eff, x_targets, extrap_eff, side, deriv, searcher)
+    extrap_eff = _resolve_periodic_extrap(bc, extrap, x_typed)
+    searcher = _resolve_search(x_typed, x_targets, search, nothing, bc)
+    _constant_vector_loop!(output, x_typed, y, x_targets, extrap_eff, side, deriv, searcher)
     return output
 end
 

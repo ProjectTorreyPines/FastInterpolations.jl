@@ -495,8 +495,8 @@ end
     return q
 end
 
-@inline function _handle_axis_extrap(q, axis::AbstractVector, ::WrapExtrap)
-    return _wrap_to_domain(q, first(axis), last(axis))
+@inline function _handle_axis_extrap(q, axis::AbstractVector, extrap::WrapExtrap)
+    return _wrap_to_domain(q, first(axis), last(axis), extrap)
 end
 
 # ========================================
@@ -518,7 +518,7 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
 
 # Named helpers for oneshot map-based search — each receives concrete types per axis.
-# search_interval returns (idx, L, R) with the same concrete element type regardless
+# search_interval returns (idx_L, idx_R, L, R) with the same concrete element type regardless
 # of spacing type (ScalarSpacing or VectorSpacing), so results is homogeneous.
 # Persistent batch paths use _search_axis_adaptive instead (Bool-flag, no Union boxing).
 @inline _search_axis_oneshot(q, grid, spacing, search) =
@@ -526,8 +526,8 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 @inline _search_axis_oneshot_hint(q, grid, spacing, search, hint) =
     @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, spacing, q)
 @inline _getidx(r) = r[1]
-@inline _getL(r) = r[2]
-@inline _getR(r) = r[3]
+@inline _getL(r) = r[3]
+@inline _getR(r) = r[4]
 
 @inline function _search_all_intervals(
         q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
@@ -730,8 +730,8 @@ end
 
     x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
     y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
-    ix, xL, _ = _search_axis_adaptive(x_eval, grid_x, spacing_x, policy_x, hint_x, mono_x)
-    iy, yL, _ = _search_axis_adaptive(y_eval, grid_y, spacing_y, policy_y, hint_y, mono_y)
+    ix, _, xL, _ = _search_axis_adaptive(x_eval, grid_x, spacing_x, policy_x, hint_x, mono_x)
+    iy, _, yL, _ = _search_axis_adaptive(y_eval, grid_y, spacing_y, policy_y, hint_y, mono_y)
 
     return (x_eval, y_eval, ix, iy, xL, yL)
 end

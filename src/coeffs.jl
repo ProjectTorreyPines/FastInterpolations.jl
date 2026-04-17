@@ -106,15 +106,15 @@ function coeffs end
     x = itp.cache.x
     spacing = itp.cache.spacing
     searcher = _resolve_search(x, xq, search, hint)
-    i, xL, xR = search_interval(searcher, x, spacing, xq)
+    i, i_R, xL, xR = search_interval(searcher, x, spacing, xq)
     h = _get_h(spacing, i)
     inv_h = _get_inv_h(spacing, i)
     inv6 = inv(Tg(6))    # const-folded
     inv_6h = inv_h * inv6 # 1/(6h), shared factor         fmul
     h_inv6 = h * inv6     # h/6                           fmul
     @inbounds begin
-        zL, zR = itp.z[i], itp.z[i + 1]
-        yL, yR = itp.y[i], itp.y[i + 1]
+        zL, zR = itp.z[i], itp.z[i_R]
+        yL, yR = itp.y[i], itp.y[i_R]
     end
     z_sum = muladd(Tg(2), zL, zR)                       # 2zL + zR       fmadd
     a = (zR - zL) * inv_6h                               # (zR-zL)/(6h)   fsub, fmul
@@ -132,7 +132,7 @@ end
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)
-    i, xL, xR = search_interval(searcher, itp.x, itp.spacing, xq)
+    i, _, xL, xR = search_interval(searcher, itp.x, itp.spacing, xq)
     @inbounds return CellPoly{3, Tv, Tg}((itp.y[i], itp.d[i], itp.a[i]), xL, xR)
 end
 
@@ -144,9 +144,9 @@ end
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)
-    i, xL, xR = search_interval(searcher, itp.x, itp.spacing, xq)
+    i, i_R, xL, xR = search_interval(searcher, itp.x, itp.spacing, xq)
     @inbounds begin
-        slope = (itp.y[i + 1] - itp.y[i]) * _get_inv_h(itp.spacing, i)
+        slope = (itp.y[i_R] - itp.y[i]) * _get_inv_h(itp.spacing, i)
         return CellPoly{2, Tv, Tg}((itp.y[i], slope), xL, xR)
     end
 end
@@ -159,8 +159,8 @@ end
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)
-    i, xL, xR = search_interval(searcher, itp.x, itp.spacing, xq)
+    i, i_R, xL, xR = search_interval(searcher, itp.x, itp.spacing, xq)
     # Reuse the constant kernel directly for correct side/grid-point behavior
-    @inbounds y0 = _constant_kernel(EvalValue(), itp.y[i], itp.y[i + 1], _get_h(itp.spacing, i), xq - xL, itp.side)
+    @inbounds y0 = _constant_kernel(EvalValue(), itp.y[i], itp.y[i_R], _get_h(itp.spacing, i), xq - xL, itp.side)
     return CellPoly{1, Tv, Tg}((y0,), xL, xR)
 end

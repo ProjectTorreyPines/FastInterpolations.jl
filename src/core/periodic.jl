@@ -44,6 +44,23 @@ end
     return x_min + mod(xi - x_min, period)
 end
 
+# ────────────────────────────────────────────────────────
+# Extrap-aware 4-arg overloads (Option H: typed WrapExtrap carries domain)
+# ────────────────────────────────────────────────────────
+#
+# Called from eval kernels' WrapExtrap branch — the `extrap` arg carries either
+# grid-span fallback (WrapExtrap{Nothing}) or an explicit domain resolved at
+# entry via `_resolve_periodic_extrap(bc, extrap, x)`. Cubic/persistent paths
+# hit the Nothing variant because their extended grid already satisfies
+# `last(x_p) - first(x_p) == period`; Linear/Constant oneshot (post-Phase 3+)
+# hit the AbstractFloat variant carrying the resolved `(x_min, x_min+period)`.
+
+@inline _wrap_to_domain(xi, x_min, x_max, ::WrapExtrap{Nothing}) =
+    _wrap_to_domain(xi, x_min, x_max)
+
+@inline _wrap_to_domain(xi, _x_min_fb, _x_max_fb, e::WrapExtrap{<:AbstractFloat}) =
+    _wrap_to_domain(xi, e._x_min, e._x_max)
+
 # ========================================
 # Endpoint Validation
 # ========================================
@@ -394,6 +411,62 @@ end
 _extend_values(y::AbstractVector) = vcat(y, first(y))
 
 """
+    _resolve_periodic_extrap(bc, extrap, x) -> AbstractExtrap
+
+Resolve a boundary condition + grid into the runtime wrap policy.
+
+- `NoBC` → passthrough (user's `extrap` preserved).
+- `PeriodicBC{:inclusive}` → `WrapExtrap{T}(first(x), last(x))` (grid span IS the period).
+- `PeriodicBC{:exclusive, <:Real}` → `WrapExtrap{T}(first(x), first(x)+bc.period)`.
+- `PeriodicBC{:exclusive, Nothing}` + `AbstractRange` → auto-inferred period
+  (`step(x) * length(x)`).
+- `PeriodicBC{:exclusive, Nothing}` + `AbstractVector` → `ArgumentError` (matches
+  `_resolve_exclusive_period` contract).
+
+This is the extraction of the `WrapExtrap()` override previously inlined at the
+tail of `_periodic_extend_1d` / `_periodic_extend_1d_pooled!` / ND variants,
+upgraded to return a typed `WrapExtrap{T}` carrying the resolved physical domain.
+Both the existing pool/persistent extend helpers (which still extend data) and
+the new zero-copy Linear/Constant oneshot entries (which skip extension and
+rely on Phase 1's BC-aware seam detection) reuse this single projection.
+"""
+@inline _resolve_periodic_extrap(::NoBC, extrap::AbstractExtrap, _) = extrap
+
+@inline function _resolve_periodic_extrap(::PeriodicBC{:inclusive}, _, x)
+    lo, hi = first(x), last(x)
+    T = promote_type(typeof(lo), typeof(hi))
+    return WrapExtrap{T}(T(lo), T(hi))
+end
+
+@inline function _resolve_periodic_extrap(bc::PeriodicBC{:exclusive, <:Real}, _, x)
+    x_min = first(x)
+    x_max = x_min + bc.period
+    # Validate: virtual endpoint must lie strictly beyond the last grid point so
+    # the seam cell [x[end], x_min+period] is non-empty and the grid actually
+    # covers at most one period. Matches `_periodic_extend_1d_pooled!`'s contract.
+    last(x) < x_max || throw(
+        ArgumentError(
+            "period=$(bc.period) places virtual endpoint at $x_max, " *
+                "not after last grid point x[end]=$(last(x))"
+        )
+    )
+    return WrapExtrap{typeof(x_max)}(x_min, x_max)
+end
+
+@inline function _resolve_periodic_extrap(::PeriodicBC{:exclusive, Nothing}, _, x::AbstractRange)
+    period = float(step(x) * length(x))
+    x_min = float(first(x))
+    return WrapExtrap{typeof(x_min)}(x_min, x_min + period)
+end
+
+@inline _resolve_periodic_extrap(::PeriodicBC{:exclusive, Nothing}, _, ::AbstractVector) =
+    throw(
+        ArgumentError(
+            "PeriodicBC(:exclusive) requires explicit `period` for non-Range grid"
+        )
+    )
+
+"""
     _periodic_extend_1d(x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)
 
 Non-pool 1D periodic dispatch for the **persistent-interpolant path**.
@@ -402,8 +475,8 @@ periodic — callers invoke this once and feed the result into their normal
 build flow without branching on `_is_periodic_bc`:
 
 - Non-periodic `bc` → `(x, y, extrap)` passthrough.
-- `PeriodicBC{:inclusive}` → `(x, y, WrapExtrap())` (validates `y[1] ≈ y[end]`).
-- `PeriodicBC{:exclusive}` → `(x_ext, y_ext, WrapExtrap())` where the grid/values
+- `PeriodicBC{:inclusive}` → `(x, y, typed WrapExtrap)` (validates `y[1] ≈ y[end]`).
+- `PeriodicBC{:exclusive}` → `(x_ext, y_ext, typed WrapExtrap)` where the grid/values
   are extended by one virtual endpoint via `_extend_exclusive` (heap copy
   consistent with existing non-periodic persistent-path copy semantics).
 
@@ -423,7 +496,7 @@ periodicity, not just on the grid representation.
     # Endpoint validation is meaningful only for `:inclusive` — `:exclusive` sets
     # `y_ext[end] = y_ext[1]` by construction so the check is trivially true.
     bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_ext)
-    return x_ext, y_ext, WrapExtrap()
+    return x_ext, y_ext, _resolve_periodic_extrap(bc, extrap, x)
 end
 
 """
@@ -482,7 +555,7 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
     # `:exclusive` path constructs `y_p[end] = y_p[1]` by extension, so the check
     # is trivially satisfied. Run validation only for `:inclusive`.
     bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_p)
-    return x_p, y_p, WrapExtrap()
+    return x_p, y_p, _resolve_periodic_extrap(bc, extrap, x)
 end
 
 """

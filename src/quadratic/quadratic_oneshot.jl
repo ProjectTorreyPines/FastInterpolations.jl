@@ -34,7 +34,7 @@
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
-    idx, xL, _ = search_interval(searcher, x, xq)
+    idx, _, xL, _ = search_interval(searcher, x, xq)
     dt = xq - xL  # Can be Dual for AD
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
@@ -53,24 +53,25 @@ end
     xq_primal = _extract_primal(xq)
     xq_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xq)
     xq_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xq)
-    idx, xL, _ = search_interval(searcher, x, xq)
+    idx, _, xL, _ = search_interval(searcher, x, xq)
     dt = xq - xL
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
+# 4-arg `_wrap_to_domain` dispatches on typed vs Nothing WrapExtrap.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         a::AbstractVector{Tc},
         d::AbstractVector{Tc},
         xq::Tq,
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    idx, xL, _ = search_interval(searcher, x, xq_wrapped)
+    xq_wrapped = _wrap_to_domain(xq, first(x), last(x), extrap)
+    idx, _, xL, _ = search_interval(searcher, x, xq_wrapped)
     dt = xq_wrapped - xL
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end

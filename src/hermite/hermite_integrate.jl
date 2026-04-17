@@ -100,11 +100,11 @@ end
     sign == 0 && return zero(Tout)
     n = length(x)
 
-    i0, xL0, _ = search_interval(searcher, x, spacing, lo)
-    i1, xL1, _ = search_interval(searcher, x, spacing, hi)
+    i0, i0_R, xL0, _ = search_interval(searcher, x, spacing, lo)
+    i1, i1_R, xL1, _ = search_interval(searcher, x, spacing, hi)
 
     dy_L = _local_slope(sm, x, y, i0, n)
-    dy_R = _local_slope(sm, x, y, i0 + 1, n)
+    dy_R = _local_slope(sm, x, y, i0_R, n)
 
     # Single-cell fast path — both bounds fall in the same cell.
     # `_get_inv_h(spacing, i)` reads a cached field (ScalarSpacing) or an
@@ -113,7 +113,7 @@ end
         h = _get_h(spacing, i0)
         inv_h = _get_inv_h(spacing, i0)
         return sign * _hermite_integral_kernel_1d(
-            @inbounds(y[i0]), @inbounds(y[i0 + 1]), dy_L, dy_R,
+            @inbounds(y[i0]), @inbounds(y[i0_R]), dy_L, dy_R,
             h, inv_h, lo - xL0, hi - xL0,
         )
     end
@@ -122,7 +122,7 @@ end
     h0 = _get_h(spacing, i0)
     inv_h0 = _get_inv_h(spacing, i0)
     total = _hermite_integral_kernel_1d(
-        @inbounds(y[i0]), @inbounds(y[i0 + 1]), dy_L, dy_R,
+        @inbounds(y[i0]), @inbounds(y[i0_R]), dy_L, dy_R,
         h0, inv_h0, lo - xL0, h0,
     )
 
@@ -140,11 +140,11 @@ end
 
     # Final partial cell [xL1, hi]
     dy_L = dy_R
-    dy_R = _local_slope(sm, x, y, i1 + 1, n)
+    dy_R = _local_slope(sm, x, y, i1_R, n)
     h1 = _get_h(spacing, i1)
     inv_h1 = _get_inv_h(spacing, i1)
     total += _hermite_integral_kernel_1d(
-        @inbounds(y[i1]), @inbounds(y[i1 + 1]), dy_L, dy_R,
+        @inbounds(y[i1]), @inbounds(y[i1_R]), dy_L, dy_R,
         h1, inv_h1, zero(eltype(x)), hi - xL1,
     )
 

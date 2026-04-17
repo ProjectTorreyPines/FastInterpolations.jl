@@ -23,11 +23,11 @@
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
-    idx, xL, xR = search_interval(searcher, x, xq)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL
     h = _get_h(x, xR, xL)
     inv_h = _get_inv_h(x, xR, xL)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dy[idx], dy[idx + 1], h, inv_h, dL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel
@@ -46,11 +46,11 @@ end
     elseif xq_primal > _extract_primal(last(x))
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
-    idx, xL, xR = search_interval(searcher, x, xq)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL
     h = _get_h(x, xR, xL)
     inv_h = _get_inv_h(x, xR, xL)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dy[idx], dy[idx + 1], h, inv_h, dL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel
@@ -59,16 +59,16 @@ end
         y::AbstractVector{Tv},
         dy::AbstractVector,
         xq::Tq,
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    idx, xL, xR = search_interval(searcher, x, xq_wrapped)
+    xq_wrapped = _wrap_to_domain(xq, first(x), last(x), extrap)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     dL = xq_wrapped - xL
     h = _get_h(x, xR, xL)
     inv_h = _get_inv_h(x, xR, xL)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dy[idx], dy[idx + 1], h, inv_h, dL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
@@ -87,11 +87,11 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
-    idx, xL, _ = search_interval(searcher, x, spacing, xq)
+    idx, idx_R, xL, _ = search_interval(searcher, x, spacing, xq)
     dL = xq - xL
     h = _get_h(spacing, idx)
     inv_h = _get_inv_h(spacing, idx)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dy[idx], dy[idx + 1], h, inv_h, dL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel
@@ -111,11 +111,11 @@ end
     elseif xq_primal > _extract_primal(last(x))
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
-    idx, xL, _ = search_interval(searcher, x, spacing, xq)
+    idx, idx_R, xL, _ = search_interval(searcher, x, spacing, xq)
     dL = xq - xL
     h = _get_h(spacing, idx)
     inv_h = _get_inv_h(spacing, idx)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dy[idx], dy[idx + 1], h, inv_h, dL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel
@@ -125,16 +125,16 @@ end
         y::AbstractVector{Tv},
         dy::AbstractVector,
         xq::Tq,
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    idx, xL, _ = search_interval(searcher, x, spacing, xq_wrapped)
+    xq_wrapped = _wrap_to_domain(xq, first(x), last(x), extrap)
+    idx, idx_R, xL, _ = search_interval(searcher, x, spacing, xq_wrapped)
     dL = xq_wrapped - xL
     h = _get_h(spacing, idx)
     inv_h = _get_inv_h(spacing, idx)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dy[idx], dy[idx + 1], h, inv_h, dL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
@@ -166,7 +166,7 @@ end
         y::AbstractVector{Tv},
         dy::AbstractVector,
         xq::AbstractVector{<:Real},
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         deriv::O,
         searcher::P
     ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
@@ -179,7 +179,7 @@ end
         end
     else
         @inbounds for i in eachindex(xq, output)
-            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max)
+            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max, extrap)
             output[i] = _hermite_eval_at_point(x, y, dy, xi_wrapped, ExtendExtrap(), deriv, searcher)
         end
     end
@@ -213,7 +213,7 @@ end
         y::AbstractVector{Tv},
         dy::AbstractVector,
         xq::AbstractVector{<:Real},
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         deriv::O,
         searcher::P
     ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
@@ -226,7 +226,7 @@ end
         end
     else
         @inbounds for i in eachindex(xq, output)
-            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max)
+            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max, extrap)
             output[i] = _hermite_eval_at_point(x, spacing, y, dy, xi_wrapped, ExtendExtrap(), deriv, searcher)
         end
     end
@@ -251,14 +251,14 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
-    idx, xL, xR = search_interval(searcher, x, xq)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     n = length(x)
     dyL = _local_slope(sm, x, y, idx, n)
-    dyR = _local_slope(sm, x, y, idx + 1, n)
+    dyR = _local_slope(sm, x, y, idx_R, n)
     dL = xq - xL
     h = _get_h(x, xR, xL)
     inv_h = _get_inv_h(x, xR, xL)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dyL, dyR, h, inv_h, dL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
 @inline function _hermite_eval_at_point(
@@ -276,14 +276,14 @@ end
     elseif xq_primal > _extract_primal(last(x))
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
-    idx, xL, xR = search_interval(searcher, x, xq)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     n = length(x)
     dyL = _local_slope(sm, x, y, idx, n)
-    dyR = _local_slope(sm, x, y, idx + 1, n)
+    dyR = _local_slope(sm, x, y, idx_R, n)
     dL = xq - xL
     h = _get_h(x, xR, xL)
     inv_h = _get_inv_h(x, xR, xL)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dyL, dyR, h, inv_h, dL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
 @inline function _hermite_eval_at_point(
@@ -291,19 +291,19 @@ end
         y::AbstractVector{Tv},
         sm::AbstractSlopeMethod,
         xq::Tq,
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    idx, xL, xR = search_interval(searcher, x, xq_wrapped)
+    xq_wrapped = _wrap_to_domain(xq, first(x), last(x), extrap)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     n = length(x)
     dyL = _local_slope(sm, x, y, idx, n)
-    dyR = _local_slope(sm, x, y, idx + 1, n)
+    dyR = _local_slope(sm, x, y, idx_R, n)
     dL = xq_wrapped - xL
     h = _get_h(x, xR, xL)
     inv_h = _get_inv_h(x, xR, xL)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dyL, dyR, h, inv_h, dL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
 # ── Interpolant scalar (with spacing) ───────────────────────────
@@ -319,14 +319,14 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
-    idx, xL, _ = search_interval(searcher, x, spacing, xq)
+    idx, idx_R, xL, _ = search_interval(searcher, x, spacing, xq)
     n = length(x)
     dyL = _local_slope(sm, x, y, idx, n)
-    dyR = _local_slope(sm, x, y, idx + 1, n)
+    dyR = _local_slope(sm, x, y, idx_R, n)
     dL = xq - xL
     h = _get_h(spacing, idx)
     inv_h = _get_inv_h(spacing, idx)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dyL, dyR, h, inv_h, dL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
 @inline function _hermite_eval_at_point(
@@ -345,14 +345,14 @@ end
     elseif xq_primal > _extract_primal(last(x))
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
-    idx, xL, _ = search_interval(searcher, x, spacing, xq)
+    idx, idx_R, xL, _ = search_interval(searcher, x, spacing, xq)
     n = length(x)
     dyL = _local_slope(sm, x, y, idx, n)
-    dyR = _local_slope(sm, x, y, idx + 1, n)
+    dyR = _local_slope(sm, x, y, idx_R, n)
     dL = xq - xL
     h = _get_h(spacing, idx)
     inv_h = _get_inv_h(spacing, idx)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dyL, dyR, h, inv_h, dL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
 @inline function _hermite_eval_at_point(
@@ -361,19 +361,19 @@ end
         y::AbstractVector{Tv},
         sm::AbstractSlopeMethod,
         xq::Tq,
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    idx, xL, _ = search_interval(searcher, x, spacing, xq_wrapped)
+    xq_wrapped = _wrap_to_domain(xq, first(x), last(x), extrap)
+    idx, idx_R, xL, _ = search_interval(searcher, x, spacing, xq_wrapped)
     n = length(x)
     dyL = _local_slope(sm, x, y, idx, n)
-    dyR = _local_slope(sm, x, y, idx + 1, n)
+    dyR = _local_slope(sm, x, y, idx_R, n)
     dL = xq_wrapped - xL
     h = _get_h(spacing, idx)
     inv_h = _get_inv_h(spacing, idx)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx + 1], dyL, dyR, h, inv_h, dL)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
 # ── Vector loops (delegate to scalar overloads above) ────────────
@@ -403,7 +403,7 @@ end
         y::AbstractVector{Tv},
         sm::AbstractSlopeMethod,
         xq::AbstractVector{<:Real},
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         deriv::O,
         searcher::P
     ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
@@ -416,7 +416,7 @@ end
         end
     else
         @inbounds for i in eachindex(xq, output)
-            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max)
+            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max, extrap)
             output[i] = _hermite_eval_at_point(x, y, sm, xi_wrapped, ExtendExtrap(), deriv, searcher)
         end
     end
@@ -450,7 +450,7 @@ end
         y::AbstractVector{Tv},
         sm::AbstractSlopeMethod,
         xq::AbstractVector{<:Real},
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         deriv::O,
         searcher::P
     ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
@@ -463,7 +463,7 @@ end
         end
     else
         @inbounds for i in eachindex(xq, output)
-            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max)
+            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max, extrap)
             output[i] = _hermite_eval_at_point(x, spacing, y, sm, xi_wrapped, ExtendExtrap(), deriv, searcher)
         end
     end

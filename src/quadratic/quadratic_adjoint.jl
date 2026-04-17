@@ -109,7 +109,7 @@ function _bake_quadratic_adjoint_anchors(
         end
 
         # Search interval
-        idx, xL, _ = search_interval(DEFAULT_SEARCHER, x, spacing, xq_eval)
+        idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, x, spacing, xq_eval)
         h = _get_h(spacing, idx)
         inv_h = _get_inv_h(spacing, idx)
         t = (xq_eval - xL) * inv_h

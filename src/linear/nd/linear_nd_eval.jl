@@ -173,6 +173,27 @@ Compute cell widths and normalized coordinates for multilinear interpolation.
     return (hs, αs)
 end
 
+# Pair-valued indices variant (Phase 6) — computes per-axis cell width directly from
+# `Rs[d] - Ls[d]` to avoid the idx-based spacing lookup (which is out-of-bounds
+# for the seam cell at idx_L == n on periodic-exclusive axes — there's no
+# `spacing.widths[n]`). For uniform Range grids via ScalarSpacing the cost is
+# unchanged (1 subtraction vs 1 field load). For Vector axes this matches what
+# VectorSpacing would return for interior cells and Just Works for the seam cell.
+@inline function _compute_linear_params_lr(
+        q_eval::Tuple{Vararg{Real, N}},
+        Ls::Tuple{Vararg{Real, N}},
+        Rs::Tuple{Vararg{Real, N}},
+        ::Val{N}
+    ) where {N}
+    hs = ntuple(Val(N)) do d
+        @inbounds Rs[d] - Ls[d]
+    end
+    αs = ntuple(Val(N)) do d
+        @inbounds (q_eval[d] - Ls[d]) / hs[d]
+    end
+    return (hs, αs)
+end
+
 # ========================================
 # Multilinear Interpolation Kernel
 # ========================================
@@ -226,6 +247,63 @@ The weight function depends on the evaluation operation:
     end
 
     # Sum all corners
+    sum_expr = foldl((a, b) -> :($a + $b), corner_exprs)
+
+    return quote
+        Base.@_inline_meta
+        @inbounds $sum_expr
+    end
+end
+
+"""
+    _multilinear_sum(data, indices_pairs, hs, αs, ops, Val(N))
+
+Pair-valued indices variant for zero-copy periodic ND evaluation (Phase 6).
+
+`indices_pairs[d] = (idx_L_d, idx_R_d)` — for each corner bit pattern
+`b ∈ {0,1}^N`, corner address on axis `d` is `indices_pairs[d][b_d + 1]`
+(bit 0 → left `idx_L_d`, bit 1 → right `idx_R_d`).
+
+Dispatch-distinct from the Int-valued `_multilinear_sum`: non-periodic ND
+oneshot and persistent paths keep the Int variant (`idx_R == idx_L + 1` from
+grid extension); periodic ND oneshot uses this variant so seam-cell reads
+land on `data[..., idx_R=1, ...]` without data extension.
+
+Codegen: identical flat 2^N straight-line unroll. The only change is the
+corner-address expression — `indices[d] + bit` → `indices_pairs[d][bit + 1]`.
+LLVM should elide the 2-tuple indexing to the same loads as the Int variant
+whenever the caller's searcher is `NoBC` (idx_R inferable as idx_L+1 at
+type level).
+"""
+@generated function _multilinear_sum(
+        data::AbstractArray{Tv, N},
+        indices_pairs::NTuple{N, NTuple{2, Int}},
+        hs::NTuple{N},
+        αs::Tuple{Vararg{Real, N}},
+        ops::NTuple{N, AbstractEvalOp},
+        ::Val{N}
+    ) where {Tv, N}
+    num_corners = 1 << N
+
+    corner_exprs = []
+    for corner in 0:(num_corners - 1)
+        bits = ntuple(d -> (corner >> (d - 1)) & 1, N)
+
+        # Pair-indexed corner: indices_pairs[d][bit_d + 1]  — bit 0 → [1] (L), bit 1 → [2] (R)
+        idx_expr = Expr(:tuple, [:(indices_pairs[$d][$(bits[d] + 1)]) for d in 1:N]...)
+
+        weight_exprs = [
+            :(_linear_weight(ops[$d], αs[$d], hs[$d], Val($(bits[d])))) for d in 1:N
+        ]
+        weight_expr = foldl((a, b) -> :($a * $b), weight_exprs)
+
+        push!(
+            corner_exprs, :(
+                @inbounds data[$idx_expr...] * $weight_expr
+            )
+        )
+    end
+
     sum_expr = foldl((a, b) -> :($a + $b), corner_exprs)
 
     return quote

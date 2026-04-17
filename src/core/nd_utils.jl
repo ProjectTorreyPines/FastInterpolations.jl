@@ -526,8 +526,25 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 @inline _search_axis_oneshot_hint(q, grid, spacing, search, hint) =
     @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, spacing, q)
 @inline _getidx(r) = r[1]
+@inline _getidxR(r) = r[2]
 @inline _getL(r) = r[3]
 @inline _getR(r) = r[4]
+
+# BC-aware per-axis oneshot: threads per-axis bc into the Searcher so PeriodicBC{:exclusive}
+# dispatches in `search_interval` return (n, 1, x[n], x[1]+period) at seam cells.
+# The 4-tuple `(idx_L, idx_R, xL, xR)` per axis is destructured downstream via
+# `_getidx` + `_getidxR` for zero-copy corner addressing in ND kernels.
+@inline _search_axis_oneshot_bc(q, grid, spacing, search, bc) =
+    @inbounds search_interval(_resolve_search(grid, q, search, nothing, bc), grid, spacing, q)
+@inline _search_axis_oneshot_bc_hint(q, grid, spacing, search, hint, bc) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint, bc), grid, spacing, q)
+
+# Pair-valued interval tuple per axis: `indices_pairs[d] = (idx_L_d, idx_R_d)`.
+# Consumers (periodic-aware ND kernels) read corner addresses via
+# `indices_pairs[d][bit_d + 1]` — `bit=0 → idx_L`, `bit=1 → idx_R`. For non-periodic
+# axes `idx_R == idx_L + 1`; for periodic-exclusive axes at the seam `idx_R == 1`
+# (wrap) so eval reads the periodic neighbor without data extension.
+@inline _getpair(r) = (r[1], r[2])
 
 @inline function _search_all_intervals(
         q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
@@ -672,6 +689,48 @@ end
     results = map(_search_axis_adaptive, q_evals, grids, spacings, policies, hints, mono)
     return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
+
+# ────────────────────────────────────────────────────────
+# BC-aware per-axis search (Phase 6 — zero-copy periodic ND)
+# ────────────────────────────────────────────────────────
+# Parallel to `_search_all_intervals`, but threads per-axis `bcs` into each
+# `Searcher` so `PeriodicBC{:exclusive}` axes return `(n, 1, x[n], x[1]+L)`
+# at seam cells (via the Phase 1 BC-aware `search_interval` dispatch).
+# Returns `(indices_pairs, Ls, Rs)` where `indices_pairs[d] = (idx_L_d, idx_R_d)` —
+# non-periodic axes have `idx_R == idx_L + 1`; periodic-exclusive axes at seam
+# have `idx_R == 1` (wrap). ND kernels read corner addresses via
+# `indices_pairs[d][bit_d + 1]` to pick left-vs-right per axis bit.
+#
+# Non-adaptive: uses `_resolve_search(grid, q, search, hint, bc)` per axis
+# (BC-aware constructor from Phase 2), skipping the monotonicity-aware
+# `_search_axis_adaptive` for simplicity. Callers that need monotonicity
+# optimization should stay on the existing (non-pair) `_search_all_intervals`.
+
+@inline _resolve_axis_searcher_bc(grid, q, search, hint, bc) =
+    _resolve_search(grid, q, search, hint, bc)
+
+# 3-arg search (no spacing) — Range uses _search_direct's own step, Vector uses
+# _search_binary. Avoids VectorSpacing allocation entirely since pair-variant
+# `_compute_linear_params_lr` derives h from `Rs[d] - Ls[d]` (not from spacing).
+@inline _search_axis_with_searcher(searcher, grid, q) =
+    @inbounds search_interval(searcher, grid, q)
+
+@inline function _search_all_intervals_lr(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Union{Nothing, Tuple{Vararg{Base.RefValue{Int}, N}}},
+        bcs::Tuple{Vararg{AbstractBC, N}},
+    ) where {N}
+    hints_eff = hints === nothing ? ntuple(_nothing_hint, Val(N)) : hints
+    # Build per-axis BC-aware searchers via map (per-element concrete dispatch, no closure box)
+    searchers = map(_resolve_axis_searcher_bc, grids, q_evals, searches, hints_eff, bcs)
+    results = map(_search_axis_with_searcher, searchers, grids, q_evals)
+    return (map(_getpair, results), map(_getL, results), map(_getR, results))
+end
+
+# Nothing hint sentinel — each axis gets no persistent hint (NoHint searcher)
+@inline _nothing_hint(_) = nothing
 
 # Nothing hint + mono → delegate to stateless 4-arg (zero Ref alloc).
 # mono is accepted but ignored: without hints, no LB walk benefit → Binary always.

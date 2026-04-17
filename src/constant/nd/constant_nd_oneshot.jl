@@ -40,7 +40,7 @@ function _constant_interp_nd_oneshot(
     _validate_periodic_slices_nd(data, bcs, Val(N))
     q_eval = _handle_all_extraps(query, grids, extraps_eff)
     indices_pairs, Ls, Rs = _search_all_intervals_lr(q_eval, grids, searches, hints, bcs)
-    return _constant_nd_kernel(data, indices_pairs, Rs, side_vals, q_eval, Ls)
+    return _constant_nd_kernel_lr(data, indices_pairs, Rs, side_vals, q_eval, Ls)
 end
 
 """
@@ -76,7 +76,7 @@ function _constant_interp_nd_oneshot_batch!(
         end
         q_eval = _handle_all_extraps(query_k, grids, extraps_eff)
         indices_pairs, Ls, Rs = _search_all_intervals_lr(q_eval, grids, policies, hints, bcs)
-        output[k] = _constant_nd_kernel(data, indices_pairs, Rs, side_vals, q_eval, Ls)
+        output[k] = _constant_nd_kernel_lr(data, indices_pairs, Rs, side_vals, q_eval, Ls)
     end
     return output
 end

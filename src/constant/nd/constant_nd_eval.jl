@@ -202,21 +202,20 @@ Computes cell widths, distances from left edge, side-based offsets, and returns 
 end
 
 """
-    _constant_nd_kernel(data, indices_pairs, Rs, sides, q_eval, Ls)
+    _constant_nd_kernel_lr(data, indices_pairs, Rs, sides, q_eval, Ls)
 
 Pair-valued indices variant for zero-copy periodic ND evaluation (Phase 6).
 
 `indices_pairs[d] = (idx_L_d, idx_R_d)` — corner address on axis `d` is
 `indices_pairs[d][offset_d + 1]` (offset 0 → left idx_L, offset 1 → right idx_R).
 Cell width `h_d = Rs[d] - Ls[d]` — sidesteps the `_get_h(spacings[d], indices[d])`
-lookup which would be out-of-bounds for periodic-exclusive seam cells
-(idx_L == n, no `spacing.widths[n]` in the precomputed spacing).
+lookup which would be out-of-bounds for periodic-exclusive seam cells.
 
-Non-periodic ND stays on the Int-valued variant (`idx_R == idx_L + 1` from
-grid extension); periodic ND oneshot uses this variant so seam reads land
-on `data[..., idx_R=1, ...]` without data extension.
+Distinct name (not an overload) because at `N=0` the two possible
+`NTuple{0, ...}` element types both collapse to `Tuple{}`, making
+overload-style dispatch ambiguous (caught by Aqua static analysis).
 """
-@generated function _constant_nd_kernel(
+@generated function _constant_nd_kernel_lr(
         data::AbstractArray{Tv, N},
         indices_pairs::NTuple{N, NTuple{2, Int}},
         Rs::Tuple{Vararg{Real, N}},

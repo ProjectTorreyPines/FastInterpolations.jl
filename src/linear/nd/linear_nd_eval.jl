@@ -256,7 +256,7 @@ The weight function depends on the evaluation operation:
 end
 
 """
-    _multilinear_sum(data, indices_pairs, hs, αs, ops, Val(N))
+    _multilinear_sum_lr(data, indices_pairs, hs, αs, ops, Val(N))
 
 Pair-valued indices variant for zero-copy periodic ND evaluation (Phase 6).
 
@@ -264,18 +264,16 @@ Pair-valued indices variant for zero-copy periodic ND evaluation (Phase 6).
 `b ∈ {0,1}^N`, corner address on axis `d` is `indices_pairs[d][b_d + 1]`
 (bit 0 → left `idx_L_d`, bit 1 → right `idx_R_d`).
 
-Dispatch-distinct from the Int-valued `_multilinear_sum`: non-periodic ND
-oneshot and persistent paths keep the Int variant (`idx_R == idx_L + 1` from
-grid extension); periodic ND oneshot uses this variant so seam-cell reads
-land on `data[..., idx_R=1, ...]` without data extension.
+Distinct name (not an overload) because at `N=0` `NTuple{0, Int}` and
+`NTuple{0, NTuple{2, Int}}` both collapse to `Tuple{}`, making
+overload-style dispatch ambiguous (caught by Aqua static analysis). Used
+only by periodic ND oneshot — non-periodic/persistent callers stay on
+`_multilinear_sum`.
 
-Codegen: identical flat 2^N straight-line unroll. The only change is the
-corner-address expression — `indices[d] + bit` → `indices_pairs[d][bit + 1]`.
-LLVM should elide the 2-tuple indexing to the same loads as the Int variant
-whenever the caller's searcher is `NoBC` (idx_R inferable as idx_L+1 at
-type level).
+Codegen: identical flat 2^N straight-line unroll. Only the corner-address
+expression differs — `indices[d] + bit` → `indices_pairs[d][bit + 1]`.
 """
-@generated function _multilinear_sum(
+@generated function _multilinear_sum_lr(
         data::AbstractArray{Tv, N},
         indices_pairs::NTuple{N, NTuple{2, Int}},
         hs::NTuple{N},

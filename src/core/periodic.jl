@@ -467,6 +467,38 @@ end
     )
 
 """
+    _resolve_periodic_extrap_1d(bc, extrap, x, y) -> WrapExtrap | extrap
+
+Single gateway for 1D oneshot periodic entries: validates the `:inclusive`
+endpoint contract (`y[1] ≈ y[end]`), then projects `bc` into a typed
+`WrapExtrap`. Non-periodic `bc` returns `extrap` unchanged.
+"""
+@inline function _resolve_periodic_extrap_1d(
+        bc::AbstractBC, extrap::AbstractExtrap, x, y::AbstractVector
+    )
+    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y)
+    return _resolve_periodic_extrap(bc, extrap, x)
+end
+
+"""
+    _resolve_periodic_extraps_nd(bcs, extraps, grids, data, Val(N)) -> NTuple{N, AbstractExtrap}
+
+Single gateway for ND oneshot periodic entries: validates `:inclusive` axes'
+matched-endpoint slices on `data`, then returns per-axis effective extraps
+via `map(_resolve_periodic_extrap, bcs, extraps, grids)`.
+"""
+@inline function _resolve_periodic_extraps_nd(
+        bcs::NTuple{N, AbstractBC},
+        extraps::NTuple{N, AbstractExtrap},
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray,
+        ::Val{N},
+    ) where {N}
+    _validate_periodic_slices_nd(data, bcs, Val(N))
+    return map(_resolve_periodic_extrap, bcs, extraps, grids)
+end
+
+"""
     _periodic_extend_1d(x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)
 
 Non-pool 1D periodic dispatch for the **persistent-interpolant path**.

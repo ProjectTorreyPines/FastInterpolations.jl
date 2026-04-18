@@ -39,11 +39,7 @@ function _linear_interp_nd_oneshot(
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    # Per-axis bc → effective extrap (typed WrapExtrap for periodic axes, passthrough for NoBC)
-    extraps_eff = map(_resolve_periodic_extrap, bcs, extraps_val, grids)
-    # Inclusive periodic axes: validate matched-endpoint slices on original data
-    # (same check `_prepare_periodic_nd_pooled` did; run here since we skip extension).
-    _validate_periodic_slices_nd(data, bcs, Val(N))
+    extraps_eff = _resolve_periodic_extraps_nd(bcs, extraps_val, grids, data, Val(N))
     q_eval = _handle_all_extraps(query, grids, extraps_eff)
     # BC-aware per-axis search — returns (indices_pairs, Ls, Rs) where
     # indices_pairs[d] = (idx_L_d, idx_R_d); periodic seam axes have idx_R == 1.
@@ -78,10 +74,7 @@ function _linear_interp_nd_oneshot_batch!(
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps_val)
-    # Zero-copy periodic ND batch: per-axis extraps from bcs, spacings non-pool,
-    # BC-aware per-axis search returns pair indices (periodic axes wrap at seam).
-    extraps_eff = map(_resolve_periodic_extrap, bcs, extraps_val, grids)
-    _validate_periodic_slices_nd(data, bcs, Val(N))
+    extraps_eff = _resolve_periodic_extraps_nd(bcs, extraps_val, grids, data, Val(N))
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, grids, extraps_val, ops, first(data))

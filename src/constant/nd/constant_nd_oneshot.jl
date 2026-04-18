@@ -33,11 +33,7 @@ function _constant_interp_nd_oneshot(
     oob_result = _try_fill_oob(query, grids, extraps_val, EvalValue(), @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    # Zero-copy periodic ND: per-axis extraps from bcs, BC-aware search returns
-    # pair indices (periodic axes wrap at seam), pair-dispatch kernel reads
-    # wrapped corners from original data without extension.
-    extraps_eff = map(_resolve_periodic_extrap, bcs, extraps_val, grids)
-    _validate_periodic_slices_nd(data, bcs, Val(N))
+    extraps_eff = _resolve_periodic_extraps_nd(bcs, extraps_val, grids, data, Val(N))
     q_eval = _handle_all_extraps(query, grids, extraps_eff)
     indices_pairs, Ls, Rs = _search_all_intervals_lr(q_eval, grids, searches, hints, bcs)
     return _constant_nd_kernel_lr(data, indices_pairs, Rs, side_vals, q_eval, Ls)
@@ -66,8 +62,7 @@ function _constant_interp_nd_oneshot_batch!(
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps_val)
-    extraps_eff = map(_resolve_periodic_extrap, bcs, extraps_val, grids)
-    _validate_periodic_slices_nd(data, bcs, Val(N))
+    extraps_eff = _resolve_periodic_extraps_nd(bcs, extraps_val, grids, data, Val(N))
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, grids, extraps_val, EvalValue(), first(data))

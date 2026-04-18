@@ -70,8 +70,7 @@ function linear_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     x_typed = _prepare_grid(x)
-    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y)
-    extrap_eff = _resolve_periodic_extrap(bc, extrap, x_typed)
+    extrap_eff = _resolve_periodic_extrap_1d(bc, extrap, x_typed, y)
     searcher = _resolve_search(x_typed, x_targets, search, nothing, bc)
     return _linear_interp_loop!(output, x_typed, y, x_targets, extrap_eff, deriv, searcher)
 end
@@ -285,8 +284,7 @@ end
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     x_typed = _prepare_grid(x)
-    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y)
-    extrap_eff = _resolve_periodic_extrap(bc, extrap, x_typed)
+    extrap_eff = _resolve_periodic_extrap_1d(bc, extrap, x_typed, y)
     searcher = _resolve_search(x_typed, xq, search, hint, bc)
     return _linear_eval_at_point(x_typed, y, xq, extrap_eff, deriv, searcher)
 end

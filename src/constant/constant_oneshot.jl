@@ -162,8 +162,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     x_typed = _prepare_grid(x)
-    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y)
-    extrap_eff = _resolve_periodic_extrap(bc, extrap, x_typed)
+    extrap_eff = _resolve_periodic_extrap_1d(bc, extrap, x_typed, y)
     searcher = _resolve_search(x_typed, xi, search, hint, bc)
     result = _constant_eval_at_point(x_typed, y, xi, extrap_eff, side, deriv, searcher)
     # Single-exit coerce: Int/Rational y returns y[idx] directly; promote to Float.
@@ -216,8 +215,7 @@ function constant_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     x_typed = _prepare_grid(x)
-    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y)
-    extrap_eff = _resolve_periodic_extrap(bc, extrap, x_typed)
+    extrap_eff = _resolve_periodic_extrap_1d(bc, extrap, x_typed, y)
     searcher = _resolve_search(x_typed, x_targets, search, nothing, bc)
     _constant_vector_loop!(output, x_typed, y, x_targets, extrap_eff, side, deriv, searcher)
     return output

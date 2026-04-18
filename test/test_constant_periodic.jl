@@ -28,6 +28,21 @@ using FastInterpolations: _CachedRange
         @test_throws ArgumentError constant_interp(x, y; bc = PeriodicBC())
     end
 
+    @testset "Inclusive — endpoint mismatch raises on 1D oneshot (scalar + vector)" begin
+        x = collect(range(0.0, 1.0, length = 5))
+        y = [0.0, 1.0, 2.0, 3.0, 4.0]
+        @test_throws ArgumentError constant_interp(x, y, 0.5; bc = PeriodicBC())
+        @test_throws ArgumentError constant_interp(x, y, [0.25, 0.75]; bc = PeriodicBC())
+    end
+
+    @testset "Inclusive — endpoint check=false skips validation on 1D oneshot" begin
+        x = collect(range(0.0, 1.0, length = 5))
+        y = [0.0, 1.0, 2.0, 3.0, 4.0]
+        bc = PeriodicBC(endpoint = :inclusive, check = false)
+        @test constant_interp(x, y, 0.5; bc = bc) isa Real
+        @test constant_interp(x, y, [0.25, 0.75]; bc = bc) isa AbstractVector
+    end
+
     @testset "Exclusive — FVM cell-centered, LeftSide" begin
         x = range(0.5, step = 1.0, length = 3)
         y = [10.0, 20.0, 30.0]

@@ -11,10 +11,6 @@
 # ║                      Zero type conversion overhead                        ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# PeriodicBC 1D dispatch uses the shared `_periodic_extend_1d_pooled!` helper
-# from core/periodic.jl (no method-specific logic needed — Linear has no
-# coefficient system, so extension alone suffices).
-
 # ========================================
 # Vector interpolation (in-place, zero-allocation)
 # ========================================
@@ -60,11 +56,6 @@ function linear_interp! end
 
 # Unified in-place entry point. Handles promotion internally via _promote_itp_inputs,
 # so no separate Real/Mixed-type wrapper is needed (same pattern as the scalar API).
-#
-# Periodic path: `_resolve_periodic_extrap` projects bc into a typed WrapExtrap
-# carrying the physical wrap domain — no pool, no data extension. Seam handling
-# happens on the original grid via BC-aware `Searcher` (Phase 1) + 4-arg
-# `_wrap_to_domain` inside the eval's WrapExtrap branch.
 function linear_interp!(
         output::AbstractVector,
         x::AbstractVector,
@@ -79,6 +70,7 @@ function linear_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     x_typed = _prepare_grid(x)
+    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y)
     extrap_eff = _resolve_periodic_extrap(bc, extrap, x_typed)
     searcher = _resolve_search(x_typed, x_targets, search, nothing, bc)
     return _linear_interp_loop!(output, x_typed, y, x_targets, extrap_eff, deriv, searcher)
@@ -280,9 +272,6 @@ end
 # Public scalar one-shot API.
 # Zero-alloc: _prepare_grid returns Vector as-is, Range → _CachedRange (stack).
 # Kernel arithmetic auto-promotes Int×Float via _get_h float() wrappers.
-# Periodic path: no pool, no extension — `_resolve_periodic_extrap` projects bc
-# into a typed WrapExtrap carrying the physical wrap domain, BC-aware search
-# (Phase 1) handles the seam cell on original data.
 @inline function linear_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -296,6 +285,7 @@ end
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     x_typed = _prepare_grid(x)
+    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y)
     extrap_eff = _resolve_periodic_extrap(bc, extrap, x_typed)
     searcher = _resolve_search(x_typed, xq, search, hint, bc)
     return _linear_eval_at_point(x_typed, y, xq, extrap_eff, deriv, searcher)

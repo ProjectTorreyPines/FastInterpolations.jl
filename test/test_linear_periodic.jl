@@ -46,6 +46,21 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         @test_throws ArgumentError linear_interp(x, y; bc = PeriodicBC())
     end
 
+    @testset "Inclusive — endpoint mismatch raises on 1D oneshot (scalar + vector)" begin
+        x = collect(range(0.0, 1.0, length = 5))
+        y = [0.0, 1.0, 2.0, 3.0, 4.0]                          # y[1] != y[end]
+        @test_throws ArgumentError linear_interp(x, y, 0.5; bc = PeriodicBC())
+        @test_throws ArgumentError linear_interp(x, y, [0.25, 0.75]; bc = PeriodicBC())
+    end
+
+    @testset "Inclusive — endpoint check=false skips validation on 1D oneshot" begin
+        x = collect(range(0.0, 1.0, length = 5))
+        y = [0.0, 1.0, 2.0, 3.0, 4.0]
+        bc = PeriodicBC(endpoint = :inclusive, check = false)
+        @test linear_interp(x, y, 0.5; bc = bc) isa Real
+        @test linear_interp(x, y, [0.25, 0.75]; bc = bc) isa AbstractVector
+    end
+
     @testset "Exclusive — FVM cell-centered, Range grid" begin
         # Cell centers x = [0.5, 1.5, 2.5], physical period L = 3.0
         x = range(0.5, step = 1.0, length = 3)

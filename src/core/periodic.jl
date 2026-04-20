@@ -58,7 +58,9 @@ end
 @inline _wrap_to_domain(xi, x_min, x_max, ::WrapExtrap{Nothing}) =
     _wrap_to_domain(xi, x_min, x_max)
 
-@inline _wrap_to_domain(xi, _x_min_fb, _x_max_fb, e::WrapExtrap{<:AbstractFloat}) =
+# Typed WrapExtrap (any element type): delegate to the duck-typed 3-arg dispatch
+# which handles `Int`, `Rational`, `Dual`, `Float*` grids via its existing overloads.
+@inline _wrap_to_domain(xi, _x_min_fb, _x_max_fb, e::WrapExtrap) =
     _wrap_to_domain(xi, e._x_min, e._x_max)
 
 # ========================================

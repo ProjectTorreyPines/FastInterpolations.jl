@@ -61,6 +61,45 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         @test linear_interp(x, y, [0.25, 0.75]; bc = bc) isa AbstractVector
     end
 
+    @testset "Non-Float wrap domains — Int grid + PeriodicBC" begin
+        # Contract: y[1] ≈ y[end] is satisfied so :inclusive build/eval is legal.
+        # Exercises WrapExtrap{Int} (produced by _resolve_periodic_extrap on Int grid).
+        x = [0, 1, 2, 3]
+        y = [1.0, 2.0, 3.0, 1.0]
+        # Persistent
+        itp = linear_interp(x, y; bc = PeriodicBC())
+        @test itp(0.5) ≈ 1.5 atol = 1.0e-12    # no wrap
+        @test itp(1.5) ≈ 2.5 atol = 1.0e-12    # no wrap
+        @test itp(4.5) ≈ 2.5 atol = 1.0e-12    # wrap: 4.5 → 1.5 via period=3
+
+        # Oneshot scalar + vector
+        @test linear_interp(x, y, 0.5; bc = PeriodicBC()) ≈ 1.5 atol = 1.0e-12
+        @test linear_interp(x, y, 4.5; bc = PeriodicBC()) ≈ 2.5 atol = 1.0e-12
+        @test linear_interp(x, y, [0.5, 4.5]; bc = PeriodicBC()) ≈ [1.5, 2.5] atol = 1.0e-12
+    end
+
+    @testset "Non-Float wrap domains — explicit WrapExtrap(Int, Int)" begin
+        # User constructs WrapExtrap with Int args → WrapExtrap{Int}. Must dispatch
+        # through to the duck-typed 3-arg _wrap_to_domain (Int x_min/x_max, Float xi).
+        x = collect(range(0.0, step = 1.0, length = 4))
+        y = [1.0, 2.0, 3.0, 4.0]
+        extrap_int = @test_logs (:warn, r"WrapExtrap") match_mode = :any WrapExtrap(0, 4)
+        @test extrap_int isa FastInterpolations.WrapExtrap{Int}
+        itp = linear_interp(x, y; extrap = extrap_int)
+        # wrap: 4.5 → period 4 → 0.5 → between y[1]=1.0 and y[2]=2.0 → 1.5
+        @test itp(4.5) ≈ 1.5 atol = 1.0e-12
+    end
+
+    @testset "Non-Float wrap domains — Rational grid + PeriodicBC" begin
+        # Rational grid preserves exact arithmetic through the wrap path.
+        x = [0 // 1, 1 // 1, 2 // 1, 3 // 1]
+        y = [1.0, 2.0, 3.0, 1.0]
+        itp = linear_interp(x, y; bc = PeriodicBC())
+        @test itp(0.5) ≈ 1.5 atol = 1.0e-12
+        @test itp(4.5) ≈ 2.5 atol = 1.0e-12
+        @test linear_interp(x, y, 4.5; bc = PeriodicBC()) ≈ 2.5 atol = 1.0e-12
+    end
+
     @testset "Exclusive — FVM cell-centered, Range grid" begin
         # Cell centers x = [0.5, 1.5, 2.5], physical period L = 3.0
         x = range(0.5, step = 1.0, length = 3)

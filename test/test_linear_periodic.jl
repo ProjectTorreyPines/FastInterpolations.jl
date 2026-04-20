@@ -285,6 +285,56 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         @test itp isa LinearInterpolantND
     end
 
+    @testset "ND seam-cell — _multilinear_sum_lr exact bilinear via wrap" begin
+        # 2D, axis 1 :exclusive (period=4), axis 2 NoBC. Query lands in the seam
+        # cell on axis 1, so the kernel must read corners (n, 1) on that axis
+        # rather than (n, n+1). Picks data values that make the expected wrap-
+        # interpolated result trivially predictable.
+        x = collect(range(0.0, step = 1.0, length = 4))     # [0,1,2,3], period 4
+        yy = collect(range(0.0, step = 1.0, length = 3))    # [0,1,2]
+        # data[i, j] = (i-1) + 10*(j-1)  ⇒ corner-recoverable
+        data = [Float64(i - 1) + 10 * Float64(j - 1) for i in 1:4, j in 1:3]
+
+        bc = (PeriodicBC(endpoint = :exclusive, period = 4.0), NoBC())
+        # NoExtrap on axis 2 is fine because q[2] is in domain.
+        extrap = (NoExtrap(), NoExtrap())
+
+        # Query in seam cell axis 1: 3.5 ∈ [3, 4=x[1]+period].
+        # Axis 1 corners read data[4, j] (=3 + 10*(j-1)) and data[1, j] (=10*(j-1)).
+        # α = (3.5 - 3)/(4 - 3) = 0.5 ⇒ axis-1 blend = 1.5 + 10*(j-1).
+        # Axis 2 at 0.5 between j=1 (1.5) and j=2 (11.5) ⇒ β=0.5 ⇒ 6.5.
+        q = (3.5, 0.5)
+        @test linear_interp((x, yy), data, q; bc = bc, extrap = extrap) ≈ 6.5 atol = 1.0e-12
+
+        # Persistent must agree at the same query (zero-copy must match extension path).
+        itp = linear_interp((x, yy), data; bc = bc, extrap = extrap)
+        @test itp(q) ≈ 6.5 atol = 1.0e-12
+
+        # Query just below seam → no wrap, normal bilinear cell [2,3]×[0,1].
+        # data[3,1]=2, data[4,1]=3, data[3,2]=12, data[4,2]=13.
+        # At (2.9, 0.5): α=0.9, β=0.5
+        # 0.1*0.5*2 + 0.9*0.5*3 + 0.1*0.5*12 + 0.9*0.5*13
+        # = 0.1 + 1.35 + 0.6 + 5.85 = 7.9
+        q2 = (2.9, 0.5)
+        @test linear_interp((x, yy), data, q2; bc = bc, extrap = extrap) ≈ 7.9 atol = 1.0e-12
+
+        # Both axes periodic, both in seam — kernel reads (4,1) on each axis.
+        bc_both = (
+            PeriodicBC(endpoint = :exclusive, period = 4.0),
+            PeriodicBC(endpoint = :exclusive, period = 3.0),
+        )
+        # data periodic along axis 2 too: rebuild with period-3 wrap-friendly values.
+        # Use data[i,j] = (i-1) + (j-1) so wrap on axis 2 gives j=1 ↔ j=4 virtual.
+        data2 = [Float64(i - 1) + Float64(j - 1) for i in 1:4, j in 1:3]
+        q3 = (3.5, 2.5)  # both axes in seam cells
+        # Axis 1 corners: data2[4, j]=3+(j-1) and data2[1, j]=(j-1) → α=0.5 → 1.5+(j-1)
+        # Axis 2 corners (via wrap): blend between j=3 (1.5+2=3.5) and j=1 (1.5+0=1.5)
+        # β = (2.5 - 2)/(3 - 2) = 0.5 → result = 0.5*3.5 + 0.5*1.5 = 2.5
+        @test linear_interp((x, yy), data2, q3; bc = bc_both, extrap = extrap) ≈ 2.5 atol = 1.0e-12
+        itp_both = linear_interp((x, yy), data2; bc = bc_both, extrap = extrap)
+        @test itp_both(q3) ≈ 2.5 atol = 1.0e-12
+    end
+
     # ============================================================
     # Edge cases (mirrors test_periodic_exclusive.jl for cubic)
     # ============================================================

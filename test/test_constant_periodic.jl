@@ -194,6 +194,45 @@ using FastInterpolations: _CachedRange
         @test itp isa ConstantInterpolantND
     end
 
+    @testset "ND seam-cell — _constant_nd_kernel_lr exact wrap" begin
+        # 2D, axis 1 :exclusive (period=4), axis 2 NoBC. Constant uses one of
+        # the (idx_L, idx_R) corners per axis according to `side`. Pinning down
+        # LeftSide and RightSide along the seam axis is the strongest unit-level
+        # check on the kernel: oneshot must agree with persistent for both.
+        x = collect(range(0.0, step = 1.0, length = 4))     # period 4
+        yy = collect(range(0.0, step = 1.0, length = 3))
+        data = [Float64(i - 1) + 10 * Float64(j - 1) for i in 1:4, j in 1:3]
+
+        bc = (PeriodicBC(endpoint = :exclusive, period = 4.0), NoBC())
+        extrap = (NoExtrap(), NoExtrap())
+
+        # Seam cell axis 1 at q=(3.5, 0.5):
+        #   axis-1 corners are data[4, j] (left, x=3) and data[1, j] (right, wrapped to x=4)
+        #   axis-2 corners are data[i, 1] (left, y=0) and data[i, 2] (right, y=1)
+        q = (3.5, 0.5)
+
+        # LeftSide on both axes ⇒ pick (4, 1) ⇒ data[4, 1] = 3.0
+        side_LL = (LeftSide(), LeftSide())
+        @test constant_interp((x, yy), data, q; bc = bc, extrap = extrap, side = side_LL) == 3.0
+        itp_LL = constant_interp((x, yy), data; bc = bc, extrap = extrap, side = side_LL)
+        @test itp_LL(q) == 3.0
+
+        # RightSide on axis 1, LeftSide on axis 2 ⇒ pick (1, 1) ⇒ data[1, 1] = 0.0
+        # (axis 1 right corner wraps to data[1, j])
+        side_RL = (RightSide(), LeftSide())
+        @test constant_interp((x, yy), data, q; bc = bc, extrap = extrap, side = side_RL) == 0.0
+        itp_RL = constant_interp((x, yy), data; bc = bc, extrap = extrap, side = side_RL)
+        @test itp_RL(q) == 0.0
+
+        # Both RightSide ⇒ data[1, 2] = 10.0
+        side_RR = (RightSide(), RightSide())
+        @test constant_interp((x, yy), data, q; bc = bc, extrap = extrap, side = side_RR) == 10.0
+
+        # Just below seam (no wrap): LeftSide picks data[3, 1] = 2.0
+        q_pre = (2.9, 0.5)
+        @test constant_interp((x, yy), data, q_pre; bc = bc, extrap = extrap, side = side_LL) == 2.0
+    end
+
     # ============================================================
     # Edge cases
     # ============================================================

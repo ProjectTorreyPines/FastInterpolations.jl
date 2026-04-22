@@ -70,7 +70,7 @@ function linear_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     x_typed = _prepare_grid(x)
-    extrap_eff = _resolve_periodic_extrap_1d(bc, extrap, x_typed, y)
+    extrap_eff = _resolve_extrap(bc, extrap, x_typed, y)
     searcher = _resolve_search(x_typed, x_targets, search, nothing, bc)
     return _linear_interp_loop!(output, x_typed, y, x_targets, extrap_eff, deriv, searcher)
 end
@@ -106,19 +106,23 @@ end
         op::O,
         searcher::S
     ) where {Tg, O <: AbstractEvalOp, S <: Searcher}
-    x_min, x_max = first(x), last(x)
+    # Fast-path bounds come from the materialized wrap domain (may extend past
+    # `last(x)` for `:exclusive` periodic, where the domain spans one period
+    # beyond the grid). Using `extrap._x_min/._x_max` avoids a misfire where an
+    # in-period query would be forced through the slow path just because it's
+    # past `last(x)`.
+    x_min, x_max = extrap._x_min, extrap._x_max
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
     if qmin >= x_min && qmax < x_max
-        # Fast path: all queries inside domain - use extension (no wrap overhead)
+        # Fast path: all queries inside domain — use extension (no wrap overhead)
         @inbounds for i in eachindex(x_targets, output)
             output[i] = _linear_eval_at_point(x, y, x_targets[i], ExtendExtrap(), op, searcher)
         end
     else
-        # Slow path: some queries outside - per-element wrap (4-arg uses extrap's stored
-        # domain for WrapExtrap{<:AbstractFloat}, falls back to grid span for {Nothing}).
+        # Slow path: some queries outside — per-element wrap via 2-arg form.
         @inbounds for i in eachindex(x_targets, output)
-            xi_wrapped = _wrap_to_domain(x_targets[i], x_min, x_max, extrap)
+            xi_wrapped = _wrap_to_domain(x_targets[i], extrap)
             output[i] = _linear_eval_at_point(x, y, xi_wrapped, ExtendExtrap(), op, searcher)
         end
     end
@@ -251,9 +255,9 @@ end
 
 # WrapExtrap: wrap query to domain → search + kernel.
 # Pass original xq (may be Dual) to _wrap_to_domain to preserve AD derivatives.
-# 4-arg `_wrap_to_domain` with `extrap::WrapExtrap` uses stored domain for
-# WrapExtrap{<:AbstractFloat} (typed, from `_resolve_periodic_extrap`) and
-# falls back to grid span for WrapExtrap{Nothing} (legacy singleton).
+# The 2-arg `_wrap_to_domain(xq, extrap)` reads `extrap._x_min/._x_max` directly —
+# materialization of `WrapExtrap{Nothing}` to `WrapExtrap{T}` happens upstream in
+# `_resolve_extrap` / `_materialize_extrap`, so kernels only see the typed form.
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -262,7 +266,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, first(x), last(x), extrap)
+    xq_wrapped = _wrap_to_domain(xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     dL = xq_wrapped - xL
     @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xR, xL), dL)
@@ -284,7 +288,7 @@ end
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     x_typed = _prepare_grid(x)
-    extrap_eff = _resolve_periodic_extrap_1d(bc, extrap, x_typed, y)
+    extrap_eff = _resolve_extrap(bc, extrap, x_typed, y)
     searcher = _resolve_search(x_typed, xq, search, hint, bc)
     return _linear_eval_at_point(x_typed, y, xq, extrap_eff, deriv, searcher)
 end

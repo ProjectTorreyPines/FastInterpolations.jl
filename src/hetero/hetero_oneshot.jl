@@ -30,7 +30,11 @@
 
     # 1. Extend exclusive periodic axes (pool-based)
     bcs_periodic = map(_bc_for_periodic_check, methods)
-    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
+    grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
+
+    # 1a. Per-axis materialization: upgrade WrapExtrap{Nothing} → WrapExtrap{T} against
+    # the post-extension grid so the downstream eval pipeline never sees the singleton.
+    extraps_eff = map(_materialize_extrap, grids_p, bcs_p, extraps_val)
 
     # 2. Pool-allocate compact partials (widened with Tg for Dual grid support)
     Tv = _value_type(eltype(data), Tg)
@@ -46,7 +50,7 @@
     spacings = _create_spacings_pooled(pool, grids_p)
 
     # 5. Eval pipeline (all standalone functions from nd_utils.jl)
-    q_eval = _handle_all_extraps(query, grids_p, extraps_val)
+    q_eval = _handle_all_extraps(query, grids_p, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches, hints)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
 
@@ -77,7 +81,10 @@ end
 
     # Build phase (ONE-TIME)
     bcs_periodic = map(_bc_for_periodic_check, methods)
-    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
+    grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
+
+    # Per-axis materialization against the (possibly extended) grid.
+    extraps_eff = map(_materialize_extrap, grids_p, bcs_p, extraps_val)
 
     Tv = _value_type(eltype(data), Tg)
     Tz = _output_eltype(Tv, Tg)
@@ -95,7 +102,7 @@ end
             output[k] = oob_val
             continue
         end
-        q_eval = _handle_all_extraps(query_k, grids_p, extraps_val)
+        q_eval = _handle_all_extraps(query_k, grids_p, extraps_eff)
         indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, policies, hints, mono)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
         output[k] = _eval_hetero_nd_cell(partials, indices, hs, inv_hs, dLs, ops, methods)
@@ -134,7 +141,12 @@ end
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
-    q_eval = _handle_all_extraps(query, grids, extraps_val)
+    # OnTheFly does not extend data — materialize extraps against the original grid
+    # with per-axis bcs derived from methods. Periodic axes become WrapExtrap with
+    # the correct `[x_min, x_min+period)` domain via the bc-aware constructor.
+    bcs = map(_bc_for_periodic_check, methods)
+    extraps_eff = map(_materialize_extrap, grids, bcs, extraps_val)
+    q_eval = _handle_all_extraps(query, grids, extraps_eff)
     # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
     # Grid eltype included: when grid is Dual, 1D oneshot returns Dual-typed results
     # that must fit into _collapse_dims intermediate buffers.
@@ -166,14 +178,14 @@ end
         grids_local = map(view, grids, windows)
         rel_windows = map(Base.OneTo ∘ length, windows)
         return _collapse_dims(
-            Tr, data_local, grids_local, methods, extraps_val,
+            Tr, data_local, grids_local, methods, extraps_eff,
             q_eval, ops, searches, nothing, rel_windows,
         )
     end
 
     # Pure global-solve path: no pre-search, full windows, bit-for-bit pre-Phase-3 behavior.
     full_windows = map(Base.OneTo, size(data))
-    return _collapse_dims(Tr, data, grids, methods, extraps_val, q_eval, ops, searches, hints, full_windows)
+    return _collapse_dims(Tr, data, grids, methods, extraps_eff, q_eval, ops, searches, hints, full_windows)
 end
 
 # ========================================

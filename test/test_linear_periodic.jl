@@ -78,14 +78,16 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         @test linear_interp(x, y, [0.5, 4.5]; bc = PeriodicBC()) ≈ [1.5, 2.5] atol = 1.0e-12
     end
 
-    @testset "Non-Float wrap domains — explicit WrapExtrap(Int, Int)" begin
-        # User constructs WrapExtrap with Int args → WrapExtrap{Int}. Must dispatch
-        # through to the duck-typed 3-arg _wrap_to_domain (Int x_min/x_max, Float xi).
-        x = collect(range(0.0, step = 1.0, length = 4))
-        y = [1.0, 2.0, 3.0, 4.0]
-        extrap_int = @test_logs (:warn, r"WrapExtrap") match_mode = :any WrapExtrap(0, 4)
+    @testset "Non-Float wrap domains — WrapExtrap(x) with Int grid" begin
+        # `WrapExtrap(x::AbstractVector)` preserves the grid's eltype. For an Int
+        # grid, the stored WrapExtrap is WrapExtrap{Int} — must dispatch through
+        # the duck-typed 3-arg `_wrap_to_domain` (Int x_min/x_max, Float xi).
+        x_int = [0, 1, 2, 3, 4]
+        y = [1.0, 2.0, 3.0, 4.0, 5.0]
+        extrap_int = WrapExtrap(x_int)
         @test extrap_int isa FastInterpolations.WrapExtrap{Int}
-        itp = linear_interp(x, y; extrap = extrap_int)
+        @test (extrap_int._x_min, extrap_int._x_max) == (0, 4)
+        itp = linear_interp(x_int, y; extrap = extrap_int)
         # wrap: 4.5 → period 4 → 0.5 → between y[1]=1.0 and y[2]=2.0 → 1.5
         @test itp(4.5) ≈ 1.5 atol = 1.0e-12
     end

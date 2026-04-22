@@ -267,6 +267,9 @@ function _build_hetero_nd(
     # 6. Resolve per-axis configuration (pass BCs so PeriodicBC auto-gets WrapExtrap)
     bcs = map(_bc_for_periodic_check, methods)
     extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    # Materialize against the original grid — the OnTheFly path does not extend,
+    # so periodic/exclusive uses bc-aware `WrapExtrap(x, bc)` with bc.period.
+    extraps = map(_materialize_extrap, grids_typed, bcs, extraps)
     searches = _resolve_search_nd(search, Val(N))
 
     # 6b. Override extrap/search for NoInterp axes (no domain check, no search)
@@ -317,6 +320,9 @@ function _build_hetero_precomputed(
     # Extend exclusive periodic axes to inclusive form (same as CubicInterpolantND).
     # Must happen before spacings + partials so the stored grid matches the data.
     grids_typed, data_ext, _ = _prepare_periodic_nd(grids_typed, data, bcs_periodic)
+    # Materialize WrapExtrap{Nothing} via extended grid-span (post-extension
+    # grid spans the period for periodic axes).
+    extraps = map(_materialize_extrap, grids_typed, extraps)
     spacings = _create_spacings_typed(grids_typed)
 
     # Build partials on the (possibly extended) data

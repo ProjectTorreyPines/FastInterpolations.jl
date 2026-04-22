@@ -36,6 +36,7 @@ C\$^1\$ continuous — slopes are used directly, no global spline solve.
     @boundscheck length(x) >= 2 || throw(ArgumentError("Hermite interpolation requires at least 2 points, got $(length(x))"))
 
     searcher = _resolve_search(x, xq, search, hint)
+    extrap = _materialize_extrap(x, extrap)
     return _hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
 end
 
@@ -65,6 +66,7 @@ function hermite_interp!(
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
 
     searcher = _resolve_search(x, x_query, search, hint)
+    extrap = _materialize_extrap(x, extrap)
     return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
 end
 

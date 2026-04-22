@@ -19,7 +19,7 @@
 Zero-allocation scalar one-shot ND multilinear evaluation.
 Evaluates directly from grids + data — no pool, no data extension even for
 exclusive periodic axes. Per-axis bc is projected into typed `WrapExtrap` via
-`_resolve_periodic_extrap`; BC-aware `Searcher` returns `(idx_L=n, idx_R=1)`
+`_resolve_extrap` (validation + materialization); BC-aware `Searcher` returns `(idx_L=n, idx_R=1)`
 at periodic seam cells so the kernel reads wrapped corners directly from the
 original `data`. Expect ~1× parity with persistent ND interpolant for periodic
 exclusive (was ~365× pre-refactor due to per-query N-dim data copy).
@@ -39,7 +39,7 @@ function _linear_interp_nd_oneshot(
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    extraps_eff = _resolve_periodic_extraps_nd(bcs, extraps_val, grids, data, Val(N))
+    extraps_eff = _resolve_extrap(bcs, extraps_val, grids, data, Val(N))
     q_eval = _handle_all_extraps(query, grids, extraps_eff)
     # BC-aware per-axis search — returns (indices_pairs, Ls, Rs) where
     # indices_pairs[d] = (idx_L_d, idx_R_d); periodic seam axes have idx_R == 1.
@@ -74,7 +74,7 @@ function _linear_interp_nd_oneshot_batch!(
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps_val)
-    extraps_eff = _resolve_periodic_extraps_nd(bcs, extraps_val, grids, data, Val(N))
+    extraps_eff = _resolve_extrap(bcs, extraps_val, grids, data, Val(N))
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, grids, extraps_val, ops, first(data))

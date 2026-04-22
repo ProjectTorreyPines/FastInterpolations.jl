@@ -121,6 +121,7 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x = _prepare_grid(x)
+    extrap = _materialize_extrap(x, extrap)
     tension_f = float(eltype(x))(tension)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
@@ -147,6 +148,7 @@ In-place cardinal spline interpolation.
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x = _prepare_grid(x)
+    extrap = _materialize_extrap(x, extrap)
     resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly
         return _cardinal_interp_onthefly!(output, x, y, x_query, float(eltype(x))(tension), extrap, deriv, search, hint)

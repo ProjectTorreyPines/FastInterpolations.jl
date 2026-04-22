@@ -73,6 +73,9 @@ function constant_interp(
     # _resolve_extrap_nd(extrap, bcs, ...) validates periodic/extrap compatibility
     # and auto-overrides per-axis extrap to WrapExtrap() on periodic axes.
     extrap_vals = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    # Materialize WrapExtrap{Nothing} via extended grid-span (post-extension
+    # invariant: `last - first == period` for periodic axes).
+    extrap_vals = map(_materialize_extrap, grids_typed, extrap_vals)
     return ConstantInterpolantND{
         Tg, Tv, N,
         typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(sides), typeof(searches),

@@ -892,22 +892,15 @@ end
     return idx, idx + 1, xL, xR
 end
 
-# --- Real + NoBC: pure 3→4 tuple packaging, no seam wrap ---
-@inline function search_interval(s::Searcher{P, H, NoBC}, x::AbstractVector, xq::Real) where {P, H}
+# --- Real + any BC that isn't exclusive: pure 3→4 tuple packaging, no seam wrap.
+# Covers NoBC, PeriodicBC{:inclusive}, CubicFit, QuadraticFit, and any future BC
+# that doesn't require seam handling. The more-specific `<:PeriodicBC{:exclusive}`
+# methods below take precedence via Julia method specificity. ---
+@inline function search_interval(s::Searcher{P, H, <:AbstractBC}, x::AbstractVector, xq::Real) where {P, H}
     idx, xL, xR = _search_interval_real(s, x, xq)
     return idx, idx + 1, xL, xR
 end
-@inline function search_interval(s::Searcher{P, H, NoBC}, x::AbstractVector, spacing::AbstractGridSpacing, xq::Real) where {P, H}
-    idx, xL, xR = _search_interval_real(s, x, spacing, xq)
-    return idx, idx + 1, xL, xR
-end
-
-# --- Real + PeriodicBC{:inclusive}: same as NoBC (matched endpoints, no wrap) ---
-@inline function search_interval(s::Searcher{P, H, <:PeriodicBC{:inclusive}}, x::AbstractVector, xq::Real) where {P, H}
-    idx, xL, xR = _search_interval_real(s, x, xq)
-    return idx, idx + 1, xL, xR
-end
-@inline function search_interval(s::Searcher{P, H, <:PeriodicBC{:inclusive}}, x::AbstractVector, spacing::AbstractGridSpacing, xq::Real) where {P, H}
+@inline function search_interval(s::Searcher{P, H, <:AbstractBC}, x::AbstractVector, spacing::AbstractGridSpacing, xq::Real) where {P, H}
     idx, xL, xR = _search_interval_real(s, x, spacing, xq)
     return idx, idx + 1, xL, xR
 end

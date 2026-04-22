@@ -84,6 +84,9 @@ function linear_interp(
     # _resolve_extrap_nd(extrap, bcs, ...) validates periodic/extrap compatibility
     # and auto-overrides per-axis extrap to WrapExtrap() on periodic axes.
     extrap_vals = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    # Materialize WrapExtrap{Nothing} against the extended grid via grid-span
+    # (post-extension, `last - first == period` for periodic axes).
+    extrap_vals = map(_materialize_extrap, grids_typed, extrap_vals)
     return LinearInterpolantND{
         Tg, Tv, N,
         typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches),

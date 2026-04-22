@@ -203,11 +203,13 @@ end
         y_periodic[end] = y_periodic[1]  # Ensure exact periodicity
 
         mitp = cubic_interp(x, Series(y_periodic); bc = PeriodicBC(), extrap = NoExtrap())
-        @test mitp.extrap === WrapExtrap()
+        @test mitp.extrap isa WrapExtrap
+        @test !(mitp.extrap isa WrapExtrap{Nothing})
 
         # Even if user requests :extension, periodic BC should override to :wrap
         mitp2 = cubic_interp(x, Series(y_periodic); bc = PeriodicBC(), extrap = ExtendExtrap())
-        @test mitp2.extrap === WrapExtrap()
+        @test mitp2.extrap isa WrapExtrap
+        @test !(mitp2.extrap isa WrapExtrap{Nothing})
     end
 end
 
@@ -480,7 +482,8 @@ end
         Y_periodic[end, 2] = Y_periodic[1, 2]
 
         mitp = cubic_interp(x, Series(Y_periodic); bc = PeriodicBC())
-        @test mitp.extrap === WrapExtrap()
+        @test mitp.extrap isa WrapExtrap
+        @test !(mitp.extrap isa WrapExtrap{Nothing})
     end
 
     @testset "Matrix input with precompute_transpose" begin

@@ -288,23 +288,26 @@ Wrap extrapolation — wraps queries into the domain using modular arithmetic.
 For periodic data.
 
 # Type Parameters
-- `T`: Either `Nothing` (default, domain inferred from grid span at query time) or
-  `<:AbstractFloat` (explicit domain stored in `_x_min`, `_x_max` fields).
+- `T`: Either `Nothing` (build-time placeholder from the zero-arg `WrapExtrap()`
+  singleton) or a concrete numeric type carrying the resolved physical wrap domain.
+  Kernels only ever see the concrete form; the `Nothing` variant is materialized
+  upstream via `_materialize_extrap` / `_resolve_extrap`.
 
 # Fields
 - `_x_min::T`, `_x_max::T`: Physical wrap domain `[_x_min, _x_max)`. Underscore
-  prefix signals advisory internal use — user code should **not** set these
-  directly via `WrapExtrap(x_min, x_max)` (that constructor emits a warning);
-  prefer `bc=PeriodicBC(...)` on the interpolant, which auto-configures the
-  wrap domain via `_resolve_periodic_extrap`.
+  prefix signals advisory internal state — prefer constructing via `WrapExtrap(x)`
+  or letting `bc=PeriodicBC(...)` drive materialization on the interpolant.
 
 # Example
 ```julia
 # Canonical usage — domain auto-configured from bc:
 itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive, period=2π))
 
-# Backward-compat singleton (domain inferred from grid first/last):
+# Backward-compat singleton — materialized to WrapExtrap(x) inside the interpolant:
 itp = cubic_interp((x, y), data; extrap=WrapExtrap())
+
+# Explicit grid-span wrap (advanced):
+itp = linear_interp(x, y; extrap=WrapExtrap(x))
 ```
 """
 struct WrapExtrap{T} <: AbstractExtrap
@@ -312,28 +315,29 @@ struct WrapExtrap{T} <: AbstractExtrap
     _x_max::T
 end
 
-# Public default: backward-compat (no domain → grid fallback via dispatch on WrapExtrap{Nothing})
+# Zero-arg singleton: a build-time placeholder. Never reaches kernels — upstream
+# `_materialize_extrap` upgrades it to `WrapExtrap(x)` before queries land.
 WrapExtrap() = WrapExtrap{Nothing}(nothing, nothing)
 
 """
-    WrapExtrap(x_min::Real, x_max::Real)
+    WrapExtrap(x::AbstractVector)
 
-Construct a `WrapExtrap` carrying an explicit physical wrap domain `[x_min, x_max)`.
+Primary factory: construct a `WrapExtrap` whose wrap domain is the grid span
+`[first(x), last(x))`.
 
-**Advisory: advanced/internal API.** For periodic interpolation, prefer specifying
-`bc=PeriodicBC(...)` on the interpolant — the wrap domain will be auto-configured
-consistently with the BC's periodicity convention. Direct use of this constructor
-emits a warning.
+Used both by user code (when they want to wrap against a known grid without a
+`PeriodicBC`) and internally by `_materialize_extrap` to upgrade the zero-arg
+singleton to a fully-typed `WrapExtrap{T}`.
 
-Throws `ArgumentError` if `x_max <= x_min`.
+For periodic interpolation, prefer `bc=PeriodicBC(...)` on the interpolant — BC
+drives extrap resolution, including `:exclusive` endpoints where the wrap domain
+extends one period beyond `last(x)`. See `WrapExtrap(x, bc)` (defined in
+`src/core/periodic.jl` after BC types load) for the BC-aware constructor layer.
 """
-function WrapExtrap(x_min::Real, x_max::Real)
-    @warn "WrapExtrap(x_min, x_max): explicit domain is advanced/internal API. " *
-          "For periodic interpolation, prefer `bc=PeriodicBC(...)` on the interpolant — " *
-          "the wrap domain is auto-configured correctly there." maxlog=1
-    x_max > x_min || throw(ArgumentError("WrapExtrap: require x_max > x_min, got ($x_min, $x_max)"))
-    p_min, p_max = promote(x_min, x_max)
-    return WrapExtrap{typeof(p_min)}(p_min, p_max)
+@inline function WrapExtrap(x::AbstractVector)
+    lo, hi = first(x), last(x)
+    T = promote_type(typeof(lo), typeof(hi))
+    return WrapExtrap{T}(T(lo), T(hi))
 end
 
 """

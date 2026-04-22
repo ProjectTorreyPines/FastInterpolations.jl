@@ -171,7 +171,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, first(x), last(x), extrap)
+    xq_wrapped = _wrap_to_domain(xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
     dL = xq_wrapped - xL
     dR = xR - xq_wrapped
@@ -294,6 +294,7 @@ Uses task-local pool for workspace allocation.
     _solve_system!(z, cache, y, cache.bc_config)
 
     searcher = _resolve_search(cache.x, x_query, search, hint)
-    @boundscheck _check_domain(cache.x, x_query, extrap)
-    _eval_with_bc(cache, y, z, x_query, extrap, deriv, searcher)
+    extrap_eff = _materialize_extrap(cache.x, NoBC(), extrap)
+    @boundscheck _check_domain(cache.x, x_query, extrap_eff)
+    _eval_with_bc(cache, y, z, x_query, extrap_eff, deriv, searcher)
 end

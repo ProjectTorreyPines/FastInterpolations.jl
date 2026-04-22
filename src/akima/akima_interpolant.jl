@@ -30,7 +30,8 @@ itp(0.5; deriv=DerivOp(1))
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    extrap_p = _promote_extrap(extrap, _value_type(TY, Tg))
+    extrap_mat = _materialize_extrap(x, NoBC(), extrap)
+    extrap_p = _promote_extrap(extrap_mat, _value_type(TY, Tg))
     resolved = _resolve_coeffs(coeffs)
     if resolved isa OnTheFly
         return AkimaInterpolant1D(x, y, AkimaSlopes(), extrap_p, search)

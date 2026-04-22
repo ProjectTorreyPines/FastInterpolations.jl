@@ -60,7 +60,8 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # Periodic BC always uses WrapExtrap internally
         itp_periodic = @inferred cubic_interp(x, y_periodic; bc = PeriodicBC())
-        @test itp_periodic.extrap === WrapExtrap()
+        @test itp_periodic.extrap isa WrapExtrap
+        @test !(itp_periodic.extrap isa WrapExtrap{Nothing})
     end
 
     # =========================================================================
@@ -293,7 +294,8 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             @test litp_none.extrap === NoExtrap()
             @test litp_const.extrap === ClampExtrap()
             @test litp_ext.extrap === ExtendExtrap()
-            @test litp_wrap.extrap === WrapExtrap()
+            @test litp_wrap.extrap isa WrapExtrap
+            @test !(litp_wrap.extrap isa WrapExtrap{Nothing})
 
             # Different extrap modes → different concrete types (E parameter)
             @test typeof(litp_none) !== typeof(litp_const)
@@ -310,7 +312,8 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             @test citp_none.extrap === NoExtrap()
             @test citp_const.extrap === ClampExtrap()
             @test citp_ext.extrap === ExtendExtrap()
-            @test citp_wrap.extrap === WrapExtrap()
+            @test citp_wrap.extrap isa WrapExtrap
+            @test !(citp_wrap.extrap isa WrapExtrap{Nothing})
 
             # Different extrap modes → different concrete types (E parameter)
             @test typeof(citp_none) !== typeof(citp_const)
@@ -327,7 +330,8 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             @test qitp_none.extrap === NoExtrap()
             @test qitp_const.extrap === ClampExtrap()
             @test qitp_ext.extrap === ExtendExtrap()
-            @test qitp_wrap.extrap === WrapExtrap()
+            @test qitp_wrap.extrap isa WrapExtrap
+            @test !(qitp_wrap.extrap isa WrapExtrap{Nothing})
 
             # Different extrap modes → different concrete types (E parameter)
             @test typeof(qitp_none) !== typeof(qitp_const)
@@ -344,7 +348,8 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             @test cbitp_none.extrap === NoExtrap()
             @test cbitp_const.extrap === ClampExtrap()
             @test cbitp_ext.extrap === ExtendExtrap()
-            @test cbitp_wrap.extrap === WrapExtrap()
+            @test cbitp_wrap.extrap isa WrapExtrap
+            @test !(cbitp_wrap.extrap isa WrapExtrap{Nothing})
 
             # Different extrap modes → different concrete types (E parameter)
             @test typeof(cbitp_none) !== typeof(cbitp_const)
@@ -554,7 +559,8 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             bc = (ZeroCurvBC(), PeriodicBC()), extrap = NoExtrap()
         )
         @test itp.extraps[1] === NoExtrap()
-        @test itp.extraps[2] === WrapExtrap()
+        @test itp.extraps[2] isa WrapExtrap
+        @test !(itp.extraps[2] isa WrapExtrap{Nothing})
 
         # PeriodicBC + ClampExtrap → should throw (incompatible)
         @test_throws ArgumentError cubic_interp(
@@ -584,7 +590,9 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # Per-axis mode tuple
         itp = @inferred linear_interp((x_nd, y_nd), data2d; extrap = (ClampExtrap(), WrapExtrap()))
-        @test itp.extraps === (ClampExtrap(), WrapExtrap())
+        @test itp.extraps[1] === ClampExtrap()
+        @test itp.extraps[2] isa WrapExtrap
+        @test !(itp.extraps[2] isa WrapExtrap{Nothing})
 
         # Typed vs Symbol equivalence
         itp_typed = linear_interp((x_nd, y_nd), data2d; extrap = ClampExtrap())
@@ -712,7 +720,8 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             (x_p, y_p), data_p;
             bc = PeriodicBC(), extrap = NoExtrap()
         )
-        @test itp.extraps === (WrapExtrap(), WrapExtrap())
+        @test itp.extraps[1] isa WrapExtrap && !(itp.extraps[1] isa WrapExtrap{Nothing})
+        @test itp.extraps[2] isa WrapExtrap && !(itp.extraps[2] isa WrapExtrap{Nothing})
 
         # Mixed: one periodic, one ZeroCurv
         itp_mixed = @inferred cubic_interp(
@@ -720,14 +729,16 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             bc = (ZeroCurvBC(), PeriodicBC()), extrap = NoExtrap()
         )
         @test itp_mixed.extraps[1] === NoExtrap()
-        @test itp_mixed.extraps[2] === WrapExtrap()
+        @test itp_mixed.extraps[2] isa WrapExtrap
+        @test !(itp_mixed.extraps[2] isa WrapExtrap{Nothing})
 
         # Quadratic: PeriodicBC + WrapExtrap
         itp_q = @inferred quadratic_interp(
             (x_p, y_p), data_p;
             bc = ZeroCurvBC(), extrap = WrapExtrap()
         )
-        @test itp_q.extraps === (WrapExtrap(), WrapExtrap())
+        @test itp_q.extraps[1] isa WrapExtrap && !(itp_q.extraps[1] isa WrapExtrap{Nothing})
+        @test itp_q.extraps[2] isa WrapExtrap && !(itp_q.extraps[2] isa WrapExtrap{Nothing})
     end
 
     @testset "ND PeriodicBC exclusive + Mode — constructor type stability" begin
@@ -751,7 +762,8 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         )
         @test itp_mixed isa CubicInterpolantND
         @test itp_mixed.extraps[1] === NoExtrap()
-        @test itp_mixed.extraps[2] === WrapExtrap()
+        @test itp_mixed.extraps[2] isa WrapExtrap
+        @test !(itp_mixed.extraps[2] isa WrapExtrap{Nothing})
 
         # Exclusive with explicit period + Mode
         itp_period = @inferred cubic_interp(

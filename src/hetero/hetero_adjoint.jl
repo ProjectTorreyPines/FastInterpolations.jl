@@ -450,6 +450,8 @@ function hetero_adjoint(
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    # Materialize WrapExtrap{Nothing} so kernels never see the unmaterialized singleton.
+    extraps = map(_materialize_extrap, grids_typed, extraps)
     return _build_hetero_nd_adjoint(grids_typed, queries, methods, extraps)
 end
 
@@ -490,6 +492,8 @@ function hetero_adjoint(
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    # Materialize WrapExtrap{Nothing} so kernels never see the unmaterialized singleton.
+    extraps = map(_materialize_extrap, grids_typed, extraps)
     return _build_hetero_nd_adjoint(grids_typed, queries, methods, extraps)
 end
 

@@ -45,22 +45,17 @@ end
 end
 
 # ────────────────────────────────────────────────────────
-# Extrap-aware 4-arg overloads (Option H: typed WrapExtrap carries domain)
+# Extrap-aware 2-arg wrapper
 # ────────────────────────────────────────────────────────
 #
-# Called from eval kernels' WrapExtrap branch — the `extrap` arg carries either
-# grid-span fallback (WrapExtrap{Nothing}) or an explicit domain resolved at
-# entry via `_resolve_periodic_extrap(bc, extrap, x)`. Cubic/persistent paths
-# hit the Nothing variant because their extended grid already satisfies
-# `last(x_p) - first(x_p) == period`; Linear/Constant oneshot (post-Phase 3+)
-# hit the AbstractFloat variant carrying the resolved `(x_min, x_min+period)`.
+# Kernels hand off the materialized WrapExtrap directly — no phantom `first(x)`,
+# `last(x)` arguments needed. By design, no method is defined for
+# `WrapExtrap{Nothing}`: an unmaterialized extrap reaching a kernel is a
+# `MethodError`, signaling a materialization bug upstream (`_materialize_extrap`
+# / `_resolve_extrap` should have upgraded it). The contract is enforced by
+# the type system rather than a runtime check.
 
-@inline _wrap_to_domain(xi, x_min, x_max, ::WrapExtrap{Nothing}) =
-    _wrap_to_domain(xi, x_min, x_max)
-
-# Typed WrapExtrap (any element type): delegate to the duck-typed 3-arg dispatch
-# which handles `Int`, `Rational`, `Dual`, `Float*` grids via its existing overloads.
-@inline _wrap_to_domain(xi, _x_min_fb, _x_max_fb, e::WrapExtrap) =
+@inline _wrap_to_domain(xi, e::WrapExtrap) =
     _wrap_to_domain(xi, e._x_min, e._x_max)
 
 # ========================================
@@ -412,84 +407,119 @@ end
 # Value extension: append first element
 _extend_values(y::AbstractVector) = vcat(y, first(y))
 
-"""
-    _resolve_periodic_extrap(bc, extrap, x) -> AbstractExtrap
+# ========================================
+# BC-Aware WrapExtrap Constructors
+# ========================================
+#
+# Constructor layering that replaces the old `_resolve_periodic_extrap` BC-factory
+# family. Depends on bc_types.jl (AbstractBC / PeriodicBC), so these live in
+# periodic.jl rather than eval_ops.jl (where the struct is declared).
+#
+# - `WrapExtrap(x, ::AbstractBC)` → delegate to `WrapExtrap(x)`. Covers NoBC,
+#   PeriodicBC{:inclusive}, CubicFit, QuadraticFit, and any future BC — the grid
+#   span already IS the wrap domain (inclusive) or BC is irrelevant to wrapping
+#   (non-periodic).
+# - `WrapExtrap(x, ::PeriodicBC{:exclusive, <:Real})` → `[first(x), first(x)+period)`,
+#   since `x` has NOT been extended at zero-copy oneshot call sites.
+# - `WrapExtrap(x::AbstractRange, ::PeriodicBC{:exclusive, Nothing})` → infer
+#   period from `step(x) * length(x)`.
+# - Non-Range + Nothing period → error.
 
-Resolve a boundary condition + grid into the runtime wrap policy.
+@inline WrapExtrap(x::AbstractVector, ::AbstractBC) = WrapExtrap(x)
 
-- `NoBC` → passthrough (user's `extrap` preserved).
-- `PeriodicBC{:inclusive}` → `WrapExtrap{T}(first(x), last(x))` (grid span IS the period).
-- `PeriodicBC{:exclusive, <:Real}` → `WrapExtrap{T}(first(x), first(x)+bc.period)`.
-- `PeriodicBC{:exclusive, Nothing}` + `AbstractRange` → auto-inferred period
-  (`step(x) * length(x)`).
-- `PeriodicBC{:exclusive, Nothing}` + `AbstractVector` → `ArgumentError` (matches
-  `_resolve_exclusive_period` contract).
-
-This is the extraction of the `WrapExtrap()` override previously inlined at the
-tail of `_periodic_extend_1d` / `_periodic_extend_1d_pooled!` / ND variants,
-upgraded to return a typed `WrapExtrap{T}` carrying the resolved physical domain.
-Both the existing pool/persistent extend helpers (which still extend data) and
-the new zero-copy Linear/Constant oneshot entries (which skip extension and
-rely on Phase 1's BC-aware seam detection) reuse this single projection.
-"""
-@inline _resolve_periodic_extrap(::NoBC, extrap::AbstractExtrap, _) = extrap
-
-@inline function _resolve_periodic_extrap(::PeriodicBC{:inclusive}, _, x)
-    lo, hi = first(x), last(x)
-    T = promote_type(typeof(lo), typeof(hi))
-    return WrapExtrap{T}(T(lo), T(hi))
-end
-
-@inline function _resolve_periodic_extrap(bc::PeriodicBC{:exclusive, <:Real}, _, x)
+@inline function WrapExtrap(x::AbstractVector, bc::PeriodicBC{:exclusive, <:Real})
     x_min = first(x)
     x_max = x_min + bc.period
-    # Validate: virtual endpoint must lie strictly beyond the last grid point so
-    # the seam cell [x[end], x_min+period] is non-empty and the grid actually
-    # covers at most one period. Matches `_periodic_extend_1d_pooled!`'s contract.
-    last(x) < x_max || throw(
+    # Virtual endpoint must lie strictly beyond the last grid point so the seam
+    # cell [x[end], x_min+period] is non-empty and the grid covers at most one
+    # period. Matches the contract formerly in `_periodic_extend_1d_pooled!`.
+    last(x) < x_max || _throw_wrap_virtual_endpoint_error(bc.period, x_max, last(x))
+    T = typeof(x_max)
+    return WrapExtrap{T}(T(x_min), T(x_max))
+end
+
+@inline function WrapExtrap(x::AbstractRange, ::PeriodicBC{:exclusive, Nothing})
+    Tg_raw = eltype(x)
+    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
+    period = Tg(step(x)) * length(x)
+    x_min = Tg(first(x))
+    return WrapExtrap{Tg}(x_min, x_min + period)
+end
+
+WrapExtrap(::AbstractVector, ::PeriodicBC{:exclusive, Nothing}) =
+    _throw_wrap_nonrange_period_error()
+
+# Error helpers — `@noinline` keeps the `ArgumentError` formatting out of the
+# happy-path inlined body (cold-path I-cache friendly). Mirrors the existing
+# `_throw_periodic_*` pattern earlier in this file.
+@noinline function _throw_wrap_virtual_endpoint_error(period, x_max, last_x)
+    throw(
         ArgumentError(
-            "period=$(bc.period) places virtual endpoint at $x_max, " *
-                "not after last grid point x[end]=$(last(x))"
+            "period=$period places virtual endpoint at $x_max, " *
+                "not after last grid point x[end]=$last_x"
         )
     )
-    return WrapExtrap{typeof(x_max)}(x_min, x_max)
 end
 
-@inline function _resolve_periodic_extrap(::PeriodicBC{:exclusive, Nothing}, _, x::AbstractRange)
-    period = float(step(x) * length(x))
-    x_min = float(first(x))
-    return WrapExtrap{typeof(x_min)}(x_min, x_min + period)
-end
-
-@inline _resolve_periodic_extrap(::PeriodicBC{:exclusive, Nothing}, _, ::AbstractVector) =
+@noinline _throw_wrap_nonrange_period_error() =
     throw(
         ArgumentError(
             "PeriodicBC(:exclusive) requires explicit `period` for non-Range grid"
         )
     )
 
-"""
-    _resolve_periodic_extrap_1d(bc, extrap, x, y) -> WrapExtrap | extrap
+# ========================================
+# Extrap Materialization
+# ========================================
+#
+# `_materialize_extrap(x, bc, extrap)` — the primitive that drives every entry
+# point's materialization decision. Three methods (compile-time dispatch):
+#
+# - PeriodicBC (any endpoint) → force `WrapExtrap(x, bc)`. BC drives extrap for
+#   periodic data, overriding whatever the user passed.
+# - Non-periodic BC + `WrapExtrap{Nothing}` → upgrade the zero-arg singleton to a
+#   typed `WrapExtrap{T}` via grid span.
+# - Everything else → passthrough.
+#
+# Kernels only ever see fully-materialized `WrapExtrap{T}`; the `{Nothing}`
+# variant is a build-time-only placeholder.
 
-Single gateway for 1D oneshot periodic entries: validates the `:inclusive`
-endpoint contract (`y[1] ≈ y[end]`), then projects `bc` into a typed
-`WrapExtrap`. Non-periodic `bc` returns `extrap` unchanged.
+@inline _materialize_extrap(x, bc::PeriodicBC, ::WrapExtrap{Nothing}) = WrapExtrap(x, bc)
+@inline _materialize_extrap(x, bc::PeriodicBC, _)                     = WrapExtrap(x, bc)
+@inline _materialize_extrap(x, ::AbstractBC, ::WrapExtrap{Nothing})   = WrapExtrap(x)
+@inline _materialize_extrap(_, ::AbstractBC, extrap)                  = extrap
+
+# 2-arg convenience: for entry points that don't carry a BC (Hermite family, etc.)
+# just need to upgrade a zero-arg `WrapExtrap()` and pass everything else through.
+@inline _materialize_extrap(x, ::WrapExtrap{Nothing}) = WrapExtrap(x)
+@inline _materialize_extrap(_, extrap::AbstractExtrap) = extrap
+
 """
-@inline function _resolve_periodic_extrap_1d(
+    _resolve_extrap(bc, extrap, x, y) -> AbstractExtrap                # 1D
+    _resolve_extrap(bcs, extraps, grids, data, Val(N)) -> NTuple{N}    # ND
+
+Single gateway for zero-copy oneshot entries (and any site that needs
+validation + materialization in one step). Dispatches on arg shape:
+
+- 1D — validates `:inclusive` endpoint match (`y[1] ≈ y[end]`) when required,
+  then returns `_materialize_extrap(x, bc, extrap)`.
+- ND — validates per-axis `:inclusive` slice equality, then returns the tuple
+  `map(_materialize_extrap, grids, bcs, extraps)`.
+
+Extension-path helpers (`_periodic_extend_1d` / `_periodic_extend_1d_pooled!`)
+call `WrapExtrap(x_ext)` directly after extension instead of going through
+`_resolve_extrap`, since extension guarantees `last(x_ext) - first(x_ext) == period`.
+Matches the `_resolve_search` / `_resolve_coeffs` / `_resolve_grididx` naming
+convention — name shared between 1D and ND variants, dispatch on arg type.
+"""
+@inline function _resolve_extrap(
         bc::AbstractBC, extrap::AbstractExtrap, x, y::AbstractVector
     )
     bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y)
-    return _resolve_periodic_extrap(bc, extrap, x)
+    return _materialize_extrap(x, bc, extrap)
 end
 
-"""
-    _resolve_periodic_extraps_nd(bcs, extraps, grids, data, Val(N)) -> NTuple{N, AbstractExtrap}
-
-Single gateway for ND oneshot periodic entries: validates `:inclusive` axes'
-matched-endpoint slices on `data`, then returns per-axis effective extraps
-via `map(_resolve_periodic_extrap, bcs, extraps, grids)`.
-"""
-@inline function _resolve_periodic_extraps_nd(
+@inline function _resolve_extrap(
         bcs::NTuple{N, AbstractBC},
         extraps::NTuple{N, AbstractExtrap},
         grids::NTuple{N, AbstractVector},
@@ -497,7 +527,7 @@ via `map(_resolve_periodic_extrap, bcs, extraps, grids)`.
         ::Val{N},
     ) where {N}
     _validate_periodic_slices_nd(data, bcs, Val(N))
-    return map(_resolve_periodic_extrap, bcs, extraps, grids)
+    return map(_materialize_extrap, grids, bcs, extraps)
 end
 
 """
@@ -525,12 +555,20 @@ periodicity, not just on the grid representation.
         bc::AbstractBC,
         extrap::AbstractExtrap
     )
-    _is_periodic_bc(bc) || return x, y, extrap
-    x_ext, y_ext = _prepare_periodic(x, y, bc)
-    # Endpoint validation is meaningful only for `:inclusive` — `:exclusive` sets
-    # `y_ext[end] = y_ext[1]` by construction so the check is trivially true.
-    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_ext)
-    return x_ext, y_ext, _resolve_periodic_extrap(bc, extrap, x)
+    if _is_periodic_bc(bc)
+        x_ext, y_ext = _prepare_periodic(x, y, bc)
+        # Endpoint validation is meaningful only for `:inclusive` — `:exclusive`
+        # sets `y_ext[end] = y_ext[1]` by construction so the check is trivially true.
+        bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_ext)
+        # After extension, `last(x_ext) - first(x_ext) == period`, so the grid-span
+        # `WrapExtrap(x_ext)` already carries the correct wrap domain — no need
+        # for the BC-aware constructor here.
+        return x_ext, y_ext, WrapExtrap(x_ext)
+    end
+    # Non-periodic: still materialize in case the user passed `WrapExtrap()` (legacy
+    # singleton); `_materialize_extrap` upgrades it to `WrapExtrap(x)` and leaves
+    # other extraps untouched.
+    return x, y, _materialize_extrap(x, bc, extrap)
 end
 
 """
@@ -556,7 +594,10 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
         bc::AbstractBC,
         extrap::AbstractExtrap
     ) where {Tg, Tv}
-    _is_periodic_bc(bc) || return x, y, extrap
+    if !_is_periodic_bc(bc)
+        # Non-periodic: still materialize in case user passed `WrapExtrap()` singleton.
+        return x, y, _materialize_extrap(x, bc, extrap)
+    end
     # Duck-safe extension buffer type: promote Integer / Complex{Integer} grids
     # to float so the extended pool buffer and `_CachedRange` `inv_h` field can
     # hold `inv(step)`. Duck grids (Dual, Measurement, ...) keep their type so
@@ -566,12 +607,7 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
     if bc isa PeriodicBC{:exclusive}
         period = _resolve_exclusive_period(x, bc)
         x_end = first(x) + Tg_ext(period)
-        last(x) < x_end || throw(
-            ArgumentError(
-                "period=$period places virtual endpoint at $x_end, " *
-                    "not after last grid point x[end]=$(last(x))"
-            )
-        )
+        last(x) < x_end || _throw_wrap_virtual_endpoint_error(period, x_end, last(x))
         n = length(x)
         if x isa AbstractRange
             x_p = _to_float_adding_endpoint(x, Tg_ext)
@@ -589,7 +625,9 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
     # `:exclusive` path constructs `y_p[end] = y_p[1]` by extension, so the check
     # is trivially satisfied. Run validation only for `:inclusive`.
     bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_p)
-    return x_p, y_p, _resolve_periodic_extrap(bc, extrap, x)
+    # After extension (or no-op for inclusive), the extended grid span IS the wrap
+    # domain — use `WrapExtrap(x_p)` directly, no BC-aware construction needed.
+    return x_p, y_p, WrapExtrap(x_p)
 end
 
 """

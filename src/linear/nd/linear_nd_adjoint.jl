@@ -213,6 +213,9 @@ function linear_adjoint(
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    # Materialize WrapExtrap{Nothing} against grids so kernels never see the
+    # unmaterialized singleton. Linear adjoint has no BC here.
+    extraps = map(_materialize_extrap, grids_typed, extraps)
     return _build_linear_nd_adjoint(grids_typed, queries, extraps)
 end
 
@@ -250,6 +253,9 @@ function linear_adjoint(
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    # Materialize WrapExtrap{Nothing} against grids so kernels never see the
+    # unmaterialized singleton. Linear adjoint has no BC here.
+    extraps = map(_materialize_extrap, grids_typed, extraps)
     return _build_linear_nd_adjoint(grids_typed, queries, extraps)
 end
 

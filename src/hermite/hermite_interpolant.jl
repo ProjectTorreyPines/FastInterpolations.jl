@@ -77,6 +77,7 @@ itp(1.0; deriv=DerivOp(1))       # ≈ cos(1.0)
         search::AbstractSearchPolicy = AutoSearch(),
     ) where {TX, TY}
     x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
-    extrap_p = _promote_extrap(extrap, eltype(y_p))
+    extrap_mat = _materialize_extrap(x_p, NoBC(), extrap)
+    extrap_p = _promote_extrap(extrap_mat, eltype(y_p))
     return CubicHermiteInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search)
 end

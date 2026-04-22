@@ -187,6 +187,9 @@ function constant_adjoint(
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    # Materialize WrapExtrap{Nothing} so kernels never see the unmaterialized
+    # singleton.
+    extraps = map(_materialize_extrap, grids_typed, extraps)
     sides = _resolve_side_nd(side, Val(N))
     return _build_constant_nd_adjoint(grids_typed, queries, extraps, sides)
 end
@@ -228,6 +231,9 @@ function constant_adjoint(
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    # Materialize WrapExtrap{Nothing} so kernels never see the unmaterialized
+    # singleton.
+    extraps = map(_materialize_extrap, grids_typed, extraps)
     sides = _resolve_side_nd(side, Val(N))
     return _build_constant_nd_adjoint(grids_typed, queries, extraps, sides)
 end

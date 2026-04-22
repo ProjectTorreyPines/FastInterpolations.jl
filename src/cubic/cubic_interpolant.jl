@@ -217,8 +217,8 @@ so the pool memory can be safely reused after this function returns.
     _solve_system!(tmp_z, cache, y, bc_pair)
     # Materialize WrapExtrap{Nothing} to typed form so the struct never holds
     # the unmaterialized singleton.
-    extrap_mat = _resolve_extrap(extrap, cache.x)
-    extrap_p = _promote_extrap(extrap_mat, Tv)
+    # 3-arg: materialize WrapExtrap{Nothing} + promote FillExtrap value type.
+    extrap_p = _resolve_extrap(extrap, cache.x, Tv)
     return CubicInterpolant(cache, y, tmp_z, bc_pair, extrap_p, search)
 end
 
@@ -381,8 +381,8 @@ so the pool memory can be safely reused after this function returns.
     # cache.bc_config is BCPair - use it directly.
     # Materialize WrapExtrap{Nothing} to typed form before storage so the struct
     # never holds the unmaterialized singleton.
-    extrap_mat = _resolve_extrap(extrap, cache.x)
-    extrap_p = _promote_extrap(extrap_mat, Tv)
+    # 3-arg: materialize WrapExtrap{Nothing} + promote FillExtrap value type.
+    extrap_p = _resolve_extrap(extrap, cache.x, Tv)
     return CubicInterpolant(cache, y, tmp_z, cache.bc_config, extrap_p, search)
 end
 

@@ -500,6 +500,15 @@ end
 @inline _resolve_extrap(::WrapExtrap{Nothing}, x::AbstractVector) = WrapExtrap(x)
 @inline _resolve_extrap(extrap::AbstractExtrap, ::AbstractVector) = extrap
 
+# ── Primitive: 3-arg (grid + value type — composes WrapExtrap upgrade with FillExtrap promote) ──
+# Collapses the common `_resolve_extrap(extrap, x)` + `_promote_extrap(·, Tv)` pair at
+# 1D persistent-interpolant entries. Orthogonal sub-operations:
+#   - `_resolve_extrap(·, x)`      : WrapExtrap{Nothing} → WrapExtrap{T} (grid-span)
+#   - `_promote_extrap(·, Tv)`     : FillExtrap{Int}(v) → FillExtrap{Tv}(convert(Tv, v))
+# Both passthrough for extraps that don't match their respective trigger.
+@inline _resolve_extrap(extrap, x::AbstractVector, ::Type{Tv}) where {Tv} =
+    _promote_extrap(_resolve_extrap(extrap, x), Tv)
+
 # ── Primitive: 3-arg (BC-aware) ──
 # PeriodicBC forces WrapExtrap regardless of user's extrap. The explicit
 # `WrapExtrap{Nothing}` tiebreaker resolves the ambiguity between the

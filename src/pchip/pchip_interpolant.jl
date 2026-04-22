@@ -50,8 +50,7 @@ itp(1.5; deriv=DerivOp(1))       # first derivative
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    extrap_mat = _resolve_extrap(extrap, x)
-    extrap_p = _promote_extrap(extrap_mat, _value_type(TY, Tg))
+    extrap_p = _resolve_extrap(extrap, x, _value_type(TY, Tg))
     resolved = _resolve_coeffs(coeffs)
     if resolved isa OnTheFly
         return PchipInterpolant1D(x, y, PchipSlopes(), extrap_p, search)

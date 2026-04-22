@@ -33,8 +33,7 @@ itp(0.5)
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    extrap_mat = _resolve_extrap(extrap, x)
-    extrap_p = _promote_extrap(extrap_mat, _value_type(TY, Tg))
+    extrap_p = _resolve_extrap(extrap, x, _value_type(TY, Tg))
     resolved = _resolve_coeffs(coeffs)
     if resolved isa OnTheFly
         return CardinalInterpolant1D(x, y, CardinalSlopes(Tg(tension)), extrap_p, search, Tg(tension))

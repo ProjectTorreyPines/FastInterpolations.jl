@@ -42,7 +42,7 @@ import FastInterpolations:
     _compute_all_local_params_gen,
     num_partials,
     # nd_utils.jl
-    _resolve_extrap_nd,
+    _resolve_extrap,
     _resolve_search_nd,
     _resolve_bcs_nd,
     _validate_nd_grids,
@@ -217,14 +217,14 @@ import FastInterpolations:
     # ========================================
     @testset "nd_utils.jl" begin
 
-        @testset "_resolve_extrap_nd wrong-sized tuple error" begin
+        @testset "_resolve_extrap wrong-sized tuple error" begin
             # Correct size should work (3-arg form: extrap, bcs, Val(N))
-            @test _resolve_extrap_nd(NoExtrap(), nothing, Val(2), Float64) == (NoExtrap(), NoExtrap())
-            @test _resolve_extrap_nd((NoExtrap(), ClampExtrap()), nothing, Val(2), Float64) == (NoExtrap(), ClampExtrap())
+            @test _resolve_extrap(NoExtrap(), nothing, Val(2), Float64) == (NoExtrap(), NoExtrap())
+            @test _resolve_extrap((NoExtrap(), ClampExtrap()), nothing, Val(2), Float64) == (NoExtrap(), ClampExtrap())
 
             # Wrong size should throw
-            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(),), nothing, Val(2), Float64)  # 1 element for 2D
-            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(), NoExtrap(), NoExtrap()), nothing, Val(2), Float64)  # 3 for 2D
+            @test_throws ArgumentError _resolve_extrap((NoExtrap(),), nothing, Val(2), Float64)  # 1 element for 2D
+            @test_throws ArgumentError _resolve_extrap((NoExtrap(), NoExtrap(), NoExtrap()), nothing, Val(2), Float64)  # 3 for 2D
         end
 
         @testset "_resolve_search_nd wrong-sized tuple error" begin

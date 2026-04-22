@@ -294,7 +294,7 @@ Uses task-local pool for workspace allocation.
     _solve_system!(z, cache, y, cache.bc_config)
 
     searcher = _resolve_search(cache.x, x_query, search, hint)
-    extrap_eff = _materialize_extrap(cache.x, NoBC(), extrap)
+    extrap_eff = _resolve_extrap(extrap, cache.x)
     @boundscheck _check_domain(cache.x, x_query, extrap_eff)
     _eval_with_bc(cache, y, z, x_query, extrap_eff, deriv, searcher)
 end

@@ -149,35 +149,99 @@ end
     error("unreachable: _first_fill_value called without FillExtrap")
 end
 
-# ── Mode → Mode tuple, then promote fill values ───────────────────────
+# ── _resolve_extrap: ND variants (expand + promote [+ materialize]) ──
+#
+# Continues the `_resolve_extrap` family from `src/core/periodic.jl` (primitive
+# per-axis + 1D bundled + ND bundled-with-data). These ND methods handle the
+# scalar→NTuple expansion, periodic-BC override, and FillExtrap value-type
+# promotion. Two shapes by arity:
+#
+# - 4-arg (extrap, bcs, Val(N), Tv): expand + promote. Returns NTuple with
+#   possibly-unmaterialized `WrapExtrap{Nothing}` on periodic axes. Used by
+#   callers that materialize separately (post-extension persistent paths
+#   where bc-aware materialize would trip the pre-extension `<` check).
+#
+# - 5-arg (extrap, bcs, grids, Val(N), Tv): above + per-axis materialize.
+#   `bcs::NTuple` → 3-arg primitive (bc-aware); `bcs::Nothing` → 2-arg primitive
+#   (grid-span only, no periodic override needed).
 
-@inline function _resolve_extrap_nd(extrap::AbstractExtrap, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}
+# ── 4-arg: expand + promote (no materialize) ──
+
+@inline function _resolve_extrap(extrap::AbstractExtrap, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}
     result = ntuple(_ -> extrap, Val(N))
     _validate_fill_values_nd(result)
     return _promote_extraps_nd(result, Tv)
 end
 
-@inline function _resolve_extrap_nd(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
+@inline function _resolve_extrap(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
     _check_mode_periodic_compat(extrap, bcs, Val(N))
     result = _mode_to_modes_with_periodic(extrap, bcs)
     _validate_fill_values_nd(result)
     return _promote_extraps_nd(result, Tv)
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap, N}}, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}
+@inline function _resolve_extrap(extrap::Tuple{Vararg{AbstractExtrap, N}}, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}
     _validate_fill_values_nd(extrap)
     return _promote_extraps_nd(extrap, Tv)
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap, N}}, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
+@inline function _resolve_extrap(extrap::Tuple{Vararg{AbstractExtrap, N}}, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
     _check_modes_periodic_compat(extrap, bcs, Val(N))
     result = _modes_to_modes_with_periodic(extrap, bcs)
     _validate_fill_values_nd(result)
     return _promote_extraps_nd(result, Tv)
 end
 
-@noinline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap}}, ::Any, ::Val{N}, ::Type) where {N}
+@noinline function _resolve_extrap(extrap::Tuple{Vararg{AbstractExtrap}}, ::Any, ::Val{N}, ::Type) where {N}
     throw(ArgumentError("extrap tuple must have $N elements to match grid dimensions, got $(length(extrap))"))
+end
+
+# ── 5-arg: above + per-axis materialize against `grids` ──
+#
+# `bcs::NTuple{N,AbstractBC}` → per-axis 3-arg primitive (bc-aware, used
+# pre-extension for adjoints / hetero OnTheFly where exclusive period matters).
+# `bcs::Nothing` → per-axis 2-arg primitive (no periodic concept, used by
+# adjoints without BC support).
+
+@inline function _resolve_extrap(
+        extrap::AbstractExtrap, ::Nothing,
+        grids::NTuple{N, AbstractVector}, ::Val{N}, ::Type{Tv}
+    ) where {N, Tv}
+    result = ntuple(_ -> extrap, Val(N))
+    _validate_fill_values_nd(result)
+    promoted = _promote_extraps_nd(result, Tv)
+    return map(_resolve_extrap, promoted, grids)
+end
+
+@inline function _resolve_extrap(
+        extrap::AbstractExtrap, bcs::NTuple{N, AbstractBC},
+        grids::NTuple{N, AbstractVector}, ::Val{N}, ::Type{Tv}
+    ) where {N, Tv}
+    _check_mode_periodic_compat(extrap, bcs, Val(N))
+    result = _mode_to_modes_with_periodic(extrap, bcs)
+    _validate_fill_values_nd(result)
+    promoted = _promote_extraps_nd(result, Tv)
+    return map(_resolve_extrap, promoted, bcs, grids)
+end
+
+@inline function _resolve_extrap(
+        extrap::NTuple{N, AbstractExtrap}, ::Nothing,
+        grids::NTuple{N, AbstractVector}, ::Val{N}, ::Type{Tv}
+    ) where {N, Tv}
+    _validate_fill_values_nd(extrap)
+    promoted = _promote_extraps_nd(extrap, Tv)
+    return map(_resolve_extrap, promoted, grids)
+end
+
+@inline function _resolve_extrap(
+        extrap::NTuple{N, AbstractExtrap}, bcs::NTuple{N, AbstractBC},
+        grids::NTuple{N, AbstractVector}, ::Val{N}, ::Type{Tv}
+    ) where {N, Tv}
+    _check_modes_periodic_compat(extrap, bcs, Val(N))
+    result = _modes_to_modes_with_periodic(extrap, bcs)
+    _validate_fill_values_nd(result)
+    promoted = _promote_extraps_nd(result, Tv)
+    return map(_resolve_extrap, promoted, bcs, grids)
 end
 
 @generated function _promote_extraps_nd(extraps::E, ::Type{Tv}) where {E <: Tuple{Vararg{AbstractExtrap}}, Tv}

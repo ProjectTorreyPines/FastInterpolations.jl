@@ -212,10 +212,9 @@ function linear_adjoint(
     Tg = _promote_grid_eltype(grids)
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
-    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
-    # Materialize WrapExtrap{Nothing} against grids so kernels never see the
-    # unmaterialized singleton. Linear adjoint has no BC here.
-    extraps = map(_materialize_extrap, grids_typed, extraps)
+    # 5-arg `_resolve_extrap` (no BC): expand + promote + per-axis 2-arg
+    # materialize — upgrades WrapExtrap{Nothing} to WrapExtrap(grid).
+    extraps = _resolve_extrap(extrap, nothing, grids_typed, Val(N), Tg)
     return _build_linear_nd_adjoint(grids_typed, queries, extraps)
 end
 
@@ -252,10 +251,9 @@ function linear_adjoint(
     Tg = _promote_grid_eltype(grids)
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
-    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
-    # Materialize WrapExtrap{Nothing} against grids so kernels never see the
-    # unmaterialized singleton. Linear adjoint has no BC here.
-    extraps = map(_materialize_extrap, grids_typed, extraps)
+    # 5-arg `_resolve_extrap` (no BC): expand + promote + per-axis 2-arg
+    # materialize — upgrades WrapExtrap{Nothing} to WrapExtrap(grid).
+    extraps = _resolve_extrap(extrap, nothing, grids_typed, Val(N), Tg)
     return _build_linear_nd_adjoint(grids_typed, queries, extraps)
 end
 

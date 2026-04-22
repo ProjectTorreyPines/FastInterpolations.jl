@@ -33,7 +33,7 @@ function _constant_interp_nd_oneshot(
     oob_result = _try_fill_oob(query, grids, extraps_val, EvalValue(), @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    extraps_eff = _resolve_extrap(bcs, extraps_val, grids, data, Val(N))
+    extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
     q_eval = _handle_all_extraps(query, grids, extraps_eff)
     indices_pairs, Ls, Rs = _search_all_intervals_lr(q_eval, grids, searches, hints, bcs)
     return _constant_nd_kernel_lr(data, indices_pairs, Rs, side_vals, q_eval, Ls)
@@ -62,7 +62,7 @@ function _constant_interp_nd_oneshot_batch!(
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps_val)
-    extraps_eff = _resolve_extrap(bcs, extraps_val, grids, data, Val(N))
+    extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, grids, extraps_val, EvalValue(), first(data))
@@ -145,7 +145,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _constant_interp_nd_oneshot(
         grids_typed, data, query, bcs, extraps_val, sides, searches, hint
     )::Tv
@@ -181,7 +181,7 @@ function constant_interp(
     policies = _resolve_search_nd(search, Val(N))
     mono = _check_mono_nd(policies, queries)
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _constant_nd_batch_dispatch(
         grids_typed, data, queries, bcs, extraps_val, sides, policies, hint, mono
     )::Vector{Tv}
@@ -224,7 +224,7 @@ function constant_interp!(
     policies = _resolve_search_nd(search, Val(N))
     mono = _check_mono_nd(policies, queries)
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _constant_nd_batch_dispatch!(
         output, grids_typed, data, queries, bcs, extraps_val, sides, policies, hint, mono
     )

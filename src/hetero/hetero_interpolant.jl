@@ -264,12 +264,9 @@ function _build_hetero_nd(
     spacings = _create_spacings_typed(grids_typed)
     data_typed = Tv === Tv_raw ? Array(data) : Array{Tv}(data)
 
-    # 6. Resolve per-axis configuration (pass BCs so PeriodicBC auto-gets WrapExtrap)
+    # 6. Resolve per-axis configuration (OnTheFly: no extension, bc-aware materialize).
     bcs = map(_bc_for_periodic_check, methods)
-    extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
-    # Materialize against the original grid — the OnTheFly path does not extend,
-    # so periodic/exclusive uses bc-aware `WrapExtrap(x, bc)` with bc.period.
-    extraps = map(_materialize_extrap, grids_typed, bcs, extraps)
+    extraps = _resolve_extrap(extrap, bcs, grids_typed, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N))
 
     # 6b. Override extrap/search for NoInterp axes (no domain check, no search)
@@ -307,7 +304,9 @@ function _build_hetero_precomputed(
     end
     grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
     bcs_periodic = map(_bc_for_periodic_check, methods)
-    extraps = _resolve_extrap_nd(extrap, bcs_periodic, Val(N), Tv)
+    # 4-arg expand-only — materialize deferred until after extension (post-extension
+    # grid-span form is used via 2-arg primitive).
+    extraps = _resolve_extrap(extrap, bcs_periodic, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N))
 
     # Override extrap/search for NoInterp axes (no domain check, no search)
@@ -320,9 +319,8 @@ function _build_hetero_precomputed(
     # Extend exclusive periodic axes to inclusive form (same as CubicInterpolantND).
     # Must happen before spacings + partials so the stored grid matches the data.
     grids_typed, data_ext, _ = _prepare_periodic_nd(grids_typed, data, bcs_periodic)
-    # Materialize WrapExtrap{Nothing} via extended grid-span (post-extension
-    # grid spans the period for periodic axes).
-    extraps = map(_materialize_extrap, grids_typed, extraps)
+    # Per-axis materialize via 2-arg primitive (post-extension grid-span).
+    extraps = map(_resolve_extrap, extraps, grids_typed)
     spacings = _create_spacings_typed(grids_typed)
 
     # Build partials on the (possibly extended) data

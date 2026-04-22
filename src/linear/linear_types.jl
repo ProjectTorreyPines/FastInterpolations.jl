@@ -100,5 +100,5 @@ end
     )
     # Materialize WrapExtrap{Nothing} against grid so kernels never see the
     # unmaterialized singleton when users construct the struct directly.
-    return LinearInterpolant(x, y, _materialize_extrap(x, extrap), search)
+    return LinearInterpolant(x, y, _resolve_extrap(extrap, x), search)
 end

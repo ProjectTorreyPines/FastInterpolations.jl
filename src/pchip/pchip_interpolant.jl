@@ -50,7 +50,7 @@ itp(1.5; deriv=DerivOp(1))       # first derivative
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    extrap_mat = _materialize_extrap(x, NoBC(), extrap)
+    extrap_mat = _resolve_extrap(extrap, x)
     extrap_p = _promote_extrap(extrap_mat, _value_type(TY, Tg))
     resolved = _resolve_coeffs(coeffs)
     if resolved isa OnTheFly

@@ -46,7 +46,7 @@ Thread-safe: workspaces allocated from task-local pool.
 
     searcher = _resolve_search(cache.x, x_query, search, nothing)
     # Upgrade WrapExtrap{Nothing} → WrapExtrap{T} against the cache grid.
-    extrap_eff = _materialize_extrap(cache.x, NoBC(), extrap)
+    extrap_eff = _resolve_extrap(extrap, cache.x)
     _cubic_vector_loop!(output, cache, y, z, x_query, extrap_eff, deriv, searcher)
 
     return output
@@ -94,7 +94,7 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
 
     # Upgrade WrapExtrap{Nothing} to the typed form so the kernel never sees the
     # zero-arg placeholder. Non-Wrap extraps pass through.
-    extrap_eff = _materialize_extrap(cache.x, NoBC(), extrap)
+    extrap_eff = _resolve_extrap(extrap, cache.x)
     _cubic_vector_loop!(output, cache, y, z, x_query, extrap_eff, op, searcher)
 
     return output
@@ -125,7 +125,7 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     _solve_system!(tmp_z, cache, y, bc)
 
     # Upgrade WrapExtrap{Nothing} to typed WrapExtrap against the cache grid.
-    extrap_eff = _materialize_extrap(cache.x, NoBC(), extrap)
+    extrap_eff = _resolve_extrap(extrap, cache.x)
     _check_domain(cache.x, xq, extrap_eff)
     return _eval_with_bc(cache, y, tmp_z, xq, extrap_eff, op, searcher)
 end

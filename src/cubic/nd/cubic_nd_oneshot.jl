@@ -47,7 +47,7 @@ function cubic_interp(
     # Validate BC requirements (once, before dispatch).
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv_p)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv_p)
     ops = _resolve_deriv_nd(deriv, Val(N))
 
     # OnTheFly: skip full partials build — use sequential 1D collapse (2^N× less work)
@@ -128,7 +128,8 @@ Zero-allocation after warmup (pool reuse).
     # 1a. Per-axis materialization: upgrade WrapExtrap{Nothing} → WrapExtrap{T} against
     # the extended grid and force WrapExtrap on periodic axes so `_handle_all_extraps`
     # hits the typed form (kernels never see WrapExtrap{Nothing}).
-    extraps_eff = map(_materialize_extrap, grids_p, bcs_p, extraps_val)
+    # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
+    extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
@@ -181,7 +182,8 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # Build phase (same as scalar, done once)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
     # Per-axis materialization of extraps against the (possibly extended) grid.
-    extraps_eff = map(_materialize_extrap, grids_p, bcs_p, extraps_val)
+    # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
+    extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
     Tz = _output_eltype(Tv, Tg)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
@@ -244,7 +246,7 @@ function cubic_interp!(
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv_p)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv_p)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _cubic_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, policies, ops, hints_nd, mono)
 end

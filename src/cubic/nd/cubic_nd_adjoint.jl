@@ -446,11 +446,10 @@ function cubic_adjoint(
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tg)
-    # Materialize WrapExtrap{Nothing} (auto-inserted for periodic axes) against
-    # the user-facing grids — adjoint construction happens before any extension,
-    # so the bc-aware constructor correctly uses bc.period for exclusive axes.
-    extraps = map(_materialize_extrap, grids_typed, bcs, extraps)
+    # 5-arg `_resolve_extrap` (with BCs): expand + promote + per-axis 3-arg
+    # materialize. Adjoint construction is pre-extension, so bc-aware materialize
+    # correctly uses `bc.period` for exclusive axes.
+    extraps = _resolve_extrap(extrap, bcs, grids_typed, Val(N), Tg)
     return _build_nd_adjoint(grids_typed, queries, bcs, extraps, autocache)
 end
 
@@ -498,10 +497,8 @@ function cubic_adjoint(
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
     bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tg)
-    # Materialize WrapExtrap{Nothing} for periodic axes so adjoint kernels never
-    # see the unmaterialized singleton.
-    extraps = map(_materialize_extrap, grids_typed, bcs, extraps)
+    # 5-arg `_resolve_extrap` (with BCs): bc-aware per-axis materialize.
+    extraps = _resolve_extrap(extrap, bcs, grids_typed, Val(N), Tg)
     return _build_nd_adjoint(grids_typed, queries, bcs, extraps, autocache)
 end
 

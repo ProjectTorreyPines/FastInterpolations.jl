@@ -30,11 +30,12 @@
 
     # 1. Extend exclusive periodic axes (pool-based)
     bcs_periodic = map(_bc_for_periodic_check, methods)
-    grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
+    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
 
     # 1a. Per-axis materialization: upgrade WrapExtrap{Nothing} → WrapExtrap{T} against
     # the post-extension grid so the downstream eval pipeline never sees the singleton.
-    extraps_eff = map(_materialize_extrap, grids_p, bcs_p, extraps_val)
+    # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
+    extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
 
     # 2. Pool-allocate compact partials (widened with Tg for Dual grid support)
     Tv = _value_type(eltype(data), Tg)
@@ -81,10 +82,11 @@ end
 
     # Build phase (ONE-TIME)
     bcs_periodic = map(_bc_for_periodic_check, methods)
-    grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
+    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
 
     # Per-axis materialization against the (possibly extended) grid.
-    extraps_eff = map(_materialize_extrap, grids_p, bcs_p, extraps_val)
+    # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
+    extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
 
     Tv = _value_type(eltype(data), Tg)
     Tz = _output_eltype(Tv, Tg)
@@ -141,11 +143,12 @@ end
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
-    # OnTheFly does not extend data — materialize extraps against the original grid
-    # with per-axis bcs derived from methods. Periodic axes become WrapExtrap with
-    # the correct `[x_min, x_min+period)` domain via the bc-aware constructor.
+    # OnTheFly does not extend data — pre-extension bc-aware materialize with
+    # `bc.period` for exclusive axes via the per-axis 3-arg primitive. `extraps_val`
+    # is already an NTuple (resolved upstream), so this call is just the per-axis
+    # materialize step.
     bcs = map(_bc_for_periodic_check, methods)
-    extraps_eff = map(_materialize_extrap, grids, bcs, extraps_val)
+    extraps_eff = map(_resolve_extrap, extraps_val, bcs, grids)
     q_eval = _handle_all_extraps(query, grids, extraps_eff)
     # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
     # Grid eltype included: when grid is Dual, 1D oneshot returns Dual-typed results
@@ -240,7 +243,7 @@ function _interp_nd_oneshot_dispatch(
     _validate_nd_grids(grids_typed, data)
     Tr = _output_eltype(eltype(data), Tg, typeof.(query)...)
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, nothing, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N), query)
     ops = _resolve_deriv_nd(deriv, Val(N))
     _validate_axis_methods(grids_typed, methods, extraps_val)
@@ -305,7 +308,7 @@ end
     _validate_nd_grids(grids_typed, data)
     _query_check_ndims(queries, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, nothing, Val(N), Tv)
     policies = _resolve_search_nd(search, Val(N))
     mono = _check_mono_nd(policies, queries)
     ops = _resolve_deriv_nd(deriv, Val(N))

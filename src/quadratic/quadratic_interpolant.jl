@@ -128,7 +128,7 @@ end
     d, a = _compute_quadratic_coeffs(xc, yc, bc_p, spacing)
 
     # Materialize WrapExtrap{Nothing} against the grid before storage.
-    extrap_mat = _materialize_extrap(xc, NoBC(), extrap)
+    extrap_mat = _resolve_extrap(extrap, xc)
     extrap_p = _promote_extrap(extrap_mat, Tv)
     return QuadraticInterpolant(xc, yc, spacing, a, d, extrap_p, search, bc_p)
 end

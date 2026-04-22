@@ -68,10 +68,9 @@ function quadratic_interp(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
-    # Materialize WrapExtrap{Nothing} via grid-span (Quadratic only supports
-    # inclusive periodic, so grid-span equals period).
-    extraps_val = map(_materialize_extrap, grids_typed, extraps_val)
+    # Quadratic only supports inclusive periodic → grid-span equals period →
+    # 5-arg `_resolve_extrap` with BCs is safe (no extension needed).
+    extraps_val = _resolve_extrap(extrap, bcs, grids_typed, Val(N), Tv)
     return _build_nd_quadratic_interpolant(grids_typed, data_typed, bcs, extraps_val, searches)
 end
 

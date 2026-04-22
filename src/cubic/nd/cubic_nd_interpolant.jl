@@ -78,7 +78,7 @@ function cubic_interp(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
 
     # OnTheFly → delegate to HeteroInterpolantND (sequential 1D collapse)
     if coeffs isa OnTheFly
@@ -110,12 +110,10 @@ function _build_nd_interpolant(
     # After this, all periodic axes have inclusive-form data.
     grids, data, bcs = _prepare_periodic_nd(grids, data, bcs)
 
-    # Per-axis materialization: WrapExtrap{Nothing} (auto-inserted for periodic
-    # axes by `_mode_to_modes_with_periodic`) upgrades to WrapExtrap{T} via
-    # grid-span. Post-extension, `last(grid) - first(grid) == period` for periodic
-    # axes, so the 2-arg form is correct and avoids the bc-aware constructor's
-    # pre-extension "virtual endpoint beyond last(x)" validation.
-    extraps_val = map(_materialize_extrap, grids, extraps_val)
+    # Per-axis materialization via 2-arg primitive — post-extension, `last(grid) -
+    # first(grid) == period`, so grid-span is the correct wrap domain and we avoid
+    # the bc-aware constructor's pre-extension `last(x) < x_max` check.
+    extraps_val = map(_resolve_extrap, extraps_val, grids)
 
     # Build nodal derivatives using generic ND builder
     nodal_derivs = _build_nd_coeffs(grids, data, bcs)

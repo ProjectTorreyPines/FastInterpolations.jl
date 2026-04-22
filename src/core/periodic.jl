@@ -469,65 +469,77 @@ end
     )
 
 # ========================================
-# Extrap Materialization
+# Extrap Resolution (_resolve_extrap)
 # ========================================
 #
-# `_materialize_extrap(x, bc, extrap)` — the primitive that drives every entry
-# point's materialization decision. Three methods (compile-time dispatch):
+# Single name for every extrap materialization / validation step. `extrap` is
+# always the 1st arg — consistent with `_resolve_search`, `_resolve_coeffs`,
+# `_resolve_grididx` naming family. Layers (dispatched by arg shape):
 #
-# - PeriodicBC (any endpoint) → force `WrapExtrap(x, bc)`. BC drives extrap for
-#   periodic data, overriding whatever the user passed.
-# - Non-periodic BC + `WrapExtrap{Nothing}` → upgrade the zero-arg singleton to a
-#   typed `WrapExtrap{T}` via grid span.
-# - Everything else → passthrough.
+# 1D primitives (per-axis):
+#   (extrap, x)                          — grid-only; upgrade {Nothing} or passthrough
+#   (extrap, bc, x)                      — BC-aware; PeriodicBC forces WrapExtrap
+#
+# 1D bundled: validate + materialize
+#   (extrap, bc, x, y)                   — `:inclusive` endpoint check + primitive
+#
+# ND: expand + promote + per-axis materialize (1-line for pre-extension / adjoints)
+#   (extrap, bcs, grids, Val(N), Tv)     — with BCs → per-axis 3-arg primitive
+#   (extrap, ::Nothing, grids, Val(N), Tv) — no BCs → per-axis 2-arg primitive
+#
+# ND expand-only (no materialize — post-extension 2-step callers):
+#   (extrap, bcs, Val(N), Tv)            — same shape as old `_resolve_extrap_nd`
+#
+# ND bundled (oneshot): slice validation + materialize
+#   (extraps, bcs, grids, data, Val(N))  — zero-copy ND oneshot entry
 #
 # Kernels only ever see fully-materialized `WrapExtrap{T}`; the `{Nothing}`
-# variant is a build-time-only placeholder.
+# variant is a build-time-only placeholder that never reaches query paths.
 
-@inline _materialize_extrap(x, bc::PeriodicBC, ::WrapExtrap{Nothing}) = WrapExtrap(x, bc)
-@inline _materialize_extrap(x, bc::PeriodicBC, _)                     = WrapExtrap(x, bc)
-@inline _materialize_extrap(x, ::AbstractBC, ::WrapExtrap{Nothing})   = WrapExtrap(x)
-@inline _materialize_extrap(_, ::AbstractBC, extrap)                  = extrap
+# ── Primitive: 2-arg (no BC info; for Hermite family + non-periodic persistent) ──
+@inline _resolve_extrap(::WrapExtrap{Nothing}, x::AbstractVector) = WrapExtrap(x)
+@inline _resolve_extrap(extrap::AbstractExtrap, ::AbstractVector) = extrap
 
-# 2-arg convenience: for entry points that don't carry a BC (Hermite family, etc.)
-# just need to upgrade a zero-arg `WrapExtrap()` and pass everything else through.
-@inline _materialize_extrap(x, ::WrapExtrap{Nothing}) = WrapExtrap(x)
-@inline _materialize_extrap(_, extrap::AbstractExtrap) = extrap
+# ── Primitive: 3-arg (BC-aware) ──
+# PeriodicBC forces WrapExtrap regardless of user's extrap. The explicit
+# `WrapExtrap{Nothing}` tiebreaker resolves the ambiguity between the
+# "PeriodicBC forces" rule and the "Nothing upgrade" rule when both match.
+@inline _resolve_extrap(::WrapExtrap{Nothing}, bc::PeriodicBC, x::AbstractVector) = WrapExtrap(x, bc)
+@inline _resolve_extrap(::AbstractExtrap,      bc::PeriodicBC, x::AbstractVector) = WrapExtrap(x, bc)
+@inline _resolve_extrap(::WrapExtrap{Nothing}, ::AbstractBC,   x::AbstractVector) = WrapExtrap(x)
+@inline _resolve_extrap(extrap::AbstractExtrap, ::AbstractBC,  ::AbstractVector)  = extrap
 
+# ── 1D Bundled: validate + materialize ──
 """
-    _resolve_extrap(bc, extrap, x, y) -> AbstractExtrap                # 1D
-    _resolve_extrap(bcs, extraps, grids, data, Val(N)) -> NTuple{N}    # ND
+    _resolve_extrap(extrap, bc, x, y) -> AbstractExtrap
 
-Single gateway for zero-copy oneshot entries (and any site that needs
-validation + materialization in one step). Dispatches on arg shape:
-
-- 1D — validates `:inclusive` endpoint match (`y[1] ≈ y[end]`) when required,
-  then returns `_materialize_extrap(x, bc, extrap)`.
-- ND — validates per-axis `:inclusive` slice equality, then returns the tuple
-  `map(_materialize_extrap, grids, bcs, extraps)`.
-
-Extension-path helpers (`_periodic_extend_1d` / `_periodic_extend_1d_pooled!`)
-call `WrapExtrap(x_ext)` directly after extension instead of going through
-`_resolve_extrap`, since extension guarantees `last(x_ext) - first(x_ext) == period`.
-Matches the `_resolve_search` / `_resolve_coeffs` / `_resolve_grididx` naming
-convention — name shared between 1D and ND variants, dispatch on arg type.
+Zero-copy 1D oneshot entry: validate `:inclusive` endpoint (`y[1] ≈ y[end]`) when
+required, then hand off to the BC-aware 3-arg primitive.
 """
 @inline function _resolve_extrap(
-        bc::AbstractBC, extrap::AbstractExtrap, x, y::AbstractVector
+        extrap::AbstractExtrap, bc::AbstractBC,
+        x::AbstractVector, y::AbstractVector
     )
     bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y)
-    return _materialize_extrap(x, bc, extrap)
+    return _resolve_extrap(extrap, bc, x)
 end
 
+# ── ND Bundled (oneshot): per-axis slice validation + materialize ──
+"""
+    _resolve_extrap(extraps, bcs, grids, data, Val(N)) -> NTuple{N, AbstractExtrap}
+
+Zero-copy ND oneshot entry: validate `:inclusive` axes' first/last slice
+equality on `data`, then materialize per-axis via the 3-arg primitive.
+"""
 @inline function _resolve_extrap(
-        bcs::NTuple{N, AbstractBC},
         extraps::NTuple{N, AbstractExtrap},
+        bcs::NTuple{N, AbstractBC},
         grids::NTuple{N, AbstractVector},
         data::AbstractArray,
         ::Val{N},
     ) where {N}
     _validate_periodic_slices_nd(data, bcs, Val(N))
-    return map(_materialize_extrap, grids, bcs, extraps)
+    return map(_resolve_extrap, extraps, bcs, grids)
 end
 
 """
@@ -566,9 +578,9 @@ periodicity, not just on the grid representation.
         return x_ext, y_ext, WrapExtrap(x_ext)
     end
     # Non-periodic: still materialize in case the user passed `WrapExtrap()` (legacy
-    # singleton); `_materialize_extrap` upgrades it to `WrapExtrap(x)` and leaves
+    # singleton); `_resolve_extrap` upgrades it to `WrapExtrap(x)` and leaves
     # other extraps untouched.
-    return x, y, _materialize_extrap(x, bc, extrap)
+    return x, y, _resolve_extrap(extrap, bc, x)
 end
 
 """
@@ -596,7 +608,7 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
     ) where {Tg, Tv}
     if !_is_periodic_bc(bc)
         # Non-periodic: still materialize in case user passed `WrapExtrap()` singleton.
-        return x, y, _materialize_extrap(x, bc, extrap)
+        return x, y, _resolve_extrap(extrap, bc, x)
     end
     # Duck-safe extension buffer type: promote Integer / Complex{Integer} grids
     # to float so the extended pool buffer and `_CachedRange` `inv_h` field can

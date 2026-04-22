@@ -39,7 +39,7 @@ function _linear_interp_nd_oneshot(
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    extraps_eff = _resolve_extrap(bcs, extraps_val, grids, data, Val(N))
+    extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
     q_eval = _handle_all_extraps(query, grids, extraps_eff)
     # BC-aware per-axis search — returns (indices_pairs, Ls, Rs) where
     # indices_pairs[d] = (idx_L_d, idx_R_d); periodic seam axes have idx_R == 1.
@@ -74,7 +74,7 @@ function _linear_interp_nd_oneshot_batch!(
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps_val)
-    extraps_eff = _resolve_extrap(bcs, extraps_val, grids, data, Val(N))
+    extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, grids, extraps_val, ops, first(data))
@@ -122,7 +122,7 @@ function linear_interp(
     searches = _resolve_search_nd(search, Val(N), query)  # scalar: type-based (no monotonicity check)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _linear_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
@@ -183,7 +183,7 @@ function linear_interp!(
     mono = _check_mono_nd(policies, queries)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _linear_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, policies, ops, hints_nd, mono)
 end

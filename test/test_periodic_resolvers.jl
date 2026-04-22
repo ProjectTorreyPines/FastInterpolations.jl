@@ -1,13 +1,13 @@
-# Direct unit coverage for the `WrapExtrap` constructor layering, the
-# `_materialize_extrap` primitive, and the `_resolve_extrap` gateway (1D + ND).
-# These paths previously had only end-to-end coverage via oneshot APIs.
+# Direct unit coverage for `WrapExtrap` constructor layering and the unified
+# `_resolve_extrap` family (primitive per-axis + 1D bundled + ND). All layers
+# share the same function name — `extrap` is always the first argument.
 
 using Test
 using FastInterpolations
 using FastInterpolations: WrapExtrap, NoBC, PeriodicBC, NoExtrap, ClampExtrap,
-    _materialize_extrap, _resolve_extrap
+    _resolve_extrap
 
-@testset "WrapExtrap + extrap resolution" begin
+@testset "WrapExtrap + _resolve_extrap" begin
 
     @testset "WrapExtrap constructors" begin
         # Zero-arg legacy singleton — build-time placeholder only.
@@ -55,15 +55,29 @@ using FastInterpolations: WrapExtrap, NoBC, PeriodicBC, NoExtrap, ClampExtrap,
         @test_throws ArgumentError WrapExtrap([0.0, 1.0, 2.0, 3.0], bc_auto)
     end
 
-    @testset "_materialize_extrap — dispatch truth table" begin
+    @testset "_resolve_extrap — primitive 2-arg (extrap, x)" begin
+        x = 0.0:0.5:2.0
+
+        # WrapExtrap{Nothing} → upgrade via grid span.
+        e = _resolve_extrap(WrapExtrap(), x)
+        @test e isa WrapExtrap
+        @test !(e isa WrapExtrap{Nothing})
+        @test e._x_min ≈ 0.0 && e._x_max ≈ 2.0
+
+        # Non-Wrap extraps passthrough.
+        @test _resolve_extrap(NoExtrap(), x) === NoExtrap()
+        @test _resolve_extrap(ClampExtrap(), x) === ClampExtrap()
+    end
+
+    @testset "_resolve_extrap — primitive 3-arg (extrap, bc, x)" begin
         x = 0.0:0.5:2.0
 
         # Rule 1: non-periodic BC + non-Wrap extrap → passthrough (===).
-        @test _materialize_extrap(x, NoBC(), NoExtrap()) === NoExtrap()
-        @test _materialize_extrap(x, NoBC(), ClampExtrap()) === ClampExtrap()
+        @test _resolve_extrap(NoExtrap(), NoBC(), x) === NoExtrap()
+        @test _resolve_extrap(ClampExtrap(), NoBC(), x) === ClampExtrap()
 
         # Rule 2: non-periodic BC + WrapExtrap{Nothing} → upgrade via WrapExtrap(x).
-        e = _materialize_extrap(x, NoBC(), WrapExtrap())
+        e = _resolve_extrap(WrapExtrap(), NoBC(), x)
         @test e isa WrapExtrap
         @test !(e isa WrapExtrap{Nothing})
         @test e._x_min ≈ 0.0
@@ -71,51 +85,51 @@ using FastInterpolations: WrapExtrap, NoBC, PeriodicBC, NoExtrap, ClampExtrap,
 
         # Rule 3: PeriodicBC forces WrapExtrap via (x, bc) constructor, overriding
         # any user-supplied extrap (including NoExtrap).
-        e = _materialize_extrap(x, PeriodicBC(endpoint = :inclusive), NoExtrap())
+        e = _resolve_extrap(NoExtrap(), PeriodicBC(endpoint = :inclusive), x)
         @test e isa WrapExtrap
         @test e._x_min ≈ 0.0 && e._x_max ≈ 2.0
 
         bc_exc = PeriodicBC(endpoint = :exclusive, period = 2.5)
-        e = _materialize_extrap(x, bc_exc, NoExtrap())
+        e = _resolve_extrap(NoExtrap(), bc_exc, x)
         @test e isa WrapExtrap
         @test e._x_min ≈ 0.0 && e._x_max ≈ 2.5
     end
 
-    @testset "_resolve_extrap — 1D gateway" begin
+    @testset "_resolve_extrap — 1D bundled (extrap, bc, x, y)" begin
         x = collect(range(0.0, 1.0, length = 5))
         y_good = [0.0, 1.0, 2.0, 1.0, 0.0]                  # y[1] == y[end] = 0
         y_bad = [0.0, 1.0, 2.0, 3.0, 4.0]                   # y[1] != y[end]
 
         # NoBC: y not validated, extrap returned unchanged.
-        @test _resolve_extrap(NoBC(), NoExtrap(), x, y_bad) === NoExtrap()
-        @test _resolve_extrap(NoBC(), ClampExtrap(), x, y_bad) === ClampExtrap()
+        @test _resolve_extrap(NoExtrap(), NoBC(), x, y_bad) === NoExtrap()
+        @test _resolve_extrap(ClampExtrap(), NoBC(), x, y_bad) === ClampExtrap()
 
-        # NoBC + legacy singleton: upgraded to typed WrapExtrap even without BC.
-        e = _resolve_extrap(NoBC(), WrapExtrap(), x, y_bad)
+        # NoBC + legacy singleton: upgraded to typed WrapExtrap even without periodic BC.
+        e = _resolve_extrap(WrapExtrap(), NoBC(), x, y_bad)
         @test e isa WrapExtrap
         @test !(e isa WrapExtrap{Nothing})
         @test e._x_min ≈ 0.0 && e._x_max ≈ 1.0
 
         # :inclusive valid: typed WrapExtrap returned.
-        e = _resolve_extrap(PeriodicBC(), NoExtrap(), x, y_good)
+        e = _resolve_extrap(NoExtrap(), PeriodicBC(), x, y_good)
         @test e isa WrapExtrap
         @test e._x_min ≈ 0.0 && e._x_max ≈ 1.0
 
-        # :inclusive invalid: gateway fires the validator.
+        # :inclusive invalid: bundled gateway fires the validator.
         @test_throws ArgumentError _resolve_extrap(
-            PeriodicBC(), NoExtrap(), x, y_bad
+            NoExtrap(), PeriodicBC(), x, y_bad
         )
 
         # :inclusive + check=false: validation skipped (escape hatch).
         bc_skip = PeriodicBC(endpoint = :inclusive, check = false)
-        @test _resolve_extrap(bc_skip, NoExtrap(), x, y_bad) isa WrapExtrap
+        @test _resolve_extrap(NoExtrap(), bc_skip, x, y_bad) isa WrapExtrap
 
         # :exclusive: y carries no endpoint contract, never validated.
         bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.25)
-        @test _resolve_extrap(bc_exc, NoExtrap(), x, y_bad) isa WrapExtrap
+        @test _resolve_extrap(NoExtrap(), bc_exc, x, y_bad) isa WrapExtrap
     end
 
-    @testset "_resolve_extrap — ND gateway" begin
+    @testset "_resolve_extrap — ND bundled (extraps, bcs, grids, data, Val(N))" begin
         x = collect(range(0.0, 2π, length = 5))
         y = collect(range(0.0, 2π, length = 5))
         good = [sin(xi) * cos(yj) for xi in x, yj in y]     # endpoints match on both axes
@@ -128,38 +142,56 @@ using FastInterpolations: WrapExtrap, NoBC, PeriodicBC, NoExtrap, ClampExtrap,
 
         # All NoBC: per-axis passthrough — slice validation is a no-op.
         out = _resolve_extrap(
-            (NoBC(), NoBC()), extraps, (x, y), bad_axis1, Val(2)
+            extraps, (NoBC(), NoBC()), (x, y), bad_axis1, Val(2)
         )
         @test out === extraps
 
         # :inclusive on axis 1 with valid data.
         bcs_p1 = (PeriodicBC(), NoBC())
-        out = _resolve_extrap(bcs_p1, extraps, (x, y), good, Val(2))
+        out = _resolve_extrap(extraps, bcs_p1, (x, y), good, Val(2))
         @test out[1] isa WrapExtrap
         @test out[2] === NoExtrap()
 
         # :inclusive on axis 1 with mismatch on axis 1: gateway fires validator.
         @test_throws ArgumentError _resolve_extrap(
-            bcs_p1, extraps, (x, y), bad_axis1, Val(2)
+            extraps, bcs_p1, (x, y), bad_axis1, Val(2)
         )
 
         # :inclusive on axis 2 with mismatch on axis 2: gateway catches per-axis.
         bcs_p2 = (NoBC(), PeriodicBC())
         @test_throws ArgumentError _resolve_extrap(
-            bcs_p2, extraps, (x, y), bad_axis2, Val(2)
+            extraps, bcs_p2, (x, y), bad_axis2, Val(2)
         )
 
         # :inclusive + check=false on axis 1: validation skipped.
         bcs_skip = (PeriodicBC(endpoint = :inclusive, check = false), NoBC())
-        out = _resolve_extrap(bcs_skip, extraps, (x, y), bad_axis1, Val(2))
+        out = _resolve_extrap(extraps, bcs_skip, (x, y), bad_axis1, Val(2))
         @test out[1] isa WrapExtrap
 
         # ND with legacy singleton on one axis: gets upgraded to typed form.
         out = _resolve_extrap(
-            (NoBC(), NoBC()), (WrapExtrap(), NoExtrap()), (x, y), good, Val(2)
+            (WrapExtrap(), NoExtrap()), (NoBC(), NoBC()), (x, y), good, Val(2)
         )
         @test out[1] isa WrapExtrap
         @test !(out[1] isa WrapExtrap{Nothing})
         @test out[2] === NoExtrap()
+    end
+
+    @testset "_resolve_extrap — ND 5-arg (extrap, bcs, grids, Val, Tv) one-step" begin
+        # 1-liner collapse: expand + promote + per-axis materialize.
+        x = collect(range(0.0, 2π, length = 5))
+        y = collect(range(0.0, 2π, length = 5))
+
+        # Periodic on axis 1 — BC-aware materialize (bc.period used for exclusive;
+        # grid span for inclusive).
+        bcs = (PeriodicBC(endpoint = :inclusive), NoBC())
+        out = _resolve_extrap(NoExtrap(), bcs, (x, y), Val(2), Float64)
+        @test out[1] isa WrapExtrap
+        @test out[2] === NoExtrap()
+
+        # `nothing` bcs: expand + per-axis 2-arg materialize (grid-span only).
+        out = _resolve_extrap(WrapExtrap(), nothing, (x, y), Val(2), Float64)
+        @test out[1] isa WrapExtrap && !(out[1] isa WrapExtrap{Nothing})
+        @test out[2] isa WrapExtrap && !(out[2] isa WrapExtrap{Nothing})
     end
 end

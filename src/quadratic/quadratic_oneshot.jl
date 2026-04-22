@@ -159,7 +159,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
 
     searcher = _resolve_search(x, xq, search, hint)
     # Materialize WrapExtrap{Nothing} against the grid before reaching the kernel.
-    extrap_eff = _materialize_extrap(x, NoBC(), extrap)
+    extrap_eff = _resolve_extrap(extrap, x)
     _quadratic_eval_at_point(x, y, a, d, xq, extrap_eff, deriv, searcher)
 end
 
@@ -215,7 +215,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
 
     searcher = _resolve_search(x, x_targets, search, nothing)
-    extrap_eff = _materialize_extrap(x, NoBC(), extrap)
+    extrap_eff = _resolve_extrap(extrap, x)
     _quadratic_vector_loop!(output, x, y, a, d, x_targets, extrap_eff, deriv, searcher)
     return output
 end

@@ -610,12 +610,22 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 # (wrap) so eval reads the periodic neighbor without data extension.
 @inline _getpair(r) = (r[1], r[2])
 
+# Shared projector for all `_search_all_intervals*` overloads. Every variant
+# boils down to "run `map(search_fn, ...)` then extract `(indices, Ls, Rs)`
+# from each result". Only the index extractor differs:
+#   - `_getidx`  → `NTuple{N, Int}`              (single corner per axis)
+#   - `_getpair` → `NTuple{N, NTuple{2, Int}}`   (left/right pair per axis)
+# Centralizing the `(map(_getL, ...), map(_getR, ...))` tail keeps all variants
+# in sync when the 4-tuple `search_interval` return shape evolves.
+@inline _project_search_results(results, proj::F) where {F} =
+    (map(proj, results), map(_getL, results), map(_getR, results))
+
 @inline function _search_all_intervals(
         q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}}
     ) where {N}
     results = map(_search_axis_oneshot, q_evals, grids, spacings, searches)
-    return (map(_getidx, results), map(_getL, results), map(_getR, results))
+    return _project_search_results(results, _getidx)
 end
 
 # ----------------------------------------
@@ -751,7 +761,7 @@ end
         mono::NTuple{N, Bool},
     ) where {N}
     results = map(_search_axis_adaptive, q_evals, grids, spacings, policies, hints, mono)
-    return (map(_getidx, results), map(_getL, results), map(_getR, results))
+    return _project_search_results(results, _getidx)
 end
 
 # ────────────────────────────────────────────────────────
@@ -790,7 +800,7 @@ end
     # Build per-axis BC-aware searchers via map (per-element concrete dispatch, no closure box)
     searchers = map(_resolve_axis_searcher_bc, grids, q_evals, searches, hints_eff, bcs)
     results = map(_search_axis_with_searcher, searchers, grids, q_evals)
-    return (map(_getpair, results), map(_getL, results), map(_getR, results))
+    return _project_search_results(results, _getpair)
 end
 
 # Nothing hint sentinel — each axis gets no persistent hint (NoHint searcher)
@@ -824,7 +834,7 @@ end
         hints::Tuple{Vararg{Base.RefValue{Int}, N}}
     ) where {N}
     results = map(_search_axis_oneshot_hint, q_evals, grids, spacings, searches, hints)
-    return (map(_getidx, results), map(_getL, results), map(_getR, results))
+    return _project_search_results(results, _getidx)
 end
 
 # ========================================

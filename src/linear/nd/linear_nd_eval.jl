@@ -150,12 +150,25 @@ end
 # Local Parameter Computation
 # ========================================
 
+# Shared `αs` formula for both variants. `map` on NTuples dispatches
+# per-element with concrete types — safe for heterogeneous `hs` / `Ls` /
+# `q_eval` tuples (e.g., Real + Float64 mixes), avoiding the Union-box risk
+# of `ntuple(d -> q_eval[d], Val(N))` where runtime-indexed lookup collapses
+# to an abstract return type. See MEMORY.md "ND Constructor Inferrability
+# Pattern" for the canonical precedent.
+@inline _alpha_of(q::Real, L::Real, h::Real) = (q - L) / h
+@inline _alphas_from_hs(q_eval, Ls, hs) = map(_alpha_of, q_eval, Ls, hs)
+
 """
     _compute_linear_params(q_eval, spacings, indices, Ls, Val(N)) -> (hs, αs)
 
-Compute cell widths and normalized coordinates for multilinear interpolation.
-- hs: cell widths for each dimension
-- αs: normalized coordinates α = (q - L) / h
+Cell widths and normalized coordinates for multilinear interpolation via
+spacing lookup. Used by persistent ND paths where `spacings` is precomputed.
+
+Shares the `αs` formula with `_compute_linear_params_lr` via `_alphas_from_hs`;
+only the `hs` derivation (spacing lookup) is variant-specific. Uses `map` over
+the `(spacings, indices)` tuple pair to avoid Union boxing when the axes carry
+heterogeneous spacing concrete types (ScalarSpacing + VectorSpacing mix).
 """
 @inline function _compute_linear_params(
         q_eval::Tuple{Vararg{Real, N}},
@@ -164,34 +177,32 @@ Compute cell widths and normalized coordinates for multilinear interpolation.
         Ls::Tuple{Vararg{Real, N}},
         ::Val{N}
     ) where {N}
-    hs = ntuple(Val(N)) do d
-        @inbounds _get_h(spacings[d], indices[d])
-    end
-    αs = ntuple(Val(N)) do d
-        @inbounds (q_eval[d] - Ls[d]) / hs[d]
-    end
-    return (hs, αs)
+    hs = map(_get_h, spacings, indices)
+    return (hs, _alphas_from_hs(q_eval, Ls, hs))
 end
 
-# Pair-valued indices variant (Phase 6) — computes per-axis cell width directly from
-# `Rs[d] - Ls[d]` to avoid the idx-based spacing lookup (which is out-of-bounds
-# for the seam cell at idx_L == n on periodic-exclusive axes — there's no
-# `spacing.widths[n]`). For uniform Range grids via ScalarSpacing the cost is
-# unchanged (1 subtraction vs 1 field load). For Vector axes this matches what
-# VectorSpacing would return for interior cells and Just Works for the seam cell.
+"""
+    _compute_linear_params_lr(q_eval, Ls, Rs, Val(N)) -> (hs, αs)
+
+Pair-variant (Phase 6) — computes per-axis cell width directly from
+`Rs[d] - Ls[d]` to avoid the idx-based spacing lookup (which is out-of-bounds
+for the seam cell at `idx_L == n` on periodic-exclusive axes — there's no
+`spacing.widths[n]`). For uniform Range grids via ScalarSpacing the cost is
+unchanged (1 subtraction vs 1 field load). For Vector axes this matches what
+VectorSpacing would return for interior cells and Just Works for the seam cell.
+
+Shares the `αs` formula with `_compute_linear_params` via `_alphas_from_hs`.
+`map(-, Rs, Ls)` dispatches per-element with concrete types (no Union-box risk
+from heterogeneous `Rs` / `Ls` tuples; matches MEMORY.md's inferrability rules).
+"""
 @inline function _compute_linear_params_lr(
         q_eval::Tuple{Vararg{Real, N}},
         Ls::Tuple{Vararg{Real, N}},
         Rs::Tuple{Vararg{Real, N}},
         ::Val{N}
     ) where {N}
-    hs = ntuple(Val(N)) do d
-        @inbounds Rs[d] - Ls[d]
-    end
-    αs = ntuple(Val(N)) do d
-        @inbounds (q_eval[d] - Ls[d]) / hs[d]
-    end
-    return (hs, αs)
+    hs = map(-, Rs, Ls)
+    return (hs, _alphas_from_hs(q_eval, Ls, hs))
 end
 
 # ========================================

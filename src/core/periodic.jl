@@ -48,15 +48,28 @@ end
 # Extrap-aware 2-arg wrapper
 # ────────────────────────────────────────────────────────
 #
-# Kernels hand off the materialized WrapExtrap directly — no phantom `first(x)`,
-# `last(x)` arguments needed. By design, no method is defined for
-# `WrapExtrap{Nothing}`: an unmaterialized extrap reaching a kernel is a
-# `MethodError`, signaling a materialization bug upstream (`_materialize_extrap`
-# / `_resolve_extrap` should have upgraded it). The contract is enforced by
-# the type system rather than a runtime check.
+# Kernels hand off the materialized `WrapExtrap{T}` directly — no phantom
+# `first(x)`, `last(x)` arguments needed. `_resolve_extrap` is responsible for
+# materializing any `WrapExtrap{Nothing}` build-time placeholder into
+# `WrapExtrap{T}` before evaluation. An unmaterialized one reaching this
+# wrapper is a contract violation — the explicit `::WrapExtrap{Nothing}`
+# overload below raises a clear error instead of letting `nothing - nothing`
+# fail cryptically one layer down.
 
 @inline _wrap_to_domain(xi, e::WrapExtrap) =
     _wrap_to_domain(xi, e._x_min, e._x_max)
+
+@inline _wrap_to_domain(::Any, ::WrapExtrap{Nothing}) =
+    _throw_unmaterialized_wrap_extrap()
+
+@noinline _throw_unmaterialized_wrap_extrap() =
+    throw(
+    ArgumentError(
+        "WrapExtrap reached evaluator unmaterialized (WrapExtrap{Nothing}). " *
+            "This is a contract violation — `_resolve_extrap` should have " *
+            "upgraded it to WrapExtrap{T} at the API boundary."
+    )
+)
 
 # ========================================
 # Endpoint Validation

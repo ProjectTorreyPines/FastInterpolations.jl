@@ -72,8 +72,10 @@ end
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
-# 4-arg `_wrap_to_domain` with `extrap::WrapExtrap` picks stored domain (typed variant)
-# or grid-span fallback (WrapExtrap{Nothing}) via multiple dispatch.
+# `_wrap_to_domain(xi, extrap)` reads `extrap._x_min/._x_max` directly from the
+# materialized `WrapExtrap{T}`. Any `WrapExtrap{Nothing}` placeholder must have
+# been upgraded earlier by `_resolve_extrap` — an unresolved one hitting this
+# path errors out at the explicit `::WrapExtrap{Nothing}` overload (periodic.jl).
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},

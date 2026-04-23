@@ -257,7 +257,7 @@ end
 # Pass original xq (may be Dual) to _wrap_to_domain to preserve AD derivatives.
 # The 2-arg `_wrap_to_domain(xq, extrap)` reads `extrap._x_min/._x_max` directly —
 # materialization of `WrapExtrap{Nothing}` to `WrapExtrap{T}` happens upstream in
-# `_resolve_extrap` / `_materialize_extrap`, so kernels only see the typed form.
+# `_resolve_extrap`, so kernels only see the typed form.
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},

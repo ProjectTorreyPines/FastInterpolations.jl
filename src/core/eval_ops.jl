@@ -291,7 +291,7 @@ For periodic data.
 - `T`: Either `Nothing` (build-time placeholder from the zero-arg `WrapExtrap()`
   singleton) or a concrete numeric type carrying the resolved physical wrap domain.
   Kernels only ever see the concrete form; the `Nothing` variant is materialized
-  upstream via `_materialize_extrap` / `_resolve_extrap`.
+  upstream via `_resolve_extrap`.
 
 # Fields
 - `_x_min::T`, `_x_max::T`: Physical wrap domain `[_x_min, _x_max)`. Underscore
@@ -316,7 +316,7 @@ struct WrapExtrap{T} <: AbstractExtrap
 end
 
 # Zero-arg singleton: a build-time placeholder. Never reaches kernels — upstream
-# `_materialize_extrap` upgrades it to `WrapExtrap(x)` before queries land.
+# `_resolve_extrap` upgrades it to `WrapExtrap(x)` before queries land.
 WrapExtrap() = WrapExtrap{Nothing}(nothing, nothing)
 
 """
@@ -326,7 +326,7 @@ Primary factory: construct a `WrapExtrap` whose wrap domain is the grid span
 `[first(x), last(x))`.
 
 Used both by user code (when they want to wrap against a known grid without a
-`PeriodicBC`) and internally by `_materialize_extrap` to upgrade the zero-arg
+`PeriodicBC`) and internally by `_resolve_extrap` to upgrade the zero-arg
 singleton to a fully-typed `WrapExtrap{T}`.
 
 For periodic interpolation, prefer `bc=PeriodicBC(...)` on the interpolant — BC

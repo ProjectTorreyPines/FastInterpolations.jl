@@ -608,13 +608,15 @@ import FastInterpolations: _get_cubic_cache
         periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc = PeriodicBC())
 
         # Both ZeroCurv and periodic BC should be zero-allocation with autocache.
-        # Periodic path now threads a materialized WrapExtrap{Float64} through the
-        # flow (16 bytes = 2 × sizeof(Float64) for the stored domain). On Julia
-        # 1.10 (LTS) the compiler does not fully eliminate this from the stack
-        # frame on cache hit; on 1.11+ it's optimized to zero. Allow the domain
-        # carry-over here — it is not a regression, it is the cost of typed wrap.
+        # The periodic path now threads a materialized `WrapExtrap{Float64}` (16 B
+        # = 2 × sizeof(Float64)) through the flow. `@allocated` reports heap
+        # allocations: on Julia 1.11+ escape analysis elides the struct to the
+        # stack (0 bytes), but on LTS (1.10) the compiler lets it escape to the
+        # heap as one small box. Allow the extra 16 bytes on LTS — tightened to
+        # zero on 1.12+ by the project-wide `ALLOC_THRESHOLD` (runtests.jl).
         @test natural_allocs <= ALLOC_THRESHOLD
-        @test periodic_allocs <= ALLOC_THRESHOLD + 2 * sizeof(Float64)
+        @test periodic_allocs <=
+            ALLOC_THRESHOLD + (VERSION >= v"1.12" ? 0 : 2 * sizeof(Float64))
     end
 
     @testset "Wrap extrap: LinearInterpolant callable is zero-allocation" begin
@@ -1437,12 +1439,13 @@ import FastInterpolations: _get_cubic_cache
             cubic_interp(x, y, 1.0; bc = PeriodicBC())
             cubic_interp(x, y, 1.0; bc = PeriodicBC())
 
-            # Periodic BC Range cache hit. Same note as line 612: LTS 1.10 keeps
-            # a WrapExtrap{Float64} domain on the stack frame that 1.11+ optimizes
-            # away. Scalar-query path accumulates 32 bytes (domain + intermediate)
-            # vs 16 bytes for the vector path — allow 4 × sizeof(Float64) here.
+            # Periodic BC Range cache hit. Same heap-allocation behavior as line
+            # 612: on LTS (1.10) escape analysis lets `WrapExtrap{Float64}` +
+            # one small intermediate box escape (~32 B), 1.11+ elides them. The
+            # scalar-query path accumulates more boxes than the vector path, so
+            # allow up to 4 × sizeof(Float64) on LTS (gated off on 1.12+).
             allocs = @allocated cubic_interp(x, y, 1.0; bc = PeriodicBC())
-            @test allocs <= ALLOC_THRESHOLD + 4 * sizeof(Float64)
+            @test allocs <= ALLOC_THRESHOLD + (VERSION >= v"1.12" ? 0 : 4 * sizeof(Float64))
         end
 
         @testset "Range vs Vector cache miss allocation comparison" begin

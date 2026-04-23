@@ -198,6 +198,33 @@ end
 # Multilinear Interpolation Kernel
 # ========================================
 
+# Shared Expr builder for the two multilinear generators below. Both variants
+# produce an identical flat 2^N straight-line unroll; only the per-axis corner
+# addressing differs. `make_idx_expr(d, bit)` returns the address expression
+# for axis `d` at corner bit `bit` ∈ {0, 1}:
+#   non-pair : (d, bit) -> :(indices[$d] + $bit)
+#   pair     : (d, bit) -> :(indices_pairs[$d][$(bit + 1)])
+# Runs at compile time only (inside @generated); closure cost is free.
+function _multilinear_sum_body(N::Int, make_idx_expr::Function)
+    num_corners = 1 << N  # 2^N
+    corner_exprs = []
+    for corner in 0:(num_corners - 1)
+        bits = ntuple(d -> (corner >> (d - 1)) & 1, N)
+        idx_expr = Expr(:tuple, [make_idx_expr(d, bits[d]) for d in 1:N]...)
+        weight_exprs = [
+            :(_linear_weight(ops[$d], αs[$d], hs[$d], Val($(bits[d]))))
+            for d in 1:N
+        ]
+        weight_expr = foldl((a, b) -> :($a * $b), weight_exprs)
+        push!(corner_exprs, :(@inbounds data[$idx_expr...] * $weight_expr))
+    end
+    sum_expr = foldl((a, b) -> :($a + $b), corner_exprs)
+    return quote
+        Base.@_inline_meta
+        @inbounds $sum_expr
+    end
+end
+
 """
     _multilinear_sum(data, indices, hs, αs, ops, Val(N))
 
@@ -210,6 +237,8 @@ For each corner indexed by bit pattern b ∈ {0,1}^N:
 The weight function depends on the evaluation operation:
 - EvalValue: (1-α) if b=0, α if b=1
 - EvalDeriv1: -1/h if b=0, 1/h if b=1
+
+Shares body with `_multilinear_sum_lr` via `_multilinear_sum_body`.
 """
 @generated function _multilinear_sum(
         data::AbstractArray{Tv, N},
@@ -219,40 +248,7 @@ The weight function depends on the evaluation operation:
         ops::NTuple{N, AbstractEvalOp},
         ::Val{N}
     ) where {Tv, N}
-    num_corners = 1 << N  # 2^N
-
-    # Generate the unrolled sum over all corners
-    corner_exprs = []
-    for corner in 0:(num_corners - 1)
-        # Extract bit pattern for this corner
-        bits = ntuple(d -> (corner >> (d - 1)) & 1, N)
-
-        # Generate index expression: indices[d] + bit
-        idx_expr = Expr(:tuple, [:(indices[$d] + $(bits[d])) for d in 1:N]...)
-
-        # Generate weight expression: product of _linear_weight for each dimension
-        weight_exprs = [
-            :(
-                    _linear_weight(ops[$d], αs[$d], hs[$d], Val($(bits[d])))
-                ) for d in 1:N
-        ]
-        weight_expr = foldl((a, b) -> :($a * $b), weight_exprs)
-
-        # data[idx...] * weight
-        push!(
-            corner_exprs, :(
-                @inbounds data[$idx_expr...] * $weight_expr
-            )
-        )
-    end
-
-    # Sum all corners
-    sum_expr = foldl((a, b) -> :($a + $b), corner_exprs)
-
-    return quote
-        Base.@_inline_meta
-        @inbounds $sum_expr
-    end
+    return _multilinear_sum_body(N, (d, bit) -> :(indices[$d] + $bit))
 end
 
 """
@@ -270,8 +266,8 @@ overload-style dispatch ambiguous (caught by Aqua static analysis). Used
 only by periodic ND oneshot — non-periodic/persistent callers stay on
 `_multilinear_sum`.
 
-Codegen: identical flat 2^N straight-line unroll. Only the corner-address
-expression differs — `indices[d] + bit` → `indices_pairs[d][bit + 1]`.
+Shares body with `_multilinear_sum` via `_multilinear_sum_body`; only the
+corner-address expression differs — `indices[d] + bit` → `indices_pairs[d][bit + 1]`.
 """
 @generated function _multilinear_sum_lr(
         data::AbstractArray{Tv, N},
@@ -281,33 +277,7 @@ expression differs — `indices[d] + bit` → `indices_pairs[d][bit + 1]`.
         ops::NTuple{N, AbstractEvalOp},
         ::Val{N}
     ) where {Tv, N}
-    num_corners = 1 << N
-
-    corner_exprs = []
-    for corner in 0:(num_corners - 1)
-        bits = ntuple(d -> (corner >> (d - 1)) & 1, N)
-
-        # Pair-indexed corner: indices_pairs[d][bit_d + 1]  — bit 0 → [1] (L), bit 1 → [2] (R)
-        idx_expr = Expr(:tuple, [:(indices_pairs[$d][$(bits[d] + 1)]) for d in 1:N]...)
-
-        weight_exprs = [
-            :(_linear_weight(ops[$d], αs[$d], hs[$d], Val($(bits[d])))) for d in 1:N
-        ]
-        weight_expr = foldl((a, b) -> :($a * $b), weight_exprs)
-
-        push!(
-            corner_exprs, :(
-                @inbounds data[$idx_expr...] * $weight_expr
-            )
-        )
-    end
-
-    sum_expr = foldl((a, b) -> :($a + $b), corner_exprs)
-
-    return quote
-        Base.@_inline_meta
-        @inbounds $sum_expr
-    end
+    return _multilinear_sum_body(N, (d, bit) -> :(indices_pairs[$d][$(bit + 1)]))
 end
 
 # ========================================

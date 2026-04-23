@@ -917,10 +917,18 @@ end
     return idx, idx + 1, xL, xR
 end
 
+# No-op for NoHint, write-back for RefHint. Called on the seam fast path so
+# subsequent LinearSearch/LinearBinarySearch queries resume walking from the
+# seam cell instead of re-walking from the last interior hint position. For
+# NoHint this compiles to nothing — dispatch-only.
+@inline _writeback_seam_hint(::NoHint, _::Int) = nothing
+@inline _writeback_seam_hint(h::RefHint, idx::Int) = (h.idx[] = idx; nothing)
+
 # --- Real + PeriodicBC{:exclusive}: seam wrap at x[n] → x[1]+period ---
 @inline function search_interval(s::Searcher{P, H, <:PeriodicBC{:exclusive}}, x::AbstractVector, xq::Real) where {P, H}
     n = length(x)
     @inbounds if xq >= x[n]
+        _writeback_seam_hint(s.hint, n)
         return n, 1, x[n], x[1] + s.bc.period
     end
     idx, xL, xR = _search_interval_real(s, x, xq)
@@ -929,6 +937,7 @@ end
 @inline function search_interval(s::Searcher{P, H, <:PeriodicBC{:exclusive}}, x::AbstractVector, spacing::AbstractGridSpacing, xq::Real) where {P, H}
     n = length(x)
     @inbounds if xq >= x[n]
+        _writeback_seam_hint(s.hint, n)
         return n, 1, x[n], x[1] + s.bc.period
     end
     idx, xL, xR = _search_interval_real(s, x, spacing, xq)

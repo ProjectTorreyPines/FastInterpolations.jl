@@ -12,6 +12,13 @@ using Test
 using FastInterpolations
 using FastInterpolations: _is_periodic_bc, _CachedRange
 
+# Shared ALLOC_THRESHOLD — defined in runtests.jl when running the full suite,
+# fall back here for standalone test runs. LTS (1.10) escape-analysis may
+# retain small Ref / struct allocs (~16 B) that 1.12+ elides to stack.
+if !@isdefined(ALLOC_THRESHOLD)
+    const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
+end
+
 @testset "Linear PeriodicBC" begin
 
     @testset "NoBC default is no-op" begin
@@ -311,15 +318,32 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
     end
 
     @testset "Exclusive — NoBC oneshot allocation regression guard (T-9)" begin
-        # After the WrapExtrap{T} materialization refactor, NoBC paths must NOT
-        # allocate a 16-byte WrapExtrap{Float64} struct. Guard the scalar hot path.
+        # After the WrapExtrap{T} materialization refactor, NoBC paths must not
+        # *leak* WrapExtrap{Float64} structs to the heap. On 1.12+ escape analysis
+        # stack-elides them (0 bytes); on LTS (1.10) a small Ref / struct may
+        # survive (~16 B). Compare against ALLOC_THRESHOLD per the project-wide
+        # convention rather than strict `== 0`.
         x = range(0.0, 1.0, length = 11)
         y = sin.(2π .* x)
         # Warmup
         for _ in 1:3
             linear_interp(x, y, 0.5)
         end
-        @test (@allocated linear_interp(x, y, 0.5)) == 0
+        @test (@allocated linear_interp(x, y, 0.5)) <= ALLOC_THRESHOLD
+    end
+
+    @testset "Exclusive — period conflict rejected in oneshot too (P1 review)" begin
+        # Regression: WrapExtrap(x, bc::PeriodicBC{:exclusive, <:Real}) used to read
+        # `bc.period` directly, skipping the `step(x) * length(x)` cross-check that
+        # persistent paths route through `_resolve_exclusive_period`. That let
+        # oneshot silently accept a period that disagrees with the Range's implied
+        # period. Both paths must now throw on the same input.
+        x = range(0.0, step = 0.1, length = 10)           # implied period = 1.0
+        y = rand(10)
+        bc_bad = PeriodicBC(endpoint = :exclusive, period = 2.0)   # conflicts
+        @test_throws ArgumentError linear_interp(x, y; bc = bc_bad)
+        @test_throws ArgumentError linear_interp(x, y, 0.5; bc = bc_bad)
+        @test_throws ArgumentError linear_interp(x, y, [0.2, 0.5]; bc = bc_bad)
     end
 
     @testset "Exclusive — ND oneshot Vector grid without period raises (3.5)" begin
@@ -331,6 +355,22 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
             (x, y), data, (1.5, 0.5);
             bc = (PeriodicBC(endpoint = :exclusive), NoBC()),   # period::Nothing
         )
+    end
+
+    @testset "Exclusive — seam hint write-back updates RefHint (P2 review)" begin
+        # Regression: the seam fast path in `search_interval` used to return
+        # before `_search_interval_real`, so RefHint never got updated at the
+        # seam cell. Monotone batches spending time past x[n] would keep
+        # searching from the stale interior hint. After fix, the seam branch
+        # writes `n` back to hint.idx so LinearBinarySearch can resume from
+        # the seam position on subsequent queries.
+        x = range(0.0, step = 1.0, length = 5)            # [0, 1, 2, 3, 4]
+        bc = PeriodicBC(endpoint = :exclusive, period = 5.0)
+        ref = Ref(1)
+        s = FastInterpolations._resolve_search(x, 4.5, AutoSearch(), ref, bc)
+        # Seam query: xq=4.5 > x[end]=4 → seam fires, hint must now be n=5
+        FastInterpolations.search_interval(s, x, 4.5)
+        @test ref[] == 5
     end
 
     @testset "Exclusive — adjoint with WrapExtrap(x) smoke (T-8)" begin

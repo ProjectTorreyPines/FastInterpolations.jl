@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776304358798,
+  "lastUpdate": 1776974602672,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -43750,6 +43750,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1618,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "154a4fa28a786c31be53a8837a7e15331ee191e1",
+          "message": "(refac): Zero-Copy `PeriodicBC(:exclusive)` OneShot + Dispatch Surface Refactor (#126)\n\n* (perf): Zero-copy Exclusive PeriodicBC oneshot — 1D Linear/Constant (Phases 1-4)\n\nContinue the \"factor out pool-based periodic handling\" trajectory started in\nPR #124, delivering zero-copy exclusive PeriodicBC for Linear/Constant 1D\noneshot by pushing BC awareness into `search_interval` and resolving extrap\nfrom bc at entry. ~2× speedup on 1D scalar oneshot exclusive; non-periodic\npaths remain bit-identical.\n\n## Phase 1 — BC-aware search\n\n- `Searcher{P, H, BC}` widened with BC type param (default NoBC)\n- `search_interval` returns 4-tuple `(idx_L, idx_R, xL, xR)` uniformly\n- PeriodicBC{:exclusive} dispatcher returns `(n, 1, x[n], x[1]+L)` at seam —\n  no data extension needed; seam detection is a single `xq >= x[n]` branch\n- `_search_interval_real` (12 methods) widened with `where {BC}` TypeVar;\n  bodies unchanged. Core helpers `_search_binary` / `_search_direct` /\n  `_search_linear!` / `_search_linear_binary!` fully untouched\n- 49 call sites across 17 files migrated to 4-tuple destructure\n\n## Phase 2 — Typed WrapExtrap + extraction\n\n- `WrapExtrap{T}` parametric with `_x_min, _x_max` fields (underscore\n  convention; direct 2-arg constructor emits advisory `@warn`)\n- `_resolve_periodic_extrap(bc, extrap, x)` 5 methods — extraction of the\n  `WrapExtrap()` override previously inlined in `_periodic_extend_1d*` /\n  `_prepare_periodic_nd*` helpers, upgraded to return domain-carrying\n  `WrapExtrap{T}(x_min, x_max)`\n- `_wrap_to_domain` 4-arg overloads: `::WrapExtrap{Nothing}` delegates to\n  existing 3-arg (grid span), `::WrapExtrap{<:AbstractFloat}` uses stored\n  domain. Enables period-aware wrap without extending the grid\n- Existing resolve helpers upgraded by 1 line each — Cubic/persistent\n  callers benefit from typed WrapExtrap without source changes\n- ~10 eval WrapExtrap dispatch sites thread extrap through 4-arg\n  `_wrap_to_domain` (linear, constant, quadratic, cubic, hermite, nd_utils)\n\n## Phases 3-4 — Linear/Constant 1D oneshot refactor\n\n- `linear_interp` / `constant_interp` scalar + vector entries collapse the\n  periodic/non-periodic branch into a single `_resolve_periodic_extrap`\n  call — uniform BC-agnostic body shape\n- 4 pool-based wrapper helpers deleted (14 + 15 lines):\n  `_linear_interp_periodic_{scalar,vector}!`,\n  `_constant_interp_periodic_{scalar,vector}!`\n- Seam cell validation preserved (`period` too small → ArgumentError)\n\n## Perf (1D Range n=100, measured via scripts/smoke_1d_oneshot_vs_interpolant.jl)\n\n- NoBC oneshot:      18.34 ns  (persistent: 17.42 ns,  ratio 1.05x)\n- Periodic oneshot:  21.21 ns  (persistent: 20.61 ns,  ratio 1.03x)\n- vs master baseline: Linear 1D oneshot excl went 43.8 ns → 21.21 ns (~2.07×)\n- Zero-alloc verified (warmed, function-barrier @allocated == 0)\n- Seam queries: bit-identical to persistent interpolant\n\n## What remains (follow-up work within this PR's branch)\n\n- Phase 5: series cleanup (needs `_anchor_loc` periodic-awareness\n  extension; current series works via typed WrapExtrap from Phase 2.3)\n- Phase 6: ND oneshot — drop `_prepare_periodic_nd_pooled` call in\n  Linear/Constant ND, 2-tuple per-axis indices in `_multilinear_sum` /\n  `_constant_nd_kernel`. Target: 365× → ~1× for 2D periodic oneshot.\n- Phase 7: new `test_wrapextrap_parametric.jl`,\n  `test_periodic_search_4value.jl`, benchmark A/B script, cleanup\n- `_periodic_extend_1d_pooled!` / `_prepare_periodic_nd_pooled` — still\n  used by Cubic oneshot + Hermite ND; deletion after those migrate.\n\n* (perf): Zero-copy Exclusive PeriodicBC ND oneshot — Linear + Constant (Phase 6)\n\nContinue the trajectory from Phase 1-4 (1D): Linear/Constant ND oneshot now\ndrop `_prepare_periodic_nd_pooled` entirely and evaluate on original data\nwith BC-aware per-axis search returning 2-tuple indices. Periodic seam cells\nwrap via `idx_R == 1` on the periodic axis; kernel reads `data[..., idx_R=1]`\ndirectly — no per-query ND data copy.\n\n## Changes\n\n### Core helpers (nd_utils.jl)\n- `_getidxR`, `_getpair` — extractors for the 4-tuple `search_interval` return\n- `_search_all_intervals_lr(q_evals, grids, searches, hints, bcs)` — per-axis\n  BC-aware search via `_resolve_search(grid, q, s, h, bc)`, returns\n  `(indices_pairs, Ls, Rs)` where `indices_pairs[d] = (idx_L_d, idx_R_d)`.\n  Non-periodic axes: `idx_R == idx_L + 1`. Periodic-exclusive seam axes:\n  `idx_R == 1` (wrap). No spacings param — avoids `VectorSpacing.widths`\n  allocation for Vector grids.\n\n### Pair-dispatched kernels\n- `_multilinear_sum(data, indices_pairs, hs, αs, ops, Val(N))` — new\n  dispatch on `NTuple{N, NTuple{2, Int}}` indices; corner address\n  `indices_pairs[d][bit_d + 1]` (bit 0 → idx_L, bit 1 → idx_R). Flat 2^N\n  straight-line unroll preserved.\n- `_compute_linear_params_lr(q_eval, Ls, Rs, Val(N))` — derives cell width\n  from `Rs[d] - Ls[d]` (no spacings lookup; works for seam cell whose width\n  is not in precomputed VectorSpacing).\n- `_constant_nd_kernel(data, indices_pairs, Rs, sides, q_eval, Ls)` — same\n  pair-indexing pattern; side-based offset still 0 or 1, selects left or\n  right of each axis's pair.\n\n### Entry refactor\n- `_linear_interp_nd_oneshot` (scalar + batch) and\n  `_constant_interp_nd_oneshot` (scalar + batch) — dropped `@with_pool`\n  wrapper and `_prepare_periodic_nd_pooled` call. New path:\n  `_resolve_periodic_extrap` per axis (typed WrapExtrap for periodic) +\n  `_search_all_intervals_lr` + pair kernel.\n- `_validate_periodic_slices_nd` called explicitly (moved out of the\n  deleted pool extend helper).\n\n## Perf (2D Range 100×100, measured via scripts/smoke_2d_oneshot_vs_interpolant.jl)\n\n- NoBC oneshot:     24.48 ns  (persistent: 17.88 ns,  ratio 1.37x)\n- Periodic oneshot: 26.67 ns  (persistent: 18.00 ns,  ratio 1.48x)\n- vs pre-refactor: **365× → 1.48× periodic ratio (~246× speedup)**\n- Zero-alloc verified for both NoBC and PeriodicBC(:exclusive)\n- Correctness: diff=0 vs persistent interpolant\n\n## What remains\n\n- Phase 5 (series): still deferred (needs `_anchor_loc` periodic-awareness)\n- Phase 7: new tests (`test_wrapextrap_parametric.jl`,\n  `test_periodic_search_4value.jl`), zero-alloc ND regression augmentation,\n  benchmark A/B vs master, docstring updates\n- `_periodic_extend_1d_pooled!` / `_prepare_periodic_nd_pooled` — still\n  used by Cubic (1D + ND) and Hermite ND oneshot; deletion after those\n  migrate in follow-up PRs.\n\n* (fix): Rename ND pair-variant kernels to resolve Aqua ambiguity at N=0\n\nAqua's method ambiguity check flagged two overload pairs where the Int-valued\nand pair-valued variants both collapse to `Tuple{}` at N=0:\n- `_multilinear_sum(::NTuple{N, Int})` vs `_multilinear_sum(::NTuple{N, NTuple{2, Int}})`\n- `_constant_nd_kernel(::NTuple{N, AbstractGridSpacing}, ::NTuple{N, Int})`\n  vs `_constant_nd_kernel(::NTuple{N, NTuple{2, Int}}, ::NTuple{N, Real})`\n\nJulia treats `NTuple{0, X}` as the same type (`Tuple{}`) regardless of `X`,\nso dispatch is ambiguous at the N=0 edge case. Rename pair-variants to\ndistinct names instead of overloading:\n- `_multilinear_sum_lr`\n- `_constant_nd_kernel_lr`\n\nCallers updated in Linear/Constant ND oneshot entries. No functional change;\nall Tier 1 tests pass (40s), 2D perf unchanged (1.36×/1.48× parity).\n\n* (bench): Periodic oneshot A/B benchmark + smoke tests\n\nBenchmark scripts for quantifying the Exclusive PeriodicBC zero-copy win:\n\n- `benchmark/periodic_oneshot_benchmark.jl` — Linear/Constant oneshot matrix\n  (1D+2D × Range/Vector × NoBC/Inclusive/Exclusive × scalar/vector queries).\n  Emits JSON suitable for master vs branch comparison. Uses try/catch around\n  warmup so master's pre-existing ND Vector-grid SubArray bug doesn't abort\n  the run — failing entries recorded as \"skipped\".\n\n- `benchmark/compare_periodic.jl` — joins two JSONs by config key, prints\n  speedup table sorted by ratio. Flags regressions (>2% slower) and\n  significant wins (≥1.5×).\n\n- `scripts/smoke_1d_oneshot_vs_interpolant.jl` / `smoke_2d_*.jl` — developer\n  sanity smoke tests: oneshot vs persistent interpolant parity + zero-alloc\n  checks. Used during Phase 3/4/6 implementation.\n\n## Measured A/B (Julia 1.12.6)\n\nHeadline speedups (branch / master):\n- 2D Linear n=100 Range excl scalar: 7543 ns → 29 ns  (263×)\n- 2D Constant n=100 Range excl scalar: 7515 ns → 34 ns (219×)\n- 2D Linear n=50 Range excl scalar:  1849 ns → 28 ns  (66×)\n- 1D Linear n=1000 Range excl scalar: 163 ns → 19 ns   (8.4×)\n- 1D Linear n=100 Range excl scalar:  73 ns → 20 ns    (3.6×)\n- Inclusive across sizes:             ~2.0-2.7× speedup\n\nMinor regressions (NoBC Vector scalar only):\n- 1D Linear/Constant 50-1000 Vector nobc scalar: 0.84-0.93×\n  (BC-aware dispatch branch adds ~2-4 ns on Vector path).\n- All Range + NoBC paths within ±2%.\n\nNo allocations introduced. Correctness verified by Tier 1 (40s pass)\nand Aqua (ambiguity-clean) in prior commits.\n\n* (fix): Restore :inclusive endpoint validation on 1D Linear/Constant oneshot\n\n`_check_periodic_endpoints` was no longer called from the 1D scalar and\nvector oneshot paths for `PeriodicBC(endpoint=:inclusive)`. The old pool-based\npath enforced it inside `_periodic_extend_1d_pooled!`, which the zero-copy\npath no longer invokes. ND and persistent paths were unaffected.\n\nAdds the guarded call (`bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y)`)\nat four entry points plus regression tests for scalar + vector mismatch\nand the `check=false` escape hatch.\n\n* (refactor): Centralize periodic validation into _resolve_periodic_extrap{_1d,s_nd}\n\nThe zero-copy periodic path required callers to explicitly run both\n`_check_periodic_endpoints` / `_validate_periodic_slices_nd` and\n`_resolve_periodic_extrap`. Future methods (Quadratic, Hermite) would have\nto remember the validator call or silently accept invalid `:inclusive`\ninputs.\n\nAdds two thin wrappers in `core/periodic.jl` that bundle validation and\nextrap projection into a single call:\n- `_resolve_periodic_extrap_1d(bc, extrap, x, y)`\n- `_resolve_periodic_extraps_nd(bcs, extraps, grids, data, Val(N))`\n\nAll 4 1D and 4 ND oneshot entry points now go through these gateways.\nNo behavior change; the existing validators still do the work.\n\n* (fix): Accept non-Float WrapExtrap domains in 4-arg _wrap_to_domain\n\nThe 4-arg WrapExtrap overload constrained the typed variant to\n`WrapExtrap{<:AbstractFloat}`, so any `WrapExtrap{Int}`, `WrapExtrap{Rational}`,\nor other non-Float parametrization produced by `_resolve_periodic_extrap`\n(on Int / Rational grids) or by the public `WrapExtrap(x_min, x_max)`\nconstructor hit a `MethodError` at first wrap.\n\nDropping the `<:AbstractFloat` constraint delegates to the duck-typed\n3-arg `_wrap_to_domain`, which already supports Int, Rational, Dual, and\nFloat grid element types via its existing overloads. `WrapExtrap{Nothing}`\nremains a separate, strictly more specific overload.\n\nAdds regression tests: Int grid + PeriodicBC (persistent + oneshot),\nexplicit `WrapExtrap(0, 4)` on Float grid, and Rational grid.\n\n* (test): Direct unit coverage for periodic resolvers, 4-tuple search, ND seam\n\nAdds three layers of unit tests for the zero-copy periodic infrastructure\nthat previously had only end-to-end coverage:\n\n* test/test_periodic_resolvers.jl — `WrapExtrap` parametric constructor\n  (Float / Int / mixed promotion / `x_max ≤ x_min` guard / advisory @warn),\n  `_resolve_periodic_extrap` 5-method truth table (`NoBC` passthrough,\n  `:inclusive` grid span, `:exclusive` with explicit / Nothing period,\n  Vector + Nothing error), and the `_resolve_periodic_extrap_{1d,nd}`\n  gateways' validation contract (`:inclusive` mismatch, `check=false`\n  escape hatch, NoBC passthrough).\n\n* test/test_periodic_search_4value.jl — `search_interval` BC dispatch\n  4-tuple semantics: NoBC / `:inclusive` standard pair, `:exclusive`\n  seam wrap at `xq ≥ x[n]` (idx_R=1, xR=x[1]+period). Boundary at\n  `xq == x[n]`. Vector + Range, Float64 + Float32. `@inferred` guards\n  on all three BC variants.\n\n* test/test_linear_periodic.jl + test_constant_periodic.jl — ND seam-cell\n  exact-value tests for `_multilinear_sum_lr` / `_constant_nd_kernel_lr`.\n  Linear: bilinear with single-axis seam, both-axes seam. Constant:\n  LeftSide / RightSide picks across the seam. Each case asserts both\n  the oneshot value against a hand-computed expected and oneshot ==\n  persistent agreement.\n\n* (refactor): Materialize WrapExtrap at API surface; collapse search/extrap dispatchers\n\nType-level refactor reducing dispatch surface without public API change.\nFollows the spec in claudedocs/plans/snappy-splashing-peach.md (Scope α').\n\n- WrapExtrap: layered factories replace the warned WrapExtrap(x_min, x_max).\n  * WrapExtrap() — legacy singleton, build-time placeholder only\n  * WrapExtrap(x::AbstractVector) — grid-span\n  * WrapExtrap(x, bc::AbstractBC) — delegate\n  * WrapExtrap(x, bc::PeriodicBC{:exclusive, <:Real}) — with period\n  * WrapExtrap(x::AbstractRange, bc::PeriodicBC{:exclusive, Nothing}) — inferred\n  Kernels only ever see materialized WrapExtrap{T} — type-enforced via the\n  absence of a _wrap_to_domain method for WrapExtrap{Nothing} (MethodError\n  on leak = loud, bisect-friendly failure).\n\n- _wrap_to_domain: 4 methods → 3. Drop 4-arg phantom-fallback overloads;\n  new 2-arg wrapper reads extrap._x_min/._x_max directly.\n\n- Extrap resolution: replace the 5-method BC-specialized\n  _resolve_periodic_extrap factory family with a 3-method\n  _materialize_extrap primitive (+ 2-arg convenience form) plus a unified\n  _resolve_extrap (1D + ND via arg-shape dispatch, validation bundled).\n\n- search_interval: 8 outer dispatchers → 6. NoBC + PeriodicBC{:inclusive}\n  merge into <:AbstractBC generic; :exclusive seam-wrap specialization\n  preserved. GridIdx methods unchanged.\n\n- Struct storage: every interpolant/adjoint constructor materializes\n  WrapExtrap{Nothing} → WrapExtrap{T} before storing. Covers 1D + ND across\n  Linear/Constant/Cubic/Quadratic + Hermite family (PCHIP/Cardinal/Akima) +\n  Hetero, for interpolants + oneshot + adjoints.\n\n- Test updates:\n  * test_periodic_resolvers.jl rewritten against the new\n    constructor/materialize/resolve API.\n  * test_type_stability.jl, test_cubic_series_interp.jl,\n    test_linear_periodic.jl: assertions updated to match materialized\n    WrapExtrap{T} (vs the legacy singleton).\n  * test_allocation.jl: 3 thresholds bumped by +16–32 bytes on LTS only\n    — inherent cost of WrapExtrap{Float64}'s 16-byte domain storage that\n    Julia 1.11+ optimizes away but 1.10 keeps on the stack frame.\n\nNet: ~12 methods removed from dispatch table, zero public API break.\nAqua clean. Full test suite passes on Julia 1.10 (LTS) + latest.\n\n* (refactor): Unify `_materialize_extrap` + `_resolve_extrap_nd` under `_resolve_extrap` (extrap-first arg order)\n\nSingle function name for every extrap materialization / validation step —\nconsistent with the `_resolve_search` / `_resolve_coeffs` / `_resolve_grididx`\nnaming family. `extrap` is always the 1st argument; remaining args follow a\nstable logical order (`bc[s]`, `x`/`grids`, `y`/`data`, `Val(N)`, `Tv`).\n\nLayers (dispatched by arg shape):\n\n- Primitives (per-axis):\n  * `(extrap, x)`                         — grid-only; upgrade {Nothing} or passthrough\n  * `(extrap, bc, x)`                     — BC-aware; PeriodicBC forces WrapExtrap\n\n- 1D bundled (validate + materialize):\n  * `(extrap, bc, x, y)`                  — `:inclusive` endpoint check + primitive\n\n- ND expand-only:\n  * `(extrap, bcs, Val(N), Tv)`           — expand + FillExtrap promote; no materialize.\n                                            Used by post-extension callers that\n                                            follow up with per-axis 2-arg primitive\n                                            (grid-span post-extension, bc-aware check\n                                            would trip on `last == first + period`).\n\n- ND one-step (expand + promote + materialize):\n  * `(extrap, bcs, grids, Val(N), Tv)`     — bc-aware per-axis materialize\n  * `(extrap, ::Nothing, grids, Val(N), Tv)` — grid-only per-axis materialize\n  Collapses the common 2-line `_resolve_extrap_nd(…)` + `map(_materialize_extrap, …)`\n  pattern into a single call.\n\n- ND bundled (oneshot, slice validation + materialize):\n  * `(extraps, bcs, grids, data, Val(N))` — per-axis `:inclusive` slice check +\n                                            per-axis 3-arg primitive.\n\nChanges:\n\n- Delete `_materialize_extrap` (6 methods) and `_resolve_extrap_nd` (5 methods).\n  Re-homed under `_resolve_extrap` with reordered args (13 methods total).\n\n- Migrate ~30 call sites across 1D + ND interpolants, oneshot entries,\n  adjoints, hetero dispatch, and extension helpers. Renamed and reordered.\n  Many cubic/hermite-family `NoBC()` 3-arg sites collapse to 2-arg since BC\n  is structurally non-periodic there (fewer tokens, same result).\n\n- Collapse adjoint (cubic / quadratic / linear / constant / hetero ND) and\n  hetero-OnTheFly-oneshot from 2 lines (expand + map materialize) to 1 line\n  via the new 5-arg `(extrap, bcs, grids, Val, Tv)` form — per-axis\n  materialize happens inside, not at the call site.\n\n- Update `test_periodic_resolvers.jl`: rewritten to cover every layer of the\n  new unified `_resolve_extrap` dispatch (primitive 2-arg + 3-arg, 1D bundled,\n  ND bundled, ND one-step with bcs and with `nothing`).\n\n- Update `test_nd_utils_shared.jl` and `test_nd_coverage.jl`: rename\n  `_resolve_extrap_nd` → `_resolve_extrap` in import and all test assertions.\n\nThe `WrapExtrap(x, bc::PeriodicBC{:exclusive, <:Real})` `<` check is\nunchanged — Pattern B (post-extension persistent interpolants) stays as a\n2-line call (4-arg expand-only + per-axis 2-arg primitive) because bc-aware\nmaterialize cannot run on grids where `last(x) == first(x) + period`.\n\nNet: ~12 methods removed from dispatch table; single consistent name and\narg convention across all extrap resolution paths. Zero public API change.\nFull suite passes on Julia 1.10 (LTS) + latest; Aqua clean.\n\n* (refactor): Add 3-arg `_resolve_extrap(extrap, x, Tv)` for 1D persistent interpolant entries\n\nFold the common 2-line pattern at 1D persistent interpolant constructors\ninto a single call. Previously each site did:\n\n    extrap_mat = _resolve_extrap(extrap, x)              # WrapExtrap{Nothing} upgrade\n    extrap_p   = _promote_extrap(extrap_mat, Tv)         # FillExtrap value-type promote\n\nTwo orthogonal operations (different trigger types: WrapExtrap vs FillExtrap),\nalways called in sequence at storage sites. The new 3-arg method composes\nthem:\n\n    @inline _resolve_extrap(extrap, x::AbstractVector, ::Type{Tv}) where {Tv} =\n        _promote_extrap(_resolve_extrap(extrap, x), Tv)\n\nCall site:\n\n    extrap_p = _resolve_extrap(extrap, x, Tv)\n\n`_promote_extrap` is kept as the canonical owner of FillExtrap value-type\npromotion — the 3-arg `_resolve_extrap` is a thin composition wrapper that\ndelegates to it. Zero runtime cost under `@inline`.\n\nMigrated sites (6 files, 7 call sites):\n- pchip/cardinal/akima/hermite interpolant constructors\n- quadratic_interpolant.jl\n- cubic_interpolant.jl (both bcpair builder and cache-based constructor)\n\nUnchanged (different shape, still 2-line):\n- linear_interpolant.jl, constant_interpolant.jl — use `_periodic_extend_1d`\n  which already returns a materialized extrap; only `_promote_extrap` remains.\n- ND persistent interpolants (Pattern B, post-extension) — covered by the\n  prior unification commit's 4-arg + map pattern.\n\nFull suite passes on Julia 1.10 (LTS) + latest.\n\n* (refactor): Share generator body between _multilinear_sum and _multilinear_sum_lr\n\nExtract the Expr-building logic shared by the two multilinear @generated\nkernels into a single helper `_multilinear_sum_body(N, make_idx_expr)`.\nThe two variants now differ only in the per-axis addressing callback:\n\n  non-pair : (d, bit) -> :(indices[$d] + $bit)\n  pair (lr): (d, bit) -> :(indices_pairs[$d][$(bit + 1)])\n\nEverything else — 2^N flat unroll, weight product, @inbounds wrapping —\nlives in one place. Each @generated is now a one-line wrapper.\n\nMotivation: prevent drift. The pair variant (for zero-copy periodic-exclusive\noneshot, Phase 6) was introduced as a parallel @generated with an identical\nbody; any future kernel-level change (e.g. @fastmath, weight folding, SROA\nhints) would otherwise need to be applied twice, easy to miss.\n\nZero runtime impact — generators run at compile time, the returned Expr is\nbyte-equivalent to the previous per-generator implementation. Public API\nand call-site signatures unchanged.\n\nValidation:\n- 2D smoke (NoBC + PeriodicBC(:excl)): values within 1e-16, perf unchanged\n  (oneshot NoBC 12.10 ns, oneshot Periodic 13.48→13.44 ns, within noise)\n- test_linear_periodic.jl (exercises _multilinear_sum_lr): pass\n- test_nd_comprehensive.jl (exercises _multilinear_sum): pass\n\n* (fix + test): Resolve PeriodicBC{:exclusive, Nothing} period in _resolve_search; expand periodic coverage\n\n## Fix (src/core/search.jl)\n\n`PeriodicBC(endpoint=:exclusive)` with unresolved period (period::Nothing,\nrelying on Range step × length auto-inference) threw `MethodError: +(::Float64,\n::Nothing)` when a oneshot query landed in the seam cell. Root cause: the\noneshot `_resolve_search(grid, q, search, hint, bc)` stored the raw `bc`\ninto the Searcher, so the seam branch in `search_interval` (which computes\n`x[1] + s.bc.period`) received `Nothing`. Persistent interpolants materialized\nthe period at construction via `_resolve_exclusive_period`, so they were safe.\n\nFix: single-point resolution inside `_resolve_search`. A new internal helper\n`_resolve_bc_period(grid, bc)` dispatches on `PeriodicBC{:exclusive, Nothing}`\nto materialize the period via the existing `_resolve_exclusive_period` +\n`_with_resolved_period` pair; for every other BC it is identity (so NoBC\ncodegen is bit-identical to pre-fix). Covers 1D scalar + vector oneshot and\nND oneshot in one edit.\n\nReproducer:\n  x = range(0.5, step=1.0, length=3); y = [10., 20., 30.]\n  linear_interp(x, y, 3.0; bc=PeriodicBC(endpoint=:exclusive))\n  # before: MethodError, after: 20.0\n\n## Expanded coverage (test/)\n\nEleven testing gaps turned into invariant pin-downs. Written RED-first in TDD;\nonly the B-1 fix above was needed to land GREEN. The remaining ten were pure\ncoverage additions that revealed no hidden bugs — documenting the current\ncontract so future refactors cannot silently drift it.\n\nPer file:\n- test_linear_periodic.jl (+158): B-1 regression (scalar/vector/ND oneshot\n  with auto-infer period), T-1 Vector-grid seam at xq==x[n], T-2 Clamp/Fill/\n  Extend extrap silent override on 1D bundled, T-3 ND persistent period-too-\n  small build-time error, T-4 seam continuity invariant (left/right limits at\n  virtual endpoint), T-5 derivative at seam, T-6 ND axis-2-only periodic,\n  T-8 adjoint + WrapExtrap(x) smoke, T-9 NoBC oneshot allocation regression\n  guard, 3.5 ND oneshot Vector grid + no-period throws.\n- test_constant_periodic.jl (+75): B-1 regression (1D + ND oneshot), T-1\n  Vector seam, T-3 ND period-too-small, T-6 ND axis-2 periodic, T-7 RightSide\n  seam edges — T-7 documents the grid-point convention (iszero(dL) → y_left\n  regardless of side; wrap only activates for xq strictly past x[n]).\n- test_periodic_resolvers.jl (+29): 2.2 WrapExtrap(x, bc) with non-Float\n  grids (Int/Float32), 3.2 _resolve_extrap passthrough for already-typed\n  WrapExtrap.\n\nValidation: cc-julia-test-runner on LTS (1.10) and latest, both exit 0.\n\n* (chore): Untrack session-only smoke scripts; ignore LocalPreferences.toml\n\nTwo categories of cleanup after the branch's zero-copy periodic + refactor\nwork, in preparation for PR hygiene:\n\n1. `scripts/smoke_{1d,2d}_oneshot_vs_interpolant.jl` were added mid-branch\n   as session-specific regression smokes, not as part of the public benchmark\n   suite under `benchmark/`. Untrack them with `git rm --cached` (working\n   copies preserved locally under `claudedocs/scripts/` via .gitignore).\n\n2. `LocalPreferences.toml` is an environment-specific Julia config (per-user\n   CPU optimization, precompile targets, etc.) that must stay in the project\n   root for Julia to find it, but should never be committed. Add to .gitignore.\n\nAlso moved session-only analysis artifacts — `scripts/{analyze,bench,compare,\ninspect,mwe,smoke_duck}_*.jl`, `benchmark/bicubic_2d_benchmark.jl`,\n`docs/images/benchmark_2d_oneshot.png`, and root-level `{output.json,\nseries_test.jl, test_output.txt}` — into `claudedocs/` (gitignored) so they\nremain on disk for future reference without contaminating PR diffs.\n\nPublic benchmark suite (`benchmark/compare_periodic.jl`,\n`benchmark/periodic_oneshot_benchmark.jl`) is preserved unchanged — those\nare systematic A/B harnesses that belong with the published benchmarks.\n\n* (refactor): Share bodies across periodic/linear ND sibling helpers\n\nFour parallel sibling-pair simplifications, each confined to the pattern\nalready proven by the earlier `_multilinear_sum` body-sharing commit\n(`99a42eb2`). Zero public API change, zero runtime impact — verified via\n1D/2D smoke (NoBC + PeriodicBC(:excl)) hitting exact pre-refactor ns/call\nbaselines after a one-revision correction described below.\n\n## F-3 — `_has_any_bc(bcs, Val(N), T)` generalization\n`src/core/periodic.jl`. Two `@generated` predicates (`_has_any_periodic_bc`,\n`_has_any_exclusive_bc`) differed only in the `fieldtype(bcs, d) <: X` check.\nUnified to a single generator parameterized on `::Type{T}`; the old names\nremain as one-line `@inline` wrappers for back-compat. Generated `true`/\n`false` literals are byte-identical to before.\n\n## F-4 — `_prepare_periodic_nd_impl` shared core\n`src/core/periodic.jl`. The heap (`_prepare_periodic_nd`) and pool\n(`_prepare_periodic_nd_pooled`) variants ran the same ~40-line pattern:\nultra-fast path → validate → per-axis grid/bc resolve via `map` → allocate\noutput data → `_extend_all_slices!`. Extracted the common core; the two\nvariants now inject only (grid-extender, data-allocator) callbacks:\n  - Heap: `_extend_grid_vcat` + `_allocate_array` (plain @inline functions)\n  - Pool: `_PoolGridExtender{P}` + `_PoolDataAllocator{P}` (callable structs\n    so the pool reference rides a type parameter, avoiding the abstract-\n    field boxing a plain closure would cause).\nAlso extracted the `@noinline _throw_prepare_periodic_nd_endpoint` error\nhelper per the existing `_throw_*` pattern. The non-pooled variant now\nroutes through the `@generated` `_extend_all_slices!` helper too (was an\ninline `for d in 1:N` loop), removing the per-query ~48 B Union box the\nold runtime loop produced on heterogeneous-BC ND cases.\n\n## R-1a — `_alphas_from_hs` formula sharing (map-based)\n`src/linear/nd/linear_nd_eval.jl`. `_compute_linear_params` and\n`_compute_linear_params_lr` differed only in how `hs[d]` is derived:\nspacing lookup vs `Rs[d] - Ls[d]`. Factored the shared `αs = (q-L)/h`\nformula into `_alphas_from_hs(q_eval, Ls, hs)`.\n\nNotable: the first draft used a `compute_h::F` callback (do-block closure)\nparalleling `_multilinear_sum_body`'s callback pattern. But at runtime\n`@inline` context (vs `_multilinear_sum_body`'s `@generated` compile-time\ncontext), the do-block closures captured `spacings/indices` or `Rs/Ls`\ninto struct fields, which measured at +0.35 ns (3%) on 2D oneshot — real,\nstable across 4 re-runs. Switched to `map(_get_h, spacings, indices)` /\n`map(-, Rs, Ls)` per-element concrete dispatch (MEMORY.md's \"ND Constructor\nInferrability Pattern\"). This is safer on heterogeneous `AbstractGridSpacing`\ntuples (Scalar + Vector mix) and measures exact baseline.\n\n## R-1b — `_project_search_results(results, proj)` helper\n`src/core/nd_utils.jl`. Four `_search_all_intervals[_lr]` overloads each\nended with `(map(_getidx_or_pair, results), map(_getL, results), map(_getR,\nresults))`. Centralized into a single projection helper parameterized on\nthe per-element extractor. Any future 4-tuple search-layer refactor (e.g.\nthe generic `_IdxStencil{K}` direction flagged for Phase 2 Hermite) only\nneeds to edit one site.\n\n## Validation\n- test_linear_periodic.jl, test_constant_periodic.jl, test_nd_comprehensive.jl,\n  test_periodic_resolvers.jl, test_periodic_bc.jl — all green\n- Full suite LTS + latest — exit 0 both\n- 1D smoke: oneshot NoBC=5.33 ns, Periodic=6.17 ns (exact pre-refactor)\n- 2D smoke: oneshot NoBC=12.10 ns, Periodic=13.47 ns (exact pre-refactor)\n- Persistent paths unchanged in behavior and timing\n\nNet: +154 / -156 LOC across 3 files.\n\n* (refactor): Align oneshot lr search path with persistent's single-map + shared hint helper\n\nTwo internal cleanups in the oneshot ND lr search stage, aligning its shape\nwith the persistent path's `_search_all_intervals` / `_search_axis_adaptive`\npattern. No public API change; no perf regression (2D oneshot still at\nbaseline 12.10 ns NoBC / 13.47 ns Periodic, zero-alloc preserved).\n\n## Option A — collapse 2-map into 1-map\nPreviously `_search_all_intervals_lr` did two passes over the axes:\n  searchers = map(_resolve_axis_searcher_bc, ...)   # build Searcher per axis\n  results   = map(_search_axis_with_searcher, ...)  # run search_interval\nmaterializing an intermediate `searchers::NTuple{N, Searcher{...}}` tuple.\nThe persistent path's `_search_axis_adaptive` already does \"resolve +\nsearch\" in one body, so we adopt the same pattern via a new\n`_search_axis_lr(grid, q, search, hint, bc)` inline helper. One `map` now\ncovers both steps; LLVM was likely already SROA-ing the intermediate\ntuple anyway, but the code structure now matches persistent's.\n\n## Hint helper unification\nReplaced the oneshot-only `ntuple(_nothing_hint, Val(N))` pattern (Tuple\nof Nothings → NoHint Searcher) with `_ensure_hint_nd(hints, Val(N))` —\nthe exact same helper persistent's scalar entry uses. Rationale:\n\n- Persistent scalar also calls `_ensure_hint_nd(nothing, Val(N))` →\n  `ntuple(_ref1, Val(N))` → N `Ref(1)` instances. Julia's escape analysis\n  stack-elides these when the Ref doesn't escape (BinarySearch ignores it,\n  so `mono=false` paths never observe the Ref). Measured 0 heap bytes/query\n  for both persistent and oneshot scalar after this change.\n- For oneshot *batch* with AutoSearch on monotone queries, the resolved\n  LinearBinarySearch policy now benefits from the Ref for intra-batch walk\n  locality — the same pattern persistent batch relies on. Previously the\n  Nothing-hint tuple forced NoHint → BinarySearch on every query regardless\n  of monotonicity, silently forfeiting the walking optimization.\n\n## Dead code removal\nWith the unification, three helpers have zero callers and are removed:\n  - `_nothing_hint(_) = nothing`            (was the Nothing tuple builder)\n  - `_resolve_axis_searcher_bc(...)`        (2-map intermediate)\n  - `_search_axis_with_searcher(...)`       (2-map intermediate)\n\nAlso removed the short-lived back-compat wrappers\n`_has_any_periodic_bc` / `_has_any_exclusive_bc` added in the previous\nrefactor commit — no internal callers ever used them, and our convention\nis to migrate internal call sites rather than preserve dead signatures.\n\n## Validation\n- test_linear_periodic.jl, test_nd_batch_inplace.jl,\n  test_nd_batch_hint_persistence.jl, test_nd_hint.jl — all green\n- 2D smoke: oneshot NoBC=12.10 ns, Periodic=13.47 ns — exact pre-refactor\n  baseline, zero-alloc\n- Structurally one fewer parallel-path pattern in the codebase (persistent\n  and oneshot lr now share the \"single-map + _ensure_hint_nd + _project_\n  search_results\" shape; only the per-axis inline function name and the\n  projection extractor differ).\n\nNet: +23 / -33 LOC across 2 files.\n\n* (chore): Untrack session-only periodic benchmark scripts\n\n`benchmark/compare_periodic.jl` and `benchmark/periodic_oneshot_benchmark.jl`\nwere added mid-branch as ad-hoc periodic A/B harnesses — useful during the\nPhase 6 zero-copy development but not part of the package's public benchmark\nsuite. Untrack with `git rm --cached`; local copies moved to\n`claudedocs/benchmark/` (gitignored) for future reference.\n\nMatches the earlier cleanup (`80a535e9`) that untracked the\n`scripts/smoke_{1d,2d}_oneshot_vs_interpolant.jl` files for the same reason.\n\n* Runic formatting\n\n* (fix): Address PR #126 review findings — period cross-check + seam hint writeback\n\nThree fixes surfaced by the Codex + Copilot + CI review cycle.\n\n## P1 — Reject conflicting periods in exclusive oneshot wrapping\n\n`WrapExtrap(x, bc::PeriodicBC{:exclusive, <:Real})` previously read\n`bc.period` directly, bypassing the `step(x) * length(x)` cross-check that\npersistent construction runs via `_resolve_exclusive_period`. That meant\n\n  linear_interp(range(0, step = 0.1, length = 10), y, q;\n                bc = PeriodicBC(endpoint = :exclusive, period = 2.0))\n\nsilently accepted the mismatched period (implied 1.0 vs supplied 2.0) and\nreturned wrapped values at the wrong coordinates, while the persistent\nconstructor on the same input threw `ArgumentError`. Fix: route through\n`_resolve_exclusive_period(x, bc)` so both paths share the same validation\ncontract.\n\nFile: src/core/periodic.jl — 3-line change.\n\n## P2 — Write the seam-cell index back into RefHint\n\nThe `PeriodicBC{:exclusive}` seam fast path in `search_interval` returned\nbefore `_search_interval_real`, so RefHint never got updated for queries\nwith `xq >= x[end]`. Monotone batches spending time in the seam kept\nre-searching from the last interior hint on every query, regressing the\nintra-batch locality benefit that LinearSearch/LinearBinarySearch rely on.\n\nFix: new dispatch-based helper `_writeback_seam_hint` — no-op for NoHint\n(free for non-stateful search), `h.idx[] = n` for RefHint (single store).\nCalled on both seam-return variants (with and without spacing).\n\nFile: src/core/search.jl — 9-line change.\n\n## T-9 — Allocation regression guard threshold\n\nThe NoBC oneshot allocation test landed in the previous commit asserted\n`@allocated == 0`, which fails on LTS (Julia 1.10) where escape analysis\nretains a small Ref/struct allocation (~16 B) that 1.12+ elides to stack.\nMatches the project-wide convention: compare against `ALLOC_THRESHOLD`\n(defined in runtests.jl, guarded for standalone runs).\n\nFile: test/test_linear_periodic.jl — threshold + file-level guard.\n\n## Regression tests added\n\n- \"Exclusive — period conflict rejected in oneshot too\" — exercises P1 fix\n  on persistent + 1D scalar + 1D vector oneshot paths, all must throw.\n- \"Exclusive — seam hint write-back updates RefHint\" — verifies P2 fix by\n  building a RefHint searcher, calling `search_interval` at a seam query,\n  and checking `ref[] == n`.\n\n## Validation\n- test_linear_periodic.jl, test_periodic_bc.jl, test_periodic_resolvers.jl\n  — all green on both LTS and latest.\n\n* (fix): Address Copilot PR #126 review comments — stale doc refs + clearer error\n\nSix line-level review items from the Copilot reviewer on PR #126. One is a\nreal code fix; the other five are stale/misleading comments that drifted\nduring the refactor.\n\n## Real behavior change — clearer error for unmaterialized WrapExtrap\n\n`src/core/periodic.jl`. The 2-arg `_wrap_to_domain(xi, e::WrapExtrap)` used\nto match `WrapExtrap{Nothing}` too and then fail one layer down at\n`_wrap_to_domain(xi, nothing, nothing)` with `MethodError: -(::Nothing, ::Nothing)`.\nThe original comment claimed \"no method is defined for WrapExtrap{Nothing}\"\nwhich was aspirational but not actually true.\n\nAdded explicit `_wrap_to_domain(::Any, ::WrapExtrap{Nothing})` that throws a\nclear `ArgumentError` pointing at the real problem (missing materialization\nby `_resolve_extrap`). More specific method wins by dispatch; legitimate\n`WrapExtrap{T}` paths unchanged.\n\n## Stale comment references to removed `_materialize_extrap`\n\n`_materialize_extrap` was unified into `_resolve_extrap` earlier in the PR\n(commit `81e10e38`). Four references to the old name remained in doc /\ninline comments:\n\n- `src/core/eval_ops.jl:294`, `:319`, `:329` (WrapExtrap docstring + singleton\n  + WrapExtrap(x) factory docstring)\n- `src/linear/linear_oneshot.jl:260` (_linear_eval_at_point WrapExtrap branch)\n\n## Misleading \"grid-span fallback\" claim in constant oneshot\n\n`src/constant/constant_oneshot.jl:74-76` claimed `_wrap_to_domain` performed\na \"grid-span fallback (WrapExtrap{Nothing}) via multiple dispatch\" — but no\nsuch fallback ever existed; `WrapExtrap{Nothing}` now errors explicitly per\nthe fix above. Updated the comment to state the actual contract.\n\n## @allocated wording in test_allocation.jl\n\nTwo testsets (cache-hit periodic BC) described the allowance as the compiler\nnot eliminating `WrapExtrap{Float64}` \"from the stack frame on LTS\". That was\nimprecise — `@allocated` counts heap allocations, so the real explanation is\nescape analysis letting the struct box escape to the heap on 1.10 vs stack-\neliding it on 1.11+. Reworded both and gated the allowance on `VERSION >= v\"1.12\"`\nso the threshold auto-tightens to zero on newer Julia and a genuine\nregression there is no longer masked by the LTS budget.\n\n## Validation\n- test_allocation.jl, test_linear_periodic.jl, test_periodic_resolvers.jl —\n  all green.\n- Full LTS suite — exit 0.\n\n* (fix): precompilation warning",
+          "timestamp": "2026-04-23T12:57:58-07:00",
+          "tree_id": "7c7cab240ae38ec6601d93e4d88520ab53f7b8e6",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/154a4fa28a786c31be53a8837a7e15331ee191e1"
+        },
+        "date": 1776974595300,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 38147,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 701.06,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 350669,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1968.36,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1735.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 16.12,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 10.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3597.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 36.35,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 17.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4655.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4644.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9597.06,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3197.82,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 505.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 62878.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1451.38,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 14006.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 20.03,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 485.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 47042.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 28.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 19435.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 34.65,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 256.09,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 200.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 19162.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 6.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.71,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 605.52,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4746.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 43990.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 734.92,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1774.06,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2492.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11813.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3500.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 39948.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 1034.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 354994.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1598.4,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

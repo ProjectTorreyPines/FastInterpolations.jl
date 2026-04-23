@@ -22,7 +22,8 @@ matches the interpolant grid.
 - `T`: Grid type (unconstrained)
 
 # Fields
-- `idx`: Interval index where xq falls
+- `idxL`: Left cell index (`1 ≤ idxL ≤ n-1` normally; equals `n` at periodic-exclusive seam)
+- `idxR`: Right cell index (`idxL + 1` normally; wraps to `1` at periodic-exclusive seam)
 - `xq`: Original query point (or wrapped value for periodic)
 - `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
 - `h`: Interval width (for :nearest comparison)
@@ -45,7 +46,8 @@ Anchored evaluation is faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search.
 """
 struct _ConstantAnchoredQuery{Tg, Tq <: Real}
-    idx::Int                   # interval index
+    idxL::Int                  # left cell index
+    idxR::Int                  # right cell index (idxL+1 normally; 1 at periodic-exclusive seam)
     xq::Tq                     # query point (possibly wrapped, may be Dual for AD)
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     h::Tg                      # interval width
@@ -53,7 +55,7 @@ struct _ConstantAnchoredQuery{Tg, Tq <: Real}
 end
 
 # Convenience: single type param for backward compat (non-AD paths)
-_ConstantAnchoredQuery{T}(idx, xq, state, h, dL) where {T} = _ConstantAnchoredQuery{T, T}(idx, xq, state, h, dL)
+_ConstantAnchoredQuery{T}(idxL, idxR, xq, state, h, dL) where {T} = _ConstantAnchoredQuery{T, T}(idxL, idxR, xq, state, h, dL)
 
 # ========================================
 # Anchor Construction
@@ -198,7 +200,10 @@ Internal implementation of _anchor_query for constant interpolation.
     # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual)
     xq_promoted = oftype(dL, loc.xq)
 
-    return _ConstantAnchoredQuery(loc.idx, xq_promoted, loc.state, h, dL)
+    # `_anchor_loc` never returns a periodic-exclusive seam pair, so
+    # `idxR = idxL + 1` here. Seam-pair anchors are constructed directly in
+    # the exclusive periodic series helper via `_ConstantAnchoredQuery(...)`.
+    return _ConstantAnchoredQuery(loc.idx, loc.idx + 1, xq_promoted, loc.state, h, dL)
 end
 
 # ========================================
@@ -248,7 +253,7 @@ end
         op::AbstractEvalOp, side_param::AbstractSide, ::AbstractExtrap
     )
     aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
-    @inbounds return _constant_kernel(op, y[aq.idx], y[aq.idx + 1], aq.h, aq.dL, side_param)
+    @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
 # No extrapolation: throw DomainError if outside domain
@@ -258,7 +263,7 @@ end
     )
     aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
     aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
-    @inbounds return _constant_kernel(op, y[aq.idx], y[aq.idx + 1], aq.h, aq.dL, side_param)
+    @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
 # Clamp/Fill extrapolation: boundary value if OOB
@@ -271,7 +276,7 @@ end
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     end
     aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
-    @inbounds return _constant_kernel(op, y[aq.idx], y[aq.idx + 1], aq.h, aq.dL, side_param)
+    @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
 # ExtendExtrap → ClampExtrap for constant (zero slope → extend = clamp)
@@ -300,7 +305,7 @@ end
     if aq.xq == last(itp.x)
         return op isa EvalValue ? (@inbounds itp.y[end]) : zero(T)
     end
-    @inbounds return _constant_kernel(op, itp.y[aq.idx], itp.y[aq.idx + 1], aq.h, aq.dL, itp.side)
+    @inbounds return _constant_kernel(op, itp.y[aq.idxL], itp.y[aq.idxR], aq.h, aq.dL, itp.side)
 end
 
 # Inside domain or extension mode: delegate to shared

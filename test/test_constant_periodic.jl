@@ -596,4 +596,94 @@ using FastInterpolations: _CachedRange
         @test outs[1] ≈ out_vec[1] atol = 1.0e-12
     end
 
+    # ============================================================
+    # Series OneShot Scalar + PeriodicBC — Zero-Copy Migration (A-2)
+    # ============================================================
+    # Mirrors the Linear zero-copy migration. Notable constant-specific
+    # behavior: at xq == x[1] + period (exclusive right endpoint), the new
+    # path returns y[n] via LeftSide convention — aligning series with the
+    # already-in-place non-series constant semantics (D5 in plan).
+
+    function _alloc_constant_series_scalar_range_exclusive()
+        x = range(0.0, step = 2π / 16, length = 16)
+        y1 = sin.(x)
+        y2 = cos.(x)
+        s = Series(y1, y2)
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        out = Vector{Float64}(undef, 2)
+        constant_interp!(out, x, s, 1.0; bc = bc)
+        constant_interp!(out, x, s, 1.0; bc = bc)
+        return @allocated constant_interp!(out, x, s, 1.0; bc = bc)
+    end
+
+    function _alloc_constant_series_scalar_vector_exclusive()
+        x = [0.0, 0.5, 1.5, 3.0, 5.0]
+        y1 = sin.(x)
+        y2 = cos.(x)
+        s = Series(y1, y2)
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        out = Vector{Float64}(undef, 2)
+        constant_interp!(out, x, s, 1.0; bc = bc)
+        constant_interp!(out, x, s, 1.0; bc = bc)
+        return @allocated constant_interp!(out, x, s, 1.0; bc = bc)
+    end
+
+    function _alloc_constant_series_scalar_inclusive()
+        x = collect(range(0.0, 2π, length = 17))
+        y1 = sin.(x)
+        y2 = cos.(x)
+        s = Series(y1, y2)
+        bc = PeriodicBC()
+        out = Vector{Float64}(undef, 2)
+        constant_interp!(out, x, s, 1.0; bc = bc)
+        constant_interp!(out, x, s, 1.0; bc = bc)
+        return @allocated constant_interp!(out, x, s, 1.0; bc = bc)
+    end
+
+    @testset "Series scalar + PeriodicBC zero-alloc — Range exclusive (T-series-alloc)" begin
+        @test _alloc_constant_series_scalar_range_exclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Series scalar + PeriodicBC zero-alloc — Vector exclusive (T-series-alloc)" begin
+        @test _alloc_constant_series_scalar_vector_exclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Series scalar + PeriodicBC zero-alloc — inclusive (T-series-alloc)" begin
+        @test _alloc_constant_series_scalar_inclusive() <= ALLOC_THRESHOLD
+    end
+
+    @testset "Series scalar + PeriodicBC(:exclusive) seam semantic" begin
+        # 4-point grid, period = 4.0 → seam cell [x[n], x[1]+period) = [3, 4)
+        x  = collect(0.0:3.0)
+        y1 = [10.0, 20.0, 30.0, 40.0]
+        y2 = [1.0, 2.0, 3.0, 4.0]
+        s  = Series(y1, y2)
+        bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+
+        # Inside seam cell at xq = 3.5: LeftSide default → y[idxL] = y[n]
+        out = constant_interp(x, s, 3.5; bc = bc)
+        @test out[1] == 40.0
+        @test out[2] ==  4.0
+
+        # At xq == x[n] = 3.0: `aq.xq == x_last` short-circuit → y[end] = y[n]
+        out_at_n = constant_interp(x, s, 3.0; bc = bc)
+        @test out_at_n[1] == 40.0
+        @test out_at_n[2] ==  4.0
+
+        # D5 delta — at xq == x[1] + period = 4.0 the NEW path returns y[n]
+        # via LeftSide convention, matching the non-series constant path.
+        # CURRENT pool-extended code returns y[1] here; this assertion is the
+        # RED test that drives the refactor toward series↔non-series alignment.
+        out_endpoint = constant_interp(x, s, 4.0; bc = bc)
+        @test out_endpoint[1] == constant_interp(x, y1, 4.0; bc = bc)
+        @test out_endpoint[2] == constant_interp(x, y2, 4.0; bc = bc)
+
+        # Cross-check series↔non-series at mid-seam
+        @test out[1] == constant_interp(x, y1, 3.5; bc = bc)
+        @test out[2] == constant_interp(x, y2, 3.5; bc = bc)
+
+        # Cross-check series oneshot == persistent series interpolant (mid-seam)
+        sitp = constant_interp(x, s; bc = bc)
+        @test out[1] == sitp(3.5)[1]
+        @test out[2] == sitp(3.5)[2]
+    end
+
 end

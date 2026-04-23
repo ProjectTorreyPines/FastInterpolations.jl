@@ -44,7 +44,7 @@ function _bake_constant_nd_anchors(
         per_axis = ntuple(Val(N)) do d
             xq_raw = Tg(query_q[d])
             xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
-            idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
+            idx, idxR, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
             h = _get_h(spacings[d], idx)
             dL = xq_d - xL
 
@@ -56,7 +56,7 @@ function _bake_constant_nd_anchors(
                 IN_DOMAIN
             end
 
-            return _ConstantAnchoredQuery{Tg, Tg}(idx, xq_d, state_flag, h, dL)
+            return _ConstantAnchoredQuery{Tg, Tg}(idx, idxR, xq_d, state_flag, h, dL)
         end
         anchors[q] = per_axis
     end
@@ -80,7 +80,7 @@ Uses `_compute_single_offset` per axis — matches the ND forward kernel exactly
     ) where {N, Tg}
     return ntuple(Val(N)) do d
         aq = per_axis[d]
-        aq.idx + _compute_single_offset(sides[d], aq.h, aq.dL)
+        aq.idxL + _compute_single_offset(sides[d], aq.h, aq.dL)
     end
 end
 

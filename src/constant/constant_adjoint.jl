@@ -121,7 +121,7 @@ end
             f_bar[grid_size] += y_bar[q]
         else
             offset = _compute_single_offset(side, aq.h, aq.dL)
-            f_bar[aq.idx + offset] += y_bar[q]
+            f_bar[aq.idxL + offset] += y_bar[q]
         end
     end
     return nothing
@@ -173,7 +173,7 @@ function _fixup_constant_anchor_state!(
         state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
         aq = anchors[i]
         anchors[i] = _ConstantAnchoredQuery{Tg, Tg}(
-            aq.idx, aq.xq, state, aq.h, aq.dL
+            aq.idxL, aq.idxR, aq.xq, state, aq.h, aq.dL
         )
     end
     return nothing

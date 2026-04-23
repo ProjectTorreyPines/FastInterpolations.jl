@@ -108,8 +108,8 @@ end
         aq = anchors[q]
         _is_oob_skip(aq.state, extrap) && continue
         yb = y_bar[q]
-        f_bar[aq.idx] += (one(aq.alpha) - aq.alpha) * yb
-        f_bar[aq.idx + 1] += aq.alpha * yb
+        f_bar[aq.idxL] += (one(aq.alpha) - aq.alpha) * yb
+        f_bar[aq.idxR] += aq.alpha * yb
     end
     return nothing
 end
@@ -129,8 +129,8 @@ end
         aq = anchors[q]
         _is_oob_skip_deriv(aq.state, extrap) && continue
         yb = y_bar[q]
-        f_bar[aq.idx] -= aq.inv_h * yb
-        f_bar[aq.idx + 1] += aq.inv_h * yb
+        f_bar[aq.idxL] -= aq.inv_h * yb
+        f_bar[aq.idxR] += aq.inv_h * yb
     end
     return nothing
 end
@@ -181,7 +181,7 @@ function _fixup_linear_anchor_state!(
         state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
         aq = anchors[i]
         anchors[i] = typeof(aq)(
-            aq.idx, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha
+            aq.idxL, aq.idxR, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha
         )
     end
     return nothing

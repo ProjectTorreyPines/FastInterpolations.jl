@@ -231,15 +231,15 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
     # the kernel would see the unwrapped distance and pick the wrong side/index.
     # `aq.dL` is `loc.xq - loc.xL` where `loc.xq` is the wrapped query — Dual is
     # preserved through `_wrap_to_domain`, so AD chains survive.
-    idx = aq.idx
-    idx1 = idx + 1
+    idxL = aq.idxL
+    idxR = aq.idxR
     h = aq.h
     dL = aq.dL
 
     # SIMD loop over series
     @inbounds @simd for k in axes(output, 1)
-        y_left = y_point[k, idx]
-        y_right = y_point[k, idx1]
+        y_left = y_point[k, idxL]
+        y_right = y_point[k, idxR]
         output[k] = _constant_kernel(op, y_left, y_right, h, dL, sitp.side)
     end
 
@@ -295,15 +295,15 @@ end
         ::UInt8
     ) where {Tg, Tv}
     # Use boundary interval for extension (inline evaluation, no xq needed)
-    idx = aq.idx
-    idx1 = idx + 1
+    idxL = aq.idxL
+    idxR = aq.idxR
     h = aq.h
     dL = aq.dL
 
     # SIMD loop over series
     @inbounds @simd for k in axes(out, 1)
-        y_left = y_point[k, idx]
-        y_right = y_point[k, idx1]
+        y_left = y_point[k, idxL]
+        y_right = y_point[k, idxR]
         out[k] = _constant_kernel(op, y_left, y_right, h, dL, side_val)
     end
     return out
@@ -588,10 +588,11 @@ Internal: Core constant evaluation for series k at anchored query point.
         return 0 * first(y)
     end
 
-    idx = aq.idx
+    idxL = aq.idxL
+    idxR = aq.idxR
     @inbounds begin
-        y_left = y[idx, k]
-        y_right = y[idx + 1, k]
+        y_left = y[idxL, k]
+        y_right = y[idxR, k]
     end
     return _constant_kernel(EvalValue(), y_left, y_right, aq.h, aq.dL, side_val)
 end

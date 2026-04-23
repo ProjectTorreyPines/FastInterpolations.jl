@@ -276,15 +276,15 @@ while `xq` is used directly in arithmetic to preserve derivative information.
 
     # Inside domain: SIMD evaluation with point-contiguous layout
     y_point = _ensure_point_layout!(sitp)
-    idx = aq.idx
-    idx1 = idx + 1
+    idxL = aq.idxL
+    idxR = aq.idxR
 
     inv_h = aq.inv_h
     dL = aq.xq - aq.xL  # aq.xq carries Dual info (widened by outer constructor)
 
     @inbounds @simd for k in axes(output, 1)
-        yL = y_point[k, idx]
-        yR = y_point[k, idx1]
+        yL = y_point[k, idxL]
+        yR = y_point[k, idxR]
         output[k] = _linear_kernel(op, yL, yR, inv_h, dL)
     end
     return output
@@ -575,8 +575,8 @@ The kernel internally extracts alpha (for EvalValue) or inv_h (for derivatives).
         op::AbstractEvalOp
     ) where {Tg, Tv}
     @inbounds begin
-        yL = y[aq.idx, k]
-        yR = y[aq.idx + 1, k]
+        yL = y[aq.idxL, k]
+        yR = y[aq.idxR, k]
     end
     return _linear_kernel(op, yL, yR, aq)
 end

@@ -689,12 +689,6 @@ letting user-facing oneshot entry points use a single, non-misleading call.
     return :(false)
 end
 
-# Back-compat shorthand wrappers — preserved so existing call sites need no edit.
-@inline _has_any_periodic_bc(bcs::NTuple{N, AbstractBC}, ::Val{N}) where {N} =
-    _has_any_bc(bcs, Val(N), PeriodicBC)
-@inline _has_any_exclusive_bc(bcs::NTuple{N, AbstractBC}, ::Val{N}) where {N} =
-    _has_any_bc(bcs, Val(N), PeriodicBC{:exclusive})
-
 """
     _prepare_periodic_nd(grids, data, bcs) -> (grids_ext, data_ext, bcs_resolved)
 

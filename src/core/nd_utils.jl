@@ -767,27 +767,28 @@ end
 # ────────────────────────────────────────────────────────
 # BC-aware per-axis search (Phase 6 — zero-copy periodic ND)
 # ────────────────────────────────────────────────────────
-# Parallel to `_search_all_intervals`, but threads per-axis `bcs` into each
-# `Searcher` so `PeriodicBC{:exclusive}` axes return `(n, 1, x[n], x[1]+L)`
-# at seam cells (via the Phase 1 BC-aware `search_interval` dispatch).
-# Returns `(indices_pairs, Ls, Rs)` where `indices_pairs[d] = (idx_L_d, idx_R_d)` —
-# non-periodic axes have `idx_R == idx_L + 1`; periodic-exclusive axes at seam
-# have `idx_R == 1` (wrap). ND kernels read corner addresses via
-# `indices_pairs[d][bit_d + 1]` to pick left-vs-right per axis bit.
+# Parallel in purpose to `_search_all_intervals`, but threads per-axis `bcs`
+# into each `Searcher` so `PeriodicBC{:exclusive}` axes return
+# `(n, 1, x[n], x[1]+L)` at seam cells via the BC-aware `search_interval`
+# dispatch. Returns `(indices_pairs, Ls, Rs)` where
+# `indices_pairs[d] = (idx_L_d, idx_R_d)` — non-periodic axes have
+# `idx_R == idx_L + 1`; periodic-exclusive axes at seam have `idx_R == 1` (wrap).
 #
-# Non-adaptive: uses `_resolve_search(grid, q, search, hint, bc)` per axis
-# (BC-aware constructor from Phase 2), skipping the monotonicity-aware
-# `_search_axis_adaptive` for simplicity. Callers that need monotonicity
-# optimization should stay on the existing (non-pair) `_search_all_intervals`.
+# Structurally mirrors persistent's `_search_all_intervals`: one `map` that
+# resolves and searches per axis in a single body (persistent's
+# `_search_axis_adaptive` pattern). Hint preparation reuses `_ensure_hint_nd` —
+# the same helper persistent uses, so scalar vs batch semantics are identical:
+#   - batch with AutoSearch → monotone queries hit LinearBinarySearch walk
+#     (Ref tracks walk position across queries → intra-batch locality)
+#   - scalar / non-monotone → BinarySearch, Refs are unused and stack-elided
+# by Julia escape analysis → 0 heap bytes/call.
 
-@inline _resolve_axis_searcher_bc(grid, q, search, hint, bc) =
-    _resolve_search(grid, q, search, hint, bc)
-
-# 3-arg search (no spacing) — Range uses _search_direct's own step, Vector uses
-# _search_binary. Avoids VectorSpacing allocation entirely since pair-variant
-# `_compute_linear_params_lr` derives h from `Rs[d] - Ls[d]` (not from spacing).
-@inline _search_axis_with_searcher(searcher, grid, q) =
-    @inbounds search_interval(searcher, grid, q)
+# Per-axis inline: build Searcher + run search_interval in one body.
+# 3-arg `search_interval` (no spacing) — Range uses _search_direct's own step,
+# Vector uses _search_binary. Avoids VectorSpacing allocation entirely since
+# the pair-variant `_compute_linear_params_lr` derives `h` from `Rs[d] - Ls[d]`.
+@inline _search_axis_lr(grid, q, search, hint, bc) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint, bc), grid, q)
 
 @inline function _search_all_intervals_lr(
         q_evals::Tuple{Vararg{Real, N}},
@@ -796,15 +797,10 @@ end
         hints::Union{Nothing, Tuple{Vararg{Base.RefValue{Int}, N}}},
         bcs::Tuple{Vararg{AbstractBC, N}},
     ) where {N}
-    hints_eff = hints === nothing ? ntuple(_nothing_hint, Val(N)) : hints
-    # Build per-axis BC-aware searchers via map (per-element concrete dispatch, no closure box)
-    searchers = map(_resolve_axis_searcher_bc, grids, q_evals, searches, hints_eff, bcs)
-    results = map(_search_axis_with_searcher, searchers, grids, q_evals)
+    hints_eff = _ensure_hint_nd(hints, Val(N))
+    results = map(_search_axis_lr, grids, q_evals, searches, hints_eff, bcs)
     return _project_search_results(results, _getpair)
 end
-
-# Nothing hint sentinel — each axis gets no persistent hint (NoHint searcher)
-@inline _nothing_hint(_) = nothing
 
 # Nothing hint + mono → delegate to stateless 4-arg (zero Ref alloc).
 # mono is accepted but ignored: without hints, no LB walk benefit → Binary always.

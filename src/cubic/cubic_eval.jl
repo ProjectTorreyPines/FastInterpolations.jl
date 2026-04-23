@@ -18,7 +18,7 @@
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    idx, xL, xR = search_interval(searcher, x, spacing, xq)
+    idx, idx_R, xL, xR = search_interval(searcher, x, spacing, xq)
 
     # Use original xq for arithmetic to preserve AD
     dL = xq - xL   # distance from Left endpoint (can be Dual for AD)
@@ -29,9 +29,9 @@
 
     @inbounds begin
         zL = z[idx]
-        zR = z[idx + 1]
+        zR = z[idx_R]
         yL = y[idx]
-        yR = y[idx + 1]
+        yR = y[idx_R]
     end
 
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
@@ -46,7 +46,7 @@ end
         xq::Tq,
         op::O
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp}
-    idx, xL, xR = _search_interval(x, spacing, xq)
+    idx, idx_R, xL, xR = _search_interval(x, spacing, xq)
 
     # Use original xq for arithmetic to preserve AD
     dL = xq - xL   # distance from Left endpoint (can be Dual for AD)
@@ -57,9 +57,9 @@ end
 
     @inbounds begin
         zL = z[idx]
-        zR = z[idx + 1]
+        zR = z[idx_R]
         yL = y[idx]
-        yR = y[idx + 1]
+        yR = y[idx_R]
     end
 
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
@@ -77,7 +77,7 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), first(x) + period)
-    idx, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
+    idx, idx_R, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
 
     # Compute offset from original xq to preserve AD (adjust for wrapping)
     # For periodic, we use the wrapped position for arithmetic since
@@ -89,9 +89,9 @@ end
 
     @inbounds begin
         zL = z[idx]
-        zR = z[idx + 1]
+        zR = z[idx_R]
         yL = y[idx]
-        yR = y[idx + 1]
+        yR = y[idx_R]
     end
 
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
@@ -121,14 +121,14 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
-    idx, xL, xR = search_interval(searcher, x, spacing, xq)
+    idx, idx_R, xL, xR = search_interval(searcher, x, spacing, xq)
     dL = xq - xL
     dR = xR - xq
     h = _get_h(spacing, idx)
     inv_h = _get_inv_h(spacing, idx)
     @inbounds begin
-        zL = z[idx]; zR = z[idx + 1]
-        yL = y[idx]; yR = y[idx + 1]
+        zL = z[idx]; zR = z[idx_R]
+        yL = y[idx]; yR = y[idx_R]
     end
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
@@ -147,38 +147,39 @@ end
     xq_primal = _extract_primal(xq)
     xq_primal < first(x) && return _eval_extrapolation(op, first(y), extrap, xq)
     xq_primal > last(x) && return _eval_extrapolation(op, last(y), extrap, xq)
-    idx, xL, xR = search_interval(searcher, x, spacing, xq)
+    idx, idx_R, xL, xR = search_interval(searcher, x, spacing, xq)
     dL = xq - xL
     dR = xR - xq
     h = _get_h(spacing, idx)
     inv_h = _get_inv_h(spacing, idx)
     @inbounds begin
-        zL = z[idx]; zR = z[idx + 1]
-        yL = y[idx]; yR = y[idx + 1]
+        zL = z[idx]; zR = z[idx_R]
+        yL = y[idx]; yR = y[idx_R]
     end
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
+# 4-arg `_wrap_to_domain` dispatches on typed vs Nothing WrapExtrap.
 @inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
         z::AbstractVector,
         xq::Tq,
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    idx, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
+    xq_wrapped = _wrap_to_domain(xq, extrap)
+    idx, idx_R, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
     dL = xq_wrapped - xL
     dR = xR - xq_wrapped
     h = _get_h(spacing, idx)
     inv_h = _get_inv_h(spacing, idx)
     @inbounds begin
-        zL = z[idx]; zR = z[idx + 1]
-        yL = y[idx]; yR = y[idx + 1]
+        zL = z[idx]; zR = z[idx_R]
+        yL = y[idx]; yR = y[idx_R]
     end
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
@@ -293,6 +294,7 @@ Uses task-local pool for workspace allocation.
     _solve_system!(z, cache, y, cache.bc_config)
 
     searcher = _resolve_search(cache.x, x_query, search, hint)
-    @boundscheck _check_domain(cache.x, x_query, extrap)
-    _eval_with_bc(cache, y, z, x_query, extrap, deriv, searcher)
+    extrap_eff = _resolve_extrap(extrap, cache.x)
+    @boundscheck _check_domain(cache.x, x_query, extrap_eff)
+    _eval_with_bc(cache, y, z, x_query, extrap_eff, deriv, searcher)
 end

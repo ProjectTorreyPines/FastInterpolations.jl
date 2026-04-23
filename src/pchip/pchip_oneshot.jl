@@ -116,6 +116,7 @@ C\$^1\$ continuous, monotonicity guaranteed for monotone input data.
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x = _prepare_grid(x)
+    extrap = _resolve_extrap(extrap, x)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
         return _pchip_interp_onthefly(x, y, xq, extrap, deriv, search, hint)
@@ -140,6 +141,7 @@ In-place PCHIP interpolation with monotone-preserving slopes.
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x = _prepare_grid(x)
+    extrap = _resolve_extrap(extrap, x)
     resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly
         return _pchip_interp_onthefly!(output, x, y, x_query, extrap, deriv, search, hint)

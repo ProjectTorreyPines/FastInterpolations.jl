@@ -34,7 +34,7 @@
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
-    idx, xL, _ = search_interval(searcher, x, xq)
+    idx, _, xL, _ = search_interval(searcher, x, xq)
     dt = xq - xL  # Can be Dual for AD
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
@@ -53,24 +53,25 @@ end
     xq_primal = _extract_primal(xq)
     xq_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xq)
     xq_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xq)
-    idx, xL, _ = search_interval(searcher, x, xq)
+    idx, _, xL, _ = search_interval(searcher, x, xq)
     dt = xq - xL
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
+# 4-arg `_wrap_to_domain` dispatches on typed vs Nothing WrapExtrap.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         a::AbstractVector{Tc},
         d::AbstractVector{Tc},
         xq::Tq,
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    idx, xL, _ = search_interval(searcher, x, xq_wrapped)
+    xq_wrapped = _wrap_to_domain(xq, extrap)
+    idx, _, xL, _ = search_interval(searcher, x, xq_wrapped)
     dt = xq_wrapped - xL
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
@@ -157,7 +158,9 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
 
     searcher = _resolve_search(x, xq, search, hint)
-    _quadratic_eval_at_point(x, y, a, d, xq, extrap, deriv, searcher)
+    # Materialize WrapExtrap{Nothing} against the grid before reaching the kernel.
+    extrap_eff = _resolve_extrap(extrap, x)
+    _quadratic_eval_at_point(x, y, a, d, xq, extrap_eff, deriv, searcher)
 end
 
 # ========================================
@@ -212,7 +215,8 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
 
     searcher = _resolve_search(x, x_targets, search, nothing)
-    _quadratic_vector_loop!(output, x, y, a, d, x_targets, extrap, deriv, searcher)
+    extrap_eff = _resolve_extrap(extrap, x)
+    _quadratic_vector_loop!(output, x, y, a, d, x_targets, extrap_eff, deriv, searcher)
     return output
 end
 

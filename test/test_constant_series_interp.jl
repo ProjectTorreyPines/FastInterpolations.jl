@@ -283,7 +283,7 @@ const FI = FastInterpolations
         for xqi in xq
             result = sitp(xqi)
             # Constant interpolation returns nearest value
-            idx, xL, xR = FI._search_interval(x, xqi)
+            idx, _, xL, xR = FI._search_interval(x, xqi)
             h = xR - xL
             dL = xqi - xL
             expected1 = dL <= h / 2 ? y1[idx] : y1[idx + 1]

@@ -22,11 +22,11 @@
     ) where {Tg}
     vecs = _series_vectors(s)
     n = length(x)
-    x_p, y_p_first, _ = _periodic_extend_1d_pooled!(pool, x, first(vecs), bc, WrapExtrap())
+    x_p, y_p_first, extrap_p = _periodic_extend_1d_pooled!(pool, x, first(vecs), bc, WrapExtrap())
     n_p = length(x_p)
     x_last = eltype(x_p)(last(x_p))
     aq = _anchor_query(x_p, xq, Val(:constant), true, searcher)
-    @inbounds output[1] = _constant_eval_at_anchor(y_p_first, x_last, aq, op, side, WrapExtrap())
+    @inbounds output[1] = _constant_eval_at_anchor(y_p_first, x_last, aq, op, side, extrap_p)
 
     K = length(output)
     if K > 1
@@ -36,12 +36,12 @@
             @inbounds for k in 2:K
                 copyto!(y_p, 1, vecs[k], 1, n)
                 y_p[n + 1] = vecs[k][1]
-                output[k] = _constant_eval_at_anchor(y_p, x_last, aq, op, side, WrapExtrap())
+                output[k] = _constant_eval_at_anchor(y_p, x_last, aq, op, side, extrap_p)
             end
         else
             @inbounds for k in 2:K
                 _check_periodic_endpoints(bc, vecs[k])
-                output[k] = _constant_eval_at_anchor(vecs[k], x_last, aq, op, side, WrapExtrap())
+                output[k] = _constant_eval_at_anchor(vecs[k], x_last, aq, op, side, extrap_p)
             end
         end
     end
@@ -139,14 +139,14 @@ end
     vecs = _series_vectors(s)
 
     if _is_periodic_bc(bc)
-        x_p, y_p_first, _ = _periodic_extend_1d_pooled!(pool, x, first(vecs), bc, WrapExtrap())
+        x_p, y_p_first, extrap_p = _periodic_extend_1d_pooled!(pool, x, first(vecs), bc, WrapExtrap())
         Tg_p = eltype(x_p)
         x_last = Tg_p(last(x_p))
         searcher = _resolve_search(x_p, xqs, search, nothing)
         aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg_p, Tg_p}, length(xqs))
         _fill_anchors!(aq_vec, x_p, xqs, Val(:constant), true, searcher)
         @inbounds for j in eachindex(xqs)
-            outputs[1][j] = _constant_eval_at_anchor(y_p_first, x_last, aq_vec[j], deriv, side, WrapExtrap())
+            outputs[1][j] = _constant_eval_at_anchor(y_p_first, x_last, aq_vec[j], deriv, side, extrap_p)
         end
         if K > 1
             if bc isa PeriodicBC{:exclusive}
@@ -157,14 +157,14 @@ end
                     copyto!(y_p, 1, vecs[k], 1, n)
                     y_p[n + 1] = vecs[k][1]
                     for j in eachindex(xqs)
-                        outputs[k][j] = _constant_eval_at_anchor(y_p, x_last, aq_vec[j], deriv, side, WrapExtrap())
+                        outputs[k][j] = _constant_eval_at_anchor(y_p, x_last, aq_vec[j], deriv, side, extrap_p)
                     end
                 end
             else
                 @inbounds for k in 2:K
                     _check_periodic_endpoints(bc, vecs[k])
                     for j in eachindex(xqs)
-                        outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq_vec[j], deriv, side, WrapExtrap())
+                        outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq_vec[j], deriv, side, extrap_p)
                     end
                 end
             end

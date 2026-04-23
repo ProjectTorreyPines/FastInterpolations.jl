@@ -32,6 +32,11 @@
     bcs_periodic = map(_bc_for_periodic_check, methods)
     grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
 
+    # 1a. Per-axis materialization: upgrade WrapExtrap{Nothing} → WrapExtrap{T} against
+    # the post-extension grid so the downstream eval pipeline never sees the singleton.
+    # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
+    extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
+
     # 2. Pool-allocate compact partials (widened with Tg for Dual grid support)
     Tv = _value_type(eltype(data), Tg)
     Tz = _output_eltype(Tv, Tg)
@@ -46,7 +51,7 @@
     spacings = _create_spacings_pooled(pool, grids_p)
 
     # 5. Eval pipeline (all standalone functions from nd_utils.jl)
-    q_eval = _handle_all_extraps(query, grids_p, extraps_val)
+    q_eval = _handle_all_extraps(query, grids_p, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches, hints)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
 
@@ -79,6 +84,10 @@ end
     bcs_periodic = map(_bc_for_periodic_check, methods)
     grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
 
+    # Per-axis materialization against the (possibly extended) grid.
+    # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
+    extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
+
     Tv = _value_type(eltype(data), Tg)
     Tz = _output_eltype(Tv, Tg)
     sizes = map(_deriv_size, methods)
@@ -95,7 +104,7 @@ end
             output[k] = oob_val
             continue
         end
-        q_eval = _handle_all_extraps(query_k, grids_p, extraps_val)
+        q_eval = _handle_all_extraps(query_k, grids_p, extraps_eff)
         indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, policies, hints, mono)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
         output[k] = _eval_hetero_nd_cell(partials, indices, hs, inv_hs, dLs, ops, methods)
@@ -134,7 +143,13 @@ end
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
-    q_eval = _handle_all_extraps(query, grids, extraps_val)
+    # OnTheFly does not extend data — pre-extension bc-aware materialize with
+    # `bc.period` for exclusive axes via the per-axis 3-arg primitive. `extraps_val`
+    # is already an NTuple (resolved upstream), so this call is just the per-axis
+    # materialize step.
+    bcs = map(_bc_for_periodic_check, methods)
+    extraps_eff = map(_resolve_extrap, extraps_val, bcs, grids)
+    q_eval = _handle_all_extraps(query, grids, extraps_eff)
     # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
     # Grid eltype included: when grid is Dual, 1D oneshot returns Dual-typed results
     # that must fit into _collapse_dims intermediate buffers.
@@ -166,14 +181,14 @@ end
         grids_local = map(view, grids, windows)
         rel_windows = map(Base.OneTo ∘ length, windows)
         return _collapse_dims(
-            Tr, data_local, grids_local, methods, extraps_val,
+            Tr, data_local, grids_local, methods, extraps_eff,
             q_eval, ops, searches, nothing, rel_windows,
         )
     end
 
     # Pure global-solve path: no pre-search, full windows, bit-for-bit pre-Phase-3 behavior.
     full_windows = map(Base.OneTo, size(data))
-    return _collapse_dims(Tr, data, grids, methods, extraps_val, q_eval, ops, searches, hints, full_windows)
+    return _collapse_dims(Tr, data, grids, methods, extraps_eff, q_eval, ops, searches, hints, full_windows)
 end
 
 # ========================================
@@ -228,7 +243,7 @@ function _interp_nd_oneshot_dispatch(
     _validate_nd_grids(grids_typed, data)
     Tr = _output_eltype(eltype(data), Tg, typeof.(query)...)
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, nothing, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N), query)
     ops = _resolve_deriv_nd(deriv, Val(N))
     _validate_axis_methods(grids_typed, methods, extraps_val)
@@ -293,7 +308,7 @@ end
     _validate_nd_grids(grids_typed, data)
     _query_check_ndims(queries, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, nothing, Val(N), Tv)
     policies = _resolve_search_nd(search, Val(N))
     mono = _check_mono_nd(policies, queries)
     ops = _resolve_deriv_nd(deriv, Val(N))

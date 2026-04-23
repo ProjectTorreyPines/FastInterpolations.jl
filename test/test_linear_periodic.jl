@@ -12,6 +12,13 @@ using Test
 using FastInterpolations
 using FastInterpolations: _is_periodic_bc, _CachedRange
 
+# Shared ALLOC_THRESHOLD — defined in runtests.jl when running the full suite,
+# fall back here for standalone test runs. LTS (1.10) escape-analysis may
+# retain small Ref / struct allocs (~16 B) that 1.12+ elides to stack.
+if !@isdefined(ALLOC_THRESHOLD)
+    const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
+end
+
 @testset "Linear PeriodicBC" begin
 
     @testset "NoBC default is no-op" begin
@@ -44,6 +51,62 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         x = collect(range(0.0, 1.0, length = 5))
         y = [0.0, 1.0, 2.0, 3.0, 4.0]                          # y[1] != y[end]
         @test_throws ArgumentError linear_interp(x, y; bc = PeriodicBC())
+    end
+
+    @testset "Inclusive — endpoint mismatch raises on 1D oneshot (scalar + vector)" begin
+        x = collect(range(0.0, 1.0, length = 5))
+        y = [0.0, 1.0, 2.0, 3.0, 4.0]                          # y[1] != y[end]
+        @test_throws ArgumentError linear_interp(x, y, 0.5; bc = PeriodicBC())
+        @test_throws ArgumentError linear_interp(x, y, [0.25, 0.75]; bc = PeriodicBC())
+    end
+
+    @testset "Inclusive — endpoint check=false skips validation on 1D oneshot" begin
+        x = collect(range(0.0, 1.0, length = 5))
+        y = [0.0, 1.0, 2.0, 3.0, 4.0]
+        bc = PeriodicBC(endpoint = :inclusive, check = false)
+        @test linear_interp(x, y, 0.5; bc = bc) isa Real
+        @test linear_interp(x, y, [0.25, 0.75]; bc = bc) isa AbstractVector
+    end
+
+    @testset "Non-Float wrap domains — Int grid + PeriodicBC" begin
+        # Contract: y[1] ≈ y[end] is satisfied so :inclusive build/eval is legal.
+        # Exercises WrapExtrap{Int} (produced by _resolve_periodic_extrap on Int grid).
+        x = [0, 1, 2, 3]
+        y = [1.0, 2.0, 3.0, 1.0]
+        # Persistent
+        itp = linear_interp(x, y; bc = PeriodicBC())
+        @test itp(0.5) ≈ 1.5 atol = 1.0e-12    # no wrap
+        @test itp(1.5) ≈ 2.5 atol = 1.0e-12    # no wrap
+        @test itp(4.5) ≈ 2.5 atol = 1.0e-12    # wrap: 4.5 → 1.5 via period=3
+
+        # Oneshot scalar + vector
+        @test linear_interp(x, y, 0.5; bc = PeriodicBC()) ≈ 1.5 atol = 1.0e-12
+        @test linear_interp(x, y, 4.5; bc = PeriodicBC()) ≈ 2.5 atol = 1.0e-12
+        @test linear_interp(x, y, [0.5, 4.5]; bc = PeriodicBC()) ≈ [1.5, 2.5] atol = 1.0e-12
+    end
+
+    @testset "Non-Float wrap domains — WrapExtrap(x) with Int grid" begin
+        # `WrapExtrap(x::AbstractVector)` preserves the grid's eltype. For an Int
+        # grid, the stored WrapExtrap is WrapExtrap{Int} — must dispatch through
+        # the duck-typed 3-arg `_wrap_to_domain` (Int x_min/x_max, Float xi).
+        x_int = [0, 1, 2, 3, 4]
+        y = [1.0, 2.0, 3.0, 4.0, 5.0]
+        extrap_int = WrapExtrap(x_int)
+        @test extrap_int isa FastInterpolations.WrapExtrap{Int}
+        @test (extrap_int._x_min, extrap_int._x_max) == (0, 4)
+        itp = linear_interp(x_int, y; extrap = extrap_int)
+        # wrap: 4.5 → period 4 → 0.5 → between y[1]=1.0 and y[2]=2.0 → 1.5
+        @test itp(4.5) ≈ 1.5 atol = 1.0e-12
+    end
+
+    @testset "Non-Float wrap domains — Rational grid + PeriodicBC" begin
+        # Rational grid preserves exact arithmetic through the wrap path.
+        x = [0 // 1, 1 // 1, 2 // 1, 3 // 1]
+        y = [1.0, 2.0, 3.0, 1.0]
+        itp = linear_interp(x, y; bc = PeriodicBC())
+        @test itp(0.5) ≈ 1.5 atol = 1.0e-12
+        @test itp(4.5) ≈ 2.5 atol = 1.0e-12
+        @test linear_interp(x, y, 4.5; bc = PeriodicBC()) ≈ 2.5 atol = 1.0e-12
     end
 
     @testset "Exclusive — FVM cell-centered, Range grid" begin
@@ -79,6 +142,40 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
 
         @test itp(3.0) ≈ 20.0 atol = 1.0e-12
+    end
+
+    @testset "Exclusive — auto-infer period on 1D oneshot (regression for unresolved Searcher bc)" begin
+        # Regression: Searcher must receive resolved PeriodicBC period. Otherwise the seam
+        # branch `x[1] + s.bc.period` in `search_interval` reduces to `Float + Nothing`
+        # and throws MethodError. The persistent interpolant materializes the period at
+        # construction; the oneshot path used to thread the raw bc directly.
+        x = range(0.5, step = 1.0, length = 3)   # period auto = 3.0
+        y = [10.0, 20.0, 30.0]
+        bc_auto = PeriodicBC(endpoint = :exclusive)
+        bc_expl = PeriodicBC(endpoint = :exclusive, period = 3.0)
+
+        # Scalar oneshot at seam cell (xq = 3.0 is inside [x[n]=2.5, x[1]+period=3.5))
+        @test linear_interp(x, y, 3.0; bc = bc_auto) ≈ 20.0 atol = 1.0e-12
+        @test linear_interp(x, y, 3.0; bc = bc_auto) ≈
+            linear_interp(x, y, 3.0; bc = bc_expl) atol = 1.0e-12
+
+        # Vector oneshot mixing seam + non-seam queries
+        xq = [0.5, 1.0, 2.5, 3.0, 3.4]
+        @test linear_interp(x, y, xq; bc = bc_auto) ≈
+            linear_interp(x, y, xq; bc = bc_expl) atol = 1.0e-12
+    end
+
+    @testset "ND Exclusive — auto-infer period on ND oneshot (regression)" begin
+        # Same class of bug as above, via _search_all_intervals_lr → _resolve_search per axis.
+        x = range(0.5, step = 1.0, length = 3)         # axis-1 periodic-exclusive (period auto)
+        y = range(0.0, 1.0, length = 4)                # axis-2 NoBC
+        data = [10xi + yj for xi in x, yj in y]
+        bc_auto = (PeriodicBC(endpoint = :exclusive), NoBC())
+        bc_expl = (PeriodicBC(endpoint = :exclusive, period = 3.0), NoBC())
+
+        q = (3.0, 0.5)                                  # axis-1 seam, axis-2 interior
+        @test linear_interp((x, y), data, q; bc = bc_auto) ≈
+            linear_interp((x, y), data, q; bc = bc_expl) atol = 1.0e-12
     end
 
     @testset "Extrap is forced to WrapExtrap on periodic path" begin
@@ -132,6 +229,163 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         # Default (no bc kwarg) must equal explicit NoBC()
         @test linear_interp(x, y, xq) == linear_interp(x, y, xq; bc = NoBC())
         @test linear_interp(x, y, 0.5) === linear_interp(x, y, 0.5; bc = NoBC())
+    end
+
+    @testset "Exclusive — Vector grid seam at xq == x[n] exactly (T-1)" begin
+        # _search_binary path must still route xq == x[n] to the seam branch
+        # (xq >= x[n]) before entering the binary search. Off-by-one here could
+        # read data[end+1].
+        x_vec = [0.0, 0.25, 0.5, 0.75]            # non-uniform-ok? uniform here
+        y = [1.0, 2.0, 4.0, 8.0]
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        itp = linear_interp(x_vec, y; bc = bc)
+
+        # At xq == x[n] the seam cell left edge → α = 0 → value = y[n]
+        @test itp(0.75) ≈ 8.0 atol = 1.0e-12
+        @test linear_interp(x_vec, y, 0.75; bc = bc) ≈ 8.0 atol = 1.0e-12
+        # Strictly inside seam
+        @test itp(0.85) ≈ 8.0 * 0.6 + 1.0 * 0.4 atol = 1.0e-12
+        @test linear_interp(x_vec, y, 0.85; bc = bc) ≈ itp(0.85) atol = 1.0e-12
+    end
+
+    @testset "Exclusive — Clamp/Fill/Extend extrap silently overridden on 1D bundled (T-2)" begin
+        # Periodic BC forces WrapExtrap regardless of user-passed extrap on 1D.
+        # ND raises; 1D silently overrides (matches interpolant path).
+        x = range(0.5, step = 1.0, length = 3)
+        y = [10.0, 20.0, 30.0]
+        bc = PeriodicBC(endpoint = :exclusive, period = 3.0)
+
+        itp_ref = linear_interp(x, y; bc = bc)
+        for extrap in (ClampExtrap(), ExtendExtrap(), FillExtrap(0.0))
+            itp = linear_interp(x, y; bc = bc, extrap = extrap)
+            @test itp.extrap isa WrapExtrap
+            @test itp(3.0) ≈ itp_ref(3.0) atol = 1.0e-12
+            # Oneshot override must also match (regression for B-1 era path)
+            @test linear_interp(x, y, 3.0; bc = bc, extrap = extrap) ≈ itp_ref(3.0) atol = 1.0e-12
+        end
+    end
+
+    @testset "Exclusive — ND persistent rejects period-too-small at build (T-3)" begin
+        # period < grid_span should trip _throw_wrap_virtual_endpoint_error at ND build.
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = range(0.0, 1.0, length = 4)
+        data = rand(4, 4)
+        # period=2.5 places virtual endpoint at 2.5, behind x[end]=3.0
+        @test_throws ArgumentError linear_interp(
+            (x, y), data;
+            bc = (PeriodicBC(endpoint = :exclusive, period = 2.5), NoBC()),
+        )
+    end
+
+    @testset "Exclusive — seam continuity invariant (T-4)" begin
+        # Left/right limits at the virtual endpoint must agree with y[1].
+        x = range(0.0, step = 1.0, length = 4)
+        y = [1.0, 2.0, 3.0, 4.0]
+        bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+        itp = linear_interp(x, y; bc = bc)
+        # Approach virtual endpoint 4.0 from the left (inside seam)
+        @test itp(4.0 - 1.0e-9) ≈ y[1] atol = 1.0e-6
+        # Approach from right — wraps to +ε, back to y[1]
+        @test itp(1.0e-9) ≈ y[1] atol = 1.0e-8
+        # Exactly at virtual endpoint wraps to x[1]
+        @test itp(4.0) ≈ y[1] atol = 1.0e-12
+    end
+
+    @testset "Exclusive — derivative at seam (T-5)" begin
+        # Seam cell derivative via Rs - Ls width on virtual endpoint.
+        # y = [1, 2, 4, 8], x step = 1. Seam slope = (y[1] - y[n]) / step = (1 - 8) / 1 = -7.
+        x = range(0.0, step = 1.0, length = 4)
+        y = [1.0, 2.0, 4.0, 8.0]
+        bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+        itp = linear_interp(x, y; bc = bc)
+        @test itp(3.5; deriv = DerivOp(1)) ≈ -7.0 atol = 1.0e-10
+        @test linear_interp(x, y, 3.5; bc = bc, deriv = DerivOp(1)) ≈ -7.0 atol = 1.0e-10
+    end
+
+    @testset "Exclusive — ND axis-2 periodic only (T-6)" begin
+        # Non-leading periodic axis exercises a different recursion / dispatch pattern
+        # than leading-axis periodic.
+        x = range(0.0, 1.0, length = 5)                       # NoBC
+        y = range(0.5, step = 1.0, length = 3)                # :exclusive
+        data = [i + 10j for i in 1:5, j in 1:3]
+        bc = (NoBC(), PeriodicBC(endpoint = :exclusive, period = 3.0))
+        itp = linear_interp((x, y), data; bc = bc)
+
+        # Seam-wrap equivalence along axis 2
+        @test itp((0.5, 0.5)) ≈ itp((0.5, 3.5)) atol = 1.0e-12
+        # Oneshot must agree
+        @test linear_interp((x, y), data, (0.5, 3.0); bc = bc) ≈ itp((0.5, 3.0)) atol = 1.0e-12
+    end
+
+    @testset "Exclusive — NoBC oneshot allocation regression guard (T-9)" begin
+        # After the WrapExtrap{T} materialization refactor, NoBC paths must not
+        # *leak* WrapExtrap{Float64} structs to the heap. On 1.12+ escape analysis
+        # stack-elides them (0 bytes); on LTS (1.10) a small Ref / struct may
+        # survive (~16 B). Compare against ALLOC_THRESHOLD per the project-wide
+        # convention rather than strict `== 0`.
+        x = range(0.0, 1.0, length = 11)
+        y = sin.(2π .* x)
+        # Warmup
+        for _ in 1:3
+            linear_interp(x, y, 0.5)
+        end
+        @test (@allocated linear_interp(x, y, 0.5)) <= ALLOC_THRESHOLD
+    end
+
+    @testset "Exclusive — period conflict rejected in oneshot too (P1 review)" begin
+        # Regression: WrapExtrap(x, bc::PeriodicBC{:exclusive, <:Real}) used to read
+        # `bc.period` directly, skipping the `step(x) * length(x)` cross-check that
+        # persistent paths route through `_resolve_exclusive_period`. That let
+        # oneshot silently accept a period that disagrees with the Range's implied
+        # period. Both paths must now throw on the same input.
+        x = range(0.0, step = 0.1, length = 10)           # implied period = 1.0
+        y = rand(10)
+        bc_bad = PeriodicBC(endpoint = :exclusive, period = 2.0)   # conflicts
+        @test_throws ArgumentError linear_interp(x, y; bc = bc_bad)
+        @test_throws ArgumentError linear_interp(x, y, 0.5; bc = bc_bad)
+        @test_throws ArgumentError linear_interp(x, y, [0.2, 0.5]; bc = bc_bad)
+    end
+
+    @testset "Exclusive — ND oneshot Vector grid without period raises (3.5)" begin
+        # Public ND oneshot must surface the non-Range + no-period error path.
+        x = [0.0, 1.0, 2.0, 3.0]                        # Vector grid, cannot infer period
+        y = range(0.0, 1.0, length = 4)
+        data = rand(4, 4)
+        @test_throws ArgumentError linear_interp(
+            (x, y), data, (1.5, 0.5);
+            bc = (PeriodicBC(endpoint = :exclusive), NoBC()),   # period::Nothing
+        )
+    end
+
+    @testset "Exclusive — seam hint write-back updates RefHint (P2 review)" begin
+        # Regression: the seam fast path in `search_interval` used to return
+        # before `_search_interval_real`, so RefHint never got updated at the
+        # seam cell. Monotone batches spending time past x[n] would keep
+        # searching from the stale interior hint. After fix, the seam branch
+        # writes `n` back to hint.idx so LinearBinarySearch can resume from
+        # the seam position on subsequent queries.
+        x = range(0.0, step = 1.0, length = 5)            # [0, 1, 2, 3, 4]
+        bc = PeriodicBC(endpoint = :exclusive, period = 5.0)
+        ref = Ref(1)
+        s = FastInterpolations._resolve_search(x, 4.5, AutoSearch(), ref, bc)
+        # Seam query: xq=4.5 > x[end]=4 → seam fires, hint must now be n=5
+        FastInterpolations.search_interval(s, x, 4.5)
+        @test ref[] == 5
+    end
+
+    @testset "Exclusive — adjoint with WrapExtrap(x) smoke (T-8)" begin
+        # Adjoint doesn't accept `bc`, so periodic-shaped adjoint is exercised via
+        # explicit `extrap=WrapExtrap(x)` (grid-span materialization). Verify the
+        # materialized WrapExtrap{Float64} flows through scatter correctly.
+        x = range(0.0, 1.0, length = 5)
+        y = range(0.0, 1.0, length = 4)
+        q = ((0.5, 0.25),)
+        adj = linear_adjoint((x, y), q; extrap = WrapExtrap(x))
+        # Scatter a scalar gradient of 1.0 → per-corner weights sum to 1.0 at a single query
+        y_bar = [1.0]
+        f_bar = adj(y_bar)
+        @test sum(f_bar) ≈ 1.0 atol = 1.0e-12
+        @test size(f_bar) == (length(x), length(y))
     end
 
     # ============================================================
@@ -229,6 +483,56 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
             )
         )
         @test itp isa LinearInterpolantND
+    end
+
+    @testset "ND seam-cell — _multilinear_sum_lr exact bilinear via wrap" begin
+        # 2D, axis 1 :exclusive (period=4), axis 2 NoBC. Query lands in the seam
+        # cell on axis 1, so the kernel must read corners (n, 1) on that axis
+        # rather than (n, n+1). Picks data values that make the expected wrap-
+        # interpolated result trivially predictable.
+        x = collect(range(0.0, step = 1.0, length = 4))     # [0,1,2,3], period 4
+        yy = collect(range(0.0, step = 1.0, length = 3))    # [0,1,2]
+        # data[i, j] = (i-1) + 10*(j-1)  ⇒ corner-recoverable
+        data = [Float64(i - 1) + 10 * Float64(j - 1) for i in 1:4, j in 1:3]
+
+        bc = (PeriodicBC(endpoint = :exclusive, period = 4.0), NoBC())
+        # NoExtrap on axis 2 is fine because q[2] is in domain.
+        extrap = (NoExtrap(), NoExtrap())
+
+        # Query in seam cell axis 1: 3.5 ∈ [3, 4=x[1]+period].
+        # Axis 1 corners read data[4, j] (=3 + 10*(j-1)) and data[1, j] (=10*(j-1)).
+        # α = (3.5 - 3)/(4 - 3) = 0.5 ⇒ axis-1 blend = 1.5 + 10*(j-1).
+        # Axis 2 at 0.5 between j=1 (1.5) and j=2 (11.5) ⇒ β=0.5 ⇒ 6.5.
+        q = (3.5, 0.5)
+        @test linear_interp((x, yy), data, q; bc = bc, extrap = extrap) ≈ 6.5 atol = 1.0e-12
+
+        # Persistent must agree at the same query (zero-copy must match extension path).
+        itp = linear_interp((x, yy), data; bc = bc, extrap = extrap)
+        @test itp(q) ≈ 6.5 atol = 1.0e-12
+
+        # Query just below seam → no wrap, normal bilinear cell [2,3]×[0,1].
+        # data[3,1]=2, data[4,1]=3, data[3,2]=12, data[4,2]=13.
+        # At (2.9, 0.5): α=0.9, β=0.5
+        # 0.1*0.5*2 + 0.9*0.5*3 + 0.1*0.5*12 + 0.9*0.5*13
+        # = 0.1 + 1.35 + 0.6 + 5.85 = 7.9
+        q2 = (2.9, 0.5)
+        @test linear_interp((x, yy), data, q2; bc = bc, extrap = extrap) ≈ 7.9 atol = 1.0e-12
+
+        # Both axes periodic, both in seam — kernel reads (4,1) on each axis.
+        bc_both = (
+            PeriodicBC(endpoint = :exclusive, period = 4.0),
+            PeriodicBC(endpoint = :exclusive, period = 3.0),
+        )
+        # data periodic along axis 2 too: rebuild with period-3 wrap-friendly values.
+        # Use data[i,j] = (i-1) + (j-1) so wrap on axis 2 gives j=1 ↔ j=4 virtual.
+        data2 = [Float64(i - 1) + Float64(j - 1) for i in 1:4, j in 1:3]
+        q3 = (3.5, 2.5)  # both axes in seam cells
+        # Axis 1 corners: data2[4, j]=3+(j-1) and data2[1, j]=(j-1) → α=0.5 → 1.5+(j-1)
+        # Axis 2 corners (via wrap): blend between j=3 (1.5+2=3.5) and j=1 (1.5+0=1.5)
+        # β = (2.5 - 2)/(3 - 2) = 0.5 → result = 0.5*3.5 + 0.5*1.5 = 2.5
+        @test linear_interp((x, yy), data2, q3; bc = bc_both, extrap = extrap) ≈ 2.5 atol = 1.0e-12
+        itp_both = linear_interp((x, yy), data2; bc = bc_both, extrap = extrap)
+        @test itp_both(q3) ≈ 2.5 atol = 1.0e-12
     end
 
     # ============================================================

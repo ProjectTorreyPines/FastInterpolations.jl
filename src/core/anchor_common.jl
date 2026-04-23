@@ -104,7 +104,8 @@ Dual type. The interval search uses `_extract_primal(xq)` for comparisons.
         n = length(x)
         @inbounds (n - 1, x[n - 1], x[n])
     else
-        search_interval(policy, x, xq_primal)
+        _i, _, _xL, _xR = search_interval(policy, x, xq_primal)
+        (_i, _xL, _xR)
     end
 
     return _AnchorLoc{Tg, typeof(xq)}(idx, xq, state, xL, xR)

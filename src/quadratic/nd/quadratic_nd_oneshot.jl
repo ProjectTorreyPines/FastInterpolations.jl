@@ -47,8 +47,12 @@ Zero-allocation after warmup (pool reuse).
     # 3. Create spacings (ScalarSpacing for Range grids = zero alloc)
     spacings = _create_spacings_pooled(pool, grids)
 
+    # 3a. Materialize WrapExtrap{Nothing} against grids so the eval pipeline never
+    # sees the singleton.
+    extraps_eff = map(_resolve_extrap, extraps_val, grids)
+
     # 4. Eval pipeline (all standalone functions, no Interpolant needed)
-    q_eval = _handle_all_extraps(query, grids, extraps_val)
+    q_eval = _handle_all_extraps(query, grids, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
 
@@ -86,6 +90,8 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
     _compute_nd_partials_quadratic!(partials, grids, data, bcs)
     spacings = _create_spacings_pooled(pool, grids)
+    # Materialize WrapExtrap{Nothing} before the eval loop.
+    extraps_eff = map(_resolve_extrap, extraps_val, grids)
 
     # Eval loop
     @inbounds for k in 1:nq
@@ -94,7 +100,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
         if oob_val !== nothing
             output[k] = oob_val; continue
         end
-        q_eval = _handle_all_extraps(query_k, grids, extraps_val)
+        q_eval = _handle_all_extraps(query_k, grids, extraps_eff)
         indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, policies, hints, mono)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
         output[k] = _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
@@ -155,7 +161,7 @@ function quadratic_interp(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
 
     # Keep AutoCoeffs on the specialized PreCompute path so scalar one-shot
@@ -229,7 +235,7 @@ function quadratic_interp!(
     hints_nd = hint
     mono = _check_mono_nd(policies, queries)
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _quadratic_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, policies, ops, hints_nd, mono)
 end

@@ -108,8 +108,8 @@ end
     sign, lo, hi = _normalize_bounds_1d(a, b)
     sign == 0 && return zero(Tout)
 
-    i0, xL0, _ = search_interval(searcher, x, spacing, lo)
-    i1, xL1, _ = search_interval(searcher, x, spacing, hi)
+    i0, _, xL0, _ = search_interval(searcher, x, spacing, lo)
+    i1, _, xL1, _ = search_interval(searcher, x, spacing, hi)
 
     if i0 == i1
         h = _get_h(spacing, i0)

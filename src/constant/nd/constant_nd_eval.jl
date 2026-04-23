@@ -201,5 +201,59 @@ Computes cell widths, distances from left edge, side-based offsets, and returns 
     return Expr(:block, :(Base.@_inline_meta), exprs...)
 end
 
+"""
+    _constant_nd_kernel_lr(data, indices_pairs, Rs, sides, q_eval, Ls)
+
+Pair-valued indices variant for zero-copy periodic ND evaluation (Phase 6).
+
+`indices_pairs[d] = (idx_L_d, idx_R_d)` — corner address on axis `d` is
+`indices_pairs[d][offset_d + 1]` (offset 0 → left idx_L, offset 1 → right idx_R).
+Cell width `h_d = Rs[d] - Ls[d]` — sidesteps the `_get_h(spacings[d], indices[d])`
+lookup which would be out-of-bounds for periodic-exclusive seam cells.
+
+Distinct name (not an overload) because at `N=0` the two possible
+`NTuple{0, ...}` element types both collapse to `Tuple{}`, making
+overload-style dispatch ambiguous (caught by Aqua static analysis).
+"""
+@generated function _constant_nd_kernel_lr(
+        data::AbstractArray{Tv, N},
+        indices_pairs::NTuple{N, NTuple{2, Int}},
+        Rs::Tuple{Vararg{Real, N}},
+        sides::Tuple{Vararg{AbstractSide, N}},
+        q_eval::Tuple{Vararg{Real, N}},
+        Ls::Tuple{Vararg{Real, N}}
+    ) where {Tv, N}
+    exprs = Expr[]
+
+    for d in 1:N
+        h_sym = Symbol("h_", d)
+        push!(exprs, :($h_sym = @inbounds Rs[$d] - Ls[$d]))
+    end
+
+    for d in 1:N
+        dL_sym = Symbol("dL_", d)
+        push!(exprs, :($dL_sym = @inbounds q_eval[$d] - Ls[$d]))
+    end
+
+    for d in 1:N
+        h_sym = Symbol("h_", d)
+        dL_sym = Symbol("dL_", d)
+        offset_sym = Symbol("offset_", d)
+        push!(exprs, :($offset_sym = _compute_single_offset(sides[$d], $h_sym, $dL_sym)))
+    end
+
+    # Corner address: offset 0 → indices_pairs[d][1] (idx_L); offset 1 → indices_pairs[d][2] (idx_R)
+    idx_parts = Expr[]
+    for d in 1:N
+        offset_sym = Symbol("offset_", d)
+        push!(idx_parts, :(indices_pairs[$d][$offset_sym + 1]))
+    end
+    idx_expr = Expr(:tuple, idx_parts...)
+
+    push!(exprs, :(@inbounds data[$idx_expr...]))
+
+    return Expr(:block, :(Base.@_inline_meta), exprs...)
+end
+
 # Side offset helpers (_compute_single_offset) are defined in
 # src/constant/constant_kernels.jl and shared by 1D adjoint and ND eval.

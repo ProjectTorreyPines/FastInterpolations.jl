@@ -44,7 +44,7 @@ function _bake_constant_nd_anchors(
         per_axis = ntuple(Val(N)) do d
             xq_raw = Tg(query_q[d])
             xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
-            idx, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
+            idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
             h = _get_h(spacings[d], idx)
             dL = xq_d - xL
 
@@ -186,7 +186,8 @@ function constant_adjoint(
     Tg = _promote_grid_eltype(grids)
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
-    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    # 5-arg `_resolve_extrap` (no BC): expand + promote + per-axis 2-arg materialize.
+    extraps = _resolve_extrap(extrap, nothing, grids_typed, Val(N), Tg)
     sides = _resolve_side_nd(side, Val(N))
     return _build_constant_nd_adjoint(grids_typed, queries, extraps, sides)
 end
@@ -227,7 +228,8 @@ function constant_adjoint(
     Tg = _promote_grid_eltype(grids)
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
-    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    # 5-arg `_resolve_extrap` (no BC): expand + promote + per-axis 2-arg materialize.
+    extraps = _resolve_extrap(extrap, nothing, grids_typed, Val(N), Tg)
     sides = _resolve_side_nd(side, Val(N))
     return _build_constant_nd_adjoint(grids_typed, queries, extraps, sides)
 end

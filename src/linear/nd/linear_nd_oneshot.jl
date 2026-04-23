@@ -17,9 +17,14 @@
     _linear_interp_nd_oneshot(grids, data, query, extraps_val, searches, ops, hints=nothing)
 
 Zero-allocation scalar one-shot ND multilinear evaluation.
-Evaluates directly from grids + data without constructing a LinearInterpolantND.
+Evaluates directly from grids + data — no pool, no data extension even for
+exclusive periodic axes. Per-axis bc is projected into typed `WrapExtrap` via
+`_resolve_extrap` (validation + materialization); BC-aware `Searcher` returns `(idx_L=n, idx_R=1)`
+at periodic seam cells so the kernel reads wrapped corners directly from the
+original `data`. Expect ~1× parity with persistent ND interpolant for periodic
+exclusive (was ~365× pre-refactor due to per-query N-dim data copy).
 """
-@with_pool pool function _linear_interp_nd_oneshot(
+function _linear_interp_nd_oneshot(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}},
@@ -34,15 +39,16 @@ Evaluates directly from grids + data without constructing a LinearInterpolantND.
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    # Extend exclusive periodic axes (pool-based, zero heap alloc).
-    # Non-periodic axes pass through unchanged.
-    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
-
-    spacings = _create_spacings_pooled(pool, grids_p)
-    q_eval = _handle_all_extraps(query, grids_p, extraps_val)
-    indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches, hints)
-    hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
-    return _multilinear_sum(data_p, indices, hs, αs, ops, Val(N))
+    extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
+    q_eval = _handle_all_extraps(query, grids, extraps_eff)
+    # BC-aware per-axis search — returns (indices_pairs, Ls, Rs) where
+    # indices_pairs[d] = (idx_L_d, idx_R_d); periodic seam axes have idx_R == 1.
+    # No spacings needed — pair-variant `_compute_linear_params_lr` uses Rs-Ls for h,
+    # avoiding VectorSpacing allocation for Vector grids.
+    indices_pairs, Ls, Rs = _search_all_intervals_lr(q_eval, grids, searches, hints, bcs)
+    hs, αs = _compute_linear_params_lr(q_eval, Ls, Rs, Val(N))
+    # Pair-dispatch `_multilinear_sum`: corner[d] = indices_pairs[d][bit_d + 1]
+    return _multilinear_sum_lr(data, indices_pairs, hs, αs, ops, Val(N))
 end
 
 """
@@ -52,7 +58,7 @@ In-place batch one-shot ND multilinear evaluation.
 Uses query protocol (`_query_length`, `_query_extract`) — works with any query format.
 Writes results into `output`. No heap allocation beyond spacings.
 """
-@with_pool pool function _linear_interp_nd_oneshot_batch!(
+function _linear_interp_nd_oneshot_batch!(
         output::AbstractVector,
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
@@ -68,18 +74,17 @@ Writes results into `output`. No heap allocation beyond spacings.
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps_val)
-    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
-    spacings = _create_spacings_pooled(pool, grids_p)
+    extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
+        oob_val = _try_fill_oob(query_k, grids, extraps_val, ops, first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end
-        q_eval = _handle_all_extraps(query_k, grids_p, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, policies, hints, mono)
-        hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
-        output[k] = _multilinear_sum(data_p, indices, hs, αs, ops, Val(N))
+        q_eval = _handle_all_extraps(query_k, grids, extraps_eff)
+        indices_pairs, Ls, Rs = _search_all_intervals_lr(q_eval, grids, policies, hints, bcs)
+        hs, αs = _compute_linear_params_lr(q_eval, Ls, Rs, Val(N))
+        output[k] = _multilinear_sum_lr(data, indices_pairs, hs, αs, ops, Val(N))
     end
     return output
 end
@@ -117,7 +122,7 @@ function linear_interp(
     searches = _resolve_search_nd(search, Val(N), query)  # scalar: type-based (no monotonicity check)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _linear_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
@@ -178,7 +183,7 @@ function linear_interp!(
     mono = _check_mono_nd(policies, queries)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _linear_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, policies, ops, hints_nd, mono)
 end

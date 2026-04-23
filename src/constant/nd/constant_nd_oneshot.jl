@@ -18,7 +18,7 @@
 Zero-allocation scalar one-shot ND constant evaluation.
 Evaluates directly from grids + data without constructing a ConstantInterpolantND.
 """
-@with_pool pool function _constant_interp_nd_oneshot(
+function _constant_interp_nd_oneshot(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}},
@@ -33,11 +33,10 @@ Evaluates directly from grids + data without constructing a ConstantInterpolantN
     oob_result = _try_fill_oob(query, grids, extraps_val, EvalValue(), @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
-    spacings = _create_spacings_pooled(pool, grids_p)
-    q_eval = _handle_all_extraps(query, grids_p, extraps_val)
-    indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches, hints)
-    return _constant_nd_kernel(data_p, spacings, side_vals, indices, q_eval, Ls)
+    extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
+    q_eval = _handle_all_extraps(query, grids, extraps_eff)
+    indices_pairs, Ls, Rs = _search_all_intervals_lr(q_eval, grids, searches, hints, bcs)
+    return _constant_nd_kernel_lr(data, indices_pairs, Rs, side_vals, q_eval, Ls)
 end
 
 """
@@ -47,7 +46,7 @@ In-place batch one-shot ND constant evaluation.
 Uses query protocol (`_query_length`, `_query_extract`) — works with any query format.
 Writes results into `output`. No heap allocation beyond spacings.
 """
-@with_pool pool function _constant_interp_nd_oneshot_batch!(
+function _constant_interp_nd_oneshot_batch!(
         output::AbstractVector,
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
@@ -63,17 +62,16 @@ Writes results into `output`. No heap allocation beyond spacings.
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps_val)
-    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
-    spacings = _create_spacings_pooled(pool, grids_p)
+    extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids_p, extraps_val, EvalValue(), first(data_p))
+        oob_val = _try_fill_oob(query_k, grids, extraps_val, EvalValue(), first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end
-        q_eval = _handle_all_extraps(query_k, grids_p, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, policies, hints, mono)
-        output[k] = _constant_nd_kernel(data_p, spacings, side_vals, indices, q_eval, Ls)
+        q_eval = _handle_all_extraps(query_k, grids, extraps_eff)
+        indices_pairs, Ls, Rs = _search_all_intervals_lr(q_eval, grids, policies, hints, bcs)
+        output[k] = _constant_nd_kernel_lr(data, indices_pairs, Rs, side_vals, q_eval, Ls)
     end
     return output
 end
@@ -147,7 +145,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _constant_interp_nd_oneshot(
         grids_typed, data, query, bcs, extraps_val, sides, searches, hint
     )::Tv
@@ -183,7 +181,7 @@ function constant_interp(
     policies = _resolve_search_nd(search, Val(N))
     mono = _check_mono_nd(policies, queries)
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _constant_nd_batch_dispatch(
         grids_typed, data, queries, bcs, extraps_val, sides, policies, hint, mono
     )::Vector{Tv}
@@ -226,7 +224,7 @@ function constant_interp!(
     policies = _resolve_search_nd(search, Val(N))
     mono = _check_mono_nd(policies, queries)
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _constant_nd_batch_dispatch!(
         output, grids_typed, data, queries, bcs, extraps_val, sides, policies, hint, mono
     )

@@ -45,7 +45,9 @@ Thread-safe: workspaces allocated from task-local pool.
     _solve_system!(z, cache, y, cache.bc_config)
 
     searcher = _resolve_search(cache.x, x_query, search, nothing)
-    _cubic_vector_loop!(output, cache, y, z, x_query, extrap, deriv, searcher)
+    # Upgrade WrapExtrap{Nothing} → WrapExtrap{T} against the cache grid.
+    extrap_eff = _resolve_extrap(extrap, cache.x)
+    _cubic_vector_loop!(output, cache, y, z, x_query, extrap_eff, deriv, searcher)
 
     return output
 end
@@ -90,7 +92,10 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
     # Solve uses original BC for proper RHS materialization
     _solve_system!(z, cache, y, bc)
 
-    _cubic_vector_loop!(output, cache, y, z, x_query, extrap, op, searcher)
+    # Upgrade WrapExtrap{Nothing} to the typed form so the kernel never sees the
+    # zero-arg placeholder. Non-Wrap extraps pass through.
+    extrap_eff = _resolve_extrap(extrap, cache.x)
+    _cubic_vector_loop!(output, cache, y, z, x_query, extrap_eff, op, searcher)
 
     return output
 end
@@ -119,8 +124,10 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc)
 
-    _check_domain(cache.x, xq, extrap)
-    return _eval_with_bc(cache, y, tmp_z, xq, extrap, op, searcher)
+    # Upgrade WrapExtrap{Nothing} to typed WrapExtrap against the cache grid.
+    extrap_eff = _resolve_extrap(extrap, cache.x)
+    _check_domain(cache.x, xq, extrap_eff)
+    return _eval_with_bc(cache, y, tmp_z, xq, extrap_eff, op, searcher)
 end
 
 """
@@ -141,8 +148,10 @@ manages their lifetime. Follows the `_create_spacing_pooled(pool, ...)` pattern.
 
     # ── Extend exclusive → inclusive (pool-based, zero-alloc after warmup) ──
     # Shared helper also calls _check_periodic_endpoints on y_p. `extrap` slot is
-    # vestigial for cubic (we always return WrapExtrap here), so pass WrapExtrap()
-    # and ignore the returned extrap.
+    # vestigial for cubic — the periodic `_eval_with_bc`/`_cubic_vector_loop!`
+    # dispatch ignores the extrap arg — so we pass `WrapExtrap()` and discard
+    # the helper's materialized return to keep this path's stack frame lean
+    # (no 16-byte WrapExtrap{T} bumping LTS allocation measurements).
     x_p, y_p, _ = _periodic_extend_1d_pooled!(pool, x, y, bc, WrapExtrap())
 
     # ── Solve periodic tridiagonal system ──
@@ -173,6 +182,8 @@ Pool-based exclusive extension: zero-alloc after warmup.
 
     cache, y_p, z = _cubic_periodic_solve!(pool, x, y, bc, autocache)
 
+    # Periodic `_cubic_vector_loop!` dispatch ignores the extrap arg — pass the
+    # zero-size singleton to keep the path allocation-free.
     _cubic_vector_loop!(output, cache, y_p, z, x_query, WrapExtrap(), op, searcher)
     return output
 end
@@ -194,6 +205,7 @@ Pool-based exclusive extension: zero-alloc after warmup.
     ) where {Tg, Tv, Tq <: Real, O <: AbstractEvalOp, S <: Searcher}
     cache, y_p, z = _cubic_periodic_solve!(pool, x, y, bc, autocache)
 
+    # Periodic `_eval_with_bc` dispatch ignores the extrap arg — singleton suffices.
     _check_domain(cache.x, xq, WrapExtrap())
     return _eval_with_bc(cache, y_p, z, xq, WrapExtrap(), op, searcher)
 end

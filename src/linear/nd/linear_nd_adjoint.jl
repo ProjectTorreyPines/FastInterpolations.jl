@@ -43,7 +43,7 @@ function _bake_linear_nd_anchors(
         idx_and_weights = ntuple(Val(N)) do d
             xq_raw = Tg(query_q[d])
             xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
-            idx, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
+            idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
             h = _get_h(spacings[d], idx)
             inv_h = _get_inv_h(spacings[d], idx)
             α = (xq_d - xL) * inv_h
@@ -212,7 +212,9 @@ function linear_adjoint(
     Tg = _promote_grid_eltype(grids)
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
-    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    # 5-arg `_resolve_extrap` (no BC): expand + promote + per-axis 2-arg
+    # materialize — upgrades WrapExtrap{Nothing} to WrapExtrap(grid).
+    extraps = _resolve_extrap(extrap, nothing, grids_typed, Val(N), Tg)
     return _build_linear_nd_adjoint(grids_typed, queries, extraps)
 end
 
@@ -249,7 +251,9 @@ function linear_adjoint(
     Tg = _promote_grid_eltype(grids)
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
-    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    # 5-arg `_resolve_extrap` (no BC): expand + promote + per-axis 2-arg
+    # materialize — upgrades WrapExtrap{Nothing} to WrapExtrap(grid).
+    extraps = _resolve_extrap(extrap, nothing, grids_typed, Val(N), Tg)
     return _build_linear_nd_adjoint(grids_typed, queries, extraps)
 end
 

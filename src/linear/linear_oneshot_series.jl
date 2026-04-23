@@ -29,11 +29,13 @@
     vecs = _series_vectors(s)
     n = length(x)
 
-    # Phase 1: extend x + first series, build anchor on the extended grid
-    x_p, y_p_first, _ = _periodic_extend_1d_pooled!(pool, x, first(vecs), bc, WrapExtrap())
+    # Phase 1: extend x + first series, build anchor on the extended grid.
+    # `_periodic_extend_1d_pooled!` now returns a materialized WrapExtrap — capture
+    # it so the kernel never sees WrapExtrap{Nothing}.
+    x_p, y_p_first, extrap_p = _periodic_extend_1d_pooled!(pool, x, first(vecs), bc, WrapExtrap())
     n_p = length(x_p)
     aq = _anchor_query(x_p, xq, Val(:linear), true, searcher)
-    @inbounds output[1] = _linear_eval_at_anchor(y_p_first, aq, op, WrapExtrap())
+    @inbounds output[1] = _linear_eval_at_anchor(y_p_first, aq, op, extrap_p)
 
     # Phase 2: remaining series — reuse a single pool buffer (exclusive) or the
     # user's vecs[k] directly (inclusive, already length n_p, just re-validated).
@@ -45,12 +47,12 @@
             @inbounds for k in 2:K
                 copyto!(y_p, 1, vecs[k], 1, n)
                 y_p[n + 1] = vecs[k][1]
-                output[k] = _linear_eval_at_anchor(y_p, aq, op, WrapExtrap())
+                output[k] = _linear_eval_at_anchor(y_p, aq, op, extrap_p)
             end
         else
             @inbounds for k in 2:K
                 _check_periodic_endpoints(bc, vecs[k])
-                output[k] = _linear_eval_at_anchor(vecs[k], aq, op, WrapExtrap())
+                output[k] = _linear_eval_at_anchor(vecs[k], aq, op, extrap_p)
             end
         end
     end
@@ -179,14 +181,14 @@ In-place one-shot linear interpolation at multiple query points.
     # reuse + validate (inclusive), pre-compute anchors on extended grid, then
     # K outer × Q inner eval loop.
     if _is_periodic_bc(bc)
-        x_p, y_p_first, _ = _periodic_extend_1d_pooled!(pool, x, first(vecs), bc, WrapExtrap())
+        x_p, y_p_first, extrap_p = _periodic_extend_1d_pooled!(pool, x, first(vecs), bc, WrapExtrap())
         Tg_p_actual = eltype(x_p)
         Tq_promoted = promote_type(Tq, Tg_p_actual)
         searcher = _resolve_search(x_p, xqs, search, nothing)
         aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_p_actual, Tq_promoted}, length(xqs))
         _fill_anchors!(aq_vec, x_p, xqs, Val(:linear), true, searcher)
         @inbounds for j in eachindex(xqs)
-            outputs[1][j] = _linear_eval_at_anchor(y_p_first, aq_vec[j], deriv, WrapExtrap())
+            outputs[1][j] = _linear_eval_at_anchor(y_p_first, aq_vec[j], deriv, extrap_p)
         end
         if K > 1
             if bc isa PeriodicBC{:exclusive}
@@ -197,14 +199,14 @@ In-place one-shot linear interpolation at multiple query points.
                     copyto!(y_p, 1, vecs[k], 1, n)
                     y_p[n + 1] = vecs[k][1]
                     for j in eachindex(xqs)
-                        outputs[k][j] = _linear_eval_at_anchor(y_p, aq_vec[j], deriv, WrapExtrap())
+                        outputs[k][j] = _linear_eval_at_anchor(y_p, aq_vec[j], deriv, extrap_p)
                     end
                 end
             else
                 @inbounds for k in 2:K
                     _check_periodic_endpoints(bc, vecs[k])
                     for j in eachindex(xqs)
-                        outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq_vec[j], deriv, WrapExtrap())
+                        outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq_vec[j], deriv, extrap_p)
                     end
                 end
             end

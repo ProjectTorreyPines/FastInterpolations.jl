@@ -1,5 +1,6 @@
 # Julia package artifacts
 Manifest.toml
+LocalPreferences.toml
 
 # Internal development docs
 /docs/plans

@@ -150,12 +150,25 @@ end
 # Local Parameter Computation
 # ========================================
 
+# Shared `αs` formula for both variants. `map` on NTuples dispatches
+# per-element with concrete types — safe for heterogeneous `hs` / `Ls` /
+# `q_eval` tuples (e.g., Real + Float64 mixes), avoiding the Union-box risk
+# of `ntuple(d -> q_eval[d], Val(N))` where runtime-indexed lookup collapses
+# to an abstract return type. See MEMORY.md "ND Constructor Inferrability
+# Pattern" for the canonical precedent.
+@inline _alpha_of(q::Real, L::Real, h::Real) = (q - L) / h
+@inline _alphas_from_hs(q_eval, Ls, hs) = map(_alpha_of, q_eval, Ls, hs)
+
 """
     _compute_linear_params(q_eval, spacings, indices, Ls, Val(N)) -> (hs, αs)
 
-Compute cell widths and normalized coordinates for multilinear interpolation.
-- hs: cell widths for each dimension
-- αs: normalized coordinates α = (q - L) / h
+Cell widths and normalized coordinates for multilinear interpolation via
+spacing lookup. Used by persistent ND paths where `spacings` is precomputed.
+
+Shares the `αs` formula with `_compute_linear_params_lr` via `_alphas_from_hs`;
+only the `hs` derivation (spacing lookup) is variant-specific. Uses `map` over
+the `(spacings, indices)` tuple pair to avoid Union boxing when the axes carry
+heterogeneous spacing concrete types (ScalarSpacing + VectorSpacing mix).
 """
 @inline function _compute_linear_params(
         q_eval::Tuple{Vararg{Real, N}},
@@ -164,18 +177,64 @@ Compute cell widths and normalized coordinates for multilinear interpolation.
         Ls::Tuple{Vararg{Real, N}},
         ::Val{N}
     ) where {N}
-    hs = ntuple(Val(N)) do d
-        @inbounds _get_h(spacings[d], indices[d])
-    end
-    αs = ntuple(Val(N)) do d
-        @inbounds (q_eval[d] - Ls[d]) / hs[d]
-    end
-    return (hs, αs)
+    hs = map(_get_h, spacings, indices)
+    return (hs, _alphas_from_hs(q_eval, Ls, hs))
+end
+
+"""
+    _compute_linear_params_lr(q_eval, Ls, Rs, Val(N)) -> (hs, αs)
+
+Pair-variant (Phase 6) — computes per-axis cell width directly from
+`Rs[d] - Ls[d]` to avoid the idx-based spacing lookup (which is out-of-bounds
+for the seam cell at `idx_L == n` on periodic-exclusive axes — there's no
+`spacing.widths[n]`). For uniform Range grids via ScalarSpacing the cost is
+unchanged (1 subtraction vs 1 field load). For Vector axes this matches what
+VectorSpacing would return for interior cells and Just Works for the seam cell.
+
+Shares the `αs` formula with `_compute_linear_params` via `_alphas_from_hs`.
+`map(-, Rs, Ls)` dispatches per-element with concrete types (no Union-box risk
+from heterogeneous `Rs` / `Ls` tuples; matches MEMORY.md's inferrability rules).
+"""
+@inline function _compute_linear_params_lr(
+        q_eval::Tuple{Vararg{Real, N}},
+        Ls::Tuple{Vararg{Real, N}},
+        Rs::Tuple{Vararg{Real, N}},
+        ::Val{N}
+    ) where {N}
+    hs = map(-, Rs, Ls)
+    return (hs, _alphas_from_hs(q_eval, Ls, hs))
 end
 
 # ========================================
 # Multilinear Interpolation Kernel
 # ========================================
+
+# Shared Expr builder for the two multilinear generators below. Both variants
+# produce an identical flat 2^N straight-line unroll; only the per-axis corner
+# addressing differs. `make_idx_expr(d, bit)` returns the address expression
+# for axis `d` at corner bit `bit` ∈ {0, 1}:
+#   non-pair : (d, bit) -> :(indices[$d] + $bit)
+#   pair     : (d, bit) -> :(indices_pairs[$d][$(bit + 1)])
+# Runs at compile time only (inside @generated); closure cost is free.
+function _multilinear_sum_body(N::Int, make_idx_expr::Function)
+    num_corners = 1 << N  # 2^N
+    corner_exprs = []
+    for corner in 0:(num_corners - 1)
+        bits = ntuple(d -> (corner >> (d - 1)) & 1, N)
+        idx_expr = Expr(:tuple, [make_idx_expr(d, bits[d]) for d in 1:N]...)
+        weight_exprs = [
+            :(_linear_weight(ops[$d], αs[$d], hs[$d], Val($(bits[d]))))
+                for d in 1:N
+        ]
+        weight_expr = foldl((a, b) -> :($a * $b), weight_exprs)
+        push!(corner_exprs, :(@inbounds data[$idx_expr...] * $weight_expr))
+    end
+    sum_expr = foldl((a, b) -> :($a + $b), corner_exprs)
+    return quote
+        Base.@_inline_meta
+        @inbounds $sum_expr
+    end
+end
 
 """
     _multilinear_sum(data, indices, hs, αs, ops, Val(N))
@@ -189,6 +248,8 @@ For each corner indexed by bit pattern b ∈ {0,1}^N:
 The weight function depends on the evaluation operation:
 - EvalValue: (1-α) if b=0, α if b=1
 - EvalDeriv1: -1/h if b=0, 1/h if b=1
+
+Shares body with `_multilinear_sum_lr` via `_multilinear_sum_body`.
 """
 @generated function _multilinear_sum(
         data::AbstractArray{Tv, N},
@@ -198,40 +259,36 @@ The weight function depends on the evaluation operation:
         ops::NTuple{N, AbstractEvalOp},
         ::Val{N}
     ) where {Tv, N}
-    num_corners = 1 << N  # 2^N
+    return _multilinear_sum_body(N, (d, bit) -> :(indices[$d] + $bit))
+end
 
-    # Generate the unrolled sum over all corners
-    corner_exprs = []
-    for corner in 0:(num_corners - 1)
-        # Extract bit pattern for this corner
-        bits = ntuple(d -> (corner >> (d - 1)) & 1, N)
+"""
+    _multilinear_sum_lr(data, indices_pairs, hs, αs, ops, Val(N))
 
-        # Generate index expression: indices[d] + bit
-        idx_expr = Expr(:tuple, [:(indices[$d] + $(bits[d])) for d in 1:N]...)
+Pair-valued indices variant for zero-copy periodic ND evaluation (Phase 6).
 
-        # Generate weight expression: product of _linear_weight for each dimension
-        weight_exprs = [
-            :(
-                    _linear_weight(ops[$d], αs[$d], hs[$d], Val($(bits[d])))
-                ) for d in 1:N
-        ]
-        weight_expr = foldl((a, b) -> :($a * $b), weight_exprs)
+`indices_pairs[d] = (idx_L_d, idx_R_d)` — for each corner bit pattern
+`b ∈ {0,1}^N`, corner address on axis `d` is `indices_pairs[d][b_d + 1]`
+(bit 0 → left `idx_L_d`, bit 1 → right `idx_R_d`).
 
-        # data[idx...] * weight
-        push!(
-            corner_exprs, :(
-                @inbounds data[$idx_expr...] * $weight_expr
-            )
-        )
-    end
+Distinct name (not an overload) because at `N=0` `NTuple{0, Int}` and
+`NTuple{0, NTuple{2, Int}}` both collapse to `Tuple{}`, making
+overload-style dispatch ambiguous (caught by Aqua static analysis). Used
+only by periodic ND oneshot — non-periodic/persistent callers stay on
+`_multilinear_sum`.
 
-    # Sum all corners
-    sum_expr = foldl((a, b) -> :($a + $b), corner_exprs)
-
-    return quote
-        Base.@_inline_meta
-        @inbounds $sum_expr
-    end
+Shares body with `_multilinear_sum` via `_multilinear_sum_body`; only the
+corner-address expression differs — `indices[d] + bit` → `indices_pairs[d][bit + 1]`.
+"""
+@generated function _multilinear_sum_lr(
+        data::AbstractArray{Tv, N},
+        indices_pairs::NTuple{N, NTuple{2, Int}},
+        hs::NTuple{N},
+        αs::Tuple{Vararg{Real, N}},
+        ops::NTuple{N, AbstractEvalOp},
+        ::Val{N}
+    ) where {Tv, N}
+    return _multilinear_sum_body(N, (d, bit) -> :(indices_pairs[$d][$(bit + 1)]))
 end
 
 # ========================================

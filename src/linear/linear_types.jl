@@ -98,5 +98,7 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    return LinearInterpolant(x, y, extrap, search)
+    # Materialize WrapExtrap{Nothing} against grid so kernels never see the
+    # unmaterialized singleton when users construct the struct directly.
+    return LinearInterpolant(x, y, _resolve_extrap(extrap, x), search)
 end

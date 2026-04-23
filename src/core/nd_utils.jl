@@ -149,35 +149,99 @@ end
     error("unreachable: _first_fill_value called without FillExtrap")
 end
 
-# ── Mode → Mode tuple, then promote fill values ───────────────────────
+# ── _resolve_extrap: ND variants (expand + promote [+ materialize]) ──
+#
+# Continues the `_resolve_extrap` family from `src/core/periodic.jl` (primitive
+# per-axis + 1D bundled + ND bundled-with-data). These ND methods handle the
+# scalar→NTuple expansion, periodic-BC override, and FillExtrap value-type
+# promotion. Two shapes by arity:
+#
+# - 4-arg (extrap, bcs, Val(N), Tv): expand + promote. Returns NTuple with
+#   possibly-unmaterialized `WrapExtrap{Nothing}` on periodic axes. Used by
+#   callers that materialize separately (post-extension persistent paths
+#   where bc-aware materialize would trip the pre-extension `<` check).
+#
+# - 5-arg (extrap, bcs, grids, Val(N), Tv): above + per-axis materialize.
+#   `bcs::NTuple` → 3-arg primitive (bc-aware); `bcs::Nothing` → 2-arg primitive
+#   (grid-span only, no periodic override needed).
 
-@inline function _resolve_extrap_nd(extrap::AbstractExtrap, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}
+# ── 4-arg: expand + promote (no materialize) ──
+
+@inline function _resolve_extrap(extrap::AbstractExtrap, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}
     result = ntuple(_ -> extrap, Val(N))
     _validate_fill_values_nd(result)
     return _promote_extraps_nd(result, Tv)
 end
 
-@inline function _resolve_extrap_nd(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
+@inline function _resolve_extrap(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
     _check_mode_periodic_compat(extrap, bcs, Val(N))
     result = _mode_to_modes_with_periodic(extrap, bcs)
     _validate_fill_values_nd(result)
     return _promote_extraps_nd(result, Tv)
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap, N}}, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}
+@inline function _resolve_extrap(extrap::Tuple{Vararg{AbstractExtrap, N}}, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}
     _validate_fill_values_nd(extrap)
     return _promote_extraps_nd(extrap, Tv)
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap, N}}, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
+@inline function _resolve_extrap(extrap::Tuple{Vararg{AbstractExtrap, N}}, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
     _check_modes_periodic_compat(extrap, bcs, Val(N))
     result = _modes_to_modes_with_periodic(extrap, bcs)
     _validate_fill_values_nd(result)
     return _promote_extraps_nd(result, Tv)
 end
 
-@noinline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap}}, ::Any, ::Val{N}, ::Type) where {N}
+@noinline function _resolve_extrap(extrap::Tuple{Vararg{AbstractExtrap}}, ::Any, ::Val{N}, ::Type) where {N}
     throw(ArgumentError("extrap tuple must have $N elements to match grid dimensions, got $(length(extrap))"))
+end
+
+# ── 5-arg: above + per-axis materialize against `grids` ──
+#
+# `bcs::NTuple{N,AbstractBC}` → per-axis 3-arg primitive (bc-aware, used
+# pre-extension for adjoints / hetero OnTheFly where exclusive period matters).
+# `bcs::Nothing` → per-axis 2-arg primitive (no periodic concept, used by
+# adjoints without BC support).
+
+@inline function _resolve_extrap(
+        extrap::AbstractExtrap, ::Nothing,
+        grids::NTuple{N, AbstractVector}, ::Val{N}, ::Type{Tv}
+    ) where {N, Tv}
+    result = ntuple(_ -> extrap, Val(N))
+    _validate_fill_values_nd(result)
+    promoted = _promote_extraps_nd(result, Tv)
+    return map(_resolve_extrap, promoted, grids)
+end
+
+@inline function _resolve_extrap(
+        extrap::AbstractExtrap, bcs::NTuple{N, AbstractBC},
+        grids::NTuple{N, AbstractVector}, ::Val{N}, ::Type{Tv}
+    ) where {N, Tv}
+    _check_mode_periodic_compat(extrap, bcs, Val(N))
+    result = _mode_to_modes_with_periodic(extrap, bcs)
+    _validate_fill_values_nd(result)
+    promoted = _promote_extraps_nd(result, Tv)
+    return map(_resolve_extrap, promoted, bcs, grids)
+end
+
+@inline function _resolve_extrap(
+        extrap::NTuple{N, AbstractExtrap}, ::Nothing,
+        grids::NTuple{N, AbstractVector}, ::Val{N}, ::Type{Tv}
+    ) where {N, Tv}
+    _validate_fill_values_nd(extrap)
+    promoted = _promote_extraps_nd(extrap, Tv)
+    return map(_resolve_extrap, promoted, grids)
+end
+
+@inline function _resolve_extrap(
+        extrap::NTuple{N, AbstractExtrap}, bcs::NTuple{N, AbstractBC},
+        grids::NTuple{N, AbstractVector}, ::Val{N}, ::Type{Tv}
+    ) where {N, Tv}
+    _check_modes_periodic_compat(extrap, bcs, Val(N))
+    result = _modes_to_modes_with_periodic(extrap, bcs)
+    _validate_fill_values_nd(result)
+    promoted = _promote_extraps_nd(result, Tv)
+    return map(_resolve_extrap, promoted, bcs, grids)
 end
 
 @generated function _promote_extraps_nd(extraps::E, ::Type{Tv}) where {E <: Tuple{Vararg{AbstractExtrap}}, Tv}
@@ -495,8 +559,8 @@ end
     return q
 end
 
-@inline function _handle_axis_extrap(q, axis::AbstractVector, ::WrapExtrap)
-    return _wrap_to_domain(q, first(axis), last(axis))
+@inline function _handle_axis_extrap(q, axis::AbstractVector, extrap::WrapExtrap)
+    return _wrap_to_domain(q, extrap)
 end
 
 # ========================================
@@ -518,7 +582,7 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
 
 # Named helpers for oneshot map-based search — each receives concrete types per axis.
-# search_interval returns (idx, L, R) with the same concrete element type regardless
+# search_interval returns (idx_L, idx_R, L, R) with the same concrete element type regardless
 # of spacing type (ScalarSpacing or VectorSpacing), so results is homogeneous.
 # Persistent batch paths use _search_axis_adaptive instead (Bool-flag, no Union boxing).
 @inline _search_axis_oneshot(q, grid, spacing, search) =
@@ -526,15 +590,42 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 @inline _search_axis_oneshot_hint(q, grid, spacing, search, hint) =
     @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, spacing, q)
 @inline _getidx(r) = r[1]
-@inline _getL(r) = r[2]
-@inline _getR(r) = r[3]
+@inline _getidxR(r) = r[2]
+@inline _getL(r) = r[3]
+@inline _getR(r) = r[4]
+
+# BC-aware per-axis oneshot: threads per-axis bc into the Searcher so PeriodicBC{:exclusive}
+# dispatches in `search_interval` return (n, 1, x[n], x[1]+period) at seam cells.
+# The 4-tuple `(idx_L, idx_R, xL, xR)` per axis is destructured downstream via
+# `_getidx` + `_getidxR` for zero-copy corner addressing in ND kernels.
+@inline _search_axis_oneshot_bc(q, grid, spacing, search, bc) =
+    @inbounds search_interval(_resolve_search(grid, q, search, nothing, bc), grid, spacing, q)
+@inline _search_axis_oneshot_bc_hint(q, grid, spacing, search, hint, bc) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint, bc), grid, spacing, q)
+
+# Pair-valued interval tuple per axis: `indices_pairs[d] = (idx_L_d, idx_R_d)`.
+# Consumers (periodic-aware ND kernels) read corner addresses via
+# `indices_pairs[d][bit_d + 1]` — `bit=0 → idx_L`, `bit=1 → idx_R`. For non-periodic
+# axes `idx_R == idx_L + 1`; for periodic-exclusive axes at the seam `idx_R == 1`
+# (wrap) so eval reads the periodic neighbor without data extension.
+@inline _getpair(r) = (r[1], r[2])
+
+# Shared projector for all `_search_all_intervals*` overloads. Every variant
+# boils down to "run `map(search_fn, ...)` then extract `(indices, Ls, Rs)`
+# from each result". Only the index extractor differs:
+#   - `_getidx`  → `NTuple{N, Int}`              (single corner per axis)
+#   - `_getpair` → `NTuple{N, NTuple{2, Int}}`   (left/right pair per axis)
+# Centralizing the `(map(_getL, ...), map(_getR, ...))` tail keeps all variants
+# in sync when the 4-tuple `search_interval` return shape evolves.
+@inline _project_search_results(results, proj::F) where {F} =
+    (map(proj, results), map(_getL, results), map(_getR, results))
 
 @inline function _search_all_intervals(
         q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}}
     ) where {N}
     results = map(_search_axis_oneshot, q_evals, grids, spacings, searches)
-    return (map(_getidx, results), map(_getL, results), map(_getR, results))
+    return _project_search_results(results, _getidx)
 end
 
 # ----------------------------------------
@@ -670,7 +761,45 @@ end
         mono::NTuple{N, Bool},
     ) where {N}
     results = map(_search_axis_adaptive, q_evals, grids, spacings, policies, hints, mono)
-    return (map(_getidx, results), map(_getL, results), map(_getR, results))
+    return _project_search_results(results, _getidx)
+end
+
+# ────────────────────────────────────────────────────────
+# BC-aware per-axis search (Phase 6 — zero-copy periodic ND)
+# ────────────────────────────────────────────────────────
+# Parallel in purpose to `_search_all_intervals`, but threads per-axis `bcs`
+# into each `Searcher` so `PeriodicBC{:exclusive}` axes return
+# `(n, 1, x[n], x[1]+L)` at seam cells via the BC-aware `search_interval`
+# dispatch. Returns `(indices_pairs, Ls, Rs)` where
+# `indices_pairs[d] = (idx_L_d, idx_R_d)` — non-periodic axes have
+# `idx_R == idx_L + 1`; periodic-exclusive axes at seam have `idx_R == 1` (wrap).
+#
+# Structurally mirrors persistent's `_search_all_intervals`: one `map` that
+# resolves and searches per axis in a single body (persistent's
+# `_search_axis_adaptive` pattern). Hint preparation reuses `_ensure_hint_nd` —
+# the same helper persistent uses, so scalar vs batch semantics are identical:
+#   - batch with AutoSearch → monotone queries hit LinearBinarySearch walk
+#     (Ref tracks walk position across queries → intra-batch locality)
+#   - scalar / non-monotone → BinarySearch, Refs are unused and stack-elided
+# by Julia escape analysis → 0 heap bytes/call.
+
+# Per-axis inline: build Searcher + run search_interval in one body.
+# 3-arg `search_interval` (no spacing) — Range uses _search_direct's own step,
+# Vector uses _search_binary. Avoids VectorSpacing allocation entirely since
+# the pair-variant `_compute_linear_params_lr` derives `h` from `Rs[d] - Ls[d]`.
+@inline _search_axis_lr(grid, q, search, hint, bc) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint, bc), grid, q)
+
+@inline function _search_all_intervals_lr(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Union{Nothing, Tuple{Vararg{Base.RefValue{Int}, N}}},
+        bcs::Tuple{Vararg{AbstractBC, N}},
+    ) where {N}
+    hints_eff = _ensure_hint_nd(hints, Val(N))
+    results = map(_search_axis_lr, grids, q_evals, searches, hints_eff, bcs)
+    return _project_search_results(results, _getpair)
 end
 
 # Nothing hint + mono → delegate to stateless 4-arg (zero Ref alloc).
@@ -701,7 +830,7 @@ end
         hints::Tuple{Vararg{Base.RefValue{Int}, N}}
     ) where {N}
     results = map(_search_axis_oneshot_hint, q_evals, grids, spacings, searches, hints)
-    return (map(_getidx, results), map(_getL, results), map(_getR, results))
+    return _project_search_results(results, _getidx)
 end
 
 # ========================================
@@ -730,8 +859,8 @@ end
 
     x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
     y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
-    ix, xL, _ = _search_axis_adaptive(x_eval, grid_x, spacing_x, policy_x, hint_x, mono_x)
-    iy, yL, _ = _search_axis_adaptive(y_eval, grid_y, spacing_y, policy_y, hint_y, mono_y)
+    ix, _, xL, _ = _search_axis_adaptive(x_eval, grid_x, spacing_x, policy_x, hint_x, mono_x)
+    iy, _, yL, _ = _search_axis_adaptive(y_eval, grid_y, spacing_y, policy_y, hint_y, mono_y)
 
     return (x_eval, y_eval, ix, iy, xL, yL)
 end

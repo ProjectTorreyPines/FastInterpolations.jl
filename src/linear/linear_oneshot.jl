@@ -11,10 +11,6 @@
 # ║                      Zero type conversion overhead                        ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# PeriodicBC 1D dispatch uses the shared `_periodic_extend_1d_pooled!` helper
-# from core/periodic.jl (no method-specific logic needed — Linear has no
-# coefficient system, so extension alone suffices).
-
 # ========================================
 # Vector interpolation (in-place, zero-allocation)
 # ========================================
@@ -58,14 +54,8 @@ linear_interp!(output, x_vec, y_vec, sorted_queries; search=LinearBinarySearch(l
 """
 function linear_interp! end
 
-# Unified method for AbstractVector
 # Unified in-place entry point. Handles promotion internally via _promote_itp_inputs,
 # so no separate Real/Mixed-type wrapper is needed (same pattern as the scalar API).
-#
-# Hot-path (non-periodic) stays pool-free — `@with_pool` is hoisted into the
-# periodic helper below. Directly wrapping the whole entry point added ~5-25 ns
-# per call on small queries even when the pool was unused, a measurable
-# regression vs master on the `4_linear_oneshot/q00001` benchmark.
 function linear_interp!(
         output::AbstractVector,
         x::AbstractVector,
@@ -80,21 +70,9 @@ function linear_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     x_typed = _prepare_grid(x)
-    if _is_periodic_bc(bc)
-        return _linear_interp_periodic_vector!(output, x_typed, y, x_targets, bc, extrap, deriv, search)
-    end
-    searcher = _resolve_search(x_typed, x_targets, search, nothing)
-    return _linear_interp_loop!(output, x_typed, y, x_targets, extrap, deriv, searcher)
-end
-
-# Pool-scoped helper for the periodic oneshot vector path. Isolated so the
-# common non-periodic path above doesn't pay the `@with_pool` overhead.
-@inline @with_pool pool function _linear_interp_periodic_vector!(
-        output, x, y, x_targets, bc, extrap, deriv, search
-    )
-    x_eff, y_eff, extrap_eff = _periodic_extend_1d_pooled!(pool, x, y, bc, extrap)
-    searcher = _resolve_search(x_eff, x_targets, search, nothing)
-    return _linear_interp_loop!(output, x_eff, y_eff, x_targets, extrap_eff, deriv, searcher)
+    extrap_eff = _resolve_extrap(extrap, bc, x_typed, y)
+    searcher = _resolve_search(x_typed, x_targets, search, nothing, bc)
+    return _linear_interp_loop!(output, x_typed, y, x_targets, extrap_eff, deriv, searcher)
 end
 
 # Internal loop with AbstractExtrap dispatch and Searcher (type-stable)
@@ -124,22 +102,27 @@ end
         x::AbstractVector{Tg},
         y::AbstractVector,
         x_targets::AbstractVector,
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         op::O,
         searcher::S
     ) where {Tg, O <: AbstractEvalOp, S <: Searcher}
-    x_min, x_max = first(x), last(x)
+    # Fast-path bounds come from the materialized wrap domain (may extend past
+    # `last(x)` for `:exclusive` periodic, where the domain spans one period
+    # beyond the grid). Using `extrap._x_min/._x_max` avoids a misfire where an
+    # in-period query would be forced through the slow path just because it's
+    # past `last(x)`.
+    x_min, x_max = extrap._x_min, extrap._x_max
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
     if qmin >= x_min && qmax < x_max
-        # Fast path: all queries inside domain - use extension (no wrap overhead)
+        # Fast path: all queries inside domain — use extension (no wrap overhead)
         @inbounds for i in eachindex(x_targets, output)
             output[i] = _linear_eval_at_point(x, y, x_targets[i], ExtendExtrap(), op, searcher)
         end
     else
-        # Slow path: some queries outside - per-element wrap
+        # Slow path: some queries outside — per-element wrap via 2-arg form.
         @inbounds for i in eachindex(x_targets, output)
-            xi_wrapped = _wrap_to_domain(x_targets[i], x_min, x_max)
+            xi_wrapped = _wrap_to_domain(x_targets[i], extrap)
             output[i] = _linear_eval_at_point(x, y, xi_wrapped, ExtendExtrap(), op, searcher)
         end
     end
@@ -245,9 +228,9 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
-    idx, xL, xR = search_interval(searcher, x, xq)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL  # xq can be Dual here (preserves AD)
-    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], _get_inv_h(x, xR, xL), dL)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xR, xL), dL)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
@@ -265,25 +248,28 @@ end
     elseif xq_primal > last(x)
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
-    idx, xL, xR = search_interval(searcher, x, xq)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL
-    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], _get_inv_h(x, xR, xL), dL)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xR, xL), dL)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
 # Pass original xq (may be Dual) to _wrap_to_domain to preserve AD derivatives.
+# The 2-arg `_wrap_to_domain(xq, extrap)` reads `extrap._x_min/._x_max` directly —
+# materialization of `WrapExtrap{Nothing}` to `WrapExtrap{T}` happens upstream in
+# `_resolve_extrap`, so kernels only see the typed form.
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq,
-        ::WrapExtrap,
+        extrap::WrapExtrap,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    idx, xL, xR = search_interval(searcher, x, xq_wrapped)
+    xq_wrapped = _wrap_to_domain(xq, extrap)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     dL = xq_wrapped - xL
-    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], _get_inv_h(x, xR, xL), dL)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xR, xL), dL)
 end
 
 # Public scalar one-shot API.
@@ -302,20 +288,9 @@ end
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     x_typed = _prepare_grid(x)
-    if _is_periodic_bc(bc)
-        return _linear_interp_periodic_scalar(x_typed, y, xq, bc, extrap, deriv, search, hint)
-    end
-    searcher = _resolve_search(x_typed, xq, search, hint)
-    return _linear_eval_at_point(x_typed, y, xq, extrap, deriv, searcher)
-end
-
-# Pool-scoped scalar periodic helper — kept out of the hot non-periodic path.
-@inline @with_pool pool function _linear_interp_periodic_scalar(
-        x, y, xq, bc, extrap, deriv, search, hint
-    )
-    x_eff, y_eff, extrap_eff = _periodic_extend_1d_pooled!(pool, x, y, bc, extrap)
-    searcher = _resolve_search(x_eff, xq, search, hint)
-    return _linear_eval_at_point(x_eff, y_eff, xq, extrap_eff, deriv, searcher)
+    extrap_eff = _resolve_extrap(extrap, bc, x_typed, y)
+    searcher = _resolve_search(x_typed, xq, search, hint, bc)
+    return _linear_eval_at_point(x_typed, y, xq, extrap_eff, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗

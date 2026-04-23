@@ -127,6 +127,7 @@ end
     # Compute coefficients (d::Tc, a::Tc where Tc = _output_eltype(Tv, Tg))
     d, a = _compute_quadratic_coeffs(xc, yc, bc_p, spacing)
 
-    extrap_p = _promote_extrap(extrap, Tv)
+    # 3-arg: materialize WrapExtrap{Nothing} + promote FillExtrap value type.
+    extrap_p = _resolve_extrap(extrap, xc, Tv)
     return QuadraticInterpolant(xc, yc, spacing, a, d, extrap_p, search, bc_p)
 end

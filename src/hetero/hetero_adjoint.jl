@@ -449,7 +449,8 @@ function hetero_adjoint(
     Tg = _promote_grid_eltype(grids)
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
-    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    # 5-arg `_resolve_extrap` (no BC): expand + promote + per-axis 2-arg materialize.
+    extraps = _resolve_extrap(extrap, nothing, grids_typed, Val(N), Tg)
     return _build_hetero_nd_adjoint(grids_typed, queries, methods, extraps)
 end
 
@@ -489,7 +490,8 @@ function hetero_adjoint(
     Tg = _promote_grid_eltype(grids)
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
-    extraps = _resolve_extrap_nd(extrap, nothing, Val(N), Tg)
+    # 5-arg `_resolve_extrap` (no BC): expand + promote + per-axis 2-arg materialize.
+    extraps = _resolve_extrap(extrap, nothing, grids_typed, Val(N), Tg)
     return _build_hetero_nd_adjoint(grids_typed, queries, methods, extraps)
 end
 

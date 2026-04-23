@@ -44,6 +44,33 @@ end
     return x_min + mod(xi - x_min, period)
 end
 
+# ────────────────────────────────────────────────────────
+# Extrap-aware 2-arg wrapper
+# ────────────────────────────────────────────────────────
+#
+# Kernels hand off the materialized `WrapExtrap{T}` directly — no phantom
+# `first(x)`, `last(x)` arguments needed. `_resolve_extrap` is responsible for
+# materializing any `WrapExtrap{Nothing}` build-time placeholder into
+# `WrapExtrap{T}` before evaluation. An unmaterialized one reaching this
+# wrapper is a contract violation — the explicit `::WrapExtrap{Nothing}`
+# overload below raises a clear error instead of letting `nothing - nothing`
+# fail cryptically one layer down.
+
+@inline _wrap_to_domain(xi, e::WrapExtrap) =
+    _wrap_to_domain(xi, e._x_min, e._x_max)
+
+@inline _wrap_to_domain(::Any, ::WrapExtrap{Nothing}) =
+    _throw_unmaterialized_wrap_extrap()
+
+@noinline _throw_unmaterialized_wrap_extrap() =
+    throw(
+    ArgumentError(
+        "WrapExtrap reached evaluator unmaterialized (WrapExtrap{Nothing}). " *
+            "This is a contract violation — `_resolve_extrap` should have " *
+            "upgraded it to WrapExtrap{T} at the API boundary."
+    )
+)
+
 # ========================================
 # Endpoint Validation
 # ========================================
@@ -393,6 +420,157 @@ end
 # Value extension: append first element
 _extend_values(y::AbstractVector) = vcat(y, first(y))
 
+# ========================================
+# BC-Aware WrapExtrap Constructors
+# ========================================
+#
+# Constructor layering that replaces the old `_resolve_periodic_extrap` BC-factory
+# family. Depends on bc_types.jl (AbstractBC / PeriodicBC), so these live in
+# periodic.jl rather than eval_ops.jl (where the struct is declared).
+#
+# - `WrapExtrap(x, ::AbstractBC)` → delegate to `WrapExtrap(x)`. Covers NoBC,
+#   PeriodicBC{:inclusive}, CubicFit, QuadraticFit, and any future BC — the grid
+#   span already IS the wrap domain (inclusive) or BC is irrelevant to wrapping
+#   (non-periodic).
+# - `WrapExtrap(x, ::PeriodicBC{:exclusive, <:Real})` → `[first(x), first(x)+period)`,
+#   since `x` has NOT been extended at zero-copy oneshot call sites.
+# - `WrapExtrap(x::AbstractRange, ::PeriodicBC{:exclusive, Nothing})` → infer
+#   period from `step(x) * length(x)`.
+# - Non-Range + Nothing period → error.
+
+@inline WrapExtrap(x::AbstractVector, ::AbstractBC) = WrapExtrap(x)
+
+@inline function WrapExtrap(x::AbstractVector, bc::PeriodicBC{:exclusive, <:Real})
+    x_min = first(x)
+    # Route through `_resolve_exclusive_period` so Range grids get the same
+    # `period ≈ step(x) * length(x)` cross-check that persistent paths rely on.
+    # Without this, `linear_interp(range(0,step=0.1,length=10), y, q;
+    # bc=PeriodicBC(:exclusive, period=2.0))` would silently accept a period
+    # that disagrees with the grid's implied period — persistent throws on the
+    # same input, so oneshot must too.
+    period = _resolve_exclusive_period(x, bc)
+    x_max = x_min + period
+    # Virtual endpoint must lie strictly beyond the last grid point so the seam
+    # cell [x[end], x_min+period] is non-empty and the grid covers at most one
+    # period. Matches the contract formerly in `_periodic_extend_1d_pooled!`.
+    last(x) < x_max || _throw_wrap_virtual_endpoint_error(period, x_max, last(x))
+    T = typeof(x_max)
+    return WrapExtrap{T}(T(x_min), T(x_max))
+end
+
+@inline function WrapExtrap(x::AbstractRange, ::PeriodicBC{:exclusive, Nothing})
+    Tg_raw = eltype(x)
+    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
+    period = Tg(step(x)) * length(x)
+    x_min = Tg(first(x))
+    return WrapExtrap{Tg}(x_min, x_min + period)
+end
+
+WrapExtrap(::AbstractVector, ::PeriodicBC{:exclusive, Nothing}) =
+    _throw_wrap_nonrange_period_error()
+
+# Error helpers — `@noinline` keeps the `ArgumentError` formatting out of the
+# happy-path inlined body (cold-path I-cache friendly). Mirrors the existing
+# `_throw_periodic_*` pattern earlier in this file.
+@noinline function _throw_wrap_virtual_endpoint_error(period, x_max, last_x)
+    throw(
+        ArgumentError(
+            "period=$period places virtual endpoint at $x_max, " *
+                "not after last grid point x[end]=$last_x"
+        )
+    )
+end
+
+@noinline _throw_wrap_nonrange_period_error() =
+    throw(
+    ArgumentError(
+        "PeriodicBC(:exclusive) requires explicit `period` for non-Range grid"
+    )
+)
+
+# ========================================
+# Extrap Resolution (_resolve_extrap)
+# ========================================
+#
+# Single name for every extrap materialization / validation step. `extrap` is
+# always the 1st arg — consistent with `_resolve_search`, `_resolve_coeffs`,
+# `_resolve_grididx` naming family. Layers (dispatched by arg shape):
+#
+# 1D primitives (per-axis):
+#   (extrap, x)                          — grid-only; upgrade {Nothing} or passthrough
+#   (extrap, bc, x)                      — BC-aware; PeriodicBC forces WrapExtrap
+#
+# 1D bundled: validate + materialize
+#   (extrap, bc, x, y)                   — `:inclusive` endpoint check + primitive
+#
+# ND: expand + promote + per-axis materialize (1-line for pre-extension / adjoints)
+#   (extrap, bcs, grids, Val(N), Tv)     — with BCs → per-axis 3-arg primitive
+#   (extrap, ::Nothing, grids, Val(N), Tv) — no BCs → per-axis 2-arg primitive
+#
+# ND expand-only (no materialize — post-extension 2-step callers):
+#   (extrap, bcs, Val(N), Tv)            — same shape as old `_resolve_extrap_nd`
+#
+# ND bundled (oneshot): slice validation + materialize
+#   (extraps, bcs, grids, data, Val(N))  — zero-copy ND oneshot entry
+#
+# Kernels only ever see fully-materialized `WrapExtrap{T}`; the `{Nothing}`
+# variant is a build-time-only placeholder that never reaches query paths.
+
+# ── Primitive: 2-arg (no BC info; for Hermite family + non-periodic persistent) ──
+@inline _resolve_extrap(::WrapExtrap{Nothing}, x::AbstractVector) = WrapExtrap(x)
+@inline _resolve_extrap(extrap::AbstractExtrap, ::AbstractVector) = extrap
+
+# ── Primitive: 3-arg (grid + value type — composes WrapExtrap upgrade with FillExtrap promote) ──
+# Collapses the common `_resolve_extrap(extrap, x)` + `_promote_extrap(·, Tv)` pair at
+# 1D persistent-interpolant entries. Orthogonal sub-operations:
+#   - `_resolve_extrap(·, x)`      : WrapExtrap{Nothing} → WrapExtrap{T} (grid-span)
+#   - `_promote_extrap(·, Tv)`     : FillExtrap{Int}(v) → FillExtrap{Tv}(convert(Tv, v))
+# Both passthrough for extraps that don't match their respective trigger.
+@inline _resolve_extrap(extrap, x::AbstractVector, ::Type{Tv}) where {Tv} =
+    _promote_extrap(_resolve_extrap(extrap, x), Tv)
+
+# ── Primitive: 3-arg (BC-aware) ──
+# PeriodicBC forces WrapExtrap regardless of user's extrap. The explicit
+# `WrapExtrap{Nothing}` tiebreaker resolves the ambiguity between the
+# "PeriodicBC forces" rule and the "Nothing upgrade" rule when both match.
+@inline _resolve_extrap(::WrapExtrap{Nothing}, bc::PeriodicBC, x::AbstractVector) = WrapExtrap(x, bc)
+@inline _resolve_extrap(::AbstractExtrap, bc::PeriodicBC, x::AbstractVector) = WrapExtrap(x, bc)
+@inline _resolve_extrap(::WrapExtrap{Nothing}, ::AbstractBC, x::AbstractVector) = WrapExtrap(x)
+@inline _resolve_extrap(extrap::AbstractExtrap, ::AbstractBC, ::AbstractVector) = extrap
+
+# ── 1D Bundled: validate + materialize ──
+"""
+    _resolve_extrap(extrap, bc, x, y) -> AbstractExtrap
+
+Zero-copy 1D oneshot entry: validate `:inclusive` endpoint (`y[1] ≈ y[end]`) when
+required, then hand off to the BC-aware 3-arg primitive.
+"""
+@inline function _resolve_extrap(
+        extrap::AbstractExtrap, bc::AbstractBC,
+        x::AbstractVector, y::AbstractVector
+    )
+    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y)
+    return _resolve_extrap(extrap, bc, x)
+end
+
+# ── ND Bundled (oneshot): per-axis slice validation + materialize ──
+"""
+    _resolve_extrap(extraps, bcs, grids, data, Val(N)) -> NTuple{N, AbstractExtrap}
+
+Zero-copy ND oneshot entry: validate `:inclusive` axes' first/last slice
+equality on `data`, then materialize per-axis via the 3-arg primitive.
+"""
+@inline function _resolve_extrap(
+        extraps::NTuple{N, AbstractExtrap},
+        bcs::NTuple{N, AbstractBC},
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray,
+        ::Val{N},
+    ) where {N}
+    _validate_periodic_slices_nd(data, bcs, Val(N))
+    return map(_resolve_extrap, extraps, bcs, grids)
+end
+
 """
     _periodic_extend_1d(x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)
 
@@ -402,8 +580,8 @@ periodic — callers invoke this once and feed the result into their normal
 build flow without branching on `_is_periodic_bc`:
 
 - Non-periodic `bc` → `(x, y, extrap)` passthrough.
-- `PeriodicBC{:inclusive}` → `(x, y, WrapExtrap())` (validates `y[1] ≈ y[end]`).
-- `PeriodicBC{:exclusive}` → `(x_ext, y_ext, WrapExtrap())` where the grid/values
+- `PeriodicBC{:inclusive}` → `(x, y, typed WrapExtrap)` (validates `y[1] ≈ y[end]`).
+- `PeriodicBC{:exclusive}` → `(x_ext, y_ext, typed WrapExtrap)` where the grid/values
   are extended by one virtual endpoint via `_extend_exclusive` (heap copy
   consistent with existing non-periodic persistent-path copy semantics).
 
@@ -418,12 +596,20 @@ periodicity, not just on the grid representation.
         bc::AbstractBC,
         extrap::AbstractExtrap
     )
-    _is_periodic_bc(bc) || return x, y, extrap
-    x_ext, y_ext = _prepare_periodic(x, y, bc)
-    # Endpoint validation is meaningful only for `:inclusive` — `:exclusive` sets
-    # `y_ext[end] = y_ext[1]` by construction so the check is trivially true.
-    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_ext)
-    return x_ext, y_ext, WrapExtrap()
+    if _is_periodic_bc(bc)
+        x_ext, y_ext = _prepare_periodic(x, y, bc)
+        # Endpoint validation is meaningful only for `:inclusive` — `:exclusive`
+        # sets `y_ext[end] = y_ext[1]` by construction so the check is trivially true.
+        bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_ext)
+        # After extension, `last(x_ext) - first(x_ext) == period`, so the grid-span
+        # `WrapExtrap(x_ext)` already carries the correct wrap domain — no need
+        # for the BC-aware constructor here.
+        return x_ext, y_ext, WrapExtrap(x_ext)
+    end
+    # Non-periodic: still materialize in case the user passed `WrapExtrap()` (legacy
+    # singleton); `_resolve_extrap` upgrades it to `WrapExtrap(x)` and leaves
+    # other extraps untouched.
+    return x, y, _resolve_extrap(extrap, bc, x)
 end
 
 """
@@ -449,7 +635,10 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
         bc::AbstractBC,
         extrap::AbstractExtrap
     ) where {Tg, Tv}
-    _is_periodic_bc(bc) || return x, y, extrap
+    if !_is_periodic_bc(bc)
+        # Non-periodic: still materialize in case user passed `WrapExtrap()` singleton.
+        return x, y, _resolve_extrap(extrap, bc, x)
+    end
     # Duck-safe extension buffer type: promote Integer / Complex{Integer} grids
     # to float so the extended pool buffer and `_CachedRange` `inv_h` field can
     # hold `inv(step)`. Duck grids (Dual, Measurement, ...) keep their type so
@@ -459,12 +648,7 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
     if bc isa PeriodicBC{:exclusive}
         period = _resolve_exclusive_period(x, bc)
         x_end = first(x) + Tg_ext(period)
-        last(x) < x_end || throw(
-            ArgumentError(
-                "period=$period places virtual endpoint at $x_end, " *
-                    "not after last grid point x[end]=$(last(x))"
-            )
-        )
+        last(x) < x_end || _throw_wrap_virtual_endpoint_error(period, x_end, last(x))
         n = length(x)
         if x isa AbstractRange
             x_p = _to_float_adding_endpoint(x, Tg_ext)
@@ -482,7 +666,9 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
     # `:exclusive` path constructs `y_p[end] = y_p[1]` by extension, so the check
     # is trivially satisfied. Run validation only for `:inclusive`.
     bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_p)
-    return x_p, y_p, WrapExtrap()
+    # After extension (or no-op for inclusive), the extended grid span IS the wrap
+    # domain — use `WrapExtrap(x_p)` directly, no BC-aware construction needed.
+    return x_p, y_p, WrapExtrap(x_p)
 end
 
 """
@@ -503,21 +689,22 @@ letting user-facing oneshot entry points use a single, non-misleading call.
 # ND Exclusive Endpoint Extension
 # ========================================
 
-# Compile-time predicates on the `bcs` tuple. `@generated` inspects the
-# concrete tuple type at specialization time and collapses to `true`/`false`,
-# so non-periodic callers (CubicFit, QuadraticFit, NoBC, ...) pay ZERO runtime
-# cost — no loop, no per-axis check, no validation. Crucial for the ND oneshot
-# hot path where `_prepare_periodic_nd_pooled` is called per query.
-@generated function _has_any_periodic_bc(bcs::NTuple{N, AbstractBC}, ::Val{N}) where {N}
+# Compile-time predicate "does any axis have a BC of type T?" on the `bcs` tuple.
+# `@generated` inspects the concrete tuple type at specialization time and
+# collapses to `true`/`false`, so non-periodic callers (CubicFit, QuadraticFit,
+# NoBC, ...) pay ZERO runtime cost — no loop, no per-axis check, no validation.
+# Crucial for the ND oneshot hot path where `_prepare_periodic_nd_pooled` is
+# called per query.
+#
+# Callers pass `::Type{T}` as a `Val{T}`-like singleton so the type parameter
+# is visible to the generator. Example:
+#   _has_any_bc(bcs, Val(N), PeriodicBC)              # any periodic axis?
+#   _has_any_bc(bcs, Val(N), PeriodicBC{:exclusive})  # any exclusive axis?
+@generated function _has_any_bc(
+        bcs::NTuple{N, AbstractBC}, ::Val{N}, ::Type{T}
+    ) where {N, T}
     for d in 1:N
-        fieldtype(bcs, d) <: PeriodicBC && return :(true)
-    end
-    return :(false)
-end
-
-@generated function _has_any_exclusive_bc(bcs::NTuple{N, AbstractBC}, ::Val{N}) where {N}
-    for d in 1:N
-        fieldtype(bcs, d) <: PeriodicBC{:exclusive} && return :(true)
+        fieldtype(bcs, d) <: T && return :(true)
     end
     return :(false)
 end
@@ -543,79 +730,88 @@ function _prepare_periodic_nd(
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
     ) where {Tg, Tv, N}
-    # Ultra-fast path: if no axis is periodic at all, skip everything.
-    # `@generated` predicate collapses to a literal `true`/`false` at compile
-    # time, so common non-periodic ND calls (CubicFit, NoBC, etc.) pay zero
-    # cost — no validation, no extension, no loop.
-    _has_any_periodic_bc(bcs, Val(N)) || return (grids, data, bcs)
+    return _prepare_periodic_nd_impl(grids, data, bcs, _extend_grid_vcat, _allocate_array)
+end
 
-    # Validate :inclusive axes: for each periodic axis with endpoint=:inclusive,
-    # the first and last slices of `data` along that axis must match within
-    # tolerance. `:exclusive` axes do not need this — extension constructs the
-    # matching slice by definition.
+# Heap-based Vector grid extender (build-time; non-pool). Range axes never reach
+# this callback — they're handled inline via `_to_float_adding_endpoint`.
+@inline _extend_grid_vcat(grid_d::AbstractVector, x_end, ::Type{Tg}) where {Tg} =
+    vcat(grid_d, x_end)
+
+# Heap-based data allocator. `final_sizes` is NTuple{N, Int}; `Tv` is value type.
+@inline _allocate_array(final_sizes::NTuple{N, Int}, ::Type{Tv}) where {N, Tv} =
+    Array{Tv, N}(undef, final_sizes)
+
+# ────────────────────────────────────────────────────────
+# Shared core for `_prepare_periodic_nd` and `_prepare_periodic_nd_pooled`.
+# Both variants share the ultra-fast path, validation, per-axis grid+bc
+# resolution, and data copy/fill pattern. They differ ONLY in:
+#   1. Vector-axis grid extension: vcat vs pool-acquire
+#   2. Data allocation: `Array(undef, ...)` vs pool-acquire
+# Injected via two callbacks (callable structs for the pool variant so the
+# pool reference is carried via a type parameter — concrete dispatch, no Box).
+# ────────────────────────────────────────────────────────
+@inline function _prepare_periodic_nd_impl(
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        bcs::NTuple{N, AbstractBC},
+        extend_vector_grid::F_ext,
+        allocate_data::F_alloc,
+    ) where {Tg, Tv, N, F_ext, F_alloc}
+    # Ultra-fast path: non-periodic call-sites collapse this to a no-op via
+    # the `@generated` predicate (zero runtime cost on the hot non-periodic path).
+    _has_any_bc(bcs, Val(N), PeriodicBC) || return (grids, data, bcs)
+    # Validate :inclusive endpoint matching (:exclusive extension is constructive,
+    # so no pre-validation needed for exclusive axes).
     _validate_periodic_slices_nd(data, bcs, Val(N))
+    # Fast path: purely inclusive → no extension needed.
+    _has_any_bc(bcs, Val(N), PeriodicBC{:exclusive}) || return (grids, data, bcs)
 
-    # Fast path: no exclusive axes (but some inclusive ones — validation done above)
-    _has_any_exclusive_bc(bcs, Val(N)) || return (grids, data, bcs)
-
-    # Per-axis grid extension + BC resolution via map (preserves concrete types per-element,
-    # unlike Vector{AbstractVector} intermediary which erases concrete grid types)
+    # Per-axis grid extension + bc resolution. `map` with `ntuple(identity, Val(N))`
+    # dispatches per-element with concrete (grid, bc) types → each closure call
+    # compiles to a specialization with concrete return type. A `do d …` with
+    # runtime indexing `bcs[d]` / `grids[d]` over a heterogeneous tuple would
+    # leave the return type as `Union{...}` → heap-boxed Refs (~2 KB/query).
+    # See MEMORY.md "ND Constructor Inferrability Pattern".
     processed = map(ntuple(identity, Val(N)), grids, bcs) do d, grid_d, bc_d
         bc_d isa PeriodicBC{:exclusive} || return (grid_d, bc_d)
-
         period = _resolve_exclusive_period(grid_d, bc_d)
         x_end = first(grid_d) + Tg(period)
-
-        # Validate: virtual endpoint must be strictly after last grid point
-        last(grid_d) < x_end || throw(
-            ArgumentError(
-                "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
-                    "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"
-            )
-        )
-
-        # Type-stable grid extension: Range → _CachedRange, Vector → Vector
-        grid_ext = if grid_d isa AbstractRange
-            _to_float_adding_endpoint(grid_d, Tg)
-        else
-            vcat(grid_d, x_end)
-        end
-        bc_ext = _with_resolved_period(bc_d, period)
-        return (grid_ext, bc_ext)
+        last(grid_d) < x_end ||
+            _throw_prepare_periodic_nd_endpoint(d, period, x_end, last(grid_d))
+        # Range axes use type-preserving `_to_float_adding_endpoint`; Vector axes
+        # delegate to the caller-supplied `extend_vector_grid` (vcat vs pool).
+        grid_ext = grid_d isa AbstractRange ?
+            _to_float_adding_endpoint(grid_d, Tg) :
+            extend_vector_grid(grid_d, x_end, Tg)
+        return (grid_ext, _with_resolved_period(bc_d, period))
     end
     grids_out = map(first, processed)
     bcs_out = map(last, processed)
 
-    # Extend data: allocate final shape once, then fill slices (avoids O(k) cat copies)
+    # Extend data: caller-supplied allocator + shared fill. `_extend_all_slices!`
+    # is @generated so the per-axis `d` is literal at each call — avoids the
+    # 48 B/query Union box that a runtime `for d in 1:N` loop produced on
+    # heterogeneous axis configurations.
     final_sizes = ntuple(Val(N)) do d
         bcs[d] isa PeriodicBC{:exclusive} ? size(data, d) + 1 : size(data, d)
     end
-    data_out = Array{Tv, N}(undef, final_sizes)
-
-    # Copy original data into the sub-array
+    data_out = allocate_data(final_sizes, Tv)
     orig_inds = ntuple(d -> 1:size(data, d), Val(N))
     copyto!(view(data_out, orig_inds...), data)
-
-    # Fill extended slices dim-by-dim (earlier extensions are visible to later dims)
-    for d in 1:N
-        bcs[d] isa PeriodicBC{:exclusive} || continue
-        nd = size(data, d)  # original size in this dim
-        # Build valid ranges: already-extended dims use full size, others use original
-        cur_ranges = ntuple(Val(N)) do i
-            if i == d
-                1:1  # placeholder, overridden below
-            elseif i < d && bcs[i] isa PeriodicBC{:exclusive}
-                1:(size(data, i) + 1)  # already extended
-            else
-                1:size(data, i)
-            end
-        end
-        src_inds = ntuple(i -> i == d ? (1:1) : cur_ranges[i], Val(N))
-        dst_inds = ntuple(i -> i == d ? ((nd + 1):(nd + 1)) : cur_ranges[i], Val(N))
-        copyto!(view(data_out, dst_inds...), view(data_out, src_inds...))
-    end
+    _extend_all_slices!(data_out, data, bcs, Val(N))
 
     return (grids_out, data_out, bcs_out)
+end
+
+# Cold-path error body (kept out of the happy-path inlined code).
+@noinline function _throw_prepare_periodic_nd_endpoint(d, period, x_end, last_x)
+    throw(
+        ArgumentError(
+            "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
+                "virtual endpoint at $x_end, not after last grid point x[end]=$last_x"
+        )
+    )
 end
 
 # ========================================
@@ -641,69 +837,32 @@ via `acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
     ) where {Tg, Tv, N}
-    # Ultra-fast path — see `_prepare_periodic_nd` for rationale.
-    _has_any_periodic_bc(bcs, Val(N)) || return (grids, data, bcs)
-    _validate_periodic_slices_nd(data, bcs, Val(N))
-    _has_any_exclusive_bc(bcs, Val(N)) || return (grids, data, bcs)
-
-    # Build (extended_grid, resolved_bc) pair per axis.
-    #
-    # CRITICAL: use `map(f, grids, bcs)` rather than `ntuple(Val(N)) do d ... end`.
-    # `map` dispatches per-element with concrete (grid, bc) types → each f call
-    # compiles to a specialization with concrete return type. `ntuple do d` with
-    # runtime indexing `bcs[d]` / `grids[d]` over a heterogeneous tuple leaves the
-    # return type as Union{Vector{Tg}, _CachedRange{Tg}, ...} → every tuple slot
-    # becomes a heap-boxed Ref, causing ~2 KB/query allocation on mixed grids.
-    # See MEMORY.md "ND Constructor Inferrability Pattern".
-    # 3-arg `map` with `ntuple(identity, Val(N))` threads the axis index `d` into
-    # the closure so error messages can name the failing axis, while still keeping
-    # per-element concrete-type dispatch (no runtime Union boxing). Matches the
-    # pattern used by the non-pooled sibling `_prepare_periodic_nd`.
-    processed = map(ntuple(identity, Val(N)), grids, bcs) do d, grid_d, bc_d
-        bc_d isa PeriodicBC{:exclusive} || return (grid_d, bc_d)
-
-        period = _resolve_exclusive_period(grid_d, bc_d)
-        x_end = first(grid_d) + Tg(period)
-        last(grid_d) < x_end || throw(
-            ArgumentError(
-                "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
-                    "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"
-            )
-        )
-
-        grid_ext = if grid_d isa AbstractRange
-            _to_float_adding_endpoint(grid_d, Tg)
-        else
-            n = length(grid_d)
-            g_ext = acquire!(pool, Tg, n + 1)
-            @inbounds copyto!(g_ext, 1, grid_d, 1, n)
-            @inbounds g_ext[n + 1] = x_end
-            g_ext
-        end
-        return (grid_ext, _with_resolved_period(bc_d, period))
-    end
-    grids_out = map(first, processed)
-    bcs_out = map(last, processed)
-
-    # Extend data: pool-allocate final shape, then fill slices
-    final_sizes = ntuple(Val(N)) do d
-        bcs[d] isa PeriodicBC{:exclusive} ? size(data, d) + 1 : size(data, d)
-    end
-    data_out = acquire!(pool, Tv, final_sizes)
-
-    # Copy original data into the sub-array
-    orig_inds = ntuple(d -> 1:size(data, d), Val(N))
-    copyto!(view(data_out, orig_inds...), data)
-
-    # Fill extended slices dim-by-dim (earlier extensions are visible to later dims).
-    # `@generated` unrolls the N calls at compile time, so each `bcs[d]` index is
-    # literal and resolves to the concrete per-axis BC type — no runtime Union box.
-    # A naive `for d in 1:N` loop with runtime `d` leaked 48 bytes/query on mixed
-    # grids; `ntuple(Val(N)) do d ... end` returning NTuple{N,Nothing} allocated 64.
-    _extend_all_slices!(data_out, data, bcs, Val(N))
-
-    return (grids_out, data_out, bcs_out)
+    return _prepare_periodic_nd_impl(
+        grids, data, bcs,
+        _PoolGridExtender(pool),
+        _PoolDataAllocator(pool),
+    )
 end
+
+# Callable structs carry the pool as a type-parameterized field, so Julia
+# dispatches with concrete `_PoolGridExtender{P}` / `_PoolDataAllocator{P}` —
+# no runtime boxing of the `pool::AbstractArrayPool` abstract reference.
+struct _PoolGridExtender{P <: AbstractArrayPool}
+    pool::P
+end
+@inline function (e::_PoolGridExtender)(grid_d::AbstractVector, x_end, ::Type{Tg}) where {Tg}
+    n = length(grid_d)
+    g_ext = acquire!(e.pool, Tg, n + 1)
+    @inbounds copyto!(g_ext, 1, grid_d, 1, n)
+    @inbounds g_ext[n + 1] = x_end
+    return g_ext
+end
+
+struct _PoolDataAllocator{P <: AbstractArrayPool}
+    pool::P
+end
+@inline (a::_PoolDataAllocator)(final_sizes::NTuple{N, Int}, ::Type{Tv}) where {N, Tv} =
+    acquire!(a.pool, Tv, final_sizes)
 
 # Per-axis slice extension with compile-time dimension index `d`.
 @inline function _extend_slice_along!(

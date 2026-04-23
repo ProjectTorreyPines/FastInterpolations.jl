@@ -53,6 +53,35 @@ using FastInterpolations: WrapExtrap, NoBC, PeriodicBC, NoExtrap, ClampExtrap,
 
         # :exclusive Nothing + Vector grid → cannot infer, must error.
         @test_throws ArgumentError WrapExtrap([0.0, 1.0, 2.0, 3.0], bc_auto)
+
+        # Non-Float grids (2.2) — Int grid with Float period promotes to Float64.
+        e_int = WrapExtrap([0, 1, 2, 3], PeriodicBC(endpoint = :exclusive, period = 4.0))
+        @test e_int isa WrapExtrap{Float64}
+        @test e_int._x_min === 0.0 && e_int._x_max === 4.0
+
+        # Float32 grid + Float32 period preserves Float32.
+        e_f32 = WrapExtrap(
+            Float32[0, 1, 2, 3],
+            PeriodicBC(endpoint = :exclusive, period = 4.0f0),
+        )
+        @test e_f32 isa WrapExtrap{Float32}
+        @test e_f32._x_min === 0.0f0 && e_f32._x_max === 4.0f0
+
+        # Int Range + :exclusive + Nothing period: inference via step × length.
+        e_rng = WrapExtrap(0:3, PeriodicBC(endpoint = :exclusive))
+        @test e_rng isa WrapExtrap
+        @test e_rng._x_min == 0 && e_rng._x_max == 4
+    end
+
+    @testset "_resolve_extrap — passthrough for already-typed WrapExtrap (3.2)" begin
+        # Already-materialized WrapExtrap{Float64} must not be re-wrapped. The 3-arg
+        # (extrap, bc, x) primitive with NoBC passes non-Wrap extraps through `=== extrap`.
+        e_typed = WrapExtrap([0.0, 1.0, 2.0])
+        # 2-arg primitive: materialized WrapExtrap is not :Nothing, so passthrough.
+        @test _resolve_extrap(e_typed, [0.0, 1.0, 2.0]) === e_typed
+        # 3-arg primitive (NoBC) passthrough on already-typed WrapExtrap too.
+        # (PeriodicBC would re-materialize via WrapExtrap(x, bc) — not a passthrough.)
+        @test _resolve_extrap(e_typed, NoBC(), [0.0, 1.0, 2.0]) === e_typed
     end
 
     @testset "_resolve_extrap — primitive 2-arg (extrap, x)" begin

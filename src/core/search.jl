@@ -473,8 +473,20 @@ Via Julia's default-arg expansion, each policy has 2 source methods (`::Nothing`
 # Composes policy resolution + searcher creation + (optional) BC threading.
 # `bc=NoBC()` (default) is used by the 99% non-periodic path — bit-identical codegen to
 # pre-BC-refactor. `bc::PeriodicBC(...)` is supplied only by oneshot periodic entries.
+#
+# For `PeriodicBC{:exclusive, Nothing}` the period is resolved from the grid here so
+# the stored Searcher always carries a concrete period. Without this, the seam branch
+# in `search_interval` (`x[1] + s.bc.period`) reduces to `Float + Nothing` → MethodError.
+# Persistent interpolants materialize the period at construction; oneshot entries never
+# did before this change.
 @inline _resolve_search(grid, q, search, hint, bc::AbstractBC = NoBC()) =
-    _to_searcher(_resolve_search_policy(grid, q, search, hint), hint, bc)
+    _to_searcher(_resolve_search_policy(grid, q, search, hint), hint, _resolve_bc_period(grid, bc))
+
+# Resolve an unresolved `:exclusive` period against the grid (e.g. inferred from a Range
+# step × length); no-op for every other BC so non-periodic dispatch is unchanged.
+@inline _resolve_bc_period(_, bc::AbstractBC) = bc
+@inline _resolve_bc_period(grid, bc::PeriodicBC{:exclusive, Nothing}) =
+    _with_resolved_period(bc, _resolve_exclusive_period(grid, bc))
 
 # ========================================
 # 2. Base Implementations

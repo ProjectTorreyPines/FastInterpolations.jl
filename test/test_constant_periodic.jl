@@ -84,6 +84,81 @@ using FastInterpolations: _CachedRange
         @test itp.extrap isa WrapExtrap
     end
 
+    @testset "Exclusive — auto-infer period on 1D + ND oneshot (regression)" begin
+        # See test_linear_periodic.jl for the parent regression note.
+        x = range(0.5, step = 1.0, length = 3)
+        y = [10.0, 20.0, 30.0]
+        bc_auto = PeriodicBC(endpoint = :exclusive)
+        bc_expl = PeriodicBC(endpoint = :exclusive, period = 3.0)
+
+        # 1D scalar + vector oneshot at and near seam
+        @test constant_interp(x, y, 3.0; bc = bc_auto, side = LeftSide()) ≈
+              constant_interp(x, y, 3.0; bc = bc_expl, side = LeftSide()) atol = 1.0e-12
+        xq = [0.5, 2.5, 3.0, 3.4]
+        @test constant_interp(x, y, xq; bc = bc_auto) ≈
+              constant_interp(x, y, xq; bc = bc_expl) atol = 1.0e-12
+
+        # ND oneshot with mixed BC
+        x2 = range(0.0, 1.0, length = 4)
+        data = [10xi + yj for xi in x, yj in x2]
+        q = (3.0, 0.5)
+        @test constant_interp((x, x2), data, q; bc = (bc_auto, NoBC())) ≈
+              constant_interp((x, x2), data, q; bc = (bc_expl, NoBC())) atol = 1.0e-12
+    end
+
+    @testset "Exclusive — Vector grid seam at xq == x[n] exactly (T-1)" begin
+        x_vec = [0.0, 0.25, 0.5, 0.75]
+        y = [10.0, 20.0, 30.0, 40.0]
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        itp = constant_interp(x_vec, y; bc = bc, side = LeftSide())
+        @test itp(0.75) ≈ 40.0 atol = 1.0e-12
+        @test constant_interp(x_vec, y, 0.75; bc = bc, side = LeftSide()) ≈ 40.0 atol = 1.0e-12
+    end
+
+    @testset "Exclusive — ND persistent rejects period-too-small at build (T-3)" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = range(0.0, 1.0, length = 4)
+        data = rand(4, 4)
+        @test_throws ArgumentError constant_interp(
+            (x, y), data;
+            bc = (PeriodicBC(endpoint = :exclusive, period = 2.5), NoBC()),
+        )
+    end
+
+    @testset "Exclusive — ND axis-2 periodic only (T-6)" begin
+        x = range(0.0, 1.0, length = 5)
+        y = range(0.5, step = 1.0, length = 3)
+        data = [i + 10j for i in 1:5, j in 1:3]
+        bc = (NoBC(), PeriodicBC(endpoint = :exclusive, period = 3.0))
+        itp = constant_interp((x, y), data; bc = bc)
+        @test itp((0.5, 0.5)) ≈ itp((0.5, 3.5)) atol = 1.0e-12
+        @test constant_interp((x, y), data, (0.5, 3.0); bc = bc) ≈ itp((0.5, 3.0)) atol = 1.0e-12
+    end
+
+    @testset "Exclusive — 1D RightSide at seam edges (T-7)" begin
+        # Grid-point convention: at `xq == x[i]` exactly, constant interp returns
+        # `y[i]` regardless of `side` (the point is unambiguous). The seam-wrap
+        # to y[1] only activates for xq STRICTLY inside the seam cell (xq > x[n]).
+        # This testset pins down both edges of the seam cell for RightSide.
+        x = range(0.5, step = 1.0, length = 3)
+        y = [10.0, 20.0, 30.0]
+        bc = PeriodicBC(endpoint = :exclusive, period = 3.0)
+        itp_R = constant_interp(x, y; bc = bc, side = RightSide())
+        itp_L = constant_interp(x, y; bc = bc, side = LeftSide())
+
+        # At grid point x[n]: both sides agree on y[n].
+        @test itp_R(2.5) ≈ 30.0 atol = 1.0e-12
+        @test itp_L(2.5) ≈ 30.0 atol = 1.0e-12
+        @test constant_interp(x, y, 2.5; bc = bc, side = RightSide()) ≈ 30.0 atol = 1.0e-12
+
+        # Strictly inside seam (xq > x[n]): RightSide reads virtual right corner = y[1].
+        @test itp_R(2.7) ≈ 10.0 atol = 1.0e-12
+        @test constant_interp(x, y, 2.7; bc = bc, side = RightSide()) ≈ 10.0 atol = 1.0e-12
+
+        # Approaching virtual endpoint from inside still reads y[1] (wrap).
+        @test itp_R(3.4999) ≈ 10.0 atol = 1.0e-12
+    end
+
     @testset "Oneshot scalar + vector + in-place — matches persistent" begin
         x = range(0.5, step = 1.0, length = 3)
         y = [10.0, 20.0, 30.0]

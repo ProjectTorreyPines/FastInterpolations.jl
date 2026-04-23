@@ -463,10 +463,10 @@ end
 
 @noinline _throw_wrap_nonrange_period_error() =
     throw(
-        ArgumentError(
-            "PeriodicBC(:exclusive) requires explicit `period` for non-Range grid"
-        )
+    ArgumentError(
+        "PeriodicBC(:exclusive) requires explicit `period` for non-Range grid"
     )
+)
 
 # ========================================
 # Extrap Resolution (_resolve_extrap)
@@ -514,9 +514,9 @@ end
 # `WrapExtrap{Nothing}` tiebreaker resolves the ambiguity between the
 # "PeriodicBC forces" rule and the "Nothing upgrade" rule when both match.
 @inline _resolve_extrap(::WrapExtrap{Nothing}, bc::PeriodicBC, x::AbstractVector) = WrapExtrap(x, bc)
-@inline _resolve_extrap(::AbstractExtrap,      bc::PeriodicBC, x::AbstractVector) = WrapExtrap(x, bc)
-@inline _resolve_extrap(::WrapExtrap{Nothing}, ::AbstractBC,   x::AbstractVector) = WrapExtrap(x)
-@inline _resolve_extrap(extrap::AbstractExtrap, ::AbstractBC,  ::AbstractVector)  = extrap
+@inline _resolve_extrap(::AbstractExtrap, bc::PeriodicBC, x::AbstractVector) = WrapExtrap(x, bc)
+@inline _resolve_extrap(::WrapExtrap{Nothing}, ::AbstractBC, x::AbstractVector) = WrapExtrap(x)
+@inline _resolve_extrap(extrap::AbstractExtrap, ::AbstractBC, ::AbstractVector) = extrap
 
 # ── 1D Bundled: validate + materialize ──
 """
@@ -786,10 +786,12 @@ end
 
 # Cold-path error body (kept out of the happy-path inlined code).
 @noinline function _throw_prepare_periodic_nd_endpoint(d, period, x_end, last_x)
-    throw(ArgumentError(
-        "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
-            "virtual endpoint at $x_end, not after last grid point x[end]=$last_x"
-    ))
+    throw(
+        ArgumentError(
+            "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
+                "virtual endpoint at $x_end, not after last grid point x[end]=$last_x"
+        )
+    )
 end
 
 # ========================================

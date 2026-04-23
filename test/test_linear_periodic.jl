@@ -150,12 +150,12 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
         # Scalar oneshot at seam cell (xq = 3.0 is inside [x[n]=2.5, x[1]+period=3.5))
         @test linear_interp(x, y, 3.0; bc = bc_auto) ≈ 20.0 atol = 1.0e-12
         @test linear_interp(x, y, 3.0; bc = bc_auto) ≈
-              linear_interp(x, y, 3.0; bc = bc_expl) atol = 1.0e-12
+            linear_interp(x, y, 3.0; bc = bc_expl) atol = 1.0e-12
 
         # Vector oneshot mixing seam + non-seam queries
         xq = [0.5, 1.0, 2.5, 3.0, 3.4]
         @test linear_interp(x, y, xq; bc = bc_auto) ≈
-              linear_interp(x, y, xq; bc = bc_expl) atol = 1.0e-12
+            linear_interp(x, y, xq; bc = bc_expl) atol = 1.0e-12
     end
 
     @testset "ND Exclusive — auto-infer period on ND oneshot (regression)" begin
@@ -168,7 +168,7 @@ using FastInterpolations: _is_periodic_bc, _CachedRange
 
         q = (3.0, 0.5)                                  # axis-1 seam, axis-2 interior
         @test linear_interp((x, y), data, q; bc = bc_auto) ≈
-              linear_interp((x, y), data, q; bc = bc_expl) atol = 1.0e-12
+            linear_interp((x, y), data, q; bc = bc_expl) atol = 1.0e-12
     end
 
     @testset "Extrap is forced to WrapExtrap on periodic path" begin

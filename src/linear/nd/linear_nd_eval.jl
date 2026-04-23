@@ -224,7 +224,7 @@ function _multilinear_sum_body(N::Int, make_idx_expr::Function)
         idx_expr = Expr(:tuple, [make_idx_expr(d, bits[d]) for d in 1:N]...)
         weight_exprs = [
             :(_linear_weight(ops[$d], αs[$d], hs[$d], Val($(bits[d]))))
-            for d in 1:N
+                for d in 1:N
         ]
         weight_expr = foldl((a, b) -> :($a * $b), weight_exprs)
         push!(corner_exprs, :(@inbounds data[$idx_expr...] * $weight_expr))

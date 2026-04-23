@@ -93,17 +93,17 @@ using FastInterpolations: _CachedRange
 
         # 1D scalar + vector oneshot at and near seam
         @test constant_interp(x, y, 3.0; bc = bc_auto, side = LeftSide()) ≈
-              constant_interp(x, y, 3.0; bc = bc_expl, side = LeftSide()) atol = 1.0e-12
+            constant_interp(x, y, 3.0; bc = bc_expl, side = LeftSide()) atol = 1.0e-12
         xq = [0.5, 2.5, 3.0, 3.4]
         @test constant_interp(x, y, xq; bc = bc_auto) ≈
-              constant_interp(x, y, xq; bc = bc_expl) atol = 1.0e-12
+            constant_interp(x, y, xq; bc = bc_expl) atol = 1.0e-12
 
         # ND oneshot with mixed BC
         x2 = range(0.0, 1.0, length = 4)
         data = [10xi + yj for xi in x, yj in x2]
         q = (3.0, 0.5)
         @test constant_interp((x, x2), data, q; bc = (bc_auto, NoBC())) ≈
-              constant_interp((x, x2), data, q; bc = (bc_expl, NoBC())) atol = 1.0e-12
+            constant_interp((x, x2), data, q; bc = (bc_expl, NoBC())) atol = 1.0e-12
     end
 
     @testset "Exclusive — Vector grid seam at xq == x[n] exactly (T-1)" begin

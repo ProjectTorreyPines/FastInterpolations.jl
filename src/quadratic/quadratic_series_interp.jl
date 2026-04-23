@@ -626,8 +626,8 @@ end
 # DerivOp{N≥4} + ClampOrFill: zero without loading a/d/y
 @inline function _eval_single_quadratic_with_extrap(
         y::AbstractVector{Tv},
-        ::AbstractVector{Tv},
-        ::AbstractVector{Tv},
+        ::AbstractVector{Tc},
+        ::AbstractVector{Tc},
         ::Int,
         ::Tg,
         ::Tg,

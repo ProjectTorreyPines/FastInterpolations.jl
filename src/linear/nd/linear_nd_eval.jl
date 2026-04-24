@@ -165,7 +165,7 @@ end
 Cell widths and normalized coordinates for multilinear interpolation via
 spacing lookup. Used by persistent ND paths where `spacings` is precomputed.
 
-Shares the `αs` formula with `_compute_linear_params_lr` via `_alphas_from_hs`;
+Shares the `αs` formula with `_compute_linear_params_stencil` via `_alphas_from_hs`;
 only the `hs` derivation (spacing lookup) is variant-specific. Uses `map` over
 the `(spacings, indices)` tuple pair to avoid Union boxing when the axes carry
 heterogeneous spacing concrete types (ScalarSpacing + VectorSpacing mix).
@@ -182,9 +182,9 @@ heterogeneous spacing concrete types (ScalarSpacing + VectorSpacing mix).
 end
 
 """
-    _compute_linear_params_lr(q_eval, Ls, Rs, Val(N)) -> (hs, αs)
+    _compute_linear_params_stencil(q_eval, Ls, Rs, Val(N)) -> (hs, αs)
 
-Pair-variant (Phase 6) — computes per-axis cell width directly from
+Stencil-variant — computes per-axis cell width directly from
 `Rs[d] - Ls[d]` to avoid the idx-based spacing lookup (which is out-of-bounds
 for the seam cell at `idx_L == n` on periodic-exclusive axes — there's no
 `spacing.widths[n]`). For uniform Range grids via ScalarSpacing the cost is
@@ -195,7 +195,7 @@ Shares the `αs` formula with `_compute_linear_params` via `_alphas_from_hs`.
 `map(-, Rs, Ls)` dispatches per-element with concrete types (no Union-box risk
 from heterogeneous `Rs` / `Ls` tuples; matches MEMORY.md's inferrability rules).
 """
-@inline function _compute_linear_params_lr(
+@inline function _compute_linear_params_stencil(
         q_eval::Tuple{Vararg{Real, N}},
         Ls::Tuple{Vararg{Real, N}},
         Rs::Tuple{Vararg{Real, N}},
@@ -213,8 +213,8 @@ end
 # produce an identical flat 2^N straight-line unroll; only the per-axis corner
 # addressing differs. `make_idx_expr(d, bit)` returns the address expression
 # for axis `d` at corner bit `bit` ∈ {0, 1}:
-#   non-pair : (d, bit) -> :(indices[$d] + $bit)
-#   pair     : (d, bit) -> :(indices_pairs[$d][$(bit + 1)])
+#   single-idx : (d, bit) -> :(indices[$d] + $bit)
+#   stencil    : (d, bit) -> :(stencils[$d][$(bit + 1)])
 # Runs at compile time only (inside @generated); closure cost is free.
 function _multilinear_sum_body(N::Int, make_idx_expr::Function)
     num_corners = 1 << N  # 2^N
@@ -249,7 +249,7 @@ The weight function depends on the evaluation operation:
 - EvalValue: (1-α) if b=0, α if b=1
 - EvalDeriv1: -1/h if b=0, 1/h if b=1
 
-Shares body with `_multilinear_sum_lr` via `_multilinear_sum_body`.
+Shares body with `_multilinear_sum_stencil` via `_multilinear_sum_body`.
 """
 @generated function _multilinear_sum(
         data::AbstractArray{Tv, N},
@@ -263,32 +263,35 @@ Shares body with `_multilinear_sum_lr` via `_multilinear_sum_body`.
 end
 
 """
-    _multilinear_sum_lr(data, indices_pairs, hs, αs, ops, Val(N))
+    _multilinear_sum_stencil(data, stencils, hs, αs, ops, Val(N))
 
-Pair-valued indices variant for zero-copy periodic ND evaluation (Phase 6).
+Stencil-variant for zero-copy periodic ND evaluation.
 
-`indices_pairs[d] = (idx_L_d, idx_R_d)` — for each corner bit pattern
-`b ∈ {0,1}^N`, corner address on axis `d` is `indices_pairs[d][b_d + 1]`
-(bit 0 → left `idx_L_d`, bit 1 → right `idx_R_d`).
+`stencils[d]::_IdxStencil{2}` carries `(idx_L_d, idx_R_d)` — for each corner
+bit pattern `b ∈ {0,1}^N`, corner address on axis `d` is
+`stencils[d][b_d + 1]` (bit 0 → left `idx_L_d`, bit 1 → right `idx_R_d`).
+For non-periodic cells, `idx_R == idx_L + 1`; for periodic-exclusive seam
+cells, `idx_R == 1` (wrap) so the kernel reads the wrapped neighbor without
+any data extension.
 
 Distinct name (not an overload) because at `N=0` `NTuple{0, Int}` and
-`NTuple{0, NTuple{2, Int}}` both collapse to `Tuple{}`, making
+`NTuple{0, _IdxStencil{2}}` both collapse to `Tuple{}`, making
 overload-style dispatch ambiguous (caught by Aqua static analysis). Used
 only by periodic ND oneshot — non-periodic/persistent callers stay on
 `_multilinear_sum`.
 
 Shares body with `_multilinear_sum` via `_multilinear_sum_body`; only the
-corner-address expression differs — `indices[d] + bit` → `indices_pairs[d][bit + 1]`.
+corner-address expression differs — `indices[d] + bit` → `stencils[d][bit + 1]`.
 """
-@generated function _multilinear_sum_lr(
+@generated function _multilinear_sum_stencil(
         data::AbstractArray{Tv, N},
-        indices_pairs::NTuple{N, NTuple{2, Int}},
+        stencils::NTuple{N, _IdxStencil{2}},
         hs::NTuple{N},
         αs::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
         ::Val{N}
     ) where {Tv, N}
-    return _multilinear_sum_body(N, (d, bit) -> :(indices_pairs[$d][$(bit + 1)]))
+    return _multilinear_sum_body(N, (d, bit) -> :(stencils[$d][$(bit + 1)]))
 end
 
 # ========================================

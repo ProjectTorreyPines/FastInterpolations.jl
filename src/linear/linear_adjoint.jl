@@ -181,7 +181,7 @@ function _fixup_linear_anchor_state!(
         state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
         aq = anchors[i]
         anchors[i] = typeof(aq)(
-            aq.idxL, aq.idxR, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha
+            aq.stencil, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha
         )
     end
     return nothing

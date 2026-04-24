@@ -35,8 +35,8 @@ function _constant_interp_nd_oneshot(
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
     q_eval = _handle_all_extraps(query, grids, extraps_eff)
-    indices_pairs, Ls, Rs = _search_all_intervals_lr(q_eval, grids, searches, hints, bcs)
-    return _constant_nd_kernel_lr(data, indices_pairs, Rs, side_vals, q_eval, Ls)
+    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids, searches, hints, bcs)
+    return _constant_nd_kernel_stencil(data, stencils, Rs, side_vals, q_eval, Ls)
 end
 
 """
@@ -70,8 +70,8 @@ function _constant_interp_nd_oneshot_batch!(
             output[k] = oob_val; continue
         end
         q_eval = _handle_all_extraps(query_k, grids, extraps_eff)
-        indices_pairs, Ls, Rs = _search_all_intervals_lr(q_eval, grids, policies, hints, bcs)
-        output[k] = _constant_nd_kernel_lr(data, indices_pairs, Rs, side_vals, q_eval, Ls)
+        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids, policies, hints, bcs)
+        output[k] = _constant_nd_kernel_stencil(data, stencils, Rs, side_vals, q_eval, Ls)
     end
     return output
 end

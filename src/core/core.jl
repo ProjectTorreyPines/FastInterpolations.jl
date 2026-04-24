@@ -10,6 +10,7 @@ include("polyfit_kernels.jl")       # 4. Boundary condition computation kernels 
 include("grid_spacing.jl")     # 5. ScalarSpacing, VectorSpacing
 include("cached_range.jl")     # 5b. _CachedRange struct + _to_float (Range → _CachedRange normalizer)
 include("search.jl")           # 6. Search policy + interval search
+include("idx_stencil.jl")      # 6a. _IdxStencil{K} — wrap-aware per-axis index stencil
 include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)
 include("utils.jl")            # 7. Shared utilities (1D)
 include("periodic.jl")         # 8. Periodic BC helpers (wrapping, validation, exclusive endpoint)

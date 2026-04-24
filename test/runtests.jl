@@ -30,6 +30,7 @@ else
     include("test_abstract_types.jl")
     include("test_grid_spacing.jl")
     include("test_search.jl")
+    include("test_idx_stencil.jl")
     include("test_anchor_common.jl")
     include("test_search_anchor_integration.jl")
     include("test_search_context_normalization.jl")

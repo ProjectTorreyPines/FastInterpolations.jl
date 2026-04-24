@@ -202,22 +202,25 @@ Computes cell widths, distances from left edge, side-based offsets, and returns 
 end
 
 """
-    _constant_nd_kernel_lr(data, indices_pairs, Rs, sides, q_eval, Ls)
+    _constant_nd_kernel_stencil(data, stencils, Rs, sides, q_eval, Ls)
 
-Pair-valued indices variant for zero-copy periodic ND evaluation (Phase 6).
+Stencil-variant for zero-copy periodic ND evaluation.
 
-`indices_pairs[d] = (idx_L_d, idx_R_d)` — corner address on axis `d` is
-`indices_pairs[d][offset_d + 1]` (offset 0 → left idx_L, offset 1 → right idx_R).
-Cell width `h_d = Rs[d] - Ls[d]` — sidesteps the `_get_h(spacings[d], indices[d])`
+`stencils[d]::_IdxStencil{2}` carries `(idx_L_d, idx_R_d)` — corner address
+on axis `d` is `stencils[d][offset_d + 1]` (offset 0 → left idx_L, offset 1
+→ right idx_R). For non-periodic cells, `idx_R == idx_L + 1`; for
+periodic-exclusive seam cells, `idx_R == 1` (wrap) so the kernel reads the
+wrapped neighbor without any data extension. Cell width
+`h_d = Rs[d] - Ls[d]` — sidesteps the `_get_h(spacings[d], indices[d])`
 lookup which would be out-of-bounds for periodic-exclusive seam cells.
 
-Distinct name (not an overload) because at `N=0` the two possible
-`NTuple{0, ...}` element types both collapse to `Tuple{}`, making
+Distinct name (not an overload) because at `N=0` `NTuple{0, Int}` and
+`NTuple{0, _IdxStencil{2}}` both collapse to `Tuple{}`, making
 overload-style dispatch ambiguous (caught by Aqua static analysis).
 """
-@generated function _constant_nd_kernel_lr(
+@generated function _constant_nd_kernel_stencil(
         data::AbstractArray{Tv, N},
-        indices_pairs::NTuple{N, NTuple{2, Int}},
+        stencils::NTuple{N, _IdxStencil{2}},
         Rs::Tuple{Vararg{Real, N}},
         sides::Tuple{Vararg{AbstractSide, N}},
         q_eval::Tuple{Vararg{Real, N}},
@@ -242,11 +245,11 @@ overload-style dispatch ambiguous (caught by Aqua static analysis).
         push!(exprs, :($offset_sym = _compute_single_offset(sides[$d], $h_sym, $dL_sym)))
     end
 
-    # Corner address: offset 0 → indices_pairs[d][1] (idx_L); offset 1 → indices_pairs[d][2] (idx_R)
+    # Corner address: offset 0 → stencils[d][1] (idx_L); offset 1 → stencils[d][2] (idx_R)
     idx_parts = Expr[]
     for d in 1:N
         offset_sym = Symbol("offset_", d)
-        push!(idx_parts, :(indices_pairs[$d][$offset_sym + 1]))
+        push!(idx_parts, :(stencils[$d][$offset_sym + 1]))
     end
     idx_expr = Expr(:tuple, idx_parts...)
 

@@ -50,16 +50,44 @@ Anchored evaluation is faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search.
 """
 struct _ConstantAnchoredQuery{Tg, Tq <: Real}
-    idxL::Int                  # left cell index
-    idxR::Int                  # right cell index (idxL+1 normally; 1 at periodic-exclusive seam)
+    # Corner-index stencil: `stencil[1]` is the left index (idxL),
+    # `stencil[2]` is the right index (idxR). For non-periodic cells
+    # `idxR == idxL + 1`; for periodic-exclusive seam cells `idxR == 1` (wrap).
+    # Unified across all wrap-aware methods via `_IdxStencil{K}`
+    # (src/core/idx_stencil.jl). Legacy `aq.idxL` / `aq.idxR` accessors are
+    # preserved via `getproperty` below.
+    stencil::_IdxStencil{2}
     xq::Tq                     # query point (possibly wrapped, may be Dual for AD)
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     h::Tg                      # interval width
     dL::Tq                     # offset from left boundary (same type as xq for AD)
 end
 
-# Convenience: single type param for backward compat (non-AD paths)
-_ConstantAnchoredQuery{T}(idxL, idxR, xq, state, h, dL) where {T} = _ConstantAnchoredQuery{T, T}(idxL, idxR, xq, state, h, dL)
+# ──────────────────────────────────────────────────────────────
+# Virtual property accessors — legacy `aq.idxL` / `aq.idxR` ergonomics
+# ──────────────────────────────────────────────────────────────
+# Val-dispatch pattern (see linear_anchor.jl for rationale): one method per
+# property symbol so the compiler specializes each access to a single `getfield`
+# (+ tuple index) with concrete return type — no boxing from union-wide
+# `getproperty` return.
+@inline Base.getproperty(aq::_ConstantAnchoredQuery, s::Symbol) = _get_const_prop(aq, Val(s))
+@inline _get_const_prop(aq::_ConstantAnchoredQuery, ::Val{:idxL}) = getfield(aq, :stencil)[1]
+@inline _get_const_prop(aq::_ConstantAnchoredQuery, ::Val{:idxR}) = getfield(aq, :stencil)[2]
+@inline _get_const_prop(aq::_ConstantAnchoredQuery, ::Val{s}) where {s} = getfield(aq, s)
+@inline Base.propertynames(::_ConstantAnchoredQuery) =
+    (:stencil, :idxL, :idxR, :xq, :state, :h, :dL)
+
+# Outer constructors — preserve both the legacy 6-arg positional pair shape
+# (used by `_anchor_query`, Series one-shot, adjoint) and the stencil-native form.
+@inline _ConstantAnchoredQuery(idxL::Int, idxR::Int, xq::Tq, state::UInt8, h::Tg, dL::Tq) where {Tg, Tq} =
+    _ConstantAnchoredQuery{Tg, Tq}(_pair(idxL, idxR), xq, state, h, dL)
+
+# Convenience: single type param for backward compat (non-AD paths) — Tq==Tg
+@inline _ConstantAnchoredQuery{T}(idxL::Int, idxR::Int, xq, state, h, dL) where {T} =
+    _ConstantAnchoredQuery{T, T}(_pair(idxL, idxR), xq, state, h, dL)
+# Parametric stencil-native alias used by legacy typeof(aq)(...) fixup sites.
+@inline _ConstantAnchoredQuery{Tg, Tq}(idxL::Int, idxR::Int, xq, state, h, dL) where {Tg, Tq} =
+    _ConstantAnchoredQuery{Tg, Tq}(_pair(idxL, idxR), xq, state, h, dL)
 
 # ========================================
 # Anchor Construction

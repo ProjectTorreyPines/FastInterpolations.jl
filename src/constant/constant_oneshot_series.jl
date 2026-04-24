@@ -126,7 +126,11 @@ end
 # ║                         VECTOR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-@with_pool pool function constant_interp!(
+# Zero-pool vector-batch: Q outer × K inner, mirrors the Linear counterpart
+# with `side` + `x_last` propagation. `x_last = Tg(last(x))` on the ORIGINAL
+# grid — preserves the right-continuous short-circuit inside
+# `_constant_eval_at_anchor` for inclusive queries at `xq == x[n]`.
+@inline function constant_interp!(
         outputs::AbstractVector{<:AbstractVector},
         x::AbstractVector{Tg},
         s::Series,
@@ -142,52 +146,40 @@ end
     K = n_series(s)
     _validate_series_outputs(outputs, K, length(xqs))
     vecs = _series_vectors(s)
+    Tg_actual = eltype(x)
 
     if _is_periodic_bc(bc)
-        x_p, y_p_first, extrap_p = _periodic_extend_1d_pooled!(pool, x, first(vecs), bc, WrapExtrap())
-        Tg_p = eltype(x_p)
-        x_last = Tg_p(last(x_p))
-        searcher = _resolve_search(x_p, xqs, search, nothing)
-        aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg_p, Tg_p}, length(xqs))
-        _fill_anchors!(aq_vec, x_p, xqs, Val(:constant), true, searcher)
-        @inbounds for j in eachindex(xqs)
-            outputs[1][j] = _constant_eval_at_anchor(y_p_first, x_last, aq_vec[j], deriv, side, extrap_p)
+        if bc isa PeriodicBC{:inclusive}
+            @inbounds for k in 1:K
+                _check_periodic_endpoints(bc, vecs[k])
+            end
         end
-        if K > 1
-            if bc isa PeriodicBC{:exclusive}
-                n = length(x)
-                Tv_buf = eltype(y_p_first)
-                y_p = acquire!(pool, Tv_buf, length(x_p))
-                @inbounds for k in 2:K
-                    copyto!(y_p, 1, vecs[k], 1, n)
-                    y_p[n + 1] = vecs[k][1]
-                    for j in eachindex(xqs)
-                        outputs[k][j] = _constant_eval_at_anchor(y_p, x_last, aq_vec[j], deriv, side, extrap_p)
-                    end
-                end
-            else
-                @inbounds for k in 2:K
-                    _check_periodic_endpoints(bc, vecs[k])
-                    for j in eachindex(xqs)
-                        outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq_vec[j], deriv, side, extrap_p)
-                    end
-                end
+        extrap_p = _resolve_extrap(NoExtrap(), bc, x, first(vecs))
+        searcher = _resolve_search(x, xqs, search, nothing, bc)
+        x_last   = @inbounds Tg_actual(last(x))
+        @inbounds for j in eachindex(xqs)
+            xq_wrapped = _wrap_to_domain(xqs[j], extrap_p)
+            idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
+            h  = xR - xL
+            dL = xq_wrapped - xL
+            xq_promoted = oftype(dL, xq_wrapped)
+            aq = _ConstantAnchoredQuery(idxL, idxR, xq_promoted, IN_DOMAIN, h, dL)
+            for k in 1:K
+                outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap_p)
             end
         end
         return outputs
     end
 
-    # Domain check: NoExtrap → throws if OOB, returns InBounds(); others → pass-through
+    # Non-periodic: `_anchor_query` handles WrapExtrap query-wrap + OOB state.
     extrap_eff = _check_domain(x, xqs, extrap)
-    searcher = _resolve_search(x, xqs, search, nothing)
-    wrap = extrap_eff isa WrapExtrap
-    x_last = Tg(last(x))
-    # Pre-compute anchors via pool, then K outer × Q inner for cache locality
-    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg, Tg}, length(xqs))
-    _fill_anchors!(aq_vec, x, xqs, Val(:constant), wrap, searcher)
-    @inbounds for k in 1:K
-        for j in eachindex(xqs)
-            outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq_vec[j], deriv, side, extrap_eff)
+    searcher   = _resolve_search(x, xqs, search, nothing)
+    wrap       = extrap_eff isa WrapExtrap
+    x_last     = @inbounds Tg_actual(last(x))
+    @inbounds for j in eachindex(xqs)
+        aq = _anchor_query(x, xqs[j], Val(:constant), wrap, searcher)
+        for k in 1:K
+            outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap_eff)
         end
     end
     return outputs

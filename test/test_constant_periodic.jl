@@ -686,4 +686,64 @@ using FastInterpolations: _CachedRange
         @test out[2] == sitp(3.5)[2]
     end
 
+    # ============================================================
+    # Series OneShot Vector-Batch + PeriodicBC — Zero-Copy (Stage 2)
+    # ============================================================
+
+    function _alloc_constant_series_vector_range_exclusive()
+        x = range(0.0, step = 2π / 16, length = 16)
+        s = Series(sin.(x), cos.(x))
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        constant_interp!(outs, x, s, xqs; bc = bc)
+        constant_interp!(outs, x, s, xqs; bc = bc)
+        return @allocated constant_interp!(outs, x, s, xqs; bc = bc)
+    end
+
+    function _alloc_constant_series_vector_vector_exclusive()
+        x = [0.0, 0.5, 1.5, 3.0, 5.0]
+        s = Series(sin.(x), cos.(x))
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        constant_interp!(outs, x, s, xqs; bc = bc)
+        constant_interp!(outs, x, s, xqs; bc = bc)
+        return @allocated constant_interp!(outs, x, s, xqs; bc = bc)
+    end
+
+    function _alloc_constant_series_vector_inclusive()
+        x = collect(range(0.0, 2π, length = 17))
+        s = Series(sin.(x), cos.(x))
+        bc = PeriodicBC()
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        constant_interp!(outs, x, s, xqs; bc = bc)
+        constant_interp!(outs, x, s, xqs; bc = bc)
+        return @allocated constant_interp!(outs, x, s, xqs; bc = bc)
+    end
+
+    function _alloc_constant_series_vector_nobc()
+        x = range(0.0, step = 2π / 16, length = 16)
+        s = Series(sin.(x), cos.(x))
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        constant_interp!(outs, x, s, xqs)
+        constant_interp!(outs, x, s, xqs)
+        return @allocated constant_interp!(outs, x, s, xqs)
+    end
+
+    @testset "Series vector + PeriodicBC zero-alloc — Range exclusive (T-series-alloc)" begin
+        @test _alloc_constant_series_vector_range_exclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Series vector + PeriodicBC zero-alloc — Vector exclusive (T-series-alloc)" begin
+        @test _alloc_constant_series_vector_vector_exclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Series vector + PeriodicBC zero-alloc — inclusive (T-series-alloc)" begin
+        @test _alloc_constant_series_vector_inclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Series vector + NoBC zero-alloc (T-series-alloc)" begin
+        @test _alloc_constant_series_vector_nobc() <= ALLOC_THRESHOLD
+    end
+
 end

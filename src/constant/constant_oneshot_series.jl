@@ -39,7 +39,7 @@
     extrap_p = _resolve_extrap(NoExtrap(), bc, x, first(vecs))
     xq_wrapped = _wrap_to_domain(xq, extrap_p)
     idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
-    h  = xR - xL
+    h = xR - xL
     dL = xq_wrapped - xL
     # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual).
     xq_promoted = oftype(dL, xq_wrapped)
@@ -156,11 +156,11 @@ end
         end
         extrap_p = _resolve_extrap(NoExtrap(), bc, x, first(vecs))
         searcher = _resolve_search(x, xqs, search, nothing, bc)
-        x_last   = @inbounds Tg_actual(last(x))
+        x_last = @inbounds Tg_actual(last(x))
         @inbounds for j in eachindex(xqs)
             xq_wrapped = _wrap_to_domain(xqs[j], extrap_p)
             idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
-            h  = xR - xL
+            h = xR - xL
             dL = xq_wrapped - xL
             xq_promoted = oftype(dL, xq_wrapped)
             aq = _ConstantAnchoredQuery(idxL, idxR, xq_promoted, IN_DOMAIN, h, dL)
@@ -173,9 +173,9 @@ end
 
     # Non-periodic: `_anchor_query` handles WrapExtrap query-wrap + OOB state.
     extrap_eff = _check_domain(x, xqs, extrap)
-    searcher   = _resolve_search(x, xqs, search, nothing)
-    wrap       = extrap_eff isa WrapExtrap
-    x_last     = @inbounds Tg_actual(last(x))
+    searcher = _resolve_search(x, xqs, search, nothing)
+    wrap = extrap_eff isa WrapExtrap
+    x_last = @inbounds Tg_actual(last(x))
     @inbounds for j in eachindex(xqs)
         aq = _anchor_query(x, xqs[j], Val(:constant), wrap, searcher)
         for k in 1:K

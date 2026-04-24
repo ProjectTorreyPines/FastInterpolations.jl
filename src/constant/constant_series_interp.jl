@@ -485,21 +485,21 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
     ) where {Tg, Tv, P}
     # Normalize queries to the grid's base float type (not Tg itself, which may be Dual)
     xq_typed = _promote_query_typed(xq, Tg)
-    n_query  = length(xq_typed)
-    n_ser    = n_series(sitp)
+    n_query = length(xq_typed)
+    n_ser = n_series(sitp)
 
     # Validate dimensions
     _validate_series_outputs(outputs, n_ser, n_query)
 
     searcher = _resolve_search(sitp.x, xq_typed, search, hint)
-    wrap     = _should_wrap(sitp)
-    y        = sitp.y
-    x_grid   = sitp.x
-    n_pts    = n_points(sitp)
-    extrap   = sitp.extrap
+    wrap = _should_wrap(sitp)
+    y = sitp.y
+    x_grid = sitp.x
+    n_pts = n_points(sitp)
+    extrap = sitp.extrap
     side_val = sitp.side
-    x_min    = Tg(first(sitp.x))
-    x_max    = Tg(last(sitp.x))
+    x_min = Tg(first(sitp.x))
+    x_max = Tg(last(sitp.x))
 
     @inbounds for j in eachindex(xq_typed)
         aq = _anchor_query(x_grid, xq_typed[j], Val(:constant), wrap, searcher)

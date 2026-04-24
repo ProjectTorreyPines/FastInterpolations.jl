@@ -484,13 +484,13 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
     _validate_series_outputs(outputs, n_ser, n_query)
 
     searcher = _resolve_search(sitp.x, xq, search, hint)
-    wrap     = _should_wrap(sitp)
-    y        = sitp.y
-    x_grid   = sitp.x
-    n_pts    = n_points(sitp)
-    extrap   = sitp.extrap
-    x_min    = Tg(first(sitp.x))
-    x_max    = Tg(last(sitp.x))
+    wrap = _should_wrap(sitp)
+    y = sitp.y
+    x_grid = sitp.x
+    n_pts = n_points(sitp)
+    extrap = sitp.extrap
+    x_min = Tg(first(sitp.x))
+    x_max = Tg(last(sitp.x))
 
     @inbounds for j in eachindex(xq)
         aq = _anchor_query(x_grid, xq[j], Val(:linear), wrap, searcher)

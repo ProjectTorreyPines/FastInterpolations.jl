@@ -652,21 +652,21 @@ using FastInterpolations: _CachedRange
 
     @testset "Series scalar + PeriodicBC(:exclusive) seam semantic" begin
         # 4-point grid, period = 4.0 → seam cell [x[n], x[1]+period) = [3, 4)
-        x  = collect(0.0:3.0)
+        x = collect(0.0:3.0)
         y1 = [10.0, 20.0, 30.0, 40.0]
         y2 = [1.0, 2.0, 3.0, 4.0]
-        s  = Series(y1, y2)
+        s = Series(y1, y2)
         bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
         # Inside seam cell at xq = 3.5: LeftSide default → y[idxL] = y[n]
         out = constant_interp(x, s, 3.5; bc = bc)
         @test out[1] == 40.0
-        @test out[2] ==  4.0
+        @test out[2] == 4.0
 
         # At xq == x[n] = 3.0: `aq.xq == x_last` short-circuit → y[end] = y[n]
         out_at_n = constant_interp(x, s, 3.0; bc = bc)
         @test out_at_n[1] == 40.0
-        @test out_at_n[2] ==  4.0
+        @test out_at_n[2] == 4.0
 
         # D5 delta — at xq == x[1] + period = 4.0 the NEW path returns y[n]
         # via LeftSide convention, matching the non-series constant path.
@@ -751,10 +751,10 @@ using FastInterpolations: _CachedRange
         # returns yL if dL ≤ h/2, else yR. Inside seam cell: yL=y[n], yR=y[1].
         # `_constant_eval_at_anchor` short-circuits at `aq.xq == x_last`
         # (x_last = x[n] = 3.0) → returns y[end] = y[n] = 40.
-        x  = collect(0.0:3.0)
+        x = collect(0.0:3.0)
         y1 = [10.0, 20.0, 30.0, 40.0]
         y2 = [1.0, 2.0, 3.0, 4.0]
-        s  = Series(y1, y2)
+        s = Series(y1, y2)
         bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
         # Batch covering:
@@ -775,11 +775,11 @@ using FastInterpolations: _CachedRange
         @test outs[1][5] == 10.0   # seam 75%, NearestSide → yR=y[1] (wrap)
 
         # y2 series
-        @test outs[2][1] ==  3.0
-        @test outs[2][2] ==  4.0
-        @test outs[2][3] ==  4.0
-        @test outs[2][4] ==  4.0
-        @test outs[2][5] ==  1.0
+        @test outs[2][1] == 3.0
+        @test outs[2][2] == 4.0
+        @test outs[2][3] == 4.0
+        @test outs[2][4] == 4.0
+        @test outs[2][5] == 1.0
 
         # Cross-check: batch path agrees with per-query scalar path, series-wise.
         for j in eachindex(xqs)

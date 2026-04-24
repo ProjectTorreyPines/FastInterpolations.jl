@@ -52,7 +52,7 @@
     extrap_p = _resolve_extrap(NoExtrap(), bc, x, first(vecs))
     xq_wrapped = _wrap_to_domain(xq, extrap_p)
     idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
-    h     = xR - xL
+    h = xR - xL
     inv_h = inv(h)
     alpha = (xq_wrapped - xL) * inv_h
     aq = _LinearAnchoredQuery(idxL, idxR, xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
@@ -199,7 +199,7 @@ In-place one-shot linear interpolation at multiple query points.
         @inbounds for j in eachindex(xqs)
             xq_wrapped = _wrap_to_domain(xqs[j], extrap_p)
             idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
-            h     = xR - xL
+            h = xR - xL
             inv_h = inv(h)
             alpha = (xq_wrapped - xL) * inv_h
             aq = _LinearAnchoredQuery(idxL, idxR, xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
@@ -212,8 +212,8 @@ In-place one-shot linear interpolation at multiple query points.
 
     # Non-periodic: `_anchor_query` handles WrapExtrap query-wrap + OOB state.
     extrap_eff = _check_domain(x, xqs, extrap)
-    searcher   = _resolve_search(x, xqs, search, nothing)
-    wrap       = extrap_eff isa WrapExtrap
+    searcher = _resolve_search(x, xqs, search, nothing)
+    wrap = extrap_eff isa WrapExtrap
     @inbounds for j in eachindex(xqs)
         aq = _anchor_query(x, xqs[j], Val(:linear), wrap, searcher)
         for k in 1:K

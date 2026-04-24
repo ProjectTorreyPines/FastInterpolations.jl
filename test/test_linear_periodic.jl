@@ -917,21 +917,21 @@ end
 
     @testset "Series scalar + PeriodicBC(:exclusive) seam semantic" begin
         # Simple 4-point grid, period = 4.0 → seam cell [x[n], x[1]+period) = [3, 4)
-        x  = collect(0.0:3.0)
+        x = collect(0.0:3.0)
         y1 = [10.0, 20.0, 30.0, 40.0]
         y2 = [1.0, 2.0, 3.0, 4.0]
-        s  = Series(y1, y2)
+        s = Series(y1, y2)
         bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
         # Inside seam cell at xq = 3.5, α = 0.5 → y[n]*(1-α) + y[1]*α
         out = linear_interp(x, s, 3.5; bc = bc)
         @test out[1] ≈ 40.0 * 0.5 + 10.0 * 0.5 atol = 1.0e-12
-        @test out[2] ≈  4.0 * 0.5 +  1.0 * 0.5 atol = 1.0e-12
+        @test out[2] ≈ 4.0 * 0.5 + 1.0 * 0.5 atol = 1.0e-12
 
         # At xq = x[n] = 3.0 (α = 0 in seam cell → yL = y[n])
         out_left = linear_interp(x, s, 3.0; bc = bc)
         @test out_left[1] ≈ 40.0 atol = 1.0e-12
-        @test out_left[2] ≈  4.0 atol = 1.0e-12
+        @test out_left[2] ≈ 4.0 atol = 1.0e-12
 
         # Cross-check: series oneshot == per-series non-series scalar
         @test out[1] ≈ linear_interp(x, y1, 3.5; bc = bc) atol = 1.0e-12
@@ -1007,10 +1007,10 @@ end
 
     @testset "Series vector + PeriodicBC(:exclusive) seam cell semantic" begin
         # 4-point grid, period=4.0 → seam cell [x[n], x[1]+period) = [3, 4).
-        x  = collect(0.0:3.0)
+        x = collect(0.0:3.0)
         y1 = [10.0, 20.0, 30.0, 40.0]
         y2 = [1.0, 2.0, 3.0, 4.0]
-        s  = Series(y1, y2)
+        s = Series(y1, y2)
         bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
         # Batch of xqs covering:
@@ -1024,18 +1024,18 @@ end
         linear_interp!(outs, x, s, xqs; bc = bc)
 
         # Linear blend expected values, y1 series
-        @test outs[1][1] ≈ 30.0 * 0.5   + 40.0 * 0.5   atol = 1.0e-12  # interior
+        @test outs[1][1] ≈ 30.0 * 0.5 + 40.0 * 0.5   atol = 1.0e-12  # interior
         @test outs[1][2] ≈ 40.0                        atol = 1.0e-12  # at x[n]
-        @test outs[1][3] ≈ 40.0 * 0.75  + 10.0 * 0.25  atol = 1.0e-12  # seam 25%
-        @test outs[1][4] ≈ 40.0 * 0.5   + 10.0 * 0.5   atol = 1.0e-12  # seam mid
+        @test outs[1][3] ≈ 40.0 * 0.75 + 10.0 * 0.25  atol = 1.0e-12  # seam 25%
+        @test outs[1][4] ≈ 40.0 * 0.5 + 10.0 * 0.5   atol = 1.0e-12  # seam mid
         @test outs[1][5] ≈ 40.0 * 0.125 + 10.0 * 0.875 atol = 1.0e-12  # seam 87.5%
 
         # Linear blend expected values, y2 series
-        @test outs[2][1] ≈  3.0 * 0.5   +  4.0 * 0.5   atol = 1.0e-12
-        @test outs[2][2] ≈  4.0                        atol = 1.0e-12
-        @test outs[2][3] ≈  4.0 * 0.75  +  1.0 * 0.25  atol = 1.0e-12
-        @test outs[2][4] ≈  4.0 * 0.5   +  1.0 * 0.5   atol = 1.0e-12
-        @test outs[2][5] ≈  4.0 * 0.125 +  1.0 * 0.875 atol = 1.0e-12
+        @test outs[2][1] ≈ 3.0 * 0.5 + 4.0 * 0.5   atol = 1.0e-12
+        @test outs[2][2] ≈ 4.0                        atol = 1.0e-12
+        @test outs[2][3] ≈ 4.0 * 0.75 + 1.0 * 0.25  atol = 1.0e-12
+        @test outs[2][4] ≈ 4.0 * 0.5 + 1.0 * 0.5   atol = 1.0e-12
+        @test outs[2][5] ≈ 4.0 * 0.125 + 1.0 * 0.875 atol = 1.0e-12
 
         # Cross-check: batch path agrees with per-query scalar path, series-wise.
         for j in eachindex(xqs)

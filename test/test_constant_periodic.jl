@@ -746,4 +746,53 @@ using FastInterpolations: _CachedRange
         @test _alloc_constant_series_vector_nobc() <= ALLOC_THRESHOLD
     end
 
+    @testset "Series vector + PeriodicBC(:exclusive) seam cell semantic" begin
+        # 4-point grid, period=4.0 → seam cell [3, 4). NearestSide default:
+        # returns yL if dL ≤ h/2, else yR. Inside seam cell: yL=y[n], yR=y[1].
+        # `_constant_eval_at_anchor` short-circuits at `aq.xq == x_last`
+        # (x_last = x[n] = 3.0) → returns y[end] = y[n] = 40.
+        x  = collect(0.0:3.0)
+        y1 = [10.0, 20.0, 30.0, 40.0]
+        y2 = [1.0, 2.0, 3.0, 4.0]
+        s  = Series(y1, y2)
+        bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+
+        # Batch covering:
+        #   2.25  — interior cell [2,3], dL=0.25 ≤ 0.5 → yL = y[3] = 30
+        #   3.0   — exact x[n], x_last short-circuit → y[end] = y[n] = 40
+        #   3.25  — seam, dL=0.25 ≤ 0.5 → yL = y[n] = 40
+        #   3.5   — seam mid, dL=0.5 = h/2 (tie) → yL = y[n] = 40
+        #   3.75  — seam, dL=0.75 > 0.5 → yR = y[1] = 10 (wrap)
+        xqs = [2.25, 3.0, 3.25, 3.5, 3.75]
+        outs = [Vector{Float64}(undef, length(xqs)) for _ in 1:2]
+        constant_interp!(outs, x, s, xqs; bc = bc)
+
+        # y1 series
+        @test outs[1][1] == 30.0   # interior, NearestSide → yL
+        @test outs[1][2] == 40.0   # at x[n] (x_last short-circuit)
+        @test outs[1][3] == 40.0   # seam 25%, NearestSide → yL=y[n]
+        @test outs[1][4] == 40.0   # seam mid (tie-break to yL)
+        @test outs[1][5] == 10.0   # seam 75%, NearestSide → yR=y[1] (wrap)
+
+        # y2 series
+        @test outs[2][1] ==  3.0
+        @test outs[2][2] ==  4.0
+        @test outs[2][3] ==  4.0
+        @test outs[2][4] ==  4.0
+        @test outs[2][5] ==  1.0
+
+        # Cross-check: batch path agrees with per-query scalar path, series-wise.
+        for j in eachindex(xqs)
+            scalar_out = constant_interp(x, s, xqs[j]; bc = bc)
+            @test outs[1][j] == scalar_out[1]
+            @test outs[2][j] == scalar_out[2]
+        end
+
+        # Cross-check: batch path agrees with non-series constant.
+        for j in eachindex(xqs)
+            @test outs[1][j] == constant_interp(x, y1, xqs[j]; bc = bc)
+            @test outs[2][j] == constant_interp(x, y2, xqs[j]; bc = bc)
+        end
+    end
+
 end

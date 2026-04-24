@@ -1005,4 +1005,52 @@ end
         @test _alloc_linear_series_vector_nobc() <= ALLOC_THRESHOLD
     end
 
+    @testset "Series vector + PeriodicBC(:exclusive) seam cell semantic" begin
+        # 4-point grid, period=4.0 → seam cell [x[n], x[1]+period) = [3, 4).
+        x  = collect(0.0:3.0)
+        y1 = [10.0, 20.0, 30.0, 40.0]
+        y2 = [1.0, 2.0, 3.0, 4.0]
+        s  = Series(y1, y2)
+        bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+
+        # Batch of xqs covering:
+        #   2.5   — interior cell [2,3], α=0.5 → y[3]*0.5 + y[4]*0.5
+        #   3.0   — exactly x[n], α=0 in seam cell → yL = y[n]
+        #   3.25  — seam cell, α=0.25 → y[n]*0.75 + y[1]*0.25
+        #   3.5   — seam mid, α=0.5 → y[n]*0.5 + y[1]*0.5
+        #   3.875 — seam cell near right, α=0.875 → y[n]*0.125 + y[1]*0.875
+        xqs = [2.5, 3.0, 3.25, 3.5, 3.875]
+        outs = [Vector{Float64}(undef, length(xqs)) for _ in 1:2]
+        linear_interp!(outs, x, s, xqs; bc = bc)
+
+        # Linear blend expected values, y1 series
+        @test outs[1][1] ≈ 30.0 * 0.5   + 40.0 * 0.5   atol = 1.0e-12  # interior
+        @test outs[1][2] ≈ 40.0                        atol = 1.0e-12  # at x[n]
+        @test outs[1][3] ≈ 40.0 * 0.75  + 10.0 * 0.25  atol = 1.0e-12  # seam 25%
+        @test outs[1][4] ≈ 40.0 * 0.5   + 10.0 * 0.5   atol = 1.0e-12  # seam mid
+        @test outs[1][5] ≈ 40.0 * 0.125 + 10.0 * 0.875 atol = 1.0e-12  # seam 87.5%
+
+        # Linear blend expected values, y2 series
+        @test outs[2][1] ≈  3.0 * 0.5   +  4.0 * 0.5   atol = 1.0e-12
+        @test outs[2][2] ≈  4.0                        atol = 1.0e-12
+        @test outs[2][3] ≈  4.0 * 0.75  +  1.0 * 0.25  atol = 1.0e-12
+        @test outs[2][4] ≈  4.0 * 0.5   +  1.0 * 0.5   atol = 1.0e-12
+        @test outs[2][5] ≈  4.0 * 0.125 +  1.0 * 0.875 atol = 1.0e-12
+
+        # Cross-check: batch path agrees with per-query scalar path, series-wise.
+        for j in eachindex(xqs)
+            scalar_out = linear_interp(x, s, xqs[j]; bc = bc)
+            @test outs[1][j] ≈ scalar_out[1] atol = 1.0e-12
+            @test outs[2][j] ≈ scalar_out[2] atol = 1.0e-12
+        end
+
+        # Cross-check: batch path agrees with persistent interpolants (non-series).
+        itp1 = linear_interp(x, y1; bc = bc)
+        itp2 = linear_interp(x, y2; bc = bc)
+        for j in eachindex(xqs)
+            @test outs[1][j] ≈ itp1(xqs[j]) atol = 1.0e-12
+            @test outs[2][j] ≈ itp2(xqs[j]) atol = 1.0e-12
+        end
+    end
+
 end

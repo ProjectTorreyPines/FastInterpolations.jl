@@ -10,14 +10,26 @@
 # Shared anchor eval: _linear_eval_at_anchor(y, aq, op, extrap) in linear_anchor.jl
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                 INTERNAL: PERIODIC CORE                                  ║
+# ║                 INTERNAL: PERIODIC CORE (zero-copy)                       ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# Extend x once via the shared helper (bound to series 1 just to get x_p), then
-# reuse a single pool buffer across all other series to avoid reallocating.
-# Mirrors the cubic_oneshot_series periodic strategy without the tridiagonal
-# solve. Always uses WrapExtrap for the eval-at-anchor call.
-@inline @with_pool pool function _linear_oneshot_series_periodic!(
+# Zero-copy scalar-series periodic anchor + K-loop eval. One search, K evals.
+# No pool, no grid/value extension — the anchor carries pair indices
+# (`idxL`/`idxR`) so `y[aq.idxR]` reads `vecs[k][1]` automatically at the
+# exclusive seam.
+#
+# Mirrors the non-series scalar periodic pattern in `linear_oneshot.jl`:
+# resolve a `WrapExtrap` carrying the BC's period, wrap `xq` into the periodic
+# domain, then call `search_interval` on the wrapped query. For exclusive,
+# the searcher's seam branch fires when the wrapped `xq` lands in
+# `[x[n], x[1]+period)` and returns the `(n, 1)` seam pair. For inclusive,
+# the wrap uses `x[n] - x[1]` (= period) and search returns a regular pair
+# guarded by the user's `y[1] ≈ y[end]` invariant.
+#
+# The only `bc`-distinguished work is the per-series endpoint validation for
+# inclusive — a compile-time `bc isa PeriodicBC{:inclusive}` branch that LLVM
+# drops in the exclusive specialization.
+@inline function _linear_oneshot_series_periodic!(
         output::AbstractVector,
         x::AbstractVector{Tg},
         s::Series,
@@ -27,34 +39,28 @@
         searcher
     ) where {Tg}
     vecs = _series_vectors(s)
-    n = length(x)
-
-    # Phase 1: extend x + first series, build anchor on the extended grid.
-    # `_periodic_extend_1d_pooled!` now returns a materialized WrapExtrap — capture
-    # it so the kernel never sees WrapExtrap{Nothing}.
-    x_p, y_p_first, extrap_p = _periodic_extend_1d_pooled!(pool, x, first(vecs), bc, WrapExtrap())
-    n_p = length(x_p)
-    aq = _anchor_query(x_p, xq, Val(:linear), true, searcher)
-    @inbounds output[1] = _linear_eval_at_anchor(y_p_first, aq, op, extrap_p)
-
-    # Phase 2: remaining series — reuse a single pool buffer (exclusive) or the
-    # user's vecs[k] directly (inclusive, already length n_p, just re-validated).
     K = length(output)
-    if K > 1
-        if bc isa PeriodicBC{:exclusive}
-            Tv_buf = eltype(y_p_first)
-            y_p = acquire!(pool, Tv_buf, n_p)
-            @inbounds for k in 2:K
-                copyto!(y_p, 1, vecs[k], 1, n)
-                y_p[n + 1] = vecs[k][1]
-                output[k] = _linear_eval_at_anchor(y_p, aq, op, extrap_p)
-            end
-        else
-            @inbounds for k in 2:K
-                _check_periodic_endpoints(bc, vecs[k])
-                output[k] = _linear_eval_at_anchor(vecs[k], aq, op, extrap_p)
-            end
+
+    if bc isa PeriodicBC{:inclusive}
+        @inbounds for k in 1:K
+            _check_periodic_endpoints(bc, vecs[k])
         end
+    end
+
+    # Materialize WrapExtrap with BC-correct period (inclusive: x[n]-x[1];
+    # exclusive: bc.period). `first(vecs)` only contributes element-type info.
+    extrap_p = _resolve_extrap(NoExtrap(), bc, x, first(vecs))
+    xq_wrapped = _wrap_to_domain(xq, extrap_p)
+    idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
+    # Use _get_h/_get_inv_h so _CachedRange returns its exact cached step
+    # instead of the cancellation-prone `xR - xL` on large-offset grids.
+    h = _get_h(x, xR, xL)
+    inv_h = _get_inv_h(x, xR, xL)
+    alpha = (xq_wrapped - xL) * inv_h
+    aq = _LinearAnchoredQuery(idxL, idxR, xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
+
+    @inbounds for k in 1:K
+        output[k] = _linear_eval_at_anchor(vecs[k], aq, op, extrap_p)
     end
     return output
 end
@@ -100,7 +106,9 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
     Tv = _series_output_type(_output_eltype(_series_eltype(s), Tg_actual), Tq)
     output = Vector{Tv}(undef, K)
     if _is_periodic_bc(bc)
-        searcher = _resolve_search(x, xq, search, hint)
+        # Thread `bc` into the Searcher type param so `search_interval` performs
+        # the seam-wrap for `PeriodicBC{:exclusive}` inside the helper.
+        searcher = _resolve_search(x, xq, search, hint, bc)
         return _linear_oneshot_series_periodic!(output, x, s, xq, bc, deriv, searcher)
     end
     _check_domain(x, xq, extrap)
@@ -136,7 +144,7 @@ In-place one-shot linear interpolation of multiple y-series at a single query po
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
     x = _to_float(x, Tg_p)
     if _is_periodic_bc(bc)
-        searcher = _resolve_search(x, xq, search, hint)
+        searcher = _resolve_search(x, xq, search, hint, bc)
         return _linear_oneshot_series_periodic!(output, x, s, xq, bc, deriv, searcher)
     end
     _check_domain(x, xq, extrap)
@@ -159,7 +167,11 @@ end
 In-place one-shot linear interpolation at multiple query points.
 `outputs` is a `Vector{<:AbstractVector}` of length `n_series`, each of length `length(xqs)`.
 """
-@with_pool pool function linear_interp!(
+# Zero-pool vector-batch: Q outer × K inner. Anchor is register-resident for
+# the K-inner loop — no aq_vec scratch, no grid/value extension. Periodic
+# mirrors the scalar helper's wrap-first pattern; non-periodic uses the
+# pair-aware `_anchor_query` (Stage 1) directly.
+@inline function linear_interp!(
         outputs::AbstractVector{<:AbstractVector},
         x::AbstractVector{Tg},
         s::Series,
@@ -172,59 +184,43 @@ In-place one-shot linear interpolation at multiple query points.
     _validate_series_lengths(s, length(x))
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
     x = _to_float(x, Tg_p)
-    Tg_actual = eltype(x)
     K = n_series(s)
     _validate_series_outputs(outputs, K, length(xqs))
     vecs = _series_vectors(s)
 
-    # Periodic vector-xqs: extend x once, per-series extend y (exclusive) or
-    # reuse + validate (inclusive), pre-compute anchors on extended grid, then
-    # K outer × Q inner eval loop.
     if _is_periodic_bc(bc)
-        x_p, y_p_first, extrap_p = _periodic_extend_1d_pooled!(pool, x, first(vecs), bc, WrapExtrap())
-        Tg_p_actual = eltype(x_p)
-        Tq_promoted = promote_type(Tq, Tg_p_actual)
-        searcher = _resolve_search(x_p, xqs, search, nothing)
-        aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_p_actual, Tq_promoted}, length(xqs))
-        _fill_anchors!(aq_vec, x_p, xqs, Val(:linear), true, searcher)
-        @inbounds for j in eachindex(xqs)
-            outputs[1][j] = _linear_eval_at_anchor(y_p_first, aq_vec[j], deriv, extrap_p)
+        # Per-series `:inclusive` endpoint guarantee. `:exclusive` needs no
+        # per-series check; the anchor's seam pair handles wrap.
+        if bc isa PeriodicBC{:inclusive}
+            @inbounds for k in 1:K
+                _check_periodic_endpoints(bc, vecs[k])
+            end
         end
-        if K > 1
-            if bc isa PeriodicBC{:exclusive}
-                n = length(x)
-                Tv_buf = eltype(y_p_first)
-                y_p = acquire!(pool, Tv_buf, length(x_p))
-                @inbounds for k in 2:K
-                    copyto!(y_p, 1, vecs[k], 1, n)
-                    y_p[n + 1] = vecs[k][1]
-                    for j in eachindex(xqs)
-                        outputs[k][j] = _linear_eval_at_anchor(y_p, aq_vec[j], deriv, extrap_p)
-                    end
-                end
-            else
-                @inbounds for k in 2:K
-                    _check_periodic_endpoints(bc, vecs[k])
-                    for j in eachindex(xqs)
-                        outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq_vec[j], deriv, extrap_p)
-                    end
-                end
+        extrap_p = _resolve_extrap(NoExtrap(), bc, x, first(vecs))
+        searcher = _resolve_search(x, xqs, search, nothing, bc)
+        @inbounds for j in eachindex(xqs)
+            xq_wrapped = _wrap_to_domain(xqs[j], extrap_p)
+            idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
+            # Cached-step-preserving dispatch (matches scalar/persistent paths).
+            h = _get_h(x, xR, xL)
+            inv_h = _get_inv_h(x, xR, xL)
+            alpha = (xq_wrapped - xL) * inv_h
+            aq = _LinearAnchoredQuery(idxL, idxR, xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
+            for k in 1:K
+                outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap_p)
             end
         end
         return outputs
     end
 
-    # Domain check: NoExtrap → throws if OOB, returns InBounds(); others → pass-through
+    # Non-periodic: `_anchor_query` handles WrapExtrap query-wrap + OOB state.
     extrap_eff = _check_domain(x, xqs, extrap)
     searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap_eff isa WrapExtrap
-    # Pre-compute anchors via pool, then K outer × Q inner for cache locality
-    Tq_promoted = promote_type(Tq, Tg_actual)
-    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_actual, Tq_promoted}, length(xqs))
-    _fill_anchors!(aq_vec, x, xqs, Val(:linear), wrap, searcher)
-    @inbounds for k in 1:K
-        for j in eachindex(xqs)
-            outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq_vec[j], deriv, extrap_eff)
+    @inbounds for j in eachindex(xqs)
+        aq = _anchor_query(x, xqs[j], Val(:linear), wrap, searcher)
+        for k in 1:K
+            outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap_eff)
         end
     end
     return outputs

@@ -231,15 +231,15 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
     # the kernel would see the unwrapped distance and pick the wrong side/index.
     # `aq.dL` is `loc.xq - loc.xL` where `loc.xq` is the wrapped query — Dual is
     # preserved through `_wrap_to_domain`, so AD chains survive.
-    idx = aq.idx
-    idx1 = idx + 1
+    idxL = aq.idxL
+    idxR = aq.idxR
     h = aq.h
     dL = aq.dL
 
     # SIMD loop over series
     @inbounds @simd for k in axes(output, 1)
-        y_left = y_point[k, idx]
-        y_right = y_point[k, idx1]
+        y_left = y_point[k, idxL]
+        y_right = y_point[k, idxR]
         output[k] = _constant_kernel(op, y_left, y_right, h, dL, sitp.side)
     end
 
@@ -295,15 +295,15 @@ end
         ::UInt8
     ) where {Tg, Tv}
     # Use boundary interval for extension (inline evaluation, no xq needed)
-    idx = aq.idx
-    idx1 = idx + 1
+    idxL = aq.idxL
+    idxR = aq.idxR
     h = aq.h
     dL = aq.dL
 
     # SIMD loop over series
     @inbounds @simd for k in axes(out, 1)
-        y_left = y_point[k, idx]
-        y_right = y_point[k, idx1]
+        y_left = y_point[k, idxL]
+        y_right = y_point[k, idxR]
         out[k] = _constant_kernel(op, y_left, y_right, h, dL, side_val)
     end
     return out
@@ -472,10 +472,11 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 - `xq`: Query points
 - `deriv`: Derivative order (0, 1, or 2)
 
-This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
-Uses task-local pool for anchor vector to achieve zero allocation after warmup.
+Zero-alloc by construction (Q outer × K inner): anchor is built once per
+query on the stack and reused for all K series, staying in registers across
+the K evals. No pool, no `aq_vec` scratch.
 """
-@with_pool pool function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
+function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         outputs::AbstractVector{<:AbstractVector{Tv}},
         xq::AbstractVector{<:Real};
         deriv::DerivOp = EvalValue(),
@@ -490,48 +491,25 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     # Validate dimensions
     _validate_series_outputs(outputs, n_ser, n_query)
 
-    # Build anchors from pool (zero allocation after warmup)
-    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg, Tg}, length(xq_typed))
     searcher = _resolve_search(sitp.x, xq_typed, search, hint)
-    _fill_anchors!(aq_vec, sitp.x, xq_typed, Val(:constant), _should_wrap(sitp), searcher)
-
-    # Extract matrices for argument-passing pattern
+    wrap = _should_wrap(sitp)
     y = sitp.y
     x_grid = sitp.x
     n_pts = n_points(sitp)
-    n = n_series(sitp)
     extrap = sitp.extrap
     side_val = sitp.side
-    x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
+    x_min = Tg(first(sitp.x))
+    x_max = Tg(last(sitp.x))
 
-    # Evaluate all series with derivative dispatch
-    @inbounds for k in 1:n
-        _eval_constant_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, side_val, deriv)
+    @inbounds for j in eachindex(xq_typed)
+        aq = _anchor_query(x_grid, xq_typed[j], Val(:constant), wrap, searcher)
+        for k in 1:n_ser
+            outputs[k][j] = _eval_constant_series_with_extrap(
+                y, x_grid, n_pts, x_min, x_max, k, aq, extrap, side_val, deriv
+            )
+        end
     end
     return outputs
-end
-
-"""
-Internal: Evaluate a single series for vector of query points.
-Uses argument-passing pattern for optimal performance.
-"""
-@inline function _eval_constant_series_vector!(
-        out::AbstractVector{Tv},
-        y::Matrix{Tv},
-        x::AbstractVector{Tg},
-        n_pts::Int,
-        x_min::Tg,
-        x_max::Tg,
-        k::Int,
-        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{Tg}},
-        extrap::AbstractExtrap,
-        side_val::AbstractSide,
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    @inbounds for j in eachindex(out, aq_vec)
-        out[j] = _eval_constant_series_with_extrap(y, x, n_pts, x_min, x_max, k, aq_vec[j], extrap, side_val, op)
-    end
-    return out
 end
 
 """
@@ -588,10 +566,11 @@ Internal: Core constant evaluation for series k at anchored query point.
         return 0 * first(y)
     end
 
-    idx = aq.idx
+    idxL = aq.idxL
+    idxR = aq.idxR
     @inbounds begin
-        y_left = y[idx, k]
-        y_right = y[idx + 1, k]
+        y_left = y[idxL, k]
+        y_right = y[idxR, k]
     end
     return _constant_kernel(EvalValue(), y_left, y_right, aq.h, aq.dL, side_val)
 end

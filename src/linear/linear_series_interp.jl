@@ -255,13 +255,12 @@ constructor), so `dL = aq.xq - aq.xL` correctly propagates grid-side partials.
 # Arguments
 - `output`: Pre-allocated output vector (length = n_series)
 - `sitp`: LinearSeriesInterpolant
-- `aq`: Anchor with precomputed index/side (from primal value)
-- `xq`: Original query point (any Real type, including ForwardDiff.Dual)
+- `aq`: Anchor with precomputed indices (`idxL`/`idxR`) and widened `xq`
 - `op`: Evaluation operation (value, derivative)
 
 # AD Support
-Supports ForwardDiff.Dual input: anchor provides index/side from primal,
-while `xq` is used directly in arithmetic to preserve derivative information.
+Supports ForwardDiff.Dual input: the anchor's indices come from the primal value,
+while `aq.xq` carries the Dual payload so `dL = aq.xq - aq.xL` preserves derivatives.
 """
 @inline function _eval_linear_series_point!(
         output::AbstractVector,
@@ -276,15 +275,15 @@ while `xq` is used directly in arithmetic to preserve derivative information.
 
     # Inside domain: SIMD evaluation with point-contiguous layout
     y_point = _ensure_point_layout!(sitp)
-    idx = aq.idx
-    idx1 = idx + 1
+    idxL = aq.idxL
+    idxR = aq.idxR
 
     inv_h = aq.inv_h
     dL = aq.xq - aq.xL  # aq.xq carries Dual info (widened by outer constructor)
 
     @inbounds @simd for k in axes(output, 1)
-        yL = y_point[k, idx]
-        yR = y_point[k, idx1]
+        yL = y_point[k, idxL]
+        yR = y_point[k, idxR]
         output[k] = _linear_kernel(op, yL, yR, inv_h, dL)
     end
     return output
@@ -462,14 +461,15 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 - `xq`: Query points (any Real type, auto-promoted for search)
 - `deriv`: Derivative order (0 or 1)
 
-This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
-Uses task-local pool for anchor vector to achieve zero allocation after warmup.
+Zero-alloc by construction (Q outer × K inner): anchor is built once per
+query on the stack and reused for all K series in an inner loop, staying in
+registers across the K evals. No pool, no `aq_vec` scratch.
 
 # Precision Preservation
-Uses pooled anchors with promoted type `promote_type(Tq, Tg)` to preserve precision in alpha.
-Pool handles both same-type and mixed-type cases efficiently.
+Per-query anchor is typed `_LinearAnchoredQuery{Tg, promote_type(Tq, Tg)}`
+via the outer constructor's alpha-type inference.
 """
-@with_pool pool function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
+function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         outputs::AbstractVector{<:AbstractVector},
         xq::AbstractVector{Tq};
         deriv::DerivOp = EvalValue(),
@@ -482,50 +482,24 @@ Pool handles both same-type and mixed-type cases efficiently.
     # Validate dimensions
     _validate_series_outputs(outputs, n_ser, n_query)
 
-    # Build anchors - pool handles both same-type and mixed-type cases
-    Tq_eff = promote_type(Tq, Tg)
-    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tq_eff}, n_query)
     searcher = _resolve_search(sitp.x, xq, search, hint)
-    _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear), _should_wrap(sitp), searcher)
-
-    # Extract matrices for argument-passing pattern
+    wrap = _should_wrap(sitp)
     y = sitp.y
     x_grid = sitp.x
     n_pts = n_points(sitp)
     extrap = sitp.extrap
-    x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
+    x_min = Tg(first(sitp.x))
+    x_max = Tg(last(sitp.x))
 
-    # Evaluate all series - anchor already has correct alpha precision
-    @inbounds for k in 1:n_ser
-        _eval_linear_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, deriv)
+    @inbounds for j in eachindex(xq)
+        aq = _anchor_query(x_grid, xq[j], Val(:linear), wrap, searcher)
+        for k in 1:n_ser
+            outputs[k][j] = _eval_linear_series_with_extrap(
+                y, x_grid, n_pts, x_min, x_max, k, aq, extrap, deriv
+            )
+        end
     end
     return outputs
-end
-
-"""
-Internal: Evaluate a single series for vector of query points.
-Uses argument-passing pattern for optimal performance.
-
-# Precision Preservation
-The anchor's `alpha` field already contains precision-preserving normalized position
-computed as `(xq - xL) / h` with the query's original precision.
-"""
-@inline function _eval_linear_series_vector!(
-        out::AbstractVector,
-        y::Matrix{Tv},
-        x::AbstractVector{Tg},
-        n_pts::Int,
-        x_min::Tg,
-        x_max::Tg,
-        k::Int,
-        aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg}},
-        extrap::AbstractExtrap,
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    @inbounds for j in eachindex(out, aq_vec)
-        out[j] = _eval_linear_series_with_extrap(y, x, n_pts, x_min, x_max, k, aq_vec[j], extrap, op)
-    end
-    return out
 end
 
 """
@@ -575,8 +549,8 @@ The kernel internally extracts alpha (for EvalValue) or inv_h (for derivatives).
         op::AbstractEvalOp
     ) where {Tg, Tv}
     @inbounds begin
-        yL = y[aq.idx, k]
-        yR = y[aq.idx + 1, k]
+        yL = y[aq.idxL, k]
+        yR = y[aq.idxR, k]
     end
     return _linear_kernel(op, yL, yR, aq)
 end

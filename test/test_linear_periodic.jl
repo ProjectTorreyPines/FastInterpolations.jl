@@ -862,4 +862,270 @@ end
         @test outs[2] ≈ out_vec[2] atol = 1.0e-12
     end
 
+    # ============================================================
+    # Series OneShot Scalar + PeriodicBC — Zero-Copy Migration (A-2)
+    # ============================================================
+    # These tests drive and lock down the scalar-series zero-copy refactor
+    # (TODO: linear_constant_series_zero_copy.md, Stage 1).
+    # Function-barrier pattern mirrors the non-series alloc-guards above.
+
+    function _alloc_linear_series_scalar_range_exclusive()
+        x = range(0.0, step = 2π / 16, length = 16)
+        y1 = sin.(x)
+        y2 = cos.(x)
+        s = Series(y1, y2)
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        out = Vector{Float64}(undef, 2)
+        linear_interp!(out, x, s, 1.0; bc = bc)
+        linear_interp!(out, x, s, 1.0; bc = bc)
+        return @allocated linear_interp!(out, x, s, 1.0; bc = bc)
+    end
+
+    function _alloc_linear_series_scalar_vector_exclusive()
+        x = [0.0, 0.5, 1.5, 3.0, 5.0]
+        y1 = sin.(x)
+        y2 = cos.(x)
+        s = Series(y1, y2)
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        out = Vector{Float64}(undef, 2)
+        linear_interp!(out, x, s, 1.0; bc = bc)
+        linear_interp!(out, x, s, 1.0; bc = bc)
+        return @allocated linear_interp!(out, x, s, 1.0; bc = bc)
+    end
+
+    function _alloc_linear_series_scalar_inclusive()
+        x = collect(range(0.0, 2π, length = 17))
+        y1 = sin.(x)                          # y1[1] == y1[end] == 0
+        y2 = cos.(x)                          # y2[1] == y2[end] == 1
+        s = Series(y1, y2)
+        bc = PeriodicBC()                     # :inclusive default
+        out = Vector{Float64}(undef, 2)
+        linear_interp!(out, x, s, 1.0; bc = bc)
+        linear_interp!(out, x, s, 1.0; bc = bc)
+        return @allocated linear_interp!(out, x, s, 1.0; bc = bc)
+    end
+
+    @testset "Series scalar + PeriodicBC zero-alloc — Range exclusive (T-series-alloc)" begin
+        @test _alloc_linear_series_scalar_range_exclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Series scalar + PeriodicBC zero-alloc — Vector exclusive (T-series-alloc)" begin
+        @test _alloc_linear_series_scalar_vector_exclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Series scalar + PeriodicBC zero-alloc — inclusive (T-series-alloc)" begin
+        @test _alloc_linear_series_scalar_inclusive() <= ALLOC_THRESHOLD
+    end
+
+    @testset "Series scalar + PeriodicBC(:exclusive) seam semantic" begin
+        # Simple 4-point grid, period = 4.0 → seam cell [x[n], x[1]+period) = [3, 4)
+        x = collect(0.0:3.0)
+        y1 = [10.0, 20.0, 30.0, 40.0]
+        y2 = [1.0, 2.0, 3.0, 4.0]
+        s = Series(y1, y2)
+        bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+
+        # Inside seam cell at xq = 3.5, α = 0.5 → y[n]*(1-α) + y[1]*α
+        out = linear_interp(x, s, 3.5; bc = bc)
+        @test out[1] ≈ 40.0 * 0.5 + 10.0 * 0.5 atol = 1.0e-12
+        @test out[2] ≈ 4.0 * 0.5 + 1.0 * 0.5 atol = 1.0e-12
+
+        # At xq = x[n] = 3.0 (α = 0 in seam cell → yL = y[n])
+        out_left = linear_interp(x, s, 3.0; bc = bc)
+        @test out_left[1] ≈ 40.0 atol = 1.0e-12
+        @test out_left[2] ≈ 4.0 atol = 1.0e-12
+
+        # Cross-check: series oneshot == per-series non-series scalar
+        @test out[1] ≈ linear_interp(x, y1, 3.5; bc = bc) atol = 1.0e-12
+        @test out[2] ≈ linear_interp(x, y2, 3.5; bc = bc) atol = 1.0e-12
+
+        # Cross-check: series oneshot == persistent series interpolant
+        sitp = linear_interp(x, s; bc = bc)
+        @test out[1] ≈ sitp(3.5)[1] atol = 1.0e-12
+        @test out[2] ≈ sitp(3.5)[2] atol = 1.0e-12
+    end
+
+    @testset "Series oneshot + PeriodicBC(:exclusive) preserves cached step on large-offset Range" begin
+        # On `range(1e8, step=0.1, …)`, `x[i+1] - x[i]` loses precision to float
+        # cancellation (~1.5e-8 ulp at 1e8), while `_CachedRange.h` stores the
+        # exact step. The periodic series one-shot paths must dispatch through
+        # `_get_h`/`_get_inv_h` so they match the non-series scalar and
+        # persistent series evaluators on such grids.
+        x = range(1.0e8, step = 0.1, length = 10)
+        y1 = Float64.(1:10)
+        y2 = Float64.(11:20)
+        s = Series(y1, y2)
+        bc = PeriodicBC(endpoint = :exclusive)
+        xq = 1.0e8 + 0.95  # lands in seam cell [x[10], x[1]+period)
+
+        v_scalar = linear_interp(x, y1, xq; bc = bc)
+        v_oneshot = linear_interp(x, s, xq; bc = bc)
+        v_persist = linear_interp(x, s; bc = bc)(xq)
+
+        @test v_oneshot[1] === v_scalar
+        @test v_oneshot[1] === v_persist[1]
+
+        # Batch path must agree element-wise
+        xqs = [1.0e8 + 0.95, 1.0e8 + 0.55]
+        outs = [similar(xqs) for _ in 1:2]
+        linear_interp!(outs, x, s, xqs; bc = bc)
+        @test outs[1][1] === v_scalar
+        @test outs[1][2] === linear_interp(x, y1, xqs[2]; bc = bc)
+    end
+
+    # ============================================================
+    # Series OneShot Vector-Batch + PeriodicBC — Zero-Copy (Stage 2)
+    # ============================================================
+    # Drives the Q outer × K inner zero-pool refactor. Function-barrier +
+    # double-warmup pattern matches the scalar T-series-alloc convention.
+
+    function _alloc_linear_series_vector_range_exclusive()
+        x = range(0.0, step = 2π / 16, length = 16)
+        s = Series(sin.(x), cos.(x))
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        linear_interp!(outs, x, s, xqs; bc = bc)
+        linear_interp!(outs, x, s, xqs; bc = bc)
+        return @allocated linear_interp!(outs, x, s, xqs; bc = bc)
+    end
+
+    function _alloc_linear_series_vector_vector_exclusive()
+        x = [0.0, 0.5, 1.5, 3.0, 5.0]
+        s = Series(sin.(x), cos.(x))
+        bc = PeriodicBC(endpoint = :exclusive, period = 2π)
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        linear_interp!(outs, x, s, xqs; bc = bc)
+        linear_interp!(outs, x, s, xqs; bc = bc)
+        return @allocated linear_interp!(outs, x, s, xqs; bc = bc)
+    end
+
+    function _alloc_linear_series_vector_inclusive()
+        x = collect(range(0.0, 2π, length = 17))
+        s = Series(sin.(x), cos.(x))
+        bc = PeriodicBC()
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        linear_interp!(outs, x, s, xqs; bc = bc)
+        linear_interp!(outs, x, s, xqs; bc = bc)
+        return @allocated linear_interp!(outs, x, s, xqs; bc = bc)
+    end
+
+    function _alloc_linear_series_vector_nobc()
+        x = range(0.0, step = 2π / 16, length = 16)
+        s = Series(sin.(x), cos.(x))
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        linear_interp!(outs, x, s, xqs)
+        linear_interp!(outs, x, s, xqs)
+        return @allocated linear_interp!(outs, x, s, xqs)
+    end
+
+    @testset "Series vector + PeriodicBC zero-alloc — Range exclusive (T-series-alloc)" begin
+        @test _alloc_linear_series_vector_range_exclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Series vector + PeriodicBC zero-alloc — Vector exclusive (T-series-alloc)" begin
+        @test _alloc_linear_series_vector_vector_exclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Series vector + PeriodicBC zero-alloc — inclusive (T-series-alloc)" begin
+        @test _alloc_linear_series_vector_inclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Series vector + NoBC zero-alloc (T-series-alloc)" begin
+        @test _alloc_linear_series_vector_nobc() <= ALLOC_THRESHOLD
+    end
+
+    @testset "Series vector + PeriodicBC(:exclusive) seam cell semantic" begin
+        # 4-point grid, period=4.0 → seam cell [x[n], x[1]+period) = [3, 4).
+        x = collect(0.0:3.0)
+        y1 = [10.0, 20.0, 30.0, 40.0]
+        y2 = [1.0, 2.0, 3.0, 4.0]
+        s = Series(y1, y2)
+        bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+
+        # Batch of xqs covering:
+        #   2.5   — interior cell [2,3], α=0.5 → y[3]*0.5 + y[4]*0.5
+        #   3.0   — exactly x[n], α=0 in seam cell → yL = y[n]
+        #   3.25  — seam cell, α=0.25 → y[n]*0.75 + y[1]*0.25
+        #   3.5   — seam mid, α=0.5 → y[n]*0.5 + y[1]*0.5
+        #   3.875 — seam cell near right, α=0.875 → y[n]*0.125 + y[1]*0.875
+        xqs = [2.5, 3.0, 3.25, 3.5, 3.875]
+        outs = [Vector{Float64}(undef, length(xqs)) for _ in 1:2]
+        linear_interp!(outs, x, s, xqs; bc = bc)
+
+        # Linear blend expected values, y1 series
+        @test outs[1][1] ≈ 30.0 * 0.5 + 40.0 * 0.5   atol = 1.0e-12  # interior
+        @test outs[1][2] ≈ 40.0                        atol = 1.0e-12  # at x[n]
+        @test outs[1][3] ≈ 40.0 * 0.75 + 10.0 * 0.25  atol = 1.0e-12  # seam 25%
+        @test outs[1][4] ≈ 40.0 * 0.5 + 10.0 * 0.5   atol = 1.0e-12  # seam mid
+        @test outs[1][5] ≈ 40.0 * 0.125 + 10.0 * 0.875 atol = 1.0e-12  # seam 87.5%
+
+        # Linear blend expected values, y2 series
+        @test outs[2][1] ≈ 3.0 * 0.5 + 4.0 * 0.5   atol = 1.0e-12
+        @test outs[2][2] ≈ 4.0                        atol = 1.0e-12
+        @test outs[2][3] ≈ 4.0 * 0.75 + 1.0 * 0.25  atol = 1.0e-12
+        @test outs[2][4] ≈ 4.0 * 0.5 + 1.0 * 0.5   atol = 1.0e-12
+        @test outs[2][5] ≈ 4.0 * 0.125 + 1.0 * 0.875 atol = 1.0e-12
+
+        # Cross-check: batch path agrees with per-query scalar path, series-wise.
+        for j in eachindex(xqs)
+            scalar_out = linear_interp(x, s, xqs[j]; bc = bc)
+            @test outs[1][j] ≈ scalar_out[1] atol = 1.0e-12
+            @test outs[2][j] ≈ scalar_out[2] atol = 1.0e-12
+        end
+
+        # Cross-check: batch path agrees with persistent interpolants (non-series).
+        itp1 = linear_interp(x, y1; bc = bc)
+        itp2 = linear_interp(x, y2; bc = bc)
+        for j in eachindex(xqs)
+            @test outs[1][j] ≈ itp1(xqs[j]) atol = 1.0e-12
+            @test outs[2][j] ≈ itp2(xqs[j]) atol = 1.0e-12
+        end
+    end
+
+    # ============================================================
+    # Persistent Series callable + PeriodicBC — Zero-Copy (Stage 3)
+    # ============================================================
+    # `sitp(outs, xqs)` callable must be zero-alloc under Q outer × K inner
+    # refactor. These guards complement the existing non-periodic alloc
+    # tests in test_linear_series_interp.jl (lines 101-121).
+
+    function _alloc_linear_persistent_vector_range_exclusive()
+        x = range(0.0, step = 2π / 16, length = 16)
+        s = Series(sin.(x), cos.(x))
+        sitp = linear_interp(x, s; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        sitp(outs, xqs); sitp(outs, xqs)
+        return @allocated sitp(outs, xqs)
+    end
+
+    function _alloc_linear_persistent_vector_vector_exclusive()
+        x = [0.0, 0.5, 1.5, 3.0, 5.0]
+        s = Series(sin.(x), cos.(x))
+        sitp = linear_interp(x, s; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        sitp(outs, xqs); sitp(outs, xqs)
+        return @allocated sitp(outs, xqs)
+    end
+
+    function _alloc_linear_persistent_vector_inclusive()
+        x = collect(range(0.0, 2π, length = 17))
+        s = Series(sin.(x), cos.(x))
+        sitp = linear_interp(x, s; bc = PeriodicBC())
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        sitp(outs, xqs); sitp(outs, xqs)
+        return @allocated sitp(outs, xqs)
+    end
+
+    @testset "Persistent callable + PeriodicBC zero-alloc — Range exclusive (T-persistent-alloc)" begin
+        @test _alloc_linear_persistent_vector_range_exclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Persistent callable + PeriodicBC zero-alloc — Vector exclusive (T-persistent-alloc)" begin
+        @test _alloc_linear_persistent_vector_vector_exclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Persistent callable + PeriodicBC zero-alloc — inclusive (T-persistent-alloc)" begin
+        @test _alloc_linear_persistent_vector_inclusive() <= ALLOC_THRESHOLD
+    end
+
 end

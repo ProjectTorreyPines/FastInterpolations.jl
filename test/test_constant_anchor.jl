@@ -17,14 +17,16 @@ using FastInterpolations
         aq = FastInterpolations._anchor_query(x, xq, Val(:constant))
 
         @test aq isa FastInterpolations._ConstantAnchoredQuery{Float64}
-        @test hasfield(typeof(aq), :idx)
+        @test hasfield(typeof(aq), :idxL)
+        @test hasfield(typeof(aq), :idxR)
         @test hasfield(typeof(aq), :xq)
         @test hasfield(typeof(aq), :state)
         @test hasfield(typeof(aq), :h)
         @test hasfield(typeof(aq), :dL)
 
         # Verify field types
-        @test aq.idx isa Int
+        @test aq.idxL isa Int
+        @test aq.idxR isa Int
         @test aq.xq isa Float64
         @test aq.state isa UInt8
         @test aq.h isa Float64
@@ -39,7 +41,8 @@ using FastInterpolations
 
         # Query inside domain
         aq = FastInterpolations._anchor_query(x, 0.35, Val(:constant))
-        @test aq.idx == 4  # interval [0.3, 0.4]
+        @test aq.idxL == 4  # interval [0.3, 0.4]
+        @test aq.idxR == 5
         @test aq.xq == 0.35
         @test aq.state == FastInterpolations.IN_DOMAIN  # inside
         @test aq.h ≈ 0.1
@@ -47,7 +50,8 @@ using FastInterpolations
 
         # Query at left boundary
         aq_left = FastInterpolations._anchor_query(x, 0.0, Val(:constant))
-        @test aq_left.idx == 1
+        @test aq_left.idxL == 1
+        @test aq_left.idxR == 2
         @test aq_left.state == FastInterpolations.IN_DOMAIN
         @test aq_left.dL ≈ 0.0
 
@@ -66,9 +70,9 @@ using FastInterpolations
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:constant))
 
         @test length(aq_vec) == 3
-        @test aq_vec[1].idx == 2   # interval [0.1, 0.2]
-        @test aq_vec[2].idx == 4   # interval [0.3, 0.4]
-        @test aq_vec[3].idx == 8   # interval [0.7, 0.8]
+        @test aq_vec[1].idxL == 2   # interval [0.1, 0.2]
+        @test aq_vec[2].idxL == 4   # interval [0.3, 0.4]
+        @test aq_vec[3].idxL == 8   # interval [0.7, 0.8]
 
         @test all(aq.h ≈ 0.1 for aq in aq_vec)
     end
@@ -227,7 +231,7 @@ using FastInterpolations
         xq = 0.45  # interval [0.3, 0.6]
         aq = FastInterpolations._anchor_query(x, xq, Val(:constant))
 
-        @test aq.idx == 3  # interval [0.3, 0.6]
+        @test aq.idxL == 3  # interval [0.3, 0.6]
         @test aq.xq == 0.45
         @test aq.h ≈ 0.3  # 0.6 - 0.3
         @test aq.dL ≈ 0.15  # 0.45 - 0.3
@@ -366,7 +370,7 @@ using FastInterpolations
             FI._fill_anchors!(buffer, x, xq, Val(:constant))
 
             for i in eachindex(xq)
-                @test buffer[i].idx == expected[i].idx
+                @test buffer[i].idxL == expected[i].idxL
                 @test buffer[i].xq == expected[i].xq
                 @test buffer[i].state == expected[i].state
                 @test buffer[i].h == expected[i].h
@@ -383,7 +387,7 @@ using FastInterpolations
             FI._fill_anchors!(buffer, x, xq, Val(:constant), true)
 
             for i in eachindex(xq)
-                @test buffer[i].idx == expected[i].idx
+                @test buffer[i].idxL == expected[i].idxL
                 @test buffer[i].xq == expected[i].xq
                 @test buffer[i].state == expected[i].state
             end

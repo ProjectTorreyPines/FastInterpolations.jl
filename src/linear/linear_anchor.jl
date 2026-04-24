@@ -23,10 +23,11 @@ matches the interpolant grid.
 - `Tq`: Query type (widened to `promote_type(Tq, Tg)` by the outer constructor)
 
 # Fields
-- `idx`: Interval index where xq falls
+- `idxL`: Left cell index (`1 ≤ idxL ≤ n-1` normally; equals `n` at periodic-exclusive seam)
+- `idxR`: Right cell index (`idxL + 1` normally; wraps to `1` at periodic-exclusive seam)
 - `xq`: Original query point (or wrapped value for periodic), preserves original precision
 - `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
-- `xL`: Left grid point of the interval (avoids re-indexing x[idx] which triggers TwicePrecision on Range)
+- `xL`: Left grid point of the interval (avoids re-indexing x[idxL] which triggers TwicePrecision on Range)
 - `h`: Interval width (xR - xL)
 - `inv_h`: Precomputed reciprocal (1/h) for fast derivative computation
 - `alpha`: Normalized position within interval: (xq - xL) / h, preserves precision
@@ -52,7 +53,8 @@ as it eliminates O(log n) binary search.
 - `inv_h` for EvalDeriv1: `(yR - yL) * inv_h` (no division)
 """
 struct _LinearAnchoredQuery{Tg, Tq <: Real}
-    idx::Int                   # interval index
+    idxL::Int                  # left cell index
+    idxR::Int                  # right cell index (idxL+1 normally; 1 at periodic-exclusive seam)
     xq::Tq                     # query point (possibly wrapped)
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     xL::Tg                     # left grid point
@@ -68,10 +70,10 @@ end
 # For Float grids:  alpha::Tq, xq::Tq — no conversion (identity).
 # For Dual grids + Float query:  alpha::Dual (from grid arithmetic),
 #   xq promoted to Dual via convert (zero partials = "query has no grid sensitivity").
-@inline function _LinearAnchoredQuery(idx::Int, xq, state::UInt8, xL::Tg, h::Tg, inv_h::Tg, alpha) where {Tg}
+@inline function _LinearAnchoredQuery(idxL::Int, idxR::Int, xq, state::UInt8, xL::Tg, h::Tg, inv_h::Tg, alpha) where {Tg}
     Ta = typeof(alpha)
     xq_p = convert(Ta, xq)
-    return _LinearAnchoredQuery{Tg, Ta}(idx, xq_p, state, xL, h, inv_h, alpha)
+    return _LinearAnchoredQuery{Tg, Ta}(idxL, idxR, xq_p, state, xL, h, inv_h, alpha)
 end
 
 # ========================================
@@ -165,7 +167,8 @@ end
 Create anchored queries for multiple query points with precision preservation.
 
 # Precision Preservation
-Uses `_promote_for_anchor` to preserve wider precision when `Tq` differs from `Tg`.
+The outer `_LinearAnchoredQuery` constructor promotes via `promote_type(Tq, Tg)`,
+so wider precision is preserved when `Tq` differs from `Tg`.
 
 # Example
 ```julia
@@ -201,18 +204,20 @@ end
 """
     _fill_anchors!(buffer, x, xq, ::Val{:linear}; wrap=false) -> buffer
 
-Fill a pre-allocated buffer with anchored queries for linear interpolation.
-In-place version of `_anchor_query(x, xq, Val(:linear))` for zero-allocation pooled usage.
+Fill a caller-allocated buffer with anchored queries for linear interpolation.
+In-place version of `_anchor_query(x, xq, Val(:linear))` — zero-allocation as long as
+the caller reuses `buffer`. Writes `length(xq)` entries.
 
 # Arguments
-- `buffer::Vector{_LinearAnchoredQuery{Tg,Tq}}`: Pre-allocated buffer (length >= length(xq))
+- `buffer::Vector{_LinearAnchoredQuery{Tg,Tq}}`: Caller-allocated buffer (length >= length(xq))
 - `x::AbstractVector{Tg}`: Grid points (must match interpolant's grid)
 - `xq::AbstractVector`: Query points (any Real type)
 - `::Val{:linear}`: Type tag for linear interpolation
 - `wrap::Bool=false`: If true, wrap query points to domain [x[1], x[end])
 
 # Precision Preservation
-Uses `_promote_for_anchor` to preserve wider precision when `S` differs from `Tg`.
+The outer `_LinearAnchoredQuery` constructor promotes via `promote_type(S, Tg)`,
+so wider precision is preserved when `S` differs from `Tg`.
 """
 @inline function _fill_anchors!(
         buffer::AbstractVector{_LinearAnchoredQuery{Tg, Tq}},
@@ -259,7 +264,11 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
     inv_h = _get_inv_h(x, loc.xR, loc.xL)
     alpha = (loc.xq - loc.xL) * inv_h
 
-    return _LinearAnchoredQuery(loc.idx, loc.xq, loc.state, loc.xL, h, inv_h, alpha)
+    # `_anchor_loc` never returns a periodic-exclusive seam pair — it operates
+    # on a fixed grid with at most wrap-to-domain remapping — so `idxR = idxL+1`
+    # here. Periodic-exclusive seam anchors are constructed via `_LinearAnchoredQuery(...)`
+    # directly in the exclusive periodic one-shot helpers (bypassing `_anchor_loc`).
+    return _LinearAnchoredQuery(loc.idx, loc.idx + 1, loc.xq, loc.state, loc.xL, h, inv_h, alpha)
 end
 
 # ========================================
@@ -310,7 +319,7 @@ end
         op::AbstractEvalOp,
         ::AbstractExtrap
     )
-    @inbounds return _linear_kernel(op, y[aq.idx], y[aq.idx + 1], aq)
+    @inbounds return _linear_kernel(op, y[aq.idxL], y[aq.idxR], aq)
 end
 
 # No extrapolation: throw DomainError if outside domain
@@ -321,7 +330,7 @@ end
         ::NoExtrap
     )
     aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
-    @inbounds return _linear_kernel(op, y[aq.idx], y[aq.idx + 1], aq)
+    @inbounds return _linear_kernel(op, y[aq.idxL], y[aq.idxR], aq)
 end
 
 # Clamp/Fill extrapolation: boundary value if OOB
@@ -335,7 +344,7 @@ end
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     end
-    @inbounds return _linear_kernel(op, y[aq.idx], y[aq.idx + 1], aq)
+    @inbounds return _linear_kernel(op, y[aq.idxL], y[aq.idxR], aq)
 end
 
 # ========================================
@@ -358,7 +367,7 @@ end
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end
-    @inbounds return _linear_kernel(op, itp.y[aq.idx], itp.y[aq.idx + 1], aq)
+    @inbounds return _linear_kernel(op, itp.y[aq.idxL], itp.y[aq.idxR], aq)
 end
 
 # Clamp/Fill: delegate to shared

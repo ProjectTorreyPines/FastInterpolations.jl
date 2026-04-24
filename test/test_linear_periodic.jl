@@ -943,6 +943,34 @@ end
         @test out[2] ≈ sitp(3.5)[2] atol = 1.0e-12
     end
 
+    @testset "Series oneshot + PeriodicBC(:exclusive) preserves cached step on large-offset Range" begin
+        # On `range(1e8, step=0.1, …)`, `x[i+1] - x[i]` loses precision to float
+        # cancellation (~1.5e-8 ulp at 1e8), while `_CachedRange.h` stores the
+        # exact step. The periodic series one-shot paths must dispatch through
+        # `_get_h`/`_get_inv_h` so they match the non-series scalar and
+        # persistent series evaluators on such grids.
+        x = range(1.0e8, step = 0.1, length = 10)
+        y1 = Float64.(1:10)
+        y2 = Float64.(11:20)
+        s = Series(y1, y2)
+        bc = PeriodicBC(endpoint = :exclusive)
+        xq = 1.0e8 + 0.95  # lands in seam cell [x[10], x[1]+period)
+
+        v_scalar = linear_interp(x, y1, xq; bc = bc)
+        v_oneshot = linear_interp(x, s, xq; bc = bc)
+        v_persist = linear_interp(x, s; bc = bc)(xq)
+
+        @test v_oneshot[1] === v_scalar
+        @test v_oneshot[1] === v_persist[1]
+
+        # Batch path must agree element-wise
+        xqs = [1.0e8 + 0.95, 1.0e8 + 0.55]
+        outs = [similar(xqs) for _ in 1:2]
+        linear_interp!(outs, x, s, xqs; bc = bc)
+        @test outs[1][1] === v_scalar
+        @test outs[1][2] === linear_interp(x, y1, xqs[2]; bc = bc)
+    end
+
     # ============================================================
     # Series OneShot Vector-Batch + PeriodicBC — Zero-Copy (Stage 2)
     # ============================================================

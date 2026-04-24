@@ -686,6 +686,33 @@ using FastInterpolations: _CachedRange
         @test out[2] == sitp(3.5)[2]
     end
 
+    @testset "Series oneshot + PeriodicBC(:exclusive) preserves cached step on large-offset Range" begin
+        # Parallel to the Linear test: `_CachedRange.h` stores the exact step
+        # while `xR - xL` suffers float cancellation near 1e8. Constant uses
+        # `h`/`dL` for side-offset computation, so nearest/left/right-side
+        # decisions must see the cached step to match scalar/persistent paths.
+        x = range(1.0e8, step = 0.1, length = 10)
+        y1 = Float64.(1:10)
+        y2 = Float64.(11:20)
+        s = Series(y1, y2)
+        bc = PeriodicBC(endpoint = :exclusive)
+        xq = 1.0e8 + 0.95
+
+        for side in (LeftSide(), RightSide(), NearestSide())
+            v_scalar = constant_interp(x, y1, xq; bc = bc, side = side)
+            v_oneshot = constant_interp(x, s, xq; bc = bc, side = side)
+            v_persist = constant_interp(x, s; bc = bc, side = side)(xq)
+            @test v_oneshot[1] === v_scalar
+            @test v_oneshot[1] === v_persist[1]
+
+            xqs = [1.0e8 + 0.95, 1.0e8 + 0.55]
+            outs = [similar(xqs) for _ in 1:2]
+            constant_interp!(outs, x, s, xqs; bc = bc, side = side)
+            @test outs[1][1] === v_scalar
+            @test outs[1][2] === constant_interp(x, y1, xqs[2]; bc = bc, side = side)
+        end
+    end
+
     # ============================================================
     # Series OneShot Vector-Batch + PeriodicBC — Zero-Copy (Stage 2)
     # ============================================================

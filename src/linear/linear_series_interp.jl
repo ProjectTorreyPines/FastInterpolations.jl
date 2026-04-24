@@ -255,13 +255,12 @@ constructor), so `dL = aq.xq - aq.xL` correctly propagates grid-side partials.
 # Arguments
 - `output`: Pre-allocated output vector (length = n_series)
 - `sitp`: LinearSeriesInterpolant
-- `aq`: Anchor with precomputed index/side (from primal value)
-- `xq`: Original query point (any Real type, including ForwardDiff.Dual)
+- `aq`: Anchor with precomputed indices (`idxL`/`idxR`) and widened `xq`
 - `op`: Evaluation operation (value, derivative)
 
 # AD Support
-Supports ForwardDiff.Dual input: anchor provides index/side from primal,
-while `xq` is used directly in arithmetic to preserve derivative information.
+Supports ForwardDiff.Dual input: the anchor's indices come from the primal value,
+while `aq.xq` carries the Dual payload so `dL = aq.xq - aq.xL` preserves derivatives.
 """
 @inline function _eval_linear_series_point!(
         output::AbstractVector,
@@ -501,32 +500,6 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         end
     end
     return outputs
-end
-
-"""
-Internal: Evaluate a single series for vector of query points.
-Uses argument-passing pattern for optimal performance.
-
-# Precision Preservation
-The anchor's `alpha` field already contains precision-preserving normalized position
-computed as `(xq - xL) / h` with the query's original precision.
-"""
-@inline function _eval_linear_series_vector!(
-        out::AbstractVector,
-        y::Matrix{Tv},
-        x::AbstractVector{Tg},
-        n_pts::Int,
-        x_min::Tg,
-        x_max::Tg,
-        k::Int,
-        aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg}},
-        extrap::AbstractExtrap,
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    @inbounds for j in eachindex(out, aq_vec)
-        out[j] = _eval_linear_series_with_extrap(y, x, n_pts, x_min, x_max, k, aq_vec[j], extrap, op)
-    end
-    return out
 end
 
 """

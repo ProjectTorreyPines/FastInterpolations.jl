@@ -167,7 +167,8 @@ end
 Create anchored queries for multiple query points with precision preservation.
 
 # Precision Preservation
-Uses `_promote_for_anchor` to preserve wider precision when `Tq` differs from `Tg`.
+The outer `_LinearAnchoredQuery` constructor promotes via `promote_type(Tq, Tg)`,
+so wider precision is preserved when `Tq` differs from `Tg`.
 
 # Example
 ```julia
@@ -203,18 +204,20 @@ end
 """
     _fill_anchors!(buffer, x, xq, ::Val{:linear}; wrap=false) -> buffer
 
-Fill a pre-allocated buffer with anchored queries for linear interpolation.
-In-place version of `_anchor_query(x, xq, Val(:linear))` for zero-allocation pooled usage.
+Fill a caller-allocated buffer with anchored queries for linear interpolation.
+In-place version of `_anchor_query(x, xq, Val(:linear))` — zero-allocation as long as
+the caller reuses `buffer`. Writes `length(xq)` entries.
 
 # Arguments
-- `buffer::Vector{_LinearAnchoredQuery{Tg,Tq}}`: Pre-allocated buffer (length >= length(xq))
+- `buffer::Vector{_LinearAnchoredQuery{Tg,Tq}}`: Caller-allocated buffer (length >= length(xq))
 - `x::AbstractVector{Tg}`: Grid points (must match interpolant's grid)
 - `xq::AbstractVector`: Query points (any Real type)
 - `::Val{:linear}`: Type tag for linear interpolation
 - `wrap::Bool=false`: If true, wrap query points to domain [x[1], x[end])
 
 # Precision Preservation
-Uses `_promote_for_anchor` to preserve wider precision when `S` differs from `Tg`.
+The outer `_LinearAnchoredQuery` constructor promotes via `promote_type(S, Tg)`,
+so wider precision is preserved when `S` differs from `Tg`.
 """
 @inline function _fill_anchors!(
         buffer::AbstractVector{_LinearAnchoredQuery{Tg, Tq}},

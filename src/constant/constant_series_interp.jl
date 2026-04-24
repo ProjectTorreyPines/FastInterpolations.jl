@@ -513,29 +513,6 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
 end
 
 """
-Internal: Evaluate a single series for vector of query points.
-Uses argument-passing pattern for optimal performance.
-"""
-@inline function _eval_constant_series_vector!(
-        out::AbstractVector{Tv},
-        y::Matrix{Tv},
-        x::AbstractVector{Tg},
-        n_pts::Int,
-        x_min::Tg,
-        x_max::Tg,
-        k::Int,
-        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{Tg}},
-        extrap::AbstractExtrap,
-        side_val::AbstractSide,
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    @inbounds for j in eachindex(out, aq_vec)
-        out[j] = _eval_constant_series_with_extrap(y, x, n_pts, x_min, x_max, k, aq_vec[j], extrap, side_val, op)
-    end
-    return out
-end
-
-"""
 Internal: Evaluate single series at single query point with extrapolation handling.
 """
 @inline function _eval_constant_series_with_extrap(

@@ -12,22 +12,26 @@
 # ========================================
 
 """
-    _ConstantAnchoredQuery{T}
+    _ConstantAnchoredQuery{Tg, Tq}
 
 Precomputed geometry for ultra-fast constant interpolation at a fixed query point.
 Internal API: no runtime grid validation; callers must ensure the anchor
 matches the interpolant grid.
 
 # Type Parameters
-- `T`: Grid type (unconstrained)
+- `Tg`: Grid element type (stored in `h`)
+- `Tq <: Real`: Query point type (stored in `xq`, `dL`); may widen `Tg` (e.g. `Dual` for AD)
+
+A convenience constructor `_ConstantAnchoredQuery{T}(args...)` is provided for the
+common non-AD case where `Tg == Tq`.
 
 # Fields
 - `idxL`: Left cell index (`1 ≤ idxL ≤ n-1` normally; equals `n` at periodic-exclusive seam)
 - `idxR`: Right cell index (`idxL + 1` normally; wraps to `1` at periodic-exclusive seam)
 - `xq`: Original query point (or wrapped value for periodic)
 - `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
-- `h`: Interval width (for :nearest comparison)
-- `dL`: Offset from left boundary (for :nearest comparison)
+- `h`: Interval width (used by all side modes via `_compute_single_offset`)
+- `dL`: Offset from left boundary (used by all side modes via `_compute_single_offset`)
 
 # Usage
 ```julia
@@ -145,11 +149,12 @@ end
 """
     _fill_anchors!(buffer, x, xq, ::Val{:constant}; wrap=false) -> buffer
 
-Fill a pre-allocated buffer with anchored queries for constant interpolation.
-In-place version of `_anchor_query(x, xq, Val(:constant))` for zero-allocation pooled usage.
+Fill a caller-allocated buffer with anchored queries for constant interpolation.
+In-place version of `_anchor_query(x, xq, Val(:constant))` — zero-allocation as long as
+the caller reuses `buffer`. Writes `length(xq)` entries.
 
 # Arguments
-- `buffer::Vector{_ConstantAnchoredQuery{T}}`: Pre-allocated buffer (length >= length(xq))
+- `buffer::Vector{_ConstantAnchoredQuery{T,T}}`: Caller-allocated buffer (length >= length(xq))
 - `x::AbstractVector{T}`: Grid points (must match interpolant's grid)
 - `xq::AbstractVector`: Query points (any Real type, auto-promoted to T)
 - `::Val{:constant}`: Type tag for constant interpolation

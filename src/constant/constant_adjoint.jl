@@ -6,9 +6,10 @@
 # Pure single-point scatter (simpler than linear's 2-point scatter).
 #
 # Reuses _ConstantAnchoredQuery from constant_anchor.jl:
-# - idx   → interval index
-# - h     → interval width (for NearestSide offset computation)
-# - dL    → offset from left boundary (for offset computation)
+# - idxL  → left cell index (used directly; this path never sees seam pairs)
+# - idxR  → right cell index (unused here; present on the shared struct for periodic-exclusive callers)
+# - h     → interval width (for side-offset computation)
+# - dL    → offset from left boundary (for side-offset computation)
 # - state → OOB detection: IN_DOMAIN, OOB_LEFT, OOB_RIGHT
 # - xq    → query point (for right-boundary special case)
 #

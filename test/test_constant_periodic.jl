@@ -795,4 +795,48 @@ using FastInterpolations: _CachedRange
         end
     end
 
+    # ============================================================
+    # Persistent Series callable + PeriodicBC — Zero-Copy (Stage 3)
+    # ============================================================
+
+    function _alloc_constant_persistent_vector_range_exclusive()
+        x = range(0.0, step = 2π / 16, length = 16)
+        s = Series(sin.(x), cos.(x))
+        sitp = constant_interp(x, s; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        sitp(outs, xqs); sitp(outs, xqs)
+        return @allocated sitp(outs, xqs)
+    end
+
+    function _alloc_constant_persistent_vector_vector_exclusive()
+        x = [0.0, 0.5, 1.5, 3.0, 5.0]
+        s = Series(sin.(x), cos.(x))
+        sitp = constant_interp(x, s; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        sitp(outs, xqs); sitp(outs, xqs)
+        return @allocated sitp(outs, xqs)
+    end
+
+    function _alloc_constant_persistent_vector_inclusive()
+        x = collect(range(0.0, 2π, length = 17))
+        s = Series(sin.(x), cos.(x))
+        sitp = constant_interp(x, s; bc = PeriodicBC())
+        xqs = [0.5, 1.0, 2.0, 3.5]
+        outs = [similar(xqs) for _ in 1:2]
+        sitp(outs, xqs); sitp(outs, xqs)
+        return @allocated sitp(outs, xqs)
+    end
+
+    @testset "Persistent callable + PeriodicBC zero-alloc — Range exclusive (T-persistent-alloc)" begin
+        @test _alloc_constant_persistent_vector_range_exclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Persistent callable + PeriodicBC zero-alloc — Vector exclusive (T-persistent-alloc)" begin
+        @test _alloc_constant_persistent_vector_vector_exclusive() <= ALLOC_THRESHOLD
+    end
+    @testset "Persistent callable + PeriodicBC zero-alloc — inclusive (T-persistent-alloc)" begin
+        @test _alloc_constant_persistent_vector_inclusive() <= ALLOC_THRESHOLD
+    end
+
 end

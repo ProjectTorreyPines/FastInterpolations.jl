@@ -462,14 +462,15 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 - `xq`: Query points (any Real type, auto-promoted for search)
 - `deriv`: Derivative order (0 or 1)
 
-This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
-Uses task-local pool for anchor vector to achieve zero allocation after warmup.
+Zero-alloc by construction (Q outer × K inner): anchor is built once per
+query on the stack and reused for all K series in an inner loop, staying in
+registers across the K evals. No pool, no `aq_vec` scratch.
 
 # Precision Preservation
-Uses pooled anchors with promoted type `promote_type(Tq, Tg)` to preserve precision in alpha.
-Pool handles both same-type and mixed-type cases efficiently.
+Per-query anchor is typed `_LinearAnchoredQuery{Tg, promote_type(Tq, Tg)}`
+via the outer constructor's alpha-type inference.
 """
-@with_pool pool function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
+function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         outputs::AbstractVector{<:AbstractVector},
         xq::AbstractVector{Tq};
         deriv::DerivOp = EvalValue(),
@@ -482,22 +483,22 @@ Pool handles both same-type and mixed-type cases efficiently.
     # Validate dimensions
     _validate_series_outputs(outputs, n_ser, n_query)
 
-    # Build anchors - pool handles both same-type and mixed-type cases
-    Tq_eff = promote_type(Tq, Tg)
-    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tq_eff}, n_query)
     searcher = _resolve_search(sitp.x, xq, search, hint)
-    _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear), _should_wrap(sitp), searcher)
+    wrap     = _should_wrap(sitp)
+    y        = sitp.y
+    x_grid   = sitp.x
+    n_pts    = n_points(sitp)
+    extrap   = sitp.extrap
+    x_min    = Tg(first(sitp.x))
+    x_max    = Tg(last(sitp.x))
 
-    # Extract matrices for argument-passing pattern
-    y = sitp.y
-    x_grid = sitp.x
-    n_pts = n_points(sitp)
-    extrap = sitp.extrap
-    x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
-
-    # Evaluate all series - anchor already has correct alpha precision
-    @inbounds for k in 1:n_ser
-        _eval_linear_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, deriv)
+    @inbounds for j in eachindex(xq)
+        aq = _anchor_query(x_grid, xq[j], Val(:linear), wrap, searcher)
+        for k in 1:n_ser
+            outputs[k][j] = _eval_linear_series_with_extrap(
+                y, x_grid, n_pts, x_min, x_max, k, aq, extrap, deriv
+            )
+        end
     end
     return outputs
 end

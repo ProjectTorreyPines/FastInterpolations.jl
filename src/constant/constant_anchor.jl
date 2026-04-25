@@ -22,9 +22,6 @@ matches the interpolant grid.
 - `Tg`: Grid element type (stored in `h`)
 - `Tq <: Real`: Query point type (stored in `xq`, `dL`); may widen `Tg` (e.g. `Dual` for AD)
 
-A convenience constructor `_ConstantAnchoredQuery{T}(args...)` is provided for the
-common non-AD case where `Tg == Tq`.
-
 # Fields
 - `idxL`: Left cell index (`1 ≤ idxL ≤ n-1` normally; equals `n` at periodic-exclusive seam)
 - `idxR`: Right cell index (`idxL + 1` normally; wraps to `1` at periodic-exclusive seam)
@@ -82,10 +79,8 @@ end
 @inline _ConstantAnchoredQuery(idxL::Int, idxR::Int, xq::Tq, state::UInt8, h::Tg, dL::Tq) where {Tg, Tq} =
     _ConstantAnchoredQuery{Tg, Tq}(_pair(idxL, idxR), xq, state, h, dL)
 
-# Convenience: single type param for backward compat (non-AD paths) — Tq==Tg
-@inline _ConstantAnchoredQuery{T}(idxL::Int, idxR::Int, xq, state, h, dL) where {T} =
-    _ConstantAnchoredQuery{T, T}(_pair(idxL, idxR), xq, state, h, dL)
-# Parametric stencil-native alias used by legacy typeof(aq)(...) fixup sites.
+# Parametric stencil-native alias used by legacy typeof(aq)(...) fixup sites
+# (e.g. `_fixup_constant_anchor_state!` in constant_adjoint.jl).
 @inline _ConstantAnchoredQuery{Tg, Tq}(idxL::Int, idxR::Int, xq, state, h, dL) where {Tg, Tq} =
     _ConstantAnchoredQuery{Tg, Tq}(_pair(idxL, idxR), xq, state, h, dL)
 

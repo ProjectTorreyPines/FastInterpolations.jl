@@ -1,6 +1,6 @@
 # ALLOC_THRESHOLD is defined in runtests.jl
 
-@testitem "Cubic Spline - Core Functionality" setup=[AllocConstants] begin
+@testitem "Cubic Spline - Core Functionality" setup = [AllocConstants] begin
 
     @testset "Basic correctness" begin
         for n in [10, 50, 101]

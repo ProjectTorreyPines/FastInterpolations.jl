@@ -14,7 +14,7 @@
 # Function-barrier pattern is mandatory: @testset wraps body in try/catch
 # → makes locals type-unstable → @allocated shows artifacts.
 
-@testitem "ND batch hint persistence" setup=[AllocConstants] begin
+@testitem "ND batch hint persistence" setup = [AllocConstants] begin
 
     # ── Vector grid fixtures ─────────────────────────────────────
     # Slightly perturbed uniform grids → Vector{Float64}, not Range

@@ -1,6 +1,6 @@
 # ALLOC_THRESHOLD is defined in runtests.jl
 
-@testitem "Akima 1D" setup=[AllocConstants] begin
+@testitem "Akima 1D" setup = [AllocConstants] begin
 
     p(x) = 2x^3 - x^2 + 3x - 1
     dp(x) = 6x^2 - 2x + 3

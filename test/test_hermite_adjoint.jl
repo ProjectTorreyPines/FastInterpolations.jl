@@ -1,4 +1,4 @@
-@testitem "HermiteAdjoint1D" setup=[AllocConstants] begin
+@testitem "HermiteAdjoint1D" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # ========================================
@@ -447,7 +447,7 @@ end
 # CardinalAdjoint1D
 # ========================================
 
-@testitem "CardinalAdjoint1D" setup=[AllocConstants] begin
+@testitem "CardinalAdjoint1D" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     function cardinal_dot_product_test(
@@ -692,7 +692,7 @@ end
 # PchipAdjoint1D
 # ========================================
 
-@testitem "PchipAdjoint1D" setup=[AllocConstants] begin
+@testitem "PchipAdjoint1D" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     function pchip_dot_product_test(
@@ -1005,7 +1005,7 @@ end
 # AkimaAdjoint1D
 # ========================================
 
-@testitem "AkimaAdjoint1D" setup=[AllocConstants] begin
+@testitem "AkimaAdjoint1D" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     function akima_dot_product_test(
@@ -1330,7 +1330,7 @@ end
 # Hermite Family — integrate
 # ========================================
 
-@testitem "Hermite Family — integrate" setup=[AllocConstants] begin
+@testitem "Hermite Family — integrate" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
 

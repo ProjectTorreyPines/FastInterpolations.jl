@@ -1,4 +1,4 @@
-@testitem "Hermite OnTheFly" setup=[AllocConstants] begin
+@testitem "Hermite OnTheFly" setup = [AllocConstants] begin
     using Random: MersenneTwister
     using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes,
         _pchip_slopes!, _cardinal_slopes!, _akima_slopes!,

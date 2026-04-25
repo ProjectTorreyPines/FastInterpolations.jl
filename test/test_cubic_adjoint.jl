@@ -1,4 +1,4 @@
-@testitem "CubicAdjoint" setup=[AllocConstants] begin
+@testitem "CubicAdjoint" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # ========================================
@@ -633,7 +633,7 @@ end
 # ========================================
 # Scalar / Tuple y_bar + scalar query constructor
 # ========================================
-@testitem "CubicAdjoint scalar/tuple y_bar" setup=[AllocConstants] begin
+@testitem "CubicAdjoint scalar/tuple y_bar" setup = [AllocConstants] begin
     x = range(0.0, 1.0, 20)
 
     @testset "Scalar y_bar (1 query point)" begin

@@ -1,4 +1,4 @@
-@testitem "LinearAdjoint" setup=[AllocConstants] begin
+@testitem "LinearAdjoint" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # ========================================

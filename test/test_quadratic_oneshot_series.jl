@@ -1,4 +1,4 @@
-@testitem "Quadratic One-Shot Series" setup=[AllocConstants] begin
+@testitem "Quadratic One-Shot Series" setup = [AllocConstants] begin
     x = collect(range(0.0, 1.0, 101))
     y_sin = sin.(2π .* x)
     y_cos = cos.(2π .* x)

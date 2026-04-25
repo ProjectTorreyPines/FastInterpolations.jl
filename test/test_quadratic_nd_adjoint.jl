@@ -1,4 +1,4 @@
-@testitem "QuadraticAdjointND (N=2)" setup=[AllocConstants] begin
+@testitem "QuadraticAdjointND (N=2)" setup = [AllocConstants] begin
     using LinearAlgebra: dot
     using StaticArrays: SVector
 
@@ -631,7 +631,7 @@ end
 # ========================================
 # N=3 Tests (generic ntuple path)
 # ========================================
-@testitem "QuadraticAdjointND (N=3)" setup=[AllocConstants] begin
+@testitem "QuadraticAdjointND (N=3)" setup = [AllocConstants] begin
     using LinearAlgebra: dot
     using StaticArrays: SVector
 

@@ -8,7 +8,7 @@
 
 # ALLOC_THRESHOLD is defined in runtests.jl (0 on Julia 1.12+, 240 on older)
 
-@testitem "Type Promotion Allocations" setup=[AllocConstants] begin
+@testitem "Type Promotion Allocations" setup = [AllocConstants] begin
 
     # ========================================
     # Setup: Float64 grid, various data/query types

@@ -72,7 +72,7 @@
     end
 end
 
-@testitem "series_matrix - Integration with CubicSeriesInterpolant" setup=[AllocConstants] begin
+@testitem "series_matrix - Integration with CubicSeriesInterpolant" setup = [AllocConstants] begin
     # Verify Cubic still works after refactoring to use shared infrastructure
     x = collect(0.0:0.1:1.0)  # 11 points
     y1 = sin.(2π .* x)

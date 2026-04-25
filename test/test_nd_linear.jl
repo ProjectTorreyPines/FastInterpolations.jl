@@ -5,7 +5,7 @@
 # Comprehensive test coverage for N-dimensional multilinear interpolation.
 # Tests cover: exactness, derivatives, batch queries, extrapolation, grid types, complex values.
 
-@testitem "LinearInterpolantND" setup=[AllocConstants] begin
+@testitem "LinearInterpolantND" setup = [AllocConstants] begin
     using FastInterpolations: get_task_local_pool
     # ========================================
     # 2D Bilinear Exactness Tests

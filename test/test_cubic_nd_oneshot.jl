@@ -1,4 +1,4 @@
-@testitem "Cubic ND One-Shot (Pool-Based)" setup=[AllocConstants] begin
+@testitem "Cubic ND One-Shot (Pool-Based)" setup = [AllocConstants] begin
     using FastInterpolations: get_task_local_pool
 
     # ========================================

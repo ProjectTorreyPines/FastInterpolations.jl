@@ -1,4 +1,4 @@
-@testitem "LinearAdjointND (N=2)" setup=[AllocConstants] begin
+@testitem "LinearAdjointND (N=2)" setup = [AllocConstants] begin
     using LinearAlgebra: dot
     using StaticArrays: SVector
 
@@ -363,7 +363,7 @@ end
 # N=3 Tests
 # ========================================
 
-@testitem "LinearAdjointND (N=3)" setup=[AllocConstants] begin
+@testitem "LinearAdjointND (N=3)" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩)
@@ -474,7 +474,7 @@ end
 # Linear ND adjoint weights are tensor products of 1D weights.
 # For query at (αx, αy), corner weights are products of per-axis weights.
 
-@testitem "LinearAdjointND — Analytical (N=2)" setup=[AllocConstants] begin
+@testitem "LinearAdjointND — Analytical (N=2)" setup = [AllocConstants] begin
     using LinearAlgebra: dot
     using StaticArrays: SVector
 
@@ -673,7 +673,7 @@ end
 # ========================================
 # Scalar / Tuple y_bar + AoS / single-tuple constructor
 # ========================================
-@testitem "LinearAdjointND scalar/tuple y_bar" setup=[AllocConstants] begin
+@testitem "LinearAdjointND scalar/tuple y_bar" setup = [AllocConstants] begin
 
     nx, ny = 10, 8
     x = range(0.0, 1.0, nx)
@@ -726,7 +726,7 @@ end
     end
 end
 
-@testitem "LinearAdjointND AoS / single-tuple constructor" setup=[AllocConstants] begin
+@testitem "LinearAdjointND AoS / single-tuple constructor" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩)
@@ -796,7 +796,7 @@ end
 # ========================================
 # SVector query support (N=2 and N=3)
 # ========================================
-@testitem "LinearAdjointND — SVector queries" setup=[AllocConstants] begin
+@testitem "LinearAdjointND — SVector queries" setup = [AllocConstants] begin
     using LinearAlgebra: dot
     using StaticArrays: SVector
 
@@ -921,7 +921,7 @@ end
 # ========================================
 # Duck-typed y_bar (multi-query)
 # ========================================
-@testitem "LinearAdjointND — duck-typed y_bar" setup=[AllocConstants] begin
+@testitem "LinearAdjointND — duck-typed y_bar" setup = [AllocConstants] begin
 
     gx = collect(range(0.0, 2.0, 5))
     gy = collect(range(0.0, 1.0, 5))

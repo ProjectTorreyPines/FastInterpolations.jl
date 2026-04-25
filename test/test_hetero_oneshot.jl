@@ -1,4 +1,4 @@
-@testitem "interp One-Shot API" setup=[AllocConstants] begin
+@testitem "interp One-Shot API" setup = [AllocConstants] begin
     # ========================================
     # Test Setup
     # ========================================

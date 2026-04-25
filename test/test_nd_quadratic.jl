@@ -6,7 +6,7 @@
 # Tests cover: polynomial reproduction, derivatives, batch queries,
 # extrapolation, grid types, complex values, BCs, and error handling.
 
-@testitem "QuadraticInterpolantND" setup=[AllocConstants] begin
+@testitem "QuadraticInterpolantND" setup = [AllocConstants] begin
     using FastInterpolations: get_task_local_pool
 
     # ========================================

@@ -8,7 +8,7 @@
 #   - Range grid (type-stable extension) vs Vector grid (vcat extension).
 #   - Inclusive check raises on mismatched endpoints.
 
-@testitem "Linear PeriodicBC" setup=[AllocConstants] begin
+@testitem "Linear PeriodicBC" setup = [AllocConstants] begin
     using FastInterpolations: _is_periodic_bc, _CachedRange
 
     @testset "NoBC default is no-op" begin

@@ -292,7 +292,7 @@ end
 # ============================================================================
 # Group 4: Allocation Tests (Phase 3)
 # ============================================================================
-@testitem "Constant Interpolation - Allocations" setup=[AllocConstants] begin
+@testitem "Constant Interpolation - Allocations" setup = [AllocConstants] begin
     import FastInterpolations: _constant_kernel, EvalValue, EvalDeriv1, EvalDeriv2
 
     x = collect(0.0:0.1:1.0)

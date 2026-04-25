@@ -1,4 +1,4 @@
-@testitem "Full-domain fast path" setup=[AllocConstants] begin
+@testitem "Full-domain fast path" setup = [AllocConstants] begin
     x = collect(range(0.0, 2.0, length = 21))
 
     @testset "1D scalar parity" begin

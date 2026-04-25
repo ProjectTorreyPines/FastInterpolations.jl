@@ -1,4 +1,4 @@
-@testitem "QuadraticAdjoint" setup=[AllocConstants] begin
+@testitem "QuadraticAdjoint" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # ========================================

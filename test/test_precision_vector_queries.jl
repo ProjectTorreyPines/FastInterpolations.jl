@@ -10,7 +10,7 @@
 # to Float32 when the grid is Float32, losing precision in arithmetic.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@testitem "Precision: Vector Query Paths (Scalar/Vector Symmetry)" setup=[AllocConstants] begin
+@testitem "Precision: Vector Query Paths (Scalar/Vector Symmetry)" setup = [AllocConstants] begin
     # Helper: extract diagonal from a matrix (avoid LinearAlgebra dependency)
     __diag(M::AbstractMatrix) = [M[i, i] for i in 1:min(size(M)...)]
 

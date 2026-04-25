@@ -1,6 +1,6 @@
 # ALLOC_THRESHOLD is defined in runtests.jl
 
-@testitem "CubicInterpolant" setup=[AllocConstants] begin
+@testitem "CubicInterpolant" setup = [AllocConstants] begin
     # Setup
     x = collect(range(0.0, 1.0, 11))
     y = sin.(2π .* x)

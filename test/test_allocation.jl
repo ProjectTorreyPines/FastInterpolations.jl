@@ -15,7 +15,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
 
 # ALLOC_THRESHOLD is defined in runtests.jl
 
-@testitem "Allocation Tests" setup=[AllocConstants] begin
+@testitem "Allocation Tests" setup = [AllocConstants] begin
     # Import internal function for testing
     import FastInterpolations: _get_cubic_cache
 

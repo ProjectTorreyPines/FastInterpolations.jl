@@ -7,7 +7,7 @@
 # shared series infrastructure from Phases A-D.
 #
 
-@testitem "QuadraticSeriesInterpolant" setup=[AllocConstants] begin
+@testitem "QuadraticSeriesInterpolant" setup = [AllocConstants] begin
     FI = FastInterpolations
 
 

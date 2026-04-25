@@ -1,4 +1,4 @@
-@testitem "ND Cubic Interpolation (2D)" setup=[AllocConstants] begin
+@testitem "ND Cubic Interpolation (2D)" setup = [AllocConstants] begin
 
     @testset "Basic 2D Interpolation" begin
         # Create a simple test function: f(x,y) = sin(x) * cos(y)

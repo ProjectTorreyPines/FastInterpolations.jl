@@ -7,7 +7,7 @@
 # shared series infrastructure from Phases A-D.
 #
 
-@testitem "LinearSeriesInterpolant" setup=[AllocConstants] begin
+@testitem "LinearSeriesInterpolant" setup = [AllocConstants] begin
     FI = FastInterpolations
 
 

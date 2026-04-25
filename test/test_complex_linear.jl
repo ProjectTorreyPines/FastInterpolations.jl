@@ -4,7 +4,7 @@
 # Tests for native Complex number support in LinearInterpolant.
 # Validates the Tg/Tv type separation design.
 
-@testitem "Complex Linear Interpolation" setup=[AllocConstants] begin
+@testitem "Complex Linear Interpolation" setup = [AllocConstants] begin
 
     # ========================================
     # Basic Complex Interpolation

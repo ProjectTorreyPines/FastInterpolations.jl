@@ -227,7 +227,7 @@ end
 # Phase 3: Scalar Kernel Migration Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
 
-@testitem "CubicSeriesInterpolant - Scalar Kernel Migration" setup=[AllocConstants] begin
+@testitem "CubicSeriesInterpolant - Scalar Kernel Migration" setup = [AllocConstants] begin
     using FastInterpolations: _ensure_point_layout!
 
     FI = FastInterpolations
@@ -374,7 +374,7 @@ end
 # Phase 5: Memory & Allocation Verification Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
 
-@testitem "CubicSeriesInterpolant - Memory & Allocation" setup=[AllocConstants] begin
+@testitem "CubicSeriesInterpolant - Memory & Allocation" setup = [AllocConstants] begin
     using FastInterpolations: _ensure_point_layout!
 
     FI = FastInterpolations
@@ -975,7 +975,7 @@ end
     end
 end
 
-@testitem "CubicSeriesInterpolant - Container In-place (KILLER FEATURE)" setup=[AllocConstants] begin
+@testitem "CubicSeriesInterpolant - Container In-place (KILLER FEATURE)" setup = [AllocConstants] begin
     using FastInterpolations: _ensure_point_layout!
 
     FI = FastInterpolations
@@ -1274,7 +1274,7 @@ end
 # Phase 3: Zero-Allocation Vector API (Pooled Anchors)
 # ============================================================================
 
-@testitem "CubicSeriesInterpolant - Zero-allocation vector API (pooled anchors)" setup=[AllocConstants] begin
+@testitem "CubicSeriesInterpolant - Zero-allocation vector API (pooled anchors)" setup = [AllocConstants] begin
     using FastInterpolations: _ensure_point_layout!
 
     FI = FastInterpolations
@@ -1528,7 +1528,7 @@ end
     end
 end
 
-@testitem "CubicSeriesInterpolant - Zero-Allocation Derivative Tests" setup=[AllocConstants] begin
+@testitem "CubicSeriesInterpolant - Zero-Allocation Derivative Tests" setup = [AllocConstants] begin
     using FastInterpolations: _ensure_point_layout!
 
     FI = FastInterpolations
@@ -1609,7 +1609,7 @@ end
 # Per-Series Boundary Conditions Tests
 # ============================================================================
 
-@testitem "CubicSeriesInterpolant - Per-Series BC" setup=[AllocConstants] begin
+@testitem "CubicSeriesInterpolant - Per-Series BC" setup = [AllocConstants] begin
     using FastInterpolations: _ensure_point_layout!
 
     FI = FastInterpolations
@@ -1921,7 +1921,7 @@ end
 # Pre-built Anchor Tests for Coverage (deriv=DerivOp(3) and extrapolation)
 # ============================================================================
 
-@testitem "CubicSeriesInterpolant - Pre-built Anchor with deriv=DerivOp(3)" setup=[AllocConstants] begin
+@testitem "CubicSeriesInterpolant - Pre-built Anchor with deriv=DerivOp(3)" setup = [AllocConstants] begin
     using FastInterpolations: _ensure_point_layout!
 
     FI = FastInterpolations

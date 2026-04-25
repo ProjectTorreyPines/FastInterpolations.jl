@@ -1,6 +1,6 @@
 # ALLOC_THRESHOLD is defined in runtests.jl
 
-@testitem "Linear Interpolation - Core Functionality" setup=[AllocConstants] begin
+@testitem "Linear Interpolation - Core Functionality" setup = [AllocConstants] begin
 
     @testset "Uniform grid (AbstractRange) - Interior points" begin
         x = 0.0:0.01:1.0

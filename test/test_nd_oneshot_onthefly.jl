@@ -6,7 +6,7 @@
 # B. AutoCoeffs default behavior (scalar → OnTheFly, batch → PreCompute)
 # C. Zero-allocation after warmup (function barrier pattern)
 
-@testitem "ND OnTheFly One-Shot + AutoCoeffs" setup=[AllocConstants] begin
+@testitem "ND OnTheFly One-Shot + AutoCoeffs" setup = [AllocConstants] begin
     # Aliases mapping legacy *_LOCAL names to AllocConstants snippet symbols.
     AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
     ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD

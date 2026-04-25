@@ -1589,7 +1589,7 @@ end
 # Verifies that specialized D≤3 implementations are allocation-free,
 # and measures allocations for generic D>3 implementations.
 
-@testitem "Allocation Tests: Specialized vs Generic PolyFit{D}" setup=[AllocConstants] begin
+@testitem "Allocation Tests: Specialized vs Generic PolyFit{D}" setup = [AllocConstants] begin
 
     # ----------------------------------------
     # Test Setup: Pre-allocated data

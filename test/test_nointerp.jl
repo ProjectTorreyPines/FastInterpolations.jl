@@ -1,4 +1,4 @@
-@testitem "NoInterp + GridIdx" setup=[AllocConstants] begin
+@testitem "NoInterp + GridIdx" setup = [AllocConstants] begin
     # Aliases mapping legacy *_LOCAL names to AllocConstants snippet symbols.
     AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
     ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD

@@ -756,7 +756,7 @@ end
 # ============================================================================
 # Group 6: Allocation Tests
 # ============================================================================
-@testitem "Quadratic Interpolation - Allocations" setup=[AllocConstants] begin
+@testitem "Quadratic Interpolation - Allocations" setup = [AllocConstants] begin
 
     # ALLOC_THRESHOLD is defined in runtests.jl
 

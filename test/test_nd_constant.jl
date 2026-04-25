@@ -8,7 +8,7 @@
 # - 🟢 GREEN: Minimal implementation to pass
 # - 🔵 REFACTOR: Cleanup while staying green
 
-@testitem "ConstantInterpolantND" setup=[AllocConstants] begin
+@testitem "ConstantInterpolantND" setup = [AllocConstants] begin
     using FastInterpolations: get_task_local_pool
     # ========================================
     # 2D Constant Exactness

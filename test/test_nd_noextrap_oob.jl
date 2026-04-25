@@ -19,7 +19,7 @@
 # @boundscheck _check_domain(::NoExtrap) is ALWAYS elided in production.
 # Without _validate_nd_domain, OOB queries silently return garbage.
 
-@testitem "ND NoExtrap OOB — DomainError" setup=[AllocConstants] begin
+@testitem "ND NoExtrap OOB — DomainError" setup = [AllocConstants] begin
     # ── Shared test data ──
     gx = [0.0, 1.0, 2.0]
     gy = [0.0, 1.0]

@@ -3,7 +3,7 @@
 # Coverage mirrors test_linear_periodic.jl, with extra per-`side` coverage
 # (NearestSide/LeftSide/RightSide must all respect periodicity).
 
-@testitem "Constant PeriodicBC" setup=[AllocConstants] begin
+@testitem "Constant PeriodicBC" setup = [AllocConstants] begin
     using FastInterpolations: _CachedRange
 
     @testset "NoBC default is no-op" begin

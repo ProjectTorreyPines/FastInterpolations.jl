@@ -4,7 +4,7 @@
 # Tests for native Complex number support in CubicInterpolant.
 # Validates the Tg/Tv type separation design.
 
-@testitem "Complex Cubic Interpolation" setup=[AllocConstants] begin
+@testitem "Complex Cubic Interpolation" setup = [AllocConstants] begin
 
     # ========================================
     # Basic Complex Interpolation

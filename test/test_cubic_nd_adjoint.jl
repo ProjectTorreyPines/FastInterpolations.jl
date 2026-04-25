@@ -1,4 +1,4 @@
-@testitem "CubicAdjointND (N=2)" setup=[AllocConstants] begin
+@testitem "CubicAdjointND (N=2)" setup = [AllocConstants] begin
     using LinearAlgebra: dot
     using StaticArrays: SVector
 
@@ -338,7 +338,7 @@ end
 # N=3 Tests
 # ========================================
 
-@testitem "CubicAdjointND (N=3)" setup=[AllocConstants] begin
+@testitem "CubicAdjointND (N=3)" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
@@ -538,7 +538,7 @@ end
 # Boundary Condition Tests (N=2)
 # ========================================
 
-@testitem "CubicAdjointND — Boundary Conditions" setup=[AllocConstants] begin
+@testitem "CubicAdjointND — Boundary Conditions" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
@@ -620,7 +620,7 @@ end
 # PeriodicBC Tests
 # ========================================
 
-@testitem "CubicAdjointND — PeriodicBC" setup=[AllocConstants] begin
+@testitem "CubicAdjointND — PeriodicBC" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
@@ -939,7 +939,7 @@ end
 # Verifies adjoint of derivative evaluation: adj(ȳ; deriv=DerivOp(k))
 # Core identity: ⟨W_d·f, ȳ⟩ = ⟨f, W_dᵀ·ȳ⟩
 
-@testitem "CubicAdjointND — Derivative Adjoint" setup=[AllocConstants] begin
+@testitem "CubicAdjointND — Derivative Adjoint" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
@@ -1201,7 +1201,7 @@ end
 # Derivative Adjoint — N=3
 # ========================================
 
-@testitem "CubicAdjointND — Derivative Adjoint (N=3)" setup=[AllocConstants] begin
+@testitem "CubicAdjointND — Derivative Adjoint (N=3)" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
@@ -1270,7 +1270,7 @@ end
 # Derivative Adjoint — Periodic BCs
 # ========================================
 
-@testitem "CubicAdjointND — Derivative Adjoint + Periodic" setup=[AllocConstants] begin
+@testitem "CubicAdjointND — Derivative Adjoint + Periodic" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
@@ -1410,7 +1410,7 @@ end
 # ========================================
 # Scalar / Tuple y_bar + AoS / single-tuple constructor
 # ========================================
-@testitem "CubicAdjointND scalar/tuple y_bar" setup=[AllocConstants] begin
+@testitem "CubicAdjointND scalar/tuple y_bar" setup = [AllocConstants] begin
 
     nx, ny = 10, 8
     x = range(0.0, 1.0, nx)
@@ -1463,7 +1463,7 @@ end
     end
 end
 
-@testitem "CubicAdjointND AoS / single-tuple constructor" setup=[AllocConstants] begin
+@testitem "CubicAdjointND AoS / single-tuple constructor" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
@@ -1537,7 +1537,7 @@ end
     end
 end
 
-@testitem "CubicAdjointND — Periodic BC scalar/tuple y_bar" setup=[AllocConstants] begin
+@testitem "CubicAdjointND — Periodic BC scalar/tuple y_bar" setup = [AllocConstants] begin
 
     for (bc, x1, x2) in [
             (PeriodicBC(), collect(range(0.0, 2π, 11)), collect(range(0.0, 2π, 9))),
@@ -1575,7 +1575,7 @@ end
 # ========================================
 # SVector query support (N=2 and N=3)
 # ========================================
-@testitem "CubicAdjointND — SVector queries" setup=[AllocConstants] begin
+@testitem "CubicAdjointND — SVector queries" setup = [AllocConstants] begin
     using LinearAlgebra: dot
     using StaticArrays: SVector
 
@@ -1698,7 +1698,7 @@ end
 # P1/P2 fix regression tests
 # ========================================
 
-@testitem "CubicAdjointND — NoExtrap OOB DomainError" setup=[AllocConstants] begin
+@testitem "CubicAdjointND — NoExtrap OOB DomainError" setup = [AllocConstants] begin
     using StaticArrays: SVector
 
     gx = collect(range(0.0, 2.0, 5))
@@ -1720,7 +1720,7 @@ end
     end
 end
 
-@testitem "CubicAdjointND — duck-typed y_bar" setup=[AllocConstants] begin
+@testitem "CubicAdjointND — duck-typed y_bar" setup = [AllocConstants] begin
 
     gx = collect(range(0.0, 2.0, 5))
     gy = collect(range(0.0, 1.0, 5))

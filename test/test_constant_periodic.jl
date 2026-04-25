@@ -317,8 +317,10 @@ using FastInterpolations: _CachedRange
         x = collect(range(0.0, step = 1.0, length = 4))    # axis 1 periodic, period 4
         yy = collect(range(0.0, step = 1.0, length = 3))   # axis 2 NoBC
         zz = collect(range(0.0, step = 1.0, length = 3))   # axis 3 NoBC
-        data = [Float64(i - 1) + 10 * Float64(j - 1) + 100 * Float64(k - 1)
-                for i in 1:4, j in 1:3, k in 1:3]
+        data = [
+            Float64(i - 1) + 10 * Float64(j - 1) + 100 * Float64(k - 1)
+                for i in 1:4, j in 1:3, k in 1:3
+        ]
 
         bc = (PeriodicBC(endpoint = :exclusive, period = 4.0), NoBC(), NoBC())
         extrap = (NoExtrap(), NoExtrap(), NoExtrap())

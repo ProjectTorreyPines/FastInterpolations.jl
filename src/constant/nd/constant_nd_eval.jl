@@ -125,12 +125,14 @@ end
     # Lift h + wrap indices into stencils, matching the generic-N path.
     hx = _get_h(itp.spacings[1], ix)
     hy = _get_h(itp.spacings[2], iy)
-    return (itp.data,
-            (_IdxPair(ix, ix + 1), _IdxPair(iy, iy + 1)),
-            (hx, hy),
-            itp.sides,
-            (x_eval, y_eval),
-            (xL, yL))
+    return (
+        itp.data,
+        (_IdxPair(ix, ix + 1), _IdxPair(iy, iy + 1)),
+        (hx, hy),
+        itp.sides,
+        (x_eval, y_eval),
+        (xL, yL),
+    )
 end
 
 # Evaluate kernel at a pre-located cell with given derivative ops
@@ -223,9 +225,15 @@ paths share this signature.
     idx_parts = Expr[]
     for d in 1:N
         offset_sym = Symbol("offset_", d)
-        push!(idx_parts, :(ifelse($offset_sym == 0,
-                                  @inbounds(stencils[$d][1]),
-                                  @inbounds(stencils[$d][2]))))
+        push!(
+            idx_parts, :(
+                ifelse(
+                    $offset_sym == 0,
+                    @inbounds(stencils[$d][1]),
+                    @inbounds(stencils[$d][2])
+                )
+            )
+        )
     end
     idx_expr = Expr(:tuple, idx_parts...)
 

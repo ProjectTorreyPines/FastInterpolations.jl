@@ -21,7 +21,10 @@
     @testset "GridIdx basics" begin
         g = GridIdx(5)
         @test g.idx == 5
-        @test sprint(show, g) == "GridIdx(5)"
+        # `occursin` (not `==`): show() may prefix the module qualifier
+        # depending on the active IOContext (VSCode test runner vs CLI vs
+        # Pkg.test all differ). The unqualified name is always present.
+        @test occursin("GridIdx(5)", sprint(show, g))
         @test_throws ArgumentError GridIdx(0)
         @test_throws ArgumentError GridIdx(-1)
         @test GridIdx <: Real
@@ -32,7 +35,7 @@
     # ========================================
     @testset "NoInterp basics" begin
         @test NoInterp() isa AbstractInterpMethod
-        @test sprint(show, NoInterp()) == "NoInterp()"
+        @test occursin("NoInterp()", sprint(show, NoInterp()))
     end
 
     # ========================================

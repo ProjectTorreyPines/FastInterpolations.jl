@@ -166,7 +166,7 @@ end
     end
 
     @testset "ND Exclusive — auto-infer period on ND oneshot (regression)" begin
-        # Same class of bug as above, via _search_all_intervals_lr → _resolve_search per axis.
+        # Same class of bug as above, via _search_all_intervals_stencil → _resolve_search per axis.
         x = range(0.5, step = 1.0, length = 3)         # axis-1 periodic-exclusive (period auto)
         y = range(0.0, 1.0, length = 4)                # axis-2 NoBC
         data = [10xi + yj for xi in x, yj in y]
@@ -533,6 +533,35 @@ end
         @test linear_interp((x, yy), data2, q3; bc = bc_both, extrap = extrap) ≈ 2.5 atol = 1.0e-12
         itp_both = linear_interp((x, yy), data2; bc = bc_both, extrap = extrap)
         @test itp_both(q3) ≈ 2.5 atol = 1.0e-12
+    end
+
+    @testset "ND seam-cell — _multilinear_sum at N=3 with periodic axis-1 wrap" begin
+        # The unified `_multilinear_sum` is @generated and unrolls to 2^N corners.
+        # Existing seam-cell tests are N=2 only; this exercises the N=3 unroll
+        # with a wrapped corner on axis 1, ensuring the @generated body addresses
+        # `stencils[1][2] == 1` (wrap) correctly for any N.
+        x = collect(range(0.0, step = 1.0, length = 4))    # axis 1 periodic, period 4
+        yy = collect(range(0.0, step = 1.0, length = 3))   # axis 2 NoBC
+        zz = collect(range(0.0, step = 1.0, length = 3))   # axis 3 NoBC
+        # Separable data: (i-1) + 10*(j-1) + 100*(k-1) — corner-recoverable.
+        data = [Float64(i - 1) + 10 * Float64(j - 1) + 100 * Float64(k - 1)
+                for i in 1:4, j in 1:3, k in 1:3]
+
+        bc = (PeriodicBC(endpoint = :exclusive, period = 4.0), NoBC(), NoBC())
+        extrap = (NoExtrap(), NoExtrap(), NoExtrap())
+
+        # Seam on axis 1 at q1=3.5: blend axis-1 corners 3 (data[4,j,k]) and 4≡0 (data[1,j,k])
+        # ⇒ axis-1 contribution = 1.5 + 10*(j-1) + 100*(k-1).
+        # Axis 2 at 0.5 between j=1 (1.5) and j=2 (11.5) ⇒ 6.5 + 100*(k-1).
+        # Axis 3 at 0.5 between k=1 (6.5) and k=2 (106.5) ⇒ 56.5.
+        q = (3.5, 0.5, 0.5)
+        @test linear_interp((x, yy, zz), data, q; bc = bc, extrap = extrap) ≈ 56.5 atol = 1.0e-12
+
+        itp = linear_interp((x, yy, zz), data; bc = bc, extrap = extrap)
+        @test itp(q) ≈ 56.5 atol = 1.0e-12
+
+        # Persistent must match oneshot exactly (zero-copy seam ↔ extended-data path).
+        @test itp(q) ≈ linear_interp((x, yy, zz), data, q; bc = bc, extrap = extrap) atol = 1.0e-12
     end
 
     # ============================================================

@@ -23,8 +23,9 @@ matches the interpolant grid.
 - `Tq`: Query type (widened to `promote_type(Tq, Tg)` by the outer constructor)
 
 # Fields
-- `idxL`: Left cell index (`1 ≤ idxL ≤ n-1` normally; equals `n` at periodic-exclusive seam)
-- `idxR`: Right cell index (`idxL + 1` normally; wraps to `1` at periodic-exclusive seam)
+- `stencil::_IdxStencil{2}`: Corner-index stencil; `stencil[1]` is the left index, `stencil[2]` the right
+  (legacy `aq.idxL` / `aq.idxR` virtual properties read through `getproperty` — see below).
+  For non-periodic cells `idxR == idxL + 1`; at periodic-exclusive seam `idxL == n`, `idxR == 1` (wrap).
 - `xq`: Original query point (or wrapped value for periodic), preserves original precision
 - `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
 - `xL`: Left grid point of the interval (avoids re-indexing x[idxL] which triggers TwicePrecision on Range)

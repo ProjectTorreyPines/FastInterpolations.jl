@@ -14,7 +14,7 @@
 # Zero heap allocation for scalar queries after warmup.
 
 """
-    _linear_interp_nd_oneshot(grids, data, query, extraps_val, searches, ops, hints=nothing)
+    _linear_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops, hints=nothing)
 
 Zero-allocation scalar one-shot ND multilinear evaluation.
 Evaluates directly from grids + data — no pool, no data extension even for
@@ -54,7 +54,7 @@ function _linear_interp_nd_oneshot(
 end
 
 """
-    _linear_interp_nd_oneshot_batch!(output, grids, data, queries, extraps_val, searches, ops, hints=nothing)
+    _linear_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, policies, ops, hints, mono)
 
 In-place batch one-shot ND multilinear evaluation.
 Uses query protocol (`_query_length`, `_query_extract`) — works with any query format.

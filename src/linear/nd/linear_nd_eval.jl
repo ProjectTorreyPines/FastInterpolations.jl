@@ -236,17 +236,6 @@ function _multilinear_sum_body(N::Int, make_idx_expr::Function)
         @inbounds $sum_expr
     end
 end
-@generated function _multilinear_sum_stencil(
-        data::AbstractArray{Tv, N},
-        stencils::NTuple{N, _IdxStencil{2}},
-        hs::NTuple{N},
-        αs::Tuple{Vararg{Real, N}},
-        ops::NTuple{N, AbstractEvalOp},
-        ::Val{N}
-    ) where {Tv, N}
-    return _multilinear_sum_body(N, (d, bit) -> :(stencils[$d][$(bit + 1)]))
-end
-
 # ========================================
 # Linear Weight Functions
 # ========================================

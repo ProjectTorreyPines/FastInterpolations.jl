@@ -13,7 +13,7 @@
 # Zero heap allocation for scalar queries after warmup.
 
 """
-    _constant_interp_nd_oneshot(grids, data, query, extraps_val, side_vals, searches, hints=nothing)
+    _constant_interp_nd_oneshot(grids, data, query, bcs, extraps_val, side_vals, searches, hints=nothing)
 
 Zero-allocation scalar one-shot ND constant evaluation.
 Evaluates directly from grids + data without constructing a ConstantInterpolantND.
@@ -41,7 +41,7 @@ function _constant_interp_nd_oneshot(
 end
 
 """
-    _constant_interp_nd_oneshot_batch!(output, grids, data, queries, extraps_val, side_vals, searches, hints=nothing)
+    _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, policies, hints, mono)
 
 In-place batch one-shot ND constant evaluation.
 Uses query protocol (`_query_length`, `_query_extract`) — works with any query format.

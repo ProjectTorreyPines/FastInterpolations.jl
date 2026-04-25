@@ -40,6 +40,35 @@ using FastInterpolations
         @test aq.alpha isa Float64
     end
 
+    @testset "virtual property type-stability + zero-alloc" begin
+        # Pins the Val-dispatched `getproperty` contract: every virtual access
+        # (idxL/idxR backed by stencil) and direct field access (alpha/h)
+        # must infer to a concrete type and allocate zero bytes inside a
+        # function barrier. A regression to single-method `getproperty` with
+        # `s === :idxL && return ...` branches would defeat inference (union
+        # return) and silently slow hot consumers.
+        # `@inferred` requires a call expression — wrap each access in a
+        # 1-arg helper so the macro sees a function call.
+        _get_idxL(aq) = aq.idxL
+        _get_idxR(aq) = aq.idxR
+        _get_alpha(aq) = aq.alpha
+        _get_h(aq) = aq.h
+
+        x = collect(range(0.0, 1.0, 11))
+        aq = FastInterpolations._anchor_query(x, 0.35, Val(:linear))
+
+        @test @inferred(_get_idxL(aq)) isa Int
+        @test @inferred(_get_idxR(aq)) isa Int
+        @test @inferred(_get_alpha(aq)) isa Float64
+        @test @inferred(_get_h(aq)) isa Float64
+
+        function _bench_idx(aq)
+            return aq.idxL + aq.idxR
+        end
+        _bench_idx(aq); _bench_idx(aq)  # warmup
+        @test (@allocated _bench_idx(aq)) == 0
+    end
+
     # ========================================
     # Scalar Construction Tests
     # ========================================

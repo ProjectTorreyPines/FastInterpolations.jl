@@ -96,7 +96,7 @@ using FastInterpolations: _IdxStencil, _IdxPair
     end
 
     @testset "Type stability" begin
-        # Construction infers to concrete _IdxStencil{K, NTuple{K, Int}}
+        # Construction infers to concrete _IdxStencil{K}
         @test @inferred(_IdxStencil((1, 2))) isa _IdxStencil{2}
         @test @inferred(_IdxStencil((1, 2, 3, 4))) isa _IdxStencil{4}
         @test @inferred(_IdxPair(1, 2)) isa _IdxStencil{2}

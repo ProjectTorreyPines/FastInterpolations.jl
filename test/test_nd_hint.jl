@@ -6,10 +6,7 @@
 # Hints use NTuple{N, Base.RefValue{Int}} to maintain search state
 # across calls, enabling O(1) lookup for sequential/sorted queries.
 
-using Test
-using FastInterpolations
-
-@testset "ND Hint Support" begin
+@testitem "ND Hint Support" begin
 
     # Helper: compute expected interval index for a query on a grid
     # Mirrors what search_interval does: searchsortedlast clamped to [1, n-1]

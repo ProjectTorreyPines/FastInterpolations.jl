@@ -2,12 +2,9 @@
 # `_resolve_extrap` family (primitive per-axis + 1D bundled + ND). All layers
 # share the same function name — `extrap` is always the first argument.
 
-using Test
-using FastInterpolations
-using FastInterpolations: WrapExtrap, NoBC, PeriodicBC, NoExtrap, ClampExtrap,
-    _resolve_extrap
-
-@testset "WrapExtrap + _resolve_extrap" begin
+@testitem "WrapExtrap + _resolve_extrap" begin
+    using FastInterpolations: WrapExtrap, NoBC, PeriodicBC, NoExtrap, ClampExtrap,
+        _resolve_extrap
 
     @testset "WrapExtrap constructors" begin
         # Zero-arg legacy singleton — build-time placeholder only.

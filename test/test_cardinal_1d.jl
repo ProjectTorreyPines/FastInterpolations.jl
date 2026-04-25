@@ -1,6 +1,6 @@
 # ALLOC_THRESHOLD is defined in runtests.jl
 
-@testset "Cardinal 1D" begin
+@testitem "Cardinal 1D" setup=[AllocConstants] begin
 
     # Cubic polynomial for accuracy reference
     p(x) = 2x^3 - x^2 + 3x - 1

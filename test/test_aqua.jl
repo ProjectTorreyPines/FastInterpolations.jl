@@ -1,6 +1,5 @@
-using Aqua, Test
-
-@testset "Aqua.jl" begin
+@testitem "Aqua.jl" begin
+    using Aqua
     Aqua.test_all(
         FastInterpolations;
         # 55 false positives: Julia's has_unbound_tpars flags TypeVars nested

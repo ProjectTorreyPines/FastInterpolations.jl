@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "FillExtrap Fill Value" begin
+@testitem "FillExtrap Fill Value" begin
     # ────────────────────────────────────────────
     # Construction & Type Hierarchy
     # ────────────────────────────────────────────

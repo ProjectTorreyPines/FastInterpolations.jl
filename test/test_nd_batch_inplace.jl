@@ -5,10 +5,7 @@
 # Tests for in-place batch evaluation: itp(output, queries; ...)
 # Covers all 4 ND interpolant types with SoA and AoS batch modes.
 
-using Test
-using FastInterpolations
-
-@testset "ND In-Place Batch Evaluation" begin
+@testitem "ND In-Place Batch Evaluation" begin
 
     # ========================================
     # Test Data Setup

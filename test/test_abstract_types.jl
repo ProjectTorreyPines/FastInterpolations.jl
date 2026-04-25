@@ -1,9 +1,6 @@
 # Test suite for Abstract Type Hierarchy
 
-using Test
-using FastInterpolations
-
-@testset "Abstract Types Hierarchy" begin
+@testitem "Abstract Types Hierarchy" begin
 
     # ========================================
     # Abstract Types Exist and Are Abstract

@@ -1,8 +1,6 @@
-using Test
-using FastInterpolations
-using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
+@testitem "Factory Functions" begin
+    using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
 
-@testset "Factory Functions" begin
 
     # ========================================
     # Search Factory

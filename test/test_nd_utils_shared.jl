@@ -10,17 +10,14 @@
 # - 🟢 GREEN: Minimal implementation to pass
 # - 🔵 REFACTOR: Cleanup while staying green
 
-using Test
-using FastInterpolations
+@testitem "Shared ND Utilities" begin
+    # Access internal functions for testing
+    import FastInterpolations: _resolve_extrap, _resolve_search_nd, _resolve_bcs_nd,
+        _resolve_side_nd, _validate_nd_grids,
+        _promote_grid_eltype, _convert_grids_typed, _create_spacings_typed,
+        _check_mode_periodic_compat, _check_modes_periodic_compat,
+        _mode_to_modes_with_periodic, _modes_to_modes_with_periodic
 
-# Access internal functions for testing
-import FastInterpolations: _resolve_extrap, _resolve_search_nd, _resolve_bcs_nd,
-    _resolve_side_nd, _validate_nd_grids,
-    _promote_grid_eltype, _convert_grids_typed, _create_spacings_typed,
-    _check_mode_periodic_compat, _check_modes_periodic_compat,
-    _mode_to_modes_with_periodic, _modes_to_modes_with_periodic
-
-@testset "Shared ND Utilities" begin
     # ========================================
     # _resolve_extrap
     # ========================================

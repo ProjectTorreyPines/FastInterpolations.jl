@@ -1,10 +1,7 @@
-using Test
-using FastInterpolations
-using FastInterpolations: _resolve_search_nd, _resolve_search_policy,
-    _is_axis_likely_monotone, _check_mono_nd, _query_extract, _query_length,
-    AutoSearch, BinarySearch, LinearBinarySearch
-
-@testset "ND Per-Axis Adaptive AutoSearch Resolution" begin
+@testitem "ND Per-Axis Adaptive AutoSearch Resolution" begin
+    using FastInterpolations: _resolve_search_nd, _resolve_search_policy,
+        _is_axis_likely_monotone, _check_mono_nd, _query_extract, _query_length,
+        AutoSearch, BinarySearch, LinearBinarySearch
 
     # ========================================
     # 4-arg _resolve_search_nd: per-axis monotonicity check

@@ -7,10 +7,7 @@
 #
 # Coverage: Single interpolant creation (cubic, linear, constant, quadratic)
 
-using Test
-using FastInterpolations
-
-@testset "Complex{Int} Type Promotion" begin
+@testitem "Complex{Int} Type Promotion" begin
     # Common test data
     x = [0.0, 1.0, 2.0, 3.0, 4.0]
     y_cint = Complex{Int}[1 + 2im, 3 + 4im, 5 + 6im, 7 + 8im, 9 + 10im]

@@ -1,6 +1,3 @@
-using Test
-using FastInterpolations
-
 # ═══════════════════════════════════════════════════════════════════════
 # Polynomial exactness tests for ND integrate
 #
@@ -9,7 +6,7 @@ using FastInterpolations
 # The integral of such a function must therefore match the analytical value.
 # ═══════════════════════════════════════════════════════════════════════
 
-@testset "integrate nd polynomial exactness" begin
+@testitem "integrate nd polynomial exactness" begin
 
     # ───────────────────────────────────────────────
     # 2D polynomial exactness

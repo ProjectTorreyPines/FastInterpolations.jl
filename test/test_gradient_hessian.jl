@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "Vector Calculus (gradient, hessian, laplacian)" begin
+@testitem "Vector Calculus (gradient, hessian, laplacian)" setup=[AllocConstants] begin
 
     @testset "2D Gradient" begin
         # Test function: f(x,y) = sin(x) * cos(y)

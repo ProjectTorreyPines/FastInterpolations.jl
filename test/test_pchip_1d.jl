@@ -1,6 +1,7 @@
 # ALLOC_THRESHOLD is defined in runtests.jl
 
-@testset "PCHIP 1D" begin
+@testitem "PCHIP 1D" setup=[AllocConstants] begin
+    using Random: MersenneTwister
 
     # ========================================
     # Test data

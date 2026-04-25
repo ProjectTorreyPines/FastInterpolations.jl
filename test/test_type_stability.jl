@@ -1,10 +1,7 @@
 # Type stability tests using @inferred
-using Test
-using FastInterpolations
-using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, ZeroCurvBC, ZeroSlopeBC, CubicSplineCache
-using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
-
-@testset "Type Stability" begin
+@testitem "Type Stability" begin
+    using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, ZeroCurvBC, ZeroSlopeBC, CubicSplineCache
+    using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
     x = collect(range(0.0, 2π, 10))
     y = sin.(x)
     y_periodic = copy(y); y_periodic[end] = y_periodic[1]

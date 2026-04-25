@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "HeteroInterpolantND" begin
+@testitem "HeteroInterpolantND" begin
     # ========================================
     # Test Setup — separable functions for exact verification
     # ========================================

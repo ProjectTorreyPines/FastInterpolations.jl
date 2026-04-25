@@ -2,10 +2,7 @@
 #
 # ALLOC_THRESHOLD is defined in runtests.jl
 
-using Test
-using FastInterpolations
-
-@testset "Quadratic Anchored Query" begin
+@testitem "Quadratic Anchored Query" setup=[AllocConstants] begin
 
     # ========================================
     # Struct Fields Tests

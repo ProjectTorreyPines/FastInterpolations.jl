@@ -1,6 +1,7 @@
 # ALLOC_THRESHOLD is defined in runtests.jl
 
-@testset "Random Grid (Non-uniform Spacing)" begin
+@testitem "Random Grid (Non-uniform Spacing)" setup=[AllocConstants] begin
+    using Random
     # Random grids require binary search O(log n) - tests the non-uniform path
 
     @testset "Linear Interpolation - Random Grid" begin

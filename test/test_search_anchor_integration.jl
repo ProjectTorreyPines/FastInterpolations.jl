@@ -1,10 +1,7 @@
-using Test
-using FastInterpolations
-using FastInterpolations: _anchor_query, _fill_anchors!,
-    _LinearAnchoredQuery, _ConstantAnchoredQuery, _QuadraticAnchoredQuery, _CubicAnchoredQuery,
-    Searcher, LinearBinarySearch, RefHint
-
-@testset "Search Policy Anchor Integration" begin
+@testitem "Search Policy Anchor Integration" begin
+    using FastInterpolations: _anchor_query, _fill_anchors!,
+        _LinearAnchoredQuery, _ConstantAnchoredQuery, _QuadraticAnchoredQuery, _CubicAnchoredQuery,
+        Searcher, LinearBinarySearch, RefHint
 
     # ========================================
     # Linear Anchor Tests

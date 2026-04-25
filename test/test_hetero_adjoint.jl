@@ -13,11 +13,8 @@
 #   adj(1) partition of unity: sum(adj(1.0)) ≈ 1.0 for EvalValue
 #   derivative adjoint: Matrix(adj; deriv=...) vs analytical gradient
 
-using Test
-using FastInterpolations
-using LinearAlgebra
-
-@testset "HeteroAdjointND" begin
+@testitem "HeteroAdjointND" setup=[AllocConstants] begin
+    using LinearAlgebra
 
     # ════════════════════════════════════════════════════════════════════════
     # FORWARD-ADJOINT CONSISTENCY: W' * f ≈ itp.(queries)

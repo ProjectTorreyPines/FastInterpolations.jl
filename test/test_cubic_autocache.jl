@@ -1,10 +1,9 @@
-# Import internal functions for testing
-import FastInterpolations: _get_cubic_cache, _get_derivative_cache_impl
-
 # =============================================================================
 # TESTSET 1: Basic Cache Operations
 # =============================================================================
-@testset "Cubic Cache: Basic Operations" begin
+@testitem "Cubic Cache: Basic Operations" begin
+    import FastInterpolations: _get_cubic_cache, _get_derivative_cache_impl
+
     clear_cubic_cache!()
 
     @testset "Basic auto-cache reuse" begin
@@ -127,7 +126,9 @@ end
 # =============================================================================
 # TESTSET 2: Stress Tests & Edge Cases
 # =============================================================================
-@testset "Cubic Cache: Stress Tests & Edge Cases" begin
+@testitem "Cubic Cache: Stress Tests & Edge Cases" begin
+    import FastInterpolations: _get_cubic_cache, _get_derivative_cache_impl
+
     @testset "Hash collision handling (stress test)" begin
         clear_cubic_cache!()
 
@@ -186,7 +187,9 @@ end
 # =============================================================================
 # TESTSET 3: Type Support (Integer, Float32, AbstractRange, AbstractVector)
 # =============================================================================
-@testset "Cubic Cache: Type Support" begin
+@testitem "Cubic Cache: Type Support" begin
+    import FastInterpolations: _get_cubic_cache, _get_derivative_cache_impl
+
     @testset "Auto-cache with Integer inputs" begin
         clear_cubic_cache!()
 
@@ -473,7 +476,9 @@ end
 # =============================================================================
 # TESTSET 4: Boundary Condition Coverage
 # =============================================================================
-@testset "Cubic Cache: Boundary Condition Coverage" begin
+@testitem "Cubic Cache: Boundary Condition Coverage" begin
+    import FastInterpolations: _get_cubic_cache, _get_derivative_cache_impl
+
     @testset "_get_cubic_cache with ZeroSlopeBC (typed API)" begin
         clear_cubic_cache!()
 
@@ -576,7 +581,9 @@ end
 # =============================================================================
 # TESTSET 5: Mutation Safety & Cache Invalidation
 # =============================================================================
-@testset "Cubic Cache: Mutation Safety" begin
+@testitem "Cubic Cache: Mutation Safety" begin
+    import FastInterpolations: _get_cubic_cache, _get_derivative_cache_impl
+
     @testset "Vector x mutation safety" begin
         # Verify autocache detects in-place mutation and rebuilds correctly.
         # Key invariant: before !== after (result changed) AND after == fresh_build
@@ -818,7 +825,9 @@ end
 # =============================================================================
 # TESTSET 6: Analytic Correctness After Mutation
 # =============================================================================
-@testset "Cubic Cache: Analytic Correctness" begin
+@testitem "Cubic Cache: Analytic Correctness" begin
+    import FastInterpolations: _get_cubic_cache, _get_derivative_cache_impl
+
     @testset "Analytic correctness: cubic polynomial with ZeroSlopeBC after mutation" begin
         # Cubic splines with CLAMPED BC (exact endpoint derivatives) reproduce
         # cubic polynomials EXACTLY. Zero-Curvature BC only reproduces linears.
@@ -982,7 +991,9 @@ end
 # =============================================================================
 # _get_derivative_cache_impl: AbstractRange fallback normalizes to _CachedRange
 # =============================================================================
-@testset "Cubic Cache: _get_derivative_cache_impl AbstractRange fallback" begin
+@testitem "Cubic Cache: _get_derivative_cache_impl AbstractRange fallback" begin
+    import FastInterpolations: _get_cubic_cache, _get_derivative_cache_impl
+
     clear_cubic_cache!()
 
     x_range = range(-1.0, 2.0, 31)   # StepRangeLen, NOT _CachedRange

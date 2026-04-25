@@ -10,59 +10,57 @@
 # These tests focus on exercising internal functions that aren't
 # reached through the normal public API code paths.
 
-using Test
-using FastInterpolations
-
-# Import internal functions we need to test
-import FastInterpolations:
-    # nd_math.jl (Val(1) error methods)
-    _ldiv_along_dim!,
-    compute_rhs_along_dim!,
-    moments_to_derivatives_along_dim!,
-    # nd_build.jl
-    _differentiate_nd_along_dim!,
-    _differentiate_nd_along_dim_batch!,
-    _get_effective_bc,
-    _compute_nd_partials!,
-    _build_nd_coeffs,
-    # nd_types.jl
-    _NodalDerivativesND,
-    PreCompute,
-    OnTheFly,
-    _grid,
-    _spacing,
-    _bc,
-    _extrap,
-    _search,
-    _handle_all_extraps,
-    _handle_all_extraps_gen,
-    _search_all_intervals,
-    _search_all_intervals_gen,
-    _compute_all_local_params,
-    _compute_all_local_params_gen,
-    num_partials,
-    # nd_utils.jl
-    _resolve_extrap,
-    _resolve_search_nd,
-    _resolve_bcs_nd,
-    _validate_nd_grids,
-    _promote_grid_eltype,
-    _convert_grids_typed,
-    _create_spacings_typed,
-    _throw_ndims_mismatch,
-    # BC types
-    ZeroCurvBC,
-    PeriodicBC,
-    PolyFit,
-    CubicFit,
-    BCPair,
-    # Eval ops
-    EvalValue,
-    EvalDeriv1,
-    EvalDeriv2,
-    EvalDeriv3
-
-@testset "ND Coverage Tests" begin
+@testitem "ND Coverage Tests" begin
+    # Import internal functions we need to test
+    import FastInterpolations:
+        # spacings (used unqualified at line 547, 573)
+        ScalarSpacing,
+        # nd_math.jl (Val(1) error methods)
+        _ldiv_along_dim!,
+        compute_rhs_along_dim!,
+        moments_to_derivatives_along_dim!,
+        # nd_build.jl
+        _differentiate_nd_along_dim!,
+        _differentiate_nd_along_dim_batch!,
+        _get_effective_bc,
+        _compute_nd_partials!,
+        _build_nd_coeffs,
+        # nd_types.jl
+        _NodalDerivativesND,
+        PreCompute,
+        OnTheFly,
+        _grid,
+        _spacing,
+        _bc,
+        _extrap,
+        _search,
+        _handle_all_extraps,
+        _handle_all_extraps_gen,
+        _search_all_intervals,
+        _search_all_intervals_gen,
+        _compute_all_local_params,
+        _compute_all_local_params_gen,
+        num_partials,
+        # nd_utils.jl
+        _resolve_extrap,
+        _resolve_search_nd,
+        _resolve_bcs_nd,
+        _validate_nd_grids,
+        _promote_grid_eltype,
+        _convert_grids_typed,
+        _create_spacings_typed,
+        _throw_ndims_mismatch,
+        # BC types
+        ZeroCurvBC,
+        PeriodicBC,
+        PolyFit,
+        CubicFit,
+        BCPair,
+        # Eval ops
+        EvalValue,
+        EvalDeriv1,
+        EvalDeriv2,
+        EvalDeriv3
 
     # ========================================
     # nd_build.jl Coverage
@@ -607,7 +605,6 @@ import FastInterpolations:
             @test itp((0.5, 1.0)) ≈ sin(0.5) * cos(1.0) atol = 0.1
         end
     end
-
 end
 
 # ========================================
@@ -618,7 +615,7 @@ end
 # for ConstantInterpolantND, LinearInterpolantND, and the oneshot APIs
 # for linear/quadratic. Distinct from the `deriv::Int` broadcast path.
 
-@testset "DerivOp deriv paths — ConstantInterpolantND batch" begin
+@testitem "DerivOp deriv paths — ConstantInterpolantND batch" begin
     x = [0.0, 1.0, 2.0]
     y = [0.0, 1.0, 2.0, 3.0]
     data = [10.0 * i + j for i in 1:3, j in 1:4]
@@ -682,7 +679,7 @@ end
     end
 end
 
-@testset "DerivOp deriv paths — LinearInterpolantND batch" begin
+@testitem "DerivOp deriv paths — LinearInterpolantND batch" begin
     x = collect(range(0.0, 1.0, 5))
     y = collect(range(0.0, 1.0, 5))
     data = [2xi + 3yj for xi in x, yj in y]
@@ -746,7 +743,7 @@ end
     end
 end
 
-@testset "DerivOp deriv paths — linear_interp oneshot" begin
+@testitem "DerivOp deriv paths — linear_interp oneshot" begin
     grids = (collect(range(0.0, 1.0, 6)), collect(range(0.0, 1.0, 6)))
     data = [2xi + 3yj for xi in grids[1], yj in grids[2]]
 
@@ -795,7 +792,7 @@ end
     end
 end
 
-@testset "DerivOp deriv paths — quadratic_interp oneshot" begin
+@testitem "DerivOp deriv paths — quadratic_interp oneshot" begin
     grids = (collect(range(0.0, 1.0, 7)), collect(range(0.0, 1.0, 7)))
     data = [2xi + 3yj for xi in grids[1], yj in grids[2]]
 
@@ -844,7 +841,7 @@ end
     end
 end
 
-@testset "ND extrapolation dispatch paths" begin
+@testitem "ND extrapolation dispatch paths" begin
     grids = (collect(range(0.0, 1.0, 6)), collect(range(0.0, 1.0, 6)))
     data = [xi + yj for xi in grids[1], yj in grids[2]]
 
@@ -893,7 +890,7 @@ end
     end
 end
 
-@testset "mixed-sides fallback" begin
+@testitem "mixed-sides fallback" begin
     # Mixed side=(LeftSide(), RightSide())
     grids = (collect(range(0.0, 2.0, 4)), collect(range(0.0, 3.0, 5)))
     data = [Float64(10i + j) for i in 1:4, j in 1:5]

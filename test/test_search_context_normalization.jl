@@ -1,11 +1,8 @@
-using Test
-using FastInterpolations
-using FastInterpolations: search_interval, Searcher, BinarySearch, LinearSearch, LinearBinarySearch,
-    AutoSearch, DirectSearch, NoHint, RefHint, DEFAULT_SEARCHER,
-    _to_searcher, _resolve_search, _resolve_search_policy,
-    _resolve_searcher_for_grid, ScalarSpacing, _create_spacing
-
-@testset "Search Context Normalization" begin
+@testitem "Search Context Normalization" begin
+    using FastInterpolations: search_interval, Searcher, BinarySearch, LinearSearch, LinearBinarySearch,
+        AutoSearch, DirectSearch, NoHint, RefHint, DEFAULT_SEARCHER,
+        _to_searcher, _resolve_search, _resolve_search_policy,
+        _resolve_searcher_for_grid, ScalarSpacing, _create_spacing
 
     # Shared test fixtures
     x_vec = collect(range(0.0, 1.0, 101))

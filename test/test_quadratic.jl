@@ -8,7 +8,7 @@
 # ============================================================================
 # Group 1: BC Type Tests (Phase 1)
 # ============================================================================
-@testset "Quadratic Interpolation - BC Types" begin
+@testitem "Quadratic Interpolation - BC Types" begin
 
     @testset "Left BC wrapper" begin
         @testset "construction with Float64" begin
@@ -135,7 +135,7 @@ end
 # ============================================================================
 # Group 2: Kernel Tests
 # ============================================================================
-@testset "Quadratic Interpolation - Kernels" begin
+@testitem "Quadratic Interpolation - Kernels" begin
     using FastInterpolations: _quadratic_kernel, EvalValue, EvalDeriv1, EvalDeriv2
 
     @testset "quadratic kernel value" begin
@@ -210,7 +210,7 @@ end
 # ============================================================================
 # Group 3: Coefficient Computation Tests
 # ============================================================================
-@testset "Quadratic Interpolation - Coefficient Computation" begin
+@testitem "Quadratic Interpolation - Coefficient Computation" begin
     using FastInterpolations: _compute_quadratic_secants!, _fill_slopes!,
         _forward_recurrence!, _backward_recurrence!,
         _compute_quadratic_coefficients!, VectorSpacing
@@ -489,7 +489,7 @@ end
 # ============================================================================
 # Group 4: Public API Tests
 # ============================================================================
-@testset "Quadratic Interpolation - Public API" begin
+@testitem "Quadratic Interpolation - Public API" begin
 
     @testset "quadratic_interp scalar - grid points" begin
         # Grid point interpolation is always exact regardless of BC
@@ -655,7 +655,7 @@ end
 # ============================================================================
 # Group 5: QuadraticInterpolant Tests
 # ============================================================================
-@testset "Quadratic Interpolation - Interpolant" begin
+@testitem "Quadratic Interpolation - Interpolant" begin
 
     @testset "QuadraticInterpolant construction" begin
         x = [0.0, 1.0, 2.0, 3.0]
@@ -756,7 +756,7 @@ end
 # ============================================================================
 # Group 6: Allocation Tests
 # ============================================================================
-@testset "Quadratic Interpolation - Allocations" begin
+@testitem "Quadratic Interpolation - Allocations" setup=[AllocConstants] begin
 
     # ALLOC_THRESHOLD is defined in runtests.jl
 
@@ -903,7 +903,7 @@ end
 # ============================================================================
 # Group 7: Type Conversion Tests (Real → Float wrappers)
 # ============================================================================
-@testset "Quadratic Interpolation - Type Conversion" begin
+@testitem "Quadratic Interpolation - Type Conversion" begin
     using FastInterpolations: _normalize_bc
 
     @testset "_normalize_bc same-type passthrough" begin
@@ -1101,7 +1101,7 @@ end
 
 end
 
-@testset "Quadratic Interpolation - DerivativeView" begin
+@testitem "Quadratic Interpolation - DerivativeView" begin
 
     @testset "deriv1 view" begin
         x = [0.0, 1.0, 2.0, 3.0]
@@ -1147,7 +1147,7 @@ end
 # ============================================================================
 # Group 9: Mathematical Correctness Tests (Non-uniform Grid)
 # ============================================================================
-@testset "Quadratic Interpolation - Mathematical Correctness" begin
+@testitem "Quadratic Interpolation - Mathematical Correctness" begin
     # For a quadratic polynomial f(x) = ax² + bx + c, the quadratic spline
     # should be EXACT regardless of which BC is used (Left/Right, Deriv1/Deriv2),
     # as long as the BC value matches the true derivative.
@@ -1313,7 +1313,7 @@ end
 # ============================================================================
 # Group 10: Extension Extrapolation Accuracy Tests
 # ============================================================================
-@testset "Quadratic Interpolation - Extension Extrapolation Accuracy" begin
+@testitem "Quadratic Interpolation - Extension Extrapolation Accuracy" begin
     # For quadratic polynomials, extension extrapolation should be EXACT
     # because extending a quadratic polynomial is still the same quadratic.
 
@@ -1448,7 +1448,7 @@ end
 # ============================================================================
 # Group 11: MinCurvFit API Integration Tests (Phase 3)
 # ============================================================================
-@testset "Quadratic Interpolation - MinCurvFit API" begin
+@testitem "Quadratic Interpolation - MinCurvFit API" begin
 
     @testset "quadratic_interp scalar with MinCurvFit" begin
         x = [0.0, 1.0, 2.0, 3.0]
@@ -1567,8 +1567,8 @@ end
 # ============================================================================
 # Group 12: MinCurvFit Mathematical Verification (Phase 4)
 # ============================================================================
-@testset "Quadratic Interpolation - MinCurvFit Mathematical Verification" begin
-    using FastInterpolations: _fill_slopes!, _compute_quadratic_secants!
+@testitem "Quadratic Interpolation - MinCurvFit Mathematical Verification" begin
+    using FastInterpolations: _fill_slopes!, _compute_quadratic_secants!, VectorSpacing
 
     # ========================================
     # Test 1: d[1] Optimality Verification
@@ -1928,7 +1928,7 @@ end
 # ============================================================================
 # Group 13: QuadraticFit BC Type Tests (Phase 2)
 # ============================================================================
-@testset "Quadratic Interpolation - QuadraticFit BC Type" begin
+@testitem "Quadratic Interpolation - QuadraticFit BC Type" begin
     using FastInterpolations: _fill_slopes!
 
     @testset "QuadraticFit type construction" begin
@@ -1967,7 +1967,7 @@ end
 # ============================================================================
 # Group 14: QuadraticFit Polynomial Reproduction Tests (Phase 2)
 # ============================================================================
-@testset "Quadratic Interpolation - QuadraticFit Polynomial Reproduction" begin
+@testitem "Quadratic Interpolation - QuadraticFit Polynomial Reproduction" begin
     using FastInterpolations: _fill_slopes!
 
     @testset "Left(QuadraticFit()) uniform grid" begin
@@ -2097,8 +2097,8 @@ end
 # ============================================================================
 # Group 15: QuadraticFit _fill_slopes! Direct Tests (Phase 2)
 # ============================================================================
-@testset "Quadratic Interpolation - QuadraticFit _fill_slopes!" begin
-    using FastInterpolations: _fill_slopes!
+@testitem "Quadratic Interpolation - QuadraticFit _fill_slopes!" begin
+    using FastInterpolations: _fill_slopes!, VectorSpacing
 
     @testset "Left(QuadraticFit) slope computation" begin
         # For f(x) = x² on uniform grid [0,1,2,3,4]

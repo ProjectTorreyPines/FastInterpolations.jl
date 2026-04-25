@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "Cubic One-Shot Series" begin
+@testitem "Cubic One-Shot Series" setup = [AllocConstants] begin
     x = collect(range(0.0, 1.0, 101))
     y_sin = sin.(2π .* x)
     y_cos = cos.(2π .* x)
@@ -103,46 +100,50 @@ using FastInterpolations
         end
     end
 
+    # NOTE: Allocation tests use the function-barrier pattern with arguments
+    # (rather than closure capture or @testset-local vars) because Test.jl wraps
+    # @testset bodies in try/catch, which weakens type inference under @testitem
+    # fresh-module compilation. Passing outer vars as args restores type stability.
     @testset "Zero allocation (in-place vector, PeriodicBC)" begin
-        s = Series(y_sin, y_cos)
-        xqs = [0.1, 0.37, 0.5, 0.9]
-        outputs = [zeros(length(xqs)) for _ in 1:2]
-        f_alloc() = begin
-            cubic_interp!(outputs, x, s, xqs; bc = PeriodicBC())
+        function measure(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            xqs = [0.1, 0.37, 0.5, 0.9]
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            cubic_interp!(outputs, x, s, xqs; bc = PeriodicBC())  # warmup
             return @allocated cubic_interp!(outputs, x, s, xqs; bc = PeriodicBC())
         end
-        @test f_alloc() <= ALLOC_THRESHOLD
+        @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
     end
 
     @testset "Zero allocation (in-place scalar, CubicFit)" begin
-        s = Series(y_sin, y_cos)
-        out = zeros(2)
-        f_alloc() = begin
-            cubic_interp!(out, x, s, 0.37)
+        function measure(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            out = zeros(2)
+            cubic_interp!(out, x, s, 0.37)  # warmup
             return @allocated cubic_interp!(out, x, s, 0.37)
         end
-        @test f_alloc() <= ALLOC_THRESHOLD
+        @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
     end
 
     @testset "Zero allocation (in-place scalar, PeriodicBC)" begin
-        s = Series(y_sin, y_cos)
-        out = zeros(2)
-        f_alloc() = begin
-            cubic_interp!(out, x, s, 0.37; bc = PeriodicBC())
+        function measure(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            out = zeros(2)
+            cubic_interp!(out, x, s, 0.37; bc = PeriodicBC())  # warmup
             return @allocated cubic_interp!(out, x, s, 0.37; bc = PeriodicBC())
         end
-        @test f_alloc() <= ALLOC_THRESHOLD
+        @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
     end
 
     @testset "Zero allocation (in-place vector, CubicFit)" begin
-        s = Series(y_sin, y_cos)
-        xqs = [0.1, 0.37, 0.5, 0.9]
-        outputs = [zeros(length(xqs)) for _ in 1:2]
-        f_alloc() = begin
-            cubic_interp!(outputs, x, s, xqs)
+        function measure(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            xqs = [0.1, 0.37, 0.5, 0.9]
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            cubic_interp!(outputs, x, s, xqs)  # warmup
             return @allocated cubic_interp!(outputs, x, s, xqs)
         end
-        @test f_alloc() <= ALLOC_THRESHOLD
+        @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
     end
 
     @testset "Extrapolation modes" begin

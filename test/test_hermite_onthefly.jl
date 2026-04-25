@@ -1,13 +1,10 @@
-using Test
-using Random: MersenneTwister
-using FastInterpolations
-using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes,
-    _pchip_slopes!, _cardinal_slopes!, _akima_slopes!,
-    _resolve_coeffs, _deriv_size, _is_deriv_method,
-    _pchip_interp_onthefly, _akima_interp_onthefly, _cardinal_interp_onthefly,
-    _adjoint_func
-
-@testset "Hermite OnTheFly" begin
+@testitem "Hermite OnTheFly" setup=[AllocConstants] begin
+    using Random: MersenneTwister
+    using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes,
+        _pchip_slopes!, _cardinal_slopes!, _akima_slopes!,
+        _resolve_coeffs, _deriv_size, _is_deriv_method,
+        _pchip_interp_onthefly, _akima_interp_onthefly, _cardinal_interp_onthefly,
+        _adjoint_func
 
     # ========================================
     # 1. Local slope correctness

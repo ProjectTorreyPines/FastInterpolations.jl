@@ -1,6 +1,3 @@
-using Test
-using FastInterpolations
-
 # ============================================================================
 # Graceful error messages for Hermite family ND
 # ============================================================================
@@ -13,7 +10,7 @@ using FastInterpolations
 #
 # This test suite pins the error surface so the release contract is explicit.
 
-@testset "Hermite ND — graceful not-implemented errors" begin
+@testitem "Hermite ND — graceful not-implemented errors" begin
     x = collect(range(0.0, 1.0, 8))
     y = collect(range(0.0, 1.0, 6))
     data = [sin(xi) * cos(yj) for xi in x, yj in y]

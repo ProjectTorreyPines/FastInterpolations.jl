@@ -1,9 +1,6 @@
-using Test
-using FastInterpolations
-
 # ALLOC_THRESHOLD is defined in runtests.jl
 
-@testset "Integration Allocation Tests" begin
+@testitem "Integration Allocation Tests" setup=[AllocConstants] begin
 
     # ═══════════════════════════════════════════════════════════════
     # 1D Linear — should be 0B (no _create_spacing)

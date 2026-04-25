@@ -18,7 +18,7 @@
 #      `CardinalInterp(tension)` (otherwise results would silently match the
 #      default, defeating the kwarg).
 
-@testset "Local Hermite ND forwarders (pchip/cardinal/akima)" begin
+@testitem "Local Hermite ND forwarders (pchip/cardinal/akima)" begin
 
     # ── shared 2D fixture ──
     x2 = collect(range(0.0, 2π, 15))

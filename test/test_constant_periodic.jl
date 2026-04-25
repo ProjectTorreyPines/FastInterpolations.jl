@@ -3,11 +3,8 @@
 # Coverage mirrors test_linear_periodic.jl, with extra per-`side` coverage
 # (NearestSide/LeftSide/RightSide must all respect periodicity).
 
-using Test
-using FastInterpolations
-using FastInterpolations: _CachedRange
-
-@testset "Constant PeriodicBC" begin
+@testitem "Constant PeriodicBC" setup=[AllocConstants] begin
+    using FastInterpolations: _CachedRange
 
     @testset "NoBC default is no-op" begin
         x = collect(range(0.0, 1.0, length = 11))

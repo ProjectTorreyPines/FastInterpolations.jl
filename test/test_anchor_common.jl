@@ -1,4 +1,4 @@
-@testset "Anchor Common: _AnchorLoc + _anchor_loc" begin
+@testitem "Anchor Common: _AnchorLoc + _anchor_loc" begin
     FI = FastInterpolations
 
     # ========================================

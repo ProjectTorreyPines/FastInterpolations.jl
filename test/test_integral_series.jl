@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "Series Integration" begin
+@testitem "Series Integration" begin
     x = collect(range(0.0, 2.0, length = 21))
     y1 = sin.(x)
     y2 = cos.(x)

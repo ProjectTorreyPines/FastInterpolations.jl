@@ -13,10 +13,7 @@
 # without promotion. No type instability exists for constant interp.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-using Test
-using FastInterpolations
-
-@testset "Mixed-Precision Extrapolation Type Stability" begin
+@testitem "Mixed-Precision Extrapolation Type Stability" begin
     # ── Shared test data (Float32 grids + values) ────────────────────────
     x32 = collect(range(0.0f0, 5.0f0, length = 11))
     y32 = sin.(x32)

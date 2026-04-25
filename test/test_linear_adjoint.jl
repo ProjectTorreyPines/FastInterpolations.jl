@@ -1,30 +1,29 @@
-using Test
-using LinearAlgebra: dot
-using FastInterpolations
+@testitem "LinearAdjoint" setup=[AllocConstants] begin
+    using LinearAlgebra: dot
 
-# ========================================
-# Helper: Dot-product test for adjoint correctness
-# ========================================
-# The gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
-# Linear interp is purely linear in f (no BC constant offset), so no subtraction needed.
+    # ========================================
+    # Helper: Dot-product test for adjoint correctness
+    # ========================================
+    # The gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
+    # Linear interp is purely linear in f (no BC constant offset), so no subtraction needed.
 
-function linear_dot_product_test(
-        x, xq, f, y_bar;
-        extrap = NoExtrap(), deriv = EvalValue(),
-        atol = 0, rtol = sqrt(eps(eltype(x)))
-    )
-    itp = linear_interp(x, f; extrap = extrap)
-    adj = linear_adjoint(x, xq; extrap = extrap)
+    function linear_dot_product_test(
+            x, xq, f, y_bar;
+            extrap = NoExtrap(), deriv = EvalValue(),
+            atol = 0, rtol = sqrt(eps(eltype(x)))
+        )
+        itp = linear_interp(x, f; extrap = extrap)
+        adj = linear_adjoint(x, xq; extrap = extrap)
 
-    Wf = itp.(xq; deriv = deriv)
-    WTy = adj(y_bar; deriv = deriv)
+        Wf = itp.(xq; deriv = deriv)
+        WTy = adj(y_bar; deriv = deriv)
 
-    lhs = dot(Wf, y_bar)
-    rhs = dot(f, WTy)
-    return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
-end
+        lhs = dot(Wf, y_bar)
+        rhs = dot(f, WTy)
+        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+    end
 
-@testset "LinearAdjoint" begin
+
     # ========================================
     # Test data setup
     # ========================================

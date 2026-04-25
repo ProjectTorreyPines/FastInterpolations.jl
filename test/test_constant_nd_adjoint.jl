@@ -1,35 +1,34 @@
-using Test
-using LinearAlgebra: dot
-using StaticArrays: SVector
-using FastInterpolations
+@testitem "ConstantAdjointND (N=2)" setup=[AllocConstants] begin
+    using LinearAlgebra: dot
+    using StaticArrays: SVector
 
-# ========================================
-# Helper: ND Dot-product test
-# ========================================
-# Gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
+    # ========================================
+    # Helper: ND Dot-product test
+    # ========================================
+    # Gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
 
-function constant_nd_dot_product_test(
-        grids, xqs, f, y_bar;
-        side = NearestSide(),
-        extrap = NoExtrap(),
-        deriv = EvalValue(),
-        rtol = sqrt(eps(eltype(grids[1])))
-    )
-    itp = constant_interp(grids, f; side = side, extrap = extrap)
-    adj = constant_adjoint(grids, xqs; side = side, extrap = extrap)
+    function constant_nd_dot_product_test(
+            grids, xqs, f, y_bar;
+            side = NearestSide(),
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = constant_interp(grids, f; side = side, extrap = extrap)
+        adj = constant_adjoint(grids, xqs; side = side, extrap = extrap)
 
-    n_queries = length(xqs[1])
-    Wf = Vector{eltype(f)}(undef, n_queries)
-    itp(Wf, xqs; deriv = deriv)
+        n_queries = length(xqs[1])
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
 
-    WTy = adj(y_bar; deriv = deriv)
+        WTy = adj(y_bar; deriv = deriv)
 
-    lhs = dot(Wf, y_bar)
-    rhs = dot(vec(f), vec(WTy))
-    return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
-end
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
 
-@testset "ConstantAdjointND (N=2)" begin
+
     # ========================================
     # Test data setup
     # ========================================
@@ -497,7 +496,36 @@ end
 # ========================================
 # N=3 Tests (generic ntuple path)
 # ========================================
-@testset "ConstantAdjointND (N=3)" begin
+@testitem "ConstantAdjointND (N=3)" setup=[AllocConstants] begin
+    using LinearAlgebra: dot
+
+    # ========================================
+    # Helper: ND Dot-product test
+    # ========================================
+    # Gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
+
+    function constant_nd_dot_product_test(
+            grids, xqs, f, y_bar;
+            side = NearestSide(),
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = constant_interp(grids, f; side = side, extrap = extrap)
+        adj = constant_adjoint(grids, xqs; side = side, extrap = extrap)
+
+        n_queries = length(xqs[1])
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+
+        WTy = adj(y_bar; deriv = deriv)
+
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
+
+
     nx3, ny3, nz3 = 8, 6, 5
     nq3 = 20
 

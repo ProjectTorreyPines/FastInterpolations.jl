@@ -1,35 +1,34 @@
-using Test
-using LinearAlgebra: dot
-using StaticArrays: SVector
-using FastInterpolations
+@testitem "LinearAdjointND (N=2)" setup=[AllocConstants] begin
+    using LinearAlgebra: dot
+    using StaticArrays: SVector
 
-# ========================================
-# Helper: ND Dot-product test
-# ========================================
-# Gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
-# Linear interp is purely linear in f (no BC constant offset).
+    # ========================================
+    # Helper: ND Dot-product test
+    # ========================================
+    # Gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
+    # Linear interp is purely linear in f (no BC constant offset).
 
-function linear_nd_dot_product_test(
-        grids, xqs, f, y_bar;
-        extrap = NoExtrap(),
-        deriv = EvalValue(),
-        rtol = sqrt(eps(eltype(grids[1])))
-    )
-    itp = linear_interp(grids, f; extrap = extrap)
-    adj = linear_adjoint(grids, xqs; extrap = extrap)
+    function linear_nd_dot_product_test(
+            grids, xqs, f, y_bar;
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = linear_interp(grids, f; extrap = extrap)
+        adj = linear_adjoint(grids, xqs; extrap = extrap)
 
-    n_queries = length(xqs[1])
-    Wf = Vector{eltype(f)}(undef, n_queries)
-    itp(Wf, xqs; deriv = deriv)
+        n_queries = length(xqs[1])
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
 
-    WTy = adj(y_bar; deriv = deriv)
+        WTy = adj(y_bar; deriv = deriv)
 
-    lhs = dot(Wf, y_bar)
-    rhs = dot(vec(f), vec(WTy))
-    return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
-end
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
 
-@testset "LinearAdjointND (N=2)" begin
+
     # ========================================
     # Test data setup
     # ========================================
@@ -364,7 +363,31 @@ end
 # N=3 Tests
 # ========================================
 
-@testset "LinearAdjointND (N=3)" begin
+@testitem "LinearAdjointND (N=3)" setup=[AllocConstants] begin
+    using LinearAlgebra: dot
+
+    # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩)
+    function linear_nd_dot_product_test(
+            grids, xqs, f, y_bar;
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = linear_interp(grids, f; extrap = extrap)
+        adj = linear_adjoint(grids, xqs; extrap = extrap)
+
+        n_queries = length(xqs[1])
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+
+        WTy = adj(y_bar; deriv = deriv)
+
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
+
+
     nx, ny, nz = 10, 8, 6
     n_query = 30
 
@@ -451,7 +474,10 @@ end
 # Linear ND adjoint weights are tensor products of 1D weights.
 # For query at (αx, αy), corner weights are products of per-axis weights.
 
-@testset "LinearAdjointND — Analytical (N=2)" begin
+@testitem "LinearAdjointND — Analytical (N=2)" setup=[AllocConstants] begin
+    using LinearAlgebra: dot
+    using StaticArrays: SVector
+
     @testset "Single midpoint query — EvalValue" begin
         gx = [0.0, 1.0, 2.0]
         gy = [0.0, 1.0]
@@ -647,7 +673,8 @@ end
 # ========================================
 # Scalar / Tuple y_bar + AoS / single-tuple constructor
 # ========================================
-@testset "LinearAdjointND scalar/tuple y_bar" begin
+@testitem "LinearAdjointND scalar/tuple y_bar" setup=[AllocConstants] begin
+
     nx, ny = 10, 8
     x = range(0.0, 1.0, nx)
     y = range(0.0, 2.0, ny)
@@ -699,7 +726,31 @@ end
     end
 end
 
-@testset "LinearAdjointND AoS / single-tuple constructor" begin
+@testitem "LinearAdjointND AoS / single-tuple constructor" setup=[AllocConstants] begin
+    using LinearAlgebra: dot
+
+    # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩)
+    function linear_nd_dot_product_test(
+            grids, xqs, f, y_bar;
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = linear_interp(grids, f; extrap = extrap)
+        adj = linear_adjoint(grids, xqs; extrap = extrap)
+
+        n_queries = length(xqs[1])
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+
+        WTy = adj(y_bar; deriv = deriv)
+
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
+
+
     nx, ny = 10, 8
     x = range(0.0, 1.0, nx)
     y = range(0.0, 2.0, ny)
@@ -745,7 +796,10 @@ end
 # ========================================
 # SVector query support (N=2 and N=3)
 # ========================================
-@testset "LinearAdjointND — SVector queries" begin
+@testitem "LinearAdjointND — SVector queries" setup=[AllocConstants] begin
+    using LinearAlgebra: dot
+    using StaticArrays: SVector
+
     # ── N=2 setup ──
     nx, ny = 12, 10
     x = range(0.0, 1.0, nx)
@@ -867,7 +921,8 @@ end
 # ========================================
 # Duck-typed y_bar (multi-query)
 # ========================================
-@testset "LinearAdjointND — duck-typed y_bar" begin
+@testitem "LinearAdjointND — duck-typed y_bar" setup=[AllocConstants] begin
+
     gx = collect(range(0.0, 2.0, 5))
     gy = collect(range(0.0, 1.0, 5))
     adj = linear_adjoint((gx, gy), ([0.5, 1.0], [0.3, 0.7]))

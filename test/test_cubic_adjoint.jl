@@ -1,34 +1,33 @@
-using Test
-using LinearAlgebra: dot
-using FastInterpolations
+@testitem "CubicAdjoint" setup=[AllocConstants] begin
+    using LinearAlgebra: dot
 
-# ========================================
-# Helper: Dot-product test for adjoint correctness
-# ========================================
-# The gold standard: ⟨W·f, ȳ⟩ = ⟨f, W^T·ȳ⟩
+    # ========================================
+    # Helper: Dot-product test for adjoint correctness
+    # ========================================
+    # The gold standard: ⟨W·f, ȳ⟩ = ⟨f, W^T·ȳ⟩
 
-function dot_product_test(
-        x, xq, f, y_bar;
-        bc = CubicFit(), extrap = NoExtrap(), deriv = EvalValue(),
-        atol = 0, rtol = sqrt(eps(eltype(x)))
-    )
-    itp = cubic_interp(x, f; bc = bc, extrap = extrap)
-    adj = cubic_adjoint(x, xq; bc = bc, extrap = extrap)
+    function dot_product_test(
+            x, xq, f, y_bar;
+            bc = CubicFit(), extrap = NoExtrap(), deriv = EvalValue(),
+            atol = 0, rtol = sqrt(eps(eltype(x)))
+        )
+        itp = cubic_interp(x, f; bc = bc, extrap = extrap)
+        adj = cubic_adjoint(x, xq; bc = bc, extrap = extrap)
 
-    # The forward is affine: y = W·f + c, where c comes from non-zero BC values.
-    # Subtract the constant offset to isolate the linear part W_d·f.
-    f_zero = zeros(eltype(f), length(f))
-    itp_zero = cubic_interp(x, f_zero; bc = bc, extrap = extrap)
-    Wf = itp.(xq; deriv = deriv) .- itp_zero.(xq; deriv = deriv)  # linear part only
+        # The forward is affine: y = W·f + c, where c comes from non-zero BC values.
+        # Subtract the constant offset to isolate the linear part W_d·f.
+        f_zero = zeros(eltype(f), length(f))
+        itp_zero = cubic_interp(x, f_zero; bc = bc, extrap = extrap)
+        Wf = itp.(xq; deriv = deriv) .- itp_zero.(xq; deriv = deriv)  # linear part only
 
-    WTy = adj(y_bar; deriv = deriv)        # adjoint: ȳ → f̄
+        WTy = adj(y_bar; deriv = deriv)        # adjoint: ȳ → f̄
 
-    lhs = dot(Wf, y_bar)
-    rhs = dot(f, WTy)
-    return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
-end
+        lhs = dot(Wf, y_bar)
+        rhs = dot(f, WTy)
+        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+    end
 
-@testset "CubicAdjoint" begin
+
     # ========================================
     # Test data setup
     # ========================================
@@ -634,7 +633,7 @@ end
 # ========================================
 # Scalar / Tuple y_bar + scalar query constructor
 # ========================================
-@testset "CubicAdjoint scalar/tuple y_bar" begin
+@testitem "CubicAdjoint scalar/tuple y_bar" setup=[AllocConstants] begin
     x = range(0.0, 1.0, 20)
 
     @testset "Scalar y_bar (1 query point)" begin

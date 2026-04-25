@@ -88,20 +88,13 @@ end
 @inline Base.propertynames(::_LinearAnchoredQuery) =
     (:stencil, :idxL, :idxR, :xq, :state, :xL, :h, :inv_h, :alpha)
 
-# Outer constructor (positional pair): infers Tq from alpha's arithmetic type
-# and promotes xq to match. Keeps the legacy 8-arg call shape used by every
-# existing caller (Series one-shot, adjoint fixup, `_anchor_query`).
+# Outer constructor: infers `Tq` from alpha's arithmetic type and promotes
+# `xq` to match. Callers pass an explicit `_IdxPair` (or any `_IdxStencil{2}`)
+# so seam-aware index handling is local to the call site.
 #
 # For Float grids:  alpha::Tq, xq::Tq — no conversion (identity).
 # For Dual grids + Float query:  alpha::Dual (from grid arithmetic),
 #   xq promoted to Dual via convert (zero partials = "query has no grid sensitivity").
-@inline function _LinearAnchoredQuery(idxL::Int, idxR::Int, xq, state::UInt8, xL::Tg, h::Tg, inv_h::Tg, alpha) where {Tg}
-    Ta = typeof(alpha)
-    xq_p = convert(Ta, xq)
-    return _LinearAnchoredQuery{Tg, Ta}(_pair(idxL, idxR), xq_p, state, xL, h, inv_h, alpha)
-end
-
-# Stencil-native outer constructor — preferred for new code.
 @inline function _LinearAnchoredQuery(stencil::_IdxStencil{2}, xq, state::UInt8, xL::Tg, h::Tg, inv_h::Tg, alpha) where {Tg}
     Ta = typeof(alpha)
     xq_p = convert(Ta, xq)
@@ -300,7 +293,7 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
     # on a fixed grid with at most wrap-to-domain remapping — so `idxR = idxL+1`
     # here. Periodic-exclusive seam anchors are constructed via `_LinearAnchoredQuery(...)`
     # directly in the exclusive periodic one-shot helpers (bypassing `_anchor_loc`).
-    return _LinearAnchoredQuery(loc.idx, loc.idx + 1, loc.xq, loc.state, loc.xL, h, inv_h, alpha)
+    return _LinearAnchoredQuery(_IdxPair(loc.idx, loc.idx + 1), loc.xq, loc.state, loc.xL, h, inv_h, alpha)
 end
 
 # ========================================

@@ -45,7 +45,7 @@
     dL = xq_wrapped - xL
     # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual).
     xq_promoted = oftype(dL, xq_wrapped)
-    aq = _ConstantAnchoredQuery(idxL, idxR, xq_promoted, IN_DOMAIN, h, dL)
+    aq = _ConstantAnchoredQuery(_IdxPair(idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
 
     x_last = @inbounds Tg(last(x))
 
@@ -166,7 +166,7 @@ end
             h = _get_h(x, xR, xL)
             dL = xq_wrapped - xL
             xq_promoted = oftype(dL, xq_wrapped)
-            aq = _ConstantAnchoredQuery(idxL, idxR, xq_promoted, IN_DOMAIN, h, dL)
+            aq = _ConstantAnchoredQuery(_IdxPair(idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
             for k in 1:K
                 outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap_p)
             end

@@ -174,7 +174,7 @@ function _fixup_constant_anchor_state!(
         state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
         aq = anchors[i]
         anchors[i] = _ConstantAnchoredQuery{Tg, Tg}(
-            aq.idxL, aq.idxR, aq.xq, state, aq.h, aq.dL
+            aq.stencil, aq.xq, state, aq.h, aq.dL
         )
     end
     return nothing

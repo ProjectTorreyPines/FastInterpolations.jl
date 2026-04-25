@@ -74,15 +74,11 @@ end
 @inline Base.propertynames(::_ConstantAnchoredQuery) =
     (:stencil, :idxL, :idxR, :xq, :state, :h, :dL)
 
-# Outer constructors — preserve both the legacy 6-arg positional pair shape
-# (used by `_anchor_query`, Series one-shot, adjoint) and the stencil-native form.
-@inline _ConstantAnchoredQuery(idxL::Int, idxR::Int, xq::Tq, state::UInt8, h::Tg, dL::Tq) where {Tg, Tq} =
-    _ConstantAnchoredQuery{Tg, Tq}(_pair(idxL, idxR), xq, state, h, dL)
-
-# Parametric stencil-native alias used by legacy typeof(aq)(...) fixup sites
-# (e.g. `_fixup_constant_anchor_state!` in constant_adjoint.jl).
-@inline _ConstantAnchoredQuery{Tg, Tq}(idxL::Int, idxR::Int, xq, state, h, dL) where {Tg, Tq} =
-    _ConstantAnchoredQuery{Tg, Tq}(_pair(idxL, idxR), xq, state, h, dL)
+# Stencil-native outer — infers `Tg, Tq` from arg types so callers can write
+# `_ConstantAnchoredQuery(_IdxPair(idxL, idxR), xq, state, h, dL)` without
+# specifying type params. Mirrors Linear's stencil-native outer.
+@inline _ConstantAnchoredQuery(stencil::_IdxStencil{2}, xq::Tq, state::UInt8, h::Tg, dL::Tq) where {Tg, Tq} =
+    _ConstantAnchoredQuery{Tg, Tq}(stencil, xq, state, h, dL)
 
 # ========================================
 # Anchor Construction
@@ -231,7 +227,7 @@ Internal implementation of _anchor_query for constant interpolation.
     # `_anchor_loc` never returns a periodic-exclusive seam pair, so
     # `idxR = idxL + 1` here. Seam-pair anchors are constructed directly in
     # the exclusive periodic series helper via `_ConstantAnchoredQuery(...)`.
-    return _ConstantAnchoredQuery(loc.idx, loc.idx + 1, xq_promoted, loc.state, h, dL)
+    return _ConstantAnchoredQuery(_IdxPair(loc.idx, loc.idx + 1), xq_promoted, loc.state, h, dL)
 end
 
 # ========================================

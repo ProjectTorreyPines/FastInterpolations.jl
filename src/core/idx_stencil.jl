@@ -37,7 +37,7 @@ Construction:
 s = _IdxStencil((5, 6))            # K inferred (=2)
 s = _IdxStencil{2}((5, 6))         # K specified
 s = _IdxStencil((5, 6, 7, 8))      # K=4 stencil
-s = _pair(5, 6)                    # K=2 convenience
+s = _IdxPair(5, 6)                 # K=2 convenience (2-arg constructor)
 const _IdxPair = _IdxStencil{2}    # alias
 ```
 
@@ -58,19 +58,23 @@ end
 #
 # The struct's auto-generated inner constructor
 #   `_IdxStencil{K}(t::NTuple{K, Int}) where K`
-# serves BOTH call shapes once K is reachable from the tuple length:
-#   _IdxStencil{2}((5, 6))   -- K specified, inner matches directly
-#   _IdxStencil((5, 6))      -- Julia's `where K` inference on the inner
-#                               resolves K=2 from the NTuple{2, Int} argument
-# No outer constructor needed — adding one here would overwrite the inner
-# (same normalized method signature at the Julia type system level) and
-# trigger a precompile-time method-overwriting error.
+# handles tuple-style construction for both `_IdxStencil((5, 6))` and
+# `_IdxStencil{2}((5, 6))`. We do NOT add an outer for the tuple form —
+# Julia normalizes any such outer to the same method signature as the
+# inner, triggering a precompile-time method-overwriting error.
+#
+# Below we add ONE positional-args outer (Vararg{Int, K}) so callers can
+# write `_IdxStencil{K}(i1, i2, …, iK)` without the explicit tuple
+# parentheses. This is purely cosmetic — body just forwards to the inner
+# with the captured Vararg tuple.
 
-# K=2 convenience alias (most common case: Linear/Constant 1D+ND, Cubic 1D)
+@inline _IdxStencil{K}(idxs::Vararg{Int, K}) where {K} = _IdxStencil{K}(idxs)
+
+# K=2 convenience alias (most common case: Linear/Constant 1D+ND, Cubic 1D).
+# Combined with the Vararg outer above, `_IdxPair(idxL, idxR)` works directly:
+# Julia resolves `_IdxPair === _IdxStencil{2}` then matches the Vararg method
+# with K=2. No separate `_IdxPair(...)` method needed.
 const _IdxPair = _IdxStencil{2}
-
-# Construct a pair stencil from left + right indices (Phase 6 style call sites).
-@inline _pair(idxL::Int, idxR::Int) = _IdxStencil((idxL, idxR))
 
 # ────────────────────────────────────────
 # Accessors — explicit, no AbstractVector inheritance

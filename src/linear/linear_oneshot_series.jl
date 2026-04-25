@@ -57,7 +57,7 @@
     h = _get_h(x, xR, xL)
     inv_h = _get_inv_h(x, xR, xL)
     alpha = (xq_wrapped - xL) * inv_h
-    aq = _LinearAnchoredQuery(idxL, idxR, xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
+    aq = _LinearAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
 
     @inbounds for k in 1:K
         output[k] = _linear_eval_at_anchor(vecs[k], aq, op, extrap_p)
@@ -205,7 +205,7 @@ In-place one-shot linear interpolation at multiple query points.
             h = _get_h(x, xR, xL)
             inv_h = _get_inv_h(x, xR, xL)
             alpha = (xq_wrapped - xL) * inv_h
-            aq = _LinearAnchoredQuery(idxL, idxR, xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
+            aq = _LinearAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
             for k in 1:K
                 outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap_p)
             end

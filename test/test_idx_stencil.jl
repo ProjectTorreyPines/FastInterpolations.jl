@@ -2,7 +2,7 @@
 # See src/core/idx_stencil.jl for design notes.
 
 using Test
-using FastInterpolations: _IdxStencil, _IdxPair, _pair
+using FastInterpolations: _IdxStencil, _IdxPair
 
 @testset "_IdxStencil" begin
 
@@ -22,8 +22,8 @@ using FastInterpolations: _IdxStencil, _IdxPair, _pair
         @test s4 isa _IdxStencil{4}
         @test s4.indices === (3, 4, 5, 6)
 
-        # _pair convenience
-        sp = _pair(10, 1)               # periodic-exclusive seam shape
+        # _IdxPair 2-arg constructor — periodic-exclusive seam shape
+        sp = _IdxPair(10, 1)
         @test sp isa _IdxStencil{2}
         @test sp.indices === (10, 1)
 
@@ -99,7 +99,7 @@ using FastInterpolations: _IdxStencil, _IdxPair, _pair
         # Construction infers to concrete _IdxStencil{K, NTuple{K, Int}}
         @test @inferred(_IdxStencil((1, 2))) isa _IdxStencil{2}
         @test @inferred(_IdxStencil((1, 2, 3, 4))) isa _IdxStencil{4}
-        @test @inferred(_pair(1, 2)) isa _IdxStencil{2}
+        @test @inferred(_IdxPair(1, 2)) isa _IdxStencil{2}
 
         # Accessors preserve Int concrete
         s = _IdxStencil((5, 6))

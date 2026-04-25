@@ -54,8 +54,8 @@
     idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
     # Use _get_h/_get_inv_h so _CachedRange returns its exact cached step
     # instead of the cancellation-prone `xR - xL` on large-offset grids.
-    h = _get_h(x, xR, xL)
-    inv_h = _get_inv_h(x, xR, xL)
+    h = _get_h(x, xL, xR)
+    inv_h = _get_inv_h(x, xL, xR)
     alpha = (xq_wrapped - xL) * inv_h
     aq = _LinearAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
 
@@ -202,8 +202,8 @@ In-place one-shot linear interpolation at multiple query points.
             xq_wrapped = _wrap_to_domain(xqs[j], extrap_p)
             idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
             # Cached-step-preserving dispatch (matches scalar/persistent paths).
-            h = _get_h(x, xR, xL)
-            inv_h = _get_inv_h(x, xR, xL)
+            h = _get_h(x, xL, xR)
+            inv_h = _get_inv_h(x, xL, xR)
             alpha = (xq_wrapped - xL) * inv_h
             aq = _LinearAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
             for k in 1:K

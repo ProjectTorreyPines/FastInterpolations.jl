@@ -138,8 +138,8 @@ Uses `@propagate_inbounds` to enable bounds-check elision in hot loops.
 # _CachedRange overloads are in cached_range.jl (loaded after this file).
 # float(): scalar conversion (0 alloc, register op). Ensures Int grids produce
 # Float h/inv_h for kernel compatibility. No-op for AbstractFloat/Dual grids.
-@inline _get_h(::AbstractVector, xR::Real, xL::Real) = float(xR - xL)
-@inline _get_inv_h(::AbstractVector, xR::Real, xL::Real) = inv(float(xR - xL))
+@inline _get_h(::AbstractVector, xL::Real, xR::Real) = float(xR - xL)
+@inline _get_inv_h(::AbstractVector, xL::Real, xR::Real) = inv(float(xR - xL))
 
 # ========================================
 # Factory Functions

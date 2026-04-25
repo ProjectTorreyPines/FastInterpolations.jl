@@ -14,7 +14,7 @@
 # Core eval: extrap dispatch → search → kernel (no intermediate layers)
 # ========================================
 # _eval_extrapolation helper is defined in core/utils.jl (shared by all methods).
-# _get_h(x, xR, xL) dispatches to x.h (_CachedRange) or xR-xL (Vector).
+# _get_h(x, xL, xR) dispatches to x.h (_CachedRange) or xR-xL (Vector).
 
 # NoExtrap / InBounds: domain check + search + kernel.
 # (OOB impossible: NoExtrap throws, InBounds guarantees in-domain)
@@ -33,7 +33,7 @@
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xR, xL), dL, side)
+    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xL, xR), dL, side)
 end
 
 # ExtendExtrap: constant function has zero slope → extend = clamp.
@@ -68,7 +68,7 @@ end
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xR, xL), dL, side)
+    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xL, xR), dL, side)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
@@ -88,7 +88,7 @@ end
     xi_wrapped = _wrap_to_domain(xi, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xR, xL), dL, side)
+    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xL, xR), dL, side)
 end
 
 

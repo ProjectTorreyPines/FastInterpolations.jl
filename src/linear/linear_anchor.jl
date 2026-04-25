@@ -285,8 +285,8 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
     loc = _anchor_loc(x, xq, wrap, policy)
 
     # Compute geometry (linear-internal concern)
-    h = _get_h(x, loc.xR, loc.xL)
-    inv_h = _get_inv_h(x, loc.xR, loc.xL)
+    h = _get_h(x, loc.xL, loc.xR)
+    inv_h = _get_inv_h(x, loc.xL, loc.xR)
     alpha = (loc.xq - loc.xL) * inv_h
 
     # `_anchor_loc` never returns a periodic-exclusive seam pair — it operates

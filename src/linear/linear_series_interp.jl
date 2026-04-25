@@ -209,7 +209,7 @@ end
 end
 
 # ExtendExtrap - extend linear polynomial using boundary interval.
-# _get_inv_h(x, xR, xL) dispatches to x.inv_h (_CachedRange) or inv(xR-xL) (Vector).
+# _get_inv_h(x, xL, xR) dispatches to x.inv_h (_CachedRange) or inv(xR-xL) (Vector).
 @inline function _eval_linear_series_point_extrap!(
         out::AbstractVector{Tv},
         y_point::Matrix{Tv},
@@ -228,7 +228,7 @@ end
         xL = x[idx]
         xR = x[idx1]
     end
-    inv_h = _get_inv_h(x, xR, xL)
+    inv_h = _get_inv_h(x, xL, xR)
     dL = aq.xq - xL
     @inbounds @simd for k in axes(out, 1)
         yL = y_point[k, idx]

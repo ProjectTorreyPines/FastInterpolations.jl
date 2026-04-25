@@ -25,8 +25,8 @@
     @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL
-    h = _get_h(x, xR, xL)
-    inv_h = _get_inv_h(x, xR, xL)
+    h = _get_h(x, xL, xR)
+    inv_h = _get_inv_h(x, xL, xR)
     @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
@@ -48,8 +48,8 @@ end
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL
-    h = _get_h(x, xR, xL)
-    inv_h = _get_inv_h(x, xR, xL)
+    h = _get_h(x, xL, xR)
+    inv_h = _get_inv_h(x, xL, xR)
     @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
@@ -66,8 +66,8 @@ end
     xq_wrapped = _wrap_to_domain(xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     dL = xq_wrapped - xL
-    h = _get_h(x, xR, xL)
-    inv_h = _get_inv_h(x, xR, xL)
+    h = _get_h(x, xL, xR)
+    inv_h = _get_inv_h(x, xL, xR)
     @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
@@ -256,8 +256,8 @@ end
     dyL = _local_slope(sm, x, y, idx, n)
     dyR = _local_slope(sm, x, y, idx_R, n)
     dL = xq - xL
-    h = _get_h(x, xR, xL)
-    inv_h = _get_inv_h(x, xR, xL)
+    h = _get_h(x, xL, xR)
+    inv_h = _get_inv_h(x, xL, xR)
     @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
@@ -281,8 +281,8 @@ end
     dyL = _local_slope(sm, x, y, idx, n)
     dyR = _local_slope(sm, x, y, idx_R, n)
     dL = xq - xL
-    h = _get_h(x, xR, xL)
-    inv_h = _get_inv_h(x, xR, xL)
+    h = _get_h(x, xL, xR)
+    inv_h = _get_inv_h(x, xL, xR)
     @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
@@ -301,8 +301,8 @@ end
     dyL = _local_slope(sm, x, y, idx, n)
     dyR = _local_slope(sm, x, y, idx_R, n)
     dL = xq_wrapped - xL
-    h = _get_h(x, xR, xL)
-    inv_h = _get_inv_h(x, xR, xL)
+    h = _get_h(x, xL, xR)
+    inv_h = _get_inv_h(x, xL, xR)
     @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dyL, dyR, h, inv_h, dL)
 end
 

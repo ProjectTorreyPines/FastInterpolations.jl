@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1777098670519,
+  "lastUpdate": 1777099212730,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -45130,6 +45130,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1569.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "737f7b69489eefea912d86f7d23114a4b8b306ee",
+          "message": "(refac): `_IdxStencil{K}` — Unified Corner Addressing + Layer Cleanup (#128)\n\n* (refac): Introduce _IdxStencil{K} — unify Linear/Constant 1D+ND corner addressing\n\nAdds a new parametric type `_IdxStencil{K}` (src/core/idx_stencil.jl) that\nwraps an `NTuple{K, Int}` of wrap-aware per-axis corner indices. Migrates\nLinear and Constant 1D anchors and their ND BC-aware search/kernel families\nto use it, retiring the `_lr` suffix that was introduced as an Aqua N=0\nambiguity workaround (commit c318d133).\n\nWhy:\n  - #127's periodic-exclusive refactor introduced a second ND corner-addressing\n    shape (`NTuple{N, NTuple{2, Int}}`) alongside the existing single-index\n    shape. The pair was named with `_lr` suffix globally to avoid\n    `NTuple{0, …}`-collapsing-to-`Tuple{}` ambiguity at N=0.\n  - Every future pair-needing method family (Cubic 1D periodic, Hermite 1D,\n    ND Hermite K=4) would add another `_suffix` — parallel families\n    proliferating.\n  - `_IdxStencil{K}` is the \"unified type\" that carries K as a parameter\n    (K=2 today, K=4 for future ND Hermite); one function name serves all\n    methods via parametric dispatch.\n\nScope — Linear and Constant only (1D + ND). Other ND methods (Cubic,\nQuadratic, Hetero) untouched; their `_search_all_intervals` single-idx\npath continues to work unchanged. Follow-up PRs will port Cubic 1D\nperiodic, Series anchor batch, Hermite 1D, and ND Hermite to the same\ninfrastructure.\n\nNew infrastructure:\n  - `src/core/idx_stencil.jl` — `_IdxStencil{K}` struct + K=2 alias\n    `_IdxPair` + `_pair(idxL, idxR)` helper. Single parametric inner\n    constructor; no outer (a second constructor would normalize to the\n    same Julia method signature and trigger precompile-time\n    method-overwriting error).\n  - `test/test_idx_stencil.jl` — construction, indexing, iteration,\n    equality/hash, sizeof parity with raw NTuple, `@allocated == 0`,\n    `@inferred` on accessors.\n\n1D anchor migration (Linear + Constant):\n  - `_LinearAnchoredQuery` / `_ConstantAnchoredQuery`: fields `idxL::Int,\n    idxR::Int` → single `stencil::_IdxStencil{2}`. Field count goes from\n    8→7 (Linear) / 6→5 (Constant).\n  - Legacy `aq.idxL` / `aq.idxR` ergonomics preserved via a **Val-dispatch\n    `Base.getproperty`** pattern: `getproperty(aq, s::Symbol)` delegates to\n    `_get_{lin,const}_prop(aq, Val(s))` with one method per property.\n    This forces per-symbol compile-time specialization — each access\n    inlines to a single `getfield` + tuple index with concrete return\n    type. A naïve single-method `s === :idxL && return ...` override had\n    wide return-type union that defeated inlining and caused 6400-byte\n    allocs in the zero-alloc test. Val-dispatch restores zero-alloc.\n  - Outer constructors keep the legacy 8-arg / 6-arg positional call\n    shape so every existing call site (`_anchor_query`, Series one-shot,\n    adjoint fixup) works unchanged.\n  - `_fixup_linear_anchor_state!` updated to call the new 7-arg default\n    inner constructor via `aq.stencil`.\n\nND migration (Linear + Constant only):\n  - `src/core/nd_utils.jl`: `_search_axis_lr` → `_search_axis_stencil`;\n    `_search_all_intervals_lr` → `_search_all_intervals_stencil` with\n    output shape `NTuple{N, _IdxStencil{2}}`. `_getpair` replaced by\n    `_getstencil`.\n  - `src/linear/nd/linear_nd_eval.jl`: `_compute_linear_params_lr` →\n    `_compute_linear_params_stencil`; `_multilinear_sum_lr` →\n    `_multilinear_sum_stencil` taking `NTuple{N, _IdxStencil{2}}`.\n    Generator body unchanged — just the `make_idx_expr` callback swaps\n    from `indices_pairs[d][bit+1]` to `stencils[d][bit+1]`.\n  - `src/constant/nd/constant_nd_eval.jl`: `_constant_nd_kernel_lr` →\n    `_constant_nd_kernel_stencil` same pattern.\n  - `src/linear/nd/linear_nd_oneshot.jl`,\n    `src/constant/nd/constant_nd_oneshot.jl`: BC-path call sites\n    updated to new names. Non-BC path and the pre-built-anchor public\n    overloads untouched.\n\nVerification:\n  - Full test suite: **all tests passed (27m 43s)**, 97% line coverage\n    across 10051 lines.\n  - Benchmarks: **±1% on every hot path** (9 benchmarks from 1D scalar\n    through 3D trilinear). Delta range: −0.52% to +0.69%. No\n    allocation regression.\n  - Aqua.test_all: CLEAN (ambiguity check confirms `_lr`/stencil pair\n    dispatch is no longer ambiguous; no new piracies).\n  - `@code_warntype` on `aq.idxL`: `Body::Int64`; `@code_native`\n    collapses to `ret` (full inlining, no getproperty overhead).\n  - `@inferred` on 1D / 2D / 3D interp paths: all type-stable.\n\nFollow-ups (separate PRs):\n  - Cubic 1D periodic zero-copy: `_cubic_periodic_solve!` drops grid\n    extension, feeds length-n z to kernel via `_IdxStencil{2}`.\n  - Quadratic/Cubic Series batch Q×K + pool removal.\n  - Hermite 1D periodic (reuse BC-aware slope types from\n    `feat/periodic_bc_hermite`, plus `_IdxStencil{2}` for eval).\n  - ND Hermite periodic (K=4 — parametric K is the main motivation).\n\n* (chore): Remove dead single-param _ConstantAnchoredQuery{T}(6 args) alias\n\nAfter the `_IdxStencil{2}` migration, the convenience constructor\n  `_ConstantAnchoredQuery{T}(idxL, idxR, xq, state, h, dL) where {T}`\nno longer has any caller — every construction site goes through either:\n  - the type-parametric form `_ConstantAnchoredQuery{Tg, Tq}(...)` (used\n    by the `_fixup_constant_anchor_state!` legacy `typeof(aq)(...)` site\n    and ND adjoint construction), or\n  - the type-inferring outer `_ConstantAnchoredQuery(idxL, idxR, ...)`\n    (used by `_anchor_query`, Series one-shot, and persistent paths).\n\nThe `{T}` single-param alias was kept for backward compat at the time of\nthe stencil refactor but is now genuinely unreferenced (verified via\n`grep -rn '_ConstantAnchoredQuery{[A-Za-z]*}('` across `src/` and `test/`\n— only the docstring mention at line 25 remained).\n\nRemoves the alias plus its docstring reference. Net −5 lines, zero\nbehavior change. All `test_constant_anchor` / `test_constant_periodic` /\n`test_constant_series_interp` suites pass unchanged; Aqua ambiguity\ncheck still clean; quick `@btime constant_interp` sanity within noise.\n\n* (refac): Retire legacy positional pair constructors — Vararg + alias dispatch\n\nCleans up the backward-compat scaffolding that the `_IdxStencil{K}`\nmigration left behind. After the refactor every Linear/Constant anchor\nconstruction site can express the seam-pair shape directly through the\nunified type alias, so the legacy 8-arg / 6-arg / parametric outer\nconstructors that wrapped `(idxL, idxR, ...)` into a stencil internally\nare no longer needed.\n\nType infra (src/core/idx_stencil.jl):\n  - Drop the standalone `_pair(idxL, idxR)` helper function and the\n    short-lived explicit `_IdxPair(idxL, idxR)` 2-arg method (the latter\n    triggered an LSP \"function already has value\" since `_IdxPair` is a\n    type alias, not a function).\n  - Add ONE `Vararg{Int, K}` outer on `_IdxStencil{K}`:\n      `_IdxStencil{K}(idxs::Vararg{Int, K}) where K = _IdxStencil{K}(idxs)`\n    Combined with the existing `const _IdxPair = _IdxStencil{2}`, this\n    transparently enables every natural call shape via Julia's dispatch:\n      _IdxStencil((5, 6))      # auto-inner with NTuple\n      _IdxStencil{2}((5, 6))   # K-specified, auto-inner\n      _IdxStencil{2}(5, 6)     # Vararg\n      _IdxPair((5, 6))         # alias + auto-inner\n      _IdxPair(5, 6)           # alias + Vararg     ← preferred for seam pair\n      _IdxStencil{4}(1,2,3,4)  # future ND Hermite — also free\n    No second method named `_IdxPair` is defined; calling `_IdxPair(5, 6)`\n    resolves the alias to `_IdxStencil{2}` and dispatches to the Vararg\n    method with `K=2`.\n\nLinear/Constant 1D anchors:\n  - Linear: drop the legacy 8-arg outer\n      `_LinearAnchoredQuery(idxL, idxR, xq, state, xL, h, inv_h, alpha)`\n    and migrate every call site to the stencil-native 7-arg outer using\n    `_IdxPair(idxL, idxR)` for the first arg.\n  - Constant: drop the legacy 6-arg outer\n      `_ConstantAnchoredQuery(idxL, idxR, xq, state, h, dL)` and the\n    parametric `_ConstantAnchoredQuery{Tg, Tq}(idxL, idxR, ...)` form;\n    add the missing stencil-native 5-arg outer\n      `_ConstantAnchoredQuery(stencil::_IdxStencil{2}, xq, state, h, dL)`.\n    All call sites updated.\n\nCall sites migrated to the stencil-native form:\n  - linear_anchor.jl `_anchor_query` (line 303)\n  - linear_oneshot_series.jl periodic seam (lines 60, 208)\n  - constant_anchor.jl `_anchor_query` (line 230)\n  - constant_oneshot_series.jl periodic seam (lines 48, 169)\n  - constant_adjoint.jl `_fixup_constant_anchor_state!` (line 176) — uses\n    `aq.stencil` directly instead of reconstructing from `idxL`/`idxR`,\n    matching the corresponding Linear fixup pattern landed earlier.\n  - constant_nd_adjoint.jl ND adjoint anchor build (line 59) — wraps\n    `(idx, idxR)` into `_IdxPair`.\n\nTests: `test_idx_stencil.jl` updated to drop the `_pair` import + add\ncoverage for `_IdxStencil{2}(5, 6)` Vararg form. Anchor / periodic /\nseries / ND tests all pass unchanged.\n\nVerification:\n  - `cc-julia-test-runner` on test_idx_stencil, test_linear_anchor,\n    test_constant_anchor, test_linear_periodic, test_constant_periodic,\n    test_linear_series_interp, test_constant_series_interp — all pass.\n  - `Aqua.test_all` (with `unbound_args=(broken=true,)`): CLEAN — no new\n    ambiguities from the Vararg outer (different arity from auto-inner\n    NTuple form).\n  - 31-benchmark Linear matrix vs master baseline: worst delta +2.23%\n    on a single 240-ns measurement (5 ns absolute, noise margin); 2D /\n    3D oneshot vector batch *improved* −2.3% / −4.0%; all allocations\n    unchanged.\n\nNet: −7 lines, removes 4 legacy constructor methods, unifies the\nconstruction surface around a single Vararg-friendly inner constructor.\n\n* (refac): Reorder 3-arg _get_h / _get_inv_h to natural L→R argument order\n\nPure mechanical signature change — zero behavior change, no logic touched.\n\nThe 3-arg helpers `_get_h(x, xR, xL)` / `_get_inv_h(x, xR, xL)` accepted\nthe right endpoint *before* the left endpoint, which reads in reverse of\nevery other helper / call site in the codebase (search returns\n`(idxL, idxR, xL, xR)`, anchors expose `idxL` then `idxR`, etc.).\nReorder to `_get_h(x, xL, xR)` / `_get_inv_h(x, xL, xR)` so callers\nwrite the boundary pair in natural L→R order.\n\nDefinitions:\n  - `src/core/grid_spacing.jl`: `(::AbstractVector, xR, xL)` →\n    `(::AbstractVector, xL, xR)`. Body unchanged: `float(xR - xL)` —\n    semantically identical, just consumes the renamed args.\n  - `src/core/cached_range.jl`: `(_CachedRange, ::Real, ::Real)` —\n    args ignored regardless of order; signature reorder for consistency.\n\nCall sites (28 total) — positional swap `(xR, xL)` → `(xL, xR)`:\n  - linear: linear_anchor.jl × 2, linear_oneshot.jl × 3,\n    linear_oneshot_series.jl × 4, linear_series_interp.jl × 1\n  - constant: constant_anchor.jl × 1, constant_oneshot.jl × 3,\n    constant_oneshot_series.jl × 2\n  - cubic: cubic_anchor.jl × 2\n  - hermite: hermite_eval.jl × 12\n\nDoc comments mentioning the 3-arg signature also updated to L→R.\n\nVerification: test_linear_anchor / test_constant_anchor /\ntest_cubic_anchor / test_pchip_1d / test_linear_periodic all pass\nunchanged. Sanity grep `_get_h(.*, xR, xL)` returns zero hits across\nsrc/.\n\nNet: ±0 behavior, +37/−36 lines (whitespace from arg name length parity).\nFirst step toward the layer-cleanup planned in\nclaudedocs/… — see also the upcoming `_compute_linear_params*`\ndeletion and `_multilinear_sum` / `_constant_nd_kernel` unification.\n\n* (refac): Inline Linear ND param computation — drop _compute_linear_params* + _alphas_from_hs\n\nRemoves three single-line wrapper functions in `src/linear/nd/linear_nd_eval.jl`\nthat hid the actual `(q-L)/h` arithmetic behind two extra layers:\n\n- `_compute_linear_params(q_eval, spacings, indices, Ls, Val(N))` — persistent\n  variant (used spacing 2-arg `_get_h` form).\n- `_compute_linear_params_stencil(q_eval, Ls, Rs, Val(N))` — BC variant\n  (used `map(-, Rs, Ls)`).\n- `_alphas_from_hs(q_eval, Ls, hs)` — `map(_alpha_of, …)` forwarder.\n\nAll three were single-`map` forwarders. Call sites now do the work directly\nin two visible lines:\n\n  hs = map(_get_h, ...)                    # spacings or grids+Ls+Rs\n  αs = map(_alpha_of, q_eval, Ls, hs)\n\n`_alpha_of(q, L, h) = (q - L) / h` survives as the named single-line formula\n(the only layer that earns its keep — the name documents the formula).\n\nInline pattern per path:\n- Persistent (`linear_nd_eval.jl:52` in `_locate_cell` generic-N):\n    `hs = map(_get_h, itp.spacings, indices)`         # 2-arg cached fast lane\n    `αs = map(_alpha_of, q_eval, Ls, hs)`\n- BC oneshot scalar + batch (`linear_nd_oneshot.jl:50-52, 87-89`):\n    `hs = map(_get_h, grids, Ls, Rs)`                  # 3-arg dispatch (cached\n                                                        # `x.h` for `_CachedRange`,\n                                                        # `xR-xL` for Vector)\n    `αs = map(_alpha_of, q_eval, Ls, hs)`\n\nThe Stage 1 reorder (`_get_h(x, xL, xR)`) makes the BC oneshot path symmetric\nwith the persistent path — both paths now express \"h via `_get_h` dispatch on\nthe input geometry handle\" instead of the previous `map(-, Rs, Ls)` raw\nsubtract that bypassed the `_CachedRange` cached-step optimization.\n\nStale comment in `src/core/nd_utils.jl:791` referring to the deleted\n`_compute_linear_params_stencil` updated to describe the inline pattern.\n\nThe N=2 specialization at `linear_nd_eval.jl:69-72` was already inline and\nis unchanged.\n\nVerification:\n- test_linear, test_linear_periodic, test_linear_anchor, test_pchip_1d,\n  test_cubic_anchor, test_constant_anchor — all pass.\n- `Aqua.test_ambiguities`: CLEAN.\n- 31-benchmark Linear matrix vs master baseline: every entry within ±1%\n  (worst +1.55% on 1D persistent scalar Range = 0.04 ns noise; several\n  improvements: 1D oneshot vector Vector −1.62%, 2D persistent vector\n  batch −1.51%, 3D oneshot vector batch −7.49%). Allocations unchanged.\n\nNet: −34 lines (3 wrapper functions deleted, replaced by 2-line inline\nat 3 call sites). Layer depth from 4 → 2.\n\n* (refac): Unify _multilinear_sum — drop Int-indexed sibling, single stencil-only kernel\n\nRemoves the Int-indexed `_multilinear_sum(data, indices::NTuple{N, Int}, …)`\nkernel that was the original Linear ND kernel for non-periodic / persistent\npaths. The stencil-using `_multilinear_sum_stencil(data, stencils, …)` (added\nin commit 37b41685 alongside the `_IdxStencil{K}` migration) is renamed to\n`_multilinear_sum` and becomes the single overload — every Linear ND eval\npath now expresses corner addressing through `_IdxStencil{2}`.\n\nThe two paths agree on shape because:\n  - **BC oneshot** already gets seam-aware stencils from\n    `_search_all_intervals_stencil` and called `_multilinear_sum_stencil`\n    directly (now just `_multilinear_sum`).\n  - **Persistent / non-periodic oneshot** historically passed raw\n    `indices::NTuple{N, Int}` to the now-deleted Int-indexed kernel. After\n    this commit the call sites wrap once at construction time:\n        stencils = map(i -> _IdxPair(i, i + 1), indices)\n    Non-periodic cells always have `idxR == idxL + 1`, so the wrap is\n    purely a shape change — zero behavior change. The `_IdxPair` Vararg\n    constructor (existing) inlines to a single-NTuple wrap and adds zero\n    runtime cost (compiler-folded).\n\nFiles modified:\n  - `src/linear/nd/linear_nd_eval.jl`:\n      * Delete Int-indexed `@generated function _multilinear_sum(…, indices::NTuple{N, Int}, …)`.\n      * Rename `_multilinear_sum_stencil` → `_multilinear_sum`. Update its\n        docstring to describe the now-canonical stencil-only form.\n      * `_multilinear_sum_body` callback generator unchanged — still the\n        shared corner-unroll skeleton used by the kernel; comment updated\n        to note it stays callback-driven for future K > 2 (ND Hermite)\n        kernel reuse.\n      * `_locate_cell` (generic-N) wraps `indices` into stencils before\n        returning the cell tuple.\n      * `_locate_cell` (N=2 specialization) wraps the destructured\n        `(ix, iy)` directly into `(_IdxPair(ix, ix+1), _IdxPair(iy, iy+1))`.\n      * `_eval_at_cell` destructures `stencils` (renamed from `indices`)\n        and forwards to the unified `_multilinear_sum`.\n  - `src/linear/nd/linear_nd_oneshot.jl`: `_multilinear_sum_stencil` →\n    `_multilinear_sum` at both BC oneshot scalar and batch sites.\n  - `test/test_linear_periodic.jl`: testset name updated from\n    `_multilinear_sum_lr` to `_multilinear_sum`.\n\nAqua N=0 ambiguity (the original reason for the `_lr` / `_stencil` suffix\nnamespacing) is now eliminated by construction — there is only one\n`_multilinear_sum` overload, no overload pair to be ambiguous.\n\nVerification:\n  - test_linear, test_linear_periodic, test_linear_anchor,\n    test_linear_series_interp — all pass.\n  - `Aqua.test_ambiguities`: CLEAN.\n\nNet: −11 lines (one @generated kernel + its docstring removed; the\nremaining kernel keeps the stencil docstring expanded slightly).\n\n* (refac): Unify _constant_nd_kernel — drop spacings/Int dispatch, lift h out of @generated body\n\nRemoves the Int-indexed + spacings-aware `_constant_nd_kernel` and the\nparallel `_constant_nd_kernel_stencil` BC-aware sibling. The remaining\nsingle kernel is stencil-only and geometry-agnostic — it takes\n`hs::Tuple{Vararg{Real, N}}` as a precomputed argument instead of\ncomputing `_get_h(spacings[d], indices[d])` inside the @generated body.\nThis matches Linear's `_multilinear_sum` shape, which Stage 3 reduced to\na single stencil-only overload.\n\nArchitectural changes:\n- `_locate_cell` (generic-N + N=2 specialization) now performs the h-lift:\n    hs = map(_get_h, itp.spacings, indices)        # 2-arg cached fast lane\n    stencils = map(i -> _IdxPair(i, i + 1), indices)\n  and packages `(data, stencils, hs, sides, q_eval, Ls)` as the cell tuple.\n- `_eval_at_cell` destructures the new cell shape and forwards directly to\n  the unified kernel.\n- BC oneshot scalar + batch (`constant_nd_oneshot.jl`) compute\n  `hs = map(_get_h, grids, Ls, Rs)` (3-arg dispatch — uses cached `x.h`\n  for `_CachedRange`, `xR-xL` for Vector) before calling the same\n  unified kernel.\n\nCritical perf detail — `ifelse` corner addressing:\nThe Constant kernel reads ONE corner per query (no 2^N unroll like\nLinear), and `offset_d = _compute_single_offset(side, h, dL)` is a\n*runtime* value, unlike Linear where the corner bit pattern is a\ncompile-time constant for each unrolled corner. Naive\n`stencils[d][offset_d + 1]` compiles to a dynamic NTuple lookup\n(bounds-check + indexed load), measured as +7.3% regression on 2D\nbi-constant persistent scalar (12.012 ns → 12.888 ns).\n\nReplaced with explicit branchless `ifelse`:\n    ifelse(offset_d == 0,\n           @inbounds(stencils[d][1]),\n           @inbounds(stencils[d][2]))\nwhich compiles to a CSEL on x86/ARM. Recovers the original perf and\nslightly improves it (12.012 ns → 11.928 ns, −0.7%).\n\nFiles modified:\n- `src/constant/nd/constant_nd_eval.jl`:\n    * Delete Int-indexed `_constant_nd_kernel(data, spacings, sides,\n      indices, q_eval, Ls)`.\n    * Delete `_constant_nd_kernel_stencil(data, stencils, Rs, sides,\n      q_eval, Ls)`.\n    * Rename to single unified `_constant_nd_kernel(data, stencils, hs,\n      sides, q_eval, Ls)` with `ifelse`-based corner addressing.\n    * `_locate_cell` (both generic-N and N=2) lifts h + wraps stencils.\n    * `_eval_at_cell` destructures the new cell tuple shape.\n- `src/constant/nd/constant_nd_oneshot.jl`: BC oneshot scalar + batch\n  call sites compute `hs = map(_get_h, grids, Ls, Rs)` and call the\n  unified `_constant_nd_kernel`.\n- `test/test_constant_periodic.jl`: testset name updated from\n  `_constant_nd_kernel_lr` to `_constant_nd_kernel`.\n\nAqua N=0 ambiguity: eliminated by construction — only one kernel\noverload remains, no Int-vs-stencil overload pair to be ambiguous.\n\nVerification:\n- test_constant, test_constant_periodic — all pass.\n- `Aqua.test_ambiguities`: CLEAN.\n- 31-benchmark Linear matrix vs master baseline: worst delta +2.61%\n  on 2D oneshot vector batch (33 ns over 1280 ns scale = noise);\n  improvements at 3D oneshot vector batch −7.75%, 2D persistent vector\n  batch −1.50%. Allocations unchanged across all 31 measurements.\n- Constant 2D persistent scalar (separately measured): 12.012 ns →\n  11.928 ns (−0.7%, within noise).\n\nNet: −22 lines (one entire @generated kernel removed, the surviving\nkernel slightly larger due to per-axis `ifelse` corner addressing).\nLayer count: 3 → 2 (eval_at_cell → unified kernel).\n\n* (refac): Pre-merge review polish — drop dead kernel, sync docstrings, lock virtual-property contract\n\nAddresses pre-PR review findings on top of the 4-stage layer cleanup.\n\nBlock (1):\n- Delete dead `_multilinear_sum_stencil` in `linear_nd_eval.jl` — Stage 3 commit\n  3ab600af unified the kernel into `_multilinear_sum` but the rename left the\n  original function alongside the renamed one with byte-identical body and zero\n  call sites. Symmetric `_constant_nd_kernel_stencil` was correctly fully\n  removed in Stage 4 — only Linear had the leftover.\n\nStrong (3 doc + 2 test):\n- Linear/Constant anchor docstrings: replace stale `idxL`/`idxR` field-list\n  entries with the actual `stencil::_IdxStencil{2}` field and a virtual-\n  property note (the `getproperty` Val-dispatch already documents the runtime\n  pattern, but the user-facing top docstring wasn't reconciled).\n- `_oneshot` docstring signatures: add the missing `bcs::NTuple{N, AbstractBC}`\n  arg (Linear scalar+batch, Constant scalar+batch).\n- New testset \"virtual property type-stability + zero-alloc\" in\n  `test_{linear,constant}_anchor.jl`: directly verifies `aq.idxL`/`aq.idxR`\n  are `@inferred` to concrete `Int` and access through a function barrier\n  allocates 0 bytes. Pins the Val-dispatched `getproperty` contract — a\n  regression to single-method `getproperty` with `s === :idxL && return ...`\n  branches would silently defeat inference (union return) and slow hot\n  consumers (linear_adjoint.jl, linear_series_interp.jl, etc.).\n- New testset \"ND seam-cell at N=3\" in test_{linear,constant}_periodic.jl:\n  the unified `_multilinear_sum`/`_constant_nd_kernel` are @generated and\n  unroll for any N, but every existing ND seam test was N=2 only. The N=3\n  unroll with `stencils[1][2] == 1` (wrap) was never exercised. New tests\n  are corner-recoverable (separable data) so the expected result is computed\n  by hand from the wrapped corner identities.\n\nPolish (2):\n- Stale `_search_all_intervals_lr` reference in test_linear_periodic.jl\n  comment → `_search_all_intervals_stencil`.\n- Cosmetic typo in test_idx_stencil.jl (mentioned 2-param type for a 1-param\n  struct).\n\nVerification:\n- Targeted suite (test_idx_stencil + test_{linear,constant}_anchor +\n  test_{linear,constant}_periodic): PASS in 58s.\n- Full suite: PASS in 26m 23s, 97% coverage on 10,022 lines.\n\n* Runic formatting",
+          "timestamp": "2026-04-24T23:29:02-07:00",
+          "tree_id": "5fa7e2f39fc0afb54c27811de23fa0cad65f5596",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/737f7b69489eefea912d86f7d23114a4b8b306ee"
+        },
+        "date": 1777099205088,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 37320,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 621.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 356934,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1671.12,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1577.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 15.72,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 11.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3238,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 32.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 18.23,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4229.68,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4216.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9169.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3209.38,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 446.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 57021.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1214.06,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12642.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 18.74,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 443.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 39303.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 25.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 17380.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 47.49,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 273.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 9.91,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 195.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 17156,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 11.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 546.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4006.66,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 36429.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 667.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1609.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2278.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 10457.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3349.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 36524.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 867.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 381838.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1576.9,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

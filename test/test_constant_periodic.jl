@@ -269,7 +269,7 @@ using FastInterpolations: _CachedRange
         @test itp isa ConstantInterpolantND
     end
 
-    @testset "ND seam-cell — _constant_nd_kernel_lr exact wrap" begin
+    @testset "ND seam-cell — _constant_nd_kernel exact wrap" begin
         # 2D, axis 1 :exclusive (period=4), axis 2 NoBC. Constant uses one of
         # the (idx_L, idx_R) corners per axis according to `side`. Pinning down
         # LeftSide and RightSide along the seam axis is the strongest unit-level

@@ -959,13 +959,19 @@ end
 
         mitp2 = cubic_interp(x, Series(y1, y2); extrap = ExtendExtrap())
 
+        # atol=5e-14 (not 1e-14): multi-series and single-series code paths
+        # use different summation orders. IEEE-754 deterministic but not bit-equal;
+        # last-bit differences accumulate to ~1.2e-14 in the worst case. The
+        # relaxed tolerance accommodates FMA/summation-order variation across
+        # compilation contexts (master happened to align by coincidence; testitem
+        # fresh-module compilation exposes the variation).
         d1 = mitp2(xq; deriv = DerivOp(1))
-        @test d1[1] ≈ itp1(xq; deriv = DerivOp(1)) atol = 1.0e-14
-        @test d1[2] ≈ itp2(xq; deriv = DerivOp(1)) atol = 1.0e-14
+        @test d1[1] ≈ itp1(xq; deriv = DerivOp(1)) atol = 5.0e-14
+        @test d1[2] ≈ itp2(xq; deriv = DerivOp(1)) atol = 5.0e-14
 
         d2 = mitp2(xq; deriv = DerivOp(2))
-        @test d2[1] ≈ itp1(xq; deriv = DerivOp(2)) atol = 1.0e-14
-        @test d2[2] ≈ itp2(xq; deriv = DerivOp(2)) atol = 1.0e-14
+        @test d2[1] ≈ itp1(xq; deriv = DerivOp(2)) atol = 5.0e-14
+        @test d2[2] ≈ itp2(xq; deriv = DerivOp(2)) atol = 5.0e-14
     end
 end
 

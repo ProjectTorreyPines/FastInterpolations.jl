@@ -7,11 +7,9 @@
 # shared series infrastructure from Phases A-D.
 #
 
-using Test
-using FastInterpolations
-const FI = FastInterpolations
+@testitem "QuadraticSeriesInterpolant" setup=[AllocConstants] begin
+    FI = FastInterpolations
 
-@testset "QuadraticSeriesInterpolant" begin
 
     # ========================================
     # Constructor Tests
@@ -107,24 +105,29 @@ const FI = FastInterpolations
     # ========================================
 
     @testset "zero allocation" begin
-        x = collect(0.0:0.1:1.0)
-        sitp = quadratic_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
-
         @testset "scalar in-place" begin
-            output = zeros(2)
-            sitp(output, 0.5)  # Warmup
-            sitp(output, 0.5)  # Warmup
-            allocs = @allocated sitp(output, 0.5)
-            @test allocs <= ALLOC_THRESHOLD
+            function measure_scalar()
+                x = collect(0.0:0.1:1.0)
+                sitp = quadratic_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
+                output = zeros(2)
+                sitp(output, 0.5)  # Warmup
+                sitp(output, 0.5)  # Warmup
+                return @allocated sitp(output, 0.5)
+            end
+            @test measure_scalar() <= ALLOC_THRESHOLD
         end
 
         @testset "vector in-place" begin
-            xq = collect(0.0:0.05:1.0)
-            outputs = [zeros(length(xq)) for _ in 1:2]
-            sitp(outputs, xq)  # Warmup
-            sitp(outputs, xq)  # Warmup
-            allocs = @allocated sitp(outputs, xq)
-            @test allocs <= ALLOC_THRESHOLD
+            function measure_vector()
+                x = collect(0.0:0.1:1.0)
+                sitp = quadratic_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
+                xq = collect(0.0:0.05:1.0)
+                outputs = [zeros(length(xq)) for _ in 1:2]
+                sitp(outputs, xq)  # Warmup
+                sitp(outputs, xq)  # Warmup
+                return @allocated sitp(outputs, xq)
+            end
+            @test measure_vector() <= ALLOC_THRESHOLD
         end
     end
 

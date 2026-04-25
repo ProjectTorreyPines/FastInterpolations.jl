@@ -1,17 +1,15 @@
-using Test
-using FastInterpolations
-import DataInterpolations as DI
-import Dierckx
-import Interpolations as Itp
-using Random
+@testitem "Package Comparison Tests" begin
+    import DataInterpolations as DI
+    import Dierckx
+    import Interpolations as Itp
+    using Random
 
-# 1e-14 instead of 1e-15: accounts for FMA (fused multiply-add) differences
-# between Julia versions (e.g., 1.10 LTS vs latest) that cause last-bit variations.
-# Note: FMA is numerically more accurate (single rounding vs two), but produces
-# slightly different results than separate multiply-then-add operations.
-const APPROX_REL_TOLERANCCE = 1.0e-14
+    # 1e-14 instead of 1e-15: accounts for FMA (fused multiply-add) differences
+    # between Julia versions (e.g., 1.10 LTS vs latest) that cause last-bit variations.
+    # Note: FMA is numerically more accurate (single rounding vs two), but produces
+    # slightly different results than separate multiply-then-add operations.
+    APPROX_REL_TOLERANCCE = 1.0e-14
 
-@testset "Package Comparison Tests" begin
 
     # Test functions
     target_f(x) = sin(2π * x) + 0.5 * cos(4π * x)

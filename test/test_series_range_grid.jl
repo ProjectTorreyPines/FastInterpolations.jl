@@ -6,11 +6,8 @@
 # Verifies that series interpolants correctly handle both Range (StepRangeLen)
 # and Vector grid types, producing consistent results.
 
-using Test
-using FastInterpolations
-const FI = FastInterpolations
-
-@testset "Series Interpolant Range Grid Support" begin
+@testitem "Series Interpolant Range Grid Support" begin
+    FI = FastInterpolations
 
     # ========================================
     # Test Data Setup

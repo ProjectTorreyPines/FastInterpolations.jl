@@ -1,11 +1,9 @@
-using Test
-using FastInterpolations
-using Random
+@testitem "Thomas LU Solver" begin
+    using Random
 
-const FI = FastInterpolations
-const LA = FI.LinearAlgebra
+    FI = FastInterpolations
+    LA = FI.LinearAlgebra
 
-@testset "Thomas LU Solver" begin
 
     # ─────────────────────────────────────────────────────────────────────────
     # Helper functions for generating test grids

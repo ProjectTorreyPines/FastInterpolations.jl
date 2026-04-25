@@ -2,11 +2,8 @@
 # Phase B: Tests for shared matrix series infrastructure
 # These tests verify the extracted lazy transpose and SIMD evaluation patterns
 
-using Test
-using FastInterpolations
-const FI = FastInterpolations
-
-@testset "series_matrix - Lazy Transpose Infrastructure" begin
+@testitem "series_matrix - Lazy Transpose Infrastructure" begin
+    FI = FastInterpolations
 
     @testset "LazyTranspose - single matrix" begin
         # Create a test matrix (n_points × n_series) = series-contiguous
@@ -75,7 +72,7 @@ const FI = FastInterpolations
     end
 end
 
-@testset "series_matrix - Integration with CubicSeriesInterpolant" begin
+@testitem "series_matrix - Integration with CubicSeriesInterpolant" setup=[AllocConstants] begin
     # Verify Cubic still works after refactoring to use shared infrastructure
     x = collect(0.0:0.1:1.0)  # 11 points
     y1 = sin.(2π .* x)
@@ -113,10 +110,13 @@ end
     end
 
     @testset "zero allocation preserved" begin
-        output = zeros(3)
-        sitp(output, 0.5)  # Warmup
-
-        allocs = @allocated sitp(output, 0.5)
-        @test allocs <= ALLOC_THRESHOLD
+        # Function-barrier pattern: pass outer vars as args (avoids @testset
+        # try/catch type-instability under @testitem fresh-module compilation).
+        function measure(sitp)
+            output = zeros(3)
+            sitp(output, 0.5)  # Warmup
+            return @allocated sitp(output, 0.5)
+        end
+        @test measure(sitp) <= ALLOC_THRESHOLD
     end
 end

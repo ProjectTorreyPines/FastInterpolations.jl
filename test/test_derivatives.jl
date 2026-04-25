@@ -4,23 +4,20 @@
 # Phase 1: Foundation tests for EvalOp types (DerivOp)
 # Phase 2+: Kernel functions, cubic/linear derivative evaluation
 
-using Test
-using FastInterpolations
-
-# Import internal types/macros for testing
-using FastInterpolations: _linear_kernel, _cubic_kernel
-using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
-using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
-using FastInterpolations: _to_searcher
-
-# Julia version-aware threshold (1.12+ has improved allocation tracking)
-# Note: Tg/Tv type separation (for Complex support) adds ~80-300 bytes overhead on LTS
-const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
-
 # ========================================
 # Group 1: Core Types and Dispatch
 # ========================================
-@testset "Derivative Core" begin
+@testitem "Derivative Core" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    # Note: Tg/Tv type separation (for Complex support) adds ~80-300 bytes overhead on LTS
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
+
 
     @testset "EvalOp types" begin
         @test EvalValue() isa AbstractEvalOp
@@ -353,7 +350,15 @@ end # Derivative Core
 # ========================================
 # Group 2: Kernel Functions
 # ========================================
-@testset "Derivative Kernels" begin
+@testitem "Derivative Kernels" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
     @testset "Linear kernels" begin
         # Test case: L(x) = 1 + 2x on [0, 1]
@@ -486,7 +491,15 @@ end # Derivative Kernels
 # ========================================
 # Group 3: Cubic Derivative API
 # ========================================
-@testset "Cubic Derivatives" begin
+@testitem "Cubic Derivatives" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
     @testset "Cubic internal functions with op" begin
         # Test with quadratic f(x) = x² on [0, 2] with step 0.5
@@ -814,7 +827,15 @@ end # Cubic Derivatives
 # ========================================
 # Group 4: Linear Derivative API
 # ========================================
-@testset "Linear Derivatives" begin
+@testitem "Linear Derivatives" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
     @testset "Linear public API with deriv" begin
 
@@ -1090,7 +1111,15 @@ end # Linear Derivatives
 # ========================================
 # Group 5: Periodic and Boundary Behavior
 # ========================================
-@testset "Derivative Boundary Behavior" begin
+@testitem "Derivative Boundary Behavior" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
     @testset "Periodic BC derivative continuity" begin
         # Test that derivatives are continuous at the wrap point
@@ -1215,7 +1244,15 @@ end # Derivative Boundary Behavior
 # ========================================
 # Group 6: Type Stability
 # ========================================
-@testset "Derivative Type Stability" begin
+@testitem "Derivative Type Stability" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
     @testset "Cubic derivative type inference" begin
         x = collect(0.0:0.1:1.0)
@@ -1300,7 +1337,15 @@ end # Derivative Type Stability
 # ========================================
 # Group 7: Edge Cases
 # ========================================
-@testset "Derivative Edge Cases" begin
+@testitem "Derivative Edge Cases" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
     @testset "Very small grid (minimum size)" begin
         # Minimum for cubic: 3 points (needs ZeroCurvBC; CubicFit requires 4+)
@@ -1391,7 +1436,15 @@ end # Derivative Edge Cases
 # ========================================
 # Group 8: Allocation Tests
 # ========================================
-@testset "Derivative Allocations" begin
+@testitem "Derivative Allocations" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
     @testset "Cubic allocation with deriv" begin
         x = collect(0.0:0.1:1.0)
@@ -1679,7 +1732,15 @@ end # Derivative Allocations
 # ========================================
 # Group 9: Comprehensive Path Coverage
 # ========================================
-@testset "Derivative Comprehensive Coverage" begin
+@testitem "Derivative Comprehensive Coverage" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
     @testset "All cubic paths zero-allocation" begin
         # Test all combinations of BC, extrap, and deriv
@@ -1811,7 +1872,15 @@ end # Derivative Comprehensive Coverage
 # ========================================
 # Group 10: DerivativeView Wrapper (Phase 3)
 # ========================================
-@testset "DerivativeView Wrapper" begin
+@testitem "DerivativeView Wrapper" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
     @testset "DerivativeView wrapper - CubicInterpolant" begin
         x = collect(0.0:0.2:2.0)
@@ -2009,7 +2078,15 @@ end # DerivativeView Wrapper
 # ========================================
 # Group 11: Deriv=3 Extensions
 # ========================================
-@testset "Deriv=3 Extensions" begin
+@testitem "Deriv=3 Extensions" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
     @testset "EvalDeriv3 core type" begin
         @test isdefined(FastInterpolations, :EvalDeriv3)
@@ -2218,7 +2295,15 @@ end # Deriv=3 Extensions
 # ========================================
 # Group 12: DerivativeView Vector Queries
 # ========================================
-@testset "DerivativeView Vector Queries" begin
+@testitem "DerivativeView Vector Queries" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
     @testset "DerivativeView accepts vector queries - Cubic" begin
         x = collect(range(0.0, 1.0, 101))
@@ -2288,7 +2373,15 @@ end # DerivativeView Vector Queries
 # ========================================
 # Group 13: SeriesInterpolant Derivatives
 # ========================================
-@testset "SeriesInterpolant Derivatives" begin
+@testitem "SeriesInterpolant Derivatives" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
     @testset "CubicSeriesInterpolant with deriv keyword - scalar" begin
         x = collect(range(0.0, 1.0, 101))
@@ -2532,7 +2625,15 @@ end # SeriesInterpolant Derivatives
 # DerivativeView search/hint keywords and in-place vector
 # ========================================
 
-@testset "DerivativeView search/hint keywords" begin
+@testitem "DerivativeView search/hint keywords" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
     # Shared cubic test data
     x_cubic = collect(range(0.0, 1.0, 51))
     y_cubic = x_cubic .^ 2
@@ -2597,7 +2698,15 @@ end # SeriesInterpolant Derivatives
     end
 end # DerivativeView search/hint keywords
 
-@testset "DerivativeView single-series in-place vector" begin
+@testitem "DerivativeView single-series in-place vector" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
     # Shared test data
     x_base = collect(range(0.0, 1.0, 51))
     xq = [0.25, 0.5, 0.75]
@@ -2669,7 +2778,15 @@ end # DerivativeView search/hint keywords
 
 end # DerivativeView single-series in-place vector
 
-@testset "DerivativeView SeriesInterpolant search/hint keywords" begin
+@testitem "DerivativeView SeriesInterpolant search/hint keywords" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
     # Shared test data for series interpolant
     x = collect(range(0.0, 1.0, 51))
     sitp = cubic_interp(x, Series(x .^ 2, x .^ 3))
@@ -2708,7 +2825,15 @@ end # DerivativeView single-series in-place vector
 
 end # DerivativeView SeriesInterpolant search/hint keywords
 
-@testset "DerivativeView type stability and performance" begin
+@testitem "DerivativeView type stability and performance" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
     # Shared cubic test data
     x_cubic = collect(range(0.0, 1.0, 51))
     y_cubic = x_cubic .^ 2
@@ -2857,7 +2982,15 @@ end # DerivativeView SeriesInterpolant search/hint keywords
 
 end # DerivativeView type stability and performance
 
-@testset "AbstractDerivativeView type hierarchy" begin
+@testitem "AbstractDerivativeView type hierarchy" begin
+    # Import internal types/macros for testing
+    using FastInterpolations: _linear_kernel, _cubic_kernel
+    using FastInterpolations: _eval_cubic_at_point, _get_cubic_cache, _solve_system!
+    using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+    using FastInterpolations: _to_searcher
+
+    # Julia version-aware threshold (1.12+ has improved allocation tracking)
+    DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
     # Create test interpolants
     x = collect(range(0.0, 1.0, 11))
     y = x .^ 2

@@ -31,6 +31,7 @@ const MIGRATED_TESTITEM_FILES = Set([
     "test_constant_anchor.jl",
     "test_constant_oneshot_series.jl",
     "test_constant_periodic.jl",
+    "test_constant_series_interp.jl",
     "test_constextrap_fill.jl",
     "test_cubic.jl",
     "test_cubic_anchor.jl",
@@ -40,7 +41,9 @@ const MIGRATED_TESTITEM_FILES = Set([
     "test_cubic_series_interp.jl",
     "test_cubic_series_naming.jl",
     "test_cumulative_integrate.jl",
+    "test_derivatives.jl",
     "test_factory.jl",
+    "test_generic_bc.jl",
     "test_gradient_hessian.jl",
     "test_grid_spacing.jl",
     "test_hermite_1d.jl",
@@ -65,6 +68,7 @@ const MIGRATED_TESTITEM_FILES = Set([
     "test_linear.jl",
     "test_linear_anchor.jl",
     "test_linear_oneshot_series.jl",
+    "test_linear_series_interp.jl",
     "test_local_hermite_nd_forward.jl",
     "test_local_slope_comparison.jl",
     "test_mixed_precision_extrap.jl",
@@ -75,24 +79,33 @@ const MIGRATED_TESTITEM_FILES = Set([
     "test_nd_coverage.jl",
     "test_nd_heterogeneous_grids.jl",
     "test_nd_hint.jl",
+    "test_nd_mixed_partial_bc_consistency.jl",
     "test_nd_oneshot_hint.jl",
     "test_nd_utils_shared.jl",
     "test_nodal_partials.jl",
+    "test_packages_comparison.jl",
     "test_pchip_1d.jl",
     "test_periodic_bc.jl",
     "test_periodic_exclusive.jl",
     "test_periodic_resolvers.jl",
     "test_periodic_search_4value.jl",
+    "test_polyfit_bc.jl",
     "test_promotion_alloc.jl",
     "test_quadratic.jl",
     "test_quadratic_anchor.jl",
     "test_quadratic_oneshot_series.jl",
+    "test_quadratic_series_interp.jl",
     "test_random_grid.jl",
+    "test_rcu.jl",
     "test_search.jl",
     "test_search_anchor_integration.jl",
     "test_search_context_normalization.jl",
+    "test_series_matrix.jl",
+    "test_series_range_grid.jl",
+    "test_series_utils.jl",
     "test_series_wrapper.jl",
     "test_show.jl",
+    "test_thomas_lu_solver.jl",
     "test_type_stability.jl",
 ])
 
@@ -136,39 +149,26 @@ else
     # Default behavior: run all legacy files
     include("test_constant_adjoint.jl")
     include("test_constant_nd_adjoint.jl")
-    include("test_constant_series_interp.jl")
     include("test_cubic_adjoint.jl")
     include("test_cubic_nd.jl")
     include("test_cubic_nd_adjoint.jl")
     include("test_cubic_nd_oneshot.jl")
-    include("test_derivatives.jl")
     include("test_duck_typing_comprehensive.jl")
-    include("test_generic_bc.jl")
     include("test_hermite_adjoint.jl")
     include("test_linear_adjoint.jl")
     include("test_linear_nd_adjoint.jl")
     include("test_linear_periodic.jl")
-    include("test_linear_series_interp.jl")
     include("test_mutation_safety.jl")
     include("test_nd_constant.jl")
     include("test_nd_linear.jl")
-    include("test_nd_mixed_partial_bc_consistency.jl")
     include("test_nd_noextrap_oob.jl")
     include("test_nd_oneshot_onthefly.jl")
     include("test_nd_quadratic.jl")
     include("test_nointerp.jl")
     include("test_nonuniform_grid.jl")
-    include("test_packages_comparison.jl")
-    include("test_polyfit_bc.jl")
     include("test_precision_vector_queries.jl")
     include("test_quadratic_adjoint.jl")
     include("test_quadratic_nd_adjoint.jl")
-    include("test_quadratic_series_interp.jl")
-    include("test_rcu.jl")
-    include("test_series_matrix.jl")
-    include("test_series_range_grid.jl")
-    include("test_series_utils.jl")
-    include("test_thomas_lu_solver.jl")
     include("test_thread_safety.jl")
 
     # ── Extension tests (AD / Symbolics) ──────────────────────────────

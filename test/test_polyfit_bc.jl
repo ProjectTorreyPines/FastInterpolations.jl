@@ -10,18 +10,11 @@
 # These BCs compute endpoint derivatives from data automatically,
 # unlike Deriv1/Deriv2 which require user-specified values.
 
-using Test
-using FastInterpolations
-
-# Tolerance constants for numerical comparisons (local to this test file)
-const POLYFIT_RTOL = 1.0e-12
-const POLYFIT_ATOL = 1.0e-12
-
 # ========================================
 # PolyFit{D} Type System Tests
 # ========================================
 
-@testset "PolyFit{D} Type System" begin
+@testitem "PolyFit{D} Type System" begin
 
     @testset "Type Aliases" begin
         # Verify type aliases are truly identical to PolyFit{D}
@@ -88,7 +81,7 @@ const POLYFIT_ATOL = 1.0e-12
 
 end
 
-@testset "PolyFit Normalization and BCPair" begin
+@testitem "PolyFit Normalization and BCPair" begin
 
     @testset "Single PolyFit → Symmetric BCPair" begin
         # Type-Free design: _normalize_bc promotes to concrete types
@@ -132,7 +125,9 @@ end
 
 end
 
-@testset "CubicFit Integration (as CubicFit, not CubicFit)" begin
+@testitem "CubicFit Integration (as CubicFit, not CubicFit)" begin
+    POLYFIT_RTOL = 1.0e-12
+    POLYFIT_ATOL = 1.0e-12
 
     @testset "Cubic Polynomial Reproduction with CubicFit" begin
         # f(x) = x³ - 2x² + x - 1, f'(x) = 3x² - 4x + 1
@@ -172,7 +167,7 @@ end
 # Phase 1: CubicFit Type System Tests (Backward Compatibility)
 # ========================================
 
-@testset "CubicFit Type System" begin
+@testitem "CubicFit Type System" begin
 
     @testset "Type Hierarchy" begin
         # Type-Free design: CubicFit is a PointBC subtype (no type parameter)
@@ -209,7 +204,7 @@ end
 
 end
 
-@testset "CubicFit Normalization" begin
+@testitem "CubicFit Normalization" begin
 
     @testset "Single CubicFit → Symmetric BCPair" begin
         # When a single CubicFit is provided, it should be applied to both ends
@@ -241,7 +236,7 @@ end
 
 end
 
-@testset "CubicFit BCPair Construction" begin
+@testitem "CubicFit BCPair Construction" begin
 
     @testset "Symmetric CubicFit BCPair" begin
         bc = BCPair(CubicFit(), CubicFit())
@@ -279,7 +274,7 @@ end
 # Phase 3: PolyFit Kernel Tests
 # ========================================
 
-@testset "PolyFit Kernel Correctness (PolyFit{3})" begin
+@testitem "PolyFit Kernel Correctness (PolyFit{3})" begin
 
     @testset "Left Endpoint: f(x) = x³" begin
         # f(x) = x³, f'(x) = 3x²
@@ -364,7 +359,7 @@ end
 # Non-Uniform Grid Kernel Tests (Precomputed Coefficients)
 # ========================================
 
-@testset "Non-Uniform PolyFit Kernels (PolyFit{3})" begin
+@testitem "Non-Uniform PolyFit Kernels (PolyFit{3})" begin
 
     @testset "Coefficient Precomputation: Left Endpoint" begin
         # Non-uniform grid: [0, 0.1, 0.3, 0.6]
@@ -524,7 +519,9 @@ end
 # Phase 4: CubicFit Integration Tests
 # ========================================
 
-@testset "CubicFit Mathematical Correctness" begin
+@testitem "CubicFit Mathematical Correctness" begin
+    POLYFIT_RTOL = 1.0e-12
+    POLYFIT_ATOL = 1.0e-12
 
     @testset "Cubic Polynomial Reproduction" begin
         # f(x) = x³ - 2x² + x - 1
@@ -584,7 +581,7 @@ end
 
 end
 
-@testset "CubicFit Mixed with Other BCs" begin
+@testitem "CubicFit Mixed with Other BCs" begin
 
     @testset "CubicFit Left, Deriv2(0) Right (ZeroCurv)" begin
         f_mixed1(x) = sin(π * x)
@@ -636,7 +633,7 @@ end
 
 end
 
-@testset "CubicFit Error Handling" begin
+@testitem "CubicFit Error Handling" begin
 
     @testset "Requires Minimum 4 Points" begin
         # CubicFit uses 4-point stencil, needs at least 4 points
@@ -656,7 +653,7 @@ end
 
 end
 
-@testset "CubicFit with CubicSplineCache" begin
+@testitem "CubicFit with CubicSplineCache" begin
 
     @testset "Cache Creation with CubicFit" begin
         # Use Range directly (not collect) - CubicFit requires uniform grid
@@ -696,7 +693,7 @@ end
 
 end
 
-@testset "CubicFit with CubicInterpolant" begin
+@testitem "CubicFit with CubicInterpolant" begin
 
     @testset "2-arg Form Creates Interpolant" begin
         x = range(0.0, 1.0, 21)
@@ -731,7 +728,7 @@ end
 
 end
 
-@testset "CubicFit with CubicSeriesInterpolant" begin
+@testitem "CubicFit with CubicSeriesInterpolant" begin
 
     @testset "Multiple Series" begin
         x = range(0.0, 1.0, 21)
@@ -747,7 +744,7 @@ end
 
 end
 
-@testset "CubicFit Float32 Support" begin
+@testitem "CubicFit Float32 Support" begin
 
     @testset "Float32 Grid and Values" begin
         x = range(0.0f0, 1.0f0, 21)
@@ -773,7 +770,7 @@ end
 # ========================================
 # Tests for the 3-point derivative estimation kernels in polyfit_kernels.jl
 
-@testset "QuadraticFit Kernels (polyfit_kernels.jl)" begin
+@testitem "QuadraticFit Kernels (polyfit_kernels.jl)" begin
 
     @testset "Uniform Grid - Quadratic Reproduction" begin
         # f(x) = x² - 2x + 1, f'(x) = 2x - 2
@@ -920,7 +917,7 @@ end
 # ========================================
 # Tests for the 2-point derivative estimation kernels in polyfit_kernels.jl
 
-@testset "LinearFit Kernels (polyfit_kernels.jl)" begin
+@testitem "LinearFit Kernels (polyfit_kernels.jl)" begin
 
     @testset "Uniform Grid - Linear Function (Exact)" begin
         # f(x) = 3x + 2, f'(x) = 3 (constant)
@@ -1080,7 +1077,7 @@ end
 # Tests for using any PolyFit{D} with both cubic_interp and quadratic_interp.
 # This validates the materialize_bc factory function and generic dispatch.
 
-@testset "Cross-BC: Cubic Interpolation with QuadraticFit" begin
+@testitem "Cross-BC: Cubic Interpolation with QuadraticFit" begin
     # Test that QuadraticFit (PolyFit{2}) works with cubic_interp
 
     @testset "Quadratic Function Reproduction" begin
@@ -1142,7 +1139,7 @@ end
     end
 end
 
-@testset "Cross-BC: Quadratic Interpolation with CubicFit" begin
+@testitem "Cross-BC: Quadratic Interpolation with CubicFit" begin
     # Test that CubicFit (PolyFit{3}) works with quadratic_interp
 
     @testset "Quadratic Function Reproduction" begin
@@ -1189,7 +1186,7 @@ end
     end
 end
 
-@testset "Cross-BC: LinearFit Integration" begin
+@testitem "Cross-BC: LinearFit Integration" begin
     # Test that LinearFit (PolyFit{1}) works with interpolation functions
 
     @testset "Cubic Interpolation with LinearFit" begin
@@ -1256,7 +1253,7 @@ end
 
 end
 
-@testset "PolyFit{D} Minimum Points Validation" begin
+@testitem "PolyFit{D} Minimum Points Validation" begin
     x2 = [0.0, 1.0]
     y2 = [1.0, 2.0]
     x3 = [0.0, 1.0, 2.0]
@@ -1293,7 +1290,7 @@ end
     end
 end
 
-@testset "materialize_bc Factory Function" begin
+@testitem "materialize_bc Factory Function" begin
     x = range(0.0, 2.0, 11)
     y = collect(x .^ 2)
 
@@ -1351,7 +1348,7 @@ end
 # Tests for the generic barycentric differentiation fallback
 # that handles polynomial degrees D > 3.
 
-@testset "PolyFit{D > 3} Generic Implementation" begin
+@testitem "PolyFit{D > 3} Generic Implementation" begin
     @testset "Generic _weighted_sum for N > 4" begin
         # Test that _weighted_sum works for tuple sizes > 4
         for N in [5, 6, 7, 8]
@@ -1592,7 +1589,7 @@ end
 # Verifies that specialized D≤3 implementations are allocation-free,
 # and measures allocations for generic D>3 implementations.
 
-@testset "Allocation Tests: Specialized vs Generic PolyFit{D}" begin
+@testitem "Allocation Tests: Specialized vs Generic PolyFit{D}" setup=[AllocConstants] begin
 
     # ----------------------------------------
     # Test Setup: Pre-allocated data
@@ -1630,53 +1627,43 @@ end
     @testset "Specialized D≤3: Zero Allocations" begin
 
         @testset "_compute_deriv1 (Uniform Grid)" begin
-            # Warmup calls (trigger compilation)
-            FastInterpolations._compute_deriv1(PolyFit{1}(), LeftSide(), f2, inv_h)
-            FastInterpolations._compute_deriv1(PolyFit{2}(), LeftSide(), f3, inv_h)
-            FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), f4, inv_h)
+            # Function-barrier pattern: pass outer vars as args (avoids @testset
+            # try/catch + testitem fresh-module type-instability under @allocated).
+            function measure_d1(pf, side, fvals, inv_h)
+                FastInterpolations._compute_deriv1(pf, side, fvals, inv_h)  # warmup
+                return @allocated FastInterpolations._compute_deriv1(pf, side, fvals, inv_h)
+            end
 
             # D=1 (LinearFit)
-            alloc_d1_left = @allocated FastInterpolations._compute_deriv1(PolyFit{1}(), LeftSide(), f2, inv_h)
-            alloc_d1_right = @allocated FastInterpolations._compute_deriv1(PolyFit{1}(), RightSide(), f2, inv_h)
-            @test alloc_d1_left <= ALLOC_THRESHOLD
-            @test alloc_d1_right <= ALLOC_THRESHOLD
+            @test measure_d1(PolyFit{1}(), LeftSide(), f2, inv_h) <= ALLOC_THRESHOLD
+            @test measure_d1(PolyFit{1}(), RightSide(), f2, inv_h) <= ALLOC_THRESHOLD
 
             # D=2 (QuadraticFit)
-            alloc_d2_left = @allocated FastInterpolations._compute_deriv1(PolyFit{2}(), LeftSide(), f3, inv_h)
-            alloc_d2_right = @allocated FastInterpolations._compute_deriv1(PolyFit{2}(), RightSide(), f3, inv_h)
-            @test alloc_d2_left <= ALLOC_THRESHOLD
-            @test alloc_d2_right <= ALLOC_THRESHOLD
+            @test measure_d1(PolyFit{2}(), LeftSide(), f3, inv_h) <= ALLOC_THRESHOLD
+            @test measure_d1(PolyFit{2}(), RightSide(), f3, inv_h) <= ALLOC_THRESHOLD
 
             # D=3 (CubicFit)
-            alloc_d3_left = @allocated FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), f4, inv_h)
-            alloc_d3_right = @allocated FastInterpolations._compute_deriv1(PolyFit{3}(), RightSide(), f4, inv_h)
-            @test alloc_d3_left <= ALLOC_THRESHOLD
-            @test alloc_d3_right <= ALLOC_THRESHOLD
+            @test measure_d1(PolyFit{3}(), LeftSide(), f4, inv_h) <= ALLOC_THRESHOLD
+            @test measure_d1(PolyFit{3}(), RightSide(), f4, inv_h) <= ALLOC_THRESHOLD
         end
 
         @testset "_compute_deriv1_coeffs (Non-Uniform Grid)" begin
-            # Warmup calls
-            FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), LeftSide(), x2)
-            FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), LeftSide(), x3)
-            FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x4)
+            function measure_coeffs(pf, side, xvals)
+                FastInterpolations._compute_deriv1_coeffs(pf, side, xvals)  # warmup
+                return @allocated FastInterpolations._compute_deriv1_coeffs(pf, side, xvals)
+            end
 
             # D=1 (LinearFit)
-            alloc_d1_left = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), LeftSide(), x2)
-            alloc_d1_right = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), RightSide(), x2)
-            @test alloc_d1_left <= ALLOC_THRESHOLD
-            @test alloc_d1_right <= ALLOC_THRESHOLD
+            @test measure_coeffs(PolyFit{1}(), LeftSide(), x2) <= ALLOC_THRESHOLD
+            @test measure_coeffs(PolyFit{1}(), RightSide(), x2) <= ALLOC_THRESHOLD
 
             # D=2 (QuadraticFit)
-            alloc_d2_left = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), LeftSide(), x3)
-            alloc_d2_right = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), RightSide(), x3)
-            @test alloc_d2_left <= ALLOC_THRESHOLD
-            @test alloc_d2_right <= ALLOC_THRESHOLD
+            @test measure_coeffs(PolyFit{2}(), LeftSide(), x3) <= ALLOC_THRESHOLD
+            @test measure_coeffs(PolyFit{2}(), RightSide(), x3) <= ALLOC_THRESHOLD
 
             # D=3 (CubicFit)
-            alloc_d3_left = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x4)
-            alloc_d3_right = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), RightSide(), x4)
-            @test alloc_d3_left <= ALLOC_THRESHOLD
-            @test alloc_d3_right <= ALLOC_THRESHOLD
+            @test measure_coeffs(PolyFit{3}(), LeftSide(), x4) <= ALLOC_THRESHOLD
+            @test measure_coeffs(PolyFit{3}(), RightSide(), x4) <= ALLOC_THRESHOLD
         end
 
         @testset "_weighted_sum (NTuple)" begin
@@ -1685,72 +1672,34 @@ end
             c3 = FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), LeftSide(), x3)
             c4 = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x4)
 
-            # Warmup calls
-            FastInterpolations._weighted_sum(c2, f2)
-            FastInterpolations._weighted_sum(c3, f3)
-            FastInterpolations._weighted_sum(c4, f4)
+            function measure_wsum(c, f)
+                FastInterpolations._weighted_sum(c, f)  # warmup
+                return @allocated FastInterpolations._weighted_sum(c, f)
+            end
 
             # N=2 tuple
-            alloc_n2 = @allocated FastInterpolations._weighted_sum(c2, f2)
-            @test alloc_n2 <= ALLOC_THRESHOLD
-
+            @test measure_wsum(c2, f2) <= ALLOC_THRESHOLD
             # N=3 tuple
-            alloc_n3 = @allocated FastInterpolations._weighted_sum(c3, f3)
-            @test alloc_n3 <= ALLOC_THRESHOLD
-
+            @test measure_wsum(c3, f3) <= ALLOC_THRESHOLD
             # N=4 tuple
-            alloc_n4 = @allocated FastInterpolations._weighted_sum(c4, f4)
-            @test alloc_n4 <= ALLOC_THRESHOLD
+            @test measure_wsum(c4, f4) <= ALLOC_THRESHOLD
         end
 
         @testset "_estimate_endpoint_derivative (Unified API, D≤3)" begin
-            # Test with uniform grid (Range)
-            # Warmup
-            FastInterpolations._estimate_endpoint_derivative(xs_uniform, ys, LeftSide(), PolyFit{1}())
-            FastInterpolations._estimate_endpoint_derivative(xs_uniform, ys, LeftSide(), PolyFit{2}())
-            FastInterpolations._estimate_endpoint_derivative(xs_uniform, ys, LeftSide(), PolyFit{3}())
+            function measure_est(xs, ys, side, pf)
+                FastInterpolations._estimate_endpoint_derivative(xs, ys, side, pf)  # warmup
+                return @allocated FastInterpolations._estimate_endpoint_derivative(xs, ys, side, pf)
+            end
 
-            # D=1 uniform
-            alloc_d1_uniform = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_uniform, ys, LeftSide(), PolyFit{1}()
-            )
-            @test alloc_d1_uniform <= ALLOC_THRESHOLD
+            # Uniform grid (Range)
+            @test measure_est(xs_uniform, ys, LeftSide(), PolyFit{1}()) <= ALLOC_THRESHOLD
+            @test measure_est(xs_uniform, ys, LeftSide(), PolyFit{2}()) <= ALLOC_THRESHOLD
+            @test measure_est(xs_uniform, ys, LeftSide(), PolyFit{3}()) <= ALLOC_THRESHOLD
 
-            # D=2 uniform
-            alloc_d2_uniform = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_uniform, ys, LeftSide(), PolyFit{2}()
-            )
-            @test alloc_d2_uniform <= ALLOC_THRESHOLD
-
-            # D=3 uniform
-            alloc_d3_uniform = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_uniform, ys, LeftSide(), PolyFit{3}()
-            )
-            @test alloc_d3_uniform <= ALLOC_THRESHOLD
-
-            # Test with non-uniform grid (Vector) - also should be zero for D≤3
-            # Warmup
-            FastInterpolations._estimate_endpoint_derivative(xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{1}())
-            FastInterpolations._estimate_endpoint_derivative(xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{2}())
-            FastInterpolations._estimate_endpoint_derivative(xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{3}())
-
-            # D=1 non-uniform
-            alloc_d1_nonuniform = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{1}()
-            )
-            @test alloc_d1_nonuniform <= ALLOC_THRESHOLD
-
-            # D=2 non-uniform
-            alloc_d2_nonuniform = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{2}()
-            )
-            @test alloc_d2_nonuniform <= ALLOC_THRESHOLD
-
-            # D=3 non-uniform
-            alloc_d3_nonuniform = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{3}()
-            )
-            @test alloc_d3_nonuniform <= ALLOC_THRESHOLD
+            # Non-uniform grid (Vector) - also should be zero for D≤3
+            @test measure_est(xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{1}()) <= ALLOC_THRESHOLD
+            @test measure_est(xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{2}()) <= ALLOC_THRESHOLD
+            @test measure_est(xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{3}()) <= ALLOC_THRESHOLD
         end
 
     end
@@ -1805,17 +1754,13 @@ end
 
 
             function alloc_est(xs, ys, side, pf)
-                @allocated FastInterpolations._estimate_endpoint_derivative(xs, ys, side, pf)
+                FastInterpolations._estimate_endpoint_derivative(xs, ys, side, pf)  # warmup
+                return @allocated FastInterpolations._estimate_endpoint_derivative(xs, ys, side, pf)
             end
 
             # Report allocations
-            alloc_d4 = alloc_est(xs_large, ys_large, RightSide(), PolyFit{4}())
-            alloc_d4 = alloc_est(xs_large, ys_large, RightSide(), PolyFit{4}())
-            alloc_d5 = alloc_est(xs_large, ys_large, RightSide(), PolyFit{5}())
-            alloc_d5 = alloc_est(xs_large, ys_large, RightSide(), PolyFit{5}())
-
-            @test alloc_d4 <= ALLOC_THRESHOLD
-            @test alloc_d5 <= ALLOC_THRESHOLD
+            @test alloc_est(xs_large, ys_large, RightSide(), PolyFit{4}()) <= ALLOC_THRESHOLD
+            @test alloc_est(xs_large, ys_large, RightSide(), PolyFit{5}()) <= ALLOC_THRESHOLD
 
 
             # Non-uniform grid
@@ -1827,8 +1772,7 @@ end
             )
             @test result_d4_nu ≈ 2.0 atol = 1.0e-10
 
-            alloc_d4_nu = alloc_est(xs_nonuniform_large, ys_nonuniform_large, RightSide(), PolyFit{4}())
-            @test alloc_d4_nu <= ALLOC_THRESHOLD
+            @test alloc_est(xs_nonuniform_large, ys_nonuniform_large, RightSide(), PolyFit{4}()) <= ALLOC_THRESHOLD
         end
 
     end
@@ -1842,24 +1786,21 @@ end
         c5 = ntuple(i -> Float64(i), 5)
         f5_tuple = ntuple(i -> 1.0, 5)
 
-        # Warmup
-        FastInterpolations._weighted_sum(c5, f5_tuple)
-
-        alloc_n5 = @allocated FastInterpolations._weighted_sum(c5, f5_tuple)
+        function measure_wsum_gen(c, f)
+            FastInterpolations._weighted_sum(c, f)  # warmup
+            return @allocated FastInterpolations._weighted_sum(c, f)
+        end
 
         # The @generated function should produce allocation-free code
         # @generated _weighted_sum(N=5) should be allocation-free
-        @test alloc_n5 <= ALLOC_THRESHOLD
+        @test measure_wsum_gen(c5, f5_tuple) <= ALLOC_THRESHOLD
 
         # N=6 tuple
         c6 = ntuple(i -> Float64(i), 6)
         f6_tuple = ntuple(i -> 1.0, 6)
 
-        FastInterpolations._weighted_sum(c6, f6_tuple)
-        alloc_n6 = @allocated FastInterpolations._weighted_sum(c6, f6_tuple)
-
         # @generated _weighted_sum(N=6) should be allocation-free
-        @test alloc_n6 <= ALLOC_THRESHOLD
+        @test measure_wsum_gen(c6, f6_tuple) <= ALLOC_THRESHOLD
     end
 
     @testset "Check polyfit requirements" begin
@@ -1894,7 +1835,7 @@ end
     end
 end
 
-@testset "BC Types Coverage (bc_types.jl)" begin
+@testitem "BC Types Coverage (bc_types.jl)" begin
     # 1. _is_periodic_bc
     @test FastInterpolations._is_periodic_bc(PeriodicBC())
     @test !FastInterpolations._is_periodic_bc(ZeroCurvBC())
@@ -1943,7 +1884,7 @@ end
 #   - _compute_deriv1: D=1,2,3 mixed-type versions (uniform grid)
 #   - _estimate_endpoint_derivative: mixed-type for non-uniform grids
 
-@testset "Complex Value Kernel Coverage" begin
+@testitem "Complex Value Kernel Coverage" begin
 
     # ========================================
     # Mixed-type _compute_deriv1 (Uniform Grid + Complex)

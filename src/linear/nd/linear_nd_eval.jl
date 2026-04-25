@@ -54,7 +54,11 @@ end
     # (or `.h[i]` for Vector). `map` dispatches per-axis with concrete types.
     hs = map(_get_h, itp.spacings, indices)
     αs = map(_alpha_of, q_eval, Ls, hs)
-    return (itp.data, indices, hs, αs)
+    # Wrap raw indices into the unified stencil shape so `_multilinear_sum`
+    # has a single signature across persistent / BC oneshot callers.
+    # Non-periodic cells are always `(idx, idx+1)` — no seam wrap.
+    stencils = map(i -> _IdxPair(i, i + 1), indices)
+    return (itp.data, stencils, hs, αs)
 end
 
 # N=2 specialization: direct destructuring eliminates ntuple closure overhead
@@ -74,7 +78,9 @@ end
     αx = (x_eval - xL) / hx
     αy = (y_eval - yL) / hy
 
-    return (itp.data, (ix, iy), (hx, hy), (αx, αy))
+    # N=2 specialization wraps directly into the unified stencil shape — same
+    # `_multilinear_sum` signature as the generic-N persistent / BC oneshot paths.
+    return (itp.data, (_IdxPair(ix, ix + 1), _IdxPair(iy, iy + 1)), (hx, hy), (αx, αy))
 end
 
 # Evaluate kernel at a pre-located cell with given derivative ops
@@ -86,8 +92,8 @@ end
     if _has_second_or_higher_derivative(ops, Val(N))
         return 0 * first(itp.data)
     end
-    data, indices, hs, αs = cell
-    return _multilinear_sum(data, indices, hs, αs, ops, Val(N))
+    data, stencils, hs, αs = cell
+    return _multilinear_sum(data, stencils, hs, αs, ops, Val(N))
 end
 
 # ========================================
@@ -173,13 +179,44 @@ end
 # Multilinear Interpolation Kernel
 # ========================================
 
-# Shared Expr builder for the two multilinear generators below. Both variants
-# produce an identical flat 2^N straight-line unroll; only the per-axis corner
-# addressing differs. `make_idx_expr(d, bit)` returns the address expression
-# for axis `d` at corner bit `bit` ∈ {0, 1}:
-#   single-idx : (d, bit) -> :(indices[$d] + $bit)
-#   stencil    : (d, bit) -> :(stencils[$d][$(bit + 1)])
-# Runs at compile time only (inside @generated); closure cost is free.
+"""
+    _multilinear_sum(data, stencils, hs, αs, ops, Val(N))
+
+Compute the multilinear interpolation sum over 2^N corners.
+
+`stencils[d]::_IdxStencil{2}` carries `(idx_L_d, idx_R_d)` — for each corner
+bit pattern `b ∈ {0,1}^N`, the corner address on axis `d` is
+`stencils[d][b_d + 1]` (bit 0 → left `idx_L_d`, bit 1 → right `idx_R_d`).
+For non-periodic cells `idx_R == idx_L + 1`; for periodic-exclusive seam
+cells `idx_R == 1` (wrap), so the kernel reads the wrapped neighbor without
+any data extension.
+
+Per-corner weight: `∏ᵢ _linear_weight(ops[i], αs[i], hs[i], bᵢ)`. The weight
+function depends on the evaluation op — EvalValue: `(1-α)` for `b=0`, `α`
+for `b=1`; EvalDeriv1: `-1/h` for `b=0`, `+1/h` for `b=1`.
+
+Single-overload, stencil-only kernel. Persistent callers wrap their
+single-index `indices` via `map(i -> _IdxPair(i, i+1), indices)` at the
+call site before invoking; BC oneshot callers receive seam-aware stencils
+directly from `_search_all_intervals_stencil`.
+"""
+@generated function _multilinear_sum(
+        data::AbstractArray{Tv, N},
+        stencils::NTuple{N, _IdxStencil{2}},
+        hs::NTuple{N},
+        αs::Tuple{Vararg{Real, N}},
+        ops::NTuple{N, AbstractEvalOp},
+        ::Val{N}
+    ) where {Tv, N}
+    return _multilinear_sum_body(N, (d, bit) -> :(stencils[$d][$(bit + 1)]))
+end
+
+# Shared Expr builder for the multilinear @generated kernel above. Produces
+# the flat 2^N straight-line unroll. `make_idx_expr(d, bit)` returns the
+# address expression for axis `d` at corner bit `bit` ∈ {0, 1}; the kernel
+# above passes the stencil-style `(d, bit) -> :(stencils[$d][$(bit + 1)])`.
+# Body kept as a callback-driven helper so future K > 2 kernels (ND Hermite)
+# can reuse it without duplicating the corner-unroll skeleton.
 function _multilinear_sum_body(N::Int, make_idx_expr::Function)
     num_corners = 1 << N  # 2^N
     corner_exprs = []
@@ -199,54 +236,6 @@ function _multilinear_sum_body(N::Int, make_idx_expr::Function)
         @inbounds $sum_expr
     end
 end
-
-"""
-    _multilinear_sum(data, indices, hs, αs, ops, Val(N))
-
-Compute the multilinear interpolation sum over 2^N corners.
-
-For each corner indexed by bit pattern b ∈ {0,1}^N:
-- Corner index: (indices[1]+b₁, indices[2]+b₂, ..., indices[N]+bₙ)
-- Weight: ∏ᵢ _linear_weight(ops[i], αs[i], hs[i], bᵢ)
-
-The weight function depends on the evaluation operation:
-- EvalValue: (1-α) if b=0, α if b=1
-- EvalDeriv1: -1/h if b=0, 1/h if b=1
-
-Shares body with `_multilinear_sum_stencil` via `_multilinear_sum_body`.
-"""
-@generated function _multilinear_sum(
-        data::AbstractArray{Tv, N},
-        indices::NTuple{N, Int},
-        hs::NTuple{N},
-        αs::Tuple{Vararg{Real, N}},
-        ops::NTuple{N, AbstractEvalOp},
-        ::Val{N}
-    ) where {Tv, N}
-    return _multilinear_sum_body(N, (d, bit) -> :(indices[$d] + $bit))
-end
-
-"""
-    _multilinear_sum_stencil(data, stencils, hs, αs, ops, Val(N))
-
-Stencil-variant for zero-copy periodic ND evaluation.
-
-`stencils[d]::_IdxStencil{2}` carries `(idx_L_d, idx_R_d)` — for each corner
-bit pattern `b ∈ {0,1}^N`, corner address on axis `d` is
-`stencils[d][b_d + 1]` (bit 0 → left `idx_L_d`, bit 1 → right `idx_R_d`).
-For non-periodic cells, `idx_R == idx_L + 1`; for periodic-exclusive seam
-cells, `idx_R == 1` (wrap) so the kernel reads the wrapped neighbor without
-any data extension.
-
-Distinct name (not an overload) because at `N=0` `NTuple{0, Int}` and
-`NTuple{0, _IdxStencil{2}}` both collapse to `Tuple{}`, making
-overload-style dispatch ambiguous (caught by Aqua static analysis). Used
-only by periodic ND oneshot — non-periodic/persistent callers stay on
-`_multilinear_sum`.
-
-Shares body with `_multilinear_sum` via `_multilinear_sum_body`; only the
-corner-address expression differs — `indices[d] + bit` → `stencils[d][bit + 1]`.
-"""
 @generated function _multilinear_sum_stencil(
         data::AbstractArray{Tv, N},
         stencils::NTuple{N, _IdxStencil{2}},

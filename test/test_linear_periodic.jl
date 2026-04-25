@@ -485,7 +485,7 @@ end
         @test itp isa LinearInterpolantND
     end
 
-    @testset "ND seam-cell — _multilinear_sum_lr exact bilinear via wrap" begin
+    @testset "ND seam-cell — _multilinear_sum exact bilinear via wrap" begin
         # 2D, axis 1 :exclusive (period=4), axis 2 NoBC. Query lands in the seam
         # cell on axis 1, so the kernel must read corners (n, 1) on that axis
         # rather than (n, n+1). Picks data values that make the expected wrap-

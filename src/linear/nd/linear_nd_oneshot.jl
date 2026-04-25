@@ -50,7 +50,7 @@ function _linear_interp_nd_oneshot(
     stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids, searches, hints, bcs)
     hs = map(_get_h, grids, Ls, Rs)
     αs = map(_alpha_of, q_eval, Ls, hs)
-    return _multilinear_sum_stencil(data, stencils, hs, αs, ops, Val(N))
+    return _multilinear_sum(data, stencils, hs, αs, ops, Val(N))
 end
 
 """
@@ -87,7 +87,7 @@ function _linear_interp_nd_oneshot_batch!(
         stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids, policies, hints, bcs)
         hs = map(_get_h, grids, Ls, Rs)
         αs = map(_alpha_of, q_eval, Ls, hs)
-        output[k] = _multilinear_sum_stencil(data, stencils, hs, αs, ops, Val(N))
+        output[k] = _multilinear_sum(data, stencils, hs, αs, ops, Val(N))
     end
     return output
 end

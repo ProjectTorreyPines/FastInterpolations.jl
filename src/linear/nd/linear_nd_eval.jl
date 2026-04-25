@@ -50,8 +50,15 @@ end
     ) where {Tg, Tv, N}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
     indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, policies, hints, mono)
-    hs, αs = _compute_linear_params(q_eval, itp.spacings, indices, Ls, Val(N))
-    return (itp.data, indices, hs, αs)
+    # Persistent fast lane: 2-arg `_get_h` reads precomputed `spacings[d].h`
+    # (or `.h[i]` for Vector). `map` dispatches per-axis with concrete types.
+    hs = map(_get_h, itp.spacings, indices)
+    αs = map(_alpha_of, q_eval, Ls, hs)
+    # Wrap raw indices into the unified stencil shape so `_multilinear_sum`
+    # has a single signature across persistent / BC oneshot callers.
+    # Non-periodic cells are always `(idx, idx+1)` — no seam wrap.
+    stencils = map(i -> _IdxPair(i, i + 1), indices)
+    return (itp.data, stencils, hs, αs)
 end
 
 # N=2 specialization: direct destructuring eliminates ntuple closure overhead
@@ -71,7 +78,9 @@ end
     αx = (x_eval - xL) / hx
     αy = (y_eval - yL) / hy
 
-    return (itp.data, (ix, iy), (hx, hy), (αx, αy))
+    # N=2 specialization wraps directly into the unified stencil shape — same
+    # `_multilinear_sum` signature as the generic-N persistent / BC oneshot paths.
+    return (itp.data, (_IdxPair(ix, ix + 1), _IdxPair(iy, iy + 1)), (hx, hy), (αx, αy))
 end
 
 # Evaluate kernel at a pre-located cell with given derivative ops
@@ -83,8 +92,8 @@ end
     if _has_second_or_higher_derivative(ops, Val(N))
         return 0 * first(itp.data)
     end
-    data, indices, hs, αs = cell
-    return _multilinear_sum(data, indices, hs, αs, ops, Val(N))
+    data, stencils, hs, αs = cell
+    return _multilinear_sum(data, stencils, hs, αs, ops, Val(N))
 end
 
 # ========================================
@@ -156,66 +165,58 @@ end
 # of `ntuple(d -> q_eval[d], Val(N))` where runtime-indexed lookup collapses
 # to an abstract return type. See MEMORY.md "ND Constructor Inferrability
 # Pattern" for the canonical precedent.
+#
+# `_alpha_of` is the only surviving named helper from this region. The earlier
+# `_alphas_from_hs(q, Ls, hs)`, `_compute_linear_params(q, spacings, indices, Ls, …)`,
+# and `_compute_linear_params_stencil(q, Ls, Rs, …)` wrappers were single-line
+# `map`-forwarders that hid the actual arithmetic behind two extra layers; call
+# sites now do the `map(_get_h, …)` + `map(_alpha_of, q, Ls, hs)` directly.
+#   - persistent path: `map(_get_h, spacings, indices)` (2-arg cached fast lane)
+#   - BC oneshot path: `map(_get_h, grids, Ls, Rs)` (3-arg dispatch, seam-aware)
 @inline _alpha_of(q::Real, L::Real, h::Real) = (q - L) / h
-@inline _alphas_from_hs(q_eval, Ls, hs) = map(_alpha_of, q_eval, Ls, hs)
-
-"""
-    _compute_linear_params(q_eval, spacings, indices, Ls, Val(N)) -> (hs, αs)
-
-Cell widths and normalized coordinates for multilinear interpolation via
-spacing lookup. Used by persistent ND paths where `spacings` is precomputed.
-
-Shares the `αs` formula with `_compute_linear_params_lr` via `_alphas_from_hs`;
-only the `hs` derivation (spacing lookup) is variant-specific. Uses `map` over
-the `(spacings, indices)` tuple pair to avoid Union boxing when the axes carry
-heterogeneous spacing concrete types (ScalarSpacing + VectorSpacing mix).
-"""
-@inline function _compute_linear_params(
-        q_eval::Tuple{Vararg{Real, N}},
-        spacings::Tuple{Vararg{AbstractGridSpacing, N}},
-        indices::NTuple{N, Int},
-        Ls::Tuple{Vararg{Real, N}},
-        ::Val{N}
-    ) where {N}
-    hs = map(_get_h, spacings, indices)
-    return (hs, _alphas_from_hs(q_eval, Ls, hs))
-end
-
-"""
-    _compute_linear_params_lr(q_eval, Ls, Rs, Val(N)) -> (hs, αs)
-
-Pair-variant (Phase 6) — computes per-axis cell width directly from
-`Rs[d] - Ls[d]` to avoid the idx-based spacing lookup (which is out-of-bounds
-for the seam cell at `idx_L == n` on periodic-exclusive axes — there's no
-`spacing.widths[n]`). For uniform Range grids via ScalarSpacing the cost is
-unchanged (1 subtraction vs 1 field load). For Vector axes this matches what
-VectorSpacing would return for interior cells and Just Works for the seam cell.
-
-Shares the `αs` formula with `_compute_linear_params` via `_alphas_from_hs`.
-`map(-, Rs, Ls)` dispatches per-element with concrete types (no Union-box risk
-from heterogeneous `Rs` / `Ls` tuples; matches MEMORY.md's inferrability rules).
-"""
-@inline function _compute_linear_params_lr(
-        q_eval::Tuple{Vararg{Real, N}},
-        Ls::Tuple{Vararg{Real, N}},
-        Rs::Tuple{Vararg{Real, N}},
-        ::Val{N}
-    ) where {N}
-    hs = map(-, Rs, Ls)
-    return (hs, _alphas_from_hs(q_eval, Ls, hs))
-end
 
 # ========================================
 # Multilinear Interpolation Kernel
 # ========================================
 
-# Shared Expr builder for the two multilinear generators below. Both variants
-# produce an identical flat 2^N straight-line unroll; only the per-axis corner
-# addressing differs. `make_idx_expr(d, bit)` returns the address expression
-# for axis `d` at corner bit `bit` ∈ {0, 1}:
-#   non-pair : (d, bit) -> :(indices[$d] + $bit)
-#   pair     : (d, bit) -> :(indices_pairs[$d][$(bit + 1)])
-# Runs at compile time only (inside @generated); closure cost is free.
+"""
+    _multilinear_sum(data, stencils, hs, αs, ops, Val(N))
+
+Compute the multilinear interpolation sum over 2^N corners.
+
+`stencils[d]::_IdxStencil{2}` carries `(idx_L_d, idx_R_d)` — for each corner
+bit pattern `b ∈ {0,1}^N`, the corner address on axis `d` is
+`stencils[d][b_d + 1]` (bit 0 → left `idx_L_d`, bit 1 → right `idx_R_d`).
+For non-periodic cells `idx_R == idx_L + 1`; for periodic-exclusive seam
+cells `idx_R == 1` (wrap), so the kernel reads the wrapped neighbor without
+any data extension.
+
+Per-corner weight: `∏ᵢ _linear_weight(ops[i], αs[i], hs[i], bᵢ)`. The weight
+function depends on the evaluation op — EvalValue: `(1-α)` for `b=0`, `α`
+for `b=1`; EvalDeriv1: `-1/h` for `b=0`, `+1/h` for `b=1`.
+
+Single-overload, stencil-only kernel. Persistent callers wrap their
+single-index `indices` via `map(i -> _IdxPair(i, i+1), indices)` at the
+call site before invoking; BC oneshot callers receive seam-aware stencils
+directly from `_search_all_intervals_stencil`.
+"""
+@generated function _multilinear_sum(
+        data::AbstractArray{Tv, N},
+        stencils::NTuple{N, _IdxStencil{2}},
+        hs::NTuple{N},
+        αs::Tuple{Vararg{Real, N}},
+        ops::NTuple{N, AbstractEvalOp},
+        ::Val{N}
+    ) where {Tv, N}
+    return _multilinear_sum_body(N, (d, bit) -> :(stencils[$d][$(bit + 1)]))
+end
+
+# Shared Expr builder for the multilinear @generated kernel above. Produces
+# the flat 2^N straight-line unroll. `make_idx_expr(d, bit)` returns the
+# address expression for axis `d` at corner bit `bit` ∈ {0, 1}; the kernel
+# above passes the stencil-style `(d, bit) -> :(stencils[$d][$(bit + 1)])`.
+# Body kept as a callback-driven helper so future K > 2 kernels (ND Hermite)
+# can reuse it without duplicating the corner-unroll skeleton.
 function _multilinear_sum_body(N::Int, make_idx_expr::Function)
     num_corners = 1 << N  # 2^N
     corner_exprs = []
@@ -235,62 +236,6 @@ function _multilinear_sum_body(N::Int, make_idx_expr::Function)
         @inbounds $sum_expr
     end
 end
-
-"""
-    _multilinear_sum(data, indices, hs, αs, ops, Val(N))
-
-Compute the multilinear interpolation sum over 2^N corners.
-
-For each corner indexed by bit pattern b ∈ {0,1}^N:
-- Corner index: (indices[1]+b₁, indices[2]+b₂, ..., indices[N]+bₙ)
-- Weight: ∏ᵢ _linear_weight(ops[i], αs[i], hs[i], bᵢ)
-
-The weight function depends on the evaluation operation:
-- EvalValue: (1-α) if b=0, α if b=1
-- EvalDeriv1: -1/h if b=0, 1/h if b=1
-
-Shares body with `_multilinear_sum_lr` via `_multilinear_sum_body`.
-"""
-@generated function _multilinear_sum(
-        data::AbstractArray{Tv, N},
-        indices::NTuple{N, Int},
-        hs::NTuple{N},
-        αs::Tuple{Vararg{Real, N}},
-        ops::NTuple{N, AbstractEvalOp},
-        ::Val{N}
-    ) where {Tv, N}
-    return _multilinear_sum_body(N, (d, bit) -> :(indices[$d] + $bit))
-end
-
-"""
-    _multilinear_sum_lr(data, indices_pairs, hs, αs, ops, Val(N))
-
-Pair-valued indices variant for zero-copy periodic ND evaluation (Phase 6).
-
-`indices_pairs[d] = (idx_L_d, idx_R_d)` — for each corner bit pattern
-`b ∈ {0,1}^N`, corner address on axis `d` is `indices_pairs[d][b_d + 1]`
-(bit 0 → left `idx_L_d`, bit 1 → right `idx_R_d`).
-
-Distinct name (not an overload) because at `N=0` `NTuple{0, Int}` and
-`NTuple{0, NTuple{2, Int}}` both collapse to `Tuple{}`, making
-overload-style dispatch ambiguous (caught by Aqua static analysis). Used
-only by periodic ND oneshot — non-periodic/persistent callers stay on
-`_multilinear_sum`.
-
-Shares body with `_multilinear_sum` via `_multilinear_sum_body`; only the
-corner-address expression differs — `indices[d] + bit` → `indices_pairs[d][bit + 1]`.
-"""
-@generated function _multilinear_sum_lr(
-        data::AbstractArray{Tv, N},
-        indices_pairs::NTuple{N, NTuple{2, Int}},
-        hs::NTuple{N},
-        αs::Tuple{Vararg{Real, N}},
-        ops::NTuple{N, AbstractEvalOp},
-        ::Val{N}
-    ) where {Tv, N}
-    return _multilinear_sum_body(N, (d, bit) -> :(indices_pairs[$d][$(bit + 1)]))
-end
-
 # ========================================
 # Linear Weight Functions
 # ========================================

@@ -56,7 +56,7 @@ function _bake_constant_nd_anchors(
                 IN_DOMAIN
             end
 
-            return _ConstantAnchoredQuery{Tg, Tg}(idx, idxR, xq_d, state_flag, h, dL)
+            return _ConstantAnchoredQuery{Tg, Tg}(_IdxPair(idx, idxR), xq_d, state_flag, h, dL)
         end
         anchors[q] = per_axis
     end

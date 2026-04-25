@@ -329,8 +329,8 @@ while preserving the full Dual value for weight computation.
     # Compute geometry (cubic-internal concern)
     # h and inv_h are Tg (grid type)
     # dL and dR preserve Dual type for AD (via loc.xq)
-    h = _get_h(x, loc.xR, loc.xL)
-    inv_h = _get_inv_h(x, loc.xR, loc.xL)
+    h = _get_h(x, loc.xL, loc.xR)
+    inv_h = _get_inv_h(x, loc.xL, loc.xR)
     dL = loc.xq - loc.xL
     dR = loc.xR - loc.xq
 

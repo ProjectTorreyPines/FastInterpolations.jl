@@ -182,6 +182,7 @@ function _create_spacing(x::_CachedRange{T}) where {T}
 end
 
 # 3-arg grid-based accessors: _CachedRange has h/inv_h cached in the struct.
-# AbstractVector fallbacks are in grid_spacing.jl.
+# Args are (x, xL, xR) — natural L→R order, matching AbstractVector fallbacks
+# in grid_spacing.jl. The cached form ignores both endpoints (uniform step).
 @inline _get_h(x::_CachedRange, ::Real, ::Real) = x.h
 @inline _get_inv_h(x::_CachedRange, ::Real, ::Real) = x.inv_h

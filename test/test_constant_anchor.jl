@@ -17,8 +17,12 @@ using FastInterpolations
         aq = FastInterpolations._anchor_query(x, xq, Val(:constant))
 
         @test aq isa FastInterpolations._ConstantAnchoredQuery{Float64}
-        @test hasfield(typeof(aq), :idxL)
-        @test hasfield(typeof(aq), :idxR)
+        # `idxL` and `idxR` are virtual properties backed by `stencil::_IdxStencil{2}`
+        # since the _IdxStencil migration — `hasproperty` handles both real and
+        # virtual fields.
+        @test hasproperty(aq, :idxL)
+        @test hasproperty(aq, :idxR)
+        @test hasfield(typeof(aq), :stencil)
         @test hasfield(typeof(aq), :xq)
         @test hasfield(typeof(aq), :state)
         @test hasfield(typeof(aq), :h)
@@ -31,6 +35,35 @@ using FastInterpolations
         @test aq.state isa UInt8
         @test aq.h isa Float64
         @test aq.dL isa Float64
+    end
+
+    @testset "virtual property type-stability + zero-alloc" begin
+        # Pins the Val-dispatched `getproperty` contract: every virtual access
+        # (idxL/idxR backed by stencil) and direct field access (h/dL) must
+        # infer to a concrete type and allocate zero bytes inside a function
+        # barrier. A regression to single-method `getproperty` with
+        # `s === :idxL && return ...` branches would defeat inference and
+        # silently slow hot consumers.
+        # `@inferred` requires a call expression — wrap each access in a
+        # 1-arg helper so the macro sees a function call.
+        _get_idxL(aq) = aq.idxL
+        _get_idxR(aq) = aq.idxR
+        _get_h(aq) = aq.h
+        _get_dL(aq) = aq.dL
+
+        x = collect(range(0.0, 1.0, 11))
+        aq = FastInterpolations._anchor_query(x, 0.35, Val(:constant))
+
+        @test @inferred(_get_idxL(aq)) isa Int
+        @test @inferred(_get_idxR(aq)) isa Int
+        @test @inferred(_get_h(aq)) isa Float64
+        @test @inferred(_get_dL(aq)) isa Float64
+
+        function _bench_idx(aq)
+            return aq.idxL + aq.idxR
+        end
+        _bench_idx(aq); _bench_idx(aq)  # warmup
+        @test (@allocated _bench_idx(aq)) == 0
     end
 
     # ========================================

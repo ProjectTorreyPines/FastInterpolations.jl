@@ -22,12 +22,10 @@ matches the interpolant grid.
 - `Tg`: Grid element type (stored in `h`)
 - `Tq <: Real`: Query point type (stored in `xq`, `dL`); may widen `Tg` (e.g. `Dual` for AD)
 
-A convenience constructor `_ConstantAnchoredQuery{T}(args...)` is provided for the
-common non-AD case where `Tg == Tq`.
-
 # Fields
-- `idxL`: Left cell index (`1 ≤ idxL ≤ n-1` normally; equals `n` at periodic-exclusive seam)
-- `idxR`: Right cell index (`idxL + 1` normally; wraps to `1` at periodic-exclusive seam)
+- `stencil::_IdxStencil{2}`: Corner-index stencil; `stencil[1]` is the left index, `stencil[2]` the right
+  (legacy `aq.idxL` / `aq.idxR` virtual properties read through `getproperty` — see below).
+  For non-periodic cells `idxR == idxL + 1`; at periodic-exclusive seam `idxL == n`, `idxR == 1` (wrap).
 - `xq`: Original query point (or wrapped value for periodic)
 - `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
 - `h`: Interval width (used by all side modes via `_compute_single_offset`)
@@ -50,16 +48,38 @@ Anchored evaluation is faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search.
 """
 struct _ConstantAnchoredQuery{Tg, Tq <: Real}
-    idxL::Int                  # left cell index
-    idxR::Int                  # right cell index (idxL+1 normally; 1 at periodic-exclusive seam)
+    # Corner-index stencil: `stencil[1]` is the left index (idxL),
+    # `stencil[2]` is the right index (idxR). For non-periodic cells
+    # `idxR == idxL + 1`; for periodic-exclusive seam cells `idxR == 1` (wrap).
+    # Unified across all wrap-aware methods via `_IdxStencil{K}`
+    # (src/core/idx_stencil.jl). Legacy `aq.idxL` / `aq.idxR` accessors are
+    # preserved via `getproperty` below.
+    stencil::_IdxStencil{2}
     xq::Tq                     # query point (possibly wrapped, may be Dual for AD)
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     h::Tg                      # interval width
     dL::Tq                     # offset from left boundary (same type as xq for AD)
 end
 
-# Convenience: single type param for backward compat (non-AD paths)
-_ConstantAnchoredQuery{T}(idxL, idxR, xq, state, h, dL) where {T} = _ConstantAnchoredQuery{T, T}(idxL, idxR, xq, state, h, dL)
+# ──────────────────────────────────────────────────────────────
+# Virtual property accessors — legacy `aq.idxL` / `aq.idxR` ergonomics
+# ──────────────────────────────────────────────────────────────
+# Val-dispatch pattern (see linear_anchor.jl for rationale): one method per
+# property symbol so the compiler specializes each access to a single `getfield`
+# (+ tuple index) with concrete return type — no boxing from union-wide
+# `getproperty` return.
+@inline Base.getproperty(aq::_ConstantAnchoredQuery, s::Symbol) = _get_const_prop(aq, Val(s))
+@inline _get_const_prop(aq::_ConstantAnchoredQuery, ::Val{:idxL}) = getfield(aq, :stencil)[1]
+@inline _get_const_prop(aq::_ConstantAnchoredQuery, ::Val{:idxR}) = getfield(aq, :stencil)[2]
+@inline _get_const_prop(aq::_ConstantAnchoredQuery, ::Val{s}) where {s} = getfield(aq, s)
+@inline Base.propertynames(::_ConstantAnchoredQuery) =
+    (:stencil, :idxL, :idxR, :xq, :state, :h, :dL)
+
+# Stencil-native outer — infers `Tg, Tq` from arg types so callers can write
+# `_ConstantAnchoredQuery(_IdxPair(idxL, idxR), xq, state, h, dL)` without
+# specifying type params. Mirrors Linear's stencil-native outer.
+@inline _ConstantAnchoredQuery(stencil::_IdxStencil{2}, xq::Tq, state::UInt8, h::Tg, dL::Tq) where {Tg, Tq} =
+    _ConstantAnchoredQuery{Tg, Tq}(stencil, xq, state, h, dL)
 
 # ========================================
 # Anchor Construction
@@ -200,7 +220,7 @@ Internal implementation of _anchor_query for constant interpolation.
     loc = _anchor_loc(x, xq, wrap, policy)
 
     # Compute geometry (constant-internal concern)
-    h = _get_h(x, loc.xR, loc.xL)
+    h = _get_h(x, loc.xL, loc.xR)
     dL = loc.xq - loc.xL
     # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual)
     xq_promoted = oftype(dL, loc.xq)
@@ -208,7 +228,7 @@ Internal implementation of _anchor_query for constant interpolation.
     # `_anchor_loc` never returns a periodic-exclusive seam pair, so
     # `idxR = idxL + 1` here. Seam-pair anchors are constructed directly in
     # the exclusive periodic series helper via `_ConstantAnchoredQuery(...)`.
-    return _ConstantAnchoredQuery(loc.idx, loc.idx + 1, xq_promoted, loc.state, h, dL)
+    return _ConstantAnchoredQuery(_IdxPair(loc.idx, loc.idx + 1), xq_promoted, loc.state, h, dL)
 end
 
 # ========================================

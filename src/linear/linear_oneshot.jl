@@ -215,7 +215,7 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
 # ========================================
 # Core eval: extrap dispatch → search → kernel (no intermediate layers)
 # ========================================
-# _get_inv_h(x, xR, xL) dispatches to x.inv_h (_CachedRange) or inv(xR-xL) (Vector).
+# _get_inv_h(x, xL, xR) dispatches to x.inv_h (_CachedRange) or inv(xR-xL) (Vector).
 
 # NoExtrap / ExtendExtrap / other: direct search + kernel.
 # _check_domain(::NoExtrap) throws if OOB; all others are no-ops.
@@ -230,7 +230,7 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL  # xq can be Dual here (preserves AD)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xR, xL), dL)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), dL)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
@@ -250,7 +250,7 @@ end
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xR, xL), dL)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), dL)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
@@ -269,7 +269,7 @@ end
     xq_wrapped = _wrap_to_domain(xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     dL = xq_wrapped - xL
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xR, xL), dL)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), dL)
 end
 
 # Public scalar one-shot API.

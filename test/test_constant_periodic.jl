@@ -269,7 +269,7 @@ using FastInterpolations: _CachedRange
         @test itp isa ConstantInterpolantND
     end
 
-    @testset "ND seam-cell — _constant_nd_kernel_lr exact wrap" begin
+    @testset "ND seam-cell — _constant_nd_kernel exact wrap" begin
         # 2D, axis 1 :exclusive (period=4), axis 2 NoBC. Constant uses one of
         # the (idx_L, idx_R) corners per axis according to `side`. Pinning down
         # LeftSide and RightSide along the seam axis is the strongest unit-level
@@ -306,6 +306,42 @@ using FastInterpolations: _CachedRange
         # Just below seam (no wrap): LeftSide picks data[3, 1] = 2.0
         q_pre = (2.9, 0.5)
         @test constant_interp((x, yy), data, q_pre; bc = bc, extrap = extrap, side = side_LL) == 2.0
+    end
+
+    @testset "ND seam-cell — _constant_nd_kernel at N=3 with periodic axis-1 wrap" begin
+        # The unified `_constant_nd_kernel` is @generated and addresses one of
+        # 2^N corners per query via runtime offsets. Existing seam-cell tests
+        # are N=2 only; this exercises the N=3 unroll with axis-1 wrap, pinning
+        # the `ifelse(offset==0, stencils[d][1], stencils[d][2])` corner-pick
+        # for any N.
+        x = collect(range(0.0, step = 1.0, length = 4))    # axis 1 periodic, period 4
+        yy = collect(range(0.0, step = 1.0, length = 3))   # axis 2 NoBC
+        zz = collect(range(0.0, step = 1.0, length = 3))   # axis 3 NoBC
+        data = [
+            Float64(i - 1) + 10 * Float64(j - 1) + 100 * Float64(k - 1)
+                for i in 1:4, j in 1:3, k in 1:3
+        ]
+
+        bc = (PeriodicBC(endpoint = :exclusive, period = 4.0), NoBC(), NoBC())
+        extrap = (NoExtrap(), NoExtrap(), NoExtrap())
+
+        # Seam cell axis 1 at q=(3.5, 0.5, 0.5): axis-1 corners are
+        # data[4, j, k] (left) and data[1, j, k] (right, wrapped).
+        q = (3.5, 0.5, 0.5)
+
+        # All-LeftSide ⇒ pick (4, 1, 1) ⇒ data[4, 1, 1] = 3.0
+        side_LLL = (LeftSide(), LeftSide(), LeftSide())
+        @test constant_interp((x, yy, zz), data, q; bc = bc, extrap = extrap, side = side_LLL) == 3.0
+        itp_LLL = constant_interp((x, yy, zz), data; bc = bc, extrap = extrap, side = side_LLL)
+        @test itp_LLL(q) == 3.0
+
+        # RightSide axis 1 ⇒ wraps to (1, 1, 1) ⇒ data[1, 1, 1] = 0.0
+        side_RLL = (RightSide(), LeftSide(), LeftSide())
+        @test constant_interp((x, yy, zz), data, q; bc = bc, extrap = extrap, side = side_RLL) == 0.0
+
+        # All-RightSide ⇒ (1, 2, 2) ⇒ data[1, 2, 2] = 0 + 10 + 100 = 110.0
+        side_RRR = (RightSide(), RightSide(), RightSide())
+        @test constant_interp((x, yy, zz), data, q; bc = bc, extrap = extrap, side = side_RRR) == 110.0
     end
 
     # ============================================================

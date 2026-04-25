@@ -41,11 +41,11 @@
     idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
     # Use _get_h so _CachedRange returns its exact cached step instead of
     # the cancellation-prone `xR - xL` on large-offset grids.
-    h = _get_h(x, xR, xL)
+    h = _get_h(x, xL, xR)
     dL = xq_wrapped - xL
     # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual).
     xq_promoted = oftype(dL, xq_wrapped)
-    aq = _ConstantAnchoredQuery(idxL, idxR, xq_promoted, IN_DOMAIN, h, dL)
+    aq = _ConstantAnchoredQuery(_IdxPair(idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
 
     x_last = @inbounds Tg(last(x))
 
@@ -163,10 +163,10 @@ end
             xq_wrapped = _wrap_to_domain(xqs[j], extrap_p)
             idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
             # Cached-step-preserving dispatch (matches scalar/persistent paths).
-            h = _get_h(x, xR, xL)
+            h = _get_h(x, xL, xR)
             dL = xq_wrapped - xL
             xq_promoted = oftype(dL, xq_wrapped)
-            aq = _ConstantAnchoredQuery(idxL, idxR, xq_promoted, IN_DOMAIN, h, dL)
+            aq = _ConstantAnchoredQuery(_IdxPair(idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
             for k in 1:K
                 outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap_p)
             end

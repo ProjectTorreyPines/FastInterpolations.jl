@@ -14,7 +14,7 @@
 # Zero heap allocation for scalar queries after warmup.
 
 """
-    _linear_interp_nd_oneshot(grids, data, query, extraps_val, searches, ops, hints=nothing)
+    _linear_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops, hints=nothing)
 
 Zero-allocation scalar one-shot ND multilinear evaluation.
 Evaluates directly from grids + data — no pool, no data extension even for
@@ -41,18 +41,20 @@ function _linear_interp_nd_oneshot(
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
     q_eval = _handle_all_extraps(query, grids, extraps_eff)
-    # BC-aware per-axis search — returns (indices_pairs, Ls, Rs) where
-    # indices_pairs[d] = (idx_L_d, idx_R_d); periodic seam axes have idx_R == 1.
-    # No spacings needed — pair-variant `_compute_linear_params_lr` uses Rs-Ls for h,
-    # avoiding VectorSpacing allocation for Vector grids.
-    indices_pairs, Ls, Rs = _search_all_intervals_lr(q_eval, grids, searches, hints, bcs)
-    hs, αs = _compute_linear_params_lr(q_eval, Ls, Rs, Val(N))
-    # Pair-dispatch `_multilinear_sum`: corner[d] = indices_pairs[d][bit_d + 1]
-    return _multilinear_sum_lr(data, indices_pairs, hs, αs, ops, Val(N))
+    # BC-aware per-axis search — returns (stencils, Ls, Rs) where
+    # stencils[d]::_IdxStencil{2} wraps (idx_L_d, idx_R_d); periodic seam
+    # axes have idx_R == 1 (wrap), so kernel reads the wrapped neighbor
+    # without data extension. No spacings needed — 3-arg `_get_h(x, xL, xR)`
+    # dispatches to cached `x.h` for `_CachedRange` and `xR-xL` for Vector,
+    # giving seam-aware h without VectorSpacing allocation.
+    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids, searches, hints, bcs)
+    hs = map(_get_h, grids, Ls, Rs)
+    αs = map(_alpha_of, q_eval, Ls, hs)
+    return _multilinear_sum(data, stencils, hs, αs, ops, Val(N))
 end
 
 """
-    _linear_interp_nd_oneshot_batch!(output, grids, data, queries, extraps_val, searches, ops, hints=nothing)
+    _linear_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, policies, ops, hints, mono)
 
 In-place batch one-shot ND multilinear evaluation.
 Uses query protocol (`_query_length`, `_query_extract`) — works with any query format.
@@ -82,9 +84,10 @@ function _linear_interp_nd_oneshot_batch!(
             output[k] = oob_val; continue
         end
         q_eval = _handle_all_extraps(query_k, grids, extraps_eff)
-        indices_pairs, Ls, Rs = _search_all_intervals_lr(q_eval, grids, policies, hints, bcs)
-        hs, αs = _compute_linear_params_lr(q_eval, Ls, Rs, Val(N))
-        output[k] = _multilinear_sum_lr(data, indices_pairs, hs, αs, ops, Val(N))
+        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids, policies, hints, bcs)
+        hs = map(_get_h, grids, Ls, Rs)
+        αs = map(_alpha_of, q_eval, Ls, hs)
+        output[k] = _multilinear_sum(data, stencils, hs, αs, ops, Val(N))
     end
     return output
 end

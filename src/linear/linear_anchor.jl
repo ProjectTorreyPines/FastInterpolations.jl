@@ -23,8 +23,9 @@ matches the interpolant grid.
 - `Tq`: Query type (widened to `promote_type(Tq, Tg)` by the outer constructor)
 
 # Fields
-- `idxL`: Left cell index (`1 ≤ idxL ≤ n-1` normally; equals `n` at periodic-exclusive seam)
-- `idxR`: Right cell index (`idxL + 1` normally; wraps to `1` at periodic-exclusive seam)
+- `stencil::_IdxStencil{2}`: Corner-index stencil; `stencil[1]` is the left index, `stencil[2]` the right
+  (legacy `aq.idxL` / `aq.idxR` virtual properties read through `getproperty` — see below).
+  For non-periodic cells `idxR == idxL + 1`; at periodic-exclusive seam `idxL == n`, `idxR == 1` (wrap).
 - `xq`: Original query point (or wrapped value for periodic), preserves original precision
 - `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
 - `xL`: Left grid point of the interval (avoids re-indexing x[idxL] which triggers TwicePrecision on Range)
@@ -53,8 +54,13 @@ as it eliminates O(log n) binary search.
 - `inv_h` for EvalDeriv1: `(yR - yL) * inv_h` (no division)
 """
 struct _LinearAnchoredQuery{Tg, Tq <: Real}
-    idxL::Int                  # left cell index
-    idxR::Int                  # right cell index (idxL+1 normally; 1 at periodic-exclusive seam)
+    # Corner-index stencil: `stencil[1]` is the left index (idxL), `stencil[2]`
+    # is the right index (idxR). For non-periodic cells `idxR == idxL + 1`; for
+    # periodic-exclusive seam cells `idxR == 1` (wrap). Unified across all
+    # wrap-aware methods via `_IdxStencil{K}` (src/core/idx_stencil.jl).
+    # Legacy `aq.idxL` / `aq.idxR` accessors are preserved via `getproperty`
+    # below — every existing call site reads through the virtual property.
+    stencil::_IdxStencil{2}
     xq::Tq                     # query point (possibly wrapped)
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     xL::Tg                     # left grid point
@@ -63,17 +69,37 @@ struct _LinearAnchoredQuery{Tg, Tq <: Real}
     alpha::Tq                  # normalized position: (xq - xL) / h
 end
 
-# Outer constructor: infers Tq from alpha's arithmetic type and promotes xq to match.
-# Callers pass raw fields without worrying about type widening — the constructor
-# handles the Tg×Tq promotion automatically.
+# ──────────────────────────────────────────────────────────────
+# Virtual property accessors — legacy `aq.idxL` / `aq.idxR` ergonomics
+# ──────────────────────────────────────────────────────────────
+# Preserves every existing call site (kernel eval, adjoint scatter, Series
+# one-shot, tests) without a single source change downstream.
+#
+# Dispatch pattern: `getproperty(aq, s::Symbol)` delegates to `_get_lin_prop(aq, Val(s))`,
+# one method per property symbol. This forces compile-time specialization — each
+# property returns a concrete type and the call inlines to a single `getfield`
+# (+ tuple index for `:idxL` / `:idxR`). A single-method `getproperty` with
+# `s === :idxL && ...` branches is *not* reliably inlined inside hot loops:
+# the union of possible return types (Int, Tq, UInt8, Tg, _IdxStencil{2})
+# defeats return-type inference and causes boxing. Val-dispatch sidesteps this.
+@inline Base.getproperty(aq::_LinearAnchoredQuery, s::Symbol) = _get_lin_prop(aq, Val(s))
+@inline _get_lin_prop(aq::_LinearAnchoredQuery, ::Val{:idxL}) = getfield(aq, :stencil)[1]
+@inline _get_lin_prop(aq::_LinearAnchoredQuery, ::Val{:idxR}) = getfield(aq, :stencil)[2]
+@inline _get_lin_prop(aq::_LinearAnchoredQuery, ::Val{s}) where {s} = getfield(aq, s)
+@inline Base.propertynames(::_LinearAnchoredQuery) =
+    (:stencil, :idxL, :idxR, :xq, :state, :xL, :h, :inv_h, :alpha)
+
+# Outer constructor: infers `Tq` from alpha's arithmetic type and promotes
+# `xq` to match. Callers pass an explicit `_IdxPair` (or any `_IdxStencil{2}`)
+# so seam-aware index handling is local to the call site.
 #
 # For Float grids:  alpha::Tq, xq::Tq — no conversion (identity).
 # For Dual grids + Float query:  alpha::Dual (from grid arithmetic),
 #   xq promoted to Dual via convert (zero partials = "query has no grid sensitivity").
-@inline function _LinearAnchoredQuery(idxL::Int, idxR::Int, xq, state::UInt8, xL::Tg, h::Tg, inv_h::Tg, alpha) where {Tg}
+@inline function _LinearAnchoredQuery(stencil::_IdxStencil{2}, xq, state::UInt8, xL::Tg, h::Tg, inv_h::Tg, alpha) where {Tg}
     Ta = typeof(alpha)
     xq_p = convert(Ta, xq)
-    return _LinearAnchoredQuery{Tg, Ta}(idxL, idxR, xq_p, state, xL, h, inv_h, alpha)
+    return _LinearAnchoredQuery{Tg, Ta}(stencil, xq_p, state, xL, h, inv_h, alpha)
 end
 
 # ========================================
@@ -260,15 +286,15 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
     loc = _anchor_loc(x, xq, wrap, policy)
 
     # Compute geometry (linear-internal concern)
-    h = _get_h(x, loc.xR, loc.xL)
-    inv_h = _get_inv_h(x, loc.xR, loc.xL)
+    h = _get_h(x, loc.xL, loc.xR)
+    inv_h = _get_inv_h(x, loc.xL, loc.xR)
     alpha = (loc.xq - loc.xL) * inv_h
 
     # `_anchor_loc` never returns a periodic-exclusive seam pair — it operates
     # on a fixed grid with at most wrap-to-domain remapping — so `idxR = idxL+1`
     # here. Periodic-exclusive seam anchors are constructed via `_LinearAnchoredQuery(...)`
     # directly in the exclusive periodic one-shot helpers (bypassing `_anchor_loc`).
-    return _LinearAnchoredQuery(loc.idx, loc.idx + 1, loc.xq, loc.state, loc.xL, h, inv_h, alpha)
+    return _LinearAnchoredQuery(_IdxPair(loc.idx, loc.idx + 1), loc.xq, loc.state, loc.xL, h, inv_h, alpha)
 end
 
 # ========================================

@@ -50,7 +50,10 @@ end
     ) where {Tg, Tv, N}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
     indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, policies, hints, mono)
-    hs, αs = _compute_linear_params(q_eval, itp.spacings, indices, Ls, Val(N))
+    # Persistent fast lane: 2-arg `_get_h` reads precomputed `spacings[d].h`
+    # (or `.h[i]` for Vector). `map` dispatches per-axis with concrete types.
+    hs = map(_get_h, itp.spacings, indices)
+    αs = map(_alpha_of, q_eval, Ls, hs)
     return (itp.data, indices, hs, αs)
 end
 
@@ -156,54 +159,15 @@ end
 # of `ntuple(d -> q_eval[d], Val(N))` where runtime-indexed lookup collapses
 # to an abstract return type. See MEMORY.md "ND Constructor Inferrability
 # Pattern" for the canonical precedent.
+#
+# `_alpha_of` is the only surviving named helper from this region. The earlier
+# `_alphas_from_hs(q, Ls, hs)`, `_compute_linear_params(q, spacings, indices, Ls, …)`,
+# and `_compute_linear_params_stencil(q, Ls, Rs, …)` wrappers were single-line
+# `map`-forwarders that hid the actual arithmetic behind two extra layers; call
+# sites now do the `map(_get_h, …)` + `map(_alpha_of, q, Ls, hs)` directly.
+#   - persistent path: `map(_get_h, spacings, indices)` (2-arg cached fast lane)
+#   - BC oneshot path: `map(_get_h, grids, Ls, Rs)` (3-arg dispatch, seam-aware)
 @inline _alpha_of(q::Real, L::Real, h::Real) = (q - L) / h
-@inline _alphas_from_hs(q_eval, Ls, hs) = map(_alpha_of, q_eval, Ls, hs)
-
-"""
-    _compute_linear_params(q_eval, spacings, indices, Ls, Val(N)) -> (hs, αs)
-
-Cell widths and normalized coordinates for multilinear interpolation via
-spacing lookup. Used by persistent ND paths where `spacings` is precomputed.
-
-Shares the `αs` formula with `_compute_linear_params_stencil` via `_alphas_from_hs`;
-only the `hs` derivation (spacing lookup) is variant-specific. Uses `map` over
-the `(spacings, indices)` tuple pair to avoid Union boxing when the axes carry
-heterogeneous spacing concrete types (ScalarSpacing + VectorSpacing mix).
-"""
-@inline function _compute_linear_params(
-        q_eval::Tuple{Vararg{Real, N}},
-        spacings::Tuple{Vararg{AbstractGridSpacing, N}},
-        indices::NTuple{N, Int},
-        Ls::Tuple{Vararg{Real, N}},
-        ::Val{N}
-    ) where {N}
-    hs = map(_get_h, spacings, indices)
-    return (hs, _alphas_from_hs(q_eval, Ls, hs))
-end
-
-"""
-    _compute_linear_params_stencil(q_eval, Ls, Rs, Val(N)) -> (hs, αs)
-
-Stencil-variant — computes per-axis cell width directly from
-`Rs[d] - Ls[d]` to avoid the idx-based spacing lookup (which is out-of-bounds
-for the seam cell at `idx_L == n` on periodic-exclusive axes — there's no
-`spacing.widths[n]`). For uniform Range grids via ScalarSpacing the cost is
-unchanged (1 subtraction vs 1 field load). For Vector axes this matches what
-VectorSpacing would return for interior cells and Just Works for the seam cell.
-
-Shares the `αs` formula with `_compute_linear_params` via `_alphas_from_hs`.
-`map(-, Rs, Ls)` dispatches per-element with concrete types (no Union-box risk
-from heterogeneous `Rs` / `Ls` tuples; matches MEMORY.md's inferrability rules).
-"""
-@inline function _compute_linear_params_stencil(
-        q_eval::Tuple{Vararg{Real, N}},
-        Ls::Tuple{Vararg{Real, N}},
-        Rs::Tuple{Vararg{Real, N}},
-        ::Val{N}
-    ) where {N}
-    hs = map(-, Rs, Ls)
-    return (hs, _alphas_from_hs(q_eval, Ls, hs))
-end
 
 # ========================================
 # Multilinear Interpolation Kernel

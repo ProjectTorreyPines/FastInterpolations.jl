@@ -787,8 +787,9 @@ end
 
 # Per-axis inline: build Searcher + run search_interval in one body.
 # 3-arg `search_interval` (no spacing) — Range uses _search_direct's own step,
-# Vector uses _search_binary. Avoids VectorSpacing allocation entirely since
-# the stencil-variant `_compute_linear_params_stencil` derives `h` from `Rs[d] - Ls[d]`.
+# Vector uses _search_binary. Avoids VectorSpacing allocation entirely; the
+# stencil-using callers compute `h` from the search-returned `(xL, xR)` via
+# 3-arg `_get_h(grid, xL, xR)` dispatch.
 @inline _search_axis_stencil(grid, q, search, hint, bc) =
     @inbounds search_interval(_resolve_search(grid, q, search, hint, bc), grid, q)
 

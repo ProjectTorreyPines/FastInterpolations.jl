@@ -44,12 +44,12 @@ function _linear_interp_nd_oneshot(
     # BC-aware per-axis search — returns (stencils, Ls, Rs) where
     # stencils[d]::_IdxStencil{2} wraps (idx_L_d, idx_R_d); periodic seam
     # axes have idx_R == 1 (wrap), so kernel reads the wrapped neighbor
-    # without data extension. No spacings needed —
-    # `_compute_linear_params_stencil` uses Rs-Ls for h, avoiding
-    # VectorSpacing allocation for Vector grids.
+    # without data extension. No spacings needed — 3-arg `_get_h(x, xL, xR)`
+    # dispatches to cached `x.h` for `_CachedRange` and `xR-xL` for Vector,
+    # giving seam-aware h without VectorSpacing allocation.
     stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids, searches, hints, bcs)
-    hs, αs = _compute_linear_params_stencil(q_eval, Ls, Rs, Val(N))
-    # Stencil dispatch: corner[d] = stencils[d][bit_d + 1]
+    hs = map(_get_h, grids, Ls, Rs)
+    αs = map(_alpha_of, q_eval, Ls, hs)
     return _multilinear_sum_stencil(data, stencils, hs, αs, ops, Val(N))
 end
 
@@ -85,7 +85,8 @@ function _linear_interp_nd_oneshot_batch!(
         end
         q_eval = _handle_all_extraps(query_k, grids, extraps_eff)
         stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids, policies, hints, bcs)
-        hs, αs = _compute_linear_params_stencil(q_eval, Ls, Rs, Val(N))
+        hs = map(_get_h, grids, Ls, Rs)
+        αs = map(_alpha_of, q_eval, Ls, hs)
         output[k] = _multilinear_sum_stencil(data, stencils, hs, αs, ops, Val(N))
     end
     return output

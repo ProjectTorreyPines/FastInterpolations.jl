@@ -8,17 +8,16 @@ Comprehensive tests for:
 Run with: julia -t 8 --project -e 'using Pkg; Pkg.test(test_args=["test_thread_safety.jl"])'
 =#
 
-using Test
-using FastInterpolations
-using Base.Threads
+@testitem "Thread Safety" begin
+    using Base.Threads
 
-# Skip all tests if single-threaded
-if nthreads() == 1
-    @warn "Thread-safety tests require multiple threads. Run with: julia -t 4"
-    @testset "Thread Safety (skipped)" begin
-        @test_skip "Need multiple threads"
-    end
-else
+    # Skip all tests if single-threaded
+    if nthreads() == 1
+        @warn "Thread-safety tests require multiple threads. Run with: julia -t 4"
+        @testset "Thread Safety (skipped)" begin
+            @test_skip "Need multiple threads"
+        end
+    else
 
     # =========================================================================
     # Group 1: Ring Buffer Safety (Phase 1)
@@ -689,12 +688,13 @@ else
         end
     end
 
-end  # if nthreads() > 1
+    end  # if nthreads() > 1
 
-# Print summary if run directly
-if abspath(PROGRAM_FILE) == @__FILE__
-    println("\n" * "="^60)
-    println("Thread Safety Tests Complete")
-    println("Threads used: $(nthreads())")
-    println("="^60)
-end
+    # Print summary if run directly
+    if abspath(PROGRAM_FILE) == @__FILE__
+        println("\n" * "="^60)
+        println("Thread Safety Tests Complete")
+        println("Threads used: $(nthreads())")
+        println("="^60)
+    end
+end  # @testitem

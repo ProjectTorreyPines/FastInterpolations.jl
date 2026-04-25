@@ -19,16 +19,7 @@
 # @boundscheck _check_domain(::NoExtrap) is ALWAYS elided in production.
 # Without _validate_nd_domain, OOB queries silently return garbage.
 
-using Test
-using FastInterpolations
-
-# LTS Julia may show small boxing allocations on ND eval paths.
-# Guarded for standalone execution (runtests.jl defines this globally).
-if !@isdefined(ALLOC_THRESHOLD)
-    const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
-end
-
-@testset "ND NoExtrap OOB — DomainError" begin
+@testitem "ND NoExtrap OOB — DomainError" setup=[AllocConstants] begin
     # ── Shared test data ──
     gx = [0.0, 1.0, 2.0]
     gy = [0.0, 1.0]

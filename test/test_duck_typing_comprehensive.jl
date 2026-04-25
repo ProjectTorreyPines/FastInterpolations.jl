@@ -12,25 +12,22 @@
 # opaque DuckFloat5 wrapper, causing expected 1-3 ULP differences. We use ≈
 # (rtol=sqrt(eps)) which catches real algorithmic bugs while allowing FMA diffs.
 
-using Test
-using FastInterpolations
+@testitem "Duck Typing — Comprehensive" begin
+    # ================================================================
+    # DuckFloat5 — strict 5-op type for comprehensive testing
+    # ================================================================
+    struct MyDuck
+        v::Float64
+    end
 
-# ================================================================
-# DuckFloat5 — strict 5-op type for comprehensive testing
-# ================================================================
-struct MyDuck
-    v::Float64
-end
+    Base.:+(a::MyDuck, b::MyDuck) = MyDuck(a.v + b.v)
+    Base.:-(a::MyDuck, b::MyDuck) = MyDuck(a.v - b.v)
+    Base.:*(a::Real, b::MyDuck) = MyDuck(a * b.v)
+    Base.:*(a::MyDuck, b::Real) = MyDuck(a.v * b)
 
-Base.:+(a::MyDuck, b::MyDuck) = MyDuck(a.v + b.v)
-Base.:-(a::MyDuck, b::MyDuck) = MyDuck(a.v - b.v)
-Base.:*(a::Real, b::MyDuck) = MyDuck(a * b.v)
-Base.:*(a::MyDuck, b::Real) = MyDuck(a.v * b)
+    # Helper: extract raw value for assertions (since isapprox is NOT defined)
+    _val(d::MyDuck) = d.v
 
-# Helper: extract raw value for assertions (since isapprox is NOT defined)
-_val(d::MyDuck) = d.v
-
-@testset "Duck Typing — Comprehensive" begin
 
     # ================================================================
     # SHARED TEST DATA

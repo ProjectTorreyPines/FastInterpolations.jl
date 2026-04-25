@@ -8,18 +8,8 @@
 #   - Range grid (type-stable extension) vs Vector grid (vcat extension).
 #   - Inclusive check raises on mismatched endpoints.
 
-using Test
-using FastInterpolations
-using FastInterpolations: _is_periodic_bc, _CachedRange
-
-# Shared ALLOC_THRESHOLD — defined in runtests.jl when running the full suite,
-# fall back here for standalone test runs. LTS (1.10) escape-analysis may
-# retain small Ref / struct allocs (~16 B) that 1.12+ elides to stack.
-if !@isdefined(ALLOC_THRESHOLD)
-    const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
-end
-
-@testset "Linear PeriodicBC" begin
+@testitem "Linear PeriodicBC" setup=[AllocConstants] begin
+    using FastInterpolations: _is_periodic_bc, _CachedRange
 
     @testset "NoBC default is no-op" begin
         x = collect(range(0.0, 1.0, length = 11))

@@ -8,17 +8,8 @@
 # - 🟢 GREEN: Minimal implementation to pass
 # - 🔵 REFACTOR: Cleanup while staying green
 
-using Test
-using FastInterpolations
-using FastInterpolations: get_task_local_pool
-
-# Allocation threshold (bytes) — tolerates minor LTS/GC overhead.
-# Guarded for standalone execution (runtests.jl defines this globally).
-if !@isdefined(ND_ALLOC_THRESHOLD)
-    const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
-end
-
-@testset "ConstantInterpolantND" begin
+@testitem "ConstantInterpolantND" setup=[AllocConstants] begin
+    using FastInterpolations: get_task_local_pool
     # ========================================
     # 2D Constant Exactness
     # ========================================

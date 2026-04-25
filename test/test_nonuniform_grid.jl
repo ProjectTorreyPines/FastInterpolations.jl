@@ -15,97 +15,96 @@
 # 7. Interpolant callable forms
 # 8. Edge cases and regression tests
 
-using Test
-using FastInterpolations
-using FastInterpolations: Deriv1, Deriv2, Deriv3, BCPair
+@testitem "Non-uniform Grid" begin
+    using FastInterpolations: Deriv1, Deriv2, Deriv3, BCPair
 
-# ========================================
-# Test Utilities
-# ========================================
+    # ========================================
+    # Test Utilities
+    # ========================================
 
-# Tolerances for different precision levels
-const POLY_RTOL = 100 * eps(Float64)   # Polynomial reproduction (~2.2e-14)
-const POLY_ATOL = 100 * eps(Float64)
-const FUNC_RTOL = 1.0e-6                  # General function approximation
-const FUNC_ATOL = 1.0e-10
+    # Tolerances for different precision levels
+    const POLY_RTOL = 100 * eps(Float64)   # Polynomial reproduction (~2.2e-14)
+    const POLY_ATOL = 100 * eps(Float64)
+    const FUNC_RTOL = 1.0e-6                  # General function approximation
+    const FUNC_ATOL = 1.0e-10
 
-# Standard non-uniform grids for testing
-# These grids have deliberately different spacings at edges
+    # Standard non-uniform grids for testing
+    # These grids have deliberately different spacings at edges
 
-"""Create grid with last interval much larger than previous."""
-function grid_large_last(::Type{T} = Float64) where {T}
-    # h = [1, 1, 1, 1, 10] → h[n]=10, h[n-1]=1
-    return T[0, 1, 2, 3, 4, 14]
-end
-
-"""Create grid with last interval much smaller than previous."""
-function grid_small_last(::Type{T} = Float64) where {T}
-    # h = [1, 1, 1, 10, 1] → h[n]=1, h[n-1]=10
-    return T[0, 1, 2, 3, 13, 14]
-end
-
-"""Create asymmetric grid with small-large-small pattern."""
-function grid_asymmetric(::Type{T} = Float64) where {T}
-    # h = [0.1, 5.0, 5.0, 0.2]
-    return T[0, 0.1, 5.1, 10.1, 10.3]
-end
-
-"""Create geometric progression grid (exponentially increasing h)."""
-function grid_geometric(::Type{T} = Float64; h1 = T(0.1), ratio = T(1.5), n = 8) where {T}
-    x = Vector{T}(undef, n + 1)
-    x[1] = zero(T)
-    for i in 1:n
-        x[i + 1] = x[i] + h1 * ratio^(i - 1)
+    """Create grid with last interval much larger than previous."""
+    function grid_large_last(::Type{T} = Float64) where {T}
+        # h = [1, 1, 1, 1, 10] → h[n]=10, h[n-1]=1
+        return T[0, 1, 2, 3, 4, 14]
     end
-    return x
-end
 
-"""Create clustered grid (dense at boundaries, sparse in middle)."""
-function grid_clustered(::Type{T} = Float64) where {T}
-    return vcat(
-        range(T(0), T(0.5), 6),      # Dense at start
-        range(T(1), T(9), 5),         # Sparse in middle
-        range(T(9.5), T(10), 6)       # Dense at end
-    ) |> collect |> sort |> unique
-end
+    """Create grid with last interval much smaller than previous."""
+    function grid_small_last(::Type{T} = Float64) where {T}
+        # h = [1, 1, 1, 10, 1] → h[n]=1, h[n-1]=10
+        return T[0, 1, 2, 3, 13, 14]
+    end
 
-# Test polynomials with known exact derivatives
-struct TestPolynomial{T}
-    f::Function
-    f_prime::Function
-    f_double_prime::Function
-    f_triple_prime::Function  # Third derivative (constant for cubic, 0 for quadratic/linear)
-    name::String
-end
+    """Create asymmetric grid with small-large-small pattern."""
+    function grid_asymmetric(::Type{T} = Float64) where {T}
+        # h = [0.1, 5.0, 5.0, 0.2]
+        return T[0, 0.1, 5.1, 10.1, 10.3]
+    end
 
-const QUADRATIC = TestPolynomial{Float64}(
-    t -> 2t^2 - 3t + 1,
-    t -> 4t - 3,
-    t -> 4.0,
-    t -> 0.0,  # f'''(x) = 0 for quadratic
-    "quadratic"
-)
+    """Create geometric progression grid (exponentially increasing h)."""
+    function grid_geometric(::Type{T} = Float64; h1 = T(0.1), ratio = T(1.5), n = 8) where {T}
+        x = Vector{T}(undef, n + 1)
+        x[1] = zero(T)
+        for i in 1:n
+            x[i + 1] = x[i] + h1 * ratio^(i - 1)
+        end
+        return x
+    end
 
-const CUBIC = TestPolynomial{Float64}(
-    t -> t^3 - 2t^2 + 3t - 1,
-    t -> 3t^2 - 4t + 3,
-    t -> 6t - 4,
-    t -> 6.0,  # f'''(x) = 6 (constant for cubic)
-    "cubic"
-)
+    """Create clustered grid (dense at boundaries, sparse in middle)."""
+    function grid_clustered(::Type{T} = Float64) where {T}
+        return vcat(
+            range(T(0), T(0.5), 6),      # Dense at start
+            range(T(1), T(9), 5),         # Sparse in middle
+            range(T(9.5), T(10), 6)       # Dense at end
+        ) |> collect |> sort |> unique
+    end
 
-const LINEAR = TestPolynomial{Float64}(
-    t -> 2.5t - 1.0,
-    t -> 2.5,
-    t -> 0.0,
-    t -> 0.0,  # f'''(x) = 0 for linear
-    "linear"
-)
+    # Test polynomials with known exact derivatives
+    struct TestPolynomial{T}
+        f::Function
+        f_prime::Function
+        f_double_prime::Function
+        f_triple_prime::Function  # Third derivative (constant for cubic, 0 for quadratic/linear)
+        name::String
+    end
 
-# ========================================
-# 1. Linear Interpolation
-# ========================================
-@testset "Non-uniform Grid: Linear Interpolation" begin
+    const QUADRATIC = TestPolynomial{Float64}(
+        t -> 2t^2 - 3t + 1,
+        t -> 4t - 3,
+        t -> 4.0,
+        t -> 0.0,  # f'''(x) = 0 for quadratic
+        "quadratic"
+    )
+
+    const CUBIC = TestPolynomial{Float64}(
+        t -> t^3 - 2t^2 + 3t - 1,
+        t -> 3t^2 - 4t + 3,
+        t -> 6t - 4,
+        t -> 6.0,  # f'''(x) = 6 (constant for cubic)
+        "cubic"
+    )
+
+    const LINEAR = TestPolynomial{Float64}(
+        t -> 2.5t - 1.0,
+        t -> 2.5,
+        t -> 0.0,
+        t -> 0.0,  # f'''(x) = 0 for linear
+        "linear"
+    )
+
+    # ========================================
+    # 1. Linear Interpolation
+    # ========================================
+    @testset "Non-uniform Grid: Linear Interpolation" begin
 
     @testset "Basic interpolation accuracy" begin
         for (grid_name, grid_fn) in [
@@ -1024,3 +1023,4 @@ end
         end
     end
 end
+end  # @testitem

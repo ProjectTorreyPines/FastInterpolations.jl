@@ -1,12 +1,4 @@
-using Test
-using FastInterpolations
-
-# Allocation threshold (bytes) — tolerates minor LTS/GC overhead.
-if !@isdefined(ND_ALLOC_THRESHOLD)
-    const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
-end
-
-@testset "ND Cubic Interpolation (2D)" begin
+@testitem "ND Cubic Interpolation (2D)" setup=[AllocConstants] begin
 
     @testset "Basic 2D Interpolation" begin
         # Create a simple test function: f(x,y) = sin(x) * cos(y)

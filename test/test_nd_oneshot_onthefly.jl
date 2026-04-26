@@ -7,9 +7,6 @@
 # C. Zero-allocation after warmup (function barrier pattern)
 
 @testitem "ND OnTheFly: Equivalence" setup = [AllocConstants] begin
-    # Aliases mapping legacy *_LOCAL names to AllocConstants snippet symbols.
-    AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
-    ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
     # ========================================
     # Test Data Setup
     # ========================================
@@ -117,8 +114,6 @@ end
 # ========================================
 
 @testitem "ND OnTheFly: AutoCoeffs" setup = [AllocConstants] begin
-    AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
-    ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
     x = range(0.0, 2π, 30)
     y = range(0.0, π, 25)
     z = range(0.0, 1.0, 10)
@@ -172,8 +167,6 @@ end
 # ========================================
 
 @testitem "ND OnTheFly: Zero-Alloc" setup = [AllocConstants] begin
-    AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
-    ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
     x = range(0.0, 2π, 30)
     y = range(0.0, π, 25)
     z = range(0.0, 1.0, 10)
@@ -191,7 +184,7 @@ end
             cubic_interp((xg, yg), d, q; coeffs = OnTheFly())
             return @allocated cubic_interp((xg, yg), d, q; coeffs = OnTheFly())
         end
-        @test _alloc_test_otf_cubic_2d() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _alloc_test_otf_cubic_2d() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-alloc: OnTheFly oneshot cubic 3D" begin
@@ -205,7 +198,7 @@ end
             cubic_interp((xg, yg, zg), d, q; coeffs = OnTheFly())
             return @allocated cubic_interp((xg, yg, zg), d, q; coeffs = OnTheFly())
         end
-        @test _alloc_test_otf_cubic_3d() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _alloc_test_otf_cubic_3d() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-alloc: OnTheFly oneshot quadratic 2D" begin
@@ -218,7 +211,7 @@ end
             quadratic_interp((xg, yg), d, q; coeffs = OnTheFly())
             return @allocated quadratic_interp((xg, yg), d, q; coeffs = OnTheFly())
         end
-        @test _alloc_test_otf_quad_2d() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _alloc_test_otf_quad_2d() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-alloc: OnTheFly oneshot interp hetero" begin
@@ -232,7 +225,7 @@ end
             interp((xg, yg), d, q; method = m, coeffs = OnTheFly())
             return @allocated interp((xg, yg), d, q; method = m, coeffs = OnTheFly())
         end
-        @test _alloc_test_otf_hetero() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _alloc_test_otf_hetero() <= ND_ALLOC_THRESHOLD
     end
 
     # ========================================================================
@@ -295,18 +288,18 @@ end
                 ("Cubic × Cubic", (CubicInterp(), CubicInterp())),
             )
             # Scalar one-shot: both grid types
-            @test _alloc_scalar((xv, yv), data_vv, q, m) <= ND_ALLOC_THRESHOLD_LOCAL
-            @test _alloc_scalar((xr, yr), data_rr, q, m) <= ND_ALLOC_THRESHOLD_LOCAL
+            @test _alloc_scalar((xv, yv), data_vv, q, m) <= ND_ALLOC_THRESHOLD
+            @test _alloc_scalar((xr, yr), data_rr, q, m) <= ND_ALLOC_THRESHOLD
 
             # Batch in-place: both grid types
-            @test _alloc_batch_inplace(out, (xv, yv), data_vv, qs, m) <= ND_ALLOC_THRESHOLD_LOCAL
-            @test _alloc_batch_inplace(out, (xr, yr), data_rr, qs, m) <= ND_ALLOC_THRESHOLD_LOCAL
+            @test _alloc_batch_inplace(out, (xv, yv), data_vv, qs, m) <= ND_ALLOC_THRESHOLD
+            @test _alloc_batch_inplace(out, (xr, yr), data_rr, qs, m) <= ND_ALLOC_THRESHOLD
 
             # Persistent interpolant: both grid types
             itp_v = interp((xv, yv), data_vv; method = m, coeffs = OnTheFly())
             itp_r = interp((xr, yr), data_rr; method = m, coeffs = OnTheFly())
-            @test _alloc_persistent(itp_v, q) <= ND_ALLOC_THRESHOLD_LOCAL
-            @test _alloc_persistent(itp_r, q) <= ND_ALLOC_THRESHOLD_LOCAL
+            @test _alloc_persistent(itp_v, q) <= ND_ALLOC_THRESHOLD
+            @test _alloc_persistent(itp_r, q) <= ND_ALLOC_THRESHOLD
         end
     end
 
@@ -355,7 +348,7 @@ end
             cubic_interp((xg, yg), d, q)
             return @allocated cubic_interp((xg, yg), d, q)
         end
-        @test _alloc_test_auto_cubic() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _alloc_test_auto_cubic() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-alloc: OnTheFly interpolant eval" begin
@@ -368,7 +361,7 @@ end
             itp((1.7, 0.8))
             return @allocated itp((1.7, 0.8))
         end
-        @test _alloc_test_otf_itp_eval() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _alloc_test_otf_itp_eval() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-alloc: OnTheFly gradient" begin
@@ -381,7 +374,7 @@ end
             gradient(itp, (1.7, 0.8))
             return @allocated gradient(itp, (1.7, 0.8))
         end
-        @test _alloc_test_otf_gradient() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _alloc_test_otf_gradient() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-alloc: OnTheFly PeriodicBC oneshot" begin
@@ -404,7 +397,7 @@ end
                 bc = (CubicFit(), PeriodicBC()), extrap = (NoExtrap(), WrapExtrap()), coeffs = OnTheFly()
             )
         end
-        @test _alloc_test_otf_periodic() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _alloc_test_otf_periodic() <= ND_ALLOC_THRESHOLD
     end
 
 end
@@ -414,8 +407,6 @@ end
 # ========================================
 
 @testitem "ND OnTheFly: Specialized" setup = [AllocConstants] begin
-    AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
-    ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
     x = range(0.0, 2π, 30)
     y = range(0.0, π, 25)
     z = range(0.0, 1.0, 10)
@@ -670,7 +661,7 @@ end
             itp((1.7, 0.8, 0.4))
             return @allocated itp((1.7, 0.8, 0.4))
         end
-        @test _alloc_test_otf_itp_eval_3d() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _alloc_test_otf_itp_eval_3d() <= ND_ALLOC_THRESHOLD
     end
 
     # ========================================

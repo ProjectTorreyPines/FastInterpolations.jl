@@ -1,7 +1,4 @@
 @testitem "NoInterp + GridIdx: Basics & One-shot & Interpolant" setup = [AllocConstants] begin
-    # Aliases mapping legacy *_LOCAL names to AllocConstants snippet symbols.
-    AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
-    ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
     # ========================================
     # Test Setup
     # ========================================
@@ -321,7 +318,7 @@
             itp((1.7, GridIdx(5)))  # warmup
             return @allocated itp((1.7, GridIdx(5)))
         end
-        @test _test_alloc_precompute() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _test_alloc_precompute() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-allocation: PreCompute interpolant eval with deriv" begin
@@ -330,7 +327,7 @@
             itp((1.7, GridIdx(5)); deriv = (DerivOp(1), DerivOp(0)))  # warmup
             return @allocated itp((1.7, GridIdx(5)); deriv = (DerivOp(1), DerivOp(0)))
         end
-        @test _test_alloc_deriv() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _test_alloc_deriv() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-allocation: OnTheFly interpolant eval" begin
@@ -339,7 +336,7 @@
             itp((1.7, GridIdx(5)))  # warmup
             return @allocated itp((1.7, GridIdx(5)))
         end
-        @test _test_alloc_onthefly() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _test_alloc_onthefly() <= ND_ALLOC_THRESHOLD
     end
 
 end
@@ -348,8 +345,6 @@ end
 # 12. Vararg Callable
 # ========================================
 @testitem "NoInterp + GridIdx: Vararg & Calculus & Batch & Regression" setup = [AllocConstants] begin
-    AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
-    ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
     x = range(0.0, 2π, 30)
     y = range(0.0, π, 25)
     z = range(0.0, 1.0, 20)
@@ -731,8 +726,6 @@ end
 # 28. ClampExtrap × NoInterp
 # ========================================
 @testitem "NoInterp + GridIdx: ClampExtrap & Periodic & Hints & Cross-method" setup = [AllocConstants] begin
-    AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
-    ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
     x = range(0.0, 2π, 30)
     y = range(0.0, π, 25)
     z = range(0.0, 1.0, 20)

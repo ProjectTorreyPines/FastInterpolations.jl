@@ -484,6 +484,12 @@ end
 # Thin function barrier: ensures the resolved `searcher` (and any hint Ref it
 # may carry) is consumed inside a fresh stack frame, preventing escape-analysis
 # spillover into a 16-byte heap box. No pool needed.
+#
+# Note `@inline` is intentional: the barrier benefit comes from this being a
+# *separate named function* (a clean specialization point for the compiler),
+# not from preventing inlining. Empirically `@noinline` regresses to ~32 B
+# because the forced function-call frame adds arg-passing overhead — see
+# claudedocs/PR_test_infra_refac.md.
 @inline function _linear_series_inplace_kernel!(
         outputs::AbstractVector{<:AbstractVector},
         sitp::LinearSeriesInterpolant{Tg},

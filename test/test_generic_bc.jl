@@ -7,8 +7,8 @@
     # Tolerance constants for numerical comparisons
     # rtol: relative tolerance (scale-independent, good for most cases)
     # atol: absolute tolerance (needed when values can be near zero)
-    RTOL = 1.0e-14
-    ATOL = 1.0e-14
+    const RTOL = 1.0e-14
+    const ATOL = 1.0e-14
 
 
     # ========================================

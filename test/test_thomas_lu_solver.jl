@@ -1,8 +1,8 @@
 @testitem "Thomas LU Solver" begin
     using Random
 
-    FI = FastInterpolations
-    LA = FI.LinearAlgebra
+    const FI = FastInterpolations
+    const LA = FI.LinearAlgebra
 
 
     # ─────────────────────────────────────────────────────────────────────────

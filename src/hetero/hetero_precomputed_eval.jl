@@ -100,7 +100,10 @@ Non-derivative axes (Linear/Constant) produce fewer intermediates (no derivative
                 elseif method_type <: QuadraticInterp
                     :(_quadratic_kernel_nd($op, $fL, $fR, $dfL, $inv_h, $dL))
                 elseif method_type <: LinearInterp
-                    :(_linear_kernel($op, $fL, $fR, $inv_h, $dL))
+                    # New `_linear_kernel` signature takes α (= dL * inv_h)
+                    # instead of dL. Hetero path is fully cached, so the
+                    # extra mul is one register op — no DCE needed here.
+                    :(_linear_kernel($op, $fL, $fR, $inv_h, $dL * $inv_h))
                 elseif method_type <: ConstantInterp
                     side_inst = fieldtype(method_type, :side)()
                     :(_constant_kernel($op, $fL, $fR, $h, $dL, $side_inst))

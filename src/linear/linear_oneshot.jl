@@ -229,8 +229,8 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
-    dL = xq - xL  # xq can be Dual here (preserves AD)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), dL)
+    α = _alpha_of(xq, xL, xR, x)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
@@ -249,8 +249,8 @@ end
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
-    dL = xq - xL
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), dL)
+    α = _alpha_of(xq, xL, xR, x)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
@@ -268,8 +268,8 @@ end
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
-    dL = xq_wrapped - xL
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), dL)
+    α = _alpha_of(xq_wrapped, xL, xR, x)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
 end
 
 # Public scalar one-shot API.

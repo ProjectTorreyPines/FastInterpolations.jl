@@ -229,11 +229,11 @@ end
         xR = x[idx1]
     end
     inv_h = _get_inv_h(x, xL, xR)
-    dL = aq.xq - xL
+    α = _alpha_of(aq.xq, xL, xR, x)
     @inbounds @simd for k in axes(out, 1)
         yL = y_point[k, idx]
         yR = y_point[k, idx1]
-        out[k] = _linear_kernel(op, yL, yR, inv_h, dL)
+        out[k] = _linear_kernel(op, yL, yR, inv_h, α)
     end
     return out
 end
@@ -279,12 +279,12 @@ while `aq.xq` carries the Dual payload so `dL = aq.xq - aq.xL` preserves derivat
     idxR = aq.idxR
 
     inv_h = aq.inv_h
-    dL = aq.xq - aq.xL  # aq.xq carries Dual info (widened by outer constructor)
+    α = aq.alpha  # precomputed by anchor constructor
 
     @inbounds @simd for k in axes(output, 1)
         yL = y_point[k, idxL]
         yR = y_point[k, idxR]
-        output[k] = _linear_kernel(op, yL, yR, inv_h, dL)
+        output[k] = _linear_kernel(op, yL, yR, inv_h, α)
     end
     return output
 end

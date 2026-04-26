@@ -380,8 +380,11 @@ end
         itp = linear_interp(x, y)
         result = itp.(x_targets)
 
+        # Persistent uses cached `inv_h * α`; oneshot uses direct
+        # `(q-L)/(R-L)`. Both within 1 ULP — tolerance allows the
+        # documented design difference.
         expected_3arg = linear_interp(x, y, x_targets)
-        @test result == expected_3arg
+        @test result ≈ expected_3arg rtol = 4 * eps(Float64)
     end
 
     @testset "Type stability" begin

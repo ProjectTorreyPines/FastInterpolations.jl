@@ -217,6 +217,12 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
 # ========================================
 # _get_inv_h(x, xL, xR) dispatches to x.inv_h (_CachedRange) or inv(xR-xL) (Vector).
 
+# Oneshot path (no spacing): α via direct (q-L)/(R-L) on plain Vector grid
+# (`_alpha_of(q, L, R, grid)`); inv_h recomputed per query.
+# Persistent path (with spacing): α via cached `inv_h * (q-L)`; mirrors the ND
+# `_locate_cell` design — exact at knots is sacrificed for query-time speed
+# (1 ULP off possible at right knots; oneshot path remains exact).
+
 # NoExtrap / ExtendExtrap / other: direct search + kernel.
 # _check_domain(::NoExtrap) throws if OOB; all others are no-ops.
 @inline function _linear_eval_at_point(
@@ -231,6 +237,22 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     α = _alpha_of(xq, xL, xR, x)
     @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
+end
+
+@inline function _linear_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg},
+        xq::Tq,
+        extrap::AbstractExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    @boundscheck _check_domain(x, xq, extrap)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq)
+    inv_h = _get_inv_h(spacing, idx)
+    α = (xq - xL) * inv_h
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], inv_h, α)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
@@ -253,6 +275,27 @@ end
     @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
 end
 
+@inline function _linear_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg},
+        xq::Tq,
+        extrap::_ClampOrFill,
+        op::O,
+        searcher::S
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq_primal = _extract_primal(xq)
+    if xq_primal < first(x)
+        return _eval_extrapolation(op, first(y), extrap, xq)
+    elseif xq_primal > last(x)
+        return _eval_extrapolation(op, last(y), extrap, xq)
+    end
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq)
+    inv_h = _get_inv_h(spacing, idx)
+    α = (xq - xL) * inv_h
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], inv_h, α)
+end
+
 # WrapExtrap: wrap query to domain → search + kernel.
 # Pass original xq (may be Dual) to _wrap_to_domain to preserve AD derivatives.
 # The 2-arg `_wrap_to_domain(xq, extrap)` reads `extrap._x_min/._x_max` directly —
@@ -270,6 +313,22 @@ end
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     α = _alpha_of(xq_wrapped, xL, xR, x)
     @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
+end
+
+@inline function _linear_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg},
+        xq::Tq,
+        extrap::WrapExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq_wrapped = _wrap_to_domain(xq, extrap)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq_wrapped)
+    inv_h = _get_inv_h(spacing, idx)
+    α = (xq_wrapped - xL) * inv_h
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], inv_h, α)
 end
 
 # Public scalar one-shot API.

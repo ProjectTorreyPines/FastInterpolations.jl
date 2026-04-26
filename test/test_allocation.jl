@@ -13,7 +13,7 @@ Note: Julia 1.12+ has improved escape analysis that eliminates small allocations
 from mutable struct field access. Older versions may show ~16-64 bytes allocation.
 """
 
-# ALLOC_THRESHOLD is defined in runtests.jl
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
 @testitem "Allocation Tests" setup = [AllocConstants] begin
     # Import internal function for testing

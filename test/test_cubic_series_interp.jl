@@ -3,7 +3,7 @@
 # Multi-Y interpolation: multiple y-data series sharing the same x-grid.
 # After unification: Uses matrix storage with adaptive layout for optimal performance.
 #
-# ALLOC_THRESHOLD is defined in runtests.jl
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
 # ============================================================================
 # Phase 1: Unified Type Migration Tests (TDD RED → GREEN → REFACTOR)

@@ -1,4 +1,4 @@
-# ALLOC_THRESHOLD is defined in runtests.jl
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
 @testitem "Cardinal 1D" setup = [AllocConstants] begin
 

@@ -758,7 +758,7 @@ end
 # ============================================================================
 @testitem "Quadratic Interpolation - Allocations" setup = [AllocConstants] begin
 
-    # ALLOC_THRESHOLD is defined in runtests.jl
+    # ALLOC_THRESHOLD is defined in test/setup.jl
 
     @testset "interpolant scalar zero-allocation" begin
         x = collect(range(0.0, 1.0, 51))

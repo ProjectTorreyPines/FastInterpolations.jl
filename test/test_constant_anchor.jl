@@ -1,6 +1,6 @@
 # Test suite for Constant Anchored Query functionality
 #
-# ALLOC_THRESHOLD is defined in runtests.jl
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
 @testitem "Constant Anchored Query" setup = [AllocConstants] begin
 

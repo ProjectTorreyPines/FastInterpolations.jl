@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "Periodic BC Tests" begin
+@testitem "Periodic BC Tests" begin
 
     @testset "Linear Wrap Extrapolation" begin
         # Periodic function: sin on [0, 2π]

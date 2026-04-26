@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "HeteroInterpolantND — PreCompute" begin
+@testitem "HeteroInterpolantND — PreCompute" begin
     # ========================================
     # Test Setup
     # ========================================

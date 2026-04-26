@@ -1,35 +1,34 @@
-using Test
-using LinearAlgebra: dot
-using FastInterpolations
+@testitem "QuadraticAdjoint" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
 
-# ========================================
-# Helper: Dot-product test for quadratic adjoint correctness
-# ========================================
-# Gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
-# W is affine (non-zero BC values add a constant offset), so we
-# subtract the zero-data response to isolate the linear part.
+    # ========================================
+    # Helper: Dot-product test for quadratic adjoint correctness
+    # ========================================
+    # Gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
+    # W is affine (non-zero BC values add a constant offset), so we
+    # subtract the zero-data response to isolate the linear part.
 
-function quadratic_dot_test(
-        x, xq, f, y_bar;
-        bc = Left(QuadraticFit()), extrap = NoExtrap(), deriv = EvalValue(),
-        atol = 0, rtol = sqrt(eps(eltype(x)))
-    )
-    itp = quadratic_interp(x, f; bc = bc, extrap = extrap)
-    adj = quadratic_adjoint(x, xq; bc = bc, extrap = extrap)
+    function quadratic_dot_test(
+            x, xq, f, y_bar;
+            bc = Left(QuadraticFit()), extrap = NoExtrap(), deriv = EvalValue(),
+            atol = 0, rtol = sqrt(eps(eltype(x)))
+        )
+        itp = quadratic_interp(x, f; bc = bc, extrap = extrap)
+        adj = quadratic_adjoint(x, xq; bc = bc, extrap = extrap)
 
-    # Subtract constant offset from non-zero BC values (e.g. Deriv1(0.5))
-    f_zero = zeros(eltype(f), length(f))
-    itp_zero = quadratic_interp(x, f_zero; bc = bc, extrap = extrap)
-    Wf = itp.(xq; deriv = deriv) .- itp_zero.(xq; deriv = deriv)
+        # Subtract constant offset from non-zero BC values (e.g. Deriv1(0.5))
+        f_zero = zeros(eltype(f), length(f))
+        itp_zero = quadratic_interp(x, f_zero; bc = bc, extrap = extrap)
+        Wf = itp.(xq; deriv = deriv) .- itp_zero.(xq; deriv = deriv)
 
-    WTy = adj(y_bar; deriv = deriv)
+        WTy = adj(y_bar; deriv = deriv)
 
-    lhs = dot(Wf, y_bar)
-    rhs = dot(f, WTy)
-    return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
-end
+        lhs = dot(Wf, y_bar)
+        rhs = dot(f, WTy)
+        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+    end
 
-@testset "QuadraticAdjoint" begin
+
     # ========================================
     # Test data setup
     # ========================================

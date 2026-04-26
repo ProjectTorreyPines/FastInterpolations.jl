@@ -1,10 +1,9 @@
 # Unit tests for `_IdxStencil{K}` — the wrap-aware per-axis corner-index type.
 # See src/core/idx_stencil.jl for design notes.
 
-using Test
-using FastInterpolations: _IdxStencil, _IdxPair
+@testitem "_IdxStencil" begin
+    using FastInterpolations: _IdxStencil, _IdxPair
 
-@testset "_IdxStencil" begin
 
     @testset "Construction" begin
         # NTuple constructor

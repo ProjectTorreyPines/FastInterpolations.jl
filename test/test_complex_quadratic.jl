@@ -4,10 +4,7 @@
 # Tests for native Complex number support in QuadraticInterpolant.
 # Validates the Tg/Tv type separation design.
 
-using Test
-using FastInterpolations
-
-@testset "Complex Quadratic Interpolation" begin
+@testitem "Complex Quadratic Interpolation" setup = [AllocConstants] begin
 
     # ========================================
     # Basic Complex Interpolation

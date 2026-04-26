@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "integrate nd parity (linear/quadratic/constant)" begin
+@testitem "integrate nd parity (linear/quadratic/constant)" begin
     x = collect(range(0.0, 1.0, length = 21))
     y = collect(range(0.0, 2.0, length = 17))
 
@@ -35,7 +32,7 @@ using FastInterpolations
     end
 end
 
-@testset "integrate nd output type promotion" begin
+@testitem "integrate nd output type promotion" begin
     x = Float32[0, 1, 2, 3]
     y = Float32[0, 1, 2, 3]
     constructors = (

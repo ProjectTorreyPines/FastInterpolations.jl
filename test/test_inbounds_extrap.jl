@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "InBounds() extrap type" begin
+@testitem "InBounds() extrap type" begin
     x = collect(range(0.0, 10.0, 21))
     y = sin.(x)
     xq_scalar = 5.0

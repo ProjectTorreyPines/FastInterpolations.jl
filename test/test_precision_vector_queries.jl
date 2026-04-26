@@ -10,27 +10,18 @@
 # to Float32 when the grid is Float32, losing precision in arithmetic.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-using Test
-using FastInterpolations
+@testitem "Precision: Vector Query Paths (Scalar/Vector Symmetry)" setup = [AllocConstants] begin
+    # Helper: extract diagonal from a matrix (avoid LinearAlgebra dependency)
+    __diag(M::AbstractMatrix) = [M[i, i] for i in 1:min(size(M)...)]
 
-# Helper: extract diagonal from a matrix (avoid LinearAlgebra dependency)
-__diag(M::AbstractMatrix) = [M[i, i] for i in 1:min(size(M)...)]
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # Test Configuration
+    # ═══════════════════════════════════════════════════════════════════════════════
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Test Configuration
-# ═══════════════════════════════════════════════════════════════════════════════
+    # Tolerance for numerical comparison
+    # The bug causes errors on the order of Float32 epsilon (~1e-7) relative to Float64
+    const PRECISION_RTOL = 1.0e-10  # Tight tolerance - should pass if no downcast
 
-# Tolerance for numerical comparison
-# The bug causes errors on the order of Float32 epsilon (~1e-7) relative to Float64
-const PRECISION_RTOL = 1.0e-10  # Tight tolerance - should pass if no downcast
-
-# ALLOC_THRESHOLD is defined in runtests.jl (0 for Julia 1.12+, 240 for older)
-# For standalone runs, define it here
-if !@isdefined(ALLOC_THRESHOLD)
-    const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
-end
-
-@testset "Precision: Vector Query Paths (Scalar/Vector Symmetry)" begin
 
     # ═══════════════════════════════════════════════════════════════════════════
     # Section 1: Callable Interpolant - Scalar vs Vector Consistency
@@ -371,75 +362,83 @@ end
     # This establishes the baseline for later phases to compare against.
 
     @testset "Typed hot path: itp(xq::Vector{Tg})" begin
-        # Float64 grid with Float64 query (common case)
-        x = collect(range(0.0, 4.0, 51))
-        y = sin.(2π .* x)
+        function measure_linear_alloc()
+            # Float64 grid with Float64 query (common case)
+            x = collect(range(0.0, 4.0, 51))
+            y = sin.(2π .* x)
 
-        itp = linear_interp(x, y)
+            itp = linear_interp(x, y)
 
-        xq = [0.5, 1.5, 2.5, 3.5]  # Float64
+            xq = [0.5, 1.5, 2.5, 3.5]  # Float64
 
-        # Warmup
-        itp(xq)
-        itp(xq)
+            # Warmup
+            itp(xq)
+            itp(xq)
 
-        allocs = @allocated itp(xq)
+            return @allocated itp(xq)
+        end
         # Vector call allocates output array (~32 bytes for 4 Float64 + header)
-        expected_output = sizeof(Float64) * length(xq) + 40
-        @test allocs <= expected_output * 2 + ALLOC_THRESHOLD
+        expected_output = sizeof(Float64) * 4 + 40
+        @test measure_linear_alloc() <= expected_output * 2 + ALLOC_THRESHOLD
     end
 
     @testset "Typed hot path: itp(output, xq::Vector{Tg}) in-place" begin
-        x = collect(range(0.0, 4.0, 51))
-        y = sin.(2π .* x)
+        function measure_linear_inplace_alloc()
+            x = collect(range(0.0, 4.0, 51))
+            y = sin.(2π .* x)
 
-        itp = linear_interp(x, y)
+            itp = linear_interp(x, y)
 
-        xq = [0.5, 1.5, 2.5, 3.5]
-        output = similar(xq)
+            xq = [0.5, 1.5, 2.5, 3.5]
+            output = similar(xq)
 
-        # Warmup
-        itp(output, xq)
-        itp(output, xq)
+            # Warmup
+            itp(output, xq)
+            itp(output, xq)
 
-        allocs = @allocated itp(output, xq)
-        @test allocs <= ALLOC_THRESHOLD
+            return @allocated itp(output, xq)
+        end
+        @test measure_linear_inplace_alloc() <= ALLOC_THRESHOLD
     end
 
     @testset "Typed hot path: sitp(outputs, xq::Vector{Tg}) series in-place" begin
-        x = collect(range(0.0, 4.0, 51))
-        y1 = sin.(2π .* x)
-        y2 = cos.(2π .* x)
+        function measure_series_inplace_alloc()
+            x = collect(range(0.0, 4.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
 
-        sitp = linear_interp(x, Series(y1, y2))
-        precompute_transpose!(sitp)
+            sitp = linear_interp(x, Series(y1, y2))
+            precompute_transpose!(sitp)
 
-        xq = collect(range(0.25, 3.75, 10))
-        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:2]
+            xq = collect(range(0.25, 3.75, 10))
+            outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:2]
 
-        # Warmup
-        sitp(outputs, xq)
-        sitp(outputs, xq)
+            # Warmup
+            sitp(outputs, xq)
+            sitp(outputs, xq)
 
-        allocs = @allocated sitp(outputs, xq)
-        @test allocs <= ALLOC_THRESHOLD
+            return @allocated sitp(outputs, xq)
+        end
+        @test measure_series_inplace_alloc() <= ALLOC_THRESHOLD
     end
 
     @testset "Typed hot path: cubic itp(xq::Vector{Tg})" begin
-        x = collect(range(0.0, 2π, 51))
-        y = sin.(x)
+        function measure_cubic_alloc()
+            x = collect(range(0.0, 2π, 51))
+            y = sin.(x)
 
-        itp = cubic_interp(x, y; autocache = false)
+            itp = cubic_interp(x, y; autocache = false)
 
-        xq = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0]
+            xq = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0]
 
-        # Warmup
-        itp(xq)
-        itp(xq)
+            # Warmup
+            itp(xq)
+            itp(xq)
 
-        allocs = @allocated itp(xq)
-        expected_output = sizeof(Float64) * length(xq) + 40
-        @test allocs <= expected_output * 2 + ALLOC_THRESHOLD
+            return @allocated itp(xq)
+        end
+        expected_output = sizeof(Float64) * 6 + 40
+        @test measure_cubic_alloc() <= expected_output * 2 + ALLOC_THRESHOLD
     end
 
     # ═══════════════════════════════════════════════════════════════════════════

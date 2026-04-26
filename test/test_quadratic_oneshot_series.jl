@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "Quadratic One-Shot Series" begin
+@testitem "Quadratic One-Shot Series" setup = [AllocConstants] begin
     x = collect(range(0.0, 1.0, 101))
     y_sin = sin.(2π .* x)
     y_cos = cos.(2π .* x)
@@ -143,24 +140,24 @@ using FastInterpolations
     end
 
     @testset "Zero allocation (in-place scalar)" begin
-        s = Series(y_sin, y_cos)
-        out = zeros(2)
-        f_alloc() = begin
-            quadratic_interp!(out, x, s, 0.5)
+        function measure(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            out = zeros(2)
+            quadratic_interp!(out, x, s, 0.5)  # warmup
             return @allocated quadratic_interp!(out, x, s, 0.5)
         end
-        @test f_alloc() <= ALLOC_THRESHOLD
+        @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
     end
 
     @testset "Zero allocation (in-place vector)" begin
-        s = Series(y_sin, y_cos)
-        xqs = [0.1, 0.37, 0.5, 0.9]
-        outputs = [zeros(length(xqs)) for _ in 1:2]
-        f_alloc() = begin
-            quadratic_interp!(outputs, x, s, xqs)
+        function measure(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            xqs = [0.1, 0.37, 0.5, 0.9]
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            quadratic_interp!(outputs, x, s, xqs)  # warmup
             return @allocated quadratic_interp!(outputs, x, s, xqs)
         end
-        @test f_alloc() <= ALLOC_THRESHOLD
+        @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
     end
 
     @testset "Type promotion: Integer series" begin

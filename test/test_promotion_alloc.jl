@@ -6,9 +6,9 @@
 # 1. One-shot in-place: zero-alloc even with Float32 query / Int data on Float64 grid
 # 2. Interpolant construction: no double-copy when y needs type conversion
 
-# ALLOC_THRESHOLD is defined in runtests.jl (0 on Julia 1.12+, 240 on older)
+# ALLOC_THRESHOLD is defined in test/setup.jl (0 on Julia 1.12+, 240 on older)
 
-@testset "Type Promotion Allocations" begin
+@testitem "Type Promotion Allocations" setup = [AllocConstants] begin
 
     # ========================================
     # Setup: Float64 grid, various data/query types
@@ -49,11 +49,18 @@
             f(out, x_f64, y_f64, xq_f32)
         end
 
+        # cubic_interp! oneshot leaks exactly 16 B under `--code-coverage` due
+        # to instrumentation interacting with its `@with_pool` + atomic cache
+        # lookup chain (linear/pchip/quadratic don't use that machinery, so they
+        # stay strict). Real allocs are always 0 — single-file runs (no coverage)
+        # still verify that.
+        _cubic_cov_slack = Base.JLOptions().code_coverage != 0 ? 16 : 0
+
         # Baseline: matched types → zero-alloc
         @testset "baseline (Float64 query)" begin
             @test (@allocated _bench_linear!(out, x_f64, y_f64, xq_f64)) <= ALLOC_THRESHOLD
             @test (@allocated _bench_pchip!(out, x_f64, y_f64, xq_f64)) <= ALLOC_THRESHOLD
-            @test (@allocated _bench_cubic!(out, x_f64, y_f64, xq_f64)) <= ALLOC_THRESHOLD
+            @test (@allocated _bench_cubic!(out, x_f64, y_f64, xq_f64)) <= ALLOC_THRESHOLD + _cubic_cov_slack
             @test (@allocated _bench_quadratic!(out, x_f64, y_f64, xq_f64)) <= ALLOC_THRESHOLD
         end
 
@@ -61,7 +68,7 @@
         @testset "Float32 query → zero-alloc" begin
             @test (@allocated _bench_linear!(out, x_f64, y_f64, xq_f32)) <= ALLOC_THRESHOLD
             @test (@allocated _bench_pchip!(out, x_f64, y_f64, xq_f32)) <= ALLOC_THRESHOLD
-            @test (@allocated _bench_cubic!(out, x_f64, y_f64, xq_f32)) <= ALLOC_THRESHOLD
+            @test (@allocated _bench_cubic!(out, x_f64, y_f64, xq_f32)) <= ALLOC_THRESHOLD + _cubic_cov_slack
             @test (@allocated _bench_quadratic!(out, x_f64, y_f64, xq_f32)) <= ALLOC_THRESHOLD
         end
     end

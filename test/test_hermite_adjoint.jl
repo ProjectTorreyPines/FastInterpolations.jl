@@ -1,30 +1,29 @@
-using Test
-using LinearAlgebra: dot
-using FastInterpolations
+@testitem "HermiteAdjoint1D" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
 
-# ========================================
-# Helper: Dot-product test for Hermite adjoint correctness
-# ========================================
-# With dy=0, the forward is purely W_y * y, so: dot(itp.(xq), y_bar) = dot(y, adj(y_bar))
-# With non-zero dy, use Matrix materialization: dot(W_T' * y, y_bar) = dot(y, W_T * y_bar)
+    # ========================================
+    # Helper: Dot-product test for Hermite adjoint correctness
+    # ========================================
+    # With dy=0, the forward is purely W_y * y, so: dot(itp.(xq), y_bar) = dot(y, adj(y_bar))
+    # With non-zero dy, use Matrix materialization: dot(W_T' * y, y_bar) = dot(y, W_T * y_bar)
 
-function hermite_dot_product_test(
-        x, xq, y, dy, y_bar;
-        extrap = NoExtrap(), deriv = EvalValue(),
-        atol = 0, rtol = sqrt(eps(eltype(x)))
-    )
-    itp = hermite_interp(x, y, dy; extrap = extrap)
-    adj = hermite_adjoint(x, xq; extrap = extrap)
+    function hermite_dot_product_test(
+            x, xq, y, dy, y_bar;
+            extrap = NoExtrap(), deriv = EvalValue(),
+            atol = 0, rtol = sqrt(eps(eltype(x)))
+        )
+        itp = hermite_interp(x, y, dy; extrap = extrap)
+        adj = hermite_adjoint(x, xq; extrap = extrap)
 
-    Wf = itp.(xq; deriv = deriv)      # forward eval
-    WTy = adj(y_bar; deriv = deriv)    # adjoint
+        Wf = itp.(xq; deriv = deriv)      # forward eval
+        WTy = adj(y_bar; deriv = deriv)    # adjoint
 
-    lhs = dot(Wf, y_bar)
-    rhs = dot(y, WTy)
-    return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
-end
+        lhs = dot(Wf, y_bar)
+        rhs = dot(y, WTy)
+        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+    end
 
-@testset "HermiteAdjoint1D" begin
+
     # ========================================
     # Test data setup
     # ========================================
@@ -448,23 +447,25 @@ end
 # CardinalAdjoint1D
 # ========================================
 
-function cardinal_dot_product_test(
-        x, xq, y, y_bar;
-        tension = 0.0, extrap = NoExtrap(), deriv = EvalValue(),
-        atol = 0, rtol = sqrt(eps(eltype(x)))
-    )
-    itp = cardinal_interp(x, y; tension = tension, extrap = extrap)
-    adj = cardinal_adjoint(x, xq; tension = tension, extrap = extrap)
+@testitem "CardinalAdjoint1D" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
 
-    Wf = itp.(xq; deriv = deriv)      # forward eval
-    WTy = adj(y_bar; deriv = deriv)    # adjoint
+    function cardinal_dot_product_test(
+            x, xq, y, y_bar;
+            tension = 0.0, extrap = NoExtrap(), deriv = EvalValue(),
+            atol = 0, rtol = sqrt(eps(eltype(x)))
+        )
+        itp = cardinal_interp(x, y; tension = tension, extrap = extrap)
+        adj = cardinal_adjoint(x, xq; tension = tension, extrap = extrap)
 
-    lhs = dot(Wf, y_bar)
-    rhs = dot(y, WTy)
-    return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
-end
+        Wf = itp.(xq; deriv = deriv)      # forward eval
+        WTy = adj(y_bar; deriv = deriv)    # adjoint
 
-@testset "CardinalAdjoint1D" begin
+        lhs = dot(Wf, y_bar)
+        rhs = dot(y, WTy)
+        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+    end
+
     # ========================================
     # Test data setup
     # ========================================
@@ -691,23 +692,25 @@ end
 # PchipAdjoint1D
 # ========================================
 
-function pchip_dot_product_test(
-        x, xq, y, y_bar;
-        extrap = NoExtrap(), deriv = EvalValue(),
-        atol = 0, rtol = sqrt(eps(eltype(x)))
-    )
-    itp = pchip_interp(x, y; extrap = extrap)
-    adj = pchip_adjoint(x, y, xq; extrap = extrap)
+@testitem "PchipAdjoint1D" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
 
-    Wf = itp.(xq; deriv = deriv)      # forward eval
-    WTy = adj(y_bar; deriv = deriv)    # adjoint
+    function pchip_dot_product_test(
+            x, xq, y, y_bar;
+            extrap = NoExtrap(), deriv = EvalValue(),
+            atol = 0, rtol = sqrt(eps(eltype(x)))
+        )
+        itp = pchip_interp(x, y; extrap = extrap)
+        adj = pchip_adjoint(x, y, xq; extrap = extrap)
 
-    lhs = dot(Wf, y_bar)
-    rhs = dot(y, WTy)
-    return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
-end
+        Wf = itp.(xq; deriv = deriv)      # forward eval
+        WTy = adj(y_bar; deriv = deriv)    # adjoint
 
-@testset "PchipAdjoint1D" begin
+        lhs = dot(Wf, y_bar)
+        rhs = dot(y, WTy)
+        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+    end
+
     # ========================================
     # Test data setup
     # ========================================
@@ -1002,23 +1005,25 @@ end
 # AkimaAdjoint1D
 # ========================================
 
-function akima_dot_product_test(
-        x, xq, y, y_bar;
-        extrap = NoExtrap(), deriv = EvalValue(),
-        atol = 0, rtol = sqrt(eps(eltype(x)))
-    )
-    itp = akima_interp(x, y; extrap = extrap)
-    adj = akima_adjoint(x, y, xq; extrap = extrap)
+@testitem "AkimaAdjoint1D" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
 
-    Wf = itp.(xq; deriv = deriv)      # forward eval
-    WTy = adj(y_bar; deriv = deriv)    # adjoint
+    function akima_dot_product_test(
+            x, xq, y, y_bar;
+            extrap = NoExtrap(), deriv = EvalValue(),
+            atol = 0, rtol = sqrt(eps(eltype(x)))
+        )
+        itp = akima_interp(x, y; extrap = extrap)
+        adj = akima_adjoint(x, y, xq; extrap = extrap)
 
-    lhs = dot(Wf, y_bar)
-    rhs = dot(y, WTy)
-    return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
-end
+        Wf = itp.(xq; deriv = deriv)      # forward eval
+        WTy = adj(y_bar; deriv = deriv)    # adjoint
 
-@testset "AkimaAdjoint1D" begin
+        lhs = dot(Wf, y_bar)
+        rhs = dot(y, WTy)
+        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+    end
+
     # ========================================
     # Test data setup
     # ========================================
@@ -1325,7 +1330,9 @@ end
 # Hermite Family — integrate
 # ========================================
 
-@testset "Hermite Family — integrate" begin
+@testitem "Hermite Family — integrate" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+
 
     # Known integral: Hermite is exact for cubics with exact slopes
     @testset "Exact cubic polynomial — Hermite" begin

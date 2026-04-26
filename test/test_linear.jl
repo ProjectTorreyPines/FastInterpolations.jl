@@ -1,6 +1,6 @@
-# ALLOC_THRESHOLD is defined in runtests.jl
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
-@testset "Linear Interpolation - Core Functionality" begin
+@testitem "Linear Interpolation - Core Functionality" setup = [AllocConstants] begin
 
     @testset "Uniform grid (AbstractRange) - Interior points" begin
         x = 0.0:0.01:1.0
@@ -251,7 +251,7 @@
     end
 end
 
-@testset "Linear Interpolation - Callable (2-Argument Form)" begin
+@testitem "Linear Interpolation - Callable (2-Argument Form)" begin
 
     @testset "Basic callable functionality" begin
         x = 0.0:0.1:1.0
@@ -437,7 +437,7 @@ end
     end
 end
 
-@testset "Linear Interpolation - Type Auto-Promotion" begin
+@testitem "Linear Interpolation - Type Auto-Promotion" begin
 
     @testset "Integer input → Float output" begin
         x_int = 0:10
@@ -515,7 +515,7 @@ end
     end
 end
 
-@testset "Linear Interpolation - Range Preservation (O(1) Path)" begin
+@testitem "Linear Interpolation - Range Preservation (O(1) Path)" begin
     # Test that LinearInterpolant preserves AbstractRange structure
     # This enables O(1) index lookup vs O(log n) binary search
 

@@ -1,43 +1,42 @@
-using Test
-using LinearAlgebra: dot
-using StaticArrays: SVector
-using FastInterpolations
+@testitem "CubicAdjointND (N=2)" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+    using StaticArrays: SVector
 
-# ========================================
-# Helper: ND Dot-product test
-# ========================================
-# Gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
+    # ========================================
+    # Helper: ND Dot-product test
+    # ========================================
+    # Gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
 
-function dot_product_test_nd(
-        grids, xqs, f, y_bar;
-        bc = CubicFit(),
-        extrap = NoExtrap(),
-        deriv = EvalValue(),
-        rtol = sqrt(eps(eltype(grids[1])))
-    )
-    itp = cubic_interp(grids, f; bc = bc, extrap = extrap)
-    adj = cubic_adjoint(grids, xqs; bc = bc, extrap = extrap)
+    function dot_product_test_nd(
+            grids, xqs, f, y_bar;
+            bc = CubicFit(),
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = cubic_interp(grids, f; bc = bc, extrap = extrap)
+        adj = cubic_adjoint(grids, xqs; bc = bc, extrap = extrap)
 
-    n_queries = length(xqs[1])
+        n_queries = length(xqs[1])
 
-    # Forward: W·f (subtract constant offset for affine BCs)
-    f_zero = zeros(eltype(f), size(f))
-    itp_zero = cubic_interp(grids, f_zero; bc = bc, extrap = extrap)
-    Wf = Vector{eltype(f)}(undef, n_queries)
-    Wf_zero = Vector{eltype(f)}(undef, n_queries)
-    itp(Wf, xqs; deriv = deriv)
-    itp_zero(Wf_zero, xqs; deriv = deriv)
-    Wf .-= Wf_zero  # linear part only
+        # Forward: W·f (subtract constant offset for affine BCs)
+        f_zero = zeros(eltype(f), size(f))
+        itp_zero = cubic_interp(grids, f_zero; bc = bc, extrap = extrap)
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        Wf_zero = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+        itp_zero(Wf_zero, xqs; deriv = deriv)
+        Wf .-= Wf_zero  # linear part only
 
-    # Adjoint: Wᵀ·ȳ
-    WTy = adj(y_bar; deriv = deriv)
+        # Adjoint: Wᵀ·ȳ
+        WTy = adj(y_bar; deriv = deriv)
 
-    lhs = dot(Wf, y_bar)
-    rhs = dot(vec(f), vec(WTy))
-    return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
-end
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
 
-@testset "CubicAdjointND (N=2)" begin
+
     # ========================================
     # Test data setup
     # ========================================
@@ -339,7 +338,38 @@ end
 # N=3 Tests
 # ========================================
 
-@testset "CubicAdjointND (N=3)" begin
+@testitem "CubicAdjointND (N=3)" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+
+    # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
+    function dot_product_test_nd(
+            grids, xqs, f, y_bar;
+            bc = CubicFit(),
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = cubic_interp(grids, f; bc = bc, extrap = extrap)
+        adj = cubic_adjoint(grids, xqs; bc = bc, extrap = extrap)
+
+        n_queries = length(xqs[1])
+
+        f_zero = zeros(eltype(f), size(f))
+        itp_zero = cubic_interp(grids, f_zero; bc = bc, extrap = extrap)
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        Wf_zero = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+        itp_zero(Wf_zero, xqs; deriv = deriv)
+        Wf .-= Wf_zero
+
+        WTy = adj(y_bar; deriv = deriv)
+
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
+
+
     nx, ny, nz = 10, 8, 6
     n_query = 30
 
@@ -508,7 +538,38 @@ end
 # Boundary Condition Tests (N=2)
 # ========================================
 
-@testset "CubicAdjointND — Boundary Conditions" begin
+@testitem "CubicAdjointND — Boundary Conditions" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+
+    # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
+    function dot_product_test_nd(
+            grids, xqs, f, y_bar;
+            bc = CubicFit(),
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = cubic_interp(grids, f; bc = bc, extrap = extrap)
+        adj = cubic_adjoint(grids, xqs; bc = bc, extrap = extrap)
+
+        n_queries = length(xqs[1])
+
+        f_zero = zeros(eltype(f), size(f))
+        itp_zero = cubic_interp(grids, f_zero; bc = bc, extrap = extrap)
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        Wf_zero = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+        itp_zero(Wf_zero, xqs; deriv = deriv)
+        Wf .-= Wf_zero
+
+        WTy = adj(y_bar; deriv = deriv)
+
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
+
+
     nx, ny = 12, 10
     n_query = 25
 
@@ -559,31 +620,62 @@ end
 # PeriodicBC Tests
 # ========================================
 
-# Helper: generate periodic-compatible data for inclusive grids.
-# Uses sin/cos basis functions, then explicitly enforces f[end,...] = f[1,...]
-# to avoid floating-point mismatch (sin(2π) ≈ -2.45e-16, not exactly 0).
-function _make_periodic_data_inclusive(grids)
-    N = length(grids)
-    sizes = ntuple(d -> length(grids[d]), Val(N))
-    f = zeros(sizes)
-    for I in CartesianIndices(f)
-        val = 0.0
-        for d in 1:N
-            x_d = grids[d][I[d]]
-            x_min = first(grids[d])
-            period = last(grids[d]) - first(grids[d])
-            val += sin(2π * (x_d - x_min) / period) + 0.5 * cos(4π * (x_d - x_min) / period)
-        end
-        f[I] = val
-    end
-    # Enforce strict periodicity: f[end,...] = f[1,...] for each axis
-    for d in 1:N
-        selectdim(f, d, sizes[d]) .= selectdim(f, d, 1)
-    end
-    return f
-end
+@testitem "CubicAdjointND — PeriodicBC" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
 
-@testset "CubicAdjointND — PeriodicBC" begin
+    # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
+    function dot_product_test_nd(
+            grids, xqs, f, y_bar;
+            bc = CubicFit(),
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = cubic_interp(grids, f; bc = bc, extrap = extrap)
+        adj = cubic_adjoint(grids, xqs; bc = bc, extrap = extrap)
+
+        n_queries = length(xqs[1])
+
+        f_zero = zeros(eltype(f), size(f))
+        itp_zero = cubic_interp(grids, f_zero; bc = bc, extrap = extrap)
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        Wf_zero = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+        itp_zero(Wf_zero, xqs; deriv = deriv)
+        Wf .-= Wf_zero
+
+        WTy = adj(y_bar; deriv = deriv)
+
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
+
+    # Helper: generate periodic-compatible data for inclusive grids.
+    # Uses sin/cos basis functions, then explicitly enforces f[end,...] = f[1,...]
+    # to avoid floating-point mismatch (sin(2π) ≈ -2.45e-16, not exactly 0).
+    function _make_periodic_data_inclusive(grids)
+        N = length(grids)
+        sizes = ntuple(d -> length(grids[d]), Val(N))
+        f = zeros(sizes)
+        for I in CartesianIndices(f)
+            val = 0.0
+            for d in 1:N
+                x_d = grids[d][I[d]]
+                x_min = first(grids[d])
+                period = last(grids[d]) - first(grids[d])
+                val += sin(2π * (x_d - x_min) / period) + 0.5 * cos(4π * (x_d - x_min) / period)
+            end
+            f[I] = val
+        end
+        # Enforce strict periodicity: f[end,...] = f[1,...] for each axis
+        for d in 1:N
+            selectdim(f, d, sizes[d]) .= selectdim(f, d, 1)
+        end
+        return f
+    end
+
+
     # ========================================
     # Inclusive PeriodicBC — N=2
     # ========================================
@@ -847,7 +939,38 @@ end
 # Verifies adjoint of derivative evaluation: adj(ȳ; deriv=DerivOp(k))
 # Core identity: ⟨W_d·f, ȳ⟩ = ⟨f, W_dᵀ·ȳ⟩
 
-@testset "CubicAdjointND — Derivative Adjoint" begin
+@testitem "CubicAdjointND — Derivative Adjoint" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+
+    # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
+    function dot_product_test_nd(
+            grids, xqs, f, y_bar;
+            bc = CubicFit(),
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = cubic_interp(grids, f; bc = bc, extrap = extrap)
+        adj = cubic_adjoint(grids, xqs; bc = bc, extrap = extrap)
+
+        n_queries = length(xqs[1])
+
+        f_zero = zeros(eltype(f), size(f))
+        itp_zero = cubic_interp(grids, f_zero; bc = bc, extrap = extrap)
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        Wf_zero = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+        itp_zero(Wf_zero, xqs; deriv = deriv)
+        Wf .-= Wf_zero
+
+        WTy = adj(y_bar; deriv = deriv)
+
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
+
+
     nx, ny = 12, 10
     n_query = 25
     x = range(0.0, 1.0, nx)
@@ -1078,7 +1201,38 @@ end
 # Derivative Adjoint — N=3
 # ========================================
 
-@testset "CubicAdjointND — Derivative Adjoint (N=3)" begin
+@testitem "CubicAdjointND — Derivative Adjoint (N=3)" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+
+    # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
+    function dot_product_test_nd(
+            grids, xqs, f, y_bar;
+            bc = CubicFit(),
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = cubic_interp(grids, f; bc = bc, extrap = extrap)
+        adj = cubic_adjoint(grids, xqs; bc = bc, extrap = extrap)
+
+        n_queries = length(xqs[1])
+
+        f_zero = zeros(eltype(f), size(f))
+        itp_zero = cubic_interp(grids, f_zero; bc = bc, extrap = extrap)
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        Wf_zero = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+        itp_zero(Wf_zero, xqs; deriv = deriv)
+        Wf .-= Wf_zero
+
+        WTy = adj(y_bar; deriv = deriv)
+
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
+
+
     nx, ny, nz = 8, 7, 6
     n_query = 15
     x = range(0.0, 1.0, nx)
@@ -1116,7 +1270,59 @@ end
 # Derivative Adjoint — Periodic BCs
 # ========================================
 
-@testset "CubicAdjointND — Derivative Adjoint + Periodic" begin
+@testitem "CubicAdjointND — Derivative Adjoint + Periodic" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+
+    # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
+    function dot_product_test_nd(
+            grids, xqs, f, y_bar;
+            bc = CubicFit(),
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = cubic_interp(grids, f; bc = bc, extrap = extrap)
+        adj = cubic_adjoint(grids, xqs; bc = bc, extrap = extrap)
+
+        n_queries = length(xqs[1])
+
+        f_zero = zeros(eltype(f), size(f))
+        itp_zero = cubic_interp(grids, f_zero; bc = bc, extrap = extrap)
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        Wf_zero = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+        itp_zero(Wf_zero, xqs; deriv = deriv)
+        Wf .-= Wf_zero
+
+        WTy = adj(y_bar; deriv = deriv)
+
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
+
+    # Helper: generate periodic-compatible data for inclusive grids.
+    function _make_periodic_data_inclusive(grids)
+        N = length(grids)
+        sizes = ntuple(d -> length(grids[d]), Val(N))
+        f = zeros(sizes)
+        for I in CartesianIndices(f)
+            val = 0.0
+            for d in 1:N
+                x_d = grids[d][I[d]]
+                x_min = first(grids[d])
+                period = last(grids[d]) - first(grids[d])
+                val += sin(2π * (x_d - x_min) / period) + 0.5 * cos(4π * (x_d - x_min) / period)
+            end
+            f[I] = val
+        end
+        for d in 1:N
+            selectdim(f, d, sizes[d]) .= selectdim(f, d, 1)
+        end
+        return f
+    end
+
+
     nx, ny = 12, 10
     n_query = 20
     x = range(0.0, 2π, nx)
@@ -1204,7 +1410,8 @@ end
 # ========================================
 # Scalar / Tuple y_bar + AoS / single-tuple constructor
 # ========================================
-@testset "CubicAdjointND scalar/tuple y_bar" begin
+@testitem "CubicAdjointND scalar/tuple y_bar" setup = [AllocConstants] begin
+
     nx, ny = 10, 8
     x = range(0.0, 1.0, nx)
     y = range(0.0, 2.0, ny)
@@ -1256,7 +1463,38 @@ end
     end
 end
 
-@testset "CubicAdjointND AoS / single-tuple constructor" begin
+@testitem "CubicAdjointND AoS / single-tuple constructor" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+
+    # Helper: ND Dot-product test (gold standard ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩, BC offset subtracted)
+    function dot_product_test_nd(
+            grids, xqs, f, y_bar;
+            bc = CubicFit(),
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = cubic_interp(grids, f; bc = bc, extrap = extrap)
+        adj = cubic_adjoint(grids, xqs; bc = bc, extrap = extrap)
+
+        n_queries = length(xqs[1])
+
+        f_zero = zeros(eltype(f), size(f))
+        itp_zero = cubic_interp(grids, f_zero; bc = bc, extrap = extrap)
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        Wf_zero = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+        itp_zero(Wf_zero, xqs; deriv = deriv)
+        Wf .-= Wf_zero
+
+        WTy = adj(y_bar; deriv = deriv)
+
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
+
+
     nx, ny = 10, 8
     x = range(0.0, 1.0, nx)
     y = range(0.0, 2.0, ny)
@@ -1299,7 +1537,8 @@ end
     end
 end
 
-@testset "CubicAdjointND — Periodic BC scalar/tuple y_bar" begin
+@testitem "CubicAdjointND — Periodic BC scalar/tuple y_bar" setup = [AllocConstants] begin
+
     for (bc, x1, x2) in [
             (PeriodicBC(), collect(range(0.0, 2π, 11)), collect(range(0.0, 2π, 9))),
             (
@@ -1336,7 +1575,10 @@ end
 # ========================================
 # SVector query support (N=2 and N=3)
 # ========================================
-@testset "CubicAdjointND — SVector queries" begin
+@testitem "CubicAdjointND — SVector queries" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+    using StaticArrays: SVector
+
     # ── N=2 setup ──
     nx, ny = 12, 10
     x = range(0.0, 1.0, nx)
@@ -1456,7 +1698,9 @@ end
 # P1/P2 fix regression tests
 # ========================================
 
-@testset "CubicAdjointND — NoExtrap OOB DomainError" begin
+@testitem "CubicAdjointND — NoExtrap OOB DomainError" setup = [AllocConstants] begin
+    using StaticArrays: SVector
+
     gx = collect(range(0.0, 2.0, 5))
     gy = collect(range(0.0, 1.0, 5))
 
@@ -1476,7 +1720,8 @@ end
     end
 end
 
-@testset "CubicAdjointND — duck-typed y_bar" begin
+@testitem "CubicAdjointND — duck-typed y_bar" setup = [AllocConstants] begin
+
     gx = collect(range(0.0, 2.0, 5))
     gy = collect(range(0.0, 1.0, 5))
     f = randn(5, 5)

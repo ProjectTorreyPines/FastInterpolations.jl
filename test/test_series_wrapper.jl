@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "Series Wrapper" begin
+@testitem "Series Wrapper" begin
     # Test data
     x = collect(range(0.0, 1.0, 11))
     y1 = sin.(2π .* x)

@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "integrate extrap semantics" begin
+@testitem "integrate extrap semantics" begin
     x = collect(range(0.0, 1.0, length = 31))
 
     @testset ":none throws outside domain" begin

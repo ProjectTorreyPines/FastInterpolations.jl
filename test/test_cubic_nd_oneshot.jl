@@ -1,15 +1,5 @@
-using Test
-using FastInterpolations
-using FastInterpolations: get_task_local_pool
-
-# Allocation threshold (bytes) — tolerates minor LTS/GC overhead.
-# On latest Julia, scalar oneshot is truly zero-alloc; LTS may show ≤64 bytes.
-# Guarded for standalone execution (runtests.jl defines this globally).
-if !@isdefined(ND_ALLOC_THRESHOLD)
-    const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
-end
-
-@testset "Cubic ND One-Shot (Pool-Based)" begin
+@testitem "Cubic ND One-Shot (Pool-Based)" setup = [AllocConstants] begin
+    using FastInterpolations: get_task_local_pool
 
     # ========================================
     # Correctness: One-shot vs Interpolant

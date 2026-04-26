@@ -1,17 +1,15 @@
-using Test
-using FastInterpolations
-import DataInterpolations as DI
-import Dierckx
-import Interpolations as Itp
-using Random
+@testitem "Package Comparison Tests" begin
+    import DataInterpolations as DI
+    import Dierckx
+    import Interpolations as Itp
+    using Random
 
-# 1e-14 instead of 1e-15: accounts for FMA (fused multiply-add) differences
-# between Julia versions (e.g., 1.10 LTS vs latest) that cause last-bit variations.
-# Note: FMA is numerically more accurate (single rounding vs two), but produces
-# slightly different results than separate multiply-then-add operations.
-const APPROX_REL_TOLERANCCE = 1.0e-14
+    # 1e-14 instead of 1e-15: accounts for FMA (fused multiply-add) differences
+    # between Julia versions (e.g., 1.10 LTS vs latest) that cause last-bit variations.
+    # Note: FMA is numerically more accurate (single rounding vs two), but produces
+    # slightly different results than separate multiply-then-add operations.
+    const APPROX_REL_TOLERANCE = 1.0e-14
 
-@testset "Package Comparison Tests" begin
 
     # Test functions
     target_f(x) = sin(2π * x) + 0.5 * cos(4π * x)
@@ -66,7 +64,7 @@ const APPROX_REL_TOLERANCCE = 1.0e-14
                     itp = Itp.linear_interpolation(x, y)
                     result_interp = itp(xq_interior)
 
-                    @test isapprox(result_fast, result_interp; rtol = APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_interp; rtol = APPROX_REL_TOLERANCE)
                 end
             end
         end
@@ -83,7 +81,7 @@ const APPROX_REL_TOLERANCCE = 1.0e-14
                     itp = Itp.linear_interpolation(x, y)
                     result_interp = itp(xq_interior)
 
-                    @test isapprox(result_fast, result_interp; rtol = APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_interp; rtol = APPROX_REL_TOLERANCE)
                 end
             end
         end
@@ -100,7 +98,7 @@ const APPROX_REL_TOLERANCCE = 1.0e-14
                     itp = DI.LinearInterpolation(y, x)
                     result_data = itp(xq_interior)
 
-                    @test isapprox(result_fast, result_data; rtol = APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_data; rtol = APPROX_REL_TOLERANCE)
 
                 end
             end
@@ -119,7 +117,7 @@ const APPROX_REL_TOLERANCCE = 1.0e-14
                     itp = DI.LinearInterpolation(y, x; extrapolation = DI.ExtrapolationType.Extension)
                     result_data = itp(xq_with_extrap)
 
-                    @test isapprox(result_fast, result_data; rtol = APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_data; rtol = APPROX_REL_TOLERANCE)
                 end
             end
         end
@@ -146,7 +144,7 @@ const APPROX_REL_TOLERANCCE = 1.0e-14
                     result_interp = scaled_itp(xq_interior)
                     # Cubic splines may have slight differences due to boundary conditions
                     # Use looser tolerance
-                    @test isapprox(result_fast, result_interp; rtol = APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_interp; rtol = APPROX_REL_TOLERANCE)
                 end
             end
         end
@@ -164,7 +162,7 @@ const APPROX_REL_TOLERANCCE = 1.0e-14
                     result_data = itp(xq_interior)
 
                     # ZeroCurv cubic spline should match closely
-                    @test isapprox(result_fast, result_data; rtol = APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_data; rtol = APPROX_REL_TOLERANCE)
                 end
             end
         end
@@ -181,7 +179,7 @@ const APPROX_REL_TOLERANCCE = 1.0e-14
                     itp = DI.CubicSpline(y, x; extrapolation = DI.ExtrapolationType.Extension)
                     result_data = itp(xq_with_extrap)
 
-                    @test isapprox(result_fast, result_data; rtol = APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_data; rtol = APPROX_REL_TOLERANCE)
                 end
             end
         end
@@ -246,7 +244,7 @@ const APPROX_REL_TOLERANCCE = 1.0e-14
                     result_dierckx = [itp(xi) for xi in xq_interior]
 
                     # Both reproduce cubic polynomials exactly → machine precision match
-                    @test isapprox(result_fast, result_dierckx; rtol = APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_dierckx; rtol = APPROX_REL_TOLERANCE)
                 end
             end
         end

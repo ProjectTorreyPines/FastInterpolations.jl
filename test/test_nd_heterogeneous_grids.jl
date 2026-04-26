@@ -11,14 +11,11 @@
 # These tests cover the specific combination that was previously untested and
 # caused MethodErrors in _compute_all_local_params and N=2 specialization dispatch.
 
-using Test
-using FastInterpolations
-
 # ========================================
 # 2D CUBIC: HETEROGENEOUS GRID + MIXED DERIVATIVES (ANALYTIC)
 # ========================================
 
-@testset "Heterogeneous Grid + Mixed Derivative Regression" begin
+@testitem "Heterogeneous Grid + Mixed Derivative Regression" begin
 
     @testset "2D Cubic: Range × Vector with CubicFit — polynomial analytic" begin
         # f(x,y) = x³ + x²y + xy² + y³

@@ -5,12 +5,9 @@
 # down the boundary semantics (xq at x[n], xq just inside last cell, xq beyond
 # x[n]) so off-by-one regressions surface immediately.
 
-using Test
-using FastInterpolations
-using FastInterpolations: search_interval, Searcher, BinarySearch, NoHint,
-    NoBC, PeriodicBC, _create_spacing
-
-@testset "search_interval — 4-tuple BC dispatch" begin
+@testitem "search_interval — 4-tuple BC dispatch" begin
+    using FastInterpolations: search_interval, Searcher, BinarySearch, NoHint,
+        NoBC, PeriodicBC, _create_spacing
 
     @testset "NoBC: idx_R = idx_L + 1, no seam" begin
         # Both Range and Vector grids

@@ -4,25 +4,18 @@ RCU (Read-Copy-Update) Unit Tests
 Tests for the thread-safe autocache implementation:
 - BankSnapshot and CacheBank (lock-free cache entry storage)
 - GlobalRegistry (lock-free bank type lookup)
-
-Run with:
-    julia --project -e 'using Pkg; Pkg.test(test_args=["test_rcu.jl"])'
-    julia -t 4 --project -e 'using Pkg; Pkg.test(test_args=["test_rcu.jl"])'
 """
-
-using FastInterpolations
-using Test
-
-# Common type aliases for tests
-const FI = FastInterpolations
-const EntryType = FI.CacheEntry{Float64, FI.Deriv2{Float64}, FI.Deriv2{Float64}, Vector{Float64}, FI.VectorSpacing{Float64, Float64}}
-const BankType = FI.CacheBank{EntryType}
 
 # ###################################################################
 #                         BANK TESTS
 # ###################################################################
 
-@testset "RCU Bank" begin
+@testitem "RCU Bank" begin
+    # Common type aliases for tests
+    FI = FastInterpolations
+    EntryType = FI.CacheEntry{Float64, FI.Deriv2{Float64}, FI.Deriv2{Float64}, Vector{Float64}, FI.VectorSpacing{Float64, Float64}}
+    BankType = FI.CacheBank{EntryType}
+
 
     # ===============================================================
     # BankSnapshot Structure
@@ -288,7 +281,12 @@ end  # RCU Bank
 #                       REGISTRY TESTS
 # ###################################################################
 
-@testset "RCU Registry" begin
+@testitem "RCU Registry" begin
+    # Common type aliases for tests
+    FI = FastInterpolations
+    EntryType = FI.CacheEntry{Float64, FI.Deriv2{Float64}, FI.Deriv2{Float64}, Vector{Float64}, FI.VectorSpacing{Float64, Float64}}
+    BankType = FI.CacheBank{EntryType}
+
 
     # ===============================================================
     # GlobalRegistry Structure

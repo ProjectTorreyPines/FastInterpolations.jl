@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "ND Oneshot Hint: State Updates & Zero-Alloc" begin
+@testitem "ND Oneshot Hint: State Updates & Zero-Alloc" begin
 
     # ========================================
     # Hint State Update — Scalar Queries

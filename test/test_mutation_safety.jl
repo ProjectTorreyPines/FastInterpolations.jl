@@ -11,53 +11,50 @@
 # when the caller mutates the original x, y, or data arrays.
 # Same principle applies to adjoint operators.
 
-using Test
-using FastInterpolations
+@testitem "Mutation Safety (issue #80)" begin
+    # ============================================================
+    # Helper: build common test data
+    # ============================================================
 
-# ============================================================
-# Helper: build common test data
-# ============================================================
+    function _make_1d_test_data(; n = 50)
+        x = collect(range(0.0, 10.0, n))
+        y = sin.(x)
+        return x, y
+    end
 
-function _make_1d_test_data(; n = 50)
-    x = collect(range(0.0, 10.0, n))
-    y = sin.(x)
-    return x, y
-end
+    function _make_2d_test_data(; nx = 10, ny = 12)
+        x = collect(range(0.0, 2π, nx))
+        y = collect(range(0.0, π, ny))
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        return (x, y), data
+    end
 
-function _make_2d_test_data(; nx = 10, ny = 12)
-    x = collect(range(0.0, 2π, nx))
-    y = collect(range(0.0, π, ny))
-    data = [sin(xi) * cos(yj) for xi in x, yj in y]
-    return (x, y), data
-end
+    function _make_3d_test_data(; nx = 8, ny = 9, nz = 7)
+        x = collect(range(0.0, 2π, nx))
+        y = collect(range(0.0, π, ny))
+        z = collect(range(0.0, 1.0, nz))
+        data = [sin(xi) * cos(yj) * (1.0 + zk) for xi in x, yj in y, zk in z]
+        return (x, y, z), data
+    end
 
-function _make_3d_test_data(; nx = 8, ny = 9, nz = 7)
-    x = collect(range(0.0, 2π, nx))
-    y = collect(range(0.0, π, ny))
-    z = collect(range(0.0, 1.0, nz))
-    data = [sin(xi) * cos(yj) * (1.0 + zk) for xi in x, yj in y, zk in z]
-    return (x, y, z), data
-end
+    # Query point inside domain (avoid boundaries for cleaner tests)
+    const Q1D = 2.4
+    const Q2D = (1.5, 0.8)
+    const Q3D = (1.5, 0.8, 0.4)
 
-# Query point inside domain (avoid boundaries for cleaner tests)
-const Q1D = 2.4
-const Q2D = (1.5, 0.8)
-const Q3D = (1.5, 0.8, 0.4)
+    # Struct definitions for §13 (must be at top level, not inside @testset)
+    mutable struct _MutTestFooLinear{T, I}
+        xs::T
+        ys::T
+        interp::I
+    end
 
-# Struct definitions for §13 (must be at top level, not inside @testset)
-mutable struct _MutTestFooLinear{T, I}
-    xs::T
-    ys::T
-    interp::I
-end
+    mutable struct _MutTestFooConstant{T, I}
+        xs::T
+        ys::T
+        interp::I
+    end
 
-mutable struct _MutTestFooConstant{T, I}
-    xs::T
-    ys::T
-    interp::I
-end
-
-@testset "Mutation Safety (issue #80)" begin
 
     # ============================================================
     # §1  1D Interpolant — y-data mutation

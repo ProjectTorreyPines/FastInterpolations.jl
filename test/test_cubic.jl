@@ -1,6 +1,6 @@
-# ALLOC_THRESHOLD is defined in runtests.jl
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
-@testset "Cubic Spline - Core Functionality" begin
+@testitem "Cubic Spline - Core Functionality" setup = [AllocConstants] begin
 
     @testset "Basic correctness" begin
         for n in [10, 50, 101]
@@ -306,7 +306,7 @@
     end
 end
 
-@testset "Cubic Spline - Type Auto-Promotion" begin
+@testitem "Cubic Spline - Type Auto-Promotion" begin
 
     @testset "Integer input → Float output (allocating)" begin
         x_int = 0:10
@@ -485,7 +485,7 @@ end
     end
 end
 
-@testset "Cubic Spline - Uncovered Paths" begin
+@testitem "Cubic Spline - Uncovered Paths" begin
 
     @testset "cubic_interp! with cache and scalar query" begin
         # Lines 154-164: cubic_interp!(output, cache, y, x_query::T)

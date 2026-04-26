@@ -1,4 +1,4 @@
-@testset "Show Methods" begin
+@testitem "Show Methods" begin
     # Test data
     x = range(0.0, 1.0, 101)
     y = sin.(2π .* collect(x))

@@ -13,10 +13,7 @@
 # - show.jl: ND display methods
 # - derivative_view.jl: ND-specific deriv_view
 
-using Test
-using FastInterpolations
-
-@testset "ND Comprehensive Tests" begin
+@testitem "ND Comprehensive Tests" begin
 
     # ========================================
     # VECTOR CALCULUS (gradient, hessian, laplacian)

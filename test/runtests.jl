@@ -1,173 +1,41 @@
+# Main test entry point — TestItemRunner auto-discovers all @testitem
+# files under test/. The 36 test/ext/ files use legacy @testset and run
+# in a separate Julia process to isolate AD/ChainRulesCore loading order.
+
 using Test
-using FastInterpolations
-using Random
+using TestItemRunner
 
-# AdaptiveArrayPools RUNTIME_CHECK (debug mode flag)
-const AAP_RUNTIME_CHECK = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
-
-# Julia 1.12+ achieves true zero-allocation via improved escape analysis.
-# Older versions have small runtime overhead from mutable struct field access.
-# Note: 4-way Val dispatch (extrap modes) increases overhead on older Julia (~160 bytes).
-# +16: --code-coverage instrumentation adds one pointer-sized allocation per @allocated call.
-const _COV_OVERHEAD = 16
-const ALLOC_THRESHOLD = (VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240) + _COV_OVERHEAD
-
-# ND oneshot dispatch has higher fixed overhead from tuple construction/resolution.
-# This is O(1) overhead, not O(n), so a separate higher threshold is appropriate.
-const ND_ALLOC_THRESHOLD = (VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240) + _COV_OVERHEAD
-
-@info "Running tests with ALLOC_THRESHOLD = $ALLOC_THRESHOLD bytes (AAP_RUNTIME_CHECK = $AAP_RUNTIME_CHECK)"
-
-# Check if specific test files are requested via ARGS
-if !isempty(ARGS)
-    for testfile in ARGS
-        @info "Running test file: $testfile"
-        include(testfile)
-    end
+# ── Extension tests via ARGS shortcut ────────────────────────────────
+# `Pkg.test(test_args=["ext/runtests.jl"])` and
+# `cc-julia-test-runner . ext/runtests.jl` route straight to the legacy
+# @testset extension runner without invoking the @testitem dispatcher
+# (no testitem matches that path, so the filter would otherwise leave
+# the run silently empty).
+if "ext/runtests.jl" in ARGS
+    include("ext/runtests.jl")
 else
-    # Default behavior: run all tests
-    include("test_aqua.jl")
-    include("test_abstract_types.jl")
-    include("test_grid_spacing.jl")
-    include("test_search.jl")
-    include("test_idx_stencil.jl")
-    include("test_anchor_common.jl")
-    include("test_search_anchor_integration.jl")
-    include("test_search_context_normalization.jl")
-    include("test_factory.jl")
-    include("test_constant.jl")
-    include("test_constextrap_fill.jl")
-    include("test_complex_constant.jl")
-    include("test_inbounds_extrap.jl")
-    include("test_linear.jl")
-    include("test_complex_linear.jl")
-    include("test_quadratic.jl")
-    include("test_complex_quadratic.jl")
-    include("test_cubic.jl")
-    include("test_complex_cubic.jl")
-    include("test_cubic_autocache.jl")
-    include("test_cubic_interpolant.jl")
-    include("test_cubic_anchor.jl")
-    include("test_cubic_adjoint.jl")
-    include("test_linear_adjoint.jl")   # Linear 1D adjoint (W^T * y_bar)
-    include("test_constant_adjoint.jl")  # Constant 1D adjoint (W^T * y_bar)
-    include("test_quadratic_adjoint.jl") # Quadratic 1D adjoint (W^T * y_bar)
-    include("test_hermite_adjoint.jl")   # Hermite family 1D adjoint (W^T * y_bar)
-    include("test_linear_anchor.jl")
-    include("test_constant_anchor.jl")
-    include("test_quadratic_anchor.jl")
-    include("test_cubic_series_interp.jl")
-    include("test_linear_series_interp.jl")
-    include("test_constant_series_interp.jl")
-    include("test_quadratic_series_interp.jl")
-    include("test_complex_linear_series.jl")
-    include("test_complex_constant_series.jl")
-    include("test_complex_quadratic_series.jl")
-    include("test_complex_cubic_series.jl")
-    include("test_series_range_grid.jl")
-    include("test_series_wrapper.jl")
-    include("test_series_matrix.jl")
-    include("test_series_utils.jl")
-    include("test_linear_oneshot_series.jl")
-    include("test_constant_oneshot_series.jl")
-    include("test_quadratic_oneshot_series.jl")
-    include("test_cubic_oneshot_series.jl")
-    include("test_allocation.jl")
-    include("test_promotion_alloc.jl")
-    include("test_random_grid.jl")
-    include("test_periodic_bc.jl")
-    include("test_periodic_exclusive.jl")
-    include("test_periodic_resolvers.jl")
-    include("test_periodic_search_4value.jl")
-    include("test_linear_periodic.jl")
-    include("test_constant_periodic.jl")
-    include("test_thomas_lu_solver.jl")
-    include("test_generic_bc.jl")
-    include("test_polyfit_bc.jl")
-    include("test_bc_structure.jl")
-    include("test_bc_complex_int.jl")
-    include("test_type_stability.jl")
-    include("test_mixed_precision_extrap.jl")
-    include("test_derivatives.jl")
-    include("test_packages_comparison.jl")
-    include("test_thread_safety.jl")
-    include("test_rcu.jl")
-    include("test_nonuniform_grid.jl")
-    include("test_show.jl")
-    include("test_mutation_safety.jl")
-    include("test_precision_vector_queries.jl")
-    include("test_hermite_1d.jl")           # Hermite 1D (user-supplied slopes)
-    include("test_pchip_1d.jl")            # PCHIP 1D (monotone-preserving slopes)
-    include("test_cardinal_1d.jl")         # Cardinal 1D (CatmullRom default)
-    include("test_akima_1d.jl")            # Akima 1D (outlier-robust slopes)
-    include("test_local_slope_comparison.jl") # Cross-validation vs DataInterpolations.jl
-    include("test_hermite_onthefly.jl")    # OnTheFly coefficient strategy for Hermite family
-    include("test_local_hermite_nd_forward.jl") # ND forwarders pchip/cardinal/akima → unified `interp`
+    # ── Auto-discovered @testitem files ──────────────────────────────
+    # Allocation thresholds and AAP_RUNTIME_CHECK live in @testsnippet
+    # AllocConstants (test/setup.jl); each @testitem opts in via setup=[AllocConstants].
+    # Extension tests in test/ext/ are self-contained (see test/ext/runtests.jl).
+    # ARGS-based filter: pass testitem name OR filename substring.
+    # Examples:
+    #   cc-julia-test-runner . cubic                # all testitems matching "cubic" in name or filename
+    #   cc-julia-test-runner . test_grid_spacing    # by filename
+    #   cc-julia-test-runner . "Cubic Adjoint"      # by testitem name
+    @run_package_tests verbose = true filter = ti -> begin
+        isempty(ARGS) && return true
+        return any(arg -> occursin(arg, ti.name) || occursin(arg, ti.filename), ARGS)
+    end
 
-    # ND Interpolation
-    include("test_nd_utils_shared.jl")  # Shared ND utilities (phase 1)
-    include("test_nd_constant.jl")      # Constant ND interpolation (phase 2)
-    include("test_nd_linear.jl")        # Linear ND interpolation (phase 3)
-    include("test_nd_quadratic.jl")     # Quadratic ND interpolation
-    include("test_cubic_nd.jl")
-    include("test_cubic_nd_adjoint.jl")  # Cubic ND adjoint (W^T * y_bar)
-    include("test_linear_nd_adjoint.jl") # Linear ND adjoint (W^T * y_bar)
-    include("test_constant_nd_adjoint.jl") # Constant ND adjoint (W^T * y_bar)
-    include("test_quadratic_nd_adjoint.jl") # Quadratic ND adjoint (W^T * y_bar)
-    include("test_cubic_nd_oneshot.jl")  # Cubic ND one-shot (pool-based, zero-alloc)
-    include("test_nd_noextrap_oob.jl")  # ND NoExtrap domain validation (all paths)
-    include("test_nd_comprehensive.jl")
-    include("test_nd_coverage.jl")
-    include("test_nd_heterogeneous_grids.jl")
-    include("test_nd_hint.jl")
-    include("test_nd_oneshot_hint.jl")
-    include("test_nd_autosearch_peraxis.jl")
-    include("test_nd_batch_inplace.jl")
-    include("test_nd_batch_hint_persistence.jl")  # Unified Searcher path: zero-alloc + hint persistence
-    include("test_gradient_hessian.jl")
-    include("test_hetero_nd.jl")  # Hetero ND (per-axis methods, on-the-fly)
-    include("test_hetero_precomputed.jl")  # Hetero ND (precomputed partials)
-    include("test_hetero_oneshot.jl")  # Hetero ND (one-shot, zero-alloc)
-    include("test_nd_oneshot_onthefly.jl")  # ND OnTheFly one-shot + AutoCoeffs
-    include("test_nd_mixed_partial_bc_consistency.jl")  # PreCompute↔OnTheFly equivalence + Clairaut symmetry
-    include("test_hetero_adjoint.jl")  # Hetero ND (adjoint operator)
-
-    # Duck typing (custom value types)
-    include("test_duck_typing_comprehensive.jl")
-
-    # Coefficients API
-    include("test_coeffs.jl")
-
-    # Nodal partials API
-    include("test_nodal_partials.jl")
-
-    # Hermite family ND — graceful not-implemented errors for the release
-    # contract (nodal_partials, integrate, hetero_adjoint / AD)
-    include("test_hermite_nd_graceful_errors.jl")
-
-    # Integration API
-    include("test_integral_api.jl")
-    include("test_integral_cubic_1d.jl")
-    include("test_integral_1d.jl")
-    include("test_integral_nd_cubic.jl")
-    include("test_integral_nd.jl")
-    include("test_integral_nd_exactness.jl")
-    include("test_integral_extrap.jl")
-    include("test_integral_allocation.jl")
-    include("test_integral_series.jl")
-    include("test_integral_fulldomain.jl")
-    include("test_cumulative_integrate.jl")
-
-    include("test_nointerp.jl")
-
-    # ── Extension tests (AD / Symbolics) ──────────────────────────────
-    # In CI, extensions run in a SEPARATE job (clean Julia process) to prevent
-    # ChainRulesCore contamination from Interpolations.jl (test_packages_comparison).
-    # See test/ext/runtests.jl for the extension entrypoint.
-    # Locally, run via: cc-julia-test-runner . ext/runtests.jl
-    if get(ENV, "CI", nothing) !== nothing && get(ENV, "SKIP_EXTENSIONS", nothing) === nothing
-        include("ext/runtests.jl")
-    elseif get(ENV, "CI", nothing) === nothing
-        @info "Skipping extension tests (run via: cc-julia-test-runner . ext/runtests.jl)"
+    # ── Extension tests on default (no-ARGS) full runs ───────────────
+    # Still legacy @testset. Run in separate process to avoid
+    # ChainRulesCore contamination from Interpolations.jl.
+    if isempty(ARGS)
+        if get(ENV, "CI", nothing) !== nothing && get(ENV, "SKIP_EXTENSIONS", nothing) === nothing
+            include("ext/runtests.jl")
+        elseif get(ENV, "CI", nothing) === nothing
+            @info "Skipping extension tests (run via: julia --project=test test/ext/runtests.jl)"
+        end
     end
 end

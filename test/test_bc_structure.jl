@@ -6,11 +6,9 @@
 #
 # Note: bc_structure is @inline, so we must explicitly call it to get coverage.
 
-using Test
-using FastInterpolations
-using FastInterpolations: bc_structure
+@testitem "bc_structure Trait" begin
+    using FastInterpolations: bc_structure
 
-@testset "bc_structure Trait" begin
 
     # ========================================
     # Deriv1/Deriv2/Deriv3 - Basic PointBC Types

@@ -1,20 +1,4 @@
-using Test
-using FastInterpolations
-
-# LTS Julia 1.10 has small per-call overhead from Val-dispatch boxing on some
-# heterogeneous-method paths that disappears on stable ≥1.12. Use the same
-# threshold pattern as test_nd_oneshot_onthefly.jl so the file stays runnable
-# standalone (without depending on runtests.jl's globals). The `@isdefined`
-# guard prevents const redefinition warnings when both files are included
-# sequentially from runtests.jl into the same module.
-if !@isdefined(AAP_RUNTIME_CHECK_LOCAL)
-    const AAP_RUNTIME_CHECK_LOCAL = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
-end
-if !@isdefined(ND_ALLOC_THRESHOLD_LOCAL)
-    const ND_ALLOC_THRESHOLD_LOCAL = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK_LOCAL + 1) * 240
-end
-
-@testset "NoInterp + GridIdx" begin
+@testitem "NoInterp + GridIdx: Basics & One-shot & Interpolant" setup = [AllocConstants] begin
     # ========================================
     # Test Setup
     # ========================================
@@ -34,7 +18,10 @@ end
     @testset "GridIdx basics" begin
         g = GridIdx(5)
         @test g.idx == 5
-        @test sprint(show, g) == "GridIdx(5)"
+        # `occursin` (not `==`): show() may prefix the module qualifier
+        # depending on the active IOContext (VSCode test runner vs CLI vs
+        # Pkg.test all differ). The unqualified name is always present.
+        @test occursin("GridIdx(5)", sprint(show, g))
         @test_throws ArgumentError GridIdx(0)
         @test_throws ArgumentError GridIdx(-1)
         @test GridIdx <: Real
@@ -45,7 +32,7 @@ end
     # ========================================
     @testset "NoInterp basics" begin
         @test NoInterp() isa AbstractInterpMethod
-        @test sprint(show, NoInterp()) == "NoInterp()"
+        @test occursin("NoInterp()", sprint(show, NoInterp()))
     end
 
     # ========================================
@@ -331,7 +318,7 @@ end
             itp((1.7, GridIdx(5)))  # warmup
             return @allocated itp((1.7, GridIdx(5)))
         end
-        @test _test_alloc_precompute() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _test_alloc_precompute() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-allocation: PreCompute interpolant eval with deriv" begin
@@ -340,7 +327,7 @@ end
             itp((1.7, GridIdx(5)); deriv = (DerivOp(1), DerivOp(0)))  # warmup
             return @allocated itp((1.7, GridIdx(5)); deriv = (DerivOp(1), DerivOp(0)))
         end
-        @test _test_alloc_deriv() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _test_alloc_deriv() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-allocation: OnTheFly interpolant eval" begin
@@ -349,12 +336,24 @@ end
             itp((1.7, GridIdx(5)))  # warmup
             return @allocated itp((1.7, GridIdx(5)))
         end
-        @test _test_alloc_onthefly() <= ND_ALLOC_THRESHOLD_LOCAL
+        @test _test_alloc_onthefly() <= ND_ALLOC_THRESHOLD
     end
 
-    # ========================================
-    # 12. Vararg Callable
-    # ========================================
+end
+
+# ========================================
+# 12. Vararg Callable
+# ========================================
+@testitem "NoInterp + GridIdx: Vararg & Calculus & Batch & Regression" setup = [AllocConstants] begin
+    x = range(0.0, 2π, 30)
+    y = range(0.0, π, 25)
+    z = range(0.0, 1.0, 20)
+    f2(xi, yj) = sin(xi) * cos(yj)
+    f3(xi, yj, zk) = sin(xi) * cos(yj) * exp(-zk)
+    data_2d = [f2(xi, yj) for xi in x, yj in y]
+    data_3d = [f3(xi, yj, zk) for xi in x, yj in y, zk in z]
+    qx, qy, qz = 1.7, 0.8, 0.45
+
     @testset "Vararg callable: itp(0.5, GridIdx(k))" begin
         itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
         val_vararg = itp(qx, GridIdx(5))
@@ -721,9 +720,21 @@ end
         @test H[3, 1] ≈ ref_dxdz rtol = 1.0e-10  # symmetry
     end
 
-    # ========================================
-    # 28. ClampExtrap × NoInterp
-    # ========================================
+end
+
+# ========================================
+# 28. ClampExtrap × NoInterp
+# ========================================
+@testitem "NoInterp + GridIdx: ClampExtrap & Periodic & Hints & Cross-method" setup = [AllocConstants] begin
+    x = range(0.0, 2π, 30)
+    y = range(0.0, π, 25)
+    z = range(0.0, 1.0, 20)
+    f2(xi, yj) = sin(xi) * cos(yj)
+    f3(xi, yj, zk) = sin(xi) * cos(yj) * exp(-zk)
+    data_2d = [f2(xi, yj) for xi in x, yj in y]
+    data_3d = [f3(xi, yj, zk) for xi in x, yj in y, zk in z]
+    qx, qy, qz = 1.7, 0.8, 0.45
+
     @testset "ClampExtrap: interpolant with NoInterp" begin
         itp = interp(
             (x, y), data_2d;

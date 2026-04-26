@@ -2,12 +2,9 @@
 # Verifies that FastInterpolations produces numerically equivalent results
 # to the reference implementations.
 
-using Test
-using FastInterpolations
-import DataInterpolations as DI
-using Random
-
-@testset "Local Slope Methods — Package Comparison" begin
+@testitem "Local Slope Methods — Package Comparison" begin
+    import DataInterpolations as DI
+    using Random
 
     # ========================================
     # Test configurations

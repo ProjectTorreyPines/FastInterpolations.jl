@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "integrate nd cubic in-domain" begin
+@testitem "integrate nd cubic in-domain" begin
     x = collect(range(0.0, 2.0, length = 31))
     y = collect(range(-1.0, 1.0, length = 29))
     data = [sin(xi) * cos(yj) for xi in x, yj in y]

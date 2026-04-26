@@ -1,11 +1,8 @@
 # Test suite for Quadratic Anchored Query functionality
 #
-# ALLOC_THRESHOLD is defined in runtests.jl
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
-using Test
-using FastInterpolations
-
-@testset "Quadratic Anchored Query" begin
+@testitem "Quadratic Anchored Query" setup = [AllocConstants] begin
 
     # ========================================
     # Struct Fields Tests

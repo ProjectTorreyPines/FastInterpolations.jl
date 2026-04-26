@@ -1,6 +1,6 @@
-# ALLOC_THRESHOLD is defined in runtests.jl
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
-@testset "Cubic Hermite 1D" begin
+@testitem "Cubic Hermite 1D" setup = [AllocConstants] begin
 
     # ========================================
     # Test data: cubic polynomial p(x) = 2x³ - x² + 3x - 1

@@ -12,63 +12,7 @@
 # opaque DuckFloat5 wrapper, causing expected 1-3 ULP differences. We use ≈
 # (rtol=sqrt(eps)) which catches real algorithmic bugs while allowing FMA diffs.
 
-using Test
-using FastInterpolations
-
-# ================================================================
-# DuckFloat5 — strict 5-op type for comprehensive testing
-# ================================================================
-struct MyDuck
-    v::Float64
-end
-
-Base.:+(a::MyDuck, b::MyDuck) = MyDuck(a.v + b.v)
-Base.:-(a::MyDuck, b::MyDuck) = MyDuck(a.v - b.v)
-Base.:*(a::Real, b::MyDuck) = MyDuck(a * b.v)
-Base.:*(a::MyDuck, b::Real) = MyDuck(a.v * b)
-
-# Helper: extract raw value for assertions (since isapprox is NOT defined)
-_val(d::MyDuck) = d.v
-
-@testset "Duck Typing — Comprehensive" begin
-
-    # ================================================================
-    # SHARED TEST DATA
-    # ================================================================
-    # 1D grids
-    x_vec = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-    x_rng = range(0.0, 6.0, 7)
-    xq = 2.7  # interior query point
-    xq_vec = [1.5, 2.7, 4.3]
-
-    # Polynomial data for exact-result testing:
-    #   f(x) = 2x + 1  (linear — exact for linear and higher)
-    y_linear = MyDuck.(2 .* collect(x_vec) .+ 1)
-
-    #   f(x) = x² - x + 1  (quadratic — exact for quadratic and higher)
-    y_quad = MyDuck.(collect(x_vec) .^ 2 .- collect(x_vec) .+ 1)
-
-    #   f(x) = x³/6 - x/2 + 1  (cubic — exact for cubic)
-    y_cubic = MyDuck.(collect(x_vec) .^ 3 ./ 6 .- collect(x_vec) ./ 2 .+ 1)
-
-    # Generic non-polynomial data
-    y_generic = MyDuck.([1.0, 4.0, 2.0, 5.0, 3.0, 6.0, 2.5])
-
-    # --- Flat (Float64) reference copies for correctness checks ---
-    y_linear_flat = _val.(y_linear)
-    y_quad_flat = _val.(y_quad)
-    y_cubic_flat = _val.(y_cubic)
-    y_generic_flat = _val.(y_generic)
-
-    # 2D grids
-    xg = [0.0, 1.0, 2.0, 3.0]
-    yg = [0.0, 1.0, 2.0, 3.0]
-    xg_r = range(0.0, 3.0, 4)
-    yg_r = range(0.0, 3.0, 4)
-    data_2d = [MyDuck(xi + 2yj) for xi in xg, yj in yg]  # linear in x,y
-    data_2d_flat = _val.(data_2d)
-    q2d = (1.5, 1.5)
-
+@testitem "Duck Typing: 1D Construction & BCs & Derivatives & Integration" setup = [DuckTypeSetup] begin
     # ================================================================
     # SECTION 1: INTERPOLANT CONSTRUCTION — all methods × grid types
     # ================================================================
@@ -431,9 +375,12 @@ _val(d::MyDuck) = d.v
         end
     end
 
-    # ================================================================
-    # SECTION 5: ONE-SHOT API (with targets)
-    # ================================================================
+end
+
+# ================================================================
+# SECTION 5: ONE-SHOT API (with targets)
+# ================================================================
+@testitem "Duck Typing: 1D APIs & Series & Edge cases" setup = [DuckTypeSetup] begin
     @testset "9. One-shot API — scalar target" begin
         @testset "constant" begin
             r = constant_interp(x_vec, y_generic, xq)
@@ -900,9 +847,12 @@ _val(d::MyDuck) = d.v
         end
     end
 
-    # ================================================================
-    # SECTION 17: ND ONE-SHOT API — scalar, SoA batch, AoS batch
-    # ================================================================
+end
+
+# ================================================================
+# SECTION 17: ND ONE-SHOT API — scalar, SoA batch, AoS batch
+# ================================================================
+@testitem "Duck Typing: ND Construction & BCs" setup = [DuckTypeSetup] begin
     @testset "23. ND One-shot API" begin
         qx_nd = [0.5, 1.5, 2.5]
         qy_nd = [0.5, 1.5, 2.5]
@@ -1167,9 +1117,12 @@ _val(d::MyDuck) = d.v
         end
     end
 
-    # ================================================================
-    # SECTION 21: VECTOR CALCULUS — gradient, hessian, laplacian
-    # ================================================================
+end
+
+# ================================================================
+# SECTION 21: VECTOR CALCULUS — gradient, hessian, laplacian
+# ================================================================
+@testitem "Duck Typing: ND Advanced & Type Stability" setup = [DuckTypeSetup] begin
     @testset "27. Vector Calculus" begin
         @testset "gradient — cubic" begin
             itp = cubic_interp((xg, yg), data_2d)

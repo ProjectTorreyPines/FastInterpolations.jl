@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "coeffs / CellPoly" begin
+@testitem "coeffs / CellPoly" begin
 
     # ────────────────────────────────────────────
     # Test data

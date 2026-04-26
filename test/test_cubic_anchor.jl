@@ -1,6 +1,6 @@
-# ALLOC_THRESHOLD is defined in runtests.jl
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
-@testset "Cubic Anchored Query" begin
+@testitem "Cubic Anchored Query" setup = [AllocConstants] begin
     FI = FastInterpolations
 
     # ========================================

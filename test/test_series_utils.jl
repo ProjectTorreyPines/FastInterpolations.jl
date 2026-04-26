@@ -1,11 +1,8 @@
 # test/test_series_utils.jl
 # Phase A: Validation function tests for SeriesInterpolant infrastructure
 
-using Test
-using FastInterpolations
-const FI = FastInterpolations
-
-@testset "series_utils - Validation Functions" begin
+@testitem "series_utils - Validation Functions" begin
+    FI = FastInterpolations
 
     @testset "_validate_series_outputs" begin
         @testset "valid outputs pass" begin
@@ -40,7 +37,8 @@ end
 # ============================================================================
 # Phase 1: Extrapolation Helper Tests
 # ============================================================================
-@testset "series_utils - Extrapolation Helpers" begin
+@testitem "series_utils - Extrapolation Helpers" begin
+    FI = FastInterpolations
 
     @testset "_boundary_point_index" begin
         @testset "left side (FI.OOB_LEFT) returns 1" begin

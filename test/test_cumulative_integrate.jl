@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "cumulative_integrate" begin
+@testitem "cumulative_integrate" begin
     x = collect(range(0.0, 2.0, length = 21))
 
     @testset "1D scalar" begin

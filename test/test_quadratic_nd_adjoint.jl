@@ -1,45 +1,44 @@
-using Test
-using LinearAlgebra: dot
-using StaticArrays: SVector
-using FastInterpolations
+@testitem "QuadraticAdjointND (N=2)" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+    using StaticArrays: SVector
 
-# ========================================
-# Helper: ND Dot-product test for quadratic adjoint
-# ========================================
-# Gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
-# W is affine (non-zero BC values add a constant offset), so we
-# subtract the zero-data response to isolate the linear part.
+    # ========================================
+    # Helper: ND Dot-product test for quadratic adjoint
+    # ========================================
+    # Gold standard: ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩
+    # W is affine (non-zero BC values add a constant offset), so we
+    # subtract the zero-data response to isolate the linear part.
 
-function quadratic_nd_dot_product_test(
-        grids, xqs, f, y_bar;
-        bc = Left(QuadraticFit()),
-        extrap = NoExtrap(),
-        deriv = EvalValue(),
-        rtol = sqrt(eps(eltype(grids[1])))
-    )
-    itp = quadratic_interp(grids, f; bc = bc, extrap = extrap)
-    adj = quadratic_adjoint(grids, xqs; bc = bc, extrap = extrap)
+    function quadratic_nd_dot_product_test(
+            grids, xqs, f, y_bar;
+            bc = Left(QuadraticFit()),
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = quadratic_interp(grids, f; bc = bc, extrap = extrap)
+        adj = quadratic_adjoint(grids, xqs; bc = bc, extrap = extrap)
 
-    n_queries = length(xqs[1])
+        n_queries = length(xqs[1])
 
-    # Forward: W·f (subtract constant offset for affine BCs)
-    f_zero = zeros(eltype(f), size(f))
-    itp_zero = quadratic_interp(grids, f_zero; bc = bc, extrap = extrap)
-    Wf = Vector{eltype(f)}(undef, n_queries)
-    Wf_zero = Vector{eltype(f)}(undef, n_queries)
-    itp(Wf, xqs; deriv = deriv)
-    itp_zero(Wf_zero, xqs; deriv = deriv)
-    Wf .-= Wf_zero  # linear part only
+        # Forward: W·f (subtract constant offset for affine BCs)
+        f_zero = zeros(eltype(f), size(f))
+        itp_zero = quadratic_interp(grids, f_zero; bc = bc, extrap = extrap)
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        Wf_zero = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+        itp_zero(Wf_zero, xqs; deriv = deriv)
+        Wf .-= Wf_zero  # linear part only
 
-    # Adjoint: Wᵀ·ȳ
-    WTy = adj(y_bar; deriv = deriv)
+        # Adjoint: Wᵀ·ȳ
+        WTy = adj(y_bar; deriv = deriv)
 
-    lhs = dot(Wf, y_bar)
-    rhs = dot(vec(f), vec(WTy))
-    return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
-end
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
 
-@testset "QuadraticAdjointND (N=2)" begin
+
     # ========================================
     # Test data setup
     # ========================================
@@ -632,7 +631,39 @@ end
 # ========================================
 # N=3 Tests (generic ntuple path)
 # ========================================
-@testset "QuadraticAdjointND (N=3)" begin
+@testitem "QuadraticAdjointND (N=3)" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+    using StaticArrays: SVector
+
+    # Helper: ND Dot-product test for quadratic adjoint (subtracts BC offset).
+    function quadratic_nd_dot_product_test(
+            grids, xqs, f, y_bar;
+            bc = Left(QuadraticFit()),
+            extrap = NoExtrap(),
+            deriv = EvalValue(),
+            rtol = sqrt(eps(eltype(grids[1])))
+        )
+        itp = quadratic_interp(grids, f; bc = bc, extrap = extrap)
+        adj = quadratic_adjoint(grids, xqs; bc = bc, extrap = extrap)
+
+        n_queries = length(xqs[1])
+
+        f_zero = zeros(eltype(f), size(f))
+        itp_zero = quadratic_interp(grids, f_zero; bc = bc, extrap = extrap)
+        Wf = Vector{eltype(f)}(undef, n_queries)
+        Wf_zero = Vector{eltype(f)}(undef, n_queries)
+        itp(Wf, xqs; deriv = deriv)
+        itp_zero(Wf_zero, xqs; deriv = deriv)
+        Wf .-= Wf_zero
+
+        WTy = adj(y_bar; deriv = deriv)
+
+        lhs = dot(Wf, y_bar)
+        rhs = dot(vec(f), vec(WTy))
+        return lhs, rhs, isapprox(lhs, rhs; rtol = rtol)
+    end
+
+
     nx3, ny3, nz3 = 8, 6, 5
     nq3 = 20
 

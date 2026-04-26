@@ -1,12 +1,10 @@
 # Tests for constant (step/piecewise constant) interpolation
 
-# Import internal items for testing
-import FastInterpolations: _constant_kernel, EvalValue, EvalDeriv1, EvalDeriv2
-
 # ============================================================================
 # Group 1: Infrastructure Tests (Phase 1)
 # ============================================================================
-@testset "Constant Interpolation - Infrastructure" begin
+@testitem "Constant Interpolation - Infrastructure" begin
+    import FastInterpolations: _constant_kernel, EvalValue, EvalDeriv1, EvalDeriv2
 
     @testset "AbstractSide type hierarchy" begin
         @testset "AbstractSide is abstract" begin
@@ -37,7 +35,8 @@ end
 # ============================================================================
 # Group 2: Kernel Tests (Phase 2)
 # ============================================================================
-@testset "Constant Interpolation - Kernels" begin
+@testitem "Constant Interpolation - Kernels" begin
+    import FastInterpolations: _constant_kernel, EvalValue, EvalDeriv1, EvalDeriv2
 
     # Test setup: interval [0, 1] with y_left=10.0, y_right=20.0
     y_left = 10.0
@@ -105,7 +104,8 @@ end
 # ============================================================================
 # Group 3: API Tests (Phase 3)
 # ============================================================================
-@testset "Constant Interpolation - API" begin
+@testitem "Constant Interpolation - API" begin
+    import FastInterpolations: _constant_kernel, EvalValue, EvalDeriv1, EvalDeriv2
 
     x = [0.0, 1.0, 2.0, 3.0, 4.0]
     y = [10.0, 20.0, 30.0, 40.0, 50.0]
@@ -292,7 +292,8 @@ end
 # ============================================================================
 # Group 4: Allocation Tests (Phase 3)
 # ============================================================================
-@testset "Constant Interpolation - Allocations" begin
+@testitem "Constant Interpolation - Allocations" setup = [AllocConstants] begin
+    import FastInterpolations: _constant_kernel, EvalValue, EvalDeriv1, EvalDeriv2
 
     x = collect(0.0:0.1:1.0)
     y = sin.(x)
@@ -403,7 +404,8 @@ end
 # ============================================================================
 # Group 5: Integration & Edge Cases (Phase 4)
 # ============================================================================
-@testset "Constant Interpolation - Integration" begin
+@testitem "Constant Interpolation - Integration" begin
+    import FastInterpolations: _constant_kernel, EvalValue, EvalDeriv1, EvalDeriv2
 
     x = [0.0, 1.0, 2.0, 3.0, 4.0]
     y = [10.0, 20.0, 30.0, 40.0, 50.0]

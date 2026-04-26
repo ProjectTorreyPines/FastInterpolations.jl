@@ -1,6 +1,6 @@
-# ALLOC_THRESHOLD is defined in runtests.jl
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
-@testset "CubicInterpolant" begin
+@testitem "CubicInterpolant" setup = [AllocConstants] begin
     # Setup
     x = collect(range(0.0, 1.0, 11))
     y = sin.(2π .* x)
@@ -210,7 +210,7 @@
     end
 end
 
-@testset "Cubic Interpolation - Range/Vector Input Handling" begin
+@testitem "Cubic Interpolation - Range/Vector Input Handling" begin
     # CubicSplineCache now preserves Range structure for O(1) index lookup
     # This testset documents behavior for both input types
 

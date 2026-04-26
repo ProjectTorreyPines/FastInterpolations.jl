@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "Grid Spacing Types" begin
+@testitem "Grid Spacing Types" begin
 
     @testset "ScalarSpacing Construction" begin
         # Test 1.1: ScalarSpacing type exists and constructs correctly

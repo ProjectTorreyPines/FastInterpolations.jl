@@ -35,12 +35,9 @@
 # cubic, 1e-5 quadratic) so the RED→GREEN flip is unambiguous.
 # ==============================================================================
 
-using Test
-using FastInterpolations
+@testitem "ND Mixed-Partial BC Consistency" begin
+    _MP_ATOL = 50 * eps(Float64)
 
-const _MP_ATOL = 50 * eps(Float64)
-
-@testset "ND Mixed-Partial BC Consistency" begin
 
     # ----- shared fixtures -----
     xs = range(0.0, 2π, 30)

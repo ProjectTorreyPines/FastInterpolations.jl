@@ -13,12 +13,11 @@ Note: Julia 1.12+ has improved escape analysis that eliminates small allocations
 from mutable struct field access. Older versions may show ~16-64 bytes allocation.
 """
 
-# ALLOC_THRESHOLD is defined in runtests.jl
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
-# Import internal function for testing
-import FastInterpolations: _get_cubic_cache
-
-@testset "Allocation Tests" begin
+@testitem "Allocation Tests: Cache & Periodic & Wrap & Typed extrap" setup = [AllocConstants] begin
+    # Import internal function for testing
+    import FastInterpolations: _get_cubic_cache
 
     # =========================================================================
     # Core Zero-Allocation Tests (Critical Path)
@@ -803,11 +802,15 @@ import FastInterpolations: _get_cubic_cache
         @test allocs_periodic <= 128   # Periodic BC cache hit
     end
 
-    # =========================================================================
-    # FillExtrap Fill Value — Zero Allocation Tests
-    # =========================================================================
-    # Verifies that FillExtrap(value) fill-value paths are zero-allocation,
-    # matching the zero-allocation guarantee of ClampExtrap() (boundary clamp).
+end
+
+# =========================================================================
+# FillExtrap Fill Value — Zero Allocation Tests
+# =========================================================================
+# Verifies that FillExtrap(value) fill-value paths are zero-allocation,
+# matching the zero-allocation guarantee of ClampExtrap() (boundary clamp).
+@testitem "Allocation Tests: FillExtrap & Dynamic BCPair" setup = [AllocConstants] begin
+    import FastInterpolations: _get_cubic_cache
 
     @testset "FillExtrap fill value: linear oneshot scalar" begin
         x = collect(range(0.0, 1.0, 51))
@@ -914,37 +917,29 @@ import FastInterpolations: _get_cubic_cache
     end
 
     @testset "FillExtrap fill value: series zero-alloc" begin
+        function measure(sitp, xq)
+            out = Vector{Float64}(undef, 2)
+            sitp(out, xq)  # warmup
+            sitp(out, xq)  # warmup
+            return @allocated sitp(out, xq)
+        end
+
         x = collect(range(0.0, 1.0, 51))
         y_mat = hcat(sin.(2π .* x), cos.(2π .* x))
         s = Series(y_mat)
-        out = Vector{Float64}(undef, 2)
 
         sitp_clamp = linear_interp(x, s; extrap = ClampExtrap())
         sitp_fill = linear_interp(x, s; extrap = FillExtrap(0.0))
         sitp_nan = linear_interp(x, s; extrap = FillExtrap(NaN))
 
-        function eval_series_fill!(out, sitp, xq)
-            sitp(out, xq)
-        end
-
-        # Warmup
-        for sitp in (sitp_clamp, sitp_fill, sitp_nan)
-            eval_series_fill!(out, sitp, 0.5)
-            eval_series_fill!(out, sitp, -0.5)
-            eval_series_fill!(out, sitp, 0.5)
-            eval_series_fill!(out, sitp, -0.5)
-        end
-
         # In-domain
         for sitp in (sitp_clamp, sitp_fill, sitp_nan)
-            allocs = @allocated eval_series_fill!(out, sitp, 0.5)
-            @test allocs <= ALLOC_THRESHOLD
+            @test measure(sitp, 0.5) <= ALLOC_THRESHOLD
         end
 
         # Out-of-domain (fill/SIMD path)
         for sitp in (sitp_clamp, sitp_fill, sitp_nan)
-            allocs = @allocated eval_series_fill!(out, sitp, -0.5)
-            @test allocs <= ALLOC_THRESHOLD
+            @test measure(sitp, -0.5) <= ALLOC_THRESHOLD
         end
     end
 

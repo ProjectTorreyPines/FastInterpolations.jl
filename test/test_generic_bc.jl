@@ -3,16 +3,13 @@
 # ========================================
 # Tests for Deriv1, Deriv2, and mixed BC types
 
-using Test
-using FastInterpolations
+@testitem "Generic Boundary Conditions" begin
+    # Tolerance constants for numerical comparisons
+    # rtol: relative tolerance (scale-independent, good for most cases)
+    # atol: absolute tolerance (needed when values can be near zero)
+    const RTOL = 1.0e-14
+    const ATOL = 1.0e-14
 
-# Tolerance constants for numerical comparisons
-# rtol: relative tolerance (scale-independent, good for most cases)
-# atol: absolute tolerance (needed when values can be near zero)
-const RTOL = 1.0e-14
-const ATOL = 1.0e-14
-
-@testset "Generic Boundary Conditions" begin
 
     # ========================================
     # Type Hierarchy Tests

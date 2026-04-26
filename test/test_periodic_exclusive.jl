@@ -1,10 +1,7 @@
-using Test
-using FastInterpolations
-using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
-    _resolve_exclusive_period,
-    _can_infer_period, _is_periodic_bc, endpoint
-
-@testset "PeriodicBC Exclusive Endpoint" begin
+@testitem "PeriodicBC Exclusive Endpoint" setup = [AllocConstants] begin
+    using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
+        _resolve_exclusive_period,
+        _can_infer_period, _is_periodic_bc, endpoint
 
     # ========================================
     # Construction Tests
@@ -561,7 +558,10 @@ end
 # ND Exclusive Endpoint Tests
 # ========================================
 
-@testset "PeriodicBC Exclusive Endpoint — ND" begin
+@testitem "PeriodicBC Exclusive Endpoint — ND" begin
+    using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
+        _resolve_exclusive_period,
+        _can_infer_period, _is_periodic_bc, endpoint
 
     # ========================================
     # _prepare_periodic_nd unit tests

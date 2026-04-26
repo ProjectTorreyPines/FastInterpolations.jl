@@ -1,6 +1,6 @@
-# ALLOC_THRESHOLD is defined in runtests.jl
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
-@testset "Akima 1D" begin
+@testitem "Akima 1D: Main" setup = [AllocConstants] begin
 
     p(x) = 2x^3 - x^2 + 3x - 1
     dp(x) = 6x^2 - 2x + 3
@@ -248,6 +248,11 @@
         end
         @test test_akima_inplace_alloc(output, x, y, xq) <= ALLOC_THRESHOLD
     end
+
+end
+
+@testitem "Akima 1D: Coverage" setup = [AllocConstants] begin
+    p(x) = 2x^3 - x^2 + 3x - 1
 
     @testset "Coverage — n=2 minimum grid" begin
         x = [0.0, 1.0]

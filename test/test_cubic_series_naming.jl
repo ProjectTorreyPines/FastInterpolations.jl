@@ -1,10 +1,7 @@
 # test/test_cubic_series_naming.jl
 # Test CubicSeriesInterpolant naming and type hierarchy
 
-using Test
-using FastInterpolations
-
-@testset "CubicSeriesInterpolant naming" begin
+@testitem "CubicSeriesInterpolant naming" begin
     x = 0.0:0.1:1.0
     y1 = sin.(x)
     y2 = cos.(x)

@@ -4,10 +4,7 @@
 # Tests for native Complex number support in ConstantSeriesInterpolant.
 # Validates the Tg/Tv type separation design for series interpolants.
 
-using Test
-using FastInterpolations
-
-@testset "Complex Constant Series Interpolation" begin
+@testitem "Complex Constant Series Interpolation" setup = [AllocConstants] begin
 
     # ========================================
     # Basic Complex Series Interpolation
@@ -212,20 +209,19 @@ using FastInterpolations
     # Zero Allocation (Scalar In-place)
     # ========================================
     @testset "Zero allocation (scalar in-place)" begin
-        x = collect(range(0.0, 1.0, 101))
-        y1 = rand(ComplexF64, 101)
-        y2 = rand(ComplexF64, 101)
+        function measure()
+            x = collect(range(0.0, 1.0, 101))
+            y1 = rand(ComplexF64, 101)
+            y2 = rand(ComplexF64, 101)
 
-        sitp = constant_interp(x, Series(y1, y2))
-        output = Vector{ComplexF64}(undef, 2)
+            sitp = constant_interp(x, Series(y1, y2))
+            output = Vector{ComplexF64}(undef, 2)
 
-        # Warmup
-        sitp(output, 0.5)
-        sitp(output, 0.5)
-
-        # Measure allocation
-        allocs = @allocated sitp(output, 0.5)
-        @test allocs <= ALLOC_THRESHOLD
+            # Warmup
+            sitp(output, 0.5)
+            return @allocated sitp(output, 0.5)
+        end
+        @test measure() <= ALLOC_THRESHOLD
     end
 
     # ========================================

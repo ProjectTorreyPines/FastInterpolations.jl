@@ -4,10 +4,7 @@
 # Tests for native Complex number support in ConstantInterpolant.
 # Validates the Tg/Tv type separation design.
 
-using Test
-using FastInterpolations
-
-@testset "Complex Constant Interpolation" begin
+@testitem "Complex Constant Interpolation" setup = [AllocConstants] begin
 
     # ========================================
     # Basic Complex Interpolation

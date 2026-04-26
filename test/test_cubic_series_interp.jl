@@ -3,15 +3,15 @@
 # Multi-Y interpolation: multiple y-data series sharing the same x-grid.
 # After unification: Uses matrix storage with adaptive layout for optimal performance.
 #
-# ALLOC_THRESHOLD is defined in runtests.jl
-
-using FastInterpolations: _ensure_point_layout!
+# ALLOC_THRESHOLD is defined in test/setup.jl
 
 # ============================================================================
 # Phase 1: Unified Type Migration Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - TransposeSnapshot Type" begin
+@testitem "CubicSeriesInterpolant - TransposeSnapshot Type" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     @testset "Empty snapshot creation" begin
@@ -40,7 +40,9 @@ using FastInterpolations: _ensure_point_layout!
     end
 end
 
-@testset "CubicSeriesInterpolant - trait implementations" begin
+@testitem "CubicSeriesInterpolant - trait implementations" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(0.0:0.1:1.0)
@@ -53,7 +55,9 @@ end
     @test FI._method_kind(typeof(sitp)) === Val(:cubic)
 end
 
-@testset "CubicSeriesInterpolant - Unified Struct Fields" begin
+@testitem "CubicSeriesInterpolant - Unified Struct Fields" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -113,7 +117,9 @@ end
     end
 end
 
-@testset "CubicSeriesInterpolant - Helper Functions" begin
+@testitem "CubicSeriesInterpolant - Helper Functions" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -136,7 +142,9 @@ end
     end
 end
 
-@testset "CubicSeriesInterpolant - Type Parameters" begin
+@testitem "CubicSeriesInterpolant - Type Parameters" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     @testset "Float64 type parameter" begin
@@ -162,7 +170,9 @@ end
 # Phase 2: Constructor Migration Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Constructor Migration" begin
+@testitem "CubicSeriesInterpolant - Constructor Migration" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 51))
@@ -217,7 +227,9 @@ end
 # Phase 3: Scalar Kernel Migration Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Scalar Kernel Migration" begin
+@testitem "CubicSeriesInterpolant - Scalar Kernel Migration" setup = [AllocConstants] begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -262,12 +274,13 @@ end
     end
 
     @testset "Scalar zero-alloc after precompute" begin
-        mitp = cubic_interp(x, Series(y1, y2); precompute_transpose = true)
-        out = zeros(2)
-        mitp(out, 0.5)  # Warmup
-
-        allocs = @allocated mitp(out, 0.5)
-        @test allocs <= ALLOC_THRESHOLD
+        function measure(x, y1, y2)
+            mitp = cubic_interp(x, Series(y1, y2); precompute_transpose = true)
+            out = zeros(2)
+            mitp(out, 0.5)  # Warmup
+            return @allocated mitp(out, 0.5)
+        end
+        @test measure(x, y1, y2) <= ALLOC_THRESHOLD
     end
 
     @testset "Invalid deriv=4 throws" begin
@@ -280,7 +293,9 @@ end
 # Phase 4: Vector Kernel Migration Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Vector Kernel Migration" begin
+@testitem "CubicSeriesInterpolant - Vector Kernel Migration" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -359,7 +374,9 @@ end
 # Phase 5: Memory & Allocation Verification Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Memory & Allocation" begin
+@testitem "CubicSeriesInterpolant - Memory & Allocation" setup = [AllocConstants] begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -379,33 +396,37 @@ end
     end
 
     @testset "_ensure_point_layout! allocates only once" begin
-        mitp = cubic_interp(x, Series(y1))
-        _ensure_point_layout!(mitp)  # First call (warmup)
-
-        # Use direct import to ensure proper escape analysis
-        allocs = @allocated _ensure_point_layout!(mitp)
-        @test allocs <= ALLOC_THRESHOLD
+        function measure(x, y1)
+            mitp = cubic_interp(x, Series(y1))
+            _ensure_point_layout!(mitp)  # First call (warmup)
+            # Use direct import to ensure proper escape analysis
+            return @allocated _ensure_point_layout!(mitp)
+        end
+        @test measure(x, y1) <= ALLOC_THRESHOLD
     end
 
     @testset "Scalar deriv=DerivOp(1) zero-alloc" begin
-        mitp = cubic_interp(x, Series(y1, y2); precompute_transpose = true)
-        out = zeros(2)
-        mitp(out, 0.5; deriv = DerivOp(1))  # Warmup
-
-        allocs = @allocated mitp(out, 0.5; deriv = DerivOp(1))
-        @test allocs <= ALLOC_THRESHOLD
+        function measure(x, y1, y2)
+            mitp = cubic_interp(x, Series(y1, y2); precompute_transpose = true)
+            out = zeros(2)
+            mitp(out, 0.5; deriv = DerivOp(1))  # Warmup
+            return @allocated mitp(out, 0.5; deriv = DerivOp(1))
+        end
+        @test measure(x, y1, y2) <= ALLOC_THRESHOLD
     end
 
     @testset "Vector deriv=DerivOp(1) zero-alloc with pool" begin
-        mitp = cubic_interp(x, Series(y1, y2))
-        xq = collect(range(0.1, 0.9, 100))
-        outputs = [zeros(100) for _ in 1:2]
+        function measure(x, y1, y2)
+            mitp = cubic_interp(x, Series(y1, y2))
+            xq = collect(range(0.1, 0.9, 100))
+            outputs = [zeros(100) for _ in 1:2]
 
-        mitp(outputs, xq; deriv = DerivOp(1))  # Warmup × 2
-        mitp(outputs, xq; deriv = DerivOp(1))
+            mitp(outputs, xq; deriv = DerivOp(1))  # Warmup × 2
+            mitp(outputs, xq; deriv = DerivOp(1))
 
-        allocs = @allocated mitp(outputs, xq; deriv = DerivOp(1))
-        @test allocs <= ALLOC_THRESHOLD
+            return @allocated mitp(outputs, xq; deriv = DerivOp(1))
+        end
+        @test measure(x, y1, y2) <= ALLOC_THRESHOLD
     end
 end
 
@@ -413,7 +434,9 @@ end
 # Phase 6: Uncovered Path Coverage Tests
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Uncovered Path Coverage" begin
+@testitem "CubicSeriesInterpolant - Uncovered Path Coverage" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -618,7 +641,9 @@ end
 # Phase 1 (Legacy): Type Definition & Constructor Tests
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Type Structure" begin
+@testitem "CubicSeriesInterpolant - Type Structure" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -663,7 +688,9 @@ end
     end
 end
 
-@testset "CubicSeriesInterpolant - Cache Sharing" begin
+@testitem "CubicSeriesInterpolant - Cache Sharing" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -694,7 +721,9 @@ end
     end
 end
 
-@testset "CubicSeriesInterpolant - Constructor Validation" begin
+@testitem "CubicSeriesInterpolant - Constructor Validation" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -734,7 +763,9 @@ end
 # Phase 2: Scalar Evaluation Tests
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Scalar Evaluation (out-of-place)" begin
+@testitem "CubicSeriesInterpolant - Scalar Evaluation (out-of-place)" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -785,7 +816,9 @@ end
     end
 end
 
-@testset "CubicSeriesInterpolant - Scalar Evaluation (in-place)" begin
+@testitem "CubicSeriesInterpolant - Scalar Evaluation (in-place)" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -824,7 +857,9 @@ end
     end
 end
 
-@testset "CubicSeriesInterpolant - Scalar Extrap Modes" begin
+@testitem "CubicSeriesInterpolant - Scalar Extrap Modes" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -885,7 +920,9 @@ end
 # Phase 3: Vector Evaluation Tests
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Vector Evaluation (out-of-place)" begin
+@testitem "CubicSeriesInterpolant - Vector Evaluation (out-of-place)" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -922,17 +959,25 @@ end
 
         mitp2 = cubic_interp(x, Series(y1, y2); extrap = ExtendExtrap())
 
+        # atol=5e-14 (not 1e-14): multi-series and single-series code paths
+        # use different summation orders. IEEE-754 deterministic but not bit-equal;
+        # last-bit differences accumulate to ~1.2e-14 in the worst case. The
+        # relaxed tolerance accommodates FMA/summation-order variation across
+        # compilation contexts (master happened to align by coincidence; testitem
+        # fresh-module compilation exposes the variation).
         d1 = mitp2(xq; deriv = DerivOp(1))
-        @test d1[1] ≈ itp1(xq; deriv = DerivOp(1)) atol = 1.0e-14
-        @test d1[2] ≈ itp2(xq; deriv = DerivOp(1)) atol = 1.0e-14
+        @test d1[1] ≈ itp1(xq; deriv = DerivOp(1)) atol = 5.0e-14
+        @test d1[2] ≈ itp2(xq; deriv = DerivOp(1)) atol = 5.0e-14
 
         d2 = mitp2(xq; deriv = DerivOp(2))
-        @test d2[1] ≈ itp1(xq; deriv = DerivOp(2)) atol = 1.0e-14
-        @test d2[2] ≈ itp2(xq; deriv = DerivOp(2)) atol = 1.0e-14
+        @test d2[1] ≈ itp1(xq; deriv = DerivOp(2)) atol = 5.0e-14
+        @test d2[2] ≈ itp2(xq; deriv = DerivOp(2)) atol = 5.0e-14
     end
 end
 
-@testset "CubicSeriesInterpolant - Container In-place (KILLER FEATURE)" begin
+@testitem "CubicSeriesInterpolant - Container In-place (KILLER FEATURE)" setup = [AllocConstants] begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -1009,7 +1054,9 @@ end
     end
 end
 
-@testset "CubicSeriesInterpolant - Vector Extrap Modes" begin
+@testitem "CubicSeriesInterpolant - Vector Extrap Modes" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -1038,7 +1085,9 @@ end
 # Phase 4: Safety & Integration Tests
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Immutability" begin
+@testitem "CubicSeriesInterpolant - Immutability" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -1067,7 +1116,9 @@ end
     end
 end
 
-@testset "CubicSeriesInterpolant - Float32 Support" begin
+@testitem "CubicSeriesInterpolant - Float32 Support" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x32 = Float32.(collect(range(Float32(0), Float32(1), 101)))
@@ -1095,7 +1146,9 @@ end
     end
 end
 
-@testset "CubicSeriesInterpolant - Edge Cases" begin
+@testitem "CubicSeriesInterpolant - Edge Cases" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -1144,7 +1197,9 @@ end
 # Phase 5b: Type Promotion Tests (coverage for Real type wrappers)
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Type Promotion" begin
+@testitem "CubicSeriesInterpolant - Type Promotion" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     @testset "Integer x with Float y vectors (promotes to Float64)" begin
@@ -1219,7 +1274,9 @@ end
 # Phase 3: Zero-Allocation Vector API (Pooled Anchors)
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Zero-allocation vector API (pooled anchors)" begin
+@testitem "CubicSeriesInterpolant - Zero-allocation vector API (pooled anchors)" setup = [AllocConstants] begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -1317,7 +1374,9 @@ end
 # Phase 7: Scalar Extension Extrapolation with Derivatives (Coverage)
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Scalar Extension Extrapolation with Derivatives" begin
+@testitem "CubicSeriesInterpolant - Scalar Extension Extrapolation with Derivatives" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     # Setup: create interpolant with ExtendExtrap() extrapolation
@@ -1469,7 +1528,9 @@ end
     end
 end
 
-@testset "CubicSeriesInterpolant - Zero-Allocation Derivative Tests" begin
+@testitem "CubicSeriesInterpolant - Zero-Allocation Derivative Tests" setup = [AllocConstants] begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -1548,7 +1609,9 @@ end
 # Per-Series Boundary Conditions Tests
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Per-Series BC" begin
+@testitem "CubicSeriesInterpolant - Per-Series BC" setup = [AllocConstants] begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     @testset "Same BC type, different values - linear functions" begin
@@ -1708,86 +1771,105 @@ end
     # regardless of whether single BC or BC array was used.
 
     @testset "Zero-allocation: scalar query with per-series BC" begin
-        x = collect(range(0.0, 1.0, 101))
-        y1 = sin.(2π .* x)
-        y2 = cos.(2π .* x)
-        y3 = exp.(-3 .* x)
+        function measure()
+            x = collect(range(0.0, 1.0, 101))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+            y3 = exp.(-3 .* x)
 
-        # Create with per-series BC (mixed types)
-        sitp = cubic_interp(
-            x, Series(y1, y2, y3); bc = [
-                ZeroCurvBC(),
-                BCPair(Deriv1(0.0), Deriv1(0.0)),
-                BCPair(Deriv2(0.0), Deriv2(0.0)),
-            ], precompute_transpose = true
-        )
+            # Create with per-series BC (mixed types)
+            sitp = cubic_interp(
+                x, Series(y1, y2, y3); bc = [
+                    ZeroCurvBC(),
+                    BCPair(Deriv1(0.0), Deriv1(0.0)),
+                    BCPair(Deriv2(0.0), Deriv2(0.0)),
+                ], precompute_transpose = true
+            )
 
-        out = zeros(3)
+            out = zeros(3)
 
-        # Warmup
-        sitp(out, 0.5)
-        sitp(out, 0.5)
+            # Warmup
+            sitp(out, 0.5)
 
-        # Scalar query - zero allocation
-        allocs = @allocated sitp(out, 0.5)
-        @test allocs <= ALLOC_THRESHOLD
+            # Scalar query - zero allocation
+            return @allocated sitp(out, 0.5)
+        end
+        @test measure() <= ALLOC_THRESHOLD
     end
 
     @testset "Zero-allocation: vector query with per-series BC" begin
-        x = collect(range(0.0, 1.0, 101))
-        y1 = sin.(2π .* x)
-        y2 = cos.(2π .* x)
+        function measure()
+            x = collect(range(0.0, 1.0, 101))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
 
-        # Create with same BC type, different values
-        sitp = cubic_interp(
-            x, Series(y1, y2); bc = [
-                BCPair(Deriv1(1.0), Deriv1(-1.0)),
-                BCPair(Deriv1(0.5), Deriv1(-0.5)),
-            ]
-        )
+            # Create with same BC type, different values
+            sitp = cubic_interp(
+                x, Series(y1, y2); bc = [
+                    BCPair(Deriv1(1.0), Deriv1(-1.0)),
+                    BCPair(Deriv1(0.5), Deriv1(-0.5)),
+                ]
+            )
 
-        xq = collect(range(0.1, 0.9, 50))
-        out1 = Vector{Float64}(undef, 50)
-        out2 = Vector{Float64}(undef, 50)
-        outputs = [out1, out2]
+            xq = collect(range(0.1, 0.9, 50))
+            out1 = Vector{Float64}(undef, 50)
+            out2 = Vector{Float64}(undef, 50)
+            outputs = [out1, out2]
 
-        # Warmup
-        sitp(outputs, xq)
-        sitp(outputs, xq)
+            # Warmup
+            sitp(outputs, xq)
+            sitp(outputs, xq)
 
-        # Vector query - zero allocation
-        allocs = @allocated sitp(outputs, xq)
-        @test allocs <= ALLOC_THRESHOLD
+            # Vector query - zero allocation
+            return @allocated sitp(outputs, xq)
+        end
+        @test measure() <= ALLOC_THRESHOLD
     end
 
     @testset "Zero-allocation: derivatives with per-series BC" begin
-        x = collect(range(0.0, 1.0, 101))
-        y1 = sin.(2π .* x)
-        y2 = cos.(2π .* x)
+        function measure_d1()
+            x = collect(range(0.0, 1.0, 101))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
 
-        # Create with mixed BC types
-        sitp = cubic_interp(
-            x, Series(y1, y2); bc = [
-                ZeroCurvBC(),
-                BCPair(Deriv1(0.0), Deriv1(0.0)),
-            ], precompute_transpose = true
-        )
+            # Create with mixed BC types
+            sitp = cubic_interp(
+                x, Series(y1, y2); bc = [
+                    ZeroCurvBC(),
+                    BCPair(Deriv1(0.0), Deriv1(0.0)),
+                ], precompute_transpose = true
+            )
 
-        out = zeros(2)
+            out = zeros(2)
 
-        # Warmup deriv=1
-        sitp(out, 0.5; deriv = DerivOp(1))
-        sitp(out, 0.5; deriv = DerivOp(1))
+            # Warmup deriv=1
+            sitp(out, 0.5; deriv = DerivOp(1))
 
-        allocs = @allocated sitp(out, 0.5; deriv = DerivOp(1))
-        @test allocs <= ALLOC_THRESHOLD
+            return @allocated sitp(out, 0.5; deriv = DerivOp(1))
+        end
+        @test measure_d1() <= ALLOC_THRESHOLD
 
-        # Warmup deriv=2
-        sitp(out, 0.5; deriv = DerivOp(2))
-        sitp(out, 0.5; deriv = DerivOp(2))
+        function measure_d2()
+            x = collect(range(0.0, 1.0, 101))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
 
-        allocs = @allocated sitp(out, 0.5; deriv = DerivOp(2))
-        @test allocs <= ALLOC_THRESHOLD
+            # Create with mixed BC types
+            sitp = cubic_interp(
+                x, Series(y1, y2); bc = [
+                    ZeroCurvBC(),
+                    BCPair(Deriv1(0.0), Deriv1(0.0)),
+                ], precompute_transpose = true
+            )
+
+            out = zeros(2)
+
+            # Warmup deriv=2
+            sitp(out, 0.5; deriv = DerivOp(2))
+
+            return @allocated sitp(out, 0.5; deriv = DerivOp(2))
+        end
+        @test measure_d2() <= ALLOC_THRESHOLD
     end
 
     @testset "Fast path: BCPair array normalization is zero-allocation" begin
@@ -1839,7 +1921,9 @@ end
 # Pre-built Anchor Tests for Coverage (deriv=DerivOp(3) and extrapolation)
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Pre-built Anchor with deriv=DerivOp(3)" begin
+@testitem "CubicSeriesInterpolant - Pre-built Anchor with deriv=DerivOp(3)" setup = [AllocConstants] begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     @testset "deriv=DerivOp(3) correctness with pre-built anchors" begin
@@ -1868,23 +1952,25 @@ end
     end
 
     @testset "deriv=DerivOp(3) zero allocation with pre-built anchors" begin
-        x = collect(range(0.0, 1.0, 51))
-        y1 = x .^ 4
-        y2 = x .^ 3
+        function measure()
+            x = collect(range(0.0, 1.0, 51))
+            y1 = x .^ 4
+            y2 = x .^ 3
 
-        mitp = cubic_interp(x, Series(y1, y2))
-        xq = collect(range(0.1, 0.9, 20))
+            mitp = cubic_interp(x, Series(y1, y2))
+            xq = collect(range(0.1, 0.9, 20))
 
-        # Pre-build anchors
-        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
-        outputs = [similar(xq) for _ in 1:2]
+            # Pre-build anchors
+            aq_vec = FI._anchor_query(x, xq, Val(:cubic))
+            outputs = [similar(xq) for _ in 1:2]
 
-        # Warmup
-        mitp(outputs, aq_vec; deriv = DerivOp(3))
-        mitp(outputs, aq_vec; deriv = DerivOp(3))
+            # Warmup
+            mitp(outputs, aq_vec; deriv = DerivOp(3))
+            mitp(outputs, aq_vec; deriv = DerivOp(3))
 
-        allocs = @allocated mitp(outputs, aq_vec; deriv = DerivOp(3))
-        @test allocs <= ALLOC_THRESHOLD
+            return @allocated mitp(outputs, aq_vec; deriv = DerivOp(3))
+        end
+        @test measure() <= ALLOC_THRESHOLD
     end
 
     @testset "deriv=DerivOp(3) matches individual interpolants" begin
@@ -1912,7 +1998,9 @@ end
     end
 end
 
-@testset "CubicSeriesInterpolant - Pre-built Anchor with Extrapolation" begin
+@testitem "CubicSeriesInterpolant - Pre-built Anchor with Extrapolation" begin
+    using FastInterpolations: _ensure_point_layout!
+
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 11))

@@ -1,7 +1,4 @@
-using Test
-using FastInterpolations
-
-@testset "nodal_partials" begin
+@testitem "nodal_partials" begin
     # ========================================
     # Test Data Setup
     # ========================================

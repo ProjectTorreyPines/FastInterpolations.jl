@@ -5,17 +5,8 @@
 # Comprehensive test coverage for N-dimensional multilinear interpolation.
 # Tests cover: exactness, derivatives, batch queries, extrapolation, grid types, complex values.
 
-using Test
-using FastInterpolations
-using FastInterpolations: get_task_local_pool
-
-# Allocation threshold (bytes) — tolerates minor LTS/GC overhead.
-# Guarded for standalone execution (runtests.jl defines this globally).
-if !@isdefined(ND_ALLOC_THRESHOLD)
-    const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
-end
-
-@testset "LinearInterpolantND" begin
+@testitem "LinearInterpolantND" setup = [AllocConstants] begin
+    using FastInterpolations: get_task_local_pool
     # ========================================
     # 2D Bilinear Exactness Tests
     # ========================================

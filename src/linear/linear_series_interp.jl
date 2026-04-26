@@ -476,17 +476,26 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    n_query = length(xq)
-    n_ser = n_series(sitp)
-
-    # Validate dimensions
-    _validate_series_outputs(outputs, n_ser, n_query)
-
+    _validate_series_outputs(outputs, n_series(sitp), length(xq))
     searcher = _resolve_search(sitp.x, xq, search, hint)
+    return _linear_series_inplace_kernel!(outputs, sitp, xq, searcher, deriv)
+end
+
+# Thin function barrier: ensures the resolved `searcher` (and any hint Ref it
+# may carry) is consumed inside a fresh stack frame, preventing escape-analysis
+# spillover into a 16-byte heap box. No pool needed.
+@inline function _linear_series_inplace_kernel!(
+        outputs::AbstractVector{<:AbstractVector},
+        sitp::LinearSeriesInterpolant{Tg},
+        xq::AbstractVector,
+        searcher::Searcher,
+        deriv::DerivOp
+    ) where {Tg}
     wrap = _should_wrap(sitp)
     y = sitp.y
     x_grid = sitp.x
     n_pts = n_points(sitp)
+    n_ser = n_series(sitp)
     extrap = sitp.extrap
     x_min = Tg(first(sitp.x))
     x_max = Tg(last(sitp.x))

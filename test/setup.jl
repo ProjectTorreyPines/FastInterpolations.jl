@@ -10,7 +10,7 @@ using TestItemRunner
 # accessing FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK is safe.
 @testsnippet AllocConstants begin
     const AAP_RUNTIME_CHECK = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
-    const _COV_OVERHEAD = 16
+    const _COV_OVERHEAD = 0
     const ALLOC_THRESHOLD = (VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240) + _COV_OVERHEAD
     const ND_ALLOC_THRESHOLD = (VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240) + _COV_OVERHEAD
 end

@@ -485,17 +485,24 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
     ) where {Tg, Tv, P}
     # Normalize queries to the grid's base float type (not Tg itself, which may be Dual)
     xq_typed = _promote_query_typed(xq, Tg)
-    n_query = length(xq_typed)
-    n_ser = n_series(sitp)
-
-    # Validate dimensions
-    _validate_series_outputs(outputs, n_ser, n_query)
-
+    _validate_series_outputs(outputs, n_series(sitp), length(xq_typed))
     searcher = _resolve_search(sitp.x, xq_typed, search, hint)
+    return _constant_series_inplace_kernel!(outputs, sitp, xq_typed, searcher, deriv)
+end
+
+# Thin function barrier: see comment on `_linear_series_inplace_kernel!`.
+@inline function _constant_series_inplace_kernel!(
+        outputs::AbstractVector{<:AbstractVector},
+        sitp::ConstantSeriesInterpolant{Tg},
+        xq_typed::AbstractVector,
+        searcher::Searcher,
+        deriv::DerivOp
+    ) where {Tg}
     wrap = _should_wrap(sitp)
     y = sitp.y
     x_grid = sitp.x
     n_pts = n_points(sitp)
+    n_ser = n_series(sitp)
     extrap = sitp.extrap
     side_val = sitp.side
     x_min = Tg(first(sitp.x))

@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1777136136048,
+  "lastUpdate": 1777180948337,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -45958,6 +45958,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1579.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dbcbdf5cd277592705d00f694ca1c9fb7e90974a",
+          "message": "(test): `@testitem` splits (#129)\n\n* test: migrate 84 SPLIT test files to @testitem framework\n\nPhase 1 of TestItemRunner migration — converts file-level @testset blocks\nto @testitem so tests are auto-discovered and individually runnable from\nVSCode Test Explorer.\n\nScope (87 files):\n- test/Project.toml: add TestItemRunner + [sources] = {path=\"..\"} + [compat]\n- test/setup.jl: new — @testsnippet AllocConstants for shared alloc thresholds\n- test/runtests.jl: hybrid — @run_package_tests for migrated, include cascade\n  for legacy. ARGS filter works for both paths. MIGRATED_TESTITEM_FILES set\n  documents migration progress.\n- 84 SPLIT files (single or multiple top-level @testset, no file-level\n  helpers): @testset → @testitem, drop auto-injected `using Test`/\n  `using FastInterpolations`, move other usings inside testitem body.\n\nSide fixes surfaced by fresh-module compilation:\n- Missing imports: VectorSpacing in test_quadratic.jl, ScalarSpacing in\n  test_nd_coverage.jl, Random in test_pchip_1d.jl\n- Alloc test fragility: 14 testsets across 7 files refactored to\n  function-barrier pattern (pass outer vars as args). Test.jl wraps\n  @testset bodies in try/catch which weakens type inference under\n  @testitem fresh-module compilation; closure or @testset-local var\n  capture caused +32 byte allocation. master worked by coincidence;\n  arg-passing makes it robust.\n\nNot in this commit:\n- 36 WRAP files (file-level helpers) — pending per-file extraction to\n  @testsnippet, requires design decisions per file\n- test/ext/ — kept on legacy @testset (CRC loading order isolation)\n\n* test: relax atol from 1e-14 to 5e-14 for multi-series derivative comparison\n\nMulti-series and single-series code paths use different summation orders\n(IEEE-754 deterministic but not bit-equal). Worst-case difference is\n~1.2e-14, just above the previous 1e-14 tolerance.\n\nMaster happened to align by coincidence (cumulative include-cascade\ncompile context); @testitem fresh-module compilation exposes the\nvariation. Same fragility class as test_packages_comparison.jl which\nalready documents the FMA tolerance issue at 1e-14.\n\nThis is the second test failing in the @testitem migration's full\nsuite run (28053 passed / 2 failed). With this fix, all 28055\nexpected to pass.\n\n* test: migrate 13 trivial WRAP test files to @testitem\n\nPhase 2 of TestItemRunner migration — converts files with file-level\nconst aliases or numerical tolerance constants. No real helpers, no\ntop-level control flow.\n\nPattern: const aliases (e.g. `const FI = FastInterpolations`) move\ninto each @testitem body, dropping the const keyword (LSP false-\npositives on cross-testitem redefinition; not needed for type aliases).\n\nFiles migrated (13):\n- test_series_matrix.jl (manually as pattern reference)\n- test_constant_series_interp.jl, test_linear_series_interp.jl,\n  test_quadratic_series_interp.jl\n- test_derivatives.jl (DERIV_ALLOC_THRESHOLD const + 18 testitems +\n  5 internal selective imports duplicated per testitem)\n- test_nd_mixed_partial_bc_consistency.jl\n- test_packages_comparison.jl (3 imports: DataInterpolations as DI,\n  Dierckx, Interpolations as Itp + Random + APPROX_REL_TOLERANCCE)\n- test_series_range_grid.jl, test_series_utils.jl\n- test_generic_bc.jl (RTOL/ATOL tolerances)\n- test_polyfit_bc.jl (26 testitems, 4 alloc tests refactored to\n  function-barrier in the Allocation testitem)\n- test_thomas_lu_solver.jl, test_rcu.jl\n\nruntests.jl: MIGRATED_TESTITEM_FILES grew 84 -> 97. Legacy include\ncascade shrunk to 23 files (HELPER + CONTROL-FLOW categories pending\nper-file design).\n\n* test: migrate 9 adjoint test files to @testitem\n\nPhase 3 of TestItemRunner migration — converts adjoint test files\nwhich all share the same shape: 1+ file-level helper function (e.g.,\n`*_dot_product_test`) + 1+ top-level @testset.\n\nPattern: helper function moves INSIDE the @testitem body (just after\nimports). Body indentation stays unchanged (already +4 inside @testset,\nnow +4 inside @testitem). Diff is minimal — no body churn.\n\nFiles migrated (9):\n- 1D adjoint family (5):\n  test_constant_adjoint.jl, test_linear_adjoint.jl,\n  test_quadratic_adjoint.jl, test_cubic_adjoint.jl,\n  test_hermite_adjoint.jl (5 testitems with 4 method-specific helpers:\n  hermite/cardinal/pchip/akima_dot_product_test)\n- ND adjoint family (4):\n  test_constant_nd_adjoint.jl (2 testitems: N=2, N=3),\n  test_linear_nd_adjoint.jl (7 testitems for each query shape variant),\n  test_quadratic_nd_adjoint.jl (2),\n  test_cubic_nd_adjoint.jl (13 testitems with 2 helpers:\n  dot_product_test_nd duplicated into 9, _make_periodic_data_inclusive\n  into 2)\n\nFor multi-testitem files, helpers duplicate into each testitem that\nuses them — testitem fresh-module isolation requires per-module\nvisibility.\n\nruntests.jl: MIGRATED_TESTITEM_FILES grew 97 → 109. Legacy include\ncascade now 14 files (CONTROL-FLOW + remaining HELPER files).\n\n* test: complete migration — all 120 main test files now @testitem\n\nPhase 4 + 5 of TestItemRunner migration. Empties the legacy include\ncascade entirely. Only ext/ tests remain on legacy @testset (kept\nintentionally for AD/ChainRulesCore loading order isolation).\n\nFiles migrated (14):\n\nCONTROL-FLOW (9 defensive-if files): drop the\n`if !@isdefined(ALLOC_THRESHOLD) ... end` standalone-mode guard,\nreplaced by `setup=[AllocConstants]`.\n- test_cubic_nd.jl, test_cubic_nd_oneshot.jl, test_linear_periodic.jl\n- test_nd_constant.jl, test_nd_linear.jl, test_nd_noextrap_oob.jl\n- test_nd_quadratic.jl, test_nd_oneshot_onthefly.jl, test_nointerp.jl\n- For test_nd_oneshot_onthefly.jl and test_nointerp.jl, added\n  AAP_RUNTIME_CHECK_LOCAL / ND_ALLOC_THRESHOLD_LOCAL aliases inside\n  the testitem (referenced by name in test bodies).\n\nCOMPLEX (5 files with helpers/structs/runtime conditionals):\n- test_thread_safety.jl: real `if nthreads()==1/else` branch moved\n  inside testitem (still works as runtime branch).\n- test_mutation_safety.jl: 3 functions + 3 consts + 2 mutable structs\n  moved inside testitem.\n- test_nonuniform_grid.jl: 5 functions + 7 consts + 1 struct moved\n  inside; 8 top-level @testsets coalesced to 1 @testitem (helpers\n  shared, no duplication).\n- test_duck_typing_comprehensive.jl: custom `MyDuck` struct + 4\n  Base operator extensions + helper moved inside.\n- test_precision_vector_queries.jl: defensive guard dropped, helper\n  + const moved inside, 4 alloc tests refactored to function-barrier.\n\nTotal migration progress: 120/120 main files (100%). Legacy include\ncascade empty. ext/ tests deferred.\n\n* test: relax sprint(show) assertions in test_nointerp.jl to occursin\n\n`sprint(show, x) == \"NoInterp()\"` is fragile across environments —\nthe IOContext :module attribute (and Base.active_module() fallback)\ndiffer between CLI Pkg.test, julia --project direct activation, and\nVSCode persistent test process. Some contexts produce\n\"FastInterpolations.NoInterp()\" instead of \"NoInterp()\".\n\nDefensive pattern `occursin(\"NoInterp()\", sprint(show, x))`\naccepts both qualified and unqualified output while still verifying\nthe type's display name appears.\n\n* Runic formatting\n\n* test: cleanup runtests.jl — drop transition cruft, idiomatic auto-discovery\n\nNow that all 120 main test files are migrated to @testitem, the\nMIGRATED_TESTITEM_FILES set and legacy include cascade are obsolete.\nTestItemRunner's @run_package_tests auto-discovers all @testitem\nfiles under test/ — no need to enumerate them.\n\nRemoved:\n- MIGRATED_TESTITEM_FILES set (97 entries)\n- Legacy ARGS-based include path (with .jl normalization, file-existence\n  check) — irrelevant when no legacy files remain\n- Default-cascade include() block (already empty after Phase 5)\n\nKept:\n- Alloc threshold constants — needed by ext/ legacy @testset files\n- @run_package_tests with ARGS filter (filename OR testitem name match)\n- Conditional ext/ include for full local/CI runs\n\nResult: 184 lines → 38 lines (-79%). All filtering use cases preserved.\n\n* (perf): close 16B Searcher box in Linear/Constant Series in-place — thin function barrier\n\nPR #127 made Linear/Constant Series in-place pool-free, but with no function\nbarrier the resolved Searcher escapes the hot loop frame and gets boxed\n(16 B/call) on Vector grids — the LLVM escape-analysis cliff that\nQuadratic/Cubic dodge via @with_pool. Hoist the eval loop into\n_{linear,constant}_series_inplace_kernel! so the Searcher is consumed inside\na fresh @inline frame; no pool reintroduced.\n\nAfter: 0 B across all 4 Series in-place vector calls on both 1.10.11 LTS\nand 1.12.6 (verified against master 77187120 baseline matrix — Issue A\nwas pre-existing, not a regression on this branch).\n\ntest/setup.jl: drop the _COV_OVERHEAD = 16 slack now that the leak is\nclosed; Julia 1.12 ALLOC_THRESHOLD becomes a strict <= 0 so any future\nSearcher escape regression fails the test directly.\n\n(The universal hint=Ref alloc surfaced by the smoke matrix — 16-160 B\nacross all in-place methods including single-Y, kwarg-lowering territory —\nsurvives the barrier and is left for a follow-up.)\n\n* test: drop dead _COV_OVERHEAD slack — explicit cubic-only coverage allowance\n\nThe hidden global _COV_OVERHEAD = 16 in setup.jl/runtests.jl was masking real\nallocation regressions across every alloc test just to absorb the single\n16-byte instrumentation footprint of cubic_interp! oneshot under\n--code-coverage (its @with_pool + atomic cache lookup chain trips LLVM\nstack-promotion only when coverage counters are inserted into that\ncombination — linear/pchip/quadratic don't use that machinery and stay\nstrict in both modes).\n\nReplace the global slack with a scoped, explicit allowance:\n\n- setup.jl: drop _COV_OVERHEAD; ALLOC_THRESHOLD becomes a one-line formula\n  (0 on 1.12+, 240 on older).\n- runtests.jl: drop the parallel ALLOC_THRESHOLD/AAP_RUNTIME_CHECK block\n  and @info banner — no callers (every @testitem pulls them from setup.jl\n  via setup=[AllocConstants]; ext/ tests are self-contained). Drops\n  `using FastInterpolations` which was only there for that purpose.\n- test_promotion_alloc.jl: opt-in `_cubic_cov_slack` gates only the two\n  cubic baseline/promotion alloc tests, with an inline comment naming\n  the exact culprit so future readers don't suspect a real regression.\n- 16 unrelated test files: bulk-update stale \"defined in runtests.jl\"\n  pointer to \"in test/setup.jl\".\n\nSingle-file cov off/on both pass; any new alloc regression in a non-cubic\npath now fails at strict 0 instead of slipping past the old 16-byte cushion.\n\n* test: split 8 large @testitems for parallel scheduling and Test Explorer ergonomics\n\nEach @testitem in TestItemRunner is its own scheduling unit — a single\nheavy testitem blocks one worker for its full duration, so parallel\nwall-clock is bounded by the longest one. Split eight files (the >20s\noffenders) into multiple top-level @testitem blocks within the same file,\ngrouped by category. Each new @testitem duplicates the small shared data\nsetup; duck typing's larger setup (struct MyDuck + Base method overloads\n+ ~50 lines of fixtures) is extracted to a new @testsnippet DuckTypeSetup\nin setup.jl, avoiding ~150 lines of would-be duplication.\n\n| File                              | testitems before → after |\n|-----------------------------------|--------------------------|\n| test_nd_oneshot_onthefly.jl       | 1 → 4 (Equiv / AutoCoeffs / Alloc / Specialized) |\n| test_duck_typing_comprehensive.jl | 1 → 4 (1D core / 1D APIs / ND core / ND advanced) |\n| test_nointerp.jl                  | 1 → 3 (basics / vararg+calc+reg / clamp+periodic+hints) |\n| test_hermite_onthefly.jl          | 1 → 3 (1D / ND+autocoeffs / integrate+windowing) |\n| test_cubic_adjoint.jl             | 2 → 4 (dot+periodic / complex / matrix+alloc / scalar y_bar) |\n| test_gradient_hessian.jl          | 1 → 4 (basics / value_gradient / GridIdx ND / Hermite ND) |\n| test_akima_1d.jl                  | 1 → 2 (main / coverage) |\n| test_allocation.jl                | 1 → 2 (cache+periodic+wrap+typed / fill+dynamic) |\n\nTotal: 12 → 26 top-level testitems across these 8 files.\n\nSingle-file `cc-julia-test-runner . <file>` runs become slightly slower\n(per-testitem fresh-module setup pays its own first-call specialization\ncost that the single-testitem version amortized). Parallel full-suite\nruns benefit because the critical-path testitem is shorter and the rest\ndistribute across workers.\n\nFour testsets remain monolithic and >50s in their split testitem (cell-\nlocal windowed in ND OnTheFly Specialized, ND BCs expansion in Duck Typing\nND advanced, ND+AutoCoeffs in Hermite OnTheFly, Hermite ND windowed Phase\n4 in Vector Calculus). They're inherently single big tests that iterate\nover many configurations internally; further splitting would require\nrestructuring at the @testset level.\n\n* test: drop legacy *_LOCAL aliases — read directly from AllocConstants snippet\n\nThe `AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK` /\n`ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD` pairs were transitional\nshims from when these two files first migrated to @testitem. Now that\n`setup = [AllocConstants]` already exposes the constants under their\ncanonical names, the *_LOCAL renames are dead indirection. Inline them\n(34 usages → direct reference) and drop the 14 alias definitions plus\nthe explanatory comment.\n\nNet -16 lines. Both files pass single-file verification.\n\n* fix: restore ext/runtests.jl ARGS shortcut — silent empty run regression\n\nbb33a4da's runtests.jl cleanup dropped the master-era\n`for testfile in ARGS; include(testfile); end` block in favor of\nTestItemRunner's substring filter, but that block was also serving the\ndocumented entry point `Pkg.test(test_args=[\"ext/runtests.jl\"])` /\n`cc-julia-test-runner . ext/runtests.jl`. With the cleanup in place,\nARGS=[\"ext/runtests.jl\"] passes the testitem filter (no @testitem\nmatches that path → 0 tests), then trips the `if isempty(ARGS)` guard\non the ext include, and exits successfully with zero tests run — a\nsilent regression for the AD/Recipes/Symbolics suite.\n\nSpecial-case the ext path before the @testitem dispatcher: when\n\"ext/runtests.jl\" is in ARGS, route straight to the ext runner. The\nsubstring-filter behavior is unchanged for every other ARGS value.\n\n* fix: address Copilot review on PR #129 — const test globals + typo + barrier rationale\n\n- test/test_generic_bc.jl: RTOL/ATOL non-const at testitem-scope → const.\n- test/test_thomas_lu_solver.jl: FI/LA aliases → const.\n- test/test_packages_comparison.jl: typo APPROX_REL_TOLERANCCE → APPROX_REL_TOLERANCE\n  (5 usages renamed); also make it const for consistency.\n- src/linear/linear_series_interp.jl: Copilot also flagged `@inline` on\n  `_linear_series_inplace_kernel!` as defeating the function-barrier intent.\n  Empirical check: switching to `@noinline` regresses Linear/Constant Vector\n  in-place series from 0 B → 32 B (forced function-call frame adds arg-passing\n  overhead). The barrier benefit comes from this being a *separate named\n  function* (clean specialization point), not from preventing inlining.\n  Keep `@inline` and document the rationale so future readers don't repeat\n  the same well-intentioned regression. constant_series_interp.jl's mirror\n  comment already references this one.",
+          "timestamp": "2026-04-25T22:20:09-07:00",
+          "tree_id": "e221feaf7960fc0f50b191fea9b50eee3d6ce7b1",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/dbcbdf5cd277592705d00f694ca1c9fb7e90974a"
+        },
+        "date": 1777180940546,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 37957,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 738.72,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 330489,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1942.32,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1719.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 16.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 10.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3591.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 36.26,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 16.82,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4649.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4644.82,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 10474.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3200.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 495.96,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 62848.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1449.18,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 14084.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 20.33,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 484.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 47036,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 28.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 19351.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 38.26,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 276.52,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 200.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 19164.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 6.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.81,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 596.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4898.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 44390,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 720.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1790.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2481.94,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11806.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3521.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 41197.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 966.66,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 377174.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1542.3,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

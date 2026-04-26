@@ -1,4 +1,4 @@
-@testitem "Vector Calculus (gradient, hessian, laplacian)" setup = [AllocConstants] begin
+@testitem "Vector Calculus: gradient/hessian/laplacian basics" setup = [AllocConstants] begin
 
     @testset "2D Gradient" begin
         # Test function: f(x,y) = sin(x) * cos(y)
@@ -374,9 +374,12 @@
         @test all(abs.(H) .< 1.0e-10)
     end
 
-    # ========================================
-    # VALUE_GRADIENT
-    # ========================================
+end
+
+# ========================================
+# VALUE_GRADIENT
+# ========================================
+@testitem "Vector Calculus: value_gradient" setup = [AllocConstants] begin
 
     @testset "2D value_gradient - cubic" begin
         x = range(0.0, 2π, 51)
@@ -550,12 +553,14 @@
         @test lap ≈ 4.0 atol = 1.0e-1
     end
 
-    # ========================================
-    # GridIdx support for non-HeteroInterpolantND interpolants
-    # ========================================
-    # GridIdx(k) on axis d → evaluate at grids[d][k], treat axis as discrete (deriv=0).
-    # This works generically for CubicInterpolantND, LinearInterpolantND, etc.
+end
 
+# ========================================
+# GridIdx support for non-HeteroInterpolantND interpolants
+# ========================================
+# GridIdx(k) on axis d → evaluate at grids[d][k], treat axis as discrete (deriv=0).
+# This works generically for CubicInterpolantND, LinearInterpolantND, etc.
+@testitem "Vector Calculus: GridIdx ND" setup = [AllocConstants] begin
     @testset "GridIdx gradient: CubicInterpolantND" begin
         x = range(0.0, 2π, 51)
         y = range(0.0, π, 31)
@@ -630,9 +635,12 @@
         @test g[2] ≈ g_ref[2] rtol = 1.0e-14
     end
 
-    # ========================================
-    # Phase 4: Cell-local windowed Hermite ND vector calculus
-    # ========================================
+end
+
+# ========================================
+# Phase 4: Cell-local windowed Hermite ND vector calculus
+# ========================================
+@testitem "Vector Calculus: Hermite ND windowed (Phase 4)" setup = [AllocConstants] begin
     # The OnTheFly path now uses cell-local stencil windows when at least one axis
     # is a local-Hermite method. `_locate_cell` caches the windows in the cell tuple
     # so gradient/hessian/laplacian (which call `_eval_at_cell` N or N² times) only

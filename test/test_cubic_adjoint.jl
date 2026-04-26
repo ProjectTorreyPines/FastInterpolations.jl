@@ -1,4 +1,4 @@
-@testitem "CubicAdjoint" setup = [AllocConstants] begin
+@testitem "CubicAdjoint: Dot-product & PeriodicBC" setup = [AllocConstants] begin
     using LinearAlgebra: dot
 
     # ========================================
@@ -313,9 +313,39 @@
         @test ok
     end
 
-    # ========================================
-    # Complex data support
-    # ========================================
+end
+
+# ========================================
+# Complex data support
+# ========================================
+@testitem "CubicAdjoint: Complex & Derivative" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+
+    function dot_product_test(
+            x, xq, f, y_bar;
+            bc = CubicFit(), extrap = NoExtrap(), deriv = EvalValue(),
+            atol = 0, rtol = sqrt(eps(eltype(x)))
+        )
+        itp = cubic_interp(x, f; bc = bc, extrap = extrap)
+        adj = cubic_adjoint(x, xq; bc = bc, extrap = extrap)
+        f_zero = zeros(eltype(f), length(f))
+        itp_zero = cubic_interp(x, f_zero; bc = bc, extrap = extrap)
+        Wf = itp.(xq; deriv = deriv) .- itp_zero.(xq; deriv = deriv)
+        WTy = adj(y_bar; deriv = deriv)
+        lhs = dot(Wf, y_bar)
+        rhs = dot(f, WTy)
+        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+    end
+
+    n_grid = 50
+    n_query = 30
+    x_uniform = collect(range(0.0, 1.0, n_grid))
+    x_nonuniform = cumsum(0.5 .+ rand(n_grid))
+    x_nonuniform .= (x_nonuniform .- x_nonuniform[1]) ./ (x_nonuniform[end] - x_nonuniform[1])
+    xq = sort(rand(n_query)) .* 0.98 .+ 0.01
+    f = randn(n_grid)
+    y_bar = randn(n_query)
+
     @testset "Complex — dot-product — $bc_name" for (bc_name, bc) in [
             ("CubicFit", CubicFit()),
             ("ZeroCurvBC", ZeroCurvBC()),
@@ -474,9 +504,23 @@
         @test ok
     end
 
-    # ========================================
-    # Matrix materialization
-    # ========================================
+end
+
+# ========================================
+# Matrix materialization
+# ========================================
+@testitem "CubicAdjoint: Matrix & Zero-alloc & y_bar variants" setup = [AllocConstants] begin
+    using LinearAlgebra: dot
+
+    n_grid = 50
+    n_query = 30
+    x_uniform = collect(range(0.0, 1.0, n_grid))
+    x_nonuniform = cumsum(0.5 .+ rand(n_grid))
+    x_nonuniform .= (x_nonuniform .- x_nonuniform[1]) ./ (x_nonuniform[end] - x_nonuniform[1])
+    xq = sort(rand(n_query)) .* 0.98 .+ 0.01
+    f = randn(n_grid)
+    y_bar = randn(n_query)
+
     @testset "Matrix(adj) — Wᵀ·ȳ == adj(ȳ)" begin
         adj = cubic_adjoint(x_uniform, xq; bc = CubicFit())
         W_T = Matrix(adj)

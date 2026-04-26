@@ -1,4 +1,4 @@
-@testitem "NoInterp + GridIdx" setup = [AllocConstants] begin
+@testitem "NoInterp + GridIdx: Basics & One-shot & Interpolant" setup = [AllocConstants] begin
     # Aliases mapping legacy *_LOCAL names to AllocConstants snippet symbols.
     AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
     ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
@@ -342,9 +342,23 @@
         @test _test_alloc_onthefly() <= ND_ALLOC_THRESHOLD_LOCAL
     end
 
-    # ========================================
-    # 12. Vararg Callable
-    # ========================================
+end
+
+# ========================================
+# 12. Vararg Callable
+# ========================================
+@testitem "NoInterp + GridIdx: Vararg & Calculus & Batch & Regression" setup = [AllocConstants] begin
+    AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
+    ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
+    x = range(0.0, 2π, 30)
+    y = range(0.0, π, 25)
+    z = range(0.0, 1.0, 20)
+    f2(xi, yj) = sin(xi) * cos(yj)
+    f3(xi, yj, zk) = sin(xi) * cos(yj) * exp(-zk)
+    data_2d = [f2(xi, yj) for xi in x, yj in y]
+    data_3d = [f3(xi, yj, zk) for xi in x, yj in y, zk in z]
+    qx, qy, qz = 1.7, 0.8, 0.45
+
     @testset "Vararg callable: itp(0.5, GridIdx(k))" begin
         itp = interp((x, y), data_2d; method = (CubicInterp(), NoInterp()))
         val_vararg = itp(qx, GridIdx(5))
@@ -711,9 +725,23 @@
         @test H[3, 1] ≈ ref_dxdz rtol = 1.0e-10  # symmetry
     end
 
-    # ========================================
-    # 28. ClampExtrap × NoInterp
-    # ========================================
+end
+
+# ========================================
+# 28. ClampExtrap × NoInterp
+# ========================================
+@testitem "NoInterp + GridIdx: ClampExtrap & Periodic & Hints & Cross-method" setup = [AllocConstants] begin
+    AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
+    ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
+    x = range(0.0, 2π, 30)
+    y = range(0.0, π, 25)
+    z = range(0.0, 1.0, 20)
+    f2(xi, yj) = sin(xi) * cos(yj)
+    f3(xi, yj, zk) = sin(xi) * cos(yj) * exp(-zk)
+    data_2d = [f2(xi, yj) for xi in x, yj in y]
+    data_3d = [f3(xi, yj, zk) for xi in x, yj in y, zk in z]
+    qx, qy, qz = 1.7, 0.8, 0.45
+
     @testset "ClampExtrap: interpolant with NoInterp" begin
         itp = interp(
             (x, y), data_2d;

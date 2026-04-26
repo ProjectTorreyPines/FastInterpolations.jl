@@ -6,7 +6,7 @@
 # B. AutoCoeffs default behavior (scalar → OnTheFly, batch → PreCompute)
 # C. Zero-allocation after warmup (function barrier pattern)
 
-@testitem "ND OnTheFly One-Shot + AutoCoeffs" setup = [AllocConstants] begin
+@testitem "ND OnTheFly: Equivalence" setup = [AllocConstants] begin
     # Aliases mapping legacy *_LOCAL names to AllocConstants snippet symbols.
     AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
     ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
@@ -110,9 +110,21 @@
         @test val_otf ≈ val_pre rtol = 1.0e-10
     end
 
-    # ========================================
-    # B. AutoCoeffs Default Behavior
-    # ========================================
+end
+
+# ========================================
+# B. AutoCoeffs Default Behavior
+# ========================================
+
+@testitem "ND OnTheFly: AutoCoeffs" setup = [AllocConstants] begin
+    AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
+    ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
+    x = range(0.0, 2π, 30)
+    y = range(0.0, π, 25)
+    z = range(0.0, 1.0, 10)
+    data_2d = [sin(xi) * cos(yj) for xi in x, yj in y]
+    data_3d = [sin(xi) * cos(yj) * zk for xi in x, yj in y, zk in z]
+    qx, qy, qz = 1.7, 0.8, 0.4
 
     @testset "AutoCoeffs: cubic scalar matches PreCompute" begin
         val_auto = cubic_interp((x, y), data_2d, (qx, qy))  # AutoCoeffs default
@@ -153,9 +165,21 @@
         @test val_auto ≈ val_pre rtol = 1.0e-14
     end
 
-    # ========================================
-    # C. Zero-Allocation Tests
-    # ========================================
+end
+
+# ========================================
+# C. Zero-Allocation Tests
+# ========================================
+
+@testitem "ND OnTheFly: Zero-Alloc" setup = [AllocConstants] begin
+    AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
+    ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
+    x = range(0.0, 2π, 30)
+    y = range(0.0, π, 25)
+    z = range(0.0, 1.0, 10)
+    data_2d = [sin(xi) * cos(yj) for xi in x, yj in y]
+    data_3d = [sin(xi) * cos(yj) * zk for xi in x, yj in y, zk in z]
+    qx, qy, qz = 1.7, 0.8, 0.4
 
     @testset "Zero-alloc: OnTheFly oneshot cubic 2D" begin
         function _alloc_test_otf_cubic_2d()
@@ -383,9 +407,21 @@
         @test _alloc_test_otf_periodic() <= ND_ALLOC_THRESHOLD_LOCAL
     end
 
-    # ========================================
-    # D. Additional Coverage (review feedback)
-    # ========================================
+end
+
+# ========================================
+# D. Additional Coverage (review feedback)
+# ========================================
+
+@testitem "ND OnTheFly: Specialized" setup = [AllocConstants] begin
+    AAP_RUNTIME_CHECK_LOCAL = AAP_RUNTIME_CHECK
+    ND_ALLOC_THRESHOLD_LOCAL = ND_ALLOC_THRESHOLD
+    x = range(0.0, 2π, 30)
+    y = range(0.0, π, 25)
+    z = range(0.0, 1.0, 10)
+    data_2d = [sin(xi) * cos(yj) for xi in x, yj in y]
+    data_3d = [sin(xi) * cos(yj) * zk for xi in x, yj in y, zk in z]
+    qx, qy, qz = 1.7, 0.8, 0.4
 
     @testset "Equivalence: quadratic derivatives via OnTheFly" begin
         d = (DerivOp(1), DerivOp(0))

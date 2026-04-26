@@ -15,7 +15,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
 
 # ALLOC_THRESHOLD is defined in test/setup.jl
 
-@testitem "Allocation Tests" setup = [AllocConstants] begin
+@testitem "Allocation Tests: Cache & Periodic & Wrap & Typed extrap" setup = [AllocConstants] begin
     # Import internal function for testing
     import FastInterpolations: _get_cubic_cache
 
@@ -802,11 +802,15 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         @test allocs_periodic <= 128   # Periodic BC cache hit
     end
 
-    # =========================================================================
-    # FillExtrap Fill Value — Zero Allocation Tests
-    # =========================================================================
-    # Verifies that FillExtrap(value) fill-value paths are zero-allocation,
-    # matching the zero-allocation guarantee of ClampExtrap() (boundary clamp).
+end
+
+# =========================================================================
+# FillExtrap Fill Value — Zero Allocation Tests
+# =========================================================================
+# Verifies that FillExtrap(value) fill-value paths are zero-allocation,
+# matching the zero-allocation guarantee of ClampExtrap() (boundary clamp).
+@testitem "Allocation Tests: FillExtrap & Dynamic BCPair" setup = [AllocConstants] begin
+    import FastInterpolations: _get_cubic_cache
 
     @testset "FillExtrap fill value: linear oneshot scalar" begin
         x = collect(range(0.0, 1.0, 51))

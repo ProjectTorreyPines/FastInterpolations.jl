@@ -1,4 +1,4 @@
-@testitem "Hermite OnTheFly" setup = [AllocConstants] begin
+@testitem "Hermite OnTheFly: 1D Equivalence & Edge cases" setup = [AllocConstants] begin
     using Random: MersenneTwister
     using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes,
         _pchip_slopes!, _cardinal_slopes!, _akima_slopes!,
@@ -285,9 +285,19 @@
         end
     end
 
-    # ========================================
-    # 8. ND via HeteroInterpolantND
-    # ========================================
+end
+
+# ========================================
+# 8. ND via HeteroInterpolantND
+# ========================================
+@testitem "Hermite OnTheFly: ND & AutoCoeffs & Coverage" setup = [AllocConstants] begin
+    using Random: MersenneTwister
+    using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes,
+        _pchip_slopes!, _cardinal_slopes!, _akima_slopes!,
+        _resolve_coeffs, _deriv_size, _is_deriv_method,
+        _pchip_interp_onthefly, _akima_interp_onthefly, _cardinal_interp_onthefly,
+        _adjoint_func
+
     @testset "ND Hetero: Hermite methods" begin
         x = range(0.0, 2π, 15)
         y = range(0.0, π, 10)
@@ -836,6 +846,16 @@
     # the same (x, y) data. Both paths share `_hermite_integral_kernel_1d`;
     # the only difference is how slopes are materialized (bulk vector vs
     # per-cell `_local_slope`), so differences should be at the ULP level.
+end
+
+@testitem "Hermite OnTheFly: Integrate & Windowing" setup = [AllocConstants] begin
+    using Random: MersenneTwister
+    using FastInterpolations: _local_slope, PchipSlopes, CardinalSlopes, AkimaSlopes,
+        _pchip_slopes!, _cardinal_slopes!, _akima_slopes!,
+        _resolve_coeffs, _deriv_size, _is_deriv_method,
+        _pchip_interp_onthefly, _akima_interp_onthefly, _cardinal_interp_onthefly,
+        _adjoint_func
+
     @testset "OnTheFly integrate — equivalence with PreCompute" begin
         x = collect(range(0.0, 2π, 25))
         y = sin.(x)

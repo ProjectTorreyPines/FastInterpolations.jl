@@ -67,10 +67,12 @@
             @test val isa Float64
             @test isfinite(val)
 
-            # Broadcast
+            # Broadcast — persistent (cached `inv_h * α`) vs oneshot
+            # (direct `(q-L)/(R-L)`) may differ by 1 ULP at right knots;
+            # same trade-off as `test_linear.jl` Non-uniform grid case.
             x_query = [x_min + 0.5, (x_min + x_max) / 2, x_max - 0.5]
             result = itp.(x_query)
-            @test result == linear_interp(x_random, y, x_query)
+            @test result ≈ linear_interp(x_random, y, x_query) rtol = 4 * eps(Float64)
         end
 
         @testset "Zero-allocation (scalar)" begin

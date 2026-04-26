@@ -152,7 +152,7 @@ end
 # uses direct division so EvalValue queries can DCE the separately-extracted
 # `inv_hs` (only needed by EvalDeriv1 kernel weights).
 @inline _alpha_of(q::Real, L::Real, inv_h::Real) = (q - L) * inv_h
-@inline _alpha_of(q::Real, L::Real, R::Real, x::_CachedRange)  = (q - L) * x.inv_h
+@inline _alpha_of(q::Real, L::Real, R::Real, x::_CachedRange) = (q - L) * x.inv_h
 @inline _alpha_of(q::Real, L::Real, R::Real, ::AbstractVector) = (q - L) / float(R - L)
 
 # ========================================

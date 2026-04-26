@@ -21,14 +21,17 @@
 # - α: Unconstrained — can be Tg or Dual{Tg} for AD support
 
 # ========================================
-# Standard Kernel (inv_h, dL signature)
+# Standard Kernel (inv_h, α signature)
 # ========================================
 
 """
     _linear_kernel(::EvalValue, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
 
-Evaluate linear interpolation value at normalized cell coordinate α ∈ [0, 1].
-Returns: yL + α*(yR - yL). `inv_h` is unused for value eval — DCE'd by LLVM
+Evaluate linear interpolation value at normalized cell coordinate `α`.
+Returns: yL + α*(yR - yL). `α` is typically in [0, 1] for in-domain
+queries but may fall outside that range under linear extrapolation
+(`ExtendExtrap`/`WrapExtrap`) where callers intentionally evaluate
+outside the cell. `inv_h` is unused for value eval — DCE'd by LLVM
 when the caller's `inv_h` extraction has no other live use.
 """
 @inline function _linear_kernel(::EvalValue, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}

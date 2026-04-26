@@ -248,19 +248,21 @@ end
 Core scalar evaluation for all series at a single query point.
 Uses SIMD-optimized point-contiguous layout for vectorization across series.
 
-Query information (`aq.xq`, `aq.xL`, `aq.inv_h`) is read from the anchor.
-For duck grids (Dual), `aq.xq` carries the widened query type (via the outer
-constructor), so `dL = aq.xq - aq.xL` correctly propagates grid-side partials.
+Anchor data (`aq.alpha`, `aq.inv_h`, `aq.idxL`, `aq.idxR`) is read directly
+— `α` is precomputed by the anchor constructor as `(xq - xL) * inv_h`,
+so the SIMD loop only does multiplies/muladds per series.
 
 # Arguments
 - `output`: Pre-allocated output vector (length = n_series)
 - `sitp`: LinearSeriesInterpolant
-- `aq`: Anchor with precomputed indices (`idxL`/`idxR`) and widened `xq`
+- `aq`: Anchor with precomputed indices (`idxL`/`idxR`), `alpha`, `inv_h`
 - `op`: Evaluation operation (value, derivative)
 
 # AD Support
-Supports ForwardDiff.Dual input: the anchor's indices come from the primal value,
-while `aq.xq` carries the Dual payload so `dL = aq.xq - aq.xL` preserves derivatives.
+Supports ForwardDiff.Dual input: the anchor's indices come from the primal
+value while `aq.alpha` carries the Dual payload (the outer
+`_LinearAnchoredQuery` constructor widens via `promote_type(Tq, Tg)`), so
+the SIMD loop preserves grid-side partials through `α`.
 """
 @inline function _eval_linear_series_point!(
         output::AbstractVector,

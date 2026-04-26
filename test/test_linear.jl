@@ -384,8 +384,9 @@ end
         result = itp.(x_targets)
 
         # Persistent uses cached `inv_h * α`; oneshot uses direct
-        # `(q-L)/(R-L)`. Both within 1 ULP — tolerance allows the
-        # documented design difference.
+        # `(q-L)/(R-L)`. They can differ by a few ULPs at right knots
+        # — tolerance permits this documented design difference
+        # (rtol = 4*eps) while still catching real correctness regressions.
         expected_3arg = linear_interp(x, y, x_targets)
         @test result ≈ expected_3arg rtol = 4 * eps(Float64)
     end

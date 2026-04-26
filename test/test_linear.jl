@@ -337,9 +337,12 @@ end
         result2 = itp.(rho2)
         result3 = itp(rho3)
 
-        @test result1 == linear_interp(x, y, rho1; extrap = ExtendExtrap())
-        @test result2 == linear_interp(x, y, rho2; extrap = ExtendExtrap())
-        @test result3 == linear_interp(x, y, rho3; extrap = ExtendExtrap())
+        # Persistent (cached `inv_h * α`) vs oneshot (direct division) may
+        # differ by 1 ULP at right knots — same documented trade-off as
+        # the Non-uniform grid test.
+        @test result1 ≈ linear_interp(x, y, rho1; extrap = ExtendExtrap()) rtol = 4 * eps(Float64)
+        @test result2 ≈ linear_interp(x, y, rho2; extrap = ExtendExtrap()) rtol = 4 * eps(Float64)
+        @test result3 ≈ linear_interp(x, y, rho3; extrap = ExtendExtrap()) rtol = 4 * eps(Float64)
     end
 
     @testset "Extrapolation :extension" begin
@@ -380,8 +383,12 @@ end
         itp = linear_interp(x, y)
         result = itp.(x_targets)
 
+        # Persistent uses cached `inv_h * α`; oneshot uses direct
+        # `(q-L)/(R-L)`. They can differ by a few ULPs at right knots
+        # — tolerance permits this documented design difference
+        # (rtol = 4*eps) while still catching real correctness regressions.
         expected_3arg = linear_interp(x, y, x_targets)
-        @test result == expected_3arg
+        @test result ≈ expected_3arg rtol = 4 * eps(Float64)
     end
 
     @testset "Type stability" begin

@@ -12,11 +12,11 @@
 # _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
 
 @inline function _itp_eval_scalar(itp::LinearInterpolant, xq, extrap, op, searcher)
-    return _linear_eval_at_point(itp.x, itp.y, xq, extrap, op, searcher)
+    return _linear_eval_at_point(itp.x, itp.y, itp.spacing, xq, extrap, op, searcher)
 end
 
 @inline function _itp_vector_loop!(output, itp::LinearInterpolant, xq, extrap, op, searcher)
-    return _linear_vector_loop!(output, itp.x, itp.y, xq, extrap, op, searcher)
+    return _linear_vector_loop!(output, itp.x, itp.y, itp.spacing, xq, extrap, op, searcher)
 end
 
 # ========================================
@@ -26,6 +26,8 @@ end
 # overhead when adaptive AutoSearch resolves to BinarySearch or LinearBinarySearch.
 # CRITICAL: All arguments must be fully typed — untyped args prevent SROA
 # of RefHint's Ref, causing 16-byte heap allocation per call.
+# Oneshot variant (no spacing) and persistent variant (with spacing) coexist;
+# persistent calls reuse the spacing's cached `inv_h` array per query.
 @inline function _linear_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -38,6 +40,22 @@ end
     extrap = _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
         output[i] = _linear_eval_at_point(x, y, xq[i], extrap, deriv, searcher)
+    end
+end
+
+@inline function _linear_vector_loop!(
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg},
+        xq::AbstractVector{<:Real},
+        extrap::E,
+        deriv::O,
+        searcher::P
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    extrap = _check_domain(x, xq, extrap)
+    return @inbounds for i in eachindex(xq, output)
+        output[i] = _linear_eval_at_point(x, y, spacing, xq[i], extrap, deriv, searcher)
     end
 end
 

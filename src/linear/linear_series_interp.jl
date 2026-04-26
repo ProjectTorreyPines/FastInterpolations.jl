@@ -229,11 +229,11 @@ end
         xR = x[idx1]
     end
     inv_h = _get_inv_h(x, xL, xR)
-    dL = aq.xq - xL
+    α = _alpha_of(aq.xq, xL, xR, x)
     @inbounds @simd for k in axes(out, 1)
         yL = y_point[k, idx]
         yR = y_point[k, idx1]
-        out[k] = _linear_kernel(op, yL, yR, inv_h, dL)
+        out[k] = _linear_kernel(op, yL, yR, inv_h, α)
     end
     return out
 end
@@ -248,19 +248,21 @@ end
 Core scalar evaluation for all series at a single query point.
 Uses SIMD-optimized point-contiguous layout for vectorization across series.
 
-Query information (`aq.xq`, `aq.xL`, `aq.inv_h`) is read from the anchor.
-For duck grids (Dual), `aq.xq` carries the widened query type (via the outer
-constructor), so `dL = aq.xq - aq.xL` correctly propagates grid-side partials.
+Anchor data (`aq.alpha`, `aq.inv_h`, `aq.idxL`, `aq.idxR`) is read directly
+— `α` is precomputed by the anchor constructor as `(xq - xL) * inv_h`,
+so the SIMD loop only does multiplies/muladds per series.
 
 # Arguments
 - `output`: Pre-allocated output vector (length = n_series)
 - `sitp`: LinearSeriesInterpolant
-- `aq`: Anchor with precomputed indices (`idxL`/`idxR`) and widened `xq`
+- `aq`: Anchor with precomputed indices (`idxL`/`idxR`), `alpha`, `inv_h`
 - `op`: Evaluation operation (value, derivative)
 
 # AD Support
-Supports ForwardDiff.Dual input: the anchor's indices come from the primal value,
-while `aq.xq` carries the Dual payload so `dL = aq.xq - aq.xL` preserves derivatives.
+Supports ForwardDiff.Dual input: the anchor's indices come from the primal
+value while `aq.alpha` carries the Dual payload (the outer
+`_LinearAnchoredQuery` constructor widens via `promote_type(Tq, Tg)`), so
+the SIMD loop preserves grid-side partials through `α`.
 """
 @inline function _eval_linear_series_point!(
         output::AbstractVector,
@@ -279,12 +281,12 @@ while `aq.xq` carries the Dual payload so `dL = aq.xq - aq.xL` preserves derivat
     idxR = aq.idxR
 
     inv_h = aq.inv_h
-    dL = aq.xq - aq.xL  # aq.xq carries Dual info (widened by outer constructor)
+    α = aq.alpha  # precomputed by anchor constructor
 
     @inbounds @simd for k in axes(output, 1)
         yL = y_point[k, idxL]
         yR = y_point[k, idxR]
-        output[k] = _linear_kernel(op, yL, yR, inv_h, dL)
+        output[k] = _linear_kernel(op, yL, yR, inv_h, α)
     end
     return output
 end

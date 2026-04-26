@@ -50,15 +50,10 @@ end
     ) where {Tg, Tv, N}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
     indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, policies, hints, mono)
-    # Persistent fast lane: 2-arg `_get_h` reads precomputed `spacings[d].h`
-    # (or `.h[i]` for Vector). `map` dispatches per-axis with concrete types.
-    hs = map(_get_h, itp.spacings, indices)
-    αs = map(_alpha_of, q_eval, Ls, hs)
-    # Wrap raw indices into the unified stencil shape so `_multilinear_sum`
-    # has a single signature across persistent / BC oneshot callers.
-    # Non-periodic cells are always `(idx, idx+1)` — no seam wrap.
+    inv_hs = map(_get_inv_h, itp.spacings, indices)
+    αs = map(_alpha_of, q_eval, Ls, inv_hs)
     stencils = map(i -> _IdxPair(i, i + 1), indices)
-    return (itp.data, stencils, hs, αs)
+    return (itp.data, stencils, inv_hs, αs)
 end
 
 # N=2 specialization: direct destructuring eliminates ntuple closure overhead
@@ -73,14 +68,11 @@ end
         query, itp.grids, itp.spacings, itp.extraps, policies, hints, mono
     )
 
-    hx = _get_h(itp.spacings[1], ix)
-    hy = _get_h(itp.spacings[2], iy)
-    αx = (x_eval - xL) / hx
-    αy = (y_eval - yL) / hy
-
-    # N=2 specialization wraps directly into the unified stencil shape — same
-    # `_multilinear_sum` signature as the generic-N persistent / BC oneshot paths.
-    return (itp.data, (_IdxPair(ix, ix + 1), _IdxPair(iy, iy + 1)), (hx, hy), (αx, αy))
+    inv_hx = _get_inv_h(itp.spacings[1], ix)
+    inv_hy = _get_inv_h(itp.spacings[2], iy)
+    αx = (x_eval - xL) * inv_hx
+    αy = (y_eval - yL) * inv_hy
+    return (itp.data, (_IdxPair(ix, ix + 1), _IdxPair(iy, iy + 1)), (inv_hx, inv_hy), (αx, αy))
 end
 
 # Evaluate kernel at a pre-located cell with given derivative ops
@@ -92,8 +84,8 @@ end
     if _has_second_or_higher_derivative(ops, Val(N))
         return 0 * first(itp.data)
     end
-    data, stencils, hs, αs = cell
-    return _multilinear_sum(data, stencils, hs, αs, ops, Val(N))
+    data, stencils, inv_hs, αs = cell
+    return _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
 end
 
 # ========================================
@@ -155,32 +147,20 @@ end
     return false
 end
 
-# ========================================
-# Local Parameter Computation
-# ========================================
-
-# Shared `αs` formula for both variants. `map` on NTuples dispatches
-# per-element with concrete types — safe for heterogeneous `hs` / `Ls` /
-# `q_eval` tuples (e.g., Real + Float64 mixes), avoiding the Union-box risk
-# of `ntuple(d -> q_eval[d], Val(N))` where runtime-indexed lookup collapses
-# to an abstract return type. See MEMORY.md "ND Constructor Inferrability
-# Pattern" for the canonical precedent.
-#
-# `_alpha_of` is the only surviving named helper from this region. The earlier
-# `_alphas_from_hs(q, Ls, hs)`, `_compute_linear_params(q, spacings, indices, Ls, …)`,
-# and `_compute_linear_params_stencil(q, Ls, Rs, …)` wrappers were single-line
-# `map`-forwarders that hid the actual arithmetic behind two extra layers; call
-# sites now do the `map(_get_h, …)` + `map(_alpha_of, q, Ls, hs)` directly.
-#   - persistent path: `map(_get_h, spacings, indices)` (2-arg cached fast lane)
-#   - BC oneshot path: `map(_get_h, grids, Ls, Rs)` (3-arg dispatch, seam-aware)
-@inline _alpha_of(q::Real, L::Real, h::Real) = (q - L) / h
+# 3-arg form: caller supplies cached `inv_h` (persistent path).
+# 4-arg form: dispatch on grid type (oneshot path) — plain `AbstractVector`
+# uses direct division so EvalValue queries can DCE the separately-extracted
+# `inv_hs` (only needed by EvalDeriv1 kernel weights).
+@inline _alpha_of(q::Real, L::Real, inv_h::Real) = (q - L) * inv_h
+@inline _alpha_of(q::Real, L::Real, R::Real, x::_CachedRange) = (q - L) * x.inv_h
+@inline _alpha_of(q::Real, L::Real, R::Real, ::AbstractVector) = (q - L) / float(R - L)
 
 # ========================================
 # Multilinear Interpolation Kernel
 # ========================================
 
 """
-    _multilinear_sum(data, stencils, hs, αs, ops, Val(N))
+    _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
 
 Compute the multilinear interpolation sum over 2^N corners.
 
@@ -191,9 +171,10 @@ For non-periodic cells `idx_R == idx_L + 1`; for periodic-exclusive seam
 cells `idx_R == 1` (wrap), so the kernel reads the wrapped neighbor without
 any data extension.
 
-Per-corner weight: `∏ᵢ _linear_weight(ops[i], αs[i], hs[i], bᵢ)`. The weight
-function depends on the evaluation op — EvalValue: `(1-α)` for `b=0`, `α`
-for `b=1`; EvalDeriv1: `-1/h` for `b=0`, `+1/h` for `b=1`.
+Per-corner weight: `∏ᵢ _linear_weight(ops[i], αs[i], inv_hs[i], bᵢ)`. The
+weight function depends on the evaluation op — EvalValue: `(1-α)` for `b=0`,
+`α` for `b=1` (inv_h unused); EvalDeriv1: `-inv_h` for `b=0`, `+inv_h` for
+`b=1` (precomputed reciprocal — no `inv()` at the kernel).
 
 Single-overload, stencil-only kernel. Persistent callers wrap their
 single-index `indices` via `map(i -> _IdxPair(i, i+1), indices)` at the
@@ -203,28 +184,18 @@ directly from `_search_all_intervals_stencil`.
 @generated function _multilinear_sum(
         data::AbstractArray{Tv, N},
         stencils::NTuple{N, _IdxStencil{2}},
-        hs::NTuple{N},
+        inv_hs::NTuple{N},
         αs::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
         ::Val{N}
     ) where {Tv, N}
-    return _multilinear_sum_body(N, (d, bit) -> :(stencils[$d][$(bit + 1)]))
-end
-
-# Shared Expr builder for the multilinear @generated kernel above. Produces
-# the flat 2^N straight-line unroll. `make_idx_expr(d, bit)` returns the
-# address expression for axis `d` at corner bit `bit` ∈ {0, 1}; the kernel
-# above passes the stencil-style `(d, bit) -> :(stencils[$d][$(bit + 1)])`.
-# Body kept as a callback-driven helper so future K > 2 kernels (ND Hermite)
-# can reuse it without duplicating the corner-unroll skeleton.
-function _multilinear_sum_body(N::Int, make_idx_expr::Function)
     num_corners = 1 << N  # 2^N
     corner_exprs = []
     for corner in 0:(num_corners - 1)
         bits = ntuple(d -> (corner >> (d - 1)) & 1, N)
-        idx_expr = Expr(:tuple, [make_idx_expr(d, bits[d]) for d in 1:N]...)
+        idx_expr = Expr(:tuple, [:(stencils[$d][$(bits[d] + 1)]) for d in 1:N]...)
         weight_exprs = [
-            :(_linear_weight(ops[$d], αs[$d], hs[$d], Val($(bits[d]))))
+            :(_linear_weight(ops[$d], αs[$d], inv_hs[$d], Val($(bits[d]))))
                 for d in 1:N
         ]
         weight_expr = foldl((a, b) -> :($a * $b), weight_exprs)
@@ -240,18 +211,18 @@ end
 # Linear Weight Functions
 # ========================================
 
-# For value evaluation: (1-α) for bit=0, α for bit=1
-@inline _linear_weight(::EvalValue, α, h, ::Val{0}) = one(α) - α
-@inline _linear_weight(::EvalValue, α, h, ::Val{1}) = α
+# For value evaluation: (1-α) for bit=0, α for bit=1 (inv_h unused)
+@inline _linear_weight(::EvalValue, α, inv_h, ::Val{0}) = one(α) - α
+@inline _linear_weight(::EvalValue, α, inv_h, ::Val{1}) = α
 
-# For first derivative: -1/h for bit=0, 1/h for bit=1
-@inline _linear_weight(::EvalDeriv1, α, h, ::Val{0}) = -inv(h)
-@inline _linear_weight(::EvalDeriv1, α, h, ::Val{1}) = inv(h)
+# For first derivative: -inv_h for bit=0, +inv_h for bit=1
+@inline _linear_weight(::EvalDeriv1, α, inv_h, ::Val{0}) = -inv_h
+@inline _linear_weight(::EvalDeriv1, α, inv_h, ::Val{1}) = inv_h
 
 # Second and higher derivatives are zero (handled by early return in _eval_linear_nd)
 # But define them for completeness if somehow called
-@inline _linear_weight(::EvalDeriv2, α, h, ::Val{B}) where {B} = zero(α)
-@inline _linear_weight(::EvalDeriv3, α, h, ::Val{B}) where {B} = zero(α)
+@inline _linear_weight(::EvalDeriv2, α, inv_h, ::Val{B}) where {B} = zero(α)
+@inline _linear_weight(::EvalDeriv3, α, inv_h, ::Val{B}) where {B} = zero(α)
 
 # Generic fallback: N-th derivative weight is zero for N ≥ 2
-@inline _linear_weight(::DerivOp{N}, α, h, ::Val{B}) where {N, B} = zero(α)
+@inline _linear_weight(::DerivOp{N}, α, inv_h, ::Val{B}) where {N, B} = zero(α)

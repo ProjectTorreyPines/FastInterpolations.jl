@@ -41,16 +41,13 @@ function _linear_interp_nd_oneshot(
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
     q_eval = _handle_all_extraps(query, grids, extraps_eff)
-    # BC-aware per-axis search — returns (stencils, Ls, Rs) where
-    # stencils[d]::_IdxStencil{2} wraps (idx_L_d, idx_R_d); periodic seam
-    # axes have idx_R == 1 (wrap), so kernel reads the wrapped neighbor
-    # without data extension. No spacings needed — 3-arg `_get_h(x, xL, xR)`
-    # dispatches to cached `x.h` for `_CachedRange` and `xR-xL` for Vector,
-    # giving seam-aware h without VectorSpacing allocation.
+    # Periodic seam: stencils[d] carries (idx_L, idx_R) with idx_R==1 at wrap.
+    # `_alpha_of` keeps α independent of `inv_hs` so EvalValue queries DCE
+    # the inv_h computation on the plain `AbstractVector` path.
     stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids, searches, hints, bcs)
-    hs = map(_get_h, grids, Ls, Rs)
-    αs = map(_alpha_of, q_eval, Ls, hs)
-    return _multilinear_sum(data, stencils, hs, αs, ops, Val(N))
+    αs = map(_alpha_of, q_eval, Ls, Rs, grids)
+    inv_hs = map(_get_inv_h, grids, Ls, Rs)
+    return _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
 end
 
 """
@@ -85,9 +82,9 @@ function _linear_interp_nd_oneshot_batch!(
         end
         q_eval = _handle_all_extraps(query_k, grids, extraps_eff)
         stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids, policies, hints, bcs)
-        hs = map(_get_h, grids, Ls, Rs)
-        αs = map(_alpha_of, q_eval, Ls, hs)
-        output[k] = _multilinear_sum(data, stencils, hs, αs, ops, Val(N))
+        αs = map(_alpha_of, q_eval, Ls, Rs, grids)
+        inv_hs = map(_get_inv_h, grids, Ls, Rs)
+        output[k] = _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
     end
     return output
 end

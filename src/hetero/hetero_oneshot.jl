@@ -178,8 +178,8 @@ end
         #   - periodic:     `Vector{Tg}` from pool (monotonic shifted x)
         # Each axis's return type is determined at compile time by the method
         # type → tuple is concrete, no Union boxing.
-        windows = map((m, x, ix) -> _axis_window_oneshot(pool, m, x, ix), methods, grids, indices)
-        grids_local = map((m, x, w, ix) -> _axis_grid_oneshot(pool, m, x, w, ix), methods, grids, windows, indices)
+        windows = map((m, x, ix) -> _axis_window_pooled(pool, m, x, ix), methods, grids, indices)
+        grids_local = map((m, x, w, ix) -> _axis_grid_pooled(pool, m, x, w, ix), methods, grids, windows, indices)
         # Wrap is baked into the windowed grid → strip BC and any WrapExtrap so
         # the inner 1D oneshot evaluates the local mini-grid as non-periodic.
         methods_inner = map(_strip_periodic_bc, methods)

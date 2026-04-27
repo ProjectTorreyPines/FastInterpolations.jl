@@ -75,7 +75,7 @@ end
 # extended grid. A windowed view there does not satisfy the
 # `y[1] ≈ y[end]` BC check inside the inner 1D oneshot, so the persistent
 # path keeps full-axis fallback. The OnTheFly oneshot path uses the
-# wrap-aware helpers below (`_axis_window_oneshot` + `_axis_grid_oneshot`)
+# wrap-aware helpers below (`_axis_window_pooled` + `_axis_grid_pooled`)
 # instead, which bake the wrap into pool-allocated index/grid buffers and
 # strip BC for the inner call.
 @inline _axis_window(::PchipInterp{<:PeriodicBC}, ix::Int, n::Int) = 1:n
@@ -84,7 +84,7 @@ end
 
 # ── OnTheFly oneshot wrap-aware window + grid helpers ──
 #
-# Per-axis dispatch entries (`_axis_window_oneshot`, `_axis_grid_oneshot`):
+# Per-axis dispatch entries (`_axis_window_pooled`, `_axis_grid_pooled`):
 # only the dispatch entry takes `pool` — for periodic methods it acquires a
 # small (4-6 element) buffer and hands it to the pure in-place fill helpers
 # (`_fill_periodic_window!`, `_fill_periodic_grid!`). The fill helpers are
@@ -92,22 +92,22 @@ end
 # Non-periodic methods go through the default method (UnitRange / grid view,
 # no pool acquire).
 
-@inline _axis_window_oneshot(pool, m::AbstractInterpMethod, x::AbstractVector, ix::Int) =
+@inline _axis_window_pooled(pool, m::AbstractInterpMethod, x::AbstractVector, ix::Int) =
     _axis_window(m, ix, length(x))
-@inline _axis_window_oneshot(pool, m::PchipInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
+@inline _axis_window_pooled(pool, m::PchipInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
     _fill_periodic_window!(acquire!(pool, Int, _fixed_window_size(m)), m, ix, length(x))
-@inline _axis_window_oneshot(pool, m::CardinalInterp{T, <:PeriodicBC}, x::AbstractVector, ix::Int) where {T} =
+@inline _axis_window_pooled(pool, m::CardinalInterp{T, <:PeriodicBC}, x::AbstractVector, ix::Int) where {T} =
     _fill_periodic_window!(acquire!(pool, Int, _fixed_window_size(m)), m, ix, length(x))
-@inline _axis_window_oneshot(pool, m::AkimaInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
+@inline _axis_window_pooled(pool, m::AkimaInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
     _fill_periodic_window!(acquire!(pool, Int, _fixed_window_size(m)), m, ix, length(x))
 
-@inline _axis_grid_oneshot(pool, ::AbstractInterpMethod, x::AbstractVector, w::AbstractVector{Int}, ::Int) =
+@inline _axis_grid_pooled(pool, ::AbstractInterpMethod, x::AbstractVector, w::AbstractVector{Int}, ::Int) =
     view(x, w)
-@inline _axis_grid_oneshot(pool, m::PchipInterp{<:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {Tg} =
+@inline _axis_grid_pooled(pool, m::PchipInterp{<:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {Tg} =
     _fill_periodic_grid!(acquire!(pool, Tg, _fixed_window_size(m)), m, x, ix)
-@inline _axis_grid_oneshot(pool, m::CardinalInterp{T, <:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {T, Tg} =
+@inline _axis_grid_pooled(pool, m::CardinalInterp{T, <:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {T, Tg} =
     _fill_periodic_grid!(acquire!(pool, Tg, _fixed_window_size(m)), m, x, ix)
-@inline _axis_grid_oneshot(pool, m::AkimaInterp{<:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {Tg} =
+@inline _axis_grid_pooled(pool, m::AkimaInterp{<:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {Tg} =
     _fill_periodic_grid!(acquire!(pool, Tg, _fixed_window_size(m)), m, x, ix)
 
 # Pure in-place fill helpers (no pool knowledge).
@@ -161,6 +161,8 @@ end
 @inline _is_periodic_method(::CardinalInterp{T, <:PeriodicBC}) where {T} = true
 @inline _is_periodic_method(::AkimaInterp{<:PeriodicBC}) = true
 @inline _is_periodic_method(::AbstractInterpMethod) = false
+
+@inline _has_any_periodic_method(methods::Tuple) = any(_is_periodic_method, methods)
 
 @inline _strip_wrap_extrap(e, m) = _is_periodic_method(m) ? NoExtrap() : e
 

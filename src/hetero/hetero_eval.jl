@@ -198,6 +198,14 @@ end
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
     Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
 
+    # Wrap-aware path: routed only when at least one axis is a periodic local
+    # Hermite method. Pool scope (and the wrap-aware buffers) live entirely
+    # inside `_eval_hetero_nd_wrap_aware` — the NoBC branch below stays
+    # pool-free and identical to its pre-Phase-2 behavior.
+    if _has_any_periodic_method(itp.methods) && !_has_grididx(typeof(query))
+        return _eval_hetero_nd_wrap_aware(itp, q_eval, Tr, ops, policies, hints, mono)
+    end
+
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
         data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)
         # Inner kernel uses policies for fiber re-search on sliced grids.
@@ -215,6 +223,29 @@ end
     return _collapse_dims(
         Tr, itp.data, itp.grids, itp.methods, itp.extraps,
         q_eval, ops, policies, nothing, full_windows,
+    )
+end
+
+# Wrap-aware persistent path: same shape as the OnTheFly oneshot wrap-aware
+# branch in `_interp_nd_oneshot_onthefly`. Pool scope is local to this function
+# so the NoBC `_eval_hetero_nd` branch never enters a `@with_pool` setup.
+@inline @with_pool pool function _eval_hetero_nd_wrap_aware(
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        q_eval::Tuple{Vararg{Real, N}},
+        ::Type{Tr},
+        ops::NTuple{N, AbstractEvalOp},
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
+    ) where {Tg, Tv, N, G, S, M, E, P, Tr}
+    indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, policies, hints, mono)
+    windows = map((m, x, ix) -> _axis_window_pooled(pool, m, x, ix), itp.methods, itp.grids, indices)
+    grids_local = map((m, x, w, ix) -> _axis_grid_pooled(pool, m, x, w, ix), itp.methods, itp.grids, windows, indices)
+    methods_inner = map(_strip_periodic_bc, itp.methods)
+    extraps_inner = map(_strip_wrap_extrap, itp.extraps, itp.methods)
+    return _collapse_dims(
+        Tr, itp.data, grids_local, methods_inner, extraps_inner,
+        q_eval, ops, policies, nothing, windows,
     )
 end
 

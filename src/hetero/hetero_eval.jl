@@ -45,8 +45,6 @@ end
 end
 
 # Hermite family: local slope methods (PCHIP, Cardinal, Akima)
-# `m.bc` forwards each axis's PeriodicBC (or NoBC) into the 1D entry, where
-# the bc-aware boundary slope helpers handle closed-cycle wrap.
 @inline function _oneshot_eval_1d(m::PchipInterp, grid, fiber, extrap, q, op, search, hint)
     return pchip_interp(grid, fiber, q; bc = m.bc, extrap = extrap, deriv = op, search = search, hint = hint)
 end

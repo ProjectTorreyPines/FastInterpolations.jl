@@ -138,7 +138,6 @@ end
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
-        spacings::Union{Nothing, Tuple{Vararg{AbstractGridSpacing, N}}} = nothing,
     ) where {Tg, Tv, N}
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
@@ -167,22 +166,10 @@ end
     # `_has_grididx` branch is unreachable. The gate exists to prevent silent
     # corruption if a future internal caller forgets to strip GridIdx first.
     if _has_any_local_method(methods) && !_has_grididx(typeof(query))
-        # Resolve spacings:
-        # - Caller-provided (batch dispatcher precomputes once outside its loop) → reuse.
-        # - nothing → this is scalar oneshot. Acquire h/inv_h from the pool so Vector
-        #   grids don't heap-allocate per call. Range grids return `ScalarSpacing`
-        #   (struct, no pool touch). Pool scope is this function's `@with_pool`, so
-        #   the acquired buffers are reclaimed when we return.
-        sp = spacings === nothing ? _create_spacings_pooled(pool, grids) : spacings
-        # BC-aware per-axis search: PeriodicBC{:exclusive} axes produce seam-cell
-        # `(n, 1, …)` 4-tuple at the join, so the windowing below picks the correct
-        # cell and the inner 1D `_oneshot_eval_1d` handles the wrap automatically.
-        results = if hints === nothing
-            map(_search_axis_oneshot_bc, q_eval, grids, sp, searches, bcs)
-        else
-            map(_search_axis_oneshot_bc_hint, q_eval, grids, sp, searches, hints, bcs)
-        end
-        indices = map(_getidx, results)
+        # BC-aware per-axis search; on `PeriodicBC{:exclusive}` axes the seam
+        # cell returns `idx_R=1` so the windowing below picks the right cell.
+        stencils, _, _ = _search_all_intervals_stencil(q_eval, grids, searches, hints, bcs)
+        indices = map(first, stencils)
         # `map` over heterogeneous tuples for closure-free unrolled per-axis dispatch.
         windows = map(_axis_window, methods, indices, map(length, grids))
         data_local = view(data, windows...)
@@ -251,9 +238,7 @@ function _interp_nd_oneshot_dispatch(
     _validate_nd_grids(grids_typed, data)
     Tr = _output_eltype(eltype(data), Tg, typeof.(query)...)
 
-    # Bc-aware extrap resolution: extract per-axis BC from methods so that
-    # `extrap=NoExtrap()` upgrades to `WrapExtrap` on PeriodicBC axes (matches
-    # the 1D pattern + Cubic/Quadratic ND paths).
+    # bc-aware extrap: NoExtrap → WrapExtrap on PeriodicBC axes.
     bcs = map(_bc_for_periodic_check, methods)
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N), query)
@@ -320,7 +305,7 @@ end
     _validate_nd_grids(grids_typed, data)
     _query_check_ndims(queries, Val(N))
 
-    # Bc-aware extrap resolution (matches scalar dispatch).
+    # bc-aware extrap (matches scalar dispatch).
     bcs = map(_bc_for_periodic_check, methods)
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     policies = _resolve_search_nd(search, Val(N))
@@ -332,19 +317,9 @@ end
         nq = _query_length(queries)
         length(output) == nq || _throw_query_output_mismatch(nq, length(output))
         _query_validate(queries)
-        # Phase 5a: precompute per-axis spacings ONCE if any local-Hermite axis is present.
-        # The windowed path inside `_interp_nd_oneshot_onthefly` reuses these across all
-        # `nq` queries, so the cell-local stencil benefit is realized in the batch loop.
-        # For pure global-solve method tuples, `spacings` is left as `nothing` (unused).
-        # Use `_create_spacings_pooled` so Vector grids acquire h/inv_h from THIS
-        # function's `@with_pool` scope — the buffers outlive the per-query
-        # `_interp_nd_oneshot_onthefly` calls (which have their own inner pool
-        # scope) because nested `@with_pool` scopes don't reclaim the outer
-        # scope's arrays. Range grids return `ScalarSpacing` with zero pool touch.
-        spacings = _has_any_local_method(methods) ? _create_spacings_pooled(pool, grids_typed) : nothing
         @inbounds for k in 1:nq
             query_k = _extract_query_point(queries, k, Val(N))
-            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, policies, ops, hints, spacings)
+            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, policies, ops, hints)
         end
         return output
     end

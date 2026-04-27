@@ -89,6 +89,8 @@ const _IdxPair = _IdxStencil{2}
 @inline Base.length(::_IdxStencil{K}) where {K} = K
 @inline Base.firstindex(::_IdxStencil) = 1
 @inline Base.lastindex(::_IdxStencil{K}) where {K} = K
+@inline Base.first(s::_IdxStencil) = @inbounds s.indices[1]
+@inline Base.last(s::_IdxStencil{K}) where {K} = @inbounds s.indices[K]
 
 # `iterate` provided for `for i in stencil` ergonomics; still allocation-free
 # because it's a compile-time-known fixed-K loop.

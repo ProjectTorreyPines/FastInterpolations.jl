@@ -97,15 +97,5 @@ _compute_slopes!(dy, x, y, sm::PchipSlopes) = _pchip_slopes!(dy, x, y; bc = sm.b
 _compute_slopes!(dy, x, y, sm::CardinalSlopes) = _cardinal_slopes!(dy, x, y, sm.tension; bc = sm.bc)
 _compute_slopes!(dy, x, y, sm::AkimaSlopes) = _akima_slopes!(dy, x, y; bc = sm.bc)
 
-# ────────────────────────────────────────────
-# BC normalization after grid extension
-# ────────────────────────────────────────────
-# `_periodic_extend_1d` produces a closed-cycle (n+1) grid for `:exclusive`
-# input and a passthrough n-grid for `:inclusive` (already closed-cycle).
-# After this normalization, the slope side should treat the grid as
-# `:inclusive` regardless of the user's original `bc.endpoint` — the seam
-# cell is now the last cell of the extended grid (or already in place for
-# `:inclusive`). `check=false` skips redundant endpoint validation since
-# the extension constructs `y_eff[end] = y_eff[1]` by definition.
-@inline _bc_after_extend(bc::AbstractBC) = bc
-@inline _bc_after_extend(::PeriodicBC) = PeriodicBC(endpoint = :inclusive, check = false)
+# `_bc_after_extend` lives in `src/core/periodic.jl` next to `_periodic_extend_1d`
+# — it is generic post-extension BC normalization, not Hermite-specific.

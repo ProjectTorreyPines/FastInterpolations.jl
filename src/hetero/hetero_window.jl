@@ -19,7 +19,7 @@
 #    call on the windowed view is *numerically identical* to the same call
 #    on the full grid. For PCHIP/Cardinal this means n_window ≥ 3; for
 #    Akima ≥ 4 (Akima 1D has a special n==3 branch that diverges from the
-#    general n≥4 formula — see hermite_local_slopes.jl:99-107). On tiny
+#    general n≥4 formula — see hermite_local_slopes.jl:164-178). On tiny
 #    grids the windowed call and the full-grid call are literally the same
 #    call (both use `1:n`), so equivalence holds trivially.
 # 3. Global-solve methods (Cubic, Quadratic) always return the full axis
@@ -72,12 +72,19 @@ end
 #
 # Persistent interpolants reach `_axis_window` via `_eval_hetero_nd` /
 # `_locate_cell` with `itp.methods` still carrying `PeriodicBC` and the
-# extended grid. A windowed view there does not satisfy the
+# unextended grid. A windowed view there does not satisfy the
 # `y[1] ≈ y[end]` BC check inside the inner 1D oneshot, so the persistent
 # path keeps full-axis fallback. The OnTheFly oneshot path uses the
 # wrap-aware helpers below (`_axis_window_pooled` + `_axis_grid_pooled`)
 # instead, which bake the wrap into pool-allocated index/grid buffers and
 # strip BC for the inner call.
+#
+# These per-method specializations CAN'T be replaced by a single
+# `AbstractLocalHermiteInterp{<:PeriodicBC}` dispatch — that would tie
+# specificity-wise with the `Union{PchipInterp, …, ConstantInterp}` general
+# dispatch above (line 47), and Julia silently picks the latter, returning
+# a cell-local window for periodic axes. The concrete-type specializations
+# below are unambiguously more specific than both.
 @inline _axis_window(::PchipInterp{<:PeriodicBC}, ix::Int, n::Int) = 1:n
 @inline _axis_window(::CardinalInterp{T, <:PeriodicBC}, ix::Int, n::Int) where {T} = 1:n
 @inline _axis_window(::AkimaInterp{<:PeriodicBC}, ix::Int, n::Int) = 1:n
@@ -94,20 +101,12 @@ end
 
 @inline _axis_window_pooled(pool, m::AbstractInterpMethod, x::AbstractVector, ix::Int) =
     _axis_window(m, ix, length(x))
-@inline _axis_window_pooled(pool, m::PchipInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
-    _fill_periodic_window!(acquire!(pool, Int, _fixed_window_size(m)), m, ix, length(x))
-@inline _axis_window_pooled(pool, m::CardinalInterp{T, <:PeriodicBC}, x::AbstractVector, ix::Int) where {T} =
-    _fill_periodic_window!(acquire!(pool, Int, _fixed_window_size(m)), m, ix, length(x))
-@inline _axis_window_pooled(pool, m::AkimaInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
+@inline _axis_window_pooled(pool, m::AbstractLocalHermiteInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
     _fill_periodic_window!(acquire!(pool, Int, _fixed_window_size(m)), m, ix, length(x))
 
 @inline _axis_grid_pooled(pool, ::AbstractInterpMethod, x::AbstractVector, w::AbstractVector{Int}, ::Int) =
     view(x, w)
-@inline _axis_grid_pooled(pool, m::PchipInterp{<:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {Tg} =
-    _fill_periodic_grid!(acquire!(pool, Tg, _fixed_window_size(m)), m, x, ix)
-@inline _axis_grid_pooled(pool, m::CardinalInterp{T, <:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {T, Tg} =
-    _fill_periodic_grid!(acquire!(pool, Tg, _fixed_window_size(m)), m, x, ix)
-@inline _axis_grid_pooled(pool, m::AkimaInterp{<:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {Tg} =
+@inline _axis_grid_pooled(pool, m::AbstractLocalHermiteInterp{<:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {Tg} =
     _fill_periodic_grid!(acquire!(pool, Tg, _fixed_window_size(m)), m, x, ix)
 
 # Pure in-place fill helpers (no pool knowledge).
@@ -151,15 +150,12 @@ end
 # When the wrap-aware helpers above bake the periodic seam into pool-allocated
 # index + monotonic shifted x buffers, the inner 1D oneshot must NOT re-apply
 # periodic slope wrap. We strip per-axis: identity for non-periodic methods.
-@inline _strip_periodic_bc(::PchipInterp{<:PeriodicBC}) = PchipInterp(NoBC())
-@inline _strip_periodic_bc(m::CardinalInterp{T, <:PeriodicBC}) where {T} =
-    CardinalInterp(m.tension, NoBC())
-@inline _strip_periodic_bc(::AkimaInterp{<:PeriodicBC}) = AkimaInterp(NoBC())
+# Per-method construction lives in `_replace_bc` (interp_method_types.jl) so
+# this dispatch can be a single line over the abstract supertype.
+@inline _strip_periodic_bc(m::AbstractLocalHermiteInterp{<:PeriodicBC}) = _replace_bc(m, NoBC())
 @inline _strip_periodic_bc(m::AbstractInterpMethod) = m
 
-@inline _is_periodic_method(::PchipInterp{<:PeriodicBC}) = true
-@inline _is_periodic_method(::CardinalInterp{T, <:PeriodicBC}) where {T} = true
-@inline _is_periodic_method(::AkimaInterp{<:PeriodicBC}) = true
+@inline _is_periodic_method(::AbstractLocalHermiteInterp{<:PeriodicBC}) = true
 @inline _is_periodic_method(::AbstractInterpMethod) = false
 
 @inline _has_any_periodic_method(methods::Tuple) = any(_is_periodic_method, methods)

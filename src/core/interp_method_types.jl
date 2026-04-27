@@ -109,34 +109,48 @@ struct NoInterp <: AbstractInterpMethod end
 # ========================================
 
 """
-    PchipInterp <: AbstractInterpMethod
+    PchipInterp{BC} <: AbstractInterpMethod
 
 PCHIP (monotone-preserving) interpolation method for one axis.
 Slopes computed via Fritsch-Carlson algorithm. Requires ≥2 grid points.
+
+The `bc` field selects boundary handling at slope time. `NoBC()` (default)
+uses one-sided 3-point FD with monotonicity clamping. `PeriodicBC(...)`
+uses closed-cycle wrapped secants. BC is a type parameter so dispatch
+specializes at compile time.
 """
-struct PchipInterp <: AbstractInterpMethod end
+struct PchipInterp{BC <: AbstractBC} <: AbstractInterpMethod
+    bc::BC
+end
+PchipInterp() = PchipInterp(NoBC())   # backward-compat (NoBC default)
 
 """
-    CardinalInterp{T} <: AbstractInterpMethod
+    CardinalInterp{T, BC} <: AbstractInterpMethod
 
 Cardinal spline interpolation method for one axis.
 `tension=0` gives Catmull-Rom. Requires ≥2 grid points.
 
 # Arguments
 - `tension`: Tension parameter (0 = CatmullRom, 1 = zero slopes)
+- `bc`: Boundary condition (`NoBC()` default, or `PeriodicBC(...)`)
 """
-struct CardinalInterp{T} <: AbstractInterpMethod
+struct CardinalInterp{T, BC <: AbstractBC} <: AbstractInterpMethod
     tension::T
+    bc::BC
 end
-CardinalInterp(; tension = 0.0) = CardinalInterp(tension)
+CardinalInterp(tension::T) where {T} = CardinalInterp(tension, NoBC())   # backward-compat
+CardinalInterp(; tension = 0.0, bc::AbstractBC = NoBC()) = CardinalInterp(tension, bc)
 
 """
-    AkimaInterp <: AbstractInterpMethod
+    AkimaInterp{BC} <: AbstractInterpMethod
 
 Akima (1970) outlier-robust interpolation method for one axis.
 Requires ≥2 grid points.
 """
-struct AkimaInterp <: AbstractInterpMethod end
+struct AkimaInterp{BC <: AbstractBC} <: AbstractInterpMethod
+    bc::BC
+end
+AkimaInterp() = AkimaInterp(NoBC())   # backward-compat
 
 """
     CubicHermiteInterp <: AbstractInterpMethod

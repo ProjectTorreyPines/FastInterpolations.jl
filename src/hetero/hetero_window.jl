@@ -68,6 +68,18 @@ end
 @inline _axis_window(::CubicInterp, ix::Int, n::Int) = 1:n
 @inline _axis_window(::QuadraticInterp, ix::Int, n::Int) = 1:n
 
+# ── PeriodicBC variants: full axis, no windowing ──
+# A cell-local window for PeriodicBC would split the seam cell across the grid
+# boundary, breaking the 1D entry's `bc.period - (x[end] - x[1])` seam-cell
+# computation (the windowed `x` view is a sub-range, not the full periodic
+# grid). Forwarding the FULL grid lets the 1D entry's zero-copy `_periodic_secant`
+# path operate correctly. Trade-off: full-axis fiber scan instead of
+# cell-local stencil for PeriodicBC axes — perf reverts to global-solve-like
+# pattern, which is acceptable for the (less-common) periodic case.
+@inline _axis_window(::PchipInterp{<:PeriodicBC}, ix::Int, n::Int) = 1:n
+@inline _axis_window(::CardinalInterp{T, <:PeriodicBC}, ix::Int, n::Int) where {T} = 1:n
+@inline _axis_window(::AkimaInterp{<:PeriodicBC}, ix::Int, n::Int) = 1:n
+
 # ── Windowable-method trait (persistent-path gate) ──
 #
 # A method is "windowable" iff it evaluates from a fixed-size cell-local stencil

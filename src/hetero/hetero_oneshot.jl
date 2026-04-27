@@ -174,7 +174,15 @@ end
         #   (struct, no pool touch). Pool scope is this function's `@with_pool`, so
         #   the acquired buffers are reclaimed when we return.
         sp = spacings === nothing ? _create_spacings_pooled(pool, grids) : spacings
-        indices, _, _ = _search_all_intervals(q_eval, grids, sp, searches, hints)
+        # BC-aware per-axis search: PeriodicBC{:exclusive} axes produce seam-cell
+        # `(n, 1, …)` 4-tuple at the join, so the windowing below picks the correct
+        # cell and the inner 1D `_oneshot_eval_1d` handles the wrap automatically.
+        results = if hints === nothing
+            map(_search_axis_oneshot_bc, q_eval, grids, sp, searches, bcs)
+        else
+            map(_search_axis_oneshot_bc_hint, q_eval, grids, sp, searches, hints, bcs)
+        end
+        indices = map(_getidx, results)
         # `map` over heterogeneous tuples for closure-free unrolled per-axis dispatch.
         windows = map(_axis_window, methods, indices, map(length, grids))
         data_local = view(data, windows...)
@@ -243,7 +251,11 @@ function _interp_nd_oneshot_dispatch(
     _validate_nd_grids(grids_typed, data)
     Tr = _output_eltype(eltype(data), Tg, typeof.(query)...)
 
-    extraps_val = _resolve_extrap(extrap, nothing, Val(N), Tv)
+    # Bc-aware extrap resolution: extract per-axis BC from methods so that
+    # `extrap=NoExtrap()` upgrades to `WrapExtrap` on PeriodicBC axes (matches
+    # the 1D pattern + Cubic/Quadratic ND paths).
+    bcs = map(_bc_for_periodic_check, methods)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N), query)
     ops = _resolve_deriv_nd(deriv, Val(N))
     _validate_axis_methods(grids_typed, methods, extraps_val)
@@ -308,7 +320,9 @@ end
     _validate_nd_grids(grids_typed, data)
     _query_check_ndims(queries, Val(N))
 
-    extraps_val = _resolve_extrap(extrap, nothing, Val(N), Tv)
+    # Bc-aware extrap resolution (matches scalar dispatch).
+    bcs = map(_bc_for_periodic_check, methods)
+    extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     policies = _resolve_search_nd(search, Val(N))
     mono = _check_mono_nd(policies, queries)
     ops = _resolve_deriv_nd(deriv, Val(N))

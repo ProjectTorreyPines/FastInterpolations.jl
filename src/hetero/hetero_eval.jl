@@ -45,16 +45,18 @@ end
 end
 
 # Hermite family: local slope methods (PCHIP, Cardinal, Akima)
-@inline function _oneshot_eval_1d(::PchipInterp, grid, fiber, extrap, q, op, search, hint)
-    return pchip_interp(grid, fiber, q; extrap = extrap, deriv = op, search = search, hint = hint)
+# `m.bc` forwards each axis's PeriodicBC (or NoBC) into the 1D entry, where
+# the bc-aware boundary slope helpers handle closed-cycle wrap.
+@inline function _oneshot_eval_1d(m::PchipInterp, grid, fiber, extrap, q, op, search, hint)
+    return pchip_interp(grid, fiber, q; bc = m.bc, extrap = extrap, deriv = op, search = search, hint = hint)
 end
 
 @inline function _oneshot_eval_1d(m::CardinalInterp, grid, fiber, extrap, q, op, search, hint)
-    return cardinal_interp(grid, fiber, q; tension = m.tension, extrap = extrap, deriv = op, search = search, hint = hint)
+    return cardinal_interp(grid, fiber, q; bc = m.bc, tension = m.tension, extrap = extrap, deriv = op, search = search, hint = hint)
 end
 
-@inline function _oneshot_eval_1d(::AkimaInterp, grid, fiber, extrap, q, op, search, hint)
-    return akima_interp(grid, fiber, q; extrap = extrap, deriv = op, search = search, hint = hint)
+@inline function _oneshot_eval_1d(m::AkimaInterp, grid, fiber, extrap, q, op, search, hint)
+    return akima_interp(grid, fiber, q; bc = m.bc, extrap = extrap, deriv = op, search = search, hint = hint)
 end
 
 # ========================================

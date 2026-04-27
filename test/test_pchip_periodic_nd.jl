@@ -206,4 +206,96 @@
         itp = pchip_interp((x, y), data; bc = bc_unchecked)
         @test isfinite(itp((0.5, 0.5)))
     end
+
+    # 3D PeriodicBC smoke test — exercises the wrap-aware path's
+    # `ntuple(...,Val(M-1))` fiber-build with two scalar tail axes.
+    # Use a separable-but-shifted test function so that no axis collapse
+    # ever produces an exact-zero fiber (pre-existing PCHIP harmonic-mean
+    # NaN at signed-zero secants is out of scope for this PR).
+    @testset "3D PeriodicBC smoke" begin
+        n = 11
+        x = collect(range(0.0, 1.0, length = n))
+        y = collect(range(0.0, 1.0, length = n))
+        z = collect(range(0.0, 1.0, length = n))
+        f3(a, b, c) = 1.5 + cos(2π * a) * cos(2π * b) * cos(2π * c)
+        data = [f3(xi, yj, zk) for xi in x, yj in y, zk in z]
+        bc = PeriodicBC(endpoint = :inclusive)
+
+        v_oneshot = pchip_interp((x, y, z), data, (0.3, 0.4, 0.5); bc = bc)
+        @test isapprox(v_oneshot, f3(0.3, 0.4, 0.5); atol = 1.0e-2)
+
+        itp = pchip_interp((x, y, z), data; bc = bc)
+        # Persistent ↔ oneshot agreement at interior + near-seam in 3D
+        for q in ((0.3, 0.4, 0.5), (0.95, 0.05, 0.5), (0.5, 0.95, 0.95))
+            @test isapprox(itp(q), pchip_interp((x, y, z), data, q; bc = bc); atol = 1.0e-10)
+        end
+    end
+
+    # GridIdx (no-interp protocol) interaction with a PeriodicBC axis. GridIdx
+    # auto-promotes to NoInterp before reaching the wrap-aware path; this guards
+    # the ND oneshot + persistent gates that strip GridIdx out before windowing.
+    @testset "GridIdx + PeriodicBC" begin
+        n = 11
+        x = collect(range(0.0, 1.0, length = n))
+        y = collect(range(0.0, 1.0, length = n))
+        data = [f(xi, yj) for xi in x, yj in y]
+        bc = PeriodicBC(endpoint = :inclusive)
+
+        # GridIdx on the periodic axis 1 (axis 2 stays a Real query)
+        v_oneshot = pchip_interp((x, y), data, (GridIdx(3), 0.5); bc = bc)
+        @test isapprox(v_oneshot, f(x[3], 0.5); atol = 1.0e-3)
+
+        itp = pchip_interp((x, y), data; bc = bc)
+        v_persistent = itp((GridIdx(3), 0.5))
+        @test isapprox(v_persistent, v_oneshot; atol = 1.0e-10)
+    end
+
+    # `range` (StepRangeLen) grid + PeriodicBC: validates that the wrap-aware
+    # path works on Range grids (DirectSearch fast path) the same as Vector grids.
+    @testset "StepRangeLen grid + PeriodicBC" begin
+        n = 21
+        x = range(0.0, 1.0, length = n)   # StepRangeLen, NOT collect()
+        y = range(0.0, 1.0, length = n)
+        data = [f(xi, yj) for xi in x, yj in y]
+        bc = PeriodicBC(endpoint = :inclusive)
+
+        v_oneshot = pchip_interp((x, y), data, (0.3, 0.4); bc = bc)
+        @test isapprox(v_oneshot, f(0.3, 0.4); atol = 1.0e-3)
+
+        itp = pchip_interp((x, y), data; bc = bc)
+        for q in ((0.3, 0.4), (0.95, 0.05))
+            @test isapprox(itp(q), pchip_interp((x, y), data, q; bc = bc); atol = 1.0e-10)
+        end
+    end
+
+    # Vector calculus (gradient / hessian / laplacian) on persistent PeriodicBC ND.
+    # Routes through `_locate_cell` → `_build_windowed_cell` (still on the
+    # full-axis fallback for periodic axes — perf is a separate follow-up), so
+    # this guards correctness, not perf.
+    @testset "Vector calculus + PeriodicBC ND" begin
+        n = 41
+        x = collect(range(0.0, 1.0, length = n))
+        y = collect(range(0.0, 1.0, length = n))
+        data = [f(xi, yj) for xi in x, yj in y]
+        bc = PeriodicBC(endpoint = :inclusive)
+        itp = pchip_interp((x, y), data; bc = bc)
+
+        # Analytic gradient of f(x,y) = sin(2πx) cos(2πy)
+        ∇f(xi, yj) = (2π * cos(2π * xi) * cos(2π * yj), -2π * sin(2π * xi) * sin(2π * yj))
+
+        # Probe interior + near-seam points
+        for q in ((0.3, 0.4), (0.7, 0.2), (0.95, 0.5), (0.5, 0.95))
+            g = gradient(itp, q)
+            ∇true = ∇f(q...)
+            # PCHIP ND on n=41 ≈ 2nd-order accuracy → loose absolute tol
+            @test isapprox(g[1], ∇true[1]; atol = 0.5)
+            @test isapprox(g[2], ∇true[2]; atol = 0.5)
+
+            h = hessian(itp, q)
+            @test all(isfinite, h)
+
+            l = laplacian(itp, q)
+            @test isfinite(l)
+        end
+    end
 end

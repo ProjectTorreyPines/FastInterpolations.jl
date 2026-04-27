@@ -101,4 +101,48 @@
         end
         @test _alloc_check() <= ALLOC_THRESHOLD
     end
+
+    # Regression: persistent OnTheFly path must use a BC-aware search so that
+    # exclusive-periodic seam queries pick the same cell as the oneshot path.
+    @testset "Persistent ↔ oneshot consistency at exclusive seam" begin
+        n = 10
+        x = collect(range(0.0, 1.0, length = n + 1))[1:n]
+        y = collect(range(0.0, 1.0, length = n + 1))[1:n]
+        data = [f(xi, yj) for xi in x, yj in y]
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+
+        queries = [
+            (0.95, 0.3),
+            (0.99, 0.5),
+            (x[n], 0.3),
+            (0.5, x[n]),
+            (x[n], x[n]),
+        ]
+        for tens in (0.0, 0.5)
+            for q in queries
+                v_persistent = cardinal_interp((x, y), data; bc = bc, tension = tens)(q)
+                v_oneshot = cardinal_interp((x, y), data, q; bc = bc, tension = tens)
+                @test isapprox(v_persistent, v_oneshot; atol = 1.0e-10)
+            end
+        end
+    end
+
+    # Regression: inclusive PeriodicBC ND must validate `data[1, :] ≈ data[end, :]`.
+    @testset "Inclusive ND validation rejects mismatched endpoints" begin
+        n = 11
+        x = collect(range(0.0, 1.0, length = n))
+        y = collect(range(0.0, 1.0, length = n))
+        data = rand(n, n)
+        data[end, :] .= data[1, :] .+ 0.5
+        bc = PeriodicBC(endpoint = :inclusive)
+
+        @test_throws ArgumentError cardinal_interp((x, y), data, (0.5, 0.5); bc = bc, tension = 0.3)
+        @test_throws ArgumentError cardinal_interp((x, y), data; bc = bc, tension = 0.3)
+
+        bc_unchecked = PeriodicBC(endpoint = :inclusive, check = false)
+        v = cardinal_interp((x, y), data, (0.5, 0.5); bc = bc_unchecked, tension = 0.3)
+        @test isfinite(v)
+        itp = cardinal_interp((x, y), data; bc = bc_unchecked, tension = 0.3)
+        @test isfinite(itp((0.5, 0.5)))
+    end
 end

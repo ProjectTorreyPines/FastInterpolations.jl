@@ -61,7 +61,8 @@ O(n), single pass, zero allocation (writes into `dy`).
 function _pchip_slopes!(
         dy::AbstractVector,
         x::AbstractVector{Tg},
-        y::AbstractVector
+        y::AbstractVector;
+        bc::AbstractBC = NoBC()
     ) where {Tg}
     n = length(x)
     @assert n >= 2 "PCHIP requires at least 2 points"
@@ -78,17 +79,19 @@ function _pchip_slopes!(
         return dy
     end
 
-    # Compute secant slopes for first two intervals (needed for endpoint + first interior)
+    # Compute secant slopes for first two intervals (needed for first interior)
     @inbounds h_prev = x[2] - x[1]
     @inbounds δ_prev = (y[2] - y[1]) / h_prev
 
     @inbounds h_curr = x[3] - x[2]
     @inbounds δ_curr = (y[3] - y[2]) / h_curr
 
-    # Left endpoint: 3-point one-sided FD with monotonicity clamping
-    @inbounds dy[1] = _pchip_endpoint_slope(h_prev, h_curr, δ_prev, δ_curr)
+    # Left endpoint: bc-dispatched helper.
+    # NoBC: one-sided 3-point FD with monotonicity clamping.
+    # PeriodicBC: closed-cycle interior formula via wrap-aware abstraction.
+    @inbounds dy[1] = _pchip_boundary_slope(x, y, 1, n, bc)
 
-    # Interior slopes (k = 2:n-1)
+    # Interior slopes (k = 2:n-1) — unchanged. K=3 stencil never crosses join.
     @inbounds for k in 2:(n - 1)
         if sign(δ_prev) != sign(δ_curr)
             # Local extremum: zero slope preserves monotonicity
@@ -109,9 +112,16 @@ function _pchip_slopes!(
         end
     end
 
-    # Right endpoint: 3-point one-sided FD with monotonicity clamping
-    # Note: after the loop, δ_prev = δ[n-2], δ_curr = δ[n-1], h_prev = h[n-2], h_curr = h[n-1]
-    @inbounds dy[n] = _pchip_endpoint_slope(h_curr, h_prev, δ_curr, δ_prev)
+    # Right endpoint: same bc-dispatched helper. The wrap-aware abstraction
+    # makes this self-consistent across endpoints:
+    # - PeriodicBC{:inclusive}: helper at i=n yields the same value as at i=1
+    #   (closed cycle on n-1 cells → m_{n-1}, m_n=m_1 produces same pair) →
+    #   dy[n] == dy[1] automatically.
+    # - PeriodicBC{:exclusive}: helper at i=n uses (m_{n-1}, m_n=seam) which
+    #   differs from i=1's (m_0=seam, m_1) — dy[1] ≠ dy[n] in general, both
+    #   correctly wrap-aware via the seam secant.
+    # - NoBC: helper falls back to the original one-sided FD.
+    @inbounds dy[n] = _pchip_boundary_slope(x, y, n, n, bc)
 
     return dy
 end

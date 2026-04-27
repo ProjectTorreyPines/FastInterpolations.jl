@@ -66,6 +66,27 @@ struct PchipInterpolant1D{
         )
     end
 
+    # Pre-computed slopes inner: promotes x/y, stores caller-supplied `dy`.
+    # Used by the periodic path where bulk slopes are computed externally with
+    # a `bc` kwarg (closed-cycle endpoint dispatch) before construction.
+    function PchipInterpolant1D(
+            x::AbstractVector, y::AbstractVector, dy::AbstractVector, extrap::E, search::P
+        ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
+        length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
+        length(dy) == length(y) || throw(ArgumentError("dy length ($(length(dy))) must match y length ($(length(y)))"))
+        length(x) >= 2 || throw(ArgumentError("PCHIP interpolation requires at least 2 points, got $(length(x))"))
+        Tg = _promote_grid_float(eltype(x), eltype(y))
+        Tv = _value_type(eltype(y), Tg)
+        xc = _store_grid(x, Tg)
+        yc = _convert_copy(y, Tv)
+        spacing = _create_spacing(xc)
+        Tdy = _output_eltype(Tv, Tg)
+        dyc = _convert_copy(dy, Tdy)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), typeof(spacing), E, P, PreCompute}(
+            xc, yc, dyc, spacing, extrap, search
+        )
+    end
+
     # OnTheFly inner: promotes x/y, creates spacing, slope_strategy is a slope method tag.
     function PchipInterpolant1D(
             x::AbstractVector, y::AbstractVector, slope_strategy::AbstractSlopeMethod, extrap::E, search::P

@@ -9,11 +9,12 @@
 # ║                 INTERNAL: PreCompute (bulk slopes via @with_pool)          ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# Scalar
+# Scalar — bc-aware unified path.
 @inline @with_pool pool function _akima_interp_precompute(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq,
+        bc::AbstractBC,
         extrap::AbstractExtrap,
         deriv::DerivOp,
         search::AbstractSearchPolicy,
@@ -23,17 +24,18 @@
     x = _prepare_grid(x)
     Tdy = _output_eltype(Tv, float(eltype(x)))
     dy = acquire!(pool, Tdy, length(y))
-    _akima_slopes!(dy, x, y)
-    searcher = _resolve_search(x, xq, search, hint)
+    _akima_slopes!(dy, x, y; bc)
+    searcher = _resolve_search(x, xq, search, hint, bc)
     return _hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
 end
 
-# Vector in-place
+# Vector in-place — bc-aware unified path.
 @inline @with_pool pool function _akima_interp_precompute!(
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector,
+        bc::AbstractBC,
         extrap::AbstractExtrap,
         deriv::DerivOp,
         search::AbstractSearchPolicy,
@@ -45,20 +47,21 @@ end
 
     Tdy = _output_eltype(Tv, float(eltype(x)))
     dy = acquire!(pool, Tdy, length(y))
-    _akima_slopes!(dy, x, y)
-    searcher = _resolve_search(x, x_query, search, hint)
+    _akima_slopes!(dy, x, y; bc)
+    searcher = _resolve_search(x, x_query, search, hint, bc)
     return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                 INTERNAL: OnTheFly (local slopes, no pool)                ║
+# ║         INTERNAL: OnTheFly (local slopes, no pool, bc-aware)              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# Scalar
+# Scalar — bc-aware unified path.
 @inline function _akima_interp_onthefly(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq,
+        bc::AbstractBC,
         extrap::AbstractExtrap,
         deriv::DerivOp,
         search::AbstractSearchPolicy,
@@ -67,16 +70,17 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
     x = _prepare_grid(x)
-    searcher = _resolve_search(x, xq, search, hint)
-    return _hermite_eval_at_point(x, y, AkimaSlopes(), xq, extrap, deriv, searcher)
+    searcher = _resolve_search(x, xq, search, hint, bc)
+    return _hermite_eval_at_point(x, y, AkimaSlopes(bc), xq, extrap, deriv, searcher)
 end
 
-# Vector in-place
+# Vector in-place — bc-aware unified path.
 @inline function _akima_interp_onthefly!(
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector,
+        bc::AbstractBC,
         extrap::AbstractExtrap,
         deriv::DerivOp,
         search::AbstractSearchPolicy,
@@ -87,8 +91,8 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x = _prepare_grid(x)
 
-    searcher = _resolve_search(x, x_query, search, hint)
-    return _hermite_vector_loop!(output, x, y, AkimaSlopes(), x_query, extrap, deriv, searcher)
+    searcher = _resolve_search(x, x_query, search, hint, bc)
+    return _hermite_vector_loop!(output, x, y, AkimaSlopes(bc), x_query, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
@@ -109,6 +113,7 @@ Outlier-robust, C\$^1\$ continuous.
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq;
+        bc::AbstractBC = NoBC(),
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
@@ -116,12 +121,12 @@ Outlier-robust, C\$^1\$ continuous.
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x = _prepare_grid(x)
-    extrap = _resolve_extrap(extrap, x)
+    extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
-        return _akima_interp_onthefly(x, y, xq, extrap, deriv, search, hint)
+        return _akima_interp_onthefly(x, y, xq, bc, extrap_eff, deriv, search, hint)
     end
-    return _akima_interp_precompute(x, y, xq, extrap, deriv, search, hint)
+    return _akima_interp_precompute(x, y, xq, bc, extrap_eff, deriv, search, hint)
 end
 
 """
@@ -134,6 +139,7 @@ In-place Akima interpolation with outlier-robust slopes.
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector{Tq};
+        bc::AbstractBC = NoBC(),
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
@@ -141,12 +147,12 @@ In-place Akima interpolation with outlier-robust slopes.
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x = _prepare_grid(x)
-    extrap = _resolve_extrap(extrap, x)
+    extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly
-        return _akima_interp_onthefly!(output, x, y, x_query, extrap, deriv, search, hint)
+        return _akima_interp_onthefly!(output, x, y, x_query, bc, extrap_eff, deriv, search, hint)
     end
-    return _akima_interp_precompute!(output, x, y, x_query, extrap, deriv, search, hint)
+    return _akima_interp_precompute!(output, x, y, x_query, bc, extrap_eff, deriv, search, hint)
 end
 
 """
@@ -158,6 +164,7 @@ function akima_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         x_query::AbstractVector{Tq};
+        bc::AbstractBC = NoBC(),
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
@@ -166,6 +173,6 @@ function akima_interp(
     ) where {Tg, Tv, Tq <: Real}
     Tr = _output_eltype(Tv, _promote_grid_float(Tg, Tv), Tq)
     output = Vector{Tr}(undef, length(x_query))
-    akima_interp!(output, x, y, x_query; coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
+    akima_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output
 end

@@ -27,12 +27,6 @@ include("derivative_view.jl")
 # Vector calculus operations (depends on ND interpolant types)
 include("vector_calculus.jl")
 
-# HeteroInterpolantND PeriodicBC ND wrap-aware specialization for vector calculus.
-# Must follow `vector_calculus.jl` so the specialized `_gradient_generic` /
-# `_hessian_generic` / `_laplacian_generic` methods shadow the generic ones
-# for `HeteroInterpolantND{...,<:Array}` queries.
-include("hetero/hetero_vector_calc_periodic.jl")
-
 # Method traits: constructor/adjoint dispatch mappings (shared by AD extensions)
 include("method_traits.jl")
 

@@ -254,11 +254,13 @@ end
 end
 
 # Shared cell-building primitive used by both the OnTheFly persistent eval
-# (`_eval_hetero_nd_wrap_aware`) and the vector-calculus wrappers in
-# `vector_calculus.jl`. Carries closures (the per-axis `_axis_window_pooled` /
+# (`_eval_hetero_nd_wrap_aware`) and the wrap-aware persistent path in
+# `_locate_cell`. Carries closures (the per-axis `_axis_window_pooled` /
 # `_axis_grid_pooled` lambdas) — those are fine in a regular function but
-# reject in a `@generated` body, so vector-calculus generated dispatches must
-# call this helper from an outer non-generated `@with_pool` shim.
+# reject in `@generated` bodies; callers that need pool buffers across
+# multiple `_eval_at_cell` invocations (vector-calculus gradient/hessian/
+# laplacian) acquire them via `_hetero_pooled_call` (below) so the
+# task-local pool snapshot/restore happens at gradient-call boundaries.
 @inline function _build_wrap_aware_cell_components(
         pool,
         itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
@@ -290,6 +292,39 @@ end
         query, ops, policies, hints, mono,
     )
 end
+
+# Heap-allocated wrap-aware cell builder. Used by the periodic branch in the
+# OnTheFly persistent `_locate_cell` for vector-calculus calls (gradient/
+# hessian/laplacian), where the cell components must outlive multiple
+# `_eval_at_cell` invocations. The OnTheFly oneshot path
+# (`_eval_hetero_nd_wrap_aware`) and the persistent `(itp)(query)` operator
+# both still use the pool variant (`_build_wrap_aware_cell_components`) since
+# their cell lifetime fits cleanly inside a single `@with_pool` scope.
+@inline function _build_wrap_aware_cell_heap(
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        q_eval::Tuple{Vararg{Real, N}},
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints,
+    ) where {Tg, Tv, N, G, S, M, E, P}
+    bcs = map(_bc_for_periodic_check, itp.methods)
+    stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints, bcs)
+    indices = map(first, stencils)
+    windows = map(_axis_window_heap, itp.methods, itp.grids, indices)
+    grids_local = map(_axis_grid_heap, itp.methods, itp.grids, windows, indices)
+    methods_inner = map(_strip_periodic_bc, itp.methods)
+    extraps_inner = map(_strip_wrap_extrap, itp.extraps, itp.methods)
+    return windows, grids_local, methods_inner, extraps_inner
+end
+
+@inline _axis_window_heap(m::AbstractInterpMethod, x::AbstractVector, ix::Int) =
+    _axis_window(m, ix, length(x))
+@inline _axis_window_heap(m::AbstractLocalHermiteInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
+    _fill_periodic_window!(Vector{Int}(undef, _fixed_window_size(m)), m, ix, length(x))
+
+@inline _axis_grid_heap(::AbstractInterpMethod, x::AbstractVector, w::AbstractVector{Int}, ::Int) =
+    view(x, w)
+@inline _axis_grid_heap(m::AbstractLocalHermiteInterp{<:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {Tg} =
+    _fill_periodic_grid!(Vector{Tg}(undef, _fixed_window_size(m)), m, x, ix)
 
 # ========================================
 # Callable Interface
@@ -387,6 +422,21 @@ end
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, S, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
+
+    # Periodic wrap-aware path: build the wrap-aware cell ONCE here so the
+    # generic `_gradient_generic` / `_hessian_generic` / `_laplacian_generic`
+    # protocol (locate-once + N or N(N+1)/2 `_eval_at_cell` calls) flows through
+    # unmodified. The `Vector{Int}` / `Vector{Tg}` buffers are heap-allocated
+    # (one set per gradient/hessian/laplacian call) — vector-calculus paths
+    # don't have a zero-alloc test, so the small heap churn (~200 B per call)
+    # is preferable to the multi-helper pool dance the previous design needed.
+    # Persistent itp `(itp)(q)` eval (which DOES require zero alloc) goes
+    # through `_eval_hetero_nd_wrap_aware` and stays on the pool path.
+    if _has_any_periodic_method(itp.methods) && !_has_grididx(typeof(query))
+        windows, grids_local, methods_inner, extraps_inner =
+            _build_wrap_aware_cell_heap(itp, q_eval, policies, hints)
+        return (itp.data, grids_local, methods_inner, extraps_inner, q_eval, policies, nothing, windows)
+    end
 
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
         data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)

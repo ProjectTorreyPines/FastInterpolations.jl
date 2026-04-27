@@ -50,6 +50,76 @@
     end
 end
 
+# Specialized for HeteroInterpolantND OnTheFly persistent (`<:Array` data) —
+# branches to the wrap-aware path when at least one axis is a periodic local
+# Hermite method. The branch keeps the locate-once benefit (one search +
+# one wrap-aware cell construction) shared across all N derivative-axis
+# evaluations under a single `@with_pool` scope (in `_gradient_wrap_aware`).
+#
+# `_gradient_wrap_aware` is non-generated (closures over `pool` are fine in
+# regular bodies but reject in `@generated` purity checks). The closure-free
+# generated dispatch `_gradient_collapse_all` then expands the per-axis
+# `_collapse_dims` calls with type-stable ops literals.
+@generated function _gradient_generic(
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        query::Tuple{Vararg{Real, N}},
+        hint,
+    ) where {Tg, Tv, N, G_, S, M, E, P}
+    deriv_calls = [
+        begin
+                ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+                :(_eval_at_cell(itp, cell, $ops))
+            end for i in 1:N
+    ]
+    zero_tuple = [:(0 * zref) for _ in 1:N]
+    return quote
+        query_r = map(_resolve_grididx, query, itp.grids)
+        policies = _resolve_search_nd(itp.searches, Val($N))
+        hints = _ensure_hint_nd(hint, Val($N))
+        mono = _scalar_mono(hint, Val($N))
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
+            zref = _zero_ref(itp)
+            return tuple($(zero_tuple...))
+        end
+        if _has_any_periodic_method(itp.methods) && !_has_grididx(typeof(query_r))
+            return _gradient_wrap_aware(itp, query_r, policies, hints)
+        end
+        cell = _locate_cell(itp, query_r, policies, hints, mono)
+        return tuple($(deriv_calls...))
+    end
+end
+
+@with_pool pool function _gradient_wrap_aware(
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        query_r::Tuple{Vararg{Real, N}},
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+    ) where {Tg, Tv, N, G_, S, M, E, P}
+    q_eval = _handle_all_extraps(query_r, itp.grids, itp.extraps)
+    windows, grids_local, methods_inner, extraps_inner =
+        _build_wrap_aware_cell_components(pool, itp, q_eval, policies, hints)
+    Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
+    return _gradient_collapse_all(itp, q_eval, policies, windows, grids_local, methods_inner, extraps_inner, Tr)
+end
+
+@generated function _gradient_collapse_all(
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        q_eval::Tuple{Vararg{Real, N}},
+        policies::NTuple{N, AbstractSearchPolicy},
+        windows, grids_local, methods_inner, extraps_inner,
+        ::Type{Tr},
+    ) where {Tg, Tv, N, G_, S, M, E, P, Tr}
+    calls = [
+        begin
+                ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+                :(_collapse_dims(Tr, itp.data, grids_local, methods_inner, extraps_inner, q_eval, $ops, policies, nothing, windows))
+            end for i in 1:N
+    ]
+    return quote
+        tuple($(calls...))
+    end
+end
+
 """
     gradient(itp::AbstractInterpolantND, query)
 
@@ -124,6 +194,85 @@ end
             return G
         end
         cell = _locate_cell(itp, query_r, policies, hints, mono)
+        @inbounds begin
+            $(stmts...)
+        end
+        return G
+    end
+end
+
+# In-place wrap-aware gradient — see scalar `_gradient_generic` specialization for design.
+@generated function _gradient_generic!(
+        G::AbstractVector,
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        query::Tuple{Vararg{Real, N}},
+        hint,
+    ) where {Tg, Tv, N, G_, S, M, E, P}
+    stmts = [
+        begin
+                ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+                :(G[$i] = _eval_at_cell(itp, cell, $ops))
+            end for i in 1:N
+    ]
+    return quote
+        query_r = map(_resolve_grididx, query, itp.grids)
+        @boundscheck length(G) >= $N || throw(
+            DimensionMismatch(
+                "gradient output vector must have at least $($N) elements, got $(length(G))"
+            )
+        )
+        policies = _resolve_search_nd(itp.searches, Val($N))
+        hints = _ensure_hint_nd(hint, Val($N))
+        mono = _scalar_mono(hint, Val($N))
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
+            zref = _zero_ref(itp)
+            @inbounds for i in 1:$N
+                G[i] = 0 * zref
+            end
+            return G
+        end
+        if _has_any_periodic_method(itp.methods) && !_has_grididx(typeof(query_r))
+            _gradient_wrap_aware!(G, itp, query_r, policies, hints)
+            return G
+        end
+        cell = _locate_cell(itp, query_r, policies, hints, mono)
+        @inbounds begin
+            $(stmts...)
+        end
+        return G
+    end
+end
+
+@with_pool pool function _gradient_wrap_aware!(
+        G::AbstractVector,
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        query_r::Tuple{Vararg{Real, N}},
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+    ) where {Tg, Tv, N, G_, S, M, E, P}
+    q_eval = _handle_all_extraps(query_r, itp.grids, itp.extraps)
+    windows, grids_local, methods_inner, extraps_inner =
+        _build_wrap_aware_cell_components(pool, itp, q_eval, policies, hints)
+    Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
+    _gradient_collapse_all!(G, itp, q_eval, policies, windows, grids_local, methods_inner, extraps_inner, Tr)
+    return G
+end
+
+@generated function _gradient_collapse_all!(
+        G::AbstractVector,
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        q_eval::Tuple{Vararg{Real, N}},
+        policies::NTuple{N, AbstractSearchPolicy},
+        windows, grids_local, methods_inner, extraps_inner,
+        ::Type{Tr},
+    ) where {Tg, Tv, N, G_, S, M, E, P, Tr}
+    stmts = [
+        begin
+                ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+                :(G[$i] = _collapse_dims(Tr, itp.data, grids_local, methods_inner, extraps_inner, q_eval, $ops, policies, nothing, windows))
+            end for i in 1:N
+    ]
+    return quote
         @inbounds begin
             $(stmts...)
         end
@@ -321,6 +470,96 @@ end
     end
 end
 
+# Wrap-aware hessian — see `_gradient_generic` specialization for design.
+@generated function _hessian_generic(
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        query::Tuple{Vararg{Real, N}},
+        hint,
+    ) where {Tg, Tv, N, G_, S, M, E, P}
+    stmts = Expr[]
+    for i in 1:N
+        ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+        push!(stmts, :(H[$i, $i] = _eval_at_cell(itp, cell, $ops)))
+    end
+    for i in 1:N, j in (i + 1):N
+        ops = ntuple(k -> (k == i || k == j) ? DerivOp{1}() : DerivOp{0}(), N)
+        push!(
+            stmts, quote
+                val = _eval_at_cell(itp, cell, $ops)
+                H[$i, $j] = val
+                H[$j, $i] = val
+            end
+        )
+    end
+    return quote
+        query_r = map(_resolve_grididx, query, itp.grids)
+        Tq = promote_type(eltype(map(float, query_r)), $Tg, $Tv)
+        H = Matrix{Tq}(undef, $N, $N)
+        policies = _resolve_search_nd(itp.searches, Val($N))
+        hints = _ensure_hint_nd(hint, Val($N))
+        mono = _scalar_mono(hint, Val($N))
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
+            fill!(H, zero(Tq))
+            return H
+        end
+        if _has_any_periodic_method(itp.methods) && !_has_grididx(typeof(query_r))
+            _hessian_wrap_aware!(H, itp, query_r, policies, hints)
+            return H
+        end
+        cell = _locate_cell(itp, query_r, policies, hints, mono)
+        @inbounds begin
+            $(stmts...)
+        end
+        return H
+    end
+end
+
+@with_pool pool function _hessian_wrap_aware!(
+        H::AbstractMatrix,
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        query_r::Tuple{Vararg{Real, N}},
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+    ) where {Tg, Tv, N, G_, S, M, E, P}
+    q_eval = _handle_all_extraps(query_r, itp.grids, itp.extraps)
+    windows, grids_local, methods_inner, extraps_inner =
+        _build_wrap_aware_cell_components(pool, itp, q_eval, policies, hints)
+    Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
+    _hessian_collapse_all!(H, itp, q_eval, policies, windows, grids_local, methods_inner, extraps_inner, Tr)
+    return H
+end
+
+@generated function _hessian_collapse_all!(
+        H::AbstractMatrix,
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        q_eval::Tuple{Vararg{Real, N}},
+        policies::NTuple{N, AbstractSearchPolicy},
+        windows, grids_local, methods_inner, extraps_inner,
+        ::Type{Tr},
+    ) where {Tg, Tv, N, G_, S, M, E, P, Tr}
+    stmts = Expr[]
+    for i in 1:N
+        ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+        push!(stmts, :(H[$i, $i] = _collapse_dims(Tr, itp.data, grids_local, methods_inner, extraps_inner, q_eval, $ops, policies, nothing, windows)))
+    end
+    for i in 1:N, j in (i + 1):N
+        ops = ntuple(k -> (k == i || k == j) ? DerivOp{1}() : DerivOp{0}(), N)
+        push!(
+            stmts, quote
+                val = _collapse_dims(Tr, itp.data, grids_local, methods_inner, extraps_inner, q_eval, $ops, policies, nothing, windows)
+                H[$i, $j] = val
+                H[$j, $i] = val
+            end
+        )
+    end
+    return quote
+        @inbounds begin
+            $(stmts...)
+        end
+        return H
+    end
+end
+
 """
     hessian(itp::AbstractInterpolantND, query)
 
@@ -414,6 +653,55 @@ end
     end
 end
 
+# In-place wrap-aware hessian — branches into the same `_hessian_wrap_aware!`
+# helper that the allocating variant uses (writes directly into the matrix).
+@generated function _hessian_generic!(
+        H::AbstractMatrix,
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        query::Tuple{Vararg{Real, N}},
+        hint,
+    ) where {Tg, Tv, N, G_, S, M, E, P}
+    stmts = Expr[]
+    for i in 1:N
+        ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+        push!(stmts, :(H[$i, $i] = _eval_at_cell(itp, cell, $ops)))
+    end
+    for i in 1:N, j in (i + 1):N
+        ops = ntuple(k -> (k == i || k == j) ? DerivOp{1}() : DerivOp{0}(), N)
+        push!(
+            stmts, quote
+                val = _eval_at_cell(itp, cell, $ops)
+                H[$i, $j] = val
+                H[$j, $i] = val
+            end
+        )
+    end
+    return quote
+        query_r = map(_resolve_grididx, query, itp.grids)
+        @boundscheck size(H) == ($N, $N) || throw(
+            DimensionMismatch(
+                "Hessian output matrix must be $($N)×$($N), got $(size(H))"
+            )
+        )
+        policies = _resolve_search_nd(itp.searches, Val($N))
+        hints = _ensure_hint_nd(hint, Val($N))
+        mono = _scalar_mono(hint, Val($N))
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
+            fill!(H, zero(eltype(H)))
+            return H
+        end
+        if _has_any_periodic_method(itp.methods) && !_has_grididx(typeof(query_r))
+            _hessian_wrap_aware!(H, itp, query_r, policies, hints)
+            return H
+        end
+        cell = _locate_cell(itp, query_r, policies, hints, mono)
+        @inbounds begin
+            $(stmts...)
+        end
+        return H
+    end
+end
+
 """
     hessian!(H, itp::AbstractInterpolantND, query)
 
@@ -486,6 +774,65 @@ end
         end
         cell = _locate_cell(itp, query_r, policies, hints, mono)
         return +($(deriv_calls...))
+    end
+end
+
+# Wrap-aware laplacian — see `_gradient_generic` specialization for design.
+@generated function _laplacian_generic(
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        query::Tuple{Vararg{Real, N}},
+        hint,
+    ) where {Tg, Tv, N, G_, S, M, E, P}
+    deriv_calls = [
+        begin
+                ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+                :(_eval_at_cell(itp, cell, $ops))
+            end for i in 1:N
+    ]
+    return quote
+        query_r = map(_resolve_grididx, query, itp.grids)
+        policies = _resolve_search_nd(itp.searches, Val($N))
+        hints = _ensure_hint_nd(hint, Val($N))
+        mono = _scalar_mono(hint, Val($N))
+        if _is_fill_oob(query_r, itp.grids, itp.extraps)
+            return 0 * _zero_ref(itp)
+        end
+        if _has_any_periodic_method(itp.methods) && !_has_grididx(typeof(query_r))
+            return _laplacian_wrap_aware(itp, query_r, policies, hints)
+        end
+        cell = _locate_cell(itp, query_r, policies, hints, mono)
+        return +($(deriv_calls...))
+    end
+end
+
+@with_pool pool function _laplacian_wrap_aware(
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        query_r::Tuple{Vararg{Real, N}},
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+    ) where {Tg, Tv, N, G_, S, M, E, P}
+    q_eval = _handle_all_extraps(query_r, itp.grids, itp.extraps)
+    windows, grids_local, methods_inner, extraps_inner =
+        _build_wrap_aware_cell_components(pool, itp, q_eval, policies, hints)
+    Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
+    return _laplacian_collapse_all(itp, q_eval, policies, windows, grids_local, methods_inner, extraps_inner, Tr)
+end
+
+@generated function _laplacian_collapse_all(
+        itp::HeteroInterpolantND{Tg, Tv, N, G_, S, M, E, P, <:Array},
+        q_eval::Tuple{Vararg{Real, N}},
+        policies::NTuple{N, AbstractSearchPolicy},
+        windows, grids_local, methods_inner, extraps_inner,
+        ::Type{Tr},
+    ) where {Tg, Tv, N, G_, S, M, E, P, Tr}
+    calls = [
+        begin
+                ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+                :(_collapse_dims(Tr, itp.data, grids_local, methods_inner, extraps_inner, q_eval, $ops, policies, nothing, windows))
+            end for i in 1:N
+    ]
+    return quote
+        +($(calls...))
     end
 end
 

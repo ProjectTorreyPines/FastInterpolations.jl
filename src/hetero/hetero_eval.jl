@@ -245,6 +245,27 @@ end
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         ::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, S, M, E, P, Tr}
+    windows, grids_local, methods_inner, extraps_inner =
+        _build_wrap_aware_cell_components(pool, itp, q_eval, policies, hints)
+    return _collapse_dims(
+        Tr, itp.data, grids_local, methods_inner, extraps_inner,
+        q_eval, ops, policies, nothing, windows,
+    )
+end
+
+# Shared cell-building primitive used by both the OnTheFly persistent eval
+# (`_eval_hetero_nd_wrap_aware`) and the vector-calculus wrappers in
+# `vector_calculus.jl`. Carries closures (the per-axis `_axis_window_pooled` /
+# `_axis_grid_pooled` lambdas) — those are fine in a regular function but
+# reject in a `@generated` body, so vector-calculus generated dispatches must
+# call this helper from an outer non-generated `@with_pool` shim.
+@inline function _build_wrap_aware_cell_components(
+        pool,
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        q_eval::Tuple{Vararg{Real, N}},
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints,
+    ) where {Tg, Tv, N, G, S, M, E, P}
     bcs = map(_bc_for_periodic_check, itp.methods)
     stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints, bcs)
     indices = map(first, stencils)
@@ -252,10 +273,7 @@ end
     grids_local = map((m, x, w, ix) -> _axis_grid_pooled(pool, m, x, w, ix), itp.methods, itp.grids, windows, indices)
     methods_inner = map(_strip_periodic_bc, itp.methods)
     extraps_inner = map(_strip_wrap_extrap, itp.extraps, itp.methods)
-    return _collapse_dims(
-        Tr, itp.data, grids_local, methods_inner, extraps_inner,
-        q_eval, ops, policies, nothing, windows,
-    )
+    return windows, grids_local, methods_inner, extraps_inner
 end
 
 # PreCompute path: precomputed partials + local kernel eval (O(1) per query)

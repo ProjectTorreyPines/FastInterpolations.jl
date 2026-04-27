@@ -68,10 +68,101 @@ end
 @inline _axis_window(::CubicInterp, ix::Int, n::Int) = 1:n
 @inline _axis_window(::QuadraticInterp, ix::Int, n::Int) = 1:n
 
-# ── PeriodicBC variants: full axis (windowed view would split seam cell) ──
+# ── PeriodicBC variants on the persistent path: full axis ──
+#
+# Persistent interpolants reach `_axis_window` via `_eval_hetero_nd` /
+# `_locate_cell` with `itp.methods` still carrying `PeriodicBC` and the
+# extended grid. A windowed view there does not satisfy the
+# `y[1] ≈ y[end]` BC check inside the inner 1D oneshot, so the persistent
+# path keeps full-axis fallback. The OnTheFly oneshot path uses the
+# wrap-aware helpers below (`_axis_window_oneshot` + `_axis_grid_oneshot`)
+# instead, which bake the wrap into pool-allocated index/grid buffers and
+# strip BC for the inner call.
 @inline _axis_window(::PchipInterp{<:PeriodicBC}, ix::Int, n::Int) = 1:n
 @inline _axis_window(::CardinalInterp{T, <:PeriodicBC}, ix::Int, n::Int) where {T} = 1:n
 @inline _axis_window(::AkimaInterp{<:PeriodicBC}, ix::Int, n::Int) = 1:n
+
+# ── OnTheFly oneshot wrap-aware window + grid helpers ──
+#
+# Per-axis dispatch entries (`_axis_window_oneshot`, `_axis_grid_oneshot`):
+# only the dispatch entry takes `pool` — for periodic methods it acquires a
+# small (4-6 element) buffer and hands it to the pure in-place fill helpers
+# (`_fill_periodic_window!`, `_fill_periodic_grid!`). The fill helpers are
+# pool-agnostic (mirrors codebase convention: `_compute_*!`, `_slope_1d!`).
+# Non-periodic methods go through the default method (UnitRange / grid view,
+# no pool acquire).
+
+@inline _axis_window_oneshot(pool, m::AbstractInterpMethod, x::AbstractVector, ix::Int) =
+    _axis_window(m, ix, length(x))
+@inline _axis_window_oneshot(pool, m::PchipInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
+    _fill_periodic_window!(acquire!(pool, Int, _fixed_window_size(m)), m, ix, length(x))
+@inline _axis_window_oneshot(pool, m::CardinalInterp{T, <:PeriodicBC}, x::AbstractVector, ix::Int) where {T} =
+    _fill_periodic_window!(acquire!(pool, Int, _fixed_window_size(m)), m, ix, length(x))
+@inline _axis_window_oneshot(pool, m::AkimaInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
+    _fill_periodic_window!(acquire!(pool, Int, _fixed_window_size(m)), m, ix, length(x))
+
+@inline _axis_grid_oneshot(pool, ::AbstractInterpMethod, x::AbstractVector, w::AbstractVector{Int}, ::Int) =
+    view(x, w)
+@inline _axis_grid_oneshot(pool, m::PchipInterp{<:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {Tg} =
+    _fill_periodic_grid!(acquire!(pool, Tg, _fixed_window_size(m)), m, x, ix)
+@inline _axis_grid_oneshot(pool, m::CardinalInterp{T, <:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {T, Tg} =
+    _fill_periodic_grid!(acquire!(pool, Tg, _fixed_window_size(m)), m, x, ix)
+@inline _axis_grid_oneshot(pool, m::AkimaInterp{<:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {Tg} =
+    _fill_periodic_grid!(acquire!(pool, Tg, _fixed_window_size(m)), m, x, ix)
+
+# Pure in-place fill helpers (no pool knowledge).
+@inline function _fill_periodic_window!(buf::AbstractVector{Int}, m, ix::Int, n::Int)
+    fw = length(buf)
+    cycle = _wrap_cycle(m.bc, n)
+    r = (fw - 2) >> 1
+    @inbounds for k in 1:fw
+        buf[k] = mod1(ix - r + (k - 1), cycle)
+    end
+    return buf
+end
+
+@inline function _fill_periodic_grid!(buf::AbstractVector{Tg}, m, x::AbstractVector{Tg}, ix::Int) where {Tg}
+    fw = length(buf)
+    n = length(x)
+    bc = m.bc
+    cycle = _wrap_cycle(bc, n)
+    period = _wrap_period(x, bc)
+    r = (fw - 2) >> 1
+    @inbounds for k in 1:fw
+        raw = ix - r + (k - 1)
+        wrap = mod1(raw, cycle)
+        offset = (raw - wrap) ÷ cycle
+        buf[k] = x[wrap] + offset * period
+    end
+    return buf
+end
+
+# Cycle period for `mod1(k, cycle)` index wrap.
+# - Inclusive (y[1]==y[n]): cycle = n-1, so x[n] ≡ x[1] + period.
+# - Exclusive (n distinct samples on [x[1], x[1]+period)): cycle = n.
+@inline _wrap_cycle(::PeriodicBC{:inclusive}, n::Int) = n - 1
+@inline _wrap_cycle(::PeriodicBC{:exclusive}, n::Int) = n
+
+@inline _wrap_period(x::AbstractVector, ::PeriodicBC{:inclusive}) = last(x) - first(x)
+@inline _wrap_period(x::AbstractVector, bc::PeriodicBC{:exclusive}) = _resolve_exclusive_period(x, bc)
+
+# ── BC strip helpers: PeriodicBC → NoBC, WrapExtrap → NoExtrap ──
+#
+# When the wrap-aware helpers above bake the periodic seam into pool-allocated
+# index + monotonic shifted x buffers, the inner 1D oneshot must NOT re-apply
+# periodic slope wrap. We strip per-axis: identity for non-periodic methods.
+@inline _strip_periodic_bc(::PchipInterp{<:PeriodicBC}) = PchipInterp(NoBC())
+@inline _strip_periodic_bc(m::CardinalInterp{T, <:PeriodicBC}) where {T} =
+    CardinalInterp(m.tension, NoBC())
+@inline _strip_periodic_bc(::AkimaInterp{<:PeriodicBC}) = AkimaInterp(NoBC())
+@inline _strip_periodic_bc(m::AbstractInterpMethod) = m
+
+@inline _is_periodic_method(::PchipInterp{<:PeriodicBC}) = true
+@inline _is_periodic_method(::CardinalInterp{T, <:PeriodicBC}) where {T} = true
+@inline _is_periodic_method(::AkimaInterp{<:PeriodicBC}) = true
+@inline _is_periodic_method(::AbstractInterpMethod) = false
+
+@inline _strip_wrap_extrap(e, m) = _is_periodic_method(m) ? NoExtrap() : e
 
 # ── Windowable-method trait (persistent-path gate) ──
 #

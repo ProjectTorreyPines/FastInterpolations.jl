@@ -74,9 +74,10 @@ end
 # Base case: 1D data → one-shot eval final dimension (Tr is carried but unused —
 # the 1D scalar eval returns a scalar directly, no buffer needed).
 #
-# `windows` parameter: per the recursion-alignment invariant, `data` and `grids[1]` are
-# already aligned at this layer (the top-level call site pre-sliced them). `windows[1]`
-# is `1:length(data)` here — passed through for symmetry only.
+# `windows[1]` indexes axis 1 of `data`. For non-fancy callers it's `Base.OneTo`
+# (or `UnitRange`) and `view(data, windows[1])` is a zero-cost identity-shaped
+# SubArray; for the OnTheFly wrap-aware periodic path it is a `Vector{Int}` of
+# wrapped indices that select the cell-local fiber directly out of full data.
 @inline function _collapse_dims(
         ::Type,
         data::AbstractVector,
@@ -87,20 +88,24 @@ end
         ops::Tuple{AbstractEvalOp},
         searches::Tuple{AbstractSearchPolicy},
         hints,
-        windows::Tuple{AbstractUnitRange{Int}},
+        windows::Tuple{AbstractVector{Int}},
     )
     return _oneshot_eval_1d(
-        methods[1], grids[1], data, extraps[1], q_eval[1], ops[1], searches[1], _first_hint(hints)
+        methods[1], grids[1], view(data, windows[1]),
+        extraps[1], q_eval[1], ops[1], searches[1], _first_hint(hints)
     )
 end
 
-# Recursive case: collapse dim 1 → (M-1)D array, then recurse
+# Recursive case: collapse dim 1 → (M-1)D array, then recurse.
 #
-# `windows` parameter: see hetero_window.jl for how the top-level entry computes per-axis
-# windows. Inside this recursion, `windows[d] == 1:size(data, d)` always (the call site
-# pre-slices `data` and `grids` so they're aligned with the actual cell-local stencil).
-# We thread `windows` through unchanged — the kernel iterates `Base.tail(size(data))`,
-# which equals `length.(Base.tail(windows))` by the alignment invariant.
+# Generic windows: each `windows[d]` is an `AbstractVector{Int}` selecting which
+# entries of axis d of `data` participate. Existing callers pre-slice `data` and
+# pass `Base.OneTo` per axis (identity), so this generalization preserves their
+# zero-alloc behavior. The new OnTheFly wrap-aware periodic path passes the full
+# data plus per-axis index vectors (UnitRange for non-periodic, pool-allocated
+# `Vector{Int}` for periodic) — fibers are built by single-level direct indexing
+# into `data`, avoiding the nested-SubArray allocation that `view(view(data, vec, vec), :, idx)`
+# produces.
 @inline @with_pool pool function _collapse_dims(
         ::Type{Tr},
         data::AbstractArray{<:Any, M},
@@ -111,23 +116,26 @@ end
         ops::Tuple{AbstractEvalOp, Vararg{AbstractEvalOp}},
         searches::Tuple{AbstractSearchPolicy, Vararg{AbstractSearchPolicy}},
         hints,
-        windows::NTuple{M, AbstractUnitRange{Int}},
+        windows::NTuple{M, AbstractVector{Int}},
     ) where {Tr, M}
-    remaining_size = Base.tail(size(data))
+    # Result shape derives from windows (not size(data)) — `data` may be the
+    # full array with windows[d] selecting a sub-range per axis.
+    remaining_size = ntuple(d -> length(@inbounds windows[d + 1]), Val(M - 1))
     result = acquire!(pool, Tr, remaining_size)
     hint_1 = _first_hint(hints)
 
-    # Collapse first dimension: for each fiber along dim 1, one-shot eval
+    # Build axis-1 fiber by direct indexing: data[windows[1], windows[2][idx[1]], …].
+    # Single-level view → no nested-SubArray alloc even when windows[1] is Vector{Int}.
     for idx in CartesianIndices(remaining_size)
-        fiber = view(data, :, idx)  # column-major contiguous
+        tail_scalars = ntuple(d -> @inbounds(windows[d + 1][idx[d]]), Val(M - 1))
+        fiber = view(data, windows[1], tail_scalars...)
         result[idx] = _oneshot_eval_1d(
             first(methods), first(grids), fiber,
             first(extraps), first(q_eval), first(ops), first(searches), hint_1
         )
     end
 
-    # Recurse with remaining dimensions (Tr unchanged — all levels share one buffer type).
-    # The result buffer is sized to `remaining_size`, so its windows are 1-based.
+    # Recurse with regular pool buffer (no fancy windowing on `result`).
     new_windows = map(Base.OneTo, remaining_size)
     return _collapse_dims(
         Tr, result, Base.tail(grids), Base.tail(methods),

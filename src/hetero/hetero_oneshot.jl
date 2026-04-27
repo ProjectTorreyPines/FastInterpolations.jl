@@ -170,14 +170,26 @@ end
         # cell returns `idx_R=1` so the windowing below picks the right cell.
         stencils, _, _ = _search_all_intervals_stencil(q_eval, grids, searches, hints, bcs)
         indices = map(first, stencils)
-        # `map` over heterogeneous tuples for closure-free unrolled per-axis dispatch.
-        windows = map(_axis_window, methods, indices, map(length, grids))
-        data_local = view(data, windows...)
-        grids_local = map(view, grids, windows)
-        rel_windows = map(Base.OneTo ∘ length, windows)
+        # Per-axis windows — generic `AbstractVector{Int}`:
+        #   - non-periodic windowable: `UnitRange{Int}` (cell-local, asymmetric clamp)
+        #   - periodic windowable:     `Vector{Int}` from pool (wrap-aware indices)
+        # Per-axis grid local — `AbstractVector{Tg}`:
+        #   - non-periodic: `view(grid, window)`
+        #   - periodic:     `Vector{Tg}` from pool (monotonic shifted x)
+        # Each axis's return type is determined at compile time by the method
+        # type → tuple is concrete, no Union boxing.
+        windows = map((m, x, ix) -> _axis_window_oneshot(pool, m, x, ix), methods, grids, indices)
+        grids_local = map((m, x, w, ix) -> _axis_grid_oneshot(pool, m, x, w, ix), methods, grids, windows, indices)
+        # Wrap is baked into the windowed grid → strip BC and any WrapExtrap so
+        # the inner 1D oneshot evaluates the local mini-grid as non-periodic.
+        methods_inner = map(_strip_periodic_bc, methods)
+        extraps_inner = map(_strip_wrap_extrap, extraps_eff, methods)
+        # Pass full `data` + `windows` (not pre-sliced) to `_collapse_dims`.
+        # Inside, fibers are built via single-level `view(data, windows[1], scalars...)`
+        # — no nested-SubArray alloc even when `windows[1]` is `Vector{Int}`.
         return _collapse_dims(
-            Tr, data_local, grids_local, methods, extraps_eff,
-            q_eval, ops, searches, nothing, rel_windows,
+            Tr, data, grids_local, methods_inner, extraps_inner,
+            q_eval, ops, searches, nothing, windows,
         )
     end
 

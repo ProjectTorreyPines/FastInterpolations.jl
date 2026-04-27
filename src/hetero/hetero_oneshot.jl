@@ -147,10 +147,10 @@ end
     # is already an NTuple (resolved upstream), so this call is just the per-axis
     # materialize step.
     bcs = map(_bc_for_periodic_check, methods)
-    # Inclusive PeriodicBC requires `data[1, ...] ≈ data[end, ...]` per axis;
-    # mirrors the 1D oneshot and CubicInterpolantND ND validation. No-op when no
-    # axis is inclusive periodic with `check=true`.
-    _validate_periodic_slices_nd(data, bcs, Val(N))
+    # NOTE: inclusive PeriodicBC slice validation is NOT performed here — it is
+    # hoisted to the callers (`_interp_nd_oneshot_dispatch` and the OnTheFly
+    # branch of `_interp_nd_oneshot_batch_dispatch!`) so the batch path pays the
+    # O(boundary-size) check once per batch instead of once per query.
     extraps_eff = map(_resolve_extrap, extraps_val, bcs, grids)
     q_eval = _handle_all_extraps(query, grids, extraps_eff)
     # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
@@ -256,6 +256,11 @@ function _interp_nd_oneshot_dispatch(
 
     # bc-aware extrap: NoExtrap → WrapExtrap on PeriodicBC axes.
     bcs = map(_bc_for_periodic_check, methods)
+    # Inclusive PeriodicBC requires `data[1, ...] ≈ data[end, ...]` per axis.
+    # Validated once here (not inside `_interp_nd_oneshot_onthefly`) so that
+    # the equivalent batch dispatch can hoist the same check above its loop —
+    # otherwise the boundary-slice scan runs once per query.
+    _validate_periodic_slices_nd(data, bcs, Val(N))
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N), query)
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -333,6 +338,10 @@ end
         nq = _query_length(queries)
         length(output) == nq || _throw_query_output_mismatch(nq, length(output))
         _query_validate(queries)
+        # Validate inclusive periodic boundary slices ONCE per batch (not per
+        # query). `_interp_nd_oneshot_onthefly` skips the validation since both
+        # callers (here + scalar dispatch) hoist it above their hot path.
+        _validate_periodic_slices_nd(data, bcs, Val(N))
         @inbounds for k in 1:nq
             query_k = _extract_query_point(queries, k, Val(N))
             output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, policies, ops, hints)

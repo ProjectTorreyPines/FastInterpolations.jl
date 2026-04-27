@@ -158,4 +158,52 @@
         # for any framework-level box (rare, but avoids brittleness).
         @test _alloc_check() <= ALLOC_THRESHOLD
     end
+
+    # Regression: persistent OnTheFly path must use a BC-aware search so that
+    # exclusive-periodic seam queries pick the same cell as the oneshot path.
+    # Without it, `_search_all_intervals` clamps `q ≥ x[n]` to interval n-1
+    # (last *real* cell) instead of returning the seam cell n (= virtual wrap),
+    # and the windowed evaluation diverges from the oneshot result.
+    @testset "Persistent ↔ oneshot consistency at exclusive seam" begin
+        n = 10   # small n amplifies the per-cell mismatch
+        x = collect(range(0.0, 1.0, length = n + 1))[1:n]
+        y = collect(range(0.0, 1.0, length = n + 1))[1:n]
+        data = [f(xi, yj) for xi in x, yj in y]
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+
+        queries = [
+            (0.95, 0.3),
+            (0.99, 0.5),
+            (x[n], 0.3),
+            (0.5, x[n]),
+            (x[n], x[n]),
+        ]
+        for q in queries
+            v_persistent = pchip_interp((x, y), data; bc = bc)(q)
+            v_oneshot = pchip_interp((x, y), data, q; bc = bc)
+            @test isapprox(v_persistent, v_oneshot; atol = 1.0e-10)
+        end
+    end
+
+    # Regression: inclusive PeriodicBC ND must validate `data[1, :] ≈ data[end, :]`
+    # per axis at construction / oneshot entry, mirroring 1D and existing
+    # CubicInterpolantND. Without this, mismatched data is silently accepted.
+    @testset "Inclusive ND validation rejects mismatched endpoints" begin
+        n = 11
+        x = collect(range(0.0, 1.0, length = n))
+        y = collect(range(0.0, 1.0, length = n))
+        data = rand(n, n)
+        data[end, :] .= data[1, :] .+ 0.5   # axis-1 endpoint mismatch
+        bc = PeriodicBC(endpoint = :inclusive)
+
+        @test_throws ArgumentError pchip_interp((x, y), data, (0.5, 0.5); bc = bc)
+        @test_throws ArgumentError pchip_interp((x, y), data; bc = bc)
+
+        # `check=false` bypass — must not throw.
+        bc_unchecked = PeriodicBC(endpoint = :inclusive, check = false)
+        v = pchip_interp((x, y), data, (0.5, 0.5); bc = bc_unchecked)
+        @test isfinite(v)
+        itp = pchip_interp((x, y), data; bc = bc_unchecked)
+        @test isfinite(itp((0.5, 0.5)))
+    end
 end

@@ -147,6 +147,10 @@ end
     # is already an NTuple (resolved upstream), so this call is just the per-axis
     # materialize step.
     bcs = map(_bc_for_periodic_check, methods)
+    # Inclusive PeriodicBC requires `data[1, ...] ≈ data[end, ...]` per axis;
+    # mirrors the 1D oneshot and CubicInterpolantND ND validation. No-op when no
+    # axis is inclusive periodic with `check=true`.
+    _validate_periodic_slices_nd(data, bcs, Val(N))
     extraps_eff = map(_resolve_extrap, extraps_val, bcs, grids)
     q_eval = _handle_all_extraps(query, grids, extraps_eff)
     # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.

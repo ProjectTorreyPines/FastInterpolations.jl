@@ -229,6 +229,13 @@ end
 # Wrap-aware persistent path: same shape as the OnTheFly oneshot wrap-aware
 # branch in `_interp_nd_oneshot_onthefly`. Pool scope is local to this function
 # so the NoBC `_eval_hetero_nd` branch never enters a `@with_pool` setup.
+#
+# `mono` is intentionally unused: BC-aware search via `_search_all_intervals_stencil`
+# is required for `PeriodicBC{:exclusive}` seam queries (`q ≥ x[n]` must return
+# `idx_L = n`, not the clamped `n-1` that the non-BC `_search_all_intervals` would
+# produce). The stencil search resolves `Searcher{...,<:PeriodicBC{:exclusive}}`
+# per axis and handles seam wrap directly; mono-aware LinearBinarySearch hint
+# walking still works inside the resolved Searcher when the user opts in.
 @inline @with_pool pool function _eval_hetero_nd_wrap_aware(
         itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
         q_eval::Tuple{Vararg{Real, N}},
@@ -236,9 +243,11 @@ end
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
-        mono::NTuple{N, Bool},
+        ::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, S, M, E, P, Tr}
-    indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, policies, hints, mono)
+    bcs = map(_bc_for_periodic_check, itp.methods)
+    stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints, bcs)
+    indices = map(first, stencils)
     windows = map((m, x, ix) -> _axis_window_pooled(pool, m, x, ix), itp.methods, itp.grids, indices)
     grids_local = map((m, x, w, ix) -> _axis_grid_pooled(pool, m, x, w, ix), itp.methods, itp.grids, windows, indices)
     methods_inner = map(_strip_periodic_bc, itp.methods)

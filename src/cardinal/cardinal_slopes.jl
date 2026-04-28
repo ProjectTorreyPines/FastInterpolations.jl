@@ -38,8 +38,14 @@ function _cardinal_slopes!(
 
     scale = one(Tg) - tension
 
-    # Special case: 2 points → linear
+    # Special case: 2 points. PeriodicBC routes through the wrap-aware central
+    # FD helper (see PCHIP n=2 note for rationale).
     if n == 2
+        if bc isa PeriodicBC
+            @inbounds dy[1] = _cardinal_boundary_slope(x, y, 1, n, scale, bc)
+            @inbounds dy[2] = _cardinal_boundary_slope(x, y, 2, n, scale, bc)
+            return dy
+        end
         @inbounds begin
             δ = (y[2] - y[1]) / (x[2] - x[1])
             dy[1] = scale * δ

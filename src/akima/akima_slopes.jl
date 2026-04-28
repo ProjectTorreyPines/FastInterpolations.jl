@@ -51,8 +51,14 @@ function _akima_slopes!(
     @assert length(y) == n "y length must match x"
     @assert length(dy) == n "dy length must match x"
 
-    # Special case: 2 points → linear
+    # Special case: 2 points. PeriodicBC routes through the wrap-aware
+    # 4-secant helper (cycle=2 for `:exclusive` yields a 2-secant alternation).
     if n == 2
+        if bc isa PeriodicBC
+            @inbounds dy[1] = _akima_local_4secant_periodic(x, y, 1, n, bc)
+            @inbounds dy[2] = _akima_local_4secant_periodic(x, y, 2, n, bc)
+            return dy
+        end
         @inbounds begin
             δ = (y[2] - y[1]) / (x[2] - x[1])
             dy[1] = δ

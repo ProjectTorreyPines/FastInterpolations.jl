@@ -31,8 +31,15 @@
 # Boundary (PeriodicBC): closed-cycle interior formula via abstraction
 
 @inline function _local_slope(sm::PchipSlopes, x::AbstractVector{Tg}, y::AbstractVector{Tv}, i::Int, n::Int) where {Tg, Tv}
-    # Special case: 2 points → linear
+    # Special case: 2 points. NoBC degenerates to a single linear secant.
+    # PeriodicBC must route through the wrap-aware boundary helper because the
+    # seam-cell secant is in general distinct (and may have opposite sign)
+    # from the cell-1 secant — using the simple linear formula here would
+    # diverge from the persistent path's wrap-aware result.
     if n == 2
+        if sm.bc isa PeriodicBC
+            return _pchip_boundary_slope(x, y, i, n, sm.bc)
+        end
         @inbounds return (y[2] - y[1]) / (x[2] - x[1])
     end
 
@@ -112,8 +119,12 @@ end
 @inline function _local_slope(sm::CardinalSlopes, x::AbstractVector{Tg}, y::AbstractVector{Tv}, i::Int, n::Int) where {Tg, Tv}
     scale = one(Tg) - sm.tension
 
-    # Special case: 2 points → linear
+    # Special case: 2 points. PeriodicBC must use wrap-aware central FD so the
+    # seam-cell secant is folded in (see PCHIP n=2 note above).
     if n == 2
+        if sm.bc isa PeriodicBC
+            return _cardinal_boundary_slope(x, y, i, n, scale, sm.bc)
+        end
         @inbounds return scale * (y[2] - y[1]) / (x[2] - x[1])
     end
 
@@ -155,8 +166,13 @@ end
 # fast path (no wrap overhead).
 
 @inline function _local_slope(sm::AkimaSlopes, x::AbstractVector{Tg}, y::AbstractVector{Tv}, i::Int, n::Int) where {Tg, Tv}
-    # Special case: 2 points → linear
+    # Special case: 2 points. PeriodicBC routes through the wrap-aware
+    # 4-secant formula so the seam-cell secant participates (cycle=2 for
+    # exclusive yields a 2-secant alternation, matching the persistent path).
     if n == 2
+        if sm.bc isa PeriodicBC
+            return _akima_local_4secant_periodic(x, y, i, n, sm.bc)
+        end
         @inbounds return (y[2] - y[1]) / (x[2] - x[1])
     end
 

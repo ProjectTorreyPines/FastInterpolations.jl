@@ -69,8 +69,16 @@ function _pchip_slopes!(
     @assert length(y) == n "y length must match x"
     @assert length(dy) == n "dy length must match x"
 
-    # Special case: 2 points → linear
+    # Special case: 2 points. PeriodicBC routes through the wrap-aware
+    # boundary helper so the seam-cell secant participates — without this
+    # OnTheFly oneshot would diverge from the persistent path on `:exclusive`
+    # n=2 grids (where the seam secant can have opposite sign of cell-1).
     if n == 2
+        if bc isa PeriodicBC
+            @inbounds dy[1] = _pchip_boundary_slope(x, y, 1, n, bc)
+            @inbounds dy[2] = _pchip_boundary_slope(x, y, 2, n, bc)
+            return dy
+        end
         @inbounds begin
             δ = (y[2] - y[1]) / (x[2] - x[1])
             dy[1] = δ

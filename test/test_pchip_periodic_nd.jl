@@ -55,13 +55,13 @@
         data = [f(xi, yj) for xi in x, yj in y]
         bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
 
-        # bcs (per-axis) and bc (broadcast) must agree when both axes use the same BC
-        v_bcs = pchip_interp((x, y), data, (0.5, 0.5); bcs = (bc, bc))
+        # Per-axis tuple `bc` and broadcast `bc` must agree when both axes use the same BC
+        v_tuple = pchip_interp((x, y), data, (0.5, 0.5); bc = (bc, bc))
         v_bc = pchip_interp((x, y), data, (0.5, 0.5); bc = bc)
-        @test v_bcs === v_bc
+        @test v_tuple === v_bc
 
-        # Mixed via bcs: PeriodicBC × NoBC
-        v_mixed = pchip_interp((x, y), data, (0.5, 0.5); bcs = (bc, NoBC()))
+        # Mixed per-axis: PeriodicBC × NoBC
+        v_mixed = pchip_interp((x, y), data, (0.5, 0.5); bc = (bc, NoBC()))
         @test isfinite(v_mixed)
     end
 

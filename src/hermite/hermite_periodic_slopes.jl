@@ -64,12 +64,24 @@ grid secants directly.
     @inbounds return (y[jw + 1] - y[jw]) / (x[jw + 1] - x[jw])
 end
 
+# Cast the resolved exclusive period to the grid's promoted-float type so
+# seam-cell arithmetic (`seam_h`, seam secant) stays in the grid eltype.
+# Without this cast, a `Float64` user-supplied period combined with a
+# `Float32` grid would silently widen Float32 → Float64 (PCHIP/Cardinal) or
+# trigger a `MethodError` in `_akima_weighted_slope` (which requires all 4
+# secants to share `Tv`). Mirrors the duck-safe `_PromotableValue` lift
+# used by `_extend_exclusive` in `core/periodic.jl`.
+@inline function _resolve_seam_period(x::AbstractVector, bc::PeriodicBC{:exclusive})
+    period_raw = _resolve_exclusive_period(x, bc)
+    Tg_raw = eltype(x)
+    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
+    return Tg(period_raw)
+end
+
 @inline function _periodic_secant(x::AbstractVector, y::AbstractVector, j::Int, n::Int, bc::PeriodicBC{:exclusive})
     jw = mod1(j, n)
     if jw == n
-        # `bc.period` may be `nothing` (Range-inferred) — `_resolve_exclusive_period`
-        # returns either the user-supplied period or the Range-inferred value.
-        period = _resolve_exclusive_period(x, bc)
+        period = _resolve_seam_period(x, bc)
         seam_h = period - (@inbounds x[n] - x[1])
         @inbounds return (y[1] - y[n]) / seam_h
     end
@@ -92,9 +104,7 @@ end
 @inline function _periodic_cell_width(x::AbstractVector, j::Int, n::Int, bc::PeriodicBC{:exclusive})
     jw = mod1(j, n)
     if jw == n
-        # `bc.period` may be `nothing` (Range-inferred). Resolve via the same
-        # helper used by `_resolve_extrap` / `_resolve_search`.
-        period = _resolve_exclusive_period(x, bc)
+        period = _resolve_seam_period(x, bc)
         return period - (@inbounds x[n] - x[1])
     end
     @inbounds return x[jw + 1] - x[jw]

@@ -266,6 +266,11 @@ function _build_hetero_nd(
 
     # 6. Resolve per-axis configuration (OnTheFly: no extension, bc-aware materialize).
     bcs = map(_bc_for_periodic_check, methods)
+    # Inclusive PeriodicBC requires `data[1, ...] ≈ data[end, ...]` per axis;
+    # mirrors `_prepare_periodic_nd_impl` for the PreCompute path so that local
+    # Hermite ND OnTheFly build rejects the same mismatched data 1D and Cubic ND
+    # already reject. No-op when no axis is inclusive periodic with `check=true`.
+    _validate_periodic_slices_nd(data, bcs, Val(N))
     extraps = _resolve_extrap(extrap, bcs, grids_typed, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N))
 

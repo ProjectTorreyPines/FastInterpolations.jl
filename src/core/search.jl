@@ -484,9 +484,20 @@ Via Julia's default-arg expansion, each policy has 2 source methods (`::Nothing`
 
 # Resolve an unresolved `:exclusive` period against the grid (e.g. inferred from a Range
 # step × length); no-op for every other BC so non-periodic dispatch is unchanged.
+#
+# Also normalizes user-supplied periods to the grid's promoted-float type so seam
+# arithmetic (`x[1] + s.bc.period` in `search_interval`, `seam_h` in Hermite slope
+# code) stays in the grid eltype. Without this cast, e.g. a Float64 period on a
+# Float32 grid silently widens xR to Float64 (Linear/Constant) and triggers
+# `MethodError` in `_akima_weighted_slope` (which requires all 4 secants to share
+# `Tv`). Mirrors the duck-safe `_PromotableValue` lift used by `_extend_exclusive`.
 @inline _resolve_bc_period(_, bc::AbstractBC) = bc
-@inline _resolve_bc_period(grid, bc::PeriodicBC{:exclusive, Nothing}) =
-    _with_resolved_period(bc, _resolve_exclusive_period(grid, bc))
+@inline function _resolve_bc_period(grid, bc::PeriodicBC{:exclusive})
+    period_raw = _resolve_exclusive_period(grid, bc)
+    Tg_raw = eltype(grid)
+    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
+    return _with_resolved_period(bc, Tg(period_raw))
+end
 
 # ========================================
 # 2. Base Implementations

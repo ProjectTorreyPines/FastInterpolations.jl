@@ -43,15 +43,22 @@ O(n), single pass, zero allocation (writes into `dy`).
 function _akima_slopes!(
         dy::AbstractVector,
         x::AbstractVector{Tg},
-        y::AbstractVector
+        y::AbstractVector;
+        bc::AbstractBC = NoBC()
     ) where {Tg}
     n = length(x)
     @assert n >= 2 "Akima requires at least 2 points"
     @assert length(y) == n "y length must match x"
     @assert length(dy) == n "dy length must match x"
 
-    # Special case: 2 points → linear
+    # Special case: 2 points. PeriodicBC routes through the wrap-aware
+    # 4-secant helper (cycle=2 for `:exclusive` yields a 2-secant alternation).
     if n == 2
+        if bc isa PeriodicBC
+            @inbounds dy[1] = _akima_local_4secant_periodic(x, y, 1, n, bc)
+            @inbounds dy[2] = _akima_local_4secant_periodic(x, y, 2, n, bc)
+            return dy
+        end
         @inbounds begin
             δ = (y[2] - y[1]) / (x[2] - x[1])
             dy[1] = δ
@@ -62,6 +69,14 @@ function _akima_slopes!(
 
     # Special case: 3 points → simple average at interior, one-sided at endpoints
     if n == 3
+        if bc isa PeriodicBC
+            # Wrap-aware path: every index is within K=5 stencil reach of the
+            # join, so use the closed-cycle 4-secant formula at all 3 points.
+            @inbounds for i in 1:3
+                dy[i] = _akima_local_4secant_periodic(x, y, i, n, bc)
+            end
+            return dy
+        end
         @inbounds begin
             m1 = (y[2] - y[1]) / (x[2] - x[1])
             m2 = (y[3] - y[2]) / (x[3] - x[2])
@@ -90,43 +105,62 @@ function _akima_slopes!(
     @inbounds m2 = (y[3] - y[2]) / (x[3] - x[2])
     @inbounds m3 = (y[4] - y[3]) / (x[4] - x[3])
 
-    # Virtual secants for left boundary (linear extrapolation of secant sequence)
-    m_neg1 = 3 * m1 - 2 * m2    # m[-1] = 2*(2*m[1]-m[2]) - m[1] = 3*m[1] - 2*m[2]
-    m_0 = 2 * m1 - m2            # m[0]  = 2*m[1] - m[2]
+    # Boundary virtual / wrapped secants for the LEFT side of the domain.
+    # NoBC:                          linear extrapolation (Akima's original).
+    # PeriodicBC{:inclusive}:        m[-1]=m[n-2], m[0]=m[n-1] (closed cycle on n-1 cells).
+    # PeriodicBC{:exclusive}:        m[-1]=m[n-1], m[0]=m[n]=seam = (y[1]-y[n])/seam_h
+    #                                (closed cycle on n cells, with virtual seam cell).
+    # The `_periodic_secant` abstraction absorbs both PeriodicBC variants.
+    if bc isa PeriodicBC
+        @inbounds m_0 = _periodic_secant(x, y, 0, n, bc)     # m[0]
+        @inbounds m_neg1 = _periodic_secant(x, y, -1, n, bc)    # m[-1]
+    else
+        @inbounds m_0 = 2 * m1 - m2                          # virtual (NoBC)
+        @inbounds m_neg1 = 3 * m1 - 2 * m2                      # virtual (NoBC)
+    end
 
-    # Left endpoint: k=1, uses m[-1], m[0], m[1], m[2]
+    # Left endpoint: k=1 uses m[-1], m[0], m[1], m[2].
     @inbounds dy[1] = _akima_weighted_slope(m_neg1, m_0, m1, m2)
 
-    # k=2: uses m[0], m[1], m[2], m[3]
+    # k=2: uses m[0], m[1], m[2], m[3]. m[0] above is wrap-aware so this stencil
+    # is fully closed-cycle accurate under PeriodicBC.
     @inbounds dy[2] = _akima_weighted_slope(m_0, m1, m2, m3)
 
-    # Interior points: k=3 to n-2
-    # Rolling window: need m[k-2], m[k-1], m[k], m[k+1]
-    # At this point we have m1, m2, m3 = secants at indices 1, 2, 3
-    m_km2 = m1  # m[k-2] for k=3
-    m_km1 = m2  # m[k-1]
-    m_k = m3    # m[k]
+    # Interior points: k=3 to n-2 — K=5 stencil entirely within real-secants
+    # range [1, n-1]; no wrap. Rolling window unchanged.
+    m_km2 = m1
+    m_km1 = m2
+    m_k = m3
 
     @inbounds for k in 3:(n - 2)
         m_kp1 = (y[k + 2] - y[k + 1]) / (x[k + 2] - x[k + 1])
         dy[k] = _akima_weighted_slope(m_km2, m_km1, m_k, m_kp1)
-        # Advance window
         m_km2 = m_km1
         m_km1 = m_k
         m_k = m_kp1
     end
 
     # After loop: m_km2 = m[n-3], m_km1 = m[n-2], m_k = m[n-1]
-    # Note: m_k is already m[n-1] (the last real secant), so no need for m_last.
 
-    # Virtual secants for right boundary (linear extrapolation of secant sequence)
-    m_np1 = 2 * m_k - m_km1       # m[n]  = 2*m[n-1] - m[n-2]
-    m_np2 = 3 * m_k - 2 * m_km1   # m[n+1] = 3*m[n-1] - 2*m[n-2]
+    # Boundary virtual / wrapped secants for the RIGHT side of the domain.
+    # NoBC:                          linear extrapolation.
+    # PeriodicBC{:inclusive}:        m[n]=m[1], m[n+1]=m[2] (closed cycle on n-1 cells).
+    # PeriodicBC{:exclusive}:        m[n]=seam, m[n+1]=m[1] (closed cycle on n cells).
+    if bc isa PeriodicBC
+        @inbounds m_np1 = _periodic_secant(x, y, n, n, bc)         # m[n]
+        @inbounds m_np2 = _periodic_secant(x, y, n + 1, n, bc)     # m[n+1]
+    else
+        m_np1 = 2 * m_k - m_km1                                    # virtual (NoBC)
+        m_np2 = 3 * m_k - 2 * m_km1                                # virtual (NoBC)
+    end
 
-    # k=n-1: uses m[n-3], m[n-2], m[n-1], m[n]
+    # k=n-1: uses m[n-3], m[n-2], m[n-1], m[n]. m[n] is wrap-aware under PeriodicBC.
     @inbounds dy[n - 1] = _akima_weighted_slope(m_km2, m_km1, m_k, m_np1)
 
-    # Right endpoint: k=n, uses m[n-2], m[n-1], m[n], m[n+1]
+    # Right endpoint: k=n uses m[n-2], m[n-1], m[n], m[n+1].
+    # For PeriodicBC{:inclusive}: this stencil equals the i=1 stencil under wrap
+    # (m[n-2]=m[i-2 wrapped], etc.), so the result equals dy[1] automatically.
+    # For PeriodicBC{:exclusive}: stencil is genuinely different (dy[1] ≠ dy[n]).
     @inbounds dy[n] = _akima_weighted_slope(m_km1, m_k, m_np1, m_np2)
 
     return dy

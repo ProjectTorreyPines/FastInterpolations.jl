@@ -28,7 +28,8 @@ function _cardinal_slopes!(
         dy::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector,
-        tension
+        tension;
+        bc::AbstractBC = NoBC()
     ) where {Tg}
     n = length(x)
     @assert n >= 2 "Cardinal spline requires at least 2 points"
@@ -37,8 +38,14 @@ function _cardinal_slopes!(
 
     scale = one(Tg) - tension
 
-    # Special case: 2 points → linear
+    # Special case: 2 points. PeriodicBC routes through the wrap-aware central
+    # FD helper (see PCHIP n=2 note for rationale).
     if n == 2
+        if bc isa PeriodicBC
+            @inbounds dy[1] = _cardinal_boundary_slope(x, y, 1, n, scale, bc)
+            @inbounds dy[2] = _cardinal_boundary_slope(x, y, 2, n, scale, bc)
+            return dy
+        end
         @inbounds begin
             δ = (y[2] - y[1]) / (x[2] - x[1])
             dy[1] = scale * δ
@@ -47,16 +54,19 @@ function _cardinal_slopes!(
         return dy
     end
 
-    # Left endpoint: one-sided 2-point FD
-    @inbounds dy[1] = scale * (y[2] - y[1]) / (x[2] - x[1])
+    # Left endpoint: bc-dispatched helper.
+    @inbounds dy[1] = _cardinal_boundary_slope(x, y, 1, n, scale, bc)
 
-    # Interior: central finite difference
+    # Interior: central finite difference (K=3, no wrap needed).
     @inbounds for k in 2:(n - 1)
         dy[k] = scale * (y[k + 1] - y[k - 1]) / (x[k + 1] - x[k - 1])
     end
 
-    # Right endpoint: one-sided 2-point FD
-    @inbounds dy[n] = scale * (y[n] - y[n - 1]) / (x[n] - x[n - 1])
+    # Right endpoint: same bc-dispatched helper. PeriodicBC{:inclusive} yields
+    # dy[n] == dy[1] automatically (closed-cycle symmetry); :exclusive yields
+    # a different value using the seam secant — the helper handles both via
+    # `_periodic_secant`/`_periodic_cell_width`.
+    @inbounds dy[n] = _cardinal_boundary_slope(x, y, n, n, scale, bc)
 
     return dy
 end

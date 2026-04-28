@@ -109,34 +109,65 @@ struct NoInterp <: AbstractInterpMethod end
 # ========================================
 
 """
-    PchipInterp <: AbstractInterpMethod
+    AbstractLocalHermiteInterp{BC} <: AbstractInterpMethod
+
+Common parent of PCHIP, Cardinal, and Akima interpolation methods — the local
+auto-slope Hermite family. Carries the `BC` type parameter so cross-method
+dispatch can specialize on the boundary condition (e.g. `<:AbstractLocalHermiteInterp{<:PeriodicBC}`)
+without enumerating each concrete type.
+"""
+abstract type AbstractLocalHermiteInterp{BC <: AbstractBC} <: AbstractInterpMethod end
+
+"""
+    PchipInterp{BC} <: AbstractLocalHermiteInterp{BC}
 
 PCHIP (monotone-preserving) interpolation method for one axis.
 Slopes computed via Fritsch-Carlson algorithm. Requires ≥2 grid points.
+
+The `bc` field selects boundary handling at slope time. `NoBC()` (default)
+uses one-sided 3-point FD with monotonicity clamping. `PeriodicBC(...)`
+uses closed-cycle wrapped secants. BC is a type parameter so dispatch
+specializes at compile time.
 """
-struct PchipInterp <: AbstractInterpMethod end
+struct PchipInterp{BC <: AbstractBC} <: AbstractLocalHermiteInterp{BC}
+    bc::BC
+end
+PchipInterp() = PchipInterp(NoBC())   # backward-compat (NoBC default)
 
 """
-    CardinalInterp{T} <: AbstractInterpMethod
+    CardinalInterp{T, BC} <: AbstractLocalHermiteInterp{BC}
 
 Cardinal spline interpolation method for one axis.
 `tension=0` gives Catmull-Rom. Requires ≥2 grid points.
 
 # Arguments
 - `tension`: Tension parameter (0 = CatmullRom, 1 = zero slopes)
+- `bc`: Boundary condition (`NoBC()` default, or `PeriodicBC(...)`)
 """
-struct CardinalInterp{T} <: AbstractInterpMethod
+struct CardinalInterp{T, BC <: AbstractBC} <: AbstractLocalHermiteInterp{BC}
     tension::T
+    bc::BC
 end
-CardinalInterp(; tension = 0.0) = CardinalInterp(tension)
+CardinalInterp(tension::T) where {T} = CardinalInterp(tension, NoBC())   # backward-compat
+CardinalInterp(; tension = 0.0, bc::AbstractBC = NoBC()) = CardinalInterp(tension, bc)
 
 """
-    AkimaInterp <: AbstractInterpMethod
+    AkimaInterp{BC} <: AbstractLocalHermiteInterp{BC}
 
 Akima (1970) outlier-robust interpolation method for one axis.
 Requires ≥2 grid points.
 """
-struct AkimaInterp <: AbstractInterpMethod end
+struct AkimaInterp{BC <: AbstractBC} <: AbstractLocalHermiteInterp{BC}
+    bc::BC
+end
+AkimaInterp() = AkimaInterp(NoBC())   # backward-compat
+
+# Per-method factory used by `_strip_periodic_bc` (and any future BC-swap
+# helper) so the abstract dispatch above doesn't have to enumerate each
+# concrete type's constructor.
+@inline _replace_bc(::PchipInterp, bc::AbstractBC) = PchipInterp(bc)
+@inline _replace_bc(m::CardinalInterp, bc::AbstractBC) = CardinalInterp(m.tension, bc)
+@inline _replace_bc(::AkimaInterp, bc::AbstractBC) = AkimaInterp(bc)
 
 """
     CubicHermiteInterp <: AbstractInterpMethod

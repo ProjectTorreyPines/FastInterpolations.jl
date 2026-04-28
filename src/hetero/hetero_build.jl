@@ -73,6 +73,9 @@ end
 # Non-BC methods return a non-periodic placeholder (never triggers extension).
 @inline _bc_for_periodic_check(m::CubicInterp) = m.bc
 @inline _bc_for_periodic_check(m::QuadraticInterp) = m.bc
+@inline _bc_for_periodic_check(m::PchipInterp) = m.bc
+@inline _bc_for_periodic_check(m::CardinalInterp) = m.bc
+@inline _bc_for_periodic_check(m::AkimaInterp) = m.bc
 @inline _bc_for_periodic_check(::AbstractInterpMethod) = CubicFit()
 
 # ========================================

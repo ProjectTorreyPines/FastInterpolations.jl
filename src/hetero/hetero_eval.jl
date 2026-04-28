@@ -45,16 +45,16 @@ end
 end
 
 # Hermite family: local slope methods (PCHIP, Cardinal, Akima)
-@inline function _oneshot_eval_1d(::PchipInterp, grid, fiber, extrap, q, op, search, hint)
-    return pchip_interp(grid, fiber, q; extrap = extrap, deriv = op, search = search, hint = hint)
+@inline function _oneshot_eval_1d(m::PchipInterp, grid, fiber, extrap, q, op, search, hint)
+    return pchip_interp(grid, fiber, q; bc = m.bc, extrap = extrap, deriv = op, search = search, hint = hint)
 end
 
 @inline function _oneshot_eval_1d(m::CardinalInterp, grid, fiber, extrap, q, op, search, hint)
-    return cardinal_interp(grid, fiber, q; tension = m.tension, extrap = extrap, deriv = op, search = search, hint = hint)
+    return cardinal_interp(grid, fiber, q; bc = m.bc, tension = m.tension, extrap = extrap, deriv = op, search = search, hint = hint)
 end
 
-@inline function _oneshot_eval_1d(::AkimaInterp, grid, fiber, extrap, q, op, search, hint)
-    return akima_interp(grid, fiber, q; extrap = extrap, deriv = op, search = search, hint = hint)
+@inline function _oneshot_eval_1d(m::AkimaInterp, grid, fiber, extrap, q, op, search, hint)
+    return akima_interp(grid, fiber, q; bc = m.bc, extrap = extrap, deriv = op, search = search, hint = hint)
 end
 
 # ========================================
@@ -74,9 +74,10 @@ end
 # Base case: 1D data → one-shot eval final dimension (Tr is carried but unused —
 # the 1D scalar eval returns a scalar directly, no buffer needed).
 #
-# `windows` parameter: per the recursion-alignment invariant, `data` and `grids[1]` are
-# already aligned at this layer (the top-level call site pre-sliced them). `windows[1]`
-# is `1:length(data)` here — passed through for symmetry only.
+# `windows[1]` indexes axis 1 of `data`. For non-fancy callers it's `Base.OneTo`
+# (or `UnitRange`) and `view(data, windows[1])` is a zero-cost identity-shaped
+# SubArray; for the OnTheFly wrap-aware periodic path it is a `Vector{Int}` of
+# wrapped indices that select the cell-local fiber directly out of full data.
 @inline function _collapse_dims(
         ::Type,
         data::AbstractVector,
@@ -87,20 +88,24 @@ end
         ops::Tuple{AbstractEvalOp},
         searches::Tuple{AbstractSearchPolicy},
         hints,
-        windows::Tuple{AbstractUnitRange{Int}},
+        windows::Tuple{AbstractVector{Int}},
     )
     return _oneshot_eval_1d(
-        methods[1], grids[1], data, extraps[1], q_eval[1], ops[1], searches[1], _first_hint(hints)
+        methods[1], grids[1], view(data, windows[1]),
+        extraps[1], q_eval[1], ops[1], searches[1], _first_hint(hints)
     )
 end
 
-# Recursive case: collapse dim 1 → (M-1)D array, then recurse
+# Recursive case: collapse dim 1 → (M-1)D array, then recurse.
 #
-# `windows` parameter: see hetero_window.jl for how the top-level entry computes per-axis
-# windows. Inside this recursion, `windows[d] == 1:size(data, d)` always (the call site
-# pre-slices `data` and `grids` so they're aligned with the actual cell-local stencil).
-# We thread `windows` through unchanged — the kernel iterates `Base.tail(size(data))`,
-# which equals `length.(Base.tail(windows))` by the alignment invariant.
+# Generic windows: each `windows[d]` is an `AbstractVector{Int}` selecting which
+# entries of axis d of `data` participate. Existing callers pre-slice `data` and
+# pass `Base.OneTo` per axis (identity), so this generalization preserves their
+# zero-alloc behavior. The new OnTheFly wrap-aware periodic path passes the full
+# data plus per-axis index vectors (UnitRange for non-periodic, pool-allocated
+# `Vector{Int}` for periodic) — fibers are built by single-level direct indexing
+# into `data`, avoiding the nested-SubArray allocation that `view(view(data, vec, vec), :, idx)`
+# produces.
 @inline @with_pool pool function _collapse_dims(
         ::Type{Tr},
         data::AbstractArray{<:Any, M},
@@ -111,23 +116,26 @@ end
         ops::Tuple{AbstractEvalOp, Vararg{AbstractEvalOp}},
         searches::Tuple{AbstractSearchPolicy, Vararg{AbstractSearchPolicy}},
         hints,
-        windows::NTuple{M, AbstractUnitRange{Int}},
+        windows::NTuple{M, AbstractVector{Int}},
     ) where {Tr, M}
-    remaining_size = Base.tail(size(data))
+    # Result shape derives from windows (not size(data)) — `data` may be the
+    # full array with windows[d] selecting a sub-range per axis.
+    remaining_size = ntuple(d -> length(@inbounds windows[d + 1]), Val(M - 1))
     result = acquire!(pool, Tr, remaining_size)
     hint_1 = _first_hint(hints)
 
-    # Collapse first dimension: for each fiber along dim 1, one-shot eval
+    # Build axis-1 fiber by direct indexing: data[windows[1], windows[2][idx[1]], …].
+    # Single-level view → no nested-SubArray alloc even when windows[1] is Vector{Int}.
     for idx in CartesianIndices(remaining_size)
-        fiber = view(data, :, idx)  # column-major contiguous
+        tail_scalars = ntuple(d -> @inbounds(windows[d + 1][idx[d]]), Val(M - 1))
+        fiber = view(data, windows[1], tail_scalars...)
         result[idx] = _oneshot_eval_1d(
             first(methods), first(grids), fiber,
             first(extraps), first(q_eval), first(ops), first(searches), hint_1
         )
     end
 
-    # Recurse with remaining dimensions (Tr unchanged — all levels share one buffer type).
-    # The result buffer is sized to `remaining_size`, so its windows are 1-based.
+    # Recurse with regular pool buffer (no fancy windowing on `result`).
     new_windows = map(Base.OneTo, remaining_size)
     return _collapse_dims(
         Tr, result, Base.tail(grids), Base.tail(methods),
@@ -190,6 +198,14 @@ end
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
     Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
 
+    # Wrap-aware path: routed only when at least one axis is a periodic local
+    # Hermite method. Pool scope (and the wrap-aware buffers) live entirely
+    # inside `_eval_hetero_nd_wrap_aware` — the NoBC branch below stays
+    # pool-free and identical to its pre-Phase-2 behavior.
+    if _has_any_periodic_method(itp.methods) && !_has_grididx(typeof(query))
+        return _eval_hetero_nd_wrap_aware(itp, q_eval, Tr, ops, policies, hints, mono)
+    end
+
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
         data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)
         # Inner kernel uses policies for fiber re-search on sliced grids.
@@ -210,6 +226,56 @@ end
     )
 end
 
+# Wrap-aware persistent path: same shape as the OnTheFly oneshot wrap-aware
+# branch in `_interp_nd_oneshot_onthefly`. Pool scope is local to this function
+# so the NoBC `_eval_hetero_nd` branch never enters a `@with_pool` setup.
+#
+# `mono` is intentionally unused: BC-aware search via `_search_all_intervals_stencil`
+# is required for `PeriodicBC{:exclusive}` seam queries (`q ≥ x[n]` must return
+# `idx_L = n`, not the clamped `n-1` that the non-BC `_search_all_intervals` would
+# produce). The stencil search resolves `Searcher{...,<:PeriodicBC{:exclusive}}`
+# per axis and handles seam wrap directly; mono-aware LinearBinarySearch hint
+# walking still works inside the resolved Searcher when the user opts in.
+@inline @with_pool pool function _eval_hetero_nd_wrap_aware(
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        q_eval::Tuple{Vararg{Real, N}},
+        ::Type{Tr},
+        ops::NTuple{N, AbstractEvalOp},
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        ::NTuple{N, Bool},
+    ) where {Tg, Tv, N, G, S, M, E, P, Tr}
+    windows, grids_local, methods_inner, extraps_inner =
+        _build_wrap_aware_cell_components(pool, itp, q_eval, policies, hints)
+    return _collapse_dims(
+        Tr, itp.data, grids_local, methods_inner, extraps_inner,
+        q_eval, ops, policies, nothing, windows,
+    )
+end
+
+# Pool-allocated wrap-aware cell builder. Used by `_eval_hetero_nd_wrap_aware`
+# (OnTheFly persistent operator) where the cell components are consumed
+# inside the same `@with_pool` scope as their construction.
+# Vector-calculus paths (gradient/hessian/laplacian), which call
+# `_eval_at_cell` many times across separate scopes, instead use the
+# heap-allocated counterpart `_build_wrap_aware_cell_heap` below.
+@inline function _build_wrap_aware_cell_components(
+        pool,
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        q_eval::Tuple{Vararg{Real, N}},
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints,
+    ) where {Tg, Tv, N, G, S, M, E, P}
+    bcs = map(_bc_for_periodic_check, itp.methods)
+    stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints, bcs)
+    indices = map(first, stencils)
+    windows = map((m, x, ix) -> _axis_window_pooled(pool, m, x, ix), itp.methods, itp.grids, indices)
+    grids_local = map((m, x, w, ix) -> _axis_grid_pooled(pool, m, x, w, ix), itp.methods, itp.grids, windows, indices)
+    methods_inner = map(_strip_periodic_bc, itp.methods)
+    extraps_inner = map(_strip_wrap_extrap, itp.extraps, itp.methods)
+    return windows, grids_local, methods_inner, extraps_inner
+end
+
 # PreCompute path: precomputed partials + local kernel eval (O(1) per query)
 @inline function _eval_hetero_nd(
         itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:_HeteroPartials},
@@ -224,6 +290,39 @@ end
         query, ops, policies, hints, mono,
     )
 end
+
+# Heap-allocated wrap-aware cell builder. Used by the periodic branch in the
+# OnTheFly persistent `_locate_cell` for vector-calculus calls (gradient/
+# hessian/laplacian), where the cell components must outlive multiple
+# `_eval_at_cell` invocations. The OnTheFly oneshot path
+# (`_eval_hetero_nd_wrap_aware`) and the persistent `(itp)(query)` operator
+# both still use the pool variant (`_build_wrap_aware_cell_components`) since
+# their cell lifetime fits cleanly inside a single `@with_pool` scope.
+@inline function _build_wrap_aware_cell_heap(
+        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        q_eval::Tuple{Vararg{Real, N}},
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints,
+    ) where {Tg, Tv, N, G, S, M, E, P}
+    bcs = map(_bc_for_periodic_check, itp.methods)
+    stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints, bcs)
+    indices = map(first, stencils)
+    windows = map(_axis_window_heap, itp.methods, itp.grids, indices)
+    grids_local = map(_axis_grid_heap, itp.methods, itp.grids, windows, indices)
+    methods_inner = map(_strip_periodic_bc, itp.methods)
+    extraps_inner = map(_strip_wrap_extrap, itp.extraps, itp.methods)
+    return windows, grids_local, methods_inner, extraps_inner
+end
+
+@inline _axis_window_heap(m::AbstractInterpMethod, x::AbstractVector, ix::Int) =
+    _axis_window(m, ix, length(x))
+@inline _axis_window_heap(m::AbstractLocalHermiteInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
+    _fill_periodic_window!(Vector{Int}(undef, _fixed_window_size(m)), m, ix, length(x))
+
+@inline _axis_grid_heap(::AbstractInterpMethod, x::AbstractVector, w::AbstractVector{Int}, ::Int) =
+    view(x, w)
+@inline _axis_grid_heap(m::AbstractLocalHermiteInterp{<:PeriodicBC}, x::AbstractVector{Tg}, ::AbstractVector{Int}, ix::Int) where {Tg} =
+    _fill_periodic_grid!(Vector{Tg}(undef, _fixed_window_size(m)), m, x, ix)
 
 # ========================================
 # Callable Interface
@@ -321,6 +420,21 @@ end
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, S, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
+
+    # Periodic wrap-aware path: build the wrap-aware cell ONCE here so the
+    # generic `_gradient_generic` / `_hessian_generic` / `_laplacian_generic`
+    # protocol (locate-once + N or N(N+1)/2 `_eval_at_cell` calls) flows through
+    # unmodified. The `Vector{Int}` / `Vector{Tg}` buffers are heap-allocated
+    # (one set per gradient/hessian/laplacian call) — vector-calculus paths
+    # don't have a zero-alloc test, so the small heap churn (~200 B per call)
+    # is preferable to the multi-helper pool dance the previous design needed.
+    # Persistent itp `(itp)(q)` eval (which DOES require zero alloc) goes
+    # through `_eval_hetero_nd_wrap_aware` and stays on the pool path.
+    if _has_any_periodic_method(itp.methods) && !_has_grididx(typeof(query))
+        windows, grids_local, methods_inner, extraps_inner =
+            _build_wrap_aware_cell_heap(itp, q_eval, policies, hints)
+        return (itp.data, grids_local, methods_inner, extraps_inner, q_eval, policies, nothing, windows)
+    end
 
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
         data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)

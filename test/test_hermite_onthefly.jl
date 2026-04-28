@@ -99,7 +99,7 @@
         @test cardinal_interp(x, y, xq; coeffs = OnTheFly(), tension = 0.5) ≈ cardinal_interp(x, y, xq; tension = 0.5) atol = 1.0e-14
 
         # Internal API also works
-        @test _pchip_interp_onthefly(collect(Float64, x), sin.(x), Float64(xq), NoExtrap(), EvalValue(), AutoSearch(), nothing) ≈ pchip_interp(x, y, xq) atol = 1.0e-14
+        @test _pchip_interp_onthefly(collect(Float64, x), sin.(x), Float64(xq), NoBC(), NoExtrap(), EvalValue(), AutoSearch(), nothing) ≈ pchip_interp(x, y, xq) atol = 1.0e-14
     end
 
     # ========================================
@@ -243,9 +243,9 @@
         # because coeffs is a compile-time constant)
         xf = collect(Float64, x)
         yf = collect(Float64, y)
-        @test @inferred(_pchip_interp_onthefly(xf, yf, 1.0, NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
-        @test @inferred(_akima_interp_onthefly(xf, yf, 1.0, NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
-        @test @inferred(_cardinal_interp_onthefly(xf, yf, 1.0, 0.0, NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
+        @test @inferred(_pchip_interp_onthefly(xf, yf, 1.0, NoBC(), NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
+        @test @inferred(_akima_interp_onthefly(xf, yf, 1.0, NoBC(), NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
+        @test @inferred(_cardinal_interp_onthefly(xf, yf, 1.0, NoBC(), 0.0, NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
     end
 
     # ========================================
@@ -447,9 +447,9 @@ end
         @test @inferred(cardinal_interp(xg, yg, 1.0)) isa Float64
 
         # Internal onthefly paths — type-stable
-        @test @inferred(_pchip_interp_onthefly(xg, yg, 1.0, NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
-        @test @inferred(_akima_interp_onthefly(xg, yg, 1.0, NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
-        @test @inferred(_cardinal_interp_onthefly(xg, yg, 1.0, 0.0, NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
+        @test @inferred(_pchip_interp_onthefly(xg, yg, 1.0, NoBC(), NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
+        @test @inferred(_akima_interp_onthefly(xg, yg, 1.0, NoBC(), NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
+        @test @inferred(_cardinal_interp_onthefly(xg, yg, 1.0, NoBC(), 0.0, NoExtrap(), EvalValue(), AutoSearch(), nothing)) isa Float64
     end
 
     @testset "AutoCoeffs zero allocation — scalar" begin

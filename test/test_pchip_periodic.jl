@@ -154,4 +154,62 @@
             @test itp(xq) ≈ f(xq) atol = 1.0e-3
         end
     end
+
+    @testset "Zero-alloc 1D oneshot OnTheFly (function barrier)" begin
+        # Function-barrier pattern: setup + warmup + @allocated all inside one
+        # function so locals are concrete-typed (the @testset try/catch wrapper
+        # would otherwise box and inflate the alloc count).
+        function _alloc_check_excl()
+            n = 21
+            x = collect(range(0.0, 1.0, length = n + 1))[1:n]
+            y = f.(x)
+            bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+            pchip_interp(x, y, 0.5; bc = bc, coeffs = OnTheFly())            # warmup
+            return @allocated pchip_interp(x, y, 0.5; bc = bc, coeffs = OnTheFly())
+        end
+        function _alloc_check_incl()
+            n = 21
+            x = collect(range(0.0, 1.0, length = n))
+            y = f.(x); y[end] = y[1]
+            bc = PeriodicBC(endpoint = :inclusive)
+            pchip_interp(x, y, 0.5; bc = bc, coeffs = OnTheFly())            # warmup
+            return @allocated pchip_interp(x, y, 0.5; bc = bc, coeffs = OnTheFly())
+        end
+        @test _alloc_check_excl() <= ALLOC_THRESHOLD
+        @test _alloc_check_incl() <= ALLOC_THRESHOLD
+    end
+
+    @testset "Float32 grid + user-supplied Float64 period (codex P2)" begin
+        # Regression: Float64 `bc.period` on a Float32 grid must not widen
+        # results to Float64 (silent precision change) — verified at the seam
+        # cell where the period participates in `xR` and `seam_h`.
+        x32 = collect(Float32, range(0f0, 1f0, length = 8))[1:7]
+        y32 = sin.(2f0 .* Float32(pi) .* x32)
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)              # Float64 user period
+
+        itp = pchip_interp(x32, y32; bc = bc)
+        for q in (0.42f0, 0.86f0, 0.95f0)
+            r_scalar = pchip_interp(x32, y32, q; bc = bc)
+            r_persist = itp(q)
+            @test r_scalar isa Float32
+            @test r_persist isa Float32
+            @test isapprox(r_scalar, r_persist; atol = 1.0e-6)
+        end
+    end
+
+    @testset "n=2 :exclusive scalar↔persistent consistency (codex P2)" begin
+        # Regression: the OnTheFly + PreCompute n==2 fast paths previously
+        # bypassed BC dispatch and returned the linear secant, diverging from
+        # the persistent path's wrap-aware boundary slope on `:exclusive` data
+        # whose seam-cell secant has opposite sign of cell 1.
+        x = [0.0, 0.3]; y = [0.0, 1.0]
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        itp = pchip_interp(x, y; bc = bc)
+        for q in (0.05, 0.15, 0.5, 0.8)
+            persist = itp(q)
+            for cs in (OnTheFly(), PreCompute())
+                @test pchip_interp(x, y, q; bc = bc, coeffs = cs) ≈ persist atol = 1.0e-12
+            end
+        end
+    end
 end

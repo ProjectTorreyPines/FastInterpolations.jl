@@ -174,4 +174,55 @@
             @test isfinite(itp(0.5; deriv = DerivOp(1)))
         end
     end
+
+    @testset "Zero-alloc 1D oneshot OnTheFly (function barrier)" begin
+        function _alloc_check_excl()
+            n = 21
+            x = collect(range(0.0, 1.0, length = n + 1))[1:n]
+            y = sin.(2π .* x)
+            bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+            akima_interp(x, y, 0.5; bc = bc, coeffs = OnTheFly())
+            return @allocated akima_interp(x, y, 0.5; bc = bc, coeffs = OnTheFly())
+        end
+        function _alloc_check_incl()
+            n = 21
+            x = collect(range(0.0, 1.0, length = n))
+            y = sin.(2π .* x); y[end] = y[1]
+            bc = PeriodicBC(endpoint = :inclusive)
+            akima_interp(x, y, 0.5; bc = bc, coeffs = OnTheFly())
+            return @allocated akima_interp(x, y, 0.5; bc = bc, coeffs = OnTheFly())
+        end
+        @test _alloc_check_excl() <= ALLOC_THRESHOLD
+        @test _alloc_check_incl() <= ALLOC_THRESHOLD
+    end
+
+    @testset "Float32 grid + user-supplied Float64 period (codex P2)" begin
+        # The MethodError in `_akima_weighted_slope` (which requires all 4
+        # secants to share `Tv`) was the strongest manifestation of this bug —
+        # PCHIP/Cardinal silently widened, Akima outright threw at seam queries.
+        x32 = collect(Float32, range(0f0, 1f0, length = 8))[1:7]
+        y32 = sin.(2f0 .* Float32(pi) .* x32)
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)              # Float64 user period
+
+        itp = akima_interp(x32, y32; bc = bc)
+        for q in (0.42f0, 0.86f0, 0.95f0)
+            r_scalar = akima_interp(x32, y32, q; bc = bc)                 # would throw before fix
+            r_persist = itp(q)
+            @test r_scalar isa Float32
+            @test r_persist isa Float32
+            @test isapprox(r_scalar, r_persist; atol = 1.0e-6)
+        end
+    end
+
+    @testset "n=2 :exclusive scalar↔persistent consistency (codex P2)" begin
+        x = [0.0, 0.3]; y = [0.0, 1.0]
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        itp = akima_interp(x, y; bc = bc)
+        for q in (0.05, 0.15, 0.5, 0.8)
+            persist = itp(q)
+            for cs in (OnTheFly(), PreCompute())
+                @test akima_interp(x, y, q; bc = bc, coeffs = cs) ≈ persist atol = 1.0e-12
+            end
+        end
+    end
 end

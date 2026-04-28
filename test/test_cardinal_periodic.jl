@@ -136,4 +136,52 @@
             @test itp(xq) ≈ f(xq) atol = 1.0e-3
         end
     end
+
+    @testset "Zero-alloc 1D oneshot OnTheFly (function barrier)" begin
+        function _alloc_check_excl()
+            n = 21
+            x = collect(range(0.0, 1.0, length = n + 1))[1:n]
+            y = f.(x)
+            bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+            cardinal_interp(x, y, 0.5; bc = bc, tension = 0.5, coeffs = OnTheFly())
+            return @allocated cardinal_interp(x, y, 0.5; bc = bc, tension = 0.5, coeffs = OnTheFly())
+        end
+        function _alloc_check_incl()
+            n = 21
+            x = collect(range(0.0, 1.0, length = n))
+            y = f.(x); y[end] = y[1]
+            bc = PeriodicBC(endpoint = :inclusive)
+            cardinal_interp(x, y, 0.5; bc = bc, tension = 0.5, coeffs = OnTheFly())
+            return @allocated cardinal_interp(x, y, 0.5; bc = bc, tension = 0.5, coeffs = OnTheFly())
+        end
+        @test _alloc_check_excl() <= ALLOC_THRESHOLD
+        @test _alloc_check_incl() <= ALLOC_THRESHOLD
+    end
+
+    @testset "Float32 grid + user-supplied Float64 period (codex P2)" begin
+        x32 = collect(Float32, range(0f0, 1f0, length = 8))[1:7]
+        y32 = sin.(2f0 .* Float32(pi) .* x32)
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+
+        itp = cardinal_interp(x32, y32; bc = bc, tension = 0.5f0)
+        for q in (0.42f0, 0.86f0, 0.95f0)
+            r_scalar = cardinal_interp(x32, y32, q; bc = bc, tension = 0.5f0)
+            r_persist = itp(q)
+            @test r_scalar isa Float32
+            @test r_persist isa Float32
+            @test isapprox(r_scalar, r_persist; atol = 1.0e-6)
+        end
+    end
+
+    @testset "n=2 :exclusive scalar↔persistent consistency (codex P2)" begin
+        x = [0.0, 0.3]; y = [0.0, 1.0]
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        itp = cardinal_interp(x, y; bc = bc, tension = 0.0)
+        for q in (0.05, 0.15, 0.5, 0.8)
+            persist = itp(q)
+            for cs in (OnTheFly(), PreCompute())
+                @test cardinal_interp(x, y, q; bc = bc, tension = 0.0, coeffs = cs) ≈ persist atol = 1.0e-12
+            end
+        end
+    end
 end

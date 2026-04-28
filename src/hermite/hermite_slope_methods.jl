@@ -34,9 +34,13 @@ abstract type AbstractSlopeMethod end
 On-the-fly slope computation using the Fritsch-Carlson (1980) monotone-preserving algorithm.
 Each slope depends on at most 3 neighboring points (the cell's own interval and one neighbor).
 
-The `bc` field selects endpoint slope formula: `NoBC()` uses one-sided FD,
-`PeriodicBC()` uses wrapped interior formula (after closed-cycle normalization
-by the entry-point `_periodic_extend_1d` / `_periodic_extend_1d_pooled!`).
+The `bc` field selects the endpoint slope formula:
+- `NoBC()`: one-sided 3-point finite difference with monotonicity clamping.
+- `PeriodicBC()`: closed-cycle wrapped formula via `_periodic_secant` /
+  `_periodic_cell_width` (oneshot path stays zero-copy on the user's grid;
+  the persistent path performs a one-time `_periodic_extend_1d` at
+  construction).
+
 Compile-time dispatch via type parameter — zero runtime cost when `BC === NoBC`.
 
 Used as: `pchip_interp(x, y; coeffs=OnTheFly())`

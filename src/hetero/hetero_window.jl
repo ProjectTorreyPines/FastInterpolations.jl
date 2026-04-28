@@ -98,6 +98,12 @@ end
 # pool-agnostic (mirrors codebase convention: `_compute_*!`, `_slope_1d!`).
 # Non-periodic methods go through the default method (UnitRange / grid view,
 # no pool acquire).
+#
+# Tiny-grid behavior differs from `_axis_window`: the periodic path *always*
+# returns a buffer of length `_fixed_window_size(m)`. When `n < fw`, the
+# wrapped indices repeat across the cycle (via `mod1`) rather than falling
+# back to `1:n`. This keeps the inner 1D oneshot's stencil-size contract
+# satisfied even on degenerate small grids.
 
 @inline _axis_window_pooled(pool, m::AbstractInterpMethod, x::AbstractVector, ix::Int) =
     _axis_window(m, ix, length(x))

@@ -3,10 +3,20 @@
 # ========================================
 #
 # Two endpoint variants of `PeriodicBC` flow through the slope code uniformly
-# via the wrap-aware secant access primitives below. No grid extension is
-# required; the user's n-length grid is consumed as-is at slope time, while
-# `_resolve_search`'s seam dispatch (master infrastructure) handles eval-time
-# wrap. This is the genuine "zero-copy exclusive" path.
+# via the wrap-aware secant access primitives below.
+#
+# Used by two different paths with different copy strategies:
+#
+#   1. Oneshot (OnTheFly + PreCompute scalar/vector entry points):
+#      zero-copy — the user's n-length grid is consumed as-is at slope time;
+#      `_resolve_search`'s seam dispatch handles eval-time wrap.
+#
+#   2. Persistent (`pchip_interp(x, y; bc=...)` etc.): mirrors the
+#      Linear/Constant convention via `_periodic_extend_1d` for both
+#      endpoints, then renormalizes `bc` to `:inclusive` via
+#      `_bc_after_extend`. The (n+1) extension is a one-time construction
+#      cost; per-query eval has zero overhead. The wrap-aware primitives
+#      below still drive the boundary slopes on the extended grid.
 #
 # Closed-cycle index conventions:
 #
@@ -89,13 +99,6 @@ end
     end
     @inbounds return x[jw + 1] - x[jw]
 end
-
-# ────────────────────────────────────────────
-# Slope computation dispatch (method-agnostic, passes bc)
-# ────────────────────────────────────────────
-_compute_slopes!(dy, x, y, sm::PchipSlopes) = _pchip_slopes!(dy, x, y; bc = sm.bc)
-_compute_slopes!(dy, x, y, sm::CardinalSlopes) = _cardinal_slopes!(dy, x, y, sm.tension; bc = sm.bc)
-_compute_slopes!(dy, x, y, sm::AkimaSlopes) = _akima_slopes!(dy, x, y; bc = sm.bc)
 
 # `_bc_after_extend` lives in `src/core/periodic.jl` next to `_periodic_extend_1d`
 # — it is generic post-extension BC normalization, not Hermite-specific.

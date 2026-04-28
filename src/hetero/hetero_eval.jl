@@ -253,14 +253,12 @@ end
     )
 end
 
-# Shared cell-building primitive used by both the OnTheFly persistent eval
-# (`_eval_hetero_nd_wrap_aware`) and the wrap-aware persistent path in
-# `_locate_cell`. Carries closures (the per-axis `_axis_window_pooled` /
-# `_axis_grid_pooled` lambdas) — those are fine in a regular function but
-# reject in `@generated` bodies; callers that need pool buffers across
-# multiple `_eval_at_cell` invocations (vector-calculus gradient/hessian/
-# laplacian) acquire them via `_hetero_pooled_call` (below) so the
-# task-local pool snapshot/restore happens at gradient-call boundaries.
+# Pool-allocated wrap-aware cell builder. Used by `_eval_hetero_nd_wrap_aware`
+# (OnTheFly persistent operator) where the cell components are consumed
+# inside the same `@with_pool` scope as their construction.
+# Vector-calculus paths (gradient/hessian/laplacian), which call
+# `_eval_at_cell` many times across separate scopes, instead use the
+# heap-allocated counterpart `_build_wrap_aware_cell_heap` below.
 @inline function _build_wrap_aware_cell_components(
         pool,
         itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},

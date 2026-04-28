@@ -246,10 +246,13 @@ so the pool memory can be safely reused after this function returns.
     Tz = _output_eltype(eltype(y), eltype(cache.x))
     tmp_z = acquire!(pool, Tz, length(y))
     _solve_system!(tmp_z, cache, y, cache.bc_config)
-    bc_display = _with_resolved_period(bc, cache.bc_config.period)
+    # Normalize stored bc to `:inclusive` (matching cache state) with period
+    # materialized for introspection. Prevents re-extension when this
+    # interpolant is later passed to `cubic_adjoint(itp.cache.x; bc=itp.bc)`.
+    bc_normalized = _with_resolved_period(_bc_after_extend(bc), cache.bc_config.period)
     # Materialize WrapExtrap with the extended grid's span so the struct stores
     # the typed form; kernels never see WrapExtrap{Nothing}.
-    return CubicInterpolant(cache, y, tmp_z, bc_display, WrapExtrap(cache.x), search)
+    return CubicInterpolant(cache, y, tmp_z, bc_normalized, WrapExtrap(cache.x), search)
 end
 
 # ========================================

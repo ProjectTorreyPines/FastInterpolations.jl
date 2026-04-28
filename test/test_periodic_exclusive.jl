@@ -425,42 +425,39 @@
         show(buf, MIME"text/plain"(), sitp)
         @test occursin("Periodic", String(take!(buf)))
 
-        # itp.bc preserves original user-specified BC with resolved period
-        @testset "itp.bc preserves endpoint and resolves period" begin
+        # `itp.bc` is normalized to `:inclusive` post-extension, with period
+        # materialized from the cache for introspection.
+        @testset "itp.bc reflects post-extension `:inclusive` form (period preserved)" begin
             N_bc = 16
             dx_bc = 2π / N_bc
 
-            # Exclusive with explicit period
+            # Exclusive input → normalized to `:inclusive`, period preserved
             x_bc = range(0.0, step = dx_bc, length = N_bc)
             y_bc = sin.(x_bc)
             itp_excl = cubic_interp(collect(x_bc), y_bc; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
-            @test itp_excl.bc isa PeriodicBC{:exclusive}
+            @test itp_excl.bc isa PeriodicBC{:inclusive}
             @test itp_excl.bc.period ≈ 2π
 
-            # Exclusive without period (auto-inferred from Range) — period should still be resolved
+            # Exclusive without period (auto-inferred from Range)
             itp_excl_auto = cubic_interp(x_bc, y_bc; bc = PeriodicBC(endpoint = :exclusive))
-            @test itp_excl_auto.bc isa PeriodicBC{:exclusive}
+            @test itp_excl_auto.bc isa PeriodicBC{:inclusive}
             @test itp_excl_auto.bc.period ≈ 2π
 
-            # show output should reflect exclusive with period
             buf_bc = IOBuffer()
             show(buf_bc, MIME"text/plain"(), itp_excl_auto)
             s = String(take!(buf_bc))
-            @test occursin("exclusive", s)
+            @test occursin("Periodic", s)
             @test occursin("period≈", s)
 
-            # Inclusive — period should also be resolved from grid
+            # Inclusive input — passthrough; period materialized too
             x_incl_bc = range(0.0, step = dx_bc, length = N_bc + 1)
-            y_incl_bc = sin.(x_incl_bc)
-            y_incl_bc[end] = y_incl_bc[1]
+            y_incl_bc = sin.(x_incl_bc); y_incl_bc[end] = y_incl_bc[1]
             itp_incl = cubic_interp(collect(x_incl_bc), y_incl_bc; bc = PeriodicBC())
             @test itp_incl.bc isa PeriodicBC{:inclusive}
             @test itp_incl.bc.period ≈ 2π
 
-            # show output should show period for inclusive too
             show(buf_bc, MIME"text/plain"(), itp_incl)
-            s_incl = String(take!(buf_bc))
-            @test occursin("period≈", s_incl)
+            @test occursin("period≈", String(take!(buf_bc)))
         end
 
         # Also test exclusive series interpolant show
@@ -794,7 +791,7 @@ end
     # ========================================
     # bcs_store preserves endpoint info
     # ========================================
-    @testset "bcs_store preserves endpoint and period" begin
+    @testset "bcs_store reflects post-extension `:inclusive` form" begin
         Nx = 16
         x = range(0.0, step = 2π / Nx, length = Nx)
         y = range(0.0, 1.0, 8)
@@ -805,9 +802,9 @@ end
             bc = (PeriodicBC(endpoint = :exclusive), ZeroCurvBC())
         )
 
-        # Exclusive axis preserves endpoint symbol and resolved period
-        @test itp.bcs[1] isa PeriodicBC{:exclusive}
-        @test itp.bcs[1].period ≈ 2π
+        @test itp.bcs[1] isa PeriodicBC{:inclusive}                   # normalized
+        @test itp.bcs[1].period ≈ 2π                                  # materialized from grid span
+        @test itp.bcs[2] isa BCPair                                    # ZeroCurvBC → BCPair{Deriv2, Deriv2}
     end
 
     # ========================================

@@ -65,18 +65,27 @@ end
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
-"Evaluate periodic cubic spline at a single point with operation dispatch and search policy."
+"""
+Evaluate periodic cubic spline at a single point with operation dispatch and search policy.
+
+`bc_config::PeriodicData{Tg, E}` provides:
+- `period` for query wrap (`_wrap_to_domain`).
+- `h_n` (seam-cell width) — for `:exclusive` form, the spacing object only
+  carries n-1 interior cell widths; the seam cell (`idx == n`) reads from
+  `bc_config.h_n` instead. Inclusive form is unaffected (spacing has the
+  full n cells); the BC-aware accessor below dispatches on `E`.
+"""
 @inline function _eval_cubic_at_point_periodic(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         spacing::AbstractGridSpacing{Tg},
         z::AbstractVector,
         xq::Tq,
-        period::Tg,
+        bc_config::PeriodicData{Tg},
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, first(x), first(x) + period)
+    xq_wrapped = _wrap_to_domain(xq, first(x), first(x) + bc_config.period)
     idx, idx_R, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
 
     # Compute offset from original xq to preserve AD (adjust for wrapping)
@@ -84,8 +93,7 @@ end
     # wrapping is a discrete operation that AD shouldn't track
     dL = xq_wrapped - xL   # distance from Left endpoint
     dR = xR - xq_wrapped   # distance from Right endpoint
-    h = _get_h(spacing, idx)
-    inv_h = _get_inv_h(spacing, idx)
+    h, inv_h = _periodic_cell_h(spacing, idx, bc_config)
 
     @inbounds begin
         zL = z[idx]
@@ -96,6 +104,33 @@ end
 
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
+
+# Periodic cell-width accessor — BC-aware via `PeriodicData{Tg, E}` type-param.
+#
+# Inclusive form: spacing carries all n cells (length(x) - 1 = n), so any
+#   `idx in 1..n` resolves through the standard accessor.
+# Exclusive form: spacing carries only n-1 interior cells; the seam cell
+#   (`idx == length(z)` where `length(z) == n`) reads `h_n` from `bc_config`.
+#   `idx_R == 1` at the seam from the searcher dispatch confirms this is
+#   the wrapped cell, but indexing on `idx > length(spacing entries)` is
+#   simpler and uniform across ScalarSpacing/VectorSpacing.
+@inline _periodic_cell_h(spacing, idx::Int, ::PeriodicData{Tg, :inclusive}) where {Tg} =
+    (_get_h(spacing, idx), _get_inv_h(spacing, idx))
+
+@inline function _periodic_cell_h(spacing::AbstractGridSpacing{Tg}, idx::Int, bc::PeriodicData{Tg, :exclusive}) where {Tg}
+    # ScalarSpacing (uniform Range): all cells share `step`; seam_h equals step
+    # for valid exclusive Range input. Return the spacing accessor — uniform.
+    # VectorSpacing: spacing.h has n-1 entries; idx == n is OOB → seam.
+    return idx > _periodic_n_real_cells(spacing) ?
+        (bc.h_n, inv(bc.h_n)) :
+        (_get_h(spacing, idx), _get_inv_h(spacing, idx))
+end
+
+# Number of real (spacing-resident) cell widths. For VectorSpacing this is
+# `length(spacing.h)`; for ScalarSpacing (uniform), every index is "real" since
+# the constant step is well-defined for any idx.
+@inline _periodic_n_real_cells(s::ScalarSpacing) = typemax(Int)   # always real (uniform step)
+@inline _periodic_n_real_cells(s::VectorSpacing) = length(s.h)
 
 # ========================================
 # Extrapolation-aware Evaluation
@@ -193,7 +228,7 @@ end
 
 "Evaluate with BC-aware dispatch (Periodic BC) with search policy."
 @inline function _eval_with_bc(
-        cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
+        cache::CubicSplineCache{Tg, X, F, <:PeriodicData{Tg}, S},
         y::AbstractVector{Tv},
         z::AbstractVector,
         xq::Tq,
@@ -201,7 +236,7 @@ end
         op::O,
         searcher::P
     ) where {Tg, Tv, Tq, X, F, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
-    return _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, xq, cache.bc_config.period, op, searcher)
+    return _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, xq, cache.bc_config, op, searcher)
 end
 
 "Evaluate with BC-aware dispatch (Generic Derivative BC) with search policy."
@@ -239,10 +274,10 @@ end
     end
 end
 
-"Vector loop for Periodic BC with 2-stage optimization. Accepts any Real query type."
+"Vector loop for Periodic BC. Accepts any Real query type."
 @inline function _cubic_vector_loop!(
         output::AbstractVector,
-        cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
+        cache::CubicSplineCache{Tg, X, F, <:PeriodicData{Tg}, S},
         y::AbstractVector{Tv},
         z::AbstractVector,
         x_query::AbstractVector{<:Real},
@@ -250,21 +285,16 @@ end
         op::O,
         searcher::P
     ) where {Tg, Tv, X, F, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
-    x_min = first(cache.x)
-    x_max = x_min + cache.bc_config.period
-    qmin, qmax = minimum(x_query), maximum(x_query)
-
-    return if qmin >= x_min && qmax < x_max
-        # Fast path: all queries inside domain
-        @inbounds for k in eachindex(x_query, output)
-            output[k] = _eval_cubic_at_point(cache.x, y, cache.spacing, z, x_query[k], op, searcher)
-        end
-    else
-        # Slow path: per-element wrap
-        period = cache.bc_config.period
-        @inbounds for k in eachindex(x_query, output)
-            output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, x_query[k], period, op, searcher)
-        end
+    # Use the periodic kernel uniformly: it handles BC-aware seam cell widths
+    # via `bc_config` (essential for `:exclusive` Vector grids where the spacing
+    # only carries n-1 cells and the seam cell width is in `bc_config.h_n`).
+    # `_wrap_to_domain` is a no-op when queries are already in-domain, so the
+    # previous "fast path" optimization (skipping wrap for in-domain queries)
+    # had no measurable benefit and is removed to keep the seam-cell handling
+    # in one place.
+    bc_config = cache.bc_config
+    return @inbounds for k in eachindex(x_query, output)
+        output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, x_query[k], bc_config, op, searcher)
     end
 end
 

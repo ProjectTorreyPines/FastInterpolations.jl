@@ -546,9 +546,17 @@
             @test itp(1.0f0) isa Float32
         end
 
-        @testset "CubicSplineCache rejects exclusive PeriodicBC" begin
+        @testset "CubicSplineCache accepts exclusive PeriodicBC (zero-copy)" begin
+            # Previously the cache builder threw ArgumentError because the cache
+            # was grid-only and could not extend data values. With the BC-aware
+            # `_build_periodic_cache(x, bc)`, exclusive form is consumed
+            # directly: cycle length = length(x), seam-cell width derived from
+            # `bc.period`. No data extension required.
             x = range(0.0, step = 0.1, length = 10)
-            @test_throws ArgumentError CubicSplineCache(x; bc = PeriodicBC(endpoint = :exclusive))
+            cache = CubicSplineCache(x; bc = PeriodicBC(endpoint = :exclusive))
+            @test cache.bc_config isa FastInterpolations.PeriodicData
+            @test cache.bc_config.period ≈ 1.0
+            @test cache.bc_config.h_n ≈ 0.1                  # seam-cell width = period - (last - first)
         end
     end
 
@@ -593,8 +601,11 @@ end
             @test size(data_out) == (N + 1, 5)
             @test data_out[end, :] ≈ data_out[1, :]      # first slice copied
             @test grids_out[2] === y                      # unchanged reference
-            @test bcs_out[1] isa PeriodicBC{:exclusive}   # preserved endpoint
-            @test bcs_out[1].period ≈ 2π                  # resolved period
+            # Post-extension: bc is normalized to `:inclusive` (grid is now in
+            # closed-cycle inclusive form, so the seam cell is the last real cell).
+            # The resolved period is recoverable as `last(grid) - first(grid)`.
+            @test bcs_out[1] isa PeriodicBC{:inclusive}
+            @test last(grids_out[1]) - first(grids_out[1]) ≈ 2π
             @test bcs_out[2] === ZeroCurvBC()              # unchanged
         end
 
@@ -611,8 +622,9 @@ end
             @test data_out[end, :] ≈ data_out[1, :]       # dim 1 wrap
             @test data_out[:, end] ≈ data_out[:, 1]        # dim 2 wrap
             @test data_out[end, end] ≈ data_out[1, 1]      # corner
-            @test bcs_out[1].period ≈ 2π
-            @test bcs_out[2].period ≈ π
+            # Post-extension period is encoded in the grid span (not bc.period).
+            @test last(grids_out[1]) - first(grids_out[1]) ≈ 2π
+            @test last(grids_out[2]) - first(grids_out[2]) ≈ π
         end
 
         @testset "Range preserved after extension" begin

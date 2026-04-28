@@ -99,25 +99,54 @@ end
 # Cache Builders
 # ========================================
 
-"Build cache for periodic cubic spline using Sherman-Morrison formula."
-function _build_periodic_cache(x::AbstractVector{T}) where {T}
-    n = length(x) - 1  # Number of intervals
+"""
+Build cache for periodic cubic spline using Sherman-Morrison formula.
 
-    n >= 3 || throw(ArgumentError("Periodic spline requires at least 4 points"))
+BC-aware: handles both `:inclusive` (length(x) = n+1, y[1] ≈ y[n+1]) and
+`:exclusive` (length(x) = n, virtual seam between x[n] and x[1]+period).
 
-    period = last(x) - first(x)
+For `:exclusive`, the spacing object only carries the n-1 interior cell widths
+— the seam cell width `h_n = period - (last(x) - first(x))` is computed here
+and stored in `PeriodicData.h_n` for solve-time access (see `α` in
+`_solve_cubic_system_periodic!`).
+"""
+function _build_periodic_cache(x::AbstractVector{T}, bc::PeriodicBC) where {T}
+    # Cycle length (number of cells) and seam-cell width depend on the endpoint variant.
+    # Inclusive:  length(x) == n + 1, last cell width is on the spacing object.
+    # Exclusive:  length(x) == n,     seam cell is virtual — width derived from period.
+    if bc isa PeriodicBC{:exclusive}
+        n = length(x)
+        period = _resolve_seam_period(x, bc)
+        h_n = period - (last(x) - first(x))
+        E = :exclusive
+    else
+        n = length(x) - 1
+        period = last(x) - first(x)
+        # spacing built below has cell index 1..n; h_n = last spacing entry.
+        E = :inclusive
+        h_n = zero(T)  # placeholder — assigned after spacing is built
+    end
 
-    # Create spacing object (ScalarSpacing for Range, VectorSpacing for Vector)
+    n >= 3 || throw(ArgumentError("Periodic spline requires at least 3 cells (length(x) >= 4 for inclusive, >= 3 for exclusive)"))
+
+    # Create spacing object (ScalarSpacing for Range, VectorSpacing for Vector).
+    # For exclusive, spacing has n-1 interior cell widths (from x[1..n] differences);
+    # the seam cell width is held in `h_n` separately.
     spacing = _create_spacing(x)
 
-    # Build modified tridiagonal matrix A' for Sherman-Morrison
+    # Inclusive form fills `h_n` from the spacing (last real cell).
+    # Exclusive form already computed `h_n = seam_h` above.
+    if !(bc isa PeriodicBC{:exclusive})
+        h_n = _get_h(spacing, n)
+    end
+
+    # Build modified tridiagonal matrix A' for Sherman-Morrison.
     # CRITICAL: Use Vector allocation (NOT pool!) for persistent arrays
     # These arrays are stored in CubicSplineCache which outlives the function.
     dl = Vector{T}(undef, n - 1)
     d_diag = Vector{T}(undef, n)  # Will become inv_d after factorization
     du = Vector{T}(undef, n - 1)
 
-    h_n = _get_h(spacing, n)
     h_1 = _get_h(spacing, 1)
     d_diag[1] = h_n + 2 * h_1
 
@@ -148,8 +177,9 @@ function _build_periodic_cache(x::AbstractVector{T}) where {T}
     q[n] = one(T)
     _ldiv_tridiagonal_nopiv!(q, thomas)
 
-    # Workspaces (z, y_temp) are allocated from task-local pools at solve time
-    bc_config = PeriodicData(q, period)
+    # Workspaces (z, y_temp) are allocated from task-local pools at solve time.
+    # `E` (Symbol type-param) baked into PeriodicData so RHS dispatch is zero-cost.
+    bc_config = PeriodicData{T, E}(q, period, h_n)
 
     return CubicSplineCache(x, spacing, thomas, bc_config)
 end
@@ -326,11 +356,26 @@ end
 # Periodic RHS function
 # ----------------------------------------
 
-"Compute RHS vector d for periodic cubic spline system in-place."
-@inline function compute_rhs_periodic!(d::AbstractVector, y::AbstractVector, spacing::AbstractGridSpacing{Tg}) where {Tg}
-    n = length(y) - 1
+"""
+    compute_rhs_periodic!(d, y, spacing, bc_config) -> nothing
 
-    # Use spacing accessors
+Compute the n_cells-length RHS vector for the periodic cubic spline system.
+
+BC-aware via `bc_config` type-param dispatch (zero-cost):
+- `PeriodicData{T, :inclusive}`: `length(y) == n_cells + 1` with `y[1] ≈ y[n+1]`.
+  Last cell width comes from the spacing object.
+- `PeriodicData{T, :exclusive}`: `length(y) == n_cells`. Seam-cell width
+  (`bc_config.h_n`) bridges `y[n]` and the cyclic-wrapped `y[1]`.
+
+Interior rows (`2:n_cells-1`) are identical between forms — they reference only
+real (non-seam) cell widths.
+"""
+@inline function compute_rhs_periodic!(
+        d::AbstractVector, y::AbstractVector,
+        spacing::AbstractGridSpacing{Tg}, ::PeriodicData{Tg, :inclusive}
+    ) where {Tg}
+    n = length(y) - 1   # n_cells
+
     @inbounds d[1] = 6 * (y[2] - y[1]) * _get_inv_h(spacing, 1) - 6 * (y[1] - y[end - 1]) * _get_inv_h(spacing, n)
 
     @inbounds for i in 2:(n - 1)
@@ -342,26 +387,53 @@ end
     return nothing
 end
 
+@inline function compute_rhs_periodic!(
+        d::AbstractVector, y::AbstractVector,
+        spacing::AbstractGridSpacing{Tg}, bc_config::PeriodicData{Tg, :exclusive}
+    ) where {Tg}
+    n = length(y)         # n_cells (raw exclusive form)
+    inv_h_n = inv(bc_config.h_n)   # seam-cell width inverse
+
+    # Cyclic indexing at the seam: previous-of-y[1] is y[n]; next-of-y[n] is y[1].
+    @inbounds d[1] = 6 * (y[2] - y[1]) * _get_inv_h(spacing, 1) - 6 * (y[1] - y[n]) * inv_h_n
+
+    @inbounds for i in 2:(n - 1)
+        d[i] = 6 * (y[i + 1] - y[i]) * _get_inv_h(spacing, i) - 6 * (y[i] - y[i - 1]) * _get_inv_h(spacing, i - 1)
+    end
+
+    @inbounds d[n] = 6 * (y[1] - y[n]) * inv_h_n - 6 * (y[n] - y[n - 1]) * _get_inv_h(spacing, n - 1)
+
+    return nothing
+end
+
 # ========================================
 # System Solvers
 # ========================================
 # Scalar Thomas solver moved to: core/thomas_lu_solver.jl
 # - _ldiv_tridiagonal_nopiv!
 
-"Solve periodic cyclic tridiagonal system using Sherman-Morrison formula."
+"""
+Solve periodic cyclic tridiagonal system using Sherman-Morrison formula.
+
+BC-aware: cycle length, seam-cell width, and final z-extension all read from
+`cache.bc_config` (`PeriodicData{Tg, E}`), so this body works uniformly for
+both `:inclusive` (length(y) = n+1) and `:exclusive` (length(y) = n).
+"""
 @inline function _solve_cubic_system_periodic!(
         z_workspace::AbstractVector,
         y_temp::AbstractVector,
-        cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
+        cache::CubicSplineCache{Tg, X, F, <:PeriodicData{Tg}, S},
         y::AbstractVector
     ) where {Tg, X, F, S <: AbstractGridSpacing{Tg}}
-    n = length(y) - 1
+    bc_config = cache.bc_config
+    q = bc_config.q
+    n = length(q)   # n_cells (BC-form-agnostic: q is allocated to cycle length in builder)
 
-    compute_rhs_periodic!(y_temp, y, cache.spacing)
+    # RHS: BC-aware via `bc_config` type-param dispatch (compute_rhs_periodic!).
+    compute_rhs_periodic!(y_temp, y, cache.spacing, bc_config)
     _ldiv_tridiagonal_nopiv!(y_temp, cache.thomas)
 
-    α = _get_h(cache.spacing, n)
-    q = cache.bc_config.q
+    α = bc_config.h_n   # seam-cell width baked at cache-build time
 
     vTy = α * (y_temp[1] + y_temp[n])
     vTq = α * (q[1] + q[n])
@@ -387,10 +459,18 @@ end
         z_workspace[i] = y_temp[i] - factor * q[i]
     end
 
-    z_workspace[n + 1] = z_workspace[1]
+    # Inclusive form: eval may read z[n+1] (idx_R can reach n+1 on the inclusive
+    # closed-cycle grid) → mirror z[1] into the trailing slot.
+    # Exclusive form: search seam dispatch returns idx_R = 1 directly (no n+1 access)
+    # and `z_workspace` was allocated to length n, so leave as-is.
+    _finalize_z_periodic_seam!(z_workspace, bc_config)
 
     return z_workspace
 end
+
+@inline _finalize_z_periodic_seam!(z::AbstractVector, ::PeriodicData{Tg, :inclusive}) where {Tg} =
+    (@inbounds z[end] = z[1]; nothing)
+@inline _finalize_z_periodic_seam!(::AbstractVector, ::PeriodicData{Tg, :exclusive}) where {Tg} = nothing
 
 # ========================================
 # Unified System Solver Entry Point
@@ -428,11 +508,13 @@ Tg = grid type, Tv = value type (can be Complex)
 """
 @inline @with_pool pool function _solve_system!(
         out_z::AbstractVector{Tz},
-        cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
+        cache::CubicSplineCache{Tg, X, F, <:PeriodicData{Tg}, S},
         y::AbstractVector,
-        ::PeriodicData{Tg}  # Unused, for API consistency with BCPair version
+        ::PeriodicData  # Unused, for API consistency with BCPair version
     ) where {Tz, Tg, X, F, S <: AbstractGridSpacing{Tg}}
-    n = length(y) - 1
+    # Cycle length (number of cells) is BC-form-agnostic: q is allocated to that
+    # length in the cache builder regardless of inclusive/exclusive input form.
+    n = length(cache.bc_config.q)
 
     # Periodic workspaces need n elements (NOT length(y)!)
     # Use pool allocation for zero-allocation hot path

@@ -99,11 +99,17 @@ Four-tier dispatch based on element type:
 
 Throws `ArgumentError` if endpoints differ.
 """
-@inline function _check_periodic_endpoints(bc::PeriodicBC, y::AbstractVector)
+@inline function _check_periodic_endpoints(bc::PeriodicBC{:inclusive}, y::AbstractVector)
     periodic_check(bc) || return nothing
     _check_periodic_endpoints(y)
     return nothing
 end
+
+# `:exclusive` form has no endpoint-matching constraint: the user provides n
+# distinct samples and the seam is virtual (constructed from `bc.period`).
+# Calling `_check_periodic_endpoints(y)` on raw exclusive y would falsely
+# reject valid data (e.g., `y = sin.(2π .* x_excl)` where `y[1] ≠ y[n]`).
+@inline _check_periodic_endpoints(::PeriodicBC{:exclusive}, ::AbstractVector) = nothing
 
 @inline function _check_periodic_endpoints(y::AbstractVector{T}) where {T <: AbstractFloat}
     isapprox(first(y), last(y); atol = 8 * eps(T), rtol = sqrt(eps(T))) ||
@@ -797,7 +803,12 @@ end
         grid_ext = grid_d isa AbstractRange ?
             _to_float_adding_endpoint(grid_d, Tg) :
             extend_vector_grid(grid_d, x_end, Tg)
-        return (grid_ext, _with_resolved_period(bc_d, period))
+        # Normalize bc to `:inclusive` post-extension: the extended grid IS a
+        # closed-cycle inclusive form (length n+1, last point at x[1]+period),
+        # so downstream solvers/cache builders should treat it as inclusive.
+        # Without this normalization, BC-aware solvers (e.g. cubic) would
+        # interpret `:exclusive` as "raw n-grid" and miscount the cycle.
+        return (grid_ext, _bc_after_extend(bc_d))
     end
     grids_out = map(first, processed)
     bcs_out = map(last, processed)

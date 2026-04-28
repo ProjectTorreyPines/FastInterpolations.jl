@@ -568,7 +568,7 @@ Operates in-place on `z_bar[1:n]`; `z_bar[n+1]` is not touched.
 """
 function _adjoint_periodic_solve!(
         z_bar::AbstractVector{Tv},
-        cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
+        cache::CubicSplineCache{Tg, X, F, <:PeriodicData{Tg}, S},
         q_t::AbstractVector,
         n::Int
     ) where {Tv, Tg, X, F, S <: AbstractGridSpacing{Tg}}

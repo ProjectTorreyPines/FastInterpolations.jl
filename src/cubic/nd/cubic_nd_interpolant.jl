@@ -106,8 +106,14 @@ function _build_nd_interpolant(
         searches::NTuple{N, AbstractSearchPolicy},
         ::PreCompute
     ) where {Tg, Tv, N}
-    # Extend grids/data for exclusive periodic axes (build-time only)
-    # After this, all periodic axes have inclusive-form data.
+    # Save user's original bcs for storage (pre-extension) — preserves user's
+    # `:exclusive` endpoint for introspection. Solver consumes post-extension
+    # form via the bcs returned below.
+    bcs_orig = bcs
+
+    # Extend grids/data for exclusive periodic axes (build-time only).
+    # After this, all periodic axes are in inclusive-form (length n+1, closed
+    # cycle), and `bcs` is normalized to `:inclusive` accordingly.
     grids, data, bcs = _prepare_periodic_nd(grids, data, bcs)
 
     # Per-axis materialization via 2-arg primitive — post-extension, `last(grid) -
@@ -121,10 +127,13 @@ function _build_nd_interpolant(
     # Create spacings (uses @generated to avoid closure boxing for heterogeneous grids)
     spacings = _create_spacings_typed(grids)
 
-    # Normalize BCs for storage — preserve endpoint and resolved period for periodic axes
+    # Normalize BCs for storage — preserve user's original endpoint
+    # (`:exclusive`/`:inclusive`) and bake the resolved period in. Periodic axes
+    # use the post-extension grid span (which equals the resolved period) so
+    # `bc.period` is concrete in the stored interpolant for introspection.
     # Uses map instead of ntuple so each bc element gets its concrete type
     # (ntuple indexes with Int → Union return; map dispatches per-element → compile-time branch)
-    bcs_store = map(bcs, grids) do bc, grid
+    bcs_store = map(bcs_orig, grids) do bc, grid
         if _is_periodic_bc(bc)
             period = last(grid) - first(grid)
             _with_resolved_period(bc, period)

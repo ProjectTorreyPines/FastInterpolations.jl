@@ -131,11 +131,21 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
 end
 
 """
-    _cubic_periodic_solve!(pool, x, y, bc, autocache) -> (cache, y_p, z)
+    _cubic_periodic_solve!(pool, x, y, bc, autocache) -> (cache, y_eff, z)
 
-Shared periodic setup: extend exclusive→inclusive grid, then solve tridiagonal system.
-Pool buffers (x_p, y_p, z) are acquired from `pool` — caller's @with_pool scope
-manages their lifetime. Follows the `_create_spacing_pooled(pool, ...)` pattern.
+Shared periodic setup: build BC-aware cache and solve the periodic tridiagonal
+system on the user's grid as-is.
+
+- `:inclusive` input (`length(x) = n+1`, `y[1] ≈ y[end]`): solver consumes the
+  full closed-cycle grid; eval kernel may read `z[n+1]` (mirrored to `z[1]`).
+- `:exclusive` input (`length(x) = n`, virtual seam): solver uses the n-cell
+  cycle directly; the seam-cell width is held in `cache.bc_config.h_n`. No
+  grid extension or memcpy — `_resolve_search`'s seam dispatch handles
+  eval-time wrap (`q ≥ x[n] → idx_R = 1, xR = x[1] + period`).
+
+Pool buffer `z` is acquired from `pool` (caller's `@with_pool` scope manages
+lifetime). `y_eff` returned for caller convenience — same object as `y`
+(caller may bind a separate variable for clarity in the existing API shape).
 """
 @inline function _cubic_periodic_solve!(
         pool::AbstractArrayPool,
@@ -146,21 +156,21 @@ manages their lifetime. Follows the `_create_spacing_pooled(pool, ...)` pattern.
     ) where {Tg, Tv}
     @assert length(x) == length(y) "x and y must have the same length"
 
-    # ── Extend exclusive → inclusive (pool-based, zero-alloc after warmup) ──
-    # Shared helper also calls _check_periodic_endpoints on y_p. `extrap` slot is
-    # vestigial for cubic — the periodic `_eval_with_bc`/`_cubic_vector_loop!`
-    # dispatch ignores the extrap arg — so we pass `WrapExtrap()` and discard
-    # the helper's materialized return to keep this path's stack frame lean
-    # (no 16-byte WrapExtrap{T} bumping LTS allocation measurements).
-    x_p, y_p, _ = _periodic_extend_1d_pooled!(pool, x, y, bc, WrapExtrap())
+    # Inclusive form requires `y[1] ≈ y[end]` (closed-cycle data). Previously
+    # this validation was performed inside `_periodic_extend_1d_pooled!`; with
+    # the zero-copy path skipping that helper, we invoke the check explicitly
+    # here. The dispatch is a no-op for `:exclusive` (which has no endpoint
+    # constraint — virtual seam is constructed from `bc.period`).
+    _check_periodic_endpoints(bc, y)
 
-    # ── Solve periodic tridiagonal system ──
-    cache = _get_cubic_cache(x_p, PeriodicBC(), _effective_autocache(autocache, Tg))
+    # Build cache on the user's grid (BC-aware: `:inclusive` length n+1 OR
+    # `:exclusive` length n). Zero-copy — no `_periodic_extend_1d_pooled!`.
+    cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
     Tz = _output_eltype(Tv, eltype(cache.x))
-    z = acquire!(pool, Tz, length(y_p))
-    _solve_system!(z, cache, y_p, cache.bc_config)
+    z = acquire!(pool, Tz, length(y))
+    _solve_system!(z, cache, y, cache.bc_config)
 
-    return cache, y_p, z
+    return cache, y, z
 end
 
 """
@@ -227,7 +237,9 @@ In-place cubic spline interpolation with optional automatic caching.
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tv}
     x = _prepare_grid(x)
-    searcher = _resolve_search(x, x_query, search, nothing)
+    # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher
+    # (`search.jl:928`). Non-periodic bc is a no-op via the NoBC default.
+    searcher = _resolve_search(x, x_query, search, nothing, bc)
     # Periodic BC
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, deriv, searcher)
@@ -373,7 +385,9 @@ function cubic_interp(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x = _prepare_grid(x)
-    searcher = _resolve_search(x, xq, search, hint)
+    # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher
+    # (`search.jl:928`). Non-periodic bc is a no-op via the NoBC default.
+    searcher = _resolve_search(x, xq, search, hint, bc)
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, deriv, searcher)
     end

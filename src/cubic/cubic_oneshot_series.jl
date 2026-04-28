@@ -72,22 +72,13 @@ end
     output[1] = _cubic_eval_kernel(y_p_first, z, aq, op)
 
     # ── Phase 2: Reuse z buffer for remaining series (no grid re-extension) ──
-    # For exclusive BC: y_p_first is a pool buffer of length n+1, safe to overwrite
-    # For inclusive BC: y_p_first IS the user's vector, must NOT mutate it
-    is_exclusive = bc isa PeriodicBC{:exclusive}
-    y_p = if is_exclusive
-        y_p_first  # pool buffer, safe to reuse
-    else
-        acquire!(pool, Tv_out, n_p)  # separate buffer for inclusive BC
-    end
+    # `y_p_first === y1_promoted` (a pool buffer copied from user series 1).
+    # Zero-copy oneshot keeps `length(y_p_first) = n_p` (= n for `:exclusive`,
+    # n+1 for `:inclusive`). Reuse y_p_first as the per-series scratch buffer.
+    y_p = y_p_first
 
     for k in 2:length(output)
-        if is_exclusive
-            @inbounds copyto!(y_p, 1, vecs[k], 1, n)
-            @inbounds y_p[n + 1] = vecs[k][1]
-        else
-            @inbounds copyto!(y_p, 1, vecs[k], 1, n_p)
-        end
+        @inbounds copyto!(y_p, 1, vecs[k], 1, n_p)
         _check_periodic_endpoints(bc, y_p)
         _solve_system!(z, cache, y_p, cache.bc_config)
         @inbounds output[k] = _cubic_eval_kernel(y_p, z, aq, op)
@@ -132,21 +123,16 @@ end
         outputs[1][j] = _cubic_eval_kernel(y_p_first, z, aq_vec[j], op)
     end
 
-    # Phase 2: Reuse z buffer for remaining series
-    is_exclusive = bc isa PeriodicBC{:exclusive}
-    y_p = if is_exclusive
-        y_p_first  # pool buffer, safe to reuse
-    else
-        acquire!(pool, Tv_out, n_p)  # separate buffer for inclusive BC
-    end
+    # Phase 2: Reuse `y1_promoted` (pool buffer of length `n_p`) + z for the
+    # remaining series. `y_p_first === y1_promoted` (zero-copy oneshot returns
+    # the user-typed buffer that was passed in), so it's safe to overwrite.
+    # No `y_p[n+1] = ...` closure write needed: zero-copy `:exclusive` cycle
+    # is `length(y) = n_p = n` (raw), and `:inclusive` already has y[1]≈y[n+1]
+    # in the user-supplied data so copying the full n_p length suffices.
+    y_p = y_p_first
 
     for k in 2:K
-        if is_exclusive
-            @inbounds copyto!(y_p, 1, vecs[k], 1, n)
-            @inbounds y_p[n + 1] = vecs[k][1]
-        else
-            @inbounds copyto!(y_p, 1, vecs[k], 1, n_p)
-        end
+        @inbounds copyto!(y_p, 1, vecs[k], 1, n_p)
         _check_periodic_endpoints(bc, y_p)
         _solve_system!(z, cache, y_p, cache.bc_config)
         @inbounds for j in eachindex(xqs)

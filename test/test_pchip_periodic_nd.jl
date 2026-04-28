@@ -2,7 +2,7 @@
 #
 # Coverage:
 #   - NoBC default is no-op (regression guard).
-#   - Homogeneous PCHIP×PCHIP with `bc` broadcast and `bcs` per-axis API.
+#   - Homogeneous PCHIP×PCHIP with single `bc` broadcast and tuple `bc` per-axis.
 #   - Heterogeneous combinations (PchipInterp(bc) × LinearInterp()).
 #   - C¹-at-seam continuity per axis on smooth periodic 2D data.
 #   - Wrap query past seam.
@@ -45,10 +45,10 @@
 
         # Wrap query past seam
         @test pchip_interp((x, y), data, (1.25, 0.5); bc = bc) ≈
-              pchip_interp((x, y), data, (0.25, 0.5); bc = bc) atol = 1.0e-12
+            pchip_interp((x, y), data, (0.25, 0.5); bc = bc) atol = 1.0e-12
     end
 
-    @testset "Homogeneous PCHIP×PCHIP — bcs per-axis tuple" begin
+    @testset "Homogeneous PCHIP×PCHIP — tuple `bc` per-axis" begin
         n = 21
         x = collect(range(0.0, 1.0, length = n + 1))[1:n]
         y = collect(range(0.0, 1.0, length = n + 1))[1:n]

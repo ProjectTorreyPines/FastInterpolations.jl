@@ -29,6 +29,23 @@
         @test abs(v_left - v_right) < 1.0e-3
     end
 
+    @testset "Homogeneous Akima × Akima — tuple `bc` per-axis" begin
+        n = 21
+        x = collect(range(0.0, 1.0, length = n + 1))[1:n]
+        y = collect(range(0.0, 1.0, length = n + 1))[1:n]
+        data = [f(xi, yj) for xi in x, yj in y]
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+
+        # Per-axis tuple `bc` and broadcast `bc` must agree when both axes use the same BC
+        v_tuple = akima_interp((x, y), data, (0.5, 0.5); bc = (bc, bc))
+        v_bc = akima_interp((x, y), data, (0.5, 0.5); bc = bc)
+        @test v_tuple === v_bc
+
+        # Mixed per-axis: PeriodicBC × NoBC
+        v_mixed = akima_interp((x, y), data, (0.5, 0.5); bc = (bc, NoBC()))
+        @test isfinite(v_mixed)
+    end
+
     @testset "Inclusive endpoint" begin
         n = 21
         x = collect(range(0.0, 1.0, length = n))

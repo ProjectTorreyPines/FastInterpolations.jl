@@ -112,10 +112,10 @@ function _akima_slopes!(
     #                                (closed cycle on n cells, with virtual seam cell).
     # The `_periodic_secant` abstraction absorbs both PeriodicBC variants.
     if bc isa PeriodicBC
-        @inbounds m_0    = _periodic_secant(x, y, 0, n, bc)     # m[0]
+        @inbounds m_0 = _periodic_secant(x, y, 0, n, bc)     # m[0]
         @inbounds m_neg1 = _periodic_secant(x, y, -1, n, bc)    # m[-1]
     else
-        @inbounds m_0    = 2 * m1 - m2                          # virtual (NoBC)
+        @inbounds m_0 = 2 * m1 - m2                          # virtual (NoBC)
         @inbounds m_neg1 = 3 * m1 - 2 * m2                      # virtual (NoBC)
     end
 

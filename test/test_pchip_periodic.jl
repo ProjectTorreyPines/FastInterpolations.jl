@@ -85,7 +85,7 @@
         itp = pchip_interp(x, y; bc = bc)
         # Query past the seam should wrap modulo period
         @test itp(1.25) ≈ itp(0.25) atol = 1.0e-12
-        @test itp(-0.30) ≈ itp(0.70) atol = 1.0e-12
+        @test itp(-0.3) ≈ itp(0.7) atol = 1.0e-12
         @test itp(2.5) ≈ itp(0.5) atol = 1.0e-12
     end
 
@@ -112,7 +112,7 @@
         n = 25
         x = collect(range(0.0, 1.0, length = n + 1))[1:n]
         y = f.(x)
-        xq = [0.05, 0.20, 0.50, 0.80, 0.95, 0.999]
+        xq = [0.05, 0.2, 0.5, 0.8, 0.95, 0.999]
         bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
 
         v_persistent = pchip_interp(x, y; bc = bc).(xq)
@@ -183,8 +183,8 @@
         # Regression: Float64 `bc.period` on a Float32 grid must not widen
         # results to Float64 (silent precision change) — verified at the seam
         # cell where the period participates in `xR` and `seam_h`.
-        x32 = collect(Float32, range(0f0, 1f0, length = 8))[1:7]
-        y32 = sin.(2f0 .* Float32(pi) .* x32)
+        x32 = collect(Float32, range(0.0f0, 1.0f0, length = 8))[1:7]
+        y32 = sin.(2.0f0 .* Float32(pi) .* x32)
         bc = PeriodicBC(endpoint = :exclusive, period = 1.0)              # Float64 user period
 
         itp = pchip_interp(x32, y32; bc = bc)

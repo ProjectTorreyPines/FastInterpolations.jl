@@ -1,0 +1,515 @@
+# ========================================
+# PHS Evaluation Engine
+# ========================================
+#
+# Core evaluation functions for PHSInterpolantND.
+# Three layers:
+#   1. _phs_find_base_node     — nearest grid node to query point
+#   2. _phs_eval_stencil       — evaluate one local PHS interpolant at a query point
+#   3. _phs_eval_blended       — weighted blend of multiple local interpolants (C² output)
+#
+# All mutable workspace (rhs, coeffs) is acquired from thread-local
+# AdaptiveArrayPools (via @with_pool) so the hot path is zero-allocation.
+
+# ======================================================
+# Layer 1: Base-node lookup
+# ======================================================
+
+"""
+    _phs_find_base_node(itp::PHSInterpolantND{Tg,Tv,N,K}, query::NTuple{N,<:Real})
+        -> NTuple{N,Int}
+
+Find the grid node nearest to `query` in each dimension.
+O(1) per axis for uniform (ScalarSpacing) grids; O(log n) for non-uniform.
+"""
+@inline function _phs_find_base_node(
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+    ) where {Tg, Tv, N, K}
+    return ntuple(N) do d
+        grid = itp.grids[d]
+        n = length(grid)
+        sp = itp.spacings[d]
+        qd = Tg(query[d])
+        if sp isa ScalarSpacing
+            idx = round(Int, (qd - grid[1]) * sp.inv_h + 1)
+        else
+            # Binary search for nearest
+            lo, hi = 1, n
+            while hi - lo > 1
+                mid = (lo + hi) >> 1
+                grid[mid] <= qd ? (lo = mid) : (hi = mid)
+            end
+            # lo and hi are the two bracketing nodes; pick nearest
+            idx = abs(qd - grid[lo]) <= abs(qd - grid[hi]) ? lo : hi
+        end
+        clamp(idx, 1, n)
+    end
+end
+
+"""
+    _phs_base_coords(itp, base_idx) -> NTuple{N,Tg}
+
+Physical coordinates of the base node at `base_idx`.
+"""
+@inline function _phs_base_coords(
+        itp::PHSInterpolantND{Tg, Tv, N},
+        base_idx::NTuple{N, Int},
+    ) where {Tg, Tv, N}
+    return ntuple(d -> itp.grids[d][base_idx[d]], N)
+end
+
+# ======================================================
+# Layer 2: Single-stencil evaluation
+# ======================================================
+
+"""
+    _phs_build_rhs!(rhs, data, base_idx, offsets, grid_sizes)
+
+Fill `rhs[1:N_stencil]` with the data values at the stencil nodes
+(clamped to [1,n] per axis).  `rhs[N_stencil+1:end]` remain zero
+(the polynomial consistency constraints).
+"""
+@inline function _phs_build_rhs!(
+        rhs::AbstractVector,
+        data::AbstractArray{Tv, N},
+        base_idx::NTuple{N, Int},
+        offsets::Vector{<:NTuple{N, Int}},
+        grid_sizes::NTuple{N, Int},
+    ) where {Tv, N}
+    @inbounds for (i, off) in enumerate(offsets)
+        idx = ntuple(d -> clamp(base_idx[d] + off[d], 1, grid_sizes[d]), N)
+        rhs[i] = data[idx...]
+    end
+    return rhs
+end
+
+# ---- Evaluation dispatch on DerivOp ----
+
+# Helper: difference vector (query - stencil_node_i) in physical space
+@inline function _phs_diff(query::NTuple{N, <:Real}, base_coords::NTuple{N, Tg},
+        off::NTuple{N, Int}, hs_local::NTuple{N, Tg}) where {N, Tg}
+    return ntuple(d -> Tg(query[d]) - (base_coords[d] + Tg(off[d]) * hs_local[d]), N)
+end
+
+"""
+    _phs_eval_coeffs_value(coeffs, offsets, hs_local, query, base_coords, ::Val{K}, N) -> scalar
+
+Evaluate the PHS interpolant value at `query` given precomputed coefficients.
+  f = Σᵢ wᵢ φ(rᵢ) + v₀ + Σⱼ vⱼ (xⱼ - xbase_j)
+"""
+@inline function _phs_eval_coeffs_value(
+        coeffs::AbstractVector{Tv},
+        offsets::Vector{<:NTuple{N, Int}},
+        hs_local::NTuple{N, Tg},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+    ) where {Tv, Tg, N, K}
+    ns = length(offsets)
+    y = zero(Tv)
+
+    # RBF sum
+    @inbounds for i in 1:ns
+        xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+        r = sqrt(sum(x -> x * x, xh))
+        y += coeffs[i] * _phs_phi(r, Val{K}())
+    end
+
+    # Polynomial part: v₀ + v · (x - x_base)
+    @inbounds begin
+        y += coeffs[ns + 1]   # v₀
+        for j in 1:N
+            y = muladd(coeffs[ns + 1 + j], Tg(query[j]) - base_coords[j], y)
+        end
+    end
+    return y
+end
+
+"""
+    _phs_eval_coeffs_deriv1(coeffs, offsets, hs_local, query, base_coords, ::Val{K}, axis) -> scalar
+
+Evaluate ∂f/∂xξ (Eq. 25).
+  fξ = Σᵢ wᵢ φ'(rᵢ) (xξ - xiξ)/rᵢ + vξ
+"""
+@inline function _phs_eval_coeffs_deriv1(
+        coeffs::AbstractVector{Tv},
+        offsets::Vector{<:NTuple{N, Int}},
+        hs_local::NTuple{N, Tg},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        axis::Int,
+    ) where {Tv, Tg, N, K}
+    ns = length(offsets)
+    y = zero(Tv)
+
+    @inbounds for i in 1:ns
+        xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+        r = sqrt(sum(x -> x * x, xh))
+        r < eps(Tg) && continue
+        y += coeffs[i] * _phs_phi_prime(r, Val{K}()) * xh[axis] / r
+    end
+    # Polynomial: vξ
+    y += coeffs[ns + 1 + axis]
+    return y
+end
+
+"""
+    _phs_eval_coeffs_deriv2(coeffs, offsets, hs_local, query, base_coords, ::Val{K}, ax1, ax2) -> scalar
+
+Evaluate ∂²f/∂xξ∂xζ (Eq. 26).
+"""
+@inline function _phs_eval_coeffs_deriv2(
+        coeffs::AbstractVector{Tv},
+        offsets::Vector{<:NTuple{N, Int}},
+        hs_local::NTuple{N, Tg},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ax1::Int,
+        ax2::Int,
+    ) where {Tv, Tg, N, K}
+    ns = length(offsets)
+    y = zero(Tv)
+
+    @inbounds for i in 1:ns
+        xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+        r2 = sum(x -> x * x, xh)
+        r2 < eps(Tg)^2 && continue
+        r = sqrt(r2)
+        fp = _phs_phi_prime(r, Val{K}())
+        fpp = _phs_phi_dprime(r, Val{K}())
+        if ax1 == ax2
+            # Diagonal: fpp*(xξ-xiξ)²/r² + fp*(1/r - (xξ-xiξ)²/r³)
+            xh_ax = xh[ax1]
+            y += coeffs[i] * (fpp * xh_ax * xh_ax / r2 + fp * (1 / r - xh_ax * xh_ax / (r2 * r)))
+        else
+            # Off-diagonal: fpp*(xξ-xiξ)*(xζ-xiζ)/r² - fp*(xξ-xiξ)*(xζ-xiζ)/r³
+            y += coeffs[i] * (fpp - fp / r) * xh[ax1] * xh[ax2] / r2
+        end
+    end
+    # Polynomial second derivatives are zero for linear augmentation
+    return y
+end
+
+"""
+    _phs_eval_stencil(itp, base_idx, query, ops, rhs_buf, coeff_buf)
+        -> scalar
+
+Evaluate the local PHS interpolant based at `base_idx` at point `query`.
+`ops` is an `NTuple{N, DerivOp}` encoding which derivative to compute.
+
+Uses pre-allocated buffers `rhs_buf` and `coeff_buf` (from AdaptiveArrayPools).
+"""
+@inline function _phs_eval_stencil(
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        base_idx::NTuple{N, Int},
+        query::NTuple{N, <:Real},
+        ops::NTuple{N, AbstractEvalOp},
+        rhs_buf::AbstractVector,
+        coeff_buf::AbstractVector,
+    ) where {Tg, Tv, N, K}
+    key = @inbounds itp.node_key[base_idx...]
+    offsets, phi_inv = itp.stencil_map[key]
+    ns = length(offsets)
+    grid_sizes = ntuple(d -> length(itp.grids[d]), N)
+    base_coords = _phs_base_coords(itp, base_idx)
+
+    # Per-node local spacings
+    hs_local = ntuple(N) do d
+        sp = itp.spacings[d]
+        sp isa ScalarSpacing ? sp.h : begin
+            i = base_idx[d]
+            n = grid_sizes[d]
+            il = max(1, i - 1)
+            ir = min(n - 1, i)
+            Tg((itp.grids[d][ir + 1] - itp.grids[d][il]) / (ir - il + 1))
+        end
+    end
+
+    # Build RHS vector (length = ns; trailing entries already zero)
+    fill!(rhs_buf, zero(Tg))
+    _phs_build_rhs!(rhs_buf, itp.data, base_idx, offsets, grid_sizes)
+
+    # Solve: coeffs = Φ⁻¹ * rhs  (BLAS gemv)
+    LinearAlgebra.mul!(coeff_buf, phi_inv, rhs_buf)
+
+    # Determine which derivative to compute from ops
+    n_deriv = ntuple(d -> deriv_order(ops[d]), N)
+    total_order = sum(n_deriv)
+
+    if total_order == 0
+        return _phs_eval_coeffs_value(coeff_buf, offsets, hs_local, query, base_coords, Val{K}())
+    elseif total_order == 1
+        axis = findfirst(d -> n_deriv[d] == 1, 1:N)::Int
+        return _phs_eval_coeffs_deriv1(coeff_buf, offsets, hs_local, query, base_coords, Val{K}(), axis)
+    elseif total_order == 2
+        # Find which axes
+        nonzero = findall(d -> n_deriv[d] > 0, 1:N)
+        if length(nonzero) == 1
+            ax = nonzero[1]
+            if n_deriv[ax] == 2
+                return _phs_eval_coeffs_deriv2(coeff_buf, offsets, hs_local, query, base_coords, Val{K}(), ax, ax)
+            end
+        elseif length(nonzero) == 2
+            ax1, ax2 = nonzero[1], nonzero[2]
+            return _phs_eval_coeffs_deriv2(coeff_buf, offsets, hs_local, query, base_coords, Val{K}(), ax1, ax2)
+        end
+    end
+    # Higher-order derivatives: return zero (PHS with linear augmentation has zero 3rd+ derivatives)
+    return zero(Tv)
+end
+
+# ======================================================
+# Layer 3: Blended evaluation
+# ======================================================
+
+"""
+    _phs_eval_blended(itp, query, ops)
+        -> scalar (or zero for out-of-domain)
+
+Evaluate the C²-continuous blended PHS interpolant at `query`.
+
+Algorithm:
+  F = N/W  where  N = Σ wᵢ fᵢ,  W = Σ wᵢ
+  Derivatives via exact quotient rule:
+    F'   = (N' - F·W') / W
+    F''  = (N'' - 2·N'·W'/W - F·W'' + 2·F·(W')²/W) / W
+"""
+@with_pool pool function _phs_eval_blended(
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+        ops::NTuple{N, AbstractEvalOp},
+    ) where {Tg, Tv, N, K}
+    blend_a   = itp.blend_a
+    base_idx0 = _phs_find_base_node(itp, query)
+    r_idx     = itp.blend_r_idx
+    grid_sizes = ntuple(d -> length(itp.grids[d]), N)
+
+    total_deriv = sum(deriv_order(ops[d]) for d in 1:N)
+
+    # Thread-local scratch space
+    ns_max    = length(first(values(itp.stencil_map))[1])
+    M         = ns_max + N + 1
+    rhs_buf   = acquire!(pool, Tg, M)
+    coeff_buf = acquire!(pool, Tg, M)
+
+    lo_idx = ntuple(d -> max(1, base_idx0[d] - r_idx[d]), N)
+    hi_idx = ntuple(d -> min(grid_sizes[d], base_idx0[d] + r_idx[d]), N)
+    ranges = ntuple(d -> lo_idx[d]:hi_idx[d], N)
+
+    ops_val = ntuple(_ -> EvalValue(), Val(N))
+
+    # ----------------------------------------------------------------
+    # Branch 1: value  F = N/W
+    # ----------------------------------------------------------------
+    if total_deriv == 0
+        sum_w  = zero(Tg)
+        sum_wy = zero(Tv)
+        for nb_ci in CartesianIndices(ranges)
+            nb_idx    = Tuple(nb_ci)
+            nb_coords = _phs_base_coords(itp, nb_idx)
+            d2 = zero(Tg)
+            @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
+            w = _phs_blend_weight(sqrt(d2), blend_a)
+            w < eps(Tg) && continue
+            f = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val, rhs_buf, coeff_buf))
+            sum_w  += w
+            sum_wy += w * f
+        end
+        sum_w < eps(Tg) && return zero(Tv)
+        return sum_wy / sum_w
+
+    # ----------------------------------------------------------------
+    # Branch 2: first derivative
+    #   ∂F/∂xξ = (∂N/∂xξ - F·∂W/∂xξ) / W
+    #   ∂N/∂xξ = Σ(w'ᵢ·dirξ·fᵢ + wᵢ·∂fᵢ/∂xξ)
+    #   ∂W/∂xξ = Σ  w'ᵢ·dirξ
+    # ----------------------------------------------------------------
+    elseif total_deriv == 1
+        grad_ax = findfirst(d -> deriv_order(ops[d]) == 1, 1:N)::Int
+        sum_w   = zero(Tg)
+        sum_wy  = zero(Tv)
+        sum_N1  = zero(Tv)   # ∂N/∂xξ
+        sum_W1  = zero(Tg)   # ∂W/∂xξ
+        for nb_ci in CartesianIndices(ranges)
+            nb_idx    = Tuple(nb_ci)
+            nb_coords = _phs_base_coords(itp, nb_idx)
+            d2 = zero(Tg)
+            @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
+            d_dist = sqrt(d2)
+            w, wp = _phs_blend_weight_and_prime(d_dist, blend_a)
+            w < eps(Tg) && continue
+            f = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val, rhs_buf, coeff_buf))
+            sum_w  += w
+            sum_wy += w * f
+            if d_dist > eps(Tg)
+                dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
+                df  = Tv(_phs_eval_stencil(itp, nb_idx, query, ops, rhs_buf, coeff_buf))
+                sum_N1 += wp * dir * f + w * df
+                sum_W1 += wp * dir
+            end
+        end
+        sum_w < eps(Tg) && return zero(Tv)
+        F = sum_wy / sum_w
+        return Tv((sum_N1 - F * sum_W1) / sum_w)
+
+    # ----------------------------------------------------------------
+    # Branch 3: second (or mixed) derivative — full quotient rule
+    #   F'' = (N'' - 2·N'·W'/W - F·W'' + 2·F·(W')²/W) / W   [diagonal]
+    #   or the mixed analogue for ax1 ≠ ax2
+    # ----------------------------------------------------------------
+    elseif total_deriv == 2
+        n_deriv_arr = ntuple(d -> deriv_order(ops[d]), Val(N))
+        nonzero = findall(d -> n_deriv_arr[d] > 0, 1:N)
+        ax1     = nonzero[1]
+        ax2     = length(nonzero) >= 2 ? nonzero[2] : ax1
+        is_diag = (ax1 == ax2)
+
+        ops_d1_1 = ntuple(d -> d == ax1 ? EvalDeriv1() : EvalValue(), Val(N))
+        ops_d1_2 = is_diag ? ops_d1_1 :
+                   ntuple(d -> d == ax2 ? EvalDeriv1() : EvalValue(), Val(N))
+
+        sum_w   = zero(Tg); sum_wy  = zero(Tv)
+        sum_N2  = zero(Tv); sum_W2  = zero(Tg)  # ∂²N, ∂²W  w.r.t. the requested axes
+        sum_N1  = zero(Tv); sum_W1  = zero(Tg)  # ∂N/∂x_ax1, ∂W/∂x_ax1
+        sum_N1b = zero(Tv); sum_W1b = zero(Tg)  # ∂N/∂x_ax2, ∂W/∂x_ax2 (mixed only)
+
+        for nb_ci in CartesianIndices(ranges)
+            nb_idx    = Tuple(nb_ci)
+            nb_coords = _phs_base_coords(itp, nb_idx)
+            d2 = zero(Tg)
+            @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
+            d_dist = sqrt(d2)
+            w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a)
+            w < eps(Tg) && continue
+
+            f   = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val, rhs_buf, coeff_buf))
+            f2  = Tv(_phs_eval_stencil(itp, nb_idx, query, ops,     rhs_buf, coeff_buf))
+            sum_w += w; sum_wy += w * f
+
+            if d_dist > eps(Tg)
+                da1  = (Tg(query[ax1]) - nb_coords[ax1]) / d_dist
+                wxi1 = wp * da1
+                f1   = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_d1_1, rhs_buf, coeff_buf))
+                sum_N1 += wxi1 * f + w * f1
+                sum_W1 += wxi1
+
+                if is_diag
+                    # ∂²w/∂x_ξ² = wpp·da1² + wp·(1 - da1²)/d
+                    wxixi = wpp * da1 * da1 + wp * (1 - da1 * da1) / d_dist
+                    # ∂²N/∂x_ξ² = w_ξξ·f + 2·w_ξ·f_ξ + w·f_ξξ
+                    sum_N2 += wxixi * f + 2 * wxi1 * f1 + w * f2
+                else
+                    da2  = (Tg(query[ax2]) - nb_coords[ax2]) / d_dist
+                    wxi2 = wp * da2
+                    f1b  = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_d1_2, rhs_buf, coeff_buf))
+                    sum_N1b += wxi2 * f + w * f1b
+                    sum_W1b += wxi2
+                    # ∂²w/∂x_ξ∂x_ζ = wpp·da1·da2 - wp·da1·da2/d
+                    wxixi = wpp * da1 * da2 - wp * da1 * da2 / d_dist
+                    # ∂²N/∂x_ξ∂x_ζ = w_ξζ·f + w_ξ·f_ζ + w_ζ·f_ξ + w·f_ξζ
+                    sum_N2 += wxixi * f + wxi1 * f1b + wxi2 * f1 + w * f2
+                end
+                sum_W2 += wxixi
+            else
+                # d≈0: blend-weight derivatives ≈ 0, only stencil contribution survives
+                sum_N2 += w * f2
+            end
+        end
+
+        sum_w < eps(Tg) && return zero(Tv)
+        W = sum_w
+        F = sum_wy / W
+
+        if is_diag
+            # F'' = N''/W - 2·N'·W'/W² - F·W''/W + 2·F·(W'/W)²
+            d2F = sum_N2 / W - 2 * sum_N1 * sum_W1 / W^2 - F * sum_W2 / W + 2 * F * (sum_W1 / W)^2
+        else
+            # ∂²F/∂x_ξ∂x_ζ = N''_ξζ/W - (N'_ξ·W'_ζ + N'_ζ·W'_ξ)/W² - F·W''_ξζ/W + 2F·W'_ξ·W'_ζ/W²
+            d2F = sum_N2 / W - (sum_N1 * sum_W1b + sum_N1b * sum_W1) / W^2 -
+                  F * sum_W2 / W + 2 * F * sum_W1 * sum_W1b / W^2
+        end
+        return Tv(d2F)
+    end
+
+    return zero(Tv)
+end
+
+# ======================================================
+# Smoothing transform wrapper
+# ======================================================
+
+"""
+    _phs_eval_with_transform(itp, query, ops)
+
+Evaluate the PHS interpolant and apply the inverse log-density transform.
+Computes ρ̃ = ρ₀ * exp(f) and its derivatives using Eqs. 21–23.
+"""
+function _phs_eval_with_transform(
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+        ops::NTuple{N, AbstractEvalOp},
+    ) where {Tg, Tv, N, K}
+    total_deriv = sum(deriv_order(ops[d]) for d in 1:N)
+    ref = itp.transform.reference
+
+    # Evaluate f (the smooth log-density ratio) and rho0 at query
+    f_val = _phs_eval_blended(itp, query, ntuple(_ -> EvalValue(), N))
+    rho0_val = ref(query)
+
+    rho = _phs_unroll_value(f_val, Tg(rho0_val))
+
+    total_deriv == 0 && return rho
+
+    if total_deriv == 1
+        ax = findfirst(d -> deriv_order(ops[d]) == 1, 1:N)::Int
+        ops_grad = ntuple(d -> d == ax ? DerivOp{1}() : EvalValue(), N)
+        f_grad = _phs_eval_blended(itp, query, ops_grad)
+        rho0_grad = Tg(ref(query; deriv = ops_grad))
+        return _phs_unroll_grad_component(rho, Tg(f_grad), rho0_grad, Tg(rho0_val))
+    end
+
+    if total_deriv == 2
+        # Second or mixed derivative
+        nonzero = [ax for ax in 1:N if deriv_order(ops[ax]) > 0]
+        ax1, ax2 = nonzero[1], (length(nonzero) >= 2 ? nonzero[2] : nonzero[1])
+
+        ops_d1 = ntuple(d -> d == ax1 ? DerivOp{1}() : EvalValue(), N)
+        ops_d2 = ntuple(d -> d == ax2 ? DerivOp{1}() : EvalValue(), N)
+
+        f_d1  = Tg(_phs_eval_blended(itp, query, ops_d1))
+        f_d2  = Tg(_phs_eval_blended(itp, query, ops_d2))
+        f_d12 = Tg(_phs_eval_blended(itp, query, ops))
+
+        rho_d1   = _phs_unroll_grad_component(rho, f_d1, Tg(ref(query; deriv = ops_d1)), Tg(rho0_val))
+        rho_d2   = _phs_unroll_grad_component(rho, f_d2, Tg(ref(query; deriv = ops_d2)), Tg(rho0_val))
+        rho0_d12 = Tg(ref(query; deriv = ops))
+        rho0_d1  = Tg(ref(query; deriv = ops_d1))
+        rho0_d2  = Tg(ref(query; deriv = ops_d2))
+
+        return _phs_unroll_hess_component(rho, f_d12, rho_d1, rho_d2, Tg(rho0_val), rho0_d1, rho0_d2, rho0_d12)
+    end
+
+    return zero(Tv)
+end
+
+# ======================================================
+# Top-level dispatch: with or without transform
+# ======================================================
+# Julia does not allow partial type-parameter specification in dispatch signatures
+# (e.g. Foo{A,B,Nothing} when Foo has 9 params). Instead we dispatch via a
+# two-argument helper that specialises on the transform field type, which the
+# compiler will constant-fold since T is a type parameter of PHSInterpolantND.
+
+@inline _phs_eval_dispatch(itp, ::Nothing, query, ops) = _phs_eval_blended(itp, query, ops)
+@inline _phs_eval_dispatch(itp, ::Any,     query, ops) = _phs_eval_with_transform(itp, query, ops)
+
+@inline function _phs_eval(
+        itp::PHSInterpolantND,
+        query::NTuple{N, <:Real},
+        ops::NTuple{N, AbstractEvalOp},
+    ) where {N}
+    return _phs_eval_dispatch(itp, itp.transform, query, ops)
+end

@@ -20,6 +20,7 @@ include("akima/akima.jl")
 include("core/coeff_policy.jl")  # AutoCoeffs resolution (after method types + strategy types, before hetero)
 include("hetero/hetero.jl")
 include("hetero/local_hermite_nd_forward.jl")  # pchip/cardinal/akima ND forwarders to `interp`
+include("phs/phs.jl")
 
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")
@@ -65,6 +66,7 @@ export cardinal_adjoint, CardinalAdjoint1D  # Cardinal adjoint (slope-from-data)
 export akima_adjoint, AkimaAdjoint1D  # Akima adjoint (slope-from-data, data-dependent)
 export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly, AutoCoeffs  # ND cubic types + strategies
 export interp, interp!, HeteroInterpolantND  # Tensor product ND (per-axis methods)
+export phs_interp, phs_interp!, PHSInterpolantND, PHSLogTransform  # Polyharmonic spline ND
 export AbstractInterpMethod, CubicInterp, LinearInterp, QuadraticInterp, ConstantInterp, NoInterp
 export PchipInterp, CardinalInterp, AkimaInterp, CubicHermiteInterp  # Hermite family ND methods
 export GridIdx

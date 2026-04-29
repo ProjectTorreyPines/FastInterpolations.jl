@@ -89,6 +89,41 @@
         end
     end
 
+    # codex P2.3: The anchor path used by Series oneshot stores only `idx::Int`
+    # and reads `y[aq.idx + 1]`/`z[aq.idx + 1]` in the kernel. With zero-copy
+    # exclusive (n-size data) the seam cell needs `idxR = 1`, but `aq.idx + 1
+    # = n + 1` is OOB / wraps to garbage. These tests pin the seam region for
+    # both scalar and vector Series oneshot. Reference is the single-vector
+    # 1D path which already handles the seam via `search_interval`'s 4-tuple.
+    @testset "PeriodicBC scalar (exclusive) — seam region (codex P2.3)" begin
+        x_exc = collect(range(0.0, step = 0.01, length = 100))
+        y1_exc = sin.(2π .* x_exc)
+        y2_exc = cos.(2π .* x_exc)
+        bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        for xq in (0.991, 0.995, 0.999)
+            vals = cubic_interp(x_exc, Series(y1_exc, y2_exc), xq; bc = bc_exc)
+            ref1 = cubic_interp(x_exc, y1_exc, xq; bc = bc_exc)
+            ref2 = cubic_interp(x_exc, y2_exc, xq; bc = bc_exc)
+            @test vals[1] ≈ ref1 atol = 1e-12
+            @test vals[2] ≈ ref2 atol = 1e-12
+        end
+    end
+
+    @testset "PeriodicBC vector (exclusive) — seam region (codex P2.3)" begin
+        x_exc = collect(range(0.0, step = 0.01, length = 100))
+        y1_exc = sin.(2π .* x_exc)
+        y2_exc = cos.(2π .* x_exc)
+        bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        xqs_seam = [0.991, 0.995, 0.999]  # all in [x[n], x[1]+period) seam cell
+        outs = cubic_interp(x_exc, Series(y1_exc, y2_exc), xqs_seam; bc = bc_exc)
+        for j in eachindex(xqs_seam)
+            ref1 = cubic_interp(x_exc, y1_exc, xqs_seam[j]; bc = bc_exc)
+            ref2 = cubic_interp(x_exc, y2_exc, xqs_seam[j]; bc = bc_exc)
+            @test outs[1][j] ≈ ref1 atol = 1e-12
+            @test outs[2][j] ≈ ref2 atol = 1e-12
+        end
+    end
+
     @testset "PeriodicBC vector in-place" begin
         xqs = [0.1, 0.37, 0.5, 0.9]
         outputs = [zeros(length(xqs)) for _ in 1:2]

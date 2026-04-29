@@ -552,6 +552,63 @@
             x = range(0.0, step = 0.1, length = 10)
             @test_throws ArgumentError CubicSplineCache(x; bc = PeriodicBC(endpoint = :exclusive))
         end
+
+        @testset "Cache key includes bc.period — distinct periods on same x (codex P1)" begin
+            # Same Vector x called twice with different explicit periods: each
+            # must build/lookup a distinct cache. Pre-fix: bank partitioned by
+            # `(T, X, S, E)` only and `_rcu_lookup` compared `x` only, so the
+            # second call silently hit the first cache and used the stale
+            # period in its bc_config (wrong seam_h, wrong q vector).
+            x = collect([0.0, 0.3, 0.6, 0.85, 1.05, 1.4, 1.85])    # non-uniform
+            y = [0.0, 1.0, 0.5, -0.5, 0.3, 0.8, -0.2]
+            xq = 1.95   # in seam region — sensitive to seam_h
+
+            v1 = cubic_interp(x, y, xq; bc = PeriodicBC(endpoint = :exclusive, period = 2.5))
+            v2 = cubic_interp(x, y, xq; bc = PeriodicBC(endpoint = :exclusive, period = 2.2))
+            v3 = cubic_interp(x, y, xq; bc = PeriodicBC(endpoint = :exclusive, period = 2.5))
+
+            # v1 and v3 should match (same period). v1 vs v2 should differ
+            # (different seam geometry → different result).
+            @test v1 ≈ v3
+            @test !isapprox(v1, v2; atol = 1.0e-6)
+
+            # Direct cache pool inspection — distinct cache objects for distinct periods.
+            c1 = FastInterpolations._get_cubic_cache(x, PeriodicBC(endpoint = :exclusive, period = 2.5))
+            c2 = FastInterpolations._get_cubic_cache(x, PeriodicBC(endpoint = :exclusive, period = 2.2))
+            @test c1.bc_config.period ≈ 2.5
+            @test c2.bc_config.period ≈ 2.2
+            @test c1.bc_config.h_n ≈ 0.65
+            @test c2.bc_config.h_n ≈ 0.35
+        end
+
+        @testset "Reject non-positive seam width (codex P2.1)" begin
+            # Pre-fix: `_build_periodic_cache(x, bc::PeriodicBC{:exclusive})`
+            # computed `h_n = period - (last(x) - first(x))` without checking
+            # `h_n > 0`. Master path threw via `_extend_exclusive`'s
+            # `last(x) < x_end` validation; zero-copy bypass lost that.
+            x = collect([0.0, 0.3, 0.6, 0.85, 1.05, 1.4, 1.85])    # span = 1.85
+            y = sin.(2π .* x ./ 2.0)
+
+            # period == grid span → h_n == 0 → divide by zero in solver
+            @test_throws ArgumentError cubic_interp(x, y, 0.5; bc = PeriodicBC(endpoint = :exclusive, period = 1.85))
+
+            # period < grid span → h_n < 0 → invalid seam geometry
+            @test_throws ArgumentError cubic_interp(x, y, 0.5; bc = PeriodicBC(endpoint = :exclusive, period = 1.5))
+        end
+
+        @testset "autocache=false routes through internal builder (codex P2.2)" begin
+            # Pre-fix: `_get_cubic_cache(x, bc, autocache=false)` routed to
+            # `CubicSplineCache(...; bc=bc)` outer constructor, which (post
+            # commit 7d9b125e) rejects `:exclusive` direct construction. So
+            # the public oneshot API silently broke for `autocache=false`.
+            x = collect(range(0.0, 1.0, length = 11))[1:10]
+            y = sin.(2π .* x)
+            bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+
+            v_true = cubic_interp(x, y, 0.5; bc = bc, autocache = true)
+            v_false = cubic_interp(x, y, 0.5; bc = bc, autocache = false)
+            @test v_true ≈ v_false
+        end
     end
 
 end

@@ -392,22 +392,22 @@ Uses 2-pass algorithm with verification:
 Entry stores a snapshot of x (copy for Vector, same for Range).
 Pass 1 verifies content even on objectid match to detect in-place mutation.
 """
-@inline function _rcu_lookup(snap::BankSnapshot{E}, id::UInt, x::X) where {E, X}
+@inline function _rcu_lookup(snap::BankSnapshot{E}, id::UInt, x::X, bc_config) where {E, X}
     store = snap.store
     count = snap.count
 
     # [Pass 1] Identity hint check with verification
     # objectid match is a HINT that this might be the right entry.
     # We MUST verify content because user may have mutated x in-place.
+    # Periodic exclusive caches additionally verify the user-supplied period
+    # against the cached `bc_config.period` (codex P1) — same `x` with two
+    # different explicit periods must yield distinct caches.
     @inbounds for i in 1:count
         entry = store[i]
         if entry.id === id
-            # Verify content matches snapshot (catches in-place mutation)
-            if isequal(entry.x, x)
+            if isequal(entry.x, x) && _verify_cache_match(entry.cache, bc_config)
                 return entry.cache
             end
-            # objectid matched but content differs → mutation detected!
-            # Continue to Pass 2 (might find another entry with matching content)
         end
     end
 
@@ -415,12 +415,23 @@ Pass 1 verifies content even on objectid match to detect in-place mutation.
     # This handles: different object with same content (cache hit)
     @inbounds for i in 1:count
         entry = store[i]
-        if isequal(entry.x, x)
+        if isequal(entry.x, x) && _verify_cache_match(entry.cache, bc_config)
             return entry.cache
         end
     end
 
     return nothing
+end
+
+# BC-aware cache match verification. Default is `true` (objectid + isequal
+# already adequate for non-periodic and inclusive caches). Exclusive periodic
+# caches must additionally check that the user-supplied period matches the
+# cached period — same `x` with two distinct explicit periods is a valid
+# configuration and must produce two distinct caches.
+@inline _verify_cache_match(::Any, ::Any) = true
+@inline function _verify_cache_match(cache::CubicSplineCache, bc::PeriodicBC{:exclusive, P}) where {P}
+    P === Nothing && return true   # Range-inferred period — derived from grid, no mismatch possible
+    return cache.bc_config.period == bc.period
 end
 
 # ---------------------------------------------------------------
@@ -473,7 +484,7 @@ Core lookup/insert logic for CacheBank{E} using RCU pattern.
 
     # === RCU Read Path (Lock-Free) ===
     snap = @atomic :acquire bank.snapshot
-    found = _rcu_lookup(snap, id, x)
+    found = _rcu_lookup(snap, id, x, bc_config)
     found !== nothing && return found
 
     # === RCU Write Path (Lock + Copy-on-Write) ===
@@ -481,7 +492,7 @@ Core lookup/insert logic for CacheBank{E} using RCU pattern.
     try
         # Double-check after acquiring lock
         snap = @atomic :monotonic bank.snapshot
-        found = _rcu_lookup(snap, id, x)
+        found = _rcu_lookup(snap, id, x, bc_config)
         found !== nothing && return found
 
         # Build cache — CubicSplineCache inner constructor handles copy(x)
@@ -618,8 +629,18 @@ end
     if autocache
         return _get_cubic_cache(x_norm, bc)
     else
+        # Bypass the public `CubicSplineCache(x; bc=bc)` outer constructor —
+        # it rejects `:exclusive` PeriodicBC for direct user use, but the
+        # internal `autocache=false` path is safe (oneshot / persistent
+        # callers thread `bc` into the searcher via `_resolve_search`).
         FT = _cache_float_type(eltype(x))
-        return CubicSplineCache(_to_float(x_norm, FT); bc = bc)
+        x_typed = _to_float(x_norm, FT)
+        if _is_periodic_bc(bc)
+            return _build_periodic_cache(x_typed, bc)
+        else
+            bc_normalized = _normalize_bc(bc)
+            return _build_derivative_bc_cache(x_typed, bc_normalized.left, bc_normalized.right)
+        end
     end
 end
 

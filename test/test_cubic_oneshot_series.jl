@@ -156,6 +156,59 @@
         end
     end
 
+    # AD through exclusive PeriodicBC: WrapExtrap's period-cast path and the
+    # seam-aware anchor must preserve `ForwardDiff.Dual` end-to-end. Pin AD
+    # against the analytic derivative reference (single-y `cubic_interp` with
+    # `DerivOp(1)`).
+    @testset "ForwardDiff AD through exclusive PeriodicBC" begin
+        using ForwardDiff
+        x_exc = collect(range(0.0, step = 0.01, length = 100))
+        y1_exc = sin.(2π .* x_exc)
+        y2_exc = cos.(2π .* x_exc)
+        bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        f_ad(t) = sum(cubic_interp(x_exc, Series(y1_exc, y2_exc), t; bc = bc_exc))
+
+        for xq in (0.37, 0.95)   # interior + seam
+            grad_ad = ForwardDiff.derivative(f_ad, xq)
+            ref = cubic_interp(x_exc, y1_exc, xq; bc = bc_exc, deriv = DerivOp(1)) +
+                  cubic_interp(x_exc, y2_exc, xq; bc = bc_exc, deriv = DerivOp(1))
+            @test grad_ad ≈ ref atol = 1e-10
+        end
+    end
+
+    # DerivOp through exclusive PeriodicBC at the seam: the seam-aware anchor
+    # carries (idxL=n, idxR=1); each derivative kernel selects different weight
+    # tuples (w1/w2/w3), so a weight-mismatch bug would only surface here.
+    @testset "DerivOp × Series exclusive — seam region" begin
+        x_exc = collect(range(0.0, step = 0.01, length = 100))
+        y1_exc = sin.(2π .* x_exc)
+        y2_exc = cos.(2π .* x_exc)
+        bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        for d in (1, 2, 3), xq in (0.991, 0.995, 0.999)
+            op = DerivOp(d)
+            vals = cubic_interp(x_exc, Series(y1_exc, y2_exc), xq; bc = bc_exc, deriv = op)
+            ref1 = cubic_interp(x_exc, y1_exc, xq; bc = bc_exc, deriv = op)
+            ref2 = cubic_interp(x_exc, y2_exc, xq; bc = bc_exc, deriv = op)
+            @test vals[1] ≈ ref1 atol = 1e-9
+            @test vals[2] ≈ ref2 atol = 1e-9
+        end
+    end
+
+    @testset "Zero allocation (in-place vector, exclusive PeriodicBC)" begin
+        function measure(x_exc, y1_exc, y2_exc)
+            s = Series(y1_exc, y2_exc)
+            xqs = [0.05, 0.37, 0.75, 0.95]
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+            cubic_interp!(outputs, x_exc, s, xqs; bc = bc_exc)  # warmup
+            return @allocated cubic_interp!(outputs, x_exc, s, xqs; bc = bc_exc)
+        end
+        x_exc = collect(range(0.0, step = 0.01, length = 100))
+        y1_exc = sin.(2π .* x_exc)
+        y2_exc = cos.(2π .* x_exc)
+        @test measure(x_exc, y1_exc, y2_exc) <= ALLOC_THRESHOLD
+    end
+
     # NOTE: Allocation tests use the function-barrier pattern with arguments
     # (rather than closure capture or @testset-local vars) because Test.jl wraps
     # @testset bodies in try/catch, which weakens type inference under @testitem

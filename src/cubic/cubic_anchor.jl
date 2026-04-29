@@ -23,7 +23,10 @@ matches the interpolant grid.
 - `Tq`: Query type (Float or ForwardDiff.Dual for AD support)
 
 # Fields
-- `idx`: Interval index where xq falls
+- `stencil`: `_IdxStencil{2}` carrying the corner pair `(idxL, idxR)`.
+  `idxR == idxL + 1` for non-seam cells; `idxR == 1` at periodic-exclusive
+  seam cells (wrap). Virtual properties `aq.idx` (= `idxL`), `aq.idxL`,
+  and `aq.idxR` are exposed via `getproperty` for ergonomics.
 - `xq`: Original query point (or wrapped value for periodic)
 - `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
 - `w0`: Precomputed weights for value (wyL, wyR, wzL, wzR)

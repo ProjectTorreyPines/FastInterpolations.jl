@@ -42,13 +42,32 @@
     return output
 end
 
+# Build a seam-aware cubic anchor for one query against a (possibly raw
+# n-size) periodic cache. Bypasses `_anchor_query_impl` because that helper's
+# `_anchor_loc` discards `idx_R`, so it cannot represent the periodic-exclusive
+# seam pair `(n, 1)`. Search returns the 4-tuple directly; `_periodic_cell_h`
+# supplies the seam-aware width (`bc.h_n` at the seam, spacing accessor
+# elsewhere). Used by both scalar and vector periodic series helpers.
+@inline function _build_periodic_cubic_anchor(
+        cache::CubicSplineCache,
+        xq,
+        extrap_p::AbstractExtrap,
+        searcher::Searcher,
+    )
+    xq_wrapped = _wrap_to_domain(xq, extrap_p)
+    idxL, idxR, xL, xR = search_interval(searcher, cache.x, xq_wrapped)
+    h, inv_h = _periodic_cell_h(cache.spacing, idxL, cache.bc_config)
+    dL = xq_wrapped - xL
+    dR = xR - xq_wrapped
+    w0 = _compute_anchor_weights(EvalValue(), h, inv_h, dL, dR)
+    w1 = _compute_anchor_weights(EvalDeriv1(), h, inv_h, dL, dR)
+    w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
+    w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
+    return _CubicAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, w0, w1, w2, w3, eltype(cache.x))
+end
+
 # Periodic scalar: zero-copy. One search → seam-aware `_IdxPair` anchor → loop
 # solve+eval per series. No grid extension, no `y_p` rebuild.
-#
-# The anchor stores the corner pair `(idxL, idxR)` directly. For inclusive,
-# search returns `(idx, idx+1)`. For exclusive at the seam (xq ≥ x[n]),
-# `search_interval` dispatches to `(n, 1, x[n], x[1] + period)` so the kernel
-# reads `y[1]`/`z[1]` for the wrapped corner — no extension needed.
 #
 # Mirrors `_linear_oneshot_series_periodic!`: wrap query, search once, anchor
 # carries seam pair, K-loop solves and evaluates. Caller passes a bc-threaded
@@ -76,24 +95,8 @@ end
 
     # Build cache on the user's grid (BC-aware: `_build_periodic_cache`).
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
-
-    # Wrap query + seam-aware search → corner pair (possibly seam-wrapped).
     extrap_p = _resolve_extrap(NoExtrap(), bc, cache.x, first(vecs))
-    xq_wrapped = _wrap_to_domain(xq, extrap_p)
-    idxL, idxR, xL, xR = search_interval(searcher, cache.x, xq_wrapped)
-
-    # `_periodic_cell_h` returns `bc.h_n` at the seam cell (where solver and
-    # eval must agree on width) and the spacing accessor elsewhere. Going
-    # through `_get_h(cache.x, xL, xR)` would skip the seam fixup for
-    # `_CachedRange` since that overload returns the cached `step`.
-    h, inv_h = _periodic_cell_h(cache.spacing, idxL, cache.bc_config)
-    dL = xq_wrapped - xL
-    dR = xR - xq_wrapped
-    w0 = _compute_anchor_weights(EvalValue(), h, inv_h, dL, dR)
-    w1 = _compute_anchor_weights(EvalDeriv1(), h, inv_h, dL, dR)
-    w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
-    w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
-    aq = _CubicAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, w0, w1, w2, w3, eltype(cache.x))
+    aq = _build_periodic_cubic_anchor(cache, xq, extrap_p, searcher)
 
     # Solve + eval per series. Both `_solve_system!` and the kernel read `y`
     # read-only (the periodic solver acquires its own scratch internally),
@@ -134,26 +137,13 @@ end
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
     extrap_p = _resolve_extrap(NoExtrap(), bc, cache.x, first(vecs))
 
-    # Pre-fill seam-aware anchors. We bypass `_fill_anchors!` (which discards
-    # `idx_R` via `_anchor_loc`) and construct each anchor from the 4-tuple
-    # returned by `search_interval` — `_IdxPair(idxL, idxR)` carries the seam
-    # wrap directly. Searcher is bc-threaded so `:exclusive` dispatches the
-    # `(n, 1, x[n], x[1] + period)` seam tuple.
+    # Pre-fill seam-aware anchors via `_build_periodic_cubic_anchor`.
     Tg_c = eltype(cache.x)
     Tq_w = promote_type(Tq, Tg_c)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg_c, Tq_w}, length(xqs))
     searcher = _resolve_search(cache.x, xqs, search, nothing, bc)
     @inbounds for j in eachindex(xqs)
-        xq_wrapped = _wrap_to_domain(xqs[j], extrap_p)
-        idxL, idxR, xL, xR = search_interval(searcher, cache.x, xq_wrapped)
-        h, inv_h = _periodic_cell_h(cache.spacing, idxL, cache.bc_config)
-        dL = xq_wrapped - xL
-        dR = xR - xq_wrapped
-        w0 = _compute_anchor_weights(EvalValue(), h, inv_h, dL, dR)
-        w1 = _compute_anchor_weights(EvalDeriv1(), h, inv_h, dL, dR)
-        w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
-        w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
-        aq_vec[j] = _CubicAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, w0, w1, w2, w3, Tg_c)
+        aq_vec[j] = _build_periodic_cubic_anchor(cache, xqs[j], extrap_p, searcher)
     end
 
     # Solve per series, eval at all queries. `_solve_system!` reads `y`

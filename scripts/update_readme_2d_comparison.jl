@@ -40,6 +40,18 @@ function plot_comparison(xs, ys; phs_stencil_size = 5)
         p = heatmap(x_hi, y_hi, z_interp';
             title = "PHS Interpolation\n (Error≈$(measure_error_string(itp)))",
             kwargs...)
+        # Gridlines
+        for yj in ys
+            plot!(p, [xs[1], xs[end]], [yj, yj];
+                color = :white, alpha = itp_plot_kwargs.gridline_alpha,
+                linestyle = :dot, linewidth = 1, label = false)
+        end
+        for xi in xs
+            plot!(p, [xi, xi], [ys[1], ys[end]];
+                color = :white, alpha = itp_plot_kwargs.gridline_alpha,
+                linestyle = :dot, linewidth = 1, label = false)
+        end
+        # Nodes
         xs_nodes = [x for x in xs for _ in ys]
         ys_nodes = [y for _ in xs for y in ys]
         scatter!(p, xs_nodes, ys_nodes;
@@ -68,9 +80,9 @@ p_irreg = plot_comparison(x_irreg, y_irreg; phs_stencil_size = 4)
 savefig(p_irreg, "$(pkgdir(FastInterpolations))/docs/images/readme_2d_comparison.png")
 
 # Regular grid (15×15)
-x_reg = collect(range(0.0, 1.0, 15))
-y_reg = collect(range(0.0, 1.0, 15))
-p_reg = plot_comparison(x_reg, y_reg; phs_stencil_size = 7)
+x_reg = collect(range(0.0, 1.0, 6))
+y_reg = collect(range(0.0, 1.0, 6))
+p_reg = plot_comparison(x_reg, y_reg; phs_stencil_size = 4)
 savefig(p_reg, "$(pkgdir(FastInterpolations))/docs/images/readme_2d_comparison_regular.png")
 
 

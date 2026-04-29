@@ -8,13 +8,28 @@
 # Boundary condition types (AbstractBC, PointBC, Deriv1, Deriv2, BCPair, PeriodicBC) are defined in bc_types.jl
 
 """
-    PeriodicData{T}
+    PeriodicData{T, E}
 
 Pre-computed data for Sherman-Morrison periodic spline solver.
 
+# Type parameters
+- `T`: Element type (Float64, Float32, etc.)
+- `E`: Endpoint variant — `:inclusive` (`length(x) = n+1`, `y[1] ≈ y[n+1]`) or
+  `:exclusive` (`length(x) = n`, virtual seam at `x[1] + period`). Encoded in
+  the type for zero-cost dispatch in `compute_rhs_periodic!` (the only place
+  the formula differs between forms).
+
 # Fields
-- `q::Vector{T}`: Pre-computed A'^{-1} * u vector for Sherman-Morrison formula
-- `period::T`: Period T = x[end] - x[1]
+- `q::Vector{T}`: Pre-computed A'^{-1} * u vector for Sherman-Morrison formula.
+  Length = number of cells in the closed cycle (n_cells).
+- `period::T`: Full cycle length (resolved from grid for `:inclusive`,
+  from `bc.period` for `:exclusive`).
+- `h_n::T`: Width of the seam cell (last cell in the closed cycle).
+  - Inclusive: `h_n = x[n+1] - x[n]`.
+  - Exclusive: `h_n = period - (x[n] - x[1])` (virtual seam between `x[n]` and `x[1]+period`).
+  Stored explicitly so the Sherman-Morrison Schur factor `α = h_n` is available
+  at solve-time without re-deriving it from the spacing object (spacing only
+  carries the n-1 interior cell widths in exclusive form).
 
 # Notes
 For cyclic tridiagonal system A_cyclic = A' + u * v^T, Sherman-Morrison gives:
@@ -25,9 +40,10 @@ where q = A'^{-1} * u is pre-computed and reused for different y vectors.
 Workspaces for the periodic solver are allocated from task-local pools via `@with_pool`,
 not stored in this struct. This eliminates shared mutable state.
 """
-struct PeriodicData{T}
-    q::Vector{T}  # Pre-computed A'^{-1} * u
-    period::T     # x[end] - x[1]
+struct PeriodicData{T, E}
+    q::Vector{T}  # Pre-computed A'^{-1} * u (length = n_cells)
+    period::T     # full cycle length
+    h_n::T        # seam-cell width: x[n+1]-x[n] inclusive, period-(x[n]-x[1]) exclusive
 end
 
 """

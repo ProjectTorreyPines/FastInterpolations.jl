@@ -23,7 +23,10 @@ matches the interpolant grid.
 - `Tq`: Query type (Float or ForwardDiff.Dual for AD support)
 
 # Fields
-- `idx`: Interval index where xq falls
+- `stencil`: `_IdxStencil{2}` carrying the corner pair `(idxL, idxR)`.
+  `idxR == idxL + 1` for non-seam cells; `idxR == 1` at periodic-exclusive
+  seam cells (wrap). Virtual properties `aq.idx` (= `idxL`), `aq.idxL`,
+  and `aq.idxR` are exposed via `getproperty` for ergonomics.
 - `xq`: Original query point (or wrapped value for periodic)
 - `state`: Domain state (`IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`)
 - `w0`: Precomputed weights for value (wyL, wyR, wzL, wzR)
@@ -58,7 +61,11 @@ in both `xq` and weight fields, enabling automatic differentiation through
 series interpolant evaluation.
 """
 struct _CubicAnchoredQuery{Tg, Tq <: Real}
-    idx::Int                   # interval index
+    # Corner-index stencil: `stencil[1]` is the left index (idxL), `stencil[2]`
+    # is the right index (idxR). For non-periodic cells `idxR == idxL + 1`; for
+    # periodic-exclusive seam cells `idxR == 1` (wrap). Mirrors `_LinearAnchoredQuery`.
+    # Legacy `aq.idx` accessor is preserved via `getproperty` (= idxL).
+    stencil::_IdxStencil{2}
     xq::Tq                     # query point (possibly wrapped), Float or Dual
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     w0::NTuple{4, Tq}           # (wyL, wyR, wzL, wzR) for value
@@ -67,12 +74,25 @@ struct _CubicAnchoredQuery{Tg, Tq <: Real}
     w3::NTuple{2, Tq}           # (wzL, wzR) for third deriv - optimized
 end
 
+# Virtual property accessors — legacy `aq.idx` ergonomics + new `aq.idxL`/`aq.idxR`.
+# Val-dispatch (rather than a single `getproperty` with `===` branches) forces
+# per-property compile-time specialization so each lookup inlines to a single
+# `getfield` (+ tuple index for the stencil paths). Avoids the union-typed
+# return that would otherwise box weights/state in hot loops.
+@inline Base.getproperty(aq::_CubicAnchoredQuery, s::Symbol) = _get_cub_prop(aq, Val(s))
+@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{:idx}) = getfield(aq, :stencil)[1]
+@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{:idxL}) = getfield(aq, :stencil)[1]
+@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{:idxR}) = getfield(aq, :stencil)[2]
+@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{s}) where {s} = getfield(aq, s)
+@inline Base.propertynames(::_CubicAnchoredQuery) =
+    (:stencil, :idx, :idxL, :idxR, :xq, :state, :w0, :w1, :w2, :w3)
+
 # Outer constructor: infer Tq from weight element type (not from input xq).
 # When grid is Dual, weights are Dual even if xq is Float64.
 # Widens xq to match weight type for struct consistency.
-@inline function _CubicAnchoredQuery(idx::Int, xq, state::UInt8, w0::NTuple{4, Tw}, w1::NTuple{4, Tw}, w2::NTuple{2, Tw}, w3::NTuple{2, Tw}, ::Type{Tg}) where {Tg, Tw}
+@inline function _CubicAnchoredQuery(stencil::_IdxStencil{2}, xq, state::UInt8, w0::NTuple{4, Tw}, w1::NTuple{4, Tw}, w2::NTuple{2, Tw}, w3::NTuple{2, Tw}, ::Type{Tg}) where {Tg, Tw}
     xq_p = convert(Tw, xq)
-    return _CubicAnchoredQuery{Tg, Tw}(idx, xq_p, state, w0, w1, w2, w3)
+    return _CubicAnchoredQuery{Tg, Tw}(stencil, xq_p, state, w0, w1, w2, w3)
 end
 
 # ========================================
@@ -340,7 +360,19 @@ while preserving the full Dual value for weight computation.
     w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
     w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
 
-    return _CubicAnchoredQuery(loc.idx, loc.xq, loc.state, w0, w1, w2, w3, Tg)
+    # `_anchor_loc` discards `idx_R` from `search_interval`'s 4-tuple, so this
+    # path always assumes `idxR = idxL + 1`. Valid only for:
+    #   - non-periodic queries (no seam dispatch in the searcher),
+    #   - `WrapExtrap` queries (wrap maps into `[first(x), last(x))`, no seam),
+    #   - periodic queries on a *post-extension* (n+1) grid (idxL+1 ≤ n+1).
+    # Periodic-exclusive callers on a raw n-size grid MUST bypass this path
+    # and build the anchor from `search_interval`'s 4-tuple to preserve the
+    # seam pair `(n, 1)` (see `_cubic_oneshot_series_periodic!` /
+    # `_cubic_oneshot_series_periodic_vec!`). The proper long-term fix is the
+    # `_anchor_loc` 4-tuple refactor tracked as MEMORY.md "search_interval
+    # 4-value refactor (PR A)", which would let this path read `idx_R`
+    # directly and eliminate the bypass.
+    return _CubicAnchoredQuery(_IdxPair(loc.idx, loc.idx + 1), loc.xq, loc.state, w0, w1, w2, w3, Tg)
 end
 
 # ========================================
@@ -351,16 +383,19 @@ end
 
 # ─── Kernel: dispatches on DerivOp, returns scalar ───────────────────────────
 
-# EvalValue: Full 4-term dot product
+# EvalValue: Full 4-term dot product. `aq.idxR` carries seam wrap (== 1 at the
+# periodic-exclusive seam, otherwise == idxL + 1) — kernels are oblivious.
 @inline function _cubic_eval_kernel(
         y::AbstractVector, z::AbstractVector,
         aq::_CubicAnchoredQuery, ::EvalValue
     )
     wyL, wyR, wzL, wzR = aq.w0
+    idxL = aq.idxL
+    idxR = aq.idxR
     @inbounds return muladd(
-        wyR, y[aq.idx + 1], muladd(
-            wyL, y[aq.idx],
-            muladd(wzR, z[aq.idx + 1], wzL * z[aq.idx])
+        wyR, y[idxR], muladd(
+            wyL, y[idxL],
+            muladd(wzR, z[idxR], wzL * z[idxL])
         )
     )
 end
@@ -371,10 +406,12 @@ end
         aq::_CubicAnchoredQuery, ::EvalDeriv1
     )
     wyL, wyR, wzL, wzR = aq.w1
+    idxL = aq.idxL
+    idxR = aq.idxR
     @inbounds return muladd(
-        wyR, y[aq.idx + 1], muladd(
-            wyL, y[aq.idx],
-            muladd(wzR, z[aq.idx + 1], wzL * z[aq.idx])
+        wyR, y[idxR], muladd(
+            wyL, y[idxL],
+            muladd(wzR, z[idxR], wzL * z[idxL])
         )
     )
 end
@@ -385,7 +422,7 @@ end
         aq::_CubicAnchoredQuery, ::EvalDeriv2
     )
     wzL, wzR = aq.w2
-    @inbounds return muladd(wzR, z[aq.idx + 1], wzL * z[aq.idx])
+    @inbounds return muladd(wzR, z[aq.idxR], wzL * z[aq.idxL])
 end
 
 # EvalDeriv3: Optimized 2-term (z-only, no y-loads)
@@ -394,7 +431,7 @@ end
         aq::_CubicAnchoredQuery, ::EvalDeriv3
     )
     wzL, wzR = aq.w3
-    @inbounds return muladd(wzR, z[aq.idx + 1], wzL * z[aq.idx])
+    @inbounds return muladd(wzR, z[aq.idxR], wzL * z[aq.idxL])
 end
 
 # DerivOp{N≥4}: zero (N-th derivative of cubic is zero for N ≥ 4)
@@ -402,7 +439,7 @@ end
         y::AbstractVector, ::AbstractVector,
         aq::_CubicAnchoredQuery, ::DerivOp{N}
     ) where {N}
-    return 0 * (@inbounds y[aq.idx])
+    return 0 * (@inbounds y[aq.idxL])
 end
 
 # ─── Extrap dispatch: handles OOB logic ──────────────────────────────────────

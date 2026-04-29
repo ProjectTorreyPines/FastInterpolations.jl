@@ -425,42 +425,39 @@
         show(buf, MIME"text/plain"(), sitp)
         @test occursin("Periodic", String(take!(buf)))
 
-        # itp.bc preserves original user-specified BC with resolved period
-        @testset "itp.bc preserves endpoint and resolves period" begin
+        # `itp.bc` is normalized to `:inclusive` post-extension, with period
+        # materialized from the cache for introspection.
+        @testset "itp.bc reflects post-extension `:inclusive` form (period preserved)" begin
             N_bc = 16
             dx_bc = 2π / N_bc
 
-            # Exclusive with explicit period
+            # Exclusive input → normalized to `:inclusive`, period preserved
             x_bc = range(0.0, step = dx_bc, length = N_bc)
             y_bc = sin.(x_bc)
             itp_excl = cubic_interp(collect(x_bc), y_bc; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
-            @test itp_excl.bc isa PeriodicBC{:exclusive}
+            @test itp_excl.bc isa PeriodicBC{:inclusive}
             @test itp_excl.bc.period ≈ 2π
 
-            # Exclusive without period (auto-inferred from Range) — period should still be resolved
+            # Exclusive without period (auto-inferred from Range)
             itp_excl_auto = cubic_interp(x_bc, y_bc; bc = PeriodicBC(endpoint = :exclusive))
-            @test itp_excl_auto.bc isa PeriodicBC{:exclusive}
+            @test itp_excl_auto.bc isa PeriodicBC{:inclusive}
             @test itp_excl_auto.bc.period ≈ 2π
 
-            # show output should reflect exclusive with period
             buf_bc = IOBuffer()
             show(buf_bc, MIME"text/plain"(), itp_excl_auto)
             s = String(take!(buf_bc))
-            @test occursin("exclusive", s)
+            @test occursin("Periodic", s)
             @test occursin("period≈", s)
 
-            # Inclusive — period should also be resolved from grid
+            # Inclusive input — passthrough; period materialized too
             x_incl_bc = range(0.0, step = dx_bc, length = N_bc + 1)
-            y_incl_bc = sin.(x_incl_bc)
-            y_incl_bc[end] = y_incl_bc[1]
+            y_incl_bc = sin.(x_incl_bc); y_incl_bc[end] = y_incl_bc[1]
             itp_incl = cubic_interp(collect(x_incl_bc), y_incl_bc; bc = PeriodicBC())
             @test itp_incl.bc isa PeriodicBC{:inclusive}
             @test itp_incl.bc.period ≈ 2π
 
-            # show output should show period for inclusive too
             show(buf_bc, MIME"text/plain"(), itp_incl)
-            s_incl = String(take!(buf_bc))
-            @test occursin("period≈", s_incl)
+            @test occursin("period≈", String(take!(buf_bc)))
         end
 
         # Also test exclusive series interpolant show
@@ -546,9 +543,130 @@
             @test itp(1.0f0) isa Float32
         end
 
-        @testset "CubicSplineCache rejects exclusive PeriodicBC" begin
+        @testset "CubicSplineCache rejects exclusive PeriodicBC (direct construction)" begin
+            # The internal cache pool handles `:exclusive` correctly via the
+            # public oneshot/persistent APIs. Direct cache construction is
+            # rejected because the cache-direct eval path
+            # (`cubic_interp!(out, cache, y, xq)`) does not thread BC into the
+            # searcher, so seam-cell queries would silently mis-evaluate.
             x = range(0.0, step = 0.1, length = 10)
             @test_throws ArgumentError CubicSplineCache(x; bc = PeriodicBC(endpoint = :exclusive))
+        end
+
+        @testset "Cache key includes bc.period — distinct periods on same x" begin
+            # Same Vector x with two different explicit periods must produce
+            # two distinct caches: their bc_config.period and seam_h differ,
+            # and a stale cache hit would silently miscompute at the seam.
+            x = collect([0.0, 0.3, 0.6, 0.85, 1.05, 1.4, 1.85])    # non-uniform
+            y = [0.0, 1.0, 0.5, -0.5, 0.3, 0.8, -0.2]
+            xq = 1.95   # in seam region — sensitive to seam_h
+
+            v1 = cubic_interp(x, y, xq; bc = PeriodicBC(endpoint = :exclusive, period = 2.5))
+            v2 = cubic_interp(x, y, xq; bc = PeriodicBC(endpoint = :exclusive, period = 2.2))
+            v3 = cubic_interp(x, y, xq; bc = PeriodicBC(endpoint = :exclusive, period = 2.5))
+
+            # v1 and v3 should match (same period). v1 vs v2 should differ
+            # (different seam geometry → different result).
+            @test v1 ≈ v3
+            @test !isapprox(v1, v2; atol = 1.0e-6)
+
+            # Direct cache pool inspection — distinct cache objects for distinct periods.
+            c1 = FastInterpolations._get_cubic_cache(x, PeriodicBC(endpoint = :exclusive, period = 2.5))
+            c2 = FastInterpolations._get_cubic_cache(x, PeriodicBC(endpoint = :exclusive, period = 2.2))
+            @test c1.bc_config.period ≈ 2.5
+            @test c2.bc_config.period ≈ 2.2
+            @test c1.bc_config.h_n ≈ 0.65
+            @test c2.bc_config.h_n ≈ 0.35
+        end
+
+        @testset "Reject non-positive seam width" begin
+            # `period <= last(x) - first(x)` places the virtual endpoint at or
+            # before the last grid point — geometrically invalid. Must throw.
+            x = collect([0.0, 0.3, 0.6, 0.85, 1.05, 1.4, 1.85])    # span = 1.85
+            y = sin.(2π .* x ./ 2.0)
+
+            # period == grid span → h_n == 0 → divide by zero in solver
+            @test_throws ArgumentError cubic_interp(x, y, 0.5; bc = PeriodicBC(endpoint = :exclusive, period = 1.85))
+
+            # period < grid span → h_n < 0 → invalid seam geometry
+            @test_throws ArgumentError cubic_interp(x, y, 0.5; bc = PeriodicBC(endpoint = :exclusive, period = 1.5))
+        end
+
+        @testset "Range and Vector grids agree at seam with off-bit-equal period" begin
+            # An explicit period that passes the Range tolerance but is not
+            # exactly `step(x) * length(x)` makes `bc.h_n` differ from `step`.
+            # The cubic solver bakes `bc.h_n` into the periodic system; eval
+            # must use the same width at the seam cell. Vector grids already
+            # do (VectorSpacing has only n-1 interior cells, so the seam idx
+            # falls through to `bc.h_n`); Range grids store a uniform
+            # `ScalarSpacing` and previously returned `step` at every idx,
+            # producing a width mismatch with the solver. Pin Range vs Vector
+            # equivalence at seam queries.
+            r = range(0.0, step = 0.1, length = 10)
+            v = collect(r)                        # same grid, Vector form
+            y = sin.(2π .* v)
+            bc = PeriodicBC(endpoint = :exclusive, period = 1.0 + 1.0e-9)
+
+            # Single-y oneshot at interior + seam queries.
+            for xq in (0.05, 0.95)
+                @test cubic_interp(r, y, xq; bc = bc) ≈
+                    cubic_interp(v, y, xq; bc = bc) atol = 1.0e-13
+            end
+
+            # Series oneshot — scalar.
+            for xq in (0.05, 0.95)
+                vals_r = cubic_interp(r, Series(y, y), xq; bc = bc)
+                vals_v = cubic_interp(v, Series(y, y), xq; bc = bc)
+                @test vals_r[1] ≈ vals_v[1] atol = 1.0e-13
+            end
+
+            # Series oneshot — vector queries (covers seam region).
+            xqs = [0.05, 0.5, 0.95]
+            outs_r = cubic_interp(r, Series(y, y), xqs; bc = bc)
+            outs_v = cubic_interp(v, Series(y, y), xqs; bc = bc)
+            for j in eachindex(xqs)
+                @test outs_r[1][j] ≈ outs_v[1][j] atol = 1.0e-13
+            end
+        end
+
+        @testset "Cache key resolves Nothing period for Range grids" begin
+            # `bc.period === Nothing` means "auto-infer from grid"
+            # (`step(x)*length(x)`). The lookup must compare that inferred
+            # value to the cached period — otherwise a previous explicit-period
+            # cache that fell within the Range tolerance is reused incorrectly.
+            FastInterpolations.clear_cubic_cache!()
+            r = range(0.0, step = 0.1, length = 10)   # inferred period = 1.0
+            y = sin.(2π .* collect(r))
+
+            # 1e-9 is within `sqrt(eps(Float64)) ≈ 1.49e-8`, so the explicit
+            # period passes `_resolve_exclusive_period`'s tolerance.
+            period_offset = 1.0e-9
+            bc_explicit = PeriodicBC(endpoint = :exclusive, period = 1.0 + period_offset)
+            bc_inferred = PeriodicBC(endpoint = :exclusive)
+
+            # Seed the bank with the explicit-period cache.
+            cubic_interp(r, y, 0.5; bc = bc_explicit)
+
+            # Auto-infer must produce a cache with the inferred period (1.0),
+            # not the off-by-1e-9 explicit one already in the bank.
+            c_inferred = FastInterpolations._get_cubic_cache(r, bc_inferred)
+            c_explicit = FastInterpolations._get_cubic_cache(r, bc_explicit)
+            @test c_inferred.bc_config.period == 1.0
+            @test c_explicit.bc_config.period == 1.0 + period_offset
+            @test c_inferred !== c_explicit
+        end
+
+        @testset "autocache=false routes through internal builder" begin
+            # `autocache=false` must build an exclusive cache directly. The
+            # public outer `CubicSplineCache` rejects `:exclusive`, so the
+            # autocache=false branch must bypass it.
+            x = collect(range(0.0, 1.0, length = 11))[1:10]
+            y = sin.(2π .* x)
+            bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+
+            v_true = cubic_interp(x, y, 0.5; bc = bc, autocache = true)
+            v_false = cubic_interp(x, y, 0.5; bc = bc, autocache = false)
+            @test v_true ≈ v_false
         end
     end
 
@@ -593,8 +711,11 @@ end
             @test size(data_out) == (N + 1, 5)
             @test data_out[end, :] ≈ data_out[1, :]      # first slice copied
             @test grids_out[2] === y                      # unchanged reference
-            @test bcs_out[1] isa PeriodicBC{:exclusive}   # preserved endpoint
-            @test bcs_out[1].period ≈ 2π                  # resolved period
+            # Post-extension: bc is normalized to `:inclusive` (grid is now in
+            # closed-cycle inclusive form, so the seam cell is the last real cell).
+            # The resolved period is recoverable as `last(grid) - first(grid)`.
+            @test bcs_out[1] isa PeriodicBC{:inclusive}
+            @test last(grids_out[1]) - first(grids_out[1]) ≈ 2π
             @test bcs_out[2] === ZeroCurvBC()              # unchanged
         end
 
@@ -611,8 +732,9 @@ end
             @test data_out[end, :] ≈ data_out[1, :]       # dim 1 wrap
             @test data_out[:, end] ≈ data_out[:, 1]        # dim 2 wrap
             @test data_out[end, end] ≈ data_out[1, 1]      # corner
-            @test bcs_out[1].period ≈ 2π
-            @test bcs_out[2].period ≈ π
+            # Post-extension period is encoded in the grid span (not bc.period).
+            @test last(grids_out[1]) - first(grids_out[1]) ≈ 2π
+            @test last(grids_out[2]) - first(grids_out[2]) ≈ π
         end
 
         @testset "Range preserved after extension" begin
@@ -782,7 +904,7 @@ end
     # ========================================
     # bcs_store preserves endpoint info
     # ========================================
-    @testset "bcs_store preserves endpoint and period" begin
+    @testset "bcs_store reflects post-extension `:inclusive` form" begin
         Nx = 16
         x = range(0.0, step = 2π / Nx, length = Nx)
         y = range(0.0, 1.0, 8)
@@ -793,9 +915,9 @@ end
             bc = (PeriodicBC(endpoint = :exclusive), ZeroCurvBC())
         )
 
-        # Exclusive axis preserves endpoint symbol and resolved period
-        @test itp.bcs[1] isa PeriodicBC{:exclusive}
-        @test itp.bcs[1].period ≈ 2π
+        @test itp.bcs[1] isa PeriodicBC{:inclusive}                   # normalized
+        @test itp.bcs[1].period ≈ 2π                                  # materialized from grid span
+        @test itp.bcs[2] isa BCPair                                    # ZeroCurvBC → BCPair{Deriv2, Deriv2}
     end
 
     # ========================================

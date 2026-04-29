@@ -89,6 +89,62 @@
         end
     end
 
+    # Pin the seam region for both scalar and vector Series oneshot under
+    # zero-copy exclusive periodic. Reference is the single-vector 1D path,
+    # which routes the seam pair `(n, 1)` through `search_interval`.
+    @testset "PeriodicBC scalar (exclusive) — seam region" begin
+        x_exc = collect(range(0.0, step = 0.01, length = 100))
+        y1_exc = sin.(2π .* x_exc)
+        y2_exc = cos.(2π .* x_exc)
+        bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        for xq in (0.991, 0.995, 0.999)
+            vals = cubic_interp(x_exc, Series(y1_exc, y2_exc), xq; bc = bc_exc)
+            ref1 = cubic_interp(x_exc, y1_exc, xq; bc = bc_exc)
+            ref2 = cubic_interp(x_exc, y2_exc, xq; bc = bc_exc)
+            @test vals[1] ≈ ref1 atol = 1.0e-12
+            @test vals[2] ≈ ref2 atol = 1.0e-12
+        end
+    end
+
+    # Float32 grid + Float64 period: `WrapExtrap(x, bc)` must cast the period to
+    # the grid's float type, otherwise OOB-wrapped queries widen to Float64 and
+    # break the preallocated `_CubicAnchoredQuery{Float32, Float32}` buffer.
+    @testset "Float32 grid + Float64 period vector series" begin
+        x32 = collect(range(0.0f0, step = 0.1f0, length = 10))   # Float32, span 0.9
+        # Keep y in Float32 (default `2π` is Float64 → broadcast widens).
+        two_pi = Float32(2π)
+        y1 = sin.(two_pi .* x32)
+        y2 = cos.(two_pi .* x32)
+        @assert eltype(y1) === Float32
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)     # Float64 literal
+        # 1.05 is OOB, wraps via the seam-aware WrapExtrap.
+        xqs = Float32[0.05, 1.05]
+        outs = cubic_interp(x32, Series(y1, y2), xqs; bc = bc)
+        @test length(outs) == 2
+        @test eltype(outs[1]) === Float32
+        for j in eachindex(xqs)
+            ref1 = cubic_interp(x32, y1, xqs[j]; bc = bc)
+            ref2 = cubic_interp(x32, y2, xqs[j]; bc = bc)
+            @test outs[1][j] ≈ ref1
+            @test outs[2][j] ≈ ref2
+        end
+    end
+
+    @testset "PeriodicBC vector (exclusive) — seam region" begin
+        x_exc = collect(range(0.0, step = 0.01, length = 100))
+        y1_exc = sin.(2π .* x_exc)
+        y2_exc = cos.(2π .* x_exc)
+        bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        xqs_seam = [0.991, 0.995, 0.999]  # all in [x[n], x[1]+period) seam cell
+        outs = cubic_interp(x_exc, Series(y1_exc, y2_exc), xqs_seam; bc = bc_exc)
+        for j in eachindex(xqs_seam)
+            ref1 = cubic_interp(x_exc, y1_exc, xqs_seam[j]; bc = bc_exc)
+            ref2 = cubic_interp(x_exc, y2_exc, xqs_seam[j]; bc = bc_exc)
+            @test outs[1][j] ≈ ref1 atol = 1.0e-12
+            @test outs[2][j] ≈ ref2 atol = 1.0e-12
+        end
+    end
+
     @testset "PeriodicBC vector in-place" begin
         xqs = [0.1, 0.37, 0.5, 0.9]
         outputs = [zeros(length(xqs)) for _ in 1:2]
@@ -98,6 +154,59 @@
         for k in 1:2
             @test outputs[k] ≈ outs_alloc[k]
         end
+    end
+
+    # AD through exclusive PeriodicBC: WrapExtrap's period-cast path and the
+    # seam-aware anchor must preserve `ForwardDiff.Dual` end-to-end. Pin AD
+    # against the analytic derivative reference (single-y `cubic_interp` with
+    # `DerivOp(1)`).
+    @testset "ForwardDiff AD through exclusive PeriodicBC" begin
+        using ForwardDiff
+        x_exc = collect(range(0.0, step = 0.01, length = 100))
+        y1_exc = sin.(2π .* x_exc)
+        y2_exc = cos.(2π .* x_exc)
+        bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        f_ad(t) = sum(cubic_interp(x_exc, Series(y1_exc, y2_exc), t; bc = bc_exc))
+
+        for xq in (0.37, 0.95)   # interior + seam
+            grad_ad = ForwardDiff.derivative(f_ad, xq)
+            ref = cubic_interp(x_exc, y1_exc, xq; bc = bc_exc, deriv = DerivOp(1)) +
+                cubic_interp(x_exc, y2_exc, xq; bc = bc_exc, deriv = DerivOp(1))
+            @test grad_ad ≈ ref atol = 1.0e-10
+        end
+    end
+
+    # DerivOp through exclusive PeriodicBC at the seam: the seam-aware anchor
+    # carries (idxL=n, idxR=1); each derivative kernel selects different weight
+    # tuples (w1/w2/w3), so a weight-mismatch bug would only surface here.
+    @testset "DerivOp × Series exclusive — seam region" begin
+        x_exc = collect(range(0.0, step = 0.01, length = 100))
+        y1_exc = sin.(2π .* x_exc)
+        y2_exc = cos.(2π .* x_exc)
+        bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+        for d in (1, 2, 3), xq in (0.991, 0.995, 0.999)
+            op = DerivOp(d)
+            vals = cubic_interp(x_exc, Series(y1_exc, y2_exc), xq; bc = bc_exc, deriv = op)
+            ref1 = cubic_interp(x_exc, y1_exc, xq; bc = bc_exc, deriv = op)
+            ref2 = cubic_interp(x_exc, y2_exc, xq; bc = bc_exc, deriv = op)
+            @test vals[1] ≈ ref1 atol = 1.0e-9
+            @test vals[2] ≈ ref2 atol = 1.0e-9
+        end
+    end
+
+    @testset "Zero allocation (in-place vector, exclusive PeriodicBC)" begin
+        function measure(x_exc, y1_exc, y2_exc)
+            s = Series(y1_exc, y2_exc)
+            xqs = [0.05, 0.37, 0.75, 0.95]
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            bc_exc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+            cubic_interp!(outputs, x_exc, s, xqs; bc = bc_exc)  # warmup
+            return @allocated cubic_interp!(outputs, x_exc, s, xqs; bc = bc_exc)
+        end
+        x_exc = collect(range(0.0, step = 0.01, length = 100))
+        y1_exc = sin.(2π .* x_exc)
+        y2_exc = cos.(2π .* x_exc)
+        @test measure(x_exc, y1_exc, y2_exc) <= ALLOC_THRESHOLD
     end
 
     # NOTE: Allocation tests use the function-barrier pattern with arguments

@@ -177,10 +177,12 @@ Dispatches on `DerivOp{N}` to select the appropriate weight field from `_CubicAn
         aq = anchors[q]
         yb = y_bar[q]
         wyL, wyR, wzL, wzR = aq.w0
-        f_bar[aq.idx] += wyL * yb
-        f_bar[aq.idx + 1] += wyR * yb
-        z_bar[aq.idx] += wzL * yb
-        z_bar[aq.idx + 1] += wzR * yb
+        idxL = aq.idxL
+        idxR = aq.idxR
+        f_bar[idxL] += wyL * yb
+        f_bar[idxR] += wyR * yb
+        z_bar[idxL] += wzL * yb
+        z_bar[idxR] += wzR * yb
     end
     return nothing
 end
@@ -194,10 +196,12 @@ end
         aq = anchors[q]
         yb = y_bar[q]
         wyL, wyR, wzL, wzR = aq.w1
-        f_bar[aq.idx] += wyL * yb
-        f_bar[aq.idx + 1] += wyR * yb
-        z_bar[aq.idx] += wzL * yb
-        z_bar[aq.idx + 1] += wzR * yb
+        idxL = aq.idxL
+        idxR = aq.idxR
+        f_bar[idxL] += wyL * yb
+        f_bar[idxR] += wyR * yb
+        z_bar[idxL] += wzL * yb
+        z_bar[idxR] += wzR * yb
     end
     return nothing
 end
@@ -211,8 +215,8 @@ end
         aq = anchors[q]
         yb = y_bar[q]
         wzL, wzR = aq.w2
-        z_bar[aq.idx] += wzL * yb
-        z_bar[aq.idx + 1] += wzR * yb
+        z_bar[aq.idxL] += wzL * yb
+        z_bar[aq.idxR] += wzR * yb
     end
     return nothing
 end
@@ -226,8 +230,8 @@ end
         aq = anchors[q]
         yb = y_bar[q]
         wzL, wzR = aq.w3
-        z_bar[aq.idx] += wzL * yb
-        z_bar[aq.idx + 1] += wzR * yb
+        z_bar[aq.idxL] += wzL * yb
+        z_bar[aq.idxR] += wzR * yb
     end
     return nothing
 end
@@ -377,7 +381,7 @@ function _fixup_clampfill_anchors!(
         aq = anchors[i]
         w0_new = keep_w0 ? aq.w0 : (z, z, z, z)
         anchors[i] = _CubicAnchoredQuery{Tg, Tg}(
-            aq.idx, aq.xq, IN_DOMAIN,
+            getfield(aq, :stencil), aq.xq, IN_DOMAIN,
             w0_new, (z, z, z, z), (z, z), (z, z)
         )
     end
@@ -568,7 +572,7 @@ Operates in-place on `z_bar[1:n]`; `z_bar[n+1]` is not touched.
 """
 function _adjoint_periodic_solve!(
         z_bar::AbstractVector{Tv},
-        cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
+        cache::CubicSplineCache{Tg, X, F, <:PeriodicData{Tg}, S},
         q_t::AbstractVector,
         n::Int
     ) where {Tv, Tg, X, F, S <: AbstractGridSpacing{Tg}}

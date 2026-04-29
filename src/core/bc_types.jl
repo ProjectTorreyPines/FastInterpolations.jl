@@ -697,17 +697,14 @@ end
     )
 end
 
-@noinline function _throw_periodic_exclusive_cache()
-    throw(
-        ArgumentError(
-            "CubicSplineCache does not support PeriodicBC(endpoint=:exclusive) because " *
-                "the cache is grid-only and cannot extend data values. " *
-                "Use cubic_interp(x, y, xq; bc=PeriodicBC(endpoint=:exclusive)) or " *
-                "CubicInterpolant(x, y; bc=PeriodicBC(endpoint=:exclusive)) instead."
-        )
+@noinline _throw_periodic_exclusive_cache() = throw(
+    ArgumentError(
+        "CubicSplineCache(x; bc=PeriodicBC(endpoint=:exclusive)) direct construction is " *
+            "not supported. Use the public oneshot/persistent APIs " *
+            "(`cubic_interp(x, y, xq; bc=PeriodicBC(endpoint=:exclusive))` or " *
+            "`cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive))`) instead."
     )
-end
-
+)
 
 # ========================================
 # Cubic BC Type Alias

@@ -99,11 +99,17 @@ Four-tier dispatch based on element type:
 
 Throws `ArgumentError` if endpoints differ.
 """
-@inline function _check_periodic_endpoints(bc::PeriodicBC, y::AbstractVector)
+@inline function _check_periodic_endpoints(bc::PeriodicBC{:inclusive}, y::AbstractVector)
     periodic_check(bc) || return nothing
     _check_periodic_endpoints(y)
     return nothing
 end
+
+# `:exclusive` form has no endpoint-matching constraint: the user provides n
+# distinct samples and the seam is virtual (constructed from `bc.period`).
+# Calling `_check_periodic_endpoints(y)` on raw exclusive y would falsely
+# reject valid data (e.g., `y = sin.(2π .* x_excl)` where `y[1] ≠ y[n]`).
+@inline _check_periodic_endpoints(::PeriodicBC{:exclusive}, ::AbstractVector) = nothing
 
 @inline function _check_periodic_endpoints(y::AbstractVector{T}) where {T <: AbstractFloat}
     isapprox(first(y), last(y); atol = 8 * eps(T), rtol = sqrt(eps(T))) ||
@@ -442,13 +448,15 @@ _extend_values(y::AbstractVector) = vcat(y, first(y))
 
 @inline function WrapExtrap(x::AbstractVector, bc::PeriodicBC{:exclusive, <:Real})
     x_min = first(x)
-    # Route through `_resolve_exclusive_period` so Range grids get the same
-    # `period ≈ step(x) * length(x)` cross-check that persistent paths rely on.
-    # Without this, `linear_interp(range(0,step=0.1,length=10), y, q;
-    # bc=PeriodicBC(:exclusive, period=2.0))` would silently accept a period
-    # that disagrees with the grid's implied period — persistent throws on the
-    # same input, so oneshot must too.
-    period = _resolve_exclusive_period(x, bc)
+    # `_resolve_exclusive_period` returns the user's period as-is; cast to
+    # grid float to keep wrap arithmetic in grid precision. Without this a
+    # `Float64` literal period on a `Float32` grid silently produces a
+    # `WrapExtrap{Float64}`, polluting downstream anchors/weights (codex P2 #1).
+    # Mirrors `_resolve_seam_period` in hermite_periodic_slopes.jl.
+    period_raw = _resolve_exclusive_period(x, bc)
+    Tg_raw = eltype(x)
+    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
+    period = Tg(period_raw)
     x_max = x_min + period
     # Virtual endpoint must lie strictly beyond the last grid point so the seam
     # cell [x[end], x_min+period] is non-empty and the grid covers at most one
@@ -723,7 +731,7 @@ letting user-facing oneshot entry points use a single, non-misleading call.
 end
 
 """
-    _prepare_periodic_nd(grids, data, bcs) -> (grids_ext, data_ext, bcs_resolved)
+    _prepare_periodic_nd(grids, data, bcs) -> (grids_ext, data_ext, bcs_post_extend)
 
 Prepare N-dimensional grids and data for periodic interpolation.
 
@@ -736,7 +744,12 @@ Called once at build time before `_build_nd_coeffs`.
 # Returns
 - `grids_ext`: Grids with exclusive axes extended (Range type preserved when possible)
 - `data_ext`: Data with first slice appended along each exclusive axis
-- `bcs_resolved`: BCs with resolved period for exclusive axes (for display/introspection)
+- `bcs_post_extend`: Per-axis BCs after extension. Exclusive periodic axes are
+  normalized to `PeriodicBC(:inclusive, check=false)` (period dropped — the
+  extended grid carries the period implicitly as `last(grid_ext) - first(grid_ext)`).
+  Callers that need the period for storage/introspection re-materialize via
+  `_with_resolved_period(bc, last(grid_ext) - first(grid_ext))`. Other axes pass
+  through unchanged.
 """
 function _prepare_periodic_nd(
         grids::NTuple{N, AbstractVector{Tg}},
@@ -797,7 +810,12 @@ end
         grid_ext = grid_d isa AbstractRange ?
             _to_float_adding_endpoint(grid_d, Tg) :
             extend_vector_grid(grid_d, x_end, Tg)
-        return (grid_ext, _with_resolved_period(bc_d, period))
+        # Normalize bc to `:inclusive` post-extension: the extended grid IS a
+        # closed-cycle inclusive form (length n+1, last point at x[1]+period),
+        # so downstream solvers/cache builders should treat it as inclusive.
+        # Without this normalization, BC-aware solvers (e.g. cubic) would
+        # interpret `:exclusive` as "raw n-grid" and miscount the cycle.
+        return (grid_ext, _bc_after_extend(bc_d))
     end
     grids_out = map(first, processed)
     bcs_out = map(last, processed)

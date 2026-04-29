@@ -42,9 +42,36 @@
     return output
 end
 
-# Periodic: extend grid ONCE, then solve+eval per y-vector reusing buffers.
-# Phase 1: _cubic_periodic_solve! for first series → establishes cache, x_p, y_p, z
-# Phase 2: reuse y_p + z for remaining series (only y-data changes, no grid re-extension)
+# Build a seam-aware cubic anchor for one query against a (possibly raw
+# n-size) periodic cache. Bypasses `_anchor_query_impl` because that helper's
+# `_anchor_loc` discards `idx_R`, so it cannot represent the periodic-exclusive
+# seam pair `(n, 1)`. Search returns the 4-tuple directly; `_periodic_cell_h`
+# supplies the seam-aware width (`bc.h_n` at the seam, spacing accessor
+# elsewhere). Used by both scalar and vector periodic series helpers.
+@inline function _build_periodic_cubic_anchor(
+        cache::CubicSplineCache,
+        xq,
+        extrap_p::AbstractExtrap,
+        searcher::Searcher,
+    )
+    xq_wrapped = _wrap_to_domain(xq, extrap_p)
+    idxL, idxR, xL, xR = search_interval(searcher, cache.x, xq_wrapped)
+    h, inv_h = _periodic_cell_h(cache.spacing, idxL, cache.bc_config)
+    dL = xq_wrapped - xL
+    dR = xR - xq_wrapped
+    w0 = _compute_anchor_weights(EvalValue(), h, inv_h, dL, dR)
+    w1 = _compute_anchor_weights(EvalDeriv1(), h, inv_h, dL, dR)
+    w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
+    w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
+    return _CubicAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, w0, w1, w2, w3, eltype(cache.x))
+end
+
+# Periodic scalar: zero-copy. One search → seam-aware `_IdxPair` anchor → loop
+# solve+eval per series. No grid extension, no `y_p` rebuild.
+#
+# Mirrors `_linear_oneshot_series_periodic!`: wrap query, search once, anchor
+# carries seam pair, K-loop solves and evaluates. Caller passes a bc-threaded
+# `searcher` so the seam dispatch fires for `:exclusive`.
 @inline @with_pool pool function _cubic_oneshot_series_periodic!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -57,45 +84,34 @@ end
     ) where {Tg}
     vecs = _series_vectors(s)
     n = length(x)
-    Tv_out = _value_type(_series_eltype(s), Tg)
+    K = length(output)
 
-    # Promote first series to Tv_out so z/y_p buffers match all series (mixed-type safety)
-    y1_promoted = acquire!(pool, Tv_out, n)
-    copyto!(y1_promoted, 1, first(vecs), 1, n)
-
-    # ── Phase 1: Extend grid + solve first series (establishes cache + x_p) ──
-    cache, y_p_first, z = _cubic_periodic_solve!(pool, x, y1_promoted, bc, autocache)
-    n_p = length(y_p_first)  # inclusive length (n or n+1 depending on BC mode)
-
-    # Build anchor on the extended (inclusive) grid — once for all series
-    aq = _anchor_query(cache.x, xq, Val(:cubic), true, searcher)
-    output[1] = _cubic_eval_kernel(y_p_first, z, aq, op)
-
-    # ── Phase 2: Reuse z buffer for remaining series (no grid re-extension) ──
-    # For exclusive BC: y_p_first is a pool buffer of length n+1, safe to overwrite
-    # For inclusive BC: y_p_first IS the user's vector, must NOT mutate it
-    is_exclusive = bc isa PeriodicBC{:exclusive}
-    y_p = if is_exclusive
-        y_p_first  # pool buffer, safe to reuse
-    else
-        acquire!(pool, Tv_out, n_p)  # separate buffer for inclusive BC
+    # `:inclusive` requires `y[1] ≈ y[end]` per series; `:exclusive` is no-op.
+    if bc isa PeriodicBC{:inclusive}
+        @inbounds for k in 1:K
+            _check_periodic_endpoints(bc, vecs[k])
+        end
     end
 
-    for k in 2:length(output)
-        if is_exclusive
-            @inbounds copyto!(y_p, 1, vecs[k], 1, n)
-            @inbounds y_p[n + 1] = vecs[k][1]
-        else
-            @inbounds copyto!(y_p, 1, vecs[k], 1, n_p)
-        end
-        _check_periodic_endpoints(bc, y_p)
-        _solve_system!(z, cache, y_p, cache.bc_config)
-        @inbounds output[k] = _cubic_eval_kernel(y_p, z, aq, op)
+    # Build cache on the user's grid (BC-aware: `_build_periodic_cache`).
+    cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
+    extrap_p = _resolve_extrap(NoExtrap(), bc, cache.x, first(vecs))
+    aq = _build_periodic_cubic_anchor(cache, xq, extrap_p, searcher)
+
+    # Solve + eval per series. Both `_solve_system!` and the kernel read `y`
+    # read-only (the periodic solver acquires its own scratch internally),
+    # so we feed `vecs[k]` directly — no per-series copy needed.
+    Tz = _output_eltype(_series_eltype(s), eltype(cache.x))
+    z = acquire!(pool, Tz, n)
+    @inbounds for k in 1:K
+        _solve_system!(z, cache, vecs[k], cache.bc_config)
+        output[k] = _cubic_eval_kernel(vecs[k], z, aq, op)
     end
     return output
 end
 
-# Periodic vector: extend grid once, pre-compute anchors, then solve+eval per series.
+# Periodic vector: zero-copy. Build cache once, pre-fill seam-aware anchors
+# for all queries, then solve+eval per series. No grid extension.
 @inline function _cubic_oneshot_series_periodic_vec!(
         pool::AbstractArrayPool,
         outputs::AbstractVector{<:AbstractVector},
@@ -110,47 +126,35 @@ end
     vecs = _series_vectors(s)
     n = length(x)
     K = n_series(s)
-    Tv_out = _value_type(_series_eltype(s), Tg)
 
-    # Promote first series to Tv_out so z/y_p buffers match all series (mixed-type safety)
-    y1_promoted = acquire!(pool, Tv_out, n)
-    copyto!(y1_promoted, 1, first(vecs), 1, n)
-
-    # Phase 1: Extend grid + solve first series (establishes cache + x_p)
-    cache, y_p_first, z = _cubic_periodic_solve!(pool, x, y1_promoted, bc, autocache)
-    n_p = length(y_p_first)
-
-    # Pre-compute anchors on the extended (inclusive) grid — once for all series
-    # Tq widens when grid is Dual: promote_type(Float64, Dual) = Dual
-    Tq_w = promote_type(Tq, eltype(cache.x))
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{eltype(cache.x), Tq_w}, length(xqs))
-    searcher = _resolve_search(cache.x, xqs, search, nothing)
-    _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), true, searcher)
-
-    # Eval first series (already solved)
-    @inbounds for j in eachindex(xqs)
-        outputs[1][j] = _cubic_eval_kernel(y_p_first, z, aq_vec[j], op)
-    end
-
-    # Phase 2: Reuse z buffer for remaining series
-    is_exclusive = bc isa PeriodicBC{:exclusive}
-    y_p = if is_exclusive
-        y_p_first  # pool buffer, safe to reuse
-    else
-        acquire!(pool, Tv_out, n_p)  # separate buffer for inclusive BC
-    end
-
-    for k in 2:K
-        if is_exclusive
-            @inbounds copyto!(y_p, 1, vecs[k], 1, n)
-            @inbounds y_p[n + 1] = vecs[k][1]
-        else
-            @inbounds copyto!(y_p, 1, vecs[k], 1, n_p)
+    # `:inclusive` validation per-series (`:exclusive` no-op).
+    if bc isa PeriodicBC{:inclusive}
+        @inbounds for k in 1:K
+            _check_periodic_endpoints(bc, vecs[k])
         end
-        _check_periodic_endpoints(bc, y_p)
-        _solve_system!(z, cache, y_p, cache.bc_config)
-        @inbounds for j in eachindex(xqs)
-            outputs[k][j] = _cubic_eval_kernel(y_p, z, aq_vec[j], op)
+    end
+
+    cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
+    extrap_p = _resolve_extrap(NoExtrap(), bc, cache.x, first(vecs))
+
+    # Pre-fill seam-aware anchors via `_build_periodic_cubic_anchor`.
+    Tg_c = eltype(cache.x)
+    Tq_w = promote_type(Tq, Tg_c)
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg_c, Tq_w}, length(xqs))
+    searcher = _resolve_search(cache.x, xqs, search, nothing, bc)
+    @inbounds for j in eachindex(xqs)
+        aq_vec[j] = _build_periodic_cubic_anchor(cache, xqs[j], extrap_p, searcher)
+    end
+
+    # Solve per series, eval at all queries. `_solve_system!` reads `y`
+    # read-only (periodic solver acquires its own scratch); kernel reads
+    # `y[idxL]`/`y[idxR]` — both can come straight from `vecs[k]`.
+    Tz = _output_eltype(_series_eltype(s), Tg_c)
+    z = acquire!(pool, Tz, n)
+    @inbounds for k in 1:K
+        _solve_system!(z, cache, vecs[k], cache.bc_config)
+        for j in eachindex(xqs)
+            outputs[k][j] = _cubic_eval_kernel(vecs[k], z, aq_vec[j], op)
         end
     end
     return outputs
@@ -189,7 +193,10 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
     K = n_series(s)
     Tg_actual = eltype(x)
     output = Vector{_series_output_type(_output_eltype(_series_eltype(s), Tg_actual), Tq)}(undef, K)
-    searcher = _resolve_search(x, xq, search, hint)
+    # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher
+    # (`search.jl:939`) — required for the zero-copy seam pair in the periodic
+    # series helper. NoBC default keeps non-periodic paths unchanged.
+    searcher = _resolve_search(x, xq, search, hint, bc)
     if _is_periodic_bc(bc)
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
         return output
@@ -217,7 +224,8 @@ end
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
-    searcher = _resolve_search(x, xq, search, hint)
+    # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher.
+    searcher = _resolve_search(x, xq, search, hint, bc)
     if _is_periodic_bc(bc)
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
         return output

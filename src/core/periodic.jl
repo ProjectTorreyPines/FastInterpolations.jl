@@ -448,13 +448,15 @@ _extend_values(y::AbstractVector) = vcat(y, first(y))
 
 @inline function WrapExtrap(x::AbstractVector, bc::PeriodicBC{:exclusive, <:Real})
     x_min = first(x)
-    # Route through `_resolve_exclusive_period` so Range grids get the same
-    # `period ≈ step(x) * length(x)` cross-check that persistent paths rely on.
-    # Without this, `linear_interp(range(0,step=0.1,length=10), y, q;
-    # bc=PeriodicBC(:exclusive, period=2.0))` would silently accept a period
-    # that disagrees with the grid's implied period — persistent throws on the
-    # same input, so oneshot must too.
-    period = _resolve_exclusive_period(x, bc)
+    # `_resolve_exclusive_period` returns the user's period as-is; cast to
+    # grid float to keep wrap arithmetic in grid precision. Without this a
+    # `Float64` literal period on a `Float32` grid silently produces a
+    # `WrapExtrap{Float64}`, polluting downstream anchors/weights (codex P2 #1).
+    # Mirrors `_resolve_seam_period` in hermite_periodic_slopes.jl.
+    period_raw = _resolve_exclusive_period(x, bc)
+    Tg_raw = eltype(x)
+    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
+    period = Tg(period_raw)
     x_max = x_min + period
     # Virtual endpoint must lie strictly beyond the last grid point so the seam
     # cell [x[end], x_min+period] is non-empty and the grid covers at most one

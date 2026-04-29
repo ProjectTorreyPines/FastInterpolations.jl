@@ -109,28 +109,19 @@ end
 #
 # Inclusive form: spacing carries all n cells (length(x) - 1 = n), so any
 #   `idx in 1..n` resolves through the standard accessor.
-# Exclusive form: spacing carries only n-1 interior cells; the seam cell
-#   (`idx == length(z)` where `length(z) == n`) reads `h_n` from `bc_config`.
-#   `idx_R == 1` at the seam from the searcher dispatch confirms this is
-#   the wrapped cell, but indexing on `idx > length(spacing entries)` is
-#   simpler and uniform across ScalarSpacing/VectorSpacing.
+# Exclusive form: the cycle length is `n_cells = length(bc.q)` and the seam
+#   cell (`idx == n_cells`) is virtual — its width is `bc.h_n` (computed at
+#   cache build from `period - (last(x) - first(x))`). For ScalarSpacing this
+#   may differ from `step` if the user-supplied period was within the Range
+#   tolerance but not bit-equal to `step * length`.
 @inline _periodic_cell_h(spacing, idx::Int, ::PeriodicData{Tg, :inclusive}) where {Tg} =
     (_get_h(spacing, idx), _get_inv_h(spacing, idx))
 
 @inline function _periodic_cell_h(spacing::AbstractGridSpacing{Tg}, idx::Int, bc::PeriodicData{Tg, :exclusive}) where {Tg}
-    # ScalarSpacing (uniform Range): all cells share `step`; seam_h equals step
-    # for valid exclusive Range input. Return the spacing accessor — uniform.
-    # VectorSpacing: spacing.h has n-1 entries; idx == n is OOB → seam.
-    return idx > _periodic_n_real_cells(spacing) ?
+    return idx == length(bc.q) ?
         (bc.h_n, inv(bc.h_n)) :
         (_get_h(spacing, idx), _get_inv_h(spacing, idx))
 end
-
-# Number of real (spacing-resident) cell widths. For VectorSpacing this is
-# `length(spacing.h)`; for ScalarSpacing (uniform), every index is "real" since
-# the constant step is well-defined for any idx.
-@inline _periodic_n_real_cells(s::ScalarSpacing) = typemax(Int)   # always real (uniform step)
-@inline _periodic_n_real_cells(s::VectorSpacing) = length(s.h)
 
 # ========================================
 # Extrapolation-aware Evaluation

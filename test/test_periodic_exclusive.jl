@@ -553,12 +553,10 @@
             @test_throws ArgumentError CubicSplineCache(x; bc = PeriodicBC(endpoint = :exclusive))
         end
 
-        @testset "Cache key includes bc.period — distinct periods on same x (codex P1)" begin
-            # Same Vector x called twice with different explicit periods: each
-            # must build/lookup a distinct cache. Pre-fix: bank partitioned by
-            # `(T, X, S, E)` only and `_rcu_lookup` compared `x` only, so the
-            # second call silently hit the first cache and used the stale
-            # period in its bc_config (wrong seam_h, wrong q vector).
+        @testset "Cache key includes bc.period — distinct periods on same x" begin
+            # Same Vector x with two different explicit periods must produce
+            # two distinct caches: their bc_config.period and seam_h differ,
+            # and a stale cache hit would silently miscompute at the seam.
             x = collect([0.0, 0.3, 0.6, 0.85, 1.05, 1.4, 1.85])    # non-uniform
             y = [0.0, 1.0, 0.5, -0.5, 0.3, 0.8, -0.2]
             xq = 1.95   # in seam region — sensitive to seam_h
@@ -581,11 +579,9 @@
             @test c2.bc_config.h_n ≈ 0.35
         end
 
-        @testset "Reject non-positive seam width (codex P2.1)" begin
-            # Pre-fix: `_build_periodic_cache(x, bc::PeriodicBC{:exclusive})`
-            # computed `h_n = period - (last(x) - first(x))` without checking
-            # `h_n > 0`. Master path threw via `_extend_exclusive`'s
-            # `last(x) < x_end` validation; zero-copy bypass lost that.
+        @testset "Reject non-positive seam width" begin
+            # `period <= last(x) - first(x)` places the virtual endpoint at or
+            # before the last grid point — geometrically invalid. Must throw.
             x = collect([0.0, 0.3, 0.6, 0.85, 1.05, 1.4, 1.85])    # span = 1.85
             y = sin.(2π .* x ./ 2.0)
 
@@ -596,11 +592,74 @@
             @test_throws ArgumentError cubic_interp(x, y, 0.5; bc = PeriodicBC(endpoint = :exclusive, period = 1.5))
         end
 
-        @testset "autocache=false routes through internal builder (codex P2.2)" begin
-            # Pre-fix: `_get_cubic_cache(x, bc, autocache=false)` routed to
-            # `CubicSplineCache(...; bc=bc)` outer constructor, which (post
-            # commit 7d9b125e) rejects `:exclusive` direct construction. So
-            # the public oneshot API silently broke for `autocache=false`.
+        @testset "Range and Vector grids agree at seam with off-bit-equal period" begin
+            # An explicit period that passes the Range tolerance but is not
+            # exactly `step(x) * length(x)` makes `bc.h_n` differ from `step`.
+            # The cubic solver bakes `bc.h_n` into the periodic system; eval
+            # must use the same width at the seam cell. Vector grids already
+            # do (VectorSpacing has only n-1 interior cells, so the seam idx
+            # falls through to `bc.h_n`); Range grids store a uniform
+            # `ScalarSpacing` and previously returned `step` at every idx,
+            # producing a width mismatch with the solver. Pin Range vs Vector
+            # equivalence at seam queries.
+            r = range(0.0, step = 0.1, length = 10)
+            v = collect(r)                        # same grid, Vector form
+            y = sin.(2π .* v)
+            bc = PeriodicBC(endpoint = :exclusive, period = 1.0 + 1.0e-9)
+
+            # Single-y oneshot at interior + seam queries.
+            for xq in (0.05, 0.95)
+                @test cubic_interp(r, y, xq; bc = bc) ≈
+                      cubic_interp(v, y, xq; bc = bc) atol = 1.0e-13
+            end
+
+            # Series oneshot — scalar.
+            for xq in (0.05, 0.95)
+                vals_r = cubic_interp(r, Series(y, y), xq; bc = bc)
+                vals_v = cubic_interp(v, Series(y, y), xq; bc = bc)
+                @test vals_r[1] ≈ vals_v[1] atol = 1.0e-13
+            end
+
+            # Series oneshot — vector queries (covers seam region).
+            xqs = [0.05, 0.5, 0.95]
+            outs_r = cubic_interp(r, Series(y, y), xqs; bc = bc)
+            outs_v = cubic_interp(v, Series(y, y), xqs; bc = bc)
+            for j in eachindex(xqs)
+                @test outs_r[1][j] ≈ outs_v[1][j] atol = 1.0e-13
+            end
+        end
+
+        @testset "Cache key resolves Nothing period for Range grids" begin
+            # `bc.period === Nothing` means "auto-infer from grid"
+            # (`step(x)*length(x)`). The lookup must compare that inferred
+            # value to the cached period — otherwise a previous explicit-period
+            # cache that fell within the Range tolerance is reused incorrectly.
+            FastInterpolations.clear_cubic_cache!()
+            r = range(0.0, step = 0.1, length = 10)   # inferred period = 1.0
+            y = sin.(2π .* collect(r))
+
+            # 1e-9 is within `sqrt(eps(Float64)) ≈ 1.49e-8`, so the explicit
+            # period passes `_resolve_exclusive_period`'s tolerance.
+            period_offset = 1.0e-9
+            bc_explicit = PeriodicBC(endpoint = :exclusive, period = 1.0 + period_offset)
+            bc_inferred = PeriodicBC(endpoint = :exclusive)
+
+            # Seed the bank with the explicit-period cache.
+            cubic_interp(r, y, 0.5; bc = bc_explicit)
+
+            # Auto-infer must produce a cache with the inferred period (1.0),
+            # not the off-by-1e-9 explicit one already in the bank.
+            c_inferred = FastInterpolations._get_cubic_cache(r, bc_inferred)
+            c_explicit = FastInterpolations._get_cubic_cache(r, bc_explicit)
+            @test c_inferred.bc_config.period == 1.0
+            @test c_explicit.bc_config.period == 1.0 + period_offset
+            @test c_inferred !== c_explicit
+        end
+
+        @testset "autocache=false routes through internal builder" begin
+            # `autocache=false` must build an exclusive cache directly. The
+            # public outer `CubicSplineCache` rejects `:exclusive`, so the
+            # autocache=false branch must bypass it.
             x = collect(range(0.0, 1.0, length = 11))[1:10]
             y = sin.(2π .* x)
             bc = PeriodicBC(endpoint = :exclusive, period = 1.0)

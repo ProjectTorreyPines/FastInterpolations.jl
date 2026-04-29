@@ -82,10 +82,11 @@ end
     xq_wrapped = _wrap_to_domain(xq, extrap_p)
     idxL, idxR, xL, xR = search_interval(searcher, cache.x, xq_wrapped)
 
-    # Geometry: `_get_h(::AbstractVector, xL, xR) = xR - xL` works directly
-    # for the seam cell since `xR = x[1] + period` is the period-shifted node.
-    h = _get_h(cache.x, xL, xR)
-    inv_h = _get_inv_h(cache.x, xL, xR)
+    # `_periodic_cell_h` returns `bc.h_n` at the seam cell (where solver and
+    # eval must agree on width) and the spacing accessor elsewhere. Going
+    # through `_get_h(cache.x, xL, xR)` would skip the seam fixup for
+    # `_CachedRange` since that overload returns the cached `step`.
+    h, inv_h = _periodic_cell_h(cache.spacing, idxL, cache.bc_config)
     dL = xq_wrapped - xL
     dR = xR - xq_wrapped
     w0 = _compute_anchor_weights(EvalValue(), h, inv_h, dL, dR)
@@ -145,8 +146,7 @@ end
     @inbounds for j in eachindex(xqs)
         xq_wrapped = _wrap_to_domain(xqs[j], extrap_p)
         idxL, idxR, xL, xR = search_interval(searcher, cache.x, xq_wrapped)
-        h = _get_h(cache.x, xL, xR)
-        inv_h = _get_inv_h(cache.x, xL, xR)
+        h, inv_h = _periodic_cell_h(cache.spacing, idxL, cache.bc_config)
         dL = xq_wrapped - xL
         dR = xR - xq_wrapped
         w0 = _compute_anchor_weights(EvalValue(), h, inv_h, dL, dR)

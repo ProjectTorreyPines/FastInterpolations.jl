@@ -89,13 +89,10 @@
         end
     end
 
-    # codex P2.3: The anchor path used by Series oneshot stores only `idx::Int`
-    # and reads `y[aq.idx + 1]`/`z[aq.idx + 1]` in the kernel. With zero-copy
-    # exclusive (n-size data) the seam cell needs `idxR = 1`, but `aq.idx + 1
-    # = n + 1` is OOB / wraps to garbage. These tests pin the seam region for
-    # both scalar and vector Series oneshot. Reference is the single-vector
-    # 1D path which already handles the seam via `search_interval`'s 4-tuple.
-    @testset "PeriodicBC scalar (exclusive) — seam region (codex P2.3)" begin
+    # Pin the seam region for both scalar and vector Series oneshot under
+    # zero-copy exclusive periodic. Reference is the single-vector 1D path,
+    # which routes the seam pair `(n, 1)` through `search_interval`.
+    @testset "PeriodicBC scalar (exclusive) — seam region" begin
         x_exc = collect(range(0.0, step = 0.01, length = 100))
         y1_exc = sin.(2π .* x_exc)
         y2_exc = cos.(2π .* x_exc)
@@ -109,7 +106,31 @@
         end
     end
 
-    @testset "PeriodicBC vector (exclusive) — seam region (codex P2.3)" begin
+    # Float32 grid + Float64 period: `WrapExtrap(x, bc)` must cast the period to
+    # the grid's float type, otherwise OOB-wrapped queries widen to Float64 and
+    # break the preallocated `_CubicAnchoredQuery{Float32, Float32}` buffer.
+    @testset "Float32 grid + Float64 period vector series" begin
+        x32 = collect(range(0.0f0, step = 0.1f0, length = 10))   # Float32, span 0.9
+        # Keep y in Float32 (default `2π` is Float64 → broadcast widens).
+        two_pi = Float32(2π)
+        y1 = sin.(two_pi .* x32)
+        y2 = cos.(two_pi .* x32)
+        @assert eltype(y1) === Float32
+        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)     # Float64 literal
+        # 1.05 is OOB, wraps via the seam-aware WrapExtrap.
+        xqs = Float32[0.05, 1.05]
+        outs = cubic_interp(x32, Series(y1, y2), xqs; bc = bc)
+        @test length(outs) == 2
+        @test eltype(outs[1]) === Float32
+        for j in eachindex(xqs)
+            ref1 = cubic_interp(x32, y1, xqs[j]; bc = bc)
+            ref2 = cubic_interp(x32, y2, xqs[j]; bc = bc)
+            @test outs[1][j] ≈ ref1
+            @test outs[2][j] ≈ ref2
+        end
+    end
+
+    @testset "PeriodicBC vector (exclusive) — seam region" begin
         x_exc = collect(range(0.0, step = 0.01, length = 100))
         y1_exc = sin.(2π .* x_exc)
         y2_exc = cos.(2π .* x_exc)

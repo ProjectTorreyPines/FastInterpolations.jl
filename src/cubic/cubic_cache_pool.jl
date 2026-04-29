@@ -430,8 +430,17 @@ end
 # configuration and must produce two distinct caches.
 @inline _verify_cache_match(::Any, ::Any) = true
 @inline function _verify_cache_match(cache::CubicSplineCache, bc::PeriodicBC{:exclusive, P}) where {P}
-    P === Nothing && return true   # Range-inferred period — derived from grid, no mismatch possible
-    return cache.bc_config.period == bc.period
+    # `bc.period === Nothing` means "auto-infer from grid"; the requested
+    # period is `step(x) * length(x)` for Range grids (the only shape allowed
+    # to omit it). Comparing to `cache.bc_config.period` here prevents reusing
+    # a stale cache built with an explicit period that passed the Range
+    # tolerance but does not match the inferred value.
+    requested = if P === Nothing
+        step(cache.x) * length(cache.x)
+    else
+        bc.period
+    end
+    return cache.bc_config.period == requested
 end
 
 # ---------------------------------------------------------------

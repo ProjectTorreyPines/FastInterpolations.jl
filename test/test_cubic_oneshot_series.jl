@@ -101,8 +101,8 @@
             vals = cubic_interp(x_exc, Series(y1_exc, y2_exc), xq; bc = bc_exc)
             ref1 = cubic_interp(x_exc, y1_exc, xq; bc = bc_exc)
             ref2 = cubic_interp(x_exc, y2_exc, xq; bc = bc_exc)
-            @test vals[1] ≈ ref1 atol = 1e-12
-            @test vals[2] ≈ ref2 atol = 1e-12
+            @test vals[1] ≈ ref1 atol = 1.0e-12
+            @test vals[2] ≈ ref2 atol = 1.0e-12
         end
     end
 
@@ -140,8 +140,8 @@
         for j in eachindex(xqs_seam)
             ref1 = cubic_interp(x_exc, y1_exc, xqs_seam[j]; bc = bc_exc)
             ref2 = cubic_interp(x_exc, y2_exc, xqs_seam[j]; bc = bc_exc)
-            @test outs[1][j] ≈ ref1 atol = 1e-12
-            @test outs[2][j] ≈ ref2 atol = 1e-12
+            @test outs[1][j] ≈ ref1 atol = 1.0e-12
+            @test outs[2][j] ≈ ref2 atol = 1.0e-12
         end
     end
 
@@ -171,8 +171,8 @@
         for xq in (0.37, 0.95)   # interior + seam
             grad_ad = ForwardDiff.derivative(f_ad, xq)
             ref = cubic_interp(x_exc, y1_exc, xq; bc = bc_exc, deriv = DerivOp(1)) +
-                  cubic_interp(x_exc, y2_exc, xq; bc = bc_exc, deriv = DerivOp(1))
-            @test grad_ad ≈ ref atol = 1e-10
+                cubic_interp(x_exc, y2_exc, xq; bc = bc_exc, deriv = DerivOp(1))
+            @test grad_ad ≈ ref atol = 1.0e-10
         end
     end
 
@@ -189,8 +189,8 @@
             vals = cubic_interp(x_exc, Series(y1_exc, y2_exc), xq; bc = bc_exc, deriv = op)
             ref1 = cubic_interp(x_exc, y1_exc, xq; bc = bc_exc, deriv = op)
             ref2 = cubic_interp(x_exc, y2_exc, xq; bc = bc_exc, deriv = op)
-            @test vals[1] ≈ ref1 atol = 1e-9
-            @test vals[2] ≈ ref2 atol = 1e-9
+            @test vals[1] ≈ ref1 atol = 1.0e-9
+            @test vals[2] ≈ ref2 atol = 1.0e-9
         end
     end
 

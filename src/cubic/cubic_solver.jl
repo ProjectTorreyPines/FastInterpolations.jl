@@ -121,11 +121,13 @@ function _build_periodic_cache(x::AbstractVector{T}, bc::PeriodicBC) where {T}
         # Seam cell width must be strictly positive — `period <= last(x) - first(x)`
         # places the virtual endpoint at or before the last grid point, which
         # is geometrically invalid (codex P2.1).
-        h_n > 0 || throw(ArgumentError(
-            "PeriodicBC(endpoint=:exclusive) requires period > (last(x) - first(x)). " *
-                "Got period=$period, grid span=$(last(x) - first(x)), " *
-                "yielding seam cell width h_n=$h_n (must be > 0)."
-        ))
+        h_n > 0 || throw(
+            ArgumentError(
+                "PeriodicBC(endpoint=:exclusive) requires period > (last(x) - first(x)). " *
+                    "Got period=$period, grid span=$(last(x) - first(x)), " *
+                    "yielding seam cell width h_n=$h_n (must be > 0)."
+            )
+        )
         E = :exclusive
     else
         n = length(x) - 1

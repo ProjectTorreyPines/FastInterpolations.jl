@@ -610,7 +610,7 @@
             # Single-y oneshot at interior + seam queries.
             for xq in (0.05, 0.95)
                 @test cubic_interp(r, y, xq; bc = bc) ≈
-                      cubic_interp(v, y, xq; bc = bc) atol = 1.0e-13
+                    cubic_interp(v, y, xq; bc = bc) atol = 1.0e-13
             end
 
             # Series oneshot — scalar.

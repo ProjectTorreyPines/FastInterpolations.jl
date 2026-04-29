@@ -323,13 +323,13 @@ function _build_hetero_precomputed(
 
     # Extend exclusive periodic axes to inclusive form (same as CubicInterpolantND).
     # Must happen before spacings + partials so the stored grid matches the data.
-    grids_typed, data_ext, _ = _prepare_periodic_nd(grids_typed, data, bcs_periodic)
+    grids_typed, data_ext, bcs_resolved = _prepare_periodic_nd(grids_typed, data, bcs_periodic)
     # Per-axis materialize via 2-arg primitive (post-extension grid-span).
     extraps = map(_resolve_extrap, extraps, grids_typed)
     spacings = _create_spacings_typed(grids_typed)
 
     # Build partials on the (possibly extended) data
-    hetero_partials = _build_nd_coeffs_hetero(grids_typed, Tv, data_ext, methods)
+    hetero_partials = _build_nd_coeffs_hetero(grids_typed, Tv, data_ext, methods, bcs_resolved)
 
     return HeteroInterpolantND{
         Tg, Tv, N,

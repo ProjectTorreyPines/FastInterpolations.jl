@@ -28,9 +28,10 @@
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    # 1. Extend exclusive periodic axes (pool-based)
+    # 1. Extend exclusive periodic axes (pool-based). `bcs_p` is the
+    # post-extension bc tuple, threaded into the build below.
     bcs_periodic = map(_bc_for_periodic_check, methods)
-    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
+    grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
 
     # 1a. Per-axis materialization: upgrade WrapExtrap{Nothing} → WrapExtrap{T} against
     # the post-extension grid so the downstream eval pipeline never sees the singleton.
@@ -45,7 +46,7 @@
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
 
     # 3. Compute heterogeneous partials in-place (reuses build.jl core)
-    _compute_nd_partials_hetero!(partials, grids_p, data_p, methods, sizes)
+    _compute_nd_partials_hetero!(partials, grids_p, data_p, methods, bcs_p, sizes)
 
     # 4. Pool-based spacings
     spacings = _create_spacings_pooled(pool, grids_p)
@@ -82,7 +83,7 @@ end
 
     # Build phase (ONE-TIME)
     bcs_periodic = map(_bc_for_periodic_check, methods)
-    grids_p, data_p, _ = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
+    grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
 
     # Per-axis materialization against the (possibly extended) grid.
     # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
@@ -93,7 +94,7 @@ end
     sizes = map(_deriv_size, methods)
     n_partials = prod(sizes)
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
-    _compute_nd_partials_hetero!(partials, grids_p, data_p, methods, sizes)
+    _compute_nd_partials_hetero!(partials, grids_p, data_p, methods, bcs_p, sizes)
     spacings = _create_spacings_pooled(pool, grids_p)
 
     # Eval loop (per query)

@@ -82,7 +82,10 @@ Tests for the thread-safe autocache implementation:
             bank = FI._get_derivative_bank(x, bc)
 
             snap = @atomic :acquire bank.snapshot
-            result = FI._rcu_lookup(snap, objectid(x2), x2)
+            # `_rcu_lookup` 4th arg verifies the cache's BC against the looked-up
+            # one (codex P1). Derivative banks fall through `_verify_cache_match
+            # (::Any, ::Any) = true`, so any sentinel works here.
+            result = FI._rcu_lookup(snap, objectid(x2), x2, bc)
             @test result === nothing
         end
 
@@ -97,7 +100,7 @@ Tests for the thread-safe autocache implementation:
             bank = FI._get_derivative_bank(x, bc)
 
             snap = @atomic :acquire bank.snapshot
-            result = FI._rcu_lookup(snap, objectid(x), x)
+            result = FI._rcu_lookup(snap, objectid(x), x, bc)
             @test result !== nothing
         end
 
@@ -116,7 +119,7 @@ Tests for the thread-safe autocache implementation:
             bank = FI._get_derivative_bank(x, bc)
 
             snap = @atomic :acquire bank.snapshot
-            result = FI._rcu_lookup(snap, objectid(x_copy), x_copy)
+            result = FI._rcu_lookup(snap, objectid(x_copy), x_copy, bc)
             @test result !== nothing
         end
     end
@@ -268,7 +271,7 @@ Tests for the thread-safe autocache implementation:
             y[end] = y[1]
             FI.cubic_interp(x, y, π; bc = FI.PeriodicBC(), autocache = true)
 
-            bank = FI._get_periodic_bank(x)
+            bank = FI._get_periodic_bank(x, FI.PeriodicBC())
             snap = @atomic :acquire bank.snapshot
             @test snap.count == 1
         end

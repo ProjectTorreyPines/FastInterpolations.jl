@@ -174,7 +174,17 @@
 
                 y = rand(T, length(x))
                 rhs = Vector{T}(undef, size(Aprime, 1))
-                FI.compute_rhs_periodic!(rhs, y, spacing)
+                # Inclusive form: y has n+1 nodes; bc_config carries period
+                # and seam-cell width (last-cell h, since the spacing already
+                # holds it for inclusive). `q` is unused by `compute_rhs_periodic!`
+                # but the struct field is non-optional.
+                n_cells = length(x) - 1
+                bc_config = FI.PeriodicData{T, :inclusive}(
+                    Vector{T}(undef, n_cells),
+                    x[end] - x[1],
+                    x[end] - x[end - 1],
+                )
+                FI.compute_rhs_periodic!(rhs, y, spacing, bc_config)
 
                 # Baseline: stdlib LU + ldiv!
                 x_base = copy(rhs)

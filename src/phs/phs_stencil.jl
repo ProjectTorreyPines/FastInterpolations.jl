@@ -69,7 +69,10 @@ function _phs_build_phi_inv(
         degree::Int,
     ) where {N, T <: AbstractFloat}
     ns = length(offsets)
-    M = ns + N + 1
+    poly_deg = (degree - 1) ÷ 2
+    poly_exps = _phs_all_exponents(Val(N), poly_deg)  # same ordering as _phs_poly_exps_tuple
+    n_poly = length(poly_exps)
+    M = ns + n_poly
     Phi = zeros(T, M, M)
 
     # --- F block: Fij = φ(|x_i − x_j|) ---
@@ -88,15 +91,17 @@ function _phs_build_phi_inv(
         end
     end
 
-    # --- C block: C_i = (1, xi₁, xi₂, …, xiN) ---
-    # Row N_stencil+1 is the constant-term constraint
+    # --- C block: polynomial basis at each stencil node ---
+    # poly_exps ordering must match _phs_poly_exps_tuple used at eval time
     @inbounds for i in 1:ns
-        Phi[ns + 1, i] = one(T)
-        Phi[i, ns + 1] = one(T)
-        for dim in 1:N
-            xi_dim = T(offsets[i][dim]) * hs[dim]
-            Phi[ns + 1 + dim, i] = xi_dim
-            Phi[i, ns + 1 + dim] = xi_dim
+        xi = ntuple(d -> T(offsets[i][d]) * hs[d], N)
+        for (k, α) in enumerate(poly_exps)
+            val = one(T)
+            for d in 1:N
+                α[d] != 0 && (val *= xi[d]^α[d])
+            end
+            Phi[ns + k, i] = val
+            Phi[i, ns + k] = val
         end
     end
 

@@ -116,13 +116,10 @@ Evaluate the PHS interpolant value at `query` given precomputed coefficients.
         y += coeffs[i] * _phs_phi(r, Val{K}())
     end
 
-    # Polynomial part: v₀ + v · (x - x_base)
-    @inbounds begin
-        y += coeffs[ns + 1]   # v₀
-        for j in 1:N
-            y = muladd(coeffs[ns + 1 + j], Tg(query[j]) - base_coords[j], y)
-        end
-    end
+    # Polynomial augmentation: all monomials up to degree (K-1)÷2
+    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
+    poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
+    y += _phs_eval_poly(Δx, poly_exps, coeffs, ns)
     return y
 end
 
@@ -150,8 +147,10 @@ Evaluate ∂f/∂xξ (Eq. 25).
         r < eps(Tg) && continue
         y += coeffs[i] * _phs_phi_prime(r, Val{K}()) * xh[axis] / r
     end
-    # Polynomial: vξ
-    y += coeffs[ns + 1 + axis]
+    # Polynomial derivative: ∂/∂x_axis of all augmentation monomials
+    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
+    poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
+    y += _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, axis)
     return y
 end
 
@@ -189,7 +188,10 @@ Evaluate ∂²f/∂xξ∂xζ (Eq. 26).
             y += coeffs[i] * (fpp - fp / r) * xh[ax1] * xh[ax2] / r2
         end
     end
-    # Polynomial second derivatives are zero for linear augmentation
+    # Polynomial second derivatives (non-zero for poly_deg ≥ 2)
+    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
+    poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
+    y += _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, ax1, ax2)
     return y
 end
 
@@ -289,9 +291,8 @@ Algorithm:
 
     total_deriv = sum(deriv_order(ops[d]) for d in 1:N)
 
-    # Thread-local scratch space
-    ns_max    = length(first(values(itp.stencil_map))[1])
-    M         = ns_max + N + 1
+    # Thread-local scratch space — M = max(phi_inv matrix size) across all stencils
+    M         = maximum(size(v[2], 1) for v in values(itp.stencil_map))
     rhs_buf   = acquire!(pool, Tg, M)
     coeff_buf = acquire!(pool, Tg, M)
 

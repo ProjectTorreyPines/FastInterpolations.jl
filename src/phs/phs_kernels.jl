@@ -181,3 +181,166 @@ Compute one component (ξ,ζ) of the Hessian of the recovered density.
         rho0_grad_xi * rho0_grad_xj / (rho0_safe * rho0_safe)
     )
 end
+
+# ╔════════════════════════════════════════════╗
+# ║   Group D: Polynomial Augmentation Helpers ║
+# ╚════════════════════════════════════════════╝
+#
+# For r^K PHS interpolation the polynomial augmentation must have degree
+# at least  poly_deg = (K-1)÷2:
+#   K=1  →  poly_deg=0  (constants only,   1 term in N dims)
+#   K=3  →  poly_deg=1  (linear,          N+1 terms)
+#   K=5  →  poly_deg=2  (quadratic, C(N+2,2) terms)
+#   K=7  →  poly_deg=3  (cubic,     C(N+3,3) terms)
+#
+# Monomial ordering: increasing total degree, last index varies fastest.
+#   N=2, poly_deg=2: (0,0),(0,1),(1,0),(0,2),(1,1),(2,0)
+
+"""
+    _phs_n_poly(N, poly_deg) -> Int
+
+Number of polynomial basis functions in N dimensions up to total degree `poly_deg`.
+Equal to C(N+poly_deg, poly_deg).
+"""
+@inline _phs_n_poly(N::Int, poly_deg::Int) = binomial(N + poly_deg, poly_deg)
+
+"""
+    _phs_all_exponents(::Val{N}, poly_deg) -> Vector{NTuple{N,Int}}
+
+All exponent vectors for monomials of total degree ≤ `poly_deg` in N dimensions.
+Called at stencil-construction time only (not the hot path).
+"""
+function _phs_all_exponents(::Val{N}, poly_deg::Int) where {N}
+    result = NTuple{N, Int}[]
+    current = zeros(Int, N - 1)   # dims 1…N-1; dim N is `remaining`
+    function gen(d::Int, remaining::Int)
+        if d == N
+            push!(result, ntuple(i -> i < N ? current[i] : remaining, Val(N)))
+            return
+        end
+        for k in 0:remaining
+            current[d] = k
+            gen(d + 1, remaining - k)
+        end
+    end
+    for total in 0:poly_deg
+        gen(1, total)
+    end
+    return result
+end
+
+"""
+    _phs_poly_exps_tuple(::Val{N}, ::Val{K})
+
+Return a compile-time `NTuple` of `NTuple{N,Int}` exponents for the polynomial
+augmentation of the r^K PHS interpolant (poly_deg = (K-1)÷2).
+Generated at compile time — zero allocation, loops fully unrolled.
+"""
+@generated function _phs_poly_exps_tuple(::Val{N}, ::Val{K}) where {N, K}
+    m = (K - 1) ÷ 2
+    exps = NTuple{N, Int}[]
+    current = zeros(Int, N - 1)
+    function gen(d, remaining)
+        if d == N
+            push!(exps, ntuple(i -> i < N ? current[i] : remaining, N))
+            return
+        end
+        for k in 0:remaining
+            current[d] = k
+            gen(d + 1, remaining - k)
+        end
+    end
+    for total in 0:m
+        gen(1, total)
+    end
+    tup = Expr(:tuple, [Expr(:tuple, α...) for α in exps]...)
+    return :($tup)
+end
+
+"""
+    _phs_eval_poly(Δx, poly_exps, coeffs, ns) -> scalar
+
+Evaluate the polynomial augmentation: `Σ_k c[ns+k] · Δx^α_k`.
+`poly_exps` is a (compile-time) tuple of exponent NTuples from
+`_phs_poly_exps_tuple`.
+"""
+@inline function _phs_eval_poly(
+        Δx::NTuple{N, Tg},
+        poly_exps::Tuple,
+        coeffs::AbstractVector{Tv},
+        ns::Int,
+    ) where {N, Tg, Tv}
+    y = zero(Tv)
+    @inbounds for k in 1:length(poly_exps)
+        α = poly_exps[k]
+        mono = one(Tg)
+        for d in 1:N
+            α[d] != 0 && (mono *= Δx[d]^α[d])
+        end
+        y += coeffs[ns + k] * mono
+    end
+    return y
+end
+
+"""
+    _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, axis) -> scalar
+
+Evaluate `∂/∂x_axis` of the polynomial augmentation.
+"""
+@inline function _phs_eval_poly_deriv1(
+        Δx::NTuple{N, Tg},
+        poly_exps::Tuple,
+        coeffs::AbstractVector{Tv},
+        ns::Int,
+        axis::Int,
+    ) where {N, Tg, Tv}
+    y = zero(Tv)
+    @inbounds for k in 1:length(poly_exps)
+        α = poly_exps[k]
+        α[axis] == 0 && continue
+        mono = Tg(α[axis])
+        for d in 1:N
+            exp = d == axis ? α[d] - 1 : α[d]
+            exp != 0 && (mono *= Δx[d]^exp)
+        end
+        y += coeffs[ns + k] * mono
+    end
+    return y
+end
+
+"""
+    _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, ax1, ax2) -> scalar
+
+Evaluate `∂²/∂x_ax1 ∂x_ax2` of the polynomial augmentation.
+"""
+@inline function _phs_eval_poly_deriv2(
+        Δx::NTuple{N, Tg},
+        poly_exps::Tuple,
+        coeffs::AbstractVector{Tv},
+        ns::Int,
+        ax1::Int,
+        ax2::Int,
+    ) where {N, Tg, Tv}
+    y = zero(Tv)
+    @inbounds for k in 1:length(poly_exps)
+        α = poly_exps[k]
+        if ax1 == ax2
+            α[ax1] < 2 && continue
+            mono = Tg(α[ax1] * (α[ax1] - 1))
+            for d in 1:N
+                exp = d == ax1 ? α[d] - 2 : α[d]
+                exp != 0 && (mono *= Δx[d]^exp)
+            end
+            y += coeffs[ns + k] * mono
+        else
+            (α[ax1] == 0 || α[ax2] == 0) && continue
+            mono = Tg(α[ax1] * α[ax2])
+            for d in 1:N
+                exp = (d == ax1 || d == ax2) ? α[d] - 1 : α[d]
+                exp != 0 && (mono *= Δx[d]^exp)
+            end
+            y += coeffs[ns + k] * mono
+        end
+    end
+    return y
+end

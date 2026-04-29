@@ -27,7 +27,7 @@ function plot_comparison(xs, ys; phs_stencil_size = 5)
         xlims = extrema(xs), ylims = extrema(ys), titlefont = (14, "Helvetica Bold"), topmargin = 9Plots.px, legend = false,
     )
 
-    itp_plot_kwargs = (node_color = :black, node_size = 6, node_alpha = 0.4, gridline_alpha = 0.3)
+    itp_plot_kwargs = (node_color = :black, node_size = 6, node_alpha = 0.4, gridline_color = :black, gridline_alpha = 0.3)
 
     # Calculate Error
     function measure_error_string(itp)
@@ -43,12 +43,12 @@ function plot_comparison(xs, ys; phs_stencil_size = 5)
         # Gridlines
         for yj in ys
             plot!(p, [xs[1], xs[end]], [yj, yj];
-                color = :white, alpha = itp_plot_kwargs.gridline_alpha,
+                color = :black, alpha = itp_plot_kwargs.gridline_alpha,
                 linestyle = :dot, linewidth = 1, label = false)
         end
         for xi in xs
             plot!(p, [xi, xi], [ys[1], ys[end]];
-                color = :white, alpha = itp_plot_kwargs.gridline_alpha,
+                color = :black, alpha = itp_plot_kwargs.gridline_alpha,
                 linestyle = :dot, linewidth = 1, label = false)
         end
         # Nodes

@@ -10,7 +10,8 @@ function plot_comparison(xs, ys; phs_stencil_size = 5)
 
     itp_constant = constant_interp((xs, ys), f_test(xs, ys))
     itp_linear = linear_interp((xs, ys), f_test(xs, ys))
-    itp_cubic = cubic_interp((xs, ys), f_test(xs, ys); bc = (PeriodicBC(), PeriodicBC()))
+    itp_cubic_periodic = cubic_interp((xs, ys), f_test(xs, ys); bc = (PeriodicBC(), PeriodicBC()))
+    itp_cubic_natural = cubic_interp((xs, ys), f_test(xs, ys))
     itp_phs = phs_interp((xs, ys), f_test(xs, ys); stencil_size = phs_stencil_size, degree = 3, blend_factor = 1.3)
 
     # High-res grid for ground truth
@@ -66,10 +67,11 @@ function plot_comparison(xs, ys; phs_stencil_size = 5)
     p1 = heatmap(x_hi, y_hi, z_hi', title = "Ground Truth"; kwargs..., titlefont = (17, "Helvetica Bold"))
     p2 = plot(itp_constant; title = "Constant Interpolation\n (Error≈$(measure_error_string(itp_constant)))", kwargs..., itp_plot_kwargs...)
     p3 = plot(itp_linear; title = "Linear Interpolation\n (Error≈$(measure_error_string(itp_linear)))", kwargs..., itp_plot_kwargs...)
-    p4 = plot(itp_cubic; title = "Cubic Interpolation\n (Error≈$(measure_error_string(itp_cubic)))", kwargs..., itp_plot_kwargs...)
-    p5 = phs_heatmap(itp_phs)
+    p4 = plot(itp_cubic_periodic; title = "Cubic (Periodic BC)\n (Error≈$(measure_error_string(itp_cubic_periodic)))", kwargs..., itp_plot_kwargs...)
+    p5 = plot(itp_cubic_natural; title = "Cubic (Natural BC)\n (Error≈$(measure_error_string(itp_cubic_natural)))", kwargs..., itp_plot_kwargs...)
+    p6 = phs_heatmap(itp_phs)
 
-    return plot(p1, p2, p3, p4, p5, layout = (2, 3), size = (1200, 800), dpi = 200)
+    return plot(p1, p2, p3, p4, p5, p6, layout = (2, 3), size = (1200, 800), dpi = 200)
 end
 
 

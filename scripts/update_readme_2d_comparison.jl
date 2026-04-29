@@ -69,7 +69,7 @@ function plot_comparison(xs, ys; phs_stencil_size = 5)
     p3 = plot(itp_linear; title = "Linear Interpolation\n (Error≈$(measure_error_string(itp_linear)))", kwargs..., itp_plot_kwargs...)
     p4 = plot(itp_cubic_periodic; title = "Cubic (Periodic BC)\n (Error≈$(measure_error_string(itp_cubic_periodic)))", kwargs..., itp_plot_kwargs...)
     p5 = plot(itp_cubic_natural; title = "Cubic (Natural BC)\n (Error≈$(measure_error_string(itp_cubic_natural)))", kwargs..., itp_plot_kwargs...)
-    p6 = phs_heatmap(itp_phs)
+    p6 = plot(itp_phs; title = "PHS Interpolation\n (Error≈$(measure_error_string(itp_phs)))", kwargs..., itp_plot_kwargs...)
 
     return plot(p1, p2, p3, p4, p5, p6, layout = (2, 3), size = (1200, 800), dpi = 200)
 end
@@ -81,7 +81,7 @@ y_irreg = [0, 0.1, 0.2, 0.5, 0.8, 0.9, 1.0]
 p_irreg = plot_comparison(x_irreg, y_irreg; phs_stencil_size = 4)
 savefig(p_irreg, "$(pkgdir(FastInterpolations))/docs/images/readme_2d_comparison.png")
 
-# Regular grid (15×15)
+# Regular grid
 x_reg = collect(range(0.0, 1.0, 6))
 y_reg = collect(range(0.0, 1.0, 6))
 p_reg = plot_comparison(x_reg, y_reg; phs_stencil_size = 4)

@@ -2,17 +2,16 @@ using FastInterpolations
 using Plots
 using Printf
 using LinearAlgebra
-using Random
 
 f_point(xi, yi) = sin(2π * xi) * cos(2π * yi)
 
-function plot_comparison(xs, ys)
+function plot_comparison(xs, ys; phs_stencil_size = 5)
     f_test(x, y) = [f_point(xi, yj) for xi in x, yj in y]
 
     itp_constant = constant_interp((xs, ys), f_test(xs, ys))
     itp_linear = linear_interp((xs, ys), f_test(xs, ys))
     itp_cubic = cubic_interp((xs, ys), f_test(xs, ys); bc = (PeriodicBC(), PeriodicBC()))
-    itp_phs = phs_interp((xs, ys), f_test(xs, ys); stencil_size = 7, degree = 3, blend_factor = 1.5)
+    itp_phs = phs_interp((xs, ys), f_test(xs, ys); stencil_size = phs_stencil_size, degree = 3, blend_factor = 1.3)
 
     # High-res grid for ground truth
     x_hi = collect(range(minimum(xs), maximum(xs), length = 400))
@@ -62,18 +61,17 @@ function plot_comparison(xs, ys)
 end
 
 
-# Irregular 10-point grids: uniform base + small random perturbations,
-# endpoints fixed at 0 and 1.
-let rng = MersenneTwister(42)
-    base = collect(range(0.0, 1.0, 10))
-    noise = [0.0; (rand(rng, 8) .- 0.5) .* 0.06; 0.0]
-    global x_test = clamp.(base .+ noise, 0.0, 1.0)
-    noise = [0.0; (rand(rng, 8) .- 0.5) .* 0.06; 0.0]
-    global y_test = clamp.(base .+ noise, 0.0, 1.0)
-end
-p = plot_comparison(x_test, y_test)
+# Irregular grid (original hard-coded points)
+x_irreg = [0, 0.1, 0.4, 0.5, 0.82, 1.0]
+y_irreg = [0, 0.1, 0.2, 0.5, 0.8, 0.9, 1.0]
+p_irreg = plot_comparison(x_irreg, y_irreg; phs_stencil_size = 4)
+savefig(p_irreg, "$(pkgdir(FastInterpolations))/docs/images/readme_2d_comparison.png")
 
-savefig(p, "$(pkgdir(FastInterpolations))/docs/images/readme_2d_comparison.png")
+# Regular grid (15×15)
+x_reg = collect(range(0.0, 1.0, 15))
+y_reg = collect(range(0.0, 1.0, 15))
+p_reg = plot_comparison(x_reg, y_reg; phs_stencil_size = 7)
+savefig(p_reg, "$(pkgdir(FastInterpolations))/docs/images/readme_2d_comparison_regular.png")
 
 
 # function chebyshev_nodes(n, a=0.0, b=1.0)

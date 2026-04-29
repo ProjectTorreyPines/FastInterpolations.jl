@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1777490977184,
+  "lastUpdate": 1777491253777,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -47890,6 +47890,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1053,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "97c203fdf2c68bb8522b4e3170c5df33f1f4ac3e",
+          "message": "(refac+perf): Cubic `PeriodicBC(:exclusive)` — zero-copy oneshot + sibling-method alignment (#132)\n\n* (perf): cubic exclusive PeriodicBC oneshot — zero-copy\n\nCubic was the last outlier on the periodic-oneshot zero-copy path. After\nPR #126 (Linear/Constant) and PR #131 (PCHIP/Cardinal/Akima), only cubic\nstill extended `:exclusive` input to `:inclusive` form via\n`_periodic_extend_1d_pooled!` — paying a (n+1) pool acquire + memcpy on\nevery oneshot call. Cache pool kept the alloc count at 0, but the per-call\noverhead remained.\n\nThis commit pulls cubic 1D oneshot onto the same zero-copy contract as\nthe other methods: the user's n-size grid is consumed as-is, and the\nseam-cell width / cycle length are baked into the cache.\n\n== Architecture ==\n\n`PeriodicData{T, E}` gains an endpoint type-param `E` (`:inclusive`/\n`:exclusive`) and an `h_n::T` field (seam-cell width). The cache builder\nbecomes BC-aware:\n\n  - `:inclusive` (length(x) = n+1): existing logic, `h_n` from spacing.\n  - `:exclusive` (length(x) = n):   new path, `h_n = period - (last(x) - first(x))`,\n                                    cycle length n encoded directly.\n\nThe Sherman-Morrison solver, RHS, and eval kernel all read cycle length\nand `h_n` from `cache.bc_config` (BC-form-agnostic). RHS is split into\n`:inclusive` / `:exclusive` overloads dispatched by the cache's E param —\nexclusive form uses `(y[1] - y[n]) * inv(h_n)` for the seam contribution,\ninclusive uses the existing `y[end-1]` / `y[end]` cyclic indexing.\n\nThe eval kernel (`_eval_cubic_at_point_periodic`) needed BC-awareness too:\nfor exclusive Vector grids the spacing object only carries n-1 cells, so\n`_get_h(spacing, n)` was OOB at the seam. New `_periodic_cell_h` accessor\ndispatches on E and reads `h_n` from `bc_config` for the seam cell.\n\n== Cache pool partitioning ==\n\n`PeriodicCacheEntry{T, X, S, E}` adds the E type-param so inclusive and\nexclusive caches for the same grid object live in separate banks. Without\nthis partition, repeating `cubic_interp(x, y, q; bc=PeriodicBC(:inclusive))`\nfollowed by `cubic_interp(x, y, q; bc=PeriodicBC(:exclusive))` (for some\nunusual user) would silently pull the wrong cache.\n\n== ND ripple ==\n\n`_prepare_periodic_nd_impl` now normalizes `bc` to `:inclusive` post-\nextension (via `_bc_after_extend`). Without this, the BC-aware cache\nbuilder would interpret the post-extension grid (length n+1) as\n`:exclusive` and miscount the cycle. ND oneshot/persistent paths still\nextend (they're not zero-copy in this commit — that needs `_eval_nd_cell`\nrewrite, deferred), but the extension now produces consistent inclusive\nform that the new cache builder handles correctly.\n\n`cubic_nd_interpolant.jl` preserves the user's original `bcs` for storage\n(via a `bcs_orig` snapshot before extension) so `itp.bcs[d]` continues to\nreport the user-supplied `:exclusive` endpoint for introspection.\n\n== Adjacent fixes ==\n\n- `_check_periodic_endpoints(bc, y)` is now E-aware: `:exclusive` is a\n  no-op (raw n-grid has no endpoint-matching constraint), `:inclusive`\n  retains the existing `y[1] ≈ y[end]` validation. This used to run\n  inside `_periodic_extend_1d_pooled!`; with the helper bypassed in the\n  zero-copy path, the check is invoked explicitly in `_cubic_periodic_solve!`.\n\n- `_cubic_oneshot_series_periodic_vec!` (and the scalar series variant)\n  reuse `y_p_first` directly for series k≥2 — previously they wrote\n  `y_p[n+1] = vecs[k][1]` to enforce closure on an extended buffer, which\n  is OOB after the extension is gone. Zero-copy `:exclusive` cycle is\n  `length(y) = n` and `:inclusive` already has `y[1] ≈ y[n+1]` in user\n  data, so a plain `copyto!` of length `n_p` suffices.\n\n- `cubic_oneshot.jl` entry points thread `bc` into `_resolve_search` so\n  exclusive-periodic queries route to the seam-aware searcher\n  (`search.jl:928`). NoBC default keeps non-periodic dispatch unchanged.\n\n- `_throw_periodic_exclusive_cache` removed — its call site\n  (`cubic_cache.jl:50`) is gone, and the helper has no other consumers.\n\n== Verification ==\n\nThe existing `test/test_periodic_exclusive.jl` already covered the\ncorrectness contracts comprehensively; the suite caught three real\nregressions during development:\n\n  1. ND post-extension bc keyed on `:exclusive` after the cache builder\n     change (length mismatch) → fixed via `_bc_after_extend` in\n     `_prepare_periodic_nd_impl`.\n  2. `_check_periodic_endpoints` validation lost when the extension\n     helper was bypassed → restored explicitly + made E-aware.\n  3. Series oneshot vector path's `y_p[n+1] = ...` write was OOB on\n     zero-copy exclusive → simplified to direct buffer reuse.\n\nTwo test assertions also needed updating (deliberate contract changes):\n\n  - `CubicSplineCache rejects exclusive PeriodicBC` (was: ArgumentError)\n    → now: cache accepts exclusive, validates `bc_config.h_n` matches\n    `period - (last - first)`.\n  - `_prepare_periodic_nd` post-extension bcs (was: `:exclusive` with\n    resolved `bc.period`) → now: `:inclusive` with period recoverable as\n    `last(grid) - first(grid)`. The user-facing `itp.bcs` storage still\n    preserves `:exclusive` via the `bcs_orig` snapshot.\n\nFull test suite passes: test_periodic_exclusive.jl, test_periodic_bc.jl,\ntest_cubic.jl / _nd / _nd_oneshot / _adjoint / _nd_adjoint /\n_oneshot_series / _interpolant. Linear/Constant/PCHIP periodic tests +\nhetero_dispatch confirm no upstream-shared infrastructure regressions.\n\n== Out of scope ==\n\n- ND zero-copy (`_eval_nd_cell` `@generated` rewrite to use stencils\n  instead of `idx + 1` corner addressing) — deferred to a separate PR.\n- Cubic adjoint zero-copy — `cubic_adjoint(x, xq; bc=...)` still extends.\n\n* (refac): cubic persistent — normalize stored `bc` to `:inclusive` post-extension\n\nThe cubic persistent path extends the user's grid to closed-cycle inclusive\nform for `:exclusive` PeriodicBC input, but previously kept `itp.bc` /\n`itp.bcs[d]` as the user's original `:exclusive` form via\n`_with_resolved_period(bc, period)`. This left a latent inconsistency:\nthe cache (and physical grid) was `:inclusive` while the stored bc claimed\n`:exclusive`.\n\nThe inconsistency surfaced in `Base.Matrix(itp::CubicInterpolant, xq)` —\nwhich calls `cubic_adjoint(itp.cache.x, xq; bc=itp.bc, extrap=itp.extrap)`.\nPassing `bc=:exclusive` together with the already-extended `itp.cache.x`\nsent the adjoint constructor down its `:exclusive` branch, which extends\nthe grid *again* (Range axes throw a period mismatch; Vector axes silently\nextend to length n+2). This Matrix bug exists on master and is verified\nto reproduce there.\n\n== Change ==\n\nBoth 1D persistent (`_build_interpolant_periodic` in\n`cubic_interpolant.jl`) and ND persistent (`_build_nd_interpolant` in\n`cubic_nd_interpolant.jl`) now normalize the stored bc via\n`_bc_after_extend`, dropping the redundant `bcs_orig` snapshot in the\nND case (added briefly in the previous commit on this branch). Periodic\naxes end up with `PeriodicBC{:inclusive, Nothing, false}` in storage,\nmatching `cache.bc_config.E === :inclusive`. Period is recoverable as\n`last(itp.cache.x) - first(itp.cache.x)` (or `last(grid) - first(grid)`\nper axis for ND).\n\nTwo test contracts updated accordingly in `test_periodic_exclusive.jl`:\n\n  - `itp.bc reflects post-extension :inclusive form` (was: \"preserves\n    endpoint and resolves period\") — asserts `:inclusive` storage and\n    period recovered from grid span. The corresponding `show` assertion\n    relaxed to just `Periodic` (the `:exclusive` / `period≈X.XX` info\n    that was in the show string for `:exclusive` storage no longer\n    applies).\n  - `bcs_store reflects post-extension :inclusive form` (ND, was:\n    \"preserves endpoint and period\") — same shape, applied per-axis.\n\n== Scope limit ==\n\nThis commit is a stopgap: `Matrix(itp, xq)` size still does not match\nthe user's input data length when constructed with `:exclusive` BC\n(returns `(n_query, length(itp.cache.x))` = `(n_query, n+1)` instead of\nthe user's `(n_query, n)`). Fixing that requires either a column-sum\nprojection in `Matrix` or a unified `bc::AbstractBC` field across all\npersistent structs (Linear/Constant/PCHIP/Cardinal/Akima/Hermite\ncurrently store no bc field at all — BC information is encoded\nimplicitly in `(x, y, dy)` closure invariants and `WrapExtrap{T}(period)`\non those methods). Both directions are tracked in\n`claudedocs/TODO/persistent_bc_field_unification.md` (local TODO note;\nclaudedocs/ is gitignored) for the next refactor PR.\n\n== Verification ==\n\n`test_periodic_exclusive.jl` (1D + ND), `test_cubic.jl`, `test_cubic_nd.jl`,\n`test_cubic_interpolant.jl`, `test_cubic_oneshot_series.jl`,\n`test_cubic_adjoint.jl`, `test_cubic_nd_adjoint.jl`, `test_periodic_bc.jl`\nall pass post-change.\n\n* (fix): re-reject `CubicSplineCache(x; bc=PeriodicBC(:exclusive))` direct construction\n\nThe previous zero-copy commit (541c844d) removed\n`_throw_periodic_exclusive_cache()` so the internal cache pool could build\nexclusive-form caches. That was correct for the internal `_get_cubic_cache`\npath (used by the public `cubic_interp` oneshot/persistent APIs, which thread\n`bc` into `_resolve_search` and route through the seam-aware Searcher\ndispatch in `search.jl:928`).\n\nBut it also exposed the public `CubicSplineCache(x; bc=...)` constructor to\nthe same path — and the cache-direct eval entry `cubic_interp!(out, cache,\ny, xq)` (`cubic_oneshot.jl:47`) does NOT thread BC into the searcher.\nResult: a user who builds an exclusive cache directly and uses it with\n`cubic_interp!` would get silently wrong values for queries in the seam\ncell (`xq ≥ x[n]`), because the searcher misses the seam wrap and the eval\nkernel computes against the last interior cell instead.\n\nRather than add BC-from-cache derivation to every cache-direct call site\n(`_resolve_search(cache.x, ..., _bc_for_searcher(cache.bc_config))` across\noneshot, eval, and series paths), restore the throw at the public outer\nconstructor. This matches master's behavior and keeps the cache-direct\nsurface narrow:\n\n  - `CubicSplineCache(x; bc=PeriodicBC(endpoint=:exclusive))`\n    → `ArgumentError` (with guidance to use the public `cubic_interp` APIs)\n\nThe internal `_get_cubic_cache(x, bc, autocache)` path (used by\n`_cubic_periodic_solve!` and ND build) is unaffected — it bypasses the\nouter constructor and goes through the cache pool directly.\n\nTest updated: was checking that direct construction now succeeds; now back\nto checking that it throws `ArgumentError`.\n\n* (fix): codex P1/P2.1/P2.2 — cache key, seam-width validation, autocache=false\n\nThree issues uncovered by codex review of the cubic exclusive PeriodicBC\nzero-copy work:\n\n== P1: Cache key omits `bc.period` ==\n\nFor non-uniform Vector grids, `bc.period` controls `cache.bc_config.period`,\n`bc_config.h_n`, and the Sherman-Morrison `q` vector. The periodic bank was\npartitioned only by `(T, X, S, E)` and `_rcu_lookup` compared just `x`, so:\n\n  cubic_interp(x, y, xq; bc=PeriodicBC(:exclusive, period=2.5))\n  cubic_interp(x, y, xq; bc=PeriodicBC(:exclusive, period=3.0))   # same x\n\nwould silently reuse the first cache and evaluate against the wrong seam\ngeometry. The master extended-grid path avoided this because the virtual\nendpoint was baked into the cached grid (different `x_p` per period →\ndifferent cache key).\n\nFix: thread `bc_config` through `_rcu_lookup` + add `_verify_cache_match`\ndispatched on the BC type. Default verification is `true` (objectid +\nisequal cover non-periodic and inclusive correctly). Exclusive periodic\ncaches verify the user-supplied period against the cached\n`bc_config.period`. When user period is unspecified (Range-inferred path,\n`P === Nothing`), the period is derived from the grid so no mismatch is\npossible.\n\n== P2.1: No seam-width validation ==\n\n`_build_periodic_cache(x, bc::PeriodicBC{:exclusive})` computed\n`h_n = period - (last(x) - first(x))` and proceeded without checking\n`h_n > 0`. For `period <= last(x) - first(x)` (e.g. user mistakenly\npasses `period == grid_span`), `h_n <= 0` produced nonsensical\ncoefficients or a divide-by-zero in the solver. The master path threw\nvia `_extend_exclusive`'s `last(x) < x_end` check.\n\nFix: explicit `h_n > 0` validation in `_build_periodic_cache` with a\nclear error message naming `period`, `grid span`, and the resulting\n`h_n`.\n\n== P2.2: `autocache=false` regressed for `:exclusive` ==\n\nThe previous fix (commit 7d9b125e) restored the throw on the public\n`CubicSplineCache(x; bc=PeriodicBC(:exclusive))` direct constructor,\nbut the internal `_get_cubic_cache(x, bc, autocache::Bool)` false branch\nrouted through that same constructor — so\n\n  cubic_interp(x, y, xq; bc=PeriodicBC(:exclusive,...), autocache=false)\n\nthrew, even though the same call with the default `autocache=true`\nworked fine. This was a public-API regression.\n\nFix: the `autocache=false` branch now bypasses the public outer\nconstructor and calls `_build_periodic_cache(x, bc)` /\n`_build_derivative_bc_cache(...)` directly. The internal path is safe\nbecause the oneshot/persistent callers thread `bc` into the searcher\nvia `_resolve_search`; only direct user construction was unsafe (and\nthat throw is preserved on the outer constructor).\n\n== Tests (TDD) ==\n\nAdded three regression testsets to `test_periodic_exclusive.jl` under\nthe `Edge cases` group, each tied to its codex tag:\n\n  - \"Cache key includes bc.period — distinct periods on same x (codex P1)\"\n    Verifies `v1 ≠ v2` for two different periods on the same `x` and\n    direct cache pool inspection shows distinct `bc_config.period` /\n    `bc_config.h_n`.\n\n  - \"Reject non-positive seam width (codex P2.1)\"\n    Asserts `ArgumentError` for `period == grid_span` (h_n=0) and\n    `period < grid_span` (h_n<0).\n\n  - \"autocache=false routes through internal builder (codex P2.2)\"\n    Asserts `cubic_interp(x, y, xq; bc=:exclusive, autocache=false)`\n    succeeds and matches the `autocache=true` result.\n\nAll three tests fail on the pre-fix code (RED) and pass after the fix\n(GREEN). Existing test_cubic*, test_periodic_bc, test_cubic_oneshot_series,\ntest_cubic_adjoint, test_cubic_nd_adjoint all continue to pass.\n\n== Out of scope ==\n\nP2.3 (Series oneshot anchor seam mis-eval for `xq ∈ [last(x), first(x)+period)`)\nis still being investigated — the `_anchor_query(...; wrap=true)` path\nwraps against `last(cache.x)` rather than `first(x) + period` and the\nanchor's corner addressing can't represent the `idx_R = 1` seam wrap.\nLikely fix is to revert the Series oneshot exclusive path to the\nextension-based master flow.\n\n* (fix): codex P2.3 — Series oneshot exclusive seam mis-eval\n\nThe Series oneshot path used `_anchor_query` → `_anchor_query_impl` →\n`_anchor_loc`, which discards `idx_R` from `search_interval`'s 4-tuple.\nThe kernel then read `y[aq.idx + 1]` / `z[aq.idx + 1]`. For zero-copy\nexclusive at the seam (`idx = n`), this is `y[n+1]` — OOB on the n-size\nbuffer, returning whatever the pool last wrote. The single-y oneshot\npath was unaffected: it routes through `_eval_cubic_at_point_periodic`,\nwhich threads the seam-aware `(idx_L, idx_R, xL, xR)` end-to-end.\n\nAligning cubic with Linear/Constant: `_CubicAnchoredQuery.idx::Int` is\nreplaced by `stencil::_IdxStencil{2}` (the same shape the K=2 anchor\nmethods already carry). Legacy `aq.idx` is preserved as a virtual\nproperty (= `aq.idxL`); kernels and adjoint scatter switch to\n`aq.idxL` / `aq.idxR` so a wrap-aware pair (`idxR = 1` at the seam)\nflows through with no further surgery.\n\nThe Series periodic helpers now mirror `_linear_oneshot_series_periodic!`:\nbuild cache once, search once with a bc-threaded searcher, construct\nthe anchor directly from the 4-tuple, then K-loop solve+eval. No grid\nextension, no per-series `y_buf` copy (`_solve_system!` reads `y`\nread-only; the periodic solver acquires its own n-size scratch).\n\nThe `:inclusive` series path collapses to the same shape — search\nreturns `(idx, idx+1)` and the anchor pair degenerates to the\nnon-wrapped form, so the helper handles both BC variants uniformly.\n\n* (fix): hetero ND build — thread post-extension bcs into the build chain; sync test API drift\n\nTwo fallout fixes from this branch's BC-aware refactor (commit 541c844d).\n\n== Threading post-extension bcs into the hetero build ==\n\n`_prepare_periodic_nd[_pooled]` already returns the per-axis bc tuple\nnormalized to `:inclusive` for axes that were extended. Other ND modules\n(`cubic_nd_oneshot`, `cubic_nd_interpolant`) consume that third return\nvalue, but the hetero build path was discarding it (`_, _, _ = ...`)\nand re-extracting raw bcs from methods. The cubic 1D solver then saw\n`(extended_grid_n+1, :exclusive_bc)` and computed\n`h_n = period − (last − first) = 0`.\n\nEffects, depending on call path:\n  • Forward (oneshot/precomputed): silently miscalculated cell widths\n    (~1e-5 relative drift in the failing hetero tests).\n  • Adjoint: tripped the new seam-width validation (P2.1), throwing\n    `ArgumentError: ... h_n=0.0 (must be > 0)`.\n\nFix: capture `bcs_resolved` at the three hetero entry points\n(`_interp_nd_hetero_oneshot`, `_interp_nd_hetero_oneshot_batch!`,\n`HeteroInterpolantND` constructor) and thread it through\n`_compute_nd_partials_hetero!` → `_build_nd_partials_dim_hetero!`.\n`_extract_bc` stays a pure accessor; the post-extension bc lives on\nthe data flow, not in the type-method bridge.\n\n== Test API drift ==\n\nTwo internal-API tests stayed on pre-541c844d signatures:\n  • `test_thomas_lu_solver.jl`: `compute_rhs_periodic!` gained a\n    `PeriodicData{T, E}` 4th arg (E baked into dispatch).\n  • `test_rcu.jl`: `_rcu_lookup` gained a `bc_config` 4th arg\n    (codex P1 cache-key period verification); `_get_periodic_bank`\n    gained a BC-partition 2nd arg.\n\nThese call sites are now updated to the current signatures.\n\n* (fix): exclusive PeriodicBC edge cases — period cast, seam_h, cache key\n\nFour edge-case correctness gaps surfaced by codex review of the cubic\nzero-copy series path. All trigger only on either (a) a Float64 `period`\nliteral applied to a Float32 grid, or (b) a Range grid with an explicit\n`period` that passes `_resolve_exclusive_period`'s `sqrt(eps)` tolerance\nbut is not bit-equal to `step(x) * length(x)`.\n\n== `WrapExtrap(x, bc)` casts period to grid float ==\n\n`_resolve_exclusive_period` returns the user's raw `bc.period`, so a\nFloat64 literal would build `WrapExtrap{Float64}` against a Float32\ngrid. OOB queries then wrap into Float64, which the cubic series\nvector path's preallocated `_CubicAnchoredQuery{Float32, Float32}`\nbuffer cannot accept (`MethodError` on `convert`). Cast through the\n`_PromotableValue`-aware float promotion (mirrors `_resolve_seam_period`\nin hermite_periodic_slopes.jl), keeping wrap arithmetic in grid\nprecision. Fixes the cross-precision combination project-wide.\n\n== `_verify_cache_match` resolves `bc.period === Nothing` ==\n\nThe `P === Nothing` branch returned `true` unconditionally, so any\nsame-grid exclusive cache was reused. If a previous explicit-period\ncall seeded the bank with a value within tolerance but not equal to\n`step(x) * length(x)`, the auto-infer call silently consumed that\nstale cache. Compare to the inferred period instead.\n\n== `_periodic_cell_h` exclusive seam uses `bc.h_n` for ScalarSpacing too ==\n\n`_periodic_n_real_cells(::ScalarSpacing) = typemax(Int)` assumed all\ncells share `step` for uniform grids. That's true when the period is\nexactly `step * length`, but a tolerance-accepted explicit period\nmakes `bc.h_n = period - (last(x) - first(x))` differ from `step`.\nThe solver bakes `bc.h_n` into the periodic system, so eval must use\nthe same width at the seam cell. Switch the dispatch to\n`idx == length(bc.q)` and drop the now-unused\n`_periodic_n_real_cells` helper.\n\n== Series oneshot uses `_periodic_cell_h` instead of `_get_h(cache.x, ...)` ==\n\n`_get_h(::_CachedRange, ::Real, ::Real)` returns the cached `step`,\nignoring `xL`/`xR`. At the seam (`xR = x[1] + period`), this collapses\nto `step` and disagrees with the solver's `bc.h_n` whenever the user\nperiod is not bit-equal to `step * length`. Routing the series helper\nthrough `_periodic_cell_h` gives the same seam fixup that\n`_eval_cubic_at_point_periodic` already uses for single-y eval, so\nRange and Vector grids of the same shape now produce ULP-equivalent\nresults at seam queries.\n\n== Tests ==\n\nTDD red-green for each gap:\n  • `Float32 grid + Float64 period vector series` — confirms the\n    cross-precision MethodError without the period cast.\n  • `Cache key resolves Nothing period for Range grids` — confirms\n    auto-infer no longer reuses an off-by-tolerance explicit cache.\n  • `Range and Vector grids agree at seam with off-bit-equal period`\n    — single-y, scalar series, and vector series all match at the\n    seam.\n\nExisting codex P1/P2.1/P2.2/P2.3 tests are renamed to drop the codex\nlabels from `@testset` strings and historical narrative from the\ninline comments — the tests document the contract, not the audit\ntrail.\n\n* (docs): clarify _anchor_query_impl's idxR=idxL+1 contract\n\nThe `_anchor_loc` discards `idx_R` from `search_interval`'s 4-tuple, so\nthis path always builds `_IdxPair(idxL, idxL+1)`. That's correct for\nevery current caller (non-periodic, WrapExtrap-only, or periodic on a\npost-extension n+1 grid), but a future caller passing a bc-threaded\nperiodic-exclusive searcher with a raw n-size grid would silently get\nan OOB `idxR = n+1`. Series oneshot exclusive already bypasses this\npath with a manual `search_interval`-based anchor build; the comment\nnow spells out the contract and points at the long-term refactor that\nremoves the trap.\n\nLinear/Constant have the same pattern with a briefer note; cubic gets\nthe fuller annotation since it's the most recently-touched and the\nhazard surfaced during code review.\n\n* (refac+test): periodic series anchor helper + AD/DerivOp/alloc pins\n\nCode review follow-ups (items #1-#5):\n\n== #1 — `_CubicAnchoredQuery` docstring drift ==\n\nAnchor's primary field is `stencil::_IdxStencil{2}` since the P2.3\nrefactor; the docstring still listed `idx`. Updated to describe the\nstencil pair semantics (`idxR == 1` at exclusive seam) and the\nvirtual `aq.idx` / `aq.idxL` / `aq.idxR` accessors.\n\n== #2 — Periodic anchor construction helper ==\n\nThe scalar (`_cubic_oneshot_series_periodic!`) and vector\n(`_cubic_oneshot_series_periodic_vec!`) helpers each contained the\nsame ~10-line block: wrap query, search via 4-tuple, `_periodic_cell_h`\nfor seam-aware width, compute w0/w1/w2/w3, build\n`_CubicAnchoredQuery(_IdxPair(idxL, idxR), ...)`. Extracted into\n`_build_periodic_cubic_anchor(cache, xq, extrap_p, searcher)` —\n@inline, no closures, identical generated code, single source for the\nseam-pair construction.\n\n== #3 — AD test through exclusive PeriodicBC ==\n\nThe existing `ForwardDiff AD` testset covered only inclusive +\nnon-periodic. Added a testset that takes `ForwardDiff.derivative` of\nthe Series oneshot through `PeriodicBC(:exclusive)` at both an interior\nand a seam query, and compares against the analytic reference computed\nwith `DerivOp(1)` on the single-y path.\n\n== #4 — DerivOp × Series × exclusive seam ==\n\nThe \"Derivative ops\" testset iterated `d in 0:4` but only on inclusive\n+ CubicFit data. Added a seam-region testset that exercises\n`DerivOp(1)`, `DerivOp(2)`, `DerivOp(3)` × Series oneshot at multiple\nseam queries, comparing each against the single-y derivative reference.\nCatches any weight-tuple misselection in the seam-aware anchor's\n`w1`/`w2`/`w3` paths.\n\n== #5 — Allocation pin for exclusive Series vector path ==\n\nThe existing zero-alloc gate covered inclusive PeriodicBC + CubicFit;\nnone covered the new zero-copy `_cubic_oneshot_series_periodic_vec!`\nexclusive path. Added a function-barrier `@allocated` test against\n`ALLOC_THRESHOLD`.\n\n* Runic formatting\n\n* (docs): align _prepare_periodic_nd / _rcu_lookup docstrings with current contracts\n\nTwo stale docstrings flagged in copilot review of #132:\n\n- `_prepare_periodic_nd`'s \"Returns\" block claimed `bcs_resolved` carries the\n  resolved period for display/introspection, but the actual return strips the\n  period via `_bc_after_extend` (yields `PeriodicBC{:inclusive, Nothing,\n  false}`). All current callers (cubic ND interpolant, hetero ND interpolant)\n  re-materialize the period themselves from `last(grid_ext) - first(grid_ext)`,\n  so adding `_with_resolved_period` to the helper would be unused work.\n  Updated the docstring to describe the actual normalize-and-drop behavior and\n  point at the re-materialization pattern.\n\n- `_rcu_lookup`'s signature line still showed the pre-codex-P1 3-arg form\n  `(snap, id, x)`. Now documents the 4th `bc_config` arg and explains the\n  `_verify_cache_match` integration so future callers don't drop it.",
+          "timestamp": "2026-04-29T12:27:18-07:00",
+          "tree_id": "5418baf4c8cd75b763c231e640c2e4154720e20b",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/97c203fdf2c68bb8522b4e3170c5df33f1f4ac3e"
+        },
+        "date": 1777491246827,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 38127,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83848\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 736.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 331511,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515272\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1958.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1717.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 16.12,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 6.81,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3604.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 36.05,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 12.81,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4647.88,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4645.28,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 10510.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3203.14,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 493.52,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 62909.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1482.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 14094.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 20.12,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 486.92,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 47033.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 28.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 19404.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 38.06,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 256.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 200.68,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 19162.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 6.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.71,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 602.28,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4816.32,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 44592.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 718.66,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1753.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2478.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11588.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3495.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 40173.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 604.08,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 357819.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1096.6,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

@@ -148,7 +148,7 @@ Homogeneous methods (all same type) auto-dispatch to the optimized type — no p
 Comparison on a non-uniform 2D rectilinear grid for $f(x, y) = \sin(2\pi x) \cos(2\pi y)$. Cubic interpolation maintains high accuracy and captures extrema even on coarse, non-uniform grids. The gray dots in the image below represent the given node points (6x7 grid), and the dashed lines illustrate the grid structure.
 ![2D Interpolation Example non-uniform](docs/images/readme_2d_comparison.png)
 
-Another comparison with the same function, but on a uniform 2D 6x6 grid. The uniform grid allows the cubic spline to achieve even higher accuracy, closely matching the true function values across the domain.
+Another comparison with the same function, but on a uniform 2D 6x6 grid. The uniform grid allows the cubic spline to achieve even higher accuracy, closely matching the true function values across the domain. This example shows how the polyharmonic spline (PHS) can outperform non-periodic cubic splines.
 ![2D Interpolation Example uniform](docs/images/readme_2d_comparison_regular.png)
 
 

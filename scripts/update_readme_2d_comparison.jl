@@ -2,6 +2,7 @@ using FastInterpolations
 using Plots
 using Printf
 using LinearAlgebra
+using Random
 
 f_point(xi, yi) = sin(2π * xi) * cos(2π * yi)
 
@@ -37,9 +38,17 @@ function plot_comparison(xs, ys)
 
     function phs_heatmap(itp)
         z_interp = [itp((xi, yi)) for xi in x_hi, yi in y_hi]
-        heatmap(x_hi, y_hi, z_interp';
+        p = heatmap(x_hi, y_hi, z_interp';
             title = "PHS Interpolation\n (Error≈$(measure_error_string(itp)))",
             kwargs...)
+        xs_nodes = [x for x in xs for _ in ys]
+        ys_nodes = [y for _ in xs for y in ys]
+        scatter!(p, xs_nodes, ys_nodes;
+            color = itp_plot_kwargs.node_color,
+            ms    = itp_plot_kwargs.node_size,
+            alpha = itp_plot_kwargs.node_alpha,
+            label = false)
+        p
     end
 
     # Create plots
@@ -53,8 +62,15 @@ function plot_comparison(xs, ys)
 end
 
 
-x_test = collect(range(0.0, 1.0, 15))
-y_test = collect(range(0.0, 1.0, 15))
+# Irregular 10-point grids: uniform base + small random perturbations,
+# endpoints fixed at 0 and 1.
+let rng = MersenneTwister(42)
+    base = collect(range(0.0, 1.0, 10))
+    noise = [0.0; (rand(rng, 8) .- 0.5) .* 0.06; 0.0]
+    global x_test = clamp.(base .+ noise, 0.0, 1.0)
+    noise = [0.0; (rand(rng, 8) .- 0.5) .* 0.06; 0.0]
+    global y_test = clamp.(base .+ noise, 0.0, 1.0)
+end
 p = plot_comparison(x_test, y_test)
 
 savefig(p, "$(pkgdir(FastInterpolations))/docs/images/readme_2d_comparison.png")

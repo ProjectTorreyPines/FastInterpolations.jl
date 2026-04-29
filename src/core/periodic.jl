@@ -731,7 +731,7 @@ letting user-facing oneshot entry points use a single, non-misleading call.
 end
 
 """
-    _prepare_periodic_nd(grids, data, bcs) -> (grids_ext, data_ext, bcs_resolved)
+    _prepare_periodic_nd(grids, data, bcs) -> (grids_ext, data_ext, bcs_post_extend)
 
 Prepare N-dimensional grids and data for periodic interpolation.
 
@@ -744,7 +744,12 @@ Called once at build time before `_build_nd_coeffs`.
 # Returns
 - `grids_ext`: Grids with exclusive axes extended (Range type preserved when possible)
 - `data_ext`: Data with first slice appended along each exclusive axis
-- `bcs_resolved`: BCs with resolved period for exclusive axes (for display/introspection)
+- `bcs_post_extend`: Per-axis BCs after extension. Exclusive periodic axes are
+  normalized to `PeriodicBC(:inclusive, check=false)` (period dropped — the
+  extended grid carries the period implicitly as `last(grid_ext) - first(grid_ext)`).
+  Callers that need the period for storage/introspection re-materialize via
+  `_with_resolved_period(bc, last(grid_ext) - first(grid_ext))`. Other axes pass
+  through unchanged.
 """
 function _prepare_periodic_nd(
         grids::NTuple{N, AbstractVector{Tg}},

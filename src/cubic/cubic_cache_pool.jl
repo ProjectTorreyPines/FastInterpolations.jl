@@ -376,12 +376,20 @@ end
 # ===============================================================
 
 """
-    _rcu_lookup(snap, id, x) -> cache or nothing
+    _rcu_lookup(snap, id, x, bc_config) -> cache or nothing
 
 Lock-free cache lookup on an immutable snapshot.
 Uses 2-pass algorithm with verification:
-- Pass 1: objectid hint match → verify with isequal (catches in-place mutation)
-- Pass 2: isequal fallback (different object, same content)
+- Pass 1: objectid hint match → verify with isequal + `_verify_cache_match`
+  (catches in-place mutation AND BC mismatch)
+- Pass 2: isequal + `_verify_cache_match` fallback (different object, same content)
+
+The `bc_config` argument is the user-supplied BC for the lookup. It is passed to
+`_verify_cache_match` so exclusive periodic caches can additionally check that
+the cached `bc_config.period` matches the requested period — same `x` with two
+distinct explicit periods (or auto-inferred vs explicit) must yield distinct
+caches. For non-periodic / inclusive caches `_verify_cache_match` falls through
+to `true`, so this argument is a no-op in those banks.
 
 # Thread Safety
 - This function is called on an immutable snapshot

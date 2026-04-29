@@ -12,7 +12,7 @@ function plot_comparison(xs, ys)
     itp_constant = constant_interp((xs, ys), f_test(xs, ys))
     itp_linear = linear_interp((xs, ys), f_test(xs, ys))
     itp_cubic = cubic_interp((xs, ys), f_test(xs, ys); bc = (PeriodicBC(), PeriodicBC()))
-    itp_phs = phs_interp((xs, ys), f_test(xs, ys); stencil_size = 5, degree = 3, blend_factor = 1.5)
+    itp_phs = phs_interp((xs, ys), f_test(xs, ys); stencil_size = 7, degree = 3, blend_factor = 1.5)
 
     # High-res grid for ground truth
     x_hi = collect(range(minimum(xs), maximum(xs), length = 400))

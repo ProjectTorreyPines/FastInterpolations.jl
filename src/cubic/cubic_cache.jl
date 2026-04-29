@@ -45,11 +45,14 @@ function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC = CubicFit()) whe
     # Normalize early: Range → _CachedRange, Vector → identity.
     x = _to_float(x, T)
 
-    # Periodic BC. Both `:inclusive` and `:exclusive` are accepted: the cache
-    # builder is BC-aware (see `_build_periodic_cache`) and resolves the cycle
-    # length + seam-cell width per endpoint variant. Exclusive form lets the
-    # oneshot path consume the user's n-size grid without a (n+1) extension copy.
+    # Periodic BC. Direct construction with `:exclusive` is rejected at the
+    # public surface — the eval kernel for cache-direct usage
+    # (`cubic_interp!(out, cache, y, xq)`) does not thread BC into the searcher,
+    # so seam-cell queries would silently mis-evaluate. The internal cache pool
+    # (`_get_cubic_cache(x, bc, ...)`) handles `:exclusive` correctly when used
+    # via the public `cubic_interp(x, y, ...; bc=...)` oneshot/persistent APIs.
     if _is_periodic_bc(bc)
+        bc isa PeriodicBC{:exclusive} && _throw_periodic_exclusive_cache()
         return _build_periodic_cache(x, bc)
     end
 

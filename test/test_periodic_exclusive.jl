@@ -543,17 +543,14 @@
             @test itp(1.0f0) isa Float32
         end
 
-        @testset "CubicSplineCache accepts exclusive PeriodicBC (zero-copy)" begin
-            # Previously the cache builder threw ArgumentError because the cache
-            # was grid-only and could not extend data values. With the BC-aware
-            # `_build_periodic_cache(x, bc)`, exclusive form is consumed
-            # directly: cycle length = length(x), seam-cell width derived from
-            # `bc.period`. No data extension required.
+        @testset "CubicSplineCache rejects exclusive PeriodicBC (direct construction)" begin
+            # The internal cache pool handles `:exclusive` correctly via the
+            # public oneshot/persistent APIs. Direct cache construction is
+            # rejected because the cache-direct eval path
+            # (`cubic_interp!(out, cache, y, xq)`) does not thread BC into the
+            # searcher, so seam-cell queries would silently mis-evaluate.
             x = range(0.0, step = 0.1, length = 10)
-            cache = CubicSplineCache(x; bc = PeriodicBC(endpoint = :exclusive))
-            @test cache.bc_config isa FastInterpolations.PeriodicData
-            @test cache.bc_config.period ≈ 1.0
-            @test cache.bc_config.h_n ≈ 0.1                  # seam-cell width = period - (last - first)
+            @test_throws ArgumentError CubicSplineCache(x; bc = PeriodicBC(endpoint = :exclusive))
         end
     end
 

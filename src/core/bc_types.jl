@@ -697,6 +697,15 @@ end
     )
 end
 
+@noinline _throw_periodic_exclusive_cache() = throw(
+    ArgumentError(
+        "CubicSplineCache(x; bc=PeriodicBC(endpoint=:exclusive)) direct construction is " *
+            "not supported. Use the public oneshot/persistent APIs " *
+            "(`cubic_interp(x, y, xq; bc=PeriodicBC(endpoint=:exclusive))` or " *
+            "`cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive))`) instead."
+    )
+)
+
 # ========================================
 # Cubic BC Type Alias
 # ========================================

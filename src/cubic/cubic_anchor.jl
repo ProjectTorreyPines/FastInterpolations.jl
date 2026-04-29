@@ -357,9 +357,18 @@ while preserving the full Dual value for weight computation.
     w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
     w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
 
-    # Non-periodic / WrapExtrap path: corner pair is always `(idx, idx+1)` —
-    # no seam wrap. Series oneshot exclusive constructs the anchor directly
-    # with a possibly-wrapped `_IdxPair` (see `_cubic_oneshot_series_periodic!`).
+    # `_anchor_loc` discards `idx_R` from `search_interval`'s 4-tuple, so this
+    # path always assumes `idxR = idxL + 1`. Valid only for:
+    #   - non-periodic queries (no seam dispatch in the searcher),
+    #   - `WrapExtrap` queries (wrap maps into `[first(x), last(x))`, no seam),
+    #   - periodic queries on a *post-extension* (n+1) grid (idxL+1 ≤ n+1).
+    # Periodic-exclusive callers on a raw n-size grid MUST bypass this path
+    # and build the anchor from `search_interval`'s 4-tuple to preserve the
+    # seam pair `(n, 1)` (see `_cubic_oneshot_series_periodic!` /
+    # `_cubic_oneshot_series_periodic_vec!`). The proper long-term fix is the
+    # `_anchor_loc` 4-tuple refactor tracked as MEMORY.md "search_interval
+    # 4-value refactor (PR A)", which would let this path read `idx_R`
+    # directly and eliminate the bypass.
     return _CubicAnchoredQuery(_IdxPair(loc.idx, loc.idx + 1), loc.xq, loc.state, w0, w1, w2, w3, Tg)
 end
 

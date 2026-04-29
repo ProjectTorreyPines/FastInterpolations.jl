@@ -10,7 +10,7 @@ function plot_comparison(xs, ys)
 
     itp_constant = constant_interp((xs, ys), f_test(xs, ys))
     itp_linear = linear_interp((xs, ys), f_test(xs, ys))
-    itp_cubic = cubic_interp((xs, ys), f_test(xs, ys))
+    itp_cubic = cubic_interp((xs, ys), f_test(xs, ys); bc = (PeriodicBC(), PeriodicBC()))
     itp_phs = phs_interp((xs, ys), f_test(xs, ys); stencil_size = 5, degree = 3, blend_factor = 1.5)
 
     # High-res grid for ground truth
@@ -53,8 +53,8 @@ function plot_comparison(xs, ys)
 end
 
 
-x_test = [0, 0.1, 0.4, 0.5, 0.82, 1.0]
-y_test = [0, 0.1, 0.2, 0.5, 0.8, 0.9, 1.0]
+x_test = collect(range(0.0, 1.0, 15))
+y_test = collect(range(0.0, 1.0, 15))
 p = plot_comparison(x_test, y_test)
 
 savefig(p, "$(pkgdir(FastInterpolations))/docs/images/readme_2d_comparison.png")

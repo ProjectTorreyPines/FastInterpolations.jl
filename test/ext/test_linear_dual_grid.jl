@@ -53,9 +53,11 @@ const FI = FastInterpolations
         @test itp isa FI.LinearInterpolant
         @test eltype(itp.x) <: ForwardDiff.Dual
         @test eltype(itp.y) === Float64
-        # Spacing cache is a real VectorSpacing{Dual} carrying partials
-        @test itp.spacing isa FI.VectorSpacing{<:ForwardDiff.Dual}
-        @test length(itp.spacing.h) == length(x) - 1
+        # Grid is wrapped in `_CachedVector{Dual, Dual}` carrying partials
+        # in both the inner grid values and the cached `h`/`inv_h` arrays.
+        @test itp.x isa FI._CachedVector{<:ForwardDiff.Dual}
+        @test eltype(itp.x.h) <: ForwardDiff.Dual
+        @test length(itp.x.h) == length(x) - 1
     end
 
     @testset "Scalar callable returns Dual with correct primal and partial" begin

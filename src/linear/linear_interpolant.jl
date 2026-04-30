@@ -12,11 +12,11 @@
 # _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
 
 @inline function _itp_eval_scalar(itp::LinearInterpolant, xq, extrap, op, searcher)
-    return _linear_eval_at_point(itp.x, itp.y, itp.spacing, xq, extrap, op, searcher)
+    return _linear_eval_at_point(itp.x, itp.y, xq, extrap, op, searcher)
 end
 
 @inline function _itp_vector_loop!(output, itp::LinearInterpolant, xq, extrap, op, searcher)
-    return _linear_vector_loop!(output, itp.x, itp.y, itp.spacing, xq, extrap, op, searcher)
+    return _linear_vector_loop!(output, itp.x, itp.y, xq, extrap, op, searcher)
 end
 
 # ========================================
@@ -26,8 +26,9 @@ end
 # overhead when adaptive AutoSearch resolves to BinarySearch or LinearBinarySearch.
 # CRITICAL: All arguments must be fully typed — untyped args prevent SROA
 # of RefHint's Ref, causing 16-byte heap allocation per call.
-# Oneshot variant (no spacing) and persistent variant (with spacing) coexist;
-# persistent calls reuse the spacing's cached `inv_h` array per query.
+# Single 7-arg signature: persistent vs oneshot strategy is dispatched on the
+# grid type itself inside `_linear_eval_at_point` (via `_alpha_of`/`_get_inv_h`
+# specializations on `_CachedRange`/`_CachedVector` vs raw `AbstractVector`).
 @inline function _linear_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -40,22 +41,6 @@ end
     extrap = _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
         output[i] = _linear_eval_at_point(x, y, xq[i], extrap, deriv, searcher)
-    end
-end
-
-@inline function _linear_vector_loop!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        spacing::AbstractGridSpacing{Tg},
-        xq::AbstractVector{<:Real},
-        extrap::E,
-        deriv::O,
-        searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    extrap = _check_domain(x, xq, extrap)
-    return @inbounds for i in eachindex(xq, output)
-        output[i] = _linear_eval_at_point(x, y, spacing, xq[i], extrap, deriv, searcher)
     end
 end
 
@@ -155,9 +140,27 @@ function linear_interp end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    # Single code path — helper returns (x, y, extrap) passthrough for non-periodic,
-    # or (extended x, extended y, WrapExtrap()) for PeriodicBC (inclusive/exclusive).
-    x_eff, y_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
+    # `:exclusive` PeriodicBC + Vector grid → wrap in `_ExclusivePeriodicVector`
+    # (zero-alloc representation transform: presents length n+1, leaves y at length
+    # n; eval kernels use `_resolve_idx(idx_R, x)` to wrap y access at seam).
+    # Other paths (`:exclusive` Range, `:inclusive`, NoBC) go through legacy
+    # `_periodic_extend_1d` — Range :exclusive is exact-and-zero-alloc via
+    # `_to_float_adding_endpoint`; Vector :inclusive is passthrough.
+    x_eff, y_eff, extrap_eff = _linear_resolve_periodic_grid(x, y, bc, extrap)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
     return LinearInterpolant(x_eff, y_eff; extrap = extrap_p, search)
+end
+
+# Linear-specific periodic grid resolution. Other method families (Cardinal,
+# Akima, Hermite, Constant) keep using `_periodic_extend_1d` directly until
+# their own Step 2.X migration commits adopt the wrapper.
+@inline function _linear_resolve_periodic_grid(
+        x::AbstractVector, y::AbstractVector, bc::AbstractBC, extrap::AbstractExtrap
+    )
+    if bc isa PeriodicBC{:exclusive} && !(x isa AbstractRange)
+        bc_resolved = _resolve_bc_period(x, bc)
+        x_wrapped = _ExclusivePeriodicVector(x, bc_resolved.period)
+        return x_wrapped, y, WrapExtrap(x_wrapped)
+    end
+    return _periodic_extend_1d(x, y, bc, extrap)
 end

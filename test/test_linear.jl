@@ -540,15 +540,16 @@ end
         @test itp(0.5) ≈ sin(0.5) atol = 0.01
     end
 
-    @testset "Vector input → Vector stored (O(log n) path)" begin
+    @testset "Vector input → _CachedVector stored (O(log n) path)" begin
         x_vec = collect(0.0:0.1:1.0)  # Vector{Float64}
         y = sin.(x_vec)
 
         itp = linear_interp(x_vec, y)
 
-        # Vector should remain Vector
-        @test itp.x isa Vector{Float64}
+        # Vector inputs are wrapped in _CachedVector (caches h/inv_h, still <:AbstractVector)
+        @test itp.x isa FastInterpolations._CachedVector{Float64, Float64}
         @test !(itp.x isa AbstractRange)
+        @test eltype(itp.x) == Float64
 
         # Verify correctness
         @test itp(0.5) ≈ sin(0.5) atol = 0.01

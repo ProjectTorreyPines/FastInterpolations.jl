@@ -98,6 +98,13 @@ Base.size(g::_ExclusivePeriodicVector) = (length(g),)
 Base.eltype(::Type{<:_ExclusivePeriodicVector{Tg}}) where {Tg} = Tg
 Base.IndexStyle(::Type{<:_ExclusivePeriodicVector}) = IndexLinear()
 
+# `first`/`last` capture the *virtual* extended span — `WrapExtrap(g)` relies
+# on these to compute the wrap domain. Without these overrides, `last(g)`
+# would resolve to `g[length(g)] = g[n+1]` which raises BoundsError (since
+# `Base.getindex` forwards to `inner`).
+@inline Base.first(g::_ExclusivePeriodicVector) = @inbounds g.inner[1]
+@inline Base.last(g::_ExclusivePeriodicVector) = @inbounds g.inner[1] + g.period
+
 # ========================================
 # Helpers: virtual access + index resolution + ND fold-back
 # ========================================
@@ -158,6 +165,29 @@ before calling this helper.
     selectdim(arr, dim, 1) .+= selectdim(arr, dim, n_period + 1)
     return arr
 end
+
+"""
+    _grid_length(x) -> Int
+
+Number of *physical* knot points on the axis grid `x`. Identity to
+`length(x)` for plain vectors and ranges (the user-supplied grid IS the
+data grid). For `_ExclusivePeriodicVector` returns `length(g.inner)` (n,
+the user's original grid size) rather than the virtual n+1 that `length(g)`
+reports for the extended search domain.
+
+Used by interpolant constructors to validate that the y values supplied
+correspond one-to-one with the user's original grid points (not with the
+virtually extended search domain).
+"""
+@inline _grid_length(x::AbstractVector) = length(x)
+@inline _grid_length(g::_ExclusivePeriodicVector) = length(g.inner)
+
+# `_ExclusivePeriodicVector` passes through `_store_grid_cached` (defined
+# in cached_vector.jl). When a method-family factory wraps a Vector +
+# `:exclusive` PeriodicBC grid before delegating to the persistent
+# constructor, the wrapper must survive the constructor's `_store_grid_cached`
+# call rather than being re-wrapped or mistakenly converted.
+@inline _store_grid_cached(x::_ExclusivePeriodicVector, ::Type{Tg}) where {Tg} = x
 
 # ========================================
 # Spacing accessors: idx-aware with seam fast-path
@@ -223,6 +253,14 @@ end
 # the seam-specialized dispatch (`Searcher{...,<:PeriodicBC{:exclusive}},
 # AbstractVector, Real`). When the grid is `_ExclusivePeriodicVector`, the
 # wrapper handles the seam — the searcher's BC seam logic is bypassed.
+
+# GridIdx queries — bypass the seam fast-path entirely (user-supplied explicit
+# index semantics, no wrap). Mirrors `search_interval(s, x::AbstractVector, ::GridIdx)`
+# in search.jl. Required to avoid Aqua method-ambiguity warnings.
+@inline function search_interval(s::Searcher, g::_ExclusivePeriodicVector, xq::GridIdx)
+    idx, xL, xR = _search_grididx_dispatch(s.hint, g, xq)
+    return idx, idx + 1, xL, xR
+end
 
 # Generic BC + wrapper: always use grid-type seam handling.
 @inline function search_interval(

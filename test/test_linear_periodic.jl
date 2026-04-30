@@ -591,7 +591,7 @@
     # ============================================================
     # Interpolant path — extended copy storage
     # ============================================================
-    @testset "Interpolant path stores extended copy (Vector grid)" begin
+    @testset "Interpolant path stores Vector grid in `_ExclusivePeriodicVector`" begin
         x = [0.0, 1.0, 2.0, 3.0]
         y = [10.0, 20.0, 30.0, 40.0]
         x_ref = copy(x)
@@ -599,11 +599,19 @@
 
         itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 4.0))
 
-        # Stored grid/values are length N+1 with the virtual endpoint appended.
-        @test length(itp.x) == 5
-        @test length(itp.y) == 5
-        @test itp.y[end] == itp.y[1]  # appended y[1] at the end
-        @test itp.x[end] ≈ 4.0
+        # Vector + `:exclusive` is now wrapped in `_ExclusivePeriodicVector`
+        # (zero-alloc representation transform; y is left at length n).
+        @test itp.x isa FastInterpolations._ExclusivePeriodicVector
+        @test length(itp.x) == 5                # virtual extended length n+1
+        @test length(itp.x.inner) == 4          # physical inner grid length n
+        @test itp.x.period ≈ 4.0
+        @test length(itp.y) == 4                # y is NOT extended — wrapper handles seam
+        @test itp.x.inner == x                  # inner grid is the user's original grid
+        @test itp.y == y                        # y is the user's original values
+
+        # Virtual endpoint via `_getindex` (NOT plain `[]`, which BoundsErrors
+        # to keep hot search loops branch-free).
+        @test FastInterpolations._getindex(itp.x, 5) ≈ 4.0
 
         # Original user arrays are untouched.
         @test x == x_ref

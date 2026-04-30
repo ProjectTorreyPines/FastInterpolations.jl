@@ -57,7 +57,7 @@
             itp = linear_interp(x_random, y)
 
             @test itp isa LinearInterpolant
-            @test itp.x isa Vector{Float64}  # Random grid stored as Vector
+            @test itp.x isa FastInterpolations._CachedVector{Float64, Float64}  # Vector grid → _CachedVector
 
             x_min, x_max = extrema(x_random)
             xi = (x_min + x_max) / 2

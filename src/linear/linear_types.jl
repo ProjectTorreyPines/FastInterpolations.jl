@@ -5,7 +5,7 @@
 # Constructor and callable methods are in linear_interpolant.jl.
 
 """
-    LinearInterpolant{Tg,Tv,X,Y,S,E,P}
+    LinearInterpolant{Tg,Tv,X,Y,E,P}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `linear_interp(x, y)` (2-argument form).
@@ -13,19 +13,18 @@ Returned by `linear_interp(x, y)` (2-argument form).
 # Type Parameters
 - `Tg`: Grid type — normally `Float32`/`Float64`, but **unconstrained** to admit
         duck-typed grid scalars (e.g. `ForwardDiff.Dual`) that satisfy the grid
-        arithmetic/ordering protocol (`-`, `inv`, `*`, `<`). Duck grids take a
-        pass-through normalization path and build a differentiable `VectorSpacing{Tg}`.
+        arithmetic/ordering protocol (`-`, `inv`, `*`, `<`).
 - `Tv`: Value type (unconstrained)
-- `X<:AbstractVector{Tg}`: Grid vector type (preserves Range for O(1) lookup)
+- `X<:AbstractVector{Tg}`: Grid vector type — `_CachedRange{Tg}` for Range input
+        (uniform, O(1) search + cached `h`/`inv_h` scalars), `_CachedVector{Tg,Tinv}`
+        for Vector input (non-uniform, O(log n) search + cached `h`/`inv_h` arrays).
 - `Y<:AbstractVector{Tv}`: Values vector type
-- `S<:AbstractGridSpacing{Tg}`: Grid spacing type (ScalarSpacing or VectorSpacing)
 - `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
 - `P<:AbstractSearchPolicy`: Search policy type
 
 # Fields
-- `x::X`: x-coordinates (sorted)
+- `x::X`: x-coordinates (sorted, wrapped — grid is the source of truth for spacing)
 - `y::Y`: y-values
-- `spacing::S`: Precomputed grid spacing (avoids TwicePrecision overhead on Range grids)
 - `extrap::E`: Extrapolation mode (NoExtrap(), ExtendExtrap(), ClampExtrap(), or WrapExtrap())
 - `search_policy::P`: Default search policy for interval lookup
 
@@ -63,29 +62,32 @@ struct LinearInterpolant{
         Tv,
         X <: AbstractVector{Tg},
         Y <: AbstractVector{Tv},
-        S <: AbstractGridSpacing{Tg},
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
     } <: AbstractInterpolant1D{Tg, Tv}
     x::X
     y::Y
-    spacing::S  # Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
     extrap::E  # Extrapolation mode (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    # Inner constructor: promotes x/y, creates spacing, stores everything.
-    # _store_grid: Vector → _convert_copy (single alloc), Range → _CachedRange (stack).
-    # _convert_copy: same-type → copy(), different-type → Vector{T}(v).
+    # Inner constructor: promotes x/y, wraps grid for cached spacing, stores.
+    # _store_grid_cached: Vector → _CachedVector (cached h/inv_h),
+    #                     Range → _CachedRange (cached scalar h/inv_h).
+    # Spacing access via `_get_h(itp.x, i)` / `_get_inv_h(itp.x, i)` —
+    # grid is the single source of truth; no separate spacing field.
     function LinearInterpolant(
             x::AbstractVector, y::AbstractVector, ev::E, search::P
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
-        length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
+        # `_grid_length(x)` returns physical knot count: identity for plain
+        # vectors/ranges, `length(x.inner)` for `_ExclusivePeriodicVector`
+        # (whose `length` reports the virtually extended n+1 search domain).
+        n_grid = _grid_length(x)
+        n_grid == length(y) || _throw_length_mismatch(n_grid, length(y))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid(x, Tg)
+        xc = _store_grid_cached(x, Tg)
         yc = _convert_copy(y, Tv)
-        spacing = _create_spacing(xc)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(spacing), E, P}(xc, yc, spacing, ev, search)
+        return new{Tg, Tv, typeof(xc), typeof(yc), E, P}(xc, yc, ev, search)
     end
 end
 

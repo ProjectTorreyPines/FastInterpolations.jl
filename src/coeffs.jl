@@ -144,9 +144,13 @@ end
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)
-    i, i_R, xL, xR = search_interval(searcher, itp.x, itp.spacing, xq)
+    i, i_R, xL, xR = search_interval(searcher, itp.x, xq)
     @inbounds begin
-        slope = (itp.y[i_R] - itp.y[i]) * _get_inv_h(itp.spacing, i)
+        # itp.x is `_CachedRange`, `_CachedVector`, or `_ExclusivePeriodicVector`.
+        # 2-arg `_get_inv_h(x, i)` dispatches to cached scalar / vector lookup, or
+        # (for the wrapper at seam) computes from period. `_resolve_idx(i_R, itp.x)`
+        # wraps the virtual `n+1` → `1` for the wrapper; identity elsewhere.
+        slope = (itp.y[_resolve_idx(i_R, itp.x)] - itp.y[i]) * _get_inv_h(itp.x, i)
         return CellPoly{2, Tv, Tg}((itp.y[i], slope), xL, xR)
     end
 end

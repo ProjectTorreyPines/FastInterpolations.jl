@@ -144,3 +144,24 @@ end
 # itself are deleted in Step 3.
 @inline _create_spacing(c::_CachedVector{T, Tinv}) where {T, Tinv} =
     VectorSpacing{T, Tinv}(c.h, c.inv_h)
+
+# ========================================
+# _store_grid_cached: persistent grid wrapping
+# ========================================
+#
+# Companion to `_store_grid` (utils.jl). Where `_store_grid` is the
+# lightweight normalizer used by cache-lookup paths (Vector inputs stay
+# raw to avoid per-call wrap allocations on autocache hits),
+# `_store_grid_cached` is for persistent interpolant constructors that
+# build the struct ONCE — they pay the wrap cost upfront so every
+# subsequent eval gets O(1) `_get_h`/`_get_inv_h` cached lookups.
+#
+# After Step 2 migration, persistent constructors call this instead of
+# `_store_grid`. Resulting `xc` is always one of:
+#   {`_CachedRange{Tg}`, `_CachedVector{Tg, Tinv}`}
+# enabling unified `_get_h(xc, i)` dispatch with cached lookup.
+@inline _store_grid_cached(x::AbstractVector, ::Type{Tg}) where {Tg} =
+    _CachedVector(_convert_copy(x, Tg))
+@inline _store_grid_cached(x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+@inline _store_grid_cached(x::_CachedVector, ::Type{Tg}) where {Tg} = x
+@inline _store_grid_cached(x::_CachedRange, ::Type{Tg}) where {Tg} = x

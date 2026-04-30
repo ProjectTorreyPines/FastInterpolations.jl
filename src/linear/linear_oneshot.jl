@@ -236,23 +236,7 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     α = _alpha_of(xq, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
-end
-
-@inline function _linear_eval_at_point(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        spacing::AbstractGridSpacing{Tg},
-        xq::Tq,
-        extrap::AbstractExtrap,
-        op::O,
-        searcher::S
-    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    @boundscheck _check_domain(x, xq, extrap)
-    idx, idx_R, xL, _ = search_interval(searcher, x, xq)
-    inv_h = _get_inv_h(spacing, idx)
-    α = (xq - xL) * inv_h
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], inv_h, α)
+    @inbounds return _linear_kernel(op, y[idx], y[_resolve_idx(idx_R, x)], _get_inv_h(x, xL, xR), α)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
@@ -272,28 +256,7 @@ end
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     α = _alpha_of(xq, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
-end
-
-@inline function _linear_eval_at_point(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        spacing::AbstractGridSpacing{Tg},
-        xq::Tq,
-        extrap::_ClampOrFill,
-        op::O,
-        searcher::S
-    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_primal = _extract_primal(xq)
-    if xq_primal < first(x)
-        return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > last(x)
-        return _eval_extrapolation(op, last(y), extrap, xq)
-    end
-    idx, idx_R, xL, _ = search_interval(searcher, x, xq)
-    inv_h = _get_inv_h(spacing, idx)
-    α = (xq - xL) * inv_h
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], inv_h, α)
+    @inbounds return _linear_kernel(op, y[idx], y[_resolve_idx(idx_R, x)], _get_inv_h(x, xL, xR), α)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
@@ -312,23 +275,7 @@ end
     xq_wrapped = _wrap_to_domain(xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     α = _alpha_of(xq_wrapped, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
-end
-
-@inline function _linear_eval_at_point(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        spacing::AbstractGridSpacing{Tg},
-        xq::Tq,
-        extrap::WrapExtrap,
-        op::O,
-        searcher::S
-    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, extrap)
-    idx, idx_R, xL, _ = search_interval(searcher, x, xq_wrapped)
-    inv_h = _get_inv_h(spacing, idx)
-    α = (xq_wrapped - xL) * inv_h
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], inv_h, α)
+    @inbounds return _linear_kernel(op, y[idx], y[_resolve_idx(idx_R, x)], _get_inv_h(x, xL, xR), α)
 end
 
 # Public scalar one-shot API.

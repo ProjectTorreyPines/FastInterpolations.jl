@@ -1,11 +1,11 @@
-@testitem "_ExclusivePeriodicGrid construction + interface" begin
-    using FastInterpolations: _ExclusivePeriodicGrid
+@testitem "_ExclusivePeriodicVector construction + interface" begin
+    using FastInterpolations: _ExclusivePeriodicVector
 
     @testset "Vector inner — basic round-trip" begin
         x = [0.0, 0.25, 0.5, 0.75]
-        g = _ExclusivePeriodicGrid(x, 1.0)
+        g = _ExclusivePeriodicVector(x, 1.0)
 
-        @test g isa _ExclusivePeriodicGrid{Float64, Vector{Float64}, Float64}
+        @test g isa _ExclusivePeriodicVector{Float64, Vector{Float64}, Float64}
         @test g.inner === x
         @test g.period == 1.0
 
@@ -27,11 +27,13 @@
         @test_throws BoundsError g[5]
     end
 
-    @testset "Range inner" begin
-        x = 0.0:0.25:0.75   # length 4
-        g = _ExclusivePeriodicGrid(x, 1.0)
+    @testset "_CachedVector inner" begin
+        using FastInterpolations: _CachedVector
+        x = [0.0, 0.25, 0.5, 0.75]
+        cv = _CachedVector(x)
+        g = _ExclusivePeriodicVector(cv, 1.0)
 
-        @test g isa _ExclusivePeriodicGrid{Float64}
+        @test g isa _ExclusivePeriodicVector{Float64, _CachedVector{Float64, Float64}, Float64}
         @test length(g) == 5
         @test eltype(g) == Float64
 
@@ -42,27 +44,35 @@
 
     @testset "Float32 grid + Float32 period" begin
         x = Float32[0.0, 0.5, 1.0, 1.5]
-        g = _ExclusivePeriodicGrid(x, Float32(2.0))
-        @test g isa _ExclusivePeriodicGrid{Float32, Vector{Float32}, Float32}
+        g = _ExclusivePeriodicVector(x, Float32(2.0))
+        @test g isa _ExclusivePeriodicVector{Float32, Vector{Float32}, Float32}
         @test eltype(g) == Float32
     end
 
     @testset "Different period type than grid (e.g. Int period)" begin
         x = [0.0, 1.0, 2.0]
-        g = _ExclusivePeriodicGrid(x, 3)  # Int period
+        g = _ExclusivePeriodicVector(x, 3)  # Int period
         @test g.period == 3
         @test g.period isa Int
     end
+
+    @testset "AbstractRange inner is rejected (Range path uses _CachedRange of length n+1 instead)" begin
+        r = 0.0:0.25:0.75
+        @test_throws ArgumentError _ExclusivePeriodicVector(r, 1.0)
+
+        cr = FastInterpolations._to_float(r, Float64)  # _CachedRange
+        @test_throws ArgumentError _ExclusivePeriodicVector(cr, 1.0)
+    end
 end
 
-@testitem "_ExclusivePeriodicGrid helpers (_getindex, _resolve_idx)" begin
-    using FastInterpolations: _ExclusivePeriodicGrid, _getindex, _resolve_idx
+@testitem "_ExclusivePeriodicVector helpers (_getindex, _resolve_idx)" begin
+    using FastInterpolations: _ExclusivePeriodicVector, _getindex, _resolve_idx
 
     x = [0.0, 0.25, 0.5, 0.75]
-    g = _ExclusivePeriodicGrid(x, 1.0)
+    g = _ExclusivePeriodicVector(x, 1.0)
     n = length(x)  # = 4
 
-    @testset "_getindex on _ExclusivePeriodicGrid" begin
+    @testset "_getindex on _ExclusivePeriodicVector" begin
         # Normal cells: forward to inner
         for i in 1:n
             @test _getindex(g, i) == x[i]
@@ -86,7 +96,7 @@ end
         end
     end
 
-    @testset "_resolve_idx on _ExclusivePeriodicGrid" begin
+    @testset "_resolve_idx on _ExclusivePeriodicVector" begin
         # Normal indices: unchanged
         for i in 1:n
             @test _resolve_idx(i, g) == i
@@ -103,12 +113,62 @@ end
     end
 end
 
-@testitem "_ExclusivePeriodicGrid specialized search (PoC validation)" begin
-    using FastInterpolations: _ExclusivePeriodicGrid, _search_binary, _search_direct
+@testitem "_ExclusivePeriodicVector idx-aware _get_h / _get_inv_h" begin
+    using FastInterpolations: _ExclusivePeriodicVector, _CachedVector, _get_h, _get_inv_h
+
+    x = [0.0, 0.25, 0.5, 0.75]   # h = [0.25, 0.25, 0.25], seam_h = 1.0 - 0.75 + 0.0 = 0.25
+    period = 1.0
+
+    @testset "Vector inner — normal cells delegate, seam cell computes from period" begin
+        g = _ExclusivePeriodicVector(x, period)
+
+        # Normal cells (idx = 1..n-1): delegate to inner's on-the-fly diff
+        @test _get_h(g, 1) ≈ 0.25
+        @test _get_h(g, 2) ≈ 0.25
+        @test _get_h(g, 3) ≈ 0.25
+        @test _get_inv_h(g, 1) ≈ 4.0
+        @test _get_inv_h(g, 3) ≈ 4.0
+
+        # Seam cell (idx = n = 4): h = inner[1] + period - inner[n] = 0.25
+        @test _get_h(g, 4) ≈ 0.25
+        @test _get_inv_h(g, 4) ≈ 4.0
+    end
+
+    @testset "_CachedVector inner — normal cells use cached fast path" begin
+        cv = _CachedVector(x)
+        g = _ExclusivePeriodicVector(cv, period)
+
+        # Normal cells: cached lookup via inner._CachedVector
+        @test _get_h(g, 1) === cv.h[1]
+        @test _get_inv_h(g, 1) === cv.inv_h[1]
+
+        # Seam cell: still computed on-the-fly (cv.h doesn't have seam slot)
+        @test _get_h(g, 4) ≈ 0.25
+        @test _get_inv_h(g, 4) ≈ 4.0
+    end
+
+    @testset "Asymmetric seam — period larger than data span" begin
+        # x covers [0.0, 0.7], period = 1.0 → seam_h = 1.0 - 0.7 + 0.0 = 0.3
+        x_asym = [0.0, 0.2, 0.5, 0.7]
+        g = _ExclusivePeriodicVector(x_asym, 1.0)
+
+        # Normal cells
+        @test _get_h(g, 1) ≈ 0.2
+        @test _get_h(g, 2) ≈ 0.3
+        @test _get_h(g, 3) ≈ 0.2
+
+        # Seam cell — wider than any normal cell
+        @test _get_h(g, 4) ≈ 0.3
+        @test _get_inv_h(g, 4) ≈ 1 / 0.3
+    end
+end
+
+@testitem "_ExclusivePeriodicVector specialized search (PoC validation)" begin
+    using FastInterpolations: _ExclusivePeriodicVector, _search_binary
 
     @testset "Vector inner — _search_binary seam fast-path" begin
         x = collect(range(0.0, 0.75; length = 4))  # [0.0, 0.25, 0.5, 0.75], n=4
-        g = _ExclusivePeriodicGrid(x, 1.0)
+        g = _ExclusivePeriodicVector(x, 1.0)
 
         # Normal in-domain queries: should match raw inner search
         for xq in [0.05, 0.3, 0.55]
@@ -128,53 +188,34 @@ end
         end
     end
 
-    @testset "Range inner — _search_direct seam fast-path" begin
-        x = 0.0:0.25:0.75   # length 4
-        g = _ExclusivePeriodicGrid(x, 1.0)
+    @testset "_CachedVector inner — _search_binary delegates to inner.inner" begin
+        using FastInterpolations: _CachedVector
+        x = [0.0, 0.25, 0.5, 0.75]
+        cv = _CachedVector(x)
+        g = _ExclusivePeriodicVector(cv, 1.0)
 
-        # Normal in-domain
-        for xq in [0.05, 0.3, 0.55]
-            idx_g, xL_g, xR_g = _search_direct(g, xq)
-            idx_x, xL_x, xR_x = _search_direct(x, xq)
-            @test idx_g == idx_x
-            @test xL_g == xL_x
-            @test xR_g == xR_x
-        end
+        # Normal: delegates to _search_binary(::_CachedVector — itself <:AbstractVector)
+        idx, xL, xR = _search_binary(g, 0.3)
+        @test idx == 2
+        @test xL == 0.25
+        @test xR == 0.5
 
-        # Seam case
-        idx, xL, xR = _search_direct(g, 0.85)
+        # Seam
+        idx, xL, xR = _search_binary(g, 0.85)
         @test idx == 4
         @test xL == 0.75
         @test xR ≈ 1.0
     end
-
-    @testset "_CachedRange inner (via _CachedRange <: AbstractRange dispatch)" begin
-        using FastInterpolations: _CachedRange, _to_float
-        cr = _to_float(0.0:0.25:0.75, Float64)
-        g = _ExclusivePeriodicGrid(cr, 1.0)
-
-        # Normal: delegates to _search_direct(::_CachedRange, ...)
-        idx, xL, xR = _search_direct(g, 0.3)
-        @test idx == 2
-        @test xL ≈ 0.25
-        @test xR ≈ 0.5
-
-        # Seam
-        idx, xL, xR = _search_direct(g, 0.95)
-        @test idx == 4
-        @test xL ≈ 0.75
-        @test xR ≈ 1.0
-    end
 end
 
-@testitem "_ExclusivePeriodicGrid search_interval 4-tuple entry" begin
+@testitem "_ExclusivePeriodicVector search_interval 4-tuple entry" begin
     using FastInterpolations:
-        _ExclusivePeriodicGrid, search_interval, _resolve_search,
-        AutoSearch, NoBC, BinarySearch, _to_float
+        _ExclusivePeriodicVector, search_interval, _resolve_search,
+        AutoSearch, NoBC, BinarySearch
 
     @testset "Vector grid + NoBC searcher" begin
         x = [0.0, 0.25, 0.5, 0.75]
-        g = _ExclusivePeriodicGrid(x, 1.0)
+        g = _ExclusivePeriodicVector(x, 1.0)
         searcher = _resolve_search(g, 0.3, BinarySearch(), nothing, NoBC())
 
         # Normal cell
@@ -191,28 +232,16 @@ end
         @test xL == 0.75
         @test xR ≈ 1.0           # virtual right endpoint = x[1] + period
     end
-
-    @testset "Range grid + NoBC searcher" begin
-        r = 0.0:0.25:0.75
-        g = _ExclusivePeriodicGrid(r, 1.0)
-        searcher = _resolve_search(g, 0.5, BinarySearch(), nothing, NoBC())
-
-        idx, idx_R, xL, xR = search_interval(searcher, g, 0.5)
-        @test idx == 3
-        @test idx_R == 4
-        @test xL ≈ 0.5
-        @test xR ≈ 0.75
-    end
 end
 
-@testitem "_ExclusivePeriodicGrid + _resolve_idx round-trip in eval-style usage" begin
-    using FastInterpolations: _ExclusivePeriodicGrid, search_interval, _resolve_idx,
+@testitem "_ExclusivePeriodicVector + _resolve_idx round-trip in eval-style usage" begin
+    using FastInterpolations: _ExclusivePeriodicVector, search_interval, _resolve_idx,
                               _resolve_search, NoBC, BinarySearch
 
     # Simulate an eval kernel: use search_interval + _resolve_idx to access data
     x = [0.0, 0.25, 0.5, 0.75]
     y = [1.0, 2.0, 3.0, 4.0]
-    g = _ExclusivePeriodicGrid(x, 1.0)
+    g = _ExclusivePeriodicVector(x, 1.0)
     searcher = _resolve_search(g, 0.0, BinarySearch(), nothing, NoBC())
 
     @testset "Normal cell — yL, yR straight from y[idx], y[idx_R]" begin

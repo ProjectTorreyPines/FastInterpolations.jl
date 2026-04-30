@@ -15,7 +15,7 @@ include("idx_stencil.jl")      # 6a. _IdxStencil{K} — wrap-aware per-axis inde
 include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)
 include("utils.jl")            # 7. Shared utilities (1D)
 include("periodic.jl")         # 8. Periodic BC helpers (wrapping, validation, exclusive endpoint)
-include("periodic_grid.jl")    # 8b. _ExclusivePeriodicGrid wrapper (representation transform for `:exclusive` BC)
+include("periodic_vector.jl")  # 8b. _ExclusivePeriodicVector wrapper (representation transform for `:exclusive` BC on Vector grids)
 include("anchor_common.jl")    # 8c. Shared _AnchorLoc + _anchor_loc (all methods, 1D/ND)
 include("nd_utils.jl")            # 9. ND-specific utilities (shared by constant/linear/cubic ND)
 include("query_protocol.jl")           # 9b. Query protocol (query_length, extract, eltype, validate)

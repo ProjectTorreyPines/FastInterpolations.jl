@@ -78,11 +78,12 @@ struct LinearInterpolant{
     function LinearInterpolant(
             x::AbstractVector, y::AbstractVector, ev::E, search::P
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
-        # `_grid_length(x)` returns physical knot count: identity for plain
-        # vectors/ranges, `length(x.inner)` for `_ExclusivePeriodicVector`
-        # (whose `length` reports the virtually extended n+1 search domain).
-        n_grid = _grid_length(x)
-        n_grid == length(y) || _throw_length_mismatch(n_grid, length(y))
+        # `_check_compatible_length(x, y)` is a single generic `length(x)
+        # == length(y)` check that works uniformly: plain vectors agree
+        # naturally, and the wrapped `_ExclusivePeriodicAxis` /
+        # `_ExclusivePeriodicData` pair both report the virtual `n+1`,
+        # so the comparison stays correct without per-pair dispatch.
+        _check_compatible_length(x, y)
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
         xc = _store_grid_cached(x, Tg)

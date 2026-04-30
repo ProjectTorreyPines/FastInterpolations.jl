@@ -236,7 +236,7 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     α = _alpha_of(xq, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[_resolve_idx(idx_R, x)], _get_inv_h(x, xL, xR), α)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
@@ -256,7 +256,7 @@ end
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     α = _alpha_of(xq, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[_resolve_idx(idx_R, x)], _get_inv_h(x, xL, xR), α)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
@@ -275,7 +275,7 @@ end
     xq_wrapped = _wrap_to_domain(xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     α = _alpha_of(xq_wrapped, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[_resolve_idx(idx_R, x)], _get_inv_h(x, xL, xR), α)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
 end
 
 # Public scalar one-shot API.

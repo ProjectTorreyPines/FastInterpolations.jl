@@ -373,7 +373,7 @@
     # ============================================================
     # Interpolant path — extended copy storage
     # ============================================================
-    @testset "Interpolant path stores extended copy (Vector grid)" begin
+    @testset "Interpolant path stores Vector grid in `_ExclusivePeriodicAxis` + y in `_ExclusivePeriodicData`" begin
         x = [0.0, 1.0, 2.0, 3.0]
         y = [10.0, 20.0, 30.0, 40.0]
         x_ref = copy(x)
@@ -381,10 +381,16 @@
 
         itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 4.0))
 
+        # Both axis and data are wrapped — zero-copy presents virtual length n+1.
+        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
+        @test itp.y isa FastInterpolations._ExclusivePeriodicData
         @test length(itp.x) == 5
         @test length(itp.y) == 5
-        @test itp.y[end] == itp.y[1]
-        @test itp.x[end] ≈ 4.0
+        @test itp.y[end] == itp.y[1] == 10.0    # cyclic via data wrapper
+        @test last(itp.x) ≈ 4.0                  # axis: inner[1] + period (virtual coord)
+        # Plain `itp.x[5]` BoundsErrors (axis wrapper has no auto-cycle on `getindex`);
+        # use `_getindex` for the virtual coord:
+        @test FastInterpolations._getindex(itp.x, 5) ≈ 4.0
 
         # Original arrays unmodified.
         @test x == x_ref

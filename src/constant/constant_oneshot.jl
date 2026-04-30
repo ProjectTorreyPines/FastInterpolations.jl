@@ -29,6 +29,11 @@
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
     @boundscheck _check_domain(x, xi, extrap)
     if _extract_primal(xi) == _extract_primal(last(x))
+        # `last(x)` for `_ExclusivePeriodicAxis` is the *virtual* `inner[1] + period`
+        # (the seam right endpoint). The corresponding y at that virtual slot is
+        # `last(y) = inner[1]` for `_ExclusivePeriodicData` — cyclic via the data
+        # wrapper. For raw vectors both `last`s are the user's last entry.
+        # Single uniform `last(y)` handles both cases — no `_resolve_idx` needed.
         return op isa EvalValue ? last(y) : 0 * first(y)
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xi)

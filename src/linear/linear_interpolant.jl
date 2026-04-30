@@ -159,8 +159,12 @@ end
     )
     if bc isa PeriodicBC{:exclusive} && !(x isa AbstractRange)
         bc_resolved = _resolve_bc_period(x, bc)
-        x_wrapped = _ExclusivePeriodicVector(x, bc_resolved.period)
-        return x_wrapped, y, WrapExtrap(x_wrapped)
+        x_wrapped = _ExclusivePeriodicAxis(x, bc_resolved.period)
+        # Wrap y in the data-side companion so eval kernels can use plain
+        # `y[idx_R]` and `last(y)` without `_resolve_idx` calls — the data
+        # wrapper auto-cycles the virtual `n+1` slot back to `inner[1]`.
+        y_wrapped = _ExclusivePeriodicData(y)
+        return x_wrapped, y_wrapped, WrapExtrap(x_wrapped)
     end
     return _periodic_extend_1d(x, y, bc, extrap)
 end

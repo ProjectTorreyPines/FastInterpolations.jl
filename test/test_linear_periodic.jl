@@ -591,7 +591,7 @@
     # ============================================================
     # Interpolant path — extended copy storage
     # ============================================================
-    @testset "Interpolant path stores Vector grid in `_ExclusivePeriodicVector`" begin
+    @testset "Interpolant path stores Vector grid in `_ExclusivePeriodicAxis` + y in `_ExclusivePeriodicData`" begin
         x = [0.0, 1.0, 2.0, 3.0]
         y = [10.0, 20.0, 30.0, 40.0]
         x_ref = copy(x)
@@ -599,19 +599,25 @@
 
         itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 4.0))
 
-        # Vector + `:exclusive` is now wrapped in `_ExclusivePeriodicVector`
-        # (zero-alloc representation transform; y is left at length n).
-        @test itp.x isa FastInterpolations._ExclusivePeriodicVector
+        # Vector + `:exclusive` is now wrapped in `_ExclusivePeriodicAxis`
+        # (axis-side, carries period) + `_ExclusivePeriodicData` (data-side,
+        # auto-cyclic). Zero-copy: both wrappers reference the user's arrays.
+        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
+        @test itp.y isa FastInterpolations._ExclusivePeriodicData
         @test length(itp.x) == 5                # virtual extended length n+1
+        @test length(itp.y) == 5                # data wrapper also reports n+1
         @test length(itp.x.inner) == 4          # physical inner grid length n
+        @test length(itp.y.inner) == 4          # physical inner data length n
         @test itp.x.period ≈ 4.0
-        @test length(itp.y) == 4                # y is NOT extended — wrapper handles seam
         @test itp.x.inner == x                  # inner grid is the user's original grid
-        @test itp.y == y                        # y is the user's original values
+        @test itp.y.inner == y                  # inner data is the user's original values
 
-        # Virtual endpoint via `_getindex` (NOT plain `[]`, which BoundsErrors
-        # to keep hot search loops branch-free).
+        # Virtual endpoints: axis carries coord (`inner[1] + period`),
+        # data auto-cycles (`inner[1]`).
         @test FastInterpolations._getindex(itp.x, 5) ≈ 4.0
+        @test itp.y[5] == itp.y[1] == 10.0      # cyclic via data wrapper's getindex
+        @test last(itp.x) ≈ 4.0                 # axis: inner[1] + period
+        @test last(itp.y) == 10.0               # data: inner[1] (cyclic)
 
         # Original user arrays are untouched.
         @test x == x_ref

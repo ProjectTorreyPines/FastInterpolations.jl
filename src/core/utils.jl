@@ -314,6 +314,12 @@ Kernel arithmetic auto-promotes Int×Float via Julia's built-in promotion rules.
 Single-allocation grid storage for interpolant constructors.
 - `AbstractVector`: `_convert_copy(x, Tg)` — promote + copy in one step (no double alloc)
 - `AbstractRange`: `_to_float(x, Tg)` — `_CachedRange` (stack alloc, preserves O(1) search)
+
+Note: this is the lightweight normalization — Vector inputs stay as plain
+`Vector{Tg}`, no spacing cache. Method-family constructors that want
+per-cell h/inv_h caching wrap explicitly via `_CachedVector(_store_grid(x, Tg))`
+during the build step (so the cache miss path pays the wrap cost just once,
+without inflating cache-hit lookups).
 """
 @inline _store_grid(x::AbstractVector, ::Type{Tg}) where {Tg} = _convert_copy(x, Tg)
 @inline _store_grid(x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)

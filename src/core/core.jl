@@ -9,6 +9,7 @@ include("coeff_types.jl")         # 3c. AbstractCoeffStrategy, PreCompute, OnThe
 include("polyfit_kernels.jl")       # 4. Boundary condition computation kernels (Lagrange, etc.)
 include("grid_spacing.jl")     # 5. ScalarSpacing, VectorSpacing
 include("cached_range.jl")     # 5b. _CachedRange struct + _to_float (Range → _CachedRange normalizer)
+include("cached_vector.jl")    # 5c. _CachedVector struct (Vector grid + cached h/inv_h)
 include("search.jl")           # 6. Search policy + interval search
 include("idx_stencil.jl")      # 6a. _IdxStencil{K} — wrap-aware per-axis index stencil
 include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)

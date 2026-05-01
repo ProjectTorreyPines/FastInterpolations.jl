@@ -61,6 +61,18 @@ end
 @inline _wrap_to_domain(xq, x::AbstractVector) =
     _wrap_to_domain(xq, first(x), last(x))
 
+# Searcher-aware overload: when the searcher carries `PeriodicBC{:exclusive}`
+# (raw x, period in `s.bc`), use the bc's resolved period to compute the wrap
+# domain. This is the OnTheFly Hermite-family path where x is the raw user
+# vector (length n) and `last(x) ≠ first(x) + period`. Migrated paths
+# (Linear/Cubic with wrapped `_ExclusivePeriodicAxis`) use NoBC searchers and
+# fall through to the 2-arg form (wrapped axis's `last(x) == first(x)+period`).
+@inline _wrap_to_domain(xq, x::AbstractVector, ::Any) = _wrap_to_domain(xq, x)
+@inline function _wrap_to_domain(xq, x::AbstractVector, bc::PeriodicBC{:exclusive})
+    x_min = first(x)
+    return _wrap_to_domain(xq, x_min, x_min + bc.period)
+end
+
 # ========================================
 # Endpoint Validation
 # ========================================

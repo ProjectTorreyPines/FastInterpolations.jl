@@ -160,7 +160,7 @@ println("  [5/5] Polyharmonic spline (PHS-3, stencil_size=8, log-density transfo
 # raw interpolation of ρ directly.  LogCubicRef provides ρ₀ and its derivatives
 # via the chain rule on a global cubic spline of log(ρ₀) — much faster at eval
 # time and smoother near nuclei than a local PHS stencil.
-@time itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 3.0,
+@time itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 1.75,
     reference_interp = ref_rho0, reference_data = rho0_3d)
 
 println("All interpolants built.")

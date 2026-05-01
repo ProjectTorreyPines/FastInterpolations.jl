@@ -61,35 +61,43 @@ end
 # ║    Group B: Blend Weight Function    ║
 # ╚══════════════════════════════════════╝
 #
-# Paper Eq. 27:
-#   w(d, a) = exp(d³ / (a³(d³ - a³)))   for d < a
-#            = 0                          for d ≥ a
+# The reference Fortran implementation (critic2 / grinterp_smr) uses a
+# dimensionless (scale-invariant) form that differs from the printed paper
+# Eq. 27.  The Fortran comment explicitly states:
+#   "this version of weifun is different from the article.  The argument
+#    of the exponential is adimensional in this version, and prevents
+#    problems with underflows in very fine grids."
 #
-# Note: the a³ factor in the denominator is essential.  Without it the weight
-# becomes scale-invariant (depends only on d/a), giving a much wider blending
-# window than the paper intends.  With it, for a ≈ 2h the weight is ~0.25 at
-# d = a/2, so only the nearest 1-2 base nodes contribute significantly.
+# Fortran weifun (what actually produces the paper's figures):
+#   w(d, a) = exp( d³ / (d³ - a³) )           for d < a
+#            = 0                                for d ≥ a
 #
-# Derivatives (chain rule on u = d³/(a³(d³-a³))):
-#   w'(d)  = -3d² w / (d³ - a³)²
-#   w''(d) = [(9 - 6a³)d⁴ - 6da⁶ + 12d⁷] w / (d³ - a³)⁴
+# The argument d³/(d³-a³) is dimensionless: it depends only on the ratio d/a,
+# not on the physical scale of a.  The paper formula exp(d³/(a³(d³-a³))) suffers
+# from underflow/overflow when a is very small (fine grids) because the a³
+# factor in the denominator can make the exponent enormous.
+#
+# Derivatives (let u = d³/(d³-a³), so du/dd = -3a³d²/(d³-a³)²):
+#   w'(d)  = -3a³d² w / (d³ - a³)²
+#   w''(d) = 3a³d(-2a⁶ + a³d³ + 4d⁶) w / (d³ - a³)⁴
 
 """
     _phs_blend_weight(d::T, a::T) -> T
 
-Evaluate the blend weight w(d, a) from paper Eq. 27. Returns zero for d ≥ a.
+Evaluate the blend weight w(d, a) using the dimensionless Fortran formula
+w = exp(d³/(d³-a³)).  Returns zero for d ≥ a.
 """
 @inline function _phs_blend_weight(d::T, a::T) where {T}
     d >= a && return zero(T)
     d3 = d * d * d
     a3 = a * a * a
-    return exp(d3 / (a3 * (d3 - a3)))
+    return exp(d3 / (d3 - a3))
 end
 
 """
     _phs_blend_weight_and_prime(d::T, a::T) -> (w, wp)
 
-Evaluate w and its first derivative w'(d) = -3d² w / (d³ - a³)² simultaneously.
+Evaluate w and its first derivative w'(d) = -3a³d² w / (d³ - a³)² simultaneously.
 """
 @inline function _phs_blend_weight_and_prime(d::T, a::T) where {T}
     if d >= a
@@ -100,8 +108,8 @@ Evaluate w and its first derivative w'(d) = -3d² w / (d³ - a³)² simultaneous
     a3 = a * a * a
     denom  = d3 - a3          # negative (d < a)
     denom2 = denom * denom
-    w  = exp(d3 / (a3 * denom))
-    wp = -3 * d2 * w / denom2
+    w  = exp(d3 / denom)
+    wp = -3 * a3 * d2 * w / denom2
     return w, wp
 end
 
@@ -110,7 +118,8 @@ end
 
 Evaluate w, w', and w'' simultaneously for use in second-derivative blending.
 
-  w''(d) = [(9 - 6a³)d⁴ - 6da⁶ + 12d⁷] w / (d³ - a³)⁴
+  w'(d)  = -3a³d² w / (d³ - a³)²
+  w''(d) = 3a³d(-2a⁶ + a³d³ + 4d⁶) w / (d³ - a³)⁴
 """
 @inline function _phs_blend_weight_and_derivs(d::T, a::T) where {T}
     if d >= a
@@ -122,11 +131,10 @@ Evaluate w, w', and w'' simultaneously for use in second-derivative blending.
     denom  = d3 - a3           # negative
     denom2 = denom * denom
     denom4 = denom2 * denom2
-    w  = exp(d3 / (a3 * denom))
-    wp = -3 * d2 * w / denom2
-    # inner = (9 - 6a³)d⁴ - 6da⁶ + 12d⁷
-    inner = muladd(9 - 6 * a3, d2 * d2, muladd(-6 * a3, a3 * d, 12 * d * d3 * d3))
-    wpp = inner * w / denom4
+    w  = exp(d3 / denom)
+    wp = -3 * a3 * d2 * w / denom2
+    # wpp = 3a³d(-2a⁶ + a³d³ + 4d⁶) w / (d³-a³)⁴
+    wpp = 3 * a3 * d * (muladd(4 * d3, d3, muladd(a3, d3, -2 * a3 * a3))) * w / denom4
     return w, wp, wpp
 end
 

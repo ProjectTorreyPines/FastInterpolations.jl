@@ -43,6 +43,23 @@ Abstract type for cache entries. Subtypes must have:
 """
 abstract type AbstractCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}} end
 
+# Map user input grid type to the cache's wrapped axis type. Mirrors
+# `_caching_axis(x, bc, T)`:
+# - Non-periodic / `:inclusive`: Range → `_CachedRange{T}`,
+#   Vector → `_CachedVector{T, Tinv}`.
+# - `:exclusive` periodic: extra `_ExclusivePeriodicAxis` wrapper around the
+#   above inner.
+@inline _cached_axis_type(::Type{<:AbstractRange}, ::Type{T}) where {T} = _CachedRange{T}
+@inline _cached_axis_type(::Type{<:AbstractVector}, ::Type{T}) where {T} =
+    _CachedVector{T, typeof(inv(oneunit(T)))}
+
+@inline _cached_axis_type(::Type{X}, ::Type{T}, ::Val{:inclusive}) where {X, T} =
+    _cached_axis_type(X, T)
+@inline function _cached_axis_type(::Type{X}, ::Type{T}, ::Val{:exclusive}) where {X, T}
+    Inner = _cached_axis_type(X, T)
+    return _ExclusivePeriodicAxis{T, Inner, T}
+end
+
 """
     CacheEntry{T, L, R, X, S}
 
@@ -65,14 +82,14 @@ The `x` field stores a snapshot (copy) for Vector inputs, preventing external
 mutation from corrupting the cache. Lookup verifies `isequal(entry.x, input_x)`
 even on objectid match to detect in-place mutation.
 """
-mutable struct CacheEntry{T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}, S <: AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
+mutable struct CacheEntry{T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}, C <: CubicSplineCache{T, <:AbstractVector{T}, ThomasFactorization{T, Vector{T}}, BCPair{L, R}}} <: AbstractCacheEntry{T, X}
     id::UInt
-    x::X
-    cache::CubicSplineCache{T, X, ThomasFactorization{T, Vector{T}}, BCPair{L, R}, S}
+    x::X                                  # user-input snapshot (Vector / Range)
+    cache::C                              # concrete cache type — preserves wrapped-axis X for inference
 end
 
 """
-    PeriodicCacheEntry{T, X, S, E}
+    PeriodicCacheEntry{T, X, E}
 
 Cache entry for periodic BC (uses PeriodicData).
 
@@ -93,10 +110,10 @@ Cache entry for periodic BC (uses PeriodicData).
 # Mutation Safety
 See `CacheEntry` documentation for details on mutation safety pattern.
 """
-mutable struct PeriodicCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}, S <: AbstractGridSpacing{T}, E} <: AbstractCacheEntry{T, X}
+mutable struct PeriodicCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}, E, C <: CubicSplineCache{T, <:AbstractVector{T}, ThomasFactorization{T, Vector{T}}, <:PeriodicBC}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
-    cache::CubicSplineCache{T, X, ThomasFactorization{T, Vector{T}}, PeriodicData{T, E}, S}
+    cache::C
 end
 
 # ===============================================================
@@ -347,8 +364,9 @@ Type-Free design: L, R are PointBC subtypes without type parameter constraint.
 Accepts Type{X} to avoid needing an instance (eliminates collect() for views).
 """
 @inline function _get_derivative_bank(::Type{X}, ::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}}
-    S = _spacing_type(X)
-    EntryType = CacheEntry{T, L, R, X, S}
+    Xc = _cached_axis_type(X, T)
+    Cc = CubicSplineCache{T, Xc, ThomasFactorization{T, Vector{T}}, BCPair{L, R}}
+    EntryType = CacheEntry{T, L, R, X, Cc}
     return _get_bank(_DERIVATIVE_REGISTRY, CacheBank{EntryType})
 end
 # Instance convenience: forward to Type dispatch (used by tests / external callers)
@@ -363,8 +381,10 @@ exclusive caches for the same grid object live in *different* banks — their
 cache contents (cycle length, seam-cell width, Sherman-Morrison `q`) differ.
 """
 @inline function _get_periodic_bank(::Type{X}, ::Val{E}) where {T <: AbstractFloat, X <: AbstractVector{T}, E}
-    S = _spacing_type(X)
-    EntryType = PeriodicCacheEntry{T, X, S, E}
+    Xc = _cached_axis_type(X, T, Val(E))
+    bc = E === :exclusive ? PeriodicBC{:exclusive, T, true} : PeriodicBC{:inclusive, T, true}
+    Cc = CubicSplineCache{T, Xc, ThomasFactorization{T, Vector{T}}, bc}
+    EntryType = PeriodicCacheEntry{T, X, E, Cc}
     return _get_bank(_PERIODIC_REGISTRY, CacheBank{EntryType})
 end
 # Instance convenience: forward to Type dispatch
@@ -440,7 +460,7 @@ end
 @inline function _verify_cache_match(cache::CubicSplineCache, bc::PeriodicBC{:exclusive, P}) where {P}
     # `bc.period === Nothing` means "auto-infer from grid"; the requested
     # period is `step(x) * length(x)` for Range grids (the only shape allowed
-    # to omit it). Comparing to `cache.bc_config.period` here prevents reusing
+    # to omit it). Comparing to `cache.bc.period` here prevents reusing
     # a stale cache built with an explicit period that passed the Range
     # tolerance but does not match the inferred value.
     requested = if P === Nothing
@@ -448,7 +468,7 @@ end
     else
         bc.period
     end
-    return cache.bc_config.period == requested
+    return cache.bc.period == requested
 end
 
 # ---------------------------------------------------------------
@@ -472,12 +492,12 @@ end
 # (not optional `Nothing`) because cache content is BC-form-dependent: cycle
 # length, period, and seam-cell width all differ between `:inclusive` and
 # `:exclusive`. The entry's E type-param matches `bc`'s E by dispatch.
-@inline function _build_cache(::Type{<:PeriodicCacheEntry{T, X, S, E}}, x::AbstractVector{T}, bc::PeriodicBC{E}) where {T <: AbstractFloat, X, S, E}
+@inline function _build_cache(::Type{<:PeriodicCacheEntry{T, X, E}}, x::AbstractVector{T}, bc::PeriodicBC{E}) where {T <: AbstractFloat, X, E}
     return _build_periodic_cache(x, bc)
 end
 
 # Non-AbstractFloat Real input: convert to float for periodic cache.
-@inline function _build_cache(::Type{<:PeriodicCacheEntry{T, X, S, E}}, x::AbstractVector, bc::PeriodicBC{E}) where {T <: AbstractFloat, X, S, E}
+@inline function _build_cache(::Type{<:PeriodicCacheEntry{T, X, E}}, x::AbstractVector, bc::PeriodicBC{E}) where {T <: AbstractFloat, X, E}
     return _build_periodic_cache(_to_float(x, T), bc)
 end
 
@@ -512,11 +532,11 @@ Core lookup/insert logic for CacheBank{E} using RCU pattern.
         found = _rcu_lookup(snap, id, x, bc_config)
         found !== nothing && return found
 
-        # Build cache — CubicSplineCache inner constructor handles copy(x)
-        # for mutation safety, so no pre-copy needed here.
+        # Build cache — `_caching_axis` (inside the builder) wraps the user's x
+        # into the cached/wrapped axis form. Snapshot the *raw* user input on
+        # the entry so `isequal(entry.x, input_x)` lookups remain comparable.
         new_cache = _build_cache(E, x, bc_config)
-        # Use new_cache.x as entry snapshot: same owned copy, zero duplication.
-        new_entry = E(id, new_cache.x, new_cache)
+        new_entry = E(id, copy(x), new_cache)
 
         # Copy-on-write: create new snapshot with added entry
         new_store = copy(snap.store)

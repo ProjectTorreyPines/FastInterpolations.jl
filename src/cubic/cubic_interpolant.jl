@@ -23,7 +23,7 @@
 @inline _itp_grid(itp::CubicInterpolant) = itp.cache.x
 
 @inline function _itp_eval_scalar(itp::CubicInterpolant, xq, extrap, op, searcher)
-    return _eval_with_bc(itp.cache, itp.y, itp.z, xq, extrap, op, searcher)
+    return _eval_cubic_at_point(itp.cache.x, itp.y, itp.z, xq, extrap, op, searcher)
 end
 
 @inline function _itp_vector_loop!(output, itp::CubicInterpolant, xq, extrap, op, searcher)
@@ -245,11 +245,11 @@ so the pool memory can be safely reused after this function returns.
     cache = _get_cubic_cache(x, PeriodicBC(), _effective_autocache(autocache, Tg))
     Tz = _output_eltype(eltype(y), eltype(cache.x))
     tmp_z = acquire!(pool, Tz, length(y))
-    _solve_system!(tmp_z, cache, y, cache.bc_config)
+    _solve_system!(tmp_z, cache, y, cache.bc)
     # Normalize stored bc to `:inclusive` (matching cache state) with period
     # materialized for introspection. Prevents re-extension when this
     # interpolant is later passed to `cubic_adjoint(itp.cache.x; bc=itp.bc)`.
-    bc_normalized = _with_resolved_period(_bc_after_extend(bc), cache.bc_config.period)
+    bc_normalized = _with_resolved_period(_bc_after_extend(bc), cache.bc.period)
     # Materialize WrapExtrap with the extended grid's span so the struct stores
     # the typed form; kernels never see WrapExtrap{Nothing}.
     return CubicInterpolant(cache, y, tmp_z, bc_normalized, WrapExtrap(cache.x), search)
@@ -353,7 +353,7 @@ end
 Create a callable interpolant from a pre-built cache.
 
 # Note on BC Values
-Uses `cache.bc_config` for boundary condition values. This is correct when:
+Uses `cache.bc` for boundary condition values. This is correct when:
 - Cache was built via `CubicSplineCache(x; bc=...)` with actual BC values
 - BC is ZeroCurvBC/ZeroSlopeBC/PeriodicBC (values are always zero)
 
@@ -374,19 +374,19 @@ so the pool memory can be safely reused after this function returns.
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
     Tz = _output_eltype(Tv, eltype(cache.x))
     tmp_z = acquire!(pool, Tz, length(y))
-    _solve_system!(tmp_z, cache, y, cache.bc_config)
+    _solve_system!(tmp_z, cache, y, cache.bc)
 
-    if cache.bc_config isa PeriodicData
+    if cache.bc isa PeriodicBC
         _check_periodic_endpoints(y)
         return CubicInterpolant(cache, y, tmp_z, PeriodicBC(), WrapExtrap(cache.x), search)
     end
 
-    # cache.bc_config is BCPair - use it directly.
+    # cache.bc is BCPair - use it directly.
     # Materialize WrapExtrap{Nothing} to typed form before storage so the struct
     # never holds the unmaterialized singleton.
     # 3-arg: materialize WrapExtrap{Nothing} + promote FillExtrap value type.
     extrap_p = _resolve_extrap(extrap, cache.x, Tv)
-    return CubicInterpolant(cache, y, tmp_z, cache.bc_config, extrap_p, search)
+    return CubicInterpolant(cache, y, tmp_z, cache.bc, extrap_p, search)
 end
 
 

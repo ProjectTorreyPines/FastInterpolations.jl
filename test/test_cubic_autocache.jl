@@ -468,8 +468,8 @@ end
         @test c3 isa CubicSplineCache{Float64}  # Range normalizes to Float64
         @test c4 isa CubicSplineCache{Float64}
 
-        # Periodic cache should have PeriodicData BC
-        @test c4.bc_config !== nothing
+        # Periodic cache should carry the PeriodicBC on the new `bc` field
+        @test c4.bc isa FastInterpolations.PeriodicBC
     end
 end
 
@@ -489,13 +489,13 @@ end
         @test cache isa CubicSplineCache{Float64}
 
         # Cache should be created with BCPair(Deriv1(0), Deriv1(0))
-        @test cache.bc_config isa BCPair{Deriv1{Float64}, Deriv1{Float64}}
+        @test cache.bc isa BCPair{Deriv1{Float64}, Deriv1{Float64}}
 
         # Should work for Float32 as well
         x32 = Float32.(x)
         cache32 = _get_cubic_cache(x32, ZeroSlopeBC())
         @test cache32 isa CubicSplineCache{Float32}
-        @test cache32.bc_config isa BCPair{Deriv1{Float32}, Deriv1{Float32}}
+        @test cache32.bc isa BCPair{Deriv1{Float32}, Deriv1{Float32}}
 
         # Range input
         x_range = range(0.0, 1.0, 51)
@@ -513,18 +513,18 @@ end
         # Cache stores structural zeros — solver uses caller's original BC values at solve time.
         cache_d1 = _get_cubic_cache(x, Deriv1(0.5))
         @test cache_d1 isa CubicSplineCache{Float64}
-        @test cache_d1.bc_config isa BCPair{Deriv1{Float64}, Deriv1{Float64}}
+        @test cache_d1.bc isa BCPair{Deriv1{Float64}, Deriv1{Float64}}
         # Pool caches store structural zeros (values are irrelevant to LU factorization)
-        @test cache_d1.bc_config.left.val == 0.0
-        @test cache_d1.bc_config.right.val == 0.0
+        @test cache_d1.bc.left.val == 0.0
+        @test cache_d1.bc.right.val == 0.0
 
         # Deriv2 PointBC - applies symmetrically to both ends
         cache_d2 = _get_cubic_cache(x, Deriv2(1.0))
         @test cache_d2 isa CubicSplineCache{Float64}
-        @test cache_d2.bc_config isa BCPair{Deriv2{Float64}, Deriv2{Float64}}
+        @test cache_d2.bc isa BCPair{Deriv2{Float64}, Deriv2{Float64}}
         # Pool caches store structural zeros (values are irrelevant to LU factorization)
-        @test cache_d2.bc_config.left.val == 0.0
-        @test cache_d2.bc_config.right.val == 0.0
+        @test cache_d2.bc.left.val == 0.0
+        @test cache_d2.bc.right.val == 0.0
 
         # Float32 with PointBC
         x32 = Float32.(x)

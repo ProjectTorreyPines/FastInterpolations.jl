@@ -54,22 +54,15 @@ end
         extrap_p::AbstractExtrap,
         searcher::Searcher,
     )
-    # `cache.x` is the user's raw n-length grid for `:exclusive` periodic
-    # (legacy cubic cache layout — `cache.spacing` carries n-1 interior cells,
-    # `cache.bc_config.h_n` the seam width). The wrap domain therefore spans
-    # one period beyond `last(cache.x)` and must be derived from
-    # `bc_config.period`. Mirrors the explicit-bound construction in
-    # `_eval_cubic_at_point_periodic` (cubic_eval.jl).
-    #
-    # TODO: Cubic-family surface-API migration (separate PR) will move
-    # `cache.x` to `_ExclusivePeriodicAxis(...)` so this becomes
-    # `_wrap_to_domain(xq, cache.x)` like Linear/Constant. Until then, keep
-    # the explicit-bound form for correctness.
-    x_min = @inbounds first(cache.x)
-    x_max = x_min + cache.bc_config.period
-    xq_wrapped = _wrap_to_domain(xq, x_min, x_max)
+    # `cache.x` is the wrapped axis: `_CachedRange`/`_CachedVector` for
+    # `:inclusive`, `_ExclusivePeriodicAxis` for `:exclusive` (virtual length n+1
+    # with cached `_x_max`). `_wrap_to_domain(xq, cache.x)` reads `(first, last)`
+    # uniformly. The wrapper's `search_interval` returns `idx_R = 1` at seam so
+    # raw `y[idx_R]` indexing in the eval kernel works without a data wrapper.
+    xq_wrapped = _wrap_to_domain(xq, cache.x)
     idxL, idxR, xL, xR = search_interval(searcher, cache.x, xq_wrapped)
-    h, inv_h = _periodic_cell_h(cache.spacing, idxL, cache.bc_config)
+    h = _get_h(cache.x, idxL)
+    inv_h = _get_inv_h(cache.x, idxL)
     dL = xq_wrapped - xL
     dR = xR - xq_wrapped
     w0 = _compute_anchor_weights(EvalValue(), h, inv_h, dL, dR)
@@ -111,14 +104,15 @@ end
     extrap_p = _resolve_extrap(NoExtrap(), bc, cache.x, first(vecs))
     aq = _build_periodic_cubic_anchor(cache, xq, extrap_p, searcher)
 
-    # Solve + eval per series. Both `_solve_system!` and the kernel read `y`
-    # read-only (the periodic solver acquires its own scratch internally),
-    # so we feed `vecs[k]` directly — no per-series copy needed.
+    # Solve + eval per series. For `:exclusive` periodic, wrap each `vecs[k]`
+    # with `_ExclusivePeriodicData` so it reports virtual length n+1 to match
+    # `length(cache.x)`; the solver and kernel see uniform indexing.
     Tz = _output_eltype(_series_eltype(s), eltype(cache.x))
-    z = acquire!(pool, Tz, n)
+    z = acquire!(pool, Tz, length(cache.x))
     @inbounds for k in 1:K
-        _solve_system!(z, cache, vecs[k], cache.bc_config)
-        output[k] = _cubic_eval_kernel(vecs[k], z, aq, op)
+        y_eff = _resolve_data(vecs[k], bc)
+        _solve_system!(z, cache, y_eff, cache.bc)
+        output[k] = _cubic_eval_kernel(y_eff, z, aq, op)
     end
     return output
 end
@@ -159,15 +153,15 @@ end
         aq_vec[j] = _build_periodic_cubic_anchor(cache, xqs[j], extrap_p, searcher)
     end
 
-    # Solve per series, eval at all queries. `_solve_system!` reads `y`
-    # read-only (periodic solver acquires its own scratch); kernel reads
-    # `y[idxL]`/`y[idxR]` — both can come straight from `vecs[k]`.
+    # Solve per series, eval at all queries. For `:exclusive`, wrap `vecs[k]`
+    # via `_ExclusivePeriodicData` so it reports virtual n+1 like `cache.x`.
     Tz = _output_eltype(_series_eltype(s), Tg_c)
-    z = acquire!(pool, Tz, n)
+    z = acquire!(pool, Tz, length(cache.x))
     @inbounds for k in 1:K
-        _solve_system!(z, cache, vecs[k], cache.bc_config)
+        y_eff = _resolve_data(vecs[k], bc)
+        _solve_system!(z, cache, y_eff, cache.bc)
         for j in eachindex(xqs)
-            outputs[k][j] = _cubic_eval_kernel(vecs[k], z, aq_vec[j], op)
+            outputs[k][j] = _cubic_eval_kernel(y_eff, z, aq_vec[j], op)
         end
     end
     return outputs

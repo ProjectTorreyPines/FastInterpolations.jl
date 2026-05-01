@@ -152,7 +152,7 @@ end
     # Step 3: RHS adjoint — f̄ += Rᵀr̄
     # Compute polyfit stencil coefficients on the fly (O(D), grid-only)
     pf = _build_polyfit_data(adj.bc, adj.cache.x)
-    _compute_rhs_adjoint!(f_bar, z_bar, adj.cache.spacing, adj.bc, pf)
+    _compute_rhs_adjoint!(f_bar, z_bar, adj.cache.x, adj.bc, pf)
 
     return f_bar
 end
@@ -257,7 +257,7 @@ The forward RHS operator `R` maps `f → r` via finite differences + BC rows.
 """
 @inline function _compute_rhs_adjoint!(
         f_bar::AbstractVector, r_bar::AbstractVector,
-        spacing::AbstractGridSpacing{Tg},
+        x::AbstractVector{Tg},
         bc::BCPair{L, R}, pf::_AdjointPolyfitData
     ) where {Tg, L <: PointBC, R <: PointBC}
     n = length(f_bar) - 1  # n intervals
@@ -265,14 +265,14 @@ The forward RHS operator `R` maps `f → r` via finite differences + BC rows.
     # Interior rows (i=2..n): R[i, i-1]=6/h[i-1], R[i,i]=-6(1/h[i-1]+1/h[i]), R[i,i+1]=6/h[i]
     @inbounds for i in 2:n
         c = 6 * r_bar[i]
-        f_bar[i - 1] += c * _get_inv_h(spacing, i - 1)
-        f_bar[i] -= c * (_get_inv_h(spacing, i - 1) + _get_inv_h(spacing, i))
-        f_bar[i + 1] += c * _get_inv_h(spacing, i)
+        f_bar[i - 1] += c * _get_inv_h(x, i - 1)
+        f_bar[i] -= c * (_get_inv_h(x, i - 1) + _get_inv_h(x, i))
+        f_bar[i + 1] += c * _get_inv_h(x, i)
     end
 
     # Boundary rows — type-dispatched
-    _rhs_adjoint_left!(f_bar, r_bar[1], spacing, bc.left, pf.left)
-    _rhs_adjoint_right!(f_bar, r_bar[end], spacing, bc.right, pf.right, n)
+    _rhs_adjoint_left!(f_bar, r_bar[1], x, bc.left, pf.left)
+    _rhs_adjoint_right!(f_bar, r_bar[end], x, bc.right, pf.right, n)
 
     return nothing
 end
@@ -283,9 +283,9 @@ end
 
 # Deriv1 left: r₁ = 6·((y₂-y₁)/h₁ - val), so R[1,1] = -6/h₁, R[1,2] = 6/h₁
 @inline function _rhs_adjoint_left!(
-        f_bar::AbstractVector, r1, spacing::AbstractGridSpacing{Tg}, ::Deriv1, ::Nothing
+        f_bar::AbstractVector, r1, x::AbstractVector{Tg}, ::Deriv1, ::Nothing
     ) where {Tg}
-    inv_h1 = _get_inv_h(spacing, 1)
+    inv_h1 = _get_inv_h(x, 1)
     c = 6 * r1
     @inbounds f_bar[1] -= c * inv_h1
     @inbounds f_bar[2] += c * inv_h1
@@ -294,10 +294,10 @@ end
 
 # PolyFit left: Deriv1 terms + polyfit stencil. R[1,k] = -6·coeffs[k] for stencil k
 @inline function _rhs_adjoint_left!(
-        f_bar::AbstractVector, r1, spacing::AbstractGridSpacing{Tg},
+        f_bar::AbstractVector, r1, x::AbstractVector{Tg},
         ::PolyFit{D}, coeffs::NTuple{N, Tg}
     ) where {D, N, Tg}
-    inv_h1 = _get_inv_h(spacing, 1)
+    inv_h1 = _get_inv_h(x, 1)
     c = 6 * r1
     # Standard Deriv1 terms
     @inbounds f_bar[1] -= c * inv_h1
@@ -310,8 +310,8 @@ end
 end
 
 # Deriv2/Deriv3 left: RHS is constant (bc.val or h*bc.val), no f dependency
-@inline _rhs_adjoint_left!(::AbstractVector, _, ::AbstractGridSpacing, ::Deriv2, ::Nothing) = nothing
-@inline _rhs_adjoint_left!(::AbstractVector, _, ::AbstractGridSpacing, ::Deriv3, ::Nothing) = nothing
+@inline _rhs_adjoint_left!(::AbstractVector, _, ::AbstractVector, ::Deriv2, ::Nothing) = nothing
+@inline _rhs_adjoint_left!(::AbstractVector, _, ::AbstractVector, ::Deriv3, ::Nothing) = nothing
 
 # ----------------------------------------
 # Right boundary Rᵀ dispatch
@@ -319,9 +319,9 @@ end
 
 # Deriv1 right: rₙ₊₁ = 6·(val - (yₙ₊₁-yₙ)/hₙ), so R[n+1,n] = 6/hₙ, R[n+1,n+1] = -6/hₙ
 @inline function _rhs_adjoint_right!(
-        f_bar::AbstractVector, rn1, spacing::AbstractGridSpacing{Tg}, ::Deriv1, ::Nothing, n::Int
+        f_bar::AbstractVector, rn1, x::AbstractVector{Tg}, ::Deriv1, ::Nothing, n::Int
     ) where {Tg}
-    inv_hn = _get_inv_h(spacing, n)
+    inv_hn = _get_inv_h(x, n)
     c = 6 * rn1
     @inbounds f_bar[n] += c * inv_hn
     @inbounds f_bar[n + 1] -= c * inv_hn
@@ -332,10 +332,10 @@ end
 # Forward: rₙ₊₁ = 6·(d'_polyfit - slope), where d' = Σ coeffs[k]·f[stencil_k].
 # ∂r/∂f[stencil_k] = 6·coeffs[k] (positive). R[n+1,stencil_k] = 6·coeffs[k].
 @inline function _rhs_adjoint_right!(
-        f_bar::AbstractVector, rn1, spacing::AbstractGridSpacing{Tg},
+        f_bar::AbstractVector, rn1, x::AbstractVector{Tg},
         ::PolyFit{D}, coeffs::NTuple{N, Tg}, n::Int
     ) where {D, N, Tg}
-    inv_hn = _get_inv_h(spacing, n)
+    inv_hn = _get_inv_h(x, n)
     c = 6 * rn1
     # Standard Deriv1 terms
     @inbounds f_bar[n] += c * inv_hn
@@ -349,8 +349,8 @@ end
 end
 
 # Deriv2/Deriv3 right: no-op
-@inline _rhs_adjoint_right!(::AbstractVector, _, ::AbstractGridSpacing, ::Deriv2, ::Nothing, ::Int) = nothing
-@inline _rhs_adjoint_right!(::AbstractVector, _, ::AbstractGridSpacing, ::Deriv3, ::Nothing, ::Int) = nothing
+@inline _rhs_adjoint_right!(::AbstractVector, _, ::AbstractVector, ::Deriv2, ::Nothing, ::Int) = nothing
+@inline _rhs_adjoint_right!(::AbstractVector, _, ::AbstractVector, ::Deriv3, ::Nothing, ::Int) = nothing
 
 # ========================================
 # ClampExtrap / FillExtrap OOB Anchor Fixup
@@ -515,7 +515,7 @@ function _build_cubic_adjoint_periodic(
     anchors = _anchor_query(cache.x, xq, Val(:cubic), true)
 
     # Store resolved period in BC for display/introspection
-    bc_display = _with_resolved_period(bc, cache.bc_config.period)
+    bc_display = _with_resolved_period(bc, cache.bc.period)
 
     return CubicAdjoint(cache, anchors, bc_display)
 end
@@ -551,7 +551,7 @@ end
     _adjoint_periodic_solve!(z_bar, adj.cache, q_t, n)
 
     # Step 4: Rᵀ_circ r̄ → f̄ += Rᵀ·r̄ (accumulates into f_bar[1..n+1])
-    _compute_rhs_adjoint_periodic!(f_bar, z_bar, adj.cache.spacing, n)
+    _compute_rhs_adjoint_periodic!(f_bar, z_bar, adj.cache.x, n)
 
     return f_bar
 end
@@ -572,16 +572,16 @@ Operates in-place on `z_bar[1:n]`; `z_bar[n+1]` is not touched.
 """
 function _adjoint_periodic_solve!(
         z_bar::AbstractVector{Tv},
-        cache::CubicSplineCache{Tg, X, F, <:PeriodicData{Tg}, S},
+        cache::CubicSplineCache{Tg, X, F, <:PeriodicBC},
         q_t::AbstractVector,
         n::Int
-    ) where {Tv, Tg, X, F, S <: AbstractGridSpacing{Tg}}
+    ) where {Tv, Tg, X, F}
 
     # Transpose Thomas solve on z_bar[1:n]
     _ldiv_tridiagonal_transpose!(z_bar, cache.thomas)
 
     # Sherman-Morrison correction with q_t = A'^{-T} u
-    α = Tv(_get_h(cache.spacing, n))
+    α = Tv(_get_h(cache.x, n))
 
     @inbounds begin
         vTz = α * (z_bar[1] + z_bar[n])
@@ -605,31 +605,31 @@ R is n×(n+1) with wrapping entries at rows 1 and n.
 """
 @inline function _compute_rhs_adjoint_periodic!(
         f_bar::AbstractVector, r_bar::AbstractVector,
-        spacing::AbstractGridSpacing{Tg}, n::Int
+        x::AbstractVector{Tg}, n::Int
     ) where {Tg}
 
     # Interior rows (i=2..n-1): standard tridiagonal stencil
     @inbounds for i in 2:(n - 1)
         c = 6 * r_bar[i]
-        f_bar[i - 1] += c * _get_inv_h(spacing, i - 1)
-        f_bar[i] -= c * (_get_inv_h(spacing, i - 1) + _get_inv_h(spacing, i))
-        f_bar[i + 1] += c * _get_inv_h(spacing, i)
+        f_bar[i - 1] += c * _get_inv_h(x, i - 1)
+        f_bar[i] -= c * (_get_inv_h(x, i - 1) + _get_inv_h(x, i))
+        f_bar[i + 1] += c * _get_inv_h(x, i)
     end
 
     # Row 1: R[1,n]=6/hₙ, R[1,1]=-6(1/hₙ+1/h₁), R[1,2]=6/h₁
     @inbounds begin
         c1 = 6 * r_bar[1]
-        f_bar[n] += c1 * _get_inv_h(spacing, n)
-        f_bar[1] -= c1 * (_get_inv_h(spacing, n) + _get_inv_h(spacing, 1))
-        f_bar[2] += c1 * _get_inv_h(spacing, 1)
+        f_bar[n] += c1 * _get_inv_h(x, n)
+        f_bar[1] -= c1 * (_get_inv_h(x, n) + _get_inv_h(x, 1))
+        f_bar[2] += c1 * _get_inv_h(x, 1)
     end
 
     # Row n: R[n,n-1]=6/hₙ₋₁, R[n,n]=-6(1/hₙ₋₁+1/hₙ), R[n,n+1]=6/hₙ
     @inbounds begin
         cn = 6 * r_bar[n]
-        f_bar[n - 1] += cn * _get_inv_h(spacing, n - 1)
-        f_bar[n] -= cn * (_get_inv_h(spacing, n - 1) + _get_inv_h(spacing, n))
-        f_bar[n + 1] += cn * _get_inv_h(spacing, n)
+        f_bar[n - 1] += cn * _get_inv_h(x, n - 1)
+        f_bar[n] -= cn * (_get_inv_h(x, n - 1) + _get_inv_h(x, n))
+        f_bar[n + 1] += cn * _get_inv_h(x, n)
     end
 
     return nothing

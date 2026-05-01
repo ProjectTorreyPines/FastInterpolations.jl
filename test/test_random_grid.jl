@@ -118,7 +118,7 @@
             itp = cubic_interp(x_random, y; autocache = false)
 
             @test itp isa CubicInterpolant
-            @test itp.cache.x isa Vector{Float64}  # Random grid stored as Vector
+            @test itp.cache.x isa FastInterpolations._CachedVector{Float64}  # Random grid stored as Vector
 
             x_min, x_max = extrema(x_random)
             xi = (x_min + x_max) / 2

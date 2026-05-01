@@ -254,7 +254,7 @@ end
         itp = cubic_interp(x_vec, y; autocache = false)
 
         # Vector remains Vector
-        @test itp.cache.x isa Vector{Float64}
+        @test itp.cache.x isa FastInterpolations._CachedVector{Float64}
 
         # Verify correctness
         @test itp(0.5) ≈ sin(2π * 0.5) atol = 0.01
@@ -325,10 +325,10 @@ end
         @test cache_range.x isa AbstractRange
         @test typeof(cache_range).parameters[2] <: AbstractRange
 
-        # Vector input → parametric type with Vector
+        # Vector input → parametric type with `_CachedVector` wrapper
         cache_vec = CubicSplineCache(x_vec)
-        @test cache_vec.x isa Vector{Float64}
-        @test typeof(cache_vec).parameters[2] == Vector{Float64}
+        @test cache_vec.x isa FastInterpolations._CachedVector{Float64}
+        @test typeof(cache_vec).parameters[2] <: FastInterpolations._CachedVector{Float64}
 
         # Both produce correct results
         y = sin.(2π .* x_vec)

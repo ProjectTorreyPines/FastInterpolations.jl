@@ -177,7 +177,7 @@
 
         # Vector input
         itp_vec = @inferred cubic_interp(collect(x_range), y_range)
-        @test itp_vec.cache.x isa Vector
+        @test itp_vec.cache.x isa FastInterpolations._CachedVector
 
         # Both are type-stable and produce same results
         @test @inferred(itp_range(0.5)) ≈ @inferred(itp_vec(0.5))

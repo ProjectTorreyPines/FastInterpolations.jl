@@ -46,7 +46,7 @@ function _moments_to_deriv_adjoint_1d!(
         z_bar::AbstractVector{Tv},
         f_contrib::AbstractVector{Tv},
         dy_bar::AbstractVector{Tv},
-        spacing::AbstractGridSpacing{Tg}
+        x::AbstractVector{Tg}
     ) where {Tv, Tg}
     n = length(dy_bar)
 
@@ -57,8 +57,8 @@ function _moments_to_deriv_adjoint_1d!(
 
     # First point adjoint (right derivative: dydx[1])
     @inbounds begin
-        h1 = _get_h(spacing, 1)
-        inv_h1 = _get_inv_h(spacing, 1)
+        h1 = _get_h(x, 1)
+        inv_h1 = _get_inv_h(x, 1)
         h_over_6 = h1 * inv_6
         h_over_3 = h_over_6 * 2
         db = dy_bar[1]
@@ -70,8 +70,8 @@ function _moments_to_deriv_adjoint_1d!(
 
     # Interior + last points adjoint (left derivative: dydx[i+1], i=1..n-1)
     @inbounds for i in 1:(n - 1)
-        h = _get_h(spacing, i)
-        inv_h = _get_inv_h(spacing, i)
+        h = _get_h(x, i)
+        inv_h = _get_inv_h(x, i)
         h_over_6 = h * inv_6
         h_over_3 = h_over_6 * 2
         db = dy_bar[i + 1]

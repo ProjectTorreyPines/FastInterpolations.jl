@@ -707,14 +707,14 @@ end
         # CubicFit (default)
         mitp_natural = cubic_interp(x, Series(y1, y2))
         @test mitp_natural.cache isa FI.CubicSplineCache
-        @test mitp_natural.cache.bc_config isa BCPair
+        @test mitp_natural.cache.bc isa BCPair
 
         # PeriodicBC
         y1_periodic = copy(y1); y1_periodic[end] = y1_periodic[1]
         y2_periodic = copy(y2); y2_periodic[end] = y2_periodic[1]
         mitp_periodic = cubic_interp(x, Series(y1_periodic, y2_periodic); bc = PeriodicBC())
         @test mitp_periodic.cache isa FI.CubicSplineCache
-        @test mitp_periodic.cache.bc_config isa FI.PeriodicData
+        @test mitp_periodic.cache.bc isa FI.PeriodicBC
     end
 end
 
@@ -739,13 +739,13 @@ end
     @testset "BC propagation" begin
         # CubicFit (default) - check bc_config field (unified struct)
         mitp_natural = cubic_interp(x, Series(y1, y2))
-        @test mitp_natural.cache.bc_config isa BCPair
+        @test mitp_natural.cache.bc isa BCPair
 
         # PeriodicBC - check bc_config is PeriodicData
         y1_periodic = copy(y1); y1_periodic[end] = y1_periodic[1]
         y2_periodic = copy(y2); y2_periodic[end] = y2_periodic[1]
         mitp_periodic = cubic_interp(x, Series(y1_periodic, y2_periodic); bc = PeriodicBC())
-        @test mitp_periodic.cache.bc_config isa FastInterpolations.PeriodicData
+        @test mitp_periodic.cache.bc isa FastInterpolations.PeriodicBC
     end
 
     @testset "Extrap propagation" begin

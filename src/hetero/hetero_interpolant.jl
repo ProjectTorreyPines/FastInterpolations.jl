@@ -261,11 +261,19 @@ function _build_hetero_nd(
 
     # 2-5. Promote grid + data types
     grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
-    spacings = _create_spacings_typed(grids_typed)
     data_typed = Tv === Tv_raw ? Array(data) : Array{Tv}(data)
 
     # 6. Resolve per-axis configuration (OnTheFly: no extension, bc-aware materialize).
     bcs = map(_bc_for_periodic_check, methods)
+    # Per-axis axis-as-truth wrap: `:exclusive` axes become `_ExclusivePeriodicAxis`
+    # (carrying the validated period and virtual endpoint `x[1]+period`), so
+    # downstream `last(grid)` / `_wrap_to_domain` / `search_interval` see the
+    # correct wrap domain without needing to re-derive period from raw n-length
+    # data. Non-periodic axes are normalized through `_caching_axis` too —
+    # Vector → `_CachedVector` (h/inv_h cached for repeat persistent queries),
+    # Range → `_CachedRange`. Mirrors how Linear/Constant/Cubic ND handle BC.
+    grids_typed = map((g, bc) -> _caching_axis(g, bc, Tg), grids_typed, bcs)
+    spacings = _create_spacings_typed(grids_typed)
     # Inclusive PeriodicBC requires `data[1, ...] ≈ data[end, ...]` per axis;
     # mirrors `_prepare_periodic_nd_impl` for the PreCompute path so that local
     # Hermite ND OnTheFly build rejects the same mismatched data 1D and Cubic ND

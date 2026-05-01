@@ -315,9 +315,9 @@ end
 end
 
 @inline _axis_window_heap(m::AbstractInterpMethod, x::AbstractVector, ix::Int) =
-    _axis_window(m, ix, length(x))
+    _axis_window(m, ix, _data_length(x))
 @inline _axis_window_heap(m::AbstractLocalHermiteInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
-    _fill_periodic_window!(Vector{Int}(undef, _fixed_window_size(m)), m, ix, length(x))
+    _fill_periodic_window!(Vector{Int}(undef, _fixed_window_size(m)), m, ix, _data_length(x))
 
 @inline _axis_grid_heap(::AbstractInterpMethod, x::AbstractVector, w::AbstractVector{Int}, ::Int) =
     view(x, w)

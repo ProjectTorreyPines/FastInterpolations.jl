@@ -143,17 +143,18 @@ end
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
-    # OnTheFly does not extend data — pre-extension bc-aware materialize with
-    # `bc.period` for exclusive axes via the per-axis 3-arg primitive. `extraps_val`
-    # is already an NTuple (resolved upstream), so this call is just the per-axis
-    # materialize step.
+    # OnTheFly does not extend data — per-axis surface-level axis-as-truth
+    # wrap so `:exclusive` axes carry the validated period through `last(g)` /
+    # `_wrap_to_domain` / `search_interval` without the raw n-length Vector's
+    # `last - first ≠ period` mismatch (Linear/Constant ND mirror this pattern).
     bcs = map(_bc_for_periodic_check, methods)
+    grids_eff = map(_resolve_axis, grids, bcs)
     # NOTE: inclusive PeriodicBC slice validation is NOT performed here — it is
     # hoisted to the callers (`_interp_nd_oneshot_dispatch` and the OnTheFly
     # branch of `_interp_nd_oneshot_batch_dispatch!`) so the batch path pays the
     # O(boundary-size) check once per batch instead of once per query.
-    extraps_eff = map(_resolve_extrap, extraps_val, bcs, grids)
-    q_eval = _handle_all_extraps(query, grids, extraps_eff)
+    extraps_eff = map(_resolve_extrap, extraps_val, bcs, grids_eff)
+    q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
     # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
     # Grid eltype included: when grid is Dual, 1D oneshot returns Dual-typed results
     # that must fit into _collapse_dims intermediate buffers.
@@ -173,7 +174,7 @@ end
     if _has_any_local_method(methods) && !_has_grididx(typeof(query))
         # BC-aware per-axis search; on `PeriodicBC{:exclusive}` axes the seam
         # cell returns `idx_R=1` so the windowing below picks the right cell.
-        stencils, _, _ = _search_all_intervals_stencil(q_eval, grids, searches, hints, bcs)
+        stencils, _, _ = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, bcs)
         indices = map(first, stencils)
         # Per-axis windows — generic `AbstractVector{Int}`:
         #   - non-periodic windowable: `UnitRange{Int}` (cell-local, asymmetric clamp)
@@ -183,8 +184,8 @@ end
         #   - periodic:     `Vector{Tg}` from pool (monotonic shifted x)
         # Each axis's return type is determined at compile time by the method
         # type → tuple is concrete, no Union boxing.
-        windows = map((m, x, ix) -> _axis_window_pooled(pool, m, x, ix), methods, grids, indices)
-        grids_local = map((m, x, w, ix) -> _axis_grid_pooled(pool, m, x, w, ix), methods, grids, windows, indices)
+        windows = map((m, x, ix) -> _axis_window_pooled(pool, m, x, ix), methods, grids_eff, indices)
+        grids_local = map((m, x, w, ix) -> _axis_grid_pooled(pool, m, x, w, ix), methods, grids_eff, windows, indices)
         # Wrap is baked into the windowed grid → strip BC and any WrapExtrap so
         # the inner 1D oneshot evaluates the local mini-grid as non-periodic.
         methods_inner = map(_strip_periodic_bc, methods)

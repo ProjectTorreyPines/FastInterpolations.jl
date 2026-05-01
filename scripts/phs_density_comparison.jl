@@ -113,30 +113,55 @@ println("  [4/5] Tricubic (Cardinal / Catmull-Rom)...")
 @time itp_cardinal = interp(grids, rho_3d;
     method = (CardinalInterp(), CardinalInterp(), CardinalInterp()))
 
-# Build a log-space PHS of the promolecular density ρ₀ (density_frag).
+# ============================================================
+# LogCubicRef — fast, smooth ρ₀ reference from a global cubic spline of log(ρ₀)
 #
-# Near nuclei, ρ₀ varies on sub-grid-step scales, so a plain cubic (or even PHS)
-# interpolant of ρ₀ gives wildly inaccurate derivatives there.  The paper avoids
-# this by representing ρ₀ as a sum of 1D atomic radial functions that can be
-# differentiated analytically.  We achieve the same accuracy from 3D grid data by
-# storing log(ρ₀) in the PHS instead of ρ₀ directly: log(ρ₀) is smooth near nuclei
-# (asymptotically linear in r), so the PHS derivatives are accurate.
+# Near nuclei, log(ρ₀) is approximately linear in r (exponential decay).
+# A GLOBAL cubic spline of log(ρ₀) gives smoother, less oscillatory derivatives
+# than a local PHS stencil that spans the nuclear cusp node.
+# Evaluation is microsecond-fast (vs milliseconds for PHS).
 #
-# ConstantRef(1.0) acts as the trivial reference so that the stored data becomes
-#   log(ρ₀ / 1.0) = log(ρ₀)
-# and evaluations return ρ₀ = 1 · exp(f) with derivatives via the exact chain rule
-# inside the PHS engine — no external cubic-spline derivative of ρ₀ is ever used.
-println("  Building log-space PHS reference for ρ₀ (accurate near-nucleus derivatives)...")
-@time itp_frag_log = phs_interp(grids, rho0_3d; stencil_size = 8, degree = 3,
-    blend_factor = 2.0, reference_interp = ConstantRef(1.0))
+# The chain rule recovers ρ₀ and its derivatives in the ρ₀ domain:
+#   ρ₀         = exp(log_itp(q))
+#   ∂ρ₀/∂xξ   = ρ₀ · ∂(log ρ₀)/∂xξ
+#   ∂²ρ₀/∂xξ² = ρ₀ · [(∂ log ρ₀/∂xξ)² + ∂²(log ρ₀)/∂xξ²]
+# ============================================================
+struct LogCubicRef{T}
+    log_itp::T  # cubic spline of log(ρ₀)
+end
+function (r::LogCubicRef{T})(q; deriv=nothing) where T
+    N = length(q)
+    rho0 = exp(r.log_itp(q))
+    deriv === nothing && return rho0
+    total = sum(o -> deriv_order(o), deriv)
+    total == 0 && return rho0
+    if total == 1
+        return rho0 * r.log_itp(q; deriv=deriv)
+    elseif total == 2
+        nonzero = [d for d in 1:N if deriv_order(deriv[d]) > 0]
+        ax1 = nonzero[1]; ax2 = length(nonzero) >= 2 ? nonzero[2] : ax1
+        ops1 = ntuple(d -> d == ax1 ? DerivOp{1}() : EvalValue(), Val(N))
+        ops2 = ax1 == ax2 ? ops1 : ntuple(d -> d == ax2 ? DerivOp{1}() : EvalValue(), Val(N))
+        dl1  = r.log_itp(q; deriv=ops1)
+        dl2  = ax1 == ax2 ? dl1 : r.log_itp(q; deriv=ops2)
+        d2l  = r.log_itp(q; deriv=deriv)
+        return rho0 * (dl1 * dl2 + d2l)
+    end
+    return zero(rho0)
+end
+
+println("  Building log-cubic reference for ρ₀ (cubic spline of log ρ₀)...")
+@time log_rho0_itp = cubic_interp(grids, log.(rho0_3d))
+ref_rho0 = LogCubicRef(log_rho0_itp)
 
 println("  [5/5] Polyharmonic spline (PHS-3, stencil_size=8, log-density transform)...")
 # Paper (Sec. III): N = 8³ = 512 stencil nodes; f = log(ρ_scf / ρ₀) is smooth
 # across the whole grid, eliminating the nuclear-cusp oscillations that affect
-# raw interpolation of ρ directly.  itp_frag_log is used as the reference so that
-# ∂ρ₀/∂x at any query point is computed accurately via the log-space PHS.
-@time itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 2.0,
-    reference_interp = itp_frag_log, reference_data = rho0_3d)
+# raw interpolation of ρ directly.  LogCubicRef provides ρ₀ and its derivatives
+# via the chain rule on a global cubic spline of log(ρ₀) — much faster at eval
+# time and smoother near nuclei than a local PHS stencil.
+@time itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 3.0,
+    reference_interp = ref_rho0, reference_data = rho0_3d)
 
 println("All interpolants built.")
 

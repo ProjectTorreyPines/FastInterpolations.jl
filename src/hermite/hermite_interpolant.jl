@@ -9,15 +9,17 @@
 # Protocol Trait Implementations (shared for all Hermite family)
 # ========================================
 # Dispatches on AbstractHermiteInterpolant1D: covers Hermite, PCHIP, Cardinal, Akima.
-# All subtypes store (x, y, dy, spacing) and use the same Hermite kernel.
-# _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
+# All subtypes store (x, y, dy) — axis-as-truth: `x` is the wrapped axis and
+# `_get_h(x, idx)` covers the cached-h lookup that the legacy `spacing` field
+# served. _itp_grid, _itp_extrap, _itp_search use defaults
+# (itp.x, itp.extrap, itp.search_policy).
 
 @inline function _itp_eval_scalar(itp::AbstractHermiteInterpolant1D, xq, extrap, op, searcher)
-    return _hermite_eval_at_point(itp.x, itp.spacing, itp.y, itp.dy, xq, extrap, op, searcher)
+    return _hermite_eval_at_point(itp.x, itp.y, itp.dy, xq, extrap, op, searcher)
 end
 
 @inline function _itp_vector_loop!(output, itp::AbstractHermiteInterpolant1D, xq, extrap, op, searcher)
-    return _hermite_vector_loop!(output, itp.x, itp.spacing, itp.y, itp.dy, xq, extrap, op, searcher)
+    return _hermite_vector_loop!(output, itp.x, itp.y, itp.dy, xq, extrap, op, searcher)
 end
 
 # ========================================
@@ -31,8 +33,7 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    spacing = _create_spacing(x)
-    return CubicHermiteInterpolant1D(x, y, dy, spacing, extrap, search)
+    return CubicHermiteInterpolant1D(x, y, dy, extrap, search)
 end
 
 # ========================================

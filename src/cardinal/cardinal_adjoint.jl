@@ -191,9 +191,9 @@ function cardinal_adjoint(
         end
     end
 
-    # Build spacing and anchors
-    spacing = _create_spacing(x_p)
-    anchors = _bake_hermite_adjoint_anchors(x_p, spacing, xq_p, extrap)
+    # Wrap axis (axis-as-truth) and bake anchors
+    x_axis = _store_grid_cached(x_p, Tg)
+    anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap)
 
     return CardinalAdjoint1D{Tg, typeof(extrap)}(
         anchors, collect(x_p), length(x_p), Tg(tension), extrap

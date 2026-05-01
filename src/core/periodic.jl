@@ -305,6 +305,13 @@ Resolve the period for exclusive endpoint PeriodicBC:
 - If `bc.period` is nothing, infer from Range or error for non-uniform grids.
 """
 function _resolve_exclusive_period(x, bc::PeriodicBC)
+    # Wrapped axes already carry the resolved period — no re-resolution needed.
+    # Without this, downstream callers that wrap once (oneshot surface) and then
+    # invoke periodic slope helpers would re-enter `_resolve_exclusive_period`
+    # on the wrapper, where `_can_infer_period(::_ExclusivePeriodicAxis)` is
+    # false, and erroneously raise on Vector-inner wrappers.
+    x isa _ExclusivePeriodicAxis && return x.period
+
     inferred = _can_infer_period(x) ? step(x) * length(x) : nothing
 
     if bc.period !== nothing

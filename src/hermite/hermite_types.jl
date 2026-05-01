@@ -42,7 +42,6 @@ struct CubicHermiteInterpolant1D{
         X <: AbstractVector{Tg},
         Y <: AbstractVector{Tv},
         DY,
-        S <: AbstractGridSpacing{Tg},
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
         CS <: AbstractCoeffStrategy,
@@ -50,24 +49,27 @@ struct CubicHermiteInterpolant1D{
     x::X
     y::Y
     dy::DY
-    spacing::S
     extrap::E
     search_policy::P
 
-    # PreCompute inner: dy is a precomputed slope vector
+    # PreCompute inner: dy is a precomputed slope vector. Axis-as-truth: `xc`
+    # is wrapped via `_store_grid_cached` (Vector → `_CachedVector`, Range →
+    # `_CachedRange`), so `_get_h(xc, idx)` returns cached h/inv_h — no
+    # separate spacing field needed.
     function CubicHermiteInterpolant1D(
-            x::AbstractVector{Tg}, y::AbstractVector, dy::AbstractVector,
-            spacing::S, extrap::E, search::P
-        ) where {Tg, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+            x::AbstractVector, y::AbstractVector, dy::AbstractVector,
+            extrap::E, search::P
+        ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) == length(dy) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
         length(x) >= 2 || throw(ArgumentError("Hermite interpolation requires at least 2 points, got $(length(x))"))
+        Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = copy(x)
+        xc = _store_grid_cached(x, Tg)
         yc = _convert_copy(y, Tv)
         dyc = copy(dy)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), S, E, P, PreCompute}(
-            xc, yc, dyc, spacing, extrap, search
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, PreCompute}(
+            xc, yc, dyc, extrap, search
         )
     end
 end

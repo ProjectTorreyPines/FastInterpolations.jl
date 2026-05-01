@@ -12,7 +12,7 @@
 # `_resolve_search`'s seam dispatch handles eval-time wrap. No grid extension
 # is needed — same approach as Linear's zero-copy oneshot.
 
-# Scalar
+# Scalar — axis-as-truth via `_resolve_axis`/`_resolve_data`.
 @inline @with_pool pool function _pchip_interp_precompute(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -24,12 +24,14 @@
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    x = _prepare_grid(x)
-    Tdy = _output_eltype(Tv, float(eltype(x)))
-    dy = acquire!(pool, Tdy, length(y))
-    _pchip_slopes!(dy, x, y; bc)
-    searcher = _resolve_search(x, xq, search, hint, bc)
-    return _hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
+    x_ext, y_ext, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
+    bc_eff = _bc_after_extend(bc)
+    x_eff = _prepare_grid(x_ext)
+    Tdy = _output_eltype(Tv, float(eltype(x_eff)))
+    dy = acquire!(pool, Tdy, length(y_ext))
+    _pchip_slopes!(dy, x_eff, y_ext; bc = bc_eff)
+    searcher = _resolve_search(x_eff, xq, search, hint, bc_eff)
+    return _hermite_eval_at_point(x_eff, y_ext, dy, xq, extrap_eff, deriv, searcher)
 end
 
 # Vector in-place
@@ -46,13 +48,15 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _prepare_grid(x)
+    x_ext, y_ext, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
+    bc_eff = _bc_after_extend(bc)
+    x_eff = _prepare_grid(x_ext)
 
-    Tdy = _output_eltype(Tv, float(eltype(x)))
-    dy = acquire!(pool, Tdy, length(y))
-    _pchip_slopes!(dy, x, y; bc)
-    searcher = _resolve_search(x, x_query, search, hint, bc)
-    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
+    Tdy = _output_eltype(Tv, float(eltype(x_eff)))
+    dy = acquire!(pool, Tdy, length(y_ext))
+    _pchip_slopes!(dy, x_eff, y_ext; bc = bc_eff)
+    searcher = _resolve_search(x_eff, x_query, search, hint, bc_eff)
+    return _hermite_vector_loop!(output, x_eff, y_ext, dy, x_query, extrap_eff, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗

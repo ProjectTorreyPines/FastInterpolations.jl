@@ -22,7 +22,7 @@
 #
 # Dependencies (add to your active Julia environment as needed):
 #   Pkg.add("Plots")   — Plots.jl for visualisation
-#   Python 3 + numpy   — for loading the .pkl grid file (no Julia PyCall needed)
+#   Pkg.add("Pickle")  — Pickle.jl for loading the .pkl grid file
 #
 # Implementation notes on PHS derivatives:
 #   PHSInterpolantND does NOT implement _locate_cell/_eval_at_cell, so
@@ -34,8 +34,23 @@
 using FastInterpolations
 using DelimitedFiles
 using LinearAlgebra
+using Pickle
 using Plots
 using Printf
+
+# ============================================================
+# Patch Pickle.jl to support numpy._core (NumPy >= 2.0)
+# ============================================================
+Pickle.np_methods!(mt) = begin
+    mt["numpy.core.multiarray._reconstruct"]  = Pickle.np_multiarray_reconstruct
+    mt["numpy._core.multiarray._reconstruct"] = Pickle.np_multiarray_reconstruct
+    mt["numpy.dtype"]                          = Pickle.np_dtype
+    mt["numpy.core.multiarray.scalar"]         = Pickle.np_scalar
+    mt["numpy._core.multiarray.scalar"]        = Pickle.np_scalar
+    mt["__build__.Pickle.NpyDtype"]            = Pickle.build_npydtype
+    mt["__build__.Pickle.NpyArrayPlaceholder"] = Pickle.build_nparray
+    return mt
+end
 
 # ============================================================
 # Configuration — edit paths here
@@ -47,37 +62,16 @@ const OUT_PATH = joinpath(@__DIR__, "phs_density_comparison.png")
 const BOHR2ANG = 0.529177210903   # 1 Bohr → Angstrom
 
 # ============================================================
-# 1. Load 3D grid from pickle via Python subprocess
+# 1. Load 3D grid from pickle via Pickle.jl
 # ============================================================
 println("Loading 3D grid from pickle...")
 
-tmp_bin = tempname()
-py_script = """
-import pickle, struct, numpy as np
-d = pickle.load(open(r'$(PKL_PATH)', 'rb'))
-x = np.asarray(d['x'], dtype='<f8')
-y = np.asarray(d['y'], dtype='<f8')
-z = np.asarray(d['z'], dtype='<f8')
-rho = np.asarray(d['variables']['density_scf'], dtype='<f8')
-nx, ny, nz = rho.shape
-with open(r'$(tmp_bin)', 'wb') as f:
-    f.write(struct.pack('<3i', nx, ny, nz))
-    f.write(x.tobytes())
-    f.write(y.tobytes())
-    f.write(z.tobytes())
-    f.write(rho.tobytes(order='F'))
-"""
-run(`python3 -c $py_script`)
-
-x_grid, y_grid, z_grid, rho_3d = open(tmp_bin, "r") do io
-    nx, ny, nz = Int.(read!(io, Vector{Int32}(undef, 3)))
-    xg   = read!(io, Vector{Float64}(undef, nx))
-    yg   = read!(io, Vector{Float64}(undef, ny))
-    zg   = read!(io, Vector{Float64}(undef, nz))
-    flat = read!(io, Vector{Float64}(undef, nx * ny * nz))
-    xg, yg, zg, reshape(copy(flat), nx, ny, nz)
-end
-rm(tmp_bin)
+pkl = Pickle.npyload(PKL_PATH)
+x_grid = Float64.(pkl["x"])
+y_grid = Float64.(pkl["y"])
+z_grid = Float64.(pkl["z"])
+rho_3d  = Float64.(pkl["variables"]["density_scf"])   # already (nx,ny,nz) via c2f
+rho0_3d = Float64.(pkl["variables"]["density_frag"])
 
 @printf "  Grid: %d×%d×%d, ρ ∈ [%.2e, %.2e] a.u.\n" length(x_grid) length(y_grid) length(z_grid) minimum(rho_3d) maximum(rho_3d)
 
@@ -119,12 +113,19 @@ println("  [4/5] Tricubic (Cardinal / Catmull-Rom)...")
 @time itp_cardinal = interp(grids, rho_3d;
     method = (CardinalInterp(), CardinalInterp(), CardinalInterp()))
 
-println("  [5/5] Polyharmonic spline (PHS-3, stencil_size=4)...")
-# Note: reference_interp enables a log-density smoothing transform (log(ρ/ρ₀)).
-# This is most effective when reference_interp is an analytic promolecular density.
-# Using another grid interpolant as reference causes degeneracy (log-ratio≈0 at nodes),
-# so we use raw PHS here.
-@time itp_phs = phs_interp(grids, rho_3d; stencil_size = 4, degree = 3, blend_factor = 2.0)
+# Build a cubic interpolant on the promolecular density ρ₀ (density_frag).
+# This is used as the reference for the PHS log-density transform f = log(ρ/ρ₀).
+# ρ₀ ≠ ρ at grid nodes (it is the sum of atomic in-vacuo densities, not the SCF density),
+# so the log-ratio is non-trivial and the transform is well-conditioned.
+println("  Building promolecular reference interpolant (ρ₀ = density_frag)...")
+@time itp_frag = cubic_interp(grids, rho0_3d)
+
+println("  [5/5] Polyharmonic spline (PHS-3, stencil_size=8, log-density transform)...")
+# Paper (Sec. III): N = 8³ = 512 stencil nodes; f = log(ρ_scf / ρ₀) is smooth
+# across the whole grid, eliminating the nuclear-cusp oscillations that affect
+# raw interpolation of ρ directly.
+@time itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 2.0,
+    reference_interp = itp_frag)
 
 println("All interpolants built.")
 

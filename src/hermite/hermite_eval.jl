@@ -130,7 +130,7 @@ end
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, _ = search_interval(searcher, x, xq)
-    n = length(x)
+    n = _data_length(x)
     dyL = _local_slope(sm, x, y, idx, n)
     dyR = _local_slope(sm, x, y, idx_R, n)
     dL = xq - xL
@@ -155,7 +155,7 @@ end
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
     idx, idx_R, xL, _ = search_interval(searcher, x, xq)
-    n = length(x)
+    n = _data_length(x)
     dyL = _local_slope(sm, x, y, idx, n)
     dyR = _local_slope(sm, x, y, idx_R, n)
     dL = xq - xL
@@ -175,7 +175,7 @@ end
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, _ = search_interval(searcher, x, xq_wrapped)
-    n = length(x)
+    n = _data_length(x)
     dyL = _local_slope(sm, x, y, idx, n)
     dyR = _local_slope(sm, x, y, idx_R, n)
     dL = xq_wrapped - xL

@@ -85,15 +85,16 @@ end
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
+    # Wrap axis + data (axis-as-truth: `last(x_eff) == first(x) + period`,
+    # so `_wrap_to_domain(xq, x_eff)` and `_get_h(x_eff, idx)` correctly hit
+    # the seam without needing bc as a side-channel). Keep `bc` flowing into
+    # `CardinalSlopes(tension, bc)` so the `:exclusive` slope dispatch fires
+    # the seam formula via `bc.period` — the slope helper does NOT touch
+    # `x[n+1]`, so `Base.getindex` raw passthrough on the wrapper is safe.
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
-    # Post-wrap, an `:exclusive` axis presents a length-(n+1) closed-cycle view
-    # via `getindex(g, n+1) = inner[1]+period` / `_ExclusivePeriodicData[n+1] =
-    # inner[1]` — i.e. structurally identical to user-supplied `:inclusive`.
-    # Normalize bc accordingly so slope helpers use a single periodic dispatch.
-    bc_eff = _bc_after_extend(bc)
     searcher = _resolve_search(x_eff, xq, search, hint, NoBC())
-    return _hermite_eval_at_point(x_eff, y_eff, CardinalSlopes(tension, bc_eff), xq, extrap, deriv, searcher)
+    return _hermite_eval_at_point(x_eff, y_eff, CardinalSlopes(tension, bc), xq, extrap, deriv, searcher)
 end
 
 # Vector in-place — same axis-as-truth pattern.
@@ -114,9 +115,8 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
-    bc_eff = _bc_after_extend(bc)
     searcher = _resolve_search(x_eff, x_query, search, hint, NoBC())
-    return _hermite_vector_loop!(output, x_eff, y_eff, CardinalSlopes(tension, bc_eff), x_query, extrap, deriv, searcher)
+    return _hermite_vector_loop!(output, x_eff, y_eff, CardinalSlopes(tension, bc), x_query, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗

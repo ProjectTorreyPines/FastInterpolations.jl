@@ -112,20 +112,17 @@ end
 # ---------- AbstractVector interface ----------
 # `length` reports virtual extended (n+1) so search algorithms find the seam
 # cell at boundary. `getindex` forwards to inner WITHOUT branch — accessing
-# `g[n+1]` returns the *virtual seam point* `inner[1] + period`, presenting an
-# inclusive-equivalent view of an exclusive grid. This means kernels that
-# iterate `1:length(g)` and read `x[i]` get a closed-cycle length-(n+1)
-# representation identical in shape to the user-supplied inclusive form
-# (`length n+1` with `x[end] == x[1] + period`). The unified shape lets
-# slope helpers, `_periodic_secant`/`_periodic_cell_width`, and any future
-# code paths use `:inclusive` semantics for both endpoints — no per-axis
-# `getindex` branching at the call site.
+# `Base.getindex` is a *zero-branch raw passthrough* to `inner`: hot-path
+# accesses (interior cells with `i <= length(g.inner)`) compile to a single
+# load with no extra arithmetic. Accessing `g[length(g)] = g[n+1]` raises
+# BoundsError — by design. Kernels that intentionally need the virtual seam
+# point (e.g. boundary slope formulas, eval at the seam edge) MUST go
+# through `_getindex(g, i)`, the cyclic-aware helper that returns
+# `inner[1] + period` for `i == n+1`.
 Base.length(g::_ExclusivePeriodicAxis) = length(g.inner) + 1
 Base.size(g::_ExclusivePeriodicAxis) = (length(g),)
-@inline Base.@propagate_inbounds function Base.getindex(g::_ExclusivePeriodicAxis, i::Int)
-    n = length(g.inner)
-    return @inbounds (i <= n ? g.inner[i] : g.inner[1] + g.period)
-end
+@inline Base.@propagate_inbounds Base.getindex(g::_ExclusivePeriodicAxis, i::Int) =
+    g.inner[i]
 @inline Base.firstindex(::_ExclusivePeriodicAxis) = 1
 @inline Base.lastindex(g::_ExclusivePeriodicAxis) = length(g)
 Base.eltype(::Type{<:_ExclusivePeriodicAxis{Tg}}) where {Tg} = Tg
@@ -145,6 +142,21 @@ Base.IndexStyle(::Type{<:_ExclusivePeriodicAxis}) = IndexLinear()
 # which is the desired behavior: callers asking for `step` already assume a
 # uniform axis.
 @inline Base.step(g::_ExclusivePeriodicAxis) = step(g.inner)
+
+# Raw data length — the count of physical knots, used by callers that need to
+# distinguish "inner indices" (where `Base.getindex(g, i)` is a zero-branch
+# raw passthrough) from "edge indices" (where `i+1` would land at the virtual
+# seam and require `_getindex` for cyclic-aware access). Slope helpers and
+# similar inner-loop kernels iterate over `1:_data_length(x)` for the
+# branchless path, dispatching to the edge variant only when `i == 1` or
+# `i == _data_length(x)`.
+#
+# For non-wrapper axes (Vector, Range, _CachedVector, _CachedRange,
+# inclusive raw vector), `_data_length(x) == length(x)` — no overhead.
+# For `_ExclusivePeriodicAxis`, returns `length(g.inner)` (raw n), distinct
+# from `length(g) = n+1` (virtual length used by search/wrap).
+@inline _data_length(x::AbstractVector) = length(x)
+@inline _data_length(g::_ExclusivePeriodicAxis) = length(g.inner)
 
 # ========================================
 # Helpers: virtual access + ND fold-back
@@ -232,10 +244,31 @@ end
 @inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int) =
     @inbounds inv(_get_h(g, idx))
 
+# `_CachedRange` inner (uniform Range): every cell — including the seam — has
+# width equal to the cached step. `_resolve_bc_period` validates user-supplied
+# `period ≈ step*n` (or auto-infers it) at construction, so the seam cell
+# `[inner[n], inner[1]+period)` has width `step` within `Tg` precision. Returning
+# the cached `inner.h` / `inner.inv_h` here avoids the `inner[1]+period-inner[n]`
+# cancellation (~1.5e-8 ULP at 1e8 offset) that the generic seam branch incurs,
+# and matches what master's 3-arg `_get_h(::_CachedRange, xL, xR) = x.h` did
+# before the wrapper unification — keeping all four eval routes (scalar/series
+# scalar/series persistent/series batch) in bit-exact agreement on
+# large-offset Ranges.
+@inline _get_h(g::_ExclusivePeriodicAxis{Tg, <:_CachedRange}, ::Int) where {Tg} = g.inner.h
+@inline _get_inv_h(g::_ExclusivePeriodicAxis{Tg, <:_CachedRange}, ::Int) where {Tg} = g.inner.inv_h
+
 # `_alpha_of` for the wrapper: defer to inner so `_CachedRange` uses cached
 # `inv_h` (avoids `(R - L)` cancellation in the denominator).
 @inline _alpha_of(q::Real, L::Real, R::Real, g::_ExclusivePeriodicAxis) =
     _alpha_of(q, L, R, g.inner)
+
+# `_create_spacing` for the wrapper: defer to inner so the spacing buffer has
+# `length(inner) - 1 = n - 1` entries (interior cells only — the seam cell is
+# handled per-query via the wrapper-level `_get_h` seam fast-path). The default
+# `_create_spacing(::AbstractVector)` would walk `1:length(g)-1 = 1:n` and read
+# `g[n+1]` (the virtual seam slot), forwarding to `inner[n+1]` and tripping a
+# `BoundsError`.
+@inline _create_spacing(g::_ExclusivePeriodicAxis) = _create_spacing(g.inner)
 
 # `_ExclusivePeriodicAxis` passes through `_store_grid_cached` (defined in
 # cached_vector.jl). When a method-family factory wraps a Vector + `:exclusive`

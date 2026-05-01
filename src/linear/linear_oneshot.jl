@@ -245,7 +245,11 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     α = _alpha_of(xq, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
+    # Index-based 2-arg `_get_inv_h(x, idx)` reads `_CachedRange.inv_h` (exact)
+    # and `_ExclusivePeriodicAxis`'s seam formula (`inv(inner[1]+period-inner[idx])`).
+    # The 3-arg `(x, xL, xR)` form falls back to `inv(float(xR-xL))` for the
+    # wrapper, which loses precision at the seam on large-offset Ranges.
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
@@ -265,7 +269,7 @@ end
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     α = _alpha_of(xq, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
@@ -284,7 +288,7 @@ end
     xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     α = _alpha_of(xq_wrapped, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
 end
 
 # Public scalar one-shot API.

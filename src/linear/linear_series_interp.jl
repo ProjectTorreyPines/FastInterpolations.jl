@@ -228,7 +228,7 @@ end
         xL = x[idx]
         xR = x[idx1]
     end
-    inv_h = _get_inv_h(x, xL, xR)
+    inv_h = _get_inv_h(x, idx)
     α = _alpha_of(aq.xq, xL, xR, x)
     @inbounds @simd for k in axes(out, 1)
         yL = y_point[k, idx]

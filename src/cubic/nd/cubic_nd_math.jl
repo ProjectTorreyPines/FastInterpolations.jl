@@ -283,7 +283,10 @@ end
 
 function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::PeriodicBC{E}, args...) where {Tv, E}
     # Enforce periodic: dydx[1] == dydx[end]
-    avg = inv(Tv(2)) * (dydx[1] + dydx[end])
+    # Use a `Real` scalar (`0.5`) rather than `inv(Tv(2))` so duck-typed `Tv`
+    # without `inv` (e.g. test `MyDuck` with only `+,-, Real*Tv`) still work.
+    # `Real * Tv` is the documented minimum op set for duck values.
+    avg = (dydx[1] + dydx[end]) * 0.5
     @inbounds dydx[1] = avg
     @inbounds dydx[end] = avg
     return nothing
@@ -588,7 +591,7 @@ Use `_moments_to_derivatives_1d!` in a loop for axis 1, or use `Val(2)` for batc
         out::AbstractMatrix{Tv},
         M::AbstractMatrix{Tv},
         data::AbstractMatrix{Tv},
-        spacing,
+        x::AbstractVector,
         bc,
         ::Val{1}
     ) where {Tv}

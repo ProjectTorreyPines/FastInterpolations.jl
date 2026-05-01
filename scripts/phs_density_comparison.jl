@@ -182,59 +182,75 @@ println("\nEvaluating along path ($N_path points)...")
 ∇²ρ_cardinal = zeros(N_path)
 ∇²ρ_phs      = zeros(N_path)
 
-# Derivative operator shortcuts for PHS:
+# Derivative operator shortcuts:
 #   DerivOp{n}() selects the n-th derivative along that axis (0 = value)
 const D0 = DerivOp{0}()
 const D1 = DerivOp{1}()
 const D2 = DerivOp{2}()
 
+# SoA query format — all ND interpolants accept (x_vec, y_vec, z_vec).
+# PHSInterpolantND batch evaluation uses Threads.@threads internally.
+const queries = (qx, qy, qz)
+
+# Scratch buffers shared across all gradient / Laplacian batch calls
+const _gx = zeros(N_path)
+const _gy = zeros(N_path)
+const _gz = zeros(N_path)
+
 # ── density ρ ──────────────────────────────────────────────────────────────────
 print("  ρ ... ")
-@time for i in 1:N_path
-    q = (qx[i], qy[i], qz[i])
-    ρ_nearest[i]  = itp_nearest(q)
-    ρ_linear[i]   = itp_linear(q)
-    ρ_cubic[i]    = itp_cubic(q)
-    ρ_cardinal[i] = itp_cardinal(q)
-    ρ_phs[i]      = itp_phs(q)
+@time begin
+    itp_nearest(ρ_nearest,  queries)
+    itp_linear(ρ_linear,    queries)
+    itp_cubic(ρ_cubic,      queries)
+    itp_cardinal(ρ_cardinal, queries)
+    itp_phs(ρ_phs,          queries)
 end
 
 # ── gradient magnitude |∇ρ| ────────────────────────────────────────────────────
-# gradient(itp, q) returns NTuple{3, Float64} for cubic / cardinal interpolants.
-# PHSInterpolantND: must use the deriv kwarg (no _locate_cell/_eval_at_cell).
+# All ND interpolants accept the batch form itp(out, queries; deriv=(...)).
+# PHS does not implement _locate_cell/_eval_at_cell so gradient() is unavailable,
+# but the same computation works via the deriv kwarg on the batch callable.
 print("  |∇ρ| ... ")
-@time for i in 1:N_path
-    q = (qx[i], qy[i], qz[i])
+@time begin
+    itp_linear(_gx, queries; deriv = (D1, D0, D0))
+    itp_linear(_gy, queries; deriv = (D0, D1, D0))
+    itp_linear(_gz, queries; deriv = (D0, D0, D1))
+    @. ∇ρ_linear = sqrt(_gx^2 + _gy^2 + _gz^2)
 
-    g = gradient(itp_linear, q)
-    ∇ρ_linear[i] = sqrt(g[1]^2 + g[2]^2 + g[3]^2)
+    itp_cubic(_gx, queries; deriv = (D1, D0, D0))
+    itp_cubic(_gy, queries; deriv = (D0, D1, D0))
+    itp_cubic(_gz, queries; deriv = (D0, D0, D1))
+    @. ∇ρ_cubic = sqrt(_gx^2 + _gy^2 + _gz^2)
 
-    g = gradient(itp_cubic, q)
-    ∇ρ_cubic[i] = sqrt(g[1]^2 + g[2]^2 + g[3]^2)
+    itp_cardinal(_gx, queries; deriv = (D1, D0, D0))
+    itp_cardinal(_gy, queries; deriv = (D0, D1, D0))
+    itp_cardinal(_gz, queries; deriv = (D0, D0, D1))
+    @. ∇ρ_cardinal = sqrt(_gx^2 + _gy^2 + _gz^2)
 
-    g = gradient(itp_cardinal, q)
-    ∇ρ_cardinal[i] = sqrt(g[1]^2 + g[2]^2 + g[3]^2)
-
-    gx = itp_phs(q; deriv = (D1, D0, D0))
-    gy = itp_phs(q; deriv = (D0, D1, D0))
-    gz = itp_phs(q; deriv = (D0, D0, D1))
-    ∇ρ_phs[i] = sqrt(gx^2 + gy^2 + gz^2)
+    itp_phs(_gx, queries; deriv = (D1, D0, D0))
+    itp_phs(_gy, queries; deriv = (D0, D1, D0))
+    itp_phs(_gz, queries; deriv = (D0, D0, D1))
+    @. ∇ρ_phs = sqrt(_gx^2 + _gy^2 + _gz^2)
 end
 
 # ── Laplacian magnitude |∇²ρ| ──────────────────────────────────────────────────
-# laplacian(itp, q) returns scalar ∇²f for cubic / cardinal.
-# PHSInterpolantND: sum of the three diagonal second-order partials.
 print("  |∇²ρ| ... ")
-@time for i in 1:N_path
-    q = (qx[i], qy[i], qz[i])
+@time begin
+    itp_cubic(_gx, queries; deriv = (D2, D0, D0))
+    itp_cubic(_gy, queries; deriv = (D0, D2, D0))
+    itp_cubic(_gz, queries; deriv = (D0, D0, D2))
+    @. ∇²ρ_cubic = abs(_gx + _gy + _gz)
 
-    ∇²ρ_cubic[i]    = abs(laplacian(itp_cubic,    q))
-    ∇²ρ_cardinal[i] = abs(laplacian(itp_cardinal, q))
+    itp_cardinal(_gx, queries; deriv = (D2, D0, D0))
+    itp_cardinal(_gy, queries; deriv = (D0, D2, D0))
+    itp_cardinal(_gz, queries; deriv = (D0, D0, D2))
+    @. ∇²ρ_cardinal = abs(_gx + _gy + _gz)
 
-    d2x = itp_phs(q; deriv = (D2, D0, D0))
-    d2y = itp_phs(q; deriv = (D0, D2, D0))
-    d2z = itp_phs(q; deriv = (D0, D0, D2))
-    ∇²ρ_phs[i] = abs(d2x + d2y + d2z)
+    itp_phs(_gx, queries; deriv = (D2, D0, D0))
+    itp_phs(_gy, queries; deriv = (D0, D2, D0))
+    itp_phs(_gz, queries; deriv = (D0, D0, D2))
+    @. ∇²ρ_phs = abs(_gx + _gy + _gz)
 end
 
 println("Evaluation complete.")

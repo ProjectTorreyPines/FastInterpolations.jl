@@ -397,17 +397,20 @@
         @test y == y_ref
     end
 
-    @testset "Interpolant path stores extended copy (Range grid → _CachedRange)" begin
+    @testset "Interpolant path wraps Range axis (`_ExclusivePeriodicAxis(_CachedRange)`)" begin
         x = range(0.0, step = 1.0, length = 4)
         y = [10.0, 20.0, 30.0, 40.0]
 
         itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
 
-        # Range input → extended grid must be _CachedRange (O(1) indexing preserved).
-        @test itp.x isa _CachedRange
-        @test length(itp.x) == 5
-        @test length(itp.y) == 5
-        @test itp.y[end] == itp.y[1]
+        # Range input → `_ExclusivePeriodicAxis(_CachedRange, period)` (uniform with
+        # the Vector path; O(1) indexing preserved through inner `_CachedRange`).
+        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
+        @test itp.x.inner isa _CachedRange
+        @test length(itp.x) == 5             # virtual length n+1
+        @test length(itp.x.inner) == 4       # raw n-length cached Range
+        @test length(itp.y) == 5             # `_ExclusivePeriodicData` virtual n+1
+        @test itp.y[end] == itp.y[1]         # cyclic
     end
 
     # ============================================================
@@ -529,8 +532,10 @@
         x = 0:10
         y = Float64.(0:10)
         itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
-        @test itp.x isa _CachedRange{Float64}
+        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
+        @test itp.x.inner isa _CachedRange{Float64}
         @test length(itp.x) == 12
+        @test length(itp.x.inner) == 11
         ref = constant_interp(Float64.(0:10), y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
         for xq in (0.5, 5.5, 10.5)
             @test itp(xq) ≈ ref(xq) atol = 1.0e-12

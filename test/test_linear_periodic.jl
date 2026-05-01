@@ -75,16 +75,14 @@
         @test linear_interp(x, y, [0.5, 4.5]; bc = PeriodicBC()) ≈ [1.5, 2.5] atol = 1.0e-12
     end
 
-    @testset "Non-Float wrap domains — WrapExtrap(x) with Int grid" begin
-        # `WrapExtrap(x::AbstractVector)` preserves the grid's eltype. For an Int
-        # grid, the stored WrapExtrap is WrapExtrap{Int} — must dispatch through
-        # the duck-typed 3-arg `_wrap_to_domain` (Int x_min/x_max, Float xi).
+    @testset "Non-Float wrap domains — Int grid + WrapExtrap()" begin
+        # `WrapExtrap` is a tag struct: the wrap domain `[first(x), last(x))`
+        # is read directly from the axis at query time. For an Int grid that
+        # exercises the duck-typed 3-arg `_wrap_to_domain` (Int x_min/x_max,
+        # Float xi).
         x_int = [0, 1, 2, 3, 4]
         y = [1.0, 2.0, 3.0, 4.0, 5.0]
-        extrap_int = WrapExtrap(x_int)
-        @test extrap_int isa FastInterpolations.WrapExtrap{Int}
-        @test (extrap_int._x_min, extrap_int._x_max) == (0, 4)
-        itp = linear_interp(x_int, y; extrap = extrap_int)
+        itp = linear_interp(x_int, y; extrap = WrapExtrap())
         # wrap: 4.5 → period 4 → 0.5 → between y[1]=1.0 and y[2]=2.0 → 1.5
         @test itp(4.5) ≈ 1.5 atol = 1.0e-12
     end
@@ -363,14 +361,14 @@
         @test ref[] == 5
     end
 
-    @testset "Exclusive — adjoint with WrapExtrap(x) smoke (T-8)" begin
+    @testset "Exclusive — adjoint with WrapExtrap() smoke (T-8)" begin
         # Adjoint doesn't accept `bc`, so periodic-shaped adjoint is exercised via
-        # explicit `extrap=WrapExtrap(x)` (grid-span materialization). Verify the
-        # materialized WrapExtrap{Float64} flows through scatter correctly.
+        # explicit `extrap=WrapExtrap()` (tag struct — wrap domain comes from the
+        # axis at query time). Verify it flows through scatter correctly.
         x = range(0.0, 1.0, length = 5)
         y = range(0.0, 1.0, length = 4)
         q = ((0.5, 0.25),)
-        adj = linear_adjoint((x, y), q; extrap = WrapExtrap(x))
+        adj = linear_adjoint((x, y), q; extrap = WrapExtrap())
         # Scatter a scalar gradient of 1.0 → per-corner weights sum to 1.0 at a single query
         y_bar = [1.0]
         f_bar = adj(y_bar)
@@ -624,18 +622,20 @@
         @test y == y_ref
     end
 
-    @testset "Interpolant path stores extended copy (Range grid → _CachedRange)" begin
+    @testset "Interpolant path wraps Range axis (`_ExclusivePeriodicAxis(_CachedRange)`)" begin
         x = range(0.0, step = 1.0, length = 4)
         y = [10.0, 20.0, 30.0, 40.0]
 
         itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
 
-        # Range input → extended grid must be _CachedRange (preserves O(1) indexing
-        # and zero-alloc lookup; _to_float_adding_endpoint guarantees this).
-        @test itp.x isa _CachedRange
-        @test length(itp.x) == 5
-        @test length(itp.y) == 5
-        @test itp.y[end] == itp.y[1]
+        # Range input → `_ExclusivePeriodicAxis(_CachedRange, period)` (uniform with
+        # the Vector path; period + virtual endpoint cached on the axis).
+        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
+        @test itp.x.inner isa _CachedRange
+        @test length(itp.x) == 5             # virtual length n+1
+        @test length(itp.x.inner) == 4       # raw n-length cached Range
+        @test length(itp.y) == 5             # `_ExclusivePeriodicData` virtual n+1
+        @test itp.y[end] == itp.y[1]         # cyclic
     end
 
     # ============================================================
@@ -761,8 +761,10 @@
         x = 0:10                                       # UnitRange{Int}
         y = sin.(2π .* (x ./ 10))
         itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
-        @test itp.x isa _CachedRange{Float64}          # Int Range → Float _CachedRange
-        @test length(itp.x) == 12                      # N+1 extension
+        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
+        @test itp.x.inner isa _CachedRange{Float64}    # Int Range → Float _CachedRange (cached)
+        @test length(itp.x) == 12                      # virtual N+1
+        @test length(itp.x.inner) == 11                # raw N
         # Query agrees with Float-equivalent grid
         ref = linear_interp(Float64.(0:10), y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
         for xq in (0.5, 5.5, 10.5)

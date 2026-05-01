@@ -73,9 +73,11 @@ end
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
-    x = _prepare_grid(x)
-    searcher = _resolve_search(x, xq, search, hint, bc)
-    return _hermite_eval_at_point(x, y, AkimaSlopes(bc), xq, extrap, deriv, searcher)
+    x_eff = _resolve_axis(x, bc)
+    y_eff = _resolve_data(y, bc)
+    bc_eff = _bc_after_extend(bc)
+    searcher = _resolve_search(x_eff, xq, search, hint, NoBC())
+    return _hermite_eval_at_point(x_eff, y_eff, AkimaSlopes(bc_eff), xq, extrap, deriv, searcher)
 end
 
 # Vector in-place — bc-aware unified path.
@@ -93,10 +95,12 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _prepare_grid(x)
+    x_eff = _resolve_axis(x, bc)
+    y_eff = _resolve_data(y, bc)
+    bc_eff = _bc_after_extend(bc)
 
-    searcher = _resolve_search(x, x_query, search, hint, bc)
-    return _hermite_vector_loop!(output, x, y, AkimaSlopes(bc), x_query, extrap, deriv, searcher)
+    searcher = _resolve_search(x_eff, x_query, search, hint, NoBC())
+    return _hermite_vector_loop!(output, x_eff, y_eff, AkimaSlopes(bc_eff), x_query, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗

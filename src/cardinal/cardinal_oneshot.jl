@@ -66,10 +66,12 @@ end
 # ║                 INTERNAL: OnTheFly (local slopes, no pool)                ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# Scalar — OnTheFly path stays zero-alloc by NOT extending the grid; instead
-# `CardinalSlopes(tension, bc)` carries the periodic dispatch tag so the
-# slope helper produces seam-aware boundary slopes per cell. `_resolve_search`
-# threads `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher.
+# Scalar — axis-as-truth: `_resolve_axis(x, bc)` wraps the axis so
+# `last(x_eff) = first(x) + period` for periodic exclusive, giving the eval
+# kernel correct wrap-domain bounds via `_wrap_to_domain(xq, x_eff)` and
+# correct seam-cell `_get_h(x_eff, idx)`. Slopes use `_data_length(x_eff)`
+# (raw n) for boundary detection, so `CardinalSlopes(tension, bc)`'s bc-aware
+# wrap-formulas fire at i==n_raw without any `x[n+1]` access.
 @inline function _cardinal_interp_onthefly(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -83,12 +85,18 @@ end
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
-    x = _prepare_grid(x)
-    searcher = _resolve_search(x, xq, search, hint, bc)
-    return _hermite_eval_at_point(x, y, CardinalSlopes(tension, bc), xq, extrap, deriv, searcher)
+    x_eff = _resolve_axis(x, bc)
+    y_eff = _resolve_data(y, bc)
+    # Post-wrap, an `:exclusive` axis presents a length-(n+1) closed-cycle view
+    # via `getindex(g, n+1) = inner[1]+period` / `_ExclusivePeriodicData[n+1] =
+    # inner[1]` — i.e. structurally identical to user-supplied `:inclusive`.
+    # Normalize bc accordingly so slope helpers use a single periodic dispatch.
+    bc_eff = _bc_after_extend(bc)
+    searcher = _resolve_search(x_eff, xq, search, hint, NoBC())
+    return _hermite_eval_at_point(x_eff, y_eff, CardinalSlopes(tension, bc_eff), xq, extrap, deriv, searcher)
 end
 
-# Vector in-place — same zero-alloc pattern.
+# Vector in-place — same axis-as-truth pattern.
 @inline function _cardinal_interp_onthefly!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -104,9 +112,11 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _prepare_grid(x)
-    searcher = _resolve_search(x, x_query, search, hint, bc)
-    return _hermite_vector_loop!(output, x, y, CardinalSlopes(tension, bc), x_query, extrap, deriv, searcher)
+    x_eff = _resolve_axis(x, bc)
+    y_eff = _resolve_data(y, bc)
+    bc_eff = _bc_after_extend(bc)
+    searcher = _resolve_search(x_eff, x_query, search, hint, NoBC())
+    return _hermite_vector_loop!(output, x_eff, y_eff, CardinalSlopes(tension, bc_eff), x_query, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗

@@ -112,11 +112,20 @@ end
 # ---------- AbstractVector interface ----------
 # `length` reports virtual extended (n+1) so search algorithms find the seam
 # cell at boundary. `getindex` forwards to inner WITHOUT branch — accessing
-# `g[n+1]` raises BoundsError from inner. Use `_getindex` helper for virtual.
+# `g[n+1]` returns the *virtual seam point* `inner[1] + period`, presenting an
+# inclusive-equivalent view of an exclusive grid. This means kernels that
+# iterate `1:length(g)` and read `x[i]` get a closed-cycle length-(n+1)
+# representation identical in shape to the user-supplied inclusive form
+# (`length n+1` with `x[end] == x[1] + period`). The unified shape lets
+# slope helpers, `_periodic_secant`/`_periodic_cell_width`, and any future
+# code paths use `:inclusive` semantics for both endpoints — no per-axis
+# `getindex` branching at the call site.
 Base.length(g::_ExclusivePeriodicAxis) = length(g.inner) + 1
 Base.size(g::_ExclusivePeriodicAxis) = (length(g),)
-@inline Base.@propagate_inbounds Base.getindex(g::_ExclusivePeriodicAxis, i::Int) =
-    g.inner[i]
+@inline Base.@propagate_inbounds function Base.getindex(g::_ExclusivePeriodicAxis, i::Int)
+    n = length(g.inner)
+    return @inbounds (i <= n ? g.inner[i] : g.inner[1] + g.period)
+end
 @inline Base.firstindex(::_ExclusivePeriodicAxis) = 1
 @inline Base.lastindex(g::_ExclusivePeriodicAxis) = length(g)
 Base.eltype(::Type{<:_ExclusivePeriodicAxis{Tg}}) where {Tg} = Tg

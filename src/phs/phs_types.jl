@@ -21,12 +21,47 @@ When active, `data` stored in `PHSInterpolantND` contains `log(ρ/ρ₀)` and
 evaluation applies the inverse transform (Eqs. 21–23 from the paper) to
 recover the interpolated density and its derivatives.
 
+`Tr` can be any callable supporting `ref(query)` (value) and
+`ref(query; deriv=ops)` (derivative), including:
+- Any `AbstractInterpolantND` (cubic spline, PHS, etc.)
+- A log-space PHS built with `ConstantRef(1.0)` for accurate near-nucleus
+  derivatives from 3D grid data (see `ConstantRef` docstring)
+- A custom `SumOfRadials` type when atomic contributions are available
+
 # Fields
-- `reference`: An `AbstractInterpolantND` providing ρ₀(x), ∇ρ₀(x), and ∇²ρ₀(x)
+- `reference`: callable providing ρ₀(x), ∂ρ₀/∂xξ, and ∂²ρ₀/∂xξ∂xζ
 """
-struct PHSLogTransform{N, Tr <: AbstractInterpolantND}
+struct PHSLogTransform{N, Tr}
     reference::Tr
 end
+
+"""
+    ConstantRef(val)
+
+A callable that returns `val` for value queries and `zero(val)` for any
+derivative query.  Use as `reference_interp` when building a log-density PHS
+whose reference density is a constant — typically `ConstantRef(1.0)` so that
+the stored data becomes `log(data)` and evaluations return `exp(f)` with
+accurate derivatives via the PHS chain rule.
+
+This enables accurate ρ₀ derivatives from 3D grid data by building a log-space
+PHS of ρ₀ (where `log(ρ₀)` is smooth near nuclei) instead of a plain cubic
+spline (which oscillates near nuclei):
+
+```julia
+# log-space PHS of ρ₀ — stores log(ρ₀), evals return ρ₀ and ∂ρ₀/∂x accurately
+itp_rho0 = phs_interp(grids, rho0; stencil_size=8, degree=3,
+                      reference_interp = ConstantRef(1.0))
+# main PHS of ρ: reference derivatives now come from the accurate log-space PHS
+itp_phs  = phs_interp(grids, rho;  stencil_size=8, degree=3,
+                      reference_interp = itp_rho0)
+```
+"""
+struct ConstantRef{T}
+    val::T
+end
+# Value query: return val.  Any derivative query (deriv keyword present): return zero.
+(c::ConstantRef{T})(q; deriv=nothing) where {T} = deriv === nothing ? c.val : zero(T)
 
 """
     PHSInterpolantND{Tg, Tv, N, K}

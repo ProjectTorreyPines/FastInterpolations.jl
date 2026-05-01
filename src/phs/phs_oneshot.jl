@@ -25,8 +25,9 @@ function phs_interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         reference_interp = nothing,
+        reference_data = nothing,
     ) where {Tv, N}
-    itp = phs_interp(grids, data; stencil_size, degree, blend_factor, extrap, search, reference_interp)
+    itp = phs_interp(grids, data; stencil_size, degree, blend_factor, extrap, search, reference_interp, reference_data)
     return itp(query; deriv)
 end
 
@@ -49,8 +50,9 @@ function phs_interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         reference_interp = nothing,
+        reference_data = nothing,
     ) where {Tv, N}
-    itp = phs_interp(grids, data; stencil_size, degree, blend_factor, extrap, search, reference_interp)
+    itp = phs_interp(grids, data; stencil_size, degree, blend_factor, extrap, search, reference_interp, reference_data)
     return itp(queries; deriv)
 end
 
@@ -72,7 +74,8 @@ function phs_interp!(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         reference_interp = nothing,
+        reference_data = nothing,
     ) where {Tv, N}
-    itp = phs_interp(grids, data; stencil_size, degree, blend_factor, extrap, search, reference_interp)
+    itp = phs_interp(grids, data; stencil_size, degree, blend_factor, extrap, search, reference_interp, reference_data)
     return itp(out, queries; deriv)
 end

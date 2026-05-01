@@ -56,8 +56,22 @@ Create an N-dimensional polyharmonic spline interpolant.
     Search policy (scalar or per-axis tuple; used for OOB checking).
 - `reference_interp=nothing`:
     If provided, enables the log-density smoothing transform:
-    `data` is stored as `log(ρ/ρ₀)` where `ρ₀ = reference_interp(grid_point)`.
-    Evaluation then returns ρ̃ = ρ₀ * exp(f) and correctly-transformed derivatives.
+    `data` is stored as `log(ρ/ρ₀)` where ρ₀ values come from `reference_data`
+    (if given) or from evaluating `reference_interp` at each grid node.
+    Evaluation returns ρ̃ = ρ₀ * exp(f) with correct derivative transforms.
+- `reference_data=nothing`:
+    Pre-computed ρ₀ values at all grid nodes (same shape as `data`).
+    When provided alongside `reference_interp`, avoids evaluating `reference_interp`
+    at every grid node during construction — useful when `reference_interp` is a
+    nested PHS (expensive per-node) but the raw ρ₀ array is already available.
+    Example:
+    ```julia
+    # itp_rho0 is a log-space PHS — accurate derivatives but slow to query 592K nodes
+    itp_rho0 = phs_interp(grids, rho0; reference_interp = ConstantRef(1.0))
+    # Pass rho0 directly so construction stays O(N·log N); eval uses itp_rho0 for ∂ρ₀
+    itp_phs  = phs_interp(grids, rho; reference_interp = itp_rho0,
+                          reference_data = rho0)
+    ```
 
 # Returns
 `PHSInterpolantND{Tg, Tv, N, degree}` — callable interpolant.
@@ -83,6 +97,7 @@ function phs_interp(
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         reference_interp = nothing,
+        reference_data = nothing,
     ) where {N, Tv_raw}
     isodd(degree) && degree >= 1 || throw(ArgumentError("PHS degree must be odd and ≥ 1, got $degree"))
     stencil_size >= 1 || throw(ArgumentError("stencil_size must be ≥ 1, got $stencil_size"))
@@ -105,9 +120,19 @@ function phs_interp(
     transform, data_store = if reference_interp === nothing
         nothing, Array{Tv}(data_typed)
     else
-        # Evaluate ρ₀ at all grid nodes and store log(ρ/ρ₀)
-        rho0 = [Tv(reference_interp(ntuple(d -> grids_typed[d][idx[d]], N))) for idx in CartesianIndices(size(data_typed))]
-        log_data = Array{Tv}(log.(data_typed ./ rho0))
+        # Determine ρ₀ at each grid node.
+        # `reference_data` lets the caller bypass per-node evaluation of `reference_interp`
+        # (useful when reference_interp is a nested PHS — expensive at 592K+ nodes).
+        rho0_nodes = if reference_data !== nothing
+            # Pre-computed ρ₀ array supplied — use directly (fast path)
+            size(reference_data) == size(data_typed) ||
+                throw(DimensionMismatch("reference_data size $(size(reference_data)) must match data size $(size(data_typed))"))
+            Tv.(reference_data)
+        else
+            # Evaluate reference_interp at each grid node (may be slow for nested PHS)
+            Tv[reference_interp(ntuple(d -> grids_typed[d][idx[d]], N)) for idx in CartesianIndices(size(data_typed))]
+        end
+        log_data = Array{Tv}(log.(data_typed ./ rho0_nodes))
         PHSLogTransform{N, typeof(reference_interp)}(reference_interp), log_data
     end
 

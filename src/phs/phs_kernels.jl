@@ -61,31 +61,35 @@ end
 # ║    Group B: Blend Weight Function    ║
 # ╚══════════════════════════════════════╝
 #
-# w(d, a) = exp(d³ / (d³ - a³))   for d < a
-#          = 0                     for d ≥ a
+# Paper Eq. 27:
+#   w(d, a) = exp(d³ / (a³(d³ - a³)))   for d < a
+#            = 0                          for d ≥ a
 #
-# This is the form from the implementation snippets, equivalent to the paper's
-# Eq. 27 formulation.  It has a maximum of e at d→0⁺ (note: the paper normalizes
-# the sum, so the absolute scale cancels), goes smoothly to 0 at d=a with
-# continuous first and second derivatives.
+# Note: the a³ factor in the denominator is essential.  Without it the weight
+# becomes scale-invariant (depends only on d/a), giving a much wider blending
+# window than the paper intends.  With it, for a ≈ 2h the weight is ~0.25 at
+# d = a/2, so only the nearest 1-2 base nodes contribute significantly.
+#
+# Derivatives (chain rule on u = d³/(a³(d³-a³))):
+#   w'(d)  = -3d² w / (d³ - a³)²
+#   w''(d) = [(9 - 6a³)d⁴ - 6da⁶ + 12d⁷] w / (d³ - a³)⁴
 
 """
     _phs_blend_weight(d::T, a::T) -> T
 
-Evaluate the blend weight w(d, a). Returns zero for d ≥ a.
+Evaluate the blend weight w(d, a) from paper Eq. 27. Returns zero for d ≥ a.
 """
 @inline function _phs_blend_weight(d::T, a::T) where {T}
     d >= a && return zero(T)
     d3 = d * d * d
     a3 = a * a * a
-    return exp(d3 / (d3 - a3))
+    return exp(d3 / (a3 * (d3 - a3)))
 end
 
 """
     _phs_blend_weight_and_prime(d::T, a::T) -> (w, wp)
 
-Evaluate w and its first derivative w'(d) simultaneously.
-w'(d) = -3a³d² * w / (d³ - a³)²
+Evaluate w and its first derivative w'(d) = -3d² w / (d³ - a³)² simultaneously.
 """
 @inline function _phs_blend_weight_and_prime(d::T, a::T) where {T}
     if d >= a
@@ -94,9 +98,10 @@ w'(d) = -3a³d² * w / (d³ - a³)²
     d2 = d * d
     d3 = d2 * d
     a3 = a * a * a
-    denom = d3 - a3        # negative (d < a)
-    w = exp(d3 / denom)
-    wp = -3 * a3 * d2 * w / (denom * denom)
+    denom  = d3 - a3          # negative (d < a)
+    denom2 = denom * denom
+    w  = exp(d3 / (a3 * denom))
+    wp = -3 * d2 * w / denom2
     return w, wp
 end
 
@@ -104,8 +109,8 @@ end
     _phs_blend_weight_and_derivs(d::T, a::T) -> (w, wp, wpp)
 
 Evaluate w, w', and w'' simultaneously for use in second-derivative blending.
-wpp = 3a³*d * (-2a⁶ + a³*d³ + 4*d⁶) * w / (d³ - a³)⁴
-(This matches the snippet's weifun second-derivative formula.)
+
+  w''(d) = [(9 - 6a³)d⁴ - 6da⁶ + 12d⁷] w / (d³ - a³)⁴
 """
 @inline function _phs_blend_weight_and_derivs(d::T, a::T) where {T}
     if d >= a
@@ -114,14 +119,14 @@ wpp = 3a³*d * (-2a⁶ + a³*d³ + 4*d⁶) * w / (d³ - a³)⁴
     d2 = d * d
     d3 = d2 * d
     a3 = a * a * a
-    denom = d3 - a3        # negative
+    denom  = d3 - a3           # negative
     denom2 = denom * denom
     denom4 = denom2 * denom2
-    w = exp(d3 / denom)
-    wp = -3 * a3 * d2 * w / denom2
-    # inner = -2*a⁶ + a³*d³ + 4*d⁴  (matches snippet's (-2*a3^2 + a3*x3 + 4*x2^2))
-    inner = muladd(4 * d2, d2, muladd(a3, d3, -2 * a3 * a3))
-    wpp = 3 * a3 * d * inner * w / denom4
+    w  = exp(d3 / (a3 * denom))
+    wp = -3 * d2 * w / denom2
+    # inner = (9 - 6a³)d⁴ - 6da⁶ + 12d⁷
+    inner = muladd(9 - 6 * a3, d2 * d2, muladd(-6 * a3, a3 * d, 12 * d * d3 * d3))
+    wpp = inner * w / denom4
     return w, wp, wpp
 end
 

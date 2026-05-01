@@ -66,7 +66,7 @@ export cardinal_adjoint, CardinalAdjoint1D  # Cardinal adjoint (slope-from-data)
 export akima_adjoint, AkimaAdjoint1D  # Akima adjoint (slope-from-data, data-dependent)
 export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly, AutoCoeffs  # ND cubic types + strategies
 export interp, interp!, HeteroInterpolantND  # Tensor product ND (per-axis methods)
-export phs_interp, phs_interp!, PHSInterpolantND, PHSLogTransform  # Polyharmonic spline ND
+export phs_interp, phs_interp!, PHSInterpolantND, PHSLogTransform, ConstantRef  # Polyharmonic spline ND
 export AbstractInterpMethod, CubicInterp, LinearInterp, QuadraticInterp, ConstantInterp, NoInterp
 export PchipInterp, CardinalInterp, AkimaInterp, CubicHermiteInterp  # Hermite family ND methods
 export GridIdx

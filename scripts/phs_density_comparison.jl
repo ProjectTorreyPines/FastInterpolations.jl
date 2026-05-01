@@ -113,19 +113,30 @@ println("  [4/5] Tricubic (Cardinal / Catmull-Rom)...")
 @time itp_cardinal = interp(grids, rho_3d;
     method = (CardinalInterp(), CardinalInterp(), CardinalInterp()))
 
-# Build a cubic interpolant on the promolecular density ρ₀ (density_frag).
-# This is used as the reference for the PHS log-density transform f = log(ρ/ρ₀).
-# ρ₀ ≠ ρ at grid nodes (it is the sum of atomic in-vacuo densities, not the SCF density),
-# so the log-ratio is non-trivial and the transform is well-conditioned.
-println("  Building promolecular reference interpolant (ρ₀ = density_frag)...")
-@time itp_frag = cubic_interp(grids, rho0_3d)
+# Build a log-space PHS of the promolecular density ρ₀ (density_frag).
+#
+# Near nuclei, ρ₀ varies on sub-grid-step scales, so a plain cubic (or even PHS)
+# interpolant of ρ₀ gives wildly inaccurate derivatives there.  The paper avoids
+# this by representing ρ₀ as a sum of 1D atomic radial functions that can be
+# differentiated analytically.  We achieve the same accuracy from 3D grid data by
+# storing log(ρ₀) in the PHS instead of ρ₀ directly: log(ρ₀) is smooth near nuclei
+# (asymptotically linear in r), so the PHS derivatives are accurate.
+#
+# ConstantRef(1.0) acts as the trivial reference so that the stored data becomes
+#   log(ρ₀ / 1.0) = log(ρ₀)
+# and evaluations return ρ₀ = 1 · exp(f) with derivatives via the exact chain rule
+# inside the PHS engine — no external cubic-spline derivative of ρ₀ is ever used.
+println("  Building log-space PHS reference for ρ₀ (accurate near-nucleus derivatives)...")
+@time itp_frag_log = phs_interp(grids, rho0_3d; stencil_size = 8, degree = 3,
+    blend_factor = 2.0, reference_interp = ConstantRef(1.0))
 
 println("  [5/5] Polyharmonic spline (PHS-3, stencil_size=8, log-density transform)...")
 # Paper (Sec. III): N = 8³ = 512 stencil nodes; f = log(ρ_scf / ρ₀) is smooth
 # across the whole grid, eliminating the nuclear-cusp oscillations that affect
-# raw interpolation of ρ directly.
+# raw interpolation of ρ directly.  itp_frag_log is used as the reference so that
+# ∂ρ₀/∂x at any query point is computed accurately via the log-space PHS.
 @time itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 2.0,
-    reference_interp = itp_frag)
+    reference_interp = itp_frag_log, reference_data = rho0_3d)
 
 println("All interpolants built.")
 

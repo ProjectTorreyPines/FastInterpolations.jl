@@ -464,12 +464,17 @@ end
 @inline _verify_cache_match(::Any, ::Any) = true
 @inline function _verify_cache_match(cache::CubicSplineCache, bc::PeriodicBC{:exclusive, P}) where {P}
     # `bc.period === Nothing` means "auto-infer from grid"; the requested
-    # period is `step(x) * length(x)` for Range grids (the only shape allowed
+    # period is `step(x) * n_cells` for Range grids (the only shape allowed
     # to omit it). Comparing to `cache.bc.period` here prevents reusing
     # a stale cache built with an explicit period that passed the Range
     # tolerance but does not match the inferred value.
+    #
+    # IMPORTANT: `cache.x` is the WRAPPED axis with virtual length n+1
+    # (`_ExclusivePeriodicAxis`), so `n_cells = length(cache.x) - 1`. Using
+    # `length(cache.x)` directly (= n+1) inflates the requested period and
+    # forces cache miss on every lookup → KB allocs per query.
     requested = if P === Nothing
-        step(cache.x) * length(cache.x)
+        step(cache.x) * (length(cache.x) - 1)
     else
         bc.period
     end

@@ -212,51 +212,48 @@ Uses pre-allocated buffers `rhs_buf` and `coeff_buf` (from AdaptiveArrayPools).
         rhs_buf::AbstractVector,
         coeff_buf::AbstractVector,
     ) where {Tg, Tv, N, K}
-    key = @inbounds itp.node_key[base_idx...]
-    offsets, phi_inv = itp.stencil_map[key]
-    ns = length(offsets)
+    hs_local   = itp.hs
     grid_sizes = ntuple(d -> length(itp.grids[d]), N)
     base_coords = _phs_base_coords(itp, base_idx)
 
-    # Per-node local spacings
-    hs_local = ntuple(N) do d
-        sp = itp.spacings[d]
-        sp isa ScalarSpacing ? sp.h : begin
-            i = base_idx[d]
-            n = grid_sizes[d]
-            il = max(1, i - 1)
-            ir = min(n - 1, i)
-            Tg((itp.grids[d][ir + 1] - itp.grids[d][il]) / (ir - il + 1))
-        end
+    # Select canonical or boundary-restricted (offsets, Φ⁻¹)
+    shift = _phs_compute_shift(base_idx, itp.stencil_lo, itp.stencil_hi, grid_sizes)
+    offsets, phi_inv = if all(iszero, shift) || !haskey(itp.shift_cache, shift)
+        itp.stencil_offsets, itp.phi_inv
+    else
+        itp.shift_cache[shift]
     end
 
-    # Build RHS vector (length = ns; trailing entries already zero)
-    fill!(rhs_buf, zero(Tg))
-    _phs_build_rhs!(rhs_buf, itp.data, base_idx, offsets, grid_sizes)
+    # Build RHS vector (boundary stencils may have fewer nodes)
+    M = size(phi_inv, 1)
+    actual_rhs   = length(rhs_buf)   == M ? rhs_buf   : similar(rhs_buf, M)
+    actual_coeff = length(coeff_buf) == M ? coeff_buf : similar(coeff_buf, M)
+    fill!(actual_rhs, zero(Tg))
+    _phs_build_rhs!(actual_rhs, itp.data, base_idx, offsets, grid_sizes)
 
     # Solve: coeffs = Φ⁻¹ * rhs  (BLAS gemv)
-    LinearAlgebra.mul!(coeff_buf, phi_inv, rhs_buf)
+    LinearAlgebra.mul!(actual_coeff, phi_inv, actual_rhs)
 
     # Determine which derivative to compute from ops
     n_deriv = ntuple(d -> deriv_order(ops[d]), N)
     total_order = sum(n_deriv)
 
     if total_order == 0
-        return _phs_eval_coeffs_value(coeff_buf, offsets, hs_local, query, base_coords, Val{K}())
+        return _phs_eval_coeffs_value(actual_coeff, offsets, hs_local, query, base_coords, Val{K}())
     elseif total_order == 1
         axis = findfirst(d -> n_deriv[d] == 1, 1:N)::Int
-        return _phs_eval_coeffs_deriv1(coeff_buf, offsets, hs_local, query, base_coords, Val{K}(), axis)
+        return _phs_eval_coeffs_deriv1(actual_coeff, offsets, hs_local, query, base_coords, Val{K}(), axis)
     elseif total_order == 2
         # Find which axes
         nonzero = findall(d -> n_deriv[d] > 0, 1:N)
         if length(nonzero) == 1
             ax = nonzero[1]
             if n_deriv[ax] == 2
-                return _phs_eval_coeffs_deriv2(coeff_buf, offsets, hs_local, query, base_coords, Val{K}(), ax, ax)
+                return _phs_eval_coeffs_deriv2(actual_coeff, offsets, hs_local, query, base_coords, Val{K}(), ax, ax)
             end
         elseif length(nonzero) == 2
             ax1, ax2 = nonzero[1], nonzero[2]
-            return _phs_eval_coeffs_deriv2(coeff_buf, offsets, hs_local, query, base_coords, Val{K}(), ax1, ax2)
+            return _phs_eval_coeffs_deriv2(actual_coeff, offsets, hs_local, query, base_coords, Val{K}(), ax1, ax2)
         end
     end
     # Higher-order derivatives: return zero (PHS with linear augmentation has zero 3rd+ derivatives)
@@ -292,7 +289,7 @@ Algorithm:
     total_deriv = sum(deriv_order(ops[d]) for d in 1:N)
 
     # Thread-local scratch space — M = max(phi_inv matrix size) across all stencils
-    M         = maximum(size(v[2], 1) for v in values(itp.stencil_map))
+    M         = size(itp.phi_inv, 1)
     rhs_buf   = acquire!(pool, Tg, M)
     coeff_buf = acquire!(pool, Tg, M)
 
@@ -439,14 +436,201 @@ Algorithm:
 end
 
 # ======================================================
-# Smoothing transform wrapper
+# Smoothing transform wrapper — exp-space blending
 # ======================================================
+#
+# The Fortran reference blends g_i(x) = exp(f_i(x)) across base nodes (where
+# f_i is the PHS interpolant of log(ρ/ρ₀) at base node i), then multiplies by
+# ρ₀.  This is different from blending f_i and applying exp afterward.
+#
+#   ρ̃(x) = ρ₀(x) · G(x)       G = blend(exp(f_i))          (value, Eq. 21)
+#   ∂ρ̃/∂xξ = ∂ρ₀/∂xξ · G + ρ₀ · ∂G/∂xξ                    (gradient, Leibniz)
+#   ∂²ρ̃/∂xξ∂xζ = ∂²ρ₀/∂xξ∂xζ·G + ∂ρ₀/∂xξ·∂G/∂xζ
+#                + ∂ρ₀/∂xζ·∂G/∂xξ + ρ₀·∂²G/∂xξ∂xζ          (Hessian, Leibniz)
+#
+# Within the blend loop the chain rules for g_i = exp(f_i) are:
+#   dg_ξ     = g · f_ξ
+#   d2g_ξξ   = g · (f_ξξ  + f_ξ²)
+#   d2g_ξζ   = g · (f_ξζ  + f_ξ · f_ζ)   (ξ ≠ ζ)
+
+"""
+    _phs_eval_blended_G(itp, query, ops, rhs_buf, coeff_buf)
+
+Evaluate the weighted blend of exp(f_i) (and its requested derivative) at `query`.
+Identical accumulation structure to `_phs_eval_blended`, but replaces f_i with
+g_i = exp(f_i) and propagates derivatives via the chain rule.
+"""
+@with_pool pool function _phs_eval_blended_G(
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+        ops::NTuple{N, AbstractEvalOp},
+    ) where {Tg, Tv, N, K}
+    blend_a    = itp.blend_a
+    base_idx0  = _phs_find_base_node(itp, query)
+    r_idx      = itp.blend_r_idx
+    grid_sizes = ntuple(d -> length(itp.grids[d]), N)
+
+    total_deriv = sum(deriv_order(ops[d]) for d in 1:N)
+
+    M         = size(itp.phi_inv, 1)
+    rhs_buf   = acquire!(pool, Tg, M)
+    coeff_buf = acquire!(pool, Tg, M)
+
+    lo_idx = ntuple(d -> max(1, base_idx0[d] - r_idx[d]), N)
+    hi_idx = ntuple(d -> min(grid_sizes[d], base_idx0[d] + r_idx[d]), N)
+    ranges = ntuple(d -> lo_idx[d]:hi_idx[d], N)
+
+    ops_val = ntuple(_ -> EvalValue(), Val(N))
+
+    # ----------------------------------------------------------------
+    # Branch 1: G = Σ(wᵢ · gᵢ) / Σwᵢ  where  gᵢ = exp(fᵢ)
+    # ----------------------------------------------------------------
+    if total_deriv == 0
+        sum_w  = zero(Tg)
+        sum_wg = zero(Tv)
+        for nb_ci in CartesianIndices(ranges)
+            nb_idx    = Tuple(nb_ci)
+            nb_coords = _phs_base_coords(itp, nb_idx)
+            d2 = zero(Tg)
+            @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
+            w = _phs_blend_weight(sqrt(d2), blend_a)
+            w < eps(Tg) && continue
+            f = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val, rhs_buf, coeff_buf))
+            sum_w  += w
+            sum_wg += w * exp(f)
+        end
+        sum_w < eps(Tg) && return zero(Tv)
+        return sum_wg / sum_w
+
+    # ----------------------------------------------------------------
+    # Branch 2: ∂G/∂xξ via quotient rule with gᵢ = exp(fᵢ)
+    #   N = Σ(wᵢ · gᵢ),  N_ξ = Σ(w'ᵢ · dirξ · gᵢ  +  wᵢ · gᵢ · fᵢ_ξ)
+    # ----------------------------------------------------------------
+    elseif total_deriv == 1
+        grad_ax = findfirst(d -> deriv_order(ops[d]) == 1, 1:N)::Int
+        sum_w   = zero(Tg)
+        sum_wg  = zero(Tv)
+        sum_N1  = zero(Tv)
+        sum_W1  = zero(Tg)
+        for nb_ci in CartesianIndices(ranges)
+            nb_idx    = Tuple(nb_ci)
+            nb_coords = _phs_base_coords(itp, nb_idx)
+            d2 = zero(Tg)
+            @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
+            d_dist = sqrt(d2)
+            w, wp = _phs_blend_weight_and_prime(d_dist, blend_a)
+            w < eps(Tg) && continue
+            f  = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val, rhs_buf, coeff_buf))
+            g  = exp(f)
+            sum_w  += w
+            sum_wg += w * g
+            if d_dist > eps(Tg)
+                dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
+                f_ξ = Tv(_phs_eval_stencil(itp, nb_idx, query, ops, rhs_buf, coeff_buf))
+                sum_N1 += wp * dir * g + w * g * f_ξ
+                sum_W1 += wp * dir
+            end
+        end
+        sum_w < eps(Tg) && return zero(Tv)
+        G = sum_wg / sum_w
+        return Tv((sum_N1 - G * sum_W1) / sum_w)
+
+    # ----------------------------------------------------------------
+    # Branch 3: ∂²G/∂xξ∂xζ via quotient rule with gᵢ = exp(fᵢ)
+    #   diagonal (ξ=ζ): d2gᵢ = gᵢ · (fᵢ_ξξ + fᵢ_ξ²)
+    #   mixed   (ξ≠ζ): d2gᵢ = gᵢ · (fᵢ_ξζ + fᵢ_ξ · fᵢ_ζ)
+    # ----------------------------------------------------------------
+    elseif total_deriv == 2
+        n_deriv_arr = ntuple(d -> deriv_order(ops[d]), Val(N))
+        nonzero = findall(d -> n_deriv_arr[d] > 0, 1:N)
+        ax1     = nonzero[1]
+        ax2     = length(nonzero) >= 2 ? nonzero[2] : ax1
+        is_diag = (ax1 == ax2)
+
+        ops_d1_1 = ntuple(d -> d == ax1 ? EvalDeriv1() : EvalValue(), Val(N))
+        ops_d1_2 = is_diag ? ops_d1_1 :
+                   ntuple(d -> d == ax2 ? EvalDeriv1() : EvalValue(), Val(N))
+
+        sum_w   = zero(Tg); sum_wg  = zero(Tv)
+        sum_N2  = zero(Tv); sum_W2  = zero(Tg)
+        sum_N1  = zero(Tv); sum_W1  = zero(Tg)
+        sum_N1b = zero(Tv); sum_W1b = zero(Tg)
+
+        for nb_ci in CartesianIndices(ranges)
+            nb_idx    = Tuple(nb_ci)
+            nb_coords = _phs_base_coords(itp, nb_idx)
+            d2 = zero(Tg)
+            @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
+            d_dist = sqrt(d2)
+            w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a)
+            w < eps(Tg) && continue
+
+            f    = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val,  rhs_buf, coeff_buf))
+            g    = exp(f)
+            f_d2 = Tv(_phs_eval_stencil(itp, nb_idx, query, ops,      rhs_buf, coeff_buf))
+            sum_w += w; sum_wg += w * g
+
+            if d_dist > eps(Tg)
+                da1  = (Tg(query[ax1]) - nb_coords[ax1]) / d_dist
+                wxi1 = wp * da1
+                f_d1 = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_d1_1, rhs_buf, coeff_buf))
+                dg1  = g * f_d1   # ∂gᵢ/∂xξ = gᵢ · fᵢ_ξ
+                sum_N1 += wxi1 * g + w * dg1
+                sum_W1 += wxi1
+
+                if is_diag
+                    # d2gᵢ_ξξ = gᵢ · (fᵢ_ξξ + fᵢ_ξ²)
+                    d2g  = g * (f_d2 + f_d1 * f_d1)
+                    wxixi = wpp * da1 * da1 + wp * (1 - da1 * da1) / d_dist
+                    sum_N2 += wxixi * g + 2 * wxi1 * dg1 + w * d2g
+                else
+                    da2   = (Tg(query[ax2]) - nb_coords[ax2]) / d_dist
+                    wxi2  = wp * da2
+                    f_d1b = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_d1_2, rhs_buf, coeff_buf))
+                    dg2   = g * f_d1b  # ∂gᵢ/∂xζ = gᵢ · fᵢ_ζ
+                    sum_N1b += wxi2 * g + w * dg2
+                    sum_W1b += wxi2
+                    # d2gᵢ_ξζ = gᵢ · (fᵢ_ξζ + fᵢ_ξ · fᵢ_ζ)
+                    d2g   = g * (f_d2 + f_d1 * f_d1b)
+                    wxixi = wpp * da1 * da2 - wp * da1 * da2 / d_dist
+                    sum_N2 += wxixi * g + wxi1 * dg2 + wxi2 * dg1 + w * d2g
+                end
+                sum_W2 += wxixi
+            else
+                # d≈0: weight derivatives ≈ 0
+                d2g = g * (f_d2 + (is_diag ? Tv(_phs_eval_stencil(itp, nb_idx, query, ops_d1_1, rhs_buf, coeff_buf))^2 : zero(Tv)))
+                sum_N2 += w * d2g
+            end
+        end
+
+        sum_w < eps(Tg) && return zero(Tv)
+        W = sum_w
+        G = sum_wg / W
+
+        if is_diag
+            d2G = sum_N2 / W - 2 * sum_N1 * sum_W1 / W^2 - G * sum_W2 / W + 2 * G * (sum_W1 / W)^2
+        else
+            d2G = sum_N2 / W - (sum_N1 * sum_W1b + sum_N1b * sum_W1) / W^2 -
+                  G * sum_W2 / W + 2 * G * sum_W1 * sum_W1b / W^2
+        end
+        return Tv(d2G)
+    end
+
+    return zero(Tv)
+end
 
 """
     _phs_eval_with_transform(itp, query, ops)
 
-Evaluate the PHS interpolant and apply the inverse log-density transform.
-Computes ρ̃ = ρ₀ * exp(f) and its derivatives using Eqs. 21–23.
+Evaluate the PHS interpolant with the log-density smoothing transform.
+Blends g_i = exp(f_i) across base nodes (matching the reference Fortran
+implementation), then applies the Leibniz rule to recover ρ̃ = ρ₀ · G
+and its derivatives.
+
+  value:    ρ̃ = ρ₀ · G
+  gradient: ∂ρ̃/∂xξ = ∂ρ₀/∂xξ · G + ρ₀ · ∂G/∂xξ
+  Hessian:  ∂²ρ̃/∂xξ∂xζ = ∂²ρ₀/∂xξ∂xζ · G + ∂ρ₀/∂xξ · ∂G/∂xζ
+                          + ∂ρ₀/∂xζ · ∂G/∂xξ + ρ₀ · ∂²G/∂xξ∂xζ
 """
 function _phs_eval_with_transform(
         itp::PHSInterpolantND{Tg, Tv, N, K},
@@ -456,41 +640,38 @@ function _phs_eval_with_transform(
     total_deriv = sum(deriv_order(ops[d]) for d in 1:N)
     ref = itp.transform.reference
 
-    # Evaluate f (the smooth log-density ratio) and rho0 at query
-    f_val = _phs_eval_blended(itp, query, ntuple(_ -> EvalValue(), N))
-    rho0_val = ref(query)
+    ops_val = ntuple(_ -> EvalValue(), Val(N))
+    G    = Tg(_phs_eval_blended_G(itp, query, ops_val))
+    rho0 = Tg(ref(query))
+    rho  = rho0 * G
 
-    rho = _phs_unroll_value(f_val, Tg(rho0_val))
-
-    total_deriv == 0 && return rho
+    total_deriv == 0 && return Tv(rho)
 
     if total_deriv == 1
-        ax = findfirst(d -> deriv_order(ops[d]) == 1, 1:N)::Int
+        ax       = findfirst(d -> deriv_order(ops[d]) == 1, 1:N)::Int
         ops_grad = ntuple(d -> d == ax ? DerivOp{1}() : EvalValue(), N)
-        f_grad = _phs_eval_blended(itp, query, ops_grad)
-        rho0_grad = Tg(ref(query; deriv = ops_grad))
-        return _phs_unroll_grad_component(rho, Tg(f_grad), rho0_grad, Tg(rho0_val))
+        G_ξ      = Tg(_phs_eval_blended_G(itp, query, ops_grad))
+        rho0_ξ   = Tg(ref(query; deriv = ops_grad))
+        return Tv(rho0_ξ * G + rho0 * G_ξ)
     end
 
     if total_deriv == 2
-        # Second or mixed derivative
         nonzero = [ax for ax in 1:N if deriv_order(ops[ax]) > 0]
         ax1, ax2 = nonzero[1], (length(nonzero) >= 2 ? nonzero[2] : nonzero[1])
 
         ops_d1 = ntuple(d -> d == ax1 ? DerivOp{1}() : EvalValue(), N)
         ops_d2 = ntuple(d -> d == ax2 ? DerivOp{1}() : EvalValue(), N)
 
-        f_d1  = Tg(_phs_eval_blended(itp, query, ops_d1))
-        f_d2  = Tg(_phs_eval_blended(itp, query, ops_d2))
-        f_d12 = Tg(_phs_eval_blended(itp, query, ops))
+        G_ξ    = Tg(_phs_eval_blended_G(itp, query, ops_d1))
+        G_ζ    = Tg(_phs_eval_blended_G(itp, query, ops_d2))
+        G_ξζ   = Tg(_phs_eval_blended_G(itp, query, ops))
 
-        rho_d1   = _phs_unroll_grad_component(rho, f_d1, Tg(ref(query; deriv = ops_d1)), Tg(rho0_val))
-        rho_d2   = _phs_unroll_grad_component(rho, f_d2, Tg(ref(query; deriv = ops_d2)), Tg(rho0_val))
-        rho0_d12 = Tg(ref(query; deriv = ops))
-        rho0_d1  = Tg(ref(query; deriv = ops_d1))
-        rho0_d2  = Tg(ref(query; deriv = ops_d2))
+        rho0_ξ  = Tg(ref(query; deriv = ops_d1))
+        rho0_ζ  = Tg(ref(query; deriv = ops_d2))
+        rho0_ξζ = Tg(ref(query; deriv = ops))
 
-        return _phs_unroll_hess_component(rho, f_d12, rho_d1, rho_d2, Tg(rho0_val), rho0_d1, rho0_d2, rho0_d12)
+        # Leibniz rule: ρ̃_ξζ = ρ₀_ξζ·G + ρ₀_ξ·G_ζ + ρ₀_ζ·G_ξ + ρ₀·G_ξζ
+        return Tv(rho0_ξζ * G + rho0_ξ * G_ζ + rho0_ζ * G_ξ + rho0 * G_ξζ)
     end
 
     return zero(Tv)

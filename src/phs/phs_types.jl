@@ -33,10 +33,14 @@ end
 
 N-dimensional local polyharmonic spline interpolant.
 
-Implements the method of Otero-Muras & Banga (2024), combining:
+Implements the method from the paper, combining:
 1. Local stencil-based PHS interpolation (φ(r) = r^K, K odd)
 2. Weighted blending across neighbouring base-node interpolants for C² continuity
 3. Optional log-density smoothing transform
+
+A single canonical stencil geometry (and its Φ⁻¹) is precomputed once from the
+mean grid spacings.  At boundary nodes the same Φ⁻¹ is reused with clamped data
+indices — identical to the reference Fortran implementation.
 
 # Type Parameters
 - `Tg`: Grid float type
@@ -45,21 +49,22 @@ Implements the method of Otero-Muras & Banga (2024), combining:
 - `K`:  PHS degree (1, 3, 5, …)
 
 # Fields
-- `grids`:       Per-axis grid vectors
-- `spacings`:    Per-axis spacing (ScalarSpacing for uniform, VectorSpacing for non-uniform)
-- `data`:        N-D data array (or `log(ρ/ρ₀)` when transform is active)
-- `stencil_map`: Dict mapping stencil geometry hash → (offsets, Φ⁻¹)
-- `node_key`:    Per-node stencil hash (shape matches grid)
-- `blend_a`:     Blending range parameter (≥ max grid spacing × blend_factor)
-- `blend_r_idx`: Per-axis half-width of blend neighbourhood in index space
-- `transform`:   Nothing, or PHSLogTransform for log-density mode
-- `extraps`:     Per-axis extrapolation modes
-- `searches`:    Per-axis search policies (used for OOB checking only)
+- `grids`:           Per-axis grid vectors
+- `spacings`:        Per-axis spacing (ScalarSpacing for uniform, VectorSpacing for non-uniform)
+- `data`:            N-D data array (or `log(ρ/ρ₀)` when transform is active)
+- `stencil_offsets`: Single canonical stencil: `stencil_size^N` integer offsets from origin
+- `phi_inv`:         Single Φ⁻¹ matrix for the canonical stencil
+- `hs`:              Per-axis mean grid spacing used to build `stencil_offsets`/`phi_inv`
+- `blend_a`:         Blending range parameter (≥ max grid spacing × blend_factor)
+- `blend_r_idx`:     Per-axis half-width of blend neighbourhood in index space
+- `transform`:       Nothing, or PHSLogTransform for log-density mode
+- `extraps`:         Per-axis extrapolation modes
+- `searches`:        Per-axis search policies (used for OOB checking only)
 
 # Performance
-- **Construction**: O(N_unique_stencils × M³) for Φ⁻¹ (M = stencil_size^N + N + 1)
-- **Query**: O(n_blend × N_stencil) where n_blend = number of neighbours within blend_a
-- **Memory**: O(N_unique_stencils × M²)
+- **Construction**: O(M³) for one Φ⁻¹ (M = stencil_size^N + N + 1)
+- **Query**: O(n_blend × N_stencil × M) where n_blend = number of neighbours within blend_a
+- **Memory**: O(M²) for Φ⁻¹ plus O(prod(grid_sizes)) for data
 
 # Thread-Safety
 Immutable after construction; safe for concurrent read access.
@@ -79,8 +84,12 @@ struct PHSInterpolantND{
     grids::G
     spacings::S
     data::Array{Tv, N}
-    stencil_map::Dict{UInt64, Tuple{Vector{NTuple{N, Int}}, Matrix{Tg}}}
-    node_key::Array{UInt64, N}
+    stencil_offsets::Vector{NTuple{N, Int}}   # canonical stencil (stencil_size^N offsets)
+    phi_inv::Matrix{Tg}                       # canonical Φ⁻¹ (shift = 0, used for interior nodes)
+    stencil_lo::NTuple{N, Int}                # per-axis min canonical offset (for fast shift computation)
+    stencil_hi::NTuple{N, Int}                # per-axis max canonical offset
+    shift_cache::Dict{NTuple{N, Int}, Tuple{Vector{NTuple{N, Int}}, Matrix{Tg}}}  # boundary shift variants
+    hs::NTuple{N, Tg}                         # mean grid spacing per axis
     blend_a::Tg
     blend_r_idx::NTuple{N, Int}   # ceil(blend_a / h_min) per axis
     transform::T

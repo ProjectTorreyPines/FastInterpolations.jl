@@ -97,8 +97,9 @@ function phs_interp(
 
     blend_a, blend_r_idx = _phs_blend_params(grids_typed, spacings, blend_factor)
 
-    # Build all unique stencil geometries
-    stencil_map, node_key = _phs_build_all_stencils(grids_typed, spacings, stencil_size, degree)
+    # Build single canonical stencil + boundary shift cache
+    stencil_offsets, phi_inv, hs, stencil_lo, stencil_hi, shift_cache =
+        _phs_build_stencil(grids_typed, spacings, stencil_size, degree)
 
     # Optionally apply log-density smoothing transform
     transform, data_store = if reference_interp === nothing
@@ -115,7 +116,7 @@ function phs_interp(
         typeof(grids_typed), typeof(spacings), typeof(transform), typeof(extrap_vals), typeof(searches),
     }(
         grids_typed, spacings, data_store,
-        stencil_map, node_key,
+        stencil_offsets, phi_inv, stencil_lo, stencil_hi, shift_cache, hs,
         blend_a, blend_r_idx,
         transform, extrap_vals, searches,
     )

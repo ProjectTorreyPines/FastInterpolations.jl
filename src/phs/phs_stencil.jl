@@ -157,99 +157,142 @@ function _phs_clamp_offsets(
 end
 
 # ----------------------------------------
-# Full stencil precomputation for all grid nodes
+# Shift computation (O(N), used at eval time)
 # ----------------------------------------
 
 """
-    _phs_build_all_stencils(grids, spacings, stencil_size, degree)
-        -> (stencil_map, node_key)
+    _phs_compute_shift(base_idx, stencil_lo, stencil_hi, grid_sizes) -> NTuple{N,Int}
 
-Precompute Φ⁻¹ for every unique stencil geometry that appears across all grid nodes.
+Compute the per-axis effective clip (clamped offset floor) for boundary nodes.
+For each axis d, returns `max(0, 1 - base_idx[d])` (left clip) or
+`min(0, grid_sizes[d] - base_idx[d] - stencil_hi[d])` (right clip):
+i.e., how many canonical negative offsets would go out-of-bounds to the left,
+and how far positive offsets exceed the grid to the right.
+
+Returns `(0,...,0)` for interior nodes; non-zero otherwise.
+O(N) — no allocation.
+"""
+@inline function _phs_compute_shift(
+        base_idx::NTuple{N, Int},
+        stencil_lo::NTuple{N, Int},
+        stencil_hi::NTuple{N, Int},
+        grid_sizes::NTuple{N, Int},
+    ) where {N}
+    return ntuple(N) do d
+        lo_abs = base_idx[d] + stencil_lo[d]   # absolute index of leftmost offset
+        hi_abs = base_idx[d] + stencil_hi[d]   # absolute index of rightmost offset
+        lo_clip = lo_abs < 1 ? 1 - lo_abs : 0  # how far the left edge exceeds the boundary
+        hi_clip = hi_abs > grid_sizes[d] ? hi_abs - grid_sizes[d] : 0  # how far right edge exceeds
+        lo_clip > 0 ? lo_clip : (hi_clip > 0 ? -hi_clip : 0)
+    end
+end
+
+# ----------------------------------------
+# Boundary shift cache
+# ----------------------------------------
+
+"""
+    _phs_build_boundary_shift_cache(canonical_offsets, hs, degree)
+        -> Dict{NTuple{N,Int}, Tuple{Vector{NTuple{N,Int}}, Matrix{Tg}}}
+
+Precompute Φ⁻¹ for every unique boundary shift vector (stencil shifted as a
+block so it stays inside the grid).  Only built if the estimated total memory
+is ≤ 100 MB; otherwise returns an empty Dict and boundary nodes fall back to
+the canonical Φ⁻¹ (Fortran approach, acceptable when queries are interior).
+
+For small-to-moderate stencils (stencil_size ≤ 6, N ≤ 3) the cache is always
+built and guarantees exact polynomial reproduction everywhere.
+"""
+function _phs_build_boundary_shift_cache(
+        canonical_offsets::Vector{<:NTuple{N, Int}},
+        hs::NTuple{N, Tg},
+        degree::Int,
+        stencil_size::Int,
+    ) where {N, Tg}
+    ns  = length(canonical_offsets)
+    poly_deg = (degree - 1) ÷ 2
+    n_poly   = length(_phs_all_exponents(Val(N), poly_deg))
+    M        = ns + n_poly
+
+    R = stencil_size   # canonical half-width
+
+    min_off = ntuple(d -> minimum(off -> off[d], canonical_offsets), N)
+    max_off = ntuple(d -> maximum(off -> off[d], canonical_offsets), N)
+
+    # Unique clip amounts per dimension:
+    # lo_clip in [0, -min_off[d]], hi_clip in [0, max_off[d]]
+    # We encode as clip = lo_clip if lo_clip > 0 else -hi_clip
+    clip_options = ntuple(N) do d
+        left  = -min_off[d] > 0 ? collect(1:-min_off[d]) : Int[]
+        right = max_off[d]  > 0 ? collect(-max_off[d]:-1) : Int[]
+        [0; left; right]
+    end
+
+    # Estimate total cache size
+    n_shifts     = prod(length, clip_options) - 1
+    mem_estimate = n_shifts * M * M * sizeof(Tg)
+
+    cache = Dict{NTuple{N, Int}, Tuple{Vector{NTuple{N, Int}}, Matrix{Tg}}}()
+    mem_estimate > 100_000_000 && return cache
+
+    target = ns   # keep same number of stencil nodes
+    for clip_combo in Iterators.product(clip_options...)
+        clip = NTuple{N, Int}(clip_combo)
+        all(iszero, clip) && continue   # canonical stored separately
+
+        # Valid offset range for this clip pattern.
+        # clip[d] > 0 means left boundary: abs offsets must be ≥ -R+clip[d], i.e. lo = -R+clip[d] ... R
+        # clip[d] < 0 means right boundary: abs offsets must be ≤ R+clip[d], i.e. lo = -R ... R+clip[d]
+        lo_off = ntuple(d -> clip[d] > 0 ? min_off[d] + clip[d] : min_off[d], N)
+        hi_off = ntuple(d -> clip[d] < 0 ? max_off[d] + clip[d] : max_off[d], N)
+        ranges_per_dim = ntuple(d -> lo_off[d]:hi_off[d], N)
+        candidates = vec(collect(Iterators.product(ranges_per_dim...)))
+        sort!(candidates; by = off -> sum(d -> (Tg(off[d]) * hs[d])^2, 1:N))
+        valid_offsets = candidates[1:min(target, length(candidates))]
+
+        cache[clip] = (valid_offsets, _phs_build_phi_inv(valid_offsets, hs, degree))
+    end
+
+    return cache
+end
+
+# ----------------------------------------
+# Single canonical stencil (+ boundary shift cache)
+# ----------------------------------------
+
+"""
+    _phs_build_stencil(grids, spacings, stencil_size, degree)
+        -> (offsets, phi_inv, hs, stencil_lo, stencil_hi, shift_cache)
+
+Build the canonical stencil and precompute all boundary shift variants.
 
 Returns:
-- `stencil_map :: Dict{UInt64, Tuple{offsets, phi_inv}}` — hash → (offsets, Φ⁻¹)
-- `node_key    :: Array{UInt64, N}` — maps each grid-node CartesianIndex to its hash
-
-For a uniform grid, the interior and each boundary-layer type share the same
-geometry, so `length(stencil_map) ≪ prod(grid_sizes)`.
-
-Stencil design guarantee: every node's stencil includes offset (0,…,0), i.e. the
-node itself, so that local stencil interpolants pass through their base-node data
-value.  For boundary nodes the candidate set is restricted to valid grid indices,
-so the stencil shifts toward the interior rather than wrapping outside the domain.
+- `offsets      :: Vector{NTuple{N,Int}}` — canonical offsets
+- `phi_inv      :: Matrix{Tg}` — canonical Φ⁻¹
+- `hs           :: NTuple{N,Tg}` — mean grid spacing per axis
+- `stencil_lo   :: NTuple{N,Int}` — per-axis min canonical offset
+- `stencil_hi   :: NTuple{N,Int}` — per-axis max canonical offset
+- `shift_cache  :: Dict{NTuple{N,Int}, ...}` — shifted (offsets, Φ⁻¹) per boundary shift
 """
-function _phs_build_all_stencils(
+function _phs_build_stencil(
         grids::NTuple{N, AbstractVector{Tg}},
         spacings::NTuple{N, <:AbstractGridSpacing},
         stencil_size::Int,
         degree::Int,
     ) where {N, Tg}
-    grid_sizes = ntuple(d -> length(grids[d]), N)
 
-    # Representative grid spacings (use mean h per axis for stencil geometry)
-    # For uniform grids this is exact; for non-uniform it gives good neighbour selection.
+    # Mean h per axis (for uniform grids this is exact)
     hs = ntuple(N) do d
         g = grids[d]
         Tg((last(g) - first(g)) / (length(g) - 1))
     end
 
-    target = stencil_size^N
-    R      = stencil_size   # candidate half-width: same as _phs_stencil_offsets
+    offsets     = _phs_stencil_offsets(N, stencil_size, hs)
+    phi_inv     = _phs_build_phi_inv(offsets, hs, degree)
+    stencil_lo  = ntuple(d -> minimum(off -> off[d], offsets), N)
+    stencil_hi  = ntuple(d -> maximum(off -> off[d], offsets), N)
+    shift_cache = _phs_build_boundary_shift_cache(offsets, hs, degree, stencil_size)
 
-    # Interior offsets (for fast-path interior nodes where the full [-R,R]^N box fits)
-    interior_offsets = _phs_stencil_offsets(N, stencil_size, hs)
-
-    # Dict: hash → (offsets, phi_inv)
-    stencil_map = Dict{UInt64, Tuple{Vector{NTuple{N, Int}}, Matrix{Tg}}}()
-
-    # node_key: one UInt64 per grid node
-    node_key = Array{UInt64, N}(undef, grid_sizes...)
-
-    for ci in CartesianIndices(node_key)
-        base_idx = Tuple(ci)
-
-        # Compute per-axis physical spacing for this base node
-        # (for non-uniform grids, use local h at the base node)
-        hs_local = ntuple(N) do d
-            n = grid_sizes[d]
-            i = base_idx[d]
-            if spacings[d] isa ScalarSpacing
-                spacings[d].h
-            else
-                # Use mean of left/right intervals (or boundary one-sided)
-                il = max(1, i - 1)
-                ir = min(n - 1, i)
-                Tg((grids[d][ir + 1] - grids[d][il]) / (ir - il + 1))
-            end
-        end
-
-        # Is this node far enough from every boundary that the full [-R,R]^N box fits?
-        is_interior = all(d -> base_idx[d] > R && base_idx[d] + R <= grid_sizes[d], 1:N)
-
-        offsets = if is_interior
-            # Re-use the pre-computed interior stencil directly (fast path)
-            interior_offsets
-        else
-            # Boundary node: build candidates restricted to valid grid offsets.
-            # Clamp each axis to [1 - base_idx[d], grid_sizes[d] - base_idx[d]] ∩ [-R, R].
-            # This guarantees (0,…,0) is always a candidate (base node in its own stencil).
-            lo_off = ntuple(d -> max(1 - base_idx[d], -R), N)
-            hi_off = ntuple(d -> min(grid_sizes[d] - base_idx[d], R), N)
-            ranges_per_dim = ntuple(d -> lo_off[d]:hi_off[d], N)
-            candidates = vec(collect(Iterators.product(ranges_per_dim...)))
-            sort!(candidates; by = off -> sum(d -> (Tg(off[d]) * hs_local[d])^2, 1:N))
-            candidates[1:min(target, length(candidates))]
-        end
-
-        key = _phs_stencil_key(offsets)
-        node_key[ci] = key
-
-        if !haskey(stencil_map, key)
-            # Build physical positions relative to origin (offsets * hs_local)
-            phi_inv = _phs_build_phi_inv(offsets, hs_local, degree)
-            stencil_map[key] = (offsets, phi_inv)
-        end
-    end
-
-    return stencil_map, node_key
+    return offsets, phi_inv, hs, stencil_lo, stencil_hi, shift_cache
 end
+

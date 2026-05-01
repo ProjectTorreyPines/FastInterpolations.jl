@@ -360,7 +360,7 @@ function linear_interp(
         _validate_series_endpoints(bc, y_mat)
         # Materialize against the extended grid on both branches — duck grids
         # keep their eltype, Float grids go through value-type promotion.
-        extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(WrapExtrap(x_typed), Tv_out) : WrapExtrap(x_typed)
+        extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(WrapExtrap(), Tv_out) : WrapExtrap()
         return LinearSeriesInterpolant(x_typed, y_mat, extrap_p, search)
     end
 

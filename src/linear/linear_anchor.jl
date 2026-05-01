@@ -285,9 +285,13 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
     ) where {Tg, Tq <: Real, P <: Searcher}
     loc = _anchor_loc(x, xq, wrap, policy)
 
-    # Compute geometry (linear-internal concern)
-    h = _get_h(x, loc.xL, loc.xR)
-    inv_h = _get_inv_h(x, loc.xL, loc.xR)
+    # Index-based 2-arg dispatch: reads `_CachedRange.h` (exact cached step) and
+    # `_ExclusivePeriodicAxis` seam width directly. The 3-arg `(xL, xR)` form
+    # falls back to `xR - xL` on AbstractVector, which loses precision on
+    # large-offset Ranges (e.g. `range(1e8, step=0.1, ...)`) due to floating-
+    # point cancellation.
+    h = _get_h(x, loc.idx)
+    inv_h = _get_inv_h(x, loc.idx)
     alpha = (loc.xq - loc.xL) * inv_h
 
     # `_anchor_loc` never returns a periodic-exclusive seam pair — it operates

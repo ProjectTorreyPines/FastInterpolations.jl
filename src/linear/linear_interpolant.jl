@@ -140,31 +140,21 @@ function linear_interp end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    # `:exclusive` PeriodicBC + Vector grid → wrap in `_ExclusivePeriodicVector`
-    # (zero-alloc representation transform: presents length n+1, leaves y at length
-    # n; eval kernels use `_resolve_idx(idx_R, x)` to wrap y access at seam).
-    # Other paths (`:exclusive` Range, `:inclusive`, NoBC) go through legacy
-    # `_periodic_extend_1d` — Range :exclusive is exact-and-zero-alloc via
-    # `_to_float_adding_endpoint`; Vector :inclusive is passthrough.
-    x_eff, y_eff, extrap_eff = _linear_resolve_periodic_grid(x, y, bc, extrap)
+    # Surface-level BC-aware resolvers (`_caching_axis` / `_resolve_data` in
+    # periodic_axis.jl) compose the right per-(grid×bc) shape uniformly:
+    #   Vector + :exclusive → `_ExclusivePeriodicAxis(_CachedVector(...), period)`
+    #   Vector + non-excl   → `_CachedVector(...)` (cached for persistent eval)
+    #   Range  + :exclusive → length-(n+1) `_CachedRange` (`_to_float_adding_endpoint`)
+    #   Range  + non-excl   → `_CachedRange` (`_to_float`)
+    # `_resolve_data(y, bc)` is reference-only: passthrough for non-`:exclusive`
+    # (with optional `:inclusive` endpoint check), `_ExclusivePeriodicData(y)`
+    # for `:exclusive` (mutation copy happens inside the inner constructor via
+    # `_convert_copy`).
+    x_eff = _caching_axis(x, bc, Tg)
+    y_eff = _resolve_data(y, bc)
+    # Periodic BCs auto-promote `extrap` to `WrapExtrap` against the resolved
+    # axis span. `_resolve_extrap` handles materialization.
+    extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
     return LinearInterpolant(x_eff, y_eff; extrap = extrap_p, search)
-end
-
-# Linear-specific periodic grid resolution. Other method families (Cardinal,
-# Akima, Hermite, Constant) keep using `_periodic_extend_1d` directly until
-# their own Step 2.X migration commits adopt the wrapper.
-@inline function _linear_resolve_periodic_grid(
-        x::AbstractVector, y::AbstractVector, bc::AbstractBC, extrap::AbstractExtrap
-    )
-    if bc isa PeriodicBC{:exclusive} && !(x isa AbstractRange)
-        bc_resolved = _resolve_bc_period(x, bc)
-        x_wrapped = _ExclusivePeriodicAxis(x, bc_resolved.period)
-        # Wrap y in the data-side companion so eval kernels can use plain
-        # `y[idx_R]` and `last(y)` without `_resolve_idx` calls — the data
-        # wrapper auto-cycles the virtual `n+1` slot back to `inner[1]`.
-        y_wrapped = _ExclusivePeriodicData(y)
-        return x_wrapped, y_wrapped, WrapExtrap(x_wrapped)
-    end
-    return _periodic_extend_1d(x, y, bc, extrap)
 end

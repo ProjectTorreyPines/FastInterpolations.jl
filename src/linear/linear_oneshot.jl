@@ -69,10 +69,19 @@ function linear_interp!(
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    x_typed = _prepare_grid(x)
-    extrap_eff = _resolve_extrap(extrap, bc, x_typed, y)
-    searcher = _resolve_search(x_typed, x_targets, search, nothing, bc)
-    return _linear_interp_loop!(output, x_typed, y, x_targets, extrap_eff, deriv, searcher)
+    # Surface-level BC-aware resolvers (zero-alloc reference wrapping):
+    #   `_resolve_axis(x, bc)` shapes the axis (Range→`_CachedRange`, Vector→passthrough,
+    #     Vector+`:exclusive`→`_ExclusivePeriodicAxis`, Range+`:exclusive`→length-(n+1)
+    #     `_CachedRange`).
+    #   `_resolve_data(y, bc)` shapes the data (passthrough, or `_ExclusivePeriodicData`
+    #     for `:exclusive`).
+    # BC info lives in the axis type after resolution → searcher uses `NoBC()`,
+    # the seam is handled by the wrapper (or by the naturally-extended Range).
+    x_eff = _resolve_axis(x, bc)
+    y_eff = _resolve_data(y, bc)
+    extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
+    searcher = _resolve_search(x_eff, x_targets, search, nothing, NoBC())
+    return _linear_interp_loop!(output, x_eff, y_eff, x_targets, extrap_eff, deriv, searcher)
 end
 
 # Internal loop with AbstractExtrap dispatch and Searcher (type-stable)
@@ -106,12 +115,12 @@ end
         op::O,
         searcher::S
     ) where {Tg, O <: AbstractEvalOp, S <: Searcher}
-    # Fast-path bounds come from the materialized wrap domain (may extend past
-    # `last(x)` for `:exclusive` periodic, where the domain spans one period
-    # beyond the grid). Using `extrap._x_min/._x_max` avoids a misfire where an
-    # in-period query would be forced through the slow path just because it's
-    # past `last(x)`.
-    x_min, x_max = extrap._x_min, extrap._x_max
+    # Wrap domain comes directly from the axis: `[first(x), last(x))`. For
+    # `_ExclusivePeriodicAxis`, `last(x)` is the precomputed virtual endpoint
+    # (`inner[1] + period`), so the domain extends one period beyond the raw
+    # grid as required for `:exclusive` periodic. Hoisting once outside the
+    # loop keeps inner-loop cost identical to the legacy `_x_min/_x_max` read.
+    x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
     if qmin >= x_min && qmax < x_max
@@ -120,9 +129,9 @@ end
             output[i] = _linear_eval_at_point(x, y, x_targets[i], ExtendExtrap(), op, searcher)
         end
     else
-        # Slow path: some queries outside — per-element wrap via 2-arg form.
+        # Slow path: some queries outside — per-element wrap.
         @inbounds for i in eachindex(x_targets, output)
-            xi_wrapped = _wrap_to_domain(x_targets[i], extrap)
+            xi_wrapped = _wrap_to_domain(x_targets[i], x_min, x_max)
             output[i] = _linear_eval_at_point(x, y, xi_wrapped, ExtendExtrap(), op, searcher)
         end
     end
@@ -261,9 +270,9 @@ end
 
 # WrapExtrap: wrap query to domain → search + kernel.
 # Pass original xq (may be Dual) to _wrap_to_domain to preserve AD derivatives.
-# The 2-arg `_wrap_to_domain(xq, extrap)` reads `extrap._x_min/._x_max` directly —
-# materialization of `WrapExtrap{Nothing}` to `WrapExtrap{T}` happens upstream in
-# `_resolve_extrap`, so kernels only see the typed form.
+# The wrap domain is `[first(x), last(x))`, read directly from the axis —
+# `_ExclusivePeriodicAxis` exposes the virtual endpoint via `last(g)` so the
+# domain naturally spans one period beyond the raw grid for `:exclusive` periodic.
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -272,7 +281,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, extrap)
+    xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     α = _alpha_of(xq_wrapped, xL, xR, x)
     @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, xL, xR), α)
@@ -293,10 +302,15 @@ end
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    x_typed = _prepare_grid(x)
-    extrap_eff = _resolve_extrap(extrap, bc, x_typed, y)
-    searcher = _resolve_search(x_typed, xq, search, hint, bc)
-    return _linear_eval_at_point(x_typed, y, xq, extrap_eff, deriv, searcher)
+    # Same surface-level resolution as the in-place vector form. Zero-alloc:
+    # `_resolve_axis` returns either `x` (Vector passthrough), a stack-allocated
+    # `_CachedRange`, or an `_ExclusivePeriodicAxis` reference wrapper.
+    # `_resolve_data` is reference-only.
+    x_eff = _resolve_axis(x, bc)
+    y_eff = _resolve_data(y, bc)
+    extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
+    searcher = _resolve_search(x_eff, xq, search, hint, NoBC())
+    return _linear_eval_at_point(x_eff, y_eff, xq, extrap_eff, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗

@@ -47,15 +47,20 @@
         end
     end
 
-    # Materialize WrapExtrap with BC-correct period (inclusive: x[n]-x[1];
-    # exclusive: bc.period). `first(vecs)` only contributes element-type info.
-    extrap_p = _resolve_extrap(NoExtrap(), bc, x, first(vecs))
-    xq_wrapped = _wrap_to_domain(xq, extrap_p)
-    idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
-    # Use _get_h/_get_inv_h so _CachedRange returns its exact cached step
-    # instead of the cancellation-prone `xR - xL` on large-offset grids.
-    h = _get_h(x, xL, xR)
-    inv_h = _get_inv_h(x, xL, xR)
+    # Surface-API axis resolution: for `:exclusive` Vector / Range, `x_eff`
+    # becomes `_ExclusivePeriodicAxis` carrying the period and virtual endpoint.
+    # `last(x_eff)` then gives the canonical wrap domain max (`first + period`),
+    # and the wrapper's specialized `search_interval` returns post-fold idx_R=1
+    # at the seam. For `:inclusive`, axis stays unchanged.
+    x_eff = _resolve_axis(x, bc)
+    extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)   # PeriodicBC → WrapExtrap()
+    xq_wrapped = _wrap_to_domain(xq, x_eff)
+    idxL, idxR, xL, xR = search_interval(searcher, x_eff, xq_wrapped)
+    # Index-based 2-arg `_get_h(x, idx)` reads `_CachedRange.h` (exact cached
+    # step) and the wrapper's seam width directly — avoids `xR - xL` cancellation
+    # on large-offset Ranges and matches the persistent interpolant path.
+    h = _get_h(x_eff, idxL)
+    inv_h = _get_inv_h(x_eff, idxL)
     alpha = (xq_wrapped - xL) * inv_h
     aq = _LinearAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
 
@@ -196,14 +201,16 @@ In-place one-shot linear interpolation at multiple query points.
                 _check_periodic_endpoints(bc, vecs[k])
             end
         end
-        extrap_p = _resolve_extrap(NoExtrap(), bc, x, first(vecs))
-        searcher = _resolve_search(x, xqs, search, nothing, bc)
+        x_eff = _resolve_axis(x, bc)
+        extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
+        searcher = _resolve_search(x_eff, xqs, search, nothing, NoBC())
         @inbounds for j in eachindex(xqs)
-            xq_wrapped = _wrap_to_domain(xqs[j], extrap_p)
-            idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
-            # Cached-step-preserving dispatch (matches scalar/persistent paths).
-            h = _get_h(x, xL, xR)
-            inv_h = _get_inv_h(x, xL, xR)
+            xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
+            idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
+            # Index-based dispatch: `_CachedRange.h` exact step on Range axis,
+            # wrapper's seam width at idx==n. Matches scalar/persistent paths.
+            h = _get_h(x_eff, idxL)
+            inv_h = _get_inv_h(x_eff, idxL)
             alpha = (xq_wrapped - xL) * inv_h
             aq = _LinearAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
             for k in 1:K

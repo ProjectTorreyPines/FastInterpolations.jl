@@ -55,12 +55,20 @@ overhead vs raw `inner`.
 Virtual-index access (i.e. `g[n+1]`) is provided through the `_getindex`
 helper (defined below), which branches on the virtual range.
 
+The wrapper also caches `_x_max = inner[1] + period` so `last(g)` is a single
+field read on every query (matches the cost of the legacy `WrapExtrap{T}._x_max`
+field read). This makes the axis a self-sufficient single source of truth for
+the wrap domain `[first(g), last(g))` — `WrapExtrap` itself stays a pure tag
+struct.
+
 # Fields
 - `inner::X` — user's raw non-uniform grid (length n). Can be `Vector{Tg}`
   or `_CachedVector{Tg, Tinv}`. Range inputs are NOT wrapped — they go
   directly through `_to_float_adding_endpoint` to a length-(n+1) `_CachedRange`.
 - `period::Tp` — period span. Type independent of `Tg` to allow e.g. `Float64`
   grids with `Float32` period.
+- `_x_max::Tg` — virtual-endpoint cache (`inner[1] + Tg(period)`); precomputed
+  at construction so `Base.last(g)` is a single field read.
 
 # Example
 ```julia
@@ -69,23 +77,33 @@ g = _ExclusivePeriodicAxis(x, 1.0)               # presented as length 5
 g[1], g[2], g[3], g[4]                           # 0.0, 0.25, 0.5, 0.75 (raw)
 length(g) == 5                                   # virtual extension
 _getindex(g, 5)                                  # 1.0 (= x[1] + period)
+last(g)                                          # 1.0 (single field read)
 ```
 """
 struct _ExclusivePeriodicAxis{Tg, X <: AbstractVector{Tg}, Tp} <: AbstractVector{Tg}
     inner::X
     period::Tp
+    _x_max::Tg
 
-    # Inner constructor: reject AbstractRange inner (those go through
-    # `_to_float_adding_endpoint` → `_CachedRange` of length n+1 instead).
+    # Inner constructor: precompute `_x_max = inner[1] + period` and validate
+    # `inner[end] < _x_max` (period must exceed the grid span — otherwise the
+    # seam cell would collapse or overlap interior cells). Accepts any
+    # `AbstractVector` inner (`Vector`, `_CachedVector`, `AbstractRange`,
+    # `_CachedRange`) so the same wrapper unifies the `:exclusive` periodic
+    # representation for 1D and ND zero-copy paths.
     function _ExclusivePeriodicAxis{Tg, X, Tp}(inner::X, period::Tp) where {Tg, X <: AbstractVector{Tg}, Tp}
-        X <: AbstractRange && throw(ArgumentError(
-            "_ExclusivePeriodicAxis does not wrap AbstractRange grids. " *
-                "Convert exclusive Range to inclusive `_CachedRange` of length n+1 via " *
-                "`_to_float_adding_endpoint` instead."
-        ))
-        return new{Tg, X, Tp}(inner, period)
+        x_max = @inbounds inner[1] + Tg(period)
+        @inbounds inner[end] < x_max || _throw_excl_axis_period_too_small(period, x_max, inner[end])
+        return new{Tg, X, Tp}(inner, period, x_max)
     end
 end
+
+@noinline _throw_excl_axis_period_too_small(period, x_max, last_x) = throw(
+    ArgumentError(
+        "PeriodicBC(:exclusive) period=$period places virtual endpoint at $x_max, " *
+            "not after last grid point x[end]=$last_x"
+    )
+)
 
 # Convenience outer constructor — type params inferred from inputs.
 @inline _ExclusivePeriodicAxis(inner::AbstractVector{Tg}, period) where {Tg} =
@@ -104,12 +122,14 @@ Base.size(g::_ExclusivePeriodicAxis) = (length(g),)
 Base.eltype(::Type{<:_ExclusivePeriodicAxis{Tg}}) where {Tg} = Tg
 Base.IndexStyle(::Type{<:_ExclusivePeriodicAxis}) = IndexLinear()
 
-# `first`/`last` capture the *virtual* extended span — `WrapExtrap(g)` relies
-# on these to compute the wrap domain. Without these overrides, `last(g)`
-# would resolve to `g[length(g)] = g[n+1]` which raises BoundsError (since
-# `Base.getindex` forwards to `inner`).
+# `first`/`last` capture the *virtual* extended span — eval kernels read these
+# directly to derive the wrap domain `[first(g), last(g))`. Without these
+# overrides, `last(g)` would resolve to `g[length(g)] = g[n+1]` which raises
+# BoundsError (since `Base.getindex` forwards to `inner`). `_x_max` is
+# precomputed at construction so `last(g)` is a single field read — same cost
+# as the legacy `WrapExtrap{T}._x_max` lookup.
 @inline Base.first(g::_ExclusivePeriodicAxis) = @inbounds g.inner[1]
-@inline Base.last(g::_ExclusivePeriodicAxis) = @inbounds g.inner[1] + g.period
+@inline Base.last(g::_ExclusivePeriodicAxis) = g._x_max
 
 # ========================================
 # Helpers: virtual access + ND fold-back
@@ -198,12 +218,142 @@ end
     @inbounds return idx < n ? _get_inv_h(g.inner, idx) : inv(g.inner[1] + g.period - g.inner[n])
 end
 
+# Range-inner specialization: every cell (interior + seam) has the cached step
+# width, so dispatch to the inner's cached `h`/`inv_h` regardless of idx. This
+# avoids the seam-cell `inner[1] + period - inner[n]` cancellation on
+# large-offset Ranges (e.g. `range(1e8, step=0.1, ...)`), and matches the
+# precision of the persistent extended-Range path bit-for-bit.
+@inline _get_h(g::_ExclusivePeriodicAxis{Tg, <:_CachedRange}, ::Int) where {Tg} = g.inner.h
+@inline _get_inv_h(g::_ExclusivePeriodicAxis{Tg, <:_CachedRange}, ::Int) where {Tg} = g.inner.inv_h
+
+# 3-arg `(xL, xR)` overloads for the wrapper: delegate to cached inner so
+# eval kernels using the legacy `_get_h(x, xL, xR)` shape (linear/cubic
+# `_eval_at_point` fallbacks) avoid `xR - xL` cancellation. For non-Range
+# inner (`_CachedVector`/`Vector`), the inner's 3-arg form falls through to
+# `xR - xL` for non-seam cells, but per-cell `h` from `_CachedVector` is the
+# typical path; the seam cell at large offset still suffers cancellation
+# unless callers switch to the 2-arg index-based dispatch.
+@inline _get_h(g::_ExclusivePeriodicAxis{Tg, <:_CachedRange}, ::Real, ::Real) where {Tg} = g.inner.h
+@inline _get_inv_h(g::_ExclusivePeriodicAxis{Tg, <:_CachedRange}, ::Real, ::Real) where {Tg} = g.inner.inv_h
+
+# `_alpha_of` for the wrapper: defer to inner so `_CachedRange` uses cached
+# `inv_h` (avoids `(R - L)` cancellation in the denominator).
+@inline _alpha_of(q::Real, L::Real, R::Real, g::_ExclusivePeriodicAxis) =
+    _alpha_of(q, L, R, g.inner)
+
 # `_ExclusivePeriodicAxis` passes through `_store_grid_cached` (defined in
 # cached_vector.jl). When a method-family factory wraps a Vector + `:exclusive`
 # PeriodicBC grid before delegating to the persistent constructor, the
 # wrapper must survive the constructor's `_store_grid_cached` call rather
 # than being re-wrapped or mistakenly converted.
 @inline _store_grid_cached(x::_ExclusivePeriodicAxis, ::Type{Tg}) where {Tg} = x
+
+
+# ========================================
+# Surface-API resolvers — used by ALL method-family factories (1D)
+# ========================================
+#
+# `_resolve_axis(x, bc)` — zero-alloc reference-wrapping for the x/axis side.
+# Reshapes the user input into the canonical axis form for this BC, all by
+# composing existing primitives:
+#
+#   x type        + bc                          →  result
+#   ─────────────────────────────────────────────────────────────────
+#   AbstractVector + NoBC / PeriodicBC{:inclusive} → x (passthrough, zero-alloc)
+#   AbstractVector + PeriodicBC{:exclusive}        → _ExclusivePeriodicAxis(x, period)
+#                                                       (zero-alloc reference wrap)
+#   AbstractRange  + NoBC / PeriodicBC{:inclusive} → _CachedRange{T} (stack alloc)
+#   AbstractRange  + PeriodicBC{:exclusive}        → _CachedRange{T} of length n+1
+#                                                       (stack alloc, exact extension)
+#
+# `_resolve_data(y, bc)` — zero-alloc reference-wrapping for the y/data side:
+#
+#   y type        + bc                          →  result
+#   ─────────────────────────────────────────────────────────────────
+#   AbstractArray  + NoBC                          → y (passthrough)
+#   AbstractArray  + PeriodicBC{:inclusive}        → y (passthrough; endpoint-checked)
+#   AbstractArray  + PeriodicBC{:exclusive}        → _ExclusivePeriodicData(y) (zero-alloc)
+#
+# `_caching_axis(x, bc, Tg)` — caching variant for **persistent** interpolant
+# constructors. Same shape as `_resolve_axis` but bakes h/inv_h into a
+# `_CachedVector` for Vector inputs (so eval-time `_get_h(x, i)` is cached
+# lookup), and converts/copies for type promotion. Range inputs are
+# already cached via `_to_float`/`_to_float_adding_endpoint` → identical
+# treatment to oneshot.
+#
+#   x type        + bc                          →  result
+#   ─────────────────────────────────────────────────────────────────
+#   AbstractVector + NoBC / inclusive              → _CachedVector(_convert_copy(x, Tg))
+#   AbstractVector + :exclusive                    → _ExclusivePeriodicAxis(
+#                                                      _CachedVector(_convert_copy(x, Tg)),
+#                                                      period)
+#   AbstractRange  + NoBC / inclusive              → _to_float(x, Tg)
+#   AbstractRange  + :exclusive                    → _to_float_adding_endpoint(x, Tg)
+#
+# All three resolvers replace the older `_periodic_extend_1d` /
+# `_*_resolve_periodic_grid` per-method helpers with a single uniform
+# surface for every method-family. The same flow works for 1D oneshot
+# (zero-alloc) AND persistent (cached) — just pick the right axis variant.
+
+# ----- Surface (oneshot, zero-alloc) ---------------------------------------
+
+@inline _resolve_axis(x::AbstractVector, ::AbstractBC) = x
+@inline _resolve_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
+@inline function _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
+    # Wrap the (cached, length-n) Range so the seam-fold idx_R=1 is shared
+    # with the Vector path — uniform behavior in 1D and ND zero-copy.
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
+end
+@inline function _resolve_axis(x::AbstractVector, bc::PeriodicBC{:exclusive})
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(x, bc_resolved.period)
+end
+
+@inline _resolve_data(y::AbstractArray, ::AbstractBC) = y
+@inline function _resolve_data(y::AbstractArray, bc::PeriodicBC{:inclusive})
+    # Inclusive: user already supplied length-(n+1) data with closed cycle.
+    # Validate once at the surface (cheap; `check=false` skips for hot paths).
+    # `periodic_check(bc)` reads the `C` type-parameter — zero-cost.
+    periodic_check(bc) && _check_periodic_endpoints(bc, y)
+    return y
+end
+@inline _resolve_data(y::AbstractArray, ::PeriodicBC{:exclusive}) =
+    _ExclusivePeriodicData(y)
+
+# ----- Caching (interpolant) -----------------------------------------------
+
+@inline _caching_axis(x::AbstractVector, ::AbstractBC, ::Type{Tg}) where {Tg} =
+    _CachedVector(_convert_copy(x, Tg))
+@inline _caching_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} =
+    _to_float(x, Tg)
+@inline function _caching_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(_to_float(x, Tg), bc_resolved.period)
+end
+@inline function _caching_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
+    bc_resolved = _resolve_bc_period(x, bc)
+    cv = _CachedVector(_convert_copy(x, Tg))
+    return _ExclusivePeriodicAxis(cv, bc_resolved.period)
+end
+# Idempotent passthroughs (handle re-entry, e.g. wrapper passed back through).
+# Each cached/wrapped type has BOTH a `<:AbstractBC` passthrough AND an explicit
+# `<:PeriodicBC{:exclusive}` overload to resolve ambiguity against the
+# `(AbstractRange|AbstractVector, PeriodicBC{:exclusive}, Tg)` entries above
+# (`_CachedRange <: AbstractRange`, `_CachedVector <: AbstractVector`,
+# `_ExclusivePeriodicAxis <: AbstractVector`).
+@inline _caching_axis(x::_CachedRange, ::AbstractBC, ::Type{Tg}) where {Tg} = x
+@inline function _caching_axis(x::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(x, bc_resolved.period)
+end
+@inline _caching_axis(x::_CachedVector, ::AbstractBC, ::Type{Tg}) where {Tg} = x
+@inline function _caching_axis(x::_CachedVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(x, bc_resolved.period)
+end
+@inline _caching_axis(x::_ExclusivePeriodicAxis, ::AbstractBC, ::Type{Tg}) where {Tg} = x
+@inline _caching_axis(x::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = x
 
 # ========================================
 # Specialized search: zero-overhead seam fast-path
@@ -237,10 +387,11 @@ end
 #
 # Matches the existing `search_interval(s, x, xq)` shape so eval kernels can
 # unpack `(idx_L, idx_R, xL, xR)` uniformly. For `_ExclusivePeriodicAxis`,
-# `idx_R` is the *virtual* index (= n+1 at seam, = idx+1 elsewhere). With the
-# data side also wrapped in `_ExclusivePeriodicData`, eval kernels can do
-# plain `y[idx_R]` (no `_resolve_idx`) — the data wrapper auto-cycles
-# `[n+1] → [1]` at the wrapped slot.
+# `idx_R` is **post-fold**: at the seam cell (`idx_L == n`), `idx_R = 1` instead
+# of the virtual `n+1`. This lets ND eval kernels read raw `data[..., idx_R, ...]`
+# directly without needing an N-D periodic data wrapper. The 1D `:exclusive`
+# path keeps `_ExclusivePeriodicData` for `last(y)` semantics, but `y[idx_R=1]`
+# yields the same value as `y[idx_R=n+1]` through the cyclic wrapper.
 #
 # Two BC-constrained methods exist to avoid ambiguity with the existing
 # generic dispatch (`Searcher{...,<:AbstractBC}, AbstractVector, Real`) and
@@ -261,7 +412,9 @@ end
         s::Searcher{P, H, <:AbstractBC}, g::_ExclusivePeriodicAxis, xq::Real
     ) where {P, H}
     idx, xL, xR = _search_binary(g, xq)
-    return idx, idx + 1, xL, xR
+    n = length(g.inner)
+    idx_R = ifelse(idx == n, 1, idx + 1)
+    return idx, idx_R, xL, xR
 end
 
 # `:exclusive` BC + wrapper: explicit override so this is unambiguous against
@@ -273,5 +426,7 @@ end
         s::Searcher{P, H, <:PeriodicBC{:exclusive}}, g::_ExclusivePeriodicAxis, xq::Real
     ) where {P, H}
     idx, xL, xR = _search_binary(g, xq)
-    return idx, idx + 1, xL, xR
+    n = length(g.inner)
+    idx_R = ifelse(idx == n, 1, idx + 1)
+    return idx, idx_R, xL, xR
 end

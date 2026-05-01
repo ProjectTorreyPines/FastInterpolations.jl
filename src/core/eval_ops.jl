@@ -282,63 +282,37 @@ itp = cubic_interp((x, y), data; extrap=ExtendExtrap())
 struct ExtendExtrap <: AbstractExtrap end
 
 """
-    WrapExtrap{T} <: AbstractExtrap
+    WrapExtrap <: AbstractExtrap
 
-Wrap extrapolation — wraps queries into the domain using modular arithmetic.
-For periodic data.
+Wrap extrapolation — wraps queries into the domain `[first(x), last(x))` using
+modular arithmetic. For periodic data.
 
-# Type Parameters
-- `T`: Either `Nothing` (build-time placeholder from the zero-arg `WrapExtrap()`
-  singleton) or a concrete numeric type carrying the resolved physical wrap domain.
-  Kernels only ever see the concrete form; the `Nothing` variant is materialized
-  upstream via `_resolve_extrap`.
-
-# Fields
-- `_x_min::T`, `_x_max::T`: Physical wrap domain `[_x_min, _x_max)`. Underscore
-  prefix signals advisory internal state — prefer constructing via `WrapExtrap(x)`
-  or letting `bc=PeriodicBC(...)` drive materialization on the interpolant.
+Tag struct with no fields: the wrap domain is read directly from the axis at
+query time via `first(x)` / `last(x)`. After the surface-API axis resolution
+(`_resolve_axis` / `_caching_axis` in `periodic_axis.jl`), every supported axis
+type — plain `Vector`, `AbstractRange`, `_CachedRange`, `_ExclusivePeriodicAxis` —
+exposes `first/last` that already corresponds to the canonical wrap domain
+(including `:exclusive` periodic, where `_ExclusivePeriodicAxis` reports
+`last(g) = inner[1] + period`).
 
 # Example
 ```julia
-# Canonical usage — domain auto-configured from bc:
+# Canonical usage — domain auto-configured from axis:
 itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive, period=2π))
 
-# Backward-compat singleton — materialized to WrapExtrap(x) inside the interpolant:
-itp = cubic_interp((x, y), data; extrap=WrapExtrap())
-
-# Explicit grid-span wrap (advanced):
-itp = linear_interp(x, y; extrap=WrapExtrap(x))
+# Standalone WrapExtrap on any sorted axis:
+itp = linear_interp(x, y; extrap=WrapExtrap())
 ```
 """
-struct WrapExtrap{T} <: AbstractExtrap
-    _x_min::T
-    _x_max::T
-end
+struct WrapExtrap <: AbstractExtrap end
 
-# Zero-arg singleton: a build-time placeholder. Never reaches kernels — upstream
-# `_resolve_extrap` upgrades it to `WrapExtrap(x)` before queries land.
-WrapExtrap() = WrapExtrap{Nothing}(nothing, nothing)
-
-"""
-    WrapExtrap(x::AbstractVector)
-
-Primary factory: construct a `WrapExtrap` whose wrap domain is the grid span
-`[first(x), last(x))`.
-
-Used both by user code (when they want to wrap against a known grid without a
-`PeriodicBC`) and internally by `_resolve_extrap` to upgrade the zero-arg
-singleton to a fully-typed `WrapExtrap{T}`.
-
-For periodic interpolation, prefer `bc=PeriodicBC(...)` on the interpolant — BC
-drives extrap resolution, including `:exclusive` endpoints where the wrap domain
-extends one period beyond `last(x)`. See `WrapExtrap(x, bc)` (defined in
-`src/core/periodic.jl` after BC types load) for the BC-aware constructor layer.
-"""
-@inline function WrapExtrap(x::AbstractVector)
-    lo, hi = first(x), last(x)
-    T = promote_type(typeof(lo), typeof(hi))
-    return WrapExtrap{T}(T(lo), T(hi))
-end
+# Backward-compat: previous API was `WrapExtrap(x)` materializing the wrap
+# domain `[first(x), last(x))` into the struct's `_x_min`/`_x_max` fields.
+# After the tag-struct refactor (axis IS the source of truth for the wrap
+# domain), the axis-passing form is redundant — the kernel reads `(first(x),
+# last(x))` directly via `_wrap_to_domain(xq, x)`. This shim accepts and
+# discards the axis so existing call sites and tests keep compiling.
+@inline WrapExtrap(::AbstractVector) = WrapExtrap()
 
 """
     InBounds <: AbstractExtrap

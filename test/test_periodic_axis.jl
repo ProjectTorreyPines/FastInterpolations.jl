@@ -56,12 +56,19 @@
         @test g.period isa Int
     end
 
-    @testset "AbstractRange inner is rejected (Range path uses _CachedRange of length n+1 instead)" begin
+    @testset "AbstractRange / _CachedRange inner is accepted (axis-as-truth design)" begin
+        # `_ExclusivePeriodicAxis` now accepts any `AbstractVector` inner so
+        # the same wrapper unifies Vector and Range periodic-exclusive paths.
+        # The constructor only validates `inner[end] < inner[1] + period`.
         r = 0.0:0.25:0.75
-        @test_throws ArgumentError _ExclusivePeriodicAxis(r, 1.0)
+        g_r = _ExclusivePeriodicAxis(r, 1.0)
+        @test length(g_r) == 5  # virtual n+1
+        @test last(g_r) == 1.0  # = inner[1] + period
 
         cr = FastInterpolations._to_float(r, Float64)  # _CachedRange
-        @test_throws ArgumentError _ExclusivePeriodicAxis(cr, 1.0)
+        g_cr = _ExclusivePeriodicAxis(cr, 1.0)
+        @test length(g_cr) == 5
+        @test last(g_cr) == 1.0
     end
 end
 
@@ -213,10 +220,12 @@ end
         @test xL ≈ 0.25
         @test xR ≈ 0.5
 
-        # Seam cell — idx_R is the *virtual* n+1
+        # Seam cell — `_ExclusivePeriodicAxis` returns *post-fold* idx_R = 1
+        # (so ND eval can read raw data without a separate cyclic wrapper).
+        # The virtual n+1 endpoint is captured in `xR = first(g) + period`.
         idx, idx_R, xL, xR = search_interval(searcher, g, 0.85)
         @test idx == 4
-        @test idx_R == 5         # virtual!
+        @test idx_R == 1         # post-fold (was: virtual 5)
         @test xL == 0.75
         @test xR ≈ 1.0           # virtual right endpoint = x[1] + period
     end
@@ -242,11 +251,15 @@ end
         @test y[idx_R] == 3.0
     end
 
-    @testset "Seam cell — idx_R = n+1 cycles via data wrapper" begin
+    @testset "Seam cell — idx_R = 1 (post-fold) reads y_raw[1] directly" begin
         idx, idx_R, xL, xR = search_interval(searcher, g, 0.85)
-        @test idx == 4 && idx_R == 5            # virtual idx_R
+        @test idx == 4 && idx_R == 1            # post-fold (was: virtual 5)
         @test y[idx] == 4.0                     # last physical y
-        @test y[idx_R] == 1.0                   # data wrapper auto-cycles to y_raw[1]
+        @test y[idx_R] == 1.0                   # post-fold idx_R = 1 reads first physical y directly
+        # The data wrapper still cycles `y[5]` → `y_raw[1]` for completeness,
+        # but the post-fold idx_R means kernels never need that path on the
+        # search-driven hot loop.
+        @test y[5] == 1.0
     end
 end
 

@@ -13,7 +13,7 @@ Tests for the thread-safe autocache implementation:
 @testitem "RCU Bank" begin
     # Common type aliases for tests
     FI = FastInterpolations
-    EntryType = FI.CacheEntry{Float64, FI.Deriv2{Float64}, FI.Deriv2{Float64}, Vector{Float64}, FI.VectorSpacing{Float64, Float64}}
+    EntryType = FI.CacheEntry{Float64, FI.Deriv2{Float64}, FI.Deriv2{Float64}, Vector{Float64}, FI.CubicSplineCache{Float64, FI._CachedVector{Float64, Float64}, FI.ThomasFactorization{Float64, Vector{Float64}}, FI.BCPair{FI.Deriv2{Float64}, FI.Deriv2{Float64}}}}
     BankType = FI.CacheBank{EntryType}
 
 
@@ -287,7 +287,7 @@ end  # RCU Bank
 @testitem "RCU Registry" begin
     # Common type aliases for tests
     FI = FastInterpolations
-    EntryType = FI.CacheEntry{Float64, FI.Deriv2{Float64}, FI.Deriv2{Float64}, Vector{Float64}, FI.VectorSpacing{Float64, Float64}}
+    EntryType = FI.CacheEntry{Float64, FI.Deriv2{Float64}, FI.Deriv2{Float64}, Vector{Float64}, FI.CubicSplineCache{Float64, FI._CachedVector{Float64, Float64}, FI.ThomasFactorization{Float64, Vector{Float64}}, FI.BCPair{FI.Deriv2{Float64}, FI.Deriv2{Float64}}}}
     BankType = FI.CacheBank{EntryType}
 
 

@@ -131,6 +131,12 @@ Base.IndexStyle(::Type{<:_ExclusivePeriodicAxis}) = IndexLinear()
 @inline Base.first(g::_ExclusivePeriodicAxis) = @inbounds g.inner[1]
 @inline Base.last(g::_ExclusivePeriodicAxis) = g._x_max
 
+# Forward `step` to inner — meaningful only when inner is a Range/`_CachedRange`
+# (uniform-spacing). Vector inners will hit the inner's `MethodError(::step)`,
+# which is the desired behavior: callers asking for `step` already assume a
+# uniform axis.
+@inline Base.step(g::_ExclusivePeriodicAxis) = step(g.inner)
+
 # ========================================
 # Helpers: virtual access + ND fold-back
 # ========================================
@@ -209,32 +215,13 @@ end
 #
 # Branch is highly predictable (seam fires at most once per query batch),
 # and the wrapper-level branch keeps inner-level dispatches simple.
-@inline Base.@propagate_inbounds function _get_h(g::_ExclusivePeriodicAxis, idx::Int)
-    n = length(g.inner)
-    @inbounds return idx < n ? _get_h(g.inner, idx) : g.inner[1] + g.period - g.inner[n]
-end
-@inline Base.@propagate_inbounds function _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int)
-    n = length(g.inner)
-    @inbounds return idx < n ? _get_inv_h(g.inner, idx) : inv(g.inner[1] + g.period - g.inner[n])
-end
-
-# Range-inner specialization: every cell (interior + seam) has the cached step
-# width, so dispatch to the inner's cached `h`/`inv_h` regardless of idx. This
-# avoids the seam-cell `inner[1] + period - inner[n]` cancellation on
-# large-offset Ranges (e.g. `range(1e8, step=0.1, ...)`), and matches the
-# precision of the persistent extended-Range path bit-for-bit.
-@inline _get_h(g::_ExclusivePeriodicAxis{Tg, <:_CachedRange}, ::Int) where {Tg} = g.inner.h
-@inline _get_inv_h(g::_ExclusivePeriodicAxis{Tg, <:_CachedRange}, ::Int) where {Tg} = g.inner.inv_h
-
-# 3-arg `(xL, xR)` overloads for the wrapper: delegate to cached inner so
-# eval kernels using the legacy `_get_h(x, xL, xR)` shape (linear/cubic
-# `_eval_at_point` fallbacks) avoid `xR - xL` cancellation. For non-Range
-# inner (`_CachedVector`/`Vector`), the inner's 3-arg form falls through to
-# `xR - xL` for non-seam cells, but per-cell `h` from `_CachedVector` is the
-# typical path; the seam cell at large offset still suffers cancellation
-# unless callers switch to the 2-arg index-based dispatch.
-@inline _get_h(g::_ExclusivePeriodicAxis{Tg, <:_CachedRange}, ::Real, ::Real) where {Tg} = g.inner.h
-@inline _get_inv_h(g::_ExclusivePeriodicAxis{Tg, <:_CachedRange}, ::Real, ::Real) where {Tg} = g.inner.inv_h
+# Generic wrapper: interior cells delegate to inner; seam (idx == length(inner))
+# computes from `period` so explicit period (`!= step·n`) is handled correctly.
+# `_get_inv_h` derives from `_get_h` to keep the seam formula in one place.
+@inline Base.@propagate_inbounds _get_h(g::_ExclusivePeriodicAxis, idx::Int) =
+    idx < length(g.inner) ? _get_h(g.inner, idx) : @inbounds(g.inner[1] + g.period - g.inner[idx])
+@inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int) =
+    @inbounds inv(_get_h(g, idx))
 
 # `_alpha_of` for the wrapper: defer to inner so `_CachedRange` uses cached
 # `inv_h` (avoids `(R - L)` cancellation in the denominator).

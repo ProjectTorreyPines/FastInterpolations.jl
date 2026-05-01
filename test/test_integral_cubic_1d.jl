@@ -19,9 +19,10 @@
 
     @testset "cell full formula parity" begin
         total = zero(eltype(y))
-        h = itp.cache.spacing.h
-        for i in 1:length(h)
-            hi = h[i]
+        x_axis = itp.cache.x
+        n_cells = length(x_axis) - 1
+        for i in 1:n_cells
+            hi = FastInterpolations._get_h(x_axis, i)
             total += hi / 2 * (itp.y[i] + itp.y[i + 1]) - hi^3 / 24 * (itp.z[i] + itp.z[i + 1])
         end
         @test integrate(itp) ≈ total atol = 1.0e-12

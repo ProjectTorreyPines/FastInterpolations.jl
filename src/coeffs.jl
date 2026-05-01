@@ -104,11 +104,10 @@ function coeffs end
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv}
     x = itp.cache.x
-    spacing = itp.cache.spacing
     searcher = _resolve_search(x, xq, search, hint)
-    i, i_R, xL, xR = search_interval(searcher, x, spacing, xq)
-    h = _get_h(spacing, i)
-    inv_h = _get_inv_h(spacing, i)
+    i, i_R, xL, xR = search_interval(searcher, x, xq)
+    h = _get_h(x, i)
+    inv_h = _get_inv_h(x, i)
     inv6 = inv(Tg(6))    # const-folded
     inv_6h = inv_h * inv6 # 1/(6h), shared factor         fmul
     h_inv6 = h * inv6     # h/6                           fmul

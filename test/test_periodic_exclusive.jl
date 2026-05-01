@@ -571,12 +571,17 @@
             @test !isapprox(v1, v2; atol = 1.0e-6)
 
             # Direct cache pool inspection — distinct cache objects for distinct periods.
+            # After the axis-as-truth migration: `cache.bc` carries the resolved
+            # period (was: separate `bc_config.period`/`h_n` fields), and the seam-
+            # cell width is read on the fly via `_get_h(cache.x, n)`.
             c1 = FastInterpolations._get_cubic_cache(x, PeriodicBC(endpoint = :exclusive, period = 2.5))
             c2 = FastInterpolations._get_cubic_cache(x, PeriodicBC(endpoint = :exclusive, period = 2.2))
-            @test c1.bc_config.period ≈ 2.5
-            @test c2.bc_config.period ≈ 2.2
-            @test c1.bc_config.h_n ≈ 0.65
-            @test c2.bc_config.h_n ≈ 0.35
+            @test c1.bc.period ≈ 2.5
+            @test c2.bc.period ≈ 2.2
+            n1 = length(c1.x) - 1
+            n2 = length(c2.x) - 1
+            @test FastInterpolations._get_h(c1.x, n1) ≈ 0.65
+            @test FastInterpolations._get_h(c2.x, n2) ≈ 0.35
         end
 
         @testset "Reject non-positive seam width" begin
@@ -651,8 +656,8 @@
             # not the off-by-1e-9 explicit one already in the bank.
             c_inferred = FastInterpolations._get_cubic_cache(r, bc_inferred)
             c_explicit = FastInterpolations._get_cubic_cache(r, bc_explicit)
-            @test c_inferred.bc_config.period == 1.0
-            @test c_explicit.bc_config.period == 1.0 + period_offset
+            @test c_inferred.bc.period == 1.0
+            @test c_explicit.bc.period == 1.0 + period_offset
             @test c_inferred !== c_explicit
         end
 

@@ -5,23 +5,17 @@
 
 # ── 1D spacing accessor ──
 # Returns an object that responds to `_get_h(., i)` / `_get_inv_h(., i)` 2-arg
-# form. Migrated method-families (Linear, Constant) drop their `spacing` field
-# and use the grid itself as the source of truth for h/inv_h — `itp.x` is one
-# of `_CachedRange`/`_CachedVector`/`_ExclusivePeriodicAxis`, all of which
-# specialize `_get_h(g, i)` to cached lookup. Pre-migration method-families
-# (Quadratic, Cubic, Hermite-family) still expose `itp.spacing` /
-# `itp.cache.spacing` as a separate spacing object.
+# form. Migrated families (Linear, Constant, Cubic) use the wrapped axis itself
+# (`_CachedRange`/`_CachedVector`/`_ExclusivePeriodicAxis`) as the source of
+# truth for h/inv_h. Pre-migration families (Quadratic, Hermite-family) still
+# carry a separate `spacing::S` field.
 @inline _spacing(itp::LinearInterpolant) = itp.x
 @inline _spacing(itp::ConstantInterpolant) = itp.x
-# Pre-migration default: methods that still carry a `spacing::S` field.
+@inline _spacing(itp::CubicInterpolant) = itp.cache.x
+@inline _spacing(sitp::CubicSeriesInterpolant) = sitp.cache.x
+# Pre-migration default: families that still carry a `spacing::S` field.
 @inline _spacing(itp::AbstractInterpolant1D) = itp.spacing
-# Cubic: spacing lives in cache
-@inline _spacing(itp::CubicInterpolant) = itp.cache.spacing
-@inline _spacing(sitp::CubicSeriesInterpolant) = sitp.cache.spacing
-# Series: Linear/Quadratic store spacing directly after Phase 2d
 @inline _spacing(sitp::AbstractSeriesInterpolant) = sitp.spacing
-# Constant: spacing stored after Phase 2 addition
-# ConstantSeriesInterpolant: spacing stored after Phase 2 addition
 
 # ── Fallback stub (bounded 1D) ──
 function integrate(itp::AbstractInterpolant, x0::Real, x1::Real; search = nothing, hint = nothing)

@@ -167,7 +167,6 @@ matching the forward `compute_rhs!` pattern (O(D) per axis, negligible).
 @inline function _adjoint_axis_pair!(
         src_3d, dst_3d,
         cache_d::CubicSplineCache{Tg},
-        spacing_d::AbstractGridSpacing{Tg},
         bc_pair::BCPair,
         grid_d::AbstractVector{Tg},
         shape_before::Int, n_d::Int, shape_after::Int,
@@ -175,6 +174,8 @@ matching the forward `compute_rhs!` pattern (O(D) per axis, negligible).
         f_contrib::AbstractVector{Tv},
         dy_bar_slice::AbstractVector{Tv}
     ) where {Tv, Tg}
+    # Wrapped axis carries h/inv_h cache (`_get_h(x, i)`).
+    x_axis = cache_d.x
     # Compute polyfit stencil coefficients on the fly (O(D), grid-only)
     pf = _build_polyfit_data(bc_pair, grid_d)
 
@@ -186,13 +187,13 @@ matching the forward `compute_rhs!` pattern (O(D) per axis, negligible).
             end
 
             # Step a: moments_to_deriv adjoint
-            _moments_to_deriv_adjoint_1d!(z_bar, f_contrib, dy_bar_slice, spacing_d)
+            _moments_to_deriv_adjoint_1d!(z_bar, f_contrib, dy_bar_slice, x_axis)
 
             # Step b: transpose Thomas solve (A⁻ᵀ z_bar)
             _ldiv_tridiagonal_transpose!(z_bar, cache_d.thomas)
 
             # Step c: RHS stencil adjoint (f_contrib += Rᵀ z_bar)
-            _compute_rhs_adjoint!(f_contrib, z_bar, spacing_d, bc_pair, pf)
+            _compute_rhs_adjoint!(f_contrib, z_bar, x_axis, bc_pair, pf)
 
             # Step d: accumulate into partials_bar[p_src]
             @inbounds for k in 1:n_d
@@ -221,7 +222,6 @@ Differences from non-periodic `_adjoint_axis_pair!`:
 @inline function _adjoint_axis_pair_periodic!(
         src_3d, dst_3d,
         cache_d::CubicSplineCache{Tg},
-        spacing_d::AbstractGridSpacing{Tg},
         shape_before::Int, n_d::Int, shape_after::Int,
         z_bar::AbstractVector{Tv},
         f_contrib::AbstractVector{Tv},
@@ -229,6 +229,7 @@ Differences from non-periodic `_adjoint_axis_pair!`:
         q_t::AbstractVector
     ) where {Tv, Tg}
     n = n_d - 1  # n intervals for periodic (n+1 grid points, z[n+1]=z[1])
+    x_axis = cache_d.x
 
     for j in 1:shape_after
         for i in 1:shape_before
@@ -247,7 +248,7 @@ Differences from non-periodic `_adjoint_axis_pair!`:
             end
 
             # Step b: moments_to_deriv adjoint (SAME as non-periodic)
-            _moments_to_deriv_adjoint_1d!(z_bar, f_contrib, dy_bar_slice, spacing_d)
+            _moments_to_deriv_adjoint_1d!(z_bar, f_contrib, dy_bar_slice, x_axis)
 
             # Step c: fold periodic closure (adjoint of z[n+1]=z[1])
             @inbounds z_bar[1] += z_bar[n_d]
@@ -256,7 +257,7 @@ Differences from non-periodic `_adjoint_axis_pair!`:
             _adjoint_periodic_solve!(z_bar, cache_d, q_t, n)
 
             # Step e: circulant RHS adjoint → f_contrib[1:n+1]
-            _compute_rhs_adjoint_periodic!(f_contrib, z_bar, spacing_d, n)
+            _compute_rhs_adjoint_periodic!(f_contrib, z_bar, x_axis, n)
 
             # Step f: accumulate into partials_bar[p_src]
             @inbounds for k in 1:n_d
@@ -300,7 +301,6 @@ so each branch dispatches on a concrete cache type — no Union boxing.
     for d in N:-1:1
         bit_d = 1 << (d - 1)
         n_d = grid_size[d]
-        spacing_d = spacings[d]
         is_periodic_d = _is_periodic_bc(bcs[d])
 
         # Compute reshape dimensions for axis d
@@ -339,20 +339,20 @@ so each branch dispatches on a concrete cache type — no Union boxing.
             if is_periodic_d
                 # Periodic: same cache for all p_src (periodic propagates through _get_effective_bc)
                 _adjoint_axis_pair_periodic!(
-                    src_3d, dst_3d, caches[d], spacing_d,
+                    src_3d, dst_3d, caches[d],
                     shape_before, n_d, shape_after,
                     z_bar, f_contrib, dy_bar_slice, q_t
                 )
             elseif p_src == 1
                 _adjoint_axis_pair!(
-                    src_3d, dst_3d, caches[d], spacing_d,
+                    src_3d, dst_3d, caches[d],
                     bcs[d], grids[d],
                     shape_before, n_d, shape_after,
                     z_bar, f_contrib, dy_bar_slice
                 )
             else
                 _adjoint_axis_pair!(
-                    src_3d, dst_3d, mixed_caches[d], spacing_d,
+                    src_3d, dst_3d, mixed_caches[d],
                     mixed_bcs[d], grids[d],
                     shape_before, n_d, shape_after,
                     z_bar, f_contrib, dy_bar_slice

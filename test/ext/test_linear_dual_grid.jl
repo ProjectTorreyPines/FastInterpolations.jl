@@ -329,9 +329,8 @@ const FI = FastInterpolations
         itp = linear_interp(x_dual_range, y)
 
         # Stored as _CachedRange{Dual}, not the raw StepRangeLen
+        # _CachedRange wraps the Range and caches step/inv_step (replaces ScalarSpacing).
         @test itp.x isa FI._CachedRange{<:ForwardDiff.Dual}
-        # ScalarSpacing{Dual} — uniform grid, O(1) memory
-        @test itp.spacing isa FI.ScalarSpacing{<:ForwardDiff.Dual}
     end
 
     @testset "Range{Dual} scalar eval matches Vector{Dual} path" begin
@@ -397,7 +396,6 @@ const FI = FastInterpolations
 
                 # All normalized to _CachedRange{Dual}
                 @test itp.x isa FI._CachedRange{<:ForwardDiff.Dual}
-                @test itp.spacing isa FI.ScalarSpacing{<:ForwardDiff.Dual}
 
                 # Scalar eval returns Dual.
                 # Use a mid-interval query to avoid exact-knot tiebreak differences

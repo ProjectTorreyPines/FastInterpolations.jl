@@ -373,22 +373,27 @@ end
 @inline _get_derivative_bank(x::AbstractVector, bc::BCPair) = _get_derivative_bank(typeof(x), bc)
 
 """
-Get or create a periodic BC cache bank for the given (T, X, S, E) combination.
+Get or create a periodic BC cache bank for the given (T, X, E, C) combination.
 Accepts Type{X} to avoid needing an instance (eliminates collect() for views).
 
 `E` (`:inclusive`/`:exclusive`) is encoded in the entry type so inclusive and
 exclusive caches for the same grid object live in *different* banks — their
 cache contents (cycle length, seam-cell width, Sherman-Morrison `q`) differ.
+
+`C` (`check::Bool` of `PeriodicBC`) is also threaded into the bank key because
+`_with_resolved_period` preserves it and `_bc_after_extend` flips it to `false`.
+Without partitioning on `C`, a cache built from `check=false` BC would fail to
+fit into a bank typed for `check=true`.
 """
-@inline function _get_periodic_bank(::Type{X}, ::Val{E}) where {T <: AbstractFloat, X <: AbstractVector{T}, E}
+@inline function _get_periodic_bank(::Type{X}, ::Val{E}, ::Val{C}) where {T <: AbstractFloat, X <: AbstractVector{T}, E, C}
     Xc = _cached_axis_type(X, T, Val(E))
-    bc = E === :exclusive ? PeriodicBC{:exclusive, T, true} : PeriodicBC{:inclusive, T, true}
+    bc = E === :exclusive ? PeriodicBC{:exclusive, T, C} : PeriodicBC{:inclusive, T, C}
     Cc = CubicSplineCache{T, Xc, ThomasFactorization{T, Vector{T}}, bc}
     EntryType = PeriodicCacheEntry{T, X, E, Cc}
     return _get_bank(_PERIODIC_REGISTRY, CacheBank{EntryType})
 end
-# Instance convenience: forward to Type dispatch
-@inline _get_periodic_bank(::Type{X}, ::PeriodicBC{E}) where {X, E} = _get_periodic_bank(X, Val(E))
+# Instance convenience: forward to Type dispatch (reads C from the bc type-param)
+@inline _get_periodic_bank(::Type{X}, ::PeriodicBC{E, P, C}) where {X, E, P, C} = _get_periodic_bank(X, Val(E), Val(C))
 @inline _get_periodic_bank(x::AbstractVector, bc::PeriodicBC) = _get_periodic_bank(typeof(x), bc)
 
 # ===============================================================

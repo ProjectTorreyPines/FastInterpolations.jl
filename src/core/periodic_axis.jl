@@ -385,6 +385,21 @@ end
 @inline _caching_axis(x::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = x
 
 # ========================================
+# Search policy: preserve inner's trait
+# ========================================
+#
+# `_resolve_search_policy(::AbstractRange, ...)` returns `DirectSearch()` for
+# the O(1) Range fast-path; the `AbstractVector` fallback returns
+# Binary/LinearBinary. `_ExclusivePeriodicAxis <: AbstractVector`, so without
+# this override a wrapped `_CachedRange` inner would lose its Range trait and
+# fall through to BinarySearch (5–13× regression at N=10²–10⁴ on the
+# Per-excl Range path). Delegating to `g.inner` lets `_CachedRange` /
+# `AbstractRange` inners surface their `DirectSearch` while `_CachedVector` /
+# `Vector` inners still resolve to Binary/LinearBinary.
+@inline _resolve_search_policy(g::_ExclusivePeriodicAxis, xq, search::AbstractSearchPolicy, hint) =
+    _resolve_search_policy(g.inner, xq, search, hint)
+
+# ========================================
 # Specialized search: zero-overhead seam fast-path
 # ========================================
 #
@@ -436,26 +451,39 @@ end
     return idx, idx + 1, xL, xR
 end
 
-# Generic BC + wrapper: always use grid-type seam handling.
+# Generic BC + wrapper: seam fast-path → policy-aware delegate to inner.
+#
+# Crucially, we MUST route the interior search through `_search_interval_real`
+# on the inner — NOT through `_search_binary(g, xq)`. The unconditional binary
+# fallback would discard the `Searcher`'s policy parameter `P`: when inner is
+# `_CachedRange` (or any `AbstractRange`) and the resolved policy is
+# `DirectSearch`, the inner's specialized `_search_interval_real(::Searcher{
+# DirectSearch}, ::AbstractRange, ::Real)` overload computes the cell index
+# in O(1) (single mul/floor/clamp). Forcing `_search_binary` instead would
+# downgrade Range axes to O(log n), which scales as the bench shows
+# (Range Per-excl: 3.5 ns @ N=10 → 44 ns @ N=10000).
 @inline function search_interval(
         s::Searcher{P, H, <:AbstractBC}, g::_ExclusivePeriodicAxis, xq::Real
     ) where {P, H}
-    idx, xL, xR = _search_binary(g, xq)
     n = length(g.inner)
-    idx_R = ifelse(idx == n, 1, idx + 1)
-    return idx, idx_R, xL, xR
+    @inbounds if xq >= g.inner[n]
+        return n, 1, g.inner[n], g.inner[1] + g.period
+    end
+    idx, xL, xR = _search_interval_real(s, g.inner, xq)
+    return idx, idx + 1, xL, xR
 end
 
 # `:exclusive` BC + wrapper: explicit override so this is unambiguous against
 # the existing `<:PeriodicBC{:exclusive}` dispatch on plain AbstractVector.
 # Wrapper takes precedence — searcher's `bc.period` is ignored (grid carries
-# its own period). Migrated method-family commits will use NoBC searcher
-# when wrapping; this override is purely for transitional safety.
+# its own period). Same policy-aware shape as the generic-BC overload above.
 @inline function search_interval(
         s::Searcher{P, H, <:PeriodicBC{:exclusive}}, g::_ExclusivePeriodicAxis, xq::Real
     ) where {P, H}
-    idx, xL, xR = _search_binary(g, xq)
     n = length(g.inner)
-    idx_R = ifelse(idx == n, 1, idx + 1)
-    return idx, idx_R, xL, xR
+    @inbounds if xq >= g.inner[n]
+        return n, 1, g.inner[n], g.inner[1] + g.period
+    end
+    idx, xL, xR = _search_interval_real(s, g.inner, xq)
+    return idx, idx + 1, xL, xR
 end

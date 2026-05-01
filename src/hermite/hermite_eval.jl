@@ -63,7 +63,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, extrap)
+    xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     dL = xq_wrapped - xL
     h = _get_h(x, xL, xR)
@@ -129,7 +129,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, extrap)
+    xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, _ = search_interval(searcher, x, spacing, xq_wrapped)
     dL = xq_wrapped - xL
     h = _get_h(spacing, idx)
@@ -170,7 +170,7 @@ end
         deriv::O,
         searcher::P
     ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
-    x_min, x_max = extrap._x_min, extrap._x_max
+    x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(xq), maximum(xq)
 
     if qmin >= x_min && qmax < x_max
@@ -179,7 +179,7 @@ end
         end
     else
         @inbounds for i in eachindex(xq, output)
-            xi_wrapped = _wrap_to_domain(xq[i], extrap)
+            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max)
             output[i] = _hermite_eval_at_point(x, y, dy, xi_wrapped, ExtendExtrap(), deriv, searcher)
         end
     end
@@ -217,7 +217,7 @@ end
         deriv::O,
         searcher::P
     ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
-    x_min, x_max = extrap._x_min, extrap._x_max
+    x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(xq), maximum(xq)
 
     if qmin >= x_min && qmax < x_max
@@ -226,7 +226,7 @@ end
         end
     else
         @inbounds for i in eachindex(xq, output)
-            xi_wrapped = _wrap_to_domain(xq[i], extrap)
+            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max)
             output[i] = _hermite_eval_at_point(x, spacing, y, dy, xi_wrapped, ExtendExtrap(), deriv, searcher)
         end
     end
@@ -295,7 +295,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, extrap)
+    xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     n = length(x)
     dyL = _local_slope(sm, x, y, idx, n)
@@ -365,7 +365,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, extrap)
+    xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, _ = search_interval(searcher, x, spacing, xq_wrapped)
     n = length(x)
     dyL = _local_slope(sm, x, y, idx, n)
@@ -407,7 +407,7 @@ end
         deriv::O,
         searcher::P
     ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
-    x_min, x_max = extrap._x_min, extrap._x_max
+    x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(xq), maximum(xq)
 
     if qmin >= x_min && qmax < x_max
@@ -416,7 +416,7 @@ end
         end
     else
         @inbounds for i in eachindex(xq, output)
-            xi_wrapped = _wrap_to_domain(xq[i], extrap)
+            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max)
             output[i] = _hermite_eval_at_point(x, y, sm, xi_wrapped, ExtendExtrap(), deriv, searcher)
         end
     end
@@ -454,7 +454,7 @@ end
         deriv::O,
         searcher::P
     ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
-    x_min, x_max = extrap._x_min, extrap._x_max
+    x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(xq), maximum(xq)
 
     if qmin >= x_min && qmax < x_max
@@ -463,7 +463,7 @@ end
         end
     else
         @inbounds for i in eachindex(xq, output)
-            xi_wrapped = _wrap_to_domain(xq[i], extrap)
+            xi_wrapped = _wrap_to_domain(xq[i], x_min, x_max)
             output[i] = _hermite_eval_at_point(x, spacing, y, sm, xi_wrapped, ExtendExtrap(), deriv, searcher)
         end
     end

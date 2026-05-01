@@ -186,7 +186,7 @@ end
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
-# 4-arg `_wrap_to_domain` dispatches on typed vs Nothing WrapExtrap.
+# Wrap domain `[first(x), last(x))` is read directly from the axis.
 @inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -197,7 +197,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, extrap)
+    xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
     dL = xq_wrapped - xL
     dR = xR - xq_wrapped

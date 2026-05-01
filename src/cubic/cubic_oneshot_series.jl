@@ -54,7 +54,7 @@ end
         extrap_p::AbstractExtrap,
         searcher::Searcher,
     )
-    xq_wrapped = _wrap_to_domain(xq, extrap_p)
+    xq_wrapped = _wrap_to_domain(xq, cache.x)
     idxL, idxR, xL, xR = search_interval(searcher, cache.x, xq_wrapped)
     h, inv_h = _periodic_cell_h(cache.spacing, idxL, cache.bc_config)
     dL = xq_wrapped - xL

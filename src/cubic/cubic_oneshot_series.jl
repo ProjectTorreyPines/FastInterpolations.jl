@@ -54,7 +54,20 @@ end
         extrap_p::AbstractExtrap,
         searcher::Searcher,
     )
-    xq_wrapped = _wrap_to_domain(xq, cache.x)
+    # `cache.x` is the user's raw n-length grid for `:exclusive` periodic
+    # (legacy cubic cache layout — `cache.spacing` carries n-1 interior cells,
+    # `cache.bc_config.h_n` the seam width). The wrap domain therefore spans
+    # one period beyond `last(cache.x)` and must be derived from
+    # `bc_config.period`. Mirrors the explicit-bound construction in
+    # `_eval_cubic_at_point_periodic` (cubic_eval.jl).
+    #
+    # TODO: Cubic-family surface-API migration (separate PR) will move
+    # `cache.x` to `_ExclusivePeriodicAxis(...)` so this becomes
+    # `_wrap_to_domain(xq, cache.x)` like Linear/Constant. Until then, keep
+    # the explicit-bound form for correctness.
+    x_min = @inbounds first(cache.x)
+    x_max = x_min + cache.bc_config.period
+    xq_wrapped = _wrap_to_domain(xq, x_min, x_max)
     idxL, idxR, xL, xR = search_interval(searcher, cache.x, xq_wrapped)
     h, inv_h = _periodic_cell_h(cache.spacing, idxL, cache.bc_config)
     dL = xq_wrapped - xL

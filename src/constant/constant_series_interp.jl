@@ -362,9 +362,10 @@ function constant_interp(
     if _is_periodic_bc(bc)
         x_ext, y_mat_ext = _prepare_periodic(x, y_mat, bc)
         _validate_series_endpoints(bc, y_mat_ext)
-        # Materialize against the extended grid so the struct stores WrapExtrap{T}
-        # (never {Nothing}); `_promote_extrap` then handles value-type promotion.
-        extrap_p = _promote_extrap(WrapExtrap(x_ext), Tv_out)
+        # `WrapExtrap` is a tag struct — wrap domain is read from the extended
+        # axis at query time. `_promote_extrap` only handles `FillExtrap` value
+        # promotion; passthrough for `WrapExtrap`.
+        extrap_p = _promote_extrap(WrapExtrap(), Tv_out)
         return ConstantSeriesInterpolant(x_ext, y_mat_ext, extrap_p, side, search)
     end
 

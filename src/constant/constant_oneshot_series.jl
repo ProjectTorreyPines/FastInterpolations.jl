@@ -36,18 +36,20 @@
         end
     end
 
-    extrap_p = _resolve_extrap(NoExtrap(), bc, x, first(vecs))
-    xq_wrapped = _wrap_to_domain(xq, extrap_p)
-    idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
-    # Use _get_h so _CachedRange returns its exact cached step instead of
-    # the cancellation-prone `xR - xL` on large-offset grids.
-    h = _get_h(x, xL, xR)
+    # Surface-API axis resolution: `:exclusive` axis → `_ExclusivePeriodicAxis`
+    # carrying period + virtual endpoint; specialized search returns post-fold
+    # `idx_R` so raw `vecs[k][aq.idxR]` reads the wrapped corner directly.
+    x_eff = _resolve_axis(x, bc)
+    extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)   # PeriodicBC → WrapExtrap()
+    xq_wrapped = _wrap_to_domain(xq, x_eff)
+    idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
+    h = _get_h(x_eff, idxL)
     dL = xq_wrapped - xL
     # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual).
     xq_promoted = oftype(dL, xq_wrapped)
     aq = _ConstantAnchoredQuery(_IdxPair(idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
 
-    x_last = @inbounds Tg(last(x))
+    x_last = @inbounds Tg(last(x_eff))
 
     @inbounds for k in 1:K
         output[k] = _constant_eval_at_anchor(vecs[k], x_last, aq, op, side, extrap_p)
@@ -156,14 +158,15 @@ end
                 _check_periodic_endpoints(bc, vecs[k])
             end
         end
-        extrap_p = _resolve_extrap(NoExtrap(), bc, x, first(vecs))
-        searcher = _resolve_search(x, xqs, search, nothing, bc)
-        x_last = @inbounds Tg_actual(last(x))
+        x_eff = _resolve_axis(x, bc)
+        extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
+        searcher = _resolve_search(x_eff, xqs, search, nothing, NoBC())
+        x_last = @inbounds Tg_actual(last(x_eff))
         @inbounds for j in eachindex(xqs)
-            xq_wrapped = _wrap_to_domain(xqs[j], extrap_p)
-            idxL, idxR, xL, xR = search_interval(searcher, x, xq_wrapped)
-            # Cached-step-preserving dispatch (matches scalar/persistent paths).
-            h = _get_h(x, xL, xR)
+            xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
+            idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
+            # Index-based dispatch (cached step on Range, seam width on wrapper).
+            h = _get_h(x_eff, idxL)
             dL = xq_wrapped - xL
             xq_promoted = oftype(dL, xq_wrapped)
             aq = _ConstantAnchoredQuery(_IdxPair(idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)

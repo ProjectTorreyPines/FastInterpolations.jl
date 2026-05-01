@@ -77,10 +77,9 @@ end
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
-# `_wrap_to_domain(xi, extrap)` reads `extrap._x_min/._x_max` directly from the
-# materialized `WrapExtrap{T}`. Any `WrapExtrap{Nothing}` placeholder must have
-# been upgraded earlier by `_resolve_extrap` — an unresolved one hitting this
-# path errors out at the explicit `::WrapExtrap{Nothing}` overload (periodic.jl).
+# `_wrap_to_domain(xi, x, ::WrapExtrap)` reads `(first(x), last(x))` from the
+# axis — `_ExclusivePeriodicAxis` exposes the precomputed virtual endpoint via
+# `last(g)`, so the wrap domain naturally spans one period for `:exclusive`.
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -90,7 +89,7 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
-    xi_wrapped = _wrap_to_domain(xi, extrap)
+    xi_wrapped = _wrap_to_domain(xi, x)
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xL, xR), dL, side)
@@ -168,10 +167,13 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    x_typed = _prepare_grid(x)
-    extrap_eff = _resolve_extrap(extrap, bc, x_typed, y)
-    searcher = _resolve_search(x_typed, xi, search, hint, bc)
-    result = _constant_eval_at_point(x_typed, y, xi, extrap_eff, side, deriv, searcher)
+    # Surface-level BC-aware resolvers (zero-alloc reference wrapping). BC info
+    # lives in axis type after resolution → searcher uses `NoBC()`.
+    x_eff = _resolve_axis(x, bc)
+    y_eff = _resolve_data(y, bc)
+    extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
+    searcher = _resolve_search(x_eff, xi, search, hint, NoBC())
+    result = _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
     # Single-exit coerce: Int/Rational y returns y[idx] directly; promote to Float.
     return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
 end
@@ -221,10 +223,12 @@ function constant_interp!(
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    x_typed = _prepare_grid(x)
-    extrap_eff = _resolve_extrap(extrap, bc, x_typed, y)
-    searcher = _resolve_search(x_typed, x_targets, search, nothing, bc)
-    _constant_vector_loop!(output, x_typed, y, x_targets, extrap_eff, side, deriv, searcher)
+    # Surface-level BC-aware resolvers (same template as Linear oneshot).
+    x_eff = _resolve_axis(x, bc)
+    y_eff = _resolve_data(y, bc)
+    extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
+    searcher = _resolve_search(x_eff, x_targets, search, nothing, NoBC())
+    _constant_vector_loop!(output, x_eff, y_eff, x_targets, extrap_eff, side, deriv, searcher)
     return output
 end
 

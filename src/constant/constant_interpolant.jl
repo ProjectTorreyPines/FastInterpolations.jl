@@ -114,22 +114,11 @@ end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    # Same shape as `_linear_resolve_periodic_grid` — Vector + `:exclusive`
-    # gets the zero-alloc Axis/Data wrapper pair; other paths use legacy
-    # `_periodic_extend_1d`.
-    x_eff, y_eff, extrap_eff = _constant_resolve_periodic_grid(x, y, bc, extrap)
+    # Surface-level BC-aware resolvers (`periodic_axis.jl`) compose the right
+    # per-(grid×bc) shape. Same template as Linear; Constant just adds `side`.
+    x_eff = _caching_axis(x, bc, Tg)
+    y_eff = _resolve_data(y, bc)
+    extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
     return ConstantInterpolant(x_eff, y_eff; extrap = extrap_p, side, search)
-end
-
-@inline function _constant_resolve_periodic_grid(
-        x::AbstractVector, y::AbstractVector, bc::AbstractBC, extrap::AbstractExtrap
-    )
-    if bc isa PeriodicBC{:exclusive} && !(x isa AbstractRange)
-        bc_resolved = _resolve_bc_period(x, bc)
-        x_wrapped = _ExclusivePeriodicAxis(x, bc_resolved.period)
-        y_wrapped = _ExclusivePeriodicData(y)
-        return x_wrapped, y_wrapped, WrapExtrap(x_wrapped)
-    end
-    return _periodic_extend_1d(x, y, bc, extrap)
 end

@@ -92,7 +92,12 @@ end
     xi_wrapped = _wrap_to_domain(xi, x)
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xL, xR), dL, side)
+    # Unwrap data once: `search_interval` already resolved the seam (idx_R = 1
+    # at seam cell), so direct inner access skips the wrapper's cyclic
+    # `Base.getindex` branch on each `y[idx]` / `y[idx_R]`. The 3-arg
+    # `_get_h(x, xL, xR)` is already wrapper-aware and branch-free.
+    yi = _raw(y)
+    @inbounds return _constant_kernel(op, yi[idx], yi[idx_R], _get_h(x, xL, xR), dL, side)
 end
 
 

@@ -288,7 +288,12 @@ end
     xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     α = _alpha_of(xq_wrapped, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
+    # `search_interval` already resolves seam wrap-around (idx_R = 1 for the
+    # seam cell), so `yi[idx_R]` is safe via the raw inner — no need for the
+    # data wrapper's per-call cyclic branch. `_get_inv_h(x, idx)` keeps the
+    # wrapper for seam-aware (idx == n) cell width.
+    yi = _raw(y)
+    @inbounds return _linear_kernel(op, yi[idx], yi[idx_R], _get_inv_h(x, idx), α)
 end
 
 # Public scalar one-shot API.

@@ -73,9 +73,10 @@ Base.IndexStyle(::Type{<:_ExclusivePeriodicData}) = IndexLinear()
 @inline Base.firstindex(::_ExclusivePeriodicData{Tv, 1}) where {Tv} = 1
 @inline Base.lastindex(c::_ExclusivePeriodicData{Tv, 1}) where {Tv} = length(c)
 
-# `getindex(c, n+1)` returns `inner[1]` (cyclic value at the virtual seam slot).
-# In-bounds for normal indices it forwards to `inner` with @inbounds for full
-# zero-overhead. The branch is single-compare and predicted not-seam.
+# `Base.getindex` is **cyclic**: for `i ∈ 1:n` returns `inner[i]`; for `i == n+1`
+# returns `inner[1]` (cyclic value at the virtual seam slot). This satisfies the
+# AbstractArray contract — every index in `1:length(c)` is valid. Generic Base
+# algorithms (`view`, `copyto!`, `iterate`, broadcast) work transparently.
 @inline Base.@propagate_inbounds function Base.getindex(c::_ExclusivePeriodicData{Tv, 1}, i::Int) where {Tv}
     n = length(c.inner)
     @inbounds return i <= n ? c.inner[i] : c.inner[1]

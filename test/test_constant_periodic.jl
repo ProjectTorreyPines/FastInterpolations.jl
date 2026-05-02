@@ -388,9 +388,7 @@
         @test length(itp.y) == 5
         @test itp.y[end] == itp.y[1] == 10.0    # cyclic via data wrapper
         @test last(itp.x) ≈ 4.0                  # axis: inner[1] + period (virtual coord)
-        # Plain `itp.x[5]` BoundsErrors (axis wrapper has no auto-cycle on `getindex`);
-        # use `_getindex` for the virtual coord:
-        @test FastInterpolations._getindex(itp.x, 5) ≈ 4.0
+        @test itp.x[5] ≈ 4.0                     # cyclic via axis wrapper (= last(itp.x))
 
         # Original arrays unmodified.
         @test x == x_ref

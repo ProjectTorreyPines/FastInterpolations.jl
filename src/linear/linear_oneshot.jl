@@ -224,8 +224,6 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
 # ========================================
 # Core eval: extrap dispatch → search → kernel (no intermediate layers)
 # ========================================
-# _get_inv_h(x, xL, xR) dispatches to x.inv_h (_CachedRange) or inv(xR-xL) (Vector).
-
 # Oneshot path (no spacing): α via direct (q-L)/(R-L) on plain Vector grid
 # (`_alpha_of(q, L, R, grid)`); inv_h recomputed per query.
 # Persistent path (with spacing): α via cached `inv_h * (q-L)`; mirrors the ND
@@ -244,11 +242,13 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
+    # Independent computation of `α` and `inv_h`. The kernel uses only one
+    # (EvalValue → α, `DerivOp(1)` → inv_h, `DerivOp(2)` → neither), so the
+    # unused branch's fdiv is dead-code-eliminated by LLVM. `_alpha_of`
+    # dispatches on grid type:
+    #   `_CachedRange`        → `(q-L) * x.inv_h` (cached fmul, no fdiv)
+    #   raw `AbstractVector`  → `(q-L) / float(R-L)` (single fdiv)
     α = _alpha_of(xq, xL, xR, x)
-    # Index-based 2-arg `_get_inv_h(x, idx)` reads `_CachedRange.inv_h` (exact)
-    # and `_ExclusivePeriodicAxis`'s seam formula (`inv(inner[1]+period-inner[idx])`).
-    # The 3-arg `(x, xL, xR)` form falls back to `inv(float(xR-xL))` for the
-    # wrapper, which loses precision at the seam on large-offset Ranges.
     @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
 end
 

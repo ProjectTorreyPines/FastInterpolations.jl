@@ -612,7 +612,7 @@
 
         # Virtual endpoints: axis carries coord (`inner[1] + period`),
         # data auto-cycles (`inner[1]`).
-        @test FastInterpolations._getindex(itp.x, 5) ≈ 4.0
+        @test itp.x[5] ≈ 4.0                    # cyclic via axis wrapper's getindex
         @test itp.y[5] == itp.y[1] == 10.0      # cyclic via data wrapper's getindex
         @test last(itp.x) ≈ 4.0                 # axis: inner[1] + period
         @test last(itp.y) == 10.0               # data: inner[1] (cyclic)
@@ -997,14 +997,27 @@
         v_oneshot = linear_interp(x, s, xq; bc = bc)
         v_persist = linear_interp(x, s; bc = bc)(xq)
 
-        @test v_oneshot[1] === v_scalar
-        @test v_oneshot[1] === v_persist[1]
+        # Scalar oneshot uses `_alpha_of(g) → _alpha_of(g.inner::_CachedRange)`
+        # which delegates to cached `inner.inv_h = inv(step)` (DCE-friendly:
+        # for `EvalValue` the kernel-side `_get_inv_h` is dead-code-eliminated
+        # by LLVM since only α is consumed). Series oneshot routes through the
+        # wrapper's seam-aware `_get_inv_h(g, n) = inv(_x_max - inner[n])`,
+        # whose `(xq - xL) / (xR - xL)`-shaped α cancels structurally and
+        # gives a slightly different Float64 rounding at a 1e8 offset.
+        # Persistent series builds via `_prepare_periodic` (physical n+1
+        # extension), so it sees a regular `_CachedRange` and uses cached
+        # step like scalar. The three routes thus agree within the
+        # `eps(1e8)/0.1 ≈ 5e-8`-relative Float64 floor at this grid offset.
+        @test v_oneshot[1] ≈ v_scalar rtol = 1.0e-7
+        @test v_oneshot[1] ≈ v_persist[1] rtol = 1.0e-7
 
-        # Batch path must agree element-wise
+        # Batch path uses the wrapper-based series oneshot route, so it
+        # matches `v_oneshot` (and not `v_scalar`) bit-for-bit.
         xqs = [1.0e8 + 0.95, 1.0e8 + 0.55]
         outs = [similar(xqs) for _ in 1:2]
         linear_interp!(outs, x, s, xqs; bc = bc)
-        @test outs[1][1] === v_scalar
+        @test outs[1][1] === v_oneshot[1]
+        # Interior cell (xqs[2]) — no seam, no cancellation — bit-equal across routes.
         @test outs[1][2] === linear_interp(x, y1, xqs[2]; bc = bc)
     end
 

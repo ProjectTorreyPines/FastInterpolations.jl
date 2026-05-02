@@ -598,15 +598,13 @@
         end
 
         @testset "Range and Vector grids agree at seam with off-bit-equal period" begin
-            # An explicit period that passes the Range tolerance but is not
-            # exactly `step(x) * length(x)` makes `bc.h_n` differ from `step`.
-            # The cubic solver bakes `bc.h_n` into the periodic system; eval
-            # must use the same width at the seam cell. Vector grids already
-            # do (VectorSpacing has only n-1 interior cells, so the seam idx
-            # falls through to `bc.h_n`); Range grids store a uniform
-            # `ScalarSpacing` and previously returned `step` at every idx,
-            # producing a width mismatch with the solver. Pin Range vs Vector
-            # equivalence at seam queries.
+            # An explicit period that passes the Range tolerance (`sqrt(eps)`,
+            # ~1.5e-8) but isn't exactly `step(x) * length(x)`. Both Range and
+            # Vector grids compute the seam cell width from `period - span`
+            # (where Range uses `step*(n-1)` and Vector uses
+            # `inner[end] - inner[1]`); these formulas are numerically
+            # identical at small grid offsets, so Range and Vector agree to
+            # near-ULP at the seam.
             r = range(0.0, step = 0.1, length = 10)
             v = collect(r)                        # same grid, Vector form
             y = sin.(2π .* v)

@@ -23,8 +23,8 @@
             @test g[i] == x[i]
         end
 
-        # i = n+1 raises BoundsError from inner (no virtual access via `[]`).
-        @test_throws BoundsError g[5]
+        # i = n+1 returns the virtual seam coord `inner[1] + period` via cyclic Base.getindex.
+        @test g[5] == g[1] + g.period
     end
 
     @testset "_CachedVector inner" begin

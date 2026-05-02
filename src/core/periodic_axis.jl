@@ -166,6 +166,20 @@ Base.IndexStyle(::Type{<:_ExclusivePeriodicAxis}) = IndexLinear()
 @inline _data_length(g::_ExclusivePeriodicAxis) = length(g.inner)
 
 # ========================================
+# `_raw`: strip wrapping for branch-free hot loops
+# ========================================
+#
+# Hot inner loops that index strictly within `1:length(_raw(x))` should
+# unwrap once via `xi = _raw(x)` and use `xi[i]` / `_get_inv_h(xi, i)`,
+# avoiding the wrapper's per-call cyclic-vs-seam branch. Indices that
+# touch the seam (`> length(_raw(x))`) MUST go through the wrapper.
+#
+# Plain vectors / ranges / `_CachedRange` / `_CachedVector` are already raw
+# — `_raw(x) === x`, zero overhead. Wrapper overloads expose `.inner`.
+@inline _raw(x::AbstractVector) = x
+@inline _raw(g::_ExclusivePeriodicAxis) = g.inner
+
+# ========================================
 # Helpers: virtual access + ND fold-back
 # ========================================
 #

@@ -119,7 +119,7 @@ function _build_periodic_cache(x::AbstractVector{T}, bc::PeriodicBC) where {T}
 
     n >= 3 || throw(ArgumentError("Periodic spline requires at least 3 cells (length(x) >= 4 for inclusive, >= 3 for exclusive)"))
 
-    h_n = _get_h(cache_x, n)   # seam (exclusive) or last real cell (inclusive)
+    h_n = _get_h(cache_x, n)   # seam (exclusive) or last real cell (inclusive) — wrapper-aware
 
     # Build modified tridiagonal matrix A' for Sherman-Morrison.
     # CRITICAL: Use Vector allocation (NOT pool!) for persistent arrays.
@@ -127,18 +127,23 @@ function _build_periodic_cache(x::AbstractVector{T}, bc::PeriodicBC) where {T}
     d_diag = Vector{T}(undef, n)  # becomes inv_d after factorization
     du = Vector{T}(undef, n - 1)
 
-    h_1 = _get_h(cache_x, 1)
+    # All `_get_h(xi, idx)` calls below have `idx ∈ 1..n-1` (interior cells —
+    # never the seam at `idx == n`). Unwrap once so each call is a single
+    # field/array load on the inner type, no per-iter wrapper branch.
+    xi = _raw(cache_x)
+
+    h_1 = _get_h(xi, 1)
     d_diag[1] = h_n + 2 * h_1
 
     @inbounds for i in 2:(n - 1)
-        h_im1 = _get_h(cache_x, i - 1)
-        h_i = _get_h(cache_x, i)
+        h_im1 = _get_h(xi, i - 1)
+        h_i = _get_h(xi, i)
         dl[i - 1] = h_im1
         d_diag[i] = 2 * (h_im1 + h_i)
         du[i - 1] = h_i
     end
 
-    h_nm1 = _get_h(cache_x, n - 1)
+    h_nm1 = _get_h(xi, n - 1)
     dl[n - 1] = h_nm1
     d_diag[n] = 2 * h_nm1 + h_n
 
@@ -347,13 +352,19 @@ Interior rows (2 .. n-1) reference only real (non-seam) cells.
     ) where {Tg}
     n = length(y) - 1   # n_cells (uniform)
 
+    # Seam-touching endpoint rows go through the wrapper for cyclic indexing
+    # (`y[n+1]` = y[1]) and seam-cell width (`_get_inv_h(x, n)`).
     @inbounds d[1] = 6 * (y[2] - y[1]) * _get_inv_h(x, 1) - 6 * (y[1] - y[n]) * _get_inv_h(x, n)
-
-    @inbounds for i in 2:(n - 1)
-        d[i] = 6 * (y[i + 1] - y[i]) * _get_inv_h(x, i) - 6 * (y[i] - y[i - 1]) * _get_inv_h(x, i - 1)
-    end
-
     @inbounds d[n] = 6 * (y[n + 1] - y[n]) * _get_inv_h(x, n) - 6 * (y[n] - y[n - 1]) * _get_inv_h(x, n - 1)
+
+    # Interior rows: i ∈ 2..n-1 → all `xi`/`yi` indices land in `1..n`, which
+    # is `≤ length(_raw(x))` (= `length(_raw(y))` = n). Unwrap once and run a
+    # branch-free hot loop. `_raw` is identity for plain types.
+    xi = _raw(x)
+    yi = _raw(y)
+    @inbounds for i in 2:(n - 1)
+        d[i] = 6 * (yi[i + 1] - yi[i]) * _get_inv_h(xi, i) - 6 * (yi[i] - yi[i - 1]) * _get_inv_h(xi, i - 1)
+    end
 
     return nothing
 end

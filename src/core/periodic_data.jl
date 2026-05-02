@@ -87,6 +87,12 @@ end
 @inline Base.first(c::_ExclusivePeriodicData{Tv, 1}) where {Tv} = @inbounds c.inner[1]
 @inline Base.last(c::_ExclusivePeriodicData{Tv, 1}) where {Tv} = @inbounds c.inner[1]
 
+# ---------- `_raw`: strip wrapping for branch-free hot loops ----------
+# See `core/periodic_axis.jl` for the rationale and contract. Caller must
+# stay within `1:length(_raw(c))` — the virtual seam slot (`length(c)`)
+# MUST go through the wrapper's cyclic `Base.getindex`.
+@inline _raw(c::_ExclusivePeriodicData) = c.inner
+
 # ---------- `_convert_copy` overload ----------
 # When the constructor calls `_convert_copy(y, Tv)` and `y` is already a
 # `_ExclusivePeriodicData`, copy the inner vector so mutations don't leak

@@ -1,6 +1,7 @@
 @testitem "PeriodicBC Exclusive Endpoint" setup = [AllocConstants] begin
     using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
-        _resolve_exclusive_period,
+        _resolve_exclusive_period, _resolve_axis, _caching_axis,
+        _ExclusivePeriodicAxis,
         _can_infer_period, _is_periodic_bc, endpoint
 
     # ========================================
@@ -77,10 +78,14 @@
             @test period ≈ 1.0
         end
 
-        @testset "Range grid with conflicting period → error" begin
+        @testset "Range grid with conflicting period → error at wrapper construction" begin
+            # Cross-validation moved from `_resolve_exclusive_period` (hot-path) to
+            # `_ExclusivePeriodicAxis` constructor (one-time at wrap). The resolver
+            # now trusts user `bc.period`; the wrapper rejects mismatches.
             x = range(0.0, step = 0.1, length = 10)
             bc = PeriodicBC(endpoint = :exclusive, period = 2.0)  # doesn't match 0.1*10=1.0
-            @test_throws ArgumentError _resolve_exclusive_period(x, bc)
+            @test_throws ArgumentError _caching_axis(x, bc, Float64)
+            @test_throws ArgumentError _resolve_axis(x, bc)
         end
 
         @testset "Vector grid requires explicit period" begin
@@ -98,17 +103,18 @@
             @test _can_infer_period([0.0, 1.0, 2.0]) == false
         end
 
-        @testset "Mixed-precision period correctly rejected" begin
-            # Float32 period on Float64 Range: isapprox with Float32's generous rtol
-            # (~3e-4) would accept Float32(1.0002) ≈ 1.0, but grid-precision comparison
-            # correctly rejects it.
+        @testset "Mixed-precision period correctly rejected at wrapper construction" begin
+            # Float32 period on Float64 Range: validation in `_ExclusivePeriodicAxis`
+            # constructor uses grid precision (Tg) so Float32(1.0002) is correctly
+            # rejected against the Float64 inferred period (1.0).
             x = range(0.0, step = 0.1, length = 10)  # Float64, inferred period=1.0
             bc = PeriodicBC(endpoint = :exclusive, period = Float32(1.0002))
-            @test_throws ArgumentError _resolve_exclusive_period(x, bc)
+            @test_throws ArgumentError _caching_axis(x, bc, Float64)
 
             # Float32 period that genuinely matches → accepted
             bc_ok = PeriodicBC(endpoint = :exclusive, period = Float32(1.0))
             @test _resolve_exclusive_period(x, bc_ok) == Float32(1.0)
+            @test _caching_axis(x, bc_ok, Float64) isa _ExclusivePeriodicAxis
         end
     end
 
@@ -681,7 +687,8 @@ end
 
 @testitem "PeriodicBC Exclusive Endpoint — ND" begin
     using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
-        _resolve_exclusive_period,
+        _resolve_exclusive_period, _resolve_axis, _caching_axis,
+        _ExclusivePeriodicAxis,
         _can_infer_period, _is_periodic_bc, endpoint
 
     # ========================================

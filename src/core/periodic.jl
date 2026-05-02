@@ -312,38 +312,23 @@ function _resolve_exclusive_period(x, bc::PeriodicBC)
     # false, and erroneously raise on Vector-inner wrappers.
     x isa _ExclusivePeriodicAxis && return x.period
 
-    inferred = _can_infer_period(x) ? step(x) * length(x) : nothing
-
-    if bc.period !== nothing
-        # User provided period — cross-validate against Range inference.
-        # Compare in grid precision (Tg) to avoid mixed-type ≈ using Float32's
-        # generous rtol (~3e-4) when a Float32 period is given on a Float64 grid.
-        # Duck-safe promotion: Integer/Rational grids lack a meaningful `eps`,
-        # so lift to `float(Tg)` for the tolerance math. Duck grids (Dual,
-        # Measurement, ...) keep their own eltype and use their own `eps`.
-        Tg_raw = eltype(x)
-        Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
-        if inferred !== nothing && !isapprox(Tg(bc.period), Tg(inferred); rtol = sqrt(eps(Tg)))
-            x0 = first(x); x1 = x0 + inferred
-            throw(
-                ArgumentError(
-                    "PeriodicBC's period=$(bc.period) conflicts with Range-inferred period = $x1 - $x0 = $inferred. " *
-                        "Either adjust `period` or omit it for auto-inference."
-                )
-            )
-        end
-        return bc.period
-    end
+    # User-provided period: trust it. Cross-validation against Range-inferred
+    # `step(x) * length(x)` is performed once at `_ExclusivePeriodicAxis`
+    # construction (see `_validate_exclusive_period` in periodic_axis.jl) — no
+    # per-call validation tax in hot resolve paths (oneshot / search).
+    bc.period !== nothing && return bc.period
 
     # No user period — must infer from Range
-    inferred !== nothing || throw(
-        ArgumentError(
-            "PeriodicBC(endpoint=:exclusive) requires `period` for non-uniform grids. " *
-                "Use PeriodicBC(endpoint=:exclusive, period=T)."
-        )
-    )
-    return inferred
+    _can_infer_period(x) || _throw_exclusive_period_required()
+    return step(x) * length(x)
 end
+
+@noinline _throw_exclusive_period_required() = throw(
+    ArgumentError(
+        "PeriodicBC(endpoint=:exclusive) requires `period` for non-uniform grids. " *
+            "Use PeriodicBC(endpoint=:exclusive, period=T)."
+    )
+)
 
 """
     _with_resolved_period(bc::PeriodicBC, period) -> PeriodicBC
@@ -365,6 +350,13 @@ Preserves Range type for Range inputs (step consistency guaranteed by `_resolve_
 """
 function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     period = _resolve_exclusive_period(x, bc)
+    # Cross-validate user-supplied period against Range-inferred (Range only;
+    # Vector trust). Mirrors the validation done in `_ExclusivePeriodicAxis`
+    # constructor for the wrapper-using paths (linear/constant). Cubic's
+    # extension-based path doesn't construct a wrapper, so we explicitly
+    # invoke the same check here so `bc.period` mismatches are caught
+    # uniformly across all method families.
+    _validate_exclusive_period(x, period)
     # Duck-safe grid promotion. `_PromotableValue` (Integer / AbstractFloat /
     # Rational / Complex) is promoted via `float(...)` so Int-typed Ranges can
     # form a valid `_CachedRange{Float}` (otherwise `inv(step::Int)::Float64`
@@ -376,13 +368,9 @@ function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
     x_end = first(x) + Tg(period)
 
-    # Validate: virtual endpoint must be strictly after last grid point
-    last(x) < x_end || throw(
-        ArgumentError(
-            "period=$period places virtual endpoint at $x_end, " *
-                "not after last grid point x[end]=$(last(x))"
-        )
-    )
+    # Sanity: virtual endpoint must be strictly after last grid point. Catches
+    # a too-small period even when Vector grids skipped the cross-validation.
+    last(x) < x_end || _throw_excl_endpoint_too_small(period, x_end, last(x))
 
     # Type-stable grid extension: isa branch (compile-time narrowing) instead of
     # runtime ≈ check. _resolve_exclusive_period already validates period ≈ step(x)*length(x)
@@ -396,20 +384,23 @@ function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     return x_ext, y_ext
 end
 
+@noinline _throw_excl_endpoint_too_small(period, x_end, last_x) = throw(
+    ArgumentError(
+        "period=$period places virtual endpoint at $x_end, " *
+            "not after last grid point x[end]=$last_x"
+    )
+)
+
 # Matrix overload for CubicSeriesInterpolant
 function _extend_exclusive(x::AbstractVector, y_mat::AbstractMatrix, bc::PeriodicBC)
     period = _resolve_exclusive_period(x, bc)
+    _validate_exclusive_period(x, period)
     # Duck-safe grid promotion — see the Vector overload above for rationale.
     Tg_raw = eltype(x)
     Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
     x_end = first(x) + Tg(period)
 
-    last(x) < x_end || throw(
-        ArgumentError(
-            "period=$period places virtual endpoint at $x_end, " *
-                "not after last grid point x[end]=$(last(x))"
-        )
-    )
+    last(x) < x_end || _throw_excl_endpoint_too_small(period, x_end, last(x))
 
     x_ext = if x isa AbstractRange
         _to_float_adding_endpoint(x, Tg)
@@ -594,6 +585,7 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
     Tg_ext = Tg <: _PromotableValue ? float(Tg) : Tg
     if bc isa PeriodicBC{:exclusive}
         period = _resolve_exclusive_period(x, bc)
+        _validate_exclusive_period(x, period)
         x_end = first(x) + Tg_ext(period)
         last(x) < x_end || _throw_wrap_virtual_endpoint_error(period, x_end, last(x))
         n = length(x)
@@ -728,6 +720,7 @@ end
     processed = map(ntuple(identity, Val(N)), grids, bcs) do d, grid_d, bc_d
         bc_d isa PeriodicBC{:exclusive} || return (grid_d, bc_d)
         period = _resolve_exclusive_period(grid_d, bc_d)
+        _validate_exclusive_period(grid_d, period)
         x_end = first(grid_d) + Tg(period)
         last(grid_d) < x_end ||
             _throw_prepare_periodic_nd_endpoint(d, period, x_end, last(grid_d))

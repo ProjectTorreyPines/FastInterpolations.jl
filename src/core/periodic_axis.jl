@@ -95,6 +95,11 @@ struct _ExclusivePeriodicAxis{Tg, X <: AbstractVector{Tg}, Tp} <: AbstractVector
     function _ExclusivePeriodicAxis{Tg, X, Tp}(inner::X, period::Tp) where {Tg, X <: AbstractVector{Tg}, Tp}
         x_max = @inbounds inner[1] + Tg(period)
         @inbounds inner[end] < x_max || _throw_excl_axis_period_too_small(period, x_max, inner[end])
+        # Cross-validate user period against Range-inferred period (Range inners
+        # only — Vector inners cannot infer). Done once at wrapper construction
+        # so hot-path resolvers (`_resolve_exclusive_period`, `_resolve_bc_period`)
+        # can be trust-mode and pay no per-call validation tax.
+        _validate_exclusive_period(inner, period)
         return new{Tg, X, Tp}(inner, period, x_max)
     end
 end
@@ -103,6 +108,28 @@ end
     ArgumentError(
         "PeriodicBC(:exclusive) period=$period places virtual endpoint at $x_max, " *
             "not after last grid point x[end]=$last_x"
+    )
+)
+
+# No-op for Vector inners (period unverifiable) — caller's responsibility.
+@inline _validate_exclusive_period(::AbstractVector, _) = nothing
+# Range inners: cross-validate against `step × length` (= total period for the
+# n-cell exclusive form). Promotes Integer/Rational grids to float for the
+# tolerance arithmetic; duck grids (Dual / Measurement) keep their own eltype.
+@inline function _validate_exclusive_period(inner::AbstractRange, period)
+    Tg_raw = eltype(inner)
+    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
+    inferred = step(inner) * length(inner)
+    isapprox(Tg(period), Tg(inferred); rtol = sqrt(eps(Tg))) ||
+        _throw_excl_axis_period_mismatch(period, first(inner), inferred)
+    return nothing
+end
+
+@noinline _throw_excl_axis_period_mismatch(period, x0, inferred) = throw(
+    ArgumentError(
+        "PeriodicBC's period=$period conflicts with Range-inferred period = " *
+            "$(x0 + inferred) - $x0 = $inferred. " *
+            "Either adjust `period` or omit it for auto-inference."
     )
 )
 

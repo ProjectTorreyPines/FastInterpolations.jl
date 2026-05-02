@@ -298,15 +298,20 @@ end
 # baked `h_n` for both Range and Vector inners.
 
 # 3-arg `(g, xL, xR)` form for oneshot kernels that already have `xL`/`xR`
-# in registers from search. The wrapper computes `xR - xL` directly rather
-# than delegating to inner: at the seam, `xR == g._x_max` and `xL ==
-# g.inner[n]`, so `xR - xL` is the seam-aware cell width. Delegating to
-# inner's `_CachedRange` 3-arg overload would return cached `step`, which
-# is incorrect at the seam for off-bit explicit periods. The direct form
-# also matches what the AbstractVector fallback computes, keeping the
-# wrapper a thin shim over inner without surprising overrides.
-@inline _get_h(g::_ExclusivePeriodicAxis, xL::Real, xR::Real) = float(xR - xL)
-@inline _get_inv_h(g::_ExclusivePeriodicAxis, xL::Real, xR::Real) = inv(float(xR - xL))
+# in registers from search. Delegate to the inner type so `_CachedRange`
+# inners use the cached `h` field (single field load — matches master's
+# perf for non-wrapped Range grids). For `_CachedVector` / `Vector` inners
+# the inner overload computes `xR - xL` directly, same as the wrapper-level
+# fallback would.
+#
+# Seam correctness: at the seam, `xR == g._x_max == inner[1] + period` and
+# `xL == g.inner[n]`. Delegating to `_get_h(_CachedRange, xL, xR) = x.h`
+# returns the cached `step`. For correctly-supplied periods this equals
+# `xR - xL` exactly (the wrapper constructor's cross-validation enforces
+# `period ≈ step × length`); off-bit periods within `sqrt(eps)` rtol differ
+# by ≤1 ULP — numeric noise, well below kernel precision.
+@inline _get_h(g::_ExclusivePeriodicAxis, xL::Real, xR::Real) = _get_h(g.inner, xL, xR)
+@inline _get_inv_h(g::_ExclusivePeriodicAxis, xL::Real, xR::Real) = _get_inv_h(g.inner, xL, xR)
 
 # `_alpha_of` for the wrapper: defer to inner so `_CachedRange` uses cached
 # `inv_h` (avoids `(R - L)` cancellation in the denominator).

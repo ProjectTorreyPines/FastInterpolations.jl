@@ -136,7 +136,8 @@ end
     dL = xq - xL
     h = _get_h(x, idx)
     inv_h = _get_inv_h(x, idx)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dyL, dyR, h, inv_h, dL)
+    yr = _raw(y)
+    @inbounds return _hermite_kernel_1d(op, yr[idx], yr[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
 @inline function _hermite_eval_at_point(
@@ -161,7 +162,8 @@ end
     dL = xq - xL
     h = _get_h(x, idx)
     inv_h = _get_inv_h(x, idx)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dyL, dyR, h, inv_h, dL)
+    yr = _raw(y)
+    @inbounds return _hermite_kernel_1d(op, yr[idx], yr[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
 @inline function _hermite_eval_at_point(
@@ -181,7 +183,8 @@ end
     dL = xq_wrapped - xL
     h = _get_h(x, idx)
     inv_h = _get_inv_h(x, idx)
-    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dyL, dyR, h, inv_h, dL)
+    yr = _raw(y)
+    @inbounds return _hermite_kernel_1d(op, yr[idx], yr[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
 # Vector loop — generic (slope method)

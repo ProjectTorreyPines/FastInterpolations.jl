@@ -20,26 +20,32 @@ Used for periodic boundary conditions and extrap=WrapExtrap().
 Optimized: skips expensive `mod()` when xi is already in domain.
 """
 @inline function _wrap_to_domain(xi::Tg, x_min::Tg, x_max::Tg) where {Tg}
-    # Single-branch check: outside domain → slow path
-    if (xi < x_min) || (xi >= x_max)
-        period = x_max - x_min
-        return x_min + mod(xi - x_min, period)
+    # Hot path: already in domain — return as-is (no arith). Cold `mod()`
+    # work goes through `@noinline` `_wrap_to_domain_slow` so it doesn't
+    # bloat the caller (every WrapExtrap eval kernel) with mod-related
+    # asm. On constant rng+perEx persistent (3-4 ns baseline, 138 lines
+    # before split), this collapses the eval kernel to ~75 lines.
+    if (xi >= x_min) && (xi < x_max)
+        return xi
     end
-    # Fast path: already in domain (most common case)
-    return xi
+    return _wrap_to_domain_slow(xi, x_min, x_max)
 end
 
 # Generic wrapper: handles Dual, Int, Float32 on Float64 grid, etc.
 # IMPORTANT: Preserves AD Dual type through the entire operation.
-# mod() is compatible with ForwardDiff.Dual, so we use it directly on xi.
+# Same hot/cold split as the AbstractFloat overload above.
 @inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg}
     xi_primal = _extract_primal(xi)
     # Fast path: already in domain, return original xi (preserves Dual type for AD)
     if (xi_primal >= x_min) && (xi_primal < x_max)
         return xi
     end
-    # Slow path: outside domain, wrap using mod (preserves Dual type for AD)
-    # mod() works correctly with ForwardDiff.Dual: d/dx[mod(x,p)] = 1
+    return _wrap_to_domain_slow(xi, x_min, x_max)
+end
+
+# Cold path — `mod()` work hoisted out of the inlined hot path.
+# `mod()` works correctly with `ForwardDiff.Dual`: d/dx[mod(x,p)] = 1.
+@noinline function _wrap_to_domain_slow(xi, x_min, x_max)
     period = x_max - x_min
     return x_min + mod(xi - x_min, period)
 end
@@ -60,6 +66,8 @@ end
 # the operand always comes first; axis bounds (or extracted bounds) follow.
 @inline _wrap_to_domain(xq, x::AbstractVector) =
     _wrap_to_domain(xq, first(x), last(x))
+# Wrapper-specific overload lives in `periodic_axis.jl` where
+# `_ExclusivePeriodicAxis` is defined.
 
 # ========================================
 # Endpoint Validation

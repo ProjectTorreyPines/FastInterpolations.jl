@@ -297,6 +297,17 @@ end
 # carries an off-bit offset; the seam width matches the cubic solver's
 # baked `h_n` for both Range and Vector inners.
 
+# `_wrap_to_domain` wrapper-specific overload — bypass the `first(x)` /
+# `last(x)` method dispatch chain that the generic `(::AbstractVector)` form
+# in periodic.jl goes through. Saves one method-call layer in WrapExtrap eval
+# kernels, which matters on the constant rng+perEx persistent path where the
+# baseline is only 3-4 ns.
+#   - `g.inner[1]` instead of `first(g)` → `inner.lo` directly (no Base.first
+#     dispatch through wrapper → inner getindex chain).
+#   - `g._x_max` → cached field, single load.
+@inline _wrap_to_domain(xq, g::_ExclusivePeriodicAxis) =
+    _wrap_to_domain(xq, @inbounds(g.inner[1]), g._x_max)
+
 # 3-arg `(g, xL, xR)` form for oneshot kernels that already have `xL`/`xR`
 # in registers from search. Delegate to the inner type so `_CachedRange`
 # inners use the cached `h` field (single field load — matches master's

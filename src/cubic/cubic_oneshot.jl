@@ -42,11 +42,11 @@ Thread-safe: workspaces allocated from task-local pool.
 
     Tz = _output_eltype(Tv, eltype(cache.x))
     z = acquire!(pool, Tz, length(y))
-    _solve_system!(z, cache, y, cache.bc_config)
+    _solve_system!(z, cache, y, cache.bc)
 
     searcher = _resolve_search(cache.x, x_query, search, nothing)
     # Upgrade WrapExtrap{Nothing} → WrapExtrap{T} against the cache grid.
-    extrap_eff = _resolve_extrap(extrap, cache.x)
+    extrap_eff = _resolve_extrap(extrap, cache.bc, cache.x)
     _cubic_vector_loop!(output, cache, y, z, x_query, extrap_eff, deriv, searcher)
 
     return output
@@ -94,7 +94,7 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
 
     # Upgrade WrapExtrap{Nothing} to the typed form so the kernel never sees the
     # zero-arg placeholder. Non-Wrap extraps pass through.
-    extrap_eff = _resolve_extrap(extrap, cache.x)
+    extrap_eff = _resolve_extrap(extrap, cache.bc, cache.x)
     _cubic_vector_loop!(output, cache, y, z, x_query, extrap_eff, op, searcher)
 
     return output
@@ -125,9 +125,9 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     _solve_system!(tmp_z, cache, y, bc)
 
     # Upgrade WrapExtrap{Nothing} to typed WrapExtrap against the cache grid.
-    extrap_eff = _resolve_extrap(extrap, cache.x)
+    extrap_eff = _resolve_extrap(extrap, cache.bc, cache.x)
     _check_domain(cache.x, xq, extrap_eff)
-    return _eval_with_bc(cache, y, tmp_z, xq, extrap_eff, op, searcher)
+    return _eval_cubic_at_point(cache.x, y, tmp_z, xq, extrap_eff, op, searcher)
 end
 
 """
@@ -139,7 +139,7 @@ system on the user's grid as-is.
 - `:inclusive` input (`length(x) = n+1`, `y[1] ≈ y[end]`): solver consumes the
   full closed-cycle grid; eval kernel may read `z[n+1]` (mirrored to `z[1]`).
 - `:exclusive` input (`length(x) = n`, virtual seam): solver uses the n-cell
-  cycle directly; the seam-cell width is held in `cache.bc_config.h_n`. No
+  cycle directly; the seam-cell width is held in `cache.bc.h_n`. No
   grid extension or memcpy — `_resolve_search`'s seam dispatch handles
   eval-time wrap (`q ≥ x[n] → idx_R = 1, xR = x[1] + period`).
 
@@ -163,14 +163,16 @@ lifetime). `y_eff` returned for caller convenience — same object as `y`
     # constraint — virtual seam is constructed from `bc.period`).
     _check_periodic_endpoints(bc, y)
 
-    # Build cache on the user's grid (BC-aware: `:inclusive` length n+1 OR
-    # `:exclusive` length n). Zero-copy — no `_periodic_extend_1d_pooled!`.
+    # Build cache on the user's grid (BC-aware: `:inclusive` user length n+1 OR
+    # `:exclusive` user length n → wrapped axis virtual n+1). Zero-copy.
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
+    # For `:exclusive`, wrap y to virtual length n+1 (matches `length(cache.x)`).
+    y_eff = _resolve_data(y, bc)
     Tz = _output_eltype(Tv, eltype(cache.x))
-    z = acquire!(pool, Tz, length(y))
-    _solve_system!(z, cache, y, cache.bc_config)
+    z = acquire!(pool, Tz, length(cache.x))
+    _solve_system!(z, cache, y_eff, cache.bc)
 
-    return cache, y, z
+    return cache, y_eff, z
 end
 
 """
@@ -217,7 +219,7 @@ Pool-based exclusive extension: zero-alloc after warmup.
 
     # Periodic `_eval_with_bc` dispatch ignores the extrap arg — singleton suffices.
     _check_domain(cache.x, xq, WrapExtrap())
-    return _eval_with_bc(cache, y_p, z, xq, WrapExtrap(), op, searcher)
+    return _eval_cubic_at_point(cache.x, y_p, z, xq, WrapExtrap(), op, searcher)
 end
 
 """

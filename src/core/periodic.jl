@@ -20,56 +20,54 @@ Used for periodic boundary conditions and extrap=WrapExtrap().
 Optimized: skips expensive `mod()` when xi is already in domain.
 """
 @inline function _wrap_to_domain(xi::Tg, x_min::Tg, x_max::Tg) where {Tg}
-    # Single-branch check: outside domain → slow path
-    if (xi < x_min) || (xi >= x_max)
-        period = x_max - x_min
-        return x_min + mod(xi - x_min, period)
+    # Hot path: already in domain — return as-is (no arith). Cold `mod()`
+    # work goes through `@noinline` `_wrap_to_domain_slow` so it doesn't
+    # bloat the caller (every WrapExtrap eval kernel) with mod-related
+    # asm. On constant rng+perEx persistent (3-4 ns baseline, 138 lines
+    # before split), this collapses the eval kernel to ~75 lines.
+    if (xi >= x_min) && (xi < x_max)
+        return xi
     end
-    # Fast path: already in domain (most common case)
-    return xi
+    return _wrap_to_domain_slow(xi, x_min, x_max)
 end
 
 # Generic wrapper: handles Dual, Int, Float32 on Float64 grid, etc.
 # IMPORTANT: Preserves AD Dual type through the entire operation.
-# mod() is compatible with ForwardDiff.Dual, so we use it directly on xi.
+# Same hot/cold split as the AbstractFloat overload above.
 @inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg}
     xi_primal = _extract_primal(xi)
     # Fast path: already in domain, return original xi (preserves Dual type for AD)
     if (xi_primal >= x_min) && (xi_primal < x_max)
         return xi
     end
-    # Slow path: outside domain, wrap using mod (preserves Dual type for AD)
-    # mod() works correctly with ForwardDiff.Dual: d/dx[mod(x,p)] = 1
+    return _wrap_to_domain_slow(xi, x_min, x_max)
+end
+
+# Cold path — `mod()` work hoisted out of the inlined hot path.
+# `mod()` works correctly with `ForwardDiff.Dual`: d/dx[mod(x,p)] = 1.
+@noinline function _wrap_to_domain_slow(xi, x_min, x_max)
     period = x_max - x_min
     return x_min + mod(xi - x_min, period)
 end
 
 # ────────────────────────────────────────────────────────
-# Extrap-aware 2-arg wrapper
+# Axis-aware 2-arg wrapper (axis as single source of truth)
 # ────────────────────────────────────────────────────────
 #
-# Kernels hand off the materialized `WrapExtrap{T}` directly — no phantom
-# `first(x)`, `last(x)` arguments needed. `_resolve_extrap` is responsible for
-# materializing any `WrapExtrap{Nothing}` build-time placeholder into
-# `WrapExtrap{T}` before evaluation. An unmaterialized one reaching this
-# wrapper is a contract violation — the explicit `::WrapExtrap{Nothing}`
-# overload below raises a clear error instead of letting `nothing - nothing`
-# fail cryptically one layer down.
-
-@inline _wrap_to_domain(xi, e::WrapExtrap) =
-    _wrap_to_domain(xi, e._x_min, e._x_max)
-
-@inline _wrap_to_domain(::Any, ::WrapExtrap{Nothing}) =
-    _throw_unmaterialized_wrap_extrap()
-
-@noinline _throw_unmaterialized_wrap_extrap() =
-    throw(
-    ArgumentError(
-        "WrapExtrap reached evaluator unmaterialized (WrapExtrap{Nothing}). " *
-            "This is a contract violation — `_resolve_extrap` should have " *
-            "upgraded it to WrapExtrap{T} at the API boundary."
-    )
-)
+# After the surface-API axis resolution (`_resolve_axis` / `_caching_axis`),
+# every supported axis exposes `first/last` matching the canonical wrap
+# domain — including `_ExclusivePeriodicAxis`, whose `last` reports the
+# virtual endpoint `inner[1] + period`. With `WrapExtrap` reduced to a tag
+# struct (no `_x_min/_x_max` fields), the axis IS the wrap-domain context —
+# no extrap parameter needed for this helper. Callers know they want to
+# wrap because they're inside a `WrapExtrap`-dispatched eval branch.
+#
+# Arg order `(xq, x)`: matches the 3-arg primitive `(xq, x_min, x_max)` —
+# the operand always comes first; axis bounds (or extracted bounds) follow.
+@inline _wrap_to_domain(xq, x::AbstractVector) =
+    _wrap_to_domain(xq, first(x), last(x))
+# Wrapper-specific overload lives in `periodic_axis.jl` where
+# `_ExclusivePeriodicAxis` is defined.
 
 # ========================================
 # Endpoint Validation
@@ -315,38 +313,30 @@ Resolve the period for exclusive endpoint PeriodicBC:
 - If `bc.period` is nothing, infer from Range or error for non-uniform grids.
 """
 function _resolve_exclusive_period(x, bc::PeriodicBC)
-    inferred = _can_infer_period(x) ? step(x) * length(x) : nothing
+    # Wrapped axes already carry the resolved period — no re-resolution needed.
+    # Without this, downstream callers that wrap once (oneshot surface) and then
+    # invoke periodic slope helpers would re-enter `_resolve_exclusive_period`
+    # on the wrapper, where `_can_infer_period(::_ExclusivePeriodicAxis)` is
+    # false, and erroneously raise on Vector-inner wrappers.
+    x isa _ExclusivePeriodicAxis && return x.period
 
-    if bc.period !== nothing
-        # User provided period — cross-validate against Range inference.
-        # Compare in grid precision (Tg) to avoid mixed-type ≈ using Float32's
-        # generous rtol (~3e-4) when a Float32 period is given on a Float64 grid.
-        # Duck-safe promotion: Integer/Rational grids lack a meaningful `eps`,
-        # so lift to `float(Tg)` for the tolerance math. Duck grids (Dual,
-        # Measurement, ...) keep their own eltype and use their own `eps`.
-        Tg_raw = eltype(x)
-        Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
-        if inferred !== nothing && !isapprox(Tg(bc.period), Tg(inferred); rtol = sqrt(eps(Tg)))
-            x0 = first(x); x1 = x0 + inferred
-            throw(
-                ArgumentError(
-                    "PeriodicBC's period=$(bc.period) conflicts with Range-inferred period = $x1 - $x0 = $inferred. " *
-                        "Either adjust `period` or omit it for auto-inference."
-                )
-            )
-        end
-        return bc.period
-    end
+    # User-provided period: trust it. Cross-validation against Range-inferred
+    # `step(x) * length(x)` is performed once at `_ExclusivePeriodicAxis`
+    # construction (see `_validate_exclusive_period` in periodic_axis.jl) — no
+    # per-call validation tax in hot resolve paths (oneshot / search).
+    bc.period !== nothing && return bc.period
 
     # No user period — must infer from Range
-    inferred !== nothing || throw(
-        ArgumentError(
-            "PeriodicBC(endpoint=:exclusive) requires `period` for non-uniform grids. " *
-                "Use PeriodicBC(endpoint=:exclusive, period=T)."
-        )
-    )
-    return inferred
+    _can_infer_period(x) || _throw_exclusive_period_required()
+    return step(x) * length(x)
 end
+
+@noinline _throw_exclusive_period_required() = throw(
+    ArgumentError(
+        "PeriodicBC(endpoint=:exclusive) requires `period` for non-uniform grids. " *
+            "Use PeriodicBC(endpoint=:exclusive, period=T)."
+    )
+)
 
 """
     _with_resolved_period(bc::PeriodicBC, period) -> PeriodicBC
@@ -368,6 +358,13 @@ Preserves Range type for Range inputs (step consistency guaranteed by `_resolve_
 """
 function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     period = _resolve_exclusive_period(x, bc)
+    # Cross-validate user-supplied period against Range-inferred (Range only;
+    # Vector trust). Mirrors the validation done in `_ExclusivePeriodicAxis`
+    # constructor for the wrapper-using paths (linear/constant). Cubic's
+    # extension-based path doesn't construct a wrapper, so we explicitly
+    # invoke the same check here so `bc.period` mismatches are caught
+    # uniformly across all method families.
+    _validate_exclusive_period(x, period)
     # Duck-safe grid promotion. `_PromotableValue` (Integer / AbstractFloat /
     # Rational / Complex) is promoted via `float(...)` so Int-typed Ranges can
     # form a valid `_CachedRange{Float}` (otherwise `inv(step::Int)::Float64`
@@ -379,13 +376,9 @@ function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
     x_end = first(x) + Tg(period)
 
-    # Validate: virtual endpoint must be strictly after last grid point
-    last(x) < x_end || throw(
-        ArgumentError(
-            "period=$period places virtual endpoint at $x_end, " *
-                "not after last grid point x[end]=$(last(x))"
-        )
-    )
+    # Sanity: virtual endpoint must be strictly after last grid point. Catches
+    # a too-small period even when Vector grids skipped the cross-validation.
+    last(x) < x_end || _throw_excl_endpoint_too_small(period, x_end, last(x))
 
     # Type-stable grid extension: isa branch (compile-time narrowing) instead of
     # runtime ≈ check. _resolve_exclusive_period already validates period ≈ step(x)*length(x)
@@ -399,20 +392,23 @@ function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     return x_ext, y_ext
 end
 
+@noinline _throw_excl_endpoint_too_small(period, x_end, last_x) = throw(
+    ArgumentError(
+        "period=$period places virtual endpoint at $x_end, " *
+            "not after last grid point x[end]=$last_x"
+    )
+)
+
 # Matrix overload for CubicSeriesInterpolant
 function _extend_exclusive(x::AbstractVector, y_mat::AbstractMatrix, bc::PeriodicBC)
     period = _resolve_exclusive_period(x, bc)
+    _validate_exclusive_period(x, period)
     # Duck-safe grid promotion — see the Vector overload above for rationale.
     Tg_raw = eltype(x)
     Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
     x_end = first(x) + Tg(period)
 
-    last(x) < x_end || throw(
-        ArgumentError(
-            "period=$period places virtual endpoint at $x_end, " *
-                "not after last grid point x[end]=$(last(x))"
-        )
-    )
+    last(x) < x_end || _throw_excl_endpoint_too_small(period, x_end, last(x))
 
     x_ext = if x isa AbstractRange
         _to_float_adding_endpoint(x, Tg)
@@ -427,74 +423,16 @@ end
 _extend_values(y::AbstractVector) = vcat(y, first(y))
 
 # ========================================
-# BC-Aware WrapExtrap Constructors
+# WrapExtrap is a tag struct (eval_ops.jl)
 # ========================================
 #
-# Constructor layering that replaces the old `_resolve_periodic_extrap` BC-factory
-# family. Depends on bc_types.jl (AbstractBC / PeriodicBC), so these live in
-# periodic.jl rather than eval_ops.jl (where the struct is declared).
-#
-# - `WrapExtrap(x, ::AbstractBC)` → delegate to `WrapExtrap(x)`. Covers NoBC,
-#   PeriodicBC{:inclusive}, CubicFit, QuadraticFit, and any future BC — the grid
-#   span already IS the wrap domain (inclusive) or BC is irrelevant to wrapping
-#   (non-periodic).
-# - `WrapExtrap(x, ::PeriodicBC{:exclusive, <:Real})` → `[first(x), first(x)+period)`,
-#   since `x` has NOT been extended at zero-copy oneshot call sites.
-# - `WrapExtrap(x::AbstractRange, ::PeriodicBC{:exclusive, Nothing})` → infer
-#   period from `step(x) * length(x)`.
-# - Non-Range + Nothing period → error.
-
-@inline WrapExtrap(x::AbstractVector, ::AbstractBC) = WrapExtrap(x)
-
-@inline function WrapExtrap(x::AbstractVector, bc::PeriodicBC{:exclusive, <:Real})
-    x_min = first(x)
-    # `_resolve_exclusive_period` returns the user's period as-is; cast to
-    # grid float to keep wrap arithmetic in grid precision. Without this a
-    # `Float64` literal period on a `Float32` grid silently produces a
-    # `WrapExtrap{Float64}`, polluting downstream anchors/weights (codex P2 #1).
-    # Mirrors `_resolve_seam_period` in hermite_periodic_slopes.jl.
-    period_raw = _resolve_exclusive_period(x, bc)
-    Tg_raw = eltype(x)
-    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
-    period = Tg(period_raw)
-    x_max = x_min + period
-    # Virtual endpoint must lie strictly beyond the last grid point so the seam
-    # cell [x[end], x_min+period] is non-empty and the grid covers at most one
-    # period. Matches the contract formerly in `_periodic_extend_1d_pooled!`.
-    last(x) < x_max || _throw_wrap_virtual_endpoint_error(period, x_max, last(x))
-    T = typeof(x_max)
-    return WrapExtrap{T}(T(x_min), T(x_max))
-end
-
-@inline function WrapExtrap(x::AbstractRange, ::PeriodicBC{:exclusive, Nothing})
-    Tg_raw = eltype(x)
-    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
-    period = Tg(step(x)) * length(x)
-    x_min = Tg(first(x))
-    return WrapExtrap{Tg}(x_min, x_min + period)
-end
-
-WrapExtrap(::AbstractVector, ::PeriodicBC{:exclusive, Nothing}) =
-    _throw_wrap_nonrange_period_error()
-
-# Error helpers — `@noinline` keeps the `ArgumentError` formatting out of the
-# happy-path inlined body (cold-path I-cache friendly). Mirrors the existing
-# `_throw_periodic_*` pattern earlier in this file.
-@noinline function _throw_wrap_virtual_endpoint_error(period, x_max, last_x)
-    throw(
-        ArgumentError(
-            "period=$period places virtual endpoint at $x_max, " *
-                "not after last grid point x[end]=$last_x"
-        )
-    )
-end
-
-@noinline _throw_wrap_nonrange_period_error() =
-    throw(
-    ArgumentError(
-        "PeriodicBC(:exclusive) requires explicit `period` for non-Range grid"
-    )
-)
+# After the surface-API axis resolution (`_resolve_axis` / `_caching_axis`),
+# every supported axis exposes `first/last` matching the canonical wrap
+# domain — including `_ExclusivePeriodicAxis`, whose `last` reports the
+# precomputed virtual endpoint. Eval kernels read those bounds directly
+# from the axis via `_wrap_to_domain(xq, x, ::WrapExtrap)`. No BC-aware
+# `WrapExtrap` constructors, no `WrapExtrap{Nothing}` materialization, no
+# duplicated `_x_min/_x_max` fields.
 
 # ========================================
 # Extrap Resolution (_resolve_extrap)
@@ -508,45 +446,36 @@ end
 #   (extrap, x)                          — grid-only; upgrade {Nothing} or passthrough
 #   (extrap, bc, x)                      — BC-aware; PeriodicBC forces WrapExtrap
 #
-# 1D bundled: validate + materialize
+# `WrapExtrap` is a tag struct — no `{Nothing}` placeholder, no materialization.
+# The axis carries the canonical wrap domain via `first/last` after the
+# surface-API axis resolution.
+#
+# 1D entries (per-axis):
+#   (extrap, x)                          — passthrough + FillExtrap promote (no Tv → identity)
+#   (extrap, bc, x)                      — BC-aware: PeriodicBC forces WrapExtrap, otherwise passthrough
+#   (extrap, x, Tv)                      — FillExtrap promote (eltype → Tv)
+#
+# 1D bundled: validate + dispatch
 #   (extrap, bc, x, y)                   — `:inclusive` endpoint check + primitive
 #
-# ND: expand + promote + per-axis materialize (1-line for pre-extension / adjoints)
-#   (extrap, bcs, grids, Val(N), Tv)     — with BCs → per-axis 3-arg primitive
-#   (extrap, ::Nothing, grids, Val(N), Tv) — no BCs → per-axis 2-arg primitive
-#
-# ND expand-only (no materialize — post-extension 2-step callers):
-#   (extrap, bcs, Val(N), Tv)            — same shape as old `_resolve_extrap_nd`
-#
-# ND bundled (oneshot): slice validation + materialize
+# ND bundled (oneshot): slice validation + per-axis materialize
 #   (extraps, bcs, grids, data, Val(N))  — zero-copy ND oneshot entry
-#
-# Kernels only ever see fully-materialized `WrapExtrap{T}`; the `{Nothing}`
-# variant is a build-time-only placeholder that never reaches query paths.
 
-# ── Primitive: 2-arg (no BC info; for Hermite family + non-periodic persistent) ──
-@inline _resolve_extrap(::WrapExtrap{Nothing}, x::AbstractVector) = WrapExtrap(x)
+# ── Primitive: 2-arg (no BC info; non-periodic persistent / Hermite family) ──
 @inline _resolve_extrap(extrap::AbstractExtrap, ::AbstractVector) = extrap
 
-# ── Primitive: 3-arg (grid + value type — composes WrapExtrap upgrade with FillExtrap promote) ──
-# Collapses the common `_resolve_extrap(extrap, x)` + `_promote_extrap(·, Tv)` pair at
-# 1D persistent-interpolant entries. Orthogonal sub-operations:
-#   - `_resolve_extrap(·, x)`      : WrapExtrap{Nothing} → WrapExtrap{T} (grid-span)
-#   - `_promote_extrap(·, Tv)`     : FillExtrap{Int}(v) → FillExtrap{Tv}(convert(Tv, v))
-# Both passthrough for extraps that don't match their respective trigger.
+# ── Primitive: 3-arg (grid + value type — FillExtrap promote on persistent path) ──
+# `_promote_extrap(·, Tv)` only acts on `FillExtrap{Int}(v)` → `FillExtrap{Tv}(convert(Tv, v))`;
+# passthrough for everything else.
 @inline _resolve_extrap(extrap, x::AbstractVector, ::Type{Tv}) where {Tv} =
-    _promote_extrap(_resolve_extrap(extrap, x), Tv)
+    _promote_extrap(extrap, Tv)
 
 # ── Primitive: 3-arg (BC-aware) ──
-# PeriodicBC forces WrapExtrap regardless of user's extrap. The explicit
-# `WrapExtrap{Nothing}` tiebreaker resolves the ambiguity between the
-# "PeriodicBC forces" rule and the "Nothing upgrade" rule when both match.
-@inline _resolve_extrap(::WrapExtrap{Nothing}, bc::PeriodicBC, x::AbstractVector) = WrapExtrap(x, bc)
-@inline _resolve_extrap(::AbstractExtrap, bc::PeriodicBC, x::AbstractVector) = WrapExtrap(x, bc)
-@inline _resolve_extrap(::WrapExtrap{Nothing}, ::AbstractBC, x::AbstractVector) = WrapExtrap(x)
+# PeriodicBC forces WrapExtrap regardless of the user's extrap; otherwise passthrough.
+@inline _resolve_extrap(::AbstractExtrap, ::PeriodicBC, ::AbstractVector) = WrapExtrap()
 @inline _resolve_extrap(extrap::AbstractExtrap, ::AbstractBC, ::AbstractVector) = extrap
 
-# ── 1D Bundled: validate + materialize ──
+# ── 1D Bundled: validate + dispatch ──
 """
     _resolve_extrap(extrap, bc, x, y) -> AbstractExtrap
 
@@ -593,10 +522,23 @@ build flow without branching on `_is_periodic_bc`:
   are extended by one virtual endpoint via `_extend_exclusive` (heap copy
   consistent with existing non-periodic persistent-path copy semantics).
 
-Intended consumers: Linear, Constant, and (future Phase 2/3) PCHIP/Cardinal/
-Akima/Quadratic persistent interpolant constructors. Cubic stays on its
-dedicated `_build_interpolant_periodic` path because its solver branches on
-periodicity, not just on the grid representation.
+!!! note "Legacy retention — wrapper migration in progress"
+    The 1D forward path for **Linear, Constant, Cubic** has been migrated to
+    the zero-copy `_ExclusivePeriodicAxis` / `_ExclusivePeriodicData` wrappers
+    (see `src/core/periodic_axis.jl`, `src/core/periodic_data.jl`). This
+    function is retained because the following call sites still depend on the
+    `(n+1)`-extended `Vector` shape:
+
+    - `pchip_interp_precompute` / `cardinal_interp_precompute` /
+      `akima_interp_precompute` (1D Hermite-family PreCompute oneshot)
+    - `*_interp_precompute` persistent-builder paths for the same families
+    - The entire ND `:exclusive` path via `_prepare_periodic_nd`
+      (LinearInterpolantND / ConstantInterpolantND / CubicInterpolantND /
+      HeteroInterpolantND still carry `spacings::S` and have not been
+      migrated to wrappers)
+
+    Cleanup tracked alongside the ND-struct migration follow-up; once those
+    consumers move to the wrapper protocol, this helper can be removed.
 """
 @inline function _periodic_extend_1d(
         x::AbstractVector,
@@ -609,15 +551,11 @@ periodicity, not just on the grid representation.
         # Endpoint validation is meaningful only for `:inclusive` — `:exclusive`
         # sets `y_ext[end] = y_ext[1]` by construction so the check is trivially true.
         bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_ext)
-        # After extension, `last(x_ext) - first(x_ext) == period`, so the grid-span
-        # `WrapExtrap(x_ext)` already carries the correct wrap domain — no need
-        # for the BC-aware constructor here.
-        return x_ext, y_ext, WrapExtrap(x_ext)
+        # `WrapExtrap` is a tag struct; eval kernels read `(first(x_ext), last(x_ext))`
+        # directly. After extension `last(x_ext) - first(x_ext) == period`.
+        return x_ext, y_ext, WrapExtrap()
     end
-    # Non-periodic: still materialize in case the user passed `WrapExtrap()` (legacy
-    # singleton); `_resolve_extrap` upgrades it to `WrapExtrap(x)` and leaves
-    # other extraps untouched.
-    return x, y, _resolve_extrap(extrap, bc, x)
+    return x, y, extrap
 end
 
 # ────────────────────────────────────────────
@@ -668,6 +606,7 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
     Tg_ext = Tg <: _PromotableValue ? float(Tg) : Tg
     if bc isa PeriodicBC{:exclusive}
         period = _resolve_exclusive_period(x, bc)
+        _validate_exclusive_period(x, period)
         x_end = first(x) + Tg_ext(period)
         last(x) < x_end || _throw_wrap_virtual_endpoint_error(period, x_end, last(x))
         n = length(x)
@@ -802,6 +741,7 @@ end
     processed = map(ntuple(identity, Val(N)), grids, bcs) do d, grid_d, bc_d
         bc_d isa PeriodicBC{:exclusive} || return (grid_d, bc_d)
         period = _resolve_exclusive_period(grid_d, bc_d)
+        _validate_exclusive_period(grid_d, period)
         x_end = first(grid_d) + Tg(period)
         last(grid_d) < x_end ||
             _throw_prepare_periodic_nd_endpoint(d, period, x_end, last(grid_d))

@@ -106,9 +106,9 @@ end
 # satisfied even on degenerate small grids.
 
 @inline _axis_window_pooled(pool, m::AbstractInterpMethod, x::AbstractVector, ix::Int) =
-    _axis_window(m, ix, length(x))
+    _axis_window(m, ix, _data_length(x))
 @inline _axis_window_pooled(pool, m::AbstractLocalHermiteInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
-    _fill_periodic_window!(acquire!(pool, Int, _fixed_window_size(m)), m, ix, length(x))
+    _fill_periodic_window!(acquire!(pool, Int, _fixed_window_size(m)), m, ix, _data_length(x))
 
 @inline _axis_grid_pooled(pool, ::AbstractInterpMethod, x::AbstractVector, w::AbstractVector{Int}, ::Int) =
     view(x, w)
@@ -116,6 +116,9 @@ end
     _fill_periodic_grid!(acquire!(pool, Tg, _fixed_window_size(m)), m, x, ix)
 
 # Pure in-place fill helpers (no pool knowledge).
+# `n` is raw (non-virtual) inner length — callers pass `_data_length(x)` so the
+# `mod1(_, cycle)` index wrap stays correct when `x` is an
+# `_ExclusivePeriodicAxis` whose `length` reports the virtual `n+1`.
 @inline function _fill_periodic_window!(buf::AbstractVector{Int}, m, ix::Int, n::Int)
     fw = length(buf)
     cycle = _wrap_cycle(m.bc, n)
@@ -128,7 +131,10 @@ end
 
 @inline function _fill_periodic_grid!(buf::AbstractVector{Tg}, m, x::AbstractVector{Tg}, ix::Int) where {Tg}
     fw = length(buf)
-    n = length(x)
+    # `_data_length(x)` is the raw inner length — for `_ExclusivePeriodicAxis`
+    # this strips the virtual seam slot so `cycle` and offset arithmetic match
+    # the raw periodic layout.
+    n = _data_length(x)
     bc = m.bc
     cycle = _wrap_cycle(bc, n)
     period = _wrap_period(x, bc)

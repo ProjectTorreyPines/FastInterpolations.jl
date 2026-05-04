@@ -31,6 +31,14 @@
 # Boundary (PeriodicBC): closed-cycle interior formula via abstraction
 
 @inline function _local_slope(sm::PchipSlopes, x::AbstractVector{Tg}, y::AbstractVector{Tv}, i::Int, n::Int) where {Tg, Tv}
+    # Strip wrappers — all internal accesses are guaranteed in [1, n_raw] for
+    # both NoBC and PeriodicBC paths (boundary helpers route via
+    # `_periodic_secant`/`_periodic_cell_width` which special-case the seam
+    # without touching the virtual `n+1` slot). Skips the per-access
+    # `Base.getindex` cyclic branch on `_ExclusivePeriodicAxis`/`_ExclusivePeriodicData`.
+    xr = _raw(x)
+    yr = _raw(y)
+
     # Special case: 2 points. NoBC degenerates to a single linear secant.
     # PeriodicBC must route through the wrap-aware boundary helper because the
     # seam-cell secant is in general distinct (and may have opposite sign)
@@ -38,21 +46,21 @@
     # diverge from the persistent path's wrap-aware result.
     if n == 2
         if sm.bc isa PeriodicBC
-            return _pchip_boundary_slope(x, y, i, n, sm.bc)
+            return _pchip_boundary_slope(xr, yr, i, n, sm.bc)
         end
-        @inbounds return (y[2] - y[1]) / (x[2] - x[1])
+        @inbounds return (yr[2] - yr[1]) / (xr[2] - xr[1])
     end
 
     if i == 1 || i == n
-        return _pchip_boundary_slope(x, y, i, n, sm.bc)
+        return _pchip_boundary_slope(xr, yr, i, n, sm.bc)
     end
 
     # Interior: weighted harmonic mean (Fritsch-Carlson)
     @inbounds begin
-        h_prev = x[i] - x[i - 1]
-        h_curr = x[i + 1] - x[i]
-        δ_prev = (y[i] - y[i - 1]) / h_prev
-        δ_curr = (y[i + 1] - y[i]) / h_curr
+        h_prev = xr[i] - xr[i - 1]
+        h_curr = xr[i + 1] - xr[i]
+        δ_prev = (yr[i] - yr[i - 1]) / h_prev
+        δ_curr = (yr[i + 1] - yr[i]) / h_curr
     end
     if sign(δ_prev) != sign(δ_curr)
         return zero(Tv)
@@ -117,21 +125,26 @@ end
 # Boundary (PeriodicBC): closed-cycle central FD × scale via abstraction
 
 @inline function _local_slope(sm::CardinalSlopes, x::AbstractVector{Tg}, y::AbstractVector{Tv}, i::Int, n::Int) where {Tg, Tv}
+    # See PCHIP `_local_slope` for the `_raw` rationale — same safety
+    # argument applies here (interior accesses i±1 stay in [1, n]; boundary
+    # path delegates to wrap-aware primitives).
+    xr = _raw(x)
+    yr = _raw(y)
     scale = one(Tg) - sm.tension
 
     # Special case: 2 points. PeriodicBC must use wrap-aware central FD so the
     # seam-cell secant is folded in (see PCHIP n=2 note above).
     if n == 2
         if sm.bc isa PeriodicBC
-            return _cardinal_boundary_slope(x, y, i, n, scale, sm.bc)
+            return _cardinal_boundary_slope(xr, yr, i, n, scale, sm.bc)
         end
-        @inbounds return scale * (y[2] - y[1]) / (x[2] - x[1])
+        @inbounds return scale * (yr[2] - yr[1]) / (xr[2] - xr[1])
     end
 
     if i == 1 || i == n
-        return _cardinal_boundary_slope(x, y, i, n, scale, sm.bc)
+        return _cardinal_boundary_slope(xr, yr, i, n, scale, sm.bc)
     end
-    @inbounds return scale * (y[i + 1] - y[i - 1]) / (x[i + 1] - x[i - 1])
+    @inbounds return scale * (yr[i + 1] - yr[i - 1]) / (xr[i + 1] - xr[i - 1])
 end
 
 @inline function _cardinal_boundary_slope(x, y, i, n, scale, ::NoBC)
@@ -166,14 +179,22 @@ end
 # fast path (no wrap overhead).
 
 @inline function _local_slope(sm::AkimaSlopes, x::AbstractVector{Tg}, y::AbstractVector{Tv}, i::Int, n::Int) where {Tg, Tv}
+    # See PCHIP `_local_slope` for the `_raw` rationale. Even Akima's 4-secant
+    # interior fast path stays within [1, n] because `i ∈ [3, n-2]` (the
+    # boundary-routed range is `i ∈ {1, 2, n-1, n}`), so j ∈ [i-2, i+1] ⊂
+    # [1, n-1] and j+1 ∈ [2, n]. Wrap-aware boundary path uses
+    # `_periodic_secant` which special-cases the seam.
+    xr = _raw(x)
+    yr = _raw(y)
+
     # Special case: 2 points. PeriodicBC routes through the wrap-aware
     # 4-secant formula so the seam-cell secant participates (cycle=2 for
     # exclusive yields a 2-secant alternation, matching the persistent path).
     if n == 2
         if sm.bc isa PeriodicBC
-            return _akima_local_4secant_periodic(x, y, i, n, sm.bc)
+            return _akima_local_4secant_periodic(xr, yr, i, n, sm.bc)
         end
-        @inbounds return (y[2] - y[1]) / (x[2] - x[1])
+        @inbounds return (yr[2] - yr[1]) / (xr[2] - xr[1])
     end
 
     # Special case: 3 points
@@ -182,11 +203,11 @@ end
         # so use the wrap-aware path (cycle of 2 secants for inclusive, 3 for
         # exclusive — `_periodic_secant` handles both via mod1).
         if sm.bc isa PeriodicBC
-            return _akima_local_4secant_periodic(x, y, i, n, sm.bc)
+            return _akima_local_4secant_periodic(xr, yr, i, n, sm.bc)
         end
         @inbounds begin
-            m1 = (y[2] - y[1]) / (x[2] - x[1])
-            m2 = (y[3] - y[2]) / (x[3] - x[2])
+            m1 = (yr[2] - yr[1]) / (xr[2] - xr[1])
+            m2 = (yr[3] - yr[2]) / (xr[3] - xr[2])
         end
         i == 1 && return m1
         i == 3 && return m2
@@ -196,9 +217,9 @@ end
     # General case: n ≥ 4
     # PeriodicBC: wrap-aware path for i ∈ {1, 2, n-1, n}.
     if sm.bc isa PeriodicBC && (i <= 2 || i >= n - 1)
-        return _akima_local_4secant_periodic(x, y, i, n, sm.bc)
+        return _akima_local_4secant_periodic(xr, yr, i, n, sm.bc)
     end
-    return _akima_local_4secant(x, y, i, n)
+    return _akima_local_4secant(xr, yr, i, n)
 end
 
 # Akima 4-secant computation with wrap-aware secant access. Dispatches via

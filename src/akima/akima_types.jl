@@ -6,7 +6,7 @@
 # Minimum 3 grid points (2 secants needed).
 
 """
-    AkimaInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}
+    AkimaInterpolant1D{Tg, Tv, X, Y, DY, E, P, CS}
 
 Callable interpolant for Akima interpolation.
 Returned by `akima_interp(x, y)` (2-argument form).
@@ -32,7 +32,6 @@ struct AkimaInterpolant1D{
         X <: AbstractVector{Tg},
         Y <: AbstractVector{Tv},
         DY,
-        S <: AbstractGridSpacing{Tg},
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
         CS <: AbstractCoeffStrategy,
@@ -40,11 +39,11 @@ struct AkimaInterpolant1D{
     x::X
     y::Y
     dy::DY
-    spacing::S
     extrap::E
     search_policy::P
 
-    # PreCompute inner: promotes x/y, computes slopes, creates spacing — all in one place.
+    # PreCompute inner: promotes x/y, computes slopes — axis-as-truth (`xc`
+    # wraps cached h/inv_h via `_store_grid_cached`).
     function AkimaInterpolant1D(
             x::AbstractVector, y::AbstractVector, ::Type{PreCompute}, extrap::E, search::P
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
@@ -52,14 +51,13 @@ struct AkimaInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid(x, Tg)
+        xc = _store_grid_cached(x, Tg)
         yc = _convert_copy(y, Tv)
-        spacing = _create_spacing(xc)
         Tdy = _output_eltype(Tv, Tg)
         dy = Vector{Tdy}(undef, length(yc))
         _akima_slopes!(dy, xc, yc)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), typeof(spacing), E, P, PreCompute}(
-            xc, yc, dy, spacing, extrap, search
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), E, P, PreCompute}(
+            xc, yc, dy, extrap, search
         )
     end
 
@@ -72,17 +70,16 @@ struct AkimaInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid(x, Tg)
+        xc = _store_grid_cached(x, Tg)
         yc = _convert_copy(y, Tv)
-        spacing = _create_spacing(xc)
         Tdy = _output_eltype(Tv, Tg)
         dyc = _convert_copy(dy, Tdy)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), typeof(spacing), E, P, PreCompute}(
-            xc, yc, dyc, spacing, extrap, search
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, PreCompute}(
+            xc, yc, dyc, extrap, search
         )
     end
 
-    # OnTheFly inner: promotes x/y, creates spacing, slope_strategy is a slope method tag.
+    # OnTheFly inner: slope_strategy is a slope method tag.
     function AkimaInterpolant1D(
             x::AbstractVector, y::AbstractVector, slope_strategy::AbstractSlopeMethod, extrap::E, search::P
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
@@ -90,11 +87,10 @@ struct AkimaInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid(x, Tg)
+        xc = _store_grid_cached(x, Tg)
         yc = _convert_copy(y, Tv)
-        spacing = _create_spacing(xc)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), typeof(spacing), E, P, OnTheFly}(
-            xc, yc, slope_strategy, spacing, extrap, search
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, OnTheFly}(
+            xc, yc, slope_strategy, extrap, search
         )
     end
 end

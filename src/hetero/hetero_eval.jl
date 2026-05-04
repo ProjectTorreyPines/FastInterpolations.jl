@@ -165,7 +165,7 @@ end
     # `map` over heterogeneous tuples is unrolled by the compiler with no closure
     # capture, which is more allocation-robust than `ntuple(d -> ..., Val(N))` for
     # this kind of zipped per-axis dispatch (see hetero_window.jl `_axis_window`).
-    windows = map(_axis_window, itp.methods, indices, map(length, itp.grids))
+    windows = map(_axis_window, itp.methods, indices, map(_data_length, itp.grids))
     data_local = view(itp.data, windows...)
     grids_local = map(view, itp.grids, windows)
     rel_windows = map(Base.OneTo ∘ length, windows)
@@ -315,9 +315,9 @@ end
 end
 
 @inline _axis_window_heap(m::AbstractInterpMethod, x::AbstractVector, ix::Int) =
-    _axis_window(m, ix, length(x))
+    _axis_window(m, ix, _data_length(x))
 @inline _axis_window_heap(m::AbstractLocalHermiteInterp{<:PeriodicBC}, x::AbstractVector, ix::Int) =
-    _fill_periodic_window!(Vector{Int}(undef, _fixed_window_size(m)), m, ix, length(x))
+    _fill_periodic_window!(Vector{Int}(undef, _fixed_window_size(m)), m, ix, _data_length(x))
 
 @inline _axis_grid_heap(::AbstractInterpMethod, x::AbstractVector, w::AbstractVector{Int}, ::Int) =
     view(x, w)

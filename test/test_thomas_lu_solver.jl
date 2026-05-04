@@ -67,53 +67,53 @@
     # ─────────────────────────────────────────────────────────────────────────
 
     function _build_tridiagonal_derivative_bc(x::AbstractVector{T}, bc_pair::FI.BCPair) where {T <: AbstractFloat}
-        spacing = FI._create_spacing(x)
-        n = length(x) - 1
+        cache_x = FI._caching_axis(x, FI.NoBC(), T)
+        n = length(cache_x) - 1
         dl = Vector{T}(undef, n)
         d_diag = Vector{T}(undef, n + 1)
         du = Vector{T}(undef, n)
 
-        FI._set_first_row!(d_diag, du, bc_pair.left, spacing)
-        FI._set_last_row!(dl, d_diag, bc_pair.right, spacing)
+        FI._set_first_row!(d_diag, du, bc_pair.left, cache_x)
+        FI._set_last_row!(dl, d_diag, bc_pair.right, cache_x)
 
         @inbounds for i in 2:n
-            h_im1 = FI._get_h(spacing, i - 1)
-            h_i = FI._get_h(spacing, i)
+            h_im1 = FI._get_h(cache_x, i - 1)
+            h_i = FI._get_h(cache_x, i)
             dl[i - 1] = h_im1
             d_diag[i] = 2 * (h_im1 + h_i)
             du[i] = h_i
         end
 
         A = LA.Tridiagonal(dl, d_diag, du)
-        return spacing, A
+        return cache_x, A
     end
 
     function _build_tridiagonal_periodic_Aprime(x::AbstractVector{T}) where {T <: AbstractFloat}
-        spacing = FI._create_spacing(x)
-        n_sys = length(x) - 1
+        cache_x = FI._caching_axis(x, FI.NoBC(), T)
+        n_sys = length(cache_x) - 1
         dl = Vector{T}(undef, n_sys - 1)
         d_diag = Vector{T}(undef, n_sys)
         du = Vector{T}(undef, n_sys - 1)
 
-        h_n = FI._get_h(spacing, n_sys)
-        h_1 = FI._get_h(spacing, 1)
+        h_n = FI._get_h(cache_x, n_sys)
+        h_1 = FI._get_h(cache_x, 1)
         d_diag[1] = h_n + 2 * h_1
 
         @inbounds for i in 2:(n_sys - 1)
-            h_im1 = FI._get_h(spacing, i - 1)
-            h_i = FI._get_h(spacing, i)
+            h_im1 = FI._get_h(cache_x, i - 1)
+            h_i = FI._get_h(cache_x, i)
             dl[i - 1] = h_im1
             d_diag[i] = 2 * (h_im1 + h_i)
             du[i - 1] = h_i
         end
 
-        h_nm1 = FI._get_h(spacing, n_sys - 1)
+        h_nm1 = FI._get_h(cache_x, n_sys - 1)
         dl[n_sys - 1] = h_nm1
         d_diag[n_sys] = 2 * h_nm1 + h_n
         du[n_sys - 1] = h_nm1
 
         A = LA.Tridiagonal(dl, d_diag, du)
-        return spacing, A
+        return cache_x, A
     end
 
     # ═════════════════════════════════════════════════════════════════════════
@@ -131,11 +131,11 @@
                 )
                 for bc_in in (ZeroCurvBC(), ZeroSlopeBC(), FI.BCPair(FI.Deriv1(T(0.25)), FI.Deriv2(T(0))))
                     bc = FI._normalize_bc(bc_in, T)
-                    spacing, A = _build_tridiagonal_derivative_bc(x, bc)
+                    cache_x, A = _build_tridiagonal_derivative_bc(x, bc)
 
                     y = rand(T, length(x))
                     rhs = similar(y)
-                    FI.compute_rhs!(rhs, y, x, spacing, bc)
+                    FI.compute_rhs!(rhs, y, cache_x, bc)
 
                     # Baseline: stdlib LU + ldiv! (default pivot strategy)
                     x_base = copy(rhs)
@@ -170,21 +170,15 @@
                     ("nonuniform", _x_nonuniform(T, 101; seed = 2)),
                     ("strongly-nonuniform", _x_strongly_nonuniform(T, 101; strength = :strong)),
                 )
-                spacing, Aprime = _build_tridiagonal_periodic_Aprime(x)
+                cache_x, Aprime = _build_tridiagonal_periodic_Aprime(x)
 
                 y = rand(T, length(x))
                 rhs = Vector{T}(undef, size(Aprime, 1))
-                # Inclusive form: y has n+1 nodes; bc_config carries period
-                # and seam-cell width (last-cell h, since the spacing already
-                # holds it for inclusive). `q` is unused by `compute_rhs_periodic!`
-                # but the struct field is non-optional.
-                n_cells = length(x) - 1
-                bc_config = FI.PeriodicData{T, :inclusive}(
-                    Vector{T}(undef, n_cells),
-                    x[end] - x[1],
-                    x[end] - x[end - 1],
-                )
-                FI.compute_rhs_periodic!(rhs, y, spacing, bc_config)
+                # `compute_rhs_periodic!` reads cell widths via `_get_h(cache_x, i)`.
+                # Inclusive form: cache_x is the user's length n+1 grid (closed
+                # cycle); `_get_h(cache_x, n)` returns the last real cell.
+                cache_x = FastInterpolations._caching_axis(x, FastInterpolations.NoBC(), T)
+                FI.compute_rhs_periodic!(rhs, y, cache_x)
 
                 # Baseline: stdlib LU + ldiv!
                 x_base = copy(rhs)
@@ -219,7 +213,7 @@
                     ("nonuniform", _x_nonuniform(T, 51; seed = 3)),
                     ("strongly-nonuniform", _x_strongly_nonuniform(T, 51; strength = :strong)),
                 )
-                spacing, Aprime = _build_tridiagonal_periodic_Aprime(x)
+                cache_x, Aprime = _build_tridiagonal_periodic_Aprime(x)
                 n_sys = size(Aprime, 1)
 
                 # Baseline: stdlib LU + ldiv!

@@ -207,20 +207,20 @@ end
     is_periodic_d = _is_periodic_bc(bc_d)
     if is_periodic_d
         _adjoint_axis_pair_periodic!(
-            src_3d, dst_3d, cache_d, spacing_d,
+            src_3d, dst_3d, cache_d,
             shape_before, n_d, shape_after,
             z_bar, f_contrib, dy_bar_slice, q_t
         )
     elseif p_src == 1
         _adjoint_axis_pair!(
-            src_3d, dst_3d, cache_d, spacing_d,
+            src_3d, dst_3d, cache_d,
             bc_d, grid_d,
             shape_before, n_d, shape_after,
             z_bar, f_contrib, dy_bar_slice
         )
     else
         _adjoint_axis_pair!(
-            src_3d, dst_3d, mixed_cache_d, spacing_d,
+            src_3d, dst_3d, mixed_cache_d,
             mixed_bc_d, grid_d,
             shape_before, n_d, shape_after,
             z_bar, f_contrib, dy_bar_slice

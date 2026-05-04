@@ -28,15 +28,21 @@ function _constant_interp_nd_oneshot(
         searches::NTuple{N, AbstractSearchPolicy},
         hints = nothing
     ) where {Tg, Tv, N}
+    # Surface-API axis resolution (mirrors `_linear_interp_nd_oneshot`):
+    # `:exclusive` Vector/Range → `_ExclusivePeriodicAxis`; non-periodic
+    # passthrough or cached float form. Wrapper search returns post-fold
+    # `idx_R = 1` at seam so `data[..., idx_R, ...]` indexes raw data.
+    grids_eff = map(_resolve_axis, grids, bcs)
+    nobcs = ntuple(_ -> NoBC(), Val(N))
     # NoExtrap domain check must precede FillExtrap short-circuit
-    _validate_nd_domain(grids, query, extraps_val)
-    oob_result = _try_fill_oob(query, grids, extraps_val, EvalValue(), @inbounds first(data))
+    _validate_nd_domain(grids_eff, query, extraps_val)
+    oob_result = _try_fill_oob(query, grids_eff, extraps_val, EvalValue(), @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
-    q_eval = _handle_all_extraps(query, grids, extraps_eff)
-    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids, searches, hints, bcs)
-    hs = map(_get_h, grids, Ls, Rs)
+    extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
+    q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
+    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, nobcs)
+    hs = map(_get_h, grids_eff, Ls, Rs)
     return _constant_nd_kernel(data, stencils, hs, side_vals, q_eval, Ls)
 end
 
@@ -62,17 +68,19 @@ function _constant_interp_nd_oneshot_batch!(
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
-    _validate_nd_domain(grids, queries, extraps_val)
-    extraps_eff = _resolve_extrap(extraps_val, bcs, grids, data, Val(N))
+    grids_eff = map(_resolve_axis, grids, bcs)
+    nobcs = ntuple(_ -> NoBC(), Val(N))
+    _validate_nd_domain(grids_eff, queries, extraps_val)
+    extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids, extraps_val, EvalValue(), first(data))
+        oob_val = _try_fill_oob(query_k, grids_eff, extraps_val, EvalValue(), first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end
-        q_eval = _handle_all_extraps(query_k, grids, extraps_eff)
-        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids, policies, hints, bcs)
-        hs = map(_get_h, grids, Ls, Rs)
+        q_eval = _handle_all_extraps(query_k, grids_eff, extraps_eff)
+        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints, nobcs)
+        hs = map(_get_h, grids_eff, Ls, Rs)
         output[k] = _constant_nd_kernel(data, stencils, hs, side_vals, q_eval, Ls)
     end
     return output

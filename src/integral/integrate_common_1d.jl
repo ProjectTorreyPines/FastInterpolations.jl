@@ -102,14 +102,19 @@ end
 # `full_fn(i, h)` — integrate full cell i with cell width h
 # `spacing` provides `_get_h(spacing, i)` to avoid TwicePrecision x indexing on Range grids.
 @inline function _integrate_1d_cellwise(
-        x::AbstractVector, spacing::AbstractGridSpacing, a::Real, b::Real,
+        x::AbstractVector, spacing::Union{AbstractGridSpacing, AbstractVector}, a::Real, b::Real,
         searcher::S, partial_fn::PF, full_fn::FF, ::Type{Tout}
     ) where {S <: Searcher, PF, FF, Tout}
     sign, lo, hi = _normalize_bounds_1d(a, b)
     sign == 0 && return zero(Tout)
 
-    i0, _, xL0, _ = search_interval(searcher, x, spacing, lo)
-    i1, _, xL1, _ = search_interval(searcher, x, spacing, hi)
+    # 3-arg `search_interval(s, x, xq)` — spacing is a passthrough dispatch
+    # marker (search itself doesn't consume spacing). This keeps the integral
+    # code grid-type-agnostic: works whether `_spacing(itp)` returns a true
+    # `<:AbstractGridSpacing` (Quadratic/Cubic/Hermite-family, not yet migrated)
+    # or the grid itself (Linear/Constant, post-migration to grid-as-SOT).
+    i0, _, xL0, _ = search_interval(searcher, x, lo)
+    i1, _, xL1, _ = search_interval(searcher, x, hi)
 
     if i0 == i1
         h = _get_h(spacing, i0)
@@ -134,7 +139,7 @@ end
 # Scalar accumulator: ∫ over entire grid using full-cell kernel only.
 # `full_fn(i, h)` — same closure signature as _integrate_1d_cellwise.
 @inline function _integrate_1d_fulldomain(
-        x::AbstractVector, spacing::AbstractGridSpacing, full_fn::F, ::Type{Tout}
+        x::AbstractVector, spacing::Union{AbstractGridSpacing, AbstractVector}, full_fn::F, ::Type{Tout}
     ) where {F, Tout}
     n = length(x)
     total = zero(Tout)
@@ -147,7 +152,7 @@ end
 # Prefix-sum (in-place): write cumulative integral into pre-allocated buffer.
 # `out` must have length ≥ length(x). Works with Vector or @view(matrix[:, k]).
 function _cumulative_integrate_1d!(
-        out::AbstractVector, x::AbstractVector, spacing::AbstractGridSpacing, full_fn::F
+        out::AbstractVector, x::AbstractVector, spacing::Union{AbstractGridSpacing, AbstractVector}, full_fn::F
     ) where {F}
     n = length(x)
     out[1] = zero(eltype(out))
@@ -159,7 +164,7 @@ end
 
 # Allocating wrapper: creates a fresh Vector and fills it.
 function _cumulative_integrate_1d(
-        x::AbstractVector, spacing::AbstractGridSpacing, full_fn::F, ::Type{Tout}
+        x::AbstractVector, spacing::Union{AbstractGridSpacing, AbstractVector}, full_fn::F, ::Type{Tout}
     ) where {F, Tout}
     result = Vector{Tout}(undef, length(x))
     return _cumulative_integrate_1d!(result, x, spacing, full_fn)

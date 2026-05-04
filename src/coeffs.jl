@@ -104,11 +104,10 @@ function coeffs end
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv}
     x = itp.cache.x
-    spacing = itp.cache.spacing
     searcher = _resolve_search(x, xq, search, hint)
-    i, i_R, xL, xR = search_interval(searcher, x, spacing, xq)
-    h = _get_h(spacing, i)
-    inv_h = _get_inv_h(spacing, i)
+    i, i_R, xL, xR = search_interval(searcher, x, xq)
+    h = _get_h(x, i)
+    inv_h = _get_inv_h(x, i)
     inv6 = inv(Tg(6))    # const-folded
     inv_6h = inv_h * inv6 # 1/(6h), shared factor         fmul
     h_inv6 = h * inv6     # h/6                           fmul
@@ -144,9 +143,16 @@ end
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)
-    i, i_R, xL, xR = search_interval(searcher, itp.x, itp.spacing, xq)
+    i, i_R, xL, xR = search_interval(searcher, itp.x, xq)
     @inbounds begin
-        slope = (itp.y[i_R] - itp.y[i]) * _get_inv_h(itp.spacing, i)
+        # itp.x is `_CachedRange`, `_CachedVector`, or `_ExclusivePeriodicAxis`.
+        # 2-arg `_get_inv_h(x, i)` dispatches to cached scalar / vector lookup, or
+        # (for the axis wrapper at seam) computes from period. itp.y is
+        # `Vector{Tv}` for non-periodic / Range-extended paths and
+        # `_ExclusivePeriodicData` for Vector + `:exclusive` — the data wrapper
+        # auto-cycles `i_R = n+1` back to inner[1], so plain `itp.y[i_R]` works
+        # uniformly without `_resolve_idx`.
+        slope = (itp.y[i_R] - itp.y[i]) * _get_inv_h(itp.x, i)
         return CellPoly{2, Tv, Tg}((itp.y[i], slope), xL, xR)
     end
 end
@@ -159,8 +165,11 @@ end
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)
-    i, i_R, xL, xR = search_interval(searcher, itp.x, itp.spacing, xq)
-    # Reuse the constant kernel directly for correct side/grid-point behavior
-    @inbounds y0 = _constant_kernel(EvalValue(), itp.y[i], itp.y[i_R], _get_h(itp.spacing, i), xq - xL, itp.side)
+    i, i_R, xL, xR = search_interval(searcher, itp.x, xq)
+    # itp.x: `_CachedRange` / `_CachedVector` / `_ExclusivePeriodicAxis`.
+    # itp.y: plain `Vector{Tv}` for non-periodic / `_ExclusivePeriodicData`
+    # for Vector + `:exclusive` — the data wrapper auto-cycles `i_R = n+1`
+    # back to inner[1], so plain `itp.y[i_R]` works uniformly.
+    @inbounds y0 = _constant_kernel(EvalValue(), itp.y[i], itp.y[i_R], _get_h(itp.x, i), xq - xL, itp.side)
     return CellPoly{1, Tv, Tg}((y0,), xL, xR)
 end

@@ -209,7 +209,6 @@ end
 end
 
 # ExtendExtrap - extend linear polynomial using boundary interval.
-# _get_inv_h(x, xL, xR) dispatches to x.inv_h (_CachedRange) or inv(xR-xL) (Vector).
 @inline function _eval_linear_series_point_extrap!(
         out::AbstractVector{Tv},
         y_point::Matrix{Tv},
@@ -228,7 +227,7 @@ end
         xL = x[idx]
         xR = x[idx1]
     end
-    inv_h = _get_inv_h(x, xL, xR)
+    inv_h = _get_inv_h(x, idx)
     α = _alpha_of(aq.xq, xL, xR, x)
     @inbounds @simd for k in axes(out, 1)
         yL = y_point[k, idx]
@@ -360,7 +359,7 @@ function linear_interp(
         _validate_series_endpoints(bc, y_mat)
         # Materialize against the extended grid on both branches — duck grids
         # keep their eltype, Float grids go through value-type promotion.
-        extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(WrapExtrap(x_typed), Tv_out) : WrapExtrap(x_typed)
+        extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(WrapExtrap(), Tv_out) : WrapExtrap()
         return LinearSeriesInterpolant(x_typed, y_mat, extrap_p, search)
     end
 

@@ -3,16 +3,20 @@
 @inline _grid_1d(itp::CubicSeriesInterpolant) = itp.cache.x
 @inline _grid_1d(itp::AbstractInterpolant) = itp.x
 
-# ── 1D spacing accessor (type-dispatched: ScalarSpacing for Range, VectorSpacing for Vector) ──
-# Default: Linear/Quadratic store spacing directly after Phase 2a/2b
+# ── 1D spacing accessor ──
+# Returns an object that responds to `_get_h(., i)` / `_get_inv_h(., i)` 2-arg
+# form. Migrated families (Linear, Constant, Cubic, Hermite/Pchip/Cardinal/
+# Akima) use the wrapped axis itself (`_CachedRange`/`_CachedVector`/
+# `_ExclusivePeriodicAxis`) as the source of truth for h/inv_h. Pre-migration
+# families (Quadratic) still carry a separate `spacing::S` field.
+@inline _spacing(itp::LinearInterpolant) = itp.x
+@inline _spacing(itp::ConstantInterpolant) = itp.x
+@inline _spacing(itp::CubicInterpolant) = itp.cache.x
+@inline _spacing(sitp::CubicSeriesInterpolant) = sitp.cache.x
+@inline _spacing(itp::AbstractHermiteInterpolant1D) = itp.x
+# Pre-migration default: families that still carry a `spacing::S` field.
 @inline _spacing(itp::AbstractInterpolant1D) = itp.spacing
-# Cubic: spacing lives in cache
-@inline _spacing(itp::CubicInterpolant) = itp.cache.spacing
-@inline _spacing(sitp::CubicSeriesInterpolant) = sitp.cache.spacing
-# Series: Linear/Quadratic store spacing directly after Phase 2d
 @inline _spacing(sitp::AbstractSeriesInterpolant) = sitp.spacing
-# Constant: spacing stored after Phase 2 addition
-# ConstantSeriesInterpolant: spacing stored after Phase 2 addition
 
 # ── Fallback stub (bounded 1D) ──
 function integrate(itp::AbstractInterpolant, x0::Real, x1::Real; search = nothing, hint = nothing)
@@ -122,7 +126,7 @@ end
 # Receives concrete side (parametric from struct) + extrap mode.
 # Uses the generic _integrate_1d_cellwise path — side is already concrete here.
 @inline function _integrate_constant_1d_impl(
-        x::AbstractVector, spacing::AbstractGridSpacing, y::AbstractVector, side::AbstractSide, extrap::AbstractExtrap,
+        x::AbstractVector, spacing::Union{AbstractGridSpacing, AbstractVector}, y::AbstractVector, side::AbstractSide, extrap::AbstractExtrap,
         x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
     ) where {SR <: Searcher, Tg, Tout}
     partial = @inline (i, xL, h, a2, b2) -> begin
@@ -240,7 +244,7 @@ end
 end
 
 @inline function _integrate_constant_series_1d(
-        x::AbstractVector, spacing::AbstractGridSpacing, y::AbstractMatrix, side::AbstractSide, extrap::AbstractExtrap,
+        x::AbstractVector, spacing::Union{AbstractGridSpacing, AbstractVector}, y::AbstractMatrix, side::AbstractSide, extrap::AbstractExtrap,
         x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
     ) where {SR <: Searcher, Tg, Tout}
     n = size(y, 2)

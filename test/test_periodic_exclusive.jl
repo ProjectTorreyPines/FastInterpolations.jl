@@ -1,6 +1,7 @@
 @testitem "PeriodicBC Exclusive Endpoint" setup = [AllocConstants] begin
     using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
-        _resolve_exclusive_period,
+        _resolve_exclusive_period, _resolve_axis, _caching_axis,
+        _ExclusivePeriodicAxis,
         _can_infer_period, _is_periodic_bc, endpoint
 
     # ========================================
@@ -77,10 +78,14 @@
             @test period ≈ 1.0
         end
 
-        @testset "Range grid with conflicting period → error" begin
+        @testset "Range grid with conflicting period → error at wrapper construction" begin
+            # Cross-validation moved from `_resolve_exclusive_period` (hot-path) to
+            # `_ExclusivePeriodicAxis` constructor (one-time at wrap). The resolver
+            # now trusts user `bc.period`; the wrapper rejects mismatches.
             x = range(0.0, step = 0.1, length = 10)
             bc = PeriodicBC(endpoint = :exclusive, period = 2.0)  # doesn't match 0.1*10=1.0
-            @test_throws ArgumentError _resolve_exclusive_period(x, bc)
+            @test_throws ArgumentError _caching_axis(x, bc, Float64)
+            @test_throws ArgumentError _resolve_axis(x, bc)
         end
 
         @testset "Vector grid requires explicit period" begin
@@ -98,17 +103,18 @@
             @test _can_infer_period([0.0, 1.0, 2.0]) == false
         end
 
-        @testset "Mixed-precision period correctly rejected" begin
-            # Float32 period on Float64 Range: isapprox with Float32's generous rtol
-            # (~3e-4) would accept Float32(1.0002) ≈ 1.0, but grid-precision comparison
-            # correctly rejects it.
+        @testset "Mixed-precision period correctly rejected at wrapper construction" begin
+            # Float32 period on Float64 Range: validation in `_ExclusivePeriodicAxis`
+            # constructor uses grid precision (Tg) so Float32(1.0002) is correctly
+            # rejected against the Float64 inferred period (1.0).
             x = range(0.0, step = 0.1, length = 10)  # Float64, inferred period=1.0
             bc = PeriodicBC(endpoint = :exclusive, period = Float32(1.0002))
-            @test_throws ArgumentError _resolve_exclusive_period(x, bc)
+            @test_throws ArgumentError _caching_axis(x, bc, Float64)
 
             # Float32 period that genuinely matches → accepted
             bc_ok = PeriodicBC(endpoint = :exclusive, period = Float32(1.0))
             @test _resolve_exclusive_period(x, bc_ok) == Float32(1.0)
+            @test _caching_axis(x, bc_ok, Float64) isa _ExclusivePeriodicAxis
         end
     end
 
@@ -571,12 +577,17 @@
             @test !isapprox(v1, v2; atol = 1.0e-6)
 
             # Direct cache pool inspection — distinct cache objects for distinct periods.
+            # After the axis-as-truth migration: `cache.bc` carries the resolved
+            # period (was: separate `bc_config.period`/`h_n` fields), and the seam-
+            # cell width is read on the fly via `_get_h(cache.x, n)`.
             c1 = FastInterpolations._get_cubic_cache(x, PeriodicBC(endpoint = :exclusive, period = 2.5))
             c2 = FastInterpolations._get_cubic_cache(x, PeriodicBC(endpoint = :exclusive, period = 2.2))
-            @test c1.bc_config.period ≈ 2.5
-            @test c2.bc_config.period ≈ 2.2
-            @test c1.bc_config.h_n ≈ 0.65
-            @test c2.bc_config.h_n ≈ 0.35
+            @test c1.bc.period ≈ 2.5
+            @test c2.bc.period ≈ 2.2
+            n1 = length(c1.x) - 1
+            n2 = length(c2.x) - 1
+            @test FastInterpolations._get_h(c1.x, n1) ≈ 0.65
+            @test FastInterpolations._get_h(c2.x, n2) ≈ 0.35
         end
 
         @testset "Reject non-positive seam width" begin
@@ -593,15 +604,13 @@
         end
 
         @testset "Range and Vector grids agree at seam with off-bit-equal period" begin
-            # An explicit period that passes the Range tolerance but is not
-            # exactly `step(x) * length(x)` makes `bc.h_n` differ from `step`.
-            # The cubic solver bakes `bc.h_n` into the periodic system; eval
-            # must use the same width at the seam cell. Vector grids already
-            # do (VectorSpacing has only n-1 interior cells, so the seam idx
-            # falls through to `bc.h_n`); Range grids store a uniform
-            # `ScalarSpacing` and previously returned `step` at every idx,
-            # producing a width mismatch with the solver. Pin Range vs Vector
-            # equivalence at seam queries.
+            # An explicit period that passes the Range tolerance (`sqrt(eps)`,
+            # ~1.5e-8) but isn't exactly `step(x) * length(x)`. Both Range and
+            # Vector grids compute the seam cell width from `period - span`
+            # (where Range uses `step*(n-1)` and Vector uses
+            # `inner[end] - inner[1]`); these formulas are numerically
+            # identical at small grid offsets, so Range and Vector agree to
+            # near-ULP at the seam.
             r = range(0.0, step = 0.1, length = 10)
             v = collect(r)                        # same grid, Vector form
             y = sin.(2π .* v)
@@ -651,8 +660,8 @@
             # not the off-by-1e-9 explicit one already in the bank.
             c_inferred = FastInterpolations._get_cubic_cache(r, bc_inferred)
             c_explicit = FastInterpolations._get_cubic_cache(r, bc_explicit)
-            @test c_inferred.bc_config.period == 1.0
-            @test c_explicit.bc_config.period == 1.0 + period_offset
+            @test c_inferred.bc.period == 1.0
+            @test c_explicit.bc.period == 1.0 + period_offset
             @test c_inferred !== c_explicit
         end
 
@@ -678,7 +687,8 @@ end
 
 @testitem "PeriodicBC Exclusive Endpoint — ND" begin
     using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
-        _resolve_exclusive_period,
+        _resolve_exclusive_period, _resolve_axis, _caching_axis,
+        _ExclusivePeriodicAxis,
         _can_infer_period, _is_periodic_bc, endpoint
 
     # ========================================

@@ -9,7 +9,11 @@
 # ║                 INTERNAL: PreCompute (bulk slopes via @with_pool)          ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# Scalar — bc-aware unified path.
+# Scalar — periodic BC physically extends grid via `_periodic_extend_1d`
+# (length n+1 with closed cycle), then `_prepare_grid` wraps the result so
+# `_get_h(x, idx)` reads cached h. Slope kernels need physical data of length
+# n+1 — wrapper-based axis (`_ExclusivePeriodicAxis`) only supports virtual
+# n+1 access via `_getindex`, which the slope kernels don't use.
 @inline @with_pool pool function _cardinal_interp_precompute(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -22,15 +26,17 @@
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    x = _prepare_grid(x)
-    Tdy = _output_eltype(Tv, float(eltype(x)))
-    dy = acquire!(pool, Tdy, length(y))
-    _cardinal_slopes!(dy, x, y, tension; bc)
-    searcher = _resolve_search(x, xq, search, hint, bc)
-    return _hermite_eval_at_point(x, y, dy, xq, extrap, deriv, searcher)
+    x_ext, y_ext, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
+    bc_eff = _bc_after_extend(bc)
+    x_eff = _prepare_grid(x_ext)
+    Tdy = _output_eltype(Tv, float(eltype(x_eff)))
+    dy = acquire!(pool, Tdy, length(y_ext))
+    _cardinal_slopes!(dy, x_eff, y_ext, tension; bc = bc_eff)
+    searcher = _resolve_search(x_eff, xq, search, hint, bc_eff)
+    return _hermite_eval_at_point(x_eff, y_ext, dy, xq, extrap_eff, deriv, searcher)
 end
 
-# Vector in-place — bc-aware unified path.
+# Vector in-place — periodic BC follows the same extend-then-eval pattern.
 @inline @with_pool pool function _cardinal_interp_precompute!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -45,20 +51,27 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _prepare_grid(x)
+    x_ext, y_ext, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
+    bc_eff = _bc_after_extend(bc)
+    x_eff = _prepare_grid(x_ext)
 
-    Tdy = _output_eltype(Tv, float(eltype(x)))
-    dy = acquire!(pool, Tdy, length(y))
-    _cardinal_slopes!(dy, x, y, tension; bc)
-    searcher = _resolve_search(x, x_query, search, hint, bc)
-    return _hermite_vector_loop!(output, x, y, dy, x_query, extrap, deriv, searcher)
+    Tdy = _output_eltype(Tv, float(eltype(x_eff)))
+    dy = acquire!(pool, Tdy, length(y_ext))
+    _cardinal_slopes!(dy, x_eff, y_ext, tension; bc = bc_eff)
+    searcher = _resolve_search(x_eff, x_query, search, hint, bc_eff)
+    return _hermite_vector_loop!(output, x_eff, y_ext, dy, x_query, extrap_eff, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                 INTERNAL: OnTheFly (local slopes, no pool)                ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# Scalar — bc-aware unified path.
+# Scalar — axis-as-truth: `_resolve_axis(x, bc)` wraps the axis so
+# `last(x_eff) = first(x) + period` for periodic exclusive, giving the eval
+# kernel correct wrap-domain bounds via `_wrap_to_domain(xq, x_eff)` and
+# correct seam-cell `_get_h(x_eff, idx)`. Slopes use `_data_length(x_eff)`
+# (raw n) for boundary detection, so `CardinalSlopes(tension, bc)`'s bc-aware
+# wrap-formulas fire at i==n_raw without any `x[n+1]` access.
 @inline function _cardinal_interp_onthefly(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -72,12 +85,19 @@ end
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
-    x = _prepare_grid(x)
-    searcher = _resolve_search(x, xq, search, hint, bc)
-    return _hermite_eval_at_point(x, y, CardinalSlopes(tension, bc), xq, extrap, deriv, searcher)
+    # Wrap axis + data (axis-as-truth: `last(x_eff) == first(x) + period`,
+    # so `_wrap_to_domain(xq, x_eff)` and `_get_h(x_eff, idx)` correctly hit
+    # the seam without needing bc as a side-channel). Keep `bc` flowing into
+    # `CardinalSlopes(tension, bc)` so the `:exclusive` slope dispatch fires
+    # the seam formula via `bc.period` — the slope helper does NOT touch
+    # `x[n+1]`, so `Base.getindex` raw passthrough on the wrapper is safe.
+    x_eff = _resolve_axis(x, bc)
+    y_eff = _resolve_data(y, bc)
+    searcher = _resolve_search(x_eff, xq, search, hint, NoBC())
+    return _hermite_eval_at_point(x_eff, y_eff, CardinalSlopes(tension, bc), xq, extrap, deriv, searcher)
 end
 
-# Vector in-place — bc-aware unified path.
+# Vector in-place — same axis-as-truth pattern.
 @inline function _cardinal_interp_onthefly!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -93,10 +113,10 @@ end
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x = _prepare_grid(x)
-
-    searcher = _resolve_search(x, x_query, search, hint, bc)
-    return _hermite_vector_loop!(output, x, y, CardinalSlopes(tension, bc), x_query, extrap, deriv, searcher)
+    x_eff = _resolve_axis(x, bc)
+    y_eff = _resolve_data(y, bc)
+    searcher = _resolve_search(x_eff, x_query, search, hint, NoBC())
+    return _hermite_vector_loop!(output, x_eff, y_eff, CardinalSlopes(tension, bc), x_query, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗

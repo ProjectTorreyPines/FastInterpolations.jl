@@ -58,7 +58,6 @@
         # Periodic BC always uses WrapExtrap internally
         itp_periodic = @inferred cubic_interp(x, y_periodic; bc = PeriodicBC())
         @test itp_periodic.extrap isa WrapExtrap
-        @test !(itp_periodic.extrap isa WrapExtrap{Nothing})
     end
 
     # =========================================================================
@@ -178,7 +177,7 @@
 
         # Vector input
         itp_vec = @inferred cubic_interp(collect(x_range), y_range)
-        @test itp_vec.cache.x isa Vector
+        @test itp_vec.cache.x isa FastInterpolations._CachedVector
 
         # Both are type-stable and produce same results
         @test @inferred(itp_range(0.5)) ≈ @inferred(itp_vec(0.5))
@@ -292,7 +291,6 @@
             @test litp_const.extrap === ClampExtrap()
             @test litp_ext.extrap === ExtendExtrap()
             @test litp_wrap.extrap isa WrapExtrap
-            @test !(litp_wrap.extrap isa WrapExtrap{Nothing})
 
             # Different extrap modes → different concrete types (E parameter)
             @test typeof(litp_none) !== typeof(litp_const)
@@ -310,7 +308,6 @@
             @test citp_const.extrap === ClampExtrap()
             @test citp_ext.extrap === ExtendExtrap()
             @test citp_wrap.extrap isa WrapExtrap
-            @test !(citp_wrap.extrap isa WrapExtrap{Nothing})
 
             # Different extrap modes → different concrete types (E parameter)
             @test typeof(citp_none) !== typeof(citp_const)
@@ -328,7 +325,6 @@
             @test qitp_const.extrap === ClampExtrap()
             @test qitp_ext.extrap === ExtendExtrap()
             @test qitp_wrap.extrap isa WrapExtrap
-            @test !(qitp_wrap.extrap isa WrapExtrap{Nothing})
 
             # Different extrap modes → different concrete types (E parameter)
             @test typeof(qitp_none) !== typeof(qitp_const)
@@ -346,7 +342,6 @@
             @test cbitp_const.extrap === ClampExtrap()
             @test cbitp_ext.extrap === ExtendExtrap()
             @test cbitp_wrap.extrap isa WrapExtrap
-            @test !(cbitp_wrap.extrap isa WrapExtrap{Nothing})
 
             # Different extrap modes → different concrete types (E parameter)
             @test typeof(cbitp_none) !== typeof(cbitp_const)
@@ -557,7 +552,6 @@
         )
         @test itp.extraps[1] === NoExtrap()
         @test itp.extraps[2] isa WrapExtrap
-        @test !(itp.extraps[2] isa WrapExtrap{Nothing})
 
         # PeriodicBC + ClampExtrap → should throw (incompatible)
         @test_throws ArgumentError cubic_interp(
@@ -589,7 +583,6 @@
         itp = @inferred linear_interp((x_nd, y_nd), data2d; extrap = (ClampExtrap(), WrapExtrap()))
         @test itp.extraps[1] === ClampExtrap()
         @test itp.extraps[2] isa WrapExtrap
-        @test !(itp.extraps[2] isa WrapExtrap{Nothing})
 
         # Typed vs Symbol equivalence
         itp_typed = linear_interp((x_nd, y_nd), data2d; extrap = ClampExtrap())
@@ -717,8 +710,8 @@
             (x_p, y_p), data_p;
             bc = PeriodicBC(), extrap = NoExtrap()
         )
-        @test itp.extraps[1] isa WrapExtrap && !(itp.extraps[1] isa WrapExtrap{Nothing})
-        @test itp.extraps[2] isa WrapExtrap && !(itp.extraps[2] isa WrapExtrap{Nothing})
+        @test itp.extraps[1] isa WrapExtrap
+        @test itp.extraps[2] isa WrapExtrap
 
         # Mixed: one periodic, one ZeroCurv
         itp_mixed = @inferred cubic_interp(
@@ -727,15 +720,14 @@
         )
         @test itp_mixed.extraps[1] === NoExtrap()
         @test itp_mixed.extraps[2] isa WrapExtrap
-        @test !(itp_mixed.extraps[2] isa WrapExtrap{Nothing})
 
         # Quadratic: PeriodicBC + WrapExtrap
         itp_q = @inferred quadratic_interp(
             (x_p, y_p), data_p;
             bc = ZeroCurvBC(), extrap = WrapExtrap()
         )
-        @test itp_q.extraps[1] isa WrapExtrap && !(itp_q.extraps[1] isa WrapExtrap{Nothing})
-        @test itp_q.extraps[2] isa WrapExtrap && !(itp_q.extraps[2] isa WrapExtrap{Nothing})
+        @test itp_q.extraps[1] isa WrapExtrap
+        @test itp_q.extraps[2] isa WrapExtrap
     end
 
     @testset "ND PeriodicBC exclusive + Mode — constructor type stability" begin
@@ -760,7 +752,6 @@
         @test itp_mixed isa CubicInterpolantND
         @test itp_mixed.extraps[1] === NoExtrap()
         @test itp_mixed.extraps[2] isa WrapExtrap
-        @test !(itp_mixed.extraps[2] isa WrapExtrap{Nothing})
 
         # Exclusive with explicit period + Mode
         itp_period = @inferred cubic_interp(

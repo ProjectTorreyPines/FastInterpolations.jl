@@ -7,7 +7,7 @@
 # but separate type for dispatch (show, plot, future integrate/adjoint).
 
 """
-    CardinalInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}
+    CardinalInterpolant1D{Tg, Tv, X, Y, DY, E, P, CS}
 
 Callable interpolant for cardinal spline interpolation.
 Returned by `cardinal_interp(x, y)` (2-argument form).
@@ -36,7 +36,6 @@ struct CardinalInterpolant1D{
         X <: AbstractVector{Tg},
         Y <: AbstractVector{Tv},
         DY,
-        S <: AbstractGridSpacing{Tg},
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
         CS <: AbstractCoeffStrategy,
@@ -44,12 +43,12 @@ struct CardinalInterpolant1D{
     x::X
     y::Y
     dy::DY
-    spacing::S
     extrap::E
     search_policy::P
     tension::Tg
 
-    # PreCompute inner: promotes x/y, computes slopes, creates spacing — all in one place.
+    # PreCompute inner: promotes x/y, computes slopes — axis-as-truth (`xc`
+    # wraps cached h/inv_h via `_store_grid_cached`).
     function CardinalInterpolant1D(
             x::AbstractVector, y::AbstractVector, ::Type{PreCompute},
             extrap::E, search::P, tension::Real
@@ -58,14 +57,13 @@ struct CardinalInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid(x, Tg)
+        xc = _store_grid_cached(x, Tg)
         yc = _convert_copy(y, Tv)
-        spacing = _create_spacing(xc)
         Tdy = _output_eltype(Tv, Tg)
         dy = Vector{Tdy}(undef, length(yc))
         _cardinal_slopes!(dy, xc, yc, Tg(tension))
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), typeof(spacing), E, P, PreCompute}(
-            xc, yc, dy, spacing, extrap, search, Tg(tension)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), E, P, PreCompute}(
+            xc, yc, dy, extrap, search, Tg(tension)
         )
     end
 
@@ -79,17 +77,16 @@ struct CardinalInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid(x, Tg)
+        xc = _store_grid_cached(x, Tg)
         yc = _convert_copy(y, Tv)
-        spacing = _create_spacing(xc)
         Tdy = _output_eltype(Tv, Tg)
         dyc = _convert_copy(dy, Tdy)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), typeof(spacing), E, P, PreCompute}(
-            xc, yc, dyc, spacing, extrap, search, Tg(tension)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, PreCompute}(
+            xc, yc, dyc, extrap, search, Tg(tension)
         )
     end
 
-    # OnTheFly inner: promotes x/y, creates spacing, slope_strategy is a slope method tag.
+    # OnTheFly inner: slope_strategy is a slope method tag.
     function CardinalInterpolant1D(
             x::AbstractVector, y::AbstractVector, slope_strategy::AbstractSlopeMethod,
             extrap::E, search::P, tension::Real
@@ -98,11 +95,10 @@ struct CardinalInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid(x, Tg)
+        xc = _store_grid_cached(x, Tg)
         yc = _convert_copy(y, Tv)
-        spacing = _create_spacing(xc)
-        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), typeof(spacing), E, P, OnTheFly}(
-            xc, yc, slope_strategy, spacing, extrap, search, Tg(tension)
+        return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, OnTheFly}(
+            xc, yc, slope_strategy, extrap, search, Tg(tension)
         )
     end
 end

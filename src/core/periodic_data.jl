@@ -1,0 +1,112 @@
+# ========================================
+# _ExclusivePeriodicData: data-side cyclic wrapper for `:exclusive` PeriodicBC
+# ========================================
+#
+# Companion to `_ExclusivePeriodicAxis` (periodic_axis.jl): when the axis
+# grid is wrapped to length n+1 to expose the virtual seam endpoint, the
+# corresponding y/data array also gains a virtual `(n+1)`-th slot. Unlike
+# the axis wrapper, the data wrapper has NO coordinate semantics — its
+# only role is to cyclically expose `inner[1]` at the virtual slot so that
+# `y[idx_R]` and `last(y)` work without explicit `_resolve_idx` calls.
+#
+# Currently 1D-only. The struct is parameterized on N for future ND adoption,
+# but every method below is `N=1`-specialized and the convenience constructor
+# only accepts `AbstractVector`. ND adoption (e.g., wrapping `Array{T,N}` for
+# ND `:exclusive` axes) requires threading per-axis cyclicity (not every axis
+# is necessarily periodic) and is deferred to the ND-struct migration PR.
+# Until then the `N` type parameter is reserved, not active.
+#
+# Include order: ... → periodic_axis.jl → periodic_data.jl → ...
+
+"""
+    _ExclusivePeriodicData{Tv, N, A<:AbstractArray{Tv, N}} <: AbstractArray{Tv, N}
+
+Cyclic-indexing wrapper for the y/data side of a `:exclusive` PeriodicBC
+interpolant. Companion to `_ExclusivePeriodicAxis` on the x/axis side.
+
+`inner` is the user's raw value array (size matches the user's original
+grid size, NO copy).
+
+!!! note "Currently 1D-only"
+    Only `N=1` is implemented (every method is `N=1`-specialized and the
+    convenience constructor only accepts `AbstractVector`). The `N` type
+    parameter is reserved for future ND adoption — at that point the wrapper
+    must also carry per-axis cyclicity (not every ND axis is necessarily
+    periodic). Tracked under the ND-struct migration follow-up.
+
+# 1D contract (N=1)
+- `length(c) = length(c.inner) + 1` (virtual extension)
+- `c[i] = c.inner[i]` for `i ≤ length(inner)`, `c[length(inner)+1] = c.inner[1]` (cyclic)
+- `first(c) = inner[1]`, `last(c) = inner[1]` (cyclic boundary)
+
+# Why "Data" vs "Axis"
+This wrapper has no coordinate semantics — `last(c) = inner[1]`, NOT
+`inner[1] + period` (that's the axis wrapper). It is a pure cyclic-indexing
+adapter so eval kernels can write `y[idx_R]` uniformly without branching.
+
+# Example
+```julia
+y = [10.0, 20.0, 30.0, 40.0]                       # length 4
+yw = _ExclusivePeriodicData(y)                     # presented as length 5
+yw[1], yw[2], yw[3], yw[4]                         # 10, 20, 30, 40 (raw)
+yw[5]                                              # 10.0 (cyclic, = yw[1])
+length(yw) == 5
+last(yw) == 10.0
+```
+"""
+struct _ExclusivePeriodicData{Tv, N, A <: AbstractArray{Tv, N}} <: AbstractArray{Tv, N}
+    inner::A
+end
+
+# Convenience outer constructor — type params inferred. Currently expects 1D
+# input; ND constructor is reserved for future commits that thread per-axis
+# cyclicity through the wrapper.
+@inline _ExclusivePeriodicData(inner::AbstractVector{Tv}) where {Tv} =
+    _ExclusivePeriodicData{Tv, 1, typeof(inner)}(inner)
+
+# Idempotent: re-wrapping returns input unchanged. Mirrors
+# `_CachedVector(::_CachedVector) === input` and
+# `_ExclusivePeriodicAxis` constructor patterns.
+_ExclusivePeriodicData(c::_ExclusivePeriodicData) = c
+
+# ---------- AbstractArray interface (1D specialized) ----------
+Base.size(c::_ExclusivePeriodicData{Tv, 1}) where {Tv} = (length(c.inner) + 1,)
+Base.length(c::_ExclusivePeriodicData{Tv, 1}) where {Tv} = length(c.inner) + 1
+Base.eltype(::Type{<:_ExclusivePeriodicData{Tv}}) where {Tv} = Tv
+Base.IndexStyle(::Type{<:_ExclusivePeriodicData}) = IndexLinear()
+@inline Base.firstindex(::_ExclusivePeriodicData{Tv, 1}) where {Tv} = 1
+@inline Base.lastindex(c::_ExclusivePeriodicData{Tv, 1}) where {Tv} = length(c)
+
+# `Base.getindex` is **cyclic**: for `i ∈ 1:n` returns `inner[i]`; for `i == n+1`
+# returns `inner[1]` (cyclic value at the virtual seam slot). This satisfies the
+# AbstractArray contract — every index in `1:length(c)` is valid. Generic Base
+# algorithms (`view`, `copyto!`, `iterate`, broadcast) work transparently.
+@inline Base.@propagate_inbounds function Base.getindex(c::_ExclusivePeriodicData{Tv, 1}, i::Int) where {Tv}
+    n = length(c.inner)
+    # Bounds: valid indices are `1:n+1`. Only the virtual seam slot
+    # (`i == n+1`) folds back to `inner[1]`; reject any other out-of-range
+    # index so off-by-one bugs surface and negative-`i` `@inbounds` paths
+    # cannot read arbitrary memory.
+    @boundscheck (1 <= i <= n + 1) || throw(BoundsError(c, i))
+    @inbounds return i <= n ? c.inner[i] : c.inner[1]
+end
+
+# `first` / `last` follow the wrapper's virtual span: first stays inner[1];
+# last is *also* inner[1] because the wrapped tail equals the wrapped head.
+@inline Base.first(c::_ExclusivePeriodicData{Tv, 1}) where {Tv} = @inbounds c.inner[1]
+@inline Base.last(c::_ExclusivePeriodicData{Tv, 1}) where {Tv} = @inbounds c.inner[1]
+
+# ---------- `_raw`: strip wrapping for branch-free hot loops ----------
+# See `core/periodic_axis.jl` for the rationale and contract. Caller must
+# stay within `1:length(_raw(c))` — the virtual seam slot (`length(c)`)
+# MUST go through the wrapper's cyclic `Base.getindex`.
+@inline _raw(c::_ExclusivePeriodicData) = c.inner
+
+# ---------- `_convert_copy` overload ----------
+# When the constructor calls `_convert_copy(y, Tv)` and `y` is already a
+# `_ExclusivePeriodicData`, copy the inner vector so mutations don't leak
+# between user and stored representation. Wrapper rebuilt on copied inner.
+@inline _convert_copy(c::_ExclusivePeriodicData{T}, ::Type{T}) where {T} =
+    _ExclusivePeriodicData(_convert_copy(c.inner, T))
+@inline _convert_copy(c::_ExclusivePeriodicData, ::Type{T}) where {T} =
+    _ExclusivePeriodicData(_convert_copy(c.inner, T))

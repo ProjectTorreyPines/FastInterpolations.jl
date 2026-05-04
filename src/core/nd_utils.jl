@@ -560,7 +560,7 @@ end
 end
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector, extrap::WrapExtrap)
-    return _wrap_to_domain(q, extrap)
+    return _wrap_to_domain(q, axis)
 end
 
 # ========================================

@@ -710,11 +710,11 @@ function _build_series_periodic(
     # Build z matrix (Dual when grid is Dual)
     Tz = _output_eltype(Tv, eltype(cache.x))
     z_mat = Matrix{Tz}(undef, n_pts, n_series_count)
-    _solve_series_coefficients!(z_mat, y_mat, cache, cache.bc_config)
+    _solve_series_coefficients!(z_mat, y_mat, cache, cache.bc)
 
     # Periodic BC always uses wrap extrapolation — materialize with the extended
     # grid so the struct stores WrapExtrap{T}, never the {Nothing} placeholder.
-    sitp = CubicSeriesInterpolant(cache, cache.bc_config, y_mat, z_mat, WrapExtrap(cache.x), search)
+    sitp = CubicSeriesInterpolant(cache, cache.bc, y_mat, z_mat, WrapExtrap(cache.x), search)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)

@@ -75,16 +75,14 @@
         @test linear_interp(x, y, [0.5, 4.5]; bc = PeriodicBC()) ≈ [1.5, 2.5] atol = 1.0e-12
     end
 
-    @testset "Non-Float wrap domains — WrapExtrap(x) with Int grid" begin
-        # `WrapExtrap(x::AbstractVector)` preserves the grid's eltype. For an Int
-        # grid, the stored WrapExtrap is WrapExtrap{Int} — must dispatch through
-        # the duck-typed 3-arg `_wrap_to_domain` (Int x_min/x_max, Float xi).
+    @testset "Non-Float wrap domains — Int grid + WrapExtrap()" begin
+        # `WrapExtrap` is a tag struct: the wrap domain `[first(x), last(x))`
+        # is read directly from the axis at query time. For an Int grid that
+        # exercises the duck-typed 3-arg `_wrap_to_domain` (Int x_min/x_max,
+        # Float xi).
         x_int = [0, 1, 2, 3, 4]
         y = [1.0, 2.0, 3.0, 4.0, 5.0]
-        extrap_int = WrapExtrap(x_int)
-        @test extrap_int isa FastInterpolations.WrapExtrap{Int}
-        @test (extrap_int._x_min, extrap_int._x_max) == (0, 4)
-        itp = linear_interp(x_int, y; extrap = extrap_int)
+        itp = linear_interp(x_int, y; extrap = WrapExtrap())
         # wrap: 4.5 → period 4 → 0.5 → between y[1]=1.0 and y[2]=2.0 → 1.5
         @test itp(4.5) ≈ 1.5 atol = 1.0e-12
     end
@@ -363,14 +361,14 @@
         @test ref[] == 5
     end
 
-    @testset "Exclusive — adjoint with WrapExtrap(x) smoke (T-8)" begin
+    @testset "Exclusive — adjoint with WrapExtrap() smoke (T-8)" begin
         # Adjoint doesn't accept `bc`, so periodic-shaped adjoint is exercised via
-        # explicit `extrap=WrapExtrap(x)` (grid-span materialization). Verify the
-        # materialized WrapExtrap{Float64} flows through scatter correctly.
+        # explicit `extrap=WrapExtrap()` (tag struct — wrap domain comes from the
+        # axis at query time). Verify it flows through scatter correctly.
         x = range(0.0, 1.0, length = 5)
         y = range(0.0, 1.0, length = 4)
         q = ((0.5, 0.25),)
-        adj = linear_adjoint((x, y), q; extrap = WrapExtrap(x))
+        adj = linear_adjoint((x, y), q; extrap = WrapExtrap())
         # Scatter a scalar gradient of 1.0 → per-corner weights sum to 1.0 at a single query
         y_bar = [1.0]
         f_bar = adj(y_bar)
@@ -591,7 +589,7 @@
     # ============================================================
     # Interpolant path — extended copy storage
     # ============================================================
-    @testset "Interpolant path stores extended copy (Vector grid)" begin
+    @testset "Interpolant path stores Vector grid in `_ExclusivePeriodicAxis` + y in `_ExclusivePeriodicData`" begin
         x = [0.0, 1.0, 2.0, 3.0]
         y = [10.0, 20.0, 30.0, 40.0]
         x_ref = copy(x)
@@ -599,29 +597,45 @@
 
         itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 4.0))
 
-        # Stored grid/values are length N+1 with the virtual endpoint appended.
-        @test length(itp.x) == 5
-        @test length(itp.y) == 5
-        @test itp.y[end] == itp.y[1]  # appended y[1] at the end
-        @test itp.x[end] ≈ 4.0
+        # Vector + `:exclusive` is now wrapped in `_ExclusivePeriodicAxis`
+        # (axis-side, carries period) + `_ExclusivePeriodicData` (data-side,
+        # auto-cyclic). Zero-copy: both wrappers reference the user's arrays.
+        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
+        @test itp.y isa FastInterpolations._ExclusivePeriodicData
+        @test length(itp.x) == 5                # virtual extended length n+1
+        @test length(itp.y) == 5                # data wrapper also reports n+1
+        @test length(itp.x.inner) == 4          # physical inner grid length n
+        @test length(itp.y.inner) == 4          # physical inner data length n
+        @test itp.x.period ≈ 4.0
+        @test itp.x.inner == x                  # inner grid is the user's original grid
+        @test itp.y.inner == y                  # inner data is the user's original values
+
+        # Virtual endpoints: axis carries coord (`inner[1] + period`),
+        # data auto-cycles (`inner[1]`).
+        @test itp.x[5] ≈ 4.0                    # cyclic via axis wrapper's getindex
+        @test itp.y[5] == itp.y[1] == 10.0      # cyclic via data wrapper's getindex
+        @test last(itp.x) ≈ 4.0                 # axis: inner[1] + period
+        @test last(itp.y) == 10.0               # data: inner[1] (cyclic)
 
         # Original user arrays are untouched.
         @test x == x_ref
         @test y == y_ref
     end
 
-    @testset "Interpolant path stores extended copy (Range grid → _CachedRange)" begin
+    @testset "Interpolant path wraps Range axis (`_ExclusivePeriodicAxis(_CachedRange)`)" begin
         x = range(0.0, step = 1.0, length = 4)
         y = [10.0, 20.0, 30.0, 40.0]
 
         itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
 
-        # Range input → extended grid must be _CachedRange (preserves O(1) indexing
-        # and zero-alloc lookup; _to_float_adding_endpoint guarantees this).
-        @test itp.x isa _CachedRange
-        @test length(itp.x) == 5
-        @test length(itp.y) == 5
-        @test itp.y[end] == itp.y[1]
+        # Range input → `_ExclusivePeriodicAxis(_CachedRange, period)` (uniform with
+        # the Vector path; period + virtual endpoint cached on the axis).
+        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
+        @test itp.x.inner isa _CachedRange
+        @test length(itp.x) == 5             # virtual length n+1
+        @test length(itp.x.inner) == 4       # raw n-length cached Range
+        @test length(itp.y) == 5             # `_ExclusivePeriodicData` virtual n+1
+        @test itp.y[end] == itp.y[1]         # cyclic
     end
 
     # ============================================================
@@ -747,8 +761,10 @@
         x = 0:10                                       # UnitRange{Int}
         y = sin.(2π .* (x ./ 10))
         itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
-        @test itp.x isa _CachedRange{Float64}          # Int Range → Float _CachedRange
-        @test length(itp.x) == 12                      # N+1 extension
+        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
+        @test itp.x.inner isa _CachedRange{Float64}    # Int Range → Float _CachedRange (cached)
+        @test length(itp.x) == 12                      # virtual N+1
+        @test length(itp.x.inner) == 11                # raw N
         # Query agrees with Float-equivalent grid
         ref = linear_interp(Float64.(0:10), y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
         for xq in (0.5, 5.5, 10.5)
@@ -981,14 +997,27 @@
         v_oneshot = linear_interp(x, s, xq; bc = bc)
         v_persist = linear_interp(x, s; bc = bc)(xq)
 
-        @test v_oneshot[1] === v_scalar
-        @test v_oneshot[1] === v_persist[1]
+        # Scalar oneshot uses `_alpha_of(g) → _alpha_of(g.inner::_CachedRange)`
+        # which delegates to cached `inner.inv_h = inv(step)` (DCE-friendly:
+        # for `EvalValue` the kernel-side `_get_inv_h` is dead-code-eliminated
+        # by LLVM since only α is consumed). Series oneshot routes through the
+        # wrapper's seam-aware `_get_inv_h(g, n) = inv(_x_max - inner[n])`,
+        # whose `(xq - xL) / (xR - xL)`-shaped α cancels structurally and
+        # gives a slightly different Float64 rounding at a 1e8 offset.
+        # Persistent series builds via `_prepare_periodic` (physical n+1
+        # extension), so it sees a regular `_CachedRange` and uses cached
+        # step like scalar. The three routes thus agree within the
+        # `eps(1e8)/0.1 ≈ 5e-8`-relative Float64 floor at this grid offset.
+        @test v_oneshot[1] ≈ v_scalar rtol = 1.0e-7
+        @test v_oneshot[1] ≈ v_persist[1] rtol = 1.0e-7
 
-        # Batch path must agree element-wise
+        # Batch path uses the wrapper-based series oneshot route, so it
+        # matches `v_oneshot` (and not `v_scalar`) bit-for-bit.
         xqs = [1.0e8 + 0.95, 1.0e8 + 0.55]
         outs = [similar(xqs) for _ in 1:2]
         linear_interp!(outs, x, s, xqs; bc = bc)
-        @test outs[1][1] === v_scalar
+        @test outs[1][1] === v_oneshot[1]
+        # Interior cell (xqs[2]) — no seam, no cancellation — bit-equal across routes.
         @test outs[1][2] === linear_interp(x, y1, xqs[2]; bc = bc)
     end
 

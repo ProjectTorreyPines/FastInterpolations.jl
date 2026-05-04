@@ -12,11 +12,11 @@
 # _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
 
 @inline function _itp_eval_scalar(itp::LinearInterpolant, xq, extrap, op, searcher)
-    return _linear_eval_at_point(itp.x, itp.y, itp.spacing, xq, extrap, op, searcher)
+    return _linear_eval_at_point(itp.x, itp.y, xq, extrap, op, searcher)
 end
 
 @inline function _itp_vector_loop!(output, itp::LinearInterpolant, xq, extrap, op, searcher)
-    return _linear_vector_loop!(output, itp.x, itp.y, itp.spacing, xq, extrap, op, searcher)
+    return _linear_vector_loop!(output, itp.x, itp.y, xq, extrap, op, searcher)
 end
 
 # ========================================
@@ -26,8 +26,9 @@ end
 # overhead when adaptive AutoSearch resolves to BinarySearch or LinearBinarySearch.
 # CRITICAL: All arguments must be fully typed — untyped args prevent SROA
 # of RefHint's Ref, causing 16-byte heap allocation per call.
-# Oneshot variant (no spacing) and persistent variant (with spacing) coexist;
-# persistent calls reuse the spacing's cached `inv_h` array per query.
+# Single 7-arg signature: persistent vs oneshot strategy is dispatched on the
+# grid type itself inside `_linear_eval_at_point` (via `_alpha_of`/`_get_inv_h`
+# specializations on `_CachedRange`/`_CachedVector` vs raw `AbstractVector`).
 @inline function _linear_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -40,22 +41,6 @@ end
     extrap = _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
         output[i] = _linear_eval_at_point(x, y, xq[i], extrap, deriv, searcher)
-    end
-end
-
-@inline function _linear_vector_loop!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        spacing::AbstractGridSpacing{Tg},
-        xq::AbstractVector{<:Real},
-        extrap::E,
-        deriv::O,
-        searcher::P
-    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    extrap = _check_domain(x, xq, extrap)
-    return @inbounds for i in eachindex(xq, output)
-        output[i] = _linear_eval_at_point(x, y, spacing, xq[i], extrap, deriv, searcher)
     end
 end
 
@@ -155,9 +140,21 @@ function linear_interp end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    # Single code path — helper returns (x, y, extrap) passthrough for non-periodic,
-    # or (extended x, extended y, WrapExtrap()) for PeriodicBC (inclusive/exclusive).
-    x_eff, y_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
+    # Surface-level BC-aware resolvers (`_caching_axis` / `_resolve_data` in
+    # periodic_axis.jl) compose the right per-(grid×bc) shape uniformly:
+    #   Vector + :exclusive → `_ExclusivePeriodicAxis(_CachedVector(...), period)`
+    #   Vector + non-excl   → `_CachedVector(...)` (cached for persistent eval)
+    #   Range  + :exclusive → length-(n+1) `_CachedRange` (`_to_float_adding_endpoint`)
+    #   Range  + non-excl   → `_CachedRange` (`_to_float`)
+    # `_resolve_data(y, bc)` is reference-only: passthrough for non-`:exclusive`
+    # (with optional `:inclusive` endpoint check), `_ExclusivePeriodicData(y)`
+    # for `:exclusive` (mutation copy happens inside the inner constructor via
+    # `_convert_copy`).
+    x_eff = _caching_axis(x, bc, Tg)
+    y_eff = _resolve_data(y, bc)
+    # Periodic BCs auto-promote `extrap` to `WrapExtrap` against the resolved
+    # axis span. `_resolve_extrap` handles materialization.
+    extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
     return LinearInterpolant(x_eff, y_eff; extrap = extrap_p, search)
 end

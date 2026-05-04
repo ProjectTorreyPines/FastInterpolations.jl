@@ -538,24 +538,21 @@
         end
 
         @testset "compute_rhs_along_dim! Val(1) error" begin
-            # Create minimal test data
+            # Create minimal test data. Post spacing-cleanup the routine takes
+            # the grid directly (h/inv_h come from `_get_h(x, idx)`); no separate
+            # spacing argument.
             D = zeros(5, 10)
             data = rand(5, 10)
             x = collect(range(0.0, 1.0, 10))
 
-            # Create spacing using ScalarSpacing (uniform grid)
-            ScalarSpacing = FastInterpolations.ScalarSpacing
-            h = 1.0 / 9.0  # spacing for 10 points in [0,1]
-            spacing = ScalarSpacing(h, 1.0 / h)
-
             bc = BCPair(FastInterpolations.Deriv2(0.0), FastInterpolations.Deriv2(0.0))
 
             # Val(1) should throw ArgumentError
-            @test_throws ArgumentError compute_rhs_along_dim!(D, data, x, spacing, bc, Val(1))
+            @test_throws ArgumentError compute_rhs_along_dim!(D, data, x, bc, Val(1))
 
             # Check error message content
             try
-                compute_rhs_along_dim!(D, data, x, spacing, bc, Val(1))
+                compute_rhs_along_dim!(D, data, x, bc, Val(1))
             catch e
                 @test e isa ArgumentError
                 @test occursin("Val", e.msg) && occursin("1", e.msg)
@@ -564,24 +561,21 @@
         end
 
         @testset "moments_to_derivatives_along_dim! Val(1) error" begin
-            # Create minimal test data
+            # Create minimal test data. Post spacing-cleanup the routine takes
+            # the grid directly; no separate spacing argument.
             out = zeros(5, 10)
             M = rand(5, 10)  # Moments
             data = rand(5, 10)
-
-            # Create spacing using ScalarSpacing
-            ScalarSpacing = FastInterpolations.ScalarSpacing
-            h = 1.0 / 9.0
-            spacing = ScalarSpacing(h, 1.0 / h)
+            x = collect(range(0.0, 1.0, 10))
 
             bc = BCPair(FastInterpolations.Deriv2(0.0), FastInterpolations.Deriv2(0.0))
 
             # Val(1) should throw ArgumentError
-            @test_throws ArgumentError moments_to_derivatives_along_dim!(out, M, data, spacing, bc, Val(1))
+            @test_throws ArgumentError moments_to_derivatives_along_dim!(out, M, data, x, bc, Val(1))
 
             # Check error message content
             try
-                moments_to_derivatives_along_dim!(out, M, data, spacing, bc, Val(1))
+                moments_to_derivatives_along_dim!(out, M, data, x, bc, Val(1))
             catch e
                 @test e isa ArgumentError
                 @test occursin("Val", e.msg) && occursin("1", e.msg)

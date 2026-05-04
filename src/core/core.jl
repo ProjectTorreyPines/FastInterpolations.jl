@@ -9,12 +9,15 @@ include("coeff_types.jl")         # 3c. AbstractCoeffStrategy, PreCompute, OnThe
 include("polyfit_kernels.jl")       # 4. Boundary condition computation kernels (Lagrange, etc.)
 include("grid_spacing.jl")     # 5. ScalarSpacing, VectorSpacing
 include("cached_range.jl")     # 5b. _CachedRange struct + _to_float (Range → _CachedRange normalizer)
+include("cached_vector.jl")    # 5c. _CachedVector struct (Vector grid + cached h/inv_h)
 include("search.jl")           # 6. Search policy + interval search
 include("idx_stencil.jl")      # 6a. _IdxStencil{K} — wrap-aware per-axis index stencil
 include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)
 include("utils.jl")            # 7. Shared utilities (1D)
 include("periodic.jl")         # 8. Periodic BC helpers (wrapping, validation, exclusive endpoint)
-include("anchor_common.jl")    # 8b. Shared _AnchorLoc + _anchor_loc (all methods, 1D/ND)
+include("periodic_axis.jl")    # 8b. _ExclusivePeriodicAxis wrapper (axis-side representation transform for `:exclusive` BC on Vector grids)
+include("periodic_data.jl")    # 8c. _ExclusivePeriodicData wrapper (data-side cyclic-indexing companion)
+include("anchor_common.jl")    # 8c. Shared _AnchorLoc + _anchor_loc (all methods, 1D/ND)
 include("nd_utils.jl")            # 9. ND-specific utilities (shared by constant/linear/cubic ND)
 include("query_protocol.jl")           # 9b. Query protocol (query_length, extract, eltype, validate)
 include("interpolant_protocol.jl")     # 9c. Interpolant callable interface (1D + ND)

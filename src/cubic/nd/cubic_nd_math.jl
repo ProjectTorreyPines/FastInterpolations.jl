@@ -227,13 +227,13 @@ In-place version that modifies `dydx`.
 - `dydx::AbstractVector{Tv}`: Output first derivatives (modified in-place)
 - `m::AbstractVector{Tv}`: Input moments (second derivatives)
 - `y::AbstractVector{Tv}`: Function values at grid points
-- `spacing::AbstractGridSpacing{Tg}`: Grid spacing information
+- `x::AbstractVector{Tg}`: Grid spacing information
 """
 function _moments_to_derivatives_1d!(
         dydx::AbstractVector{Tv},
         m::AbstractVector{Tv},
         y::AbstractVector{Tv},
-        spacing::AbstractGridSpacing{Tg}
+        x::AbstractVector{Tg}
     ) where {Tv, Tg}
     n = length(y)
     @assert length(dydx) == n "dydx length mismatch"
@@ -244,8 +244,8 @@ function _moments_to_derivatives_1d!(
 
     # First point (using right derivative from first interval)
     @inbounds begin
-        h1 = _get_h(spacing, 1)
-        inv_h1 = _get_inv_h(spacing, 1)
+        h1 = _get_h(x, 1)
+        inv_h1 = _get_inv_h(x, 1)
         h_over_6 = h1 * inv_6
         linear_slope = (y[2] - y[1]) * inv_h1
         moment_sum = muladd(Tg(2), m[1], m[2])
@@ -254,8 +254,8 @@ function _moments_to_derivatives_1d!(
 
     # Interior and last points (using left derivative from each interval)
     @inbounds for i in 1:(n - 1)
-        h = _get_h(spacing, i)
-        inv_h = _get_inv_h(spacing, i)
+        h = _get_h(x, i)
+        inv_h = _get_inv_h(x, i)
         h_over_6 = h * inv_6
         linear_slope = (y[i + 1] - y[i]) * inv_h
         moment_sum = muladd(Tg(2), m[i + 1], m[i])
@@ -281,9 +281,12 @@ function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::BCPair, args...) wh
     return nothing
 end
 
-function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::PeriodicData{Tg, E}, args...) where {Tv, Tg, E}
+function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::PeriodicBC{E}, args...) where {Tv, E}
     # Enforce periodic: dydx[1] == dydx[end]
-    avg = inv(Tg(2)) * (dydx[1] + dydx[end])
+    # Use a `Real` scalar (`0.5`) rather than `inv(Tv(2))` so duck-typed `Tv`
+    # without `inv` (e.g. test `MyDuck` with only `+,-, Real*Tv`) still work.
+    # `Real * Tv` is the documented minimum op set for duck values.
+    avg = (dydx[1] + dydx[end]) * 0.5
     @inbounds dydx[1] = avg
     @inbounds dydx[end] = avg
     return nothing
@@ -317,11 +320,11 @@ Differentiate 1D vector using cubic splines. BC type determines the method:
     # Computation: normalize BC values to Tv via value-based _normalize_bc.
     bc_compute = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, first(values))
     cache = _get_cubic_cache(grid, bc, _effective_autocache(true, Tg))
-    actual_bc = cache.bc_config isa PeriodicData ? cache.bc_config : bc_compute
+    actual_bc = cache.bc isa PeriodicBC ? cache.bc : bc_compute
     Tz = _output_eltype(Tv, eltype(cache.x))
     m = acquire!(pool, Tz, n)
     _solve_system!(m, cache, values, actual_bc)
-    _moments_to_derivatives_1d!(deriv, m, values, cache.spacing)
+    _moments_to_derivatives_1d!(deriv, m, values, cache.x)
     _apply_derivative_bc!(deriv, actual_bc)
     return deriv
 end
@@ -344,7 +347,7 @@ end
     Tz = _output_eltype(Tv, eltype(cache.x))
     m = acquire!(pool, Tz, n)
     _solve_system!(m, cache, values, bc)
-    _moments_to_derivatives_1d!(deriv, m, values, cache.spacing)
+    _moments_to_derivatives_1d!(deriv, m, values, cache.x)
     _apply_derivative_bc!(deriv, bc)
     return deriv
 end
@@ -446,14 +449,13 @@ Optimized for memory locality and SIMD execution.
 """
 function solve_along_dim!(
         out_z::AbstractMatrix{Tv},
-        cache::CubicSplineCache{Tg, X, F, BC_cache, S},
+        cache::CubicSplineCache{Tg, X, F, BC_cache},
         data::AbstractMatrix{Tv},
         bc::BCPair,
         dim::Val{D}
-    ) where {Tv, Tg, X, F, BC_cache, S <: AbstractGridSpacing{Tg}, D}
+    ) where {Tv, Tg, X, F, BC_cache, D}
     # Step 1: Compute RHS for all systems
-    # Note: bc can have different value type than cache.bc_config (e.g., ComplexF64 vs Float64)
-    compute_rhs_along_dim!(out_z, data, cache.x, cache.spacing, bc, dim)
+    compute_rhs_along_dim!(out_z, data, cache.x, bc, dim)
 
     # Step 2: Batch solve (SIMD for D≥2)
     _ldiv_along_dim!(out_z, cache.thomas, dim)
@@ -474,7 +476,7 @@ Compute RHS for batch systems along dimension `D`.
 - `D::AbstractMatrix{T}`: Output RHS matrix (modified in-place)
 - `data::AbstractMatrix{T}`: Input data matrix
 - `x::AbstractVector{T}`: Grid points
-- `spacing::AbstractGridSpacing{T}`: Grid spacing object
+- `x::AbstractVector{T}`: Grid spacing object
 - `bc::BCPair{T}`: Boundary condition pair
 - `::Val{D}`: Dimension along which to compute RHS
 
@@ -484,13 +486,12 @@ function compute_rhs_along_dim!(
         D::AbstractMatrix{Tv},
         data::AbstractMatrix{Tv},
         x::AbstractVector{Tg},
-        spacing::AbstractGridSpacing{Tg},
         bc::BCPair,
         ::Val{2}
     ) where {Tv, Tg}
     n_batch = size(data, 1)
     @inbounds for i in 1:n_batch
-        compute_rhs!(view(D, i, :), view(data, i, :), x, spacing, bc)
+        compute_rhs!(view(D, i, :), view(data, i, :), x, bc)
     end
     return D
 end
@@ -508,7 +509,7 @@ Convert moments to derivatives for batch systems along dimension D.
 - `out::AbstractMatrix{T}`: Output derivatives (modified in-place)
 - `M::AbstractMatrix{T}`: Input moments (second derivatives)
 - `data::AbstractMatrix{T}`: Original function values
-- `spacing::AbstractGridSpacing{T}`: Grid spacing
+- `x::AbstractVector{T}`: Grid spacing
 - `bc`: Boundary condition configuration
 - `::Val{D}`: Dimension along which conversion was performed
 
@@ -518,14 +519,14 @@ function moments_to_derivatives_along_dim!(
         out::AbstractMatrix{Tv},
         M::AbstractMatrix{Tv},
         data::AbstractMatrix{Tv},
-        spacing::AbstractGridSpacing{Tg},
+        x::AbstractVector{Tg},
         bc,
         ::Val{2}
     ) where {Tv, Tg}
     n_batch = size(data, 1)
     @inbounds for i in 1:n_batch
         _moments_to_derivatives_1d!(
-            view(out, i, :), view(M, i, :), view(data, i, :), spacing
+            view(out, i, :), view(M, i, :), view(data, i, :), x
         )
         _apply_derivative_bc!(view(out, i, :), bc)
     end
@@ -569,7 +570,6 @@ Use `compute_rhs!` in a loop for axis 1, or use `Val(2)` for batch computation.
         D::AbstractMatrix{Tv},
         data::AbstractMatrix{Tv},
         x::AbstractVector{Tg},
-        spacing::AbstractGridSpacing{Tg},
         bc::BCPair,
         ::Val{1}
     ) where {Tv, Tg}
@@ -591,7 +591,7 @@ Use `_moments_to_derivatives_1d!` in a loop for axis 1, or use `Val(2)` for batc
         out::AbstractMatrix{Tv},
         M::AbstractMatrix{Tv},
         data::AbstractMatrix{Tv},
-        spacing,
+        x::AbstractVector,
         bc,
         ::Val{1}
     ) where {Tv}

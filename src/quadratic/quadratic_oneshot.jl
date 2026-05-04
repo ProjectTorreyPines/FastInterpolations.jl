@@ -59,7 +59,7 @@ end
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
-# 4-arg `_wrap_to_domain` dispatches on typed vs Nothing WrapExtrap.
+# Wrap domain `[first(x), last(x))` is read directly from the axis.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -70,7 +70,7 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, extrap)
+    xq_wrapped = _wrap_to_domain(xq, x)
     idx, _, xL, _ = search_interval(searcher, x, xq_wrapped)
     dt = xq_wrapped - xL
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)

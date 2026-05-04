@@ -90,14 +90,14 @@ end
 # ========================================
 
 """
-    _bake_hermite_adjoint_anchors(x, spacing, xq, extrap) -> Vector{_HermiteAdjointAnchor1D}
+    _bake_hermite_adjoint_anchors(x, xq, extrap) -> Vector{_HermiteAdjointAnchor1D}
 
 Precompute cell indices and all derivative-order weights for each query point.
 OOB handling baked into weights at construction time (no runtime OOB checks).
+Axis-as-truth: `x` is the wrapped axis carrying cached h/inv_h.
 """
 function _bake_hermite_adjoint_anchors(
         x::AbstractVector{Tg},
-        spacing::AbstractGridSpacing{Tg},
         xq::AbstractVector,
         extrap::AbstractExtrap
     ) where {Tg}
@@ -114,15 +114,15 @@ function _bake_hermite_adjoint_anchors(
         xq_eval = if need_clamp
             clamp(xq_raw, x_lo, x_hi)
         elseif wrap
-            _wrap_to_domain(xq_raw, x_lo, x_hi)
+            _wrap_to_domain(xq_raw, x)
         else
             xq_raw
         end
 
         # Search interval
-        idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, x, spacing, xq_eval)
-        h = _get_h(spacing, idx)
-        inv_h = _get_inv_h(spacing, idx)
+        idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, x, xq_eval)
+        h = _get_h(x, idx)
+        inv_h = _get_inv_h(x, idx)
         t = (xq_eval - xL) * inv_h
 
         # Compute all weight sets
@@ -437,11 +437,13 @@ function hermite_adjoint(
         end
     end
 
-    # Build spacing and anchors
-    spacing = _create_spacing(x_p)
-    anchors = _bake_hermite_adjoint_anchors(x_p, spacing, xq_p, extrap)
+    # Wrap axis (axis-as-truth) and bake anchors. `_store_grid_cached` is
+    # idempotent on already-cached axes (Range from `_promote_adjoint_inputs`
+    # arrives as `_CachedRange`), and wraps a plain `Vector` into `_CachedVector`.
+    x_axis = _store_grid_cached(x_p, Tg)
+    anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap)
 
-    return HermiteAdjoint1D{Tg, typeof(extrap)}(anchors, length(x_p), extrap)
+    return HermiteAdjoint1D{Tg, typeof(extrap)}(anchors, length(x_axis), extrap)
 end
 
 # Scalar query convenience

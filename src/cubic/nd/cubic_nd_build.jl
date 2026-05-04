@@ -178,7 +178,7 @@ slices simultaneously using the batch solver from 2D implementation.
         # Batch SIMD path: use 2D batch solver along axis 2
         # Cache construction: _get_cubic_cache internally uses _cache_pointbc (duck-safe).
         cache = _get_cubic_cache(grid, bc, _effective_autocache(true, eltype(grid)))
-        actual_bc = cache.bc_config isa PeriodicData ? cache.bc_config : _normalize_bc(bc, first(data_3d))
+        actual_bc = cache.bc isa PeriodicBC ? cache.bc : _normalize_bc(bc, first(data_3d))
 
         # Acquire workspace for moments matrix
         M = acquire!(pool, Tv, (shape_before, n_d))
@@ -192,7 +192,7 @@ slices simultaneously using the batch solver from 2D implementation.
             solve_along_dim!(M, cache, data_2d, actual_bc, Val(2))
 
             # Batch convert: moments → derivatives for all rows
-            moments_to_derivatives_along_dim!(out_2d, M, data_2d, cache.spacing, actual_bc, Val(2))
+            moments_to_derivatives_along_dim!(out_2d, M, data_2d, cache.x, actual_bc, Val(2))
         end
     else
         # Fall back to per-slice approach (d=1 or PeriodicBC)

@@ -633,6 +633,44 @@ for method in ["Cubic", "Cardinal", "PHS"]
     @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
 end
 
+# Table 5: PHS Error Comparison
+println("\n### PHS Error Relative to Other Methods (mean relative error ratio)\n")
+
+# Compute PHS mean errors
+phs_rho_mean = sum(errors_rho["PHS"]) / length(errors_rho["PHS"])
+phs_grad_mean = sum(errors_grad["PHS"]) / length(errors_grad["PHS"])
+phs_lap_mean = sum(errors_lap["PHS"]) / length(errors_lap["PHS"])
+
+# Density comparison
+println("**Charge Density (ρ):**")
+println("| Method | Ratio to PHS | Improvement Factor |")
+println("|--------|--------------|-------------------|")
+for method in ["Nearest", "Linear", "Cubic", "Cardinal"]
+    method_mean = sum(errors_rho[method]) / length(errors_rho[method])
+    ratio = method_mean / phs_rho_mean
+    @printf "| %-18s | %.2f× | %.1f%% better |\n" method ratio (1.0 - 1.0/ratio) * 100
+end
+
+# Gradient comparison
+println("\n**Gradient Magnitude (|∇ρ|):**")
+println("| Method | Ratio to PHS | Improvement Factor |")
+println("|--------|--------------|-------------------|")
+for method in ["Linear", "Cubic", "Cardinal"]
+    method_mean = sum(errors_grad[method]) / length(errors_grad[method])
+    ratio = method_mean / phs_grad_mean
+    @printf "| %-18s | %.2f× | %.1f%% better |\n" method ratio (1.0 - 1.0/ratio) * 100
+end
+
+# Laplacian comparison
+println("\n**Laplacian Magnitude (|∇²ρ|):**")
+println("| Method | Ratio to PHS | Improvement Factor |")
+println("|--------|--------------|-------------------|")
+for method in ["Cubic", "Cardinal"]
+    method_mean = sum(errors_lap[method]) / length(errors_lap[method])
+    ratio = method_mean / phs_lap_mean
+    @printf "| %-18s | %.2f× | %.1f%% better |\n" method ratio (1.0 - 1.0/ratio) * 100
+end
+
 println("\n" * "="^80 * "\n")
 
 # ============================================================

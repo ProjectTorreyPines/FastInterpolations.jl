@@ -4,9 +4,9 @@
         _CachedRange, _CachedVector, _ExclusivePeriodicAxis, _ExclusivePeriodicData,
         NoBC, PeriodicBC
 
-    bc_no    = NoBC()
-    bc_inc   = PeriodicBC(endpoint = :inclusive)
-    bc_excl  = PeriodicBC(endpoint = :exclusive, period = 4.0)
+    bc_no = NoBC()
+    bc_inc = PeriodicBC(endpoint = :inclusive)
+    bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
     @testset "Vector + non-exclusive → passthrough" begin
         x = [0.0, 1.0, 2.0, 3.0]
@@ -49,9 +49,9 @@ end
     using FastInterpolations: _resolve_data, _ExclusivePeriodicData, NoBC, PeriodicBC
 
     y = [10.0, 20.0, 30.0, 40.0]
-    bc_no    = NoBC()
-    bc_inc   = PeriodicBC(endpoint = :inclusive, check = false)
-    bc_excl  = PeriodicBC(endpoint = :exclusive, period = 4.0)
+    bc_no = NoBC()
+    bc_inc = PeriodicBC(endpoint = :inclusive, check = false)
+    bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
     @testset "non-exclusive → passthrough" begin
         @test _resolve_data(y, bc_no) === y
@@ -83,8 +83,8 @@ end
         _caching_axis, _CachedRange, _CachedVector, _ExclusivePeriodicAxis,
         NoBC, PeriodicBC
 
-    bc_no    = NoBC()
-    bc_excl  = PeriodicBC(endpoint = :exclusive, period = 4.0)
+    bc_no = NoBC()
+    bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
     @testset "Vector + non-exclusive → _CachedVector" begin
         x = [0.0, 1.0, 2.0, 3.0]

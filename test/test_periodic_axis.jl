@@ -175,7 +175,7 @@ end
         end
 
         # Seam queries (xq >= x[n]): early-exit, return (n, x[n], x[1]+period)
-        for xq in [0.75, 0.9, 1.0 - 1e-10]
+        for xq in [0.75, 0.9, 1.0 - 1.0e-10]
             idx, xL, xR = _search_binary(g, xq)
             @test idx == 4         # n
             @test xL == x[4]       # x[n]
@@ -233,7 +233,7 @@ end
 
 @testitem "_ExclusivePeriodicAxis + _ExclusivePeriodicData round-trip in eval-style usage" begin
     using FastInterpolations: _ExclusivePeriodicAxis, _ExclusivePeriodicData,
-                              search_interval, _resolve_search, NoBC, BinarySearch
+        search_interval, _resolve_search, NoBC, BinarySearch
 
     # Simulate an eval kernel: search returns idx_R = n+1 at seam; the data
     # wrapper auto-cycles `y[n+1] → inner[1]` so kernels write `y[idx_R]`
@@ -276,18 +276,22 @@ end
     end
 
     @testset "2D fold-back along dim=1" begin
-        arr = [10.0 20.0;
-               30.0 40.0;
-               50.0 60.0;
-               1.0 2.0]   # 4×2, fold dim=1 with n_period=3
+        arr = [
+            10.0 20.0;
+            30.0 40.0;
+            50.0 60.0;
+            1.0 2.0
+        ]   # 4×2, fold dim=1 with n_period=3
         _periodic_fold_axis!(arr, 1, 3)
         @test arr[1, :] == [11.0, 22.0]   # arr[1,:] += arr[4,:]
         @test arr[2:4, :] == [30.0 40.0; 50.0 60.0; 1.0 2.0]  # untouched
     end
 
     @testset "2D fold-back along dim=2" begin
-        arr = [10.0 20.0 30.0 1.0;
-               40.0 50.0 60.0 2.0]   # 2×4, fold dim=2 with n_period=3
+        arr = [
+            10.0 20.0 30.0 1.0;
+            40.0 50.0 60.0 2.0
+        ]   # 2×4, fold dim=2 with n_period=3
         _periodic_fold_axis!(arr, 2, 3)
         @test arr[:, 1] == [11.0, 42.0]   # arr[:,1] += arr[:,4]
         @test arr[:, 2:4] == [20.0 30.0 1.0; 50.0 60.0 2.0]  # untouched

@@ -59,9 +59,9 @@
         @test which(_get_h, Tuple{Vector{Float64}, Int}).sig <: Tuple{Any, AbstractVector, Int}
         @test which(_get_h, Tuple{typeof(x_range), Int}).sig <: Tuple{Any, AbstractRange, Int}
         @test which(_get_h, Tuple{typeof(x_cached_range), Int}).sig <:
-            Tuple{Any, _CachedRange, Int}
+        Tuple{Any, _CachedRange, Int}
         @test which(_get_h, Tuple{typeof(x_cached_vec), Int}).sig <:
-            Tuple{Any, _CachedVector, Int}
+        Tuple{Any, _CachedVector, Int}
     end
 
     @testset "Int grid → Float h" begin

@@ -75,7 +75,7 @@ end
 
 @testitem "_ExclusivePeriodicData + _ExclusivePeriodicAxis pairing (length compatibility)" begin
     using FastInterpolations: _ExclusivePeriodicData, _ExclusivePeriodicAxis,
-                              _check_compatible_length
+        _check_compatible_length
 
     @testset "Wrapped pair: length(x) == length(y) (both n+1)" begin
         x = [0.0, 0.25, 0.5, 0.75]

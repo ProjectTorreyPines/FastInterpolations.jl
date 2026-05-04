@@ -183,5 +183,18 @@ end
 @inline _store_grid_cached(x::AbstractVector, ::Type{Tg}) where {Tg} =
     _CachedVector(_convert_copy(x, Tg))
 @inline _store_grid_cached(x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
-@inline _store_grid_cached(x::_CachedVector, ::Type{Tg}) where {Tg} = x
-@inline _store_grid_cached(x::_CachedRange, ::Type{Tg}) where {Tg} = x
+# Pre-wrapped cases delegate to wrapper-aware `_convert_copy`. This handles
+# BOTH:
+#   1. Mutation safety: same-type `_convert_copy` delegates to `Base.copy`,
+#      which recursively copies inner buffers (mandatory for `_CachedVector`
+#      whose 1-arg constructor `_CachedVector(::Vector{T})` shares the input
+#      buffer by reference — see line ~113).
+#   2. Type promotion: different-type `_convert_copy` rebuilds the wrapper
+#      with a type-converted inner — without this, callers who pass
+#      `_CachedVector{Float32}` with `Tg = Float64` would silently get back
+#      a `_CachedVector{Float32}` and break downstream type inference.
+# `_CachedRange` would be mutation-safe even with a passthrough (immutable
+# struct of scalar fields, no buffer to share), but the unified delegation
+# is required for correct type promotion in `_CachedRange{!Tg} → Tg` cases.
+@inline _store_grid_cached(x::_CachedVector, ::Type{Tg}) where {Tg} = _convert_copy(x, Tg)
+@inline _store_grid_cached(x::_CachedRange, ::Type{Tg}) where {Tg} = _convert_copy(x, Tg)

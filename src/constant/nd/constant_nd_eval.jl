@@ -100,11 +100,11 @@ end
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, policies, hints, mono)
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
     # h-lift: the kernel now takes precomputed `hs` instead of computing
-    # `_get_h(spacings[d], indices[d])` inside the @generated body. Persistent
-    # fast lane: 2-arg `_get_h` reads cached `spacings[d].h`.
-    hs = map(_get_h, itp.spacings, indices)
+    # `_get_h(grids[d], indices[d])` inside the @generated body. Persistent
+    # fast lane: 2-arg `_get_h` reads cached `h` from the grid wrapper.
+    hs = map(_get_h, itp.grids, indices)
     # Wrap raw indices into the unified stencil shape so the kernel has a
     # single signature across persistent and BC oneshot callers.
     stencils = map(i -> _IdxPair(i, i + 1), indices)
@@ -120,11 +120,11 @@ end
         mono::Tuple{Bool, Bool},
     ) where {Tg, Tv}
     x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, itp.grids, itp.spacings, itp.extraps, policies, hints, mono
+        query, itp.grids, itp.extraps, policies, hints, mono
     )
     # Lift h + wrap indices into stencils, matching the generic-N path.
-    hx = _get_h(itp.spacings[1], ix)
-    hy = _get_h(itp.spacings[2], iy)
+    hx = _get_h(itp.grids[1], ix)
+    hy = _get_h(itp.grids[2], iy)
     return (
         itp.data,
         (_IdxPair(ix, ix + 1), _IdxPair(iy, iy + 1)),

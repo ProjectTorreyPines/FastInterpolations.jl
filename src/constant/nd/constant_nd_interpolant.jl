@@ -68,7 +68,6 @@ function constant_interp(
 
     # Extend grids/data for exclusive periodic axes (build-time only).
     grids_typed, data_typed, _ = _prepare_periodic_nd(grids_typed, data_typed, bcs)
-    spacings = _create_spacings_typed(grids_typed)
 
     # _resolve_extrap_nd(extrap, bcs, ...) validates periodic/extrap compatibility
     # and auto-overrides per-axis extrap to WrapExtrap() on periodic axes.
@@ -78,8 +77,8 @@ function constant_interp(
     extrap_vals = map(_resolve_extrap, extrap_vals, grids_typed)
     return ConstantInterpolantND{
         Tg, Tv, N,
-        typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(sides), typeof(searches),
+        typeof(grids_typed), typeof(extrap_vals), typeof(sides), typeof(searches),
     }(
-        grids_typed, spacings, data_typed, extrap_vals, sides, searches
+        grids_typed, data_typed, extrap_vals, sides, searches
     )
 end

@@ -50,31 +50,28 @@ struct ConstantInterpolantND{
         Tv,
         N,
         G <: NTuple{N, AbstractVector{Tg}},
-        S <: NTuple{N, AbstractGridSpacing{Tg}},
         E <: Tuple{Vararg{AbstractExtrap, N}},
         SD <: Tuple{Vararg{AbstractSide, N}},
         P <: NTuple{N, AbstractSearchPolicy},
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    spacings::S
     data::Array{Tv, N}
     extraps::E
     sides::SD
     searches::P
 
-    function ConstantInterpolantND{Tg, Tv, N, G, S, E, SD, P}(
-            grids::Tuple{Vararg{AbstractVector, N}}, spacings::S, data::AbstractArray{Tv, N}, extraps::E, sides::SD, searches::P
+    function ConstantInterpolantND{Tg, Tv, N, G, E, SD, P}(
+            grids::Tuple{Vararg{AbstractVector, N}}, data::AbstractArray{Tv, N}, extraps::E, sides::SD, searches::P
         ) where {
             Tg, Tv, N, G <: NTuple{N, AbstractVector{Tg}},
-            S <: NTuple{N, AbstractGridSpacing{Tg}}, E,
-            SD <: Tuple{Vararg{AbstractSide, N}}, P <: NTuple{N, AbstractSearchPolicy},
+            E, SD <: Tuple{Vararg{AbstractSide, N}}, P <: NTuple{N, AbstractSearchPolicy},
         }
         # Copy grids and data to ensure mutation safety.
         # copy() on immutable Range types is a no-op (zero allocation).
         # Array() converts AbstractArray→Array AND copies in one step.
         # typeof() rebinds G after copy (e.g. tuple-of-SubArrays → tuple-of-Vectors).
         grids_c = map(copy, grids)
-        return new{Tg, Tv, N, typeof(grids_c), S, E, SD, P}(grids_c, spacings, Array(data), extraps, sides, searches)
+        return new{Tg, Tv, N, typeof(grids_c), E, SD, P}(grids_c, Array(data), extraps, sides, searches)
     end
 end
 

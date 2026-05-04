@@ -153,8 +153,11 @@ Base.length(g::_ExclusivePeriodicAxis) = length(g.inner) + 1
 Base.size(g::_ExclusivePeriodicAxis) = (length(g),)
 @inline Base.@propagate_inbounds function Base.getindex(g::_ExclusivePeriodicAxis, i::Int)
     n = length(g.inner)
-    # Seam slot returns the cached `_x_max = inner[1] + period` (precomputed at
-    # construction) — single field load, no per-access add.
+    # Bounds: valid indices are `1:n+1`. The seam slot (`i == n+1`) returns
+    # the cached `_x_max = inner[1] + period`; any other out-of-range index
+    # is rejected to prevent silent off-by-one bugs (and to avoid arbitrary
+    # memory reads at negative `i` from the `@inbounds` inner indexing).
+    @boundscheck (1 <= i <= n + 1) || throw(BoundsError(g, i))
     @inbounds return i <= n ? g.inner[i] : g._x_max
 end
 @inline Base.firstindex(::_ExclusivePeriodicAxis) = 1
@@ -357,9 +360,20 @@ end
 # When the requested range covers the full virtual length, return the wrapper
 # itself (zero-cost identity). For partial ranges that stay within the raw
 # inner indices, fall through to a raw view of `g.inner` (loses wrapper
-# identity but is correct since the slice doesn't include the seam).
+# identity but is correct since the slice doesn't include the seam). For
+# partial ranges that include the virtual seam slot (`last(r) == length(g)`
+# but the range is not full), build a `SubArray` over the wrapper so the
+# seam access resolves through our cyclic `Base.getindex` instead of
+# touching `g.inner` past its raw length.
 @inline function Base.view(g::_ExclusivePeriodicAxis, r::AbstractUnitRange{Int})
-    return (first(r) == 1 && last(r) == length(g)) ? g : view(g.inner, r)
+    @boundscheck (first(r) >= 1 && last(r) <= length(g)) || throw(BoundsError(g, r))
+    if first(r) == 1 && last(r) == length(g)
+        return g
+    elseif last(r) <= length(g.inner)
+        return @inbounds view(g.inner, r)
+    else
+        return SubArray(g, (r,))
+    end
 end
 @inline Base.view(g::_ExclusivePeriodicAxis, ::Colon) = g
 

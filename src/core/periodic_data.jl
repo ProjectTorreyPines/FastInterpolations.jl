@@ -79,6 +79,11 @@ Base.IndexStyle(::Type{<:_ExclusivePeriodicData}) = IndexLinear()
 # algorithms (`view`, `copyto!`, `iterate`, broadcast) work transparently.
 @inline Base.@propagate_inbounds function Base.getindex(c::_ExclusivePeriodicData{Tv, 1}, i::Int) where {Tv}
     n = length(c.inner)
+    # Bounds: valid indices are `1:n+1`. Only the virtual seam slot
+    # (`i == n+1`) folds back to `inner[1]`; reject any other out-of-range
+    # index so off-by-one bugs surface and negative-`i` `@inbounds` paths
+    # cannot read arbitrary memory.
+    @boundscheck (1 <= i <= n + 1) || throw(BoundsError(c, i))
     @inbounds return i <= n ? c.inner[i] : c.inner[1]
 end
 

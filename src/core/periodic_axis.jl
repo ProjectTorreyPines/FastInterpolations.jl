@@ -397,13 +397,6 @@ end
 # `BoundsError`.
 @inline _create_spacing(g::_ExclusivePeriodicAxis) = _create_spacing(g.inner)
 
-# `_ExclusivePeriodicAxis` passes through `_store_grid_cached` (defined in
-# cached_vector.jl). When a method-family factory wraps a Vector + `:exclusive`
-# PeriodicBC grid before delegating to the persistent constructor, the
-# wrapper must survive the constructor's `_store_grid_cached` call rather
-# than being re-wrapped or mistakenly converted.
-@inline _store_grid_cached(x::_ExclusivePeriodicAxis, ::Type{Tg}) where {Tg} = x
-
 # ========================================
 # View specialization: preserve wrapper for full-virtual range
 # ========================================
@@ -537,20 +530,38 @@ end
 # (`_CachedRange <: AbstractRange`, `_CachedVector <: AbstractVector`,
 # `_ExclusivePeriodicAxis <: AbstractVector`).
 #
-# All re-entry paths route through wrapper-aware `_convert_copy(x, Tg)`:
-#   - same Tg → delegates to `Base.copy(x)` (recursive copy of inner buffer
-#     for `_CachedVector`/`_ExclusivePeriodicAxis`; same-ref for the
-#     immutable `_CachedRange`),
-#   - different Tg → rebuilds wrapper from a type-converted inner in a single
-#     allocation pass (no double copy via intermediate plain Vector).
-# This guarantees mutation safety AND honors `Tg` regardless of whether the
-# user constructed the wrapper themselves with a shared buffer.
+# Two-tier dispatch on the wrapper's eltype:
+#   - **Same eltype as Tg → true passthrough** (return `x` as-is). The
+#     canonical outer→inner constructor flow (e.g. `linear_interp` →
+#     `_resolve_axis_copied` → `LinearInterpolant(...)` → inner ctor →
+#     `_resolve_axis_copied` again) re-enters with the SAME wrapper that the
+#     outer call produced. Re-copying here would double the allocations.
+#     Internal API contract: callers must not pass a wrapper holding a
+#     shared user buffer (e.g. `_CachedVector(my_vec)` shares `my_vec` —
+#     that's caller's responsibility to handle).
+#   - **Different eltype → wrapper-aware `_convert_copy(x, Tg)` rebuild** in
+#     a single allocation pass (no double-copy via intermediate plain
+#     Vector).
+#
+# `_CachedRange` is unconditionally routed through `_convert_copy` because
+# the `_convert_copy(::_CachedRange{T}, ::Type{T}) = r` same-type branch is
+# already a true zero-cost identity (immutable struct of scalar fields, no
+# buffer to share with anyone).
 @inline _resolve_axis_copied(x::_CachedRange, ::AbstractBC, ::Type{Tg}) where {Tg} =
     _convert_copy(x, Tg)
 @inline function _resolve_axis_copied(x::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
     bc_resolved = _resolve_bc_period(x, bc)
     return _ExclusivePeriodicAxis(_convert_copy(x, Tg), bc_resolved.period)
 end
+# Same-eltype passthroughs (true zero-copy re-entry).
+@inline _resolve_axis_copied(x::_CachedVector{Tg}, ::AbstractBC, ::Type{Tg}) where {Tg} = x
+@inline function _resolve_axis_copied(x::_CachedVector{Tg}, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(x, bc_resolved.period)
+end
+@inline _resolve_axis_copied(x::_ExclusivePeriodicAxis{Tg}, ::AbstractBC, ::Type{Tg}) where {Tg} = x
+@inline _resolve_axis_copied(x::_ExclusivePeriodicAxis{Tg}, ::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = x
+# Different-eltype rebuilds.
 @inline _resolve_axis_copied(x::_CachedVector, ::AbstractBC, ::Type{Tg}) where {Tg} =
     _convert_copy(x, Tg)
 @inline function _resolve_axis_copied(x::_CachedVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}

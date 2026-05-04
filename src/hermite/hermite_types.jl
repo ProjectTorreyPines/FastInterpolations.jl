@@ -14,7 +14,7 @@
 Callable interpolant for cubic Hermite interpolation with user-supplied slopes.
 Returned by `hermite_interp(x, y, dy)` (interpolant form).
 
-The grid `x` is wrapped via `_store_grid_cached` (Range → `_CachedRange`,
+The grid `x` is wrapped via `_resolve_axis_copied` (Range → `_CachedRange`,
 Vector → `_CachedVector`) so `_get_h(x, idx)` / `_get_inv_h(x, idx)` are
 O(1) cached lookups — no separate `spacing` field is stored. Evaluation uses
 `_hermite_kernel_1d` (derivative-based Hermite basis functions), NOT
@@ -55,7 +55,7 @@ struct CubicHermiteInterpolant1D{
     search_policy::P
 
     # PreCompute inner: dy is a precomputed slope vector. Axis-as-truth: `xc`
-    # is wrapped via `_store_grid_cached` (Vector → `_CachedVector`, Range →
+    # is wrapped via `_resolve_axis_copied` (Vector → `_CachedVector`, Range →
     # `_CachedRange`), so `_get_h(xc, idx)` returns cached h/inv_h — no
     # separate spacing field needed.
     function CubicHermiteInterpolant1D(
@@ -67,7 +67,7 @@ struct CubicHermiteInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Hermite interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid_cached(x, Tg)
+        xc = _resolve_axis_copied(x, NoBC(), Tg)
         yc = _convert_copy(y, Tv)
         dyc = copy(dy)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, PreCompute}(

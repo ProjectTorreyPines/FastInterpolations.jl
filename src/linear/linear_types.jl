@@ -71,10 +71,17 @@ struct LinearInterpolant{
     search_policy::P  # Default search policy (immutable, thread-safe)
 
     # Inner constructor: promotes x/y, wraps grid for cached spacing, stores.
-    # _store_grid_cached: Vector → _CachedVector (cached h/inv_h),
-    #                     Range → _CachedRange (cached scalar h/inv_h).
+    # `_resolve_axis_copied(x, NoBC(), Tg)`:
+    #   - raw Vector → `_CachedVector` (cached h/inv_h, fresh-owned),
+    #   - raw Range → `_CachedRange` (cached scalar h/inv_h),
+    #   - already-wrapped same-eltype → passthrough (no double-copy when
+    #     `linear_interp` outer ctor already produced a wrapped axis via
+    #     `_resolve_axis_copied(x, bc, Tg)`),
+    #   - already-wrapped different-eltype → wrapper-aware rebuild.
     # Spacing access via `_get_h(itp.x, i)` / `_get_inv_h(itp.x, i)` —
     # grid is the single source of truth; no separate spacing field.
+    # `NoBC()` here means "no bc-aware extra wrapping needed at this layer";
+    # outer `linear_interp` already applied the bc-aware wrap when needed.
     function LinearInterpolant(
             x::AbstractVector, y::AbstractVector, ev::E, search::P
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
@@ -86,7 +93,7 @@ struct LinearInterpolant{
         _check_compatible_length(x, y)
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid_cached(x, Tg)
+        xc = _resolve_axis_copied(x, NoBC(), Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, P}(xc, yc, ev, search)
     end

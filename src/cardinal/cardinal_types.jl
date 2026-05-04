@@ -48,7 +48,7 @@ struct CardinalInterpolant1D{
     tension::Tg
 
     # PreCompute inner: promotes x/y, computes slopes — axis-as-truth (`xc`
-    # wraps cached h/inv_h via `_store_grid_cached`).
+    # wraps cached h/inv_h via `_resolve_axis_copied`).
     function CardinalInterpolant1D(
             x::AbstractVector, y::AbstractVector, ::Type{PreCompute},
             extrap::E, search::P, tension::Real
@@ -57,7 +57,7 @@ struct CardinalInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid_cached(x, Tg)
+        xc = _resolve_axis_copied(x, NoBC(), Tg)
         yc = _convert_copy(y, Tv)
         Tdy = _output_eltype(Tv, Tg)
         dy = Vector{Tdy}(undef, length(yc))
@@ -77,7 +77,7 @@ struct CardinalInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid_cached(x, Tg)
+        xc = _resolve_axis_copied(x, NoBC(), Tg)
         yc = _convert_copy(y, Tv)
         Tdy = _output_eltype(Tv, Tg)
         dyc = _convert_copy(dy, Tdy)
@@ -95,7 +95,7 @@ struct CardinalInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid_cached(x, Tg)
+        xc = _resolve_axis_copied(x, NoBC(), Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, OnTheFly}(
             xc, yc, slope_strategy, extrap, search, Tg(tension)

@@ -121,35 +121,41 @@ end
         @test length(cr.inner) == 4
     end
 
-    @testset "Pre-wrapped re-entry: type preserved + mutation-safe copy" begin
-        # `_resolve_axis_copied` on already-wrapped inputs goes through
-        # wrapper-aware `_convert_copy` — same Tg delegates to `Base.copy`
-        # (recursive copy of inner buffer), different Tg rebuilds. No silent
-        # passthrough that would (a) drop Tg or (b) keep user-shared inner.
+    @testset "Pre-wrapped re-entry: same-eltype passthrough, different-eltype rebuild" begin
+        # `_resolve_axis_copied` on already-wrapped inputs:
+        #   - Same eltype as Tg → true passthrough (returns input as-is). The
+        #     canonical outer→inner constructor flow re-enters with a wrapper
+        #     produced by an earlier `_resolve_axis_copied` call; re-copying
+        #     would double allocations. Internal API contract: the wrapper
+        #     must already own its inner buffer.
+        #   - Different eltype → wrapper-aware `_convert_copy` rebuild
+        #     (preserves wrapper type, promotes eltype, single-pass).
 
-        # _CachedVector: Base.copy of wrapper, fresh inner buffer
+        # _CachedVector same-eltype: passthrough
         x_cv = _CachedVector([0.0, 1.0, 2.0])
         out_cv = _resolve_axis_copied(x_cv, bc_no, Float64)
-        @test out_cv isa _CachedVector{Float64, Float64}
-        @test out_cv.inner !== x_cv.inner   # mutation-safe copy
-        @test out_cv.inner == x_cv.inner    # same content
+        @test out_cv === x_cv               # true passthrough, no copy
 
-        # _CachedRange: immutable struct of scalar fields, returned as-is
+        # _CachedRange: immutable struct, always returned as-is
         x_cr = FastInterpolations._to_float(0.0:1.0:3.0, Float64)
         out_cr = _resolve_axis_copied(x_cr, bc_no, Float64)
         @test out_cr isa _CachedRange{Float64}
         @test out_cr === x_cr               # safe to share — no buffer
 
-        # _ExclusivePeriodicAxis: wrapper preserved, fresh inner buffer
+        # _ExclusivePeriodicAxis same-eltype: passthrough
         x_ax = _ExclusivePeriodicAxis([0.0, 1.0, 2.0], 3.0)
         out_ax = _resolve_axis_copied(x_ax, bc_excl, Float64)
-        @test out_ax isa _ExclusivePeriodicAxis{Float64}
-        @test out_ax.inner !== x_ax.inner   # mutation-safe copy
+        @test out_ax === x_ax               # true passthrough
 
-        # Type promotion across wrapper boundary
+        # Type promotion across wrapper boundary — different eltype rebuilds
         x_cv32 = _CachedVector(Float32[1.0, 2.0, 3.0])
         out_cv32 = _resolve_axis_copied(x_cv32, bc_no, Float64)
         @test out_cv32 isa _CachedVector{Float64, Float64}  # eltype promoted
+        @test out_cv32.inner !== x_cv32.inner               # fresh inner buffer
+
+        x_cr32 = FastInterpolations._to_float(0.0f0:1.0f0:3.0f0, Float32)
+        out_cr32 = _resolve_axis_copied(x_cr32, bc_no, Float64)
+        @test out_cr32 isa _CachedRange{Float64}            # eltype promoted
     end
 end
 

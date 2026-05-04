@@ -437,10 +437,11 @@ function hermite_adjoint(
         end
     end
 
-    # Wrap axis (axis-as-truth) and bake anchors. `_store_grid_cached` is
-    # idempotent on already-cached axes (Range from `_promote_adjoint_inputs`
-    # arrives as `_CachedRange`), and wraps a plain `Vector` into `_CachedVector`.
-    x_axis = _store_grid_cached(x_p, Tg)
+    # Wrap axis (axis-as-truth) and bake anchors. `_resolve_axis_copied`
+    # passes through already-cached same-eltype axes (Range from
+    # `_promote_adjoint_inputs` arrives as `_CachedRange`), and wraps a plain
+    # `Vector` into `_CachedVector`.
+    x_axis = _resolve_axis_copied(x_p, NoBC(), Tg)
     anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap)
 
     return HermiteAdjoint1D{Tg, typeof(extrap)}(anchors, length(x_axis), extrap)

@@ -476,7 +476,7 @@ function akima_adjoint(
     end
 
     # Wrap axis (axis-as-truth) and bake anchors
-    x_axis = _store_grid_cached(x_p, Tg)
+    x_axis = _resolve_axis_copied(x_p, NoBC(), Tg)
     anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap)
 
     # Promote y to float: slope adjoint computes fractional derivatives (Int division loses precision)

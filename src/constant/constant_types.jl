@@ -61,7 +61,7 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
     search_policy::P  # Default search policy (immutable, thread-safe)
 
     # Inner constructor: promotes x/y, wraps grid for cached spacing, stores.
-    # `_store_grid_cached`: Vector → `_CachedVector`, Range → `_CachedRange`,
+    # `_resolve_axis_copied`: Vector → `_CachedVector`, Range → `_CachedRange`,
     # `_ExclusivePeriodicAxis` passes through. Spacing access via
     # `_get_h(itp.x, i)` / `_get_inv_h(itp.x, i)`.
     function ConstantInterpolant(
@@ -71,7 +71,7 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
         length(x) >= 2 || _throw_grid_too_small(length(x))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid_cached(x, Tg)
+        xc = _resolve_axis_copied(x, NoBC(), Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, SD, P}(xc, yc, ev, sv, search)
     end

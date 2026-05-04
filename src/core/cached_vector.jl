@@ -165,36 +165,8 @@ end
 @inline _create_spacing(c::_CachedVector{T, Tinv}) where {T, Tinv} =
     VectorSpacing{T, Tinv}(c.h, c.inv_h)
 
-# ========================================
-# _store_grid_cached: persistent grid wrapping
-# ========================================
-#
-# Companion to `_store_grid` (utils.jl). Where `_store_grid` is the
-# lightweight normalizer used by cache-lookup paths (Vector inputs stay
-# raw to avoid per-call wrap allocations on autocache hits),
-# `_store_grid_cached` is for persistent interpolant constructors that
-# build the struct ONCE — they pay the wrap cost upfront so every
-# subsequent eval gets O(1) `_get_h`/`_get_inv_h` cached lookups.
-#
-# After Step 2 migration, persistent constructors call this instead of
-# `_store_grid`. Resulting `xc` is always one of:
-#   {`_CachedRange{Tg}`, `_CachedVector{Tg, Tinv}`}
-# enabling unified `_get_h(xc, i)` dispatch with cached lookup.
-@inline _store_grid_cached(x::AbstractVector, ::Type{Tg}) where {Tg} =
-    _CachedVector(_convert_copy(x, Tg))
-@inline _store_grid_cached(x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
-# Pre-wrapped cases delegate to wrapper-aware `_convert_copy`. This handles
-# BOTH:
-#   1. Mutation safety: same-type `_convert_copy` delegates to `Base.copy`,
-#      which recursively copies inner buffers (mandatory for `_CachedVector`
-#      whose 1-arg constructor `_CachedVector(::Vector{T})` shares the input
-#      buffer by reference — see line ~113).
-#   2. Type promotion: different-type `_convert_copy` rebuilds the wrapper
-#      with a type-converted inner — without this, callers who pass
-#      `_CachedVector{Float32}` with `Tg = Float64` would silently get back
-#      a `_CachedVector{Float32}` and break downstream type inference.
-# `_CachedRange` would be mutation-safe even with a passthrough (immutable
-# struct of scalar fields, no buffer to share), but the unified delegation
-# is required for correct type promotion in `_CachedRange{!Tg} → Tg` cases.
-@inline _store_grid_cached(x::_CachedVector, ::Type{Tg}) where {Tg} = _convert_copy(x, Tg)
-@inline _store_grid_cached(x::_CachedRange, ::Type{Tg}) where {Tg} = _convert_copy(x, Tg)
+# `_store_grid_cached` was the legacy bc-less variant of the persistent
+# axis wrapper. It is now subsumed by `_resolve_axis_copied(x, NoBC(), Tg)`
+# (defined in `periodic_axis.jl`), which handles bc-aware variants
+# (`PeriodicBC{:exclusive}` → `_ExclusivePeriodicAxis`) AND the same
+# Vector/Range/wrapper dispatch matrix in one helper. Use that instead.

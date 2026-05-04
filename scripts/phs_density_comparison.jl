@@ -41,6 +41,7 @@ using LinearAlgebra
 using Pickle
 using Plots
 using Printf
+using Statistics
 
 # ============================================================
 # Patch Pickle.jl to support numpy._core (NumPy >= 2.0)
@@ -369,23 +370,35 @@ const ref_rho0 = PromolecularRef(ATOMS)
 @printf "  ρ₀ at path start: %.6e a.u.\n" ref_rho0((qx[1], qy[1], qz[1]))
 
 # ============================================================
-# 4. Build 3D interpolants
+# 4. Build 3D interpolants — with timing capture
 # ============================================================
 grids = (x_grid, y_grid, z_grid)
 println("\nBuilding interpolants on $(length(x_grid))×$(length(y_grid))×$(length(z_grid)) grid...")
 
+# Storage for timing information
+build_times = Dict{String, Float64}()
+eval_times = Dict{String, Dict{String, Float64}}()
+
 println("  [1/4] Nearest (constant)...")
-@time itp_nearest  = constant_interp(grids, rho_3d)
+time_nearest = @elapsed itp_nearest  = constant_interp(grids, rho_3d)
+build_times["Nearest"] = time_nearest
+@printf "    %.4f seconds\n" time_nearest
 
 println("  [2/4] Trilinear (linear)...")
-@time itp_linear   = linear_interp(grids, rho_3d)
+time_linear = @elapsed itp_linear   = linear_interp(grids, rho_3d)
+build_times["Linear"] = time_linear
+@printf "    %.4f seconds\n" time_linear
 
 println("  [3/4] Trispline (global cubic spline)...")
-@time itp_cubic    = cubic_interp(grids, rho_3d)
+time_cubic = @elapsed itp_cubic    = cubic_interp(grids, rho_3d)
+build_times["Cubic"] = time_cubic
+@printf "    %.4f seconds\n" time_cubic
 
 println("  [4/4] Tricubic (Cardinal / Catmull-Rom)...")
-@time itp_cardinal = interp(grids, rho_3d;
+time_cardinal = @elapsed itp_cardinal = interp(grids, rho_3d;
     method = (CardinalInterp(), CardinalInterp(), CardinalInterp()))
+build_times["Cardinal"] = time_cardinal
+@printf "    %.4f seconds\n" time_cardinal
 
 println("  [PHS] Polyharmonic spline (PHS-3, stencil_size=8, log-density transform)...")
 # Paper (Sec. III): N = 8³ = 512 stencil nodes; f = log(ρ_scf / ρ₀) is smooth
@@ -393,8 +406,10 @@ println("  [PHS] Polyharmonic spline (PHS-3, stencil_size=8, log-density transfo
 # from PBE all-electron atomic radial splines via the chain rule — matches the
 # Fortran crystalmod_promolecular approach and avoids Gibbs-like errors from
 # a cubic spline of log(ρ₀) near nuclear cusps.
-@time itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 2.0,
+time_phs = @elapsed itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 2.0,
     reference_interp = ref_rho0)
+build_times["PHS"] = time_phs
+@printf "    %.4f seconds\n" time_phs
 
 println("All interpolants built.")
 
@@ -432,20 +447,24 @@ const _gz = zeros(N_path)
 
 # ── density ρ ──────────────────────────────────────────────────────────────────
 print("  ρ ... ")
-@time begin
+time_rho = @elapsed begin
     itp_nearest(ρ_nearest,  queries)
     itp_linear(ρ_linear,    queries)
     itp_cubic(ρ_cubic,      queries)
     itp_cardinal(ρ_cardinal, queries)
     itp_phs(ρ_phs,          queries)
 end
+@printf "%.4f s\n" time_rho
+eval_times["ρ"] = Dict(
+    "Nearest" => 0.0, "Linear" => 0.0, "Cubic" => 0.0, "Cardinal" => 0.0, "PHS" => 0.0
+)
 
 # ── gradient magnitude |∇ρ| ────────────────────────────────────────────────────
 # All ND interpolants accept the batch form itp(out, queries; deriv=(...)).
 # PHS does not implement _locate_cell/_eval_at_cell so gradient() is unavailable,
 # but the same computation works via the deriv kwarg on the batch callable.
 print("  |∇ρ| ... ")
-@time begin
+time_grad = @elapsed begin
     itp_linear(_gx, queries; deriv = (D1, D0, D0))
     itp_linear(_gy, queries; deriv = (D0, D1, D0))
     itp_linear(_gz, queries; deriv = (D0, D0, D1))
@@ -466,10 +485,14 @@ print("  |∇ρ| ... ")
     itp_phs(_gz, queries; deriv = (D0, D0, D1))
     @. ∇ρ_phs = sqrt(_gx^2 + _gy^2 + _gz^2)
 end
+@printf "%.4f s\n" time_grad
+eval_times["|∇ρ|"] = Dict(
+    "Linear" => 0.0, "Cubic" => 0.0, "Cardinal" => 0.0, "PHS" => 0.0
+)
 
 # ── Laplacian magnitude |∇²ρ| ──────────────────────────────────────────────────
 print("  |∇²ρ| ... ")
-@time begin
+time_laplacian = @elapsed begin
     itp_cubic(_gx, queries; deriv = (D2, D0, D0))
     itp_cubic(_gy, queries; deriv = (D0, D2, D0))
     itp_cubic(_gz, queries; deriv = (D0, D0, D2))
@@ -485,8 +508,104 @@ print("  |∇²ρ| ... ")
     itp_phs(_gz, queries; deriv = (D0, D0, D2))
     @. ∇²ρ_phs = abs(_gx + _gy + _gz)
 end
+@printf "%.4f s\n" time_laplacian
+eval_times["|∇²ρ|"] = Dict(
+    "Cubic" => 0.0, "Cardinal" => 0.0, "PHS" => 0.0
+)
 
 println("Evaluation complete.")
+
+# ============================================================
+# 5a. Compute errors and generate summary tables
+# ============================================================
+
+# Helper function to compute relative error
+compute_rel_error(computed, reference) = begin
+    errors = similar(computed)
+    for i in eachindex(computed)
+        ref_val = abs(reference[i])
+        if ref_val > 0.0
+            errors[i] = abs(computed[i] - reference[i]) / ref_val
+        else
+            errors[i] = abs(computed[i])
+        end
+    end
+    return errors
+end
+
+# Compute errors for each method
+errors_rho = Dict()
+errors_grad = Dict()
+errors_lap = Dict()
+
+errors_rho["Nearest"] = compute_rel_error(ρ_nearest, ρ_ref)
+errors_rho["Linear"] = compute_rel_error(ρ_linear, ρ_ref)
+errors_rho["Cubic"] = compute_rel_error(ρ_cubic, ρ_ref)
+errors_rho["Cardinal"] = compute_rel_error(ρ_cardinal, ρ_ref)
+errors_rho["PHS"] = compute_rel_error(ρ_phs, ρ_ref)
+
+errors_grad["Linear"] = compute_rel_error(∇ρ_linear, ∇ρ_ref)
+errors_grad["Cubic"] = compute_rel_error(∇ρ_cubic, ∇ρ_ref)
+errors_grad["Cardinal"] = compute_rel_error(∇ρ_cardinal, ∇ρ_ref)
+errors_grad["PHS"] = compute_rel_error(∇ρ_phs, ∇ρ_ref)
+
+errors_lap["Cubic"] = compute_rel_error(∇²ρ_cubic, ∇²ρ_ref)
+errors_lap["Cardinal"] = compute_rel_error(∇²ρ_cardinal, ∇²ρ_ref)
+errors_lap["PHS"] = compute_rel_error(∇²ρ_phs, ∇²ρ_ref)
+
+# Print performance summary tables
+println("\n" * "="^80)
+println("PERFORMANCE SUMMARY")
+println("="^80)
+
+# Table 1: Interpolant Build Times
+println("\n### Interpolant Build Times\n")
+println("| Method | Time (s) |")
+println("|--------|----------|")
+for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
+    @printf "| %-18s | %.6f |\n" method build_times[method]
+end
+
+# Table 2: Density (ρ) Errors
+println("\n### Charge Density (ρ) — Relative Error Statistics\n")
+println("| Method | Min Error | Max Error | Mean Error | Median Error |")
+println("|--------|-----------|-----------|------------|--------------|")
+for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
+    errs = errors_rho[method]
+    min_err = minimum(errs)
+    max_err = maximum(errs)
+    mean_err = sum(errs) / length(errs)
+    median_err = median(errs)
+    @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
+end
+
+# Table 3: Gradient Error
+println("\n### Gradient Magnitude (|∇ρ|) — Relative Error Statistics\n")
+println("| Method | Min Error | Max Error | Mean Error | Median Error |")
+println("|--------|-----------|-----------|------------|--------------|")
+for method in ["Linear", "Cubic", "Cardinal", "PHS"]
+    errs = errors_grad[method]
+    min_err = minimum(errs)
+    max_err = maximum(errs)
+    mean_err = sum(errs) / length(errs)
+    median_err = median(errs)
+    @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
+end
+
+# Table 4: Laplacian Error
+println("\n### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics\n")
+println("| Method | Min Error | Max Error | Mean Error | Median Error |")
+println("|--------|-----------|-----------|------------|--------------|")
+for method in ["Cubic", "Cardinal", "PHS"]
+    errs = errors_lap[method]
+    min_err = minimum(errs)
+    max_err = maximum(errs)
+    mean_err = sum(errs) / length(errs)
+    median_err = median(errs)
+    @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
+end
+
+println("\n" * "="^80 * "\n")
 
 # ============================================================
 # 6. Plot — 3 rows × 2 columns, log-scale y-axis

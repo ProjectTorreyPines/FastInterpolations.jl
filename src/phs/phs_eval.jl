@@ -32,7 +32,17 @@ O(1) per axis for uniform (ScalarSpacing) grids; O(log n) for non-uniform.
         sp = itp.spacings[d]
         qd = Tg(query[d])
         if sp isa ScalarSpacing
-            idx = round(Int, (qd - grid[1]) * sp.inv_h + 1)
+            # Implement Fortran nint() behavior: round half values away from zero.
+            # Julia's round(Int) uses banker's rounding (ties → nearest even),
+            # which gives the wrong result at midpoints between grid nodes.
+            idx_raw = Tg((qd - grid[1]) * sp.inv_h + 1)
+            if isinteger(idx_raw)
+                # Exact integer: regular round works fine
+                idx = round(Int, idx_raw)
+            else
+                # Midpoint or near-midpoint: nint semantics (round ties away from zero for positive values)
+                idx = floor(Int, idx_raw + 0.5)
+            end
         else
             # Binary search for nearest
             lo, hi = 1, n

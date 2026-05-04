@@ -117,6 +117,16 @@ itp = phs_interp((x, y, z), rho_data;
     degree = 3)
 ```
 
+## Parameters and Tuning
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| `stencil_size` | 8 | Stencil nodes per axis (total = stencil_size^N). Increase for smoother but slower interpolant. |
+| `degree` | 3 | PHS degree: 1, 3, 5, … (odd only). Higher → smoother, larger condition number. |
+| `blend_factor` | 2.0 | Blend range = blend_factor × max_grid_spacing. Increase for wider blending. |
+| `reference_interp` | nothing | Optional custom reference function for log-transform. Use `ConstantRef(val)` for constant reference. |
+| `reference_data` | nothing | Pre-computed reference values on grid (avoids re-evaluating `reference_interp` at every grid node). |
+
 ## Example: Quantum Chemistry
 
 The script [`scripts/phs_density_comparison.jl`](https://github.com/ProjectTorreyPines/FastInterpolations.jl/blob/feat/phs-interpolation/scripts/phs_density_comparison.jl) demonstrates PHS for **electron density interpolation** in a phenol dimer, recreating Figure 2 in [the paper](https://doi.org/10.1063/5.0090232). It uses:
@@ -147,29 +157,46 @@ This generates `phs_density_comparison.png` and demonstrates:
 - Evaluating density, gradient, Laplacian analytically
 - Batch evaluation for performance
 
-## Parameters and Tuning
+### Performance
 
-| Parameter | Default | Notes |
-|-----------|---------|-------|
-| `stencil_size` | 8 | Stencil nodes per axis (total = stencil_size^N). Increase for smoother but slower interpolant. |
-| `degree` | 3 | PHS degree: 1, 3, 5, … (odd only). Higher → smoother, larger condition number. |
-| `blend_factor` | 2.0 | Blend range = blend_factor × max_grid_spacing. Increase for wider blending. |
-| `reference_interp` | nothing | Optional custom reference function for log-transform. Use `ConstantRef(val)` for constant reference. |
-| `reference_data` | nothing | Pre-computed reference values on grid (avoids re-evaluating `reference_interp` at every grid node). |
+For the phenol dimer example (75×113×70 grid, 1000 query points):
 
-## Performance
+#### Timing Summary (per method, 1000 query points)
 
-Validation on phenol dimer (75×113×70 grid, 1000 query points). All times in seconds; errors are mean relative error (%).
+| Method | Build (s) | ρ Time (s) | \|∇ρ\| Time (s) | \|∇²ρ\| Time (s) |
+|--------|-----------|------------|--------------|----------------|
+| Nearest            | 0.176278 |   0.483935 |            — |              — |
+| Linear             | 0.008676 |   0.259310 |     0.592057 |              — |
+| Cubic              | 0.569003 |   0.334952 |     0.825838 |       0.867262 |
+| Cardinal           | 0.040574 |   1.043034 |     2.426582 |       2.469174 |
+| PHS                | 2.516633 |   1.557916 |    12.222952 |      28.424406 |
 
-| Method | Build | Eval: ρ | Eval: \|∇ρ\| | Eval: \|∇²ρ\| | Error ρ | Error \|∇ρ\| | Error \|∇²ρ\| |
-|--------|-------|---------|--------------|--------------|---------|--------------|----------------|
-| Nearest | 0.18 | 0.49 | — | — | 18.4 | — | — |
-| Linear | 0.01 | 0.26 | 0.61 | — | 8.8 | 41.4 | — |
-| Cubic | 0.58 | 0.35 | 0.84 | 0.82 | 11.7 | 35.7 | 641 |
-| Cardinal | 0.04 | 1.08 | 2.57 | 2.55 | 9.7 | 24.8 | 241 |
-| **PHS** | **2.51** | **1.60** | **11.89** | **29.49** | **0.41** | **1.17** | **4.73** |
+#### Charge Density (ρ) — Relative Error Statistics
 
-PHS achieves ~50× better accuracy on density, ~20× on gradients, and ~50× on Laplacian compared to standard splines, at the cost of higher upfront build and evaluation time. The log-density transform via reference functions enables accurate approximation near singularities (e.g., nuclear cusps in quantum chemistry applications).
+| Method | Min Error | Max Error | Mean Error | Median Error |
+|--------|-----------|-----------|------------|--------------|
+| Nearest            | 5.27e-04 | 2.15e+00 | 1.84e-01 | 1.34e-01 |
+| Linear             | 1.68e-05 | 9.34e-01 | 8.80e-02 | 2.18e-02 |
+| Cubic              | 4.58e-06 | 9.73e-01 | 1.17e-01 | 3.36e-03 |
+| Cardinal           | 2.29e-05 | 9.21e-01 | 9.65e-02 | 3.47e-03 |
+| PHS                | 1.48e-08 | 1.00e+00 | 4.06e-03 | 1.61e-04 |
+
+#### Gradient Magnitude (|∇ρ|) — Relative Error Statistics
+
+| Method | Min Error | Max Error | Mean Error | Median Error |
+|--------|-----------|-----------|------------|--------------|
+| Linear             | 3.75e-05 | 2.39e+01 | 4.14e-01 | 1.89e-01 |
+| Cubic              | 2.39e-05 | 3.36e+00 | 3.57e-01 | 2.65e-02 |
+| Cardinal           | 1.83e-04 | 2.52e+00 | 2.48e-01 | 3.23e-02 |
+| PHS                | 7.68e-07 | 1.00e+00 | 1.17e-02 | 1.11e-03 |
+
+#### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics
+
+| Method | Min Error | Max Error | Mean Error | Median Error |
+|--------|-----------|-----------|------------|--------------|
+| Cubic              | 8.30e-06 | 1.13e+03 | 6.41e+00 | 1.69e-01 |
+| Cardinal           | 7.58e-04 | 1.96e+02 | 2.41e+00 | 5.03e-01 |
+| PHS                | 1.28e-05 | 3.09e+00 | 4.73e-02 | 1.37e-02 |
 
 ## References
 

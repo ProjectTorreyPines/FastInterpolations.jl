@@ -578,7 +578,7 @@ println("="^80)
 
 # Combined Build and Evaluation Times Table
 println("\n### Timing Summary (per method, 1000 query points)\n")
-println("| Method | Build (s) | ρ Time (s) | |∇ρ| Time (s) | |∇²ρ| Time (s) |")
+println("| Method | Build (s) | ρ Time (s) | \\|∇ρ\\| Time (s) | \\|∇²ρ\\| Time (s) |")
 println("|--------|-----------|------------|--------------|----------------|")
 
 for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]

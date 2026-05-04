@@ -51,7 +51,7 @@ Thumbs.db
 lcov.info
 
 # Scripts: downloaded data (large, auto-generated)
-# /scripts/dat/wfc/
+/scripts/dat/wfc/
 
 # Generated example plots
 /examples/*.png

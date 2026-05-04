@@ -112,7 +112,8 @@ function ensure_wfc_files()
     # List of all elements (Z=1 to Z=118) with their 2-letter symbols,
     # using the keys of ELEMENT_Z.  Single-letter symbols get an extra underscore for filename formatting.
     # Single letters get underscore padding (H→h_, C→c_, etc.)
-    all_symbols = [rpad(lowercase(sym), 2, '_') for sym in keys(ELEMENT_Z)]
+    # We only need H, C, O for this system, but it's written in a way that's easy to extend if needed.
+    all_symbols = [rpad(lowercase(sym), 2, '_') for sym in keys(ELEMENT_Z) if any(lowercase(sym) == s for s in ("h", "c", "o"))]
     
     println("Downloading PBE wavefunction files from critic2 (GitHub)...")
     
@@ -136,8 +137,9 @@ function ensure_wfc_files()
             # Check if download was successful (file size > 1KB)
             if isfile(fpath) && filesize(fpath) > 1000
                 download_count += 1
+                print(".")
                 if download_count % 30 == 0
-                    print(".")
+                    println("")
                 end
             else
                 # Failed download, remove small file

@@ -688,6 +688,7 @@ col_phs        = :red
 
 lw_ref = 2.0
 lw_itp = 1.5
+lw_phs = 0.8  # Thinner line for PHS
 
 # Replace non-positive values with NaN for safe log-scale rendering
 logclean(v) = [x > 0.0 ? x : NaN for x in v]
@@ -731,8 +732,8 @@ function ref_series!(p, s, ref; label = "Analytical")
           color = col_analytical, linewidth = lw_ref, linestyle = :solid)
 end
 
-function add_series!(p, s, data, label, color)
-    plot!(p, s, logclean(data); label = label, color = color, linewidth = lw_itp)
+function add_series!(p, s, data, label, color; lw = lw_itp)
+    plot!(p, s, logclean(data); label = label, color = color, linewidth = lw)
 end
 
 # ── Row 1: ρ ──────────────────────────────────────────────────────────────────
@@ -745,7 +746,7 @@ add_series!(p11, s_ang, ρ_cardinal, "Tricubic",   col_cardinal)
 
 p12 = plot(; kw_common..., ylabel = "ρ (a.u.)")
 ref_series!(p12, s_ang, ρ_ref)
-add_series!(p12, s_ang, ρ_phs, "Polyharmonic", col_phs)
+add_series!(p12, s_ang, ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
 
 # ── Row 2: |∇ρ| ───────────────────────────────────────────────────────────────
 p21 = plot(; kw_common..., ylabel = "|∇ρ| (a.u./Bohr)")
@@ -756,7 +757,7 @@ add_series!(p21, s_ang, ∇ρ_cardinal, "Tricubic",  col_cardinal)
 
 p22 = plot(; kw_common..., ylabel = "|∇ρ| (a.u./Bohr)")
 ref_series!(p22, s_ang, ∇ρ_ref)
-add_series!(p22, s_ang, ∇ρ_phs, "Polyharmonic", col_phs)
+add_series!(p22, s_ang, ∇ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
 
 # ── Row 3: |∇²ρ| ──────────────────────────────────────────────────────────────
 p31 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u./Bohr²)")
@@ -766,7 +767,7 @@ add_series!(p31, s_ang, ∇²ρ_cardinal, "Tricubic",  col_cardinal)
 
 p32 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u./Bohr²)")
 ref_series!(p32, s_ang, ∇²ρ_ref)
-add_series!(p32, s_ang, ∇²ρ_phs, "Polyharmonic", col_phs)
+add_series!(p32, s_ang, ∇²ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
 
 # ── Combine ───────────────────────────────────────────────────────────────────
 fig = plot(p11, p12, p21, p22, p31, p32;

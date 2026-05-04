@@ -50,6 +50,11 @@ Thumbs.db
 /coverage/
 lcov.info
 
+# Scripts: downloaded data (large, auto-generated)
+/scripts/dat/wfc/
+/scripts/*.png
+/scripts/*.pkl
+
 # Generated example plots
 /examples/*.png
 /scripts/*.png

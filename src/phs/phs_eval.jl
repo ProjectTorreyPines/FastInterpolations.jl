@@ -307,6 +307,7 @@ Algorithm:
         ops::NTuple{N, AbstractEvalOp},
     ) where {Tg, Tv, N, K}
     blend_a   = itp.blend_a
+    blend_a3  = itp.blend_a3
     base_idx0 = _phs_find_base_node(itp, query)
     r_idx     = itp.blend_r_idx
     grid_sizes = ntuple(d -> length(itp.grids[d]), N)
@@ -335,7 +336,7 @@ Algorithm:
             nb_coords = _phs_base_coords(itp, nb_idx)
             d2 = zero(Tg)
             @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
-            w = _phs_blend_weight(sqrt(d2), blend_a)
+            w = _phs_blend_weight(sqrt(d2), blend_a, blend_a3)
             w < eps(Tg) && continue
             f = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val, rhs_buf, coeff_buf))
             sum_w  += w
@@ -362,7 +363,7 @@ Algorithm:
             d2 = zero(Tg)
             @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
             d_dist = sqrt(d2)
-            w, wp = _phs_blend_weight_and_prime(d_dist, blend_a)
+            w, wp = _phs_blend_weight_and_prime(d_dist, blend_a, blend_a3)
             w < eps(Tg) && continue
             offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
             f = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_val))
@@ -412,7 +413,7 @@ Algorithm:
             d2 = zero(Tg)
             @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
             d_dist = sqrt(d2)
-            w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a)
+            w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a, blend_a3)
             w < eps(Tg) && continue
 
             offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
@@ -499,6 +500,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
         ops::NTuple{N, AbstractEvalOp},
     ) where {Tg, Tv, N, K}
     blend_a    = itp.blend_a
+    blend_a3   = itp.blend_a3
     base_idx0  = _phs_find_base_node(itp, query)
     r_idx      = itp.blend_r_idx
     grid_sizes = ntuple(d -> length(itp.grids[d]), N)
@@ -526,7 +528,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
             nb_coords = _phs_base_coords(itp, nb_idx)
             d2 = zero(Tg)
             @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
-            w = _phs_blend_weight(sqrt(d2), blend_a)
+            w = _phs_blend_weight(sqrt(d2), blend_a, blend_a3)
             w < eps(Tg) && continue
             f = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val, rhs_buf, coeff_buf))
             sum_w  += w
@@ -551,7 +553,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
             d2 = zero(Tg)
             @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
             d_dist = sqrt(d2)
-            w, wp = _phs_blend_weight_and_prime(d_dist, blend_a)
+            w, wp = _phs_blend_weight_and_prime(d_dist, blend_a, blend_a3)
             w < eps(Tg) && continue
             offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
             f  = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_val))
@@ -602,7 +604,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
             d2 = zero(Tg)
             @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
             d_dist = sqrt(d2)
-            w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a)
+            w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a, blend_a3)
             w < eps(Tg) && continue
 
             offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)

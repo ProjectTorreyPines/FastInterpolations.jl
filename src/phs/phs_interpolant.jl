@@ -136,13 +136,14 @@ function phs_interp(
         PHSLogTransform{N, typeof(reference_interp)}(reference_interp), log_data
     end
 
+    blend_a3 = blend_a^3
     return PHSInterpolantND{
         Tg, Tv, N, degree,
         typeof(grids_typed), typeof(spacings), typeof(transform), typeof(extrap_vals), typeof(searches),
     }(
         grids_typed, spacings, data_store,
         stencil_offsets, phi_inv, stencil_lo, stencil_hi, shift_cache, hs,
-        blend_a, blend_r_idx,
+        blend_a, blend_a3, blend_r_idx,
         transform, extrap_vals, searches,
     )
 end

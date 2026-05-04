@@ -94,6 +94,12 @@ w = exp(d³/(d³-a³)).  Returns zero for d ≥ a.
     return exp(d3 / (d3 - a3))
 end
 
+@inline function _phs_blend_weight(d::T, a::T, a3::T) where {T}
+    d >= a && return zero(T)
+    d3 = d * d * d
+    return exp(d3 / (d3 - a3))
+end
+
 """
     _phs_blend_weight_and_prime(d::T, a::T) -> (w, wp)
 
@@ -107,6 +113,19 @@ Evaluate w and its first derivative w'(d) = -3a³d² w / (d³ - a³)² simultane
     d3 = d2 * d
     a3 = a * a * a
     denom  = d3 - a3          # negative (d < a)
+    denom2 = denom * denom
+    w  = exp(d3 / denom)
+    wp = -3 * a3 * d2 * w / denom2
+    return w, wp
+end
+
+@inline function _phs_blend_weight_and_prime(d::T, a::T, a3::T) where {T}
+    if d >= a
+        return zero(T), zero(T)
+    end
+    d2 = d * d
+    d3 = d2 * d
+    denom  = d3 - a3
     denom2 = denom * denom
     w  = exp(d3 / denom)
     wp = -3 * a3 * d2 * w / denom2
@@ -134,6 +153,21 @@ Evaluate w, w', and w'' simultaneously for use in second-derivative blending.
     w  = exp(d3 / denom)
     wp = -3 * a3 * d2 * w / denom2
     # wpp = 3a³d(-2a⁶ + a³d³ + 4d⁶) w / (d³-a³)⁴
+    wpp = 3 * a3 * d * (muladd(4 * d3, d3, muladd(a3, d3, -2 * a3 * a3))) * w / denom4
+    return w, wp, wpp
+end
+
+@inline function _phs_blend_weight_and_derivs(d::T, a::T, a3::T) where {T}
+    if d >= a
+        return zero(T), zero(T), zero(T)
+    end
+    d2 = d * d
+    d3 = d2 * d
+    denom  = d3 - a3
+    denom2 = denom * denom
+    denom4 = denom2 * denom2
+    w  = exp(d3 / denom)
+    wp = -3 * a3 * d2 * w / denom2
     wpp = 3 * a3 * d * (muladd(4 * d3, d3, muladd(a3, d3, -2 * a3 * a3))) * w / denom4
     return w, wp, wpp
 end

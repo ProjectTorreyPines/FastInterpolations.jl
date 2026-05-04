@@ -126,6 +126,7 @@ struct PHSInterpolantND{
     shift_cache::Dict{NTuple{N, Int}, Tuple{Vector{NTuple{N, Int}}, Matrix{Tg}}}  # boundary shift variants
     hs::NTuple{N, Tg}                         # mean grid spacing per axis
     blend_a::Tg
+    blend_a3::Tg                  # blend_a^3, precomputed for weight function kernels
     blend_r_idx::NTuple{N, Int}   # ceil(blend_a / h_min) per axis
     transform::T
     extraps::E

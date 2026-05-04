@@ -578,8 +578,13 @@ println("="^80)
 
 # Combined Build and Evaluation Times Table
 println("\n### Timing Summary (per method, 1000 query points)\n")
-println("| Method | Build (s) | ρ Time (s) | \\|∇ρ\\| Time (s) | \\|∇²ρ\\| Time (s) |")
-println("|--------|-----------|------------|--------------|----------------|")
+println("| Method | Build (s) | ρ Time (s) | |∇ρ| Time (s) | |∇²ρ| Time (s) |")
+println("|--------|-----------|------------|----------------|-----------------|")
+
+phs_build_time = build_times["PHS"]
+phs_rho_time = eval_times["ρ"]["PHS"]
+phs_grad_time = eval_times["|∇ρ|"]["PHS"]
+phs_lap_time = eval_times["|∇²ρ|"]["PHS"]
 
 for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     build_time = build_times[method]
@@ -587,11 +592,51 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     grad_time = get(eval_times["|∇ρ|"], method, nothing)
     lap_time = get(eval_times["|∇²ρ|"], method, nothing)
     
-    rho_str = rho_time !== nothing ? @sprintf("%.6f", rho_time) : "—"
-    grad_str = grad_time !== nothing ? @sprintf("%.6f", grad_time) : "—"
-    lap_str = lap_time !== nothing ? @sprintf("%.6f", lap_time) : "—"
+    # Format build time with ratio
+    build_str = if method == "PHS"
+        @sprintf("%.6f", build_time)
+    else
+        ratio = phs_build_time / build_time
+        @sprintf("%.6f (%.1f×)", build_time, ratio)
+    end
     
-    @printf "| %-18s | %.6f | %10s | %12s | %14s |\n" method build_time rho_str grad_str lap_str
+    # Format rho time with ratio
+    rho_str = if rho_time !== nothing
+        if method == "PHS"
+            @sprintf("%.6f", rho_time)
+        else
+            ratio = phs_rho_time / rho_time
+            @sprintf("%.6f (%.1f×)", rho_time, ratio)
+        end
+    else
+        "—"
+    end
+    
+    # Format grad time with ratio
+    grad_str = if grad_time !== nothing
+        if method == "PHS"
+            @sprintf("%.6f", grad_time)
+        else
+            ratio = phs_grad_time / grad_time
+            @sprintf("%.6f (%.1f×)", grad_time, ratio)
+        end
+    else
+        "—"
+    end
+    
+    # Format lap time with ratio
+    lap_str = if lap_time !== nothing
+        if method == "PHS"
+            @sprintf("%.6f", lap_time)
+        else
+            ratio = phs_lap_time / lap_time
+            @sprintf("%.6f (%.1f×)", lap_time, ratio)
+        end
+    else
+        "—"
+    end
+    
+    @printf "| %-18s | %15s | %16s | %18s | %20s |\n" method build_str rho_str grad_str lap_str
 end
 
 # Compute PHS statistics for comparison

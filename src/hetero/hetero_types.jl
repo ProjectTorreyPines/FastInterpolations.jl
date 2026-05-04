@@ -60,6 +60,23 @@ struct HeteroInterpolantND{
     methods::M
     extraps::E
     searches::P
+
+    function HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D}(
+            grids::Tuple{Vararg{AbstractVector, N}}, data::D, methods::M, extraps::E, searches::P
+        ) where {Tg, Tv, N, G, M, E, P, D}
+        # Copy grids to ensure mutation safety. Mirrors LinearInterpolantND /
+        # ConstantInterpolantND / CubicInterpolantND inner-constructor pattern.
+        # Per-wrapper `Base.copy` overloads (cached_vector.jl / cached_range.jl /
+        # periodic_axis.jl) preserve wrapper type and recurse into the inner
+        # buffer — so this is mutation-safe AND wrapper-preserving for both
+        # OnTheFly (wrapped grids via `_caching_axis`) and PreCompute (raw
+        # Range/Vector via `_prepare_periodic_nd`) builder paths.
+        # Data is NOT copied here — it's already an owned `Array` (OnTheFly
+        # path: `Array(data)` in builder) or a freshly-built `_HeteroPartials`
+        # (PreCompute path: built by `_build_nd_coeffs_hetero`).
+        grids_c = map(copy, grids)
+        return new{Tg, Tv, N, typeof(grids_c), M, E, P, D}(grids_c, data, methods, extraps, searches)
+    end
 end
 
 """

@@ -231,6 +231,27 @@
             val_after = itp(Q2D)
             @test val_before == val_after
         end
+
+        @testset "HeteroInterpolantND (OnTheFly)" begin
+            grids, data = _make_2d_test_data()
+            itp = interp(grids, data;
+                method = (PchipInterp(), LinearInterp()), coeffs = OnTheFly())
+            val_before = itp(Q2D)
+            data .= 0.0
+            val_after = itp(Q2D)
+            @test val_before == val_after
+        end
+
+        @testset "HeteroInterpolantND (PreCompute)" begin
+            grids, data = _make_2d_test_data()
+            # Heterogeneous methods, PreCompute coefficients (partials baked in).
+            itp = interp(grids, data;
+                method = (CubicInterp(), LinearInterp()), coeffs = PreCompute())
+            val_before = itp(Q2D)
+            data .= 0.0
+            val_after = itp(Q2D)
+            @test val_before == val_after
+        end
     end
 
     # ============================================================
@@ -313,6 +334,26 @@
         @testset "ConstantInterpolantND" begin
             grids, data = _make_2d_test_data()
             itp = constant_interp(grids, data)
+            val_before = itp(Q2D)
+            grids[1][3] = 100.0
+            val_after = itp(Q2D)
+            @test val_before == val_after
+        end
+
+        @testset "HeteroInterpolantND (OnTheFly)" begin
+            grids, data = _make_2d_test_data()
+            itp = interp(grids, data;
+                method = (PchipInterp(), LinearInterp()), coeffs = OnTheFly())
+            val_before = itp(Q2D)
+            grids[1][3] = 100.0
+            val_after = itp(Q2D)
+            @test val_before == val_after
+        end
+
+        @testset "HeteroInterpolantND (PreCompute)" begin
+            grids, data = _make_2d_test_data()
+            itp = interp(grids, data;
+                method = (CubicInterp(), LinearInterp()), coeffs = PreCompute())
             val_before = itp(Q2D)
             grids[1][3] = 100.0
             val_after = itp(Q2D)

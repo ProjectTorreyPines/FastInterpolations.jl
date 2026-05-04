@@ -171,6 +171,29 @@ end
 @inline _ExclusivePeriodicAxis(inner::AbstractVector{Tg}, period) where {Tg} =
     _ExclusivePeriodicAxis{Tg, typeof(inner), typeof(period)}(inner, period)
 
+# ---------- Wrapper-preserving copy ----------
+# Default `Base.copy(::AbstractVector)` uses `similar` + `copyto!` which
+# materializes this wrapper as a plain `Vector{Tg}` of length `n+1`,
+# destroying the periodic seam-fold contract (search returns `idx_R = 1`
+# at seam → eval reads `inner[1]` directly). Persistent ND constructors
+# do `map(copy, grids)` for mutation safety; without this overload, that
+# call would silently break OnTheFly Hetero ND eval on `:exclusive`
+# periodic axes.
+#
+# Recurses into `inner` to produce a fresh wrapper that owns its inner
+# buffer. The `period` and cached `_x_max` are scalars (immutable copy).
+@inline Base.copy(g::_ExclusivePeriodicAxis) =
+    _ExclusivePeriodicAxis(copy(g.inner), g.period)
+
+# ---------- Wrapper-aware `_convert_copy` ----------
+# Same-type → delegate to `Base.copy` (recursive wrapper-preserving copy).
+# Different-type → rebuild wrapper from a type-converted inner — single
+# allocation pass via `_convert_copy(g.inner, T)` (which itself dispatches
+# wrapper-aware on `_CachedVector`/`_CachedRange`/raw Vector).
+@inline _convert_copy(g::_ExclusivePeriodicAxis{T}, ::Type{T}) where {T} = copy(g)
+@inline _convert_copy(g::_ExclusivePeriodicAxis, ::Type{T}) where {T} =
+    _ExclusivePeriodicAxis(_convert_copy(g.inner, T), g.period)
+
 # ---------- AbstractVector interface ----------
 # `length` reports virtual extended (n+1) so search algorithms find the seam
 # cell at boundary. `Base.getindex` is **cyclic**: for `i ∈ 1:n` returns

@@ -492,10 +492,13 @@ end
 # The wrapper is **internal API** that intentionally exposes a virtual
 # `(n+1)`-length view. This test pins down what generic Base operations do
 # with that contract — both the *intended* iteration/reduction behavior and
-# the *materialization escape hatch* of `similar`/`copy`/broadcast (which
-# fall back to plain `Vector{T}` of length `n+1`). If a future contributor
-# is tempted to overload `Base.similar` / `Base.copy` to return a wrapper,
-# these tests force that to be a deliberate, reviewed decision.
+# the *materialization escape hatch* of `similar`/broadcast (which fall back
+# to plain `Vector{T}` of length `n+1`).
+#
+# `Base.copy` is overloaded to PRESERVE wrapper type (recursive copy of
+# inner) so persistent ND constructors can call `map(copy, grids)` for
+# mutation safety without destroying the periodic seam-fold contract.
+# `similar` and broadcast remain on the default-materialize escape hatch.
 @testitem "_ExclusivePeriodicAxis — Base.AbstractVector contract (lock-down)" begin
     using FastInterpolations: _ExclusivePeriodicAxis
 
@@ -521,21 +524,35 @@ end
         @test minimum(g) == x[1]          # 0.0
     end
 
-    @testset "similar/copy materialize as plain Vector (n+1)" begin
+    @testset "similar materializes as plain Vector (n+1) — escape hatch" begin
         # Default `similar(::AbstractVector{T}, ::Dims)` returns
-        # `Vector{T}(undef, length)`. We document this: any code that calls
-        # `similar(g)` or `copy(g)` gets a NON-cyclic `Vector` of length n+1
-        # — the wrapper's zero-copy property is lost at that point. Caller's
-        # responsibility to use `_raw(g)` or `g.inner` for raw-length buffers.
+        # `Vector{T}(undef, length)`. Caller's responsibility to use
+        # `_raw(g)` or `g.inner` for raw-length buffers.
         s = similar(g)
         @test s isa Vector{Float64}
         @test length(s) == n + 1
+    end
 
+    @testset "copy preserves wrapper type (mutation safety)" begin
+        # `Base.copy(::_ExclusivePeriodicAxis)` is overloaded to recurse
+        # into the inner buffer and rebuild the wrapper. This is required
+        # by persistent ND constructors that do `map(copy, grids)` for
+        # mutation safety — without the overload, the default Base
+        # `similar`+`copyto!` path would destroy the wrapper.
         c = copy(g)
-        @test c isa Vector{Float64}
-        @test length(c) == n + 1
-        @test c[1:n] == x
-        @test c[n + 1] ≈ x[1] + 4.0
+        @test c isa _ExclusivePeriodicAxis{Float64}
+        @test length(c) == n + 1            # virtual span preserved
+        @test c.inner !== g.inner           # fresh buffer (independent of user)
+        @test c.inner == g.inner            # same content
+        @test c.period == g.period          # period preserved
+        @test c[n + 1] ≈ x[1] + 4.0          # seam coord still correct
+
+        # Mutation isolation: changing user's input doesn't affect copy
+        x_local = [0.0, 1.0, 2.0, 3.0]
+        g_local = _ExclusivePeriodicAxis(x_local, 4.0)
+        c_local = copy(g_local)
+        x_local[3] = 999.0
+        @test c_local[3] == 2.0             # copy unaffected
     end
 
     @testset "Broadcast materializes virtual span as plain Vector" begin

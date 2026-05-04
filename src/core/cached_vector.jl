@@ -68,6 +68,26 @@ Base.IndexStyle(::Type{<:_CachedVector}) = IndexLinear()
 # would discard the existing cached `h`/`inv_h` for no reason.
 _CachedVector(c::_CachedVector) = c
 
+# ---------- Wrapper-preserving copy ----------
+# Default Base `copy(::AbstractVector)` uses `similar` + `copyto!` which
+# materializes wrappers as plain `Vector{T}`, destroying the wrapper type.
+# Persistent ND constructors do `map(copy, grids)` for mutation safety;
+# without this overload, that call would silently drop the cached `h`/`inv_h`
+# fields on every grid axis. Recursive copy of inner buffers preserves the
+# wrapper structure AND ensures the returned wrapper owns fresh storage.
+@inline Base.copy(c::_CachedVector) =
+    _CachedVector{eltype(c.inner), eltype(c.inv_h)}(copy(c.inner), copy(c.h), copy(c.inv_h))
+
+# ---------- Wrapper-aware `_convert_copy` ----------
+# Single-pass type-conversion + ownership. Same-type → delegate to
+# `Base.copy` (preserves wrapper, recursive copy of inner). Different-type
+# → rebuild wrapper from a type-converted inner (one allocation pass —
+# `_convert_copy(c.inner, T)` produces the new buffer; `_CachedVector`
+# constructor recomputes `h`/`inv_h` for the converted eltype).
+@inline _convert_copy(c::_CachedVector{T}, ::Type{T}) where {T} = copy(c)
+@inline _convert_copy(c::_CachedVector, ::Type{T}) where {T} =
+    _CachedVector(_convert_copy(c.inner, T))
+
 # ---------- Construction from AbstractVector ----------
 """
     _CachedVector(x::AbstractVector{T})

@@ -682,8 +682,8 @@ println("\nGenerating plot...")
 col_analytical = :black
 col_nearest    = :blue
 col_linear     = :red
-col_cubic      = :darkgreen   # Trispline
-col_cardinal   = :darkorange  # Tricubic
+col_cubic      = :darkorange   # Trispline
+col_cardinal   = :darkgreen  # Tricubic
 col_phs        = :red
 
 lw_ref = 2.0
@@ -741,8 +741,8 @@ p11 = plot(; kw_common..., ylabel = "ρ (a.u.)")
 ref_series!(p11, s_ang, ρ_ref)
 add_series!(p11, s_ang, ρ_nearest,  "Nearest",    col_nearest)
 add_series!(p11, s_ang, ρ_linear,   "Trilinear",  col_linear)
-add_series!(p11, s_ang, ρ_cubic,    "Trispline",  col_cubic)
 add_series!(p11, s_ang, ρ_cardinal, "Tricubic",   col_cardinal)
+add_series!(p11, s_ang, ρ_cubic,    "Trispline",  col_cubic)
 
 p12 = plot(; kw_common..., ylabel = "ρ (a.u.)")
 ref_series!(p12, s_ang, ρ_ref)
@@ -752,8 +752,8 @@ add_series!(p12, s_ang, ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
 p21 = plot(; kw_common..., ylabel = "|∇ρ| (a.u.)")
 ref_series!(p21, s_ang, ∇ρ_ref)
 add_series!(p21, s_ang, ∇ρ_linear,   "Trilinear", col_linear)
-add_series!(p21, s_ang, ∇ρ_cubic,    "Trispline", col_cubic)
 add_series!(p21, s_ang, ∇ρ_cardinal, "Tricubic",  col_cardinal)
+add_series!(p21, s_ang, ∇ρ_cubic,    "Trispline", col_cubic)
 
 p22 = plot(; kw_common..., ylabel = "|∇ρ| (a.u.)")
 ref_series!(p22, s_ang, ∇ρ_ref)
@@ -762,8 +762,8 @@ add_series!(p22, s_ang, ∇ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
 # ── Row 3: |∇²ρ| ──────────────────────────────────────────────────────────────
 p31 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u.)")
 ref_series!(p31, s_ang, ∇²ρ_ref)
-add_series!(p31, s_ang, ∇²ρ_cubic,    "Trispline", col_cubic)
 add_series!(p31, s_ang, ∇²ρ_cardinal, "Tricubic",  col_cardinal)
+add_series!(p31, s_ang, ∇²ρ_cubic,    "Trispline", col_cubic)
 
 p32 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u.)")
 ref_series!(p32, s_ang, ∇²ρ_ref)

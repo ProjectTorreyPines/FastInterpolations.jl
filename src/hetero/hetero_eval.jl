@@ -244,7 +244,7 @@ end
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         ::NTuple{N, Bool},
-    ) where {Tg, Tv, N, G, S, M, E, P, Tr}
+    ) where {Tg, Tv, N, G, M, E, P, Tr}
     windows, grids_local, methods_inner, extraps_inner =
         _build_wrap_aware_cell_components(pool, itp, q_eval, policies, hints)
     return _collapse_dims(

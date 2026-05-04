@@ -393,7 +393,7 @@ println("  [PHS] Polyharmonic spline (PHS-3, stencil_size=8, log-density transfo
 # from PBE all-electron atomic radial splines via the chain rule — matches the
 # Fortran crystalmod_promolecular approach and avoids Gibbs-like errors from
 # a cubic spline of log(ρ₀) near nuclear cusps.
-@time itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 1.75,
+@time itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 2.0,
     reference_interp = ref_rho0)
 
 println("All interpolants built.")

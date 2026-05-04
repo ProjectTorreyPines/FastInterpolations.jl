@@ -119,19 +119,17 @@ itp = phs_interp((x, y, z), rho_data;
 
 ## Example: Quantum Chemistry
 
-The script [`scripts/phs_density_comparison.jl`](https://github.com/ProjectTorreyPines/FastInterpolations.jl/blob/feat/phs-interpolation/scripts/phs_density_comparison.jl) demonstrates PHS for **electron density interpolation** in a phenol dimer. It uses:
+The script [`scripts/phs_density_comparison.jl`](https://github.com/ProjectTorreyPines/FastInterpolations.jl/blob/feat/phs-interpolation/scripts/phs_density_comparison.jl) demonstrates PHS for **electron density interpolation** in a phenol dimer, recreating Figure 2 in [the paper](https://doi.org/10.1063/5.0090232). It uses:
 
 - **Data**: DFT-computed electron density on a 75×113×70 grid
-- **Reference**: Promolecular density (sum of PBE atomic densities from [critic2](https://github.com/aoterodelaroza/critic2))
+- **Reference**: Analytical promolecular density (sum of PBE atomic densities from [critic2](https://github.com/aoterodelaroza/critic2))
 - **Validation**: Comparison of density, gradient, and Laplacian along a hydrogen-bond path
 
 The resulting plot shows exceptional agreement with analytical values, even near nuclear cusps and steep features:
 
 ![PHS density comparison](../../images/phs_density_comparison.png)
 
-**Left column:** Standard 3D interpolation methods (nearest, linear, cubic spline, cardinal) vs. analytical DFT values. All exhibit spurious oscillations and errors near the nuclei.
-
-**Right column:** PHS with log-density transform and promolecular reference. Smooth, accurate across the domain, with only minor deviations very close to nuclei.
+***Left column:** Standard 3D interpolation methods (nearest, linear, cubic spline, cardinal) vs. analytical DFT values. All exhibit spurious oscillations and errors near the nuclei. **Right column:** PHS with log-density transform and promolecular reference. Smooth, accurate across the domain, with only minor deviations very close to nuclei.*
 
 ### Running the Example
 
@@ -174,14 +172,6 @@ The PHS evaluation includes cost of solving the linear system at each query poin
 
 ## References
 
-- **Paper**: [Asymptotic-expansion extrapolation of the electron density at the atomic nucleus](https://doi.org/10.1063/5.0090232)
-  A. Otero de la Roza & E. R. Johnson, J. Chem. Phys. 156, 084108 (2022)
-
+- **Paper**: Otero-de-la-Roza, A. *Finding critical points and reconstruction of electron densities on grids*. J. Chem. Phys. 156, 224116 (2022) https://doi.org/10.1063/5.0090232.
 - **critic2**: Database of PBE all-electron atomic densities
   https://github.com/aoterodelaroza/critic2/tree/master/dat/wfc
-
-## See Also
-
-- [ConstantRef](@ref) — simple constant reference for log-transform
-- [cubic_interp](@ref) — classical spline for comparison
-- [gradient](@ref), [hessian](@ref), [laplacian](@ref) — analytical derivatives

@@ -134,3 +134,67 @@ end
         @test_throws ArgumentError _check_compatible_length(xa, y_raw)
     end
 end
+
+# Lock-down for the data-side `<: AbstractArray{Tv,N}` semantic contract.
+# Mirrors `_ExclusivePeriodicAxis` lock-down in test_periodic_axis.jl. Pins
+# down: iteration/reduction covers the virtual `(n+1)` span (with the seam
+# slot cyclically equal to `inner[1]`), and `similar`/`copy`/broadcast
+# materialize the virtual view as a plain `Vector{T}` of length `n+1`.
+@testitem "_ExclusivePeriodicData — Base.AbstractArray contract (lock-down)" begin
+    using FastInterpolations: _ExclusivePeriodicData
+
+    y = [10.0, 20.0, 30.0, 40.0]
+    c = _ExclusivePeriodicData(y)
+    n = length(y)
+
+    @testset "Iteration covers virtual span (n+1, includes cyclic seam)" begin
+        # `for v in c` and `collect` see the seam at index n+1 with value
+        # `inner[1]` (cyclic). INTENDED — eval kernels rely on this uniformity.
+        v = collect(c)
+        @test length(v) == n + 1
+        @test v == [10.0, 20.0, 30.0, 40.0, 10.0]   # seam = inner[1]
+    end
+
+    @testset "Reductions span n+1 (seam re-counted as inner[1])" begin
+        # `sum(c)` includes the cyclic seam → `sum(inner) + inner[1]`.
+        # This is what "sum over a cyclic-extended array" means by definition;
+        # diagnostic users should be aware. INTENDED.
+        @test sum(c) == sum(y) + y[1]                  # 100 + 10 = 110
+        @test maximum(c) == maximum(y)                  # 40
+        @test minimum(c) == minimum(y)                  # 10
+    end
+
+    @testset "similar/copy materialize as plain Vector (n+1)" begin
+        # Default Base path: `similar(::AbstractVector{T}, dims) = Vector{T}(undef, dims)`.
+        # Calling `similar(c)` or `copy(c)` produces a NON-cyclic `Vector` of
+        # length n+1. Wrapper's zero-copy property is lost — internal callers
+        # must use `_raw(c)` or `c.inner` for raw-length buffers.
+        s = similar(c)
+        @test s isa Vector{Float64}
+        @test length(s) == n + 1
+
+        cc = copy(c)
+        @test cc isa Vector{Float64}
+        @test cc == [10.0, 20.0, 30.0, 40.0, 10.0]     # default copy = collect
+    end
+
+    @testset "Broadcast materializes virtual span as plain Vector" begin
+        # `c .+ 0` runs through default AbstractArray broadcast → Vector{T} of
+        # length n+1. Same escape-hatch rule as `similar`/`copy`: internal
+        # wrapper not preserved through broadcast. Do NOT use in hot paths.
+        b = c .+ 0.0
+        @test b isa Vector{Float64}
+        @test length(b) == n + 1
+        @test b[n + 1] == y[1]
+    end
+
+    @testset "Equality and hash differ from inner" begin
+        # Different lengths → NOT equal under `==`. Internal callers that
+        # need identity must check `c.inner === reference` directly.
+        @test c != c.inner
+        @test hash(c) != hash(c.inner)
+        # Two wrappers around the same data agree.
+        c2 = _ExclusivePeriodicData(y)
+        @test c == c2
+    end
+end

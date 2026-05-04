@@ -487,3 +487,76 @@ end
         @test arr[:, 2:4] == [20.0 30.0 1.0; 50.0 60.0 2.0]  # untouched
     end
 end
+
+# Lock-down test for the `<: AbstractVector{T}` semantic contract:
+# The wrapper is **internal API** that intentionally exposes a virtual
+# `(n+1)`-length view. This test pins down what generic Base operations do
+# with that contract — both the *intended* iteration/reduction behavior and
+# the *materialization escape hatch* of `similar`/`copy`/broadcast (which
+# fall back to plain `Vector{T}` of length `n+1`). If a future contributor
+# is tempted to overload `Base.similar` / `Base.copy` to return a wrapper,
+# these tests force that to be a deliberate, reviewed decision.
+@testitem "_ExclusivePeriodicAxis — Base.AbstractVector contract (lock-down)" begin
+    using FastInterpolations: _ExclusivePeriodicAxis
+
+    x = [0.0, 1.0, 2.0, 3.0]
+    g = _ExclusivePeriodicAxis(x, 4.0)
+    n = length(x)
+
+    @testset "Iteration covers virtual span (n+1, includes seam coord)" begin
+        # `for v in g` and `collect` see the seam at index n+1 with value
+        # `inner[1] + period`. INTENDED — eval kernels rely on this uniformity.
+        v = collect(g)
+        @test length(v) == n + 1
+        @test v[1:n] == x
+        @test v[n + 1] ≈ x[1] + 4.0
+    end
+
+    @testset "Reductions span n+1 (seam coord included)" begin
+        # `sum(g)` / `maximum(g)` iterate the virtual extension. For an
+        # `_ExclusivePeriodicAxis`, the seam coord is `inner[1] + period`,
+        # so `sum(g) == sum(inner) + (inner[1] + period)`. INTENDED.
+        @test sum(g) == sum(x) + (x[1] + 4.0)
+        @test maximum(g) == x[1] + 4.0   # seam = 4.0, larger than inner max=3.0
+        @test minimum(g) == x[1]          # 0.0
+    end
+
+    @testset "similar/copy materialize as plain Vector (n+1)" begin
+        # Default `similar(::AbstractVector{T}, ::Dims)` returns
+        # `Vector{T}(undef, length)`. We document this: any code that calls
+        # `similar(g)` or `copy(g)` gets a NON-cyclic `Vector` of length n+1
+        # — the wrapper's zero-copy property is lost at that point. Caller's
+        # responsibility to use `_raw(g)` or `g.inner` for raw-length buffers.
+        s = similar(g)
+        @test s isa Vector{Float64}
+        @test length(s) == n + 1
+
+        c = copy(g)
+        @test c isa Vector{Float64}
+        @test length(c) == n + 1
+        @test c[1:n] == x
+        @test c[n + 1] ≈ x[1] + 4.0
+    end
+
+    @testset "Broadcast materializes virtual span as plain Vector" begin
+        # `g .+ 0.0` runs through the default AbstractArray broadcast path,
+        # which produces a `Vector{T}` of length `n+1`. This is the same
+        # rule as `similar`/`copy` — internal-API wrappers are not preserved
+        # under broadcast. INTENDED escape hatch for diagnostics; do NOT use
+        # in performance-critical paths.
+        b = g .+ 0.0
+        @test b isa Vector{Float64}
+        @test length(b) == n + 1
+        @test b[n + 1] ≈ x[1] + 4.0
+    end
+
+    @testset "Equality and hash differ from inner" begin
+        # `g == g.inner` is `false` because lengths differ (5 vs 4). Wrappers
+        # are NOT interchangeable with their inner under `==` / `Set` / `Dict`.
+        @test g != g.inner
+        @test hash(g) != hash(g.inner)
+        # But two wrappers with the same inner+period agree.
+        g2 = _ExclusivePeriodicAxis(x, 4.0)
+        @test g == g2
+    end
+end

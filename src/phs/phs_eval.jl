@@ -196,6 +196,73 @@ Evaluate ∂²f/∂xξ∂xζ (Eq. 26).
 end
 
 """
+    _phs_solve_stencil!(itp, base_idx, rhs_buf, coeff_buf) -> (offsets, coeff, hs_local)
+
+Perform the linear solve for the PHS stencil at `base_idx`:
+selects offsets/Φ⁻¹, builds the RHS, and computes `coeff = Φ⁻¹ * rhs` (BLAS gemv).
+Returns the stencil offsets, coefficient vector (aliasing `coeff_buf`), and grid spacings.
+"""
+@inline function _phs_solve_stencil!(
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        base_idx::NTuple{N, Int},
+        rhs_buf::AbstractVector,
+        coeff_buf::AbstractVector,
+    ) where {Tg, Tv, N, K}
+    hs_local   = itp.hs
+    grid_sizes = ntuple(d -> length(itp.grids[d]), N)
+    shift = _phs_compute_shift(base_idx, itp.stencil_lo, itp.stencil_hi, grid_sizes)
+    offsets, phi_inv = if all(iszero, shift) || !haskey(itp.shift_cache, shift)
+        itp.stencil_offsets, itp.phi_inv
+    else
+        itp.shift_cache[shift]
+    end
+    M  = size(phi_inv, 1)
+    actual_rhs   = length(rhs_buf)   == M ? rhs_buf   : similar(rhs_buf, M)
+    actual_coeff = length(coeff_buf) == M ? coeff_buf : similar(coeff_buf, M)
+    fill!(actual_rhs, zero(Tg))
+    _phs_build_rhs!(actual_rhs, itp.data, base_idx, offsets, grid_sizes)
+    LinearAlgebra.mul!(actual_coeff, phi_inv, actual_rhs)
+    return offsets, actual_coeff, hs_local
+end
+
+"""
+    _phs_eval_from_coeffs(coeffs, offsets, hs_local, query, base_coords, ::Val{K}, ops) -> scalar
+
+Evaluate the local PHS interpolant given precomputed coefficients.
+Dispatches to the appropriate `_phs_eval_coeffs_*` function based on `ops`.
+"""
+@inline function _phs_eval_from_coeffs(
+        coeffs::AbstractVector,
+        offsets::Vector{<:NTuple{N, Int}},
+        hs_local::NTuple{N},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N},
+        ::Val{K},
+        ops::NTuple{N, AbstractEvalOp},
+    ) where {N, K}
+    n_deriv = ntuple(d -> deriv_order(ops[d]), N)
+    total_order = sum(n_deriv)
+    if total_order == 0
+        return _phs_eval_coeffs_value(coeffs, offsets, hs_local, query, base_coords, Val{K}())
+    elseif total_order == 1
+        axis = findfirst(d -> n_deriv[d] == 1, 1:N)::Int
+        return _phs_eval_coeffs_deriv1(coeffs, offsets, hs_local, query, base_coords, Val{K}(), axis)
+    elseif total_order == 2
+        nonzero = findall(d -> n_deriv[d] > 0, 1:N)
+        if length(nonzero) == 1
+            ax = nonzero[1]
+            if n_deriv[ax] == 2
+                return _phs_eval_coeffs_deriv2(coeffs, offsets, hs_local, query, base_coords, Val{K}(), ax, ax)
+            end
+        elseif length(nonzero) == 2
+            ax1, ax2 = nonzero[1], nonzero[2]
+            return _phs_eval_coeffs_deriv2(coeffs, offsets, hs_local, query, base_coords, Val{K}(), ax1, ax2)
+        end
+    end
+    return zero(eltype(coeffs))
+end
+
+"""
     _phs_eval_stencil(itp, base_idx, query, ops, rhs_buf, coeff_buf)
         -> scalar
 
@@ -212,52 +279,9 @@ Uses pre-allocated buffers `rhs_buf` and `coeff_buf` (from AdaptiveArrayPools).
         rhs_buf::AbstractVector,
         coeff_buf::AbstractVector,
     ) where {Tg, Tv, N, K}
-    hs_local   = itp.hs
-    grid_sizes = ntuple(d -> length(itp.grids[d]), N)
+    offsets, coeff, hs_local = _phs_solve_stencil!(itp, base_idx, rhs_buf, coeff_buf)
     base_coords = _phs_base_coords(itp, base_idx)
-
-    # Select canonical or boundary-restricted (offsets, Φ⁻¹)
-    shift = _phs_compute_shift(base_idx, itp.stencil_lo, itp.stencil_hi, grid_sizes)
-    offsets, phi_inv = if all(iszero, shift) || !haskey(itp.shift_cache, shift)
-        itp.stencil_offsets, itp.phi_inv
-    else
-        itp.shift_cache[shift]
-    end
-
-    # Build RHS vector (boundary stencils may have fewer nodes)
-    M = size(phi_inv, 1)
-    actual_rhs   = length(rhs_buf)   == M ? rhs_buf   : similar(rhs_buf, M)
-    actual_coeff = length(coeff_buf) == M ? coeff_buf : similar(coeff_buf, M)
-    fill!(actual_rhs, zero(Tg))
-    _phs_build_rhs!(actual_rhs, itp.data, base_idx, offsets, grid_sizes)
-
-    # Solve: coeffs = Φ⁻¹ * rhs  (BLAS gemv)
-    LinearAlgebra.mul!(actual_coeff, phi_inv, actual_rhs)
-
-    # Determine which derivative to compute from ops
-    n_deriv = ntuple(d -> deriv_order(ops[d]), N)
-    total_order = sum(n_deriv)
-
-    if total_order == 0
-        return _phs_eval_coeffs_value(actual_coeff, offsets, hs_local, query, base_coords, Val{K}())
-    elseif total_order == 1
-        axis = findfirst(d -> n_deriv[d] == 1, 1:N)::Int
-        return _phs_eval_coeffs_deriv1(actual_coeff, offsets, hs_local, query, base_coords, Val{K}(), axis)
-    elseif total_order == 2
-        # Find which axes
-        nonzero = findall(d -> n_deriv[d] > 0, 1:N)
-        if length(nonzero) == 1
-            ax = nonzero[1]
-            if n_deriv[ax] == 2
-                return _phs_eval_coeffs_deriv2(actual_coeff, offsets, hs_local, query, base_coords, Val{K}(), ax, ax)
-            end
-        elseif length(nonzero) == 2
-            ax1, ax2 = nonzero[1], nonzero[2]
-            return _phs_eval_coeffs_deriv2(actual_coeff, offsets, hs_local, query, base_coords, Val{K}(), ax1, ax2)
-        end
-    end
-    # Higher-order derivatives: return zero (PHS with linear augmentation has zero 3rd+ derivatives)
-    return zero(Tv)
+    return _phs_eval_from_coeffs(coeff, offsets, hs_local, query, base_coords, Val{K}(), ops)
 end
 
 # ======================================================
@@ -339,12 +363,13 @@ Algorithm:
             d_dist = sqrt(d2)
             w, wp = _phs_blend_weight_and_prime(d_dist, blend_a)
             w < eps(Tg) && continue
-            f = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val, rhs_buf, coeff_buf))
+            offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+            f = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_val))
             sum_w  += w
             sum_wy += w * f
             if d_dist > eps(Tg)
                 dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
-                df  = Tv(_phs_eval_stencil(itp, nb_idx, query, ops, rhs_buf, coeff_buf))
+                df  = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops))
                 sum_N1 += wp * dir * f + w * df
                 sum_W1 += wp * dir
             end
@@ -383,14 +408,15 @@ Algorithm:
             w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a)
             w < eps(Tg) && continue
 
-            f   = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val, rhs_buf, coeff_buf))
-            f2  = Tv(_phs_eval_stencil(itp, nb_idx, query, ops,     rhs_buf, coeff_buf))
+            offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+            f   = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_val))
+            f2  = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops))
             sum_w += w; sum_wy += w * f
 
             if d_dist > eps(Tg)
                 da1  = (Tg(query[ax1]) - nb_coords[ax1]) / d_dist
                 wxi1 = wp * da1
-                f1   = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_d1_1, rhs_buf, coeff_buf))
+                f1   = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d1_1))
                 sum_N1 += wxi1 * f + w * f1
                 sum_W1 += wxi1
 
@@ -402,7 +428,7 @@ Algorithm:
                 else
                     da2  = (Tg(query[ax2]) - nb_coords[ax2]) / d_dist
                     wxi2 = wp * da2
-                    f1b  = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_d1_2, rhs_buf, coeff_buf))
+                    f1b  = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d1_2))
                     sum_N1b += wxi2 * f + w * f1b
                     sum_W1b += wxi2
                     # ∂²w/∂x_ξ∂x_ζ = wpp·da1·da2 - wp·da1·da2/d
@@ -520,13 +546,14 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
             d_dist = sqrt(d2)
             w, wp = _phs_blend_weight_and_prime(d_dist, blend_a)
             w < eps(Tg) && continue
-            f  = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val, rhs_buf, coeff_buf))
+            offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+            f  = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_val))
             g  = exp(f)
             sum_w  += w
             sum_wg += w * g
             if d_dist > eps(Tg)
                 dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
-                f_ξ = Tv(_phs_eval_stencil(itp, nb_idx, query, ops, rhs_buf, coeff_buf))
+                f_ξ = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops))
                 sum_N1 += wp * dir * g + w * g * f_ξ
                 sum_W1 += wp * dir
             end
@@ -565,15 +592,16 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
             w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a)
             w < eps(Tg) && continue
 
-            f    = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val,  rhs_buf, coeff_buf))
+            offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+            f    = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_val))
             g    = exp(f)
-            f_d2 = Tv(_phs_eval_stencil(itp, nb_idx, query, ops,      rhs_buf, coeff_buf))
+            f_d2 = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops))
             sum_w += w; sum_wg += w * g
 
             if d_dist > eps(Tg)
                 da1  = (Tg(query[ax1]) - nb_coords[ax1]) / d_dist
                 wxi1 = wp * da1
-                f_d1 = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_d1_1, rhs_buf, coeff_buf))
+                f_d1 = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d1_1))
                 dg1  = g * f_d1   # ∂gᵢ/∂xξ = gᵢ · fᵢ_ξ
                 sum_N1 += wxi1 * g + w * dg1
                 sum_W1 += wxi1
@@ -586,7 +614,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                 else
                     da2   = (Tg(query[ax2]) - nb_coords[ax2]) / d_dist
                     wxi2  = wp * da2
-                    f_d1b = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_d1_2, rhs_buf, coeff_buf))
+                    f_d1b = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d1_2))
                     dg2   = g * f_d1b  # ∂gᵢ/∂xζ = gᵢ · fᵢ_ζ
                     sum_N1b += wxi2 * g + w * dg2
                     sum_W1b += wxi2
@@ -598,7 +626,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                 sum_W2 += wxixi
             else
                 # d≈0: weight derivatives ≈ 0
-                d2g = g * (f_d2 + (is_diag ? Tv(_phs_eval_stencil(itp, nb_idx, query, ops_d1_1, rhs_buf, coeff_buf))^2 : zero(Tv)))
+                d2g = g * (f_d2 + (is_diag ? Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d1_1))^2 : zero(Tv)))
                 sum_N2 += w * d2g
             end
         end

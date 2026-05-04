@@ -219,7 +219,8 @@ Returns the stencil offsets, coefficient vector (aliasing `coeff_buf`), and grid
     M  = size(phi_inv, 1)
     actual_rhs   = length(rhs_buf)   == M ? rhs_buf   : similar(rhs_buf, M)
     actual_coeff = length(coeff_buf) == M ? coeff_buf : similar(coeff_buf, M)
-    fill!(actual_rhs, zero(Tg))
+    ns = length(offsets)
+    @inbounds for i in ns + 1:M; actual_rhs[i] = zero(Tg); end  # zero polynomial tail only
     _phs_build_rhs!(actual_rhs, itp.data, base_idx, offsets, grid_sizes)
     LinearAlgebra.mul!(actual_coeff, phi_inv, actual_rhs)
     return offsets, actual_coeff, hs_local

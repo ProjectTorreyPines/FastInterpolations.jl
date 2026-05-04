@@ -12,7 +12,7 @@
 # - N:  Number of dimensions
 
 """
-    HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D} <: AbstractInterpolantND{Tg, Tv, N}
+    HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D} <: AbstractInterpolantND{Tg, Tv, N}
 
 N-dimensional interpolant with per-axis method specification.
 
@@ -26,8 +26,7 @@ linear on axis 2) with two evaluation strategies:
 - `Tg`: Grid/coordinate type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
-- `G`: Tuple type for grids
-- `S`: Tuple type for spacings
+- `G`: Tuple type for grids (wrapped grids carry cached `h`/`inv_h`)
 - `M`: Tuple type for per-axis methods (heterogeneous)
 - `E`: Tuple type for extrapolation modes
 - `P`: Tuple type for search policies
@@ -51,14 +50,12 @@ struct HeteroInterpolantND{
         Tv,
         N,
         G <: Tuple{Vararg{AbstractVector, N}},
-        S <: Tuple{Vararg{AbstractGridSpacing, N}},
         M <: Tuple{Vararg{AbstractInterpMethod, N}},
         E <: Tuple{Vararg{AbstractExtrap, N}},
         P <: Tuple{Vararg{AbstractSearchPolicy, N}},
         D,
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    spacings::S
     data::D
     methods::M
     extraps::E

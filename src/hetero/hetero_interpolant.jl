@@ -273,7 +273,6 @@ function _build_hetero_nd(
     # Vector → `_CachedVector` (h/inv_h cached for repeat persistent queries),
     # Range → `_CachedRange`. Mirrors how Linear/Constant/Cubic ND handle BC.
     grids_typed = map((g, bc) -> _caching_axis(g, bc, Tg), grids_typed, bcs)
-    spacings = _create_spacings_typed(grids_typed)
     # Inclusive PeriodicBC requires `data[1, ...] ≈ data[end, ...]` per axis;
     # mirrors `_prepare_periodic_nd_impl` for the PreCompute path so that local
     # Hermite ND OnTheFly build rejects the same mismatched data 1D and Cubic ND
@@ -292,10 +291,10 @@ function _build_hetero_nd(
 
     return HeteroInterpolantND{
         Tg, Tv, N,
-        typeof(grids_typed), typeof(spacings), typeof(methods),
+        typeof(grids_typed), typeof(methods),
         typeof(extraps), typeof(searches), typeof(data_typed),
     }(
-        grids_typed, spacings, data_typed, methods, extraps, searches
+        grids_typed, data_typed, methods, extraps, searches
     )
 end
 
@@ -330,21 +329,20 @@ function _build_hetero_precomputed(
     _validate_axis_methods(grids_typed, methods, extraps)
 
     # Extend exclusive periodic axes to inclusive form (same as CubicInterpolantND).
-    # Must happen before spacings + partials so the stored grid matches the data.
+    # Must happen before partials so the stored grid matches the data.
     grids_typed, data_ext, bcs_resolved = _prepare_periodic_nd(grids_typed, data, bcs_periodic)
     # Per-axis materialize via 2-arg primitive (post-extension grid-span).
     extraps = map(_resolve_extrap, extraps, grids_typed)
-    spacings = _create_spacings_typed(grids_typed)
 
     # Build partials on the (possibly extended) data
     hetero_partials = _build_nd_coeffs_hetero(grids_typed, Tv, data_ext, methods, bcs_resolved)
 
     return HeteroInterpolantND{
         Tg, Tv, N,
-        typeof(grids_typed), typeof(spacings), typeof(methods),
+        typeof(grids_typed), typeof(methods),
         typeof(extraps), typeof(searches), typeof(hetero_partials),
     }(
-        grids_typed, spacings, hetero_partials, methods, extraps, searches
+        grids_typed, hetero_partials, methods, extraps, searches
     )
 end
 

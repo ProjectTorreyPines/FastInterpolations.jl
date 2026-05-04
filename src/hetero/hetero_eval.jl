@@ -160,7 +160,7 @@ end
 # concrete type and unroll the per-axis `map` calls into straight-line code.
 @inline function _build_windowed_cell(itp, q_eval, policies, hints, mono)
     # Pre-search via per-axis adaptive function barriers (hint state mutated in-place).
-    indices, _, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, policies, hints, mono)
+    indices, _, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
     # Per-axis window: cell-local for windowable methods, full axis for global-solve.
     # `map` over heterogeneous tuples is unrolled by the compiler with no closure
     # capture, which is more allocation-robust than `ntuple(d -> ..., Val(N))` for
@@ -188,13 +188,13 @@ end
 #     pre-search entirely and use full windows. The kernel sees the original data and
 #     grids — bit-for-bit identical to the pre-Phase-3 behavior, zero regression.
 @inline function _eval_hetero_nd(
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
-    ) where {Tg, Tv, N, G, S, M, E, P}
+    ) where {Tg, Tv, N, G, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
     Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
 
@@ -237,7 +237,7 @@ end
 # per axis and handles seam wrap directly; mono-aware LinearBinarySearch hint
 # walking still works inside the resolved Searcher when the user opts in.
 @inline @with_pool pool function _eval_hetero_nd_wrap_aware(
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
         q_eval::Tuple{Vararg{Real, N}},
         ::Type{Tr},
         ops::NTuple{N, AbstractEvalOp},
@@ -261,11 +261,11 @@ end
 # heap-allocated counterpart `_build_wrap_aware_cell_heap` below.
 @inline function _build_wrap_aware_cell_components(
         pool,
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
         q_eval::Tuple{Vararg{Real, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints,
-    ) where {Tg, Tv, N, G, S, M, E, P}
+    ) where {Tg, Tv, N, G, M, E, P}
     bcs = map(_bc_for_periodic_check, itp.methods)
     stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints, bcs)
     indices = map(first, stencils)
@@ -278,15 +278,15 @@ end
 
 # PreCompute path: precomputed partials + local kernel eval (O(1) per query)
 @inline function _eval_hetero_nd(
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:_HeteroPartials},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials},
         query::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
-    ) where {Tg, Tv, N, G, S, M, E, P}
+    ) where {Tg, Tv, N, G, M, E, P}
     return _eval_hetero_precomputed(
-        itp.data, itp.grids, itp.spacings, itp.methods, itp.extraps,
+        itp.data, itp.grids, itp.methods, itp.extraps,
         query, ops, policies, hints, mono,
     )
 end
@@ -299,11 +299,11 @@ end
 # both still use the pool variant (`_build_wrap_aware_cell_components`) since
 # their cell lifetime fits cleanly inside a single `@with_pool` scope.
 @inline function _build_wrap_aware_cell_heap(
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
         q_eval::Tuple{Vararg{Real, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints,
-    ) where {Tg, Tv, N, G, S, M, E, P}
+    ) where {Tg, Tv, N, G, M, E, P}
     bcs = map(_bc_for_periodic_check, itp.methods)
     stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints, bcs)
     indices = map(first, stencils)
@@ -413,12 +413,12 @@ end
 # `_axis_window` cost across all those evaluations. Pure global-solve tuples skip the
 # pre-search and store full windows (zero regression).
 @inline function _locate_cell(
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
-    ) where {Tg, Tv, N, G, S, M, E, P}
+    ) where {Tg, Tv, N, G, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
 
     # Periodic wrap-aware path: build the wrap-aware cell ONCE here so the
@@ -451,10 +451,10 @@ end
 end
 
 @inline function _eval_at_cell(
-        ::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array},
+        ::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp},
-    ) where {Tg, Tv, N, G, S, M, E, P}
+    ) where {Tg, Tv, N, G, M, E, P}
     data, grids, methods, extraps, q_eval, searches, hints, windows = cell
     # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
     Tr = _output_eltype(Tv, Tg, typeof.(q_eval)...)
@@ -463,23 +463,23 @@ end
 
 # PreCompute: cell stores precomputed cell location (locate-once optimization)
 @inline function _locate_cell(
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:_HeteroPartials},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials},
         query::Tuple{Vararg{Real, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
-    ) where {Tg, Tv, N, G, S, M, E, P}
+    ) where {Tg, Tv, N, G, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, policies, hints, mono)
-    hs, inv_hs, dLs = _compute_all_local_params(q_eval, itp.spacings, indices, Ls)
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
+    hs, inv_hs, dLs = _compute_all_local_params(q_eval, itp.grids, indices, Ls)
     return (itp.data.partials, indices, hs, inv_hs, dLs)
 end
 
 @inline function _eval_at_cell(
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:_HeteroPartials},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials},
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp},
-    ) where {Tg, Tv, N, G, S, M, E, P}
+    ) where {Tg, Tv, N, G, M, E, P}
     partials, indices, hs, inv_hs, dLs = cell
     return _eval_hetero_nd_cell(partials, indices, hs, inv_hs, dLs, ops, itp.methods)
 end
@@ -488,9 +488,9 @@ end
 # Required Traits
 # ========================================
 
-@inline _zero_ref(itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:Array}) where {Tg, Tv, N, G, S, M, E, P} =
+@inline _zero_ref(itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array}) where {Tg, Tv, N, G, M, E, P} =
     @inbounds first(itp.data)
-@inline _zero_ref(itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, <:_HeteroPartials}) where {Tg, Tv, N, G, S, M, E, P} =
+@inline _zero_ref(itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials}) where {Tg, Tv, N, G, M, E, P} =
     @inbounds itp.data.partials[1]
 
 @inline _deriv_zero_fill(::HeteroInterpolantND, ::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} = false

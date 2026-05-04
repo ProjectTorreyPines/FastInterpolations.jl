@@ -810,6 +810,45 @@ end
     return _project_search_results(results, _getidx)
 end
 
+# Per-axis oneshot variants (no spacing). Used by `hetero_nointerp.jl`
+# real-axis-reduced search where spacings have been removed alongside the
+# `spacings::S` field on HeteroInterpolantND.
+@inline _search_axis_oneshot(q, grid, search) =
+    @inbounds search_interval(_resolve_search(grid, q, search, nothing), grid, q)
+@inline _search_axis_oneshot_hint(q, grid, search, hint) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q)
+
+# 3-arg `_search_all_intervals` (no spacings, no hints, no mono).
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+    ) where {N}
+    results = map(_search_axis_oneshot, q_evals, grids, searches)
+    return _project_search_results(results, _getidx)
+end
+
+# 4-arg `_search_all_intervals` (no spacings, Nothing hint).
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing,
+    ) where {N}
+    return _search_all_intervals(q_evals, grids, searches)
+end
+
+# 4-arg `_search_all_intervals` (no spacings, Tuple hint).
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+    ) where {N}
+    results = map(_search_axis_oneshot_hint, q_evals, grids, searches, hints)
+    return _project_search_results(results, _getidx)
+end
+
 # ────────────────────────────────────────────────────────
 # BC-aware per-axis search (Phase 6 — zero-copy periodic ND)
 # ────────────────────────────────────────────────────────

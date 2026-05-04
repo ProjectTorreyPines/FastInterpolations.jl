@@ -11,7 +11,7 @@
 # - N:  Number of dimensions
 
 """
-    LinearInterpolantND{Tg, Tv, N, G, S, E, P}
+    LinearInterpolantND{Tg, Tv, N, G, E, P}
 
 N-dimensional multilinear interpolant for tensor-product linear interpolation.
 
@@ -22,14 +22,14 @@ The interpolation is exact at grid points and linearly blended between them.
 - `Tg`: Grid/coordinate type — normally Float32/Float64, but unconstrained for duck-typed grids (e.g. ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
-- `G<:Tuple{Vararg{AbstractVector,N}}`: Grid tuple type (supports heterogeneous grids)
-- `S<:Tuple{Vararg{AbstractGridSpacing,N}}`: Spacing tuple type
+- `G<:Tuple{Vararg{AbstractVector,N}}`: Grid tuple type (supports heterogeneous grids).
+  Wrapped grids (`_CachedRange`/`_CachedVector`/`_ExclusivePeriodicAxis`) carry
+  cached `h`/`inv_h` directly — no separate spacings field needed.
 - `E<:Tuple{Vararg{AbstractExtrap,N}}`: Extrapolation mode tuple type
 - `P<:Tuple{Vararg{AbstractSearchPolicy,N}}`: Search policy tuple type
 
 # Fields
-- `grids`: N-tuple of grid vectors for each dimension
-- `spacings`: N-tuple of grid spacing info (for O(1) h lookup)
+- `grids`: N-tuple of (wrapped) grid vectors for each dimension
 - `data`: N-dimensional array of values at grid points
 - `extraps`: N-tuple of extrapolation modes
 - `searches`: N-tuple of search policies
@@ -72,25 +72,23 @@ struct LinearInterpolantND{
         Tv,
         N,
         G <: Tuple{Vararg{AbstractVector, N}},
-        S <: Tuple{Vararg{AbstractGridSpacing, N}},
         E <: Tuple{Vararg{AbstractExtrap, N}},
         P <: Tuple{Vararg{AbstractSearchPolicy, N}},
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    spacings::S
     data::Array{Tv, N}
     extraps::E
     searches::P
 
-    function LinearInterpolantND{Tg, Tv, N, G, S, E, P}(
-            grids::Tuple{Vararg{AbstractVector, N}}, spacings::S, data::AbstractArray{Tv, N}, extraps::E, searches::P
-        ) where {Tg, Tv, N, G, S, E, P}
+    function LinearInterpolantND{Tg, Tv, N, G, E, P}(
+            grids::Tuple{Vararg{AbstractVector, N}}, data::AbstractArray{Tv, N}, extraps::E, searches::P
+        ) where {Tg, Tv, N, G, E, P}
         # Copy grids and data to ensure mutation safety.
         # copy() on immutable Range types is a no-op (zero allocation).
         # Array() converts AbstractArray→Array AND copies in one step.
         # typeof() rebinds G after copy (e.g. tuple-of-SubArrays → tuple-of-Vectors).
         grids_c = map(copy, grids)
-        return new{Tg, Tv, N, typeof(grids_c), S, E, P}(grids_c, spacings, Array(data), extraps, searches)
+        return new{Tg, Tv, N, typeof(grids_c), E, P}(grids_c, Array(data), extraps, searches)
     end
 end
 

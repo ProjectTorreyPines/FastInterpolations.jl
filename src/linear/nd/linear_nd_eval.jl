@@ -49,8 +49,8 @@ end
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, policies, hints, mono)
-    inv_hs = map(_get_inv_h, itp.spacings, indices)
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
+    inv_hs = map(_get_inv_h, itp.grids, indices)
     αs = map(_alpha_of, q_eval, Ls, inv_hs)
     stencils = map(i -> _IdxPair(i, i + 1), indices)
     return (itp.data, stencils, inv_hs, αs)
@@ -65,11 +65,11 @@ end
         mono::Tuple{Bool, Bool},
     ) where {Tg, Tv}
     x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, itp.grids, itp.spacings, itp.extraps, policies, hints, mono
+        query, itp.grids, itp.extraps, policies, hints, mono
     )
 
-    inv_hx = _get_inv_h(itp.spacings[1], ix)
-    inv_hy = _get_inv_h(itp.spacings[2], iy)
+    inv_hx = _get_inv_h(itp.grids[1], ix)
+    inv_hy = _get_inv_h(itp.grids[2], iy)
     αx = (x_eval - xL) * inv_hx
     αy = (y_eval - yL) * inv_hy
     return (itp.data, (_IdxPair(ix, ix + 1), _IdxPair(iy, iy + 1)), (inv_hx, inv_hy), (αx, αy))

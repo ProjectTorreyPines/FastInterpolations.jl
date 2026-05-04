@@ -709,15 +709,9 @@ yformatter = (y) -> begin
     end
 end
 
-# Y-axis ticks: More granular with intermediate values (2,3,5) between powers of 10
-# Range: 10^-6 to 10^5 to accommodate all Laplacian values
-yticks_val = Float64[]
-for i in -6:5
-    for mult in [1, 2, 3, 5]
-        push!(yticks_val, mult * 10.0^i)
-    end
-end
-sort!(yticks_val)
+# Y-axis ticks: Powers of 10 only, extended range to 10^6
+# Range: 10^-4 to 10^6 to cover full data span without gaps
+yticks_val = [10.0^i for i in -4:6]
 
 kw_common = (
     xaxis      = :identity,

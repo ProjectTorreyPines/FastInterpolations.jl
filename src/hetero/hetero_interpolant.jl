@@ -269,10 +269,10 @@ function _build_hetero_nd(
     # (carrying the validated period and virtual endpoint `x[1]+period`), so
     # downstream `last(grid)` / `_wrap_to_domain` / `search_interval` see the
     # correct wrap domain without needing to re-derive period from raw n-length
-    # data. Non-periodic axes are normalized through `_caching_axis` too —
+    # data. Non-periodic axes are normalized through `_resolve_axis_copied` too —
     # Vector → `_CachedVector` (h/inv_h cached for repeat persistent queries),
     # Range → `_CachedRange`. Mirrors how Linear/Constant/Cubic ND handle BC.
-    grids_typed = map((g, bc) -> _caching_axis(g, bc, Tg), grids_typed, bcs)
+    grids_typed = map((g, bc) -> _resolve_axis_copied(g, bc, Tg), grids_typed, bcs)
     # Inclusive PeriodicBC requires `data[1, ...] ≈ data[end, ...]` per axis;
     # mirrors `_prepare_periodic_nd_impl` for the PreCompute path so that local
     # Hermite ND OnTheFly build rejects the same mismatched data 1D and Cubic ND

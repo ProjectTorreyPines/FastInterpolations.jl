@@ -116,7 +116,7 @@ end
     Tg = _promote_grid_float(TX, TY)
     # Surface-level BC-aware resolvers (`periodic_axis.jl`) compose the right
     # per-(grid×bc) shape. Same template as Linear; Constant just adds `side`.
-    x_eff = _caching_axis(x, bc, Tg)
+    x_eff = _resolve_axis_copied(x, bc, Tg)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))

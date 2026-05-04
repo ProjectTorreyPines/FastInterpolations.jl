@@ -69,7 +69,7 @@ struct HeteroInterpolantND{
         # Per-wrapper `Base.copy` overloads (cached_vector.jl / cached_range.jl /
         # periodic_axis.jl) preserve wrapper type and recurse into the inner
         # buffer — so this is mutation-safe AND wrapper-preserving for both
-        # OnTheFly (wrapped grids via `_caching_axis`) and PreCompute (raw
+        # OnTheFly (wrapped grids via `_resolve_axis_copied`) and PreCompute (raw
         # Range/Vector via `_prepare_periodic_nd`) builder paths.
         # Data is NOT copied here — it's already an owned `Array` (OnTheFly
         # path: `Array(data)` in builder) or a freshly-built `_HeteroPartials`

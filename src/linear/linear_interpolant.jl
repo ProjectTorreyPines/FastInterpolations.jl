@@ -140,7 +140,7 @@ function linear_interp end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    # Surface-level BC-aware resolvers (`_caching_axis` / `_resolve_data` in
+    # Surface-level BC-aware resolvers (`_resolve_axis_copied` / `_resolve_data` in
     # periodic_axis.jl) compose the right per-(grid×bc) shape uniformly:
     #   Vector + :exclusive → `_ExclusivePeriodicAxis(_CachedVector(...), period)`
     #   Vector + non-excl   → `_CachedVector(...)` (cached for persistent eval)
@@ -150,7 +150,7 @@ function linear_interp end
     # (with optional `:inclusive` endpoint check), `_ExclusivePeriodicData(y)`
     # for `:exclusive` (mutation copy happens inside the inner constructor via
     # `_convert_copy`).
-    x_eff = _caching_axis(x, bc, Tg)
+    x_eff = _resolve_axis_copied(x, bc, Tg)
     y_eff = _resolve_data(y, bc)
     # Periodic BCs auto-promote `extrap` to `WrapExtrap` against the resolved
     # axis span. `_resolve_extrap` handles materialization.

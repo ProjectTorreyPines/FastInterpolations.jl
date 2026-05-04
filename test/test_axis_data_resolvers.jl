@@ -1,6 +1,6 @@
 @testitem "_resolve_axis — type correctness across (grid, bc) combinations" begin
     using FastInterpolations:
-        _resolve_axis, _resolve_data, _caching_axis,
+        _resolve_axis, _resolve_data, _resolve_axis_copied,
         _CachedRange, _CachedVector, _ExclusivePeriodicAxis, _ExclusivePeriodicData,
         NoBC, PeriodicBC
 
@@ -78,9 +78,9 @@ end
     end
 end
 
-@testitem "_caching_axis — interpolant variant with caching layer" begin
+@testitem "_resolve_axis_copied — interpolant variant with caching layer" begin
     using FastInterpolations:
-        _caching_axis, _CachedRange, _CachedVector, _ExclusivePeriodicAxis,
+        _resolve_axis_copied, _CachedRange, _CachedVector, _ExclusivePeriodicAxis,
         NoBC, PeriodicBC
 
     bc_no = NoBC()
@@ -88,7 +88,7 @@ end
 
     @testset "Vector + non-exclusive → _CachedVector" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        xc = _caching_axis(x, bc_no, Float64)
+        xc = _resolve_axis_copied(x, bc_no, Float64)
         @test xc isa _CachedVector{Float64, Float64}
         @test xc.inner == x                          # copied
         @test xc.inner !== x                         # NOT same object (mutation-safe)
@@ -97,7 +97,7 @@ end
 
     @testset "Vector + :exclusive → _ExclusivePeriodicAxis{_CachedVector inner}" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        ax = _caching_axis(x, bc_excl, Float64)
+        ax = _resolve_axis_copied(x, bc_excl, Float64)
         @test ax isa _ExclusivePeriodicAxis{Float64, _CachedVector{Float64, Float64}, Float64}
         @test ax.inner isa _CachedVector
         @test ax.inner.h ≈ [1.0, 1.0, 1.0]           # inner is cached
@@ -107,35 +107,55 @@ end
 
     @testset "Range + non-exclusive → _CachedRange (length n)" begin
         r = 0.0:1.0:3.0
-        cr = _caching_axis(r, bc_no, Float64)
+        cr = _resolve_axis_copied(r, bc_no, Float64)
         @test cr isa _CachedRange{Float64}
         @test length(cr) == 4
     end
 
     @testset "Range + :exclusive → _ExclusivePeriodicAxis(_CachedRange, period)" begin
         r = 0.0:1.0:3.0
-        cr = _caching_axis(r, bc_excl, Float64)
+        cr = _resolve_axis_copied(r, bc_excl, Float64)
         @test cr isa FastInterpolations._ExclusivePeriodicAxis
         @test cr.inner isa _CachedRange{Float64}
         @test length(cr) == 5
         @test length(cr.inner) == 4
     end
 
-    @testset "Idempotent passthroughs" begin
+    @testset "Pre-wrapped re-entry: type preserved + mutation-safe copy" begin
+        # `_resolve_axis_copied` on already-wrapped inputs goes through
+        # wrapper-aware `_convert_copy` — same Tg delegates to `Base.copy`
+        # (recursive copy of inner buffer), different Tg rebuilds. No silent
+        # passthrough that would (a) drop Tg or (b) keep user-shared inner.
+
+        # _CachedVector: Base.copy of wrapper, fresh inner buffer
         x_cv = _CachedVector([0.0, 1.0, 2.0])
-        @test _caching_axis(x_cv, bc_no, Float64) === x_cv
+        out_cv = _resolve_axis_copied(x_cv, bc_no, Float64)
+        @test out_cv isa _CachedVector{Float64, Float64}
+        @test out_cv.inner !== x_cv.inner   # mutation-safe copy
+        @test out_cv.inner == x_cv.inner    # same content
 
+        # _CachedRange: immutable struct of scalar fields, returned as-is
         x_cr = FastInterpolations._to_float(0.0:1.0:3.0, Float64)
-        @test _caching_axis(x_cr, bc_no, Float64) === x_cr
+        out_cr = _resolve_axis_copied(x_cr, bc_no, Float64)
+        @test out_cr isa _CachedRange{Float64}
+        @test out_cr === x_cr               # safe to share — no buffer
 
+        # _ExclusivePeriodicAxis: wrapper preserved, fresh inner buffer
         x_ax = _ExclusivePeriodicAxis([0.0, 1.0, 2.0], 3.0)
-        @test _caching_axis(x_ax, bc_excl, Float64) === x_ax
+        out_ax = _resolve_axis_copied(x_ax, bc_excl, Float64)
+        @test out_ax isa _ExclusivePeriodicAxis{Float64}
+        @test out_ax.inner !== x_ax.inner   # mutation-safe copy
+
+        # Type promotion across wrapper boundary
+        x_cv32 = _CachedVector(Float32[1.0, 2.0, 3.0])
+        out_cv32 = _resolve_axis_copied(x_cv32, bc_no, Float64)
+        @test out_cv32 isa _CachedVector{Float64, Float64}  # eltype promoted
     end
 end
 
 @testitem "Resolvers are type-stable when used inside a function" begin
     using FastInterpolations:
-        _resolve_axis, _resolve_data, _caching_axis,
+        _resolve_axis, _resolve_data, _resolve_axis_copied,
         _CachedRange, _CachedVector, _ExclusivePeriodicAxis, _ExclusivePeriodicData,
         NoBC, PeriodicBC
 
@@ -176,13 +196,13 @@ end
         @test f(y, bc_excl) isa _ExclusivePeriodicData{Float64, 1, Vector{Float64}}
     end
 
-    @testset "_caching_axis type stability" begin
+    @testset "_resolve_axis_copied type stability" begin
         x_vec = [0.0, 1.0, 2.0, 3.0]
         x_rng = 0.0:1.0:3.0
         bc_no = NoBC()
         bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
-        f(x, bc, Tg) = _caching_axis(x, bc, Tg)
+        f(x, bc, Tg) = _resolve_axis_copied(x, bc, Tg)
         @inferred f(x_vec, bc_no, Float64)
         @inferred f(x_vec, bc_excl, Float64)
         @inferred f(x_rng, bc_no, Float64)

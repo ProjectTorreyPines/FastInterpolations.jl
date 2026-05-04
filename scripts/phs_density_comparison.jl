@@ -100,21 +100,21 @@ Uses regex to parse GitHub API response (simple approach, no JSON dependency).
 """
 function ensure_wfc_files()
     mkpath(WFC_DIR)
-    
-    # Check if files already exist
-    existing = filter(f -> endswith(f, ".wfc"), readdir(WFC_DIR))
-    existing_count = length(existing)
-    
-    if existing_count >= 118
-        println("✓ All 118 wavefunction files already present")
-        return
-    end
-    
+
     # List of all elements (Z=1 to Z=118) with their 2-letter symbols,
     # using the keys of ELEMENT_Z.  Single-letter symbols get an extra underscore for filename formatting.
     # Single letters get underscore padding (H→h_, C→c_, etc.)
     # We only need H, C, O for this system, but it's written in a way that's easy to extend if needed.
     all_symbols = [rpad(lowercase(sym), 2, '_') for sym in keys(ELEMENT_Z) if any(lowercase(sym) == s for s in ("h", "c", "o"))]
+    
+    # Check if files already exist
+    existing = filter(f -> endswith(f, ".wfc"), readdir(WFC_DIR))
+    existing_count = length(existing)
+    
+    if existing_count >= length(all_symbols)
+        println("✓ All wavefunction files already present")
+        return
+    end
     
     println("Downloading PBE wavefunction files from critic2 (GitHub)...")
     
@@ -576,20 +576,13 @@ println("\n" * "="^80)
 println("PERFORMANCE SUMMARY")
 println("="^80)
 
-# Table 1: Interpolant Build Times
-println("\n### Interpolant Build Times\n")
-println("| Method | Time (s) |")
-println("|--------|----------|")
-for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
-    @printf "| %-18s | %.6f |\n" method build_times[method]
-end
-
-# Table 2: Per-Method Evaluation Times
-println("\n### Evaluation Times (per method, 1000 query points)\n")
-println("| Method | ρ Time (s) | |∇ρ| Time (s) | |∇²ρ| Time (s) |")
-println("|--------|------------|--------------|----------------|")
+# Combined Build and Evaluation Times Table
+println("\n### Timing Summary (per method, 1000 query points)\n")
+println("| Method | Build (s) | ρ Time (s) | |∇ρ| Time (s) | |∇²ρ| Time (s) |")
+println("|--------|-----------|------------|--------------|----------------|")
 
 for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
+    build_time = build_times[method]
     rho_time = get(eval_times["ρ"], method, nothing)
     grad_time = get(eval_times["|∇ρ|"], method, nothing)
     lap_time = get(eval_times["|∇²ρ|"], method, nothing)
@@ -598,10 +591,10 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     grad_str = grad_time !== nothing ? @sprintf("%.6f", grad_time) : "—"
     lap_str = lap_time !== nothing ? @sprintf("%.6f", lap_time) : "—"
     
-    @printf "| %-18s | %10s | %12s | %14s |\n" method rho_str grad_str lap_str
+    @printf "| %-18s | %.6f | %10s | %12s | %14s |\n" method build_time rho_str grad_str lap_str
 end
 
-# Table 3: Density (ρ) Errors
+# Table 2: Density (ρ) Errors
 println("\n### Charge Density (ρ) — Relative Error Statistics\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
@@ -614,7 +607,7 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
 end
 
-# Table 4: Gradient Error
+# Table 3: Gradient Error
 println("\n### Gradient Magnitude (|∇ρ|) — Relative Error Statistics\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
@@ -627,7 +620,7 @@ for method in ["Linear", "Cubic", "Cardinal", "PHS"]
     @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
 end
 
-# Table 5: Laplacian Error
+# Table 4: Laplacian Error
 println("\n### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")

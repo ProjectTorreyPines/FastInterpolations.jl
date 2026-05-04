@@ -853,6 +853,16 @@ end
     return _project_search_results(results, _getidx)
 end
 
+# Aqua-required N=0 disambiguators. The grid-only and spacings-based 4-arg
+# / 5-arg variants of `_search_all_intervals` bind to `Tuple{}` ambiguously
+# when N=0 (slot 3+ is `NTuple{0, X}` regardless of `X`). ND interpolants
+# require N >= 1 at runtime — these methods exist solely to make
+# `Aqua.test_ambiguities` happy.
+@inline _search_all_intervals(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}) =
+    ((), (), ())
+@inline _search_all_intervals(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}) =
+    ((), (), ())
+
 # ────────────────────────────────────────────────────────
 # BC-aware per-axis search (Phase 6 — zero-copy periodic ND)
 # ────────────────────────────────────────────────────────
@@ -1124,6 +1134,14 @@ above until PR3.
     end
     return hs, inv_hs, dLs
 end
+
+# Aqua-required disambiguator at N=0: both spacings-based and grid-based
+# overloads above bind to `Tuple{}` ambiguously when N=0. ND interpolants
+# require N >= 1 in practice (callers never pass empty tuples), so this
+# method is unreachable at runtime — its sole purpose is to satisfy
+# `Aqua.test_ambiguities`.
+@inline _compute_all_local_params(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}) =
+    ((), (), ())
 
 # ========================================
 # @generated Tensor-Product Code Generation Helpers

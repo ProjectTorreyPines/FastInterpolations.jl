@@ -695,11 +695,20 @@ logclean(v) = [x > 0.0 ? x : NaN for x in v]
 xlims_val  = (s_ang[1], s_ang[end])
 xlabel_str = "Distance along O···H hydrogen bond (Å)"
 
+# Custom Y-axis formatter for log scale — decimal notation, right-aligned
+yformatter = (y) -> @sprintf("%10.2e", y)
+
+# Y-axis ticks for log scale: 10^-10 to 10^2
+yticks_val = [10.0^i for i in -10:1:2]
+
 kw_common = (
     xaxis      = :identity,
     yaxis      = :log10,
     xlims      = xlims_val,
     xlabel     = xlabel_str,
+    xticks     = 0:0.2:2.0,
+    yticks     = yticks_val,
+    yformatter = yformatter,
     legend     = :topright,
     minorgrid  = true,
     framestyle = :box,

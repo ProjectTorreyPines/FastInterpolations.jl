@@ -850,3 +850,55 @@
         end
     end
 end
+
+# ════════════════════════════════════════════════════════════════
+# PR1 (`refac/cleanup_nd_spacing`) lock-down: spacings field
+# removed from forward struct. Asserts field absence,
+# type-parameter count, type stability, and zero-allocation
+# persistent eval — pinning the migration so future refactors
+# can't silently re-introduce the field or regress the alloc /
+# inference profile.
+# ════════════════════════════════════════════════════════════════
+@testitem "LinearInterpolantND — spacings cleanup lock-down" setup = [AllocConstants] begin
+    using FastInterpolations: linear_interp
+
+    # ── Field absence + type-parameter count ──
+    @testset "spacings field removed" begin
+        x = 0.0:1.0:3.0
+        y = 0.0:1.0:3.0
+        data = [Float64(i + j) for i in 1:4, j in 1:4]
+        itp = linear_interp((x, y), data)
+
+        @test !hasfield(typeof(itp), :spacings)
+        # Was 7 (Tg, Tv, N, G, S, E, P), now 6 (drops S)
+        @test length(typeof(itp).parameters) == 6
+        # Bilinear of data[i,j]=i+j at (1.5, 1.5): corners (4, 5, 5, 6) → avg 5.0
+        @test itp((1.5, 1.5)) ≈ 5.0
+    end
+
+    # ── Type stability for Range and Vector grids ──
+    @testset "type stability (@inferred)" begin
+        x_rng = 0.0:1.0:3.0
+        x_vec = [0.0, 1.0, 2.0, 3.0]
+        data = [Float64(i + j) for i in 1:4, j in 1:4]
+
+        itp_rng = linear_interp((x_rng, x_rng), data)
+        itp_vec = linear_interp((x_vec, x_vec), data)
+
+        @test (@inferred itp_rng((0.5, 0.5))) isa Float64
+        @test (@inferred itp_vec((0.5, 0.5))) isa Float64
+    end
+
+    # ── Zero-alloc on persistent eval ──
+    @testset "zero-alloc persistent eval" begin
+        x = 0.0:1.0:3.0
+        y = 0.0:1.0:3.0
+        data = [Float64(i + j) for i in 1:4, j in 1:4]
+        itp = linear_interp((x, y), data)
+        # Warmup
+        itp((0.5, 0.5))
+        itp((0.5, 0.5))
+
+        @test (@allocated itp((0.5, 0.5))) <= ALLOC_THRESHOLD
+    end
+end

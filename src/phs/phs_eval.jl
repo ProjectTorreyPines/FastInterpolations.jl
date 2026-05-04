@@ -110,7 +110,7 @@ Evaluate the PHS interpolant value at `query` given precomputed coefficients.
     y = zero(Tv)
 
     # RBF sum
-    @inbounds for i in 1:ns
+    @inbounds @simd for i in 1:ns
         xh = _phs_diff(query, base_coords, offsets[i], hs_local)
         r = sqrt(sum(x -> x * x, xh))
         y += coeffs[i] * _phs_phi(r, Val{K}())

@@ -749,23 +749,23 @@ ref_series!(p12, s_ang, ρ_ref)
 add_series!(p12, s_ang, ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
 
 # ── Row 2: |∇ρ| ───────────────────────────────────────────────────────────────
-p21 = plot(; kw_common..., ylabel = "|∇ρ| (a.u./Bohr)")
+p21 = plot(; kw_common..., ylabel = "|∇ρ| (a.u.)")
 ref_series!(p21, s_ang, ∇ρ_ref)
 add_series!(p21, s_ang, ∇ρ_linear,   "Trilinear", col_linear)
 add_series!(p21, s_ang, ∇ρ_cubic,    "Trispline", col_cubic)
 add_series!(p21, s_ang, ∇ρ_cardinal, "Tricubic",  col_cardinal)
 
-p22 = plot(; kw_common..., ylabel = "|∇ρ| (a.u./Bohr)")
+p22 = plot(; kw_common..., ylabel = "|∇ρ| (a.u.)")
 ref_series!(p22, s_ang, ∇ρ_ref)
 add_series!(p22, s_ang, ∇ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
 
 # ── Row 3: |∇²ρ| ──────────────────────────────────────────────────────────────
-p31 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u./Bohr²)")
+p31 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u.)")
 ref_series!(p31, s_ang, ∇²ρ_ref)
 add_series!(p31, s_ang, ∇²ρ_cubic,    "Trispline", col_cubic)
 add_series!(p31, s_ang, ∇²ρ_cardinal, "Tricubic",  col_cardinal)
 
-p32 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u./Bohr²)")
+p32 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u.)")
 ref_series!(p32, s_ang, ∇²ρ_ref)
 add_series!(p32, s_ang, ∇²ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
 

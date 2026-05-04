@@ -71,7 +71,8 @@ const BOHR2ANG = 0.529177210903   # 1 Bohr → Angstrom
     ensure_wfc_files()
 
 Download critic2 PBE wavefunction files if not already present.
-Files are downloaded from GitHub and cached in \`WFC_DIR\`.
+Files are downloaded from GitHub and cached in `WFC_DIR`.
+Uses regex to parse GitHub API response (simple approach, no JSON dependency).
 """
 function ensure_wfc_files()
     mkpath(WFC_DIR)
@@ -87,23 +88,24 @@ function ensure_wfc_files()
     
     println("Downloading PBE wavefunction files from critic2 (GitHub)...")
     
-    # Query GitHub API for wfc files
     try
+        # Query GitHub API for wfc files
         cmd = `curl -s "https://api.github.com/repos/aoterodelaroza/critic2/contents/dat/wfc"`
         api_output = read(cmd, String)
         
-        # Parse JSON to extract download URLs
-        import JSON
-        files_json = JSON.parse(api_output)
+        # Extract URLs using regex (no JSON dependency)
+        urls = [m.match for m in eachmatch(r"https://[^\"]+\.wfc", api_output)]
         
-        wfc_files = [f for f in files_json if endswith(f["name"], ".wfc")]
-        println("  Found $(length(wfc_files)) wfc files to download")
+        if length(urls) == 0
+            println("  Warning: No URLs found in API response")
+            return
+        end
         
-        # Download in parallel (8 concurrent)
+        println("  Found $(length(urls)) wfc files to download")
+        
         download_count = 0
-        for f in wfc_files
-            fname = f["name"]
-            url = f["download_url"]
+        for url in urls
+            fname = split(url, "/")[end]
             fpath = joinpath(WFC_DIR, fname)
             
             # Skip if already exists
@@ -112,39 +114,23 @@ function ensure_wfc_files()
             end
             
             try
-                cmd_dl = `curl -s -o $fpath $url`
-                run(cmd_dl)
+                run(`curl -s -o $fpath $url`)
                 download_count += 1
                 if download_count % 20 == 0
                     print(".")
                 end
             catch e
-                println("  Warning: Failed to download $fname: $e")
+                println("\n  Warning: Failed to download $fname: $e")
             end
         end
         
-        println("\n  Downloaded $(download_count) new files")
-        println("  ✓ Wavefunction files ready")
-    catch e
-        @warn "Failed to download wavefunction files automatically. Trying manual curl..." exception=e
-        # Fallback: try direct curl without JSON parsing
-        println("  Attempting fallback download...")
-        cmd = `curl -s https://api.github.com/repos/aoterodelaroza/critic2/contents/dat/wfc`
-        try
-            api_output = read(cmd, String)
-            # Basic regex extraction as fallback
-            urls = [m.match for m in eachmatch(r"https://[^\"]+\.wfc", api_output)]
-            println("  Found $(length(urls)) wfc files")
-            for url in urls[1:min(10, length(urls))]  # Demo: download first 10
-                fname = split(url, "/")[end]
-                fpath = joinpath(WFC_DIR, fname)
-                isfile(fpath) && continue
-                run(`curl -s -o $fpath $url`)
-            end
-            println("  ✓ Downloaded sample wavefunction files (note: not all 118)")
-        catch
-            error("Could not download wavefunction files. Ensure 'curl' and (optionally) 'JSON.jl' are available.")
+        println("\n  Downloaded $download_count new wavefunction files")
+        if download_count > 0
+            println("  ✓ Wavefunction files ready")
         end
+    catch e
+        @warn "Failed to download wavefunction files: $e"
+        println("  Note: Ensure curl is available and GitHub API is accessible")
     end
 end
 

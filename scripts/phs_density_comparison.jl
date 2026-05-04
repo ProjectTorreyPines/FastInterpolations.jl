@@ -57,6 +57,8 @@ end
 # ============================================================
 const PKL_PATH = "/Users/haiiro/scratch/phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_ext3.pkl"
 const CSV_PATH = "/Users/haiiro/scratch/phenol-dimer_B3LYP_TZ2P_GO_line_O7_H21_N1000.csv"
+const XYZ_PATH = "/Users/haiiro/scratch/phenol-dimer_B3LYP_TZ2P_GO_atoms.xyz"
+const WFC_DIR  = joinpath(@__DIR__, "dat", "wfc")
 const OUT_PATH = joinpath(@__DIR__, "phs_density_comparison.png")
 
 const BOHR2ANG = 0.529177210903   # 1 Bohr → Angstrom
@@ -95,78 +97,232 @@ N_path  = length(qx)
 @printf "  Path: %d points, s ∈ [%.4f, %.4f] Å\n" N_path s_ang[1] s_ang[end]
 
 # ============================================================
-# 3. Build 3D interpolants
+# 3. Promolecular reference density (PromolecularRef)
+#    Replicates the Fortran crystalmod_promolecular approach:
+#    ρ₀(x) = Σᵢ ρᵢ(|x - Rᵢ|)  using PBE all-electron atomic densities
+#    from critic2 dat/wfc files, giving an accurate ρ₀ and exact
+#    analytical derivatives everywhere — no cubic-spline Gibbs near cusps.
+# ============================================================
+
+# ── Element symbol → atomic number (full periodic table) ──────────────────────
+const ELEMENT_Z = Dict(
+    "H"=>1,  "He"=>2, "Li"=>3,  "Be"=>4,  "B"=>5,   "C"=>6,   "N"=>7,   "O"=>8,
+    "F"=>9,  "Ne"=>10,"Na"=>11, "Mg"=>12, "Al"=>13, "Si"=>14, "P"=>15,  "S"=>16,
+    "Cl"=>17,"Ar"=>18,"K"=>19,  "Ca"=>20, "Sc"=>21, "Ti"=>22, "V"=>23,  "Cr"=>24,
+    "Mn"=>25,"Fe"=>26,"Co"=>27, "Ni"=>28, "Cu"=>29, "Zn"=>30, "Ga"=>31, "Ge"=>32,
+    "As"=>33,"Se"=>34,"Br"=>35, "Kr"=>36, "Rb"=>37, "Sr"=>38, "Y"=>39,  "Zr"=>40,
+    "Nb"=>41,"Mo"=>42,"Tc"=>43, "Ru"=>44, "Rh"=>45, "Pd"=>46, "Ag"=>47, "Cd"=>48,
+    "In"=>49,"Sn"=>50,"Sb"=>51, "Te"=>52, "I"=>53,  "Xe"=>54, "Cs"=>55, "Ba"=>56,
+    "La"=>57,"Ce"=>58,"Pr"=>59, "Nd"=>60, "Pm"=>61, "Sm"=>62, "Eu"=>63, "Gd"=>64,
+    "Tb"=>65,"Dy"=>66,"Ho"=>67, "Er"=>68, "Tm"=>69, "Yb"=>70, "Lu"=>71, "Hf"=>72,
+    "Ta"=>73,"W"=>74, "Re"=>75, "Os"=>76, "Ir"=>77, "Pt"=>78, "Au"=>79, "Hg"=>80,
+    "Tl"=>81,"Pb"=>82,"Bi"=>83, "Po"=>84, "At"=>85, "Rn"=>86, "Fr"=>87, "Ra"=>88,
+    "Ac"=>89,"Th"=>90,"Pa"=>91, "U"=>92,  "Np"=>93, "Pu"=>94, "Am"=>95, "Cm"=>96,
+    "Bk"=>97,"Cf"=>98,"Es"=>99,"Fm"=>100,"Md"=>101,"No"=>102,"Lr"=>103,
+    "Rf"=>104,"Db"=>105,"Sg"=>106,"Bh"=>107,"Hs"=>108,"Mt"=>109,"Ds"=>110,
+    "Rg"=>111,"Cn"=>112,"Nh"=>113,"Fl"=>114,"Mc"=>115,"Lv"=>116,"Ts"=>117,"Og"=>118,
+)
+
+# wfc filename: single-letter symbols get an extra trailing underscore
+# e.g. "H" → "h__pbe.wfc", "He" → "he_pbe.wfc"
+wfc_filename(sym::String) = rpad(lowercase(sym), 2, '_') * "_pbe.wfc"
+
+"""
+    parse_wfc(filepath) -> (r_grid, rho_values)
+
+Parse a critic2 PBE all-electron wfc file and return the radial grid and
+electron density ρ(r) = Σⱼ occⱼ ψⱼ(r)² / (4πr²).
+
+File format:
+  Line 1:  norb
+  Line 2:  orbital labels
+  Line 3:  occupations (integers)
+  Line 4:  orbital energies
+  Line 5:  ngrid
+  Lines 6…: r  ψ₁(r)  ψ₂(r)  …  ψₙₒᵣb(r)
+"""
+function parse_wfc(filepath::String)
+    open(filepath) do io
+        norb = parse(Int, readline(io))
+        readline(io)                              # labels — not needed
+        occ  = parse.(Float64, split(readline(io)))
+        readline(io)                              # energies — not needed
+        ngrid = parse(Int, readline(io))
+
+        r_vals   = Vector{Float64}(undef, ngrid)
+        rho_vals = Vector{Float64}(undef, ngrid)
+        pi4 = 4π
+
+        for i in 1:ngrid
+            row   = parse.(Float64, split(readline(io)))
+            r     = row[1]
+            psi   = @view row[2:end]
+            rr0   = dot(occ, psi .^ 2)           # Σⱼ occⱼ ψⱼ²
+            r_vals[i]   = r
+            rho_vals[i] = rr0 / (pi4 * r^2)      # ρ(r)
+        end
+        return r_vals, rho_vals
+    end
+end
+
+# Build a Dict: Z => 1D cubic spline of ρ(r) for each element present in system
+# (lazy-loaded; only elements actually needed are parsed)
+const _wfc_cache = Dict{Int, Any}()
+
+function get_rho_itp(Z::Int)
+    haskey(_wfc_cache, Z) && return _wfc_cache[Z]
+    sym = findfirst(==(Z), ELEMENT_Z)
+    sym === nothing && error("Unknown atomic number Z=$Z")
+    fname = joinpath(WFC_DIR, wfc_filename(sym))
+    isfile(fname) || error("wfc file not found: $fname")
+    r_grid, rho_vals = parse_wfc(fname)
+    itp = cubic_interp(r_grid, rho_vals; extrap = FillExtrap(0.0))
+    _wfc_cache[Z] = itp
+    return itp
+end
+
+# ── XYZ loader — returns Vector of (Z, (x,y,z)) with positions in Bohr ────────
+const ANG2BOHR = 1.0 / BOHR2ANG   # 1 Å → Bohr
+
+"""
+    load_xyz(filepath) -> Vector{Tuple{Int, NTuple{3,Float64}}}
+
+Load an XYZ file (positions in Angstrom) and return atoms as (Z, (x,y,z)) in Bohr.
+Skips the first two header lines.
+"""
+function load_xyz(filepath::String)
+    lines = readlines(filepath)
+    n = parse(Int, strip(lines[1]))
+    atoms = Vector{Tuple{Int, NTuple{3,Float64}}}(undef, n)
+    for i in 1:n
+        parts = split(strip(lines[i + 2]))
+        sym = String(parts[1])
+        Z   = ELEMENT_Z[sym]
+        x, y, z = parse(Float64, parts[2]) * ANG2BOHR,
+                   parse(Float64, parts[3]) * ANG2BOHR,
+                   parse(Float64, parts[4]) * ANG2BOHR
+        atoms[i] = (Z, (x, y, z))
+    end
+    return atoms
+end
+
+println("Loading atomic geometry from XYZ...")
+const ATOMS = load_xyz(XYZ_PATH)
+@printf "  %d atoms loaded\n" length(ATOMS)
+
+# ── Verify path endpoints are near atoms ──────────────────────────────────────
+let
+    p_start = (qx[1],   qy[1],   qz[1])
+    p_end   = (qx[end], qy[end], qz[end])
+    for (label, pt) in (("start", p_start), ("end", p_end))
+        best_d = Inf; best_i = 0
+        for (i, (Z, R)) in enumerate(ATOMS)
+            d = sqrt(sum((pt[k] - R[k])^2 for k in 1:3))
+            if d < best_d; best_d = d; best_i = i; end
+        end
+        Z_near, R_near = ATOMS[best_i]
+        sym_near = findfirst(==(Z_near), ELEMENT_Z)
+        @printf "  Path %-5s → nearest atom %2d (%s) at (%.4f, %.4f, %.4f) Bohr, dist = %.4f Bohr\n" label best_i sym_near R_near[1] R_near[2] R_near[3] best_d
+    end
+end
+
+# ── PromolecularRef ────────────────────────────────────────────────────────────
+# Callable with the same (q; deriv=nothing) interface as LogCubicRef.
+# Uses the Fortran chain rule for exact gradient and Hessian:
+#   ∂ρ₀/∂xd      = Σᵢ ρᵢ'(rᵢ) · xxd / rᵢ
+#   ∂²ρ₀/∂xd²    = Σᵢ [ ρᵢ'(rᵢ)/rᵢ + (ρᵢ''(rᵢ) − ρᵢ'(rᵢ)/rᵢ) · xxd² / rᵢ² ]
+#   ∂²ρ₀/∂xd1∂xd2 = Σᵢ [ (ρᵢ''(rᵢ) − ρᵢ'(rᵢ)/rᵢ) · xxd1 · xxd2 / rᵢ² ]
+struct PromolecularRef
+    atoms::Vector{Tuple{Int, NTuple{3,Float64}}}  # (Z, (x,y,z)) in Bohr
+end
+
+function (pmr::PromolecularRef)(q; deriv=nothing)
+    # Determine derivative order along each axis
+    total = deriv === nothing ? 0 : sum(deriv_order(op) for op in deriv)
+
+    if total == 0
+        f = 0.0
+        for (Z, R) in pmr.atoms
+            xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
+            r = sqrt(xx1^2 + xx2^2 + xx3^2)
+            r < 1e-14 && continue
+            f += max(get_rho_itp(Z)(r), 0.0)
+        end
+        return f
+    end
+
+    if total == 1
+        ax = findfirst(d -> deriv_order(deriv[d]) == 1, 1:3)::Int
+        fp = 0.0
+        for (Z, R) in pmr.atoms
+            xx = (q[1] - R[1], q[2] - R[2], q[3] - R[3])
+            r  = sqrt(xx[1]^2 + xx[2]^2 + xx[3]^2)
+            r < 1e-14 && continue
+            rhop = get_rho_itp(Z)(r; deriv = DerivOp(1))
+            fp += rhop * xx[ax] / r
+        end
+        return fp
+    end
+
+    if total == 2
+        nonzero = [d for d in 1:3 if deriv_order(deriv[d]) > 0]
+        ax1 = nonzero[1]; ax2 = length(nonzero) >= 2 ? nonzero[2] : ax1
+        fpp = 0.0
+        for (Z, R) in pmr.atoms
+            xx = (q[1] - R[1], q[2] - R[2], q[3] - R[3])
+            r  = sqrt(xx[1]^2 + xx[2]^2 + xx[3]^2)
+            r < 1e-14 && continue
+            rho_itp = get_rho_itp(Z)
+            rhop  = rho_itp(r; deriv = DerivOp(1))
+            rhopp = rho_itp(r; deriv = DerivOp(2))
+            rfac  = (rhopp - rhop / r) / r^2
+            fpp += ax1 == ax2 ? rhop / r + rfac * xx[ax1]^2 :
+                                 rfac * xx[ax1] * xx[ax2]
+        end
+        return fpp
+    end
+
+    return 0.0
+end
+
+println("Building PromolecularRef (loading wfc files for present elements)...")
+# Pre-warm the wfc cache for all elements in the system
+for (Z, _) in ATOMS; get_rho_itp(Z); end
+const ref_rho0 = PromolecularRef(ATOMS)
+@printf "  ρ₀ at path start: %.6e a.u.\n" ref_rho0((qx[1], qy[1], qz[1]))
+
+# ============================================================
+# 4. Build 3D interpolants
 # ============================================================
 grids = (x_grid, y_grid, z_grid)
 println("\nBuilding interpolants on $(length(x_grid))×$(length(y_grid))×$(length(z_grid)) grid...")
 
-println("  [1/5] Nearest (constant)...")
+println("  [1/4] Nearest (constant)...")
 @time itp_nearest  = constant_interp(grids, rho_3d)
 
-println("  [2/5] Trilinear (linear)...")
+println("  [2/4] Trilinear (linear)...")
 @time itp_linear   = linear_interp(grids, rho_3d)
 
-println("  [3/5] Trispline (global cubic spline)...")
+println("  [3/4] Trispline (global cubic spline)...")
 @time itp_cubic    = cubic_interp(grids, rho_3d)
 
-println("  [4/5] Tricubic (Cardinal / Catmull-Rom)...")
+println("  [4/4] Tricubic (Cardinal / Catmull-Rom)...")
 @time itp_cardinal = interp(grids, rho_3d;
     method = (CardinalInterp(), CardinalInterp(), CardinalInterp()))
 
-# ============================================================
-# LogCubicRef — fast, smooth ρ₀ reference from a global cubic spline of log(ρ₀)
-#
-# Near nuclei, log(ρ₀) is approximately linear in r (exponential decay).
-# A GLOBAL cubic spline of log(ρ₀) gives smoother, less oscillatory derivatives
-# than a local PHS stencil that spans the nuclear cusp node.
-# Evaluation is microsecond-fast (vs milliseconds for PHS).
-#
-# The chain rule recovers ρ₀ and its derivatives in the ρ₀ domain:
-#   ρ₀         = exp(log_itp(q))
-#   ∂ρ₀/∂xξ   = ρ₀ · ∂(log ρ₀)/∂xξ
-#   ∂²ρ₀/∂xξ² = ρ₀ · [(∂ log ρ₀/∂xξ)² + ∂²(log ρ₀)/∂xξ²]
-# ============================================================
-struct LogCubicRef{T}
-    log_itp::T  # cubic spline of log(ρ₀)
-end
-function (r::LogCubicRef{T})(q; deriv=nothing) where T
-    N = length(q)
-    rho0 = exp(r.log_itp(q))
-    deriv === nothing && return rho0
-    total = sum(o -> deriv_order(o), deriv)
-    total == 0 && return rho0
-    if total == 1
-        return rho0 * r.log_itp(q; deriv=deriv)
-    elseif total == 2
-        nonzero = [d for d in 1:N if deriv_order(deriv[d]) > 0]
-        ax1 = nonzero[1]; ax2 = length(nonzero) >= 2 ? nonzero[2] : ax1
-        ops1 = ntuple(d -> d == ax1 ? DerivOp{1}() : EvalValue(), Val(N))
-        ops2 = ax1 == ax2 ? ops1 : ntuple(d -> d == ax2 ? DerivOp{1}() : EvalValue(), Val(N))
-        dl1  = r.log_itp(q; deriv=ops1)
-        dl2  = ax1 == ax2 ? dl1 : r.log_itp(q; deriv=ops2)
-        d2l  = r.log_itp(q; deriv=deriv)
-        return rho0 * (dl1 * dl2 + d2l)
-    end
-    return zero(rho0)
-end
-
-println("  Building log-cubic reference for ρ₀ (cubic spline of log ρ₀)...")
-@time log_rho0_itp = cubic_interp(grids, log.(rho0_3d))
-ref_rho0 = LogCubicRef(log_rho0_itp)
-
-println("  [5/5] Polyharmonic spline (PHS-3, stencil_size=8, log-density transform)...")
+println("  [PHS] Polyharmonic spline (PHS-3, stencil_size=8, log-density transform)...")
 # Paper (Sec. III): N = 8³ = 512 stencil nodes; f = log(ρ_scf / ρ₀) is smooth
-# across the whole grid, eliminating the nuclear-cusp oscillations that affect
-# raw interpolation of ρ directly.  LogCubicRef provides ρ₀ and its derivatives
-# via the chain rule on a global cubic spline of log(ρ₀) — much faster at eval
-# time and smoother near nuclei than a local PHS stencil.
+# across the whole grid.  PromolecularRef provides ρ₀ and exact derivatives
+# from PBE all-electron atomic radial splines via the chain rule — matches the
+# Fortran crystalmod_promolecular approach and avoids Gibbs-like errors from
+# a 3D cubic spline of log(ρ₀) near nuclear cusps.
 @time itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 1.75,
     reference_interp = ref_rho0, reference_data = rho0_3d)
 
 println("All interpolants built.")
 
 # ============================================================
-# 4. Evaluate along the 1D path
+# 5. Evaluate along the 1D path
 # ============================================================
 println("\nEvaluating along path ($N_path points)...")
 
@@ -256,7 +412,7 @@ end
 println("Evaluation complete.")
 
 # ============================================================
-# 5. Plot — 3 rows × 2 columns, log-scale y-axis
+# 6. Plot — 3 rows × 2 columns, log-scale y-axis
 # ============================================================
 println("\nGenerating plot...")
 

@@ -577,8 +577,8 @@ println("PERFORMANCE SUMMARY")
 println("="^80)
 
 # Combined Build and Evaluation Times Table
-println("\n### Timing Summary (per method, 1000 query points)\n")
-println("| Method | Build (s) | ρ Time (s) | |∇ρ| Time (s) | |∇²ρ| Time (s) |")
+println("\n### Timing Summary (with PHS-to-method ratios)")
+println("| Method | Build (s) | ρ Time (s) | \\|∇ρ\\| Time (s) | \\|∇²ρ\\| Time (s) |")
 println("|--------|-----------|------------|----------------|-----------------|")
 
 phs_build_time = build_times["PHS"]
@@ -594,19 +594,19 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     
     # Format build time with ratio
     build_str = if method == "PHS"
-        @sprintf("%.6f", build_time)
+        @sprintf("%.3f", build_time)
     else
         ratio = phs_build_time / build_time
-        @sprintf("%.6f (%.1f×)", build_time, ratio)
+        @sprintf("%.3f (%.1f×)", build_time, ratio)
     end
     
     # Format rho time with ratio
     rho_str = if rho_time !== nothing
         if method == "PHS"
-            @sprintf("%.6f", rho_time)
+            @sprintf("%.3f", rho_time)
         else
             ratio = phs_rho_time / rho_time
-            @sprintf("%.6f (%.1f×)", rho_time, ratio)
+            @sprintf("%.3f (%.1f×)", rho_time, ratio)
         end
     else
         "—"
@@ -615,10 +615,10 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     # Format grad time with ratio
     grad_str = if grad_time !== nothing
         if method == "PHS"
-            @sprintf("%.6f", grad_time)
+            @sprintf("%.3f", grad_time)
         else
             ratio = phs_grad_time / grad_time
-            @sprintf("%.6f (%.1f×)", grad_time, ratio)
+            @sprintf("%.3f (%.1f×)", grad_time, ratio)
         end
     else
         "—"
@@ -627,10 +627,10 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     # Format lap time with ratio
     lap_str = if lap_time !== nothing
         if method == "PHS"
-            @sprintf("%.6f", lap_time)
+            @sprintf("%.3f", lap_time)
         else
             ratio = phs_lap_time / lap_time
-            @sprintf("%.6f (%.1f×)", lap_time, ratio)
+            @sprintf("%.3f (%.1f×)", lap_time, ratio)
         end
     else
         "—"
@@ -660,7 +660,7 @@ phs_lap_stats = Dict(
 )
 
 # Table 2: Density (ρ) Errors with PHS comparison ratios
-println("\n### Charge Density (ρ) — Relative Error Statistics\n")
+println("\n### Charge Density (ρ) — Relative Error Statistics (with method-to-PHS ratios)\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
 for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
@@ -682,7 +682,7 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
 end
 
 # Table 3: Gradient Error with PHS comparison ratios
-println("\n### Gradient Magnitude (|∇ρ|) — Relative Error Statistics\n")
+println("\n### Gradient Magnitude (|∇ρ|) — Relative Error Statistics (with method-to-PHS ratios)\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
 for method in ["Linear", "Cubic", "Cardinal", "PHS"]
@@ -704,7 +704,7 @@ for method in ["Linear", "Cubic", "Cardinal", "PHS"]
 end
 
 # Table 4: Laplacian Error with PHS comparison ratios
-println("\n### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics\n")
+println("\n### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics (with method-to-PHS ratios)\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
 for method in ["Cubic", "Cardinal", "PHS"]

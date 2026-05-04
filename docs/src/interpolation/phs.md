@@ -157,64 +157,48 @@ This generates `phs_density_comparison.png` and demonstrates:
 - Evaluating density, gradient, Laplacian analytically
 - Batch evaluation for performance
 
-### Performance Comparison
+### Performance Comparison for the phenol dimer example:
 
-For the phenol dimer example (75×113×70 grid, 1000 query points):
+### Timing Summary (with PHS-to-method ratios)
 
-#### Timing Summary (per method, 1000 query points)
+The build time was for a 75×113×70 grid, and evaluation times were for 1000 query points along the hydrogen-bond path:
 
 | Method | Build (s) | ρ Time (s) | \|∇ρ\| Time (s) | \|∇²ρ\| Time (s) |
-|--------|-----------|------------|--------------|----------------|
-| Nearest            | 0.161815 |   0.383345 |            — |              — |
-| Linear             | 0.008480 |   0.254733 |     0.566794 |              — |
-| Cubic              | 0.648779 |   0.346084 |     0.727612 |       0.860846 |
-| Cardinal           | 0.037853 |   1.030071 |     2.490707 |       2.534368 |
-| PHS                | 2.409247 |   1.607145 |    12.041282 |      28.271121 |
+|--------|-----------|------------|----------------|-----------------|
+| Nearest            |   0.161 (14.9×) |     0.382 (3.9×) |                  — |                    — |
+| Linear             |  0.008 (282.5×) |     0.337 (4.5×) |      0.581 (20.6×) |                    — |
+| Cubic              |    0.651 (3.7×) |     0.334 (4.5×) |      0.730 (16.4×) |        0.759 (37.1×) |
+| Cardinal           |   0.041 (58.9×) |     1.042 (1.4×) |       2.488 (4.8×) |        2.610 (10.8×) |
+| PHS                |           2.394 |            1.506 |             11.987 |               28.207 |
 
-#### Charge Density (ρ) — Relative Error Statistics
+*PHS is significantly more expensive to build and evaluate than standard methods, but achieves much higher accuracy, especially for derivatives.*
+
+### Charge Density (ρ) — Relative Error Statistics (with method-to-PHS ratios)
 
 | Method | Min Error | Max Error | Mean Error | Median Error |
 |--------|-----------|-----------|------------|--------------|
-| Nearest            | 5.27e-04 | 2.15e+00 | 1.84e-01 | 1.34e-01 |
-| Linear             | 1.68e-05 | 9.34e-01 | 8.80e-02 | 2.18e-02 |
-| Cubic              | 4.58e-06 | 9.73e-01 | 1.17e-01 | 3.36e-03 |
-| Cardinal           | 2.29e-05 | 9.21e-01 | 9.65e-02 | 3.47e-03 |
+| Nearest            | 5.27e-04 (35555×) | 2.15e+00 (2×) | 1.84e-01 (45×) | 1.34e-01 (837×) |
+| Linear             | 1.68e-05 (1133×) | 9.34e-01 (1×) | 8.80e-02 (22×) | 2.18e-02 (135×) |
+| Cubic              | 4.58e-06 (309×) | 9.73e-01 (1×) | 1.17e-01 (29×) | 3.36e-03 (21×) |
+| Cardinal           | 2.29e-05 (1546×) | 9.21e-01 (1×) | 9.65e-02 (24×) | 3.47e-03 (22×) |
 | PHS                | 1.48e-08 | 1.00e+00 | 4.06e-03 | 1.61e-04 |
 
-| Method | Error ratio to PHS | PHS Improvement Factor |
-|--------|--------------|-------------------|
-| Nearest            | 45.29× | 97.8% better |
-| Linear             | 21.67× | 95.4% better |
-| Cubic              | 28.94× | 96.5% better |
-| Cardinal           | 23.77× | 95.8% better |
-
-#### Gradient Magnitude (|∇ρ|) — Relative Error Statistics
+### Gradient Magnitude (|∇ρ|) — Relative Error Statistics (with method-to-PHS ratios)
 
 | Method | Min Error | Max Error | Mean Error | Median Error |
 |--------|-----------|-----------|------------|--------------|
-| Linear             | 3.75e-05 | 2.39e+01 | 4.14e-01 | 1.89e-01 |
-| Cubic              | 2.39e-05 | 3.36e+00 | 3.57e-01 | 2.65e-02 |
-| Cardinal           | 1.83e-04 | 2.52e+00 | 2.48e-01 | 3.23e-02 |
+| Linear             | 3.75e-05 (49×) | 2.39e+01 (24×) | 4.14e-01 (35×) | 1.89e-01 (171×) |
+| Cubic              | 2.39e-05 (31×) | 3.36e+00 (3×) | 3.57e-01 (30×) | 2.65e-02 (24×) |
+| Cardinal           | 1.83e-04 (238×) | 2.52e+00 (3×) | 2.48e-01 (21×) | 3.23e-02 (29×) |
 | PHS                | 7.68e-07 | 1.00e+00 | 1.17e-02 | 1.11e-03 |
 
-| Method | Error ratio to PHS | PHS Improvement Factor |
-|--------|--------------|-------------------|
-| Linear             | 35.28× | 97.2% better |
-| Cubic              | 30.40× | 96.7% better |
-| Cardinal           | 21.16× | 95.3% better |
-
-#### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics
+### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics (with method-to-PHS ratios)
 
 | Method | Min Error | Max Error | Mean Error | Median Error |
 |--------|-----------|-----------|------------|--------------|
-| Cubic              | 8.30e-06 | 1.13e+03 | 6.41e+00 | 1.69e-01 |
-| Cardinal           | 7.58e-04 | 1.96e+02 | 2.41e+00 | 5.03e-01 |
+| Cubic              | 8.30e-06 (1×) | 1.13e+03 (364×) | 6.41e+00 (135×) | 1.69e-01 (12×) |
+| Cardinal           | 7.58e-04 (59×) | 1.96e+02 (63×) | 2.41e+00 (51×) | 5.03e-01 (37×) |
 | PHS                | 1.28e-05 | 3.09e+00 | 4.73e-02 | 1.37e-02 |
-
-| Method | Error ratio to PHS | PHS Improvement Factor |
-|--------|--------------|-------------------|
-| Cubic              | 135.46× | 99.3% better |
-| Cardinal           | 50.98× | 98.0% better |
 
 Polyharmonic spline interpolation was added specifically for applications to physical systems with singularities and steep features, where standard methods fail. The results show that PHS with log-density transform and a promolecular reference achieves **orders of magnitude better accuracy** than nearest, linear, cubic spline, and cardinal interpolation for both the density and its derivatives, even near nuclear cusps, at the expense of higher computational cost.
 

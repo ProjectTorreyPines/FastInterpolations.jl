@@ -446,72 +446,90 @@ const _gy = zeros(N_path)
 const _gz = zeros(N_path)
 
 # ── density ρ ──────────────────────────────────────────────────────────────────
-print("  ρ ... ")
-time_rho = @elapsed begin
-    itp_nearest(ρ_nearest,  queries)
-    itp_linear(ρ_linear,    queries)
-    itp_cubic(ρ_cubic,      queries)
-    itp_cardinal(ρ_cardinal, queries)
-    itp_phs(ρ_phs,          queries)
-end
-@printf "%.4f s\n" time_rho
-eval_times["ρ"] = Dict(
-    "Nearest" => 0.0, "Linear" => 0.0, "Cubic" => 0.0, "Cardinal" => 0.0, "PHS" => 0.0
-)
+println("  Density (ρ):")
+eval_times["ρ"] = Dict()
+
+print("    Nearest ... ")
+eval_times["ρ"]["Nearest"] = @elapsed @time itp_nearest(ρ_nearest,  queries)
+
+print("    Linear ... ")
+eval_times["ρ"]["Linear"] = @elapsed @time itp_linear(ρ_linear,    queries)
+
+print("    Cubic ... ")
+eval_times["ρ"]["Cubic"] = @elapsed @time itp_cubic(ρ_cubic,      queries)
+
+print("    Cardinal ... ")
+eval_times["ρ"]["Cardinal"] = @elapsed @time itp_cardinal(ρ_cardinal, queries)
+
+print("    PHS ... ")
+eval_times["ρ"]["PHS"] = @elapsed @time itp_phs(ρ_phs,          queries)
 
 # ── gradient magnitude |∇ρ| ────────────────────────────────────────────────────
 # All ND interpolants accept the batch form itp(out, queries; deriv=(...)).
 # PHS does not implement _locate_cell/_eval_at_cell so gradient() is unavailable,
 # but the same computation works via the deriv kwarg on the batch callable.
-print("  |∇ρ| ... ")
-time_grad = @elapsed begin
+println("  Gradient Magnitude (|∇ρ|):")
+eval_times["|∇ρ|"] = Dict()
+
+print("    Linear ... ")
+eval_times["|∇ρ|"]["Linear"] = @elapsed @time begin
     itp_linear(_gx, queries; deriv = (D1, D0, D0))
     itp_linear(_gy, queries; deriv = (D0, D1, D0))
     itp_linear(_gz, queries; deriv = (D0, D0, D1))
     @. ∇ρ_linear = sqrt(_gx^2 + _gy^2 + _gz^2)
+end
 
+print("    Cubic ... ")
+eval_times["|∇ρ|"]["Cubic"] = @elapsed @time begin
     itp_cubic(_gx, queries; deriv = (D1, D0, D0))
     itp_cubic(_gy, queries; deriv = (D0, D1, D0))
     itp_cubic(_gz, queries; deriv = (D0, D0, D1))
     @. ∇ρ_cubic = sqrt(_gx^2 + _gy^2 + _gz^2)
+end
 
+print("    Cardinal ... ")
+eval_times["|∇ρ|"]["Cardinal"] = @elapsed @time begin
     itp_cardinal(_gx, queries; deriv = (D1, D0, D0))
     itp_cardinal(_gy, queries; deriv = (D0, D1, D0))
     itp_cardinal(_gz, queries; deriv = (D0, D0, D1))
     @. ∇ρ_cardinal = sqrt(_gx^2 + _gy^2 + _gz^2)
+end
 
+print("    PHS ... ")
+eval_times["|∇ρ|"]["PHS"] = @elapsed @time begin
     itp_phs(_gx, queries; deriv = (D1, D0, D0))
     itp_phs(_gy, queries; deriv = (D0, D1, D0))
     itp_phs(_gz, queries; deriv = (D0, D0, D1))
     @. ∇ρ_phs = sqrt(_gx^2 + _gy^2 + _gz^2)
 end
-@printf "%.4f s\n" time_grad
-eval_times["|∇ρ|"] = Dict(
-    "Linear" => 0.0, "Cubic" => 0.0, "Cardinal" => 0.0, "PHS" => 0.0
-)
 
 # ── Laplacian magnitude |∇²ρ| ──────────────────────────────────────────────────
-print("  |∇²ρ| ... ")
-time_laplacian = @elapsed begin
+println("  Laplacian Magnitude (|∇²ρ|):")
+eval_times["|∇²ρ|"] = Dict()
+
+print("    Cubic ... ")
+eval_times["|∇²ρ|"]["Cubic"] = @elapsed @time begin
     itp_cubic(_gx, queries; deriv = (D2, D0, D0))
     itp_cubic(_gy, queries; deriv = (D0, D2, D0))
     itp_cubic(_gz, queries; deriv = (D0, D0, D2))
     @. ∇²ρ_cubic = abs(_gx + _gy + _gz)
+end
 
+print("    Cardinal ... ")
+eval_times["|∇²ρ|"]["Cardinal"] = @elapsed @time begin
     itp_cardinal(_gx, queries; deriv = (D2, D0, D0))
     itp_cardinal(_gy, queries; deriv = (D0, D2, D0))
     itp_cardinal(_gz, queries; deriv = (D0, D0, D2))
     @. ∇²ρ_cardinal = abs(_gx + _gy + _gz)
+end
 
+print("    PHS ... ")
+eval_times["|∇²ρ|"]["PHS"] = @elapsed @time begin
     itp_phs(_gx, queries; deriv = (D2, D0, D0))
     itp_phs(_gy, queries; deriv = (D0, D2, D0))
     itp_phs(_gz, queries; deriv = (D0, D0, D2))
     @. ∇²ρ_phs = abs(_gx + _gy + _gz)
 end
-@printf "%.4f s\n" time_laplacian
-eval_times["|∇²ρ|"] = Dict(
-    "Cubic" => 0.0, "Cardinal" => 0.0, "PHS" => 0.0
-)
 
 println("Evaluation complete.")
 
@@ -566,7 +584,24 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     @printf "| %-18s | %.6f |\n" method build_times[method]
 end
 
-# Table 2: Density (ρ) Errors
+# Table 2: Per-Method Evaluation Times
+println("\n### Evaluation Times (per method, 1000 query points)\n")
+println("| Method | ρ Time (s) | |∇ρ| Time (s) | |∇²ρ| Time (s) |")
+println("|--------|------------|--------------|----------------|")
+
+for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
+    rho_time = get(eval_times["ρ"], method, nothing)
+    grad_time = get(eval_times["|∇ρ|"], method, nothing)
+    lap_time = get(eval_times["|∇²ρ|"], method, nothing)
+    
+    rho_str = rho_time !== nothing ? @sprintf("%.6f", rho_time) : "—"
+    grad_str = grad_time !== nothing ? @sprintf("%.6f", grad_time) : "—"
+    lap_str = lap_time !== nothing ? @sprintf("%.6f", lap_time) : "—"
+    
+    @printf "| %-18s | %10s | %12s | %14s |\n" method rho_str grad_str lap_str
+end
+
+# Table 3: Density (ρ) Errors
 println("\n### Charge Density (ρ) — Relative Error Statistics\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
@@ -579,7 +614,7 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
 end
 
-# Table 3: Gradient Error
+# Table 4: Gradient Error
 println("\n### Gradient Magnitude (|∇ρ|) — Relative Error Statistics\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
@@ -592,7 +627,7 @@ for method in ["Linear", "Cubic", "Cardinal", "PHS"]
     @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
 end
 
-# Table 4: Laplacian Error
+# Table 5: Laplacian Error
 println("\n### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")

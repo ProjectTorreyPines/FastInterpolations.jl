@@ -2,20 +2,24 @@
 # PHS Charge Density Analysis — Comparison Script
 # ============================================================
 #
-# Reproduces the 3×2 log-scale comparison plot comparing analytical
-# (DFT reference) values against 3D interpolants for:
+# Reproduces the 3×2 log-scale comparison plot comparing analytical DFT
+# (reference) values against 3D interpolants for:
 #   Row 1:  ρ        (charge density)
 #   Row 2:  |∇ρ|     (gradient magnitude)
 #   Row 3:  |∇²ρ|    (Laplacian magnitude)
 # along the O7...H21 hydrogen-bond path in the phenol dimer.
 #
-# Left column  — all standard 3D methods vs Analytical
-# Right column — Polyharmonic spline (PHS) vs Analytical
+# Left column  — all standard 3D methods vs DFT reference
+# Right column — Polyharmonic spline (PHS) vs DFT reference
+#
+# For PHS, the reference density is the analytical promolecule density
+# constructed from critic2 PBE wavefunction files, enabling log-density
+# smoothing via the reference_interp interface.
 #
 # Data files (edit the paths below if needed):
 #   3D grid : phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_ext3.pkl
 #             Python pickle: x (75,), y (113,), z (70,) [Bohr],
-#             variables["density_scf"] (75,113,70) [a.u.]
+#             variables["density_scf"] (75,113,70) [a.u.] — DFT reference density
 #   1D path : phenol-dimer_B3LYP_TZ2P_GO_line_O7_H21_N1000.csv
 #             Columns: point, x_bohr, y_bohr, z_bohr, arclength_bohr,
 #                      density_scf, density_frag, dengrad_mag, laplacian_scf
@@ -146,8 +150,7 @@ pkl = Pickle.npyload(PKL_PATH)
 x_grid = Float64.(pkl["x"])
 y_grid = Float64.(pkl["y"])
 z_grid = Float64.(pkl["z"])
-rho_3d  = Float64.(pkl["variables"]["density_scf"])   # already (nx,ny,nz) via c2f
-rho0_3d = Float64.(pkl["variables"]["density_frag"])
+rho_3d  = Float64.(pkl["variables"]["density_scf"])   # DFT reference density: (nx,ny,nz) via c2f
 
 @printf "  Grid: %d×%d×%d, ρ ∈ [%.2e, %.2e] a.u.\n" length(x_grid) length(y_grid) length(z_grid) minimum(rho_3d) maximum(rho_3d)
 
@@ -389,9 +392,9 @@ println("  [PHS] Polyharmonic spline (PHS-3, stencil_size=8, log-density transfo
 # across the whole grid.  PromolecularRef provides ρ₀ and exact derivatives
 # from PBE all-electron atomic radial splines via the chain rule — matches the
 # Fortran crystalmod_promolecular approach and avoids Gibbs-like errors from
-# a 3D cubic spline of log(ρ₀) near nuclear cusps.
+# a cubic spline of log(ρ₀) near nuclear cusps.
 @time itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 1.75,
-    reference_interp = ref_rho0, reference_data = rho0_3d)
+    reference_interp = ref_rho0)
 
 println("All interpolants built.")
 

@@ -43,7 +43,7 @@ struct AkimaInterpolant1D{
     search_policy::P
 
     # PreCompute inner: promotes x/y, computes slopes — axis-as-truth (`xc`
-    # wraps cached h/inv_h via `_resolve_axis_copied`).
+    # wraps cached h/inv_h; outer applies `_caching_axis`).
     function AkimaInterpolant1D(
             x::AbstractVector, y::AbstractVector, ::Type{PreCompute}, extrap::E, search::P
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
@@ -51,7 +51,7 @@ struct AkimaInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _resolve_axis_copied(x, NoBC(), Tg)
+        xc = _convert_copy(x, Tg)
         yc = _convert_copy(y, Tv)
         Tdy = _output_eltype(Tv, Tg)
         dy = Vector{Tdy}(undef, length(yc))
@@ -70,7 +70,7 @@ struct AkimaInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _resolve_axis_copied(x, NoBC(), Tg)
+        xc = _convert_copy(x, Tg)
         yc = _convert_copy(y, Tv)
         Tdy = _output_eltype(Tv, Tg)
         dyc = _convert_copy(dy, Tdy)
@@ -87,7 +87,7 @@ struct AkimaInterpolant1D{
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _resolve_axis_copied(x, NoBC(), Tg)
+        xc = _convert_copy(x, Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, OnTheFly}(
             xc, yc, slope_strategy, extrap, search

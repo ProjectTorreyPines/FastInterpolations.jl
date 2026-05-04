@@ -60,9 +60,12 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
     side::SD         # Side selection (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    # Inner constructor: promotes x/y, wraps grid for cached spacing, stores.
-    # `_resolve_axis_copied`: Vector → `_CachedVector`, Range → `_CachedRange`,
-    # `_ExclusivePeriodicAxis` passes through. Spacing access via
+    # Inner constructor: ownership copy + element-type promotion of an
+    # already-resolved x/y. Outer `constant_interp` does the axis caching
+    # wrap via `_caching_axis(x, bc)`; by this layer `x` is already a
+    # wrapper carrying cached `h`/`inv_h`. Symmetric with `y`'s handling —
+    # both go through `_convert_copy` for ownership + same/different-eltype
+    # dispatch (wrapper-preserving). Spacing access via
     # `_get_h(itp.x, i)` / `_get_inv_h(itp.x, i)`.
     function ConstantInterpolant(
             x::AbstractVector, y::AbstractVector, ev::E, sv::SD, search::P
@@ -71,7 +74,7 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
         length(x) >= 2 || _throw_grid_too_small(length(x))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _resolve_axis_copied(x, NoBC(), Tg)
+        xc = _convert_copy(x, Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, SD, P}(xc, yc, ev, sv, search)
     end

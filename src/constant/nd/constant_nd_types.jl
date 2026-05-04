@@ -66,11 +66,12 @@ struct ConstantInterpolantND{
             Tg, Tv, N, G <: NTuple{N, AbstractVector{Tg}},
             E, SD <: Tuple{Vararg{AbstractSide, N}}, P <: NTuple{N, AbstractSearchPolicy},
         }
-        # Copy grids and data to ensure mutation safety.
-        # copy() on immutable Range types is a no-op (zero allocation).
-        # Array() converts AbstractArray→Array AND copies in one step.
-        # typeof() rebinds G after copy (e.g. tuple-of-SubArrays → tuple-of-Vectors).
-        grids_c = map(copy, grids)
+        # Per-axis ownership copy + element-type promotion. Outer
+        # `constant_interp` already applied `_caching_axis` per axis; this
+        # mirrors 1D `_convert_copy(x, Tg)` (wrapper-preserving same-eltype
+        # `Base.copy`, single-pass rebuild for different eltype).
+        # Array() converts AbstractArray→Array AND copies data in one step.
+        grids_c = map(g -> _convert_copy(g, Tg), grids)
         return new{Tg, Tv, N, typeof(grids_c), E, SD, P}(grids_c, Array(data), extraps, sides, searches)
     end
 end

@@ -70,18 +70,20 @@ struct LinearInterpolant{
     extrap::E  # Extrapolation mode (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    # Inner constructor: promotes x/y, wraps grid for cached spacing, stores.
-    # `_resolve_axis_copied(x, NoBC(), Tg)`:
-    #   - raw Vector → `_CachedVector` (cached h/inv_h, fresh-owned),
-    #   - raw Range → `_CachedRange` (cached scalar h/inv_h),
-    #   - already-wrapped same-eltype → passthrough (no double-copy when
-    #     `linear_interp` outer ctor already produced a wrapped axis via
-    #     `_resolve_axis_copied(x, bc, Tg)`),
-    #   - already-wrapped different-eltype → wrapper-aware rebuild.
+    # Inner constructor: ownership copy + element-type promotion of an
+    # already-resolved x/y. Outer `linear_interp` is responsible for the axis
+    # caching wrap via `_caching_axis(x, bc)` (raw Vector → `_CachedVector`,
+    # Range → `_CachedRange`, `:exclusive` PeriodicBC → `_ExclusivePeriodicAxis`);
+    # by this layer `x` is already a wrapper carrying cached `h`/`inv_h`
+    # (sharing the user's buffer in `inner`). The inner ctor mirrors `y`'s
+    # handling — both go through `_convert_copy` for ownership + same/different
+    # eltype dispatch:
+    #   - same-eltype wrapper → wrapper-preserving `Base.copy` (only copies
+    #     `inner`; `h`/`inv_h` are internal-only and safely aliased),
+    #   - different-eltype wrapper → wrapper-aware single-pass rebuild,
+    #   - immutable `_CachedRange{T}` (same T) → identity (no copy needed).
     # Spacing access via `_get_h(itp.x, i)` / `_get_inv_h(itp.x, i)` —
     # grid is the single source of truth; no separate spacing field.
-    # `NoBC()` here means "no bc-aware extra wrapping needed at this layer";
-    # outer `linear_interp` already applied the bc-aware wrap when needed.
     function LinearInterpolant(
             x::AbstractVector, y::AbstractVector, ev::E, search::P
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
@@ -93,7 +95,7 @@ struct LinearInterpolant{
         _check_compatible_length(x, y)
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _resolve_axis_copied(x, NoBC(), Tg)
+        xc = _convert_copy(x, Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, P}(xc, yc, ev, search)
     end

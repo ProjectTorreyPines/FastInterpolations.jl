@@ -78,7 +78,11 @@ function linear_interp(
 
     # Extend grids/data for exclusive periodic axes (build-time only).
     # After this, all periodic axes have inclusive-form data and WrapExtrap handles queries.
-    grids_typed, data_typed, _ = _prepare_periodic_nd(grids_typed, data_typed, bcs)
+    grids_typed, data_typed, bcs_post = _prepare_periodic_nd(grids_typed, data_typed, bcs)
+    # Per-axis caching wrap (zero-copy of buffer): raw Vector → `_CachedVector`,
+    # Range → `_CachedRange`, pre-wrapped → idempotent passthrough. Mirrors
+    # 1D `linear_interp` outer flow. Ownership copy happens in inner ctor.
+    grids_typed = map(_caching_axis, grids_typed, bcs_post)
 
     # _resolve_extrap_nd(extrap, bcs, ...) validates periodic/extrap compatibility
     # and auto-overrides per-axis extrap to WrapExtrap() on periodic axes.

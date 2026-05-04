@@ -73,8 +73,14 @@ _CachedVector(c::_CachedVector) = c
 # materializes wrappers as plain `Vector{T}`, destroying the wrapper type.
 # Persistent ND constructors do `map(copy, grids)` for mutation safety;
 # without this overload, that call would silently drop the cached `h`/`inv_h`
-# fields on every grid axis. Recursive copy of inner buffers preserves the
-# wrapper structure AND ensures the returned wrapper owns fresh storage.
+# fields on every grid axis.
+#
+# True deep copy: every field gets a fresh allocation owned by the result.
+# `copy(c.h)` and `copy(c.inv_h)` are fast `memcpy`s (no element-wise
+# recomputation — h/inv_h were already computed by the source's constructor).
+# Aliasing the cache fields would violate `copy`'s ownership contract
+# (source and result must be fully independent), even though the cache
+# fields have no public mutation API.
 @inline Base.copy(c::_CachedVector) =
     _CachedVector{eltype(c.inner), eltype(c.inv_h)}(copy(c.inner), copy(c.h), copy(c.inv_h))
 

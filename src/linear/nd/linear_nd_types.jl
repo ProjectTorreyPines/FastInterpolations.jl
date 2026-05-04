@@ -83,11 +83,14 @@ struct LinearInterpolantND{
     function LinearInterpolantND{Tg, Tv, N, G, E, P}(
             grids::Tuple{Vararg{AbstractVector, N}}, data::AbstractArray{Tv, N}, extraps::E, searches::P
         ) where {Tg, Tv, N, G, E, P}
-        # Copy grids and data to ensure mutation safety.
-        # copy() on immutable Range types is a no-op (zero allocation).
-        # Array() converts AbstractArray→Array AND copies in one step.
-        # typeof() rebinds G after copy (e.g. tuple-of-SubArrays → tuple-of-Vectors).
-        grids_c = map(copy, grids)
+        # Per-axis ownership copy + element-type promotion. Outer `linear_interp`
+        # already applied `_caching_axis` per axis (raw Vector → `_CachedVector`,
+        # Range → `_CachedRange`, etc.) so each grid is a wrapper carrying its
+        # cached `h`/`inv_h` (sharing the user buffer in `inner`). The ND inner
+        # ctor mirrors the 1D `_convert_copy(x, Tg)` call — wrapper-preserving
+        # `Base.copy` for same-eltype, single-pass rebuild for different eltype.
+        # Array() converts AbstractArray→Array AND copies data in one step.
+        grids_c = map(g -> _convert_copy(g, Tg), grids)
         return new{Tg, Tv, N, typeof(grids_c), E, P}(grids_c, Array(data), extraps, searches)
     end
 end

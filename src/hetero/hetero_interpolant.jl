@@ -265,14 +265,11 @@ function _build_hetero_nd(
 
     # 6. Resolve per-axis configuration (OnTheFly: no extension, bc-aware materialize).
     bcs = map(_bc_for_periodic_check, methods)
-    # Per-axis axis-as-truth wrap: `:exclusive` axes become `_ExclusivePeriodicAxis`
-    # (carrying the validated period and virtual endpoint `x[1]+period`), so
-    # downstream `last(grid)` / `_wrap_to_domain` / `search_interval` see the
-    # correct wrap domain without needing to re-derive period from raw n-length
-    # data. Non-periodic axes are normalized through `_resolve_axis_copied` too —
-    # Vector → `_CachedVector` (h/inv_h cached for repeat persistent queries),
-    # Range → `_CachedRange`. Mirrors how Linear/Constant/Cubic ND handle BC.
-    grids_typed = map((g, bc) -> _resolve_axis_copied(g, bc, Tg), grids_typed, bcs)
+    # Per-axis caching wrap (zero-copy of buffer): `:exclusive` axes become
+    # `_ExclusivePeriodicAxis`, Vector → `_CachedVector`, Range → `_CachedRange`.
+    # Ownership copy + element-type promotion happens in the inner ctor's
+    # `_convert_copy(g, Tg)` per axis. Mirrors 1D/Linear/Constant ND surface flow.
+    grids_typed = map(_caching_axis, grids_typed, bcs)
     # Inclusive PeriodicBC requires `data[1, ...] ≈ data[end, ...]` per axis;
     # mirrors `_prepare_periodic_nd_impl` for the PreCompute path so that local
     # Hermite ND OnTheFly build rejects the same mismatched data 1D and Cubic ND
@@ -331,6 +328,8 @@ function _build_hetero_precomputed(
     # Extend exclusive periodic axes to inclusive form (same as CubicInterpolantND).
     # Must happen before partials so the stored grid matches the data.
     grids_typed, data_ext, bcs_resolved = _prepare_periodic_nd(grids_typed, data, bcs_periodic)
+    # Per-axis caching wrap (zero-copy of buffer); ownership copy in inner ctor.
+    grids_typed = map(_caching_axis, grids_typed, bcs_resolved)
     # Per-axis materialize via 2-arg primitive (post-extension grid-span).
     extraps = map(_resolve_extrap, extraps, grids_typed)
 

@@ -59,11 +59,11 @@ end
 # ============================================================
 # Configuration — edit paths here
 # ============================================================
-const PKL_PATH = "/Users/haiiro/scratch/phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_ext3.pkl"
-const CSV_PATH = "/Users/haiiro/scratch/phenol-dimer_B3LYP_TZ2P_GO_line_O7_H21_N1000.csv"
-const XYZ_PATH = "/Users/haiiro/scratch/phenol-dimer_B3LYP_TZ2P_GO_atoms.xyz"
+const PKL_PATH = "dat/phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_ext3.pkl"
+const CSV_PATH = "dat/phenol-dimer_B3LYP_TZ2P_GO_line_O7_H21_N1000.csv"
+const XYZ_PATH = "dat/phenol-dimer_B3LYP_TZ2P_GO_atoms.xyz"
 const WFC_DIR  = joinpath(@__DIR__, "dat", "wfc")
-const OUT_PATH = joinpath(@__DIR__, "phs_density_comparison.png")
+const OUT_PATH = "../docs/images/phs_density_comparison.png"
 
 const BOHR2ANG = 0.529177210903   # 1 Bohr → Angstrom
 
@@ -90,51 +90,61 @@ function ensure_wfc_files()
         return
     end
     
+    # List of all elements (Z=1 to Z=118) with their 2-letter symbols
+    # Single letters get underscore padding (H→h_, C→c_, etc.)
+    all_symbols = [
+        "h_", "he", "li", "be", "b_", "c_", "n_", "o_", "f_", "ne",
+        "na", "mg", "al", "si", "p_", "s_", "cl", "ar", "k_", "ca",
+        "sc", "ti", "v_", "cr", "mn", "fe", "co", "ni", "cu", "zn",
+        "ga", "ge", "as", "se", "br", "kr", "rb", "sr", "y_", "zr",
+        "nb", "mo", "tc", "ru", "rh", "pd", "ag", "cd", "in", "sn",
+        "sb", "te", "i_", "xe", "cs", "ba", "la", "ce", "pr", "nd",
+        "pm", "sm", "eu", "gd", "tb", "dy", "ho", "er", "tm", "yb",
+        "lu", "hf", "ta", "w_", "re", "os", "ir", "pt", "au", "hg",
+        "tl", "pb", "bi", "po", "at", "rn", "fr", "ra", "ac", "th",
+        "pa", "u_", "np", "pu", "am", "cm", "bk", "cf", "es", "fm",
+        "md", "no", "lr", "rf", "db", "sg", "bh", "hs", "mt", "ds",
+        "rg", "cn", "nh", "fl", "mc", "lv", "ts", "og"
+    ]
+    
     println("Downloading PBE wavefunction files from critic2 (GitHub)...")
     
-    try
-        # Query GitHub API for wfc files
-        cmd = `curl -s "https://api.github.com/repos/aoterodelaroza/critic2/contents/dat/wfc"`
-        api_output = read(cmd, String)
+    # Try to download files using raw GitHub URLs with hardcoded filename list
+    base_url = "https://raw.githubusercontent.com/aoterodelaroza/critic2/master/dat/wfc"
+    
+    download_count = 0
+    for sym in all_symbols
+        fname = sym * "_pbe.wfc"
+        fpath = joinpath(WFC_DIR, fname)
         
-        # Extract URLs using regex (no JSON dependency)
-        urls = [m.match for m in eachmatch(r"https://[^\"]+\.wfc", api_output)]
-        
-        if length(urls) == 0
-            println("  Warning: No URLs found in API response")
-            return
+        # Skip if already exists and is non-empty (>1KB suggests real data)
+        if isfile(fpath) && filesize(fpath) > 1000
+            continue
         end
         
-        println("  Found $(length(urls)) wfc files to download")
+        url = "$base_url/$fname"
         
-        download_count = 0
-        for url in urls
-            fname = split(url, "/")[end]
-            fpath = joinpath(WFC_DIR, fname)
-            
-            # Skip if already exists
-            if isfile(fpath)
-                continue
-            end
-            
-            try
-                run(`curl -s -o $fpath $url`)
+        try
+            run(`curl -s -o $fpath $url`)
+            # Check if download was successful (file size > 1KB)
+            if isfile(fpath) && filesize(fpath) > 1000
                 download_count += 1
-                if download_count % 20 == 0
+                if download_count % 30 == 0
                     print(".")
                 end
-            catch e
-                println("\n  Warning: Failed to download $fname: $e")
+            else
+                # Failed download, remove small file
+                isfile(fpath) && rm(fpath)
             end
+        catch e
+            # Download error, clean up
+            isfile(fpath) && rm(fpath)
         end
-        
-        println("\n  Downloaded $download_count new wavefunction files")
-        if download_count > 0
-            println("  ✓ Wavefunction files ready")
-        end
-    catch e
-        @warn "Failed to download wavefunction files: $e"
-        println("  Note: Ensure curl is available and GitHub API is accessible")
+    end
+    
+    println("\n  Downloaded $download_count new wavefunction files")
+    if download_count > 0
+        println("  ✓ Wavefunction files ready")
     end
 end
 

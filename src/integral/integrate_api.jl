@@ -296,7 +296,7 @@ end
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
+        itp.grids, itp.extraps, lo, hi, search, hint
     )
     Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
     _zero = Tout <: Number ? zero(Tout) : 0 * itp.nodal_derivs.partials[1]
@@ -304,7 +304,7 @@ end
 
     total = _zero
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
-        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
+        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
             inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.spacings[d], idx[d])), Val(N))
             total += convert(Tout, _integrate_nd_cubic_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, uhis))
@@ -325,7 +325,7 @@ end
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
+        itp.grids, itp.extraps, lo, hi, search, hint
     )
     Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
     _zero = Tout <: Number ? zero(Tout) : 0 * itp.data[1]
@@ -333,7 +333,7 @@ end
 
     total = _zero
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
-        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
+        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
             total += convert(Tout, _integrate_linear_nd_cell(itp.data, idx, hs, ulos, uhis))
         end
@@ -353,7 +353,7 @@ end
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
+        itp.grids, itp.extraps, lo, hi, search, hint
     )
     Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
     _zero = Tout <: Number ? zero(Tout) : 0 * itp.nodal_derivs.partials[1]
@@ -361,7 +361,7 @@ end
 
     total = _zero
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
-        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
+        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
             inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.spacings[d], idx[d])), Val(N))
             total += convert(Tout, _integrate_nd_quad_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, uhis))
@@ -382,7 +382,7 @@ end
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
+        itp.grids, itp.extraps, lo, hi, search, hint
     )
     Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
     _zero = Tout <: Number ? zero(Tout) : 0 * itp.data[1]
@@ -390,7 +390,7 @@ end
 
     total = _zero
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
-        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
+        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
             total += convert(Tout, _integrate_constant_nd_cell(itp.data, idx, hs, ulos, uhis, itp.sides))
         end

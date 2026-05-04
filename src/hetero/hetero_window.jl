@@ -194,18 +194,18 @@ end
 # and the batch dispatcher's spacings pre-compute still use `_has_any_local_method`.
 #
 # Rationale: the windowed path runs `_search_all_intervals(q_eval, grids,
-# spacings, ...)` and needs per-axis spacings to binary-search for the cell
-# index. The persistent path has `itp.spacings` PRE-COMPUTED at construction
-# and stored in the struct — zero per-call allocation. The scalar one-shot
-# path has to build spacings inline via `map(_create_spacing, grids)`, and for
-# Vector grids `_create_spacing` allocates `h` and `inv_h` buffers (~1024 B
-# for a 30×25 grid). For Hermite methods the stencil win (~5-20× for local-
-# slope kernels) justifies that allocation; for pure Linear/Constant with
-# Vector grids it would be a net loss for scalar one-shot, so we leave the
-# one-shot gate narrower.
+# ...)` and reads per-axis cell widths via `_get_h(grid, idx)`. Post-PR1
+# the persistent HeteroInterpolantND wraps grids in `_CachedRange` /
+# `_CachedVector` / `_ExclusivePeriodicAxis`, so `h`/`inv_h` are cached
+# directly on the grid wrapper — zero per-call allocation. The scalar
+# one-shot path operates on raw user grids; for Hermite methods the
+# stencil win (~5-20× for local-slope kernels) justifies the on-demand
+# `h` computation, while for pure Linear/Constant with Vector grids the
+# windowing trick is a net loss for scalar one-shot, so we leave that
+# gate narrower.
 #
 # Persistent interpolant + pure Linear/Constant: 667 ns → ~50 ns (13×) for
-# 100×100, no per-call allocation (spacings are cached in itp.spacings).
+# 100×100, no per-call allocation (h/inv_h cached on grid wrappers).
 @inline _is_windowable_method(::PchipInterp) = true
 @inline _is_windowable_method(::CardinalInterp) = true
 @inline _is_windowable_method(::AkimaInterp) = true

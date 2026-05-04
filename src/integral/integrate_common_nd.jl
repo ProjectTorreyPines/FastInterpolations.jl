@@ -10,10 +10,13 @@
     return sign, lo2, hi2
 end
 
-# Locate cell index ranges for ND integration bounds
+# Locate cell index ranges for ND integration bounds.
+# Uses the 3-arg `search_interval(s, grid, q)` (no spacing) which dispatches
+# correctly for raw Range/Vector and wrapped grids alike. Avoids requiring a
+# pre-computed `AbstractGridSpacing` tuple — all post-PR1 ND struct types are
+# supported uniformly (the field-less Linear/Constant/Hetero ND included).
 @inline function _nd_cell_ranges(
         grids::NTuple{N, AbstractVector},
-        spacings,
         lo::Tuple{Vararg{Real, N}},
         hi::Tuple{Vararg{Real, N}},
         search_tuple,
@@ -21,12 +24,12 @@ end
     ) where {N}
     idx_lo = ntuple(Val(N)) do d
         s = _resolve_search(grids[d], lo[d], search_tuple[d], isnothing(hint) ? nothing : hint[d])
-        i, _, _, _ = search_interval(s, grids[d], spacings[d], lo[d])
+        i, _, _, _ = search_interval(s, grids[d], lo[d])
         i
     end
     idx_hi = ntuple(Val(N)) do d
         s = _resolve_search(grids[d], hi[d], search_tuple[d], isnothing(hint) ? nothing : hint[d])
-        i, _, _, _ = search_interval(s, grids[d], spacings[d], hi[d])
+        i, _, _, _ = search_interval(s, grids[d], hi[d])
         i
     end
     return idx_lo, idx_hi
@@ -49,7 +52,7 @@ end
 
 # Shared ND preamble: normalize bounds, domain checks, cell range computation.
 @inline function _integrate_nd_preamble(
-        grids, spacings, extraps, lo::Tuple{Vararg{Real, N}}, hi::Tuple{Vararg{Real, N}},
+        grids, extraps, lo::Tuple{Vararg{Real, N}}, hi::Tuple{Vararg{Real, N}},
         search, hint
     ) where {N}
     sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)
@@ -58,16 +61,21 @@ end
         _check_nd_integrate_domain(grids[d], hi2[d], extraps[d])
     end
     search_tuple = _resolve_search_nd(search, Val(N), lo)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
-    idx_lo, idx_hi = _nd_cell_ranges(grids, spacings, lo2, hi2, search_tuple, hint)
+    idx_lo, idx_hi = _nd_cell_ranges(grids, lo2, hi2, search_tuple, hint)
     return (sign, lo2, hi2, idx_lo, idx_hi)
 end
 
 # Per-cell geometry: indices, cell widths, and local integration bounds.
+# Uses the universal 2-arg `_get_h(grid, idx)` overloads (defined in
+# `cached_vector.jl` for `_CachedVector`/`AbstractRange`/`AbstractVector`,
+# `cached_range.jl` for `_CachedRange`, `periodic_axis.jl` for
+# `_ExclusivePeriodicAxis`) — works for raw and wrapped grids alike, so
+# all ND struct types (with or without spacings field) are supported.
 @inline function _nd_cell_geom(
-        grids, spacings, lo2, hi2, I::CartesianIndex{N}, ::Val{N}
+        grids, lo2, hi2, I::CartesianIndex{N}, ::Val{N}
     ) where {N}
     idx = ntuple(d -> I[d], Val(N))
-    hs = ntuple(d -> @inbounds(_get_h(spacings[d], idx[d])), Val(N))
+    hs = ntuple(d -> @inbounds(_get_h(grids[d], idx[d])), Val(N))
     Ls = ntuple(d -> @inbounds(grids[d][idx[d]]), Val(N))
     Rs = ntuple(d -> @inbounds(grids[d][idx[d] + 1]), Val(N))
     ulos = ntuple(d -> max(lo2[d], Ls[d]) - Ls[d], Val(N))

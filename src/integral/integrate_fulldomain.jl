@@ -246,8 +246,8 @@ end
     cell_ranges = ntuple(d -> 1:(length(itp.grids[d]) - 1), Val(N))
     for I in CartesianIndices(cell_ranges)
         idx = ntuple(d -> I[d], Val(N))
-        hs = ntuple(d -> @inbounds(_get_h(itp.spacings[d], idx[d])), Val(N))
-        inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.spacings[d], idx[d])), Val(N))
+        hs = ntuple(d -> @inbounds(_get_h(itp.grids[d], idx[d])), Val(N))
+        inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.grids[d], idx[d])), Val(N))
         total += _full_cell_integral_nd(itp, idx, hs, inv_hs)
     end
     return total

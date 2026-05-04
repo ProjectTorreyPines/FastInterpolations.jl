@@ -176,6 +176,7 @@ end
 # _create_spacing: _CachedRange specialization
 # ========================================
 
+# TODO(spacing-cleanup): see grid_spacing.jl AbstractGridSpacing marker.
 # _CachedRange already has h and inv_h cached — trivial field copy, no recomputation.
 function _create_spacing(x::_CachedRange{T}) where {T}
     return ScalarSpacing{T}(x.h, x.inv_h)

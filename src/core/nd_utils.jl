@@ -580,6 +580,10 @@ Accepts heterogeneous tuples (e.g., mixed grid types, spacing types, search poli
 Uses map over named helpers so each axis receives its concrete type directly,
 avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
+# TODO(spacing-cleanup): spacings-based eval helper. PR1 added grid-only
+# overloads (no `spacings` arg) below — Linear/Constant/Hetero ND now use
+# those. The spacings-based variants here remain for Cubic/Quadratic ND eval
+# (deferred to PR3) and Cubic/Quadratic + 5 ND adjoint paths (PR2).
 
 # Named helpers for oneshot map-based search — each receives concrete types per axis.
 # search_interval returns (idx_L, idx_R, L, R) with the same concrete element type regardless
@@ -928,6 +932,8 @@ end
 # Returns raw (x_eval, y_eval, ix, iy, xL, yL) for type-specific post-processing.
 
 # N=2 preamble: per-axis adaptive search inside function barrier
+# TODO(spacing-cleanup): spacings-based variant. Grid-only overload is below.
+# Used by Cubic/Quadratic ND N=2 specializations (deferred to PR3).
 @inline function _locate_cell_2d_preamble(
         query::Tuple{Vararg{Real, 2}},
         grids, spacings, extraps,
@@ -1068,6 +1074,9 @@ Returns tuples of: hs (cell widths), inv_hs (reciprocals), dLs (left deltas).
 
 Used by both CubicInterpolantND and QuadraticInterpolantND evaluation.
 """
+# TODO(spacing-cleanup): spacings-based variant. Grid-only overload is below
+# (used by Hetero ND PreCompute eval post-PR1). This variant remains for
+# Cubic/Quadratic ND eval (deferred to PR3) + adjoint paths (PR2).
 @inline function _compute_all_local_params(
         q_evals::Tuple{Vararg{Real, N}},  # Allow heterogeneous/AD types (Dual) and GridIdx
         spacings::Tuple{Vararg{AbstractGridSpacing, N}},  # Allow heterogeneous spacing types (VectorSpacing, ScalarSpacing)
@@ -1230,6 +1239,10 @@ Generates unrolled `(_create_spacing(grids[1]), _create_spacing(grids[2]), ...)`
 Avoids closure boxing that occurs with `ntuple(d -> _create_spacing(grids[d]), Val(N))`
 when grids is a heterogeneous tuple (e.g., mix of Range and Vector).
 """
+# TODO(spacing-cleanup): factory. PR1 migrated Linear/Constant/Hetero ND
+# forward path; remaining callers are Cubic/Quadratic ND interpolant
+# constructors + 5 ND adjoint constructors. See AbstractGridSpacing marker
+# in grid_spacing.jl for full consumer list.
 @generated function _create_spacings_typed(grids::NTuple{N, AbstractVector}) where {N}
     exprs = [:(FastInterpolations._create_spacing(grids[$i])) for i in 1:N]
     return :(($(exprs...),))
@@ -1250,6 +1263,10 @@ end
 Pool-aware spacing for Range grids. Delegates to `_create_spacing` since
 ScalarSpacing is already zero-allocation (two scalar values).
 """
+# TODO(spacing-cleanup): pool-aware factory. Remaining callers post-PR1 are
+# Cubic ND oneshot (`_prepare_periodic_nd_pooled` path) and Hetero PreCompute
+# oneshot. Adjoint batch paths also use these. See AbstractGridSpacing
+# marker in grid_spacing.jl.
 @inline _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractRange{T}) where {T} = _create_spacing(x)
 
 """

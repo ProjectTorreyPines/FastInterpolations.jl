@@ -231,3 +231,80 @@ end
     allocs = @allocations itp(q)
     @test allocs <= ND_ALLOC_THRESHOLD
 end
+
+@testitem "ConstantRef — value and derivatives" setup = [AllocConstants] begin
+    # ConstantRef is a simple callable for constant reference values
+    ref = ConstantRef(2.5)
+    
+    # Value query returns the constant
+    @test ref((1.0, 2.0, 3.0)) == 2.5
+    @test ref((0.0, 0.0, 0.0)) == 2.5
+    
+    # Derivative queries return zero
+    @test ref((1.0, 2.0, 3.0); deriv = (DerivOp{1}(), DerivOp{0}(), DerivOp{0}())) == 0.0
+    @test ref((1.0, 2.0, 3.0); deriv = (DerivOp{0}(), DerivOp{1}(), DerivOp{0}())) == 0.0
+    @test ref((1.0, 2.0, 3.0); deriv = (DerivOp{0}(), DerivOp{0}(), DerivOp{2}())) == 0.0
+    @test ref((1.0, 2.0, 3.0); deriv = (DerivOp{1}(), DerivOp{1}(), DerivOp{0}())) == 0.0
+    
+    # Type preservation
+    ref_int = ConstantRef(5)
+    @test ref_int((1.0, 2.0, 3.0)) == 5
+    @test ref_int((1.0, 2.0, 3.0); deriv = (DerivOp{1}(), DerivOp{0}(), DerivOp{0}())) == 0
+end
+
+@testitem "PHS with log-transform (ConstantRef)" setup = [AllocConstants] begin
+    # Build a 2D PHS with log-transform: f = ln(ρ / ρ₀) where ρ₀ = 1.0
+    # This tests that stored data is log(ρ) and evaluation returns exp(f)
+    x = range(0.0, π, 20)
+    y = range(0.0, π, 20)
+    rho = [0.5 + sin(xi) * cos(yj) for xi in x, yj in y]  # positive data
+    
+    ref = ConstantRef(1.0)
+    
+    itp = phs_interp((x, y), rho; 
+        stencil_size = 5, degree = 3, 
+        reference_interp = ref)
+    
+    @test itp isa PHSInterpolantND
+    # transform should be active
+    @test itp.transform !== nothing
+    
+    # At grid nodes, should match original (interpolation property)
+    for i in 1:5:20, j in 1:5:20
+        @test itp((x[i], y[j])) ≈ rho[i, j] atol = 1e-6
+    end
+    
+    # Interior point should be positive (exponential of real value)
+    val = itp((1.5, 1.5))
+    @test val > 0.0
+end
+
+@testitem "PHS log-transform — gradient vs. finite difference" setup = [AllocConstants] begin
+    # Verify that analytical gradients match finite differences
+    # in the log-transformed PHS
+    x = range(0.0, π, 25)
+    y = range(0.0, π, 25)
+    rho = [0.5 + sin(xi) * cos(yj) for xi in x, yj in y]
+    
+    ref = ConstantRef(1.0)
+    itp = phs_interp((x, y), rho; 
+        stencil_size = 6, degree = 3, 
+        reference_interp = ref)
+    
+    h = 1e-4
+    qx, qy = 1.5, 1.5
+    
+    # Finite difference
+    fx    = itp((qx, qy))
+    fxh   = itp((qx + h, qy))
+    fyh   = itp((qx, qy + h))
+    dfdx_fd = (fxh - fx) / h
+    dfdy_fd = (fyh - fx) / h
+    
+    # Analytical via deriv keyword
+    dfdx = itp((qx, qy); deriv = (DerivOp{1}(), DerivOp{0}()))
+    dfdy = itp((qx, qy); deriv = (DerivOp{0}(), DerivOp{1}()))
+    
+    @test dfdx ≈ dfdx_fd atol = 1e-3
+    @test dfdy ≈ dfdy_fd atol = 1e-3
+end

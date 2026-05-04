@@ -23,7 +23,7 @@ A high-performance **N-dimensional** interpolation package for Julia, optimized 
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
 ## Supported Methods
-`FastInterpolations.jl` supports **five interpolation families** — four classical polynomial splines (**Constant**, **Linear**, **Quadratic**, **Cubic**) plus the **Local Cubic Hermite family** (Hermite / PCHIP / Cardinal / Akima), each with a native adjoint operator ($W^\top \bar{y}$) for gradient-based workflows.
+`FastInterpolations.jl` supports **six interpolation families** — four classical polynomial splines (**Constant**, **Linear**, **Quadratic**, **Cubic**), the **Local Cubic Hermite family** (Hermite / PCHIP / Cardinal / Akima), and **Polyharmonic Splines (PHS)**. Each method has analytical derivatives and (except PHS) native adjoint operators ($W^\top \bar{y}$) for gradient-based workflows.
 
 ### Classical splines
 
@@ -45,8 +45,23 @@ One cubic Hermite basis, four choices of slope rule. All C¹-continuous, O(1) pe
 | `cardinal_interp` | `cardinal_adjoint` | Catmull-Rom with `tension`   | Animation, spline curves through control points |
 | `akima_interp`    | `akima_adjoint`    | Akima (5-point stencil)      | Noisy data, outlier-robust |
 
+### Polyharmonic Splines (PHS)
+
+Radial basis function method with local stencil-based interpolation, blending for C² continuity, and optional log-density smoothing transform.
+
+| Interpolation | Adjoint | Continuity | Best For |
+|:-------------|:--------|:-----------|:---------|
+| `phs_interp` | — | C² | High-dimensional scattered/gridded data; smooth-on-log-scale data with custom reference functions |
+
+**Key features:**
+- **N-dimensional** (2D, 3D, ND) on any rectilinear grid
+- **Analytical derivatives** (gradient, hessian, laplacian)
+- **Log-density transform** f(x) = ln(ρ(x)/ρ₀(x)) for accurate derivatives near singular features (e.g., nuclear cusps)
+- **Custom reference functions** — pass any callable for ρ₀(x) with derivative support to enable physics-informed interpolation (see `PromolecularRef` example)
+
 📖 [Interpolation Overview](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/overview/) 
 📖 [Local Cubic Hermite](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/local_hermite/) 
+📖 [Polyharmonic Splines (PHS)](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/phs/)
 📖 [Adjoint Overview](https://projecttorreypines.github.io/FastInterpolations.jl/dev/adjoint/overview/)
 
 ## Quick Start

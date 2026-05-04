@@ -577,7 +577,7 @@ println("PERFORMANCE SUMMARY")
 println("="^80)
 
 # Combined Build and Evaluation Times Table
-println("\n### Timing Summary (with PHS-to-method ratios)")
+println("\n#### Timing Summary (with PHS-to-method ratios)")
 println("| Method | Build (s) | ρ Time (s) | \\|∇ρ\\| Time (s) | \\|∇²ρ\\| Time (s) |")
 println("|--------|-----------|------------|----------------|-----------------|")
 
@@ -660,7 +660,7 @@ phs_lap_stats = Dict(
 )
 
 # Table 2: Density (ρ) Errors with PHS comparison ratios
-println("\n### Charge Density (ρ) — Relative Error Statistics (with method-to-PHS ratios)\n")
+println("\n#### Charge Density (ρ) — Relative Error Statistics (with method-to-PHS ratios)\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
 for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
@@ -682,7 +682,7 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
 end
 
 # Table 3: Gradient Error with PHS comparison ratios
-println("\n### Gradient Magnitude (|∇ρ|) — Relative Error Statistics (with method-to-PHS ratios)\n")
+println("\n#### Gradient Magnitude (|∇ρ|) — Relative Error Statistics (with method-to-PHS ratios)\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
 for method in ["Linear", "Cubic", "Cardinal", "PHS"]
@@ -704,7 +704,7 @@ for method in ["Linear", "Cubic", "Cardinal", "PHS"]
 end
 
 # Table 4: Laplacian Error with PHS comparison ratios
-println("\n### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics (with method-to-PHS ratios)\n")
+println("\n#### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics (with method-to-PHS ratios)\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
 for method in ["Cubic", "Cardinal", "PHS"]

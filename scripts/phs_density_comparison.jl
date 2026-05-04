@@ -594,7 +594,27 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     @printf "| %-18s | %.6f | %10s | %12s | %14s |\n" method build_time rho_str grad_str lap_str
 end
 
-# Table 2: Density (ρ) Errors
+# Compute PHS statistics for comparison
+phs_rho_stats = Dict(
+    :min => minimum(errors_rho["PHS"]),
+    :max => maximum(errors_rho["PHS"]),
+    :mean => sum(errors_rho["PHS"]) / length(errors_rho["PHS"]),
+    :median => median(errors_rho["PHS"])
+)
+phs_grad_stats = Dict(
+    :min => minimum(errors_grad["PHS"]),
+    :max => maximum(errors_grad["PHS"]),
+    :mean => sum(errors_grad["PHS"]) / length(errors_grad["PHS"]),
+    :median => median(errors_grad["PHS"])
+)
+phs_lap_stats = Dict(
+    :min => minimum(errors_lap["PHS"]),
+    :max => maximum(errors_lap["PHS"]),
+    :mean => sum(errors_lap["PHS"]) / length(errors_lap["PHS"]),
+    :median => median(errors_lap["PHS"])
+)
+
+# Table 2: Density (ρ) Errors with PHS comparison ratios
 println("\n### Charge Density (ρ) — Relative Error Statistics\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
@@ -604,10 +624,19 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     max_err = maximum(errs)
     mean_err = sum(errs) / length(errs)
     median_err = median(errs)
-    @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
+    
+    if method == "PHS"
+        @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
+    else
+        min_ratio = min_err / phs_rho_stats[:min]
+        max_ratio = max_err / phs_rho_stats[:max]
+        mean_ratio = mean_err / phs_rho_stats[:mean]
+        median_ratio = median_err / phs_rho_stats[:median]
+        @printf "| %-18s | %.2e (%.0f×) | %.2e (%.0f×) | %.2e (%.0f×) | %.2e (%.0f×) |\n" method min_err min_ratio max_err max_ratio mean_err mean_ratio median_err median_ratio
+    end
 end
 
-# Table 3: Gradient Error
+# Table 3: Gradient Error with PHS comparison ratios
 println("\n### Gradient Magnitude (|∇ρ|) — Relative Error Statistics\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
@@ -617,10 +646,19 @@ for method in ["Linear", "Cubic", "Cardinal", "PHS"]
     max_err = maximum(errs)
     mean_err = sum(errs) / length(errs)
     median_err = median(errs)
-    @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
+    
+    if method == "PHS"
+        @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
+    else
+        min_ratio = min_err / phs_grad_stats[:min]
+        max_ratio = max_err / phs_grad_stats[:max]
+        mean_ratio = mean_err / phs_grad_stats[:mean]
+        median_ratio = median_err / phs_grad_stats[:median]
+        @printf "| %-18s | %.2e (%.0f×) | %.2e (%.0f×) | %.2e (%.0f×) | %.2e (%.0f×) |\n" method min_err min_ratio max_err max_ratio mean_err mean_ratio median_err median_ratio
+    end
 end
 
-# Table 4: Laplacian Error
+# Table 4: Laplacian Error with PHS comparison ratios
 println("\n### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics\n")
 println("| Method | Min Error | Max Error | Mean Error | Median Error |")
 println("|--------|-----------|-----------|------------|--------------|")
@@ -630,45 +668,16 @@ for method in ["Cubic", "Cardinal", "PHS"]
     max_err = maximum(errs)
     mean_err = sum(errs) / length(errs)
     median_err = median(errs)
-    @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
-end
-
-# Table 5: PHS Error Comparison
-println("\n### PHS Error Relative to Other Methods (mean relative error ratio)\n")
-
-# Compute PHS mean errors
-phs_rho_mean = sum(errors_rho["PHS"]) / length(errors_rho["PHS"])
-phs_grad_mean = sum(errors_grad["PHS"]) / length(errors_grad["PHS"])
-phs_lap_mean = sum(errors_lap["PHS"]) / length(errors_lap["PHS"])
-
-# Density comparison
-println("**Charge Density (ρ):**")
-println("| Method | Error ratio to PHS | PHS Improvement Factor |")
-println("|--------|--------------|-------------------|")
-for method in ["Nearest", "Linear", "Cubic", "Cardinal"]
-    method_mean = sum(errors_rho[method]) / length(errors_rho[method])
-    ratio = method_mean / phs_rho_mean
-    @printf "| %-18s | %.2f× | %.1f%% better |\n" method ratio (1.0 - 1.0/ratio) * 100
-end
-
-# Gradient comparison
-println("\n**Gradient Magnitude (|∇ρ|):**")
-println("| Method | Error ratio to PHS | PHS Improvement Factor |")
-println("|--------|--------------|-------------------|")
-for method in ["Linear", "Cubic", "Cardinal"]
-    method_mean = sum(errors_grad[method]) / length(errors_grad[method])
-    ratio = method_mean / phs_grad_mean
-    @printf "| %-18s | %.2f× | %.1f%% better |\n" method ratio (1.0 - 1.0/ratio) * 100
-end
-
-# Laplacian comparison
-println("\n**Laplacian Magnitude (|∇²ρ|):**")
-println("| Method | Error ratio to PHS | PHS Improvement Factor |")
-println("|--------|--------------|-------------------|")
-for method in ["Cubic", "Cardinal"]
-    method_mean = sum(errors_lap[method]) / length(errors_lap[method])
-    ratio = method_mean / phs_lap_mean
-    @printf "| %-18s | %.2f× | %.1f%% better |\n" method ratio (1.0 - 1.0/ratio) * 100
+    
+    if method == "PHS"
+        @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
+    else
+        min_ratio = min_err / phs_lap_stats[:min]
+        max_ratio = max_err / phs_lap_stats[:max]
+        mean_ratio = mean_err / phs_lap_stats[:mean]
+        median_ratio = median_err / phs_lap_stats[:median]
+        @printf "| %-18s | %.2e (%.0f×) | %.2e (%.0f×) | %.2e (%.0f×) | %.2e (%.0f×) |\n" method min_err min_ratio max_err max_ratio mean_err mean_ratio median_err median_ratio
+    end
 end
 
 println("\n" * "="^80 * "\n")

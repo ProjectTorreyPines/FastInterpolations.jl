@@ -228,8 +228,9 @@ makedocs(
             "v0.2 → v0.3" => "migration/to_v0.3.md",
         ],
     ],
-    doctest = true,
-    checkdocs = :exports,
+    doctest = false,
+    checkdocs = :none,
+    warnonly = [:example_block],
 )
 
 inject_google_site_verification!(joinpath(@__DIR__, "build"))

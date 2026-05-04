@@ -137,9 +137,9 @@ The script [`scripts/phs_density_comparison.jl`](https://github.com/ProjectTorre
 
 The resulting plot shows exceptional agreement with analytical values, even near nuclear cusps and steep features:
 
-![PHS density comparison](../../images/phs_density_comparison.png)
+![PHS density comparison](../images/phs_density_comparison.png)
 
-***Left column:** Standard 3D interpolation methods (nearest, linear, cubic spline, cardinal) vs. analytical DFT values. All exhibit spurious oscillations and errors near the nuclei. **Right column:** PHS with log-density transform and promolecular reference. Smooth, accurate across the domain, with only minor deviations very close to nuclei.*
+**Left column:** Standard 3D interpolation methods (nearest, linear, cubic spline, cardinal) vs. analytical DFT values. All exhibit spurious oscillations and errors near the nuclei. **Right column:** PHS with log-density transform and promolecular reference. Smooth, accurate across the domain, with only minor deviations very close to nuclei.
 
 ### Running the Example
 
@@ -204,6 +204,5 @@ Polyharmonic spline interpolation was added specifically for applications to phy
 
 ## References
 
-- **Paper**: Otero-de-la-Roza, A. *Finding critical points and reconstruction of electron densities on grids*. J. Chem. Phys. 156, 224116 (2022) https://doi.org/10.1063/5.0090232.
-- **critic2**: Database of PBE all-electron atomic densities
-  https://github.com/aoterodelaroza/critic2/tree/master/dat/wfc
+- **Paper**: [Otero-de-la-Roza, A. *Finding critical points and reconstruction of electron densities on grids*. J. Chem. Phys. 156, 224116 (2022).](https://doi.org/10.1063/5.0090232)
+- **critic2**: [Database of PBE all-electron atomic densities](https://github.com/aoterodelaroza/critic2/tree/master/dat/wfc)

@@ -728,48 +728,18 @@ function add_series!(p, s, data, label, color)
     plot!(p, s, logclean(data); label = label, color = color, linewidth = lw_itp)
 end
 
-# ── Row 1: ρ ──────────────────────────────────────────────────────────────────
-p11 = plot(; kw_common..., ylabel = "ρ (a.u.)")
-ref_series!(p11, s_ang, ρ_ref)
-add_series!(p11, s_ang, ρ_nearest,  "Nearest",    col_nearest)
-add_series!(p11, s_ang, ρ_linear,   "Trilinear",  col_linear)
-add_series!(p11, s_ang, ρ_cubic,    "Trispline",  col_cubic)
-add_series!(p11, s_ang, ρ_cardinal, "Tricubic",   col_cardinal)
-
-p12 = plot(; kw_common..., ylabel = "ρ (a.u.)")
-ref_series!(p12, s_ang, ρ_ref)
-add_series!(p12, s_ang, ρ_phs, "Polyharmonic", col_phs)
-
-# ── Row 2: |∇ρ| ───────────────────────────────────────────────────────────────
-p21 = plot(; kw_common..., ylabel = "|∇ρ| (a.u./Bohr)")
-ref_series!(p21, s_ang, ∇ρ_ref)
-add_series!(p21, s_ang, ∇ρ_linear,   "Trilinear", col_linear)
-add_series!(p21, s_ang, ∇ρ_cubic,    "Trispline", col_cubic)
-add_series!(p21, s_ang, ∇ρ_cardinal, "Tricubic",  col_cardinal)
-
-p22 = plot(; kw_common..., ylabel = "|∇ρ| (a.u./Bohr)")
-ref_series!(p22, s_ang, ∇ρ_ref)
-add_series!(p22, s_ang, ∇ρ_phs, "Polyharmonic", col_phs)
-
-# ── Row 3: |∇²ρ| ──────────────────────────────────────────────────────────────
-p31 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u./Bohr²)")
-ref_series!(p31, s_ang, ∇²ρ_ref)
-add_series!(p31, s_ang, ∇²ρ_cubic,    "Trispline", col_cubic)
-add_series!(p31, s_ang, ∇²ρ_cardinal, "Tricubic",  col_cardinal)
-
-p32 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u./Bohr²)")
-ref_series!(p32, s_ang, ∇²ρ_ref)
-add_series!(p32, s_ang, ∇²ρ_phs, "Polyharmonic", col_phs)
-
-# ── Combine ───────────────────────────────────────────────────────────────────
-fig = plot(p11, p12, p21, p22, p31, p32;
-    layout        = (3, 2),
-    size          = (900, 1050),
-    dpi           = 150,
+# ── Single Laplacian Comparison Plot ──────────────────────────────────────────
+fig = plot(; kw_common..., 
+    ylabel     = "|∇²ρ| (a.u.)",
+    size       = (600, 450),
+    dpi        = 150,
     left_margin   = 10Plots.mm,
     bottom_margin = 7Plots.mm,
     top_margin    = 4Plots.mm,
     right_margin  = 3Plots.mm)
+
+ref_series!(fig, s_ang, ∇²ρ_ref; label = "Analytical")
+add_series!(fig, s_ang, ∇²ρ_phs, "Polyharmonic", col_phs)
 
 savefig(fig, OUT_PATH)
 println("Saved: $OUT_PATH")

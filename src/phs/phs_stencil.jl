@@ -42,9 +42,9 @@ function _phs_stencil_offsets(N::Int, stencil_size::Int, hs::NTuple)
     ranges = ntuple(_ -> -R:R, N)
     candidates = vec(collect(Iterators.product(ranges...)))  # Vector{NTuple{N,Int}}
 
-    # Sort by scaled Euclidean distance from origin (stable with tuple as secondary key for deterministic ordering)
+    # Sort by scaled Euclidean distance from origin
     target = stencil_size^N
-    sort!(candidates; alg=MergeSort, by = off -> (sum(d -> (off[d] * hs[d])^2, 1:N), off))
+    sort!(candidates; by = off -> sum(d -> (off[d] * hs[d])^2, 1:N))
 
     # Keep closest target; include the origin (offset == 0), which is always first
     return candidates[1:min(target, length(candidates))]
@@ -240,39 +240,15 @@ function _phs_build_boundary_shift_cache(
         clip = NTuple{N, Int}(clip_combo)
         all(iszero, clip) && continue   # canonical stored separately
 
-        # Clamp canonical offsets to stay within grid bounds for this clip pattern.
-        # This matches the Fortran/critic2 approach: keep same Φ⁻¹ structure but clamp offsets.
-        shifted_offsets_raw = [ntuple(d -> clamp(canonical[d] + clip[d], min_off[d], max_off[d]), Val(N))
-                              for canonical in canonical_offsets]
-        # Deduplicate (clamping can produce duplicates near corners)
-        seen = Set{NTuple{N, Int}}()
-        unique_shifted = NTuple{N, Int}[]
-        for off in shifted_offsets_raw
-            if !(off in seen)
-                push!(seen, off)
-                push!(unique_shifted, off)
-            end
-        end
-        
-        # If duplicates exist, fill remaining slots with closest candidates from clamped range
-        n_missing = ns - length(unique_shifted)
-        if n_missing > 0
-            lo_off = ntuple(d -> clip[d] > 0 ? min_off[d] + clip[d] : min_off[d], N)
-            hi_off = ntuple(d -> clip[d] < 0 ? max_off[d] + clip[d] : max_off[d], N)
-            ranges_per_dim = ntuple(d -> lo_off[d]:hi_off[d], N)
-            candidates = vec(collect(Iterators.product(ranges_per_dim...)))
-            sort!(candidates; alg=MergeSort, by = off -> (sum(d -> (Tg(off[d]) * hs[d])^2, 1:N), off))
-            for cand in candidates
-                if length(unique_shifted) >= ns
-                    break
-                end
-                if !(cand in seen)
-                    push!(seen, cand)
-                    push!(unique_shifted, cand)
-                end
-            end
-        end
-        valid_offsets = unique_shifted
+        # Valid offset range for this clip pattern.
+        # clip[d] > 0 means left boundary: abs offsets must be ≥ -R+clip[d], i.e. lo = -R+clip[d] ... R
+        # clip[d] < 0 means right boundary: abs offsets must be ≤ R+clip[d], i.e. lo = -R ... R+clip[d]
+        lo_off = ntuple(d -> clip[d] > 0 ? min_off[d] + clip[d] : min_off[d], N)
+        hi_off = ntuple(d -> clip[d] < 0 ? max_off[d] + clip[d] : max_off[d], N)
+        ranges_per_dim = ntuple(d -> lo_off[d]:hi_off[d], N)
+        candidates = vec(collect(Iterators.product(ranges_per_dim...)))
+        sort!(candidates; by = off -> sum(d -> (Tg(off[d]) * hs[d])^2, 1:N))
+        valid_offsets = candidates[1:min(target, length(candidates))]
 
         cache[clip] = (valid_offsets, _phs_build_phi_inv(valid_offsets, hs, degree))
     end

@@ -53,5 +53,3 @@ lcov.info
 # Generated example plots
 /examples/*.png
 /scripts/*.png
-
-*.pdf

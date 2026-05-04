@@ -73,6 +73,36 @@
     end
 end
 
+@testitem "_ExclusivePeriodicData bounds contract (@boundscheck)" begin
+    using FastInterpolations: _ExclusivePeriodicData
+
+    # Mirrors `_ExclusivePeriodicAxis` bounds contract — only `i ∈ 1:n+1`
+    # is valid, with i==n+1 cyclically returning `inner[1]`.
+    n = 4
+    y = [10.0, 20.0, 30.0, 40.0]
+    c = _ExclusivePeriodicData(y)
+
+    @testset "valid range 1:n+1" begin
+        for i in 1:n
+            @test c[i] == y[i]
+        end
+        @test c[n + 1] == y[1]   # cyclic seam
+    end
+
+    @testset "out-of-range throws BoundsError" begin
+        @test_throws BoundsError c[n + 2]
+        @test_throws BoundsError c[100]
+        @test_throws BoundsError c[0]
+        @test_throws BoundsError c[-3]
+    end
+
+    @testset "@inbounds elides the check (no error path taken)" begin
+        f(c, i) = @inbounds c[i]
+        @test f(c, 1) == 10.0
+        @test f(c, n + 1) == 10.0   # cyclic
+    end
+end
+
 @testitem "_ExclusivePeriodicData + _ExclusivePeriodicAxis pairing (length compatibility)" begin
     using FastInterpolations: _ExclusivePeriodicData, _ExclusivePeriodicAxis,
         _check_compatible_length

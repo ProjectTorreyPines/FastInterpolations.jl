@@ -263,6 +263,196 @@ end
     end
 end
 
+@testitem "_ExclusivePeriodicAxis period validation (matches y-endpoint check)" begin
+    using FastInterpolations: _ExclusivePeriodicAxis
+
+    # Period validation for Range inner mirrors `_check_periodic_endpoints`:
+    #   AbstractFloat → atol = 8*eps(T), rtol = sqrt(eps(T))
+    #   Integer / Rational → default isapprox (effectively ==)
+    # Float32 with a 0.03% off period was previously accepted under the old
+    # `sqrt(eps(Tg))`-only rtol; the merged contract now also enforces atol so
+    # the seam-cell width error stays ≤ ULP-scale.
+
+    @testset "Float64 — accepts ULP-level rounding" begin
+        x = range(0.0, step = 0.1, length = 10)
+        # Period within sqrt(eps(Float64)) ≈ 1.5e-8: should pass
+        _ExclusivePeriodicAxis(x, 1.0 + 1.0e-10)
+        @test true   # no throw
+    end
+
+    @testset "Float64 — rejects gross mismatch" begin
+        x = range(0.0, step = 0.1, length = 10)
+        @test_throws ArgumentError _ExclusivePeriodicAxis(x, 2.0)
+        @test_throws ArgumentError _ExclusivePeriodicAxis(x, 0.5)
+    end
+
+    @testset "Float32 — atol bound prevents near-zero false-pass" begin
+        x = range(0.0f0, step = 0.1f0, length = 10)
+        # Exact period passes
+        _ExclusivePeriodicAxis(x, 1.0f0)
+        @test true
+        # 1 ULP off should still pass (atol = 8*eps(Float32))
+        _ExclusivePeriodicAxis(x, nextfloat(1.0f0))
+        @test true
+    end
+
+    @testset "Integer grid + Integer period — exact equality required" begin
+        x = 0:1:5   # step=1, length=6, inferred period = 6
+        _ExclusivePeriodicAxis(x, 6)
+        @test true
+        # Off-by-one should fail (default isapprox is essentially ==)
+        @test_throws ArgumentError _ExclusivePeriodicAxis(x, 7)
+    end
+
+    @testset "Vector inner — no validation (period unverifiable)" begin
+        x = [0.0, 0.1, 0.3, 0.6]   # non-uniform — no canonical period
+        _ExclusivePeriodicAxis(x, 1.0)   # any period accepted
+        @test true
+        _ExclusivePeriodicAxis(x, 999.0)
+        @test true
+    end
+end
+
+@testitem "_ExclusivePeriodicAxis bounds contract (@boundscheck)" begin
+    using FastInterpolations: _ExclusivePeriodicAxis
+
+    # Valid indices are 1:n+1 (n = length(inner)), with i==n+1 returning the
+    # virtual seam coord. Anything outside that must throw BoundsError so
+    # off-by-one bugs and negative-index `@inbounds` paths cannot read
+    # arbitrary memory.
+    n = 5
+    x = collect(0.0:0.2:0.8)   # length 5, period 1.0
+    g = _ExclusivePeriodicAxis(x, 1.0)
+
+    @testset "valid range 1:n+1" begin
+        for i in 1:(n + 1)
+            @test g[i] == (i <= n ? x[i] : g._x_max)
+        end
+    end
+
+    @testset "out-of-range throws BoundsError" begin
+        @test_throws BoundsError g[n + 2]
+        @test_throws BoundsError g[100]
+        @test_throws BoundsError g[0]
+        @test_throws BoundsError g[-3]
+    end
+
+    @testset "@inbounds elides the check (no error path taken)" begin
+        # The function must remain `@propagate_inbounds`, so callers wrapping
+        # in `@inbounds` see zero overhead and no error even on the seam slot.
+        f(g, i) = @inbounds g[i]
+        @test f(g, 1) == 0.0
+        @test f(g, n + 1) == g._x_max
+    end
+end
+
+@testitem "_ExclusivePeriodicAxis search_interval seam fold for GridIdx" begin
+    using FastInterpolations: _ExclusivePeriodicAxis, GridIdx, AutoSearch,
+        _resolve_search, search_interval
+
+    # search_interval(::Searcher, ::_ExclusivePeriodicAxis, ::GridIdx) must
+    # apply the same seam-fold contract as the Real-query path: when the
+    # resolved cell is at the seam (`idx == n_inner`), `idx_R` must be `1`
+    # (post-fold), NOT the virtual `n+1`. Otherwise downstream eval kernels
+    # using `_raw(y)[idx_R]` would read past the raw inner's length-n bounds.
+    n = 5   # length of the raw inner
+    x = collect(0.0:0.2:0.8)   # length 5
+    g = _ExclusivePeriodicAxis(x, 1.0)
+    @test length(g) == n + 1   # virtual length includes seam
+    searcher = _resolve_search(g, 0.5, AutoSearch(), nothing)
+
+    @testset "interior GridIdx — idx_R = idx + 1" begin
+        for k in 1:(n - 1)
+            idx, idx_R, _, _ = search_interval(searcher, g, GridIdx(k))
+            @test idx == k
+            @test idx_R == k + 1
+        end
+    end
+
+    @testset "seam cell GridIdx(n) — idx_R folds to 1" begin
+        idx, idx_R, xL, xR = search_interval(searcher, g, GridIdx(n))
+        @test idx == n
+        @test idx_R == 1     # post-fold (would be n+1 = 6 = OOB on _raw(y))
+        @test xL == x[n]
+        @test xR == g._x_max
+    end
+
+    @testset "virtual seam GridIdx(n+1) — clamped, still folds" begin
+        # `_search_grididx` clamps `idx = min(xq.idx, n_virtual - 1) = n`,
+        # so GridIdx(n+1) collapses to the seam cell rather than producing
+        # idx_R = n+2.
+        idx, idx_R, _, _ = search_interval(searcher, g, GridIdx(n + 1))
+        @test idx == n
+        @test idx_R == 1
+    end
+end
+
+@testitem "GridIdx + periodic-exclusive end-to-end (no OOB on _raw(y))" begin
+    using FastInterpolations
+
+    # End-to-end smoke for the GridIdx seam-fold fix: build a 2D periodic-
+    # exclusive cubic interpolant, query with GridIdx ranging over both
+    # interior and seam cells of the periodic axis. With the fix, every
+    # query returns a finite value; without it, GridIdx(n) / GridIdx(n+1)
+    # would access `_raw(y)[n+1]` which is past the raw inner length.
+    n = 5
+    x = collect(0.0:0.2:0.8)
+    data2d = [sin(2π * xi) * cos(2π * yj) for xi in x, yj in x]
+    bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+    itp = cubic_interp((x, x), data2d; bc = (bc, bc))
+
+    @testset "interior + seam GridIdx queries are all finite" begin
+        for k in 1:(n + 1)
+            v = itp((GridIdx(k), 0.5))
+            @test isfinite(v)
+        end
+    end
+
+    @testset "GridIdx(n+1) on the periodic axis matches the cyclic GridIdx(1)" begin
+        # The virtual seam endpoint is `inner[1] + period`, which under the
+        # axis-as-truth contract equals the cyclic image of `inner[1]`.
+        # Evaluating at the seam endpoint must equal evaluating at index 1
+        # along the same other-axis coordinate.
+        v_seam_end = itp((GridIdx(n + 1), 0.3))
+        v_first = itp((GridIdx(1), 0.3))
+        @test v_seam_end ≈ v_first  rtol = 1.0e-12
+    end
+end
+
+@testitem "_ExclusivePeriodicAxis view (seam-containing range)" begin
+    using FastInterpolations: _ExclusivePeriodicAxis
+
+    n = 5
+    x = collect(0.0:0.2:0.8)
+    g = _ExclusivePeriodicAxis(x, 1.0)
+
+    @testset "full range returns wrapper itself (identity)" begin
+        v = @view g[1:end]
+        @test v === g
+    end
+
+    @testset "interior partial range delegates to inner" begin
+        v = @view g[2:(n - 1)]
+        @test parent(v) === g.inner
+        @test collect(v) == x[2:(n - 1)]
+    end
+
+    @testset "seam-containing partial range builds SubArray over wrapper" begin
+        # `2:end` includes the virtual seam slot — must NOT delegate to
+        # `view(g.inner, 2:end)` (which would BoundsError since g.inner has
+        # length n while the range ends at n+1).
+        v = @view g[2:end]
+        @test length(v) == n   # = (n+1) - 2 + 1
+        @test v[end] == g._x_max
+        @test v[1] == x[2]
+    end
+
+    @testset "out-of-range view throws BoundsError" begin
+        @test_throws BoundsError view(g, 0:5)
+        @test_throws BoundsError view(g, 1:(n + 5))
+    end
+end
+
 @testitem "_periodic_fold_axis! — adjoint seam fold-back" begin
     using FastInterpolations: _periodic_fold_axis!
 

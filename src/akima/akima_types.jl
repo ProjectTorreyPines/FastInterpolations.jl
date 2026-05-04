@@ -6,7 +6,7 @@
 # Minimum 3 grid points (2 secants needed).
 
 """
-    AkimaInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}
+    AkimaInterpolant1D{Tg, Tv, X, Y, DY, E, P, CS}
 
 Callable interpolant for Akima interpolation.
 Returned by `akima_interp(x, y)` (2-argument form).

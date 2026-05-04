@@ -7,7 +7,7 @@
 # but separate type for dispatch (show, plot, future integrate/adjoint).
 
 """
-    CardinalInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}
+    CardinalInterpolant1D{Tg, Tv, X, Y, DY, E, P, CS}
 
 Callable interpolant for cardinal spline interpolation.
 Returned by `cardinal_interp(x, y)` (2-argument form).

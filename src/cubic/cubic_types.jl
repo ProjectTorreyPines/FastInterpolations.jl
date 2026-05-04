@@ -57,7 +57,7 @@ end
 # AbstractExtrap types are defined in eval_ops.jl (shared across all interpolants)
 
 """
-    CubicInterpolant{Tg,Tv,C,E,P,BC}
+    CubicInterpolant{Tg, Tv, C, E, P, BC, Tz}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `cubic_interp(x, y)` (2-argument form).

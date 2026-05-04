@@ -7,7 +7,7 @@
 # at construction, then stored in `dy` for O(1) evaluation.
 
 """
-    PchipInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}
+    PchipInterpolant1D{Tg, Tv, X, Y, DY, E, P, CS}
 
 Callable interpolant for PCHIP (Piecewise Cubic Hermite Interpolating Polynomial).
 Returned by `pchip_interp(x, y)` (2-argument form).

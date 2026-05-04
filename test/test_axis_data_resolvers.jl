@@ -193,9 +193,14 @@ end
     end
 end
 
-@testitem "Resolvers are zero-alloc on hot path (oneshot use)" begin
+@testitem "Resolvers are zero-alloc on hot path (oneshot use)" setup = [AllocConstants] begin
     using FastInterpolations: _resolve_axis, _resolve_data, NoBC, PeriodicBC
 
+    # ALLOC_THRESHOLD comes from `AllocConstants`: 0 on Julia ≥ 1.12, ~240 B on
+    # LTS to absorb infrastructure boxing the LTS compiler can't elide. The
+    # surface-API resolvers are designed for zero heap on Julia ≥ 1.12; the
+    # struct-allocation cases also accept a small `+ ALLOC_THRESHOLD` slack on
+    # LTS for the same reason.
     bc_no = NoBC()
     bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
     x_vec = [0.0, 1.0, 2.0, 3.0]
@@ -208,25 +213,25 @@ end
     _resolve_data(y, bc_excl)
 
     @testset "Vector + NoBC: zero alloc (passthrough)" begin
-        @test (@allocated _resolve_axis(x_vec, bc_no)) == 0
-        @test (@allocated _resolve_data(y, bc_no)) == 0
+        @test (@allocated _resolve_axis(x_vec, bc_no)) <= ALLOC_THRESHOLD
+        @test (@allocated _resolve_data(y, bc_no)) <= ALLOC_THRESHOLD
     end
 
     @testset "Vector + :exclusive: ≤ small alloc (one struct)" begin
         # `_ExclusivePeriodicAxis(x, period)` allocates the struct itself
-        # (~24 bytes on 64-bit Julia) but does NOT copy `x`. Ditto for Data.
+        # (~24-64 bytes on 64-bit Julia) but does NOT copy `x`. Ditto for Data.
         # Acceptable for surface-API one-shot wrappers.
         a_axis = @allocated _resolve_axis(x_vec, bc_excl)
         a_data = @allocated _resolve_data(y, bc_excl)
-        @test a_axis <= 64
-        @test a_data <= 64
+        @test a_axis <= 64 + ALLOC_THRESHOLD
+        @test a_data <= 64 + ALLOC_THRESHOLD
     end
 
     @testset "Range: stack-allocated _CachedRange (zero heap)" begin
         r = 0.0:1.0:3.0
         _resolve_axis(r, bc_no)       # warmup
         _resolve_axis(r, bc_excl)
-        @test (@allocated _resolve_axis(r, bc_no)) == 0
-        @test (@allocated _resolve_axis(r, bc_excl)) == 0
+        @test (@allocated _resolve_axis(r, bc_no)) <= ALLOC_THRESHOLD
+        @test (@allocated _resolve_axis(r, bc_excl)) <= ALLOC_THRESHOLD
     end
 end

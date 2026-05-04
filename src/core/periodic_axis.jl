@@ -114,13 +114,47 @@ end
 # No-op for Vector inners (period unverifiable) — caller's responsibility.
 @inline _validate_exclusive_period(::AbstractVector, _) = nothing
 # Range inners: cross-validate against `step × length` (= total period for the
-# n-cell exclusive form). Promotes Integer/Rational grids to float for the
-# tolerance arithmetic; duck grids (Dual / Measurement) keep their own eltype.
-@inline function _validate_exclusive_period(inner::AbstractRange, period)
-    Tg_raw = eltype(inner)
-    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
+# n-cell exclusive form). Tolerance pattern mirrors `_check_periodic_endpoints`
+# in `core/periodic.jl` so the period check and the inclusive-y endpoint check
+# share one numerical contract. Per-eltype dispatch:
+#   - AbstractFloat / Complex{<:AbstractFloat} → `atol = 8*eps, rtol = sqrt(eps)`
+#   - Integer / Rational                       → default `isapprox` (effectively `==`)
+#   - Duck types (Dual, Measurement, ...)      → strict equality on the primal
+@inline _validate_exclusive_period(inner::AbstractRange, period) =
+    _validate_exclusive_period_impl(inner, period, eltype(inner))
+
+@inline function _validate_exclusive_period_impl(
+        inner::AbstractRange, period, ::Type{T}
+    ) where {T <: AbstractFloat}
     inferred = step(inner) * length(inner)
-    isapprox(Tg(period), Tg(inferred); rtol = sqrt(eps(Tg))) ||
+    isapprox(T(period), T(inferred); atol = 8 * eps(T), rtol = sqrt(eps(T))) ||
+        _throw_excl_axis_period_mismatch(period, first(inner), inferred)
+    return nothing
+end
+
+@inline function _validate_exclusive_period_impl(
+        inner::AbstractRange, period, ::Type{Complex{T}}
+    ) where {T <: AbstractFloat}
+    inferred = step(inner) * length(inner)
+    isapprox(Complex{T}(period), Complex{T}(inferred); atol = 8 * eps(T), rtol = sqrt(eps(T))) ||
+        _throw_excl_axis_period_mismatch(period, first(inner), inferred)
+    return nothing
+end
+
+@inline function _validate_exclusive_period_impl(
+        inner::AbstractRange, period, ::Type{T}
+    ) where {T <: _PromotableValue}
+    # Integer / Rational grids: exact equality (default isapprox tolerance).
+    inferred = step(inner) * length(inner)
+    isapprox(period, inferred) ||
+        _throw_excl_axis_period_mismatch(period, first(inner), inferred)
+    return nothing
+end
+
+@inline function _validate_exclusive_period_impl(inner::AbstractRange, period, ::Type)
+    # Duck-type fallback (Dual, Measurement, ...): strict equality on primal.
+    inferred = step(inner) * length(inner)
+    _extract_primal(period) == _extract_primal(inferred) ||
         _throw_excl_axis_period_mismatch(period, first(inner), inferred)
     return nothing
 end
@@ -543,12 +577,19 @@ end
 # AbstractVector, Real`). When the grid is `_ExclusivePeriodicAxis`, the
 # wrapper handles the seam — the searcher's BC seam logic is bypassed.
 
-# GridIdx queries — bypass the seam fast-path entirely (user-supplied explicit
-# index semantics, no wrap). Mirrors `search_interval(s, x::AbstractVector, ::GridIdx)`
-# in search.jl. Required to avoid Aqua method-ambiguity warnings.
+# GridIdx queries — explicit index semantics, no query wrapping. Mirrors
+# `search_interval(s, x::AbstractVector, ::GridIdx)` in search.jl, but with
+# the seam-fold contract of `_ExclusivePeriodicAxis`: when the resolved cell
+# is the seam (`idx == n`), `idx_R` folds to `1` so eval kernels can read
+# `_raw(y)[idx_R]` safely (the raw inner has length n; `idx_R = n+1` would be
+# OOB). The seam-fold here is the SAME contract as the Real-query path
+# below — only the search itself bypasses the `xq >= g.inner[n]` fast-path
+# (no wrap of the explicit user index).
 @inline function search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq::GridIdx)
+    n = length(g.inner)
     idx, xL, xR = _search_grididx_dispatch(s.hint, g, xq)
-    return idx, idx + 1, xL, xR
+    idx_R = idx < n ? idx + 1 : 1
+    return idx, idx_R, xL, xR
 end
 
 # Generic BC + wrapper: seam fast-path → policy-aware delegate to inner.

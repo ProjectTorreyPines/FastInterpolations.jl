@@ -9,14 +9,16 @@
 # ========================================
 
 """
-    CubicHermiteInterpolant1D{Tg, Tv, X, Y, DY, S, E, P}
+    CubicHermiteInterpolant1D{Tg, Tv, X, Y, DY, E, P, CS}
 
 Callable interpolant for cubic Hermite interpolation with user-supplied slopes.
 Returned by `hermite_interp(x, y, dy)` (interpolant form).
 
-Stores precomputed grid spacing for O(1) `h`/`inv_h` lookup on uniform grids.
-Evaluation uses `_hermite_kernel_1d` (derivative-based Hermite basis functions),
-NOT `_cubic_kernel` (moment-based spline formulation).
+The grid `x` is wrapped via `_store_grid_cached` (Range → `_CachedRange`,
+Vector → `_CachedVector`) so `_get_h(x, idx)` / `_get_inv_h(x, idx)` are
+O(1) cached lookups — no separate `spacing` field is stored. Evaluation uses
+`_hermite_kernel_1d` (derivative-based Hermite basis functions), NOT
+`_cubic_kernel` (moment-based spline formulation).
 
 # Properties
 - **C\$^1\$ continuous** (continuous first derivative, discontinuous second derivative at knots)

@@ -522,10 +522,23 @@ build flow without branching on `_is_periodic_bc`:
   are extended by one virtual endpoint via `_extend_exclusive` (heap copy
   consistent with existing non-periodic persistent-path copy semantics).
 
-Intended consumers: Linear, Constant, and (future Phase 2/3) PCHIP/Cardinal/
-Akima/Quadratic persistent interpolant constructors. Cubic stays on its
-dedicated `_build_interpolant_periodic` path because its solver branches on
-periodicity, not just on the grid representation.
+!!! note "Legacy retention — wrapper migration in progress"
+    The 1D forward path for **Linear, Constant, Cubic** has been migrated to
+    the zero-copy `_ExclusivePeriodicAxis` / `_ExclusivePeriodicData` wrappers
+    (see `src/core/periodic_axis.jl`, `src/core/periodic_data.jl`). This
+    function is retained because the following call sites still depend on the
+    `(n+1)`-extended `Vector` shape:
+
+    - `pchip_interp_precompute` / `cardinal_interp_precompute` /
+      `akima_interp_precompute` (1D Hermite-family PreCompute oneshot)
+    - `*_interp_precompute` persistent-builder paths for the same families
+    - The entire ND `:exclusive` path via `_prepare_periodic_nd`
+      (LinearInterpolantND / ConstantInterpolantND / CubicInterpolantND /
+      HeteroInterpolantND still carry `spacings::S` and have not been
+      migrated to wrappers)
+
+    Cleanup tracked alongside the ND-struct migration follow-up; once those
+    consumers move to the wrapper protocol, this helper can be removed.
 """
 @inline function _periodic_extend_1d(
         x::AbstractVector,

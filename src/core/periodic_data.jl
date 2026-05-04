@@ -9,13 +9,12 @@
 # only role is to cyclically expose `inner[1]` at the virtual slot so that
 # `y[idx_R]` and `last(y)` work without explicit `_resolve_idx` calls.
 #
-# Generic over array dimension N so that:
-#   - 1D `_ExclusivePeriodicData{Tv, 1, Vector{Tv}}` wraps the y vector for
-#     scalar `LinearInterpolant` / `ConstantInterpolant`.
-#   - Future ND `_ExclusivePeriodicData{Tv, N, Array{Tv,N}}` will wrap the
-#     data array for ND interpolants. ND case needs to know *which* dims are
-#     cyclic (since not every axis is necessarily periodic) — the design
-#     stub for that lives below; for now only the 1D path is enabled.
+# Currently 1D-only. The struct is parameterized on N for future ND adoption,
+# but every method below is `N=1`-specialized and the convenience constructor
+# only accepts `AbstractVector`. ND adoption (e.g., wrapping `Array{T,N}` for
+# ND `:exclusive` axes) requires threading per-axis cyclicity (not every axis
+# is necessarily periodic) and is deferred to the ND-struct migration PR.
+# Until then the `N` type parameter is reserved, not active.
 #
 # Include order: ... → periodic_axis.jl → periodic_data.jl → ...
 
@@ -26,9 +25,14 @@ Cyclic-indexing wrapper for the y/data side of a `:exclusive` PeriodicBC
 interpolant. Companion to `_ExclusivePeriodicAxis` on the x/axis side.
 
 `inner` is the user's raw value array (size matches the user's original
-grid size, NO copy). Currently only N=1 is wired through interpolant
-constructors; the type signature is generic over N so the same wrapper
-naturally extends to ND data arrays in a future commit.
+grid size, NO copy).
+
+!!! note "Currently 1D-only"
+    Only `N=1` is implemented (every method is `N=1`-specialized and the
+    convenience constructor only accepts `AbstractVector`). The `N` type
+    parameter is reserved for future ND adoption — at that point the wrapper
+    must also carry per-axis cyclicity (not every ND axis is necessarily
+    periodic). Tracked under the ND-struct migration follow-up.
 
 # 1D contract (N=1)
 - `length(c) = length(c.inner) + 1` (virtual extension)

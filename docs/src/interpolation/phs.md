@@ -157,7 +157,7 @@ This generates `phs_density_comparison.png` and demonstrates:
 - Evaluating density, gradient, Laplacian analytically
 - Batch evaluation for performance
 
-### Performance
+### Performance Comparison
 
 For the phenol dimer example (75×113×70 grid, 1000 query points):
 
@@ -165,11 +165,11 @@ For the phenol dimer example (75×113×70 grid, 1000 query points):
 
 | Method | Build (s) | ρ Time (s) | \|∇ρ\| Time (s) | \|∇²ρ\| Time (s) |
 |--------|-----------|------------|--------------|----------------|
-| Nearest            | 0.176278 |   0.483935 |            — |              — |
-| Linear             | 0.008676 |   0.259310 |     0.592057 |              — |
-| Cubic              | 0.569003 |   0.334952 |     0.825838 |       0.867262 |
-| Cardinal           | 0.040574 |   1.043034 |     2.426582 |       2.469174 |
-| PHS                | 2.516633 |   1.557916 |    12.222952 |      28.424406 |
+| Nearest            | 0.161815 |   0.383345 |            — |              — |
+| Linear             | 0.008480 |   0.254733 |     0.566794 |              — |
+| Cubic              | 0.648779 |   0.346084 |     0.727612 |       0.860846 |
+| Cardinal           | 0.037853 |   1.030071 |     2.490707 |       2.534368 |
+| PHS                | 2.409247 |   1.607145 |    12.041282 |      28.271121 |
 
 #### Charge Density (ρ) — Relative Error Statistics
 
@@ -181,6 +181,13 @@ For the phenol dimer example (75×113×70 grid, 1000 query points):
 | Cardinal           | 2.29e-05 | 9.21e-01 | 9.65e-02 | 3.47e-03 |
 | PHS                | 1.48e-08 | 1.00e+00 | 4.06e-03 | 1.61e-04 |
 
+| Method | Error ratio to PHS | PHS Improvement Factor |
+|--------|--------------|-------------------|
+| Nearest            | 45.29× | 97.8% better |
+| Linear             | 21.67× | 95.4% better |
+| Cubic              | 28.94× | 96.5% better |
+| Cardinal           | 23.77× | 95.8% better |
+
 #### Gradient Magnitude (|∇ρ|) — Relative Error Statistics
 
 | Method | Min Error | Max Error | Mean Error | Median Error |
@@ -190,6 +197,12 @@ For the phenol dimer example (75×113×70 grid, 1000 query points):
 | Cardinal           | 1.83e-04 | 2.52e+00 | 2.48e-01 | 3.23e-02 |
 | PHS                | 7.68e-07 | 1.00e+00 | 1.17e-02 | 1.11e-03 |
 
+| Method | Error ratio to PHS | PHS Improvement Factor |
+|--------|--------------|-------------------|
+| Linear             | 35.28× | 97.2% better |
+| Cubic              | 30.40× | 96.7% better |
+| Cardinal           | 21.16× | 95.3% better |
+
 #### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics
 
 | Method | Min Error | Max Error | Mean Error | Median Error |
@@ -197,6 +210,13 @@ For the phenol dimer example (75×113×70 grid, 1000 query points):
 | Cubic              | 8.30e-06 | 1.13e+03 | 6.41e+00 | 1.69e-01 |
 | Cardinal           | 7.58e-04 | 1.96e+02 | 2.41e+00 | 5.03e-01 |
 | PHS                | 1.28e-05 | 3.09e+00 | 4.73e-02 | 1.37e-02 |
+
+| Method | Error ratio to PHS | PHS Improvement Factor |
+|--------|--------------|-------------------|
+| Cubic              | 135.46× | 99.3% better |
+| Cardinal           | 50.98× | 98.0% better |
+
+Polyharmonic spline interpolation was added specifically for applications to physical systems with singularities and steep features, where standard methods fail. The results show that PHS with log-density transform and a promolecular reference achieves **orders of magnitude better accuracy** than nearest, linear, cubic spline, and cardinal interpolation for both the density and its derivatives, even near nuclear cusps, at the expense of higher computational cost.
 
 ## References
 

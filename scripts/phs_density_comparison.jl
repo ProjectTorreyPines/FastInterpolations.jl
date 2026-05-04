@@ -643,7 +643,7 @@ phs_lap_mean = sum(errors_lap["PHS"]) / length(errors_lap["PHS"])
 
 # Density comparison
 println("**Charge Density (ρ):**")
-println("| Method | Ratio to PHS | Improvement Factor |")
+println("| Method | Error ratio to PHS | PHS Improvement Factor |")
 println("|--------|--------------|-------------------|")
 for method in ["Nearest", "Linear", "Cubic", "Cardinal"]
     method_mean = sum(errors_rho[method]) / length(errors_rho[method])
@@ -653,7 +653,7 @@ end
 
 # Gradient comparison
 println("\n**Gradient Magnitude (|∇ρ|):**")
-println("| Method | Ratio to PHS | Improvement Factor |")
+println("| Method | Error ratio to PHS | PHS Improvement Factor |")
 println("|--------|--------------|-------------------|")
 for method in ["Linear", "Cubic", "Cardinal"]
     method_mean = sum(errors_grad[method]) / length(errors_grad[method])
@@ -663,7 +663,7 @@ end
 
 # Laplacian comparison
 println("\n**Laplacian Magnitude (|∇²ρ|):**")
-println("| Method | Ratio to PHS | Improvement Factor |")
+println("| Method | Error ratio to PHS | PHS Improvement Factor |")
 println("|--------|--------------|-------------------|")
 for method in ["Cubic", "Cardinal"]
     method_mean = sum(errors_lap[method]) / length(errors_lap[method])

@@ -78,8 +78,8 @@ Fill `rhs[1:N_stencil]` with the data values at the stencil nodes
         grid_sizes::NTuple{N, Int},
     ) where {Tv, N}
     @inbounds for (i, off) in enumerate(offsets)
-        idx = ntuple(d -> clamp(base_idx[d] + off[d], 1, grid_sizes[d]), N)
-        rhs[i] = data[idx...]
+        cidx = ntuple(d -> clamp(base_idx[d] + off[d], 1, grid_sizes[d]), N)
+        rhs[i] = data[CartesianIndex(cidx)]
     end
     return rhs
 end

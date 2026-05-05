@@ -382,3 +382,15 @@ end
     @test xL ≈ 2.0
     @test yL ≈ 0.5
 end
+
+@testitem "N=0 Aqua disambiguators — coverage" begin
+    using FastInterpolations: _search_all_intervals, _compute_all_local_params
+
+    # These N=0 methods exist solely to satisfy `Aqua.test_ambiguities` —
+    # ND interpolants require N >= 1 at runtime so they are never reached
+    # via normal call sites. Cover them by direct invocation so the
+    # coverage report doesn't flag them as missing.
+    @test _search_all_intervals((), (), (), ()) === ((), (), ())
+    @test _search_all_intervals((), (), (), (), ()) === ((), (), ())
+    @test _compute_all_local_params((), (), (), ()) === ((), (), ())
+end

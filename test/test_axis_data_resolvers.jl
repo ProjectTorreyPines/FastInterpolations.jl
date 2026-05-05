@@ -423,3 +423,59 @@ end
     g.inner.inner[1] = 999.0
     @test g2.inner.inner[1] != 999.0                     # source-mutation isolated
 end
+
+@testitem "_cache_axis 3-arg Tg form: pre-wrapped + :exclusive coverage" begin
+    using FastInterpolations:
+        _cache_axis,
+        _CachedRange, _CachedVector, _ExclusivePeriodicAxis,
+        PeriodicBC, _to_float
+
+    # The 3-arg `_cache_axis(x, bc, Tg)` overloads for pre-wrapped axes +
+    # `:exclusive` BC are the missing rung in the canonical path: outer
+    # factories produce raw → wrapped (one-shot wrap by the 3-arg `Vector`
+    # / `Range` overload), so pre-wrapped + `:exclusive` only fires when
+    # callers thread an already-wrapped axis through `_cache_axis(_, bc, Tg)`
+    # explicitly. Exercise those rungs here so the 3-arg dispatch table is
+    # uniformly covered.
+    bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
+
+    @testset "_CachedRange + :exclusive (3-arg)" begin
+        cr = _to_float(0.0:1.0:3.0, Float64)
+        ax = _cache_axis(cr, bc_excl, Float64)
+        @test ax isa _ExclusivePeriodicAxis
+        @test ax.inner === cr
+        @test ax.period == 4.0
+    end
+
+    @testset "_CachedVector + :exclusive (3-arg)" begin
+        cv = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        ax = _cache_axis(cv, bc_excl, Float64)
+        @test ax isa _ExclusivePeriodicAxis
+        @test ax.inner === cv
+        @test ax.period == 4.0
+    end
+
+    @testset "_ExclusivePeriodicAxis + :exclusive / NoBC (3-arg, idempotent)" begin
+        cv = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        g = _ExclusivePeriodicAxis(cv, 4.0)
+        @test _cache_axis(g, bc_excl, Float64) === g
+        @test _cache_axis(g, FastInterpolations.NoBC(), Float64) === g
+    end
+end
+
+@testitem "_convert_copy(::_ExclusivePeriodicAxis, ::Type{T2}) cross-eltype rebuild" begin
+    using FastInterpolations: _CachedVector, _ExclusivePeriodicAxis, _convert_copy
+
+    # Same-eltype path is exercised by `Base.copy` testitem above; this
+    # exercises the cross-eltype rebuild branch (Float32 → Float64 here).
+    cv32 = _CachedVector(Float32[0.0, 1.0, 2.0, 3.0])
+    g32 = _ExclusivePeriodicAxis(cv32, 4.0f0)
+
+    g64 = _convert_copy(g32, Float64)
+    @test g64 isa _ExclusivePeriodicAxis
+    @test eltype(g64) == Float64
+    @test g64.inner isa _CachedVector{Float64}
+    @test g64.inner !== g32.inner               # fresh wrapper
+    @test g64.period == 4.0f0                   # period kept (its own type)
+    @test collect(g64.inner.inner) == [0.0, 1.0, 2.0, 3.0]
+end

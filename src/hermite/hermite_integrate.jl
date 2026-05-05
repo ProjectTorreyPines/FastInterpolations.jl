@@ -46,7 +46,7 @@ end
         )
     end
 
-    in_domain = @inline (a, b) -> _integrate_1d_cellwise(x, x, a, b, searcher, partial, full, Tout)
+    in_domain = @inline (a, b) -> _integrate_1d_cellwise(x, a, b, searcher, partial, full, Tout)
 
     return _dispatch_extrap_integrate_1d(itp.extrap, in_domain, x, y[1], y[end], x0, x1, Tout)
 end

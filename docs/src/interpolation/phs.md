@@ -165,11 +165,11 @@ The build time was for a 75×113×70 grid, and evaluation times were for 1000 qu
 
 | Method | Build (s) | ρ Time (s) | \|∇ρ\| Time (s) | \|∇²ρ\| Time (s) |
 |--------|-----------|------------|----------------|-----------------|
-| Nearest            |   0.161 (14.9×) |     0.382 (3.9×) |                  — |                    — |
-| Linear             |  0.008 (282.5×) |     0.337 (4.5×) |      0.581 (20.6×) |                    — |
-| Cubic              |    0.651 (3.7×) |     0.334 (4.5×) |      0.730 (16.4×) |        0.759 (37.1×) |
-| Cardinal           |   0.041 (58.9×) |     1.042 (1.4×) |       2.488 (4.8×) |        2.610 (10.8×) |
-| PHS                |           2.394 |            1.506 |             11.987 |               28.207 |
+| Nearest            |   0.162 (14.0×) |     0.366 (4.2×) |                  — |                    — |
+| Linear             |  0.008 (276.6×) |     0.235 (6.5×) |      0.540 (15.8×) |                    — |
+| Cubic              |    0.590 (3.8×) |     0.406 (3.8×) |      0.669 (12.7×) |        0.806 (18.0×) |
+| Cardinal           |   0.035 (65.2×) |     0.875 (1.7×) |       2.360 (3.6×) |         2.363 (6.1×) |
+| PHS                |           2.267 |            1.525 |              8.514 |               14.466 |
 
 *PHS is significantly more expensive to build and evaluate than standard methods, but achieves much higher accuracy, especially for derivatives.*
 

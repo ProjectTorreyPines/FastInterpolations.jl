@@ -521,9 +521,14 @@ end
 # folded wrap+copy+typed into one call):
 #   - clearer separation of concerns (BC-aware wrap vs ownership copy),
 #   - no misleading `NoBC()` placeholder inside inner constructors,
-#   - same total allocation cost — `_CachedVector` ctor allocates
-#     `h`/`inv_h` once (here), and `Base.copy(::_CachedVector)` only
-#     copies `inner` (aliasing `h`/`inv_h`, which are internal-only).
+#   - construction allocations increase: `_CachedVector` ctor allocates
+#     `h`/`inv_h` once (here), and the inner ctor's `Base.copy(::_CachedVector)`
+#     deep-copies all three fields (`inner` + `h` + `inv_h`) for full
+#     ownership independence. Net effect: ~+50% on raw-Vector 1D persistent
+#     construction, ~+5x on raw-Vector ND grids vs the legacy alias-h/inv_h
+#     optimization. Trade-off explicitly accepted to keep `Base.copy`'s
+#     ownership contract clean (every field independent); pool-based
+#     reduction of the redundant outer h/inv_h alloc is a future option.
 #
 #   x type        + bc                          →  result
 #   ─────────────────────────────────────────────────────────────────

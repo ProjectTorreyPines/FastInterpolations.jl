@@ -533,12 +533,12 @@ build flow without branching on `_is_periodic_bc`:
       `akima_interp_precompute` (1D Hermite-family PreCompute oneshot)
     - `*_interp_precompute` persistent-builder paths for the same families
     - The entire ND `:exclusive` path via `_prepare_periodic_nd`
-      (LinearInterpolantND / ConstantInterpolantND / CubicInterpolantND /
-      HeteroInterpolantND still carry `spacings::S` and have not been
-      migrated to wrappers)
+      (Linear/Constant/Hetero ND have migrated to the wrapper protocol;
+      CubicInterpolantND and QuadraticInterpolantND still carry
+      `spacings::S` and use this helper indirectly)
 
-    Cleanup tracked alongside the ND-struct migration follow-up; once those
-    consumers move to the wrapper protocol, this helper can be removed.
+    Cleanup tracked alongside the ND-struct migration follow-up; once
+    Cubic/Quadratic ND move to the wrapper protocol, this helper can be removed.
 """
 @inline function _periodic_extend_1d(
         x::AbstractVector,

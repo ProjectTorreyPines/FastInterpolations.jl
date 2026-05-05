@@ -6,7 +6,7 @@
 # Each axis independently selects left or right neighbor based on side mode.
 
 """
-    ConstantInterpolantND{Tg,Tv,N,G,S,E,SD,P}
+    ConstantInterpolantND{Tg,Tv,N,G,E,SD,P}
 
 N-dimensional constant (step) interpolation with per-axis configuration.
 

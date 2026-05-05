@@ -172,7 +172,13 @@ end
     VectorSpacing{T, Tinv}(c.h, c.inv_h)
 
 # `_store_grid_cached` was the legacy bc-less variant of the persistent
-# axis wrapper. It is now subsumed by `_resolve_axis_copied(x, NoBC(), Tg)`
-# (defined in `periodic_axis.jl`), which handles bc-aware variants
-# (`PeriodicBC{:exclusive}` → `_ExclusivePeriodicAxis`) AND the same
-# Vector/Range/wrapper dispatch matrix in one helper. Use that instead.
+# axis wrapper. The persistent path is now split into two stages
+# (see `periodic_axis.jl`):
+#   - outer surface API: `_cache_axis(x, bc)` — bc-aware wrap, zero-copy
+#     of buffer (Vector → `_CachedVector`, Range → `_CachedRange`,
+#     `:exclusive` → `_ExclusivePeriodicAxis`),
+#   - inner constructor:  `_convert_copy(x, Tg)` — ownership copy +
+#     element-type promotion (wrapper-preserving `Base.copy`).
+# `_resolve_axis_copied(x, bc, Tg)` (the older one-shot helper) is retained
+# for Cubic's cache builder until that family migrates to the split pattern
+# in a follow-up PR — see `# TODO(spacing-cleanup)` markers in `grid_spacing.jl`.

@@ -14,7 +14,7 @@
 # ========================================
 
 """
-    LinearSeriesInterpolant{Tg, Tv, P, X}
+    LinearSeriesInterpolant{Tg, Tv, E, P, X}
 
 Multi-series linear interpolant with unified matrix storage and SIMD optimization.
 Shares a single x-grid across N y-series for efficient batch evaluation.
@@ -22,14 +22,17 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 # Type Parameters
 - `Tg`: Grid type (Float32 or Float64)
 - `Tv`: Value type (unconstrained)
-- `P`: Search policy type
-- `X`: Grid container type (Vector or Range)
+- `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
+- `P<:AbstractSearchPolicy`: Search policy type
+- `X<:AbstractVector{Tg}`: Grid container type — `_CachedRange{Tg}` for Range input,
+  `_CachedVector{Tg,Tinv}` for Vector input (carries cached `h`/`inv_h`).
 
 # Fields
-- `x::X`: Shared x-grid (Vector or Range)
+- `x::X`: Shared x-grid (wrapped — `_CachedVector`/`_CachedRange`)
 - `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
 - `_transpose::LazyTranspose{Tv}`: Lazy point-contiguous layout for scalar SIMD
 - `extrap::E`: Extrapolation mode (compile-time specialized via type parameter)
+- `search_policy::P`: Default search policy for interval lookup (immutable, thread-safe)
 
 # Memory Layout
 Primary storage is series-contiguous (n_points × n_series):

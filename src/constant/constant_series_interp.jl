@@ -14,7 +14,7 @@
 # ========================================
 
 """
-    ConstantSeriesInterpolant{Tg, Tv, P, X}
+    ConstantSeriesInterpolant{Tg, Tv, E, SD, P, X}
 
 Multi-series constant (step) interpolant with unified matrix storage and SIMD optimization.
 Shares a single x-grid across N y-series for efficient batch evaluation.
@@ -22,15 +22,19 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 # Type Parameters
 - `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)
-- `P`: Search policy type
-- `X`: Grid container type (Vector or Range)
+- `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
+- `SD<:AbstractSide`: Side selection type (compile-time specialized)
+- `P<:AbstractSearchPolicy`: Search policy type
+- `X<:AbstractVector{Tg}`: Grid container type — `_CachedRange{Tg}` for Range input,
+  `_CachedVector{Tg,Tinv}` for Vector input (carries cached `h`/`inv_h`).
 
 # Fields
-- `x::X`: Shared x-grid (Vector or Range)
+- `x::X`: Shared x-grid (wrapped — `_CachedVector`/`_CachedRange`)
 - `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
 - `_transpose::LazyTranspose{Tv}`: Lazy point-contiguous layout for scalar SIMD
-- `extrap::AbstractExtrap`: Extrapolation mode
+- `extrap::E`: Extrapolation mode (compile-time specialized)
 - `side::SD`: Side selection (NearestSide(), LeftSide(), RightSide())
+- `search_policy::P`: Default search policy
 
 # Memory Layout
 Primary storage is series-contiguous (n_points × n_series):

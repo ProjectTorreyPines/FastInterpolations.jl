@@ -10,7 +10,7 @@
 # from bc_types.jl (shared with cubic and other interpolators).
 
 """
-    QuadraticInterpolant{Tg,Tv,X,Y,S,E,P,BC,Tc}
+    QuadraticInterpolant{Tg,Tv,X,Y,E,P,BC,Tc}
 
 Lightweight callable interpolant for quadratic spline interpolation.
 Returned by `quadratic_interp(x, y)` (2-argument form).
@@ -18,18 +18,17 @@ Returned by `quadratic_interp(x, y)` (2-argument form).
 # Type Parameters
 - `Tg`: Grid type (unconstrained) for x-coordinates
 - `Tv`: Value type (unconstrained)
-- `X<:AbstractVector{Tg}`: Type of x-coordinates
+- `X<:AbstractVector{Tg}`: Grid vector type — `_CachedRange{Tg}` for Range input,
+        `_CachedVector{Tg,Tinv}` for Vector input (carries cached `h`/`inv_h`).
 - `Y<:AbstractVector{Tv}`: Type of y-values
-- `S<:AbstractGridSpacing{Tg}`: Grid spacing type (ScalarSpacing or VectorSpacing)
 - `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
 - `P<:AbstractSearchPolicy`: Search policy type
 - `BC<:QuadraticBC`: Boundary condition type (retained for adjoint/matrix convenience)
 - `Tc`: Coefficient element type (`_output_eltype(Tv, Tg)` — may be Dual for duck grids)
 
 # Fields
-- `x::X`: x-coordinates (sorted)
+- `x::X`: x-coordinates (sorted, wrapped — grid is the source of truth for spacing)
 - `y::Y`: y-values
-- `spacing::S`: Precomputed grid spacing (avoids TwicePrecision overhead on Range grids)
 - `a::Vector{Tc}`: Quadratic coefficients
 - `d::Vector{Tc}`: Slope coefficients
 - `extrap::E`: Extrapolation mode (NoExtrap(), ExtendExtrap(), ClampExtrap(), or WrapExtrap())
@@ -60,24 +59,34 @@ itp = quadratic_interp(x, y; search=LinearBinarySearch())  # explicit override
 val = itp(0.5; search=BinarySearch())  # per-call override
 ```
 """
-struct QuadraticInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC, Tc} <: AbstractInterpolant1D{Tg, Tv}
+struct QuadraticInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC, Tc} <: AbstractInterpolant1D{Tg, Tv}
     x::X
     y::Y
-    spacing::S          # Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
     a::Vector{Tc}       # Quadratic coefficients (Tc = _output_eltype(Tv, Tg))
     d::Vector{Tc}       # Slope coefficients (Tc = _output_eltype(Tv, Tg))
     extrap::E           # Extrapolation mode (compile-time specialized)
     search_policy::P    # Default search policy (immutable, thread-safe)
     bc::BC              # Boundary condition (retained for Matrix(itp, xq) convenience)
 
-    # Inner constructor: stores pre-promoted data from *_interp / outer callers.
-    # Callers provide fresh copies via _store_grid/_convert_copy — no re-copy here.
+    # Inner constructor: ownership copy + element-type promotion of the
+    # already-resolved x/y. Outer `quadratic_interp` is responsible for the
+    # caching wrap via `_cache_axis(x, bc, Tg)`; by this layer `x` is a
+    # wrapper carrying cached `h`/`inv_h` (sharing the user buffer in
+    # `inner`). Mirrors `LinearInterpolant` / `ConstantInterpolant`:
+    # both `x` and `y` go through `_convert_copy` for ownership, so direct
+    # struct construction is also mutation-safe (no need for callers to
+    # remember to pre-copy). Coefficients (`a`, `d`) are computed by the
+    # solver in the outer ctor; passed here freshly-allocated, no copy.
     function QuadraticInterpolant(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, spacing::S,
+            x::AbstractVector, y::AbstractVector,
             a::Vector{Tc}, d::Vector{Tc}, ev::E, search::P, bc::BC
-        ) where {Tg, Tv, Tc, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC}
+        ) where {Tc, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || _throw_grid_too_small(length(x))
-        return new{Tg, Tv, typeof(x), typeof(y), S, E, P, BC, Tc}(x, y, spacing, a, d, ev, search, bc)
+        Tg = _promote_grid_float(eltype(x), eltype(y))
+        Tv = _value_type(eltype(y), Tg)
+        xc = _convert_copy(x, Tg)
+        yc = _convert_copy(y, Tv)
+        return new{Tg, Tv, typeof(xc), typeof(yc), E, P, BC, Tc}(xc, yc, a, d, ev, search, bc)
     end
 end

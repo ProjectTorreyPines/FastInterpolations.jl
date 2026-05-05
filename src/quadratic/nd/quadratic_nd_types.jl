@@ -17,7 +17,7 @@
 # ========================================
 
 """
-    QuadraticInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}
+    QuadraticInterpolantND{Tg, Tv, N, NP1, G, B, E, P}
 
 Generic N-dimensional quadratic interpolant with precomputed partial derivatives.
 
@@ -29,15 +29,15 @@ ultra-fast O(1) evaluation via tensor-product quadratic polynomials.
 - `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
 - `NP1`: N + 1 (partials array dimensionality)
-- `G`: Tuple type for grids
-- `S`: Tuple type for spacings
+- `G`: Tuple type for (wrapped) grids — each axis is `_CachedRange{Tg}` /
+       `_CachedVector{Tg, Tinv}` / `_ExclusivePeriodicAxis`, carrying cached
+       `h`/`inv_h` directly (no separate spacings field needed)
 - `B`: Tuple type for boundary conditions
 - `E`: Tuple type for extrapolation modes
 - `P`: Tuple type for search policies
 
 # Fields
-- `grids`: N-tuple of grid vectors for each dimension
-- `spacings`: N-tuple of grid spacing info (for O(1) h lookup)
+- `grids`: N-tuple of (wrapped) grid vectors for each dimension
 - `nodal_derivs`: _NodalDerivativesND containing partial derivatives at grid nodes
 - `bcs`: N-tuple of boundary conditions used for construction
 - `extraps`: N-tuple of extrapolation modes
@@ -68,28 +68,30 @@ struct QuadraticInterpolantND{
         N,
         NP1,
         G <: Tuple{Vararg{AbstractVector, N}},
-        S <: Tuple{Vararg{AbstractGridSpacing, N}},
         B <: Tuple{Vararg{AbstractBC, N}},
         E <: Tuple{Vararg{AbstractExtrap, N}},
         P <: Tuple{Vararg{AbstractSearchPolicy, N}},
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    spacings::S
     nodal_derivs::_NodalDerivativesND{Tv, N, NP1}
     bcs::B
     extraps::E
     searches::P
 
-    function QuadraticInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}(
-            grids::Tuple{Vararg{AbstractVector, N}}, spacings::S, nodal_derivs::_NodalDerivativesND{Tv, N, NP1},
+    function QuadraticInterpolantND{Tg, Tv, N, NP1, G, B, E, P}(
+            grids::Tuple{Vararg{AbstractVector, N}}, nodal_derivs::_NodalDerivativesND{Tv, N, NP1},
             bcs::B, extraps::E, searches::P
-        ) where {Tg, Tv, N, NP1, G, S, B, E, P}
+        ) where {Tg, Tv, N, NP1, G, B, E, P}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
-        # Copy grids to ensure mutation safety.
-        # copy() on immutable Range types is a no-op (zero allocation).
-        # typeof() rebinds G after copy (e.g. tuple-of-SubArrays → tuple-of-Vectors).
-        grids_c = map(copy, grids)
-        return new{Tg, Tv, N, NP1, typeof(grids_c), S, B, E, P}(grids_c, spacings, nodal_derivs, bcs, extraps, searches)
+        # Per-axis ownership copy + element-type promotion. Outer
+        # `quadratic_interp` already applied `_cache_axis` per axis, so each
+        # grid is a wrapper carrying cached `h`/`inv_h` (sharing the user
+        # buffer in `inner`). `_convert_copy(g, Tg)` is wrapper-preserving:
+        # `Base.copy` for same eltype, single-pass rebuild for different
+        # eltype. No separate `spacings` field — `_get_h(itp.grids[d], i)`
+        # is the source of truth.
+        grids_c = map(g -> _convert_copy(g, Tg), grids)
+        return new{Tg, Tv, N, NP1, typeof(grids_c), B, E, P}(grids_c, nodal_derivs, bcs, extraps, searches)
     end
 end
 

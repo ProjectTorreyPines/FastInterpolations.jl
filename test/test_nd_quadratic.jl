@@ -490,7 +490,7 @@
         @test itp.grids isa Tuple
         @test length(itp.grids) == 2
 
-        @test length(itp.spacings) == 2
+        # `spacings::S` field removed — wrapped grids carry `h`/`inv_h` directly.
         @test length(itp.extraps) == 2
         @test length(itp.searches) == 2
     end

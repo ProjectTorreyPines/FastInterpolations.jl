@@ -76,28 +76,33 @@ sitp_complex = quadratic_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct QuadraticSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, S <: AbstractGridSpacing{Tg}, Tc} <: AbstractSeriesInterpolant{Tg, Tv}
-    const x::X                                 # Grid points (Range or Vector)
+mutable struct QuadraticSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, Tc} <: AbstractSeriesInterpolant{Tg, Tv}
+    const x::X                                 # Wrapped grid (`_CachedRange`/`_CachedVector` carrying cached `h`/`inv_h`)
     const y::Matrix{Tv}                        # Series-contiguous y (n_points × n_series)
     const a::Matrix{Tc}                        # Series-contiguous a: Tc = _output_eltype(Tv, Tg)
     const d::Matrix{Tc}                        # Series-contiguous d: Tc = _output_eltype(Tv, Tg)
-    const spacing::S                           # Precomputed grid spacing
     const _transpose::LazyTransposeTriple{Tv, Tc} # Lazy point-contiguous layout
     const extrap::E                            # Extrapolation mode (compile-time specialized)
     const search_policy::P                     # Default search policy
 
+    # Inner ctor: ownership copy of an already-resolved axis. Outer
+    # `quadratic_interp(x, ::Series)` applies `_cache_axis(x, NoBC(), Tg)`
+    # (zero-copy wrap); inner takes ownership via `_convert_copy(x, Tg)`.
+    # Mirrors `LinearSeriesInterpolant` / `ConstantSeriesInterpolant`. The
+    # wrapped axis carries cached `h`/`inv_h` directly — no separate
+    # `spacing` field. y/a/d matrices are freshly built by the outer ctor's
+    # solver loop (no aliasing concern; not copied here).
     function QuadraticSeriesInterpolant(
             x::AbstractVector{Tg},
             y::Matrix{Tv},
             a::Matrix,
             d::Matrix,
-            spacing::S,
             extrap::E,
             search::P = AutoSearch()
-        ) where {Tg, Tv, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+        ) where {Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         Tc = eltype(a)
-        xc = _to_float(copy(x), Tg)
-        return new{Tg, Tv, E, P, typeof(xc), S, Tc}(xc, y, a, d, spacing, LazyTransposeTriple{Tv, Tc}(), extrap, search)
+        xc = _convert_copy(x, Tg)
+        return new{Tg, Tv, E, P, typeof(xc), Tc}(xc, y, a, d, LazyTransposeTriple{Tv, Tc}(), extrap, search)
     end
 end
 
@@ -365,8 +370,10 @@ function quadratic_interp(
         return quadratic_interp(_to_float(x, Tg_new), s; bc = _normalize_bc(bc), extrap, search)
     end
 
-    # Normalize early: Range → _CachedRange, Vector → identity.
-    x = _to_float(x, Tg)
+    # Caching wrap (zero-copy of buffer): Range → `_CachedRange{Tg}`,
+    # Vector → `_CachedVector{Tg, Tinv}`. Inner ctor's `_convert_copy` takes
+    # ownership.
+    x = _cache_axis(x, NoBC(), Tg)
 
     n_pts = length(x)
     Tv_out = _value_type(Tv, Tg)
@@ -377,7 +384,9 @@ function quadratic_interp(
     a_mat = Matrix{Tc}(undef, n_pts, n_ser)
     d_mat = Matrix{Tc}(undef, n_pts, n_ser)
 
-    # Compute spacing once — shared across all series
+    # Compute spacing as a transient — shared across all series solver
+    # calls during construction, then GC'd. Not stored in the struct;
+    # the wrapped axis `x` carries `h`/`inv_h` directly.
     spacing = _create_spacing(x)
 
     # Promote BC values to Tv_out for convert(Tv, bc.val) compatibility
@@ -399,7 +408,7 @@ function quadratic_interp(
     end
 
     extrap_p = _promote_extrap(extrap, eltype(y_mat))
-    return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, spacing, extrap_p, search)
+    return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, extrap_p, search)
 end
 
 

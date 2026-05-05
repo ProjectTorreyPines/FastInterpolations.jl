@@ -26,10 +26,15 @@
 # ========================================
 
 """
-    _bake_hetero_nd_anchors(grids, spacings, queries, extraps, methods)
+    _bake_hetero_nd_anchors(grids, queries, extraps, methods)
 
 Precompute cell indices and per-axis 4-tuple weights for each query point.
 Dispatches to per-method weight functions: cubic, quadratic, linear, or constant.
+
+Reads `_get_h(grids[d], idx)` directly via the spacings-free 4-arg
+`_bake_nd_anchors_generic` overload. Periodic seam fold is transparent for
+any axis whose `grids[d]` is a `_ExclusivePeriodicAxis` (cubic axes use
+the explicit-extension path instead — same length-(n+1) result).
 
 OOB handling per axis (baked at construction):
 - `FillExtrap`: zero ALL weights (fill value independent of f)
@@ -37,13 +42,12 @@ OOB handling per axis (baked at construction):
 """
 function _bake_hetero_nd_anchors(
         grids::NTuple{N, AbstractVector{Tg}},
-        spacings::NTuple{N, AbstractGridSpacing{Tg}},
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}}
     ) where {N, Tg}
     return _bake_nd_anchors_generic(
-        grids, spacings, queries, extraps,
+        grids, queries, extraps,
         (d, t, h, inv_h, dL) -> _compute_hetero_anchor_weights(t, h, inv_h, dL, methods[d])
     )
 end
@@ -194,7 +198,6 @@ end
         ::CubicInterp,
         p_src::Int,
         cache_d, mixed_cache_d,
-        spacing_d::AbstractGridSpacing{Tg},
         bc_d, mixed_bc_d,
         grid_d::AbstractVector{Tg},
         shape_before::Int, n_d::Int, shape_after::Int,
@@ -235,7 +238,6 @@ end
         m::QuadraticInterp,
         p_src::Int,
         cache_d, mixed_cache_d,
-        spacing_d::AbstractGridSpacing{Tg},
         bc_d, mixed_bc_d,
         grid_d::AbstractVector{Tg},
         shape_before::Int, n_d::Int, shape_after::Int,
@@ -251,7 +253,7 @@ end
     # z_bar is size n_d — reuse first n_d-1 elements as s_bar
     s_bar = view(z_bar, 1:(n_d - 1))
     _adjoint_axis_pair_quadratic!(
-        src_3d, dst_3d, spacing_d, bc_q, grid_d,
+        src_3d, dst_3d, bc_q, grid_d,
         shape_before, n_d, shape_after,
         s_bar, dy_bar_slice, f_contrib, mincurv_C_d
     )
@@ -297,7 +299,6 @@ end
         stride_d = d == 1 ? 1 : prod(sizes[1:(d - 1)])
         n_d = grid_size[d]
         method_d = adj.methods[d]   # d is compile-time → concrete type
-        spacing_d = adj.spacings[d]
 
         # Compute reshape dimensions for axis d
         shape_before = 1
@@ -336,7 +337,7 @@ end
             _hetero_axis_adjoint!(
                 src_3d, dst_3d, method_d, p_src,
                 adj.caches[d], adj.mixed_caches[d],
-                spacing_d, adj.bcs[d], adj.mixed_bcs[d], adj.grids[d],
+                adj.bcs[d], adj.mixed_bcs[d], adj.grids[d],
                 shape_before, n_d, shape_after,
                 z_bar, f_contrib, dy_bar_slice,
                 q_t, adj.mincurv_Cs[d]
@@ -555,8 +556,6 @@ function _build_hetero_nd_adjoint(
         end
     end
 
-    spacings = _create_spacings_typed(grids_ext)
-
     # Per-axis BC normalization (for derivative methods only)
     # Non-BC methods (Linear/Constant) use `nothing` sentinel — never matched
     # against PeriodicBC or BCPair in protocol functions.
@@ -606,28 +605,29 @@ function _build_hetero_nd_adjoint(
         end
     end
 
-    # Per-axis MinCurvFit constants (quadratic only)
-    mincurv_Cs = map(methods, spacings, grids_ext) do method_d, spacing_d, grid_d
+    # Per-axis MinCurvFit constants (quadratic only) — axis-based form
+    # reads `_get_inv_h(grid_d, i)` from wrapped or raw axes uniformly.
+    mincurv_Cs = map(methods, grids_ext) do method_d, grid_d
         if method_d isa QuadraticInterp
             bc_d = method_d.bc
-            _mincurv_C_for_bc(bc_d, spacing_d, length(grid_d))
+            _mincurv_C_for_bc(bc_d, grid_d, length(grid_d))
         else
             zero(Tg)
         end
     end
 
     # Bake per-query anchors
-    anchors = _bake_hetero_nd_anchors(grids_ext, spacings, queries, extraps, methods)
+    anchors = _bake_hetero_nd_anchors(grids_ext, queries, extraps, methods)
 
     grid_size = ntuple(d -> length(grids_ext[d]), Val(N))
 
     return HeteroAdjointND{
         Tg, N,
-        typeof(methods), typeof(grids_ext), typeof(spacings),
+        typeof(methods), typeof(grids_ext),
         typeof(caches), typeof(mixed_caches),
         typeof(bcs), typeof(mixed_bcs),
     }(
-        methods, grids_ext, spacings,
+        methods, grids_ext,
         caches, mixed_caches, bcs, mixed_bcs,
         anchors, grid_size, mincurv_Cs
     )

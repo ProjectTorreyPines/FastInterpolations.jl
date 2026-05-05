@@ -12,6 +12,49 @@
 # AdaptiveArrayPools (via @with_pool) so the hot path is zero-allocation.
 
 # ======================================================
+# Stencil Coefficient Cache (thread-local)
+# ======================================================
+#
+# Task-local cache of precomputed stencil coefficient vectors.
+# Key:   NTuple{N,Int}  — blend-neighbour base-node grid index
+# Value: Vector{Tg}     — coeff = Φ⁻¹ · rhs (length M = stencil_size^N + n_poly)
+#
+# Coefficients depend only on `itp.data` (fixed after construction) and the
+# stencil geometry (also fixed), so they are safe to cache indefinitely per task.
+# Thread safety is implicit: each Julia Task gets an independent Dict via
+# task_local_storage — no locks needed.
+#
+# A per-interpolant sub-Dict (keyed by objectid) ensures that multiple
+# PHSInterpolantND instances co-exist in the same task without interference.
+# The cache is bounded to _PHS_COEFF_CACHE_MAX entries per interpolant to
+# prevent unbounded memory use when evaluating over large 3D grids.
+
+const _PHS_COEFF_CACHE_TKEY = :_phs_stencil_coeff_cache
+const _PHS_COEFF_CACHE_MAX  = 5_000   # ≈ 20 MB for 516-coeff Float64 stencils
+
+@inline function _phs_get_thread_cache_store()
+    store = get(task_local_storage(), _PHS_COEFF_CACHE_TKEY, nothing)
+    if store === nothing
+        store = Dict{UInt, Any}()
+        task_local_storage(_PHS_COEFF_CACHE_TKEY, store)
+    end
+    return store::Dict{UInt, Any}
+end
+
+@inline function _phs_get_coeff_cache(
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+    ) where {Tg, Tv, N, K}
+    store  = _phs_get_thread_cache_store()
+    itp_id = objectid(itp)
+    cache  = get(store, itp_id, nothing)
+    if cache === nothing
+        cache = Dict{NTuple{N, Int}, Vector{Tg}}()
+        store[itp_id] = cache
+    end
+    return cache::Dict{NTuple{N, Int}, Vector{Tg}}
+end
+
+# ======================================================
 # Layer 1: Base-node lookup
 # ======================================================
 
@@ -423,13 +466,26 @@ Returns the stencil offsets, coefficient vector (aliasing `coeff_buf`), and grid
     else
         itp.shift_cache[shift]
     end
-    M  = size(phi_inv, 1)
-    actual_rhs   = length(rhs_buf)   == M ? rhs_buf   : similar(rhs_buf, M)
+    # Check stencil coefficient cache (task-local; zero-alloc on hit after warm-up).
+    # On cache hit, return cached vector directly — callers only read from it.
+    coeff_cache = _phs_get_coeff_cache(itp)
+    cached = get(coeff_cache, base_idx, nothing)
+    cached !== nothing && return offsets, cached, hs_local
+
+    # Cache miss: build RHS and solve via BLAS gemv.
+    M            = size(phi_inv, 1)
     actual_coeff = length(coeff_buf) == M ? coeff_buf : similar(coeff_buf, M)
+    actual_rhs   = length(rhs_buf)   == M ? rhs_buf   : similar(rhs_buf,   M)
     ns = length(offsets)
     @inbounds for i in ns + 1:M; actual_rhs[i] = zero(Tg); end  # zero polynomial tail only
     _phs_build_rhs!(actual_rhs, itp.data, base_idx, offsets, grid_sizes)
     LinearAlgebra.mul!(actual_coeff, phi_inv, actual_rhs)
+
+    # Store a copy in the cache (bounded to prevent unbounded memory growth).
+    if length(coeff_cache) < _PHS_COEFF_CACHE_MAX
+        coeff_cache[base_idx] = copy(actual_coeff)
+    end
+
     return offsets, actual_coeff, hs_local
 end
 
@@ -456,16 +512,10 @@ Dispatches to the appropriate `_phs_eval_coeffs_*` function based on `ops`.
         axis = findfirst(d -> n_deriv[d] == 1, 1:N)::Int
         return _phs_eval_coeffs_deriv1(coeffs, offsets, hs_local, query, base_coords, Val{K}(), axis)
     elseif total_order == 2
-        nonzero = findall(d -> n_deriv[d] > 0, 1:N)
-        if length(nonzero) == 1
-            ax = nonzero[1]
-            if n_deriv[ax] == 2
-                return _phs_eval_coeffs_deriv2(coeffs, offsets, hs_local, query, base_coords, Val{K}(), ax, ax)
-            end
-        elseif length(nonzero) == 2
-            ax1, ax2 = nonzero[1], nonzero[2]
-            return _phs_eval_coeffs_deriv2(coeffs, offsets, hs_local, query, base_coords, Val{K}(), ax1, ax2)
-        end
+        ax1       = findfirst(d -> n_deriv[d] > 0, 1:N)::Int
+        ax2_maybe = ax1 < N ? findnext(d -> n_deriv[d] > 0, 1:N, ax1 + 1) : nothing
+        ax2       = ax2_maybe !== nothing ? ax2_maybe : ax1
+        return _phs_eval_coeffs_deriv2(coeffs, offsets, hs_local, query, base_coords, Val{K}(), ax1, ax2)
     end
     return zero(eltype(coeffs))
 end
@@ -599,10 +649,10 @@ Algorithm:
     # ----------------------------------------------------------------
     elseif total_deriv == 2
         n_deriv_arr = ntuple(d -> deriv_order(ops[d]), Val(N))
-        nonzero = findall(d -> n_deriv_arr[d] > 0, 1:N)
-        ax1     = nonzero[1]
-        ax2     = length(nonzero) >= 2 ? nonzero[2] : ax1
-        is_diag = (ax1 == ax2)
+        ax1       = findfirst(d -> n_deriv_arr[d] > 0, 1:N)::Int
+        ax2_maybe = ax1 < N ? findnext(d -> n_deriv_arr[d] > 0, 1:N, ax1 + 1) : nothing
+        ax2       = ax2_maybe !== nothing ? ax2_maybe : ax1
+        is_diag   = (ax1 == ax2)
 
         sum_w   = zero(Tg); sum_wy  = zero(Tv)
         sum_N2  = zero(Tv); sum_W2  = zero(Tg)  # ∂²N, ∂²W  w.r.t. the requested axes
@@ -788,10 +838,10 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
     # ----------------------------------------------------------------
     elseif total_deriv == 2
         n_deriv_arr = ntuple(d -> deriv_order(ops[d]), Val(N))
-        nonzero = findall(d -> n_deriv_arr[d] > 0, 1:N)
-        ax1     = nonzero[1]
-        ax2     = length(nonzero) >= 2 ? nonzero[2] : ax1
-        is_diag = (ax1 == ax2)
+        ax1       = findfirst(d -> n_deriv_arr[d] > 0, 1:N)::Int
+        ax2_maybe = ax1 < N ? findnext(d -> n_deriv_arr[d] > 0, 1:N, ax1 + 1) : nothing
+        ax2       = ax2_maybe !== nothing ? ax2_maybe : ax1
+        is_diag   = (ax1 == ax2)
 
         ops_d1_1 = ntuple(d -> d == ax1 ? EvalDeriv1() : EvalValue(), Val(N))  # kept for d≈0 branch
 
@@ -874,6 +924,205 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
     return zero(Tv)
 end
 
+# ======================================================
+# Fused blend functions for _phs_eval_with_transform
+# ======================================================
+#
+# These replace 2–4 separate calls to _phs_eval_blended_G with a single
+# pass over the blend neighbourhood, eliminating redundant stencil solves.
+# For sequential batch queries (typical 1D paths), the stencil coefficient
+# cache in _phs_solve_stencil! makes each neighbour a cheap copyto! instead
+# of a full BLAS GEMV.
+
+"""
+    _phs_eval_blended_G_with_grad(itp, query, grad_ax) -> (G, G_ξ)
+
+Evaluate G = blend(exp(fᵢ)) and ∂G/∂x_{grad_ax} in a single pass over the
+blend neighbourhood, replacing the two separate `_phs_eval_blended_G` calls
+that `_phs_eval_with_transform` previously made for gradient queries.
+"""
+@with_pool pool function _phs_eval_blended_G_with_grad(
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+        grad_ax::Int,
+    ) where {Tg, Tv, N, K}
+    blend_a   = itp.blend_a
+    blend_a3  = itp.blend_a3
+    base_idx0 = _phs_find_base_node(itp, query)
+    r_idx     = itp.blend_r_idx
+    grid_sizes = ntuple(d -> length(itp.grids[d]), N)
+
+    M         = size(itp.phi_inv, 1)
+    rhs_buf   = acquire!(pool, Tg, M)
+    coeff_buf = acquire!(pool, Tg, M)
+
+    lo_idx = ntuple(d -> max(1, base_idx0[d] - r_idx[d]), N)
+    hi_idx = ntuple(d -> min(grid_sizes[d], base_idx0[d] + r_idx[d]), N)
+    ranges = ntuple(d -> lo_idx[d]:hi_idx[d], N)
+
+    ops_val = ntuple(_ -> EvalValue(), Val(N))
+
+    sum_w  = zero(Tg)
+    sum_wg = zero(Tv)
+    sum_N1 = zero(Tv)   # ∂N/∂x_{grad_ax}
+    sum_W1 = zero(Tg)   # ∂W/∂x_{grad_ax}
+
+    for nb_ci in CartesianIndices(ranges)
+        nb_idx    = Tuple(nb_ci)
+        nb_coords = _phs_base_coords(itp, nb_idx)
+        d2 = zero(Tg)
+        @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
+        d_dist = sqrt(d2)
+        w, wp = _phs_blend_weight_and_prime(d_dist, blend_a, blend_a3)
+        w < eps(Tg) && continue
+
+        offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+
+        if d_dist > eps(Tg)
+            f, f_ξ = _phs_eval_coeffs_value_and_deriv1(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), grad_ax)
+            f = Tv(f); f_ξ = Tv(f_ξ)
+            g   = exp(f)
+            dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
+            sum_w  += w
+            sum_wg += w * g
+            sum_N1 += wp * dir * g + w * g * f_ξ
+            sum_W1 += wp * dir
+        else
+            f = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_val))
+            g = exp(f)
+            sum_w  += w
+            sum_wg += w * g
+        end
+    end
+
+    sum_w < eps(Tg) && return zero(Tv), zero(Tv)
+    G   = sum_wg / sum_w
+    G_ξ = Tv((sum_N1 - G * sum_W1) / sum_w)
+    return G, G_ξ
+end
+
+"""
+    _phs_eval_blended_G_with_hess(itp, query, ax1, ax2) -> (G, G_ax1, G_ax2, G_ax1ax2)
+
+Evaluate G and its requested first- and second-order blend derivatives in a
+single pass over the blend neighbourhood.  For the diagonal case (ax1 == ax2),
+G_ax2 == G_ax1.  Replaces four separate `_phs_eval_blended_G` calls that
+`_phs_eval_with_transform` previously made for Hessian queries.
+"""
+@with_pool pool function _phs_eval_blended_G_with_hess(
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+        ax1::Int,
+        ax2::Int,
+    ) where {Tg, Tv, N, K}
+    blend_a   = itp.blend_a
+    blend_a3  = itp.blend_a3
+    base_idx0 = _phs_find_base_node(itp, query)
+    r_idx     = itp.blend_r_idx
+    grid_sizes = ntuple(d -> length(itp.grids[d]), N)
+
+    M         = size(itp.phi_inv, 1)
+    rhs_buf   = acquire!(pool, Tg, M)
+    coeff_buf = acquire!(pool, Tg, M)
+
+    lo_idx = ntuple(d -> max(1, base_idx0[d] - r_idx[d]), N)
+    hi_idx = ntuple(d -> min(grid_sizes[d], base_idx0[d] + r_idx[d]), N)
+    ranges = ntuple(d -> lo_idx[d]:hi_idx[d], N)
+
+    ops_val  = ntuple(_ -> EvalValue(), Val(N))
+    ops_d1_1 = ntuple(d -> d == ax1 ? EvalDeriv1() : EvalValue(), Val(N))
+    is_diag  = (ax1 == ax2)
+
+    sum_w   = zero(Tg); sum_wg  = zero(Tv)
+    sum_N2  = zero(Tv); sum_W2  = zero(Tg)
+    sum_N1  = zero(Tv); sum_W1  = zero(Tg)
+    sum_N1b = zero(Tv); sum_W1b = zero(Tg)
+
+    for nb_ci in CartesianIndices(ranges)
+        nb_idx    = Tuple(nb_ci)
+        nb_coords = _phs_base_coords(itp, nb_idx)
+        d2 = zero(Tg)
+        @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
+        d_dist = sqrt(d2)
+        w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a, blend_a3)
+        w < eps(Tg) && continue
+
+        offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+
+        if d_dist > eps(Tg)
+            da1  = (Tg(query[ax1]) - nb_coords[ax1]) / d_dist
+            wxi1 = wp * da1
+            if is_diag
+                f, f_d1, f_d2 = _phs_eval_coeffs_value_and_deriv1_and_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1, ax1)
+                f = Tv(f); f_d1 = Tv(f_d1); f_d2 = Tv(f_d2)
+                g     = exp(f)
+                dg1   = g * f_d1
+                d2g   = g * (f_d2 + f_d1 * f_d1)
+                wxixi = wpp * da1 * da1 + wp * (1 - da1 * da1) / d_dist
+                sum_w  += w; sum_wg += w * g
+                sum_N1 += wxi1 * g + w * dg1
+                sum_W1 += wxi1
+                sum_N2 += wxixi * g + 2 * wxi1 * dg1 + w * d2g
+                sum_W2 += wxixi
+            else
+                da2   = (Tg(query[ax2]) - nb_coords[ax2]) / d_dist
+                wxi2  = wp * da2
+                f, f_d1, f_d1b, f_d2 = _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1, ax2)
+                f = Tv(f); f_d1 = Tv(f_d1); f_d1b = Tv(f_d1b); f_d2 = Tv(f_d2)
+                g     = exp(f)
+                dg1   = g * f_d1
+                dg2   = g * f_d1b
+                d2g   = g * (f_d2 + f_d1 * f_d1b)
+                wxixi = wpp * da1 * da2 - wp * da1 * da2 / d_dist
+                sum_w  += w; sum_wg += w * g
+                sum_N1  += wxi1 * g + w * dg1
+                sum_W1  += wxi1
+                sum_N1b += wxi2 * g + w * dg2
+                sum_W1b += wxi2
+                sum_N2  += wxixi * g + wxi1 * dg2 + wxi2 * dg1 + w * d2g
+                sum_W2  += wxixi
+            end
+        else
+            # d≈0: weight prime/dprime ≈ 0; only stencil contributions survive.
+            f    = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_val))
+            g    = exp(f)
+            f_d1 = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d1_1))
+            if is_diag
+                ops_d2 = ntuple(d -> d == ax1 ? EvalDeriv2() : EvalValue(), Val(N))
+                f_d2   = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d2))
+                d2g    = g * (f_d2 + f_d1 * f_d1)
+                sum_w  += w; sum_wg += w * g
+                sum_N1 += w * g * f_d1
+                sum_N2 += w * d2g
+            else
+                ops_d1_2 = ntuple(d -> d == ax2 ? EvalDeriv1() : EvalValue(), Val(N))
+                f_d1b    = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d1_2))
+                ops_d12  = ntuple(d -> (d == ax1 || d == ax2) ? EvalDeriv1() : EvalValue(), Val(N))
+                f_d2     = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d12))
+                d2g      = g * (f_d2 + f_d1 * f_d1b)
+                sum_w  += w; sum_wg += w * g
+                sum_N1  += w * g * f_d1
+                sum_N1b += w * g * f_d1b
+                sum_N2  += w * d2g
+            end
+        end
+    end
+
+    sum_w < eps(Tg) && return zero(Tv), zero(Tv), zero(Tv), zero(Tv)
+    W     = sum_w
+    G     = sum_wg / W
+    G_ax1 = Tv((sum_N1 - G * sum_W1) / W)
+    if is_diag
+        G_ax2 = G_ax1
+        d2G   = sum_N2 / W - 2 * sum_N1 * sum_W1 / W^2 - G * sum_W2 / W + 2 * G * (sum_W1 / W)^2
+    else
+        G_ax2 = Tv((sum_N1b - G * sum_W1b) / W)
+        d2G   = sum_N2 / W - (sum_N1 * sum_W1b + sum_N1b * sum_W1) / W^2 -
+                G * sum_W2 / W + 2 * G * sum_W1 * sum_W1b / W^2
+    end
+    return G, G_ax1, G_ax2, Tv(d2G)
+end
+
 """
     _phs_eval_with_transform(itp, query, ops)
 
@@ -895,38 +1144,48 @@ function _phs_eval_with_transform(
     total_deriv = sum(deriv_order(ops[d]) for d in 1:N)
     ref = itp.transform.reference
 
-    ops_val = ntuple(_ -> EvalValue(), Val(N))
-    G    = Tg(_phs_eval_blended_G(itp, query, ops_val))
-    rho0 = Tg(ref(query))
-    rho  = rho0 * G
-
-    total_deriv == 0 && return Tv(rho)
+    if total_deriv == 0
+        ops_val = ntuple(_ -> EvalValue(), Val(N))
+        G    = Tg(_phs_eval_blended_G(itp, query, ops_val))
+        rho0 = Tg(ref(query))
+        return Tv(rho0 * G)
+    end
 
     if total_deriv == 1
         ax       = findfirst(d -> deriv_order(ops[d]) == 1, 1:N)::Int
         ops_grad = ntuple(d -> d == ax ? DerivOp{1}() : EvalValue(), N)
-        G_ξ      = Tg(_phs_eval_blended_G(itp, query, ops_grad))
+        # Single fused pass: compute G and G_ξ together
+        G, G_ξ   = _phs_eval_blended_G_with_grad(itp, query, ax)
+        rho0     = Tg(ref(query))
         rho0_ξ   = Tg(ref(query; deriv = ops_grad))
         return Tv(rho0_ξ * G + rho0 * G_ξ)
     end
 
     if total_deriv == 2
-        nonzero = [ax for ax in 1:N if deriv_order(ops[ax]) > 0]
-        ax1, ax2 = nonzero[1], (length(nonzero) >= 2 ? nonzero[2] : nonzero[1])
+        n_deriv_arr = ntuple(d -> deriv_order(ops[d]), Val(N))
+        ax1       = findfirst(d -> n_deriv_arr[d] > 0, 1:N)::Int
+        ax2_maybe = ax1 < N ? findnext(d -> n_deriv_arr[d] > 0, 1:N, ax1 + 1) : nothing
+        ax2       = ax2_maybe !== nothing ? ax2_maybe : ax1
 
-        ops_d1 = ntuple(d -> d == ax1 ? DerivOp{1}() : EvalValue(), N)
-        ops_d2 = ntuple(d -> d == ax2 ? DerivOp{1}() : EvalValue(), N)
+        ops_d1  = ntuple(d -> d == ax1 ? DerivOp{1}() : EvalValue(), N)
 
-        G_ξ    = Tg(_phs_eval_blended_G(itp, query, ops_d1))
-        G_ζ    = Tg(_phs_eval_blended_G(itp, query, ops_d2))
-        G_ξζ   = Tg(_phs_eval_blended_G(itp, query, ops))
+        # Single fused pass: compute G, G_ξ, G_ζ (= G_ξ for diagonal), G_ξζ together
+        G, G_ξ, G_ζ, G_ξζ = _phs_eval_blended_G_with_hess(itp, query, ax1, ax2)
 
+        rho0    = Tg(ref(query))
         rho0_ξ  = Tg(ref(query; deriv = ops_d1))
-        rho0_ζ  = Tg(ref(query; deriv = ops_d2))
         rho0_ξζ = Tg(ref(query; deriv = ops))
 
-        # Leibniz rule: ρ̃_ξζ = ρ₀_ξζ·G + ρ₀_ξ·G_ζ + ρ₀_ζ·G_ξ + ρ₀·G_ξζ
-        return Tv(rho0_ξζ * G + rho0_ξ * G_ζ + rho0_ζ * G_ξ + rho0 * G_ξζ)
+        if ax1 == ax2
+            # Diagonal case: ρ̃_ξξ = ρ₀_ξξ·G + 2·ρ₀_ξ·G_ξ + ρ₀·G_ξξ
+            # (G_ζ == G_ξ and rho0_ζ == rho0_ξ — no extra blend call needed)
+            return Tv(rho0_ξζ * G + 2 * rho0_ξ * G_ξ + rho0 * G_ξζ)
+        else
+            ops_d2 = ntuple(d -> d == ax2 ? DerivOp{1}() : EvalValue(), N)
+            rho0_ζ = Tg(ref(query; deriv = ops_d2))
+            # Leibniz rule: ρ̃_ξζ = ρ₀_ξζ·G + ρ₀_ξ·G_ζ + ρ₀_ζ·G_ξ + ρ₀·G_ξζ
+            return Tv(rho0_ξζ * G + rho0_ξ * G_ζ + rho0_ζ * G_ξ + rho0 * G_ξζ)
+        end
     end
 
     return zero(Tv)

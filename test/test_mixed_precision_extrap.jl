@@ -188,3 +188,67 @@
         @test isnan(itp_nd((-1.0, 2.0)))
     end
 end
+
+@testitem "Tg promotion preserved on Integer Range + Float32 data" begin
+    # Regression: pre-`_cache_axis` migration the persistent path threaded
+    # the promoted `Tg` (computed from `_promote_grid_float(eltype(x), eltype(y))`)
+    # all the way to the cached axis, so `linear_interp(1:4, Float32[...])`
+    # produced `_CachedRange{Float32}` + `Vector{Float32}`. After the migration,
+    # `_cache_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))`
+    # ignored Tg, defaulted Int eltype to Float64, and the inner ctor's
+    # `_promote_grid_float(Float64, Float32)` then widened y to Float64 too.
+    # Cubic (still on the legacy `_resolve_axis_copied(x, bc, T)` builder) was
+    # unaffected; the migrated families (Linear / Constant / PCHIP / Cardinal /
+    # Akima + their Series + ND) lost the Float32 promotion contract.
+    x_int = 1:4
+    y32 = Float32[1.0, 2.0, 3.0, 4.0]
+
+    @testset "1D Linear / Constant" begin
+        itp_l = linear_interp(x_int, y32)
+        @test itp_l.x isa FastInterpolations._CachedRange{Float32}
+        @test itp_l.y isa Vector{Float32}
+
+        itp_c = constant_interp(x_int, y32)
+        @test itp_c.x isa FastInterpolations._CachedRange{Float32}
+        @test itp_c.y isa Vector{Float32}
+    end
+
+    @testset "1D Hermite family (PCHIP / Cardinal / Akima)" begin
+        itp_p = pchip_interp(x_int, y32)
+        @test itp_p.x isa FastInterpolations._CachedRange{Float32}
+        @test itp_p.y isa Vector{Float32}
+
+        itp_c = cardinal_interp(x_int, y32; tension = 0.0)
+        @test itp_c.x isa FastInterpolations._CachedRange{Float32}
+        @test itp_c.y isa Vector{Float32}
+
+        itp_a = akima_interp(x_int, y32)
+        @test itp_a.x isa FastInterpolations._CachedRange{Float32}
+        @test itp_a.y isa Vector{Float32}
+    end
+
+    @testset "Cubic preserves Float32 (control)" begin
+        # Cubic uses the legacy `_resolve_axis_copied(x, bc, T)` builder which
+        # already threads Tg. Locks in the existing-correct behavior so any
+        # future Cubic migration to `_cache_axis` doesn't regress.
+        itp = cubic_interp(x_int, y32)
+        @test itp.cache.x isa FastInterpolations._CachedRange{Float32}
+        @test itp.y isa Vector{Float32}
+    end
+
+    @testset "1D Series (Linear / Constant)" begin
+        sitp_l = linear_interp(x_int, Series(y32, y32))
+        @test sitp_l.x isa FastInterpolations._CachedRange{Float32}
+        @test sitp_l.y isa Matrix{Float32}
+
+        sitp_c = constant_interp(x_int, Series(y32, y32))
+        @test sitp_c.x isa FastInterpolations._CachedRange{Float32}
+        @test sitp_c.y isa Matrix{Float32}
+    end
+
+    # Note: ND (Linear/Constant) `_nd_promote_grids` computes `Tg =
+    # float(promote(grid_eltypes))` *without* considering data eltype, so
+    # ND `linear_interp((1:4, 1:5), Float32[...])` has historically widened
+    # to Float64. That's a separate (pre-existing) limitation — not in scope
+    # of the `_cache_axis` migration.
+end

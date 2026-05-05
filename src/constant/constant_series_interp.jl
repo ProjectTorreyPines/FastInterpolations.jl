@@ -369,12 +369,14 @@ function constant_interp(
         # promotion; passthrough for `WrapExtrap`.
         extrap_p = _promote_extrap(WrapExtrap(), Tv_out)
         # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
-        x_eff = _cache_axis(x_ext, NoBC())
+        # Thread `Tg` so `Int` ranges + `Float32` data become
+        # `_CachedRange{Float32}` (not silently widened to Float64).
+        x_eff = _cache_axis(x_ext, NoBC(), Tg)
         return ConstantSeriesInterpolant(x_eff, y_mat_ext, extrap_p, side, search)
     end
 
     extrap_p = _promote_extrap(extrap, Tv_out)
-    x_eff = _cache_axis(x, bc)
+    x_eff = _cache_axis(x, bc, Tg)
     return ConstantSeriesInterpolant(x_eff, y_mat, extrap_p, side, search)
 end
 

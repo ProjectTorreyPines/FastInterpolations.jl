@@ -575,6 +575,38 @@ end
 @inline _cache_axis(g::_ExclusivePeriodicAxis, ::AbstractBC) = g
 @inline _cache_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}) = g
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Tg-aware 3-arg overloads (`_cache_axis(x, bc, Tg)`)
+# ─────────────────────────────────────────────────────────────────────────────
+# Outer surface APIs (`linear_interp`, `constant_interp`, etc.) compute the
+# promoted `Tg = _promote_grid_float(eltype(x), eltype(y))` *before* calling
+# `_cache_axis`, then thread `Tg` here so Range inputs convert directly to the
+# correct float type. Without this, `Int` ranges + `Float32` data silently
+# produced `_CachedRange{Float64}` because the 2-arg path defaulted to
+# `float(eltype(x)) = Float64` for integer eltypes — and the inner ctor's
+# `_promote_grid_float(Float64, Float32) = Float64` then widened `y` to
+# `Float64` too, breaking the documented Float32 promotion.
+#
+# Vector path: `Tg` is unused at the wrap step. Vector eltype is preserved by
+# `_CachedVector(x)`; the inner ctor's wrapper-aware `_convert_copy(c, Tg)`
+# rebuilds with the requested element type. Same for pre-wrapped inputs:
+# the wrapper's eltype passes through unchanged; promotion is the inner
+# constructor's responsibility.
+@inline _cache_axis(x::AbstractVector, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(x, bc)
+@inline _cache_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(x, bc)
+@inline _cache_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+@inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(_to_float(x, Tg), bc_resolved.period)
+end
+# Pre-wrapped passthroughs ignore Tg (idempotent — inner ctor handles promotion).
+@inline _cache_axis(c::_CachedRange, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
+@inline _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
+@inline _cache_axis(c::_CachedVector, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
+@inline _cache_axis(c::_CachedVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
+@inline _cache_axis(g::_ExclusivePeriodicAxis, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(g, bc)
+@inline _cache_axis(g::_ExclusivePeriodicAxis, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(g, bc)
+
 # ----- Resolve + copy (persistent interpolant) -----------------------------
 
 @inline _resolve_axis_copied(x::AbstractVector, ::AbstractBC, ::Type{Tg}) where {Tg} =

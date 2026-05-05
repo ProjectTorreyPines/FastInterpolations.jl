@@ -44,7 +44,7 @@ itp(0.5)
     # Caching wrap (zero-copy of buffer): post-extension grid → `_CachedVector`
     # (Vector) / `_CachedRange` (Range). Ownership copy in inner ctor's
     # `_convert_copy(x, Tg)`. Mirrors Linear/Constant 1D outer flow.
-    x_eff = _cache_axis(x_eff, bc_eff)
+    x_eff = _cache_axis(x_eff, bc_eff, Tg)
 
     if resolved isa OnTheFly
         return CardinalInterpolant1D(x_eff, y_eff, CardinalSlopes(tens_t, bc_eff), extrap_p, search, tens_t)

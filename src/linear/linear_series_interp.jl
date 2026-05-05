@@ -364,12 +364,14 @@ function linear_interp(
         # keep their eltype, Float grids go through value-type promotion.
         extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(WrapExtrap(), Tv_out) : WrapExtrap()
         # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
-        x_eff = _cache_axis(x_typed, NoBC())
+        # Thread `Tg_new` so `Int` ranges + `Float32` data become
+        # `_CachedRange{Float32}` (not silently widened to Float64).
+        x_eff = _cache_axis(x_typed, NoBC(), Tg_new)
         return LinearSeriesInterpolant(x_eff, y_mat, extrap_p, search)
     end
 
     extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(extrap, Tv_out) : extrap
-    x_eff = _cache_axis(x_typed, bc)
+    x_eff = _cache_axis(x_typed, bc, Tg_new)
     return LinearSeriesInterpolant(x_eff, y_mat, extrap_p, search)
 end
 

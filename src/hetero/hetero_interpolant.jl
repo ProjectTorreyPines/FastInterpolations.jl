@@ -4,6 +4,14 @@
 # Public API: interp(grids, data; method, ...)
 # Internal:   _build_hetero_nd(grids, data, methods, extrap, search)
 
+# Method-aware caching wrap for HeteroND. `NoInterp` axes can be singletons
+# (length-1 marker, no interpolation kernel touches them) — `_CachedVector`
+# rejects those (requires ≥ 2 points to compute h/inv_h). Pass them through
+# raw so the persistent path stays type-stable (`_caching_axis` itself stays
+# strict to avoid Union return types in 1D Linear/Constant Series, etc.).
+@inline _caching_axis_for_method(g, ::AbstractBC, ::NoInterp) = g
+@inline _caching_axis_for_method(g, bc::AbstractBC, ::AbstractInterpMethod) = _caching_axis(g, bc)
+
 # ========================================
 # Homogeneous Auto-Dispatch
 # ========================================
@@ -267,9 +275,10 @@ function _build_hetero_nd(
     bcs = map(_bc_for_periodic_check, methods)
     # Per-axis caching wrap (zero-copy of buffer): `:exclusive` axes become
     # `_ExclusivePeriodicAxis`, Vector → `_CachedVector`, Range → `_CachedRange`.
+    # `NoInterp` axes (singleton marker) bypass the wrap — see PreCompute path.
     # Ownership copy + element-type promotion happens in the inner ctor's
-    # `_convert_copy(g, Tg)` per axis. Mirrors 1D/Linear/Constant ND surface flow.
-    grids_typed = map(_caching_axis, grids_typed, bcs)
+    # `_convert_copy(g, Tg)` per axis.
+    grids_typed = map(_caching_axis_for_method, grids_typed, bcs, methods)
     # Inclusive PeriodicBC requires `data[1, ...] ≈ data[end, ...]` per axis;
     # mirrors `_prepare_periodic_nd_impl` for the PreCompute path so that local
     # Hermite ND OnTheFly build rejects the same mismatched data 1D and Cubic ND
@@ -329,7 +338,10 @@ function _build_hetero_precomputed(
     # Must happen before partials so the stored grid matches the data.
     grids_typed, data_ext, bcs_resolved = _prepare_periodic_nd(grids_typed, data, bcs_periodic)
     # Per-axis caching wrap (zero-copy of buffer); ownership copy in inner ctor.
-    grids_typed = map(_caching_axis, grids_typed, bcs_resolved)
+    # `NoInterp` axes can be singletons (length-1 marker) which `_CachedVector`
+    # rejects — pass those through raw via the method-aware variant. The eval
+    # kernel for NoInterp never invokes `_get_h`, so no cached lookup is needed.
+    grids_typed = map(_caching_axis_for_method, grids_typed, bcs_resolved, methods)
     # Per-axis materialize via 2-arg primitive (post-extension grid-span).
     extraps = map(_resolve_extrap, extraps, grids_typed)
 

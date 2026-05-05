@@ -354,6 +354,55 @@ Used for mixed-Hessian blending to get both first-derivative components in one l
 end
 
 """
+    _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeffs, offsets, hs_local, query, base_coords,
+        ::Val{K}, ax1, ax2) -> (value, deriv1_ax1, deriv1_ax2, deriv2_ax1_ax2)
+
+Fused single-pass evaluation of value, ∂f/∂x_{ax1}, ∂f/∂x_{ax2}, and ∂²f/∂x_{ax1}∂x_{ax2}
+for the off-diagonal (ax1 ≠ ax2) mixed Hessian case.  Replaces the previous two-pass approach
+of calling `_phs_eval_coeffs_value_and_two_deriv1` followed by `_phs_eval_coeffs_deriv2`.
+"""
+@inline function _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(
+        coeffs::AbstractVector{Tv},
+        offsets::Vector{<:NTuple{N, Int}},
+        hs_local::NTuple{N, Tg},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ax1::Int,
+        ax2::Int,
+    ) where {Tv, Tg, N, K}
+    ns = length(offsets)
+    yv   = zero(Tv)
+    yd1  = zero(Tv)
+    yd2  = zero(Tv)
+    yd12 = zero(Tv)
+
+    eps2 = eps(Tg)^2
+    @inbounds @simd for i in 1:ns
+        xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+        r2 = sum(x -> x * x, xh)
+        r  = sqrt(r2)
+        ci = coeffs[i]
+        r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
+        r2_inv = r_inv * r_inv
+        fp  = _phs_phi_prime(r, Val{K}())
+        fpp = _phs_phi_dprime(r, Val{K}())
+        yv   += ci * _phs_phi(r, Val{K}())
+        yd1  += ci * fp * xh[ax1] * r_inv
+        yd2  += ci * fp * xh[ax2] * r_inv
+        yd12 += ci * (fpp - fp * r_inv) * xh[ax1] * xh[ax2] * r2_inv
+    end
+
+    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
+    poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
+    yv   += _phs_eval_poly(Δx, poly_exps, coeffs, ns)
+    yd1  += _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, ax1)
+    yd2  += _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, ax2)
+    yd12 += _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, ax1, ax2)
+    return yv, yd1, yd2, yd12
+end
+
+"""
     _phs_solve_stencil!(itp, base_idx, rhs_buf, coeff_buf) -> (offsets, coeff, hs_local)
 
 Perform the linear solve for the PHS stencil at `base_idx`:
@@ -593,9 +642,8 @@ Algorithm:
                 else
                     da2  = (Tg(query[ax2]) - nb_coords[ax2]) / d_dist
                     wxi2 = wp * da2
-                    f, f1, f1b = _phs_eval_coeffs_value_and_two_deriv1(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1, ax2)
-                    f = Tv(f); f1 = Tv(f1); f1b = Tv(f1b)
-                    f2 = Tv(_phs_eval_coeffs_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1, ax2))
+                    f, f1, f1b, f2 = _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1, ax2)
+                    f = Tv(f); f1 = Tv(f1); f1b = Tv(f1b); f2 = Tv(f2)
                     sum_w += w; sum_wy += w * f
                     sum_N1 += wxi1 * f + w * f1
                     sum_W1 += wxi1
@@ -794,9 +842,8 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                 else
                     da2   = (Tg(query[ax2]) - nb_coords[ax2]) / d_dist
                     wxi2  = wp * da2
-                    f, f_d1, f_d1b = _phs_eval_coeffs_value_and_two_deriv1(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1, ax2)
-                    f = Tv(f); f_d1 = Tv(f_d1); f_d1b = Tv(f_d1b)
-                    f_d2  = Tv(_phs_eval_coeffs_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1, ax2))
+                    f, f_d1, f_d1b, f_d2 = _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1, ax2)
+                    f = Tv(f); f_d1 = Tv(f_d1); f_d1b = Tv(f_d1b); f_d2 = Tv(f_d2)
                     g    = exp(f)
                     dg1  = g * f_d1
                     dg2  = g * f_d1b

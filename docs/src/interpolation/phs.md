@@ -141,6 +141,8 @@ The resulting plot shows exceptional agreement with analytical values, even near
 
 **Left column:** Standard 3D interpolation methods (nearest, linear, cubic spline, cardinal) vs. analytical DFT values. All exhibit spurious oscillations and errors near the nuclei. **Right column:** PHS with log-density transform and promolecular reference. Smooth, accurate across the domain, with only minor deviations very close to nuclei.
 
+Polyharmonic spline interpolation was added specifically for applications to physical systems with singularities and steep features, where they achieve better relative results. The results show that PHS with log-density transform and a promolecular reference achieves **orders of magnitude better accuracy** than nearest, linear, cubic spline, and cardinal interpolation for both the density and its derivatives, even near nuclear cusps, at the expense of higher computational cost.
+
 ### Running the Example
 
 The script automatically downloads wavefunction files on first run:
@@ -157,9 +159,36 @@ This generates `phs_density_comparison.png` and demonstrates:
 - Evaluating density, gradient, Laplacian analytically
 - Batch evaluation for performance
 
-### Performance Comparison for the phenol dimer example:
+### Error Statistics (with method-to-PHS ratios) for phenol dimer example
 
-#### Timing Summary (with PHS-to-method ratios)
+#### Charge Density (ρ)
+
+| Method | Min Error | Max Error | Mean Error | Median Error |
+|--------|-----------|-----------|------------|--------------|
+| Nearest            | 5.27e-04 (35555×) | 2.15e+00 (2×) | 1.84e-01 (45×) | 1.34e-01 (837×) |
+| Linear             | 1.68e-05 (1133×) | 9.34e-01 (1×) | 8.80e-02 (22×) | 2.18e-02 (135×) |
+| Cubic              | 4.58e-06 (309×) | 9.73e-01 (1×) | 1.17e-01 (29×) | 3.36e-03 (21×) |
+| Cardinal           | 2.29e-05 (1546×) | 9.21e-01 (1×) | 9.65e-02 (24×) | 3.47e-03 (22×) |
+| PHS                | 1.48e-08 | 1.00e+00 | 4.06e-03 | 1.61e-04 |
+
+#### Gradient Magnitude (|∇ρ|)
+
+| Method | Min Error | Max Error | Mean Error | Median Error |
+|--------|-----------|-----------|------------|--------------|
+| Linear             | 3.75e-05 (49×) | 2.39e+01 (24×) | 4.14e-01 (35×) | 1.89e-01 (171×) |
+| Cubic              | 2.39e-05 (31×) | 3.36e+00 (3×) | 3.57e-01 (30×) | 2.65e-02 (24×) |
+| Cardinal           | 1.83e-04 (238×) | 2.52e+00 (3×) | 2.48e-01 (21×) | 3.23e-02 (29×) |
+| PHS                | 7.68e-07 | 1.00e+00 | 1.17e-02 | 1.11e-03 |
+
+#### Laplacian Magnitude (|∇²ρ|)
+
+| Method | Min Error | Max Error | Mean Error | Median Error |
+|--------|-----------|-----------|------------|--------------|
+| Cubic              | 8.30e-06 (1×) | 1.13e+03 (364×) | 6.41e+00 (135×) | 1.69e-01 (12×) |
+| Cardinal           | 7.58e-04 (59×) | 1.96e+02 (63×) | 2.41e+00 (51×) | 5.03e-01 (37×) |
+| PHS                | 1.28e-05 | 3.09e+00 | 4.73e-02 | 1.37e-02 |
+
+### Timing Summary (with PHS-to-method ratios) for phenol dimer example
 
 The build time was for a 75×113×70 grid, and evaluation times were for 1000 query points along the hydrogen-bond path:
 
@@ -172,35 +201,6 @@ The build time was for a 75×113×70 grid, and evaluation times were for 1000 qu
 | PHS                |           2.267 |            1.525 |              8.514 |               14.466 |
 
 *PHS is significantly more expensive to build and evaluate than standard methods, but achieves much higher accuracy, especially for derivatives.*
-
-#### Charge Density (ρ) — Relative Error Statistics (with method-to-PHS ratios)
-
-| Method | Min Error | Max Error | Mean Error | Median Error |
-|--------|-----------|-----------|------------|--------------|
-| Nearest            | 5.27e-04 (35555×) | 2.15e+00 (2×) | 1.84e-01 (45×) | 1.34e-01 (837×) |
-| Linear             | 1.68e-05 (1133×) | 9.34e-01 (1×) | 8.80e-02 (22×) | 2.18e-02 (135×) |
-| Cubic              | 4.58e-06 (309×) | 9.73e-01 (1×) | 1.17e-01 (29×) | 3.36e-03 (21×) |
-| Cardinal           | 2.29e-05 (1546×) | 9.21e-01 (1×) | 9.65e-02 (24×) | 3.47e-03 (22×) |
-| PHS                | 1.48e-08 | 1.00e+00 | 4.06e-03 | 1.61e-04 |
-
-#### Gradient Magnitude (|∇ρ|) — Relative Error Statistics (with method-to-PHS ratios)
-
-| Method | Min Error | Max Error | Mean Error | Median Error |
-|--------|-----------|-----------|------------|--------------|
-| Linear             | 3.75e-05 (49×) | 2.39e+01 (24×) | 4.14e-01 (35×) | 1.89e-01 (171×) |
-| Cubic              | 2.39e-05 (31×) | 3.36e+00 (3×) | 3.57e-01 (30×) | 2.65e-02 (24×) |
-| Cardinal           | 1.83e-04 (238×) | 2.52e+00 (3×) | 2.48e-01 (21×) | 3.23e-02 (29×) |
-| PHS                | 7.68e-07 | 1.00e+00 | 1.17e-02 | 1.11e-03 |
-
-#### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics (with method-to-PHS ratios)
-
-| Method | Min Error | Max Error | Mean Error | Median Error |
-|--------|-----------|-----------|------------|--------------|
-| Cubic              | 8.30e-06 (1×) | 1.13e+03 (364×) | 6.41e+00 (135×) | 1.69e-01 (12×) |
-| Cardinal           | 7.58e-04 (59×) | 1.96e+02 (63×) | 2.41e+00 (51×) | 5.03e-01 (37×) |
-| PHS                | 1.28e-05 | 3.09e+00 | 4.73e-02 | 1.37e-02 |
-
-Polyharmonic spline interpolation was added specifically for applications to physical systems with singularities and steep features, where they achieve better relative results. The results show that PHS with log-density transform and a promolecular reference achieves **orders of magnitude better accuracy** than nearest, linear, cubic spline, and cardinal interpolation for both the density and its derivatives, even near nuclear cusps, at the expense of higher computational cost.
 
 ## References
 

@@ -85,7 +85,6 @@ OOB handling baked into weights at construction time (no runtime OOB checks).
 """
 function _bake_quadratic_adjoint_anchors(
         x::AbstractVector{Tg},
-        spacing::AbstractGridSpacing{Tg},
         xq::AbstractVector{Tg},
         extrap::AbstractExtrap
     ) where {Tg}
@@ -108,10 +107,12 @@ function _bake_quadratic_adjoint_anchors(
             xq_raw
         end
 
-        # Search interval
-        idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, x, spacing, xq_eval)
-        h = _get_h(spacing, idx)
-        inv_h = _get_inv_h(spacing, idx)
+        # Search interval — 3-arg axis-only form; `_get_h(x, idx)` reads from
+        # the wrapped axis (`_CachedRange`/`_CachedVector`) cache or falls
+        # back to on-the-fly diff for raw `Vector`.
+        idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, x, xq_eval)
+        h = _get_h(x, idx)
+        inv_h = _get_inv_h(x, idx)
         t = (xq_eval - xL) * inv_h
 
         # Compute all weight sets
@@ -154,8 +155,8 @@ Constructed from a grid and query points (query-baked, data-free).
 
 # Type Parameters
 - `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
-- `S`: Grid spacing type (for fast inv_h access)
-- `X`: Grid vector type (after copy for mutation safety)
+- `X`: Grid vector type — wrapped axis (`_CachedRange`/`_CachedVector`) carries
+       cached `h`/`inv_h` directly; no separate `spacing` field needed.
 - `BC`: Boundary condition type (Left, Right, or MinCurvFit)
 
 # Usage
@@ -184,29 +185,25 @@ No tridiagonal solve needed (unlike cubic) — the slope recurrence
 """
 struct QuadraticAdjoint{
         Tg,
-        S <: AbstractGridSpacing{Tg},
         BC <: QuadraticBC,
         X <: AbstractVector{Tg},
     } <: AbstractAdjoint1D{Tg}
-    spacing::S
     anchors::Vector{_QuadraticAdjointAnchor1D{Tg}}
     bc::BC
     grid_size::Int
-    grid::X  # Needed for PolyFit BC adjoint
+    grid::X  # Wrapped axis — provides `_get_h`/`_get_inv_h` directly, also used for PolyFit BC adjoint
     mincurv_C::Tg  # Precomputed inv(Σ inv_h); only used for MinCurvFit BC
 
     # Inner constructor: copy() for mutation safety.
     # copy() on immutable Range types is a no-op (zero allocation).
     # typeof() rebinds X after copy (e.g. SubArray → Vector).
     function QuadraticAdjoint(
-            spacing::S, anchors::Vector{_QuadraticAdjointAnchor1D{Tg}},
+            anchors::Vector{_QuadraticAdjointAnchor1D{Tg}},
             bc::BC, grid_size::Int, grid::AbstractVector{Tg}
-        ) where {Tg, S <: AbstractGridSpacing{Tg}, BC <: QuadraticBC}
+        ) where {Tg, BC <: QuadraticBC}
         gc = copy(grid)
-        # Axis-based `_compute_mincurv_C` reads `_get_inv_h(gc, i)` directly;
-        # `spacing` is now an unused legacy field (removed in PR3 → C7).
         C = bc isa MinCurvFit ? _compute_mincurv_C(gc, grid_size) : zero(Tg)
-        return new{Tg, S, BC, typeof(gc)}(spacing, anchors, bc, grid_size, gc, C)
+        return new{Tg, BC, typeof(gc)}(anchors, bc, grid_size, gc, C)
     end
 end
 
@@ -642,11 +639,10 @@ function quadratic_adjoint(
         end
     end
 
-    # Build spacing and anchors
-    spacing = _create_spacing(x_p)
-    anchors = _bake_quadratic_adjoint_anchors(x_p, spacing, xq_p, extrap)
+    # Bake anchors — axis-as-truth, no transient `_create_spacing` call needed.
+    anchors = _bake_quadratic_adjoint_anchors(x_p, xq_p, extrap)
 
-    return QuadraticAdjoint(spacing, anchors, bc, length(x_p), x_p)
+    return QuadraticAdjoint(anchors, bc, length(x_p), x_p)
 end
 
 # Scalar query convenience

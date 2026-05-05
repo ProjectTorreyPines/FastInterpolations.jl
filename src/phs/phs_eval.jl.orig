@@ -786,8 +786,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
             @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
             w = _phs_blend_weight(sqrt(d2), blend_a, blend_a3)
             w < eps(Tg) && continue
-            offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
-            f = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
+            f = Tv(_phs_eval_stencil(itp, nb_idx, query, ops_val, rhs_buf, coeff_buf))
             sum_w  += w
             sum_wg += w * exp(f)
         end
@@ -823,7 +822,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                 sum_N1 += wp * dir * g + w * g * f_ξ
                 sum_W1 += wp * dir
             else
-                f = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
+                f = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_val))
                 g = exp(f)
                 sum_w  += w
                 sum_wg += w * g
@@ -899,11 +898,11 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                 end
             else
                 # d≈0: weight derivatives ≈ 0
-                f    = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
+                f    = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_val))
                 g    = exp(f)
-                f_d2 = Tv(_phs_eval_coeffs_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1, ax2))
+                f_d2 = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops))
                 # For the d≈0 diagonal case, f_d1 contributes to d2g; since it's rare, compute separately
-                f_d1_sq = is_diag ? Tv(_phs_eval_coeffs_deriv1(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1))^2 : zero(Tv)
+                f_d1_sq = is_diag ? Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d1_1))^2 : zero(Tv)
                 d2g = g * (f_d2 + f_d1_sq)
                 sum_w += w; sum_wg += w * g
                 sum_N2 += w * d2g
@@ -990,7 +989,7 @@ that `_phs_eval_with_transform` previously made for gradient queries.
             sum_N1 += wp * dir * g + w * g * f_ξ
             sum_W1 += wp * dir
         else
-            f = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
+            f = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_val))
             g = exp(f)
             sum_w  += w
             sum_wg += w * g
@@ -1086,18 +1085,21 @@ G_ax2 == G_ax1.  Replaces four separate `_phs_eval_blended_G` calls that
             end
         else
             # d≈0: weight prime/dprime ≈ 0; only stencil contributions survive.
-            f    = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
+            f    = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_val))
             g    = exp(f)
-            f_d1 = Tv(_phs_eval_coeffs_deriv1(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1))
+            f_d1 = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d1_1))
             if is_diag
-                f_d2   = Tv(_phs_eval_coeffs_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1, ax1))
+                ops_d2 = ntuple(d -> d == ax1 ? EvalDeriv2() : EvalValue(), Val(N))
+                f_d2   = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d2))
                 d2g    = g * (f_d2 + f_d1 * f_d1)
                 sum_w  += w; sum_wg += w * g
                 sum_N1 += w * g * f_d1
                 sum_N2 += w * d2g
             else
-                f_d1b    = Tv(_phs_eval_coeffs_deriv1(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax2))
-                f_d2     = Tv(_phs_eval_coeffs_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ax1, ax2))
+                ops_d1_2 = ntuple(d -> d == ax2 ? EvalDeriv1() : EvalValue(), Val(N))
+                f_d1b    = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d1_2))
+                ops_d12  = ntuple(d -> (d == ax1 || d == ax2) ? EvalDeriv1() : EvalValue(), Val(N))
+                f_d2     = Tv(_phs_eval_from_coeffs(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), ops_d12))
                 d2g      = g * (f_d2 + f_d1 * f_d1b)
                 sum_w  += w; sum_wg += w * g
                 sum_N1  += w * g * f_d1

@@ -11,6 +11,8 @@
 # families (Quadratic) still carry a separate `spacing::S` field.
 @inline _spacing(itp::LinearInterpolant) = itp.x
 @inline _spacing(itp::ConstantInterpolant) = itp.x
+@inline _spacing(sitp::LinearSeriesInterpolant) = sitp.x
+@inline _spacing(sitp::ConstantSeriesInterpolant) = sitp.x
 @inline _spacing(itp::CubicInterpolant) = itp.cache.x
 @inline _spacing(sitp::CubicSeriesInterpolant) = sitp.cache.x
 @inline _spacing(itp::AbstractHermiteInterpolant1D) = itp.x

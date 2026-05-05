@@ -64,11 +64,10 @@ sitp_complex = constant_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct ConstantSeriesInterpolant{Tg, Tv, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
-    const x::X                            # Shared x-grid (Range or Vector)
+mutable struct ConstantSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+    const x::X                            # Shared x-grid (wrapped — `_CachedVector`/`_CachedRange` carrying cached `h`/`inv_h`)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
-    const spacing::S                      # Grid spacing (ScalarSpacing or VectorSpacing)
     const extrap::E                        # Extrapolation mode (compile-time specialized)
     const side::SD                        # Side selection (compile-time specialized)
     const search_policy::P                # Default search policy
@@ -80,13 +79,12 @@ mutable struct ConstantSeriesInterpolant{Tg, Tv, S <: AbstractGridSpacing{Tg}, E
             side::SD,
             search::P = AutoSearch()
         ) where {Tg, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
-        # _to_float(copy(x), Tg): Range → _CachedRange (O(1) search + no TwicePrecision overhead);
-        # Vector → defensive copy. copy() on Range is identity (zero alloc).
-        # typeof(xc) rebinds X after conversion (view → Vector, TwicePrecision → _CachedRange).
-        # y is NOT copied here — _build_series_mat() already provides an owned matrix.
-        xc = _to_float(copy(x), Tg)
-        spacing = _create_spacing(xc)
-        return new{Tg, Tv, typeof(spacing), E, SD, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), spacing, extrap, side, search)
+        # Outer `constant_interp` already applied `_caching_axis(x, bc)` so `x` is
+        # a wrapper carrying cached `h`/`inv_h`. Inner ctor mirrors `ConstantInterpolant`
+        # 1D — `_convert_copy(x, Tg)` for ownership + element-type promotion. y is
+        # NOT copied — `_build_series_mat()` already provides an owned matrix.
+        xc = _convert_copy(x, Tg)
+        return new{Tg, Tv, E, SD, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), extrap, side, search)
     end
 end
 
@@ -366,11 +364,14 @@ function constant_interp(
         # axis at query time. `_promote_extrap` only handles `FillExtrap` value
         # promotion; passthrough for `WrapExtrap`.
         extrap_p = _promote_extrap(WrapExtrap(), Tv_out)
-        return ConstantSeriesInterpolant(x_ext, y_mat_ext, extrap_p, side, search)
+        # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
+        x_eff = _caching_axis(x_ext, NoBC())
+        return ConstantSeriesInterpolant(x_eff, y_mat_ext, extrap_p, side, search)
     end
 
     extrap_p = _promote_extrap(extrap, Tv_out)
-    return ConstantSeriesInterpolant(x, y_mat, extrap_p, side, search)
+    x_eff = _caching_axis(x, bc)
+    return ConstantSeriesInterpolant(x_eff, y_mat, extrap_p, side, search)
 end
 
 # NOTE: the former Real grid promotion wrapper (Tg <: Real) has been removed.

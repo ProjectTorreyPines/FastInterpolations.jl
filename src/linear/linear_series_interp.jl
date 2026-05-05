@@ -67,10 +67,9 @@ sitp_complex = linear_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct LinearSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, S <: AbstractGridSpacing{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
-    const x::X                            # Shared x-grid (Range or Vector)
+mutable struct LinearSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+    const x::X                            # Shared x-grid (wrapped — `_CachedVector` for Vector, `_CachedRange` for Range; carries cached `h`/`inv_h`)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
-    const spacing::S                      # Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
     const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
     const extrap::E                        # Extrapolation mode (compile-time specialized)
     const search_policy::P                # Default search policy (immutable, thread-safe)
@@ -81,13 +80,14 @@ mutable struct LinearSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: Abstrac
             extrap::E,
             search::P = AutoSearch()
         ) where {Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
-        # _to_float(copy(x), Tg): Range → _CachedRange (O(1) search + no TwicePrecision overhead);
-        # Vector → defensive copy (copy is identity for immutable Range, alloc for Vector).
-        # typeof(xc) rebinds X after conversion (view → Vector, TwicePrecision → _CachedRange).
-        # y is NOT copied here — _build_series_mat() already provides an owned matrix.
-        xc = _to_float(copy(x), Tg)
-        spacing = _create_spacing(xc)
-        return new{Tg, Tv, E, P, typeof(xc), typeof(spacing)}(xc, y, spacing, LazyTranspose{Tv}(), extrap, search)
+        # Outer `linear_interp` already applied `_caching_axis(x, bc)` so `x` is
+        # a wrapper carrying cached `h`/`inv_h`. Inner ctor mirrors `LinearInterpolant`
+        # 1D — `_convert_copy(x, Tg)` for ownership + element-type promotion
+        # (wrapper-preserving same-eltype `Base.copy`, single-pass rebuild for
+        # different eltype). y is NOT copied — `_build_series_mat()` already
+        # provides an owned matrix.
+        xc = _convert_copy(x, Tg)
+        return new{Tg, Tv, E, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), extrap, search)
     end
 end
 
@@ -360,11 +360,14 @@ function linear_interp(
         # Materialize against the extended grid on both branches — duck grids
         # keep their eltype, Float grids go through value-type promotion.
         extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(WrapExtrap(), Tv_out) : WrapExtrap()
-        return LinearSeriesInterpolant(x_typed, y_mat, extrap_p, search)
+        # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
+        x_eff = _caching_axis(x_typed, NoBC())
+        return LinearSeriesInterpolant(x_eff, y_mat, extrap_p, search)
     end
 
     extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(extrap, Tv_out) : extrap
-    return LinearSeriesInterpolant(x_typed, y_mat, extrap_p, search)
+    x_eff = _caching_axis(x_typed, bc)
+    return LinearSeriesInterpolant(x_eff, y_mat, extrap_p, search)
 end
 
 # ========================================

@@ -542,7 +542,14 @@ end
 # are idempotent passthroughs — wrapping is already done; the inner ctor's
 # `_convert_copy` handles ownership transfer + optional type conversion.
 
-@inline _caching_axis(x::AbstractVector, ::AbstractBC) = _CachedVector(x)
+# NoInterp axes can be singletons (length-1 marker, no interpolation kernel
+# touches them) — `_CachedVector` requires ≥ 2 points to compute `h`/`inv_h`,
+# so leave singleton grids raw. Inner ctor's `_convert_copy(::AbstractVector,
+# T)` still copies + type-converts; the only cost is the lost `_get_h(c, i)`
+# cached lookup, which `_get_h(::AbstractVector, i)` fallback covers anyway
+# (and NoInterp axes never invoke `_get_h`).
+@inline _caching_axis(x::AbstractVector, ::AbstractBC) =
+    length(x) >= 2 ? _CachedVector(x) : x
 @inline _caching_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
 @inline function _caching_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
     bc_resolved = _resolve_bc_period(x, bc)

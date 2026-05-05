@@ -47,12 +47,11 @@ spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
     @assert n == length(grid) "values and grid must have same length"
     @assert n >= 2 "Need at least 2 points"
 
-    # spacing: ScalarSpacing for Range (zero-alloc), pool-acquired VectorSpacing for Vector
-    spacing = _create_spacing_pooled(pool, grid)
     secant = acquire!(pool, Tv, n - 1)
 
-    # 1. Compute secant slopes using spacing
-    _compute_quadratic_secants!(secant, values, spacing)
+    # 1. Compute secant slopes — `grid` carries cached `h`/`inv_h` when wrapped,
+    #    raw `Vector` falls back to on-the-fly diff via `_get_inv_h(::AbstractVector, i)`.
+    _compute_quadratic_secants!(secant, values, grid)
 
     # 2. Normalize BC values to Tv (lazy normalization — Tv is known here)
     # This ensures _fill_slopes! always receives Tv-typed values,
@@ -60,7 +59,7 @@ spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
     bc_typed = _normalize_bc(bc, first(values))
 
     # 3. Fill slopes via BC-dispatched recurrence
-    _fill_slopes!(d_out, secant, spacing, bc_typed, grid, values)
+    _fill_slopes!(d_out, secant, grid, bc_typed, grid, values)
 
     return d_out
 end

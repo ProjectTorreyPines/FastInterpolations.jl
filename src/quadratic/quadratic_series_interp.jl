@@ -380,19 +380,15 @@ function quadratic_interp(
     a_mat = Matrix{Tc}(undef, n_pts, n_ser)
     d_mat = Matrix{Tc}(undef, n_pts, n_ser)
 
-    # Compute spacing as a transient — shared across all series solver
-    # calls during construction, then GC'd. Not stored in the struct;
-    # the wrapped axis `x` carries `h`/`inv_h` directly.
-    spacing = _create_spacing(x)
-
-    # Promote BC values to Tv_out for convert(Tv, bc.val) compatibility
+    # Promote BC values to Tv_out for convert(Tv, bc.val) compatibility.
+    # The wrapped axis `x` carries `h`/`inv_h` directly via `_get_h(x, i)`.
     bc_promoted = _normalize_bc(bc, first(y_mat))
     _typed_zero = 0 * y_mat[1]
 
     # Compute coefficients for each series from y_mat columns
     for k in 1:n_ser
         y_col = @view y_mat[:, k]
-        d_k, a_k = _compute_quadratic_coeffs(x, y_col, bc_promoted, spacing)
+        d_k, a_k = _compute_quadratic_coeffs(x, y_col, bc_promoted)
 
         @inbounds for i in 1:n_pts
             d_mat[i, k] = d_k[i]

@@ -147,15 +147,14 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
     x = _prepare_grid(x)
-    # Compute coefficients using temporary arrays from pool
-    # spacing is pooled (zero-alloc for Range, pool-acquired for Vector)
+    # Compute coefficients using temporary arrays from pool. The grid `x`
+    # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)
-    spacing = _create_spacing_pooled(pool, x)
     Tcoeff = _output_eltype(eltype(y), eltype(x))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
-    _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
+    _compute_quadratic_coeffs!(d, a, x, y, bc_promoted)
 
     searcher = _resolve_search(x, xq, search, hint)
     # Materialize WrapExtrap{Nothing} against the grid before reaching the kernel.
@@ -205,14 +204,14 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     @assert length(x) >= 2 "x must have at least 2 elements"
 
     x = _prepare_grid(x)
-    # Compute coefficients using temporary arrays from pool
+    # Compute coefficients using temporary arrays from pool. The grid `x`
+    # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)
-    spacing = _create_spacing_pooled(pool, x)
     Tcoeff = _output_eltype(eltype(y), eltype(x))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
-    _compute_quadratic_coeffs!(d, a, spacing, x, y, bc_promoted)
+    _compute_quadratic_coeffs!(d, a, x, y, bc_promoted)
 
     searcher = _resolve_search(x, x_targets, search, nothing)
     extrap_eff = _resolve_extrap(extrap, x)

@@ -445,6 +445,22 @@ const _gx = zeros(N_path)
 const _gy = zeros(N_path)
 const _gz = zeros(N_path)
 
+# ── PHS warm-up: trigger JIT compilation and fill stencil cache ───────────────
+# The first call to a PHS method with a new ops-type triggers JIT compilation,
+# which can account for millions of "allocations" in @time output. These warm-up
+# calls force compilation and stencil-cache filling so that the @time measurements
+# below reflect steady-state (allocation-minimal) execution.
+print("  Warming up PHS (JIT + stencil cache) ... ")
+flush(stdout)
+itp_phs(ρ_phs, queries)                                    # value → compile + cache fill
+itp_phs(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
+itp_phs(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
+itp_phs(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
+itp_phs(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
+itp_phs(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
+itp_phs(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
+println("done.")
+
 # ── density ρ ──────────────────────────────────────────────────────────────────
 println("  Density (ρ):")
 eval_times["ρ"] = Dict()

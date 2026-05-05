@@ -257,7 +257,8 @@ end
     # This tests that stored data is log(ρ) and evaluation returns exp(f)
     x = range(0.0, π, 20)
     y = range(0.0, π, 20)
-    rho = [0.5 + sin(xi) * cos(yj) for xi in x, yj in y]  # positive data
+    # 1.5 + 0.4*sin*cos has range [1.1, 1.9] — strictly positive everywhere
+    rho = [1.5 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]
     
     ref = ConstantRef(1.0)
     
@@ -284,7 +285,7 @@ end
     # in the log-transformed PHS
     x = range(0.0, π, 25)
     y = range(0.0, π, 25)
-    rho = [0.5 + sin(xi) * cos(yj) for xi in x, yj in y]
+    rho = [1.5 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]
     
     ref = ConstantRef(1.0)
     itp = phs_interp((x, y), rho; 

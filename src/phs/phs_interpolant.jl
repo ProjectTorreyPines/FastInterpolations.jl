@@ -174,20 +174,28 @@ end
 
 Evaluate the PHS interpolant at a single N-tuple query point.
 """
+# Shared implementation — always receives concrete `ops` tuple, zero-alloc.
+@inline function _phs_callable_impl(
+        itp::PHSInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}},
+        ops::NTuple{N, AbstractEvalOp},
+    ) where {Tg, Tv, N}
+    _phs_check_domain(itp, query)
+    # Handle out-of-bounds (fills FillExtrap, etc.)
+    oob = _try_fill_oob(query, itp.grids, itp.extraps, ops, first(itp.data))
+    oob !== nothing && return oob
+    return _phs_eval(itp, query, ops)
+end
+
+# Single callable — Union{DerivOp, Tuple} is handled by Julia's union-splitting
+# at the _phs_resolve_ops call site inside _phs_callable_impl.
 @inline function (itp::PHSInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         kw...,  # absorb search/hint passed by AbstractInterpolantND protocol
     ) where {Tg, Tv, N}
-    _phs_check_domain(itp, query)
-    # Handle out-of-bounds (fills FillExtrap, etc.)
-    oob = _try_fill_oob(query, itp.grids, itp.extraps, _phs_resolve_ops(deriv, Val(N)), first(itp.data))
-    oob !== nothing && return oob
-    ops = _phs_resolve_ops(deriv, Val(N))
-    return _phs_eval(itp, query, ops)
+    return _phs_callable_impl(itp, query, _phs_resolve_ops(deriv, Val(N)))
 end
-
-# ---- Batch in-place (SoA + AoS via query protocol) ----
 
 """
     (itp::PHSInterpolantND)(out::AbstractVector, queries; deriv=EvalValue())
@@ -196,30 +204,52 @@ In-place batch evaluation. `queries` can be:
   - `Tuple{Vararg{AbstractVector,N}}` (SoA)
   - `AbstractVector{<:NTuple{N}}` or `AbstractVector{<:AbstractVector}` (AoS)
 
-Uses `Threads.@threads :static` for parallelism.
+Uses `Threads.@threads :static` for parallelism (when nthreads > 1).
 All workspace is thread-local (AdaptiveArrayPools).
 """
+# Shared batch implementation — receives concrete ops tuple.
+function _phs_batch_impl!(
+        itp::PHSInterpolantND{Tg, Tv, N},
+        out::AbstractVector,
+        queries,
+        ops::NTuple{N, AbstractEvalOp},
+    ) where {Tg, Tv, N}
+    nq = _query_length(queries)
+    length(out) == nq || _throw_query_output_mismatch(nq, length(out))
+    _query_validate(queries)
+
+    # Skip Threads.@threads overhead when running single-threaded (~14 KB constant).
+    if Threads.nthreads() == 1
+        for k in 1:nq
+            q = _extract_query_point(queries, k, Val(N))
+            oob = _try_fill_oob(q, itp.grids, itp.extraps, ops, first(itp.data))
+            if oob !== nothing
+                @inbounds out[k] = oob
+            else
+                @inbounds out[k] = _phs_eval(itp, q, ops)
+            end
+        end
+    else
+        Threads.@threads :static for k in 1:nq
+            q = _extract_query_point(queries, k, Val(N))
+            oob = _try_fill_oob(q, itp.grids, itp.extraps, ops, first(itp.data))
+            if oob !== nothing
+                @inbounds out[k] = oob
+            else
+                @inbounds out[k] = _phs_eval(itp, q, ops)
+            end
+        end
+    end
+    return out
+end
+
 function (itp::PHSInterpolantND{Tg, Tv, N})(
         out::AbstractVector,
         queries::Union{Tuple{Vararg{AbstractVector, N}}, AbstractVector};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         kw...,  # absorb search/hint forwarded by AbstractInterpolantND protocol
     ) where {Tg, Tv, N}
-    nq = _query_length(queries)
-    length(out) == nq || _throw_query_output_mismatch(nq, length(out))
-    _query_validate(queries)
-    ops = _phs_resolve_ops(deriv, Val(N))
-
-    Threads.@threads :static for k in 1:nq
-        q = _extract_query_point(queries, k, Val(N))
-        oob = _try_fill_oob(q, itp.grids, itp.extraps, ops, first(itp.data))
-        if oob !== nothing
-            @inbounds out[k] = oob
-        else
-            @inbounds out[k] = _phs_eval(itp, q, ops)
-        end
-    end
-    return out
+    return _phs_batch_impl!(itp, out, queries, _phs_resolve_ops(deriv, Val(N)))
 end
 
 # Allocating batch evaluation is handled by AbstractInterpolantND protocol,

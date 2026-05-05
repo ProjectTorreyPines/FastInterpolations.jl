@@ -240,6 +240,10 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    # Resolve bare `GridIdx(k)` (which carries `val=NaN` until bound) into
+    # its grid coordinate so all subsequent arithmetic sees a real value.
+    # Real queries pass through unchanged.
+    xq = _resolve_grididx(xq, x)
     @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     # Independent computation of `α` and `inv_h`. The kernel uses only one
@@ -261,6 +265,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
     xq_primal = _extract_primal(xq)
     if xq_primal < first(x)
         return _eval_extrapolation(op, first(y), extrap, xq)
@@ -285,6 +290,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
     xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     α = _alpha_of(xq_wrapped, xL, xR, x)

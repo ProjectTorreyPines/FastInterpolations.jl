@@ -282,6 +282,33 @@
                 @test output[i] ≈ itp_ref(xq[i]) atol = 1.0e-14
             end
         end
+
+        @testset "GridIdx scalar query — regression for unresolved-NaN bug" begin
+            # `GridIdx(k)` carries `val=NaN` until `_resolve_grididx` binds it
+            # to the knot coordinate. The 1D scalar eval kernels for Linear/
+            # Cubic/PCHIP/Cardinal/Akima all use `xq` directly for `xq - xL` /
+            # `_wrap_to_domain(xq, x)` arithmetic, so without an explicit
+            # `_resolve_grididx(xq, x)` at the kernel head, queries like
+            # `itp(GridIdx(4))` on `:exclusive` periodic Vector grids return
+            # NaN. Lock the contract: bare `GridIdx(k)` must produce `y[k]`.
+            x = [0.0, 0.2, 0.55, 0.8]
+            y = sin.(2π .* x)
+            bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+
+            @test linear_interp(x, y; bc = bc, extrap = WrapExtrap())(GridIdx(4)) ≈ y[4]
+            @test cubic_interp(x, y; bc = bc, extrap = WrapExtrap())(GridIdx(4)) ≈ y[4]
+            @test pchip_interp(x, y; bc = bc, extrap = WrapExtrap())(GridIdx(4)) ≈ y[4]
+            @test cardinal_interp(x, y; tension = 0.0, bc = bc, extrap = WrapExtrap())(GridIdx(4)) ≈ y[4]
+            @test akima_interp(x, y; bc = bc, extrap = WrapExtrap())(GridIdx(4)) ≈ y[4]
+
+            # Also verify NoBC + GridIdx (non-periodic path uses the same
+            # kernels with `extrap::AbstractExtrap`/`_ClampOrFill` overloads).
+            @test linear_interp(x, y)(GridIdx(2)) ≈ y[2]
+            @test cubic_interp(x, y)(GridIdx(2)) ≈ y[2]
+            @test pchip_interp(x, y)(GridIdx(2)) ≈ y[2]
+            @test cardinal_interp(x, y; tension = 0.0)(GridIdx(2)) ≈ y[2]
+            @test akima_interp(x, y)(GridIdx(2)) ≈ y[2]
+        end
     end
 
     # ========================================

@@ -21,6 +21,7 @@
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
     @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, _ = search_interval(searcher, x, xq)
     dL = xq - xL
@@ -39,6 +40,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
     xq_primal = _extract_primal(xq)
     if xq_primal < _extract_primal(first(x))
         return _eval_extrapolation(op, first(y), extrap, xq)
@@ -62,6 +64,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
     xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, _ = search_interval(searcher, x, xq_wrapped)
     dL = xq_wrapped - xL
@@ -128,6 +131,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
     @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, _ = search_interval(searcher, x, xq)
     n = _data_length(x)
@@ -149,6 +153,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
     xq_primal = _extract_primal(xq)
     if xq_primal < _extract_primal(first(x))
         return _eval_extrapolation(op, first(y), extrap, xq)
@@ -175,6 +180,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
     xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, _ = search_interval(searcher, x, xq_wrapped)
     n = _data_length(x)

@@ -29,6 +29,9 @@
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    # Resolve bare `GridIdx(k)` (carries `val=NaN` until bound) to its grid
+    # coordinate so subsequent arithmetic sees a real value.
+    xq = _resolve_grididx(xq, x)
     @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL
@@ -52,6 +55,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
     xq_primal = _extract_primal(xq)
     xq_primal < first(x) && return _eval_extrapolation(op, first(y), extrap, xq)
     xq_primal > last(x) && return _eval_extrapolation(op, last(y), extrap, xq)
@@ -78,6 +82,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
     xq_wrapped = _wrap_to_domain(xq, x)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     dL = xq_wrapped - xL

@@ -1151,9 +1151,17 @@ end
         @test allocs_ext == allocs_const
         domain_bytes = 2 * sizeof(eltype(x))
         @test allocs_wrap - allocs_ext <= domain_bytes
-        # Construction allocates: struct + defensive copy(x), copy(y) + spacing (h, inv_h vectors)
-        n_spacing_bytes = 2 * sizeof(eltype(x)) * (length(x) - 1)  # VectorSpacing h + inv_h
-        n_copy_bytes = sizeof(eltype(x)) * (length(x) + length(y)) + n_spacing_bytes + 384  # data + spacing + headers(×4 vectors) + struct
+        # After the PR refactor + insurance `_cache_axis` in inner ctor: two
+        # `_CachedVector` objects materialize during construction:
+        #   1) outer kwarg ctor's `_cache_axis(x, bc, Tg)` wraps the user
+        #      buffer (alias on `inner`, fresh allocs for `h`/`inv_h`).
+        #   2) inner ctor's `Base.copy(::_CachedVector)` deep-copies all
+        #      three fields (`inner`, `h`, `inv_h`) for ownership independence.
+        # So the cache arrays (h + inv_h) materialize twice.
+        n_cache_per_wrap = 2 * sizeof(eltype(x)) * (length(x) - 1)  # h + inv_h
+        n_copy_bytes = sizeof(eltype(x)) * (length(x) + length(y)) +  # owned buffer copy of x + y
+            2 * n_cache_per_wrap +                                     # two wraps × cache arrays
+            512                                                         # headers (×6 vectors) + struct + dispatch slack
         @test allocs_ext <= ALLOC_THRESHOLD + n_copy_bytes
     end
 

@@ -114,20 +114,27 @@ end
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
     Tv = _value_type(TY, Tg)
-    xc = _store_grid(x, Tg)
-    yc = _convert_copy(y, Tv)
+    # Caching wrap (zero-copy of buffer): Range → `_CachedRange{Tg}`,
+    # Vector → `_CachedVector{Tg, Tinv}` aliasing user buffer. Mirrors
+    # Linear/Constant — outer is reference-only, inner constructor takes
+    # ownership via `_convert_copy(x, Tg)` / `_convert_copy(y, Tv)`.
+    x_eff = _cache_axis(x, NoBC(), Tg)
     bc_p = _normalize_bc(bc, first(y))
 
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
-    validate_polyfit_points(bc_p, length(xc))
+    validate_polyfit_points(bc_p, length(x_eff))
 
-    # Compute spacing once: used for both coefficients and struct storage
-    spacing = _create_spacing(xc)
+    # Compute spacing as a transient — used by the solver for coefficient
+    # computation, then GC'd. Not stored in the struct; the wrapped axis
+    # carries `h`/`inv_h` directly via `_get_h(x, i)`.
+    spacing = _create_spacing(x_eff)
 
-    # Compute coefficients (d::Tc, a::Tc where Tc = _output_eltype(Tv, Tg))
-    d, a = _compute_quadratic_coeffs(xc, yc, bc_p, spacing)
+    # Compute coefficients (d::Tc, a::Tc where Tc = _output_eltype(Tv, Tg)).
+    # Solver's output buffer is allocated with the right element type
+    # regardless of y's raw eltype, so passing raw y is safe.
+    d, a = _compute_quadratic_coeffs(x_eff, y, bc_p, spacing)
 
     # 3-arg: materialize WrapExtrap{Nothing} + promote FillExtrap value type.
-    extrap_p = _resolve_extrap(extrap, xc, Tv)
-    return QuadraticInterpolant(xc, yc, spacing, a, d, extrap_p, search, bc_p)
+    extrap_p = _resolve_extrap(extrap, x_eff, Tv)
+    return QuadraticInterpolant(x_eff, y, a, d, extrap_p, search, bc_p)
 end

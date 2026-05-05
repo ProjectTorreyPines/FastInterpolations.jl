@@ -327,4 +327,25 @@
         y = [1.0, 3.0]
         @test isfinite(cardinal_interp(x, y, 0.5))
     end
+
+    @testset "Direct outer kwarg ctor" begin
+        using FastInterpolations: CardinalSlopes
+        # Cover `CardinalInterpolant1D(x, y, slope_strategy; tension=..., ...)`
+        # direct call.
+        x_vec = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y_vec = sin.(x_vec)
+        x_rng = range(0.0, 4.0; length = 5)
+
+        itp_v = CardinalInterpolant1D(x_vec, y_vec, CardinalSlopes(0.5))
+        @test itp_v.x isa FastInterpolations._CachedVector
+        @test isfinite(itp_v(2.5))
+
+        itp_r = CardinalInterpolant1D(x_rng, y_vec, CardinalSlopes(0.0); tension = 0.0)
+        @test itp_r.x isa FastInterpolations._CachedRange
+
+        itp_clamp = CardinalInterpolant1D(
+            x_vec, y_vec, CardinalSlopes(0.0); tension = 0.0, extrap = ClampExtrap()
+        )
+        @test itp_clamp(-1.0) ≈ y_vec[1]
+    end
 end

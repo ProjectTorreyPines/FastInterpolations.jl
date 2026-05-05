@@ -4,6 +4,10 @@
 # Public API: interp(grids, data; method, ...)
 # Internal:   _build_hetero_nd(grids, data, methods, extrap, search)
 
+# `_cache_axis_for_method` (3-arg + 4-arg variants) is defined in
+# `hetero_types.jl` so the inner ctor can use it directly. See there for
+# the NoInterp passthrough rationale.
+
 # ========================================
 # Homogeneous Auto-Dispatch
 # ========================================
@@ -260,20 +264,17 @@ function _build_hetero_nd(
     end
 
     # 2-5. Promote grid + data types
-    grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     data_typed = Tv === Tv_raw ? Array(data) : Array{Tv}(data)
 
     # 6. Resolve per-axis configuration (OnTheFly: no extension, bc-aware materialize).
     bcs = map(_bc_for_periodic_check, methods)
-    # Per-axis axis-as-truth wrap: `:exclusive` axes become `_ExclusivePeriodicAxis`
-    # (carrying the validated period and virtual endpoint `x[1]+period`), so
-    # downstream `last(grid)` / `_wrap_to_domain` / `search_interval` see the
-    # correct wrap domain without needing to re-derive period from raw n-length
-    # data. Non-periodic axes are normalized through `_caching_axis` too —
-    # Vector → `_CachedVector` (h/inv_h cached for repeat persistent queries),
-    # Range → `_CachedRange`. Mirrors how Linear/Constant/Cubic ND handle BC.
-    grids_typed = map((g, bc) -> _caching_axis(g, bc, Tg), grids_typed, bcs)
-    spacings = _create_spacings_typed(grids_typed)
+    # Per-axis caching wrap (zero-copy of buffer): `:exclusive` axes become
+    # `_ExclusivePeriodicAxis`, Vector → `_CachedVector`, Range → `_CachedRange`.
+    # `NoInterp` axes (singleton marker) bypass the wrap — see PreCompute path.
+    # Ownership copy + element-type promotion happens in the inner ctor's
+    # `_convert_copy(g, Tg)` per axis.
+    grids_typed = map(_cache_axis_for_method, grids_typed, bcs, methods)
     # Inclusive PeriodicBC requires `data[1, ...] ≈ data[end, ...]` per axis;
     # mirrors `_prepare_periodic_nd_impl` for the PreCompute path so that local
     # Hermite ND OnTheFly build rejects the same mismatched data 1D and Cubic ND
@@ -290,13 +291,7 @@ function _build_hetero_nd(
     # 7. Per-axis method validation
     _validate_axis_methods(grids_typed, methods, extraps)
 
-    return HeteroInterpolantND{
-        Tg, Tv, N,
-        typeof(grids_typed), typeof(spacings), typeof(methods),
-        typeof(extraps), typeof(searches), typeof(data_typed),
-    }(
-        grids_typed, spacings, data_typed, methods, extraps, searches
-    )
+    return HeteroInterpolantND(grids_typed, data_typed, methods, extraps, searches; bcs = bcs)
 end
 
 # ========================================
@@ -315,7 +310,7 @@ function _build_hetero_precomputed(
     else
         _validate_nd_grids(grids, data)
     end
-    grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     bcs_periodic = map(_bc_for_periodic_check, methods)
     # 4-arg expand-only — materialize deferred until after extension (post-extension
     # grid-span form is used via 2-arg primitive).
@@ -330,22 +325,20 @@ function _build_hetero_precomputed(
     _validate_axis_methods(grids_typed, methods, extraps)
 
     # Extend exclusive periodic axes to inclusive form (same as CubicInterpolantND).
-    # Must happen before spacings + partials so the stored grid matches the data.
+    # Must happen before partials so the stored grid matches the data.
     grids_typed, data_ext, bcs_resolved = _prepare_periodic_nd(grids_typed, data, bcs_periodic)
+    # Per-axis caching wrap (zero-copy of buffer); ownership copy in inner ctor.
+    # `NoInterp` axes can be singletons (length-1 marker) which `_CachedVector`
+    # rejects — pass those through raw via the method-aware variant. The eval
+    # kernel for NoInterp never invokes `_get_h`, so no cached lookup is needed.
+    grids_typed = map(_cache_axis_for_method, grids_typed, bcs_resolved, methods)
     # Per-axis materialize via 2-arg primitive (post-extension grid-span).
     extraps = map(_resolve_extrap, extraps, grids_typed)
-    spacings = _create_spacings_typed(grids_typed)
 
     # Build partials on the (possibly extended) data
     hetero_partials = _build_nd_coeffs_hetero(grids_typed, Tv, data_ext, methods, bcs_resolved)
 
-    return HeteroInterpolantND{
-        Tg, Tv, N,
-        typeof(grids_typed), typeof(spacings), typeof(methods),
-        typeof(extraps), typeof(searches), typeof(hetero_partials),
-    }(
-        grids_typed, spacings, hetero_partials, methods, extraps, searches
-    )
+    return HeteroInterpolantND(grids_typed, hetero_partials, methods, extraps, searches; bcs = bcs_resolved)
 end
 
 # ========================================

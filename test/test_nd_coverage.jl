@@ -30,7 +30,6 @@
         PreCompute,
         OnTheFly,
         _grid,
-        _spacing,
         _bc,
         _extrap,
         _search,
@@ -176,12 +175,6 @@
             # Test _grid accessor
             @test collect(_grid(itp, Val(1))) ≈ collect(x) rtol = 8eps(Float64)
             @test collect(_grid(itp, Val(2))) ≈ collect(y) rtol = 8eps(Float64)
-
-            # Test _spacing accessor (this was uncovered!)
-            sp1 = _spacing(itp, Val(1))
-            sp2 = _spacing(itp, Val(2))
-            @test sp1 isa FastInterpolations.AbstractGridSpacing
-            @test sp2 isa FastInterpolations.AbstractGridSpacing
 
             # Test _bc accessor
             @test _bc(itp, Val(1)) isa FastInterpolations.AbstractBC

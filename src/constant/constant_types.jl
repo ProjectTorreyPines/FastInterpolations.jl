@@ -60,30 +60,33 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
     side::SD         # Side selection (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    # Inner constructor: promotes x/y, wraps grid for cached spacing, stores.
-    # `_store_grid_cached`: Vector → `_CachedVector`, Range → `_CachedRange`,
-    # `_ExclusivePeriodicAxis` passes through. Spacing access via
-    # `_get_h(itp.x, i)` / `_get_inv_h(itp.x, i)`.
+    # Inner: `_cache_axis` (insurance) then `_convert_copy` for ownership +
+    # eltype promotion. `bc` kwarg lets direct-ctor callers request periodic.
     function ConstantInterpolant(
-            x::AbstractVector, y::AbstractVector, ev::E, sv::SD, search::P
+            x::AbstractVector, y::AbstractVector, ev::E, sv::SD, search::P;
+            bc::AbstractBC = NoBC()
         ) where {E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         _check_compatible_length(x, y)
         length(x) >= 2 || _throw_grid_too_small(length(x))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid_cached(x, Tg)
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, SD, P}(xc, yc, ev, sv, search)
     end
 end
 
-# Outer constructor: convenience kwarg wrapper.
+# Outer constructor: convenience kwarg wrapper. Wraps the axis here so the
+# inner ctor's `_cache_axis` insurance is an idempotent passthrough.
 @inline function ConstantInterpolant(
         x::AbstractVector,
         y::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    return ConstantInterpolant(x, y, extrap, side, search)
+    Tg = _promote_grid_float(eltype(x), eltype(y))
+    x_eff = _cache_axis(x, bc, Tg)
+    return ConstantInterpolant(x_eff, y, extrap, side, search; bc = bc)
 end

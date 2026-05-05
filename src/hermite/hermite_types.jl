@@ -14,7 +14,7 @@
 Callable interpolant for cubic Hermite interpolation with user-supplied slopes.
 Returned by `hermite_interp(x, y, dy)` (interpolant form).
 
-The grid `x` is wrapped via `_store_grid_cached` (Range → `_CachedRange`,
+The grid `x` is wrapped via `_cache_axis` (Range → `_CachedRange`,
 Vector → `_CachedVector`) so `_get_h(x, idx)` / `_get_inv_h(x, idx)` are
 O(1) cached lookups — no separate `spacing` field is stored. Evaluation uses
 `_hermite_kernel_1d` (derivative-based Hermite basis functions), NOT
@@ -54,20 +54,19 @@ struct CubicHermiteInterpolant1D{
     extrap::E
     search_policy::P
 
-    # PreCompute inner: dy is a precomputed slope vector. Axis-as-truth: `xc`
-    # is wrapped via `_store_grid_cached` (Vector → `_CachedVector`, Range →
-    # `_CachedRange`), so `_get_h(xc, idx)` returns cached h/inv_h — no
-    # separate spacing field needed.
+    # PreCompute inner: `_cache_axis` (insurance) + `_convert_copy` ownership.
+    # `dy` is always a fresh `copy` (precomputed externally).
     function CubicHermiteInterpolant1D(
             x::AbstractVector, y::AbstractVector, dy::AbstractVector,
-            extrap::E, search::P
+            extrap::E, search::P;
+            bc::AbstractBC = NoBC()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) == length(dy) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
         length(x) >= 2 || throw(ArgumentError("Hermite interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid_cached(x, Tg)
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         dyc = copy(dy)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, PreCompute}(

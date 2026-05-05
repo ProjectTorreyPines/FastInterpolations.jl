@@ -42,16 +42,16 @@ struct AkimaInterpolant1D{
     extrap::E
     search_policy::P
 
-    # PreCompute inner: promotes x/y, computes slopes — axis-as-truth (`xc`
-    # wraps cached h/inv_h via `_store_grid_cached`).
+    # PreCompute inner: builds slopes via Akima weighted-average algorithm.
     function AkimaInterpolant1D(
-            x::AbstractVector, y::AbstractVector, ::Type{PreCompute}, extrap::E, search::P
+            x::AbstractVector, y::AbstractVector, ::Type{PreCompute}, extrap::E, search::P;
+            bc::AbstractBC = NoBC()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid_cached(x, Tg)
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         Tdy = _output_eltype(Tv, Tg)
         dy = Vector{Tdy}(undef, length(yc))
@@ -61,16 +61,17 @@ struct AkimaInterpolant1D{
         )
     end
 
-    # Pre-computed slopes inner: caller-supplied `dy`. Used by periodic path.
+    # Pre-computed slopes inner: caller-supplied `dy` (used by periodic path).
     function AkimaInterpolant1D(
-            x::AbstractVector, y::AbstractVector, dy::AbstractVector, extrap::E, search::P
+            x::AbstractVector, y::AbstractVector, dy::AbstractVector, extrap::E, search::P;
+            bc::AbstractBC = NoBC()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(dy) == length(y) || throw(ArgumentError("dy length ($(length(dy))) must match y length ($(length(y)))"))
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid_cached(x, Tg)
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         Tdy = _output_eltype(Tv, Tg)
         dyc = _convert_copy(dy, Tdy)
@@ -79,15 +80,16 @@ struct AkimaInterpolant1D{
         )
     end
 
-    # OnTheFly inner: slope_strategy is a slope method tag.
+    # OnTheFly inner: stores slope_strategy tag.
     function AkimaInterpolant1D(
-            x::AbstractVector, y::AbstractVector, slope_strategy::AbstractSlopeMethod, extrap::E, search::P
+            x::AbstractVector, y::AbstractVector, slope_strategy::AbstractSlopeMethod, extrap::E, search::P;
+            bc::AbstractBC = NoBC()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid_cached(x, Tg)
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, OnTheFly}(
             xc, yc, slope_strategy, extrap, search
@@ -95,13 +97,17 @@ struct AkimaInterpolant1D{
     end
 end
 
-# Outer: kwarg wrapper.
+# Outer kwarg wrapper. Wraps the axis here so the inner ctor's `_cache_axis`
+# insurance is an idempotent passthrough.
 @inline function AkimaInterpolant1D(
         x::AbstractVector,
         y::AbstractVector,
         slope_strategy::AbstractSlopeMethod;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    return AkimaInterpolant1D(x, y, slope_strategy, extrap, search)
+    Tg = _promote_grid_float(eltype(x), eltype(y))
+    x_eff = _cache_axis(x, bc, Tg)
+    return AkimaInterpolant1D(x_eff, y, slope_strategy, extrap, search; bc = bc)
 end

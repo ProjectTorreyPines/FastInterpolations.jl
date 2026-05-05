@@ -289,7 +289,7 @@ modular arithmetic. For periodic data.
 
 Tag struct with no fields: the wrap domain is read directly from the axis at
 query time via `first(x)` / `last(x)`. After the surface-API axis resolution
-(`_resolve_axis` / `_caching_axis` in `periodic_axis.jl`), every supported axis
+(`_resolve_axis` / `_resolve_axis_copied` in `periodic_axis.jl`), every supported axis
 type — plain `Vector`, `AbstractRange`, `_CachedRange`, `_ExclusivePeriodicAxis` —
 exposes `first/last` that already corresponds to the canonical wrap domain
 (including `:exclusive` periodic, where `_ExclusivePeriodicAxis` reports

@@ -6,7 +6,7 @@
 # Each axis independently selects left or right neighbor based on side mode.
 
 """
-    ConstantInterpolantND{Tg,Tv,N,G,S,E,SD,P}
+    ConstantInterpolantND{Tg,Tv,N,G,E,SD,P}
 
 N-dimensional constant (step) interpolation with per-axis configuration.
 
@@ -14,15 +14,15 @@ N-dimensional constant (step) interpolation with per-axis configuration.
 - `Tg`: Grid coordinate type (unconstrained)
 - `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
-- `G<:NTuple{N, AbstractVector{Tg}}`: Grid tuple type
-- `S<:NTuple{N, AbstractGridSpacing{Tg}}`: Spacing tuple type
+- `G<:NTuple{N, AbstractVector{Tg}}`: Grid tuple type. Wrapped grids
+  (`_CachedRange`/`_CachedVector`/`_ExclusivePeriodicAxis`) carry cached
+  `h`/`inv_h` directly — no separate spacings field needed.
 - `E<:Tuple{Vararg{AbstractExtrap, N}}`: Extrapolation mode tuple type
 - `SD<:Tuple{Vararg{AbstractSide, N}}`: Side selection tuple type
 - `P<:NTuple{N, AbstractSearchPolicy}`: Search policy tuple type
 
 # Fields
-- `grids`: Tuple of grid vectors, one per dimension
-- `spacings`: Tuple of spacing objects for efficient interval lookup
+- `grids`: Tuple of (wrapped) grid vectors, one per dimension
 - `data`: N-dimensional data array
 - `extraps`: Per-axis extrapolation modes
 - `sides`: Per-axis side selection (NearestSide(), LeftSide(), RightSide())
@@ -50,31 +50,29 @@ struct ConstantInterpolantND{
         Tv,
         N,
         G <: NTuple{N, AbstractVector{Tg}},
-        S <: NTuple{N, AbstractGridSpacing{Tg}},
         E <: Tuple{Vararg{AbstractExtrap, N}},
         SD <: Tuple{Vararg{AbstractSide, N}},
         P <: NTuple{N, AbstractSearchPolicy},
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    spacings::S
     data::Array{Tv, N}
     extraps::E
     sides::SD
     searches::P
 
-    function ConstantInterpolantND{Tg, Tv, N, G, S, E, SD, P}(
-            grids::Tuple{Vararg{AbstractVector, N}}, spacings::S, data::AbstractArray{Tv, N}, extraps::E, sides::SD, searches::P
-        ) where {
-            Tg, Tv, N, G <: NTuple{N, AbstractVector{Tg}},
-            S <: NTuple{N, AbstractGridSpacing{Tg}}, E,
-            SD <: Tuple{Vararg{AbstractSide, N}}, P <: NTuple{N, AbstractSearchPolicy},
-        }
-        # Copy grids and data to ensure mutation safety.
-        # copy() on immutable Range types is a no-op (zero allocation).
-        # Array() converts AbstractArray→Array AND copies in one step.
-        # typeof() rebinds G after copy (e.g. tuple-of-SubArrays → tuple-of-Vectors).
-        grids_c = map(copy, grids)
-        return new{Tg, Tv, N, typeof(grids_c), S, E, SD, P}(grids_c, spacings, Array(data), extraps, sides, searches)
+    # Inner ctor: type params inferred from arg signature.
+    function ConstantInterpolantND(
+            grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+            data::AbstractArray{Tv, N},
+            extraps::Tuple{Vararg{AbstractExtrap, N}},
+            sides::Tuple{Vararg{AbstractSide, N}},
+            searches::Tuple{Vararg{AbstractSearchPolicy, N}};
+            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N))
+        ) where {Tg, Tv, N}
+        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
+        return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(sides), typeof(searches)}(
+            grids_c, Array(data), extraps, sides, searches
+        )
     end
 end
 

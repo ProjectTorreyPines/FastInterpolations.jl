@@ -14,7 +14,7 @@
 # ========================================
 
 """
-    ConstantSeriesInterpolant{Tg, Tv, P, X}
+    ConstantSeriesInterpolant{Tg, Tv, E, SD, P, X}
 
 Multi-series constant (step) interpolant with unified matrix storage and SIMD optimization.
 Shares a single x-grid across N y-series for efficient batch evaluation.
@@ -22,15 +22,19 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 # Type Parameters
 - `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)
-- `P`: Search policy type
-- `X`: Grid container type (Vector or Range)
+- `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
+- `SD<:AbstractSide`: Side selection type (compile-time specialized)
+- `P<:AbstractSearchPolicy`: Search policy type
+- `X<:AbstractVector{Tg}`: Grid container type — `_CachedRange{Tg}` for Range input,
+  `_CachedVector{Tg,Tinv}` for Vector input (carries cached `h`/`inv_h`).
 
 # Fields
-- `x::X`: Shared x-grid (Vector or Range)
+- `x::X`: Shared x-grid (wrapped — `_CachedVector`/`_CachedRange`)
 - `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
 - `_transpose::LazyTranspose{Tv}`: Lazy point-contiguous layout for scalar SIMD
-- `extrap::AbstractExtrap`: Extrapolation mode
+- `extrap::E`: Extrapolation mode (compile-time specialized)
 - `side::SD`: Side selection (NearestSide(), LeftSide(), RightSide())
+- `search_policy::P`: Default search policy
 
 # Memory Layout
 Primary storage is series-contiguous (n_points × n_series):
@@ -64,11 +68,10 @@ sitp_complex = constant_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct ConstantSeriesInterpolant{Tg, Tv, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
-    const x::X                            # Shared x-grid (Range or Vector)
+mutable struct ConstantSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+    const x::X                            # Shared x-grid (wrapped — `_CachedVector`/`_CachedRange` carrying cached `h`/`inv_h`)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
-    const spacing::S                      # Grid spacing (ScalarSpacing or VectorSpacing)
     const extrap::E                        # Extrapolation mode (compile-time specialized)
     const side::SD                        # Side selection (compile-time specialized)
     const search_policy::P                # Default search policy
@@ -78,15 +81,14 @@ mutable struct ConstantSeriesInterpolant{Tg, Tv, S <: AbstractGridSpacing{Tg}, E
             y::Matrix{Tv},
             extrap::E,
             side::SD,
-            search::P = AutoSearch()
+            search::P = AutoSearch();
+            bc::AbstractBC = NoBC()
         ) where {Tg, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
-        # _to_float(copy(x), Tg): Range → _CachedRange (O(1) search + no TwicePrecision overhead);
-        # Vector → defensive copy. copy() on Range is identity (zero alloc).
-        # typeof(xc) rebinds X after conversion (view → Vector, TwicePrecision → _CachedRange).
-        # y is NOT copied here — _build_series_mat() already provides an owned matrix.
-        xc = _to_float(copy(x), Tg)
-        spacing = _create_spacing(xc)
-        return new{Tg, Tv, typeof(spacing), E, SD, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), spacing, extrap, side, search)
+        # `_cache_axis` (insurance) + `_convert_copy` (ownership). Series
+        # factory pre-extends `:exclusive` to `:inclusive` form, so `bc` here
+        # is normally `NoBC` or `:inclusive`. y is owned by `_build_series_mat`.
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
+        return new{Tg, Tv, E, SD, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), extrap, side, search)
     end
 end
 
@@ -357,20 +359,26 @@ function constant_interp(
     Tv_out = _value_type(Tv, Tg)
     y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
 
-    # Periodic path: extend x + y_mat, validate :inclusive endpoints per series,
-    # force WrapExtrap.
+    # Periodic path: extend x + y_mat to `:inclusive` form, normalize BC label
+    # so the inner ctor sees a self-consistent (x, y, bc) triple.
     if _is_periodic_bc(bc)
         x_ext, y_mat_ext = _prepare_periodic(x, y_mat, bc)
         _validate_series_endpoints(bc, y_mat_ext)
+        bc_inner = _bc_after_extend(bc)
         # `WrapExtrap` is a tag struct — wrap domain is read from the extended
         # axis at query time. `_promote_extrap` only handles `FillExtrap` value
         # promotion; passthrough for `WrapExtrap`.
         extrap_p = _promote_extrap(WrapExtrap(), Tv_out)
-        return ConstantSeriesInterpolant(x_ext, y_mat_ext, extrap_p, side, search)
+        # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
+        # Thread `Tg` so `Int` ranges + `Float32` data become
+        # `_CachedRange{Float32}` (not silently widened to Float64).
+        x_eff = _cache_axis(x_ext, bc_inner, Tg)
+        return ConstantSeriesInterpolant(x_eff, y_mat_ext, extrap_p, side, search; bc = bc_inner)
     end
 
     extrap_p = _promote_extrap(extrap, Tv_out)
-    return ConstantSeriesInterpolant(x, y_mat, extrap_p, side, search)
+    x_eff = _cache_axis(x, bc, Tg)
+    return ConstantSeriesInterpolant(x_eff, y_mat, extrap_p, side, search; bc = bc)
 end
 
 # NOTE: the former Real grid promotion wrapper (Tg <: Real) has been removed.

@@ -211,9 +211,9 @@ end
 positions, filters all per-axis tuples to Real-only axes, delegates to existing pipeline.
 """
 @generated function _eval_nointerp(
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, ops_full, search, hint,
-    ) where {Tg, Tv, N, G, S, M, E, P, D, Q}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q}
     nointerp_dims = [d for d in 1:N if fieldtype(M, d) <: NoInterp]
     real_dims = [d for d in 1:N if !(fieldtype(M, d) <: NoInterp)]
     N_r = length(real_dims)
@@ -233,7 +233,6 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
 
     # Build reduced tuple expressions
     r_grids = [:(itp.grids[$d]) for d in real_dims]
-    r_spacings = [:(itp.spacings[$d]) for d in real_dims]
     r_methods = [:(itp.methods[$d]) for d in real_dims]
     r_extraps = [:(itp.extraps[$d]) for d in real_dims]
     r_searches = [:(search[$d]) for d in real_dims]
@@ -251,13 +250,12 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         :(_axis_window(itp.methods[$d], idxs_r[$k], length(itp.grids[$d])))
             for (k, d) in enumerate(real_dims)
     ]
-    # Per-real-axis spacings (already in the PreCompute branch as `rs`; mirror here for OnTheFly).
-    r_spacings_exprs = [:(itp.spacings[$d]) for d in real_dims]
     # Compile-time check: any windowable axis remaining in the filtered methods?
-    # `_eval_nointerp` is called on a persistent `HeteroInterpolantND` whose
-    # `itp.spacings` is pre-computed at construction, so the asymmetric
-    # persistent-path rule (use `_has_any_windowable_method`, not the narrower
-    # `_has_any_local_method`) applies — see hetero_window.jl for rationale.
+    # `_eval_nointerp` is called on a persistent `HeteroInterpolantND`. Post-PR1
+    # spacings are derived from grid wrappers on demand (no separate field), so
+    # the asymmetric persistent-path rule (use `_has_any_windowable_method`, not
+    # the narrower `_has_any_local_method`) still applies — see hetero_window.jl
+    # for rationale.
     # Mirror the `_is_windowable_method` set: PCHIP/Cardinal/Akima/Linear/Constant.
     rm_has_local = any(
         M -> M <: Union{PchipInterp, CardinalInterp, AkimaInterp, LinearInterp, ConstantInterp},
@@ -326,7 +324,6 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             # Reduced tuples (all types compile-time known)
             rq = ($(r_query...),)
             rg = ($(r_grids...),)
-            rs = ($(r_spacings...),)
             re = ($(r_extraps...),)
             ro = ($(r_ops...),)
             rm = ($(r_methods...),)
@@ -341,8 +338,8 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             rsrc = ($(r_searches...),)
             search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
             hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
-            idxs, Ls, _ = _search_all_intervals(q_eval, rg, rs, search_r, hint_r)
-            hs, inv_hs, dLs = _compute_all_local_params(q_eval, rs, idxs, Ls)
+            idxs, Ls, _ = _search_all_intervals(q_eval, rg, search_r, hint_r)
+            hs, inv_hs, dLs = _compute_all_local_params(q_eval, rg, idxs, Ls)
             return _eval_hetero_nd_cell(p_sliced, idxs, hs, inv_hs, dLs, ro, rm)
         end
     else
@@ -363,7 +360,6 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
                 rm = ($(r_methods...),)
                 re = ($(r_extraps...),)
                 ro = ($(r_ops...),)
-                rs = ($(r_spacings_exprs...),)
 
                 _validate_nd_domain(rg, rq, re)
                 oob = _try_fill_oob(rq, rg, re, ro, @inbounds d_sliced[1])
@@ -377,7 +373,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
                 Tr = _output_eltype(eltype(d_sliced), $Tg, typeof.(q_eval)...)
 
                 # Pre-search: mutates user hints (real-axis subset) to absolute indices.
-                idxs_r, _, _ = _search_all_intervals(q_eval, rg, rs, search_r, hint_r)
+                idxs_r, _, _ = _search_all_intervals(q_eval, rg, search_r, hint_r)
                 # Per-real-axis cell-local windows. Static tuple literal — no closure.
                 windows_r = ($(r_axis_window_exprs...),)
                 # Slice d_sliced (already NoInterp-sliced) further to the cell-local stencil.
@@ -606,9 +602,9 @@ Gradient with NoInterp support. Returns N-tuple with zeros at NoInterp positions
 Uses the pre-slice strategy: slices data at GridIdx positions, evaluates on reduced dims.
 """
 @generated function _gradient_nointerp(
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     # Use promoted type for zero (handles Float32 data + Float64 query)
@@ -656,9 +652,9 @@ end
 Hessian with NoInterp support. Returns N×N matrix with zero rows/columns at NoInterp positions.
 """
 @generated function _hessian_nointerp(
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     stmts = Expr[]
@@ -721,9 +717,9 @@ In-place Hessian with NoInterp support. Fills H with zeros at NoInterp positions
 """
 @generated function _hessian_nointerp!(
         H::AbstractMatrix,
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     stmts = Expr[]
@@ -799,9 +795,9 @@ end
 Laplacian with NoInterp support. Sums ∂²f/∂xᵢ² only over interpolated axes.
 """
 @generated function _laplacian_nointerp(
-        itp::HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D},
+        itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D},
         query::Q, hint,
-    ) where {Tg, Tv, N, G, S, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
+    ) where {Tg, Tv, N, G, M, E, P, D, Q <: Tuple{Vararg{Real, N}}}
     nointerp_dims = Set(d for d in 1:N if fieldtype(M, d) <: NoInterp)
 
     terms = [

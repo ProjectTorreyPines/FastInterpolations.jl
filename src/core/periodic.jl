@@ -54,7 +54,7 @@ end
 # Axis-aware 2-arg wrapper (axis as single source of truth)
 # ────────────────────────────────────────────────────────
 #
-# After the surface-API axis resolution (`_resolve_axis` / `_caching_axis`),
+# After the surface-API axis resolution (`_resolve_axis` / `_resolve_axis_copied`),
 # every supported axis exposes `first/last` matching the canonical wrap
 # domain — including `_ExclusivePeriodicAxis`, whose `last` reports the
 # virtual endpoint `inner[1] + period`. With `WrapExtrap` reduced to a tag
@@ -426,7 +426,7 @@ _extend_values(y::AbstractVector) = vcat(y, first(y))
 # WrapExtrap is a tag struct (eval_ops.jl)
 # ========================================
 #
-# After the surface-API axis resolution (`_resolve_axis` / `_caching_axis`),
+# After the surface-API axis resolution (`_resolve_axis` / `_resolve_axis_copied`),
 # every supported axis exposes `first/last` matching the canonical wrap
 # domain — including `_ExclusivePeriodicAxis`, whose `last` reports the
 # precomputed virtual endpoint. Eval kernels read those bounds directly
@@ -533,12 +533,12 @@ build flow without branching on `_is_periodic_bc`:
       `akima_interp_precompute` (1D Hermite-family PreCompute oneshot)
     - `*_interp_precompute` persistent-builder paths for the same families
     - The entire ND `:exclusive` path via `_prepare_periodic_nd`
-      (LinearInterpolantND / ConstantInterpolantND / CubicInterpolantND /
-      HeteroInterpolantND still carry `spacings::S` and have not been
-      migrated to wrappers)
+      (Linear/Constant/Hetero ND have migrated to the wrapper protocol;
+      CubicInterpolantND and QuadraticInterpolantND still carry
+      `spacings::S` and use this helper indirectly)
 
-    Cleanup tracked alongside the ND-struct migration follow-up; once those
-    consumers move to the wrapper protocol, this helper can be removed.
+    Cleanup tracked alongside the ND-struct migration follow-up; once
+    Cubic/Quadratic ND move to the wrapper protocol, this helper can be removed.
 """
 @inline function _periodic_extend_1d(
         x::AbstractVector,

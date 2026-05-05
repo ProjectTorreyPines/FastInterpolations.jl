@@ -24,6 +24,15 @@ unconstrained `_create_spacing(::AbstractVector)` method below, which uses only
 `Vector{T}(undef, ...)`, subtraction, and `inv` — all of which Dual supports.
 The Float path is unchanged: concrete allocations still specialize per-eltype.
 """
+
+# TODO(spacing-cleanup): consumers remaining as of PR1 (2026-05-04)
+#   - CubicInterpolantND (forward, deferred to PR3)
+#   - QuadraticInterpolantND (forward + 1D legacy, deferred to PR3)
+#   - LinearAdjointND, ConstantAdjointND, HeteroAdjointND, CubicAdjointND,
+#     QuadraticAdjointND (deferred to PR2)
+# When this list is empty, the entire AbstractGridSpacing hierarchy +
+# `_create_spacing*` helpers + spacings-based `_search_all_intervals` /
+# `_compute_all_local_params` overloads can be deleted.
 abstract type AbstractGridSpacing{T} end
 
 """
@@ -49,6 +58,8 @@ x = range(0.0, 1.0, 1001)  # 1000 intervals, uniform spacing
 spacing = _create_spacing(x)  # ScalarSpacing{Float64}(0.001, 1000.0)
 ```
 """
+# TODO(spacing-cleanup): see AbstractGridSpacing marker — concrete spacing
+# type retained for Cubic/Quadratic ND + 5 ND adjoint structs as of PR1.
 struct ScalarSpacing{T} <: AbstractGridSpacing{T}
     h::T
     inv_h::T
@@ -90,6 +101,8 @@ x_int = [0, 1, 3, 6]                     # Int grid
 spacing_i = _create_spacing(x_int)        # VectorSpacing{Int,Float64}
 ```
 """
+# TODO(spacing-cleanup): see AbstractGridSpacing marker — concrete spacing
+# type retained for Cubic/Quadratic ND + 5 ND adjoint structs as of PR1.
 struct VectorSpacing{T, Tinv} <: AbstractGridSpacing{T}
     h::Vector{T}
     inv_h::Vector{Tinv}
@@ -144,6 +157,10 @@ Uses `@propagate_inbounds` to enable bounds-check elision in hot loops.
 # ========================================
 # Factory Functions
 # ========================================
+
+# TODO(spacing-cleanup): factory functions. PR1 migrated Linear/Constant/Hetero
+# ND forward path; remaining callers are Cubic/Quadratic ND + 5 ND adjoint
+# constructors. See AbstractGridSpacing marker for full list.
 
 """
     _create_spacing(x::AbstractRange{T}) -> ScalarSpacing{T}

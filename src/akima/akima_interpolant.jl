@@ -37,6 +37,8 @@ itp(0.5; deriv=DerivOp(1))
     Tg = _promote_grid_float(eltype(x_eff), eltype(y_eff))
     extrap_p = _promote_extrap(extrap_eff, _value_type(eltype(y_eff), Tg))
     resolved = _resolve_coeffs(coeffs)
+    # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
+    x_eff = _cache_axis(x_eff, bc_eff, Tg)
 
     if resolved isa OnTheFly
         return AkimaInterpolant1D(x_eff, y_eff, AkimaSlopes(bc_eff), extrap_p, search)

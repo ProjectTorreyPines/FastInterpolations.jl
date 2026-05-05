@@ -70,38 +70,32 @@ struct LinearInterpolant{
     extrap::E  # Extrapolation mode (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    # Inner constructor: promotes x/y, wraps grid for cached spacing, stores.
-    # _store_grid_cached: Vector → _CachedVector (cached h/inv_h),
-    #                     Range → _CachedRange (cached scalar h/inv_h).
-    # Spacing access via `_get_h(itp.x, i)` / `_get_inv_h(itp.x, i)` —
-    # grid is the single source of truth; no separate spacing field.
+    # Inner: `_cache_axis` (insurance — passthrough on wrapped, wraps raw)
+    # then `_convert_copy` for ownership + eltype promotion. `bc` kwarg lets
+    # direct-ctor callers request periodic without the factory.
     function LinearInterpolant(
-            x::AbstractVector, y::AbstractVector, ev::E, search::P
+            x::AbstractVector, y::AbstractVector, ev::E, search::P;
+            bc::AbstractBC = NoBC()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
-        # `_check_compatible_length(x, y)` is a single generic `length(x)
-        # == length(y)` check that works uniformly: plain vectors agree
-        # naturally, and the wrapped `_ExclusivePeriodicAxis` /
-        # `_ExclusivePeriodicData` pair both report the virtual `n+1`,
-        # so the comparison stays correct without per-pair dispatch.
         _check_compatible_length(x, y)
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _store_grid_cached(x, Tg)
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, P}(xc, yc, ev, search)
     end
 end
 
-# ========================================
-# Outer Constructor: convenience kwarg wrapper
-# ========================================
+# Outer kwarg wrapper. Wraps the axis here so the inner ctor's `_cache_axis`
+# insurance is an idempotent passthrough.
 @inline function LinearInterpolant(
         x::AbstractVector,
         y::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    # Materialize WrapExtrap{Nothing} against grid so kernels never see the
-    # unmaterialized singleton when users construct the struct directly.
-    return LinearInterpolant(x, y, _resolve_extrap(extrap, x), search)
+    Tg = _promote_grid_float(eltype(x), eltype(y))
+    x_eff = _cache_axis(x, bc, Tg)
+    return LinearInterpolant(x_eff, y, _resolve_extrap(extrap, x_eff), search; bc = bc)
 end

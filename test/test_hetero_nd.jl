@@ -515,3 +515,51 @@
         @test val ≈ ref_x * ref_y rtol = 1.0e-10
     end
 end
+
+# ════════════════════════════════════════════════════════════════
+# PR1 (`refac/cleanup_nd_spacing`) lock-down: spacings field
+# removed from forward struct. Asserts field absence,
+# type-parameter count, type stability, and zero-allocation
+# persistent eval. Hetero is constructed via `interp(... ; coeffs=OnTheFly())`
+# (PreCompute path dispatches to specialized homogeneous structs).
+# ════════════════════════════════════════════════════════════════
+@testitem "HeteroInterpolantND — spacings cleanup lock-down" setup = [AllocConstants] begin
+    using FastInterpolations: interp, LinearInterp, PchipInterp, OnTheFly
+
+    @testset "spacings field removed" begin
+        x = 0.0:1.0:3.0
+        y = 0.0:1.0:3.0
+        data = [Float64(i + j) for i in 1:4, j in 1:4]
+        # Heterogeneous methods → HeteroInterpolantND (homogeneous would dispatch to
+        # the specialized struct).
+        itp = interp((x, y), data; method = (PchipInterp(), LinearInterp()), coeffs = OnTheFly())
+
+        @test !hasfield(typeof(itp), :spacings)
+        # Was 9 (Tg, Tv, N, G, S, M, E, P, D), now 8 (drops S)
+        @test length(typeof(itp).parameters) == 8
+        @test isfinite(itp((1.5, 1.5)))
+    end
+
+    @testset "type stability (@inferred)" begin
+        x_rng = 0.0:1.0:3.0
+        x_vec = [0.0, 1.0, 2.0, 3.0]
+        data = [Float64(i + j) for i in 1:4, j in 1:4]
+
+        itp_rng = interp((x_rng, x_rng), data; method = (PchipInterp(), LinearInterp()), coeffs = OnTheFly())
+        itp_vec = interp((x_vec, x_vec), data; method = (PchipInterp(), LinearInterp()), coeffs = OnTheFly())
+
+        @test (@inferred itp_rng((0.5, 0.5))) isa Float64
+        @test (@inferred itp_vec((0.5, 0.5))) isa Float64
+    end
+
+    @testset "zero-alloc persistent eval" begin
+        x = 0.0:1.0:3.0
+        y = 0.0:1.0:3.0
+        data = [Float64(i + j) for i in 1:4, j in 1:4]
+        itp = interp((x, y), data; method = (PchipInterp(), LinearInterp()), coeffs = OnTheFly())
+        itp((0.5, 0.5))
+        itp((0.5, 0.5))
+
+        @test (@allocated itp((0.5, 0.5))) <= ALLOC_THRESHOLD
+    end
+end

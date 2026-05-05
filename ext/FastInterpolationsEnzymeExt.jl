@@ -267,8 +267,8 @@ _data_field(itp::FastInterpolations.CubicInterpolantND) = selectdim(itp.nodal_de
 _data_field(itp::FastInterpolations.QuadraticInterpolantND) = selectdim(itp.nodal_derivs.partials, 1, 1)
 
 # HeteroInterpolantND: OnTheFly stores raw Array, PreCompute stores _HeteroPartials
-_data_field(itp::FastInterpolations.HeteroInterpolantND{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Array}) = itp.data
-_data_field(itp::FastInterpolations.HeteroInterpolantND{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:FastInterpolations._HeteroPartials}) =
+_data_field(itp::FastInterpolations.HeteroInterpolantND{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Array}) = itp.data
+_data_field(itp::FastInterpolations.HeteroInterpolantND{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:FastInterpolations._HeteroPartials}) =
     selectdim(itp.data.partials, 1, 1)
 
 # ── Constructor: func(grids, data) → itp ──

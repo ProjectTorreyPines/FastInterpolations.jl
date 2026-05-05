@@ -560,4 +560,24 @@
         hermite_interp!(out, x_int, y_int, dy_int, [1.5, 2.5])
         @test out ≈ [1.5^2, 2.5^2] atol = 1.0e-10
     end
+
+    @testset "Direct outer kwarg ctor" begin
+        # Cover `CubicHermiteInterpolant1D(x, y, dy; ...)` direct call — the
+        # factory `hermite_interp` is exercised above; this exercises the
+        # alternate outer kwarg ctor's `_cache_axis` + `bc` forwarding.
+        x_vec = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y_vec = sin.(x_vec)
+        dy_vec = cos.(x_vec)
+        x_rng = range(0.0, 4.0; length = 5)
+
+        itp_v = CubicHermiteInterpolant1D(x_vec, y_vec, dy_vec)
+        @test itp_v.x isa FastInterpolations._CachedVector
+        @test itp_v(2.0) ≈ sin(2.0)
+
+        itp_r = CubicHermiteInterpolant1D(x_rng, y_vec, dy_vec)
+        @test itp_r.x isa FastInterpolations._CachedRange
+
+        itp_clamp = CubicHermiteInterpolant1D(x_vec, y_vec, dy_vec; extrap = ClampExtrap())
+        @test itp_clamp(-1.0) ≈ y_vec[1]
+    end
 end

@@ -14,7 +14,7 @@ Cache structure for cubic spline interpolation with reusable Thomas factorizatio
 
 After the surface-API axis migration, `cache.x` is the **single source of truth**
 for grid geometry — it is the wrapped/cached axis (`_CachedRange`, `_CachedVector`,
-or `_ExclusivePeriodicAxis`) returned by `_caching_axis(x, bc, T)`. Cell widths
+or `_ExclusivePeriodicAxis`) returned by `_resolve_axis_copied(x, bc, T)`. Cell widths
 read via `_get_h(cache.x, idx)` (cached lookup); wrap-domain bounds via
 `(first(cache.x), last(cache.x))`. The legacy `spacing::AbstractGridSpacing` and
 `bc_config::PeriodicData` (which mirrored period/seam-cell info) are gone —

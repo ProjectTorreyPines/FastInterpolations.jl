@@ -140,21 +140,28 @@ function linear_interp end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    # Surface-level BC-aware resolvers (`_caching_axis` / `_resolve_data` in
-    # periodic_axis.jl) compose the right per-(grid×bc) shape uniformly:
-    #   Vector + :exclusive → `_ExclusivePeriodicAxis(_CachedVector(...), period)`
-    #   Vector + non-excl   → `_CachedVector(...)` (cached for persistent eval)
-    #   Range  + :exclusive → length-(n+1) `_CachedRange` (`_to_float_adding_endpoint`)
-    #   Range  + non-excl   → `_CachedRange` (`_to_float`)
+    # Surface-level BC-aware resolvers (`periodic_axis.jl`) compose the right
+    # per-(grid×bc) wrapper SHAPE without owning storage:
+    #   Vector + :exclusive → `_ExclusivePeriodicAxis(_CachedVector(x), period)`
+    #                          (aliases `x` in `_CachedVector.inner`,
+    #                           allocates fresh `h`/`inv_h`)
+    #   Vector + non-excl   → `_CachedVector(x)` (same aliasing rule)
+    #   Range  + :exclusive → `_ExclusivePeriodicAxis(_to_float(x, ...), period)`
+    #   Range  + non-excl   → `_to_float(x, ...)` (immutable `_CachedRange`)
     # `_resolve_data(y, bc)` is reference-only: passthrough for non-`:exclusive`
     # (with optional `:inclusive` endpoint check), `_ExclusivePeriodicData(y)`
-    # for `:exclusive` (mutation copy happens inside the inner constructor via
-    # `_convert_copy`).
-    x_eff = _caching_axis(x, bc, Tg)
+    # for `:exclusive`. Ownership copy + element-type promotion happens INSIDE
+    # the inner constructor via `_convert_copy(x, Tg)` / `_convert_copy(y, Tv)`,
+    # mirroring `y`'s flow — single copy point, no double-copy.
+    # Thread the promoted `Tg` so Range inputs convert directly to the
+    # correct float type (e.g. `Int` range + `Float32` y → `_CachedRange{Float32}`).
+    # Without `Tg`, the 2-arg form would default `Int` → `Float64` and break the
+    # documented Float32 promotion contract.
+    x_eff = _cache_axis(x, bc, Tg)
     y_eff = _resolve_data(y, bc)
     # Periodic BCs auto-promote `extrap` to `WrapExtrap` against the resolved
     # axis span. `_resolve_extrap` handles materialization.
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
-    return LinearInterpolant(x_eff, y_eff; extrap = extrap_p, search)
+    return LinearInterpolant(x_eff, y_eff, extrap_p, search; bc = bc)
 end

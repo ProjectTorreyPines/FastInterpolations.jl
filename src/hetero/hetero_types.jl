@@ -11,8 +11,17 @@
 # - Tv: Value type (unconstrained)
 # - N:  Number of dimensions
 
+# Method-aware `_cache_axis` for HeteroND. `NoInterp` axes are length-1
+# markers — bypass `_cache_axis` (which requires ≥ 2 points). 3-arg form
+# is used by outer factories; 4-arg threads `Tg` for the inner ctor.
+@inline _cache_axis_for_method(g, ::AbstractBC, ::NoInterp) = g
+@inline _cache_axis_for_method(g, bc::AbstractBC, ::AbstractInterpMethod) = _cache_axis(g, bc)
+@inline _cache_axis_for_method(g, ::AbstractBC, ::Type, ::NoInterp) = g
+@inline _cache_axis_for_method(g, bc::AbstractBC, ::Type{Tg}, ::AbstractInterpMethod) where {Tg} =
+    _cache_axis(g, bc, Tg)
+
 """
-    HeteroInterpolantND{Tg, Tv, N, G, S, M, E, P, D} <: AbstractInterpolantND{Tg, Tv, N}
+    HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D} <: AbstractInterpolantND{Tg, Tv, N}
 
 N-dimensional interpolant with per-axis method specification.
 
@@ -26,8 +35,7 @@ linear on axis 2) with two evaluation strategies:
 - `Tg`: Grid/coordinate type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
-- `G`: Tuple type for grids
-- `S`: Tuple type for spacings
+- `G`: Tuple type for grids (wrapped grids carry cached `h`/`inv_h`)
 - `M`: Tuple type for per-axis methods (heterogeneous)
 - `E`: Tuple type for extrapolation modes
 - `P`: Tuple type for search policies
@@ -51,18 +59,33 @@ struct HeteroInterpolantND{
         Tv,
         N,
         G <: Tuple{Vararg{AbstractVector, N}},
-        S <: Tuple{Vararg{AbstractGridSpacing, N}},
         M <: Tuple{Vararg{AbstractInterpMethod, N}},
         E <: Tuple{Vararg{AbstractExtrap, N}},
         P <: Tuple{Vararg{AbstractSearchPolicy, N}},
         D,
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    spacings::S
     data::D
     methods::M
     extraps::E
     searches::P
+
+    # Inner ctor: type params inferred from arg signature. Tv extracted via
+    # `eltype(data)` (works for both `Array{Tv,N}` and `_HeteroPartials{Tv,N,NP1}`).
+    function HeteroInterpolantND(
+            grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+            data,
+            methods::Tuple{Vararg{AbstractInterpMethod, N}},
+            extraps::Tuple{Vararg{AbstractExtrap, N}},
+            searches::Tuple{Vararg{AbstractSearchPolicy, N}};
+            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N))
+        ) where {Tg, N}
+        Tv = eltype(data)
+        grids_c = map((g, bc, m) -> _convert_copy(_cache_axis_for_method(g, bc, Tg, m), Tg), grids, bcs, methods)
+        return new{Tg, Tv, N, typeof(grids_c), typeof(methods), typeof(extraps), typeof(searches), typeof(data)}(
+            grids_c, data, methods, extraps, searches
+        )
+    end
 end
 
 """
@@ -80,3 +103,6 @@ Layout: `partials[p, i₁, i₂, ..., iₙ]` where `p ∈ 1:prod(sizes)`.
 struct _HeteroPartials{Tv, N, NP1}
     partials::Array{Tv, NP1}
 end
+
+@inline Base.eltype(::Type{<:_HeteroPartials{Tv}}) where {Tv} = Tv
+@inline Base.eltype(p::_HeteroPartials) = eltype(typeof(p))

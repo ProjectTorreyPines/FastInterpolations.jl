@@ -473,7 +473,6 @@
 
         @test FastInterpolations._grid(itp, Val(1)) === itp.grids[1]
         @test FastInterpolations._grid(itp, Val(2)) === itp.grids[2]
-        @test FastInterpolations._spacing(itp, Val(1)) isa FastInterpolations.AbstractGridSpacing
         @test FastInterpolations._bc(itp, Val(1)) isa FastInterpolations.AbstractBC
         @test FastInterpolations._extrap(itp, Val(1)) isa FastInterpolations.AbstractExtrap
         @test FastInterpolations._search(itp, Val(1)) isa FastInterpolations.AbstractSearchPolicy
@@ -491,7 +490,7 @@
         @test itp.grids isa Tuple
         @test length(itp.grids) == 2
 
-        @test length(itp.spacings) == 2
+        # `spacings::S` field removed — wrapped grids carry `h`/`inv_h` directly.
         @test length(itp.extraps) == 2
         @test length(itp.searches) == 2
     end

@@ -580,6 +580,10 @@ Accepts heterogeneous tuples (e.g., mixed grid types, spacing types, search poli
 Uses map over named helpers so each axis receives its concrete type directly,
 avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
+# TODO(spacing-cleanup): spacings-based eval helper. PR1 added grid-only
+# overloads (no `spacings` arg) below — Linear/Constant/Hetero ND now use
+# those. The spacings-based variants here remain for Cubic/Quadratic ND eval
+# (deferred to PR3) and Cubic/Quadratic + 5 ND adjoint paths (PR2).
 
 # Named helpers for oneshot map-based search — each receives concrete types per axis.
 # search_interval returns (idx_L, idx_R, L, R) with the same concrete element type regardless
@@ -766,6 +770,99 @@ end
     return _project_search_results(results, _getidx)
 end
 
+# ────────────────────────────────────────────
+# Spacings-free overloads (post-1D-migration; grid wrappers carry h/inv_h)
+# ────────────────────────────────────────────
+# These take `grids` only. The leaf `search_interval(searcher, grid, q)`
+# (3-arg form in `src/core/search.jl:909-925`) handles wrapped grids
+# (`_CachedRange`, `_CachedVector`, `_ExclusivePeriodicAxis`) directly.
+# Keep the existing spacings-based overloads above for Cubic/Quadratic ND
+# until they migrate (tracked in PR3).
+
+# Per-axis adaptive search WITHOUT spacing argument.
+@inline function _search_axis_adaptive(q, grid::AbstractRange, ::AbstractSearchPolicy, hint, _)
+    searcher = _to_searcher(DirectSearch(), hint)
+    return @inbounds search_interval(searcher, grid, q)
+end
+
+@inline function _search_axis_adaptive(q, grid::AbstractRange, ::AutoSearch, hint, _)
+    searcher = _to_searcher(DirectSearch(), hint)
+    return @inbounds search_interval(searcher, grid, q)
+end
+
+@inline function _search_axis_adaptive(q, grid::AbstractVector, ::AutoSearch, hint, is_mono)
+    searcher = is_mono ?
+        _to_searcher(LinearBinarySearch(), hint) :
+        _to_searcher(BinarySearch(), hint)
+    return @inbounds search_interval(searcher, grid, q)
+end
+
+@inline function _search_axis_adaptive(q, grid::AbstractVector, policy::AbstractSearchPolicy, hint, _)
+    searcher = _to_searcher(policy, hint)
+    return @inbounds search_interval(searcher, grid, q)
+end
+
+# 5-arg `_search_all_intervals` (mono variant, no spacings).
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
+    ) where {N}
+    results = map(_search_axis_adaptive, q_evals, grids, policies, hints, mono)
+    return _project_search_results(results, _getidx)
+end
+
+# Per-axis oneshot variants (no spacing). Used by `hetero_nointerp.jl`
+# real-axis-reduced search where spacings have been removed alongside the
+# `spacings::S` field on HeteroInterpolantND.
+@inline _search_axis_oneshot(q, grid, search) =
+    @inbounds search_interval(_resolve_search(grid, q, search, nothing), grid, q)
+@inline _search_axis_oneshot_hint(q, grid, search, hint) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q)
+
+# 3-arg `_search_all_intervals` (no spacings, no hints, no mono).
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+    ) where {N}
+    results = map(_search_axis_oneshot, q_evals, grids, searches)
+    return _project_search_results(results, _getidx)
+end
+
+# 4-arg `_search_all_intervals` (no spacings, Nothing hint).
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing,
+    ) where {N}
+    return _search_all_intervals(q_evals, grids, searches)
+end
+
+# 4-arg `_search_all_intervals` (no spacings, Tuple hint).
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+    ) where {N}
+    results = map(_search_axis_oneshot_hint, q_evals, grids, searches, hints)
+    return _project_search_results(results, _getidx)
+end
+
+# Aqua-required N=0 disambiguators. The grid-only and spacings-based 4-arg
+# / 5-arg variants of `_search_all_intervals` bind to `Tuple{}` ambiguously
+# when N=0 (slot 3+ is `NTuple{0, X}` regardless of `X`). ND interpolants
+# require N >= 1 at runtime — these methods exist solely to make
+# `Aqua.test_ambiguities` happy.
+@inline _search_all_intervals(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}) =
+    ((), (), ())
+@inline _search_all_intervals(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}) =
+    ((), (), ())
+
 # ────────────────────────────────────────────────────────
 # BC-aware per-axis search (Phase 6 — zero-copy periodic ND)
 # ────────────────────────────────────────────────────────
@@ -845,6 +942,8 @@ end
 # Returns raw (x_eval, y_eval, ix, iy, xL, yL) for type-specific post-processing.
 
 # N=2 preamble: per-axis adaptive search inside function barrier
+# TODO(spacing-cleanup): spacings-based variant. Grid-only overload is below.
+# Used by Cubic/Quadratic ND N=2 specializations (deferred to PR3).
 @inline function _locate_cell_2d_preamble(
         query::Tuple{Vararg{Real, 2}},
         grids, spacings, extraps,
@@ -864,6 +963,30 @@ end
     y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
     ix, _, xL, _ = _search_axis_adaptive(x_eval, grid_x, spacing_x, policy_x, hint_x, mono_x)
     iy, _, yL, _ = _search_axis_adaptive(y_eval, grid_y, spacing_y, policy_y, hint_y, mono_y)
+
+    return (x_eval, y_eval, ix, iy, xL, yL)
+end
+
+# Spacings-free 2D preamble: parallel to the spacings-based overload above,
+# but takes grid wrappers directly (post-1D-migration shape).
+@inline function _locate_cell_2d_preamble(
+        query::Tuple{Vararg{Real, 2}},
+        grids, extraps,
+        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
+        mono::Tuple{Bool, Bool},
+    )
+    xq, yq = query
+    grid_x, grid_y = grids
+    extrap_x, extrap_y = extraps
+    policy_x, policy_y = policies
+    hint_x, hint_y = hints
+    mono_x, mono_y = mono
+
+    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
+    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
+    ix, _, xL, _ = _search_axis_adaptive(x_eval, grid_x, policy_x, hint_x, mono_x)
+    iy, _, yL, _ = _search_axis_adaptive(y_eval, grid_y, policy_y, hint_y, mono_y)
 
     return (x_eval, y_eval, ix, iy, xL, yL)
 end
@@ -961,6 +1084,9 @@ Returns tuples of: hs (cell widths), inv_hs (reciprocals), dLs (left deltas).
 
 Used by both CubicInterpolantND and QuadraticInterpolantND evaluation.
 """
+# TODO(spacing-cleanup): spacings-based variant. Grid-only overload is below
+# (used by Hetero ND PreCompute eval post-PR1). This variant remains for
+# Cubic/Quadratic ND eval (deferred to PR3) + adjoint paths (PR2).
 @inline function _compute_all_local_params(
         q_evals::Tuple{Vararg{Real, N}},  # Allow heterogeneous/AD types (Dual) and GridIdx
         spacings::Tuple{Vararg{AbstractGridSpacing, N}},  # Allow heterogeneous spacing types (VectorSpacing, ScalarSpacing)
@@ -978,6 +1104,44 @@ Used by both CubicInterpolantND and QuadraticInterpolantND evaluation.
     end
     return (hs, inv_hs, dLs)
 end
+
+"""
+    _compute_all_local_params(q_evals, grids, indices, Ls) -> (hs, inv_hs, dLs)
+
+Spacings-free variant for ND structs that store grid wrappers carrying
+cached `h`/`inv_h` (post-1D-migration: `_CachedRange`, `_CachedVector`,
+`_ExclusivePeriodicAxis`). Uses the 2-arg `_get_h(grid, idx)` /
+`_get_inv_h(grid, idx)` accessors directly.
+
+Used by `LinearInterpolantND`, `ConstantInterpolantND`, `HeteroInterpolantND`
+post-PR1. Cubic/Quadratic ND continue to use the spacings-based overload
+above until PR3.
+"""
+@inline function _compute_all_local_params(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        indices::NTuple{N, Int},
+        Ls::Tuple{Vararg{Real, N}},
+    ) where {N}
+    hs = ntuple(Val(N)) do d
+        @inbounds _get_h(grids[d], indices[d])
+    end
+    inv_hs = ntuple(Val(N)) do d
+        @inbounds _get_inv_h(grids[d], indices[d])
+    end
+    dLs = ntuple(Val(N)) do d
+        @inbounds q_evals[d] - Ls[d]
+    end
+    return hs, inv_hs, dLs
+end
+
+# Aqua-required disambiguator at N=0: both spacings-based and grid-based
+# overloads above bind to `Tuple{}` ambiguously when N=0. ND interpolants
+# require N >= 1 in practice (callers never pass empty tuples), so this
+# method is unreachable at runtime — its sole purpose is to satisfy
+# `Aqua.test_ambiguities`.
+@inline _compute_all_local_params(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}) =
+    ((), (), ())
 
 # ========================================
 # @generated Tensor-Product Code Generation Helpers
@@ -1093,6 +1257,10 @@ Generates unrolled `(_create_spacing(grids[1]), _create_spacing(grids[2]), ...)`
 Avoids closure boxing that occurs with `ntuple(d -> _create_spacing(grids[d]), Val(N))`
 when grids is a heterogeneous tuple (e.g., mix of Range and Vector).
 """
+# TODO(spacing-cleanup): factory. PR1 migrated Linear/Constant/Hetero ND
+# forward path; remaining callers are Cubic/Quadratic ND interpolant
+# constructors + 5 ND adjoint constructors. See AbstractGridSpacing marker
+# in grid_spacing.jl for full consumer list.
 @generated function _create_spacings_typed(grids::NTuple{N, AbstractVector}) where {N}
     exprs = [:(FastInterpolations._create_spacing(grids[$i])) for i in 1:N]
     return :(($(exprs...),))
@@ -1113,6 +1281,10 @@ end
 Pool-aware spacing for Range grids. Delegates to `_create_spacing` since
 ScalarSpacing is already zero-allocation (two scalar values).
 """
+# TODO(spacing-cleanup): pool-aware factory. Remaining callers post-PR1 are
+# Cubic ND oneshot (`_prepare_periodic_nd_pooled` path) and Hetero PreCompute
+# oneshot. Adjoint batch paths also use these. See AbstractGridSpacing
+# marker in grid_spacing.jl.
 @inline _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractRange{T}) where {T} = _create_spacing(x)
 
 """

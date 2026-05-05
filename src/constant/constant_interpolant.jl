@@ -114,11 +114,12 @@ end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    # Surface-level BC-aware resolvers (`periodic_axis.jl`) compose the right
-    # per-(grid×bc) shape. Same template as Linear; Constant just adds `side`.
-    x_eff = _caching_axis(x, bc, Tg)
+    # BC-aware caching wrap (zero-copy of buffer); ownership copy + element
+    # promotion is delegated to the inner constructor's `_convert_copy(x, Tg)`
+    # / `_convert_copy(y, Tv)` symmetric pair. Same template as Linear.
+    x_eff = _cache_axis(x, bc, Tg)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
-    return ConstantInterpolant(x_eff, y_eff; extrap = extrap_p, side, search)
+    return ConstantInterpolant(x_eff, y_eff, extrap_p, side, search; bc = bc)
 end

@@ -131,7 +131,7 @@ end
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)
-    i, _, xL, xR = search_interval(searcher, itp.x, itp.spacing, xq)
+    i, _, xL, xR = search_interval(searcher, itp.x, xq)
     @inbounds return CellPoly{3, Tv, Tg}((itp.y[i], itp.d[i], itp.a[i]), xL, xR)
 end
 

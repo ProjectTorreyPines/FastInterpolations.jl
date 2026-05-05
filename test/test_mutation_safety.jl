@@ -231,6 +231,31 @@
             val_after = itp(Q2D)
             @test val_before == val_after
         end
+
+        @testset "HeteroInterpolantND (OnTheFly)" begin
+            grids, data = _make_2d_test_data()
+            itp = interp(
+                grids, data;
+                method = (PchipInterp(), LinearInterp()), coeffs = OnTheFly()
+            )
+            val_before = itp(Q2D)
+            data .= 0.0
+            val_after = itp(Q2D)
+            @test val_before == val_after
+        end
+
+        @testset "HeteroInterpolantND (PreCompute)" begin
+            grids, data = _make_2d_test_data()
+            # Heterogeneous methods, PreCompute coefficients (partials baked in).
+            itp = interp(
+                grids, data;
+                method = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+            )
+            val_before = itp(Q2D)
+            data .= 0.0
+            val_after = itp(Q2D)
+            @test val_before == val_after
+        end
     end
 
     # ============================================================
@@ -313,6 +338,30 @@
         @testset "ConstantInterpolantND" begin
             grids, data = _make_2d_test_data()
             itp = constant_interp(grids, data)
+            val_before = itp(Q2D)
+            grids[1][3] = 100.0
+            val_after = itp(Q2D)
+            @test val_before == val_after
+        end
+
+        @testset "HeteroInterpolantND (OnTheFly)" begin
+            grids, data = _make_2d_test_data()
+            itp = interp(
+                grids, data;
+                method = (PchipInterp(), LinearInterp()), coeffs = OnTheFly()
+            )
+            val_before = itp(Q2D)
+            grids[1][3] = 100.0
+            val_after = itp(Q2D)
+            @test val_before == val_after
+        end
+
+        @testset "HeteroInterpolantND (PreCompute)" begin
+            grids, data = _make_2d_test_data()
+            itp = interp(
+                grids, data;
+                method = (CubicInterp(), LinearInterp()), coeffs = PreCompute()
+            )
             val_before = itp(Q2D)
             grids[1][3] = 100.0
             val_after = itp(Q2D)
@@ -894,6 +943,117 @@
             sitp = cubic_interp(@view(x[:]), Series(y1, y2))
             val_before = sitp(Q1D)
             x[12] = 100.0
+            @test sitp(Q1D) == val_before
+        end
+    end
+
+    # ============================================================
+    # §22  Pre-wrapped `_CachedVector` user input — mutation safety
+    # ============================================================
+    # The `_cache_axis(c::_CachedVector, ::AbstractBC) = c` passthrough means
+    # that when a user manually wraps `_CachedVector(my_vec)` and passes it
+    # to a public API, the persistent struct's mutation safety relies on the
+    # inner ctor's `_convert_copy(c, Tg) = Base.copy(c)` to take ownership of
+    # the inner buffer. Regressing to alias-h/inv_h or skipping inner-copy
+    # would silently couple user mutations to the interpolant.
+
+    @testset "Pre-wrapped _CachedVector — 1D x-grid mutation isolated" begin
+        @testset "LinearInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y = sin.(x)
+            cv = FastInterpolations._CachedVector(x)
+            itp = linear_interp(cv, y)
+            val_before = itp(Q1D)
+            cv.inner[12] = 100.0   # mutate user's wrapper buffer
+            @test itp(Q1D) == val_before
+        end
+
+        @testset "ConstantInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y = sin.(x)
+            cv = FastInterpolations._CachedVector(x)
+            itp = constant_interp(cv, y)
+            val_before = itp(Q1D)
+            cv.inner[12] = 100.0
+            @test itp(Q1D) == val_before
+        end
+
+        @testset "PchipInterpolant1D" begin
+            x = collect(range(0.0, 10.0, 50))
+            y = sin.(x)
+            cv = FastInterpolations._CachedVector(x)
+            itp = pchip_interp(cv, y)
+            val_before = itp(Q1D)
+            cv.inner[12] = 100.0
+            @test itp(Q1D) == val_before
+        end
+    end
+
+    @testset "Pre-wrapped _CachedVector — ND grid mutation isolated" begin
+        @testset "LinearInterpolantND (2D Vector axis)" begin
+            x = collect(range(0.0, 10.0, 30))
+            y = collect(range(0.0, 5.0, 20))
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            cv_x = FastInterpolations._CachedVector(x)
+            cv_y = FastInterpolations._CachedVector(y)
+            itp = linear_interp((cv_x, cv_y), data)
+            val_before = itp((Q1D, 2.5))
+            cv_x.inner[5] = 999.0
+            cv_y.inner[3] = 999.0
+            @test itp((Q1D, 2.5)) == val_before
+        end
+
+        @testset "ConstantInterpolantND (2D Vector axis)" begin
+            x = collect(range(0.0, 10.0, 30))
+            y = collect(range(0.0, 5.0, 20))
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            cv_x = FastInterpolations._CachedVector(x)
+            cv_y = FastInterpolations._CachedVector(y)
+            itp = constant_interp((cv_x, cv_y), data)
+            val_before = itp((Q1D, 2.5))
+            cv_x.inner[5] = 999.0
+            cv_y.inner[3] = 999.0
+            @test itp((Q1D, 2.5)) == val_before
+        end
+
+        @testset "HeteroInterpolantND OnTheFly (2D, mixed methods)" begin
+            x = collect(range(0.0, 10.0, 30))
+            y = collect(range(0.0, 5.0, 20))
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            cv_x = FastInterpolations._CachedVector(x)
+            cv_y = FastInterpolations._CachedVector(y)
+            itp = interp((cv_x, cv_y), data; method = (CubicInterp(), LinearInterp()))
+            val_before = itp((Q1D, 2.5))
+            cv_x.inner[5] = 999.0
+            cv_y.inner[3] = 999.0
+            @test itp((Q1D, 2.5)) == val_before
+        end
+    end
+
+    # ============================================================
+    # §23  Series y-buffer ownership (post-Series migration)
+    # ============================================================
+    # Linear/Constant Series 1D were migrated to use `_cache_axis` for x;
+    # y-buffer ownership is unchanged but worth a regression test.
+
+    @testset "Series y-buffer mutation isolated" begin
+        @testset "LinearSeriesInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y1 = sin.(x); y2 = cos.(x)
+            sitp = linear_interp(x, Series(y1, y2))
+            val_before = sitp(Q1D)
+            y1[12] = 999.0
+            y2[12] = -999.0
+            @test sitp(Q1D) == val_before
+        end
+
+        @testset "ConstantSeriesInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y1 = sin.(x); y2 = cos.(x)
+            sitp = constant_interp(x, Series(y1, y2))
+            val_before = sitp(Q1D)
+            y1[12] = 999.0
+            y2[12] = -999.0
             @test sitp(Q1D) == val_before
         end
     end

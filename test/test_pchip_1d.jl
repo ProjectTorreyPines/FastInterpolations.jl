@@ -453,4 +453,22 @@
         @test occursin("PchipInterpolant1D", verbose)
         @test !occursin("Search:", verbose)  # Range → no Search row
     end
+
+    @testset "Direct outer kwarg ctor" begin
+        using FastInterpolations: PchipSlopes
+        # Cover `PchipInterpolant1D(x, y, slope_strategy; ...)` direct call.
+        x_vec = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y_vec = [0.0, 1.0, 4.0, 9.0, 16.0]
+        x_rng = range(0.0, 4.0; length = 5)
+
+        itp_v = PchipInterpolant1D(x_vec, y_vec, PchipSlopes())
+        @test itp_v.x isa FastInterpolations._CachedVector
+        @test isfinite(itp_v(2.5))
+
+        itp_r = PchipInterpolant1D(x_rng, y_vec, PchipSlopes())
+        @test itp_r.x isa FastInterpolations._CachedRange
+
+        itp_clamp = PchipInterpolant1D(x_vec, y_vec, PchipSlopes(); extrap = ClampExtrap())
+        @test itp_clamp(-1.0) ≈ y_vec[1]
+    end
 end

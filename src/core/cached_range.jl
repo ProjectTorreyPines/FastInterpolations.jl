@@ -176,10 +176,20 @@ end
 # _create_spacing: _CachedRange specialization
 # ========================================
 
+# TODO(spacing-cleanup): see grid_spacing.jl AbstractGridSpacing marker.
 # _CachedRange already has h and inv_h cached — trivial field copy, no recomputation.
 function _create_spacing(x::_CachedRange{T}) where {T}
     return ScalarSpacing{T}(x.h, x.inv_h)
 end
+
+# ---------- Wrapper-aware `_convert_copy` ----------
+# `_CachedRange{T}` is an immutable struct of scalar fields — no buffer to
+# share with user code, so same-type "copy" is the same reference (free).
+# Different-type → `_to_float(r, T)` rebuilds with the target eltype.
+# Mirrors the pattern in cached_vector.jl / periodic_axis.jl for unified
+# `map(g -> _convert_copy(g, Tg), grids)` use across grid wrapper types.
+@inline _convert_copy(r::_CachedRange{T}, ::Type{T}) where {T} = r
+@inline _convert_copy(r::_CachedRange, ::Type{T}) where {T} = _to_float(r, T)
 
 # 3-arg grid-based accessors: _CachedRange has h/inv_h cached in the struct.
 # Args are (x, xL, xR) — natural L→R order, matching AbstractVector fallbacks

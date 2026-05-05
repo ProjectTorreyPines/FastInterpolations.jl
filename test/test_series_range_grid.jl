@@ -36,7 +36,9 @@
 
         @testset "grid type preservation" begin
             @test sitp_range.x isa FI._CachedRange
-            @test sitp_vector.x isa Vector
+            # Vector inputs are wrapped in `_CachedVector` (caches h/inv_h);
+            # `_CachedVector <: AbstractVector` so search/eval kernels see no change.
+            @test sitp_vector.x isa FI._CachedVector{Float64, Float64}
         end
 
         @testset "single query evaluation" begin
@@ -77,7 +79,7 @@
 
         @testset "grid type preservation" begin
             @test sitp_range.x isa FI._CachedRange
-            @test sitp_vector.x isa Vector
+            @test sitp_vector.x isa FI._CachedVector{Float64, Float64}
         end
 
         @testset "single query evaluation" begin
@@ -111,7 +113,7 @@
 
         @testset "grid type preservation" begin
             @test sitp_range.x isa FI._CachedRange
-            @test sitp_vector.x isa Vector
+            @test sitp_vector.x isa FI._CachedVector
         end
 
         @testset "single query evaluation" begin

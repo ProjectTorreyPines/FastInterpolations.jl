@@ -1,6 +1,6 @@
 @testitem "PeriodicBC Exclusive Endpoint" setup = [AllocConstants] begin
     using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
-        _resolve_exclusive_period, _resolve_axis, _caching_axis,
+        _resolve_exclusive_period, _resolve_axis, _resolve_axis_copied,
         _ExclusivePeriodicAxis,
         _can_infer_period, _is_periodic_bc, endpoint
 
@@ -84,7 +84,7 @@
             # now trusts user `bc.period`; the wrapper rejects mismatches.
             x = range(0.0, step = 0.1, length = 10)
             bc = PeriodicBC(endpoint = :exclusive, period = 2.0)  # doesn't match 0.1*10=1.0
-            @test_throws ArgumentError _caching_axis(x, bc, Float64)
+            @test_throws ArgumentError _resolve_axis_copied(x, bc, Float64)
             @test_throws ArgumentError _resolve_axis(x, bc)
         end
 
@@ -109,12 +109,12 @@
             # rejected against the Float64 inferred period (1.0).
             x = range(0.0, step = 0.1, length = 10)  # Float64, inferred period=1.0
             bc = PeriodicBC(endpoint = :exclusive, period = Float32(1.0002))
-            @test_throws ArgumentError _caching_axis(x, bc, Float64)
+            @test_throws ArgumentError _resolve_axis_copied(x, bc, Float64)
 
             # Float32 period that genuinely matches → accepted
             bc_ok = PeriodicBC(endpoint = :exclusive, period = Float32(1.0))
             @test _resolve_exclusive_period(x, bc_ok) == Float32(1.0)
-            @test _caching_axis(x, bc_ok, Float64) isa _ExclusivePeriodicAxis
+            @test _resolve_axis_copied(x, bc_ok, Float64) isa _ExclusivePeriodicAxis
         end
     end
 
@@ -281,6 +281,33 @@
             for i in eachindex(xq)
                 @test output[i] ≈ itp_ref(xq[i]) atol = 1.0e-14
             end
+        end
+
+        @testset "GridIdx scalar query — regression for unresolved-NaN bug" begin
+            # `GridIdx(k)` carries `val=NaN` until `_resolve_grididx` binds it
+            # to the knot coordinate. The 1D scalar eval kernels for Linear/
+            # Cubic/PCHIP/Cardinal/Akima all use `xq` directly for `xq - xL` /
+            # `_wrap_to_domain(xq, x)` arithmetic, so without an explicit
+            # `_resolve_grididx(xq, x)` at the kernel head, queries like
+            # `itp(GridIdx(4))` on `:exclusive` periodic Vector grids return
+            # NaN. Lock the contract: bare `GridIdx(k)` must produce `y[k]`.
+            x = [0.0, 0.2, 0.55, 0.8]
+            y = sin.(2π .* x)
+            bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
+
+            @test linear_interp(x, y; bc = bc, extrap = WrapExtrap())(GridIdx(4)) ≈ y[4]
+            @test cubic_interp(x, y; bc = bc, extrap = WrapExtrap())(GridIdx(4)) ≈ y[4]
+            @test pchip_interp(x, y; bc = bc, extrap = WrapExtrap())(GridIdx(4)) ≈ y[4]
+            @test cardinal_interp(x, y; tension = 0.0, bc = bc, extrap = WrapExtrap())(GridIdx(4)) ≈ y[4]
+            @test akima_interp(x, y; bc = bc, extrap = WrapExtrap())(GridIdx(4)) ≈ y[4]
+
+            # Also verify NoBC + GridIdx (non-periodic path uses the same
+            # kernels with `extrap::AbstractExtrap`/`_ClampOrFill` overloads).
+            @test linear_interp(x, y)(GridIdx(2)) ≈ y[2]
+            @test cubic_interp(x, y)(GridIdx(2)) ≈ y[2]
+            @test pchip_interp(x, y)(GridIdx(2)) ≈ y[2]
+            @test cardinal_interp(x, y; tension = 0.0)(GridIdx(2)) ≈ y[2]
+            @test akima_interp(x, y)(GridIdx(2)) ≈ y[2]
         end
     end
 
@@ -687,7 +714,7 @@ end
 
 @testitem "PeriodicBC Exclusive Endpoint — ND" begin
     using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
-        _resolve_exclusive_period, _resolve_axis, _caching_axis,
+        _resolve_exclusive_period, _resolve_axis, _resolve_axis_copied,
         _ExclusivePeriodicAxis,
         _can_infer_period, _is_periodic_bc, endpoint
 

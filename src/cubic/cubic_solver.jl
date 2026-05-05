@@ -104,7 +104,7 @@ end
 """
 Build cache for periodic cubic spline using Sherman-Morrison formula.
 
-The axis is wrapped via `_caching_axis(x, bc, T)`:
+The axis is wrapped via `_resolve_axis_copied(x, bc, T)`:
 - `:inclusive` → `_CachedRange`/`_CachedVector` (length n+1, user-supplied closed cycle)
 - `:exclusive` → `_ExclusivePeriodicAxis(...)` (virtual length n+1, raw n-cell inner)
 
@@ -114,7 +114,7 @@ The seam-cell positivity check that previously lived here is now enforced
 by the `_ExclusivePeriodicAxis` constructor.
 """
 function _build_periodic_cache(x::AbstractVector{T}, bc::PeriodicBC) where {T}
-    cache_x = _caching_axis(x, bc, T)
+    cache_x = _resolve_axis_copied(x, bc, T)
     n = length(cache_x) - 1   # n_cells (uniform across :inclusive / :exclusive)
 
     n >= 3 || throw(ArgumentError("Periodic spline requires at least 3 cells (length(x) >= 4 for inclusive, >= 3 for exclusive)"))
@@ -186,7 +186,7 @@ function _build_derivative_bc_cache(
         left_bc::L,
         right_bc::R
     ) where {T, L <: PointBC, R <: PointBC}
-    cache_x = _caching_axis(x, NoBC(), T)   # `_CachedRange`/`_CachedVector` for non-periodic
+    cache_x = _resolve_axis_copied(x, NoBC(), T)   # `_CachedRange`/`_CachedVector` for non-periodic
     n = length(cache_x) - 1
 
     # Validate PolyFit requirements: PolyFit{D} requires D+1 points

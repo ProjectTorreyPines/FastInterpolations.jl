@@ -85,24 +85,14 @@ function _build_nd_quadratic_interpolant(
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy}
     ) where {Tg, Tv, N}
-    # Build nodal derivatives using quadratic recurrence
+    # Build nodal derivatives using quadratic recurrence (uses
+    # `_create_spacings_typed` internally as a transient — the resulting
+    # spacings are NOT stored in the struct; the wrapped grids carry
+    # `h`/`inv_h` directly via `_get_h(itp.grids[d], i)`).
     nodal_derivs = _build_nd_coeffs_quadratic(grids, data, bcs)
 
-    # Create spacings (uses @generated to avoid closure boxing)
-    spacings = _create_spacings_typed(grids)
-
-    # Store BCs as-is (raw AbstractBC, normalized lazily during build)
-    bcs_store = bcs
-
-    # extraps_val already resolved to concrete types at API boundary
-
-    # Construct the interpolant
-    # Tz = coefficient type: widens Tv with Tg (Dual grid → Dual coefficients).
-    Tz = eltype(nodal_derivs)
-    NP1 = N + 1
-    return QuadraticInterpolantND{
-        Tg, Tz, N, NP1,
-        typeof(grids), typeof(spacings), typeof(bcs_store),
-        typeof(extraps_val), typeof(searches),
-    }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)
+    # Caching wrap (zero-copy of buffer): per-axis `_cache_axis`. Inner ctor's
+    # `_convert_copy(g, Tg)` takes ownership.
+    grids_typed = map(g -> _cache_axis(g, NoBC(), Tg), grids)
+    return QuadraticInterpolantND(grids_typed, nodal_derivs, bcs, extraps_val, searches)
 end

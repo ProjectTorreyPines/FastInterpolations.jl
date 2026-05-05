@@ -30,14 +30,14 @@ end
     _hermite_full_cell_fn(itp, itp.dy)
 
 # PreCompute branch: slopes live in `itp.dy::AbstractVector`, indexed directly.
-# `inv_h` is pulled from the spacing's precomputed cache via `_get_inv_h`
-# (cached field for ScalarSpacing, indexed load for VectorSpacing) — always
-# cheaper than computing `inv(h)` per cell.
+# `inv_h` is pulled from the wrapped grid's precomputed cache via `_get_inv_h`
+# — single field load for `_CachedRange`, indexed load for `_CachedVector` —
+# always cheaper than computing `inv(h)` per cell.
 @inline function _hermite_full_cell_fn(itp::AbstractHermiteInterpolant1D, dy::AbstractVector)
+    x = _grid_1d(itp)
     y = itp.y
-    spacing = _spacing(itp)
     return @inline (i, h) -> begin
-        inv_h = _get_inv_h(spacing, i)
+        inv_h = _get_inv_h(x, i)
         @inbounds _hermite_integral_kernel_1d(y[i], y[i + 1], dy[i], dy[i + 1], h, inv_h, zero(h), h)
     end
 end
@@ -50,12 +50,11 @@ end
 # removes three dedicated kernels.
 @inline function _hermite_full_cell_fn(itp::AbstractHermiteInterpolant1D, sm::AbstractSlopeMethod)
     x, y = _grid_1d(itp), itp.y
-    spacing = _spacing(itp)
     n = length(x)
     return @inline (i, h) -> begin
         dy_L = _local_slope(sm, x, y, i, n)
         dy_R = _local_slope(sm, x, y, i + 1, n)
-        inv_h = _get_inv_h(spacing, i)
+        inv_h = _get_inv_h(x, i)
         @inbounds _hermite_integral_kernel_1d(y[i], y[i + 1], dy_L, dy_R, h, inv_h, zero(h), h)
     end
 end
@@ -101,7 +100,7 @@ end
     ) where {Tg <: AbstractFloat, Tv}
     x = _grid_1d(itp)
     Tout = promote_type(Tv, Tg)
-    return _integrate_1d_fulldomain(x, _spacing(itp), _full_cell_fn(itp), Tout)
+    return _integrate_1d_fulldomain(x, _full_cell_fn(itp), Tout)
 end
 
 # Constant override: side is parametric → compiler knows concrete type,
@@ -112,7 +111,7 @@ end
     ) where {Tg <: AbstractFloat, Tv}
     x = _grid_1d(itp)
     Tout = promote_type(Tv, Tg)
-    return _integrate_1d_fulldomain(x, _spacing(itp), _full_cell_fn(itp, itp.side), Tout)
+    return _integrate_1d_fulldomain(x, _full_cell_fn(itp, itp.side), Tout)
 end
 
 # Hermite family is handled by the generic path above — `_full_cell_fn`
@@ -132,7 +131,7 @@ end
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
     @inbounds for k in 1:n
-        results[k] = _integrate_1d_fulldomain(x, _spacing(sitp), _full_cell_fn(sitp, k), Tout)
+        results[k] = _integrate_1d_fulldomain(x, _full_cell_fn(sitp, k), Tout)
     end
     return results
 end
@@ -147,7 +146,7 @@ end
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
     @inbounds for k in 1:n
-        results[k] = _integrate_1d_fulldomain(x, _spacing(sitp), _full_cell_fn(sitp, k, sitp.side), Tout)
+        results[k] = _integrate_1d_fulldomain(x, _full_cell_fn(sitp, k, sitp.side), Tout)
     end
     return results
 end
@@ -246,8 +245,8 @@ end
     cell_ranges = ntuple(d -> 1:(length(itp.grids[d]) - 1), Val(N))
     for I in CartesianIndices(cell_ranges)
         idx = ntuple(d -> I[d], Val(N))
-        hs = ntuple(d -> @inbounds(_get_h(itp.spacings[d], idx[d])), Val(N))
-        inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.spacings[d], idx[d])), Val(N))
+        hs = ntuple(d -> @inbounds(_get_h(itp.grids[d], idx[d])), Val(N))
+        inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.grids[d], idx[d])), Val(N))
         total += _full_cell_integral_nd(itp, idx, hs, inv_hs)
     end
     return total
@@ -283,7 +282,7 @@ function cumulative_integrate!(
     ) where {Tg <: AbstractFloat, Tv}
     x = _grid_1d(itp)
     _check_cumulative_out(out, length(x))
-    return _cumulative_integrate_1d!(out, x, _spacing(itp), _full_cell_fn(itp))
+    return _cumulative_integrate_1d!(out, x, _full_cell_fn(itp))
 end
 
 # Constant override: side is parametric → compiler knows concrete type,
@@ -293,7 +292,7 @@ function cumulative_integrate!(
     ) where {Tg <: AbstractFloat, Tv}
     x = _grid_1d(itp)
     _check_cumulative_out(out, length(x))
-    return _cumulative_integrate_1d!(out, x, _spacing(itp), _full_cell_fn(itp, itp.side))
+    return _cumulative_integrate_1d!(out, x, _full_cell_fn(itp, itp.side))
 end
 
 # Allocating wrappers: allocate output vector then forward to the in-place path.
@@ -313,7 +312,7 @@ function cumulative_integrate(
     n_ser = n_series(sitp)
     result = Matrix{Tout}(undef, n_pts, n_ser)
     @inbounds for k in 1:n_ser
-        _cumulative_integrate_1d!(@view(result[:, k]), x, _spacing(sitp), _full_cell_fn(sitp, k))
+        _cumulative_integrate_1d!(@view(result[:, k]), x, _full_cell_fn(sitp, k))
     end
     return result
 end
@@ -328,7 +327,7 @@ function cumulative_integrate(
     n_ser = n_series(sitp)
     result = Matrix{Tout}(undef, n_pts, n_ser)
     @inbounds for k in 1:n_ser
-        _cumulative_integrate_1d!(@view(result[:, k]), x, _spacing(sitp), _full_cell_fn(sitp, k, sitp.side))
+        _cumulative_integrate_1d!(@view(result[:, k]), x, _full_cell_fn(sitp, k, sitp.side))
     end
     return result
 end

@@ -68,6 +68,32 @@ Base.IndexStyle(::Type{<:_CachedVector}) = IndexLinear()
 # would discard the existing cached `h`/`inv_h` for no reason.
 _CachedVector(c::_CachedVector) = c
 
+# ---------- Wrapper-preserving copy ----------
+# Default Base `copy(::AbstractVector)` uses `similar` + `copyto!` which
+# materializes wrappers as plain `Vector{T}`, destroying the wrapper type.
+# Persistent ND constructors do `map(copy, grids)` for mutation safety;
+# without this overload, that call would silently drop the cached `h`/`inv_h`
+# fields on every grid axis.
+#
+# True deep copy: every field gets a fresh allocation owned by the result.
+# `copy(c.h)` and `copy(c.inv_h)` are fast `memcpy`s (no element-wise
+# recomputation — h/inv_h were already computed by the source's constructor).
+# Aliasing the cache fields would violate `copy`'s ownership contract
+# (source and result must be fully independent), even though the cache
+# fields have no public mutation API.
+@inline Base.copy(c::_CachedVector) =
+    _CachedVector{eltype(c.inner), eltype(c.inv_h)}(copy(c.inner), copy(c.h), copy(c.inv_h))
+
+# ---------- Wrapper-aware `_convert_copy` ----------
+# Single-pass type-conversion + ownership. Same-type → delegate to
+# `Base.copy` (preserves wrapper, recursive copy of inner). Different-type
+# → rebuild wrapper from a type-converted inner (one allocation pass —
+# `_convert_copy(c.inner, T)` produces the new buffer; `_CachedVector`
+# constructor recomputes `h`/`inv_h` for the converted eltype).
+@inline _convert_copy(c::_CachedVector{T}, ::Type{T}) where {T} = copy(c)
+@inline _convert_copy(c::_CachedVector, ::Type{T}) where {T} =
+    _CachedVector(_convert_copy(c.inner, T))
+
 # ---------- Construction from AbstractVector ----------
 """
     _CachedVector(x::AbstractVector{T})
@@ -145,23 +171,14 @@ end
 @inline _create_spacing(c::_CachedVector{T, Tinv}) where {T, Tinv} =
     VectorSpacing{T, Tinv}(c.h, c.inv_h)
 
-# ========================================
-# _store_grid_cached: persistent grid wrapping
-# ========================================
-#
-# Companion to `_store_grid` (utils.jl). Where `_store_grid` is the
-# lightweight normalizer used by cache-lookup paths (Vector inputs stay
-# raw to avoid per-call wrap allocations on autocache hits),
-# `_store_grid_cached` is for persistent interpolant constructors that
-# build the struct ONCE — they pay the wrap cost upfront so every
-# subsequent eval gets O(1) `_get_h`/`_get_inv_h` cached lookups.
-#
-# After Step 2 migration, persistent constructors call this instead of
-# `_store_grid`. Resulting `xc` is always one of:
-#   {`_CachedRange{Tg}`, `_CachedVector{Tg, Tinv}`}
-# enabling unified `_get_h(xc, i)` dispatch with cached lookup.
-@inline _store_grid_cached(x::AbstractVector, ::Type{Tg}) where {Tg} =
-    _CachedVector(_convert_copy(x, Tg))
-@inline _store_grid_cached(x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
-@inline _store_grid_cached(x::_CachedVector, ::Type{Tg}) where {Tg} = x
-@inline _store_grid_cached(x::_CachedRange, ::Type{Tg}) where {Tg} = x
+# `_store_grid_cached` was the legacy bc-less variant of the persistent
+# axis wrapper. The persistent path is now split into two stages
+# (see `periodic_axis.jl`):
+#   - outer surface API: `_cache_axis(x, bc)` — bc-aware wrap, zero-copy
+#     of buffer (Vector → `_CachedVector`, Range → `_CachedRange`,
+#     `:exclusive` → `_ExclusivePeriodicAxis`),
+#   - inner constructor:  `_convert_copy(x, Tg)` — ownership copy +
+#     element-type promotion (wrapper-preserving `Base.copy`).
+# `_resolve_axis_copied(x, bc, Tg)` (the older one-shot helper) is retained
+# for Cubic's cache builder until that family migrates to the split pattern
+# in a follow-up PR — see `# TODO(spacing-cleanup)` markers in `grid_spacing.jl`.

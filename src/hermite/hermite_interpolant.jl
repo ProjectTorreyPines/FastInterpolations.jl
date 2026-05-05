@@ -26,14 +26,19 @@ end
 # Outer Constructor: typed inputs only
 # ========================================
 
+# Outer kwarg wrapper. Wraps the axis here so the inner ctor's `_cache_axis`
+# insurance is an idempotent passthrough.
 @inline function CubicHermiteInterpolant1D(
         x::AbstractVector,
         y::AbstractVector,
         dy::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    return CubicHermiteInterpolant1D(x, y, dy, extrap, search)
+    Tg = _promote_grid_float(eltype(x), eltype(y))
+    x_eff = _cache_axis(x, bc, Tg)
+    return CubicHermiteInterpolant1D(x_eff, y, dy, extrap, search; bc = bc)
 end
 
 # ========================================

@@ -76,24 +76,18 @@ function linear_interp(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    # Extend grids/data for exclusive periodic axes (build-time only).
-    # After this, all periodic axes have inclusive-form data and WrapExtrap handles queries.
+    # Extend `:exclusive` axes/data to `:inclusive` form, then per-axis
+    # `_cache_axis` (raw → wrapped, pre-wrapped → passthrough).
     grids_typed, data_typed, bcs_post = _prepare_periodic_nd(grids_typed, data_typed, bcs)
-    # Per-axis caching wrap (zero-copy of buffer): raw Vector → `_CachedVector`,
-    # Range → `_CachedRange`, pre-wrapped → idempotent passthrough. Mirrors
-    # 1D `linear_interp` outer flow. Ownership copy happens in inner ctor.
     grids_typed = map(_cache_axis, grids_typed, bcs_post)
 
-    # _resolve_extrap_nd(extrap, bcs, ...) validates periodic/extrap compatibility
-    # and auto-overrides per-axis extrap to WrapExtrap() on periodic axes.
-    # Expand + promote (4-arg form; no materialize yet — extension already
-    # happened above, so we use the 2-arg primitive per axis on grid-span).
+    # Per-axis extrap: validate + auto-promote `WrapExtrap` on periodic axes.
     extrap_vals = _resolve_extrap(extrap, bcs, Val(N), Tv)
     extrap_vals = map(_resolve_extrap, extrap_vals, grids_typed)
     return LinearInterpolantND{
         Tg, Tv, N,
         typeof(grids_typed), typeof(extrap_vals), typeof(searches),
     }(
-        grids_typed, data_typed, extrap_vals, searches
+        grids_typed, data_typed, extrap_vals, searches; bcs = bcs_post,
     )
 end

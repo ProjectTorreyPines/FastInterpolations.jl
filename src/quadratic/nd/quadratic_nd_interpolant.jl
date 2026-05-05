@@ -94,7 +94,7 @@ function _build_nd_quadratic_interpolant(
     # Caching wrap (zero-copy of buffer): per-axis `_cache_axis(g, NoBC(), Tg)`
     # promotes raw Range/Vector axes into `_CachedRange{Tg}` / `_CachedVector{Tg}`.
     # Inner ctor's `_convert_copy(g, Tg)` takes ownership.
-    grids_wrapped = map(g -> _cache_axis(g, NoBC(), Tg), grids)
+    grids_typed = map(g -> _cache_axis(g, NoBC(), Tg), grids)
 
     # Store BCs as-is (raw AbstractBC, normalized lazily during build)
     bcs_store = bcs
@@ -107,7 +107,7 @@ function _build_nd_quadratic_interpolant(
     NP1 = N + 1
     return QuadraticInterpolantND{
         Tg, Tz, N, NP1,
-        typeof(grids_wrapped), typeof(bcs_store),
+        typeof(grids_typed), typeof(bcs_store),
         typeof(extraps_val), typeof(searches),
-    }(grids_wrapped, nodal_derivs, bcs_store, extraps_val, searches)
+    }(grids_typed, nodal_derivs, bcs_store, extraps_val, searches)
 end

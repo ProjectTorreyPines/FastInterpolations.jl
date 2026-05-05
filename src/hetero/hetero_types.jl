@@ -11,6 +11,15 @@
 # - Tv: Value type (unconstrained)
 # - N:  Number of dimensions
 
+# Method-aware `_cache_axis` for HeteroND. `NoInterp` axes are length-1
+# markers — bypass `_cache_axis` (which requires ≥ 2 points). 3-arg form
+# is used by outer factories; 4-arg threads `Tg` for the inner ctor.
+@inline _cache_axis_for_method(g, ::AbstractBC, ::NoInterp) = g
+@inline _cache_axis_for_method(g, bc::AbstractBC, ::AbstractInterpMethod) = _cache_axis(g, bc)
+@inline _cache_axis_for_method(g, ::AbstractBC, ::Type, ::NoInterp) = g
+@inline _cache_axis_for_method(g, bc::AbstractBC, ::Type{Tg}, ::AbstractInterpMethod) where {Tg} =
+    _cache_axis(g, bc, Tg)
+
 """
     HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D} <: AbstractInterpolantND{Tg, Tv, N}
 
@@ -62,18 +71,12 @@ struct HeteroInterpolantND{
     searches::P
 
     function HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D}(
-            grids::Tuple{Vararg{AbstractVector, N}}, data::D, methods::M, extraps::E, searches::P
+            grids::Tuple{Vararg{AbstractVector, N}}, data::D, methods::M, extraps::E, searches::P;
+            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N))
         ) where {Tg, Tv, N, G, M, E, P, D}
-        # Per-axis ownership copy + element-type promotion. Outer (OnTheFly /
-        # PreCompute builder) already applied `_cache_axis` per axis, so
-        # each grid is a wrapper carrying cached `h`/`inv_h`. Mirrors
-        # LinearInterpolantND / ConstantInterpolantND inner-ctor pattern —
-        # `_convert_copy(g, Tg)` is wrapper-preserving (`Base.copy` for same
-        # eltype, single-pass rebuild for different eltype).
-        # Data is NOT copied here — it's already an owned `Array` (OnTheFly
-        # path: `Array(data)` in builder) or a freshly-built `_HeteroPartials`
-        # (PreCompute path: built by `_build_nd_coeffs_hetero`).
-        grids_c = map(g -> _convert_copy(g, Tg), grids)
+        # Per-axis `_cache_axis_for_method` (insurance; NoInterp passthrough)
+        # + `_convert_copy` (ownership). Data is owned by the outer builder.
+        grids_c = map((g, bc, m) -> _convert_copy(_cache_axis_for_method(g, bc, Tg, m), Tg), grids, bcs, methods)
         return new{Tg, Tv, N, typeof(grids_c), M, E, P, D}(grids_c, data, methods, extraps, searches)
     end
 end

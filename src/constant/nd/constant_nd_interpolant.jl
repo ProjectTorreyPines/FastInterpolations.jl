@@ -66,22 +66,18 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    # Extend grids/data for exclusive periodic axes (build-time only).
+    # Extend `:exclusive` axes/data to `:inclusive` form, then per-axis
+    # `_cache_axis` (raw → wrapped, pre-wrapped → passthrough).
     grids_typed, data_typed, bcs_post = _prepare_periodic_nd(grids_typed, data_typed, bcs)
-    # Per-axis caching wrap (zero-copy of buffer); ownership copy in inner ctor.
-    # Mirrors 1D `constant_interp` outer flow.
     grids_typed = map(_cache_axis, grids_typed, bcs_post)
 
-    # _resolve_extrap_nd(extrap, bcs, ...) validates periodic/extrap compatibility
-    # and auto-overrides per-axis extrap to WrapExtrap() on periodic axes.
-    # Expand + promote (4-arg form). Extension already done above → per-axis
-    # materialize via 2-arg primitive (grid-span suffices post-extension).
+    # Per-axis extrap: validate + auto-promote `WrapExtrap` on periodic axes.
     extrap_vals = _resolve_extrap(extrap, bcs, Val(N), Tv)
     extrap_vals = map(_resolve_extrap, extrap_vals, grids_typed)
     return ConstantInterpolantND{
         Tg, Tv, N,
         typeof(grids_typed), typeof(extrap_vals), typeof(sides), typeof(searches),
     }(
-        grids_typed, data_typed, extrap_vals, sides, searches
+        grids_typed, data_typed, extrap_vals, sides, searches; bcs = bcs_post,
     )
 end

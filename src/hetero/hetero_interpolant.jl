@@ -4,13 +4,9 @@
 # Public API: interp(grids, data; method, ...)
 # Internal:   _build_hetero_nd(grids, data, methods, extrap, search)
 
-# Method-aware caching wrap for HeteroND. `NoInterp` axes can be singletons
-# (length-1 marker, no interpolation kernel touches them) — `_CachedVector`
-# rejects those (requires ≥ 2 points to compute h/inv_h). Pass them through
-# raw so the persistent path stays type-stable (`_cache_axis` itself stays
-# strict to avoid Union return types in 1D Linear/Constant Series, etc.).
-@inline _cache_axis_for_method(g, ::AbstractBC, ::NoInterp) = g
-@inline _cache_axis_for_method(g, bc::AbstractBC, ::AbstractInterpMethod) = _cache_axis(g, bc)
+# `_cache_axis_for_method` (3-arg + 4-arg variants) is defined in
+# `hetero_types.jl` so the inner ctor can use it directly. See there for
+# the NoInterp passthrough rationale.
 
 # ========================================
 # Homogeneous Auto-Dispatch
@@ -300,7 +296,7 @@ function _build_hetero_nd(
         typeof(grids_typed), typeof(methods),
         typeof(extraps), typeof(searches), typeof(data_typed),
     }(
-        grids_typed, data_typed, methods, extraps, searches
+        grids_typed, data_typed, methods, extraps, searches; bcs = bcs,
     )
 end
 
@@ -353,7 +349,7 @@ function _build_hetero_precomputed(
         typeof(grids_typed), typeof(methods),
         typeof(extraps), typeof(searches), typeof(hetero_partials),
     }(
-        grids_typed, hetero_partials, methods, extraps, searches
+        grids_typed, hetero_partials, methods, extraps, searches; bcs = bcs_resolved,
     )
 end
 

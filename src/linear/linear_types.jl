@@ -70,47 +70,32 @@ struct LinearInterpolant{
     extrap::E  # Extrapolation mode (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    # Inner constructor: ownership copy + element-type promotion of an
-    # already-resolved x/y. Outer `linear_interp` is responsible for the axis
-    # caching wrap via `_cache_axis(x, bc)` (raw Vector → `_CachedVector`,
-    # Range → `_CachedRange`, `:exclusive` PeriodicBC → `_ExclusivePeriodicAxis`);
-    # by this layer `x` is already a wrapper carrying cached `h`/`inv_h`
-    # (sharing the user's buffer in `inner`). The inner ctor mirrors `y`'s
-    # handling — both go through `_convert_copy` for ownership + same/different
-    # eltype dispatch:
-    #   - same-eltype wrapper → wrapper-preserving `Base.copy` (only copies
-    #     `inner`; `h`/`inv_h` are internal-only and safely aliased),
-    #   - different-eltype wrapper → wrapper-aware single-pass rebuild,
-    #   - immutable `_CachedRange{T}` (same T) → identity (no copy needed).
-    # Spacing access via `_get_h(itp.x, i)` / `_get_inv_h(itp.x, i)` —
-    # grid is the single source of truth; no separate spacing field.
+    # Inner: `_cache_axis` (insurance — passthrough on wrapped, wraps raw)
+    # then `_convert_copy` for ownership + eltype promotion. `bc` kwarg lets
+    # direct-ctor callers request periodic without the factory.
     function LinearInterpolant(
-            x::AbstractVector, y::AbstractVector, ev::E, search::P
+            x::AbstractVector, y::AbstractVector, ev::E, search::P;
+            bc::AbstractBC = NoBC()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
-        # `_check_compatible_length(x, y)` is a single generic `length(x)
-        # == length(y)` check that works uniformly: plain vectors agree
-        # naturally, and the wrapped `_ExclusivePeriodicAxis` /
-        # `_ExclusivePeriodicData` pair both report the virtual `n+1`,
-        # so the comparison stays correct without per-pair dispatch.
         _check_compatible_length(x, y)
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(x, Tg)
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, P}(xc, yc, ev, search)
     end
 end
 
-# ========================================
-# Outer Constructor: convenience kwarg wrapper
-# ========================================
+# Outer kwarg wrapper. Wraps the axis here so the inner ctor's `_cache_axis`
+# insurance is an idempotent passthrough.
 @inline function LinearInterpolant(
         x::AbstractVector,
         y::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    # Materialize WrapExtrap{Nothing} against grid so kernels never see the
-    # unmaterialized singleton when users construct the struct directly.
-    return LinearInterpolant(x, y, _resolve_extrap(extrap, x), search)
+    Tg = _promote_grid_float(eltype(x), eltype(y))
+    x_eff = _cache_axis(x, bc, Tg)
+    return LinearInterpolant(x_eff, y, _resolve_extrap(extrap, x_eff), search; bc = bc)
 end

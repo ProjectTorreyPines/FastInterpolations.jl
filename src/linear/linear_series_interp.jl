@@ -81,15 +81,13 @@ mutable struct LinearSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: Abstrac
             x::AbstractVector{Tg},
             y::Matrix{Tv},
             extrap::E,
-            search::P = AutoSearch()
+            search::P = AutoSearch();
+            bc::AbstractBC = NoBC()
         ) where {Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
-        # Outer `linear_interp` already applied `_cache_axis(x, bc)` so `x` is
-        # a wrapper carrying cached `h`/`inv_h`. Inner ctor mirrors `LinearInterpolant`
-        # 1D — `_convert_copy(x, Tg)` for ownership + element-type promotion
-        # (wrapper-preserving same-eltype `Base.copy`, single-pass rebuild for
-        # different eltype). y is NOT copied — `_build_series_mat()` already
-        # provides an owned matrix.
-        xc = _convert_copy(x, Tg)
+        # `_cache_axis` (insurance) + `_convert_copy` (ownership). Series
+        # factory pre-extends `:exclusive` to `:inclusive` form, so `bc` here
+        # is normally `NoBC` or `:inclusive`. y is owned by `_build_series_mat`.
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         return new{Tg, Tv, E, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), extrap, search)
     end
 end
@@ -355,24 +353,25 @@ function linear_interp(
     Tv_out = Tg_new <: AbstractFloat ? _value_type(Tv, Tg_new) : Tv
     y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
 
-    # Periodic path: extend x + y_mat once (matrix overload of `_prepare_periodic`),
-    # validate `:inclusive` endpoints per series, force WrapExtrap.
+    # Periodic path: extend x + y_mat to `:inclusive` form, normalize BC label
+    # so the inner ctor sees a self-consistent (x, y, bc) triple.
     if _is_periodic_bc(bc)
         x_typed, y_mat = _prepare_periodic(x_typed, y_mat, bc)
         _validate_series_endpoints(bc, y_mat)
+        bc_inner = _bc_after_extend(bc)
         # Materialize against the extended grid on both branches — duck grids
         # keep their eltype, Float grids go through value-type promotion.
         extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(WrapExtrap(), Tv_out) : WrapExtrap()
         # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
         # Thread `Tg_new` so `Int` ranges + `Float32` data become
         # `_CachedRange{Float32}` (not silently widened to Float64).
-        x_eff = _cache_axis(x_typed, NoBC(), Tg_new)
-        return LinearSeriesInterpolant(x_eff, y_mat, extrap_p, search)
+        x_eff = _cache_axis(x_typed, bc_inner, Tg_new)
+        return LinearSeriesInterpolant(x_eff, y_mat, extrap_p, search; bc = bc_inner)
     end
 
     extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(extrap, Tv_out) : extrap
     x_eff = _cache_axis(x_typed, bc, Tg_new)
-    return LinearSeriesInterpolant(x_eff, y_mat, extrap_p, search)
+    return LinearSeriesInterpolant(x_eff, y_mat, extrap_p, search; bc = bc)
 end
 
 # ========================================

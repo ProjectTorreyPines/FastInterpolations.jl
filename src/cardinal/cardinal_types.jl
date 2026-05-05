@@ -47,18 +47,17 @@ struct CardinalInterpolant1D{
     search_policy::P
     tension::Tg
 
-    # PreCompute inner: ownership copy of an already-resolved axis. Outer
-    # `cardinal_interp` applies `_cache_axis(x_eff, bc_eff)` so x is a
-    # wrapper carrying cached h/inv_h. Symmetric with y via `_convert_copy`.
+    # PreCompute inner: builds slopes via cardinal central FD.
     function CardinalInterpolant1D(
             x::AbstractVector, y::AbstractVector, ::Type{PreCompute},
-            extrap::E, search::P, tension::Real
+            extrap::E, search::P, tension::Real;
+            bc::AbstractBC = NoBC()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(x, Tg)
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         Tdy = _output_eltype(Tv, Tg)
         dy = Vector{Tdy}(undef, length(yc))
@@ -68,17 +67,18 @@ struct CardinalInterpolant1D{
         )
     end
 
-    # Pre-computed slopes inner: caller-supplied `dy`. Used by periodic path.
+    # Pre-computed slopes inner: caller-supplied `dy` (used by periodic path).
     function CardinalInterpolant1D(
             x::AbstractVector, y::AbstractVector, dy::AbstractVector,
-            extrap::E, search::P, tension::Real
+            extrap::E, search::P, tension::Real;
+            bc::AbstractBC = NoBC()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(dy) == length(y) || throw(ArgumentError("dy length ($(length(dy))) must match y length ($(length(y)))"))
         length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(x, Tg)
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         Tdy = _output_eltype(Tv, Tg)
         dyc = _convert_copy(dy, Tdy)
@@ -87,16 +87,17 @@ struct CardinalInterpolant1D{
         )
     end
 
-    # OnTheFly inner: slope_strategy is a slope method tag.
+    # OnTheFly inner: stores slope_strategy tag.
     function CardinalInterpolant1D(
             x::AbstractVector, y::AbstractVector, slope_strategy::AbstractSlopeMethod,
-            extrap::E, search::P, tension::Real
+            extrap::E, search::P, tension::Real;
+            bc::AbstractBC = NoBC()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || throw(ArgumentError("Cardinal interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(x, Tg)
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, OnTheFly}(
             xc, yc, slope_strategy, extrap, search, Tg(tension)
@@ -104,16 +105,18 @@ struct CardinalInterpolant1D{
     end
 end
 
-# ========================================
-# Outer Constructor: kwarg wrapper
-# ========================================
+# Outer kwarg wrapper. Wraps the axis here so the inner ctor's `_cache_axis`
+# insurance is an idempotent passthrough.
 @inline function CardinalInterpolant1D(
         x::AbstractVector,
         y::AbstractVector,
         slope_strategy::AbstractSlopeMethod;
         tension::Real = 0.0,
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    return CardinalInterpolant1D(x, y, slope_strategy, extrap, search, tension)
+    Tg = _promote_grid_float(eltype(x), eltype(y))
+    x_eff = _cache_axis(x, bc, Tg)
+    return CardinalInterpolant1D(x_eff, y, slope_strategy, extrap, search, tension; bc = bc)
 end

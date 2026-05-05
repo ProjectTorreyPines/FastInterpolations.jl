@@ -83,14 +83,9 @@ struct QuadraticInterpolantND{
             bcs::B, extraps::E, searches::P
         ) where {Tg, Tv, N, NP1, G, B, E, P}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
-        # Per-axis ownership copy + element-type promotion. Outer
-        # `quadratic_interp` already applied `_cache_axis` per axis, so each
-        # grid is a wrapper carrying cached `h`/`inv_h` (sharing the user
-        # buffer in `inner`). `_convert_copy(g, Tg)` is wrapper-preserving:
-        # `Base.copy` for same eltype, single-pass rebuild for different
-        # eltype. No separate `spacings` field — `_get_h(itp.grids[d], i)`
-        # is the source of truth.
-        grids_c = map(g -> _convert_copy(g, Tg), grids)
+        # Per-axis `_cache_axis` (insurance, polynomial `bcs::B` here are
+        # not `PeriodicBC` so it just caches h/inv_h) + `_convert_copy`.
+        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
         return new{Tg, Tv, N, NP1, typeof(grids_c), B, E, P}(grids_c, nodal_derivs, bcs, extraps, searches)
     end
 end

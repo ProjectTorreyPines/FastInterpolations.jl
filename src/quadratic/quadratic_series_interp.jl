@@ -85,23 +85,19 @@ mutable struct QuadraticSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: Abst
     const extrap::E                            # Extrapolation mode (compile-time specialized)
     const search_policy::P                     # Default search policy
 
-    # Inner ctor: ownership copy of an already-resolved axis. Outer
-    # `quadratic_interp(x, ::Series)` applies `_cache_axis(x, NoBC(), Tg)`
-    # (zero-copy wrap); inner takes ownership via `_convert_copy(x, Tg)`.
-    # Mirrors `LinearSeriesInterpolant` / `ConstantSeriesInterpolant`. The
-    # wrapped axis carries cached `h`/`inv_h` directly — no separate
-    # `spacing` field. y/a/d matrices are freshly built by the outer ctor's
-    # solver loop (no aliasing concern; not copied here).
+    # `_cache_axis` (insurance) + `_convert_copy` (ownership).
+    # y/a/d are freshly built by the outer factory's solver loop.
     function QuadraticSeriesInterpolant(
             x::AbstractVector{Tg},
             y::Matrix{Tv},
             a::Matrix,
             d::Matrix,
             extrap::E,
-            search::P = AutoSearch()
+            search::P = AutoSearch();
+            bc::AbstractBC = NoBC()
         ) where {Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         Tc = eltype(a)
-        xc = _convert_copy(x, Tg)
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         return new{Tg, Tv, E, P, typeof(xc), Tc}(xc, y, a, d, LazyTransposeTriple{Tv, Tc}(), extrap, search)
     end
 end

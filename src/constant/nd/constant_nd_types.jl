@@ -61,17 +61,15 @@ struct ConstantInterpolantND{
     searches::P
 
     function ConstantInterpolantND{Tg, Tv, N, G, E, SD, P}(
-            grids::Tuple{Vararg{AbstractVector, N}}, data::AbstractArray{Tv, N}, extraps::E, sides::SD, searches::P
+            grids::Tuple{Vararg{AbstractVector, N}}, data::AbstractArray{Tv, N}, extraps::E, sides::SD, searches::P;
+            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N))
         ) where {
             Tg, Tv, N, G <: NTuple{N, AbstractVector{Tg}},
             E, SD <: Tuple{Vararg{AbstractSide, N}}, P <: NTuple{N, AbstractSearchPolicy},
         }
-        # Per-axis ownership copy + element-type promotion. Outer
-        # `constant_interp` already applied `_cache_axis` per axis; this
-        # mirrors 1D `_convert_copy(x, Tg)` (wrapper-preserving same-eltype
-        # `Base.copy`, single-pass rebuild for different eltype).
+        # Per-axis `_cache_axis` (insurance) + `_convert_copy` (ownership).
         # Array() converts AbstractArray→Array AND copies data in one step.
-        grids_c = map(g -> _convert_copy(g, Tg), grids)
+        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
         return new{Tg, Tv, N, typeof(grids_c), E, SD, P}(grids_c, Array(data), extraps, sides, searches)
     end
 end

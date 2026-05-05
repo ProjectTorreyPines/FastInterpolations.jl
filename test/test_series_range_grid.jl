@@ -113,7 +113,7 @@
 
         @testset "grid type preservation" begin
             @test sitp_range.x isa FI._CachedRange
-            @test sitp_vector.x isa Vector
+            @test sitp_vector.x isa FI._CachedVector
         end
 
         @testset "single query evaluation" begin

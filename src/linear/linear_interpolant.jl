@@ -163,5 +163,5 @@ function linear_interp end
     # axis span. `_resolve_extrap` handles materialization.
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
-    return LinearInterpolant(x_eff, y_eff; extrap = extrap_p, search)
+    return LinearInterpolant(x_eff, y_eff, extrap_p, search; bc = bc)
 end

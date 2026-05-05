@@ -81,13 +81,13 @@ mutable struct ConstantSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, SD <: Abst
             y::Matrix{Tv},
             extrap::E,
             side::SD,
-            search::P = AutoSearch()
+            search::P = AutoSearch();
+            bc::AbstractBC = NoBC()
         ) where {Tg, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
-        # Outer `constant_interp` already applied `_cache_axis(x, bc)` so `x` is
-        # a wrapper carrying cached `h`/`inv_h`. Inner ctor mirrors `ConstantInterpolant`
-        # 1D — `_convert_copy(x, Tg)` for ownership + element-type promotion. y is
-        # NOT copied — `_build_series_mat()` already provides an owned matrix.
-        xc = _convert_copy(x, Tg)
+        # `_cache_axis` (insurance) + `_convert_copy` (ownership). Series
+        # factory pre-extends `:exclusive` to `:inclusive` form, so `bc` here
+        # is normally `NoBC` or `:inclusive`. y is owned by `_build_series_mat`.
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         return new{Tg, Tv, E, SD, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), extrap, side, search)
     end
 end
@@ -359,11 +359,12 @@ function constant_interp(
     Tv_out = _value_type(Tv, Tg)
     y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
 
-    # Periodic path: extend x + y_mat, validate :inclusive endpoints per series,
-    # force WrapExtrap.
+    # Periodic path: extend x + y_mat to `:inclusive` form, normalize BC label
+    # so the inner ctor sees a self-consistent (x, y, bc) triple.
     if _is_periodic_bc(bc)
         x_ext, y_mat_ext = _prepare_periodic(x, y_mat, bc)
         _validate_series_endpoints(bc, y_mat_ext)
+        bc_inner = _bc_after_extend(bc)
         # `WrapExtrap` is a tag struct — wrap domain is read from the extended
         # axis at query time. `_promote_extrap` only handles `FillExtrap` value
         # promotion; passthrough for `WrapExtrap`.
@@ -371,13 +372,13 @@ function constant_interp(
         # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
         # Thread `Tg` so `Int` ranges + `Float32` data become
         # `_CachedRange{Float32}` (not silently widened to Float64).
-        x_eff = _cache_axis(x_ext, NoBC(), Tg)
-        return ConstantSeriesInterpolant(x_eff, y_mat_ext, extrap_p, side, search)
+        x_eff = _cache_axis(x_ext, bc_inner, Tg)
+        return ConstantSeriesInterpolant(x_eff, y_mat_ext, extrap_p, side, search; bc = bc_inner)
     end
 
     extrap_p = _promote_extrap(extrap, Tv_out)
     x_eff = _cache_axis(x, bc, Tg)
-    return ConstantSeriesInterpolant(x_eff, y_mat, extrap_p, side, search)
+    return ConstantSeriesInterpolant(x_eff, y_mat, extrap_p, side, search; bc = bc)
 end
 
 # NOTE: the former Real grid promotion wrapper (Tg <: Real) has been removed.

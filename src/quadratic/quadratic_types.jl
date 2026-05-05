@@ -68,15 +68,10 @@ struct QuadraticInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector
     search_policy::P    # Default search policy (immutable, thread-safe)
     bc::BC              # Boundary condition (retained for Matrix(itp, xq) convenience)
 
-    # Inner constructor: ownership copy + element-type promotion of the
-    # already-resolved x/y. Outer `quadratic_interp` is responsible for the
-    # caching wrap via `_cache_axis(x, bc, Tg)`; by this layer `x` is a
-    # wrapper carrying cached `h`/`inv_h` (sharing the user buffer in
-    # `inner`). Mirrors `LinearInterpolant` / `ConstantInterpolant`:
-    # both `x` and `y` go through `_convert_copy` for ownership, so direct
-    # struct construction is also mutation-safe (no need for callers to
-    # remember to pre-copy). Coefficients (`a`, `d`) are computed by the
-    # solver in the outer ctor; passed here freshly-allocated, no copy.
+    # Inner: `_cache_axis` (insurance, passes the polynomial `bc::QuadraticBC`
+    # through — these are not `PeriodicBC` so it just caches h/inv_h) then
+    # `_convert_copy` for ownership. `a`/`d` come freshly-allocated from the
+    # outer ctor's solver.
     function QuadraticInterpolant(
             x::AbstractVector, y::AbstractVector,
             a::Vector{Tc}, d::Vector{Tc}, ev::E, search::P, bc::BC
@@ -85,7 +80,7 @@ struct QuadraticInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector
         length(x) >= 2 || _throw_grid_too_small(length(x))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(x, Tg)
+        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, P, BC, Tc}(xc, yc, a, d, ev, search, bc)
     end

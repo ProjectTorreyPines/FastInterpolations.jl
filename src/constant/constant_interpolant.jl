@@ -121,5 +121,5 @@ end
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
-    return ConstantInterpolant(x_eff, y_eff; extrap = extrap_p, side, search)
+    return ConstantInterpolant(x_eff, y_eff, extrap_p, side, search; bc = bc)
 end

@@ -96,6 +96,53 @@ end
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
+"""
+    _eval_cubic_deriv1_and_deriv2(itp::CubicInterpolant, xq) -> (d1, d2)
+
+Evaluate the first **and** second derivatives of a non-periodic `CubicInterpolant`
+at `xq` with a **single** interval search.  Avoids the binary-search overhead of two
+independent `itp(xq; deriv=DerivOp(1))` / `itp(xq; deriv=DerivOp(2))` calls when
+both derivatives are needed at the same point (e.g. in the atom loops of
+`PromolecularRef`).
+
+Only valid for non-periodic boundary conditions (`BCPair`).
+Handles `FillExtrap` / `ClampExtrap` out-of-bounds by returning zero for both
+derivatives (consistent with a constant fill).
+"""
+@inline function _eval_cubic_deriv1_and_deriv2(
+        itp::CubicInterpolant{Tg, Tv, <:CubicSplineCache{Tg, <:Any, <:Any, <:BCPair}},
+        xq::Real,
+    ) where {Tg, Tv}
+    cache  = itp.cache
+    extrap = itp.extrap
+    x      = cache.x
+    sp     = cache.spacing
+    xq_primal = _extract_primal(xq)
+    if xq_primal < first(x)
+        d1 = _eval_extrapolation(EvalDeriv1(), first(itp.y), extrap, xq)
+        d2 = _eval_extrapolation(EvalDeriv2(), first(itp.y), extrap, xq)
+        return d1, d2
+    end
+    if xq_primal > last(x)
+        d1 = _eval_extrapolation(EvalDeriv1(), last(itp.y), extrap, xq)
+        d2 = _eval_extrapolation(EvalDeriv2(), last(itp.y), extrap, xq)
+        return d1, d2
+    end
+    searcher  = _resolve_search(x, xq, itp.search_policy, nothing)
+    idx, idx_R, xL, xR = search_interval(searcher, x, sp, xq)
+    dL    = xq - xL
+    dR    = xR - xq
+    h     = _get_h(sp, idx)
+    inv_h = _get_inv_h(sp, idx)
+    @inbounds begin
+        zL = itp.z[idx];   zR = itp.z[idx_R]
+        yL = itp.y[idx];   yR = itp.y[idx_R]
+    end
+    d1 = _cubic_kernel(EvalDeriv1(), zL, zR, yL, yR, h, inv_h, dL, dR)
+    d2 = _cubic_kernel(EvalDeriv2(), zL, zR, yL, yR, h, inv_h, dL, dR)
+    return d1, d2
+end
+
 
 # ========================================
 # Vector Loop Function

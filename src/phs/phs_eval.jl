@@ -32,26 +32,15 @@
 const _PHS_COEFF_CACHE_TKEY = :_phs_stencil_coeff_cache
 const _PHS_COEFF_CACHE_MAX  = 5_000   # ≈ 20 MB for 516-coeff Float64 stencils
 
-@inline function _phs_get_thread_cache_store()
-    store = get(task_local_storage(), _PHS_COEFF_CACHE_TKEY, nothing)
-    if store === nothing
-        store = Dict{UInt, Any}()
-        task_local_storage(_PHS_COEFF_CACHE_TKEY, store)
-    end
-    return store::Dict{UInt, Any}
-end
-
 @inline function _phs_get_coeff_cache(
         itp::PHSInterpolantND{Tg, Tv, N, K},
     ) where {Tg, Tv, N, K}
-    store  = _phs_get_thread_cache_store()
-    itp_id = objectid(itp)
-    cache  = get(store, itp_id, nothing)
-    if cache === nothing
-        cache = Dict{NTuple{N, Int}, Vector{Tg}}()
-        store[itp_id] = cache
+    tid = Threads.threadid()
+    # Fallback if somehow more threads were spawned than existed at creation time
+    if tid > length(itp.coeff_caches)
+        return Dict{NTuple{N, Int}, Vector{Tg}}()
     end
-    return cache::Dict{NTuple{N, Int}, Vector{Tg}}
+    return itp.coeff_caches[tid]::Dict{NTuple{N, Int}, Vector{Tg}}
 end
 
 # ======================================================

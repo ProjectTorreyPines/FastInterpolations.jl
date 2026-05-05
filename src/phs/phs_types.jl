@@ -131,6 +131,7 @@ struct PHSInterpolantND{
     transform::T
     extraps::E
     searches::P
+    coeff_caches::Vector{Any}
 end
 
 # ----------------------------------------

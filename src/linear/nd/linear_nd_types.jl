@@ -80,14 +80,19 @@ struct LinearInterpolantND{
     extraps::E
     searches::P
 
-    function LinearInterpolantND{Tg, Tv, N, G, E, P}(
-            grids::Tuple{Vararg{AbstractVector, N}}, data::AbstractArray{Tv, N}, extraps::E, searches::P;
+    # Inner ctor: type params inferred from arg signature; outer factories
+    # call this without spelling out `{Tg, Tv, N, G, E, P}`.
+    function LinearInterpolantND(
+            grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+            data::AbstractArray{Tv, N},
+            extraps::Tuple{Vararg{AbstractExtrap, N}},
+            searches::Tuple{Vararg{AbstractSearchPolicy, N}};
             bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N))
-        ) where {Tg, Tv, N, G, E, P}
-        # Per-axis `_cache_axis` (insurance) + `_convert_copy` (ownership).
-        # Array() converts AbstractArray→Array AND copies data in one step.
+        ) where {Tg, Tv, N}
         grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
-        return new{Tg, Tv, N, typeof(grids_c), E, P}(grids_c, Array(data), extraps, searches)
+        return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(searches)}(
+            grids_c, Array(data), extraps, searches
+        )
     end
 end
 

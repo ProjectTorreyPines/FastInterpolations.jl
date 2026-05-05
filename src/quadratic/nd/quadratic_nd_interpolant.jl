@@ -91,23 +91,8 @@ function _build_nd_quadratic_interpolant(
     # `h`/`inv_h` directly via `_get_h(itp.grids[d], i)`).
     nodal_derivs = _build_nd_coeffs_quadratic(grids, data, bcs)
 
-    # Caching wrap (zero-copy of buffer): per-axis `_cache_axis(g, NoBC(), Tg)`
-    # promotes raw Range/Vector axes into `_CachedRange{Tg}` / `_CachedVector{Tg}`.
-    # Inner ctor's `_convert_copy(g, Tg)` takes ownership.
+    # Caching wrap (zero-copy of buffer): per-axis `_cache_axis`. Inner ctor's
+    # `_convert_copy(g, Tg)` takes ownership.
     grids_typed = map(g -> _cache_axis(g, NoBC(), Tg), grids)
-
-    # Store BCs as-is (raw AbstractBC, normalized lazily during build)
-    bcs_store = bcs
-
-    # extraps_val already resolved to concrete types at API boundary
-
-    # Construct the interpolant
-    # Tz = coefficient type: widens Tv with Tg (Dual grid → Dual coefficients).
-    Tz = eltype(nodal_derivs)
-    NP1 = N + 1
-    return QuadraticInterpolantND{
-        Tg, Tz, N, NP1,
-        typeof(grids_typed), typeof(bcs_store),
-        typeof(extraps_val), typeof(searches),
-    }(grids_typed, nodal_derivs, bcs_store, extraps_val, searches)
+    return QuadraticInterpolantND(grids_typed, nodal_derivs, bcs, extraps_val, searches)
 end

@@ -78,15 +78,22 @@ struct QuadraticInterpolantND{
     extraps::E
     searches::P
 
-    function QuadraticInterpolantND{Tg, Tv, N, NP1, G, B, E, P}(
-            grids::Tuple{Vararg{AbstractVector, N}}, nodal_derivs::_NodalDerivativesND{Tv, N, NP1},
-            bcs::B, extraps::E, searches::P
-        ) where {Tg, Tv, N, NP1, G, B, E, P}
+    # Inner ctor: type params inferred from arg signature. NP1 binds via
+    # `nodal_derivs::_NodalDerivativesND{Tv, N, NP1}`. `bcs` is any per-axis
+    # BC tuple (Quadratic accepts Left/Right/MinCurvFit as well as ZeroCurvBC,
+    # PolyFit{D}, etc — all `<: AbstractBC`).
+    function QuadraticInterpolantND(
+            grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+            nodal_derivs::_NodalDerivativesND{Tv, N, NP1},
+            bcs::Tuple{Vararg{AbstractBC, N}},
+            extraps::Tuple{Vararg{AbstractExtrap, N}},
+            searches::Tuple{Vararg{AbstractSearchPolicy, N}}
+        ) where {Tg, Tv, N, NP1}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
-        # Per-axis `_cache_axis` (insurance, polynomial `bcs::B` here are
-        # not `PeriodicBC` so it just caches h/inv_h) + `_convert_copy`.
         grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
-        return new{Tg, Tv, N, NP1, typeof(grids_c), B, E, P}(grids_c, nodal_derivs, bcs, extraps, searches)
+        return new{Tg, Tv, N, NP1, typeof(grids_c), typeof(bcs), typeof(extraps), typeof(searches)}(
+            grids_c, nodal_derivs, bcs, extraps, searches
+        )
     end
 end
 

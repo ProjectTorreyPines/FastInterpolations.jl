@@ -60,17 +60,19 @@ struct ConstantInterpolantND{
     sides::SD
     searches::P
 
-    function ConstantInterpolantND{Tg, Tv, N, G, E, SD, P}(
-            grids::Tuple{Vararg{AbstractVector, N}}, data::AbstractArray{Tv, N}, extraps::E, sides::SD, searches::P;
+    # Inner ctor: type params inferred from arg signature.
+    function ConstantInterpolantND(
+            grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+            data::AbstractArray{Tv, N},
+            extraps::Tuple{Vararg{AbstractExtrap, N}},
+            sides::Tuple{Vararg{AbstractSide, N}},
+            searches::Tuple{Vararg{AbstractSearchPolicy, N}};
             bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N))
-        ) where {
-            Tg, Tv, N, G <: NTuple{N, AbstractVector{Tg}},
-            E, SD <: Tuple{Vararg{AbstractSide, N}}, P <: NTuple{N, AbstractSearchPolicy},
-        }
-        # Per-axis `_cache_axis` (insurance) + `_convert_copy` (ownership).
-        # Array() converts AbstractArray→Array AND copies data in one step.
+        ) where {Tg, Tv, N}
         grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
-        return new{Tg, Tv, N, typeof(grids_c), E, SD, P}(grids_c, Array(data), extraps, sides, searches)
+        return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(sides), typeof(searches)}(
+            grids_c, Array(data), extraps, sides, searches
+        )
     end
 end
 

@@ -70,14 +70,21 @@ struct HeteroInterpolantND{
     extraps::E
     searches::P
 
-    function HeteroInterpolantND{Tg, Tv, N, G, M, E, P, D}(
-            grids::Tuple{Vararg{AbstractVector, N}}, data::D, methods::M, extraps::E, searches::P;
+    # Inner ctor: type params inferred from arg signature. Tv extracted via
+    # `eltype(data)` (works for both `Array{Tv,N}` and `_HeteroPartials{Tv,N,NP1}`).
+    function HeteroInterpolantND(
+            grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+            data,
+            methods::Tuple{Vararg{AbstractInterpMethod, N}},
+            extraps::Tuple{Vararg{AbstractExtrap, N}},
+            searches::Tuple{Vararg{AbstractSearchPolicy, N}};
             bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N))
-        ) where {Tg, Tv, N, G, M, E, P, D}
-        # Per-axis `_cache_axis_for_method` (insurance; NoInterp passthrough)
-        # + `_convert_copy` (ownership). Data is owned by the outer builder.
+        ) where {Tg, N}
+        Tv = eltype(data)
         grids_c = map((g, bc, m) -> _convert_copy(_cache_axis_for_method(g, bc, Tg, m), Tg), grids, bcs, methods)
-        return new{Tg, Tv, N, typeof(grids_c), M, E, P, D}(grids_c, data, methods, extraps, searches)
+        return new{Tg, Tv, N, typeof(grids_c), typeof(methods), typeof(extraps), typeof(searches), typeof(data)}(
+            grids_c, data, methods, extraps, searches
+        )
     end
 end
 
@@ -96,3 +103,6 @@ Layout: `partials[p, i₁, i₂, ..., iₙ]` where `p ∈ 1:prod(sizes)`.
 struct _HeteroPartials{Tv, N, NP1}
     partials::Array{Tv, NP1}
 end
+
+@inline Base.eltype(::Type{<:_HeteroPartials{Tv}}) where {Tv} = Tv
+@inline Base.eltype(p::_HeteroPartials) = eltype(typeof(p))

@@ -58,7 +58,7 @@ function constant_interp(
     _validate_nd_grids(grids, data)
 
     # Promote grid/data types
-    grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
     # Resolve per-axis configuration
@@ -74,10 +74,5 @@ function constant_interp(
     # Per-axis extrap: validate + auto-promote `WrapExtrap` on periodic axes.
     extrap_vals = _resolve_extrap(extrap, bcs, Val(N), Tv)
     extrap_vals = map(_resolve_extrap, extrap_vals, grids_typed)
-    return ConstantInterpolantND{
-        Tg, Tv, N,
-        typeof(grids_typed), typeof(extrap_vals), typeof(sides), typeof(searches),
-    }(
-        grids_typed, data_typed, extrap_vals, sides, searches; bcs = bcs_post,
-    )
+    return ConstantInterpolantND(grids_typed, data_typed, extrap_vals, sides, searches; bcs = bcs_post)
 end

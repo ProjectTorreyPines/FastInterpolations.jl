@@ -264,7 +264,7 @@ function _build_hetero_nd(
     end
 
     # 2-5. Promote grid + data types
-    grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     data_typed = Tv === Tv_raw ? Array(data) : Array{Tv}(data)
 
     # 6. Resolve per-axis configuration (OnTheFly: no extension, bc-aware materialize).
@@ -291,13 +291,7 @@ function _build_hetero_nd(
     # 7. Per-axis method validation
     _validate_axis_methods(grids_typed, methods, extraps)
 
-    return HeteroInterpolantND{
-        Tg, Tv, N,
-        typeof(grids_typed), typeof(methods),
-        typeof(extraps), typeof(searches), typeof(data_typed),
-    }(
-        grids_typed, data_typed, methods, extraps, searches; bcs = bcs,
-    )
+    return HeteroInterpolantND(grids_typed, data_typed, methods, extraps, searches; bcs = bcs)
 end
 
 # ========================================
@@ -316,7 +310,7 @@ function _build_hetero_precomputed(
     else
         _validate_nd_grids(grids, data)
     end
-    grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
     bcs_periodic = map(_bc_for_periodic_check, methods)
     # 4-arg expand-only — materialize deferred until after extension (post-extension
     # grid-span form is used via 2-arg primitive).
@@ -344,13 +338,7 @@ function _build_hetero_precomputed(
     # Build partials on the (possibly extended) data
     hetero_partials = _build_nd_coeffs_hetero(grids_typed, Tv, data_ext, methods, bcs_resolved)
 
-    return HeteroInterpolantND{
-        Tg, Tv, N,
-        typeof(grids_typed), typeof(methods),
-        typeof(extraps), typeof(searches), typeof(hetero_partials),
-    }(
-        grids_typed, hetero_partials, methods, extraps, searches; bcs = bcs_resolved,
-    )
+    return HeteroInterpolantND(grids_typed, hetero_partials, methods, extraps, searches; bcs = bcs_resolved)
 end
 
 # ========================================

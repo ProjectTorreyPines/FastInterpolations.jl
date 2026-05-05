@@ -112,7 +112,6 @@ num_partials(::Type{<:QuadraticInterpolantND{Tg, Tv, N}}) where {Tg, Tv, N} = 1 
 # ========================================
 
 @inline _grid(itp::QuadraticInterpolantND, ::Val{D}) where {D} = itp.grids[D]
-@inline _spacing(itp::QuadraticInterpolantND, ::Val{D}) where {D} = itp.spacings[D]
 @inline _bc(itp::QuadraticInterpolantND, ::Val{D}) where {D} = itp.bcs[D]
 """
     _extrap(itp, Val(d)) -> AbstractExtrap

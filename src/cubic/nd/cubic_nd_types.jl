@@ -152,13 +152,6 @@ Get grid for dimension `d`. Uses `Val{D}` for compile-time dispatch.
 @inline _grid(itp::CubicInterpolantND, ::Val{D}) where {D} = itp.grids[D]
 
 """
-    _spacing(itp, Val(d)) -> AbstractGridSpacing{Tg}
-
-Get spacing for dimension `d`.
-"""
-@inline _spacing(itp::CubicInterpolantND, ::Val{D}) where {D} = itp.spacings[D]
-
-"""
     _bc(itp, Val(d)) -> AbstractBC
 
 Get boundary condition for dimension `d`.

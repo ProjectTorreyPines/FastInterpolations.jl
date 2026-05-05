@@ -129,17 +129,8 @@ function phs_interp(
                 throw(DimensionMismatch("reference_data size $(size(reference_data)) must match data size $(size(data_typed))"))
             Tv.(reference_data)
         else
-            # Evaluate reference_interp at each grid node in parallel.
-            # Scalar queries to CubicInterpolant / PromolecularRef are read-only after
-            # construction, so this is safe for Threads.@threads.
-            _len  = length(data_typed)
-            _size = size(data_typed)
-            _rho0 = Vector{Tv}(undef, _len)
-            Threads.@threads :static for k in 1:_len
-                idx = CartesianIndices(_size)[k]
-                @inbounds _rho0[k] = reference_interp(ntuple(d -> grids_typed[d][idx[d]], N))
-            end
-            reshape(_rho0, _size)
+            # Evaluate reference_interp at each grid node (may be slow for nested PHS)
+            Tv[reference_interp(ntuple(d -> grids_typed[d][idx[d]], N)) for idx in CartesianIndices(size(data_typed))]
         end
         log_data = Array{Tv}(log.(data_typed ./ rho0_nodes))
         PHSLogTransform{N, typeof(reference_interp)}(reference_interp), log_data

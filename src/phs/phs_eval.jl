@@ -898,7 +898,40 @@ and its derivatives.
   gradient: ∂ρ̃/∂xξ = ∂ρ₀/∂xξ · G + ρ₀ · ∂G/∂xξ
   Hessian:  ∂²ρ̃/∂xξ∂xζ = ∂²ρ₀/∂xξ∂xζ · G + ∂ρ₀/∂xξ · ∂G/∂xζ
                           + ∂ρ₀/∂xζ · ∂G/∂xξ + ρ₀ · ∂²G/∂xξ∂xζ
+
+# Fused-evaluation protocol for reference callables
+
+When the reference callable `ref` supports the fused protocol, the gradient
+and Hessian paths use a single call rather than 2–4 separate calls.  The
+protocol consists of two overloadable methods:
+
+  _phs_ref_eval_value_and_grad(ref, query, ax, ops_val, ops_grad)
+      → (rho0::Real, rho0_ξ::Real)
+
+  _phs_ref_eval_all(ref, query, ax1, ax2, ops_val, ops_d1, ops_d2, ops)
+      → (rho0::Real, rho0_ξ::Real, rho0_ζ::Real, rho0_ξζ::Real)
+
+Default implementations (below) make the same 2 / 4 separate calls as
+before.  Custom reference types (e.g. `PromolecularRef`) can override with
+a single atom-loop pass.
 """
+
+# ── Default (separate-call) implementations ──────────────────────────────────
+
+@inline function _phs_ref_eval_value_and_grad(ref, query, ax, ::Any, ops_grad)
+    return ref(query), ref(query; deriv = ops_grad)
+end
+
+@inline function _phs_ref_eval_all(ref, query, ax1, ax2, ::Any, ops_d1, ops_d2, ops)
+    rho0    = ref(query)
+    rho0_ξ  = ref(query; deriv = ops_d1)
+    rho0_ζ  = ax1 == ax2 ? rho0_ξ : ref(query; deriv = ops_d2)
+    rho0_ξζ = ref(query; deriv = ops)
+    return rho0, rho0_ξ, rho0_ζ, rho0_ξζ
+end
+
+# ── Body ─────────────────────────────────────────────────────────────────────
+
 function _phs_eval_with_transform(
         itp::PHSInterpolantND{Tg, Tv, N, K},
         query::NTuple{N, <:Real},
@@ -909,17 +942,15 @@ function _phs_eval_with_transform(
 
     ops_val = ntuple(_ -> EvalValue(), Val(N))
     G    = Tg(_phs_eval_blended_G(itp, query, ops_val))
-    rho0 = Tg(ref(query))
-    rho  = rho0 * G
 
-    total_deriv == 0 && return Tv(rho)
+    total_deriv == 0 && return Tv(Tg(ref(query)) * G)
 
     if total_deriv == 1
         ax = let a = 0; for d in 1:N; deriv_order(ops[d]) == 1 && (a = d; break); end; a; end
         ops_grad = ntuple(d -> d == ax ? DerivOp{1}() : EvalValue(), N)
         G_ξ      = Tg(_phs_eval_blended_G(itp, query, ops_grad))
-        rho0_ξ   = Tg(ref(query; deriv = ops_grad))
-        return Tv(rho0_ξ * G + rho0 * G_ξ)
+        rho0, rho0_ξ = _phs_ref_eval_value_and_grad(ref, query, ax, ops_val, ops_grad)
+        return Tv(Tg(rho0_ξ) * G + Tg(rho0) * G_ξ)
     end
 
     if total_deriv == 2
@@ -940,12 +971,11 @@ function _phs_eval_with_transform(
         G_ζ    = Tg(_phs_eval_blended_G(itp, query, ops_d2))
         G_ξζ   = Tg(_phs_eval_blended_G(itp, query, ops))
 
-        rho0_ξ  = Tg(ref(query; deriv = ops_d1))
-        rho0_ζ  = Tg(ref(query; deriv = ops_d2))
-        rho0_ξζ = Tg(ref(query; deriv = ops))
+        rho0, rho0_ξ, rho0_ζ, rho0_ξζ =
+            _phs_ref_eval_all(ref, query, ax1, ax2, ops_val, ops_d1, ops_d2, ops)
 
         # Leibniz rule: ρ̃_ξζ = ρ₀_ξζ·G + ρ₀_ξ·G_ζ + ρ₀_ζ·G_ξ + ρ₀·G_ξζ
-        return Tv(rho0_ξζ * G + rho0_ξ * G_ζ + rho0_ζ * G_ξ + rho0 * G_ξζ)
+        return Tv(Tg(rho0_ξζ) * G + Tg(rho0_ξ) * G_ζ + Tg(rho0_ζ) * G_ξ + Tg(rho0) * G_ξζ)
     end
 
     return zero(Tv)

@@ -392,6 +392,58 @@ end
     return 0.0
 end
 
+# ── Fused protocol overloads for PromolecularRef ──────────────────────────────
+# These specialise the two-method protocol from phs_eval.jl, replacing the
+# default 2- and 4-call implementations with a single atom-loop pass.
+
+# Gradient path: compute (ρ₀, ∂ρ₀/∂xξ) in one loop using _eval_cubic_value_and_deriv1.
+@inline function FastInterpolations._phs_ref_eval_value_and_grad(
+        pmr::PromolecularRef, q, ax::Int, _, _ops_grad)
+    rho0 = 0.0
+    fp   = 0.0
+    @inbounds for i in eachindex(pmr.atom_positions)
+        R  = pmr.atom_positions[i]
+        xx = (q[1] - R[1], q[2] - R[2], q[3] - R[3])
+        r  = sqrt(xx[1]^2 + xx[2]^2 + xx[3]^2)
+        r < 1e-14 && continue
+        r_inv   = 1.0 / r
+        rhoi, rhop = FastInterpolations._eval_cubic_value_and_deriv1(pmr.atom_itps[i], r)
+        rho0 += max(rhoi, 0.0)
+        fp   += rhop * xx[ax] * r_inv
+    end
+    return rho0, fp
+end
+
+# Hessian path: compute (ρ₀, ∂ρ₀/∂xξ, ∂ρ₀/∂xζ, ∂²ρ₀/∂xξ∂xζ) in one loop
+# using _eval_cubic_value_and_deriv1_and_deriv2.
+@inline function FastInterpolations._phs_ref_eval_all(
+        pmr::PromolecularRef, q, ax1::Int, ax2::Int, _, _od1, _od2, _ops)
+    rho0    = 0.0
+    rho0_ξ  = 0.0
+    rho0_ζ  = 0.0
+    rho0_ξζ = 0.0
+    @inbounds for i in eachindex(pmr.atom_positions)
+        R   = pmr.atom_positions[i]
+        xx  = (q[1] - R[1], q[2] - R[2], q[3] - R[3])
+        r2  = xx[1]^2 + xx[2]^2 + xx[3]^2
+        r   = sqrt(r2)
+        r < 1e-14 && continue
+        r_inv  = 1.0 / r
+        r2_inv = r_inv * r_inv
+        rhoi, rhop, rhopp = FastInterpolations._eval_cubic_value_and_deriv1_and_deriv2(pmr.atom_itps[i], r)
+        rho0  += max(rhoi, 0.0)
+        rho0_ξ += rhop * xx[ax1] * r_inv
+        if ax1 != ax2
+            rho0_ζ += rhop * xx[ax2] * r_inv
+        end
+        rfac    = (rhopp - rhop * r_inv) * r2_inv
+        rho0_ξζ += ax1 == ax2 ? rhop * r_inv + rfac * xx[ax1]^2 :
+                                  rfac * xx[ax1] * xx[ax2]
+    end
+    ax1 == ax2 && (rho0_ζ = rho0_ξ)
+    return rho0, rho0_ξ, rho0_ζ, rho0_ξζ
+end
+
 println("Building PromolecularRef (loading wfc files for present elements)...")
 # Pre-warm the wfc cache for all elements in the system, then build the typed struct.
 for (Z, _) in ATOMS; get_rho_itp(Z); end

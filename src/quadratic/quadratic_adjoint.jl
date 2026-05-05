@@ -317,6 +317,19 @@ end
     return inv(inv_h_sum)
 end
 
+# Axis-based overload: reads `_get_inv_h(axis, i)` directly from a wrapped
+# axis (`_CachedRange` / `_CachedVector` / `_ExclusivePeriodicAxis`) or a raw
+# `AbstractVector` (on-the-fly diff via `_get_inv_h(::AbstractVector, i)`).
+# Used by adjoint families migrated off `AbstractGridSpacing`. Dispatch is
+# unambiguous because no `AbstractGridSpacing` subtype is `<: AbstractVector`.
+@inline function _compute_mincurv_C(axis::AbstractVector{Tg}, n::Int) where {Tg}
+    inv_h_sum = zero(Tg)
+    @inbounds for i in 1:(n - 1)
+        inv_h_sum += _get_inv_h(axis, i)
+    end
+    return inv(inv_h_sum)
+end
+
 # ── Shared sweep helpers ──────────────────────────────────────────────────
 # Factor the hot loops that are common across all Left/Right BC variants.
 

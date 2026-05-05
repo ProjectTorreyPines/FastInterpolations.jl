@@ -32,29 +32,30 @@
 
 # ── Per-axis MinCurvFit constant (dispatch-based, used by map over bcs tuple) ──
 # Using dispatch instead of runtime `isa` avoids Union-type issues in tuple closures.
-@inline _mincurv_C_for_bc(::MinCurvFit, spacing::AbstractGridSpacing{Tg}, n::Int) where {Tg} = _compute_mincurv_C(spacing, n)
-@inline _mincurv_C_for_bc(::AbstractBC, spacing::AbstractGridSpacing{Tg}, ::Int) where {Tg} = zero(Tg)
+# Axis-based: reads `_get_inv_h(grid, i)` from wrapped axis directly.
+@inline _mincurv_C_for_bc(::MinCurvFit, grid::AbstractVector{Tg}, n::Int) where {Tg} = _compute_mincurv_C(grid, n)
+@inline _mincurv_C_for_bc(::AbstractBC, grid::AbstractVector{Tg}, ::Int) where {Tg} = zero(Tg)
 
 # ========================================
 # Anchor Baking (ND)
 # ========================================
 
 """
-    _bake_nd_quadratic_anchors(grids, spacings, queries, extraps)
+    _bake_nd_quadratic_anchors(grids, queries, extraps)
 
 Precompute per-query cell indices and all 4 derivative-order weight sets per axis.
 Uses 4-tuple weights (w_fL, w_fR, w_d, 0) to reuse cubic's `_NDAdjointAnchor` type.
 
-OOB handling baked into weights at construction time.
+Reads `_get_h(grids[d], idx)` directly from the wrapped axes via the spacings-free
+4-arg `_bake_nd_anchors_generic` overload. OOB handling baked at construction time.
 """
 function _bake_nd_quadratic_anchors(
         grids::NTuple{N, AbstractVector{Tg}},
-        spacings::NTuple{N, AbstractGridSpacing{Tg}},
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N, Tg}
     return _bake_nd_anchors_generic(
-        grids, spacings, queries, extraps,
+        grids, queries, extraps,
         (d, t, h, inv_h, dL) -> _compute_nd_quadratic_anchor_weights(t, h, inv_h)
     )
 end
@@ -64,9 +65,9 @@ end
 # ========================================
 
 """
-    _adjoint_axis_pair_quadratic!(src_3d, dst_3d, spacing_d, bc, grid_d,
+    _adjoint_axis_pair_quadratic!(src_3d, dst_3d, bc, grid_d,
                                    shape_before, n_d, shape_after,
-                                   s_bar, d_bar_work, f_contrib)
+                                   s_bar, d_bar_work, f_contrib, C_d)
 
 Function barrier for per-axis quadratic adjoint processing.
 Accepts concrete BC type to force specialization (avoids Union boxing).
@@ -76,10 +77,12 @@ Pipeline per 1D slice:
   2. Recurrence adjoint: d̄ → s̄ (+ BC endpoint → f̄)
   3. Secant adjoint: s̄ → f̄
   4. Accumulate into src_3d
+
+`grid_d` is the wrapped axis (`_CachedRange` / `_CachedVector` / raw); it
+provides `_get_h` / `_get_inv_h` directly — no spacing struct needed.
 """
 @inline function _adjoint_axis_pair_quadratic!(
         src_3d, dst_3d,
-        spacing_d::AbstractGridSpacing{Tg},
         bc::QuadraticBC,
         grid_d::AbstractVector{Tg},
         shape_before::Int, n_d::Int, shape_after::Int,
@@ -100,10 +103,10 @@ Pipeline per 1D slice:
             fill!(s_bar, zero(Tv))
 
             # Step 1: Recurrence adjoint: d̄ → s̄ (+ BC endpoint → f̄)
-            _call_recurrence_adjoint!(s_bar, d_bar_work, f_contrib, bc, spacing_d, grid_d, C_d)
+            _call_recurrence_adjoint!(s_bar, d_bar_work, f_contrib, bc, grid_d, C_d)
 
             # Step 2: Secant adjoint: s̄ → f̄
-            _secant_adjoint!(f_contrib, s_bar, spacing_d)
+            _secant_adjoint!(f_contrib, s_bar, grid_d)
 
             # Step 3: Accumulate into src_3d
             @inbounds for k in 1:n_d
@@ -119,7 +122,7 @@ end
 # ========================================
 
 """
-    _build_adjoint_nd_quadratic!(partials_bar, spacings, bcs, grids, grid_size, mincurv_Cs)
+    _build_adjoint_nd_quadratic!(partials_bar, bcs, grids, grid_size, mincurv_Cs)
 
 Apply the adjoint of the ND quadratic build pipeline.
 Processes axes in reverse order (d=N..1).
@@ -136,7 +139,6 @@ Simpler than cubic: no dual caches, no periodic handling.
 """
 @with_pool pool function _build_adjoint_nd_quadratic!(
         partials_bar::AbstractArray{Tv},
-        spacings::NTuple{N, AbstractGridSpacing{Tg}},
         bcs::NTuple{N, AbstractBC},
         grids::NTuple{N, AbstractVector{Tg}},
         grid_size::NTuple{N, Int},
@@ -145,7 +147,7 @@ Simpler than cubic: no dual caches, no periodic handling.
     for d in N:-1:1
         bit_d = 1 << (d - 1)
         n_d = grid_size[d]
-        spacing_d = spacings[d]
+        grid_d = grids[d]
 
         shape_before = 1
         for k in 1:(d - 1)
@@ -168,12 +170,12 @@ Simpler than cubic: no dual caches, no periodic handling.
             dst_3d = reshape(selectdim(partials_bar, 1, p_dst), shape_before, n_d, shape_after)
 
             # Get effective BC for this partial pair and normalize to QuadraticBC
-            eff_bc = _get_effective_bc_quadratic(bcs[d], p_src, grids[d])
+            eff_bc = _get_effective_bc_quadratic(bcs[d], p_src, grid_d)
             bc_q = _to_quadratic_bc_adjoint(eff_bc, Tg)
 
             # Function barrier: concrete BC type forces specialization
             _adjoint_axis_pair_quadratic!(
-                src_3d, dst_3d, spacing_d, bc_q, grids[d],
+                src_3d, dst_3d, bc_q, grid_d,
                 shape_before, n_d, shape_after,
                 s_bar, d_bar_work, f_contrib, mincurv_Cs[d]
             )
@@ -203,7 +205,7 @@ end
 
     # Step 1: Build adjoint (reverse axis order)
     _build_adjoint_nd_quadratic!(
-        partials_bar, adj.spacings, adj.bcs, adj.grids, adj.grid_size, adj.mincurv_Cs
+        partials_bar, adj.bcs, adj.grids, adj.grid_size, adj.mincurv_Cs
     )
 
     # Extract f_bar = partials_bar[1, ...]
@@ -250,13 +252,7 @@ function quadratic_adjoint(
         _extra...
     ) where {N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-    grids_typed = _convert_grids_typed(grids, Tg)
-    bcs = _resolve_bcs_nd(bc, Val(N))
-    # 5-arg `_resolve_extrap` (with BCs): bc-aware per-axis materialize.
-    extraps = _resolve_extrap(extrap, bcs, grids_typed, Val(N), Tg)
-    return _build_nd_quadratic_adjoint(grids_typed, queries, bcs, extraps)
+    return _quadratic_nd_adjoint_dispatch(grids, queries, bc, extrap)
 end
 
 # Single-tuple query: quadratic_adjoint((x, y), (0.5, 0.5); ...)
@@ -292,10 +288,25 @@ function quadratic_adjoint(
         _extra...
     ) where {N}
     _query_check_ndims(queries, Val(N))
+    return _quadratic_nd_adjoint_dispatch(grids, queries, bc, extrap)
+end
+
+# Shared resolution path (called by every public overload above).
+@inline function _quadratic_nd_adjoint_dispatch(
+        grids::NTuple{N, AbstractVector}, queries, bc, extrap
+    ) where {N}
     Tg = _promote_grid_eltype(grids)
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
+
     bcs = _resolve_bcs_nd(bc, Val(N))
+    # 2-arg `_cache_axis` (no Tg closure) — Tg already applied above; mirrors
+    # forward QuadraticInterpolantND wrap pattern. PeriodicBC is not supported
+    # for quadratic by design (half-integer slope offset is incompatible with
+    # seam wrap), so `_cache_axis` will pass NoBC paths through; user-supplied
+    # PeriodicBC will fail downstream during axis wrap or BC validation.
+    grids_typed = map(_cache_axis, grids_typed, bcs)
+
     # 5-arg `_resolve_extrap` (with BCs): bc-aware per-axis materialize.
     extraps = _resolve_extrap(extrap, bcs, grids_typed, Val(N), Tg)
     return _build_nd_quadratic_adjoint(grids_typed, queries, bcs, extraps)
@@ -309,7 +320,7 @@ end
     _build_nd_quadratic_adjoint(grids, queries, bcs, extraps)
 
 Internal builder. Separated from public API so that `Tg` is bound via argument type,
-making the return type fully inferrable.
+making the return type fully inferrable. `grids` are wrapped axes (post-`_cache_axis`).
 """
 function _build_nd_quadratic_adjoint(
         grids::NTuple{N, AbstractVector{Tg}},
@@ -327,12 +338,12 @@ function _build_nd_quadratic_adjoint(
         validate_polyfit_points(bcs[d], length(grids[d]))
     end
 
-    spacings = _create_spacings_typed(grids)
-    anchors = _bake_nd_quadratic_anchors(grids, spacings, queries, extraps)
+    anchors = _bake_nd_quadratic_anchors(grids, queries, extraps)
     grid_size = ntuple(d -> length(grids[d]), Val(N))
 
-    # Precompute per-axis MinCurvFit constants (dispatch-based, no runtime isa check)
-    mincurv_Cs = map(_mincurv_C_for_bc, bcs, spacings, grid_size)
+    # Precompute per-axis MinCurvFit constants (axis-based; dispatch-only avoids
+    # Union-type issues in tuple closures).
+    mincurv_Cs = map(_mincurv_C_for_bc, bcs, grids, grid_size)
 
-    return QuadraticAdjointND(grids, spacings, bcs, anchors, grid_size, mincurv_Cs)
+    return QuadraticAdjointND(grids, bcs, anchors, grid_size, mincurv_Cs)
 end

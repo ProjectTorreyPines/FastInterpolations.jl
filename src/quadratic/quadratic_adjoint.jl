@@ -203,7 +203,9 @@ struct QuadraticAdjoint{
             bc::BC, grid_size::Int, grid::AbstractVector{Tg}
         ) where {Tg, S <: AbstractGridSpacing{Tg}, BC <: QuadraticBC}
         gc = copy(grid)
-        C = bc isa MinCurvFit ? _compute_mincurv_C(spacing, grid_size) : zero(Tg)
+        # Axis-based `_compute_mincurv_C` reads `_get_inv_h(gc, i)` directly;
+        # `spacing` is now an unused legacy field (removed in PR3 → C7).
+        C = bc isa MinCurvFit ? _compute_mincurv_C(gc, grid_size) : zero(Tg)
         return new{Tg, S, BC, typeof(gc)}(spacing, anchors, bc, grid_size, gc, C)
     end
 end
@@ -362,12 +364,17 @@ end
 # ── Left BC: forward recurrence d[i+1] = 2s[i] - d[i] ───────────────────
 # Adjoint reverse sweep, then dispatch on BC type for residual d̄[1].
 
+# Helpers below take the wrapped axis directly — `_get_h(axis, i)` /
+# `_get_inv_h(axis, i)` work uniformly on `_CachedRange` (cached scalar),
+# `_CachedVector` (cached vector lookup), and raw `AbstractVector` (on-the-fly
+# diff). The `spacing::AbstractGridSpacing` parameter is gone; both 1D and
+# ND adjoint paths now share an axis-as-truth contract.
+
 @inline function _recurrence_adjoint!(
         s_bar::AbstractVector{Tv},
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
         bc::Left{<:Deriv1},
-        spacing::AbstractGridSpacing,
         grid::AbstractVector
     ) where {Tv}
     _recurrence_sweep_left!(s_bar, d_bar)
@@ -380,7 +387,6 @@ end
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
         bc::Left{<:Deriv2},
-        spacing::AbstractGridSpacing,
         grid::AbstractVector
     ) where {Tv}
     _recurrence_sweep_left!(s_bar, d_bar)
@@ -394,7 +400,6 @@ end
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
         bc::Left{<:PolyFit{D}},
-        spacing::AbstractGridSpacing{Tg},
         grid::AbstractVector{Tg}
     ) where {Tv, Tg, D}
     _recurrence_sweep_left!(s_bar, d_bar)
@@ -415,7 +420,6 @@ end
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
         bc::Right{<:Deriv1},
-        spacing::AbstractGridSpacing,
         grid::AbstractVector
     ) where {Tv}
     _recurrence_sweep_right!(s_bar, d_bar)
@@ -428,7 +432,6 @@ end
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
         bc::Right{<:Deriv2},
-        spacing::AbstractGridSpacing,
         grid::AbstractVector
     ) where {Tv}
     _recurrence_sweep_right!(s_bar, d_bar)
@@ -443,7 +446,6 @@ end
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
         bc::Right{<:PolyFit{D}},
-        spacing::AbstractGridSpacing{Tg},
         grid::AbstractVector{Tg}
     ) where {Tv, Tg, D}
     _recurrence_sweep_right!(s_bar, d_bar)
@@ -462,13 +464,13 @@ end
 # ── Dispatch wrapper ──────────────────────────────────────────────────────
 # Routes the precomputed C to MinCurvFit; other BCs ignore it.
 
-@inline function _call_recurrence_adjoint!(s_bar, d_bar, f_bar, bc, spacing, grid, _C)
-    _recurrence_adjoint!(s_bar, d_bar, f_bar, bc, spacing, grid)
+@inline function _call_recurrence_adjoint!(s_bar, d_bar, f_bar, bc, grid, _C)
+    _recurrence_adjoint!(s_bar, d_bar, f_bar, bc, grid)
     return nothing
 end
 
-@inline function _call_recurrence_adjoint!(s_bar, d_bar, f_bar, bc::MinCurvFit, spacing, grid, C)
-    _recurrence_adjoint!(s_bar, d_bar, f_bar, bc, spacing, grid, C)
+@inline function _call_recurrence_adjoint!(s_bar, d_bar, f_bar, bc::MinCurvFit, grid, C)
+    _recurrence_adjoint!(s_bar, d_bar, f_bar, bc, grid, C)
     return nothing
 end
 
@@ -484,9 +486,8 @@ end
         d_bar::AbstractVector{Tv},
         f_bar::AbstractVector{Tv},
         ::MinCurvFit,
-        spacing::AbstractGridSpacing{Tg},
         grid::AbstractVector{Tg},
-        C::Tg = _compute_mincurv_C(spacing, length(d_bar))
+        C::Tg = _compute_mincurv_C(grid, length(d_bar))
     ) where {Tv, Tg}
     n = length(d_bar)
     nm1 = n - 1
@@ -513,7 +514,7 @@ end
         beta_bar = -beta_bar
 
         # Adjoint of numerator += α[i] * (s[i] - β[i]) * inv_h[i]
-        inv_h_i = _get_inv_h(spacing, i)
+        inv_h_i = _get_inv_h(grid, i)
         contrib = sign * inv_h_i * numerator_bar
         s_bar[i] += contrib
         beta_bar -= contrib
@@ -534,10 +535,10 @@ end
 @inline function _secant_adjoint!(
         f_bar::AbstractVector{Tv},
         s_bar::AbstractVector{Tv},
-        spacing::AbstractGridSpacing{Tg}
+        axis::AbstractVector{Tg}
     ) where {Tv, Tg}
     @inbounds for i in eachindex(s_bar)
-        inv_h = _get_inv_h(spacing, i)
+        inv_h = _get_inv_h(axis, i)
         c = s_bar[i] * inv_h
         f_bar[i] -= c
         f_bar[i + 1] += c
@@ -566,10 +567,10 @@ end
     _scatter_eval_adjoint_quadratic!(f_bar, d_bar, adj.anchors, y_bar, deriv)
 
     # Step 2: Recurrence adjoint → s̄ (+ BC endpoint contribution to f̄)
-    _call_recurrence_adjoint!(s_bar, d_bar, f_bar, adj.bc, adj.spacing, adj.grid, adj.mincurv_C)
+    _call_recurrence_adjoint!(s_bar, d_bar, f_bar, adj.bc, adj.grid, adj.mincurv_C)
 
     # Step 3: Secant adjoint → f̄ update
-    _secant_adjoint!(f_bar, s_bar, adj.spacing)
+    _secant_adjoint!(f_bar, s_bar, adj.grid)
 
     return f_bar
 end

@@ -38,7 +38,7 @@ end
 # ========================================
 
 """
-    QuadraticAdjointND{Tg, N, G, S, BP}
+    QuadraticAdjointND{Tg, N, G, BP}
 
 Adjoint (transpose) operator for N-dimensional quadratic spline interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward ND interpolation weight matrix.
@@ -46,9 +46,10 @@ Computes `f̄ = Wᵀȳ` where `W` is the forward ND interpolation weight matrix.
 # Type Parameters
 - `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `N`: Number of dimensions
-- `G`: Grid tuple type (after copy for mutation safety)
-- `S`: Spacing tuple type
-- `BP`: Boundary condition tuple type
+- `G`: Grid tuple type — wrapped axes (`_CachedRange` / `_CachedVector`)
+       carry cached `h`/`inv_h`; no separate `spacings` field needed.
+- `BP`: Boundary condition tuple type. PeriodicBC is not supported
+        (half-integer slope offset is incompatible with seam wrap, by design).
 
 # Fields
 - `mincurv_Cs`: Precomputed `inv(Σ inv_h)` per axis, avoiding O(n) recomputation
@@ -69,29 +70,25 @@ struct QuadraticAdjointND{
         Tg,
         N,
         G <: NTuple{N, AbstractVector{Tg}},
-        S <: NTuple{N, AbstractGridSpacing{Tg}},
         BP <: NTuple{N, AbstractBC},
     } <: AbstractAdjointND{Tg, N}
     grids::G
-    spacings::S
     bcs::BP
     anchors::Vector{_NDAdjointAnchor{Tg, N}}
     grid_size::NTuple{N, Int}
     mincurv_Cs::NTuple{N, Tg}  # Precomputed inv(Σ inv_h) per axis; only used for MinCurvFit BCs
 
-    # Inner constructor: copy() for mutation safety.
-    # copy() on immutable Range types is a no-op (zero allocation).
-    # typeof() rebinds G after copy (e.g. SubArray → Vector).
+    # Inner ctor: ownership copy via wrapper-aware `_convert_copy`,
+    # idempotent `_cache_axis` insurance for direct ctor calls.
     function QuadraticAdjointND(
-            grids::NTuple{N, AbstractVector{Tg}}, spacings::S, bcs::BP,
+            grids::Tuple{Vararg{AbstractVector{Tg}, N}}, bcs::BP,
             anchors::Vector{_NDAdjointAnchor{Tg, N}}, grid_size::NTuple{N, Int},
             mincurv_Cs::NTuple{N, Tg}
         ) where {
-            Tg, N, S <: NTuple{N, AbstractGridSpacing{Tg}},
-            BP <: NTuple{N, AbstractBC},
+            Tg, N, BP <: NTuple{N, AbstractBC},
         }
-        grids_c = map(copy, grids)
-        return new{Tg, N, typeof(grids_c), S, BP}(grids_c, spacings, bcs, anchors, grid_size, mincurv_Cs)
+        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
+        return new{Tg, N, typeof(grids_c), BP}(grids_c, bcs, anchors, grid_size, mincurv_Cs)
     end
 end
 
@@ -111,7 +108,7 @@ end
 # ========================================
 
 Base.ndims(::QuadraticAdjointND{Tg, N}) where {Tg, N} = N + 1
-function Base.size(adj::QuadraticAdjointND{Tg, N}) where {Tg, N}
+function Base.size(adj::QuadraticAdjointND)
     out_size = _adjoint_output_size(adj)
     return (out_size..., _n_queries(adj))
 end

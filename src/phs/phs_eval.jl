@@ -453,19 +453,19 @@ Dispatches to the appropriate `_phs_eval_coeffs_*` function based on `ops`.
     if total_order == 0
         return _phs_eval_coeffs_value(coeffs, offsets, hs_local, query, base_coords, Val{K}())
     elseif total_order == 1
-        axis = let a = 0; for d in 1:N; n_deriv[d] == 1 && (a = d; break); end; a; end
+        axis = findfirst(d -> n_deriv[d] == 1, 1:N)::Int
         return _phs_eval_coeffs_deriv1(coeffs, offsets, hs_local, query, base_coords, Val{K}(), axis)
     elseif total_order == 2
-        ax1, ax2 = 0, 0
-        for d in 1:N
-            if n_deriv[d] > 0
-                if ax1 == 0; ax1 = d
-                else;        ax2 = d; break
-                end
+        nonzero = findall(d -> n_deriv[d] > 0, 1:N)
+        if length(nonzero) == 1
+            ax = nonzero[1]
+            if n_deriv[ax] == 2
+                return _phs_eval_coeffs_deriv2(coeffs, offsets, hs_local, query, base_coords, Val{K}(), ax, ax)
             end
+        elseif length(nonzero) == 2
+            ax1, ax2 = nonzero[1], nonzero[2]
+            return _phs_eval_coeffs_deriv2(coeffs, offsets, hs_local, query, base_coords, Val{K}(), ax1, ax2)
         end
-        ax2 == 0 && (ax2 = ax1)
-        return _phs_eval_coeffs_deriv2(coeffs, offsets, hs_local, query, base_coords, Val{K}(), ax1, ax2)
     end
     return zero(eltype(coeffs))
 end
@@ -559,7 +559,7 @@ Algorithm:
     #   ∂W/∂xξ = Σ  w'ᵢ·dirξ
     # ----------------------------------------------------------------
     elseif total_deriv == 1
-        grad_ax = let a = 0; for d in 1:N; deriv_order(ops[d]) == 1 && (a = d; break); end; a; end
+        grad_ax = findfirst(d -> deriv_order(ops[d]) == 1, 1:N)::Int
         sum_w   = zero(Tg)
         sum_wy  = zero(Tv)
         sum_N1  = zero(Tv)   # ∂N/∂xξ
@@ -599,15 +599,9 @@ Algorithm:
     # ----------------------------------------------------------------
     elseif total_deriv == 2
         n_deriv_arr = ntuple(d -> deriv_order(ops[d]), Val(N))
-        ax1, ax2 = 0, 0
-        for d in 1:N
-            if n_deriv_arr[d] > 0
-                if ax1 == 0; ax1 = d
-                else;        ax2 = d; break
-                end
-            end
-        end
-        ax2 == 0 && (ax2 = ax1)
+        nonzero = findall(d -> n_deriv_arr[d] > 0, 1:N)
+        ax1     = nonzero[1]
+        ax2     = length(nonzero) >= 2 ? nonzero[2] : ax1
         is_diag = (ax1 == ax2)
 
         sum_w   = zero(Tg); sum_wy  = zero(Tv)
@@ -753,7 +747,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
     #   N = Σ(wᵢ · gᵢ),  N_ξ = Σ(w'ᵢ · dirξ · gᵢ  +  wᵢ · gᵢ · fᵢ_ξ)
     # ----------------------------------------------------------------
     elseif total_deriv == 1
-        grad_ax = let a = 0; for d in 1:N; deriv_order(ops[d]) == 1 && (a = d; break); end; a; end
+        grad_ax = findfirst(d -> deriv_order(ops[d]) == 1, 1:N)::Int
         sum_w   = zero(Tg)
         sum_wg  = zero(Tv)
         sum_N1  = zero(Tv)
@@ -794,15 +788,9 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
     # ----------------------------------------------------------------
     elseif total_deriv == 2
         n_deriv_arr = ntuple(d -> deriv_order(ops[d]), Val(N))
-        ax1, ax2 = 0, 0
-        for d in 1:N
-            if n_deriv_arr[d] > 0
-                if ax1 == 0; ax1 = d
-                else;        ax2 = d; break
-                end
-            end
-        end
-        ax2 == 0 && (ax2 = ax1)
+        nonzero = findall(d -> n_deriv_arr[d] > 0, 1:N)
+        ax1     = nonzero[1]
+        ax2     = length(nonzero) >= 2 ? nonzero[2] : ax1
         is_diag = (ax1 == ax2)
 
         ops_d1_1 = ntuple(d -> d == ax1 ? EvalDeriv1() : EvalValue(), Val(N))  # kept for d≈0 branch
@@ -915,7 +903,7 @@ function _phs_eval_with_transform(
     total_deriv == 0 && return Tv(rho)
 
     if total_deriv == 1
-        ax = let a = 0; for d in 1:N; deriv_order(ops[d]) == 1 && (a = d; break); end; a; end
+        ax       = findfirst(d -> deriv_order(ops[d]) == 1, 1:N)::Int
         ops_grad = ntuple(d -> d == ax ? DerivOp{1}() : EvalValue(), N)
         G_ξ      = Tg(_phs_eval_blended_G(itp, query, ops_grad))
         rho0_ξ   = Tg(ref(query; deriv = ops_grad))
@@ -923,15 +911,8 @@ function _phs_eval_with_transform(
     end
 
     if total_deriv == 2
-        ax1, ax2 = 0, 0
-        for d in 1:N
-            if deriv_order(ops[d]) > 0
-                if ax1 == 0; ax1 = d
-                else;        ax2 = d; break
-                end
-            end
-        end
-        ax2 == 0 && (ax2 = ax1)
+        nonzero = [ax for ax in 1:N if deriv_order(ops[ax]) > 0]
+        ax1, ax2 = nonzero[1], (length(nonzero) >= 2 ? nonzero[2] : nonzero[1])
 
         ops_d1 = ntuple(d -> d == ax1 ? DerivOp{1}() : EvalValue(), N)
         ops_d2 = ntuple(d -> d == ax2 ? DerivOp{1}() : EvalValue(), N)

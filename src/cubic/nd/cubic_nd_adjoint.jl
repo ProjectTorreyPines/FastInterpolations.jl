@@ -126,20 +126,24 @@ the adjoint `adj(ȳ)` hot path does zero weight computation.
 end
 
 """
-    _bake_nd_anchors(grids, spacings, queries, extraps) -> Vector{_NDAdjointAnchor}
+    _bake_nd_anchors(grids, queries, extraps) -> Vector{_NDAdjointAnchor}
 
 Precompute cell indices and all derivative-order Hermite weights for each query point.
 Per-axis query preprocessing is handled by `_extrap_axis` (periodic wrapping, clamping, etc.).
 For OOB queries, weights are zeroed per-axis following the same logic as 1D `_fixup_clampfill_anchors!`.
+
+Reads `_get_h(grids[d], idx)` directly via the spacings-free 4-arg
+`_bake_nd_anchors_generic` overload. Each `grids[d]` here is a wrapped axis
+extracted from `caches[d].x` (already `_CachedRange` / `_CachedVector` /
+`_ExclusivePeriodicAxis` per `_resolve_axis_copied`).
 """
 function _bake_nd_anchors(
         grids::NTuple{N, AbstractVector{Tg}},
-        spacings::NTuple{N, AbstractGridSpacing{Tg}},
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N, Tg}
     return _bake_nd_anchors_generic(
-        grids, spacings, queries, extraps,
+        grids, queries, extraps,
         (d, t, h, inv_h, dL) -> _compute_nd_anchor_weights(t, h, inv_h)
     )
 end
@@ -269,7 +273,7 @@ Differences from non-periodic `_adjoint_axis_pair!`:
 end
 
 """
-    _build_adjoint_nd!(partials_bar, caches, mixed_caches, spacings,
+    _build_adjoint_nd!(partials_bar, caches, mixed_caches,
                        bcs, mixed_bcs, grids, grid_size)
 
 Apply the adjoint of the ND build pipeline for arbitrary N dimensions.
@@ -286,12 +290,15 @@ Cache/BC selection per (d, p_src) pair:
 
 Uses function barriers (`_adjoint_axis_pair!` / `_adjoint_axis_pair_periodic!`)
 so each branch dispatches on a concrete cache type — no Union boxing.
+
+`grids[d]` is the wrapped axis (extracted from `caches[d].x`); per-axis
+`h`/`inv_h` are read from the cache or grid directly inside the function
+barriers — no `spacings` parameter needed.
 """
 @with_pool pool function _build_adjoint_nd!(
         partials_bar::AbstractArray{Tv},
         caches,
         mixed_caches,
-        spacings,
         bcs,
         mixed_bcs,
         grids::NTuple{N, AbstractVector{Tg}},
@@ -391,9 +398,10 @@ end
     _adjoint_scatter_nd!(partials_bar, adj.anchors, y_bar, ops)
 
     # Steps 1-3: Build adjoint (reverse axis order) — UNCHANGED by deriv
-    # Grids extracted from caches (each CubicSplineCache owns a mutation-safe copy via cache.x)
+    # Grids extracted from caches (each CubicSplineCache owns a mutation-safe
+    # wrapped axis via cache.x: `_CachedRange` / `_CachedVector` / `_ExclusivePeriodicAxis`)
     _build_adjoint_nd!(
-        partials_bar, adj.caches, adj.mixed_caches, adj.spacings,
+        partials_bar, adj.caches, adj.mixed_caches,
         adj.bcs, adj.mixed_bcs, map(c -> c.x, adj.caches), adj.grid_size
     )
 
@@ -575,22 +583,27 @@ function _build_nd_adjoint(
         end
     end
 
-    spacings = _create_spacings_typed(grids_ext)
-
-    # Bake per-query anchors (extrap handles periodic wrapping + OOB weight fixup)
-    anchors = _bake_nd_anchors(grids_ext, spacings, queries, extraps)
+    # Bake per-query anchors (extrap handles periodic wrapping + OOB weight fixup).
+    # `grids_ext` here are extended raw grids; the bake reads `_get_h(grid, idx)`
+    # directly via the spacings-free `_bake_nd_anchors_generic` overload. For Range
+    # inputs `_get_h(::AbstractRange, i)` returns `step(x)`; for Vector inputs the
+    # 2-arg `_get_h(::AbstractVector, i)` does `float(x[i+1] - x[i])` — same answer
+    # as the legacy `VectorSpacing.h[i]` lookup, with one extra subtraction per anchor
+    # (negligible vs the surrounding @generated 4^N scatter).
+    anchors = _bake_nd_anchors(grids_ext, queries, extraps)
 
     grid_size = ntuple(d -> length(grids_ext[d]), Val(N))
 
     # Grids are NOT stored in the struct — each CubicSplineCache already owns
-    # a mutation-safe copy via cache.x (inner constructor copy() + typeof(xc) rebinding).
-    # The apply function extracts grids on the fly: map(c -> c.x, adj.caches).
+    # a mutation-safe wrapped axis via cache.x (inner constructor copy() +
+    # typeof(xc) rebinding). The apply function extracts grids on the fly:
+    # `map(c -> c.x, adj.caches)`.
     return CubicAdjointND{
         Tg, N,
-        typeof(spacings), typeof(caches), typeof(mixed_caches),
+        typeof(caches), typeof(mixed_caches),
         typeof(norm_bcs), typeof(mixed_bcs),
     }(
-        spacings, caches, mixed_caches, norm_bcs, mixed_bcs,
+        caches, mixed_caches, norm_bcs, mixed_bcs,
         anchors, grid_size
     )
 end

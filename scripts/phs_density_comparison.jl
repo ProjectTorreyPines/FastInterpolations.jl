@@ -310,42 +310,21 @@ end
 #   ∂ρ₀/∂xd      = Σᵢ ρᵢ'(rᵢ) · xxd / rᵢ
 #   ∂²ρ₀/∂xd²    = Σᵢ [ ρᵢ'(rᵢ)/rᵢ + (ρᵢ''(rᵢ) − ρᵢ'(rᵢ)/rᵢ) · xxd² / rᵢ² ]
 #   ∂²ρ₀/∂xd1∂xd2 = Σᵢ [ (ρᵢ''(rᵢ) − ρᵢ'(rᵢ)/rᵢ) · xxd1 · xxd2 / rᵢ² ]
-#
-# Optimisations vs. the original:
-#   1. Parametric on Titp — stores a Vector{Titp} of concrete (typed) splines
-#      instead of fetching through Dict{Int,Any} on every call, eliminating
-#      dynamic dispatch on the hot path.
-#   2. @inbounds on all atom loops.
-#   3. Precompute r_inv = 1/r and r2_inv = r_inv² to avoid repeated division.
-#   4. Hessian branch uses FastInterpolations._eval_cubic_deriv1_and_deriv2 for a
-#      single interval-search that returns both ρᵢ'(r) and ρᵢ''(r).
-struct PromolecularRef{Titp}
-    atom_positions::Vector{NTuple{3,Float64}}  # (x,y,z) in Bohr, one per atom
-    atom_itps::Vector{Titp}                    # radial cubic spline per atom
+struct PromolecularRef
+    atoms::Vector{Tuple{Int, NTuple{3,Float64}}}  # (Z, (x,y,z)) in Bohr
 end
 
-# Constructor from the (Z, (x,y,z)) atom list used elsewhere in the script.
-function PromolecularRef(atoms::Vector{Tuple{Int, NTuple{3,Float64}}})
-    positions = NTuple{3,Float64}[R for (_, R) in atoms]
-    # Build a concrete-typed vector: resolve Titp from the first element so that
-    # the inner loops are fully type-stable (no dynamic dispatch through Any).
-    Titp = typeof(get_rho_itp(atoms[1][1]))
-    itps = Titp[get_rho_itp(Z) for (Z, _) in atoms]
-    return PromolecularRef{Titp}(positions, itps)
-end
-
-@inline function (pmr::PromolecularRef)(q; deriv=nothing)
+function (pmr::PromolecularRef)(q; deriv=nothing)
     # Determine derivative order along each axis
     total = deriv === nothing ? 0 : sum(deriv_order(op) for op in deriv)
 
     if total == 0
         f = 0.0
-        @inbounds for i in eachindex(pmr.atom_positions)
-            R   = pmr.atom_positions[i]
+        for (Z, R) in pmr.atoms
             xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
-            r   = sqrt(xx1^2 + xx2^2 + xx3^2)
+            r = sqrt(xx1^2 + xx2^2 + xx3^2)
             r < 1e-14 && continue
-            f += max(pmr.atom_itps[i](r), 0.0)
+            f += max(get_rho_itp(Z)(r), 0.0)
         end
         return f
     end
@@ -353,37 +332,29 @@ end
     if total == 1
         ax = findfirst(d -> deriv_order(deriv[d]) == 1, 1:3)::Int
         fp = 0.0
-        @inbounds for i in eachindex(pmr.atom_positions)
-            R   = pmr.atom_positions[i]
-            xx  = (q[1] - R[1], q[2] - R[2], q[3] - R[3])
-            r   = sqrt(xx[1]^2 + xx[2]^2 + xx[3]^2)
+        for (Z, R) in pmr.atoms
+            xx = (q[1] - R[1], q[2] - R[2], q[3] - R[3])
+            r  = sqrt(xx[1]^2 + xx[2]^2 + xx[3]^2)
             r < 1e-14 && continue
-            r_inv = 1.0 / r
-            rhop  = pmr.atom_itps[i](r; deriv = DerivOp(1))
-            fp   += rhop * xx[ax] * r_inv
+            rhop = get_rho_itp(Z)(r; deriv = DerivOp(1))
+            fp += rhop * xx[ax] / r
         end
         return fp
     end
 
     if total == 2
-        nonzero = (d for d in 1:3 if deriv_order(deriv[d]) > 0)
-        ax1_ax2 = iterate(nonzero)
-        ax1     = ax1_ax2[1]
-        rest    = iterate(nonzero, ax1_ax2[2])
-        ax2     = rest === nothing ? ax1 : rest[1]
+        nonzero = [d for d in 1:3 if deriv_order(deriv[d]) > 0]
+        ax1 = nonzero[1]; ax2 = length(nonzero) >= 2 ? nonzero[2] : ax1
         fpp = 0.0
-        @inbounds for i in eachindex(pmr.atom_positions)
-            R   = pmr.atom_positions[i]
-            xx  = (q[1] - R[1], q[2] - R[2], q[3] - R[3])
-            r2  = xx[1]^2 + xx[2]^2 + xx[3]^2
-            r   = sqrt(r2)
+        for (Z, R) in pmr.atoms
+            xx = (q[1] - R[1], q[2] - R[2], q[3] - R[3])
+            r  = sqrt(xx[1]^2 + xx[2]^2 + xx[3]^2)
             r < 1e-14 && continue
-            r_inv  = 1.0 / r
-            r2_inv = r_inv * r_inv
-            # Single interval search → both ρᵢ'(r) and ρᵢ''(r)
-            rhop, rhopp = FastInterpolations._eval_cubic_deriv1_and_deriv2(pmr.atom_itps[i], r)
-            rfac = (rhopp - rhop * r_inv) * r2_inv
-            fpp += ax1 == ax2 ? rhop * r_inv + rfac * xx[ax1]^2 :
+            rho_itp = get_rho_itp(Z)
+            rhop  = rho_itp(r; deriv = DerivOp(1))
+            rhopp = rho_itp(r; deriv = DerivOp(2))
+            rfac  = (rhopp - rhop / r) / r^2
+            fpp += ax1 == ax2 ? rhop / r + rfac * xx[ax1]^2 :
                                  rfac * xx[ax1] * xx[ax2]
         end
         return fpp
@@ -393,7 +364,7 @@ end
 end
 
 println("Building PromolecularRef (loading wfc files for present elements)...")
-# Pre-warm the wfc cache for all elements in the system, then build the typed struct.
+# Pre-warm the wfc cache for all elements in the system
 for (Z, _) in ATOMS; get_rho_itp(Z); end
 const ref_rho0 = PromolecularRef(ATOMS)
 @printf "  ρ₀ at path start: %.6e a.u.\n" ref_rho0((qx[1], qy[1], qz[1]))

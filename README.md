@@ -164,7 +164,7 @@ Comparison on a non-uniform 2D rectilinear grid for $f(x, y) = \sin(2\pi x) \cos
 
 ![2D Interpolation Example non-uniform](docs/images/readme_2d_comparison.png)
 
-Another comparison with the same function, but on a uniform 2D 6x6 grid. The uniform grid allows the cubic spline to achieve even higher accuracy, closely matching the true function values across the domain. This example shows how the polyharmonic spline (PHS) can outperform non-periodic cubic splines.
+Another comparison with the same function, but on a uniform 2D 6x6 grid. The uniform grid allows the cubic spline to achieve even higher accuracy, closely matching the true function values across the domain.
 
 ![2D Interpolation Example uniform](docs/images/readme_2d_comparison_regular.png)
 
@@ -260,6 +260,17 @@ end
 📖 [Using Hints](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/search/hints/)
 
 **See also:** [Factory Functions](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/factory_functions/) · [Complex Numbers](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/complex_number_support/) · [AutoDiff](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/autodiff_support/) · [Thread Safety](https://projecttorreypines.github.io/FastInterpolations.jl/dev/architecture/thread_safety/) · [Optim.jl Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/optimization/)
+
+## Polyharmonic Spline Implementation Notes
+
+While PHS shares the core philosophy of FastInterpolations.jl (zero-allocation, analytical derivatives), it differs in several implementation details:
+
+- Derivative API: PHS uses the direct deriv keyword approach (itp(q; deriv=...)) rather than the gradient()/hessian() functions used by other methods
+- Boundary Conditions: PHS achieves C² continuity through blending rather than traditional boundary condition types
+- Search & Hints: The stencil-based approach eliminates the need for interval search and positional hints
+- Integration: Analytical integration is not currently implemented for PHS (focus is on density/derivative evaluation)
+
+These differences reflect the mathematical nature of polyharmonic splines rather than limitations. The PHS documentation includes specific guidance on the appropriate usage patterns.
 
 ## Documentation
 

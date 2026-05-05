@@ -287,6 +287,29 @@ end
         @test_throws TypeError constant_interp!(out, x, y, [0.5, 1.5]; side = :bar)
     end
 
+    @testset "Direct outer kwarg ctor" begin
+        # Cover `ConstantInterpolant(x, y; ...)` direct call — the factory
+        # `constant_interp` path is exercised above; this exercises the
+        # outer kwarg ctor's `_cache_axis` + `bc` forwarding lines.
+        x_vec = [0.0, 1.0, 2.0, 3.0]
+        y_vec = [10.0, 20.0, 30.0, 40.0]
+        x_rng = range(0.0, 3.0; length = 4)
+
+        itp_v = ConstantInterpolant(x_vec, y_vec)
+        @test itp_v.x isa FastInterpolations._CachedVector
+        @test itp_v(0.5) == 10.0
+
+        itp_r = ConstantInterpolant(x_rng, y_vec)
+        @test itp_r.x isa FastInterpolations._CachedRange
+
+        itp_full = ConstantInterpolant(
+            x_vec, y_vec;
+            extrap = ClampExtrap(), side = LeftSide(), search = BinarySearch()
+        )
+        @test itp_full(-1.0) == 10.0  # clamped left
+        @test itp_full(0.5) == 10.0   # LeftSide
+    end
+
 end
 
 # ============================================================================

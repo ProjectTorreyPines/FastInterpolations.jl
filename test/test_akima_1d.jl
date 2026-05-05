@@ -343,4 +343,26 @@ end
         @test isfinite(akima_interp(x, y, 1.5))
         @test isfinite(akima_interp(x, y, 2.5))
     end
+
+    @testset "Direct outer kwarg ctor" begin
+        using FastInterpolations: AkimaSlopes
+        # Cover `AkimaInterpolant1D(x, y, slope_strategy; ...)` direct call —
+        # the factory `akima_interp` path is heavily exercised above; this
+        # exercises the alternate outer kwarg ctor's `_cache_axis` + `bc`
+        # forwarding lines.
+        x_vec = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y_vec = sin.(x_vec)
+        x_rng = range(0.0, 4.0; length = 5)
+
+        itp_v = AkimaInterpolant1D(x_vec, y_vec, AkimaSlopes())
+        @test itp_v.x isa FastInterpolations._CachedVector
+        @test isfinite(itp_v(2.5))
+
+        itp_r = AkimaInterpolant1D(x_rng, y_vec, AkimaSlopes())
+        @test itp_r.x isa FastInterpolations._CachedRange
+
+        itp_clamp = AkimaInterpolant1D(x_vec, y_vec, AkimaSlopes(); extrap = ClampExtrap())
+        @test itp_clamp(-1.0) ≈ y_vec[1]
+        @test itp_clamp(5.0) ≈ y_vec[end]
+    end
 end

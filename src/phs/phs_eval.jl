@@ -141,11 +141,13 @@ Evaluate ∂f/∂xξ (Eq. 25).
     ns = length(offsets)
     y = zero(Tv)
 
-    @inbounds for i in 1:ns
+    # r_inv = 1/r when r > eps, 0 otherwise — eliminates the skip-branch and
+    # allows @simd to vectorize; phi_prime(r=0) for K≥3 is already 0.
+    @inbounds @simd for i in 1:ns
         xh = _phs_diff(query, base_coords, offsets[i], hs_local)
         r = sqrt(sum(x -> x * x, xh))
-        r < eps(Tg) && continue
-        y += coeffs[i] * _phs_phi_prime(r, Val{K}()) * xh[axis] / r
+        r_inv = ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
+        y += coeffs[i] * _phs_phi_prime(r, Val{K}()) * xh[axis] * r_inv
     end
     # Polynomial derivative: ∂/∂x_axis of all augmentation monomials
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
@@ -172,20 +174,33 @@ Evaluate ∂²f/∂xξ∂xζ (Eq. 26).
     ns = length(offsets)
     y = zero(Tv)
 
-    @inbounds for i in 1:ns
-        xh = _phs_diff(query, base_coords, offsets[i], hs_local)
-        r2 = sum(x -> x * x, xh)
-        r2 < eps(Tg)^2 && continue
-        r = sqrt(r2)
-        fp = _phs_phi_prime(r, Val{K}())
-        fpp = _phs_phi_dprime(r, Val{K}())
-        if ax1 == ax2
-            # Diagonal: fpp*(xξ-xiξ)²/r² + fp*(1/r - (xξ-xiξ)²/r³)
+    # Lift ax1==ax2 branch outside the loop and use r_inv/r2_inv instead of /r, /r2
+    # so the loop is branch-free and @simd can vectorize.
+    eps2 = eps(Tg)^2
+    if ax1 == ax2
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+            r2 = sum(x -> x * x, xh)
+            r = sqrt(r2)
+            r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
+            r2_inv = r_inv * r_inv
+            fp  = _phs_phi_prime(r, Val{K}())
+            fpp = _phs_phi_dprime(r, Val{K}())
             xh_ax = xh[ax1]
-            y += coeffs[i] * (fpp * xh_ax * xh_ax / r2 + fp * (1 / r - xh_ax * xh_ax / (r2 * r)))
-        else
+            # Diagonal: fpp*(xξ-xiξ)²/r² + fp*(1/r - (xξ-xiξ)²/r³)
+            y += coeffs[i] * (fpp * xh_ax * xh_ax * r2_inv + fp * (r_inv - xh_ax * xh_ax * r2_inv * r_inv))
+        end
+    else
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+            r2 = sum(x -> x * x, xh)
+            r = sqrt(r2)
+            r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
+            r2_inv = r_inv * r_inv
+            fp  = _phs_phi_prime(r, Val{K}())
+            fpp = _phs_phi_dprime(r, Val{K}())
             # Off-diagonal: fpp*(xξ-xiξ)*(xζ-xiζ)/r² - fp*(xξ-xiξ)*(xζ-xiζ)/r³
-            y += coeffs[i] * (fpp - fp / r) * xh[ax1] * xh[ax2] / r2
+            y += coeffs[i] * (fpp - fp * r_inv) * xh[ax1] * xh[ax2] * r2_inv
         end
     end
     # Polynomial second derivatives (non-zero for poly_deg ≥ 2)
@@ -215,15 +230,14 @@ along `axis`.  Avoids traversing the stencil twice when both are needed (gradien
     yv = zero(Tv)
     yd = zero(Tv)
 
-    @inbounds for i in 1:ns
+    @inbounds @simd for i in 1:ns
         xh = _phs_diff(query, base_coords, offsets[i], hs_local)
         r2 = sum(x -> x * x, xh)
         r  = sqrt(r2)
         ci = coeffs[i]
+        r_inv = ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
         yv += ci * _phs_phi(r, Val{K}())
-        if r >= eps(Tg)
-            yd += ci * _phs_phi_prime(r, Val{K}()) * xh[axis] / r
-        end
+        yd += ci * _phs_phi_prime(r, Val{K}()) * xh[axis] * r_inv
     end
 
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
@@ -256,24 +270,37 @@ For mixed (ax1≠ax2): returns (f, f_ξ, f_ξζ) where first-deriv is w.r.t. ax1
     yv  = zero(Tv)
     yd1 = zero(Tv)
     yd2 = zero(Tv)
-    is_diag = ax1 == ax2
 
-    @inbounds for i in 1:ns
-        xh = _phs_diff(query, base_coords, offsets[i], hs_local)
-        r2 = sum(x -> x * x, xh)
-        r  = sqrt(r2)
-        ci = coeffs[i]
-        yv += ci * _phs_phi(r, Val{K}())
-        if r >= eps(Tg)
+    # Lift is_diag outside the loop and use r_inv/r2_inv for branch-free @simd loops.
+    eps_tg = eps(Tg)
+    if ax1 == ax2
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+            r2 = sum(x -> x * x, xh)
+            r  = sqrt(r2)
+            ci = coeffs[i]
+            r_inv  = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
+            r2_inv = r_inv * r_inv
             fp  = _phs_phi_prime(r, Val{K}())
             fpp = _phs_phi_dprime(r, Val{K}())
-            yd1 += ci * fp * xh[ax1] / r
-            if is_diag
-                xh_ax = xh[ax1]
-                yd2 += ci * (fpp * xh_ax * xh_ax / r2 + fp * (1 / r - xh_ax * xh_ax / (r2 * r)))
-            else
-                yd2 += ci * (fpp - fp / r) * xh[ax1] * xh[ax2] / r2
-            end
+            yv  += ci * _phs_phi(r, Val{K}())
+            yd1 += ci * fp * xh[ax1] * r_inv
+            xh_ax = xh[ax1]
+            yd2 += ci * (fpp * xh_ax * xh_ax * r2_inv + fp * (r_inv - xh_ax * xh_ax * r2_inv * r_inv))
+        end
+    else
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+            r2 = sum(x -> x * x, xh)
+            r  = sqrt(r2)
+            ci = coeffs[i]
+            r_inv  = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
+            r2_inv = r_inv * r_inv
+            fp  = _phs_phi_prime(r, Val{K}())
+            fpp = _phs_phi_dprime(r, Val{K}())
+            yv  += ci * _phs_phi(r, Val{K}())
+            yd1 += ci * fp * xh[ax1] * r_inv
+            yd2 += ci * (fpp - fp * r_inv) * xh[ax1] * xh[ax2] * r2_inv
         end
     end
 
@@ -307,17 +334,15 @@ Used for mixed-Hessian blending to get both first-derivative components in one l
     yd1 = zero(Tv)
     yd2 = zero(Tv)
 
-    @inbounds for i in 1:ns
+    @inbounds @simd for i in 1:ns
         xh = _phs_diff(query, base_coords, offsets[i], hs_local)
         r2 = sum(x -> x * x, xh)
         r  = sqrt(r2)
         ci = coeffs[i]
-        yv += ci * _phs_phi(r, Val{K}())
-        if r >= eps(Tg)
-            fp = _phs_phi_prime(r, Val{K}()) / r
-            yd1 += ci * fp * xh[ax1]
-            yd2 += ci * fp * xh[ax2]
-        end
+        fp_r_inv = _phs_phi_prime(r, Val{K}()) * ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
+        yv  += ci * _phs_phi(r, Val{K}())
+        yd1 += ci * fp_r_inv * xh[ax1]
+        yd2 += ci * fp_r_inv * xh[ax2]
     end
 
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))

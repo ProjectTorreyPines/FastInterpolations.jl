@@ -292,7 +292,7 @@ end
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
-            inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.spacings[d], idx[d])), Val(N))
+            inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.grids[d], idx[d])), Val(N))
             total += convert(Tout, _integrate_nd_cubic_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, uhis))
         end
     end

@@ -25,14 +25,11 @@ unconstrained `_create_spacing(::AbstractVector)` method below, which uses only
 The Float path is unchanged: concrete allocations still specialize per-eltype.
 """
 
-# TODO(spacing-cleanup): consumers remaining as of PR1 (2026-05-04)
-#   - CubicInterpolantND (forward, deferred to PR3)
-#   - QuadraticInterpolantND (forward + 1D legacy, deferred to PR3)
-#   - LinearAdjointND, ConstantAdjointND, HeteroAdjointND, CubicAdjointND,
-#     QuadraticAdjointND (deferred to PR2)
-# When this list is empty, the entire AbstractGridSpacing hierarchy +
-# `_create_spacing*` helpers + spacings-based `_search_all_intervals` /
-# `_compute_all_local_params` overloads can be deleted.
+# TODO(spacing-cleanup): once nothing reads `_get_h(::ScalarSpacing/VectorSpacing, i)`
+# or constructs spacings via `_create_spacing*`, the entire `AbstractGridSpacing`
+# hierarchy plus its spacings-based `_search_all_intervals` /
+# `_compute_all_local_params` overloads can be deleted. Remaining consumers are
+# the one-shot ND paths (transient pool spacings, not stored on a struct).
 abstract type AbstractGridSpacing{T} end
 
 """

@@ -30,21 +30,15 @@ Returns zero for r ≤ ε to avoid NaN at coincident points.
 end
 # Specializations for common odd degrees — explicit multiplications avoid the
 # general pow path and enable better compiler optimisation.
-@inline function _phs_phi(r::T, ::Val{1}) where {T}
-    r <= zero(T) && return zero(T)
-    return r
-end
-@inline function _phs_phi(r::T, ::Val{3}) where {T}
-    r <= zero(T) && return zero(T)
-    return r * r * r
-end
+# No r≤0 guard needed: for K≥1 the multiplication chains evaluate to 0 at r=0,
+# so removing the guard makes these functions branch-free and SIMD-friendly.
+@inline _phs_phi(r::T, ::Val{1}) where {T} = r
+@inline _phs_phi(r::T, ::Val{3}) where {T} = r * r * r
 @inline function _phs_phi(r::T, ::Val{5}) where {T}
-    r <= zero(T) && return zero(T)
     r2 = r * r
     return r2 * r2 * r
 end
 @inline function _phs_phi(r::T, ::Val{7}) where {T}
-    r <= zero(T) && return zero(T)
     r2 = r * r
     r4 = r2 * r2
     return r4 * r2 * r
@@ -65,17 +59,13 @@ end
     r <= zero(T) && return zero(T)
     return one(T)
 end
-@inline function _phs_phi_prime(r::T, ::Val{3}) where {T}
-    r <= zero(T) && return zero(T)
-    return 3 * r * r
-end
+# No guard for K=3,5,7: 3*0²=0, 5*0⁴=0, 7*0⁶=0 — always correct at r=0.
+@inline _phs_phi_prime(r::T, ::Val{3}) where {T} = 3 * r * r
 @inline function _phs_phi_prime(r::T, ::Val{5}) where {T}
-    r <= zero(T) && return zero(T)
     r2 = r * r
     return 5 * r2 * r2
 end
 @inline function _phs_phi_prime(r::T, ::Val{7}) where {T}
-    r <= zero(T) && return zero(T)
     r2 = r * r
     return 7 * r2 * r2 * r2
 end
@@ -91,16 +81,12 @@ Returns zero for r ≤ ε and for K=1 (since K*(K-1)=0).
     return K * (K - 1) * r^(K - 2)
 end
 @inline _phs_phi_dprime(r::T, ::Val{1}) where {T} = zero(T)
-@inline function _phs_phi_dprime(r::T, ::Val{3}) where {T}
-    r <= zero(T) && return zero(T)
-    return 6 * r
-end
+# No guard for K=3,5,7: 6*0=0, 20*0³=0, 42*0⁵=0 — always correct at r=0.
+@inline _phs_phi_dprime(r::T, ::Val{3}) where {T} = 6 * r
 @inline function _phs_phi_dprime(r::T, ::Val{5}) where {T}
-    r <= zero(T) && return zero(T)
     return 20 * r * r * r
 end
 @inline function _phs_phi_dprime(r::T, ::Val{7}) where {T}
-    r <= zero(T) && return zero(T)
     r2 = r * r
     return 42 * r2 * r2 * r
 end

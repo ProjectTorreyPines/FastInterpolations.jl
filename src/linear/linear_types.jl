@@ -72,7 +72,7 @@ struct LinearInterpolant{
 
     # Inner constructor: ownership copy + element-type promotion of an
     # already-resolved x/y. Outer `linear_interp` is responsible for the axis
-    # caching wrap via `_caching_axis(x, bc)` (raw Vector → `_CachedVector`,
+    # caching wrap via `_cache_axis(x, bc)` (raw Vector → `_CachedVector`,
     # Range → `_CachedRange`, `:exclusive` PeriodicBC → `_ExclusivePeriodicAxis`);
     # by this layer `x` is already a wrapper carrying cached `h`/`inv_h`
     # (sharing the user's buffer in `inner`). The inner ctor mirrors `y`'s

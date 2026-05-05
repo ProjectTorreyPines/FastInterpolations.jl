@@ -84,7 +84,7 @@ struct LinearInterpolantND{
             grids::Tuple{Vararg{AbstractVector, N}}, data::AbstractArray{Tv, N}, extraps::E, searches::P
         ) where {Tg, Tv, N, G, E, P}
         # Per-axis ownership copy + element-type promotion. Outer `linear_interp`
-        # already applied `_caching_axis` per axis (raw Vector → `_CachedVector`,
+        # already applied `_cache_axis` per axis (raw Vector → `_CachedVector`,
         # Range → `_CachedRange`, etc.) so each grid is a wrapper carrying its
         # cached `h`/`inv_h` (sharing the user buffer in `inner`). The ND inner
         # ctor mirrors the 1D `_convert_copy(x, Tg)` call — wrapper-preserving

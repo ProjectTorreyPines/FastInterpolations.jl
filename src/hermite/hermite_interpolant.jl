@@ -80,6 +80,6 @@ itp(1.0; deriv=DerivOp(1))       # ≈ cos(1.0)
     x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
     extrap_p = _resolve_extrap(extrap, x_p, eltype(y_p))
     # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
-    x_p = _caching_axis(x_p, NoBC())
+    x_p = _cache_axis(x_p, NoBC())
     return CubicHermiteInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search)
 end

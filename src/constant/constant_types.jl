@@ -62,7 +62,7 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
 
     # Inner constructor: ownership copy + element-type promotion of an
     # already-resolved x/y. Outer `constant_interp` does the axis caching
-    # wrap via `_caching_axis(x, bc)`; by this layer `x` is already a
+    # wrap via `_cache_axis(x, bc)`; by this layer `x` is already a
     # wrapper carrying cached `h`/`inv_h`. Symmetric with `y`'s handling —
     # both go through `_convert_copy` for ownership + same/different-eltype
     # dispatch (wrapper-preserving). Spacing access via

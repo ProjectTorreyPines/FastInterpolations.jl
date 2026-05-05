@@ -440,7 +440,7 @@ function hermite_adjoint(
     # Caching wrap (transient — used only for anchor baking). Range from
     # `_promote_adjoint_inputs` arrives as `_CachedRange` (idempotent
     # passthrough); plain `Vector` becomes `_CachedVector` for cached h/inv_h.
-    x_axis = _caching_axis(x_p, NoBC())
+    x_axis = _cache_axis(x_p, NoBC())
     anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap)
 
     return HermiteAdjoint1D{Tg, typeof(extrap)}(anchors, length(x_axis), extrap)

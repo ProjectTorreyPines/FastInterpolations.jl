@@ -80,7 +80,7 @@ mutable struct LinearSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: Abstrac
             extrap::E,
             search::P = AutoSearch()
         ) where {Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
-        # Outer `linear_interp` already applied `_caching_axis(x, bc)` so `x` is
+        # Outer `linear_interp` already applied `_cache_axis(x, bc)` so `x` is
         # a wrapper carrying cached `h`/`inv_h`. Inner ctor mirrors `LinearInterpolant`
         # 1D — `_convert_copy(x, Tg)` for ownership + element-type promotion
         # (wrapper-preserving same-eltype `Base.copy`, single-pass rebuild for
@@ -361,12 +361,12 @@ function linear_interp(
         # keep their eltype, Float grids go through value-type promotion.
         extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(WrapExtrap(), Tv_out) : WrapExtrap()
         # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
-        x_eff = _caching_axis(x_typed, NoBC())
+        x_eff = _cache_axis(x_typed, NoBC())
         return LinearSeriesInterpolant(x_eff, y_mat, extrap_p, search)
     end
 
     extrap_p = Tg_new <: AbstractFloat ? _promote_extrap(extrap, Tv_out) : extrap
-    x_eff = _caching_axis(x_typed, bc)
+    x_eff = _cache_axis(x_typed, bc)
     return LinearSeriesInterpolant(x_eff, y_mat, extrap_p, search)
 end
 

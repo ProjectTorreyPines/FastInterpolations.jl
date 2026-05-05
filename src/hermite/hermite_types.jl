@@ -14,7 +14,7 @@
 Callable interpolant for cubic Hermite interpolation with user-supplied slopes.
 Returned by `hermite_interp(x, y, dy)` (interpolant form).
 
-The grid `x` is wrapped via `_caching_axis` (Range → `_CachedRange`,
+The grid `x` is wrapped via `_cache_axis` (Range → `_CachedRange`,
 Vector → `_CachedVector`) so `_get_h(x, idx)` / `_get_inv_h(x, idx)` are
 O(1) cached lookups — no separate `spacing` field is stored. Evaluation uses
 `_hermite_kernel_1d` (derivative-based Hermite basis functions), NOT
@@ -55,7 +55,7 @@ struct CubicHermiteInterpolant1D{
     search_policy::P
 
     # PreCompute inner: dy is a precomputed slope vector. Axis-as-truth: `xc`
-    # is wrapped via `_caching_axis` (Vector → `_CachedVector`, Range →
+    # is wrapped via `_cache_axis` (Vector → `_CachedVector`, Range →
     # `_CachedRange`), so `_get_h(xc, idx)` returns cached h/inv_h — no
     # separate spacing field needed.
     function CubicHermiteInterpolant1D(

@@ -65,7 +65,7 @@ struct HeteroInterpolantND{
             grids::Tuple{Vararg{AbstractVector, N}}, data::D, methods::M, extraps::E, searches::P
         ) where {Tg, Tv, N, G, M, E, P, D}
         # Per-axis ownership copy + element-type promotion. Outer (OnTheFly /
-        # PreCompute builder) already applied `_caching_axis` per axis, so
+        # PreCompute builder) already applied `_cache_axis` per axis, so
         # each grid is a wrapper carrying cached `h`/`inv_h`. Mirrors
         # LinearInterpolantND / ConstantInterpolantND inner-ctor pattern —
         # `_convert_copy(g, Tg)` is wrapper-preserving (`Base.copy` for same

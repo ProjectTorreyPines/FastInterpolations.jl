@@ -192,7 +192,7 @@ function cardinal_adjoint(
     end
 
     # Wrap axis (axis-as-truth) and bake anchors
-    x_axis = _caching_axis(x_p, NoBC())
+    x_axis = _cache_axis(x_p, NoBC())
     anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap)
 
     return CardinalAdjoint1D{Tg, typeof(extrap)}(

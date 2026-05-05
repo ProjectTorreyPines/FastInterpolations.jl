@@ -43,7 +43,7 @@ struct AkimaInterpolant1D{
     search_policy::P
 
     # PreCompute inner: promotes x/y, computes slopes — axis-as-truth (`xc`
-    # wraps cached h/inv_h; outer applies `_caching_axis`).
+    # wraps cached h/inv_h; outer applies `_cache_axis`).
     function AkimaInterpolant1D(
             x::AbstractVector, y::AbstractVector, ::Type{PreCompute}, extrap::E, search::P
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}

@@ -82,7 +82,7 @@ function linear_interp(
     # Per-axis caching wrap (zero-copy of buffer): raw Vector → `_CachedVector`,
     # Range → `_CachedRange`, pre-wrapped → idempotent passthrough. Mirrors
     # 1D `linear_interp` outer flow. Ownership copy happens in inner ctor.
-    grids_typed = map(_caching_axis, grids_typed, bcs_post)
+    grids_typed = map(_cache_axis, grids_typed, bcs_post)
 
     # _resolve_extrap_nd(extrap, bcs, ...) validates periodic/extrap compatibility
     # and auto-overrides per-axis extrap to WrapExtrap() on periodic axes.

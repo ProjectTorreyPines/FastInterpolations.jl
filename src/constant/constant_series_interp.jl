@@ -79,7 +79,7 @@ mutable struct ConstantSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, SD <: Abst
             side::SD,
             search::P = AutoSearch()
         ) where {Tg, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
-        # Outer `constant_interp` already applied `_caching_axis(x, bc)` so `x` is
+        # Outer `constant_interp` already applied `_cache_axis(x, bc)` so `x` is
         # a wrapper carrying cached `h`/`inv_h`. Inner ctor mirrors `ConstantInterpolant`
         # 1D — `_convert_copy(x, Tg)` for ownership + element-type promotion. y is
         # NOT copied — `_build_series_mat()` already provides an owned matrix.
@@ -365,12 +365,12 @@ function constant_interp(
         # promotion; passthrough for `WrapExtrap`.
         extrap_p = _promote_extrap(WrapExtrap(), Tv_out)
         # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
-        x_eff = _caching_axis(x_ext, NoBC())
+        x_eff = _cache_axis(x_ext, NoBC())
         return ConstantSeriesInterpolant(x_eff, y_mat_ext, extrap_p, side, search)
     end
 
     extrap_p = _promote_extrap(extrap, Tv_out)
-    x_eff = _caching_axis(x, bc)
+    x_eff = _cache_axis(x, bc)
     return ConstantSeriesInterpolant(x_eff, y_mat, extrap_p, side, search)
 end
 

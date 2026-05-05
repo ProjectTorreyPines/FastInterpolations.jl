@@ -509,7 +509,7 @@ end
 
 # ----- Caching wrap (persistent surface API, zero-copy of buffer) ----------
 #
-# `_caching_axis(x, bc)` is the persistent-path counterpart to one-shot's
+# `_cache_axis(x, bc)` is the persistent-path counterpart to one-shot's
 # `_resolve_axis(x, bc)`. Same dispatch shape; the difference is that for
 # raw `Vector` inputs it allocates the cached `h`/`inv_h` arrays (so the
 # stored axis supports O(1) `_get_h(x, i)` lookup downstream) while still
@@ -542,13 +542,13 @@ end
 # are idempotent passthroughs — wrapping is already done; the inner ctor's
 # `_convert_copy` handles ownership transfer + optional type conversion.
 
-@inline _caching_axis(x::AbstractVector, ::AbstractBC) = _CachedVector(x)
-@inline _caching_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
-@inline function _caching_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
+@inline _cache_axis(x::AbstractVector, ::AbstractBC) = _CachedVector(x)
+@inline _cache_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
+@inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
     bc_resolved = _resolve_bc_period(x, bc)
     return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
 end
-@inline function _caching_axis(x::AbstractVector, bc::PeriodicBC{:exclusive})
+@inline function _cache_axis(x::AbstractVector, bc::PeriodicBC{:exclusive})
     bc_resolved = _resolve_bc_period(x, bc)
     return _ExclusivePeriodicAxis(_CachedVector(x), bc_resolved.period)
 end
@@ -557,18 +557,18 @@ end
 # to resolve ambiguity against the raw-input entries above
 # (`_CachedRange <: AbstractRange`, `_CachedVector <: AbstractVector`,
 # `_ExclusivePeriodicAxis <: AbstractVector`).
-@inline _caching_axis(c::_CachedRange, ::AbstractBC) = c
-@inline function _caching_axis(c::_CachedRange, bc::PeriodicBC{:exclusive})
+@inline _cache_axis(c::_CachedRange, ::AbstractBC) = c
+@inline function _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive})
     bc_resolved = _resolve_bc_period(c, bc)
     return _ExclusivePeriodicAxis(c, bc_resolved.period)
 end
-@inline _caching_axis(c::_CachedVector, ::AbstractBC) = c
-@inline function _caching_axis(c::_CachedVector, bc::PeriodicBC{:exclusive})
+@inline _cache_axis(c::_CachedVector, ::AbstractBC) = c
+@inline function _cache_axis(c::_CachedVector, bc::PeriodicBC{:exclusive})
     bc_resolved = _resolve_bc_period(c, bc)
     return _ExclusivePeriodicAxis(c, bc_resolved.period)
 end
-@inline _caching_axis(g::_ExclusivePeriodicAxis, ::AbstractBC) = g
-@inline _caching_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}) = g
+@inline _cache_axis(g::_ExclusivePeriodicAxis, ::AbstractBC) = g
+@inline _cache_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}) = g
 
 # ----- Resolve + copy (persistent interpolant) -----------------------------
 

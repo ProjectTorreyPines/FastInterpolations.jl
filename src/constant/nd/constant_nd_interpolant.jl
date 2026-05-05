@@ -70,7 +70,7 @@ function constant_interp(
     grids_typed, data_typed, bcs_post = _prepare_periodic_nd(grids_typed, data_typed, bcs)
     # Per-axis caching wrap (zero-copy of buffer); ownership copy in inner ctor.
     # Mirrors 1D `constant_interp` outer flow.
-    grids_typed = map(_caching_axis, grids_typed, bcs_post)
+    grids_typed = map(_cache_axis, grids_typed, bcs_post)
 
     # _resolve_extrap_nd(extrap, bcs, ...) validates periodic/extrap compatibility
     # and auto-overrides per-axis extrap to WrapExtrap() on periodic axes.

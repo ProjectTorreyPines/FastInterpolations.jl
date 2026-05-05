@@ -67,7 +67,7 @@ struct ConstantInterpolantND{
             E, SD <: Tuple{Vararg{AbstractSide, N}}, P <: NTuple{N, AbstractSearchPolicy},
         }
         # Per-axis ownership copy + element-type promotion. Outer
-        # `constant_interp` already applied `_caching_axis` per axis; this
+        # `constant_interp` already applied `_cache_axis` per axis; this
         # mirrors 1D `_convert_copy(x, Tg)` (wrapper-preserving same-eltype
         # `Base.copy`, single-pass rebuild for different eltype).
         # Array() converts AbstractArray→Array AND copies data in one step.

@@ -153,7 +153,7 @@ function linear_interp end
     # for `:exclusive`. Ownership copy + element-type promotion happens INSIDE
     # the inner constructor via `_convert_copy(x, Tg)` / `_convert_copy(y, Tv)`,
     # mirroring `y`'s flow — single copy point, no double-copy.
-    x_eff = _caching_axis(x, bc)
+    x_eff = _cache_axis(x, bc)
     y_eff = _resolve_data(y, bc)
     # Periodic BCs auto-promote `extrap` to `WrapExtrap` against the resolved
     # axis span. `_resolve_extrap` handles materialization.

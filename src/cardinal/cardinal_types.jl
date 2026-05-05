@@ -48,7 +48,7 @@ struct CardinalInterpolant1D{
     tension::Tg
 
     # PreCompute inner: ownership copy of an already-resolved axis. Outer
-    # `cardinal_interp` applies `_caching_axis(x_eff, bc_eff)` so x is a
+    # `cardinal_interp` applies `_cache_axis(x_eff, bc_eff)` so x is a
     # wrapper carrying cached h/inv_h. Symmetric with y via `_convert_copy`.
     function CardinalInterpolant1D(
             x::AbstractVector, y::AbstractVector, ::Type{PreCompute},

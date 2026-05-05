@@ -48,13 +48,10 @@
     # 3. Compute heterogeneous partials in-place (reuses build.jl core)
     _compute_nd_partials_hetero!(partials, grids_p, data_p, methods, bcs_p, sizes)
 
-    # 4. Pool-based spacings
-    spacings = _create_spacings_pooled(pool, grids_p)
-
-    # 5. Eval pipeline (all standalone functions from nd_utils.jl)
+    # 4. Eval pipeline (axis-only — `grids_p` carries `h`/`inv_h` directly)
     q_eval = _handle_all_extraps(query, grids_p, extraps_eff)
-    indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches, hints)
-    hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
+    indices, Ls, _ = _search_all_intervals(q_eval, grids_p, searches, hints)
+    hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_p, indices, Ls)
 
     # 6. Heterogeneous tensor-product kernel
     return _eval_hetero_nd_cell(partials, indices, hs, inv_hs, dLs, ops, methods)
@@ -95,9 +92,8 @@ end
     n_partials = prod(sizes)
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
     _compute_nd_partials_hetero!(partials, grids_p, data_p, methods, bcs_p, sizes)
-    spacings = _create_spacings_pooled(pool, grids_p)
 
-    # Eval loop (per query)
+    # Eval loop (per query) — axis-only helpers read `h`/`inv_h` from `grids_p`
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
@@ -106,8 +102,8 @@ end
             continue
         end
         q_eval = _handle_all_extraps(query_k, grids_p, extraps_eff)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, policies, hints, mono)
-        hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, policies, hints, mono)
+        hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_p, indices, Ls)
         output[k] = _eval_hetero_nd_cell(partials, indices, hs, inv_hs, dLs, ops, methods)
     end
     return output

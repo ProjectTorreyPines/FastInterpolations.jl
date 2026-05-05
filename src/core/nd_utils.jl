@@ -814,6 +814,18 @@ end
     return _project_search_results(results, _getidx)
 end
 
+# 5-arg variant with Nothing hint (used by oneshot scalar paths that have no
+# persistent hint storage — same as the 4-arg with-hints form, plus mono).
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing,
+        ::NTuple{N, Bool},
+    ) where {N}
+    return _search_all_intervals(q_evals, grids, policies)
+end
+
 # Per-axis oneshot variants (no spacing). Used by `hetero_nointerp.jl`
 # real-axis-reduced search where spacings have been removed alongside the
 # `spacings::S` field on HeteroInterpolantND.

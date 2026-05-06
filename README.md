@@ -265,7 +265,7 @@ end
 
 While PHS shares the core philosophy of FastInterpolations.jl (zero-allocation, analytical derivatives), it differs in several implementation details:
 
-- Derivative API: PHS uses the direct deriv keyword approach (itp(q; deriv=...)) rather than the gradient()/hessian() functions used by other methods
+- Derivative API: PHS uses the direct deriv keyword approach (`itp(q; deriv=...)`) rather than the gradient()/hessian() functions used by other methods
 - Boundary Conditions: PHS achieves C² continuity through blending rather than traditional boundary condition types
 - Search & Hints: The stencil-based approach eliminates the need for interval search and positional hints
 - Integration: Analytical integration is not currently implemented for PHS (focus is on density/derivative evaluation)

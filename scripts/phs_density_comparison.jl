@@ -635,16 +635,16 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
         @sprintf("%.3f", build_time)
     else
         ratio = phs_build_time / build_time
-        @sprintf("%.3f (%.1f×)", build_time, ratio)
+        @sprintf("%.5f (%.1f×)", build_time, ratio)
     end
     
     # Format rho time with ratio
     rho_str = if rho_time !== nothing
         if method == "PHS"
-            @sprintf("%.5f", rho_time)
+            @sprintf("%.3f", rho_time)
         else
             ratio = phs_rho_time / rho_time
-            @sprintf("%.3f (%.1f×)", rho_time, ratio)
+            @sprintf("%.5f (%.1f×)", rho_time, ratio)
         end
     else
         "—"
@@ -653,10 +653,10 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     # Format grad time with ratio
     grad_str = if grad_time !== nothing
         if method == "PHS"
-            @sprintf("%.5f", grad_time)
+            @sprintf("%.3f", grad_time)
         else
             ratio = phs_grad_time / grad_time
-            @sprintf("%.3f (%.1f×)", grad_time, ratio)
+            @sprintf("%.5f (%.1f×)", grad_time, ratio)
         end
     else
         "—"
@@ -665,10 +665,10 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     # Format lap time with ratio
     lap_str = if lap_time !== nothing
         if method == "PHS"
-            @sprintf("%.5f", lap_time)
+            @sprintf("%.3f", lap_time)
         else
             ratio = phs_lap_time / lap_time
-            @sprintf("%.3f (%.1f×)", lap_time, ratio)
+            @sprintf("%.5f (%.1f×)", lap_time, ratio)
         end
     else
         "—"

@@ -139,7 +139,7 @@ The resulting plot shows exceptional agreement with analytical values, even near
 
 ![PHS density comparison](../images/phs_density_comparison.png)
 
-**Left column:** Standard 3D interpolation methods (nearest, linear, cubic spline, cardinal) vs. analytical DFT values. All exhibit spurious oscillations and errors near the nuclei. **Right column:** PHS with log-density transform and promolecular reference. Smooth, accurate across the domain, with only minor deviations very close to nuclei.
+> **Left column:** Standard 3D interpolation methods (nearest, linear, cubic spline, cardinal) vs. analytical DFT values. All exhibit spurious oscillations and errors near the nuclei. **Right column:** PHS with log-density transform and promolecular reference. Smooth, accurate across the domain, with only minor deviations very close to nuclei.
 
 Polyharmonic spline interpolation was added specifically for applications to physical systems with singularities and steep features, where they achieve better relative results. The results show that PHS with log-density transform and a promolecular reference achieves **orders of magnitude better accuracy** than nearest, linear, cubic spline, and cardinal interpolation for both the density and its derivatives, even near nuclear cusps, at the expense of higher computational cost.
 
@@ -158,6 +158,13 @@ This generates `phs_density_comparison.png` and demonstrates:
 - Constructing PHS interpolant with log-transform
 - Evaluating density, gradient, Laplacian analytically
 - Batch evaluation for performance
+
+To get timings that don't include JIT compilation and stencil caching, run the script twice:
+
+```bash
+cd scripts/
+julia --project=. -e 'include("phs_density_comparison.jl"); include("phs_density_comparison.jl")'
+```
 
 ### Error Statistics (with method-to-PHS ratios) for phenol dimer example
 
@@ -190,17 +197,37 @@ This generates `phs_density_comparison.png` and demonstrates:
 
 ### Timing Summary (with PHS-to-method ratios) for phenol dimer example
 
-The build time was for a 75×113×70 grid, and evaluation times were for 1000 query points along the hydrogen-bond path:
+The build time was for a 75×113×70 grid, and evaluation times were for 1000 query points along the hydrogen-bond path. Script was run twice to get accurate timings after JIT compilation and stencil caching.
 
 | Method | Build (s) | ρ Time (s) | \|∇ρ\| Time (s) | \|∇²ρ\| Time (s) |
 |--------|-----------|------------|----------------|-----------------|
-| Nearest            |   0.162 (14.0×) |     0.366 (4.2×) |                  — |                    — |
-| Linear             |  0.008 (276.6×) |     0.235 (6.5×) |      0.540 (15.8×) |                    — |
-| Cubic              |    0.590 (3.8×) |     0.406 (3.8×) |      0.669 (12.7×) |        0.806 (18.0×) |
-| Cardinal           |   0.035 (65.2×) |     0.875 (1.7×) |       2.360 (3.6×) |         2.363 (6.1×) |
-| PHS                |           2.267 |            1.525 |              8.514 |               14.466 |
+| Nearest            | 0.00732 (45.3×) |  0.00015 (96.7×) |                  — |                    — |
+| Linear             | 0.00008 (4354.7×) | 0.00014 (101.4×) |   0.00021 (493.6×) |                    — |
+| Cubic              | 0.02202 (15.1×) | 0.00011 (127.6×) |   0.00014 (735.9×) |     0.00015 (973.1×) |
+| Cardinal           | 0.00010 (3332.5×) |  0.00022 (65.1×) |   0.00048 (213.6×) |     0.00051 (293.8×) |
+| PHS                |           0.332 |            0.014 |              0.103 |                0.150 |
 
-*PHS is significantly more expensive to build and evaluate than standard methods, but achieves much higher accuracy, especially for derivatives.*
+```text
+Evaluating along path (1000 points)...
+  Warming up PHS (JIT + stencil cache) ... done.
+  Density (ρ):
+    Nearest ...  0.000029 seconds (8 allocations:  336 bytes)
+    Linear ...   0.000029 seconds (8 allocations:  336 bytes)
+    Cubic ...    0.000032 seconds (8 allocations:  336 bytes)
+    Cardinal ... 0.000147 seconds (45 allocations: 9.000 KiB)
+    PHS ...      0.013984 seconds
+  Gradient Magnitude (|∇ρ|):
+    Linear ...   0.000139 seconds (37 allocations:     1.406 KiB)
+    Cubic ...    0.000072 seconds (31 allocations:     1.109 KiB)
+    Cardinal ... 0.000373 seconds (142 allocations:    27.125 KiB)
+    PHS ...      0.102826 seconds (6.01 k allocations: 156.375 KiB)
+  Laplacian Magnitude (|∇²ρ|):
+    Cubic ...    0.000074 seconds (31 allocations:     1.312 KiB)
+    Cardinal ... 0.000416 seconds (136 allocations:    27.031 KiB)
+    PHS ...      0.149576 seconds (6.00 k allocations: 156.281 KiB)
+```
+
+*PHS is significantly more expensive to build and evaluate than standard methods, but achieves much higher accuracy, especially for derivatives. Not "no" allocations, but constant allocations.*
 
 ## References
 

@@ -78,7 +78,7 @@ end
 # ========================================
 
 """
-    HeteroAdjointND{Tg, N, M, G, S, C, MC, BP, MBP}
+    HeteroAdjointND{Tg, N, M, G, C, MC, BP, MBP}
 
 Adjoint (transpose) operator for N-dimensional heterogeneous interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward ND interpolation weight matrix
@@ -91,8 +91,8 @@ The same adjoint can be applied to any `ȳ` vector.
 - `Tg`:  Grid float type (unconstrained — supports duck types like ForwardDiff.Dual)
 - `N`:   Number of dimensions
 - `M`:   Per-axis methods tuple type
-- `G`:   Grid tuple type
-- `S`:   Spacing tuple type
+- `G`:   Grid tuple type — wrapped axes carry cached `h`/`inv_h` directly;
+         no separate `spacings` field needed.
 - `C`:   Per-axis cache tuple (CubicSplineCache for cubic, Nothing for others)
 - `MC`:  Per-axis mixed-partial cache tuple
 - `BP`:  Per-axis adjoint-BC tuple. For cubic axes: `BCPair`/`PeriodicBC`;
@@ -120,7 +120,6 @@ struct HeteroAdjointND{
         N,
         M <: Tuple{Vararg{AbstractInterpMethod, N}},
         G <: Tuple{Vararg{AbstractVector, N}},
-        S <: Tuple{Vararg{AbstractGridSpacing, N}},
         C,     # Heterogeneous cache tuple (CubicSplineCache or Nothing per axis)
         MC,    # Mixed-partial cache tuple
         BP,    # Per-axis BC placeholder tuple
@@ -128,7 +127,6 @@ struct HeteroAdjointND{
     } <: AbstractAdjointND{Tg, N}
     methods::M
     grids::G
-    spacings::S
     caches::C
     mixed_caches::MC
     bcs::BP
@@ -139,13 +137,13 @@ struct HeteroAdjointND{
 
     # Defensive copy of grids to prevent mutation safety issues
     # (matches LinearAdjointND / QuadraticAdjointND / ConstantAdjointND convention)
-    function HeteroAdjointND{Tg, N, M, G, S, C, MC, BP, MBP}(
-            methods, grids, spacings, caches, mixed_caches,
+    function HeteroAdjointND{Tg, N, M, G, C, MC, BP, MBP}(
+            methods, grids, caches, mixed_caches,
             bcs, mixed_bcs, anchors, grid_size, mincurv_Cs
-        ) where {Tg, N, M, G, S, C, MC, BP, MBP}
+        ) where {Tg, N, M, G, C, MC, BP, MBP}
         grids_c = map(copy, grids)
-        return new{Tg, N, M, typeof(grids_c), S, C, MC, BP, MBP}(
-            methods, grids_c, spacings, caches, mixed_caches,
+        return new{Tg, N, M, typeof(grids_c), C, MC, BP, MBP}(
+            methods, grids_c, caches, mixed_caches,
             bcs, mixed_bcs, anchors, grid_size, mincurv_Cs
         )
     end
@@ -170,7 +168,7 @@ end
 # ========================================
 
 Base.ndims(::HeteroAdjointND{Tg, N}) where {Tg, N} = N + 1
-function Base.size(adj::HeteroAdjointND{Tg, N}) where {Tg, N}
+function Base.size(adj::HeteroAdjointND)
     out_size = _adjoint_output_size(adj)
     return (out_size..., _n_queries(adj))
 end

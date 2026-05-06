@@ -30,7 +30,7 @@ Vector grid wrapper that caches per-cell spacing (`h`) and reciprocal
   `Measurements.Measurement`, etc. Any type with `-` and `inv` defined.
 - `Tinv` — Reciprocal type, equal to `typeof(inv(oneunit(T)))`. For Float
   grids `Tinv == T`; for Int grids `Tinv == Float64` (since `inv(::Int)`
-  returns `Float64`). Mirrors the historical `VectorSpacing{T,Tinv}` design.
+  returns `Float64`).
 
 # Behavior
 - `<: AbstractVector{T}` so existing search and eval kernels accept it
@@ -102,7 +102,7 @@ Construct a `_CachedVector` from a raw vector. Computes `h[i] = x[i+1] - x[i]`
 and `inv_h[i] = inv(h[i])` once, in a single pass.
 
 If `x` is not already a concrete `Vector{T}`, it is converted via `Vector(x)`
-to ensure stable storage layout (mirrors `VectorSpacing` precedent).
+to ensure stable storage layout.
 
 Throws `ArgumentError` if `length(x) < 2`.
 """
@@ -129,10 +129,6 @@ end
 #   _CachedRange  → cached scalar       (this file, also covers AbstractRange via inheritance)
 #   AbstractRange → step()              (this file, fallback for non-_CachedRange ranges)
 #   AbstractVector → on-the-fly diff    (this file, fallback for raw Vectors / one-shot path)
-#
-# The pre-existing 2-arg `_get_h(::ScalarSpacing,i)` / `_get_h(::VectorSpacing,i)`
-# in grid_spacing.jl remain alongside (dual-path) until Step 3 cleanup.
-# Dispatch is unambiguous because spacing types are NOT <: AbstractVector.
 
 # _CachedVector — cached vector lookup (most specific for AbstractVector hierarchy)
 @inline Base.@propagate_inbounds _get_h(x::_CachedVector, i::Int) = @inbounds x.h[i]
@@ -155,30 +151,18 @@ end
 @inline Base.@propagate_inbounds _get_inv_h(x::AbstractVector, i::Int) =
     inv(_get_h(x, i))
 
-# ========================================
-# Backward-compat: _create_spacing(::_CachedVector) → VectorSpacing
-# ========================================
-#
-# Existing 13 interpolant constructors call `_create_spacing(xc)` where `xc`
-# is the result of `_store_grid(x, Tg)`. Once Step 1.5 extends `_store_grid`
-# to wrap Vector inputs in `_CachedVector`, those constructors hand a
-# `_CachedVector` (not a raw `Vector`) to `_create_spacing`.
-#
-# This shim returns a `VectorSpacing` extracted from the cached fields —
-# zero recomputation, zero allocation beyond the new struct. After Step 2
-# migrates all methods to grid-based access, this shim and `VectorSpacing`
-# itself are deleted in Step 3.
-@inline _create_spacing(c::_CachedVector{T, Tinv}) where {T, Tinv} =
-    VectorSpacing{T, Tinv}(c.h, c.inv_h)
+# 3-arg: caller already has `xL` / `xR` in registers from search → bypass the
+# `x[i]` / `x[i+1]` loads. Used by oneshot kernels (and the wrapper-level
+# `_ExclusivePeriodicAxis` 3-arg overload at `periodic_axis.jl:384`, which
+# delegates here for any `_CachedVector` / raw `Vector` inner).
+@inline _get_h(::AbstractVector, xL::Real, xR::Real) = float(xR - xL)
+@inline _get_inv_h(::AbstractVector, xL::Real, xR::Real) = inv(float(xR - xL))
 
-# `_store_grid_cached` was the legacy bc-less variant of the persistent
-# axis wrapper. The persistent path is now split into two stages
-# (see `periodic_axis.jl`):
+# Persistent axis wrapping is split into two stages (see `periodic_axis.jl`):
 #   - outer surface API: `_cache_axis(x, bc)` — bc-aware wrap, zero-copy
 #     of buffer (Vector → `_CachedVector`, Range → `_CachedRange`,
 #     `:exclusive` → `_ExclusivePeriodicAxis`),
 #   - inner constructor:  `_convert_copy(x, Tg)` — ownership copy +
 #     element-type promotion (wrapper-preserving `Base.copy`).
-# `_resolve_axis_copied(x, bc, Tg)` (the older one-shot helper) is retained
-# for Cubic's cache builder until that family migrates to the split pattern
-# in a follow-up PR — see `# TODO(spacing-cleanup)` markers in `grid_spacing.jl`.
+# Cubic 1D additionally uses `_resolve_axis_copied(x, bc, Tg)` — a single-step
+# wrap+copy helper with same-eltype passthrough optimization for re-entry.

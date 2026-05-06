@@ -110,6 +110,12 @@ function _build_nd_interpolant(
     # `:inclusive` per axis (via `_bc_after_extend` inside the helper).
     grids, data, bcs = _prepare_periodic_nd(grids, data, bcs)
 
+    # Wrap extended raw grids into cached axes so eval reads `_get_h(grids[d], i)`
+    # in O(1) (cached scalar/vector lookup) instead of falling back to on-the-fly
+    # `float(x[i+1] - x[i])`. Mirrors the forward path on Linear/Constant
+    # /Quadratic/Hetero ND.
+    grids = map(_cache_axis, grids, bcs)
+
     # Per-axis materialization via 2-arg primitive — post-extension, `last(grid) -
     # first(grid) == period`, so grid-span is the correct wrap domain and we avoid
     # the bc-aware constructor's pre-extension `last(x) < x_max` check.
@@ -117,9 +123,6 @@ function _build_nd_interpolant(
 
     # Build nodal derivatives using generic ND builder
     nodal_derivs = _build_nd_coeffs(grids, data, bcs)
-
-    # Create spacings (uses @generated to avoid closure boxing for heterogeneous grids)
-    spacings = _create_spacings_typed(grids)
 
     # Periodic bcs are already `:inclusive`; materialize period from the
     # extended grid span for introspection. Non-periodic axes go through
@@ -134,16 +137,7 @@ function _build_nd_interpolant(
 
     # extraps_val already resolved to concrete AbstractExtrap instances at API boundary
     # (via _resolve_extrap_nd in cubic_interp)
-
-    # Construct the interpolant
-    # Tz = coefficient type: widens Tv with Tg (Dual grid → Dual coefficients).
-    Tz = eltype(nodal_derivs)
-    NP1 = N + 1
-    return CubicInterpolantND{
-        Tg, Tz, N, NP1,
-        typeof(grids), typeof(spacings), typeof(bcs_store),
-        typeof(extraps_val), typeof(searches),
-    }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)
+    return CubicInterpolantND(grids, nodal_derivs, bcs_store, extraps_val, searches)
 end
 
 # OnTheFly is handled in cubic_interp() above (delegates to _build_hetero_nd).

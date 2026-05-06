@@ -85,10 +85,8 @@ function _build_nd_quadratic_interpolant(
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy}
     ) where {Tg, Tv, N}
-    # Build nodal derivatives using quadratic recurrence (uses
-    # `_create_spacings_typed` internally as a transient — the resulting
-    # spacings are NOT stored in the struct; the wrapped grids carry
-    # `h`/`inv_h` directly via `_get_h(itp.grids[d], i)`).
+    # Build nodal derivatives using quadratic recurrence. The wrapped grids
+    # carry `h`/`inv_h` directly via `_get_h(itp.grids[d], i)`.
     nodal_derivs = _build_nd_coeffs_quadratic(grids, data, bcs)
 
     # Caching wrap (zero-copy of buffer): per-axis `_cache_axis`. Inner ctor's

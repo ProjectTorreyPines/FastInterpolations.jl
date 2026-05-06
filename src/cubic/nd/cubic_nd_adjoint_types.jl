@@ -16,7 +16,7 @@
 # ========================================
 
 """
-    CubicAdjointND{Tg, N, S, C, MC, BP, MBP}
+    CubicAdjointND{Tg, N, C, MC, BP, MBP}
 
 Adjoint (transpose) operator for N-dimensional cubic Hermite interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward ND cubic interpolation weight matrix.
@@ -27,8 +27,10 @@ The same adjoint can be applied to any `ȳ` vector.
 # Type Parameters
 - `Tg`:  Grid float type (Float32 or Float64)
 - `N`:   Number of dimensions
-- `S`:   Spacing tuple type
-- `C`:   Cache tuple type for user BC (per-axis CubicSplineCache)
+- `C`:   Cache tuple type for user BC (per-axis CubicSplineCache). Each
+         `cache.x` is a wrapped axis (`_CachedRange` / `_CachedVector` /
+         `_ExclusivePeriodicAxis`) carrying cached `h` / `inv_h` directly —
+         no separate `spacings` field needed.
 - `MC`:  Cache tuple type for mixed-partial BC (CubicFit internally)
 - `BP`:  User BC pairs — `BCPair` for non-periodic, `PeriodicBC` for periodic axes
 - `MBP`: Mixed-partial BC pairs — same convention as `BP`
@@ -74,13 +76,11 @@ adj = cubic_adjoint((x, y), (xq, yq); bc=(PeriodicBC(), CubicFit()))
 struct CubicAdjointND{
         Tg,
         N,
-        S <: NTuple{N, AbstractGridSpacing{Tg}},
         C <: NTuple{N, CubicSplineCache{Tg}},
         MC <: NTuple{N, CubicSplineCache{Tg}},
         BP <: NTuple{N, Union{BCPair, PeriodicBC}},
         MBP <: NTuple{N, Union{BCPair, PeriodicBC}},
     } <: AbstractAdjointND{Tg, N}
-    spacings::S
     caches::C
     mixed_caches::MC
     bcs::BP
@@ -104,7 +104,7 @@ end
 # ========================================
 
 Base.ndims(::CubicAdjointND{Tg, N}) where {Tg, N} = N + 1
-function Base.size(adj::CubicAdjointND{Tg, N}) where {Tg, N}
+function Base.size(adj::CubicAdjointND)
     out_size = _adjoint_output_size(adj)
     return (out_size..., _n_queries(adj))
 end

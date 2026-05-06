@@ -32,7 +32,7 @@
 # ========================================
 
 """
-    CubicInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}
+    CubicInterpolantND{Tg, Tv, N, NP1, G, B, E, P}
 
 Generic N-dimensional cubic Hermite interpolant with precomputed partial derivatives.
 
@@ -44,15 +44,15 @@ ultra-fast O(1) evaluation via tensor-product Hermite polynomials.
 - `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
 - `NP1`: N + 1 (partials array dimensionality)
-- `G`: Tuple type for grids, `NTuple{N, <:AbstractVector{Tg}}`
-- `S`: Tuple type for spacings, `NTuple{N, <:AbstractGridSpacing{Tg}}`
+- `G`: Tuple type for grids, `NTuple{N, <:AbstractVector{Tg}}` — wrapped axes
+       (`_CachedRange` / `_CachedVector`) carry cached `h` / `inv_h` directly,
+       so no separate spacings field is needed.
 - `B`: Tuple type for boundary conditions, `NTuple{N, <:AbstractBC}`
 - `E`: Tuple type for extrapolation modes, `Tuple{Vararg{AbstractExtrap, N}}`
 - `P`: Tuple type for search policies, `NTuple{N, <:AbstractSearchPolicy}`
 
 # Fields
-- `grids`: N-tuple of grid vectors for each dimension
-- `spacings`: N-tuple of grid spacing info (for O(1) h lookup)
+- `grids`: N-tuple of (wrapped) grid vectors for each dimension
 - `nodal_derivs`: _NodalDerivativesND containing partial derivatives at grid nodes
 - `bcs`: N-tuple of boundary conditions used for construction
 - `extraps`: N-tuple of extrapolation modes
@@ -83,28 +83,32 @@ struct CubicInterpolantND{
         N,
         NP1,
         G <: NTuple{N, AbstractVector{Tg}},
-        S <: NTuple{N, AbstractGridSpacing{Tg}},
         B <: NTuple{N, AbstractBC},
         E <: Tuple{Vararg{AbstractExtrap, N}},
         P <: NTuple{N, AbstractSearchPolicy},
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    spacings::S
     nodal_derivs::_NodalDerivativesND{Tv, N, NP1}
     bcs::B
     extraps::E
     searches::P
 
-    function CubicInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}(
-            grids::Tuple{Vararg{AbstractVector, N}}, spacings::S, nodal_derivs::_NodalDerivativesND{Tv, N, NP1},
-            bcs::B, extraps::E, searches::P
-        ) where {Tg, Tv, N, NP1, G, S, B, E, P}
+    function CubicInterpolantND(
+            grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+            nodal_derivs::_NodalDerivativesND{Tv, N, NP1},
+            bcs::NTuple{N, AbstractBC},
+            extraps::Tuple{Vararg{AbstractExtrap, N}},
+            searches::NTuple{N, AbstractSearchPolicy}
+        ) where {Tg, Tv, N, NP1}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
-        # Copy grids to ensure mutation safety.
-        # copy() on immutable Range types is a no-op (zero allocation).
-        # typeof() rebinds G after copy (e.g. tuple-of-SubArrays → tuple-of-Vectors).
-        grids_c = map(copy, grids)
-        return new{Tg, Tv, N, NP1, typeof(grids_c), S, B, E, P}(grids_c, spacings, nodal_derivs, bcs, extraps, searches)
+        # Wrapper-aware ownership copy + idempotent cache_axis insurance.
+        # When the outer API has already wrapped + extended the grids, this
+        # is just a per-axis `copy` of the wrapper (no buffer duplication
+        # for Range-backed wrappers).
+        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
+        return new{Tg, Tv, N, NP1, typeof(grids_c), typeof(bcs), typeof(extraps), typeof(searches)}(
+            grids_c, nodal_derivs, bcs, extraps, searches
+        )
     end
 end
 

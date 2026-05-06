@@ -2,7 +2,7 @@
     using FastInterpolations: search_interval, Searcher, BinarySearch, LinearSearch, LinearBinarySearch,
         AutoSearch, DirectSearch, NoHint, RefHint, DEFAULT_SEARCHER,
         _to_searcher, _resolve_search, _resolve_search_policy,
-        _resolve_searcher_for_grid, ScalarSpacing, _create_spacing
+        _resolve_searcher_for_grid
 
     # Shared test fixtures
     x_vec = collect(range(0.0, 1.0, 101))
@@ -102,30 +102,27 @@
     # ========================================
 
     @testset "search_interval results match after resolution" begin
-        spacing_vec = _create_spacing(x_vec)
-        spacing_range = _create_spacing(x_range)
-
         test_points = [0.0, 0.15, 0.5, 0.85, 1.0]
 
         for xq in test_points
             # 2-step chain
             resolved_v = _resolve_search_policy(x_vec, xq, AutoSearch(), nothing)
             searcher_v = _to_searcher(resolved_v, nothing)
-            result_old = search_interval(searcher_v, x_vec, spacing_vec, xq)
+            result_old = search_interval(searcher_v, x_vec, xq)
 
             # New context resolver
             searcher_new = _resolve_search(x_vec, xq, AutoSearch(), nothing)
-            result_new = search_interval(searcher_new, x_vec, spacing_vec, xq)
+            result_new = search_interval(searcher_new, x_vec, xq)
 
             @test result_old == result_new
 
             # Range grid
             resolved_r = _resolve_search_policy(x_range, xq, AutoSearch(), nothing)
             searcher_r = _to_searcher(resolved_r, nothing)
-            result_old_r = search_interval(searcher_r, x_range, spacing_range, xq)
+            result_old_r = search_interval(searcher_r, x_range, xq)
 
             searcher_new_r = _resolve_search(x_range, xq, AutoSearch(), nothing)
-            result_new_r = search_interval(searcher_new_r, x_range, spacing_range, xq)
+            result_new_r = search_interval(searcher_new_r, x_range, xq)
 
             @test result_old_r == result_new_r
         end

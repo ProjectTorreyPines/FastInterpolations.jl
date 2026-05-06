@@ -72,8 +72,8 @@ end
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     q_evals = _handle_all_extraps(query, itp.grids, itp.extraps)
-    indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, itp.spacings, policies, hints, mono)
-    hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.spacings, indices, Ls)
+    indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono)
+    hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls)
 
     return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)
 end
@@ -87,11 +87,11 @@ end
         mono::Tuple{Bool, Bool},
     ) where {Tg, Tv}
     x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, itp.grids, itp.spacings, itp.extraps, policies, hints, mono
+        query, itp.grids, itp.extraps, policies, hints, mono
     )
 
-    hx = _get_h(itp.spacings[1], ix);  hy = _get_h(itp.spacings[2], iy)
-    inv_hx = _get_inv_h(itp.spacings[1], ix); inv_hy = _get_inv_h(itp.spacings[2], iy)
+    hx = _get_h(itp.grids[1], ix);  hy = _get_h(itp.grids[2], iy)
+    inv_hx = _get_inv_h(itp.grids[1], ix); inv_hy = _get_inv_h(itp.grids[2], iy)
     dLx = x_eval - xL;  dLy = y_eval - yL
 
     return (itp.nodal_derivs.partials, (ix, iy), (hx, hy), (inv_hx, inv_hy), (dLx, dLy))

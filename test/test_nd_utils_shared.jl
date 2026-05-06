@@ -14,7 +14,7 @@
     # Access internal functions for testing
     import FastInterpolations: _resolve_extrap, _resolve_search_nd, _resolve_bcs_nd,
         _resolve_side_nd, _validate_nd_grids,
-        _promote_grid_eltype, _convert_grids_typed, _create_spacings_typed,
+        _promote_grid_eltype, _convert_grids_typed,
         _check_mode_periodic_compat, _check_modes_periodic_compat,
         _mode_to_modes_with_periodic, _modes_to_modes_with_periodic
 
@@ -217,17 +217,6 @@
             @test _promote_grid_eltype(grids_f32) === Float32
         end
 
-        @testset "_create_spacings_typed" begin
-            # Range → ScalarSpacing
-            x_range = range(0.0, 1.0, 11)
-            # Vector → VectorSpacing
-            y_vec = [0.0, 0.3, 0.7, 1.0]
-
-            spacings = _create_spacings_typed((x_range, y_vec))
-            @test length(spacings) == 2
-            # First should be ScalarSpacing (uniform grid)
-            # Second should be VectorSpacing (non-uniform)
-        end
     end
 
     # ========================================
@@ -393,4 +382,41 @@ end
     @test _search_all_intervals((), (), (), ()) === ((), (), ())
     @test _search_all_intervals((), (), (), (), ()) === ((), (), ())
     @test _compute_all_local_params((), (), (), ()) === ((), (), ())
+end
+
+@testitem "_first_fill_value defensive `error` path" begin
+    using FastInterpolations: _first_fill_value
+
+    # Normal callers guard with `_is_fill_oob` so the no-`FillExtrap` arm is
+    # unreachable, but the defensive `error("unreachable: ...")` body still
+    # ships in the binary. Cover it by direct invocation with extraps tuples
+    # that contain no FillExtrap — exercises the loop-then-error branch.
+    @test_throws ErrorException _first_fill_value(())
+    @test_throws ErrorException _first_fill_value((NoExtrap(), ClampExtrap()))
+end
+
+@testitem "_check_mono_nd generic-queries protocol — coverage" begin
+    using FastInterpolations: _check_mono_nd, _query_length, _query_extract
+
+    # The third `_check_mono_nd` overload (generic queries protocol) is the
+    # fallback for any container that implements `_query_length` /
+    # `_query_extract` but is neither an SoA `Tuple{Vararg{AbstractVector,N}}`
+    # nor an AoS `AbstractVector` (which hit the more specific overloads).
+    # No production caller currently routes through this path, so cover it
+    # via a custom container.
+    struct MyQ
+        pts::Vector{NTuple{2, Float64}}
+    end
+    FastInterpolations._query_length(q::MyQ) = length(q.pts)
+    FastInterpolations._query_extract(q::MyQ, i) = q.pts[i]
+
+    # Short queries (< 8) → fast-path all-false (line 719).
+    short = MyQ([(0.0, 0.0), (0.5, 0.5), (1.0, 1.0)])
+    @test _check_mono_nd((BinarySearch(), BinarySearch()), short) ===
+        (false, false)
+
+    # Long queries (≥ 8) → AoS mono-check path (lines 720-721).
+    long = MyQ([(Float64(i), Float64(i)) for i in 1:10])
+    @test _check_mono_nd((BinarySearch(), BinarySearch()), long) isa
+        NTuple{2, Bool}
 end

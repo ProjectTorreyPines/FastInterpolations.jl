@@ -124,15 +124,11 @@ end
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
     validate_polyfit_points(bc_p, length(x_eff))
 
-    # Compute spacing as a transient — used by the solver for coefficient
-    # computation, then GC'd. Not stored in the struct; the wrapped axis
-    # carries `h`/`inv_h` directly via `_get_h(x, i)`.
-    spacing = _create_spacing(x_eff)
-
     # Compute coefficients (d::Tc, a::Tc where Tc = _output_eltype(Tv, Tg)).
     # Solver's output buffer is allocated with the right element type
-    # regardless of y's raw eltype, so passing raw y is safe.
-    d, a = _compute_quadratic_coeffs(x_eff, y, bc_p, spacing)
+    # regardless of y's raw eltype, so passing raw y is safe. The wrapped
+    # axis `x_eff` carries `h`/`inv_h` directly via `_get_h(x, i)`.
+    d, a = _compute_quadratic_coeffs(x_eff, y, bc_p)
 
     # 3-arg: materialize WrapExtrap{Nothing} + promote FillExtrap value type.
     extrap_p = _resolve_extrap(extrap, x_eff, Tv)

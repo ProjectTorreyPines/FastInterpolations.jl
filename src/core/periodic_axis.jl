@@ -27,7 +27,7 @@
 # span, the `inner[1] + period` virtual endpoint at the seam). The data
 # companion is purely a cyclic-indexing wrapper with no coord semantics.
 #
-# Why this matters for spacing-cleanup: `_CachedVector.inv_h` has length n-1
+# Why a wrapper instead of `_CachedVector` extension: `_CachedVector.inv_h` has length n-1
 # (only normal cells). Without this wrapper, the seam cell (idx=n, idx_R=1
 # wrap) would force every eval kernel to special-case OOB lookups. With this
 # wrapper, search returns `idx_R = n+1` (virtual), `_getindex(g, n+1)` yields
@@ -388,14 +388,6 @@ end
 # `inv_h` (avoids `(R - L)` cancellation in the denominator).
 @inline _alpha_of(q::Real, L::Real, R::Real, g::_ExclusivePeriodicAxis) =
     _alpha_of(q, L, R, g.inner)
-
-# `_create_spacing` for the wrapper: defer to inner so the spacing buffer has
-# `length(inner) - 1 = n - 1` entries (interior cells only — the seam cell is
-# handled per-query via the wrapper-level `_get_h` seam fast-path). The default
-# `_create_spacing(::AbstractVector)` would walk `1:length(g)-1 = 1:n` and read
-# `g[n+1]` (the virtual seam slot), forwarding to `inner[n+1]` and tripping a
-# `BoundsError`.
-@inline _create_spacing(g::_ExclusivePeriodicAxis) = _create_spacing(g.inner)
 
 # ========================================
 # View specialization: preserve wrapper for full-virtual range

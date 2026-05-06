@@ -257,6 +257,41 @@ end
 
 # ── Exclusive periodic in-place (pool-allocated work buffer) ──
 
+# Per-axis seam fold: literal dimension `d` ensures `selectdim(_, d, _)`
+# specializes at compile time — runtime `d` produces SubArrays whose type
+# depends on the dim, forcing per-call boxing on heterogeneous BC tuples.
+@inline _seam_fold_axis!(f_work, ::Val{d}, gs_d::Int, ::PeriodicBC{:exclusive}) where {d} =
+    (selectdim(f_work, d, 1) .+= selectdim(f_work, d, gs_d); nothing)
+@inline _seam_fold_axis!(f_work, ::Val{d}, ::Int, ::AbstractBC) where {d} = nothing
+# `HeteroAdjointND` stores `nothing` for non-derivative (Linear/Constant) axes,
+# which can never be `PeriodicBC{:exclusive}` — treat as no-op.
+@inline _seam_fold_axis!(f_work, ::Val{d}, ::Int, ::Nothing) where {d} = nothing
+
+# Compile-time-unrolled seam-fold loop (one branch per axis, all literal `d`).
+@generated function _apply_seam_fold!(
+        f_work::AbstractArray{T, N},
+        bcs::NTuple{N, Union{AbstractBC, Nothing}},
+        gs::NTuple{N, Int}
+    ) where {T, N}
+    body = [:(_seam_fold_axis!(f_work, Val($d), gs[$d], bcs[$d])) for d in 1:N]
+    return quote
+        $(body...)
+        return nothing
+    end
+end
+
+# Compile-time-unrolled work→user trim view (replaces `view(f_work, ranges...)`
+# where `ranges = ntuple(d -> 1:out_size[d], Val(N))` — splatting an `ntuple`
+# of UnitRanges produces a runtime-dim view whose result type the compiler
+# can't fold, causing minor boxing on `f_bar .= view(...)`).
+@generated function _view_first_n(
+        f_work::AbstractArray{T, N},
+        out_size::NTuple{N, Int}
+    ) where {T, N}
+    args = [:(1:out_size[$d]) for d in 1:N]
+    return :(view(f_work, $(args...)))
+end
+
 @with_pool pool function _adjoint_apply_exclusive_nd!(
         f_bar::AbstractArray{Tv, N},
         adj::AbstractAdjointND{Tg, N},
@@ -266,15 +301,8 @@ end
     gs = _grid_size(adj)
     f_work = zeros!(pool, Tv, gs...)
     _adjoint_nd_apply!(f_work, adj, y_bar, ops)
-    bcs = _adjoint_bcs(adj)
-    for d in 1:N
-        if bcs[d] isa PeriodicBC{:exclusive}
-            selectdim(f_work, d, 1) .+= selectdim(f_work, d, gs[d])
-        end
-    end
-    out_size = _adjoint_output_size(adj)
-    ranges = ntuple(d -> 1:out_size[d], Val(N))
-    f_bar .= view(f_work, ranges...)
+    _apply_seam_fold!(f_work, _adjoint_bcs(adj), gs)
+    f_bar .= _view_first_n(f_work, _adjoint_output_size(adj))
     return nothing
 end
 

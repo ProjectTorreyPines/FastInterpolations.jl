@@ -28,7 +28,6 @@
     nx = length(x)
     K = n_series(s)
     vecs = _series_vectors(s)
-    spacing = _create_spacing_pooled(pool, x)
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
     Tv_out = _value_type(_series_eltype(s), Tg)
@@ -41,7 +40,7 @@
     @inbounds for k in 1:K
         copyto!(y_buf, 1, vecs[k], 1, nx)
         bc_promoted = _normalize_bc(bc, first(y_buf))
-        _compute_quadratic_coeffs!(d, a, spacing, x, y_buf, bc_promoted)
+        _compute_quadratic_coeffs!(d, a, x, y_buf, bc_promoted)
         output[k] = _quadratic_eval_at_anchor(y_buf, a, d, aq, deriv, extrap)
     end
     return output
@@ -66,7 +65,6 @@ end
     _check_domain(x, xq, extrap)
     nx = length(x)
     vecs = _series_vectors(s)
-    spacing = _create_spacing_pooled(pool, x)
     searcher = _resolve_search(x, xq, search, hint)
     aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
     Tv_out = _value_type(_series_eltype(s), Tg)
@@ -78,7 +76,7 @@ end
     @inbounds for k in eachindex(output)
         copyto!(y_buf, 1, vecs[k], 1, nx)
         bc_promoted = _normalize_bc(bc, first(y_buf))
-        _compute_quadratic_coeffs!(d, a, spacing, x, y_buf, bc_promoted)
+        _compute_quadratic_coeffs!(d, a, x, y_buf, bc_promoted)
         output[k] = _quadratic_eval_at_anchor(y_buf, a, d, aq, deriv, extrap)
     end
     return output
@@ -108,7 +106,6 @@ end
     extrap_eff = _check_domain(x, xqs, extrap)
     nx = length(x)
     vecs = _series_vectors(s)
-    spacing = _create_spacing_pooled(pool, x)
     Tv_out = _value_type(_series_eltype(s), Tg)
     Tg_actual = eltype(x)
     Tcoeff = _output_eltype(_series_eltype(s), Tg_actual)
@@ -125,7 +122,7 @@ end
     @inbounds for k in 1:K
         copyto!(y_buf, 1, vecs[k], 1, nx)
         bc_promoted = _normalize_bc(bc, first(y_buf))
-        _compute_quadratic_coeffs!(d, a, spacing, x, y_buf, bc_promoted)
+        _compute_quadratic_coeffs!(d, a, x, y_buf, bc_promoted)
         for j in eachindex(xqs)
             outputs[k][j] = _quadratic_eval_at_anchor(vecs[k], a, d, aq_vec[j], deriv, extrap_eff)
         end

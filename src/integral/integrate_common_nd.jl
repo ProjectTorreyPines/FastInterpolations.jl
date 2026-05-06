@@ -11,10 +11,9 @@
 end
 
 # Locate cell index ranges for ND integration bounds.
-# Uses the 3-arg `search_interval(s, grid, q)` (no spacing) which dispatches
-# correctly for raw Range/Vector and wrapped grids alike. Avoids requiring a
-# pre-computed `AbstractGridSpacing` tuple — all post-PR1 ND struct types are
-# supported uniformly (the field-less Linear/Constant/Hetero ND included).
+# Uses 3-arg `search_interval(s, grid, q)` which dispatches correctly for raw
+# Range/Vector and wrapped grids alike — `_get_h` is read from the wrapped
+# axis directly when available.
 @inline function _nd_cell_ranges(
         grids::NTuple{N, AbstractVector},
         lo::Tuple{Vararg{Real, N}},

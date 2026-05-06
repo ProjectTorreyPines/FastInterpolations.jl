@@ -16,7 +16,7 @@
 # ========================================
 
 """
-    ConstantAdjointND{Tg, N, G, S, EP, SD}
+    ConstantAdjointND{Tg, N, G, B, EP, SD}
 
 Adjoint (transpose) operator for N-dimensional constant interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward ND constant interpolation weight matrix.
@@ -27,8 +27,11 @@ The same adjoint can be applied to any `ȳ` vector.
 # Type Parameters
 - `Tg`: Grid type (unconstrained — supports duck types)
 - `N`:   Number of dimensions
-- `G`:   Grid tuple type
-- `S`:   Spacing tuple type
+- `G`:   Grid tuple type — wrapped axes (`_CachedRange` / `_CachedVector` /
+         `_ExclusivePeriodicAxis`) carry cached `h`/`inv_h`; no separate
+         `spacings` field needed.
+- `B`:   Per-axis BC tuple type. Stored so the ND adjoint protocol can detect
+         `PeriodicBC{:exclusive}` axes and apply post-apply seam fold + trim.
 - `EP`:  Extrapolation tuple type
 - `SD`:  Side selection tuple type
 
@@ -36,6 +39,7 @@ The same adjoint can be applied to any `ȳ` vector.
 Pure single-point scatter operator — no weights, no caches, no solve step.
 Each query scatters to exactly 1 grid point (vs 2^N for linear, 4^N for cubic).
 Per-axis anchors reuse `_ConstantAnchoredQuery` with offset computed at scatter time.
+PeriodicBC support is wrapper-based (same as LinearAdjointND).
 
 # Usage
 ```julia
@@ -48,29 +52,28 @@ struct ConstantAdjointND{
         Tg,
         N,
         G <: NTuple{N, AbstractVector{Tg}},
-        S <: NTuple{N, AbstractGridSpacing{Tg}},
+        B <: NTuple{N, AbstractBC},
         EP <: Tuple{Vararg{AbstractExtrap, N}},
         SD <: Tuple{Vararg{AbstractSide, N}},
     } <: AbstractAdjointND{Tg, N}
     grids::G
-    spacings::S
+    bcs::B
     extraps::EP
     sides::SD
     anchors::Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tg}}}
     grid_size::NTuple{N, Int}
 
-    # Inner constructor: copy() for mutation safety.
-    # copy() on immutable Range types is a no-op (zero allocation).
-    # typeof() rebinds G after copy (e.g. SubArray → Vector).
+    # Inner ctor: ownership copy via wrapper-aware `_convert_copy`,
+    # idempotent `_cache_axis` insurance for direct ctor calls.
     function ConstantAdjointND(
-            grids::NTuple{N, AbstractVector{Tg}}, spacings::S, extraps::EP, sides::SD,
+            grids::Tuple{Vararg{AbstractVector{Tg}, N}}, bcs::B, extraps::EP, sides::SD,
             anchors::Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tg}}}, grid_size::NTuple{N, Int}
         ) where {
-            Tg, N, S <: NTuple{N, AbstractGridSpacing{Tg}},
+            Tg, N, B <: NTuple{N, AbstractBC},
             EP <: Tuple{Vararg{AbstractExtrap, N}}, SD <: Tuple{Vararg{AbstractSide, N}},
         }
-        grids_c = map(copy, grids)
-        return new{Tg, N, typeof(grids_c), S, EP, SD}(grids_c, spacings, extraps, sides, anchors, grid_size)
+        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
+        return new{Tg, N, typeof(grids_c), B, EP, SD}(grids_c, bcs, extraps, sides, anchors, grid_size)
     end
 end
 
@@ -81,9 +84,10 @@ end
 @inline _n_queries(adj::ConstantAdjointND) = length(adj.anchors)
 @inline _grid_size(adj::ConstantAdjointND) = adj.grid_size
 
-# Constant has no periodic BCs — return non-periodic sentinel tuple.
-@inline _adjoint_bcs(adj::ConstantAdjointND{Tg, N}) where {Tg, N} =
-    ntuple(_ -> NoExtrap(), Val(N))
+# Per-axis BCs from struct field. The ND adjoint protocol checks
+# `bcs[d] isa PeriodicBC{:exclusive}` for output sizing and post-apply
+# seam fold (`_adjoint_apply_exclusive_nd!`).
+@inline _adjoint_bcs(adj::ConstantAdjointND) = adj.bcs
 
 @inline _adjoint_nd_apply!(f_bar, adj::ConstantAdjointND, y_bar, ops) =
     _constant_adjoint_nd_apply!(f_bar, adj, y_bar, ops)
@@ -93,7 +97,7 @@ end
 # ========================================
 
 Base.ndims(::ConstantAdjointND{Tg, N}) where {Tg, N} = N + 1
-function Base.size(adj::ConstantAdjointND{Tg, N}) where {Tg, N}
+function Base.size(adj::ConstantAdjointND)
     out_size = _adjoint_output_size(adj)
     return (out_size..., _n_queries(adj))
 end

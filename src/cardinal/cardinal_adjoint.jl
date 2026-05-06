@@ -22,7 +22,6 @@
 # - _scatter_hermite_adjoint! (hermite_adjoint.jl)
 # - AbstractAdjoint1D, _throw_adjoint_grid_too_small (adjoint_protocol.jl)
 # - _promote_grid_float, _to_float (promotion helpers)
-# - _create_spacing (grid_spacing.jl)
 
 # ========================================
 # CardinalAdjoint1D Struct

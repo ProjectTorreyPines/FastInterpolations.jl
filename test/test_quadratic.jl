@@ -213,13 +213,13 @@ end
 @testitem "Quadratic Interpolation - Coefficient Computation" begin
     using FastInterpolations: _compute_quadratic_secants!, _fill_slopes!,
         _forward_recurrence!, _backward_recurrence!,
-        _compute_quadratic_coefficients!, VectorSpacing
+        _compute_quadratic_coefficients!
 
     @testset "secant computation" begin
         y = [0.0, 1.0, 4.0, 9.0]  # x²
         h = [1.0, 1.0, 1.0]       # uniform grid h=1
         inv_h = [1.0, 1.0, 1.0]
-        spacing = VectorSpacing{Float64}(h, inv_h)
+        spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
         s = zeros(3)
 
         _compute_quadratic_secants!(s, y, spacing)
@@ -235,7 +235,7 @@ end
         bc = Left(Deriv1(3.0))
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
-        spacing = VectorSpacing{Float64}(h, inv.(h))
+        spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
         d = zeros(4)
         # Dummy x, y (unused by Deriv1)
         x_dummy = [0.0, 1.0, 2.0, 3.0]
@@ -258,7 +258,7 @@ end
         bc = Left(Deriv2(2.0))
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
-        spacing = VectorSpacing{Float64}(h, inv.(h))
+        spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
         d = zeros(4)
         # Dummy x, y (unused by Deriv2)
         x_dummy = [0.0, 1.0, 2.0, 3.0]
@@ -281,7 +281,7 @@ end
         bc = Right(Deriv1(7.0))
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
-        spacing = VectorSpacing{Float64}(h, inv.(h))
+        spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
         d = zeros(4)
         # Dummy x, y (unused by Deriv1)
         x_dummy = [0.0, 1.0, 2.0, 3.0]
@@ -304,7 +304,7 @@ end
         bc = Right(Deriv2(2.0))
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
-        spacing = VectorSpacing{Float64}(h, inv.(h))
+        spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
         d = zeros(4)
         # Dummy x, y (unused by Deriv2)
         x_dummy = [0.0, 1.0, 2.0, 3.0]
@@ -362,7 +362,7 @@ end
         d = [0.0, 2.0, 4.0, 6.0]
         h = [1.0, 1.0, 1.0]
         inv_h = [1.0, 1.0, 1.0]
-        spacing = VectorSpacing{Float64}(h, inv_h)
+        spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
         a = zeros(3)
 
         _compute_quadratic_coefficients!(a, d, s, spacing)
@@ -382,7 +382,7 @@ end
             # Optimal d[1] = 1/3 (gives lower curvature than d[1]=0)
             s = [1.0, 3.0, 5.0]
             h = [1.0, 1.0, 1.0]
-            spacing = VectorSpacing{Float64}(h, inv.(h))
+            spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
             d = zeros(4)
             # Dummy x, y (unused by MinCurvFit)
             x_dummy = [0.0, 1.0, 2.0, 3.0]
@@ -407,7 +407,7 @@ end
             # Test that optimization produces finite values on non-uniform grid
             s = [2.0, 1.0, 3.0]  # varying secants
             h = [0.5, 1.5, 1.0]  # non-uniform spacing
-            spacing = VectorSpacing{Float64}(h, inv.(h))
+            spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
             d = zeros(4)
             # Dummy x, y (unused by MinCurvFit)
             x_dummy = [0.0, 0.5, 2.0, 3.0]
@@ -426,7 +426,7 @@ end
             # n=2: only one segment
             s = [2.0]  # single secant
             h = [1.0]
-            spacing = VectorSpacing{Float64}(h, inv.(h))
+            spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
             d = zeros(2)
             # Dummy x, y (unused by MinCurvFit)
             x_dummy = [0.0, 1.0]
@@ -444,7 +444,7 @@ end
         @testset "Float32 support" begin
             s = Float32[1.0, 3.0, 5.0]
             h = Float32[1.0, 1.0, 1.0]
-            spacing = VectorSpacing{Float32}(h, inv.(h))
+            spacing = vcat(Float32(0.0), cumsum(h))   # axis matching h (Float32)
             d = zeros(Float32, 4)
             # Dummy x, y (unused by MinCurvFit)
             x_dummy = Float32[0.0, 1.0, 2.0, 3.0]
@@ -464,7 +464,7 @@ end
             # compared to Left(Deriv2(0)) which forces first interval linear
             s = [1.0, 3.0, 5.0]
             h = [1.0, 1.0, 1.0]
-            spacing = VectorSpacing{Float64}(h, inv.(h))
+            spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
             # Dummy x, y (unused by MinCurvFit and Deriv2)
             x_dummy = [0.0, 1.0, 2.0, 3.0]
             y_dummy = [0.0, 1.0, 4.0, 9.0]
@@ -1568,7 +1568,7 @@ end
 # Group 12: MinCurvFit Mathematical Verification (Phase 4)
 # ============================================================================
 @testitem "Quadratic Interpolation - MinCurvFit Mathematical Verification" begin
-    using FastInterpolations: _fill_slopes!, _compute_quadratic_secants!, VectorSpacing
+    using FastInterpolations: _fill_slopes!, _compute_quadratic_secants!
 
     # ========================================
     # Test 1: d[1] Optimality Verification
@@ -1581,7 +1581,7 @@ end
         @testset "uniform grid" begin
             s = [1.0, 3.0, 5.0]  # secants for x² on [0,1,2,3]
             h = [1.0, 1.0, 1.0]
-            spacing = VectorSpacing{Float64}(h, inv.(h))
+            spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
             d_opt = zeros(4)
             x_dummy = [0.0, 1.0, 2.0, 3.0]
             y_dummy = x_dummy .^ 2
@@ -1609,7 +1609,7 @@ end
         @testset "non-uniform grid" begin
             s = [2.0, 1.0, 3.0, 0.5]  # varying secants
             h = [0.5, 1.5, 1.0, 2.0]  # non-uniform spacing
-            spacing = VectorSpacing{Float64}(h, inv.(h))
+            spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
             n = length(h) + 1
             d_opt = zeros(n)
             x_dummy = cumsum([0.0; h])  # [0, 0.5, 2.0, 3.0, 5.0]
@@ -1639,7 +1639,7 @@ end
             # df/d(d[1]) = -2 * Σ α[i]*(s[i] - d[i])/h[i] where α[i] = (-1)^(i+1)
             s = [1.0, 3.0, 5.0, 7.0]
             h = [0.5, 1.0, 1.5, 0.8]
-            spacing = VectorSpacing{Float64}(h, inv.(h))
+            spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
             n = length(h) + 1
             d_opt = zeros(n)
             x_dummy = cumsum([0.0; h])
@@ -1699,7 +1699,7 @@ end
             # Compute secants and spacing
             h = diff(x)
             inv_h = 1.0 ./ h
-            spacing = VectorSpacing{Float64}(h, inv_h)
+            spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
             s = diff(y) .* inv_h
             n = length(x)
 
@@ -1898,7 +1898,7 @@ end
 
         h = diff(x)
         inv_h = 1.0 ./ h
-        spacing = VectorSpacing{Float64}(h, inv_h)
+        spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
         s = diff(y) .* inv_h
         n = length(x)
 
@@ -2098,7 +2098,7 @@ end
 # Group 15: QuadraticFit _fill_slopes! Direct Tests (Phase 2)
 # ============================================================================
 @testitem "Quadratic Interpolation - QuadraticFit _fill_slopes!" begin
-    using FastInterpolations: _fill_slopes!, VectorSpacing
+    using FastInterpolations: _fill_slopes!
 
     @testset "Left(QuadraticFit) slope computation" begin
         # For f(x) = x² on uniform grid [0,1,2,3,4]
@@ -2106,7 +2106,7 @@ end
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y = x .^ 2
         h = diff(x)
-        spacing = VectorSpacing{Float64}(h, inv.(h))
+        spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
         s = diff(y) ./ h  # [1, 3, 5, 7]
         d = zeros(5)
 
@@ -2129,7 +2129,7 @@ end
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y = x .^ 2
         h = diff(x)
-        spacing = VectorSpacing{Float64}(h, inv.(h))
+        spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
         s = diff(y) ./ h  # [1, 3, 5, 7]
         d = zeros(5)
 
@@ -2153,7 +2153,7 @@ end
         x = [0.0, 0.5, 1.5]
         y = x .^ 2  # [0, 0.25, 2.25]
         h = diff(x)  # [0.5, 1.0]
-        spacing = VectorSpacing{Float64}(h, inv.(h))
+        spacing = vcat(0.0, cumsum(h))   # axis matching h (solver reads via _get_h)
         s = diff(y) ./ h  # [0.5, 2.0]
         d = zeros(3)
 

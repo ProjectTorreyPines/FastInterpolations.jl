@@ -194,8 +194,8 @@ end
 # and the batch dispatcher's spacings pre-compute still use `_has_any_local_method`.
 #
 # Rationale: the windowed path runs `_search_all_intervals(q_eval, grids,
-# ...)` and reads per-axis cell widths via `_get_h(grid, idx)`. Post-PR1
-# the persistent HeteroInterpolantND wraps grids in `_CachedRange` /
+# ...)` and reads per-axis cell widths via `_get_h(grid, idx)`. The
+# persistent HeteroInterpolantND wraps grids in `_CachedRange` /
 # `_CachedVector` / `_ExclusivePeriodicAxis`, so `h`/`inv_h` are cached
 # directly on the grid wrapper — zero per-call allocation. The scalar
 # one-shot path operates on raw user grids; for Hermite methods the

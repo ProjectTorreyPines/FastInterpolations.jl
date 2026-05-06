@@ -141,13 +141,12 @@ Zero-allocation after warmup (pool reuse).
     #    (internally uses autocached 1D caches + nested @with_pool for temp buffers)
     _compute_nd_partials!(partials, grids_p, data_p, bcs_p)
 
-    # 4. Create spacings (ScalarSpacing for Range grids = zero alloc)
-    spacings = _create_spacings_pooled(pool, grids_p)
-
-    # 5. Eval pipeline (all standalone functions, no Interpolant needed)
+    # 4. Eval pipeline (all standalone functions, no Interpolant needed).
+    # Axis-only forms — `grids_p` axes carry `h`/`inv_h` directly via `_get_h`/
+    # `_get_inv_h` (cached lookup for wrapped axes, on-the-fly diff for raw Vector).
     q_evals = _handle_all_extraps(query, grids_p, extraps_eff)
-    indices, Ls, _ = _search_all_intervals(q_evals, grids_p, spacings, searches, hints)
-    hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
+    indices, Ls, _ = _search_all_intervals(q_evals, grids_p, searches, hints)
+    hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls)
 
     # 6. Tensor-product kernel evaluation
     return _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
@@ -188,9 +187,9 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
     _compute_nd_partials!(partials, grids_p, data_p, bcs_p)
-    spacings = _create_spacings_pooled(pool, grids_p)
 
-    # Eval loop: search + kernel per query point
+    # Eval loop: search + kernel per query point. Axis-only helpers read
+    # `h`/`inv_h` directly from `grids_p` (no transient pool spacings).
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
@@ -198,8 +197,8 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
             output[k] = oob_val; continue
         end
         q_evals = _handle_all_extraps(query_k, grids_p, extraps_eff)
-        indices, Ls, _ = _search_all_intervals(q_evals, grids_p, spacings, policies, hints, mono)
-        hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
+        indices, Ls, _ = _search_all_intervals(q_evals, grids_p, policies, hints, mono)
+        hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls)
         output[k] = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
     end
     return output

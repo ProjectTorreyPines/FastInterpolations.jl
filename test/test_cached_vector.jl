@@ -113,29 +113,3 @@ end
         @test c.inv_h == [4 // 1, 4 // 1, 4 // 1, 4 // 1]
     end
 end
-
-@testitem "_CachedVector backward-compat _create_spacing shim" begin
-    using FastInterpolations: _CachedVector, _create_spacing, VectorSpacing
-
-    @testset "Float64 shim equivalence" begin
-        x = [0.0, 0.3, 0.7, 1.0]
-        c = _CachedVector(x)
-        s_via_shim = _create_spacing(c)
-        s_direct = _create_spacing(x)
-
-        # Shim returns VectorSpacing extracted from cached fields
-        @test s_via_shim isa VectorSpacing{Float64, Float64}
-        @test s_via_shim.h == s_direct.h
-        @test s_via_shim.inv_h == s_direct.inv_h
-    end
-
-    @testset "Int grid shim → VectorSpacing{Int, Float64}" begin
-        x = [0, 1, 3, 6]
-        c = _CachedVector(x)
-        s = _create_spacing(c)
-
-        @test s isa VectorSpacing{Int, Float64}
-        @test s.h == [1, 2, 3]
-        @test s.inv_h ≈ [1.0, 0.5, 1 / 3]
-    end
-end

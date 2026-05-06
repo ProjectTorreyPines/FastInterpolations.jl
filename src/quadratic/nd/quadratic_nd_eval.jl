@@ -92,7 +92,7 @@ end
     q_evals = _handle_all_extraps(query, itp.grids, itp.extraps)
     # Wrapped grids carry cached `h`/`inv_h` directly — use the spacings-free
     # overloads (5-arg `_search_all_intervals`, 4-arg `_compute_all_local_params`)
-    # already added in PR1 for Linear/Constant/Hetero ND.
+    # shared with Linear/Constant/Hetero ND.
     indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls)
 

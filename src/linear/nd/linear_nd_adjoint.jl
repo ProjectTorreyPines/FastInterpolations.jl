@@ -15,9 +15,15 @@
 # ========================================
 
 """
-    _bake_linear_nd_anchors(grids, spacings, queries, extraps)
+    _bake_linear_nd_anchors(grids, queries, extraps)
 
 Precompute cell indices and linear interpolation weights for each query point.
+
+Reads `_get_h(grids[d], idx)` / `_get_inv_h(grids[d], idx)` directly from the
+wrapped axes (`_CachedRange` / `_CachedVector` / `_ExclusivePeriodicAxis`).
+For `_ExclusivePeriodicAxis`, `search_interval` returns `idx_R = 1` for the
+seam cell and `_get_h` returns the seam-cell width — periodic-aware bake
+falls out of the wrapper-level dispatch with no method-specific branching.
 
 Per-axis weights:
 - `w_value = (1-α, α)` for EvalValue scatter
@@ -29,7 +35,6 @@ OOB handling per axis (baked at construction):
 """
 function _bake_linear_nd_anchors(
         grids::NTuple{N, AbstractVector{Tg}},
-        spacings::NTuple{N, AbstractGridSpacing{Tg}},
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N, Tg}
@@ -43,9 +48,9 @@ function _bake_linear_nd_anchors(
         idx_and_weights = ntuple(Val(N)) do d
             xq_raw = Tg(query_q[d])
             xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
-            idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
-            h = _get_h(spacings[d], idx)
-            inv_h = _get_inv_h(spacings[d], idx)
+            idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], xq_d)
+            h = _get_h(grids[d], idx)
+            inv_h = _get_inv_h(grids[d], idx)
             α = (xq_d - xL) * inv_h
             is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])
             w_val = (one(Tg) - α, α)
@@ -179,17 +184,24 @@ end
 # ========================================
 
 """
-    linear_adjoint(grids::NTuple{N}, queries; extrap=NoExtrap())
+    linear_adjoint(grids::NTuple{N}, queries; bc=NoBC(), extrap=NoExtrap())
 
 Construct an N-dimensional linear adjoint operator.
 
 # Arguments
 - `grids`: N-tuple of grid vectors, one per dimension
 - `queries`: Query points (SoA tuple of vectors, AoS, single tuple, SVector, etc.)
-- `extrap`: Extrapolation mode (single or per-axis tuple)
+- `bc`: Boundary condition (single `AbstractBC` or per-axis tuple). Use
+  `PeriodicBC()` for `:inclusive` periodicity (closed grid with `f[1] == f[end]`)
+  or `PeriodicBC(endpoint=:exclusive, period=...)` for `:exclusive` periodicity
+  (half-open grid). Default `NoBC()`.
+- `extrap`: Extrapolation mode (single or per-axis tuple). Auto-promoted to
+  `WrapExtrap` on periodic axes.
 
 # Returns
 `LinearAdjointND` operator that can be called as `adj(y_bar)` or `adj(f_bar, y_bar)`.
+For `:exclusive` periodic axes, the output `f_bar` shape matches the user-supplied
+grid (length `n` along that axis), with the seam contribution folded into index 1.
 
 # Example
 ```julia
@@ -200,84 +212,115 @@ yq = rand(100)
 
 adj = linear_adjoint((x, y), (xq, yq))
 f_bar = adj(y_bar)   # returns 20×15 matrix
+
+# Periodic example (:exclusive on axis 1)
+x_excl = collect(range(0.0, step = 1.0/20, length = 20))   # half-open
+adj_p = linear_adjoint((x_excl, y), (xq, yq);
+    bc = (PeriodicBC(endpoint = :exclusive, period = 1.0), NoBC()))
 ```
 """
 function linear_adjoint(
         grids::NTuple{N, AbstractVector},
         queries::Tuple{AbstractVector, Vararg{AbstractVector}};
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         _extra...
     ) where {N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
-    Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
-    grids_typed = _convert_grids_typed(grids, Tg)
-    # 5-arg `_resolve_extrap` (no BC): expand + promote + per-axis 2-arg
-    # materialize — upgrades WrapExtrap{Nothing} to WrapExtrap(grid).
-    extraps = _resolve_extrap(extrap, nothing, grids_typed, Val(N), Tg)
-    return _build_linear_nd_adjoint(grids_typed, queries, extraps)
+    return _linear_adjoint_dispatch(grids, queries, bc, extrap)
 end
 
 # Single-tuple query: linear_adjoint((x, y), (0.5, 0.5); ...)
 function linear_adjoint(
         grids::NTuple{N, AbstractVector},
         query::Tuple{Vararg{Real, N}};
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         _extra...
     ) where {N}
-    return linear_adjoint(grids, (query,); extrap = extrap)
+    return linear_adjoint(grids, (query,); bc = bc, extrap = extrap)
 end
 
 # Single-vector query: linear_adjoint((x, y), SVector(0.5, 0.5); ...)
 function linear_adjoint(
         grids::NTuple{N, AbstractVector},
         query::AbstractVector{<:Real};
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         _extra...
     ) where {N}
     length(query) == N || _throw_ndims_mismatch("query elements", N, length(query))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-    return linear_adjoint(grids, (query_tuple,); extrap = extrap)
+    return linear_adjoint(grids, (query_tuple,); bc = bc, extrap = extrap)
 end
 
 # Generic query fallback
 function linear_adjoint(
         grids::NTuple{N, AbstractVector},
         queries;
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         _extra...
     ) where {N}
     _query_check_ndims(queries, Val(N))
+    return _linear_adjoint_dispatch(grids, queries, bc, extrap)
+end
+
+# Shared resolution path (called by every public overload above).
+@inline function _linear_adjoint_dispatch(
+        grids::NTuple{N, AbstractVector}, queries, bc, extrap
+    ) where {N}
     Tg = _promote_grid_eltype(grids)
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
-    # 5-arg `_resolve_extrap` (no BC): expand + promote + per-axis 2-arg
-    # materialize — upgrades WrapExtrap{Nothing} to WrapExtrap(grid).
-    extraps = _resolve_extrap(extrap, nothing, grids_typed, Val(N), Tg)
-    return _build_linear_nd_adjoint(grids_typed, queries, extraps)
+
+    bcs = _resolve_bcs_nd(bc, Val(N))
+    # BC-aware axis wrap: `:exclusive` → `_ExclusivePeriodicAxis(length+1 logical)`.
+    # The wrapper exposes virtual seam point `inner[1] + period` for searches
+    # near `xq >= inner[end]`, returning `idx_R = 1` so the scatter writes the
+    # seam contribution to index 1 directly.
+    #
+    # Use the 2-arg `_cache_axis` (no Tg closure) — Tg promotion was already
+    # applied by `_convert_grids_typed`, and per-element dispatch via `map`
+    # gives concrete return types for `@inferred` stability. Mirrors the
+    # forward `LinearInterpolantND` pattern at `linear_nd_interpolant.jl:82`.
+    grids_typed = map(_cache_axis, grids_typed, bcs)
+
+    # 5-arg `_resolve_extrap` with bcs: validates extrap/BC compat, auto-
+    # promotes `WrapExtrap` on periodic axes, materializes per-axis.
+    extraps = _resolve_extrap(extrap, bcs, grids_typed, Val(N), Tg)
+    return _build_linear_nd_adjoint(grids_typed, queries, bcs, extraps)
 end
 
 """
-    _build_linear_nd_adjoint(grids, queries, extraps)
+    _build_linear_nd_adjoint(grids, queries, bcs, extraps)
 
 Internal builder for `LinearAdjointND`. Separated from the public API so that
 `Tg` is bound via the argument type, making the return type fully inferrable.
+
+`grids` here are already wrapped via `_cache_axis(g, bc, Tg)`. For `:exclusive`
+periodic axes, `length(grids[d]) == n + 1` (virtual seam point is included
+in the wrapper's logical length), and `grid_size` reflects that internal size.
+The ND adjoint protocol's `_adjoint_output_size` and `_adjoint_apply_exclusive_nd!`
+trim back to `n` for the user-visible output.
 """
 function _build_linear_nd_adjoint(
         grids::NTuple{N, AbstractVector{Tg}},
         queries,
+        bcs::NTuple{N, AbstractBC},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N, Tg}
-    # Validate all axes have at least 2 points (scatter writes to idx and idx+1)
+    # Validate all axes have at least 2 points (scatter writes to idx and idx+1).
+    # For wrapped axes this counts the virtual seam too — `_ExclusivePeriodicAxis`
+    # exposes `length(inner) + 1`, so a 1-point user input would still fail here.
     @inbounds for d in 1:N
         length(grids[d]) >= 2 || _throw_adjoint_grid_too_small(d, length(grids[d]))
     end
 
-    spacings = _create_spacings_typed(grids)
-    anchors = _bake_linear_nd_anchors(grids, spacings, queries, extraps)
+    anchors = _bake_linear_nd_anchors(grids, queries, extraps)
     grid_size = ntuple(d -> length(grids[d]), Val(N))
 
-    return LinearAdjointND(grids, spacings, extraps, anchors, grid_size)
+    return LinearAdjointND(grids, bcs, extraps, anchors, grid_size)
 end
 
 # Matrix materialization inherited from AbstractAdjointND (nd_adjoint_protocol.jl)

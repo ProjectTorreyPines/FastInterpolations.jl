@@ -165,13 +165,19 @@ end
 # The only per-type difference is the weight computation function.
 
 """
-    _bake_nd_anchors_generic(grids, spacings, queries, extraps, weight_fn)
+    _bake_nd_anchors_generic(grids, queries, extraps, weight_fn)
 
 Generic anchor baking for ND adjoint operators that use `_NDAdjointAnchor{Tg, N}`.
-Shared by cubic, quadratic, and hetero adjoint types.
+Shared by Linear, Constant, Cubic, Quadratic, and Hetero ND adjoint types.
 
 `weight_fn(d, t, h, inv_h, dL)` must return `(w0, w1, w2, w3)` — four 4-tuple weight
 sets for derivative orders 0–3.
+
+Reads `_get_h(grids[d], idx)` / `_get_inv_h(grids[d], idx)` directly from the
+wrapped axes (`_CachedRange` / `_CachedVector` / `_ExclusivePeriodicAxis`) or
+on-the-fly diff for raw `Vector`. Periodic-exclusive seam fold is transparent:
+when `grids[d]::_ExclusivePeriodicAxis`, `search_interval` returns `idx_R = 1`
+for the seam cell and `_get_h` returns the seam-cell width `_x_max - inner[n]`.
 
 OOB handling baked into weights at construction time:
 - `FillExtrap`: zeros ALL 4 weight tuples (fill value independent of f)
@@ -179,7 +185,6 @@ OOB handling baked into weights at construction time:
 """
 function _bake_nd_anchors_generic(
         grids::NTuple{N, AbstractVector{Tg}},
-        spacings::NTuple{N, AbstractGridSpacing{Tg}},
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         weight_fn
@@ -194,9 +199,9 @@ function _bake_nd_anchors_generic(
         idx_and_weights = ntuple(Val(N)) do d
             xq_raw = Tg(query_q[d])
             xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
-            idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
-            h = _get_h(spacings[d], idx)
-            inv_h = _get_inv_h(spacings[d], idx)
+            idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], xq_d)
+            h = _get_h(grids[d], idx)
+            inv_h = _get_inv_h(grids[d], idx)
             t = (xq_d - xL) * inv_h
             dL = xq_d - xL
             is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])
@@ -208,9 +213,8 @@ function _bake_nd_anchors_generic(
         w2 = ntuple(d -> idx_and_weights[d][2][3], Val(N))
         w3 = ntuple(d -> idx_and_weights[d][2][4], Val(N))
 
-        # Per-axis OOB weight fixup
         for d in 1:N
-            idx_and_weights[d][3] || continue  # skip in-bounds axes
+            idx_and_weights[d][3] || continue
             ext_d = extraps[d]
             zw = (zero(Tg), zero(Tg), zero(Tg), zero(Tg))
             if ext_d isa FillExtrap

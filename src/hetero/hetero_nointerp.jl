@@ -251,11 +251,11 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             for (k, d) in enumerate(real_dims)
     ]
     # Compile-time check: any windowable axis remaining in the filtered methods?
-    # `_eval_nointerp` is called on a persistent `HeteroInterpolantND`. Post-PR1
-    # spacings are derived from grid wrappers on demand (no separate field), so
-    # the asymmetric persistent-path rule (use `_has_any_windowable_method`, not
-    # the narrower `_has_any_local_method`) still applies — see hetero_window.jl
-    # for rationale.
+    # `_eval_nointerp` is called on a persistent `HeteroInterpolantND`. Spacings
+    # are derived from grid wrappers on demand (no separate field), so the
+    # asymmetric persistent-path rule (use `_has_any_windowable_method`, not the
+    # narrower `_has_any_local_method`) still applies — see hetero_window.jl for
+    # rationale.
     # Mirror the `_is_windowable_method` set: PCHIP/Cardinal/Akima/Linear/Constant.
     rm_has_local = any(
         M -> M <: Union{PchipInterp, CardinalInterp, AkimaInterp, LinearInterp, ConstantInterp},

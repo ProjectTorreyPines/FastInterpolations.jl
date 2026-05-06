@@ -1330,4 +1330,151 @@ end
         end
     end
 
+    # ════════════════════════════════════════════════════════════════════════
+    # Linear / Constant ND adjoint with PeriodicBC — full backward AD round-trip
+    # ════════════════════════════════════════════════════════════════════════
+    # Verifies that Zygote.gradient through `linear_interp` / `constant_interp`
+    # with `bc=PeriodicBC(...)` produces a gradient matching the direct adjoint
+    # (which routes through the new `bc` kwarg on `linear_adjoint` /
+    # `constant_adjoint`). For `:exclusive` BCs, also explicitly verifies the
+    # n→(n+1)→n round-trip: the user passes data of shape `size(f) == size(data)`
+    # (the n-point grid), and the gradient comes back at the SAME shape — the
+    # internal length-(n+1) virtual extension is fully encapsulated.
+
+    @testset "Linear ND ∂/∂data — PeriodicBC{:inclusive}" begin
+        nx, ny = 12, 9
+        n_query = 30
+        x = range(0.0, 1.0, nx)
+        y = range(0.0, 2.0, ny)
+        data = randn(nx, ny)
+        # `:inclusive` requires exact endpoint match
+        data[end, :] .= data[1, :]
+        data[:, end] .= data[:, 1]
+        xq = rand(n_query)
+        yq = rand(n_query) .* 2
+        bc = (PeriodicBC(), PeriodicBC())
+
+        g_zy = Zygote.gradient(d -> sum(linear_interp((x, y), d, (xq, yq); bc = bc)), data)[1]
+        adj = linear_adjoint((x, y), (xq, yq); bc = bc)
+        g_adj = adj(ones(n_query))
+
+        @test size(g_zy) == size(data)   # n+1 × m+1 (closed form)
+        @test g_zy ≈ g_adj atol = 1.0e-10
+    end
+
+    @testset "Linear ND ∂/∂data — PeriodicBC{:exclusive} (n→n+1→n round-trip)" begin
+        nx, ny = 11, 8
+        n_query = 30
+        # User-supplied n-point (half-open) grid + n-point data
+        x = collect(range(0.0, step = 1.0 / nx, length = nx))
+        y_grid = collect(range(0.0, step = 2.0 / ny, length = ny))
+        data = randn(nx, ny)
+        xq = rand(n_query)
+        yq = rand(n_query) .* 2
+        bc = (
+            PeriodicBC(endpoint = :exclusive, period = 1.0),
+            PeriodicBC(endpoint = :exclusive, period = 2.0),
+        )
+
+        g_zy = Zygote.gradient(
+            d -> sum(linear_interp((x, y_grid), d, (xq, yq); bc = bc)), data
+        )[1]
+        adj = linear_adjoint((x, y_grid), (xq, yq); bc = bc)
+        g_adj = adj(ones(n_query))
+
+        # Critical shape check: gradient back at the user's n-point shape.
+        # Internally LinearAdjointND scattered into an n+1-sized work buffer
+        # and folded the seam (`f_work[1, :] += f_work[end, :]`); the trim
+        # should hand back exactly `size(data) == (nx, ny)`.
+        @test size(g_zy) == (nx, ny)
+        @test size(g_adj) == (nx, ny)
+        @test g_zy ≈ g_adj atol = 1.0e-10
+    end
+
+    @testset "Linear ND ∂/∂data — PeriodicBC{:exclusive} × NoBC mixed" begin
+        nx, ny = 10, 8
+        n_query = 25
+        x = collect(range(0.0, step = 1.0 / nx, length = nx))
+        y = range(0.0, 1.0, ny)
+        data = randn(nx, ny)
+        xq = rand(n_query)
+        yq = rand(n_query)
+        bc = (PeriodicBC(endpoint = :exclusive, period = 1.0), NoBC())
+
+        g_zy = Zygote.gradient(d -> sum(linear_interp((x, y), d, (xq, yq); bc = bc)), data)[1]
+        adj = linear_adjoint((x, y), (xq, yq); bc = bc)
+        g_adj = adj(ones(n_query))
+
+        @test size(g_zy) == (nx, ny)   # axis-1 trim n+1→n; axis-2 unchanged
+        @test g_zy ≈ g_adj atol = 1.0e-10
+    end
+
+    @testset "Constant ND ∂/∂data — PeriodicBC{:inclusive}" begin
+        nx, ny = 12, 9
+        n_query = 30
+        x = range(0.0, 1.0, nx)
+        y = range(0.0, 2.0, ny)
+        data = randn(nx, ny)
+        data[end, :] .= data[1, :]
+        data[:, end] .= data[:, 1]
+        xq = rand(n_query)
+        yq = rand(n_query) .* 2
+        bc = (PeriodicBC(), PeriodicBC())
+
+        g_zy = Zygote.gradient(d -> sum(constant_interp((x, y), d, (xq, yq); bc = bc)), data)[1]
+        adj = constant_adjoint((x, y), (xq, yq); bc = bc)
+        g_adj = adj(ones(n_query))
+
+        @test size(g_zy) == size(data)
+        @test g_zy ≈ g_adj atol = 1.0e-12   # constant: single-point scatter, exact
+    end
+
+    @testset "Constant ND ∂/∂data — PeriodicBC{:exclusive} (n→n+1→n round-trip)" begin
+        nx, ny = 11, 8
+        n_query = 25
+        x = collect(range(0.0, step = 1.0 / nx, length = nx))
+        y_grid = collect(range(0.0, step = 2.0 / ny, length = ny))
+        data = randn(nx, ny)
+        xq = rand(n_query)
+        yq = rand(n_query) .* 2
+        bc = (
+            PeriodicBC(endpoint = :exclusive, period = 1.0),
+            PeriodicBC(endpoint = :exclusive, period = 2.0),
+        )
+
+        g_zy = Zygote.gradient(
+            d -> sum(constant_interp((x, y_grid), d, (xq, yq); bc = bc)), data
+        )[1]
+        adj = constant_adjoint((x, y_grid), (xq, yq); bc = bc)
+        g_adj = adj(ones(n_query))
+
+        @test size(g_zy) == (nx, ny)
+        @test size(g_adj) == (nx, ny)
+        @test g_zy ≈ g_adj atol = 1.0e-12
+    end
+
+    @testset "Cubic ND ∂/∂data — PeriodicBC{:exclusive} (n→n+1→n round-trip)" begin
+        # Mirrors the existing `:inclusive` test at L393-408 but for `:exclusive`
+        # — verifies the Sherman-Morrison transpose path AND the n→n+1→n trim.
+        nx, ny = 10, 8
+        n_query = 25
+        x = collect(range(0.0, step = 2π / nx, length = nx))
+        y_grid = collect(range(0.0, step = 2π / ny, length = ny))
+        data = [sin(xi) + cos(yj) for xi in x, yj in y_grid]
+        xq = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+        yq = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+        bc = (
+            PeriodicBC(endpoint = :exclusive, period = 2π),
+            PeriodicBC(endpoint = :exclusive, period = 2π),
+        )
+
+        g_zy = Zygote.gradient(d -> sum(cubic_interp((x, y_grid), d, (xq, yq); bc = bc)), data)[1]
+        adj = cubic_adjoint((x, y_grid), (xq, yq); bc = bc)
+        g_adj = adj(ones(n_query))
+
+        @test size(g_zy) == (nx, ny)
+        @test size(g_adj) == (nx, ny)
+        @test g_zy ≈ g_adj atol = 1.0e-10
+    end
+
 end  # testset "Zygote AD Support"

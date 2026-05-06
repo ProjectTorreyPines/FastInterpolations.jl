@@ -42,7 +42,7 @@ Compute secant slopes: s[i] = (y[i+1] - y[i]) * inv_h[i]
 @inline function _compute_quadratic_secants!(s::AbstractVector{Tc}, y::AbstractVector, axis::AbstractVector{Tg}) where {Tc, Tg}
     n = length(y) - 1
     @inbounds for i in 1:n
-        s[i] = (y[i + 1] - y[i]) * _get_inv_h(axis,i)  # Tv * Tg → Tv
+        s[i] = (y[i + 1] - y[i]) * _get_inv_h(axis, i)  # Tv * Tg → Tv
     end
     return s
 end
@@ -126,7 +126,7 @@ end
         bc::Left{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector
     ) where {Tc, Tg}
     κ = convert(Tc, bc.bc.val)
-    d1 = s[1] - κ * (_get_h(axis,1) / 2)  # Tv - Tv*Tg → Tv (no /(Tv,Int) needed)
+    d1 = s[1] - κ * (_get_h(axis, 1) / 2)  # Tv - Tv*Tg → Tv (no /(Tv,Int) needed)
     return _forward_recurrence!(d, s, d1)
 end
 
@@ -147,7 +147,7 @@ end
     ) where {Tc, Tg}
     κ = convert(Tc, bc.bc.val)
     n_intervals = length(s)
-    dn = s[end] + κ * (_get_h(axis,n_intervals) / 2)  # Tv + Tv*Tg → Tv (no /(Tv,Int) needed)
+    dn = s[end] + κ * (_get_h(axis, n_intervals) / 2)  # Tv + Tv*Tg → Tv (no /(Tv,Int) needed)
     return _backward_recurrence!(d, s, dn)
 end
 
@@ -209,7 +209,7 @@ O(n) time, O(1) extra space (on-the-fly β computation).
     sign = one(Tg)  # α[1] = (-1)^(1+1) = +1
 
     @inbounds for i in 1:n_intervals
-        inv_h_i = _get_inv_h(axis,i)  # precomputed — no inv() needed
+        inv_h_i = _get_inv_h(axis, i)  # precomputed — no inv() needed
         inv_h_sum += inv_h_i
         numerator += sign * (s[i] - β) * inv_h_i  # Tg * Tv * Tg → Tv
         β = 2 * s[i] - β  # Tv operations
@@ -284,7 +284,7 @@ Compute quadratic coefficients: a[i] = (s[i] - d[i]) * inv_h[i]
 """
 @inline function _compute_quadratic_coefficients!(a::AbstractVector{Tc}, d::AbstractVector{Tc}, s::AbstractVector{Tc}, axis::AbstractVector{Tg}) where {Tc, Tg}
     @inbounds for i in eachindex(a)
-        a[i] = (s[i] - d[i]) * _get_inv_h(axis,i)  # (Tv - Tv) * Tg → Tv
+        a[i] = (s[i] - d[i]) * _get_inv_h(axis, i)  # (Tv - Tv) * Tg → Tv
     end
     return a
 end

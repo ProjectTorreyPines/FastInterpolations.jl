@@ -1087,4 +1087,3 @@ grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
     Tz = _output_eltype(Tv, Tg)
     return grids_typed, Tg, Tv, Tz
 end
-

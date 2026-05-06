@@ -1358,7 +1358,7 @@ end
         adj = linear_adjoint((x, y), (xq, yq); bc = bc)
         g_adj = adj(ones(n_query))
 
-        @test size(g_zy) == size(data)   # n+1 × m+1 (closed form)
+        @test size(g_zy) == size(data)   # inclusive: closed form, no virtual extension
         @test g_zy ≈ g_adj atol = 1.0e-10
     end
 

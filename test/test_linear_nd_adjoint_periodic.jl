@@ -137,4 +137,84 @@
         bc = (PeriodicBC(endpoint = :exclusive, period = 1.0), NoBC())
         @test dot_id_test((x, y), xqs, f, y_bar; bc = bc)
     end
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Type stability — `@inferred` over the periodic outer ctor.
+    # Pins the closure-over-Tg regression that previously broke ND inferrability;
+    # see MEMORY.md "ND Constructor Inferrability Pattern".
+    # ─────────────────────────────────────────────────────────────────────────
+    @testset "Type stability — @inferred(linear_adjoint(...; bc=PeriodicBC))" begin
+        # Range grid (`:inclusive` requires closed-cycle [0, 1]/[0, 2])
+        x_r_inc = range(0.0, 1.0, 10)
+        y_r_inc = range(0.0, 2.0, 8)
+        # Range grid (`:exclusive` half-open [0, 1)/[0, 2))
+        x_r_exc = collect(range(0.0, step = 1.0 / 10, length = 10))
+        y_r_exc = collect(range(0.0, step = 2.0 / 8, length = 8))
+        # Queries strictly inside the closed period
+        xqs = (rand(5), rand(5) .* 2)
+
+        bc_excl = (PeriodicBC(endpoint = :exclusive, period = 1.0), NoBC())
+        bc_incl = (PeriodicBC(), PeriodicBC())
+        @test @inferred(linear_adjoint((x_r_exc, y_r_inc), xqs; bc = bc_excl)) isa LinearAdjointND
+        @test @inferred(linear_adjoint((x_r_inc, y_r_inc), xqs; bc = bc_incl)) isa LinearAdjointND
+
+        # Vector grid, both axes :exclusive
+        xv = sort(rand(10)) .* 0.95
+        yv = sort(rand(8)) .* 1.95
+        xqs_v = (rand(5) .* xv[end], rand(5) .* yv[end])
+        bc_v = (
+            PeriodicBC(endpoint = :exclusive, period = 1.0),
+            PeriodicBC(endpoint = :exclusive, period = 2.0),
+        )
+        @test @inferred(linear_adjoint((xv, yv), xqs_v; bc = bc_v)) isa LinearAdjointND
+    end
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Allocation regression — `adj(f_bar, y_bar)` must remain zero-alloc on
+    # the in-place call across all periodic BC combinations. The `:exclusive`
+    # path runs `_adjoint_apply_exclusive_nd!` (pool-acquired work buffer +
+    # compile-time-unrolled seam fold + view trim); any non-zero allocation
+    # indicates a regression in static-dim specialization.
+    # ─────────────────────────────────────────────────────────────────────────
+    @testset "Allocation — periodic adj in-place is zero-alloc" begin
+        function alloc_test(adj, f_bar, y_bar)
+            adj(f_bar, y_bar)            # warm-up
+            adj(f_bar, y_bar)
+            return @allocated adj(f_bar, y_bar)
+        end
+
+        n_q = 32
+        let x = collect(range(0.0, step = 1.0 / 12, length = 12)),
+                y = collect(range(0.0, step = 2.0 / 10, length = 10)),
+                xqs = (rand(n_q), rand(n_q) .* 2),
+                bc = (
+                PeriodicBC(endpoint = :exclusive, period = 1.0),
+                PeriodicBC(endpoint = :exclusive, period = 2.0),
+            )
+            adj = linear_adjoint((x, y), xqs; bc = bc)
+            f_bar = zeros(12, 10)
+            y_bar = ones(n_q)
+            @test alloc_test(adj, f_bar, y_bar) == 0
+        end
+
+        let x = collect(range(0.0, step = 1.0 / 14, length = 14)),
+                y = range(0.0, 1.0, 11),
+                xqs = (rand(n_q), rand(n_q)),
+                bc = (PeriodicBC(endpoint = :exclusive, period = 1.0), NoBC())
+            adj = linear_adjoint((x, y), xqs; bc = bc)
+            f_bar = zeros(14, 11)
+            y_bar = ones(n_q)
+            @test alloc_test(adj, f_bar, y_bar) == 0
+        end
+
+        let x = range(0.0, 1.0, 12),
+                y = range(0.0, 2.0, 10),
+                xqs = (rand(n_q), rand(n_q) .* 2),
+                bc = (PeriodicBC(), PeriodicBC())
+            adj = linear_adjoint((x, y), xqs; bc = bc)
+            f_bar = zeros(12, 10)
+            y_bar = ones(n_q)
+            @test alloc_test(adj, f_bar, y_bar) == 0
+        end
+    end
 end

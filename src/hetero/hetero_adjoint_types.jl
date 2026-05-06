@@ -95,11 +95,17 @@ The same adjoint can be applied to any `ȳ` vector.
          no separate `spacings` field needed.
 - `C`:   Per-axis cache tuple (CubicSplineCache for cubic, Nothing for others)
 - `MC`:  Per-axis mixed-partial cache tuple
-- `BP`:  Per-axis adjoint-BC tuple. For cubic axes: `BCPair`/`PeriodicBC`;
-         for quadratic axes: normalized `AbstractBC` (e.g. `Left`, `Right`, `MinCurvFit`);
-         for non-derivative axes (Linear/Constant): `nothing` sentinel.
+- `BP`:  Per-axis adjoint-BC tuple, uniformly `<: AbstractBC`.
+         Cubic axes: `BCPair`/`PeriodicBC` (drives the periodic seam fold and
+         Sherman-Morrison transpose). Quadratic axes: normalized `AbstractBC`
+         (e.g. `Left`, `Right`, `MinCurvFit`). All other axes (Linear /
+         Constant / local-Hermite / NoInterp): `NoBC()` — the Hetero adjoint
+         constructor does not yet wrap/extend non-derivative axes for
+         `PeriodicBC`, so storing the user's BC here would mis-size the
+         trimmed output.
 - `MBP`: Per-axis mixed-BC tuple, analogous to `BP` but for mixed-partial
-         directions; `nothing` when no mixed-partial BC is required.
+         directions. `NoBC()` on axes that don't participate in mixed-partial
+         solving.
 
 # Architecture — Mixed-Radix Compact Storage
 Uses `prod(sizes)` partials instead of `2^N`, where `sizes[d] = _deriv_size(methods[d])`.
@@ -156,8 +162,9 @@ end
 @inline _n_queries(adj::HeteroAdjointND) = length(adj.anchors)
 @inline _grid_size(adj::HeteroAdjointND) = adj.grid_size
 
-# For periodic finalization: return per-axis BC for derivative methods,
-# nothing sentinel for non-derivative methods (never matches PeriodicBC{:exclusive}).
+# Per-axis adjoint-BC tuple — uniform `<: AbstractBC` (no `Nothing` sentinel).
+# Consumed by `_has_exclusive_periodic` / `_adjoint_output_size` to drive the
+# generic seam-fold + trim post-apply hook.
 @inline _adjoint_bcs(adj::HeteroAdjointND) = adj.bcs
 
 @inline _adjoint_nd_apply!(f_bar, adj::HeteroAdjointND, y_bar, ops) =

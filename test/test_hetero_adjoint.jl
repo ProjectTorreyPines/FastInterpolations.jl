@@ -704,6 +704,40 @@
     end
 
     # ════════════════════════════════════════════════════════════════════════
+    # COVERAGE: PeriodicBC{:exclusive} on a Linear axis — Hetero **forward**
+    # — exercises the new `LinearInterp(bc=...)` tag-struct field threaded
+    # through the unified `interp()` API and `_bc_for_periodic_check` /
+    # `_cache_axis_for_method`. The forward correctly wraps queries past the
+    # inner grid endpoint into the periodic seam.
+    #
+    # Hetero **adjoint** with PeriodicBC on Linear/Constant axes is a
+    # separate effort (the adjoint constructor only extends Cubic axes at
+    # present). For now `HeteroAdjointND.bcs` stores `NoBC()` for those
+    # axes so the trimmed output shape stays consistent.
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "PeriodicBC{:exclusive} on Linear axis (forward-Hetero wrap)" begin
+        nx, ny = 12, 10
+        x = collect(range(0.0, step = 2π / nx, length = nx))   # exclusive n-point
+        y = range(0.0, 1.0, ny)
+        data = [sin(xi) * yj for xi in x, yj in y]
+
+        bc_x = PeriodicBC(endpoint = :exclusive, period = 2π)
+        methods = (LinearInterp(bc = bc_x), CubicInterp(bc = ZeroSlopeBC()))
+
+        itp = interp((x, y), data; method = methods)
+        # Query past inner-grid last knot (= 11·2π/12 ≈ 5.76) into the seam
+        # region [x[end], x[1]+period).
+        xq_wrap = x[end] + 0.34
+        v_wrap = itp((xq_wrap, 0.5))
+        # Linear interp on x between data[end, :] = sin(x[end])*y and
+        # data[1, :] = 0; y-axis cubic at y=0.5 reduces to sin(x)*0.5 along x.
+        α = (xq_wrap - x[end]) / (2π - x[end])
+        v_expected = (1 - α) * (sin(x[end]) * 0.5) + α * 0.0
+        @test v_wrap ≈ v_expected atol = 1.0e-10
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
     # COVERAGE: PolyFit BC validation error path
     # ════════════════════════════════════════════════════════════════════════
 

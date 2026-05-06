@@ -556,31 +556,36 @@ function _build_hetero_nd_adjoint(
         end
     end
 
-    # Per-axis BC normalization (for derivative methods only)
-    # Non-BC methods (Linear/Constant) use `nothing` sentinel — never matched
-    # against PeriodicBC or BCPair in protocol functions.
+    # Per-axis adjoint BC.
+    # Cubic/Quadratic axes go through normalization (BCPair / quadratic-BC form)
+    # — these drive the per-axis adjoint solver and the periodic seam fold.
+    # All other axes (Linear / Constant / local Hermite / NoInterp) store
+    # `NoBC()` — Hetero adjoint does not yet wrap/extend non-derivative axes
+    # for `PeriodicBC` (forward does, via `_cache_axis_for_method`, but the
+    # adjoint constructor extends only Cubic axes — see `grids_ext` above).
+    # Until that asymmetry is closed in a follow-up, storing PeriodicBC here
+    # would mis-size the trimmed adjoint output.
     bcs = map(methods) do method_d
         if method_d isa CubicInterp
             bc_d = method_d.bc
             _is_periodic_bc(bc_d) ? bc_d : _normalize_bc(bc_d)
         elseif method_d isa QuadraticInterp
-            bc_d = method_d.bc
-            _normalize_bc(bc_d)
+            _normalize_bc(method_d.bc)
         else
-            nothing
+            NoBC()
         end
     end
 
-    # Mixed-partial BCs (for derivative methods, p_src > 1)
+    # Mixed-partial BCs (consumed only by Cubic/Quadratic per-axis adjoint
+    # solver; other axes' entries are inert).
     mixed_bcs = map(methods, grids_ext) do method_d, grid_d
         if method_d isa CubicInterp
             mixed_bc = _get_effective_bc(method_d.bc, 2, grid_d)
             _is_periodic_bc(mixed_bc) ? mixed_bc : _normalize_bc(mixed_bc)
         elseif method_d isa QuadraticInterp
-            mixed_bc = _get_effective_bc_quadratic(method_d.bc, 2, grid_d)
-            _normalize_bc(mixed_bc)
+            _normalize_bc(_get_effective_bc_quadratic(method_d.bc, 2, grid_d))
         else
-            nothing
+            NoBC()
         end
     end
 

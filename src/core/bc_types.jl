@@ -546,6 +546,7 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 @inline _normalize_bc(::ZeroSlopeBC, sample) = (z = 0 * sample; BCPair(Deriv1(z), Deriv1(z)))
 @inline _normalize_bc(bc::BCPair) = bc
 @inline _normalize_bc(bc::PointBC) = BCPair(bc, bc)
+@inline _normalize_bc(bc::NoBC) = bc
 # Fallback: ignore second arg for all other BC types (only ZeroCurv/ZeroSlope need it)
 @inline _normalize_bc(bc::AbstractBC, _sample) = _normalize_bc(bc)
 

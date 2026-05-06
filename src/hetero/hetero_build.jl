@@ -70,12 +70,15 @@ end
 @inline _extract_bc(m::QuadraticInterp) = m.bc
 
 # For _prepare_periodic_nd: extract BC to detect exclusive periodic axes.
-# Non-BC methods return a non-periodic placeholder (never triggers extension).
+# Methods without a `bc` field (currently only `NoInterp`) fall through to the
+# catchall and return a non-periodic placeholder (never triggers extension).
 @inline _bc_for_periodic_check(m::CubicInterp) = m.bc
 @inline _bc_for_periodic_check(m::QuadraticInterp) = m.bc
 @inline _bc_for_periodic_check(m::PchipInterp) = m.bc
 @inline _bc_for_periodic_check(m::CardinalInterp) = m.bc
 @inline _bc_for_periodic_check(m::AkimaInterp) = m.bc
+@inline _bc_for_periodic_check(m::LinearInterp) = m.bc
+@inline _bc_for_periodic_check(m::ConstantInterp) = m.bc
 @inline _bc_for_periodic_check(::AbstractInterpMethod) = CubicFit()
 
 # ========================================

@@ -26,9 +26,10 @@ function _interp_nd_dispatch(
 end
 
 function _interp_nd_dispatch(
-        grids, data, ::Tuple{LinearInterp, Vararg{LinearInterp}}, ::Any, extrap, search
+        grids, data, methods::Tuple{LinearInterp, Vararg{LinearInterp}}, ::Any, extrap, search
     )
-    return linear_interp(grids, data; extrap = extrap, search = search)
+    bcs = map(m -> m.bc, methods)
+    return linear_interp(grids, data; bc = bcs, extrap = extrap, search = search)
 end
 
 function _interp_nd_dispatch(
@@ -42,7 +43,8 @@ function _interp_nd_dispatch(
         grids, data, methods::Tuple{ConstantInterp, Vararg{ConstantInterp}}, ::Any, extrap, search
     )
     sides = map(m -> m.side, methods)
-    return constant_interp(grids, data; side = sides, extrap = extrap, search = search)
+    bcs = map(m -> m.bc, methods)
+    return constant_interp(grids, data; side = sides, bc = bcs, extrap = extrap, search = search)
 end
 
 # Hermite family has no specialized ND type — homogeneous Hermite tuples fall through

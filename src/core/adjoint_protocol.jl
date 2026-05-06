@@ -263,14 +263,11 @@ end
 @inline _seam_fold_axis!(f_work, ::Val{d}, gs_d::Int, ::PeriodicBC{:exclusive}) where {d} =
     (selectdim(f_work, d, 1) .+= selectdim(f_work, d, gs_d); nothing)
 @inline _seam_fold_axis!(f_work, ::Val{d}, ::Int, ::AbstractBC) where {d} = nothing
-# `HeteroAdjointND` stores `nothing` for non-derivative (Linear/Constant) axes,
-# which can never be `PeriodicBC{:exclusive}` — treat as no-op.
-@inline _seam_fold_axis!(f_work, ::Val{d}, ::Int, ::Nothing) where {d} = nothing
 
 # Compile-time-unrolled seam-fold loop (one branch per axis, all literal `d`).
 @generated function _apply_seam_fold!(
         f_work::AbstractArray{T, N},
-        bcs::NTuple{N, Union{AbstractBC, Nothing}},
+        bcs::NTuple{N, AbstractBC},
         gs::NTuple{N, Int}
     ) where {T, N}
     body = [:(_seam_fold_axis!(f_work, Val($d), gs[$d], bcs[$d])) for d in 1:N]

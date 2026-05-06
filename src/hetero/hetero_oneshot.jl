@@ -218,10 +218,11 @@ end
 
 function _interp_nd_oneshot_dispatch(
         grids, data, query,
-        ::Tuple{LinearInterp, Vararg{LinearInterp}},
+        methods::Tuple{LinearInterp, Vararg{LinearInterp}},
         deriv, extrap, search, hints, coeffs,
     )
-    return linear_interp(grids, data, query; extrap = extrap, search = search, deriv = deriv, hint = hints)
+    bcs = map(m -> m.bc, methods)
+    return linear_interp(grids, data, query; bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
 
 function _interp_nd_oneshot_dispatch(
@@ -239,7 +240,8 @@ function _interp_nd_oneshot_dispatch(
         deriv, extrap, search, hints, coeffs,
     )
     sides = map(m -> m.side, methods)
-    return constant_interp(grids, data, query; side = sides, extrap = extrap, search = search, deriv = deriv, hint = hints)
+    bcs = map(m -> m.bc, methods)
+    return constant_interp(grids, data, query; side = sides, bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
 
 # Heterogeneous fallback → resolve kwargs → OnTheFly or PreCompute pool core
@@ -287,10 +289,11 @@ end
 
 function _interp_nd_oneshot_batch_dispatch!(
         output, grids, data, queries,
-        ::Tuple{LinearInterp, Vararg{LinearInterp}},
+        methods::Tuple{LinearInterp, Vararg{LinearInterp}},
         deriv, extrap, search, hints, coeffs,
     )
-    return linear_interp!(output, grids, data, queries; extrap = extrap, search = search, deriv = deriv, hint = hints)
+    bcs = map(m -> m.bc, methods)
+    return linear_interp!(output, grids, data, queries; bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
 
 function _interp_nd_oneshot_batch_dispatch!(
@@ -308,7 +311,8 @@ function _interp_nd_oneshot_batch_dispatch!(
         deriv, extrap, search, hints, coeffs,
     )
     sides = map(m -> m.side, methods)
-    return constant_interp!(output, grids, data, queries; side = sides, extrap = extrap, search = search, deriv = deriv, hint = hints)
+    bcs = map(m -> m.bc, methods)
+    return constant_interp!(output, grids, data, queries; side = sides, bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
 
 # Heterogeneous fallback → resolve kwargs → function barrier → pool batch.

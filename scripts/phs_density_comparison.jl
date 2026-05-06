@@ -310,13 +310,28 @@ end
 #   ∂ρ₀/∂xd      = Σᵢ ρᵢ'(rᵢ) · xxd / rᵢ
 #   ∂²ρ₀/∂xd²    = Σᵢ [ ρᵢ'(rᵢ)/rᵢ + (ρᵢ''(rᵢ) − ρᵢ'(rᵢ)/rᵢ) · xxd² / rᵢ² ]
 #   ∂²ρ₀/∂xd1∂xd2 = Σᵢ [ (ρᵢ''(rᵢ) − ρᵢ'(rᵢ)/rᵢ) · xxd1 · xxd2 / rᵢ² ]
-struct PromolecularRef
+#
+# Type parameter I is the concrete spline type (CubicInterpolant{...}), making
+# cache::Dict{Int,I} fully type-stable so all per-atom eval calls are zero-alloc.
+struct PromolecularRef{I}
     atoms::Vector{Tuple{Int, NTuple{3,Float64}}}  # (Z, (x,y,z)) in Bohr
+    cache::Dict{Int, I}                            # Z => typed 1D spline
+end
+
+# Constructor: load all element splines and embed a typed Dict.
+function PromolecularRef(atoms::Vector{Tuple{Int, NTuple{3,Float64}}})
+    for (Z, _) in atoms; get_rho_itp(Z); end   # populate _wfc_cache (Dict{Int,Any})
+    I = typeof(first(values(_wfc_cache)))
+    cache = Dict{Int, I}(k => v for (k, v) in _wfc_cache)
+    return PromolecularRef{I}(atoms, cache)
 end
 
 function (pmr::PromolecularRef)(q; deriv=nothing)
     # Determine derivative order along each axis
-    total = deriv === nothing ? 0 : sum(deriv_order(op) for op in deriv)
+    total = 0
+    if deriv !== nothing
+        for op in deriv; total += deriv_order(op); end
+    end
 
     if total == 0
         f = 0.0
@@ -324,7 +339,7 @@ function (pmr::PromolecularRef)(q; deriv=nothing)
             xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
             r = sqrt(xx1^2 + xx2^2 + xx3^2)
             r < 1e-14 && continue
-            f += max(get_rho_itp(Z)(r), 0.0)
+            f += max(pmr.cache[Z](r), 0.0)
         end
         return f
     end
@@ -332,27 +347,36 @@ function (pmr::PromolecularRef)(q; deriv=nothing)
     if total == 1
         ax = findfirst(d -> deriv_order(deriv[d]) == 1, 1:3)::Int
         fp = 0.0
+        D1 = DerivOp{1}()
         for (Z, R) in pmr.atoms
             xx = (q[1] - R[1], q[2] - R[2], q[3] - R[3])
             r  = sqrt(xx[1]^2 + xx[2]^2 + xx[3]^2)
             r < 1e-14 && continue
-            rhop = get_rho_itp(Z)(r; deriv = DerivOp(1))
-            fp += rhop * xx[ax] / r
+            fp += pmr.cache[Z](r; deriv = D1) * xx[ax] / r
         end
         return fp
     end
 
     if total == 2
-        nonzero = [d for d in 1:3 if deriv_order(deriv[d]) > 0]
-        ax1 = nonzero[1]; ax2 = length(nonzero) >= 2 ? nonzero[2] : ax1
+        # Non-allocating axis scan (avoids heap-allocating comprehension)
+        ax1 = 0; ax2 = 0
+        for d in 1:3
+            if deriv_order(deriv[d]) > 0
+                if ax1 == 0; ax1 = d
+                else ax2 = d; break
+                end
+            end
+        end
+        ax2 = ax2 == 0 ? ax1 : ax2
         fpp = 0.0
+        D1 = DerivOp{1}(); D2 = DerivOp{2}()
         for (Z, R) in pmr.atoms
             xx = (q[1] - R[1], q[2] - R[2], q[3] - R[3])
             r  = sqrt(xx[1]^2 + xx[2]^2 + xx[3]^2)
             r < 1e-14 && continue
-            rho_itp = get_rho_itp(Z)
-            rhop  = rho_itp(r; deriv = DerivOp(1))
-            rhopp = rho_itp(r; deriv = DerivOp(2))
+            rho_itp = pmr.cache[Z]
+            rhop  = rho_itp(r; deriv = D1)
+            rhopp = rho_itp(r; deriv = D2)
             rfac  = (rhopp - rhop / r) / r^2
             fpp += ax1 == ax2 ? rhop / r + rfac * xx[ax1]^2 :
                                  rfac * xx[ax1] * xx[ax2]
@@ -364,8 +388,6 @@ function (pmr::PromolecularRef)(q; deriv=nothing)
 end
 
 println("Building PromolecularRef (loading wfc files for present elements)...")
-# Pre-warm the wfc cache for all elements in the system
-for (Z, _) in ATOMS; get_rho_itp(Z); end
 const ref_rho0 = PromolecularRef(ATOMS)
 @printf "  ρ₀ at path start: %.6e a.u.\n" ref_rho0((qx[1], qy[1], qz[1]))
 

@@ -15,7 +15,6 @@
 # - _quadratic_kernel (quadratic_kernels.jl)
 # - _anchor_query, _QuadraticAnchoredQuery (quadratic_anchor.jl)
 # - QuadraticBC (quadratic_solver.jl)
-# - _get_h, _get_inv_h, _create_spacing (grid_spacing.jl)
 # - _precompute_polyfit_coeffs, _AdjointPolyfitData (cubic_adjoint.jl)
 # - AbstractAdjoint1D, _is_oob_skip, _is_oob_skip_deriv (adjoint_protocol.jl)
 
@@ -308,19 +307,6 @@ end
 # C = inv(Σ inv_h[i]) is a grid-only constant used in MinCurvFit endpoint adjoint.
 # Precomputed once at construction time, avoiding O(n) recomputation per call.
 
-@inline function _compute_mincurv_C(spacing::AbstractGridSpacing{Tg}, n::Int) where {Tg}
-    inv_h_sum = zero(Tg)
-    @inbounds for i in 1:(n - 1)
-        inv_h_sum += _get_inv_h(spacing, i)
-    end
-    return inv(inv_h_sum)
-end
-
-# Axis-based overload: reads `_get_inv_h(axis, i)` directly from a wrapped
-# axis (`_CachedRange` / `_CachedVector` / `_ExclusivePeriodicAxis`) or a raw
-# `AbstractVector` (on-the-fly diff via `_get_inv_h(::AbstractVector, i)`).
-# Used by adjoint families migrated off `AbstractGridSpacing`. Dispatch is
-# unambiguous because no `AbstractGridSpacing` subtype is `<: AbstractVector`.
 @inline function _compute_mincurv_C(axis::AbstractVector{Tg}, n::Int) where {Tg}
     inv_h_sum = zero(Tg)
     @inbounds for i in 1:(n - 1)
@@ -364,8 +350,7 @@ end
 # Helpers below take the wrapped axis directly — `_get_h(axis, i)` /
 # `_get_inv_h(axis, i)` work uniformly on `_CachedRange` (cached scalar),
 # `_CachedVector` (cached vector lookup), and raw `AbstractVector` (on-the-fly
-# diff). The `spacing::AbstractGridSpacing` parameter is gone; both 1D and
-# ND adjoint paths now share an axis-as-truth contract.
+# diff). Both 1D and ND adjoint paths share this axis-as-truth contract.
 
 @inline function _recurrence_adjoint!(
         s_bar::AbstractVector{Tv},
@@ -639,7 +624,7 @@ function quadratic_adjoint(
         end
     end
 
-    # Bake anchors — axis-as-truth, no transient `_create_spacing` call needed.
+    # Bake anchors directly off the wrapped axis (axis-as-truth).
     anchors = _bake_quadratic_adjoint_anchors(x_p, xq_p, extrap)
 
     return QuadraticAdjoint(anchors, bc, length(x_p), x_p)

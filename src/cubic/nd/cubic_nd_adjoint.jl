@@ -584,12 +584,10 @@ function _build_nd_adjoint(
     end
 
     # Bake per-query anchors (extrap handles periodic wrapping + OOB weight fixup).
-    # `grids_ext` here are extended raw grids; the bake reads `_get_h(grid, idx)`
-    # directly via the spacings-free `_bake_nd_anchors_generic` overload. For Range
-    # inputs `_get_h(::AbstractRange, i)` returns `step(x)`; for Vector inputs the
-    # 2-arg `_get_h(::AbstractVector, i)` does `float(x[i+1] - x[i])` — same answer
-    # as the legacy `VectorSpacing.h[i]` lookup, with one extra subtraction per anchor
-    # (negligible vs the surrounding @generated 4^N scatter).
+    # `grids_ext` here are extended raw grids; `_bake_nd_anchors` reads
+    # `_get_h(grid, idx)` directly — Range axes return `step(x)`, Vector axes
+    # compute `float(x[i+1] - x[i])` on the fly. Single subtraction per anchor,
+    # negligible vs the surrounding @generated 4^N scatter.
     anchors = _bake_nd_anchors(grids_ext, queries, extraps)
 
     grid_size = ntuple(d -> length(grids_ext[d]), Val(N))

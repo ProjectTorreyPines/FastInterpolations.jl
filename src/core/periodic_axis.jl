@@ -389,14 +389,6 @@ end
 @inline _alpha_of(q::Real, L::Real, R::Real, g::_ExclusivePeriodicAxis) =
     _alpha_of(q, L, R, g.inner)
 
-# `_create_spacing` for the wrapper: defer to inner so the spacing buffer has
-# `length(inner) - 1 = n - 1` entries (interior cells only — the seam cell is
-# handled per-query via the wrapper-level `_get_h` seam fast-path). The default
-# `_create_spacing(::AbstractVector)` would walk `1:length(g)-1 = 1:n` and read
-# `g[n+1]` (the virtual seam slot), forwarding to `inner[n+1]` and tripping a
-# `BoundsError`.
-@inline _create_spacing(g::_ExclusivePeriodicAxis) = _create_spacing(g.inner)
-
 # ========================================
 # View specialization: preserve wrapper for full-virtual range
 # ========================================

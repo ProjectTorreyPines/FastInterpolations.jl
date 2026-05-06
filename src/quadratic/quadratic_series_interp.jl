@@ -31,7 +31,6 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 - `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
 - `a::Matrix{Tv}`: Quadratic coefficients (n_points × n_series) series-contiguous
 - `d::Matrix{Tv}`: Slope coefficients (n_points × n_series) series-contiguous
-- `spacing::S`: Precomputed grid spacing (ScalarSpacing for Range, VectorSpacing for Vector)
 - `_transpose::LazyTransposeTriple{Tv}`: Lazy point-contiguous layout for SIMD
 - `extrap::E`: Extrapolation mode (compile-time specialized via type parameter)
 

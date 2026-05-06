@@ -165,83 +165,23 @@ end
 # The only per-type difference is the weight computation function.
 
 """
-    _bake_nd_anchors_generic(grids, spacings, queries, extraps, weight_fn)
+    _bake_nd_anchors_generic(grids, queries, extraps, weight_fn)
 
 Generic anchor baking for ND adjoint operators that use `_NDAdjointAnchor{Tg, N}`.
-Shared by cubic, quadratic, and hetero adjoint types.
+Shared by Linear, Constant, Cubic, Quadratic, and Hetero ND adjoint types.
 
 `weight_fn(d, t, h, inv_h, dL)` must return `(w0, w1, w2, w3)` — four 4-tuple weight
 sets for derivative orders 0–3.
 
+Reads `_get_h(grids[d], idx)` / `_get_inv_h(grids[d], idx)` directly from the
+wrapped axes (`_CachedRange` / `_CachedVector` / `_ExclusivePeriodicAxis`) or
+on-the-fly diff for raw `Vector`. Periodic-exclusive seam fold is transparent:
+when `grids[d]::_ExclusivePeriodicAxis`, `search_interval` returns `idx_R = 1`
+for the seam cell and `_get_h` returns the seam-cell width `_x_max - inner[n]`.
+
 OOB handling baked into weights at construction time:
 - `FillExtrap`: zeros ALL 4 weight tuples (fill value independent of f)
 - `ClampExtrap`: zeros w1-w3 only (clamped value IS function of f)
-"""
-function _bake_nd_anchors_generic(
-        grids::NTuple{N, AbstractVector{Tg}},
-        spacings::NTuple{N, AbstractGridSpacing{Tg}},
-        queries,
-        extraps::Tuple{Vararg{AbstractExtrap, N}},
-        weight_fn
-    ) where {N, Tg}
-    nq = _query_length(queries)
-    _query_validate(queries)
-    _validate_nd_domain(grids, queries, extraps)
-
-    anchors = Vector{_NDAdjointAnchor{Tg, N}}(undef, nq)
-    @inbounds for q in 1:nq
-        query_q = _extract_query_point(queries, q, Val(N))
-        idx_and_weights = ntuple(Val(N)) do d
-            xq_raw = Tg(query_q[d])
-            xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
-            idx, _, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
-            h = _get_h(spacings[d], idx)
-            inv_h = _get_inv_h(spacings[d], idx)
-            t = (xq_d - xL) * inv_h
-            dL = xq_d - xL
-            is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])
-            return (idx, weight_fn(d, t, h, inv_h, dL), is_oob)
-        end
-        indices = ntuple(d -> idx_and_weights[d][1], Val(N))
-        w0 = ntuple(d -> idx_and_weights[d][2][1], Val(N))
-        w1 = ntuple(d -> idx_and_weights[d][2][2], Val(N))
-        w2 = ntuple(d -> idx_and_weights[d][2][3], Val(N))
-        w3 = ntuple(d -> idx_and_weights[d][2][4], Val(N))
-
-        # Per-axis OOB weight fixup
-        for d in 1:N
-            idx_and_weights[d][3] || continue  # skip in-bounds axes
-            ext_d = extraps[d]
-            zw = (zero(Tg), zero(Tg), zero(Tg), zero(Tg))
-            if ext_d isa FillExtrap
-                w0 = Base.setindex(w0, zw, d)
-                w1 = Base.setindex(w1, zw, d)
-                w2 = Base.setindex(w2, zw, d)
-                w3 = Base.setindex(w3, zw, d)
-            elseif ext_d isa ClampExtrap
-                w1 = Base.setindex(w1, zw, d)
-                w2 = Base.setindex(w2, zw, d)
-                w3 = Base.setindex(w3, zw, d)
-            end
-        end
-
-        anchors[q] = _NDAdjointAnchor{Tg, N}(indices, w0, w1, w2, w3)
-    end
-    return anchors
-end
-
-"""
-    _bake_nd_anchors_generic(grids, queries, extraps, weight_fn)
-
-Spacings-free overload — reads `_get_h(grids[d], idx)` / `_get_inv_h(grids[d], idx)`
-directly from the wrapped axes (`_CachedRange` / `_CachedVector` / `_ExclusivePeriodicAxis`).
-
-Used by adjoint families migrated off `AbstractGridSpacing`. The 5-arg form above
-remains for `CubicAdjointND` until the Cubic ND family migrates (PR3).
-
-Periodic-exclusive seam fold is transparent: when `grids[d]::_ExclusivePeriodicAxis`,
-`search_interval` returns `idx_R = 1` for the seam cell and `_get_h` returns
-the seam-cell width `_x_max - inner[n]`.
 """
 function _bake_nd_anchors_generic(
         grids::NTuple{N, AbstractVector{Tg}},

@@ -13,8 +13,6 @@
 @testitem "ND Coverage Tests" begin
     # Import internal functions we need to test
     import FastInterpolations:
-        # spacings (used unqualified at line 547, 573)
-        ScalarSpacing,
         # nd_math.jl (Val(1) error methods)
         _ldiv_along_dim!,
         compute_rhs_along_dim!,
@@ -47,7 +45,6 @@
         _validate_nd_grids,
         _promote_grid_eltype,
         _convert_grids_typed,
-        _create_spacings_typed,
         _throw_ndims_mismatch,
         # BC types
         ZeroCurvBC,
@@ -306,14 +303,6 @@
             @test _promote_grid_eltype(grids_f32) == Float32
         end
 
-        @testset "_create_spacings_typed" begin
-            # Uniform grids
-            grids = (range(0.0, 1.0, 10), range(0.0, 2.0, 15))
-            spacings = _create_spacings_typed(grids)
-            @test spacings isa Tuple
-            @test length(spacings) == 2
-            @test all(s -> s isa FastInterpolations.AbstractGridSpacing, spacings)
-        end
     end
 
     # ========================================

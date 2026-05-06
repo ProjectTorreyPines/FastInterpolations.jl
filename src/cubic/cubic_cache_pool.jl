@@ -70,7 +70,7 @@ Cache entry for derivative BC (uses BCPair).
 - `L`: Left boundary condition type (Deriv1{T} or Deriv2{T})
 - `R`: Right boundary condition type (Deriv1{T} or Deriv2{T})
 - `X`: Grid type (Vector{T} or StepRangeLen)
-- `S`: Grid spacing type (ScalarSpacing{T} or VectorSpacing{T})
+- `C`: Concrete `CubicSplineCache` parametrization
 
 # Fields
 - `id::UInt`: objectid of the ORIGINAL input x (hint for fast lookup)
@@ -96,7 +96,6 @@ Cache entry for periodic BC (uses PeriodicData).
 # Type Parameters
 - `T`: Float type (Float32 or Float64)
 - `X`: Grid type (Vector{T} or StepRangeLen)
-- `S`: Grid spacing type (ScalarSpacing{T} or VectorSpacing{T})
 - `E`: Endpoint variant (`:inclusive` or `:exclusive`) — encoded so the bank
   registry holds *separate* banks per variant. The cache content (Sherman-
   Morrison `q`, period, seam-cell width) differs between variants on the same
@@ -353,10 +352,6 @@ RCU-style bank retrieval with copy-on-write for new bank creation.
         unlock(_CACHE_LOCK)
     end
 end
-
-# Helper to determine spacing type from grid type
-@inline _spacing_type(::Type{X}) where {T, X <: AbstractRange{T}} = ScalarSpacing{T}
-@inline _spacing_type(::Type{X}) where {T, X <: AbstractVector{T}} = VectorSpacing{T, T}
 
 """
 Get or create a derivative BC cache bank for the given (T, L, R, X, S) combination.

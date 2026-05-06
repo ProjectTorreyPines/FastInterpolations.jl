@@ -2,7 +2,7 @@
     using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
         _search_interval_real,
         Searcher, BinarySearch, LinearSearch, LinearBinarySearch, AutoSearch, DirectSearch,
-        NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, VectorSpacing, _create_spacing, _to_searcher,
+        NoHint, RefHint, DEFAULT_SEARCHER, _to_searcher,
         _resolve_search_policy, _is_likely_monotone, GridIdx
 
     # ========================================
@@ -204,28 +204,6 @@
             @test hint[] == 26  # Hint updated to found index
         end
 
-        @testset "Spacing-aware Search" begin
-            x_vec = collect(range(0.0, 1.0, 101))
-            x_range = range(0.0, 1.0, 101)
-            spacing_vector = _create_spacing(x_vec)
-            spacing_scalar = _create_spacing(x_range)
-
-            hint = Ref(30)
-            policy = Searcher{LinearSearch, RefHint}(RefHint(hint))
-
-            # Vector with spacing
-            idx, _, xL, xR = search_interval(policy, x_vec, spacing_vector, 0.55)
-            @test idx == 56
-            @test hint[] == 56
-
-            # Range with spacing: hint checked first, then O(1) fallback + hint update
-            hint2 = Ref(30)
-            policy2 = Searcher{LinearSearch, RefHint}(RefHint(hint2))
-            idx2, _, _, _ = search_interval(policy2, x_range, spacing_scalar, 0.75)
-            @test idx2 == 76
-            @test hint2[] == 76  # Hint updated to found index
-        end
-
         @testset "Integration with Interpolants" begin
             y = x .^ 3
             itp = linear_interp(x, y)
@@ -286,41 +264,6 @@
 
             idx, _, _, _ = search_interval(policy, x_range, 0.1)
             @test idx == 11  # Direct O(1)
-        end
-    end
-
-    # ========================================
-    # Spacing-Aware Search Tests
-    # ========================================
-
-    @testset "Spacing-aware Search" begin
-        x_range = range(0.0, 1.0, 101)
-        x_vec = collect(x_range)
-        spacing_scalar = _create_spacing(x_range)
-        spacing_vector = _create_spacing(x_vec)
-        policy = DEFAULT_SEARCHER
-
-        @testset "ScalarSpacing Path" begin
-            idx, _, xL, xR = search_interval(policy, x_range, spacing_scalar, 0.5)
-            @test idx == 51
-            @test xL ≈ 0.5 atol = 1.0e-12
-            @test xR ≈ 0.51 atol = 1.0e-12
-        end
-
-        @testset "VectorSpacing Path" begin
-            idx, _, xL, xR = search_interval(policy, x_vec, spacing_vector, 0.5)
-            @test idx == 51
-            @test xL ≈ 0.5 atol = 1.0e-12
-            @test xR ≈ 0.51 atol = 1.0e-12
-        end
-
-        @testset "Internal Alias with Spacing" begin
-            # Verify spacing-aware path via internal alias
-            r1 = _search_interval(x_range, spacing_scalar, 0.5)
-            idx, _, xL, xR = r1
-            @test idx == 51
-            @test xL ≈ 0.5 atol = 1.0e-12
-            @test xR ≈ 0.51 atol = 1.0e-12
         end
     end
 
@@ -579,51 +522,24 @@
             @test hint[] == 16  # Hint updated to found index
         end
 
-        @testset "Range with ScalarSpacing" begin
-            spacing = _create_spacing(x_range)
-            idx, _, xL, xR = search_interval(policy, x_range, spacing, 0.25)
-            @test idx == 26
-            @test xL ≈ 0.25 atol = 1.0e-12
-            @test xR ≈ 0.26 atol = 1.0e-12
-            @test hint[] == 26  # Hint updated to found index
-        end
     end
 
-    @testset "Coverage: LinearBinarySearchAlg with Range and Spacing" begin
-        x_range = range(0.0, 1.0, 101)
-        spacing = _create_spacing(x_range)
-        hint = Ref(50)
-        policy = Searcher{LinearBinarySearch{8}, RefHint}(RefHint(hint))
-
-        @testset "Range with ScalarSpacing Updates Hint" begin
-            idx, _, xL, xR = search_interval(policy, x_range, spacing, 0.35)
-            @test idx == 36
-            @test xL ≈ 0.35 atol = 1.0e-12
-            @test xR ≈ 0.36 atol = 1.0e-12
-            @test hint[] == 36  # Hint updated to found index
-        end
-    end
-
-    @testset "Coverage: Spacing-aware with Default Policy" begin
+    @testset "Coverage: Default-policy Range search hits" begin
         x_range = range(0.0, 1.0, 101)
         x_vec = collect(x_range)
-        spacing_scalar = _create_spacing(x_range)
-        spacing_vector = _create_spacing(x_vec)
         policy = DEFAULT_SEARCHER
 
-        @testset "Direct search_interval with Spacing" begin
-            # This specifically tests line 303-304
-            idx, _, xL, xR = search_interval(policy, x_range, spacing_scalar, 0.75)
+        @testset "Range result" begin
+            idx, _, xL, xR = search_interval(policy, x_range, 0.75)
             @test idx == 76
             @test xL ≈ 0.75 atol = 1.0e-12
             @test xR ≈ 0.76 atol = 1.0e-12
         end
 
-        @testset "Multiple Spacing Queries" begin
+        @testset "Range vs Vector agree" begin
             for xi in [0.0, 0.25, 0.5, 0.75, 1.0]
-                r1 = search_interval(policy, x_range, spacing_scalar, xi)
-                r2 = search_interval(policy, x_vec, spacing_vector, xi)
-                # Both should give same index
+                r1 = search_interval(policy, x_range, xi)
+                r2 = search_interval(policy, x_vec, xi)
                 @test r1[1] == r2[1]
             end
         end
@@ -1680,9 +1596,6 @@
             @test result[1] == 2
             result2 = search_interval(s, x, 0.9)
             @test result2[1] == 4
-            spacing = _create_spacing(x)
-            result3 = search_interval(s, x, spacing, 0.6)
-            @test result3[1] == 3
         end
 
         @testset "search_interval DirectSearch+RefHint correctness" begin
@@ -1705,17 +1618,6 @@
             result3 = search_interval(s, x, 0.0)
             @test result3[1] == 1
             @test hint_ref[] == 1
-        end
-
-        @testset "search_interval DirectSearch+RefHint with spacing" begin
-            x = 0.0:0.5:2.0  # 5 points
-            spacing = _create_spacing(x)
-            hint_ref = Ref(1)
-            s = _to_searcher(DirectSearch(), hint_ref)
-
-            result = search_interval(s, x, spacing, 1.3)
-            @test result[1] == 3
-            @test hint_ref[] == 3
         end
 
         @testset "Type inference: no Union leakage" begin
@@ -1743,14 +1645,11 @@
     #   4. @boundscheck triggers on out-of-range GridIdx
 
     @testset "GridIdx search_interval dispatch" begin
-        # --- Setup: Vector grid + VectorSpacing ---
+        # --- Setup: Vector grid ---
         x_vec = collect(range(0.0, 1.0; length = 11))   # 11 points, 10 cells
-        spacing_vec = VectorSpacing(diff(x_vec), 1.0 ./ diff(x_vec))
 
-        # --- Setup: Range grid + ScalarSpacing ---
+        # --- Setup: Range grid ---
         x_range = range(0.0, 1.0; length = 11)
-        h = step(x_range)
-        spacing_range = ScalarSpacing(h, inv(h))
 
         # Target: interior cell 5 → x[5]=0.4, x[6]=0.5
         k = 5
@@ -1805,56 +1704,6 @@
             @test idx == k
             @test lo ≈ x_range[k]
             @test hi ≈ x_range[k + 1]
-            @test hint.idx[] == k
-        end
-
-        # --------------------------------------------------------
-        # 4-arg: search_interval(searcher, grid, spacing, GridIdx(k))
-        # --------------------------------------------------------
-
-        @testset "4-arg: BinarySearch + NoHint + Vector + VectorSpacing" begin
-            s = Searcher{BinarySearch, NoHint}(NoHint())
-            idx, _, lo, hi = @inferred search_interval(s, x_vec, spacing_vec, GridIdx(k))
-            @test idx == k
-            @test lo ≈ x_vec[k]
-            @test hi ≈ x_vec[k + 1]
-        end
-
-        @testset "4-arg: LinearSearch + RefHint + Vector + VectorSpacing" begin
-            hint = RefHint()
-            hint.idx[] = 1
-            s = Searcher{LinearSearch, RefHint}(hint)
-            idx, _, lo, hi = @inferred search_interval(s, x_vec, spacing_vec, GridIdx(k))
-            @test idx == k
-            @test lo ≈ x_vec[k]
-            @test hint.idx[] == k
-        end
-
-        @testset "4-arg: LinearBinarySearch + RefHint + Vector + VectorSpacing" begin
-            hint = RefHint()
-            hint.idx[] = 1
-            s = Searcher{LinearBinarySearch{8}, RefHint}(hint)
-            idx, _, lo, hi = @inferred search_interval(s, x_vec, spacing_vec, GridIdx(k))
-            @test idx == k
-            @test lo ≈ x_vec[k]
-            @test hint.idx[] == k
-        end
-
-        @testset "4-arg: DirectSearch + NoHint + Range + ScalarSpacing" begin
-            s = Searcher{DirectSearch, NoHint}(NoHint())
-            idx, _, lo, hi = @inferred search_interval(s, x_range, spacing_range, GridIdx(k))
-            @test idx == k
-            @test lo ≈ x_range[k]
-            @test hi ≈ x_range[k + 1]
-        end
-
-        @testset "4-arg: DirectSearch + RefHint + Range + ScalarSpacing" begin
-            hint = RefHint()
-            hint.idx[] = 1
-            s = Searcher{DirectSearch, RefHint}(hint)
-            idx, _, lo, hi = @inferred search_interval(s, x_range, spacing_range, GridIdx(k))
-            @test idx == k
-            @test lo ≈ x_range[k]
             @test hint.idx[] == k
         end
 

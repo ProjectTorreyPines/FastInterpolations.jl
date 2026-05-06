@@ -14,7 +14,7 @@
     # Access internal functions for testing
     import FastInterpolations: _resolve_extrap, _resolve_search_nd, _resolve_bcs_nd,
         _resolve_side_nd, _validate_nd_grids,
-        _promote_grid_eltype, _convert_grids_typed, _create_spacings_typed,
+        _promote_grid_eltype, _convert_grids_typed,
         _check_mode_periodic_compat, _check_modes_periodic_compat,
         _mode_to_modes_with_periodic, _modes_to_modes_with_periodic
 
@@ -217,17 +217,6 @@
             @test _promote_grid_eltype(grids_f32) === Float32
         end
 
-        @testset "_create_spacings_typed" begin
-            # Range → ScalarSpacing
-            x_range = range(0.0, 1.0, 11)
-            # Vector → VectorSpacing
-            y_vec = [0.0, 0.3, 0.7, 1.0]
-
-            spacings = _create_spacings_typed((x_range, y_vec))
-            @test length(spacings) == 2
-            # First should be ScalarSpacing (uniform grid)
-            # Second should be VectorSpacing (non-uniform)
-        end
     end
 
     # ========================================

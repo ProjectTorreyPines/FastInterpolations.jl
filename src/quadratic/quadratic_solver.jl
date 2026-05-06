@@ -37,7 +37,7 @@ Compute secant slopes: s[i] = (y[i+1] - y[i]) * inv_h[i]
 # Arguments
 - `s::AbstractVector`: Output secant vector (length n-1)
 - `y::AbstractVector`: Values at grid points (length n)
-- `axis::AbstractVector{Tg}`: Grid spacing (ScalarSpacing or VectorSpacing)
+- `axis::AbstractVector{Tg}`: Wrapped or raw grid axis (read via `_get_inv_h(axis, i)`)
 """
 @inline function _compute_quadratic_secants!(s::AbstractVector{Tc}, y::AbstractVector, axis::AbstractVector{Tg}) where {Tc, Tg}
     n = length(y) - 1
@@ -276,7 +276,7 @@ Compute quadratic coefficients: a[i] = (s[i] - d[i]) * inv_h[i]
 - `a::Vector{Tv}`: Output coefficient array (length n-1, value-derived)
 - `d::Vector{Tv}`: Slope array (length n, value-derived)
 - `s::Vector{Tv}`: Secant slopes (length n-1, value-derived)
-- `axis::AbstractVector{Tg}`: Grid spacing (ScalarSpacing or VectorSpacing)
+- `axis::AbstractVector{Tg}`: Wrapped or raw grid axis (read via `_get_inv_h(axis, i)`)
 
 # Type Parameters
 - `Tv`: Value type (unconstrained)

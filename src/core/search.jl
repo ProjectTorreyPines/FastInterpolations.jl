@@ -11,7 +11,7 @@
 #   Searcher → search_interval → _search_direct (O(1) for Range)
 #                              → _search_binary (O(log n) for Vector)
 #
-# Include order dependency: grid_spacing.jl (for ScalarSpacing) → search.jl
+# Include order: load after `_CachedRange` / `_CachedVector` axis wrappers.
 
 # ========================================
 # 1. User-Facing Search Policy Types (Exported)
@@ -597,46 +597,6 @@ compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
     return idx, xL, xR
 end
 
-"""
-    _search_direct(x::_CachedRange{T}, ::ScalarSpacing{T}, xq::Real)
-
-_CachedRange already has inv_h built in — delegate to 2-arg version.
-"""
-@inline function _search_direct(
-        x::_CachedRange{T}, ::ScalarSpacing{T}, xq::Real
-    ) where {T}
-    return _search_direct(x, xq)
-end
-
-"""
-    _search_direct(x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::Real)
-
-Spacing-aware O(1) direct calculation for ScalarSpacing.
-Uses pre-computed `inv_h` for multiplication instead of division.
-"""
-@inline function _search_direct(
-        x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::Real
-    ) where {T}
-    n = length(x)
-    x_min = first(x)
-    idx = clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - x_min, spacing.inv_h, 1))), 1, n - 1)
-    xL = muladd(idx - 1, spacing.h, x_min)
-    xR = xL + spacing.h
-    return idx, xL, xR
-end
-
-"""
-    _search_binary(x::AbstractVector{T}, ::AbstractGridSpacing{T}, xq::Real)
-
-VectorSpacing delegates to non-spacing version.
-"""
-@inline function _search_binary(
-        x::AbstractVector{T}, ::AbstractGridSpacing{T}, xq::Real
-    ) where {T <: Real}
-    return _search_binary(x, xq)
-end
-
-
 # ========================================
 # 3. Hinted Search Implementations
 # ========================================
@@ -840,19 +800,6 @@ but updated for correct state tracking in heterogeneous ND grids.
     return idx, xL, xR
 end
 
-"""
-    _search_direct!(x::AbstractRange, spacing, xq, hint_ref) -> (idx, xL, xR)
-
-Spacing-aware mutating variant for ND paths: O(1) arithmetic + hint update.
-"""
-@inline function _search_direct!(
-        x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::Real, hint_ref::Base.RefValue{Int}
-    ) where {T}
-    idx, xL, xR = _search_direct(x, spacing, xq)
-    hint_ref[] = idx
-    return idx, xL, xR
-end
-
 # ========================================
 # 4. Main Dispatcher (search_interval)
 # ========================================
@@ -910,10 +857,6 @@ end
     idx, xL, xR = _search_grididx_dispatch(s.hint, x, xq)
     return idx, idx + 1, xL, xR
 end
-@inline function search_interval(s::Searcher, x::AbstractVector, ::AbstractGridSpacing, xq::GridIdx)
-    idx, xL, xR = _search_grididx_dispatch(s.hint, x, xq)
-    return idx, idx + 1, xL, xR
-end
 
 # --- Real + any BC that isn't exclusive: pure 3→4 tuple packaging, no seam wrap.
 # Covers NoBC, PeriodicBC{:inclusive}, CubicFit, QuadraticFit, and any future BC
@@ -921,10 +864,6 @@ end
 # methods below take precedence via Julia method specificity. ---
 @inline function search_interval(s::Searcher{P, H, <:AbstractBC}, x::AbstractVector, xq::Real) where {P, H}
     idx, xL, xR = _search_interval_real(s, x, xq)
-    return idx, idx + 1, xL, xR
-end
-@inline function search_interval(s::Searcher{P, H, <:AbstractBC}, x::AbstractVector, spacing::AbstractGridSpacing, xq::Real) where {P, H}
-    idx, xL, xR = _search_interval_real(s, x, spacing, xq)
     return idx, idx + 1, xL, xR
 end
 
@@ -945,23 +884,12 @@ end
     idx, xL, xR = _search_interval_real(s, x, xq)
     return idx, idx + 1, xL, xR
 end
-@inline function search_interval(s::Searcher{P, H, <:PeriodicBC{:exclusive}}, x::AbstractVector, spacing::AbstractGridSpacing, xq::Real) where {P, H}
-    n = length(x)
-    @inbounds if xq >= x[n]
-        _writeback_seam_hint(s.hint, n)
-        return n, 1, x[n], x[1] + s.bc.period
-    end
-    idx, xL, xR = _search_interval_real(s, x, spacing, xq)
-    return idx, idx + 1, xL, xR
-end
 
 # --- Layer 2: Policy-specific Real dispatch (BC widened via `where {BC}`; body unchanged) ---
 
 # BinarySearch + NoHint (zero-overhead)
 @inline _search_interval_real(::Searcher{BinarySearch, NoHint, BC}, x::AbstractVector, xq::Real) where {BC} =
     _search_binary(x, xq)
-@inline _search_interval_real(::Searcher{BinarySearch, NoHint, BC}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg, BC} =
-    _search_binary(x, spacing, xq)
 
 # BinarySearch + RefHint (pure binary + hint write-back, zero search overhead)
 @inline function _search_interval_real(p::Searcher{BinarySearch, RefHint, BC}, x::AbstractVector, xq::Real) where {BC}
@@ -969,35 +897,22 @@ end
     p.hint.idx[] = idx
     return idx, xL, xR
 end
-@inline function _search_interval_real(p::Searcher{BinarySearch, RefHint, BC}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg, BC}
-    idx, xL, xR = _search_binary(x, spacing, xq)
-    p.hint.idx[] = idx
-    return idx, xL, xR
-end
 
 # LinearSearch + RefHint
 @inline _search_interval_real(p::Searcher{LinearSearch, RefHint, BC}, x::AbstractVector, xq::Real) where {BC} =
-    _search_linear!(x, xq, p.hint.idx)
-@inline _search_interval_real(p::Searcher{LinearSearch, RefHint, BC}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) where {BC} =
     _search_linear!(x, xq, p.hint.idx)
 
 # LinearBinarySearch{MAX} + RefHint
 @inline _search_interval_real(p::Searcher{LinearBinarySearch{MAX}, RefHint, BC}, x::AbstractVector, xq::Real) where {MAX, BC} =
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
-@inline _search_interval_real(p::Searcher{LinearBinarySearch{MAX}, RefHint, BC}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) where {MAX, BC} =
-    _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 
 # DirectSearch + NoHint (Range grids, zero-overhead)
 @inline _search_interval_real(::Searcher{DirectSearch, NoHint, BC}, x::AbstractRange, xq::Real) where {BC} =
     _search_direct(x, xq)
-@inline _search_interval_real(::Searcher{DirectSearch, NoHint, BC}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg, BC} =
-    _search_direct(x, spacing, xq)
 
 # DirectSearch + RefHint (Range grids with persistent hint)
 @inline _search_interval_real(p::Searcher{DirectSearch, RefHint, BC}, x::AbstractRange, xq::Real) where {BC} =
     _search_direct!(x, xq, p.hint.idx)
-@inline _search_interval_real(p::Searcher{DirectSearch, RefHint, BC}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg, BC} =
-    _search_direct!(x, spacing, xq, p.hint.idx)
 
 # ========================================
 # 5. Internal Aliases (for module-internal use)
@@ -1011,13 +926,5 @@ end
 end
 @inline function _search_interval(x::AbstractRange, xq::Real)
     idx, xL, xR = _search_direct(x, xq)
-    return idx, idx + 1, xL, xR
-end
-@inline function _search_interval(x::AbstractVector, spacing::AbstractGridSpacing, xq::Real)
-    idx, xL, xR = _search_binary(x, spacing, xq)
-    return idx, idx + 1, xL, xR
-end
-@inline function _search_interval(x::AbstractRange, spacing::ScalarSpacing, xq::Real)
-    idx, xL, xR = _search_direct(x, spacing, xq)
     return idx, idx + 1, xL, xR
 end

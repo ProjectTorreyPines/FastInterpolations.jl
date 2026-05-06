@@ -172,16 +172,6 @@ end
     return _to_float_adding_endpoint(r, T)
 end
 
-# ========================================
-# _create_spacing: _CachedRange specialization
-# ========================================
-
-# TODO(spacing-cleanup): see grid_spacing.jl AbstractGridSpacing marker.
-# _CachedRange already has h and inv_h cached — trivial field copy, no recomputation.
-function _create_spacing(x::_CachedRange{T}) where {T}
-    return ScalarSpacing{T}(x.h, x.inv_h)
-end
-
 # ---------- Wrapper-aware `_convert_copy` ----------
 # `_CachedRange{T}` is an immutable struct of scalar fields — no buffer to
 # share with user code, so same-type "copy" is the same reference (free).

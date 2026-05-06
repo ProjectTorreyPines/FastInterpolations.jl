@@ -7,7 +7,7 @@
 
 @testitem "search_interval — 4-tuple BC dispatch" begin
     using FastInterpolations: search_interval, Searcher, BinarySearch, NoHint,
-        NoBC, PeriodicBC, _create_spacing
+        NoBC, PeriodicBC
 
     @testset "NoBC: idx_R = idx_L + 1, no seam" begin
         # Both Range and Vector grids
@@ -74,21 +74,6 @@
         @test (idx_L, idx_R) == (4, 1)
         @test xL ≈ 0.75
         @test xR ≈ 1.0
-    end
-
-    @testset "PeriodicBC{:exclusive}: spacing-overload returns same 4-tuple" begin
-        # The 4-arg variant (with explicit spacing) must agree with the 3-arg
-        # variant — periodic oneshot ND paths exercise the spacing overload.
-        x = range(0.0, step = 0.25, length = 4)
-        spacing = _create_spacing(x)
-        bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
-        s = Searcher{BinarySearch, NoHint, typeof(bc)}(NoHint(), bc)
-
-        for xq in (0.1, 0.4, 0.74, 0.75, 0.85)
-            t3 = search_interval(s, x, xq)
-            t4 = search_interval(s, x, spacing, xq)
-            @test t3 == t4
-        end
     end
 
     @testset "Float32 grid: types preserved through seam" begin

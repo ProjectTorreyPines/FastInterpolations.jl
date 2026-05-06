@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778021065218,
+  "lastUpdate": 1778090462395,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -48718,6 +48718,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1096.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7edb7a88d2362b812aa659495fd71cb5fa8d7fa0",
+          "message": "(refac+feat): Finish AbstractGridSpacing removal + PeriodicBC on Linear/Constant ND adjoints (#135)\n\n* (refac): add spacings-free `_bake_nd_anchors_generic` + axis-based `_compute_mincurv_C` overloads\n\nFoundation for PR2 adjoint migration off `AbstractGridSpacing`. Both helpers\nnow have parallel overloads that read `_get_h(grids[d], idx)` /\n`_get_inv_h(axis, i)` directly from wrapped axes (`_CachedRange` /\n`_CachedVector` / `_ExclusivePeriodicAxis`), enabling the upcoming\nLinear/Constant/Quadratic/Hetero/Cubic ND adjoint migrations.\n\nThe 5-arg spacings-based `_bake_nd_anchors_generic` and `_compute_mincurv_C`\noverloads remain in place — Cubic ND forward + 1D Quadratic adjoint still\ncall them. They will be removed once those families migrate.\n\nPeriodicBC{:exclusive} support is transparent in the new 4-arg form: when\n`grids[d]` is `_ExclusivePeriodicAxis`, `search_interval` returns\n`idx_R = 1` for the seam cell and `_get_h` returns the seam-cell width\n`_x_max - inner[n]` automatically.\n\n* (test): cover nd_utils.jl `_first_fill_value` defensive arm + `_check_mono_nd` generic-queries protocol\n\nAfter running the suite with `--code-coverage=user`, two `nd_utils.jl`\narms remained as hit-zero — both unreachable from current production\ncallers but still flagged by Codecov:\n\n- `_first_fill_value` ends with `error(\"unreachable: ...\")` for the\n  no-FillExtrap case. Guarded by `_is_fill_oob` upstream so unreachable\n  in normal flow; covered by direct invocation with extraps tuples that\n  contain no FillExtrap.\n- `_check_mono_nd(policies, queries)` (generic-queries protocol overload)\n  is the fallback for any container implementing `_query_length` /\n  `_query_extract` outside the SoA / AoS shapes. No production caller\n  uses this path; covered via a tiny custom container exercising both\n  the < 8 fast-path and the ≥ 8 AoS mono-check arm.\n\n* (refac+feat): LinearAdjointND — drop spacings::S, add bc kwarg + PeriodicBC support\n\nMigrates `LinearAdjointND` off `AbstractGridSpacing` and adds first-class\nboundary-condition support (including `PeriodicBC{:inclusive}` and\n`PeriodicBC{:exclusive}`), closing a feature parity gap with forward\n`LinearInterpolantND`.\n\nStruct changes:\n- Drop `S <: NTuple{N, AbstractGridSpacing{Tg}}` type param + `spacings::S` field\n- Add `B <: NTuple{N, AbstractBC}` type param + `bcs::B` field\n- Inner ctor uses `_convert_copy(_cache_axis(g, bc, Tg), Tg)` for ownership\n\nAPI changes:\n- `linear_adjoint(grids, queries; bc=NoBC(), extrap=NoExtrap())` — `bc` now a\n  proper kwarg (was silently swallowed by `_extra...`); accepts single\n  `AbstractBC` or per-axis `NTuple{N, AbstractBC}`\n- `_adjoint_bcs(::LinearAdjointND) → adj.bcs` (was a non-periodic sentinel\n  tuple); makes the ND protocol's `_adjoint_apply_exclusive_nd!` activate\n  automatically for `:exclusive` periodic axes\n\nInternal changes:\n- `_bake_linear_nd_anchors` drops `spacings` param — reads `_get_h(grids[d],\n  idx)` directly. PeriodicBC seam handling is transparent: when `grids[d]`\n  is `_ExclusivePeriodicAxis`, search returns `idx_R=1` for the seam cell\n  and `_get_h` returns the correct seam-cell width\n- New `_linear_adjoint_dispatch` shared helper threads `bc`/`extrap` through\n  `_resolve_bcs_nd` + 2-arg `_cache_axis` map (matches forward\n  LinearInterpolantND pattern for `@inferred` stability)\n- `_build_linear_nd_adjoint` signature gains `bcs::NTuple{N, AbstractBC}`\n\nOutput sizing for `:exclusive`: internal scatter operates on the wrapper's\nlength-(n+1) logical view; the ND protocol's `_adjoint_output_size` reduces\nby 1 per `:exclusive` axis and `_adjoint_apply_exclusive_nd!` folds the\nseam contribution back into index 1 before trimming. User sees length-n\noutput matching the user-supplied grid.\n\nNew test: test/test_linear_nd_adjoint_periodic.jl — gold-standard\ndot-product identity ⟨W·f, ȳ⟩ == ⟨f, Wᵀ·ȳ⟩ for 8 periodic configurations\n(2D/3D × Range/Vector × :inclusive/:exclusive × full-periodic/mixed +\nexplicit seam-cell coverage). Passes within rtol=1e-9.\n\n* (refac+feat): ConstantAdjointND — drop spacings::S, add bc kwarg + PeriodicBC support\n\nMirrors the LinearAdjointND migration (C2). ConstantAdjointND was the only\nother ND adjoint with no `bc` kwarg in its public API.\n\nStruct changes:\n- Drop `S <: NTuple{N, AbstractGridSpacing{Tg}}` type param + `spacings::S` field\n- Add `B <: NTuple{N, AbstractBC}` type param + `bcs::B` field\n- Inner ctor uses `_convert_copy(_cache_axis(g, bc, Tg), Tg)` for ownership\n\nAPI changes:\n- `constant_adjoint(grids, queries; bc=NoBC(), side=NearestSide(), extrap=NoExtrap())`\n  — `bc` kwarg now properly accepted\n- `_adjoint_bcs(::ConstantAdjointND) → adj.bcs` — activates ND protocol\n  `_adjoint_apply_exclusive_nd!` for `:exclusive` periodic axes\n\nInternal changes:\n- `_bake_constant_nd_anchors` drops `spacings` param — reads `_get_h(grids[d],\n  idx)` from wrapped axes; periodic seam fold transparent via wrapper-level\n  `search_interval` dispatch\n- New `_constant_adjoint_dispatch` shared helper (matches `_linear_adjoint_dispatch`\n  pattern), `_build_constant_nd_adjoint` signature gains `bcs`\n\nNew test: test/test_constant_nd_adjoint_periodic.jl — dot-product identity\nfor periodic configurations (2D/3D × Range/Vector × :inclusive/:exclusive\n× full-periodic/mixed × side modes). Constant interp is single-point\nscatter, so identity holds within rtol=1e-12 (tighter than Linear's 1e-9).\n\n* (refac): QuadraticAdjointND — drop spacings::S; migrate shared helpers to axis-as-truth\n\nPure refactor: drops `spacings::S` from QuadraticAdjointND and migrates\nall quadratic adjoint shared helpers (1D + ND) to read `_get_h(grid, i)`\n/ `_get_inv_h(grid, i)` directly from wrapped axes.\n\nPeriodicBC remains out of scope by design — half-integer slope offset is\nincompatible with seam wrap. The outer API still rejects user-supplied\nPeriodicBC (downstream BC validation catches it).\n\nStruct changes (ND):\n- Drop `S <: NTuple{N, AbstractGridSpacing{Tg}}` type param + `spacings::S` field\n- Inner ctor uses `_convert_copy(_cache_axis(g, bc, Tg), Tg)` for ownership\n\nHelper migrations (1D + ND shared, src/quadratic/quadratic_adjoint.jl):\n- 6 `_recurrence_adjoint!` overloads drop `spacing::AbstractGridSpacing` param\n- 2 `_call_recurrence_adjoint!` dispatchers drop `spacing` param\n- `_secant_adjoint!` takes `axis::AbstractVector{Tg}` instead of spacing\n- `_compute_mincurv_C` default arg switches to axis-based form (added in C1)\n- `_mincurv_C_for_bc` per-axis dispatcher takes wrapped grid\n\nInternal changes (ND):\n- `_bake_nd_quadratic_anchors` calls 4-arg `_bake_nd_anchors_generic`\n- `_adjoint_axis_pair_quadratic!` drops `spacing_d::AbstractGridSpacing` param\n- `_build_adjoint_nd_quadratic!` drops `spacings` param\n- `_quadratic_adjoint_nd_apply!` no longer reads `adj.spacings`\n- New `_quadratic_nd_adjoint_dispatch` shared helper threads `bc`/`extrap`\n  through `_resolve_bcs_nd` + 2-arg `_cache_axis` map\n\nInternal changes (1D, transient):\n- 1D `QuadraticAdjoint` struct keeps `spacing::S` field unused (removed in C7)\n- Constructor switches `_compute_mincurv_C(spacing, n)` → `(gc, n)` (axis form)\n- Apply path passes `adj.grid` to `_call_recurrence_adjoint!` and\n  `_secant_adjoint!` (was `adj.spacing` for both)\n\nVerification: 1D + ND quadratic adjoint, hetero ND adjoint (calls quadratic\nhelpers per-axis), cubic ND adjoint (still on legacy spacings, untouched).\nAll green.\n\n* (refac): HeteroAdjointND — drop spacings::S; reads `_get_h`/`_get_inv_h` from wrapped axes\n\nPure refactor: drops `spacings::S` from HeteroAdjointND. Per-axis caches\n(cubic) and grids carry the necessary `h`/`inv_h` data already — caches\nvia `cache.x` (wrapped via `_resolve_axis_copied`), grids via the\n`_get_h(axis, i)` overloads on `_CachedRange` / `_CachedVector` /\n`_ExclusivePeriodicAxis` / raw `AbstractVector`.\n\nCubic axes with `PeriodicBC{:exclusive}` retain the explicit grid extension\n(`vcat` / `_to_float_adding_endpoint`) at the build path — Cubic ND adjoint\n(C6 scope) still operates on the extended raw grid. After C6 migration the\nextension can be dropped in favour of `_ExclusivePeriodicAxis` wrapping.\n\nStruct changes:\n- Drop `S <: Tuple{Vararg{AbstractGridSpacing, N}}` type param + `spacings::S` field\n- Outer ctor signature stays identical for direct callers (positional args remain)\n\nInternal changes:\n- `_hetero_axis_adjoint!` (Cubic + Quadratic) drops `spacing_d::AbstractGridSpacing` param\n- `_build_adjoint_nd_hetero!` no longer reads `adj.spacings[d]`\n- `_bake_hetero_nd_anchors` uses 4-arg `_bake_nd_anchors_generic` (axis-based)\n- `_build_hetero_nd_adjoint` drops `_create_spacings_typed` call; mincurv_Cs\n  precomputation now reads `_get_inv_h(grid_d, i)` via axis-based\n  `_mincurv_C_for_bc` (migrated in C4)\n\nVerification: existing `test_hetero_nd_adjoint.jl` + `test_hetero_nd.jl`\nboth green. Cubic-axis periodic still works through Sherman-Morrison\ntranspose path (untouched), quadratic axis with non-periodic BCs still\nspecializes through the same `_adjoint_axis_pair_quadratic!` (C4).\n\n* (refac): CubicAdjointND — drop spacings::S; build path uses caches[d].x directly\n\nPure refactor: drops `spacings::S` from CubicAdjointND. The `_build_adjoint_nd!`\nfunction never actually read `spacings` (it was plumbed through but unused\ninside the body — the function barriers `_adjoint_axis_pair!` and\n`_adjoint_axis_pair_periodic!` operate on `cache.thomas` and `cache.x`).\n\nPer-axis Sherman-Morrison transpose for periodic axes is unchanged — the\nperiodic q_t = A'⁻ᵀ u precomputation reads from `caches[d].thomas`, not\nspacings. Anchor baking now uses the spacings-free 4-arg overload from C1,\nreading `_get_h(grids[d], idx)` directly from `grids_ext` (extended raw\ngrids; `_get_h(::AbstractRange, i)` returns step, `_get_h(::AbstractVector, i)`\ndoes `float(x[i+1] - x[i])` — same numeric value as the legacy spacing\nlookup, negligible per-anchor cost vs the @generated 4^N scatter).\n\nStruct changes:\n- Drop `S <: NTuple{N, AbstractGridSpacing{Tg}}` type param + `spacings::S` field\n- 7 type params → 6 (Tg, N, C, MC, BP, MBP)\n\nInternal changes:\n- `_bake_nd_anchors` 4-arg form (drops spacings param)\n- `_build_adjoint_nd!` drops `spacings` param\n- `_cubic_adjoint_nd_apply!` no longer reads `adj.spacings`\n- `_build_nd_adjoint` drops `_create_spacings_typed` call\n\nVerification: full Cubic ND adjoint test suite (incl. PeriodicBC inclusive\n+ exclusive, mixed periodic × non-periodic, mixed-partial dual-cache path)\ngreen; Hetero ND adjoint (cubic-axis path) still green.\n\n* (refac): 1D QuadraticAdjoint — drop spacing::S field; struct now stores wrapped axis only\n\nPure refactor: drops the unused-since-C4 `spacing::S` field from 1D\n`QuadraticAdjoint`. After C4 migrated all helpers (`_recurrence_adjoint!`,\n`_call_recurrence_adjoint!`, `_secant_adjoint!`) to read from `axis::AbstractVector`,\nthe 1D struct's spacing field was already dead-weight — kept transiently\nfor the C4 commit boundary. C7 finishes the cleanup.\n\nStruct changes:\n- Drop `S <: AbstractGridSpacing{Tg}` type param + `spacing::S` field\n- 4 type params → 3 (Tg, BC, X)\n\nOuter API + bake path:\n- `_bake_quadratic_adjoint_anchors`: drops `spacing` param; uses 3-arg\n  `search_interval(DEFAULT_SEARCHER, x, xq_eval)` and `_get_h(x, idx)` /\n  `_get_inv_h(x, idx)` reading from the wrapped axis directly\n- `quadratic_adjoint(...)` outer: no longer calls transient `_create_spacing(x_p)`;\n  passes `(anchors, bc, length(x_p), x_p)` directly to inner ctor\n\nAfter this commit, neither 1D QuadraticAdjoint nor any of the 5 ND adjoints\ncontain a `spacing[s]` field. Only `CubicInterpolantND` forward (PR3 scope)\nstill depends on `AbstractGridSpacing`.\n\nVerification: full 1D Quadratic adjoint test suite green (48s).\n\n* refac: Remove PR_MESSAGE.md and migrate 1D/Series/ND forward path off legacy `spacing(s)::S`\n\n* (refac): drop `spacings::S` from CubicInterpolantND forward; eval reads wrapped grids\n\nCloses the persistent-struct migration off `AbstractGridSpacing`. Cubic ND\nforward was the last interpolant family carrying a separate spacings tuple;\nits eval path now reads `_get_h(itp.grids[d], idx)` / `_get_inv_h(...)`\nfrom wrapped axes (`_CachedRange` / `_CachedVector`) directly — same\ncached-scalar / cached-vector lookup the spacings field used to provide.\n\nStruct changes:\n- Drop `S <: NTuple{N, AbstractGridSpacing{Tg}}` type param + `spacings::S` field\n- Inner ctor wraps via `map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)`\n  (matches forward Linear/Constant/Hetero/Quadratic ND pattern)\n\nBuilder + eval:\n- `_build_nd_interpolant`: drop `_create_spacings_typed` call, add\n  `map(_cache_axis, grids, bcs)` after `_prepare_periodic_nd` so eval reads\n  cached `h`/`inv_h` from the wrapper instead of the legacy spacing struct\n- Generic `_locate_cell`: switch to axis-only `_search_all_intervals` /\n  `_compute_all_local_params` overloads\n- N=2 `_locate_cell` specialization: switch to axis-only `_locate_cell_2d_preamble`\n  + `_get_h(itp.grids[d], i)`\n- `integrate(::CubicInterpolantND, ...)` reads `itp.grids[d]` instead of\n  `itp.spacings[d]`\n\nRestored `_get_h(::ScalarSpacing, i)` / `_get_h(::VectorSpacing, i)` /\n`_get_inv_h` getters in `grid_spacing.jl` and rewrote the cleanup TODO to\ndescribe the surviving consumer (one-shot pool-spacings path) without\nreferencing PR/commit identifiers.\n\nVerification: `test_cubic_nd.jl` (298 testset, 1m), `test_cubic_nd_adjoint.jl`\n(periodic + Sherman-Morrison, 2m), `test_integrate_nd.jl` all green.\n\nOut of scope: one-shot ND paths still use transient `_create_spacings_pooled`;\nthat's pure factory removal and bundled with the final `AbstractGridSpacing`\ndeletion in a follow-up.\n\n* (refac): Quadratic 1D coefficient solver — drop `spacing::AbstractGridSpacing`, take axis directly\n\nMigrates the 1D quadratic coefficient pipeline (`_compute_quadratic_secants!`,\n`_fill_slopes!` × 8 BC overloads, `_compute_quadratic_coefficients!`,\n`_compute_quadratic_coeffs[!]`) to take `axis::AbstractVector{Tg}` instead\nof `spacing::AbstractGridSpacing{Tg}`. Internal `_get_h(axis, i)` /\n`_get_inv_h(axis, i)` work identically — wrapped axes (`_CachedRange` /\n`_CachedVector`) hit the cached scalar/vector lookup, raw `Vector` falls\nback to on-the-fly diff. No numeric change.\n\nOuter callers no longer build a transient `spacing`:\n- `quadratic_interpolant.jl`: drops `spacing = _create_spacing(x_eff)`,\n  passes wrapped `x_eff` directly to `_compute_quadratic_coeffs`\n- `quadratic_oneshot.jl`: drops `_create_spacing_pooled(pool, x)` in both\n  scalar and batch one-shot paths\n- `quadratic_oneshot_series.jl`: drops `_create_spacing_pooled(pool, x)` in\n  all 3 series one-shot paths\n- `quadratic_series_interp.jl`: drops `_create_spacing(x)` from the\n  per-column build loop\n- `quadratic_nd_build.jl` (`_slope_1d_quadratic!`): drops\n  `_create_spacing_pooled(pool, grid)` — passes `grid` directly\n\nTop-level `_compute_quadratic_coeffs[!]` API simplified by collapsing the\nduplicate `axis::AbstractVector{Tg}` parameter into the existing\n`x::AbstractVector{Tg}` parameter (they were always the same wrapped axis).\n\nTests in `test/test_quadratic.jl` (Group 3 — Coefficient Computation) used\nto construct `VectorSpacing{Float64}(h, inv.(h))` and pass it directly to\nthe internal helpers. Migrated to `vcat(0.0, cumsum(h))` (an axis vector\nmatching the same h pattern) — solver reads `_get_inv_h(::Vector, i) =\ninv(float(x[i+1] - x[i]))`, equivalent value.\n\n* (refac): one-shot ND eval pipeline — drop `_create_spacings_pooled`, use axis-only helpers\n\nThe Cubic / Hetero / Quadratic ND one-shot paths used to compute a transient\n`spacings = _create_spacings_pooled(pool, grids_p)` and thread it into\n`_search_all_intervals` + `_compute_all_local_params`. Replaces those calls\nwith the axis-only overloads — `grids_p` carries `h`/`inv_h` directly via\n`_get_h(::AbstractVector, i)` (cached lookup for wrapped axes; on-the-fly\ndiff for raw `Vector` from `_prepare_periodic_nd_pooled`).\n\nFiles:\n- `src/cubic/nd/cubic_nd_oneshot.jl`: scalar + batch paths\n- `src/hetero/hetero_oneshot.jl`: scalar + batch paths\n- `src/quadratic/nd/quadratic_nd_oneshot.jl`: scalar + batch paths\n\nAdds one missing axis-only `_search_all_intervals` overload in\n`src/core/nd_utils.jl`: 5-arg `(q_evals, grids, policies, ::Nothing, mono)`\n(used by Cubic/Hetero/Quadratic ND batch paths whose `hints` argument is\n`Nothing`). Delegates to the existing 3-arg form, ignoring `mono` consistent\nwith the existing 4-arg `Nothing`-hint variant.\n\nNo allocation or perf regression: the `_create_spacings_pooled` call\nallocated a pool buffer for Vector grids, then `_get_h(spacing, i)` did a\nvector lookup. Now `_get_h(::AbstractVector, i)` does `float(x[i+1] - x[i])`\ndirectly — single subtraction per call vs single load, indistinguishable\nin the eval hot loop and one fewer pool acquisition per one-shot call.\n\n* (refac): delete AbstractGridSpacing hierarchy — wrapped axes are the single source of truth\n\nAfter the forward and adjoint paths fully migrated off `spacing(s)::S`, the\n`AbstractGridSpacing` / `ScalarSpacing` / `VectorSpacing` types and their\n`_create_spacing*` factories had no remaining consumers. This commit removes\nthe entire hierarchy plus all the spacings-aware overloads that used to\nshadow the axis-based ones.\n\nDeleted types:\n- `AbstractGridSpacing{T}`, `ScalarSpacing{T}`, `VectorSpacing{T,Tinv}`\n\nDeleted factories:\n- `_create_spacing(::AbstractRange)`, `_create_spacing(::AbstractVector)`\n- `_create_spacing(::_CachedRange)`, `_create_spacing(::_CachedVector)`,\n  `_create_spacing(::_ExclusivePeriodicAxis)` shims\n- `_create_spacings_typed`, `_create_spacing_pooled`, `_create_spacings_pooled`\n\nDeleted spacings overloads in `src/core/search.jl`:\n- `_search_direct(::_CachedRange, ::ScalarSpacing, ::Real)`,\n  `_search_direct(::AbstractRange, ::ScalarSpacing, ::Real)`,\n  `_search_binary(::AbstractVector, ::AbstractGridSpacing, ::Real)`,\n  `_search_direct!(...)` 4-arg with spacing\n- `search_interval` 4-arg overloads (3 of them: GridIdx, generic-BC,\n  PeriodicBC{:exclusive})\n- `_search_interval_real` 4-arg overloads × 6 (across all policy/hint combos)\n- `_search_interval` 3-arg with spacing × 2\n\nDeleted spacings overloads in `src/core/nd_utils.jl`:\n- `_search_axis_oneshot` (4-arg with spacing), `_search_axis_oneshot_hint`\n- Dead `_search_axis_oneshot_bc` / `_search_axis_oneshot_bc_hint`\n- `_search_axis_adaptive` × 4 spacing overloads\n- `_search_all_intervals` spacings variants × 5 (different hint × mono combos)\n- `_compute_all_local_params(spacings, ...)` overload\n- `_locate_cell_2d_preamble(query, grids, spacings, ...)` overload\n\nDeleted other:\n- `_compute_mincurv_C(::AbstractGridSpacing, n)` legacy in quadratic_adjoint.jl\n- `_spacing_type(::Type{X})` in cubic_cache_pool.jl\n- `src/core/grid_spacing.jl` file (and `include` in core.jl)\n\nRestored after grid_spacing.jl deletion:\n- 3-arg `_get_h(::AbstractVector, xL::Real, xR::Real)` /\n  `_get_inv_h(...)` fallbacks moved to cached_vector.jl. These are the\n  termination point for the wrapper delegation chain\n  (`_ExclusivePeriodicAxis` → inner `_CachedVector`/raw `Vector` → here).\n  Without this, oneshot kernels with `xL`/`xR` pre-loaded from search would\n  hit a `MethodError` for `_CachedVector` inputs.\n\nTest cleanup:\n- `test/test_grid_spacing.jl` (entire file) deleted\n- `test/test_cached_vector.jl` backward-compat shim testitem deleted\n- `test/test_search.jl`: spacing-using testsets deleted (~170 lines), GridIdx\n  4-arg-with-spacing testsets pruned to 3-arg only\n- `test/test_nd_utils_shared.jl`, `test/test_nd_coverage.jl`,\n  `test/test_periodic_search_4value.jl`, `test/test_search_context_normalization.jl`:\n  spacings imports + usages removed\n- Stale doc comments in pchip/akima/cardinal adjoint headers and\n  cubic_nd_adjoint / quadratic_adjoint / quadratic_series_interp updated\n\nNet diff: 26 files, +67/-1223.\n\n* (test): Zygote AD coverage — Linear/Constant/Cubic ND PeriodicBC adjoint round-trip\n\nAdds Zygote.gradient comparison tests for the post-cleanup periodic adjoint\nplumbing. Each test verifies two invariants:\n\n1. **Shape correctness**: `size(Zygote.gradient(...)[1]) == size(data)` —\n   for `:exclusive`, the gradient comes back at the user's n-point shape,\n   not the n+1 internal scratch buffer that LinearAdjointND /\n   ConstantAdjointND / CubicAdjointND allocate during scatter.\n\n2. **Numeric equivalence**: Zygote-computed gradient matches the direct\n   `linear_adjoint(...)(ones(n_query))` / `constant_adjoint(...)` /\n   `cubic_adjoint(...)` call within rtol. This exercises the full path:\n   `linear_interp` → ChainRulesCore rrule → `_adjoint_func(linear_interp)\n   == linear_adjoint` → adjoint apply with `bc=PeriodicBC(...)` kwarg\n   threaded through.\n\nNew testsets in test/ext/test_autodiff_Zygote.jl:\n- Linear ND ∂/∂data — PeriodicBC{:inclusive}\n- Linear ND ∂/∂data — PeriodicBC{:exclusive} (n→n+1→n round-trip)\n- Linear ND ∂/∂data — PeriodicBC{:exclusive} × NoBC mixed\n- Constant ND ∂/∂data — PeriodicBC{:inclusive}\n- Constant ND ∂/∂data — PeriodicBC{:exclusive} (n→n+1→n round-trip)\n- Cubic ND ∂/∂data — PeriodicBC{:exclusive} (n→n+1→n round-trip;\n  parallels the existing `:inclusive` Cubic test, exercises Sherman-\n  Morrison transpose path AND the trim)\n\nConstant tolerance is tighter (1e-12) than Linear (1e-10) reflecting the\nsingle-point scatter vs 2^N-corner accumulation. Cubic uses 1e-10 to\nmatch the existing `:inclusive` test.\n\n* Runic formatting\n\n* perf: zero-alloc on ND `:exclusive` periodic adjoint apply\n\n`_adjoint_apply_exclusive_nd!` previously ran `for d in 1:N; selectdim(f_work, d, 1) .+= selectdim(f_work, d, gs[d])`. With runtime `d`, each `selectdim` produces a `SubArray` whose type depends on the dim, defeating compile-time specialization and forcing per-call boxing on heterogeneous BC tuples — ~248 bytes × 2 sides × N axes ≈ 992 bytes per call on 2D `:exclusive`×`:exclusive`.\n\nHoist the seam fold and the work→user trim view into `@generated` helpers that unroll the per-axis branches with literal integer `d` (and `Val{d}` static dispatch on the per-axis seam helper). Result: 992 → 0 byte per `adj(f_bar, y_bar)` across all 2D/3D `:exclusive` BC combinations.\n\nRestore the alloc-regression block in `test_linear_nd_adjoint_periodic.jl` / `test_constant_nd_adjoint_periodic.jl` that was scoped down to `:inclusive`-only — now exercises `:exclusive`×`:exclusive`, `:exclusive`×`NoBC`, and `:inclusive`×`:inclusive`. Also add `@inferred` ctor checks for `linear_adjoint(...; bc=PeriodicBC)` / `constant_adjoint(...; bc=PeriodicBC)` to pin the closure-over-`Tg` regression precedent.\n\n* chore: drop stale `spacings`-cleanup migration labels in src/\n\nRewrite five `# Post-PR1 …` / `# in PR1 …` / `# Why this matters for spacing-cleanup:` comments left over from the in-progress migration into plain present-tense statements, and update the `_search_all_intervals` docstring (which still listed the deleted `spacings` parameter in its signature) to match the post-cleanup axis-only call shape.\n\nAffected:\n- `src/core/nd_utils.jl` — `_search_all_intervals` docstring signature\n- `src/core/periodic_axis.jl` — design-note prelude on `_ExclusivePeriodicAxis`\n- `src/cubic/nd/cubic_nd_interpolant.jl` — `_cache_axis` mirror comment\n- `src/hetero/hetero_nointerp.jl`, `src/hetero/hetero_window.jl` — windowed-eval rationale\n- `src/quadratic/nd/quadratic_nd_eval.jl` — spacings-free overload comment\n\n* refac: handle non-derivative axes in seam-fold operation and update test for inclusive size check",
+          "timestamp": "2026-05-06T10:58:36-07:00",
+          "tree_id": "1de2871f44623064ec7587c4e09c4b6c11cda795",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/7edb7a88d2362b812aa659495fd71cb5fa8d7fa0"
+        },
+        "date": 1778090455177,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 39380,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83880\nallocs=29\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 747.12,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 335316,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515320\nallocs=40\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1988.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1683.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 15.92,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 7.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3485.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 35.95,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 13.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4649.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4649.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9751.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3205.32,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 491.34,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 62863.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1456,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4512\nallocs=11\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 14300.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40392\nallocs=16\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 23.33,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 485.14,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 47024,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 28.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 19450.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 38.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 332.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 202.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 19153,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 9.21,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.71,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 604.52,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4874.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 44926.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 726.88,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1758.24,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2479.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11825.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3920.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 41016.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 603.92,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 350821.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1102.6,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

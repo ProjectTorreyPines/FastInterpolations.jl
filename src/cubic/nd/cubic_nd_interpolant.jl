@@ -112,7 +112,7 @@ function _build_nd_interpolant(
 
     # Wrap extended raw grids into cached axes so eval reads `_get_h(grids[d], i)`
     # in O(1) (cached scalar/vector lookup) instead of falling back to on-the-fly
-    # `float(x[i+1] - x[i])`. Mirrors the post-PR1 forward path on Linear/Constant
+    # `float(x[i+1] - x[i])`. Mirrors the forward path on Linear/Constant
     # /Quadratic/Hetero ND.
     grids = map(_cache_axis, grids, bcs)
 

@@ -27,7 +27,7 @@
 # span, the `inner[1] + period` virtual endpoint at the seam). The data
 # companion is purely a cyclic-indexing wrapper with no coord semantics.
 #
-# Why this matters for spacing-cleanup: `_CachedVector.inv_h` has length n-1
+# Why a wrapper instead of `_CachedVector` extension: `_CachedVector.inv_h` has length n-1
 # (only normal cells). Without this wrapper, the seam cell (idx=n, idx_R=1
 # wrap) would force every eval kernel to special-case OOB lookups. With this
 # wrapper, search returns `idx_R = n+1` (virtual), `_getindex(g, n+1)` yields

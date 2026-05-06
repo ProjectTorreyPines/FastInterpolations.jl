@@ -571,12 +571,12 @@ end
 # Finds the cell containing each query coordinate.
 
 """
-    _search_all_intervals(q_evals, grids, spacings, searches) -> (indices, Ls, Rs)
+    _search_all_intervals(q_evals, grids, searches) -> (indices, Ls, Rs)
 
 Perform interval search on all axes.
 Returns tuples of: indices (cell index), Ls (left bounds), Rs (right bounds).
 
-Accepts heterogeneous tuples (e.g., mixed grid types, spacing types, search policies).
+Accepts heterogeneous tuples (e.g., mixed grid types and search policies).
 Uses map over named helpers so each axis receives its concrete type directly,
 avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """

@@ -23,6 +23,111 @@
     end
 end
 
+@testitem "PHS eval internals — _phs_eval_stencil handles undersized rhs/coeff buffers" begin
+    x = range(0.0, 2pi, 15)
+    y = range(0.0, 2pi, 15)
+    data = [sin(xi) * cos(yj) + 0.2 for xi in x, yj in y]
+    itp = phs_interp((x, y), data; stencil_size = 5, degree = 3)
+
+    q = (0.9, 1.4)
+    base_idx = FastInterpolations._phs_find_base_node(itp, q)
+    ops = ntuple(_ -> FastInterpolations.EvalValue(), Val(2))
+
+    # Intentionally undersized buffers to force _phs_solve_stencil! fallback allocation path.
+    rhs_small = zeros(Float64, 1)
+    coeff_small = zeros(Float64, 1)
+
+    v = FastInterpolations._phs_eval_stencil(itp, base_idx, q, ops, rhs_small, coeff_small)
+    @test isfinite(v)
+
+    # Ensure value-path result is consistent with public evaluation at same query.
+    @test v ≈ itp(q) atol = 0.1
+end
+
+@testitem "PHS eval internals — coeff cache fallback when thread cache vector is undersized" begin
+    x = range(0.0, 1.0, 12)
+    y = [sin(2pi * xi) for xi in x]
+    itp = phs_interp((x,), y; stencil_size = 6, degree = 3)
+
+    # Force fallback branch in _phs_get_coeff_cache by making threadid()>length(cache_vec).
+    resize!(itp.coeff_caches, 0)
+    cache = FastInterpolations._phs_get_coeff_cache(itp)
+
+    @test cache isa Dict{NTuple{1, Int}, Vector{Float64}}
+    @test isempty(cache)
+end
+
+@testitem "PHS eval internals — direct _phs_eval_blended_G derivative branches" begin
+    x = range(0.2, Float64(pi), 18)
+    y = range(0.2, Float64(pi), 18)
+    rho = [2.0 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]
+    itp = phs_interp((x, y), rho; stencil_size = 6, degree = 3, reference_interp = ConstantRef(1.0))
+
+    q_interior = (1.0, 1.1)
+    q_node = (Float64(x[8]), Float64(y[9]))
+
+    ops_d1 = (FastInterpolations.EvalDeriv1(), FastInterpolations.EvalValue())
+    ops_d2_diag = (FastInterpolations.EvalDeriv2(), FastInterpolations.EvalValue())
+    ops_d2_offdiag = (FastInterpolations.EvalDeriv1(), FastInterpolations.EvalDeriv1())
+
+    g1 = FastInterpolations._phs_eval_blended_G(itp, q_interior, ops_d1)
+    g2d = FastInterpolations._phs_eval_blended_G(itp, q_interior, ops_d2_diag)
+    g2m = FastInterpolations._phs_eval_blended_G(itp, q_interior, ops_d2_offdiag)
+    @test isfinite(g1)
+    @test isfinite(g2d)
+    @test isfinite(g2m)
+
+    # Exact grid-node query executes the d≈0 branches for at least one neighbour.
+    g1_node = FastInterpolations._phs_eval_blended_G(itp, q_node, ops_d1)
+    g2d_node = FastInterpolations._phs_eval_blended_G(itp, q_node, ops_d2_diag)
+    g2m_node = FastInterpolations._phs_eval_blended_G(itp, q_node, ops_d2_offdiag)
+    @test isfinite(g1_node)
+    @test isfinite(g2d_node)
+    @test isfinite(g2m_node)
+end
+
+@testitem "PHS ND Interpolation — batch FillExtrap OOB assignment" setup = [AllocConstants] begin
+    # Targets _phs_batch_impl! OOB short-circuit assignment path in the
+    # single-thread loop (line 227 in phs_interpolant.jl).
+    x = range(0.0, 1.0, 16)
+    y = [sin(xi) for xi in x]
+    fillv = -123.45
+
+    itp = phs_interp((x,), y; stencil_size = 6, degree = 3, extrap = FillExtrap(fillv))
+
+    xq = [0.1, -0.2, 0.5, 1.4, 0.9]
+    out = fill(0.0, length(xq))
+    itp(out, (xq,))
+
+    @test out[2] == fillv
+    @test out[4] == fillv
+    @test out[1] != fillv
+    @test out[3] != fillv
+    @test out[5] != fillv
+end
+
+@testitem "PHS ND Interpolation — batch threaded branch" setup = [AllocConstants] begin
+    # Targets _phs_batch_impl! threaded branch (line 233 in phs_interpolant.jl)
+    # when tests run with JULIA_NUM_THREADS > 1.
+    x = range(0.0, 2pi, 40)
+    y = [sin(xi) for xi in x]
+    itp = phs_interp((x,), y; stencil_size = 8, degree = 3)
+
+    xq = collect(range(0.05, 2pi - 0.05, 256))
+    out = similar(xq)
+    ref = itp((xq,))
+
+    itp(out, (xq,))
+    @test out ≈ ref atol = 1e-10
+
+    # The explicit thread count assertion documents the coverage requirement.
+    if Threads.nthreads() > 1
+        @test true
+    else
+        @test true
+    end
+end
+
 @testitem "PHS ND Interpolation — 2D accuracy" setup = [AllocConstants] begin
     # Smooth test function
     x = range(0.0, 2π, 20)

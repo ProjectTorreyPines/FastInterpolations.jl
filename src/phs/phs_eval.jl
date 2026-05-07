@@ -188,7 +188,9 @@ end
         xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
         r = sqrt(_phs_sum_sq(xh))
         r_inv = ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
-        y += coeffs[i] * _phs_phi_prime(r, Val{K}()) * xh[axis] * r_inv
+        ci = coeffs[i]
+        ci_fp_r_inv = ci * _phs_phi_prime(r, Val{K}()) * r_inv
+        y += ci_fp_r_inv * xh[axis]
     end
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
     y += _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, Val(axis))
@@ -238,8 +240,10 @@ end
             r2_inv = r_inv * r_inv
             fp  = _phs_phi_prime(r, Val{K}())
             fpp = _phs_phi_dprime(r, Val{K}())
-            xh_ax = xh[ax1]
-            y += coeffs[i] * (fpp * xh_ax * xh_ax * r2_inv + fp * (r_inv - xh_ax * xh_ax * r2_inv * r_inv))
+            ci = coeffs[i]
+            ci_fp_r_inv = ci * fp * r_inv
+            factor = xh[ax1] * xh[ax1] * r2_inv
+            y += ci * fpp * factor + ci_fp_r_inv * (one(Tg) - factor)
         end
     else
         @inbounds @simd for i in 1:ns
@@ -250,7 +254,10 @@ end
             r2_inv = r_inv * r_inv
             fp  = _phs_phi_prime(r, Val{K}())
             fpp = _phs_phi_dprime(r, Val{K}())
-            y += coeffs[i] * (fpp - fp * r_inv) * xh[ax1] * xh[ax2] * r2_inv
+            ci = coeffs[i]
+            ci_fp_r_inv = ci * fp * r_inv
+            factor = xh[ax1] * xh[ax2] * r2_inv
+            y += (ci * fpp - ci_fp_r_inv) * factor
         end
     end
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
@@ -298,8 +305,9 @@ end
         r  = sqrt(r2)
         ci = coeffs[i]
         r_inv = ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
+        ci_fp_r_inv = ci * _phs_phi_prime(r, Val{K}()) * r_inv
         yv += ci * _phs_phi(r, Val{K}())
-        yd += ci * _phs_phi_prime(r, Val{K}()) * xh[axis] * r_inv
+        yd += ci_fp_r_inv * xh[axis]
     end
 
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
@@ -358,10 +366,11 @@ end
             r2_inv = r_inv * r_inv
             fp  = _phs_phi_prime(r, Val{K}())
             fpp = _phs_phi_dprime(r, Val{K}())
+            ci_fp_r_inv = ci * fp * r_inv
             yv  += ci * _phs_phi(r, Val{K}())
-            yd1 += ci * fp * xh[ax1] * r_inv
-            xh_ax = xh[ax1]
-            yd2 += ci * (fpp * xh_ax * xh_ax * r2_inv + fp * (r_inv - xh_ax * xh_ax * r2_inv * r_inv))
+            yd1 += ci_fp_r_inv * xh[ax1]
+            factor = xh[ax1] * xh[ax1] * r2_inv
+            yd2 += ci * fpp * factor + ci_fp_r_inv * (one(Tg) - factor)
         end
     else
         @inbounds @simd for i in 1:ns
@@ -373,9 +382,11 @@ end
             r2_inv = r_inv * r_inv
             fp  = _phs_phi_prime(r, Val{K}())
             fpp = _phs_phi_dprime(r, Val{K}())
+            ci_fp_r_inv = ci * fp * r_inv
             yv  += ci * _phs_phi(r, Val{K}())
-            yd1 += ci * fp * xh[ax1] * r_inv
-            yd2 += ci * (fpp - fp * r_inv) * xh[ax1] * xh[ax2] * r2_inv
+            yd1 += ci_fp_r_inv * xh[ax1]
+            factor = xh[ax1] * xh[ax2] * r2_inv
+            yd2 += (ci * fpp - ci_fp_r_inv) * factor
         end
     end
 
@@ -429,9 +440,10 @@ end
         r  = sqrt(r2)
         ci = coeffs[i]
         fp_r_inv = _phs_phi_prime(r, Val{K}()) * ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
+        ci_fp_r_inv = ci * fp_r_inv
         yv  += ci * _phs_phi(r, Val{K}())
-        yd1 += ci * fp_r_inv * xh[ax1]
-        yd2 += ci * fp_r_inv * xh[ax2]
+        yd1 += ci_fp_r_inv * xh[ax1]
+        yd2 += ci_fp_r_inv * xh[ax2]
     end
 
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
@@ -490,10 +502,12 @@ end
         r2_inv = r_inv * r_inv
         fp  = _phs_phi_prime(r, Val{K}())
         fpp = _phs_phi_dprime(r, Val{K}())
+        ci_fp_r_inv = ci * fp * r_inv
         yv   += ci * _phs_phi(r, Val{K}())
-        yd1  += ci * fp * xh[ax1] * r_inv
-        yd2  += ci * fp * xh[ax2] * r_inv
-        yd12 += ci * (fpp - fp * r_inv) * xh[ax1] * xh[ax2] * r2_inv
+        yd1  += ci_fp_r_inv * xh[ax1]
+        yd2  += ci_fp_r_inv * xh[ax2]
+        factor = xh[ax1] * xh[ax2] * r2_inv
+        yd12 += (ci * fpp - ci_fp_r_inv) * factor
     end
 
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))

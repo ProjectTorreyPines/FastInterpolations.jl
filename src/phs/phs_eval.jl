@@ -40,7 +40,7 @@ const _PHS_COEFF_CACHE_MAX  = 5_000   # ≈ 20 MB for 516-coeff Float64 stencils
     if tid > length(itp.coeff_caches)
         return Dict{NTuple{N, Int}, Vector{Tg}}()
     end
-    return itp.coeff_caches[tid]::Dict{NTuple{N, Int}, Vector{Tg}}
+    return itp.coeff_caches[tid]
 end
 
 # ======================================================

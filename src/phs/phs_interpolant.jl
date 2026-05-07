@@ -138,7 +138,7 @@ function phs_interp(
 
     blend_a3 = blend_a^3
     # Use maxthreadid() to account for interactive thread pools
-    coeff_caches = Any[Dict{NTuple{N, Int}, Vector{Tg}}() for _ in 1:Threads.maxthreadid()]
+    coeff_caches = Dict{NTuple{N, Int}, Vector{Tg}}[Dict{NTuple{N, Int}, Vector{Tg}}() for _ in 1:Threads.maxthreadid()]
     return PHSInterpolantND{
         Tg, Tv, N, degree,
         typeof(grids_typed), typeof(spacings), typeof(transform), typeof(extrap_vals), typeof(searches),

@@ -130,8 +130,7 @@ struct PHSInterpolantND{
     blend_r_idx::NTuple{N, Int}   # ceil(blend_a / h_min) per axis
     transform::T
     extraps::E
-    searches::P
-    coeff_caches::Vector{Any}
+    coeff_caches::Vector{Dict{NTuple{N, Int}, Vector{Tg}}}
 end
 
 # ----------------------------------------

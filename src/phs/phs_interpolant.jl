@@ -204,8 +204,8 @@ In-place batch evaluation. `queries` can be:
   - `Tuple{Vararg{AbstractVector,N}}` (SoA)
   - `AbstractVector{<:NTuple{N}}` or `AbstractVector{<:AbstractVector}` (AoS)
 
-Uses `Threads.@threads :static` for parallelism (when nthreads > 1).
-All workspace is thread-local (AdaptiveArrayPools).
+Evaluates serially for maximum compute, memory, and allocation efficiency.
+All workspace is thread-local (AdaptiveArrayPools) to support thread-safe concurrent evaluation.
 """
 # Shared batch implementation — receives concrete ops tuple.
 function _phs_batch_impl!(
@@ -218,26 +218,13 @@ function _phs_batch_impl!(
     length(out) == nq || _throw_query_output_mismatch(nq, length(out))
     _query_validate(queries)
 
-    # Skip Threads.@threads overhead when running single-threaded (~14 KB constant).
-    if Threads.nthreads() == 1
-        for k in 1:nq
-            q = _extract_query_point(queries, k, Val(N))
-            oob = _try_fill_oob(q, itp.grids, itp.extraps, ops, first(itp.data))
-            if oob !== nothing
-                @inbounds out[k] = oob
-            else
-                @inbounds out[k] = _phs_eval(itp, q, ops)
-            end
-        end
-    else
-        Threads.@threads :static for k in 1:nq
-            q = _extract_query_point(queries, k, Val(N))
-            oob = _try_fill_oob(q, itp.grids, itp.extraps, ops, first(itp.data))
-            if oob !== nothing
-                @inbounds out[k] = oob
-            else
-                @inbounds out[k] = _phs_eval(itp, q, ops)
-            end
+    @inbounds for k in 1:nq
+        q = _extract_query_point(queries, k, Val(N))
+        oob = _try_fill_oob(q, itp.grids, itp.extraps, ops, first(itp.data))
+        if oob !== nothing
+            out[k] = oob
+        else
+            out[k] = _phs_eval(itp, q, ops)
         end
     end
     return out

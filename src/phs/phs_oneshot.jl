@@ -60,7 +60,7 @@ end
     phs_interp!(out, grids, data, queries; kwargs...)
 
 In-place one-shot N-dimensional PHS interpolation.
-Writes results into pre-allocated `out`. Parallelized via `Threads.@threads`.
+Writes results into pre-allocated `out`.
 """
 function phs_interp!(
         out::AbstractVector,

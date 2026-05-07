@@ -271,24 +271,62 @@ end
         f_bar::AbstractVector, dy_bar::AbstractVector,
         x::AbstractVector{Tg}, y::AbstractVector{Tv}
     ) where {Tg, Tv}
+    # PCHIP slope stencil radius = 1 (uses y[k-1], y[k], y[k+1]). Boundary
+    # indices where mod1 actually wraps: k=1 (j_prev → m_cyc) and k=n
+    # (j_curr → 1). For interior k ∈ [2, n-1], j_prev = k-1 and j_curr = k
+    # stay in `[1, m_cyc]` and the body simplifies — direct grid access,
+    # no mod1 cost. Split the loop accordingly.
     n = length(x)
     n >= 2 || return nothing
-    m = n - 1  # cycle length (number of cells in closed cycle)
 
-    @inbounds for k in 1:n
-        j_prev = mod1(k - 1, m)
-        j_curr = mod1(k, m)
+    if n == 2
+        # Tiny grid: m_cyc = 1, both k=1 and k=2 wrap to the same secant.
+        # Use the unified mod1 fallback (interior range `2:n-1` is empty).
+        @inbounds for k in 1:2
+            j_prev = mod1(k - 1, 1)
+            j_curr = mod1(k, 1)
+            _pchip_periodic_kernel!(f_bar, dy_bar, x, y, k, j_prev, j_curr)
+        end
+        return nothing
+    end
+
+    m = n - 1   # cycle length (real-secant count in closed cycle)
+
+    # ── Boundary k=1: j_prev wraps to m ─────────────────────────────────
+    _pchip_periodic_kernel!(f_bar, dy_bar, x, y, 1, m, 1)
+
+    # ── Interior k = 2..n-1: no wrap (j_prev = k-1, j_curr = k) ────────
+    @inbounds for k in 2:(n - 1)
+        _pchip_periodic_kernel!(f_bar, dy_bar, x, y, k, k - 1, k)
+    end
+
+    # ── Boundary k=n: j_curr wraps to 1 ─────────────────────────────────
+    _pchip_periodic_kernel!(f_bar, dy_bar, x, y, n, n - 1, 1)
+
+    return nothing
+end
+
+# Per-k kernel — given pre-resolved (j_prev, j_curr), apply the harmonic-mean
+# adjoint chain rule. `@inline` lets the compiler fold it back into the loop;
+# the helper exists only to share the body between boundary and interior call
+# sites without re-writing it three times.
+@inline function _pchip_periodic_kernel!(
+        f_bar::AbstractVector, dy_bar::AbstractVector,
+        x::AbstractVector{Tg}, y::AbstractVector,
+        k::Int, j_prev::Int, j_curr::Int
+    ) where {Tg}
+    @inbounds begin
         h_prev = x[j_prev + 1] - x[j_prev]
         h_curr = x[j_curr + 1] - x[j_curr]
         δ_prev = (y[j_prev + 1] - y[j_prev]) / h_prev
         δ_curr = (y[j_curr + 1] - y[j_curr]) / h_curr
 
-        # Zero-clamped branch: dy[k] = 0 → all derivatives zero, skip
-        sign(δ_prev) != sign(δ_curr) && continue
+        # Zero-clamped branch: dy[k] = 0 → all derivatives zero, skip.
+        sign(δ_prev) != sign(δ_curr) && return nothing
 
         # Active branch: harmonic mean dy[k] = S/D where
-        #   S = w1 + w2,  D = w1/δ_prev + w2/δ_curr,
-        #   w1 = 2*h_curr + h_prev,  w2 = h_curr + 2*h_prev
+        #   S = w1+w2,  D = w1/δ_prev + w2/δ_curr,
+        #   w1 = 2*h_curr+h_prev,  w2 = h_curr+2*h_prev.
         w1 = 2 * h_curr + h_prev
         w2 = h_curr + 2 * h_prev
         S = w1 + w2
@@ -302,11 +340,8 @@ end
         c_prev = (ddy_dδ_prev / h_prev) * db
         c_curr = (ddy_dδ_curr / h_curr) * db
 
-        # δ_prev = (y[j_prev+1] - y[j_prev]) / h_prev → ∂/∂y[j_prev] = -1/h_prev,
-        # ∂/∂y[j_prev+1] = +1/h_prev. Cyclic indices stay in [1, n] by mod1.
         f_bar[j_prev]     -= c_prev
         f_bar[j_prev + 1] += c_prev
-        # δ_curr = (y[j_curr+1] - y[j_curr]) / h_curr — same chain, different cell.
         f_bar[j_curr]     -= c_curr
         f_bar[j_curr + 1] += c_curr
     end

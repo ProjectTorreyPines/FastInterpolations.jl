@@ -134,34 +134,77 @@ end
 #          m_curr = (y[j_curr+1] - y[j_curr]) / h_curr,
 #          j_prev = mod1(k-1, m_cyc),  j_curr = mod1(k, m_cyc),  m_cyc = n-1.
 #
-# Adjoint scatters dy_bar[k] to FOUR f_bar entries (j_prev, j_prev+1, j_curr,
-# j_curr+1). For interior k (where j_prev+1 == j_curr), two of those writes
-# fall on the same index with opposite signs and cancel — equivalent to the
-# legacy 2-write central FD adjoint. For boundary k ∈ {1, n} in closed cycle,
-# the 4 indices are DISTINCT (the join wraps so j_prev+1 ≠ j_curr), and all
-# four writes contribute. Unified across both interior and boundary.
+# Cardinal slope stencil radius = 1 (uses y[k-1], y[k], y[k+1]). Boundary
+# indices where mod1 actually wraps: k=1 (j_prev → m_cyc) and k=n (j_curr
+# → 1). For interior k ∈ [2, n-1], j_prev = k-1 and j_curr = k stay in
+# `[1, m_cyc]` without wrapping, AND j_prev+1 == j_curr — so the two
+# inner-write pairs (`f_bar[j_prev+1] += c` and `f_bar[j_curr] -= c`)
+# cancel naturally and the body collapses to the 2-write central-FD
+# adjoint identical to NoBC interior. We split the loop accordingly: the
+# boundary k=1 / k=n iterations use the 4-write closed-cycle formula
+# (the join wraps so j_prev+1 ≠ j_curr — all 4 writes are distinct),
+# while interior reuses the NoBC fast path.
 @inline function _cardinal_slope_adjoint_periodic!(
         f_bar::AbstractVector, dy_bar::AbstractVector,
         x::AbstractVector{Tg}, tension::Tg
     ) where {Tg}
     n = length(x)
     n >= 2 || return nothing
-    m_cyc = n - 1
     scale = one(Tg) - tension
 
-    @inbounds for k in 1:n
-        j_prev = mod1(k - 1, m_cyc)
-        j_curr = mod1(k, m_cyc)
+    # Tiny grid (n == 2): the 1-secant cycle makes BOTH k=1 and k=2 wrap to
+    # the same secant. The interior range `2:n-1` is empty; bypass it.
+    if n == 2
+        m_cyc = 1
+        @inbounds for k in 1:2
+            j_prev = mod1(k - 1, m_cyc)
+            j_curr = mod1(k, m_cyc)
+            h_prev = x[j_prev + 1] - x[j_prev]
+            h_curr = x[j_curr + 1] - x[j_curr]
+            c = scale * dy_bar[k] / (h_prev + h_curr)
+            f_bar[j_prev]     -= c
+            f_bar[j_prev + 1] += c
+            f_bar[j_curr]     -= c
+            f_bar[j_curr + 1] += c
+        end
+        return nothing
+    end
+
+    m_cyc = n - 1
+
+    # ── Boundary k=1: j_prev wraps to m_cyc (= n-1) ─────────────────────
+    @inbounds begin
+        j_prev = m_cyc
+        j_curr = 1
         h_prev = x[j_prev + 1] - x[j_prev]
         h_curr = x[j_curr + 1] - x[j_curr]
-        c = scale * dy_bar[k] / (h_prev + h_curr)
-        # Chain rule for both secants (`m_prev` and `m_curr`) — at interior
-        # the +c at j_prev+1 and -c at j_curr cancel naturally.
-        f_bar[j_prev]     -= c
-        f_bar[j_prev + 1] += c
-        f_bar[j_curr]     -= c
-        f_bar[j_curr + 1] += c
+        c = scale * dy_bar[1] / (h_prev + h_curr)
+        f_bar[j_prev]     -= c       # f_bar[n-1]
+        f_bar[j_prev + 1] += c       # f_bar[n]
+        f_bar[j_curr]     -= c       # f_bar[1]
+        f_bar[j_curr + 1] += c       # f_bar[2]
     end
+
+    # ── Interior k = 2..n-1: no wrap; collapses to 2-write central FD ───
+    @inbounds for k in 2:(n - 1)
+        c = scale * dy_bar[k] / (x[k + 1] - x[k - 1])
+        f_bar[k - 1] -= c
+        f_bar[k + 1] += c
+    end
+
+    # ── Boundary k=n: j_curr wraps to 1 ─────────────────────────────────
+    @inbounds begin
+        j_prev = m_cyc           # n-1
+        j_curr = 1
+        h_prev = x[j_prev + 1] - x[j_prev]   # x[n] - x[n-1]
+        h_curr = x[j_curr + 1] - x[j_curr]   # x[2] - x[1]
+        c = scale * dy_bar[n] / (h_prev + h_curr)
+        f_bar[j_prev]     -= c       # f_bar[n-1]
+        f_bar[j_prev + 1] += c       # f_bar[n]
+        f_bar[j_curr]     -= c       # f_bar[1]
+        f_bar[j_curr + 1] += c       # f_bar[2]
+    end
+
     return nothing
 end
 

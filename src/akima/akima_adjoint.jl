@@ -414,23 +414,69 @@ end
 # (`:exclusive` extended to n+1 with y_ext[n+1]=y[1]; `:inclusive` already
 # closed). The forward Akima slope at every k uses the SAME 4-secant
 # weighted formula with cyclic secant indices via mod1 over m_cyc = n-1.
-# No virtual secants — wrap delivers real grid secants instead.
 #
-# The adjoint mirrors `_akima_slope_adjoint!` interior body, but with a
-# `_akima_scatter_secant_adjoint_periodic!` cyclic scatter helper that
-# wraps `m_idx` via mod1 to a real secant index in `[1, m_cyc]`.
+# Akima slope stencil radius = 2 (uses 4 secants m[k-2..k+1] / 5 grid
+# points y[k-2..k+2]). Boundary indices where mod1 actually wraps:
+# k ∈ {1, 2, n-1, n}. For interior k ∈ [3, n-2], all 4 secant indices
+# stay in `[1, m_cyc]` and we read grid/data directly — no mod1 cost.
+# Split the loop accordingly.
 
-@inline function _akima_scatter_secant_adjoint_periodic!(
-        f_bar::AbstractVector, coeff, m_idx::Int,
-        x::AbstractVector{Tg}, m_cyc::Int
+# Per-k kernel — given pre-resolved secant indices (j_km2, j_km1, j_k,
+# j_kp1), apply the Akima weighted-secant formula's transpose. `@inline`
+# folds it into both boundary (mod1) and interior (direct) call sites.
+@inline function _akima_periodic_kernel!(
+        f_bar::AbstractVector, dy_bar::AbstractVector,
+        x::AbstractVector{Tg}, y::AbstractVector,
+        k::Int, j_km2::Int, j_km1::Int, j_k::Int, j_kp1::Int
     ) where {Tg}
-    # Cyclic secant: m[j_cyc] = (y[j_cyc+1] - y[j_cyc]) / h[j_cyc]
-    j_cyc = mod1(m_idx, m_cyc)
     @inbounds begin
-        inv_h = one(Tg) / (x[j_cyc + 1] - x[j_cyc])
-        c = coeff * inv_h
-        f_bar[j_cyc]     -= c
-        f_bar[j_cyc + 1] += c
+        h_km2 = x[j_km2 + 1] - x[j_km2]
+        h_km1 = x[j_km1 + 1] - x[j_km1]
+        h_k   = x[j_k   + 1] - x[j_k]
+        h_kp1 = x[j_kp1 + 1] - x[j_kp1]
+        m_km2 = (y[j_km2 + 1] - y[j_km2]) / h_km2
+        m_km1 = (y[j_km1 + 1] - y[j_km1]) / h_km1
+        m_k   = (y[j_k   + 1] - y[j_k])   / h_k
+        m_kp1 = (y[j_kp1 + 1] - y[j_kp1]) / h_kp1
+    end
+
+    w1 = abs(m_kp1 - m_k)
+    w2 = abs(m_km1 - m_km2)
+    wsum = w1 + w2
+    db = dy_bar[k]
+
+    if wsum == zero(wsum)
+        # Equal-weight fallback: dy[k] = (m_km1 + m_k)/2 →
+        # ∂dy/∂m_km1 = 1/2, ∂dy/∂m_k = 1/2.
+        c_km1 = (db / 2) / h_km1
+        c_k   = (db / 2) / h_k
+        @inbounds begin
+            f_bar[j_km1]     -= c_km1
+            f_bar[j_km1 + 1] += c_km1
+            f_bar[j_k]       -= c_k
+            f_bar[j_k + 1]   += c_k
+        end
+    else
+        dy_k = (w1 * m_km1 + w2 * m_k) / wsum
+        s1 = sign(m_kp1 - m_k)
+        s2 = sign(m_km1 - m_km2)
+        d_km2, d_km1, d_k, d_kp1 = _akima_slope_adjoint_weighted(
+            dy_k, m_km1, m_k, w1, w2, wsum, s1, s2
+        )
+        c_km2 = (d_km2 * db) / h_km2
+        c_km1 = (d_km1 * db) / h_km1
+        c_k   = (d_k   * db) / h_k
+        c_kp1 = (d_kp1 * db) / h_kp1
+        @inbounds begin
+            f_bar[j_km2]     -= c_km2
+            f_bar[j_km2 + 1] += c_km2
+            f_bar[j_km1]     -= c_km1
+            f_bar[j_km1 + 1] += c_km1
+            f_bar[j_k]       -= c_k
+            f_bar[j_k + 1]   += c_k
+            f_bar[j_kp1]     -= c_kp1
+            f_bar[j_kp1 + 1] += c_kp1
+        end
     end
     return nothing
 end
@@ -441,45 +487,50 @@ end
     ) where {Tg, Tv}
     n = length(x)
     n >= 2 || return nothing
-    m_cyc = n - 1  # cycle length (real secants on the closed cycle)
+    m_cyc = n - 1
 
-    # Cyclic secant access — handles the seam-cell secant transparently for
-    # `:exclusive` (after extension `(y[n+1] - y[n]) / h_seam` is just the
-    # secant of cell n in the extended grid) and the wrap-around for
-    # `:inclusive` (mod1 keeps j ∈ [1, n-1]).
-    @inline _msec(j) = let
-        jw = mod1(j, m_cyc)
-        @inbounds (y[jw + 1] - y[jw]) / (x[jw + 1] - x[jw])
-    end
-
-    @inbounds for k in 1:n
-        m_km2 = _msec(k - 2)
-        m_km1 = _msec(k - 1)
-        m_k   = _msec(k)
-        m_kp1 = _msec(k + 1)
-
-        w1 = abs(m_kp1 - m_k)
-        w2 = abs(m_km1 - m_km2)
-        wsum = w1 + w2
-
-        db = dy_bar[k]
-        if wsum == zero(wsum)
-            # Equal-weight fallback: dy[k] = (m_km1 + m_k)/2
-            _akima_scatter_secant_adjoint_periodic!(f_bar, db / 2, k - 1, x, m_cyc)
-            _akima_scatter_secant_adjoint_periodic!(f_bar, db / 2, k,     x, m_cyc)
-        else
-            dy_k = (w1 * m_km1 + w2 * m_k) / wsum
-            s1 = sign(m_kp1 - m_k)
-            s2 = sign(m_km1 - m_km2)
-            d_km2, d_km1, d_k, d_kp1 = _akima_slope_adjoint_weighted(
-                dy_k, m_km1, m_k, w1, w2, wsum, s1, s2
+    # Tiny grids: n ∈ {2, 3} have no interior — boundary set covers all k.
+    # Use unified mod1 path. For n=2, m_cyc=1 collapses every secant to the
+    # single cell; for n=3, m_cyc=2 has only two real secants. Both cases
+    # are handled correctly by the kernel via fully-wrapped indices.
+    if n < 4
+        @inbounds for k in 1:n
+            _akima_periodic_kernel!(
+                f_bar, dy_bar, x, y, k,
+                mod1(k - 2, m_cyc), mod1(k - 1, m_cyc),
+                mod1(k,     m_cyc), mod1(k + 1, m_cyc),
             )
-            _akima_scatter_secant_adjoint_periodic!(f_bar, d_km2 * db, k - 2, x, m_cyc)
-            _akima_scatter_secant_adjoint_periodic!(f_bar, d_km1 * db, k - 1, x, m_cyc)
-            _akima_scatter_secant_adjoint_periodic!(f_bar, d_k   * db, k,     x, m_cyc)
-            _akima_scatter_secant_adjoint_periodic!(f_bar, d_kp1 * db, k + 1, x, m_cyc)
         end
+        return nothing
     end
+
+    # ── Boundary k=1: j_km2 = m_cyc-1, j_km1 = m_cyc (both wrap) ────────
+    @inbounds _akima_periodic_kernel!(
+        f_bar, dy_bar, x, y, 1,
+        m_cyc - 1, m_cyc, 1, 2,
+    )
+    # ── Boundary k=2: j_km2 = m_cyc (wraps) ─────────────────────────────
+    @inbounds _akima_periodic_kernel!(
+        f_bar, dy_bar, x, y, 2,
+        m_cyc, 1, 2, 3,
+    )
+
+    # ── Interior k = 3..n-2: no wrap, direct grid access ────────────────
+    @inbounds for k in 3:(n - 2)
+        _akima_periodic_kernel!(f_bar, dy_bar, x, y, k, k - 2, k - 1, k, k + 1)
+    end
+
+    # ── Boundary k=n-1: j_kp1 = mod1(n, m_cyc) = 1 (wraps) ──────────────
+    @inbounds _akima_periodic_kernel!(
+        f_bar, dy_bar, x, y, n - 1,
+        n - 3, n - 2, n - 1, 1,
+    )
+    # ── Boundary k=n: j_k = 1, j_kp1 = 2 (both wrap) ────────────────────
+    @inbounds _akima_periodic_kernel!(
+        f_bar, dy_bar, x, y, n,
+        n - 2, n - 1, 1, 2,
+    )
+
     return nothing
 end
 

@@ -57,20 +57,40 @@ f_bar = adj(y_bar; deriv=DerivOp(1))    # derivative adjoint
 adj(f_bar, y_bar)                       # in-place
 ```
 """
-struct PchipAdjoint1D{Tg, Tv <: Real, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+struct PchipAdjoint1D{Tg, Tv <: Real, BC <: AbstractBC, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_HermiteAdjointAnchor1D{Tg}}
-    grid::Vector{Tg}       # Grid points (needed for slope adjoint stencil widths)
-    data::Vector{Tv}       # y values (needed for slope clamp conditions)
-    grid_size::Int
+    grid::Vector{Tg}       # Grid points (extended length n+1 for `:exclusive`, n otherwise)
+    data::Vector{Tv}       # y values (extended length matches grid)
+    grid_size::Int         # Internal length: n+1 for `:exclusive`, n otherwise
+    bc::BC
     extrap::EP
 end
 
 # ========================================
 # 1D Adjoint Protocol Accessors
 # ========================================
+# Callables (6 overloads), Base.size, Base.Matrix, and exclusive-periodic
+# in-place seam fold are inherited from AbstractAdjoint1D via
+# src/core/adjoint_protocol.jl.
 
 @inline _n_queries(adj::PchipAdjoint1D) = length(adj.anchors)
-@inline _adjoint_output_length(adj::PchipAdjoint1D) = adj.grid_size
+
+@inline _adjoint_output_length(adj::PchipAdjoint1D) =
+    adj.bc isa PeriodicBC{:exclusive} ? adj.grid_size - 1 : adj.grid_size
+
+@inline _adjoint_internal_length(adj::PchipAdjoint1D) = adj.grid_size
+
+@inline _adjoint_1d_has_exclusive_periodic(adj::PchipAdjoint1D) =
+    adj.bc isa PeriodicBC{:exclusive}
+
+function _adjoint_1d_finalize(f_bar::AbstractVector, adj::PchipAdjoint1D)
+    if adj.bc isa PeriodicBC{:exclusive}
+        n_internal = adj.grid_size
+        @inbounds f_bar[1] += f_bar[n_internal]
+        return f_bar[1:(n_internal - 1)]
+    end
+    return f_bar
+end
 
 # ========================================
 # PCHIP Slope Adjoint: J^T * dy_bar -> f_bar update
@@ -236,6 +256,64 @@ end
 end
 
 # ========================================
+# Closed-Cycle PCHIP Slope Adjoint (PeriodicBC)
+# ========================================
+#
+# After `_periodic_extend_1d`, the grid is closed-cycle (`:inclusive`-like):
+# `:exclusive` gets extended to n+1; `:inclusive` is already closed at n.
+# In closed cycle the harmonic-mean formula applies UNIFORMLY to all k ∈ 1:n
+# with cyclic stencil (mod1 over m = n-1 secant cycle). No special boundary
+# branches — k=1 / k=n use the same formula as interior, just with wrapped
+# secant indices. Mirrors forward `_pchip_slopes!`'s `_pchip_boundary_slope`
+# unification under `_periodic_secant` / `_periodic_cell_width`.
+
+@inline function _pchip_slope_adjoint_periodic!(
+        f_bar::AbstractVector, dy_bar::AbstractVector,
+        x::AbstractVector{Tg}, y::AbstractVector{Tv}
+    ) where {Tg, Tv}
+    n = length(x)
+    n >= 2 || return nothing
+    m = n - 1  # cycle length (number of cells in closed cycle)
+
+    @inbounds for k in 1:n
+        j_prev = mod1(k - 1, m)
+        j_curr = mod1(k, m)
+        h_prev = x[j_prev + 1] - x[j_prev]
+        h_curr = x[j_curr + 1] - x[j_curr]
+        δ_prev = (y[j_prev + 1] - y[j_prev]) / h_prev
+        δ_curr = (y[j_curr + 1] - y[j_curr]) / h_curr
+
+        # Zero-clamped branch: dy[k] = 0 → all derivatives zero, skip
+        sign(δ_prev) != sign(δ_curr) && continue
+
+        # Active branch: harmonic mean dy[k] = S/D where
+        #   S = w1 + w2,  D = w1/δ_prev + w2/δ_curr,
+        #   w1 = 2*h_curr + h_prev,  w2 = h_curr + 2*h_prev
+        w1 = 2 * h_curr + h_prev
+        w2 = h_curr + 2 * h_prev
+        S = w1 + w2
+        D = w1 / δ_prev + w2 / δ_curr
+        D2 = D * D
+
+        ddy_dδ_prev = S * w1 / (D2 * δ_prev * δ_prev)
+        ddy_dδ_curr = S * w2 / (D2 * δ_curr * δ_curr)
+
+        db = dy_bar[k]
+        c_prev = (ddy_dδ_prev / h_prev) * db
+        c_curr = (ddy_dδ_curr / h_curr) * db
+
+        # δ_prev = (y[j_prev+1] - y[j_prev]) / h_prev → ∂/∂y[j_prev] = -1/h_prev,
+        # ∂/∂y[j_prev+1] = +1/h_prev. Cyclic indices stay in [1, n] by mod1.
+        f_bar[j_prev]     -= c_prev
+        f_bar[j_prev + 1] += c_prev
+        # δ_curr = (y[j_curr+1] - y[j_curr]) / h_curr — same chain, different cell.
+        f_bar[j_curr]     -= c_curr
+        f_bar[j_curr + 1] += c_curr
+    end
+    return nothing
+end
+
+# ========================================
 # Core Apply Function
 # ========================================
 
@@ -254,8 +332,13 @@ end
     # Step 1: Hermite scatter -> (f_bar, dy_bar)
     _scatter_hermite_adjoint!(f_bar, dy_bar, adj.anchors, y_bar, deriv)
 
-    # Step 2: PCHIP slope J^T * dy_bar -> f_bar update
-    _pchip_slope_adjoint!(f_bar, dy_bar, adj.grid, adj.data)
+    # Step 2: PCHIP slope J^T * dy_bar -> f_bar update.
+    # PeriodicBC (after `_periodic_extend_1d` extension) → closed-cycle path.
+    if adj.bc isa PeriodicBC
+        _pchip_slope_adjoint_periodic!(f_bar, dy_bar, adj.grid, adj.data)
+    else
+        _pchip_slope_adjoint!(f_bar, dy_bar, adj.grid, adj.data)
+    end
 
     return nothing
 end
@@ -304,6 +387,7 @@ function pchip_adjoint(
         x::AbstractVector,
         y::AbstractVector,
         x_query::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         _extra...
     )
@@ -311,9 +395,24 @@ function pchip_adjoint(
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
-    # NoExtrap: validate all queries in-domain
-    if extrap isa NoExtrap
-        x_lo, x_hi = first(x_p), last(x_p)
+    # Promote y to float: slope adjoint computes fractional derivatives (Int division loses precision)
+    _, y_p = _promote_itp_inputs(x, y)
+
+    # Closed-cycle extension for periodic BCs — mirrors the forward
+    # `pchip_interp_precompute` path. `:exclusive` gets vcat-extended to n+1
+    # (with y_ext[n+1] = y[1] and x_ext[n+1] = x[1] + period); `:inclusive`
+    # is already closed at n. After this, the slope adjoint runs over the
+    # extended grid via the unified periodic harmonic-mean formula
+    # (`_pchip_slope_adjoint_periodic!`). For `:exclusive` the protocol's
+    # exclusive in-place callable folds f_work[1] += f_work[n+1] and trims.
+    x_ext, y_ext, extrap_eff = _periodic_extend_1d(x_p, y_p, bc, extrap)
+
+    # NoExtrap: validate queries against extended domain (covers the seam
+    # cell for `:exclusive`; `_resolve_extrap`'s WrapExtrap promotion only
+    # fires inside `_periodic_extend_1d` for periodic BCs, so non-periodic
+    # NoExtrap still validates here).
+    if extrap_eff isa NoExtrap
+        x_lo, x_hi = first(x_ext), last(x_ext)
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
             (_extract_primal(x_lo) <= xq_i <= _extract_primal(x_hi)) || throw(
@@ -322,15 +421,16 @@ function pchip_adjoint(
         end
     end
 
-    # Wrap axis (axis-as-truth) and bake anchors
-    x_axis = _cache_axis(x_p, NoBC())
-    anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap)
+    # Bake anchors against the extended axis. `_cache_axis(x_ext, NoBC())`
+    # gives a `_CachedRange`/`_CachedVector` of length n_ext — wrap-free
+    # because the seam endpoint is already a real grid point in `x_ext`.
+    x_axis = _cache_axis(x_ext, NoBC())
+    anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap_eff)
 
-    # Promote y to float: slope adjoint computes fractional derivatives (Int division loses precision)
-    _, y_p = _promote_itp_inputs(x, y)
-    Tv = eltype(y_p)
-    return PchipAdjoint1D{Tg, Tv, typeof(extrap)}(
-        anchors, collect(x_p), collect(Tv, y_p), length(x_p), extrap
+    Tv = eltype(y_ext)
+    return PchipAdjoint1D{Tg, Tv, typeof(bc), typeof(extrap_eff)}(
+        anchors, collect(x_ext), collect(Tv, y_ext), length(x_ext),
+        bc, extrap_eff
     )
 end
 
@@ -339,8 +439,9 @@ function pchip_adjoint(
         x::AbstractVector,
         y::AbstractVector,
         x_query::Real;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         _extra...
     )
-    return pchip_adjoint(x, y, [x_query]; extrap = extrap)
+    return pchip_adjoint(x, y, [x_query]; bc = bc, extrap = extrap)
 end

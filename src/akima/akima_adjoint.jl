@@ -57,20 +57,39 @@ f_bar = adj(y_bar; deriv=DerivOp(1))    # derivative adjoint
 adj(f_bar, y_bar)                       # in-place
 ```
 """
-struct AkimaAdjoint1D{Tg, Tv <: Real, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+struct AkimaAdjoint1D{Tg, Tv <: Real, BC <: AbstractBC, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_HermiteAdjointAnchor1D{Tg}}
-    grid::Vector{Tg}       # Grid points (needed for slope adjoint secant computation)
-    data::Vector{Tv}       # y values (needed for slope weight conditions)
-    grid_size::Int
+    grid::Vector{Tg}       # Extended grid (length n+1 for `:exclusive`, n otherwise)
+    data::Vector{Tv}       # Extended y values (length matches grid)
+    grid_size::Int         # Internal length: n+1 for `:exclusive`, n otherwise
+    bc::BC
     extrap::EP
 end
 
 # ========================================
 # 1D Adjoint Protocol Accessors
 # ========================================
+# Callables, Base.size, Base.Matrix, exclusive-periodic in-place seam fold
+# inherited from AbstractAdjoint1D via src/core/adjoint_protocol.jl.
 
 @inline _n_queries(adj::AkimaAdjoint1D) = length(adj.anchors)
-@inline _adjoint_output_length(adj::AkimaAdjoint1D) = adj.grid_size
+
+@inline _adjoint_output_length(adj::AkimaAdjoint1D) =
+    adj.bc isa PeriodicBC{:exclusive} ? adj.grid_size - 1 : adj.grid_size
+
+@inline _adjoint_internal_length(adj::AkimaAdjoint1D) = adj.grid_size
+
+@inline _adjoint_1d_has_exclusive_periodic(adj::AkimaAdjoint1D) =
+    adj.bc isa PeriodicBC{:exclusive}
+
+function _adjoint_1d_finalize(f_bar::AbstractVector, adj::AkimaAdjoint1D)
+    if adj.bc isa PeriodicBC{:exclusive}
+        n_internal = adj.grid_size
+        @inbounds f_bar[1] += f_bar[n_internal]
+        return f_bar[1:(n_internal - 1)]
+    end
+    return f_bar
+end
 
 # ========================================
 # Akima Slope Adjoint: J^T * dy_bar -> f_bar update
@@ -388,6 +407,83 @@ end
 end
 
 # ========================================
+# Closed-Cycle Akima Slope Adjoint (PeriodicBC)
+# ========================================
+#
+# After `_periodic_extend_1d`-style extension, the grid is closed-cycle
+# (`:exclusive` extended to n+1 with y_ext[n+1]=y[1]; `:inclusive` already
+# closed). The forward Akima slope at every k uses the SAME 4-secant
+# weighted formula with cyclic secant indices via mod1 over m_cyc = n-1.
+# No virtual secants — wrap delivers real grid secants instead.
+#
+# The adjoint mirrors `_akima_slope_adjoint!` interior body, but with a
+# `_akima_scatter_secant_adjoint_periodic!` cyclic scatter helper that
+# wraps `m_idx` via mod1 to a real secant index in `[1, m_cyc]`.
+
+@inline function _akima_scatter_secant_adjoint_periodic!(
+        f_bar::AbstractVector, coeff, m_idx::Int,
+        x::AbstractVector{Tg}, m_cyc::Int
+    ) where {Tg}
+    # Cyclic secant: m[j_cyc] = (y[j_cyc+1] - y[j_cyc]) / h[j_cyc]
+    j_cyc = mod1(m_idx, m_cyc)
+    @inbounds begin
+        inv_h = one(Tg) / (x[j_cyc + 1] - x[j_cyc])
+        c = coeff * inv_h
+        f_bar[j_cyc]     -= c
+        f_bar[j_cyc + 1] += c
+    end
+    return nothing
+end
+
+@inline function _akima_slope_adjoint_periodic!(
+        f_bar::AbstractVector, dy_bar::AbstractVector,
+        x::AbstractVector{Tg}, y::AbstractVector{Tv}
+    ) where {Tg, Tv}
+    n = length(x)
+    n >= 2 || return nothing
+    m_cyc = n - 1  # cycle length (real secants on the closed cycle)
+
+    # Cyclic secant access — handles the seam-cell secant transparently for
+    # `:exclusive` (after extension `(y[n+1] - y[n]) / h_seam` is just the
+    # secant of cell n in the extended grid) and the wrap-around for
+    # `:inclusive` (mod1 keeps j ∈ [1, n-1]).
+    @inline _msec(j) = let
+        jw = mod1(j, m_cyc)
+        @inbounds (y[jw + 1] - y[jw]) / (x[jw + 1] - x[jw])
+    end
+
+    @inbounds for k in 1:n
+        m_km2 = _msec(k - 2)
+        m_km1 = _msec(k - 1)
+        m_k   = _msec(k)
+        m_kp1 = _msec(k + 1)
+
+        w1 = abs(m_kp1 - m_k)
+        w2 = abs(m_km1 - m_km2)
+        wsum = w1 + w2
+
+        db = dy_bar[k]
+        if wsum == zero(wsum)
+            # Equal-weight fallback: dy[k] = (m_km1 + m_k)/2
+            _akima_scatter_secant_adjoint_periodic!(f_bar, db / 2, k - 1, x, m_cyc)
+            _akima_scatter_secant_adjoint_periodic!(f_bar, db / 2, k,     x, m_cyc)
+        else
+            dy_k = (w1 * m_km1 + w2 * m_k) / wsum
+            s1 = sign(m_kp1 - m_k)
+            s2 = sign(m_km1 - m_km2)
+            d_km2, d_km1, d_k, d_kp1 = _akima_slope_adjoint_weighted(
+                dy_k, m_km1, m_k, w1, w2, wsum, s1, s2
+            )
+            _akima_scatter_secant_adjoint_periodic!(f_bar, d_km2 * db, k - 2, x, m_cyc)
+            _akima_scatter_secant_adjoint_periodic!(f_bar, d_km1 * db, k - 1, x, m_cyc)
+            _akima_scatter_secant_adjoint_periodic!(f_bar, d_k   * db, k,     x, m_cyc)
+            _akima_scatter_secant_adjoint_periodic!(f_bar, d_kp1 * db, k + 1, x, m_cyc)
+        end
+    end
+    return nothing
+end
+
+# ========================================
 # Core Apply Function
 # ========================================
 
@@ -406,8 +502,13 @@ end
     # Step 1: Hermite scatter -> (f_bar, dy_bar)
     _scatter_hermite_adjoint!(f_bar, dy_bar, adj.anchors, y_bar, deriv)
 
-    # Step 2: Akima slope J^T * dy_bar -> f_bar update
-    _akima_slope_adjoint!(f_bar, dy_bar, adj.grid, adj.data)
+    # Step 2: Akima slope J^T * dy_bar -> f_bar update.
+    # PeriodicBC (closed-cycle internal grid) → wrap-aware path.
+    if adj.bc isa PeriodicBC
+        _akima_slope_adjoint_periodic!(f_bar, dy_bar, adj.grid, adj.data)
+    else
+        _akima_slope_adjoint!(f_bar, dy_bar, adj.grid, adj.data)
+    end
 
     return nothing
 end
@@ -456,6 +557,7 @@ function akima_adjoint(
         x::AbstractVector,
         y::AbstractVector,
         x_query::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         _extra...
     )
@@ -463,9 +565,21 @@ function akima_adjoint(
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
-    # NoExtrap: validate all queries in-domain
-    if extrap isa NoExtrap
-        x_lo, x_hi = first(x_p), last(x_p)
+    # Promote y to float (slope adjoint computes fractional derivatives).
+    _, y_p = _promote_itp_inputs(x, y)
+
+    # Closed-cycle extension for periodic BCs — mirrors the forward
+    # `akima_interp_precompute` path. `:exclusive` gets vcat-extended to n+1;
+    # `:inclusive` is already closed at n. After this, the slope adjoint
+    # runs over the extended grid via the unified periodic 4-secant
+    # weighted formula (`_akima_slope_adjoint_periodic!`). For `:exclusive`
+    # the protocol's exclusive in-place callable folds f_work[1] +=
+    # f_work[n+1] and trims.
+    x_ext, y_ext, extrap_eff = _periodic_extend_1d(x_p, y_p, bc, extrap)
+
+    # NoExtrap: validate queries against extended domain.
+    if extrap_eff isa NoExtrap
+        x_lo, x_hi = first(x_ext), last(x_ext)
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
             (_extract_primal(x_lo) <= xq_i <= _extract_primal(x_hi)) || throw(
@@ -474,15 +588,14 @@ function akima_adjoint(
         end
     end
 
-    # Wrap axis (axis-as-truth) and bake anchors
-    x_axis = _cache_axis(x_p, NoBC())
-    anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap)
+    # Bake anchors against the extended axis.
+    x_axis = _cache_axis(x_ext, NoBC())
+    anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap_eff)
 
-    # Promote y to float: slope adjoint computes fractional derivatives (Int division loses precision)
-    _, y_p = _promote_itp_inputs(x, y)
-    Tv = eltype(y_p)
-    return AkimaAdjoint1D{Tg, Tv, typeof(extrap)}(
-        anchors, collect(x_p), collect(Tv, y_p), length(x_p), extrap
+    Tv = eltype(y_ext)
+    return AkimaAdjoint1D{Tg, Tv, typeof(bc), typeof(extrap_eff)}(
+        anchors, collect(x_ext), collect(Tv, y_ext), length(x_ext),
+        bc, extrap_eff
     )
 end
 
@@ -491,8 +604,9 @@ function akima_adjoint(
         x::AbstractVector,
         y::AbstractVector,
         x_query::Real;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         _extra...
     )
-    return akima_adjoint(x, y, [x_query]; extrap = extrap)
+    return akima_adjoint(x, y, [x_query]; bc = bc, extrap = extrap)
 end

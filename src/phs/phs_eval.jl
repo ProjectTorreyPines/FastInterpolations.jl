@@ -137,15 +137,16 @@ Evaluate the PHS interpolant value at `query` given precomputed coefficients.
     ns = length(offsets)
     y = zero(Tv)
 
+    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
+
     # RBF sum
     @inbounds @simd for i in 1:ns
-        xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+        xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
         r = sqrt(_phs_sum_sq(xh))
         y += coeffs[i] * _phs_phi(r, Val{K}())
     end
 
     # Polynomial augmentation: all monomials up to degree (K-1)÷2
-    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
     y += _phs_eval_poly(Δx, poly_exps, coeffs, ns)
     return y
@@ -181,13 +182,14 @@ end
     ns = length(offsets)
     y = zero(Tv)
 
+    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
+
     @inbounds @simd for i in 1:ns
-        xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+        xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
         r = sqrt(_phs_sum_sq(xh))
         r_inv = ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
         y += coeffs[i] * _phs_phi_prime(r, Val{K}()) * xh[axis] * r_inv
     end
-    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
     y += _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, Val(axis))
     return y
@@ -224,10 +226,12 @@ end
     ns = length(offsets)
     y = zero(Tv)
 
+    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
+
     eps2 = eps(Tg)^2
     if ax1 == ax2
         @inbounds @simd for i in 1:ns
-            xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+            xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
             r2 = _phs_sum_sq(xh)
             r = sqrt(r2)
             r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
@@ -239,7 +243,7 @@ end
         end
     else
         @inbounds @simd for i in 1:ns
-            xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+            xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
             r2 = _phs_sum_sq(xh)
             r = sqrt(r2)
             r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
@@ -249,7 +253,6 @@ end
             y += coeffs[i] * (fpp - fp * r_inv) * xh[ax1] * xh[ax2] * r2_inv
         end
     end
-    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
     y += _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, Val(ax1), Val(ax2))
     return y
@@ -287,8 +290,10 @@ end
     yv = zero(Tv)
     yd = zero(Tv)
 
+    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
+
     @inbounds @simd for i in 1:ns
-        xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+        xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
         r2 = _phs_sum_sq(xh)
         r  = sqrt(r2)
         ci = coeffs[i]
@@ -297,7 +302,6 @@ end
         yd += ci * _phs_phi_prime(r, Val{K}()) * xh[axis] * r_inv
     end
 
-    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
     yv += _phs_eval_poly(Δx, poly_exps, coeffs, ns)
     yd += _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, Val(axis))
@@ -341,10 +345,12 @@ end
     yd1 = zero(Tv)
     yd2 = zero(Tv)
 
+    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
+
     eps_tg = eps(Tg)
     if ax1 == ax2
         @inbounds @simd for i in 1:ns
-            xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+            xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
             r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
             ci = coeffs[i]
@@ -359,7 +365,7 @@ end
         end
     else
         @inbounds @simd for i in 1:ns
-            xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+            xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
             r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
             ci = coeffs[i]
@@ -373,7 +379,6 @@ end
         end
     end
 
-    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
     yv  += _phs_eval_poly(Δx, poly_exps, coeffs, ns)
     yd1 += _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, Val(ax1))
@@ -416,8 +421,10 @@ end
     yd1 = zero(Tv)
     yd2 = zero(Tv)
 
+    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
+
     @inbounds @simd for i in 1:ns
-        xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+        xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
         r2 = _phs_sum_sq(xh)
         r  = sqrt(r2)
         ci = coeffs[i]
@@ -427,7 +434,6 @@ end
         yd2 += ci * fp_r_inv * xh[ax2]
     end
 
-    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
     yv  += _phs_eval_poly(Δx, poly_exps, coeffs, ns)
     yd1 += _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, Val(ax1))
@@ -472,9 +478,11 @@ end
     yd2  = zero(Tv)
     yd12 = zero(Tv)
 
+    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
+
     eps2 = eps(Tg)^2
     @inbounds @simd for i in 1:ns
-        xh = _phs_diff(query, base_coords, offsets[i], hs_local)
+        xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
         r2 = _phs_sum_sq(xh)
         r  = sqrt(r2)
         ci = coeffs[i]
@@ -488,7 +496,6 @@ end
         yd12 += ci * (fpp - fp * r_inv) * xh[ax1] * xh[ax2] * r2_inv
     end
 
-    Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
     yv   += _phs_eval_poly(Δx, poly_exps, coeffs, ns)
     yd1  += _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, Val(ax1))

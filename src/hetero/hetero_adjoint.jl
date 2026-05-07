@@ -509,7 +509,11 @@ Internal builder for `HeteroAdjointND`. Separated from the public API so that
 Per-axis cache construction:
 - CubicInterp: CubicSplineCache (user BC) + CubicSplineCache (mixed-partial BC)
 - QuadraticInterp: compute MinCurvFit constant, no cache needed
-- LinearInterp/ConstantInterp: nothing (no build step)
+- LinearInterp / ConstantInterp / local-Hermite: no cache (`nothing` in `caches`).
+  These axes are handled by scatter alone — when `bc` is `PeriodicBC{:exclusive}`
+  the axis is wrapped via `_cache_axis` in `grids_ext` so that anchors and the
+  generic seam-fold post-apply hook see a length-`n+1` extended axis, then
+  `_adjoint_output_size` trims back to user-`n`.
 """
 function _build_hetero_nd_adjoint(
         grids::NTuple{N, AbstractVector{Tg}},
@@ -517,113 +521,28 @@ function _build_hetero_nd_adjoint(
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N, Tg}
-    # Reject Hermite family methods upfront with a clear message. Without this
-    # guard, the scatter path below would fail deep in the per-axis weight
-    # computation with an obscure MethodError. Single point of entry for both
-    # direct `hetero_adjoint(...)` calls and the Zygote/ChainRules rrule
-    # (see `_adjoint_func_from_itp(::HeteroInterpolantND) = hetero_adjoint`).
+    # Reject Hermite family methods upfront with a clear message. Single point
+    # of entry for both direct `hetero_adjoint(...)` calls and the Zygote /
+    # ChainRules rrule (`_adjoint_func_from_itp(::HeteroInterpolantND) = hetero_adjoint`).
     _has_any_local_method(methods) && _throw_hetero_adjoint_hermite_unsupported(methods)
-    # Validate grid size and cubic PolyFit BC support requirements
-    @inbounds for d in 1:N
-        len_d = length(grids[d])
-        len_d >= 2 || _throw_adjoint_grid_too_small(d, len_d)
-        if methods[d] isa CubicInterp
-            bc_d = methods[d].bc
-            if !(bc_d isa PeriodicBC)
-                deg = get_polyfit_degree(bc_d)
-                if deg > 0 && len_d < deg + 1
-                    throw(
-                        ArgumentError(
-                            "PolyFit BC on dimension $d requires at least $(deg + 1) grid points, got $len_d"
-                        )
-                    )
-                end
-            end
-        end
-    end
+    _validate_hetero_axes(grids, methods, Val(N))
 
-    # Extend exclusive periodic grids → inclusive form (cubic axes only)
-    grids_ext = map(grids, methods) do grid_d, method_d
-        method_d isa CubicInterp || return grid_d
-        bc_d = method_d.bc
-        bc_d isa PeriodicBC{:exclusive} || return grid_d
-        period = _resolve_exclusive_period(grid_d, bc_d)
-        x_end = first(grid_d) + Tg(period)
-        if grid_d isa AbstractRange
-            _to_float_adding_endpoint(grid_d, Tg)
-        else
-            vcat(grid_d, x_end)
-        end
-    end
-
-    # Per-axis adjoint BC.
-    # Cubic/Quadratic axes go through normalization (BCPair / quadratic-BC form)
-    # — these drive the per-axis adjoint solver and the periodic seam fold.
-    # All other axes (Linear / Constant / local Hermite / NoInterp) store
-    # `NoBC()` — Hetero adjoint does not yet wrap/extend non-derivative axes
-    # for `PeriodicBC` (forward does, via `_cache_axis_for_method`, but the
-    # adjoint constructor extends only Cubic axes — see `grids_ext` above).
-    # Until that asymmetry is closed in a follow-up, storing PeriodicBC here
-    # would mis-size the trimmed adjoint output.
-    bcs = map(methods) do method_d
-        if method_d isa CubicInterp
-            bc_d = method_d.bc
-            _is_periodic_bc(bc_d) ? bc_d : _normalize_bc(bc_d)
-        elseif method_d isa QuadraticInterp
-            _normalize_bc(method_d.bc)
-        else
-            NoBC()
-        end
-    end
-
-    # Mixed-partial BCs (consumed only by Cubic/Quadratic per-axis adjoint
-    # solver; other axes' entries are inert).
-    mixed_bcs = map(methods, grids_ext) do method_d, grid_d
-        if method_d isa CubicInterp
-            mixed_bc = _get_effective_bc(method_d.bc, 2, grid_d)
-            _is_periodic_bc(mixed_bc) ? mixed_bc : _normalize_bc(mixed_bc)
-        elseif method_d isa QuadraticInterp
-            _normalize_bc(_get_effective_bc_quadratic(method_d.bc, 2, grid_d))
-        else
-            NoBC()
-        end
-    end
-
-    # Per-axis caches (cubic only)
-    # _effective_autocache: bypass cache pool for Dual grids (ephemeral, hit rate ≈ 0%)
+    # Per-axis "package" via method-typed dispatch — see `_build_hetero_axis_package`
+    # below. Each package is a NamedTuple with the 6 fields the builder threads
+    # into `HeteroAdjointND`. Replaces the previous 5 if-cascade `map`s; the
+    # per-method axis policy lives in ONE place per method type.
     ac = _effective_autocache(true, Tg)
-    caches = map(methods, grids_ext, bcs) do method_d, grid_d, bp_d
-        method_d isa CubicInterp || return nothing
-        if _is_periodic_bc(bp_d)
-            _get_cubic_cache(grid_d, PeriodicBC(), ac)
-        else
-            _get_cubic_cache(grid_d, bp_d, ac)
-        end
-    end
+    axes = map((m, g) -> _build_hetero_axis_package(m, g, ac), methods, grids)
 
-    mixed_caches = map(methods, grids_ext, mixed_bcs) do method_d, grid_d, mbp_d
-        method_d isa CubicInterp || return nothing
-        if _is_periodic_bc(mbp_d)
-            _get_cubic_cache(grid_d, PeriodicBC(), ac)
-        else
-            _get_cubic_cache(grid_d, mbp_d, ac)
-        end
-    end
+    grids_ext    = map(a -> a.grid_ext,    axes)
+    bcs          = map(a -> a.bc,          axes)
+    mixed_bcs    = map(a -> a.mixed_bc,    axes)
+    caches       = map(a -> a.cache,       axes)
+    mixed_caches = map(a -> a.mixed_cache, axes)
+    mincurv_Cs   = map(a -> a.mincurv_C,   axes)
 
-    # Per-axis MinCurvFit constants (quadratic only) — axis-based form
-    # reads `_get_inv_h(grid_d, i)` from wrapped or raw axes uniformly.
-    mincurv_Cs = map(methods, grids_ext) do method_d, grid_d
-        if method_d isa QuadraticInterp
-            bc_d = method_d.bc
-            _mincurv_C_for_bc(bc_d, grid_d, length(grid_d))
-        else
-            zero(Tg)
-        end
-    end
-
-    # Bake per-query anchors
-    anchors = _bake_hetero_nd_anchors(grids_ext, queries, extraps, methods)
-
+    # Bake per-query anchors against the (now per-axis-resolved) grids_ext.
+    anchors   = _bake_hetero_nd_anchors(grids_ext, queries, extraps, methods)
     grid_size = ntuple(d -> length(grids_ext[d]), Val(N))
 
     return HeteroAdjointND{
@@ -636,4 +555,109 @@ function _build_hetero_nd_adjoint(
         caches, mixed_caches, bcs, mixed_bcs,
         anchors, grid_size, mincurv_Cs
     )
+end
+
+# ────────────────────────────────────────────────────────────────────────
+# Per-axis package builder — method-typed dispatch
+# ────────────────────────────────────────────────────────────────────────
+#
+# Returns a NamedTuple carrying everything the hetero builder needs per-axis:
+#
+#   :grid_ext     — axis as seen by anchor baking + scatter + seam fold
+#                   (length n+1 for `:exclusive` regardless of method; raw
+#                    length n otherwise). Cubic uses physical extension
+#                    (vcat / Range append) for Sherman-Morrison cache
+#                    compatibility; Linear/Constant use zero-copy wrapper
+#                    (`_ExclusivePeriodicAxis`); other methods passthrough.
+#
+#   :bc / :mixed_bc — boundary condition handed to the per-axis solver.
+#                     Cubic/Quadratic axes drive a real solver and need
+#                     normalized form (BCPair / quadratic BC); inert for
+#                     other methods (just needs `<: AbstractBC`).
+#
+#   :cache / :mixed_cache — Sherman-Morrison transpose cache. Cubic only;
+#                           `nothing` elsewhere.
+#
+#   :mincurv_C    — MinCurvFit precomputed constant. Quadratic only;
+#                   `zero(Tg)` elsewhere.
+#
+# Method-typed dispatch (4 buckets, one per method "shape"). PCHIP /
+# Cardinal / Akima are rejected upstream by `_has_any_local_method`, so
+# they never reach this dispatch — no method needed for those.
+
+# ── CubicInterp: physical extension + dual cache (user-bc + mixed-bc) ──
+@inline function _build_hetero_axis_package(
+        method::CubicInterp,
+        grid::AbstractVector{Tg},
+        ac
+    ) where {Tg}
+    bc_user  = method.bc
+    grid_ext = _prepare_periodic_grid(grid, bc_user)        # vcat for `:exclusive`, passthrough otherwise
+    bc       = _is_periodic_bc(bc_user) ? bc_user : _normalize_bc(bc_user)
+    mbc_raw  = _get_effective_bc(bc_user, 2, grid_ext)      # depends on grid_ext
+    mixed_bc = _is_periodic_bc(mbc_raw) ? mbc_raw : _normalize_bc(mbc_raw)
+    cache       = _get_cubic_cache(grid_ext, _is_periodic_bc(bc) ? PeriodicBC() : bc, ac)
+    mixed_cache = _get_cubic_cache(grid_ext, _is_periodic_bc(mixed_bc) ? PeriodicBC() : mixed_bc, ac)
+    return (; grid_ext, bc, mixed_bc, cache, mixed_cache, mincurv_C = zero(Tg))
+end
+
+# ── QuadraticInterp: passthrough grid, normalized BC pair, mincurv constant ──
+@inline function _build_hetero_axis_package(
+        method::QuadraticInterp,
+        grid::AbstractVector{Tg},
+        ac
+    ) where {Tg}
+    bc_user   = method.bc
+    bc        = _normalize_bc(bc_user)
+    mixed_bc  = _normalize_bc(_get_effective_bc_quadratic(bc_user, 2, grid))
+    mincurv_C = _mincurv_C_for_bc(bc_user, grid, length(grid))
+    return (; grid_ext = grid, bc, mixed_bc, cache = nothing, mixed_cache = nothing, mincurv_C)
+end
+
+# ── NoInterp / CubicHermiteInterp: no `.bc` field; full passthrough ─────
+@inline function _build_hetero_axis_package(
+        ::Union{NoInterp, CubicHermiteInterp},
+        grid::AbstractVector{Tg},
+        ac
+    ) where {Tg}
+    return (; grid_ext = grid, bc = NoBC(), mixed_bc = NoBC(),
+              cache = nothing, mixed_cache = nothing, mincurv_C = zero(Tg))
+end
+
+# ── Linear / Constant: zero-copy wrapper for `:exclusive`, passthrough else ──
+# (PCHIP / Cardinal / Akima rejected by `_has_any_local_method` upstream.)
+@inline function _build_hetero_axis_package(
+        method::Union{LinearInterp, ConstantInterp},
+        grid::AbstractVector{Tg},
+        ac
+    ) where {Tg}
+    bc_user  = method.bc
+    grid_ext = bc_user isa PeriodicBC{:exclusive} ? _cache_axis(grid, bc_user) : grid
+    return (; grid_ext, bc = bc_user, mixed_bc = bc_user,
+              cache = nothing, mixed_cache = nothing, mincurv_C = zero(Tg))
+end
+
+# ────────────────────────────────────────────────────────────────────────
+# Per-axis validation (length + Cubic PolyFit degree)
+# ────────────────────────────────────────────────────────────────────────
+@inline function _validate_hetero_axes(grids, methods, ::Val{N}) where {N}
+    @inbounds for d in 1:N
+        len_d = length(grids[d])
+        len_d >= 2 || _throw_adjoint_grid_too_small(d, len_d)
+        method_d = methods[d]
+        if method_d isa CubicInterp
+            bc_d = method_d.bc
+            if !(bc_d isa PeriodicBC)
+                deg = get_polyfit_degree(bc_d)
+                if deg > 0 && len_d < deg + 1
+                    throw(
+                        ArgumentError(
+                            "PolyFit BC on dimension $d requires at least $(deg + 1) grid points, got $len_d"
+                        )
+                    )
+                end
+            end
+        end
+    end
+    return nothing
 end

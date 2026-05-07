@@ -491,8 +491,8 @@ Dispatches to the appropriate `_phs_eval_coeffs_*` function based on `ops`.
         query::NTuple{N, <:Real},
         base_coords::NTuple{N},
         ::Val{K},
-        ops::NTuple{N, AbstractEvalOp},
-    ) where {N, K}
+        ops::O,
+    ) where {N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}}
     n_deriv = ntuple(d -> deriv_order(ops[d]), N)
     total_order = sum(n_deriv)
     if total_order == 0
@@ -522,10 +522,10 @@ Uses pre-allocated buffers `rhs_buf` and `coeff_buf` (from AdaptiveArrayPools).
         itp::PHSInterpolantND{Tg, Tv, N, K},
         base_idx::NTuple{N, Int},
         query::NTuple{N, <:Real},
-        ops::NTuple{N, AbstractEvalOp},
+        ops::O,
         rhs_buf::AbstractVector,
         coeff_buf::AbstractVector,
-    ) where {Tg, Tv, N, K}
+    ) where {Tg, Tv, N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}}
     offsets, coeff, hs_local = _phs_solve_stencil!(itp, base_idx, rhs_buf, coeff_buf)
     base_coords = _phs_base_coords(itp, base_idx)
     return _phs_eval_from_coeffs(coeff, offsets, hs_local, query, base_coords, Val{K}(), ops)
@@ -550,8 +550,8 @@ Algorithm:
 @with_pool pool function _phs_eval_blended(
         itp::PHSInterpolantND{Tg, Tv, N, K},
         query::NTuple{N, <:Real},
-        ops::NTuple{N, AbstractEvalOp},
-    ) where {Tg, Tv, N, K}
+        ops::O,
+    ) where {Tg, Tv, N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}}
     blend_a   = itp.blend_a
     blend_a3  = itp.blend_a3
     base_idx0 = _phs_find_base_node(itp, query)
@@ -742,8 +742,8 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
 @with_pool pool function _phs_eval_blended_G(
         itp::PHSInterpolantND{Tg, Tv, N, K},
         query::NTuple{N, <:Real},
-        ops::NTuple{N, AbstractEvalOp},
-    ) where {Tg, Tv, N, K}
+        ops::O,
+    ) where {Tg, Tv, N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}}
     blend_a    = itp.blend_a
     blend_a3   = itp.blend_a3
     base_idx0  = _phs_find_base_node(itp, query)
@@ -1124,11 +1124,27 @@ and its derivatives.
   Hessian:  ∂²ρ̃/∂xξ∂xζ = ∂²ρ₀/∂xξ∂xζ · G + ∂ρ₀/∂xξ · ∂G/∂xζ
                           + ∂ρ₀/∂xζ · ∂G/∂xξ + ρ₀ · ∂²G/∂xξ∂xζ
 """
+@inline function _phs_eval_ref_deriv1(ref, query, ax::Int, ::Val{N}, ::Type{Tg}) where {N, Tg}
+    if ax == 1
+        ops = ntuple(d -> d == 1 ? DerivOp{1}() : EvalValue(), Val(N))
+        return Tg(ref(query; deriv = ops))
+    elseif ax == 2
+        ops = ntuple(d -> d == 2 ? DerivOp{1}() : EvalValue(), Val(N))
+        return Tg(ref(query; deriv = ops))
+    elseif ax == 3
+        ops = ntuple(d -> d == 3 ? DerivOp{1}() : EvalValue(), Val(N))
+        return Tg(ref(query; deriv = ops))
+    else
+        ops = ntuple(d -> d == ax ? DerivOp{1}() : EvalValue(), Val(N))
+        return Tg(ref(query; deriv = ops))
+    end
+end
+
 function _phs_eval_with_transform(
         itp::PHSInterpolantND{Tg, Tv, N, K},
         query::NTuple{N, <:Real},
-        ops::NTuple{N, AbstractEvalOp},
-    ) where {Tg, Tv, N, K}
+        ops::O,
+    ) where {Tg, Tv, N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}}
     total_deriv = sum(deriv_order(ops[d]) for d in 1:N)
     ref = itp.transform.reference
 
@@ -1141,11 +1157,10 @@ function _phs_eval_with_transform(
 
     if total_deriv == 1
         ax       = findfirst(d -> deriv_order(ops[d]) == 1, 1:N)::Int
-        ops_grad = ntuple(d -> d == ax ? DerivOp{1}() : EvalValue(), N)
         # Single fused pass: compute G and G_ξ together
         G, G_ξ   = _phs_eval_blended_G_with_grad(itp, query, ax)
         rho0     = Tg(ref(query))
-        rho0_ξ   = Tg(ref(query; deriv = ops_grad))
+        rho0_ξ   = _phs_eval_ref_deriv1(ref, query, ax, Val(N), Tg)
         return Tv(rho0_ξ * G + rho0 * G_ξ)
     end
 
@@ -1155,13 +1170,11 @@ function _phs_eval_with_transform(
         ax2_maybe = ax1 < N ? findnext(d -> n_deriv_arr[d] > 0, 1:N, ax1 + 1) : nothing
         ax2       = ax2_maybe !== nothing ? ax2_maybe : ax1
 
-        ops_d1  = ntuple(d -> d == ax1 ? DerivOp{1}() : EvalValue(), N)
-
         # Single fused pass: compute G, G_ξ, G_ζ (= G_ξ for diagonal), G_ξζ together
         G, G_ξ, G_ζ, G_ξζ = _phs_eval_blended_G_with_hess(itp, query, ax1, ax2)
 
         rho0    = Tg(ref(query))
-        rho0_ξ  = Tg(ref(query; deriv = ops_d1))
+        rho0_ξ  = _phs_eval_ref_deriv1(ref, query, ax1, Val(N), Tg)
         rho0_ξζ = Tg(ref(query; deriv = ops))
 
         if ax1 == ax2
@@ -1169,8 +1182,7 @@ function _phs_eval_with_transform(
             # (G_ζ == G_ξ and rho0_ζ == rho0_ξ — no extra blend call needed)
             return Tv(rho0_ξζ * G + 2 * rho0_ξ * G_ξ + rho0 * G_ξζ)
         else
-            ops_d2 = ntuple(d -> d == ax2 ? DerivOp{1}() : EvalValue(), N)
-            rho0_ζ = Tg(ref(query; deriv = ops_d2))
+            rho0_ζ = _phs_eval_ref_deriv1(ref, query, ax2, Val(N), Tg)
             # Leibniz rule: ρ̃_ξζ = ρ₀_ξζ·G + ρ₀_ξ·G_ζ + ρ₀_ζ·G_ξ + ρ₀·G_ξζ
             return Tv(rho0_ξζ * G + rho0_ξ * G_ζ + rho0_ζ * G_ξ + rho0 * G_ξζ)
         end
@@ -1193,7 +1205,7 @@ end
 @inline function _phs_eval(
         itp::PHSInterpolantND,
         query::NTuple{N, <:Real},
-        ops::NTuple{N, AbstractEvalOp},
-    ) where {N}
+        ops::O,
+    ) where {N, O <: Tuple{Vararg{AbstractEvalOp, N}}}
     return _phs_eval_dispatch(itp, itp.transform, query, ops)
 end

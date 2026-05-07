@@ -315,6 +315,7 @@ end
 # cache::Dict{Int,I} fully type-stable so all per-atom eval calls are zero-alloc.
 struct PromolecularRef{I}
     atoms::Vector{Tuple{Int, NTuple{3,Float64}}}  # (Z, (x,y,z)) in Bohr
+    cache_array::Vector{I}
     cache::Dict{Int, I}                            # Z => typed 1D spline
 end
 
@@ -323,68 +324,113 @@ function PromolecularRef(atoms::Vector{Tuple{Int, NTuple{3,Float64}}})
     for (Z, _) in atoms; get_rho_itp(Z); end   # populate _wfc_cache (Dict{Int,Any})
     I = typeof(first(values(_wfc_cache)))
     cache = Dict{Int, I}(k => v for (k, v) in _wfc_cache)
-    return PromolecularRef{I}(atoms, cache)
+    
+    max_z = maximum(Z for (Z, _) in atoms)
+    cache_array = Vector{I}(undef, max_z)
+    for (Z, itp) in cache
+        if Z <= max_z
+            cache_array[Z] = itp
+        end
+    end
+    return PromolecularRef{I}(atoms, cache_array, cache)
 end
 
-function (pmr::PromolecularRef)(q; deriv=nothing)
-    # Determine derivative order along each axis
-    total = 0
-    if deriv !== nothing
-        for op in deriv; total += deriv_order(op); end
+@inline function _pmr_get_deriv_info(::Type{O}) where {O <: Tuple}
+    orders = (deriv_order(fieldtype(O, 1)), deriv_order(fieldtype(O, 2)), deriv_order(fieldtype(O, 3)))
+    total = sum(orders)
+    if total == 1
+        ax = findfirst(o -> o == 1, orders)::Int
+        return (total, ax, 0)
+    elseif total == 2
+        ax1 = findfirst(o -> o > 0, orders)::Int
+        ax2 = ax1 < 3 ? findnext(o -> o > 0, orders, ax1 + 1) : nothing
+        ax2 = ax2 !== nothing ? ax2 : ax1
+        return (total, ax1, ax2)
+    else
+        return (total, 0, 0)
     end
+end
 
-    if total == 0
+@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real}; deriv::O = nothing) where {O}
+    if O === Nothing || O === typeof(nothing)
+        # Value evaluation
         f = 0.0
-        for (Z, R) in pmr.atoms
+        @inbounds for i in 1:length(pmr.atoms)
+            Z, R = pmr.atoms[i]
             xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
-            r = sqrt(xx1^2 + xx2^2 + xx3^2)
+            r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
             r < 1e-14 && continue
-            f += max(pmr.cache[Z](r), 0.0)
+            f += max(pmr.cache_array[Z](r), 0.0)
         end
         return f
-    end
-
-    if total == 1
-        ax = findfirst(d -> deriv_order(deriv[d]) == 1, 1:3)::Int
-        fp = 0.0
-        D1 = DerivOp{1}()
-        for (Z, R) in pmr.atoms
-            xx = (q[1] - R[1], q[2] - R[2], q[3] - R[3])
-            r  = sqrt(xx[1]^2 + xx[2]^2 + xx[3]^2)
-            r < 1e-14 && continue
-            fp += pmr.cache[Z](r; deriv = D1) * xx[ax] / r
-        end
-        return fp
-    end
-
-    if total == 2
-        # Non-allocating axis scan (avoids heap-allocating comprehension)
-        ax1 = 0; ax2 = 0
-        for d in 1:3
-            if deriv_order(deriv[d]) > 0
-                if ax1 == 0; ax1 = d
-                else ax2 = d; break
-                end
+    else
+        info = _pmr_get_deriv_info(O)
+        total = info[1]
+        if total == 0
+            f = 0.0
+            @inbounds for i in 1:length(pmr.atoms)
+                Z, R = pmr.atoms[i]
+                xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
+                r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
+                r < 1e-14 && continue
+                f += max(pmr.cache_array[Z](r), 0.0)
             end
+            return f
+        elseif total == 1
+            ax = info[2]
+            fp = 0.0
+            D1 = DerivOp{1}()
+            @inbounds for i in 1:length(pmr.atoms)
+                Z, R = pmr.atoms[i]
+                xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
+                r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
+                r < 1e-14 && continue
+                dx = ax == 1 ? xx1 : (ax == 2 ? xx2 : xx3)
+                fp += pmr.cache_array[Z](r; deriv = D1) * dx / r
+            end
+            return fp
+        elseif total == 2
+            ax1 = info[2]
+            ax2 = info[3]
+            fpp = 0.0
+            D1 = DerivOp{1}()
+            D2 = DerivOp{2}()
+            @inbounds for i in 1:length(pmr.atoms)
+                Z, R = pmr.atoms[i]
+                xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
+                r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
+                r < 1e-14 && continue
+                rho_itp = pmr.cache_array[Z]
+                rhop  = rho_itp(r; deriv = D1)
+                rhopp = rho_itp(r; deriv = D2)
+                rfac  = (rhopp - rhop / r) / (r * r)
+                dx1 = ax1 == 1 ? xx1 : (ax1 == 2 ? xx2 : xx3)
+                dx2 = ax2 == 1 ? xx1 : (ax2 == 2 ? xx2 : xx3)
+                fpp += ax1 == ax2 ? rhop / r + rfac * (dx1 * dx1) : rfac * dx1 * dx2
+            end
+            return fpp
+        else
+            return 0.0
         end
-        ax2 = ax2 == 0 ? ax1 : ax2
-        fpp = 0.0
-        D1 = DerivOp{1}(); D2 = DerivOp{2}()
-        for (Z, R) in pmr.atoms
-            xx = (q[1] - R[1], q[2] - R[2], q[3] - R[3])
-            r  = sqrt(xx[1]^2 + xx[2]^2 + xx[3]^2)
-            r < 1e-14 && continue
-            rho_itp = pmr.cache[Z]
-            rhop  = rho_itp(r; deriv = D1)
-            rhopp = rho_itp(r; deriv = D2)
-            rfac  = (rhopp - rhop / r) / r^2
-            fpp += ax1 == ax2 ? rhop / r + rfac * xx[ax1]^2 :
-                                 rfac * xx[ax1] * xx[ax2]
-        end
-        return fpp
     end
+end
 
-    return 0.0
+# In-place batch evaluation mirroring the PHS batch API
+function (pmr::PromolecularRef)(
+        out::AbstractVector{T},
+        queries::Union{Tuple{Vararg{AbstractVector, 3}}, AbstractVector};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, 3}}} = EvalValue(),
+    ) where {T}
+    N = 3
+    ops = FastInterpolations._resolve_deriv_nd(deriv, Val(N))
+    nq = FastInterpolations._query_length(queries)
+    length(out) == nq || throw(DimensionMismatch("Query and output sizes mismatch"))
+    
+    @inbounds for k in 1:nq
+        q = FastInterpolations._extract_query_point(queries, k, Val(N))
+        out[k] = pmr(q; deriv = ops)
+    end
+    return out
 end
 
 println("Building PromolecularRef (loading wfc files for present elements)...")

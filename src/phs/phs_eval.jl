@@ -118,11 +118,7 @@ end
 
 # ---- Evaluation dispatch on DerivOp ----
 
-# Helper: difference vector (query - stencil_node_i) in physical space
-@inline function _phs_diff(query::NTuple{N, <:Real}, base_coords::NTuple{N, Tg},
-        off::NTuple{N, Int}, hs_local::NTuple{N, Tg}) where {N, Tg}
-    return ntuple(d -> Tg(query[d]) - (base_coords[d] + Tg(off[d]) * hs_local[d]), N)
-end
+# (Note: _phs_diff has been moved to phs_kernels.jl as a compile-time generated/unrolled function)
 
 """
     _phs_eval_coeffs_value(coeffs, offsets, hs_local, query, base_coords, ::Val{K}, N) -> scalar
@@ -144,7 +140,7 @@ Evaluate the PHS interpolant value at `query` given precomputed coefficients.
     # RBF sum
     @inbounds @simd for i in 1:ns
         xh = _phs_diff(query, base_coords, offsets[i], hs_local)
-        r = sqrt(sum(x -> x * x, xh))
+        r = sqrt(_phs_sum_sq(xh))
         y += coeffs[i] * _phs_phi(r, Val{K}())
     end
 
@@ -177,7 +173,7 @@ Evaluate ∂f/∂xξ (Eq. 25).
     # allows @simd to vectorize; phi_prime(r=0) for K≥3 is already 0.
     @inbounds @simd for i in 1:ns
         xh = _phs_diff(query, base_coords, offsets[i], hs_local)
-        r = sqrt(sum(x -> x * x, xh))
+        r = sqrt(_phs_sum_sq(xh))
         r_inv = ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
         y += coeffs[i] * _phs_phi_prime(r, Val{K}()) * xh[axis] * r_inv
     end
@@ -212,7 +208,7 @@ Evaluate ∂²f/∂xξ∂xζ (Eq. 26).
     if ax1 == ax2
         @inbounds @simd for i in 1:ns
             xh = _phs_diff(query, base_coords, offsets[i], hs_local)
-            r2 = sum(x -> x * x, xh)
+            r2 = _phs_sum_sq(xh)
             r = sqrt(r2)
             r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
             r2_inv = r_inv * r_inv
@@ -225,7 +221,7 @@ Evaluate ∂²f/∂xξ∂xζ (Eq. 26).
     else
         @inbounds @simd for i in 1:ns
             xh = _phs_diff(query, base_coords, offsets[i], hs_local)
-            r2 = sum(x -> x * x, xh)
+            r2 = _phs_sum_sq(xh)
             r = sqrt(r2)
             r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
             r2_inv = r_inv * r_inv
@@ -264,7 +260,7 @@ along `axis`.  Avoids traversing the stencil twice when both are needed (gradien
 
     @inbounds @simd for i in 1:ns
         xh = _phs_diff(query, base_coords, offsets[i], hs_local)
-        r2 = sum(x -> x * x, xh)
+        r2 = _phs_sum_sq(xh)
         r  = sqrt(r2)
         ci = coeffs[i]
         r_inv = ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
@@ -308,7 +304,7 @@ For mixed (ax1≠ax2): returns (f, f_ξ, f_ξζ) where first-deriv is w.r.t. ax1
     if ax1 == ax2
         @inbounds @simd for i in 1:ns
             xh = _phs_diff(query, base_coords, offsets[i], hs_local)
-            r2 = sum(x -> x * x, xh)
+            r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
             ci = coeffs[i]
             r_inv  = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
@@ -323,7 +319,7 @@ For mixed (ax1≠ax2): returns (f, f_ξ, f_ξζ) where first-deriv is w.r.t. ax1
     else
         @inbounds @simd for i in 1:ns
             xh = _phs_diff(query, base_coords, offsets[i], hs_local)
-            r2 = sum(x -> x * x, xh)
+            r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
             ci = coeffs[i]
             r_inv  = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
@@ -368,7 +364,7 @@ Used for mixed-Hessian blending to get both first-derivative components in one l
 
     @inbounds @simd for i in 1:ns
         xh = _phs_diff(query, base_coords, offsets[i], hs_local)
-        r2 = sum(x -> x * x, xh)
+        r2 = _phs_sum_sq(xh)
         r  = sqrt(r2)
         ci = coeffs[i]
         fp_r_inv = _phs_phi_prime(r, Val{K}()) * ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
@@ -412,7 +408,7 @@ of calling `_phs_eval_coeffs_value_and_two_deriv1` followed by `_phs_eval_coeffs
     eps2 = eps(Tg)^2
     @inbounds @simd for i in 1:ns
         xh = _phs_diff(query, base_coords, offsets[i], hs_local)
-        r2 = sum(x -> x * x, xh)
+        r2 = _phs_sum_sq(xh)
         r  = sqrt(r2)
         ci = coeffs[i]
         r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)

@@ -430,3 +430,35 @@ Evaluate `∂²/∂x_ax1 ∂x_ax2` of the polynomial augmentation.
     end
     return y
 end
+
+# ========================================
+# Generated/Unrolled Tuple Helpers for SIMD
+# ========================================
+
+"""
+    _phs_diff(query, base_coords, off, hs_local) -> NTuple{N, Tg}
+
+Compute physical distance vectors: (query - node_i).
+Generated at compile-time for arbitrary dimensions to ensure full unrolling
+and optimal SIMD register allocation.
+"""
+@generated function _phs_diff(
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        off::NTuple{N, Int},
+        hs_local::NTuple{N, Tg},
+    ) where {N, Tg}
+    exprs = [:(Tg(query[$d]) - (base_coords[$d] + Tg(off[$d]) * hs_local[$d])) for d in 1:N]
+    return Expr(:tuple, exprs...)
+end
+
+"""
+    _phs_sum_sq(x) -> Tg
+
+Compile-time unrolled sum of squares for tuples.
+"""
+@generated function _phs_sum_sq(x::NTuple{N, T}) where {N, T}
+    exprs = [:(x[$d] * x[$d]) for d in 1:N]
+    return Expr(:call, :+, exprs...)
+end
+

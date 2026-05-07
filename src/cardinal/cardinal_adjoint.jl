@@ -241,19 +241,21 @@ function cardinal_adjoint(
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
-    # BC-aware axis wrap. For `:exclusive`, `_cache_axis` returns
-    # `_ExclusivePeriodicAxis` of logical length n+1; `collect` materializes
-    # to a length-(n+1) Vector with the virtual seam endpoint at index n+1.
-    # For `:inclusive` / NoBC, length unchanged. The slope adjoint then
-    # runs over the materialized closed-cycle grid via the periodic path.
-    x_axis = _cache_axis(x_p, bc, Tg)
-    extrap_eff = _resolve_extrap(extrap, bc, x_axis)
+    # Closed-cycle extension for periodic BCs — mirrors the forward
+    # `cardinal_interpolant` persistent path. Cardinal adjoint is data-free
+    # (slopes linear in y), so we extend the x grid only via the x-only
+    # sibling `_prepare_periodic_grid`. `:exclusive` becomes length-(n+1)
+    # with the seam endpoint as a real grid point; `:inclusive` is already
+    # closed at n. After this, the slope adjoint runs over the extended
+    # grid via the unified periodic 4-corner formula
+    # (`_cardinal_slope_adjoint_periodic!`).
+    x_ext = _prepare_periodic_grid(x_p, bc)
+    extrap_eff = _resolve_extrap(extrap, bc, x_ext)
+    bc_eff = _bc_after_extend(bc)
 
-    # NoExtrap: validate queries against the axis's domain (covers the seam
-    # endpoint for `:exclusive`; non-periodic NoExtrap still validates here
-    # since periodic auto-promotes to WrapExtrap above).
+    # NoExtrap: validate queries against extended domain.
     if extrap_eff isa NoExtrap
-        x_lo, x_hi = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
+        x_lo, x_hi = _extract_primal(first(x_ext)), _extract_primal(last(x_ext))
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
             (x_lo <= xq_i <= x_hi) || throw(
@@ -262,10 +264,17 @@ function cardinal_adjoint(
         end
     end
 
+    # Wrap the extended grid for cached `h`/`inv_h` (matches forward
+    # Cardinal persistent's storage type). After `bc_eff` normalization
+    # any periodic input becomes `:inclusive` over the closed-cycle grid,
+    # so `_cache_axis` here returns `_CachedRange` / `_CachedVector` of
+    # length n+1 (NOT `_ExclusivePeriodicAxis` — the seam is now a real
+    # grid point in `x_ext`).
+    x_axis = _cache_axis(x_ext, bc_eff, Tg)
     anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap_eff)
 
     return CardinalAdjoint1D{Tg, typeof(bc), typeof(extrap_eff)}(
-        anchors, collect(Tg, x_axis), length(x_axis), Tg(tension), bc, extrap_eff
+        anchors, collect(Tg, x_ext), length(x_ext), Tg(tension), bc, extrap_eff
     )
 end
 

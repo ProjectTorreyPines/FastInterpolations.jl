@@ -380,6 +380,16 @@ Evaluate `∂/∂x_axis` of the polynomial augmentation.
         ns::Int,
         axis::Int,
     ) where {N, Tg, Tv}
+    return _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, Val(axis))
+end
+
+@inline function _phs_eval_poly_deriv1(
+        Δx::NTuple{N, Tg},
+        poly_exps::Tuple,
+        coeffs::AbstractVector{Tv},
+        ns::Int,
+        ::Val{axis},
+    ) where {N, Tg, Tv, axis}
     y = zero(Tv)
     @inbounds for k in 1:length(poly_exps)
         α = poly_exps[k]
@@ -407,6 +417,17 @@ Evaluate `∂²/∂x_ax1 ∂x_ax2` of the polynomial augmentation.
         ax1::Int,
         ax2::Int,
     ) where {N, Tg, Tv}
+    return _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, Val(ax1), Val(ax2))
+end
+
+@inline function _phs_eval_poly_deriv2(
+        Δx::NTuple{N, Tg},
+        poly_exps::Tuple,
+        coeffs::AbstractVector{Tv},
+        ns::Int,
+        ::Val{ax1},
+        ::Val{ax2},
+    ) where {N, Tg, Tv, ax1, ax2}
     y = zero(Tv)
     @inbounds for k in 1:length(poly_exps)
         α = poly_exps[k]

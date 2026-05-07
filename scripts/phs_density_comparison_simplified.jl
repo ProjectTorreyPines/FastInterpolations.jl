@@ -21,8 +21,8 @@
 # ============================================================
 # Configuration Options
 # ============================================================
-const PLOT = false             # Enable/disable generating the sanity-check plot
-const BENCHMARK = false        # Enable/disable the high-repetition benchmark loops
+const PLOT = true             # Enable/disable generating the sanity-check plot
+const BENCHMARK = true        # Enable/disable the high-repetition benchmark loops
 const BENCHMARK_REPS = 1000     # Number of evaluation repetitions for profiling (e.g. 1000 reps)
 
 # ============================================================

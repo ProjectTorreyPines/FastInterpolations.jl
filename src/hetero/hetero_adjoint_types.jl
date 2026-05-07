@@ -96,16 +96,17 @@ The same adjoint can be applied to any `ȳ` vector.
 - `C`:   Per-axis cache tuple (CubicSplineCache for cubic, Nothing for others)
 - `MC`:  Per-axis mixed-partial cache tuple
 - `BP`:  Per-axis adjoint-BC tuple, uniformly `<: AbstractBC`.
-         Cubic axes: `BCPair`/`PeriodicBC` (drives the periodic seam fold and
+         Cubic axes: `BCPair`/`PeriodicBC` (drives the periodic seam fold +
          Sherman-Morrison transpose). Quadratic axes: normalized `AbstractBC`
-         (e.g. `Left`, `Right`, `MinCurvFit`). All other axes (Linear /
-         Constant / local-Hermite / NoInterp): `NoBC()` — the Hetero adjoint
-         constructor does not yet wrap/extend non-derivative axes for
-         `PeriodicBC`, so storing the user's BC here would mis-size the
-         trimmed output.
+         (`Left`, `Right`, `MinCurvFit`). Linear / Constant / local-Hermite
+         axes: `method.bc` verbatim — only the `PeriodicBC{:exclusive}`
+         discriminant matters and drives the same generic seam-fold path
+         used by the dedicated 1D ND adjoints. `NoInterp` /
+         `CubicHermiteInterp` (no `.bc` field): `NoBC()`.
 - `MBP`: Per-axis mixed-BC tuple, analogous to `BP` but for mixed-partial
-         directions. `NoBC()` on axes that don't participate in mixed-partial
-         solving.
+         directions. Inert on axes that don't participate in mixed-partial
+         solving (Linear / Constant / local-Hermite carry `method.bc` for
+         shape consistency; `NoInterp` / `CubicHermiteInterp` carry `NoBC()`).
 
 # Architecture — Mixed-Radix Compact Storage
 Uses `prod(sizes)` partials instead of `2^N`, where `sizes[d] = _deriv_size(methods[d])`.

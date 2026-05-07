@@ -704,37 +704,49 @@
     end
 
     # ════════════════════════════════════════════════════════════════════════
-    # COVERAGE: PeriodicBC{:exclusive} on a Linear axis — Hetero **forward**
-    # — exercises the new `LinearInterp(bc=...)` tag-struct field threaded
-    # through the unified `interp()` API and `_bc_for_periodic_check` /
-    # `_cache_axis_for_method`. The forward correctly wraps queries past the
-    # inner grid endpoint into the periodic seam.
-    #
-    # Hetero **adjoint** with PeriodicBC on Linear/Constant axes is a
-    # separate effort (the adjoint constructor only extends Cubic axes at
-    # present). For now `HeteroAdjointND.bcs` stores `NoBC()` for those
-    # axes so the trimmed output shape stays consistent.
+    # COVERAGE: PeriodicBC{:exclusive} on a Linear axis — full forward+adjoint
+    # — exercises the `LinearInterp(bc=...)` tag-struct field end-to-end:
+    #   (1) Hetero forward wraps via `_cache_axis_for_method`.
+    #   (2) Hetero adjoint wraps via `_cache_axis` in `grids_ext`, the generic
+    #       seam-fold post-apply hook trims back to user-`n` via
+    #       `_adjoint_output_size`.
+    # Mixed Linear+Cubic so we cover both wrap strategies in a single call.
     # ════════════════════════════════════════════════════════════════════════
 
-    @testset "PeriodicBC{:exclusive} on Linear axis (forward-Hetero wrap)" begin
+    @testset "PeriodicBC{:exclusive} on Linear axis (mixed Linear+Cubic)" begin
         nx, ny = 12, 10
+        n_query = 18
         x = collect(range(0.0, step = 2π / nx, length = nx))   # exclusive n-point
         y = range(0.0, 1.0, ny)
         data = [sin(xi) * yj for xi in x, yj in y]
+        f_vec = vec(data)
 
         bc_x = PeriodicBC(endpoint = :exclusive, period = 2π)
         methods = (LinearInterp(bc = bc_x), CubicInterp(bc = ZeroSlopeBC()))
 
+        # Forward — verify wrap-around eval works through the unified API
         itp = interp((x, y), data; method = methods)
         # Query past inner-grid last knot (= 11·2π/12 ≈ 5.76) into the seam
         # region [x[end], x[1]+period).
         xq_wrap = x[end] + 0.34
         v_wrap = itp((xq_wrap, 0.5))
-        # Linear interp on x between data[end, :] = sin(x[end])*y and
-        # data[1, :] = 0; y-axis cubic at y=0.5 reduces to sin(x)*0.5 along x.
         α = (xq_wrap - x[end]) / (2π - x[end])
         v_expected = (1 - α) * (sin(x[end]) * 0.5) + α * 0.0
         @test v_wrap ≈ v_expected atol = 1.0e-10
+
+        # Adjoint — dot-product identity ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩.
+        # Queries cover both inner and seam (wrap) regions to exercise the
+        # full periodic adjoint path.
+        xq = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+        yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        adj = hetero_adjoint((x, y), (xq, yq); methods = methods)
+        # Adjoint output shape = user's n-point shape (n+1 → n trim happens)
+        @test size(adj(zeros(n_query))) == size(data)
+        W_T = Matrix(adj)
+        @test size(W_T) == (length(data), n_query)
+        for k in 1:n_query
+            @test itp((xq[k], yq[k])) ≈ dot(W_T[:, k], f_vec) atol = 1.0e-10
+        end
     end
 
     # ════════════════════════════════════════════════════════════════════════

@@ -40,7 +40,7 @@ const _PHS_COEFF_CACHE_MAX  = 5_000   # ≈ 20 MB for 516-coeff Float64 stencils
     if tid > length(itp.coeff_caches)
         return Dict{NTuple{N, Int}, Vector{Tg}}()
     end
-    return itp.coeff_caches[tid]
+    return itp.coeff_caches[tid]::Dict{NTuple{N, Int}, Vector{Tg}}
 end
 
 # ======================================================
@@ -139,7 +139,7 @@ Evaluate the PHS interpolant value at `query` given precomputed coefficients.
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
     # RBF sum
-    @inbounds @simd for i in 1:ns
+    @fastmath @inbounds @simd for i in 1:ns
         xh = _phs_diff_Δ(Δx, phys_offsets[i])
         r = sqrt(_phs_sum_sq(xh))
         y += coeffs[i] * _phs_phi(r, Val{K}())
@@ -182,14 +182,14 @@ end
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
     if K == 3
-        @inbounds @simd for i in 1:ns
+        @fastmath @inbounds @simd for i in 1:ns
             xh = _phs_diff_Δ(Δx, phys_offsets[i])
             r = sqrt(_phs_sum_sq(xh))
             y += (3 * coeffs[i] * r) * xh[axis]
         end
     else
         eps_tg = eps(Tg)
-        @inbounds @simd for i in 1:ns
+        @fastmath @inbounds @simd for i in 1:ns
             xh = _phs_diff_Δ(Δx, phys_offsets[i])
             r = sqrt(_phs_sum_sq(xh))
             r_inv = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
@@ -237,7 +237,7 @@ end
     if K == 3
         eps2 = eps(Tg)^2
         if ax1 == ax2
-            @inbounds @simd for i in 1:ns
+            @fastmath @inbounds @simd for i in 1:ns
                 xh = _phs_diff_Δ(Δx, phys_offsets[i])
                 r2 = _phs_sum_sq(xh)
                 r = sqrt(r2)
@@ -247,7 +247,7 @@ end
                 y += ci_3r * (one(Tg) + factor)
             end
         else
-            @inbounds @simd for i in 1:ns
+            @fastmath @inbounds @simd for i in 1:ns
                 xh = _phs_diff_Δ(Δx, phys_offsets[i])
                 r2 = _phs_sum_sq(xh)
                 r = sqrt(r2)
@@ -260,7 +260,7 @@ end
     else
         eps2 = eps(Tg)^2
         if ax1 == ax2
-            @inbounds @simd for i in 1:ns
+            @fastmath @inbounds @simd for i in 1:ns
                 xh = _phs_diff_Δ(Δx, phys_offsets[i])
                 r2 = _phs_sum_sq(xh)
                 r = sqrt(r2)
@@ -274,7 +274,7 @@ end
                 y += ci * fpp * factor + ci_fp_r_inv * (one(Tg) - factor)
             end
         else
-            @inbounds @simd for i in 1:ns
+            @fastmath @inbounds @simd for i in 1:ns
                 xh = _phs_diff_Δ(Δx, phys_offsets[i])
                 r2 = _phs_sum_sq(xh)
                 r = sqrt(r2)
@@ -327,7 +327,7 @@ end
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
     if K == 3
-        @inbounds @simd for i in 1:ns
+        @fastmath @inbounds @simd for i in 1:ns
             xh = _phs_diff_Δ(Δx, phys_offsets[i])
             r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
@@ -339,7 +339,7 @@ end
         end
     else
         eps_tg = eps(Tg)
-        @inbounds @simd for i in 1:ns
+        @fastmath @inbounds @simd for i in 1:ns
             xh = _phs_diff_Δ(Δx, phys_offsets[i])
             r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
@@ -397,7 +397,7 @@ end
     if K == 3
         eps2 = eps(Tg)^2
         if ax1 == ax2
-            @inbounds @simd for i in 1:ns
+            @fastmath @inbounds @simd for i in 1:ns
                 xh = _phs_diff_Δ(Δx, phys_offsets[i])
                 r2 = _phs_sum_sq(xh)
                 r  = sqrt(r2)
@@ -411,7 +411,7 @@ end
                 yd2 += ci_3r * (one(Tg) + factor)
             end
         else
-            @inbounds @simd for i in 1:ns
+            @fastmath @inbounds @simd for i in 1:ns
                 xh = _phs_diff_Δ(Δx, phys_offsets[i])
                 r2 = _phs_sum_sq(xh)
                 r  = sqrt(r2)
@@ -505,7 +505,7 @@ end
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
     if K == 3
-        @inbounds @simd for i in 1:ns
+        @fastmath @inbounds @simd for i in 1:ns
             xh = _phs_diff_Δ(Δx, phys_offsets[i])
             r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
@@ -518,7 +518,7 @@ end
         end
     else
         eps_tg = eps(Tg)
-        @inbounds @simd for i in 1:ns
+        @fastmath @inbounds @simd for i in 1:ns
             xh = _phs_diff_Δ(Δx, phys_offsets[i])
             r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
@@ -577,7 +577,7 @@ end
 
     if K == 3
         eps2 = eps(Tg)^2
-        @inbounds @simd for i in 1:ns
+        @fastmath @inbounds @simd for i in 1:ns
             xh = _phs_diff_Δ(Δx, phys_offsets[i])
             r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
@@ -593,7 +593,7 @@ end
         end
     else
         eps2 = eps(Tg)^2
-        @inbounds @simd for i in 1:ns
+        @fastmath @inbounds @simd for i in 1:ns
             xh = _phs_diff_Δ(Δx, phys_offsets[i])
             r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)

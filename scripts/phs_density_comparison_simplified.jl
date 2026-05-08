@@ -463,8 +463,32 @@ if BENCHMARK
     @printf "%.4f seconds (%.2f μs per query point)\n" t_lap (t_lap * 1e6 / (BENCHMARK_REPS * N_path))
     
     if PROFILE
-        println("\nRunning CPU Profiling (100 repetitions)...")
-        # Warmup is already done.
+        # 1. Profile Density (ρ) Evaluation
+        println("\nRunning CPU Profiling for Density (ρ) Evaluation (100 repetitions)...")
+        Profile.clear()
+        @profile for _ in 1:100
+            itp_phs(ρ_phs, queries)
+        end
+        println("\n" * "="^60)
+        println("CPU PROFILING RESULTS: DENSITY (ρ) EVALUATION (FLAT PROFILE)")
+        println("="^60)
+        Profile.print(format=:flat, mincount=5, noisefloor=2.0)
+
+        # 2. Profile Gradient (|∇ρ|) Evaluation
+        println("\nRunning CPU Profiling for Gradient (|∇ρ|) Evaluation (100 repetitions)...")
+        Profile.clear()
+        @profile for _ in 1:100
+            itp_phs(_gx, queries; deriv = (D1, D0, D0))
+            itp_phs(_gy, queries; deriv = (D0, D1, D0))
+            itp_phs(_gz, queries; deriv = (D0, D0, D1))
+        end
+        println("\n" * "="^60)
+        println("CPU PROFILING RESULTS: GRADIENT (|∇ρ|) EVALUATION (FLAT PROFILE)")
+        println("="^60)
+        Profile.print(format=:flat, mincount=5, noisefloor=2.0)
+
+        # 3. Profile Laplacian (|∇²ρ|) Evaluation
+        println("\nRunning CPU Profiling for Laplacian (|∇²ρ|) Evaluation (100 repetitions)...")
         Profile.clear()
         @profile for _ in 1:100
             itp_phs(_gx, queries; deriv = (D2, D0, D0))
@@ -473,9 +497,8 @@ if BENCHMARK
             @. ∇²ρ_phs = abs(_gx + _gy + _gz)
         end
         println("\n" * "="^60)
-        println("CPU PROFILING RESULTS (FLAT PROFILE)")
+        println("CPU PROFILING RESULTS: LAPLACIAN (|∇²ρ|) EVALUATION (FLAT PROFILE)")
         println("="^60)
-        # Sort flat profile by count so bottlenecks are at the end
         Profile.print(format=:flat, mincount=5, noisefloor=2.0)
     end
     

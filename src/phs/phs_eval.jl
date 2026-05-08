@@ -332,8 +332,9 @@ end
             r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
             ci = coeffs[i]
-            ci_3r = 3 * ci * r
-            yv += ci * r2 * r
+            ci_r = ci * r
+            ci_3r = 3 * ci_r
+            yv += ci_r * r2
             yd += ci_3r * xh[axis]
         end
     else
@@ -402,8 +403,9 @@ end
                 r  = sqrt(r2)
                 r2_inv = ifelse(r2 < eps2, zero(Tg), one(Tg) / r2)
                 ci = coeffs[i]
-                ci_3r = 3 * ci * r
-                yv  += ci * r2 * r
+                ci_r = ci * r
+                ci_3r = 3 * ci_r
+                yv  += ci_r * r2
                 yd1 += ci_3r * xh[ax1]
                 factor = xh[ax1] * xh[ax1] * r2_inv
                 yd2 += ci_3r * (one(Tg) + factor)
@@ -415,8 +417,9 @@ end
                 r  = sqrt(r2)
                 r2_inv = ifelse(r2 < eps2, zero(Tg), one(Tg) / r2)
                 ci = coeffs[i]
-                ci_3r = 3 * ci * r
-                yv  += ci * r2 * r
+                ci_r = ci * r
+                ci_3r = 3 * ci_r
+                yv  += ci_r * r2
                 yd1 += ci_3r * xh[ax1]
                 factor = xh[ax1] * xh[ax2] * r2_inv
                 yd2 += ci_3r * factor
@@ -507,8 +510,9 @@ end
             r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
             ci = coeffs[i]
-            ci_3r = 3 * ci * r
-            yv  += ci * r2 * r
+            ci_r = ci * r
+            ci_3r = 3 * ci_r
+            yv  += ci_r * r2
             yd1 += ci_3r * xh[ax1]
             yd2 += ci_3r * xh[ax2]
         end
@@ -579,8 +583,9 @@ end
             r  = sqrt(r2)
             r2_inv = ifelse(r2 < eps2, zero(Tg), one(Tg) / r2)
             ci = coeffs[i]
-            ci_3r = 3 * ci * r
-            yv   += ci * r2 * r
+            ci_r = ci * r
+            ci_3r = 3 * ci_r
+            yv   += ci_r * r2
             yd1  += ci_3r * xh[ax1]
             yd2  += ci_3r * xh[ax2]
             factor = xh[ax1] * xh[ax2] * r2_inv

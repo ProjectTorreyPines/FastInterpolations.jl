@@ -956,7 +956,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
     if total_deriv == 0
         sum_w  = zero(Tg)
         sum_wg = zero(Tv)
-        for nb_ci in CartesianIndices(ranges)
+        @fastmath for nb_ci in CartesianIndices(ranges)
             nb_idx    = Tuple(nb_ci)
             nb_coords = _phs_base_coords(itp, nb_idx)
             d2 = zero(Tg)
@@ -981,7 +981,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
         sum_wg  = zero(Tv)
         sum_N1  = zero(Tv)
         sum_W1  = zero(Tg)
-        for nb_ci in CartesianIndices(ranges)
+        @fastmath for nb_ci in CartesianIndices(ranges)
             nb_idx    = Tuple(nb_ci)
             nb_coords = _phs_base_coords(itp, nb_idx)
             d2 = zero(Tg)
@@ -1029,7 +1029,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
         sum_N1  = zero(Tv); sum_W1  = zero(Tg)
         sum_N1b = zero(Tv); sum_W1b = zero(Tg)
 
-        for nb_ci in CartesianIndices(ranges)
+        @fastmath for nb_ci in CartesianIndices(ranges)
             nb_idx    = Tuple(nb_ci)
             nb_coords = _phs_base_coords(itp, nb_idx)
             d2 = zero(Tg)
@@ -1215,7 +1215,7 @@ end
     sum_N1 = zero(Tv)   # ∂N/∂x_{grad_ax}
     sum_W1 = zero(Tg)   # ∂W/∂x_{grad_ax}
 
-    for nb_ci in CartesianIndices(ranges)
+    @fastmath for nb_ci in CartesianIndices(ranges)
         nb_idx    = Tuple(nb_ci)
         nb_coords = _phs_base_coords(itp, nb_idx)
         d2 = zero(Tg)
@@ -1293,7 +1293,7 @@ end
     sum_N1  = zero(Tv); sum_W1  = zero(Tg)
     sum_N1b = zero(Tv); sum_W1b = zero(Tg)
 
-    for nb_ci in CartesianIndices(ranges)
+    @fastmath for nb_ci in CartesianIndices(ranges)
         nb_idx    = Tuple(nb_ci)
         nb_coords = _phs_base_coords(itp, nb_idx)
         d2 = zero(Tg)

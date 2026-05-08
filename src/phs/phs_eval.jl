@@ -181,13 +181,22 @@ end
 
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
-    @inbounds @simd for i in 1:ns
-        xh = _phs_diff_Δ(Δx, phys_offsets[i])
-        r = sqrt(_phs_sum_sq(xh))
-        r_inv = ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
-        ci = coeffs[i]
-        ci_fp_r_inv = ci * _phs_phi_prime(r, Val{K}()) * r_inv
-        y += ci_fp_r_inv * xh[axis]
+    if K == 3
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
+            r = sqrt(_phs_sum_sq(xh))
+            y += (3 * coeffs[i] * r) * xh[axis]
+        end
+    else
+        eps_tg = eps(Tg)
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
+            r = sqrt(_phs_sum_sq(xh))
+            r_inv = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
+            ci = coeffs[i]
+            ci_fp_r_inv = ci * _phs_phi_prime(r, Val{K}()) * r_inv
+            y += ci_fp_r_inv * xh[axis]
+        end
     end
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
     y += _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, Val(axis))
@@ -225,34 +234,59 @@ end
 
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
-    eps2 = eps(Tg)^2
-    if ax1 == ax2
-        @inbounds @simd for i in 1:ns
-            xh = _phs_diff_Δ(Δx, phys_offsets[i])
-            r2 = _phs_sum_sq(xh)
-            r = sqrt(r2)
-            r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
-            r2_inv = r_inv * r_inv
-            fp  = _phs_phi_prime(r, Val{K}())
-            fpp = _phs_phi_dprime(r, Val{K}())
-            ci = coeffs[i]
-            ci_fp_r_inv = ci * fp * r_inv
-            factor = xh[ax1] * xh[ax1] * r2_inv
-            y += ci * fpp * factor + ci_fp_r_inv * (one(Tg) - factor)
+    if K == 3
+        eps2 = eps(Tg)^2
+        if ax1 == ax2
+            @inbounds @simd for i in 1:ns
+                xh = _phs_diff_Δ(Δx, phys_offsets[i])
+                r2 = _phs_sum_sq(xh)
+                r = sqrt(r2)
+                r2_inv = ifelse(r2 < eps2, zero(Tg), one(Tg) / r2)
+                ci_3r = 3 * coeffs[i] * r
+                factor = xh[ax1] * xh[ax1] * r2_inv
+                y += ci_3r * (one(Tg) + factor)
+            end
+        else
+            @inbounds @simd for i in 1:ns
+                xh = _phs_diff_Δ(Δx, phys_offsets[i])
+                r2 = _phs_sum_sq(xh)
+                r = sqrt(r2)
+                r2_inv = ifelse(r2 < eps2, zero(Tg), one(Tg) / r2)
+                ci_3r = 3 * coeffs[i] * r
+                factor = xh[ax1] * xh[ax2] * r2_inv
+                y += ci_3r * factor
+            end
         end
     else
-        @inbounds @simd for i in 1:ns
-            xh = _phs_diff_Δ(Δx, phys_offsets[i])
-            r2 = _phs_sum_sq(xh)
-            r = sqrt(r2)
-            r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
-            r2_inv = r_inv * r_inv
-            fp  = _phs_phi_prime(r, Val{K}())
-            fpp = _phs_phi_dprime(r, Val{K}())
-            ci = coeffs[i]
-            ci_fp_r_inv = ci * fp * r_inv
-            factor = xh[ax1] * xh[ax2] * r2_inv
-            y += (ci * fpp - ci_fp_r_inv) * factor
+        eps2 = eps(Tg)^2
+        if ax1 == ax2
+            @inbounds @simd for i in 1:ns
+                xh = _phs_diff_Δ(Δx, phys_offsets[i])
+                r2 = _phs_sum_sq(xh)
+                r = sqrt(r2)
+                r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
+                r2_inv = r_inv * r_inv
+                fp  = _phs_phi_prime(r, Val{K}())
+                fpp = _phs_phi_dprime(r, Val{K}())
+                ci = coeffs[i]
+                ci_fp_r_inv = ci * fp * r_inv
+                factor = xh[ax1] * xh[ax1] * r2_inv
+                y += ci * fpp * factor + ci_fp_r_inv * (one(Tg) - factor)
+            end
+        else
+            @inbounds @simd for i in 1:ns
+                xh = _phs_diff_Δ(Δx, phys_offsets[i])
+                r2 = _phs_sum_sq(xh)
+                r = sqrt(r2)
+                r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
+                r2_inv = r_inv * r_inv
+                fp  = _phs_phi_prime(r, Val{K}())
+                fpp = _phs_phi_dprime(r, Val{K}())
+                ci = coeffs[i]
+                ci_fp_r_inv = ci * fp * r_inv
+                factor = xh[ax1] * xh[ax2] * r2_inv
+                y += (ci * fpp - ci_fp_r_inv) * factor
+            end
         end
     end
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
@@ -292,15 +326,28 @@ end
 
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
-    @inbounds @simd for i in 1:ns
-        xh = _phs_diff_Δ(Δx, phys_offsets[i])
-        r2 = _phs_sum_sq(xh)
-        r  = sqrt(r2)
-        ci = coeffs[i]
-        r_inv = ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
-        ci_fp_r_inv = ci * _phs_phi_prime(r, Val{K}()) * r_inv
-        yv += ci * _phs_phi(r, Val{K}())
-        yd += ci_fp_r_inv * xh[axis]
+    if K == 3
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
+            r2 = _phs_sum_sq(xh)
+            r  = sqrt(r2)
+            ci = coeffs[i]
+            ci_3r = 3 * ci * r
+            yv += ci * r2 * r
+            yd += ci_3r * xh[axis]
+        end
+    else
+        eps_tg = eps(Tg)
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
+            r2 = _phs_sum_sq(xh)
+            r  = sqrt(r2)
+            ci = coeffs[i]
+            r_inv = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
+            ci_fp_r_inv = ci * _phs_phi_prime(r, Val{K}()) * r_inv
+            yv += ci * _phs_phi(r, Val{K}())
+            yd += ci_fp_r_inv * xh[axis]
+        end
     end
 
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
@@ -346,38 +393,69 @@ end
 
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
-    eps_tg = eps(Tg)
-    if ax1 == ax2
-        @inbounds @simd for i in 1:ns
-            xh = _phs_diff_Δ(Δx, phys_offsets[i])
-            r2 = _phs_sum_sq(xh)
-            r  = sqrt(r2)
-            ci = coeffs[i]
-            r_inv  = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
-            r2_inv = r_inv * r_inv
-            fp  = _phs_phi_prime(r, Val{K}())
-            fpp = _phs_phi_dprime(r, Val{K}())
-            ci_fp_r_inv = ci * fp * r_inv
-            yv  += ci * _phs_phi(r, Val{K}())
-            yd1 += ci_fp_r_inv * xh[ax1]
-            factor = xh[ax1] * xh[ax1] * r2_inv
-            yd2 += ci * fpp * factor + ci_fp_r_inv * (one(Tg) - factor)
+    if K == 3
+        eps2 = eps(Tg)^2
+        if ax1 == ax2
+            @inbounds @simd for i in 1:ns
+                xh = _phs_diff_Δ(Δx, phys_offsets[i])
+                r2 = _phs_sum_sq(xh)
+                r  = sqrt(r2)
+                r2_inv = ifelse(r2 < eps2, zero(Tg), one(Tg) / r2)
+                ci = coeffs[i]
+                ci_3r = 3 * ci * r
+                yv  += ci * r2 * r
+                yd1 += ci_3r * xh[ax1]
+                factor = xh[ax1] * xh[ax1] * r2_inv
+                yd2 += ci_3r * (one(Tg) + factor)
+            end
+        else
+            @inbounds @simd for i in 1:ns
+                xh = _phs_diff_Δ(Δx, phys_offsets[i])
+                r2 = _phs_sum_sq(xh)
+                r  = sqrt(r2)
+                r2_inv = ifelse(r2 < eps2, zero(Tg), one(Tg) / r2)
+                ci = coeffs[i]
+                ci_3r = 3 * ci * r
+                yv  += ci * r2 * r
+                yd1 += ci_3r * xh[ax1]
+                factor = xh[ax1] * xh[ax2] * r2_inv
+                yd2 += ci_3r * factor
+            end
         end
     else
-        @inbounds @simd for i in 1:ns
-            xh = _phs_diff_Δ(Δx, phys_offsets[i])
-            r2 = _phs_sum_sq(xh)
-            r  = sqrt(r2)
-            ci = coeffs[i]
-            r_inv  = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
-            r2_inv = r_inv * r_inv
-            fp  = _phs_phi_prime(r, Val{K}())
-            fpp = _phs_phi_dprime(r, Val{K}())
-            ci_fp_r_inv = ci * fp * r_inv
-            yv  += ci * _phs_phi(r, Val{K}())
-            yd1 += ci_fp_r_inv * xh[ax1]
-            factor = xh[ax1] * xh[ax2] * r2_inv
-            yd2 += (ci * fpp - ci_fp_r_inv) * factor
+        eps_tg = eps(Tg)
+        if ax1 == ax2
+            @inbounds @simd for i in 1:ns
+                xh = _phs_diff_Δ(Δx, phys_offsets[i])
+                r2 = _phs_sum_sq(xh)
+                r  = sqrt(r2)
+                ci = coeffs[i]
+                r_inv  = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
+                r2_inv = r_inv * r_inv
+                fp  = _phs_phi_prime(r, Val{K}())
+                fpp = _phs_phi_dprime(r, Val{K}())
+                ci_fp_r_inv = ci * fp * r_inv
+                yv  += ci * _phs_phi(r, Val{K}())
+                yd1 += ci_fp_r_inv * xh[ax1]
+                factor = xh[ax1] * xh[ax1] * r2_inv
+                yd2 += ci * fpp * factor + ci_fp_r_inv * (one(Tg) - factor)
+            end
+        else
+            @inbounds @simd for i in 1:ns
+                xh = _phs_diff_Δ(Δx, phys_offsets[i])
+                r2 = _phs_sum_sq(xh)
+                r  = sqrt(r2)
+                ci = coeffs[i]
+                r_inv  = ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
+                r2_inv = r_inv * r_inv
+                fp  = _phs_phi_prime(r, Val{K}())
+                fpp = _phs_phi_dprime(r, Val{K}())
+                ci_fp_r_inv = ci * fp * r_inv
+                yv  += ci * _phs_phi(r, Val{K}())
+                yd1 += ci_fp_r_inv * xh[ax1]
+                factor = xh[ax1] * xh[ax2] * r2_inv
+                yd2 += (ci * fpp - ci_fp_r_inv) * factor
+            end
         end
     end
 
@@ -423,16 +501,30 @@ end
 
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
-    @inbounds @simd for i in 1:ns
-        xh = _phs_diff_Δ(Δx, phys_offsets[i])
-        r2 = _phs_sum_sq(xh)
-        r  = sqrt(r2)
-        ci = coeffs[i]
-        fp_r_inv = _phs_phi_prime(r, Val{K}()) * ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
-        ci_fp_r_inv = ci * fp_r_inv
-        yv  += ci * _phs_phi(r, Val{K}())
-        yd1 += ci_fp_r_inv * xh[ax1]
-        yd2 += ci_fp_r_inv * xh[ax2]
+    if K == 3
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
+            r2 = _phs_sum_sq(xh)
+            r  = sqrt(r2)
+            ci = coeffs[i]
+            ci_3r = 3 * ci * r
+            yv  += ci * r2 * r
+            yd1 += ci_3r * xh[ax1]
+            yd2 += ci_3r * xh[ax2]
+        end
+    else
+        eps_tg = eps(Tg)
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
+            r2 = _phs_sum_sq(xh)
+            r  = sqrt(r2)
+            ci = coeffs[i]
+            fp_r_inv = _phs_phi_prime(r, Val{K}()) * ifelse(r < eps_tg, zero(Tg), one(Tg) / r)
+            ci_fp_r_inv = ci * fp_r_inv
+            yv  += ci * _phs_phi(r, Val{K}())
+            yd1 += ci_fp_r_inv * xh[ax1]
+            yd2 += ci_fp_r_inv * xh[ax2]
+        end
     end
 
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))
@@ -479,22 +571,39 @@ end
 
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
-    eps2 = eps(Tg)^2
-    @inbounds @simd for i in 1:ns
-        xh = _phs_diff_Δ(Δx, phys_offsets[i])
-        r2 = _phs_sum_sq(xh)
-        r  = sqrt(r2)
-        ci = coeffs[i]
-        r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
-        r2_inv = r_inv * r_inv
-        fp  = _phs_phi_prime(r, Val{K}())
-        fpp = _phs_phi_dprime(r, Val{K}())
-        ci_fp_r_inv = ci * fp * r_inv
-        yv   += ci * _phs_phi(r, Val{K}())
-        yd1  += ci_fp_r_inv * xh[ax1]
-        yd2  += ci_fp_r_inv * xh[ax2]
-        factor = xh[ax1] * xh[ax2] * r2_inv
-        yd12 += (ci * fpp - ci_fp_r_inv) * factor
+    if K == 3
+        eps2 = eps(Tg)^2
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
+            r2 = _phs_sum_sq(xh)
+            r  = sqrt(r2)
+            r2_inv = ifelse(r2 < eps2, zero(Tg), one(Tg) / r2)
+            ci = coeffs[i]
+            ci_3r = 3 * ci * r
+            yv   += ci * r2 * r
+            yd1  += ci_3r * xh[ax1]
+            yd2  += ci_3r * xh[ax2]
+            factor = xh[ax1] * xh[ax2] * r2_inv
+            yd12 += ci_3r * factor
+        end
+    else
+        eps2 = eps(Tg)^2
+        @inbounds @simd for i in 1:ns
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
+            r2 = _phs_sum_sq(xh)
+            r  = sqrt(r2)
+            ci = coeffs[i]
+            r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
+            r2_inv = r_inv * r_inv
+            fp  = _phs_phi_prime(r, Val{K}())
+            fpp = _phs_phi_dprime(r, Val{K}())
+            ci_fp_r_inv = ci * fp * r_inv
+            yv   += ci * _phs_phi(r, Val{K}())
+            yd1  += ci_fp_r_inv * xh[ax1]
+            yd2  += ci_fp_r_inv * xh[ax2]
+            factor = xh[ax1] * xh[ax2] * r2_inv
+            yd12 += (ci * fpp - ci_fp_r_inv) * factor
+        end
     end
 
     poly_exps = _phs_poly_exps_tuple(Val(N), Val(K))

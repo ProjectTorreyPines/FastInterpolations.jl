@@ -351,67 +351,71 @@ end
     end
 end
 
-@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real}; deriv::O = nothing) where {O}
-    if O === Nothing || O === typeof(nothing)
-        # Value evaluation
-        f = 0.0
+@inline function _pmr_eval_val_internal(pmr::PromolecularRef, q::NTuple{3, <:Real})
+    # Value evaluation
+    f = 0.0
+    @inbounds for i in 1:length(pmr.atoms)
+        Z, R = pmr.atoms[i]
+        xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
+        r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
+        r < 1e-14 && continue
+        f += max(pmr.cache_array[Z](r), 0.0)
+    end
+    return f
+end
+
+@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real})
+    return _pmr_eval_val_internal(pmr, q)
+end
+
+@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real}, ops::O) where {O}
+    info = _pmr_get_deriv_info(O)
+    total = info[1]
+    if total == 0
+        return _pmr_eval_val_internal(pmr, q)
+    elseif total == 1
+        ax = info[2]
+        fp = 0.0
+        D1 = DerivOp{1}()
         @inbounds for i in 1:length(pmr.atoms)
             Z, R = pmr.atoms[i]
             xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
             r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
             r < 1e-14 && continue
-            f += max(pmr.cache_array[Z](r), 0.0)
+            dx = ax == 1 ? xx1 : (ax == 2 ? xx2 : xx3)
+            fp += pmr.cache_array[Z](r; deriv = D1) * dx / r
         end
-        return f
+        return fp
+    elseif total == 2
+        ax1 = info[2]
+        ax2 = info[3]
+        fpp = 0.0
+        D1 = DerivOp{1}()
+        D2 = DerivOp{2}()
+        @inbounds for i in 1:length(pmr.atoms)
+            Z, R = pmr.atoms[i]
+            xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
+            r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
+            r < 1e-14 && continue
+            rho_itp = pmr.cache_array[Z]
+            rhop  = rho_itp(r; deriv = D1)
+            rhopp = rho_itp(r; deriv = D2)
+            rfac  = (rhopp - rhop / r) / (r * r)
+            dx1 = ax1 == 1 ? xx1 : (ax1 == 2 ? xx2 : xx3)
+            dx2 = ax2 == 1 ? xx1 : (ax2 == 2 ? xx2 : xx3)
+            fpp += ax1 == ax2 ? rhop / r + rfac * (dx1 * dx1) : rfac * dx1 * dx2
+        end
+        return fpp
     else
-        info = _pmr_get_deriv_info(O)
-        total = info[1]
-        if total == 0
-            f = 0.0
-            @inbounds for i in 1:length(pmr.atoms)
-                Z, R = pmr.atoms[i]
-                xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
-                r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
-                r < 1e-14 && continue
-                f += max(pmr.cache_array[Z](r), 0.0)
-            end
-            return f
-        elseif total == 1
-            ax = info[2]
-            fp = 0.0
-            D1 = DerivOp{1}()
-            @inbounds for i in 1:length(pmr.atoms)
-                Z, R = pmr.atoms[i]
-                xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
-                r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
-                r < 1e-14 && continue
-                dx = ax == 1 ? xx1 : (ax == 2 ? xx2 : xx3)
-                fp += pmr.cache_array[Z](r; deriv = D1) * dx / r
-            end
-            return fp
-        elseif total == 2
-            ax1 = info[2]
-            ax2 = info[3]
-            fpp = 0.0
-            D1 = DerivOp{1}()
-            D2 = DerivOp{2}()
-            @inbounds for i in 1:length(pmr.atoms)
-                Z, R = pmr.atoms[i]
-                xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
-                r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
-                r < 1e-14 && continue
-                rho_itp = pmr.cache_array[Z]
-                rhop  = rho_itp(r; deriv = D1)
-                rhopp = rho_itp(r; deriv = D2)
-                rfac  = (rhopp - rhop / r) / (r * r)
-                dx1 = ax1 == 1 ? xx1 : (ax1 == 2 ? xx2 : xx3)
-                dx2 = ax2 == 1 ? xx1 : (ax2 == 2 ? xx2 : xx3)
-                fpp += ax1 == ax2 ? rhop / r + rfac * (dx1 * dx1) : rfac * dx1 * dx2
-            end
-            return fpp
-        else
-            return 0.0
-        end
+        return 0.0
+    end
+end
+
+@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real}; deriv = nothing)
+    if deriv === nothing
+        return _pmr_eval_val_internal(pmr, q)
+    else
+        return pmr(q, deriv)
     end
 end
 

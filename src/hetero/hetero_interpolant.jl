@@ -67,7 +67,18 @@ end
 # Reject unsupported PreCompute + local Hermite combinations with clear error.
 @inline _has_local_method(methods::Tuple) = any(_is_local_method, methods)
 
-@inline _validate_nd_coeffs(::OnTheFly, _) = nothing
+# OnTheFly hetero on Linear/Constant + `PeriodicBC{:exclusive}` is unsupported:
+# the wrap-aware persistent eval path only specializes `_axis_window_pooled` /
+# `_axis_grid_pooled` for `AbstractLocalHermiteInterp{<:PeriodicBC}`. Without
+# those specializations the seam cell falls through to non-periodic windowing,
+# producing silent garbage (window `[n, n+1]` reads past the unextended data).
+# Reject with a clear migration hint to `PreCompute()`, which extends the data
+# physically through `_prepare_periodic_nd`.
+@inline function _validate_nd_coeffs(::OnTheFly, methods)
+    any(m -> m isa Union{LinearInterp, ConstantInterp} && m.bc isa PeriodicBC{:exclusive}, methods) &&
+        _throw_onthefly_excl_linear_constant_unsupported(methods)
+    return nothing
+end
 @inline function _validate_nd_coeffs(::PreCompute, methods)
     _has_local_method(methods) && _throw_precompute_unsupported(methods)
     return nothing
@@ -82,6 +93,23 @@ end
         ArgumentError(
             "PreCompute() is not yet supported for $(join(local_names, ", ")) in ND. " *
                 "Use coeffs=OnTheFly() or omit the coeffs kwarg for automatic selection."
+        )
+    )
+end
+
+@noinline function _throw_onthefly_excl_linear_constant_unsupported(methods)
+    names = unique([
+        string(typeof(m)) for m in methods
+            if m isa Union{LinearInterp, ConstantInterp} && m.bc isa PeriodicBC{:exclusive}
+    ])
+    throw(
+        ArgumentError(
+            "OnTheFly() is not supported for $(join(names, ", ")) in heterogeneous ND. " *
+                "The OnTheFly persistent eval path lacks wrap-aware windowing for " *
+                "Linear/Constant axes with `PeriodicBC(endpoint=:exclusive)`, which would " *
+                "silently return wrong values at the seam cell. " *
+                "Use coeffs=PreCompute() (which physically extends the data) or omit the " *
+                "coeffs kwarg for automatic selection."
         )
     )
 end
@@ -402,6 +430,12 @@ function interp(
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
     coeffs_resolved = _resolve_coeffs(coeffs, Val(N), method_tuple)
+    # Validate before any path. The OnTheFly hetero shortcut below skips
+    # `_interp_nd_dispatch` (which is the only other validation site), so we
+    # must apply OnTheFly-specific rejections here too — otherwise unsupported
+    # combos like `(LinearInterp(bc=:exclusive), CubicInterp())` build silently
+    # and return wrong values at the seam cell.
+    _validate_nd_coeffs(coeffs_resolved, method_tuple)
 
     # OnTheFly → always Hetero path (no specialized ND type supports OnTheFly natively)
     if coeffs_resolved isa OnTheFly

@@ -449,8 +449,11 @@ function hetero_adjoint(
     Tg = _promote_grid_eltype(grids)
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
-    # 5-arg `_resolve_extrap` (no BC): expand + promote + per-axis 2-arg materialize.
-    extraps = _resolve_extrap(extrap, nothing, grids_typed, Val(N), Tg)
+    # 5-arg `_resolve_extrap` (BC-aware): periodic axes auto-promote to WrapExtrap
+    # so off-span queries (e.g. xq=1.05 with period=1.0) wrap rather than raising
+    # DomainError — matches the forward `interp(...)` resolution at the same call site.
+    bcs = map(_bc_for_periodic_check, methods)
+    extraps = _resolve_extrap(extrap, bcs, grids_typed, Val(N), Tg)
     return _build_hetero_nd_adjoint(grids_typed, queries, methods, extraps)
 end
 
@@ -490,8 +493,9 @@ function hetero_adjoint(
     Tg = _promote_grid_eltype(grids)
     Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
-    # 5-arg `_resolve_extrap` (no BC): expand + promote + per-axis 2-arg materialize.
-    extraps = _resolve_extrap(extrap, nothing, grids_typed, Val(N), Tg)
+    # BC-aware extrap resolution — same as the AbstractVector-queries overload above.
+    bcs = map(_bc_for_periodic_check, methods)
+    extraps = _resolve_extrap(extrap, bcs, grids_typed, Val(N), Tg)
     return _build_hetero_nd_adjoint(grids_typed, queries, methods, extraps)
 end
 
@@ -585,13 +589,16 @@ end
 # they never reach this dispatch — no method needed for those.
 
 # ── CubicInterp: physical extension + dual cache (user-bc + mixed-bc) ──
+# The `_is_already_extended` guard handles the rrule-replay path where stored
+# grids are already length `n+1` (see helper below).
 @inline function _build_hetero_axis_package(
         method::CubicInterp,
         grid::AbstractVector{Tg},
         ac
     ) where {Tg}
     bc_user  = method.bc
-    grid_ext = _prepare_periodic_grid(grid, bc_user)        # vcat for `:exclusive`, passthrough otherwise
+    grid_ext = bc_user isa PeriodicBC{:exclusive} && _is_already_extended(grid, bc_user) ?
+        grid : _prepare_periodic_grid(grid, bc_user)
     bc       = _is_periodic_bc(bc_user) ? bc_user : _normalize_bc(bc_user)
     mbc_raw  = _get_effective_bc(bc_user, 2, grid_ext)      # depends on grid_ext
     mixed_bc = _is_periodic_bc(mbc_raw) ? mbc_raw : _normalize_bc(mbc_raw)
@@ -631,9 +638,24 @@ end
         ac
     ) where {Tg}
     bc_user  = method.bc
-    grid_ext = bc_user isa PeriodicBC{:exclusive} ? _cache_axis(grid, bc_user) : grid
+    grid_ext = if bc_user isa PeriodicBC{:exclusive} && !_is_already_extended(grid, bc_user)
+        _cache_axis(grid, bc_user)
+    else
+        grid
+    end
     return (; grid_ext, bc = bc_user, mixed_bc = bc_user,
               cache = nothing, mixed_cache = nothing, mincurv_C = zero(Tg))
+end
+
+# rrule-replay safety: persistent forward stores extended (length-`n+1`) grids
+# but `methods[d].bc` retains `PeriodicBC{:exclusive}`. When ChainRules replays
+# adjoint construction with `hetero_adjoint(itp.grids, ...; methods=itp.methods)`
+# we must NOT re-extend an already-extended grid (would push virtual seam to
+# `n+2` and trip `_validate_exclusive_period`).
+@inline function _is_already_extended(grid::AbstractVector{Tg}, bc::PeriodicBC{:exclusive}) where {Tg}
+    length(grid) >= 2 || return false
+    p = Tg(_resolve_exclusive_period(grid, bc))
+    return isapprox(last(grid) - first(grid), p; atol = 8 * eps(p))
 end
 
 # ────────────────────────────────────────────────────────────────────────

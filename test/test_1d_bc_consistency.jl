@@ -146,7 +146,50 @@ end
 #     a sharply different value for Cardinal/Akima.
 # This breaks the sin/cos symmetry coincidence (where m_seam happens to
 # equal m_1 by sin's analytic relation).
+#
+# The 6 testitems below use `xq = period .* rand(n_q)` plus a deterministic
+# boundary-cell query prepended via `vcat`. Pure random alone has a non-zero
+# probability of missing all radius-1 boundary cells on a 12-cell grid
+# (P((10/12)^30) ≈ 0.4%) — a real CI flake risk. The deterministic prepend
+# guarantees the `!isapprox(y_nobc, y_inc)` assertion always observes the
+# boundary-stencil difference.
 # ─────────────────────────────────────────────────────────────────────────
+
+
+# Regression guard: with seed 579 the 30 random uniforms all land in
+# [1/12, 11/12] (no boundary-cell sample), so NoBC and Periodic agree at every
+# query and the bare-random pattern `xq = period .* rand(n_q)` would falsely
+# silence the difference. The vcat-boundary prepend used in the testitems
+# below restores deterministic detection.
+@testitem "PCHIP NoBC≠Periodic — deterministic boundary required (flake guard)" begin
+    using Random
+    nx_exc = 12
+    period = 1.0
+    h = period / nx_exc
+    x_exc = collect(range(0.0, step = h, length = nx_exc))
+    x_inc = vcat(x_exc, x_exc[1] + period)
+    f_exc = collect(range(-1.0, 1.0, length = nx_exc))
+    f_inc = vcat(f_exc, f_exc[1])
+    n_q = 30
+    bc_inc = PeriodicBC()
+
+    Random.seed!(579)   # produces 30 uniforms entirely in [1/12, 11/12]
+    xq_random = period .* rand(n_q)
+    @test all(q -> q >= h && q <= period - h, xq_random)   # precondition: misses boundaries
+
+    # Bare-random pattern (current existing test pattern) — under this seed,
+    # NoBC and Periodic agree at every interior query → `!isapprox` would
+    # silently fail to detect the boundary-cell semantic difference.
+    y_nobc_r = pchip_interp(x_inc, f_inc, xq_random)
+    y_inc_r  = pchip_interp(x_inc, f_inc, xq_random; bc = bc_inc)
+    @test isapprox(y_nobc_r, y_inc_r; atol = 1.0e-12)  # documents the gap
+
+    # Deterministic boundary prepend (the fix applied to all 6 testitems below).
+    xq_pinned = vcat(0.5 * h, xq_random)
+    y_nobc_p = pchip_interp(x_inc, f_inc, xq_pinned)
+    y_inc_p  = pchip_interp(x_inc, f_inc, xq_pinned; bc = bc_inc)
+    @test !isapprox(y_nobc_p, y_inc_p; rtol = 1.0e-3)
+end
 
 @testitem "1D PCHIP forward — NoBC ≠ Periodic, inclusive ≈ exclusive" begin
     nx_exc = 12
@@ -164,7 +207,7 @@ end
     f_inc = vcat(f_exc, f_exc[1])  # `:inclusive` constraint (sharp seam drop)
 
     n_q = 30
-    xq = period .* rand(n_q)   # full period, includes near-boundary queries
+    xq = vcat(0.5 * h, period - 0.5 * h, period .* rand(n_q - 2))   # full period, includes near-boundary queries
     bc_inc = PeriodicBC()
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
@@ -196,7 +239,7 @@ end
     f_inc = vcat(f_exc, f_exc[1])  # `:inclusive` constraint (sharp seam drop)
 
     n_q = 30
-    xq = period .* rand(n_q)
+    xq = vcat(0.5 * h, period - 0.5 * h, period .* rand(n_q - 2))
     bc_inc = PeriodicBC()
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
@@ -223,7 +266,7 @@ end
     f_inc = vcat(f_exc, f_exc[1])  # `:inclusive` constraint (sharp seam drop)
 
     n_q = 30
-    xq = period .* rand(n_q)
+    xq = vcat(0.5 * h, period - 0.5 * h, period .* rand(n_q - 2))
     bc_inc = PeriodicBC()
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
@@ -249,7 +292,7 @@ end
     f_exc = collect(range(-1.0, 1.0, length = nx_exc))
     f_inc = vcat(f_exc, f_exc[1])  # `:inclusive` constraint (sharp seam drop)
     n_q = 30
-    xq = period .* rand(n_q)
+    xq = vcat(0.5 * h, period - 0.5 * h, period .* rand(n_q - 2))
     y_bar = randn(n_q)
     bc_inc = PeriodicBC()
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
@@ -275,7 +318,7 @@ end
     x_exc = collect(range(0.0, step = h, length = nx_exc))
     x_inc = vcat(x_exc, x_exc[1] + period)
     n_q = 30
-    xq = period .* rand(n_q)
+    xq = vcat(0.5 * h, period - 0.5 * h, period .* rand(n_q - 2))
     y_bar = randn(n_q)
     bc_inc = PeriodicBC()
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
@@ -305,7 +348,7 @@ end
     f_exc = collect(range(-1.0, 1.0, length = nx_exc))
     f_inc = vcat(f_exc, f_exc[1])  # `:inclusive` constraint (sharp seam drop)
     n_q = 30
-    xq = period .* rand(n_q)
+    xq = vcat(0.5 * h, period - 0.5 * h, period .* rand(n_q - 2))
     y_bar = randn(n_q)
     bc_inc = PeriodicBC()
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)

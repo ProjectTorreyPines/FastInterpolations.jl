@@ -757,6 +757,30 @@
     end
 
     # ════════════════════════════════════════════════════════════════════════
+    # Persistent-rrule replay path: `hetero_adjoint(itp.grids, ...; methods=itp.methods)`.
+    # The forward stores extended grids (length n+1) while the method tag
+    # retains `bc=PeriodicBC{:exclusive}`. ChainRules / Zygote rrule replays
+    # adjoint construction with `itp.grids` + `itp.methods` — the axis package
+    # builder must NOT re-extend an already-extended grid.
+    # ════════════════════════════════════════════════════════════════════════
+    @testset "Stored-grid rrule replay — no double extension" begin
+        nx, ny = 8, 6
+        x = collect(range(0.0, step = 2π / nx, length = nx))
+        y_grid = range(0.0, 1.0, ny)
+        data = [sin(xi) * yj for xi in x, yj in y_grid]
+        bc_x = PeriodicBC(endpoint = :exclusive, period = 2π)
+        methods = (LinearInterp(bc = bc_x), CubicInterp(bc = ZeroSlopeBC()))
+        itp = interp((x, y_grid), data; method = methods)
+
+        # The rrule replays adjoint construction this way:
+        #     adj_fn(itp.grids, (query_tuple,); methods=itp.methods, ...)
+        # `itp.grids[1]` is already extended to length nx+1 with the seam
+        # endpoint at `first(grid)+period`. Re-wrapping must be a no-op.
+        adj = hetero_adjoint(itp.grids, ([0.5], [0.5]); methods = itp.methods)
+        @test size(adj(zeros(1))) == size(data)
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
     # COVERAGE: PolyFit BC validation error path
     # ════════════════════════════════════════════════════════════════════════
 

@@ -93,6 +93,11 @@ end
 ConstantInterp(; side::AbstractSide = NearestSide(), bc::AbstractBC = NoBC()) =
     ConstantInterp(side, bc)
 
+# Positional 1-arg compat: pre-`bc`-field code used `ConstantInterp(LeftSide())`.
+# The default 2-field struct constructor `ConstantInterp(side, bc)` shadows that
+# call form; this outer ctor restores it with `bc=NoBC()` default.
+ConstantInterp(side::AbstractSide) = ConstantInterp(side, NoBC())
+
 """
     NoInterp()
 

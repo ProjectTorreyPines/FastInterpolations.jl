@@ -146,3 +146,63 @@ end
     forward_vec = [itp((xq[k], yq[k])) for k in 1:n_query]
     @test dot(forward_vec, y_bar) ≈ dot(vec(data), vec(adj(y_bar))) atol = 1.0e-10
 end
+
+
+# `hetero_adjoint` must auto-promote `extrap` to WrapExtrap on periodic axes,
+# matching the forward path. Without this, a query past the inner span (e.g.
+# 1.05 with period=1.0) is accepted by `interp(...)` but rejected with
+# DomainError by `hetero_adjoint(...)`.
+@testitem "hetero_adjoint — periodic extrap auto-promote on off-span query" begin
+    x = collect(range(0.0, step = 0.1, length = 10))   # n=10, period=1
+    y = collect(range(0.0, 1.0, 10))
+    data = [sin(2π * xi) + yj for xi in x, yj in y]
+    bc_x = PeriodicBC(endpoint = :exclusive, period = 1.0)
+    methods = (LinearInterp(bc = bc_x), CubicInterp())
+
+    # Forward accepts xq=1.05 by auto-promoting to WrapExtrap on the periodic axis.
+    itp = interp((x, y), data; method = methods)
+    @test isfinite(itp((1.05, 0.5)))
+
+    # Adjoint MUST also accept it. Same auto-promotion must reach the anchor
+    # baking + domain validation.
+    adj = hetero_adjoint((x, y), ([1.05], [0.5]); methods = methods)
+    @test size(adj(zeros(1))) == size(data)
+end
+
+
+# OnTheFly hetero forward must either return correct values at the periodic
+# seam cell (matching PreCompute), or reject the unsupported configuration with
+# a clear ArgumentError. Silent garbage is the bug.
+@testitem "OnTheFly hetero — seam-cell matches PreCompute or rejects" begin
+    x = collect(0.0:0.2:0.8)
+    y = collect(0.0:0.25:1.0)
+    data = [sin(2π * xi) + cos(π * yj) for xi in x, yj in y]
+    methods = (LinearInterp(bc = PeriodicBC(endpoint = :exclusive, period = 1.0)), CubicInterp())
+
+    itp_pre = interp((x, y), data; method = methods, coeffs = PreCompute())
+    v_pre   = itp_pre((0.9, 0.5))   # seam cell: between x[end]=0.8 and x[1]+period=1.0
+
+    # The OnTheFly persistent path on the same configuration must be either
+    # numerically equivalent (within ULP) to PreCompute or refuse construction.
+    # Silent disagreement (current bug) is unacceptable.
+    correctness_ok = try
+        itp_otf = interp((x, y), data; method = methods, coeffs = OnTheFly())
+        v_otf = itp_otf((0.9, 0.5))
+        isapprox(v_otf, v_pre; atol = 1.0e-12)
+    catch e
+        e isa ArgumentError      # explicit rejection is also acceptable
+    end
+    @test correctness_ok
+end
+
+
+# `ConstantInterp(side::AbstractSide)` (positional, single-arg) is a public
+# call form; the default 2-field struct constructor `ConstantInterp(side, bc)`
+# would shadow it without an explicit outer ctor.
+@testitem "ConstantInterp(side) — positional 1-arg ctor" begin
+    @test ConstantInterp(LeftSide()) isa ConstantInterp
+    @test ConstantInterp(LeftSide()).side === LeftSide()
+    @test ConstantInterp(LeftSide()).bc === NoBC()
+    @test ConstantInterp(NearestSide()) isa ConstantInterp
+    @test ConstantInterp(RightSide()) isa ConstantInterp
+end

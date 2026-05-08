@@ -747,6 +747,13 @@
         for k in 1:n_query
             @test itp((xq[k], yq[k])) ≈ dot(W_T[:, k], f_vec) atol = 1.0e-10
         end
+
+        # Dot-product (golden-rule) identity ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩ via
+        # the actual `adj(y_bar)` path (not just per-column reconstruction).
+        # Catches mistakes in the seam-fold + trim post-apply hook.
+        y_bar = randn(n_query)
+        forward_vec = [itp((xq[k], yq[k])) for k in 1:n_query]
+        @test dot(forward_vec, y_bar) ≈ dot(f_vec, vec(adj(y_bar))) atol = 1.0e-10
     end
 
     # ════════════════════════════════════════════════════════════════════════

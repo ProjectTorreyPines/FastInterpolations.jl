@@ -74,23 +74,6 @@ end
 
 @inline _n_queries(adj::AkimaAdjoint1D) = length(adj.anchors)
 
-@inline _adjoint_output_length(adj::AkimaAdjoint1D) =
-    adj.bc isa PeriodicBC{:exclusive} ? adj.grid_size - 1 : adj.grid_size
-
-@inline _adjoint_internal_length(adj::AkimaAdjoint1D) = adj.grid_size
-
-@inline _adjoint_1d_has_exclusive_periodic(adj::AkimaAdjoint1D) =
-    adj.bc isa PeriodicBC{:exclusive}
-
-function _adjoint_1d_finalize(f_bar::AbstractVector, adj::AkimaAdjoint1D)
-    if adj.bc isa PeriodicBC{:exclusive}
-        n_internal = adj.grid_size
-        @inbounds f_bar[1] += f_bar[n_internal]
-        return f_bar[1:(n_internal - 1)]
-    end
-    return f_bar
-end
-
 # ========================================
 # Akima Slope Adjoint: J^T * dy_bar -> f_bar update
 # ========================================
@@ -610,7 +593,6 @@ function akima_adjoint(
         x_query::AbstractVector;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
 
@@ -657,7 +639,6 @@ function akima_adjoint(
         x_query::Real;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     return akima_adjoint(x, y, [x_query]; bc = bc, extrap = extrap)
 end

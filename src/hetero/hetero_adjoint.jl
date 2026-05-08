@@ -400,7 +400,6 @@ end
                 "Hermite family methods (found $(join(unique(local_names), ", "))). " *
                 "This also affects `Zygote.gradient` / `ChainRulesCore.rrule` on " *
                 "`HeteroInterpolantND` built with PCHIP / Cardinal / Akima axes. " *
-                "Tracking: claudedocs/TODO/hermite_onthefly_integrate_and_nd_adjoint.md (Task 2). " *
                 "Workarounds: (1) switch Hermite axes to `CubicInterp` for AD support; " *
                 "(2) use `ForwardDiff.gradient` on a scalar-query closure, which works " *
                 "through the forward OnTheFly path without needing an adjoint; " *

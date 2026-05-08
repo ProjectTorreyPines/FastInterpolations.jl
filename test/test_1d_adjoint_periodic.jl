@@ -334,6 +334,60 @@ end
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Boundary-cell coverage for `:inclusive` Hermite (PCHIP/Cardinal/Akima):
+# stencil-aware loop split treats k ∈ {1, n} (PCHIP/Cardinal radius 1) and
+# k ∈ {1, 2, n-1, n} (Akima radius 2) as boundary, wrapping via `mod1`.
+# Random queries do not deterministically hit these cells, so we place
+# queries explicitly inside each boundary cell.
+# ─────────────────────────────────────────────────────────────────────────
+
+@testitem "1D Hermite adjoint — PeriodicBC{:inclusive} boundary cells" begin
+    using LinearAlgebra: dot
+    using ForwardDiff
+
+    nx = 12
+    x = collect(range(0.0, 1.0, nx))
+    bc = PeriodicBC()
+
+    # Explicit boundary cells.
+    # Radius-1 cells: [x[1], x[2]] and [x[n-1], x[n]].
+    # Radius-2 cells (Akima only): [x[2], x[3]] and [x[n-2], x[n-1]].
+    cell(a, b) = collect(range(a + 1.0e-3, b - 1.0e-3, length = 4))
+    xq_r1 = vcat(cell(x[1], x[2]), cell(x[end - 1], x[end]))
+    xq_r2 = vcat(cell(x[2], x[3]), cell(x[end - 2], x[end - 1]))
+    xq = vcat(xq_r1, xq_r2)
+    y_bar = randn(length(xq))
+
+    @testset "pchip_adjoint :inclusive boundary" begin
+        y = sin.(2π .* x); y[end] = y[1]
+        adj = pchip_adjoint(x, y, xq; bc = bc)
+        f_bar = adj(y_bar)
+        ref = ForwardDiff.gradient(ytest -> dot(pchip_interp(x, ytest, xq; bc = bc), y_bar), y)
+        @test size(f_bar) == size(y)
+        @test f_bar ≈ ref rtol = 1.0e-9
+    end
+
+    @testset "cardinal_adjoint :inclusive boundary" begin
+        f = randn(nx); f[end] = f[1]
+        adj = cardinal_adjoint(x, xq; bc = bc)
+        f_bar = adj(y_bar)
+        ref = ForwardDiff.gradient(ftest -> dot(cardinal_interp(x, ftest, xq; bc = bc), y_bar), f)
+        @test size(f_bar) == size(f)
+        @test f_bar ≈ ref rtol = 1.0e-10
+    end
+
+    @testset "akima_adjoint :inclusive boundary (radius 2)" begin
+        y = sin.(2π .* x); y[end] = y[1]
+        adj = akima_adjoint(x, y, xq; bc = bc)
+        f_bar = adj(y_bar)
+        ref = ForwardDiff.gradient(ytest -> dot(akima_interp(x, ytest, xq; bc = bc), y_bar), y)
+        @test size(f_bar) == size(y)
+        @test f_bar ≈ ref rtol = 1.0e-9
+    end
+end
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Zero-allocation regression: in-place `adj(f_bar, y_bar)` must not
 # allocate beyond the pool buffer (which is acquired/returned per-call
 # inside `@with_pool` and counted as 0 bytes after warmup).

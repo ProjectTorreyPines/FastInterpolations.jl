@@ -63,8 +63,10 @@ end
 # ========================================
 # BC Extraction from Method Types
 # ========================================
-# Only defined for derivative methods (Cubic/Quadratic).
-# Linear/Constant have no BC and are never differentiated (sizes[D]=1).
+# `_extract_bc` is read by `_build_nd_partials_dim_hetero!` only for derivative
+# axes (Cubic/Quadratic) — the `sizes[D] == 2` guard skips Linear/Constant/NoInterp
+# axes entirely. Linear/Constant carry their own `bc` field used by other code
+# paths (eval, hetero adjoint), but it is not consumed here.
 
 @inline _extract_bc(m::CubicInterp) = m.bc
 @inline _extract_bc(m::QuadraticInterp) = m.bc

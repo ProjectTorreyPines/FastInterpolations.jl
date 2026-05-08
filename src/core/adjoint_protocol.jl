@@ -7,13 +7,15 @@
 #
 # ── 1D Subtypes must implement:
 #   _n_queries(adj)::Int
-#   _adjoint_output_length(adj)::Int
 #   _adjoint_1d_apply!(f_bar, adj, y_bar, deriv)
 #
-# ── 1D Subtypes may override (for periodic BC):
+# ── 1D Subtypes inherit (assuming `adj.bc::AbstractBC` and `adj.grid_size::Int`):
+#   _adjoint_output_length(adj)::Int
 #   _adjoint_internal_length(adj)::Int
 #   _adjoint_1d_has_exclusive_periodic(adj)::Bool
 #   _adjoint_1d_finalize(f_bar, adj)
+# Override these only if the subtype lacks the assumed fields (e.g.,
+# `CubicAdjoint` reads `length(adj.cache.x)` instead of `adj.grid_size`).
 #
 # ── ND Subtypes must implement:
 #   _n_queries(adj)::Int
@@ -58,11 +60,26 @@
 # ║           1D Adjoint Protocol        ║
 # ╚══════════════════════════════════════╝
 
-# ── 1D Defaults (non-periodic types inherit these as-is) ──
+# ── 1D Defaults ──
+# Assume `adj.bc::AbstractBC` and `adj.grid_size::Int` fields. Concrete subtypes
+# without those fields (e.g., `CubicAdjoint` uses `length(adj.cache.x)`) override.
 
-@inline _adjoint_internal_length(adj::AbstractAdjoint1D) = _adjoint_output_length(adj)
-@inline _adjoint_1d_has_exclusive_periodic(::AbstractAdjoint1D) = false
-@inline _adjoint_1d_finalize(f_bar::AbstractVector, ::AbstractAdjoint1D) = f_bar
+@inline _adjoint_output_length(adj::AbstractAdjoint1D) =
+    adj.bc isa PeriodicBC{:exclusive} ? adj.grid_size - 1 : adj.grid_size
+
+@inline _adjoint_internal_length(adj::AbstractAdjoint1D) = adj.grid_size
+
+@inline _adjoint_1d_has_exclusive_periodic(adj::AbstractAdjoint1D) =
+    adj.bc isa PeriodicBC{:exclusive}
+
+function _adjoint_1d_finalize(f_bar::AbstractVector, adj::AbstractAdjoint1D)
+    if adj.bc isa PeriodicBC{:exclusive}
+        n_internal = adj.grid_size
+        @inbounds f_bar[1] += f_bar[n_internal]
+        return f_bar[1:(n_internal - 1)]
+    end
+    return f_bar
+end
 
 # ── Size / Introspection ──
 

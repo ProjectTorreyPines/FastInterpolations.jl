@@ -107,7 +107,8 @@
             end
             @test err isa ArgumentError
             @test occursin("not yet implemented for", err.msg)
-            @test occursin("hermite_onthefly_integrate_and_nd_adjoint.md", err.msg)
+            @test occursin("Hermite family", err.msg)
+            @test occursin("Workarounds", err.msg)
             @test occursin("ForwardDiff", err.msg)  # suggested workaround
         end
     end

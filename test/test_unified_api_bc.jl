@@ -133,4 +133,16 @@ end
     # only first-order accurate, so use a loose absolute tolerance).
     analytic = [sin(xi) + cos(yi) for (xi, yi) in zip(xq, yq)]
     @test maximum(abs, via_unified .- analytic) < 0.05
+
+    # Adjoint path through `hetero_adjoint(...; methods=...)`: verify the same
+    # tag-struct `bc` field plumbing reaches the adjoint builder and that the
+    # dot-product identity holds end-to-end.
+    methods = (LinearInterp(bc = bc_x), CubicInterp(bc = bc_y))
+    itp = interp((x, y_grid), data; method = methods)
+    adj = hetero_adjoint((x, y_grid), (xq, yq); methods = methods)
+    @test size(adj(zeros(n_query))) == size(data)
+    using LinearAlgebra: dot
+    y_bar = randn(n_query)
+    forward_vec = [itp((xq[k], yq[k])) for k in 1:n_query]
+    @test dot(forward_vec, y_bar) ≈ dot(vec(data), vec(adj(y_bar))) atol = 1.0e-10
 end

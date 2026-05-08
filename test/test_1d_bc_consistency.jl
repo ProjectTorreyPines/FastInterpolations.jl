@@ -48,8 +48,11 @@
     y_exc  = linear_interp(x_exc, f_exc, xq; bc = bc_exc)
 
     # Linear is purely local — three representations bit-equivalent.
+    # `:exclusive` synthesizes its seam endpoint via `inner[1] + period`, but
+    # cell lookup + lerp arithmetic is identical to NoBC over the closed grid,
+    # so the result must match bit-for-bit (no rounding budget needed).
     @test y_nobc == y_inc
-    @test y_nobc ≈ y_exc atol = 1.0e-13
+    @test y_nobc == y_exc
 end
 
 

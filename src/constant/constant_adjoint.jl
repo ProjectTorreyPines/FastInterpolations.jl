@@ -74,23 +74,6 @@ end
 
 @inline _n_queries(adj::ConstantAdjoint) = length(adj.anchors)
 
-@inline _adjoint_output_length(adj::ConstantAdjoint) =
-    adj.bc isa PeriodicBC{:exclusive} ? adj.grid_size - 1 : adj.grid_size
-
-@inline _adjoint_internal_length(adj::ConstantAdjoint) = adj.grid_size
-
-@inline _adjoint_1d_has_exclusive_periodic(adj::ConstantAdjoint) =
-    adj.bc isa PeriodicBC{:exclusive}
-
-function _adjoint_1d_finalize(f_bar::AbstractVector, adj::ConstantAdjoint)
-    if adj.bc isa PeriodicBC{:exclusive}
-        n_internal = adj.grid_size
-        @inbounds f_bar[1] += f_bar[n_internal]
-        return f_bar[1:(n_internal - 1)]
-    end
-    return f_bar
-end
-
 @inline _adjoint_1d_apply!(f_bar, adj::ConstantAdjoint, y_bar, deriv) =
     _constant_adjoint_apply!(f_bar, adj, y_bar, deriv)
 
@@ -243,7 +226,6 @@ function constant_adjoint(
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
 
@@ -298,7 +280,6 @@ function constant_adjoint(
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     return constant_adjoint(x, [x_query]; bc = bc, side = side, extrap = extrap)
 end

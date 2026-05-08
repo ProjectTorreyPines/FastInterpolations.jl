@@ -69,23 +69,6 @@ end
 
 @inline _n_queries(adj::CardinalAdjoint1D) = length(adj.anchors)
 
-@inline _adjoint_output_length(adj::CardinalAdjoint1D) =
-    adj.bc isa PeriodicBC{:exclusive} ? adj.grid_size - 1 : adj.grid_size
-
-@inline _adjoint_internal_length(adj::CardinalAdjoint1D) = adj.grid_size
-
-@inline _adjoint_1d_has_exclusive_periodic(adj::CardinalAdjoint1D) =
-    adj.bc isa PeriodicBC{:exclusive}
-
-function _adjoint_1d_finalize(f_bar::AbstractVector, adj::CardinalAdjoint1D)
-    if adj.bc isa PeriodicBC{:exclusive}
-        n_internal = adj.grid_size
-        @inbounds f_bar[1] += f_bar[n_internal]
-        return f_bar[1:(n_internal - 1)]
-    end
-    return f_bar
-end
-
 # ========================================
 # Slope Adjoint: J^T * dy_bar -> f_bar update
 # ========================================
@@ -278,7 +261,6 @@ function cardinal_adjoint(
         bc::AbstractBC = NoBC(),
         tension::Real = 0.0,
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
 
@@ -328,7 +310,6 @@ function cardinal_adjoint(
         bc::AbstractBC = NoBC(),
         tension::Real = 0.0,
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     return cardinal_adjoint(x, [x_query]; bc = bc, tension = tension, extrap = extrap)
 end

@@ -139,10 +139,18 @@ Evaluate the PHS interpolant value at `query` given precomputed coefficients.
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
     # RBF sum
-    @fastmath @inbounds @simd for i in 1:ns
-        xh = _phs_diff_Δ(Δx, phys_offsets[i])
-        r = sqrt(_phs_sum_sq(xh))
-        y += coeffs[i] * _phs_phi(r, Val{K}())
+    if K == 3
+        @fastmath @inbounds @simd for i in 1:ns
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
+            r2 = _phs_sum_sq(xh)
+            y += coeffs[i] * r2 * sqrt(r2)
+        end
+    else
+        @fastmath @inbounds @simd for i in 1:ns
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
+            r = sqrt(_phs_sum_sq(xh))
+            y += coeffs[i] * _phs_phi(r, Val{K}())
+        end
     end
 
     # Polynomial augmentation: all monomials up to degree (K-1)÷2

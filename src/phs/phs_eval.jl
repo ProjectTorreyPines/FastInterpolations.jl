@@ -796,11 +796,10 @@ Algorithm:
             w < eps(Tg) && continue
             offsets_nb, phys_offsets, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
             if d_dist > eps(Tg)
-                inv_d_dist = one(Tg) / d_dist
                 f, df = _phs_eval_coeffs_value_and_deriv1(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val(grad_ax))
                 f  = Tv(f)
                 df = Tv(df)
-                dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) * inv_d_dist
+                dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
                 sum_w  += w
                 sum_wy += w * f
                 sum_N1 += wp * dir * f + w * df
@@ -854,7 +853,8 @@ Algorithm:
                     sum_w += w; sum_wy += w * f
                     sum_N1 += wxi1 * f + w * f1
                     sum_W1 += wxi1
-                    wxixi = wpp * da1 * da1 + wp * (1 - da1 * da1) * inv_d_dist
+                    da1_sqr = da1 * da1
+                    wxixi = wpp * da1_sqr + wp * (1 - da1_sqr) * inv_d_dist
                     sum_N2 += wxixi * f + 2 * wxi1 * f1 + w * f2
                     sum_W2 += wxixi
                 else
@@ -867,7 +867,8 @@ Algorithm:
                     sum_W1 += wxi1
                     sum_N1b += wxi2 * f + w * f1b
                     sum_W1b += wxi2
-                    wxixi = wpp * da1 * da2 - wp * da1 * da2 * inv_d_dist
+                    da1_da2 = da1 * da2
+                    wxixi = wpp * da1_da2 - wp * da1_da2 * inv_d_dist
                     sum_N2 += wxixi * f + wxi1 * f1b + wxi2 * f1 + w * f2
                     sum_W2 += wxixi
                 end
@@ -987,11 +988,10 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
             w < eps(Tg) && continue
             offsets_nb, phys_offsets, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
             if d_dist > eps(Tg)
-                inv_d_dist = one(Tg) / d_dist
                 f, f_ξ = _phs_eval_coeffs_value_and_deriv1(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val(grad_ax))
                 f = Tv(f); f_ξ = Tv(f_ξ)
                 g  = exp(f)
-                dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) * inv_d_dist
+                dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
                 sum_w  += w
                 sum_wg += w * g
                 sum_N1 += wp * dir * g + w * g * f_ξ
@@ -1048,7 +1048,8 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                     g    = exp(f)
                     dg1  = g * f_d1
                     d2g  = g * (f_d2 + f_d1 * f_d1)
-                    wxixi = wpp * da1 * da1 + wp * (1 - da1 * da1) * inv_d_dist
+                    da1_sqr = da1 * da1
+                    wxixi = wpp * da1_sqr + wp * (1 - da1_sqr) * inv_d_dist
                     sum_w += w; sum_wg += w * g
                     sum_N1 += wxi1 * g + w * dg1
                     sum_W1 += wxi1
@@ -1063,7 +1064,8 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                     dg1  = g * f_d1
                     dg2  = g * f_d1b
                     d2g  = g * (f_d2 + f_d1 * f_d1b)
-                    wxixi = wpp * da1 * da2 - wp * da1 * da2 * inv_d_dist
+                    da1_da2 = da1 * da2
+                    wxixi = wpp * da1_da2 - wp * da1_da2 * inv_d_dist
                     sum_w += w; sum_wg += w * g
                     sum_N1 += wxi1 * g + w * dg1
                     sum_W1 += wxi1
@@ -1219,11 +1221,10 @@ end
         offsets_nb, phys_offsets, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
 
         if d_dist > eps(Tg)
-            inv_d_dist = one(Tg) / d_dist
             f, f_ξ = _phs_eval_coeffs_value_and_deriv1(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val{grad_ax}())
             f = Tv(f); f_ξ = Tv(f_ξ)
             g   = exp(f)
-            dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) * inv_d_dist
+            dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
             sum_w  += w
             sum_wg += w * g
             sum_N1 += wp * dir * g + w * g * f_ξ
@@ -1307,7 +1308,8 @@ end
                 g     = exp(f)
                 dg1   = g * f_d1
                 d2g   = g * (f_d2 + f_d1 * f_d1)
-                wxixi = wpp * da1 * da1 + wp * (1 - da1 * da1) * inv_d_dist
+                da1_sqr = da1 * da1
+                wxixi = wpp * da1_sqr + wp * (1 - da1_sqr) * inv_d_dist
                 sum_w  += w; sum_wg += w * g
                 sum_N1 += wxi1 * g + w * dg1
                 sum_W1 += wxi1
@@ -1322,7 +1324,8 @@ end
                 dg1   = g * f_d1
                 dg2   = g * f_d1b
                 d2g   = g * (f_d2 + f_d1 * f_d1b)
-                wxixi = wpp * da1 * da2 - wp * da1 * da2 * inv_d_dist
+                da1_da2 = da1 * da2
+                wxixi = wpp * da1_da2 - wp * da1_da2 * inv_d_dist
                 sum_w  += w; sum_wg += w * g
                 sum_N1  += wxi1 * g + w * dg1
                 sum_W1  += wxi1

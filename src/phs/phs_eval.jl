@@ -406,9 +406,9 @@ end
                 ci_r = ci * r
                 ci_3r = 3 * ci_r
                 yv  += ci_r * r2
-                yd1 += ci_3r * xh[ax1]
-                factor = xh[ax1] * xh[ax1] * r2_inv
-                yd2 += ci_3r * (one(Tg) + factor)
+                yd1_term = ci_3r * xh[ax1]
+                yd1 += yd1_term
+                yd2 += ci_3r + yd1_term * xh[ax1] * r2_inv
             end
         else
             @inbounds @simd for i in 1:ns
@@ -420,9 +420,9 @@ end
                 ci_r = ci * r
                 ci_3r = 3 * ci_r
                 yv  += ci_r * r2
-                yd1 += ci_3r * xh[ax1]
-                factor = xh[ax1] * xh[ax2] * r2_inv
-                yd2 += ci_3r * factor
+                yd1_term = ci_3r * xh[ax1]
+                yd1 += yd1_term
+                yd2 += yd1_term * xh[ax2] * r2_inv
             end
         end
     else
@@ -586,10 +586,10 @@ end
             ci_r = ci * r
             ci_3r = 3 * ci_r
             yv   += ci_r * r2
-            yd1  += ci_3r * xh[ax1]
+            yd1_term = ci_3r * xh[ax1]
+            yd1  += yd1_term
             yd2  += ci_3r * xh[ax2]
-            factor = xh[ax1] * xh[ax2] * r2_inv
-            yd12 += ci_3r * factor
+            yd12 += yd1_term * xh[ax2] * r2_inv
         end
     else
         eps2 = eps(Tg)^2

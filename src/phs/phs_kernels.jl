@@ -186,13 +186,13 @@ Evaluate w, w', and w'' simultaneously for use in second-derivative blending.
     d2 = d * d
     d3 = d2 * d
     a3 = a * a * a
-    denom  = d3 - a3           # negative
-    denom2 = denom * denom
-    denom4 = denom2 * denom2
-    w  = exp(d3 / denom)
-    wp = -3 * a3 * d2 * w / denom2
-    # wpp = 3a³d(-2a⁶ + a³d³ + 4d⁶) w / (d³-a³)⁴
-    wpp = 3 * a3 * d * (muladd(4 * d3, d3, muladd(a3, d3, -2 * a3 * a3))) * w / denom4
+    denom = d3 - a3
+    inv_denom = one(T) / denom
+    inv_denom2 = inv_denom * inv_denom
+    inv_denom4 = inv_denom2 * inv_denom2
+    w  = exp(d3 * inv_denom)
+    wp = -3 * a3 * d2 * w * inv_denom2
+    wpp = 3 * a3 * d * (muladd(4 * d3, d3, muladd(a3, d3, -2 * a3 * a3))) * w * inv_denom4
     return w, wp, wpp
 end
 
@@ -202,12 +202,13 @@ end
     end
     d2 = d * d
     d3 = d2 * d
-    denom  = d3 - a3
-    denom2 = denom * denom
-    denom4 = denom2 * denom2
-    w  = exp(d3 / denom)
-    wp = -3 * a3 * d2 * w / denom2
-    wpp = 3 * a3 * d * (muladd(4 * d3, d3, muladd(a3, d3, -2 * a3 * a3))) * w / denom4
+    denom = d3 - a3
+    inv_denom = one(T) / denom
+    inv_denom2 = inv_denom * inv_denom
+    inv_denom4 = inv_denom2 * inv_denom2
+    w  = exp(d3 * inv_denom)
+    wp = -3 * a3 * d2 * w * inv_denom2
+    wpp = 3 * a3 * d * (muladd(4 * d3, d3, muladd(a3, d3, -2 * a3 * a3))) * w * inv_denom4
     return w, wp, wpp
 end
 

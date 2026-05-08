@@ -484,17 +484,16 @@ Compile-time unrolled sum of squares for tuples.
 end
 
 """
-    _phs_diff_Δ(Δx, off, hs_local) -> NTuple{N, Tg}
+    _phs_diff_Δ(Δx, phys_off) -> NTuple{N, Tg}
 
-Compute physical distance vectors from physical coordinate difference Δx (query - base_node) and stencil offset.
+Compute physical distance vectors from physical coordinate difference Δx (query - base_node) and precomputed physical offset.
 Generated at compile-time for arbitrary dimensions to ensure full unrolling and optimal SIMD register allocation.
 """
 @generated function _phs_diff_Δ(
         Δx::NTuple{N, Tg},
-        off::NTuple{N, Int},
-        hs_local::NTuple{N, Tg},
+        phys_off::NTuple{N, Tg},
     ) where {N, Tg}
-    exprs = [:(Δx[$d] - Tg(off[$d]) * hs_local[$d]) for d in 1:N]
+    exprs = [:(Δx[$d] - phys_off[$d]) for d in 1:N]
     return Expr(:tuple, exprs...)
 end
 

@@ -116,6 +116,8 @@ function phs_interp(
     stencil_offsets, phi_inv, hs, stencil_lo, stencil_hi, shift_cache =
         _phs_build_stencil(grids_typed, spacings, stencil_size, degree)
 
+    stencil_phys_offsets = [ntuple(d -> Tg(off[d]) * hs[d], Val(N)) for off in stencil_offsets]
+
     # Optionally apply log-density smoothing transform
     transform, data_store = if reference_interp === nothing
         nothing, Array{Tv}(data_typed)
@@ -144,7 +146,7 @@ function phs_interp(
         typeof(grids_typed), typeof(spacings), typeof(transform), typeof(extrap_vals), typeof(searches),
     }(
         grids_typed, spacings, data_store,
-        stencil_offsets, phi_inv, stencil_lo, stencil_hi, shift_cache, hs,
+        stencil_offsets, stencil_phys_offsets, phi_inv, stencil_lo, stencil_hi, shift_cache, hs,
         blend_a, blend_a3, blend_r_idx,
         transform, extrap_vals, searches, coeff_caches
     )

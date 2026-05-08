@@ -24,6 +24,7 @@
 const PLOT = false            # Enable/disable generating the sanity-check plot
 const BENCHMARK = true        # Enable/disable the high-repetition benchmark loops
 const BENCHMARK_REPS = 5     # Number of evaluation repetitions for profiling (e.g. 1000 reps)
+const PROFILE = true          # Enable/disable the CPU profiling run
 
 # ============================================================
 # Dependencies
@@ -34,6 +35,7 @@ using LinearAlgebra
 using Pickle
 using Printf
 using Statistics
+using Profile
 
 if PLOT
     using Plots
@@ -459,6 +461,24 @@ if BENCHMARK
         end
     end
     @printf "%.4f seconds (%.2f μs per query point)\n" t_lap (t_lap * 1e6 / (BENCHMARK_REPS * N_path))
+    
+    if PROFILE
+        println("\nRunning CPU Profiling (100 repetitions)...")
+        # Warmup is already done.
+        Profile.clear()
+        @profile for _ in 1:100
+            itp_phs(_gx, queries; deriv = (D2, D0, D0))
+            itp_phs(_gy, queries; deriv = (D0, D2, D0))
+            itp_phs(_gz, queries; deriv = (D0, D0, D2))
+            @. ∇²ρ_phs = abs(_gx + _gy + _gz)
+        end
+        println("\n" * "="^60)
+        println("CPU PROFILING RESULTS (FLAT PROFILE)")
+        println("="^60)
+        # Sort flat profile by count so bottlenecks are at the end
+        Profile.print(format=:flat, mincount=5, noisefloor=2.0)
+    end
+    
     println("="^60)
     println("Profiling code can be run via: ")
     println("  julia --project=scripts --track-allocation=user scripts/phs_density_comparison_simplified.jl")

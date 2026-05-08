@@ -120,10 +120,11 @@ struct PHSInterpolantND{
     spacings::S
     data::Array{Tv, N}
     stencil_offsets::Vector{NTuple{N, Int}}   # canonical stencil (stencil_size^N offsets)
+    stencil_phys_offsets::Vector{NTuple{N, Tg}} # precomputed physical coordinate offsets
     phi_inv::Matrix{Tg}                       # canonical Φ⁻¹ (shift = 0, used for interior nodes)
     stencil_lo::NTuple{N, Int}                # per-axis min canonical offset (for fast shift computation)
     stencil_hi::NTuple{N, Int}                # per-axis max canonical offset
-    shift_cache::Dict{NTuple{N, Int}, Tuple{Vector{NTuple{N, Int}}, Matrix{Tg}}}  # boundary shift variants
+    shift_cache::Dict{NTuple{N, Int}, Tuple{Vector{NTuple{N, Int}}, Matrix{Tg}, Vector{NTuple{N, Tg}}}}  # boundary shift variants
     hs::NTuple{N, Tg}                         # mean grid spacing per axis
     blend_a::Tg
     blend_a3::Tg                  # blend_a^3, precomputed for weight function kernels

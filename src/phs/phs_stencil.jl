@@ -213,12 +213,12 @@ function _phs_build_boundary_shift_cache(
     poly_deg = (degree - 1) ÷ 2
     n_poly   = length(_phs_all_exponents(Val(N), poly_deg))
     M        = ns + n_poly
-
+ 
     R = stencil_size   # canonical half-width
-
+ 
     min_off = ntuple(d -> minimum(off -> off[d], canonical_offsets), N)
     max_off = ntuple(d -> maximum(off -> off[d], canonical_offsets), N)
-
+ 
     # Unique clip amounts per dimension:
     # lo_clip in [0, -min_off[d]], hi_clip in [0, max_off[d]]
     # We encode as clip = lo_clip if lo_clip > 0 else -hi_clip
@@ -227,19 +227,19 @@ function _phs_build_boundary_shift_cache(
         right = max_off[d]  > 0 ? collect(-max_off[d]:-1) : Int[]
         [0; left; right]
     end
-
+ 
     # Estimate total cache size
     n_shifts     = prod(length, clip_options) - 1
     mem_estimate = n_shifts * M * M * sizeof(Tg)
-
-    cache = Dict{NTuple{N, Int}, Tuple{Vector{NTuple{N, Int}}, Matrix{Tg}}}()
+ 
+    cache = Dict{NTuple{N, Int}, Tuple{Vector{NTuple{N, Int}}, Matrix{Tg}, Vector{NTuple{N, Tg}}}}()
     mem_estimate > 100_000_000 && return cache
-
+ 
     target = ns   # keep same number of stencil nodes
     for clip_combo in Iterators.product(clip_options...)
         clip = NTuple{N, Int}(clip_combo)
         all(iszero, clip) && continue   # canonical stored separately
-
+ 
         # Valid offset range for this clip pattern.
         # clip[d] > 0 means left boundary: abs offsets must be ≥ -R+clip[d], i.e. lo = -R+clip[d] ... R
         # clip[d] < 0 means right boundary: abs offsets must be ≤ R+clip[d], i.e. lo = -R ... R+clip[d]
@@ -249,10 +249,11 @@ function _phs_build_boundary_shift_cache(
         candidates = vec(collect(Iterators.product(ranges_per_dim...)))
         sort!(candidates; by = off -> sum(d -> (Tg(off[d]) * hs[d])^2, 1:N))
         valid_offsets = candidates[1:min(target, length(candidates))]
-
-        cache[clip] = (valid_offsets, _phs_build_phi_inv(valid_offsets, hs, degree))
+        shifted_phys_offsets = [ntuple(d -> Tg(off[d]) * hs[d], Val(N)) for off in valid_offsets]
+ 
+        cache[clip] = (valid_offsets, _phs_build_phi_inv(valid_offsets, hs, degree), shifted_phys_offsets)
     end
-
+ 
     return cache
 end
 

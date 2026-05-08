@@ -853,54 +853,54 @@ end
     M         = size(itp.phi_inv, 1)
     rhs_buf   = zeros(eltype(itp.hs[1]), M)
     coeff_buf = zeros(eltype(itp.hs[1]), M)
-    offsets, coeffs, hs = FastInterpolations._phs_solve_stencil!(itp, base_idx, rhs_buf, coeff_buf)
+    offsets, phys_offsets, coeffs, hs = FastInterpolations._phs_solve_stencil!(itp, base_idx, rhs_buf, coeff_buf)
     base_coords = FastInterpolations._phs_base_coords(itp, base_idx)
 
     # ── Dead-code function: _phs_eval_coeffs_value_and_two_deriv1 (lines 292-353) ──
     # Never called from eval paths; replaced by the 4-return fused version.
     # Call directly to exercise those lines.
     val, dax1, dax2 = FastInterpolations._phs_eval_coeffs_value_and_two_deriv1(
-        coeffs, offsets, hs, (qx, qy), base_coords, Val{3}(), 1, 2)
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 2)
     @test isfinite(val) && isfinite(dax1) && isfinite(dax2)
     # Cross-check against the non-fused versions (which are also tested here)
     val_ref  = FastInterpolations._phs_eval_coeffs_value(
-        coeffs, offsets, hs, (qx, qy), base_coords, Val{3}())
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}())
     d1x_ref  = FastInterpolations._phs_eval_coeffs_deriv1(
-        coeffs, offsets, hs, (qx, qy), base_coords, Val{3}(), 1)
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1)
     d1y_ref  = FastInterpolations._phs_eval_coeffs_deriv1(
-        coeffs, offsets, hs, (qx, qy), base_coords, Val{3}(), 2)
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 2)
     @test val  ≈ val_ref  atol = 1e-8
     @test dax1 ≈ d1x_ref  atol = 1e-8
     @test dax2 ≈ d1y_ref  atol = 1e-8
 
     # ── _phs_eval_coeffs_deriv2: diagonal (lines 174-190) and off-diagonal (lines 191-210) ──
     d2xx_direct = FastInterpolations._phs_eval_coeffs_deriv2(
-        coeffs, offsets, hs, (qx, qy), base_coords, Val{3}(), 1, 1)
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 1)
     d2xy_direct = FastInterpolations._phs_eval_coeffs_deriv2(
-        coeffs, offsets, hs, (qx, qy), base_coords, Val{3}(), 1, 2)
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 2)
     @test isfinite(d2xx_direct) && isfinite(d2xy_direct)
 
     # ── _phs_eval_from_coeffs: total_order==1 (lines 455-457) ──
     v1 = FastInterpolations._phs_eval_from_coeffs(
-        coeffs, offsets, hs, (qx, qy), base_coords, Val{3}(),
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(),
         (DerivOp{1}(), EvalValue()))
     @test v1 ≈ d1x_ref atol = 1e-8
 
     # ── _phs_eval_from_coeffs: total_order==2 diagonal (lines 458-464) ──
     v2d = FastInterpolations._phs_eval_from_coeffs(
-        coeffs, offsets, hs, (qx, qy), base_coords, Val{3}(),
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(),
         (DerivOp{2}(), EvalValue()))
     @test v2d ≈ d2xx_direct atol = 1e-8
 
     # ── _phs_eval_from_coeffs: total_order==2 off-diagonal (lines 465-467) ──
     v2od = FastInterpolations._phs_eval_from_coeffs(
-        coeffs, offsets, hs, (qx, qy), base_coords, Val{3}(),
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(),
         (DerivOp{1}(), DerivOp{1}()))
     @test v2od ≈ d2xy_direct atol = 1e-8
 
     # ── _phs_eval_from_coeffs: total_order≥3 → zero (line 470) ──
     z_fc = FastInterpolations._phs_eval_from_coeffs(
-        coeffs, offsets, hs, (qx, qy), base_coords, Val{3}(),
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(),
         (DerivOp{2}(), DerivOp{1}()))
     @test z_fc == 0.0
 
@@ -925,7 +925,7 @@ end
     # This function is always called with ax1==ax2 in the blended path (diagonal only).
     # Call directly with ax1≠ax2 to exercise the off-diagonal loop.
     val3, d1_3, d2_3 = FastInterpolations._phs_eval_coeffs_value_and_deriv1_and_deriv2(
-        coeffs, offsets, hs, (qx, qy), base_coords, Val{3}(), 1, 2)
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 2)
     @test isfinite(val3) && isfinite(d1_3) && isfinite(d2_3)
     # Cross-check: value should match the zero-deriv version; d1 matches deriv1 along ax1
     @test val3  ≈ val_ref  atol = 1e-8

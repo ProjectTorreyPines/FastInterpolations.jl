@@ -121,27 +121,26 @@ end
 # (Note: _phs_diff has been moved to phs_kernels.jl as a compile-time generated/unrolled function)
 
 """
-    _phs_eval_coeffs_value(coeffs, offsets, hs_local, query, base_coords, ::Val{K}, N) -> scalar
+    _phs_eval_coeffs_value(coeffs, phys_offsets, query, base_coords, ::Val{K}) -> scalar
 
 Evaluate the PHS interpolant value at `query` given precomputed coefficients.
   f = Σᵢ wᵢ φ(rᵢ) + v₀ + Σⱼ vⱼ (xⱼ - xbase_j)
 """
 @inline function _phs_eval_coeffs_value(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
     ) where {Tv, Tg, N, K}
-    ns = length(offsets)
+    ns = length(phys_offsets)
     y = zero(Tv)
 
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
     # RBF sum
     @inbounds @simd for i in 1:ns
-        xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
+        xh = _phs_diff_Δ(Δx, phys_offsets[i])
         r = sqrt(_phs_sum_sq(xh))
         y += coeffs[i] * _phs_phi(r, Val{K}())
     end
@@ -153,39 +152,37 @@ Evaluate the PHS interpolant value at `query` given precomputed coefficients.
 end
 
 """
-    _phs_eval_coeffs_deriv1(coeffs, offsets, hs_local, query, base_coords, ::Val{K}, axis) -> scalar
+    _phs_eval_coeffs_deriv1(coeffs, phys_offsets, query, base_coords, ::Val{K}, axis) -> scalar
 
 Evaluate ∂f/∂xξ (Eq. 25).
   fξ = Σᵢ wᵢ φ'(rᵢ) (xξ - xiξ)/rᵢ + vξ
 """
 @inline function _phs_eval_coeffs_deriv1(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
         axis::Int,
     ) where {Tv, Tg, N, K}
-    return _phs_eval_coeffs_deriv1(coeffs, offsets, hs_local, query, base_coords, Val{K}(), Val(axis))
+    return _phs_eval_coeffs_deriv1(coeffs, phys_offsets, query, base_coords, Val{K}(), Val(axis))
 end
 
 @inline function _phs_eval_coeffs_deriv1(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
         ::Val{axis},
     ) where {Tv, Tg, N, K, axis}
-    ns = length(offsets)
+    ns = length(phys_offsets)
     y = zero(Tv)
 
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
     @inbounds @simd for i in 1:ns
-        xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
+        xh = _phs_diff_Δ(Δx, phys_offsets[i])
         r = sqrt(_phs_sum_sq(xh))
         r_inv = ifelse(r < eps(Tg), zero(Tg), one(Tg) / r)
         ci = coeffs[i]
@@ -198,34 +195,32 @@ end
 end
 
 """
-    _phs_eval_coeffs_deriv2(coeffs, offsets, hs_local, query, base_coords, ::Val{K}, ax1, ax2) -> scalar
+    _phs_eval_coeffs_deriv2(coeffs, phys_offsets, query, base_coords, ::Val{K}, ax1, ax2) -> scalar
 
 Evaluate ∂²f/∂xξ∂xζ (Eq. 26).
 """
 @inline function _phs_eval_coeffs_deriv2(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
         ax1::Int,
         ax2::Int,
     ) where {Tv, Tg, N, K}
-    return _phs_eval_coeffs_deriv2(coeffs, offsets, hs_local, query, base_coords, Val{K}(), Val(ax1), Val(ax2))
+    return _phs_eval_coeffs_deriv2(coeffs, phys_offsets, query, base_coords, Val{K}(), Val(ax1), Val(ax2))
 end
 
 @inline function _phs_eval_coeffs_deriv2(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
         ::Val{ax1},
         ::Val{ax2},
     ) where {Tv, Tg, N, K, ax1, ax2}
-    ns = length(offsets)
+    ns = length(phys_offsets)
     y = zero(Tv)
 
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
@@ -233,7 +228,7 @@ end
     eps2 = eps(Tg)^2
     if ax1 == ax2
         @inbounds @simd for i in 1:ns
-            xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
             r2 = _phs_sum_sq(xh)
             r = sqrt(r2)
             r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
@@ -247,7 +242,7 @@ end
         end
     else
         @inbounds @simd for i in 1:ns
-            xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
             r2 = _phs_sum_sq(xh)
             r = sqrt(r2)
             r_inv  = ifelse(r2 < eps2, zero(Tg), one(Tg) / r)
@@ -266,7 +261,7 @@ end
 end
 
 """
-    _phs_eval_coeffs_value_and_deriv1(coeffs, offsets, hs_local, query, base_coords, ::Val{K}, axis)
+    _phs_eval_coeffs_value_and_deriv1(coeffs, phys_offsets, query, base_coords, ::Val{K}, axis)
         -> (value, deriv1)
 
 Fused single-pass evaluation of both the interpolant value and its first derivative
@@ -274,33 +269,31 @@ along `axis`.  Avoids traversing the stencil twice when both are needed (gradien
 """
 @inline function _phs_eval_coeffs_value_and_deriv1(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
         axis::Int,
     ) where {Tv, Tg, N, K}
-    return _phs_eval_coeffs_value_and_deriv1(coeffs, offsets, hs_local, query, base_coords, Val{K}(), Val(axis))
+    return _phs_eval_coeffs_value_and_deriv1(coeffs, phys_offsets, query, base_coords, Val{K}(), Val(axis))
 end
 
 @inline function _phs_eval_coeffs_value_and_deriv1(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
         ::Val{axis},
     ) where {Tv, Tg, N, K, axis}
-    ns = length(offsets)
+    ns = length(phys_offsets)
     yv = zero(Tv)
     yd = zero(Tv)
 
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
     @inbounds @simd for i in 1:ns
-        xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
+        xh = _phs_diff_Δ(Δx, phys_offsets[i])
         r2 = _phs_sum_sq(xh)
         r  = sqrt(r2)
         ci = coeffs[i]
@@ -317,7 +310,7 @@ end
 end
 
 """
-    _phs_eval_coeffs_value_and_deriv1_and_deriv2(coeffs, offsets, hs_local, query, base_coords,
+    _phs_eval_coeffs_value_and_deriv1_and_deriv2(coeffs, phys_offsets, query, base_coords,
         ::Val{K}, ax1, ax2) -> (value, deriv1_ax1, deriv2)
 
 Fused single-pass evaluation of value, ∂f/∂x_{ax1}, and ∂²f/∂x_{ax1}∂x_{ax2}.
@@ -327,28 +320,26 @@ For mixed (ax1≠ax2): returns (f, f_ξ, f_ξζ) where first-deriv is w.r.t. ax1
 """
 @inline function _phs_eval_coeffs_value_and_deriv1_and_deriv2(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
         ax1::Int,
         ax2::Int,
     ) where {Tv, Tg, N, K}
-    return _phs_eval_coeffs_value_and_deriv1_and_deriv2(coeffs, offsets, hs_local, query, base_coords, Val{K}(), Val(ax1), Val(ax2))
+    return _phs_eval_coeffs_value_and_deriv1_and_deriv2(coeffs, phys_offsets, query, base_coords, Val{K}(), Val(ax1), Val(ax2))
 end
 
 @inline function _phs_eval_coeffs_value_and_deriv1_and_deriv2(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
         ::Val{ax1},
         ::Val{ax2},
     ) where {Tv, Tg, N, K, ax1, ax2}
-    ns = length(offsets)
+    ns = length(phys_offsets)
     yv  = zero(Tv)
     yd1 = zero(Tv)
     yd2 = zero(Tv)
@@ -358,7 +349,7 @@ end
     eps_tg = eps(Tg)
     if ax1 == ax2
         @inbounds @simd for i in 1:ns
-            xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
             r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
             ci = coeffs[i]
@@ -374,7 +365,7 @@ end
         end
     else
         @inbounds @simd for i in 1:ns
-            xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
+            xh = _phs_diff_Δ(Δx, phys_offsets[i])
             r2 = _phs_sum_sq(xh)
             r  = sqrt(r2)
             ci = coeffs[i]
@@ -398,7 +389,7 @@ end
 end
 
 """
-    _phs_eval_coeffs_value_and_two_deriv1(coeffs, offsets, hs_local, query, base_coords,
+    _phs_eval_coeffs_value_and_two_deriv1(coeffs, phys_offsets, query, base_coords,
         ::Val{K}, ax1, ax2) -> (value, deriv1_ax1, deriv1_ax2)
 
 Fused single-pass evaluation of value, ∂f/∂x_{ax1}, and ∂f/∂x_{ax2}.
@@ -406,28 +397,26 @@ Used for mixed-Hessian blending to get both first-derivative components in one l
 """
 @inline function _phs_eval_coeffs_value_and_two_deriv1(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
         ax1::Int,
         ax2::Int,
     ) where {Tv, Tg, N, K}
-    return _phs_eval_coeffs_value_and_two_deriv1(coeffs, offsets, hs_local, query, base_coords, Val{K}(), Val(ax1), Val(ax2))
+    return _phs_eval_coeffs_value_and_two_deriv1(coeffs, phys_offsets, query, base_coords, Val{K}(), Val(ax1), Val(ax2))
 end
 
 @inline function _phs_eval_coeffs_value_and_two_deriv1(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
         ::Val{ax1},
         ::Val{ax2},
     ) where {Tv, Tg, N, K, ax1, ax2}
-    ns = length(offsets)
+    ns = length(phys_offsets)
     yv  = zero(Tv)
     yd1 = zero(Tv)
     yd2 = zero(Tv)
@@ -435,7 +424,7 @@ end
     Δx = ntuple(d -> Tg(query[d]) - base_coords[d], Val(N))
 
     @inbounds @simd for i in 1:ns
-        xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
+        xh = _phs_diff_Δ(Δx, phys_offsets[i])
         r2 = _phs_sum_sq(xh)
         r  = sqrt(r2)
         ci = coeffs[i]
@@ -454,7 +443,7 @@ end
 end
 
 """
-    _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeffs, offsets, hs_local, query, base_coords,
+    _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeffs, phys_offsets, query, base_coords,
         ::Val{K}, ax1, ax2) -> (value, deriv1_ax1, deriv1_ax2, deriv2_ax1_ax2)
 
 Fused single-pass evaluation of value, ∂f/∂x_{ax1}, ∂f/∂x_{ax2}, and ∂²f/∂x_{ax1}∂x_{ax2}
@@ -463,28 +452,26 @@ of calling `_phs_eval_coeffs_value_and_two_deriv1` followed by `_phs_eval_coeffs
 """
 @inline function _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
         ax1::Int,
         ax2::Int,
     ) where {Tv, Tg, N, K}
-    return _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeffs, offsets, hs_local, query, base_coords, Val{K}(), Val(ax1), Val(ax2))
+    return _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeffs, phys_offsets, query, base_coords, Val{K}(), Val(ax1), Val(ax2))
 end
 
 @inline function _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(
         coeffs::AbstractVector{Tv},
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N, Tg},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
         base_coords::NTuple{N, Tg},
         ::Val{K},
         ::Val{ax1},
         ::Val{ax2},
     ) where {Tv, Tg, N, K, ax1, ax2}
-    ns = length(offsets)
+    ns = length(phys_offsets)
     yv   = zero(Tv)
     yd1  = zero(Tv)
     yd2  = zero(Tv)
@@ -494,7 +481,7 @@ end
 
     eps2 = eps(Tg)^2
     @inbounds @simd for i in 1:ns
-        xh = _phs_diff_Δ(Δx, offsets[i], hs_local)
+        xh = _phs_diff_Δ(Δx, phys_offsets[i])
         r2 = _phs_sum_sq(xh)
         r  = sqrt(r2)
         ci = coeffs[i]
@@ -534,16 +521,17 @@ Returns the stencil offsets, coefficient vector (aliasing `coeff_buf`), and grid
     hs_local   = itp.hs
     grid_sizes = ntuple(d -> length(itp.grids[d]), N)
     shift = _phs_compute_shift(base_idx, itp.stencil_lo, itp.stencil_hi, grid_sizes)
-    offsets, phi_inv = if all(iszero, shift) || !haskey(itp.shift_cache, shift)
-        itp.stencil_offsets, itp.phi_inv
+    offsets, phi_inv, phys_offsets = if all(iszero, shift) || !haskey(itp.shift_cache, shift)
+        itp.stencil_offsets, itp.phi_inv, itp.stencil_phys_offsets
     else
-        itp.shift_cache[shift]
+        val = itp.shift_cache[shift]
+        val[1], val[2], val[3]
     end
     # Check stencil coefficient cache (task-local; zero-alloc on hit after warm-up).
     # On cache hit, return cached vector directly — callers only read from it.
     coeff_cache = _phs_get_coeff_cache(itp)
     cached = get(coeff_cache, base_idx, nothing)
-    cached !== nothing && return offsets, cached, hs_local
+    cached !== nothing && return offsets, phys_offsets, cached, hs_local
 
     # Cache miss: build RHS and solve via BLAS gemv.
     M            = size(phi_inv, 1)
@@ -559,33 +547,32 @@ Returns the stencil offsets, coefficient vector (aliasing `coeff_buf`), and grid
         coeff_cache[base_idx] = copy(actual_coeff)
     end
 
-    return offsets, actual_coeff, hs_local
+    return offsets, phys_offsets, actual_coeff, hs_local
 end
 
 """
-    _phs_eval_from_coeffs(coeffs, offsets, hs_local, query, base_coords, ::Val{K}, ops) -> scalar
+    _phs_eval_from_coeffs(coeffs, phys_offsets, query, base_coords, ::Val{K}, ops) -> scalar
 
 Evaluate the local PHS interpolant given precomputed coefficients.
 Dispatches to the appropriate `_phs_eval_coeffs_*` function based on `ops`.
 """
 @inline function _phs_eval_from_coeffs(
         coeffs::AbstractVector,
-        offsets::Vector{<:NTuple{N, Int}},
-        hs_local::NTuple{N},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
         query::NTuple{N, <:Real},
-        base_coords::NTuple{N},
+        base_coords::NTuple{N, Tg},
         ::Val{K},
         ops::O,
-    ) where {N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}}
+    ) where {Tg, N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}}
     total_order = sum(deriv_order(ops[d]) for d in 1:N)
     if total_order == 0
-        return _phs_eval_coeffs_value(coeffs, offsets, hs_local, query, base_coords, Val{K}())
+        return _phs_eval_coeffs_value(coeffs, phys_offsets, query, base_coords, Val{K}())
     elseif total_order == 1
         axis_val = _phs_get_deriv1_axis_val(O)
-        return _phs_eval_coeffs_deriv1(coeffs, offsets, hs_local, query, base_coords, Val{K}(), axis_val)
+        return _phs_eval_coeffs_deriv1(coeffs, phys_offsets, query, base_coords, Val{K}(), axis_val)
     elseif total_order == 2
         ax1_val, ax2_val = _phs_get_deriv2_axes_val(O)
-        return _phs_eval_coeffs_deriv2(coeffs, offsets, hs_local, query, base_coords, Val{K}(), ax1_val, ax2_val)
+        return _phs_eval_coeffs_deriv2(coeffs, phys_offsets, query, base_coords, Val{K}(), ax1_val, ax2_val)
     end
     return zero(eltype(coeffs))
 end
@@ -607,9 +594,9 @@ Uses pre-allocated buffers `rhs_buf` and `coeff_buf` (from AdaptiveArrayPools).
         rhs_buf::Vr,
         coeff_buf::Vc,
     ) where {Tg, Tv, N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}, Vr <: AbstractVector, Vc <: AbstractVector}
-    offsets, coeff, hs_local = _phs_solve_stencil!(itp, base_idx, rhs_buf, coeff_buf)
+    offsets, phys_offsets, coeff, hs_local = _phs_solve_stencil!(itp, base_idx, rhs_buf, coeff_buf)
     base_coords = _phs_base_coords(itp, base_idx)
-    return _phs_eval_from_coeffs(coeff, offsets, hs_local, query, base_coords, Val{K}(), ops)
+    return _phs_eval_from_coeffs(coeff, phys_offsets, query, base_coords, Val{K}(), ops)
 end
 
 # ======================================================
@@ -665,8 +652,8 @@ Algorithm:
             @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
             w = _phs_blend_weight(sqrt(d2), blend_a, blend_a3)
             w < eps(Tg) && continue
-            offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
-            f = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
+            offsets_nb, phys_offsets, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+            f = Tv(_phs_eval_coeffs_value(coeff_nb, phys_offsets, query, nb_coords, Val{K}()))
             sum_w  += w
             sum_wy += w * f
         end
@@ -693,9 +680,9 @@ Algorithm:
             d_dist = sqrt(d2)
             w, wp = _phs_blend_weight_and_prime(d_dist, blend_a, blend_a3)
             w < eps(Tg) && continue
-            offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+            offsets_nb, phys_offsets, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
             if d_dist > eps(Tg)
-                f, df = _phs_eval_coeffs_value_and_deriv1(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val(grad_ax))
+                f, df = _phs_eval_coeffs_value_and_deriv1(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val(grad_ax))
                 f  = Tv(f)
                 df = Tv(df)
                 dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
@@ -704,7 +691,7 @@ Algorithm:
                 sum_N1 += wp * dir * f + w * df
                 sum_W1 += wp * dir
             else
-                f = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
+                f = Tv(_phs_eval_coeffs_value(coeff_nb, phys_offsets, query, nb_coords, Val{K}()))
                 sum_w  += w
                 sum_wy += w * f
             end
@@ -739,14 +726,14 @@ Algorithm:
             w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a, blend_a3)
             w < eps(Tg) && continue
 
-            offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+            offsets_nb, phys_offsets, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
 
             if d_dist > eps(Tg)
                 da1  = (Tg(query[ax1]) - nb_coords[ax1]) / d_dist
                 wxi1 = wp * da1
 
                 if is_diag
-                    f, f1, f2 = _phs_eval_coeffs_value_and_deriv1_and_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val(ax1), Val(ax1))
+                    f, f1, f2 = _phs_eval_coeffs_value_and_deriv1_and_deriv2(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val(ax1), Val(ax1))
                     f = Tv(f); f1 = Tv(f1); f2 = Tv(f2)
                     sum_w += w; sum_wy += w * f
                     sum_N1 += wxi1 * f + w * f1
@@ -757,7 +744,7 @@ Algorithm:
                 else
                     da2  = (Tg(query[ax2]) - nb_coords[ax2]) / d_dist
                     wxi2 = wp * da2
-                    f, f1, f1b, f2 = _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val(ax1), Val(ax2))
+                    f, f1, f1b, f2 = _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val(ax1), Val(ax2))
                     f = Tv(f); f1 = Tv(f1); f1b = Tv(f1b); f2 = Tv(f2)
                     sum_w += w; sum_wy += w * f
                     sum_N1 += wxi1 * f + w * f1
@@ -770,8 +757,8 @@ Algorithm:
                 end
             else
                 # d≈0: blend-weight derivatives ≈ 0, only stencil contribution survives
-                f  = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
-                f2 = Tv(_phs_eval_coeffs_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val(ax1), Val(ax2)))
+                f  = Tv(_phs_eval_coeffs_value(coeff_nb, phys_offsets, query, nb_coords, Val{K}()))
+                f2 = Tv(_phs_eval_coeffs_deriv2(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val(ax1), Val(ax2)))
                 sum_w += w; sum_wy += w * f
                 sum_N2 += w * f2
             end
@@ -856,8 +843,8 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
             @inbounds for dim in 1:N; Δ = Tg(query[dim]) - nb_coords[dim]; d2 += Δ * Δ; end
             w = _phs_blend_weight(sqrt(d2), blend_a, blend_a3)
             w < eps(Tg) && continue
-            offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
-            f = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
+            offsets_nb, phys_offsets, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+            f = Tv(_phs_eval_coeffs_value(coeff_nb, phys_offsets, query, nb_coords, Val{K}()))
             sum_w  += w
             sum_wg += w * exp(f)
         end
@@ -882,9 +869,9 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
             d_dist = sqrt(d2)
             w, wp = _phs_blend_weight_and_prime(d_dist, blend_a, blend_a3)
             w < eps(Tg) && continue
-            offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+            offsets_nb, phys_offsets, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
             if d_dist > eps(Tg)
-                f, f_ξ = _phs_eval_coeffs_value_and_deriv1(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val(grad_ax))
+                f, f_ξ = _phs_eval_coeffs_value_and_deriv1(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val(grad_ax))
                 f = Tv(f); f_ξ = Tv(f_ξ)
                 g  = exp(f)
                 dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
@@ -893,7 +880,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                 sum_N1 += wp * dir * g + w * g * f_ξ
                 sum_W1 += wp * dir
             else
-                f = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
+                f = Tv(_phs_eval_coeffs_value(coeff_nb, phys_offsets, query, nb_coords, Val{K}()))
                 g = exp(f)
                 sum_w  += w
                 sum_wg += w * g
@@ -931,14 +918,14 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
             w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a, blend_a3)
             w < eps(Tg) && continue
 
-            offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+            offsets_nb, phys_offsets, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
 
             if d_dist > eps(Tg)
                 da1  = (Tg(query[ax1]) - nb_coords[ax1]) / d_dist
                 wxi1 = wp * da1
 
                 if is_diag
-                    f, f_d1, f_d2 = _phs_eval_coeffs_value_and_deriv1_and_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val(ax1), Val(ax1))
+                    f, f_d1, f_d2 = _phs_eval_coeffs_value_and_deriv1_and_deriv2(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val(ax1), Val(ax1))
                     f = Tv(f); f_d1 = Tv(f_d1); f_d2 = Tv(f_d2)
                     g    = exp(f)
                     dg1  = g * f_d1
@@ -952,7 +939,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                 else
                     da2   = (Tg(query[ax2]) - nb_coords[ax2]) / d_dist
                     wxi2  = wp * da2
-                    f, f_d1, f_d1b, f_d2 = _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val(ax1), Val(ax2))
+                    f, f_d1, f_d1b, f_d2 = _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val(ax1), Val(ax2))
                     f = Tv(f); f_d1 = Tv(f_d1); f_d1b = Tv(f_d1b); f_d2 = Tv(f_d2)
                     g    = exp(f)
                     dg1  = g * f_d1
@@ -969,11 +956,11 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                 end
             else
                 # d≈0: weight derivatives ≈ 0
-                f    = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
+                f    = Tv(_phs_eval_coeffs_value(coeff_nb, phys_offsets, query, nb_coords, Val{K}()))
                 g    = exp(f)
-                f_d2 = Tv(_phs_eval_coeffs_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val(ax1), Val(ax2)))
+                f_d2 = Tv(_phs_eval_coeffs_deriv2(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val(ax1), Val(ax2)))
                 # For the d≈0 diagonal case, f_d1 contributes to d2g; since it's rare, compute separately
-                f_d1_sq = is_diag ? Tv(_phs_eval_coeffs_deriv1(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val(ax1)))^2 : zero(Tv)
+                f_d1_sq = is_diag ? Tv(_phs_eval_coeffs_deriv1(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val(ax1)))^2 : zero(Tv)
                 d2g = g * (f_d2 + f_d1_sq)
                 sum_w += w; sum_wg += w * g
                 sum_N2 += w * d2g
@@ -1111,10 +1098,10 @@ end
         w, wp = _phs_blend_weight_and_prime(d_dist, blend_a, blend_a3)
         w < eps(Tg) && continue
 
-        offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+        offsets_nb, phys_offsets, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
 
         if d_dist > eps(Tg)
-            f, f_ξ = _phs_eval_coeffs_value_and_deriv1(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val{grad_ax}())
+            f, f_ξ = _phs_eval_coeffs_value_and_deriv1(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val{grad_ax}())
             f = Tv(f); f_ξ = Tv(f_ξ)
             g   = exp(f)
             dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
@@ -1123,7 +1110,7 @@ end
             sum_N1 += wp * dir * g + w * g * f_ξ
             sum_W1 += wp * dir
         else
-            f = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
+            f = Tv(_phs_eval_coeffs_value(coeff_nb, phys_offsets, query, nb_coords, Val{K}()))
             g = exp(f)
             sum_w  += w
             sum_wg += w * g
@@ -1189,13 +1176,13 @@ end
         w, wp, wpp = _phs_blend_weight_and_derivs(d_dist, blend_a, blend_a3)
         w < eps(Tg) && continue
 
-        offsets_nb, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
+        offsets_nb, phys_offsets, coeff_nb, hs_nb = _phs_solve_stencil!(itp, nb_idx, rhs_buf, coeff_buf)
 
         if d_dist > eps(Tg)
             da1  = (Tg(query[ax1]) - nb_coords[ax1]) / d_dist
             wxi1 = wp * da1
             if is_diag
-                f, f_d1, f_d2 = _phs_eval_coeffs_value_and_deriv1_and_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val{ax1}(), Val{ax1}())
+                f, f_d1, f_d2 = _phs_eval_coeffs_value_and_deriv1_and_deriv2(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val{ax1}(), Val{ax1}())
                 f = Tv(f); f_d1 = Tv(f_d1); f_d2 = Tv(f_d2)
                 g     = exp(f)
                 dg1   = g * f_d1
@@ -1209,7 +1196,7 @@ end
             else
                 da2   = (Tg(query[ax2]) - nb_coords[ax2]) / d_dist
                 wxi2  = wp * da2
-                f, f_d1, f_d1b, f_d2 = _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val{ax1}(), Val{ax2}())
+                f, f_d1, f_d1b, f_d2 = _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val{ax1}(), Val{ax2}())
                 f = Tv(f); f_d1 = Tv(f_d1); f_d1b = Tv(f_d1b); f_d2 = Tv(f_d2)
                 g     = exp(f)
                 dg1   = g * f_d1
@@ -1226,18 +1213,18 @@ end
             end
         else
             # d≈0: weight prime/dprime ≈ 0; only stencil contributions survive.
-            f    = Tv(_phs_eval_coeffs_value(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}()))
+            f    = Tv(_phs_eval_coeffs_value(coeff_nb, phys_offsets, query, nb_coords, Val{K}()))
             g    = exp(f)
-            f_d1 = Tv(_phs_eval_coeffs_deriv1(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val{ax1}()))
+            f_d1 = Tv(_phs_eval_coeffs_deriv1(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val{ax1}()))
             if is_diag
-                f_d2   = Tv(_phs_eval_coeffs_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val{ax1}(), Val{ax1}()))
+                f_d2   = Tv(_phs_eval_coeffs_deriv2(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val{ax1}(), Val{ax1}()))
                 d2g    = g * (f_d2 + f_d1 * f_d1)
                 sum_w  += w; sum_wg += w * g
                 sum_N1 += w * g * f_d1
                 sum_N2 += w * d2g
             else
-                f_d1b    = Tv(_phs_eval_coeffs_deriv1(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val{ax2}()))
-                f_d2     = Tv(_phs_eval_coeffs_deriv2(coeff_nb, offsets_nb, hs_nb, query, nb_coords, Val{K}(), Val{ax1}(), Val{ax2}()))
+                f_d1b    = Tv(_phs_eval_coeffs_deriv1(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val{ax2}()))
+                f_d2     = Tv(_phs_eval_coeffs_deriv2(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val{ax1}(), Val{ax2}()))
                 d2g      = g * (f_d2 + f_d1 * f_d1b)
                 sum_w  += w; sum_wg += w * g
                 sum_N1  += w * g * f_d1

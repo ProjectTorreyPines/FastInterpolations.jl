@@ -1477,15 +1477,68 @@ end
         @test g_zy ≈ g_adj atol = 1.0e-10
     end
 
-    # NOTE: Unified `interp(...; method=...)` API + Zygote ∂/∂data is a
-    # separate, pre-existing architectural gap (mutation/cache-pool inside
-    # `_interp_nd_oneshot_dispatch` and `HeteroInterpolantND` rrule chain).
-    # The new `bc` field on `LinearInterp`/`ConstantInterp` works correctly
-    # through:
-    #   * Direct `linear_interp` / `constant_interp` rrule (covered by the
-    #     existing testsets above).
-    #   * Direct `hetero_adjoint(...)` dot-product identity for mixed
-    #     PeriodicBC axes (covered in `test_hetero_adjoint.jl`).
-    # Wiring the unified API rrule path requires a separate effort.
+    @testset "Unified API one-shot ∂/∂data — homogeneous Linear+PeriodicBC (batch)" begin
+        nx, ny = 10, 8
+        n_query = 25
+        x = collect(range(0.0, 1.0, nx))
+        y_grid = collect(range(0.0, 1.0, ny))
+        data = [sin(2π * xi) + cos(2π * yj) for xi in x, yj in y_grid]
+        xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        bc = PeriodicBC()
+        methods = (LinearInterp(bc = bc), LinearInterp(bc = bc))
+
+        g_zy = Zygote.gradient(
+            d -> sum(interp((x, y_grid), d, (xq, yq); method = methods)), data
+        )[1]
+        # Reference via direct `linear_adjoint` (same shape, same bc tuple).
+        adj_ref = linear_adjoint((x, y_grid), (xq, yq); bc = (bc, bc))
+        g_ref = adj_ref(ones(n_query))
+
+        @test size(g_zy) == (nx, ny)
+        @test g_zy ≈ g_ref atol = 1.0e-10
+    end
+
+    @testset "Unified API one-shot ∂/∂data — heterogeneous Linear+Cubic (batch)" begin
+        nx, ny = 12, 10
+        n_query = 20
+        # `:exclusive` requires n distinct samples on [first, first+period) —
+        # i.e. last(x) < first(x) + period. Build x with `step=period/nx` so
+        # x[end] = (nx-1) * period/nx < period.
+        x = collect(range(0.0, step = 2π / nx, length = nx))
+        y_grid = collect(range(0.0, 1.0, ny))
+        data = [sin(xi) * yj for xi in x, yj in y_grid]
+        xq = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+        yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        methods = (
+            LinearInterp(bc = PeriodicBC(endpoint = :exclusive, period = 2π)),
+            CubicInterp(),
+        )
+
+        g_zy = Zygote.gradient(
+            d -> sum(interp((x, y_grid), d, (xq, yq); method = methods)), data
+        )[1]
+        adj_ref = hetero_adjoint((x, y_grid), (xq, yq); methods = methods)
+        g_ref = adj_ref(ones(n_query))
+
+        @test size(g_zy) == (nx, ny)
+        @test g_zy ≈ g_ref atol = 1.0e-10
+    end
+
+    @testset "Unified API one-shot ∂/∂data — single-point tuple query" begin
+        nx, ny = 10, 8
+        x = collect(range(0.0, 1.0, nx))
+        y_grid = collect(range(0.0, 1.0, ny))
+        data = [sin(2π * xi) + cos(2π * yj) for xi in x, yj in y_grid]
+        bc = PeriodicBC()
+        methods = (LinearInterp(bc = bc), LinearInterp(bc = bc))
+
+        g_zy = Zygote.gradient(d -> interp((x, y_grid), d, (0.35, 0.7); method = methods), data)[1]
+        adj_ref = linear_adjoint((x, y_grid), ([0.35], [0.7]); bc = (bc, bc))
+        g_ref = adj_ref(ones(1))
+
+        @test size(g_zy) == (nx, ny)
+        @test g_zy ≈ g_ref atol = 1.0e-10
+    end
 
 end  # testset "Zygote AD Support"

@@ -739,7 +739,7 @@ end
 # Coverage: phs_eval.jl missed lines — Batch 1
 # ======================================================
 
-@testitem "PHS eval — non-uniform grid (VectorSpacing binary search, lines 38-44)" begin
+@testitem "PHS eval — non-uniform grid (VectorSpacing binary search)" begin
     # A Vector grid creates VectorSpacing which triggers the O(log n) binary
     # search path in _phs_find_base_node instead of the O(1) ScalarSpacing formula.
     x = collect(range(0.0, 2π, 20))  # Vector{Float64} → VectorSpacing
@@ -753,7 +753,7 @@ end
     @test itp((1.5,); deriv = (DerivOp{1}(),)) ≈ cos(1.5) atol = 0.1
 end
 
-@testitem "PHS eval — d≈0 branches at grid node, no log-transform (lines 586-588, 652-655, 174-210, 455-467)" begin
+@testitem "PHS eval — d≈0 branches at grid node, no log-transform" begin
     # Querying at EXACTLY a grid node makes d_dist = 0 for the base node,
     # forcing the blend loop into the d≈0 else-branch.
     #   • First derivative  → lines 586-588 in _phs_eval_blended
@@ -785,7 +785,7 @@ end
     @test isfinite(d2xy)
 end
 
-@testitem "PHS log-transform — second derivatives diagonal and off-diagonal (lines 789-874, 913-929)" begin
+@testitem "PHS log-transform — second derivatives diagonal and off-diagonal" begin
     # Exercises the entire second-derivative branch of _phs_eval_blended_G
     # (lines 789-874) and _phs_eval_with_transform (lines 913-929).
     x = range(0.2, Float64(π), 20)
@@ -810,7 +810,7 @@ end
     @test d2xy ≈ d2xy_fd atol = 1e-3
 end
 
-@testitem "PHS log-transform — d≈0 at grid node (lines 774-777, 850-857, 132-156, 455-457)" begin
+@testitem "PHS log-transform — d≈0 at grid node" begin
     # Querying at a grid node with a log-transform interpolant:
     #   • First derivative  → d≈0 in _phs_eval_blended_G, lines 774-777
     #   • Second derivative → d≈0 in _phs_eval_blended_G, lines 850-857
@@ -841,7 +841,7 @@ end
     @test isfinite(d2xy)
 end
 
-@testitem "PHS eval — dead-code _phs_eval_coeffs_value_and_two_deriv1 + total_deriv≥3 fallbacks (lines 292-353, 455-470, 674, 874, 929-932)" begin
+@testitem "PHS eval — dead-code _phs_eval_coeffs_value_and_two_deriv1 + total_deriv≥3 fallbacks" begin
     # ── Setup: build a 2D interpolant and extract a solved stencil ──────────
     x = range(0.0, 2π, 15)
     y = range(0.0, 2π, 15)

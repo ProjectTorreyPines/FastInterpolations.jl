@@ -1005,7 +1005,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                 wp_dir = (wp / d_dist) * (Tg(query[grad_ax]) - nb_coords[grad_ax])
                 sum_w  += w
                 sum_wg += w * g
-                sum_N1 += wp_dir * g + w * g * f_ξ
+                sum_N1 += g * (wp_dir + w * f_ξ)
                 sum_W1 += wp_dir
             else
                 f = Tv(_phs_eval_coeffs_value(coeff_nb, phys_offsets, query, nb_coords, Val{K}()))
@@ -1241,7 +1241,7 @@ end
             wp_dir = (wp / d_dist) * (Tg(query[grad_ax]) - nb_coords[grad_ax])
             sum_w  += w
             sum_wg += w * g
-            sum_N1 += wp_dir * g + w * g * f_ξ
+            sum_N1 += g * (wp_dir + w * f_ξ)
             sum_W1 += wp_dir
         else
             f = Tv(_phs_eval_coeffs_value(coeff_nb, phys_offsets, query, nb_coords, Val{K}()))

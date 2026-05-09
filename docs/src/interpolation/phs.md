@@ -152,13 +152,6 @@ cd scripts/
 julia --project=. phs_density_comparison.jl
 ```
 
-This generates `phs_density_comparison.png` and demonstrates:
-- Loading XYZ atomic geometry
-- Building PromolecularRef from critic2 PBE wavefunctions
-- Constructing PHS interpolant with log-transform
-- Evaluating density, gradient, Laplacian analytically
-- Batch evaluation for performance
-
 To get timings that don't include JIT compilation and stencil caching, run the script twice:
 
 ```bash
@@ -166,9 +159,17 @@ cd scripts/
 julia --project=. -e 'include("phs_density_comparison.jl"); include("phs_density_comparison.jl")'
 ```
 
+This generates `phs_density_comparison.png` and demonstrates:
+
+- Loading XYZ atomic geometry
+- Building PromolecularRef from critic2 PBE wavefunctions
+- Constructing PHS interpolant with log-transform
+- Evaluating density, gradient, Laplacian analytically
+- Batch evaluation for performance
+
 ### Error Statistics (with method-to-PHS ratios) for phenol dimer example
 
-#### Charge Density (ρ)
+#### Charge Density (ρ) — Relative Error Statistics (with method-to-PHS ratios)
 
 | Method | Min Error | Max Error | Mean Error | Median Error |
 |--------|-----------|-----------|------------|--------------|
@@ -178,7 +179,7 @@ julia --project=. -e 'include("phs_density_comparison.jl"); include("phs_density
 | Cardinal           | 2.29e-05 (1546×) | 9.21e-01 (1×) | 9.65e-02 (24×) | 3.47e-03 (22×) |
 | PHS                | 1.48e-08 | 1.00e+00 | 4.06e-03 | 1.61e-04 |
 
-#### Gradient Magnitude (|∇ρ|)
+#### Gradient Magnitude (|∇ρ|) — Relative Error Statistics (with method-to-PHS ratios)
 
 | Method | Min Error | Max Error | Mean Error | Median Error |
 |--------|-----------|-----------|------------|--------------|
@@ -187,7 +188,7 @@ julia --project=. -e 'include("phs_density_comparison.jl"); include("phs_density
 | Cardinal           | 1.83e-04 (238×) | 2.52e+00 (3×) | 2.48e-01 (21×) | 3.23e-02 (29×) |
 | PHS                | 7.68e-07 | 1.00e+00 | 1.17e-02 | 1.11e-03 |
 
-#### Laplacian Magnitude (|∇²ρ|)
+#### Laplacian Magnitude (|∇²ρ|) — Relative Error Statistics (with method-to-PHS ratios)
 
 | Method | Min Error | Max Error | Mean Error | Median Error |
 |--------|-----------|-----------|------------|--------------|
@@ -201,33 +202,34 @@ The build time was for a 75×113×70 grid, and evaluation times were for 1000 qu
 
 | Method | Build (s) | ρ Time (s) | \|∇ρ\| Time (s) | \|∇²ρ\| Time (s) |
 |--------|-----------|------------|----------------|-----------------|
-| Nearest            | 0.00732 (45.3×) |  0.00015 (96.7×) |                  — |                    — |
-| Linear             | 0.00008 (4354.7×) | 0.00014 (101.4×) |   0.00021 (493.6×) |                    — |
-| Cubic              | 0.02202 (15.1×) | 0.00011 (127.6×) |   0.00014 (735.9×) |     0.00015 (973.1×) |
-| Cardinal           | 0.00010 (3332.5×) |  0.00022 (65.1×) |   0.00048 (213.6×) |     0.00051 (293.8×) |
-| PHS                |           0.332 |            0.014 |              0.103 |                0.150 |
+| Nearest            | 0.00038 (771.4×) |  0.00011 (77.6×) |                  — |                    — |
+| Linear             | 0.00028 (1040.4×) |  0.00010 (84.7×) |   0.00019 (169.6×) |                    — |
+| Cubic              |  0.03821 (7.6×) |  0.00010 (89.8×) |   0.00014 (233.2×) |     0.00013 (322.4×) |
+| Cardinal           | 0.00011 (2599.7×) |  0.00020 (44.2×) |    0.00046 (69.0×) |      0.00045 (93.5×) |
+| PHS                |           0.290 |           0.0088 |             0.0319 |               0.0421 |
+
+### Detailed timings (with allocation information)
 
 ```text
 Evaluating along path (1000 points)...
-  Warming up PHS (JIT + stencil cache) ... done.
   Density (ρ):
-    Nearest ...  0.000029 seconds (8 allocations:  336 bytes)
-    Linear ...   0.000029 seconds (8 allocations:  336 bytes)
-    Cubic ...    0.000032 seconds (8 allocations:  336 bytes)
-    Cardinal ... 0.000147 seconds (45 allocations: 9.000 KiB)
-    PHS ...      0.013984 seconds
+    Nearest ...   0.000020 seconds (8 allocations: 336 bytes)
+    Linear ...    0.000024 seconds (8 allocations: 336 bytes)
+    Cubic ...     0.000038 seconds (8 allocations: 336 bytes)
+    Cardinal ...  0.000132 seconds (45 allocations: 9.000 KiB)
+    PHS ...       0.008705 seconds (0 allocations: 0 bytes)
   Gradient Magnitude (|∇ρ|):
-    Linear ...   0.000139 seconds (37 allocations:     1.406 KiB)
-    Cubic ...    0.000072 seconds (31 allocations:     1.109 KiB)
-    Cardinal ... 0.000373 seconds (142 allocations:    27.125 KiB)
-    PHS ...      0.102826 seconds (6.01 k allocations: 156.375 KiB)
+    Linear ...    0.000127 seconds (37 allocations: 1.406 KiB)
+    Cubic ...     0.000068 seconds (31 allocations: 1.109 KiB)
+    Cardinal ...  0.000391 seconds (142 allocations: 27.125 KiB)
+    PHS ...       0.031830 seconds (7 allocations: 128 bytes)
   Laplacian Magnitude (|∇²ρ|):
-    Cubic ...    0.000074 seconds (31 allocations:     1.312 KiB)
-    Cardinal ... 0.000416 seconds (136 allocations:    27.031 KiB)
-    PHS ...      0.149576 seconds (6.00 k allocations: 156.281 KiB)
+    Cubic ...     0.000067 seconds (31 allocations: 1.312 KiB)
+    Cardinal ...  0.000381 seconds (136 allocations: 27.031 KiB)
+    PHS ...       0.042030 seconds (1 allocation: 32 bytes)
 ```
 
-*PHS is significantly more expensive to build and evaluate than standard methods, but achieves much higher accuracy, especially for derivatives. Not "no" allocations, but constant allocations.*
+*PHS is more expensive to build and evaluate than standard methods, but achieves much higher accuracy, especially for derivatives.*
 
 ## References
 

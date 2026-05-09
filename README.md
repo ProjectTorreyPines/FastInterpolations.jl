@@ -272,6 +272,8 @@ While PHS shares the core philosophy of FastInterpolations.jl (zero-allocation, 
 
 These differences reflect the mathematical nature of polyharmonic splines rather than limitations. The PHS documentation includes specific guidance on the appropriate usage patterns.
 
+See [Polyharmonic Splines documentation](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/phs/) for more details.
+
 ## Documentation
 
 For detailed guides on boundary conditions, extrapolation, and performance tuning, visit the [Documentation](https://projecttorreypines.github.io/FastInterpolations.jl).

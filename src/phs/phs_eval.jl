@@ -414,9 +414,9 @@ end
                 ci_r = ci * r
                 ci_3r = 3 * ci_r
                 yv  += ci_r * r2
-                yd1 += ci_3r * xh[ax1]
-                factor = xh[ax1] * xh[ax1] * r2_inv
-                yd2 += ci_3r * (one(Tg) + factor)
+                ci_3r_xh = ci_3r * xh[ax1]
+                yd1 += ci_3r_xh
+                yd2 += ci_3r + ci_3r_xh * xh[ax1] * r2_inv
             end
         else
             @fastmath @inbounds @simd for i in 1:ns
@@ -428,9 +428,9 @@ end
                 ci_r = ci * r
                 ci_3r = 3 * ci_r
                 yv  += ci_r * r2
-                yd1 += ci_3r * xh[ax1]
-                factor = xh[ax1] * xh[ax2] * r2_inv
-                yd2 += ci_3r * factor
+                ci_3r_xh = ci_3r * xh[ax1]
+                yd1 += ci_3r_xh
+                yd2 += ci_3r_xh * xh[ax2] * r2_inv
             end
         end
     else

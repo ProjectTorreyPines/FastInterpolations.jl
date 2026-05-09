@@ -213,20 +213,20 @@ The build time was for a 75×113×70 grid, and evaluation times were for 1000 qu
 ```text
 Evaluating along path (1000 points)...
   Density (ρ):
-    Nearest ...   0.000020 seconds (8 allocations: 336 bytes)
-    Linear ...    0.000024 seconds (8 allocations: 336 bytes)
-    Cubic ...     0.000038 seconds (8 allocations: 336 bytes)
-    Cardinal ...  0.000132 seconds (45 allocations: 9.000 KiB)
-    PHS ...       0.008705 seconds (0 allocations: 0 bytes)
+    Nearest ...   0.000011 seconds (0 allocations)
+    Linear ...    0.000013 seconds (0 allocations)
+    Cubic ...     0.000021 seconds (0 allocations)
+    Cardinal ...  0.000116 seconds (0 allocations)
+    PHS ...       0.009040 seconds (0 allocations)
   Gradient Magnitude (|∇ρ|):
-    Linear ...    0.000127 seconds (37 allocations: 1.406 KiB)
-    Cubic ...     0.000068 seconds (31 allocations: 1.109 KiB)
-    Cardinal ...  0.000391 seconds (142 allocations: 27.125 KiB)
-    PHS ...       0.031830 seconds (7 allocations: 128 bytes)
+    Linear ...    0.000111 seconds (13 allocations: 432 bytes)
+    Cubic ...     0.000052 seconds (7 allocations: 128 bytes)
+    Cardinal ...  0.000350 seconds (7 allocations: 128 bytes)
+    PHS ...       0.032212 seconds (7 allocations: 128 bytes)
   Laplacian Magnitude (|∇²ρ|):
-    Cubic ...     0.000067 seconds (31 allocations: 1.312 KiB)
-    Cardinal ...  0.000381 seconds (136 allocations: 27.031 KiB)
-    PHS ...       0.042030 seconds (1 allocation: 32 bytes)
+    Cubic ...     0.000060 seconds (7 allocations: 336 bytes)
+    Cardinal ...  0.000335 seconds (1 allocation: 32 bytes)
+    PHS ...       0.042326 seconds (1 allocation: 32 bytes)
 ```
 
 *PHS is more expensive to build and evaluate than standard methods, but achieves much higher accuracy, especially for derivatives.*

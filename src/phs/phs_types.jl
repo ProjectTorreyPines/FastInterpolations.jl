@@ -111,13 +111,11 @@ struct PHSInterpolantND{
         N,
         K,
         G <: Tuple{Vararg{AbstractVector, N}},
-        S <: Tuple{Vararg{AbstractGridSpacing, N}},
         T,   # Nothing or PHSLogTransform
         E <: Tuple{Vararg{AbstractExtrap, N}},
         P <: Tuple{Vararg{AbstractSearchPolicy, N}},
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    spacings::S
     data::Array{Tv, N}
     stencil_offsets::Vector{NTuple{N, Int}}   # canonical stencil (stencil_size^N offsets)
     stencil_phys_offsets::Vector{NTuple{N, Tg}} # precomputed physical coordinate offsets

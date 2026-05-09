@@ -277,7 +277,6 @@ Returns:
 """
 function _phs_build_stencil(
         grids::NTuple{N, AbstractVector{Tg}},
-        spacings::NTuple{N, <:AbstractGridSpacing},
         stencil_size::Int,
         degree::Int,
     ) where {N, Tg}

@@ -745,7 +745,7 @@ end
     x = collect(range(0.0, 2π, 20))  # Vector{Float64} → VectorSpacing
     data = sin.(x)
     itp = phs_interp((x,), data; stencil_size = 7, degree = 3)
-    @test itp.spacings[1] isa FastInterpolations.VectorSpacing  # ensure binary search path
+    @test itp.grids[1] isa FastInterpolations._CachedVector  # ensure binary search path
     for qx in [0.3, 1.0, 2.0, 4.0, 5.8]
         @test itp((qx,)) ≈ sin(qx) atol = 0.01
     end

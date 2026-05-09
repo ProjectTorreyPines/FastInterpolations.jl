@@ -6,7 +6,7 @@
 # Helper: compute blend_a and blend_r_idx
 # ======================================================
 
-function _phs_blend_params(grids, spacings, blend_factor::Real)
+function _phs_blend_params(grids, blend_factor::Real)
     N = length(grids)
     Tg = eltype(first(grids))
     # Maximum h per axis
@@ -106,15 +106,15 @@ function phs_interp(
     grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
-    spacings = _create_spacings_typed(grids_typed)
+    grids_c = map(g -> _convert_copy(_cache_axis(g, NoBC(), Tg), Tg), grids_typed)
     searches = _resolve_search_nd(search, Val(N))
     extrap_vals = _resolve_extrap(extrap, ntuple(_ -> NoBC(), N), Val(N), Tv)
 
-    blend_a, blend_r_idx = _phs_blend_params(grids_typed, spacings, blend_factor)
+    blend_a, blend_r_idx = _phs_blend_params(grids_c, blend_factor)
 
     # Build single canonical stencil + boundary shift cache
     stencil_offsets, phi_inv, hs, stencil_lo, stencil_hi, shift_cache =
-        _phs_build_stencil(grids_typed, spacings, stencil_size, degree)
+        _phs_build_stencil(grids_c, stencil_size, degree)
 
     stencil_phys_offsets = [ntuple(d -> Tg(off[d]) * hs[d], Val(N)) for off in stencil_offsets]
 
@@ -132,7 +132,7 @@ function phs_interp(
             Tv.(reference_data)
         else
             # Evaluate reference_interp at each grid node (may be slow for nested PHS)
-            Tv[reference_interp(ntuple(d -> grids_typed[d][idx[d]], N)) for idx in CartesianIndices(size(data_typed))]
+            Tv[reference_interp(ntuple(d -> grids_c[d][idx[d]], N)) for idx in CartesianIndices(size(data_typed))]
         end
         log_data = Array{Tv}(log.(data_typed ./ rho0_nodes))
         PHSLogTransform{N, typeof(reference_interp)}(reference_interp), log_data
@@ -143,9 +143,9 @@ function phs_interp(
     coeff_caches = Dict{NTuple{N, Int}, Vector{Tg}}[Dict{NTuple{N, Int}, Vector{Tg}}() for _ in 1:Threads.maxthreadid()]
     return PHSInterpolantND{
         Tg, Tv, N, degree,
-        typeof(grids_typed), typeof(spacings), typeof(transform), typeof(extrap_vals), typeof(searches),
+        typeof(grids_c), typeof(transform), typeof(extrap_vals), typeof(searches),
     }(
-        grids_typed, spacings, data_store,
+        grids_c, data_store,
         stencil_offsets, stencil_phys_offsets, phi_inv, stencil_lo, stencil_hi, shift_cache, hs,
         blend_a, blend_a3, blend_r_idx,
         transform, extrap_vals, searches, coeff_caches

@@ -61,10 +61,9 @@ O(1) per axis for uniform (ScalarSpacing) grids; O(log n) for non-uniform.
     return ntuple(N) do d
         grid = itp.grids[d]
         n = length(grid)
-        sp = itp.spacings[d]
         qd = Tg(query[d])
-        if sp isa ScalarSpacing
-            idx = round(Int, (qd - grid[1]) * sp.inv_h + 1)
+        if grid isa _CachedRange
+            idx = round(Int, (qd - grid.lo) * grid.inv_h + 1)
         else
             # Binary search for nearest
             lo, hi = 1, n

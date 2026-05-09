@@ -533,6 +533,39 @@ itp_phs(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
 itp_phs(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
 println("done.")
 
+# Warm up other interpolants for fair comparison
+print("  Warming up other interpolants (JIT + stencil cache) ... ")
+flush(stdout)
+itp_nearest(ρ_nearest,  queries)                                    # value → compile + cache fill
+itp_linear(ρ_linear,    queries)                                    # value → compile + cache fill
+itp_cubic(ρ_cubic,      queries)                                    # value → compile + cache fill
+itp_cardinal(ρ_cardinal, queries)                                    # value → compile + cache fill
+itp_nearest(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
+itp_nearest(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
+itp_nearest(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
+itp_nearest(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
+itp_nearest(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
+itp_nearest(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
+itp_linear(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
+itp_linear(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
+itp_linear(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
+itp_linear(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
+itp_linear(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
+itp_linear(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
+itp_cubic(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
+itp_cubic(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
+itp_cubic(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
+itp_cubic(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
+itp_cubic(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
+itp_cubic(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
+itp_cardinal(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
+itp_cardinal(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
+itp_cardinal(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
+itp_cardinal(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
+itp_cardinal(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
+itp_cardinal(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
+println("done.")
+
 # ── density ρ ──────────────────────────────────────────────────────────────────
 println("  Density (ρ):")
 eval_times["ρ"] = Dict()

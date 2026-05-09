@@ -5,14 +5,13 @@ using LinearAlgebra
 
 f_point(xi, yi) = sin(2π * xi) * cos(2π * yi)
 
-function plot_comparison(xs, ys; phs_stencil_size = 5)
+function plot_comparison(xs, ys)
     f_test(x, y) = [f_point(xi, yj) for xi in x, yj in y]
 
     itp_constant = constant_interp((xs, ys), f_test(xs, ys))
     itp_linear = linear_interp((xs, ys), f_test(xs, ys))
-    itp_cubic_periodic = cubic_interp((xs, ys), f_test(xs, ys); bc = (PeriodicBC(), PeriodicBC()))
-    itp_cubic_natural = cubic_interp((xs, ys), f_test(xs, ys))
-    itp_phs = phs_interp((xs, ys), f_test(xs, ys); stencil_size = phs_stencil_size, degree = 3, blend_factor = 1.3)
+    itp_cubic = cubic_interp((xs, ys), f_test(xs, ys); bc = (PeriodicBC(), PeriodicBC()))
+    # itp_cubic = cubic_interp((xs, ys), f_test(xs, ys))
 
     # High-res grid for ground truth
     x_hi = collect(range(minimum(xs), maximum(xs), length = 400))
@@ -28,7 +27,7 @@ function plot_comparison(xs, ys; phs_stencil_size = 5)
         xlims = extrema(xs), ylims = extrema(ys), titlefont = (14, "Helvetica Bold"), topmargin = 9Plots.px, legend = false,
     )
 
-    itp_plot_kwargs = (node_color = :black, node_size = 6, node_alpha = 0.4, gridline_color = :black, gridline_alpha = 0.3)
+    itp_plot_kwargs = (node_color = :black, node_size = 6, node_alpha = 0.4, gridline_alpha = 0.3)
 
     # Calculate Error
     function measure_error_string(itp)
@@ -36,56 +35,22 @@ function plot_comparison(xs, ys; phs_stencil_size = 5)
         return @sprintf("%.1f %%", 100 * (norm(z_interp .- z_hi) / norm(z_hi)))
     end
 
-    function phs_heatmap(itp)
-        z_interp = [itp((xi, yi)) for xi in x_hi, yi in y_hi]
-        p = heatmap(x_hi, y_hi, z_interp';
-            title = "PHS Interpolation\n (Error≈$(measure_error_string(itp)))",
-            kwargs...)
-        # Gridlines
-        for yj in ys
-            plot!(p, [xs[1], xs[end]], [yj, yj];
-                color = :black, alpha = itp_plot_kwargs.gridline_alpha,
-                linestyle = :dot, linewidth = 1, label = false)
-        end
-        for xi in xs
-            plot!(p, [xi, xi], [ys[1], ys[end]];
-                color = :black, alpha = itp_plot_kwargs.gridline_alpha,
-                linestyle = :dot, linewidth = 1, label = false)
-        end
-        # Nodes
-        xs_nodes = [x for x in xs for _ in ys]
-        ys_nodes = [y for _ in xs for y in ys]
-        scatter!(p, xs_nodes, ys_nodes;
-            color = itp_plot_kwargs.node_color,
-            ms    = itp_plot_kwargs.node_size,
-            alpha = itp_plot_kwargs.node_alpha,
-            label = false)
-        p
-    end
 
     # Create plots
     p1 = heatmap(x_hi, y_hi, z_hi', title = "Ground Truth"; kwargs..., titlefont = (17, "Helvetica Bold"))
     p2 = plot(itp_constant; title = "Constant Interpolation\n (Error≈$(measure_error_string(itp_constant)))", kwargs..., itp_plot_kwargs...)
     p3 = plot(itp_linear; title = "Linear Interpolation\n (Error≈$(measure_error_string(itp_linear)))", kwargs..., itp_plot_kwargs...)
-    p4 = plot(itp_cubic_periodic; title = "Cubic (Periodic BC)\n (Error≈$(measure_error_string(itp_cubic_periodic)))", kwargs..., itp_plot_kwargs...)
-    p5 = plot(itp_cubic_natural; title = "Cubic (Natural BC)\n (Error≈$(measure_error_string(itp_cubic_natural)))", kwargs..., itp_plot_kwargs...)
-    p6 = plot(itp_phs; title = "PHS Interpolation\n (Error≈$(measure_error_string(itp_phs)))", kwargs..., itp_plot_kwargs...)
+    p4 = plot(itp_cubic; title = "Cubic Interpolation\n (Error≈$(measure_error_string(itp_cubic)))", kwargs..., itp_plot_kwargs...)
 
-    return plot(p1, p2, p3, p4, p5, p6, layout = (2, 3), size = (1200, 800), dpi = 200)
+    return plot(p1, p2, p3, p4, layout = (2, 2), size = (800, 800), dpi = 200)
 end
 
 
-# Irregular grid (original hard-coded points)
-x_irreg = [0, 0.1, 0.4, 0.5, 0.82, 1.0]
-y_irreg = [0, 0.1, 0.2, 0.5, 0.8, 0.9, 1.0]
-p_irreg = plot_comparison(x_irreg, y_irreg; phs_stencil_size = 4)
-savefig(p_irreg, "$(pkgdir(FastInterpolations))/docs/images/readme_2d_comparison.png")
+x_test = [0, 0.1, 0.4, 0.5, 0.82, 1.0]
+y_test = [0, 0.1, 0.2, 0.5, 0.8, 0.9, 1.0]
+p = plot_comparison(x_test, y_test)
 
-# Regular grid
-x_reg = collect(range(0.0, 1.0, 6))
-y_reg = collect(range(0.0, 1.0, 6))
-p_reg = plot_comparison(x_reg, y_reg; phs_stencil_size = 4)
-savefig(p_reg, "$(pkgdir(FastInterpolations))/docs/images/readme_2d_comparison_regular.png")
+savefig(p, "$(pkgdir(FastInterpolations))/docs/images/readme_2d_comparison.png")
 
 
 # function chebyshev_nodes(n, a=0.0, b=1.0)

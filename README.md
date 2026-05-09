@@ -164,10 +164,6 @@ Comparison on a non-uniform 2D rectilinear grid for $f(x, y) = \sin(2\pi x) \cos
 
 ![2D Interpolation Example non-uniform](docs/images/readme_2d_comparison.png)
 
-Another comparison with the same function, but on a uniform 2D 6x6 grid. The uniform grid allows the cubic spline to achieve even higher accuracy, closely matching the true function values across the domain.
-
-![2D Interpolation Example uniform](docs/images/readme_2d_comparison_regular.png)
-
 
 
 ## Performance

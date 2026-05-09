@@ -594,10 +594,10 @@ end
             ci_r = ci * r
             ci_3r = 3 * ci_r
             yv   += ci_r * r2
-            yd1  += ci_3r * xh[ax1]
+            ci_3r_xh1 = ci_3r * xh[ax1]
+            yd1  += ci_3r_xh1
             yd2  += ci_3r * xh[ax2]
-            factor = xh[ax1] * xh[ax2] * r2_inv
-            yd12 += ci_3r * factor
+            yd12 += ci_3r_xh1 * xh[ax2] * r2_inv
         end
     else
         eps2 = eps(Tg)^2

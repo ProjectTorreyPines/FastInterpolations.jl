@@ -1002,11 +1002,11 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
                 f, f_ξ = _phs_eval_coeffs_value_and_deriv1(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val(grad_ax))
                 f = Tv(f); f_ξ = Tv(f_ξ)
                 g  = exp(f)
-                dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
+                wp_dir = (wp / d_dist) * (Tg(query[grad_ax]) - nb_coords[grad_ax])
                 sum_w  += w
                 sum_wg += w * g
-                sum_N1 += wp * dir * g + w * g * f_ξ
-                sum_W1 += wp * dir
+                sum_N1 += wp_dir * g + w * g * f_ξ
+                sum_W1 += wp_dir
             else
                 f = Tv(_phs_eval_coeffs_value(coeff_nb, phys_offsets, query, nb_coords, Val{K}()))
                 g = exp(f)
@@ -1238,11 +1238,11 @@ end
             f, f_ξ = _phs_eval_coeffs_value_and_deriv1(coeff_nb, phys_offsets, query, nb_coords, Val{K}(), Val{grad_ax}())
             f = Tv(f); f_ξ = Tv(f_ξ)
             g   = exp(f)
-            dir = (Tg(query[grad_ax]) - nb_coords[grad_ax]) / d_dist
+            wp_dir = (wp / d_dist) * (Tg(query[grad_ax]) - nb_coords[grad_ax])
             sum_w  += w
             sum_wg += w * g
-            sum_N1 += wp * dir * g + w * g * f_ξ
-            sum_W1 += wp * dir
+            sum_N1 += wp_dir * g + w * g * f_ξ
+            sum_W1 += wp_dir
         else
             f = Tv(_phs_eval_coeffs_value(coeff_nb, phys_offsets, query, nb_coords, Val{K}()))
             g = exp(f)

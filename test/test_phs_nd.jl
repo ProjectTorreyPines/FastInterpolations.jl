@@ -1009,4 +1009,79 @@ end
     @test itp_custom((1.5, 1.5)) > 0.0
     @test isfinite(itp_custom((1.5, 1.5); deriv = (DerivOp{1}(), EvalValue())))
     @test FastInterpolations._phs_eval_ref_deriv1(ref_obj, (1.5, 1.5), 1, Val(2), Float64) == 0.0
+
+    # 5. _phs_eval_coeffs_value_and_deriv1_and_deriv2 with K != 3 and ax1 != ax2
+    v_k5, d1_k5, d2_k5 = FastInterpolations._phs_eval_coeffs_value_and_deriv1_and_deriv2(
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{5}(), 1, 2
+    )
+    @test isfinite(v_k5) && isfinite(d1_k5) && isfinite(d2_k5)
+
+    # 6. _phs_get_deriv1_axis_val fallback
+    @test FastInterpolations._phs_get_deriv1_axis_val(Tuple{EvalValue, EvalValue}) == Val{1}()
 end
+
+@testitem "PHS eval — additional LocalCoverage gaps" begin
+    # Setup standard 2D PHS interpolant (K=3) and some coordinates/buffers
+    x = range(0.0, 2π, 15)
+    y = range(0.0, 2π, 15)
+    data = [2.0 + sin(xi) * cos(yj) for xi in x, yj in y]
+    itp = phs_interp((x, y), data; stencil_size = 5, degree = 3)
+    qx, qy = 1.5, 1.0
+    query = (qx, qy)
+    base_idx = FastInterpolations._phs_find_base_node(itp, query)
+    base_coords = FastInterpolations._phs_base_coords(itp, base_idx)
+    
+    M = size(itp.phi_inv, 1)
+    rhs_buf = zeros(eltype(itp.hs[1]), M)
+    coeff_buf = zeros(eltype(itp.hs[1]), M)
+    offsets, phys_offsets, coeffs, hs = FastInterpolations._phs_solve_stencil!(itp, base_idx, rhs_buf, coeff_buf)
+    Δx = ntuple(d -> Float64(query[d]) - base_coords[d], Val(2))
+    poly_exps = FastInterpolations._phs_poly_exps_tuple(Val(2), Val(3))
+    ns = length(phys_offsets)
+
+    # 1. phs_eval.jl: lines 311-319 (_phs_eval_coeffs_value_and_deriv1 with Int axis)
+    v1, d1 = FastInterpolations._phs_eval_coeffs_value_and_deriv1(
+        coeffs, phys_offsets, query, base_coords, Val{3}(), 1
+    )
+    @test isfinite(v1) && isfinite(d1)
+
+    # 2. phs_eval.jl: lines 556-565 (_phs_eval_coeffs_value_and_two_deriv1_and_deriv2 with Int axes)
+    v2, d2a, d2b, d2ab = FastInterpolations._phs_eval_coeffs_value_and_two_deriv1_and_deriv2(
+        coeffs, phys_offsets, query, base_coords, Val{3}(), 1, 2
+    )
+    @test isfinite(v2) && isfinite(d2a) && isfinite(d2b) && isfinite(d2ab)
+
+    # 3. phs_eval.jl: lines 1175-1181 (_phs_get_deriv1_axis)
+    # Using a Tuple type with DerivOp{1} at index 2
+    T_ops = Tuple{EvalValue, DerivOp{1}}
+    @test FastInterpolations._phs_get_deriv1_axis(T_ops) == 2
+    # Fallback path (no DerivOp{1} in Tuple)
+    @test FastInterpolations._phs_get_deriv1_axis(Tuple{EvalValue, EvalValue}) == 1
+
+    # 4. phs_eval.jl: lines 1193-1210 (_phs_get_deriv2_axes)
+    # Case with DerivOp{1} at indices 1 and 2
+    @test FastInterpolations._phs_get_deriv2_axes(Tuple{DerivOp{1}, DerivOp{1}}) == (1, 2)
+    # Case with DerivOp{2} at index 1
+    @test FastInterpolations._phs_get_deriv2_axes(Tuple{DerivOp{2}, EvalValue}) == (1, 1)
+
+    # 5. phs_eval.jl: lines 1238-1243 (_phs_eval_blended_G_with_grad with Int grad_ax)
+    g_val, g_deriv = FastInterpolations._phs_eval_blended_G_with_grad(itp, query, 1)
+    @test isfinite(g_val) && isfinite(g_deriv)
+
+    # 6. phs_eval.jl: lines 1316-1322 (_phs_eval_blended_G_with_hess with Int axes)
+    gh, gh_d1, gh_d2, gh_d12 = FastInterpolations._phs_eval_blended_G_with_hess(itp, query, 1, 2)
+    @test isfinite(gh) && isfinite(gh_d1) && isfinite(gh_d2) && isfinite(gh_d12)
+
+    # 7. phs_kernels.jl: lines 379-386 (_phs_eval_poly_deriv1 with Int axis)
+    p_d1 = FastInterpolations._phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, 1)
+    @test isfinite(p_d1)
+
+    # 8. phs_kernels.jl: lines 415-423 (_phs_eval_poly_deriv2 with Int axes)
+    p_d2 = FastInterpolations._phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, 1, 2)
+    @test isfinite(p_d2)
+
+    # 9. phs_kernels.jl: lines 469-476 (_phs_diff generated function)
+    diff_res = FastInterpolations._phs_diff(query, base_coords, (0, 0), itp.hs)
+    @test length(diff_res) == 2
+end
+

@@ -47,12 +47,12 @@ using Statistics
 # Patch Pickle.jl to support numpy._core (NumPy >= 2.0)
 # ============================================================
 Pickle.np_methods!(mt) = begin
-    mt["numpy.core.multiarray._reconstruct"]  = Pickle.np_multiarray_reconstruct
+    mt["numpy.core.multiarray._reconstruct"] = Pickle.np_multiarray_reconstruct
     mt["numpy._core.multiarray._reconstruct"] = Pickle.np_multiarray_reconstruct
-    mt["numpy.dtype"]                          = Pickle.np_dtype
-    mt["numpy.core.multiarray.scalar"]         = Pickle.np_scalar
-    mt["numpy._core.multiarray.scalar"]        = Pickle.np_scalar
-    mt["__build__.Pickle.NpyDtype"]            = Pickle.build_npydtype
+    mt["numpy.dtype"] = Pickle.np_dtype
+    mt["numpy.core.multiarray.scalar"] = Pickle.np_scalar
+    mt["numpy._core.multiarray.scalar"] = Pickle.np_scalar
+    mt["__build__.Pickle.NpyDtype"] = Pickle.build_npydtype
     mt["__build__.Pickle.NpyArrayPlaceholder"] = Pickle.build_nparray
     return mt
 end
@@ -63,28 +63,28 @@ end
 const PKL_PATH = "dat/phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_ext3.pkl"
 const CSV_PATH = "dat/phenol-dimer_B3LYP_TZ2P_GO_line_O7_H21_N1000.csv"
 const XYZ_PATH = "dat/phenol-dimer_B3LYP_TZ2P_GO_atoms.xyz"
-const WFC_DIR  = joinpath(@__DIR__, "dat", "wfc")
+const WFC_DIR = joinpath(@__DIR__, "dat", "wfc")
 const OUT_PATH = "../docs/images/phs_density_comparison.png"
 
 const BOHR2ANG = 0.529177210903   # 1 Bohr → Angstrom
 
 # ── Element symbol → atomic number (full periodic table) ──────────────────────
 const ELEMENT_Z = Dict(
-    "H"=>1,  "He"=>2, "Li"=>3,  "Be"=>4,  "B"=>5,   "C"=>6,   "N"=>7,   "O"=>8,
-    "F"=>9,  "Ne"=>10,"Na"=>11, "Mg"=>12, "Al"=>13, "Si"=>14, "P"=>15,  "S"=>16,
-    "Cl"=>17,"Ar"=>18,"K"=>19,  "Ca"=>20, "Sc"=>21, "Ti"=>22, "V"=>23,  "Cr"=>24,
-    "Mn"=>25,"Fe"=>26,"Co"=>27, "Ni"=>28, "Cu"=>29, "Zn"=>30, "Ga"=>31, "Ge"=>32,
-    "As"=>33,"Se"=>34,"Br"=>35, "Kr"=>36, "Rb"=>37, "Sr"=>38, "Y"=>39,  "Zr"=>40,
-    "Nb"=>41,"Mo"=>42,"Tc"=>43, "Ru"=>44, "Rh"=>45, "Pd"=>46, "Ag"=>47, "Cd"=>48,
-    "In"=>49,"Sn"=>50,"Sb"=>51, "Te"=>52, "I"=>53,  "Xe"=>54, "Cs"=>55, "Ba"=>56,
-    "La"=>57,"Ce"=>58,"Pr"=>59, "Nd"=>60, "Pm"=>61, "Sm"=>62, "Eu"=>63, "Gd"=>64,
-    "Tb"=>65,"Dy"=>66,"Ho"=>67, "Er"=>68, "Tm"=>69, "Yb"=>70, "Lu"=>71, "Hf"=>72,
-    "Ta"=>73,"W"=>74, "Re"=>75, "Os"=>76, "Ir"=>77, "Pt"=>78, "Au"=>79, "Hg"=>80,
-    "Tl"=>81,"Pb"=>82,"Bi"=>83, "Po"=>84, "At"=>85, "Rn"=>86, "Fr"=>87, "Ra"=>88,
-    "Ac"=>89,"Th"=>90,"Pa"=>91, "U"=>92,  "Np"=>93, "Pu"=>94, "Am"=>95, "Cm"=>96,
-    "Bk"=>97,"Cf"=>98,"Es"=>99,"Fm"=>100,"Md"=>101,"No"=>102,"Lr"=>103,
-    "Rf"=>104,"Db"=>105,"Sg"=>106,"Bh"=>107,"Hs"=>108,"Mt"=>109,"Ds"=>110,
-    "Rg"=>111,"Cn"=>112,"Nh"=>113,"Fl"=>114,"Mc"=>115,"Lv"=>116,"Ts"=>117,"Og"=>118,
+    "H" => 1, "He" => 2, "Li" => 3, "Be" => 4, "B" => 5, "C" => 6, "N" => 7, "O" => 8,
+    "F" => 9, "Ne" => 10, "Na" => 11, "Mg" => 12, "Al" => 13, "Si" => 14, "P" => 15, "S" => 16,
+    "Cl" => 17, "Ar" => 18, "K" => 19, "Ca" => 20, "Sc" => 21, "Ti" => 22, "V" => 23, "Cr" => 24,
+    "Mn" => 25, "Fe" => 26, "Co" => 27, "Ni" => 28, "Cu" => 29, "Zn" => 30, "Ga" => 31, "Ge" => 32,
+    "As" => 33, "Se" => 34, "Br" => 35, "Kr" => 36, "Rb" => 37, "Sr" => 38, "Y" => 39, "Zr" => 40,
+    "Nb" => 41, "Mo" => 42, "Tc" => 43, "Ru" => 44, "Rh" => 45, "Pd" => 46, "Ag" => 47, "Cd" => 48,
+    "In" => 49, "Sn" => 50, "Sb" => 51, "Te" => 52, "I" => 53, "Xe" => 54, "Cs" => 55, "Ba" => 56,
+    "La" => 57, "Ce" => 58, "Pr" => 59, "Nd" => 60, "Pm" => 61, "Sm" => 62, "Eu" => 63, "Gd" => 64,
+    "Tb" => 65, "Dy" => 66, "Ho" => 67, "Er" => 68, "Tm" => 69, "Yb" => 70, "Lu" => 71, "Hf" => 72,
+    "Ta" => 73, "W" => 74, "Re" => 75, "Os" => 76, "Ir" => 77, "Pt" => 78, "Au" => 79, "Hg" => 80,
+    "Tl" => 81, "Pb" => 82, "Bi" => 83, "Po" => 84, "At" => 85, "Rn" => 86, "Fr" => 87, "Ra" => 88,
+    "Ac" => 89, "Th" => 90, "Pa" => 91, "U" => 92, "Np" => 93, "Pu" => 94, "Am" => 95, "Cm" => 96,
+    "Bk" => 97, "Cf" => 98, "Es" => 99, "Fm" => 100, "Md" => 101, "No" => 102, "Lr" => 103,
+    "Rf" => 104, "Db" => 105, "Sg" => 106, "Bh" => 107, "Hs" => 108, "Mt" => 109, "Ds" => 110,
+    "Rg" => 111, "Cn" => 112, "Nh" => 113, "Fl" => 114, "Mc" => 115, "Lv" => 116, "Ts" => 117, "Og" => 118,
 )
 
 # ============================================================
@@ -106,33 +106,33 @@ function ensure_wfc_files()
     # Single letters get underscore padding (H→h_, C→c_, etc.)
     # We only need H, C, O for this system, but it's written in a way that's easy to extend if needed.
     all_symbols = [rpad(lowercase(sym), 2, '_') for sym in keys(ELEMENT_Z) if any(lowercase(sym) == s for s in ("h", "c", "o"))]
-    
+
     # Check if files already exist
     existing = filter(f -> endswith(f, ".wfc"), readdir(WFC_DIR))
     existing_count = length(existing)
-    
+
     if existing_count >= length(all_symbols)
         println("✓ All wavefunction files already present")
         return
     end
-    
+
     println("Downloading PBE wavefunction files from critic2 (GitHub)...")
-    
+
     # Try to download files using raw GitHub URLs with hardcoded filename list
     base_url = "https://raw.githubusercontent.com/aoterodelaroza/critic2/master/dat/wfc"
-    
+
     download_count = 0
     for sym in all_symbols
         fname = sym * "_pbe.wfc"
         fpath = joinpath(WFC_DIR, fname)
-        
+
         # Skip if already exists and is non-empty (>1KB suggests real data)
         if isfile(fpath) && filesize(fpath) > 1000
             continue
         end
-        
+
         url = "$base_url/$fname"
-        
+
         try
             run(`curl -s -o $fpath $url`)
             # Check if download was successful (file size > 1KB)
@@ -151,7 +151,7 @@ function ensure_wfc_files()
             isfile(fpath) && rm(fpath)
         end
     end
-    
+
     println("\n  Downloaded $download_count new wavefunction files")
     if download_count > 0
         println("  ✓ Wavefunction files ready")
@@ -170,7 +170,7 @@ pkl = Pickle.npyload(PKL_PATH)
 x_grid = Float64.(pkl["x"])
 y_grid = Float64.(pkl["y"])
 z_grid = Float64.(pkl["z"])
-rho_3d  = Float64.(pkl["variables"]["density_scf"])   # DFT reference density: (nx,ny,nz) via c2f
+rho_3d = Float64.(pkl["variables"]["density_scf"])   # DFT reference density: (nx,ny,nz) via c2f
 
 @printf "  Grid: %d×%d×%d, ρ ∈ [%.2e, %.2e] a.u.\n" length(x_grid) length(y_grid) length(z_grid) minimum(rho_3d) maximum(rho_3d)
 
@@ -179,17 +179,17 @@ rho_3d  = Float64.(pkl["variables"]["density_scf"])   # DFT reference density: (
 # ============================================================
 println("Loading 1D analytical path from CSV...")
 
-raw = readdlm(CSV_PATH, ',', skipstart = 1)
+raw = readdlm(CSV_PATH, ',', skipstart=1)
 # column order: point, x_bohr, y_bohr, z_bohr, arclength_bohr,
 #               density_scf, density_frag, dengrad_mag, laplacian_scf
-qx      = Float64.(raw[:, 2])               # x_bohr
-qy      = Float64.(raw[:, 3])               # y_bohr
-qz      = Float64.(raw[:, 4])               # z_bohr
-s_ang   = Float64.(raw[:, 5]) .* BOHR2ANG   # arclength in Å
-ρ_ref   = Float64.(raw[:, 6])               # density_scf [a.u.]
-∇ρ_ref  = Float64.(raw[:, 8])               # dengrad_mag [a.u./Bohr]
+qx = Float64.(raw[:, 2])               # x_bohr
+qy = Float64.(raw[:, 3])               # y_bohr
+qz = Float64.(raw[:, 4])               # z_bohr
+s_ang = Float64.(raw[:, 5]) .* BOHR2ANG   # arclength in Å
+ρ_ref = Float64.(raw[:, 6])               # density_scf [a.u.]
+∇ρ_ref = Float64.(raw[:, 8])               # dengrad_mag [a.u./Bohr]
 ∇²ρ_ref = abs.(Float64.(raw[:, 9]))         # |laplacian_scf| [a.u./Bohr²]
-N_path  = length(qx)
+N_path = length(qx)
 
 @printf "  Path: %d points, s ∈ [%.4f, %.4f] Å\n" N_path s_ang[1] s_ang[end]
 
@@ -223,20 +223,20 @@ function parse_wfc(filepath::String)
     open(filepath) do io
         norb = parse(Int, readline(io))
         readline(io)                              # labels — not needed
-        occ  = parse.(Float64, split(readline(io)))
+        occ = parse.(Float64, split(readline(io)))
         readline(io)                              # energies — not needed
         ngrid = parse(Int, readline(io))
 
-        r_vals   = Vector{Float64}(undef, ngrid)
+        r_vals = Vector{Float64}(undef, ngrid)
         rho_vals = Vector{Float64}(undef, ngrid)
         pi4 = 4π
 
         for i in 1:ngrid
-            row   = parse.(Float64, split(readline(io)))
-            r     = row[1]
-            psi   = @view row[2:end]
-            rr0   = dot(occ, psi .^ 2)           # Σⱼ occⱼ ψⱼ²
-            r_vals[i]   = r
+            row = parse.(Float64, split(readline(io)))
+            r = row[1]
+            psi = @view row[2:end]
+            rr0 = dot(occ, psi .^ 2)           # Σⱼ occⱼ ψⱼ²
+            r_vals[i] = r
             rho_vals[i] = rr0 / (pi4 * r^2)      # ρ(r)
         end
         return r_vals, rho_vals
@@ -245,7 +245,7 @@ end
 
 # Build a Dict: Z => 1D cubic spline of ρ(r) for each element present in system
 # (lazy-loaded; only elements actually needed are parsed)
-const _wfc_cache = Dict{Int, Any}()
+const _wfc_cache = Dict{Int,Any}()
 
 function get_rho_itp(Z::Int)
     haskey(_wfc_cache, Z) && return _wfc_cache[Z]
@@ -254,7 +254,7 @@ function get_rho_itp(Z::Int)
     fname = joinpath(WFC_DIR, wfc_filename(sym))
     isfile(fname) || error("wfc file not found: $fname")
     r_grid, rho_vals = parse_wfc(fname)
-    itp = cubic_interp(r_grid, rho_vals; extrap = FillExtrap(0.0))
+    itp = cubic_interp(r_grid, rho_vals; extrap=FillExtrap(0.0))
     _wfc_cache[Z] = itp
     return itp
 end
@@ -271,14 +271,14 @@ Skips the first two header lines.
 function load_xyz(filepath::String)
     lines = readlines(filepath)
     n = parse(Int, strip(lines[1]))
-    atoms = Vector{Tuple{Int, NTuple{3,Float64}}}(undef, n)
+    atoms = Vector{Tuple{Int,NTuple{3,Float64}}}(undef, n)
     for i in 1:n
-        parts = split(strip(lines[i + 2]))
+        parts = split(strip(lines[i+2]))
         sym = String(parts[1])
-        Z   = ELEMENT_Z[sym]
+        Z = ELEMENT_Z[sym]
         x, y, z = parse(Float64, parts[2]) * ANG2BOHR,
-                   parse(Float64, parts[3]) * ANG2BOHR,
-                   parse(Float64, parts[4]) * ANG2BOHR
+        parse(Float64, parts[3]) * ANG2BOHR,
+        parse(Float64, parts[4]) * ANG2BOHR
         atoms[i] = (Z, (x, y, z))
     end
     return atoms
@@ -290,13 +290,17 @@ const ATOMS = load_xyz(XYZ_PATH)
 
 # ── Verify path endpoints are near atoms ──────────────────────────────────────
 let
-    p_start = (qx[1],   qy[1],   qz[1])
-    p_end   = (qx[end], qy[end], qz[end])
+    p_start = (qx[1], qy[1], qz[1])
+    p_end = (qx[end], qy[end], qz[end])
     for (label, pt) in (("start", p_start), ("end", p_end))
-        best_d = Inf; best_i = 0
+        best_d = Inf
+        best_i = 0
         for (i, (Z, R)) in enumerate(ATOMS)
             d = sqrt(sum((pt[k] - R[k])^2 for k in 1:3))
-            if d < best_d; best_d = d; best_i = i; end
+            if d < best_d
+                best_d = d
+                best_i = i
+            end
         end
         Z_near, R_near = ATOMS[best_i]
         sym_near = findfirst(==(Z_near), ELEMENT_Z)
@@ -314,17 +318,19 @@ end
 # Type parameter I is the concrete spline type (CubicInterpolant{...}), making
 # cache::Dict{Int,I} fully type-stable so all per-atom eval calls are zero-alloc.
 struct PromolecularRef{I}
-    atoms::Vector{Tuple{Int, NTuple{3,Float64}}}  # (Z, (x,y,z)) in Bohr
+    atoms::Vector{Tuple{Int,NTuple{3,Float64}}}  # (Z, (x,y,z)) in Bohr
     cache_array::Vector{I}
-    cache::Dict{Int, I}                            # Z => typed 1D spline
+    cache::Dict{Int,I}                            # Z => typed 1D spline
 end
 
 # Constructor: load all element splines and embed a typed Dict.
-function PromolecularRef(atoms::Vector{Tuple{Int, NTuple{3,Float64}}})
-    for (Z, _) in atoms; get_rho_itp(Z); end   # populate _wfc_cache (Dict{Int,Any})
+function PromolecularRef(atoms::Vector{Tuple{Int,NTuple{3,Float64}}})
+    for (Z, _) in atoms
+        get_rho_itp(Z)
+    end   # populate _wfc_cache (Dict{Int,Any})
     I = typeof(first(values(_wfc_cache)))
-    cache = Dict{Int, I}(k => v for (k, v) in _wfc_cache)
-    
+    cache = Dict{Int,I}(k => v for (k, v) in _wfc_cache)
+
     max_z = maximum(Z for (Z, _) in atoms)
     cache_array = Vector{I}(undef, max_z)
     for (Z, itp) in cache
@@ -335,7 +341,7 @@ function PromolecularRef(atoms::Vector{Tuple{Int, NTuple{3,Float64}}})
     return PromolecularRef{I}(atoms, cache_array, cache)
 end
 
-@inline function _pmr_get_deriv_info(::Type{O}) where {O <: Tuple}
+@inline function _pmr_get_deriv_info(::Type{O}) where {O<:Tuple}
     orders = (deriv_order(fieldtype(O, 1)), deriv_order(fieldtype(O, 2)), deriv_order(fieldtype(O, 3)))
     total = sum(orders)
     if total == 1
@@ -351,12 +357,14 @@ end
     end
 end
 
-@inline function _pmr_eval_val_internal(pmr::PromolecularRef, q::NTuple{3, <:Real})
+@inline function _pmr_eval_val_internal(pmr::PromolecularRef, q::NTuple{3,<:Real})
     # Value evaluation
     f = 0.0
     @inbounds for i in 1:length(pmr.atoms)
         Z, R = pmr.atoms[i]
-        xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
+        xx1 = q[1] - R[1]
+        xx2 = q[2] - R[2]
+        xx3 = q[3] - R[3]
         r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
         r < 1e-14 && continue
         f += max(pmr.cache_array[Z](r), 0.0)
@@ -364,11 +372,11 @@ end
     return f
 end
 
-@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real})
+@inline function (pmr::PromolecularRef)(q::NTuple{3,<:Real})
     return _pmr_eval_val_internal(pmr, q)
 end
 
-@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real}, ops::O) where {O}
+@inline function (pmr::PromolecularRef)(q::NTuple{3,<:Real}, ops::O) where {O}
     info = _pmr_get_deriv_info(O)
     total = info[1]
     if total == 0
@@ -379,11 +387,13 @@ end
         D1 = DerivOp{1}()
         @inbounds for i in 1:length(pmr.atoms)
             Z, R = pmr.atoms[i]
-            xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
+            xx1 = q[1] - R[1]
+            xx2 = q[2] - R[2]
+            xx3 = q[3] - R[3]
             r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
             r < 1e-14 && continue
             dx = ax == 1 ? xx1 : (ax == 2 ? xx2 : xx3)
-            fp += pmr.cache_array[Z](r; deriv = D1) * dx / r
+            fp += pmr.cache_array[Z](r; deriv=D1) * dx / r
         end
         return fp
     elseif total == 2
@@ -394,13 +404,15 @@ end
         D2 = DerivOp{2}()
         @inbounds for i in 1:length(pmr.atoms)
             Z, R = pmr.atoms[i]
-            xx1 = q[1] - R[1]; xx2 = q[2] - R[2]; xx3 = q[3] - R[3]
+            xx1 = q[1] - R[1]
+            xx2 = q[2] - R[2]
+            xx3 = q[3] - R[3]
             r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
             r < 1e-14 && continue
             rho_itp = pmr.cache_array[Z]
-            rhop  = rho_itp(r; deriv = D1)
-            rhopp = rho_itp(r; deriv = D2)
-            rfac  = (rhopp - rhop / r) / (r * r)
+            rhop = rho_itp(r; deriv=D1)
+            rhopp = rho_itp(r; deriv=D2)
+            rfac = (rhopp - rhop / r) / (r * r)
             dx1 = ax1 == 1 ? xx1 : (ax1 == 2 ? xx2 : xx3)
             dx2 = ax2 == 1 ? xx1 : (ax2 == 2 ? xx2 : xx3)
             fpp += ax1 == ax2 ? rhop / r + rfac * (dx1 * dx1) : rfac * dx1 * dx2
@@ -411,7 +423,7 @@ end
     end
 end
 
-@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real}; deriv = nothing)
+@inline function (pmr::PromolecularRef)(q::NTuple{3,<:Real}; deriv=nothing)
     if deriv === nothing
         return _pmr_eval_val_internal(pmr, q)
     else
@@ -421,18 +433,18 @@ end
 
 # In-place batch evaluation mirroring the PHS batch API
 function (pmr::PromolecularRef)(
-        out::AbstractVector{T},
-        queries::Union{Tuple{Vararg{AbstractVector, 3}}, AbstractVector};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, 3}}} = EvalValue(),
-    ) where {T}
+    out::AbstractVector{T},
+    queries::Union{Tuple{Vararg{AbstractVector,3}},AbstractVector};
+    deriv::Union{DerivOp,Tuple{Vararg{DerivOp,3}}}=EvalValue(),
+) where {T}
     N = 3
     ops = FastInterpolations._resolve_deriv_nd(deriv, Val(N))
     nq = FastInterpolations._query_length(queries)
     length(out) == nq || throw(DimensionMismatch("Query and output sizes mismatch"))
-    
+
     @inbounds for k in 1:nq
         q = FastInterpolations._extract_query_point(queries, k, Val(N))
-        out[k] = pmr(q; deriv = ops)
+        out[k] = pmr(q; deriv=ops)
     end
     return out
 end
@@ -448,27 +460,27 @@ grids = (x_grid, y_grid, z_grid)
 println("\nBuilding interpolants on $(length(x_grid))×$(length(y_grid))×$(length(z_grid)) grid...")
 
 # Storage for timing information
-build_times = Dict{String, Float64}()
-eval_times = Dict{String, Dict{String, Float64}}()
+build_times = Dict{String,Float64}()
+eval_times = Dict{String,Dict{String,Float64}}()
 
 println("  [1/4] Nearest (constant)...")
-time_nearest = @elapsed itp_nearest  = constant_interp(grids, rho_3d)
+time_nearest = @elapsed itp_nearest = constant_interp(grids, rho_3d)
 build_times["Nearest"] = time_nearest
 @printf "    %.4f seconds\n" time_nearest
 
 println("  [2/4] Trilinear (linear)...")
-time_linear = @elapsed itp_linear   = linear_interp(grids, rho_3d)
+time_linear = @elapsed itp_linear = linear_interp(grids, rho_3d)
 build_times["Linear"] = time_linear
 @printf "    %.4f seconds\n" time_linear
 
 println("  [3/4] Trispline (global cubic spline)...")
-time_cubic = @elapsed itp_cubic    = cubic_interp(grids, rho_3d)
+time_cubic = @elapsed itp_cubic = cubic_interp(grids, rho_3d)
 build_times["Cubic"] = time_cubic
 @printf "    %.4f seconds\n" time_cubic
 
 println("  [4/4] Tricubic (Cardinal / Catmull-Rom)...")
 time_cardinal = @elapsed itp_cardinal = interp(grids, rho_3d;
-    method = (CardinalInterp(), CardinalInterp(), CardinalInterp()))
+    method=(CardinalInterp(), CardinalInterp(), CardinalInterp()))
 build_times["Cardinal"] = time_cardinal
 @printf "    %.4f seconds\n" time_cardinal
 
@@ -478,8 +490,8 @@ println("  [PHS] Polyharmonic spline (PHS-3, stencil_size=8, log-density transfo
 # from PBE all-electron atomic radial splines via the chain rule — matches the
 # Fortran crystalmod_promolecular approach and avoids Gibbs-like errors from
 # a cubic spline of log(ρ₀) near nuclear cusps.
-time_phs = @elapsed itp_phs = phs_interp(grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 2.0,
-    reference_interp = ref_rho0)
+time_phs = @elapsed itp_phs = phs_interp(grids, rho_3d; stencil_size=8, degree=3, blend_factor=2.0,
+    reference_interp=ref_rho0)
 build_times["PHS"] = time_phs
 @printf "    %.4f seconds\n" time_phs
 
@@ -491,16 +503,20 @@ println("All interpolants built.")
 println("\nEvaluating along path ($N_path points)...")
 
 # Allocate result arrays
-ρ_nearest  = zeros(N_path);  ρ_linear   = zeros(N_path)
-ρ_cubic    = zeros(N_path);  ρ_cardinal = zeros(N_path)
-ρ_phs      = zeros(N_path)
+ρ_nearest = zeros(N_path);
+ρ_linear = zeros(N_path);
+ρ_cubic = zeros(N_path);
+ρ_cardinal = zeros(N_path);
+ρ_phs = zeros(N_path)
 
-∇ρ_linear   = zeros(N_path);  ∇ρ_cubic    = zeros(N_path)
-∇ρ_cardinal = zeros(N_path);  ∇ρ_phs      = zeros(N_path)
+∇ρ_linear = zeros(N_path);
+∇ρ_cubic = zeros(N_path);
+∇ρ_cardinal = zeros(N_path);
+∇ρ_phs = zeros(N_path);
 
-∇²ρ_cubic    = zeros(N_path)
+∇²ρ_cubic = zeros(N_path)
 ∇²ρ_cardinal = zeros(N_path)
-∇²ρ_phs      = zeros(N_path)
+∇²ρ_phs = zeros(N_path)
 
 # Derivative operator shortcuts:
 #   DerivOp{n}() selects the n-th derivative along that axis (0 = value)
@@ -525,45 +541,45 @@ const _gz = zeros(N_path)
 print("  Warming up PHS (JIT + stencil cache) ... ")
 flush(stdout)
 itp_phs(ρ_phs, queries)                                    # value → compile + cache fill
-itp_phs(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
-itp_phs(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
-itp_phs(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
-itp_phs(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
-itp_phs(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
-itp_phs(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
+itp_phs(_gx, queries; deriv=(D1, D0, D0))                # gradient-x → compile
+itp_phs(_gy, queries; deriv=(D0, D1, D0))                # gradient-y
+itp_phs(_gz, queries; deriv=(D0, D0, D1))                # gradient-z
+itp_phs(_gx, queries; deriv=(D2, D0, D0))                # Laplacian-xx → compile
+itp_phs(_gy, queries; deriv=(D0, D2, D0))                # Laplacian-yy
+itp_phs(_gz, queries; deriv=(D0, D0, D2))                # Laplacian-zz
 println("done.")
 
 # Warm up other interpolants for fair comparison
 print("  Warming up other interpolants (JIT + stencil cache) ... ")
 flush(stdout)
-itp_nearest(ρ_nearest,  queries)                                    # value → compile + cache fill
-itp_linear(ρ_linear,    queries)                                    # value → compile + cache fill
-itp_cubic(ρ_cubic,      queries)                                    # value → compile + cache fill
+itp_nearest(ρ_nearest, queries)                                    # value → compile + cache fill
+itp_linear(ρ_linear, queries)                                    # value → compile + cache fill
+itp_cubic(ρ_cubic, queries)                                    # value → compile + cache fill
 itp_cardinal(ρ_cardinal, queries)                                    # value → compile + cache fill
-itp_nearest(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
-itp_nearest(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
-itp_nearest(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
-itp_nearest(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
-itp_nearest(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
-itp_nearest(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
-itp_linear(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
-itp_linear(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
-itp_linear(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
-itp_linear(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
-itp_linear(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
-itp_linear(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
-itp_cubic(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
-itp_cubic(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
-itp_cubic(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
-itp_cubic(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
-itp_cubic(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
-itp_cubic(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
-itp_cardinal(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
-itp_cardinal(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
-itp_cardinal(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
-itp_cardinal(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
-itp_cardinal(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
-itp_cardinal(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
+itp_nearest(_gx, queries; deriv=(D1, D0, D0))                # gradient-x → compile
+itp_nearest(_gy, queries; deriv=(D0, D1, D0))                # gradient-y
+itp_nearest(_gz, queries; deriv=(D0, D0, D1))                # gradient-z
+itp_nearest(_gx, queries; deriv=(D2, D0, D0))                # Laplacian-xx → compile
+itp_nearest(_gy, queries; deriv=(D0, D2, D0))                # Laplacian-yy
+itp_nearest(_gz, queries; deriv=(D0, D0, D2))                # Laplacian-zz
+itp_linear(_gx, queries; deriv=(D1, D0, D0))                # gradient-x → compile
+itp_linear(_gy, queries; deriv=(D0, D1, D0))                # gradient-y
+itp_linear(_gz, queries; deriv=(D0, D0, D1))                # gradient-z
+itp_linear(_gx, queries; deriv=(D2, D0, D0))                # Laplacian-xx → compile
+itp_linear(_gy, queries; deriv=(D0, D2, D0))                # Laplacian-yy
+itp_linear(_gz, queries; deriv=(D0, D0, D2))                # Laplacian-zz
+itp_cubic(_gx, queries; deriv=(D1, D0, D0))                # gradient-x → compile
+itp_cubic(_gy, queries; deriv=(D0, D1, D0))                # gradient-y
+itp_cubic(_gz, queries; deriv=(D0, D0, D1))                # gradient-z
+itp_cubic(_gx, queries; deriv=(D2, D0, D0))                # Laplacian-xx → compile
+itp_cubic(_gy, queries; deriv=(D0, D2, D0))                # Laplacian-yy
+itp_cubic(_gz, queries; deriv=(D0, D0, D2))                # Laplacian-zz
+itp_cardinal(_gx, queries; deriv=(D1, D0, D0))                # gradient-x → compile
+itp_cardinal(_gy, queries; deriv=(D0, D1, D0))                # gradient-y
+itp_cardinal(_gz, queries; deriv=(D0, D0, D1))                # gradient-z
+itp_cardinal(_gx, queries; deriv=(D2, D0, D0))                # Laplacian-xx → compile
+itp_cardinal(_gy, queries; deriv=(D0, D2, D0))                # Laplacian-yy
+itp_cardinal(_gz, queries; deriv=(D0, D0, D2))                # Laplacian-zz
 println("done.")
 
 # ── density ρ ──────────────────────────────────────────────────────────────────
@@ -571,19 +587,19 @@ println("  Density (ρ):")
 eval_times["ρ"] = Dict()
 
 print("    Nearest ... ")
-eval_times["ρ"]["Nearest"] = @elapsed @time itp_nearest(ρ_nearest,  queries)
+eval_times["ρ"]["Nearest"] = @elapsed @time itp_nearest(ρ_nearest, queries)
 
 print("    Linear ... ")
-eval_times["ρ"]["Linear"] = @elapsed @time itp_linear(ρ_linear,    queries)
+eval_times["ρ"]["Linear"] = @elapsed @time itp_linear(ρ_linear, queries)
 
 print("    Cubic ... ")
-eval_times["ρ"]["Cubic"] = @elapsed @time itp_cubic(ρ_cubic,      queries)
+eval_times["ρ"]["Cubic"] = @elapsed @time itp_cubic(ρ_cubic, queries)
 
 print("    Cardinal ... ")
 eval_times["ρ"]["Cardinal"] = @elapsed @time itp_cardinal(ρ_cardinal, queries)
 
 print("    PHS ... ")
-eval_times["ρ"]["PHS"] = @elapsed @time itp_phs(ρ_phs,          queries)
+eval_times["ρ"]["PHS"] = @elapsed @time itp_phs(ρ_phs, queries)
 
 # ── gradient magnitude |∇ρ| ────────────────────────────────────────────────────
 # All ND interpolants accept the batch form itp(out, queries; deriv=(...)).
@@ -594,33 +610,33 @@ eval_times["|∇ρ|"] = Dict()
 
 print("    Linear ... ")
 eval_times["|∇ρ|"]["Linear"] = @elapsed @time begin
-    itp_linear(_gx, queries; deriv = (D1, D0, D0))
-    itp_linear(_gy, queries; deriv = (D0, D1, D0))
-    itp_linear(_gz, queries; deriv = (D0, D0, D1))
+    itp_linear(_gx, queries; deriv=(D1, D0, D0))
+    itp_linear(_gy, queries; deriv=(D0, D1, D0))
+    itp_linear(_gz, queries; deriv=(D0, D0, D1))
     @. ∇ρ_linear = sqrt(_gx^2 + _gy^2 + _gz^2)
 end
 
 print("    Cubic ... ")
 eval_times["|∇ρ|"]["Cubic"] = @elapsed @time begin
-    itp_cubic(_gx, queries; deriv = (D1, D0, D0))
-    itp_cubic(_gy, queries; deriv = (D0, D1, D0))
-    itp_cubic(_gz, queries; deriv = (D0, D0, D1))
+    itp_cubic(_gx, queries; deriv=(D1, D0, D0))
+    itp_cubic(_gy, queries; deriv=(D0, D1, D0))
+    itp_cubic(_gz, queries; deriv=(D0, D0, D1))
     @. ∇ρ_cubic = sqrt(_gx^2 + _gy^2 + _gz^2)
 end
 
 print("    Cardinal ... ")
 eval_times["|∇ρ|"]["Cardinal"] = @elapsed @time begin
-    itp_cardinal(_gx, queries; deriv = (D1, D0, D0))
-    itp_cardinal(_gy, queries; deriv = (D0, D1, D0))
-    itp_cardinal(_gz, queries; deriv = (D0, D0, D1))
+    itp_cardinal(_gx, queries; deriv=(D1, D0, D0))
+    itp_cardinal(_gy, queries; deriv=(D0, D1, D0))
+    itp_cardinal(_gz, queries; deriv=(D0, D0, D1))
     @. ∇ρ_cardinal = sqrt(_gx^2 + _gy^2 + _gz^2)
 end
 
 print("    PHS ... ")
 eval_times["|∇ρ|"]["PHS"] = @elapsed @time begin
-    itp_phs(_gx, queries; deriv = (D1, D0, D0))
-    itp_phs(_gy, queries; deriv = (D0, D1, D0))
-    itp_phs(_gz, queries; deriv = (D0, D0, D1))
+    itp_phs(_gx, queries; deriv=(D1, D0, D0))
+    itp_phs(_gy, queries; deriv=(D0, D1, D0))
+    itp_phs(_gz, queries; deriv=(D0, D0, D1))
     @. ∇ρ_phs = sqrt(_gx^2 + _gy^2 + _gz^2)
 end
 
@@ -630,25 +646,25 @@ eval_times["|∇²ρ|"] = Dict()
 
 print("    Cubic ... ")
 eval_times["|∇²ρ|"]["Cubic"] = @elapsed @time begin
-    itp_cubic(_gx, queries; deriv = (D2, D0, D0))
-    itp_cubic(_gy, queries; deriv = (D0, D2, D0))
-    itp_cubic(_gz, queries; deriv = (D0, D0, D2))
+    itp_cubic(_gx, queries; deriv=(D2, D0, D0))
+    itp_cubic(_gy, queries; deriv=(D0, D2, D0))
+    itp_cubic(_gz, queries; deriv=(D0, D0, D2))
     @. ∇²ρ_cubic = abs(_gx + _gy + _gz)
 end
 
 print("    Cardinal ... ")
 eval_times["|∇²ρ|"]["Cardinal"] = @elapsed @time begin
-    itp_cardinal(_gx, queries; deriv = (D2, D0, D0))
-    itp_cardinal(_gy, queries; deriv = (D0, D2, D0))
-    itp_cardinal(_gz, queries; deriv = (D0, D0, D2))
+    itp_cardinal(_gx, queries; deriv=(D2, D0, D0))
+    itp_cardinal(_gy, queries; deriv=(D0, D2, D0))
+    itp_cardinal(_gz, queries; deriv=(D0, D0, D2))
     @. ∇²ρ_cardinal = abs(_gx + _gy + _gz)
 end
 
 print("    PHS ... ")
 eval_times["|∇²ρ|"]["PHS"] = @elapsed @time begin
-    itp_phs(_gx, queries; deriv = (D2, D0, D0))
-    itp_phs(_gy, queries; deriv = (D0, D2, D0))
-    itp_phs(_gz, queries; deriv = (D0, D0, D2))
+    itp_phs(_gx, queries; deriv=(D2, D0, D0))
+    itp_phs(_gy, queries; deriv=(D0, D2, D0))
+    itp_phs(_gz, queries; deriv=(D0, D0, D2))
     @. ∇²ρ_phs = abs(_gx + _gy + _gz)
 end
 
@@ -712,7 +728,7 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     rho_time = get(eval_times["ρ"], method, nothing)
     grad_time = get(eval_times["|∇ρ|"], method, nothing)
     lap_time = get(eval_times["|∇²ρ|"], method, nothing)
-    
+
     # Format build time with ratio
     build_str = if method == "PHS"
         @sprintf("%.3f", build_time)
@@ -720,7 +736,7 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
         ratio = phs_build_time / build_time
         @sprintf("%.5f (%.1f×)", build_time, ratio)
     end
-    
+
     # Format rho time with ratio
     rho_str = if rho_time !== nothing
         if method == "PHS"
@@ -732,7 +748,7 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     else
         "—"
     end
-    
+
     # Format grad time with ratio
     grad_str = if grad_time !== nothing
         if method == "PHS"
@@ -744,7 +760,7 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     else
         "—"
     end
-    
+
     # Format lap time with ratio
     lap_str = if lap_time !== nothing
         if method == "PHS"
@@ -756,7 +772,7 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     else
         "—"
     end
-    
+
     @printf "| %-18s | %15s | %16s | %18s | %20s |\n" method build_str rho_str grad_str lap_str
 end
 
@@ -790,7 +806,7 @@ for method in ["Nearest", "Linear", "Cubic", "Cardinal", "PHS"]
     max_err = maximum(errs)
     mean_err = sum(errs) / length(errs)
     median_err = median(errs)
-    
+
     if method == "PHS"
         @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
     else
@@ -812,7 +828,7 @@ for method in ["Linear", "Cubic", "Cardinal", "PHS"]
     max_err = maximum(errs)
     mean_err = sum(errs) / length(errs)
     median_err = median(errs)
-    
+
     if method == "PHS"
         @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
     else
@@ -834,7 +850,7 @@ for method in ["Cubic", "Cardinal", "PHS"]
     max_err = maximum(errs)
     mean_err = sum(errs) / length(errs)
     median_err = median(errs)
-    
+
     if method == "PHS"
         @printf "| %-18s | %.2e | %.2e | %.2e | %.2e |\n" method min_err max_err mean_err median_err
     else
@@ -855,11 +871,11 @@ println("\nGenerating plot...")
 
 # Colour scheme (approximately matching the reference figure)
 col_analytical = :black
-col_nearest    = :blue
-col_linear     = :red
-col_cubic      = :darkorange   # Trispline
-col_cardinal   = :darkgreen  # Tricubic
-col_phs        = :red
+col_nearest = :blue
+col_linear = :red
+col_cubic = :darkorange   # Trispline
+col_cardinal = :darkgreen  # Tricubic
+col_phs = :red
 
 lw_ref = 2.0
 lw_itp = 1.5
@@ -868,7 +884,7 @@ lw_phs = 0.8  # Thinner line for PHS
 # Replace non-positive values with NaN for safe log-scale rendering
 logclean(v) = [x > 0.0 ? x : NaN for x in v]
 
-xlims_val  = (s_ang[1], s_ang[end])
+xlims_val = (s_ang[1], s_ang[end])
 xlabel_str = "Distance along O···H hydrogen bond (Å)"
 
 # Custom Y-axis formatter for log scale
@@ -890,69 +906,69 @@ end
 yticks_val = [10.0^i for i in -4:6]
 
 kw_common = (
-    xaxis      = :identity,
-    yaxis      = :log10,
-    xlims      = xlims_val,
-    xlabel     = xlabel_str,
-    xticks     = 0:0.2:2.0,
-    yticks     = yticks_val,
-    yformatter = yformatter,
-    legend     = :topright,
-    minorgrid  = true,
-    framestyle = :box,
+    xaxis=:identity,
+    yaxis=:log10,
+    xlims=xlims_val,
+    xlabel=xlabel_str,
+    xticks=0:0.2:2.0,
+    yticks=yticks_val,
+    yformatter=yformatter,
+    legend=:topright,
+    minorgrid=true,
+    framestyle=:box,
 )
 
-function ref_series!(p, s, ref; label = "Analytical")
-    plot!(p, s, logclean(ref); label = label,
-          color = col_analytical, linewidth = lw_ref, linestyle = :solid)
+function ref_series!(p, s, ref; label="Analytical")
+    plot!(p, s, logclean(ref); label=label,
+        color=col_analytical, linewidth=lw_ref, linestyle=:solid)
 end
 
-function add_series!(p, s, data, label, color; lw = lw_itp)
-    plot!(p, s, logclean(data); label = label, color = color, linewidth = lw)
+function add_series!(p, s, data, label, color; lw=lw_itp)
+    plot!(p, s, logclean(data); label=label, color=color, linewidth=lw)
 end
 
 # ── Row 1: ρ ──────────────────────────────────────────────────────────────────
-p11 = plot(; kw_common..., ylabel = "ρ (a.u.)")
+p11 = plot(; kw_common..., ylabel="ρ (a.u.)")
 ref_series!(p11, s_ang, ρ_ref)
-add_series!(p11, s_ang, ρ_nearest,  "Nearest",    col_nearest)
-add_series!(p11, s_ang, ρ_linear,   "Trilinear",  col_linear)
-add_series!(p11, s_ang, ρ_cardinal, "Tricubic",   col_cardinal)
-add_series!(p11, s_ang, ρ_cubic,    "Trispline",  col_cubic)
+add_series!(p11, s_ang, ρ_nearest, "Nearest", col_nearest)
+add_series!(p11, s_ang, ρ_linear, "Trilinear", col_linear)
+add_series!(p11, s_ang, ρ_cardinal, "Tricubic", col_cardinal)
+add_series!(p11, s_ang, ρ_cubic, "Trispline", col_cubic)
 
-p12 = plot(; kw_common..., ylabel = "ρ (a.u.)")
+p12 = plot(; kw_common..., ylabel="ρ (a.u.)")
 ref_series!(p12, s_ang, ρ_ref)
-add_series!(p12, s_ang, ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
+add_series!(p12, s_ang, ρ_phs, "Polyharmonic", col_phs; lw=lw_phs)
 
 # ── Row 2: |∇ρ| ───────────────────────────────────────────────────────────────
-p21 = plot(; kw_common..., ylabel = "|∇ρ| (a.u.)")
+p21 = plot(; kw_common..., ylabel="|∇ρ| (a.u.)")
 ref_series!(p21, s_ang, ∇ρ_ref)
-add_series!(p21, s_ang, ∇ρ_linear,   "Trilinear", col_linear)
-add_series!(p21, s_ang, ∇ρ_cardinal, "Tricubic",  col_cardinal)
-add_series!(p21, s_ang, ∇ρ_cubic,    "Trispline", col_cubic)
+add_series!(p21, s_ang, ∇ρ_linear, "Trilinear", col_linear)
+add_series!(p21, s_ang, ∇ρ_cardinal, "Tricubic", col_cardinal)
+add_series!(p21, s_ang, ∇ρ_cubic, "Trispline", col_cubic)
 
-p22 = plot(; kw_common..., ylabel = "|∇ρ| (a.u.)")
+p22 = plot(; kw_common..., ylabel="|∇ρ| (a.u.)")
 ref_series!(p22, s_ang, ∇ρ_ref)
-add_series!(p22, s_ang, ∇ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
+add_series!(p22, s_ang, ∇ρ_phs, "Polyharmonic", col_phs; lw=lw_phs)
 
 # ── Row 3: |∇²ρ| ──────────────────────────────────────────────────────────────
-p31 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u.)")
+p31 = plot(; kw_common..., ylabel="|∇²ρ| (a.u.)")
 ref_series!(p31, s_ang, ∇²ρ_ref)
-add_series!(p31, s_ang, ∇²ρ_cardinal, "Tricubic",  col_cardinal)
-add_series!(p31, s_ang, ∇²ρ_cubic,    "Trispline", col_cubic)
+add_series!(p31, s_ang, ∇²ρ_cardinal, "Tricubic", col_cardinal)
+add_series!(p31, s_ang, ∇²ρ_cubic, "Trispline", col_cubic)
 
-p32 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u.)")
+p32 = plot(; kw_common..., ylabel="|∇²ρ| (a.u.)")
 ref_series!(p32, s_ang, ∇²ρ_ref)
-add_series!(p32, s_ang, ∇²ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
+add_series!(p32, s_ang, ∇²ρ_phs, "Polyharmonic", col_phs; lw=lw_phs)
 
 # ── Combine ───────────────────────────────────────────────────────────────────
 fig = plot(p11, p12, p21, p22, p31, p32;
-    layout        = (3, 2),
-    size          = (900, 1050),
-    dpi           = 150,
-    left_margin   = 10Plots.mm,
-    bottom_margin = 7Plots.mm,
-    top_margin    = 4Plots.mm,
-    right_margin  = 3Plots.mm)
+    layout=(3, 2),
+    size=(900, 1050),
+    dpi=150,
+    left_margin=10Plots.mm,
+    bottom_margin=7Plots.mm,
+    top_margin=4Plots.mm,
+    right_margin=3Plots.mm)
 
 savefig(fig, OUT_PATH)
 println("Saved: $OUT_PATH")

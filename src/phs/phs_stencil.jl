@@ -44,7 +44,7 @@ function _phs_stencil_offsets(N::Int, stencil_size::Int, hs::NTuple)
 
     # Sort by scaled Euclidean distance from origin
     target = stencil_size^N
-    sort!(candidates; by = off -> sum(d -> (off[d] * hs[d])^2, 1:N))
+    sort!(candidates; by=off -> sum(d -> (off[d] * hs[d])^2, 1:N))
 
     # Keep closest target; include the origin (offset == 0), which is always first
     return candidates[1:min(target, length(candidates))]
@@ -64,10 +64,10 @@ and return its inverse via `inv(Symmetric(Φ))`.
 so `Symmetric` tells LinearAlgebra to exploit that structure.
 """
 function _phs_build_phi_inv(
-        offsets::Vector{<:NTuple{N, Int}},
-        hs::NTuple{N, T},
-        degree::Int,
-    ) where {N, T <: AbstractFloat}
+    offsets::Vector{<:NTuple{N,Int}},
+    hs::NTuple{N,T},
+    degree::Int,
+) where {N,T<:AbstractFloat}
     ns = length(offsets)
     poly_deg = (degree - 1) ÷ 2
     poly_exps = _phs_all_exponents(Val(N), poly_deg)  # same ordering as _phs_poly_exps_tuple
@@ -100,8 +100,8 @@ function _phs_build_phi_inv(
             for d in 1:N
                 α[d] != 0 && (val *= xi[d]^α[d])
             end
-            Phi[ns + k, i] = val
-            Phi[i, ns + k] = val
+            Phi[ns+k, i] = val
+            Phi[i, ns+k] = val
         end
     end
 
@@ -136,10 +136,10 @@ This shifts the stencil at boundary nodes so all nodes remain inside the domain
 remains a valid local interpolation stencil).
 """
 function _phs_clamp_offsets(
-        offsets::Vector{<:NTuple{N, Int}},
-        base_idx::NTuple{N, Int},
-        grid_sizes::NTuple{N, Int},
-    ) where {N}
+    offsets::Vector{<:NTuple{N,Int}},
+    base_idx::NTuple{N,Int},
+    grid_sizes::NTuple{N,Int},
+) where {N}
     # Compute the bounding box of unclamped indices per dimension
     # and the shift needed to bring them inside [1, grid_sizes[d]]
     lo = ntuple(d -> minimum(off -> base_idx[d] + off[d], offsets), N)
@@ -173,11 +173,11 @@ Returns `(0,...,0)` for interior nodes; non-zero otherwise.
 O(N) — no allocation.
 """
 @inline function _phs_compute_shift(
-        base_idx::NTuple{N, Int},
-        stencil_lo::NTuple{N, Int},
-        stencil_hi::NTuple{N, Int},
-        grid_sizes::NTuple{N, Int},
-    ) where {N}
+    base_idx::NTuple{N,Int},
+    stencil_lo::NTuple{N,Int},
+    stencil_hi::NTuple{N,Int},
+    grid_sizes::NTuple{N,Int},
+) where {N}
     return ntuple(N) do d
         lo_abs = base_idx[d] + stencil_lo[d]   # absolute index of leftmost offset
         hi_abs = base_idx[d] + stencil_hi[d]   # absolute index of rightmost offset
@@ -204,42 +204,42 @@ For small-to-moderate stencils (stencil_size ≤ 6, N ≤ 3) the cache is always
 built and guarantees exact polynomial reproduction everywhere.
 """
 function _phs_build_boundary_shift_cache(
-        canonical_offsets::Vector{<:NTuple{N, Int}},
-        hs::NTuple{N, Tg},
-        degree::Int,
-        stencil_size::Int,
-    ) where {N, Tg}
-    ns  = length(canonical_offsets)
+    canonical_offsets::Vector{<:NTuple{N,Int}},
+    hs::NTuple{N,Tg},
+    degree::Int,
+    stencil_size::Int,
+) where {N,Tg}
+    ns = length(canonical_offsets)
     poly_deg = (degree - 1) ÷ 2
-    n_poly   = length(_phs_all_exponents(Val(N), poly_deg))
-    M        = ns + n_poly
- 
+    n_poly = length(_phs_all_exponents(Val(N), poly_deg))
+    M = ns + n_poly
+
     R = stencil_size   # canonical half-width
- 
+
     min_off = ntuple(d -> minimum(off -> off[d], canonical_offsets), N)
     max_off = ntuple(d -> maximum(off -> off[d], canonical_offsets), N)
- 
+
     # Unique clip amounts per dimension:
     # lo_clip in [0, -min_off[d]], hi_clip in [0, max_off[d]]
     # We encode as clip = lo_clip if lo_clip > 0 else -hi_clip
     clip_options = ntuple(N) do d
-        left  = -min_off[d] > 0 ? collect(1:-min_off[d]) : Int[]
-        right = max_off[d]  > 0 ? collect(-max_off[d]:-1) : Int[]
+        left = -min_off[d] > 0 ? collect(1:-min_off[d]) : Int[]
+        right = max_off[d] > 0 ? collect(-max_off[d]:-1) : Int[]
         [0; left; right]
     end
- 
+
     # Estimate total cache size
-    n_shifts     = prod(length, clip_options) - 1
+    n_shifts = prod(length, clip_options) - 1
     mem_estimate = n_shifts * M * M * sizeof(Tg)
- 
-    cache = Dict{NTuple{N, Int}, Tuple{Vector{NTuple{N, Int}}, Matrix{Tg}, Vector{NTuple{N, Tg}}}}()
+
+    cache = Dict{NTuple{N,Int},Tuple{Vector{NTuple{N,Int}},Matrix{Tg},Vector{NTuple{N,Tg}}}}()
     mem_estimate > 100_000_000 && return cache
- 
+
     target = ns   # keep same number of stencil nodes
     for clip_combo in Iterators.product(clip_options...)
-        clip = NTuple{N, Int}(clip_combo)
+        clip = NTuple{N,Int}(clip_combo)
         all(iszero, clip) && continue   # canonical stored separately
- 
+
         # Valid offset range for this clip pattern.
         # clip[d] > 0 means left boundary: abs offsets must be ≥ -R+clip[d], i.e. lo = -R+clip[d] ... R
         # clip[d] < 0 means right boundary: abs offsets must be ≤ R+clip[d], i.e. lo = -R ... R+clip[d]
@@ -247,13 +247,13 @@ function _phs_build_boundary_shift_cache(
         hi_off = ntuple(d -> clip[d] < 0 ? max_off[d] + clip[d] : max_off[d], N)
         ranges_per_dim = ntuple(d -> lo_off[d]:hi_off[d], N)
         candidates = vec(collect(Iterators.product(ranges_per_dim...)))
-        sort!(candidates; by = off -> sum(d -> (Tg(off[d]) * hs[d])^2, 1:N))
+        sort!(candidates; by=off -> sum(d -> (Tg(off[d]) * hs[d])^2, 1:N))
         valid_offsets = candidates[1:min(target, length(candidates))]
         shifted_phys_offsets = [ntuple(d -> Tg(off[d]) * hs[d], Val(N)) for off in valid_offsets]
- 
+
         cache[clip] = (valid_offsets, _phs_build_phi_inv(valid_offsets, hs, degree), shifted_phys_offsets)
     end
- 
+
     return cache
 end
 
@@ -276,10 +276,10 @@ Returns:
 - `shift_cache  :: Dict{NTuple{N,Int}, ...}` — shifted (offsets, Φ⁻¹) per boundary shift
 """
 function _phs_build_stencil(
-        grids::NTuple{N, AbstractVector{Tg}},
-        stencil_size::Int,
-        degree::Int,
-    ) where {N, Tg}
+    grids::NTuple{N,AbstractVector{Tg}},
+    stencil_size::Int,
+    degree::Int,
+) where {N,Tg}
 
     # Mean h per axis (for uniform grids this is exact)
     hs = ntuple(N) do d
@@ -287,10 +287,10 @@ function _phs_build_stencil(
         Tg((last(g) - first(g)) / (length(g) - 1))
     end
 
-    offsets     = _phs_stencil_offsets(N, stencil_size, hs)
-    phi_inv     = _phs_build_phi_inv(offsets, hs, degree)
-    stencil_lo  = ntuple(d -> minimum(off -> off[d], offsets), N)
-    stencil_hi  = ntuple(d -> maximum(off -> off[d], offsets), N)
+    offsets = _phs_stencil_offsets(N, stencil_size, hs)
+    phi_inv = _phs_build_phi_inv(offsets, hs, degree)
+    stencil_lo = ntuple(d -> minimum(off -> off[d], offsets), N)
+    stencil_hi = ntuple(d -> maximum(off -> off[d], offsets), N)
     shift_cache = _phs_build_boundary_shift_cache(offsets, hs, degree, stencil_size)
 
     return offsets, phi_inv, hs, stencil_lo, stencil_hi, shift_cache

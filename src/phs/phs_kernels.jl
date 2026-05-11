@@ -24,7 +24,7 @@
 Evaluate the polyharmonic radial basis function φ(r) = r^K.
 Returns zero for r ≤ ε to avoid NaN at coincident points.
 """
-@inline function _phs_phi(r::T, ::Val{K}) where {T, K}
+@inline function _phs_phi(r::T, ::Val{K}) where {T,K}
     r <= zero(T) && return zero(T)
     return r^K
 end
@@ -51,7 +51,7 @@ First derivative φ'(r) = K * r^(K-1).
 Returns zero for r ≤ ε (derivative undefined/infinite at origin for K=1,
 but the weight w_i=0 there so the product w_i*φ'(r)/r is well-defined via L'Hôpital).
 """
-@inline function _phs_phi_prime(r::T, ::Val{K}) where {T, K}
+@inline function _phs_phi_prime(r::T, ::Val{K}) where {T,K}
     r <= zero(T) && return zero(T)
     return K * r^(K - 1)
 end
@@ -76,7 +76,7 @@ end
 Second derivative φ''(r) = K*(K-1) * r^(K-2).
 Returns zero for r ≤ ε and for K=1 (since K*(K-1)=0).
 """
-@inline function _phs_phi_dprime(r::T, ::Val{K}) where {T, K}
+@inline function _phs_phi_dprime(r::T, ::Val{K}) where {T,K}
     (r <= zero(T) || K == 1) && return zero(T)
     return K * (K - 1) * r^(K - 2)
 end
@@ -151,9 +151,9 @@ Evaluate w and its first derivative w'(d) = -3a³d² w / (d³ - a³)² simultane
     d2 = d * d
     d3 = d2 * d
     a3 = a * a * a
-    denom  = d3 - a3          # negative (d < a)
+    denom = d3 - a3          # negative (d < a)
     denom2 = denom * denom
-    w  = exp(d3 / denom)
+    w = exp(d3 / denom)
     wp = -3 * a3 * d2 * w / denom2
     return w, wp
 end
@@ -164,9 +164,9 @@ end
     end
     d2 = d * d
     d3 = d2 * d
-    denom  = d3 - a3
+    denom = d3 - a3
     denom2 = denom * denom
-    w  = exp(d3 / denom)
+    w = exp(d3 / denom)
     wp = -3 * a3 * d2 * w / denom2
     return w, wp
 end
@@ -190,7 +190,7 @@ Evaluate w, w', and w'' simultaneously for use in second-derivative blending.
     inv_denom = one(T) / denom
     inv_denom2 = inv_denom * inv_denom
     inv_denom4 = inv_denom2 * inv_denom2
-    w  = exp(d3 * inv_denom)
+    w = exp(d3 * inv_denom)
     wp = -3 * a3 * d2 * w * inv_denom2
     wpp = 3 * a3 * d * (muladd(4 * d3, d3, muladd(a3, d3, -2 * a3 * a3))) * w * inv_denom4
     return w, wp, wpp
@@ -206,7 +206,7 @@ end
     inv_denom = one(T) / denom
     inv_denom2 = inv_denom * inv_denom
     inv_denom4 = inv_denom2 * inv_denom2
-    w  = exp(d3 * inv_denom)
+    w = exp(d3 * inv_denom)
     wp = -3 * a3 * d2 * w * inv_denom2
     wpp = 3 * a3 * d * (muladd(4 * d3, d3, muladd(a3, d3, -2 * a3 * a3))) * w * inv_denom4
     return w, wp, wpp
@@ -250,15 +250,15 @@ Eq. 23: ρ̃ξζ = ρ̃ * (fξζ + ρ̃ξρ̃ζ/ρ̃² + ρ₀ξζ/ρ₀ - ρ₀
 Compute one component (ξ,ζ) of the Hessian of the recovered density.
 """
 @inline function _phs_unroll_hess_component(
-        rho::T,
-        f_hess_xixj::T,
-        rho_grad_xi::T,
-        rho_grad_xj::T,
-        rho0::T,
-        rho0_grad_xi::T,
-        rho0_grad_xj::T,
-        rho0_hess_xixj::T,
-    ) where {T}
+    rho::T,
+    f_hess_xixj::T,
+    rho_grad_xi::T,
+    rho_grad_xj::T,
+    rho0::T,
+    rho0_grad_xi::T,
+    rho0_grad_xj::T,
+    rho0_hess_xixj::T,
+) where {T}
     rho_safe = max(rho, T(1e-40))
     rho0_safe = max(rho0, T(1e-40))
     return rho * (
@@ -298,7 +298,7 @@ All exponent vectors for monomials of total degree ≤ `poly_deg` in N dimension
 Called at stencil-construction time only (not the hot path).
 """
 function _phs_all_exponents(::Val{N}, poly_deg::Int) where {N}
-    result = NTuple{N, Int}[]
+    result = NTuple{N,Int}[]
     current = zeros(Int, N - 1)   # dims 1…N-1; dim N is `remaining`
     function gen(d::Int, remaining::Int)
         if d == N
@@ -323,9 +323,9 @@ Return a compile-time `NTuple` of `NTuple{N,Int}` exponents for the polynomial
 augmentation of the r^K PHS interpolant (poly_deg = (K-1)÷2).
 Generated at compile time — zero allocation, loops fully unrolled.
 """
-@generated function _phs_poly_exps_tuple(::Val{N}, ::Val{K}) where {N, K}
+@generated function _phs_poly_exps_tuple(::Val{N}, ::Val{K}) where {N,K}
     m = (K - 1) ÷ 2
-    exps = NTuple{N, Int}[]
+    exps = NTuple{N,Int}[]
     current = zeros(Int, N - 1)
     function gen(d, remaining)
         if d == N
@@ -352,11 +352,11 @@ Evaluate the polynomial augmentation: `Σ_k c[ns+k] · Δx^α_k`.
 `_phs_poly_exps_tuple`.
 """
 @inline function _phs_eval_poly(
-        Δx::NTuple{N, Tg},
-        poly_exps::Tuple,
-        coeffs::AbstractVector{Tv},
-        ns::Int,
-    ) where {N, Tg, Tv}
+    Δx::NTuple{N,Tg},
+    poly_exps::Tuple,
+    coeffs::AbstractVector{Tv},
+    ns::Int,
+) where {N,Tg,Tv}
     y = zero(Tv)
     @inbounds for k in 1:length(poly_exps)
         α = poly_exps[k]
@@ -364,7 +364,7 @@ Evaluate the polynomial augmentation: `Σ_k c[ns+k] · Δx^α_k`.
         for d in 1:N
             α[d] != 0 && (mono *= Δx[d]^α[d])
         end
-        y += coeffs[ns + k] * mono
+        y += coeffs[ns+k] * mono
     end
     return y
 end
@@ -375,22 +375,22 @@ end
 Evaluate `∂/∂x_axis` of the polynomial augmentation.
 """
 @inline function _phs_eval_poly_deriv1(
-        Δx::NTuple{N, Tg},
-        poly_exps::Tuple,
-        coeffs::AbstractVector{Tv},
-        ns::Int,
-        axis::Int,
-    ) where {N, Tg, Tv}
+    Δx::NTuple{N,Tg},
+    poly_exps::Tuple,
+    coeffs::AbstractVector{Tv},
+    ns::Int,
+    axis::Int,
+) where {N,Tg,Tv}
     return _phs_eval_poly_deriv1(Δx, poly_exps, coeffs, ns, Val(axis))
 end
 
 @inline function _phs_eval_poly_deriv1(
-        Δx::NTuple{N, Tg},
-        poly_exps::Tuple,
-        coeffs::AbstractVector{Tv},
-        ns::Int,
-        ::Val{axis},
-    ) where {N, Tg, Tv, axis}
+    Δx::NTuple{N,Tg},
+    poly_exps::Tuple,
+    coeffs::AbstractVector{Tv},
+    ns::Int,
+    ::Val{axis},
+) where {N,Tg,Tv,axis}
     y = zero(Tv)
     @inbounds for k in 1:length(poly_exps)
         α = poly_exps[k]
@@ -400,7 +400,7 @@ end
             exp = d == axis ? α[d] - 1 : α[d]
             exp != 0 && (mono *= Δx[d]^exp)
         end
-        y += coeffs[ns + k] * mono
+        y += coeffs[ns+k] * mono
     end
     return y
 end
@@ -411,24 +411,24 @@ end
 Evaluate `∂²/∂x_ax1 ∂x_ax2` of the polynomial augmentation.
 """
 @inline function _phs_eval_poly_deriv2(
-        Δx::NTuple{N, Tg},
-        poly_exps::Tuple,
-        coeffs::AbstractVector{Tv},
-        ns::Int,
-        ax1::Int,
-        ax2::Int,
-    ) where {N, Tg, Tv}
+    Δx::NTuple{N,Tg},
+    poly_exps::Tuple,
+    coeffs::AbstractVector{Tv},
+    ns::Int,
+    ax1::Int,
+    ax2::Int,
+) where {N,Tg,Tv}
     return _phs_eval_poly_deriv2(Δx, poly_exps, coeffs, ns, Val(ax1), Val(ax2))
 end
 
 @inline function _phs_eval_poly_deriv2(
-        Δx::NTuple{N, Tg},
-        poly_exps::Tuple,
-        coeffs::AbstractVector{Tv},
-        ns::Int,
-        ::Val{ax1},
-        ::Val{ax2},
-    ) where {N, Tg, Tv, ax1, ax2}
+    Δx::NTuple{N,Tg},
+    poly_exps::Tuple,
+    coeffs::AbstractVector{Tv},
+    ns::Int,
+    ::Val{ax1},
+    ::Val{ax2},
+) where {N,Tg,Tv,ax1,ax2}
     y = zero(Tv)
     @inbounds for k in 1:length(poly_exps)
         α = poly_exps[k]
@@ -439,7 +439,7 @@ end
                 exp = d == ax1 ? α[d] - 2 : α[d]
                 exp != 0 && (mono *= Δx[d]^exp)
             end
-            y += coeffs[ns + k] * mono
+            y += coeffs[ns+k] * mono
         else
             (α[ax1] == 0 || α[ax2] == 0) && continue
             mono = Tg(α[ax1] * α[ax2])
@@ -447,7 +447,7 @@ end
                 exp = (d == ax1 || d == ax2) ? α[d] - 1 : α[d]
                 exp != 0 && (mono *= Δx[d]^exp)
             end
-            y += coeffs[ns + k] * mono
+            y += coeffs[ns+k] * mono
         end
     end
     return y
@@ -465,11 +465,11 @@ Generated at compile-time for arbitrary dimensions to ensure full unrolling
 and optimal SIMD register allocation.
 """
 @generated function _phs_diff(
-        query::NTuple{N, <:Real},
-        base_coords::NTuple{N, Tg},
-        off::NTuple{N, Int},
-        hs_local::NTuple{N, Tg},
-    ) where {N, Tg}
+    query::NTuple{N,<:Real},
+    base_coords::NTuple{N,Tg},
+    off::NTuple{N,Int},
+    hs_local::NTuple{N,Tg},
+) where {N,Tg}
     exprs = [:(Tg(query[$d]) - (base_coords[$d] + Tg(off[$d]) * hs_local[$d])) for d in 1:N]
     return Expr(:tuple, exprs...)
 end
@@ -479,7 +479,7 @@ end
 
 Compile-time unrolled sum of squares for tuples.
 """
-@generated function _phs_sum_sq(x::NTuple{N, T}) where {N, T}
+@generated function _phs_sum_sq(x::NTuple{N,T}) where {N,T}
     exprs = [:(x[$d] * x[$d]) for d in 1:N]
     return Expr(:call, :+, exprs...)
 end
@@ -491,9 +491,9 @@ Compute physical distance vectors from physical coordinate difference Δx (query
 Generated at compile-time for arbitrary dimensions to ensure full unrolling and optimal SIMD register allocation.
 """
 @generated function _phs_diff_Δ(
-        Δx::NTuple{N, Tg},
-        phys_off::NTuple{N, Tg},
-    ) where {N, Tg}
+    Δx::NTuple{N,Tg},
+    phys_off::NTuple{N,Tg},
+) where {N,Tg}
     exprs = [:(Δx[$d] - phys_off[$d]) for d in 1:N]
     return Expr(:tuple, exprs...)
 end

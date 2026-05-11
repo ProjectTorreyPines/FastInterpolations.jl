@@ -227,7 +227,7 @@ end
     # Test second derivative against FD
     h = 1e-4
     for (qx, qy) in [(1.5, 1.5), (3.0, 1.0)]
-        d2f_fd  = (itp((qx + h, qy)) - 2itp((qx, qy)) + itp((qx - h, qy))) / h^2
+        d2f_fd = (itp((qx + h, qy)) - 2itp((qx, qy)) + itp((qx - h, qy))) / h^2
         d2f_itp = itp((qx, qy); deriv = (DerivOp{2}(), DerivOp{0}()))
         @test d2f_itp ≈ d2f_fd atol = 0.1   # second-order FD has O(h²) error
     end
@@ -928,7 +928,7 @@ end
         coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 2)
     @test isfinite(val3) && isfinite(d1_3) && isfinite(d2_3)
     # Cross-check: value should match the zero-deriv version; d1 matches deriv1 along ax1
-    @test val3  ≈ val_ref  atol = 1e-8
-    @test d1_3  ≈ d1x_ref  atol = 1e-8
-    @test d2_3  ≈ d2xy_direct atol = 1e-8
+    @test val3≈ val_ref atol = 1e-8
+    @test d1_3  ≈ d1x_ref atol = 1e-8
+    @test d2_3 ≈ d2xy_direct atol = 1e-8
 end

@@ -1466,19 +1466,7 @@ and its derivatives.
   Hessian:  ∂²ρ̃/∂xξ∂xζ = ∂²ρ₀/∂xξ∂xζ · G + ∂ρ₀/∂xξ · ∂G/∂xζ
                           + ∂ρ₀/∂xζ · ∂G/∂xξ + ρ₀ · ∂²G/∂xξ∂xζ
 """
-@generated function _phs_eval_ref(ref, query, ops)
-    if hasmethod(ref, Tuple{query, ops})
-        return quote
-            @inline
-            ref(query, ops)
-        end
-    else
-        return quote
-            @inline
-            ref(query; deriv = ops)
-        end
-    end
-end
+@inline _phs_eval_ref(ref, query, ops) = ref(query; deriv = ops)
 
 @inline function _phs_eval_ref_deriv1(ref, query, ax::Int, ::Val{N}, ::Type{Tg}) where {N, Tg}
     return _phs_eval_ref_deriv1(ref, query, Val(ax), Val(N), Tg)

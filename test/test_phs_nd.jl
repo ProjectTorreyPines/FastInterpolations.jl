@@ -955,3 +955,58 @@ end
     @test d1_3 ≈ d1x_ref atol = 1.0e-8
     @test d2_3 ≈ d2xy_direct atol = 1.0e-8
 end
+
+@testitem "PHS eval — K!=3 and custom reference function coverage" begin
+    # ── Setup with degree=5 (K=5) so coefficients have correct size ──
+    x = range(0.0, 2π, 15)
+    y = range(0.0, 2π, 15)
+    data = [sin(xi) * cos(yj) for xi in x, yj in y]
+    itp = phs_interp((x, y), data; stencil_size = 5, degree = 5)
+    qx, qy = 1.5, 1.0
+
+    base_idx = FastInterpolations._phs_find_base_node(itp, (qx, qy))
+    M = size(itp.phi_inv, 1)
+    rhs_buf = zeros(eltype(itp.hs[1]), M)
+    coeff_buf = zeros(eltype(itp.hs[1]), M)
+    offsets, phys_offsets, coeffs, hs = FastInterpolations._phs_solve_stencil!(itp, base_idx, rhs_buf, coeff_buf)
+    base_coords = FastInterpolations._phs_base_coords(itp, base_idx)
+
+    # 1. _phs_eval_coeffs_deriv1 with K != 3
+    d1_k5 = FastInterpolations._phs_eval_coeffs_deriv1(
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{5}(), 1
+    )
+    @test isfinite(d1_k5)
+
+    # 2. _phs_eval_coeffs_deriv2 with K != 3 (diagonal and off-diagonal)
+    d2xx_k5 = FastInterpolations._phs_eval_coeffs_deriv2(
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{5}(), 1, 1
+    )
+    d2xy_k5 = FastInterpolations._phs_eval_coeffs_deriv2(
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{5}(), 1, 2
+    )
+    @test isfinite(d2xx_k5) && isfinite(d2xy_k5)
+
+    # 3. _phs_eval_coeffs_value_and_two_deriv1 with K != 3
+    val_k5, d1x_k5, d1y_k5 = FastInterpolations._phs_eval_coeffs_value_and_two_deriv1(
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{5}(), 1, 2
+    )
+    @test isfinite(val_k5) && isfinite(d1x_k5) && isfinite(d1y_k5)
+
+    # 4. Custom reference object implementing standard keyword argument signature
+    struct CustomRefWithMethod
+        val::Float64
+    end
+    (ref::CustomRefWithMethod)(query::Any; deriv=nothing) = deriv === nothing ? ref.val : (all(op -> op isa FastInterpolations.EvalValue, deriv) ? ref.val : 0.0)
+    
+    
+    # Let's test PHS with log-transform and this custom reference
+    ref_obj = CustomRefWithMethod(1.0)
+    rho_val = [2.0 + sin(xi) * cos(yj) for xi in x, yj in y]
+    itp_custom = phs_interp(
+        (x, y), rho_val; stencil_size = 5, degree = 3,
+        reference_interp = ref_obj
+    )
+    @test itp_custom((1.5, 1.5)) > 0.0
+    @test isfinite(itp_custom((1.5, 1.5); deriv = (DerivOp{1}(), EvalValue())))
+    @test FastInterpolations._phs_eval_ref_deriv1(ref_obj, (1.5, 1.5), 1, Val(2), Float64) == 0.0
+end

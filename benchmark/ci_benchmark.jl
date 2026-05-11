@@ -52,6 +52,7 @@ y = sin.(x) .+ 0.1 .* collect(x)
 clear_cubic_cache!()
 const itp_linear = linear_interp(x, y)
 const itp_cubic = cubic_interp(x, y)
+const itp_phs = phs_interp((x,), y; stencil_size = 8, degree = 3)
 
 # Also create vector-based grid version for dispatch comparison (cubic only)
 const x_vec = collect(x)
@@ -218,6 +219,7 @@ const data2d = [sin(xi) * cos(yj) for xi in x2d, yj in y2d]
 const itp_linear_2d = linear_interp((x2d, y2d), data2d)
 clear_cubic_cache!()
 const itp_cubic_2d = cubic_interp((x2d, y2d), data2d)
+const itp_phs_2d = phs_interp((x2d, y2d), data2d; stencil_size = 5, degree = 3)
 
 # --- 3D Setup (20×20×20 = 8,000 grid points) ---
 const x3d = range(0.0, 10.0, 20)
@@ -228,6 +230,7 @@ const data3d = [sin(xi) * cos(yj) + zk for xi in x3d, yj in y3d, zk in z3d]
 const itp_linear_3d = linear_interp((x3d, y3d, z3d), data3d)
 clear_cubic_cache!()
 const itp_cubic_3d = cubic_interp((x3d, y3d, z3d), data3d)
+const itp_phs_3d = phs_interp((x3d, y3d, z3d), data3d; stencil_size = 4, degree = 3)
 
 # --- ND Query Points ---
 const N_ND_QUERY = 100
@@ -265,6 +268,16 @@ let b = @benchmarkable cubic_interp(($x3d, $y3d, $z3d), $data3d, ($xqs_3d, $yqs_
     suite["9_nd_oneshot"]["tricubic_3d"] = b
 end
 
+let b = @benchmarkable phs_interp(($x2d, $y2d), $data2d, ($xqs_2d, $yqs_2d); stencil_size = 5, degree = 3)
+    b.params.evals = EVALS_SLOW
+    suite["9_nd_oneshot"]["phs_2d"] = b
+end
+
+let b = @benchmarkable phs_interp(($x3d, $y3d, $z3d), $data3d, ($xqs_3d, $yqs_3d, $zqs_3d); stencil_size = 4, degree = 3)
+    b.params.evals = EVALS_SLOW
+    suite["9_nd_oneshot"]["phs_3d"] = b
+end
+
 # 10. ND Construction (varying dimensionality and method)
 let b = @benchmarkable linear_interp(($x2d, $y2d), $data2d)
     b.params.evals = EVALS_MED
@@ -288,6 +301,16 @@ let b = @benchmarkable cubic_interp(($x3d, $y3d, $z3d), $data3d) setup = (clear_
     suite["10_nd_construct"]["tricubic_3d"] = b
 end
 
+let b = @benchmarkable phs_interp(($x2d, $y2d), $data2d; stencil_size = 5, degree = 3)
+    b.params.evals = EVALS_SLOW
+    suite["10_nd_construct"]["phs_2d"] = b
+end
+
+let b = @benchmarkable phs_interp(($x3d, $y3d, $z3d), $data3d; stencil_size = 4, degree = 3)
+    b.params.evals = EVALS_SLOW
+    suite["10_nd_construct"]["phs_3d"] = b
+end
+
 # 11. ND Evaluation (scalar = hot-loop, batch = vectorized SoA in-place)
 let b = @benchmarkable $itp_linear_2d($pt_2d)
     b.params.evals = EVALS_FAST
@@ -309,6 +332,16 @@ let b = @benchmarkable $itp_cubic_3d($pt_3d)
     suite["11_nd_eval"]["tricubic_3d_scalar"] = b
 end
 
+let b = @benchmarkable $itp_phs_2d($pt_2d)
+    b.params.evals = EVALS_MED
+    suite["11_nd_eval"]["phs_2d_scalar"] = b
+end
+
+let b = @benchmarkable $itp_phs_3d($pt_3d)
+    b.params.evals = EVALS_MED
+    suite["11_nd_eval"]["phs_3d_scalar"] = b
+end
+
 let b = @benchmarkable $itp_cubic_2d($out_nd, ($xqs_2d, $yqs_2d))
     b.params.evals = EVALS_SLOW
     suite["11_nd_eval"]["bicubic_2d_batch"] = b
@@ -317,6 +350,16 @@ end
 let b = @benchmarkable $itp_cubic_3d($out_nd, ($xqs_3d, $yqs_3d, $zqs_3d))
     b.params.evals = EVALS_SLOW
     suite["11_nd_eval"]["tricubic_3d_batch"] = b
+end
+
+let b = @benchmarkable $itp_phs_2d($out_nd, ($xqs_2d, $yqs_2d))
+    b.params.evals = EVALS_SLOW
+    suite["11_nd_eval"]["phs_2d_batch"] = b
+end
+
+let b = @benchmarkable $itp_phs_3d($out_nd, ($xqs_3d, $yqs_3d, $zqs_3d))
+    b.params.evals = EVALS_SLOW
+    suite["11_nd_eval"]["phs_3d_batch"] = b
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -340,6 +383,59 @@ for (glabel, itp) in [("range", itp_cubic), ("vec", itp_cubic_vec)]
         let b = @benchmarkable $itp($out_gq, $xq)
             b.params.evals = EVALS_MED
             suite["12_cubic_eval_gridquery"]["$(glabel)_$(qlbl)"] = b
+        end
+    end
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHS 1D Benchmarks
+# ══════════════════════════════════════════════════════════════════════════════
+
+println("Setting up PHS 1D benchmarks...")
+
+# 13. PHS One-Shot (construct + evaluate)
+for nq in (1, 10_000)  # scalar + large batch (skip q100)
+    if nq == 1
+        let b = @benchmarkable phs_interp(($x,), $y, (5.0,); stencil_size = 8, degree = 3)
+            b.params.evals = EVALS_MED
+            suite["13_phs_oneshot"]["q00001"] = b
+        end
+    else
+        xi = collect(range(0.1, 9.9, nq))
+        let b = @benchmarkable phs_interp(($x,), $y, ($xi,); stencil_size = 8, degree = 3)
+            b.params.evals = EVALS_SLOW
+            label = lpad(nq, 5, '0')
+            suite["13_phs_oneshot"]["q$label"] = b
+        end
+    end
+end
+
+# 14. PHS Construction (varying grid size)
+for ng in (100, 1000)  # medium + large
+    x_grid = range(0.0, 10.0, ng)
+    y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
+    let b = @benchmarkable phs_interp(($x_grid,), $y_grid; stencil_size = 8, degree = 3)
+        b.params.evals = ng >= 1000 ? EVALS_SLOW : EVALS_MED
+        label = lpad(ng, 4, '0')
+        suite["14_phs_construct"]["g$label"] = b
+    end
+end
+
+# 15. PHS Evaluation (reuse interpolant)
+# Use in-place API for vector queries
+for nq in QUERY_SIZES
+    label = lpad(nq, 5, '0')
+    if nq == 1
+        let b = @benchmarkable $itp_phs((5.0,))
+            b.params.evals = EVALS_FAST
+            suite["15_phs_eval"]["q$label"] = b
+        end
+    else
+        xi = collect(range(0.1, 9.9, nq))
+        out = Vector{Float64}(undef, nq)
+        let b = @benchmarkable $itp_phs($out, ($xi,))
+            b.params.evals = nq >= 10_000 ? EVALS_SLOW : EVALS_MED
+            suite["15_phs_eval"]["q$label"] = b
         end
     end
 end

@@ -48,3 +48,45 @@ plot_scaling_separate(result; save_dir="../docs/images", dpi=250)
 ![One-Shot](../docs/images/benchmark_oneshot_detail.png)
 
 Combined construction + evaluation time per call (fixed grid size n=100, varying query points).
+
+## CI Benchmarking (Regression Tests)
+
+The `ci_benchmark.jl` script is used in the GitHub Actions CI workflow to monitor and prevent performance regressions. You can run it locally to test code changes against a baseline or profile specific components.
+
+### Basic Usage
+
+Run all benchmark groups in the suite:
+```bash
+cd benchmark && julia --project=. ci_benchmark.jl
+```
+
+### Filtering Groups
+
+Since the full suite runs a large combination of benchmarks, you can easily control which groups are executed by passing arguments to the script. The script supports group numbers, exact group keys, or general substrings:
+
+* **By Group Number** (runs only group 15, `15_phs_eval`):
+  ```bash
+  cd benchmark && julia --project=. ci_benchmark.jl 15
+  ```
+
+* **By Substring** (runs all 1D PHS-specific benchmark groups: `13_phs_oneshot`, `14_phs_construct`, and `15_phs_eval`):
+  ```bash
+  cd benchmark && julia --project=. ci_benchmark.jl phs
+  ```
+
+* **By Exact Key**:
+  ```bash
+  cd benchmark && julia --project=. ci_benchmark.jl 15_phs_eval
+  ```
+
+* **Combining Multiple Filters** (runs group 9 and group 15):
+  ```bash
+  cd benchmark && julia --project=. ci_benchmark.jl 9 15
+  ```
+
+### Comparing Against Baselines
+
+To verify performance against a previously saved JSON baseline and trigger automated regression checks:
+```bash
+cd benchmark && julia --project=. ci_benchmark.jl --baseline output.json
+```

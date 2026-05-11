@@ -481,26 +481,38 @@ if "--list" in _POSITIONAL_ARGS
     exit(0)
 end
 
-# Parse group numbers from positional args to filter suite
-const FILTER_GROUPS = let nums = Int[]
+# Parse group filters from positional args to filter suite
+const FILTER_ARGS = let filters = String[]
     for arg in _POSITIONAL_ARGS
         arg == "--list" && continue
-        n = tryparse(Int, arg)
-        isnothing(n) && error("Unknown argument: $arg (expected group number, --list, or --baseline <path>)")
-        push!(nums, n)
+        push!(filters, arg)
     end
-    nums
+    filters
 end
-const IS_FILTERED = !isempty(FILTER_GROUPS)
+const IS_FILTERED = !isempty(FILTER_ARGS)
+
+# Helper to check if a suite key matches any filter argument
+function is_match(key::String, arg::String)
+    # Exact match
+    key == arg && return true
+    # Group number match (e.g. "15" matches "15_phs_eval")
+    parts = split(key, '_')
+    if !isempty(parts) && parts[1] == arg
+        return true
+    end
+    # Substring match (e.g. "phs_eval" matches "15_phs_eval")
+    occursin(arg, key) && return true
+    return false
+end
 
 if IS_FILTERED
     for key in collect(keys(suite))
-        group_num = tryparse(Int, split(key, '_')[1])
-        if isnothing(group_num) || group_num ∉ FILTER_GROUPS
+        matched = any(arg -> is_match(key, arg), FILTER_ARGS)
+        if !matched
             delete!(suite, key)
         end
     end
-    println("\nFiltered to groups: $(join(FILTER_GROUPS, ", ")) → $(length(suite)) group(s)")
+    println("\nFiltered to groups matching: $(join(FILTER_ARGS, ", ")) → $(length(suite)) group(s)")
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -619,7 +631,7 @@ end
 
 println("\n" * "="^70)
 if IS_FILTERED
-    println("BENCHMARK RESULTS (groups: $(join(FILTER_GROUPS, ", ")))")
+    println("BENCHMARK RESULTS (groups matching: $(join(FILTER_ARGS, ", ")))")
 else
     println("BENCHMARK SUMMARY")
 end

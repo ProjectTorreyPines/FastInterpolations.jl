@@ -5,7 +5,6 @@ import Printf
 using LinearAlgebra: Tridiagonal, lu, ldiv!
 using Preferences: @load_preference, @set_preferences!
 using AdaptiveArrayPools
-using PrecompileTools: @compile_workload
 using HelpPlots: help_plot, help_plot!
 
 # Module aggregators (encapsulate include order complexity)

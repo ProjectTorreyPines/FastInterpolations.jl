@@ -33,14 +33,14 @@ const _PHS_COEFF_CACHE_TKEY = :_phs_stencil_coeff_cache
 const _PHS_COEFF_CACHE_MAX = 5_000   # ≈ 20 MB for 516-coeff Float64 stencils
 
 @inline function _phs_get_coeff_cache(
-    itp::PHSInterpolantND{Tg,Tv,N,K},
-) where {Tg,Tv,N,K}
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+    ) where {Tg, Tv, N, K}
     tid = Threads.threadid()
     # Fallback if somehow more threads were spawned than existed at creation time
     if tid > length(itp.coeff_caches)
-        return Dict{NTuple{N,Int},Vector{Tg}}()
+        return Dict{NTuple{N, Int}, Vector{Tg}}()
     end
-    return itp.coeff_caches[tid]::Dict{NTuple{N,Int},Vector{Tg}}
+    return itp.coeff_caches[tid]::Dict{NTuple{N, Int}, Vector{Tg}}
 end
 
 # ======================================================
@@ -55,9 +55,9 @@ Find the grid node nearest to `query` in each dimension.
 O(1) per axis for uniform (ScalarSpacing) grids; O(log n) for non-uniform.
 """
 @inline function _phs_find_base_node(
-    itp::PHSInterpolantND{Tg,Tv,N,K},
-    query::NTuple{N,<:Real},
-) where {Tg,Tv,N,K}
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+    ) where {Tg, Tv, N, K}
     return ntuple(N) do d
         grid = itp.grids[d]
         n = length(grid)
@@ -84,9 +84,9 @@ end
 Physical coordinates of the base node at `base_idx`.
 """
 @inline function _phs_base_coords(
-    itp::PHSInterpolantND{Tg,Tv,N},
-    base_idx::NTuple{N,Int},
-) where {Tg,Tv,N}
+        itp::PHSInterpolantND{Tg, Tv, N},
+        base_idx::NTuple{N, Int},
+    ) where {Tg, Tv, N}
     return ntuple(d -> itp.grids[d][base_idx[d]], N)
 end
 
@@ -102,12 +102,12 @@ Fill `rhs[1:N_stencil]` with the data values at the stencil nodes
 (the polynomial consistency constraints).
 """
 @inline function _phs_build_rhs!(
-    rhs::AbstractVector,
-    data::AbstractArray{Tv,N},
-    base_idx::NTuple{N,Int},
-    offsets::Vector{<:NTuple{N,Int}},
-    grid_sizes::NTuple{N,Int},
-) where {Tv,N}
+        rhs::AbstractVector,
+        data::AbstractArray{Tv, N},
+        base_idx::NTuple{N, Int},
+        offsets::Vector{<:NTuple{N, Int}},
+        grid_sizes::NTuple{N, Int},
+    ) where {Tv, N}
     @inbounds for (i, off) in enumerate(offsets)
         cidx = ntuple(d -> clamp(base_idx[d] + off[d], 1, grid_sizes[d]), N)
         rhs[i] = data[CartesianIndex(cidx)]
@@ -126,12 +126,12 @@ Evaluate the PHS interpolant value at `query` given precomputed coefficients.
   f = Σᵢ wᵢ φ(rᵢ) + v₀ + Σⱼ vⱼ (xⱼ - xbase_j)
 """
 @inline function _phs_eval_coeffs_value(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-) where {Tv,Tg,N,K}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+    ) where {Tv, Tg, N, K}
     ns = length(phys_offsets)
     y = zero(Tv)
 
@@ -165,24 +165,24 @@ Evaluate ∂f/∂xξ (Eq. 25).
   fξ = Σᵢ wᵢ φ'(rᵢ) (xξ - xiξ)/rᵢ + vξ
 """
 @inline function _phs_eval_coeffs_deriv1(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    axis::Int,
-) where {Tv,Tg,N,K}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        axis::Int,
+    ) where {Tv, Tg, N, K}
     return _phs_eval_coeffs_deriv1(coeffs, phys_offsets, query, base_coords, Val{K}(), Val(axis))
 end
 
 @inline function _phs_eval_coeffs_deriv1(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    ::Val{axis},
-) where {Tv,Tg,N,K,axis}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ::Val{axis},
+    ) where {Tv, Tg, N, K, axis}
     ns = length(phys_offsets)
     y = zero(Tv)
 
@@ -216,26 +216,26 @@ end
 Evaluate ∂²f/∂xξ∂xζ (Eq. 26).
 """
 @inline function _phs_eval_coeffs_deriv2(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    ax1::Int,
-    ax2::Int,
-) where {Tv,Tg,N,K}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ax1::Int,
+        ax2::Int,
+    ) where {Tv, Tg, N, K}
     return _phs_eval_coeffs_deriv2(coeffs, phys_offsets, query, base_coords, Val{K}(), Val(ax1), Val(ax2))
 end
 
 @inline function _phs_eval_coeffs_deriv2(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    ::Val{ax1},
-    ::Val{ax2},
-) where {Tv,Tg,N,K,ax1,ax2}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ::Val{ax1},
+        ::Val{ax2},
+    ) where {Tv, Tg, N, K, ax1, ax2}
     ns = length(phys_offsets)
     y = zero(Tv)
 
@@ -309,24 +309,24 @@ Fused single-pass evaluation of both the interpolant value and its first derivat
 along `axis`.  Avoids traversing the stencil twice when both are needed (gradient blending).
 """
 @inline function _phs_eval_coeffs_value_and_deriv1(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    axis::Int,
-) where {Tv,Tg,N,K}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        axis::Int,
+    ) where {Tv, Tg, N, K}
     return _phs_eval_coeffs_value_and_deriv1(coeffs, phys_offsets, query, base_coords, Val{K}(), Val(axis))
 end
 
 @inline function _phs_eval_coeffs_value_and_deriv1(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    ::Val{axis},
-) where {Tv,Tg,N,K,axis}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ::Val{axis},
+    ) where {Tv, Tg, N, K, axis}
     ns = length(phys_offsets)
     yv = zero(Tv)
     yd = zero(Tv)
@@ -374,26 +374,26 @@ For diagonal (ax1==ax2): returns (f, f_ξ, f_ξξ).
 For mixed (ax1≠ax2): returns (f, f_ξ, f_ξζ) where first-deriv is w.r.t. ax1.
 """
 @inline function _phs_eval_coeffs_value_and_deriv1_and_deriv2(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    ax1::Int,
-    ax2::Int,
-) where {Tv,Tg,N,K}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ax1::Int,
+        ax2::Int,
+    ) where {Tv, Tg, N, K}
     return _phs_eval_coeffs_value_and_deriv1_and_deriv2(coeffs, phys_offsets, query, base_coords, Val{K}(), Val(ax1), Val(ax2))
 end
 
 @inline function _phs_eval_coeffs_value_and_deriv1_and_deriv2(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    ::Val{ax1},
-    ::Val{ax2},
-) where {Tv,Tg,N,K,ax1,ax2}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ::Val{ax1},
+        ::Val{ax2},
+    ) where {Tv, Tg, N, K, ax1, ax2}
     ns = length(phys_offsets)
     yv = zero(Tv)
     yd1 = zero(Tv)
@@ -484,26 +484,26 @@ Fused single-pass evaluation of value, ∂f/∂x_{ax1}, and ∂f/∂x_{ax2}.
 Used for mixed-Hessian blending to get both first-derivative components in one loop.
 """
 @inline function _phs_eval_coeffs_value_and_two_deriv1(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    ax1::Int,
-    ax2::Int,
-) where {Tv,Tg,N,K}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ax1::Int,
+        ax2::Int,
+    ) where {Tv, Tg, N, K}
     return _phs_eval_coeffs_value_and_two_deriv1(coeffs, phys_offsets, query, base_coords, Val{K}(), Val(ax1), Val(ax2))
 end
 
 @inline function _phs_eval_coeffs_value_and_two_deriv1(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    ::Val{ax1},
-    ::Val{ax2},
-) where {Tv,Tg,N,K,ax1,ax2}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ::Val{ax1},
+        ::Val{ax2},
+    ) where {Tv, Tg, N, K, ax1, ax2}
     ns = length(phys_offsets)
     yv = zero(Tv)
     yd1 = zero(Tv)
@@ -554,26 +554,26 @@ for the off-diagonal (ax1 ≠ ax2) mixed Hessian case.  Replaces the previous tw
 of calling `_phs_eval_coeffs_value_and_two_deriv1` followed by `_phs_eval_coeffs_deriv2`.
 """
 @inline function _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    ax1::Int,
-    ax2::Int,
-) where {Tv,Tg,N,K}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ax1::Int,
+        ax2::Int,
+    ) where {Tv, Tg, N, K}
     return _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(coeffs, phys_offsets, query, base_coords, Val{K}(), Val(ax1), Val(ax2))
 end
 
 @inline function _phs_eval_coeffs_value_and_two_deriv1_and_deriv2(
-    coeffs::AbstractVector{Tv},
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    ::Val{ax1},
-    ::Val{ax2},
-) where {Tv,Tg,N,K,ax1,ax2}
+        coeffs::AbstractVector{Tv},
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ::Val{ax1},
+        ::Val{ax2},
+    ) where {Tv, Tg, N, K, ax1, ax2}
     ns = length(phys_offsets)
     yv = zero(Tv)
     yd1 = zero(Tv)
@@ -634,11 +634,11 @@ selects offsets/Φ⁻¹, builds the RHS, and computes `coeff = Φ⁻¹ * rhs` (B
 Returns the stencil offsets, coefficient vector (aliasing `coeff_buf`), and grid spacings.
 """
 @inline function _phs_solve_stencil!(
-    itp::PHSInterpolantND{Tg,Tv,N,K},
-    base_idx::NTuple{N,Int},
-    rhs_buf::Vr,
-    coeff_buf::Vc,
-) where {Tg,Tv,N,K,Vr<:AbstractVector,Vc<:AbstractVector}
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        base_idx::NTuple{N, Int},
+        rhs_buf::Vr,
+        coeff_buf::Vc,
+    ) where {Tg, Tv, N, K, Vr <: AbstractVector, Vc <: AbstractVector}
     hs_local = itp.hs
     grid_sizes = ntuple(d -> length(itp.grids[d]), N)
     shift = _phs_compute_shift(base_idx, itp.stencil_lo, itp.stencil_hi, grid_sizes)
@@ -659,7 +659,7 @@ Returns the stencil offsets, coefficient vector (aliasing `coeff_buf`), and grid
     actual_coeff = length(coeff_buf) == M ? coeff_buf : similar(coeff_buf, M)
     actual_rhs = length(rhs_buf) == M ? rhs_buf : similar(rhs_buf, M)
     ns = length(offsets)
-    @inbounds for i in ns+1:M
+    @inbounds for i in (ns + 1):M
         actual_rhs[i] = zero(Tg)
     end  # zero polynomial tail only
     _phs_build_rhs!(actual_rhs, itp.data, base_idx, offsets, grid_sizes)
@@ -680,13 +680,13 @@ Evaluate the local PHS interpolant given precomputed coefficients.
 Dispatches to the appropriate `_phs_eval_coeffs_*` function based on `ops`.
 """
 @inline function _phs_eval_from_coeffs(
-    coeffs::AbstractVector,
-    phys_offsets::Vector{<:NTuple{N,Tg}},
-    query::NTuple{N,<:Real},
-    base_coords::NTuple{N,Tg},
-    ::Val{K},
-    ops::O,
-) where {Tg,N,K,O<:Tuple{Vararg{AbstractEvalOp,N}}}
+        coeffs::AbstractVector,
+        phys_offsets::Vector{<:NTuple{N, Tg}},
+        query::NTuple{N, <:Real},
+        base_coords::NTuple{N, Tg},
+        ::Val{K},
+        ops::O,
+    ) where {Tg, N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}}
     total_order = sum(deriv_order(ops[d]) for d in 1:N)
     if total_order == 0
         return _phs_eval_coeffs_value(coeffs, phys_offsets, query, base_coords, Val{K}())
@@ -710,13 +710,13 @@ Evaluate the local PHS interpolant based at `base_idx` at point `query`.
 Uses pre-allocated buffers `rhs_buf` and `coeff_buf` (from AdaptiveArrayPools).
 """
 @inline function _phs_eval_stencil(
-    itp::PHSInterpolantND{Tg,Tv,N,K},
-    base_idx::NTuple{N,Int},
-    query::NTuple{N,<:Real},
-    ops::O,
-    rhs_buf::Vr,
-    coeff_buf::Vc,
-) where {Tg,Tv,N,K,O<:Tuple{Vararg{AbstractEvalOp,N}},Vr<:AbstractVector,Vc<:AbstractVector}
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        base_idx::NTuple{N, Int},
+        query::NTuple{N, <:Real},
+        ops::O,
+        rhs_buf::Vr,
+        coeff_buf::Vc,
+    ) where {Tg, Tv, N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}, Vr <: AbstractVector, Vc <: AbstractVector}
     offsets, phys_offsets, coeff, hs_local = _phs_solve_stencil!(itp, base_idx, rhs_buf, coeff_buf)
     base_coords = _phs_base_coords(itp, base_idx)
     return _phs_eval_from_coeffs(coeff, phys_offsets, query, base_coords, Val{K}(), ops)
@@ -739,10 +739,10 @@ Algorithm:
     F''  = (N'' - 2·N'·W'/W - F·W'' + 2·F·(W')²/W) / W
 """
 @with_pool pool function _phs_eval_blended(
-    itp::PHSInterpolantND{Tg,Tv,N,K},
-    query::NTuple{N,<:Real},
-    ops::O,
-) where {Tg,Tv,N,K,O<:Tuple{Vararg{AbstractEvalOp,N}}}
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+        ops::O,
+    ) where {Tg, Tv, N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}}
     blend_a = itp.blend_a
     blend_a3 = itp.blend_a3
     base_idx0 = _phs_find_base_node(itp, query)
@@ -924,7 +924,7 @@ Algorithm:
         else
             # ∂²F/∂x_ξ∂x_ζ = N''_ξζ/W - (N'_ξ·W'_ζ + N'_ζ·W'_ξ)/W² - F·W''_ξζ/W + 2F·W'_ξ·W'_ζ/W²
             d2F = sum_N2 / W - (sum_N1 * sum_W1b + sum_N1b * sum_W1) / W^2 -
-                  F * sum_W2 / W + 2 * F * sum_W1 * sum_W1b / W^2
+                F * sum_W2 / W + 2 * F * sum_W1 * sum_W1b / W^2
         end
         return Tv(d2F)
     end
@@ -958,10 +958,10 @@ Identical accumulation structure to `_phs_eval_blended`, but replaces f_i with
 g_i = exp(f_i) and propagates derivatives via the chain rule.
 """
 @with_pool pool function _phs_eval_blended_G(
-    itp::PHSInterpolantND{Tg,Tv,N,K},
-    query::NTuple{N,<:Real},
-    ops::O,
-) where {Tg,Tv,N,K,O<:Tuple{Vararg{AbstractEvalOp,N}}}
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+        ops::O,
+    ) where {Tg, Tv, N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}}
     blend_a = itp.blend_a
     blend_a3 = itp.blend_a3
     base_idx0 = _phs_find_base_node(itp, query)
@@ -1153,7 +1153,7 @@ g_i = exp(f_i) and propagates derivatives via the chain rule.
             d2G = sum_N2 / W - 2 * sum_N1 * sum_W1 / W^2 - G * sum_W2 / W + 2 * G * (sum_W1 / W)^2
         else
             d2G = sum_N2 / W - (sum_N1 * sum_W1b + sum_N1b * sum_W1) / W^2 -
-                  G * sum_W2 / W + 2 * G * sum_W1 * sum_W1b / W^2
+                G * sum_W2 / W + 2 * G * sum_W1 * sum_W1b / W^2
         end
         return Tv(d2G)
     end
@@ -1172,7 +1172,7 @@ end
 # of a full BLAS GEMV.
 
 # Static type-level helpers for resolving derivative axes from the Tuple type O:
-@inline function _phs_get_deriv1_axis(::Type{O}) where {O<:Tuple}
+@inline function _phs_get_deriv1_axis(::Type{O}) where {O <: Tuple}
     for d in 1:fieldcount(O)
         if fieldtype(O, d) <: DerivOp{1}
             return d
@@ -1181,7 +1181,7 @@ end
     return 1
 end
 
-@generated function _phs_get_deriv1_axis_val(::Type{O}) where {O<:Tuple}
+@generated function _phs_get_deriv1_axis_val(::Type{O}) where {O <: Tuple}
     for d in 1:fieldcount(O)
         if fieldtype(O, d) <: DerivOp{1}
             return :(Val{$d}())
@@ -1190,7 +1190,7 @@ end
     return :(Val{1}())
 end
 
-@inline function _phs_get_deriv2_axes(::Type{O}) where {O<:Tuple}
+@inline function _phs_get_deriv2_axes(::Type{O}) where {O <: Tuple}
     ax1 = 0
     ax2 = 0
     for d in 1:fieldcount(O)
@@ -1209,7 +1209,7 @@ end
     return ax1, ax2
 end
 
-@generated function _phs_get_deriv2_axes_val(::Type{O}) where {O<:Tuple}
+@generated function _phs_get_deriv2_axes_val(::Type{O}) where {O <: Tuple}
     ax1 = 0
     ax2 = 0
     for d in 1:fieldcount(O)
@@ -1236,18 +1236,18 @@ blend neighbourhood, replacing the two separate `_phs_eval_blended_G` calls
 that `_phs_eval_with_transform` previously made for gradient queries.
 """
 @inline function _phs_eval_blended_G_with_grad(
-    itp::PHSInterpolantND{Tg,Tv,N,K},
-    query::NTuple{N,<:Real},
-    grad_ax::Int,
-) where {Tg,Tv,N,K}
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+        grad_ax::Int,
+    ) where {Tg, Tv, N, K}
     return _phs_eval_blended_G_with_grad(itp, query, Val(grad_ax))
 end
 
 @with_pool pool function _phs_eval_blended_G_with_grad(
-    itp::PHSInterpolantND{Tg,Tv,N,K},
-    query::NTuple{N,<:Real},
-    ::Val{grad_ax},
-) where {Tg,Tv,N,K,grad_ax}
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+        ::Val{grad_ax},
+    ) where {Tg, Tv, N, K, grad_ax}
     blend_a = itp.blend_a
     blend_a3 = itp.blend_a3
     base_idx0 = _phs_find_base_node(itp, query)
@@ -1314,20 +1314,20 @@ G_ax2 == G_ax1.  Replaces four separate `_phs_eval_blended_G` calls that
 `_phs_eval_with_transform` previously made for Hessian queries.
 """
 @inline function _phs_eval_blended_G_with_hess(
-    itp::PHSInterpolantND{Tg,Tv,N,K},
-    query::NTuple{N,<:Real},
-    ax1::Int,
-    ax2::Int,
-) where {Tg,Tv,N,K}
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+        ax1::Int,
+        ax2::Int,
+    ) where {Tg, Tv, N, K}
     return _phs_eval_blended_G_with_hess(itp, query, Val(ax1), Val(ax2))
 end
 
 @with_pool pool function _phs_eval_blended_G_with_hess(
-    itp::PHSInterpolantND{Tg,Tv,N,K},
-    query::NTuple{N,<:Real},
-    ::Val{ax1},
-    ::Val{ax2},
-) where {Tg,Tv,N,K,ax1,ax2}
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+        ::Val{ax1},
+        ::Val{ax2},
+    ) where {Tg, Tv, N, K, ax1, ax2}
     blend_a = itp.blend_a
     blend_a3 = itp.blend_a3
     base_idx0 = _phs_find_base_node(itp, query)
@@ -1448,7 +1448,7 @@ end
     else
         G_ax2 = Tv((sum_N1b - G * sum_W1b) / W)
         d2G = sum_N2 / W - (sum_N1 * sum_W1b + sum_N1b * sum_W1) / W^2 -
-              G * sum_W2 / W + 2 * G * sum_W1 * sum_W1b / W^2
+            G * sum_W2 / W + 2 * G * sum_W1 * sum_W1b / W^2
     end
     return G, G_ax1, G_ax2, Tv(d2G)
 end
@@ -1467,7 +1467,7 @@ and its derivatives.
                           + ∂ρ₀/∂xζ · ∂G/∂xξ + ρ₀ · ∂²G/∂xξ∂xζ
 """
 @generated function _phs_eval_ref(ref, query, ops)
-    if hasmethod(ref, Tuple{query,ops})
+    if hasmethod(ref, Tuple{query, ops})
         return quote
             @inline
             ref(query, ops)
@@ -1475,25 +1475,25 @@ and its derivatives.
     else
         return quote
             @inline
-            ref(query; deriv=ops)
+            ref(query; deriv = ops)
         end
     end
 end
 
-@inline function _phs_eval_ref_deriv1(ref, query, ax::Int, ::Val{N}, ::Type{Tg}) where {N,Tg}
+@inline function _phs_eval_ref_deriv1(ref, query, ax::Int, ::Val{N}, ::Type{Tg}) where {N, Tg}
     return _phs_eval_ref_deriv1(ref, query, Val(ax), Val(N), Tg)
 end
 
-@inline function _phs_eval_ref_deriv1(ref, query, ::Val{ax}, ::Val{N}, ::Type{Tg}) where {N,Tg,ax}
+@inline function _phs_eval_ref_deriv1(ref, query, ::Val{ax}, ::Val{N}, ::Type{Tg}) where {N, Tg, ax}
     ops = ntuple(d -> d == ax ? DerivOp{1}() : EvalValue(), Val(N))
     return Tg(_phs_eval_ref(ref, query, ops))
 end
 
 function _phs_eval_with_transform(
-    itp::PHSInterpolantND{Tg,Tv,N,K},
-    query::NTuple{N,<:Real},
-    ops::O,
-) where {Tg,Tv,N,K,O<:Tuple{Vararg{AbstractEvalOp,N}}}
+        itp::PHSInterpolantND{Tg, Tv, N, K},
+        query::NTuple{N, <:Real},
+        ops::O,
+    ) where {Tg, Tv, N, K, O <: Tuple{Vararg{AbstractEvalOp, N}}}
     total_deriv = sum(deriv_order(ops[d]) for d in 1:N)
     ref = itp.transform.reference
 
@@ -1549,9 +1549,9 @@ end
 @inline _phs_eval_dispatch(itp, ::Any, query, ops) = _phs_eval_with_transform(itp, query, ops)
 
 @inline function _phs_eval(
-    itp::PHSInterpolantND,
-    query::NTuple{N,<:Real},
-    ops::O,
-) where {N,O<:Tuple{Vararg{AbstractEvalOp,N}}}
+        itp::PHSInterpolantND,
+        query::NTuple{N, <:Real},
+        ops::O,
+    ) where {N, O <: Tuple{Vararg{AbstractEvalOp, N}}}
     return _phs_eval_dispatch(itp, itp.transform, query, ops)
 end

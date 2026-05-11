@@ -153,7 +153,7 @@ function ensure_wfc_files()
     end
 
     println("\n  Downloaded $download_count new wavefunction files")
-    if download_count > 0
+    return if download_count > 0
         println("  ✓ Wavefunction files ready")
     end
 end
@@ -179,7 +179,7 @@ rho_3d = Float64.(pkl["variables"]["density_scf"])   # DFT reference density: (n
 # ============================================================
 println("Loading 1D analytical path from CSV...")
 
-raw = readdlm(CSV_PATH, ',', skipstart=1)
+raw = readdlm(CSV_PATH, ',', skipstart = 1)
 # column order: point, x_bohr, y_bohr, z_bohr, arclength_bohr,
 #               density_scf, density_frag, dengrad_mag, laplacian_scf
 qx = Float64.(raw[:, 2])               # x_bohr
@@ -220,7 +220,7 @@ File format:
   Lines 6…: r  ψ₁(r)  ψ₂(r)  …  ψₙₒᵣb(r)
 """
 function parse_wfc(filepath::String)
-    open(filepath) do io
+    return open(filepath) do io
         norb = parse(Int, readline(io))
         readline(io)                              # labels — not needed
         occ = parse.(Float64, split(readline(io)))
@@ -245,7 +245,7 @@ end
 
 # Build a Dict: Z => 1D cubic spline of ρ(r) for each element present in system
 # (lazy-loaded; only elements actually needed are parsed)
-const _wfc_cache = Dict{Int,Any}()
+const _wfc_cache = Dict{Int, Any}()
 
 function get_rho_itp(Z::Int)
     haskey(_wfc_cache, Z) && return _wfc_cache[Z]
@@ -254,7 +254,7 @@ function get_rho_itp(Z::Int)
     fname = joinpath(WFC_DIR, wfc_filename(sym))
     isfile(fname) || error("wfc file not found: $fname")
     r_grid, rho_vals = parse_wfc(fname)
-    itp = cubic_interp(r_grid, rho_vals; extrap=FillExtrap(0.0))
+    itp = cubic_interp(r_grid, rho_vals; extrap = FillExtrap(0.0))
     _wfc_cache[Z] = itp
     return itp
 end
@@ -271,14 +271,14 @@ Skips the first two header lines.
 function load_xyz(filepath::String)
     lines = readlines(filepath)
     n = parse(Int, strip(lines[1]))
-    atoms = Vector{Tuple{Int,NTuple{3,Float64}}}(undef, n)
+    atoms = Vector{Tuple{Int, NTuple{3, Float64}}}(undef, n)
     for i in 1:n
-        parts = split(strip(lines[i+2]))
+        parts = split(strip(lines[i + 2]))
         sym = String(parts[1])
         Z = ELEMENT_Z[sym]
         x, y, z = parse(Float64, parts[2]) * ANG2BOHR,
-        parse(Float64, parts[3]) * ANG2BOHR,
-        parse(Float64, parts[4]) * ANG2BOHR
+            parse(Float64, parts[3]) * ANG2BOHR,
+            parse(Float64, parts[4]) * ANG2BOHR
         atoms[i] = (Z, (x, y, z))
     end
     return atoms
@@ -318,18 +318,18 @@ end
 # Type parameter I is the concrete spline type (CubicInterpolant{...}), making
 # cache::Dict{Int,I} fully type-stable so all per-atom eval calls are zero-alloc.
 struct PromolecularRef{I}
-    atoms::Vector{Tuple{Int,NTuple{3,Float64}}}  # (Z, (x,y,z)) in Bohr
+    atoms::Vector{Tuple{Int, NTuple{3, Float64}}}  # (Z, (x,y,z)) in Bohr
     cache_array::Vector{I}
-    cache::Dict{Int,I}                            # Z => typed 1D spline
+    cache::Dict{Int, I}                            # Z => typed 1D spline
 end
 
 # Constructor: load all element splines and embed a typed Dict.
-function PromolecularRef(atoms::Vector{Tuple{Int,NTuple{3,Float64}}})
+function PromolecularRef(atoms::Vector{Tuple{Int, NTuple{3, Float64}}})
     for (Z, _) in atoms
         get_rho_itp(Z)
     end   # populate _wfc_cache (Dict{Int,Any})
     I = typeof(first(values(_wfc_cache)))
-    cache = Dict{Int,I}(k => v for (k, v) in _wfc_cache)
+    cache = Dict{Int, I}(k => v for (k, v) in _wfc_cache)
 
     max_z = maximum(Z for (Z, _) in atoms)
     cache_array = Vector{I}(undef, max_z)
@@ -341,7 +341,7 @@ function PromolecularRef(atoms::Vector{Tuple{Int,NTuple{3,Float64}}})
     return PromolecularRef{I}(atoms, cache_array, cache)
 end
 
-@inline function _pmr_get_deriv_info(::Type{O}) where {O<:Tuple}
+@inline function _pmr_get_deriv_info(::Type{O}) where {O <: Tuple}
     orders = (deriv_order(fieldtype(O, 1)), deriv_order(fieldtype(O, 2)), deriv_order(fieldtype(O, 3)))
     total = sum(orders)
     if total == 1
@@ -357,7 +357,7 @@ end
     end
 end
 
-@inline function _pmr_eval_val_internal(pmr::PromolecularRef, q::NTuple{3,<:Real})
+@inline function _pmr_eval_val_internal(pmr::PromolecularRef, q::NTuple{3, <:Real})
     # Value evaluation
     f = 0.0
     @inbounds for i in 1:length(pmr.atoms)
@@ -366,17 +366,17 @@ end
         xx2 = q[2] - R[2]
         xx3 = q[3] - R[3]
         r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
-        r < 1e-14 && continue
+        r < 1.0e-14 && continue
         f += max(pmr.cache_array[Z](r), 0.0)
     end
     return f
 end
 
-@inline function (pmr::PromolecularRef)(q::NTuple{3,<:Real})
+@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real})
     return _pmr_eval_val_internal(pmr, q)
 end
 
-@inline function (pmr::PromolecularRef)(q::NTuple{3,<:Real}, ops::O) where {O}
+@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real}, ops::O) where {O}
     info = _pmr_get_deriv_info(O)
     total = info[1]
     if total == 0
@@ -391,9 +391,9 @@ end
             xx2 = q[2] - R[2]
             xx3 = q[3] - R[3]
             r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
-            r < 1e-14 && continue
+            r < 1.0e-14 && continue
             dx = ax == 1 ? xx1 : (ax == 2 ? xx2 : xx3)
-            fp += pmr.cache_array[Z](r; deriv=D1) * dx / r
+            fp += pmr.cache_array[Z](r; deriv = D1) * dx / r
         end
         return fp
     elseif total == 2
@@ -408,10 +408,10 @@ end
             xx2 = q[2] - R[2]
             xx3 = q[3] - R[3]
             r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
-            r < 1e-14 && continue
+            r < 1.0e-14 && continue
             rho_itp = pmr.cache_array[Z]
-            rhop = rho_itp(r; deriv=D1)
-            rhopp = rho_itp(r; deriv=D2)
+            rhop = rho_itp(r; deriv = D1)
+            rhopp = rho_itp(r; deriv = D2)
             rfac = (rhopp - rhop / r) / (r * r)
             dx1 = ax1 == 1 ? xx1 : (ax1 == 2 ? xx2 : xx3)
             dx2 = ax2 == 1 ? xx1 : (ax2 == 2 ? xx2 : xx3)
@@ -423,7 +423,7 @@ end
     end
 end
 
-@inline function (pmr::PromolecularRef)(q::NTuple{3,<:Real}; deriv=nothing)
+@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real}; deriv = nothing)
     if deriv === nothing
         return _pmr_eval_val_internal(pmr, q)
     else
@@ -433,10 +433,10 @@ end
 
 # In-place batch evaluation mirroring the PHS batch API
 function (pmr::PromolecularRef)(
-    out::AbstractVector{T},
-    queries::Union{Tuple{Vararg{AbstractVector,3}},AbstractVector};
-    deriv::Union{DerivOp,Tuple{Vararg{DerivOp,3}}}=EvalValue(),
-) where {T}
+        out::AbstractVector{T},
+        queries::Union{Tuple{Vararg{AbstractVector, 3}}, AbstractVector};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, 3}}} = EvalValue(),
+    ) where {T}
     N = 3
     ops = FastInterpolations._resolve_deriv_nd(deriv, Val(N))
     nq = FastInterpolations._query_length(queries)
@@ -444,7 +444,7 @@ function (pmr::PromolecularRef)(
 
     @inbounds for k in 1:nq
         q = FastInterpolations._extract_query_point(queries, k, Val(N))
-        out[k] = pmr(q; deriv=ops)
+        out[k] = pmr(q; deriv = ops)
     end
     return out
 end
@@ -460,8 +460,8 @@ grids = (x_grid, y_grid, z_grid)
 println("\nBuilding interpolants on $(length(x_grid))×$(length(y_grid))×$(length(z_grid)) grid...")
 
 # Storage for timing information
-build_times = Dict{String,Float64}()
-eval_times = Dict{String,Dict{String,Float64}}()
+build_times = Dict{String, Float64}()
+eval_times = Dict{String, Dict{String, Float64}}()
 
 println("  [1/4] Nearest (constant)...")
 time_nearest = @elapsed itp_nearest = constant_interp(grids, rho_3d)
@@ -479,8 +479,10 @@ build_times["Cubic"] = time_cubic
 @printf "    %.4f seconds\n" time_cubic
 
 println("  [4/4] Tricubic (Cardinal / Catmull-Rom)...")
-time_cardinal = @elapsed itp_cardinal = interp(grids, rho_3d;
-    method=(CardinalInterp(), CardinalInterp(), CardinalInterp()))
+time_cardinal = @elapsed itp_cardinal = interp(
+    grids, rho_3d;
+    method = (CardinalInterp(), CardinalInterp(), CardinalInterp())
+)
 build_times["Cardinal"] = time_cardinal
 @printf "    %.4f seconds\n" time_cardinal
 
@@ -490,8 +492,10 @@ println("  [PHS] Polyharmonic spline (PHS-3, stencil_size=8, log-density transfo
 # from PBE all-electron atomic radial splines via the chain rule — matches the
 # Fortran crystalmod_promolecular approach and avoids Gibbs-like errors from
 # a cubic spline of log(ρ₀) near nuclear cusps.
-time_phs = @elapsed itp_phs = phs_interp(grids, rho_3d; stencil_size=8, degree=3, blend_factor=2.0,
-    reference_interp=ref_rho0)
+time_phs = @elapsed itp_phs = phs_interp(
+    grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 2.0,
+    reference_interp = ref_rho0
+)
 build_times["PHS"] = time_phs
 @printf "    %.4f seconds\n" time_phs
 
@@ -541,12 +545,12 @@ const _gz = zeros(N_path)
 print("  Warming up PHS (JIT + stencil cache) ... ")
 flush(stdout)
 itp_phs(ρ_phs, queries)                                    # value → compile + cache fill
-itp_phs(_gx, queries; deriv=(D1, D0, D0))                # gradient-x → compile
-itp_phs(_gy, queries; deriv=(D0, D1, D0))                # gradient-y
-itp_phs(_gz, queries; deriv=(D0, D0, D1))                # gradient-z
-itp_phs(_gx, queries; deriv=(D2, D0, D0))                # Laplacian-xx → compile
-itp_phs(_gy, queries; deriv=(D0, D2, D0))                # Laplacian-yy
-itp_phs(_gz, queries; deriv=(D0, D0, D2))                # Laplacian-zz
+itp_phs(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
+itp_phs(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
+itp_phs(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
+itp_phs(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
+itp_phs(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
+itp_phs(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
 println("done.")
 
 # Warm up other interpolants for fair comparison
@@ -556,30 +560,30 @@ itp_nearest(ρ_nearest, queries)                                    # value → 
 itp_linear(ρ_linear, queries)                                    # value → compile + cache fill
 itp_cubic(ρ_cubic, queries)                                    # value → compile + cache fill
 itp_cardinal(ρ_cardinal, queries)                                    # value → compile + cache fill
-itp_nearest(_gx, queries; deriv=(D1, D0, D0))                # gradient-x → compile
-itp_nearest(_gy, queries; deriv=(D0, D1, D0))                # gradient-y
-itp_nearest(_gz, queries; deriv=(D0, D0, D1))                # gradient-z
-itp_nearest(_gx, queries; deriv=(D2, D0, D0))                # Laplacian-xx → compile
-itp_nearest(_gy, queries; deriv=(D0, D2, D0))                # Laplacian-yy
-itp_nearest(_gz, queries; deriv=(D0, D0, D2))                # Laplacian-zz
-itp_linear(_gx, queries; deriv=(D1, D0, D0))                # gradient-x → compile
-itp_linear(_gy, queries; deriv=(D0, D1, D0))                # gradient-y
-itp_linear(_gz, queries; deriv=(D0, D0, D1))                # gradient-z
-itp_linear(_gx, queries; deriv=(D2, D0, D0))                # Laplacian-xx → compile
-itp_linear(_gy, queries; deriv=(D0, D2, D0))                # Laplacian-yy
-itp_linear(_gz, queries; deriv=(D0, D0, D2))                # Laplacian-zz
-itp_cubic(_gx, queries; deriv=(D1, D0, D0))                # gradient-x → compile
-itp_cubic(_gy, queries; deriv=(D0, D1, D0))                # gradient-y
-itp_cubic(_gz, queries; deriv=(D0, D0, D1))                # gradient-z
-itp_cubic(_gx, queries; deriv=(D2, D0, D0))                # Laplacian-xx → compile
-itp_cubic(_gy, queries; deriv=(D0, D2, D0))                # Laplacian-yy
-itp_cubic(_gz, queries; deriv=(D0, D0, D2))                # Laplacian-zz
-itp_cardinal(_gx, queries; deriv=(D1, D0, D0))                # gradient-x → compile
-itp_cardinal(_gy, queries; deriv=(D0, D1, D0))                # gradient-y
-itp_cardinal(_gz, queries; deriv=(D0, D0, D1))                # gradient-z
-itp_cardinal(_gx, queries; deriv=(D2, D0, D0))                # Laplacian-xx → compile
-itp_cardinal(_gy, queries; deriv=(D0, D2, D0))                # Laplacian-yy
-itp_cardinal(_gz, queries; deriv=(D0, D0, D2))                # Laplacian-zz
+itp_nearest(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
+itp_nearest(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
+itp_nearest(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
+itp_nearest(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
+itp_nearest(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
+itp_nearest(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
+itp_linear(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
+itp_linear(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
+itp_linear(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
+itp_linear(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
+itp_linear(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
+itp_linear(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
+itp_cubic(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
+itp_cubic(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
+itp_cubic(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
+itp_cubic(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
+itp_cubic(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
+itp_cubic(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
+itp_cardinal(_gx, queries; deriv = (D1, D0, D0))                # gradient-x → compile
+itp_cardinal(_gy, queries; deriv = (D0, D1, D0))                # gradient-y
+itp_cardinal(_gz, queries; deriv = (D0, D0, D1))                # gradient-z
+itp_cardinal(_gx, queries; deriv = (D2, D0, D0))                # Laplacian-xx → compile
+itp_cardinal(_gy, queries; deriv = (D0, D2, D0))                # Laplacian-yy
+itp_cardinal(_gz, queries; deriv = (D0, D0, D2))                # Laplacian-zz
 println("done.")
 
 # ── density ρ ──────────────────────────────────────────────────────────────────
@@ -610,33 +614,33 @@ eval_times["|∇ρ|"] = Dict()
 
 print("    Linear ... ")
 eval_times["|∇ρ|"]["Linear"] = @elapsed @time begin
-    itp_linear(_gx, queries; deriv=(D1, D0, D0))
-    itp_linear(_gy, queries; deriv=(D0, D1, D0))
-    itp_linear(_gz, queries; deriv=(D0, D0, D1))
+    itp_linear(_gx, queries; deriv = (D1, D0, D0))
+    itp_linear(_gy, queries; deriv = (D0, D1, D0))
+    itp_linear(_gz, queries; deriv = (D0, D0, D1))
     @. ∇ρ_linear = sqrt(_gx^2 + _gy^2 + _gz^2)
 end
 
 print("    Cubic ... ")
 eval_times["|∇ρ|"]["Cubic"] = @elapsed @time begin
-    itp_cubic(_gx, queries; deriv=(D1, D0, D0))
-    itp_cubic(_gy, queries; deriv=(D0, D1, D0))
-    itp_cubic(_gz, queries; deriv=(D0, D0, D1))
+    itp_cubic(_gx, queries; deriv = (D1, D0, D0))
+    itp_cubic(_gy, queries; deriv = (D0, D1, D0))
+    itp_cubic(_gz, queries; deriv = (D0, D0, D1))
     @. ∇ρ_cubic = sqrt(_gx^2 + _gy^2 + _gz^2)
 end
 
 print("    Cardinal ... ")
 eval_times["|∇ρ|"]["Cardinal"] = @elapsed @time begin
-    itp_cardinal(_gx, queries; deriv=(D1, D0, D0))
-    itp_cardinal(_gy, queries; deriv=(D0, D1, D0))
-    itp_cardinal(_gz, queries; deriv=(D0, D0, D1))
+    itp_cardinal(_gx, queries; deriv = (D1, D0, D0))
+    itp_cardinal(_gy, queries; deriv = (D0, D1, D0))
+    itp_cardinal(_gz, queries; deriv = (D0, D0, D1))
     @. ∇ρ_cardinal = sqrt(_gx^2 + _gy^2 + _gz^2)
 end
 
 print("    PHS ... ")
 eval_times["|∇ρ|"]["PHS"] = @elapsed @time begin
-    itp_phs(_gx, queries; deriv=(D1, D0, D0))
-    itp_phs(_gy, queries; deriv=(D0, D1, D0))
-    itp_phs(_gz, queries; deriv=(D0, D0, D1))
+    itp_phs(_gx, queries; deriv = (D1, D0, D0))
+    itp_phs(_gy, queries; deriv = (D0, D1, D0))
+    itp_phs(_gz, queries; deriv = (D0, D0, D1))
     @. ∇ρ_phs = sqrt(_gx^2 + _gy^2 + _gz^2)
 end
 
@@ -646,25 +650,25 @@ eval_times["|∇²ρ|"] = Dict()
 
 print("    Cubic ... ")
 eval_times["|∇²ρ|"]["Cubic"] = @elapsed @time begin
-    itp_cubic(_gx, queries; deriv=(D2, D0, D0))
-    itp_cubic(_gy, queries; deriv=(D0, D2, D0))
-    itp_cubic(_gz, queries; deriv=(D0, D0, D2))
+    itp_cubic(_gx, queries; deriv = (D2, D0, D0))
+    itp_cubic(_gy, queries; deriv = (D0, D2, D0))
+    itp_cubic(_gz, queries; deriv = (D0, D0, D2))
     @. ∇²ρ_cubic = abs(_gx + _gy + _gz)
 end
 
 print("    Cardinal ... ")
 eval_times["|∇²ρ|"]["Cardinal"] = @elapsed @time begin
-    itp_cardinal(_gx, queries; deriv=(D2, D0, D0))
-    itp_cardinal(_gy, queries; deriv=(D0, D2, D0))
-    itp_cardinal(_gz, queries; deriv=(D0, D0, D2))
+    itp_cardinal(_gx, queries; deriv = (D2, D0, D0))
+    itp_cardinal(_gy, queries; deriv = (D0, D2, D0))
+    itp_cardinal(_gz, queries; deriv = (D0, D0, D2))
     @. ∇²ρ_cardinal = abs(_gx + _gy + _gz)
 end
 
 print("    PHS ... ")
 eval_times["|∇²ρ|"]["PHS"] = @elapsed @time begin
-    itp_phs(_gx, queries; deriv=(D2, D0, D0))
-    itp_phs(_gy, queries; deriv=(D0, D2, D0))
-    itp_phs(_gz, queries; deriv=(D0, D0, D2))
+    itp_phs(_gx, queries; deriv = (D2, D0, D0))
+    itp_phs(_gy, queries; deriv = (D0, D2, D0))
+    itp_phs(_gz, queries; deriv = (D0, D0, D2))
     @. ∇²ρ_phs = abs(_gx + _gy + _gz)
 end
 
@@ -906,69 +910,73 @@ end
 yticks_val = [10.0^i for i in -4:6]
 
 kw_common = (
-    xaxis=:identity,
-    yaxis=:log10,
-    xlims=xlims_val,
-    xlabel=xlabel_str,
-    xticks=0:0.2:2.0,
-    yticks=yticks_val,
-    yformatter=yformatter,
-    legend=:topright,
-    minorgrid=true,
-    framestyle=:box,
+    xaxis = :identity,
+    yaxis = :log10,
+    xlims = xlims_val,
+    xlabel = xlabel_str,
+    xticks = 0:0.2:2.0,
+    yticks = yticks_val,
+    yformatter = yformatter,
+    legend = :topright,
+    minorgrid = true,
+    framestyle = :box,
 )
 
-function ref_series!(p, s, ref; label="Analytical")
-    plot!(p, s, logclean(ref); label=label,
-        color=col_analytical, linewidth=lw_ref, linestyle=:solid)
+function ref_series!(p, s, ref; label = "Analytical")
+    return plot!(
+        p, s, logclean(ref); label = label,
+        color = col_analytical, linewidth = lw_ref, linestyle = :solid
+    )
 end
 
-function add_series!(p, s, data, label, color; lw=lw_itp)
-    plot!(p, s, logclean(data); label=label, color=color, linewidth=lw)
+function add_series!(p, s, data, label, color; lw = lw_itp)
+    return plot!(p, s, logclean(data); label = label, color = color, linewidth = lw)
 end
 
 # ── Row 1: ρ ──────────────────────────────────────────────────────────────────
-p11 = plot(; kw_common..., ylabel="ρ (a.u.)")
+p11 = plot(; kw_common..., ylabel = "ρ (a.u.)")
 ref_series!(p11, s_ang, ρ_ref)
 add_series!(p11, s_ang, ρ_nearest, "Nearest", col_nearest)
 add_series!(p11, s_ang, ρ_linear, "Trilinear", col_linear)
 add_series!(p11, s_ang, ρ_cardinal, "Tricubic", col_cardinal)
 add_series!(p11, s_ang, ρ_cubic, "Trispline", col_cubic)
 
-p12 = plot(; kw_common..., ylabel="ρ (a.u.)")
+p12 = plot(; kw_common..., ylabel = "ρ (a.u.)")
 ref_series!(p12, s_ang, ρ_ref)
-add_series!(p12, s_ang, ρ_phs, "Polyharmonic", col_phs; lw=lw_phs)
+add_series!(p12, s_ang, ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
 
 # ── Row 2: |∇ρ| ───────────────────────────────────────────────────────────────
-p21 = plot(; kw_common..., ylabel="|∇ρ| (a.u.)")
+p21 = plot(; kw_common..., ylabel = "|∇ρ| (a.u.)")
 ref_series!(p21, s_ang, ∇ρ_ref)
 add_series!(p21, s_ang, ∇ρ_linear, "Trilinear", col_linear)
 add_series!(p21, s_ang, ∇ρ_cardinal, "Tricubic", col_cardinal)
 add_series!(p21, s_ang, ∇ρ_cubic, "Trispline", col_cubic)
 
-p22 = plot(; kw_common..., ylabel="|∇ρ| (a.u.)")
+p22 = plot(; kw_common..., ylabel = "|∇ρ| (a.u.)")
 ref_series!(p22, s_ang, ∇ρ_ref)
-add_series!(p22, s_ang, ∇ρ_phs, "Polyharmonic", col_phs; lw=lw_phs)
+add_series!(p22, s_ang, ∇ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
 
 # ── Row 3: |∇²ρ| ──────────────────────────────────────────────────────────────
-p31 = plot(; kw_common..., ylabel="|∇²ρ| (a.u.)")
+p31 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u.)")
 ref_series!(p31, s_ang, ∇²ρ_ref)
 add_series!(p31, s_ang, ∇²ρ_cardinal, "Tricubic", col_cardinal)
 add_series!(p31, s_ang, ∇²ρ_cubic, "Trispline", col_cubic)
 
-p32 = plot(; kw_common..., ylabel="|∇²ρ| (a.u.)")
+p32 = plot(; kw_common..., ylabel = "|∇²ρ| (a.u.)")
 ref_series!(p32, s_ang, ∇²ρ_ref)
-add_series!(p32, s_ang, ∇²ρ_phs, "Polyharmonic", col_phs; lw=lw_phs)
+add_series!(p32, s_ang, ∇²ρ_phs, "Polyharmonic", col_phs; lw = lw_phs)
 
 # ── Combine ───────────────────────────────────────────────────────────────────
-fig = plot(p11, p12, p21, p22, p31, p32;
-    layout=(3, 2),
-    size=(900, 1050),
-    dpi=150,
-    left_margin=10Plots.mm,
-    bottom_margin=7Plots.mm,
-    top_margin=4Plots.mm,
-    right_margin=3Plots.mm)
+fig = plot(
+    p11, p12, p21, p22, p31, p32;
+    layout = (3, 2),
+    size = (900, 1050),
+    dpi = 150,
+    left_margin = 10Plots.mm,
+    bottom_margin = 7Plots.mm,
+    top_margin = 4Plots.mm,
+    right_margin = 3Plots.mm
+)
 
 savefig(fig, OUT_PATH)
 println("Saved: $OUT_PATH")

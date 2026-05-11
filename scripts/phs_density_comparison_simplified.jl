@@ -124,7 +124,7 @@ function ensure_wfc_files()
             isfile(fpath) && rm(fpath)
         end
     end
-    println("\n  Downloaded $download_count new wavefunction files")
+    return println("\n  Downloaded $download_count new wavefunction files")
 end
 
 ensure_wfc_files()
@@ -141,7 +141,7 @@ rho_3d = Float64.(pkl["variables"]["density_scf"])
 
 @printf "  Grid: %d×%d×%d, ρ ∈ [%.2e, %.2e] a.u.\n" length(x_grid) length(y_grid) length(z_grid) minimum(rho_3d) maximum(rho_3d)
 
-raw = readdlm(CSV_PATH, ',', skipstart=1)
+raw = readdlm(CSV_PATH, ',', skipstart = 1)
 qx = Float64.(raw[:, 2])               # x_bohr
 qy = Float64.(raw[:, 3])               # y_bohr
 qz = Float64.(raw[:, 4])               # z_bohr
@@ -158,7 +158,7 @@ N_path = length(qx)
 wfc_filename(sym::String) = rpad(lowercase(sym), 2, '_') * "_pbe.wfc"
 
 function parse_wfc(filepath::String)
-    open(filepath) do io
+    return open(filepath) do io
         norb = parse(Int, readline(io))
         readline(io)
         occ = parse.(Float64, split(readline(io)))
@@ -181,7 +181,7 @@ function parse_wfc(filepath::String)
     end
 end
 
-const _wfc_cache = Dict{Int,Any}()
+const _wfc_cache = Dict{Int, Any}()
 
 function get_rho_itp(Z::Int)
     haskey(_wfc_cache, Z) && return _wfc_cache[Z]
@@ -190,7 +190,7 @@ function get_rho_itp(Z::Int)
     fname = joinpath(WFC_DIR, wfc_filename(sym))
     isfile(fname) || error("wfc file not found: $fname")
     r_grid, rho_vals = parse_wfc(fname)
-    itp = cubic_interp(r_grid, rho_vals; extrap=FillExtrap(0.0))
+    itp = cubic_interp(r_grid, rho_vals; extrap = FillExtrap(0.0))
     _wfc_cache[Z] = itp
     return itp
 end
@@ -200,14 +200,14 @@ const ANG2BOHR = 1.0 / BOHR2ANG
 function load_xyz(filepath::String)
     lines = readlines(filepath)
     n = parse(Int, strip(lines[1]))
-    atoms = Vector{Tuple{Int,NTuple{3,Float64}}}(undef, n)
+    atoms = Vector{Tuple{Int, NTuple{3, Float64}}}(undef, n)
     for i in 1:n
-        parts = split(strip(lines[i+2]))
+        parts = split(strip(lines[i + 2]))
         sym = String(parts[1])
         Z = ELEMENT_Z[sym]
         x, y, z = parse(Float64, parts[2]) * ANG2BOHR,
-        parse(Float64, parts[3]) * ANG2BOHR,
-        parse(Float64, parts[4]) * ANG2BOHR
+            parse(Float64, parts[3]) * ANG2BOHR,
+            parse(Float64, parts[4]) * ANG2BOHR
         atoms[i] = (Z, (x, y, z))
     end
     return atoms
@@ -216,17 +216,17 @@ end
 const ATOMS = load_xyz(XYZ_PATH)
 
 struct PromolecularRef{I}
-    atoms::Vector{Tuple{Int,NTuple{3,Float64}}}
+    atoms::Vector{Tuple{Int, NTuple{3, Float64}}}
     cache_array::Vector{I}
-    cache::Dict{Int,I}
+    cache::Dict{Int, I}
 end
 
-function PromolecularRef(atoms::Vector{Tuple{Int,NTuple{3,Float64}}})
+function PromolecularRef(atoms::Vector{Tuple{Int, NTuple{3, Float64}}})
     for (Z, _) in atoms
         get_rho_itp(Z)
     end
     I = typeof(first(values(_wfc_cache)))
-    cache = Dict{Int,I}(k => v for (k, v) in _wfc_cache)
+    cache = Dict{Int, I}(k => v for (k, v) in _wfc_cache)
 
     max_z = maximum(Z for (Z, _) in atoms)
     cache_array = Vector{I}(undef, max_z)
@@ -238,7 +238,7 @@ function PromolecularRef(atoms::Vector{Tuple{Int,NTuple{3,Float64}}})
     return PromolecularRef{I}(atoms, cache_array, cache)
 end
 
-@inline function _pmr_get_deriv_info(::Type{O}) where {O<:Tuple}
+@inline function _pmr_get_deriv_info(::Type{O}) where {O <: Tuple}
     orders = (deriv_order(fieldtype(O, 1)), deriv_order(fieldtype(O, 2)), deriv_order(fieldtype(O, 3)))
     total = sum(orders)
     if total == 1
@@ -254,7 +254,7 @@ end
     end
 end
 
-@inline function _pmr_eval_val_internal(pmr::PromolecularRef, q::NTuple{3,<:Real})
+@inline function _pmr_eval_val_internal(pmr::PromolecularRef, q::NTuple{3, <:Real})
     # Value evaluation
     f = 0.0
     @inbounds for i in 1:length(pmr.atoms)
@@ -263,17 +263,17 @@ end
         xx2 = q[2] - R[2]
         xx3 = q[3] - R[3]
         r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
-        r < 1e-14 && continue
+        r < 1.0e-14 && continue
         f += max(pmr.cache_array[Z](r), 0.0)
     end
     return f
 end
 
-@inline function (pmr::PromolecularRef)(q::NTuple{3,<:Real})
+@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real})
     return _pmr_eval_val_internal(pmr, q)
 end
 
-@inline function (pmr::PromolecularRef)(q::NTuple{3,<:Real}, ops::O) where {O}
+@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real}, ops::O) where {O}
     info = _pmr_get_deriv_info(O)
     total = info[1]
     if total == 0
@@ -288,9 +288,9 @@ end
             xx2 = q[2] - R[2]
             xx3 = q[3] - R[3]
             r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
-            r < 1e-14 && continue
+            r < 1.0e-14 && continue
             dx = ax == 1 ? xx1 : (ax == 2 ? xx2 : xx3)
-            fp += pmr.cache_array[Z](r; deriv=D1) * dx / r
+            fp += pmr.cache_array[Z](r; deriv = D1) * dx / r
         end
         return fp
     elseif total == 2
@@ -305,10 +305,10 @@ end
             xx2 = q[2] - R[2]
             xx3 = q[3] - R[3]
             r = sqrt(xx1 * xx1 + xx2 * xx2 + xx3 * xx3)
-            r < 1e-14 && continue
+            r < 1.0e-14 && continue
             rho_itp = pmr.cache_array[Z]
-            rhop = rho_itp(r; deriv=D1)
-            rhopp = rho_itp(r; deriv=D2)
+            rhop = rho_itp(r; deriv = D1)
+            rhopp = rho_itp(r; deriv = D2)
             rfac = (rhopp - rhop / r) / (r * r)
             dx1 = ax1 == 1 ? xx1 : (ax1 == 2 ? xx2 : xx3)
             dx2 = ax2 == 1 ? xx1 : (ax2 == 2 ? xx2 : xx3)
@@ -320,7 +320,7 @@ end
     end
 end
 
-@inline function (pmr::PromolecularRef)(q::NTuple{3,<:Real}; deriv=nothing)
+@inline function (pmr::PromolecularRef)(q::NTuple{3, <:Real}; deriv = nothing)
     if deriv === nothing
         return _pmr_eval_val_internal(pmr, q)
     else
@@ -330,10 +330,10 @@ end
 
 # In-place batch evaluation mirroring the PHS batch API
 function (pmr::PromolecularRef)(
-    out::AbstractVector{T},
-    queries::Union{Tuple{Vararg{AbstractVector,3}},AbstractVector};
-    deriv::Union{DerivOp,Tuple{Vararg{DerivOp,3}}}=EvalValue(),
-) where {T}
+        out::AbstractVector{T},
+        queries::Union{Tuple{Vararg{AbstractVector, 3}}, AbstractVector};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, 3}}} = EvalValue(),
+    ) where {T}
     N = 3
     ops = FastInterpolations._resolve_deriv_nd(deriv, Val(N))
     nq = FastInterpolations._query_length(queries)
@@ -341,7 +341,7 @@ function (pmr::PromolecularRef)(
 
     @inbounds for k in 1:nq
         q = FastInterpolations._extract_query_point(queries, k, Val(N))
-        out[k] = pmr(q; deriv=ops)
+        out[k] = pmr(q; deriv = ops)
     end
     return out
 end
@@ -354,8 +354,10 @@ const ref_rho0 = PromolecularRef(ATOMS)
 # ============================================================
 grids = (x_grid, y_grid, z_grid)
 println("\nBuilding Polyharmonic spline (PHS-3, stencil_size=8, log-density transform)...")
-time_phs = @elapsed itp_phs = phs_interp(grids, rho_3d; stencil_size=8, degree=3, blend_factor=2.0,
-    reference_interp=ref_rho0)
+time_phs = @elapsed itp_phs = phs_interp(
+    grids, rho_3d; stencil_size = 8, degree = 3, blend_factor = 2.0,
+    reference_interp = ref_rho0
+)
 @printf "  Built in %.4f seconds\n" time_phs
 
 # ============================================================
@@ -382,18 +384,18 @@ const D2 = DerivOp{2}()
 print("  Warming up PHS evaluation ... ")
 flush(stdout)
 itp_phs(ρ_phs, queries)
-itp_phs(_gx, queries; deriv=(D1, D0, D0))
-itp_phs(_gy, queries; deriv=(D0, D1, D0))
-itp_phs(_gz, queries; deriv=(D0, D0, D1))
-itp_phs(_gx, queries; deriv=(D2, D0, D0))
-itp_phs(_gy, queries; deriv=(D0, D2, D0))
-itp_phs(_gz, queries; deriv=(D0, D0, D2))
+itp_phs(_gx, queries; deriv = (D1, D0, D0))
+itp_phs(_gy, queries; deriv = (D0, D1, D0))
+itp_phs(_gz, queries; deriv = (D0, D0, D1))
+itp_phs(_gx, queries; deriv = (D2, D0, D0))
+itp_phs(_gy, queries; deriv = (D0, D2, D0))
+itp_phs(_gz, queries; deriv = (D0, D0, D2))
 println("done.")
 
 # Evaluate PHS Laplacian Magnitude
-itp_phs(_gx, queries; deriv=(D2, D0, D0))
-itp_phs(_gy, queries; deriv=(D0, D2, D0))
-itp_phs(_gz, queries; deriv=(D0, D0, D2))
+itp_phs(_gx, queries; deriv = (D2, D0, D0))
+itp_phs(_gy, queries; deriv = (D0, D2, D0))
+itp_phs(_gz, queries; deriv = (D0, D0, D2))
 @. ∇²ρ_phs = abs(_gx + _gy + _gz)
 
 # Helper function to compute relative error
@@ -443,7 +445,7 @@ if BENCHMARK
     @time itp_phs(ρ_phs, queries)
 
     println("\nPHS Laplacian Component xx Evaluation:")
-    @time itp_phs(_gx, queries; deriv=(D2, D0, D0))
+    @time itp_phs(_gx, queries; deriv = (D2, D0, D0))
 
     println("\nBenchmarking over high loop counts to run profilers:")
 
@@ -455,20 +457,20 @@ if BENCHMARK
             itp_phs(ρ_phs, queries)
         end
     end
-    @printf "%.4f seconds (%.2f μs per query point)\n" t_val (t_val * 1e6 / (BENCHMARK_REPS * N_path))
+    @printf "%.4f seconds (%.2f μs per query point)\n" t_val (t_val * 1.0e6 / (BENCHMARK_REPS * N_path))
 
     # 2. Benchmark Laplacian evaluation (|∇²ρ|)
     print("  Evaluating Laplacian (|∇²ρ| components) ... ")
     flush(stdout)
     t_lap = @elapsed begin
         for _ in 1:BENCHMARK_REPS
-            itp_phs(_gx, queries; deriv=(D2, D0, D0))
-            itp_phs(_gy, queries; deriv=(D0, D2, D0))
-            itp_phs(_gz, queries; deriv=(D0, D0, D2))
+            itp_phs(_gx, queries; deriv = (D2, D0, D0))
+            itp_phs(_gy, queries; deriv = (D0, D2, D0))
+            itp_phs(_gz, queries; deriv = (D0, D0, D2))
             @. ∇²ρ_phs = abs(_gx + _gy + _gz)
         end
     end
-    @printf "%.4f seconds (%.2f μs per query point)\n" t_lap (t_lap * 1e6 / (BENCHMARK_REPS * N_path))
+    @printf "%.4f seconds (%.2f μs per query point)\n" t_lap (t_lap * 1.0e6 / (BENCHMARK_REPS * N_path))
 
     if PROFILE
         # 1. Profile Density (ρ) Evaluation
@@ -480,34 +482,34 @@ if BENCHMARK
         println("\n" * "="^60)
         println("CPU PROFILING RESULTS: DENSITY (ρ) EVALUATION (FLAT PROFILE)")
         println("="^60)
-        Profile.print(format=:flat, mincount=5, noisefloor=2.0)
+        Profile.print(format = :flat, mincount = 5, noisefloor = 2.0)
 
         # 2. Profile Gradient (|∇ρ|) Evaluation
         println("\nRunning CPU Profiling for Gradient (|∇ρ|) Evaluation (100 repetitions)...")
         Profile.clear()
         @profile for _ in 1:100
-            itp_phs(_gx, queries; deriv=(D1, D0, D0))
-            itp_phs(_gy, queries; deriv=(D0, D1, D0))
-            itp_phs(_gz, queries; deriv=(D0, D0, D1))
+            itp_phs(_gx, queries; deriv = (D1, D0, D0))
+            itp_phs(_gy, queries; deriv = (D0, D1, D0))
+            itp_phs(_gz, queries; deriv = (D0, D0, D1))
         end
         println("\n" * "="^60)
         println("CPU PROFILING RESULTS: GRADIENT (|∇ρ|) EVALUATION (FLAT PROFILE)")
         println("="^60)
-        Profile.print(format=:flat, mincount=5, noisefloor=2.0)
+        Profile.print(format = :flat, mincount = 5, noisefloor = 2.0)
 
         # 3. Profile Laplacian (|∇²ρ|) Evaluation
         println("\nRunning CPU Profiling for Laplacian (|∇²ρ|) Evaluation (100 repetitions)...")
         Profile.clear()
         @profile for _ in 1:100
-            itp_phs(_gx, queries; deriv=(D2, D0, D0))
-            itp_phs(_gy, queries; deriv=(D0, D2, D0))
-            itp_phs(_gz, queries; deriv=(D0, D0, D2))
+            itp_phs(_gx, queries; deriv = (D2, D0, D0))
+            itp_phs(_gy, queries; deriv = (D0, D2, D0))
+            itp_phs(_gz, queries; deriv = (D0, D0, D2))
             @. ∇²ρ_phs = abs(_gx + _gy + _gz)
         end
         println("\n" * "="^60)
         println("CPU PROFILING RESULTS: LAPLACIAN (|∇²ρ|) EVALUATION (FLAT PROFILE)")
         println("="^60)
-        Profile.print(format=:flat, mincount=5, noisefloor=2.0)
+        Profile.print(format = :flat, mincount = 5, noisefloor = 2.0)
     end
 
     println("="^60)
@@ -527,7 +529,7 @@ if PLOT
     # Style definitions matching premium aesthetics
     col_analytical = RGB(0.1, 0.1, 0.1)      # Sleek Charcoal Black
     col_phs = RGB(0.85, 0.15, 0.15)   # Vibrant Crimson Red
-    col_error = RGB(0.0, 0.45, 0.70)    # Deep Ocean Blue
+    col_error = RGB(0.0, 0.45, 0.7)    # Deep Ocean Blue
 
     yformatter = (y) -> begin
         if y > 10000
@@ -541,55 +543,56 @@ if PLOT
 
     # Create the left plot (Laplacian Magnitude)
     p1 = plot(
-        xaxis=:identity,
-        yaxis=:log10,
-        xlims=(s_ang[1], s_ang[end]),
-        xlabel="Distance along O···H hydrogen bond (Å)",
-        ylabel="|∇²ρ| (a.u.)",
-        xticks=0:0.2:2.0,
-        yticks=[10.0^i for i in -4:6],
-        yformatter=yformatter,
-        legend=:topright,
-        minorgrid=true,
-        framestyle=:box,
-        title="Laplacian Magnitude Comparison",
-        titlefontsize=10,
-        guidefontsize=9,
-        tickfontsize=8,
-        legendfontsize=8,
+        xaxis = :identity,
+        yaxis = :log10,
+        xlims = (s_ang[1], s_ang[end]),
+        xlabel = "Distance along O···H hydrogen bond (Å)",
+        ylabel = "|∇²ρ| (a.u.)",
+        xticks = 0:0.2:2.0,
+        yticks = [10.0^i for i in -4:6],
+        yformatter = yformatter,
+        legend = :topright,
+        minorgrid = true,
+        framestyle = :box,
+        title = "Laplacian Magnitude Comparison",
+        titlefontsize = 10,
+        guidefontsize = 9,
+        tickfontsize = 8,
+        legendfontsize = 8,
     )
-    plot!(p1, s_ang, logclean(∇²ρ_ref); label="Analytical", color=col_analytical, linewidth=2.0, linestyle=:solid)
-    plot!(p1, s_ang, logclean(∇²ρ_phs); label="Polyharmonic", color=col_phs, linewidth=1.0, linestyle=:dash)
+    plot!(p1, s_ang, logclean(∇²ρ_ref); label = "Analytical", color = col_analytical, linewidth = 2.0, linestyle = :solid)
+    plot!(p1, s_ang, logclean(∇²ρ_phs); label = "Polyharmonic", color = col_phs, linewidth = 1.0, linestyle = :dash)
 
     # Create the right plot (PHS Laplacian Relative Error)
     p2 = plot(
-        xaxis=:identity,
-        yaxis=:log10,
-        xlims=(s_ang[1], s_ang[end]),
-        xlabel="Distance along O···H hydrogen bond (Å)",
-        ylabel="Relative Error",
-        xticks=0:0.2:2.0,
-        yticks=[10.0^i for i in -7:1],
-        yformatter=yformatter,
-        legend=false,
-        minorgrid=true,
-        framestyle=:box,
-        title="PHS Laplacian Relative Error",
-        titlefontsize=10,
-        guidefontsize=9,
-        tickfontsize=8,
+        xaxis = :identity,
+        yaxis = :log10,
+        xlims = (s_ang[1], s_ang[end]),
+        xlabel = "Distance along O···H hydrogen bond (Å)",
+        ylabel = "Relative Error",
+        xticks = 0:0.2:2.0,
+        yticks = [10.0^i for i in -7:1],
+        yformatter = yformatter,
+        legend = false,
+        minorgrid = true,
+        framestyle = :box,
+        title = "PHS Laplacian Relative Error",
+        titlefontsize = 10,
+        guidefontsize = 9,
+        tickfontsize = 8,
     )
-    plot!(p2, s_ang, logclean(errors_lap); color=col_error, linewidth=1.2, linestyle=:solid)
+    plot!(p2, s_ang, logclean(errors_lap); color = col_error, linewidth = 1.2, linestyle = :solid)
 
     # Combine into a gorgeous premium layout
-    fig = plot(p1, p2;
-        layout=(1, 2),
-        size=(1000, 450),
-        dpi=150,
-        left_margin=6Plots.mm,
-        bottom_margin=6Plots.mm,
-        top_margin=6Plots.mm,
-        right_margin=4Plots.mm,
+    fig = plot(
+        p1, p2;
+        layout = (1, 2),
+        size = (1000, 450),
+        dpi = 150,
+        left_margin = 6Plots.mm,
+        bottom_margin = 6Plots.mm,
+        top_margin = 6Plots.mm,
+        right_margin = 4Plots.mm,
     )
 
     savefig(fig, OUT_PATH)

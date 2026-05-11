@@ -13,13 +13,13 @@
 
     # Grid point pass-through
     for i in 1:length(x)
-        @test itp((x[i],)) ≈ data[i] atol = 1e-8
+        @test itp((x[i],)) ≈ data[i] atol = 1.0e-8
     end
 
     # Interior points (linear should be reproduced exactly by linear augmentation)
     for q in [0.5, 1.7, 3.3, 4.9]
         expected = 2.0 * q + 1.0
-        @test itp((q,)) ≈ expected atol = 1e-8
+        @test itp((q,)) ≈ expected atol = 1.0e-8
     end
 end
 
@@ -118,7 +118,7 @@ end
     ref = itp((xq,))
 
     itp(out, (xq,))
-    @test out ≈ ref atol = 1e-10
+    @test out ≈ ref atol = 1.0e-10
 
     # The explicit thread count assertion documents the coverage requirement.
     if Threads.nthreads() > 1
@@ -141,7 +141,7 @@ end
 
     # Grid points should match exactly
     for i in 1:5:20, j in 1:5:20
-        @test itp((x[i], y[j])) ≈ data[i, j] atol = 1e-7
+        @test itp((x[i], y[j])) ≈ data[i, j] atol = 1.0e-7
     end
 
     # Interior accuracy (expect ~1e-3 for smooth function on moderate grid)
@@ -153,7 +153,7 @@ end
         end
         err
     end
-    @test max_err < 1e-2
+    @test max_err < 1.0e-2
 end
 
 @testitem "PHS ND Interpolation — one-shot equals interpolant" setup = [AllocConstants] begin
@@ -166,15 +166,15 @@ end
     # Single-point one-shot
     q = (1.0, 1.5)
     val_itp = itp(q)
-    val_os  = phs_interp((x, y), data, q; stencil_size = 5, degree = 3)
-    @test val_itp ≈ val_os atol = 1e-12
+    val_os = phs_interp((x, y), data, q; stencil_size = 5, degree = 3)
+    @test val_itp ≈ val_os atol = 1.0e-12
 
     # Batch one-shot
     xs = [0.3, 0.9, 1.5, 2.1, 2.7]
     ys = [0.2, 0.7, 1.3, 1.9, 2.5]
     vals_itp = itp((xs, ys))
-    vals_os  = phs_interp((x, y), data, (xs, ys); stencil_size = 5, degree = 3)
-    @test vals_itp ≈ vals_os atol = 1e-12
+    vals_os = phs_interp((x, y), data, (xs, ys); stencil_size = 5, degree = 3)
+    @test vals_itp ≈ vals_os atol = 1.0e-12
 end
 
 @testitem "PHS ND Interpolation — in-place one-shot" setup = [AllocConstants] begin
@@ -185,11 +185,11 @@ end
     xs = [0.2, 0.8, 1.4, 2.0, 2.6]
     ys = [0.3, 0.9, 1.5, 2.1, 2.7]
 
-    out_alloc  = phs_interp((x, y), data, (xs, ys); stencil_size = 5, degree = 3)
+    out_alloc = phs_interp((x, y), data, (xs, ys); stencil_size = 5, degree = 3)
     out_inplace = similar(out_alloc)
     phs_interp!(out_inplace, (x, y), data, (xs, ys); stencil_size = 5, degree = 3)
 
-    @test out_inplace ≈ out_alloc atol = 1e-12
+    @test out_inplace ≈ out_alloc atol = 1.0e-12
 end
 
 @testitem "PHS ND Interpolation — gradient via DerivOp" setup = [AllocConstants] begin
@@ -200,9 +200,9 @@ end
     itp = phs_interp((x, y), data; stencil_size = 7, degree = 3)
 
     # Test gradient at interior points via finite differences
-    h = 1e-5
+    h = 1.0e-5
     for (qx, qy) in [(1.0, 1.0), (2.5, 0.8), (3.7, 2.1)]
-        fx  = itp((qx, qy))
+        fx = itp((qx, qy))
         fxh = itp((qx + h, qy))
         fyh = itp((qx, qy + h))
 
@@ -212,8 +212,8 @@ end
         dfdx_itp = itp((qx, qy); deriv = (DerivOp{1}(), DerivOp{0}()))
         dfdy_itp = itp((qx, qy); deriv = (DerivOp{0}(), DerivOp{1}()))
 
-        @test dfdx_itp ≈ dfdx_fd atol = 1e-3
-        @test dfdy_itp ≈ dfdy_fd atol = 1e-3
+        @test dfdx_itp ≈ dfdx_fd atol = 1.0e-3
+        @test dfdy_itp ≈ dfdy_fd atol = 1.0e-3
     end
 end
 
@@ -225,7 +225,7 @@ end
     itp = phs_interp((x, y), data; stencil_size = 7, degree = 5)
 
     # Test second derivative against FD
-    h = 1e-4
+    h = 1.0e-4
     for (qx, qy) in [(1.5, 1.5), (3.0, 1.0)]
         d2f_fd = (itp((qx + h, qy)) - 2itp((qx, qy)) + itp((qx - h, qy))) / h^2
         d2f_itp = itp((qx, qy); deriv = (DerivOp{2}(), DerivOp{0}()))
@@ -273,7 +273,7 @@ end
     # Linear functions should be reproduced exactly with linear augmentation
     for qi in [0.3, 0.9, 1.5], qj in [0.4, 1.0, 1.6], qk in [0.2, 0.8, 1.4]
         expected = qi + qj + qk
-        @test itp((qi, qj, qk)) ≈ expected atol = 1e-7
+        @test itp((qi, qj, qk)) ≈ expected atol = 1.0e-7
     end
 end
 
@@ -325,7 +325,7 @@ end
     data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
     itp = phs_interp((x, y), data; stencil_size = 5, degree = 3)
-    q   = (1.5, 1.0)
+    q = (1.5, 1.0)
     ops = (DerivOp{0}(), DerivOp{0}())
 
     # Warm up
@@ -340,17 +340,17 @@ end
 @testitem "ConstantRef — value and derivatives" setup = [AllocConstants] begin
     # ConstantRef is a simple callable for constant reference values
     ref = ConstantRef(2.5)
-    
+
     # Value query returns the constant
     @test ref((1.0, 2.0, 3.0)) == 2.5
     @test ref((0.0, 0.0, 0.0)) == 2.5
-    
+
     # Derivative queries return zero
     @test ref((1.0, 2.0, 3.0); deriv = (DerivOp{1}(), DerivOp{0}(), DerivOp{0}())) == 0.0
     @test ref((1.0, 2.0, 3.0); deriv = (DerivOp{0}(), DerivOp{1}(), DerivOp{0}())) == 0.0
     @test ref((1.0, 2.0, 3.0); deriv = (DerivOp{0}(), DerivOp{0}(), DerivOp{2}())) == 0.0
     @test ref((1.0, 2.0, 3.0); deriv = (DerivOp{1}(), DerivOp{1}(), DerivOp{0}())) == 0.0
-    
+
     # Type preservation
     ref_int = ConstantRef(5)
     @test ref_int((1.0, 2.0, 3.0)) == 5
@@ -364,22 +364,24 @@ end
     y = range(0.0, π, 20)
     # 1.5 + 0.4*sin*cos has range [1.1, 1.9] — strictly positive everywhere
     rho = [1.5 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]
-    
+
     ref = ConstantRef(1.0)
-    
-    itp = phs_interp((x, y), rho; 
-        stencil_size = 5, degree = 3, 
-        reference_interp = ref)
-    
+
+    itp = phs_interp(
+        (x, y), rho;
+        stencil_size = 5, degree = 3,
+        reference_interp = ref
+    )
+
     @test itp isa PHSInterpolantND
     # transform should be active
     @test itp.transform !== nothing
-    
+
     # At grid nodes, should match original (interpolation property)
     for i in 1:5:20, j in 1:5:20
-        @test itp((x[i], y[j])) ≈ rho[i, j] atol = 1e-6
+        @test itp((x[i], y[j])) ≈ rho[i, j] atol = 1.0e-6
     end
-    
+
     # Interior point should be positive (exponential of real value)
     val = itp((1.5, 1.5))
     @test val > 0.0
@@ -391,28 +393,30 @@ end
     x = range(0.0, π, 25)
     y = range(0.0, π, 25)
     rho = [1.5 + 0.4 * sin(xi) * cos(yj) for xi in x, yj in y]
-    
+
     ref = ConstantRef(1.0)
-    itp = phs_interp((x, y), rho; 
-        stencil_size = 6, degree = 3, 
-        reference_interp = ref)
-    
-    h = 1e-4
+    itp = phs_interp(
+        (x, y), rho;
+        stencil_size = 6, degree = 3,
+        reference_interp = ref
+    )
+
+    h = 1.0e-4
     qx, qy = 1.5, 1.5
-    
+
     # Finite difference
-    fx    = itp((qx, qy))
-    fxh   = itp((qx + h, qy))
-    fyh   = itp((qx, qy + h))
+    fx = itp((qx, qy))
+    fxh = itp((qx + h, qy))
+    fyh = itp((qx, qy + h))
     dfdx_fd = (fxh - fx) / h
     dfdy_fd = (fyh - fx) / h
-    
+
     # Analytical via deriv keyword
     dfdx = itp((qx, qy); deriv = (DerivOp{1}(), DerivOp{0}()))
     dfdy = itp((qx, qy); deriv = (DerivOp{0}(), DerivOp{1}()))
-    
-    @test dfdx ≈ dfdx_fd atol = 1e-3
-    @test dfdy ≈ dfdy_fd atol = 1e-3
+
+    @test dfdx ≈ dfdx_fd atol = 1.0e-3
+    @test dfdy ≈ dfdy_fd atol = 1.0e-3
 end
 
 @testitem "PHSInterpolantND protocol methods (_grid, _extrap, _search, axes)" begin
@@ -462,19 +466,23 @@ end
     rho0_precomp = ones(12, 12)
 
     # Build via reference_data fast path (skips per-node ref evaluation)
-    itp_fast = phs_interp((x, y), data;
+    itp_fast = phs_interp(
+        (x, y), data;
         stencil_size = 4, degree = 3,
         reference_interp = ref,
-        reference_data   = rho0_precomp)
+        reference_data = rho0_precomp
+    )
 
     # Build via slow path (evaluates ref at every node) for comparison
-    itp_slow = phs_interp((x, y), data;
+    itp_slow = phs_interp(
+        (x, y), data;
         stencil_size = 4, degree = 3,
-        reference_interp = ref)
+        reference_interp = ref
+    )
 
     # Both should give identical results because the ρ₀ arrays are the same
     q = (0.5, 0.5)
-    @test itp_fast(q) ≈ itp_slow(q) atol = 1e-10
+    @test itp_fast(q) ≈ itp_slow(q) atol = 1.0e-10
 end
 
 # ----------------------------------------
@@ -500,8 +508,8 @@ end
 @testitem "phs_stencil internals — _phs_clamp_offsets no shift (interior node)" begin
     # When every abs index is already in-bounds the function returns the original
     # vector unchanged (hits lines 138, 145–152, and the early-return on line 155).
-    offsets    = [(-2,), (-1,), (0,), (1,), (2,)]
-    base_idx   = (5,)
+    offsets = [(-2,), (-1,), (0,), (1,), (2,)]
+    base_idx = (5,)
     grid_sizes = (10,)
     result = FastInterpolations._phs_clamp_offsets(offsets, base_idx, grid_sizes)
     @test result === offsets   # exact same object — no allocation, no copy
@@ -510,8 +518,8 @@ end
 @testitem "phs_stencil internals — _phs_clamp_offsets left boundary shift" begin
     # base_idx=(1,) + offset=(-2,) → abs idx = -1 < 1 → needs a right-shift of +2.
     # Covers lines 138, 145–152, 155 (falls through), and 156 (new array returned).
-    offsets    = [(-2,), (-1,), (0,), (1,), (2,)]
-    base_idx   = (1,)
+    offsets = [(-2,), (-1,), (0,), (1,), (2,)]
+    base_idx = (1,)
     grid_sizes = (10,)
     result = FastInterpolations._phs_clamp_offsets(offsets, base_idx, grid_sizes)
     @test result !== offsets   # a fresh array was built
@@ -526,8 +534,8 @@ end
 
 @testitem "phs_stencil internals — _phs_clamp_offsets right boundary shift" begin
     # base_idx=(10,) + offset=(+2,) → abs idx = 12 > 10 → needs a left-shift of -2.
-    offsets    = [(-2,), (-1,), (0,), (1,), (2,)]
-    base_idx   = (10,)
+    offsets = [(-2,), (-1,), (0,), (1,), (2,)]
+    base_idx = (10,)
     grid_sizes = (10,)
     result = FastInterpolations._phs_clamp_offsets(offsets, base_idx, grid_sizes)
     @test result !== offsets
@@ -542,8 +550,8 @@ end
 @testitem "phs_stencil internals — _phs_clamp_offsets 2D corner shift" begin
     # 2D: dim 1 near left boundary, dim 2 interior.
     # dim 1: lo = 2 + (-2) = 0 < 1 → shift_d1 = 1;  dim 2: no shift.
-    offsets    = [(i, j) for i in -2:2 for j in -2:2]
-    base_idx   = (2, 5)
+    offsets = [(i, j) for i in -2:2 for j in -2:2]
+    base_idx = (2, 5)
     grid_sizes = (10, 10)
     result = FastInterpolations._phs_clamp_offsets(offsets, base_idx, grid_sizes)
     @test result !== offsets   # was shifted
@@ -659,22 +667,23 @@ end
     rho_val = 2.0 * exp(1.0)
     grad = FastInterpolations._phs_unroll_grad_component(rho_val, 0.3, 0.1, 2.0)
     @test isfinite(grad)
-    @test grad ≈ rho_val * (0.3 + 0.1 / 2.0) atol = 1e-12
+    @test grad ≈ rho_val * (0.3 + 0.1 / 2.0) atol = 1.0e-12
 
     # _phs_unroll_hess_component (lines 251, 261-263)
     #   rho·(f_hess + rho_xi·rho_xj/rho² + rho0_hess/rho0 - rho0_xi·rho0_xj/rho0²)
     rho_g1 = 0.2; rho_g2 = 0.3
     rho0_g1 = 0.1; rho0_g2 = 0.15
     hess = FastInterpolations._phs_unroll_hess_component(
-        rho_val, 0.1, rho_g1, rho_g2, 2.0, rho0_g1, rho0_g2, 0.05)
+        rho_val, 0.1, rho_g1, rho_g2, 2.0, rho0_g1, rho0_g2, 0.05
+    )
     @test isfinite(hess)
     expected = rho_val * (
         0.1 +
-        rho_g1 * rho_g2 / (rho_val * rho_val) +
-        0.05 / 2.0 -
-        rho0_g1 * rho0_g2 / (2.0 * 2.0)
+            rho_g1 * rho_g2 / (rho_val * rho_val) +
+            0.05 / 2.0 -
+            rho0_g1 * rho0_g2 / (2.0 * 2.0)
     )
-    @test hess ≈ expected atol = 1e-12
+    @test hess ≈ expected atol = 1.0e-12
 end
 
 @testitem "PHS kernels — _phs_n_poly and mixed-partial deriv2 (ax1≠ax2)" begin
@@ -705,13 +714,13 @@ end
     x = range(0.0, 5.0, 20)
     data = fill(3.0, 20)    # constant function
     itp1 = phs_interp((x,), data; stencil_size = 4, degree = 1)
-    @test itp1((2.5,)) ≈ 3.0 atol = 1e-6
+    @test itp1((2.5,)) ≈ 3.0 atol = 1.0e-6
     # First derivative of constant = 0 (triggers phi_prime K=1)
     d1 = itp1((2.5,); deriv = (DerivOp{1}(),))
-    @test abs(d1) < 1e-4
+    @test abs(d1) < 1.0e-4
     # Second derivative (triggers phi_dprime K=1 → always 0)
     d2 = itp1((2.5,); deriv = (DerivOp{2}(),))
-    @test abs(d2) < 1e-3
+    @test abs(d2) < 1.0e-3
 
     # K=3 second derivative: covers _phs_phi_dprime(r, Val{3}()) (line 85)
     x3 = range(0.0, 2π, 20)
@@ -726,7 +735,7 @@ end
     data7 = cos.(collect(x7))
     itp7 = phs_interp((x7,), data7; stencil_size = 10, degree = 7)
     # Value (triggers phi K=7)
-    @test itp7((1.0,)) ≈ cos(1.0) atol = 1e-3
+    @test itp7((1.0,)) ≈ cos(1.0) atol = 1.0e-3
     # First derivative: d(cos x)/dx = -sin x  (triggers phi_prime K=7)
     d1_k7 = itp7((1.0,); deriv = (DerivOp{1}(),))
     @test d1_k7 ≈ -sin(1.0) atol = 0.05
@@ -794,20 +803,20 @@ end
     ref = ConstantRef(1.0)
     itp = phs_interp((x, y), rho; stencil_size = 6, degree = 3, reference_interp = ref)
 
-    h = 1e-4
+    h = 1.0e-4
     qx, qy = 1.2, 1.0
 
     # Diagonal ∂²ρ/∂x² — triggers is_diag=true path, lines 803-812, 862-866, 913-929
-    d2xx    = itp((qx, qy); deriv = (DerivOp{2}(), DerivOp{0}()))
+    d2xx = itp((qx, qy); deriv = (DerivOp{2}(), DerivOp{0}()))
     d2xx_fd = (itp((qx + h, qy)) - 2itp((qx, qy)) + itp((qx - h, qy))) / h^2
     @test isfinite(d2xx)
-    @test d2xx ≈ d2xx_fd atol = 1e-3
+    @test d2xx ≈ d2xx_fd atol = 1.0e-3
 
     # Off-diagonal ∂²ρ/∂x∂y — triggers is_diag=false path, lines 812-846, 868-872, 913-929
-    d2xy    = itp((qx, qy); deriv = (DerivOp{1}(), DerivOp{1}()))
+    d2xy = itp((qx, qy); deriv = (DerivOp{1}(), DerivOp{1}()))
     d2xy_fd = (itp((qx + h, qy + h)) - itp((qx + h, qy)) - itp((qx, qy + h)) + itp((qx, qy))) / h^2
     @test isfinite(d2xy)
-    @test d2xy ≈ d2xy_fd atol = 1e-3
+    @test d2xy ≈ d2xy_fd atol = 1.0e-3
 end
 
 @testitem "PHS log-transform — d≈0 at grid node" begin
@@ -849,9 +858,9 @@ end
     itp = phs_interp((x, y), data; stencil_size = 5, degree = 3)
     qx, qy = 1.5, 1.0
 
-    base_idx  = FastInterpolations._phs_find_base_node(itp, (qx, qy))
-    M         = size(itp.phi_inv, 1)
-    rhs_buf   = zeros(eltype(itp.hs[1]), M)
+    base_idx = FastInterpolations._phs_find_base_node(itp, (qx, qy))
+    M = size(itp.phi_inv, 1)
+    rhs_buf = zeros(eltype(itp.hs[1]), M)
     coeff_buf = zeros(eltype(itp.hs[1]), M)
     offsets, phys_offsets, coeffs, hs = FastInterpolations._phs_solve_stencil!(itp, base_idx, rhs_buf, coeff_buf)
     base_coords = FastInterpolations._phs_base_coords(itp, base_idx)
@@ -860,48 +869,58 @@ end
     # Never called from eval paths; replaced by the 4-return fused version.
     # Call directly to exercise those lines.
     val, dax1, dax2 = FastInterpolations._phs_eval_coeffs_value_and_two_deriv1(
-        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 2)
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 2
+    )
     @test isfinite(val) && isfinite(dax1) && isfinite(dax2)
     # Cross-check against the non-fused versions (which are also tested here)
-    val_ref  = FastInterpolations._phs_eval_coeffs_value(
-        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}())
-    d1x_ref  = FastInterpolations._phs_eval_coeffs_deriv1(
-        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1)
-    d1y_ref  = FastInterpolations._phs_eval_coeffs_deriv1(
-        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 2)
-    @test val  ≈ val_ref  atol = 1e-8
-    @test dax1 ≈ d1x_ref  atol = 1e-8
-    @test dax2 ≈ d1y_ref  atol = 1e-8
+    val_ref = FastInterpolations._phs_eval_coeffs_value(
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}()
+    )
+    d1x_ref = FastInterpolations._phs_eval_coeffs_deriv1(
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1
+    )
+    d1y_ref = FastInterpolations._phs_eval_coeffs_deriv1(
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 2
+    )
+    @test val ≈ val_ref  atol = 1.0e-8
+    @test dax1 ≈ d1x_ref  atol = 1.0e-8
+    @test dax2 ≈ d1y_ref  atol = 1.0e-8
 
     # ── _phs_eval_coeffs_deriv2: diagonal (lines 174-190) and off-diagonal (lines 191-210) ──
     d2xx_direct = FastInterpolations._phs_eval_coeffs_deriv2(
-        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 1)
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 1
+    )
     d2xy_direct = FastInterpolations._phs_eval_coeffs_deriv2(
-        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 2)
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 2
+    )
     @test isfinite(d2xx_direct) && isfinite(d2xy_direct)
 
     # ── _phs_eval_from_coeffs: total_order==1 (lines 455-457) ──
     v1 = FastInterpolations._phs_eval_from_coeffs(
         coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(),
-        (DerivOp{1}(), EvalValue()))
-    @test v1 ≈ d1x_ref atol = 1e-8
+        (DerivOp{1}(), EvalValue())
+    )
+    @test v1 ≈ d1x_ref atol = 1.0e-8
 
     # ── _phs_eval_from_coeffs: total_order==2 diagonal (lines 458-464) ──
     v2d = FastInterpolations._phs_eval_from_coeffs(
         coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(),
-        (DerivOp{2}(), EvalValue()))
-    @test v2d ≈ d2xx_direct atol = 1e-8
+        (DerivOp{2}(), EvalValue())
+    )
+    @test v2d ≈ d2xx_direct atol = 1.0e-8
 
     # ── _phs_eval_from_coeffs: total_order==2 off-diagonal (lines 465-467) ──
     v2od = FastInterpolations._phs_eval_from_coeffs(
         coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(),
-        (DerivOp{1}(), DerivOp{1}()))
-    @test v2od ≈ d2xy_direct atol = 1e-8
+        (DerivOp{1}(), DerivOp{1}())
+    )
+    @test v2od ≈ d2xy_direct atol = 1.0e-8
 
     # ── _phs_eval_from_coeffs: total_order≥3 → zero (line 470) ──
     z_fc = FastInterpolations._phs_eval_from_coeffs(
         coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(),
-        (DerivOp{2}(), DerivOp{1}()))
+        (DerivOp{2}(), DerivOp{1}())
+    )
     @test z_fc == 0.0
 
     # ── _phs_eval_blended: total_deriv≥3 fallback (line 674) ──
@@ -911,10 +930,13 @@ end
     # ── _phs_eval_blended_G: total_deriv≥3 fallback (line 874) ──
     # Call the log-transform blend function directly with total_deriv=3
     rho2 = [2.0 + sin(xi) * cos(yj) for xi in x, yj in y]
-    itp_log = phs_interp((x, y), rho2; stencil_size = 5, degree = 3,
-        reference_interp = ConstantRef(1.0))
+    itp_log = phs_interp(
+        (x, y), rho2; stencil_size = 5, degree = 3,
+        reference_interp = ConstantRef(1.0)
+    )
     z_G = FastInterpolations._phs_eval_blended_G(
-        itp_log, (qx, qy), (DerivOp{2}(), DerivOp{1}()))
+        itp_log, (qx, qy), (DerivOp{2}(), DerivOp{1}())
+    )
     @test z_G == 0.0
 
     # ── _phs_eval_with_transform: total_deriv≥3 fallback (line 932) ──
@@ -925,10 +947,11 @@ end
     # This function is always called with ax1==ax2 in the blended path (diagonal only).
     # Call directly with ax1≠ax2 to exercise the off-diagonal loop.
     val3, d1_3, d2_3 = FastInterpolations._phs_eval_coeffs_value_and_deriv1_and_deriv2(
-        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 2)
+        coeffs, phys_offsets, (qx, qy), base_coords, Val{3}(), 1, 2
+    )
     @test isfinite(val3) && isfinite(d1_3) && isfinite(d2_3)
     # Cross-check: value should match the zero-deriv version; d1 matches deriv1 along ax1
-    @test val3≈ val_ref atol = 1e-8
-    @test d1_3  ≈ d1x_ref atol = 1e-8
-    @test d2_3 ≈ d2xy_direct atol = 1e-8
+    @test val3 ≈ val_ref atol = 1.0e-8
+    @test d1_3 ≈ d1x_ref atol = 1.0e-8
+    @test d2_3 ≈ d2xy_direct atol = 1.0e-8
 end

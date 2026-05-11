@@ -31,7 +31,7 @@ recover the interpolated density and its derivatives.
 # Fields
 - `reference`: callable providing ρ₀(x), ∂ρ₀/∂xξ, and ∂²ρ₀/∂xξ∂xζ
 """
-struct PHSLogTransform{N,Tr}
+struct PHSLogTransform{N, Tr}
     reference::Tr
 end
 
@@ -61,7 +61,7 @@ struct ConstantRef{T}
     val::T
 end
 # Value query: return val.  Any derivative query (deriv keyword present): return zero.
-(c::ConstantRef{T})(q; deriv=nothing) where {T} = deriv === nothing ? c.val : zero(T)
+(c::ConstantRef{T})(q; deriv = nothing) where {T} = deriv === nothing ? c.val : zero(T)
 
 """
     PHSInterpolantND{Tg, Tv, N, K}
@@ -106,31 +106,31 @@ Immutable after construction; safe for concurrent read access.
 All mutable workspace lives in thread-local `AdaptiveArrayPools`.
 """
 struct PHSInterpolantND{
-    Tg,
-    Tv,
-    N,
-    K,
-    G<:Tuple{Vararg{AbstractVector,N}},
-    T,   # Nothing or PHSLogTransform
-    E<:Tuple{Vararg{AbstractExtrap,N}},
-    P<:Tuple{Vararg{AbstractSearchPolicy,N}},
-} <: AbstractInterpolantND{Tg,Tv,N}
+        Tg,
+        Tv,
+        N,
+        K,
+        G <: Tuple{Vararg{AbstractVector, N}},
+        T,   # Nothing or PHSLogTransform
+        E <: Tuple{Vararg{AbstractExtrap, N}},
+        P <: Tuple{Vararg{AbstractSearchPolicy, N}},
+    } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    data::Array{Tv,N}
-    stencil_offsets::Vector{NTuple{N,Int}}   # canonical stencil (stencil_size^N offsets)
-    stencil_phys_offsets::Vector{NTuple{N,Tg}} # precomputed physical coordinate offsets
+    data::Array{Tv, N}
+    stencil_offsets::Vector{NTuple{N, Int}}   # canonical stencil (stencil_size^N offsets)
+    stencil_phys_offsets::Vector{NTuple{N, Tg}} # precomputed physical coordinate offsets
     phi_inv::Matrix{Tg}                       # canonical Φ⁻¹ (shift = 0, used for interior nodes)
-    stencil_lo::NTuple{N,Int}                # per-axis min canonical offset (for fast shift computation)
-    stencil_hi::NTuple{N,Int}                # per-axis max canonical offset
-    shift_cache::Dict{NTuple{N,Int},Tuple{Vector{NTuple{N,Int}},Matrix{Tg},Vector{NTuple{N,Tg}}}}  # boundary shift variants
-    hs::NTuple{N,Tg}                         # mean grid spacing per axis
+    stencil_lo::NTuple{N, Int}                # per-axis min canonical offset (for fast shift computation)
+    stencil_hi::NTuple{N, Int}                # per-axis max canonical offset
+    shift_cache::Dict{NTuple{N, Int}, Tuple{Vector{NTuple{N, Int}}, Matrix{Tg}, Vector{NTuple{N, Tg}}}}  # boundary shift variants
+    hs::NTuple{N, Tg}                         # mean grid spacing per axis
     blend_a::Tg
     blend_a3::Tg                  # blend_a^3, precomputed for weight function kernels
-    blend_r_idx::NTuple{N,Int}   # ceil(blend_a / h_min) per axis
+    blend_r_idx::NTuple{N, Int}   # ceil(blend_a / h_min) per axis
     transform::T
     extraps::E
     searches::P
-    coeff_caches::Vector{Dict{NTuple{N,Int},Vector{Tg}}}
+    coeff_caches::Vector{Dict{NTuple{N, Int}, Vector{Tg}}}
 end
 
 # ----------------------------------------
@@ -138,10 +138,10 @@ end
 # ----------------------------------------
 
 @inline Base.size(itp::PHSInterpolantND) = map(length, itp.grids)
-@inline Base.ndims(::PHSInterpolantND{Tg,Tv,N}) where {Tg,Tv,N} = N
+@inline Base.ndims(::PHSInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} = N
 @inline grid_type(::PHSInterpolantND{Tg}) where {Tg} = Tg
-@inline value_type(::PHSInterpolantND{Tg,Tv}) where {Tg,Tv} = Tv
-@inline eval_type(itp::PHSInterpolantND{Tg,Tv}) where {Tg,Tv} = promote_type(Tv, Tg)
+@inline value_type(::PHSInterpolantND{Tg, Tv}) where {Tg, Tv} = Tv
+@inline eval_type(itp::PHSInterpolantND{Tg, Tv}) where {Tg, Tv} = promote_type(Tv, Tg)
 
 # Required by AbstractInterpolantND — expose per-axis grid/extrap/search
 @inline _grid(itp::PHSInterpolantND, ::Val{D}) where {D} = itp.grids[D]

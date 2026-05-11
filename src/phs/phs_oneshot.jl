@@ -15,18 +15,18 @@ One-shot N-dimensional PHS interpolation at a single query point.
 See `phs_interp(grids, data)` for keyword argument documentation.
 """
 function phs_interp(
-    grids::NTuple{N,AbstractVector},
-    data::AbstractArray{Tv,N},
-    query::Tuple{Vararg{Real,N}};
-    stencil_size::Int=8,
-    degree::Int=3,
-    blend_factor::Real=2.0,
-    extrap::Union{AbstractExtrap,NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy,NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    deriv::Union{DerivOp,Tuple{Vararg{DerivOp,N}}}=EvalValue(),
-    reference_interp=nothing,
-    reference_data=nothing,
-) where {Tv,N}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        stencil_size::Int = 8,
+        degree::Int = 3,
+        blend_factor::Real = 2.0,
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        reference_interp = nothing,
+        reference_data = nothing,
+    ) where {Tv, N}
     itp = phs_interp(grids, data; stencil_size, degree, blend_factor, extrap, search, reference_interp, reference_data)
     return itp(query; deriv)
 end
@@ -40,18 +40,18 @@ One-shot N-dimensional PHS interpolation at a batch of query points.
 Only allocates the output vector; all workspace is pool-allocated.
 """
 function phs_interp(
-    grids::NTuple{N,AbstractVector},
-    data::AbstractArray{Tv,N},
-    queries;
-    stencil_size::Int=8,
-    degree::Int=3,
-    blend_factor::Real=2.0,
-    extrap::Union{AbstractExtrap,NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy,NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    deriv::Union{DerivOp,Tuple{Vararg{DerivOp,N}}}=EvalValue(),
-    reference_interp=nothing,
-    reference_data=nothing,
-) where {Tv,N}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries;
+        stencil_size::Int = 8,
+        degree::Int = 3,
+        blend_factor::Real = 2.0,
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        reference_interp = nothing,
+        reference_data = nothing,
+    ) where {Tv, N}
     itp = phs_interp(grids, data; stencil_size, degree, blend_factor, extrap, search, reference_interp, reference_data)
     return itp(queries; deriv)
 end
@@ -63,19 +63,19 @@ In-place one-shot N-dimensional PHS interpolation.
 Writes results into pre-allocated `out`.
 """
 function phs_interp!(
-    out::AbstractVector,
-    grids::NTuple{N,AbstractVector},
-    data::AbstractArray{Tv,N},
-    queries;
-    stencil_size::Int=8,
-    degree::Int=3,
-    blend_factor::Real=2.0,
-    extrap::Union{AbstractExtrap,NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy,NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    deriv::Union{DerivOp,Tuple{Vararg{DerivOp,N}}}=EvalValue(),
-    reference_interp=nothing,
-    reference_data=nothing,
-) where {Tv,N}
+        out::AbstractVector,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries;
+        stencil_size::Int = 8,
+        degree::Int = 3,
+        blend_factor::Real = 2.0,
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        reference_interp = nothing,
+        reference_data = nothing,
+    ) where {Tv, N}
     itp = phs_interp(grids, data; stencil_size, degree, blend_factor, extrap, search, reference_interp, reference_data)
     return itp(out, queries; deriv)
 end

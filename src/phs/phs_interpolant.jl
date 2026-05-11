@@ -89,16 +89,16 @@ itp(([0.1, 0.5, 0.9], [0.2, 0.4, 0.6]))     # batch SoA
 ```
 """
 function phs_interp(
-    grids::NTuple{N,AbstractVector},
-    data::AbstractArray{Tv_raw,N};
-    stencil_size::Int=8,
-    degree::Int=3,
-    blend_factor::Real=2.0,
-    extrap::Union{AbstractExtrap,NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy,NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    reference_interp=nothing,
-    reference_data=nothing,
-) where {N,Tv_raw}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv_raw, N};
+        stencil_size::Int = 8,
+        degree::Int = 3,
+        blend_factor::Real = 2.0,
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        reference_interp = nothing,
+        reference_data = nothing,
+    ) where {N, Tv_raw}
     isodd(degree) && degree >= 1 || throw(ArgumentError("PHS degree must be odd and ≥ 1, got $degree"))
     stencil_size >= 1 || throw(ArgumentError("stencil_size must be ≥ 1, got $stencil_size"))
 
@@ -135,15 +135,15 @@ function phs_interp(
             Tv[reference_interp(ntuple(d -> grids_c[d][idx[d]], N)) for idx in CartesianIndices(size(data_typed))]
         end
         log_data = Array{Tv}(log.(data_typed ./ rho0_nodes))
-        PHSLogTransform{N,typeof(reference_interp)}(reference_interp), log_data
+        PHSLogTransform{N, typeof(reference_interp)}(reference_interp), log_data
     end
 
     blend_a3 = blend_a^3
     # Use maxthreadid() to account for interactive thread pools
-    coeff_caches = Dict{NTuple{N,Int},Vector{Tg}}[Dict{NTuple{N,Int},Vector{Tg}}() for _ in 1:Threads.maxthreadid()]
+    coeff_caches = Dict{NTuple{N, Int}, Vector{Tg}}[Dict{NTuple{N, Int}, Vector{Tg}}() for _ in 1:Threads.maxthreadid()]
     return PHSInterpolantND{
-        Tg,Tv,N,degree,
-        typeof(grids_c),typeof(transform),typeof(extrap_vals),typeof(searches),
+        Tg, Tv, N, degree,
+        typeof(grids_c), typeof(transform), typeof(extrap_vals), typeof(searches),
     }(
         grids_c, data_store,
         stencil_offsets, stencil_phys_offsets, phi_inv, stencil_lo, stencil_hi, shift_cache, hs,
@@ -158,14 +158,14 @@ end
 
 # ---- Helpers ----
 
-@inline function _phs_check_domain(itp::PHSInterpolantND{Tg,Tv,N}, query::NTuple{N,<:Real}) where {Tg,Tv,N}
-    _validate_nd_domain(itp.grids, query, itp.extraps)
+@inline function _phs_check_domain(itp::PHSInterpolantND{Tg, Tv, N}, query::NTuple{N, <:Real}) where {Tg, Tv, N}
+    return _validate_nd_domain(itp.grids, query, itp.extraps)
 end
 
 @inline function _phs_resolve_ops(
-    deriv::Union{DerivOp,NTuple{N,DerivOp}},
-    ::Val{N},
-) where {N}
+        deriv::Union{DerivOp, NTuple{N, DerivOp}},
+        ::Val{N},
+    ) where {N}
     return _resolve_deriv_nd(deriv, Val(N))
 end
 
@@ -178,10 +178,10 @@ Evaluate the PHS interpolant at a single N-tuple query point.
 """
 # Shared implementation — always receives concrete `ops` tuple, zero-alloc.
 @inline function _phs_callable_impl(
-    itp::PHSInterpolantND{Tg,Tv,N},
-    query::Tuple{Vararg{Real,N}},
-    ops::NTuple{N,AbstractEvalOp},
-) where {Tg,Tv,N}
+        itp::PHSInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}},
+        ops::NTuple{N, AbstractEvalOp},
+    ) where {Tg, Tv, N}
     _phs_check_domain(itp, query)
     # Handle out-of-bounds (fills FillExtrap, etc.)
     oob = _try_fill_oob(query, itp.grids, itp.extraps, ops, first(itp.data))
@@ -191,11 +191,11 @@ end
 
 # Single callable — Union{DerivOp, Tuple} is handled by Julia's union-splitting
 # at the _phs_resolve_ops call site inside _phs_callable_impl.
-@inline function (itp::PHSInterpolantND{Tg,Tv,N})(
-    query::Tuple{Vararg{Real,N}};
-    deriv::Union{DerivOp,Tuple{Vararg{DerivOp,N}}}=EvalValue(),
-    kw...,  # absorb search/hint passed by AbstractInterpolantND protocol
-) where {Tg,Tv,N}
+@inline function (itp::PHSInterpolantND{Tg, Tv, N})(
+        query::Tuple{Vararg{Real, N}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        kw...,  # absorb search/hint passed by AbstractInterpolantND protocol
+    ) where {Tg, Tv, N}
     return _phs_callable_impl(itp, query, _phs_resolve_ops(deriv, Val(N)))
 end
 
@@ -211,11 +211,11 @@ All workspace is thread-local (AdaptiveArrayPools) to support thread-safe concur
 """
 # Shared batch implementation — receives concrete ops tuple.
 function _phs_batch_impl!(
-    itp::PHSInterpolantND{Tg,Tv,N},
-    out::AbstractVector,
-    queries,
-    ops::NTuple{N,AbstractEvalOp},
-) where {Tg,Tv,N}
+        itp::PHSInterpolantND{Tg, Tv, N},
+        out::AbstractVector,
+        queries,
+        ops::NTuple{N, AbstractEvalOp},
+    ) where {Tg, Tv, N}
     nq = _query_length(queries)
     length(out) == nq || _throw_query_output_mismatch(nq, length(out))
     _query_validate(queries)
@@ -232,12 +232,12 @@ function _phs_batch_impl!(
     return out
 end
 
-function (itp::PHSInterpolantND{Tg,Tv,N})(
-    out::AbstractVector,
-    queries::Union{Tuple{Vararg{AbstractVector,N}},AbstractVector};
-    deriv::Union{DerivOp,Tuple{Vararg{DerivOp,N}}}=EvalValue(),
-    kw...,  # absorb search/hint forwarded by AbstractInterpolantND protocol
-) where {Tg,Tv,N}
+function (itp::PHSInterpolantND{Tg, Tv, N})(
+        out::AbstractVector,
+        queries::Union{Tuple{Vararg{AbstractVector, N}}, AbstractVector};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        kw...,  # absorb search/hint forwarded by AbstractInterpolantND protocol
+    ) where {Tg, Tv, N}
     return _phs_batch_impl!(itp, out, queries, _phs_resolve_ops(deriv, Val(N)))
 end
 

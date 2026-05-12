@@ -100,24 +100,19 @@ end
 # ========================================
 # Generic Constructor (User API)
 # ========================================
-# Handles all Real grid types (Int, Float32, Float64, etc.)
-# Type promotion done here, then forwards to typed ConstantInterpolant constructor.
-#
-# PERFORMANCE: Typed signature enables compile-time specialization.
-# _promote_itp_inputs becomes no-op when types already match (Float64 → Float64).
+# Selection kernel → raw eltype contract (Int in → Int out). Signature
+# parametrized directly on `{Tg, Tv}` — no `_promote_grid_float` indirection.
 @inline function constant_interp(
-        x::AbstractVector{TX},
-        y::AbstractVector{TY};
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv};
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {TX, TY}
-    # Selection kernel → raw eltype contract.
-    Tg = TX
+    ) where {Tg, Tv}
     x_eff = _cache_axis(x, bc, Tg)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    extrap_p = _promote_extrap(extrap_eff, TY)
+    extrap_p = _promote_extrap(extrap_eff, Tv)
     return ConstantInterpolant(x_eff, y_eff, extrap_p, side, search; bc = bc)
 end

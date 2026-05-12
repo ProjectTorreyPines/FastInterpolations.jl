@@ -221,15 +221,14 @@ f_bar = adj(y_bar)
 - `NoExtrap` validates all queries are in-domain at construction time.
 """
 function constant_adjoint(
-        x::AbstractVector,
+        x::AbstractVector{Tg},
         x_query::AbstractVector;
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
-    )
+    ) where {Tg}
     # Selection kernel → raw eltype contract (cubic/linear/… keep using the
     # shared `_promote_adjoint_inputs` for their Float-promotion needs).
-    Tg = eltype(x)
     x_p = x
     xq_p = _promote_query_typed(x_query, Tg)
 

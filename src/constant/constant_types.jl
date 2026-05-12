@@ -60,17 +60,16 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
     side::SD         # Side selection (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    # Inner: `_cache_axis` (insurance) then `_convert_copy` for ownership +
-    # eltype promotion. `bc` kwarg lets direct-ctor callers request periodic.
+    # Inner: `_cache_axis` (insurance) then `_convert_copy` for ownership.
+    # `{Tg, Tv}` parametrized directly — selection kernel → raw eltype
+    # contract (Int in → Int out), unlike arithmetic methods that thread
+    # `_promote_grid_float(TX, TY)` through here.
     function ConstantInterpolant(
-            x::AbstractVector, y::AbstractVector, ev::E, sv::SD, search::P;
+            x::AbstractVector{Tg}, y::AbstractVector{Tv}, ev::E, sv::SD, search::P;
             bc::AbstractBC = NoBC()
-        ) where {E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
+        ) where {Tg, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         _check_compatible_length(x, y)
         length(x) >= 2 || _throw_grid_too_small(length(x))
-        # Selection kernel → raw eltype contract (Int in → Int out).
-        Tg = eltype(x)
-        Tv = eltype(y)
         xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, SD, P}(xc, yc, ev, sv, search)
@@ -80,14 +79,13 @@ end
 # Outer constructor: convenience kwarg wrapper. Wraps the axis here so the
 # inner ctor's `_cache_axis` insurance is an idempotent passthrough.
 @inline function ConstantInterpolant(
-        x::AbstractVector,
+        x::AbstractVector{Tg},
         y::AbstractVector;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
         search::AbstractSearchPolicy = AutoSearch()
-    )
-    Tg = eltype(x)
+    ) where {Tg}
     x_eff = _cache_axis(x, bc, Tg)
     return ConstantInterpolant(x_eff, y, extrap, side, search; bc = bc)
 end

@@ -437,7 +437,6 @@ function cubic_adjoint(
         bc::AbstractBC = CubicFit(),
         extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true,
-        _extra...
     )
     x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
 
@@ -474,7 +473,6 @@ function cubic_adjoint(
         bc::AbstractBC = CubicFit(),
         extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true,
-        _extra...
     )
     return cubic_adjoint(x, [x_query]; bc = bc, extrap = extrap, autocache = autocache)
 end

@@ -426,7 +426,6 @@ function hermite_adjoint(
         x::AbstractVector,
         x_query::AbstractVector;
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
 
@@ -457,7 +456,6 @@ function hermite_adjoint(
         x::AbstractVector,
         x_query::Real;
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     return hermite_adjoint(x, [x_query]; extrap = extrap)
 end

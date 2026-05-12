@@ -58,15 +58,15 @@
 
         sitp = constant_interp(x, Series(y1, y2))
 
-        # x promoted to Float64, y promoted to ComplexF64
-        @test sitp isa ConstantSeriesInterpolant{Float64, ComplexF64}
+        # Constant duck-types: Int grid stays Int, Complex{Int} preserved.
+        @test sitp isa ConstantSeriesInterpolant{Int, Complex{Int}}
 
         vals = sitp(5.5)
-        @test vals isa Vector{ComplexF64}
+        @test vals isa Vector{Complex{Int}}
 
-        # Constant interpolation returns step value (nearest by default)
-        # At 5.5 with NearestSide(), rounds to index 6 (x=5) → value 5+10i
-        @test isapprox(vals[1], 5.0 + 10.0im, rtol = 1.0e-10)
+        # Constant interpolation returns step value (nearest by default).
+        # At 5.5 with NearestSide(), rounds to index 6 (x=5) → value 5+10i.
+        @test vals[1] === 5 + 10im
     end
 
     # ========================================
@@ -79,8 +79,8 @@
 
         sitp = constant_interp(x, Series(y1, y2))
 
-        # Grid promoted to Float64 to match Complex{Float64}
-        @test sitp isa ConstantSeriesInterpolant{Float64, ComplexF64}
+        # Constant duck-types: Float32 grid preserved, ComplexF64 preserved.
+        @test sitp isa ConstantSeriesInterpolant{Float32, ComplexF64}
 
         vals = sitp(0.5)
         @test vals isa Vector{ComplexF64}
@@ -268,8 +268,11 @@
     # ========================================
     # Tg Calculation Policy (Query Independence)
     # ========================================
-    @testset "Lossless type promotion" begin
-        # Float32 data + Float64 query → Float64 output (wider type wins)
+    @testset "Eltype contract: selection kernel preserves Tv" begin
+        # Constant duck-types output to `_series_eltype(s)`: query type Tq does
+        # NOT widen the output for plain numerical Tq (Float/Int/Rational/Complex)
+        # — kernel just returns `y[idx]::Tv`. Duck-typed Tq (Dual) still
+        # promotes for AD-API compatibility, but plain Float64 keeps Tv.
         x32 = Float32.(0:0.1:1)
         y1 = sin.(x32)
         y2 = cos.(x32)
@@ -277,9 +280,8 @@
         sitp = constant_interp(x32, Series(y1, y2))
         @test sitp isa ConstantSeriesInterpolant{Float32, Float32}
 
-        # Float64 query promotes output to Float64 (lossless - wider type)
-        result = sitp(0.5)  # 0.5 is Float64
-        @test eltype(result) === Float64
+        result = sitp(0.5)  # 0.5 is Float64 — but Tv (Float32) wins for constant.
+        @test eltype(result) === Float32
     end
 
 end

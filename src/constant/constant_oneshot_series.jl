@@ -77,7 +77,7 @@ end
     _validate_series_lengths(s, length(x))
     x = _to_float(x, Tg)
     K = n_series(s)
-    Tv_out = _value_type(_series_eltype(s), Tg)
+    Tv_out = _series_eltype(s)
     output = Vector{Tv_out}(undef, K)
     if _is_periodic_bc(bc)
         searcher = _resolve_search(x, xq, search, hint, bc)
@@ -202,7 +202,7 @@ function constant_interp(
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tq <: Real}
     K = n_series(s)
-    Tv_out = _value_type(_series_eltype(s), Tg)
+    Tv_out = _series_eltype(s)
     outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
     constant_interp!(outputs, x, s, xqs; bc, side, extrap, deriv, search)
     return outputs

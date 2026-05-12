@@ -549,12 +549,13 @@ via arithmetic rather than iterative search, exploiting uniform grid spacing.
 end
 
 """
-    _search_direct(x::_CachedRange{T}, xq::Real)
+    _search_direct(x::_CachedRange{T, Tinv}, xq::Real)
 
-`_CachedRange` specialization: all fields are plain `T` — no TwicePrecision arithmetic.
+`_CachedRange` specialization: geometry fields are plain `T`, `inv_h` is `Tinv`
+(equals `T` for Float grids, `Float64` for `T = Int`) — no TwicePrecision arithmetic.
 Uses precomputed `inv_h` (multiply instead of divide) for the index calculation.
 """
-@inline function _search_direct(x::_CachedRange{T}, xq::Real) where {T}
+@inline function _search_direct(x::_CachedRange{T, Tinv}, xq::Real) where {T, Tinv}
     # Primal-based index: see _search_direct(::AbstractRange, ...) comment.
     idx = clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - x.lo, x.inv_h, 1))), 1, x.len - 1)
     xL = muladd(idx - 1, x.h, x.lo)

@@ -348,15 +348,8 @@ function constant_interp(
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg}
-    # Type promotion: widen grid if y's float base is wider than Tg
-    Tv = _series_eltype(s)
-    Tg_new = _promote_grid_float(Tg, Tv)
-    if Tg_new !== Tg
-        return constant_interp(_to_float(x, Tg_new), s; bc, side, extrap, search)
-    end
-
+    Tv_out = _series_eltype(s)
     n_pts = length(x)
-    Tv_out = _value_type(Tv, Tg)
     y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
 
     # Periodic path: extend x + y_mat to `:inclusive` form, normalize BC label

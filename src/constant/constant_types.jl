@@ -68,8 +68,9 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
         ) where {E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         _check_compatible_length(x, y)
         length(x) >= 2 || _throw_grid_too_small(length(x))
-        Tg = _promote_grid_float(eltype(x), eltype(y))
-        Tv = _value_type(eltype(y), Tg)
+        # Selection kernel → raw eltype contract (Int in → Int out).
+        Tg = eltype(x)
+        Tv = eltype(y)
         xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, SD, P}(xc, yc, ev, sv, search)
@@ -86,7 +87,7 @@ end
         side::AbstractSide = NearestSide(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    Tg = _promote_grid_float(eltype(x), eltype(y))
+    Tg = eltype(x)
     x_eff = _cache_axis(x, bc, Tg)
     return ConstantInterpolant(x_eff, y, extrap, side, search; bc = bc)
 end

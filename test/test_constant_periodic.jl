@@ -531,7 +531,8 @@
         y = Float64.(0:10)
         itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
         @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
-        @test itp.x.inner isa _CachedRange{Float64}
+        # Constant duck-types grid eltype: Int Range stays Int (Tinv = Float64).
+        @test itp.x.inner isa _CachedRange{Int, Float64}
         @test length(itp.x) == 12
         @test length(itp.x.inner) == 11
         ref = constant_interp(Float64.(0:10), y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))

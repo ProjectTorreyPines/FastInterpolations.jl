@@ -45,11 +45,15 @@ abstract type AbstractCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}} end
 
 # Map user input grid type to the cache's wrapped axis type. Mirrors
 # `_resolve_axis_copied(x, bc, T)`:
-# - Non-periodic / `:inclusive`: Range → `_CachedRange{T}`,
+# - Non-periodic / `:inclusive`: Range → `_CachedRange{T, Tinv}`,
 #   Vector → `_CachedVector{T, Tinv}`.
 # - `:exclusive` periodic: extra `_ExclusivePeriodicAxis` wrapper around the
 #   above inner.
-@inline _cached_axis_type(::Type{<:AbstractRange}, ::Type{T}) where {T} = _CachedRange{T}
+# Cubic always promotes to `T <: AbstractFloat`, so `Tinv == T` here — pin the
+# 2nd parameter to `T` to keep the bank's `EntryType` concrete (otherwise the
+# 1-param `_CachedRange{T}` form would be a UnionAll after the Phase 1
+# `_CachedRange{T, Tinv}` refactor, defeating type-specialization in the bank).
+@inline _cached_axis_type(::Type{<:AbstractRange}, ::Type{T}) where {T} = _CachedRange{T, T}
 @inline _cached_axis_type(::Type{<:AbstractVector}, ::Type{T}) where {T} =
     _CachedVector{T, typeof(inv(oneunit(T)))}
 
@@ -705,9 +709,10 @@ Type-Free design: bc_pair should already be cache-compatible (via _cache_bc_pair
     return _lookup_or_insert!(bank, x, bc_pair)
 end
 
-# _CachedRange: bank keyed on _CachedRange{T}. objectid is deterministic for isbits → fast hit.
-@inline function _get_derivative_cache_impl(x::_CachedRange{T}, bc_pair::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
-    bank = _get_derivative_bank(_CachedRange{T}, bc_pair)
+# _CachedRange: bank keyed on _CachedRange{T, T} (Tinv == T for Float grids).
+# objectid is deterministic for isbits → fast hit.
+@inline function _get_derivative_cache_impl(x::_CachedRange{T, T}, bc_pair::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
+    bank = _get_derivative_bank(_CachedRange{T, T}, bc_pair)
     return _lookup_or_insert!(bank, x, bc_pair)
 end
 
@@ -747,9 +752,9 @@ caches partition into separate banks — see `PeriodicCacheEntry`).
     return _lookup_or_insert!(bank, x, bc)
 end
 
-# _CachedRange: bank keyed on _CachedRange{T}.
-@inline function _get_periodic_cache_impl(x::_CachedRange{T}, bc::PeriodicBC) where {T <: AbstractFloat}
-    bank = _get_periodic_bank(_CachedRange{T}, bc)
+# _CachedRange: bank keyed on _CachedRange{T, T} (Tinv == T for Float grids).
+@inline function _get_periodic_cache_impl(x::_CachedRange{T, T}, bc::PeriodicBC) where {T <: AbstractFloat}
+    bank = _get_periodic_bank(_CachedRange{T, T}, bc)
     return _lookup_or_insert!(bank, x, bc)
 end
 

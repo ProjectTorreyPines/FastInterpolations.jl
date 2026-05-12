@@ -219,8 +219,10 @@ Internal implementation of _anchor_query for constant interpolation.
     ) where {T, Tq <: Real, P <: Searcher}
     loc = _anchor_loc(x, xq, wrap, policy)
 
-    # Compute geometry (constant-internal concern)
-    h = _get_h(x, loc.xL, loc.xR)
+    # Raw subtraction (not `_get_h`): constant only uses `h` for `dL <= h/2`
+    # comparison, so preserving `eltype(x)` keeps the anchor type uniform
+    # across Vector/CachedRange/CachedVector grids.
+    h = loc.xR - loc.xL
     dL = loc.xq - loc.xL
     # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual)
     xq_promoted = oftype(dL, loc.xq)

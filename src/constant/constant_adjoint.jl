@@ -227,7 +227,11 @@ function constant_adjoint(
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
     )
-    x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
+    # Selection kernel → raw eltype contract (cubic/linear/… keep using the
+    # shared `_promote_adjoint_inputs` for their Float-promotion needs).
+    Tg = eltype(x)
+    x_p = x
+    xq_p = _promote_query_typed(x_query, Tg)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 

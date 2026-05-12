@@ -178,9 +178,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     searcher = _resolve_search(x_eff, xi, search, hint, NoBC())
-    result = _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
-    # Single-exit coerce: Int/Rational y returns y[idx] directly; promote to Float.
-    return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
+    return _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
 end
 
 # ========================================
@@ -270,8 +268,7 @@ function constant_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    Tg = _promote_grid_float(eltype(x), eltype(y))
-    T_out = _output_eltype(eltype(y), Tg)
+    T_out = eltype(y)
     output = Vector{T_out}(undef, length(x_targets))
     constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)
     return output

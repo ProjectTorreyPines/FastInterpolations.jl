@@ -113,13 +113,11 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
-    Tg = _promote_grid_float(TX, TY)
-    # BC-aware caching wrap (zero-copy of buffer); ownership copy + element
-    # promotion is delegated to the inner constructor's `_convert_copy(x, Tg)`
-    # / `_convert_copy(y, Tv)` symmetric pair. Same template as Linear.
+    # Selection kernel → raw eltype contract.
+    Tg = TX
     x_eff = _cache_axis(x, bc, Tg)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
+    extrap_p = _promote_extrap(extrap_eff, TY)
     return ConstantInterpolant(x_eff, y_eff, extrap_p, side, search; bc = bc)
 end

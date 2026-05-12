@@ -532,8 +532,7 @@ function _build_hetero_nd_adjoint(
 
     # Per-axis "package" via method-typed dispatch — see `_build_hetero_axis_package`
     # below. Each package is a NamedTuple with the 6 fields the builder threads
-    # into `HeteroAdjointND`. Replaces the previous 5 if-cascade `map`s; the
-    # per-method axis policy lives in ONE place per method type.
+    # into `HeteroAdjointND`; per-method axis policy lives in ONE place per method type.
     ac = _effective_autocache(true, Tg)
     axes = map((m, g) -> _build_hetero_axis_package(m, g, ac), methods, grids)
 

@@ -57,8 +57,6 @@ end
 # Dedicated error for the "local Hermite ND + nodal_partials" combo.
 # Following the user advice to "use PreCompute" would dead-end: PreCompute
 # is rejected upstream by `_validate_nd_coeffs` for Hermite family ND.
-# This message points users at the correct workaround (per-axis 1D access)
-# and the tracking TODO.
 @noinline function _throw_nodal_partials_hermite_nd(methods)
     local_names = String[]
     for m in methods
@@ -70,8 +68,7 @@ end
         ArgumentError(
             "nodal_partials is not yet implemented for Hermite family ND " *
                 "(found $(join(unique(local_names), ", "))). The Hermite ND PreCompute " *
-                "backend has not been written yet — tracked in " *
-                "claudedocs/TODO/hermite_nd_precompute.md. " *
+                "backend has not been written yet. " *
                 "Workaround: compute per-axis 1D slopes via `pchip_interp` / " *
                 "`cardinal_interp` / `akima_interp` with `deriv=DerivOp(1)`, " *
                 "or switch the relevant axes to CubicInterp / QuadraticInterp " *

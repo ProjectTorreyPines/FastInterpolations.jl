@@ -416,11 +416,11 @@ end
     @inbounds begin
         h_km2 = x[j_km2 + 1] - x[j_km2]
         h_km1 = x[j_km1 + 1] - x[j_km1]
-        h_k   = x[j_k   + 1] - x[j_k]
+        h_k = x[j_k + 1] - x[j_k]
         h_kp1 = x[j_kp1 + 1] - x[j_kp1]
         m_km2 = (y[j_km2 + 1] - y[j_km2]) / h_km2
         m_km1 = (y[j_km1 + 1] - y[j_km1]) / h_km1
-        m_k   = (y[j_k   + 1] - y[j_k])   / h_k
+        m_k = (y[j_k + 1] - y[j_k]) / h_k
         m_kp1 = (y[j_kp1 + 1] - y[j_kp1]) / h_kp1
     end
 
@@ -433,12 +433,12 @@ end
         # Equal-weight fallback: dy[k] = (m_km1 + m_k)/2 →
         # ∂dy/∂m_km1 = 1/2, ∂dy/∂m_k = 1/2.
         c_km1 = (db / 2) / h_km1
-        c_k   = (db / 2) / h_k
+        c_k = (db / 2) / h_k
         @inbounds begin
-            f_bar[j_km1]     -= c_km1
+            f_bar[j_km1] -= c_km1
             f_bar[j_km1 + 1] += c_km1
-            f_bar[j_k]       -= c_k
-            f_bar[j_k + 1]   += c_k
+            f_bar[j_k] -= c_k
+            f_bar[j_k + 1] += c_k
         end
     else
         dy_k = (w1 * m_km1 + w2 * m_k) / wsum
@@ -449,16 +449,16 @@ end
         )
         c_km2 = (d_km2 * db) / h_km2
         c_km1 = (d_km1 * db) / h_km1
-        c_k   = (d_k   * db) / h_k
+        c_k = (d_k * db) / h_k
         c_kp1 = (d_kp1 * db) / h_kp1
         @inbounds begin
-            f_bar[j_km2]     -= c_km2
+            f_bar[j_km2] -= c_km2
             f_bar[j_km2 + 1] += c_km2
-            f_bar[j_km1]     -= c_km1
+            f_bar[j_km1] -= c_km1
             f_bar[j_km1 + 1] += c_km1
-            f_bar[j_k]       -= c_k
-            f_bar[j_k + 1]   += c_k
-            f_bar[j_kp1]     -= c_kp1
+            f_bar[j_k] -= c_k
+            f_bar[j_k + 1] += c_k
+            f_bar[j_kp1] -= c_kp1
             f_bar[j_kp1 + 1] += c_kp1
         end
     end
@@ -483,7 +483,7 @@ end
             _akima_periodic_kernel!(
                 f_bar, dy_bar, x, y, k,
                 mod1(k - 2, m_cyc), mod1(k - 1, m_cyc),
-                mod1(k,     m_cyc), mod1(k + 1, m_cyc),
+                mod1(k, m_cyc), mod1(k + 1, m_cyc),
             )
         end
         return nothing

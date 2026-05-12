@@ -1094,14 +1094,14 @@ end
         f_inc = vcat(f_data, f_data[1])
 
         for (label, fn, bc, xg, fg) in [
-                ("Linear",   linear_interp,   bc_exc, x,     f_data),
-                ("Constant", constant_interp, bc_exc, x,     f_data),
-                ("PCHIP",    pchip_interp,    bc_exc, x,     f_data),
-                ("Cardinal", cardinal_interp, bc_exc, x,     f_data),
-                ("Akima",    akima_interp,    bc_exc, x,     f_data),
-                ("Linear-inc",   linear_interp,   bc_inc, x_inc, f_inc),
-                ("PCHIP-inc",    pchip_interp,    bc_inc, x_inc, f_inc),
-                ("Akima-inc",    akima_interp,    bc_inc, x_inc, f_inc),
+                ("Linear", linear_interp, bc_exc, x, f_data),
+                ("Constant", constant_interp, bc_exc, x, f_data),
+                ("PCHIP", pchip_interp, bc_exc, x, f_data),
+                ("Cardinal", cardinal_interp, bc_exc, x, f_data),
+                ("Akima", akima_interp, bc_exc, x, f_data),
+                ("Linear-inc", linear_interp, bc_inc, x_inc, f_inc),
+                ("PCHIP-inc", pchip_interp, bc_inc, x_inc, f_inc),
+                ("Akima-inc", akima_interp, bc_inc, x_inc, f_inc),
             ]
             @testset "$label" begin
                 g_zy = Zygote.gradient(y -> sum(fn(xg, y, xq_vec; bc = bc)), fg)[1]

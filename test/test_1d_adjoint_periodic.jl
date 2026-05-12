@@ -417,9 +417,9 @@ end
         y_bar = randn(length(xq))
 
         for (label, fwd, adj_ctor, data_arg) in [
-                ("PCHIP",    pchip_interp,    pchip_adjoint,    y),
+                ("PCHIP", pchip_interp, pchip_adjoint, y),
                 ("Cardinal", cardinal_interp, cardinal_adjoint, nothing),
-                ("Akima",    akima_interp,    akima_adjoint,    y),
+                ("Akima", akima_interp, akima_adjoint, y),
             ]
             @testset "$label" begin
                 forward(ytest) = fwd(x, ytest, xq; bc = bc)

@@ -147,9 +147,9 @@ end
             h_prev = x[j_prev + 1] - x[j_prev]
             h_curr = x[j_curr + 1] - x[j_curr]
             c = scale * dy_bar[k] / (h_prev + h_curr)
-            f_bar[j_prev]     -= c
+            f_bar[j_prev] -= c
             f_bar[j_prev + 1] += c
-            f_bar[j_curr]     -= c
+            f_bar[j_curr] -= c
             f_bar[j_curr + 1] += c
         end
         return nothing
@@ -164,9 +164,9 @@ end
         h_prev = x[j_prev + 1] - x[j_prev]
         h_curr = x[j_curr + 1] - x[j_curr]
         c = scale * dy_bar[1] / (h_prev + h_curr)
-        f_bar[j_prev]     -= c       # f_bar[n-1]
+        f_bar[j_prev] -= c       # f_bar[n-1]
         f_bar[j_prev + 1] += c       # f_bar[n]
-        f_bar[j_curr]     -= c       # f_bar[1]
+        f_bar[j_curr] -= c       # f_bar[1]
         f_bar[j_curr + 1] += c       # f_bar[2]
     end
 
@@ -184,9 +184,9 @@ end
         h_prev = x[j_prev + 1] - x[j_prev]   # x[n] - x[n-1]
         h_curr = x[j_curr + 1] - x[j_curr]   # x[2] - x[1]
         c = scale * dy_bar[n] / (h_prev + h_curr)
-        f_bar[j_prev]     -= c       # f_bar[n-1]
+        f_bar[j_prev] -= c       # f_bar[n-1]
         f_bar[j_prev + 1] += c       # f_bar[n]
-        f_bar[j_curr]     -= c       # f_bar[1]
+        f_bar[j_curr] -= c       # f_bar[1]
         f_bar[j_curr + 1] += c       # f_bar[2]
     end
 

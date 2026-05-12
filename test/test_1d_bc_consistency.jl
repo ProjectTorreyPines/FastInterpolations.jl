@@ -44,8 +44,8 @@
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
     y_nobc = linear_interp(x_inc, f_inc, xq)
-    y_inc  = linear_interp(x_inc, f_inc, xq; bc = bc_inc)
-    y_exc  = linear_interp(x_exc, f_exc, xq; bc = bc_exc)
+    y_inc = linear_interp(x_inc, f_inc, xq; bc = bc_inc)
+    y_exc = linear_interp(x_exc, f_exc, xq; bc = bc_exc)
 
     # Linear is purely local — three representations bit-equivalent.
     # `:exclusive` synthesizes its seam endpoint via `inner[1] + period`, but
@@ -71,8 +71,8 @@ end
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
     y_nobc = constant_interp(x_inc, f_inc, xq; side = NearestSide())
-    y_inc  = constant_interp(x_inc, f_inc, xq; side = NearestSide(), bc = bc_inc)
-    y_exc  = constant_interp(x_exc, f_exc, xq; side = NearestSide(), bc = bc_exc)
+    y_inc = constant_interp(x_inc, f_inc, xq; side = NearestSide(), bc = bc_inc)
+    y_exc = constant_interp(x_exc, f_exc, xq; side = NearestSide(), bc = bc_exc)
 
     # Constant is single-point lookup — bit-equivalent across BCs.
     @test y_nobc == y_inc
@@ -95,8 +95,8 @@ end
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
     f_bar_nobc = linear_adjoint(x_inc, xq)(y_bar)              # length nx_exc+1
-    f_bar_inc  = linear_adjoint(x_inc, xq; bc = bc_inc)(y_bar) # length nx_exc+1
-    f_bar_exc  = linear_adjoint(x_exc, xq; bc = bc_exc)(y_bar) # length nx_exc (post seam fold)
+    f_bar_inc = linear_adjoint(x_inc, xq; bc = bc_inc)(y_bar) # length nx_exc+1
+    f_bar_exc = linear_adjoint(x_exc, xq; bc = bc_exc)(y_bar) # length nx_exc (post seam fold)
 
     # NoBC == inclusive on the closed n+1-grid (no extension/fold either way).
     @test f_bar_nobc ≈ f_bar_inc atol = 1.0e-13
@@ -121,8 +121,8 @@ end
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
     f_bar_nobc = constant_adjoint(x_inc, xq; side = NearestSide())(y_bar)
-    f_bar_inc  = constant_adjoint(x_inc, xq; side = NearestSide(), bc = bc_inc)(y_bar)
-    f_bar_exc  = constant_adjoint(x_exc, xq; side = NearestSide(), bc = bc_exc)(y_bar)
+    f_bar_inc = constant_adjoint(x_inc, xq; side = NearestSide(), bc = bc_inc)(y_bar)
+    f_bar_exc = constant_adjoint(x_exc, xq; side = NearestSide(), bc = bc_exc)(y_bar)
 
     @test f_bar_nobc ≈ f_bar_inc atol = 1.0e-13
 
@@ -181,13 +181,13 @@ end
     # NoBC and Periodic agree at every interior query → `!isapprox` would
     # silently fail to detect the boundary-cell semantic difference.
     y_nobc_r = pchip_interp(x_inc, f_inc, xq_random)
-    y_inc_r  = pchip_interp(x_inc, f_inc, xq_random; bc = bc_inc)
+    y_inc_r = pchip_interp(x_inc, f_inc, xq_random; bc = bc_inc)
     @test isapprox(y_nobc_r, y_inc_r; atol = 1.0e-12)  # documents the gap
 
     # Deterministic boundary prepend (the fix applied to all 6 testitems below).
     xq_pinned = vcat(0.5 * h, xq_random)
     y_nobc_p = pchip_interp(x_inc, f_inc, xq_pinned)
-    y_inc_p  = pchip_interp(x_inc, f_inc, xq_pinned; bc = bc_inc)
+    y_inc_p = pchip_interp(x_inc, f_inc, xq_pinned; bc = bc_inc)
     @test !isapprox(y_nobc_p, y_inc_p; rtol = 1.0e-3)
 end
 
@@ -212,8 +212,8 @@ end
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
     y_nobc = pchip_interp(x_inc, f_inc, xq)
-    y_inc  = pchip_interp(x_inc, f_inc, xq; bc = bc_inc)
-    y_exc  = pchip_interp(x_exc, f_exc, xq; bc = bc_exc)
+    y_inc = pchip_interp(x_inc, f_inc, xq; bc = bc_inc)
+    y_exc = pchip_interp(x_exc, f_exc, xq; bc = bc_exc)
 
     # Inclusive vs exclusive: same closed-cycle slope formula, equivalent up
     # to floating-point rounding from different stencil arithmetic.
@@ -244,8 +244,8 @@ end
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
     y_nobc = cardinal_interp(x_inc, f_inc, xq)
-    y_inc  = cardinal_interp(x_inc, f_inc, xq; bc = bc_inc)
-    y_exc  = cardinal_interp(x_exc, f_exc, xq; bc = bc_exc)
+    y_inc = cardinal_interp(x_inc, f_inc, xq; bc = bc_inc)
+    y_exc = cardinal_interp(x_exc, f_exc, xq; bc = bc_exc)
 
     @test y_inc ≈ y_exc atol = 1.0e-12
     @test !isapprox(y_nobc, y_inc; rtol = 1.0e-3)
@@ -271,8 +271,8 @@ end
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
     y_nobc = akima_interp(x_inc, f_inc, xq)
-    y_inc  = akima_interp(x_inc, f_inc, xq; bc = bc_inc)
-    y_exc  = akima_interp(x_exc, f_exc, xq; bc = bc_exc)
+    y_inc = akima_interp(x_inc, f_inc, xq; bc = bc_inc)
+    y_exc = akima_interp(x_exc, f_exc, xq; bc = bc_exc)
 
     @test y_inc ≈ y_exc atol = 1.0e-12
     @test !isapprox(y_nobc, y_inc; rtol = 1.0e-3)
@@ -298,8 +298,8 @@ end
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
     f_bar_nobc = pchip_adjoint(x_inc, f_inc, xq)(y_bar)              # length nx_exc+1
-    f_bar_inc  = pchip_adjoint(x_inc, f_inc, xq; bc = bc_inc)(y_bar) # length nx_exc+1
-    f_bar_exc  = pchip_adjoint(x_exc, f_exc, xq; bc = bc_exc)(y_bar) # length nx_exc
+    f_bar_inc = pchip_adjoint(x_inc, f_inc, xq; bc = bc_inc)(y_bar) # length nx_exc+1
+    f_bar_exc = pchip_adjoint(x_exc, f_exc, xq; bc = bc_exc)(y_bar) # length nx_exc
 
     # Inclusive ≡ exclusive (after fold).
     folded = copy(f_bar_inc)
@@ -324,8 +324,8 @@ end
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
     f_bar_nobc = cardinal_adjoint(x_inc, xq)(y_bar)
-    f_bar_inc  = cardinal_adjoint(x_inc, xq; bc = bc_inc)(y_bar)
-    f_bar_exc  = cardinal_adjoint(x_exc, xq; bc = bc_exc)(y_bar)
+    f_bar_inc = cardinal_adjoint(x_inc, xq; bc = bc_inc)(y_bar)
+    f_bar_exc = cardinal_adjoint(x_exc, xq; bc = bc_exc)(y_bar)
 
     folded = copy(f_bar_inc)
     folded[1] += folded[end]
@@ -354,8 +354,8 @@ end
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
     f_bar_nobc = akima_adjoint(x_inc, f_inc, xq)(y_bar)
-    f_bar_inc  = akima_adjoint(x_inc, f_inc, xq; bc = bc_inc)(y_bar)
-    f_bar_exc  = akima_adjoint(x_exc, f_exc, xq; bc = bc_exc)(y_bar)
+    f_bar_inc = akima_adjoint(x_inc, f_inc, xq; bc = bc_inc)(y_bar)
+    f_bar_exc = akima_adjoint(x_exc, f_exc, xq; bc = bc_exc)(y_bar)
 
     folded = copy(f_bar_inc)
     folded[1] += folded[end]

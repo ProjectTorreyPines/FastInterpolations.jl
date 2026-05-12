@@ -536,15 +536,15 @@ function _build_hetero_nd_adjoint(
     ac = _effective_autocache(true, Tg)
     axes = map((m, g) -> _build_hetero_axis_package(m, g, ac), methods, grids)
 
-    grids_ext    = map(a -> a.grid_ext,    axes)
-    bcs          = map(a -> a.bc,          axes)
-    mixed_bcs    = map(a -> a.mixed_bc,    axes)
-    caches       = map(a -> a.cache,       axes)
+    grids_ext = map(a -> a.grid_ext, axes)
+    bcs = map(a -> a.bc, axes)
+    mixed_bcs = map(a -> a.mixed_bc, axes)
+    caches = map(a -> a.cache, axes)
     mixed_caches = map(a -> a.mixed_cache, axes)
-    mincurv_Cs   = map(a -> a.mincurv_C,   axes)
+    mincurv_Cs = map(a -> a.mincurv_C, axes)
 
     # Bake per-query anchors against the (now per-axis-resolved) grids_ext.
-    anchors   = _bake_hetero_nd_anchors(grids_ext, queries, extraps, methods)
+    anchors = _bake_hetero_nd_anchors(grids_ext, queries, extraps, methods)
     grid_size = ntuple(d -> length(grids_ext[d]), Val(N))
 
     return HeteroAdjointND{
@@ -595,13 +595,13 @@ end
         grid::AbstractVector{Tg},
         ac
     ) where {Tg}
-    bc_user  = method.bc
+    bc_user = method.bc
     grid_ext = bc_user isa PeriodicBC{:exclusive} && _is_already_extended(grid, bc_user) ?
         grid : _prepare_periodic_grid(grid, bc_user)
-    bc       = _is_periodic_bc(bc_user) ? bc_user : _normalize_bc(bc_user)
-    mbc_raw  = _get_effective_bc(bc_user, 2, grid_ext)      # depends on grid_ext
+    bc = _is_periodic_bc(bc_user) ? bc_user : _normalize_bc(bc_user)
+    mbc_raw = _get_effective_bc(bc_user, 2, grid_ext)      # depends on grid_ext
     mixed_bc = _is_periodic_bc(mbc_raw) ? mbc_raw : _normalize_bc(mbc_raw)
-    cache       = _get_cubic_cache(grid_ext, _is_periodic_bc(bc) ? PeriodicBC() : bc, ac)
+    cache = _get_cubic_cache(grid_ext, _is_periodic_bc(bc) ? PeriodicBC() : bc, ac)
     mixed_cache = _get_cubic_cache(grid_ext, _is_periodic_bc(mixed_bc) ? PeriodicBC() : mixed_bc, ac)
     return (; grid_ext, bc, mixed_bc, cache, mixed_cache, mincurv_C = zero(Tg))
 end
@@ -612,9 +612,9 @@ end
         grid::AbstractVector{Tg},
         ac
     ) where {Tg}
-    bc_user   = method.bc
-    bc        = _normalize_bc(bc_user)
-    mixed_bc  = _normalize_bc(_get_effective_bc_quadratic(bc_user, 2, grid))
+    bc_user = method.bc
+    bc = _normalize_bc(bc_user)
+    mixed_bc = _normalize_bc(_get_effective_bc_quadratic(bc_user, 2, grid))
     mincurv_C = _mincurv_C_for_bc(bc_user, grid, length(grid))
     return (; grid_ext = grid, bc, mixed_bc, cache = nothing, mixed_cache = nothing, mincurv_C)
 end
@@ -625,8 +625,10 @@ end
         grid::AbstractVector{Tg},
         ac
     ) where {Tg}
-    return (; grid_ext = grid, bc = NoBC(), mixed_bc = NoBC(),
-              cache = nothing, mixed_cache = nothing, mincurv_C = zero(Tg))
+    return (;
+        grid_ext = grid, bc = NoBC(), mixed_bc = NoBC(),
+        cache = nothing, mixed_cache = nothing, mincurv_C = zero(Tg),
+    )
 end
 
 # ── Linear / Constant: zero-copy wrapper for `:exclusive`, passthrough else ──
@@ -636,14 +638,16 @@ end
         grid::AbstractVector{Tg},
         ac
     ) where {Tg}
-    bc_user  = method.bc
+    bc_user = method.bc
     grid_ext = if bc_user isa PeriodicBC{:exclusive} && !_is_already_extended(grid, bc_user)
         _cache_axis(grid, bc_user)
     else
         grid
     end
-    return (; grid_ext, bc = bc_user, mixed_bc = bc_user,
-              cache = nothing, mixed_cache = nothing, mincurv_C = zero(Tg))
+    return (;
+        grid_ext, bc = bc_user, mixed_bc = bc_user,
+        cache = nothing, mixed_cache = nothing, mincurv_C = zero(Tg),
+    )
 end
 
 # rrule-replay safety: persistent forward stores extended (length-`n+1`) grids

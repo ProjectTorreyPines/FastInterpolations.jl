@@ -98,10 +98,12 @@ end
 end
 
 @noinline function _throw_onthefly_excl_linear_constant_unsupported(methods)
-    names = unique([
-        string(typeof(m)) for m in methods
-            if m isa Union{LinearInterp, ConstantInterp} && m.bc isa PeriodicBC{:exclusive}
-    ])
+    names = unique(
+        [
+            string(typeof(m)) for m in methods
+                if m isa Union{LinearInterp, ConstantInterp} && m.bc isa PeriodicBC{:exclusive}
+        ]
+    )
     throw(
         ArgumentError(
             "OnTheFly() is not supported for $(join(names, ", ")) in heterogeneous ND. " *

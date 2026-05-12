@@ -88,12 +88,14 @@ end
         xq_e = rand(n_query)
         yq_e = rand(n_query) .* 2
 
-        ref = constant_interp((x_e, y_e), data_e, (xq_e, yq_e);
-            bc = (bc_x, bc_y), side = (LeftSide(), NearestSide()))
+        ref = constant_interp(
+            (x_e, y_e), data_e, (xq_e, yq_e);
+            bc = (bc_x, bc_y), side = (LeftSide(), NearestSide())
+        )
         via_unified = interp(
             (x_e, y_e), data_e, (xq_e, yq_e);
             method = (
-                ConstantInterp(side = LeftSide(),    bc = bc_x),
+                ConstantInterp(side = LeftSide(), bc = bc_x),
                 ConstantInterp(side = NearestSide(), bc = bc_y),
             ),
         )
@@ -182,7 +184,7 @@ end
     methods = (LinearInterp(bc = PeriodicBC(endpoint = :exclusive, period = 1.0)), CubicInterp())
 
     itp_pre = interp((x, y), data; method = methods, coeffs = PreCompute())
-    v_pre   = itp_pre((0.9, 0.5))   # seam cell: between x[end]=0.8 and x[1]+period=1.0
+    v_pre = itp_pre((0.9, 0.5))   # seam cell: between x[end]=0.8 and x[1]+period=1.0
 
     # Persistent ctor — must equal PreCompute or reject.
     correctness_ok = try
@@ -217,8 +219,8 @@ end
     # so query at xq = 0.499 in cell [0.4, 0.5] must equal data[5] (left).
     x = collect(0.0:0.1:1.0)
     data = collect(1.0:11.0)            # data[i] = i
-    itp_left  = interp((x,), data; method = (ConstantInterp(LeftSide()),))
+    itp_left = interp((x,), data; method = (ConstantInterp(LeftSide()),))
     itp_right = interp((x,), data; method = (ConstantInterp(RightSide()),))
-    @test itp_left((0.499,))  ≈ 5.0     # left endpoint of cell [x[5], x[6]] = data[5]
+    @test itp_left((0.499,)) ≈ 5.0     # left endpoint of cell [x[5], x[6]] = data[5]
     @test itp_right((0.401,)) ≈ 6.0     # right endpoint of cell [x[5], x[6]] = data[6]
 end

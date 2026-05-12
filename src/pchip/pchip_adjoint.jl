@@ -325,9 +325,9 @@ end
         c_prev = (ddy_dδ_prev / h_prev) * db
         c_curr = (ddy_dδ_curr / h_curr) * db
 
-        f_bar[j_prev]     -= c_prev
+        f_bar[j_prev] -= c_prev
         f_bar[j_prev + 1] += c_prev
-        f_bar[j_curr]     -= c_curr
+        f_bar[j_curr] -= c_curr
         f_bar[j_curr + 1] += c_curr
     end
     return nothing

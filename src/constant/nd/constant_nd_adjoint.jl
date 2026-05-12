@@ -238,8 +238,8 @@ end
 @inline function _constant_adjoint_dispatch(
         grids::NTuple{N, AbstractVector}, queries, bc, side, extrap
     ) where {N}
+    # Selection-kernel adjoint: raw eltype contract (no `float()` widening).
     Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
 
     bcs = _resolve_bcs_nd(bc, Val(N))

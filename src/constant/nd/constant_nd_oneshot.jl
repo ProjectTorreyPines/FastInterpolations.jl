@@ -148,7 +148,7 @@ function constant_interp(
         return 0 * first(data)
     end
 
-    grids_typed, _, _, _ = _nd_promote_grids(grids, data)
+    grids_typed, _, _ = _nd_promote_grids_raw(grids, data)
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
@@ -183,7 +183,7 @@ function constant_interp(
         return zeros(Tv, _query_length(queries))
     end
 
-    grids_typed, _, _, _ = _nd_promote_grids(grids, data)
+    grids_typed, _, _ = _nd_promote_grids_raw(grids, data)
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
@@ -226,7 +226,7 @@ function constant_interp!(
         return output
     end
 
-    grids_typed, _, _, _ = _nd_promote_grids(grids, data)
+    grids_typed, _, _ = _nd_promote_grids_raw(grids, data)
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))

@@ -246,3 +246,131 @@ end
         @test (@allocated itp(out, xq)) <= ALLOC_THRESHOLD
     end
 end
+
+# ============================================================================
+# Group 4: ND (Phase 2 — selection kernel generalizes to per-axis cell pick)
+# ============================================================================
+# Constant ND follows the same raw-eltype contract:
+#   Tg = promote_type(eltype.(grids)...)   (no `float()` widening)
+#   Tv = eltype(data)
+# Container heterogeneity (Range × Vector axes) was always supported via
+# `_convert_grids_typed`; eltype heterogeneity is unified to a single Tg via
+# `promote_type` (Int × Float → Float, Int × Rational → Rational, …).
+@testitem "Constant eltype duck-type — ND forward + adjoint" begin
+    using LinearAlgebra: dot
+    import FastInterpolations: ConstantInterpolantND, _CachedRange, _CachedVector
+
+    @testset "2D persistent — homogeneous eltypes" begin
+        @testset "Int × Int axes, Int data → ConstantInterpolantND{Int, Int, 2}" begin
+            x = 0:1:4
+            y = [0, 1, 2, 3]
+            data = [10 * i + j for i in 1:5, j in 1:4]   # Int matrix
+            itp = constant_interp((x, y), data)
+            @test itp isa ConstantInterpolantND{Int, Int, 2}
+            @test itp((2.5, 1.5)) isa Int
+            @test itp.grids[1] isa _CachedRange{Int, Float64}
+            @test itp.grids[2] isa _CachedVector{Int, Float64}
+        end
+
+        @testset "Rational × Rational axes, Rational data" begin
+            x = Rational{Int}[0 // 1, 1 // 1, 2 // 1, 3 // 1]
+            y = Rational{Int}[0 // 1, 1 // 1, 2 // 1]
+            data = Rational{Int}[i // 1 + j // 2 for i in 1:4, j in 1:3]
+            itp = constant_interp((x, y), data)
+            @test itp isa ConstantInterpolantND{Rational{Int}, Rational{Int}, 2}
+            @test itp((3 // 2, 1 // 2)) isa Rational{Int}
+        end
+
+        @testset "Float32 × Float32 axes → Float32 preserved (regression guard)" begin
+            x = Float32[0, 1, 2, 3, 4]
+            y = Float32[0, 1, 2, 3]
+            data = Float32[i + j for i in 1:5, j in 1:4]
+            itp = constant_interp((x, y), data)
+            @test itp isa ConstantInterpolantND{Float32, Float32, 2}
+            @test itp((2.5f0, 1.5f0)) isa Float32
+        end
+    end
+
+    @testset "2D persistent — heterogeneous container types (Range × Vector)" begin
+        # Container heterogeneity was always supported; pin it under the new
+        # raw-eltype policy too. Both axes share a single Tg via promote_type.
+        x = 0:1:4                # Int Range
+        y = [0.0, 1.0, 2.0, 3.0] # Float Vector
+        data = [Float64(i + j) for i in 1:5, j in 1:4]
+        itp = constant_interp((x, y), data)
+        # promote_type(Int, Float64) == Float64 → Tg unified.
+        @test itp isa ConstantInterpolantND{Float64, Float64, 2}
+        @test itp((2.5, 1.5)) isa Float64
+    end
+
+    @testset "Int data + Float axes — output tracks `eltype(data)`" begin
+        # Axes Float, data Int → Tv=Int, Tg=Float64.
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = [0.0, 1.0, 2.0]
+        data = [10 * i + j for i in 1:4, j in 1:3]  # Int matrix
+        itp = constant_interp((x, y), data)
+        @test itp isa ConstantInterpolantND{Float64, Int, 2}
+        @test itp((1.5, 0.5)) isa Int
+    end
+
+    @testset "3D sanity — Int^3 → Int output" begin
+        x = 0:1:3
+        y = 0:1:2
+        z = 0:1:2
+        data = [i + 10j + 100k for i in 1:4, j in 1:3, k in 1:3]  # Int 3D
+        itp = constant_interp((x, y, z), data)
+        @test itp isa ConstantInterpolantND{Int, Int, 3}
+        @test itp((1.5, 0.5, 1.5)) isa Int
+    end
+
+    @testset "PeriodicBC + Int axes (inclusive)" begin
+        x = 0:1:3                # length 4, closed cycle in y data
+        y = 0:1:2
+        # Closed-cycle data: data[end, :] == data[1, :] (period 3 in x).
+        data = [(i == 4 ? 1 : i) + 10j for i in 1:4, j in 1:3]
+        itp = constant_interp((x, y), data; bc = (PeriodicBC(), NoBC()))
+        @test itp isa ConstantInterpolantND{Int, Int, 2}
+        @test itp((0.5, 1.5)) isa Int
+    end
+
+    @testset "ND oneshot scalar — Int input → Int output" begin
+        x = 0:1:4
+        y = 0:1:3
+        data = [10 * i + j for i in 1:5, j in 1:4]
+        r = constant_interp((x, y), data, (2.5, 1.5))
+        @test r isa Int
+    end
+
+    @testset "ND oneshot batch — Vector{Int} preserved" begin
+        x = 0:1:4
+        y = 0:1:3
+        data = [10 * i + j for i in 1:5, j in 1:4]
+        queries = [(2.5, 1.5), (0.5, 0.5), (3.5, 2.5)]
+        vals = constant_interp((x, y), data, queries)
+        @test vals isa Vector{Int}
+        @test length(vals) == 3
+    end
+
+    @testset "ND adjoint — Int grid + Int xq dot-product identity (exact ==)" begin
+        x = collect(0:1:5)
+        y = collect(0:1:4)
+        f = [10 * i + j for i in 1:6, j in 1:5]    # Int data
+        queries = [(2, 1), (4, 3), (1, 2)]
+        y_bar = [1, 2, 3]
+        itp = constant_interp((x, y), f)
+        adj = constant_adjoint((x, y), queries)
+        # Exact equality with Int — selection kernel + Int data + Int weights.
+        @test dot([itp(q) for q in queries], y_bar) == dot(vec(f), vec(adj(y_bar)))
+    end
+end
+
+@testitem "Constant eltype duck-type — ND Float64 zero-alloc regression" setup = [AllocConstants] begin
+    @testset "2D scalar eval @allocated unchanged (Float64 path)" begin
+        x = collect(0.0:0.1:1.0)
+        y = collect(0.0:0.1:1.0)
+        data = [sin(2π * xi) * cos(2π * yj) for xi in x, yj in y]
+        itp = constant_interp((x, y), data)
+        itp((0.5, 0.5))   # warmup
+        @test (@allocated itp((0.5, 0.5))) <= ND_ALLOC_THRESHOLD
+    end
+end

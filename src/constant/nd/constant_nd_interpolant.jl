@@ -57,9 +57,11 @@ function constant_interp(
     # Validate grid dimensions
     _validate_nd_grids(grids, data)
 
-    # Promote grid/data types
-    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
-    data_typed = Tv === Tv_raw ? data : Tv.(data)
+    # Selection kernel → raw eltype contract (Int in → Int out), N-axis
+    # generalization of the 1D policy: `Tg = promote_type(eltype.(grids)...)`
+    # without Float widening, `Tv = eltype(data)`.
+    grids_typed, _, Tv = _nd_promote_grids_raw(grids, data)
+    data_typed = data
 
     # Resolve per-axis configuration
     bcs = _resolve_bcs_nd(bc, Val(N))

@@ -1618,7 +1618,8 @@ end
             method = methods, deriv = (DerivOp(1), DerivOp(0)),
         )
         # Forward parity: rrule's `y` must match the direct interp call.
-        y_direct = interp((x, y_grid), data, (0.4, 0.6);
+        y_direct = interp(
+            (x, y_grid), data, (0.4, 0.6);
             method = methods, deriv = (DerivOp(1), DerivOp(0)),
         )
         @test y_s ≈ y_direct atol = 1.0e-12

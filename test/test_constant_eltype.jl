@@ -374,3 +374,111 @@ end
         @test (@allocated itp((0.5, 0.5))) <= ND_ALLOC_THRESHOLD
     end
 end
+
+# ============================================================================
+# Group 5: ComplexF32 raw-eltype (no silent widening to ComplexF64)
+# ============================================================================
+@testitem "Constant eltype duck-type — ComplexF32 stays ComplexF32" begin
+    using LinearAlgebra: dot
+    import FastInterpolations: ConstantInterpolant, ConstantInterpolantND
+
+    @testset "1D persistent" begin
+        x = Float32.(0:4)
+        y = ComplexF32[1 + 1im, 2 + 2im, 3 + 3im, 4 + 4im, 5 + 5im]
+        itp = constant_interp(x, y)
+        @test itp isa ConstantInterpolant{Float32, ComplexF32}
+        @test itp(1.5f0) === ComplexF32(2 + 2im)
+        @test eltype(itp.(Float32[0.5, 1.5, 2.5])) === ComplexF32
+    end
+
+    @testset "1D series" begin
+        x = Float32.(0:4)
+        y1 = ComplexF32[1, 2, 3, 4, 5]
+        y2 = ComplexF32[10, 20, 30, 40, 50]
+        sitp = constant_interp(x, Series(y1, y2))
+        out = sitp(1.5f0)
+        @test eltype(out) === ComplexF32
+        @test out == ComplexF32[2, 20]
+    end
+
+    @testset "ND persistent" begin
+        x = Float32.(0:3); y = Float32.(0:3)
+        data = ComplexF32[(i + j) + (i - j)im for i in 1:4, j in 1:4]
+        itp = constant_interp((x, y), data)
+        @test itp isa ConstantInterpolantND{Float32, ComplexF32, 2}
+        @test itp((1.5f0, 2.5f0)) === data[2, 3]
+    end
+
+    @testset "ND adjoint (Float32 grid, ComplexF32 y_bar)" begin
+        x = Float32.(0:3); y = Float32.(0:3)
+        data = ComplexF32[(i + j) + (i - j)im for i in 1:4, j in 1:4]
+        itp = constant_interp((x, y), data)
+        queries = [(0.5f0, 0.5f0), (1.5f0, 2.5f0), (2.5f0, 0.5f0)]
+        y_bar = ComplexF32[1 + 1im, 2 - 1im, 3 + 0im]
+        adj = constant_adjoint((x, y), queries)
+        out = adj(y_bar)
+        @test eltype(out) === ComplexF32
+        @test dot(itp.(queries), y_bar) ≈ dot(data, out)
+    end
+end
+
+# ============================================================================
+# Group 6: FillExtrap × duck-typed Y (raw-Tv fill value contract)
+# ============================================================================
+@testitem "Constant eltype duck-type — FillExtrap raw-Tv contract" begin
+    @testset "1D persistent: Int data + Int fill" begin
+        x = Float64.(0:4)
+        y = [10, 20, 30, 40, 50]
+        itp = constant_interp(x, y; extrap = FillExtrap(-1))
+        @test itp(1.5) === 20  # in-domain: raw Tv preserved
+        # `_promote_extrap` widens fill value with Tg(=Float64) at construction,
+        # so OOB returns Float64. Pending raw-Tv contract decision.
+        @test_broken itp.extrap === FillExtrap(-1)
+        @test_broken itp(-1.0) === -1
+    end
+
+    @testset "1D persistent: Int data + Float fill → InexactError on construction" begin
+        x = Float64.(0:4)
+        y = [10, 20, 30, 40, 50]
+        @test_throws InexactError constant_interp(x, y; extrap = FillExtrap(NaN))
+    end
+
+    @testset "ND persistent: ComplexF64 data + Complex fill → Complex output" begin
+        x = collect(0.0:1:3); y = collect(0.0:1:3)
+        data = ComplexF64[(i + j) + (i - j)im for i in 1:4, j in 1:4]
+        fill_val = ComplexF64(-1 + 0im)
+        itp = constant_interp((x, y), data; extrap = FillExtrap(fill_val))
+        @test itp((-1.0, -1.0)) === fill_val
+        @test eltype(itp.([(0.5, 0.5), (-1.0, 5.0)])) === ComplexF64
+    end
+end
+
+# ============================================================================
+# Group 7: @inferred coverage on the new branched output-type paths
+# ============================================================================
+@testitem "Constant eltype duck-type — @inferred coverage" begin
+    import FastInterpolations: ConstantInterpolantND
+
+    @testset "1D Series scalar — Tv pass-through branch" begin
+        x = collect(0.0:0.1:1.0)
+        y1 = collect(1:11)
+        y2 = collect(11:21)
+        sitp = constant_interp(x, Series(y1, y2))
+        @test @inferred(sitp(0.55)) isa Vector{Int}
+    end
+
+    @testset "1D Series scalar — ComplexF32 Tv branch" begin
+        x = Float32.(0:0.1:1.0)
+        y1 = ComplexF32.(1:11)
+        sitp = constant_interp(x, Series(y1))
+        @test @inferred(sitp(0.55f0)) isa Vector{ComplexF32}
+    end
+
+    @testset "ND persistent forward (Int data)" begin
+        x = collect(0.0:1:3); y = collect(0.0:1:3)
+        data = [10 * i + j for i in 1:4, j in 1:4]
+        itp = constant_interp((x, y), data)
+        @test itp isa ConstantInterpolantND{Float64, Int, 2}
+        @test @inferred(itp((1.5, 2.5))) === data[2, 3]
+    end
+end

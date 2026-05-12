@@ -364,6 +364,12 @@ end
 @inline _n_queries(adj::HermiteAdjoint1D) = length(adj.anchors)
 @inline _adjoint_output_length(adj::HermiteAdjoint1D) = adj.grid_size
 
+# HermiteAdjoint1D has no `bc` field (user-supplied slopes; periodic BC is
+# meaningless without slope handling). Override the protocol defaults that
+# read `adj.bc` to avoid a FieldError on the allocating callable's finalize.
+@inline _adjoint_1d_has_exclusive_periodic(::HermiteAdjoint1D) = false
+@inline _adjoint_1d_finalize(f_bar::AbstractVector, ::HermiteAdjoint1D) = f_bar
+
 @inline function _adjoint_1d_apply!(f_bar, adj::HermiteAdjoint1D, y_bar, deriv)
     _scatter_hermite_adjoint_y_only!(f_bar, adj.anchors, y_bar, deriv)
     return nothing
@@ -420,7 +426,6 @@ function hermite_adjoint(
         x::AbstractVector,
         x_query::AbstractVector;
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
 
@@ -451,7 +456,6 @@ function hermite_adjoint(
         x::AbstractVector,
         x_query::Real;
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     return hermite_adjoint(x, [x_query]; extrap = extrap)
 end

@@ -188,7 +188,10 @@ function ChainRulesCore.rrule(
         kwargs...
     ) where {Tv}
     y = func(x, f, xq; deriv = deriv, kwargs...)
-    adj = _adjoint_func(func)(x, xq; deriv = deriv, kwargs...)
+    # Adjoint constructor does not consume `deriv` (deriv is an apply-time argument);
+    # do NOT forward `deriv` here — Linear/Constant/PCHIP/Cardinal/Akima constructors
+    # have explicit kwargs only and would raise `MethodError`.
+    adj = _adjoint_func(func)(x, xq; kwargs...)
     eval_value = deriv isa DerivOp{0}
     d = eval_value ? func(x, f, xq; deriv = DerivOp(1), kwargs...) : nothing
     function _interp1d_pb(Δy)
@@ -230,7 +233,8 @@ function ChainRulesCore.rrule(
         y = func(grids, data, queries; deriv = deriv, kwargs...)
         ds = nothing
     end
-    adj = _adjoint_func(func)(grids, queries; deriv = deriv, kwargs...)
+    # Adjoint constructor does not consume `deriv` (apply-time arg only).
+    adj = _adjoint_func(func)(grids, queries; kwargs...)
     function _interp_nd_scalar_pb(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
         Δu = unthunk(Δy)
@@ -313,6 +317,73 @@ function ChainRulesCore.rrule(
     end
 
     return itp, _interp_unified_ctor_pb
+end
+
+# One-shot rrules for `interp(grids, data, query/queries; method=..., ...)`.
+# Without these, the call falls through to the in-place batch path which
+# Zygote rejects ("Mutating arrays is not supported"). Routes ∂/∂data
+# through `hetero_adjoint(...)` — the unified adjoint that accepts any
+# method tuple (homogeneous or heterogeneous).
+@inline _expand_method_tuple(method::AbstractInterpMethod, ::Val{N}) where {N} =
+    ntuple(_ -> method, Val(N))
+@inline _expand_method_tuple(method::Tuple{Vararg{AbstractInterpMethod, N}}, ::Val{N}) where {N} =
+    method
+
+# Single-point query: `value_gradient` returns both eval and ∂/∂queries
+# in one cell-locate, mirroring the `_InterpMethod` ND scalar rrule above.
+function ChainRulesCore.rrule(
+        ::typeof(FastInterpolations.interp),
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries::Tuple{Vararg{Real, N}};
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        kwargs...
+    ) where {Tv, N}
+    method_tuple = _expand_method_tuple(method, Val(N))
+    eval_value = deriv isa DerivOp{0} || (deriv isa Tuple && all(d -> d isa DerivOp{0}, deriv))
+    if eval_value
+        itp = FastInterpolations.interp(grids, data; method = method, kwargs...)
+        y, ds = value_gradient(itp, queries)
+    else
+        y = FastInterpolations.interp(grids, data, queries; method = method, deriv = deriv, kwargs...)
+        ds = nothing
+    end
+    adj = FastInterpolations.hetero_adjoint(grids, queries; methods = method_tuple, kwargs...)
+    function _interp_unified_scalar_pb(Δy)
+        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
+        Δu = unthunk(Δy)
+        f_bar = adj(Δu; deriv = deriv)
+        ∂queries = eval_value ? ntuple(i -> real(conj(Δu) * ds[i]), Val(N)) : NoTangent()
+        return NoTangent(), NoTangent(), f_bar, ∂queries
+    end
+    return y, _interp_unified_scalar_pb
+end
+
+# Batch queries: ∂/∂data only (per-query gradients in batch mode are not
+# supported by the existing one-shot adjoint contract). `deriv` is extracted
+# explicitly so the pullback callable receives only apply-time kwargs —
+# mirroring the scalar sibling's `f_bar = adj(Δu; deriv = deriv)`. Slurping
+# raw `kwargs...` here would leak construction-time args (`extrap`, `search`)
+# into the adjoint apply path.
+function ChainRulesCore.rrule(
+        ::typeof(FastInterpolations.interp),
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries;
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        kwargs...
+    ) where {Tv, N}
+    method_tuple = _expand_method_tuple(method, Val(N))
+    y = FastInterpolations.interp(grids, data, queries; method = method, deriv = deriv, kwargs...)
+    adj = FastInterpolations.hetero_adjoint(grids, queries; methods = method_tuple, kwargs...)
+    function _interp_unified_batch_pb(Δy)
+        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
+        f_bar = adj(unthunk(Δy); deriv = deriv)
+        return NoTangent(), NoTangent(), f_bar, NoTangent()
+    end
+    return y, _interp_unified_batch_pb
 end
 
 # ════════════════════════════════════════

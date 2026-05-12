@@ -36,9 +36,6 @@
 # at the wrapper level (single branch, predicted not-seam).
 #
 # Include order: search.jl → periodic.jl → periodic_axis.jl → periodic_data.jl → ...
-#
-# See `claudedocs/TODO/periodic_grid_wrapper_design.md` for the full design
-# rationale, PoC perf data (Vector hot loop = 0.99×), and migration plan.
 
 """
     _ExclusivePeriodicAxis{Tg, X<:AbstractVector{Tg}, Tp} <: AbstractVector{Tg}

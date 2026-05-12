@@ -249,7 +249,6 @@ function quadratic_adjoint(
         queries::Tuple{AbstractVector, Vararg{AbstractVector}};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        _extra...
     ) where {N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     return _quadratic_nd_adjoint_dispatch(grids, queries, bc, extrap)
@@ -261,7 +260,6 @@ function quadratic_adjoint(
         query::Tuple{Vararg{Real, N}};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        _extra...
     ) where {N}
     return quadratic_adjoint(grids, (query,); bc = bc, extrap = extrap)
 end
@@ -272,7 +270,6 @@ function quadratic_adjoint(
         query::AbstractVector{<:Real};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        _extra...
     ) where {N}
     length(query) == N || _throw_ndims_mismatch("query elements", N, length(query))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
@@ -285,7 +282,6 @@ function quadratic_adjoint(
         queries;
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        _extra...
     ) where {N}
     _query_check_ndims(queries, Val(N))
     return _quadratic_nd_adjoint_dispatch(grids, queries, bc, extrap)

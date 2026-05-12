@@ -222,9 +222,7 @@ end
         ArgumentError(
             "integrate is not yet implemented for HeteroInterpolantND " *
                 "(method tuple: $(methods)). ND tensor-product integration over " *
-                "mixed/Hermite axes is tracked in " *
-                "claudedocs/TODO/hermite_onthefly_integrate_and_nd_adjoint.md (Task 2) " *
-                "and the broader ND-integrate gap. Workarounds: " *
+                "mixed/Hermite axes is not yet supported. Workarounds: " *
                 "(1) use a homogeneous specialized ND type " *
                 "(`cubic_interp`, `quadratic_interp`, `linear_interp`, `constant_interp`) " *
                 "which do support `integrate`; " *

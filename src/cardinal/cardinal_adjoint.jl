@@ -52,20 +52,22 @@ f_bar = adj(y_bar; deriv=DerivOp(1))    # derivative adjoint
 adj(f_bar, y_bar)                       # in-place
 ```
 """
-struct CardinalAdjoint1D{Tg, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+struct CardinalAdjoint1D{Tg, BC <: AbstractBC, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_HermiteAdjointAnchor1D{Tg}}
-    grid::Vector{Tg}       # Grid points (needed for slope adjoint stencil widths)
-    grid_size::Int
+    grid::Vector{Tg}       # Grid points (extended to length n+1 for `:exclusive`)
+    grid_size::Int         # Internal length: n+1 for `:exclusive`, n otherwise
     tension::Tg
+    bc::BC
     extrap::EP
 end
 
 # ========================================
 # 1D Adjoint Protocol Accessors
 # ========================================
+# Callables, Base.size, Base.Matrix, exclusive-periodic in-place seam fold
+# inherited from AbstractAdjoint1D via src/core/adjoint_protocol.jl.
 
 @inline _n_queries(adj::CardinalAdjoint1D) = length(adj.anchors)
-@inline _adjoint_output_length(adj::CardinalAdjoint1D) = adj.grid_size
 
 # ========================================
 # Slope Adjoint: J^T * dy_bar -> f_bar update
@@ -79,6 +81,7 @@ end
 # Transpose: for each k, dy_bar[k] scatters to 2 f_bar entries.
 
 @inline function _cardinal_slope_adjoint!(
+        ::NoBC,
         f_bar::AbstractVector, dy_bar::AbstractVector,
         x::AbstractVector{Tg}, tension::Tg
     ) where {Tg}
@@ -109,6 +112,87 @@ end
     return nothing
 end
 
+# Closed-cycle Cardinal slope adjoint (after `_periodic_extend_1d`-style extension).
+# Forward:  dy[k] = scale * (m_prev*h_prev + m_curr*h_curr) / (h_prev + h_curr)
+#   where  m_prev = (y[j_prev+1] - y[j_prev]) / h_prev,
+#          m_curr = (y[j_curr+1] - y[j_curr]) / h_curr,
+#          j_prev = mod1(k-1, m_cyc),  j_curr = mod1(k, m_cyc),  m_cyc = n-1.
+#
+# Cardinal slope stencil radius = 1 (uses y[k-1], y[k], y[k+1]). Boundary
+# indices where mod1 actually wraps: k=1 (j_prev → m_cyc) and k=n (j_curr
+# → 1). For interior k ∈ [2, n-1], j_prev = k-1 and j_curr = k stay in
+# `[1, m_cyc]` without wrapping, AND j_prev+1 == j_curr — so the two
+# inner-write pairs (`f_bar[j_prev+1] += c` and `f_bar[j_curr] -= c`)
+# cancel naturally and the body collapses to the 2-write central-FD
+# adjoint identical to NoBC interior. We split the loop accordingly: the
+# boundary k=1 / k=n iterations use the 4-write closed-cycle formula
+# (the join wraps so j_prev+1 ≠ j_curr — all 4 writes are distinct),
+# while interior reuses the NoBC fast path.
+@inline function _cardinal_slope_adjoint!(
+        ::PeriodicBC,
+        f_bar::AbstractVector, dy_bar::AbstractVector,
+        x::AbstractVector{Tg}, tension::Tg
+    ) where {Tg}
+    n = length(x)
+    n >= 2 || return nothing
+    scale = one(Tg) - tension
+
+    # Tiny grid (n == 2): the 1-secant cycle makes BOTH k=1 and k=2 wrap to
+    # the same secant. The interior range `2:n-1` is empty; bypass it.
+    if n == 2
+        m_cyc = 1
+        @inbounds for k in 1:2
+            j_prev = mod1(k - 1, m_cyc)
+            j_curr = mod1(k, m_cyc)
+            h_prev = x[j_prev + 1] - x[j_prev]
+            h_curr = x[j_curr + 1] - x[j_curr]
+            c = scale * dy_bar[k] / (h_prev + h_curr)
+            f_bar[j_prev] -= c
+            f_bar[j_prev + 1] += c
+            f_bar[j_curr] -= c
+            f_bar[j_curr + 1] += c
+        end
+        return nothing
+    end
+
+    m_cyc = n - 1
+
+    # ── Boundary k=1: j_prev wraps to m_cyc (= n-1) ─────────────────────
+    @inbounds begin
+        j_prev = m_cyc
+        j_curr = 1
+        h_prev = x[j_prev + 1] - x[j_prev]
+        h_curr = x[j_curr + 1] - x[j_curr]
+        c = scale * dy_bar[1] / (h_prev + h_curr)
+        f_bar[j_prev] -= c       # f_bar[n-1]
+        f_bar[j_prev + 1] += c       # f_bar[n]
+        f_bar[j_curr] -= c       # f_bar[1]
+        f_bar[j_curr + 1] += c       # f_bar[2]
+    end
+
+    # ── Interior k = 2..n-1: no wrap; collapses to 2-write central FD ───
+    @inbounds for k in 2:(n - 1)
+        c = scale * dy_bar[k] / (x[k + 1] - x[k - 1])
+        f_bar[k - 1] -= c
+        f_bar[k + 1] += c
+    end
+
+    # ── Boundary k=n: j_curr wraps to 1 ─────────────────────────────────
+    @inbounds begin
+        j_prev = m_cyc           # n-1
+        j_curr = 1
+        h_prev = x[j_prev + 1] - x[j_prev]   # x[n] - x[n-1]
+        h_curr = x[j_curr + 1] - x[j_curr]   # x[2] - x[1]
+        c = scale * dy_bar[n] / (h_prev + h_curr)
+        f_bar[j_prev] -= c       # f_bar[n-1]
+        f_bar[j_prev + 1] += c       # f_bar[n]
+        f_bar[j_curr] -= c       # f_bar[1]
+        f_bar[j_curr + 1] += c       # f_bar[2]
+    end
+
+    return nothing
+end
+
 # ========================================
 # Core Apply Function
 # ========================================
@@ -118,18 +202,20 @@ end
 
 @with_pool pool function _cardinal_adjoint_apply!(
         f_bar::AbstractVector{Tv},
-        adj::CardinalAdjoint1D{Tg},
+        adj::CardinalAdjoint1D{Tg, BC},
         y_bar,
         deriv::DerivOp = EvalValue()
-    ) where {Tv, Tg}
+    ) where {Tv, Tg, BC}
     n = adj.grid_size
     dy_bar = zeros!(pool, Tv, n)
 
     # Step 1: Hermite scatter -> (f_bar, dy_bar)
     _scatter_hermite_adjoint!(f_bar, dy_bar, adj.anchors, y_bar, deriv)
 
-    # Step 2: Slope J^T * dy_bar -> f_bar update
-    _cardinal_slope_adjoint!(f_bar, dy_bar, adj.grid, adj.tension)
+    # Step 2: Slope J^T * dy_bar -> f_bar update. BC dispatched at compile time
+    # via `BC` parameter bound in where clause (two methods of the slope adjoint
+    # cover `::PeriodicBC` and `::NoBC` — see definitions above).
+    _cardinal_slope_adjoint!(adj.bc, f_bar, dy_bar, adj.grid, adj.tension)
 
     return nothing
 end
@@ -171,31 +257,48 @@ f_bar = adj(y_bar)
 function cardinal_adjoint(
         x::AbstractVector,
         x_query::AbstractVector;
+        bc::AbstractBC = NoBC(),
         tension::Real = 0.0,
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
-    # NoExtrap: validate all queries in-domain
-    if extrap isa NoExtrap
-        x_lo, x_hi = first(x_p), last(x_p)
+    # Closed-cycle extension for periodic BCs — mirrors the forward
+    # `cardinal_interpolant` persistent path. Cardinal adjoint is data-free
+    # (slopes linear in y), so we extend the x grid only via the x-only
+    # sibling `_prepare_periodic_grid`. `:exclusive` becomes length-(n+1)
+    # with the seam endpoint as a real grid point; `:inclusive` is already
+    # closed at n. After this, the slope adjoint runs over the extended
+    # grid via the unified periodic 4-corner formula
+    # (`_cardinal_slope_adjoint_periodic!`).
+    x_ext = _prepare_periodic_grid(x_p, bc)
+    extrap_eff = _resolve_extrap(extrap, bc, x_ext)
+    bc_eff = _bc_after_extend(bc)
+
+    # NoExtrap: validate queries against extended domain.
+    if extrap_eff isa NoExtrap
+        x_lo, x_hi = _extract_primal(first(x_ext)), _extract_primal(last(x_ext))
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
-            (_extract_primal(x_lo) <= xq_i <= _extract_primal(x_hi)) || throw(
-                DomainError(xq_i, "query point outside domain [$(_extract_primal(x_lo)), $(_extract_primal(x_hi))]")
+            (x_lo <= xq_i <= x_hi) || throw(
+                DomainError(xq_i, "query point outside domain [$x_lo, $x_hi]")
             )
         end
     end
 
-    # Wrap axis (axis-as-truth) and bake anchors
-    x_axis = _cache_axis(x_p, NoBC())
-    anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap)
+    # Wrap the extended grid for cached `h`/`inv_h` (matches forward
+    # Cardinal persistent's storage type). After `bc_eff` normalization
+    # any periodic input becomes `:inclusive` over the closed-cycle grid,
+    # so `_cache_axis` here returns `_CachedRange` / `_CachedVector` of
+    # length n+1 (NOT `_ExclusivePeriodicAxis` — the seam is now a real
+    # grid point in `x_ext`).
+    x_axis = _cache_axis(x_ext, bc_eff, Tg)
+    anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap_eff)
 
-    return CardinalAdjoint1D{Tg, typeof(extrap)}(
-        anchors, collect(x_p), length(x_p), Tg(tension), extrap
+    return CardinalAdjoint1D{Tg, typeof(bc), typeof(extrap_eff)}(
+        anchors, collect(Tg, x_ext), length(x_ext), Tg(tension), bc, extrap_eff
     )
 end
 
@@ -203,9 +306,9 @@ end
 function cardinal_adjoint(
         x::AbstractVector,
         x_query::Real;
+        bc::AbstractBC = NoBC(),
         tension::Real = 0.0,
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
-    return cardinal_adjoint(x, [x_query]; tension = tension, extrap = extrap)
+    return cardinal_adjoint(x, [x_query]; bc = bc, tension = tension, extrap = extrap)
 end

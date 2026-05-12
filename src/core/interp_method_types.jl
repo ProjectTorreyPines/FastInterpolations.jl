@@ -44,12 +44,21 @@ end
 CubicInterp(; bc::AbstractBC = CubicFit()) = CubicInterp(bc)
 
 """
-    LinearInterp()
+    LinearInterp(; bc::AbstractBC = NoBC())
 
 Linear interpolation method for one axis.
 Requires ≥2 grid points.
+
+# Arguments
+- `bc`: Boundary condition. Defaults to [`NoBC`](@ref) (use built-in endpoint
+  rule). Pass `PeriodicBC(...)` to engage periodic semantics — supported in
+  both homogeneous (e.g. `interp(grids, data; method=(LinearInterp(bc=PeriodicBC()), ...))`)
+  and heterogeneous (mixed with Cubic / Quadratic / Hermite axes) ND calls.
 """
-struct LinearInterp <: AbstractInterpMethod end
+struct LinearInterp{BC <: AbstractBC} <: AbstractInterpMethod
+    bc::BC
+end
+LinearInterp(; bc::AbstractBC = NoBC()) = LinearInterp(bc)
 
 """
     QuadraticInterp(; bc::AbstractBC = Left(QuadraticFit()))
@@ -67,18 +76,27 @@ end
 QuadraticInterp(; bc::AbstractBC = Left(QuadraticFit())) = QuadraticInterp(bc)
 
 """
-    ConstantInterp(; side::AbstractSide = NearestSide())
+    ConstantInterp(; side::AbstractSide = NearestSide(), bc::AbstractBC = NoBC())
 
 Constant (nearest-neighbor) interpolation method for one axis.
 Requires ≥2 grid points.
 
 # Arguments
 - `side`: Side selection — `NearestSide()`, `LeftSide()`, `RightSide()`.
+- `bc`: Boundary condition. Defaults to [`NoBC`](@ref). Pass `PeriodicBC(...)`
+  to engage periodic semantics in homogeneous or heterogeneous ND calls.
 """
-struct ConstantInterp{SD <: AbstractSide} <: AbstractInterpMethod
+struct ConstantInterp{SD <: AbstractSide, BC <: AbstractBC} <: AbstractInterpMethod
     side::SD
+    bc::BC
 end
-ConstantInterp(; side::AbstractSide = NearestSide()) = ConstantInterp(side)
+ConstantInterp(; side::AbstractSide = NearestSide(), bc::AbstractBC = NoBC()) =
+    ConstantInterp(side, bc)
+
+# Positional 1-arg compat: pre-`bc`-field code used `ConstantInterp(LeftSide())`.
+# The default 2-field struct constructor `ConstantInterp(side, bc)` shadows that
+# call form; this outer ctor restores it with `bc=NoBC()` default.
+ConstantInterp(side::AbstractSide) = ConstantInterp(side, NoBC())
 
 """
     NoInterp()

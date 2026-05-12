@@ -604,7 +604,6 @@ function quadratic_adjoint(
         x_query::AbstractVector;
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
 
@@ -636,7 +635,6 @@ function quadratic_adjoint(
         x_query::Real;
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     return quadratic_adjoint(x, [x_query]; bc = bc, extrap = extrap)
 end

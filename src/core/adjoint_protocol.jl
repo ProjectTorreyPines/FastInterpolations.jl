@@ -7,13 +7,15 @@
 #
 # ── 1D Subtypes must implement:
 #   _n_queries(adj)::Int
-#   _adjoint_output_length(adj)::Int
 #   _adjoint_1d_apply!(f_bar, adj, y_bar, deriv)
 #
-# ── 1D Subtypes may override (for periodic BC):
+# ── 1D Subtypes inherit (assuming `adj.bc::AbstractBC` and `adj.grid_size::Int`):
+#   _adjoint_output_length(adj)::Int
 #   _adjoint_internal_length(adj)::Int
 #   _adjoint_1d_has_exclusive_periodic(adj)::Bool
 #   _adjoint_1d_finalize(f_bar, adj)
+# Override these only if the subtype lacks the assumed fields (e.g.,
+# `CubicAdjoint` reads `length(adj.cache.x)` instead of `adj.grid_size`).
 #
 # ── ND Subtypes must implement:
 #   _n_queries(adj)::Int
@@ -58,11 +60,34 @@
 # ║           1D Adjoint Protocol        ║
 # ╚══════════════════════════════════════╝
 
-# ── 1D Defaults (non-periodic types inherit these as-is) ──
+# ── 1D Defaults ──
+# Assume `adj.bc::AbstractBC` and `adj.grid_size::Int` fields. Concrete subtypes
+# without those fields (e.g., `CubicAdjoint` uses `length(adj.cache.x)`) override.
 
-@inline _adjoint_internal_length(adj::AbstractAdjoint1D) = _adjoint_output_length(adj)
-@inline _adjoint_1d_has_exclusive_periodic(::AbstractAdjoint1D) = false
-@inline _adjoint_1d_finalize(f_bar::AbstractVector, ::AbstractAdjoint1D) = f_bar
+@inline _adjoint_output_length(adj::AbstractAdjoint1D) =
+    adj.bc isa PeriodicBC{:exclusive} ? adj.grid_size - 1 : adj.grid_size
+
+@inline _adjoint_internal_length(adj::AbstractAdjoint1D) = adj.grid_size
+
+@inline _adjoint_1d_has_exclusive_periodic(adj::AbstractAdjoint1D) =
+    adj.bc isa PeriodicBC{:exclusive}
+
+# Dispatches on `adj.bc`. Subtypes without `.bc` (`HermiteAdjoint1D`) override directly.
+@inline _adjoint_1d_finalize(f_bar::AbstractVector, adj::AbstractAdjoint1D) =
+    _adjoint_1d_finalize(adj.bc, f_bar, adj)
+
+@inline _adjoint_1d_finalize(::AbstractBC, f_bar::AbstractVector, ::AbstractAdjoint1D) = f_bar
+
+# Seam-fold + in-place shrink. `resize!` on `Vector` is O(1) (no copy);
+# slicing `f_bar[1:n-1]` would heap-allocate a copy on every call.
+@inline function _adjoint_1d_finalize(
+        ::PeriodicBC{:exclusive}, f_bar::Vector, adj::AbstractAdjoint1D,
+    )
+    n_internal = _adjoint_internal_length(adj)
+    @inbounds f_bar[1] += f_bar[n_internal]
+    resize!(f_bar, n_internal - 1)
+    return f_bar
+end
 
 # ── Size / Introspection ──
 
@@ -263,14 +288,11 @@ end
 @inline _seam_fold_axis!(f_work, ::Val{d}, gs_d::Int, ::PeriodicBC{:exclusive}) where {d} =
     (selectdim(f_work, d, 1) .+= selectdim(f_work, d, gs_d); nothing)
 @inline _seam_fold_axis!(f_work, ::Val{d}, ::Int, ::AbstractBC) where {d} = nothing
-# `HeteroAdjointND` stores `nothing` for non-derivative (Linear/Constant) axes,
-# which can never be `PeriodicBC{:exclusive}` — treat as no-op.
-@inline _seam_fold_axis!(f_work, ::Val{d}, ::Int, ::Nothing) where {d} = nothing
 
 # Compile-time-unrolled seam-fold loop (one branch per axis, all literal `d`).
 @generated function _apply_seam_fold!(
         f_work::AbstractArray{T, N},
-        bcs::NTuple{N, Union{AbstractBC, Nothing}},
+        bcs::NTuple{N, AbstractBC},
         gs::NTuple{N, Int}
     ) where {T, N}
     body = [:(_seam_fold_axis!(f_work, Val($d), gs[$d], bcs[$d])) for d in 1:N]

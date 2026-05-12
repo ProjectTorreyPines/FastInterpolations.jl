@@ -51,20 +51,21 @@ itp = linear_interp(x, f)
 @assert dot(itp.(xq), y_bar) ≈ dot(f, adj(y_bar))
 ```
 """
-struct LinearAdjoint{Tg, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+struct LinearAdjoint{Tg, BC <: AbstractBC, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_LinearAnchoredQuery{Tg, Tg}}
-    grid_size::Int
+    grid_size::Int  # internal length: n+1 for PeriodicBC{:exclusive}, n otherwise
+    bc::BC
     extrap::EP
 end
 
 # ========================================
 # 1D Adjoint Protocol Accessors
 # ========================================
-# Callables (6 overloads), Base.size, and Base.Matrix are inherited
-# from AbstractAdjoint via src/core/adjoint_protocol.jl.
+# Callables (6 overloads), Base.size, Base.Matrix, and exclusive-periodic
+# in-place seam fold are inherited from AbstractAdjoint1D via
+# src/core/adjoint_protocol.jl.
 
 @inline _n_queries(adj::LinearAdjoint) = length(adj.anchors)
-@inline _adjoint_output_length(adj::LinearAdjoint) = adj.grid_size
 
 @inline _adjoint_1d_apply!(f_bar, adj::LinearAdjoint, y_bar, deriv) =
     _linear_adjoint_apply!(f_bar, adj, y_bar, deriv)
@@ -232,16 +233,26 @@ f_bar = adj(y_bar)
 function linear_adjoint(
         x::AbstractVector,
         x_query::AbstractVector;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
     x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
-    # NoExtrap: validate all queries in-domain (use primal for Dual grid boundaries)
-    if extrap isa NoExtrap
-        x_lo, x_hi = _extract_primal(first(x_p)), _extract_primal(last(x_p))
+    # BC-aware axis wrap: `:exclusive` periodic → `_ExclusivePeriodicAxis` with
+    # logical length n+1 (virtual seam endpoint `inner[1] + period`). Anchors
+    # at the seam cell store stencil = (n, n+1); the protocol's exclusive-
+    # periodic in-place callable folds f_work[1] += f_work[n+1] before trim.
+    x_axis = _cache_axis(x_p, bc, Tg)
+    # Periodic BCs auto-promote `extrap` to `WrapExtrap` against the wrapped axis;
+    # non-periodic BCs are passthrough.
+    extrap_eff = _resolve_extrap(extrap, bc, x_axis)
+
+    # NoExtrap: validate all queries in-domain (uses x_axis bounds, which include
+    # the virtual seam endpoint for `:exclusive`). Use primal for Dual grid boundaries.
+    if extrap_eff isa NoExtrap
+        x_lo, x_hi = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
             (x_lo <= xq_i <= x_hi) || throw(
@@ -251,32 +262,34 @@ function linear_adjoint(
     end
 
     # Build anchored queries with extrap-specific preprocessing
-    wrap = extrap isa WrapExtrap
-    if extrap isa _ClampOrFill
+    wrap = extrap_eff isa WrapExtrap
+    if extrap_eff isa _ClampOrFill
         # Clamp OOB queries to boundary for correct anchor weights (alpha ∈ [0,1]).
         # Then restore side flags so scatter can skip OOB contributions.
-        x_lo_p, x_hi_p = _extract_primal(first(x_p)), _extract_primal(last(x_p))
+        x_lo_p, x_hi_p = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
         xq_clamped = clamp.(xq_p, x_lo_p, x_hi_p)
-        anchors = _anchor_query(x_p, xq_clamped, Val(:linear), false)
+        anchors = _anchor_query(x_axis, xq_clamped, Val(:linear), false)
         _fixup_linear_anchor_state!(anchors, xq_p, x_lo_p, x_hi_p)
     else
         # ExtendExtrap: OOB uses boundary interval with extrapolated alpha (correct)
-        # WrapExtrap: wraps to domain (correct)
+        # WrapExtrap: wraps to domain (correct; covers periodic auto-promotion)
         # NoExtrap: already validated in-domain above
-        anchors = _anchor_query(x_p, xq_p, Val(:linear), wrap)
+        anchors = _anchor_query(x_axis, xq_p, Val(:linear), wrap)
     end
 
-    return LinearAdjoint{Tg, typeof(extrap)}(anchors, length(x_p), extrap)
+    return LinearAdjoint{Tg, typeof(bc), typeof(extrap_eff)}(
+        anchors, length(x_axis), bc, extrap_eff
+    )
 end
 
 # Scalar query convenience
 function linear_adjoint(
         x::AbstractVector,
         x_query::Real;
+        bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
-    return linear_adjoint(x, [x_query]; extrap = extrap)
+    return linear_adjoint(x, [x_query]; bc = bc, extrap = extrap)
 end
 
 # Matrix materialization inherited from AbstractAdjoint (adjoint_protocol.jl)

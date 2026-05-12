@@ -135,9 +135,7 @@ Zero-allocation after warmup.
 
 `PreCompute()` and `OnTheFly()` are equivalent up to a few ULPs of FP
 reordering noise for every user BC, but **not** bit-identical — that is why
-quadratic `AutoCoeffs` defaults to `PreCompute`. This was not the case prior
-to the mixed-partial BC consistency fix; see
-`claudedocs/TODO/DONE/mixed_partial_bc_fix.md` for the history.
+quadratic `AutoCoeffs` defaults to `PreCompute`.
 """
 function quadratic_interp(
         grids::NTuple{N, AbstractVector},

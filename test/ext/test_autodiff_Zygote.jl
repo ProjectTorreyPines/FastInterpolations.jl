@@ -1073,6 +1073,53 @@ end
         end
     end
 
+    # Direct 1D one-shot rrule under `bc=PeriodicBC(...)` for all 5 non-cubic
+    # method families. The `kwargs...` propagation in the generic `_InterpMethod`
+    # rrule is the entire mechanism that makes the periodic adjoints reachable
+    # from Zygote — a future refactor dropping it would not be caught by the
+    # NoBC-default tests above.
+    #
+    # Data: `sin(2π·x/period)` — naturally periodic (f[end]≈f[1] without
+    # `vcat`-seam discontinuity), so Akima's `|δ[k+1] - δ[k]|` slope-limiter
+    # weights stay well-separated from zero (the `abs()` non-differentiable
+    # point), keeping the hand-written reverse-mode kernel and ForwardDiff's
+    # forward-mode in agreement to machine precision.
+    @testset "1D one-shot ∂f/∂y — bc=PeriodicBC via rrule" begin
+        using Random
+        Random.seed!(0xCAFE)   # deterministic across Julia versions
+
+        period = 1.0
+        nx = 12
+        h = period / nx
+        x = collect(range(0.0, step = h, length = nx))
+        # Smoothly periodic data — avoids the seam discontinuity that
+        # destabilizes Akima's slope-limiter branches near boundary queries.
+        f_data = sin.(2π .* x ./ period)
+        xq_vec = vcat(0.5 * h, period - 0.5 * h, period .* rand(4))
+        bc_inc = PeriodicBC()
+        bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
+        # For :inclusive, use a closed-cycle grid (length nx+1, f[end]=f[1]).
+        x_inc = vcat(x, x[1] + period)
+        f_inc = vcat(f_data, f_data[1])
+
+        for (label, fn, bc, xg, fg) in [
+                ("Linear", linear_interp, bc_exc, x, f_data),
+                ("Constant", constant_interp, bc_exc, x, f_data),
+                ("PCHIP", pchip_interp, bc_exc, x, f_data),
+                ("Cardinal", cardinal_interp, bc_exc, x, f_data),
+                ("Akima", akima_interp, bc_exc, x, f_data),
+                ("Linear-inc", linear_interp, bc_inc, x_inc, f_inc),
+                ("PCHIP-inc", pchip_interp, bc_inc, x_inc, f_inc),
+                ("Akima-inc", akima_interp, bc_inc, x_inc, f_inc),
+            ]
+            @testset "$label" begin
+                g_zy = Zygote.gradient(y -> sum(fn(xg, y, xq_vec; bc = bc)), fg)[1]
+                g_fd = ForwardDiff.gradient(y -> sum(fn(xg, y, xq_vec; bc = bc)), fg)
+                @test g_zy ≈ g_fd atol = 1.0e-10
+            end
+        end
+    end
+
     # ════════════════════════════════════════════════════════════════════════
     # QUADRATIC DATA-ADJOINT (∂f/∂y) via QuadraticAdjoint rrule
     # ════════════════════════════════════════════════════════════════════════
@@ -1475,6 +1522,107 @@ end
         @test size(g_zy) == (nx, ny)
         @test size(g_adj) == (nx, ny)
         @test g_zy ≈ g_adj atol = 1.0e-10
+    end
+
+    @testset "Unified API one-shot ∂/∂data — homogeneous Linear+PeriodicBC (batch)" begin
+        nx, ny = 10, 8
+        n_query = 25
+        x = collect(range(0.0, 1.0, nx))
+        y_grid = collect(range(0.0, 1.0, ny))
+        data = [sin(2π * xi) + cos(2π * yj) for xi in x, yj in y_grid]
+        xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        bc = PeriodicBC()
+        methods = (LinearInterp(bc = bc), LinearInterp(bc = bc))
+
+        g_zy = Zygote.gradient(
+            d -> sum(interp((x, y_grid), d, (xq, yq); method = methods)), data
+        )[1]
+        # Reference via direct `linear_adjoint` (same shape, same bc tuple).
+        adj_ref = linear_adjoint((x, y_grid), (xq, yq); bc = (bc, bc))
+        g_ref = adj_ref(ones(n_query))
+
+        @test size(g_zy) == (nx, ny)
+        @test g_zy ≈ g_ref atol = 1.0e-10
+    end
+
+    @testset "Unified API one-shot ∂/∂data — heterogeneous Linear+Cubic (batch)" begin
+        nx, ny = 12, 10
+        n_query = 20
+        # `:exclusive` requires n distinct samples on [first, first+period) —
+        # i.e. last(x) < first(x) + period. Build x with `step=period/nx` so
+        # x[end] = (nx-1) * period/nx < period.
+        x = collect(range(0.0, step = 2π / nx, length = nx))
+        y_grid = collect(range(0.0, 1.0, ny))
+        data = [sin(xi) * yj for xi in x, yj in y_grid]
+        xq = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+        yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        methods = (
+            LinearInterp(bc = PeriodicBC(endpoint = :exclusive, period = 2π)),
+            CubicInterp(),
+        )
+
+        g_zy = Zygote.gradient(
+            d -> sum(interp((x, y_grid), d, (xq, yq); method = methods)), data
+        )[1]
+        adj_ref = hetero_adjoint((x, y_grid), (xq, yq); methods = methods)
+        g_ref = adj_ref(ones(n_query))
+
+        @test size(g_zy) == (nx, ny)
+        @test g_zy ≈ g_ref atol = 1.0e-10
+    end
+
+    @testset "Unified API one-shot ∂/∂data — single-point tuple query" begin
+        nx, ny = 10, 8
+        x = collect(range(0.0, 1.0, nx))
+        y_grid = collect(range(0.0, 1.0, ny))
+        data = [sin(2π * xi) + cos(2π * yj) for xi in x, yj in y_grid]
+        bc = PeriodicBC()
+        methods = (LinearInterp(bc = bc), LinearInterp(bc = bc))
+
+        g_zy = Zygote.gradient(d -> interp((x, y_grid), d, (0.35, 0.7); method = methods), data)[1]
+        adj_ref = linear_adjoint((x, y_grid), ([0.35], [0.7]); bc = (bc, bc))
+        g_ref = adj_ref(ones(1))
+
+        @test size(g_zy) == (nx, ny)
+        @test g_zy ≈ g_ref atol = 1.0e-10
+    end
+
+    # Cover the two `Δy isa AbstractZero` early-return branches in the
+    # unified-API rrules (scalar + batch) and the `eval_value = false`
+    # branch in the scalar rrule (non-EvalValue deriv routes through the
+    # direct `interp(...)` call instead of `value_gradient`).
+    @testset "Unified API rrule — pullback edge cases" begin
+        using ChainRulesCore: rrule, NoTangent, ZeroTangent
+
+        nx, ny = 6, 5
+        x = collect(range(0.0, 1.0, nx))
+        y_grid = collect(range(0.0, 1.0, ny))
+        data = [sin(2π * xi) * cos(2π * yj) for xi in x, yj in y_grid]
+        methods = (LinearInterp(), LinearInterp())
+
+        # Scalar rrule: NoTangent pullback → ZeroTangent for ∂data and ∂queries
+        _, pb_s = rrule(interp, (x, y_grid), data, (0.4, 0.6); method = methods)
+        res_s = pb_s(NoTangent())
+        @test res_s[3] === ZeroTangent() && res_s[4] === ZeroTangent()
+
+        # Batch rrule: NoTangent pullback → ZeroTangent for ∂data
+        _, pb_b = rrule(interp, (x, y_grid), data, ([0.4], [0.6]); method = methods)
+        @test pb_b(NoTangent())[3] === ZeroTangent()
+
+        # Scalar rrule: non-EvalValue deriv routes through the direct `interp`
+        # path (skips `value_gradient`). ∂queries returns NoTangent since
+        # query-gradient of a derivative would require higher-order derivs.
+        y_s, _ = rrule(
+            interp, (x, y_grid), data, (0.4, 0.6);
+            method = methods, deriv = (DerivOp(1), DerivOp(0)),
+        )
+        # Forward parity: rrule's `y` must match the direct interp call.
+        y_direct = interp(
+            (x, y_grid), data, (0.4, 0.6);
+            method = methods, deriv = (DerivOp(1), DerivOp(0)),
+        )
+        @test y_s ≈ y_direct atol = 1.0e-12
     end
 
 end  # testset "Zygote AD Support"

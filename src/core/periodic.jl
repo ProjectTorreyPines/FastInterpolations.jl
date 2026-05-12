@@ -298,6 +298,28 @@ Uses dispatch on PeriodicBC{E} type parameter for type stability.
 @inline _prepare_periodic(x, y, bc::PeriodicBC{:exclusive}) = _extend_exclusive(x, y, bc)
 
 """
+    _prepare_periodic_grid(x, bc) -> x_ext
+
+x-only sibling of `_prepare_periodic` for data-free callers (adjoint
+operators that don't carry per-grid data). Mirrors the extension policy
+on the x side exactly:
+- `PeriodicBC{:inclusive}`  → passthrough (already closed-cycle).
+- `PeriodicBC{:exclusive}`  → length-(n+1) extension via `_extend_exclusive`'s
+                              x-side validation + `vcat` / Range endpoint append.
+"""
+@inline _prepare_periodic_grid(x, ::AbstractBC) = x          # NoBC / non-periodic — passthrough
+@inline _prepare_periodic_grid(x, ::PeriodicBC{:inclusive}) = x
+
+@inline function _prepare_periodic_grid(x::AbstractVector, bc::PeriodicBC{:exclusive})
+    period = _resolve_exclusive_period(x, bc)
+    _validate_exclusive_period(x, period)
+    Tg_real = eltype(x) <: _PromotableValue ? float(eltype(x)) : eltype(x)
+    x_end = first(x) + Tg_real(period)
+    last(x) < x_end || _throw_excl_endpoint_too_small(period, x_end, last(x))
+    return x isa AbstractRange ? _to_float_adding_endpoint(x, Tg_real) : vcat(x, x_end)
+end
+
+"""
     _can_infer_period(x) -> Bool
 
 Check if the period can be inferred from the grid (true for AbstractRange).

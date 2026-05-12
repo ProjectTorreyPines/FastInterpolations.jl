@@ -81,6 +81,7 @@ end
 # Transpose: for each k, dy_bar[k] scatters to 2 f_bar entries.
 
 @inline function _cardinal_slope_adjoint!(
+        ::NoBC,
         f_bar::AbstractVector, dy_bar::AbstractVector,
         x::AbstractVector{Tg}, tension::Tg
     ) where {Tg}
@@ -127,7 +128,8 @@ end
 # boundary k=1 / k=n iterations use the 4-write closed-cycle formula
 # (the join wraps so j_prev+1 ≠ j_curr — all 4 writes are distinct),
 # while interior reuses the NoBC fast path.
-@inline function _cardinal_slope_adjoint_periodic!(
+@inline function _cardinal_slope_adjoint!(
+        ::PeriodicBC,
         f_bar::AbstractVector, dy_bar::AbstractVector,
         x::AbstractVector{Tg}, tension::Tg
     ) where {Tg}
@@ -200,23 +202,20 @@ end
 
 @with_pool pool function _cardinal_adjoint_apply!(
         f_bar::AbstractVector{Tv},
-        adj::CardinalAdjoint1D{Tg},
+        adj::CardinalAdjoint1D{Tg, BC},
         y_bar,
         deriv::DerivOp = EvalValue()
-    ) where {Tv, Tg}
+    ) where {Tv, Tg, BC}
     n = adj.grid_size
     dy_bar = zeros!(pool, Tv, n)
 
     # Step 1: Hermite scatter -> (f_bar, dy_bar)
     _scatter_hermite_adjoint!(f_bar, dy_bar, adj.anchors, y_bar, deriv)
 
-    # Step 2: Slope J^T * dy_bar -> f_bar update.
-    # PeriodicBC (closed-cycle internal grid) → wrap-aware path.
-    if adj.bc isa PeriodicBC
-        _cardinal_slope_adjoint_periodic!(f_bar, dy_bar, adj.grid, adj.tension)
-    else
-        _cardinal_slope_adjoint!(f_bar, dy_bar, adj.grid, adj.tension)
-    end
+    # Step 2: Slope J^T * dy_bar -> f_bar update. BC dispatched at compile time
+    # via `BC` parameter bound in where clause (two methods of the slope adjoint
+    # cover `::PeriodicBC` and `::NoBC` — see definitions above).
+    _cardinal_slope_adjoint!(adj.bc, f_bar, dy_bar, adj.grid, adj.tension)
 
     return nothing
 end

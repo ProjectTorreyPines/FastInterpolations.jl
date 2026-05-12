@@ -88,6 +88,7 @@ end
 # For each point k, the transpose scatters dy_bar[k] to f_bar[j] for j in stencil.
 
 @inline function _pchip_slope_adjoint!(
+        ::NoBC,
         f_bar::AbstractVector, dy_bar::AbstractVector,
         x::AbstractVector{Tg}, y::AbstractVector{Tv}
     ) where {Tg, Tv}
@@ -250,7 +251,8 @@ end
 # secant indices. Mirrors forward `_pchip_slopes!`'s `_pchip_boundary_slope`
 # unification under `_periodic_secant` / `_periodic_cell_width`.
 
-@inline function _pchip_slope_adjoint_periodic!(
+@inline function _pchip_slope_adjoint!(
+        ::PeriodicBC,
         f_bar::AbstractVector, dy_bar::AbstractVector,
         x::AbstractVector{Tg}, y::AbstractVector{Tv}
     ) where {Tg, Tv}
@@ -340,23 +342,20 @@ end
 
 @with_pool pool function _pchip_adjoint_apply!(
         f_bar::AbstractVector{Tv},
-        adj::PchipAdjoint1D{Tg},
+        adj::PchipAdjoint1D{Tg, Tv2, BC},
         y_bar,
         deriv::DerivOp = EvalValue()
-    ) where {Tv, Tg}
+    ) where {Tv, Tg, Tv2, BC}
     n = adj.grid_size
     dy_bar = zeros!(pool, Tv, n)
 
     # Step 1: Hermite scatter -> (f_bar, dy_bar)
     _scatter_hermite_adjoint!(f_bar, dy_bar, adj.anchors, y_bar, deriv)
 
-    # Step 2: PCHIP slope J^T * dy_bar -> f_bar update.
-    # PeriodicBC (after `_periodic_extend_1d` extension) → closed-cycle path.
-    if adj.bc isa PeriodicBC
-        _pchip_slope_adjoint_periodic!(f_bar, dy_bar, adj.grid, adj.data)
-    else
-        _pchip_slope_adjoint!(f_bar, dy_bar, adj.grid, adj.data)
-    end
+    # Step 2: PCHIP slope J^T * dy_bar -> f_bar update. BC dispatched at compile
+    # time via `BC` parameter bound in where clause (two methods of the slope
+    # adjoint cover `::PeriodicBC` and `::NoBC` — see definitions above).
+    _pchip_slope_adjoint!(adj.bc, f_bar, dy_bar, adj.grid, adj.data)
 
     return nothing
 end

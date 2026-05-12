@@ -193,6 +193,7 @@ Virtual secants for j=0,-1,n,n+1 are linear combinations of real secants.
 end
 
 @inline function _akima_slope_adjoint!(
+        ::NoBC,
         f_bar::AbstractVector, dy_bar::AbstractVector,
         x::AbstractVector{Tg}, y::AbstractVector{Tv}
     ) where {Tg, Tv}
@@ -464,7 +465,8 @@ end
     return nothing
 end
 
-@inline function _akima_slope_adjoint_periodic!(
+@inline function _akima_slope_adjoint!(
+        ::PeriodicBC,
         f_bar::AbstractVector, dy_bar::AbstractVector,
         x::AbstractVector{Tg}, y::AbstractVector{Tv}
     ) where {Tg, Tv}
@@ -526,23 +528,20 @@ end
 
 @with_pool pool function _akima_adjoint_apply!(
         f_bar::AbstractVector{Tv},
-        adj::AkimaAdjoint1D{Tg},
+        adj::AkimaAdjoint1D{Tg, Tv2, BC},
         y_bar,
         deriv::DerivOp = EvalValue()
-    ) where {Tv, Tg}
+    ) where {Tv, Tg, Tv2, BC}
     n = adj.grid_size
     dy_bar = zeros!(pool, Tv, n)
 
     # Step 1: Hermite scatter -> (f_bar, dy_bar)
     _scatter_hermite_adjoint!(f_bar, dy_bar, adj.anchors, y_bar, deriv)
 
-    # Step 2: Akima slope J^T * dy_bar -> f_bar update.
-    # PeriodicBC (closed-cycle internal grid) → wrap-aware path.
-    if adj.bc isa PeriodicBC
-        _akima_slope_adjoint_periodic!(f_bar, dy_bar, adj.grid, adj.data)
-    else
-        _akima_slope_adjoint!(f_bar, dy_bar, adj.grid, adj.data)
-    end
+    # Step 2: Akima slope J^T * dy_bar -> f_bar update. BC dispatched at compile
+    # time via `BC` parameter bound in where clause (two methods of the slope
+    # adjoint cover `::PeriodicBC` and `::NoBC` — see definitions above).
+    _akima_slope_adjoint!(adj.bc, f_bar, dy_bar, adj.grid, adj.data)
 
     return nothing
 end

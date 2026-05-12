@@ -1,7 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────
-# TDD test file (currently RED): verifies that 1D adjoints for
-#   linear / constant / pchip / cardinal / akima
-# honor `bc=PeriodicBC(...)` the same way their ND counterparts do.
+# 1D adjoint PeriodicBC coverage for linear / constant / pchip / cardinal / akima.
 #
 # Identity tested (uniform across linear-in-y and nonlinear-in-y forwards):
 #
@@ -13,12 +11,9 @@
 # `y` (slope limiter); ForwardDiff still gives the exact JVP-transpose at
 # the linearization point.
 #
-# Currently expected to FAIL for `:exclusive` periodic on all five methods —
-# `bc=` is silently swallowed by `_extra...` in the 1D adjoint constructors,
-# so the operator built is the NoBC variant which mis-handles the seam cell
-# `[x[n], x[1]+period]`. `:inclusive` may incidentally pass when query domain
-# coincides with NoBC domain, but `:exclusive` is unambiguous: f_bar at index
-# 1 must absorb the seam contribution that scatter writes into "virtual n+1".
+# Each method/BC combo is exercised at both random interior queries and at
+# the seam cell `[x[n], x[1]+period]` — boundary-touching queries are
+# required to drive the wrap-aware stencil and the seam-fold finalize path.
 # ─────────────────────────────────────────────────────────────────────────
 
 @testitem "1D linear_adjoint — PeriodicBC TDD" begin

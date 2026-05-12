@@ -430,10 +430,10 @@ end
         x = Float64.(0:4)
         y = [10, 20, 30, 40, 50]
         itp = constant_interp(x, y; extrap = FillExtrap(-1))
-        @test itp(1.5) === 20  # in-domain: raw Tv preserved
-        # `_promote_extrap` widens fill value with Tg(=Float64) at construction,
-        # so OOB returns Float64. Pending raw-Tv contract decision.
-        @test_broken itp.extrap === FillExtrap(-1)
+        @test itp.extrap === FillExtrap{Int}(-1)  # raw Tv stored
+        @test itp(1.5) === 20                      # in-domain: raw Tv preserved
+        # OOB widens to promote_type(Tv, Tq) — Dual-AD-friendly; pending a
+        # separate raw-Tv-on-OOB decision.
         @test_broken itp(-1.0) === -1
     end
 
@@ -480,5 +480,61 @@ end
         itp = constant_interp((x, y), data)
         @test itp isa ConstantInterpolantND{Float64, Int, 2}
         @test @inferred(itp((1.5, 2.5))) === data[2, 3]
+    end
+end
+
+# ============================================================================
+# Group 8: Anchor query precision — Tq = promote_type(Tg, eltype(xq))
+# ============================================================================
+# Narrower grids (Int, Float32) must not truncate wider queries — verified
+# end-to-end via the forward/adjoint dot-product identity.
+@testitem "Constant anchor: Tq = promote_type(Tg, eltype(xq))" begin
+    using LinearAlgebra: dot
+    import FastInterpolations: ConstantAdjoint, _ConstantAnchoredQuery
+
+    @testset "Int grid + Float query — 1D adjoint, dot identity" begin
+        x = collect(0:9)
+        y = collect(10.0:10.0:100.0)
+        xq = [0.5, 1.5, 2.5, 3.5]
+        y_bar = [0.1, 0.2, -0.3, 0.4]
+
+        itp = constant_interp(x, y)
+        adj = constant_adjoint(x, xq)
+        @test adj isa ConstantAdjoint{Int, Float64}
+        @test eltype(adj.anchors) === _ConstantAnchoredQuery{Int, Float64}
+        @test dot(itp.(xq), y_bar) ≈ dot(y, adj(y_bar))
+    end
+
+    @testset "Int grid + Float query — Series vector eval" begin
+        x = collect(0:4)
+        y1 = collect(10.0:10.0:50.0)
+        y2 = collect(100.0:100.0:500.0)
+        sitp = constant_interp(x, Series(y1, y2))
+        result = sitp([0.5, 1.5, 2.5])  # fractional Float queries on Int grid
+        @test result == [[10.0, 20.0, 30.0], [100.0, 200.0, 300.0]]
+    end
+
+    @testset "Int grids + Float queries — ND adjoint, dot identity" begin
+        x = collect(0:3); y = collect(0:3)
+        data = Float64[10 * i + j for i in 1:4, j in 1:4]
+        queries = [(0.5, 1.5), (1.5, 2.5), (2.5, 0.5)]
+        y_bar = [1.0, -0.5, 0.7]
+
+        itp = constant_interp((x, y), data)
+        adj = constant_adjoint((x, y), queries)
+        @test dot(itp.(queries), y_bar) ≈ dot(data, adj(y_bar))
+    end
+
+    @testset "Float32 grid + Float64 query — NearestSide tie-break consistency" begin
+        x = Float32[0, 1, 2]
+        y = Float32[10, 20, 30]
+        xq = [nextfloat(0.5)]   # strictly > 0.5 in Float64; collapses to 0.5f0 if narrowed
+        y_bar = [1.0]
+
+        itp = constant_interp(x, y)
+        adj = constant_adjoint(x, xq)
+        @test itp(xq[1]) === 20.0f0       # right cell (dL > h/2 in Float64)
+        @test adj(y_bar) ≈ Float32[0, 1, 0]
+        @test dot([itp(xq[1])], y_bar) ≈ dot(y, adj(y_bar))
     end
 end

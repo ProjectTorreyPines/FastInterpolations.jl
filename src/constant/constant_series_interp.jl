@@ -402,7 +402,12 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    T_out = _series_output_type(Tv, Tq)
+    # Selection kernel returns `y[idx]::Tv` — Tv flows through unchanged for
+    # plain numerical queries. Duck-typed queries (Dual, …) get the legacy
+    # `promote_type(Tv, Tq)` widening so AD callers keep their input-Dual →
+    # output-Dual API contract (the partial wrt xq is 0 for constant, but the
+    # carrier type must match).
+    T_out = Tq <: _PromotableValue ? Tv : promote_type(Tv, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)
 end

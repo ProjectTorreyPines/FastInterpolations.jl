@@ -121,14 +121,9 @@ end
 @inline _adjoint_1d_apply!(f_bar, adj::CubicAdjoint, y_bar, deriv) =
     _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
 
-function _adjoint_1d_finalize(f_bar::AbstractVector, adj::CubicAdjoint)
-    n_internal = length(adj.cache.x)
-    if adj.bc isa PeriodicBC{:exclusive}
-        @inbounds f_bar[1] += f_bar[n_internal]
-        return f_bar[1:(n_internal - 1)]
-    end
-    return f_bar
-end
+# `_adjoint_1d_finalize` falls through to the protocol default, which dispatches
+# on `adj.bc` and uses `_adjoint_internal_length(adj)` — CubicAdjoint's override
+# of `_adjoint_internal_length` (`length(adj.cache.x)`) supplies the right size.
 
 # ========================================
 # Core Apply Function

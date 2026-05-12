@@ -72,12 +72,20 @@
 @inline _adjoint_1d_has_exclusive_periodic(adj::AbstractAdjoint1D) =
     adj.bc isa PeriodicBC{:exclusive}
 
-function _adjoint_1d_finalize(f_bar::AbstractVector, adj::AbstractAdjoint1D)
-    if adj.bc isa PeriodicBC{:exclusive}
-        n_internal = adj.grid_size
-        @inbounds f_bar[1] += f_bar[n_internal]
-        return f_bar[1:(n_internal - 1)]
-    end
+# Dispatches on `adj.bc`. Subtypes without `.bc` (`HermiteAdjoint1D`) override directly.
+@inline _adjoint_1d_finalize(f_bar::AbstractVector, adj::AbstractAdjoint1D) =
+    _adjoint_1d_finalize(adj.bc, f_bar, adj)
+
+@inline _adjoint_1d_finalize(::AbstractBC, f_bar::AbstractVector, ::AbstractAdjoint1D) = f_bar
+
+# Seam-fold + in-place shrink. `resize!` on `Vector` is O(1) (no copy);
+# slicing `f_bar[1:n-1]` would heap-allocate a copy on every call.
+@inline function _adjoint_1d_finalize(
+        ::PeriodicBC{:exclusive}, f_bar::Vector, adj::AbstractAdjoint1D,
+    )
+    n_internal = _adjoint_internal_length(adj)
+    @inbounds f_bar[1] += f_bar[n_internal]
+    resize!(f_bar, n_internal - 1)
     return f_bar
 end
 

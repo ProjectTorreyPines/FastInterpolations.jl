@@ -188,9 +188,9 @@ function ChainRulesCore.rrule(
         kwargs...
     ) where {Tv}
     y = func(x, f, xq; deriv = deriv, kwargs...)
-    # Adjoint constructor does not consume `deriv` (deriv is an apply-time argument).
-    # Previously slurped by `_extra...` on adjoint constructors; now the 5 non-cubic
-    # adjoints have explicit kwargs only, so passing `deriv` would be a `MethodError`.
+    # Adjoint constructor does not consume `deriv` (deriv is an apply-time argument);
+    # do NOT forward `deriv` here — Linear/Constant/PCHIP/Cardinal/Akima constructors
+    # have explicit kwargs only and would raise `MethodError`.
     adj = _adjoint_func(func)(x, xq; kwargs...)
     eval_value = deriv isa DerivOp{0}
     d = eval_value ? func(x, f, xq; deriv = DerivOp(1), kwargs...) : nothing
@@ -361,21 +361,26 @@ function ChainRulesCore.rrule(
 end
 
 # Batch queries: ∂/∂data only (per-query gradients in batch mode are not
-# supported by the existing one-shot adjoint contract).
+# supported by the existing one-shot adjoint contract). `deriv` is extracted
+# explicitly so the pullback callable receives only apply-time kwargs —
+# mirroring the scalar sibling's `f_bar = adj(Δu; deriv = deriv)`. Slurping
+# raw `kwargs...` here would leak construction-time args (`extrap`, `search`)
+# into the adjoint apply path.
 function ChainRulesCore.rrule(
         ::typeof(FastInterpolations.interp),
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;
         method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         kwargs...
     ) where {Tv, N}
     method_tuple = _expand_method_tuple(method, Val(N))
-    y = FastInterpolations.interp(grids, data, queries; method = method, kwargs...)
+    y = FastInterpolations.interp(grids, data, queries; method = method, deriv = deriv, kwargs...)
     adj = FastInterpolations.hetero_adjoint(grids, queries; methods = method_tuple, kwargs...)
     function _interp_unified_batch_pb(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), ZeroTangent()
-        f_bar = adj(unthunk(Δy); kwargs...)
+        f_bar = adj(unthunk(Δy); deriv = deriv)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
     return y, _interp_unified_batch_pb

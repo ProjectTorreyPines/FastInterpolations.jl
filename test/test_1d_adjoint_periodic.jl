@@ -388,6 +388,55 @@ end
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Tiny-grid coverage (n ∈ {2, 3}). The Hermite-family periodic slope kernels
+# have explicit small-`n` fallback branches that avoid the boundary/interior
+# loop split (PCHIP/Cardinal n=2; Akima n ∈ {2, 3}). Random testitems above
+# all use nx ≥ 11, never reaching these paths.
+# ─────────────────────────────────────────────────────────────────────────
+
+@testitem "1D Hermite adjoint — PeriodicBC tiny grids (n ∈ {2, 3})" begin
+    using LinearAlgebra: dot
+    using ForwardDiff
+
+    # Skip `:inclusive n=2` because the closing constraint `y[end]=y[1]` forces
+    # constant data (PCHIP/Akima 0/0 in slope formulas — undefined, not a bug).
+    @testset "n=$nx, :$endpoint" for (nx, endpoint) in [
+            (3, :inclusive), (2, :exclusive), (3, :exclusive),
+        ]
+        period = 1.0
+        if endpoint === :inclusive
+            x = collect(range(0.0, period, nx))
+            y = randn(nx); y[end] = y[1]
+            bc = PeriodicBC()
+        else
+            x = collect(range(0.0, step = period / nx, length = nx))
+            y = randn(nx)
+            bc = PeriodicBC(endpoint = :exclusive, period = period)
+        end
+        xq = [0.1 * period, 0.5 * period, 0.9 * period]
+        y_bar = randn(length(xq))
+
+        for (label, fwd, adj_ctor, data_arg) in [
+                ("PCHIP",    pchip_interp,    pchip_adjoint,    y),
+                ("Cardinal", cardinal_interp, cardinal_adjoint, nothing),
+                ("Akima",    akima_interp,    akima_adjoint,    y),
+            ]
+            @testset "$label" begin
+                forward(ytest) = fwd(x, ytest, xq; bc = bc)
+                ref = ForwardDiff.gradient(ytest -> dot(forward(ytest), y_bar), y)
+                adj = data_arg === nothing ?
+                    adj_ctor(x, xq; bc = bc) :
+                    adj_ctor(x, data_arg, xq; bc = bc)
+                f_bar = adj(y_bar)
+                @test size(f_bar) == size(y)
+                @test f_bar ≈ ref rtol = 1.0e-9
+            end
+        end
+    end
+end
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Zero-allocation regression: in-place `adj(f_bar, y_bar)` must not
 # allocate beyond the pool buffer (which is acquired/returned per-call
 # inside `@with_pool` and counted as 0 bytes after warmup).

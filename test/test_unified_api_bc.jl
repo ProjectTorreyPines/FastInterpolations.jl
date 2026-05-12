@@ -172,7 +172,9 @@ end
 
 # OnTheFly hetero forward must either return correct values at the periodic
 # seam cell (matching PreCompute), or reject the unsupported configuration with
-# a clear ArgumentError. Silent garbage is the bug.
+# a clear ArgumentError. Silent garbage is the bug. Coverage spans all three
+# `_validate_nd_coeffs(::OnTheFly, ...)` call sites: persistent ctor + scalar
+# one-shot + batch one-shot.
 @testitem "OnTheFly hetero — seam-cell matches PreCompute or rejects" begin
     x = collect(0.0:0.2:0.8)
     y = collect(0.0:0.25:1.0)
@@ -182,9 +184,7 @@ end
     itp_pre = interp((x, y), data; method = methods, coeffs = PreCompute())
     v_pre   = itp_pre((0.9, 0.5))   # seam cell: between x[end]=0.8 and x[1]+period=1.0
 
-    # The OnTheFly persistent path on the same configuration must be either
-    # numerically equivalent (within ULP) to PreCompute or refuse construction.
-    # Silent disagreement (current bug) is unacceptable.
+    # Persistent ctor — must equal PreCompute or reject.
     correctness_ok = try
         itp_otf = interp((x, y), data; method = methods, coeffs = OnTheFly())
         v_otf = itp_otf((0.9, 0.5))
@@ -193,6 +193,12 @@ end
         e isa ArgumentError      # explicit rejection is also acceptable
     end
     @test correctness_ok
+
+    # Scalar one-shot — same rejection path (`hetero_oneshot.jl:_validate_nd_coeffs`).
+    @test_throws ArgumentError interp((x, y), data, (0.9, 0.5); method = methods, coeffs = OnTheFly())
+
+    # Batch one-shot — same rejection at the batch dispatch site.
+    @test_throws ArgumentError interp((x, y), data, ([0.9], [0.5]); method = methods, coeffs = OnTheFly())
 end
 
 
@@ -205,4 +211,14 @@ end
     @test ConstantInterp(LeftSide()).bc === NoBC()
     @test ConstantInterp(NearestSide()) isa ConstantInterp
     @test ConstantInterp(RightSide()) isa ConstantInterp
+
+    # Round-trip: side must be honored downstream (not silently dropped to
+    # NearestSide). LeftSide returns the value at the cell's left endpoint,
+    # so query at xq = 0.499 in cell [0.4, 0.5] must equal data[5] (left).
+    x = collect(0.0:0.1:1.0)
+    data = collect(1.0:11.0)            # data[i] = i
+    itp_left  = interp((x,), data; method = (ConstantInterp(LeftSide()),))
+    itp_right = interp((x,), data; method = (ConstantInterp(RightSide()),))
+    @test itp_left((0.499,))  ≈ 5.0     # left endpoint of cell [x[5], x[6]] = data[5]
+    @test itp_right((0.401,)) ≈ 6.0     # right endpoint of cell [x[5], x[6]] = data[6]
 end

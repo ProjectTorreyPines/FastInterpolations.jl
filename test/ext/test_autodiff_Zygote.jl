@@ -1073,6 +1073,44 @@ end
         end
     end
 
+    # Direct 1D one-shot rrule under `bc=PeriodicBC(...)` for all 5 non-cubic
+    # method families. The `kwargs...` propagation in the generic `_InterpMethod`
+    # rrule is the entire mechanism that makes the periodic adjoints reachable
+    # from Zygote — a future refactor dropping it would not be caught by the
+    # NoBC-default tests above.
+    @testset "1D one-shot ∂f/∂y — bc=PeriodicBC via rrule" begin
+        period = 1.0
+        nx = 12
+        h = period / nx
+        x = collect(range(0.0, step = h, length = nx))
+        # Monotone f closed by f[1] = f[end+period]'s constraint via vcat.
+        f_data = collect(range(-1.0, 1.0, length = nx))
+        # Boundary-touching queries guarantee the cyclic stencil path is exercised.
+        xq_vec = vcat(0.5 * h, period - 0.5 * h, period .* rand(4))
+        bc_inc = PeriodicBC()
+        bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
+        # For :inclusive, use a closed-cycle grid (length nx+1, f[end]=f[1]).
+        x_inc = vcat(x, x[1] + period)
+        f_inc = vcat(f_data, f_data[1])
+
+        for (label, fn, bc, xg, fg) in [
+                ("Linear",   linear_interp,   bc_exc, x,     f_data),
+                ("Constant", constant_interp, bc_exc, x,     f_data),
+                ("PCHIP",    pchip_interp,    bc_exc, x,     f_data),
+                ("Cardinal", cardinal_interp, bc_exc, x,     f_data),
+                ("Akima",    akima_interp,    bc_exc, x,     f_data),
+                ("Linear-inc",   linear_interp,   bc_inc, x_inc, f_inc),
+                ("PCHIP-inc",    pchip_interp,    bc_inc, x_inc, f_inc),
+                ("Akima-inc",    akima_interp,    bc_inc, x_inc, f_inc),
+            ]
+            @testset "$label" begin
+                g_zy = Zygote.gradient(y -> sum(fn(xg, y, xq_vec; bc = bc)), fg)[1]
+                g_fd = ForwardDiff.gradient(y -> sum(fn(xg, y, xq_vec; bc = bc)), fg)
+                @test g_zy ≈ g_fd atol = 1.0e-10
+            end
+        end
+    end
+
     # ════════════════════════════════════════════════════════════════════════
     # QUADRATIC DATA-ADJOINT (∂f/∂y) via QuadraticAdjoint rrule
     # ════════════════════════════════════════════════════════════════════════
@@ -1536,6 +1574,33 @@ end
         g_zy = Zygote.gradient(d -> interp((x, y_grid), d, (0.35, 0.7); method = methods), data)[1]
         adj_ref = linear_adjoint((x, y_grid), ([0.35], [0.7]); bc = (bc, bc))
         g_ref = adj_ref(ones(1))
+
+        @test size(g_zy) == (nx, ny)
+        @test g_zy ≈ g_ref atol = 1.0e-10
+    end
+
+    # Regression: the batch rrule previously slurped all kwargs and forwarded
+    # them to the pullback callable, so construction-time kwargs (`extrap`)
+    # would leak into the adjoint apply path. Fix lifts `deriv` out explicitly
+    # and forwards only `deriv = deriv` to `adj(...)`.
+    @testset "Unified API one-shot ∂/∂data — extrap kwarg does not leak to pullback" begin
+        nx, ny = 10, 8
+        x = collect(range(0.0, 1.0, nx))
+        y_grid = collect(range(0.0, 1.0, ny))
+        data = [sin(2π * xi) + cos(2π * yj) for xi in x, yj in y_grid]
+        bc = PeriodicBC()
+        methods = (LinearInterp(bc = bc), LinearInterp(bc = bc))
+        xq = collect(range(0.05, 0.95, 5))
+        yq = collect(range(0.05, 0.95, 5))
+
+        # ExtendExtrap is a construction-time arg — must reach the forward but
+        # NOT be forwarded by the pullback (apply path does not accept it).
+        g_zy = Zygote.gradient(
+            d -> sum(interp((x, y_grid), d, (xq, yq); method = methods, extrap = ExtendExtrap())),
+            data
+        )[1]
+        adj_ref = linear_adjoint((x, y_grid), (xq, yq); bc = (bc, bc), extrap = ExtendExtrap())
+        g_ref = adj_ref(ones(length(xq)))
 
         @test size(g_zy) == (nx, ny)
         @test g_zy ≈ g_ref atol = 1.0e-10

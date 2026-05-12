@@ -512,6 +512,20 @@
             )
             @test allocs <= ND_ALLOC_THRESHOLD
         end
+
+        # Linear axis with PeriodicBC{:exclusive} routes through `_cache_axis`
+        # wrapping in `grids_ext` and the generic seam-fold post-apply hook.
+        # The fb result must remain user-`n` shape (axis trimmed).
+        @testset "Linear(PeriodicBC{:exclusive})×Cubic (zero alloc)" begin
+            x_p = range(0.0, step = 1.0 / length(x_a), length = length(x_a))
+            bc_x = PeriodicBC(endpoint = :exclusive, period = 1.0)
+            fb = zeros(length(x_p), length(y_a))
+            allocs = _test_hetero_adjoint_alloc(
+                (collect(x_p), y_a), (xq_a, yq_a), fb, y_bar_a;
+                methods = (LinearInterp(bc = bc_x), CubicInterp())
+            )
+            @test allocs <= ND_ALLOC_THRESHOLD
+        end
     end
 
     # ════════════════════════════════════════════════════════════════════════

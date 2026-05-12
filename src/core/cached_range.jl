@@ -21,11 +21,8 @@ All `AbstractRange` inputs are normalized to `_CachedRange` via `_to_float` at p
 API boundaries. This means downstream code only needs to handle two grid types:
 `_CachedRange{T,Tinv}` (uniform) and `Vector{T}` (non-uniform).
 
-`Tinv == typeof(inv(oneunit(T)))`. For `T <: AbstractFloat`, `Tinv == T` and the
-struct is byte-identical to the historical single-parameter form. For raw `T = Int`
-(e.g., `constant_interp(0:10, ::Vector{Int})` — see Phase 1 of the eltype refactor),
-`Tinv = Float64` while `h` and the other geometry fields stay `Int`. Mirrors the
-`_CachedVector{T, Tinv}` pattern in `cached_vector.jl`.
+`Tinv == typeof(inv(oneunit(T)))` — equals `T` for `T <: AbstractFloat`, equals
+`Float64` for raw `T = Int`. Mirrors `_CachedVector{T, Tinv}`.
 
 # Fields
 - `lo::T`        — `first(x)`, cached as plain `T` (used for index computation)

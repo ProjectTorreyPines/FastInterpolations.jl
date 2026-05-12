@@ -14,7 +14,7 @@ Returned by `constant_interp(x, y)` (2-argument form).
 # Type Parameters
 - `Tg`: Grid type (unconstrained) for x-coordinates
 - `Tv`: Value type (unconstrained)
-- `X<:AbstractVector{Tg}`: Grid vector type — `_CachedRange{Tg}` for Range
+- `X<:AbstractVector{Tg}`: Grid vector type — `_CachedRange{Tg,Tinv}` for Range
         input, `_CachedVector{Tg,Tinv}` for Vector input,
         `_ExclusivePeriodicAxis` for Vector + `:exclusive` PeriodicBC.
 - `Y<:AbstractVector{Tv}`: y values — plain `Vector{Tv}` for non-periodic,

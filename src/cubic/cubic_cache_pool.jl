@@ -49,10 +49,8 @@ abstract type AbstractCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}} end
 #   Vector → `_CachedVector{T, Tinv}`.
 # - `:exclusive` periodic: extra `_ExclusivePeriodicAxis` wrapper around the
 #   above inner.
-# Cubic always promotes to `T <: AbstractFloat`, so `Tinv == T` here — pin the
-# 2nd parameter to `T` to keep the bank's `EntryType` concrete (otherwise the
-# 1-param `_CachedRange{T}` form would be a UnionAll after the Phase 1
-# `_CachedRange{T, Tinv}` refactor, defeating type-specialization in the bank).
+# Cubic always promotes to `T <: AbstractFloat`, so `Tinv == T`; pin it
+# explicitly to keep `EntryType` concrete in the bank.
 @inline _cached_axis_type(::Type{<:AbstractRange}, ::Type{T}) where {T} = _CachedRange{T, T}
 @inline _cached_axis_type(::Type{<:AbstractVector}, ::Type{T}) where {T} =
     _CachedVector{T, typeof(inv(oneunit(T)))}

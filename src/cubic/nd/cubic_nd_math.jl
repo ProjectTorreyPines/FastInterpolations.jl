@@ -86,8 +86,8 @@ end
 # - yL, yR: Function values at left/right endpoints (type Tv)
 # - dyL, dyR: Derivative values at endpoints (type Tv)
 # - h: Interval width (type Tg)
-# - inv_h: 1/h precomputed (type Tg)
-# - dL: Distance from left endpoint xq - xL (type Tg or query type)
+# - inv_h: 1/h precomputed (type Tinv; decoupled from Tg)
+# - dL: Distance from left endpoint xq - xL (type Tq — query type)
 
 """
     _hermite_kernel_1d(::EvalValue, yL, yR, dyL, dyR, h, inv_h, dL)

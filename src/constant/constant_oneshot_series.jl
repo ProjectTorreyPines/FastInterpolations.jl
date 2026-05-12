@@ -207,8 +207,3 @@ function constant_interp(
     constant_interp!(outputs, x, s, xqs; bc, side, extrap, deriv, search)
     return outputs
 end
-
-# NOTE: the former Real type promotion wrappers (Tg <: Real) have been removed.
-# The hot-path methods above now use unconstrained Tg, and _to_float handles
-# grid normalization for all types (Int, Float, Dual, etc.), preventing
-# infinite recursion on duck types like ForwardDiff.Dual <: Real.

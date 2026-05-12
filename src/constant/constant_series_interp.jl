@@ -393,8 +393,8 @@ Returns a vector of values, one per y-series.
 - `deriv=DerivOp(1),DerivOp(2)`: Returns zeros (step function derivative is zero everywhere)
 
 # AD Support
-When `xq` is a ForwardDiff.Dual, the output type is promoted to preserve
-derivatives. Output type is `promote_type(Tv, Tq)`.
+Plain queries (`Tq <: _PromotableValue`) → output eltype `Tv` unchanged.
+Duck-typed queries (e.g. `ForwardDiff.Dual`) widen to `promote_type(Tv, Tq)`.
 """
 function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         xq::Tq;

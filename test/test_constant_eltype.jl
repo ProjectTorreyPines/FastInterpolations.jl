@@ -248,7 +248,7 @@ end
 end
 
 # ============================================================================
-# Group 4: ND (Phase 2 — selection kernel generalizes to per-axis cell pick)
+# Group 4: ND — selection kernel generalizes to per-axis cell pick
 # ============================================================================
 # Constant ND follows the same raw-eltype contract:
 #   Tg = promote_type(eltype.(grids)...)   (no `float()` widening)

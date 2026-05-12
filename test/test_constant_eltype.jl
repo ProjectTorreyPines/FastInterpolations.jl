@@ -537,4 +537,16 @@ end
         @test adj(y_bar) ≈ Float32[0, 1, 0]
         @test dot([itp(xq[1])], y_bar) ≈ dot(y, adj(y_bar))
     end
+
+    @testset "Float32 ND grids + Float64 queries — tie-break consistency" begin
+        x = Float32[0, 1, 2]
+        y = Float32[0, 1, 2]
+        data = Float64[10 * i + j for i in 1:3, j in 1:3]
+        queries = [(nextfloat(0.5), nextfloat(0.5))]
+        y_bar = [1.0]
+
+        itp = constant_interp((x, y), data)
+        adj = constant_adjoint((x, y), queries)
+        @test dot([itp(queries[1])], y_bar) ≈ dot(data, adj(y_bar))
+    end
 end

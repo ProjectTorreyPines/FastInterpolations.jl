@@ -996,9 +996,9 @@ end
     struct CustomRefWithMethod
         val::Float64
     end
-    (ref::CustomRefWithMethod)(query::Any; deriv=nothing) = deriv === nothing ? ref.val : (all(op -> op isa FastInterpolations.EvalValue, deriv) ? ref.val : 0.0)
-    
-    
+    (ref::CustomRefWithMethod)(query::Any; deriv = nothing) = deriv === nothing ? ref.val : (all(op -> op isa FastInterpolations.EvalValue, deriv) ? ref.val : 0.0)
+
+
     # Let's test PHS with log-transform and this custom reference
     ref_obj = CustomRefWithMethod(1.0)
     rho_val = [2.0 + sin(xi) * cos(yj) for xi in x, yj in y]
@@ -1030,7 +1030,7 @@ end
     query = (qx, qy)
     base_idx = FastInterpolations._phs_find_base_node(itp, query)
     base_coords = FastInterpolations._phs_base_coords(itp, base_idx)
-    
+
     M = size(itp.phi_inv, 1)
     rhs_buf = zeros(eltype(itp.hs[1]), M)
     coeff_buf = zeros(eltype(itp.hs[1]), M)
@@ -1084,4 +1084,3 @@ end
     diff_res = FastInterpolations._phs_diff(query, base_coords, (0, 0), itp.hs)
     @test length(diff_res) == 2
 end
-

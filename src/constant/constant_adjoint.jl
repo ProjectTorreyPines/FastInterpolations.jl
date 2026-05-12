@@ -20,7 +20,7 @@
 # ========================================
 
 """
-    ConstantAdjoint{Tg, SD, EP}
+    ConstantAdjoint{Tg, Tq, BC, SD, EP}
 
 Adjoint (transpose) operator for 1D constant interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward constant interpolation weight matrix.
@@ -30,6 +30,8 @@ The same adjoint can be applied to any `ȳ` vector.
 
 # Type Parameters
 - `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
+- `Tq`: Anchor query coordinate type, `promote_type(Tg, eltype(x_query))`
+- `BC`: Boundary condition type
 - `SD`: Side selection mode (`NearestSide`, `LeftSide`, `RightSide`)
 - `EP`: Extrapolation policy type (`NoExtrap`, `ExtendExtrap`, `ClampExtrap`, `FillExtrap`, `WrapExtrap`)
 
@@ -56,8 +58,8 @@ itp = constant_interp(x, f; side=NearestSide())
 @assert dot(itp.(xq), y_bar) ≈ dot(f, adj(y_bar))
 ```
 """
-struct ConstantAdjoint{Tg, BC <: AbstractBC, SD <: AbstractSide, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
-    anchors::Vector{_ConstantAnchoredQuery{Tg, Tg}}
+struct ConstantAdjoint{Tg, Tq, BC <: AbstractBC, SD <: AbstractSide, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+    anchors::Vector{_ConstantAnchoredQuery{Tg, Tq}}
     grid_size::Int  # internal length: n+1 for PeriodicBC{:exclusive}, n otherwise
     x_hi::Tg
     bc::BC
@@ -165,16 +167,16 @@ gets `state=IN_DOMAIN` (inside). This restores the correct OOB state flag based 
 original query position, so scatter can skip OOB contributions.
 """
 function _fixup_constant_anchor_state!(
-        anchors::Vector{_ConstantAnchoredQuery{Tg, Tg}},
+        anchors::Vector{_ConstantAnchoredQuery{Tg, Tq}},
         xq_original::AbstractVector,
         x_lo, x_hi
-    ) where {Tg}
+    ) where {Tg, Tq}
     @inbounds for i in eachindex(anchors)
         xq_i = xq_original[i]
         (x_lo <= xq_i <= x_hi) && continue
         state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
         aq = anchors[i]
-        anchors[i] = _ConstantAnchoredQuery{Tg, Tg}(
+        anchors[i] = _ConstantAnchoredQuery{Tg, Tq}(
             aq.stencil, aq.xq, state, aq.h, aq.dL
         )
     end
@@ -271,7 +273,8 @@ function constant_adjoint(
         anchors = _anchor_query(x_axis, xq_p, Val(:constant), wrap)
     end
 
-    return ConstantAdjoint{Tg, typeof(bc), typeof(side), typeof(extrap_eff)}(
+    Tq = eltype(anchors).parameters[2]
+    return ConstantAdjoint{Tg, Tq, typeof(bc), typeof(side), typeof(extrap_eff)}(
         anchors, length(x_axis), x_hi, bc, side, extrap_eff
     )
 end

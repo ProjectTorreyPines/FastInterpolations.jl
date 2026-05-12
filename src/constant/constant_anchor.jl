@@ -112,8 +112,8 @@ itp1(aq)              # Ultra-fast: skips interval search
 itp2(aq)              # Reuses same anchor
 ```
 """
-# Unified scalar anchor construction. _constant_anchor_query_impl handles
-# Tg conversion internally, so no separate Real wrapper is needed.
+# Pass xq as-is — `_constant_anchor_query_impl` handles `oftype` promotion
+# so narrower grids never truncate wider queries.
 @inline function _anchor_query(
         x::AbstractVector{T},
         xq,
@@ -121,7 +121,7 @@ itp2(aq)              # Reuses same anchor
         wrap::Bool = false,
         searcher::P = DEFAULT_SEARCHER
     ) where {T, P <: Searcher}
-    return _constant_anchor_query_impl(x, T(xq), wrap, _resolve_searcher_for_grid(x, searcher))
+    return _constant_anchor_query_impl(x, xq, wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
 """
@@ -158,10 +158,11 @@ function _anchor_query(
         searcher::P = _to_searcher(LinearBinarySearch())
     ) where {T, S <: Real, P <: Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
-    output = Vector{_ConstantAnchoredQuery{T, T}}(undef, length(xq))
+    Tq = promote_type(T, S)
+    output = Vector{_ConstantAnchoredQuery{T, Tq}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
-        output[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
+        output[k] = _constant_anchor_query_impl(x, xq[k], wrap, searcher_resolved)
     end
     return output
 end
@@ -184,18 +185,18 @@ the caller reuses `buffer`. Writes `length(xq)` entries.
 The same `buffer` object, filled with anchored queries.
 """
 @inline function _fill_anchors!(
-        buffer::AbstractVector{_ConstantAnchoredQuery{T, T}},
+        buffer::AbstractVector{_ConstantAnchoredQuery{T, Tq}},
         x::AbstractVector{T},
         xq::AbstractVector{S},
         ::Val{:constant},
         wrap::Bool = false,
         searcher::P = _to_searcher(LinearBinarySearch())
-    ) where {T, S <: Real, P <: Searcher}
+    ) where {T, Tq, S <: Real, P <: Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
     @inbounds for k in eachindex(xq)
-        buffer[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
+        buffer[k] = _constant_anchor_query_impl(x, xq[k], wrap, searcher_resolved)
     end
     return buffer
 end

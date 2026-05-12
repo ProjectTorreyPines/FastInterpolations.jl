@@ -340,19 +340,13 @@ Used in interpolant inner constructors to merge promotion + immutability copy.
 """
     _promote_query_typed(xq::AbstractVector, ::Type{Tg}) -> AbstractVector
 
-Convert query vector to the appropriate float type for the given grid type `Tg`.
-
-Standard numeric queries (`_PromotableValue`: Integer, AbstractFloat, Rational)
-are promoted to grid precision (or `float(Tq)` if grid is duck-typed).
-Duck-typed queries (e.g. `Dual` for query-side AD) pass through unchanged —
-same `_PromotableValue` guard as value promotion in `_promote_itp_inputs`.
+Widen query vector to `promote_type(Tg, Tq)` — never narrows query precision.
+Duck-typed queries (`Dual`, `Measurement`, …) pass through unchanged.
 """
 @inline function _promote_query_typed(xq::AbstractVector{Tq}, ::Type{Tg}) where {Tq <: Real, Tg}
     if Tq <: _PromotableValue
-        # Standard numeric: promote to grid type (duck or float)
-        return _to_float(xq, Tg)
+        return _to_float(xq, promote_type(Tg, Tq))
     else
-        # Duck type (Dual, Measurement, etc.) — pass through unchanged
         return xq
     end
 end

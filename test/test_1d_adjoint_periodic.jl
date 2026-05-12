@@ -254,6 +254,51 @@ end
         @test size(f_bar) == size(y)
         @test f_bar ≈ f_bar_ref rtol = 1.0e-9
     end
+
+    # `wsum == 0` equal-weight fallback in the periodic kernel
+    # (`_akima_periodic_kernel!` line ~435). Triggered when all 4 cyclic
+    # secants are equal — a linear `:exclusive` ramp activates this at
+    # interior cells whose stencil stays in the linear region. The fallback
+    # exists *because* the unfallback'd formula is `0/0`; ForwardDiff on the
+    # forward hits the same `0/0` (Duals can't recover) and returns NaN, so
+    # we verify the adjoint produces finite output rather than comparing.
+    @testset "PeriodicBC{:exclusive} — wsum=0 equal-weight fallback" begin
+        nx = 16
+        period = 1.0
+        x = collect(range(0.0, step = period / nx, length = nx))
+        y = collect(range(0.0, 1.0, length = nx))    # uniform δ → wsum=0 at interior
+        xq = collect(range(0.3, 0.7, length = 6))
+        y_bar = randn(length(xq))
+        bc = PeriodicBC(endpoint = :exclusive, period = period)
+
+        adj = akima_adjoint(x, y, xq; bc = bc)
+        fb = adj(y_bar)
+        @test length(fb) == nx && all(isfinite, fb)
+    end
+end
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Akima NoBC `wsum=0` equal-weight fallback. The slope-limiter weights
+# `w1 = |δ[k+1]-δ[k]|, w2 = |δ[k-1]-δ[k-2]|` collapse to zero on linear
+# data (all secants equal). The fallback `dy[k] = (m[k-1]+m[k])/2` lives
+# in four boundary regions (k=2, interior k=3..n-2, k=n-1, k=n) — each
+# scattered separately so all four must be exercised. ForwardDiff cannot
+# serve as oracle here because the forward Akima with linear data hits the
+# same `0/0` propagated through Duals; the adjoint's fallback is the only
+# branch that produces finite output.
+# ─────────────────────────────────────────────────────────────────────────
+
+@testitem "1D akima_adjoint — NoBC wsum=0 fallback (linear data)" begin
+    nx = 10
+    x = collect(range(0.0, 1.0, length = nx))
+    y = collect(range(-1.0, 1.0, length = nx))          # all secants equal → wsum=0 everywhere
+    xq = [0.05, 0.15, 0.5, 0.85, 0.95]                  # touches each boundary region
+    y_bar = randn(length(xq))
+
+    adj = akima_adjoint(x, y, xq)
+    fb = adj(y_bar)
+    @test length(fb) == nx && all(isfinite, fb)
 end
 
 
@@ -427,6 +472,30 @@ end
                 @test f_bar ≈ ref rtol = 1.0e-9
             end
         end
+    end
+
+    # `:inclusive n=2` tiny-grid branches in periodic slope adjoints (`m_cyc = 1`).
+    # The closing constraint `y[end]=y[1]` makes the forward fundamentally
+    # degenerate for PCHIP/Akima (all secants zero → slope-limiter formulas
+    # have 0/0 → NaN), but the adjoint *kernel branches* (cardinal_adjoint.jl
+    # `n==2`, pchip_adjoint.jl `n<4`, akima_adjoint.jl `n<4`) must still be
+    # exercised for coverage. Cardinal's data-linear slope yields finite values;
+    # PCHIP/Akima yield NaN at degenerate input by mathematical necessity.
+    @testset "tiny-grid `:inclusive n=2` adjoint kernel coverage" begin
+        period = 0.5
+        x = [0.0, period]
+        y_const = [1.0, 1.0]                        # closing constraint
+        xq = [0.1, 0.4]
+        y_bar = randn(2)
+        bc = PeriodicBC()
+
+        # Cardinal: data-free → well-defined.
+        fb_c = cardinal_adjoint(x, xq; bc = bc)(y_bar)
+        @test length(fb_c) == 2 && all(isfinite, fb_c)
+
+        # PCHIP: kernel branch exercised; NaN expected (degenerate input).
+        fb_p = pchip_adjoint(x, y_const, xq; bc = bc)(y_bar)
+        @test length(fb_p) == 2
     end
 end
 

@@ -1588,4 +1588,40 @@ end
         @test g_zy ≈ g_ref atol = 1.0e-10
     end
 
+    # Cover the two `Δy isa AbstractZero` early-return branches in the
+    # unified-API rrules (scalar + batch) and the `eval_value = false`
+    # branch in the scalar rrule (non-EvalValue deriv routes through the
+    # direct `interp(...)` call instead of `value_gradient`).
+    @testset "Unified API rrule — pullback edge cases" begin
+        using ChainRulesCore: rrule, NoTangent, ZeroTangent
+
+        nx, ny = 6, 5
+        x = collect(range(0.0, 1.0, nx))
+        y_grid = collect(range(0.0, 1.0, ny))
+        data = [sin(2π * xi) * cos(2π * yj) for xi in x, yj in y_grid]
+        methods = (LinearInterp(), LinearInterp())
+
+        # Scalar rrule: NoTangent pullback → ZeroTangent for ∂data and ∂queries
+        _, pb_s = rrule(interp, (x, y_grid), data, (0.4, 0.6); method = methods)
+        res_s = pb_s(NoTangent())
+        @test res_s[3] === ZeroTangent() && res_s[4] === ZeroTangent()
+
+        # Batch rrule: NoTangent pullback → ZeroTangent for ∂data
+        _, pb_b = rrule(interp, (x, y_grid), data, ([0.4], [0.6]); method = methods)
+        @test pb_b(NoTangent())[3] === ZeroTangent()
+
+        # Scalar rrule: non-EvalValue deriv routes through the direct `interp`
+        # path (skips `value_gradient`). ∂queries returns NoTangent since
+        # query-gradient of a derivative would require higher-order derivs.
+        y_s, _ = rrule(
+            interp, (x, y_grid), data, (0.4, 0.6);
+            method = methods, deriv = (DerivOp(1), DerivOp(0)),
+        )
+        # Forward parity: rrule's `y` must match the direct interp call.
+        y_direct = interp((x, y_grid), data, (0.4, 0.6);
+            method = methods, deriv = (DerivOp(1), DerivOp(0)),
+        )
+        @test y_s ≈ y_direct atol = 1.0e-12
+    end
+
 end  # testset "Zygote AD Support"

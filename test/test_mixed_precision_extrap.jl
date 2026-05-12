@@ -198,18 +198,25 @@ end
     # ignored Tg, defaulted Int eltype to Float64, and the inner ctor's
     # `_promote_grid_float(Float64, Float32)` then widened y to Float64 too.
     # Cubic (still on the legacy `_resolve_axis_copied(x, bc, T)` builder) was
-    # unaffected; the migrated families (Linear / Constant / PCHIP / Cardinal /
-    # Akima + their Series + ND) lost the Float32 promotion contract.
+    # unaffected; the migrated families (Linear / PCHIP / Cardinal / Akima +
+    # their Series + ND) lost the Float32 promotion contract.
+    #
+    # Constant is an exception: under the raw-eltype duck-typing policy
+    # (`Tg = eltype(x)`, `Tv = eltype(y)`), `constant_interp(1:4, Float32[...])`
+    # keeps `Tg = Int`. The selection kernel performs no x·y arithmetic, so
+    # there is no precision argument for widening x. Verified explicitly below.
     x_int = 1:4
     y32 = Float32[1.0, 2.0, 3.0, 4.0]
 
-    @testset "1D Linear / Constant" begin
+    @testset "1D Linear" begin
         itp_l = linear_interp(x_int, y32)
         @test itp_l.x isa FastInterpolations._CachedRange{Float32}
         @test itp_l.y isa Vector{Float32}
+    end
 
+    @testset "1D Constant (raw-eltype: Tg stays Int)" begin
         itp_c = constant_interp(x_int, y32)
-        @test itp_c.x isa FastInterpolations._CachedRange{Float32}
+        @test itp_c.x isa FastInterpolations._CachedRange{Int, Float64}
         @test itp_c.y isa Vector{Float32}
     end
 
@@ -236,13 +243,15 @@ end
         @test itp.y isa Vector{Float32}
     end
 
-    @testset "1D Series (Linear / Constant)" begin
+    @testset "1D Series (Linear)" begin
         sitp_l = linear_interp(x_int, Series(y32, y32))
         @test sitp_l.x isa FastInterpolations._CachedRange{Float32}
         @test sitp_l.y isa Matrix{Float32}
+    end
 
+    @testset "1D Series (Constant): raw-eltype keeps Tg = Int" begin
         sitp_c = constant_interp(x_int, Series(y32, y32))
-        @test sitp_c.x isa FastInterpolations._CachedRange{Float32}
+        @test sitp_c.x isa FastInterpolations._CachedRange{Int, Float64}
         @test sitp_c.y isa Matrix{Float32}
     end
 

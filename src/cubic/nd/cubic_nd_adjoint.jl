@@ -371,7 +371,7 @@ barriers — no `spacings` parameter needed.
     return nothing
 end
 
-# NOTE: _has_exclusive_periodic, _adjoint_output_size(adj), _adjoint_nd_finalize,
+# NOTE: _has_seam_fold, _adjoint_output_size(adj), _adjoint_nd_finalize,
 # _adjoint_apply_exclusive_nd!, and all 6 callable methods (Vector/Real/Tuple ×
 # alloc/in-place) are now shared on AbstractAdjointND in nd_adjoint_protocol.jl.
 # CubicAdjointND inherits them via _n_queries, _grid_size, _adjoint_bcs,

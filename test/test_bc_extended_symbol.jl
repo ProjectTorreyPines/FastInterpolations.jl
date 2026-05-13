@@ -79,3 +79,31 @@ end
         @test itp(x[1] + period)     ≈ y[1] atol = 1e-10
     end
 end
+
+@testitem "PeriodicBC :extended — _adjoint_user_n_axis" begin
+    using FastInterpolations: PeriodicBC, NoBC
+    using FastInterpolations: _adjoint_user_n_axis
+
+    # :inclusive — layout already user-sized → no shrink
+    @test _adjoint_user_n_axis(PeriodicBC(endpoint = :inclusive), 9) == 9
+    # :exclusive — OneShot wrap layout → trim
+    @test _adjoint_user_n_axis(PeriodicBC(endpoint = :exclusive, period = 2π), 9) == 8
+    # :extended — promoted layout → trim
+    @test _adjoint_user_n_axis(PeriodicBC{:extended, Float64, false}(2π), 9) == 8
+    # Non-periodic — no shrink
+    @test _adjoint_user_n_axis(NoBC(), 9) == 9
+end
+
+@testitem "PeriodicBC :extended — _has_seam_fold renamed predicate" begin
+    using FastInterpolations: PeriodicBC, NoBC
+    using FastInterpolations: _has_seam_fold
+
+    bc_inc = PeriodicBC(endpoint = :inclusive)
+    bc_exc = PeriodicBC(endpoint = :exclusive, period = 2π)
+    bc_ext = PeriodicBC{:extended, Float64, false}(2π)
+
+    @test !_has_seam_fold((NoBC(), bc_inc))
+    @test  _has_seam_fold((NoBC(), bc_exc))
+    @test  _has_seam_fold((NoBC(), bc_ext))
+    @test  _has_seam_fold((bc_ext, bc_inc, bc_exc))
+end

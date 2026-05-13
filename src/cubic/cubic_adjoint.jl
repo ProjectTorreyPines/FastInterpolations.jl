@@ -109,14 +109,14 @@ end
 # in-place are inherited from AbstractAdjoint1D via src/core/adjoint_protocol.jl.
 
 @inline _adjoint_output_length(adj::CubicAdjoint) =
-    adj.bc isa PeriodicBC{:exclusive} ? length(adj.cache.x) - 1 : length(adj.cache.x)
+    _adjoint_user_n_axis(adj.bc, length(adj.cache.x))
 
 @inline _n_queries(adj::CubicAdjoint) = length(adj.anchors)
 
 @inline _adjoint_internal_length(adj::CubicAdjoint) = length(adj.cache.x)
 
-@inline _adjoint_1d_has_exclusive_periodic(adj::CubicAdjoint) =
-    adj.bc isa PeriodicBC{:exclusive}
+@inline _adjoint_1d_has_seam_fold(adj::CubicAdjoint) =
+    _is_periodic_seam_folded(adj.bc)
 
 @inline _adjoint_1d_apply!(f_bar, adj::CubicAdjoint, y_bar, deriv) =
     _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)

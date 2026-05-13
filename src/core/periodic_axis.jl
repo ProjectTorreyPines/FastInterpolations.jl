@@ -472,6 +472,13 @@ end
 
 # ----- Surface (oneshot, zero-alloc) ---------------------------------------
 
+# 1-arg form: BC-unaware grid normalization. Used by public oneshot API
+# entries that haven't yet inspected `bc` (e.g., `cardinal_interp(x, y, xq; bc)`)
+# and by internal helpers that just need a uniform grid representation.
+# Equivalent to `_resolve_axis(x, NoBC())` but more explicit at the call site.
+@inline _resolve_axis(x::AbstractVector) = x
+@inline _resolve_axis(x::AbstractRange)  = _to_float(x, float(eltype(x)))
+
 @inline _resolve_axis(x::AbstractVector, ::AbstractBC) = x
 @inline _resolve_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
 @inline function _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
@@ -543,6 +550,13 @@ end
 # are idempotent passthroughs — wrapping is already done; the inner ctor's
 # `_convert_copy` handles ownership transfer + optional type conversion.
 
+# 1-arg form: BC-unaware caching wrap. Mirrors `_resolve_axis(x)` but uses
+# the persistent-storage convention (Vector → `_CachedVector` for cached
+# h/inv_h lookup). Use when the call site is persistent but hasn't yet
+# inspected `bc`. Pre-wrapped inputs pass through idempotently below.
+@inline _cache_axis(x::AbstractVector) = _CachedVector(x)
+@inline _cache_axis(x::AbstractRange)  = _to_float(x, float(eltype(x)))
+
 @inline _cache_axis(x::AbstractVector, ::AbstractBC) = _CachedVector(x)
 @inline _cache_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
 @inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
@@ -558,6 +572,18 @@ end
 # to resolve ambiguity against the raw-input entries above
 # (`_CachedRange <: AbstractRange`, `_CachedVector <: AbstractVector`,
 # `_ExclusivePeriodicAxis <: AbstractVector`).
+# Pre-wrapped idempotent passthroughs — both 1-arg and 2-arg forms. The
+# 1-arg passthroughs are critical for `_cache_axis` (without them, the raw
+# `AbstractVector` overload would wrap an already-wrapped axis in a redundant
+# `_CachedVector`). `_resolve_axis` 1-arg is safe via the `AbstractVector`
+# passthrough but explicit overloads are provided for symmetry.
+@inline _resolve_axis(c::_CachedRange) = c
+@inline _resolve_axis(c::_CachedVector) = c
+@inline _resolve_axis(g::_ExclusivePeriodicAxis) = g
+@inline _cache_axis(c::_CachedRange) = c
+@inline _cache_axis(c::_CachedVector) = c
+@inline _cache_axis(g::_ExclusivePeriodicAxis) = g
+
 @inline _cache_axis(c::_CachedRange, ::AbstractBC) = c
 @inline function _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive})
     bc_resolved = _resolve_bc_period(c, bc)

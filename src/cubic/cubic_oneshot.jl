@@ -238,7 +238,7 @@ In-place cubic spline interpolation with optional automatic caching.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tv}
-    x = _prepare_grid(x)
+    x = _resolve_axis(x)
     # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher
     # (`search.jl:928`). Non-periodic bc is a no-op via the NoBC default.
     searcher = _resolve_search(x, x_query, search, nothing, bc)
@@ -386,7 +386,7 @@ function cubic_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _prepare_grid(x)
+    x = _resolve_axis(x)
     # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher
     # (`search.jl:928`). Non-periodic bc is a no-op via the NoBC default.
     searcher = _resolve_search(x, xq, search, hint, bc)

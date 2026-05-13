@@ -594,7 +594,7 @@ end
 #     seam (`y[end] = y[1]`), so endpoint validation would be a noop.
 #   - Non-periodic BCs pass through unchanged.
 # See claudedocs/design/bc_extended_symbol.md §4 + §5.2 for the full rationale.
-@inline _bc_after_extend(bc::AbstractBC)             = bc
+@inline _bc_after_extend(bc::AbstractBC) = bc
 @inline _bc_after_extend(bc::PeriodicBC{:inclusive}) = bc
 @inline _bc_after_extend(bc::PeriodicBC{:exclusive}) =
     PeriodicBC{:extended, typeof(bc.period), false}(bc.period)
@@ -665,7 +665,7 @@ end
 """
     _prepare_1d_oneshot!(pool, x, y, bc, extrap) -> (x_eff, y_eff, bc_eff, extrap_eff)
 
-Thin oneshot-API convenience that fuses `_prepare_grid(x)` with
+Thin oneshot-API convenience that fuses `_resolve_axis(x)` with
 `_periodic_extend_1d_pooled!(pool, …, bc, extrap)`. Call once per 1D oneshot
 entry point; the return 4-tuple feeds directly into searcher + eval kernel.
 
@@ -674,7 +674,7 @@ semantically accurate — it really only does work on periodic `bc` — while
 letting user-facing oneshot entry points use a single, non-misleading call.
 """
 @inline _prepare_1d_oneshot!(pool, x, y, bc, extrap) =
-    _periodic_extend_1d_pooled!(pool, _prepare_grid(x), y, bc, extrap)
+    _periodic_extend_1d_pooled!(pool, _resolve_axis(x), y, bc, extrap)
 
 # ========================================
 # ND Exclusive Endpoint Extension

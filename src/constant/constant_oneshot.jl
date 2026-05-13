@@ -158,7 +158,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 ```
 """
 # Public scalar one-shot API.
-# Zero-alloc: _prepare_grid returns Vector as-is, Range → _CachedRange (stack).
+# Zero-alloc: _resolve_axis returns Vector as-is, Range → _CachedRange (stack).
 # Selection kernel (no `inv_h * dL` arithmetic) — raw Int grids pass through.
 @inline function constant_interp(
         x::AbstractVector{Tg},

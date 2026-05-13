@@ -296,19 +296,6 @@ end
 # ========================================
 # Query & Adjoint Promotion Helpers
 """
-    _prepare_grid(x) -> x (or _CachedRange)
-
-Zero-alloc grid preparation for one-shot evaluation paths.
-- `AbstractVector`: returned as-is (no heap allocation, search handles mixed types)
-- `AbstractRange`: converted to `_CachedRange{float(T)}` (stack allocation)
-
-Unlike `_promote_grid_only`, this does NOT allocate a new Vector for type promotion.
-Kernel arithmetic auto-promotes Int×Float via Julia's built-in promotion rules.
-"""
-@inline _prepare_grid(x::AbstractVector) = x
-@inline _prepare_grid(x::AbstractRange) = _to_float(x, float(eltype(x)))
-
-"""
     _store_grid(x, ::Type{Tg}) -> stored grid
 
 Single-allocation grid storage for interpolant constructors.

@@ -598,7 +598,7 @@ LU factorization depends only on matrix structure (x-grid + BC type),
 not RHS values (y-data + BC values).
 """
 @inline function _get_cubic_cache(x; bc::AbstractBC = CubicFit())
-    xp = _prepare_grid(x)
+    xp = _resolve_axis(x)
     # Handle periodic BC. `bc` carries the endpoint variant (E type-param) which
     # the periodic pool uses to partition inclusive/exclusive caches.
     if bc isa PeriodicBC
@@ -620,37 +620,37 @@ end
     T <: _PromotableValue ? float(T) : T
 
 # Typed BC API - direct path, no Union
-# _prepare_grid: Vector as-is, Range → _CachedRange{float(T)} (normalizes Int Range).
+# _resolve_axis: Vector as-is, Range → _CachedRange{float(T)} (normalizes Int Range).
 @inline function _get_cubic_cache(x, ::ZeroCurvBC)
     FT = _cache_float_type(eltype(x))
-    return _get_derivative_cache_impl(_prepare_grid(x), BCPair(Deriv2(zero(FT)), Deriv2(zero(FT))))
+    return _get_derivative_cache_impl(_resolve_axis(x), BCPair(Deriv2(zero(FT)), Deriv2(zero(FT))))
 end
 
 @inline function _get_cubic_cache(x, ::ZeroSlopeBC)
     FT = _cache_float_type(eltype(x))
-    return _get_derivative_cache_impl(_prepare_grid(x), BCPair(Deriv1(zero(FT)), Deriv1(zero(FT))))
+    return _get_derivative_cache_impl(_resolve_axis(x), BCPair(Deriv1(zero(FT)), Deriv1(zero(FT))))
 end
 
 @inline function _get_cubic_cache(x, bc::PeriodicBC)
-    return _get_periodic_cache_impl(_prepare_grid(x), bc)
+    return _get_periodic_cache_impl(_resolve_axis(x), bc)
 end
 
 # BCPair: convert to cache-compatible form, route to cache impl.
 @inline function _get_cubic_cache(x::AbstractVector, bc::BCPair{L, R}) where {L <: PointBC, R <: PointBC}
     FT = _cache_float_type(eltype(x))
     bc_cache = _cache_bc_pair(bc, FT)
-    return _get_derivative_cache_impl(_prepare_grid(x), bc_cache)
+    return _get_derivative_cache_impl(_resolve_axis(x), bc_cache)
 end
 
 # PointBC convenience - convert to symmetric BCPair
 @inline function _get_cubic_cache(x, bc::PointBC)
     FT = _cache_float_type(eltype(x))
     bc_c = _cache_pointbc(bc, FT)
-    return _get_derivative_cache_impl(_prepare_grid(x), BCPair(bc_c, bc_c))
+    return _get_derivative_cache_impl(_resolve_axis(x), BCPair(bc_c, bc_c))
 end
 
 # BCPair + autocache API.
-# _prepare_grid normalizes Range → _CachedRange (stack); Vector passes as-is.
+# _resolve_axis normalizes Range → _CachedRange (stack); Vector passes as-is.
 # autocache=true → pool lookup, false → build fresh.
 @inline function _get_cubic_cache(
         x::AbstractVector,
@@ -659,7 +659,7 @@ end
     ) where {L <: PointBC, R <: PointBC}
     FT = _cache_float_type(eltype(x))
     bc_cache = _cache_bc_pair(bc, FT)
-    x_norm = _prepare_grid(x)
+    x_norm = _resolve_axis(x)
     if autocache
         return _get_derivative_cache_impl(x_norm, bc_cache)
     else
@@ -672,7 +672,7 @@ end
         bc::AbstractBC,
         autocache::Bool
     )
-    x_norm = _prepare_grid(x)
+    x_norm = _resolve_axis(x)
     if autocache
         return _get_cubic_cache(x_norm, bc)
     else

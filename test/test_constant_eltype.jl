@@ -603,27 +603,27 @@ end
 
     @testset "1D Int data + Float xq — scalar/batch/oneshot/broadcast agree" begin
         itp = constant_interp([0.0, 1.0, 2.0, 3.0], [10, 20, 30, 40])
-        @test itp(0.5)                       === 10
-        @test itp([0.5])                     == [10]
-        @test itp([0.5])                     isa Vector{Int}
-        @test itp.([0.5])                    isa Vector{Int}
+        @test itp(0.5) === 10
+        @test itp([0.5]) == [10]
+        @test itp([0.5]) isa Vector{Int}
+        @test itp.([0.5]) isa Vector{Int}
         @test constant_interp([0.0, 1.0, 2.0, 3.0], [10, 20, 30, 40], [0.5]) isa Vector{Int}
     end
 
     @testset "ND Int data + Float xq — scalar/batch/oneshot agree" begin
         x = [0.0, 1.0]; y = [0.0, 1.0]; data = [10 20; 30 40]
         itp = constant_interp((x, y), data)
-        @test itp((0.5, 0.5))                === 10
-        @test itp([(0.5, 0.5)])              == [10]
-        @test itp([(0.5, 0.5)])              isa Vector{Int}
+        @test itp((0.5, 0.5)) === 10
+        @test itp([(0.5, 0.5)]) == [10]
+        @test itp([(0.5, 0.5)]) isa Vector{Int}
         @test constant_interp((x, y), data, [(0.5, 0.5)]) isa Vector{Int}
     end
 
     @testset "1D persistent Dual → carrier preserved (scalar + batch)" begin
         itp = constant_interp([0.0, 1.0, 2.0, 3.0], [10, 20, 30, 40])
         d = Dual(0.5, 1.0)
-        @test itp(d)    isa Dual{Nothing, Float64, 1}
-        @test itp([d])  isa Vector{<:Dual{Nothing, Float64, 1}}
+        @test itp(d) isa Dual{Nothing, Float64, 1}
+        @test itp([d]) isa Vector{<:Dual{Nothing, Float64, 1}}
         @test itp.([d]) isa Vector{<:Dual{Nothing, Float64, 1}}
     end
 
@@ -631,7 +631,7 @@ end
         x = [0.0, 1.0]; y = [0.0, 1.0]; data = [10 20; 30 40]
         itp = constant_interp((x, y), data)
         d = Dual(0.5, 1.0)
-        @test itp((d, d))     isa Dual{Nothing, Float64, 1}
-        @test itp([(d, d)])   isa Vector{<:Dual{Nothing, Float64, 1}}
+        @test itp((d, d)) isa Dual{Nothing, Float64, 1}
+        @test itp([(d, d)]) isa Vector{<:Dual{Nothing, Float64, 1}}
     end
 end

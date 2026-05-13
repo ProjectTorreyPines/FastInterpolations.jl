@@ -50,9 +50,10 @@
 
         @testset "Allocating vector call" begin
             @test result_vec ≈ result_broadcast rtol = PRECISION_RTOL
-            @test eltype(result_vec) == Float64  # Output should be promoted
-            # Note: broadcast may return Tv (value type) which is Float32 for constant
-            # This is acceptable as constant interpolation returns y[idx] directly
+            # Constant is a selection kernel — output keeps raw `Tv` (Float32),
+            # not promoted to the query precision. Scalar / broadcast / batch
+            # all agree on this contract for plain numeric queries.
+            @test eltype(result_vec) == Float32
         end
 
         @testset "In-place vector call" begin

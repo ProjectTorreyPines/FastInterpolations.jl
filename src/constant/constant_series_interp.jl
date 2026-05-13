@@ -348,15 +348,8 @@ function constant_interp(
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg}
-    # Type promotion: widen grid if y's float base is wider than Tg
-    Tv = _series_eltype(s)
-    Tg_new = _promote_grid_float(Tg, Tv)
-    if Tg_new !== Tg
-        return constant_interp(_to_float(x, Tg_new), s; bc, side, extrap, search)
-    end
-
+    Tv_out = _series_eltype(s)
     n_pts = length(x)
-    Tv_out = _value_type(Tv, Tg)
     y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
 
     # Periodic path: extend x + y_mat to `:inclusive` form, normalize BC label
@@ -400,8 +393,8 @@ Returns a vector of values, one per y-series.
 - `deriv=DerivOp(1),DerivOp(2)`: Returns zeros (step function derivative is zero everywhere)
 
 # AD Support
-When `xq` is a ForwardDiff.Dual, the output type is promoted to preserve
-derivatives. Output type is `promote_type(Tv, Tq)`.
+Plain queries (`Tq <: _PromotableValue`) → output eltype `Tv` unchanged.
+Duck-typed queries (e.g. `ForwardDiff.Dual`) widen to `promote_type(Tv, Tq)`.
 """
 function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         xq::Tq;
@@ -409,7 +402,12 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    T_out = _series_output_type(Tv, Tq)
+    # Selection kernel returns `y[idx]::Tv` — Tv flows through unchanged for
+    # plain numerical queries. Duck-typed queries (Dual, …) get the legacy
+    # `promote_type(Tv, Tq)` widening so AD callers keep their input-Dual →
+    # output-Dual API contract (the partial wrt xq is 0 for constant, but the
+    # carrier type must match).
+    T_out = Tq <: _PromotableValue ? Tv : promote_type(Tv, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)
 end

@@ -228,14 +228,15 @@
             x_int = 1:5
             y_float = Float64[10, 20, 30, 40, 50]
 
+            # Constant duck-types: Int x stays Int (no Float widening), Tv=eltype(y).
             citp = @inferred constant_interp(x_int, y_float)
-            @test citp isa ConstantInterpolant{Float64}
-            @test eltype(citp.x) === Float64
+            @test citp isa ConstantInterpolant{Int, Float64}
+            @test eltype(citp.x) === Int
 
             # Integer Vector grid
             x_int_vec = [1, 2, 3, 4, 5]
             citp_vec = @inferred constant_interp(x_int_vec, y_float)
-            @test citp_vec isa ConstantInterpolant{Float64}
+            @test citp_vec isa ConstantInterpolant{Int, Float64}
 
             # Verify interpolation works correctly
             @test citp(2.5) isa Float64
@@ -268,8 +269,9 @@
             @test eltype(litp.x) === Float64
             @test eltype(litp.y) === Float64
 
+            # Constant duck-types: Int x stays Int, Int y stays Int.
             citp = @inferred constant_interp(x_int, y_int)
-            @test citp isa ConstantInterpolant{Float64}
+            @test citp isa ConstantInterpolant{Int, Int}
 
             qitp = @inferred quadratic_interp(x_int, y_int)
             @test qitp isa QuadraticInterpolant{Float64}

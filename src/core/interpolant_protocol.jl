@@ -24,6 +24,17 @@
 @inline _itp_extrap(itp::AbstractInterpolant1D) = itp.extrap
 @inline _itp_search(itp::AbstractInterpolant1D) = itp.search_policy
 
+# ── Output eltype trait ──
+# Arithmetic kernels (Linear, Cubic, …) widen via `_output_eltype(Tv, Tg, Tq)`
+# because the kernel produces a wider result from the arithmetic. Selection
+# kernels (Constant) override this to keep raw `Tv` for plain queries and
+# only widen for duck-typed queries (Dual, Measurement, …) so AD carriers
+# round-trip. Both scalar and batch protocol callables go through this single
+# trait; on the scalar path the result is wrapped in `convert(...)` (identity
+# when the kernel already produced the trait's type).
+@inline _output_eltype(::AbstractInterpolant1D{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
+    _output_eltype(Tv, Tg, Tq)
+
 # ========================================
 # 1D Scalar Call — Hot Path
 # ========================================
@@ -40,13 +51,15 @@
     extrap = _itp_extrap(itp)
     @boundscheck _check_domain(grid, xq, extrap)
     searcher = _resolve_search(grid, xq, search, hint)
-    return _itp_eval_scalar(itp, xq, extrap, deriv, searcher)
+    val = _itp_eval_scalar(itp, xq, extrap, deriv, searcher)
+    return convert(_output_eltype(itp, typeof(xq)), val)
 end
 
 # ========================================
 # 1D Vector Call — Allocating
 # ========================================
-# Output type promoted to wider type for precision preservation.
+# Output eltype: trait `_output_eltype(itp, Tq)` — defaults to widening
+# `promote_type(Tv, Tg, Tq)`; Constant overrides for raw-Tv contract.
 
 function (itp::AbstractInterpolant1D{Tg, Tv})(
         xq::AbstractVector{Tq};
@@ -56,10 +69,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     ) where {Tg, Tv, Tq <: Real}
     grid = _itp_grid(itp)
     extrap = _itp_extrap(itp)
-    # Include Tg in promotion: when the grid is Dual, interpolation weights
-    # carry grid partials, so the output type must reflect Tg arithmetic.
-    T_out = _output_eltype(Tv, Tg, Tq)
-    output = Vector{T_out}(undef, length(xq))
+    output = Vector{_output_eltype(itp, Tq)}(undef, length(xq))
     searcher = _resolve_search(grid, xq, search, hint)
     _itp_vector_loop!(output, itp, xq, extrap, deriv, searcher)
     return output
@@ -93,6 +103,10 @@ end
 # Default: no zero-fill (Cubic, Quadratic evaluate all derivative orders).
 
 @inline _deriv_zero_fill(::AbstractInterpolantND, ::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} = false
+
+# ── Output eltype trait (ND) — mirrors the 1D version. ──
+@inline _output_eltype(::AbstractInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
+    _output_eltype(Tv, Tg, Tq)
 
 # ========================================
 # Unified Batch Interpolant Evaluation (Generic ND)
@@ -196,6 +210,6 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     Tq = _query_eltype(queries)
-    output = Vector{_output_eltype(Tv, Tg, Tq)}(undef, _query_length(queries))
+    output = Vector{_output_eltype(itp, Tq)}(undef, _query_length(queries))
     return itp(output, queries; deriv = deriv, search = search, hint = hint)
 end

@@ -136,21 +136,23 @@
         @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
     end
 
-    @testset "Type promotion: Integer series" begin
+    @testset "Eltype contract: Integer series stays Int" begin
         x_f = collect(0.0:1.0:4.0)
         y1_int = [0, 1, 3, 4, 7]
         y2_int = [2, 3, 1, 0, 5]
         vals = constant_interp(x_f, Series(y1_int, y2_int), 1.5)
-        @test vals isa Vector{Float64}
-        ref1 = constant_interp(x_f, Float64.(y1_int), 1.5)
-        @test vals[1] ≈ ref1
+        @test vals isa Vector{Int}
+        @test vals[1] == constant_interp(x_f, y1_int, 1.5)
     end
 
-    @testset "Type promotion: FillExtrap with Integer series" begin
+    @testset "Eltype contract: FillExtrap fill_value must be compatible with y eltype" begin
         x_f = collect(0.0:1.0:4.0)
         y_int = [0, 1, 3, 4, 7]
-        vals = constant_interp(x_f, Series(y_int), 5.0; extrap = FillExtrap(0.5))
-        @test vals[1] ≈ 0.5
+        # Int series + Int fill_value → output is Int.
+        vals = constant_interp(x_f, Series(y_int), 5.0; extrap = FillExtrap(9))
+        @test vals[1] == 9
+        # Int series + Float fill_value → InexactError (raw eltype contract is strict).
+        @test_throws InexactError constant_interp(x_f, Series(y_int), 5.0; extrap = FillExtrap(0.5))
     end
 
     @testset "Scalar: Vector-of-Vectors" begin

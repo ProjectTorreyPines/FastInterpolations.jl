@@ -1087,3 +1087,27 @@ grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
     Tz = _output_eltype(Tv, Tg)
     return grids_typed, Tg, Tv, Tz
 end
+
+"""
+    _nd_promote_grids_raw(grids, data) -> (grids_typed, Tg, Tv)
+
+Raw-eltype variant of `_nd_promote_grids`: skips the `float()` widening, keeps
+`Tv = eltype(data)`. Used by selection-kernel methods (Constant) where there
+is no x·y arithmetic and the output contract follows `eltype(data)` directly.
+
+- `Tg = promote_type(eltype.(grids)...)` (via `@generated` `_promote_grid_eltype`,
+  unrolled at compile time — zero alloc).
+- `Tv = eltype(data)` — no promotion.
+- `grids_typed`: each axis converted to share `Tg` (container heterogeneity
+  preserved — Range stays Range, Vector stays Vector).
+
+Arithmetic methods keep `_nd_promote_grids` (Float-widened Tg, value-promoted Tv).
+"""
+@inline function _nd_promote_grids_raw(
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N}
+    ) where {Tv, N}
+    Tg = _promote_grid_eltype(grids)
+    grids_typed = _convert_grids_typed(grids, Tg)
+    return grids_typed, Tg, Tv
+end

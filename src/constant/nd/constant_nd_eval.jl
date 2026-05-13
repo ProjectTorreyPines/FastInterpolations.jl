@@ -9,7 +9,9 @@
 # Callable Interface
 # ========================================
 
-# Scalar tuple query
+# Scalar tuple query — wraps the selection-kernel value in `convert` against
+# the `_output_eltype(itp, Tq)` trait so plain numeric queries keep raw `Tv`
+# while duck-typed queries (Dual, …) get their carrier preserved.
 @inline function (itp::ConstantInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
@@ -21,11 +23,15 @@
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
-    return _eval_constant_nd(itp, resolved, ops, policies, hints, mono)
+    val = _eval_constant_nd(itp, resolved, ops, policies, hints, mono)
+    Tq = promote_type(map(typeof, query)...)
+    return convert(_output_eltype(itp, Tq), val)
 end
 
-# In-place batch evaluation (SoA + AoS) is handled by the unified
-# AbstractInterpolantND callable in nd_interpolant_protocol.jl.
+# In-place + allocating batch use the inherited `AbstractInterpolantND`
+# protocol; output eltype comes from the `_output_eltype(itp, Tq)` trait
+# overridden in `constant_nd_types.jl`.
+
 # Zero-fill for any derivative is handled by _deriv_zero_fill trait below.
 
 # Derivative zero-fill trait: constant has zero derivative at all orders

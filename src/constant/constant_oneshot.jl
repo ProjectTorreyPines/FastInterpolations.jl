@@ -138,7 +138,8 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `LinearBinarySearch(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns
-- Interpolated value (Float type)
+- Interpolated value, eltype `eltype(y)` (raw Tv; widens to `promote_type(Tv, Tq)`
+  only for duck-typed queries).
 
 # Example
 ```julia
@@ -158,7 +159,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 """
 # Public scalar one-shot API.
 # Zero-alloc: _prepare_grid returns Vector as-is, Range → _CachedRange (stack).
-# Kernel arithmetic auto-promotes Int×Float via _get_h float() wrappers.
+# Selection kernel (no `inv_h * dL` arithmetic) — raw Int grids pass through.
 @inline function constant_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -178,9 +179,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     searcher = _resolve_search(x_eff, xi, search, hint, NoBC())
-    result = _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
-    # Single-exit coerce: Int/Rational y returns y[idx] directly; promote to Float.
-    return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
+    return _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
 end
 
 # ========================================
@@ -212,8 +211,8 @@ output = zeros(1000)
 constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
-# Unified in-place entry point. Handles promotion internally via _promote_itp_inputs,
-# so no separate Real/Mixed-type wrapper is needed (same pattern as the scalar API).
+# Unified in-place entry. Resolvers normalize inputs; selection kernel
+# preserves `eltype(y)`. No Real/Mixed wrapper needed.
 function constant_interp!(
         output::AbstractVector,
         x::AbstractVector,
@@ -258,8 +257,9 @@ sorted_queries = sort(rand(1000))
 vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
-# Unified allocating vector one-shot. Calls the unified constant_interp! which
-# handles promotion internally. Output type includes Tg for duck grids.
+# Unified allocating vector one-shot. Output eltype = `eltype(y)` for plain
+# numeric queries (raw Tv contract); widens to `promote_type(Tv, Tq)` for
+# duck-typed queries (Dual, Measurement, …) so AD carriers aren't stripped.
 function constant_interp(
         x::AbstractVector,
         y::AbstractVector,
@@ -270,8 +270,9 @@ function constant_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    Tg = _promote_grid_float(eltype(x), eltype(y))
-    T_out = _output_eltype(eltype(y), Tg)
+    Tv = eltype(y)
+    Tq = eltype(x_targets)
+    T_out = Tq <: _PromotableValue ? Tv : promote_type(Tv, Tq)
     output = Vector{T_out}(undef, length(x_targets))
     constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)
     return output

@@ -20,6 +20,16 @@ end
     return _constant_vector_loop!(output, itp.x, itp.y, xq, extrap, itp.side, op, searcher)
 end
 
+# ========================================
+# Selection-kernel output eltype trait
+# ========================================
+# Override the shared `_output_eltype(itp, Tq)` trait so the protocol's scalar
+# + batch callables keep raw `Tv` for plain numeric queries (selection kernel)
+# and only widen for duck-typed queries (Dual, …) so AD carriers round-trip.
+# Single source of truth — no callable overrides needed.
+@inline _output_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
+    Tq <: _PromotableValue ? Tv : promote_type(Tv, Tq)
+
 # ─────────────────────────────────────────────────────────────
 # Vector loop (function barrier)
 # Julia specializes on concrete Searcher type P, eliminating Union-split
@@ -100,26 +110,19 @@ end
 # ========================================
 # Generic Constructor (User API)
 # ========================================
-# Handles all Real grid types (Int, Float32, Float64, etc.)
-# Type promotion done here, then forwards to typed ConstantInterpolant constructor.
-#
-# PERFORMANCE: Typed signature enables compile-time specialization.
-# _promote_itp_inputs becomes no-op when types already match (Float64 → Float64).
+# Selection kernel → raw eltype contract (Int in → Int out). Signature
+# parametrized directly on `{Tg, Tv}` — no `_promote_grid_float` indirection.
 @inline function constant_interp(
-        x::AbstractVector{TX},
-        y::AbstractVector{TY};
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv};
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {TX, TY}
-    Tg = _promote_grid_float(TX, TY)
-    # BC-aware caching wrap (zero-copy of buffer); ownership copy + element
-    # promotion is delegated to the inner constructor's `_convert_copy(x, Tg)`
-    # / `_convert_copy(y, Tv)` symmetric pair. Same template as Linear.
+    ) where {Tg, Tv}
     x_eff = _cache_axis(x, bc, Tg)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
+    extrap_p = _promote_extrap(extrap_eff, Tv)
     return ConstantInterpolant(x_eff, y_eff, extrap_p, side, search; bc = bc)
 end

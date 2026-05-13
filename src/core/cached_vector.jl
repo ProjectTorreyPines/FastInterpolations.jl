@@ -139,15 +139,16 @@ end
 @inline _get_inv_h(x::_CachedRange, ::Int) = x.inv_h
 
 # AbstractRange (non-_CachedRange) — uniform spacing via step()
-# float() ensures Int ranges produce Float h/inv_h for kernel compatibility.
-@inline _get_h(x::AbstractRange, ::Int) = float(step(x))
-@inline _get_inv_h(x::AbstractRange, ::Int) = inv(float(step(x)))
+@inline _get_h(x::AbstractRange, ::Int) = step(x)
+@inline _get_inv_h(x::AbstractRange, ::Int) = inv(step(x))
 
-# AbstractVector — compute on-the-fly (one-shot path, no cache available)
-# Used for raw user `x::Vector` in oneshot APIs. Subtraction is single-cycle
-# and `x[i]`/`x[i+1]` are typically cache-resident from the search step.
+# AbstractVector — compute on-the-fly (one-shot path, no cache available).
+# Raw eltype preserved (`Int → Int`, `Rational → Rational`). Arithmetic kernels
+# that follow this with `inv_h * y * dL` auto-promote naturally — no need to
+# eager-Float here. `_get_inv_h` returns `typeof(inv(h))` (Float64 for Int h,
+# Rational for Rational h, T for Float T).
 @inline Base.@propagate_inbounds _get_h(x::AbstractVector, i::Int) =
-    @inbounds float(x[i + 1] - x[i])
+    @inbounds x[i + 1] - x[i]
 @inline Base.@propagate_inbounds _get_inv_h(x::AbstractVector, i::Int) =
     inv(_get_h(x, i))
 
@@ -155,8 +156,8 @@ end
 # `x[i]` / `x[i+1]` loads. Used by oneshot kernels (and the wrapper-level
 # `_ExclusivePeriodicAxis` 3-arg overload at `periodic_axis.jl:384`, which
 # delegates here for any `_CachedVector` / raw `Vector` inner).
-@inline _get_h(::AbstractVector, xL::Real, xR::Real) = float(xR - xL)
-@inline _get_inv_h(::AbstractVector, xL::Real, xR::Real) = inv(float(xR - xL))
+@inline _get_h(::AbstractVector, xL::Real, xR::Real) = xR - xL
+@inline _get_inv_h(::AbstractVector, xL::Real, xR::Real) = inv(xR - xL)
 
 # Persistent axis wrapping is split into two stages (see `periodic_axis.jl`):
 #   - outer surface API: `_cache_axis(x, bc)` — bc-aware wrap, zero-copy

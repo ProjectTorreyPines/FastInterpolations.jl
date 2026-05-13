@@ -42,11 +42,13 @@ function _bake_constant_nd_anchors(
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps)
 
-    anchors = Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tg}}}(undef, nq)
+    # Tq widens to query precision so narrower grids never truncate.
+    Tq = promote_type(Tg, _query_eltype(queries))
+    anchors = Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tq}}}(undef, nq)
     @inbounds for q in 1:nq
         query_q = _extract_query_point(queries, q, Val(N))
         per_axis = ntuple(Val(N)) do d
-            xq_raw = Tg(query_q[d])
+            xq_raw = Tq(query_q[d])
             xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
             idx, idxR, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], xq_d)
             h = _get_h(grids[d], idx)
@@ -60,7 +62,7 @@ function _bake_constant_nd_anchors(
                 IN_DOMAIN
             end
 
-            return _ConstantAnchoredQuery{Tg, Tg}(_IdxPair(idx, idxR), xq_d, state_flag, h, dL)
+            return _ConstantAnchoredQuery{Tg, Tq}(_IdxPair(idx, idxR), xq_d, state_flag, h, dL)
         end
         anchors[q] = per_axis
     end
@@ -79,9 +81,9 @@ Uses `_compute_single_offset` per axis — matches the ND forward kernel exactly
 (no right-boundary special case, unlike the 1D path).
 """
 @inline function _constant_nd_target(
-        per_axis::NTuple{N, _ConstantAnchoredQuery{Tg, Tg}},
+        per_axis::NTuple{N, _ConstantAnchoredQuery{Tg, Tq}},
         sides::Tuple{Vararg{AbstractSide, N}}
-    ) where {N, Tg}
+    ) where {N, Tg, Tq}
     return ntuple(Val(N)) do d
         aq = per_axis[d]
         aq.idxL + _compute_single_offset(sides[d], aq.h, aq.dL)
@@ -117,10 +119,10 @@ end
 # Scalar y_bar: single query, direct scatter
 function _constant_adjoint_nd_apply!(
         f_bar::AbstractArray{Tv, N},
-        adj::ConstantAdjointND{Tg, N},
+        adj::ConstantAdjointND,
         y_bar::Real,
         ops::NTuple{N, AbstractEvalOp}
-    ) where {Tv, Tg, N}
+    ) where {Tv, N}
     _has_any_derivative(ops, Val(N)) && return nothing
     @inbounds begin
         per_axis = adj.anchors[1]
@@ -134,10 +136,10 @@ end
 # Vector/Tuple y_bar: loop over elements
 function _constant_adjoint_nd_apply!(
         f_bar::AbstractArray{Tv, N},
-        adj::ConstantAdjointND{Tg, N},
+        adj::ConstantAdjointND,
         y_bar,
         ops::NTuple{N, AbstractEvalOp}
-    ) where {Tv, Tg, N}
+    ) where {Tv, N}
     # Any derivative → f_bar stays zero (already zero-filled by caller)
     _has_any_derivative(ops, Val(N)) && return nothing
 
@@ -238,8 +240,8 @@ end
 @inline function _constant_adjoint_dispatch(
         grids::NTuple{N, AbstractVector}, queries, bc, side, extrap
     ) where {N}
+    # Selection-kernel adjoint: raw eltype contract (no `float()` widening).
     Tg = _promote_grid_eltype(grids)
-    Tg = float(Tg)
     grids_typed = _convert_grids_typed(grids, Tg)
 
     bcs = _resolve_bcs_nd(bc, Val(N))

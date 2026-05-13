@@ -52,8 +52,9 @@
 
     @testset "constant_interp" begin
         itp = constant_interp(x, y_cint)
-        @test itp isa ConstantInterpolant{Float64, ComplexF64}
-        @test itp(1.5) isa ComplexF64
+        # Constant duck-types: Complex{Int} y preserved (no widening to ComplexF64).
+        @test itp isa ConstantInterpolant{Float64, Complex{Int}}
+        @test itp(1.5) isa Complex{Int}
     end
 
     @testset "quadratic_interp" begin

@@ -86,8 +86,8 @@ end
 # - yL, yR: Function values at left/right endpoints (type Tv)
 # - dyL, dyR: Derivative values at endpoints (type Tv)
 # - h: Interval width (type Tg)
-# - inv_h: 1/h precomputed (type Tg)
-# - dL: Distance from left endpoint xq - xL (type Tg or query type)
+# - inv_h: 1/h precomputed (type Tinv; decoupled from Tg)
+# - dL: Distance from left endpoint xq - xL (type Tq — query type)
 
 """
     _hermite_kernel_1d(::EvalValue, yL, yR, dyL, dyR, h, inv_h, dL)
@@ -99,8 +99,8 @@ Returns interpolated function value.
 @inline function _hermite_kernel_1d(
         ::EvalValue,
         yL, yR, dyL, dyR,
-        h::Tg, inv_h::Tg, dL::Tq
-    ) where {Tg, Tq}
+        h::Tg, inv_h::Tinv, dL::Tq
+    ) where {Tg, Tinv, Tq}
     # Promote to output type for intermediate calculations
     t = dL * inv_h
 
@@ -123,8 +123,8 @@ Evaluate first derivative: dP/dx = (dP/dt) / h
 @inline function _hermite_kernel_1d(
         ::EvalDeriv1,
         yL, yR, dyL, dyR,
-        h::Tg, inv_h::Tg, dL::Tq
-    ) where {Tg, Tq}
+        h::Tg, inv_h::Tinv, dL::Tq
+    ) where {Tg, Tinv, Tq}
     # Let t remain in coordinate type - basis derivatives stay real
     t = dL * inv_h
     t_sq = t * t
@@ -151,8 +151,8 @@ Evaluate second derivative: d²P/dx² = (d²P/dt²) / h²
 @inline function _hermite_kernel_1d(
         ::EvalDeriv2,
         yL, yR, dyL, dyR,
-        h::Tg, inv_h::Tg, dL::Tq
-    ) where {Tg, Tq}
+        h::Tg, inv_h::Tinv, dL::Tq
+    ) where {Tg, Tinv, Tq}
     # Let t remain in coordinate type - basis derivatives stay real
     t = dL * inv_h
 
@@ -179,8 +179,8 @@ Evaluate third derivative: d³P/dx³ = (d³P/dt³) / h³ (constant within interv
 @inline function _hermite_kernel_1d(
         ::EvalDeriv3,
         yL, yR, dyL, dyR,
-        h::Tg, inv_h::Tg, dL::Tq
-    ) where {Tg, Tq}
+        h::Tg, inv_h::Tinv, dL::Tq
+    ) where {Tg, Tinv, Tq}
     # Third derivatives are constants: d³h00/dt³=12, d³h10/dt³=6, d³h01/dt³=-12, d³h11/dt³=6
     # Auto-promote naturally through arithmetic with value types
     value_contrib = 12 * (yL - yR)
@@ -199,8 +199,8 @@ Generic fallback: N-th derivative of cubic Hermite is zero for N ≥ 4.
 @inline function _hermite_kernel_1d(
         ::DerivOp{N},
         yL, ::Any, ::Any, ::Any,
-        ::Tg, ::Tg, ::Tq
-    ) where {N, Tg, Tq}
+        ::Tg, ::Tinv, ::Tq
+    ) where {N, Tg, Tinv, Tq}
     return 0 * yL
 end
 

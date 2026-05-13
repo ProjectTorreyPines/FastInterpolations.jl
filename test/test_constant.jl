@@ -164,9 +164,11 @@ end
     @testset "Real type wrapper (Integer input)" begin
         x_int = [0, 1, 2, 3, 4]
         y_int = [10, 20, 30, 40, 50]
+        # Constant duck-types output to `eltype(y)` — Int in → Int out (no Float
+        # widening, since the kernel is selection, not arithmetic).
         result = constant_interp(x_int, y_int, 1.5)
-        @test result isa Float64
-        @test result == 20.0
+        @test result isa Int
+        @test result == 20
     end
 
     @testset "Real→Float wrappers (coverage)" begin
@@ -187,12 +189,11 @@ end
         itp(out, [0, 1, 2])  # Integer query vector
         @test out ≈ [10.0, 20.0, 30.0]
 
-        # Test 3: Vector allocating Real→Float wrapper (lines 422-434)
-        # constant_interp(x::AbstractVector{T}, y::AbstractVector{T}, x_targets::AbstractVector{S})
-        # where T<:Real (Integer grid + Integer query)
+        # Test 3: Vector allocating with Integer grid + Integer query.
+        # Constant duck-types output to `eltype(y)` — no Float widening.
         result_vec = constant_interp(x_int, y_int, [0, 1, 2])
-        @test result_vec isa Vector{Float64}
-        @test result_vec ≈ [10.0, 20.0, 30.0]
+        @test result_vec isa Vector{Int}
+        @test result_vec == [10, 20, 30]
 
         # Test 4: In-place Real→Float wrapper (lines 440-468)
         # constant_interp!(output, x::AbstractVector{T}, y::AbstractVector{T}, x_targets::AbstractVector{S})

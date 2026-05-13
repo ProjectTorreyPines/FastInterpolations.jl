@@ -64,17 +64,18 @@
         Tuple{Any, _CachedVector, Int}
     end
 
-    @testset "Int grid → Float h" begin
-        # `_get_h` always promotes to float for kernel compatibility
+    @testset "Int grid → raw Int h, Float inv_h" begin
+        # `_get_h` preserves raw eltype (no `float()` widening). `_get_inv_h`
+        # promotes naturally via `inv(::Int) → Float64`. `_CachedVector` and
+        # raw Vector both follow the same contract.
         x_int = [0, 1, 3, 6]
         c_int = _CachedVector(x_int)
 
-        @test _get_h(x_int, 1) === 1.0  # float() of (x[2]-x[1])=1
-        @test _get_h(x_int, 2) === 2.0
+        @test _get_h(x_int, 1) === 1
+        @test _get_h(x_int, 2) === 2
         @test _get_inv_h(x_int, 2) === 0.5
 
-        # _CachedVector for Int grid: h stays Int, inv_h is Float64
-        @test _get_h(c_int, 1) === 1   # raw cached Int
+        @test _get_h(c_int, 1) === 1
         @test _get_inv_h(c_int, 2) === 0.5
     end
 

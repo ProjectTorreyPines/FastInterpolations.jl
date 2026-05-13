@@ -79,3 +79,9 @@ end
 # Type introspection
 @inline grid_type(::ConstantInterpolantND{Tg}) where {Tg} = Tg
 @inline value_type(::ConstantInterpolantND{Tg, Tv}) where {Tg, Tv} = Tv
+
+# Selection-kernel output eltype trait — raw `Tv` for plain queries, widen
+# only for duck queries (Dual, Measurement, …). Mirrors the 1D override in
+# `constant_interpolant.jl`.
+@inline _output_eltype(::ConstantInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
+    Tq <: _PromotableValue ? Tv : promote_type(Tv, Tq)

@@ -677,29 +677,11 @@ Check if a boundary condition is periodic.
 @inline _is_periodic_bc(::PeriodicBC) = true   # only PeriodicBC is periodic
 
 """
-    _is_periodic_inclusive(bc::AbstractBC) -> Bool
-
-PeriodicBC trait: `true` iff `bc` describes a closed-cycle internal data layout
-(length n+1 with `y[1] ≡ y[end]`). Covers both user-supplied `:inclusive`
-and library-promoted `:extended`. Used by forward kernels to select the
-pure-inclusive eval path vs the wrapper-aware (`:exclusive`) eval path.
-
-See `claudedocs/design/bc_extended_symbol.md` §4 for the trait orthogonality table.
-"""
-@inline _is_periodic_inclusive(::AbstractBC)             = false
-@inline _is_periodic_inclusive(::PeriodicBC{:inclusive}) = true
-@inline _is_periodic_inclusive(::PeriodicBC{:extended})  = true
-
-"""
     _is_periodic_seam_folded(bc::AbstractBC) -> Bool
 
-PeriodicBC trait: `true` iff the adjoint output along this axis must seam-fold
-the (n+1)-th contribution into element 1 and trim to length n. Covers both
-`:exclusive` (logical wrap, length-n storage) and `:extended` (extended
-storage, but user expects length-n output). Used by `_seam_fold_axis!`
-and `_adjoint_user_n_axis`.
-
-See `claudedocs/design/bc_extended_symbol.md` §4 for the trait orthogonality table.
+True iff the adjoint output along this axis must seam-fold the (n+1)-th
+contribution into element 1 and trim to length n. Covers `:exclusive`
+(OneShot wrap) and `:extended` (persistent promotion).
 """
 @inline _is_periodic_seam_folded(::AbstractBC)             = false
 @inline _is_periodic_seam_folded(::PeriodicBC{:exclusive}) = true

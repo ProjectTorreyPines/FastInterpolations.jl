@@ -109,7 +109,7 @@ end
 # in-place are inherited from AbstractAdjoint1D via src/core/adjoint_protocol.jl.
 
 @inline _adjoint_output_length(adj::CubicAdjoint) =
-    _adjoint_user_n_axis(adj.bc, length(adj.cache.x))
+    _is_periodic_seam_folded(adj.bc) ? length(adj.cache.x) - 1 : length(adj.cache.x)
 
 @inline _n_queries(adj::CubicAdjoint) = length(adj.anchors)
 

@@ -65,7 +65,7 @@
 # without those fields (e.g., `CubicAdjoint` uses `length(adj.cache.x)`) override.
 
 @inline _adjoint_output_length(adj::AbstractAdjoint1D) =
-    _adjoint_user_n_axis(adj.bc, adj.grid_size)
+    _is_periodic_seam_folded(adj.bc) ? adj.grid_size - 1 : adj.grid_size
 
 @inline _adjoint_internal_length(adj::AbstractAdjoint1D) = adj.grid_size
 
@@ -253,27 +253,10 @@ end
 # ║           ND Adjoint Protocol        ║
 # ╚══════════════════════════════════════╝
 
-# ── Output size (seam-folded axes shrink to user dim) ──
-
-"""
-    _adjoint_user_n_axis(bc, grid_len) -> Int
-
-Per-axis user-dim helper for adjoint output sizing. Returns `grid_len - 1`
-when the BC requires seam-folding (`:exclusive` OneShot wrap, `:extended`
-persistent promotion); otherwise returns `grid_len` unchanged. Trait
-dispatch via `_is_periodic_seam_folded` keeps this future-proof.
-
-See claudedocs/design/bc_extended_symbol.md §5.3.
-"""
-@inline _adjoint_user_n_axis(bc::AbstractBC, grid_len::Int) =
-    _is_periodic_seam_folded(bc) ? grid_len - 1 : grid_len
-
-# Trait-dispatched per-axis user-dim — `map` over (bcs, gs) specializes
-# per-element at compile time (concrete bc type per axis). Matches the
-# "ND Constructor Inferrability Pattern" (MEMORY.md): no closure over a
-# heterogeneous tuple, so each axis gets its own concrete-return specialization.
+# ── Output size (axis is always n+1 inclusive layout; seam-fold BCs shrink user dim by 1) ──
 @inline _adjoint_output_size(adj::AbstractAdjointND{<:Any, N}) where {N} =
-    map(_adjoint_user_n_axis, _adjoint_bcs(adj), _grid_size(adj))
+    map((bc, n) -> _is_periodic_seam_folded(bc) ? n - 1 : n,
+        _adjoint_bcs(adj), _grid_size(adj))
 
 # ── Seam-fold detection (covers :exclusive AND :extended) ──
 

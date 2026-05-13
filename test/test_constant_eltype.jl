@@ -110,11 +110,16 @@
         end
 
         @testset "exclusive + Int Vector x + Int y" begin
+            # Persistent `:exclusive` is now extend-promoted to a closed-cycle
+            # `:extended` layout, so the axis is promoted to Float (Tg=Float64)
+            # while Tv=Int is preserved. The old `_ExclusivePeriodicAxis` wrapper
+            # is gone from the persistent path.
             x = [0, 1, 2]
             y = [10, 20, 30]
             itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 3))
-            @test itp isa ConstantInterpolant{Int, Int}
-            @test itp.x isa _ExclusivePeriodicAxis
+            @test itp isa ConstantInterpolant{Float64, Int}
+            @test length(itp.x) == 4          # closed-cycle n+1
+            @test itp.x[end] ≈ itp.x[1] + 3   # virtual endpoint at period
             @test itp(0.5) isa Int
         end
 

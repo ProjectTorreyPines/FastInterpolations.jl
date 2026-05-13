@@ -373,7 +373,7 @@
     # ============================================================
     # Interpolant path — extended copy storage
     # ============================================================
-    @testset "Interpolant path stores Vector grid in `_ExclusivePeriodicAxis` + y in `_ExclusivePeriodicData`" begin
+    @testset "Interpolant path extends Vector grid + data to closed-cycle layout (no wrapper)" begin
         x = [0.0, 1.0, 2.0, 3.0]
         y = [10.0, 20.0, 30.0, 40.0]
         x_ref = copy(x)
@@ -381,34 +381,32 @@
 
         itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 4.0))
 
-        # Both axis and data are wrapped — zero-copy presents virtual length n+1.
-        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
-        @test itp.y isa FastInterpolations._ExclusivePeriodicData
+        # Persistent `:exclusive` is extend-promoted to a closed-cycle
+        # `:extended` layout — no wrappers, plain length-n+1 axis/data.
+        @test !(itp.x isa FastInterpolations._ExclusivePeriodicAxis)
+        @test !(itp.y isa FastInterpolations._ExclusivePeriodicData)
         @test length(itp.x) == 5
         @test length(itp.y) == 5
-        @test itp.y[end] == itp.y[1] == 10.0    # cyclic via data wrapper
-        @test last(itp.x) ≈ 4.0                  # axis: inner[1] + period (virtual coord)
-        @test itp.x[5] ≈ 4.0                     # cyclic via axis wrapper (= last(itp.x))
+        @test itp.x[end] ≈ 4.0                  # virtual endpoint = first + period
+        @test itp.y[end] == itp.y[1] == 10.0    # closed cycle
 
         # Original arrays unmodified.
         @test x == x_ref
         @test y == y_ref
     end
 
-    @testset "Interpolant path wraps Range axis (`_ExclusivePeriodicAxis(_CachedRange)`)" begin
+    @testset "Interpolant path extends Range axis to `_CachedRange` length n+1 (no wrapper)" begin
         x = range(0.0, step = 1.0, length = 4)
         y = [10.0, 20.0, 30.0, 40.0]
 
         itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
 
-        # Range input → `_ExclusivePeriodicAxis(_CachedRange, period)` (uniform with
-        # the Vector path; O(1) indexing preserved through inner `_CachedRange`).
-        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
-        @test itp.x.inner isa _CachedRange
-        @test length(itp.x) == 5             # virtual length n+1
-        @test length(itp.x.inner) == 4       # raw n-length cached Range
-        @test length(itp.y) == 5             # `_ExclusivePeriodicData` virtual n+1
-        @test itp.y[end] == itp.y[1]         # cyclic
+        # Range input → extend-promoted to `_CachedRange` of length n+1 directly.
+        @test !(itp.x isa FastInterpolations._ExclusivePeriodicAxis)
+        @test itp.x isa _CachedRange
+        @test length(itp.x) == 5             # extended n+1
+        @test length(itp.y) == 5             # extended n+1
+        @test itp.y[end] == itp.y[1]         # closed cycle
     end
 
     # ============================================================
@@ -527,14 +525,15 @@
     # gating in `_extend_exclusive` / `_periodic_extend_1d_pooled!`.
     # ============================================================
     @testset "Int Range + PeriodicBC(:exclusive) — persistent" begin
+        # Persistent `:exclusive` is extend-promoted to a closed-cycle
+        # `:extended` layout. Int Range gets float-promoted by `_extend_exclusive`
+        # (closed-cycle endpoint needs Float arithmetic), so the axis is now
+        # `_CachedRange{Float64, Float64}` of length n+1 — the lazy wrapper is gone.
         x = 0:10
         y = Float64.(0:10)
         itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
-        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
-        # Constant duck-types grid eltype: Int Range stays Int (Tinv = Float64).
-        @test itp.x.inner isa _CachedRange{Int, Float64}
-        @test length(itp.x) == 12
-        @test length(itp.x.inner) == 11
+        @test itp.x isa _CachedRange{Float64, Float64}
+        @test length(itp.x) == 12          # closed-cycle n+1
         ref = constant_interp(Float64.(0:10), y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
         for xq in (0.5, 5.5, 10.5)
             @test itp(xq) ≈ ref(xq) atol = 1.0e-12

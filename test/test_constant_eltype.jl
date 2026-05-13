@@ -86,13 +86,13 @@
             @test r == 30
         end
 
-        @testset "vector alloc oneshot: Vector{Int} 결과" begin
+        @testset "vector alloc oneshot returns Vector{Int}" begin
             v = constant_interp(x_int, y_int, [0, 1, 2, 3])
             @test v isa Vector{Int}
             @test v == [10, 20, 30, 40]
         end
 
-        @testset "in-place oneshot: Vector{Int} output 수용" begin
+        @testset "in-place oneshot accepts Vector{Int} output" begin
             out = zeros(Int, 4)
             constant_interp!(out, x_int, y_int, [0, 1, 2, 3])
             @test out == [10, 20, 30, 40]
@@ -548,5 +548,45 @@ end
         itp = constant_interp((x, y), data)
         adj = constant_adjoint((x, y), queries)
         @test dot([itp(queries[1])], y_bar) ≈ dot(data, adj(y_bar))
+    end
+end
+
+# ============================================================================
+# Group 9: Oneshot duck-typed query passthrough (Dual carrier preserved)
+# ============================================================================
+# Persistent callables already widen `T_out = promote_type(Tv, Tq)` for non-
+# `_PromotableValue` queries. The allocating oneshot paths must match — else
+# AD callers silently get raw Tv back, stripping their Dual carrier.
+@testitem "Constant oneshot: duck queries widen, plain queries stay raw" begin
+    using ForwardDiff
+    using ForwardDiff: Dual
+
+    x = [0.0, 1.0, 2.0, 3.0]
+    y = [10, 20, 30, 40]
+    s = Series(y)
+    xq_d = Dual(0.5, 1.0)
+
+    @testset "vector oneshot: Dual xq → Dual output" begin
+        out = constant_interp(x, y, [xq_d, Dual(1.5, 1.0)])
+        @test eltype(out) <: Dual
+        @test ForwardDiff.value.(out) == [10.0, 20.0]
+    end
+
+    @testset "scalar series oneshot: Dual xq → Dual output" begin
+        out = constant_interp(x, s, xq_d)
+        @test eltype(out) <: Dual
+        @test ForwardDiff.value.(out) == [10.0]
+    end
+
+    @testset "batch series oneshot: Dual xq → Dual output" begin
+        out = constant_interp(x, s, [xq_d])
+        @test eltype(eltype(out)) <: Dual
+        @test ForwardDiff.value.(out[1]) == [10.0]
+    end
+
+    @testset "plain Float xq still returns raw Tv (no widening)" begin
+        @test constant_interp(x, y, [0.5, 1.5]) isa Vector{Int}
+        @test constant_interp(x, s, 0.5)        isa Vector{Int}
+        @test constant_interp(x, s, [0.5, 1.5]) isa Vector{Vector{Int}}
     end
 end

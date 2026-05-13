@@ -154,3 +154,45 @@ end
     y_bar = adj(e)
     @test size(y_bar) == (n1, n2)
 end
+
+@testitem "PeriodicBC :extended — Linear/Constant 1D forward introspection" begin
+    using FastInterpolations: PeriodicBC, _CachedVector, _CachedRange,
+                              _ExclusivePeriodicAxis, _ExclusivePeriodicData
+    n = 8; period = 2π
+    x = collect(range(0.0, step = period/n, length = n))
+    y = sin.(x)
+    bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
+
+    # Note: LinearInterpolant / ConstantInterpolant don't carry a `bc` field
+    # (pre-existing BC-Field-Unification gap). Introspection here verifies the
+    # post-migration axis/data layout (length n+1, no wrappers, closed seam).
+    for build in (linear_interp, constant_interp)
+        itp = build(x, y; bc = bc_exc)
+        @test length(itp.x) == n + 1
+        @test !(itp.x isa _ExclusivePeriodicAxis)
+        @test length(itp.y) == n + 1
+        @test !(itp.y isa _ExclusivePeriodicData)
+        @test itp.y[end] == itp.y[1]
+    end
+end
+
+@testitem "PeriodicBC :extended — Linear/Constant 1D forward correctness" begin
+    using FastInterpolations: PeriodicBC
+    n = 8; period = 2π
+    x = collect(range(0.0, step = period/n, length = n))
+    y = sin.(x)
+    bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
+
+    for build in (linear_interp, constant_interp)
+        itp = build(x, y; bc = bc_exc)
+        if build === linear_interp
+            for i in 1:n
+                @test itp(x[i]) ≈ y[i] atol = 1e-12
+            end
+        end
+        for xq in (0.3, 1.4, 2.7, 4.2)
+            @test itp(xq + period) ≈ itp(xq) atol = 1e-12
+            @test itp(xq - period) ≈ itp(xq) atol = 1e-12
+        end
+    end
+end

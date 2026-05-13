@@ -155,13 +155,13 @@ function _to_float(x::_CachedRange, ::Type{T}) where {T}
 end
 
 """
-    _to_float_adding_endpoint(x::AbstractRange, ::Type{FT}) -> _CachedRange{FT}
+    _to_float_adding_endpoint(x::AbstractRange, ::Type{FT}) -> _CachedRange{FT, Tinv}
 
 Extend `x` by one step (for exclusive periodic grids: length n → n+1),
-converting to `_CachedRange{FT}`.
+converting to `_CachedRange{FT, Tinv}` (`Tinv = typeof(inv(oneunit(FT)))`).
 
 Dispatch:
-- `_CachedRange{FT}`: pure field copy + one addition — zero recomputation
+- `_CachedRange{FT, Tinv}`: pure field copy + one addition — zero recomputation
 - Other `AbstractRange` (OrdinalRange, StepRangeLen, LinRange, ...): convert + extend
 """
 # domain_hi = hi_new (exact): the extension uses cached plain-T fields only

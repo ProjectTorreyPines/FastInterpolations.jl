@@ -81,9 +81,9 @@ Uses `_compute_single_offset` per axis — matches the ND forward kernel exactly
 (no right-boundary special case, unlike the 1D path).
 """
 @inline function _constant_nd_target(
-        per_axis::NTuple{N, _ConstantAnchoredQuery},
+        per_axis::NTuple{N, _ConstantAnchoredQuery{Tg, Tq}},
         sides::Tuple{Vararg{AbstractSide, N}}
-    ) where {N}
+    ) where {N, Tg, Tq}
     return ntuple(Val(N)) do d
         aq = per_axis[d]
         aq.idxL + _compute_single_offset(sides[d], aq.h, aq.dL)

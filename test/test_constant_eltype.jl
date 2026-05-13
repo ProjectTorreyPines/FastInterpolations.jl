@@ -586,7 +586,7 @@ end
 
     @testset "plain Float xq still returns raw Tv (no widening)" begin
         @test constant_interp(x, y, [0.5, 1.5]) isa Vector{Int}
-        @test constant_interp(x, s, 0.5)        isa Vector{Int}
+        @test constant_interp(x, s, 0.5) isa Vector{Int}
         @test constant_interp(x, s, [0.5, 1.5]) isa Vector{Vector{Int}}
     end
 end

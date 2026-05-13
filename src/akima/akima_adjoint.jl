@@ -601,13 +601,13 @@ function akima_adjoint(
     _, y_p = _promote_itp_inputs(x, y)
 
     # Closed-cycle extension for periodic BCs — mirrors the forward
-    # `akima_interp_precompute` path. `:exclusive` gets vcat-extended to n+1;
-    # `:inclusive` is already closed at n. After this, the slope adjoint
-    # runs over the extended grid via the unified periodic 4-secant
-    # weighted formula (`_akima_slope_adjoint_periodic!`). For `:exclusive`
-    # the protocol's exclusive in-place callable folds f_work[1] +=
-    # f_work[n+1] and trims.
-    x_ext, y_ext, extrap_eff = _periodic_extend_1d(x_p, y_p, bc, extrap)
+    # `akima_interp_precompute` path. `:exclusive` gets vcat-extended to n+1
+    # and `bc_eff` flips to `:extended`; `:inclusive` passes through. The
+    # slope adjoint runs over the extended grid via the unified periodic
+    # 4-secant formula. The seam-fold trait covers both `:exclusive` and
+    # `:extended`, so the protocol's in-place callable folds f_work[1] +=
+    # f_work[n+1] uniformly.
+    x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x_p, y_p, bc, extrap)
 
     # NoExtrap: validate queries against extended domain.
     if extrap_eff isa NoExtrap
@@ -625,9 +625,9 @@ function akima_adjoint(
     anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap_eff)
 
     Tv = eltype(y_ext)
-    return AkimaAdjoint1D{Tg, Tv, typeof(bc), typeof(extrap_eff)}(
+    return AkimaAdjoint1D{Tg, Tv, typeof(bc_eff), typeof(extrap_eff)}(
         anchors, collect(x_ext), collect(Tv, y_ext), length(x_ext),
-        bc, extrap_eff
+        bc_eff, extrap_eff
     )
 end
 

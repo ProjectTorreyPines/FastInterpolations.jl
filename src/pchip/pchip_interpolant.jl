@@ -51,11 +51,10 @@ itp(1.5; deriv=DerivOp(1))       # first derivative
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     # Periodic extension (no-op for NoBC). For PeriodicBC{:exclusive}, the user
-    # n-grid is extended to (n+1) closed-cycle form; :inclusive is passthrough.
-    # After this, `bc_eff` is normalized to :inclusive so slope-side dispatch
-    # treats the extended grid uniformly.
-    x_eff, y_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    bc_eff = _bc_after_extend(bc)
+    # n-grid is extended to (n+1) closed-cycle form and `bc_eff` flips to
+    # `:extended`; `:inclusive` passes through unchanged. Slope-side dispatch
+    # then uses `bc_eff` uniformly over the closed-cycle grid.
+    x_eff, y_eff, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
     Tg = _promote_grid_float(eltype(x_eff), eltype(y_eff))
     extrap_p = _promote_extrap(extrap_eff, _value_type(eltype(y_eff), Tg))
     resolved = _resolve_coeffs(coeffs)

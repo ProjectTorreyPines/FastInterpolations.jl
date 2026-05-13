@@ -30,10 +30,9 @@ itp(0.5; deriv=DerivOp(1))
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
-    # Periodic extension (no-op for NoBC). bc_eff normalizes to :inclusive
-    # post-extension for uniform slope-side dispatch.
-    x_eff, y_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    bc_eff = _bc_after_extend(bc)
+    # Periodic extension (no-op for NoBC). bc_eff flips :exclusive → :extended
+    # post-extension; :inclusive passes through. Slope-side dispatches on bc_eff.
+    x_eff, y_eff, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
     Tg = _promote_grid_float(eltype(x_eff), eltype(y_eff))
     extrap_p = _promote_extrap(extrap_eff, _value_type(eltype(y_eff), Tg))
     resolved = _resolve_coeffs(coeffs)

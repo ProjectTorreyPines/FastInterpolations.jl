@@ -416,12 +416,13 @@ function pchip_adjoint(
 
     # Closed-cycle extension for periodic BCs — mirrors the forward
     # `pchip_interp_precompute` path. `:exclusive` gets vcat-extended to n+1
-    # (with y_ext[n+1] = y[1] and x_ext[n+1] = x[1] + period); `:inclusive`
-    # is already closed at n. After this, the slope adjoint runs over the
-    # extended grid via the unified periodic harmonic-mean formula
-    # (`_pchip_slope_adjoint_periodic!`). For `:exclusive` the protocol's
-    # exclusive in-place callable folds f_work[1] += f_work[n+1] and trims.
-    x_ext, y_ext, extrap_eff = _periodic_extend_1d(x_p, y_p, bc, extrap)
+    # (with y_ext[n+1] = y[1] and x_ext[n+1] = x[1] + period) and `bc_eff`
+    # flips to `:extended`; `:inclusive` passes through. After this, the
+    # slope adjoint runs over the extended grid via the unified periodic
+    # harmonic-mean formula. The seam-fold trait `_is_periodic_seam_folded`
+    # covers both `:exclusive` and `:extended`, so the protocol's in-place
+    # callable folds f_work[1] += f_work[n+1] uniformly.
+    x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x_p, y_p, bc, extrap)
 
     # NoExtrap: validate queries against extended domain (covers the seam
     # cell for `:exclusive`; `_resolve_extrap`'s WrapExtrap promotion only
@@ -444,9 +445,9 @@ function pchip_adjoint(
     anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap_eff)
 
     Tv = eltype(y_ext)
-    return PchipAdjoint1D{Tg, Tv, typeof(bc), typeof(extrap_eff)}(
+    return PchipAdjoint1D{Tg, Tv, typeof(bc_eff), typeof(extrap_eff)}(
         anchors, collect(x_ext), collect(Tv, y_ext), length(x_ext),
-        bc, extrap_eff
+        bc_eff, extrap_eff
     )
 end
 

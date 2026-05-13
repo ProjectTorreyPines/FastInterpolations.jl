@@ -21,8 +21,7 @@
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    x_ext, y_ext, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    bc_eff = _bc_after_extend(bc)
+    x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
     x_eff = _prepare_grid(x_ext)
     Tdy = _output_eltype(Tv, float(eltype(x_eff)))
     dy = acquire!(pool, Tdy, length(y_ext))
@@ -45,8 +44,7 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x_ext, y_ext, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    bc_eff = _bc_after_extend(bc)
+    x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
     x_eff = _prepare_grid(x_ext)
 
     Tdy = _output_eltype(Tv, float(eltype(x_eff)))

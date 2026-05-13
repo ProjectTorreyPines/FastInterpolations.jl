@@ -540,36 +540,21 @@ equality on `data`, then materialize per-axis via the 3-arg primitive.
 end
 
 """
-    _periodic_extend_1d(x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)
+    _periodic_extend_1d(x, y, bc, extrap) -> (x_eff, y_eff, bc_eff, extrap_eff)
 
 Non-pool 1D periodic dispatch for the **persistent-interpolant path**.
-Returns a single `(grid, values, extrap)` triple whether or not `bc` is
-periodic — callers invoke this once and feed the result into their normal
-build flow without branching on `_is_periodic_bc`:
+Fuses the closed-cycle grid extension with the BC normalization that always
+follows it — callers invoke this once and destructure the 4-tuple, feeding
+each piece into their normal build flow without branching on `_is_periodic_bc`:
 
-- Non-periodic `bc` → `(x, y, extrap)` passthrough.
-- `PeriodicBC{:inclusive}` → `(x, y, typed WrapExtrap)` (validates `y[1] ≈ y[end]`).
-- `PeriodicBC{:exclusive}` → `(x_ext, y_ext, typed WrapExtrap)` where the grid/values
-  are extended by one virtual endpoint via `_extend_exclusive` (heap copy
-  consistent with existing non-periodic persistent-path copy semantics).
-
-!!! note "Legacy retention — wrapper migration in progress"
-    The 1D forward path for **Linear, Constant, Cubic** has been migrated to
-    the zero-copy `_ExclusivePeriodicAxis` / `_ExclusivePeriodicData` wrappers
-    (see `src/core/periodic_axis.jl`, `src/core/periodic_data.jl`). This
-    function is retained because the following call sites still depend on the
-    `(n+1)`-extended `Vector` shape:
-
-    - `pchip_interp_precompute` / `cardinal_interp_precompute` /
-      `akima_interp_precompute` (1D Hermite-family PreCompute oneshot)
-    - `*_interp_precompute` persistent-builder paths for the same families
-    - The entire ND `:exclusive` path via `_prepare_periodic_nd`
-      (Linear/Constant/Hetero ND have migrated to the wrapper protocol;
-      CubicInterpolantND and QuadraticInterpolantND still carry
-      `spacings::S` and use this helper indirectly)
-
-    Cleanup tracked alongside the ND-struct migration follow-up; once
-    Cubic/Quadratic ND move to the wrapper protocol, this helper can be removed.
+- Non-periodic `bc` → `(x, y, bc, extrap)` passthrough.
+- `PeriodicBC{:inclusive}` → `(x, y, bc, typed WrapExtrap)`
+  (validates `y[1] ≈ y[end]`; layout already closed-cycle).
+- `PeriodicBC{:exclusive}` → `(x_ext, y_ext, PeriodicBC{:extended,...}, typed WrapExtrap)`
+  where the grid/values are extended by one virtual endpoint via
+  `_extend_exclusive` (heap copy consistent with existing non-periodic
+  persistent-path copy semantics), and `bc_eff` flips to `:extended` to
+  record the internal layout promotion (see `_bc_after_extend`).
 """
 @inline function _periodic_extend_1d(
         x::AbstractVector,
@@ -584,9 +569,9 @@ build flow without branching on `_is_periodic_bc`:
         bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_ext)
         # `WrapExtrap` is a tag struct; eval kernels read `(first(x_ext), last(x_ext))`
         # directly. After extension `last(x_ext) - first(x_ext) == period`.
-        return x_ext, y_ext, WrapExtrap()
+        return x_ext, y_ext, _bc_after_extend(bc), WrapExtrap()
     end
-    return x, y, extrap
+    return x, y, bc, extrap
 end
 
 # ────────────────────────────────────────────
@@ -615,12 +600,13 @@ end
     PeriodicBC{:extended, typeof(bc.period), false}(bc.period)
 
 """
-    _periodic_extend_1d_pooled!(pool, x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)
+    _periodic_extend_1d_pooled!(pool, x, y, bc, extrap) -> (x_eff, y_eff, bc_eff, extrap_eff)
 
 Pool-based sibling of `_periodic_extend_1d` for the **one-shot hot path**.
-Same contract as the non-pool variant, but the `:exclusive` extension uses
-`acquire!(pool, …)` for the extended buffers (zero-alloc after warmup, caller's
-`@with_pool` scope owns the lifetime).
+Same contract as the non-pool variant (4-tuple return, BC normalization
+fused), but the `:exclusive` extension uses `acquire!(pool, …)` for the
+extended buffers (zero-alloc after warmup, caller's `@with_pool` scope owns
+the lifetime).
 
 Range grids are extended to `_CachedRange` via `_to_float_adding_endpoint`
 (heap-free); Vector grids go through the pool. Value buffers are always
@@ -639,7 +625,7 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
     ) where {Tg, Tv}
     if !_is_periodic_bc(bc)
         # Non-periodic: still materialize in case user passed `WrapExtrap()` singleton.
-        return x, y, _resolve_extrap(extrap, bc, x)
+        return x, y, bc, _resolve_extrap(extrap, bc, x)
     end
     # Duck-safe extension buffer type: promote Integer / Complex{Integer} grids
     # to float so the extended pool buffer and `_CachedRange` `inv_h` field can
@@ -671,15 +657,17 @@ Akima/Quadratic oneshot paths. Cubic oneshot uses this via
     bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_p)
     # After extension (or no-op for inclusive), the extended grid span IS the wrap
     # domain — use `WrapExtrap(x_p)` directly, no BC-aware construction needed.
-    return x_p, y_p, WrapExtrap(x_p)
+    # `bc_eff` flips `:exclusive` → `:extended` to record the layout promotion;
+    # `:inclusive` passes through unchanged.
+    return x_p, y_p, _bc_after_extend(bc), WrapExtrap(x_p)
 end
 
 """
-    _prepare_1d_oneshot!(pool, x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)
+    _prepare_1d_oneshot!(pool, x, y, bc, extrap) -> (x_eff, y_eff, bc_eff, extrap_eff)
 
 Thin oneshot-API convenience that fuses `_prepare_grid(x)` with
 `_periodic_extend_1d_pooled!(pool, …, bc, extrap)`. Call once per 1D oneshot
-entry point; the return triple feeds directly into searcher + eval kernel.
+entry point; the return 4-tuple feeds directly into searcher + eval kernel.
 
 Separating this from `_periodic_extend_1d_pooled!` keeps the latter's name
 semantically accurate — it really only does work on periodic `bc` — while

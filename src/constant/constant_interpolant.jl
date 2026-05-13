@@ -21,49 +21,14 @@ end
 end
 
 # ========================================
-# Callable Overrides — selection-kernel output type
+# Selection-kernel output eltype trait
 # ========================================
-# The shared 1D protocol allocates `Vector{_output_eltype(Tv, Tg, Tq)}` which
-# widens Tv via promote_type. That's correct for arithmetic kernels (Linear,
-# Cubic, …) but violates Constant's raw-Tv contract — `itp([0.5])` would
-# return `Vector{Float64}` while `itp(0.5)` and the oneshot return raw `Tv`.
-#
-# These overrides keep raw `Tv` for plain numeric queries (`_PromotableValue`)
-# and widen only for duck-typed queries (Dual, Measurement, …) so AD carriers
-# round-trip without being stripped. Scalar / 1D-batch / ND-batch share the
-# same rule for consistency with the oneshot family in `constant_oneshot.jl`.
-
-@inline _constant_out_eltype(::Type{Tv}, ::Type{Tq}) where {Tv, Tq} =
+# Override the shared `_output_eltype(itp, Tq)` trait so the protocol's scalar
+# + batch callables keep raw `Tv` for plain numeric queries (selection kernel)
+# and only widen for duck-typed queries (Dual, …) so AD carriers round-trip.
+# Single source of truth — no callable overrides needed.
+@inline _output_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
     Tq <: _PromotableValue ? Tv : promote_type(Tv, Tq)
-
-@inline function (itp::ConstantInterpolant{Tg, Tv})(
-        xq::Tq;
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = _itp_search(itp),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
-    grid = _itp_grid(itp)
-    extrap = _itp_extrap(itp)
-    @boundscheck _check_domain(grid, xq, extrap)
-    searcher = _resolve_search(grid, xq, search, hint)
-    val = _constant_eval_at_point(itp.x, itp.y, xq, extrap, itp.side, deriv, searcher)
-    return convert(_constant_out_eltype(Tv, Tq), val)
-end
-
-function (itp::ConstantInterpolant{Tg, Tv})(
-        xq::AbstractVector{Tq};
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = _itp_search(itp),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg, Tv, Tq <: Real}
-    grid = _itp_grid(itp)
-    extrap = _itp_extrap(itp)
-    T_out = _constant_out_eltype(Tv, Tq)
-    output = Vector{T_out}(undef, length(xq))
-    searcher = _resolve_search(grid, xq, search, hint)
-    _itp_vector_loop!(output, itp, xq, extrap, deriv, searcher)
-    return output
-end
 
 # ─────────────────────────────────────────────────────────────
 # Vector loop (function barrier)

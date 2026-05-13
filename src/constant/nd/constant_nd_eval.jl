@@ -9,10 +9,9 @@
 # Callable Interface
 # ========================================
 
-# Scalar tuple query
-# Output: raw `Tv` for plain numeric queries (selection kernel contract);
-# widens via `_constant_out_eltype` for duck queries so the Dual / Measurement
-# carrier round-trips without being stripped.
+# Scalar tuple query — wraps the selection-kernel value in `convert` against
+# the `_output_eltype(itp, Tq)` trait so plain numeric queries keep raw `Tv`
+# while duck-typed queries (Dual, …) get their carrier preserved.
 @inline function (itp::ConstantInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
@@ -26,23 +25,12 @@
     mono = _scalar_mono(hint, Val(N))
     val = _eval_constant_nd(itp, resolved, ops, policies, hints, mono)
     Tq = promote_type(map(typeof, query)...)
-    return convert(_constant_out_eltype(Tv, Tq), val)
+    return convert(_output_eltype(itp, Tq), val)
 end
 
-# Allocating batch — override the shared protocol's `_output_eltype(Tv,Tg,Tq)`
-# widening to keep raw `Tv` for plain numeric queries. In-place batch
-# (`itp(output, queries)`) stays on the inherited protocol path.
-function (itp::ConstantInterpolantND{Tg, Tv, N})(
-        queries;
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
-    Tq = _query_eltype(queries)
-    T_out = _constant_out_eltype(Tv, Tq)
-    output = Vector{T_out}(undef, _query_length(queries))
-    return itp(output, queries; deriv = deriv, search = search, hint = hint)
-end
+# In-place + allocating batch use the inherited `AbstractInterpolantND`
+# protocol; output eltype comes from the `_output_eltype(itp, Tq)` trait
+# overridden in `constant_nd_types.jl`.
 
 # Zero-fill for any derivative is handled by _deriv_zero_fill trait below.
 

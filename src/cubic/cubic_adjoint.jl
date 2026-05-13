@@ -501,16 +501,14 @@ function _build_cubic_adjoint_periodic(
         x
     end
 
-    # Get/build periodic cache (Thomas factorization + PeriodicData{q, period})
-    cache = _get_cubic_cache(x_ext, PeriodicBC(), _effective_autocache(autocache, Tg))
+    # Cache built with `_bc_after_extend(bc)` → cache.bc is :extended for
+    # promoted :exclusive, :inclusive for direct user input.
+    cache = _get_cubic_cache(x_ext, _bc_after_extend(bc), _effective_autocache(autocache, Tg))
 
     # Build anchored queries with wrapping (queries outside domain → wrap to [x[1], x[end]))
     anchors = _anchor_query(cache.x, xq, Val(:cubic), true)
 
-    # Store resolved period in BC for display/introspection
-    bc_display = _with_resolved_period(bc, cache.bc.period)
-
-    return CubicAdjoint(cache, anchors, bc_display)
+    return CubicAdjoint(cache, anchors, cache.bc)
 end
 
 # ========================================

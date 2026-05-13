@@ -57,6 +57,8 @@ abstract type AbstractCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}} end
 
 @inline _cached_axis_type(::Type{X}, ::Type{T}, ::Val{:inclusive}) where {X, T} =
     _cached_axis_type(X, T)
+@inline _cached_axis_type(::Type{X}, ::Type{T}, ::Val{:extended}) where {X, T} =
+    _cached_axis_type(X, T)  # same axis shape as :inclusive
 @inline function _cached_axis_type(::Type{X}, ::Type{T}, ::Val{:exclusive}) where {X, T}
     Inner = _cached_axis_type(X, T)
     return _ExclusivePeriodicAxis{T, Inner, T}
@@ -384,7 +386,8 @@ fit into a bank typed for `check=true`.
 """
 @inline function _get_periodic_bank(::Type{X}, ::Val{E}, ::Val{C}) where {T <: AbstractFloat, X <: AbstractVector{T}, E, C}
     Xc = _cached_axis_type(X, T, Val(E))
-    bc = E === :exclusive ? PeriodicBC{:exclusive, T, C} : PeriodicBC{:inclusive, T, C}
+    # `E` ∈ {:inclusive, :exclusive, :extended} — each gets its own bank.
+    bc = PeriodicBC{E, T, C}
     Cc = CubicSplineCache{T, Xc, ThomasFactorization{T, Vector{T}}, bc}
     EntryType = PeriodicCacheEntry{T, X, E, Cc}
     return _get_bank(_PERIODIC_REGISTRY, CacheBank{EntryType})

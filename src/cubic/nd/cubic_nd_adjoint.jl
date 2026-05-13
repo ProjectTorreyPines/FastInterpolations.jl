@@ -549,15 +549,14 @@ function _build_nd_adjoint(
         end
     end
 
-    # Per-axis: normalize BC for cache + polyfit construction
-    # Periodic axes store PeriodicBC as-is; non-periodic normalize to BCPair
+    # Per-axis: periodic → _bc_after_extend (:exclusive → :extended); non-periodic → BCPair.
     norm_bcs = map(bcs) do bc_d
-        _is_periodic_bc(bc_d) ? bc_d : _normalize_bc(bc_d)
+        _is_periodic_bc(bc_d) ? _bc_after_extend(bc_d) : _normalize_bc(bc_d)
     end
 
     caches = map(grids_ext, norm_bcs) do grid_d, bp_d
         if _is_periodic_bc(bp_d)
-            _get_cubic_cache(grid_d, PeriodicBC(), _effective_autocache(autocache, Tg))
+            _get_cubic_cache(grid_d, _bc_after_extend(bp_d), _effective_autocache(autocache, Tg))
         else
             _get_cubic_cache(grid_d, bp_d, _effective_autocache(autocache, Tg))
         end
@@ -577,7 +576,7 @@ function _build_nd_adjoint(
 
     mixed_caches = map(grids_ext, mixed_bcs) do grid_d, mbp_d
         if _is_periodic_bc(mbp_d)
-            _get_cubic_cache(grid_d, PeriodicBC(), _effective_autocache(autocache, Tg))
+            _get_cubic_cache(grid_d, _bc_after_extend(mbp_d), _effective_autocache(autocache, Tg))
         else
             _get_cubic_cache(grid_d, mbp_d, _effective_autocache(autocache, Tg))
         end

@@ -107,3 +107,50 @@ end
     @test  _has_seam_fold((NoBC(), bc_ext))
     @test  _has_seam_fold((bc_ext, bc_inc, bc_exc))
 end
+
+@testitem "PeriodicBC :extended — Cubic 1D forward introspection" begin
+    using FastInterpolations: PeriodicBC
+    n = 8; period = 2π
+    x = collect(range(0.0, step = period/n, length = n))
+    y = sin.(x)
+    bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
+
+    itp = cubic_interp(x, y; bc = bc_exc)
+    @test itp.bc isa PeriodicBC{:extended, Float64, false}
+    @test itp.bc.period ≈ period
+    @test length(itp.cache.x) == n + 1
+end
+
+@testitem "PeriodicBC :extended — Cubic 1D adjoint introspection" begin
+    using FastInterpolations: PeriodicBC
+    n = 8; period = 2π
+    x = collect(range(0.0, step = period/n, length = n))
+    xq = [0.3, 1.4, 2.7]
+    bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
+
+    adj = cubic_adjoint(x, xq; bc = bc_exc)
+    @test adj.bc isa PeriodicBC{:extended, Float64, false}
+    @test length(adj.cache.x) == n + 1
+
+    # Output size invariant: y_bar is length n (user dim)
+    e = randn(length(xq))
+    y_bar = adj(e)
+    @test length(y_bar) == n
+end
+
+@testitem "PeriodicBC :extended — Cubic ND adjoint introspection" begin
+    using FastInterpolations: PeriodicBC
+    n1, n2 = 8, 10
+    x1 = collect(range(0.0, step = 2π/n1, length = n1))
+    x2 = collect(range(0.0, step = 2π/n2, length = n2))
+    bc2t = (PeriodicBC(endpoint = :exclusive, period = 2π),
+            PeriodicBC(endpoint = :exclusive, period = 2π))
+    xq = ([0.3, 1.4], [0.2, 2.7])
+
+    adj = cubic_adjoint((x1, x2), xq; bc = bc2t)
+    @test all(b -> b isa PeriodicBC{:extended, Float64, false}, adj.bcs)
+
+    e = randn(length(xq[1]))
+    y_bar = adj(e)
+    @test size(y_bar) == (n1, n2)
+end

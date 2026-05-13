@@ -196,3 +196,16 @@ end
         end
     end
 end
+
+@testitem "PeriodicBC :extended — show methods" begin
+    using FastInterpolations: PeriodicBC
+    n = 8; period = 2π
+    x = collect(range(0.0, step = period/n, length = n))
+    y = sin.(x)
+    itp = cubic_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = period))
+
+    # Compact MIME"text/plain" display of the interpolant annotates `:extended`.
+    s = sprint(show, MIME"text/plain"(), itp)
+    @test occursin("Periodic", s)
+    @test occursin("extended", s)
+end

@@ -42,7 +42,10 @@
 # ────────────────────────────────────────────
 
 # Cycle period for the secant index sequence (number of cells in closed cycle).
+# `:inclusive` and `:extended` share the same length-(n+1) closed-cycle data
+# layout — only the BC symbol differs (user-supplied vs library-promoted).
 @inline _secant_cycle_length(n::Int, ::PeriodicBC{:inclusive}) = n - 1
+@inline _secant_cycle_length(n::Int, ::PeriodicBC{:extended})  = n - 1
 @inline _secant_cycle_length(n::Int, ::PeriodicBC{:exclusive}) = n
 
 """
@@ -59,6 +62,14 @@ For `:inclusive`, all wrapped indices fall in `[1, n-1]` and return real
 grid secants directly.
 """
 @inline function _periodic_secant(x::AbstractVector, y::AbstractVector, j::Int, n::Int, ::PeriodicBC{:inclusive})
+    nm1 = n - 1
+    jw = mod1(j, nm1)
+    @inbounds return (y[jw + 1] - y[jw]) / (x[jw + 1] - x[jw])
+end
+
+# `:extended` shares the `:inclusive` data layout (length n+1 closed-cycle);
+# secant cycle is identical to `:inclusive`.
+@inline function _periodic_secant(x::AbstractVector, y::AbstractVector, j::Int, n::Int, ::PeriodicBC{:extended})
     nm1 = n - 1
     jw = mod1(j, nm1)
     @inbounds return (y[jw + 1] - y[jw]) / (x[jw + 1] - x[jw])
@@ -96,6 +107,13 @@ Mirrors `_periodic_secant`'s wrapping. Used by methods that need the cell
 width (PCHIP harmonic mean) in addition to the secant value.
 """
 @inline function _periodic_cell_width(x::AbstractVector, j::Int, n::Int, ::PeriodicBC{:inclusive})
+    nm1 = n - 1
+    jw = mod1(j, nm1)
+    @inbounds return x[jw + 1] - x[jw]
+end
+
+# `:extended` shares the `:inclusive` data layout — cell-width logic is identical.
+@inline function _periodic_cell_width(x::AbstractVector, j::Int, n::Int, ::PeriodicBC{:extended})
     nm1 = n - 1
     jw = mod1(j, nm1)
     @inbounds return x[jw + 1] - x[jw]

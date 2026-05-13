@@ -103,6 +103,15 @@ Throws `ArgumentError` if endpoints differ.
     return nothing
 end
 
+# `:extended` shares the closed-cycle layout — but `C` is pinned to `false`
+# by `_bc_after_extend`, so `periodic_check` always short-circuits. Method
+# body is identical to `:inclusive` for uniformity (no-op in practice).
+@inline function _check_periodic_endpoints(bc::PeriodicBC{:extended}, y::AbstractVector)
+    periodic_check(bc) || return nothing
+    _check_periodic_endpoints(y)
+    return nothing
+end
+
 # `:exclusive` form has no endpoint-matching constraint: the user provides n
 # distinct samples and the seam is virtual (constructed from `bc.period`).
 # Calling `_check_periodic_endpoints(y)` on raw exclusive y would falsely
@@ -590,8 +599,20 @@ end
 # cell is now the last cell of the extended grid (or already in place for
 # `:inclusive`). `check=false` skips redundant endpoint validation since
 # the extension constructs `y_eff[end] = y_eff[1]` by definition.
-@inline _bc_after_extend(bc::AbstractBC) = bc
-@inline _bc_after_extend(::PeriodicBC) = PeriodicBC(endpoint = :inclusive, check = false)
+# BC normalization after grid extension. `_periodic_extend_1d` and
+# `_prepare_periodic_nd_impl` produce a length-(n+1) closed-cycle grid for
+# `:exclusive` input. After extension, dispatch should reflect the new layout:
+#   - `:inclusive` passes through (user's data was already closed-cycle).
+#   - `:exclusive` swaps to `:extended` — records that the library promoted
+#     the layout, while preserving the period for adjoint output sizing and
+#     introspection. `C=false` because the extension constructs a bit-exact
+#     seam (`y[end] = y[1]`), so endpoint validation would be a noop.
+#   - Non-periodic BCs pass through unchanged.
+# See claudedocs/design/bc_extended_symbol.md §4 + §5.2 for the full rationale.
+@inline _bc_after_extend(bc::AbstractBC)             = bc
+@inline _bc_after_extend(bc::PeriodicBC{:inclusive}) = bc
+@inline _bc_after_extend(bc::PeriodicBC{:exclusive}) =
+    PeriodicBC{:extended, typeof(bc.period), false}(bc.period)
 
 """
     _periodic_extend_1d_pooled!(pool, x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)

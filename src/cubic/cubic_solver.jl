@@ -435,6 +435,9 @@ end
     (@inbounds z[end] = z[1]; nothing)
 @inline _finalize_z_periodic_seam!(z::AbstractVector, ::PeriodicBC{:exclusive}) =
     (@inbounds z[end] = z[1]; nothing)
+# `:extended` shares the closed-cycle layout — same seam mirror.
+@inline _finalize_z_periodic_seam!(z::AbstractVector, ::PeriodicBC{:extended}) =
+    (@inbounds z[end] = z[1]; nothing)
 
 # ========================================
 # Unified System Solver Entry Point

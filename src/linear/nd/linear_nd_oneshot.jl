@@ -53,7 +53,11 @@ function _linear_interp_nd_oneshot(
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
     stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, nobcs)
     αs = map(_alpha_of, q_eval, Ls, Rs, grids_eff)
-    inv_hs = map(_get_inv_h, grids_eff, Ls, Rs)
+    # 4-arg `_get_inv_h(g, idx, xL, xR)` — `_CachedVector`/`_CachedRange` use
+    # cached fields (idx-indexed or scalar); raw `Vector` falls back to
+    # `inv(xR - xL)`. `first(stencil)` = idxL for K=2 (linear) stencils.
+    idxLs = map(first, stencils)
+    inv_hs = map(_get_inv_h, grids_eff, idxLs, Ls, Rs)
     return _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
 end
 
@@ -92,7 +96,8 @@ function _linear_interp_nd_oneshot_batch!(
         q_eval = _handle_all_extraps(query_k, grids_eff, extraps_eff)
         stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints, nobcs)
         αs = map(_alpha_of, q_eval, Ls, Rs, grids_eff)
-        inv_hs = map(_get_inv_h, grids_eff, Ls, Rs)
+        idxLs = map(first, stencils)
+        inv_hs = map(_get_inv_h, grids_eff, idxLs, Ls, Rs)
         output[k] = _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
     end
     return output

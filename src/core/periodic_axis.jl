@@ -240,21 +240,17 @@ end
 @inline _wrap_to_domain(xq, g::_ExclusivePeriodicAxis) =
     _wrap_to_domain(xq, @inbounds(g.inner[1]), g._x_max)
 
-# 3-arg `(g, xL, xR)` form for oneshot kernels that already have `xL`/`xR`
-# in registers from search. Delegate to the inner type so `_CachedRange`
-# inners use the cached `h` field (single field load — matches master's
-# perf for non-wrapped Range grids). For `_CachedVector` / `Vector` inners
-# the inner overload computes `xR - xL` directly, same as the wrapper-level
-# fallback would.
-#
-# Seam correctness: at the seam, `xR == g._x_max == inner[1] + period` and
-# `xL == g.inner[n]`. Delegating to `_get_h(_CachedRange, xL, xR) = x.h`
-# returns the cached `step`. For correctly-supplied periods this equals
-# `xR - xL` exactly (the wrapper constructor's cross-validation enforces
-# `period ≈ step × length`); off-bit periods within `sqrt(eps)` rtol differ
-# by ≤1 ULP — numeric noise, well below kernel precision.
-@inline _get_h(g::_ExclusivePeriodicAxis, xL::Real, xR::Real) = _get_h(g.inner, xL, xR)
-@inline _get_inv_h(g::_ExclusivePeriodicAxis, xL::Real, xR::Real) = _get_inv_h(g.inner, xL, xR)
+# 4-arg `(g, idx, xL, xR)` form. Search already produced all four; dispatch
+# picks the per-type cheapest path.
+#   - `idx < length(g.inner)` (interior cell): delegate to inner — uses
+#      `_CachedRange.h`/`_CachedVector.h[idx]` cache.
+#   - `idx == length(g.inner)` (seam cell): inner's idx-lookup would index
+#      out of `inv_h` (length n-1). Use `xR - xL` directly — caller already
+#      has `xR == g._x_max` from search, so this is the natural seam width.
+@inline Base.@propagate_inbounds _get_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
+    idx < length(g.inner) ? _get_h(g.inner, idx, xL, xR) : xR - xL
+@inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
+    idx < length(g.inner) ? _get_inv_h(g.inner, idx, xL, xR) : inv(xR - xL)
 
 # `_alpha_of` for the wrapper: defer to inner so `_CachedRange` uses cached
 # `inv_h` (avoids `(R - L)` cancellation in the denominator).

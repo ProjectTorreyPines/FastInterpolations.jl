@@ -145,11 +145,12 @@ end
 @inline _convert_copy(r::_CachedRange{T, Tinv}, ::Type{T}) where {T, Tinv} = r
 @inline _convert_copy(r::_CachedRange, ::Type{T}) where {T} = _to_float(r, T)
 
-# 3-arg grid-based accessors: _CachedRange has h/inv_h cached in the struct.
-# Args are (x, xL, xR) — natural L→R order, matching AbstractVector fallbacks
-# in grid_spacing.jl. The cached form ignores both endpoints (uniform step).
-@inline _get_h(x::_CachedRange, ::Real, ::Real) = x.h
-@inline _get_inv_h(x::_CachedRange, ::Real, ::Real) = x.inv_h
+# 4-arg grid-based accessors: `(x, idx, xL, xR)`. All four are produced by
+# `search_interval`; the dispatch picks the cheapest field per axis type.
+# `_CachedRange` ignores all three because `h`/`inv_h` are scalar fields
+# (uniform spacing — same value for every cell).
+@inline _get_h(x::_CachedRange, ::Int, ::Real, ::Real) = x.h
+@inline _get_inv_h(x::_CachedRange, ::Int, ::Real, ::Real) = x.inv_h
 
 # ========================================
 # `_resolve_axis` — one-shot Range wrapping

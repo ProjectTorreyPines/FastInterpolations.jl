@@ -163,12 +163,20 @@ end
 @inline Base.@propagate_inbounds _get_inv_h(x::AbstractVector, i::Int) =
     inv(_get_h(x, i))
 
-# 3-arg: caller already has `xL` / `xR` in registers from search → bypass the
-# `x[i]` / `x[i+1]` loads. Used by oneshot kernels (and the wrapper-level
-# `_ExclusivePeriodicAxis` 3-arg overload at `periodic_axis.jl:384`, which
-# delegates here for any `_CachedVector` / raw `Vector` inner).
-@inline _get_h(::AbstractVector, xL::Real, xR::Real) = xR - xL
-@inline _get_inv_h(::AbstractVector, xL::Real, xR::Real) = inv(xR - xL)
+# 4-arg form: `(x, idx, xL, xR)` — every search result delivers all four;
+# dispatch picks the cheapest path per axis type.
+#
+# `_CachedVector`: idx-indexed cache wins (1 load, no fp ops). The xL/xR
+# fields are ignored — they're already encoded in `c.inv_h[idx]`.
+@inline Base.@propagate_inbounds _get_h(x::_CachedVector, idx::Int, ::Real, ::Real) =
+    @inbounds x.h[idx]
+@inline Base.@propagate_inbounds _get_inv_h(x::_CachedVector, idx::Int, ::Real, ::Real) =
+    @inbounds x.inv_h[idx]
+
+# Raw `AbstractVector` fallback: no cache → `xR - xL` straight from search.
+# `idx` is ignored here (kept in signature for uniform call shape).
+@inline _get_h(::AbstractVector, ::Int, xL::Real, xR::Real) = xR - xL
+@inline _get_inv_h(::AbstractVector, ::Int, xL::Real, xR::Real) = inv(xR - xL)
 
 # Persistent axis wrapping is split into two stages (see `periodic_axis.jl`):
 #   - outer surface API: `_cache_axis(x, bc)` — bc-aware wrap, zero-copy

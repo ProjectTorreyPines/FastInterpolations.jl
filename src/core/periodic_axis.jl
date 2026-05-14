@@ -479,13 +479,9 @@ end
     periodic_check(bc) && _check_periodic_endpoints(bc, y)
     return y
 end
-# `:extended` shares the closed-cycle layout — passthrough. `C` is pinned to
-# `false` by `_bc_after_extend`, so `periodic_check` is a no-op; the body is
-# identical to `:inclusive` for uniformity.
-@inline function _resolve_data(y::AbstractArray, bc::PeriodicBC{:extended})
-    periodic_check(bc) && _check_periodic_endpoints(bc, y)
-    return y
-end
+# `:extended` is constructed by `_bc_after_extend` with `C=false` pinned, so
+# `periodic_check(bc)` is always `false` — passthrough is the entire behavior.
+@inline _resolve_data(y::AbstractArray, ::PeriodicBC{:extended}) = y
 @inline _resolve_data(y::AbstractArray, ::PeriodicBC{:exclusive}) =
     _ExclusivePeriodicData(y)
 

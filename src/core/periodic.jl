@@ -103,14 +103,9 @@ Throws `ArgumentError` if endpoints differ.
     return nothing
 end
 
-# `:extended` shares the closed-cycle layout — but `C` is pinned to `false`
-# by `_bc_after_extend`, so `periodic_check` always short-circuits. Method
-# body is identical to `:inclusive` for uniformity (no-op in practice).
-@inline function _check_periodic_endpoints(bc::PeriodicBC{:extended}, y::AbstractVector)
-    periodic_check(bc) || return nothing
-    _check_periodic_endpoints(y)
-    return nothing
-end
+# `:extended` is constructed by `_bc_after_extend` with `C=false` pinned, so
+# `periodic_check(bc)` is always `false` and validation would be a no-op.
+@inline _check_periodic_endpoints(::PeriodicBC{:extended}, ::AbstractVector) = nothing
 
 # `:exclusive` form has no endpoint-matching constraint: the user provides n
 # distinct samples and the seam is virtual (constructed from `bc.period`).
@@ -577,16 +572,9 @@ end
 # ────────────────────────────────────────────
 # BC normalization after grid extension
 # ────────────────────────────────────────────
-# `_periodic_extend_1d` produces a closed-cycle (n+1) grid for `:exclusive`
-# input and a passthrough n-grid for `:inclusive` (already closed-cycle).
-# After this normalization, the slope side should treat the grid as
-# `:inclusive` regardless of the user's original `bc.endpoint` — the seam
-# cell is now the last cell of the extended grid (or already in place for
-# `:inclusive`). `check=false` skips redundant endpoint validation since
-# the extension constructs `y_eff[end] = y_eff[1]` by definition.
-# BC normalization after grid extension. `_periodic_extend_1d` and
-# `_prepare_periodic_nd_impl` produce a length-(n+1) closed-cycle grid for
-# `:exclusive` input. After extension, dispatch should reflect the new layout:
+# `_periodic_extend_1d` and `_prepare_periodic_nd_impl` produce a length-(n+1)
+# closed-cycle grid for `:exclusive` input. After extension, dispatch should
+# reflect the new layout:
 #   - `:inclusive` passes through (user's data was already closed-cycle).
 #   - `:exclusive` swaps to `:extended` — records that the library promoted
 #     the layout, while preserving the period for adjoint output sizing and
@@ -715,11 +703,12 @@ Called once at build time before `_build_nd_coeffs`.
 - `grids_ext`: Grids with exclusive axes extended (Range type preserved when possible)
 - `data_ext`: Data with first slice appended along each exclusive axis
 - `bcs_post_extend`: Per-axis BCs after extension. Exclusive periodic axes are
-  normalized to `PeriodicBC(:inclusive, check=false)` (period dropped — the
-  extended grid carries the period implicitly as `last(grid_ext) - first(grid_ext)`).
-  Callers that need the period for storage/introspection re-materialize via
-  `_with_resolved_period(bc, last(grid_ext) - first(grid_ext))`. Other axes pass
-  through unchanged.
+  promoted to `PeriodicBC{:extended}` via `_bc_after_extend` (period preserved,
+  `C=false` because the extension constructs a bit-exact seam). Other axes
+  (`:inclusive`, non-periodic) pass through unchanged. Downstream dispatch
+  should use the `_is_periodic_seam_folded` trait rather than `isa
+  PeriodicBC{:exclusive}` so both `:exclusive` (one-shot) and `:extended`
+  (post-extension) are handled uniformly.
 """
 function _prepare_periodic_nd(
         grids::NTuple{N, AbstractVector{Tg}},
@@ -781,11 +770,14 @@ end
         grid_ext = grid_d isa AbstractRange ?
             _to_float_adding_endpoint(grid_d, Tg) :
             extend_vector_grid(grid_d, x_end, Tg)
-        # Normalize bc to `:inclusive` post-extension: the extended grid IS a
-        # closed-cycle inclusive form (length n+1, last point at x[1]+period),
-        # so downstream solvers/cache builders should treat it as inclusive.
-        # Without this normalization, BC-aware solvers (e.g. cubic) would
-        # interpret `:exclusive` as "raw n-grid" and miscount the cycle.
+        # Promote bc to `:extended` post-extension: the extended grid IS a
+        # closed-cycle layout (length n+1, last point at x[1]+period). The
+        # `:extended` symbol records this promotion so downstream solvers and
+        # cache builders can distinguish "user gave :exclusive, we extended"
+        # from "user gave :inclusive" while still routing through the
+        # `_is_periodic_seam_folded` trait. Without this, BC-aware solvers
+        # (e.g. cubic) would interpret `:exclusive` as "raw n-grid" and
+        # miscount the cycle.
         return (grid_ext, _bc_after_extend(bc_d))
     end
     grids_out = map(first, processed)

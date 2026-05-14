@@ -44,9 +44,9 @@ end
     @test bc_out.period == 2π
 
     # :inclusive → unchanged (preserves user's check flag)
-    bc_inc       = PeriodicBC(endpoint = :inclusive)
+    bc_inc = PeriodicBC(endpoint = :inclusive)
     bc_inc_nochk = PeriodicBC(endpoint = :inclusive, check = false)
-    @test _bc_after_extend(bc_inc)       === bc_inc
+    @test _bc_after_extend(bc_inc) === bc_inc
     @test _bc_after_extend(bc_inc_nochk) === bc_inc_nochk
 
     # Non-periodic → passthrough
@@ -58,7 +58,7 @@ end
     using FastInterpolations: PeriodicBC
     n = 8
     period = 2π
-    x = collect(range(0.0, step = period/n, length = n))
+    x = collect(range(0.0, step = period / n, length = n))
     y = sin.(x)
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
@@ -68,8 +68,8 @@ end
         @test length(itp.x) == n + 1
         # Forward eval correctness preserved (extension + bc symbol change
         # are introspection-only; numerical path is unchanged).
-        @test itp(x[1])              ≈ y[1] atol = 1e-10
-        @test itp(x[1] + period)     ≈ y[1] atol = 1e-10
+        @test itp(x[1]) ≈ y[1] atol = 1.0e-10
+        @test itp(x[1] + period) ≈ y[1] atol = 1.0e-10
     end
 end
 
@@ -90,7 +90,7 @@ end
 @testitem "PeriodicBC :extended — Cubic 1D forward introspection" begin
     using FastInterpolations: PeriodicBC
     n = 8; period = 2π
-    x = collect(range(0.0, step = period/n, length = n))
+    x = collect(range(0.0, step = period / n, length = n))
     y = sin.(x)
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
@@ -103,7 +103,7 @@ end
 @testitem "PeriodicBC :extended — Cubic 1D adjoint introspection" begin
     using FastInterpolations: PeriodicBC
     n = 8; period = 2π
-    x = collect(range(0.0, step = period/n, length = n))
+    x = collect(range(0.0, step = period / n, length = n))
     xq = [0.3, 1.4, 2.7]
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
@@ -120,10 +120,12 @@ end
 @testitem "PeriodicBC :extended — Cubic ND adjoint introspection" begin
     using FastInterpolations: PeriodicBC
     n1, n2 = 8, 10
-    x1 = collect(range(0.0, step = 2π/n1, length = n1))
-    x2 = collect(range(0.0, step = 2π/n2, length = n2))
-    bc2t = (PeriodicBC(endpoint = :exclusive, period = 2π),
-            PeriodicBC(endpoint = :exclusive, period = 2π))
+    x1 = collect(range(0.0, step = 2π / n1, length = n1))
+    x2 = collect(range(0.0, step = 2π / n2, length = n2))
+    bc2t = (
+        PeriodicBC(endpoint = :exclusive, period = 2π),
+        PeriodicBC(endpoint = :exclusive, period = 2π),
+    )
     xq = ([0.3, 1.4], [0.2, 2.7])
 
     adj = cubic_adjoint((x1, x2), xq; bc = bc2t)
@@ -136,9 +138,9 @@ end
 
 @testitem "PeriodicBC :extended — Linear/Constant 1D forward introspection" begin
     using FastInterpolations: PeriodicBC, _CachedVector, _CachedRange,
-                              _ExclusivePeriodicAxis, _ExclusivePeriodicData
+        _ExclusivePeriodicAxis, _ExclusivePeriodicData
     n = 8; period = 2π
-    x = collect(range(0.0, step = period/n, length = n))
+    x = collect(range(0.0, step = period / n, length = n))
     y = sin.(x)
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
@@ -158,7 +160,7 @@ end
 @testitem "PeriodicBC :extended — Linear/Constant 1D forward correctness" begin
     using FastInterpolations: PeriodicBC
     n = 8; period = 2π
-    x = collect(range(0.0, step = period/n, length = n))
+    x = collect(range(0.0, step = period / n, length = n))
     y = sin.(x)
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 
@@ -166,12 +168,12 @@ end
         itp = build(x, y; bc = bc_exc)
         if build === linear_interp
             for i in 1:n
-                @test itp(x[i]) ≈ y[i] atol = 1e-12
+                @test itp(x[i]) ≈ y[i] atol = 1.0e-12
             end
         end
         for xq in (0.3, 1.4, 2.7, 4.2)
-            @test itp(xq + period) ≈ itp(xq) atol = 1e-12
-            @test itp(xq - period) ≈ itp(xq) atol = 1e-12
+            @test itp(xq + period) ≈ itp(xq) atol = 1.0e-12
+            @test itp(xq - period) ≈ itp(xq) atol = 1.0e-12
         end
     end
 end
@@ -179,7 +181,7 @@ end
 @testitem "PeriodicBC :extended — show methods" begin
     using FastInterpolations: PeriodicBC
     n = 8; period = 2π
-    x = collect(range(0.0, step = period/n, length = n))
+    x = collect(range(0.0, step = period / n, length = n))
     y = sin.(x)
     itp = cubic_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = period))
 
@@ -204,7 +206,7 @@ end
 @testitem "PeriodicBC :extended — Hermite-family 1D adjoint introspection" begin
     using FastInterpolations: PeriodicBC
     n = 8; period = 2π
-    x = collect(range(0.0, step = period/n, length = n))
+    x = collect(range(0.0, step = period / n, length = n))
     y = sin.(x)
     xq = [0.3, 1.4, 2.7]
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
@@ -213,9 +215,11 @@ end
     # Cardinal adjoint takes `(x, xq)` only (tension-parameterized, y-free).
     # All three should symmetrically promote the user's `:exclusive` to
     # `:extended` (matches `cubic_adjoint` symmetry).
-    for adj in (pchip_adjoint(x, y, xq; bc = bc_exc),
-                akima_adjoint(x, y, xq; bc = bc_exc),
-                cardinal_adjoint(x, xq; bc = bc_exc))
+    for adj in (
+            pchip_adjoint(x, y, xq; bc = bc_exc),
+            akima_adjoint(x, y, xq; bc = bc_exc),
+            cardinal_adjoint(x, xq; bc = bc_exc),
+        )
         @test adj.bc isa PeriodicBC{:extended, Float64, false}
         @test adj.bc.period ≈ period
         # Internal grid is extended length n+1; user-dim output is length n.
@@ -243,12 +247,12 @@ end
 
 @testitem "PeriodicBC :extended — _cache_axis with :extended bc returns plain wrap" begin
     using FastInterpolations: PeriodicBC, _CachedVector, _CachedRange,
-                              _ExclusivePeriodicAxis
+        _ExclusivePeriodicAxis
     using FastInterpolations: _cache_axis, _convert_copy
 
     n = 8; period = 2π
     # Pre-extended length-(n+1) buffer (what `_periodic_extend_1d` produces).
-    x_ext = collect(range(0.0, step = period/n, length = n + 1))
+    x_ext = collect(range(0.0, step = period / n, length = n + 1))
     bc_ext = PeriodicBC{:extended, Float64, false}(period)
 
     # `_cache_axis(x, ::PeriodicBC{:extended})` falls through to the
@@ -268,7 +272,7 @@ end
 
     # Range input — `_cache_axis(range, ::PeriodicBC{:extended})` also falls
     # through to `::AbstractBC` (plain `_to_float`, no wrapper).
-    r = range(0.0, step = period/n, length = n + 1)
+    r = range(0.0, step = period / n, length = n + 1)
     rwrapped = _cache_axis(r, bc_ext)
     @test !(rwrapped isa _ExclusivePeriodicAxis)
     @test length(rwrapped) == n + 1
@@ -309,4 +313,3 @@ end
     # method tag.
     @test methods[1].bc isa PeriodicBC{:exclusive}
 end
-

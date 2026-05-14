@@ -522,7 +522,7 @@ end
 # Short BC name for compact display
 _short_bc_name(::PeriodicBC{:inclusive}) = "Periodic"
 _short_bc_name(::PeriodicBC{:exclusive}) = "Periodic(excl)"
-_short_bc_name(::PeriodicBC{:extended})  = "Periodic(ext)"
+_short_bc_name(::PeriodicBC{:extended}) = "Periodic(ext)"
 _short_bc_name(::PeriodicBC) = "Periodic"
 _short_bc_name(::MinCurvFit) = "MinCurvFit"
 _short_bc_name(bc::Left) = "Left($(_format_bc_point(bc.bc)))"

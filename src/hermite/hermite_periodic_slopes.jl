@@ -45,7 +45,7 @@
 # `:inclusive` and `:extended` share the same length-(n+1) closed-cycle data
 # layout — only the BC symbol differs (user-supplied vs library-promoted).
 @inline _secant_cycle_length(n::Int, ::PeriodicBC{:inclusive}) = n - 1
-@inline _secant_cycle_length(n::Int, ::PeriodicBC{:extended})  = n - 1
+@inline _secant_cycle_length(n::Int, ::PeriodicBC{:extended}) = n - 1
 @inline _secant_cycle_length(n::Int, ::PeriodicBC{:exclusive}) = n
 
 """

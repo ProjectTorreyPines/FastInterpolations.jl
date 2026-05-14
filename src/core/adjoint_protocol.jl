@@ -255,8 +255,10 @@ end
 
 # ── Output size (axis is always n+1 inclusive layout; seam-fold BCs shrink user dim by 1) ──
 @inline _adjoint_output_size(adj::AbstractAdjointND{<:Any, N}) where {N} =
-    map((bc, n) -> _is_periodic_seam_folded(bc) ? n - 1 : n,
-        _adjoint_bcs(adj), _grid_size(adj))
+    map(
+    (bc, n) -> _is_periodic_seam_folded(bc) ? n - 1 : n,
+    _adjoint_bcs(adj), _grid_size(adj)
+)
 
 # ── Seam-fold detection (covers :exclusive AND :extended) ──
 

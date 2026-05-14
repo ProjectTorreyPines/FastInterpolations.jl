@@ -690,9 +690,9 @@ PeriodicBC{:exclusive}`. The latter silently misses `:extended` BCs that
 `_bc_after_extend` produces for persistent builds, while this trait
 covers both forms uniformly.
 """
-@inline _is_periodic_seam_folded(::AbstractBC)             = false
+@inline _is_periodic_seam_folded(::AbstractBC) = false
 @inline _is_periodic_seam_folded(::PeriodicBC{:exclusive}) = true
-@inline _is_periodic_seam_folded(::PeriodicBC{:extended})  = true
+@inline _is_periodic_seam_folded(::PeriodicBC{:extended}) = true
 
 # ── @noinline throw helpers (keep cold error paths out of hot code) ──
 

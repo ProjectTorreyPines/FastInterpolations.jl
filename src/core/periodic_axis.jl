@@ -456,7 +456,7 @@ end
 # and by internal helpers that just need a uniform grid representation.
 # Equivalent to `_resolve_axis(x, NoBC())` but more explicit at the call site.
 @inline _resolve_axis(x::AbstractVector) = x
-@inline _resolve_axis(x::AbstractRange)  = _to_float(x, float(eltype(x)))
+@inline _resolve_axis(x::AbstractRange) = _to_float(x, float(eltype(x)))
 
 @inline _resolve_axis(x::AbstractVector, ::AbstractBC) = x
 @inline _resolve_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
@@ -521,7 +521,7 @@ end
 # h/inv_h lookup). Use when the call site is persistent but hasn't yet
 # inspected `bc`. Pre-wrapped inputs pass through idempotently below.
 @inline _cache_axis(x::AbstractVector) = _CachedVector(x)
-@inline _cache_axis(x::AbstractRange)  = _to_float(x, float(eltype(x)))
+@inline _cache_axis(x::AbstractRange) = _to_float(x, float(eltype(x)))
 
 @inline _cache_axis(x::AbstractVector, ::AbstractBC) = _CachedVector(x)
 @inline _cache_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))

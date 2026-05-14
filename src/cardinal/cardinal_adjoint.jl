@@ -275,7 +275,7 @@ function cardinal_adjoint(
     # (`_cardinal_slope_adjoint_periodic!`).
     x_ext = _prepare_periodic_grid(x_p, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_ext)
-    bc_eff = _bc_after_extend(bc)
+    bc_eff = _bc_eff_extended(x_p, bc)
 
     # NoExtrap: validate queries against extended domain.
     if extrap_eff isa NoExtrap

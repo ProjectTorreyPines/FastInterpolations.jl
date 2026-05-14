@@ -230,6 +230,30 @@ end
     end
 end
 
+@testitem "PeriodicBC :extended — adjoint preserves inferred period (Range + period=nothing)" begin
+    using FastInterpolations: PeriodicBC
+    # Range grid with `bc.period === nothing` — period is inferred via
+    # `step(x) * length(x)`. The inferred period must be threaded into the
+    # stored `adj.bc` so introspection/show/replay can reconstruct the domain.
+    n = 8
+    period = 2π
+    x = range(0.0, step = period / n, length = n)
+    y = sin.(x)
+    xq = [0.3, 1.4, 2.7]
+    bc_auto = PeriodicBC(endpoint = :exclusive)
+    @test bc_auto.period === nothing
+
+    for adj in (
+            pchip_adjoint(x, y, xq; bc = bc_auto),
+            akima_adjoint(x, y, xq; bc = bc_auto),
+            cardinal_adjoint(x, xq; bc = bc_auto),
+        )
+        @test adj.bc isa PeriodicBC{:extended}
+        @test adj.bc.period !== nothing
+        @test adj.bc.period ≈ period
+    end
+end
+
 @testitem "PeriodicBC :extended — _bc_after_extend is idempotent on :extended input" begin
     using FastInterpolations: PeriodicBC
     using FastInterpolations: _bc_after_extend

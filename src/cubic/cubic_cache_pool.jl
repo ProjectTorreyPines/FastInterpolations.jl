@@ -100,10 +100,12 @@ Cache entry for periodic BC (uses PeriodicData).
 # Type Parameters
 - `T`: Float type (Float32 or Float64)
 - `X`: Grid type (Vector{T} or StepRangeLen)
-- `E`: Endpoint variant (`:inclusive` or `:exclusive`) — encoded so the bank
-  registry holds *separate* banks per variant. The cache content (Sherman-
-  Morrison `q`, period, seam-cell width) differs between variants on the same
-  grid object, so cache lookup must be partitioned to avoid mixing them.
+- `E`: Endpoint variant (`:inclusive`, `:exclusive`, or `:extended`) — encoded
+  so the bank registry holds *separate* banks per variant. The cache content
+  (Sherman-Morrison `q`, period, seam-cell width) differs between variants on
+  the same grid object, so cache lookup must be partitioned to avoid mixing
+  them. `:extended` is produced internally by `_bc_after_extend` and never
+  appears in user-supplied BCs.
 
 # Fields
 - `id::UInt`: objectid of the ORIGINAL input x (hint for fast lookup)
@@ -375,9 +377,11 @@ end
 Get or create a periodic BC cache bank for the given (T, X, E, C) combination.
 Accepts Type{X} to avoid needing an instance (eliminates collect() for views).
 
-`E` (`:inclusive`/`:exclusive`) is encoded in the entry type so inclusive and
-exclusive caches for the same grid object live in *different* banks — their
-cache contents (cycle length, seam-cell width, Sherman-Morrison `q`) differ.
+`E` (`:inclusive`/`:exclusive`/`:extended`) is encoded in the entry type so
+each endpoint variant lives in a *separate* bank for the same grid object —
+their cache contents (cycle length, seam-cell width, Sherman-Morrison `q`)
+differ. `:extended` is produced internally by `_bc_after_extend` for inputs
+that were promoted from `:exclusive` at build time.
 
 `C` (`check::Bool` of `PeriodicBC`) is also threaded into the bank key because
 `_with_resolved_period` preserves it and `_bc_after_extend` flips it to `false`.
@@ -745,8 +749,9 @@ end
 
 """
 Internal implementation for periodic BC cache lookup. `bc` is threaded through
-so `_get_periodic_bank` selects the right E-variant bank (inclusive/exclusive
-caches partition into separate banks — see `PeriodicCacheEntry`).
+so `_get_periodic_bank` selects the right E-variant bank — `:inclusive`,
+`:exclusive`, and `:extended` caches partition into separate banks (see
+`PeriodicCacheEntry`).
 """
 @inline function _get_periodic_cache_impl(x::AbstractVector{T}, bc::PeriodicBC) where {T <: AbstractFloat}
     bank = _get_periodic_bank(Vector{T}, bc)

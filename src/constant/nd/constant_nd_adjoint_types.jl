@@ -31,7 +31,8 @@ The same adjoint can be applied to any `ȳ` vector.
          `_ExclusivePeriodicAxis`) carry cached `h`/`inv_h`; no separate
          `spacings` field needed.
 - `B`:   Per-axis BC tuple type. Stored so the ND adjoint protocol can detect
-         `PeriodicBC{:exclusive}` axes and apply post-apply seam fold + trim.
+         seam-folded periodic axes (`_is_periodic_seam_folded(bc)` — covers
+         both `:exclusive` and `:extended`) and apply post-apply seam fold + trim.
 - `EP`:  Extrapolation tuple type
 - `SD`:  Side selection tuple type
 
@@ -86,8 +87,8 @@ end
 @inline _grid_size(adj::ConstantAdjointND) = adj.grid_size
 
 # Per-axis BCs from struct field. The ND adjoint protocol checks
-# `bcs[d] isa PeriodicBC{:exclusive}` for output sizing and post-apply
-# seam fold (`_adjoint_apply_exclusive_nd!`).
+# `_is_periodic_seam_folded(bcs[d])` (covers `:exclusive` and `:extended`)
+# for output sizing and post-apply seam fold (`_adjoint_apply_exclusive_nd!`).
 @inline _adjoint_bcs(adj::ConstantAdjointND) = adj.bcs
 
 @inline _adjoint_nd_apply!(f_bar, adj::ConstantAdjointND, y_bar, ops) =

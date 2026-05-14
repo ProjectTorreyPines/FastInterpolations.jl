@@ -59,10 +59,10 @@ adj(f_bar, y_bar)                       # in-place
 """
 struct PchipAdjoint1D{Tg, Tv <: Real, BC <: AbstractBC, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_HermiteAdjointAnchor1D{Tg}}
-    grid::Vector{Tg}       # Grid points (extended length n+1 for `:exclusive`, n otherwise)
+    grid::Vector{Tg}       # Grid points (extended length n+1 when `_is_periodic_seam_folded(bc)`, n otherwise)
     data::Vector{Tv}       # y values (extended length matches grid)
-    grid_size::Int         # Internal length: n+1 for `:exclusive`, n otherwise
-    bc::BC
+    grid_size::Int         # Internal length: n+1 when `_is_periodic_seam_folded(bc)`, n otherwise
+    bc::BC                 # User input `PeriodicBC{:exclusive}` is promoted to `:extended` here
     extrap::EP
 end
 

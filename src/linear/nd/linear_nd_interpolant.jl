@@ -76,8 +76,9 @@ function linear_interp(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    # Extend `:exclusive` axes/data to `:inclusive` form, then per-axis
-    # `_cache_axis` (raw → wrapped, pre-wrapped → passthrough).
+    # Extend `:exclusive` axes/data to closed-cycle (n+1) layout; periodic
+    # bcs are promoted to `:extended` by `_prepare_periodic_nd`, then per-axis
+    # `_cache_axis` wraps (raw → wrapped, pre-wrapped → passthrough).
     grids_typed, data_typed, bcs_post = _prepare_periodic_nd(grids_typed, data_typed, bcs)
     grids_typed = map(_cache_axis, grids_typed, bcs_post)
 

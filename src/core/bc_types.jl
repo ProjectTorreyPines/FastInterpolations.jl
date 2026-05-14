@@ -682,6 +682,13 @@ Check if a boundary condition is periodic.
 True iff the adjoint output along this axis must seam-fold the (n+1)-th
 contribution into element 1 and trim to length n. Covers `:exclusive`
 (OneShot wrap) and `:extended` (persistent promotion).
+
+This is the stable contract for "axis carries a folded seam" — external
+extensions (custom AD rules, ChainRules-style replays, foreign cache
+builders) should dispatch on this trait rather than `isa
+PeriodicBC{:exclusive}`. The latter silently misses `:extended` BCs that
+`_bc_after_extend` produces for persistent builds, while this trait
+covers both forms uniformly.
 """
 @inline _is_periodic_seam_folded(::AbstractBC)             = false
 @inline _is_periodic_seam_folded(::PeriodicBC{:exclusive}) = true

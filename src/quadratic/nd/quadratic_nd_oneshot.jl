@@ -35,25 +35,30 @@ Zero-allocation after warmup (pool reuse).
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    # 1. Pool-allocate partials array (THE KEY: pool instead of heap)
+    # 1. Pool-backed per-axis cache — build phase reuses h/inv_h across slices.
+    # `map` over the tuple dispatches per-element on the concrete axis type
+    # (Range vs Vector); `ntuple(d -> grids[d], ...)` would Union-box.
+    grids_c = map(g -> _cache_axis_pooled(pool, g), grids)
+
+    # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
     Tz = _output_eltype(Tv, Tg)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
 
-    # 2. Compute all partial derivatives in-place
-    _compute_nd_partials_quadratic!(partials, grids, data, bcs)
+    # 3. Compute all partial derivatives in-place
+    _compute_nd_partials_quadratic!(partials, grids_c, data, bcs)
 
-    # 3. Materialize WrapExtrap{Nothing} against grids so the eval pipeline never
+    # 4. Materialize WrapExtrap{Nothing} against grids so the eval pipeline never
     # sees the singleton.
-    extraps_eff = map(_resolve_extrap, extraps_val, grids)
+    extraps_eff = map(_resolve_extrap, extraps_val, grids_c)
 
-    # 4. Eval pipeline (axis-only — grids carry `h`/`inv_h` directly)
-    q_eval = _handle_all_extraps(query, grids, extraps_eff)
-    indices, Ls, _ = _search_all_intervals(q_eval, grids, searches, hints)
-    hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids, indices, Ls)
+    # 5. Eval pipeline (axis-only — grids carry `h`/`inv_h` directly)
+    q_eval = _handle_all_extraps(query, grids_c, extraps_eff)
+    indices, Ls, _ = _search_all_intervals(q_eval, grids_c, searches, hints)
+    hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls)
 
-    # 5. Tensor-product kernel evaluation
+    # 6. Tensor-product kernel evaluation
     return _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
 end
 
@@ -81,24 +86,27 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     _query_validate(queries)
     _validate_nd_domain(grids, queries, extraps_val)
 
+    # Pool-backed per-axis cache — build phase + eval loop reuse h/inv_h.
+    # `map` over the tuple dispatches per-element on concrete axis type;
+    # `ntuple(d -> grids[d], ...)` would Union-box heterogeneous tuples.
+    grids_c = map(g -> _cache_axis_pooled(pool, g), grids)
+
     # Build phase (done once)
     Tz = _output_eltype(Tv, Tg)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
-    _compute_nd_partials_quadratic!(partials, grids, data, bcs)
-    # Materialize WrapExtrap{Nothing} before the eval loop.
-    extraps_eff = map(_resolve_extrap, extraps_val, grids)
+    _compute_nd_partials_quadratic!(partials, grids_c, data, bcs)
+    extraps_eff = map(_resolve_extrap, extraps_val, grids_c)
 
-    # Eval loop — axis-only helpers read `h`/`inv_h` from `grids`
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids, extraps_val, ops, first(data))
+        oob_val = _try_fill_oob(query_k, grids_c, extraps_val, ops, first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end
-        q_eval = _handle_all_extraps(query_k, grids, extraps_eff)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids, policies, hints, mono)
-        hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids, indices, Ls)
+        q_eval = _handle_all_extraps(query_k, grids_c, extraps_eff)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_c, policies, hints, mono)
+        hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls)
         output[k] = _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
     end
     return output

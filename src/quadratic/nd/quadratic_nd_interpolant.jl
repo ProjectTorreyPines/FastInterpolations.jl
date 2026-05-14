@@ -85,12 +85,11 @@ function _build_nd_quadratic_interpolant(
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         searches::NTuple{N, AbstractSearchPolicy}
     ) where {Tg, Tv, N}
-    # Build nodal derivatives using quadratic recurrence. The wrapped grids
-    # carry `h`/`inv_h` directly via `_get_h(itp.grids[d], i)`.
-    nodal_derivs = _build_nd_coeffs_quadratic(grids, data, bcs)
+    # Cache axes for the build phase — inner ctor of `QuadraticInterpolantND`
+    # handles the owned `_convert_copy` separately, so we only wrap (no copy)
+    # here. Already-cached axes pass through idempotently in the ctor.
+    grids_cached = map((g, bc) -> _cache_axis(g, bc, Tg), grids, bcs)
+    nodal_derivs = _build_nd_coeffs_quadratic(grids_cached, data, bcs)
 
-    # Caching wrap (zero-copy of buffer): per-axis `_cache_axis`. Inner ctor's
-    # `_convert_copy(g, Tg)` takes ownership.
-    grids_typed = map(g -> _cache_axis(g, NoBC(), Tg), grids)
-    return QuadraticInterpolantND(grids_typed, nodal_derivs, bcs, extraps_val, searches)
+    return QuadraticInterpolantND(grids_cached, nodal_derivs, bcs, extraps_val, searches)
 end

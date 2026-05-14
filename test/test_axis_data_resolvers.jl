@@ -1,6 +1,6 @@
 @testitem "_resolve_axis — type correctness across (grid, bc) combinations" begin
     using FastInterpolations:
-        _resolve_axis, _resolve_data, _resolve_axis_copied,
+        _resolve_axis, _resolve_data,
         _CachedRange, _CachedVector, _ExclusivePeriodicAxis, _ExclusivePeriodicData,
         NoBC, PeriodicBC
 
@@ -78,17 +78,21 @@ end
     end
 end
 
-@testitem "_resolve_axis_copied — interpolant variant with caching layer" begin
+@testitem "_cache_axis(_convert_copy(x, T), bc) — persistent build pattern (cubic-style)" begin
     using FastInterpolations:
-        _resolve_axis_copied, _CachedRange, _CachedVector, _ExclusivePeriodicAxis,
+        _cache_axis, _convert_copy, _CachedRange, _CachedVector, _ExclusivePeriodicAxis,
         NoBC, PeriodicBC
+
+    # Canonical owned-axis pattern used by `_build_derivative_bc_cache` /
+    # `_build_periodic_cache` in cubic_solver.jl: copy buffer + promote eltype
+    # (one allocation pass), then alias the fresh buffer and build h/inv_h.
 
     bc_no = NoBC()
     bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
-    @testset "Vector + non-exclusive → _CachedVector" begin
+    @testset "Vector + non-exclusive → _CachedVector (owned)" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        xc = _resolve_axis_copied(x, bc_no, Float64)
+        xc = _cache_axis(_convert_copy(x, Float64), bc_no)
         @test xc isa _CachedVector{Float64, Float64}
         @test xc.inner == x                          # copied
         @test xc.inner !== x                         # NOT same object (mutation-safe)
@@ -97,7 +101,7 @@ end
 
     @testset "Vector + :exclusive → _ExclusivePeriodicAxis{_CachedVector inner}" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        ax = _resolve_axis_copied(x, bc_excl, Float64)
+        ax = _cache_axis(_convert_copy(x, Float64), bc_excl)
         @test ax isa _ExclusivePeriodicAxis{Float64, _CachedVector{Float64, Float64}, Float64}
         @test ax.inner isa _CachedVector
         @test ax.inner.h ≈ [1.0, 1.0, 1.0]           # inner is cached
@@ -107,61 +111,40 @@ end
 
     @testset "Range + non-exclusive → _CachedRange (length n)" begin
         r = 0.0:1.0:3.0
-        cr = _resolve_axis_copied(r, bc_no, Float64)
+        cr = _cache_axis(_convert_copy(r, Float64), bc_no)
         @test cr isa _CachedRange{Float64}
         @test length(cr) == 4
     end
 
     @testset "Range + :exclusive → _ExclusivePeriodicAxis(_CachedRange, period)" begin
         r = 0.0:1.0:3.0
-        cr = _resolve_axis_copied(r, bc_excl, Float64)
+        cr = _cache_axis(_convert_copy(r, Float64), bc_excl)
         @test cr isa FastInterpolations._ExclusivePeriodicAxis
         @test cr.inner isa _CachedRange{Float64}
         @test length(cr) == 5
         @test length(cr.inner) == 4
     end
 
-    @testset "Pre-wrapped re-entry: same-eltype passthrough, different-eltype rebuild" begin
-        # `_resolve_axis_copied` on already-wrapped inputs:
-        #   - Same eltype as Tg → true passthrough (returns input as-is). The
-        #     canonical outer→inner constructor flow re-enters with a wrapper
-        #     produced by an earlier `_resolve_axis_copied` call; re-copying
-        #     would double allocations. Internal API contract: the wrapper
-        #     must already own its inner buffer.
-        #   - Different eltype → wrapper-aware `_convert_copy` rebuild
-        #     (preserves wrapper type, promotes eltype, single-pass).
+    @testset "Float32 → Float64 eltype promotion" begin
+        # Vector path
+        x32 = Float32[1.0, 2.0, 3.0]
+        out = _cache_axis(_convert_copy(x32, Float64), bc_no)
+        @test out isa _CachedVector{Float64, Float64}
+        @test eltype(out) === Float64
 
-        # _CachedVector same-eltype: passthrough
-        x_cv = _CachedVector([0.0, 1.0, 2.0])
-        out_cv = _resolve_axis_copied(x_cv, bc_no, Float64)
-        @test out_cv === x_cv               # true passthrough, no copy
-
-        # _CachedRange: immutable struct, always returned as-is
-        x_cr = FastInterpolations._to_float(0.0:1.0:3.0, Float64)
-        out_cr = _resolve_axis_copied(x_cr, bc_no, Float64)
-        @test out_cr isa _CachedRange{Float64}
-        @test out_cr === x_cr               # safe to share — no buffer
-
-        # _ExclusivePeriodicAxis same-eltype: passthrough
-        x_ax = _ExclusivePeriodicAxis([0.0, 1.0, 2.0], 3.0)
-        out_ax = _resolve_axis_copied(x_ax, bc_excl, Float64)
-        @test out_ax === x_ax               # true passthrough
-
-        # Type promotion across wrapper boundary — different eltype rebuilds
-        x_cv32 = _CachedVector(Float32[1.0, 2.0, 3.0])
-        out_cv32 = _resolve_axis_copied(x_cv32, bc_no, Float64)
-        @test out_cv32 isa _CachedVector{Float64, Float64}  # eltype promoted
-        @test out_cv32.inner !== x_cv32.inner               # fresh inner buffer
-
-        x_cr32 = FastInterpolations._to_float(0.0f0:1.0f0:3.0f0, Float32)
-        out_cr32 = _resolve_axis_copied(x_cr32, bc_no, Float64)
-        @test out_cr32 isa _CachedRange{Float64}            # eltype promoted
+        # _CachedRange path — cubic flow pre-normalizes Range via outer
+        # `_resolve_axis(x)` before reaching this pattern, so the input here
+        # is `_CachedRange`, not a raw `AbstractRange`. The same-shape rebuild
+        # preserves Range type through `_convert_copy(::_CachedRange, T)`.
+        cr32 = FastInterpolations._to_float(0.0f0:1.0f0:3.0f0, Float32)
+        out_r = _cache_axis(_convert_copy(cr32, Float64), bc_no)
+        @test out_r isa _CachedRange{Float64}
     end
 end
 
 @testitem "Resolvers are type-stable when used inside a function" begin
     using FastInterpolations:
-        _resolve_axis, _resolve_data, _resolve_axis_copied,
+        _resolve_axis, _resolve_data, _cache_axis, _convert_copy,
         _CachedRange, _CachedVector, _ExclusivePeriodicAxis, _ExclusivePeriodicData,
         NoBC, PeriodicBC
 
@@ -202,13 +185,13 @@ end
         @test f(y, bc_excl) isa _ExclusivePeriodicData{Float64, 1, Vector{Float64}}
     end
 
-    @testset "_resolve_axis_copied type stability" begin
+    @testset "_cache_axis(_convert_copy(x, Tg), bc) type stability (cubic build pattern)" begin
         x_vec = [0.0, 1.0, 2.0, 3.0]
         x_rng = 0.0:1.0:3.0
         bc_no = NoBC()
         bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
-        f(x, bc, Tg) = _resolve_axis_copied(x, bc, Tg)
+        f(x, bc, Tg) = _cache_axis(_convert_copy(x, Tg), bc)
         @inferred f(x_vec, bc_no, Float64)
         @inferred f(x_vec, bc_excl, Float64)
         @inferred f(x_rng, bc_no, Float64)

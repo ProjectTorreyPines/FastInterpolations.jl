@@ -54,7 +54,7 @@ end
 # Axis-aware 2-arg wrapper (axis as single source of truth)
 # ────────────────────────────────────────────────────────
 #
-# After the surface-API axis resolution (`_resolve_axis` / `_resolve_axis_copied`),
+# After the surface-API axis resolution (`_resolve_axis` / `_cache_axis`),
 # every supported axis exposes `first/last` matching the canonical wrap
 # domain — including `_ExclusivePeriodicAxis`, whose `last` reports the
 # virtual endpoint `inner[1] + period`. With `WrapExtrap` reduced to a tag
@@ -457,7 +457,7 @@ _extend_values(y::AbstractVector) = vcat(y, first(y))
 # WrapExtrap is a tag struct (eval_ops.jl)
 # ========================================
 #
-# After the surface-API axis resolution (`_resolve_axis` / `_resolve_axis_copied`),
+# After the surface-API axis resolution (`_resolve_axis` / `_cache_axis`),
 # every supported axis exposes `first/last` matching the canonical wrap
 # domain — including `_ExclusivePeriodicAxis`, whose `last` reports the
 # precomputed virtual endpoint. Eval kernels read those bounds directly

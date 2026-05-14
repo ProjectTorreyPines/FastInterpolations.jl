@@ -1,6 +1,6 @@
 @testitem "PeriodicBC Exclusive Endpoint" setup = [AllocConstants] begin
     using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
-        _resolve_exclusive_period, _resolve_axis, _resolve_axis_copied,
+        _resolve_exclusive_period, _resolve_axis, _cache_axis, _convert_copy,
         _ExclusivePeriodicAxis,
         _can_infer_period, _is_periodic_bc, endpoint
 
@@ -84,7 +84,7 @@
             # now trusts user `bc.period`; the wrapper rejects mismatches.
             x = range(0.0, step = 0.1, length = 10)
             bc = PeriodicBC(endpoint = :exclusive, period = 2.0)  # doesn't match 0.1*10=1.0
-            @test_throws ArgumentError _resolve_axis_copied(x, bc, Float64)
+            @test_throws ArgumentError _cache_axis(_convert_copy(x, Float64), bc)
             @test_throws ArgumentError _resolve_axis(x, bc)
         end
 
@@ -109,12 +109,12 @@
             # rejected against the Float64 inferred period (1.0).
             x = range(0.0, step = 0.1, length = 10)  # Float64, inferred period=1.0
             bc = PeriodicBC(endpoint = :exclusive, period = Float32(1.0002))
-            @test_throws ArgumentError _resolve_axis_copied(x, bc, Float64)
+            @test_throws ArgumentError _cache_axis(_convert_copy(x, Float64), bc)
 
             # Float32 period that genuinely matches → accepted
             bc_ok = PeriodicBC(endpoint = :exclusive, period = Float32(1.0))
             @test _resolve_exclusive_period(x, bc_ok) == Float32(1.0)
-            @test _resolve_axis_copied(x, bc_ok, Float64) isa _ExclusivePeriodicAxis
+            @test _cache_axis(_convert_copy(x, Float64), bc_ok) isa _ExclusivePeriodicAxis
         end
     end
 
@@ -711,7 +711,7 @@ end
 
 @testitem "PeriodicBC Exclusive Endpoint — ND" begin
     using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
-        _resolve_exclusive_period, _resolve_axis, _resolve_axis_copied,
+        _resolve_exclusive_period, _resolve_axis, _cache_axis, _convert_copy,
         _ExclusivePeriodicAxis,
         _can_infer_period, _is_periodic_bc, endpoint
 

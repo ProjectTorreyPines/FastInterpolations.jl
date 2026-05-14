@@ -135,7 +135,7 @@ For OOB queries, weights are zeroed per-axis following the same logic as 1D `_fi
 Reads `_get_h(grids[d], idx)` directly via the spacings-free 4-arg
 `_bake_nd_anchors_generic` overload. Each `grids[d]` here is a wrapped axis
 extracted from `caches[d].x` (already `_CachedRange` / `_CachedVector` /
-`_ExclusivePeriodicAxis` per `_resolve_axis_copied`).
+`_ExclusivePeriodicAxis` per `_cache_axis`).
 """
 function _bake_nd_anchors(
         grids::NTuple{N, AbstractVector{Tg}},

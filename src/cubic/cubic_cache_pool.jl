@@ -44,7 +44,7 @@ Abstract type for cache entries. Subtypes must have:
 abstract type AbstractCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}} end
 
 # Map user input grid type to the cache's wrapped axis type. Mirrors
-# `_resolve_axis_copied(x, bc, T)`:
+# `_cache_axis(_convert_copy(x, T), bc)` (copy-then-wrap):
 # - Non-periodic / `:inclusive`: Range → `_CachedRange{T, Tinv}`,
 #   Vector → `_CachedVector{T, Tinv}`.
 # - `:exclusive` periodic: extra `_ExclusivePeriodicAxis` wrapper around the
@@ -542,9 +542,9 @@ Core lookup/insert logic for CacheBank{E} using RCU pattern.
         found = _rcu_lookup(snap, id, x, bc_config)
         found !== nothing && return found
 
-        # Build cache — `_resolve_axis_copied` (inside the builder) wraps the user's x
-        # into the cached/wrapped axis form. Snapshot the *raw* user input on
-        # the entry so `isequal(entry.x, input_x)` lookups remain comparable.
+        # Build cache — the builder wraps the user's x into the cached/wrapped
+        # axis form via `_cache_axis(_convert_copy(x, T), bc)`. Snapshot the *raw*
+        # user input on the entry so `isequal(entry.x, input_x)` lookups remain comparable.
         new_cache = _build_cache(E, x, bc_config)
         new_entry = E(id, copy(x), new_cache)
 

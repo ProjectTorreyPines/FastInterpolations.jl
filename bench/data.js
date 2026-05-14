@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778646423190,
+  "lastUpdate": 1778777009877,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -49546,6 +49546,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1058,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fb6871f135643846ea1f35e7e2eef039186333aa",
+          "message": "(refac+feat): `:extended` PeriodicBC symbol for persistent build path (#139)\n\n* feat: introduce PeriodicBC{:extended, P, C} symbol + orthogonal traits\n\nAdd ':extended' as a third endpoint symbol to PeriodicBC{E,P,C}, gated as\ninternal-only via the keyword constructor. Add two orthogonal trait helpers:\n\n- _is_periodic_inclusive   : true iff layout is length-(n+1) closed-cycle\n                             (covers :inclusive AND :extended)\n- _is_periodic_seam_folded : true iff adjoint output must seam-fold + trim\n                             (covers :exclusive AND :extended)\n\nNo call sites use the new symbol or traits yet — Phase 2 onward wires them in.\n\nSee claudedocs/design/bc_extended_symbol.md for the full design.\n\n* feat: _bc_after_extend(:exclusive) returns :extended (keystone + cascading dispatch)\n\nRewrite the single dispatch line that drives BC swap after grid extension\nin 1D persistent forward (_periodic_extend_1d) and ND forward\n(_prepare_periodic_nd_impl). :exclusive now becomes :extended (preserving\nperiod, pinning check=false) instead of plain :inclusive.\n\nCascade: extend every closed-cycle-layout helper that previously dispatched\nonly on PeriodicBC{:inclusive} with an identical-body PeriodicBC{:extended}\noverload. The data layouts are identical (length n+1 closed-cycle); only\nthe BC symbol differs (user-supplied vs library-promoted):\n\n  - _secant_cycle_length / _periodic_secant / _periodic_cell_width\n    (Hermite-family slope calculation: PCHIP, Cardinal, Akima)\n  - _finalize_z_periodic_seam! (Cubic z-coefficient finalization)\n  - _wrap_cycle / _wrap_period (Hetero ND window arithmetic)\n  - _resolve_data (OneShot data resolver; safety/uniformity)\n  - _check_periodic_endpoints (validation entry; no-op in practice\n    because :extended has C=false pinned)\n\nHelpers reachable only via user-supplied bc (e.g. _prepare_periodic) are\nunchanged: :extended is internal-only and never enters those paths.\n\nAfter this commit, PCHIP/Cardinal/Akima 1D persistent forward + all ND\nforward paths (Cubic, Linear, Constant, Hetero via _prepare_periodic_nd_impl)\nstore PeriodicBC{:extended, ...} in their bc/bcs fields where the cubic\n1D forward already does via cubic_interpolant.jl:252's _bc_after_extend\ncall. Adjoint paths and Linear/Constant 1D forward still use inline\nPeriodicBC() swaps — those migrate in Phases 3-5.\n\n* refac: adjoint output sizing via _is_periodic_seam_folded trait\n\nReplace inline bc-isa checks in the adjoint protocol with trait dispatch:\n\n- Add _adjoint_user_n_axis(bc, grid_len) per-axis helper using the\n  _is_periodic_seam_folded trait. Returns grid_len - 1 for :exclusive\n  (OneShot wrap) AND :extended (persistent promotion).\n- _adjoint_output_size: now `map(_adjoint_user_n_axis, bcs, gs)` —\n  trait-dispatched, future-proof against new periodic variants.\n- _seam_fold_axis!: add PeriodicBC{:extended} method (identical body\n  to :exclusive — the seam-fold operation is layout-driven).\n- _adjoint_1d_finalize(::PeriodicBC{:extended}, …): add the analogous\n  in-place trim method for the 1D allocating callable path.\n- Rename _has_exclusive_periodic → _has_seam_fold (semantic update).\n- Rename _adjoint_1d_has_exclusive_periodic → _adjoint_1d_has_seam_fold.\n  Definition now reads _is_periodic_seam_folded(adj.bc).\n- Cubic 1D adjoint: _adjoint_output_length / _adjoint_1d_has_seam_fold\n  use the new trait + helper instead of inline isa check.\n\nAll 5 call sites in src/ updated (adjoint_protocol.jl, abstract_types.jl,\nhermite_adjoint.jl, cubic_adjoint.jl, cubic_nd_adjoint.jl, hetero_adjoint_types.jl).\n\n* refac: Cubic + hetero adjoint inline PeriodicBC() → _bc_after_extend(bc)\n\nEliminate 7 inline PeriodicBC() (or ternary) BC swap sites that bypassed\n_bc_after_extend, restoring BC field unification for Cubic 1D forward,\nCubic 1D/ND adjoint, and hetero ND adjoint:\n\n- cubic_interpolant.jl:245      forward cache build\n- cubic_interpolant.jl:381      (cache, y) ctor stores cache.bc directly\n- cubic_adjoint.jl:505,513      1D adjoint cache + adj.bc = cache.bc\n- cubic_nd_adjoint.jl norm_bcs  per-axis periodic → _bc_after_extend\n- cubic_nd_adjoint.jl:560,580   ND adjoint per-axis cache build (caches + mixed_caches)\n- hetero_adjoint.jl:604-605     hetero ND adjoint cubic-family cache build\n\nPlus 2 additional sites discovered via cascading test failures:\n\n- cubic_cache_pool.jl _cached_axis_type: add Val(:extended) overload\n  (same shape as :inclusive — both are length-(n+1) closed-cycle caches).\n- cubic_cache_pool.jl _get_periodic_bank: use `PeriodicBC{E, T, C}` directly\n  instead of `E === :exclusive ? :exclusive : :inclusive` so :extended\n  gets its own bank slot.\n\nAfter this commit, itp.bc / itp.bcs / adj.bc / adj.bcs all show\n:extended for :exclusive-promoted inputs (Cubic 1D + ND + hetero ND),\nmatching the PCHIP / Cardinal / Akima 1D + non-Cubic ND forward paths\nthat were auto-absorbed in Phase 2.\n\n* refac: Linear / Constant 1D persistent build → extend-promote\n\nMigrate Linear and Constant 1D persistent forward from the lazy wrapper\nprotocol (_ExclusivePeriodicAxis / _ExclusivePeriodicData) to the\nextend-promote pattern used by PCHIP / Cardinal / Akima / Cubic. After\nthis commit, all six method families share a single canonical persistent\ninternal representation: length-(n+1) plain axis + plain Array data.\n\nOneShot paths (linear_oneshot.jl / constant_oneshot.jl) and Hetero ND\nOneShot continue to use the lazy wrappers — unchanged.\n\nUpdate test_periodic_exclusive.jl: 3 inline `:inclusive` expectations\nflipped to `:extended` (spec-driven; matches the new BC introspection).\n\nNote: LinearInterpolant / ConstantInterpolant don't carry a `bc` field\n(pre-existing BC-Field-Unification gap). Adding the field for 1D + ND\nintrospection consistency is tracked as a future follow-up in the\ndesign doc.\n\n* feat: PeriodicBC{:extended} show methods + test coverage\n\n- _format_bc(::PeriodicBC{:extended}): annotates \"extended from :exclusive\"\n- _short_bc_name(::PeriodicBC{:extended}): \"Periodic(ext)\"\n- New @testitem covering interpolant display of :extended\n\nCompletes the BC-field-unification work for PeriodicBC's persistent path.\nPeriodicBC docstring (bc_types.jl) was updated in Phase 1 with the\nuser-facing :inclusive / :exclusive / :extended convention.\n\n* refac: simplify adjoint output sizing — inline trait check, no per-axis helper\n\nReplace _adjoint_user_n_axis / _adjoint_axis_length helper with direct\nternary on `_is_periodic_seam_folded(bc)` at the two call sites that\nneed it (1D _adjoint_output_length, ND _adjoint_output_size via map).\n\nMental model is now consistent: the cached axis is always length-(n+1)\ninclusive layout; only the adjoint output sizing shrinks by 1 for\nseam-folded BCs (:exclusive, :extended).\n\nAlso:\n- Restore Julia convention: _adjoint_output_length for 1D (Base.length),\n  _adjoint_output_size for ND (Base.size). Phase 3 had inadvertently\n  conflated the two.\n- Remove _is_periodic_inclusive trait — dead code (defined but never\n  referenced after Phase 6).\n\n* fix: PeriodicBC{:extended} show with `period === nothing` + refresh stale exclusive-wrapper tests\n\n- `_format_bc(::PeriodicBC{:extended})` now branches on `bc.period === nothing`\n  (matches the `:exclusive`/`:inclusive` siblings). Without this, any persistent\n  build promoted from `PeriodicBC(endpoint=:exclusive)` (period unset, inferred\n  from grid) tripped `Float64(::Nothing)` inside `Printf.@sprintf`.\n- Linear/Constant persistent `:exclusive` no longer wraps in\n  `_ExclusivePeriodicAxis` (extend-promote landed earlier on this branch). The\n  remaining tests still asserted the old wrapper layout — updated to the new\n  closed-cycle storage (plain `_CachedRange` / Vector of length n+1, no wrapper,\n  closed seam at x[end]=x[1]+period, y[end]=y[1]). Int Vector + exclusive now\n  yields `ConstantInterpolant{Float64, Int}` because the closed-cycle endpoint\n  forces Float arithmetic in `_extend_exclusive`.\n\n* refac: fuse `_bc_after_extend` into `_periodic_extend_1d` 4-tuple return\n\n`_periodic_extend_1d` and the pooled sibling now return\n`(x_eff, y_eff, bc_eff, extrap_eff)` — the BC normalization that every\ncaller did immediately after the grid extension is now baked into the\nhelper. 11 paired call sites (5 persistent interpolant builders +\n6 oneshot precompute paths in PCHIP/Cardinal/Akima) collapse from a\ntwo-line dance into a single destructure.\n\nBonus consistency fix: `pchip_adjoint` and `akima_adjoint` now store\n`bc_eff` (so `adj.bc isa PeriodicBC{:extended}` for `:exclusive` input,\nmatching `cubic_adjoint`'s introspection). Functional behavior is\nunchanged — the seam-fold trait `_is_periodic_seam_folded` covers\nboth `:exclusive` and `:extended`, so the protocol's in-place fold\nfires uniformly either way.\n\n`_bc_after_extend` stays as a standalone helper for the solo callers\nthat don't pair with grid extension (Cubic cache build, hetero ND\nadjoint, ND axis dispatch, Linear/Constant Series inner builders).\n\n* refac: replace `_prepare_grid` with 1-arg `_resolve_axis`/`_cache_axis` overloads + drop 6 dead inner calls\n\n`_prepare_grid(x)` was an awkward third helper alongside `_resolve_axis(x, bc)`\n(oneshot) and `_cache_axis(x, bc, Tg)` (persistent) — it shadowed the trivial\ncase `_resolve_axis(x, NoBC())` without communicating call-site intent. Folded\ninto the canonical surface:\n\n- Add `_resolve_axis(x)` / `_cache_axis(x)` 1-arg overloads in periodic_axis.jl\n  (BC-unaware: Range → `_CachedRange`; Vector → passthrough for `_resolve_axis`,\n  `_CachedVector` for `_cache_axis`). Plus idempotent passthroughs for\n  pre-wrapped inputs (critical for `_cache_axis` to avoid double-wrap).\n- Delete `_prepare_grid` from utils.jl.\n- Migrate all 14 call sites:\n  * 8 public oneshot API entries (`*_interp` in cubic/quadratic/hermite/linear/\n    constant/cardinal/akima/pchip) → `_resolve_axis(x)`.\n  * 8 sites in `cubic/cubic_cache_pool.jl` → `_resolve_axis(x)` (keeps Vector\n    passthrough; cache impl handles `AbstractVector` directly).\n  * `_prepare_1d_oneshot!` helper in `core/periodic.jl` → `_resolve_axis(x)`.\n- Drop 6 redundant `_prepare_grid(x_ext)` calls in PCHIP/Cardinal/Akima\n  precompute internals. Trace: the public `*_interp` already pre-normalizes\n  via `_resolve_axis(x)` before dispatching to precompute, so the inner call\n  was always a no-op (every (input × BC) case reduces to identity).\n\nConvention going forward — oneshot path → `_resolve_axis`, persistent path →\n`_cache_axis` (1-arg without bc, 2-arg with bc, 3-arg with Tg). The 1-arg\n`_cache_axis` has no current caller; it exists for symmetry and as a\ndeliberate entry point for future migrations (e.g., the cubic cache pool\nopting into Vector → `_CachedVector` wrap for cached h/inv_h lookup).\n\n* refac: retire `_resolve_axis_copied` in favor of `_cache_axis(_convert_copy(x, T), bc)` at the 2 cubic_solver call sites\n\n`_resolve_axis_copied(x, bc, Tg)` was a third axis-prep helper alongside\n`_resolve_axis` (oneshot) and `_cache_axis` (persistent, alias-wrap). It fused\n\"owned copy + cached-wrap + eltype promotion\" into one call, with 8 method\noverloads to handle every input shape including pre-wrapped re-entry. Only\ncubic_solver actually called it (2 sites); the pre-wrapped overloads (6 of 8)\nwere dead code — cubic_cache_pool's outer `_resolve_axis(x)` never produced\npre-wrapped axes.\n\nThe combinator `_cache_axis(_convert_copy(x, T), bc)` is equivalent for live\ncases: `_convert_copy` does the one-pass buffer copy + eltype conversion,\nthen `_cache_axis` aliases the fresh buffer and builds h/inv_h once. Same\nallocation count as the old helper. The \"pre-wrapped same-eltype passthrough\"\noptimization is dropped; harmless because no live caller exercises that path.\n\n- Replaced 2 call sites in `cubic/cubic_solver.jl`.\n- Deleted `_resolve_axis_copied` definitions (8 overloads, ~70 lines) from\n  `core/periodic_axis.jl`, along with the associated docstring section.\n- Updated stale comments referencing the old helper across 6 src files.\n- Migrated 4 test files: rewrote the `_resolve_axis_copied` testset in\n  `test_axis_data_resolvers.jl` to test the new pattern (cubic-style),\n  updated direct callers in `test_periodic_exclusive.jl` and\n  `test_thomas_lu_solver.jl`, refreshed comments in\n  `test_mixed_precision_extrap.jl`.\n\nNet diff: −113 lines, semantic surface narrower (one less helper to learn).\n\n* fix: `cardinal_adjoint` stores `bc_eff` (`:extended`) for periodic input\n\nSymmetric with `pchip_adjoint` / `akima_adjoint`. Previously stored the\nuser's `:exclusive` BC while the internal grid was the length-(n+1)\nextended layout — `adj.bc` lied about the kernel state. Field comments\nrefreshed to reference `_is_periodic_seam_folded(bc)` trait.\n\n* refac: `:extended` cascade cleanup — retire dead-code methods + upstream-normalize ND `mixed_bcs`\n\n- `_check_periodic_endpoints(::PeriodicBC{:extended}, …)` and\n  `_resolve_data(::AbstractArray, ::PeriodicBC{:extended})` collapsed to\n  1-line passthroughs. `_bc_after_extend` pins `C=false`, so\n  `periodic_check(bc)` is structurally always `false` — the\n  `periodic_check && _check_periodic_endpoints` branch was dead code.\n- `cubic_nd_adjoint`'s `mixed_bcs` map now applies `_bc_after_extend`\n  upstream (symmetric with `norm_bcs`), letting the `caches` /\n  `mixed_caches` build maps drop the `_is_periodic_bc` branch. The\n  previous per-call `_bc_after_extend(bp_d)` was a no-op for `norm_bcs`\n  but did real work for `mixed_bcs` (where `_get_effective_bc` returns\n  the user's `:exclusive` verbatim). Normalizing once upstream is\n  self-consistent and removes the cache map branch entirely.\n- Refresh `_bc_after_extend` block comment, `_prepare_periodic_nd`\n  docstring, and `_prepare_periodic_nd_impl` inline comment to describe\n  `:extended` promotion (period preserved, `C=false`) — replaces the\n  stale `:inclusive`-normalization narrative.\n\n* docs+test: refresh stale `:exclusive` field references + add `:extended` introspection coverage\n\nStale docs (per-method adapter level):\n- `PchipAdjoint1D` / `AkimaAdjoint1D` / `CardinalAdjoint1D` field\n  comments referenced \"`:exclusive`\" for length-(n+1) layout — the\n  field now stores `:extended` after `_bc_after_extend` promotion.\n  Switched to `_is_periodic_seam_folded(bc)` trait language.\n- `PeriodicCacheEntry` docstring and `_get_periodic_bank` docstring\n  expanded `E ∈ {:inclusive, :exclusive}` → `{:inclusive, :exclusive,\n  :extended}` (each gets its own bank).\n- `LinearAdjointND` / `ConstantAdjointND` per-axis BC field doc and\n  inline `_adjoint_bcs` comment switched from `isa\n  PeriodicBC{:exclusive}` check to `_is_periodic_seam_folded(bcs[d])`\n  trait reference (covers both `:exclusive` one-shot and `:extended`\n  persistent paths).\n\nNew test coverage:\n- Hermite-family adjoint introspection — verifies `pchip_adjoint` /\n  `akima_adjoint` / `cardinal_adjoint` all promote `:exclusive` to\n  `:extended` in `adj.bc` (catches the cardinal asymmetry that the\n  prior cardinal fix corrected).\n- `_format_bc(::PeriodicBC{:extended})` with `period === nothing`.\n- `_bc_after_extend(::PeriodicBC{:extended})` idempotence.\n- `_cache_axis(_convert_copy(x, T), PeriodicBC{:extended}(…))` —\n  verifies the cascade returns plain `_CachedVector` / `_to_float`\n  (no `_ExclusivePeriodicAxis` wrap) for already-extended grids.\n- Hetero ND with `LinearInterp(bc=PeriodicBC(:exclusive))` — verifies\n  wrap-around eval correctness and `methods[d].bc` user-contract\n  preservation (rrule-replay safety).\n\n* docs: ND interpolant build sites — refresh stale `:inclusive` form references\n\nFour ND forward builders (`cubic_nd_interpolant`, `linear_nd_interpolant`,\n`constant_nd_interpolant`, `hetero_interpolant`) had inline comments\ndescribing the post-`_prepare_periodic_nd` BCs as \"`:inclusive` form\".\nAfter the `:extended` symbol introduction, the helper promotes periodic\nBCs to `:extended` (period preserved, `C=false`), not `:inclusive`.\nComments updated to read \"closed-cycle (n+1) layout, periodic bcs\npromoted to `:extended`\".\n\n* docs: `_is_periodic_seam_folded` — document as stable extension point\n\nExternal extensions (custom AD rules, ChainRules-style replays, foreign\ncache builders) that pattern-match `isa PeriodicBC{:exclusive}` will\nsilently miss `:extended` BCs from persistent builds. The trait's\ncontract is now explicit: it is the supported dispatch surface for\n\"axis carries a folded seam\", covering both `:exclusive` (OneShot wrap)\nand `:extended` (persistent promotion) uniformly.\n\n* Runic formatting\n\n* fix+refac: `:exclusive` extension eltype-preserving + retire dead helpers\n\n- `_extend_exclusive` (Vector+Vector, Vector+Matrix) and\n  `_prepare_periodic_grid` no longer do x-only `float(eltype(x))` promotion\n  during the periodic extension. Extension is now shape-only (n → n+1);\n  grid `Tg` is set downstream by `_cache_axis(x_ext, bc_eff, Tg)` — single\n  source of truth. Fixes regression where `Int range × Float32 y ×\n  :exclusive` silently widened to `Float64` on the persistent path\n  (Constant raw-eltype contract also restored: `Int` grid preserved).\n\n- Retire `_periodic_extend_1d_pooled!` + `_prepare_1d_oneshot!` (zero src\n  callers; the former referenced undefined `_throw_wrap_virtual_endpoint_error`,\n  definitive dead code). Update stale comments in `cubic_oneshot.jl` and\n  dual-grid tests that named the removed helpers.\n\n- `test/test_periodic_exclusive_eltype.jl`: regression guard for the four\n  joint-promotion directions across Linear/PCHIP/Cardinal/Akima.\n\n- `test/test_constant_periodic.jl` Int-Range :exclusive test was\n  asserting the buggy `_CachedRange{Float64,Float64}` layout; updated to\n  the correct Int-preserving `eltype(itp.x) === Int`.\n\n* fix: 1D adjoint `bc_eff` preserves inferred period — closes Copilot review #2\n\nWhen user passes `PeriodicBC(endpoint=:exclusive)` (period=nothing) on a\nRange grid, `_resolve_exclusive_period` infers the period via\n`step(x) * length(x)`, but `_bc_after_extend(bc)` only forwarded\n`bc.period` (still nothing). Callers that store `bc_eff` lost the\ninferred period for introspection / show / replay.\n\nIntroduce `_bc_eff_extended(x, bc)` which fuses `_bc_after_extend` with\n`_with_resolved_period(..., _resolve_exclusive_period(x, bc))` for the\n`:exclusive` branch (compile-time eliminated for all other BCs). Wire it\nthrough `_periodic_extend_1d` (catches Pchip/Akima adjoint that go through\nthe 4-tuple) and `cardinal_adjoint` (which uses the x-only sibling\n`_prepare_periodic_grid` directly).\n\nCost: one extra `step(x) * length(x)` multiply + immutable `PeriodicBC`\nstack restruct for the `:exclusive` + auto-period branch only; zero heap\nalloc. Construction-time path, no hot-eval impact.\n\nForward Cubic already handles this via\n`_with_resolved_period(_bc_after_extend(bc), cache.bc.period)` — Linear /\nPCHIP / Akima / Cardinal / Constant forward have no `bc` field so unaffected.\n\nRegression test asserts `adj.bc.period ≈ period` for all three Hermite-family\n1D adjoints on Range + period=nothing input.\n\n* refac: inline `_bc_eff_extended` — fewer dispatch helpers\n\nThe 2-overload `_bc_eff_extended` was just a 1-line composition of the\nexisting `_bc_after_extend` + `_with_resolved_period` primitives. Inline at\nthe two call sites (`_periodic_extend_1d`, `cardinal_adjoint`) — net -1\nhelper, -2 method overloads. Same behavior, same compile-time elimination\nof non-`:exclusive` branches.\n\n* fix: preserve raw grid eltype in `:exclusive` extension — remove float promotion",
+          "timestamp": "2026-05-14T09:40:18-07:00",
+          "tree_id": "b92a5fdca4e1498446e226f72e19fb4caeb62720",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/fb6871f135643846ea1f35e7e2eef039186333aa"
+        },
+        "date": 1778777000436,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 38251,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83880\nallocs=29\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 636.38,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 356866,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515320\nallocs=40\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1791.34,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1553.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 16.43,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 7.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3213,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 33.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 13.72,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4218.66,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4231.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9795.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3236.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 445.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 61770.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1308.24,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4512\nallocs=11\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12653.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40392\nallocs=16\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 20.03,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 441.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 42643.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 25.14,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 18724.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 33.66,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 259.69,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.11,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 197.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 18504.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.82,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 551.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4335.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 39579.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 728.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1718.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2286.68,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11344.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3327.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 40528.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 553.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 379693.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1056,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

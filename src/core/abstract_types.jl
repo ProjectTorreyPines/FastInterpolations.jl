@@ -177,10 +177,10 @@ Subtypes automatically inherit 6 callable overloads (Vector/Real/Tuple × alloc/
 `Base.size`, `Base.Matrix`, and exclusive periodic in-place handling by implementing:
 
     _n_queries(adj)::Int                    — number of baked query points (required)
-    _adjoint_output_length(adj)::Int        — user-facing output length (required)
+    _adjoint_output_length(adj)::Int      — user-facing output length (required)
     _adjoint_1d_apply!(f_bar, adj, y_bar, deriv)  — core scatter/solve (required)
     _adjoint_internal_length(adj)::Int      — alloc size (default: output length)
-    _adjoint_1d_has_exclusive_periodic(adj)::Bool  — (default: false)
+    _adjoint_1d_has_seam_fold(adj)::Bool  — (default: false)
     _adjoint_1d_finalize(f_bar, adj)        — fold+truncate (default: identity)
 
 # Subtypes
@@ -199,10 +199,10 @@ Subtypes automatically inherit 6 callable overloads (Vector/Real/Tuple × alloc/
 `adjoint_protocol.jl` by implementing the required interface:
 
     _n_queries(adj)::Int                    — number of baked query points (required)
-    _adjoint_output_length(adj)::Int        — user-facing output length (required)
+    _adjoint_output_length(adj)::Int      — user-facing output length (required)
     _adjoint_1d_apply!(f_bar, adj, y_bar, deriv)  — core scatter/solve (required)
     _adjoint_internal_length(adj)::Int      — alloc size (default: output length)
-    _adjoint_1d_has_exclusive_periodic(adj)::Bool  — (default: false)
+    _adjoint_1d_has_seam_fold(adj)::Bool  — (default: false)
     _adjoint_1d_finalize(f_bar, adj)        — fold+truncate (default: identity)
 
 # Subtypes

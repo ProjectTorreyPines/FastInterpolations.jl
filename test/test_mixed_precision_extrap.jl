@@ -197,9 +197,9 @@ end
     # `_cache_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))`
     # ignored Tg, defaulted Int eltype to Float64, and the inner ctor's
     # `_promote_grid_float(Float64, Float32)` then widened y to Float64 too.
-    # Cubic (still on the legacy `_resolve_axis_copied(x, bc, T)` builder) was
-    # unaffected; the migrated families (Linear / PCHIP / Cardinal / Akima +
-    # their Series + ND) lost the Float32 promotion contract.
+    # Cubic (uses `_cache_axis(_convert_copy(x, T), bc)` in its builder, threading
+    # Tg explicitly) was unaffected; the migrated families (Linear / PCHIP /
+    # Cardinal / Akima + their Series + ND) lost the Float32 promotion contract.
     #
     # Constant is an exception: under the raw-eltype duck-typing policy
     # (`Tg = eltype(x)`, `Tv = eltype(y)`), `constant_interp(1:4, Float32[...])`
@@ -235,9 +235,8 @@ end
     end
 
     @testset "Cubic preserves Float32 (control)" begin
-        # Cubic uses the legacy `_resolve_axis_copied(x, bc, T)` builder which
-        # already threads Tg. Locks in the existing-correct behavior so any
-        # future Cubic migration to `_cache_axis` doesn't regress.
+        # Cubic uses `_cache_axis(_convert_copy(x, T), bc)` in its builder,
+        # threading Tg explicitly. Locks in the correct Float32 promotion behavior.
         itp = cubic_interp(x_int, y32)
         @test itp.cache.x isa FastInterpolations._CachedRange{Float32}
         @test itp.y isa Vector{Float32}

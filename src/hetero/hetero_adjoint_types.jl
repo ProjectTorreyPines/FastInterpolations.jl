@@ -164,7 +164,7 @@ end
 @inline _grid_size(adj::HeteroAdjointND) = adj.grid_size
 
 # Per-axis adjoint-BC tuple — uniform `<: AbstractBC` (no `Nothing` sentinel).
-# Consumed by `_has_exclusive_periodic` / `_adjoint_output_size` to drive the
+# Consumed by `_has_seam_fold` / `_adjoint_output_size` to drive the
 # generic seam-fold + trim post-apply hook.
 @inline _adjoint_bcs(adj::HeteroAdjointND) = adj.bcs
 

@@ -254,7 +254,7 @@
     end
 
     @testset "Exclusive — ND persistent rejects period-too-small at build (T-3)" begin
-        # period < grid_span should trip _throw_wrap_virtual_endpoint_error at ND build.
+        # period < grid_span should be rejected at ND build (ArgumentError).
         x = [0.0, 1.0, 2.0, 3.0]
         y = range(0.0, 1.0, length = 4)
         data = rand(4, 4)
@@ -589,7 +589,7 @@
     # ============================================================
     # Interpolant path — extended copy storage
     # ============================================================
-    @testset "Interpolant path stores Vector grid in `_ExclusivePeriodicAxis` + y in `_ExclusivePeriodicData`" begin
+    @testset "Interpolant path extends Vector grid + data to closed-cycle layout (no wrapper)" begin
         x = [0.0, 1.0, 2.0, 3.0]
         y = [10.0, 20.0, 30.0, 40.0]
         x_ref = copy(x)
@@ -597,45 +597,33 @@
 
         itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 4.0))
 
-        # Vector + `:exclusive` is now wrapped in `_ExclusivePeriodicAxis`
-        # (axis-side, carries period) + `_ExclusivePeriodicData` (data-side,
-        # auto-cyclic). Zero-copy: both wrappers reference the user's arrays.
-        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
-        @test itp.y isa FastInterpolations._ExclusivePeriodicData
-        @test length(itp.x) == 5                # virtual extended length n+1
-        @test length(itp.y) == 5                # data wrapper also reports n+1
-        @test length(itp.x.inner) == 4          # physical inner grid length n
-        @test length(itp.y.inner) == 4          # physical inner data length n
-        @test itp.x.period ≈ 4.0
-        @test itp.x.inner == x                  # inner grid is the user's original grid
-        @test itp.y.inner == y                  # inner data is the user's original values
-
-        # Virtual endpoints: axis carries coord (`inner[1] + period`),
-        # data auto-cycles (`inner[1]`).
-        @test itp.x[5] ≈ 4.0                    # cyclic via axis wrapper's getindex
-        @test itp.y[5] == itp.y[1] == 10.0      # cyclic via data wrapper's getindex
-        @test last(itp.x) ≈ 4.0                 # axis: inner[1] + period
-        @test last(itp.y) == 10.0               # data: inner[1] (cyclic)
+        # Persistent `:exclusive` is extend-promoted to a closed-cycle
+        # `:extended` layout. No wrappers: axis and data are plain length-n+1
+        # storage with the seam appended (x[end]=x[1]+period, y[end]=y[1]).
+        @test !(itp.x isa FastInterpolations._ExclusivePeriodicAxis)
+        @test !(itp.y isa FastInterpolations._ExclusivePeriodicData)
+        @test length(itp.x) == 5                # extended n+1
+        @test length(itp.y) == 5                # extended n+1
+        @test itp.x[end] ≈ 4.0                  # virtual endpoint = first + period
+        @test itp.y[end] == itp.y[1] == 10.0    # closed cycle
 
         # Original user arrays are untouched.
         @test x == x_ref
         @test y == y_ref
     end
 
-    @testset "Interpolant path wraps Range axis (`_ExclusivePeriodicAxis(_CachedRange)`)" begin
+    @testset "Interpolant path extends Range axis to `_CachedRange` length n+1 (no wrapper)" begin
         x = range(0.0, step = 1.0, length = 4)
         y = [10.0, 20.0, 30.0, 40.0]
 
         itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
 
-        # Range input → `_ExclusivePeriodicAxis(_CachedRange, period)` (uniform with
-        # the Vector path; period + virtual endpoint cached on the axis).
-        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
-        @test itp.x.inner isa _CachedRange
-        @test length(itp.x) == 5             # virtual length n+1
-        @test length(itp.x.inner) == 4       # raw n-length cached Range
-        @test length(itp.y) == 5             # `_ExclusivePeriodicData` virtual n+1
-        @test itp.y[end] == itp.y[1]         # cyclic
+        # Range input → extend-promoted to `_CachedRange` of length n+1 directly.
+        @test !(itp.x isa FastInterpolations._ExclusivePeriodicAxis)
+        @test itp.x isa _CachedRange
+        @test length(itp.x) == 5             # extended n+1
+        @test length(itp.y) == 5             # extended n+1
+        @test itp.y[end] == itp.y[1]         # closed cycle
     end
 
     # ============================================================
@@ -758,13 +746,14 @@
     # with their original type (AD chains preserved).
     # ============================================================
     @testset "Int Range + PeriodicBC(:exclusive) — persistent" begin
+        # Persistent `:exclusive` is extend-promoted to a closed-cycle
+        # `:extended` layout. Int Range gets float-promoted, so the axis is
+        # `_CachedRange{Float64}` of length n+1 directly — the lazy wrapper is gone.
         x = 0:10                                       # UnitRange{Int}
         y = sin.(2π .* (x ./ 10))
         itp = linear_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
-        @test itp.x isa FastInterpolations._ExclusivePeriodicAxis
-        @test itp.x.inner isa _CachedRange{Float64}    # Int Range → Float _CachedRange (cached)
-        @test length(itp.x) == 12                      # virtual N+1
-        @test length(itp.x.inner) == 11                # raw N
+        @test itp.x isa _CachedRange{Float64}
+        @test length(itp.x) == 12                      # closed-cycle n+1
         # Query agrees with Float-equivalent grid
         ref = linear_interp(Float64.(0:10), y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
         for xq in (0.5, 5.5, 10.5)

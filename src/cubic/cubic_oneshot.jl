@@ -156,11 +156,8 @@ lifetime). `y_eff` returned for caller convenience — same object as `y`
     ) where {Tg, Tv}
     @assert length(x) == length(y) "x and y must have the same length"
 
-    # Inclusive form requires `y[1] ≈ y[end]` (closed-cycle data). Previously
-    # this validation was performed inside `_periodic_extend_1d_pooled!`; with
-    # the zero-copy path skipping that helper, we invoke the check explicitly
-    # here. The dispatch is a no-op for `:exclusive` (which has no endpoint
-    # constraint — virtual seam is constructed from `bc.period`).
+    # Inclusive form requires `y[1] ≈ y[end]` (closed-cycle data); dispatch
+    # is a no-op for `:exclusive` (virtual seam is constructed from `bc.period`).
     _check_periodic_endpoints(bc, y)
 
     # Build cache on the user's grid (BC-aware: `:inclusive` user length n+1 OR
@@ -238,7 +235,7 @@ In-place cubic spline interpolation with optional automatic caching.
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tv}
-    x = _prepare_grid(x)
+    x = _resolve_axis(x)
     # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher
     # (`search.jl:928`). Non-periodic bc is a no-op via the NoBC default.
     searcher = _resolve_search(x, x_query, search, nothing, bc)
@@ -386,7 +383,7 @@ function cubic_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _prepare_grid(x)
+    x = _resolve_axis(x)
     # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher
     # (`search.jl:928`). Non-periodic bc is a no-op via the NoBC default.
     searcher = _resolve_search(x, xq, search, hint, bc)

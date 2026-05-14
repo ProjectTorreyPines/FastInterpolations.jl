@@ -839,10 +839,8 @@ const FI = FastInterpolations
     end
 
     # ========================================================================
-    # PeriodicBC + Dual grid — verifies the `_PromotableValue` guard in
-    # `_extend_exclusive` and `_periodic_extend_1d_pooled!` does NOT misfire on
-    # duck grids (Dual is not `<: _PromotableValue`, so eltype passes through
-    # unchanged to preserve AD chains).
+    # PeriodicBC + Dual grid — verifies `_extend_exclusive` is shape-only and
+    # passes Dual eltype through unchanged to preserve AD chains.
     # ========================================================================
     @testset "PeriodicBC — Dual grid preserves type (persistent + oneshot)" begin
         # Use the tag-only `Dual{:tag}(value, partial)` form — the fully

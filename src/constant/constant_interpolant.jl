@@ -120,9 +120,10 @@ end
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tv}
-    x_eff = _cache_axis(x, bc, Tg)
-    y_eff = _resolve_data(y, bc)
-    extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
+    # Persistent: extend-promote for `:exclusive` (matches PCHIP/Cardinal/Akima/Cubic/Linear).
+    # OneShot path continues to use the lazy wrapper (constant_oneshot.jl).
+    x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
+    x_eff = _cache_axis(x_ext, bc_eff, Tg)
     extrap_p = _promote_extrap(extrap_eff, Tv)
-    return ConstantInterpolant(x_eff, y_eff, extrap_p, side, search; bc = bc)
+    return ConstantInterpolant(x_eff, y_ext, extrap_p, side, search; bc = bc_eff)
 end

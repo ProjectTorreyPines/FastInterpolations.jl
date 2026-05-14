@@ -598,11 +598,12 @@ end
     bc_user = method.bc
     grid_ext = bc_user isa PeriodicBC{:exclusive} && _is_already_extended(grid, bc_user) ?
         grid : _prepare_periodic_grid(grid, bc_user)
-    bc = _is_periodic_bc(bc_user) ? bc_user : _normalize_bc(bc_user)
+    # Periodic → _bc_after_extend (:exclusive → :extended); non-periodic → BCPair.
+    bc = _is_periodic_bc(bc_user) ? _bc_after_extend(bc_user) : _normalize_bc(bc_user)
     mbc_raw = _get_effective_bc(bc_user, 2, grid_ext)      # depends on grid_ext
-    mixed_bc = _is_periodic_bc(mbc_raw) ? mbc_raw : _normalize_bc(mbc_raw)
-    cache = _get_cubic_cache(grid_ext, _is_periodic_bc(bc) ? PeriodicBC() : bc, ac)
-    mixed_cache = _get_cubic_cache(grid_ext, _is_periodic_bc(mixed_bc) ? PeriodicBC() : mixed_bc, ac)
+    mixed_bc = _is_periodic_bc(mbc_raw) ? _bc_after_extend(mbc_raw) : _normalize_bc(mbc_raw)
+    cache = _get_cubic_cache(grid_ext, bc, ac)
+    mixed_cache = _get_cubic_cache(grid_ext, mixed_bc, ac)
     return (; grid_ext, bc, mixed_bc, cache, mixed_cache, mincurv_C = zero(Tg))
 end
 

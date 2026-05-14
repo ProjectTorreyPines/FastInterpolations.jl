@@ -109,14 +109,14 @@ end
 # in-place are inherited from AbstractAdjoint1D via src/core/adjoint_protocol.jl.
 
 @inline _adjoint_output_length(adj::CubicAdjoint) =
-    adj.bc isa PeriodicBC{:exclusive} ? length(adj.cache.x) - 1 : length(adj.cache.x)
+    _is_periodic_seam_folded(adj.bc) ? length(adj.cache.x) - 1 : length(adj.cache.x)
 
 @inline _n_queries(adj::CubicAdjoint) = length(adj.anchors)
 
 @inline _adjoint_internal_length(adj::CubicAdjoint) = length(adj.cache.x)
 
-@inline _adjoint_1d_has_exclusive_periodic(adj::CubicAdjoint) =
-    adj.bc isa PeriodicBC{:exclusive}
+@inline _adjoint_1d_has_seam_fold(adj::CubicAdjoint) =
+    _is_periodic_seam_folded(adj.bc)
 
 @inline _adjoint_1d_apply!(f_bar, adj::CubicAdjoint, y_bar, deriv) =
     _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
@@ -501,16 +501,14 @@ function _build_cubic_adjoint_periodic(
         x
     end
 
-    # Get/build periodic cache (Thomas factorization + PeriodicData{q, period})
-    cache = _get_cubic_cache(x_ext, PeriodicBC(), _effective_autocache(autocache, Tg))
+    # Cache built with `_bc_after_extend(bc)` → cache.bc is :extended for
+    # promoted :exclusive, :inclusive for direct user input.
+    cache = _get_cubic_cache(x_ext, _bc_after_extend(bc), _effective_autocache(autocache, Tg))
 
     # Build anchored queries with wrapping (queries outside domain → wrap to [x[1], x[end]))
     anchors = _anchor_query(cache.x, xq, Val(:cubic), true)
 
-    # Store resolved period in BC for display/introspection
-    bc_display = _with_resolved_period(bc, cache.bc.period)
-
-    return CubicAdjoint(cache, anchors, bc_display)
+    return CubicAdjoint(cache, anchors, cache.bc)
 end
 
 # ========================================

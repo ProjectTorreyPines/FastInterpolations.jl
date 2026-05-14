@@ -165,5 +165,6 @@ end
 #     `:exclusive` → `_ExclusivePeriodicAxis`),
 #   - inner constructor:  `_convert_copy(x, Tg)` — ownership copy +
 #     element-type promotion (wrapper-preserving `Base.copy`).
-# Cubic 1D additionally uses `_resolve_axis_copied(x, bc, Tg)` — a single-step
-# wrap+copy helper with same-eltype passthrough optimization for re-entry.
+# Cubic 1D builds owned cache axes via `_cache_axis(_convert_copy(x, T), bc)`
+# (copy-then-wrap): one buffer copy + eltype conversion, then alias the
+# fresh buffer and build h/inv_h once.

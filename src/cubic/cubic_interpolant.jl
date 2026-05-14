@@ -242,7 +242,7 @@ so the pool memory can be safely reused after this function returns.
     ) where {Tg, Tv}
     x, y = _prepare_periodic(x, y, bc)
     _check_periodic_endpoints(bc, y)
-    cache = _get_cubic_cache(x, PeriodicBC(), _effective_autocache(autocache, Tg))
+    cache = _get_cubic_cache(x, _bc_after_extend(bc), _effective_autocache(autocache, Tg))
     Tz = _output_eltype(eltype(y), eltype(cache.x))
     tmp_z = acquire!(pool, Tz, length(y))
     _solve_system!(tmp_z, cache, y, cache.bc)
@@ -378,7 +378,8 @@ so the pool memory can be safely reused after this function returns.
 
     if cache.bc isa PeriodicBC
         _check_periodic_endpoints(y)
-        return CubicInterpolant(cache, y, tmp_z, PeriodicBC(), WrapExtrap(cache.x), search)
+        # Store cache.bc verbatim (already :extended/:inclusive normalized).
+        return CubicInterpolant(cache, y, tmp_z, cache.bc, WrapExtrap(cache.x), search)
     end
 
     # cache.bc is BCPair - use it directly.

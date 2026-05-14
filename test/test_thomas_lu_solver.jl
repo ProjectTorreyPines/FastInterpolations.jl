@@ -67,7 +67,7 @@
     # ─────────────────────────────────────────────────────────────────────────
 
     function _build_tridiagonal_derivative_bc(x::AbstractVector{T}, bc_pair::FI.BCPair) where {T <: AbstractFloat}
-        cache_x = FI._resolve_axis_copied(x, FI.NoBC(), T)
+        cache_x = FI._cache_axis(FI._convert_copy(x, T), FI.NoBC())
         n = length(cache_x) - 1
         dl = Vector{T}(undef, n)
         d_diag = Vector{T}(undef, n + 1)
@@ -89,7 +89,7 @@
     end
 
     function _build_tridiagonal_periodic_Aprime(x::AbstractVector{T}) where {T <: AbstractFloat}
-        cache_x = FI._resolve_axis_copied(x, FI.NoBC(), T)
+        cache_x = FI._cache_axis(FI._convert_copy(x, T), FI.NoBC())
         n_sys = length(cache_x) - 1
         dl = Vector{T}(undef, n_sys - 1)
         d_diag = Vector{T}(undef, n_sys)
@@ -177,7 +177,7 @@
                 # `compute_rhs_periodic!` reads cell widths via `_get_h(cache_x, i)`.
                 # Inclusive form: cache_x is the user's length n+1 grid (closed
                 # cycle); `_get_h(cache_x, n)` returns the last real cell.
-                cache_x = FastInterpolations._resolve_axis_copied(x, FastInterpolations.NoBC(), T)
+                cache_x = FastInterpolations._cache_axis(FastInterpolations._convert_copy(x, T), FastInterpolations.NoBC())
                 FI.compute_rhs_periodic!(rhs, y, cache_x)
 
                 # Baseline: stdlib LU + ldiv!

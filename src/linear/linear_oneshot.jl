@@ -303,7 +303,7 @@ end
 end
 
 # Public scalar one-shot API.
-# Zero-alloc: _prepare_grid returns Vector as-is, Range → _CachedRange (stack).
+# Zero-alloc: _resolve_axis returns Vector as-is, Range → _CachedRange (stack).
 # Kernel arithmetic auto-promotes Int×Float via _get_h float() wrappers.
 @inline function linear_interp(
         x::AbstractVector{Tg},

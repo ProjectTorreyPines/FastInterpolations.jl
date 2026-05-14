@@ -442,35 +442,21 @@ end
 #   AbstractArray  + PeriodicBC{:inclusive}        → y (passthrough; endpoint-checked)
 #   AbstractArray  + PeriodicBC{:exclusive}        → _ExclusivePeriodicData(y) (zero-alloc)
 #
-# `_resolve_axis_copied(x, bc, Tg)` — owned-copy variant for **persistent**
-# interpolant constructors. Same dispatch shape as `_resolve_axis` but:
-#   - bakes h/inv_h into a `_CachedVector` for Vector inputs (eval-time
-#     `_get_h(x, i)` becomes cached lookup),
-#   - copies user buffers (mutation-safe ownership transfer),
-#   - promotes element type to `Tg`.
-# Range inputs are already cached via `_to_float`/`_to_float_adding_endpoint`
-# (immutable structs of scalar fields → no buffer copy needed regardless).
-#
-#   x type        + bc                          →  result
-#   ─────────────────────────────────────────────────────────────────
-#   AbstractVector + NoBC / inclusive              → _CachedVector(_convert_copy(x, Tg))
-#   AbstractVector + :exclusive                    → _ExclusivePeriodicAxis(
-#                                                      _CachedVector(_convert_copy(x, Tg)),
-#                                                      period)
-#   AbstractRange  + NoBC / inclusive              → _to_float(x, Tg)
-#   AbstractRange  + :exclusive                    → _to_float_adding_endpoint(x, Tg)
-#
-# Pre-wrapped inputs (`_CachedVector`, `_CachedRange`, `_ExclusivePeriodicAxis`)
-# delegate to wrapper-aware `_convert_copy(x, Tg)` so both type promotion
-# (e.g., `_CachedVector{Float32}` → `_CachedVector{Float64}`) AND mutation-safe
-# ownership are guaranteed regardless of how the wrapper was originally built.
-#
-# All three resolvers replace the older `_periodic_extend_1d` /
-# `_*_resolve_periodic_grid` per-method helpers with a single uniform
-# surface for every method-family. The same flow works for 1D oneshot
-# (zero-alloc) AND persistent (cached) — just pick the right axis variant.
+# For persistent-storage callers that need owned + eltype-promoted axes, the
+# canonical pattern is `_cache_axis(_convert_copy(x, Tg), bc)` — copy first
+# (one buffer copy + eltype conversion), then wrap (aliases the fresh copy,
+# builds h/inv_h once). Both resolvers replace the older `_periodic_extend_1d` /
+# `_*_resolve_periodic_grid` per-method helpers with a single uniform surface
+# for every method-family.
 
 # ----- Surface (oneshot, zero-alloc) ---------------------------------------
+
+# 1-arg form: BC-unaware grid normalization. Used by public oneshot API
+# entries that haven't yet inspected `bc` (e.g., `cardinal_interp(x, y, xq; bc)`)
+# and by internal helpers that just need a uniform grid representation.
+# Equivalent to `_resolve_axis(x, NoBC())` but more explicit at the call site.
+@inline _resolve_axis(x::AbstractVector) = x
+@inline _resolve_axis(x::AbstractRange) = _to_float(x, float(eltype(x)))
 
 @inline _resolve_axis(x::AbstractVector, ::AbstractBC) = x
 @inline _resolve_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
@@ -493,6 +479,9 @@ end
     periodic_check(bc) && _check_periodic_endpoints(bc, y)
     return y
 end
+# `:extended` is constructed by `_bc_after_extend` with `C=false` pinned, so
+# `periodic_check(bc)` is always `false` — passthrough is the entire behavior.
+@inline _resolve_data(y::AbstractArray, ::PeriodicBC{:extended}) = y
 @inline _resolve_data(y::AbstractArray, ::PeriodicBC{:exclusive}) =
     _ExclusivePeriodicData(y)
 
@@ -504,20 +493,11 @@ end
 # stored axis supports O(1) `_get_h(x, i)` lookup downstream) while still
 # *aliasing* the user's data buffer in `_CachedVector.inner`. The inner
 # constructor's `_convert_copy(x, Tg)` is responsible for the ownership
-# copy of `inner` plus any element-type promotion.
-#
-# Trade-off relative to the legacy `_resolve_axis_copied(x, bc, Tg)` (which
-# folded wrap+copy+typed into one call):
-#   - clearer separation of concerns (BC-aware wrap vs ownership copy),
-#   - no misleading `NoBC()` placeholder inside inner constructors,
-#   - construction allocations increase: `_CachedVector` ctor allocates
-#     `h`/`inv_h` once (here), and the inner ctor's `Base.copy(::_CachedVector)`
-#     deep-copies all three fields (`inner` + `h` + `inv_h`) for full
-#     ownership independence. Net effect: ~+50% on raw-Vector 1D persistent
-#     construction, ~+5x on raw-Vector ND grids vs the legacy alias-h/inv_h
-#     optimization. Trade-off explicitly accepted to keep `Base.copy`'s
-#     ownership contract clean (every field independent); pool-based
-#     reduction of the redundant outer h/inv_h alloc is a future option.
+# copy of `inner` plus any element-type promotion. Persistent builders that
+# need owned + eltype-promoted axes in a single pass use the canonical
+# `_cache_axis(_convert_copy(x, Tg), bc)` pattern: `_convert_copy` does one
+# buffer copy + eltype conversion, then `_cache_axis` aliases that fresh
+# buffer and builds h/inv_h once.
 #
 #   x type        + bc                          →  result
 #   ─────────────────────────────────────────────────────────────────
@@ -536,6 +516,13 @@ end
 # are idempotent passthroughs — wrapping is already done; the inner ctor's
 # `_convert_copy` handles ownership transfer + optional type conversion.
 
+# 1-arg form: BC-unaware caching wrap. Mirrors `_resolve_axis(x)` but uses
+# the persistent-storage convention (Vector → `_CachedVector` for cached
+# h/inv_h lookup). Use when the call site is persistent but hasn't yet
+# inspected `bc`. Pre-wrapped inputs pass through idempotently below.
+@inline _cache_axis(x::AbstractVector) = _CachedVector(x)
+@inline _cache_axis(x::AbstractRange) = _to_float(x, float(eltype(x)))
+
 @inline _cache_axis(x::AbstractVector, ::AbstractBC) = _CachedVector(x)
 @inline _cache_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
 @inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
@@ -551,6 +538,18 @@ end
 # to resolve ambiguity against the raw-input entries above
 # (`_CachedRange <: AbstractRange`, `_CachedVector <: AbstractVector`,
 # `_ExclusivePeriodicAxis <: AbstractVector`).
+# Pre-wrapped idempotent passthroughs — both 1-arg and 2-arg forms. The
+# 1-arg passthroughs are critical for `_cache_axis` (without them, the raw
+# `AbstractVector` overload would wrap an already-wrapped axis in a redundant
+# `_CachedVector`). `_resolve_axis` 1-arg is safe via the `AbstractVector`
+# passthrough but explicit overloads are provided for symmetry.
+@inline _resolve_axis(c::_CachedRange) = c
+@inline _resolve_axis(c::_CachedVector) = c
+@inline _resolve_axis(g::_ExclusivePeriodicAxis) = g
+@inline _cache_axis(c::_CachedRange) = c
+@inline _cache_axis(c::_CachedVector) = c
+@inline _cache_axis(g::_ExclusivePeriodicAxis) = g
+
 @inline _cache_axis(c::_CachedRange, ::AbstractBC) = c
 @inline function _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive})
     bc_resolved = _resolve_bc_period(c, bc)
@@ -595,72 +594,6 @@ end
 @inline _cache_axis(c::_CachedVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
 @inline _cache_axis(g::_ExclusivePeriodicAxis, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(g, bc)
 @inline _cache_axis(g::_ExclusivePeriodicAxis, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(g, bc)
-
-# ----- Resolve + copy (persistent interpolant) -----------------------------
-
-@inline _resolve_axis_copied(x::AbstractVector, ::AbstractBC, ::Type{Tg}) where {Tg} =
-    _CachedVector(_convert_copy(x, Tg))
-@inline _resolve_axis_copied(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} =
-    _to_float(x, Tg)
-@inline function _resolve_axis_copied(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, Tg), bc_resolved.period)
-end
-@inline function _resolve_axis_copied(x::AbstractVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    bc_resolved = _resolve_bc_period(x, bc)
-    cv = _CachedVector(_convert_copy(x, Tg))
-    return _ExclusivePeriodicAxis(cv, bc_resolved.period)
-end
-# Pre-wrapped re-entry (e.g. user passes already-wrapped axis, OR a wrapper
-# threads through a builder that calls `_resolve_axis_copied` a second time).
-# Each pre-wrapped type has BOTH a `<:AbstractBC` overload AND an explicit
-# `<:PeriodicBC{:exclusive}` overload to resolve ambiguity against the
-# `(AbstractRange|AbstractVector, PeriodicBC{:exclusive}, Tg)` entries above
-# (`_CachedRange <: AbstractRange`, `_CachedVector <: AbstractVector`,
-# `_ExclusivePeriodicAxis <: AbstractVector`).
-#
-# Two-tier dispatch on the wrapper's eltype:
-#   - **Same eltype as Tg → true passthrough** (return `x` as-is). The
-#     canonical outer→inner constructor flow (e.g. `linear_interp` →
-#     `_resolve_axis_copied` → `LinearInterpolant(...)` → inner ctor →
-#     `_resolve_axis_copied` again) re-enters with the SAME wrapper that the
-#     outer call produced. Re-copying here would double the allocations.
-#     Internal API contract: callers must not pass a wrapper holding a
-#     shared user buffer (e.g. `_CachedVector(my_vec)` shares `my_vec` —
-#     that's caller's responsibility to handle).
-#   - **Different eltype → wrapper-aware `_convert_copy(x, Tg)` rebuild** in
-#     a single allocation pass (no double-copy via intermediate plain
-#     Vector).
-#
-# `_CachedRange` is unconditionally routed through `_convert_copy` because
-# the `_convert_copy(::_CachedRange{T}, ::Type{T}) = r` same-type branch is
-# already a true zero-cost identity (immutable struct of scalar fields, no
-# buffer to share with anyone).
-@inline _resolve_axis_copied(x::_CachedRange, ::AbstractBC, ::Type{Tg}) where {Tg} =
-    _convert_copy(x, Tg)
-@inline function _resolve_axis_copied(x::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_convert_copy(x, Tg), bc_resolved.period)
-end
-# Same-eltype passthroughs (true zero-copy re-entry).
-@inline _resolve_axis_copied(x::_CachedVector{Tg}, ::AbstractBC, ::Type{Tg}) where {Tg} = x
-@inline function _resolve_axis_copied(x::_CachedVector{Tg}, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(x, bc_resolved.period)
-end
-@inline _resolve_axis_copied(x::_ExclusivePeriodicAxis{Tg}, ::AbstractBC, ::Type{Tg}) where {Tg} = x
-@inline _resolve_axis_copied(x::_ExclusivePeriodicAxis{Tg}, ::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = x
-# Different-eltype rebuilds.
-@inline _resolve_axis_copied(x::_CachedVector, ::AbstractBC, ::Type{Tg}) where {Tg} =
-    _convert_copy(x, Tg)
-@inline function _resolve_axis_copied(x::_CachedVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_convert_copy(x, Tg), bc_resolved.period)
-end
-@inline _resolve_axis_copied(x::_ExclusivePeriodicAxis, ::AbstractBC, ::Type{Tg}) where {Tg} =
-    _convert_copy(x, Tg)
-@inline _resolve_axis_copied(x::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
-    _convert_copy(x, Tg)
 
 # ========================================
 # Search policy: preserve inner's trait

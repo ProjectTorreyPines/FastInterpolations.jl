@@ -54,7 +54,7 @@ end
 # Axis-aware 2-arg wrapper (axis as single source of truth)
 # ────────────────────────────────────────────────────────
 #
-# After the surface-API axis resolution (`_resolve_axis` / `_resolve_axis_copied`),
+# After the surface-API axis resolution (`_resolve_axis` / `_cache_axis`),
 # every supported axis exposes `first/last` matching the canonical wrap
 # domain — including `_ExclusivePeriodicAxis`, whose `last` reports the
 # virtual endpoint `inner[1] + period`. With `WrapExtrap` reduced to a tag
@@ -102,6 +102,10 @@ Throws `ArgumentError` if endpoints differ.
     _check_periodic_endpoints(y)
     return nothing
 end
+
+# `:extended` is constructed by `_bc_after_extend` with `C=false` pinned, so
+# `periodic_check(bc)` is always `false` and validation would be a no-op.
+@inline _check_periodic_endpoints(::PeriodicBC{:extended}, ::AbstractVector) = nothing
 
 # `:exclusive` form has no endpoint-matching constraint: the user provides n
 # distinct samples and the seam is virtual (constructed from `bc.period`).
@@ -313,10 +317,14 @@ on the x side exactly:
 @inline function _prepare_periodic_grid(x::AbstractVector, bc::PeriodicBC{:exclusive})
     period = _resolve_exclusive_period(x, bc)
     _validate_exclusive_period(x, period)
-    Tg_real = eltype(x) <: _PromotableValue ? float(eltype(x)) : eltype(x)
-    x_end = first(x) + Tg_real(period)
+    # Shape-only extension — eltype preserved. Grid Tg is set downstream by
+    # `_cache_axis(x_ext, bc_eff, Tg)` (single source of truth).
+    T = eltype(x)
+    x_end = first(x) + T(period)
     last(x) < x_end || _throw_excl_endpoint_too_small(period, x_end, last(x))
-    return x isa AbstractRange ? _to_float_adding_endpoint(x, Tg_real) : vcat(x, x_end)
+    return x isa AbstractRange ?
+        range(first(x); step = step(x), length = length(x) + 1) :
+        vcat(x, x_end)
 end
 
 """
@@ -387,16 +395,12 @@ function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     # invoke the same check here so `bc.period` mismatches are caught
     # uniformly across all method families.
     _validate_exclusive_period(x, period)
-    # Duck-safe grid promotion. `_PromotableValue` (Integer / AbstractFloat /
-    # Rational / Complex) is promoted via `float(...)` so Int-typed Ranges can
-    # form a valid `_CachedRange{Float}` (otherwise `inv(step::Int)::Float64`
-    # cannot be stored in the `Int`-typed `inv_h` field → InexactError).
-    # Duck grids (Dual, Measurement, SVector, ...) fall through with their
-    # original type; they handle their own `inv`/arithmetic within their type.
-    # Mirrors `_promote_grid_float` and `_check_periodic_endpoints` dispatch.
-    Tg_raw = eltype(x)
-    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
-    x_end = first(x) + Tg(period)
+    # Shape-only extension — eltype preserved. Grid Tg is set downstream by
+    # `_cache_axis(x_ext, bc_eff, Tg)` (single source of truth). `T(period)`
+    # throws `InexactError` on incompatible user period (e.g. Int range +
+    # irrational period) instead of silently widening to Float64.
+    T = eltype(x)
+    x_end = first(x) + T(period)
 
     # Sanity: virtual endpoint must be strictly after last grid point. Catches
     # a too-small period even when Vector grids skipped the cross-validation.
@@ -406,7 +410,7 @@ function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     # runtime ≈ check. _resolve_exclusive_period already validates period ≈ step(x)*length(x)
     # for Range grids, so Range → Range extension is always safe.
     x_ext = if x isa AbstractRange
-        _to_float_adding_endpoint(x, Tg)
+        range(first(x); step = step(x), length = length(x) + 1)
     else
         vcat(x, x_end)
     end
@@ -425,15 +429,14 @@ end
 function _extend_exclusive(x::AbstractVector, y_mat::AbstractMatrix, bc::PeriodicBC)
     period = _resolve_exclusive_period(x, bc)
     _validate_exclusive_period(x, period)
-    # Duck-safe grid promotion — see the Vector overload above for rationale.
-    Tg_raw = eltype(x)
-    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
-    x_end = first(x) + Tg(period)
+    # Eltype-preserving — see Vector overload for rationale.
+    T = eltype(x)
+    x_end = first(x) + T(period)
 
     last(x) < x_end || _throw_excl_endpoint_too_small(period, x_end, last(x))
 
     x_ext = if x isa AbstractRange
-        _to_float_adding_endpoint(x, Tg)
+        range(first(x); step = step(x), length = length(x) + 1)
     else
         vcat(x, x_end)
     end
@@ -448,7 +451,7 @@ _extend_values(y::AbstractVector) = vcat(y, first(y))
 # WrapExtrap is a tag struct (eval_ops.jl)
 # ========================================
 #
-# After the surface-API axis resolution (`_resolve_axis` / `_resolve_axis_copied`),
+# After the surface-API axis resolution (`_resolve_axis` / `_cache_axis`),
 # every supported axis exposes `first/last` matching the canonical wrap
 # domain — including `_ExclusivePeriodicAxis`, whose `last` reports the
 # precomputed virtual endpoint. Eval kernels read those bounds directly
@@ -531,36 +534,21 @@ equality on `data`, then materialize per-axis via the 3-arg primitive.
 end
 
 """
-    _periodic_extend_1d(x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)
+    _periodic_extend_1d(x, y, bc, extrap) -> (x_eff, y_eff, bc_eff, extrap_eff)
 
 Non-pool 1D periodic dispatch for the **persistent-interpolant path**.
-Returns a single `(grid, values, extrap)` triple whether or not `bc` is
-periodic — callers invoke this once and feed the result into their normal
-build flow without branching on `_is_periodic_bc`:
+Fuses the closed-cycle grid extension with the BC normalization that always
+follows it — callers invoke this once and destructure the 4-tuple, feeding
+each piece into their normal build flow without branching on `_is_periodic_bc`:
 
-- Non-periodic `bc` → `(x, y, extrap)` passthrough.
-- `PeriodicBC{:inclusive}` → `(x, y, typed WrapExtrap)` (validates `y[1] ≈ y[end]`).
-- `PeriodicBC{:exclusive}` → `(x_ext, y_ext, typed WrapExtrap)` where the grid/values
-  are extended by one virtual endpoint via `_extend_exclusive` (heap copy
-  consistent with existing non-periodic persistent-path copy semantics).
-
-!!! note "Legacy retention — wrapper migration in progress"
-    The 1D forward path for **Linear, Constant, Cubic** has been migrated to
-    the zero-copy `_ExclusivePeriodicAxis` / `_ExclusivePeriodicData` wrappers
-    (see `src/core/periodic_axis.jl`, `src/core/periodic_data.jl`). This
-    function is retained because the following call sites still depend on the
-    `(n+1)`-extended `Vector` shape:
-
-    - `pchip_interp_precompute` / `cardinal_interp_precompute` /
-      `akima_interp_precompute` (1D Hermite-family PreCompute oneshot)
-    - `*_interp_precompute` persistent-builder paths for the same families
-    - The entire ND `:exclusive` path via `_prepare_periodic_nd`
-      (Linear/Constant/Hetero ND have migrated to the wrapper protocol;
-      CubicInterpolantND and QuadraticInterpolantND still carry
-      `spacings::S` and use this helper indirectly)
-
-    Cleanup tracked alongside the ND-struct migration follow-up; once
-    Cubic/Quadratic ND move to the wrapper protocol, this helper can be removed.
+- Non-periodic `bc` → `(x, y, bc, extrap)` passthrough.
+- `PeriodicBC{:inclusive}` → `(x, y, bc, typed WrapExtrap)`
+  (validates `y[1] ≈ y[end]`; layout already closed-cycle).
+- `PeriodicBC{:exclusive}` → `(x_ext, y_ext, PeriodicBC{:extended,...}, typed WrapExtrap)`
+  where the grid/values are extended by one virtual endpoint via
+  `_extend_exclusive` (heap copy consistent with existing non-periodic
+  persistent-path copy semantics), and `bc_eff` flips to `:extended` to
+  record the internal layout promotion (see `_bc_after_extend`).
 """
 @inline function _periodic_extend_1d(
         x::AbstractVector,
@@ -573,99 +561,34 @@ build flow without branching on `_is_periodic_bc`:
         # Endpoint validation is meaningful only for `:inclusive` — `:exclusive`
         # sets `y_ext[end] = y_ext[1]` by construction so the check is trivially true.
         bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_ext)
-        # `WrapExtrap` is a tag struct; eval kernels read `(first(x_ext), last(x_ext))`
-        # directly. After extension `last(x_ext) - first(x_ext) == period`.
-        return x_ext, y_ext, WrapExtrap()
+        # Bake resolved period into bc_eff (only for `:exclusive`; other branches
+        # compile-time-eliminated) so callers storing `bc_eff` retain the inferred
+        # period for introspection. `WrapExtrap` is a tag struct.
+        bc_eff = _bc_after_extend(bc)
+        bc isa PeriodicBC{:exclusive} &&
+            (bc_eff = _with_resolved_period(bc_eff, _resolve_exclusive_period(x, bc)))
+        return x_ext, y_ext, bc_eff, WrapExtrap()
     end
-    return x, y, extrap
+    return x, y, bc, extrap
 end
 
 # ────────────────────────────────────────────
 # BC normalization after grid extension
 # ────────────────────────────────────────────
-# `_periodic_extend_1d` produces a closed-cycle (n+1) grid for `:exclusive`
-# input and a passthrough n-grid for `:inclusive` (already closed-cycle).
-# After this normalization, the slope side should treat the grid as
-# `:inclusive` regardless of the user's original `bc.endpoint` — the seam
-# cell is now the last cell of the extended grid (or already in place for
-# `:inclusive`). `check=false` skips redundant endpoint validation since
-# the extension constructs `y_eff[end] = y_eff[1]` by definition.
+# `_periodic_extend_1d` and `_prepare_periodic_nd_impl` produce a length-(n+1)
+# closed-cycle grid for `:exclusive` input. After extension, dispatch should
+# reflect the new layout:
+#   - `:inclusive` passes through (user's data was already closed-cycle).
+#   - `:exclusive` swaps to `:extended` — records that the library promoted
+#     the layout, while preserving the period for adjoint output sizing and
+#     introspection. `C=false` because the extension constructs a bit-exact
+#     seam (`y[end] = y[1]`), so endpoint validation would be a noop.
+#   - Non-periodic BCs pass through unchanged.
+# See claudedocs/design/bc_extended_symbol.md §4 + §5.2 for the full rationale.
 @inline _bc_after_extend(bc::AbstractBC) = bc
-@inline _bc_after_extend(::PeriodicBC) = PeriodicBC(endpoint = :inclusive, check = false)
-
-"""
-    _periodic_extend_1d_pooled!(pool, x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)
-
-Pool-based sibling of `_periodic_extend_1d` for the **one-shot hot path**.
-Same contract as the non-pool variant, but the `:exclusive` extension uses
-`acquire!(pool, …)` for the extended buffers (zero-alloc after warmup, caller's
-`@with_pool` scope owns the lifetime).
-
-Range grids are extended to `_CachedRange` via `_to_float_adding_endpoint`
-(heap-free); Vector grids go through the pool. Value buffers are always
-pool-acquired when extending.
-
-Intended consumers: Linear, Constant, and (future Phase 2/3) PCHIP/Cardinal/
-Akima/Quadratic oneshot paths. Cubic oneshot uses this via
-`_cubic_periodic_solve!`, which wraps the extension + tridiagonal solve.
-"""
-@inline function _periodic_extend_1d_pooled!(
-        pool::AbstractArrayPool,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        bc::AbstractBC,
-        extrap::AbstractExtrap
-    ) where {Tg, Tv}
-    if !_is_periodic_bc(bc)
-        # Non-periodic: still materialize in case user passed `WrapExtrap()` singleton.
-        return x, y, _resolve_extrap(extrap, bc, x)
-    end
-    # Duck-safe extension buffer type: promote Integer / Complex{Integer} grids
-    # to float so the extended pool buffer and `_CachedRange` `inv_h` field can
-    # hold `inv(step)`. Duck grids (Dual, Measurement, ...) keep their type so
-    # AD / uncertainty chains survive. Tv (value type) is never promoted here —
-    # user y-vector semantics are preserved.
-    Tg_ext = Tg <: _PromotableValue ? float(Tg) : Tg
-    if bc isa PeriodicBC{:exclusive}
-        period = _resolve_exclusive_period(x, bc)
-        _validate_exclusive_period(x, period)
-        x_end = first(x) + Tg_ext(period)
-        last(x) < x_end || _throw_wrap_virtual_endpoint_error(period, x_end, last(x))
-        n = length(x)
-        if x isa AbstractRange
-            x_p = _to_float_adding_endpoint(x, Tg_ext)
-        else
-            x_p = acquire!(pool, Tg_ext, n + 1)
-            @inbounds copyto!(x_p, 1, x, 1, n)
-            @inbounds x_p[n + 1] = x_end
-        end
-        y_p = acquire!(pool, Tv, n + 1)
-        @inbounds copyto!(y_p, 1, y, 1, n)
-        @inbounds y_p[n + 1] = y[1]
-    else
-        x_p, y_p = x, y
-    end
-    # `:exclusive` path constructs `y_p[end] = y_p[1]` by extension, so the check
-    # is trivially satisfied. Run validation only for `:inclusive`.
-    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_p)
-    # After extension (or no-op for inclusive), the extended grid span IS the wrap
-    # domain — use `WrapExtrap(x_p)` directly, no BC-aware construction needed.
-    return x_p, y_p, WrapExtrap(x_p)
-end
-
-"""
-    _prepare_1d_oneshot!(pool, x, y, bc, extrap) -> (x_eff, y_eff, extrap_eff)
-
-Thin oneshot-API convenience that fuses `_prepare_grid(x)` with
-`_periodic_extend_1d_pooled!(pool, …, bc, extrap)`. Call once per 1D oneshot
-entry point; the return triple feeds directly into searcher + eval kernel.
-
-Separating this from `_periodic_extend_1d_pooled!` keeps the latter's name
-semantically accurate — it really only does work on periodic `bc` — while
-letting user-facing oneshot entry points use a single, non-misleading call.
-"""
-@inline _prepare_1d_oneshot!(pool, x, y, bc, extrap) =
-    _periodic_extend_1d_pooled!(pool, _prepare_grid(x), y, bc, extrap)
+@inline _bc_after_extend(bc::PeriodicBC{:inclusive}) = bc
+@inline _bc_after_extend(bc::PeriodicBC{:exclusive}) =
+    PeriodicBC{:extended, typeof(bc.period), false}(bc.period)
 
 # ========================================
 # ND Exclusive Endpoint Extension
@@ -706,11 +629,12 @@ Called once at build time before `_build_nd_coeffs`.
 - `grids_ext`: Grids with exclusive axes extended (Range type preserved when possible)
 - `data_ext`: Data with first slice appended along each exclusive axis
 - `bcs_post_extend`: Per-axis BCs after extension. Exclusive periodic axes are
-  normalized to `PeriodicBC(:inclusive, check=false)` (period dropped — the
-  extended grid carries the period implicitly as `last(grid_ext) - first(grid_ext)`).
-  Callers that need the period for storage/introspection re-materialize via
-  `_with_resolved_period(bc, last(grid_ext) - first(grid_ext))`. Other axes pass
-  through unchanged.
+  promoted to `PeriodicBC{:extended}` via `_bc_after_extend` (period preserved,
+  `C=false` because the extension constructs a bit-exact seam). Other axes
+  (`:inclusive`, non-periodic) pass through unchanged. Downstream dispatch
+  should use the `_is_periodic_seam_folded` trait rather than `isa
+  PeriodicBC{:exclusive}` so both `:exclusive` (one-shot) and `:extended`
+  (post-extension) are handled uniformly.
 """
 function _prepare_periodic_nd(
         grids::NTuple{N, AbstractVector{Tg}},
@@ -772,11 +696,14 @@ end
         grid_ext = grid_d isa AbstractRange ?
             _to_float_adding_endpoint(grid_d, Tg) :
             extend_vector_grid(grid_d, x_end, Tg)
-        # Normalize bc to `:inclusive` post-extension: the extended grid IS a
-        # closed-cycle inclusive form (length n+1, last point at x[1]+period),
-        # so downstream solvers/cache builders should treat it as inclusive.
-        # Without this normalization, BC-aware solvers (e.g. cubic) would
-        # interpret `:exclusive` as "raw n-grid" and miscount the cycle.
+        # Promote bc to `:extended` post-extension: the extended grid IS a
+        # closed-cycle layout (length n+1, last point at x[1]+period). The
+        # `:extended` symbol records this promotion so downstream solvers and
+        # cache builders can distinguish "user gave :exclusive, we extended"
+        # from "user gave :inclusive" while still routing through the
+        # `_is_periodic_seam_folded` trait. Without this, BC-aware solvers
+        # (e.g. cubic) would interpret `:exclusive` as "raw n-grid" and
+        # miscount the cycle.
         return (grid_ext, _bc_after_extend(bc_d))
     end
     grids_out = map(first, processed)

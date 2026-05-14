@@ -356,7 +356,8 @@ function _build_hetero_precomputed(
 
     _validate_axis_methods(grids_typed, methods, extraps)
 
-    # Extend exclusive periodic axes to inclusive form (same as CubicInterpolantND).
+    # Extend exclusive periodic axes to closed-cycle (n+1) layout (same as
+    # CubicInterpolantND); periodic bcs promoted to `:extended` per axis.
     # Must happen before partials so the stored grid matches the data.
     grids_typed, data_ext, bcs_resolved = _prepare_periodic_nd(grids_typed, data, bcs_periodic)
     # Per-axis caching wrap (zero-copy of buffer); ownership copy in inner ctor.

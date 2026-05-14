@@ -54,10 +54,10 @@ adj(f_bar, y_bar)                       # in-place
 """
 struct CardinalAdjoint1D{Tg, BC <: AbstractBC, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_HermiteAdjointAnchor1D{Tg}}
-    grid::Vector{Tg}       # Grid points (extended to length n+1 for `:exclusive`)
-    grid_size::Int         # Internal length: n+1 for `:exclusive`, n otherwise
+    grid::Vector{Tg}       # Grid points (extended length n+1 when `_is_periodic_seam_folded(bc)`, n otherwise)
+    grid_size::Int         # Internal length: n+1 when `_is_periodic_seam_folded(bc)`, n otherwise
     tension::Tg
-    bc::BC
+    bc::BC                 # User input `PeriodicBC{:exclusive}` is promoted to `:extended` here
     extrap::EP
 end
 
@@ -276,6 +276,10 @@ function cardinal_adjoint(
     x_ext = _prepare_periodic_grid(x_p, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_ext)
     bc_eff = _bc_after_extend(bc)
+    # Bake resolved period so stored `adj.bc.period` is non-nothing even when
+    # user passes `PeriodicBC(:exclusive)` (period inferred from Range).
+    bc isa PeriodicBC{:exclusive} &&
+        (bc_eff = _with_resolved_period(bc_eff, _resolve_exclusive_period(x_p, bc)))
 
     # NoExtrap: validate queries against extended domain.
     if extrap_eff isa NoExtrap
@@ -289,16 +293,20 @@ function cardinal_adjoint(
     end
 
     # Wrap the extended grid for cached `h`/`inv_h` (matches forward
-    # Cardinal persistent's storage type). After `bc_eff` normalization
-    # any periodic input becomes `:inclusive` over the closed-cycle grid,
+    # Cardinal persistent's storage type). After `bc_eff` promotion any
+    # `:exclusive` input becomes `:extended` over the closed-cycle grid,
     # so `_cache_axis` here returns `_CachedRange` / `_CachedVector` of
     # length n+1 (NOT `_ExclusivePeriodicAxis` — the seam is now a real
     # grid point in `x_ext`).
     x_axis = _cache_axis(x_ext, bc_eff, Tg)
     anchors = _bake_hermite_adjoint_anchors(x_axis, xq_p, extrap_eff)
 
-    return CardinalAdjoint1D{Tg, typeof(bc), typeof(extrap_eff)}(
-        anchors, collect(Tg, x_ext), length(x_ext), Tg(tension), bc, extrap_eff
+    # Store `bc_eff` (`:extended` for `:exclusive` input) — symmetric with
+    # `pchip_adjoint` and `akima_adjoint`. The `_is_periodic_seam_folded`
+    # trait covers both `:exclusive` and `:extended` so adjoint output sizing
+    # and seam fold dispatch is uniform.
+    return CardinalAdjoint1D{Tg, typeof(bc_eff), typeof(extrap_eff)}(
+        anchors, collect(Tg, x_ext), length(x_ext), Tg(tension), bc_eff, extrap_eff
     )
 end
 

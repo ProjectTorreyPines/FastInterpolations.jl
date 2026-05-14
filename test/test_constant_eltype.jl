@@ -110,11 +110,14 @@
         end
 
         @testset "exclusive + Int Vector x + Int y" begin
+            # Constant preserves raw grid eltype — `:exclusive` extension is
+            # shape-only (n → n+1), no float promotion.
             x = [0, 1, 2]
             y = [10, 20, 30]
             itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 3))
             @test itp isa ConstantInterpolant{Int, Int}
-            @test itp.x isa _ExclusivePeriodicAxis
+            @test length(itp.x) == 4          # closed-cycle n+1
+            @test itp.x[end] == itp.x[1] + 3  # virtual endpoint at period
             @test itp(0.5) isa Int
         end
 

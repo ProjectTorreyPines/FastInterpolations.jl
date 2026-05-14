@@ -367,7 +367,7 @@ end
 # HermiteAdjoint1D has no `bc` field (user-supplied slopes; periodic BC is
 # meaningless without slope handling). Override the protocol defaults that
 # read `adj.bc` to avoid a FieldError on the allocating callable's finalize.
-@inline _adjoint_1d_has_exclusive_periodic(::HermiteAdjoint1D) = false
+@inline _adjoint_1d_has_seam_fold(::HermiteAdjoint1D) = false
 @inline _adjoint_1d_finalize(f_bar::AbstractVector, ::HermiteAdjoint1D) = f_bar
 
 @inline function _adjoint_1d_apply!(f_bar, adj::HermiteAdjoint1D, y_bar, deriv)

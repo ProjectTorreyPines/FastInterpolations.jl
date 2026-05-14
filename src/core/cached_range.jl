@@ -1,65 +1,22 @@
 # ========================================
-# _CachedRange: Normalized AbstractRange
+# _CachedRange methods — normalized AbstractRange behavior
 # ========================================
 #
-# All AbstractRange inputs are normalized to _CachedRange{T,Tinv} at system boundaries
-# (via `_to_float`). After normalization, the grid type space is exactly
-# {_CachedRange{T,Tinv}, Vector{T}} — eliminating downstream dispatch explosion.
-# `Tinv = typeof(inv(oneunit(T)))` — equals `T` for `T <: AbstractFloat`, equals
-# `Float64` for `T = Int` (mirrors the `_CachedVector{T, Tinv}` shape).
+# Struct definition + 5-arg inner ctor + `_CachedRange(::_CachedRange)` identity
+# live in `axis_types.jl` (loaded earlier). This file owns:
+#   - `_to_float` (Range → `_CachedRange` normalizer)
+#   - AbstractArray interface (`length`, `size`, `first`, `last`, `step`,
+#     `getindex(::Int)`, `getindex(::AbstractUnitRange)`, `view`)
+#   - `_convert_copy`
+#   - `_get_h` / `_get_inv_h`
+#   - `_resolve_axis` / `_cache_axis` / `_cache_axis_pooled` (all BC variants
+#     for raw `AbstractRange` and pre-wrapped `_CachedRange` input)
 #
-# Include order: grid_spacing.jl → cached_range.jl → search.jl → utils.jl
-
-"""
-    _CachedRange{T, Tinv} <: AbstractRange{T}
-
-`AbstractRange` subtype that pre-caches `first`, `last`, `step`, and `inv(step)` as
-plain `T`/`Tinv` fields, enabling multiply-instead-of-divide search and avoiding
-TwicePrecision dispatch overhead.
-
-All `AbstractRange` inputs are normalized to `_CachedRange` via `_to_float` at public
-API boundaries. This means downstream code only needs to handle two grid types:
-`_CachedRange{T,Tinv}` (uniform) and `Vector{T}` (non-uniform).
-
-`Tinv == typeof(inv(oneunit(T)))` — equals `T` for `T <: AbstractFloat`, equals
-`Float64` for raw `T = Int`. Mirrors `_CachedVector{T, Tinv}`.
-
-# Fields
-- `lo::T`        — `first(x)`, cached as plain `T` (used for index computation)
-- `hi::T`        — `last(x)`, cached as plain `T` (used for index computation)
-- `h::T`         — `step(x)`, cached as plain `T`
-- `inv_h::Tinv`  — precomputed `1/step(x)`, enables multiply-not-divide in `_search_direct`
-- `len::Int`     — `length(x)`
-- `domain_lo::T` — safe lower bound for domain checks (≤ lo, prevents false DomainError)
-- `domain_hi::T` — safe upper bound for domain checks (≥ hi, prevents false DomainError)
-
-The `domain_lo`/`domain_hi` fields equal `lo`/`hi` in the exact path (ARM, non-TwicePrecision).
-On x86_64 with TwicePrecision fast path, they are widened by 1 ULP to account for
-possible rounding difference between fast plain-T arithmetic and exact TwicePrecision.
-
-Because `_CachedRange <: AbstractRange`, all existing `AbstractRange` dispatch
-(DirectSearch routing, `_resolve_search_policy`, `search_interval`, etc.) propagates
-automatically without any changes at call sites.
-"""
-struct _CachedRange{T, Tinv} <: AbstractRange{T}
-    lo::T
-    hi::T
-    h::T
-    inv_h::Tinv
-    len::Int
-    domain_lo::T
-    domain_hi::T
-end
-
-# Exact constructor: domain_lo == lo, domain_hi == hi (default for non-TwicePrecision paths)
-@inline function _CachedRange{T, Tinv}(lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv}
-    return _CachedRange{T, Tinv}(lo, hi, h, inv_h, len, lo, hi)
-end
+# Include order: grid_spacing.jl → axis_types.jl → cached_range.jl → ...
 
 # Convenience: construct from any AbstractRange{T}, using its own eltype.
-# Internal code should prefer _to_float(x, Tg) when the desired target type Tg differs from eltype(x).
+# Prefer `_to_float(x, Tg)` at call sites when the desired target differs.
 _CachedRange(x::AbstractRange{T}) where {T} = _to_float(x, T)
-_CachedRange(x::_CachedRange) = x
 
 Base.length(r::_CachedRange) = r.len
 Base.size(r::_CachedRange) = (r.len,)
@@ -193,3 +150,54 @@ end
 # in grid_spacing.jl. The cached form ignores both endpoints (uniform step).
 @inline _get_h(x::_CachedRange, ::Real, ::Real) = x.h
 @inline _get_inv_h(x::_CachedRange, ::Real, ::Real) = x.inv_h
+
+# ========================================
+# `_resolve_axis` — one-shot Range wrapping
+# ========================================
+@inline _resolve_axis(x::AbstractRange) = _to_float(x, float(eltype(x)))
+@inline _resolve_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
+@inline _resolve_axis(c::_CachedRange) = c
+
+# `:exclusive` raw-input one-shot path — wrap into `_ExclusivePeriodicAxis`.
+@inline function _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
+end
+
+# ========================================
+# `_cache_axis` — persistent-path Range wrapping
+# ========================================
+# Full DISPATCH TABLE for `_cache_axis(x, bc, Tg)` (cross-input-type) lives in
+# `periodic_axis.jl` as the central reference. Owner-file entries below.
+@inline _cache_axis(x::AbstractRange) = _to_float(x, float(eltype(x)))
+@inline _cache_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
+@inline _cache_axis(c::_CachedRange) = c
+@inline _cache_axis(c::_CachedRange, ::AbstractBC) = c
+
+# `:exclusive` 2-arg variants — produce `_ExclusivePeriodicAxis`.
+@inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
+end
+@inline function _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive})
+    bc_resolved = _resolve_bc_period(c, bc)
+    return _ExclusivePeriodicAxis(c, bc_resolved.period)
+end
+
+# 3-arg Tg-aware. Raw Range respects Tg via `_to_float`. Pre-wrapped passes
+# through — downstream `_convert_copy(_, Tg)` enforces Tg (intentional contract;
+# see DISPATCH TABLE in `periodic_axis.jl`).
+@inline _cache_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+@inline _cache_axis(c::_CachedRange, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
+@inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(_to_float(x, Tg), bc_resolved.period)
+end
+@inline _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
+
+# ========================================
+# `_cache_axis_pooled` — one-shot Range wrapping
+# ========================================
+# Range types have stack-only `_CachedRange` — no pool buffer needed.
+@inline _cache_axis_pooled(_, x::AbstractRange) = _to_float(x, float(eltype(x)))
+@inline _cache_axis_pooled(_, x::_CachedRange) = x

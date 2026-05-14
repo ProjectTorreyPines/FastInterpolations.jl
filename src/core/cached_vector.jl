@@ -1,74 +1,18 @@
 # ========================================
-# _CachedVector: Vector grid with cached spacing
+# _CachedVector methods — Vector grid with cached spacing
 # ========================================
 #
-# Non-uniform Vector grid wrapper that caches per-cell spacing (`h`) and
-# reciprocal (`inv_h`) for fast lookup. Parallel to `_CachedRange` (which
-# wraps uniform AbstractRange grids).
+# Struct definition + `_CachedVector(::_CachedVector)` identity ctor live in
+# `axis_types.jl` (loaded earlier). This file owns:
+#   - AbstractArray interface (`size`, `length`, `getindex`, `firstindex`,
+#     `lastindex`, `eltype`, `IndexStyle`)
+#   - `_CachedVector(x::AbstractVector{T})` build ctor (computes h/inv_h)
+#   - `Base.copy` / `_convert_copy`
+#   - `_get_h` / `_get_inv_h`
+#   - `_resolve_axis` / `_cache_axis` / `_cache_axis_pooled` (all BC variants
+#     for raw `AbstractVector` and pre-wrapped `_CachedVector` input)
 #
-# All non-Range AbstractVector inputs to persistent interpolant constructors
-# are normalized to `_CachedVector` via `_store_grid`. After normalization,
-# the grid type space for persistent paths is `{_CachedRange, _CachedVector}`,
-# enabling a single 2-arg `_get_h(grid, i)` dispatch surface.
-#
-# Include order: grid_spacing.jl → cached_range.jl → cached_vector.jl → ...
-
-"""
-    _CachedVector{T, Tinv} <: AbstractVector{T}
-
-Vector grid wrapper that caches per-cell spacing (`h`) and reciprocal
-(`inv_h`) for fast O(1) lookup during persistent interpolant evaluation.
-
-# Fields
-- `inner::Vector{T}` — Original grid values (length n). Always a concrete
-  `Vector{T}`. Persistent paths materialize for ownership; one-shot pool
-  paths alias when input is already `Vector{T}`, else pool-acquire +
-  `copyto!` (no heap alloc — see `_cache_axis_pooled` below).
-- `h::Vector{T}` — Cell widths, `h[i] = inner[i+1] - inner[i]` (length n-1).
-  Persistent: fresh heap `Vector{T}`. One-shot: pool-acquired (reused).
-- `inv_h::Vector{Tinv}` — Precomputed reciprocals (length n-1). Same
-  storage rule as `h`.
-
-# Type parameters
-- `T` — Grid element type. Can be `Int`, `Float64`, `ForwardDiff.Dual`,
-  `Measurements.Measurement`, etc. Any type with `-` and `inv` defined.
-- `Tinv` — Reciprocal type, equal to `typeof(inv(oneunit(T)))`. For Float
-  grids `Tinv == T`; for Int grids `Tinv == Float64` (since `inv(::Int)`
-  returns `Float64`).
-
-# Design choice — single concrete inner storage
-All three buffers are pinned to `Vector{_}` (no `I<:AbstractVector{T}` type
-parameter on `inner`). The reason is *not* dispatch cost — `getindex` would
-specialize either way — but **RCU cache key uniformity**: the cubic
-autocache (`CubicSplineCache{T, X, ...}`) keys on the wrapped axis type
-`X`, and if `X = _CachedVector{T, Tinv, I}` flexed per-input (one bank for
-`I=Vector`, another for `I=SubArray`, another for `I=OffsetVector`, …), a
-mixed workload would shard the bank into low-hit-rate buckets. Pinning
-`inner` to `Vector{T}` keeps a single concrete cache key for every user
-input shape. One-shot pool paths preserve zero-alloc for non-`Vector{T}`
-input by pool-acquiring the inner buffer instead of `Vector{T}(x)`.
-
-# Behavior
-- `<: AbstractVector{T}` so existing search and eval kernels accept it
-  transparently — same trick `_CachedRange` uses with `<: AbstractRange`.
-- `Base.getindex(c, i)` forwards to `inner[i]` — zero overhead vs raw `Vector`.
-- `length(c) == length(c.inner)` — same as raw vector.
-- `Base.copy(c)` deep-copies all three fields for ownership.
-
-# Example
-```julia
-x = [0.0, 0.3, 0.7, 1.0]      # non-uniform Float grid
-cv = _CachedVector(x)          # _CachedVector{Float64, Float64}
-
-x_int = [0, 1, 3, 6]           # Int grid
-cv_int = _CachedVector(x_int)  # _CachedVector{Int, Float64}
-```
-"""
-struct _CachedVector{T, Tinv} <: AbstractVector{T}
-    inner::Vector{T}
-    h::Vector{T}        # length n-1
-    inv_h::Vector{Tinv} # length n-1
-end
+# Include order: ... → axis_types.jl → cached_range.jl → cached_vector.jl → ...
 
 # ---------- AbstractVector interface ----------
 Base.size(c::_CachedVector) = (length(c.inner),)
@@ -78,12 +22,6 @@ Base.length(c::_CachedVector) = length(c.inner)
 @inline Base.lastindex(c::_CachedVector) = length(c.inner)
 Base.eltype(::Type{<:_CachedVector{T}}) where {T} = T
 Base.IndexStyle(::Type{<:_CachedVector}) = IndexLinear()
-
-# ---------- Idempotent passthrough ----------
-# `_CachedVector(::_CachedVector)` returns the input unchanged. Mirrors
-# `_to_float(x::_CachedRange{T}, ::Type{T}) = x` (cached_range.jl) — re-wrapping
-# would discard the existing cached `h`/`inv_h` for no reason.
-_CachedVector(c::_CachedVector) = c
 
 # ---------- Wrapper-preserving copy ----------
 # Default `copy(::AbstractVector)` materializes to plain `Vector{T}`, destroying
@@ -152,11 +90,9 @@ end
     return _CachedVector(inner, h, inv_h)
 end
 
-# Range / pre-wrapped passthroughs — no buffer to acquire (Range has cached
-# scalar h, pre-wrapped axes already carry their caches).
-@inline _cache_axis_pooled(_, x::AbstractRange) = _to_float(x, float(eltype(x)))
-@inline _cache_axis_pooled(_, x::_CachedRange) = x
+# Pre-wrapped `_CachedVector` passthrough — cache already built.
 @inline _cache_axis_pooled(_, x::_CachedVector) = x
+# (Range / `_CachedRange` variants live in `cached_range.jl`.)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3-arg form: `_cache_axis_pooled(pool, x, Tg)` — target eltype explicit
@@ -243,3 +179,50 @@ end
 # Cubic 1D builds owned cache axes via `_cache_axis(_convert_copy(x, T), bc)`
 # (copy-then-wrap): one buffer copy + eltype conversion, then alias the
 # fresh buffer and build h/inv_h once.
+
+# ========================================
+# `_resolve_axis` — one-shot Vector wrapping
+# ========================================
+# Raw `Vector` is the canonical one-shot form (passthrough); `_CachedVector`
+# round-trips unchanged.
+@inline _resolve_axis(x::AbstractVector) = x
+@inline _resolve_axis(x::AbstractVector, ::AbstractBC) = x
+@inline _resolve_axis(c::_CachedVector) = c
+
+# `:exclusive` raw-input one-shot path — wrap into `_ExclusivePeriodicAxis`.
+@inline function _resolve_axis(x::AbstractVector, bc::PeriodicBC{:exclusive})
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(x, bc_resolved.period)
+end
+
+# ========================================
+# `_cache_axis` — persistent-path Vector wrapping
+# ========================================
+# Full DISPATCH TABLE for `_cache_axis(x, bc, Tg)` (cross-input-type) lives in
+# `periodic_axis.jl` as the central reference. Owner-file entries below.
+@inline _cache_axis(x::AbstractVector) = _CachedVector(x)
+@inline _cache_axis(x::AbstractVector, ::AbstractBC) = _CachedVector(x)
+@inline _cache_axis(c::_CachedVector) = c
+@inline _cache_axis(c::_CachedVector, ::AbstractBC) = c
+
+# `:exclusive` 2-arg variants — produce `_ExclusivePeriodicAxis(_CachedVector, ·)`.
+@inline function _cache_axis(x::AbstractVector, bc::PeriodicBC{:exclusive})
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(_CachedVector(x), bc_resolved.period)
+end
+@inline function _cache_axis(c::_CachedVector, bc::PeriodicBC{:exclusive})
+    bc_resolved = _resolve_bc_period(c, bc)
+    return _ExclusivePeriodicAxis(c, bc_resolved.period)
+end
+
+# 3-arg Tg-aware. Raw Vector respects Tg via `_to_float` then wraps.
+# Pre-wrapped `_CachedVector` passes through — downstream `_convert_copy(_, Tg)`
+# enforces Tg (intentional contract; see DISPATCH TABLE in `periodic_axis.jl`).
+@inline _cache_axis(x::AbstractVector, bc::AbstractBC, ::Type{Tg}) where {Tg} =
+    _cache_axis(_to_float(x, Tg), bc)
+@inline _cache_axis(c::_CachedVector, bc::AbstractBC, ::Type{Tg}) where {Tg} =
+    _cache_axis(c, bc)
+@inline _cache_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _cache_axis(_to_float(x, Tg), bc)
+@inline _cache_axis(c::_CachedVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _cache_axis(c, bc)

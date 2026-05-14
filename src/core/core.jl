@@ -7,8 +7,9 @@ include("bc_types.jl")         # 3. Boundary condition types
 include("interp_method_types.jl") # 3b. Per-axis method specification (CubicMethod, etc.)
 include("coeff_types.jl")         # 3c. AbstractCoeffStrategy, PreCompute, OnTheFly, AutoCoeffs
 include("polyfit_kernels.jl")       # 4. Boundary condition computation kernels (Lagrange, etc.)
-include("cached_range.jl")     # 5. _CachedRange struct + _to_float (Range → _CachedRange normalizer)
-include("cached_vector.jl")    # 5c. _CachedVector struct (Vector grid + cached h/inv_h)
+include("axis_types.jl")       # 4b. Axis struct definitions (_CachedRange / _CachedVector / _ExclusivePeriodicAxis) — central types-first
+include("cached_range.jl")     # 5. _CachedRange methods (_to_float, _get_h, _resolve_axis, _cache_axis*)
+include("cached_vector.jl")    # 5c. _CachedVector methods (build ctor, _get_h, _resolve_axis, _cache_axis*)
 include("search.jl")           # 6. Search policy + interval search
 include("idx_stencil.jl")      # 6a. _IdxStencil{K} — wrap-aware per-axis index stencil
 include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)

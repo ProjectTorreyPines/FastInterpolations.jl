@@ -561,23 +561,16 @@ each piece into their normal build flow without branching on `_is_periodic_bc`:
         # Endpoint validation is meaningful only for `:inclusive` — `:exclusive`
         # sets `y_ext[end] = y_ext[1]` by construction so the check is trivially true.
         bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_ext)
-        # `WrapExtrap` is a tag struct; eval kernels read `(first(x_ext), last(x_ext))`
-        # directly. After extension `last(x_ext) - first(x_ext) == period`.
-        return x_ext, y_ext, _bc_eff_extended(x, bc), WrapExtrap()
+        # Bake resolved period into bc_eff (only for `:exclusive`; other branches
+        # compile-time-eliminated) so callers storing `bc_eff` retain the inferred
+        # period for introspection. `WrapExtrap` is a tag struct.
+        bc_eff = _bc_after_extend(bc)
+        bc isa PeriodicBC{:exclusive} &&
+            (bc_eff = _with_resolved_period(bc_eff, _resolve_exclusive_period(x, bc)))
+        return x_ext, y_ext, bc_eff, WrapExtrap()
     end
     return x, y, bc, extrap
 end
-
-# Post-extension `bc_eff` with the resolved period baked in. For
-# `PeriodicBC{:exclusive}` with `period === nothing` on a Range grid the
-# period is inferred via `step(x) * length(x)` — without this materialization,
-# callers that store `bc_eff` (forward Cubic, all Hermite-family 1D adjoints)
-# would lose the inferred period for introspection / show / replay.
-# Stack-only (`PeriodicBC` is isbits); only `:exclusive` pays the work,
-# all other BCs are compile-time-eliminated.
-@inline _bc_eff_extended(::AbstractVector, bc::AbstractBC) = _bc_after_extend(bc)
-@inline _bc_eff_extended(x::AbstractVector, bc::PeriodicBC{:exclusive}) =
-    _with_resolved_period(_bc_after_extend(bc), _resolve_exclusive_period(x, bc))
 
 # ────────────────────────────────────────────
 # BC normalization after grid extension

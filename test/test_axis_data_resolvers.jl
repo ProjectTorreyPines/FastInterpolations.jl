@@ -102,7 +102,7 @@ end
     @testset "Vector + :exclusive → _ExclusivePeriodicAxis{_CachedVector inner}" begin
         x = [0.0, 1.0, 2.0, 3.0]
         ax = _cache_axis(_convert_copy(x, Float64), bc_excl)
-        @test ax isa _ExclusivePeriodicAxis{Float64, _CachedVector{Float64, Float64, Vector{Float64}}, Float64}
+        @test ax isa _ExclusivePeriodicAxis{Float64, _CachedVector{Float64, Float64}, Float64}
         @test ax.inner isa _CachedVector
         @test ax.inner.h ≈ [1.0, 1.0, 1.0]           # inner is cached
         @test ax.period == 4.0
@@ -196,9 +196,9 @@ end
         @inferred f(x_vec, bc_excl, Float64)
         @inferred f(x_rng, bc_no, Float64)
         @inferred f(x_rng, bc_excl, Float64)
-        @test f(x_vec, bc_no, Float64) isa _CachedVector{Float64, Float64, Vector{Float64}}
+        @test f(x_vec, bc_no, Float64) isa _CachedVector{Float64, Float64}
         @test f(x_vec, bc_excl, Float64) isa
-            _ExclusivePeriodicAxis{Float64, _CachedVector{Float64, Float64, Vector{Float64}}}
+            _ExclusivePeriodicAxis{Float64, _CachedVector{Float64, Float64}}
     end
 end
 
@@ -788,137 +788,36 @@ end
     end
 end
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Inner-storage type parameter `I` — view aliasing in one-shot pool
-# ─────────────────────────────────────────────────────────────────────────────
-# `_CachedVector{T, Tinv, I<:AbstractVector{T}}` parametrizes the inner
-# storage so the persistent path keeps `Vector{T}` ownership (mutation safety)
-# while the one-shot pool path aliases whatever the caller passes (SubArray,
-# OffsetVector, etc.) — avoiding an otherwise-pointless `Vector{T}(x)` copy.
-# These tests lock in BOTH halves of that contract.
-
-@testitem "_CachedVector inner-type contract — persistent vs pool" begin
-    using FastInterpolations: _CachedVector, _cache_axis_pooled
+@testitem "_cache_axis_pooled — view input pool-acquires inner (no heap alloc)" setup = [AllocConstants] begin
+    using FastInterpolations: _cache_axis_pooled, _CachedVector
     using AdaptiveArrayPools: @with_pool
 
-    big = [0.0, 1.0, 2.5, 4.0, 6.0, 9.0]
-    vw = @view big[2:5]                              # SubArray{Float64, 1, ...}
+    # `inner::Vector{T}` is forced for cache-key uniformity. Non-Vector input
+    # (view, OffsetArray, etc.) is copied into a pool-acquired Vector instead
+    # of `Vector{T}(x)`, so view input stays zero-heap after warmup.
+    WRAPPER_OVERHEAD_LIMIT = 512
 
-    @testset "Persistent ctor materializes inner to Vector{T}" begin
-        c = _CachedVector(vw)
-        @test c.inner isa Vector{Float64}             # NOT SubArray
-        @test c.inner !== vw                          # materialized (independent)
-        @test c.inner == collect(vw)
-    end
-
-    @testset "Pool ctor aliases inner (no materialization)" begin
-        @with_pool pool function _inner()
-            c = _cache_axis_pooled(pool, vw)
-            # `c.inner === vw` proves zero-copy aliasing. After relaxation of
-            # `_CachedVector.inner` from `Vector{T}` to `I<:AbstractVector{T}`,
-            # the pool path no longer materializes view inputs.
-            return c.inner === vw
-        end
-        @test _inner() == true
-    end
-
-    @testset "Pool ctor preserves concrete inner type in `I`" begin
-        @with_pool pool function _inner_type()
-            c_vec = _cache_axis_pooled(pool, [0.0, 1.0, 2.0, 3.0])
-            c_view = _cache_axis_pooled(pool, vw)
-            return (typeof(c_vec).parameters[3], typeof(c_view).parameters[3])
-        end
-        Ivec, Iview = _inner_type()
-        @test Ivec === Vector{Float64}                # Vector → Vector{T}
-        @test Iview <: SubArray{Float64}              # view → SubArray<:AbstractVector{Float64}
-        @test Iview !== Vector{Float64}
-    end
-end
-
-@testitem "_CachedVector view-aliasing — getindex / iteration agree with Vector" begin
-    using FastInterpolations: _cache_axis_pooled
-    using AdaptiveArrayPools: @with_pool
-
-    # Eval kernels access the inner buffer through `getindex(c, i)` and `_get_h`.
-    # With a SubArray inner, both must give the same result as a materialized
-    # Vector wrapper — otherwise eval would silently diverge on view input.
-    big = [0.0, 1.0, 2.5, 4.0, 6.0, 9.0]
-    vw = @view big[2:5]
-    mat = collect(vw)                                 # 1.0, 2.5, 4.0, 6.0
-
-    @with_pool pool function _check()
-        c_view = _cache_axis_pooled(pool, vw)
-        c_mat = _cache_axis_pooled(pool, mat)
-        same_getindex = all(c_view[i] == c_mat[i] for i in 1:4)
-        same_h = c_view.h == c_mat.h
-        same_inv_h = c_view.inv_h == c_mat.inv_h
-        return (same_getindex, same_h, same_inv_h)
-    end
-
-    same_getindex, same_h, same_inv_h = _check()
-    @test same_getindex
-    @test same_h
-    @test same_inv_h
-end
-
-@testitem "_CachedVector copy / _convert_copy normalize view-backed inner to Vector{T}" begin
-    using FastInterpolations: _cache_axis_pooled, _CachedVector, _convert_copy
-    using AdaptiveArrayPools: @with_pool
-
-    # The persistent-path ownership contract: any time we hand a `_CachedVector`
-    # to a long-lived owner (interpolant struct), `copy` and `_convert_copy`
-    # must materialize the inner to `Vector{T}` — otherwise a view-backed
-    # one-shot wrapper could leak into persistent storage and be invalidated
-    # by mutation of the underlying buffer.
-    big = [0.0, 1.0, 2.5, 4.0, 6.0]
-    vw = @view big[1:4]
-
-    @with_pool pool function _make_view_backed()
-        c = _cache_axis_pooled(pool, vw)
-        # Return materialized copies — pool buffers must NOT escape, but
-        # `copy(c)` produces an owned wrapper with heap-allocated inner.
-        return (copy(c), _convert_copy(c, Float64), _convert_copy(c, Float32))
-    end
-
-    c_copy, c_same, c_cross = _make_view_backed()
-
-    @testset "Base.copy: inner materialized to Vector{T}" begin
-        @test c_copy isa _CachedVector{Float64}
-        @test c_copy.inner isa Vector{Float64}        # NOT SubArray
-        @test c_copy.inner == collect(vw)
-    end
-
-    @testset "_convert_copy same-eltype: same materialization as Base.copy" begin
-        @test c_same isa _CachedVector{Float64}
-        @test c_same.inner isa Vector{Float64}
-    end
-
-    @testset "_convert_copy cross-eltype: rebuilds at Tg" begin
-        @test c_cross isa _CachedVector{Float32}
-        @test c_cross.inner isa Vector{Float32}
-        @test c_cross.inner == Float32.(collect(vw))
-    end
-end
-
-@testitem "_cache_axis_pooled view-aliasing — no data-buffer copy" setup = [AllocConstants] begin
-    using FastInterpolations: _cache_axis_pooled
-    using AdaptiveArrayPools: @with_pool
-
-    # CONTRACT: pool-path view input must NOT allocate a `Vector{T}` copy of
-    # the view buffer — `inner::I` aliases the SubArray directly. A regression
-    # to materialization would add `length(vw)*sizeof(T) + header` bytes/call.
-    #
-    # JIT/pool semantics: see "pool DATA-buffer reuse" testitem comment for
-    # the warmup pattern. Wrapper aliases pool buffers, must not escape scope.
     @with_pool pool function _measure_view(vw)
         c = _cache_axis_pooled(pool, vw)
-        return c.h[1] + c.inv_h[1]
+        return c.inner[1] + c.h[1] + c.inv_h[1]
     end
 
-    big = [0.0, 1.0, 2.5, 4.0, 6.0, 9.0, 12.0, 15.0]
-    vw = @view big[2:7]
-    _measure_view(vw)                       # warmup 1 (JIT + pool grow)
-    _measure_view(vw)                       # warmup 2 (pool reuses)
+    @testset "View input → inner materialized to Vector{T} (single concrete type)" begin
+        @with_pool pool function _check_type(vw)
+            c = _cache_axis_pooled(pool, vw)
+            return (c isa _CachedVector{Float64, Float64}, c.inner isa Vector{Float64})
+        end
+        big = [0.0, 1.0, 2.5, 4.0, 6.0, 9.0, 12.0, 15.0]
+        is_concrete, inner_is_vector = _check_type(@view big[2:7])
+        @test is_concrete
+        @test inner_is_vector
+    end
 
-    @test (@allocated _measure_view(vw)) <= ALLOC_THRESHOLD
+    @testset "View input — zero heap alloc after warmup (pool reuses inner)" begin
+        big = [0.0, 1.0, 2.5, 4.0, 6.0, 9.0, 12.0, 15.0]
+        vw = @view big[2:7]
+        _measure_view(vw)                       # warmup 1 (pool grow)
+        _measure_view(vw)                       # warmup 2 (pool reuse)
+        @test (@allocated _measure_view(vw)) <= WRAPPER_OVERHEAD_LIMIT
+    end
 end

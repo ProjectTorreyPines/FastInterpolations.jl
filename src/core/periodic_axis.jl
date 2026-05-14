@@ -575,19 +575,45 @@ end
 # `_promote_grid_float(Float64, Float32) = Float64` then widened `y` to
 # `Float64` too, breaking the documented Float32 promotion.
 #
-# Vector path: `Tg` is unused at the wrap step. Vector eltype is preserved by
-# `_CachedVector(x)`; the inner ctor's wrapper-aware `_convert_copy(c, Tg)`
-# rebuilds with the requested element type. Same for pre-wrapped inputs:
-# the wrapper's eltype passes through unchanged; promotion is the inner
-# constructor's responsibility.
-@inline _cache_axis(x::AbstractVector, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(x, bc)
-@inline _cache_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(x, bc)
+# DISPATCH TABLE (and exactly *which* paths respect `Tg`):
+#
+#   x type                 +  bc                       Tg respected?  result
+#   ───────────────────────────────────────────────────────────────────────────
+#   AbstractVector         +  AbstractBC                ✅            `_CachedVector{Tg}`
+#   AbstractVector         +  PeriodicBC{:exclusive}    ✅            `_ExclusivePeriodicAxis(_CachedVector{Tg}, period)`
+#   AbstractRange          +  AbstractBC                ✅            `_CachedRange{Tg}`
+#   AbstractRange          +  PeriodicBC{:exclusive}    ✅            `_ExclusivePeriodicAxis(_CachedRange{Tg}, period)`
+#   _CachedRange{S}        +  any                       ⚠️ IGNORED    passthrough (eltype S preserved)
+#   _CachedVector{S}       +  any                       ⚠️ IGNORED    passthrough or `:exclusive` wrap (eltype S preserved)
+#   _ExclusivePeriodicAxis +  any                       ⚠️ IGNORED    passthrough (eltype unchanged)
+#
+# Why pre-wrapped paths ignore `Tg` (INTENTIONAL CONTRACT):
+#   Pre-wrapped axes have *already committed* their element type via their
+#   cached `h`/`inv_h` buffers. Re-converting eltype would require dropping
+#   and rebuilding those caches — work that belongs to `_convert_copy(_, Tg)`,
+#   not to `_cache_axis`. The canonical persistent-build pattern is:
+#
+#       xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
+#
+#   For raw `x`: `_cache_axis` returns a Tg-typed wrapper, then `_convert_copy`
+#   degrades to a same-eltype `Base.copy` (one buffer copy, no eltype work).
+#   For pre-wrapped `x` whose eltype already matches `Tg`: same — passthrough +
+#   identity copy. For pre-wrapped `x` with mismatching eltype: `_cache_axis`
+#   passes it through unchanged, then `_convert_copy(_, Tg)` rebuilds with the
+#   new eltype (one allocation pass — fastest possible for this rare case).
+#
+#   In short: `_cache_axis(x, bc, Tg)` guarantees only that ROOT raw inputs
+#   become `Tg`-typed wrappers. Pre-wrapped inputs round-trip unchanged so the
+#   downstream `_convert_copy` can do the eltype work in a single pass.
+@inline _cache_axis(x::AbstractVector, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(_to_float(x, Tg), bc)
+@inline _cache_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(_to_float(x, Tg), bc)
 @inline _cache_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
 @inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
     bc_resolved = _resolve_bc_period(x, bc)
     return _ExclusivePeriodicAxis(_to_float(x, Tg), bc_resolved.period)
 end
-# Pre-wrapped passthroughs ignore Tg (idempotent — inner ctor handles promotion).
+# Pre-wrapped passthroughs IGNORE Tg by design (see contract above). The
+# `Tg`-typed result is the responsibility of `_convert_copy(_, Tg)` downstream.
 @inline _cache_axis(c::_CachedRange, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
 @inline _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
 @inline _cache_axis(c::_CachedVector, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)

@@ -14,23 +14,20 @@
 # Include order: grid_spacing.jl → cached_range.jl → cached_vector.jl → ...
 
 """
-    _CachedVector{T, Tinv, I} <: AbstractVector{T}
+    _CachedVector{T, Tinv} <: AbstractVector{T}
 
 Vector grid wrapper that caches per-cell spacing (`h`) and reciprocal
 (`inv_h`) for fast O(1) lookup during persistent interpolant evaluation.
 
 # Fields
-- `inner::I` — Original grid values (length n). Storage type varies by
-  construction path: persistent paths materialize to `Vector{T}` for
-  ownership (mutation safety + stable layout); one-shot pool paths alias
-  the caller's input (e.g. `SubArray{T}` view) to avoid an otherwise
-  pointless copy.
+- `inner::Vector{T}` — Original grid values (length n). Always a concrete
+  `Vector{T}`. Persistent paths materialize for ownership; one-shot pool
+  paths alias when input is already `Vector{T}`, else pool-acquire +
+  `copyto!` (no heap alloc — see `_cache_axis_pooled` below).
 - `h::Vector{T}` — Cell widths, `h[i] = inner[i+1] - inner[i]` (length n-1).
-  Persistent path: fresh `Vector{T}` from heap. One-shot path:
-  `acquire!(pool, T, n-1)` returns a `Vector{T}` from the pool's task-local
-  storage (reused across calls — zero-alloc after warmup).
-- `inv_h::Vector{Tinv}` — Precomputed reciprocals (length n-1). Same storage
-  rule as `h`.
+  Persistent: fresh heap `Vector{T}`. One-shot: pool-acquired (reused).
+- `inv_h::Vector{Tinv}` — Precomputed reciprocals (length n-1). Same
+  storage rule as `h`.
 
 # Type parameters
 - `T` — Grid element type. Can be `Int`, `Float64`, `ForwardDiff.Dual`,
@@ -38,36 +35,39 @@ Vector grid wrapper that caches per-cell spacing (`h`) and reciprocal
 - `Tinv` — Reciprocal type, equal to `typeof(inv(oneunit(T)))`. For Float
   grids `Tinv == T`; for Int grids `Tinv == Float64` (since `inv(::Int)`
   returns `Float64`).
-- `I <: AbstractVector{T}` — Concrete inner-storage type. Tracked as a
-  type parameter so `getindex(c, i) = c.inner[i]` specializes on the
-  concrete storage (no runtime dispatch on `SubArray`/`Vector` mix).
-  `h` / `inv_h` are NOT parametrized — they are always `Vector{T}` /
-  `Vector{Tinv}` because `acquire!` returns a `Vector`, not a view.
+
+# Design choice — single concrete inner storage
+All three buffers are pinned to `Vector{_}` (no `I<:AbstractVector{T}` type
+parameter on `inner`). The reason is *not* dispatch cost — `getindex` would
+specialize either way — but **RCU cache key uniformity**: the cubic
+autocache (`CubicSplineCache{T, X, ...}`) keys on the wrapped axis type
+`X`, and if `X = _CachedVector{T, Tinv, I}` flexed per-input (one bank for
+`I=Vector`, another for `I=SubArray`, another for `I=OffsetVector`, …), a
+mixed workload would shard the bank into low-hit-rate buckets. Pinning
+`inner` to `Vector{T}` keeps a single concrete cache key for every user
+input shape. One-shot pool paths preserve zero-alloc for non-`Vector{T}`
+input by pool-acquiring the inner buffer instead of `Vector{T}(x)`.
 
 # Behavior
 - `<: AbstractVector{T}` so existing search and eval kernels accept it
   transparently — same trick `_CachedRange` uses with `<: AbstractRange`.
 - `Base.getindex(c, i)` forwards to `inner[i]` — zero overhead vs raw `Vector`.
 - `length(c) == length(c.inner)` — same as raw vector.
-- `Base.copy(c)` materializes `inner` to `Vector{T}` (ownership contract)
-  regardless of source storage type — so the copy path normalizes one-shot
-  view-backed wrappers into owned `Vector`-backed wrappers suitable for
-  long-lived persistent storage. `h` / `inv_h` are already `Vector`, so
-  `copy` of those is a straight memcpy.
+- `Base.copy(c)` deep-copies all three fields for ownership.
 
 # Example
 ```julia
 x = [0.0, 0.3, 0.7, 1.0]      # non-uniform Float grid
-cv = _CachedVector(x)          # _CachedVector{Float64, Float64, Vector{Float64}}
+cv = _CachedVector(x)          # _CachedVector{Float64, Float64}
 
 x_int = [0, 1, 3, 6]           # Int grid
-cv_int = _CachedVector(x_int)  # _CachedVector{Int, Float64, Vector{Int}}
+cv_int = _CachedVector(x_int)  # _CachedVector{Int, Float64}
 ```
 """
-struct _CachedVector{T, Tinv, I <: AbstractVector{T}} <: AbstractVector{T}
-    inner::I
-    h::Vector{T}        # length n-1; heap (persistent) or pool-acquired (one-shot)
-    inv_h::Vector{Tinv} # length n-1; same storage rule as `h`
+struct _CachedVector{T, Tinv} <: AbstractVector{T}
+    inner::Vector{T}
+    h::Vector{T}        # length n-1
+    inv_h::Vector{Tinv} # length n-1
 end
 
 # ---------- AbstractVector interface ----------
@@ -128,23 +128,28 @@ function _CachedVector(x::AbstractVector{T}) where {T}
 end
 
 # ---------- Pool-backed construction (transient caches) ----------
-# Same shape as the outer ctor, but `h`/`inv_h` come from `pool` (zero-alloc
-# after warmup). UNLIKE the persistent outer ctor, this *aliases* `x` directly
-# — the wrapper lifetime is bounded by the enclosing `@with_pool` scope, so
-# aliasing is safe and avoids materializing a `Vector{T}` from view inputs
-# (e.g. `view(big_grid, k:k+N)`). The `I` type parameter tracks the concrete
-# storage type so downstream `getindex` specializes per concrete inner.
+# Pool-acquired `h` / `inv_h` (reused across calls). For non-`Vector{T}`
+# input (e.g. `view(big, k:k+N)`), the inner buffer is *also* pool-acquired
+# + `copyto!` rather than `Vector{T}(x)` — keeps zero-alloc on view input
+# while preserving the `inner::Vector{T}` invariant.
 @inline function _cache_axis_pooled(pool, x::AbstractVector{T}) where {T}
     n = length(x)
     n >= 2 || throw(ArgumentError("_cache_axis_pooled requires at least 2 grid points, got $n"))
     Tinv = typeof(inv(oneunit(T)))
+    inner = if x isa Vector{T}
+        x
+    else
+        buf = acquire!(pool, T, n)
+        copyto!(buf, x)
+        buf
+    end
     h = acquire!(pool, T, n - 1)
     inv_h = acquire!(pool, Tinv, n - 1)
     @inbounds for i in 1:(n - 1)
-        h[i] = x[i + 1] - x[i]
+        h[i] = inner[i + 1] - inner[i]
         inv_h[i] = inv(h[i])
     end
-    return _CachedVector(x, h, inv_h)
+    return _CachedVector(inner, h, inv_h)
 end
 
 # Range / pre-wrapped passthroughs — no buffer to acquire (Range has cached

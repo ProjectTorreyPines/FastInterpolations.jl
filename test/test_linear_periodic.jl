@@ -254,7 +254,7 @@
     end
 
     @testset "Exclusive — ND persistent rejects period-too-small at build (T-3)" begin
-        # period < grid_span should trip _throw_wrap_virtual_endpoint_error at ND build.
+        # period < grid_span should be rejected at ND build (ArgumentError).
         x = [0.0, 1.0, 2.0, 3.0]
         y = range(0.0, 1.0, length = 4)
         data = rand(4, 4)

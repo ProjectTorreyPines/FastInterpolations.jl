@@ -317,10 +317,14 @@ on the x side exactly:
 @inline function _prepare_periodic_grid(x::AbstractVector, bc::PeriodicBC{:exclusive})
     period = _resolve_exclusive_period(x, bc)
     _validate_exclusive_period(x, period)
-    Tg_real = eltype(x) <: _PromotableValue ? float(eltype(x)) : eltype(x)
-    x_end = first(x) + Tg_real(period)
+    # Shape-only extension — eltype preserved. Grid Tg is set downstream by
+    # `_cache_axis(x_ext, bc_eff, Tg)` (single source of truth).
+    T = eltype(x)
+    x_end = first(x) + T(period)
     last(x) < x_end || _throw_excl_endpoint_too_small(period, x_end, last(x))
-    return x isa AbstractRange ? _to_float_adding_endpoint(x, Tg_real) : vcat(x, x_end)
+    return x isa AbstractRange ?
+        range(first(x); step = step(x), length = length(x) + 1) :
+        vcat(x, x_end)
 end
 
 """
@@ -391,16 +395,12 @@ function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     # invoke the same check here so `bc.period` mismatches are caught
     # uniformly across all method families.
     _validate_exclusive_period(x, period)
-    # Duck-safe grid promotion. `_PromotableValue` (Integer / AbstractFloat /
-    # Rational / Complex) is promoted via `float(...)` so Int-typed Ranges can
-    # form a valid `_CachedRange{Float}` (otherwise `inv(step::Int)::Float64`
-    # cannot be stored in the `Int`-typed `inv_h` field → InexactError).
-    # Duck grids (Dual, Measurement, SVector, ...) fall through with their
-    # original type; they handle their own `inv`/arithmetic within their type.
-    # Mirrors `_promote_grid_float` and `_check_periodic_endpoints` dispatch.
-    Tg_raw = eltype(x)
-    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
-    x_end = first(x) + Tg(period)
+    # Shape-only extension — eltype preserved. Grid Tg is set downstream by
+    # `_cache_axis(x_ext, bc_eff, Tg)` (single source of truth). `T(period)`
+    # throws `InexactError` on incompatible user period (e.g. Int range +
+    # irrational period) instead of silently widening to Float64.
+    T = eltype(x)
+    x_end = first(x) + T(period)
 
     # Sanity: virtual endpoint must be strictly after last grid point. Catches
     # a too-small period even when Vector grids skipped the cross-validation.
@@ -410,7 +410,7 @@ function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     # runtime ≈ check. _resolve_exclusive_period already validates period ≈ step(x)*length(x)
     # for Range grids, so Range → Range extension is always safe.
     x_ext = if x isa AbstractRange
-        _to_float_adding_endpoint(x, Tg)
+        range(first(x); step = step(x), length = length(x) + 1)
     else
         vcat(x, x_end)
     end
@@ -429,15 +429,14 @@ end
 function _extend_exclusive(x::AbstractVector, y_mat::AbstractMatrix, bc::PeriodicBC)
     period = _resolve_exclusive_period(x, bc)
     _validate_exclusive_period(x, period)
-    # Duck-safe grid promotion — see the Vector overload above for rationale.
-    Tg_raw = eltype(x)
-    Tg = Tg_raw <: _PromotableValue ? float(Tg_raw) : Tg_raw
-    x_end = first(x) + Tg(period)
+    # Eltype-preserving — see Vector overload for rationale.
+    T = eltype(x)
+    x_end = first(x) + T(period)
 
     last(x) < x_end || _throw_excl_endpoint_too_small(period, x_end, last(x))
 
     x_ext = if x isa AbstractRange
-        _to_float_adding_endpoint(x, Tg)
+        range(first(x); step = step(x), length = length(x) + 1)
     else
         vcat(x, x_end)
     end
@@ -586,83 +585,6 @@ end
 @inline _bc_after_extend(bc::PeriodicBC{:inclusive}) = bc
 @inline _bc_after_extend(bc::PeriodicBC{:exclusive}) =
     PeriodicBC{:extended, typeof(bc.period), false}(bc.period)
-
-"""
-    _periodic_extend_1d_pooled!(pool, x, y, bc, extrap) -> (x_eff, y_eff, bc_eff, extrap_eff)
-
-Pool-based sibling of `_periodic_extend_1d` for the **one-shot hot path**.
-Same contract as the non-pool variant (4-tuple return, BC normalization
-fused), but the `:exclusive` extension uses `acquire!(pool, …)` for the
-extended buffers (zero-alloc after warmup, caller's `@with_pool` scope owns
-the lifetime).
-
-Range grids are extended to `_CachedRange` via `_to_float_adding_endpoint`
-(heap-free); Vector grids go through the pool. Value buffers are always
-pool-acquired when extending.
-
-Intended consumers: Linear, Constant, and (future Phase 2/3) PCHIP/Cardinal/
-Akima/Quadratic oneshot paths. Cubic oneshot uses this via
-`_cubic_periodic_solve!`, which wraps the extension + tridiagonal solve.
-"""
-@inline function _periodic_extend_1d_pooled!(
-        pool::AbstractArrayPool,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        bc::AbstractBC,
-        extrap::AbstractExtrap
-    ) where {Tg, Tv}
-    if !_is_periodic_bc(bc)
-        # Non-periodic: still materialize in case user passed `WrapExtrap()` singleton.
-        return x, y, bc, _resolve_extrap(extrap, bc, x)
-    end
-    # Duck-safe extension buffer type: promote Integer / Complex{Integer} grids
-    # to float so the extended pool buffer and `_CachedRange` `inv_h` field can
-    # hold `inv(step)`. Duck grids (Dual, Measurement, ...) keep their type so
-    # AD / uncertainty chains survive. Tv (value type) is never promoted here —
-    # user y-vector semantics are preserved.
-    Tg_ext = Tg <: _PromotableValue ? float(Tg) : Tg
-    if bc isa PeriodicBC{:exclusive}
-        period = _resolve_exclusive_period(x, bc)
-        _validate_exclusive_period(x, period)
-        x_end = first(x) + Tg_ext(period)
-        last(x) < x_end || _throw_wrap_virtual_endpoint_error(period, x_end, last(x))
-        n = length(x)
-        if x isa AbstractRange
-            x_p = _to_float_adding_endpoint(x, Tg_ext)
-        else
-            x_p = acquire!(pool, Tg_ext, n + 1)
-            @inbounds copyto!(x_p, 1, x, 1, n)
-            @inbounds x_p[n + 1] = x_end
-        end
-        y_p = acquire!(pool, Tv, n + 1)
-        @inbounds copyto!(y_p, 1, y, 1, n)
-        @inbounds y_p[n + 1] = y[1]
-    else
-        x_p, y_p = x, y
-    end
-    # `:exclusive` path constructs `y_p[end] = y_p[1]` by extension, so the check
-    # is trivially satisfied. Run validation only for `:inclusive`.
-    bc isa PeriodicBC{:inclusive} && _check_periodic_endpoints(bc, y_p)
-    # After extension (or no-op for inclusive), the extended grid span IS the wrap
-    # domain — use `WrapExtrap(x_p)` directly, no BC-aware construction needed.
-    # `bc_eff` flips `:exclusive` → `:extended` to record the layout promotion;
-    # `:inclusive` passes through unchanged.
-    return x_p, y_p, _bc_after_extend(bc), WrapExtrap(x_p)
-end
-
-"""
-    _prepare_1d_oneshot!(pool, x, y, bc, extrap) -> (x_eff, y_eff, bc_eff, extrap_eff)
-
-Thin oneshot-API convenience that fuses `_resolve_axis(x)` with
-`_periodic_extend_1d_pooled!(pool, …, bc, extrap)`. Call once per 1D oneshot
-entry point; the return 4-tuple feeds directly into searcher + eval kernel.
-
-Separating this from `_periodic_extend_1d_pooled!` keeps the latter's name
-semantically accurate — it really only does work on periodic `bc` — while
-letting user-facing oneshot entry points use a single, non-misleading call.
-"""
-@inline _prepare_1d_oneshot!(pool, x, y, bc, extrap) =
-    _periodic_extend_1d_pooled!(pool, _resolve_axis(x), y, bc, extrap)
 
 # ========================================
 # ND Exclusive Endpoint Extension

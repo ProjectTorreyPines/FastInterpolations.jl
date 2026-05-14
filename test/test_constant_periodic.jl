@@ -520,19 +520,15 @@
     end
 
     # ============================================================
-    # Integer grid + duck-type (Dual) smoke tests. See
-    # test_linear_periodic.jl for the rationale — same `_PromotableValue`
-    # gating in `_extend_exclusive` / `_periodic_extend_1d_pooled!`.
+    # Integer grid + duck-type (Dual) smoke tests.
     # ============================================================
     @testset "Int Range + PeriodicBC(:exclusive) — persistent" begin
-        # Persistent `:exclusive` is extend-promoted to a closed-cycle
-        # `:extended` layout. Int Range gets float-promoted by `_extend_exclusive`
-        # (closed-cycle endpoint needs Float arithmetic), so the axis is now
-        # `_CachedRange{Float64, Float64}` of length n+1 — the lazy wrapper is gone.
+        # Constant preserves raw grid eltype (Int → Int) across all BCs —
+        # `:exclusive` extension is shape-only (n → n+1), no float promotion.
         x = 0:10
         y = Float64.(0:10)
         itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
-        @test itp.x isa _CachedRange{Float64, Float64}
+        @test eltype(itp.x) === Int
         @test length(itp.x) == 12          # closed-cycle n+1
         ref = constant_interp(Float64.(0:10), y; bc = PeriodicBC(endpoint = :exclusive, period = 11.0))
         for xq in (0.5, 5.5, 10.5)

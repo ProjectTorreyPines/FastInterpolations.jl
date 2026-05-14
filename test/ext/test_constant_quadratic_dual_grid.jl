@@ -191,9 +191,8 @@ const FI = FastInterpolations
     end
 
     # ========================================================================
-    # PeriodicBC + Dual grid — verifies `_PromotableValue` guard in
-    # `_extend_exclusive` / `_periodic_extend_1d_pooled!` passes Dual eltype
-    # through unchanged (Dual is not `<: _PromotableValue`).
+    # PeriodicBC + Dual grid — verifies `_extend_exclusive` passes Dual eltype
+    # through unchanged (extension is shape-only, eltype-preserving).
     # ========================================================================
     @testset "Constant PeriodicBC — Dual grid preserves type" begin
         # Constant interp returns `y[idx]` directly — the Dual grid only affects

@@ -252,10 +252,26 @@ end
 @inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
     idx < length(g.inner) ? _get_inv_h(g.inner, idx, xL, xR) : inv(xR - xL)
 
-# `_alpha_of` for the wrapper: defer to inner so `_CachedRange` uses cached
-# `inv_h` (avoids `(R - L)` cancellation in the denominator).
+# `_alpha_of` for the wrapper: seam-aware so the value computation shares a
+# denominator with the 4-arg `_get_inv_h` at the seam cell.
+#   - Interior cell (`R != g._x_max`): defer to inner so `_CachedRange` uses
+#     its cached `inv_h` field (avoids `(R - L)` cancellation in the denom).
+#   - Seam cell (`R == g._x_max`): use the actual seam width `R - L`,
+#     matching `_get_inv_h(g, idx, xL, xR) = inv(xR - xL)` at `idx == n`.
+#
+# Without the seam branch, a Range inner with an explicit off-tolerance period
+# (within `sqrt(eps)` rtol of `step*length`, accepted by `_validate_exclusive_period`)
+# computed `α` from inner step but derivative from `inv(xR - xL)`, leaving
+# value/derivative on disagreeing denominators. Relative error scales as
+# `n * sqrt(eps)`, so Float32 grids at n ~ 100 or Float64 grids at n ~ 10⁶
+# could show percent-level seam-cell discrepancy.
+#
+# Float equality on `_x_max` is exact: the wrapper ctor enforces
+# `inner[end] < _x_max`, so `inner[idx+1] == _x_max` is unreachable for
+# interior cells. At the seam, the wrapper's `search_interval` returns
+# `xR = g._x_max` by direct field read — bit-equal to the comparand here.
 @inline _alpha_of(q::Real, L::Real, R::Real, g::_ExclusivePeriodicAxis) =
-    _alpha_of(q, L, R, g.inner)
+    R == g._x_max ? (q - L) / float(R - L) : _alpha_of(q, L, R, g.inner)
 
 # ========================================
 # View specialization: preserve wrapper for full-virtual range

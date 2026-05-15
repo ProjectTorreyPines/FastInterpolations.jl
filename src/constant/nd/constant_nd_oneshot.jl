@@ -50,11 +50,9 @@ function _constant_interp_nd_oneshot(
 end
 
 """
-    _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, policies, hints, mono)
+    _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, search, hint)
 
 In-place batch one-shot ND constant evaluation.
-Uses query protocol (`_query_length`, `_query_extract`) — works with any query format.
-Writes results into `output`. No heap allocation beyond spacings.
 """
 function _constant_interp_nd_oneshot_batch!(
         output::AbstractVector,
@@ -64,10 +62,11 @@ function _constant_interp_nd_oneshot_batch!(
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         side_vals::Tuple{Vararg{AbstractSide, N}},
-        policies::NTuple{N, AbstractSearchPolicy},
-        hints,  # Nothing or NTuple{N, Ref{Int}}
-        mono::NTuple{N, Bool},
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tg, Tv, N}
+    # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
+    policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
@@ -91,7 +90,7 @@ function _constant_interp_nd_oneshot_batch!(
 end
 
 """
-    _constant_interp_nd_oneshot_batch(grids, data, queries, bcs, extraps_val, side_vals, searches, hints=nothing)
+    _constant_interp_nd_oneshot_batch(grids, data, queries, bcs, extraps_val, side_vals, search, hint)
 
 Allocating wrapper: creates output vector, delegates to in-place batch.
 """
@@ -102,12 +101,11 @@ function _constant_interp_nd_oneshot_batch(
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         side_vals::Tuple{Vararg{AbstractSide, N}},
-        policies::NTuple{N, AbstractSearchPolicy},
-        hints,  # Nothing or NTuple{N, Ref{Int}}
-        mono::NTuple{N, Bool},
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tg, Tv, N}
     output = Vector{Tv}(undef, _query_length(queries))
-    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, policies, hints, mono)
+    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, search, hint)
 end
 
 # ========================================
@@ -117,13 +115,12 @@ end
 @inline _is_any_deriv(op::DerivOp) = !(op isa DerivOp{0})
 @inline _is_any_deriv(ops::Tuple{Vararg{DerivOp}}) = any(op -> !(op isa DerivOp{0}), ops)
 
-# Function barrier: forces Julia to runtime-dispatch on the concrete
-# searches tuple type before entering the @with_pool boundary.
-function _constant_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps, sides, policies, hints, mono)
-    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps, sides, policies, hints, mono)
+# Function barrier — specializes on concrete `search` type.
+function _constant_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps, sides, search, hint)
+    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps, sides, search, hint)
 end
-function _constant_nd_batch_dispatch(grids, data, queries, bcs, extraps, sides, policies, hints, mono)
-    return _constant_interp_nd_oneshot_batch(grids, data, queries, bcs, extraps, sides, policies, hints, mono)
+function _constant_nd_batch_dispatch(grids, data, queries, bcs, extraps, sides, search, hint)
+    return _constant_interp_nd_oneshot_batch(grids, data, queries, bcs, extraps, sides, search, hint)
 end
 
 # ========================================
@@ -192,12 +189,10 @@ function constant_interp(
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     sides = _resolve_side_nd(side, Val(N))
-    policies = _resolve_search_nd(search, Val(N))
-    mono = _check_mono_nd(policies, queries)
 
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _constant_nd_batch_dispatch(
-        grids_typed, data, queries, bcs, extraps_val, sides, policies, hint, mono
+        grids_typed, data, queries, bcs, extraps_val, sides, search, hint
     )::Vector{Tv}
 end
 
@@ -235,11 +230,9 @@ function constant_interp!(
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     sides = _resolve_side_nd(side, Val(N))
-    policies = _resolve_search_nd(search, Val(N))
-    mono = _check_mono_nd(policies, queries)
 
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _constant_nd_batch_dispatch!(
-        output, grids_typed, data, queries, bcs, extraps_val, sides, policies, hint, mono
+        output, grids_typed, data, queries, bcs, extraps_val, sides, search, hint
     )
 end

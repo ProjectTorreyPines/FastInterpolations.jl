@@ -188,8 +188,10 @@
         out_lb_hint = Vector{Float64}(undef, nq)
 
         linear_interp!(out_auto, (xs, ys), data, (sorted_xq, sorted_yq))
-        linear_interp!(out_lb_hint, (xs, ys), data, (sorted_xq, sorted_yq);
-                       search=LinearBinarySearch(), hint=(Ref(1), Ref(1)))
+        linear_interp!(
+            out_lb_hint, (xs, ys), data, (sorted_xq, sorted_yq);
+            search = LinearBinarySearch(), hint = (Ref(1), Ref(1))
+        )
         @test out_auto == out_lb_hint   # bit-exact: same algorithm, same hints semantics
     end
 
@@ -207,7 +209,7 @@
         out_binary = Vector{Float64}(undef, nq)
 
         linear_interp!(out_auto, (xs, ys), data, (random_xq, random_yq))
-        linear_interp!(out_binary, (xs, ys), data, (random_xq, random_yq); search=BinarySearch())
+        linear_interp!(out_binary, (xs, ys), data, (random_xq, random_yq); search = BinarySearch())
         @test out_auto == out_binary
     end
 

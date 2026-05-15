@@ -68,10 +68,38 @@ function quadratic_interp(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    # Quadratic only supports inclusive periodic → grid-span equals period →
-    # 5-arg `_resolve_extrap` with BCs is safe (no extension needed).
+    # Quadratic does not support `PeriodicBC` of any flavor — reject before
+    # `_resolve_extrap` (which would project exclusive periodic into a wrap
+    # extrap on a grid the build path cannot consume) and before `_cache_axis`
+    # (which would wrap the axis to virtual `n+1` length, producing a
+    # `DimensionMismatch` instead of the intended `ArgumentError`).
+    _validate_quadratic_bcs_nd(bcs)
     extraps_val = _resolve_extrap(extrap, bcs, grids_typed, Val(N), Tv)
     return _build_nd_quadratic_interpolant(grids_typed, data_typed, bcs, extraps_val, searches)
+end
+
+# ========================================
+# BC validation — reject unsupported BCs upfront
+# ========================================
+#
+# Quadratic ND does not support `PeriodicBC`. Without this guard, the
+# `:inclusive` variant fires `ArgumentError` deep inside `_slope_1d_quadratic!`
+# (via the `AbstractBC` fallback), and the `:exclusive` variant fires a
+# misleading `DimensionMismatch` because `_cache_axis` wraps the grid to
+# virtual `n+1` length before any BC validation runs.
+@noinline _throw_quadratic_periodic_unsupported(axis_idx::Int, bc) = throw(
+    ArgumentError(
+        "Quadratic interpolation does not support PeriodicBC (axis $axis_idx: $(typeof(bc))). " *
+            "Supported: Left(...), Right(...), MinCurvFit, ZeroCurvBC, ZeroSlopeBC, or PolyFit variants."
+    )
+)
+
+@inline function _validate_quadratic_bcs_nd(bcs::NTuple{N, AbstractBC}) where {N}
+    for d in 1:N
+        bc = bcs[d]
+        bc isa PeriodicBC && _throw_quadratic_periodic_unsupported(d, bc)
+    end
+    return nothing
 end
 
 # ========================================

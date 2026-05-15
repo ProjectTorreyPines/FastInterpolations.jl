@@ -172,10 +172,106 @@ end
 In-place one-shot linear interpolation at multiple query points.
 `outputs` is a `Vector{<:AbstractVector}` of length `n_series`, each of length `length(xqs)`.
 """
-# Zero-pool vector-batch: Q outer × K inner. Anchor is register-resident for
-# the K-inner loop — no aq_vec scratch, no grid/value extension. Periodic
-# mirrors the scalar helper's wrap-first pattern; non-periodic uses the
-# pair-aware `_anchor_query` (Stage 1) directly.
+# Q outer × K inner — small-NQ fast path. Anchor stack-resident across the
+# K-inner loop. No pool acquired so tiny `xqs` doesn't pay pool-setup
+# overhead. `_is_periodic_bc(bc)` is compile-time-resolved.
+@inline function _linear_series_batch_qk!(
+        outputs::AbstractVector{<:AbstractVector},
+        x::AbstractVector,
+        vecs,
+        xqs::AbstractVector,
+        bc::AbstractBC,
+        op::AbstractEvalOp,
+        extrap::AbstractExtrap,
+        search::AbstractSearchPolicy
+    )
+    K = length(vecs)
+    NQ = length(xqs)
+
+    if _is_periodic_bc(bc)
+        x_eff = _resolve_axis(x, bc)
+        extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
+        searcher = _resolve_search(x_eff, xqs, search, nothing, NoBC())
+        @inbounds for j in 1:NQ
+            xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
+            idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
+            h = _get_h(x_eff, idxL)
+            inv_h = _get_inv_h(x_eff, idxL)
+            alpha = (xq_wrapped - xL) * inv_h
+            aq = _LinearAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
+            for k in 1:K
+                outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, op, extrap_p)
+            end
+        end
+        return outputs
+    end
+
+    extrap_eff = _check_domain(x, xqs, extrap)
+    searcher = _resolve_search(x, xqs, search, nothing)
+    wrap = extrap_eff isa WrapExtrap
+    @inbounds for j in 1:NQ
+        aq = _anchor_query(x, xqs[j], Val(:linear), wrap, searcher)
+        for k in 1:K
+            outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, op, extrap_eff)
+        end
+    end
+    return outputs
+end
+
+# K outer × Q inner with pool-acquired anchor vector — large-NQ fast path.
+# Inner loop streams a single `outputs[k]` Vector — LLVM auto-SIMDs and
+# avoids the K-cache-line write jump per query of the Q×K shape.
+@inline @with_pool pool function _linear_series_batch_kq!(
+        outputs::AbstractVector{<:AbstractVector},
+        x::AbstractVector{Tg},
+        vecs,
+        xqs::AbstractVector{Tq},
+        bc::AbstractBC,
+        op::AbstractEvalOp,
+        extrap::AbstractExtrap,
+        search::AbstractSearchPolicy
+    ) where {Tg, Tq <: Real}
+    K = length(vecs)
+    NQ = length(xqs)
+    Tg_actual = eltype(x)
+    Tqp = promote_type(Tg_actual, Tq)
+
+    if _is_periodic_bc(bc)
+        x_eff = _resolve_axis(x, bc)
+        extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
+        searcher = _resolve_search(x_eff, xqs, search, nothing, NoBC())
+        aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_actual, Tqp}, NQ)
+        @inbounds for j in 1:NQ
+            xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
+            idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
+            h = _get_h(x_eff, idxL)
+            inv_h = _get_inv_h(x_eff, idxL)
+            alpha = (xq_wrapped - xL) * inv_h
+            aq_vec[j] = _LinearAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
+        end
+        @inbounds for k in 1:K
+            for j in 1:NQ
+                outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq_vec[j], op, extrap_p)
+            end
+        end
+        return outputs
+    end
+
+    extrap_eff = _check_domain(x, xqs, extrap)
+    searcher = _resolve_search(x, xqs, search, nothing)
+    wrap = extrap_eff isa WrapExtrap
+    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_actual, Tqp}, NQ)
+    _fill_anchors!(aq_vec, x, xqs, Val(:linear), wrap, searcher)
+    @inbounds for k in 1:K
+        for j in 1:NQ
+            outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq_vec[j], op, extrap_eff)
+        end
+    end
+    return outputs
+end
+
+# Adaptive entry. `length(xqs)` selects the loop order — see
+# `_SERIES_BATCH_LOOP_THRESHOLD` docs in `src/core/series_utils.jl`.
 @inline function linear_interp!(
         outputs::AbstractVector{<:AbstractVector},
         x::AbstractVector{Tg},
@@ -192,45 +288,19 @@ In-place one-shot linear interpolation at multiple query points.
     K = n_series(s)
     _validate_series_outputs(outputs, K, length(xqs))
     vecs = _series_vectors(s)
-
-    if _is_periodic_bc(bc)
-        # Per-series `:inclusive` endpoint guarantee. `:exclusive` needs no
-        # per-series check; the anchor's seam pair handles wrap.
-        if bc isa PeriodicBC{:inclusive}
-            @inbounds for k in 1:K
-                _check_periodic_endpoints(bc, vecs[k])
-            end
-        end
-        x_eff = _resolve_axis(x, bc)
-        extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
-        searcher = _resolve_search(x_eff, xqs, search, nothing, NoBC())
-        @inbounds for j in eachindex(xqs)
-            xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
-            idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
-            # Index-based dispatch: `_CachedRange.h` exact step on Range axis,
-            # wrapper's seam width at idx==n. Matches scalar/persistent paths.
-            h = _get_h(x_eff, idxL)
-            inv_h = _get_inv_h(x_eff, idxL)
-            alpha = (xq_wrapped - xL) * inv_h
-            aq = _LinearAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
-            for k in 1:K
-                outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap_p)
-            end
-        end
-        return outputs
-    end
-
-    # Non-periodic: `_anchor_query` handles WrapExtrap query-wrap + OOB state.
-    extrap_eff = _check_domain(x, xqs, extrap)
-    searcher = _resolve_search(x, xqs, search, nothing)
-    wrap = extrap_eff isa WrapExtrap
-    @inbounds for j in eachindex(xqs)
-        aq = _anchor_query(x, xqs[j], Val(:linear), wrap, searcher)
-        for k in 1:K
-            outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap_eff)
+    # Per-series `:inclusive` endpoint guarantee. `:exclusive` needs no
+    # per-series check; the anchor's seam pair handles wrap.
+    if bc isa PeriodicBC{:inclusive}
+        @inbounds for k in 1:K
+            _check_periodic_endpoints(bc, vecs[k])
         end
     end
-    return outputs
+
+    if _series_use_kq_loop(length(xqs), K)
+        return _linear_series_batch_kq!(outputs, x, vecs, xqs, bc, deriv, extrap, search)
+    else
+        return _linear_series_batch_qk!(outputs, x, vecs, xqs, bc, deriv, extrap, search)
+    end
 end
 
 """

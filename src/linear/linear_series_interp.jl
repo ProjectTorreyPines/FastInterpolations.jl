@@ -489,15 +489,8 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
     return _linear_series_inplace_kernel!(outputs, sitp, xq, searcher, deriv)
 end
 
-# Thin function barrier: ensures the resolved `searcher` (and any hint Ref it
-# may carry) is consumed inside a fresh stack frame, preventing escape-analysis
-# spillover into a 16-byte heap box. No pool needed.
-#
-# Note `@inline` is intentional: the barrier benefit comes from this being a
-# *separate named function* (a clean specialization point for the compiler),
-# not from preventing inlining. Empirically `@noinline` regresses to ~32 B
-# because the forced function-call frame adds arg-passing overhead.
-@inline function _linear_series_inplace_kernel!(
+# Q×K — small-NQ fast path. Stack-resident anchor per query, no pool.
+@inline function _linear_series_qk!(
         outputs::AbstractVector{<:AbstractVector},
         sitp::LinearSeriesInterpolant{Tg},
         xq::AbstractVector,
@@ -512,7 +505,6 @@ end
     extrap = sitp.extrap
     x_min = Tg(first(sitp.x))
     x_max = Tg(last(sitp.x))
-
     @inbounds for j in eachindex(xq)
         aq = _anchor_query(x_grid, xq[j], Val(:linear), wrap, searcher)
         for k in 1:n_ser
@@ -522,6 +514,62 @@ end
         end
     end
     return outputs
+end
+
+# K×Q — large-NQ fast path. Pool-acquired anchor vector, sequential `outputs[k]`
+# inner loop (SIMD-able).
+@inline @with_pool pool function _linear_series_kq!(
+        outputs::AbstractVector{<:AbstractVector},
+        sitp::LinearSeriesInterpolant{Tg},
+        xq::AbstractVector,
+        searcher::Searcher,
+        deriv::DerivOp
+    ) where {Tg}
+    wrap = _should_wrap(sitp)
+    y = sitp.y
+    x_grid = sitp.x
+    n_pts = n_points(sitp)
+    n_ser = n_series(sitp)
+    extrap = sitp.extrap
+    x_min = Tg(first(sitp.x))
+    x_max = Tg(last(sitp.x))
+    NQ = length(xq)
+    Tqp = promote_type(Tg, eltype(xq))
+    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tqp}, NQ)
+    _fill_anchors!(aq_vec, x_grid, xq, Val(:linear), wrap, searcher)
+    @inbounds for k in 1:n_ser
+        for j in 1:NQ
+            outputs[k][j] = _eval_linear_series_with_extrap(
+                y, x_grid, n_pts, x_min, x_max, k, aq_vec[j], extrap, deriv
+            )
+        end
+    end
+    return outputs
+end
+
+# Thin function barrier: ensures the resolved `searcher` (and any hint Ref it
+# may carry) is consumed inside a fresh stack frame, preventing escape-analysis
+# spillover into a 16-byte heap box.
+#
+# Adaptive: `length(xq)` selects the loop order — see
+# `_SERIES_BATCH_LOOP_THRESHOLD` docs in `src/core/series_utils.jl`.
+#
+# Note `@inline` is intentional: the barrier benefit comes from this being a
+# *separate named function* (a clean specialization point for the compiler),
+# not from preventing inlining. Empirically `@noinline` regresses to ~32 B
+# because the forced function-call frame adds arg-passing overhead.
+@inline function _linear_series_inplace_kernel!(
+        outputs::AbstractVector{<:AbstractVector},
+        sitp::LinearSeriesInterpolant{Tg},
+        xq::AbstractVector,
+        searcher::Searcher,
+        deriv::DerivOp
+    ) where {Tg}
+    if _series_use_kq_loop(length(xq), n_series(sitp))
+        return _linear_series_kq!(outputs, sitp, xq, searcher, deriv)
+    else
+        return _linear_series_qk!(outputs, sitp, xq, searcher, deriv)
+    end
 end
 
 """

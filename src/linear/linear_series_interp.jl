@@ -551,8 +551,8 @@ end
 # may carry) is consumed inside a fresh stack frame, preventing escape-analysis
 # spillover into a 16-byte heap box.
 #
-# Adaptive: `length(xq)` selects the loop order — see
-# `_SERIES_BATCH_LOOP_THRESHOLD` docs in `src/core/series_utils.jl`.
+# Adaptive: `length(xq)` and `n_series(sitp)` feed `_series_use_kq_loop` to
+# select the loop order — see `src/core/series_utils.jl`.
 #
 # Note `@inline` is intentional: the barrier benefit comes from this being a
 # *separate named function* (a clean specialization point for the compiler),

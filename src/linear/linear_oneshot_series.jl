@@ -270,8 +270,8 @@ end
     return outputs
 end
 
-# Adaptive entry. `length(xqs)` selects the loop order — see
-# `_SERIES_BATCH_LOOP_THRESHOLD` docs in `src/core/series_utils.jl`.
+# Adaptive entry. `length(xqs)` and `K` feed `_series_use_kq_loop` to select
+# the loop order — see `src/core/series_utils.jl`.
 @inline function linear_interp!(
         outputs::AbstractVector{<:AbstractVector},
         x::AbstractVector{Tg},

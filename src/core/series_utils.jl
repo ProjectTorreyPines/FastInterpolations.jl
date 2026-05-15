@@ -20,7 +20,8 @@
 #       and avoids the K-cache-line write jump per query of the Q×K
 #       shape. Wins once NQ or K is large.
 #
-# The crossover is K-dependent (see `scripts/series_threshold_sweep.jl`):
+# The crossover is K-dependent (thresholds empirically tuned on Linear /
+# Constant Series oneshot batch microbenchmarks):
 #   - K ≤ ~100: NQ ≈ 16 is the cleanest break (Q×K wins below, K×Q above).
 #   - K ≥ ~256: Q×K loses at every NQ — the K-inner loop can't SIMD across
 #     K separate output Vectors and the K-cache-line write thrash per

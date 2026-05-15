@@ -341,8 +341,8 @@ end
         # hints would propagate Union policies across `_interp_nd_oneshot_onthefly`'s
         # function boundary — it's too large to inline, so the Union element
         # boxes into 4 allocs/query (≈ 100 B/query). The architectural fix is a
-        # dedicated OTF batch function that hosts the per-query work locally;
-        # tracked as a follow-up. See `claudedocs/TODO/otf_batch_adaptive_search.md`.
+        # dedicated OTF batch function that hosts the per-query work locally
+        # (follow-up).
         searches = _resolve_search_nd(search, Val(N))
         @inbounds for k in 1:nq
             query_k = _extract_query_point(queries, k, Val(N))

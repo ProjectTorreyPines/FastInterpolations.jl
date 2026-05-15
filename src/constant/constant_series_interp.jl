@@ -558,8 +558,8 @@ end
 end
 
 # Thin function barrier: see comment on `_linear_series_inplace_kernel!`.
-# Adaptive: `length(xq_typed)` selects the loop order — see
-# `_SERIES_BATCH_LOOP_THRESHOLD` docs in `src/core/series_utils.jl`.
+# Adaptive: `length(xq_typed)` and `n_series(sitp)` feed `_series_use_kq_loop`
+# to select the loop order — see `src/core/series_utils.jl`.
 @inline function _constant_series_inplace_kernel!(
         outputs::AbstractVector{<:AbstractVector},
         sitp::ConstantSeriesInterpolant{Tg},

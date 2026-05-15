@@ -238,8 +238,8 @@ end
     return outputs
 end
 
-# Adaptive entry. `length(xqs)` selects the loop order — see
-# `_SERIES_BATCH_LOOP_THRESHOLD` docs in `src/core/series_utils.jl`.
+# Adaptive entry. `length(xqs)` and `K` feed `_series_use_kq_loop` to select
+# the loop order — see `src/core/series_utils.jl`.
 # `x_last = Tg(last(x))` is computed inside each helper from the same
 # `x_eff` it uses (preserves the right-continuous short-circuit inside
 # `_constant_eval_at_anchor` for inclusive queries at `xq == x[n]`).

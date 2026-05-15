@@ -466,7 +466,8 @@ end
 # ─────────────────────────────────────────────────────────────────────────────
 # Dedicated dispatch tests for `_cache_axis` 3-arg Tg form
 # ─────────────────────────────────────────────────────────────────────────────
-# These lock in the dispatch table documented at `periodic_axis.jl:578-607`.
+# These lock in the dispatch table documented in the "Tg-aware 3-arg overloads"
+# section of `src/core/periodic_axis.jl`.
 # They distinguish:
 #   • RAW inputs (Vector/Range) → Tg respected via `_to_float`
 #   • PRE-WRAPPED inputs (_CachedRange/_CachedVector/_ExclusivePeriodicAxis)
@@ -643,6 +644,9 @@ end
     using FastInterpolations: _cache_axis_pooled, _CachedRange, _CachedVector, _to_float
     using AdaptiveArrayPools: @with_pool
 
+    # Assertions live inside the `@with_pool` scope so pool-owned `h`/`inv_h`
+    # buffers never escape — recycled storage would otherwise let stale reads
+    # slip in once a sibling test re-acquires the same slots.
     @with_pool pool function _smoke()
         x_vec = [0.0, 1.0, 2.5, 4.0]
         x_range = 0.0:1.0:3.0
@@ -655,36 +659,38 @@ end
         cr_int_out = _cache_axis_pooled(pool, x_int_range)
         cv_pass = _cache_axis_pooled(pool, cv64)
         cr_pass = _cache_axis_pooled(pool, cr64)
-        return (cv_out, cr_out, cr_int_out, cv_pass, cr_pass, cv64, cr64)
+
+        @testset "Pool wrap / passthrough rules (no Tg)" begin
+            # Vector{Float64} → pool-backed _CachedVector{Float64}
+            @test cv_out isa _CachedVector{Float64}
+            @test eltype(cv_out) === Float64
+            @test length(cv_out.h) == 3                   # n-1
+            @test cv_out.h ≈ [1.0, 1.5, 1.5]
+
+            # Float Range → _CachedRange{Float64}
+            @test cr_out isa _CachedRange{Float64}
+            @test eltype(cr_out) === Float64
+
+            # Int Range → _CachedRange{Float64} (float-defaulted via `float(eltype(x))`)
+            @test cr_int_out isa _CachedRange{Float64}
+            @test eltype(cr_int_out) === Float64
+
+            # Pre-wrapped inputs round-trip unchanged (===)
+            @test cv_pass === cv64
+            @test cr_pass === cr64
+        end
+        return nothing
     end
 
-    @testset "Pool wrap / passthrough rules (no Tg)" begin
-        cv_out, cr_out, cr_int_out, cv_pass, cr_pass, cv64, cr64 = _smoke()
-
-        # Vector{Float64} → pool-backed _CachedVector{Float64}
-        @test cv_out isa _CachedVector{Float64}
-        @test eltype(cv_out) === Float64
-        @test length(cv_out.h) == 3                   # n-1
-        @test cv_out.h ≈ [1.0, 1.5, 1.5]
-
-        # Float Range → _CachedRange{Float64}
-        @test cr_out isa _CachedRange{Float64}
-        @test eltype(cr_out) === Float64
-
-        # Int Range → _CachedRange{Float64} (float-defaulted via `float(eltype(x))`)
-        @test cr_int_out isa _CachedRange{Float64}
-        @test eltype(cr_int_out) === Float64
-
-        # Pre-wrapped inputs round-trip unchanged (===)
-        @test cv_pass === cv64
-        @test cr_pass === cr64
-    end
+    _smoke()
 end
 
 @testitem "_cache_axis_pooled 3-arg Tg respected: raw inputs" begin
     using FastInterpolations: _cache_axis_pooled, _CachedRange, _CachedVector
     using AdaptiveArrayPools: @with_pool
 
+    # Assertions live inside the `@with_pool` scope so pool-owned `h`/`inv_h`
+    # buffers never escape.
     @with_pool pool function _smoke()
         x32 = Float32[0.0, 1.0, 2.0, 3.0]              # raw Vector{Float32}
         r_int = 0:1:3                                  # Int range
@@ -695,25 +701,25 @@ end
         cv_promoted = _cache_axis_pooled(pool, x32, Float64)
         cr_int_promoted = _cache_axis_pooled(pool, r_int, Float32)
         cr_f64_demoted = _cache_axis_pooled(pool, r_f64, Float32)
-        return (cv_promoted, cr_int_promoted, cr_f64_demoted)
+
+        @testset "Vector{Float32} + Tg=Float64 → _CachedVector{Float64}" begin
+            @test cv_promoted isa _CachedVector{Float64}
+            @test eltype(cv_promoted) === Float64
+        end
+
+        @testset "Int range + Tg=Float32 → _CachedRange{Float32}" begin
+            @test cr_int_promoted isa _CachedRange{Float32}
+            @test eltype(cr_int_promoted) === Float32
+        end
+
+        @testset "Float64 range + Tg=Float32 → _CachedRange{Float32} (demotion)" begin
+            @test cr_f64_demoted isa _CachedRange{Float32}
+            @test eltype(cr_f64_demoted) === Float32
+        end
+        return nothing
     end
 
-    cv_promoted, cr_int_promoted, cr_f64_demoted = _smoke()
-
-    @testset "Vector{Float32} + Tg=Float64 → _CachedVector{Float64}" begin
-        @test cv_promoted isa _CachedVector{Float64}
-        @test eltype(cv_promoted) === Float64
-    end
-
-    @testset "Int range + Tg=Float32 → _CachedRange{Float32}" begin
-        @test cr_int_promoted isa _CachedRange{Float32}
-        @test eltype(cr_int_promoted) === Float32
-    end
-
-    @testset "Float64 range + Tg=Float32 → _CachedRange{Float32} (demotion)" begin
-        @test cr_f64_demoted isa _CachedRange{Float32}
-        @test eltype(cr_f64_demoted) === Float32
-    end
+    _smoke()
 end
 
 @testitem "_cache_axis_pooled 3-arg Tg same-eltype identity passthrough" begin
@@ -724,6 +730,8 @@ end
     # `_to_float(::AbstractVector{T}, ::Type{T}) = x` overload (utils.jl:33),
     # so the 3-arg form behaves exactly like the 2-arg form — no conversion,
     # no warning, no extra allocation beyond the 2-arg path's pool work.
+    # Assertions live inside the `@with_pool` scope so pool-owned `h`/`inv_h`
+    # buffers never escape.
     @with_pool pool function _smoke()
         x64 = [0.0, 1.0, 2.0, 3.0]
         r64 = 0.0:1.0:3.0
@@ -734,15 +742,15 @@ end
         cr_a = _cache_axis_pooled(pool, r64, Float64)         # raw range, same Tg
         cv_b = _cache_axis_pooled(pool, cv64, Float64)        # pre-wrapped vector, same Tg
         cr_b = _cache_axis_pooled(pool, cr64, Float64)        # pre-wrapped range, same Tg
-        return (cv_a, cr_a, cv_b, cr_b, cv64, cr64)
+
+        @test cv_a isa _CachedVector{Float64}
+        @test cr_a isa _CachedRange{Float64}
+        @test cv_b === cv64                                   # passthrough
+        @test cr_b === cr64                                   # passthrough
+        return nothing
     end
 
-    cv_a, cr_a, cv_b, cr_b, cv64, cr64 = _smoke()
-
-    @test cv_a isa _CachedVector{Float64}
-    @test cr_a isa _CachedRange{Float64}
-    @test cv_b === cv64                                       # passthrough
-    @test cr_b === cr64                                       # passthrough
+    _smoke()
 end
 
 @testitem "_cache_axis_pooled pool DATA-buffer reuse after warmup" setup = [AllocConstants] begin

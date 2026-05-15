@@ -1048,4 +1048,3 @@ end
         @test (val_hi - val_lo) / (2h) ≈ d_mid rtol = 1.0e-10
     end
 end
-

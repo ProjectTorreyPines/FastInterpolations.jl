@@ -444,7 +444,7 @@
             # Exclusive PeriodicBC: must also raise `ArgumentError`, not a
             # misleading `AssertionError`/`DimensionMismatch` from the wrapped
             # virtual-`n+1` grid being passed through `_cache_axis` before BC
-            # validation runs. (Regression guard for #140 Copilot review.)
+            # validation runs.
             @test_throws ArgumentError quadratic_interp(
                 (x, y), data;
                 bc = PeriodicBC(endpoint = :exclusive)

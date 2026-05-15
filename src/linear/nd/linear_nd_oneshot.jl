@@ -62,11 +62,9 @@ function _linear_interp_nd_oneshot(
 end
 
 """
-    _linear_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, policies, ops, hints, mono)
+    _linear_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, ops, search, hint)
 
 In-place batch one-shot ND multilinear evaluation.
-Uses query protocol (`_query_length`, `_query_extract`) — works with any query format.
-Writes results into `output`. No heap allocation beyond spacings.
 """
 function _linear_interp_nd_oneshot_batch!(
         output::AbstractVector,
@@ -75,11 +73,12 @@ function _linear_interp_nd_oneshot_batch!(
         queries,
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        policies::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
-        hints,  # Nothing or NTuple{N, Ref{Int}}
-        mono::NTuple{N, Bool},
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tg, Tv, N}
+    # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
+    policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
@@ -103,10 +102,9 @@ function _linear_interp_nd_oneshot_batch!(
     return output
 end
 
-# Function barrier: forces Julia to runtime-dispatch on the concrete
-# searches tuple type before entering the @with_pool boundary.
-function _linear_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps, policies, ops, hints, mono)
-    return _linear_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps, policies, ops, hints, mono)
+# Function barrier — specializes on concrete `search` type.
+function _linear_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps_val, ops, search, hint)
+    return _linear_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, ops, search, hint)
 end
 
 # ========================================
@@ -192,12 +190,8 @@ function linear_interp!(
     grids_typed, _, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
 
-    policies = _resolve_search_nd(search, Val(N))
-    hints_nd = hint
-    mono = _check_mono_nd(policies, queries)
-
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _linear_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, policies, ops, hints_nd, mono)
+    return _linear_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, ops, search, hint)
 end

@@ -831,12 +831,40 @@ end
         q_evals::Tuple{Vararg{Real, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
-        hints::Union{Nothing, Tuple{Vararg{Base.RefValue{Int}, N}}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         bcs::Tuple{Vararg{AbstractBC, N}},
     ) where {N}
-    hints_eff = _ensure_hint_nd(hints, Val(N))
-    results = map(_search_axis_stencil, grids, q_evals, searches, hints_eff, bcs)
+    results = map(_search_axis_stencil, grids, q_evals, searches, hints, bcs)
     return _project_search_results(results, _getstencil)
+end
+
+# Nothing-hint overload — scalar oneshot entries only. Batch must use the
+# 5-arg NTuple form (hint allocation hoisted via `_resolve_oneshot_search_nd`).
+@inline function _search_all_intervals_stencil(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing,
+        bcs::Tuple{Vararg{AbstractBC, N}},
+    ) where {N}
+    hints = _ensure_hint_nd(nothing, Val(N))
+    return _search_all_intervals_stencil(q_evals, grids, searches, hints, bcs)
+end
+
+
+"""
+    _resolve_oneshot_search_nd(search, queries, hint, Val(N)) -> (policies, hints)
+
+Per-axis adaptive policy + persistent hint tuple. Call once outside the
+per-query loop in every ND oneshot batch path. `hint::Nothing` produces a
+fresh `Ref{Int}` per axis; user-supplied Refs pass through unchanged.
+"""
+@inline function _resolve_oneshot_search_nd(
+        search, queries, hint, ::Val{N}
+    ) where {N}
+    policies = _resolve_search_nd(search, Val(N), queries, hint)
+    hints = _ensure_hint_nd(hint, Val(N))
+    return policies, hints
 end
 
 # ========================================

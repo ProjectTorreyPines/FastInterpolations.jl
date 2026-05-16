@@ -49,7 +49,10 @@
     ) where {Tg, Tv}
     grid = _itp_grid(itp)
     extrap = _itp_extrap(itp)
-    @boundscheck _check_domain(grid, xq, extrap)
+    # Domain check is delegated to the per-method `_eval_*_at_point` callable
+    # below — NoExtrap throws via that path's `@boundscheck _check_domain`,
+    # while Clamp/Fill/Wrap handle OOB inside their specialized eval methods
+    # without ever calling `_check_domain`. Outer redundancy removed.
     searcher = _resolve_search(grid, xq, search, hint)
     val = _itp_eval_scalar(itp, xq, extrap, deriv, searcher)
     return convert(_output_eltype(itp, typeof(xq)), val)

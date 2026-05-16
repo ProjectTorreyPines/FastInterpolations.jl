@@ -149,6 +149,8 @@ Uses task-local pool for workspace allocation.
 
     searcher = _resolve_search(cache.x, x_query, search, hint)
     extrap_eff = _resolve_extrap(extrap, cache.bc, cache.x)
-    @boundscheck _check_domain(cache.x, x_query, extrap_eff)
+    # Domain check delegated to `_eval_cubic_at_point(::AbstractExtrap)`
+    # below — its inner `@boundscheck _check_domain` handles NoExtrap throw,
+    # while Clamp/Fill/Wrap specialized methods handle OOB without checking.
     _eval_cubic_at_point(cache.x, y, z, x_query, extrap_eff, deriv, searcher)
 end

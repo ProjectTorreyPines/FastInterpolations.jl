@@ -38,7 +38,7 @@
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xL, xR), dL, side)
+    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, idx, xL, xR), dL, side)
 end
 
 # ExtendExtrap: constant function has zero slope → extend = clamp.
@@ -73,7 +73,7 @@ end
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xL, xR), dL, side)
+    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, idx, xL, xR), dL, side)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.
@@ -94,10 +94,10 @@ end
     dL = xi_wrapped - xL
     # Unwrap data once: `search_interval` already resolved the seam (idx_R = 1
     # at seam cell), so direct inner access skips the wrapper's cyclic
-    # `Base.getindex` branch on each `y[idx]` / `y[idx_R]`. The 3-arg
-    # `_get_h(x, xL, xR)` is already wrapper-aware and branch-free.
+    # `Base.getindex` branch on each `y[idx]` / `y[idx_R]`. The 4-arg
+    # `_get_h(x, idx, xL, xR)` is wrapper- and cache-aware.
     yi = _raw(y)
-    @inbounds return _constant_kernel(op, yi[idx], yi[idx_R], _get_h(x, xL, xR), dL, side)
+    @inbounds return _constant_kernel(op, yi[idx], yi[idx_R], _get_h(x, idx, xL, xR), dL, side)
 end
 
 

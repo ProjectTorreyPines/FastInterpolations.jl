@@ -146,7 +146,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
-    x = _resolve_axis(x)
+    x = _cache_axis_pooled(pool, x)
     # Compute coefficients using temporary arrays from pool. The grid `x`
     # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)
@@ -203,7 +203,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert length(x) >= 2 "x must have at least 2 elements"
 
-    x = _resolve_axis(x)
+    x = _cache_axis_pooled(pool, x)
     # Compute coefficients using temporary arrays from pool. The grid `x`
     # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)

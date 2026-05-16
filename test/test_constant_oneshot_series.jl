@@ -229,4 +229,136 @@
         bc_bad = PeriodicBC(endpoint = :exclusive, period = 2.5)
         @test_throws ArgumentError constant_interp(xv, s, 1.5; bc = bc_bad)
     end
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # K×Q (large-NQ) loop-order path. `_series_use_kq_loop(NQ, K)` returns
+    # true when `NQ > 16` (or `K ≥ 256`), routing to `_constant_series_batch_kq!`
+    # — pool-acquired anchor vector + K-outer×Q-inner stream. The QK helper
+    # (above tests at `Vector query`, `PeriodicBC — vector in-place ...`) only
+    # exercises small NQ; these testsets lock in the KQ branches.
+    # ─────────────────────────────────────────────────────────────────────────
+    @testset "Vector batch — K×Q loop (NQ=20 > threshold)" begin
+        # NQ=20 triggers the kq! path for any K (since 20 > _SERIES_BATCH_NQ_THRESHOLD=16).
+        NQ = 20
+        xqs = collect(range(0.05, 0.95, NQ))
+        s = Series(y_sin, y_cos, y_exp)
+
+        @testset "Non-periodic NoBC — KQ result == QK reference" begin
+            outputs_kq = [zeros(NQ) for _ in 1:3]
+            constant_interp!(outputs_kq, x, s, xqs)
+            # Cross-check each entry against the scalar oneshot path.
+            for j in eachindex(xqs)
+                ref = constant_interp(x, s, xqs[j])
+                for k in 1:3
+                    @test outputs_kq[k][j] ≈ ref[k] atol = 1.0e-12
+                end
+            end
+        end
+
+        @testset "Non-periodic with WrapExtrap on OOB queries" begin
+            # Include a few OOB queries so `wrap = extrap_eff isa WrapExtrap`
+            # branch fires inside `_constant_series_batch_kq!`.
+            xqs_wrap = vcat(collect(range(0.05, 0.95, NQ - 4)), [-0.2, -0.05, 1.05, 1.2])
+            outputs_kq = [zeros(length(xqs_wrap)) for _ in 1:2]
+            constant_interp!(
+                outputs_kq, x, Series(y_sin, y_cos), xqs_wrap;
+                extrap = WrapExtrap()
+            )
+            for j in eachindex(xqs_wrap)
+                ref = constant_interp(x, Series(y_sin, y_cos), xqs_wrap[j]; extrap = WrapExtrap())
+                @test outputs_kq[1][j] ≈ ref[1] atol = 1.0e-12
+                @test outputs_kq[2][j] ≈ ref[2] atol = 1.0e-12
+            end
+        end
+
+        @testset "PeriodicBC{:inclusive} batch — KQ" begin
+            outputs_kq = [zeros(NQ) for _ in 1:2]
+            constant_interp!(outputs_kq, x, Series(y_sin, y_cos), xqs; bc = PeriodicBC())
+            # Equivalent wrap-by-period query → bit-exact via shared anchor.
+            outputs_kq_wrap = [zeros(NQ) for _ in 1:2]
+            constant_interp!(
+                outputs_kq_wrap, x, Series(y_sin, y_cos), xqs .+ 1.0; bc = PeriodicBC()
+            )
+            @test outputs_kq[1] ≈ outputs_kq_wrap[1] atol = 1.0e-12
+            @test outputs_kq[2] ≈ outputs_kq_wrap[2] atol = 1.0e-12
+        end
+
+        @testset "PeriodicBC{:exclusive} FVM batch — KQ" begin
+            xc = [0.5, 1.5, 2.5]
+            s_fvm = Series([10.0, 20.0, 30.0], [1.0, 2.0, 3.0])
+            bc = PeriodicBC(endpoint = :exclusive, period = 3.0)
+            xqs_fvm = collect(range(0.1, 2.9, NQ))   # NQ=20 across one period
+            outputs_kq = [zeros(NQ), zeros(NQ)]
+            constant_interp!(outputs_kq, xc, s_fvm, xqs_fvm; bc)
+            # Cross-check each entry against the scalar in-place path.
+            out_scalar = zeros(2)
+            for j in eachindex(xqs_fvm)
+                constant_interp!(out_scalar, xc, s_fvm, xqs_fvm[j]; bc)
+                @test outputs_kq[1][j] ≈ out_scalar[1] atol = 1.0e-12
+                @test outputs_kq[2][j] ≈ out_scalar[2] atol = 1.0e-12
+            end
+        end
+
+        @testset "Range grid batch — KQ" begin
+            # Range grid → `_to_float` produces `_CachedRange`. Forces
+            # `_resolve_axis` + `_resolve_search` Range-specific branches
+            # inside the kq! body.
+            x_range = range(0.0, 1.0, 101)
+            outputs_kq = [zeros(NQ) for _ in 1:2]
+            constant_interp!(outputs_kq, x_range, Series(y_sin, y_cos), xqs)
+            for j in eachindex(xqs)
+                ref = constant_interp(x_range, Series(y_sin, y_cos), xqs[j])
+                @test outputs_kq[1][j] ≈ ref[1] atol = 1.0e-12
+                @test outputs_kq[2][j] ≈ ref[2] atol = 1.0e-12
+            end
+        end
+
+        @testset "Float32 grid + Float64 query — KQ Tqp promotion" begin
+            # Hits the `Tqp = promote_type(Tg_actual, Tq)` path inside kq!.
+            x32 = Float32.(x)
+            y32_sin = Float32.(y_sin)
+            y32_cos = Float32.(y_cos)
+            outputs_kq = [zeros(Float64, NQ) for _ in 1:2]
+            constant_interp!(outputs_kq, x32, Series(y32_sin, y32_cos), xqs)
+            for j in eachindex(xqs)
+                ref = constant_interp(x32, Series(y32_sin, y32_cos), xqs[j])
+                @test outputs_kq[1][j] ≈ ref[1] rtol = 1.0e-6
+                @test outputs_kq[2][j] ≈ ref[2] rtol = 1.0e-6
+            end
+        end
+
+        @testset "Derivative op + KQ" begin
+            outputs_kq = [zeros(NQ) for _ in 1:2]
+            constant_interp!(
+                outputs_kq, x, Series(y_sin, y_cos), xqs;
+                deriv = DerivOp(1)
+            )
+            # Constant interp derivative is zero everywhere except at sample
+            # points (where it's a delta); for any non-sample interior query
+            # the result must be zero.
+            for j in eachindex(xqs)
+                @test outputs_kq[1][j] == 0.0
+                @test outputs_kq[2][j] == 0.0
+            end
+        end
+    end
+
+    @testset "Vector batch — K×Q via K threshold (K ≥ 256)" begin
+        # Many small series — `K ≥ 256` triggers kq! regardless of NQ.
+        # Use small NQ=4 so the entry is solely via the K-threshold branch.
+        NQ = 4
+        K = 256
+        xqs = [0.1, 0.37, 0.5, 0.9]
+        ys = [sin.(2π .* x .+ 0.01 * k) for k in 1:K]
+        s = Series(ys)
+        outputs_kq = [zeros(NQ) for _ in 1:K]
+        constant_interp!(outputs_kq, x, s, xqs)
+        # Spot-check a few entries against the scalar oneshot path.
+        for j in eachindex(xqs)
+            ref = constant_interp(x, s, xqs[j])
+            for k in (1, K ÷ 2, K)
+                @test outputs_kq[k][j] ≈ ref[k] atol = 1.0e-12
+            end
+        end
+    end
 end

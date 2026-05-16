@@ -23,7 +23,8 @@
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
-    x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
+    # Pool-backed cache: K-series loop reuses h/inv_h across all K calls.
+    x = _cache_axis_pooled(pool, x, _promote_grid_float(Tg, _series_eltype(s)))
     _check_domain(x, xq, extrap)
     nx = length(x)
     K = n_series(s)
@@ -61,7 +62,8 @@ end
     ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
-    x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
+    # Pool-backed cache: K-series loop reuses h/inv_h.
+    x = _cache_axis_pooled(pool, x, _promote_grid_float(Tg, _series_eltype(s)))
     _check_domain(x, xq, extrap)
     nx = length(x)
     vecs = _series_vectors(s)
@@ -99,7 +101,8 @@ end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tq <: Real}
     _validate_series_lengths(s, length(x))
-    x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
+    # Pool-backed cache: K-series × Q-query loop reuses h/inv_h.
+    x = _cache_axis_pooled(pool, x, _promote_grid_float(Tg, _series_eltype(s)))
     K = n_series(s)
     _validate_series_outputs(outputs, K, length(xqs))
     # Domain check: NoExtrap → throws if OOB, returns InBounds(); others → pass-through

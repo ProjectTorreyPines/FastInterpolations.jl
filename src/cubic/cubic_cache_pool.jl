@@ -44,13 +44,10 @@ Abstract type for cache entries. Subtypes must have:
 abstract type AbstractCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}} end
 
 # Map user input grid type to the cache's wrapped axis type. Mirrors
-# `_cache_axis(_convert_copy(x, T), bc)` (copy-then-wrap):
-# - Non-periodic / `:inclusive`: Range → `_CachedRange{T, Tinv}`,
-#   Vector → `_CachedVector{T, Tinv}`.
-# - `:exclusive` periodic: extra `_ExclusivePeriodicAxis` wrapper around the
-#   above inner.
-# Cubic always promotes to `T <: AbstractFloat`, so `Tinv == T`; pin it
-# explicitly to keep `EntryType` concrete in the bank.
+# `_cache_axis(_convert_copy(x, T), bc)`: Range → `_CachedRange{T, T}`,
+# Vector → `_CachedVector{T, Tinv}`. `:exclusive` periodic adds an outer
+# `_ExclusivePeriodicAxis` wrapper. Cubic always promotes to float, so pin
+# `Tinv = T` to keep `EntryType` concrete.
 @inline _cached_axis_type(::Type{<:AbstractRange}, ::Type{T}) where {T} = _CachedRange{T, T}
 @inline _cached_axis_type(::Type{<:AbstractVector}, ::Type{T}) where {T} =
     _CachedVector{T, typeof(inv(oneunit(T)))}

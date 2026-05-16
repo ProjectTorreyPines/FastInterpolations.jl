@@ -605,7 +605,7 @@ function quadratic_adjoint(
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
     )
-    x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
+    x_p, xq_p, _ = _promote_adjoint_inputs(x, x_query)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
@@ -623,10 +623,15 @@ function quadratic_adjoint(
         end
     end
 
-    # Bake anchors directly off the wrapped axis (axis-as-truth).
-    anchors = _bake_quadratic_adjoint_anchors(x_p, xq_p, extrap)
+    # Cache axis for bake loop + per-apply `_compute_mincurv_C` reuse.
+    # `bc::QuadraticBC` (`Left/Right(...)` / `MinCurvFit`) is type-disjoint from
+    # `PeriodicBC{:exclusive}`, so dispatch lands on the
+    # `(::AbstractVector/AbstractRange, ::AbstractBC)` no-wrap overload.
+    x_cached = _cache_axis(x_p, bc)
 
-    return QuadraticAdjoint(anchors, bc, length(x_p), x_p)
+    anchors = _bake_quadratic_adjoint_anchors(x_cached, xq_p, extrap)
+
+    return QuadraticAdjoint(anchors, bc, length(x_cached), x_cached)
 end
 
 # Scalar query convenience

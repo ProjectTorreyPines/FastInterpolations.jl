@@ -345,6 +345,86 @@ for (glabel, itp) in [("range", itp_cubic), ("vec", itp_cubic_vec)]
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ND One-Shot: Vector grid × Query pattern (per-axis adaptive search)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Exercises the per-axis adaptive search dispatch inside ND oneshot batch
+# (sort axis → LinearBinary + persistent hint, rand axis → Binary). Vector
+# grids force the runtime search path; Range grids would use O(1) arithmetic
+# regardless of query pattern and hide the dispatch behavior. Includes a
+# `sort_rand` mixed case so a regression that disables per-axis selection
+# (collapsing both axes to a single policy) shows up here.
+
+println("Setting up ND one-shot grid×query pattern benchmarks...")
+
+const N_ND_GQ = 51
+const NQ_ND_GQ = 1000
+const x2d_vec_gq = collect(range(0.0, 10.0, N_ND_GQ))
+const y2d_vec_gq = collect(range(0.0, 6.0, N_ND_GQ))
+const data2d_gq = [sin(xi) * cos(yj) for xi in x2d_vec_gq, yj in y2d_vec_gq]
+const qx_sort_gq = collect(range(0.1, 9.9, NQ_ND_GQ))
+const qy_sort_gq = collect(range(0.1, 5.9, NQ_ND_GQ))
+const qx_rand_gq = shuffle(MersenneTwister(BENCH_RNG_SEED), copy(qx_sort_gq))
+const qy_rand_gq = shuffle(MersenneTwister(BENCH_RNG_SEED + 1), copy(qy_sort_gq))
+
+const _ND_GQ_PATTERNS = (
+    ("sort_sort", qx_sort_gq, qy_sort_gq),
+    ("rand_rand", qx_rand_gq, qy_rand_gq),
+    ("sort_rand", qx_sort_gq, qy_rand_gq),
+)
+
+# 13. ND One-Shot: Vector × Vector grid × query pattern
+for (lbl, qx, qy) in _ND_GQ_PATTERNS
+    let b = @benchmarkable linear_interp(($x2d_vec_gq, $y2d_vec_gq), $data2d_gq, ($qx, $qy))
+        b.params.evals = EVALS_MED
+        suite["13_nd_oneshot_gridquery"]["bilinear_2d_$(lbl)"] = b
+    end
+end
+
+for (lbl, qx, qy) in _ND_GQ_PATTERNS
+    clear_cubic_cache!()
+    cubic_interp((x2d_vec_gq, y2d_vec_gq), data2d_gq, (qx, qy))  # prime cache
+    let b = @benchmarkable cubic_interp(($x2d_vec_gq, $y2d_vec_gq), $data2d_gq, ($qx, $qy))
+        b.params.evals = EVALS_SLOW
+        suite["13_nd_oneshot_gridquery"]["bicubic_2d_$(lbl)"] = b
+    end
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Linear / Constant Series One-Shot Batch (in-place)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Detects regressions in the Series oneshot vector-batch code path
+# (`{linear,constant}_interp!(outs, x, ::Series, xqs)`). Vector grid + many
+# random queries is the configuration where the loop ordering
+# (Q outer × K inner vs K outer × Q inner) materially changes per-query cache
+# behavior on the `outputs[k][j]` write pattern. The in-place API is used so
+# the timing reflects pure computation — no per-call output allocation, no GC
+# pressure. (`8_cubic_multi` already covers Cubic series in-place.)
+
+println("Setting up Linear/Constant Series one-shot batch benchmarks...")
+
+const N_SER = 100
+const K_SER = 8
+const NQ_SER = 1000
+const x_ser = collect(range(0.0, 2π, N_SER + 1))
+const Y_ser = hcat([sin.(j .* x_ser) for j in 1:K_SER]...)
+const Ys_ser = Series(Y_ser)
+const q_ser_rand = rand(MersenneTwister(BENCH_RNG_SEED), NQ_SER) .* 2π
+const outs_ser = [Vector{Float64}(undef, NQ_SER) for _ in 1:K_SER]
+
+# 14. Linear / Constant Series one-shot batch (in-place)
+let b = @benchmarkable linear_interp!($outs_ser, $x_ser, $Ys_ser, $q_ser_rand)
+    b.params.evals = EVALS_SLOW
+    suite["14_series_oneshot_batch"]["linear_inplace_vec_k$(K_SER)_q$(NQ_SER)_rand"] = b
+end
+
+let b = @benchmarkable constant_interp!($outs_ser, $x_ser, $Ys_ser, $q_ser_rand)
+    b.params.evals = EVALS_SLOW
+    suite["14_series_oneshot_batch"]["constant_inplace_vec_k$(K_SER)_q$(NQ_SER)_rand"] = b
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
 # CLI Argument Parsing
 # ══════════════════════════════════════════════════════════════════════════════
 

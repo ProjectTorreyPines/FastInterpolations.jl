@@ -37,136 +37,11 @@
 #
 # Include order: search.jl → periodic.jl → periodic_axis.jl → periodic_data.jl → ...
 
-"""
-    _ExclusivePeriodicAxis{Tg, X<:AbstractVector{Tg}, Tp} <: AbstractVector{Tg}
-
-Representation wrapper for `PeriodicBC{:exclusive, L}` non-uniform Vector
-*axis* grids (companion to `_ExclusivePeriodicData` for the y/data side).
-
-`inner` is the user's raw grid (length n, NO copy). `period` is the period
-span (one period of the user's data). The wrapper reports `length(g) = n+1`
-so search algorithms naturally find the seam cell, but `Base.getindex(g, i)`
-forwards to `inner[i]` WITHOUT any branch — keeping hot search loops at zero
-overhead vs raw `inner`.
-
-Virtual-index access (i.e. `g[n+1]`) is provided through the `_getindex`
-helper (defined below), which branches on the virtual range.
-
-The wrapper also caches `_x_max = inner[1] + period` so `last(g)` is a single
-field read on every query (matches the cost of the legacy `WrapExtrap{T}._x_max`
-field read). This makes the axis a self-sufficient single source of truth for
-the wrap domain `[first(g), last(g))` — `WrapExtrap` itself stays a pure tag
-struct.
-
-# Fields
-- `inner::X` — user's raw non-uniform grid (length n). Can be `Vector{Tg}`
-  or `_CachedVector{Tg, Tinv}`. Range inputs are NOT wrapped — they go
-  directly through `_to_float_adding_endpoint` to a length-(n+1) `_CachedRange`.
-- `period::Tp` — period span. Type independent of `Tg` to allow e.g. `Float64`
-  grids with `Float32` period.
-- `_x_max::Tg` — virtual-endpoint cache (`inner[1] + Tg(period)`); precomputed
-  at construction so `Base.last(g)` is a single field read.
-
-# Example
-```julia
-x = [0.0, 0.25, 0.5, 0.75]                       # raw Vector grid, length 4
-g = _ExclusivePeriodicAxis(x, 1.0)               # presented as length 5
-g[1], g[2], g[3], g[4]                           # 0.0, 0.25, 0.5, 0.75 (raw)
-length(g) == 5                                   # virtual extension
-_getindex(g, 5)                                  # 1.0 (= x[1] + period)
-last(g)                                          # 1.0 (single field read)
-```
-"""
-struct _ExclusivePeriodicAxis{Tg, X <: AbstractVector{Tg}, Tp} <: AbstractVector{Tg}
-    inner::X
-    period::Tp
-    _x_max::Tg
-
-    # Inner constructor: precompute `_x_max = inner[1] + period` (used as the
-    # virtual seam coord and as the upper end of the wrap domain), and validate
-    # `inner[end] < _x_max` (period must exceed the grid span — otherwise the
-    # seam cell would collapse or overlap interior cells). Accepts any
-    # `AbstractVector` inner (`Vector`, `_CachedVector`, `AbstractRange`,
-    # `_CachedRange`) so the same wrapper unifies the `:exclusive` periodic
-    # representation for 1D and ND zero-copy paths.
-    function _ExclusivePeriodicAxis{Tg, X, Tp}(inner::X, period::Tp) where {Tg, X <: AbstractVector{Tg}, Tp}
-        x_max = @inbounds inner[1] + Tg(period)
-        @inbounds inner[end] < x_max || _throw_excl_axis_period_too_small(period, x_max, inner[end])
-        # Cross-validate user period against Range-inferred period (Range inners
-        # only — Vector inners cannot infer). Done once at wrapper construction
-        # so hot-path resolvers (`_resolve_exclusive_period`, `_resolve_bc_period`)
-        # can be trust-mode and pay no per-call validation tax.
-        _validate_exclusive_period(inner, period)
-        return new{Tg, X, Tp}(inner, period, x_max)
-    end
-end
-
-@noinline _throw_excl_axis_period_too_small(period, x_max, last_x) = throw(
-    ArgumentError(
-        "PeriodicBC(:exclusive) period=$period places virtual endpoint at $x_max, " *
-            "not after last grid point x[end]=$last_x"
-    )
-)
-
-# No-op for Vector inners (period unverifiable) — caller's responsibility.
-@inline _validate_exclusive_period(::AbstractVector, _) = nothing
-# Range inners: cross-validate against `step × length` (= total period for the
-# n-cell exclusive form). Tolerance pattern mirrors `_check_periodic_endpoints`
-# in `core/periodic.jl` so the period check and the inclusive-y endpoint check
-# share one numerical contract. Per-eltype dispatch:
-#   - AbstractFloat / Complex{<:AbstractFloat} → `atol = 8*eps, rtol = sqrt(eps)`
-#   - Integer / Rational                       → default `isapprox` (effectively `==`)
-#   - Duck types (Dual, Measurement, ...)      → strict equality on the primal
-@inline _validate_exclusive_period(inner::AbstractRange, period) =
-    _validate_exclusive_period_impl(inner, period, eltype(inner))
-
-@inline function _validate_exclusive_period_impl(
-        inner::AbstractRange, period, ::Type{T}
-    ) where {T <: AbstractFloat}
-    inferred = step(inner) * length(inner)
-    isapprox(T(period), T(inferred); atol = 8 * eps(T), rtol = sqrt(eps(T))) ||
-        _throw_excl_axis_period_mismatch(period, first(inner), inferred)
-    return nothing
-end
-
-@inline function _validate_exclusive_period_impl(
-        inner::AbstractRange, period, ::Type{Complex{T}}
-    ) where {T <: AbstractFloat}
-    inferred = step(inner) * length(inner)
-    isapprox(Complex{T}(period), Complex{T}(inferred); atol = 8 * eps(T), rtol = sqrt(eps(T))) ||
-        _throw_excl_axis_period_mismatch(period, first(inner), inferred)
-    return nothing
-end
-
-@inline function _validate_exclusive_period_impl(
-        inner::AbstractRange, period, ::Type{T}
-    ) where {T <: _PromotableValue}
-    # Integer / Rational grids: exact equality (default isapprox tolerance).
-    inferred = step(inner) * length(inner)
-    isapprox(period, inferred) ||
-        _throw_excl_axis_period_mismatch(period, first(inner), inferred)
-    return nothing
-end
-
-@inline function _validate_exclusive_period_impl(inner::AbstractRange, period, ::Type)
-    # Duck-type fallback (Dual, Measurement, ...): strict equality on primal.
-    inferred = step(inner) * length(inner)
-    _extract_primal(period) == _extract_primal(inferred) ||
-        _throw_excl_axis_period_mismatch(period, first(inner), inferred)
-    return nothing
-end
-
-@noinline _throw_excl_axis_period_mismatch(period, x0, inferred) = throw(
-    ArgumentError(
-        "PeriodicBC's period=$period conflicts with Range-inferred period = " *
-            "$(x0 + inferred) - $x0 = $inferred. " *
-            "Either adjust `period` or omit it for auto-inference."
-    )
-)
-
-# Convenience outer constructor — type params inferred from inputs.
-@inline _ExclusivePeriodicAxis(inner::AbstractVector{Tg}, period) where {Tg} =
-    _ExclusivePeriodicAxis{Tg, typeof(inner), typeof(period)}(inner, period)
+# `_ExclusivePeriodicAxis` struct definition + inner ctor + validation helpers
+# + outer convenience ctor live in `axis_types.jl` (loaded earlier). This file
+# owns the wrapper's behavior: `Base.copy` / `_convert_copy`, AbstractArray
+# interface, `_get_h` / `_get_inv_h` (seam-aware), `_resolve_axis` /
+# `_cache_axis(g::_ExclusivePeriodicAxis, ...)` passthroughs, view, search.
 
 # ---------- Wrapper-preserving copy ----------
 # Default `Base.copy(::AbstractVector)` uses `similar` + `copyto!` which
@@ -365,26 +240,38 @@ end
 @inline _wrap_to_domain(xq, g::_ExclusivePeriodicAxis) =
     _wrap_to_domain(xq, @inbounds(g.inner[1]), g._x_max)
 
-# 3-arg `(g, xL, xR)` form for oneshot kernels that already have `xL`/`xR`
-# in registers from search. Delegate to the inner type so `_CachedRange`
-# inners use the cached `h` field (single field load — matches master's
-# perf for non-wrapped Range grids). For `_CachedVector` / `Vector` inners
-# the inner overload computes `xR - xL` directly, same as the wrapper-level
-# fallback would.
-#
-# Seam correctness: at the seam, `xR == g._x_max == inner[1] + period` and
-# `xL == g.inner[n]`. Delegating to `_get_h(_CachedRange, xL, xR) = x.h`
-# returns the cached `step`. For correctly-supplied periods this equals
-# `xR - xL` exactly (the wrapper constructor's cross-validation enforces
-# `period ≈ step × length`); off-bit periods within `sqrt(eps)` rtol differ
-# by ≤1 ULP — numeric noise, well below kernel precision.
-@inline _get_h(g::_ExclusivePeriodicAxis, xL::Real, xR::Real) = _get_h(g.inner, xL, xR)
-@inline _get_inv_h(g::_ExclusivePeriodicAxis, xL::Real, xR::Real) = _get_inv_h(g.inner, xL, xR)
+# 4-arg `(g, idx, xL, xR)` form. Search already produced all four; dispatch
+# picks the per-type cheapest path.
+#   - `idx < length(g.inner)` (interior cell): delegate to inner — uses
+#      `_CachedRange.h`/`_CachedVector.h[idx]` cache.
+#   - `idx == length(g.inner)` (seam cell): inner's idx-lookup would index
+#      out of `inv_h` (length n-1). Use `xR - xL` directly — caller already
+#      has `xR == g._x_max` from search, so this is the natural seam width.
+@inline Base.@propagate_inbounds _get_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
+    idx < length(g.inner) ? _get_h(g.inner, idx, xL, xR) : xR - xL
+@inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
+    idx < length(g.inner) ? _get_inv_h(g.inner, idx, xL, xR) : inv(xR - xL)
 
-# `_alpha_of` for the wrapper: defer to inner so `_CachedRange` uses cached
-# `inv_h` (avoids `(R - L)` cancellation in the denominator).
+# `_alpha_of` for the wrapper: seam-aware so the value computation shares a
+# denominator with the 4-arg `_get_inv_h` at the seam cell.
+#   - Interior cell (`R != g._x_max`): defer to inner so `_CachedRange` uses
+#     its cached `inv_h` field (avoids `(R - L)` cancellation in the denom).
+#   - Seam cell (`R == g._x_max`): use the actual seam width `R - L`,
+#     matching `_get_inv_h(g, idx, xL, xR) = inv(xR - xL)` at `idx == n`.
+#
+# Without the seam branch, a Range inner with an explicit off-tolerance period
+# (within `sqrt(eps)` rtol of `step*length`, accepted by `_validate_exclusive_period`)
+# computed `α` from inner step but derivative from `inv(xR - xL)`, leaving
+# value/derivative on disagreeing denominators. Relative error scales as
+# `n * sqrt(eps)`, so Float32 grids at n ~ 100 or Float64 grids at n ~ 10⁶
+# could show percent-level seam-cell discrepancy.
+#
+# Float equality on `_x_max` is exact: the wrapper ctor enforces
+# `inner[end] < _x_max`, so `inner[idx+1] == _x_max` is unreachable for
+# interior cells. At the seam, the wrapper's `search_interval` returns
+# `xR = g._x_max` by direct field read — bit-equal to the comparand here.
 @inline _alpha_of(q::Real, L::Real, R::Real, g::_ExclusivePeriodicAxis) =
-    _alpha_of(q, L, R, g.inner)
+    R == g._x_max ? (q - L) / float(R - L) : _alpha_of(q, L, R, g.inner)
 
 # ========================================
 # View specialization: preserve wrapper for full-virtual range
@@ -450,26 +337,14 @@ end
 # for every method-family.
 
 # ----- Surface (oneshot, zero-alloc) ---------------------------------------
+#
+# Non-`:exclusive` `_resolve_axis` overloads live next to their type definitions
+# (`cached_range.jl` for Range / `_CachedRange`, `cached_vector.jl` for Vector /
+# `_CachedVector`). Below: `:exclusive` overloads (produce `_ExclusivePeriodicAxis`)
+# + the `_ExclusivePeriodicAxis` passthrough.
 
-# 1-arg form: BC-unaware grid normalization. Used by public oneshot API
-# entries that haven't yet inspected `bc` (e.g., `cardinal_interp(x, y, xq; bc)`)
-# and by internal helpers that just need a uniform grid representation.
-# Equivalent to `_resolve_axis(x, NoBC())` but more explicit at the call site.
-@inline _resolve_axis(x::AbstractVector) = x
-@inline _resolve_axis(x::AbstractRange) = _to_float(x, float(eltype(x)))
-
-@inline _resolve_axis(x::AbstractVector, ::AbstractBC) = x
-@inline _resolve_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
-@inline function _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
-    # Wrap the (cached, length-n) Range so the seam-fold idx_R=1 is shared
-    # with the Vector path — uniform behavior in 1D and ND zero-copy.
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
-end
-@inline function _resolve_axis(x::AbstractVector, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(x, bc_resolved.period)
-end
+# `_resolve_axis(::AbstractRange/AbstractVector, ::PeriodicBC{:exclusive})`
+# live in `cached_range.jl` / `cached_vector.jl` (owner files).
 
 @inline _resolve_data(y::AbstractArray, ::AbstractBC) = y
 @inline function _resolve_data(y::AbstractArray, bc::PeriodicBC{:inclusive})
@@ -516,50 +391,12 @@ end
 # are idempotent passthroughs — wrapping is already done; the inner ctor's
 # `_convert_copy` handles ownership transfer + optional type conversion.
 
-# 1-arg form: BC-unaware caching wrap. Mirrors `_resolve_axis(x)` but uses
-# the persistent-storage convention (Vector → `_CachedVector` for cached
-# h/inv_h lookup). Use when the call site is persistent but hasn't yet
-# inspected `bc`. Pre-wrapped inputs pass through idempotently below.
-@inline _cache_axis(x::AbstractVector) = _CachedVector(x)
-@inline _cache_axis(x::AbstractRange) = _to_float(x, float(eltype(x)))
-
-@inline _cache_axis(x::AbstractVector, ::AbstractBC) = _CachedVector(x)
-@inline _cache_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
-@inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
-end
-@inline function _cache_axis(x::AbstractVector, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_CachedVector(x), bc_resolved.period)
-end
-# Idempotent passthroughs for pre-wrapped axes. Each wrapper has BOTH a
-# `<:AbstractBC` overload AND an explicit `<:PeriodicBC{:exclusive}` overload
-# to resolve ambiguity against the raw-input entries above
-# (`_CachedRange <: AbstractRange`, `_CachedVector <: AbstractVector`,
-# `_ExclusivePeriodicAxis <: AbstractVector`).
-# Pre-wrapped idempotent passthroughs — both 1-arg and 2-arg forms. The
-# 1-arg passthroughs are critical for `_cache_axis` (without them, the raw
-# `AbstractVector` overload would wrap an already-wrapped axis in a redundant
-# `_CachedVector`). `_resolve_axis` 1-arg is safe via the `AbstractVector`
-# passthrough but explicit overloads are provided for symmetry.
-@inline _resolve_axis(c::_CachedRange) = c
-@inline _resolve_axis(c::_CachedVector) = c
+# `_ExclusivePeriodicAxis`-specific resolvers — wrapper passthroughs.
+# Cross-type `:exclusive` dispatches (raw Range/Vector → wrapper, pre-wrapped
+# `_CachedRange`/`_CachedVector` → wrapper) live in their owner files
+# (`cached_range.jl` / `cached_vector.jl`).
 @inline _resolve_axis(g::_ExclusivePeriodicAxis) = g
-@inline _cache_axis(c::_CachedRange) = c
-@inline _cache_axis(c::_CachedVector) = c
 @inline _cache_axis(g::_ExclusivePeriodicAxis) = g
-
-@inline _cache_axis(c::_CachedRange, ::AbstractBC) = c
-@inline function _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(c, bc)
-    return _ExclusivePeriodicAxis(c, bc_resolved.period)
-end
-@inline _cache_axis(c::_CachedVector, ::AbstractBC) = c
-@inline function _cache_axis(c::_CachedVector, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(c, bc)
-    return _ExclusivePeriodicAxis(c, bc_resolved.period)
-end
 @inline _cache_axis(g::_ExclusivePeriodicAxis, ::AbstractBC) = g
 @inline _cache_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}) = g
 
@@ -575,23 +412,39 @@ end
 # `_promote_grid_float(Float64, Float32) = Float64` then widened `y` to
 # `Float64` too, breaking the documented Float32 promotion.
 #
-# Vector path: `Tg` is unused at the wrap step. Vector eltype is preserved by
-# `_CachedVector(x)`; the inner ctor's wrapper-aware `_convert_copy(c, Tg)`
-# rebuilds with the requested element type. Same for pre-wrapped inputs:
-# the wrapper's eltype passes through unchanged; promotion is the inner
-# constructor's responsibility.
-@inline _cache_axis(x::AbstractVector, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(x, bc)
-@inline _cache_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(x, bc)
-@inline _cache_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
-@inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, Tg), bc_resolved.period)
-end
-# Pre-wrapped passthroughs ignore Tg (idempotent — inner ctor handles promotion).
-@inline _cache_axis(c::_CachedRange, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
-@inline _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
-@inline _cache_axis(c::_CachedVector, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
-@inline _cache_axis(c::_CachedVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
+# DISPATCH TABLE (and exactly *which* paths respect `Tg`):
+#
+#   x type                 +  bc                       Tg respected?  result
+#   ───────────────────────────────────────────────────────────────────────────
+#   AbstractVector         +  AbstractBC                ✅            `_CachedVector{Tg}`
+#   AbstractVector         +  PeriodicBC{:exclusive}    ✅            `_ExclusivePeriodicAxis(_CachedVector{Tg}, period)`
+#   AbstractRange          +  AbstractBC                ✅            `_CachedRange{Tg}`
+#   AbstractRange          +  PeriodicBC{:exclusive}    ✅            `_ExclusivePeriodicAxis(_CachedRange{Tg}, period)`
+#   _CachedRange{S}        +  any                       ⚠️ IGNORED    passthrough (eltype S preserved)
+#   _CachedVector{S}       +  any                       ⚠️ IGNORED    passthrough or `:exclusive` wrap (eltype S preserved)
+#   _ExclusivePeriodicAxis +  any                       ⚠️ IGNORED    passthrough (eltype unchanged)
+#
+# Why pre-wrapped paths ignore `Tg` (INTENTIONAL CONTRACT):
+#   Pre-wrapped axes have *already committed* their element type via their
+#   cached `h`/`inv_h` buffers. Re-converting eltype would require dropping
+#   and rebuilding those caches — work that belongs to `_convert_copy(_, Tg)`,
+#   not to `_cache_axis`. The canonical persistent-build pattern is:
+#
+#       xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
+#
+#   For raw `x`: `_cache_axis` returns a Tg-typed wrapper, then `_convert_copy`
+#   degrades to a same-eltype `Base.copy` (one buffer copy, no eltype work).
+#   For pre-wrapped `x` whose eltype already matches `Tg`: same — passthrough +
+#   identity copy. For pre-wrapped `x` with mismatching eltype: `_cache_axis`
+#   passes it through unchanged, then `_convert_copy(_, Tg)` rebuilds with the
+#   new eltype (one allocation pass — fastest possible for this rare case).
+#
+#   In short: `_cache_axis(x, bc, Tg)` guarantees only that ROOT raw inputs
+#   become `Tg`-typed wrappers. Pre-wrapped inputs round-trip unchanged so the
+#   downstream `_convert_copy` can do the eltype work in a single pass.
+# `_ExclusivePeriodicAxis` passthroughs for 3-arg form.
+# Raw `AbstractRange`/`AbstractVector` + `:exclusive` + Tg, and pre-wrapped
+# `_CachedRange`/`_CachedVector` + `:exclusive` + Tg live in their owner files.
 @inline _cache_axis(g::_ExclusivePeriodicAxis, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(g, bc)
 @inline _cache_axis(g::_ExclusivePeriodicAxis, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(g, bc)
 

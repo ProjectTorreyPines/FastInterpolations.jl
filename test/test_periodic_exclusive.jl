@@ -979,3 +979,72 @@ end
     end
 
 end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Seam-width consistency between value (`_alpha_of`) and derivative
+# (`_get_inv_h`) for `_ExclusivePeriodicAxis` with `_CachedRange` inner.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Regression guard for the divergence introduced when `_get_h`/`_get_inv_h`
+# moved to the 4-arg `(g, idx, xL, xR)` form and started using the actual seam
+# width `xR - xL` at the seam cell, while `_alpha_of(::_ExclusivePeriodicAxis)`
+# was left delegating to `g.inner` (which uses the inner's cached step on
+# `_CachedRange` — NOT the actual seam width).
+#
+# For Range inners with a period that passes the `sqrt(eps)` cross-validation
+# tolerance but is not exactly `step * length`, the two seam widths differ by
+# more than 1 ULP. Linear eval (`_alpha_of`) then computes a value whose
+# implicit denominator disagrees with the derivative's denominator, breaking
+# the `Range inner` vs `Vector inner` numerical parity that holds elsewhere.
+@testitem "Linear PeriodicBC(:exclusive) — Range/Vector seam parity for off-bit period" begin
+    using FastInterpolations: linear_interp, PeriodicBC, DerivOp
+
+    # Logically identical grids in Range vs Vector form. Vector form's
+    # `_alpha_of` uses `(q - L) / (R - L)`; Range form delegates to
+    # `_CachedRange.inv_h` (= `inv(step)`), which is what diverges from the
+    # actual seam width.
+    r = range(0.0, step = 1.0, length = 4)        # [0.0, 1.0, 2.0, 3.0]
+    v = collect(r)
+    y = Float64[10, 20, 30, 40]
+
+    # Period off-bit from `step*length = 4.0` but well within
+    # `sqrt(eps(Float64)) ≈ 1.49e-8` relative tolerance, so wrapper
+    # construction's cross-validation accepts it.
+    delta = 3.0e-8
+    period_off = 4.0 + delta
+    bc = PeriodicBC(endpoint = :exclusive, period = period_off)
+
+    # Query in middle of seam cell — most sensitive to seam-width handling.
+    xq_seam = 3.5
+
+    @testset "value at seam — Range inner ↔ Vector inner agree" begin
+        val_r = linear_interp(r, y, xq_seam; bc = bc)
+        val_v = linear_interp(v, y, xq_seam; bc = bc)
+        # The buggy Range path uses inner step (1.0) as the seam-cell inv_h,
+        # while the Vector path uses the actual seam width (≈ 1 + delta).
+        # Expected discrepancy ≈ 0.5 × 30 × delta ≈ 4.5e-7 — comfortably
+        # above the rtol below if val/deriv stay consistent.
+        @test val_r ≈ val_v rtol = 1.0e-12
+    end
+
+    @testset "derivative at seam — Range inner ↔ Vector inner agree" begin
+        # Derivative already uses the 4-arg `_get_inv_h` → `inv(xR - xL)` at
+        # the seam on BOTH Range and Vector inners; this guard locks that in
+        # so a future regression to inner-delegation gets flagged.
+        d_r = linear_interp(r, y, xq_seam; bc = bc, deriv = DerivOp(1))
+        d_v = linear_interp(v, y, xq_seam; bc = bc, deriv = DerivOp(1))
+        @test d_r ≈ d_v rtol = 1.0e-12
+    end
+
+    @testset "val/deriv internal consistency — Range inner" begin
+        # Independent of any Vector reference: the val and deriv at the seam
+        # must share a denominator. Finite-difference check across the seam
+        # cell — if the two paths use different inv_h, the FD slope at the
+        # cell midpoint will diverge from the analytic deriv by O(delta).
+        h = 1.0e-3                                # FD step inside seam cell
+        val_lo = linear_interp(r, y, xq_seam - h; bc = bc)
+        val_hi = linear_interp(r, y, xq_seam + h; bc = bc)
+        d_mid = linear_interp(r, y, xq_seam; bc = bc, deriv = DerivOp(1))
+        @test (val_hi - val_lo) / (2h) ≈ d_mid rtol = 1.0e-10
+    end
+end

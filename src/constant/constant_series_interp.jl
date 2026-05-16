@@ -497,8 +497,8 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
     return _constant_series_inplace_kernel!(outputs, sitp, xq_typed, searcher, deriv)
 end
 
-# Thin function barrier: see comment on `_linear_series_inplace_kernel!`.
-@inline function _constant_series_inplace_kernel!(
+# Q×K — small-NQ fast path. Stack-resident anchor per query, no pool.
+@inline function _constant_series_qk!(
         outputs::AbstractVector{<:AbstractVector},
         sitp::ConstantSeriesInterpolant{Tg},
         xq_typed::AbstractVector,
@@ -514,7 +514,6 @@ end
     side_val = sitp.side
     x_min = Tg(first(sitp.x))
     x_max = Tg(last(sitp.x))
-
     @inbounds for j in eachindex(xq_typed)
         aq = _anchor_query(x_grid, xq_typed[j], Val(:constant), wrap, searcher)
         for k in 1:n_ser
@@ -524,6 +523,55 @@ end
         end
     end
     return outputs
+end
+
+# K×Q — large-NQ fast path. Pool-acquired anchor vector, sequential `outputs[k]`
+# inner loop (SIMD-able).
+@inline @with_pool pool function _constant_series_kq!(
+        outputs::AbstractVector{<:AbstractVector},
+        sitp::ConstantSeriesInterpolant{Tg},
+        xq_typed::AbstractVector,
+        searcher::Searcher,
+        deriv::DerivOp
+    ) where {Tg}
+    wrap = _should_wrap(sitp)
+    y = sitp.y
+    x_grid = sitp.x
+    n_pts = n_points(sitp)
+    n_ser = n_series(sitp)
+    extrap = sitp.extrap
+    side_val = sitp.side
+    x_min = Tg(first(sitp.x))
+    x_max = Tg(last(sitp.x))
+    NQ = length(xq_typed)
+    Tqp = promote_type(Tg, eltype(xq_typed))
+    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg, Tqp}, NQ)
+    _fill_anchors!(aq_vec, x_grid, xq_typed, Val(:constant), wrap, searcher)
+    @inbounds for k in 1:n_ser
+        for j in 1:NQ
+            outputs[k][j] = _eval_constant_series_with_extrap(
+                y, x_grid, n_pts, x_min, x_max, k, aq_vec[j], extrap, side_val, deriv
+            )
+        end
+    end
+    return outputs
+end
+
+# Thin function barrier: see comment on `_linear_series_inplace_kernel!`.
+# Adaptive: `length(xq_typed)` and `n_series(sitp)` feed `_series_use_kq_loop`
+# to select the loop order — see `src/core/series_utils.jl`.
+@inline function _constant_series_inplace_kernel!(
+        outputs::AbstractVector{<:AbstractVector},
+        sitp::ConstantSeriesInterpolant{Tg},
+        xq_typed::AbstractVector,
+        searcher::Searcher,
+        deriv::DerivOp
+    ) where {Tg}
+    if _series_use_kq_loop(length(xq_typed), n_series(sitp))
+        return _constant_series_kq!(outputs, sitp, xq_typed, searcher, deriv)
+    else
+        return _constant_series_qk!(outputs, sitp, xq_typed, searcher, deriv)
+    end
 end
 
 """

@@ -68,11 +68,12 @@ end
         queries,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        policies::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
-        hints,  # Nothing or NTuple{N, Ref{Int}}
-        mono::NTuple{N, Bool},
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tg, N}
+    # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
+    policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
@@ -102,21 +103,16 @@ end
             continue
         end
         q_eval = _handle_all_extraps(query_k, grids_p, extraps_eff)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, policies, hints, mono)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, policies, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_p, indices, Ls)
         output[k] = _eval_hetero_nd_cell(partials, indices, hs, inv_hs, dLs, ops, methods)
     end
     return output
 end
 
-# ========================================
-# Function Barrier
-# ========================================
-# Forces search type specialization before entering @with_pool boundary.
-# NOT @inline — specialization requires real call.
-
-function _interp_nd_hetero_batch_dispatch!(output, grids, data, queries, methods, extraps, policies, ops, hints, mono)
-    return _interp_nd_hetero_oneshot_batch!(output, grids, data, queries, methods, extraps, policies, ops, hints, mono)
+# Function barrier — specializes on concrete `search` type.
+function _interp_nd_hetero_batch_dispatch!(output, grids, data, queries, methods, extraps, ops, search, hint)
+    return _interp_nd_hetero_oneshot_batch!(output, grids, data, queries, methods, extraps, ops, search, hint)
 end
 
 # ========================================
@@ -331,8 +327,6 @@ end
     # bc-aware extrap (matches scalar dispatch).
     bcs = map(_bc_for_periodic_check, methods)
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
-    policies = _resolve_search_nd(search, Val(N))
-    mono = _check_mono_nd(policies, queries)
     ops = _resolve_deriv_nd(deriv, Val(N))
     _validate_axis_methods(grids_typed, methods, extraps_val)
 
@@ -340,18 +334,24 @@ end
         nq = _query_length(queries)
         length(output) == nq || _throw_query_output_mismatch(nq, length(output))
         _query_validate(queries)
-        # Validate inclusive periodic boundary slices ONCE per batch (not per
-        # query). `_interp_nd_oneshot_onthefly` skips the validation since both
-        # callers (here + scalar dispatch) hoist it above their hot path.
+        # Validate inclusive periodic boundary slices ONCE per batch.
         _validate_periodic_slices_nd(data, bcs, Val(N))
+        # OTF batch uses the master shape: pass `search` (unresolved AutoSearch
+        # tuple) + `hints` (as-is) per query. Eager 4-arg resolution + pre-built
+        # hints would propagate Union policies across `_interp_nd_oneshot_onthefly`'s
+        # function boundary — it's too large to inline, so the Union element
+        # boxes into 4 allocs/query (≈ 100 B/query). The architectural fix is a
+        # dedicated OTF batch function that hosts the per-query work locally
+        # (follow-up).
+        searches = _resolve_search_nd(search, Val(N))
         @inbounds for k in 1:nq
             query_k = _extract_query_point(queries, k, Val(N))
-            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, policies, ops, hints)
+            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, searches, ops, hints)
         end
         return output
     end
 
-    return _interp_nd_hetero_batch_dispatch!(output, grids_typed, data, queries, methods, extraps_val, policies, ops, hints, mono)
+    return _interp_nd_hetero_batch_dispatch!(output, grids_typed, data, queries, methods, extraps_val, ops, search, hints)
 end
 
 # ========================================

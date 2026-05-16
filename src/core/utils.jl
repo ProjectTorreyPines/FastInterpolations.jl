@@ -551,7 +551,7 @@ end
 @inline function _is_all_inbounds_halfopen(x::AbstractVector, queries::AbstractVector{<:Real})
     isempty(queries) && return true
     return minimum(queries) >= _extract_primal(first(x)) &&
-        maximum(queries) <  _extract_primal(last(x))
+        maximum(queries) < _extract_primal(last(x))
 end
 
 @inline function _is_all_inbounds_halfopen(x::_CachedRange, queries::AbstractVector{<:Real})

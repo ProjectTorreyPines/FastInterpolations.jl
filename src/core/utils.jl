@@ -515,15 +515,21 @@ Uses two `&&`-chained reductions rather than `extrema`:
 1.13 fixes the SIMD issue, but the short-circuit advantage remains for
 the OOB slow-path, so this form stays preferred even post-1.10-LTS.
 """
+# `_extract_primal` is required on `first(x)` / `last(x)` here because
+# ForwardDiff's `Real <= Dual` comparison includes partial-sign tie-breaking
+# at equal primals — so a Float query exactly at the boundary against a
+# Dual grid endpoint can flip in/out of bounds based on the partial sign
+# alone (see `test/ext/test_linear_dual_grid.jl` "Domain boundary:
+# primal-based NoExtrap check (partial-independent)"). Inline calls keep
+# the `&&` short-circuit intact.
 @inline function _is_all_inbounds(x::AbstractVector, queries::AbstractVector{<:Real})
-    return minimum(queries) >= first(x) && maximum(queries) <= last(x)
+    return minimum(queries) >= _extract_primal(first(x)) &&
+        maximum(queries) <= _extract_primal(last(x))
 end
 
-# `_CachedRange`: use `domain_lo`/`domain_hi` (≈1 ULP wider than `lo`/`hi`
-# on x86_64 TwicePrecision normalization) for safe bounds, mirroring
-# `_check_domain(::_CachedRange, ::NoExtrap)`. The fields are typed
-# `T <: AbstractFloat` per `_CachedRange{T, Tinv}`, so no `_extract_primal`
-# is needed.
+# `_CachedRange`: `domain_lo`/`domain_hi` (≈1 ULP wider than `lo`/`hi` on
+# x86_64 TwicePrecision normalization) for safe bounds. Fields are typed
+# `T <: AbstractFloat` per the struct, so no `_extract_primal` is needed.
 @inline function _is_all_inbounds(x::_CachedRange, queries::AbstractVector{<:Real})
     return minimum(queries) >= x.domain_lo && maximum(queries) <= x.domain_hi
 end

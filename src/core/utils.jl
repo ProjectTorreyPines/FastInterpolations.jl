@@ -468,26 +468,24 @@ end
 # scan is skipped but the extrap conversion still happens.
 # ----------------------------------------
 
-"Vector domain check for NoExtrap: validate batch, return InBounds()."
+"""
+Vector domain check for NoExtrap: validate batch, return `InBounds()`.
+
+Delegates the batch in-domain test to `_is_all_inbounds`, which dispatches
+on axis type (using `domain_lo/hi` for `_CachedRange`'s wider TwicePrecision
+bracket on x86_64) and is partial-sign-safe under ForwardDiff. Throw
+message uses `first(x)/last(x)` — exact endpoints, not the widened bracket.
+"""
 @inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap)
-    @boundscheck begin
-        x_min, x_max = _extract_primal(first(x)), _extract_primal(last(x))
-        xq_min, xq_max = minimum(xi), maximum(xi)
-        (xq_min < x_min || xq_max > x_max) &&
-            _throw_domain_error(xq_min < x_min ? xq_min : xq_max, x_min, x_max)
-    end
+    @boundscheck _is_all_inbounds(x, xi) || _throw_batch_oob(x, xi)
     return InBounds()
 end
 
-# _CachedRange: use domain_lo/domain_hi for vector domain checks.
-@inline function _check_domain(x::_CachedRange, xi::AbstractVector{<:Real}, ::NoExtrap)
-    @boundscheck begin
-        lo, hi = _extract_primal(x.domain_lo), _extract_primal(x.domain_hi)
-        xq_min, xq_max = minimum(xi), maximum(xi)
-        (xq_min < lo || xq_max > hi) &&
-            _throw_domain_error(xq_min < lo ? xq_min : xq_max, _extract_primal(x.lo), _extract_primal(x.hi))
-    end
-    return InBounds()
+@noinline function _throw_batch_oob(x::AbstractVector, xi::AbstractVector{<:Real})
+    qmin, qmax = minimum(xi), maximum(xi)
+    x_min = _extract_primal(first(x))
+    x_max = _extract_primal(last(x))
+    _throw_domain_error(qmin < x_min ? qmin : qmax, x_min, x_max)
 end
 
 "No-op vector domain check for non-NoExtrap modes: pass-through extrap."

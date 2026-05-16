@@ -23,75 +23,23 @@
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
-    val = _eval_constant_nd(itp, resolved, ops, policies, hints, mono)
+    val = _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
     Tq = promote_type(map(typeof, query)...)
     return convert(_output_eltype(itp, Tq), val)
 end
 
 # In-place + allocating batch use the inherited `AbstractInterpolantND`
 # protocol; output eltype comes from the `_output_eltype(itp, Tq)` trait
-# overridden in `constant_nd_types.jl`.
-
-# Zero-fill for any derivative is handled by _deriv_zero_fill trait below.
+# overridden in `constant_nd_types.jl`. Scalar evaluation routes through
+# the generic `_eval_nd_at_point` in interpolant_protocol.jl — Constant's
+# "any derivative → 0" rule is wired via the `_deriv_zero_fill` trait below.
 
 # Derivative zero-fill trait: constant has zero derivative at all orders
 @inline _deriv_zero_fill(::ConstantInterpolantND, ops::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} =
     _has_any_derivative(ops, Val(N))
 
-# ========================================
-# Core Evaluation Logic
-# ========================================
-
-"""
-    _eval_constant_nd(itp, query, ops, search_tuple)
-
-Evaluate ConstantInterpolantND at a single point.
-
-For constant interpolation:
-- If any derivative order > 0, return zero via `0 * y` (duck-typing compatible)
-- Otherwise, find interval and select corner based on side mode
-"""
 # Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
 @inline _zero_ref(itp::ConstantInterpolantND) = @inbounds first(itp.data)
-
-# Generic N-dimensional version (uses _locate_cell + _eval_at_cell)
-@inline function _eval_constant_nd(
-        itp::ConstantInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
-        ops::NTuple{N, AbstractEvalOp},
-        policies::NTuple{N, AbstractSearchPolicy},
-        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
-        mono::NTuple{N, Bool},
-    ) where {Tg, Tv, N}
-    _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
-    oob_result !== nothing && return oob_result
-    if _has_any_derivative(ops, Val(N))
-        return 0 * first(itp.data)
-    end
-    cell = _locate_cell(itp, query, policies, hints, mono)
-    return _eval_at_cell(itp, cell, ops)
-end
-
-# N=2 specialization: dispatches to N=2 _locate_cell via type
-@inline function _eval_constant_nd(
-        itp::ConstantInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{Real, 2}},
-        ops::NTuple{2, AbstractEvalOp},
-        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
-        mono::Tuple{Bool, Bool},
-    ) where {Tg, Tv}
-    _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
-    oob_result !== nothing && return oob_result
-    op_x, op_y = ops
-    if !(op_x isa EvalValue) || !(op_y isa EvalValue)
-        return 0 * first(itp.data)
-    end
-    cell = _locate_cell(itp, query, policies, hints, mono)
-    return _eval_at_cell(itp, cell, ops)
-end
 
 # ========================================
 # CELL LOCATION (locate once, evaluate many)

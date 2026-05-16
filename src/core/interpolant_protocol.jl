@@ -148,14 +148,46 @@ end
     return output
 end
 
-# Scalar-path forwarder: vector_calculus and per-method scalar `_eval_*_nd`
-# call the 5-arg form; we inject `itp.extraps` so the canonical 6-arg
+# Scalar-path forwarder: vector_calculus and per-method scalar paths call
+# the 5-arg form; we inject `itp.extraps` so the canonical 6-arg
 # `_locate_cell` works uniformly. The 6-arg form is the source of truth —
 # batch callers (`_interp_nd_batch!`) and the windowed/hetero paths can pass
 # a different `extraps_eff` (e.g., InBounds-promoted) without affecting
 # scalar callers. Pure `getfield` body — Julia elides this trivially.
 @inline _locate_cell(itp::AbstractInterpolantND, q, policies, hints, mono) =
     _locate_cell(itp, q, itp.extraps, policies, hints, mono)
+
+# ========================================
+# Unified Scalar Interpolant Evaluation (Generic ND)
+# ========================================
+#
+# Single scalar entry point for AbstractInterpolantND subtypes whose eval
+# structure matches `validate → try_fill_oob → deriv_zero_fill → locate →
+# eval` (Cubic / Linear / Constant / Quadratic). Each method's callable
+# resolves search/hints/ops then delegates here.
+#
+# Trait dispatch: `_deriv_zero_fill(itp, ops, Val(N))` (Linear: 2nd+ deriv,
+# Constant: any deriv, Cubic/Quadratic default false). `_zero_ref(itp)`
+# supplies the per-method zero element (data first / partials first).
+#
+# Hetero is *not* routed through here — its callable has GridIdx/NoInterp
+# branches and `_eval_hetero_nd` uses a non-`_locate_cell` path (recursive
+# `_collapse_dims` / `_eval_hetero_precomputed`).
+@inline function _eval_nd_at_point(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}},
+        ops::NTuple{N, AbstractEvalOp},
+        policies::NTuple{N, AbstractSearchPolicy},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
+    ) where {Tg, Tv, N}
+    _validate_nd_domain(itp.grids, query, itp.extraps)
+    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
+    oob_result !== nothing && return oob_result
+    _deriv_zero_fill(itp, ops, Val(N)) && return 0 * _zero_ref(itp)
+    cell = _locate_cell(itp, query, policies, hints, mono)
+    return _eval_at_cell(itp, cell, ops)
+end
 
 # ========================================
 # ND Scalar: Vector query → tuple conversion

@@ -70,12 +70,13 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))      # ∂f/∂x only
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
-    return _eval_nd_quadratic(itp, resolved, ops, policies, hints, mono)
+    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
 end
 
 # In-place batch evaluation (SoA + AoS) is handled by the unified
-# AbstractInterpolantND callable in nd_utils.jl.
-# QuadraticInterpolantND has no special batch logic (no zero-fill trait).
+# AbstractInterpolantND callable in interpolant_protocol.jl. Scalar
+# evaluation routes through the generic `_eval_nd_at_point` there —
+# QuadraticInterpolantND has no zero-fill trait (default false).
 
 # ========================================
 # CELL LOCATION (locate once, evaluate many)
@@ -132,44 +133,8 @@ end
     return _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
 end
 
-# ========================================
-# CORE QUADRATIC EVALUATION
-# ========================================
-
 # Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
 @inline _zero_ref(itp::QuadraticInterpolantND) = @inbounds first(itp.nodal_derivs.partials)
-
-# Generic N-dimensional (uses _locate_cell + _eval_at_cell)
-@inline function _eval_nd_quadratic(
-        itp::QuadraticInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
-        ops::NTuple{N, AbstractEvalOp},
-        policies::NTuple{N, AbstractSearchPolicy},
-        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
-        mono::NTuple{N, Bool},
-    ) where {Tg, Tv, N}
-    _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
-    oob_result !== nothing && return oob_result
-    cell = _locate_cell(itp, query, policies, hints, mono)
-    return _eval_at_cell(itp, cell, ops)
-end
-
-# N=2 specialization: dispatches to N=2 _locate_cell via type
-@inline function _eval_nd_quadratic(
-        itp::QuadraticInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{Real, 2}},
-        ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp},
-        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
-        mono::Tuple{Bool, Bool},
-    ) where {Tg, Tv}
-    _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
-    oob_result !== nothing && return oob_result
-    cell = _locate_cell(itp, query, policies, hints, mono)
-    return _eval_at_cell(itp, cell, ops)
-end
 
 # ========================================
 # @GENERATED TENSOR PRODUCT KERNEL (Quadratic)

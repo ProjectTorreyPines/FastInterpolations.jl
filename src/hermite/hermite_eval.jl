@@ -73,7 +73,11 @@ end
     @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
-# Vector loop — generic
+# Vector loop — generic. WrapExtrap fast/slow path is routed by
+# `_check_domain(::WrapExtrap, ::AbstractVector)`, which returns `InBounds()`
+# when no element needs wrapping. Union splitting + LLVM loop unswitching
+# generate the same two monomorphic loop bodies as a hand-specialized
+# overload would.
 @inline function _hermite_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -87,33 +91,6 @@ end
     extrap = _check_domain(x, xq, extrap)
     @inbounds for i in eachindex(xq, output)
         output[i] = _hermite_eval_at_point(x, y, dy, xq[i], extrap, deriv, searcher)
-    end
-    return output
-end
-
-# Vector loop — WrapExtrap specialization (2-stage: bulk-wrap + ExtendExtrap kernel)
-@inline function _hermite_vector_loop!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        dy::AbstractVector,
-        xq::AbstractVector{<:Real},
-        extrap::WrapExtrap,
-        deriv::O,
-        searcher::P
-    ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
-    x_min, x_max = first(x), last(x)
-    qmin, qmax = minimum(xq), maximum(xq)
-
-    if qmin >= x_min && qmax < x_max
-        @inbounds for i in eachindex(xq, output)
-            output[i] = _hermite_eval_at_point(x, y, dy, xq[i], ExtendExtrap(), deriv, searcher)
-        end
-    else
-        @inbounds for i in eachindex(xq, output)
-            xi_wrapped = _wrap_to_domain(xq[i], x)
-            output[i] = _hermite_eval_at_point(x, y, dy, xi_wrapped, ExtendExtrap(), deriv, searcher)
-        end
     end
     return output
 end
@@ -193,7 +170,8 @@ end
     @inbounds return _hermite_kernel_1d(op, yr[idx], yr[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
-# Vector loop — generic (slope method)
+# Vector loop — generic (slope method). Same `_check_domain` routing as
+# the pre-baked-slopes variant above.
 @inline function _hermite_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -207,33 +185,6 @@ end
     extrap = _check_domain(x, xq, extrap)
     @inbounds for i in eachindex(xq, output)
         output[i] = _hermite_eval_at_point(x, y, sm, xq[i], extrap, deriv, searcher)
-    end
-    return output
-end
-
-# Vector loop — WrapExtrap specialization (slope method)
-@inline function _hermite_vector_loop!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        sm::AbstractSlopeMethod,
-        xq::AbstractVector{<:Real},
-        extrap::WrapExtrap,
-        deriv::O,
-        searcher::P
-    ) where {Tg, Tv, O <: AbstractEvalOp, P <: Searcher}
-    x_min, x_max = first(x), last(x)
-    qmin, qmax = minimum(xq), maximum(xq)
-
-    if qmin >= x_min && qmax < x_max
-        @inbounds for i in eachindex(xq, output)
-            output[i] = _hermite_eval_at_point(x, y, sm, xq[i], ExtendExtrap(), deriv, searcher)
-        end
-    else
-        @inbounds for i in eachindex(xq, output)
-            xi_wrapped = _wrap_to_domain(xq[i], x)
-            output[i] = _hermite_eval_at_point(x, y, sm, xi_wrapped, ExtendExtrap(), deriv, searcher)
-        end
     end
     return output
 end

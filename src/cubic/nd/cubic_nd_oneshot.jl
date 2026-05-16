@@ -177,13 +177,17 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
-    _validate_nd_domain(grids, queries, extraps_val)
 
     # Build phase (same as scalar, done once)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
     # Per-axis materialization of extraps against the (possibly extended) grid.
     # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
+    # Batch-level InBounds promotion: per-axis if all queries are in-bounds,
+    # axis gets `InBounds()` so per-query `_try_fill_oob` / `_handle_all_extraps`
+    # branches compile away. Subsumes the prior `_validate_nd_domain` throw
+    # (NoExtrap path goes through 1D `_check_domain`'s `@boundscheck`).
+    extraps_eff = _check_domain_nd(grids_p, queries, extraps_eff)
     Tz = _output_eltype(Tv, Tg)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
@@ -193,7 +197,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # `h`/`inv_h` directly from `grids_p` (no transient pool spacings).
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
+        oob_val = _try_fill_oob(query_k, grids_p, extraps_eff, ops, first(data_p))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end

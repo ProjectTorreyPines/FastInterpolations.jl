@@ -497,6 +497,14 @@ end
     return _is_all_inbounds(x, xi) ? InBounds() : WrapExtrap()
 end
 
+# ClampExtrap / FillExtrap: same batch-check pattern. When all queries are
+# in-domain, the per-query `<first / >last` branches inside `_eval_*_at_point`
+# are elided via the InBounds dispatch (worth ~20-30% on the in-domain hot
+# path). Returns Union{InBounds, <original>}.
+@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, e::_ClampOrFill)
+    return _is_all_inbounds(x, xi) ? InBounds() : e
+end
+
 """
 True iff every element of `queries` lies in the closed domain
 `[first(x), last(x)]`. Enables batch-level fast paths that elide per-query

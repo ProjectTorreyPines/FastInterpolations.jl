@@ -497,8 +497,10 @@ end
 # the `InBounds` dispatch. Returns `Union{InBounds, typeof(e)}` — Julia
 # specializes per concrete `e`, so callers get a narrow 2-singleton Union
 # that splits cleanly without dynamic dispatch.
-@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real},
-        e::Union{WrapExtrap, ClampExtrap, FillExtrap})
+@inline function _check_domain(
+        x::AbstractVector, xi::AbstractVector{<:Real},
+        e::Union{WrapExtrap, ClampExtrap, FillExtrap}
+    )
     return _is_all_inbounds(x, xi) ? InBounds() : e
 end
 

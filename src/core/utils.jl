@@ -500,10 +500,11 @@ end
 end
 
 """
-True iff every element of `queries` lies in the half-open domain
-`[first(x), last(x))`. Enables batch-level fast paths that elide per-query
-domain handling (e.g. `_wrap_to_domain` for PeriodicBC) when no element
-is OOB.
+True iff every element of `queries` lies in the closed domain
+`[first(x), last(x)]`. Enables batch-level fast paths that elide per-query
+domain handling (e.g. `_wrap_to_domain` for PeriodicBC, which only needs
+to apply when a query is strictly outside `[first, last]`) when no
+element is OOB.
 
 Uses two `&&`-chained reductions rather than `extrema`:
 - pre-1.13 `extrema` carries a (min, max) tuple dep across the loop that
@@ -515,7 +516,16 @@ Uses two `&&`-chained reductions rather than `extrema`:
 the OOB slow-path, so this form stays preferred even post-1.10-LTS.
 """
 @inline function _is_all_inbounds(x::AbstractVector, queries::AbstractVector{<:Real})
-    return minimum(queries) >= first(x) && maximum(queries) < last(x)
+    return minimum(queries) >= first(x) && maximum(queries) <= last(x)
+end
+
+# `_CachedRange`: use `domain_lo`/`domain_hi` (≈1 ULP wider than `lo`/`hi`
+# on x86_64 TwicePrecision normalization) for safe bounds, mirroring
+# `_check_domain(::_CachedRange, ::NoExtrap)`. The fields are typed
+# `T <: AbstractFloat` per `_CachedRange{T, Tinv}`, so no `_extract_primal`
+# is needed.
+@inline function _is_all_inbounds(x::_CachedRange, queries::AbstractVector{<:Real})
+    return minimum(queries) >= x.domain_lo && maximum(queries) <= x.domain_hi
 end
 
 # ========================================

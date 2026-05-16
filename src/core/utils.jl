@@ -491,17 +491,14 @@ end
 "No-op vector domain check for non-NoExtrap modes: pass-through extrap."
 @inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, extrap::AbstractExtrap) = extrap
 
-# WrapExtrap: batch in-domain check converts to InBounds() when wrap is unneeded.
-# Returns Union{InBounds, WrapExtrap}; caller must handle both via Union splitting.
-@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::WrapExtrap)
-    return _is_all_inbounds(x, xi) ? InBounds() : WrapExtrap()
-end
-
-# ClampExtrap / FillExtrap: same batch-check pattern. When all queries are
-# in-domain, the per-query `<first / >last` branches inside `_eval_*_at_point`
-# are elided via the InBounds dispatch (worth ~20-30% on the in-domain hot
-# path). Returns Union{InBounds, <original>}.
-@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, e::_ClampOrFill)
+# Wrap / Clamp / Fill batch fast path: when all queries are in-domain, the
+# per-query OOB handling inside `_eval_*_at_point` (`_wrap_to_domain` for
+# WrapExtrap, `<first / >last` branches for `_ClampOrFill`) is elided via
+# the `InBounds` dispatch. Returns `Union{InBounds, typeof(e)}` — Julia
+# specializes per concrete `e`, so callers get a narrow 2-singleton Union
+# that splits cleanly without dynamic dispatch.
+@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real},
+        e::Union{WrapExtrap, ClampExtrap, FillExtrap})
     return _is_all_inbounds(x, xi) ? InBounds() : e
 end
 

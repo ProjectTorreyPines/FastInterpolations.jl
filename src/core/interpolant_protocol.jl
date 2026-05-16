@@ -122,6 +122,7 @@ end
         output::AbstractVector,
         itp::AbstractInterpolantND{Tg, Tv, N},
         queries,
+        extraps_eff::Tuple{Vararg{AbstractExtrap, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
@@ -130,16 +131,31 @@ end
     zref = _zero_ref(itp)
     @inbounds for k in 1:_query_length(queries)
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, itp.grids, itp.extraps, ops, zref)
+        # `extraps_eff` carries per-axis `InBounds()` from `_check_domain_nd`
+        # when all batch queries on that axis are in-bounds (1D `_check_domain`
+        # union-split per axis via the heterogeneous `map`). `_try_fill_oob` and
+        # `_locate_cell` compile away the wrap/clamp/fill per-query branches on
+        # the InBounds axes — see `_handle_axis_extrap(::InBounds) = q` and
+        # `_is_fill_oob`'s @generated `fill_dims` filtering.
+        oob_val = _try_fill_oob(query_k, itp.grids, extraps_eff, ops, zref)
         if oob_val !== nothing
             output[k] = oob_val
             continue
         end
-        cell = _locate_cell(itp, query_k, policies, hints, mono)
+        cell = _locate_cell(itp, query_k, extraps_eff, policies, hints, mono)
         output[k] = _eval_at_cell(itp, cell, ops)
     end
     return output
 end
+
+# Scalar-path forwarder: vector_calculus and per-method scalar `_eval_*_nd`
+# call the 5-arg form; we inject `itp.extraps` so the canonical 6-arg
+# `_locate_cell` works uniformly. The 6-arg form is the source of truth —
+# batch callers (`_interp_nd_batch!`) and the windowed/hetero paths can pass
+# a different `extraps_eff` (e.g., InBounds-promoted) without affecting
+# scalar callers. Pure `getfield` body — Julia elides this trivially.
+@inline _locate_cell(itp::AbstractInterpolantND, q, policies, hints, mono) =
+    _locate_cell(itp, q, itp.extraps, policies, hints, mono)
 
 # ========================================
 # ND Scalar: Vector query → tuple conversion
@@ -189,7 +205,12 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
-    _validate_nd_domain(itp.grids, queries, itp.extraps)
+    # Batch-level InBounds promotion: SoA queries get per-axis InBounds when
+    # every query on that axis is in-bounds; AoS/generic stays original.
+    # Subsumes the NoExtrap throw via 1D `_check_domain`'s `@boundscheck
+    # _is_all_inbounds || _throw_batch_oob`, so the separate `_validate_nd_domain`
+    # call is no longer needed.
+    extraps_eff = _check_domain_nd(itp.grids, queries, itp.extraps)
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _check_mono_nd(policies, queries)
@@ -197,7 +218,7 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         fill!(output, zero(eltype(output)))
         return output
     end
-    _interp_nd_batch!(output, itp, queries, ops, policies, hints, mono)
+    _interp_nd_batch!(output, itp, queries, extraps_eff, ops, policies, hints, mono)
     return output
 end
 

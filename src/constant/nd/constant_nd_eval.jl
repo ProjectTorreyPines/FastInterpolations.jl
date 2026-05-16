@@ -97,15 +97,18 @@ end
 # CELL LOCATION (locate once, evaluate many)
 # ========================================
 
-# Generic N-dimensional
+# Generic N-dimensional. `extraps` carries batch-level InBounds promotion
+# from `_check_domain_nd` when applicable; scalar callers route via the
+# 5-arg forwarder (interpolant_protocol.jl) injecting `itp.extraps`.
 @inline function _locate_cell(
         itp::ConstantInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
-    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
+    q_eval = _handle_all_extraps(query, itp.grids, extraps)
     indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
     # h-lift: the kernel now takes precomputed `hs` instead of computing
     # `_get_h(grids[d], indices[d])` inside the @generated body. Persistent
@@ -121,12 +124,13 @@ end
 @inline function _locate_cell(
         itp::ConstantInterpolantND{Tg, Tv, 2},
         query::Tuple{Vararg{Real, 2}},
+        extraps::Tuple{AbstractExtrap, AbstractExtrap},
         policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
         hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
         mono::Tuple{Bool, Bool},
     ) where {Tg, Tv}
     x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, itp.grids, itp.extraps, policies, hints, mono
+        query, itp.grids, extraps, policies, hints, mono
     )
     # Lift h + wrap indices into stencils, matching the generic-N path.
     hx = _get_h(itp.grids[1], ix)

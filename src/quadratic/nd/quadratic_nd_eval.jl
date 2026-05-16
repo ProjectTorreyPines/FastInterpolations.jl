@@ -81,15 +81,18 @@ end
 # CELL LOCATION (locate once, evaluate many)
 # ========================================
 
-# Generic N-dimensional
+# Generic N-dimensional. `extraps` carries batch-level InBounds promotion
+# from `_check_domain_nd` when applicable; scalar callers route via the
+# 5-arg forwarder (interpolant_protocol.jl) injecting `itp.extraps`.
 @inline function _locate_cell(
         itp::QuadraticInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
-    q_evals = _handle_all_extraps(query, itp.grids, itp.extraps)
+    q_evals = _handle_all_extraps(query, itp.grids, extraps)
     # Wrapped grids carry cached `h`/`inv_h` directly — use the spacings-free
     # overloads (5-arg `_search_all_intervals`, 4-arg `_compute_all_local_params`)
     # shared with Linear/Constant/Hetero ND.
@@ -103,12 +106,13 @@ end
 @inline function _locate_cell(
         itp::QuadraticInterpolantND{Tg, Tv, 2},
         query::Tuple{Vararg{Real, 2}},
+        extraps::Tuple{AbstractExtrap, AbstractExtrap},
         policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
         hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
         mono::Tuple{Bool, Bool},
     ) where {Tg, Tv}
     x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, itp.grids, itp.extraps, policies, hints, mono
+        query, itp.grids, extraps, policies, hints, mono
     )
 
     hx = _get_h(itp.grids[1], ix);  hy = _get_h(itp.grids[2], iy)

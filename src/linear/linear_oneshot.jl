@@ -120,6 +120,7 @@ end
     # (`inner[1] + period`), so the domain extends one period beyond the raw
     # grid as required for `:exclusive` periodic. Hoisting once outside the
     # loop keeps inner-loop cost identical to the legacy `_x_min/_x_max` read.
+    isempty(x_targets) && return output
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 

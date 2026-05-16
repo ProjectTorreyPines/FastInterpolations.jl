@@ -491,17 +491,22 @@ end
 "No-op vector domain check for non-NoExtrap modes: pass-through extrap."
 @inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, extrap::AbstractExtrap) = extrap
 
-# Wrap / Clamp / Fill batch fast path: when all queries are in-domain, the
-# per-query OOB handling inside `_eval_*_at_point` (`_wrap_to_domain` for
-# WrapExtrap, `<first / >last` branches for `_ClampOrFill`) is elided via
-# the `InBounds` dispatch. Returns `Union{InBounds, typeof(e)}` — Julia
-# specializes per concrete `e`, so callers get a narrow 2-singleton Union
-# that splits cleanly without dynamic dispatch.
+# Clamp / Fill batch fast path: closed `[first, last]` — `last` is in-domain
+# for clamp/fill semantics (no clamping or filling at the boundary).
 @inline function _check_domain(
         x::AbstractVector, xi::AbstractVector{<:Real},
-        e::Union{WrapExtrap, ClampExtrap, FillExtrap}
+        e::Union{ClampExtrap, FillExtrap}
     )
     return _is_all_inbounds(x, xi) ? InBounds() : e
+end
+
+# WrapExtrap batch fast path: half-open `[first, last)` — `last` wraps to
+# `first` per `_wrap_to_domain`'s `xi < x_max` fast-path check. Promoting a
+# batch containing `last(x)` to InBounds would skip that wrap and return
+# `y[last]` instead of `y[first]` (silent semantic regression). The
+# half-open variant uses strict `<` to keep `last` in the wrap-needed set.
+@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, e::WrapExtrap)
+    return _is_all_inbounds_halfopen(x, xi) ? InBounds() : e
 end
 
 """
@@ -528,6 +533,7 @@ the OOB slow-path, so this form stays preferred even post-1.10-LTS.
 # primal-based NoExtrap check (partial-independent)"). Inline calls keep
 # the `&&` short-circuit intact.
 @inline function _is_all_inbounds(x::AbstractVector, queries::AbstractVector{<:Real})
+    isempty(queries) && return true
     return minimum(queries) >= _extract_primal(first(x)) &&
         maximum(queries) <= _extract_primal(last(x))
 end
@@ -536,7 +542,21 @@ end
 # x86_64 TwicePrecision normalization) for safe bounds. Fields are typed
 # `T <: AbstractFloat` per the struct, so no `_extract_primal` is needed.
 @inline function _is_all_inbounds(x::_CachedRange, queries::AbstractVector{<:Real})
+    isempty(queries) && return true
     return minimum(queries) >= x.domain_lo && maximum(queries) <= x.domain_hi
+end
+
+# Half-open variant for WrapExtrap: `last(x)` belongs to the wrap-needed
+# set because `_wrap_to_domain`'s fast path uses strict `xi < x_max`.
+@inline function _is_all_inbounds_halfopen(x::AbstractVector, queries::AbstractVector{<:Real})
+    isempty(queries) && return true
+    return minimum(queries) >= _extract_primal(first(x)) &&
+        maximum(queries) <  _extract_primal(last(x))
+end
+
+@inline function _is_all_inbounds_halfopen(x::_CachedRange, queries::AbstractVector{<:Real})
+    isempty(queries) && return true
+    return minimum(queries) >= x.domain_lo && maximum(queries) < x.domain_hi
 end
 
 # ========================================

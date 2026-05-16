@@ -493,6 +493,31 @@ end
 "No-op vector domain check for non-NoExtrap modes: pass-through extrap."
 @inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, extrap::AbstractExtrap) = extrap
 
+# WrapExtrap: batch in-domain check converts to InBounds() when wrap is unneeded.
+# Returns Union{InBounds, WrapExtrap}; caller must handle both via Union splitting.
+@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::WrapExtrap)
+    return _is_all_inbounds(x, xi) ? InBounds() : WrapExtrap()
+end
+
+"""
+True iff every element of `queries` lies in the half-open domain
+`[first(x), last(x))`. Enables batch-level fast paths that elide per-query
+domain handling (e.g. `_wrap_to_domain` for PeriodicBC) when no element
+is OOB.
+
+Uses two `&&`-chained reductions rather than `extrema`:
+- pre-1.13 `extrema` carries a (min, max) tuple dep across the loop that
+  blocks LLVM auto-vectorization (~30× slower on Vector{Float64} N=1000)
+- `&&` short-circuits when `minimum` is already OOB, skipping the
+  `maximum` scan entirely — strictly ≤ `extrema`'s work in all cases
+
+1.13 fixes the SIMD issue, but the short-circuit advantage remains for
+the OOB slow-path, so this form stays preferred even post-1.10-LTS.
+"""
+@inline function _is_all_inbounds(x::AbstractVector, queries::AbstractVector{<:Real})
+    return minimum(queries) >= first(x) && maximum(queries) < last(x)
+end
+
 # ========================================
 # Extrapolation value helpers (shared by all interpolation methods)
 # ========================================

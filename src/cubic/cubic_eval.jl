@@ -96,7 +96,6 @@ end
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
-
 # ========================================
 # Vector Loop Function
 # ========================================

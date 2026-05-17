@@ -155,7 +155,9 @@ end
         @test constant_interp(x, y, -1.0; extrap = ExtendExtrap()) == 10.0
         @test constant_interp(x, y, 5.0; extrap = ExtendExtrap()) == 50.0
 
-        @test constant_interp(x, y, 4.0; extrap = WrapExtrap()) == 10.0
+        # Closed `[first(x), last(x)]` (PR refac/wrap_closed): exact last(x) is in-domain,
+        # returns y[end]. Strictly-OOB queries still wrap.
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap()) == 50.0
         @test constant_interp(x, y, 4.5; extrap = WrapExtrap()) == 10.0
 
         @test constant_interp(x, y, -1.0; extrap = ClampExtrap(), deriv = DerivOp(1)) == 0.0
@@ -223,7 +225,8 @@ end
         itp_left = constant_interp(x_int, y_int; side = LeftSide())
         @test itp_left(0.9) == 10.0
         itp_wrap = constant_interp(x_int, y_int; extrap = WrapExtrap())
-        @test itp_wrap(4.0) == 10.0
+        # Closed-domain: xq == last(x) returns y[end]; was y[1] under prior half-open.
+        @test itp_wrap(4.0) == 50
     end
 
     @testset "ConstantInterpolant - 2-arg form" begin
@@ -259,7 +262,8 @@ end
 
     @testset "ConstantInterpolant - Options" begin
         itp_wrap = constant_interp(x, y; extrap = WrapExtrap())
-        @test itp_wrap(4.0) == 10.0
+        # Closed-domain: xq == last(x) returns y[end].
+        @test itp_wrap(4.0) == 50.0
 
         itp_const = constant_interp(x, y; extrap = ClampExtrap())
         @test itp_const(-1.0) == 10.0
@@ -503,16 +507,24 @@ end
     end
 
     @testset "Edge: xi == x[end] with extrap modes" begin
+        # Closed-domain (PR refac/wrap_closed): every extrap policy now agrees
+        # at the exact right boundary — xq == last(x) returns y[end].
         @test constant_interp(x, y, 4.0; extrap = NoExtrap()) == 50.0
         @test constant_interp(x, y, 4.0; extrap = ClampExtrap()) == 50.0
         @test constant_interp(x, y, 4.0; extrap = ExtendExtrap()) == 50.0
-        @test constant_interp(x, y, 4.0; extrap = WrapExtrap()) == 10.0
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap()) == 50.0
     end
 
     @testset "Edge: Wrap boundary cases" begin
-        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = LeftSide()) == 10.0
-        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = RightSide()) == 10.0
-        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = NearestSide()) == 10.0
+        # Closed `[first(x), last(x)]`: xq == last(x) returns y[end] via the
+        # x_last short-circuit in `_constant_eval_at_anchor` (which now uses
+        # `y[aq.idxR]`; idxR == n for non-periodic). Side flag is irrelevant
+        # at the exact right edge because both LeftSide/RightSide/NearestSide
+        # collapse onto the single boundary point.
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = LeftSide()) == 50.0
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = RightSide()) == 50.0
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = NearestSide()) == 50.0
+        # Strictly-OOB queries still wrap as before.
         @test constant_interp(x, y, 4.5; extrap = WrapExtrap(), side = NearestSide()) == 10.0
         @test constant_interp(x, y, 5.0; extrap = WrapExtrap(), side = NearestSide()) == 20.0
     end

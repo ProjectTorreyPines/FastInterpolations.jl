@@ -19,11 +19,10 @@ Used for periodic boundary conditions and extrap=WrapExtrap().
 
 Closed-domain convention: `xi == x_max` is an in-domain boundary query
 (returns `xi` unchanged); only strictly-OOB queries (`xi < x_min` or
-`xi > x_max`) take the cold `mod()` path. See `claudedocs/TODO/DONE/
-wrapextrap_closed_semantics.md` for the design discussion. `:inclusive`
-PeriodicBC is invariant (validated `y[1] ≈ y[end]`); `:exclusive`
-PeriodicBC is invariant (seam-aware `_ExclusivePeriodicAxis.search_interval`
-returns `idx_R = 1` at `xq >= inner[n]`).
+`xi > x_max`) take the cold `mod()` path. `PeriodicBC{:inclusive}` is
+invariant because `y[1] ≈ y[end]` by construction; `:exclusive` is
+invariant because `_ExclusivePeriodicAxis.search_interval` already returns
+`idx_R = 1` for `xq >= inner[n]` at the seam.
 
 Optimized: skips expensive `mod()` when xi is already in domain.
 """

@@ -30,7 +30,7 @@
             @test result[2] ≈ sin(0.5) atol = 1.0e-3  # 2π + 0.5 wraps to 0.5
             @test result[3] ≈ sin(2π - 0.5) atol = 1.0e-3  # -0.5 wraps to 2π - 0.5 = -sin(0.5)
 
-            # Fast path: all queries inside domain [x_min, x_max) → uses extension path
+            # Fast path: all queries inside closed domain [x_min, x_max] → uses extension path
             inside_query = [0.5, 1.0, 2.0]
             inside_result = linear_interp(x, y, inside_query; extrap = WrapExtrap())
             @test inside_result ≈ sin.(inside_query) atol = 1.0e-3

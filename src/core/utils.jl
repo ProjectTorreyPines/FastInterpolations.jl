@@ -493,10 +493,7 @@ end
 
 # Closed-domain batch fast path: every OOB policy (`ClampExtrap`, `FillExtrap`,
 # `WrapExtrap`) treats `[first(x), last(x)]` as the in-domain interval, so they
-# share one batch promotion. Previously `WrapExtrap` used a `_is_all_inbounds_halfopen`
-# variant (strict `<` on `x_max`) to keep queries at `last(x)` in the wrap-needed
-# set; with closed semantics (PR refac/wrap_closed) it joins the closed Union and
-# returns `y[end]` at the exact boundary instead of wrapping to `y[1]`.
+# share one batch promotion to `InBounds()`.
 @inline function _check_domain(
         x::AbstractVector, xi::AbstractVector{<:Real},
         e::Union{ClampExtrap, FillExtrap, WrapExtrap}

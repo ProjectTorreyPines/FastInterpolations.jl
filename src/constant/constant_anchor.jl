@@ -278,13 +278,8 @@ end
         y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
         op::AbstractEvalOp, side_param::AbstractSide, ::AbstractExtrap
     )
-    # Right-edge short-circuit: at `aq.xq == x_last`, return the right corner
-    # value `y[aq.idxR]` so this works uniformly for both non-periodic axes
-    # (idxR == n; `y[idxR] == y[end]`) and `_ExclusivePeriodicAxis` (idxR == 1;
-    # `y[idxR] == y[1]`, the cyclic wrap at the seam). Using `y[end]` was
-    # silently correct under half-open `_wrap_to_domain` (which wrapped seam
-    # queries to x_min before this point fired); closed semantics keeps
-    # `aq.xq` at the seam, so we route through the search-resolved idxR.
+    # Right-edge short-circuit: `y[aq.idxR]` resolves to `y[end]` for non-periodic
+    # (idxR == n) and to the cyclic `y[1]` for `_ExclusivePeriodicAxis` (idxR == 1).
     aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR]) : 0 * first(y))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
@@ -295,13 +290,8 @@ end
         op::AbstractEvalOp, side_param::AbstractSide, ::NoExtrap
     )
     aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
-    # Right-edge short-circuit: at `aq.xq == x_last`, return the right corner
-    # value `y[aq.idxR]` so this works uniformly for both non-periodic axes
-    # (idxR == n; `y[idxR] == y[end]`) and `_ExclusivePeriodicAxis` (idxR == 1;
-    # `y[idxR] == y[1]`, the cyclic wrap at the seam). Using `y[end]` was
-    # silently correct under half-open `_wrap_to_domain` (which wrapped seam
-    # queries to x_min before this point fired); closed semantics keeps
-    # `aq.xq` at the seam, so we route through the search-resolved idxR.
+    # Right-edge short-circuit: `y[aq.idxR]` resolves to `y[end]` for non-periodic
+    # (idxR == n) and to the cyclic `y[1]` for `_ExclusivePeriodicAxis` (idxR == 1).
     aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR]) : 0 * first(y))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
@@ -315,13 +305,8 @@ end
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     end
-    # Right-edge short-circuit: at `aq.xq == x_last`, return the right corner
-    # value `y[aq.idxR]` so this works uniformly for both non-periodic axes
-    # (idxR == n; `y[idxR] == y[end]`) and `_ExclusivePeriodicAxis` (idxR == 1;
-    # `y[idxR] == y[1]`, the cyclic wrap at the seam). Using `y[end]` was
-    # silently correct under half-open `_wrap_to_domain` (which wrapped seam
-    # queries to x_min before this point fired); closed semantics keeps
-    # `aq.xq` at the seam, so we route through the search-resolved idxR.
+    # Right-edge short-circuit: `y[aq.idxR]` resolves to `y[end]` for non-periodic
+    # (idxR == n) and to the cyclic `y[1]` for `_ExclusivePeriodicAxis` (idxR == 1).
     aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR]) : 0 * first(y))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
@@ -349,10 +334,8 @@ end
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end
-    # Right-edge short-circuit uses idxR (search-resolved). For persistent
-    # ConstantInterpolant on `:exclusive` PeriodicBC the build path extends
-    # the grid, so `itp.y[end] == itp.y[1]` cyclically and `y[idxR] == y[end]`
-    # — same value, idxR form keeps parity with `_constant_eval_at_anchor`.
+    # Right-edge short-circuit: `idxR` resolves to `n` for non-periodic and to
+    # `n+1` (cyclic `y[1]`) on `:exclusive` PeriodicBC's extended-grid persistent path.
     if aq.xq == last(itp.x)
         return op isa EvalValue ? (@inbounds itp.y[aq.idxR]) : zero(T)
     end

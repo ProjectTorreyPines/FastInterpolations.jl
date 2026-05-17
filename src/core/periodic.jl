@@ -14,8 +14,16 @@
 """
     _wrap_to_domain(xi::FT, x_min::FT, x_max::FT) where {FT<:AbstractFloat}
 
-Wrap a query point `xi` to the domain [x_min, x_max).
+Wrap a query point `xi` to the domain [x_min, x_max].
 Used for periodic boundary conditions and extrap=WrapExtrap().
+
+Closed-domain convention: `xi == x_max` is an in-domain boundary query
+(returns `xi` unchanged); only strictly-OOB queries (`xi < x_min` or
+`xi > x_max`) take the cold `mod()` path. See `claudedocs/TODO/DONE/
+wrapextrap_closed_semantics.md` for the design discussion. `:inclusive`
+PeriodicBC is invariant (validated `y[1] ≈ y[end]`); `:exclusive`
+PeriodicBC is invariant (seam-aware `_ExclusivePeriodicAxis.search_interval`
+returns `idx_R = 1` at `xq >= inner[n]`).
 
 Optimized: skips expensive `mod()` when xi is already in domain.
 """
@@ -25,7 +33,7 @@ Optimized: skips expensive `mod()` when xi is already in domain.
     # bloat the caller (every WrapExtrap eval kernel) with mod-related
     # asm. On constant rng+perEx persistent (3-4 ns baseline, 138 lines
     # before split), this collapses the eval kernel to ~75 lines.
-    if (xi >= x_min) && (xi < x_max)
+    if (xi >= x_min) && (xi <= x_max)
         return xi
     end
     return _wrap_to_domain_slow(xi, x_min, x_max)
@@ -37,7 +45,7 @@ end
 @inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg}
     xi_primal = _extract_primal(xi)
     # Fast path: already in domain, return original xi (preserves Dual type for AD)
-    if (xi_primal >= x_min) && (xi_primal < x_max)
+    if (xi_primal >= x_min) && (xi_primal <= x_max)
         return xi
     end
     return _wrap_to_domain_slow(xi, x_min, x_max)

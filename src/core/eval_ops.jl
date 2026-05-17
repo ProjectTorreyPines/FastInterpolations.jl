@@ -290,8 +290,12 @@ using modular arithmetic. For periodic data.
 Closed-domain convention: `xq == last(x)` is an in-domain boundary query
 (returns the right-corner value, e.g. `y[end]` for non-periodic data); only
 strictly-OOB queries take the `mod()` path. Matches `ClampExtrap`/`FillExtrap`'s
-closed convention. `:inclusive` PeriodicBC is invariant (validated `y[1] ≈ y[end]`);
-`:exclusive` PeriodicBC is invariant via the seam-aware
+closed convention. `:inclusive` PeriodicBC: forward **value** is invariant
+(validated `y[1] ≈ y[end]`), but **adjoint** sensitivity at `xq == last(x)`
+now scatters to slot `n` instead of slot `1` — delta-equivalent under the
+`:inclusive` cycle constraint, but observably different if downstream code
+does not enforce `y[1] == y[end]` on `f_bar`. `:exclusive` PeriodicBC is
+fully invariant (forward + adjoint) via the seam-aware
 `_ExclusivePeriodicAxis.search_interval` returning `idx_R = 1` at `xq >= inner[n]`.
 
 Tag struct with no fields: the wrap domain is read directly from the axis at

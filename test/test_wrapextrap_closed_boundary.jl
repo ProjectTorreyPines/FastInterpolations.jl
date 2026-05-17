@@ -265,6 +265,49 @@ end
     end
 end
 
+@testitem "Closed boundary — :inclusive PeriodicBC adjoint at last(x) lands at f_bar[end]" begin
+    using FastInterpolations
+    # Companion to the WrapExtrap adjoint test above for :inclusive PeriodicBC.
+    # Under v0.4.9 (half-open) the seam wrapped to first(x) and adjoint
+    # sensitivity scattered to f_bar[1]; under v0.4.10 (closed) it now lands
+    # at f_bar[end]. Forward value stays invariant (y[1] ≈ y[end] by the
+    # :inclusive cycle constraint), but the adjoint slot location does not —
+    # equivalent only after a y[1] = y[end] re-projection on f_bar.
+    x = collect(range(0.0, 2π, 11))
+    y = sin.(x)
+    y[end] = y[1]   # enforce :inclusive cycle (constructor validates this)
+    y_bar = [1.0]
+    bc = PeriodicBC(endpoint = :inclusive)
+
+    # Linear: exact at nodes — gradient = δ_{k,end}, no cyclic coupling
+    let adj = linear_adjoint(x, [last(x)]; bc = bc), f_bar = adj(y_bar)
+        @test f_bar[end] == 1.0
+        @test f_bar[1] == 0.0
+        @test all(f_bar[2:(end - 1)] .== 0.0)
+    end
+    # Cubic: Sherman-Morrison transpose solve, but the spline is exact at every
+    # node, so d itp(x[n]) / d y[k] = δ_{k,n} for any BC. Data-independent adjoint.
+    let adj = cubic_adjoint(x, [last(x)]; bc = bc), f_bar = adj(y_bar)
+        @test f_bar[end] ≈ 1.0 atol = 1.0e-10
+        @test f_bar[1] ≈ 0.0 atol = 1.0e-10
+    end
+    # PCHIP / Akima: closed-cycle slope adjoint via mod1 cyclic stencil, but
+    # Hermite slope basis evaluates to 0 at α=1, so gradient still concentrates
+    # at f_bar[end] — cyclic slope propagation contributes nothing at the node.
+    let adj = pchip_adjoint(x, y, [last(x)]; bc = bc), f_bar = adj(y_bar)
+        @test f_bar[end] ≈ 1.0 atol = 1.0e-10
+        @test f_bar[1] ≈ 0.0 atol = 1.0e-10
+    end
+    let adj = cardinal_adjoint(x, [last(x)]; tension = 0.0, bc = bc), f_bar = adj(y_bar)
+        @test f_bar[end] ≈ 1.0 atol = 1.0e-10
+        @test f_bar[1] ≈ 0.0 atol = 1.0e-10
+    end
+    let adj = akima_adjoint(x, y, [last(x)]; bc = bc), f_bar = adj(y_bar)
+        @test f_bar[end] ≈ 1.0 atol = 1.0e-10
+        @test f_bar[1] ≈ 0.0 atol = 1.0e-10
+    end
+end
+
 @testitem "Closed boundary — zero alloc on new WrapExtrap fast paths" setup = [AllocConstants] begin
     using FastInterpolations
     # The closed-domain conversion added (1) a constant scalar oneshot right-edge

@@ -45,12 +45,13 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))  # ∂f/∂x only
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
-    return _eval_nd_hermite(itp, resolved, ops, policies, hints, mono)
+    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
 end
 
 # In-place batch evaluation (SoA + AoS) is handled by the unified
 # AbstractInterpolantND callable in nd_interpolant_protocol.jl.
-# CubicInterpolantND has no special batch logic (no zero-fill trait).
+# Scalar evaluation routes through the generic `_eval_nd_at_point` defined
+# there — Cubic exposes only the `_locate_cell` + `_eval_at_cell` traits.
 
 # ========================================
 # CELL LOCATION (locate once, evaluate many)
@@ -63,15 +64,18 @@ end
 # functions (gradient, hessian, laplacian) to search intervals ONCE and
 # evaluate the kernel multiple times with different derivative ops.
 
-# Generic N-dimensional
+# Generic N-dimensional. `extraps` is the per-axis effective extrap tuple —
+# batch callers pass an InBounds-promoted version from `_check_domain_nd`;
+# scalar callers go through the 5-arg forwarder which injects `itp.extraps`.
 @inline function _locate_cell(
         itp::CubicInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
-    q_evals = _handle_all_extraps(query, itp.grids, itp.extraps)
+    q_evals = _handle_all_extraps(query, itp.grids, extraps)
     indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls)
 
@@ -82,12 +86,13 @@ end
 @inline function _locate_cell(
         itp::CubicInterpolantND{Tg, Tv, 2},
         query::Tuple{Vararg{Real, 2}},
+        extraps::Tuple{AbstractExtrap, AbstractExtrap},
         policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
         hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
         mono::Tuple{Bool, Bool},
     ) where {Tg, Tv}
     x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, itp.grids, itp.extraps, policies, hints, mono
+        query, itp.grids, extraps, policies, hints, mono
     )
 
     hx = _get_h(itp.grids[1], ix);  hy = _get_h(itp.grids[2], iy)
@@ -107,44 +112,8 @@ end
     return _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
 end
 
-# ========================================
-# CORE HERMITE EVALUATION
-# ========================================
-
 # Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
 @inline _zero_ref(itp::CubicInterpolantND) = @inbounds first(itp.nodal_derivs.partials)
-
-# Generic N-dimensional (uses _locate_cell + _eval_at_cell)
-@inline function _eval_nd_hermite(
-        itp::CubicInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
-        ops::NTuple{N, AbstractEvalOp},
-        policies::NTuple{N, AbstractSearchPolicy},
-        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
-        mono::NTuple{N, Bool},
-    ) where {Tg, Tv, N}
-    _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
-    oob_result !== nothing && return oob_result
-    cell = _locate_cell(itp, query, policies, hints, mono)
-    return _eval_at_cell(itp, cell, ops)
-end
-
-# N=2 specialization: dispatches to N=2 _locate_cell via type
-@inline function _eval_nd_hermite(
-        itp::CubicInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{Real, 2}},
-        ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp},
-        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
-        mono::Tuple{Bool, Bool},
-    ) where {Tg, Tv}
-    _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
-    oob_result !== nothing && return oob_result
-    cell = _locate_cell(itp, query, policies, hints, mono)
-    return _eval_at_cell(itp, cell, ops)
-end
 
 # ========================================
 # @GENERATED TENSOR PRODUCT KERNEL

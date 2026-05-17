@@ -77,7 +77,6 @@ end
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
-    _validate_nd_domain(grids, queries, extraps_val)
 
     # Build phase (ONE-TIME)
     bcs_periodic = map(_bc_for_periodic_check, methods)
@@ -86,6 +85,8 @@ end
     # Per-axis materialization against the (possibly extended) grid.
     # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
+    # Batch-level InBounds promotion: see cubic_nd_oneshot.jl for pattern.
+    extraps_eff = _check_domain_nd(grids_p, queries, extraps_eff)
 
     Tv = _value_type(eltype(data), Tg)
     Tz = _output_eltype(Tv, Tg)
@@ -97,7 +98,7 @@ end
     # Eval loop (per query) — axis-only helpers read `h`/`inv_h` from `grids_p`
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
+        oob_val = _try_fill_oob(query_k, grids_p, extraps_eff, ops, first(data_p))
         if oob_val !== nothing
             output[k] = oob_val
             continue

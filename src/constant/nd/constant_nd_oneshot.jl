@@ -72,11 +72,14 @@ function _constant_interp_nd_oneshot_batch!(
     _query_validate(queries)
     grids_eff = map(_resolve_axis, grids, bcs)
     nobcs = ntuple(_ -> NoBC(), Val(N))
-    _validate_nd_domain(grids_eff, queries, extraps_val)
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
+    # Batch-level InBounds promotion: see cubic_nd_oneshot.jl / linear_nd_oneshot.jl
+    # for the same pattern. Replaces `_validate_nd_domain` (throw via 1D
+    # `_check_domain`'s `@boundscheck`) and shrinks `fill_dims` at compile time.
+    extraps_eff = _check_domain_nd(grids_eff, queries, extraps_eff)
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids_eff, extraps_val, EvalValue(), first(data))
+        oob_val = _try_fill_oob(query_k, grids_eff, extraps_eff, EvalValue(), first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end

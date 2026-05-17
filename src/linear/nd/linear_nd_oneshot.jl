@@ -84,11 +84,14 @@ function _linear_interp_nd_oneshot_batch!(
     _query_validate(queries)
     grids_eff = map(_resolve_axis, grids, bcs)
     nobcs = ntuple(_ -> NoBC(), Val(N))
-    _validate_nd_domain(grids_eff, queries, extraps_val)
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
+    # Batch-level InBounds promotion: replaces `_validate_nd_domain` throw +
+    # elides per-query wrap/clamp/fill on in-bounds axes via the @generated
+    # `_is_fill_oob` and `_handle_axis_extrap(::InBounds)` no-op.
+    extraps_eff = _check_domain_nd(grids_eff, queries, extraps_eff)
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids_eff, extraps_val, ops, first(data))
+        oob_val = _try_fill_oob(query_k, grids_eff, extraps_eff, ops, first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end

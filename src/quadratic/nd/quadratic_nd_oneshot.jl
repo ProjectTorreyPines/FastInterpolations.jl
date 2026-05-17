@@ -85,7 +85,6 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
-    _validate_nd_domain(grids, queries, extraps_val)
 
     # Pool-backed per-axis cache — build phase + eval loop reuse h/inv_h.
     # `map` over the tuple dispatches per-element on concrete axis type;
@@ -98,10 +97,14 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
     _compute_nd_partials_quadratic!(partials, grids_c, data, bcs)
     extraps_eff = map(_resolve_extrap, extraps_val, grids_c)
+    # Batch-level InBounds promotion (see cubic_nd_oneshot.jl). Subsumes
+    # `_validate_nd_domain` and elides per-query wrap/clamp/fill branches on
+    # in-bounds axes.
+    extraps_eff = _check_domain_nd(grids_c, queries, extraps_eff)
 
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids_c, extraps_val, ops, first(data))
+        oob_val = _try_fill_oob(query_k, grids_c, extraps_eff, ops, first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end

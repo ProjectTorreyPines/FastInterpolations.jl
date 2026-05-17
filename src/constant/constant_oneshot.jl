@@ -16,18 +16,19 @@
 # _eval_extrapolation helper is defined in core/utils.jl (shared by all methods).
 # _get_h(x, xL, xR) dispatches to x.h (_CachedRange) or xR-xL (Vector).
 
-# NoExtrap / InBounds: domain check + search + kernel.
-# (OOB impossible: NoExtrap throws, InBounds guarantees in-domain)
+# Core in-bounds path: `last(x) == xi` seam handling + search + kernel.
+# All non-InBounds extrap overloads delegate here after preprocessing — see
+# cubic_eval.jl for the same `InBounds = core fast path` pattern. WrapExtrap
+# uses a separate periodic-seam-aware core (`_raw(y)`) below.
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xi::Tq,
-        extrap::AbstractExtrap,
+        ::InBounds,
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
-    @boundscheck _check_domain(x, xi, extrap)
     if _extract_primal(xi) == _extract_primal(last(x))
         # `last(x)` for `_ExclusivePeriodicAxis` is the *virtual* `inner[1] + period`
         # (the seam right endpoint). The corresponding y at that virtual slot is
@@ -41,8 +42,23 @@
     @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, idx, xL, xR), dL, side)
 end
 
-# ExtendExtrap: constant function has zero slope → extend = clamp.
-# Cannot use catch-all because kernel is side-dependent and OOB dL > h gives wrong side.
+# NoExtrap / others matching AbstractExtrap: domain check → delegate.
+@inline function _constant_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xi::Tq,
+        extrap::AbstractExtrap,
+        side::AbstractSide,
+        op::AbstractEvalOp,
+        searcher::S
+    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    @boundscheck _check_domain(x, xi, extrap)
+    return _constant_eval_at_point(x, y, xi, InBounds(), side, op, searcher)
+end
+
+# ExtendExtrap: constant has zero slope → extend = clamp. Route through
+# ClampExtrap so OOB queries return the boundary value (in-bounds case
+# eventually reaches the InBounds core).
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -55,7 +71,7 @@ end
     return _constant_eval_at_point(x, y, xi, ClampExtrap(), side, op, searcher)
 end
 
-# ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
+# ClampExtrap / FillExtrap: boundary check → extrap value or delegate.
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -68,12 +84,7 @@ end
     xi_primal = _extract_primal(xi)
     xi_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xi)
     xi_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xi)
-    if xi_primal == _extract_primal(last(x))
-        return op isa EvalValue ? last(y) : 0 * first(y)
-    end
-    idx, idx_R, xL, xR = search_interval(searcher, x, xi)
-    dL = xi - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, idx, xL, xR), dL, side)
+    return _constant_eval_at_point(x, y, xi, InBounds(), side, op, searcher)
 end
 
 # WrapExtrap: wrap query to domain → search + kernel.

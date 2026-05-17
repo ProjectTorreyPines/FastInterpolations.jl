@@ -162,3 +162,56 @@ function _validate_nd_domain(
     end
     return nothing
 end
+
+# ── Batch-level domain check returning per-axis InBounds-or-original ──
+#
+# ND analog of 1D `_check_domain(x, xi::AbstractVector, extrap) -> InBounds | extrap`.
+# Per-axis: if all queries on axis d are in-bounds, return `InBounds()` for that
+# axis; otherwise keep the original extrap. Result is `NTuple{N, AbstractExtrap}`
+# where each slot is `Union{InBounds, original}` — Julia specializes the map per
+# axis (heterogeneous map, no boxing) into a concrete tuple type.
+#
+# Downstream `_handle_axis_extrap(q, axis, ::InBounds) = q` (nd_utils.jl) is a
+# no-op for InBounds axes, eliding wrap/clamp/fill per-query branches when all
+# queries are in-bounds. Fixes Julia 1.10+ deep-`@inbounds`-non-propagation
+# overhead (ND NoExtrap batch N=2 Nq=1000: 2000 calls → 0 calls expected).
+#
+# SoA only — AoS/generic fallback returns `extraps` unchanged (per-axis min/max
+# would require a linear pass via `_query_extract`; deferred follow-up).
+
+# SoA batch: reuse 1D vector `_check_domain` per axis. NoExtrap throws via the
+# 1D `@boundscheck _is_all_inbounds || _throw_batch_oob`; Wrap/Clamp/Fill return
+# `InBounds()` when all in-bounds, original extrap otherwise; ExtendExtrap (and
+# any fallback) returns itself unchanged.
+@inline function _check_domain_nd(
+        grids::NTuple{N, AbstractVector},
+        queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}}
+    ) where {N}
+    isempty(first(queries)) && return extraps
+    return map(_check_domain, grids, queries, extraps)
+end
+
+# Scalar point: no batch-level promotion to do — defer to per-axis `_check_domain`
+# inside the eval path. Validate via existing `_validate_nd_domain` then return
+# `extraps` unchanged.
+@inline function _check_domain_nd(
+        grids::NTuple{N, AbstractVector},
+        query::Tuple{Vararg{Real, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}}
+    ) where {N}
+    _validate_nd_domain(grids, query, extraps)
+    return extraps
+end
+
+# Generic / AoS: deferred — single linear pass with per-axis min/max accumulators
+# could enable AoS promotion later. For now, validate (NoExtrap throw) and
+# return `extraps` unchanged so the inner per-query path handles each axis.
+@inline function _check_domain_nd(
+        grids::NTuple{N, AbstractVector},
+        queries,
+        extraps::Tuple{Vararg{AbstractExtrap, N}}
+    ) where {N}
+    _validate_nd_domain(grids, queries, extraps)
+    return extraps
+end

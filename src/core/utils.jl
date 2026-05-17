@@ -468,30 +468,96 @@ end
 # scan is skipped but the extrap conversion still happens.
 # ----------------------------------------
 
-"Vector domain check for NoExtrap: validate batch, return InBounds()."
+"""
+Vector domain check for NoExtrap: validate batch, return `InBounds()`.
+
+Delegates the batch in-domain test to `_is_all_inbounds`, which dispatches
+on axis type (using `domain_lo/hi` for `_CachedRange`'s wider TwicePrecision
+bracket on x86_64) and is partial-sign-safe under ForwardDiff. Throw
+message uses `first(x)/last(x)` — exact endpoints, not the widened bracket.
+"""
 @inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap)
-    @boundscheck begin
-        x_min, x_max = _extract_primal(first(x)), _extract_primal(last(x))
-        xq_min, xq_max = minimum(xi), maximum(xi)
-        (xq_min < x_min || xq_max > x_max) &&
-            _throw_domain_error(xq_min < x_min ? xq_min : xq_max, x_min, x_max)
-    end
+    @boundscheck _is_all_inbounds(x, xi) || _throw_batch_oob(x, xi)
     return InBounds()
 end
 
-# _CachedRange: use domain_lo/domain_hi for vector domain checks.
-@inline function _check_domain(x::_CachedRange, xi::AbstractVector{<:Real}, ::NoExtrap)
-    @boundscheck begin
-        lo, hi = _extract_primal(x.domain_lo), _extract_primal(x.domain_hi)
-        xq_min, xq_max = minimum(xi), maximum(xi)
-        (xq_min < lo || xq_max > hi) &&
-            _throw_domain_error(xq_min < lo ? xq_min : xq_max, _extract_primal(x.lo), _extract_primal(x.hi))
-    end
-    return InBounds()
+@noinline function _throw_batch_oob(x::AbstractVector, xi::AbstractVector{<:Real})
+    qmin, qmax = minimum(xi), maximum(xi)
+    x_min = _extract_primal(first(x))
+    x_max = _extract_primal(last(x))
+    _throw_domain_error(qmin < x_min ? qmin : qmax, x_min, x_max)
 end
 
 "No-op vector domain check for non-NoExtrap modes: pass-through extrap."
 @inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, extrap::AbstractExtrap) = extrap
+
+# Clamp / Fill batch fast path: closed `[first, last]` — `last` is in-domain
+# for clamp/fill semantics (no clamping or filling at the boundary).
+@inline function _check_domain(
+        x::AbstractVector, xi::AbstractVector{<:Real},
+        e::Union{ClampExtrap, FillExtrap}
+    )
+    return _is_all_inbounds(x, xi) ? InBounds() : e
+end
+
+# WrapExtrap batch fast path: half-open `[first, last)` — `last` wraps to
+# `first` per `_wrap_to_domain`'s `xi < x_max` fast-path check. Promoting a
+# batch containing `last(x)` to InBounds would skip that wrap and return
+# `y[last]` instead of `y[first]` (silent semantic regression). The
+# half-open variant uses strict `<` to keep `last` in the wrap-needed set.
+@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, e::WrapExtrap)
+    return _is_all_inbounds_halfopen(x, xi) ? InBounds() : e
+end
+
+"""
+True iff every element of `queries` lies in the closed domain
+`[first(x), last(x)]`. Enables batch-level fast paths that elide per-query
+domain handling (e.g. `_wrap_to_domain` for PeriodicBC, which only needs
+to apply when a query is strictly outside `[first, last]`) when no
+element is OOB.
+
+Uses two `&&`-chained reductions rather than `extrema`:
+- pre-1.13 `extrema` carries a (min, max) tuple dep across the loop that
+  blocks LLVM auto-vectorization (~30× slower on Vector{Float64} N=1000)
+- `&&` short-circuits when `minimum` is already OOB, skipping the
+  `maximum` scan entirely — strictly ≤ `extrema`'s work in all cases
+
+1.13 fixes the SIMD issue, but the short-circuit advantage remains for
+the OOB slow-path, so this form stays preferred even post-1.10-LTS.
+"""
+# `_extract_primal` is required on `first(x)` / `last(x)` here because
+# ForwardDiff's `Real <= Dual` comparison includes partial-sign tie-breaking
+# at equal primals — so a Float query exactly at the boundary against a
+# Dual grid endpoint can flip in/out of bounds based on the partial sign
+# alone (see `test/ext/test_linear_dual_grid.jl` "Domain boundary:
+# primal-based NoExtrap check (partial-independent)"). Inline calls keep
+# the `&&` short-circuit intact.
+@inline function _is_all_inbounds(x::AbstractVector, queries::AbstractVector{<:Real})
+    isempty(queries) && return true
+    return minimum(queries) >= _extract_primal(first(x)) &&
+        maximum(queries) <= _extract_primal(last(x))
+end
+
+# `_CachedRange`: `domain_lo`/`domain_hi` (≈1 ULP wider than `lo`/`hi` on
+# x86_64 TwicePrecision normalization) for safe bounds. Fields are typed
+# `T <: AbstractFloat` per the struct, so no `_extract_primal` is needed.
+@inline function _is_all_inbounds(x::_CachedRange, queries::AbstractVector{<:Real})
+    isempty(queries) && return true
+    return minimum(queries) >= x.domain_lo && maximum(queries) <= x.domain_hi
+end
+
+# Half-open variant for WrapExtrap: `last(x)` belongs to the wrap-needed
+# set because `_wrap_to_domain`'s fast path uses strict `xi < x_max`.
+@inline function _is_all_inbounds_halfopen(x::AbstractVector, queries::AbstractVector{<:Real})
+    isempty(queries) && return true
+    return minimum(queries) >= _extract_primal(first(x)) &&
+        maximum(queries) < _extract_primal(last(x))
+end
+
+@inline function _is_all_inbounds_halfopen(x::_CachedRange, queries::AbstractVector{<:Real})
+    isempty(queries) && return true
+    return minimum(queries) >= x.domain_lo && maximum(queries) < x.domain_hi
+end
 
 # ========================================
 # Extrapolation value helpers (shared by all interpolation methods)

@@ -120,6 +120,7 @@ end
     # (`inner[1] + period`), so the domain extends one period beyond the raw
     # grid as required for `:exclusive` periodic. Hoisting once outside the
     # loop keeps inner-loop cost identical to the legacy `_x_min/_x_max` read.
+    isempty(x_targets) && return output
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
@@ -230,21 +231,19 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
 # `_locate_cell` design — exact at knots is sacrificed for query-time speed
 # (1 ULP off possible at right knots; oneshot path remains exact).
 
-# NoExtrap / ExtendExtrap / other: direct search + kernel.
-# _check_domain(::NoExtrap) throws if OOB; all others are no-ops.
+# Core in-bounds path: search + kernel. All non-InBounds extrap overloads
+# delegate here after their preprocessing — see cubic_eval.jl for the same
+# `InBounds = core fast path` pattern. WrapExtrap uses a periodic-seam-aware
+# core overload below (`_raw(y)`) to avoid the data wrapper's cyclic branch.
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq,
-        extrap::AbstractExtrap,
+        ::InBounds,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    # Resolve bare `GridIdx(k)` (which carries `val=NaN` until bound) into
-    # its grid coordinate so all subsequent arithmetic sees a real value.
-    # Real queries pass through unchanged.
     xq = _resolve_grididx(xq, x)
-    @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     # Independent computation of `α` and `inv_h`. The kernel uses only one
     # (EvalValue → α, `DerivOp(1)` → inv_h, `DerivOp(2)` → neither), so the
@@ -256,7 +255,22 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
 end
 
-# ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
+# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check
+# (NoExtrap throws on OOB; others are no-op fallbacks) → delegate.
+@inline function _linear_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq,
+        extrap::AbstractExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
+    @boundscheck _check_domain(x, xq, extrap)
+    return _linear_eval_at_point(x, y, xq, InBounds(), op, searcher)
+end
+
+# ClampExtrap / FillExtrap: boundary check → extrap value or delegate.
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -272,32 +286,26 @@ end
     elseif xq_primal > last(x)
         return _eval_extrapolation(op, last(y), extrap, xq)
     end
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq)
-    α = _alpha_of(xq, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
+    return _linear_eval_at_point(x, y, xq, InBounds(), op, searcher)
 end
 
-# WrapExtrap: wrap query to domain → search + kernel.
+# WrapExtrap: wrap query to domain → search + kernel using `_raw(y)`.
 # Pass original xq (may be Dual) to _wrap_to_domain to preserve AD derivatives.
-# The wrap domain is `[first(x), last(x))`, read directly from the axis —
-# `_ExclusivePeriodicAxis` exposes the virtual endpoint via `last(g)` so the
-# domain naturally spans one period beyond the raw grid for `:exclusive` periodic.
+# `search_interval` already resolves seam wrap-around (idx_R = 1 for the seam
+# cell), so `yi[idx_R]` is safe via the raw inner — no need for the data
+# wrapper's per-call cyclic branch. Cannot delegate to the generic InBounds
+# core because that uses `y[idx]` (data wrapper); inline the kernel here.
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq,
-        extrap::WrapExtrap,
+        ::WrapExtrap,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq = _resolve_grididx(xq, x)
-    xq_wrapped = _wrap_to_domain(xq, x)
+    xq_wrapped = _wrap_to_domain(_resolve_grididx(xq, x), x)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
     α = _alpha_of(xq_wrapped, xL, xR, x)
-    # `search_interval` already resolves seam wrap-around (idx_R = 1 for the
-    # seam cell), so `yi[idx_R]` is safe via the raw inner — no need for the
-    # data wrapper's per-call cyclic branch. `_get_inv_h(x, idx)` keeps the
-    # wrapper for seam-aware (idx == n) cell width.
     yi = _raw(y)
     @inbounds return _linear_kernel(op, yi[idx], yi[idx_R], _get_inv_h(x, idx), α)
 end

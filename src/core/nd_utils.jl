@@ -559,8 +559,12 @@ end
     return q
 end
 
-@inline function _handle_axis_extrap(q, axis::AbstractVector, extrap::WrapExtrap)
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::WrapExtrap)
     return _wrap_to_domain(q, axis)
+end
+
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::InBounds)
+    return q
 end
 
 # ========================================

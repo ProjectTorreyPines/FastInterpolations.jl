@@ -21,8 +21,26 @@
 # Core eval: extrap dispatch → search → kernel (no intermediate layers)
 # ========================================
 
-# NoExtrap / ExtendExtrap / other: direct search + kernel.
-# _check_domain(::NoExtrap) throws if OOB; search_interval clamps idx for ExtendExtrap.
+# Core in-bounds path: search + kernel. All non-InBounds extrap overloads
+# delegate here after preprocessing — see cubic_eval.jl for the same
+# `InBounds = core fast path` pattern.
+@inline function _quadratic_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
+        xq::Tq,
+        ::InBounds,
+        op::AbstractEvalOp,
+        searcher::S
+    ) where {Tg, Tv, Tc, Tq, S <: Searcher}
+    idx, _, xL, _ = search_interval(searcher, x, xq)
+    dt = xq - xL  # Can be Dual for AD
+    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
+end
+
+# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check
+# → delegate. `_check_domain(::NoExtrap)` throws on OOB; others are no-op.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -34,12 +52,10 @@
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
-    idx, _, xL, _ = search_interval(searcher, x, xq)
-    dt = xq - xL  # Can be Dual for AD
-    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
+    return _quadratic_eval_at_point(x, y, a, d, xq, InBounds(), op, searcher)
 end
 
-# ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
+# ClampExtrap / FillExtrap: boundary check → extrap value or delegate.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -53,27 +69,22 @@ end
     xq_primal = _extract_primal(xq)
     xq_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xq)
     xq_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xq)
-    idx, _, xL, _ = search_interval(searcher, x, xq)
-    dt = xq - xL
-    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
+    return _quadratic_eval_at_point(x, y, a, d, xq, InBounds(), op, searcher)
 end
 
-# WrapExtrap: wrap query to domain → search + kernel.
-# Wrap domain `[first(x), last(x))` is read directly from the axis.
+# WrapExtrap: wrap query to domain → delegate with wrapped value.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         a::AbstractVector{Tc},
         d::AbstractVector{Tc},
         xq::Tq,
-        extrap::WrapExtrap,
+        ::WrapExtrap,
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, x)
-    idx, _, xL, _ = search_interval(searcher, x, xq_wrapped)
-    dt = xq_wrapped - xL
-    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
+    return _quadratic_eval_at_point(x, y, a, d, xq_wrapped, InBounds(), op, searcher)
 end
 
 

@@ -157,7 +157,7 @@ Create an anchored query for ultra-fast linear interpolation at a fixed point.
 - `x`: Grid points (must match grid used for interpolant construction)
 - `xq`: Query point (scalar)
 - `::Val{:linear}`: Type tag to distinguish from cubic anchor
-- `wrap`: If true, wrap `xq` to domain [x[1], x[end]) before anchoring.
+- `wrap`: If true, wrap `xq` to closed domain [x[1], x[end]] before anchoring.
           Used for `extrap=WrapExtrap()` mode.
 
 # Returns
@@ -239,7 +239,7 @@ the caller reuses `buffer`. Writes `length(xq)` entries.
 - `x::AbstractVector{Tg}`: Grid points (must match interpolant's grid)
 - `xq::AbstractVector`: Query points (any Real type)
 - `::Val{:linear}`: Type tag for linear interpolation
-- `wrap::Bool=false`: If true, wrap query points to domain [x[1], x[end])
+- `wrap::Bool=false`: If true, wrap query points to closed domain [x[1], x[end]]
 
 # Precision Preservation
 The outer `_LinearAnchoredQuery` constructor promotes via `promote_type(S, Tg)`,

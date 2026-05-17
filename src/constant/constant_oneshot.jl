@@ -137,7 +137,7 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `NoExtrap()` (default): throws DomainError if outside domain
   - `ClampExtrap()`: clamp to boundary values
   - `ExtendExtrap()`: same as ClampExtrap (slope=0)
-  - `WrapExtrap()`: wrap to [x_min, x_max)
+  - `WrapExtrap()`: wrap to closed domain [x_min, x_max] (xq==x_max returns y[end])
 - `side::AbstractSide`: Side selection
   - `NearestSide()` (default): nearest neighbor (left tie-breaking at midpoint)
   - `LeftSide()`: always use left value

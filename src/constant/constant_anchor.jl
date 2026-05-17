@@ -94,7 +94,7 @@ Create an anchored query for ultra-fast constant interpolation at a fixed point.
 - `x`: Grid points (must match grid used for interpolant construction)
 - `xq`: Query point (scalar)
 - `::Val{:constant}`: Type tag to distinguish from other anchor types
-- `wrap`: If true, wrap `xq` to domain [x[1], x[end]) before anchoring.
+- `wrap`: If true, wrap `xq` to closed domain [x[1], x[end]] before anchoring.
           Used for `extrap=WrapExtrap()` mode.
 
 # Returns
@@ -136,7 +136,7 @@ the grid used for interpolant construction.
 - `x`: Grid points (must match interpolant's grid)
 - `xq`: Query points (any Real type, auto-promoted to T)
 - `::Val{:constant}`: Type tag
-- `wrap`: If true, wrap query points to domain [x[1], x[end]) before anchoring.
+- `wrap`: If true, wrap query points to closed domain [x[1], x[end]] before anchoring.
 
 # Example
 ```julia
@@ -179,7 +179,7 @@ the caller reuses `buffer`. Writes `length(xq)` entries.
 - `x::AbstractVector{T}`: Grid points (must match interpolant's grid)
 - `xq::AbstractVector`: Query points (any Real type, auto-promoted to T)
 - `::Val{:constant}`: Type tag for constant interpolation
-- `wrap::Bool=false`: If true, wrap query points to domain [x[1], x[end])
+- `wrap::Bool=false`: If true, wrap query points to closed domain [x[1], x[end]]
 
 # Returns
 The same `buffer` object, filled with anchored queries.

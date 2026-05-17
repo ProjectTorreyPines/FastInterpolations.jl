@@ -365,8 +365,11 @@
     end
 
     @testset "_check_periodic_endpoints validation (Cubic only)" begin
-        # NOTE: Linear interpolation with extrap=WrapExtrap() does NOT check endpoints!
-        # Only cubic bc=PeriodicBC() checks that y[1] ≈ y[end] (isapprox for _PromotableValue)
+        # NOTE: Linear interpolation with extrap=WrapExtrap() does NOT check endpoints.
+        # Under closed-domain semantics (PR refac/wrap_closed), `xq == last(x)` is an
+        # in-domain boundary query that returns `y[end]` via the search path — no
+        # `y[1] ≈ y[end]` validation is needed for plain WrapExtrap. Only Cubic
+        # bc=PeriodicBC() checks endpoint match (required for the periodic Thomas solve).
         x = range(0.0, 2π, 101)
 
         @testset "Valid periodic data — exact endpoints (Float64)" begin

@@ -710,10 +710,14 @@
         @test out_at_n[2] == 4.0
 
         # Series↔non-series alignment at the exclusive right endpoint.
-        # `_wrap_to_domain` sends xq = x[1] + period back onto the base domain
-        # [x[1], x[1]+period), so the resolved value is `y[1]` (the wrapped
-        # endpoint), not `y[n]`. Before this refactor the pool-extended series
-        # path returned `y[n]` here instead; the assertion pins down the fix.
+        # Under closed-domain semantics (PR refac/wrap_closed), `_wrap_to_domain`
+        # does NOT wrap `xq == x[1]+period` (closed `[x_min, x_max]` includes both
+        # endpoints). Instead, `_ExclusivePeriodicAxis.search_interval` seam fast
+        # path returns `idx_R = 1` for `xq >= inner[n]`, so the eval kernel reads
+        # `y[idx_R=1]` cyclically. The series-anchor short-circuit `aq.xq == x_last`
+        # was updated to route through `y[aq.idxR]` (was `y[end]`) so both raw
+        # `_ExclusivePeriodicAxis` (idxR==1 → y[1]) and persistent extended paths
+        # (idxR==n+1 → y[end]==y[1]) yield the same answer.
         out_endpoint = constant_interp(x, s, 4.0; bc = bc)
         @test out_endpoint[1] == constant_interp(x, y1, 4.0; bc = bc) == y1[1]
         @test out_endpoint[2] == constant_interp(x, y2, 4.0; bc = bc) == y2[1]

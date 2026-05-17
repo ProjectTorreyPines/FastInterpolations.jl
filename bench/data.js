@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1778890628129,
+  "lastUpdate": 1778982515209,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -50146,6 +50146,330 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1034.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5de9ea17b4158bc53cbb0eabddab3b57fdf2465c",
+          "message": "(fix + perf): Restore + extend batch InBounds fast path (1D + ND) (#141)\n\n* (fix): restore WrapExtrap vector eval batch fast path (Cubic + PeriodicBC)\n\nCubic + PeriodicBC persistent vector eval regressed ~36% in #134 when the\nBC-specialized `_cubic_vector_loop!` dispatch was dropped — the new generic\nloop calls `_wrap_to_domain` per query even when no element needs wrapping.\n\nRestore v0.4.9's batch fast path in a method-agnostic way:\n`_check_domain(::AbstractVector, ::AbstractVector, ::WrapExtrap)` now\nperforms a batch in-domain check via the new `_is_all_inbounds` helper and\nconverts to `InBounds()` when no element is OOB, eliding the per-query\nwrap. Returns `Union{InBounds, WrapExtrap}` which the generic vector loop\nconsumes via Julia's Union splitting + LLVM loop unswitching — equivalent\nto a hand-specialized loop body but DRY, with automatic fast-path coverage\nfor any future WrapExtrap caller (Linear/Constant when they grow\nPeriodicBC support).\n\n`_is_all_inbounds` uses two `&&`-chained reductions rather than `extrema`:\npre-1.13 `extrema` carries a (min, max) tuple dep that blocks SIMD (~30×\nslower at Nq=1000), and short-circuiting on `minimum` halves the scan cost\non the OOB slow path regardless of Julia version.\n\nMeasured: 2.60 → 1.93 μs (n=100, Nq=1000), matching v0.4.9's 1.91 μs.\nOOB slow path unchanged.\n\n* (refac): drop redundant WrapExtrap loop specializations from Hermite\n\nPrevious commit added `_check_domain(::WrapExtrap, ::AbstractVector)` which\nreturns `InBounds()` when no query needs wrapping, letting the generic\nvector loop hit the same two monomorphic loop bodies via Union splitting +\nLLVM loop unswitching. That makes Hermite's two hand-specialized\nWrapExtrap `_hermite_vector_loop!` overloads (one for precomputed slopes,\none for `AbstractSlopeMethod` on-the-fly slopes) redundant — they were\nduplicating the exact batch fast-path / per-query-wrap dispatch logic that\nnow lives in `_check_domain`.\n\nDrop both specializations (~56 lines). The remaining generic loops cover\nWrapExtrap automatically via `extrap = _check_domain(x, xq, extrap)`.\n\nPerf: within noise across PCHIP/Cardinal/Akima (Nq=1000); OOB slow path\nshows a small consistent ~3–4% improvement because `_is_all_inbounds`\nshort-circuits on `minimum` whereas the old code always scanned both ends.\n\n* (refac): close _is_all_inbounds interval + add _CachedRange variant\n\nThe previous form `maximum(q) < last(x)` (half-open) was a transcription\nof v0.4.9's fast-path predicate, but the actual contract is closed —\nWrapExtrap's `_wrap_to_domain` only applies to queries strictly outside\n`[first(x), last(x)]`, not to `xi == last(x)` itself (axes already map\nthat boundary to a valid grid point via the seam slot).\n\nTwo changes:\n\n1. Generic `_is_all_inbounds`: `<` → `<=` on the upper bound. Boundary\n   queries `xi == last(x)` now correctly take the fast path.\n\n2. Add `_is_all_inbounds(::_CachedRange, ...)` using `domain_lo/hi`\n   (≈1 ULP wider than `lo/hi` on x86_64 TwicePrecision normalization),\n   mirroring the existing `_check_domain(::_CachedRange, ::NoExtrap)`\n   safety margin from PR #87. Avoids spurious slow-path trips when\n   TwicePrecision representation error makes an exact-arithmetic\n   in-domain query look 1 ULP OOB.\n\nBoth methods stay inline so `&&` short-circuits (`maximum` skipped when\n`minimum` already fails). The `_CachedRange` variant skips\n`_extract_primal` since `domain_lo/hi :: T <: AbstractFloat` per the\nstruct definition.\n\nPerf smoke: within noise (±5%) across the full method matrix.\n\n* (fix): make _is_all_inbounds partial-sign-safe via _extract_primal\n\nForwardDiff's `Real <= Dual` comparison tie-breaks on the partial sign\nat equal primals, so `3.0 <= Dual(3.0, -1.0)` is `false` whereas `3.0 <=\nDual(3.0, +1.0)` is `true`. Previously `_is_all_inbounds(::AbstractVector,\n...)` compared queries directly against `first(x)/last(x)`, making the\nWrapExtrap vector path AD-unsafe — Float-batch boundary queries against\na Dual grid spuriously took the slow path when the matching partial was\nnegative.\n\nWrap `first(x)` / `last(x)` in `_extract_primal` (inline, preserving the\n`&&` short-circuit). The `_CachedRange` overload is unchanged — its\n`domain_lo`/`domain_hi` are typed `T <: AbstractFloat` per the struct\ndefinition, so partial-sign issues cannot arise.\n\nCoverage exists on the scalar side at `test/ext/test_linear_dual_grid.jl`\n(\"Domain boundary: primal-based NoExtrap check (partial-independent)\").\nThis fix extends that contract to the vector path.\n\n* (refac): unify NoExtrap vector _check_domain through _is_all_inbounds\n\n`_is_all_inbounds` now covers everything the two NoExtrap × Vector\n`_check_domain` overloads were doing manually:\n- `_CachedRange` overload uses `domain_lo/hi` (1 ULP wider on x86_64\n  TwicePrecision normalization)\n- generic `AbstractVector` overload uses `_extract_primal(first/last)`\n  for partial-sign safety under ForwardDiff\n\nCollapse the two NoExtrap overloads into one (delegating to\n`_is_all_inbounds`) plus a `@noinline _throw_batch_oob` helper for the\ncold OOB path. Throw message uses `_extract_primal(first/last(x))` —\nidentical to what each previous variant produced (`first/last == lo/hi`\nfor `_CachedRange`).\n\nNet: two NoExtrap × Vector overloads → one + one cold helper. All\nboundary semantics (closed interval, TwicePrecision bracket, AD-safety)\nnow live in a single source of truth: `_is_all_inbounds`.\n\n* (perf): extend batch fast path to ClampExtrap / FillExtrap\n\nAdds `_check_domain(::AbstractVector, ::Vector, ::_ClampOrFill)` that\nconverts to `InBounds()` via `_is_all_inbounds` when all queries are\nin-domain, eliding the per-query `<first / >last` branches inside\n`_eval_*_at_point(::_ClampOrFill, ...)`.\n\nCost model (measured): `_is_all_inbounds` is O(Nq) ≈ 3 ns + 0.14·Nq\n(SIMD-able reduction), but per-query branch overhead in the\n`_ClampOrFill` eval path is ~0.5 ns/query — 4× larger. So the fast\npath wins at any Nq.\n\nMeasured (Cubic ClampExtrap, Nq sweep, in-domain):\n  Nq=2-10    within noise (±3 ns)\n  Nq=25-50   -5 to -11%\n  Nq=100     -15%\n  Nq=250+    -18 to -20%\nLinear ClampExtrap shows similar pattern with peak -23% at Nq=500.\n\nOOB mixed-batch path takes +5-10% from Union splitting overhead —\nacceptable trade-off since ClampExtrap/FillExtrap's intent is\nOOB-tolerance with in-domain queries dominant. Mirrors the WrapExtrap\nfast-path pattern.\n\n* (refac): merge WrapExtrap / _ClampOrFill _check_domain into one Union method\n\nThree separate fast-path `_check_domain` overloads collapse into a single\nmethod accepting `Union{WrapExtrap, _ClampOrFill}`. Julia specializes per\nconcrete input type, so callers still see a narrow `Union{InBounds,\ntypeof(e)}` return (verified via `Base.return_types`: WrapExtrap input\n→ `Union{InBounds, WrapExtrap}`, ClampExtrap → `Union{InBounds,\nClampExtrap}`, etc. — identical to the pre-merge separate methods).\n\nThe WrapExtrap branch previously constructed `WrapExtrap()` rather than\nreturning the argument; both are equivalent (zero-size singleton), so\nthe unified form just returns `e`.\n\nPerf smoke: within noise across all in-domain / OOB regimes.\n\n* (refac): add InBounds overload to ND _handle_axis_extrap (ND fast-path prep)\n\nWhen a future ND fast path converts NoExtrap (or other batch-validated\nextraps) to InBounds inside `_validate_nd_domain` and propagates that\nthrough `_interp_nd_batch!` → `_locate_cell` → `_handle_axis_extrap`,\nthe InBounds dispatch needs a method to match. This adds the no-op\noverload so the dispatch resolves cleanly.\n\nCurrently dead code — no caller in this PR feeds `InBounds` to\n`_handle_axis_extrap`. Stay until the ND fast-path PR wires the\nconversion path through `_validate_nd_domain`'s return value.\n\nDrive-by: drop the unused `extrap::` argument name from the WrapExtrap\noverload for consistency with the other no-op-style overloads.\n\n* (refac): drop redundant outer _check_domain from 1D scalar entries\n\nThe 1D scalar paths called `@boundscheck _check_domain` twice for\nNoExtrap queries — once at the outer entry, once inside\n`_eval_*_at_point(::AbstractExtrap)` via its own `@boundscheck`. The\nouter call was redundant: it executes the same NoExtrap throw check\nthe inner one would, and is a no-op (fallback dispatch) for all other\nextraps where the per-method specialized eval (`_ClampOrFill`,\n`WrapExtrap`) handles OOB without `_check_domain` at all.\n\nDrop the outer `@boundscheck _check_domain` from:\n- `interpolant_protocol.jl:52` — persistent `itp(xq)` entry (affects\n  all 1D methods: Cubic, Linear, Constant, Quadratic, Hermite)\n- `cubic_eval.jl:152` — `cubic_interp_scalar` oneshot entry (Cubic was\n  the only oneshot scalar with an outer `@boundscheck`; other methods'\n  oneshot scalars already relied on inner check alone)\n\nNoExtrap OOB still throws via the inner `@boundscheck _check_domain`\nin `_eval_*_at_point(::AbstractExtrap)`. Clamp/Fill/Wrap OOB still\nhandled by their specialized eval methods. Verified via test_cubic_anchor\n+ smoke scalar throw / clamp tests.\n\nPerf: scalar paths show no measurable change (LLVM was already inlining\nboth checks to equivalent code). Value is design clarity — single\nsource of truth for NoExtrap throw responsibility, and ClampExtrap/\nFillExtrap/ExtendExtrap/WrapExtrap no longer call any `_check_domain`\non the scalar hot path.\n\n* (refac): factor cubic eval search+kernel into InBounds core method\n\nThe four `_eval_cubic_at_point` overloads shared identical\n`search_interval → _cubic_kernel` bodies — only the preprocessing\n(boundary check / wrap / OOB return) differed. Factor the in-bounds\ncore into a new `_eval_cubic_at_point(::InBounds)` method that other\noverloads delegate to:\n\n- `::AbstractExtrap` (NoExtrap, ExtendExtrap, …)  →  `@boundscheck\n  _check_domain` then delegate\n- `::_ClampOrFill`                                →  boundary check;\n  return `_eval_extrapolation` if OOB else delegate\n- `::WrapExtrap`                                  →  `_wrap_to_domain`\n  then delegate with wrapped value\n\nThis makes `InBounds` the single canonical fast-path entry — mirrors the\n`_handle_axis_extrap(::InBounds)` ND-prep added in 396d599a9 and the\nbatch fast path that already routes through `InBounds()` after\n`_check_domain` conversion. ND fast-path work will follow the same\nmental model.\n\n`_resolve_grididx` stays in the core method so direct InBounds-dispatch\ncallers (Union-split batch loop) get GridIdx resolution without a\npreprocess wrapper. Delegate paths call it again but it's identity on\nnon-GridIdx and inlines to nothing.\n\nPerf: noise across smoke matrix (LLVM inlines the delegate fully —\nmachine code equivalent to the old inline form). Value is DRY + design\nclarity, not throughput.\n\n* (refac): factor Linear/Constant/Quadratic/Hermite eval into InBounds core\n\nApply the same `InBounds = core fast path` factoring as c17f51b73 (Cubic)\nto the remaining 1D methods. Each method's `_*_eval_at_point` overloads\nshare identical search + kernel bodies; the InBounds overload now owns\nthat core and other extrap overloads delegate after preprocessing:\n\n- Linear (`_linear_eval_at_point`):\n  - InBounds: search + α + kernel\n  - AbstractExtrap: `@boundscheck _check_domain` → delegate\n  - _ClampOrFill: boundary check → delegate\n  - WrapExtrap: wrap + inline kernel (uses `_raw(y)`, can't delegate to\n    InBounds core which goes through the data wrapper)\n\n- Constant (`_constant_eval_at_point`):\n  - InBounds: `last(x) == xi` seam handling + search + kernel\n  - AbstractExtrap: `@boundscheck _check_domain` → delegate\n  - ExtendExtrap → ClampExtrap (existing redirect, eventually reaches core)\n  - _ClampOrFill: boundary check → delegate\n  - WrapExtrap stays standalone (uses `_raw(y)`)\n\n- Quadratic (`_quadratic_eval_at_point`):\n  - InBounds: search + kernel\n  - AbstractExtrap / _ClampOrFill / WrapExtrap delegate\n\n- Hermite (`_hermite_eval_at_point`) × two slope variants:\n  - Pre-baked slopes (`dy::AbstractVector`) and on-the-fly\n    (`sm::AbstractSlopeMethod`) each gain their own InBounds core; other\n    overloads delegate\n\nPerf smoke matrix shows noise across all methods (LLVM inlines the\ndelegate fully — equivalent machine code to the old inlined form). Value\nis DRY + design consistency: `InBounds` is now the canonical fast-path\nentry across every 1D method, matching the\n`_handle_axis_extrap(::InBounds)` ND-prep added in 396d599a9.\n\n* (perf): add _check_domain_nd helper for ND batch InBounds promotion\n\nND analog of 1D `_check_domain(x, xi::AbstractVector, extrap) -> InBounds | extrap`.\nPer-axis: if all queries on axis d are in-bounds, return `InBounds()` for that\naxis; otherwise keep the original extrap. Result is `NTuple{N, AbstractExtrap}`\nwhere each slot is `Union{InBounds, original}` — Julia specializes the\nheterogeneous `map(_check_domain, ...)` into a concrete tuple type (no boxing).\n\nThree method overloads:\n1. SoA batch (`Tuple{Vararg{AbstractVector{<:Real},N}}`) — core fast path,\n   reuses 1D vector `_check_domain` per axis via `map`.\n2. Scalar `Tuple{Vararg{Real,N}}` — defers to existing `_validate_nd_domain`,\n   returns `extraps` unchanged (per-scalar elision has no value).\n3. Generic/AoS fallback — Phase 1 deferred (returns `extraps` unchanged so\n   the inner per-query path still handles each axis).\n\nAdditive — no callers yet; threading and oneshot rollout come in follow-up\ncommits. Unlocks the per-query `_check_domain` / `_handle_axis_extrap`\nelision documented in the 1D fast-path pattern.\n\n* (perf): apply ND batch InBounds fast path to persistent _interp_nd_batch!\n\nThread per-axis effective extraps through the persistent ND batch path so\nin-bounds axes get InBounds-promoted via `_check_domain_nd`, eliding the\nper-query `_handle_axis_extrap` wrap/clamp/fill branches and the @generated\n`_is_fill_oob`'s `fill_dims` for those axes.\n\nChanges:\n- `_interp_nd_batch!` gains an `extraps_eff::NTuple{N, AbstractExtrap}` slot;\n  caller `(itp)(output, queries; ...)` computes it via `_check_domain_nd`\n  (subsumes the prior `_validate_nd_domain` NoExtrap throw).\n- All five method-specific `_locate_cell` overloads (Cubic / Linear /\n  Constant / Quadratic / Hetero {OnTheFly, PreCompute}, generic-N + N=2\n  specializations) accept `extraps` as a positional arg and pass it to\n  `_handle_all_extraps`. Hetero's windowed branch keeps `itp.extraps`\n  forwarded into `_collapse_dims` so each 1D collapse picks up its own\n  1D-level InBounds promotion (stacks both fast paths).\n- `_locate_cell(itp, q, policies, hints, mono)` 5-arg form retained as a\n  thin forwarder that injects `itp.extraps` so vector_calculus.jl and the\n  per-method scalar `_eval_*_nd` paths stay unchanged.\n\nVerified via override-based dispatch counter (scripts/count_nd_extrap_dispatch.jl\npattern): persistent CubicND batch N=2 Nq=1000 NoExtrap drops from 4002 to\n2002 logical dispatches; the residual 2000 are no-op `_handle_axis_extrap(::InBounds)`\nthat LLVM trivially inlines away in real prod builds.\n\nMicro-bench (persistent ND N=5 grid, Nq=1000, NoExtrap, in-bounds):\n  LinearND : master 3906 ns → 2903 ns (-26%)\n  CubicND  : master 7135 ns → 6283 ns (-12%)\n  Range CubicND: master 7687 ns → 7109 ns (-7.5%)\n\nLarger grids (N=51, Nq=5000) show within-noise differences since search\ncost dominates — dispatch overhead is the right test surface.\n\n* (perf): apply ND batch InBounds fast path to oneshot batch loops\n\nSame pattern as the persistent _interp_nd_batch! change in the prior commit,\napplied to the five oneshot batch entry points (cubic / linear / constant /\nquadratic / hetero):\n\n  Before                                            After\n  ──────────                                        ──────────\n  _validate_nd_domain(grids, queries, extraps_val)  (removed — subsumed by\n  extraps_eff = map(_resolve_extrap, ...)            _check_domain_nd's\n                                                     batch-level @boundscheck)\n                                                    extraps_eff = map(_resolve_extrap, ...)\n                                                    extraps_eff = _check_domain_nd(\n                                                        grids_eff, queries, extraps_eff)\n  @inbounds for k in 1:nq                           @inbounds for k in 1:nq\n      _try_fill_oob(qk, grids, extraps_val, ...)        _try_fill_oob(qk, grids, extraps_eff, ...)\n      _handle_all_extraps(qk, grids, extraps_eff)       _handle_all_extraps(qk, grids, extraps_eff)\n      ...                                                ...\n\nPer-query `_handle_axis_extrap(::NoExtrap | _ClampOrFill | WrapExtrap)`\ncollapses to no-op `_handle_axis_extrap(::InBounds)` when every batch query\nis in-bounds on that axis, and `_is_fill_oob`'s @generated `fill_dims` loses\nthe promoted axes at compile time.\n\nScalar oneshot paths kept the original `_validate_nd_domain` + per-axis\ndispatch — promotion has no value at Nq=1 and the existing throw semantics\nmust stay intact (the AoS/generic _check_domain_nd fallback is a no-op).\n\nPer-method tests pass (cubic_nd_oneshot, linear_nd_oneshot, constant_nd_oneshot,\nquadratic_nd_oneshot, hetero_oneshot, akima_periodic_nd, cardinal_periodic_nd,\nhermite_nd_graceful_errors, hetero_precomputed, gradient_hessian).\n\n* (refac): unify per-method _eval_*_nd scalar entries into generic _eval_nd_at_point\n\nCubic / Linear / Constant / Quadratic ND interpolants each had a near-identical\nscalar-evaluation function (`_eval_nd_hermite` / `_eval_linear_nd` /\n`_eval_constant_nd` / `_eval_nd_quadratic`) plus an N=2 specialization — 8\noverloads total following the same skeleton:\n\n  _validate_nd_domain → _try_fill_oob → method-local deriv check → _locate_cell → _eval_at_cell\n\nTrait dispatch already covered the only per-method variance:\n  - `_deriv_zero_fill(itp, ops, Val(N))`:\n      Cubic / Quadratic: default false\n      Linear:  `_has_second_or_higher_derivative` (2nd+ → zero)\n      Constant: `_has_any_derivative` (any deriv → zero)\n  - `_zero_ref(itp)`: per-method first(data | partials)\n\nCollapse all 8 overloads into a single generic in interpolant_protocol.jl:\n\n  @inline function _eval_nd_at_point(itp, query, ops, policies, hints, mono)\n      _validate_nd_domain(itp.grids, query, itp.extraps)\n      oob = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))\n      oob !== nothing && return oob\n      _deriv_zero_fill(itp, ops, Val(N)) && return 0 * _zero_ref(itp)\n      cell = _locate_cell(itp, query, policies, hints, mono)\n      return _eval_at_cell(itp, cell, ops)\n  end\n\nEach method's callable routes through the generic. The N=2 closure-avoidance\nbenefit lives in `_locate_cell` (kept intact); the outer `_eval_*_nd` N=2\nduplicates were redundant since both N-generic and N=2 entry points\ndispatch into the same `_locate_cell` overloads.\n\nHetero is intentionally not routed through here — its callable has\nGridIdx/NoInterp branches and `_eval_hetero_nd` uses non-`_locate_cell`\npaths (`_collapse_dims` for OnTheFly, `_eval_hetero_precomputed` for\nPreCompute).\n\nDiff: +52 / -183 net (-131 lines).\n\nVerified: test_cubic_nd, test_cubic_nd_oneshot, test_linear_nd_oneshot,\ntest_constant_nd_oneshot, test_quadratic_nd_oneshot, test_gradient_hessian\nall pass.\n\n* (docs): note NoExtrap-before-FillExtrap invariant on _eval_nd_at_point\n\nInline comment marks the load-bearing ordering: outer `_validate_nd_domain`\nmust run before `_try_fill_oob`. In mixed-extrap configs (NoExtrap axis OOB\n+ FillExtrap axis OOB), `_try_fill_oob` would otherwise short-circuit with\nthe fill value instead of throwing. Surfaces an invariant that is easy to\nmiss when revisiting the scalar entry layout.\n\n* (fix): WrapExtrap half-open batch semantics + empty-batch guard\n\nTwo issues surfaced during code review.\n\n**Issue 1 — WrapExtrap closed/half-open inconsistency**\n\n`_check_domain(x, xi::AbstractVector, ::Union{Wrap,Clamp,Fill})` used the\nsame closed `_is_all_inbounds` check for all three extraps, but WrapExtrap\nsemantics are half-open `[first(x), last(x))` (documented on\n`_wrap_to_domain` and on `WrapExtrap`'s previous-API comment). Closed\npromotion silently regressed:\n\n```julia\nx = collect(0.0:0.25:1.0);  y = [10.0, 20.0, 30.0, 40.0, 50.0]\ncubic_interp(x, y, [1.0]; extrap=WrapExtrap())  # before: [50.0]  after: [10.0]\n                                                # scalar already returns 10.0\n```\n\nCubic / Constant / Quadratic / PCHIP / Cardinal / Akima batch paths all\nregressed (Linear was protected by its own WrapExtrap-specialized loop\nthat already uses `qmax < x_max`). Now split the Union dispatch:\n\n- `_is_all_inbounds` (closed, `<=`) — Clamp / Fill / NoExtrap (boundary\n  is in-domain for these — clamp / fill / throw don't fire at `last(x)`)\n- `_is_all_inbounds_halfopen` (strict `<`) — WrapExtrap only (boundary\n  belongs to the wrap-needed set per `_wrap_to_domain`'s fast path)\n\nScalar and batch results now match for every method × extrap.\n\n**Issue 2 — empty-batch ArgumentError regression**\n\n`_is_all_inbounds` called `minimum(queries)` / `maximum(queries)` directly,\nso `linear_interp(x, y, Float64[]; extrap=NoExtrap())` (and Clamp / Fill /\nWrapExtrap) raised `ArgumentError: reducing over an empty collection`\ninstead of returning an empty result. Add an `isempty(queries) && return\ntrue` guard to both `_is_all_inbounds` overloads and to the half-open\nvariant. Linear's WrapExtrap-specialized loop has its own\n`minimum`/`maximum` pair — add the same guard there too.\n\nND `_check_domain_nd`'s SoA branch already had this guard\n(`isempty(first(queries)) && return extraps`); 1D was the only path that\nregressed.\n\nVerified across 5 extraps × 7 methods (1D) and 3 extraps × ND SoA — all\n38 cases return correct empty / wrap result. Perf neutral (NoExtrap batch\n1229.2 → 1241.7 ns, within noise).\n\n* Runic formatting",
+          "timestamp": "2026-05-16T18:45:47-07:00",
+          "tree_id": "1186f6217aeaf8ee27ce9abd6da62b439ffb79d8",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/5de9ea17b4158bc53cbb0eabddab3b57fdf2465c"
+        },
+        "date": 1778982506585,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 37079,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83880\nallocs=29\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 642.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 357058,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515320\nallocs=40\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1675.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1435.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 16.43,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 7.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3235,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 33.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 13.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4229.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4218.28,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9568.68,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3202.18,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_rand_rand",
+            "value": 65405.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_sort_rand",
+            "value": 62270.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_sort_sort",
+            "value": 58260.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_rand_rand",
+            "value": 19156.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_sort_rand",
+            "value": 9749.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_sort_sort",
+            "value": 5695.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "14_series_oneshot_batch/constant_inplace_vec_k8_q1000_rand",
+            "value": 19389.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "14_series_oneshot_batch/linear_inplace_vec_k8_q1000_rand",
+            "value": 18956.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 538.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 43531.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1397.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4512\nallocs=11\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12777.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40392\nallocs=16\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 19.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 443.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 42628.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 24.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 18739,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 49.19,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 268.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.41,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 195.78,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 18470.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 12.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 637.78,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4444.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 39977.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 810.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1796.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2306.72,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11349.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3355.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 44060.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 539.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 424975.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1036.9,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

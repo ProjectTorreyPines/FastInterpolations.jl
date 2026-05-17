@@ -164,10 +164,10 @@ end
     @test interp((gx, gy), data, corner; method = (CubicInterp(), LinearInterp()), extrap = ext_both) ≈
         expected atol = 1.0e-12
     let itp = interp(
-                (gx, gy), data;
-                method = (CubicInterp(), LinearInterp()),
-                extrap = ext_both, coeffs = PreCompute(),
-            )
+            (gx, gy), data;
+            method = (CubicInterp(), LinearInterp()),
+            extrap = ext_both, coeffs = PreCompute(),
+        )
         @test itp(corner) ≈ expected atol = 1.0e-12
     end
 
@@ -179,10 +179,10 @@ end
         extrap = ext_both,
     ) ≈ expected atol = 1.0e-12
     let itp = interp(
-                (gx, gy), data;
-                method = (CardinalInterp(), CardinalInterp()),
-                extrap = ext_both, coeffs = OnTheFly(),
-            )
+            (gx, gy), data;
+            method = (CardinalInterp(), CardinalInterp()),
+            extrap = ext_both, coeffs = OnTheFly(),
+        )
         @test itp(corner) ≈ expected atol = 1.0e-12
     end
 

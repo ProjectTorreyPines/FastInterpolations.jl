@@ -124,8 +124,11 @@ end
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
-    if qmin >= x_min && qmax < x_max
-        # Fast path: all queries inside domain — use extension (no wrap overhead)
+    if qmin >= x_min && qmax <= x_max
+        # Fast path: all queries inside the closed domain `[first(x), last(x)]`
+        # — use extension (no wrap overhead). Exact `qmax == x_max` is in-domain
+        # under closed semantics (PR refac/wrap_closed); `_wrap_to_domain` would
+        # be a no-op for those anyway, so route them straight into the fast path.
         @inbounds for i in eachindex(x_targets, output)
             output[i] = _linear_eval_at_point(x, y, x_targets[i], ExtendExtrap(), op, searcher)
         end

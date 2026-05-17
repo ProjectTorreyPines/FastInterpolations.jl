@@ -61,12 +61,22 @@
         @test loc_right.state == FI.IN_DOMAIN
     end
 
-    @testset "_anchor_loc — wrap at x_max" begin
+    @testset "_anchor_loc — closed boundary at x_max (no wrap)" begin
         x = collect(range(0.0, 1.0, 11))
-        # xq == x_max with wrap → should wrap to x_min
+        # Closed semantics: xq == x_max stays in-domain, lands on the last cell.
         loc = FI._anchor_loc(x, 1.0, true)
         @test loc.state == FI.IN_DOMAIN
-        @test loc.xq ≈ 0.0
+        @test loc.xq ≈ 1.0
+        @test loc.idx == length(x) - 1   # last cell (n-1)
+        @test loc.xR ≈ 1.0
+    end
+
+    @testset "_anchor_loc — strictly OOB right still wraps" begin
+        x = collect(range(0.0, 1.0, 11))
+        # q = 1.25 = x_min + 1.25*period → wraps to 0.25
+        loc = FI._anchor_loc(x, 1.25, true)
+        @test loc.state == FI.IN_DOMAIN
+        @test loc.xq ≈ 0.25
     end
 
     # ========================================

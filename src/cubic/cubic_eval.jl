@@ -114,38 +114,28 @@ end
         op::O,
         searcher::P
     ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    ev = _check_domain(cache.x, x_query, ev)
-    return @inbounds for k in eachindex(x_query, output)
-        output[k] = _eval_cubic_at_point(cache.x, y, z, x_query[k], ev, op, searcher)
-    end
+    # Resolve domain here so the inner kernel sees a concrete `ev` type.
+    # `_check_domain` for Clamp/Fill/Wrap returns `Union{InBounds, E}` —
+    # passing through a function-barrier call lets Julia's union-splitting
+    # specialize the inner loop per concrete `ev` (no per-iteration union
+    # dispatch). For `NoExtrap` paths return type is already `InBounds`, so
+    # this is a no-op.
+    ev_eff = _check_domain(cache.x, x_query, ev)
+    return _cubic_vector_loop_inner!(output, cache, y, z, x_query, ev_eff, op, searcher)
 end
 
-# Periodic specialization: 2-stage optimization. Hoist the domain check once
-# outside the per-query loop. When all queries are in the closed wrap domain
-# `[first(cache.x), last(cache.x)]`, dispatch to the `InBounds()` kernel and
-# avoid the per-query `_wrap_to_domain` branch entirely. Only the slow path
-# pays the per-query wrap cost.
-@inline function _cubic_vector_loop!(
+@inline function _cubic_vector_loop_inner!(
         output::AbstractVector,
-        cache::CubicSplineCache{Tg, X, F, <:PeriodicBC},
+        cache::CubicSplineCache{Tg},
         y::AbstractVector{Tv},
         z::AbstractVector,
         x_query::AbstractVector{<:Real},
-        ::E,
+        ev::E,
         op::O,
         searcher::P
-    ) where {Tg, Tv, X <: AbstractVector{Tg}, F, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    isempty(x_query) && return output
-    x_min, x_max = first(cache.x), last(cache.x)
-    qmin, qmax = minimum(x_query), maximum(x_query)
-    if qmin >= x_min && qmax <= x_max
-        @inbounds for k in eachindex(x_query, output)
-            output[k] = _eval_cubic_at_point(cache.x, y, z, x_query[k], InBounds(), op, searcher)
-        end
-    else
-        @inbounds for k in eachindex(x_query, output)
-            output[k] = _eval_cubic_at_point(cache.x, y, z, x_query[k], WrapExtrap(), op, searcher)
-        end
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    @inbounds for k in eachindex(x_query, output)
+        output[k] = _eval_cubic_at_point(cache.x, y, z, x_query[k], ev, op, searcher)
     end
     return output
 end

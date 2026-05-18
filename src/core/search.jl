@@ -343,6 +343,12 @@ end
 RefHint() = RefHint(Ref(1))
 RefHint(idx::Int) = RefHint(Ref(idx))
 
+# Type-dispatched hint write-back. Used by fast paths that short-circuit
+# `_search_interval_real` (e.g. the `_ExclusivePeriodicAxis` seam branch),
+# which would otherwise leave a `RefHint` stuck at a stale interior index.
+@inline _write_hint!(::NoHint, _) = nothing
+@inline _write_hint!(h::RefHint, idx) = (h.idx[] = idx; nothing)
+
 # Future: ThreadHint for per-thread slots
 # struct ThreadHint{H} <: AbstractHint
 #     hint::H

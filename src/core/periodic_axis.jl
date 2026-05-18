@@ -529,6 +529,12 @@ end
 @inline function search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq::Real)
     n = length(g.inner)
     @inbounds if xq >= g.inner[n]
+        # Seam-cell write-back: `_search_interval_real` is the path that
+        # normally updates `RefHint.idx[]` (LinearSearch/LinearBinarySearch
+        # consume the hint on the next call). Short-circuiting here without
+        # writing leaves the hint stuck at a stale interior index, breaking
+        # O(1) locality for monotone hinted streaming across the seam.
+        _write_hint!(s.hint, n)
         return n, 1, g.inner[n], g.inner[1] + g.period
     end
     idx, xL, xR = _search_interval_real(s, g.inner, xq)

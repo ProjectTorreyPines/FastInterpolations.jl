@@ -27,7 +27,7 @@
     Tdy = _output_eltype(Tv, float(eltype(x_eff)))
     dy = acquire!(pool, Tdy, length(y_ext))
     _akima_slopes!(dy, x_eff, y_ext; bc = bc_eff)
-    searcher = _resolve_search(x_eff, xq, search, hint, bc_eff)
+    searcher = _resolve_search(x_eff, xq, search, hint)
     return _hermite_eval_at_point(x_eff, y_ext, dy, xq, extrap_eff, deriv, searcher)
 end
 
@@ -50,7 +50,7 @@ end
     Tdy = _output_eltype(Tv, float(eltype(x_eff)))
     dy = acquire!(pool, Tdy, length(y_ext))
     _akima_slopes!(dy, x_eff, y_ext; bc = bc_eff)
-    searcher = _resolve_search(x_eff, x_query, search, hint, bc_eff)
+    searcher = _resolve_search(x_eff, x_query, search, hint)
     return _hermite_vector_loop!(output, x_eff, y_ext, dy, x_query, extrap_eff, deriv, searcher)
 end
 
@@ -74,7 +74,7 @@ end
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
 
-    searcher = _resolve_search(x_eff, xq, search, hint, NoBC())
+    searcher = _resolve_search(x_eff, xq, search, hint)
     return _hermite_eval_at_point(x_eff, y_eff, AkimaSlopes(bc), xq, extrap, deriv, searcher)
 end
 
@@ -97,7 +97,7 @@ end
     y_eff = _resolve_data(y, bc)
 
 
-    searcher = _resolve_search(x_eff, x_query, search, hint, NoBC())
+    searcher = _resolve_search(x_eff, x_query, search, hint)
     return _hermite_vector_loop!(output, x_eff, y_eff, AkimaSlopes(bc), x_query, extrap, deriv, searcher)
 end
 

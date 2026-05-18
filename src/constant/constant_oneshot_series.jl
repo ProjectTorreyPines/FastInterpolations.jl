@@ -154,7 +154,7 @@ end
     if _is_periodic_bc(bc)
         x_eff = _resolve_axis(x, bc)
         extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
-        searcher = _resolve_search(x_eff, xqs, search, nothing, NoBC())
+        searcher = _resolve_search(x_eff, xqs, search, nothing)
         x_last = @inbounds Tg_actual(last(x_eff))
         @inbounds for j in 1:NQ
             xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
@@ -205,7 +205,7 @@ end
     if _is_periodic_bc(bc)
         x_eff = _resolve_axis(x, bc)
         extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
-        searcher = _resolve_search(x_eff, xqs, search, nothing, NoBC())
+        searcher = _resolve_search(x_eff, xqs, search, nothing)
         x_last = @inbounds Tg_actual(last(x_eff))
         aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg_actual, Tqp}, NQ)
         @inbounds for j in 1:NQ

@@ -191,7 +191,7 @@ In-place one-shot linear interpolation at multiple query points.
     if _is_periodic_bc(bc)
         x_eff = _resolve_axis(x, bc)
         extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
-        searcher = _resolve_search(x_eff, xqs, search, nothing, NoBC())
+        searcher = _resolve_search(x_eff, xqs, search, nothing)
         @inbounds for j in 1:NQ
             xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
             idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
@@ -239,7 +239,7 @@ end
     if _is_periodic_bc(bc)
         x_eff = _resolve_axis(x, bc)
         extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
-        searcher = _resolve_search(x_eff, xqs, search, nothing, NoBC())
+        searcher = _resolve_search(x_eff, xqs, search, nothing)
         aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_actual, Tqp}, NQ)
         @inbounds for j in 1:NQ
             xq_wrapped = _wrap_to_domain(xqs[j], x_eff)

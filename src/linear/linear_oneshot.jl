@@ -80,7 +80,7 @@ function linear_interp!(
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    searcher = _resolve_search(x_eff, x_targets, search, nothing, NoBC())
+    searcher = _resolve_search(x_eff, x_targets, search, nothing)
     return _linear_interp_loop!(output, x_eff, y_eff, x_targets, extrap_eff, deriv, searcher)
 end
 
@@ -334,7 +334,7 @@ end
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    searcher = _resolve_search(x_eff, xq, search, hint, NoBC())
+    searcher = _resolve_search(x_eff, xq, search, hint)
     return _linear_eval_at_point(x_eff, y_eff, xq, extrap_eff, deriv, searcher)
 end
 

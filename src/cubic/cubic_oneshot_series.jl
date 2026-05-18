@@ -148,7 +148,9 @@ end
     Tg_c = eltype(cache.x)
     Tq_w = promote_type(Tq, Tg_c)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg_c, Tq_w}, length(xqs))
-    searcher = _resolve_search(cache.x, xqs, search, nothing, bc)
+    # `cache.x` is wrapped (`_ExclusivePeriodicAxis(_CachedVector, period)` for
+    # `:exclusive`) — axis-level seam dispatch fires via `g.period`. No `bc` thread.
+    searcher = _resolve_search(cache.x, xqs, search, nothing)
     @inbounds for j in eachindex(xqs)
         aq_vec[j] = _build_periodic_cubic_anchor(cache, xqs[j], extrap_p, searcher)
     end

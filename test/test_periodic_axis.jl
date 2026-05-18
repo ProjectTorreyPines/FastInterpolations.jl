@@ -205,13 +205,12 @@ end
 
 @testitem "_ExclusivePeriodicAxis search_interval 4-tuple entry" begin
     using FastInterpolations:
-        _ExclusivePeriodicAxis, search_interval, _resolve_search,
-        AutoSearch, NoBC, BinarySearch
+        _ExclusivePeriodicAxis, search_interval, _resolve_search, BinarySearch
 
-    @testset "Vector grid + NoBC searcher" begin
+    @testset "Vector grid searcher (BC dispatch is axis-level)" begin
         x = [0.0, 0.25, 0.5, 0.75]
         g = _ExclusivePeriodicAxis(x, 1.0)
-        searcher = _resolve_search(g, 0.3, BinarySearch(), nothing, NoBC())
+        searcher = _resolve_search(g, 0.3, BinarySearch(), nothing)
 
         # Normal cell
         idx, idx_R, xL, xR = search_interval(searcher, g, 0.3)
@@ -233,7 +232,7 @@ end
 
 @testitem "_ExclusivePeriodicAxis + _ExclusivePeriodicData round-trip in eval-style usage" begin
     using FastInterpolations: _ExclusivePeriodicAxis, _ExclusivePeriodicData,
-        search_interval, _resolve_search, NoBC, BinarySearch
+        search_interval, _resolve_search, BinarySearch
 
     # Simulate an eval kernel: search returns idx_R = n+1 at seam; the data
     # wrapper auto-cycles `y[n+1] → inner[1]` so kernels write `y[idx_R]`
@@ -242,7 +241,7 @@ end
     y_raw = [1.0, 2.0, 3.0, 4.0]
     g = _ExclusivePeriodicAxis(x, 1.0)
     y = _ExclusivePeriodicData(y_raw)
-    searcher = _resolve_search(g, 0.0, BinarySearch(), nothing, NoBC())
+    searcher = _resolve_search(g, 0.0, BinarySearch(), nothing)
 
     @testset "Normal cell — yL, yR straight from y[idx], y[idx_R]" begin
         idx, idx_R, _, _ = search_interval(searcher, g, 0.3)

@@ -22,10 +22,9 @@ end
 
 # ─────────────────────────────────────────────────────────────
 # Vector loop (function barrier)
-# Julia specializes on concrete Searcher type P, eliminating Union-split
-# overhead when adaptive AutoSearch resolves to BinarySearch or LinearBinarySearch.
-# CRITICAL: All arguments must be fully typed — untyped args prevent SROA
-# of RefHint's Ref, causing 16-byte heap allocation per call.
+# Outer resolves the `_check_domain` Union; inner sees concrete `extrap`,
+# union-splitting the per-iter dispatch. Args must be fully typed — untyped
+# blocks SROA of RefHint's Ref (16 B/call alloc).
 # ─────────────────────────────────────────────────────────────
 @inline function _quadratic_vector_loop!(
         output::AbstractVector,
@@ -38,10 +37,25 @@ end
         deriv::O,
         searcher::P
     ) where {Tg, Tv, Tc, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    extrap = _check_domain(x, xq, extrap)
-    return @inbounds for i in eachindex(xq, output)
+    extrap_eff = _check_domain(x, xq, extrap)
+    return _quadratic_vector_loop_inner!(output, x, y, a, d, xq, extrap_eff, deriv, searcher)
+end
+
+@inline function _quadratic_vector_loop_inner!(
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        a::AbstractVector{Tc},
+        d::AbstractVector{Tc},
+        xq::AbstractVector{<:Real},
+        extrap::E,
+        deriv::O,
+        searcher::P
+    ) where {Tg, Tv, Tc, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    @inbounds for i in eachindex(xq, output)
         output[i] = _quadratic_eval_at_point(x, y, a, d, xq[i], extrap, deriv, searcher)
     end
+    return output
 end
 
 # ========================================

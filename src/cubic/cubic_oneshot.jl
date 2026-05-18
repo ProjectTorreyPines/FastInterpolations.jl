@@ -45,7 +45,7 @@ Thread-safe: workspaces allocated from task-local pool.
     _solve_system!(z, cache, y, cache.bc)
 
     searcher = _resolve_search(cache.x, x_query, search, nothing)
-    # Upgrade WrapExtrap{Nothing} → WrapExtrap{T} against the cache grid.
+    # BC-aware extrap: PeriodicBC forces WrapExtrap, otherwise passthrough.
     extrap_eff = _resolve_extrap(extrap, cache.bc, cache.x)
     _cubic_vector_loop!(output, cache, y, z, x_query, extrap_eff, deriv, searcher)
 
@@ -92,8 +92,7 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
     # Solve uses original BC for proper RHS materialization
     _solve_system!(z, cache, y, bc)
 
-    # Upgrade WrapExtrap{Nothing} to the typed form so the kernel never sees the
-    # zero-arg placeholder. Non-Wrap extraps pass through.
+    # BC-aware extrap: PeriodicBC forces WrapExtrap, otherwise passthrough.
     extrap_eff = _resolve_extrap(extrap, cache.bc, cache.x)
     _cubic_vector_loop!(output, cache, y, z, x_query, extrap_eff, op, searcher)
 
@@ -124,7 +123,7 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc)
 
-    # Upgrade WrapExtrap{Nothing} to typed WrapExtrap against the cache grid.
+    # BC-aware extrap: PeriodicBC forces WrapExtrap, otherwise passthrough.
     extrap_eff = _resolve_extrap(extrap, cache.bc, cache.x)
     _check_domain(cache.x, xq, extrap_eff)
     return _eval_cubic_at_point(cache.x, y, tmp_z, xq, extrap_eff, op, searcher)

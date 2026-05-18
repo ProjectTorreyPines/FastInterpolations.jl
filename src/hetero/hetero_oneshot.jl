@@ -33,9 +33,9 @@
     bcs_periodic = map(_bc_for_periodic_check, methods)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
 
-    # 1a. Per-axis materialization: upgrade WrapExtrap{Nothing} → WrapExtrap{T} against
-    # the post-extension grid so the downstream eval pipeline never sees the singleton.
-    # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
+    # 1a. Per-axis extrap passthrough against the post-extension grid.
+    # Post-extension: each axis's `(first, last)` IS the wrap domain — the
+    # 2-arg primitive is identity for tag-struct extraps.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
 
     # 2. Pool-allocate compact partials (widened with Tg for Dual grid support)

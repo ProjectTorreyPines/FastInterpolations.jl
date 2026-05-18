@@ -426,42 +426,30 @@ end
 _extend_values(y::AbstractVector) = vcat(y, first(y))
 
 # ========================================
-# WrapExtrap is a tag struct (eval_ops.jl)
-# ========================================
-#
-# After the surface-API axis resolution (`_resolve_axis` / `_cache_axis`),
-# every supported axis exposes `first/last` matching the canonical wrap
-# domain — including `_ExclusivePeriodicAxis`, whose `last` reports the
-# precomputed virtual endpoint. Eval kernels read those bounds directly
-# from the axis via `_wrap_to_domain(xq, x, ::WrapExtrap)`. No BC-aware
-# `WrapExtrap` constructors, no `WrapExtrap{Nothing}` materialization, no
-# duplicated `_x_min/_x_max` fields.
-
-# ========================================
 # Extrap Resolution (_resolve_extrap)
 # ========================================
 #
-# Single name for every extrap materialization / validation step. `extrap` is
-# always the 1st arg — consistent with `_resolve_search`, `_resolve_coeffs`,
-# `_resolve_grididx` naming family. Layers (dispatched by arg shape):
+# `WrapExtrap` is a tag struct — the axis is the source of truth for the
+# wrap domain. After surface-API axis resolution (`_resolve_axis` /
+# `_cache_axis`), every supported axis exposes `first/last` matching the
+# canonical wrap domain — including `_ExclusivePeriodicAxis`, whose `last`
+# reports the precomputed virtual endpoint. Eval kernels read those bounds
+# directly via `_wrap_to_domain(xq, x)`.
+#
+# `_resolve_extrap` is the single name for every extrap normalization step
+# (BC override + FillExtrap value-type promotion). `extrap` is always the
+# 1st arg — consistent with `_resolve_search`, `_resolve_coeffs`,
+# `_resolve_grididx`. Layers (dispatched by arg shape):
 #
 # 1D primitives (per-axis):
-#   (extrap, x)                          — grid-only; upgrade {Nothing} or passthrough
-#   (extrap, bc, x)                      — BC-aware; PeriodicBC forces WrapExtrap
-#
-# `WrapExtrap` is a tag struct — no `{Nothing}` placeholder, no materialization.
-# The axis carries the canonical wrap domain via `first/last` after the
-# surface-API axis resolution.
-#
-# 1D entries (per-axis):
-#   (extrap, x)                          — passthrough + FillExtrap promote (no Tv → identity)
-#   (extrap, bc, x)                      — BC-aware: PeriodicBC forces WrapExtrap, otherwise passthrough
+#   (extrap, x)                          — passthrough (tag-struct identity)
+#   (extrap, bc, x)                      — BC-aware: PeriodicBC forces WrapExtrap
 #   (extrap, x, Tv)                      — FillExtrap promote (eltype → Tv)
 #
 # 1D bundled: validate + dispatch
 #   (extrap, bc, x, y)                   — `:inclusive` endpoint check + primitive
 #
-# ND bundled (oneshot): slice validation + per-axis materialize
+# ND bundled (oneshot): slice validation + per-axis
 #   (extraps, bcs, grids, data, Val(N))  — zero-copy ND oneshot entry
 
 # ── Primitive: 2-arg (no BC info; non-periodic persistent / Hermite family) ──

@@ -607,12 +607,10 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc = PeriodicBC())
 
         # Both ZeroCurv and periodic BC should be zero-allocation with autocache.
-        # The periodic path now threads a materialized `WrapExtrap{Float64}` (16 B
-        # = 2 × sizeof(Float64)) through the flow. `@allocated` reports heap
-        # allocations: on Julia 1.11+ escape analysis elides the struct to the
-        # stack (0 bytes), but on LTS (1.10) the compiler lets it escape to the
-        # heap as one small box. Allow the extra 16 bytes on LTS — tightened to
-        # zero on 1.12+ by the project-wide `ALLOC_THRESHOLD` (runtests.jl).
+        # On Julia 1.11+ escape analysis elides intermediate boxes to the stack
+        # (0 bytes); on LTS (1.10) one small box (~16 B = 2 × sizeof(Float64))
+        # may escape to the heap. Allow that on LTS — tightened to zero on
+        # 1.12+ by the project-wide `ALLOC_THRESHOLD` (runtests.jl).
         @test natural_allocs <= ALLOC_THRESHOLD
         @test periodic_allocs <=
             ALLOC_THRESHOLD + (VERSION >= v"1.12" ? 0 : 2 * sizeof(Float64))
@@ -1442,11 +1440,11 @@ end
             cubic_interp(x, y, 1.0; bc = PeriodicBC())
             cubic_interp(x, y, 1.0; bc = PeriodicBC())
 
-            # Periodic BC Range cache hit. Same heap-allocation behavior as line
-            # 612: on LTS (1.10) escape analysis lets `WrapExtrap{Float64}` +
-            # one small intermediate box escape (~32 B), 1.11+ elides them. The
-            # scalar-query path accumulates more boxes than the vector path, so
-            # allow up to 4 × sizeof(Float64) on LTS (gated off on 1.12+).
+            # Periodic BC Range cache hit. On LTS (1.10) escape analysis lets
+            # a couple of small intermediate boxes escape (~32 B); 1.11+ elides
+            # them. The scalar-query path accumulates more boxes than the
+            # vector path, so allow up to 4 × sizeof(Float64) on LTS (gated
+            # off on 1.12+).
             allocs = @allocated cubic_interp(x, y, 1.0; bc = PeriodicBC())
             @test allocs <= ALLOC_THRESHOLD + (VERSION >= v"1.12" ? 0 : 4 * sizeof(Float64))
         end

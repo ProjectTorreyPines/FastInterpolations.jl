@@ -125,10 +125,9 @@ Zero-allocation after warmup (pool reuse).
     # 1. Extend exclusive periodic axes (pool-based, zero heap alloc)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
 
-    # 1a. Per-axis materialization: upgrade WrapExtrap{Nothing} → WrapExtrap{T} against
-    # the extended grid and force WrapExtrap on periodic axes so `_handle_all_extraps`
-    # hits the typed form (kernels never see WrapExtrap{Nothing}).
-    # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
+    # 1a. Per-axis extrap passthrough against the extended grid.
+    # Post-extension: each axis's `(first, last)` IS the wrap domain — the
+    # 2-arg primitive is identity for tag-struct extraps (Wrap, Clamp, ...).
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)

@@ -98,8 +98,7 @@ Base.IndexStyle(::Type{<:_ExclusivePeriodicAxis}) = IndexLinear()
 # directly to derive the wrap domain `[first(g), last(g))`. Without these
 # overrides, `last(g)` would resolve to `g[length(g)] = g[n+1]` which raises
 # BoundsError (since `Base.getindex` forwards to `inner`). `_x_max` is
-# precomputed at construction so `last(g)` is a single field read — same cost
-# as the legacy `WrapExtrap{T}._x_max` lookup.
+# precomputed at construction so `last(g)` is a single field read.
 @inline Base.first(g::_ExclusivePeriodicAxis) = @inbounds g.inner[1]
 @inline Base.last(g::_ExclusivePeriodicAxis) = g._x_max
 

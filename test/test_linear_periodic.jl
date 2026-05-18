@@ -60,7 +60,7 @@
 
     @testset "Non-Float wrap domains — Int grid + PeriodicBC" begin
         # Contract: y[1] ≈ y[end] is satisfied so :inclusive build/eval is legal.
-        # Exercises WrapExtrap{Int} (produced by _resolve_periodic_extrap on Int grid).
+        # Exercises the Int-grid wrap path (axis carries `(first, last)` directly).
         x = [0, 1, 2, 3]
         y = [1.0, 2.0, 3.0, 1.0]
         # Persistent
@@ -306,11 +306,10 @@
     end
 
     @testset "Exclusive — NoBC oneshot allocation regression guard (T-9)" begin
-        # After the WrapExtrap{T} materialization refactor, NoBC paths must not
-        # *leak* WrapExtrap{Float64} structs to the heap. On 1.12+ escape analysis
-        # stack-elides them (0 bytes); on LTS (1.10) a small Ref / struct may
-        # survive (~16 B). Compare against ALLOC_THRESHOLD per the project-wide
-        # convention rather than strict `== 0`.
+        # NoBC paths must not leak intermediate boxes to the heap. On 1.12+
+        # escape analysis stack-elides them (0 bytes); on LTS (1.10) a small
+        # Ref / struct may survive (~16 B). Compare against ALLOC_THRESHOLD
+        # per the project-wide convention rather than strict `== 0`.
         x = range(0.0, 1.0, length = 11)
         y = sin.(2π .* x)
         # Warmup

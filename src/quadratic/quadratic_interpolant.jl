@@ -130,7 +130,7 @@ end
     # axis `x_eff` carries `h`/`inv_h` directly via `_get_h(x, i)`.
     d, a = _compute_quadratic_coeffs(x_eff, y, bc_p)
 
-    # 3-arg: materialize WrapExtrap{Nothing} + promote FillExtrap value type.
+    # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
     extrap_p = _resolve_extrap(extrap, x_eff, Tv)
     return QuadraticInterpolant(x_eff, y, a, d, extrap_p, search, bc_p)
 end

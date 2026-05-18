@@ -149,21 +149,21 @@ end
     error("unreachable: _first_fill_value called without FillExtrap")
 end
 
-# ── _resolve_extrap: ND variants (expand + promote [+ materialize]) ──
+# ── _resolve_extrap: ND variants (expand + promote [+ per-axis resolve]) ──
 #
 # Continues the `_resolve_extrap` family from `src/core/periodic.jl` (primitive
 # per-axis + 1D bundled + ND bundled-with-data). These ND methods handle the
 # scalar→NTuple expansion, periodic-BC override, and FillExtrap value-type
 # promotion. Two shapes by arity:
 #
-# - 4-arg (extrap, bcs, Val(N), Tv): expand + promote. Returns NTuple with
-#   possibly-unmaterialized `WrapExtrap{Nothing}` on periodic axes. Used by
-#   callers that materialize separately (post-extension persistent paths
-#   where bc-aware materialize would trip the pre-extension `<` check).
+# - 4-arg (extrap, bcs, Val(N), Tv): expand + promote. Returns NTuple per axis,
+#   forcing `WrapExtrap` where `bcs[d]` is periodic. Used by callers that
+#   resolve against the grid separately (post-extension persistent paths
+#   where the BC-aware check would trip the pre-extension `<` invariant).
 #
-# - 5-arg (extrap, bcs, grids, Val(N), Tv): above + per-axis materialize.
-#   `bcs::NTuple` → 3-arg primitive (bc-aware); `bcs::Nothing` → 2-arg primitive
-#   (grid-span only, no periodic override needed).
+# - 5-arg (extrap, bcs, grids, Val(N), Tv): above + per-axis passthrough
+#   against `grids`. `bcs::NTuple` → 3-arg primitive (bc-aware);
+#   `bcs::Nothing` → 2-arg primitive (no periodic override).
 
 # ── 4-arg: expand + promote (no materialize) ──
 

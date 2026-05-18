@@ -250,38 +250,6 @@ In-place cubic spline interpolation with optional automatic caching.
     return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache, deriv, searcher)
 end
 
-
-# Scalar query - zero allocation
-@inline function cubic_interp!(
-        output::AbstractVector{Tv},
-        cache::CubicSplineCache{Tg, X, F, BC},
-        y::AbstractVector{Tv},
-        x_query::Tg;
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv, X, F, BC}
-    @assert length(output) >= 1 "output must have at least 1 element"
-    output[1] = cubic_interp_scalar(cache, y, x_query; extrap = extrap, deriv = deriv, search = search)
-    return output
-end
-
-@inline function cubic_interp!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_query::Real;
-        bc::AbstractBC = CubicFit(),
-        extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv}
-    @assert length(output) >= 1 "output must have at least 1 element"
-    output[1] = cubic_interp(x, y, x_query; bc, extrap, autocache, deriv, search)
-    return output
-end
-
 # ========================================
 # Allocating Vector API
 # ========================================

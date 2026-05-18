@@ -426,11 +426,6 @@ end
         # In-place vector query with Real types
         cubic_interp!(output, x, y, x_query)
         @test length(output) == 3
-
-        # Scalar query with Real types
-        output_scalar = zeros(1)
-        cubic_interp!(output_scalar, x, y, 5.5)
-        @test length(output_scalar) == 1
     end
 
     @testset "_to_float Vector path" begin
@@ -486,52 +481,6 @@ end
 end
 
 @testitem "Cubic Spline - Uncovered Paths" begin
-
-    @testset "cubic_interp! with cache and scalar query" begin
-        # Lines 154-164: cubic_interp!(output, cache, y, x_query::T)
-        x = collect(range(0.0, 1.0, 21))
-        y = sin.(2π .* x)
-        cache = CubicSplineCache(x)
-        output = zeros(1)
-
-        cubic_interp!(output, cache, y, 0.5)
-        @test output[1] ≈ sin(π) atol = 1.0e-6
-
-        # Test with different extrap modes
-        cubic_interp!(output, cache, y, 0.25; extrap = NoExtrap())
-        @test isfinite(output[1])
-
-        cubic_interp!(output, cache, y, -0.1; extrap = ClampExtrap())
-        @test output[1] ≈ y[1]
-
-        cubic_interp!(output, cache, y, 1.1; extrap = ExtendExtrap())
-        @test isfinite(output[1])
-    end
-
-    @testset "cubic_interp! with x,y,scalar and bc=PeriodicBC()" begin
-        # Lines 179-182: bc=PeriodicBC() branch in scalar cubic_interp!
-        x = collect(range(0.0, 2π, 21))
-        y = sin.(x)
-        y[end] = y[1]  # Ensure periodic
-        output = zeros(1)
-
-        cubic_interp!(output, x, y, π; bc = PeriodicBC())
-        @test output[1] ≈ 0.0 atol = 0.1
-
-        # Test with autocache=false
-        cubic_interp!(output, x, y, π; bc = PeriodicBC(), autocache = false)
-        @test output[1] ≈ 0.0 atol = 0.1
-    end
-
-    @testset "cubic_interp! with x,y,scalar and autocache=false" begin
-        # Line 186: autocache=false branch
-        x = collect(range(0.0, 1.0, 21))
-        y = sin.(2π .* x)
-        output = zeros(1)
-
-        cubic_interp!(output, x, y, 0.5; autocache = false)
-        @test output[1] ≈ sin(π) atol = 1.0e-6
-    end
 
     @testset "cubic_interp with vector query and bc=PeriodicBC()" begin
         # Lines 250-254: bc=PeriodicBC() in allocating vector API

@@ -84,8 +84,12 @@ function linear_interp!(
     return _linear_interp_loop!(output, x_eff, y_eff, x_targets, extrap_eff, deriv, searcher)
 end
 
-# Internal loop with AbstractExtrap dispatch and Searcher (type-stable)
-# Supports mixed types: Tg for grid, Tv for values
+# Internal loop with function-barrier pattern. `_check_domain` returns
+# `Union{InBounds, E}` for Clamp/Fill/Wrap (in-bounds promotion); passing
+# through a function-barrier call lets Julia's union-splitting specialize
+# the inner loop per concrete `ev` (no per-iteration union dispatch). For
+# `NoExtrap` paths the return type is already `InBounds`, so this is a
+# no-op. Supports mixed types: Tg for grid, Tv for values.
 @inline function _linear_interp_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -95,48 +99,21 @@ end
         op::O,
         searcher::S
     ) where {Tg, O <: AbstractEvalOp, S <: Searcher}
-    extrap = _check_domain(x, x_targets, extrap)
-    @inbounds for i in eachindex(x_targets, output)
-        output[i] = _linear_eval_at_point(x, y, x_targets[i], extrap, op, searcher)
-    end
-    return output
+    extrap_eff = _check_domain(x, x_targets, extrap)
+    return _linear_interp_loop_inner!(output, x, y, x_targets, extrap_eff, op, searcher)
 end
 
-
-# Optimized loop for WrapExtrap - uses 2-stage strategy
-# Stage 1: Check if ALL queries are inside domain (cheap: ~150ns for 1000 elements)
-# Stage 2: If all inside, use extension path (no wrap needed); otherwise per-element wrap
-@inline function _linear_interp_loop!(
+@inline function _linear_interp_loop_inner!(
         output::AbstractVector,
         x::AbstractVector{Tg},
         y::AbstractVector,
         x_targets::AbstractVector,
-        extrap::WrapExtrap,
+        extrap::E,
         op::O,
         searcher::S
-    ) where {Tg, O <: AbstractEvalOp, S <: Searcher}
-    # Wrap domain comes directly from the axis: `[first(x), last(x)]`. For
-    # `_ExclusivePeriodicAxis`, `last(x)` is the precomputed virtual endpoint
-    # (`inner[1] + period`), so the domain extends one period beyond the raw
-    # grid as required for `:exclusive` periodic. Hoisting once outside the
-    # loop keeps inner-loop cost identical to the legacy `_x_min/_x_max` read.
-    isempty(x_targets) && return output
-    x_min, x_max = first(x), last(x)
-    qmin, qmax = minimum(x_targets), maximum(x_targets)
-
-    if qmin >= x_min && qmax <= x_max
-        # Fast path: all queries inside the closed domain `[first(x), last(x)]`
-        # — use extension (no wrap overhead). Exact `qmax == x_max` is in-domain,
-        # so `_wrap_to_domain` would be a no-op anyway — route straight in.
-        @inbounds for i in eachindex(x_targets, output)
-            output[i] = _linear_eval_at_point(x, y, x_targets[i], ExtendExtrap(), op, searcher)
-        end
-    else
-        # Slow path: some queries outside — per-element wrap.
-        @inbounds for i in eachindex(x_targets, output)
-            xi_wrapped = _wrap_to_domain(x_targets[i], x_min, x_max)
-            output[i] = _linear_eval_at_point(x, y, xi_wrapped, ExtendExtrap(), op, searcher)
-        end
+    ) where {Tg, E <: AbstractExtrap, O <: AbstractEvalOp, S <: Searcher}
+    @inbounds for i in eachindex(x_targets, output)
+        output[i] = _linear_eval_at_point(x, y, x_targets[i], extrap, op, searcher)
     end
     return output
 end

@@ -43,7 +43,6 @@ function _linear_interp_nd_oneshot(
     # encoded in the axis type, the searcher carries `NoBC()` — the wrapper's
     # dispatch handles seam regardless.
     grids_eff = map(_resolve_axis, grids, bcs)
-    nobcs = ntuple(_ -> NoBC(), Val(N))
     # NoExtrap domain check must precede FillExtrap short-circuit
     _validate_nd_domain(grids_eff, query, extraps_val)
     oob_result = _try_fill_oob(query, grids_eff, extraps_val, ops, @inbounds first(data))
@@ -51,7 +50,7 @@ function _linear_interp_nd_oneshot(
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
-    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, nobcs)
+    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints)
     αs = map(_alpha_of, q_eval, Ls, Rs, grids_eff)
     # 4-arg `_get_inv_h(g, idx, xL, xR)` — `_CachedVector`/`_CachedRange` use
     # cached fields (idx-indexed or scalar); raw `Vector` falls back to
@@ -83,7 +82,6 @@ function _linear_interp_nd_oneshot_batch!(
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     grids_eff = map(_resolve_axis, grids, bcs)
-    nobcs = ntuple(_ -> NoBC(), Val(N))
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     # Batch-level InBounds promotion: replaces `_validate_nd_domain` throw +
     # elides per-query wrap/clamp/fill on in-bounds axes via the @generated
@@ -96,7 +94,7 @@ function _linear_interp_nd_oneshot_batch!(
             output[k] = oob_val; continue
         end
         q_eval = _handle_all_extraps(query_k, grids_eff, extraps_eff)
-        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints, nobcs)
+        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints)
         αs = map(_alpha_of, q_eval, Ls, Rs, grids_eff)
         idxLs = map(first, stencils)
         inv_hs = map(_get_inv_h, grids_eff, idxLs, Ls, Rs)

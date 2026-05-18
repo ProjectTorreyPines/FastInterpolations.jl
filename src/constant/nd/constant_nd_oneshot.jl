@@ -33,7 +33,6 @@ function _constant_interp_nd_oneshot(
     # passthrough or cached float form. Wrapper search returns post-fold
     # `idx_R = 1` at seam so `data[..., idx_R, ...]` indexes raw data.
     grids_eff = map(_resolve_axis, grids, bcs)
-    nobcs = ntuple(_ -> NoBC(), Val(N))
     # NoExtrap domain check must precede FillExtrap short-circuit
     _validate_nd_domain(grids_eff, query, extraps_val)
     oob_result = _try_fill_oob(query, grids_eff, extraps_val, EvalValue(), @inbounds first(data))
@@ -41,7 +40,7 @@ function _constant_interp_nd_oneshot(
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
-    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, nobcs)
+    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints)
     # 4-arg `_get_h(g, idx, xL, xR)` — cached path for `_CachedVector` (idx)
     # / `_CachedRange` (scalar field); raw `Vector` falls back to `xR - xL`.
     idxLs = map(first, stencils)
@@ -71,7 +70,6 @@ function _constant_interp_nd_oneshot_batch!(
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     grids_eff = map(_resolve_axis, grids, bcs)
-    nobcs = ntuple(_ -> NoBC(), Val(N))
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     # Batch-level InBounds promotion: see cubic_nd_oneshot.jl / linear_nd_oneshot.jl
     # for the same pattern. Replaces `_validate_nd_domain` (throw via 1D
@@ -84,7 +82,7 @@ function _constant_interp_nd_oneshot_batch!(
             output[k] = oob_val; continue
         end
         q_eval = _handle_all_extraps(query_k, grids_eff, extraps_eff)
-        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints, nobcs)
+        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints)
         idxLs = map(first, stencils)
         hs = map(_get_h, grids_eff, idxLs, Ls, Rs)
         output[k] = _constant_nd_kernel(data, stencils, hs, side_vals, q_eval, Ls)

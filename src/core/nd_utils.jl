@@ -825,10 +825,8 @@ end
 
 # Per-axis inline: build Searcher + run search_interval in one body.
 # Callers pre-wrap grids via `_resolve_axis` (or pass already-wrapped axes),
-# so seam handling is via axis-level dispatch in `periodic_axis.jl` — the `bc`
-# argument is retained in the signature for caller compatibility but is unused
-# at search time (slated for removal alongside the BC type-param cleanup).
-@inline _search_axis_stencil(grid, q, search, hint, _bc) =
+# so seam handling is via axis-level dispatch in `periodic_axis.jl`.
+@inline _search_axis_stencil(grid, q, search, hint) =
     @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q)
 
 @inline function _search_all_intervals_stencil(
@@ -836,23 +834,21 @@ end
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
-        bcs::Tuple{Vararg{AbstractBC, N}},
     ) where {N}
-    results = map(_search_axis_stencil, grids, q_evals, searches, hints, bcs)
+    results = map(_search_axis_stencil, grids, q_evals, searches, hints)
     return _project_search_results(results, _getstencil)
 end
 
 # Nothing-hint overload — scalar oneshot entries only. Batch must use the
-# 5-arg NTuple form (hint allocation hoisted via `_resolve_oneshot_search_nd`).
+# 4-arg NTuple form (hint allocation hoisted via `_resolve_oneshot_search_nd`).
 @inline function _search_all_intervals_stencil(
         q_evals::Tuple{Vararg{Real, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         ::Nothing,
-        bcs::Tuple{Vararg{AbstractBC, N}},
     ) where {N}
     hints = _ensure_hint_nd(nothing, Val(N))
-    return _search_all_intervals_stencil(q_evals, grids, searches, hints, bcs)
+    return _search_all_intervals_stencil(q_evals, grids, searches, hints)
 end
 
 

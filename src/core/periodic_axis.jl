@@ -500,12 +500,6 @@ end
 # directly without needing an N-D periodic data wrapper. The 1D `:exclusive`
 # path keeps `_ExclusivePeriodicData` for `last(y)` semantics, but `y[idx_R=1]`
 # yields the same value as `y[idx_R=n+1]` through the cyclic wrapper.
-#
-# Two BC-constrained methods exist to avoid ambiguity with the existing
-# generic dispatch (`Searcher{...,<:AbstractBC}, AbstractVector, Real`) and
-# the seam-specialized dispatch (`Searcher{...,<:PeriodicBC{:exclusive}},
-# AbstractVector, Real`). When the grid is `_ExclusivePeriodicAxis`, the
-# wrapper handles the seam — the searcher's BC seam logic is bypassed.
 
 # GridIdx queries — explicit index semantics, no query wrapping. Mirrors
 # `search_interval(s, x::AbstractVector, ::GridIdx)` in search.jl, but with
@@ -522,7 +516,7 @@ end
     return idx, idx_R, xL, xR
 end
 
-# Generic BC + wrapper: seam fast-path → policy-aware delegate to inner.
+# Real-query wrapper dispatch: seam fast-path → policy-aware delegate to inner.
 #
 # Crucially, we MUST route the interior search through `_search_interval_real`
 # on the inner — NOT through `_search_binary(g, xq)`. The unconditional binary
@@ -533,24 +527,7 @@ end
 # in O(1) (single mul/floor/clamp). Forcing `_search_binary` instead would
 # downgrade Range axes to O(log n), which scales as the bench shows
 # (Range Per-excl: 3.5 ns @ N=10 → 44 ns @ N=10000).
-@inline function search_interval(
-        s::Searcher{P, H, <:AbstractBC}, g::_ExclusivePeriodicAxis, xq::Real
-    ) where {P, H}
-    n = length(g.inner)
-    @inbounds if xq >= g.inner[n]
-        return n, 1, g.inner[n], g.inner[1] + g.period
-    end
-    idx, xL, xR = _search_interval_real(s, g.inner, xq)
-    return idx, idx + 1, xL, xR
-end
-
-# `:exclusive` BC + wrapper: explicit override so this is unambiguous against
-# the existing `<:PeriodicBC{:exclusive}` dispatch on plain AbstractVector.
-# Wrapper takes precedence — searcher's `bc.period` is ignored (grid carries
-# its own period). Same policy-aware shape as the generic-BC overload above.
-@inline function search_interval(
-        s::Searcher{P, H, <:PeriodicBC{:exclusive}}, g::_ExclusivePeriodicAxis, xq::Real
-    ) where {P, H}
+@inline function search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq::Real)
     n = length(g.inner)
     @inbounds if xq >= g.inner[n]
         return n, 1, g.inner[n], g.inner[1] + g.period

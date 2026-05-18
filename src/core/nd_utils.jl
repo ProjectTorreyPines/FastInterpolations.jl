@@ -824,12 +824,12 @@ end
 # by Julia escape analysis → 0 heap bytes/call.
 
 # Per-axis inline: build Searcher + run search_interval in one body.
-# 3-arg `search_interval` (no spacing) — Range uses _search_direct's own step,
-# Vector uses _search_binary; the
-# stencil-using callers compute `h` from the search-returned `(xL, xR)` via
-# 3-arg `_get_h(grid, xL, xR)` dispatch.
-@inline _search_axis_stencil(grid, q, search, hint, bc) =
-    @inbounds search_interval(_resolve_search(grid, q, search, hint, bc), grid, q)
+# Callers pre-wrap grids via `_resolve_axis` (or pass already-wrapped axes),
+# so seam handling is via axis-level dispatch in `periodic_axis.jl` — the `bc`
+# argument is retained in the signature for caller compatibility but is unused
+# at search time (slated for removal alongside the BC type-param cleanup).
+@inline _search_axis_stencil(grid, q, search, hint, _bc) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q)
 
 @inline function _search_all_intervals_stencil(
         q_evals::Tuple{Vararg{Real, N}},

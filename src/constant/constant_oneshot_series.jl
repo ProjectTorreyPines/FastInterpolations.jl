@@ -83,7 +83,9 @@ end
     Tv_out = Tq <: _PromotableValue ? Tv : promote_type(Tv, Tq)
     output = Vector{Tv_out}(undef, K)
     if _is_periodic_bc(bc)
-        searcher = _resolve_search(x, xq, search, hint, bc)
+        # Helper wraps `x` via `_resolve_axis(x, bc)` and searches against the
+        # wrapped axis — axis dispatch handles seam, no `bc` thread needed.
+        searcher = _resolve_search(x, xq, search, hint)
         return _constant_oneshot_series_periodic!(output, x, s, xq, bc, deriv, side, searcher)
     end
     _check_domain(x, xq, extrap)
@@ -115,7 +117,7 @@ end
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     x = _to_float(x, Tg)
     if _is_periodic_bc(bc)
-        searcher = _resolve_search(x, xq, search, hint, bc)
+        searcher = _resolve_search(x, xq, search, hint)
         return _constant_oneshot_series_periodic!(output, x, s, xq, bc, deriv, side, searcher)
     end
     _check_domain(x, xq, extrap)

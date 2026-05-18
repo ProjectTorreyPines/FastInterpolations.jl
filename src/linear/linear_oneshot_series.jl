@@ -111,9 +111,9 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
     Tv = _series_output_type(_output_eltype(_series_eltype(s), Tg_actual), Tq)
     output = Vector{Tv}(undef, K)
     if _is_periodic_bc(bc)
-        # Thread `bc` into the Searcher type param so `search_interval` performs
-        # the seam-wrap for `PeriodicBC{:exclusive}` inside the helper.
-        searcher = _resolve_search(x, xq, search, hint, bc)
+        # Helper wraps `x` via `_resolve_axis(x, bc)` and searches against the
+        # wrapped axis — axis dispatch handles seam, no `bc` thread needed.
+        searcher = _resolve_search(x, xq, search, hint)
         return _linear_oneshot_series_periodic!(output, x, s, xq, bc, deriv, searcher)
     end
     _check_domain(x, xq, extrap)
@@ -149,7 +149,7 @@ In-place one-shot linear interpolation of multiple y-series at a single query po
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
     x = _to_float(x, Tg_p)
     if _is_periodic_bc(bc)
-        searcher = _resolve_search(x, xq, search, hint, bc)
+        searcher = _resolve_search(x, xq, search, hint)
         return _linear_oneshot_series_periodic!(output, x, s, xq, bc, deriv, searcher)
     end
     _check_domain(x, xq, extrap)

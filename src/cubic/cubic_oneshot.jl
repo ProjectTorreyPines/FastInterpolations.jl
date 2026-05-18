@@ -156,14 +156,11 @@ lifetime). `y_eff` returned for caller convenience — same object as `y`
     ) where {Tg, Tv}
     @assert length(x) == length(y) "x and y must have the same length"
 
-    # Inclusive form requires `y[1] ≈ y[end]` (closed-cycle data); dispatch
-    # is a no-op for `:exclusive` (virtual seam is constructed from `bc.period`).
-    _check_periodic_endpoints(bc, y)
-
     # Build cache on the user's grid (BC-aware: `:inclusive` user length n+1 OR
     # `:exclusive` user length n → wrapped axis virtual n+1). Zero-copy.
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
-    # For `:exclusive`, wrap y to virtual length n+1 (matches `length(cache.x)`).
+    # `_resolve_data` handles the per-bc endpoint validation (`:inclusive`
+    # checks `y[1] ≈ y[end]`; `:exclusive` is a no-op wrap to length n+1).
     y_eff = _resolve_data(y, bc)
     Tz = _output_eltype(Tv, eltype(cache.x))
     z = acquire!(pool, Tz, length(cache.x))
@@ -236,9 +233,8 @@ In-place cubic spline interpolation with optional automatic caching.
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tv}
     x = _resolve_axis(x)
-    # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher
-    # (`search.jl:928`). Non-periodic bc is a no-op via the NoBC default.
-    searcher = _resolve_search(x, x_query, search, nothing, bc)
+    # No BC on Searcher: seam handled by axis-level dispatch on `cache.x` at eval.
+    searcher = _resolve_search(x, x_query, search, nothing)
     # Periodic BC
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, deriv, searcher)
@@ -384,9 +380,8 @@ function cubic_interp(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x = _resolve_axis(x)
-    # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher
-    # (`search.jl:928`). Non-periodic bc is a no-op via the NoBC default.
-    searcher = _resolve_search(x, xq, search, hint, bc)
+    # No BC on Searcher: seam handled by axis-level dispatch on `cache.x` at eval.
+    searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, deriv, searcher)
     end

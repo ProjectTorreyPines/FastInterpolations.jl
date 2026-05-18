@@ -422,22 +422,12 @@ eval can read `z[n+1]` at the closed-cycle endpoint.
         z_workspace[i] = y_temp[i] - factor * q[i]
     end
 
-    # `:inclusive` eval may read `z[n+1]` (closed-cycle endpoint) — mirror.
-    # `:exclusive` eval folds `idx_R = 1` at seam (wrapper specialization), so
-    # `z[n+1]` is never accessed; the mirror is still safe (z is length n+1
-    # always, callers allocate with cache.x length).
-    _finalize_z_periodic_seam!(z_workspace, cache.bc)
+    # Mirror seam: every PeriodicBC variant (:inclusive / :exclusive / :extended)
+    # uses a closed-cycle length-(n+1) z buffer with z[n+1] == z[1].
+    @inbounds z_workspace[n + 1] = z_workspace[1]
 
     return z_workspace
 end
-
-@inline _finalize_z_periodic_seam!(z::AbstractVector, ::PeriodicBC{:inclusive}) =
-    (@inbounds z[end] = z[1]; nothing)
-@inline _finalize_z_periodic_seam!(z::AbstractVector, ::PeriodicBC{:exclusive}) =
-    (@inbounds z[end] = z[1]; nothing)
-# `:extended` shares the closed-cycle layout — same seam mirror.
-@inline _finalize_z_periodic_seam!(z::AbstractVector, ::PeriodicBC{:extended}) =
-    (@inbounds z[end] = z[1]; nothing)
 
 # ========================================
 # Unified System Solver Entry Point

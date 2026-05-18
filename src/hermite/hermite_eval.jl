@@ -82,10 +82,11 @@ end
 end
 
 # Vector loop — generic. WrapExtrap fast/slow path is routed by
-# `_check_domain(::WrapExtrap, ::AbstractVector)`, which returns `InBounds()`
-# when no element needs wrapping. Union splitting + LLVM loop unswitching
-# generate the same two monomorphic loop bodies as a hand-specialized
-# overload would.
+# `_check_domain` for Clamp/Fill/Wrap returns `Union{InBounds, E}`. Passing
+# through a function-barrier call lets Julia's union-splitting specialize
+# the inner loop per concrete `extrap` (no per-iteration union dispatch);
+# more robust than relying on LLVM loop unswitching, which can give up on
+# union splitting when the inner kernel exceeds heuristic size thresholds.
 @inline function _hermite_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -96,7 +97,20 @@ end
         deriv::O,
         searcher::P
     ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    extrap = _check_domain(x, xq, extrap)
+    extrap_eff = _check_domain(x, xq, extrap)
+    return _hermite_vector_loop_inner!(output, x, y, dy, xq, extrap_eff, deriv, searcher)
+end
+
+@inline function _hermite_vector_loop_inner!(
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        dy::AbstractVector,
+        xq::AbstractVector{<:Real},
+        extrap::E,
+        deriv::O,
+        searcher::P
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     @inbounds for i in eachindex(xq, output)
         output[i] = _hermite_eval_at_point(x, y, dy, xq[i], extrap, deriv, searcher)
     end
@@ -177,8 +191,9 @@ end
     return _hermite_eval_at_point(x, y, sm, xq_wrapped, InBounds(), op, searcher)
 end
 
-# Vector loop — generic (slope method). Same `_check_domain` routing as
-# the pre-baked-slopes variant above.
+# Vector loop — generic (slope method). Function-barrier pattern: outer
+# resolves domain, inner sees concrete `extrap` (see pre-baked-slopes
+# variant above for rationale).
 @inline function _hermite_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -189,7 +204,20 @@ end
         deriv::O,
         searcher::P
     ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    extrap = _check_domain(x, xq, extrap)
+    extrap_eff = _check_domain(x, xq, extrap)
+    return _hermite_vector_loop_inner!(output, x, y, sm, xq, extrap_eff, deriv, searcher)
+end
+
+@inline function _hermite_vector_loop_inner!(
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        sm::AbstractSlopeMethod,
+        xq::AbstractVector{<:Real},
+        extrap::E,
+        deriv::O,
+        searcher::P
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     @inbounds for i in eachindex(xq, output)
         output[i] = _hermite_eval_at_point(x, y, sm, xq[i], extrap, deriv, searcher)
     end

@@ -505,7 +505,7 @@ function _build_cubic_adjoint_periodic(
     # promoted :exclusive, :inclusive for direct user input.
     cache = _get_cubic_cache(x_ext, _bc_after_extend(bc), _effective_autocache(autocache, Tg))
 
-    # Build anchored queries with wrapping (queries outside domain → wrap to [x[1], x[end]))
+    # Build anchored queries with wrapping (queries outside closed domain → wrap to [x[1], x[end]])
     anchors = _anchor_query(cache.x, xq, Val(:cubic), true)
 
     return CubicAdjoint(cache, anchors, cache.bc)

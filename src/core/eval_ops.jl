@@ -284,8 +284,19 @@ struct ExtendExtrap <: AbstractExtrap end
 """
     WrapExtrap <: AbstractExtrap
 
-Wrap extrapolation — wraps queries into the domain `[first(x), last(x))` using
-modular arithmetic. For periodic data.
+Wrap extrapolation — wraps queries into the closed domain `[first(x), last(x)]`
+using modular arithmetic. For periodic data.
+
+Closed-domain convention: `xq == last(x)` is an in-domain boundary query
+(returns the right-corner value, e.g. `y[end]` for non-periodic data); only
+strictly-OOB queries take the `mod()` path. Matches `ClampExtrap`/`FillExtrap`'s
+closed convention. `:inclusive` PeriodicBC: forward **value** is invariant
+(validated `y[1] ≈ y[end]`), but **adjoint** sensitivity at `xq == last(x)`
+now scatters to slot `n` instead of slot `1` — delta-equivalent under the
+`:inclusive` cycle constraint, but observably different if downstream code
+does not enforce `y[1] == y[end]` on `f_bar`. `:exclusive` PeriodicBC is
+fully invariant (forward + adjoint) via the seam-aware
+`_ExclusivePeriodicAxis.search_interval` returning `idx_R = 1` at `xq >= inner[n]`.
 
 Tag struct with no fields: the wrap domain is read directly from the axis at
 query time via `first(x)` / `last(x)`. After the surface-API axis resolution
@@ -307,7 +318,7 @@ itp = linear_interp(x, y; extrap=WrapExtrap())
 struct WrapExtrap <: AbstractExtrap end
 
 # Backward-compat: previous API was `WrapExtrap(x)` materializing the wrap
-# domain `[first(x), last(x))` into the struct's `_x_min`/`_x_max` fields.
+# domain `[first(x), last(x)]` into the struct's `_x_min`/`_x_max` fields.
 # After the tag-struct refactor (axis IS the source of truth for the wrap
 # domain), the axis-passing form is redundant — the kernel reads `(first(x),
 # last(x))` directly via `_wrap_to_domain(xq, x)`. This shim accepts and

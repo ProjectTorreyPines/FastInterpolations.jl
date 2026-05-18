@@ -81,8 +81,11 @@ Dual type. The interval search uses `_extract_primal(xq)` for comparisons.
     xq_primal = _extract_primal(xq)
 
     # Handle wrapping (for extrap=WrapExtrap() or periodic mode)
-    # Generic _wrap_to_domain handles AD primal extraction and returns Tg
-    if wrap && (xq_primal < x_min || xq_primal >= x_max)
+    # Generic _wrap_to_domain handles AD primal extraction and returns Tg.
+    # Closed-domain convention: `xq == x_max` is in-domain — no wrap needed.
+    # Only strictly-OOB queries (`xq < x_min` or `xq > x_max`) take the slow
+    # `mod()` path inside `_wrap_to_domain` (which itself uses `xi <= x_max`).
+    if wrap && (xq_primal < x_min || xq_primal > x_max)
         xq = _wrap_to_domain(xq, x_min, x_max)
         xq_primal = xq  # xq is now Tg, no need for _extract_primal
     end

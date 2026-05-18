@@ -192,7 +192,7 @@ Create an anchored query for ultra-fast cubic spline evaluation at a fixed point
 - `x`: Grid points (must match grid used for interpolant construction)
 - `xq`: Query point (scalar, can be Float or ForwardDiff.Dual for AD)
 - `::Val{:cubic}`: Type tag to distinguish from other anchor types
-- `wrap`: If true, wrap `xq` to domain [x[1], x[end]) before anchoring.
+- `wrap`: If true, wrap `xq` to closed domain [x[1], x[end]] before anchoring.
           Used for `extrap=WrapExtrap()` mode. Distinct from `PeriodicBC` (boundary condition).
 
 # Returns
@@ -243,7 +243,7 @@ the grid used for interpolant construction.
 - `x`: Grid points (must match interpolant's grid)
 - `xq`: Query points (any Real type, auto-promoted to T)
 - `::Val{:cubic}`: Type tag to distinguish from other anchor types
-- `wrap`: If true, wrap query points to domain [x[1], x[end]) before anchoring.
+- `wrap`: If true, wrap query points to closed domain [x[1], x[end]] before anchoring.
           Used for `extrap=WrapExtrap()` mode. Distinct from `PeriodicBC` (boundary condition).
 
 # Example
@@ -292,7 +292,7 @@ In-place version of `_anchor_query(x, xq, Val(:cubic))` for zero-allocation pool
 - `x::AbstractVector{Tg}`: Grid points (must match interpolant's grid)
 - `xq::AbstractVector{Tq}`: Query points (must match buffer's query type)
 - `::Val{:cubic}`: Type tag for cubic interpolation
-- `wrap::Bool=false`: If true, wrap query points to domain [x[1], x[end])
+- `wrap::Bool=false`: If true, wrap query points to closed domain [x[1], x[end]]
 
 # Returns
 The same `buffer` object, filled with anchored queries.
@@ -363,7 +363,7 @@ while preserving the full Dual value for weight computation.
     # `_anchor_loc` discards `idx_R` from `search_interval`'s 4-tuple, so this
     # path always assumes `idxR = idxL + 1`. Valid only for:
     #   - non-periodic queries (no seam dispatch in the searcher),
-    #   - `WrapExtrap` queries (wrap maps into `[first(x), last(x))`, no seam),
+    #   - `WrapExtrap` queries (wrap maps into `[first(x), last(x)]`, no seam),
     #   - periodic queries on a *post-extension* (n+1) grid (idxL+1 ≤ n+1).
     # Periodic-exclusive callers on a raw n-size grid MUST bypass this path
     # and build the anchor from `search_interval`'s 4-tuple to preserve the

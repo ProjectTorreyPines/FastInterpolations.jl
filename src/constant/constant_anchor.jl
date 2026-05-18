@@ -94,7 +94,7 @@ Create an anchored query for ultra-fast constant interpolation at a fixed point.
 - `x`: Grid points (must match grid used for interpolant construction)
 - `xq`: Query point (scalar)
 - `::Val{:constant}`: Type tag to distinguish from other anchor types
-- `wrap`: If true, wrap `xq` to domain [x[1], x[end]) before anchoring.
+- `wrap`: If true, wrap `xq` to closed domain [x[1], x[end]] before anchoring.
           Used for `extrap=WrapExtrap()` mode.
 
 # Returns
@@ -136,7 +136,7 @@ the grid used for interpolant construction.
 - `x`: Grid points (must match interpolant's grid)
 - `xq`: Query points (any Real type, auto-promoted to T)
 - `::Val{:constant}`: Type tag
-- `wrap`: If true, wrap query points to domain [x[1], x[end]) before anchoring.
+- `wrap`: If true, wrap query points to closed domain [x[1], x[end]] before anchoring.
 
 # Example
 ```julia
@@ -179,7 +179,7 @@ the caller reuses `buffer`. Writes `length(xq)` entries.
 - `x::AbstractVector{T}`: Grid points (must match interpolant's grid)
 - `xq::AbstractVector`: Query points (any Real type, auto-promoted to T)
 - `::Val{:constant}`: Type tag for constant interpolation
-- `wrap::Bool=false`: If true, wrap query points to domain [x[1], x[end])
+- `wrap::Bool=false`: If true, wrap query points to closed domain [x[1], x[end]]
 
 # Returns
 The same `buffer` object, filled with anchored queries.
@@ -278,7 +278,9 @@ end
         y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
         op::AbstractEvalOp, side_param::AbstractSide, ::AbstractExtrap
     )
-    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
+    # Right-edge short-circuit: `y[aq.idxR]` resolves to `y[end]` for non-periodic
+    # (idxR == n) and to the cyclic `y[1]` for `_ExclusivePeriodicAxis` (idxR == 1).
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR]) : 0 * first(y))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
@@ -288,7 +290,9 @@ end
         op::AbstractEvalOp, side_param::AbstractSide, ::NoExtrap
     )
     aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
-    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
+    # Right-edge short-circuit: `y[aq.idxR]` resolves to `y[end]` for non-periodic
+    # (idxR == n) and to the cyclic `y[1]` for `_ExclusivePeriodicAxis` (idxR == 1).
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR]) : 0 * first(y))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
@@ -301,7 +305,9 @@ end
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     end
-    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
+    # Right-edge short-circuit: `y[aq.idxR]` resolves to `y[end]` for non-periodic
+    # (idxR == n) and to the cyclic `y[1]` for `_ExclusivePeriodicAxis` (idxR == 1).
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR]) : 0 * first(y))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
@@ -328,8 +334,10 @@ end
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end
+    # Right-edge short-circuit: `idxR` resolves to `n` for non-periodic and to
+    # `n+1` (cyclic `y[1]`) on `:exclusive` PeriodicBC's extended-grid persistent path.
     if aq.xq == last(itp.x)
-        return op isa EvalValue ? (@inbounds itp.y[end]) : zero(T)
+        return op isa EvalValue ? (@inbounds itp.y[aq.idxR]) : zero(T)
     end
     @inbounds return _constant_kernel(op, itp.y[aq.idxL], itp.y[aq.idxR], aq.h, aq.dL, itp.side)
 end

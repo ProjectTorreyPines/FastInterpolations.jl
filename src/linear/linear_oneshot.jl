@@ -115,7 +115,7 @@ end
         op::O,
         searcher::S
     ) where {Tg, O <: AbstractEvalOp, S <: Searcher}
-    # Wrap domain comes directly from the axis: `[first(x), last(x))`. For
+    # Wrap domain comes directly from the axis: `[first(x), last(x)]`. For
     # `_ExclusivePeriodicAxis`, `last(x)` is the precomputed virtual endpoint
     # (`inner[1] + period`), so the domain extends one period beyond the raw
     # grid as required for `:exclusive` periodic. Hoisting once outside the
@@ -124,8 +124,10 @@ end
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
-    if qmin >= x_min && qmax < x_max
-        # Fast path: all queries inside domain — use extension (no wrap overhead)
+    if qmin >= x_min && qmax <= x_max
+        # Fast path: all queries inside the closed domain `[first(x), last(x)]`
+        # — use extension (no wrap overhead). Exact `qmax == x_max` is in-domain,
+        # so `_wrap_to_domain` would be a no-op anyway — route straight in.
         @inbounds for i in eachindex(x_targets, output)
             output[i] = _linear_eval_at_point(x, y, x_targets[i], ExtendExtrap(), op, searcher)
         end

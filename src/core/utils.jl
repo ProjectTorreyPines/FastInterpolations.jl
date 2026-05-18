@@ -491,22 +491,14 @@ end
 "No-op vector domain check for non-NoExtrap modes: pass-through extrap."
 @inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, extrap::AbstractExtrap) = extrap
 
-# Clamp / Fill batch fast path: closed `[first, last]` — `last` is in-domain
-# for clamp/fill semantics (no clamping or filling at the boundary).
+# Closed-domain batch fast path: every OOB policy (`ClampExtrap`, `FillExtrap`,
+# `WrapExtrap`) treats `[first(x), last(x)]` as the in-domain interval, so they
+# share one batch promotion to `InBounds()`.
 @inline function _check_domain(
         x::AbstractVector, xi::AbstractVector{<:Real},
-        e::Union{ClampExtrap, FillExtrap}
+        e::Union{ClampExtrap, FillExtrap, WrapExtrap}
     )
     return _is_all_inbounds(x, xi) ? InBounds() : e
-end
-
-# WrapExtrap batch fast path: half-open `[first, last)` — `last` wraps to
-# `first` per `_wrap_to_domain`'s `xi < x_max` fast-path check. Promoting a
-# batch containing `last(x)` to InBounds would skip that wrap and return
-# `y[last]` instead of `y[first]` (silent semantic regression). The
-# half-open variant uses strict `<` to keep `last` in the wrap-needed set.
-@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, e::WrapExtrap)
-    return _is_all_inbounds_halfopen(x, xi) ? InBounds() : e
 end
 
 """
@@ -544,19 +536,6 @@ end
 @inline function _is_all_inbounds(x::_CachedRange, queries::AbstractVector{<:Real})
     isempty(queries) && return true
     return minimum(queries) >= x.domain_lo && maximum(queries) <= x.domain_hi
-end
-
-# Half-open variant for WrapExtrap: `last(x)` belongs to the wrap-needed
-# set because `_wrap_to_domain`'s fast path uses strict `xi < x_max`.
-@inline function _is_all_inbounds_halfopen(x::AbstractVector, queries::AbstractVector{<:Real})
-    isempty(queries) && return true
-    return minimum(queries) >= _extract_primal(first(x)) &&
-        maximum(queries) < _extract_primal(last(x))
-end
-
-@inline function _is_all_inbounds_halfopen(x::_CachedRange, queries::AbstractVector{<:Real})
-    isempty(queries) && return true
-    return minimum(queries) >= x.domain_lo && maximum(queries) < x.domain_hi
 end
 
 # ========================================

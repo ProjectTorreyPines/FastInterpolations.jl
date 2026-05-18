@@ -87,7 +87,7 @@ end
     return _constant_eval_at_point(x, y, xi, InBounds(), side, op, searcher)
 end
 
-# WrapExtrap: wrap query to domain → search + kernel.
+# WrapExtrap: wrap query to domain → right-edge short-circuit → search + kernel.
 # `_wrap_to_domain(xi, x, ::WrapExtrap)` reads `(first(x), last(x))` from the
 # axis — `_ExclusivePeriodicAxis` exposes the precomputed virtual endpoint via
 # `last(g)`, so the wrap domain naturally spans one period for `:exclusive`.
@@ -101,6 +101,14 @@ end
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
     xi_wrapped = _wrap_to_domain(xi, x)
+    # Right-edge short-circuit (closed-domain): `xi == last(x)` collapses
+    # uniformly to `last(y)`, bypassing side semantics. Mirrors the InBounds
+    # core's identical guard and the persistent anchor path's `aq.xq == x_last`
+    # short-circuit so scalar oneshot agrees with the persistent interpolant at
+    # the exact boundary. `last(_ExclusivePeriodicData) = inner[1]` so `:exclusive`
+    # cyclic wrap is preserved; raw Vector yields `y[n]`.
+    _extract_primal(xi_wrapped) == _extract_primal(last(x)) &&
+        return op isa EvalValue ? last(y) : 0 * first(y)
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     # Unwrap data once: `search_interval` already resolved the seam (idx_R = 1
@@ -137,7 +145,7 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `NoExtrap()` (default): throws DomainError if outside domain
   - `ClampExtrap()`: clamp to boundary values
   - `ExtendExtrap()`: same as ClampExtrap (slope=0)
-  - `WrapExtrap()`: wrap to [x_min, x_max)
+  - `WrapExtrap()`: wrap to closed domain [x_min, x_max] (xq==x_max returns y[end])
 - `side::AbstractSide`: Side selection
   - `NearestSide()` (default): nearest neighbor (left tie-breaking at midpoint)
   - `LeftSide()`: always use left value

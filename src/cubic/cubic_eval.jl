@@ -120,6 +120,36 @@ end
     end
 end
 
+# Periodic specialization: 2-stage optimization. Hoist the domain check once
+# outside the per-query loop. When all queries are in the closed wrap domain
+# `[first(cache.x), last(cache.x)]`, dispatch to the `InBounds()` kernel and
+# avoid the per-query `_wrap_to_domain` branch entirely. Only the slow path
+# pays the per-query wrap cost.
+@inline function _cubic_vector_loop!(
+        output::AbstractVector,
+        cache::CubicSplineCache{Tg, X, F, <:PeriodicBC},
+        y::AbstractVector{Tv},
+        z::AbstractVector,
+        x_query::AbstractVector{<:Real},
+        ::E,
+        op::O,
+        searcher::P
+    ) where {Tg, Tv, X <: AbstractVector{Tg}, F, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    isempty(x_query) && return output
+    x_min, x_max = first(cache.x), last(cache.x)
+    qmin, qmax = minimum(x_query), maximum(x_query)
+    if qmin >= x_min && qmax <= x_max
+        @inbounds for k in eachindex(x_query, output)
+            output[k] = _eval_cubic_at_point(cache.x, y, z, x_query[k], InBounds(), op, searcher)
+        end
+    else
+        @inbounds for k in eachindex(x_query, output)
+            output[k] = _eval_cubic_at_point(cache.x, y, z, x_query[k], WrapExtrap(), op, searcher)
+        end
+    end
+    return output
+end
+
 # ========================================
 # Scalar Evaluation Entry Point
 # ========================================

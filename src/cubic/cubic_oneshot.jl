@@ -211,9 +211,16 @@ Pool-based exclusive extension: zero-alloc after warmup.
     ) where {Tg, Tv, Tq <: Real, O <: AbstractEvalOp, S <: Searcher}
     cache, y_p, z = _cubic_periodic_solve!(pool, x, y, bc, autocache)
 
-    # Periodic `_eval_with_bc` dispatch ignores the extrap arg — singleton suffices.
-    _check_domain(cache.x, xq, WrapExtrap())
-    return _eval_cubic_at_point(cache.x, y_p, z, xq, WrapExtrap(), op, searcher)
+    # Hoist the domain check so the in-domain query takes the `InBounds`
+    # eval path directly (skips the per-call `_wrap_to_domain` dispatch
+    # inside `_eval_cubic_at_point(::WrapExtrap)`). OOB queries fall to
+    # the wrap path. Mirrors the batch loop's function-barrier pattern.
+    xq_p = _extract_primal(xq)
+    return if first(cache.x) <= xq_p <= last(cache.x)
+        _eval_cubic_at_point(cache.x, y_p, z, xq, InBounds(), op, searcher)
+    else
+        _eval_cubic_at_point(cache.x, y_p, z, xq, WrapExtrap(), op, searcher)
+    end
 end
 
 """

@@ -12,49 +12,18 @@
 # ========================================
 
 """
-    _wrap_to_domain(xi::FT, x_min::FT, x_max::FT) where {FT<:AbstractFloat}
+    _wrap_to_domain(xi, x_min, x_max)
 
-Wrap a query point `xi` to the domain [x_min, x_max].
-Used for periodic boundary conditions and extrap=WrapExtrap().
-
-Closed-domain convention: `xi == x_max` is an in-domain boundary query
-(returns `xi` unchanged); only strictly-OOB queries (`xi < x_min` or
-`xi > x_max`) take the cold `mod()` path. `PeriodicBC{:inclusive}` is
-forward-**value**-invariant because `y[1] ≈ y[end]` by construction; the
-adjoint sensitivity at the seam now scatters to slot `n` instead of slot `1`
-(delta-equivalent under the cycle constraint). `:exclusive` is fully invariant
-(forward + adjoint) because `_ExclusivePeriodicAxis.search_interval` already
-returns `idx_R = 1` for `xq >= inner[n]` at the seam.
-
-Optimized: skips expensive `mod()` when xi is already in domain.
+Wrap `xi` into `[x_min, x_max]` for `WrapExtrap` / periodic BC. Closed-domain:
+`xi == x_max` returns unchanged; only strictly-OOB queries take the `mod()`
+path. `_extract_primal` is identity on plain numerics, so the in-domain branch
+returns the original `xi` and preserves AD `Dual` carriers.
 """
-@inline function _wrap_to_domain(xi::Tg, x_min::Tg, x_max::Tg) where {Tg}
-    # Hot path: already in domain — return as-is (no arith). Cold `mod()`
-    # work goes through `@noinline` `_wrap_to_domain_slow` so it doesn't
-    # bloat the caller (every WrapExtrap eval kernel) with mod-related
-    # asm. On constant rng+perEx persistent (3-4 ns baseline, 138 lines
-    # before split), this collapses the eval kernel to ~75 lines.
-    if (xi >= x_min) && (xi <= x_max)
-        return xi
-    end
-    return _wrap_to_domain_slow(xi, x_min, x_max)
-end
-
-# Generic wrapper: handles Dual, Int, Float32 on Float64 grid, etc.
-# IMPORTANT: Preserves AD Dual type through the entire operation.
-# Same hot/cold split as the AbstractFloat overload above.
 @inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg}
     xi_primal = _extract_primal(xi)
-    # Fast path: already in domain, return original xi (preserves Dual type for AD)
     if (xi_primal >= x_min) && (xi_primal <= x_max)
         return xi
     end
-    return _wrap_to_domain_slow(xi, x_min, x_max)
-end
-
-# Cold path — `mod()` work hoisted out of the inlined hot path.
-# `mod()` works correctly with `ForwardDiff.Dual`: d/dx[mod(x,p)] = 1.
-@noinline function _wrap_to_domain_slow(xi, x_min, x_max)
     period = x_max - x_min
     return x_min + mod(xi - x_min, period)
 end

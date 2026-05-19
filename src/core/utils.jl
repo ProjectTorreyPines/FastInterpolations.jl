@@ -143,6 +143,12 @@ Same logic as `_series_output_type` but accepts varargs for ND promotion
 chains like `promote_type(Tv, Tg, Tq)`.
 """
 @inline function _output_eltype(::Type{Tv}, types::Type...) where {Tv}
+    tn = Base.typename(Tv)
+    if tn.name === :SArray || tn.name === :MArray
+        Te = promote_type(eltype(Tv), types...)
+        params = Tv.parameters
+        return tn.wrapper{params[1], Te, params[3], params[4]}
+    end
     Tr = promote_type(Tv, types...)
     Tc = isconcretetype(Tr) ? Tr : Tv
     # Ensure standard numerics produce Float coefficients (Int→Float64).

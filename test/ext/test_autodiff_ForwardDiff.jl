@@ -1403,4 +1403,13 @@ const FI = FastInterpolations
         @test cache_pb isa CubicSplineCache{DualT}
     end
 
+    @testset "SVector / StaticArray AD support" begin
+        using StaticArrays
+        x = 1.0:10.0
+        y = [SA[t^2, 2.0*t, 3.0] for t in x]
+        itp = linear_interp(x, y)
+        res = ForwardDiff.derivative(t -> itp(t)[1], 2.5)
+        @test res ≈ 5.0 atol = 1.0e-10
+    end
+
 end  # testset "AutoDiff Support"

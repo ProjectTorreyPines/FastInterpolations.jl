@@ -3,7 +3,7 @@
 Boundary conditions (BCs) determine how spline interpolants behave at the domain endpoints. They are essential for **quadratic** and **cubic** splines, which require constraints to uniquely determine the spline coefficients.
 
 !!! note "Not Needed for All Methods"
-    - **Constant** and **Linear** interpolation do not require boundary conditions
+    - **Constant** and **Linear** interpolation do not require boundary conditions for construction, but accept `PeriodicBC` as a periodic domain convention
     - **Quadratic** splines require one BC (single endpoint)
     - **Cubic** splines require two BCs (both endpoints)
 
@@ -22,7 +22,7 @@ AbstractBC{T}
 │       ├── QuadraticFit     # = PolyFit{2} (3 points, O(h²))
 │       └── CubicFit        # = PolyFit{3} (4 points, O(h³))
 ├── BCPair{T,L,R}           # Both endpoints (cubic only)
-├── PeriodicBC{T}           # Periodic BC (cubic only)
+├── PeriodicBC{T}           # Periodic axis convention / method-specific BC
 ├── ZeroCurvBC{T}            # Zero curvature at both ends (cubic only)
 ├── ZeroSlopeBC{T}            # Zero slope at both ends (cubic only)
 ├── MinCurvFit{T}           # Minimum curvature (quadratic only)
@@ -118,6 +118,6 @@ PeriodicBC()     # S(x) = S(x + τ) with C² continuity
 ## See Also
 
 - [PointBC Details](pointbc.md) — In-depth explanation of PolyFit with visualizations
-- [PeriodicBC Details](periodicbc.md) — Inclusive vs exclusive endpoints, period inference, comparison with `WrapExtrap()`
+- [PeriodicBC Details](periodicbc.md) — `PeriodicBC` vs `WrapExtrap()`, endpoint policy, per-method behavior (Constant/Linear, PCHIP/Cardinal/Akima, Cubic)
 - [Quadratic Interpolation](../interpolation/quadratic.md) — BC examples in context
 - [Cubic Interpolation](../interpolation/cubic.md) — BCPair and PeriodicBC details

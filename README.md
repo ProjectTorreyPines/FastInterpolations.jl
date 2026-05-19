@@ -161,7 +161,7 @@ Benchmark comparison against [Interpolations.jl](https://github.com/JuliaMath/In
 ![One-Shot](docs/images/benchmark_oneshot_detail.png)
 
 <!-- BENCHMARK_SPEEDUP_START -->
-**Speedup:** (2.4 ~ 15.0)× vs `Interpolations.jl` · (8.5 ~ 24.2)× vs `DataInterpolations.jl` · (14.4 ~ 19.7)× vs `Dierckx.jl`
+**Speedup:** (2.4 ~ 14.6)× vs `Interpolations.jl` · (8.2 ~ 24.0)× vs `DataInterpolations.jl` · (14.0 ~ 19.7)× vs `Dierckx.jl`
 <!-- BENCHMARK_SPEEDUP_END -->
 
 One-shot (construction + evaluation) time per call with fixed grid size $n=100$. `FastInterpolations.jl` is significantly faster even on the first call (cache-miss), and becomes even faster on subsequent calls (cache-hit).

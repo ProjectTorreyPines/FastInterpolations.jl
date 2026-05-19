@@ -50,10 +50,9 @@
 
         @testset "Allocating vector call" begin
             @test result_vec ≈ result_broadcast rtol = PRECISION_RTOL
-            # Constant is a selection kernel — output keeps raw `Tv` (Float32),
-            # not promoted to the query precision. Scalar / broadcast / batch
-            # all agree on this contract for plain numeric queries.
-            @test eltype(result_vec) == Float32
+            # Zero-slope arithmetic propagates the Float64 xq carrier:
+            # Float32 y * one(Float64) = Float64. Scalar / broadcast / batch agree.
+            @test eltype(result_vec) == Float64
         end
 
         @testset "In-place vector call" begin

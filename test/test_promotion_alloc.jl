@@ -119,9 +119,10 @@
         y_int = [0, 1, 3, 2, 5]
         xq_test = [0.5, 1.5, 2.5, 3.5]
 
-        # Allocating batch (all methods). Constant duck-types: Int y → Vector{Int}.
+        # Allocating batch (all methods). Float64 xq carrier propagates;
+        # Constant returns Vector{Float64} for Int y + Float xq via zero-slope arithmetic.
         @test linear_interp(x_int, y_int, xq_test) isa Vector{Float64}
-        @test constant_interp(x_int, y_int, xq_test) isa Vector{Int}
+        @test constant_interp(x_int, y_int, xq_test) isa Vector{Float64}
         @test quadratic_interp(x_int, y_int, xq_test) isa Vector{Float64}
         @test cubic_interp(x_int, y_int, xq_test; extrap = ExtendExtrap()) isa Vector{Float64}
         @test pchip_interp(x_int, y_int, xq_test; extrap = ExtendExtrap()) isa Vector{Float64}

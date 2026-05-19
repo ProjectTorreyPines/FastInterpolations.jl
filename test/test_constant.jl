@@ -166,11 +166,14 @@ end
     @testset "Real type wrapper (Integer input)" begin
         x_int = [0, 1, 2, 3, 4]
         y_int = [10, 20, 30, 40, 50]
-        # Constant duck-types output to `eltype(y)` — Int in → Int out (no Float
-        # widening, since the kernel is selection, not arithmetic).
+        # Float64 xq → Float64 result (Int y * one(Float64) = Float64).
         result = constant_interp(x_int, y_int, 1.5)
-        @test result isa Int
-        @test result == 20
+        @test result isa Float64
+        @test result == 20.0
+        # Fully-Int chain preserves Int.
+        result_int = constant_interp(x_int, y_int, 1)
+        @test result_int isa Int
+        @test result_int == 20
     end
 
     @testset "Real→Float wrappers (coverage)" begin

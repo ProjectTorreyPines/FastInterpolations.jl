@@ -276,9 +276,8 @@ sorted_queries = sort(rand(1000))
 vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
-# Unified allocating vector one-shot. Output eltype = `eltype(y)` for plain
-# numeric queries (raw Tv contract); widens to `promote_type(Tv, Tq)` for
-# duck-typed queries (Dual, Measurement, …) so AD carriers aren't stripped.
+# Sample-first allocation: kernel return type drives the container eltype,
+# which faithfully handles cases where `promote_type` is non-concrete.
 function constant_interp(
         x::AbstractVector,
         y::AbstractVector,
@@ -289,10 +288,15 @@ function constant_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    Tv = eltype(y)
-    Tq = eltype(x_targets)
-    T_out = Tq <: _PromotableValue ? Tv : promote_type(Tv, Tq)
-    output = Vector{T_out}(undef, length(x_targets))
+    n = length(x_targets)
+    if n == 0
+        return Vector{_output_eltype(eltype(y), eltype(x), eltype(x_targets))}(undef, 0)
+    end
+    first_val = constant_interp(
+        x, y, @inbounds(x_targets[begin]);
+        bc, side, extrap, deriv, search
+    )
+    output = Vector{typeof(first_val)}(undef, n)
     constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)
     return output
 end

@@ -160,7 +160,7 @@ function constant_interp(
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _constant_interp_nd_oneshot(
         grids_typed, data, query, bcs, extraps_val, sides, searches, hint
-    )::Tv
+    )
 end
 
 """

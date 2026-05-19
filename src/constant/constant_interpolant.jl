@@ -20,16 +20,6 @@ end
     return _constant_vector_loop!(output, itp.x, itp.y, xq, extrap, itp.side, op, searcher)
 end
 
-# ========================================
-# Selection-kernel output eltype trait
-# ========================================
-# Override the shared `_output_eltype(itp, Tq)` trait so the protocol's scalar
-# + batch callables keep raw `Tv` for plain numeric queries (selection kernel)
-# and only widen for duck-typed queries (Dual, …) so AD carriers round-trip.
-# Single source of truth — no callable overrides needed.
-@inline _output_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
-    Tq <: _PromotableValue ? Tv : promote_type(Tv, Tq)
-
 # ─────────────────────────────────────────────────────────────
 # Vector loop (function barrier)
 # Julia specializes on concrete Searcher type P, eliminating Union-split

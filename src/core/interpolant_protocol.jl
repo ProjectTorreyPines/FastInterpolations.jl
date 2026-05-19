@@ -25,13 +25,9 @@
 @inline _itp_search(itp::AbstractInterpolant1D) = itp.search_policy
 
 # ── Output eltype trait ──
-# Arithmetic kernels (Linear, Cubic, …) widen via `_output_eltype(Tv, Tg, Tq)`
-# because the kernel produces a wider result from the arithmetic. Selection
-# kernels (Constant) override this to keep raw `Tv` for plain queries and
-# only widen for duck-typed queries (Dual, Measurement, …) so AD carriers
-# round-trip. Both scalar and batch protocol callables go through this single
-# trait; on the scalar path the result is wrapped in `convert(...)` (identity
-# when the kernel already produced the trait's type).
+# Used as the empty-batch fallback type. Scalar callables return the kernel
+# result directly; allocating-batch callables sample the kernel for the
+# container eltype.
 @inline _output_eltype(::AbstractInterpolant1D{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
     _output_eltype(Tv, Tg, Tq)
 
@@ -54,15 +50,14 @@
     # while Clamp/Fill/Wrap handle OOB inside their specialized eval methods
     # without ever calling `_check_domain`. Outer redundancy removed.
     searcher = _resolve_search(grid, xq, search, hint)
-    val = _itp_eval_scalar(itp, xq, extrap, deriv, searcher)
-    return convert(_output_eltype(itp, typeof(xq)), val)
+    return _itp_eval_scalar(itp, xq, extrap, deriv, searcher)
 end
 
 # ========================================
 # 1D Vector Call — Allocating
 # ========================================
-# Output eltype: trait `_output_eltype(itp, Tq)` — defaults to widening
-# `promote_type(Tv, Tg, Tq)`; Constant overrides for raw-Tv contract.
+# Sample-first: kernel return type drives the container eltype. Required when
+# `promote_type(Tv, Tg, Tq)` is non-concrete (e.g., `SVector × Dual`).
 
 function (itp::AbstractInterpolant1D{Tg, Tv})(
         xq::AbstractVector{Tq};
@@ -72,8 +67,13 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     ) where {Tg, Tv, Tq <: Real}
     grid = _itp_grid(itp)
     extrap = _itp_extrap(itp)
-    output = Vector{_output_eltype(itp, Tq)}(undef, length(xq))
+    n = length(xq)
+    if n == 0
+        return Vector{_output_eltype(itp, Tq)}(undef, 0)
+    end
     searcher = _resolve_search(grid, xq, search, hint)
+    first_val = _itp_eval_scalar(itp, @inbounds(xq[begin]), extrap, deriv, searcher)
+    output = Vector{typeof(first_val)}(undef, n)
     _itp_vector_loop!(output, itp, xq, extrap, deriv, searcher)
     return output
 end
@@ -258,7 +258,7 @@ end
 # ========================================
 # ND Allocating Batch — Unified
 # ========================================
-# Allocates output via protocol, delegates to in-place above.
+# Sample-first: kernel return type drives the container eltype (see 1D variant).
 
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
         queries;
@@ -267,6 +267,13 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     Tq = _query_eltype(queries)
-    output = Vector{_output_eltype(itp, Tq)}(undef, _query_length(queries))
+    nq = _query_length(queries)
+    if nq == 0
+        return Vector{_output_eltype(itp, Tq)}(undef, 0)
+    end
+    first_query = _extract_query_point(queries, 1, Val(N))
+    first_val = itp(first_query; deriv = deriv, search = search, hint = hint)
+    output = Vector{typeof(first_val)}(undef, nq)
+    @inbounds output[1] = first_val
     return itp(output, queries; deriv = deriv, search = search, hint = hint)
 end

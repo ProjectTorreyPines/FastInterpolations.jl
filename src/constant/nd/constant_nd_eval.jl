@@ -9,9 +9,6 @@
 # Callable Interface
 # ========================================
 
-# Scalar tuple query — wraps the selection-kernel value in `convert` against
-# the `_output_eltype(itp, Tq)` trait so plain numeric queries keep raw `Tv`
-# while duck-typed queries (Dual, …) get their carrier preserved.
 @inline function (itp::ConstantInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
@@ -23,9 +20,7 @@
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
-    val = _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
-    Tq = promote_type(map(typeof, query)...)
-    return convert(_output_eltype(itp, Tq), val)
+    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
 end
 
 # In-place + allocating batch use the inherited `AbstractInterpolantND`
@@ -195,7 +190,9 @@ paths share this signature.
     end
     idx_expr = Expr(:tuple, idx_parts...)
 
-    push!(exprs, :(@inbounds data[$idx_expr...]))
+    # Per-axis `* one(dL_d)` propagates each axis's `Tq` carrier (mirrors 1D).
+    ones_expr = Expr(:call, :*, [:(one($(Symbol("dL_", d)))) for d in 1:N]...)
+    push!(exprs, :(@inbounds data[$idx_expr...] * $ones_expr))
 
     return Expr(:block, :(Base.@_inline_meta), exprs...)
 end

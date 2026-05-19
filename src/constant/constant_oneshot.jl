@@ -197,7 +197,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    searcher = _resolve_search(x_eff, xi, search, hint, NoBC())
+    searcher = _resolve_search(x_eff, xi, search, hint)
     return _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
 end
 
@@ -250,7 +250,7 @@ function constant_interp!(
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    searcher = _resolve_search(x_eff, x_targets, search, nothing, NoBC())
+    searcher = _resolve_search(x_eff, x_targets, search, nothing)
     _constant_vector_loop!(output, x_eff, y_eff, x_targets, extrap_eff, side, deriv, searcher)
     return output
 end

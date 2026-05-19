@@ -712,9 +712,8 @@ function _build_series_periodic(
     z_mat = Matrix{Tz}(undef, n_pts, n_series_count)
     _solve_series_coefficients!(z_mat, y_mat, cache, cache.bc)
 
-    # Periodic BC always uses wrap extrapolation — materialize with the extended
-    # grid so the struct stores WrapExtrap{T}, never the {Nothing} placeholder.
-    sitp = CubicSeriesInterpolant(cache, cache.bc, y_mat, z_mat, WrapExtrap(cache.x), search)
+    # Periodic BC always uses wrap extrapolation.
+    sitp = CubicSeriesInterpolant(cache, cache.bc, y_mat, z_mat, WrapExtrap(), search)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)

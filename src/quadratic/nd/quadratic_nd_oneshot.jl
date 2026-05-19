@@ -49,8 +49,7 @@ Zero-allocation after warmup (pool reuse).
     # 3. Compute all partial derivatives in-place
     _compute_nd_partials_quadratic!(partials, grids_c, data, bcs)
 
-    # 4. Materialize WrapExtrap{Nothing} against grids so the eval pipeline never
-    # sees the singleton.
+    # 4. Per-axis extrap passthrough against the (possibly extended) grid.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_c)
 
     # 5. Eval pipeline (axis-only — grids carry `h`/`inv_h` directly)

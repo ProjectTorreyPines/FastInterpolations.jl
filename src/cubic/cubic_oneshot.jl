@@ -45,7 +45,7 @@ Thread-safe: workspaces allocated from task-local pool.
     _solve_system!(z, cache, y, cache.bc)
 
     searcher = _resolve_search(cache.x, x_query, search, nothing)
-    # Upgrade WrapExtrap{Nothing} → WrapExtrap{T} against the cache grid.
+    # BC-aware extrap: PeriodicBC forces WrapExtrap, otherwise passthrough.
     extrap_eff = _resolve_extrap(extrap, cache.bc, cache.x)
     _cubic_vector_loop!(output, cache, y, z, x_query, extrap_eff, deriv, searcher)
 
@@ -92,8 +92,7 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
     # Solve uses original BC for proper RHS materialization
     _solve_system!(z, cache, y, bc)
 
-    # Upgrade WrapExtrap{Nothing} to the typed form so the kernel never sees the
-    # zero-arg placeholder. Non-Wrap extraps pass through.
+    # BC-aware extrap: PeriodicBC forces WrapExtrap, otherwise passthrough.
     extrap_eff = _resolve_extrap(extrap, cache.bc, cache.x)
     _cubic_vector_loop!(output, cache, y, z, x_query, extrap_eff, op, searcher)
 
@@ -124,7 +123,7 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc)
 
-    # Upgrade WrapExtrap{Nothing} to typed WrapExtrap against the cache grid.
+    # BC-aware extrap: PeriodicBC forces WrapExtrap, otherwise passthrough.
     extrap_eff = _resolve_extrap(extrap, cache.bc, cache.x)
     _check_domain(cache.x, xq, extrap_eff)
     return _eval_cubic_at_point(cache.x, y, tmp_z, xq, extrap_eff, op, searcher)
@@ -156,14 +155,11 @@ lifetime). `y_eff` returned for caller convenience — same object as `y`
     ) where {Tg, Tv}
     @assert length(x) == length(y) "x and y must have the same length"
 
-    # Inclusive form requires `y[1] ≈ y[end]` (closed-cycle data); dispatch
-    # is a no-op for `:exclusive` (virtual seam is constructed from `bc.period`).
-    _check_periodic_endpoints(bc, y)
-
     # Build cache on the user's grid (BC-aware: `:inclusive` user length n+1 OR
     # `:exclusive` user length n → wrapped axis virtual n+1). Zero-copy.
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
-    # For `:exclusive`, wrap y to virtual length n+1 (matches `length(cache.x)`).
+    # `_resolve_data` handles the per-bc endpoint validation (`:inclusive`
+    # checks `y[1] ≈ y[end]`; `:exclusive` is a no-op wrap to length n+1).
     y_eff = _resolve_data(y, bc)
     Tz = _output_eltype(Tv, eltype(cache.x))
     z = acquire!(pool, Tz, length(cache.x))
@@ -214,9 +210,16 @@ Pool-based exclusive extension: zero-alloc after warmup.
     ) where {Tg, Tv, Tq <: Real, O <: AbstractEvalOp, S <: Searcher}
     cache, y_p, z = _cubic_periodic_solve!(pool, x, y, bc, autocache)
 
-    # Periodic `_eval_with_bc` dispatch ignores the extrap arg — singleton suffices.
-    _check_domain(cache.x, xq, WrapExtrap())
-    return _eval_cubic_at_point(cache.x, y_p, z, xq, WrapExtrap(), op, searcher)
+    # Hoist the domain check so the in-domain query takes the `InBounds`
+    # eval path directly (skips the per-call `_wrap_to_domain` dispatch
+    # inside `_eval_cubic_at_point(::WrapExtrap)`). OOB queries fall to
+    # the wrap path. Mirrors the batch loop's function-barrier pattern.
+    xq_p = _extract_primal(xq)
+    return if first(cache.x) <= xq_p <= last(cache.x)
+        _eval_cubic_at_point(cache.x, y_p, z, xq, InBounds(), op, searcher)
+    else
+        _eval_cubic_at_point(cache.x, y_p, z, xq, WrapExtrap(), op, searcher)
+    end
 end
 
 """
@@ -236,9 +239,8 @@ In-place cubic spline interpolation with optional automatic caching.
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tv}
     x = _resolve_axis(x)
-    # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher
-    # (`search.jl:928`). Non-periodic bc is a no-op via the NoBC default.
-    searcher = _resolve_search(x, x_query, search, nothing, bc)
+    # No BC on Searcher: seam handled by axis-level dispatch on `cache.x` at eval.
+    searcher = _resolve_search(x, x_query, search, nothing)
     # Periodic BC
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, deriv, searcher)
@@ -246,38 +248,6 @@ In-place cubic spline interpolation with optional automatic caching.
 
     bc_pair = _normalize_bc(bc, first(y))
     return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache, deriv, searcher)
-end
-
-
-# Scalar query - zero allocation
-@inline function cubic_interp!(
-        output::AbstractVector{Tv},
-        cache::CubicSplineCache{Tg, X, F, BC},
-        y::AbstractVector{Tv},
-        x_query::Tg;
-        extrap::AbstractExtrap = NoExtrap(),
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv, X, F, BC}
-    @assert length(output) >= 1 "output must have at least 1 element"
-    output[1] = cubic_interp_scalar(cache, y, x_query; extrap = extrap, deriv = deriv, search = search)
-    return output
-end
-
-@inline function cubic_interp!(
-        output::AbstractVector,
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        x_query::Real;
-        bc::AbstractBC = CubicFit(),
-        extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
-    ) where {Tg, Tv}
-    @assert length(output) >= 1 "output must have at least 1 element"
-    output[1] = cubic_interp(x, y, x_query; bc, extrap, autocache, deriv, search)
-    return output
 end
 
 # ========================================
@@ -384,9 +354,8 @@ function cubic_interp(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     x = _resolve_axis(x)
-    # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher
-    # (`search.jl:928`). Non-periodic bc is a no-op via the NoBC default.
-    searcher = _resolve_search(x, xq, search, hint, bc)
+    # No BC on Searcher: seam handled by axis-level dispatch on `cache.x` at eval.
+    searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, deriv, searcher)
     end

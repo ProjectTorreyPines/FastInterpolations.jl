@@ -148,7 +148,9 @@ end
     Tg_c = eltype(cache.x)
     Tq_w = promote_type(Tq, Tg_c)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg_c, Tq_w}, length(xqs))
-    searcher = _resolve_search(cache.x, xqs, search, nothing, bc)
+    # `cache.x` is wrapped (`_ExclusivePeriodicAxis(_CachedVector, period)` for
+    # `:exclusive`) — axis-level seam dispatch fires via `g.period`. No `bc` thread.
+    searcher = _resolve_search(cache.x, xqs, search, nothing)
     @inbounds for j in eachindex(xqs)
         aq_vec[j] = _build_periodic_cubic_anchor(cache, xqs[j], extrap_p, searcher)
     end
@@ -200,10 +202,9 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
     K = n_series(s)
     Tg_actual = eltype(x)
     output = Vector{_series_output_type(_output_eltype(_series_eltype(s), Tg_actual), Tq)}(undef, K)
-    # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher
-    # (`search.jl:939`) — required for the zero-copy seam pair in the periodic
-    # series helper. NoBC default keeps non-periodic paths unchanged.
-    searcher = _resolve_search(x, xq, search, hint, bc)
+    # Periodic helper searches against `cache.x` (wrapped from the cache pool),
+    # so axis-level dispatch handles seam — no `bc` thread into the Searcher.
+    searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
         return output
@@ -231,8 +232,7 @@ end
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     x = _to_float(x, _promote_grid_float(Tg, _series_eltype(s)))
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
-    # Thread `bc` so PeriodicBC{:exclusive} routes to the seam-aware Searcher.
-    searcher = _resolve_search(x, xq, search, hint, bc)
+    searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         _cubic_oneshot_series_periodic!(output, x, s, xq, bc, deriv, autocache, searcher)
         return output

@@ -22,13 +22,9 @@ end
 # ========================================
 # Vector Loop (Function Barrier)
 # ========================================
-# Julia specializes on concrete Searcher type P, eliminating Union-split
-# overhead when adaptive AutoSearch resolves to BinarySearch or LinearBinarySearch.
-# CRITICAL: All arguments must be fully typed — untyped args prevent SROA
-# of RefHint's Ref, causing 16-byte heap allocation per call.
-# Single 7-arg signature: persistent vs oneshot strategy is dispatched on the
-# grid type itself inside `_linear_eval_at_point` (via `_alpha_of`/`_get_inv_h`
-# specializations on `_CachedRange`/`_CachedVector` vs raw `AbstractVector`).
+# Outer resolves the `_check_domain` Union; inner sees concrete `extrap`,
+# union-splitting the per-iter dispatch. Args must be fully typed — untyped
+# blocks SROA of RefHint's Ref (16 B/call alloc).
 @inline function _linear_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -38,10 +34,23 @@ end
         deriv::O,
         searcher::P
     ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    extrap = _check_domain(x, xq, extrap)
-    return @inbounds for i in eachindex(xq, output)
+    extrap_eff = _check_domain(x, xq, extrap)
+    return _linear_vector_loop_inner!(output, x, y, xq, extrap_eff, deriv, searcher)
+end
+
+@inline function _linear_vector_loop_inner!(
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::AbstractVector{<:Real},
+        extrap::E,
+        deriv::O,
+        searcher::P
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    @inbounds for i in eachindex(xq, output)
         output[i] = _linear_eval_at_point(x, y, xq[i], extrap, deriv, searcher)
     end
+    return output
 end
 
 # ========================================

@@ -12,49 +12,18 @@
 # ========================================
 
 """
-    _wrap_to_domain(xi::FT, x_min::FT, x_max::FT) where {FT<:AbstractFloat}
+    _wrap_to_domain(xi, x_min, x_max)
 
-Wrap a query point `xi` to the domain [x_min, x_max].
-Used for periodic boundary conditions and extrap=WrapExtrap().
-
-Closed-domain convention: `xi == x_max` is an in-domain boundary query
-(returns `xi` unchanged); only strictly-OOB queries (`xi < x_min` or
-`xi > x_max`) take the cold `mod()` path. `PeriodicBC{:inclusive}` is
-forward-**value**-invariant because `y[1] ≈ y[end]` by construction; the
-adjoint sensitivity at the seam now scatters to slot `n` instead of slot `1`
-(delta-equivalent under the cycle constraint). `:exclusive` is fully invariant
-(forward + adjoint) because `_ExclusivePeriodicAxis.search_interval` already
-returns `idx_R = 1` for `xq >= inner[n]` at the seam.
-
-Optimized: skips expensive `mod()` when xi is already in domain.
+Wrap `xi` into `[x_min, x_max]` for `WrapExtrap` / periodic BC. Closed-domain:
+`xi == x_max` returns unchanged; only strictly-OOB queries take the `mod()`
+path. `_extract_primal` is identity on plain numerics, so the in-domain branch
+returns the original `xi` and preserves AD `Dual` carriers.
 """
-@inline function _wrap_to_domain(xi::Tg, x_min::Tg, x_max::Tg) where {Tg}
-    # Hot path: already in domain — return as-is (no arith). Cold `mod()`
-    # work goes through `@noinline` `_wrap_to_domain_slow` so it doesn't
-    # bloat the caller (every WrapExtrap eval kernel) with mod-related
-    # asm. On constant rng+perEx persistent (3-4 ns baseline, 138 lines
-    # before split), this collapses the eval kernel to ~75 lines.
-    if (xi >= x_min) && (xi <= x_max)
-        return xi
-    end
-    return _wrap_to_domain_slow(xi, x_min, x_max)
-end
-
-# Generic wrapper: handles Dual, Int, Float32 on Float64 grid, etc.
-# IMPORTANT: Preserves AD Dual type through the entire operation.
-# Same hot/cold split as the AbstractFloat overload above.
 @inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg}
     xi_primal = _extract_primal(xi)
-    # Fast path: already in domain, return original xi (preserves Dual type for AD)
     if (xi_primal >= x_min) && (xi_primal <= x_max)
         return xi
     end
-    return _wrap_to_domain_slow(xi, x_min, x_max)
-end
-
-# Cold path — `mod()` work hoisted out of the inlined hot path.
-# `mod()` works correctly with `ForwardDiff.Dual`: d/dx[mod(x,p)] = 1.
-@noinline function _wrap_to_domain_slow(xi, x_min, x_max)
     period = x_max - x_min
     return x_min + mod(xi - x_min, period)
 end
@@ -457,42 +426,30 @@ end
 _extend_values(y::AbstractVector) = vcat(y, first(y))
 
 # ========================================
-# WrapExtrap is a tag struct (eval_ops.jl)
-# ========================================
-#
-# After the surface-API axis resolution (`_resolve_axis` / `_cache_axis`),
-# every supported axis exposes `first/last` matching the canonical wrap
-# domain — including `_ExclusivePeriodicAxis`, whose `last` reports the
-# precomputed virtual endpoint. Eval kernels read those bounds directly
-# from the axis via `_wrap_to_domain(xq, x, ::WrapExtrap)`. No BC-aware
-# `WrapExtrap` constructors, no `WrapExtrap{Nothing}` materialization, no
-# duplicated `_x_min/_x_max` fields.
-
-# ========================================
 # Extrap Resolution (_resolve_extrap)
 # ========================================
 #
-# Single name for every extrap materialization / validation step. `extrap` is
-# always the 1st arg — consistent with `_resolve_search`, `_resolve_coeffs`,
-# `_resolve_grididx` naming family. Layers (dispatched by arg shape):
+# `WrapExtrap` is a tag struct — the axis is the source of truth for the
+# wrap domain. After surface-API axis resolution (`_resolve_axis` /
+# `_cache_axis`), every supported axis exposes `first/last` matching the
+# canonical wrap domain — including `_ExclusivePeriodicAxis`, whose `last`
+# reports the precomputed virtual endpoint. Eval kernels read those bounds
+# directly via `_wrap_to_domain(xq, x)`.
+#
+# `_resolve_extrap` is the single name for every extrap normalization step
+# (BC override + FillExtrap value-type promotion). `extrap` is always the
+# 1st arg — consistent with `_resolve_search`, `_resolve_coeffs`,
+# `_resolve_grididx`. Layers (dispatched by arg shape):
 #
 # 1D primitives (per-axis):
-#   (extrap, x)                          — grid-only; upgrade {Nothing} or passthrough
-#   (extrap, bc, x)                      — BC-aware; PeriodicBC forces WrapExtrap
-#
-# `WrapExtrap` is a tag struct — no `{Nothing}` placeholder, no materialization.
-# The axis carries the canonical wrap domain via `first/last` after the
-# surface-API axis resolution.
-#
-# 1D entries (per-axis):
-#   (extrap, x)                          — passthrough + FillExtrap promote (no Tv → identity)
-#   (extrap, bc, x)                      — BC-aware: PeriodicBC forces WrapExtrap, otherwise passthrough
+#   (extrap, x)                          — passthrough (tag-struct identity)
+#   (extrap, bc, x)                      — BC-aware: PeriodicBC forces WrapExtrap
 #   (extrap, x, Tv)                      — FillExtrap promote (eltype → Tv)
 #
 # 1D bundled: validate + dispatch
 #   (extrap, bc, x, y)                   — `:inclusive` endpoint check + primitive
 #
-# ND bundled (oneshot): slice validation + per-axis materialize
+# ND bundled (oneshot): slice validation + per-axis
 #   (extraps, bcs, grids, data, Val(N))  — zero-copy ND oneshot entry
 
 # ── Primitive: 2-arg (no BC info; non-periodic persistent / Hermite family) ──

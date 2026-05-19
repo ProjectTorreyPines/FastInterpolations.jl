@@ -168,7 +168,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     _compute_quadratic_coeffs!(d, a, x, y, bc_promoted)
 
     searcher = _resolve_search(x, xq, search, hint)
-    # Materialize WrapExtrap{Nothing} against the grid before reaching the kernel.
+    # 2-arg form: passthrough (no-op for tag-struct extraps).
     extrap_eff = _resolve_extrap(extrap, x)
     _quadratic_eval_at_point(x, y, a, d, xq, extrap_eff, deriv, searcher)
 end

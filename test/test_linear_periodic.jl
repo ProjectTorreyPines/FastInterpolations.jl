@@ -60,7 +60,7 @@
 
     @testset "Non-Float wrap domains — Int grid + PeriodicBC" begin
         # Contract: y[1] ≈ y[end] is satisfied so :inclusive build/eval is legal.
-        # Exercises WrapExtrap{Int} (produced by _resolve_periodic_extrap on Int grid).
+        # Exercises the Int-grid wrap path (axis carries `(first, last)` directly).
         x = [0, 1, 2, 3]
         y = [1.0, 2.0, 3.0, 1.0]
         # Persistent
@@ -306,11 +306,10 @@
     end
 
     @testset "Exclusive — NoBC oneshot allocation regression guard (T-9)" begin
-        # After the WrapExtrap{T} materialization refactor, NoBC paths must not
-        # *leak* WrapExtrap{Float64} structs to the heap. On 1.12+ escape analysis
-        # stack-elides them (0 bytes); on LTS (1.10) a small Ref / struct may
-        # survive (~16 B). Compare against ALLOC_THRESHOLD per the project-wide
-        # convention rather than strict `== 0`.
+        # NoBC paths must not leak intermediate boxes to the heap. On 1.12+
+        # escape analysis stack-elides them (0 bytes); on LTS (1.10) a small
+        # Ref / struct may survive (~16 B). Compare against ALLOC_THRESHOLD
+        # per the project-wide convention rather than strict `== 0`.
         x = range(0.0, 1.0, length = 11)
         y = sin.(2π .* x)
         # Warmup
@@ -346,18 +345,22 @@
     end
 
     @testset "Exclusive — seam hint write-back updates RefHint (P2 review)" begin
-        # Regression: the seam fast path in `search_interval` used to return
-        # before `_search_interval_real`, so RefHint never got updated at the
-        # seam cell. Monotone batches spending time past x[n] would keep
-        # searching from the stale interior hint. After fix, the seam branch
-        # writes `n` back to hint.idx so LinearBinarySearch can resume from
-        # the seam position on subsequent queries.
+        # Regression: the seam fast path in `search_interval` for
+        # `_ExclusivePeriodicAxis` returns before `_search_interval_real`,
+        # so RefHint never gets updated at the seam cell. Monotone batches
+        # spending time past x[n] would keep searching from the stale
+        # interior hint. The seam branch must write `n` back to hint.idx
+        # so subsequent hinted queries can resume from the seam position.
+        # BC dispatch is now axis-level (via `_ExclusivePeriodicAxis`) — the
+        # raw grid must be wrapped via `_resolve_axis(x, bc)` for seam
+        # semantics to fire.
         x = range(0.0, step = 1.0, length = 5)            # [0, 1, 2, 3, 4]
         bc = PeriodicBC(endpoint = :exclusive, period = 5.0)
+        g = FastInterpolations._resolve_axis(x, bc)        # _ExclusivePeriodicAxis
         ref = Ref(1)
-        s = FastInterpolations._resolve_search(x, 4.5, AutoSearch(), ref, bc)
+        s = FastInterpolations._resolve_search(g, 4.5, AutoSearch(), ref)
         # Seam query: xq=4.5 > x[end]=4 → seam fires, hint must now be n=5
-        FastInterpolations.search_interval(s, x, 4.5)
+        FastInterpolations.search_interval(s, g, 4.5)
         @test ref[] == 5
     end
 

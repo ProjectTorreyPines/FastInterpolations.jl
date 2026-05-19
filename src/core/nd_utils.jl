@@ -149,21 +149,21 @@ end
     error("unreachable: _first_fill_value called without FillExtrap")
 end
 
-# ── _resolve_extrap: ND variants (expand + promote [+ materialize]) ──
+# ── _resolve_extrap: ND variants (expand + promote [+ per-axis resolve]) ──
 #
 # Continues the `_resolve_extrap` family from `src/core/periodic.jl` (primitive
 # per-axis + 1D bundled + ND bundled-with-data). These ND methods handle the
 # scalar→NTuple expansion, periodic-BC override, and FillExtrap value-type
 # promotion. Two shapes by arity:
 #
-# - 4-arg (extrap, bcs, Val(N), Tv): expand + promote. Returns NTuple with
-#   possibly-unmaterialized `WrapExtrap{Nothing}` on periodic axes. Used by
-#   callers that materialize separately (post-extension persistent paths
-#   where bc-aware materialize would trip the pre-extension `<` check).
+# - 4-arg (extrap, bcs, Val(N), Tv): expand + promote. Returns NTuple per axis,
+#   forcing `WrapExtrap` where `bcs[d]` is periodic. Used by callers that
+#   resolve against the grid separately (post-extension persistent paths
+#   where the BC-aware check would trip the pre-extension `<` invariant).
 #
-# - 5-arg (extrap, bcs, grids, Val(N), Tv): above + per-axis materialize.
-#   `bcs::NTuple` → 3-arg primitive (bc-aware); `bcs::Nothing` → 2-arg primitive
-#   (grid-span only, no periodic override needed).
+# - 5-arg (extrap, bcs, grids, Val(N), Tv): above + per-axis passthrough
+#   against `grids`. `bcs::NTuple` → 3-arg primitive (bc-aware);
+#   `bcs::Nothing` → 2-arg primitive (no periodic override).
 
 # ── 4-arg: expand + promote (no materialize) ──
 
@@ -824,35 +824,31 @@ end
 # by Julia escape analysis → 0 heap bytes/call.
 
 # Per-axis inline: build Searcher + run search_interval in one body.
-# 3-arg `search_interval` (no spacing) — Range uses _search_direct's own step,
-# Vector uses _search_binary; the
-# stencil-using callers compute `h` from the search-returned `(xL, xR)` via
-# 3-arg `_get_h(grid, xL, xR)` dispatch.
-@inline _search_axis_stencil(grid, q, search, hint, bc) =
-    @inbounds search_interval(_resolve_search(grid, q, search, hint, bc), grid, q)
+# Callers pre-wrap grids via `_resolve_axis` (or pass already-wrapped axes),
+# so seam handling is via axis-level dispatch in `periodic_axis.jl`.
+@inline _search_axis_stencil(grid, q, search, hint) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q)
 
 @inline function _search_all_intervals_stencil(
         q_evals::Tuple{Vararg{Real, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
-        bcs::Tuple{Vararg{AbstractBC, N}},
     ) where {N}
-    results = map(_search_axis_stencil, grids, q_evals, searches, hints, bcs)
+    results = map(_search_axis_stencil, grids, q_evals, searches, hints)
     return _project_search_results(results, _getstencil)
 end
 
 # Nothing-hint overload — scalar oneshot entries only. Batch must use the
-# 5-arg NTuple form (hint allocation hoisted via `_resolve_oneshot_search_nd`).
+# 4-arg NTuple form (hint allocation hoisted via `_resolve_oneshot_search_nd`).
 @inline function _search_all_intervals_stencil(
         q_evals::Tuple{Vararg{Real, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         ::Nothing,
-        bcs::Tuple{Vararg{AbstractBC, N}},
     ) where {N}
     hints = _ensure_hint_nd(nothing, Val(N))
-    return _search_all_intervals_stencil(q_evals, grids, searches, hints, bcs)
+    return _search_all_intervals_stencil(q_evals, grids, searches, hints)
 end
 
 

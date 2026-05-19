@@ -114,10 +114,30 @@ end
         op::O,
         searcher::P
     ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    ev = _check_domain(cache.x, x_query, ev)
-    return @inbounds for k in eachindex(x_query, output)
+    # Resolve domain here so the inner kernel sees a concrete `ev` type.
+    # `_check_domain` for Clamp/Fill/Wrap returns `Union{InBounds, E}` —
+    # passing through a function-barrier call lets Julia's union-splitting
+    # specialize the inner loop per concrete `ev` (no per-iteration union
+    # dispatch). For `NoExtrap` paths return type is already `InBounds`, so
+    # this is a no-op.
+    ev_eff = _check_domain(cache.x, x_query, ev)
+    return _cubic_vector_loop_inner!(output, cache, y, z, x_query, ev_eff, op, searcher)
+end
+
+@inline function _cubic_vector_loop_inner!(
+        output::AbstractVector,
+        cache::CubicSplineCache{Tg},
+        y::AbstractVector{Tv},
+        z::AbstractVector,
+        x_query::AbstractVector{<:Real},
+        ev::E,
+        op::O,
+        searcher::P
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    @inbounds for k in eachindex(x_query, output)
         output[k] = _eval_cubic_at_point(cache.x, y, z, x_query[k], ev, op, searcher)
     end
+    return output
 end
 
 # ========================================

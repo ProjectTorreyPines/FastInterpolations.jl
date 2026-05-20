@@ -392,7 +392,7 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    T_out = _series_output_type(_output_eltype(Tv, Tg), Tq)
+    T_out = _output_eltype(Tv, Tg, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)
 end
@@ -446,7 +446,7 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
     ) where {Tg, Tv, P, Tq <: Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = _series_output_type(_output_eltype(Tv, Tg), Tq)
+    T_out = _output_eltype(Tv, Tg, Tq)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)

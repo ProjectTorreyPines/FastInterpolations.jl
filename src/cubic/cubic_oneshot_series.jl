@@ -201,7 +201,7 @@ Build cache once → anchor once → solve+eval per y-vector with z-buffer reuse
     _is_periodic_bc(bc) || _check_domain(x, xq, extrap)
     K = n_series(s)
     Tg_actual = eltype(x)
-    output = Vector{_series_output_type(_output_eltype(_series_eltype(s), Tg_actual), Tq)}(undef, K)
+    output = Vector{_output_eltype(_series_eltype(s), Tg_actual, Tq)}(undef, K)
     # Periodic helper searches against `cache.x` (wrapped from the cache pool),
     # so axis-level dispatch handles seam — no `bc` thread into the Searcher.
     searcher = _resolve_search(x, xq, search, hint)
@@ -313,7 +313,7 @@ function cubic_interp(
     ) where {Tg, Tq <: Real}
     K = n_series(s)
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    Tv = _series_output_type(_output_eltype(_series_eltype(s), Tg_float), Tq)
+    Tv = _output_eltype(_series_eltype(s), Tg_float, Tq)
     outputs = [Vector{Tv}(undef, length(xqs)) for _ in 1:K]
     cubic_interp!(outputs, x, s, xqs; bc, extrap, autocache, deriv, search)
     return outputs

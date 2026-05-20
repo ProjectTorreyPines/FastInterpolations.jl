@@ -94,7 +94,7 @@ end
         @test constant_interp(x, y_sv, xq_dv) isa Vector{SVector{3, D}}
     end
 
-    @testset "ND batch 3-arg (latent — same root cause)" begin
+    @testset "ND batch 3-arg" begin
         xg = collect(1.0:5.0); yg = collect(1.0:5.0)
         data_sv = [SA[Float64(i + j), 2.0(i + j), 3.0(i + j)] for i in 1:5, j in 1:5]
         q_dv = [(ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
@@ -102,6 +102,40 @@ end
         @test linear_interp((xg, yg), data_sv, q_dv) isa Vector{SVector{3, D}}
         @test cubic_interp((xg, yg), data_sv, q_dv) isa Vector{SVector{3, D}}
         @test quadratic_interp((xg, yg), data_sv, q_dv) isa Vector{SVector{3, D}}
+        # Constant ND oneshot batch — fixed in acfc95acf (was `::Vector{Tv}` typeassert).
+        @test constant_interp((xg, yg), data_sv, q_dv) isa Vector{SVector{3, D}}
+    end
+end
+
+# Series path: chain `_series_output_type(_output_eltype(...), Tq)` previously
+# collapsed `promote_type(SVector{F}, Dual)` to `Any` → MethodError on numeric
+# methods, silent `Vector{Any}` on Constant. Now unified `_output_eltype(Tv, Tg, Tq)`.
+@testitem "Series path — duck-Tv × duck-Tq carrier propagates" begin
+    using StaticArrays, ForwardDiff
+    using FastInterpolations: Series
+
+    x = collect(1.0:10.0)
+    y_sv1 = [SA[Float64(i), 2.0i, 3.0i] for i in 1:10]
+    y_sv2 = [SA[-1.0 * i, 0.5i, 2.5i] for i in 1:10]
+    s_sv  = Series(y_sv1, y_sv2)
+    xq_d  = ForwardDiff.Dual{Nothing}(5.5, 1.0)
+    xq_dv = [ForwardDiff.Dual{Nothing}(2.0 + 0.1i, 1.0) for i in 1:5]
+    D = ForwardDiff.Dual{Nothing, Float64, 1}
+
+    @testset "scalar Dual xq, SVector y per series" begin
+        # Returns Vector{T_out} of length K = number of series.
+        @test linear_interp(x, s_sv, xq_d) isa Vector{SVector{3, D}}
+        @test cubic_interp(x, s_sv, xq_d) isa Vector{SVector{3, D}}
+        @test quadratic_interp(x, s_sv, xq_d) isa Vector{SVector{3, D}}
+        @test constant_interp(x, s_sv, xq_d) isa Vector{SVector{3, D}}
+    end
+
+    @testset "batch Vector{Dual} xq, SVector y per series" begin
+        # Returns Vector{Vector{T_out}}, one inner vector per series.
+        @test linear_interp(x, s_sv, xq_dv) isa Vector{Vector{SVector{3, D}}}
+        @test cubic_interp(x, s_sv, xq_dv) isa Vector{Vector{SVector{3, D}}}
+        @test quadratic_interp(x, s_sv, xq_dv) isa Vector{Vector{SVector{3, D}}}
+        @test constant_interp(x, s_sv, xq_dv) isa Vector{Vector{SVector{3, D}}}
     end
 end
 

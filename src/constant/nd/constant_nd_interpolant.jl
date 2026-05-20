@@ -57,9 +57,9 @@ function constant_interp(
     # Validate grid dimensions
     _validate_nd_grids(grids, data)
 
-    # Selection kernel → raw eltype contract (Int in → Int out), N-axis
-    # generalization of the 1D policy: `Tg = promote_type(eltype.(grids)...)`
-    # without Float widening, `Tv = eltype(data)`.
+    # Raw storage (no Float widening): `Tg = promote_type(eltype.(grids)...)`,
+    # `Tv = eltype(data)`. Kernel handles return-type widening via per-axis
+    # `* one(dL_d)`.
     grids_typed, _, Tv = _nd_promote_grids_raw(grids, data)
     data_typed = data
 

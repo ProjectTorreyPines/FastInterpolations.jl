@@ -100,8 +100,9 @@ end
 # ========================================
 # Generic Constructor (User API)
 # ========================================
-# Selection kernel → raw eltype contract (Int in → Int out). Signature
-# parametrized directly on `{Tg, Tv}` — no `_promote_grid_float` indirection.
+# Storage parametrized on `{Tg, Tv}` directly — no `_promote_grid_float`
+# indirection. Return type widens via the kernel's `* one(dL)` carrier
+# propagation (handled per-callable, not at construction).
 @inline function constant_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv};

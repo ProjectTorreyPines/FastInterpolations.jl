@@ -155,8 +155,8 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `LinearBinarySearch(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns
-- Interpolated value, eltype `eltype(y)` (raw Tv; widens to `promote_type(Tv, Tq)`
-  only for duck-typed queries).
+- Interpolated value, eltype `promote_type(eltype(y), eltype(xq))` (the
+  kernel's `* one(dL)` carrier propagation; fully-Int chain preserves Int).
 
 # Example
 ```julia

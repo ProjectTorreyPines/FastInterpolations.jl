@@ -24,10 +24,8 @@
 end
 
 # In-place + allocating batch use the inherited `AbstractInterpolantND`
-# protocol; output eltype comes from the `_output_eltype(itp, Tq)` trait
-# overridden in `constant_nd_types.jl`. Scalar evaluation routes through
-# the generic `_eval_nd_at_point` in interpolant_protocol.jl — Constant's
-# "any derivative → 0" rule is wired via the `_deriv_zero_fill` trait below.
+# protocol (sample-first allocator). Scalar routes through `_eval_nd_at_point`;
+# Constant's "any derivative → 0" rule is wired via `_deriv_zero_fill` below.
 
 # Derivative zero-fill trait: constant has zero derivative at all orders
 @inline _deriv_zero_fill(::ConstantInterpolantND, ops::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} =

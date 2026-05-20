@@ -229,8 +229,8 @@ function constant_adjoint(
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
     ) where {Tg}
-    # Selection kernel → raw eltype contract (cubic/linear/… keep using the
-    # shared `_promote_adjoint_inputs` for their Float-promotion needs).
+    # Grid stays raw `Tg` (no `_promote_adjoint_inputs` Float widening).
+    # Adjoint buffer eltype comes from the protocol's `_output_eltype`.
     x_p = x
     xq_p = _promote_query_typed(x_query, Tg)
 

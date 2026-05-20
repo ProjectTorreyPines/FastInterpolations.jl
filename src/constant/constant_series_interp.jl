@@ -402,9 +402,9 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    # Selection kernel returns `y[idx]::Tv` for promotable Tq (raw-Tv contract).
-    # Duck-typed Tq (Dual, …) routes through `_output_eltype` so SVector × Dual
-    # resolves via `Base.promote_op` instead of collapsing to `Vector{Any}`.
+    # Container element sized as `Tv` for promotable Tq (kernel result converts
+    # on assign). Duck Tq (Dual, …) routes through `_output_eltype` so SVector
+    # × Dual resolves via `Base.promote_op` instead of collapsing to `Vector{Any}`.
     T_out = Tq <: _PromotableValue ? Tv : _output_eltype(Tv, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)

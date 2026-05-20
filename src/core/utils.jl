@@ -155,7 +155,7 @@ Method-aware output element type via `Base.promote_op` on the method's own
 kernel shape. Lets Julia inference predict the kernel's exact return type
 — no hand-coded Float upgrade, no `_PromotableValue` enumeration. Use this
 overload from a method that declares its kernel shape (e.g., Constant's
-`_constant_kernel_shape(yv, q) = yv * one(q)`).
+`_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`).
 """
 @inline function _output_eltype(kernel_op::F, ::Type{Tv}, types::Type...) where {F, Tv}
     Top = Base.promote_op(kernel_op, Tv, types...)

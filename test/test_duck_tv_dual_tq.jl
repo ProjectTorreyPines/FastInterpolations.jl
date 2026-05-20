@@ -636,7 +636,7 @@ end
     end
 
     @testset "Constant Int chain — scalar/batch type-stable Int" begin
-        # Kernel-shape trait: `_constant_kernel_shape(yv, q) = yv * one(q)`
+        # Kernel-shape trait: `_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`
         # → Int×Int×Int inferred as Int (no spurious Float upgrade).
         xi = collect(1:10); yi = collect(10:10:100)
         let k = constant_interp(xi, yi)
@@ -703,9 +703,9 @@ end
         @test (@inferred _output_eltype(_arithmetic_kernel_shape, Int, Int, Int)) === Float64
         @test (@inferred _output_eltype(_arithmetic_kernel_shape, Float64, Float64, Float64)) === Float64
         @test (@inferred _output_eltype(_arithmetic_kernel_shape, Int, Complex{Int}, Int)) === ComplexF64
-        # Selection shape: pure `Rational * one(Rational) = Rational`.
-        @test (@inferred _output_eltype(_constant_kernel_shape, Rational{Int}, Rational{Int})) === Rational{Int}
-        @test (@inferred _output_eltype(_constant_kernel_shape, Int, Int)) === Int
+        # Selection shape: `Rational * one(Rational - Rational) = Rational`.
+        @test (@inferred _output_eltype(_constant_kernel_shape, Rational{Int}, Rational{Int}, Rational{Int})) === Rational{Int}
+        @test (@inferred _output_eltype(_constant_kernel_shape, Int, Int, Int)) === Int
     end
 
     @testset "Constant — end-to-end Rational preserved (storage stays raw)" begin

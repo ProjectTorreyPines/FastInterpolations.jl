@@ -21,12 +21,14 @@ end
 end
 
 # Constant declares its kernel shape — selection (`y * one(dL)`, no division).
-# Trait infers the exact return type via `promote_op`, so scalar/batch agree
-# (Int×Int×Int → Int; SVector × Dual → SVector{Dual}; etc.).
-@inline _constant_kernel_shape(yv, q) = yv * one(q)
+# Args mirror the real kernel: `(xL, yv, xq)` so `xq - xL` exposes the actual
+# `dL` carrier (e.g. `Dual` grid + `Float` xq → `Dual` dL). Trait infers the
+# exact return type via `promote_op`, so scalar/batch agree (Int×Int×Int → Int;
+# SVector × Dual → SVector{Dual}; Float y × Dual grid → Dual; etc.).
+@inline _constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)
 
 @inline _output_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
-    _output_eltype(_constant_kernel_shape, Tv, Tq)
+    _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
 
 # ─────────────────────────────────────────────────────────────
 # Vector loop (function barrier)

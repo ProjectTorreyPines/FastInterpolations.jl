@@ -275,8 +275,9 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 ```
 """
 # Buffer eltype via Constant's kernel shape — Julia infers the return type
-# from `_constant_kernel_shape(yv, q) = yv * one(q)`, matching the actual
-# kernel reality (Int×Int×Int → Int; SVector × Dual → SVector{Dual}).
+# from `_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`, matching the
+# actual kernel reality (Int×Int×Int → Int; SVector × Dual → SVector{Dual};
+# Float y × Dual grid → Dual carrier via `xq - xL`).
 function constant_interp(
         x::AbstractVector,
         y::AbstractVector,
@@ -287,7 +288,7 @@ function constant_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    output = Vector{_output_eltype(_constant_kernel_shape, eltype(y), eltype(x_targets))}(
+    output = Vector{_output_eltype(_constant_kernel_shape, eltype(x), eltype(y), eltype(x_targets))}(
         undef, length(x_targets)
     )
     constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)

@@ -736,18 +736,30 @@ end
     # Use enough points to satisfy each method's minimum (Akima needs ≥5).
     @testset "Cubic — Rational user-visible blocked (BROKEN)" begin
         # Persistent path hits both barriers (storage + coefficient lift) → BROKEN.
-        # The 3-arg oneshot's buffer is correctly sized `Vector{Rational{Int}}`
-        # by the kernel-shape trait, but the kernel's internal `z` coefficients
-        # are still Float64; the result happens to round-trip through Rational
-        # for this input only because the kernel values are rationally
-        # representable. Asserting `isa Vector{Rational{Int}}` would pass for
-        # the wrong reason — omit until the coefficient-eltype follow-up lands.
+        #
+        # The 3-arg oneshot's `isa Vector{Rational{Int}}` check would PASS but
+        # for the wrong reason: the kernel-shape trait correctly sizes the
+        # output buffer as `Vector{Rational{Int}}`, but the in-place kernel
+        # still computes in Float64 internally (storage lift) and writes
+        # results via bit-exact `convert(Rational{Int}, ::Float64)`. The user
+        # gets Float64-bits-as-Rational, not true Rational arithmetic.
+        #
+        # We pin the SEMANTIC contract instead: a cubic spline of `y = x`
+        # should reproduce `y = x` exactly. Under pure Rational arithmetic
+        # (post-follow-up), `cubic_interp(x, x, [3//7])` returns `[3//7]`.
+        # Under current Float64-internal computation it returns the bit-exact
+        # Rational form of `Float64(3/7)` (denominator ~2^52). The semantic
+        # equality fails today and auto-surfaces when the storage-lift fix lands.
         x_r = Rational{Int}[i // 1 for i in 0:9]
         y_r = Rational{Int}[(i * i) // 2 for i in 0:9]
         xq_r = 9 // 4
         xq_r_vec = Rational{Int}[(i + 1) // 2 for i in 0:5]
         @test_broken cubic_interp(x_r, y_r)(xq_r) isa Rational{Int}
         @test_broken cubic_interp(x_r, y_r)(xq_r_vec) isa Vector{Rational{Int}}
+        # Semantic pin: y=x cubic spline must reproduce y=x exactly.
+        y_linear = copy(x_r)
+        xq_nondyadic = Rational{Int}[1 // 7, 2 // 7, 3 // 7]
+        @test_broken cubic_interp(x_r, y_linear, xq_nondyadic) == xq_nondyadic
     end
 
     @testset "Quadratic — Rational user-visible blocked (BROKEN)" begin

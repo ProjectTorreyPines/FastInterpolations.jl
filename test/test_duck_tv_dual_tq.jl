@@ -590,3 +590,55 @@ end
         end
     end
 end
+
+# Rational chains: `Rational / Rational = Rational` in Julia (no Float upgrade),
+# so the arithmetic kernel `y0 + (y1-y0) * (dL/h)` actually preserves Rational.
+# The kernel-shape trait predicts this exactly via `Base.promote_op`. The old
+# `_PromotableValue` enumeration over-predicted Float (because `Rational <:
+# _PromotableValue` triggered `float(...)`).
+@testitem "Kernel-shape trait pins Rational chain (no spurious Float upgrade)" begin
+    using FastInterpolations: _arithmetic_kernel_shape, _constant_kernel_shape, _output_eltype
+
+    @testset "Trait-level — `@inferred` type table" begin
+        # Arithmetic shape: `Rational + Rational * (Rational/Rational) = Rational`.
+        @test (@inferred _output_eltype(_arithmetic_kernel_shape, Rational{Int}, Rational{Int}, Rational{Int})) === Rational{Int}
+        # Sanity: Int/Float baselines match the previous trait.
+        @test (@inferred _output_eltype(_arithmetic_kernel_shape, Int, Int, Int)) === Float64
+        @test (@inferred _output_eltype(_arithmetic_kernel_shape, Float64, Float64, Float64)) === Float64
+        @test (@inferred _output_eltype(_arithmetic_kernel_shape, Int, Complex{Int}, Int)) === ComplexF64
+        # Selection shape: pure `Rational * one(Rational) = Rational`.
+        @test (@inferred _output_eltype(_constant_kernel_shape, Rational{Int}, Rational{Int})) === Rational{Int}
+        @test (@inferred _output_eltype(_constant_kernel_shape, Int, Int)) === Int
+    end
+
+    @testset "Constant — end-to-end Rational preserved (storage stays raw)" begin
+        # Constant 1D + ND store `{Tg, Tv}` directly (no `_promote_grid_float`),
+        # so the kernel-shape trait's Rational prediction flows through to the
+        # user-visible Vector eltype.
+        x_r = Rational{Int}[0 // 1, 1 // 1, 2 // 1, 3 // 1]
+        y_r = Rational{Int}[1 // 2, 3 // 2, 5 // 2, 7 // 2]
+        xq_r = 3 // 2
+        xq_r_vec = Rational{Int}[1 // 2, 3 // 2, 5 // 2]
+        let itp = constant_interp(x_r, y_r)
+            @test (@inferred itp(xq_r)) isa Rational{Int}
+            @test (@inferred itp(xq_r_vec)) isa Vector{Rational{Int}}
+        end
+        @test (@inferred constant_interp(x_r, y_r, xq_r_vec)) isa Vector{Rational{Int}}
+    end
+
+    @testset "Linear — Rational user-visible blocked by `_promote_grid_float` (BROKEN)" begin
+        # The arithmetic-kernel-shape trait correctly predicts Rational for a
+        # fully-Rational chain, but `LinearInterpolant`'s constructor calls
+        # `_promote_grid_float` which lifts the grid/values to Float64 at build
+        # time — the trait's Rational prediction is shadowed by storage Float64.
+        # Pinned as `@test_broken` so a future relaxation of that lift will
+        # auto-surface as a `now passing` alert.
+        x_r = Rational{Int}[0 // 1, 1 // 1, 2 // 1, 3 // 1]
+        y_r = Rational{Int}[1 // 2, 3 // 2, 5 // 2, 7 // 2]
+        xq_r = 3 // 2
+        xq_r_vec = Rational{Int}[1 // 2, 3 // 2, 5 // 2]
+        @test_broken linear_interp(x_r, y_r)(xq_r) isa Rational{Int}
+        @test_broken linear_interp(x_r, y_r)(xq_r_vec) isa Vector{Rational{Int}}
+        @test_broken linear_interp(x_r, y_r, xq_r_vec) isa Vector{Rational{Int}}
+    end
+end

@@ -352,9 +352,7 @@ end
 # Mirror of the Cubic block above for the other three SeriesInterpolant
 # variants. Each method's persistent callable allocates via its own kernel
 # shape trait, so SVector × Dual must propagate without collapsing to
-# Vector{Any} on any of them. The Constant case is also a regression test
-# for the in-place dispatch — its `outputs::AbstractVector{<:AbstractVector{Tv}}`
-# constraint blocked carrier widening before this fix.
+# Vector{Any} on any of them.
 @testitem "Linear/Quadratic/Constant SeriesInterpolant persistent — SVector × Dual carrier" begin
     using StaticArrays, ForwardDiff
     using FastInterpolations: Series
@@ -435,6 +433,39 @@ end
         dy = Float64[0, 2, 4]
         xq_v = Float32[0.5]
         @test eltype(hermite_interp(x, y, dy, xq_v)) === Float64
+    end
+end
+
+# PCHIP/Cardinal/Akima oneshot allocators were switched to the kernel-shape
+# trait via `_output_eltype(_arithmetic_kernel_shape, ...)`. Confirm the trait
+# fires on the duck-Tq path (scalar + batch). PCHIP/Akima slope formulas use
+# `sign`/`abs` on slopes so SVector y is not a supported carrier for those
+# two; their `Tv` duck coverage is exercised via duck Tq on Float y.
+# Cardinal's slopes are simple averages — it accepts SVector y, so we use the
+# stronger SVector × Dual case there.
+@testitem "Hermite-family one-shot — duck-Tq carrier through trait" begin
+    using StaticArrays, ForwardDiff
+
+    D = ForwardDiff.Dual{Nothing, Float64, 1}
+    x = collect(1.0:10.0)
+    y_f = sin.(x)
+    xq_d  = ForwardDiff.Dual{Nothing}(5.5, 1.0)
+    xq_dv = [ForwardDiff.Dual{Nothing}(2.0 + 0.5i, 1.0) for i in 1:5]
+
+    @testset "PCHIP — Float y + Dual xq" begin
+        @test pchip_interp(x, y_f, xq_d)  isa D
+        @test pchip_interp(x, y_f, xq_dv) isa Vector{D}
+    end
+
+    @testset "Cardinal — SVector y + Dual xq" begin
+        y_sv = [SA[Float64(i), 2.0i, 3.0i] for i in 1:10]
+        @test cardinal_interp(x, y_sv, xq_d)  isa SVector{3, D}
+        @test cardinal_interp(x, y_sv, xq_dv) isa Vector{SVector{3, D}}
+    end
+
+    @testset "Akima — Float y + Dual xq" begin
+        @test akima_interp(x, y_f, xq_d)  isa D
+        @test akima_interp(x, y_f, xq_dv) isa Vector{D}
     end
 end
 
@@ -694,5 +725,96 @@ end
         @test_broken linear_interp(x_r, y_r)(xq_r) isa Rational{Int}
         @test_broken linear_interp(x_r, y_r)(xq_r_vec) isa Vector{Rational{Int}}
         @test_broken linear_interp(x_r, y_r, xq_r_vec) isa Vector{Rational{Int}}
+    end
+
+    # Cubic/Quadratic and the Hermite family (PCHIP/Cardinal/Akima) hit the
+    # SAME barrier as Linear plus a second one: their internal coefficient
+    # eltype (`Tz` for cubic z, `Tc`/`Tcoeff` for quadratic a/d, slope
+    # coefficients for Hermite-family) is sized via the legacy 2-arg
+    # `_output_eltype(Tv, Tg)` which also Float-forces. Both barriers must
+    # relax before Rational reaches the user; until then these pin BROKEN.
+    # Use enough points to satisfy each method's minimum (Akima needs ≥5).
+    @testset "Cubic — Rational user-visible blocked (BROKEN)" begin
+        # Persistent path hits both barriers (storage + coefficient lift) → BROKEN.
+        # The 3-arg oneshot's buffer is correctly sized `Vector{Rational{Int}}`
+        # by the kernel-shape trait, but the kernel's internal `z` coefficients
+        # are still Float64; the result happens to round-trip through Rational
+        # for this input only because the kernel values are rationally
+        # representable. Asserting `isa Vector{Rational{Int}}` would pass for
+        # the wrong reason — omit until the coefficient-eltype follow-up lands.
+        x_r = Rational{Int}[i // 1 for i in 0:9]
+        y_r = Rational{Int}[(i * i) // 2 for i in 0:9]
+        xq_r = 9 // 4
+        xq_r_vec = Rational{Int}[(i + 1) // 2 for i in 0:5]
+        @test_broken cubic_interp(x_r, y_r)(xq_r) isa Rational{Int}
+        @test_broken cubic_interp(x_r, y_r)(xq_r_vec) isa Vector{Rational{Int}}
+    end
+
+    @testset "Quadratic — Rational user-visible blocked (BROKEN)" begin
+        x_r = Rational{Int}[i // 1 for i in 0:9]
+        y_r = Rational{Int}[(i * i) // 2 for i in 0:9]
+        xq_r = 9 // 4
+        xq_r_vec = Rational{Int}[(i + 1) // 2 for i in 0:5]
+        @test_broken quadratic_interp(x_r, y_r)(xq_r) isa Rational{Int}
+        @test_broken quadratic_interp(x_r, y_r)(xq_r_vec) isa Vector{Rational{Int}}
+        @test_broken quadratic_interp(x_r, y_r, xq_r_vec) isa Vector{Rational{Int}}
+    end
+
+    @testset "Hermite-family — Rational user-visible blocked (BROKEN)" begin
+        x_r = Rational{Int}[i // 1 for i in 0:9]
+        y_r = Rational{Int}[(i * i) // 2 for i in 0:9]
+        xq_r = 9 // 4
+        xq_r_vec = Rational{Int}[(i + 1) // 2 for i in 0:5]
+        @test_broken pchip_interp(x_r, y_r, xq_r_vec) isa Vector{Rational{Int}}
+        @test_broken cardinal_interp(x_r, y_r, xq_r_vec) isa Vector{Rational{Int}}
+        @test_broken akima_interp(x_r, y_r, xq_r_vec) isa Vector{Rational{Int}}
+    end
+end
+
+# PCHIP/Akima impose NO `<: AbstractFloat` on `Tv` — only `Tq <: Real`.
+# Their slope formulas demand an interface (`sign`, `abs`, `zero`, `+`, `-`,
+# `*`, `/`, ordering) but accept any duck type that implements it. The
+# SVector failure isn't a method restriction — it's that StaticArrays
+# doesn't define `sign`/`abs` on `SVector`. A minimal scalar-wrapper duck
+# that implements the interface flows through cleanly and the trait
+# predicts the wrapper type as the kernel return.
+@testitem "PCHIP/Akima — custom scalar duck-Tv interface" begin
+    # Wrapper around Float64 implementing the slope-formula interface.
+    struct DuckFloat
+        v::Float64
+    end
+    Base.sign(d::DuckFloat) = DuckFloat(sign(d.v))
+    Base.abs(d::DuckFloat) = DuckFloat(abs(d.v))
+    Base.zero(::Type{DuckFloat}) = DuckFloat(0.0)
+    Base.zero(::DuckFloat) = DuckFloat(0.0)
+    Base.:-(a::DuckFloat) = DuckFloat(-a.v)
+    Base.:+(a::DuckFloat, b::DuckFloat) = DuckFloat(a.v + b.v)
+    Base.:-(a::DuckFloat, b::DuckFloat) = DuckFloat(a.v - b.v)
+    Base.:*(a::DuckFloat, b::DuckFloat) = DuckFloat(a.v * b.v)
+    Base.:/(a::DuckFloat, b::DuckFloat) = DuckFloat(a.v / b.v)
+    Base.:*(a::DuckFloat, b::Real) = DuckFloat(a.v * b)
+    Base.:*(b::Real, a::DuckFloat) = DuckFloat(b * a.v)
+    Base.:/(a::DuckFloat, b::Real) = DuckFloat(a.v / b)
+    Base.:/(a::Real, b::DuckFloat) = DuckFloat(a / b.v)
+    Base.:+(a::Real, b::DuckFloat) = DuckFloat(a + b.v)
+    Base.:+(a::DuckFloat, b::Real) = DuckFloat(a.v + b)
+    Base.:-(a::Real, b::DuckFloat) = DuckFloat(a - b.v)
+    Base.:-(a::DuckFloat, b::Real) = DuckFloat(a.v - b)
+    Base.isless(a::DuckFloat, b::DuckFloat) = a.v < b.v
+    Base.:(==)(a::DuckFloat, b::DuckFloat) = a.v == b.v
+
+    x = collect(1.0:10.0)
+    y_d = [DuckFloat(sin(xi)) for xi in x]
+    xq_scalar = 5.5
+    xq_batch = [2.5, 4.5, 6.5, 8.5]
+
+    @testset "PCHIP" begin
+        @test pchip_interp(x, y_d, xq_scalar) isa DuckFloat
+        @test pchip_interp(x, y_d, xq_batch)  isa Vector{DuckFloat}
+    end
+
+    @testset "Akima" begin
+        @test akima_interp(x, y_d, xq_scalar) isa DuckFloat
+        @test akima_interp(x, y_d, xq_batch)  isa Vector{DuckFloat}
     end
 end

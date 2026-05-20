@@ -36,8 +36,12 @@
     @testset "ND batch — SVector data × Tuple{Dual, Dual}" begin
         xg = collect(1.0:5.0); yg = collect(1.0:5.0)
         data_sv = [SA[Float64(i + j), 2.0(i + j), 3.0(i + j)] for i in 1:5, j in 1:5]
-        q_dv = [(ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
-                 ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0)) for i in 1:5]
+        q_dv = [
+            (
+                    ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
+                    ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0),
+                ) for i in 1:5
+        ]
         @test linear_interp((xg, yg), data_sv)(q_dv) isa Vector{SVector{3, D}}
         @test cubic_interp((xg, yg), data_sv)(q_dv) isa Vector{SVector{3, D}}
         @test constant_interp((xg, yg), data_sv)(q_dv) isa Vector{SVector{3, D}}
@@ -97,8 +101,12 @@ end
     @testset "ND batch 3-arg" begin
         xg = collect(1.0:5.0); yg = collect(1.0:5.0)
         data_sv = [SA[Float64(i + j), 2.0(i + j), 3.0(i + j)] for i in 1:5, j in 1:5]
-        q_dv = [(ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
-                 ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0)) for i in 1:5]
+        q_dv = [
+            (
+                    ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
+                    ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0),
+                ) for i in 1:5
+        ]
         @test linear_interp((xg, yg), data_sv, q_dv) isa Vector{SVector{3, D}}
         @test cubic_interp((xg, yg), data_sv, q_dv) isa Vector{SVector{3, D}}
         @test quadratic_interp((xg, yg), data_sv, q_dv) isa Vector{SVector{3, D}}
@@ -114,8 +122,8 @@ end
     x = collect(1.0:10.0)
     y_sv1 = [SA[Float64(i), 2.0i, 3.0i] for i in 1:10]
     y_sv2 = [SA[-1.0 * i, 0.5i, 2.5i] for i in 1:10]
-    s_sv  = Series(y_sv1, y_sv2)
-    xq_d  = ForwardDiff.Dual{Nothing}(5.5, 1.0)
+    s_sv = Series(y_sv1, y_sv2)
+    xq_d = ForwardDiff.Dual{Nothing}(5.5, 1.0)
     xq_dv = [ForwardDiff.Dual{Nothing}(2.0 + 0.1i, 1.0) for i in 1:5]
     D = ForwardDiff.Dual{Nothing, Float64, 1}
 
@@ -185,7 +193,7 @@ end
         # 1D: Int y, Float/Int xq — the kernel's `* one(dL)` and the right-edge
         # short-circuit must agree on the return type.
         x = 1:10
-        y = (1:10).^2
+        y = (1:10) .^ 2
         itp = constant_interp(x, y)
         @test (@inferred itp(1.0)) === 1.0     # at first(x)
         @test (@inferred itp(10.0)) === 100.0  # at last(x): the short-circuit branch
@@ -271,9 +279,9 @@ end
         # `∂/∂δ fn(x .+ δ, y, xq)` — grid sensitivity via AD. Persistent + one-shot.
         for fn in (linear_interp, cubic_interp, constant_interp)
             d_pers = ForwardDiff.derivative(δ -> fn(x_f .+ δ, y_f)(xq_f), 0.0)
-            d_one  = ForwardDiff.derivative(δ -> fn(x_f .+ δ, y_f, xq_f), 0.0)
+            d_one = ForwardDiff.derivative(δ -> fn(x_f .+ δ, y_f, xq_f), 0.0)
             @test d_pers isa Float64 && isfinite(d_pers)
-            @test d_one  isa Float64 && isfinite(d_one)
+            @test d_one isa Float64 && isfinite(d_one)
             # SVector indexed component, one-shot path
             d_sv = ForwardDiff.derivative(δ -> fn(x_f .+ δ, y_sv, xq_f)[2], 0.0)
             @test d_sv isa Float64 && isfinite(d_sv)
@@ -313,7 +321,7 @@ end
     @testset "Series + one-shot ForwardDiff.derivative on SVector component" begin
         using FastInterpolations: Series
         y_sv1 = [SA[Float64(i), 2.0i] for i in 1:10]
-        y_sv2 = [SA[-1.0*i, 0.5i] for i in 1:10]
+        y_sv2 = [SA[-1.0 * i, 0.5i] for i in 1:10]
         s_sv = Series(y_sv1, y_sv2)
         # `fn(x, series, t)` returns Vector{SVector} (one per series).
         # ∂/∂t of series[1][component[1]] exercises the full Series + duck-Tq chain.
@@ -333,8 +341,8 @@ end
     x = collect(1.0:10.0)
     y_sv1 = [SA[Float64(i), 2.0i, 3.0i] for i in 1:10]
     y_sv2 = [SA[-1.0 * i, 0.5i, 2.5i] for i in 1:10]
-    s_sv  = Series(y_sv1, y_sv2)
-    xq_d  = ForwardDiff.Dual{Nothing}(5.5, 1.0)
+    s_sv = Series(y_sv1, y_sv2)
+    xq_d = ForwardDiff.Dual{Nothing}(5.5, 1.0)
     xq_dv = [ForwardDiff.Dual{Nothing}(2.0 + 0.1i, 1.0) for i in 1:5]
     D = ForwardDiff.Dual{Nothing, Float64, 1}
 
@@ -360,26 +368,26 @@ end
     x = collect(1.0:10.0)
     y_sv1 = [SA[Float64(i), 2.0i, 3.0i] for i in 1:10]
     y_sv2 = [SA[-1.0 * i, 0.5i, 2.5i] for i in 1:10]
-    s_sv  = Series(y_sv1, y_sv2)
-    xq_d  = ForwardDiff.Dual{Nothing}(5.5, 1.0)
+    s_sv = Series(y_sv1, y_sv2)
+    xq_d = ForwardDiff.Dual{Nothing}(5.5, 1.0)
     xq_dv = [ForwardDiff.Dual{Nothing}(2.0 + 0.1i, 1.0) for i in 1:5]
     D = ForwardDiff.Dual{Nothing, Float64, 1}
 
     @testset "Linear" begin
         sitp = linear_interp(x, s_sv)
-        @test sitp(xq_d)  isa Vector{SVector{3, D}}
+        @test sitp(xq_d) isa Vector{SVector{3, D}}
         @test sitp(xq_dv) isa Vector{Vector{SVector{3, D}}}
     end
 
     @testset "Quadratic" begin
         sitp = quadratic_interp(x, s_sv)
-        @test sitp(xq_d)  isa Vector{SVector{3, D}}
+        @test sitp(xq_d) isa Vector{SVector{3, D}}
         @test sitp(xq_dv) isa Vector{Vector{SVector{3, D}}}
     end
 
     @testset "Constant" begin
         sitp = constant_interp(x, s_sv)
-        @test sitp(xq_d)  isa Vector{SVector{3, D}}
+        @test sitp(xq_d) isa Vector{SVector{3, D}}
         @test sitp(xq_dv) isa Vector{Vector{SVector{3, D}}}
     end
 end
@@ -449,22 +457,22 @@ end
     D = ForwardDiff.Dual{Nothing, Float64, 1}
     x = collect(1.0:10.0)
     y_f = sin.(x)
-    xq_d  = ForwardDiff.Dual{Nothing}(5.5, 1.0)
+    xq_d = ForwardDiff.Dual{Nothing}(5.5, 1.0)
     xq_dv = [ForwardDiff.Dual{Nothing}(2.0 + 0.5i, 1.0) for i in 1:5]
 
     @testset "PCHIP — Float y + Dual xq" begin
-        @test pchip_interp(x, y_f, xq_d)  isa D
+        @test pchip_interp(x, y_f, xq_d) isa D
         @test pchip_interp(x, y_f, xq_dv) isa Vector{D}
     end
 
     @testset "Cardinal — SVector y + Dual xq" begin
         y_sv = [SA[Float64(i), 2.0i, 3.0i] for i in 1:10]
-        @test cardinal_interp(x, y_sv, xq_d)  isa SVector{3, D}
+        @test cardinal_interp(x, y_sv, xq_d) isa SVector{3, D}
         @test cardinal_interp(x, y_sv, xq_dv) isa Vector{SVector{3, D}}
     end
 
     @testset "Akima — Float y + Dual xq" begin
-        @test akima_interp(x, y_f, xq_d)  isa D
+        @test akima_interp(x, y_f, xq_d) isa D
         @test akima_interp(x, y_f, xq_dv) isa Vector{D}
     end
 end
@@ -569,8 +577,8 @@ end
 
     @testset "1D persistent — scalar Dual" begin
         let l = linear_interp(x, y_sv), c = cubic_interp(x, y_sv),
-            q = quadratic_interp(x, y_sv), k = constant_interp(x, y_sv),
-            h = hermite_interp(x, y_sv, dy_sv)
+                q = quadratic_interp(x, y_sv), k = constant_interp(x, y_sv),
+                h = hermite_interp(x, y_sv, dy_sv)
             @test (@inferred l(xq_d)) isa SVD
             @test (@inferred c(xq_d)) isa SVD
             @test (@inferred q(xq_d)) isa SVD
@@ -581,8 +589,8 @@ end
 
     @testset "1D persistent — batch Vector{Dual}" begin
         let l = linear_interp(x, y_sv), c = cubic_interp(x, y_sv),
-            q = quadratic_interp(x, y_sv), k = constant_interp(x, y_sv),
-            h = hermite_interp(x, y_sv, dy_sv)
+                q = quadratic_interp(x, y_sv), k = constant_interp(x, y_sv),
+                h = hermite_interp(x, y_sv, dy_sv)
             @test (@inferred l(xq_dv)) isa Vector{SVD}
             @test (@inferred c(xq_dv)) isa Vector{SVD}
             @test (@inferred q(xq_dv)) isa Vector{SVD}
@@ -610,10 +618,14 @@ end
     @testset "ND batch — SVector data × (Dual, Dual)" begin
         xg = collect(1.0:5.0); yg = collect(1.0:5.0)
         data_sv = [SA[Float64(i + j), 2.0(i + j), 3.0(i + j)] for i in 1:5, j in 1:5]
-        q_dv = [(ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
-                 ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0)) for i in 1:5]
+        q_dv = [
+            (
+                    ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
+                    ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0),
+                ) for i in 1:5
+        ]
         let l = linear_interp((xg, yg), data_sv), c = cubic_interp((xg, yg), data_sv),
-            k = constant_interp((xg, yg), data_sv)
+                k = constant_interp((xg, yg), data_sv)
             @test (@inferred l(q_dv)) isa Vector{SVD}
             @test (@inferred c(q_dv)) isa Vector{SVD}
             @test (@inferred k(q_dv)) isa Vector{SVD}
@@ -822,11 +834,11 @@ end
 
     @testset "PCHIP" begin
         @test pchip_interp(x, y_d, xq_scalar) isa DuckFloat
-        @test pchip_interp(x, y_d, xq_batch)  isa Vector{DuckFloat}
+        @test pchip_interp(x, y_d, xq_batch) isa Vector{DuckFloat}
     end
 
     @testset "Akima" begin
         @test akima_interp(x, y_d, xq_scalar) isa DuckFloat
-        @test akima_interp(x, y_d, xq_batch)  isa Vector{DuckFloat}
+        @test akima_interp(x, y_d, xq_batch) isa Vector{DuckFloat}
     end
 end

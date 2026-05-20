@@ -485,7 +485,7 @@ query on the stack and reused for all K series, staying in registers across
 the K evals. No pool, no `aq_vec` scratch.
 """
 function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
-        outputs::AbstractVector{<:AbstractVector{Tv}},
+        outputs::AbstractVector{<:AbstractVector},
         xq::AbstractVector{<:Real};
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,

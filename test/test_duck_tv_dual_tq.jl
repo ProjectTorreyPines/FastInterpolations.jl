@@ -349,6 +349,43 @@ end
     end
 end
 
+# Mirror of the Cubic block above for the other three SeriesInterpolant
+# variants. Each method's persistent callable allocates via its own kernel
+# shape trait, so SVector × Dual must propagate without collapsing to
+# Vector{Any} on any of them. The Constant case is also a regression test
+# for the in-place dispatch — its `outputs::AbstractVector{<:AbstractVector{Tv}}`
+# constraint blocked carrier widening before this fix.
+@testitem "Linear/Quadratic/Constant SeriesInterpolant persistent — SVector × Dual carrier" begin
+    using StaticArrays, ForwardDiff
+    using FastInterpolations: Series
+
+    x = collect(1.0:10.0)
+    y_sv1 = [SA[Float64(i), 2.0i, 3.0i] for i in 1:10]
+    y_sv2 = [SA[-1.0 * i, 0.5i, 2.5i] for i in 1:10]
+    s_sv  = Series(y_sv1, y_sv2)
+    xq_d  = ForwardDiff.Dual{Nothing}(5.5, 1.0)
+    xq_dv = [ForwardDiff.Dual{Nothing}(2.0 + 0.1i, 1.0) for i in 1:5]
+    D = ForwardDiff.Dual{Nothing, Float64, 1}
+
+    @testset "Linear" begin
+        sitp = linear_interp(x, s_sv)
+        @test sitp(xq_d)  isa Vector{SVector{3, D}}
+        @test sitp(xq_dv) isa Vector{Vector{SVector{3, D}}}
+    end
+
+    @testset "Quadratic" begin
+        sitp = quadratic_interp(x, s_sv)
+        @test sitp(xq_d)  isa Vector{SVector{3, D}}
+        @test sitp(xq_dv) isa Vector{Vector{SVector{3, D}}}
+    end
+
+    @testset "Constant" begin
+        sitp = constant_interp(x, s_sv)
+        @test sitp(xq_d)  isa Vector{SVector{3, D}}
+        @test sitp(xq_dv) isa Vector{Vector{SVector{3, D}}}
+    end
+end
+
 @testitem "Constant ND deriv-zero short-circuit propagates Tq carrier" begin
     using ForwardDiff
 
@@ -462,6 +499,23 @@ end
         aq_vec = Vector{_QuadraticAnchoredQuery{Float64, D}}(undef, length(xq_d))
         _fill_anchors!(aq_vec, x, xq_d, Val(:quadratic))
         @test itp(aq_vec) isa Vector{D}
+    end
+
+    # Int-chain preservation: ConstantInterpolant's kernel is `yv * one(q)`,
+    # so a fully-Int chain (`Tv = Int, Tq = Int`) must stay Int through the
+    # anchored callable. The legacy 2-arg `_output_eltype` Float-upgraded any
+    # `Tr <: _PromotableValue && !<:AbstractFloat`, producing Vector{Float64}
+    # for the same input — the scalar/oneshot paths already preserved Int.
+    @testset "Constant Int-chain preservation" begin
+        x_int = collect(0:5)
+        y_int = x_int .* x_int
+        itp = constant_interp(x_int, y_int)
+        xq_int = [1, 2, 3]
+        aq_vec = Vector{_ConstantAnchoredQuery{Int, Int}}(undef, length(xq_int))
+        _fill_anchors!(aq_vec, x_int, xq_int, Val(:constant))
+        out = itp(aq_vec)
+        @test out isa Vector{Int}
+        @test out == [itp(xq) for xq in xq_int]
     end
 end
 

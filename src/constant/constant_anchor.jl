@@ -360,7 +360,7 @@ function (itp::ConstantInterpolant{Tg, Tv})(
         aq_vec::AbstractVector{<:_ConstantAnchoredQuery{Tg, Tq}};
         deriv::DerivOp = EvalValue()
     ) where {Tg, Tv, Tq <: Real}
-    T_out = _output_eltype(Tv, Tg, Tq)
+    T_out = _output_eltype(_constant_kernel_shape, Tv, Tq)
     output = Vector{T_out}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _constant_eval_with_anchor(itp, aq_vec[i], deriv)

@@ -393,9 +393,11 @@ Returns a vector of values, one per y-series.
 - `deriv=DerivOp(1),DerivOp(2)`: Returns zeros (step function derivative is zero everywhere)
 
 # AD Support
-Plain queries (`Tq <: _PromotableValue`) → output eltype `Tv` unchanged.
-Duck-typed queries (e.g. `ForwardDiff.Dual`) route through `_output_eltype`
-(`Base.promote_op` on the kernel shape) so carriers like `SVector × Dual`
+Output eltype routes through the kernel-shape trait
+`_output_eltype(_constant_kernel_shape, Tg, Tv, Tq)`. `Base.promote_op` on
+`yv * one(xq - xL)` jointly considers grid (Tg), value (Tv) and query (Tq),
+so duck carriers on either Tg (e.g. `Dual` grid + `Float` xq) or Tq (`Float`
+grid + `Dual` xq) propagate uniformly. Carriers like `SVector × Dual`
 resolve correctly instead of collapsing to `Vector{Any}`.
 """
 function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
@@ -404,10 +406,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    # Container element sized as `Tv` for promotable Tq (kernel result converts
-    # on assign). Duck Tq (Dual, …) routes through `_output_eltype` so SVector
-    # × Dual resolves via `Base.promote_op` instead of collapsing to `Vector{Any}`.
-    T_out = Tq <: _PromotableValue ? Tv : _output_eltype(Tv, Tq)
+    T_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)
 end
@@ -459,8 +458,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
 
-    # Raw-Tv contract for promotable Tq; duck Tq (Dual, …) carrier-propagates.
-    T_out = Tq <: _PromotableValue ? Tv : _output_eltype(Tv, Tq)
+    T_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
     outputs = Vector{Vector{T_out}}(undef, n_ser)
     @inbounds for k in 1:n_ser
         outputs[k] = Vector{T_out}(undef, n_query)

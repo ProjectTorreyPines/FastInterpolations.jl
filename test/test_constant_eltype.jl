@@ -488,12 +488,14 @@ end
 @testitem "Constant eltype duck-type — @inferred coverage" begin
     import FastInterpolations: ConstantInterpolantND
 
-    @testset "1D Series scalar — Tv pass-through branch" begin
+    @testset "1D Series scalar — Int y + Float xq → Float carrier" begin
+        # Series persistent now routes through `_constant_kernel_shape` like
+        # the plain 1D path — `Int y + Float xq` widens to Float.
         x = collect(0.0:0.1:1.0)
         y1 = collect(1:11)
         y2 = collect(11:21)
         sitp = constant_interp(x, Series(y1, y2))
-        @test @inferred(sitp(0.55)) isa Vector{Int}
+        @test @inferred(sitp(0.55)) isa Vector{Float64}
     end
 
     @testset "1D Series scalar — ComplexF32 Tv branch" begin
@@ -614,13 +616,19 @@ end
         @test ForwardDiff.value.(out[1]) == [10.0]
     end
 
-    @testset "plain Float xq carrier propagation — plain vs Series oneshot" begin
-        # Plain-vector oneshot picks up the Float64 xq carrier (Tv=Int → Float).
+    @testset "Float xq carrier — plain and Series oneshot agree" begin
+        # Both plain and Series route through `_constant_kernel_shape` →
+        # `Int y + Float xq → Float`.
         @test constant_interp(x, y, [0.5, 1.5]) isa Vector{Float64}
-        # Series oneshot allocator does not yet sample-first; pin current
-        # Vector{Int} return so a future migration is intentional.
-        @test constant_interp(x, s, 0.5) isa Vector{Int}
-        @test constant_interp(x, s, [0.5, 1.5]) isa Vector{Vector{Int}}
+        @test constant_interp(x, s, 0.5) isa Vector{Float64}
+        @test constant_interp(x, s, [0.5, 1.5]) isa Vector{Vector{Float64}}
+    end
+
+    @testset "Fully-Int chain — Series stays Int (matches 1D plain pin)" begin
+        x_i = [0, 1, 2, 3]
+        s_i = Series([10, 20, 30, 40])
+        @test constant_interp(x_i, s_i, 0) isa Vector{Int}
+        @test constant_interp(x_i, s_i, [0, 1]) isa Vector{Vector{Int}}
     end
 end
 

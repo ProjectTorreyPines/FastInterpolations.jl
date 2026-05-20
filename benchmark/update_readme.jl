@@ -10,7 +10,13 @@ Usage:
 Options:
     --dry-run        Show what would be changed without modifying files
     --skip-benchmark Skip benchmark execution (use existing speedup_summary.json)
+    --skip-update    Skip `Pkg.update()` before benchmark (use existing Manifest as-is)
     --plot-only      Skip benchmark, regenerate plot and update README from existing results
+
+Default behavior: refreshes the benchmark project's dependencies via
+`Pkg.update()` immediately before running the benchmark so the speedup
+table is computed against the latest available versions of the
+comparison libraries. FastInterpolations stays on the local dev path.
 """
 
 using Pkg
@@ -54,6 +60,38 @@ const SECS_LARGE = 3.0
 
 const QUERY_SIZES = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000, 50_000, 100_000]
 const N_GRID = 100
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Benchmark Environment
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Refresh the benchmark project's dependencies before measuring, so the
+# comparison libraries (Interpolations / DataInterpolations / Dierckx and
+# their transitive deps) are at their latest registered versions. The
+# `[sources] FastInterpolations = {path = ".."}` entry in `Project.toml`
+# keeps FastInterpolations on the local dev path — `Pkg.update()` resolves
+# but does not replace path-based dependencies.
+function update_benchmark_env(; verbose::Bool = true)
+    if verbose
+        println("="^60)
+        println("Refreshing Benchmark Project Environment")
+        println("="^60)
+        println()
+        println("Active project: $(Base.active_project())")
+        println("Running `Pkg.update()`...")
+        println()
+    end
+    Pkg.update()
+    if verbose
+        println()
+        println("Resolved versions (post-update):")
+        for name in ("Interpolations", "DataInterpolations", "Dierckx")
+            println("  • $name → v$(get_pkg_version(name))")
+        end
+        println()
+    end
+    return nothing
+end
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Benchmark Functions
@@ -486,6 +524,7 @@ function main()
     args = ARGS
     dry_run = "--dry-run" in args
     skip_benchmark = "--skip-benchmark" in args
+    skip_update = "--skip-update" in args
     plot_only = "--plot-only" in args
 
     if "--help" in args || "-h" in args
@@ -498,8 +537,14 @@ function main()
     println("║     FastInterpolations.jl - README Benchmark Updater         ║")
     println("╚══════════════════════════════════════════════════════════════╝")
     println()
-    println("Options: dry_run=$dry_run, skip_benchmark=$skip_benchmark, plot_only=$plot_only")
+    println("Options: dry_run=$dry_run, skip_benchmark=$skip_benchmark, skip_update=$skip_update, plot_only=$plot_only")
     println()
+
+    # Refresh benchmark project deps before measuring (skipped in plot-only /
+    # skip-benchmark modes since neither re-runs the comparison libraries).
+    if !plot_only && !skip_benchmark && !skip_update
+        update_benchmark_env()
+    end
 
     if plot_only
         println("="^60)

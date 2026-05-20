@@ -842,3 +842,98 @@ end
         @test akima_interp(x, y_d, xq_batch) isa Vector{DuckFloat}
     end
 end
+
+# ============================================================================
+# OOB carrier + empty-path eltype contracts (PR #146 Copilot/Codex reviews)
+# ============================================================================
+# Existing duck-Tv tests above only exercise in-domain queries, so the OOB
+# branches (`_eval_extrapolation` → `_promote_extrap_val`, `_try_fill_oob` →
+# `_fill_extrap_result`) never run with non-Number Tv. The fallback
+# `_promote_extrap_val(val, xq) = val` drops the Tq carrier for `SVector` /
+# non-Number Tv, so scalar OOB returns raw `SVector{Float64}` while batch
+# OOB returns `SVector{Dual}` via the trait-sized buffer — scalar/batch
+# disagree. Pinned as `@test_broken`; a follow-up fix to
+# `_promote_extrap_val`/`_promote_extrap_zero` will flip these to `@test`.
+@testitem "OOB carrier — scalar/batch consistency for non-Number Tv" begin
+    using StaticArrays, ForwardDiff
+    D = ForwardDiff.Dual{Nothing, Float64, 1}
+
+    x = [0.0, 1.0, 2.0, 3.0, 4.0]
+    y_sv = [SA[Float64(i), 2.0i] for i in 1:5]
+    xq_in     = ForwardDiff.Dual{Nothing}(1.5, 1.0)
+    xq_oob_lo = ForwardDiff.Dual{Nothing}(-1.0, 1.0)
+    xq_oob_hi = ForwardDiff.Dual{Nothing}(10.0, 1.0)
+
+    @testset "1D scalar OOB ClampExtrap — SVector y + Dual xq" begin
+        for method in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            itp = method(x, y_sv; extrap = ClampExtrap())
+            T_in = typeof(itp(xq_in))
+            @test typeof(itp(xq_oob_lo)) === T_in
+            @test typeof(itp(xq_oob_hi)) === T_in
+            # scalar/batch agreement at OOB
+            @test typeof(itp([xq_oob_lo])[1]) === typeof(itp(xq_oob_lo))
+            @test typeof(itp([xq_oob_hi])[1]) === typeof(itp(xq_oob_hi))
+        end
+    end
+
+    @testset "1D scalar OOB FillExtrap — SVector fill + Dual xq" begin
+        fill_v = SA[99.0, 99.0]
+        for method in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            itp = method(x, y_sv; extrap = FillExtrap(fill_v))
+            T_in = typeof(itp(xq_in))
+            @test typeof(itp(xq_oob_lo)) === T_in
+            @test typeof(itp([xq_oob_lo])[1]) === typeof(itp(xq_oob_lo))
+        end
+    end
+
+    @testset "ND scalar OOB FillExtrap — SVector data/fill + Dual queries" begin
+        # 5-point grids to satisfy cubic CubicFit BC defaults.
+        xg = collect(0.0:1.0:4.0); yg = collect(0.0:1.0:4.0)
+        data_sv = [SA[Float64(i), Float64(j)] for i in 1:5, j in 1:5]
+        fill_v = SA[99.0, 99.0]
+        q_in_t  = (ForwardDiff.Dual{Nothing}(1.5, 1.0),
+                   ForwardDiff.Dual{Nothing}(1.5, 1.0))
+        q_oob_t = (ForwardDiff.Dual{Nothing}(-1.0, 1.0),
+                   ForwardDiff.Dual{Nothing}(-1.0, 1.0))
+        for method in (linear_interp, cubic_interp, constant_interp)
+            itp = method((xg, yg), data_sv; extrap = FillExtrap(fill_v))
+            T_in = typeof(itp(q_in_t))
+            @test typeof(itp(q_oob_t)) === T_in
+            @test typeof(itp([q_oob_t])[1]) === typeof(itp(q_oob_t))
+        end
+    end
+
+    @testset "ND scalar OOB ClampExtrap — SVector data + Dual queries" begin
+        xg = collect(0.0:1.0:4.0); yg = collect(0.0:1.0:4.0)
+        data_sv = [SA[Float64(i), Float64(j)] for i in 1:5, j in 1:5]
+        q_in_t  = (ForwardDiff.Dual{Nothing}(1.5, 1.0),
+                   ForwardDiff.Dual{Nothing}(1.5, 1.0))
+        q_oob_t = (ForwardDiff.Dual{Nothing}(-1.0, 1.0),
+                   ForwardDiff.Dual{Nothing}(-1.0, 1.0))
+        for method in (linear_interp, cubic_interp, constant_interp)
+            itp = method((xg, yg), data_sv; extrap = ClampExtrap())
+            T_in = typeof(itp(q_in_t))
+            @test typeof(itp(q_oob_t)) === T_in
+            @test typeof(itp([q_oob_t])[1]) === typeof(itp(q_oob_t))
+        end
+    end
+end
+
+# Constant ND oneshot derivative fast path: `nq == 0 && return Vector{Tv}(undef, 0)`
+# ignores the query carrier, while the `nq > 0` branch synthesises
+# `0 * first(data) * prod(one, first_q)` (carrier-aware). Empty and non-empty
+# results disagree on eltype — pinned `@test_broken` until the empty branch
+# allocates with the same trait-derived eltype as the non-empty branch.
+@testitem "ND oneshot derivative — empty vs non-empty query eltype" begin
+    using ForwardDiff
+    xg = [0.0, 1.0, 2.0]; yg = [0.0, 1.0, 2.0]
+    data = Float64[10i + j for i in 1:3, j in 1:3]
+    q_one_d = [(ForwardDiff.Dual{Nothing}(0.5, 1.0),
+                ForwardDiff.Dual{Nothing}(0.5, 1.0))]
+    q_empty_d = typeof(q_one_d)()
+    derivs = (EvalValue(), DerivOp(1))
+    r_one   = constant_interp((xg, yg), data, q_one_d;   deriv = derivs)
+    r_empty = constant_interp((xg, yg), data, q_empty_d; deriv = derivs)
+    @test eltype(r_one) === eltype(r_empty)
+    @test length(r_empty) == 0
+end

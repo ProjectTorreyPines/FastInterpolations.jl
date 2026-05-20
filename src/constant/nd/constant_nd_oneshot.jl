@@ -193,9 +193,13 @@ function constant_interp(
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     if _is_any_deriv(deriv)
         # `prod(one, first_q)` folds carrier over every axis (mirrors the
-        # scalar deriv branch above and the forward kernel).
+        # scalar deriv branch above and the forward kernel). Empty path
+        # uses the kernel-shape trait so eltype matches the non-empty
+        # branch (query carrier preserved).
         nq = _query_length(queries)
-        nq == 0 && return Vector{Tv}(undef, 0)
+        Tg_grid = eltype(grids_typed[1])
+        Tq = _query_eltype(queries)
+        nq == 0 && return Vector{_output_eltype(_constant_kernel_shape, Tg_grid, Tv, Tq)}(undef, 0)
         first_q = _extract_query_point(queries, 1, Val(N))
         zero_sample = 0 * first(data) * prod(one, first_q)
         return fill(zero_sample, nq)

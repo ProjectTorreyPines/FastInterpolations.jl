@@ -569,8 +569,13 @@ end
 # Named _promote_extrap_val (not _promote_extrap) to avoid collision with the struct
 # promoter in eval_ops.jl which promotes FillExtrap fill_value at construction time.
 @inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * zero(val)
+# AbstractArray Tv (e.g. `SVector` y) — broadcast the carrier-propagating
+# pattern so scalar OOB matches in-domain kernel's `y * one(dL)` shape and
+# agrees with batch path's trait-sized buffer.
+@inline _promote_extrap_val(val::AbstractArray, xq::Number) = val .+ zero(xq) .* zero(eltype(val))
 @inline _promote_extrap_val(val, xq) = val
 @inline _promote_extrap_zero(val::Number, xq::Number) = zero(xq) * zero(val)
+@inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* zero(eltype(val))
 @inline _promote_extrap_zero(val, xq) = 0 * val
 
 # Generic: any derivative order → zero (flat extrapolation has zero derivatives)

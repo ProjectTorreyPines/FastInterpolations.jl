@@ -37,9 +37,9 @@ function cubic_interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     # Type promotion + validation (same as constructor path)
-    grids_typed, Tg, Tv_p, Tz = _nd_promote_grids(grids, data)
+    grids_typed, Tg, Tv_p, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
-    Tr = _output_eltype(Tv_p, Tg, typeof.(query)...)
+    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, promote_type(typeof.(query)...))
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis

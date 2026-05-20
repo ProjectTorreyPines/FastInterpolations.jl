@@ -283,7 +283,7 @@ function cubic_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tv, Tq <: Real}
-    Tr = _output_eltype(Tv, eltype(cache.x), Tq)
+    Tr = _output_eltype(_arithmetic_kernel_shape, eltype(cache.x), Tv, Tq)
     output = Vector{Tr}(undef, length(x_query))
     cubic_interp!(output, cache, y, x_query; extrap = extrap, deriv = deriv, search = search)
     return output

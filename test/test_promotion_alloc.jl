@@ -309,3 +309,43 @@
         @test alloc_f32 - alloc_f64 < extra_vector_bytes ÷ 2  # less than half an extra vector
     end
 end
+
+# Sample-first removal contract (commit 59fc74c58): the persistent batch
+# allocating callable `itp(xq)` no longer evaluates the kernel once to read
+# `typeof(first_val)` — the kernel-shape trait predicts the buffer eltype
+# directly. The protocol-level guarantee is that the call allocates exactly
+# the output Vector and nothing else. If sample-first were re-introduced
+# (or any other intermediate buffer leaked into the persistent batch path)
+# the alloc cost would rise above one Vector{T_out}.
+@testitem "Persistent batch allocator: trait-only sizing (output Vector only)" setup = [AllocConstants] begin
+    x = collect(0.0:0.1:10.0)
+    y = sin.(x)
+    xq = collect(0.5:0.01:9.5)
+    n = length(xq)
+
+    # Function barriers — closure capture would box the locals.
+    _bench_persistent(itp, xq) = itp(xq)
+    _bench_vector(n) = Vector{Float64}(undef, n)
+
+    # Reference: a bare Vector{Float64}(undef, n) alloc cost.
+    _bench_vector(n)
+    cost_vector = @allocated _bench_vector(n)
+
+    for builder in (
+            () -> linear_interp(x, y),
+            () -> cubic_interp(x, y),
+            () -> quadratic_interp(x, y),
+            () -> pchip_interp(x, y),
+            () -> cardinal_interp(x, y),
+            () -> akima_interp(x, y),
+            () -> constant_interp(x, y),
+        )
+        itp = builder()
+        _bench_persistent(itp, xq)   # warmup
+        cost_itp = @allocated _bench_persistent(itp, xq)
+        # Persistent batch alloc = output Vector + ALLOC_THRESHOLD slack.
+        # A re-introduced sample-first (or any leaked scratch buffer) would
+        # exceed this by at least one kernel-result-sized allocation per call.
+        @test cost_itp <= cost_vector + ALLOC_THRESHOLD
+    end
+end

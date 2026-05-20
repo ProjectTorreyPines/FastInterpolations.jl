@@ -195,10 +195,10 @@ end
         @test out ≈ [10.0, 20.0, 30.0]
 
         # Test 3: Vector allocating with Integer grid + Integer query.
-        # Constant duck-types output to `eltype(y)` — no Float widening.
+        # Natural promotion: trait upgrades Int→Float at allocation.
         result_vec = constant_interp(x_int, y_int, [0, 1, 2])
-        @test result_vec isa Vector{Int}
-        @test result_vec == [10, 20, 30]
+        @test result_vec isa Vector{Float64}
+        @test result_vec == [10.0, 20.0, 30.0]
 
         # Test 4: In-place Real→Float wrapper (lines 440-468)
         # constant_interp!(output, x::AbstractVector{T}, y::AbstractVector{T}, x_targets::AbstractVector{S})

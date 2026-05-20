@@ -274,8 +274,9 @@ sorted_queries = sort(rand(1000))
 vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
-# Sample-first allocation: kernel return type drives the container eltype,
-# which faithfully handles cases where `promote_type` is non-concrete.
+# Buffer eltype from the unified `_output_eltype` — same natural-promotion
+# rule as every other method (Int chains widen to Float; duck `SVector × Dual`
+# resolves via `Base.promote_op` fallback).
 function constant_interp(
         x::AbstractVector,
         y::AbstractVector,
@@ -286,15 +287,9 @@ function constant_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    n = length(x_targets)
-    if n == 0
-        return Vector{_output_eltype(eltype(y), eltype(x), eltype(x_targets))}(undef, 0)
-    end
-    first_val = constant_interp(
-        x, y, @inbounds(x_targets[begin]);
-        bc, side, extrap, deriv, search
+    output = Vector{_output_eltype(eltype(y), eltype(x), eltype(x_targets))}(
+        undef, length(x_targets)
     )
-    output = Vector{typeof(first_val)}(undef, n)
     constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)
     return output
 end

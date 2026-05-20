@@ -105,18 +105,10 @@ function _constant_interp_nd_oneshot_batch(
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tg, Tv, N}
-    nq = _query_length(queries)
-    if nq == 0
-        return Vector{Tv}(undef, 0)
-    end
-    # Sample-first: Constant's `y * one(dL)` kernel produces a type that depends
-    # on the query carrier (Int×Float→Float, SVector×Dual→SVector{Dual}); the
-    # trait would over-predict via the Float upgrade so we read the actual
-    # kernel return type from a single scalar eval.
-    policies, _ = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
-    first_q = _extract_query_point(queries, 1, Val(N))
-    first_val = _constant_interp_nd_oneshot(grids, data, first_q, bcs, extraps_val, side_vals, policies, nothing)
-    output = Vector{typeof(first_val)}(undef, nq)
+    # Unified trait: natural promotion (Int→Float upgrade for promotable Tq;
+    # duck `SVector × Dual` resolves via `Base.promote_op` fallback).
+    Tq = _query_eltype(queries)
+    output = Vector{_output_eltype(Tv, Tg, Tq)}(undef, _query_length(queries))
     return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, search, hint)
 end
 

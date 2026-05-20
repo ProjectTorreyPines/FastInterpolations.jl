@@ -56,8 +56,10 @@ end
 # ========================================
 # 1D Vector Call — Allocating
 # ========================================
-# Sample-first: kernel return type drives the container eltype. Required when
-# `promote_type(Tv, Tg, Tq)` is non-concrete (e.g., `SVector × Dual`).
+# Buffer eltype comes from the `_output_eltype(itp, Tq)` trait — generic for
+# arithmetic kernels (Int→Float upgrade) and `_select_output_eltype` for
+# selection kernels (Constant). Duck `SVector × Dual` resolves via the
+# trait's `Base.promote_op` fallback.
 
 function (itp::AbstractInterpolant1D{Tg, Tv})(
         xq::AbstractVector{Tq};
@@ -67,13 +69,8 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     ) where {Tg, Tv, Tq <: Real}
     grid = _itp_grid(itp)
     extrap = _itp_extrap(itp)
-    n = length(xq)
-    if n == 0
-        return Vector{_output_eltype(itp, Tq)}(undef, 0)
-    end
+    output = Vector{_output_eltype(itp, Tq)}(undef, length(xq))
     searcher = _resolve_search(grid, xq, search, hint)
-    first_val = _itp_eval_scalar(itp, @inbounds(xq[begin]), extrap, deriv, searcher)
-    output = Vector{typeof(first_val)}(undef, n)
     _itp_vector_loop!(output, itp, xq, extrap, deriv, searcher)
     return output
 end
@@ -259,7 +256,8 @@ end
 # ========================================
 # ND Allocating Batch — Unified
 # ========================================
-# Sample-first: kernel return type drives the container eltype (see 1D variant).
+# Buffer eltype from `_output_eltype(itp, Tq)` (see 1D variant for kernel-
+# type rationale); delegates to in-place — no sample-first eval.
 
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
         queries;
@@ -268,13 +266,6 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     Tq = _query_eltype(queries)
-    nq = _query_length(queries)
-    if nq == 0
-        return Vector{_output_eltype(itp, Tq)}(undef, 0)
-    end
-    first_query = _extract_query_point(queries, 1, Val(N))
-    first_val = itp(first_query; deriv = deriv, search = search, hint = hint)
-    output = Vector{typeof(first_val)}(undef, nq)
-    @inbounds output[1] = first_val
+    output = Vector{_output_eltype(itp, Tq)}(undef, _query_length(queries))
     return itp(output, queries; deriv = deriv, search = search, hint = hint)
 end

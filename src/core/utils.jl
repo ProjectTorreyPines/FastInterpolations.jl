@@ -122,9 +122,10 @@ Determine the output value type from y element type and grid type.
     _output_eltype(::Type{Tv}, types...) -> Type
 
 Output element type for one-shot batch allocation. Concrete `promote_type`
-result gets Int→Float upgrade; otherwise queries `Base.promote_op` on
-`_kernel_shape_op` (constant-folded at compile time) to see through duck
-carriers like `SVector × Dual`. Falls back to `Tv` if the op is undefined.
+result gets Int→Float upgrade (natural promotion — arithmetic kernels divide,
+selection kernel accepts the same widening at allocation time); otherwise
+queries `Base.promote_op` on `_kernel_shape_op` to see through duck carriers
+like `SVector × Dual`. Falls back to `Tv` if the op is undefined.
 """
 @inline function _output_eltype(::Type{Tv}, types::Type...) where {Tv}
     Tr = promote_type(Tv, types...)

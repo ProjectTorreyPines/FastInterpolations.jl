@@ -209,11 +209,15 @@ end
         @test (@inferred itp_f(ForwardDiff.Dual{Nothing}(5.5, 1.0))) isa D
     end
 
-    @testset "Constant Int → Int contract (non-regression)" begin
+    @testset "Constant natural-promote — scalar Int×Int → Int; batch widens" begin
+        # Scalar: kernel direct, fully-Int chain stays Int (kernel returns
+        # `y[idx] * one(Int) = Int`).
         x = collect(1:10)
         y = collect(10:10:100)
-        @test constant_interp(x, y)(3) isa Int
-        @test constant_interp(x, y)([2, 5, 8]) isa Vector{Int}
+        @test constant_interp(x, y)(3) === 30
+        # Batch: trait applies Int→Float upgrade (same machinery as every
+        # other method — no Constant-specific helper).
+        @test constant_interp(x, y)([2, 5, 8]) isa Vector{Float64}
     end
 
     @testset "_output_eltype trait — type table" begin

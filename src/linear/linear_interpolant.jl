@@ -19,6 +19,9 @@ end
     return _linear_vector_loop!(output, itp.x, itp.y, xq, extrap, op, searcher)
 end
 
+# Linear uses the default `_arithmetic_kernel_shape` route (inherited from
+# `AbstractInterpolant1D`) — no explicit override needed.
+
 # ========================================
 # Vector Loop (Function Barrier)
 # ========================================

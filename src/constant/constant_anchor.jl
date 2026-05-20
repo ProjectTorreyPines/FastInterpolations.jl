@@ -273,14 +273,14 @@ end
 # Canonical evaluation functions that take raw y vector + explicit params.
 # Used by both interpolant anchor dispatch AND series one-shot evaluation.
 
-# Default case (extension, wrap, inbounds): kernel with right-boundary check
+# Default case (extension, wrap, inbounds): kernel with right-boundary check.
+# Short-circuits use `* one(aq.xq)` to match the kernel's `* one(dL)` carrier
+# propagation — without it, Int y + Float xq returns Union{Int,Float}.
 @inline function _constant_eval_at_anchor(
         y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
         op::AbstractEvalOp, side_param::AbstractSide, ::AbstractExtrap
     )
-    # Right-edge short-circuit: `y[aq.idxR]` resolves to `y[end]` for non-periodic
-    # (idxR == n) and to the cyclic `y[1]` for `_ExclusivePeriodicAxis` (idxR == 1).
-    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR]) : 0 * first(y))
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq)) : 0 * first(y) * one(aq.xq))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
@@ -290,9 +290,7 @@ end
         op::AbstractEvalOp, side_param::AbstractSide, ::NoExtrap
     )
     aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
-    # Right-edge short-circuit: `y[aq.idxR]` resolves to `y[end]` for non-periodic
-    # (idxR == n) and to the cyclic `y[1]` for `_ExclusivePeriodicAxis` (idxR == 1).
-    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR]) : 0 * first(y))
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq)) : 0 * first(y) * one(aq.xq))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
@@ -305,9 +303,7 @@ end
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     end
-    # Right-edge short-circuit: `y[aq.idxR]` resolves to `y[end]` for non-periodic
-    # (idxR == n) and to the cyclic `y[1]` for `_ExclusivePeriodicAxis` (idxR == 1).
-    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR]) : 0 * first(y))
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq)) : 0 * first(y) * one(aq.xq))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
@@ -334,10 +330,8 @@ end
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end
-    # Right-edge short-circuit: `idxR` resolves to `n` for non-periodic and to
-    # `n+1` (cyclic `y[1]`) on `:exclusive` PeriodicBC's extended-grid persistent path.
     if aq.xq == last(itp.x)
-        return op isa EvalValue ? (@inbounds itp.y[aq.idxR]) : zero(T)
+        return op isa EvalValue ? (@inbounds itp.y[aq.idxR] * one(aq.xq)) : zero(T) * one(aq.xq)
     end
     @inbounds return _constant_kernel(op, itp.y[aq.idxL], itp.y[aq.idxR], aq.h, aq.dL, itp.side)
 end
@@ -362,11 +356,12 @@ end
 Evaluate constant interpolant at multiple anchored query points.
 Returns newly allocated vector.
 """
-function (itp::ConstantInterpolant{T})(
-        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{T}};
+function (itp::ConstantInterpolant{Tg, Tv})(
+        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{Tg, Tq}};
         deriv::DerivOp = EvalValue()
-    ) where {T}
-    output = Vector{T}(undef, length(aq_vec))
+    ) where {Tg, Tv, Tq <: Real}
+    T_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
+    output = Vector{T_out}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _constant_eval_with_anchor(itp, aq_vec[i], deriv)
     end

@@ -199,7 +199,7 @@ function cardinal_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    Tr = _output_eltype(Tv, _promote_grid_float(Tg, Tv), Tq)
+    Tr = _output_eltype(_arithmetic_kernel_shape, _promote_grid_float(Tg, Tv), Tv, Tq)
     output = Vector{Tr}(undef, length(x_query))
     cardinal_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, tension = tension, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output

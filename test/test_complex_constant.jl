@@ -56,11 +56,12 @@
 
         itp = constant_interp(x, y)
 
-        # Constant duck-types: Int grid stays Int, Complex{Int} preserved.
+        # Storage stays raw: Int grid, Complex{Int} y.
         @test itp isa ConstantInterpolant{Int, Complex{Int}}
 
+        # Float64 xq carrier propagates: Complex{Int} * one(Float64) = ComplexF64.
         val = itp(0.5)
-        @test val isa Complex{Int}
+        @test val isa ComplexF64
     end
 
     # ========================================

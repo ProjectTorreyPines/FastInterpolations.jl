@@ -30,12 +30,10 @@
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
     if _extract_primal(xi) == _extract_primal(last(x))
-        # `last(x)` for `_ExclusivePeriodicAxis` is the *virtual* `inner[1] + period`
-        # (the seam right endpoint). The corresponding y at that virtual slot is
-        # `last(y) = inner[1]` for `_ExclusivePeriodicData` — cyclic via the data
-        # wrapper. For raw vectors both `last`s are the user's last entry.
-        # Single uniform `last(y)` handles both cases — no `_resolve_idx` needed.
-        return op isa EvalValue ? last(y) : 0 * first(y)
+        # `last(y)` covers both raw vectors and `_ExclusivePeriodicData` (cyclic
+        # `inner[1]`). `* one(xi)` propagates Tq carrier to match the kernel
+        # path below (without it, Int y + Float xq returns Union{Int,Float}).
+        return op isa EvalValue ? last(y) * one(xi) : 0 * first(y) * one(xi)
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
@@ -108,7 +106,7 @@ end
     # the exact boundary. `last(_ExclusivePeriodicData) = inner[1]` so `:exclusive`
     # cyclic wrap is preserved; raw Vector yields `y[n]`.
     _extract_primal(xi_wrapped) == _extract_primal(last(x)) &&
-        return op isa EvalValue ? last(y) : 0 * first(y)
+        return op isa EvalValue ? last(y) * one(xi_wrapped) : 0 * first(y) * one(xi_wrapped)
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     # Unwrap data once: `search_interval` already resolved the seam (idx_R = 1
@@ -157,8 +155,8 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `LinearBinarySearch(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns
-- Interpolated value, eltype `eltype(y)` (raw Tv; widens to `promote_type(Tv, Tq)`
-  only for duck-typed queries).
+- Interpolated value, eltype `promote_type(eltype(y), eltype(xq))` (the
+  kernel's `* one(dL)` carrier propagation; fully-Int chain preserves Int).
 
 # Example
 ```julia
@@ -276,9 +274,10 @@ sorted_queries = sort(rand(1000))
 vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
-# Unified allocating vector one-shot. Output eltype = `eltype(y)` for plain
-# numeric queries (raw Tv contract); widens to `promote_type(Tv, Tq)` for
-# duck-typed queries (Dual, Measurement, …) so AD carriers aren't stripped.
+# Buffer eltype via Constant's kernel shape — Julia infers the return type
+# from `_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`, matching the
+# actual kernel reality (Int×Int×Int → Int; SVector × Dual → SVector{Dual};
+# Float y × Dual grid → Dual carrier via `xq - xL`).
 function constant_interp(
         x::AbstractVector,
         y::AbstractVector,
@@ -289,10 +288,9 @@ function constant_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    Tv = eltype(y)
-    Tq = eltype(x_targets)
-    T_out = Tq <: _PromotableValue ? Tv : promote_type(Tv, Tq)
-    output = Vector{T_out}(undef, length(x_targets))
+    output = Vector{_output_eltype(_constant_kernel_shape, eltype(x), eltype(y), eltype(x_targets))}(
+        undef, length(x_targets)
+    )
     constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)
     return output
 end

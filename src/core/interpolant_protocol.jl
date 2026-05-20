@@ -25,15 +25,11 @@
 @inline _itp_search(itp::AbstractInterpolant1D) = itp.search_policy
 
 # ── Output eltype trait ──
-# Arithmetic kernels (Linear, Cubic, …) widen via `_output_eltype(Tv, Tg, Tq)`
-# because the kernel produces a wider result from the arithmetic. Selection
-# kernels (Constant) override this to keep raw `Tv` for plain queries and
-# only widen for duck-typed queries (Dual, Measurement, …) so AD carriers
-# round-trip. Both scalar and batch protocol callables go through this single
-# trait; on the scalar path the result is wrapped in `convert(...)` (identity
-# when the kernel already produced the trait's type).
+# Default: arithmetic kernels (Linear/Cubic/Quadratic) divide by `h`, so route
+# through the shared `_arithmetic_kernel_shape` for Julia inference. Selection
+# kernels (Constant) and Hermite-family (with `dy`) override this default.
 @inline _output_eltype(::AbstractInterpolant1D{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
-    _output_eltype(Tv, Tg, Tq)
+    _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
 
 # ========================================
 # 1D Scalar Call — Hot Path
@@ -54,15 +50,16 @@
     # while Clamp/Fill/Wrap handle OOB inside their specialized eval methods
     # without ever calling `_check_domain`. Outer redundancy removed.
     searcher = _resolve_search(grid, xq, search, hint)
-    val = _itp_eval_scalar(itp, xq, extrap, deriv, searcher)
-    return convert(_output_eltype(itp, typeof(xq)), val)
+    return _itp_eval_scalar(itp, xq, extrap, deriv, searcher)
 end
 
 # ========================================
 # 1D Vector Call — Allocating
 # ========================================
-# Output eltype: trait `_output_eltype(itp, Tq)` — defaults to widening
-# `promote_type(Tv, Tg, Tq)`; Constant overrides for raw-Tv contract.
+# Buffer eltype comes from the `_output_eltype(itp, Tq)` trait — generic for
+# arithmetic kernels (Int→Float upgrade) and `_select_output_eltype` for
+# selection kernels (Constant). Duck `SVector × Dual` resolves via the
+# trait's `Base.promote_op` fallback.
 
 function (itp::AbstractInterpolant1D{Tg, Tv})(
         xq::AbstractVector{Tq};
@@ -109,7 +106,7 @@ end
 
 # ── Output eltype trait (ND) — mirrors the 1D version. ──
 @inline _output_eltype(::AbstractInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
-    _output_eltype(Tv, Tg, Tq)
+    _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
 
 # ========================================
 # Unified Batch Interpolant Evaluation (Generic ND)
@@ -185,7 +182,8 @@ end
     _validate_nd_domain(itp.grids, query, itp.extraps)
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
-    _deriv_zero_fill(itp, ops, Val(N)) && return 0 * _zero_ref(itp)
+    # `prod(one, query)` folds carrier over every axis; identity for plain Float.
+    _deriv_zero_fill(itp, ops, Val(N)) && return 0 * _zero_ref(itp) * prod(one, query)
     cell = _locate_cell(itp, query, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
 end
@@ -258,7 +256,8 @@ end
 # ========================================
 # ND Allocating Batch — Unified
 # ========================================
-# Allocates output via protocol, delegates to in-place above.
+# Buffer eltype from `_output_eltype(itp, Tq)` (see 1D variant for kernel-
+# type rationale); delegates to in-place — no sample-first eval.
 
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
         queries;

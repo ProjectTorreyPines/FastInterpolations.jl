@@ -105,7 +105,9 @@ function _constant_interp_nd_oneshot_batch(
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tg, Tv, N}
-    output = Vector{Tv}(undef, _query_length(queries))
+    # Buffer eltype via Constant's kernel shape (mirrors 1D oneshot wrapper).
+    Tq = _query_eltype(queries)
+    output = Vector{_output_eltype(_constant_kernel_shape, Tg, Tv, Tq)}(undef, _query_length(queries))
     return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, search, hint)
 end
 
@@ -145,9 +147,10 @@ function constant_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    # Any derivative of constant interpolation is zero
+    # `prod(one, query)` folds `one(::Tq_axis_d)` over every axis (mirrors
+    # forward kernel's per-axis `* one(dL_d)`); identity for plain Float.
     if _is_any_deriv(deriv)
-        return 0 * first(data)
+        return 0 * first(data) * prod(one, query)
     end
 
     grids_typed, _, _ = _nd_promote_grids_raw(grids, data)
@@ -160,7 +163,7 @@ function constant_interp(
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _constant_interp_nd_oneshot(
         grids_typed, data, query, bcs, extraps_val, sides, searches, hint
-    )::Tv
+    )
 end
 
 """
@@ -181,10 +184,6 @@ function constant_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    if _is_any_deriv(deriv)
-        return zeros(Tv, _query_length(queries))
-    end
-
     grids_typed, _, _ = _nd_promote_grids_raw(grids, data)
     _validate_nd_grids(grids_typed, data)
 
@@ -192,9 +191,22 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
 
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
+    if _is_any_deriv(deriv)
+        # `prod(one, first_q)` folds carrier over every axis (mirrors the
+        # scalar deriv branch above and the forward kernel). Empty path
+        # uses the kernel-shape trait so eltype matches the non-empty
+        # branch (query carrier preserved).
+        nq = _query_length(queries)
+        Tg_grid = eltype(grids_typed[1])
+        Tq = _query_eltype(queries)
+        nq == 0 && return Vector{_output_eltype(_constant_kernel_shape, Tg_grid, Tv, Tq)}(undef, 0)
+        first_q = _extract_query_point(queries, 1, Val(N))
+        zero_sample = 0 * first(data) * prod(one, first_q)
+        return fill(zero_sample, nq)
+    end
     return _constant_nd_batch_dispatch(
         grids_typed, data, queries, bcs, extraps_val, sides, search, hint
-    )::Vector{Tv}
+    )
 end
 
 # ========================================

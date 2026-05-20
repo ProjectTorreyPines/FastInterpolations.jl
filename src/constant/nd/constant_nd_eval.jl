@@ -9,9 +9,6 @@
 # Callable Interface
 # ========================================
 
-# Scalar tuple query — wraps the selection-kernel value in `convert` against
-# the `_output_eltype(itp, Tq)` trait so plain numeric queries keep raw `Tv`
-# while duck-typed queries (Dual, …) get their carrier preserved.
 @inline function (itp::ConstantInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
@@ -23,16 +20,13 @@
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
-    val = _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
-    Tq = promote_type(map(typeof, query)...)
-    return convert(_output_eltype(itp, Tq), val)
+    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
 end
 
 # In-place + allocating batch use the inherited `AbstractInterpolantND`
-# protocol; output eltype comes from the `_output_eltype(itp, Tq)` trait
-# overridden in `constant_nd_types.jl`. Scalar evaluation routes through
-# the generic `_eval_nd_at_point` in interpolant_protocol.jl — Constant's
-# "any derivative → 0" rule is wired via the `_deriv_zero_fill` trait below.
+# protocol (trait-sized allocator via `_output_eltype`). Scalar routes
+# through `_eval_nd_at_point`; Constant's "any derivative → 0" rule is
+# wired via `_deriv_zero_fill` below.
 
 # Derivative zero-fill trait: constant has zero derivative at all orders
 @inline _deriv_zero_fill(::ConstantInterpolantND, ops::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} =
@@ -99,10 +93,11 @@ end
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp}
     ) where {Tg, Tv, N}
-    if _has_any_derivative(ops, Val(N))
-        return 0 * first(itp.data)
-    end
     data, stencils, hs, sides, q_eval, Ls = cell
+    if _has_any_derivative(ops, Val(N))
+        # `prod(one, q_eval)` folds carrier over every axis.
+        return 0 * first(itp.data) * prod(one, q_eval)
+    end
     return _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls)
 end
 
@@ -195,7 +190,9 @@ paths share this signature.
     end
     idx_expr = Expr(:tuple, idx_parts...)
 
-    push!(exprs, :(@inbounds data[$idx_expr...]))
+    # Per-axis `* one(dL_d)` propagates each axis's `Tq` carrier (mirrors 1D).
+    ones_expr = Expr(:call, :*, [:(one($(Symbol("dL_", d)))) for d in 1:N]...)
+    push!(exprs, :(@inbounds data[$idx_expr...] * $ones_expr))
 
     return Expr(:block, :(Base.@_inline_meta), exprs...)
 end

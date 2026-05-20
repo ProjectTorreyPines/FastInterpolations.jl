@@ -17,15 +17,19 @@
         _CachedRange, _CachedVector, _ExclusivePeriodicAxis
 
     @testset "Persistent constructor (1D)" begin
-        @testset "Int Vector x, Int y → output Int" begin
+        @testset "Int Vector x, Int y — output follows query type" begin
             x = [0, 1, 2, 3, 4]
             y = [10, 20, 30, 40, 50]
             itp = constant_interp(x, y)
             @test itp isa ConstantInterpolant{Int, Int}
             @test eltype(itp.y) === Int
             @test itp.x isa _CachedVector{Int, Float64}
-            @test itp(1.5) isa Int
-            @test itp(1.5) == 20
+            # Float xq → Float (Int y * one(Float) = Float).
+            @test itp(1.5) isa Float64
+            @test itp(1.5) == 20.0
+            # Int xq → Int (fully-Int chain preserves Tv).
+            @test itp(2) isa Int
+            @test itp(2) == 30
         end
 
         @testset "Int Range x, Int y → itp.x::_CachedRange{Int, Float64}" begin
@@ -36,26 +40,32 @@
             @test itp.x isa _CachedRange{Int, Float64}
             @test itp.x.h === 1
             @test itp.x.inv_h === 1.0
-            @test itp(2.5) isa Int
-            @test itp(2.5) == 30
+            # Float xq → Float.
+            @test itp(2.5) isa Float64
+            @test itp(2.5) == 30.0
+            # Int xq → Int.
+            @test itp(3) isa Int
+            @test itp(3) == 40
         end
 
-        @testset "Rational x, Rational y → output Rational{Int}" begin
+        @testset "Rational x, Rational y, Rational xq → output Rational{Int}" begin
             x = Rational{Int}[0 // 1, 1 // 1, 2 // 1, 3 // 1, 4 // 1]
             y = Rational{Int}[1 // 2, 3 // 2, 5 // 2, 7 // 2, 9 // 2]
             itp = constant_interp(x, y)
             @test itp isa ConstantInterpolant{Rational{Int}, Rational{Int}}
+            # Rational xq stays Rational (Rational * one(Rational) = Rational).
             @test itp(3 // 2) isa Rational{Int}
             @test itp(3 // 2) === 3 // 2
         end
 
-        @testset "Float64 x, Int y → output Int (NEW: no Float widening)" begin
+        @testset "Float64 x, Int y, Float xq → Float (natural promote)" begin
             x = [0.0, 1.0, 2.0, 3.0, 4.0]
             y = [10, 20, 30, 40, 50]
             itp = constant_interp(x, y)
             @test itp isa ConstantInterpolant{Float64, Int}
-            @test itp(1.5) isa Int
-            @test itp(1.5) == 20
+            # Carrier propagates: Int y * one(Float64) = Float64. Value preserved.
+            @test itp(1.5) isa Float64
+            @test itp(1.5) == 20.0
         end
 
         @testset "Float32 x, Float32 y → output Float32 (regression guard)" begin
@@ -87,6 +97,7 @@
         end
 
         @testset "vector alloc oneshot returns Vector{Int}" begin
+            # Kernel-shape trait infers Int×Int×Int → Int; matches scalar path.
             v = constant_interp(x_int, y_int, [0, 1, 2, 3])
             @test v isa Vector{Int}
             @test v == [10, 20, 30, 40]
@@ -105,20 +116,23 @@
             y = [10, 20, 30, 10]  # closed cycle
             itp = constant_interp(x, y; bc = PeriodicBC())
             @test itp isa ConstantInterpolant{Int, Int}
-            @test itp(0.5) isa Int
-            @test itp(3.5) isa Int  # wraps to first cell
+            # Float xq → Float (natural promote); Int xq → Int.
+            @test itp(0.5) isa Float64
+            @test itp(3.5) isa Float64    # wraps to first cell
+            @test itp(1) isa Int
         end
 
         @testset "exclusive + Int Vector x + Int y" begin
-            # Constant preserves raw grid eltype — `:exclusive` extension is
-            # shape-only (n → n+1), no float promotion.
+            # Constant grid eltype stays Int (`:exclusive` extension is
+            # shape-only, n → n+1). Query type drives output.
             x = [0, 1, 2]
             y = [10, 20, 30]
             itp = constant_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 3))
             @test itp isa ConstantInterpolant{Int, Int}
             @test length(itp.x) == 4          # closed-cycle n+1
             @test itp.x[end] == itp.x[1] + 3  # virtual endpoint at period
-            @test itp(0.5) isa Int
+            @test itp(0.5) isa Float64
+            @test itp(1) isa Int
         end
 
         @testset "inclusive + Int Range x + Int y → _CachedRange{Int, Float64}" begin
@@ -127,8 +141,10 @@
             itp = constant_interp(x, y; bc = PeriodicBC())
             @test itp isa ConstantInterpolant{Int, Int}
             @test itp.x isa _CachedRange{Int, Float64}
-            @test itp(0.5) isa Int
-            @test itp(0.5) == 10
+            @test itp(0.5) isa Float64
+            @test itp(0.5) == 10.0
+            @test itp(1) isa Int
+            @test itp(1) == 20
         end
     end
 
@@ -270,7 +286,9 @@ end
             data = [10 * i + j for i in 1:5, j in 1:4]   # Int matrix
             itp = constant_interp((x, y), data)
             @test itp isa ConstantInterpolantND{Int, Int, 2}
-            @test itp((2.5, 1.5)) isa Int
+            # Float xq → Float (natural promote); Int xq → Int (fully-Int chain).
+            @test itp((2.5, 1.5)) isa Float64
+            @test itp((2, 1)) isa Int
             @test itp.grids[1] isa _CachedRange{Int, Float64}
             @test itp.grids[2] isa _CachedVector{Int, Float64}
         end
@@ -306,24 +324,28 @@ end
         @test itp((2.5, 1.5)) isa Float64
     end
 
-    @testset "Int data + Float axes — output tracks `eltype(data)`" begin
+    @testset "Int data + Float axes — query carrier drives output" begin
         # Axes Float, data Int → Tv=Int, Tg=Float64.
         x = [0.0, 1.0, 2.0, 3.0]
         y = [0.0, 1.0, 2.0]
         data = [10 * i + j for i in 1:4, j in 1:3]  # Int matrix
         itp = constant_interp((x, y), data)
         @test itp isa ConstantInterpolantND{Float64, Int, 2}
-        @test itp((1.5, 0.5)) isa Int
+        # Float xq → Float result (Int data * one(Float) = Float).
+        @test itp((1.5, 0.5)) isa Float64
     end
 
-    @testset "3D sanity — Int^3 → Int output" begin
+    @testset "3D Int^3 — fully-Int chain stays Int" begin
         x = 0:1:3
         y = 0:1:2
         z = 0:1:2
         data = [i + 10j + 100k for i in 1:4, j in 1:3, k in 1:3]  # Int 3D
         itp = constant_interp((x, y, z), data)
         @test itp isa ConstantInterpolantND{Int, Int, 3}
-        @test itp((1.5, 0.5, 1.5)) isa Int
+        # Int xq → Int (fully-Int chain).
+        @test itp((1, 0, 1)) isa Int
+        # Float xq → Float.
+        @test itp((1.5, 0.5, 1.5)) isa Float64
     end
 
     @testset "PeriodicBC + Int axes (inclusive)" begin
@@ -333,24 +355,28 @@ end
         data = [(i == 4 ? 1 : i) + 10j for i in 1:4, j in 1:3]
         itp = constant_interp((x, y), data; bc = (PeriodicBC(), NoBC()))
         @test itp isa ConstantInterpolantND{Int, Int, 2}
-        @test itp((0.5, 1.5)) isa Int
+        @test itp((0.5, 1.5)) isa Float64
+        @test itp((1, 1)) isa Int
     end
 
-    @testset "ND oneshot scalar — Int input → Int output" begin
+    @testset "ND oneshot scalar — Float xq → Float (natural promote)" begin
         x = 0:1:4
         y = 0:1:3
         data = [10 * i + j for i in 1:5, j in 1:4]
+        # Float xq carrier propagates: Int data * one(Float64) = Float64.
         r = constant_interp((x, y), data, (2.5, 1.5))
-        @test r isa Int
+        @test r isa Float64
     end
 
-    @testset "ND oneshot batch — Vector{Int} preserved" begin
+    @testset "ND oneshot batch — Float xq carrier propagated through kernel" begin
         x = 0:1:4
         y = 0:1:3
         data = [10 * i + j for i in 1:5, j in 1:4]
         queries = [(2.5, 1.5), (0.5, 0.5), (3.5, 2.5)]
+        # Float xq + Int data → Float (kernel does y * one(dL)). Sample-first
+        # allocator (constant_nd_oneshot.jl) reads the actual kernel return type.
         vals = constant_interp((x, y), data, queries)
-        @test vals isa Vector{Int}
+        @test vals isa Vector{Float64}
         @test length(vals) == 3
     end
 
@@ -429,13 +455,15 @@ end
 # Group 6: FillExtrap × duck-typed Y (raw-Tv fill value contract)
 # ============================================================================
 @testitem "Constant eltype duck-type — FillExtrap raw-Tv contract" begin
-    @testset "1D persistent: Int data + Int fill" begin
+    @testset "1D persistent: Int data + Int fill — natural promote with Float xq" begin
         x = Float64.(0:4)
         y = [10, 20, 30, 40, 50]
         itp = constant_interp(x, y; extrap = FillExtrap(-1))
-        @test itp.extrap === FillExtrap{Int}(-1)  # raw Tv stored
-        @test itp(1.5) === 20                      # in-domain
-        @test itp(-1.0) === -1                     # OOB also raw Tv (scalar callable convert)
+        # Construction promotes the fill value to Tv (Int) — raw storage.
+        @test itp.extrap === FillExtrap{Int}(-1)
+        # Float xq → Float result for both in-domain and OOB (carrier propagates).
+        @test itp(1.5) === 20.0
+        @test itp(-1.0) === -1.0
     end
 
     @testset "1D persistent: Int data + Float fill → InexactError on construction" begin
@@ -460,12 +488,14 @@ end
 @testitem "Constant eltype duck-type — @inferred coverage" begin
     import FastInterpolations: ConstantInterpolantND
 
-    @testset "1D Series scalar — Tv pass-through branch" begin
+    @testset "1D Series scalar — Int y + Float xq → Float carrier" begin
+        # Series persistent now routes through `_constant_kernel_shape` like
+        # the plain 1D path — `Int y + Float xq` widens to Float.
         x = collect(0.0:0.1:1.0)
         y1 = collect(1:11)
         y2 = collect(11:21)
         sitp = constant_interp(x, Series(y1, y2))
-        @test @inferred(sitp(0.55)) isa Vector{Int}
+        @test @inferred(sitp(0.55)) isa Vector{Float64}
     end
 
     @testset "1D Series scalar — ComplexF32 Tv branch" begin
@@ -475,12 +505,12 @@ end
         @test @inferred(sitp(0.55f0)) isa Vector{ComplexF32}
     end
 
-    @testset "ND persistent forward (Int data)" begin
+    @testset "ND persistent forward (Int data, Float xq → Float carrier)" begin
         x = collect(0.0:1:3); y = collect(0.0:1:3)
         data = [10 * i + j for i in 1:4, j in 1:4]
         itp = constant_interp((x, y), data)
         @test itp isa ConstantInterpolantND{Float64, Int, 2}
-        @test @inferred(itp((1.5, 2.5))) === data[2, 3]
+        @test @inferred(itp((1.5, 2.5))) === Float64(data[2, 3])
     end
 end
 
@@ -534,7 +564,8 @@ end
 
         itp = constant_interp(x, y)
         adj = constant_adjoint(x, xq)
-        @test itp(xq[1]) === 20.0f0       # right cell (dL > h/2 in Float64)
+        # Carrier of Float64 xq propagates into result: Float32 y * one(Float64) = Float64.
+        @test itp(xq[1]) === 20.0
         @test adj(y_bar) ≈ Float32[0, 1, 0]
         @test dot([itp(xq[1])], y_bar) ≈ dot(y, adj(y_bar))
     end
@@ -585,41 +616,58 @@ end
         @test ForwardDiff.value.(out[1]) == [10.0]
     end
 
-    @testset "plain Float xq still returns raw Tv (no widening)" begin
-        @test constant_interp(x, y, [0.5, 1.5]) isa Vector{Int}
-        @test constant_interp(x, s, 0.5) isa Vector{Int}
-        @test constant_interp(x, s, [0.5, 1.5]) isa Vector{Vector{Int}}
+    @testset "Float xq carrier — plain and Series oneshot agree" begin
+        # Both plain and Series route through `_constant_kernel_shape` →
+        # `Int y + Float xq → Float`.
+        @test constant_interp(x, y, [0.5, 1.5]) isa Vector{Float64}
+        @test constant_interp(x, s, 0.5) isa Vector{Float64}
+        @test constant_interp(x, s, [0.5, 1.5]) isa Vector{Vector{Float64}}
+    end
+
+    @testset "Fully-Int chain — Series stays Int (matches 1D plain pin)" begin
+        x_i = [0, 1, 2, 3]
+        s_i = Series([10, 20, 30, 40])
+        @test constant_interp(x_i, s_i, 0) isa Vector{Int}
+        @test constant_interp(x_i, s_i, [0, 1]) isa Vector{Vector{Int}}
     end
 end
 
 # ============================================================================
-# Group 10: Persistent batch/scalar match oneshot output rules (Codex P2 + Dual)
+# Group 10: Natural promote — output eltype = `_output_eltype(Tv, Tg, Tq)`
 # ============================================================================
-# The shared 1D / ND `AbstractInterpolant` protocols allocate via
-# `_output_eltype(Tv, Tg, Tq)` which widens — that's correct for arithmetic
-# kernels but breaks Constant's raw-Tv contract. Constant overrides the
-# scalar + batch callables so scalar / `itp([xq])` / `itp.([xq])` / oneshot
-# all agree, and duck queries widen consistently across the family.
-@testitem "Constant persistent: batch + scalar follow raw-Tv contract + duck widen" begin
+# Constant's kernel propagates `Tq` via `* one(dL)`, so scalar / `itp([xq])` /
+# `itp.([xq])` / oneshot all agree on the naturally-promoted type. `Int y` +
+# `Float xq` → `Float`; `Int y` + `Int xq` → `Int`; `Int y` + `Dual xq` →
+# `Dual` (carrier preserved without a Constant-specific code path).
+@testitem "Constant persistent: scalar + batch follow natural promote" begin
     using ForwardDiff
     using ForwardDiff: Dual
 
-    @testset "1D Int data + Float xq — scalar/batch/oneshot/broadcast agree" begin
+    @testset "1D Int y + Float xq → Float" begin
         itp = constant_interp([0.0, 1.0, 2.0, 3.0], [10, 20, 30, 40])
-        @test itp(0.5) === 10
-        @test itp([0.5]) == [10]
-        @test itp([0.5]) isa Vector{Int}
-        @test itp.([0.5]) isa Vector{Int}
-        @test constant_interp([0.0, 1.0, 2.0, 3.0], [10, 20, 30, 40], [0.5]) isa Vector{Int}
+        @test itp(0.5) === 10.0
+        @test itp([0.5]) == [10.0]
+        @test itp([0.5]) isa Vector{Float64}
+        @test itp.([0.5]) isa Vector{Float64}
+        @test constant_interp([0.0, 1.0, 2.0, 3.0], [10, 20, 30, 40], [0.5]) isa Vector{Float64}
     end
 
-    @testset "ND Int data + Float xq — scalar/batch/oneshot agree" begin
+    @testset "1D Int y + Int xq — scalar/batch both stay Int" begin
+        # Constant's `y * one(dL)` kernel produces Int for fully-Int chain.
+        # Trait routes through `_constant_kernel_shape`, so batch matches.
+        itp = constant_interp([0, 1, 2, 3], [10, 20, 30, 40])
+        @test itp(0) === 10
+        @test itp([0, 1]) isa Vector{Int}
+        @test constant_interp([0, 1, 2, 3], [10, 20, 30, 40], [0, 1]) isa Vector{Int}
+    end
+
+    @testset "ND Int data + Float xq → Float (persistent paths)" begin
         x = [0.0, 1.0]; y = [0.0, 1.0]; data = [10 20; 30 40]
         itp = constant_interp((x, y), data)
-        @test itp((0.5, 0.5)) === 10
-        @test itp([(0.5, 0.5)]) == [10]
-        @test itp([(0.5, 0.5)]) isa Vector{Int}
-        @test constant_interp((x, y), data, [(0.5, 0.5)]) isa Vector{Int}
+        @test itp((0.5, 0.5)) === 10.0
+        @test itp([(0.5, 0.5)]) == [10.0]
+        @test itp([(0.5, 0.5)]) isa Vector{Float64}
+        @test constant_interp((x, y), data, [(0.5, 0.5)]) isa Vector{Float64}
     end
 
     @testset "1D persistent Dual → carrier preserved (scalar + batch)" begin

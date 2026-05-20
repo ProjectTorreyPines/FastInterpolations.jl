@@ -393,8 +393,12 @@ Returns a vector of values, one per y-series.
 - `deriv=DerivOp(1),DerivOp(2)`: Returns zeros (step function derivative is zero everywhere)
 
 # AD Support
-Plain queries (`Tq <: _PromotableValue`) → output eltype `Tv` unchanged.
-Duck-typed queries (e.g. `ForwardDiff.Dual`) widen to `promote_type(Tv, Tq)`.
+Output eltype routes through the kernel-shape trait
+`_output_eltype(_constant_kernel_shape, Tg, Tv, Tq)`. `Base.promote_op` on
+`yv * one(xq - xL)` jointly considers grid (Tg), value (Tv) and query (Tq),
+so duck carriers on either Tg (e.g. `Dual` grid + `Float` xq) or Tq (`Float`
+grid + `Dual` xq) propagate uniformly. Carriers like `SVector × Dual`
+resolve correctly instead of collapsing to `Vector{Any}`.
 """
 function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         xq::Tq;
@@ -402,12 +406,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    # Selection kernel returns `y[idx]::Tv` — Tv flows through unchanged for
-    # plain numerical queries. Duck-typed queries (Dual, …) get the legacy
-    # `promote_type(Tv, Tq)` widening so AD callers keep their input-Dual →
-    # output-Dual API contract (the partial wrt xq is 0 for constant, but the
-    # carrier type must match).
-    T_out = Tq <: _PromotableValue ? Tv : promote_type(Tv, Tq)
+    T_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)
 end
@@ -459,10 +458,10 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
 
-    # Explicit Vector{Vector{Tv}} for type stability on Julia LTS
-    outputs = Vector{Vector{Tv}}(undef, n_ser)
+    T_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
+    outputs = Vector{Vector{T_out}}(undef, n_ser)
     @inbounds for k in 1:n_ser
-        outputs[k] = Vector{Tv}(undef, n_query)
+        outputs[k] = Vector{T_out}(undef, n_query)
     end
     sitp(outputs, xq_typed; deriv = deriv, search = search, hint = hint)
 
@@ -484,7 +483,7 @@ query on the stack and reused for all K series, staying in registers across
 the K evals. No pool, no `aq_vec` scratch.
 """
 function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
-        outputs::AbstractVector{<:AbstractVector{Tv}},
+        outputs::AbstractVector{<:AbstractVector},
         xq::AbstractVector{<:Real};
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,

@@ -34,7 +34,7 @@
     Tv_out = _value_type(_series_eltype(s), Tg)
     Tg_actual = eltype(x)
     Tcoeff = _output_eltype(_series_eltype(s), Tg_actual)
-    output = Vector{_series_output_type(Tcoeff, Tq)}(undef, K)
+    output = Vector{_output_eltype(_arithmetic_kernel_shape, Tg_actual, _series_eltype(s), Tq)}(undef, K)
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
@@ -144,7 +144,7 @@ function quadratic_interp(
     ) where {Tg, Tq <: Real}
     K = n_series(s)
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    Tv_out = _series_output_type(_output_eltype(_series_eltype(s), Tg_float), Tq)
+    Tv_out = _output_eltype(_arithmetic_kernel_shape, Tg_float, _series_eltype(s), Tq)
     outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
     quadratic_interp!(outputs, x, s, xqs; bc, extrap, deriv, search)
     return outputs

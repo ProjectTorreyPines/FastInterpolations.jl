@@ -20,15 +20,15 @@ end
     return _constant_vector_loop!(output, itp.x, itp.y, xq, extrap, itp.side, op, searcher)
 end
 
-# ========================================
-# Selection-kernel output eltype trait
-# ========================================
-# Override the shared `_output_eltype(itp, Tq)` trait so the protocol's scalar
-# + batch callables keep raw `Tv` for plain numeric queries (selection kernel)
-# and only widen for duck-typed queries (Dual, …) so AD carriers round-trip.
-# Single source of truth — no callable overrides needed.
+# Constant declares its kernel shape — selection (`y * one(dL)`, no division).
+# Args mirror the real kernel: `(xL, yv, xq)` so `xq - xL` exposes the actual
+# `dL` carrier (e.g. `Dual` grid + `Float` xq → `Dual` dL). Trait infers the
+# exact return type via `promote_op`, so scalar/batch agree (Int×Int×Int → Int;
+# SVector × Dual → SVector{Dual}; Float y × Dual grid → Dual; etc.).
+@inline _constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)
+
 @inline _output_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
-    Tq <: _PromotableValue ? Tv : promote_type(Tv, Tq)
+    _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
 
 # ─────────────────────────────────────────────────────────────
 # Vector loop (function barrier)
@@ -110,8 +110,9 @@ end
 # ========================================
 # Generic Constructor (User API)
 # ========================================
-# Selection kernel → raw eltype contract (Int in → Int out). Signature
-# parametrized directly on `{Tg, Tv}` — no `_promote_grid_float` indirection.
+# Storage parametrized on `{Tg, Tv}` directly — no `_promote_grid_float`
+# indirection. Return type widens via the kernel's `* one(dL)` carrier
+# propagation (handled per-callable, not at construction).
 @inline function constant_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv};

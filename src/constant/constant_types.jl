@@ -61,9 +61,8 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
     search_policy::P  # Default search policy (immutable, thread-safe)
 
     # Inner: `_cache_axis` (insurance) then `_convert_copy` for ownership.
-    # `{Tg, Tv}` parametrized directly — selection kernel → raw eltype
-    # contract (Int in → Int out), unlike arithmetic methods that thread
-    # `_promote_grid_float(TX, TY)` through here.
+    # `{Tg, Tv}` parametrized directly — no `_promote_grid_float(TX, TY)`
+    # indirection (storage stays raw; the kernel handles return-type widening).
     function ConstantInterpolant(
             x::AbstractVector{Tg}, y::AbstractVector{Tv}, ev::E, sv::SD, search::P;
             bc::AbstractBC = NoBC()

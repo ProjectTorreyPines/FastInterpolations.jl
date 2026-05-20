@@ -105,10 +105,9 @@ function _constant_interp_nd_oneshot_batch(
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tg, Tv, N}
-    # Unified trait: natural promotion (Int→Float upgrade for promotable Tq;
-    # duck `SVector × Dual` resolves via `Base.promote_op` fallback).
+    # Buffer eltype via Constant's kernel shape (mirrors 1D oneshot wrapper).
     Tq = _query_eltype(queries)
-    output = Vector{_output_eltype(Tv, Tg, Tq)}(undef, _query_length(queries))
+    output = Vector{_output_eltype(_constant_kernel_shape, Tv, Tq)}(undef, _query_length(queries))
     return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, search, hint)
 end
 

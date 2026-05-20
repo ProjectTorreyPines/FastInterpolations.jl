@@ -96,11 +96,11 @@
             @test r == 30
         end
 
-        @testset "vector alloc oneshot: Int x + Int y + Int xq → Vector{Float64}" begin
-            # Natural promotion: trait upgrades Int→Float at allocation.
+        @testset "vector alloc oneshot returns Vector{Int}" begin
+            # Kernel-shape trait infers Int×Int×Int → Int; matches scalar path.
             v = constant_interp(x_int, y_int, [0, 1, 2, 3])
-            @test v isa Vector{Float64}
-            @test v == [10.0, 20.0, 30.0, 40.0]
+            @test v isa Vector{Int}
+            @test v == [10, 20, 30, 40]
         end
 
         @testset "in-place oneshot accepts Vector{Int} output" begin
@@ -644,13 +644,13 @@ end
         @test constant_interp([0.0, 1.0, 2.0, 3.0], [10, 20, 30, 40], [0.5]) isa Vector{Float64}
     end
 
-    @testset "1D Int y + Int xq — scalar stays Int; batch widens to Float" begin
-        # Scalar: kernel direct preserves Tv. Batch/oneshot: trait applies
-        # natural Int→Float upgrade (same rule as Linear/Cubic/etc).
+    @testset "1D Int y + Int xq — scalar/batch both stay Int" begin
+        # Constant's `y * one(dL)` kernel produces Int for fully-Int chain.
+        # Trait routes through `_constant_kernel_shape`, so batch matches.
         itp = constant_interp([0, 1, 2, 3], [10, 20, 30, 40])
         @test itp(0) === 10
-        @test itp([0, 1]) isa Vector{Float64}
-        @test constant_interp([0, 1, 2, 3], [10, 20, 30, 40], [0, 1]) isa Vector{Float64}
+        @test itp([0, 1]) isa Vector{Int}
+        @test constant_interp([0, 1, 2, 3], [10, 20, 30, 40], [0, 1]) isa Vector{Int}
     end
 
     @testset "ND Int data + Float xq → Float (persistent paths)" begin

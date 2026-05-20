@@ -20,6 +20,14 @@ end
     return _constant_vector_loop!(output, itp.x, itp.y, xq, extrap, itp.side, op, searcher)
 end
 
+# Constant declares its kernel shape — selection (`y * one(dL)`, no division).
+# Trait infers the exact return type via `promote_op`, so scalar/batch agree
+# (Int×Int×Int → Int; SVector × Dual → SVector{Dual}; etc.).
+@inline _constant_kernel_shape(yv, q) = yv * one(q)
+
+@inline _output_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
+    _output_eltype(_constant_kernel_shape, Tv, Tq)
+
 # ─────────────────────────────────────────────────────────────
 # Vector loop (function barrier)
 # Julia specializes on concrete Searcher type P, eliminating Union-split

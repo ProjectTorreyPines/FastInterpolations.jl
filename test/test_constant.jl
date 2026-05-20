@@ -195,10 +195,10 @@ end
         @test out ≈ [10.0, 20.0, 30.0]
 
         # Test 3: Vector allocating with Integer grid + Integer query.
-        # Natural promotion: trait upgrades Int→Float at allocation.
+        # Kernel-shape trait keeps Int×Int×Int in Int; matches scalar path.
         result_vec = constant_interp(x_int, y_int, [0, 1, 2])
-        @test result_vec isa Vector{Float64}
-        @test result_vec == [10.0, 20.0, 30.0]
+        @test result_vec isa Vector{Int}
+        @test result_vec == [10, 20, 30]
 
         # Test 4: In-place Real→Float wrapper (lines 440-468)
         # constant_interp!(output, x::AbstractVector{T}, y::AbstractVector{T}, x_targets::AbstractVector{S})

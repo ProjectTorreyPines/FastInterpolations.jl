@@ -121,11 +121,11 @@ Determine the output value type from y element type and grid type.
 """
     _output_eltype(::Type{Tv}, types...) -> Type
 
-Output element type for one-shot batch allocation. Concrete `promote_type`
-result gets Int→Float upgrade (natural promotion — arithmetic kernels divide,
-selection kernel accepts the same widening at allocation time); otherwise
-queries `Base.promote_op` on `_kernel_shape_op` to see through duck carriers
-like `SVector × Dual`. Falls back to `Tv` if the op is undefined.
+Output element type for arithmetic-kernel allocators (Linear/Cubic/Quadratic
+/Hermite). Concrete `promote_type` gets Int→Float upgrade (these kernels
+divide — Int chains widen naturally); otherwise queries `Base.promote_op`
+on `_kernel_shape_op` to see through duck carriers like `SVector × Dual`.
+Falls back to `Tv` if the op is undefined.
 """
 @inline function _output_eltype(::Type{Tv}, types::Type...) where {Tv}
     Tr = promote_type(Tv, types...)
@@ -134,6 +134,21 @@ like `SVector × Dual`. Falls back to `Tv` if the op is undefined.
     end
     Tq = length(types) == 0 ? Tv : promote_type(types...)
     Top = Base.promote_op(_kernel_shape_op, Tv, Tq)
+    (Top === Union{} || Top === Any) && return Tv
+    return Top
+end
+
+"""
+    _output_eltype(kernel_op, ::Type{Tv}, types...) -> Type
+
+Method-aware output element type via `Base.promote_op` on the method's own
+kernel shape. Lets Julia inference predict the kernel's exact return type
+— no hand-coded Float upgrade, no `_PromotableValue` enumeration. Use this
+overload from a method that declares its kernel shape (e.g., Constant's
+`_constant_kernel_shape(yv, q) = yv * one(q)`).
+"""
+@inline function _output_eltype(kernel_op::F, ::Type{Tv}, types::Type...) where {F, Tv}
+    Top = Base.promote_op(kernel_op, Tv, types...)
     (Top === Union{} || Top === Any) && return Tv
     return Top
 end

@@ -209,15 +209,14 @@ end
         @test (@inferred itp_f(ForwardDiff.Dual{Nothing}(5.5, 1.0))) isa D
     end
 
-    @testset "Constant natural-promote — scalar Int×Int → Int; batch widens" begin
-        # Scalar: kernel direct, fully-Int chain stays Int (kernel returns
-        # `y[idx] * one(Int) = Int`).
+    @testset "Constant Int → Int contract (scalar = batch consistency)" begin
+        # Kernel `y * one(dL)` keeps Int×Int×Int chains in Int — trait now
+        # routes through `_constant_kernel_shape`, so scalar/batch outputs
+        # agree at the type level.
         x = collect(1:10)
         y = collect(10:10:100)
         @test constant_interp(x, y)(3) === 30
-        # Batch: trait applies Int→Float upgrade (same machinery as every
-        # other method — no Constant-specific helper).
-        @test constant_interp(x, y)([2, 5, 8]) isa Vector{Float64}
+        @test constant_interp(x, y)([2, 5, 8]) isa Vector{Int}
     end
 
     @testset "_output_eltype trait — type table" begin
@@ -463,5 +462,131 @@ end
         aq_vec = Vector{_QuadraticAnchoredQuery{Float64, D}}(undef, length(xq_d))
         _fill_anchors!(aq_vec, x, xq_d, Val(:quadratic))
         @test itp(aq_vec) isa Vector{D}
+    end
+end
+
+# Inference-quality contract: every duck path (SVector × Dual, Float y + Dual
+# dy, heterogeneous axis carrier, anchored-vector callable, …) must be
+# type-stable. `@inferred` errors if the inferred return type doesn't match
+# the actual result type — catches silent Union returns and `Any` fallbacks
+# that `isa` checks would miss.
+@testitem "Type stability — duck-Tv × duck-Tq inference" begin
+    using StaticArrays, ForwardDiff
+    using FastInterpolations: Series
+
+    x = collect(1.0:10.0)
+    y_sv = [SA[Float64(i), 2.0i, 3.0i] for i in 1:10]
+    dy_sv = [SA[1.0, 2.0, 3.0] for _ in 1:10]
+    xq_d = ForwardDiff.Dual{Nothing}(2.5, 1.0)
+    xq_dv = [ForwardDiff.Dual{Nothing}(2.0 + 0.1i, 1.0) for i in 1:5]
+    D = ForwardDiff.Dual{Nothing, Float64, 1}
+    SVD = SVector{3, D}
+
+    @testset "1D persistent — scalar Dual" begin
+        let l = linear_interp(x, y_sv), c = cubic_interp(x, y_sv),
+            q = quadratic_interp(x, y_sv), k = constant_interp(x, y_sv),
+            h = hermite_interp(x, y_sv, dy_sv)
+            @test (@inferred l(xq_d)) isa SVD
+            @test (@inferred c(xq_d)) isa SVD
+            @test (@inferred q(xq_d)) isa SVD
+            @test (@inferred k(xq_d)) isa SVD
+            @test (@inferred h(xq_d)) isa SVD
+        end
+    end
+
+    @testset "1D persistent — batch Vector{Dual}" begin
+        let l = linear_interp(x, y_sv), c = cubic_interp(x, y_sv),
+            q = quadratic_interp(x, y_sv), k = constant_interp(x, y_sv),
+            h = hermite_interp(x, y_sv, dy_sv)
+            @test (@inferred l(xq_dv)) isa Vector{SVD}
+            @test (@inferred c(xq_dv)) isa Vector{SVD}
+            @test (@inferred q(xq_dv)) isa Vector{SVD}
+            @test (@inferred k(xq_dv)) isa Vector{SVD}
+            @test (@inferred h(xq_dv)) isa Vector{SVD}
+        end
+    end
+
+    @testset "1D oneshot 3-arg — scalar Dual" begin
+        @test (@inferred linear_interp(x, y_sv, xq_d)) isa SVD
+        @test (@inferred cubic_interp(x, y_sv, xq_d)) isa SVD
+        @test (@inferred quadratic_interp(x, y_sv, xq_d)) isa SVD
+        @test (@inferred constant_interp(x, y_sv, xq_d)) isa SVD
+        @test (@inferred hermite_interp(x, y_sv, dy_sv, xq_d)) isa SVD
+    end
+
+    @testset "1D oneshot 3-arg — batch Vector{Dual}" begin
+        @test (@inferred linear_interp(x, y_sv, xq_dv)) isa Vector{SVD}
+        @test (@inferred cubic_interp(x, y_sv, xq_dv)) isa Vector{SVD}
+        @test (@inferred quadratic_interp(x, y_sv, xq_dv)) isa Vector{SVD}
+        @test (@inferred constant_interp(x, y_sv, xq_dv)) isa Vector{SVD}
+        @test (@inferred hermite_interp(x, y_sv, dy_sv, xq_dv)) isa Vector{SVD}
+    end
+
+    @testset "ND batch — SVector data × (Dual, Dual)" begin
+        xg = collect(1.0:5.0); yg = collect(1.0:5.0)
+        data_sv = [SA[Float64(i + j), 2.0(i + j), 3.0(i + j)] for i in 1:5, j in 1:5]
+        q_dv = [(ForwardDiff.Dual{Nothing}(2.5 + 0.1i, 1.0),
+                 ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0)) for i in 1:5]
+        let l = linear_interp((xg, yg), data_sv), c = cubic_interp((xg, yg), data_sv),
+            k = constant_interp((xg, yg), data_sv)
+            @test (@inferred l(q_dv)) isa Vector{SVD}
+            @test (@inferred c(q_dv)) isa Vector{SVD}
+            @test (@inferred k(q_dv)) isa Vector{SVD}
+        end
+        @test (@inferred linear_interp((xg, yg), data_sv, q_dv)) isa Vector{SVD}
+        @test (@inferred cubic_interp((xg, yg), data_sv, q_dv)) isa Vector{SVD}
+        @test (@inferred constant_interp((xg, yg), data_sv, q_dv)) isa Vector{SVD}
+    end
+
+    @testset "Constant Int chain — scalar/batch type-stable Int" begin
+        # Kernel-shape trait: `_constant_kernel_shape(yv, q) = yv * one(q)`
+        # → Int×Int×Int inferred as Int (no spurious Float upgrade).
+        xi = collect(1:10); yi = collect(10:10:100)
+        let k = constant_interp(xi, yi)
+            @test (@inferred k(3)) === 30
+            @test (@inferred k([2, 5, 8])) isa Vector{Int}
+        end
+        @test (@inferred constant_interp(xi, yi, [2, 5, 8])) isa Vector{Int}
+    end
+
+    @testset "ND deriv-zero short-circuit — heterogeneous (Float, Dual)" begin
+        xg = collect(1.0:5.0); yg = collect(1.0:5.0)
+        data_int = [10i + j for i in 1:5, j in 1:5]
+        q_het = (2.5, ForwardDiff.Dual{Nothing}(3.5, 1.0))
+        let k = constant_interp((xg, yg), data_int)
+            @test (@inferred k(q_het; deriv = (EvalValue(), DerivOp(1)))) isa D
+        end
+    end
+
+    @testset "Hermite Float y + Dual dy precision carrier" begin
+        xs = collect(1.0:10.0)
+        ys = sin.(xs)
+        dys = [ForwardDiff.Dual{Nothing}(cos(xi), 1.0) for xi in xs]
+        xqs = collect(2.0:0.5:8.0)
+        @test (@inferred hermite_interp(xs, ys, dys, xqs)) isa Vector{D}
+    end
+
+    @testset "CubicSeriesInterpolant persistent — SVector × Dual" begin
+        y_sv1 = [SA[Float64(i), 2.0i] for i in 1:10]
+        y_sv2 = [SA[-1.0 * i, 0.5i] for i in 1:10]
+        s_sv = Series(y_sv1, y_sv2)
+        sitp = cubic_interp(x, s_sv)
+        @test (@inferred sitp(xq_d)) isa Vector{SVector{2, D}}
+        @test (@inferred sitp(xq_dv)) isa Vector{Vector{SVector{2, D}}}
+    end
+
+    @testset "Anchored-vector callable — Constant + Quadratic × Dual" begin
+        using FastInterpolations: _ConstantAnchoredQuery, _QuadraticAnchoredQuery, _fill_anchors!
+        xs = collect(0.0:0.1:1.0)
+        ys = sin.(xs)
+        xq_dual = [ForwardDiff.Dual{Nothing}(0.15 + 0.1i, 1.0) for i in 0:4]
+        let itp_c = constant_interp(xs, ys), itp_q = quadratic_interp(xs, ys)
+            aq_c = Vector{_ConstantAnchoredQuery{Float64, D}}(undef, length(xq_dual))
+            _fill_anchors!(aq_c, xs, xq_dual, Val(:constant))
+            @test (@inferred itp_c(aq_c)) isa Vector{D}
+            aq_q = Vector{_QuadraticAnchoredQuery{Float64, D}}(undef, length(xq_dual))
+            _fill_anchors!(aq_q, xs, xq_dual, Val(:quadratic))
+            @test (@inferred itp_q(aq_q)) isa Vector{D}
+        end
     end
 end

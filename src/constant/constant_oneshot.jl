@@ -274,9 +274,9 @@ sorted_queries = sort(rand(1000))
 vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
-# Buffer eltype from the unified `_output_eltype` — same natural-promotion
-# rule as every other method (Int chains widen to Float; duck `SVector × Dual`
-# resolves via `Base.promote_op` fallback).
+# Buffer eltype via Constant's kernel shape — Julia infers the return type
+# from `_constant_kernel_shape(yv, q) = yv * one(q)`, matching the actual
+# kernel reality (Int×Int×Int → Int; SVector × Dual → SVector{Dual}).
 function constant_interp(
         x::AbstractVector,
         y::AbstractVector,
@@ -287,7 +287,7 @@ function constant_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    output = Vector{_output_eltype(eltype(y), eltype(x), eltype(x_targets))}(
+    output = Vector{_output_eltype(_constant_kernel_shape, eltype(y), eltype(x_targets))}(
         undef, length(x_targets)
     )
     constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)

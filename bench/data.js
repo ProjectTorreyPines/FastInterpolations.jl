@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779161436481,
+  "lastUpdate": 1779314183476,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -52090,6 +52090,330 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1073.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c47519bbd5dc83dd5f604143ae4209154e2a641d",
+          "message": "(fix + refac): Method-aware output-eltype via kernel-shape op trait (#146)\n\n* (fix + design): Unify output-eltype via zero-slope arithmetic (#144)\n\nTreat Constant as `y[idx] + 0·(xq - x[idx])` so `Tq`'s carrier (Dual,\nMeasurement, SVector, …) propagates naturally — the same rule Linear /\nCubic / Quadratic / Hermite already follow. Drop the scalar\n`convert(_output_eltype, val)` wrapper and replace the persistent\nallocating batch + 1D Constant oneshot allocators with sample-first so\nthe container fits whatever the kernel actually produces. Constant\n`_output_eltype` overrides and inline `T_out` expressions removed; ND\nConstant scalar oneshot drops its `::Tv` typeassert. Every method now\nuses the generic `_output_eltype(Tv, Tg, Tq)`.\n\nConstant kernels multiply the selection by `one(dL)` (carrier\npropagation); derivative branches use `0 * y_left * one(dL)` to\npreserve NaN/Inf propagation and keep the minimal `*(::Int, ::Tv)` +\n`*(::Tv, ::Real)` duck-type contract.\n\nBehavior change: `constant_interp` on `Int y` with a `Float xq` now\nreturns `Float` (carrier propagates through zero-slope arithmetic).\nThe fully-Int chain `(Int x, Int y, Int xq)` still returns `Int`. The\n52a1f91 raw-Tv-for-promotable-Tq contract from #138 is intentionally\nrelaxed to keep Constant on the same machinery as every other method —\nno Constant-specific helpers. Series / ND-oneshot-3-arg / hetero\nallocators remain on the old path and will migrate in a follow-up.\n\nNew `test_duck_tv_dual_tq.jl` pins the Tv × Tq cross product across\nmethods. Existing Constant / Complex / precision / promotion tests\nupdated to the natural-promote contract.\n\nCloses #144.\n\n* (fix): _output_eltype duck fallback + Constant short-circuit consistency\n\nFollow-up to #144. Close the deferred one-shot allocator gap (1D batch,\nND batch, Hetero ND, Series) without touching the 12 individual call\nsites — and patch the Constant scalar/anchor short-circuits that broke\n`@inferred itp(1.0)` with Int y.\n\n* `_output_eltype` (src/core/utils.jl): the duck-type fallback now\n  queries `Base.promote_op` on the universal kernel-shape op\n  `yv * q + yv`, matching the Julia idiom used by `LinearAlgebra.mul`\n  (`promote_op(matprod, eltype(A), eltype(B))`) and `Base.map`\n  (`_return_type(f, eltype(A))`). Inference resolves the call to a\n  constant at compile time (zero runtime cost — verified via LLVM IR:\n  the function body is a single `ret`). For `SVector{Float64} × Dual`\n  this returns `SVector{Dual}` where `promote_type` returned the\n  non-concrete `Any` and the old fallback silently returned `Tv`. When\n  the op is undefined (e.g., custom duck-type with no `*`), the legacy\n  `Tv` fallback is preserved.\n\n* Constant short-circuits (constant_oneshot.jl, constant_anchor.jl):\n  at `xi == last(x)` the scalar/anchor paths used to `return last(y)`\n  raw — bypassing the kernel's `selected * one(dL)` carrier\n  propagation. With `Int y` and `Float xq` that disagrees with the\n  kernel's `Float` return, so `@inferred itp(1.0)` saw\n  `Union{Float64, Int64}`. Short-circuits now multiply by `one(xi)` to\n  match the kernel, restoring full type stability across both the\n  point-based scalar path and the four anchor-dispatch branches.\n\n* linear_oneshot.jl: `_output_eltype(eltype(y), Tg)` was missing `Tq`\n  entirely, so the trait couldn't see the carrier chain even after\n  the duck fallback was correct. Now passes `eltype(x_targets)`.\n\n* hermite_oneshot.jl: dropping `eltype(dy)` from the trait call —\n  including it collapses `promote_type(...)` to `Any` on duck inputs,\n  which prevents the new `promote_op` fallback from resolving the\n  carrier. `eltype(dy)` is typically the same shape as `Tv` so it\n  contributes no extra carrier information.\n\nSide-effect fix: `_output_eltype(SVector{Int}, Float64, Float64)` now\nreturns `SVector{Float64}` (was `SVector{Int}`). The linear/cubic/etc.\nkernels promote Int→Float internally via interval-slope division, so\nthe old prediction caused `convert(::SVector{Int}, ::SVector{Float64})`\nerrors that no test exercised — now correct.\n\nTests: test_duck_tv_dual_tq.jl reorganized into three logical test\nitems (Persistent path, Oneshot path, Type stability + raw-eltype\ncontracts) covering scalar/batch/ND × duck-Tv × duck-Tq, the\nForwardDiff.derivative MWE, `@inferred` Union-free assertions for the\nConstant short-circuit, the `_output_eltype` type table, and the\nInt→Int raw-eltype non-regression.\n\nVerified: smoke 42/42 PASS (master: 38/42, v0.4.9: 26/42); 35,587\ntests pass on latest Julia. LTS run blocked by a pre-existing\ntest/Manifest.toml resolution issue unrelated to this patch.\n\n* (fix): Constant ND oneshot + adjoint allocators duck-Tv support\n\nSurfaced by extended smoke covering Series / ND / Adjoint paths against\nduck-Tv (SVector) × duck-Tq (Dual) combinations. Three regressions\nfixed:\n\n* Constant ND oneshot batch (src/constant/nd/constant_nd_oneshot.jl):\n  the allocator was `Vector{Tv}(undef, …)` and the outer wrapper\n  carried a `::Vector{Tv}` typeassert — both bypass kernel carrier\n  propagation, so `constant_interp((xg,yg), data_sv, queries_dual)`\n  raised `Float64(::Dual)`. Replaced with sample-first allocation\n  matching the 1D Constant pattern: pull `first_q` via\n  `_extract_query_point`, run the scalar oneshot once, size from\n  `typeof(first_val)`. The deriv-zero short-circuit now sizes from\n  `0 * first(data) * one(eltype(first_q))` for the same reason.\n\n* 1D adjoint allocators (src/core/adjoint_protocol.jl:115, 125):\n  `Tv = promote_type(eltype(y_bar), Tg)` returned `Any` for\n  `SVector{3,Float64} × Float64` (no `promote_rule` between Base and\n  StaticArrays), so `zeros(Any, n)` raised `zero(::Type{Any})`.\n  Routing through `_output_eltype` reuses the `Base.promote_op` duck\n  fallback from b675e17c5 and resolves to `SVector{3,Float64}`. Linear,\n  Constant, Cubic, Quadratic, Hermite, Cardinal, PCHIP, Akima\n  adjoints now all accept SVector y_bar.\n\n* ND adjoint allocators (src/core/adjoint_protocol.jl:353, 368):\n  same root cause, same `promote_type → _output_eltype` fix. Linear,\n  Constant, Cubic, Quadratic, Hetero ND adjoints all accept SVector\n  y_bar (`Matrix{SVector{3,Float64}}` return).\n\nTests:\n- test_duck_tv_dual_tq.jl gains an Adjoint-path testitem covering all\n  7 1D adjoints + 4 ND adjoints × {SVector, Dual} y_bar.\n- test_constant_eltype.jl updates two assertions that previously\n  pinned the broken ND oneshot return as a known limitation; they now\n  pin the carrier-propagated Float64 return.\n\nVerified: extended smoke 116/116 PASS (Series × 4 methods + ND forward +\nND/1D adjoints × duck-Tv + slope-family OnTheFly); all affected adjoint\ntest files still pass.\n\nOut of scope (separate follow-up): the ND scalar oneshot path\n(`constant_interp((xg,yg), data, query_tuple)`) returns `Float64` for\nall-Int inputs while the persistent path returns `Int` — pre-existing\nasymmetry unrelated to this patch.\n\n* (fix): Series allocator chains route through unified _output_eltype\n\nStage 3 of the Issue #144 cleanup. Series one-shot and persistent\ncallable allocators previously composed two traits as\n`_series_output_type(_output_eltype(Tv, Tg), Tq)`. For duck-Tv × duck-Tq\ncombinations (e.g., `Series(SVector{3,Float64}, …)` queried with a\nForwardDiff.Dual) the outer step computes\n`promote_type(SVector{Float}, Dual) = Any`, falls through to its\nfallback (`Tv`), and the kernel's actual `SVector{Dual}` return then\neither errors on `setindex!(::Vector{SVector{Float}}, ::SVector{Dual})`\nor — for Constant's selection kernel — silently produces\n`Vector{Vector{Any}}`.\n\nSwitching to a single `_output_eltype(Tv, Tg, Tq)` call uses the\nb675e17c5 `Base.promote_op` fallback, which resolves\n`SVector{Float} × Dual → SVector{Dual}` at compile time. Six sites\nacross linear/cubic/quadratic series (scalar and batch, persistent and\none-shot) migrate the chain to the unified form.\n\nConstant series keeps its raw-Tv contract for promotable Tq (Int y +\nFloat xq → Vector{Int}, preserved) but routes duck Tq through\n`_output_eltype(Tv, Tq)` so SVector × Dual no longer collapses to\n`Vector{Any}`. Four allocator sites updated.\n\nRegression coverage added to test_duck_tv_dual_tq.jl: a new\n`Series path — duck-Tv × duck-Tq carrier propagates` testitem pins\nthe four methods × {scalar, batch} × {SVector y, Dual xq} grid, and\nthe existing Oneshot testitem now also asserts the Constant ND\noneshot batch path (closed in acfc95acf).\n\nVerified: extended smoke 132/132 PASS (was 126/132 with 6 series\nduck-Tv × duck-Tq fails before this commit); all touched test files\ngreen on latest Julia.\n\n* (fix): Restore duck-Tv × duck-Tq carrier across 5 missed sites\n\nFollow-up to the original Issue #144 PR, addressing five user-visible paths\nwhere carrier propagation still collapsed despite the unified `_output_eltype`\ntrait. All share the same root-cause family but live in branches the prior\ncommits did not reach.\n\nSites addressed:\n\n- `cubic_series_interp.jl` — `CubicSeriesInterpolant` build-then-call path\n  still chained `_series_output_type(_output_eltype(Tv, Tg), Tq)`, collapsing\n  `promote_type(SVector{F}, Dual)` to `Any`. Migrated to the unified\n  `_output_eltype(Tv, Tg, Tq)` (mirrors the prior 6-site migration).\n\n- `interpolant_protocol.jl::_eval_nd_at_point` deriv-zero short-circuit and\n  `constant_nd_eval.jl::_eval_at_cell` deriv branch and\n  `constant_nd_oneshot.jl` scalar + batch deriv branches — all returned\n  `0 * <data>` without query-carrier propagation. Now multiply by\n  `prod(one, query)` so per-axis carriers (homogeneous Dual, heterogeneous\n  `(Float, Dual)`) survive — symmetric with the forward kernel's per-axis\n  `* one(dL_d)`. Affects every ND method at 2nd+ derivative paths.\n\n- `hermite_oneshot.jl` — original PR dropped `eltype(dy)` to avoid\n  `promote_type` collapse on SVector + Dual inputs, which re-introduced the\n  MethodError commit b3a33791f fixed for `Float64 y + Vector{Dual} dy`.\n  Replaced with a two-call `_output_eltype` pattern keeping `Tv` and\n  `eltype(dy)` in disjoint promote chains — handles both cases.\n\nCoverage:\n- `CubicSeriesInterpolant` persistent path × SVector × Dual (scalar + batch)\n- Constant ND deriv-zero × persistent + one-shot scalar\n- Heterogeneous-axis (Float, Dual) × mixed-deriv: Constant ND persistent\n  scalar + one-shot scalar + one-shot batch, Linear ND persistent 2nd-deriv\n- Hermite Float32 y + Float64 dy precision pin\n- Hermite Float64 y + Vector{Dual} dy + ForwardDiff.derivative on slopes\n\n* (fix + refac): Anchored-vector callable carrier; drop dead _series_output_type\n\nConstant and Quadratic 1D `itp(aq_vec)` (batch eval with pre-built anchors)\nallocated `Vector{Tg}` — only the grid type, ignoring `Tq` in the anchor\nparameterization. The Constant kernel now multiplies by `* one(dL::Tq)` and\nthe Quadratic kernel mixes anchored deltas with `Tq`, so a duck-typed `Tq`\n(Dual, …) raised `MethodError` on `setindex!`. Linear's path already used\n`_output_eltype(Tv, Tg, Tq)`; mirrored here.\n\n`_series_output_type` is no longer called from any src file after the Cubic\nSeries persistent path migrated to the unified `_output_eltype(Tv, Tg, Tq)`\nin commit 440be0b18. Removed; its narrowed `promote_type → Tv` fallback is\nsuperseded by the duck-aware `Base.promote_op` fallback in `_output_eltype`.\n\nCoverage added to test/test_duck_tv_dual_tq.jl exercises both methods'\nanchored-vector callable with `_ConstantAnchoredQuery{Tg, Dual}` and\n`_QuadraticAnchoredQuery{Tg, Dual}` via `_fill_anchors!`.\n\n* (docs): Update stale \"raw-Tv contract\" comments after carrier restoration\n\nThe PR series that restored duck-Tv × duck-Tq carrier propagation changed\nConstant's behavior from \"selection kernel returns raw `Tv`\" to \"kernel\nmultiplies by `* one(dL::Tq)` so the return widens via promote_type\".\nStorage stays raw `{Tg, Tv}` (no `_promote_grid_float` indirection) — only\nthe return type widens.\n\nComments referencing the old \"raw-Tv contract\" / \"Int in → Int out\" return\nbehavior, or the deleted `_output_eltype(itp, Tq)` override in\n`constant_nd_types.jl`, are updated to reflect the post-restoration model:\nstorage is raw, the kernel handles return-type widening per-callable.\n\nNo behavior change. Pure documentation alignment.\n\n* (perf): Drop sample-first allocators; trait-only sizing (Constant unified)\n\nThe protocol's 1D + ND batch allocating callables, and Constant's 1D + ND\none-shot batch wrappers, called the scalar/persistent kernel for the first\nquery just to read `typeof(first_val)` for the output buffer. That extra\nevaluation is per-batch overhead on a hot path — measurable at small N and\nstrictly redundant once the trait predicts correctly.\n\n`_output_eltype(itp, Tq)` (and the 3-arg `_output_eltype(Tv, Tg, Tq)` used\nby one-shot wrappers) now drives all allocators directly: empty-batch and\npopulated paths share one expression. The kernel still produces the same\nruntime values; only the container eltype is sized from types, not from\nsampling.\n\nConstant follows the same natural-promotion rule as every other method (no\nConstant-specific helper or override per the original Issue #144 PR's\ndirection). The kernel's `* one(dL)` still preserves scalar-path semantics\n(Int×Int×Int scalar callable returns Int via kernel direct); batch and\none-shot wrappers widen via the trait's Int→Float upgrade. Tests pinning\nthe old sample-first `Vector{Int}` for fully-Int Constant batch are\nupdated to `Vector{Float64}`.\n\nLocations:\n- src/core/interpolant_protocol.jl:60-79 (1D batch)\n- src/core/interpolant_protocol.jl:255-272 (ND batch)\n- src/constant/constant_oneshot.jl:277-298 (1D one-shot batch)\n- src/constant/nd/constant_nd_oneshot.jl:98-115 (ND one-shot batch)\n\n* (refac + test): Method-shape op trait; Constant scalar/batch consistency\n\n`_output_eltype` previously enumerated standard numeric types via the\n`_PromotableValue` union and hand-applied an `Int→Float` upgrade — a manual\nproxy for \"the arithmetic kernels divide\". Selection kernels (Constant) don't\ndivide, so the upgrade was wrong for them and was masked by sample-first\nallocators (one extra scalar eval per batch).\n\nAdd a method-shape overload that lets the kernel itself drive inference:\n\n    @inline _output_eltype(kernel_op::F, ::Type{Tv}, types::Type...) where {F, Tv} =\n        ... Base.promote_op(kernel_op, Tv, types...) ...\n\nConstant declares its kernel shape and routes its trait through the overload:\n\n    @inline _constant_kernel_shape(yv, q) = yv * one(q)\n    @inline _output_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =\n        _output_eltype(_constant_kernel_shape, Tv, Tq)\n\nJulia infers the exact kernel return type — no `_PromotableValue` enumeration,\nno Float upgrade. Int×Int×Int matches the scalar callable (Int), SVector ×\nDual still resolves to SVector{Dual}. Constant ND mirrors the override. The\n`_PromotableValue` definition stays (other paths — grid promotion, autocache\ngating, FillExtrap auto-convert — use it independently).\n\nOther methods (Linear/Cubic/Quadratic/Hermite/etc.) keep the existing trait —\ntheir kernels divide, so the Float upgrade matches reality. Migrating them to\ntheir own kernel shape op is a follow-up.\n\nTests:\n- Constant Int contract reverted: `itp([2,5,8]) isa Vector{Int}` again,\n  matching `itp(3) === 30`. No scalar/batch asymmetry.\n- New `@testitem \"Type stability — duck-Tv × duck-Tq inference\"`: `@inferred`\n  coverage for 1D persistent/oneshot × 5 methods (scalar + batch), ND\n  persistent/oneshot × 3 methods, ND deriv-zero per-axis carrier, Hermite\n  mixed eltype, CubicSeriesInterpolant persistent, anchored-vector callable.\n  Catches silent Union returns and `Any` fallbacks `isa` checks would miss.\n\n* (refac): Linear migrates to shared `_arithmetic_kernel_shape` op\n\nLinear/Cubic/Quadratic/Hermite all share the same kernel-shape pattern at the\ntype level — every arithmetic kernel divides by `h`, which Float-upgrades Int\nchains and propagates duck carriers through `(dL / h)`. Declare one shared\n`_arithmetic_kernel_shape(yv, dL, h) = yv + yv * (dL / h)` and let Linear\nopt into it, validating the pattern at a second method beyond Constant.\n\nMigrated:\n- `LinearInterpolant` + `LinearInterpolantND` `_output_eltype(itp, Tq)` →\n  `_output_eltype(_arithmetic_kernel_shape, Tv, Tq, Tg)`\n- 1D + ND one-shot wrappers (`linear_interp(x, y, x_targets)` and the ND\n  scalar/batch variants) — buffer eltype from kernel-shape probe\n- Anchored-vector callable (`itp(aq_vec)`)\n\nBehavior parity for standard numerics (Int chain → Float, Float×Float → Float,\nComplex{Int} → ComplexF64, mixed Int×Float → Float — all match the previous\n`_PromotableValue`-driven Float upgrade). The trait's prediction now exactly\nmatches the kernel reality, so empirical kernel output and trait-allocated\nbuffer always agree.\n\nA side benefit: `Rational × Rational × Rational` chain now predicts\n`Rational{Int}` rather than `Float64` — the old trait over-predicted Float\nbecause `_PromotableValue` enumeration included `Rational`, but Julia's\n`Rational/Rational = Rational` (no Float upgrade) means the kernel actually\npreserves Rational. No existing test pinned the old over-prediction.\n\nCubic/Quadratic/Hermite/PCHIP/Cardinal/Akima migration deferred to a\nfollow-up — same shape op, mechanical override addition per method type.\n\n* (refac + test): Canonicalize kernel-shape arg order (Tg, Tv, Tq); pin Rational\n\n`_arithmetic_kernel_shape` arguments reordered from `(yv, dL, h)` to\n`(h, yv, dL)` so callsites read `_output_eltype(shape, Tg, Tv, Tq)` —\nmatching the codebase's standard `{Tg, Tv, Tq}` type-parameter order\n(`Interpolant{Tg, Tv, ...}`, where-clauses, etc.). Five Linear callsites\nupdated correspondingly. Body unchanged — purely cosmetic.\n\nTests pin the trait's Rational behavior at two layers:\n- Trait-level (`@inferred`): `_output_eltype(_arithmetic_kernel_shape,\n  Rational{Int}, Rational{Int}, Rational{Int}) === Rational{Int}`, plus\n  Int/Float/Complex baselines.\n- Constant end-to-end: storage is raw `{Tg, Tv}` so the trait's Rational\n  prediction flows through to the user-visible Vector eltype.\n- Linear end-to-end: `@test_broken` — `_promote_grid_float` in the\n  constructor lifts grid/values to Float64 at build time, shadowing the\n  trait's Rational prediction. Marked broken so a future relaxation\n  (storage following kernel reality) auto-surfaces as `now passing`.\n\nThe `@test_broken` pin documents the design gap explicitly: trait-level\ncorrectness diverges from user-visible behavior at Linear/Cubic/etc.\nbecause the constructor's Float-forcing predates the kernel-shape trait.\nResolving this is deferred to a follow-up.\n\n* (refac): All arithmetic methods route through `_arithmetic_kernel_shape`\n\nExtend the kernel-shape op pattern (validated at Constant + Linear) to every\nremaining arithmetic method (Cubic, Quadratic, Hermite, PCHIP, Cardinal,\nAkima). One shared shape captures all of them — the division `y + y*(dL/h)`\nthat Float-upgrades Int chains and propagates duck carriers.\n\nTrait wiring:\n- `interpolant_protocol.jl`: default `_output_eltype(::AbstractInterpolant1D,\n  Tq)` (and ND mirror) now routes through `_arithmetic_kernel_shape`. Every\n  method's persistent-batch path is migrated by inheritance.\n- `hermite_interpolant.jl`: `AbstractHermiteInterpolant1D` override applies\n  the two-call pattern over `Tv` and `eltype(itp.dy)`, keeping disjoint\n  promote chains so a duck-typed `dy` widens the result without poisoning\n  the `y` chain.\n- `linear_interpolant.jl` + `linear_nd_types.jl`: explicit Linear overrides\n  removed — now redundant with the default.\n\nOneshot/series wrapper migrations (13 callsites): swap legacy\n`_output_eltype(Tv, Tg, Tq)` → `_output_eltype(_arithmetic_kernel_shape,\nTg, Tv, Tq)`. Hermite oneshot's two-call already had the right shape; just\nswap to the shared shape op.\n\nNet effect: `_PromotableValue` enumeration + hand-coded Float upgrade are\nno longer reached from any output-buffer allocation path. Internal storage\nsites (coefficient/cache matrices, `Tz`/`Tc`) keep the legacy 2-arg trait —\ntheir role is different (intermediate compute, not kernel output).\n\nA latent consequence the pattern surfaces: Rational chains predict\n`Rational{Int}` rather than `Float64` at the trait level (kernel reality —\nJulia's `Rational/Rational = Rational` doesn't Float-upgrade). User-visible\npreservation is still blocked by `_promote_grid_float` in non-Constant\nconstructors (pinned as `@test_broken` in test_duck_tv_dual_tq.jl) — that\ngap is the deferred follow-up.\n\n* (docs): Refresh stale comments missed by ef6a4639c\n\n- utils.jl 2-arg _output_eltype docstring: replace the inaccurate\n  \"arithmetic-kernel allocators (Linear/Cubic/Quadratic/Hermite)\"\n  audience claim with the actual current users (internal coefficient\n  eltype, adjoint allocators, hetero ND legacy paths). Direct readers\n  to the method-aware kernel-op overload for output-buffer sizing.\n- constant_nd_eval.jl: drop reference to the deleted \"sample-first\n  allocator\"; the protocol now uses trait-only sizing via _output_eltype.\n- constant_series_interp.jl: ConstantSeriesInterpolant scalar callable\n  docstring claimed `promote_type` widening for ducks; the code now\n  uses `_output_eltype` (Base.promote_op on the kernel shape) so\n  SVector × Dual resolves correctly.\n\nDoc-only — no runtime behavior change.\n\n* (fix): Constant anchored callable + series in-place carrier widening\n\nTwo missed migration sites prevented correct output-eltype propagation\nunder the kernel-shape op trait introduced earlier in this branch.\n\n- constant_anchor.jl: the `ConstantInterpolant(aq_vec)` anchored-vector\n  callable was routing through the legacy 2-arg `_output_eltype(Tv, Tg, Tq)`\n  which Float-upgrades any `Tr <: _PromotableValue && !<:AbstractFloat`.\n  For a fully-Int chain (`Tv = Int, Tq = Int`) this allocated\n  `Vector{Float64}` while the kernel actually returns `Int` — silent\n  conversion and a contract violation. Every other Constant allocator\n  uses `_output_eltype(_constant_kernel_shape, Tv, Tq)`. Aligned.\n\n- constant_series_interp.jl: `ConstantSeriesInterpolant`'s batch in-place\n  dispatch had `outputs::AbstractVector{<:AbstractVector{Tv}}`. The\n  parallel out-of-place form correctly widens `T_out` for duck `Tq`\n  (e.g., `Vector{Vector{SVector{3, Dual}}}` when `Tv = SVector{3,Float64}`,\n  `Tq = Dual`), but the widened buffer can't dispatch back into the\n  in-place form. Linear's and Quadratic's parallel forms already used\n  the relaxed `<:AbstractVector` constraint. Aligned.\n\nRegression coverage added:\n- \"Constant Int-chain preservation\" testset pins the anchored callable\n  contract (`Vector{Int}` output for fully-Int chain).\n- \"Linear/Quadratic/Constant SeriesInterpolant persistent — SVector ×\n  Dual carrier\" testitem covers all 3 series persistent paths;\n  the Constant block is the dispatch regression.\n\n* (test): duck-Tv × duck-Tq coverage for Hermite family + Rational pins\n\nAdditive coverage extending the duck-Tv × duck-Tq test surface to\nmethods the PR description named but the test file missed.\n\n- \"Hermite-family one-shot — duck-Tq carrier through trait\": PCHIP/\n  Cardinal/Akima 3-arg oneshot allocators were rewired to\n  `_output_eltype(_arithmetic_kernel_shape, ...)` in this branch but\n  weren't exercised by any test. PCHIP/Akima slope formulas use scalar\n  `sign`/`abs` on slope differences, so they can't accept `SVector y`\n  (StaticArrays doesn't define `sign(::SVector)`); their `Tq` duck path\n  is exercised via Float y + Dual xq. Cardinal's slopes are pure\n  averages — kept the stronger SVector × Dual case there.\n\n- \"PCHIP/Akima — custom scalar duck-Tv interface\": minimal `DuckFloat`\n  wrapper around Float64 implementing the required slope-formula\n  interface (`sign`, `abs`, `zero`, `+`, `-`, `*`, `/`, ordering).\n  Demonstrates that PCHIP/Akima impose NO `<: AbstractFloat` constraint\n  on `Tv` — any duck type satisfying the interface flows through and\n  the trait predicts the duck wrapper type as the kernel return.\n\n- \"Cubic/Quadratic/Hermite-family — Rational user-visible blocked\n  (BROKEN)\" testsets mirror the Linear @test_broken pins. Cubic's\n  3-arg oneshot line is omitted with a note: its output buffer is\n  correctly sized `Vector{Rational{Int}}` by the trait, but the\n  kernel's internal z coefficients are still Float64; the result only\n  round-trips through Rational for inputs whose Float values happen\n  to be exactly representable. Asserting `isa Vector{Rational{Int}}`\n  would pass for the wrong reason — pin removed until the\n  coefficient-eltype follow-up lands.\n\n* (test): Replace Cubic Rational isa pin with semantic value pin\n\nThe previous comment in the Cubic @test_broken block was imprecise: it\nsuggested the 3-arg oneshot's `isa Vector{Rational{Int}}` would pass\n\"by accident\" for exactly-representable Floats. Empirical trace shows\nthe actual mechanism is sharper and uniform — but the contract is\nstill broken.\n\nMechanism (verified via @inferred + runtime trace):\n- The kernel-shape trait `_output_eltype(_arithmetic_kernel_shape, Tg,\n  Tv, Tq)` predicts `Rational{Int}` purely from input types at compile\n  time. Type-stable, @inferred passes.\n- The buffer is allocated as `Vector{Rational{Int}}`.\n- BUT the in-place `cubic_interp!` builds an internal cache via\n  `_promote_grid_float` which lifts grid + values to Float64. The\n  kernel computes in Float64 throughout (z coefficients are Float64).\n- `output[i] = kernel_float_result` triggers\n  `convert(Rational{Int}, ::Float64)`, which uses the bit-exact Float64\n  representation. For dyadic results (k/2 inputs on x²/2 data) the\n  Float is exactly representable as a small-denominator Rational and\n  the result LOOKS clean. For non-dyadic queries the result is a\n  ~2^52-denominator binary fraction approximation, NOT the true\n  Rational arithmetic value.\n\nThe trait says one thing, storage lift says another — they don't\ncoordinate. The next PR will decide between honoring the trait (relax\n_promote_grid_float for arithmetic methods) or honoring storage (make\nthe trait aware of the lift). Either resolution is captured by the\nsemantic pin below.\n\nSemantic pin: a cubic spline of `y = x` should reproduce `y = x`\nexactly. The new `@test_broken cubic_interp(x, x, [3//7]) == [3//7]`\ncurrently fails (Float64 path produces a 2^52-denom approximation)\nand auto-surfaces when the storage/trait mismatch is resolved.\n\n* (refac + test): Canonicalize remaining output-eltype sites + pin alloc contract\n\nItem A — canonical migration: route all surviving output-buffer sites through\nthe method-aware kernel-shape form. After this commit no output-allocation\npath remains on the legacy 2/3-arg `_output_eltype(Tv, Tg, ...)` fallback.\n\nMigrated callsites:\n- linear_series_interp.jl: 2 sites (scalar + batch out-of-place callable)\n- linear_oneshot_series.jl: 2 sites (3-arg scalar + batch oneshot)\n- cubic_oneshot.jl:286: cache-variant 3-arg batch oneshot\n- cubic_nd_oneshot.jl:42: ND scalar oneshot (Tv_p binding retained for the\n  separate `_resolve_extrap` use; trait uses raw Tv to match batch peer)\n- quadratic_nd_oneshot.jl:163: ND scalar oneshot\n- core/adjoint_protocol.jl: all 6 1D + ND adjoint allocator callables\n  (using `Tg` as both grid and dL slot — Tq is anchor-baked at this layer)\n\nItem C — allocation contract pin: the persistent batch allocating callable\n`itp(xq)` must allocate exactly one `Vector{T_out}` and nothing else. New\ntestitem in test_promotion_alloc.jl iterates over all 7 methods (linear/\ncubic/quadratic/pchip/cardinal/akima/constant), comparing the call's\n`@allocated` against the bare-Vector baseline + ALLOC_THRESHOLD slack. A\nre-introduced sample-first eval (or any leaked scratch buffer) would\nexceed this by at least one kernel-result-sized allocation per call.\n\n* (test): Tighten persistent batch alloc pin to in-place zero-alloc form\n\nReplace the baseline-Vector subtraction approach with a direct in-place\nzero-alloc check. The persistent in-place callable `itp(out, xq)` must be\nzero-alloc across all methods — that single contract covers both paths,\nsince the allocating form `itp(xq)` is just `Vector{T_out}(undef, n)` +\nthis in-place call. Matches the existing `_bench_linear!` pattern in the\nsame file (in-place + ALLOC_THRESHOLD), avoids baseline-subtraction noise,\nand pins a stronger invariant.\n\n* Runic formatting\n\n* (fix + refac): Constant kernel-shape op aligns with canonical 4-arg trait form\n\n`_constant_kernel_shape(yv, q) = yv * one(q)` only saw the query type, so\n`Dual` grid + `Float` xq paths under-predicted the kernel's true return\ntype — `_constant_vector_loop!` then tried to store a `Dual` kernel result\ninto a `Vector{Float64}` buffer (`MethodError` on Julia LTS Extensions CI).\n\nMirror the actual kernel arithmetic: `(xL, yv, xq) = yv * one(xq - xL)`.\n`Base.promote_op` now sees `xq - xL` and infers the real `dL` carrier, so\nduck grids (Dual, Measurement, …) flow through `promote_type(Tg, Tq)`\nnaturally. All callsites collapse to the canonical 4-arg `(kernel_op, Tg,\nTv, Tq)` form that Linear's `_arithmetic_kernel_shape` already used —\nConstant was the lone outlier on the 2-arg `(Tv, Tq)` shape.\n\nInt×Int×Int still infers `Int`; SVector × Dual still infers SVector{Dual};\nthe Rational chain pin and the Int batch-vs-scalar contract are unchanged\n(only the trait's arg count changes, not its predictions).\n\n* (fix + refac): Constant series Tq-gated legacy fallback → canonical 4-arg trait\n\n`test/ext/test_series_dual_grid.jl` on Julia LTS still tripped\n`MethodError: Float64(::Dual)` after the kernel-shape rename — Constant\nseries oneshot + persistent paths were the last holdouts of the\n`Tq <: _PromotableValue ? Tv : _output_eltype(Tv, Tq)` guard. That gate\nignores `Tg`, so `Dual` grid + `Float` xq short-circuited to `Vector{Tv}`\n(Float-only) while the kernel returned `Dual` via `xq - xL`.\n\nMigrate all 4 series sites to the canonical 4-arg trait\n`_output_eltype(_constant_kernel_shape, Tg, Tv, Tq)`:\n- `constant_oneshot_series.jl:83`  — scalar oneshot\n- `constant_oneshot_series.jl:288` — vector oneshot\n- `constant_series_interp.jl:409`  — persistent scalar callable\n- `constant_series_interp.jl:461`  — persistent vector callable\n\nLinear/Cubic/Quadratic series already use the canonical form; Hermite\nadds a disjoint Tdy promote chain on top. Constant was the only family\nstill on the legacy gate.\n\nTest pins updated to match the new Series contract (1D plain path's\n`Int y + Float xq → Float` already established in PR #144; Series now\nagrees instead of pinning a stale `Vector{Int}` raw-Tv hold-out):\n- `Vector{Int}` → `Vector{Float64}` for `Float xq` cases (lines 496, 622-624)\n- Added explicit pin: fully-Int chain (`Int grid + Int y + Int xq`)\n  stays `Vector{Int}` — Series ↔ plain agree on both regimes.\n\nPR description's \"Out of scope\" item that called out a Series storage\nFloat-forcing follow-up is now closed for Constant. Cubic/Quadratic Tz/Tc\ncoefficient widening is still on the legacy enumeration as documented.\n\n* (fix + test): Restore OOB carrier propagation for non-Number Tv\n\nPR #146 reviews (Codex P2 #1/#2 + Copilot) flagged that scalar OOB\nextrap paths returned raw `Tv` for non-Number value types — `SVector` y\nwith `ClampExtrap` / `FillExtrap` + `Dual` xq returned `SVector{Float64}`\nscalar but `SVector{Dual}` from the trait-sized batch buffer, breaking\nthe scalar/batch consistency the PR is meant to restore.\n\nRoot cause: `_promote_extrap_val(val::Number, xq::Number)` carrier-\npropagates via `val + zero(xq) * zero(val)`, but the non-Number fallback\n`_promote_extrap_val(val, xq) = val` returns raw — the actual `SVector`\nboundary value passes through `_eval_extrapolation` → `_promote_extrap_val`\n→ raw return, with no carrier added. ND scalar takes the same path via\n`_try_fill_oob` → `_fill_extrap_result` → `_promote_extrap_val`.\n\nAdd an `AbstractArray` overload that broadcasts the same carrier-prop\npattern (`val .+ zero(xq) .* zero(eltype(val))`); same idea for the\nderivative branch's `_promote_extrap_zero`. `SVector × Dual` now resolves\nto `SVector{Dual}` on scalar OOB, matching in-domain kernel output and\nthe trait-sized batch buffer.\n\nConstant ND oneshot derivative empty-fast-path also missed the query\ncarrier — `nq == 0 && return Vector{Tv}(undef, 0)` ignored Tq. The\nnon-empty branch already synthesises `0 * first(data) * prod(one, first_q)`.\nRoute the empty path through the same kernel-shape trait so eltypes agree.\n\nRED-then-GREEN pins added under \"OOB carrier — scalar/batch consistency\nfor non-Number Tv\" + \"ND oneshot derivative — empty vs non-empty query\neltype\" in `test/test_duck_tv_dual_tq.jl`. 36 OOB combinations\n(Linear/Cubic/Quadratic/Constant × Clamp/Fill × 1D scalar/batch + ND\nanalogues) all green.\n\nFollow-up: the `AbstractArray` overload here is a stop-gap. The\ndiscussion under design item 1 in `claudedocs/TODO/output_eltype_carrier_followups.md`\nmoves to a `Tr`-driven `_eval_extrapolation` that uses `convert(Tr, val)`\ninstead of arithmetic carrier inference — eliminates broadcasting\noverhead, removes the `zero(Tr)` requirement, preserves NaN propagation\nvia the Constant-kernel pattern `0 * convert(Tr, val)`. Out of scope\nhere.\n\n* (test): Refresh Constant Series Complex pins for canonical kernel-shape contract\n\nThree pins in `test_complex_constant_series.jl` predated the Series\ncanonical 4-arg trait migration (commit d28d7b0ac) and asserted the\nlegacy raw-Tv contract:\n\n- \"Integer grid + Complex values\" (line 65, 69): `sitp(5.5)` with\n  `Int` grid + `Complex{Int}` y → kernel-shape `yv * one(xq - xL)`\n  promotes via `Float - Int = Float` → `ComplexF64`. Was pinned as\n  `Vector{Complex{Int}}` / `5 + 10im`. Updated to `Vector{ComplexF64}` /\n  `5.0 + 10.0im`. Added explicit fully-Int chain pin (`sitp(5)` → stays\n  `Vector{Complex{Int}}`) mirroring the 1D plain-path pin in\n  `test_constant_eltype.jl`.\n\n- \"Eltype contract: selection kernel preserves Tv\" (line 284): Float32\n  grid + Float32 y + Float64 xq → trait promotes to Float64. Was pinned\n  as Float32 (legacy raw-Tv claim). Renamed to \"kernel-shape trait\n  promotes via xq - xL\" and split into two pins: Float64 xq → Float64,\n  Float32 xq → Float32 (fully-Float32 chain stays Float32).\n\nNo source change — the new Series promote behavior was already\nestablished in commit d28d7b0ac; these tests just hadn't been refreshed.\nLocal `test_complex_constant_series.jl` now passes on both Julia 1.x\nand the LTS-failure scenario reported on CI.\n\n* (test): Refresh Constant Series oneshot Int-chain pins for canonical contract\n\nTwo more pins predated the Series canonical 4-arg trait migration\n(commit d28d7b0ac) and asserted the legacy raw-Tv contract under a\nFloat-grid + Int-y + Float-xq chain — that chain now (correctly)\npromotes to Float via `xq - xL`.\n\n- \"Eltype contract: Integer series stays Int\" (line 144): `Float grid +\n  Int y + Float xq` was pinned `Vector{Int}`. Renamed to \"fully-Int\n  chain stays Int\" and migrated setup to `Int grid + Int y + Int xq` —\n  matches the intent (\"Int chain preserved\") and the 1D plain-path pin\n  in test_constant_eltype.jl's \"Fully-Int chain — Series stays Int\"\n  testset.\n\n- \"FillExtrap fill_value must be compatible with y eltype\" (line 155):\n  the InexactError contract requires an `Int` output buffer to catch\n  the Float fill_value mismatch. Under the new promote rule, the\n  original `Float grid + Int y + Float xq` setup gives a Float buffer\n  that silently absorbs the 0.5 fill — exactly what this contract\n  was trying to catch. Migrated to fully-Int chain so the Int buffer\n  reinstates the strict-on-assign behavior.\n\nNo source change — same theme as `test_complex_constant_series.jl`\ncommit 82085fc89.\n\n* Runic formatting",
+          "timestamp": "2026-05-20T14:51:07-07:00",
+          "tree_id": "aa632facfd3b95a1a7ebaeeff3973a1ec1ed86de",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/c47519bbd5dc83dd5f604143ae4209154e2a641d"
+        },
+        "date": 1779314173534,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 37656,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83880\nallocs=29\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 718.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 330706,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515320\nallocs=40\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 2002.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1512.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 15.92,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 7.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3443.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 35.85,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 13.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4646.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4646.98,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 10053.28,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3201.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_rand_rand",
+            "value": 66369.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_sort_rand",
+            "value": 61513.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_sort_sort",
+            "value": 58642,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_rand_rand",
+            "value": 18626.96,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_sort_rand",
+            "value": 9470.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_sort_sort",
+            "value": 4853.08,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "14_series_oneshot_batch/constant_inplace_vec_k8_q1000_rand",
+            "value": 20552.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "14_series_oneshot_batch/linear_inplace_vec_k8_q1000_rand",
+            "value": 18284.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 571.26,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 47988,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1538.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4512\nallocs=11\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 14141.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40392\nallocs=16\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 23.23,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 482.72,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 47045.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 27.14,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 19424.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 34.26,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 260.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 201.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 19165.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 9.11,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 682.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4906.96,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 44353.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 825.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1838.96,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2518.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11870.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3498.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 45265.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 588.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 391016.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1064.6,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

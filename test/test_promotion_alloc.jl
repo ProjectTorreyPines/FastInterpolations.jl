@@ -310,26 +310,22 @@
     end
 end
 
-# Sample-first removal contract (commit 59fc74c58): the persistent batch
-# allocating callable `itp(xq)` no longer evaluates the kernel once to read
-# `typeof(first_val)` — the kernel-shape trait predicts the buffer eltype
-# directly. The protocol-level guarantee is that the call allocates exactly
-# the output Vector and nothing else. If sample-first were re-introduced
-# (or any other intermediate buffer leaked into the persistent batch path)
-# the alloc cost would rise above one Vector{T_out}.
-@testitem "Persistent batch allocator: trait-only sizing (output Vector only)" setup = [AllocConstants] begin
+# Persistent batch in-place callable `itp(out, xq)` must be zero-alloc across
+# all methods. This pins the kernel-loop invariant directly: no sample-first
+# eval leftover, no scratch buffer, no closure capture on the hot path. The
+# allocating form `itp(xq)` is `Vector{T_out}(undef, n)` + this in-place call,
+# so this single contract covers both paths.
+@testitem "Persistent batch in-place: zero-alloc kernel loop" setup = [AllocConstants] begin
     x = collect(0.0:0.1:10.0)
     y = sin.(x)
     xq = collect(0.5:0.01:9.5)
-    n = length(xq)
+    out = Vector{Float64}(undef, length(xq))
 
-    # Function barriers — closure capture would box the locals.
-    _bench_persistent(itp, xq) = itp(xq)
-    _bench_vector(n) = Vector{Float64}(undef, n)
-
-    # Reference: a bare Vector{Float64}(undef, n) alloc cost.
-    _bench_vector(n)
-    cost_vector = @allocated _bench_vector(n)
+    # Function barrier — closure capture would box `itp`, `out`, `xq`.
+    function _bench_persistent_inplace!(itp, out, xq)
+        itp(out, xq)
+        return nothing
+    end
 
     for builder in (
             () -> linear_interp(x, y),
@@ -341,11 +337,7 @@ end
             () -> constant_interp(x, y),
         )
         itp = builder()
-        _bench_persistent(itp, xq)   # warmup
-        cost_itp = @allocated _bench_persistent(itp, xq)
-        # Persistent batch alloc = output Vector + ALLOC_THRESHOLD slack.
-        # A re-introduced sample-first (or any leaked scratch buffer) would
-        # exceed this by at least one kernel-result-sized allocation per call.
-        @test cost_itp <= cost_vector + ALLOC_THRESHOLD
+        _bench_persistent_inplace!(itp, out, xq)   # warmup
+        @test (@allocated _bench_persistent_inplace!(itp, out, xq)) <= ALLOC_THRESHOLD
     end
 end

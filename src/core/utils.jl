@@ -153,6 +153,11 @@ overload from a method that declares its kernel shape (e.g., Constant's
     return Top
 end
 
+# Shared kernel shape for arithmetic methods (Linear/Cubic/Quadratic/Hermite):
+# `y + y * (dL/h)` captures the division-by-`h` that drives the Int→Float
+# widening — Julia inference predicts the exact kernel return type.
+@inline _arithmetic_kernel_shape(yv, dL, h) = yv + yv * (dL / h)
+
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type
 

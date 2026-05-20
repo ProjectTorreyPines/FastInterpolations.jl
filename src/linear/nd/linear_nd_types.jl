@@ -120,3 +120,7 @@ Base.size(itp::LinearInterpolantND) = size(itp.data)
 Return the grid vectors for all dimensions.
 """
 Base.axes(itp::LinearInterpolantND) = itp.grids
+
+# Mirrors the 1D override: shared `_arithmetic_kernel_shape` drives inference.
+@inline _output_eltype(::LinearInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
+    _output_eltype(_arithmetic_kernel_shape, Tv, Tq, Tg)

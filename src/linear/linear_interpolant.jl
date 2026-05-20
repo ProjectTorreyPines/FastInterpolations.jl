@@ -19,10 +19,8 @@ end
     return _linear_vector_loop!(output, itp.x, itp.y, xq, extrap, op, searcher)
 end
 
-# Linear's kernel divides by `h` (`y0 + (y1-y0)*(dL/h)`); shared
-# `_arithmetic_kernel_shape` drives type inference for the output buffer.
-@inline _output_eltype(::LinearInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
-    _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+# Linear uses the default `_arithmetic_kernel_shape` route (inherited from
+# `AbstractInterpolant1D`) — no explicit override needed.
 
 # ========================================
 # Vector Loop (Function Barrier)

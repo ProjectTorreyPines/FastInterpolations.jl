@@ -25,11 +25,11 @@
 @inline _itp_search(itp::AbstractInterpolant1D) = itp.search_policy
 
 # ── Output eltype trait ──
-# Used as the empty-batch fallback type. Scalar callables return the kernel
-# result directly; allocating-batch callables sample the kernel for the
-# container eltype.
+# Default: arithmetic kernels (Linear/Cubic/Quadratic) divide by `h`, so route
+# through the shared `_arithmetic_kernel_shape` for Julia inference. Selection
+# kernels (Constant) and Hermite-family (with `dy`) override this default.
 @inline _output_eltype(::AbstractInterpolant1D{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
-    _output_eltype(Tv, Tg, Tq)
+    _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
 
 # ========================================
 # 1D Scalar Call — Hot Path
@@ -106,7 +106,7 @@ end
 
 # ── Output eltype trait (ND) — mirrors the 1D version. ──
 @inline _output_eltype(::AbstractInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
-    _output_eltype(Tv, Tg, Tq)
+    _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
 
 # ========================================
 # Unified Batch Interpolant Evaluation (Generic ND)

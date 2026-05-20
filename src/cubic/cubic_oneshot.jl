@@ -327,7 +327,7 @@ function cubic_interp(
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tv}
     Tq = eltype(x_query)
-    Tr = _output_eltype(Tv, Tg, Tq)
+    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
     output = Vector{Tr}(undef, length(x_query))
     cubic_interp!(output, x, y, x_query; bc, extrap, autocache, deriv, search)
     return output

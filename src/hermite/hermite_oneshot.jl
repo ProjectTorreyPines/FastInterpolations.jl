@@ -90,10 +90,15 @@ function hermite_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg, Tv, Tq <: Real}
-    # Disjoint chains for `Tv` and `eltype(dy)` — a 4-arg call would let SVector
-    # `eltype(dy)` collapse the duck-Tq fallback to `Any`.
+    # Disjoint chains for `Tv` and `eltype(dy)` over the shared kernel shape —
+    # a single trait call would let SVector `eltype(dy)` collapse the duck-Tq
+    # fallback to `Any`. Mirrors the `AbstractHermiteInterpolant1D` persistent
+    # override that pulls `eltype(itp.dy)` at the type level.
     Tg_p = _promote_grid_float(Tg, Tv)
-    Tr = promote_type(_output_eltype(Tv, Tg_p, Tq), _output_eltype(eltype(dy), Tg_p, Tq))
+    Tr = promote_type(
+        _output_eltype(_arithmetic_kernel_shape, Tg_p, Tv, Tq),
+        _output_eltype(_arithmetic_kernel_shape, Tg_p, eltype(dy), Tq),
+    )
     output = Vector{Tr}(undef, length(x_query))
     hermite_interp!(output, x, y, dy, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output

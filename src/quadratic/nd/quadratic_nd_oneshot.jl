@@ -201,7 +201,7 @@ function quadratic_interp(
     ) where {Tv, N}
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
-    Tr = _output_eltype(Tv, Tg, Tq)
+    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
     quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output

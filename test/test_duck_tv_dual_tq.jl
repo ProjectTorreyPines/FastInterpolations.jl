@@ -860,7 +860,7 @@ end
 
     x = [0.0, 1.0, 2.0, 3.0, 4.0]
     y_sv = [SA[Float64(i), 2.0i] for i in 1:5]
-    xq_in     = ForwardDiff.Dual{Nothing}(1.5, 1.0)
+    xq_in = ForwardDiff.Dual{Nothing}(1.5, 1.0)
     xq_oob_lo = ForwardDiff.Dual{Nothing}(-1.0, 1.0)
     xq_oob_hi = ForwardDiff.Dual{Nothing}(10.0, 1.0)
 
@@ -891,10 +891,14 @@ end
         xg = collect(0.0:1.0:4.0); yg = collect(0.0:1.0:4.0)
         data_sv = [SA[Float64(i), Float64(j)] for i in 1:5, j in 1:5]
         fill_v = SA[99.0, 99.0]
-        q_in_t  = (ForwardDiff.Dual{Nothing}(1.5, 1.0),
-                   ForwardDiff.Dual{Nothing}(1.5, 1.0))
-        q_oob_t = (ForwardDiff.Dual{Nothing}(-1.0, 1.0),
-                   ForwardDiff.Dual{Nothing}(-1.0, 1.0))
+        q_in_t = (
+            ForwardDiff.Dual{Nothing}(1.5, 1.0),
+            ForwardDiff.Dual{Nothing}(1.5, 1.0),
+        )
+        q_oob_t = (
+            ForwardDiff.Dual{Nothing}(-1.0, 1.0),
+            ForwardDiff.Dual{Nothing}(-1.0, 1.0),
+        )
         for method in (linear_interp, cubic_interp, constant_interp)
             itp = method((xg, yg), data_sv; extrap = FillExtrap(fill_v))
             T_in = typeof(itp(q_in_t))
@@ -906,10 +910,14 @@ end
     @testset "ND scalar OOB ClampExtrap — SVector data + Dual queries" begin
         xg = collect(0.0:1.0:4.0); yg = collect(0.0:1.0:4.0)
         data_sv = [SA[Float64(i), Float64(j)] for i in 1:5, j in 1:5]
-        q_in_t  = (ForwardDiff.Dual{Nothing}(1.5, 1.0),
-                   ForwardDiff.Dual{Nothing}(1.5, 1.0))
-        q_oob_t = (ForwardDiff.Dual{Nothing}(-1.0, 1.0),
-                   ForwardDiff.Dual{Nothing}(-1.0, 1.0))
+        q_in_t = (
+            ForwardDiff.Dual{Nothing}(1.5, 1.0),
+            ForwardDiff.Dual{Nothing}(1.5, 1.0),
+        )
+        q_oob_t = (
+            ForwardDiff.Dual{Nothing}(-1.0, 1.0),
+            ForwardDiff.Dual{Nothing}(-1.0, 1.0),
+        )
         for method in (linear_interp, cubic_interp, constant_interp)
             itp = method((xg, yg), data_sv; extrap = ClampExtrap())
             T_in = typeof(itp(q_in_t))
@@ -928,11 +936,15 @@ end
     using ForwardDiff
     xg = [0.0, 1.0, 2.0]; yg = [0.0, 1.0, 2.0]
     data = Float64[10i + j for i in 1:3, j in 1:3]
-    q_one_d = [(ForwardDiff.Dual{Nothing}(0.5, 1.0),
-                ForwardDiff.Dual{Nothing}(0.5, 1.0))]
+    q_one_d = [
+        (
+            ForwardDiff.Dual{Nothing}(0.5, 1.0),
+            ForwardDiff.Dual{Nothing}(0.5, 1.0),
+        ),
+    ]
     q_empty_d = typeof(q_one_d)()
     derivs = (EvalValue(), DerivOp(1))
-    r_one   = constant_interp((xg, yg), data, q_one_d;   deriv = derivs)
+    r_one = constant_interp((xg, yg), data, q_one_d; deriv = derivs)
     r_empty = constant_interp((xg, yg), data, q_empty_d; deriv = derivs)
     @test eltype(r_one) === eltype(r_empty)
     @test length(r_empty) == 0

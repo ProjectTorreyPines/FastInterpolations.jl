@@ -156,9 +156,10 @@ function constant_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    # Any derivative of constant interpolation is zero
+    # `prod(one, query)` folds `one(::Tq_axis_d)` over every axis (mirrors
+    # forward kernel's per-axis `* one(dL_d)`); identity for plain Float.
     if _is_any_deriv(deriv)
-        return 0 * first(data)
+        return 0 * first(data) * prod(one, query)
     end
 
     grids_typed, _, _ = _nd_promote_grids_raw(grids, data)
@@ -200,11 +201,12 @@ function constant_interp(
 
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     if _is_any_deriv(deriv)
-        # Derivative is identically zero; size with the actual kernel output
-        # type via a single sample so Tq carrier (Dual, etc.) propagates.
+        # `prod(one, first_q)` folds carrier over every axis (mirrors the
+        # scalar deriv branch above and the forward kernel).
         nq = _query_length(queries)
         nq == 0 && return Vector{Tv}(undef, 0)
-        zero_sample = 0 * first(data) * one(eltype(_extract_query_point(queries, 1, Val(N))[1]))
+        first_q = _extract_query_point(queries, 1, Val(N))
+        zero_sample = 0 * first(data) * prod(one, first_q)
         return fill(zero_sample, nq)
     end
     return _constant_nd_batch_dispatch(

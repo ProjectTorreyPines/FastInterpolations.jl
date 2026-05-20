@@ -236,3 +236,203 @@ end
         @test _output_eltype(_DuckNoOp, Float64, Float64) === _DuckNoOp
     end
 end
+
+# Advanced AD shapes: Dual x grid, grid-offset sensitivity, nested Dual,
+# ForwardDiff.gradient + Hessian. These pin cases beyond the basic
+# {scalar, batch} × duck-Tv × duck-Tq matrix already covered above.
+@testitem "Advanced AD — Dual grid, grid-offset, nested, gradient" begin
+    using StaticArrays, ForwardDiff
+
+    x_f = collect(1.0:10.0)
+    y_f = sin.(x_f); dy_f = cos.(x_f)
+    y_sv = [SA[Float64(i), 2.0i, 3.0i] for i in 1:10]
+    dy_sv = [SA[1.0, 2.0, 3.0] for _ in 1:10]
+    x_dg = [ForwardDiff.Dual{Nothing}(Float64(i), 1.0) for i in 1:10]
+    xq_f = 5.5
+    xq_d = ForwardDiff.Dual{Nothing}(5.5, 1.0)
+    D = ForwardDiff.Dual{Nothing, Float64, 1}
+
+    @testset "Dual x grid carrier flows through Tv × Tq" begin
+        # Persistent + one-shot, scalar + batch, both Float y and SVector y.
+        for fn in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            @test fn(x_dg, y_f)(xq_f) isa D
+            @test fn(x_dg, y_f)(xq_d) isa D
+            @test fn(x_dg, y_sv)(xq_f) isa SVector{3, D}
+            @test fn(x_dg, y_sv)(xq_d) isa SVector{3, D}
+            # One-shot mirror
+            @test fn(x_dg, y_f, xq_d) isa D
+            @test fn(x_dg, y_sv, xq_d) isa SVector{3, D}
+        end
+        @test hermite_interp(x_dg, y_f, dy_f)(xq_d) isa D
+        @test hermite_interp(x_dg, y_sv, dy_sv)(xq_d) isa SVector{3, D}
+    end
+
+    @testset "ForwardDiff.derivative w.r.t. grid offset" begin
+        # `∂/∂δ fn(x .+ δ, y, xq)` — grid sensitivity via AD. Persistent + one-shot.
+        for fn in (linear_interp, cubic_interp, constant_interp)
+            d_pers = ForwardDiff.derivative(δ -> fn(x_f .+ δ, y_f)(xq_f), 0.0)
+            d_one  = ForwardDiff.derivative(δ -> fn(x_f .+ δ, y_f, xq_f), 0.0)
+            @test d_pers isa Float64 && isfinite(d_pers)
+            @test d_one  isa Float64 && isfinite(d_one)
+            # SVector indexed component, one-shot path
+            d_sv = ForwardDiff.derivative(δ -> fn(x_f .+ δ, y_sv, xq_f)[2], 0.0)
+            @test d_sv isa Float64 && isfinite(d_sv)
+        end
+    end
+
+    @testset "Nested Dual — 2nd-order AD (d²/dt²)" begin
+        for fn in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            d2 = ForwardDiff.derivative(
+                t1 -> ForwardDiff.derivative(t2 -> fn(x_f, y_f)(t2), t1),
+                xq_f,
+            )
+            @test d2 isa Float64
+        end
+    end
+
+    @testset "ND ForwardDiff.gradient + Hessian + grid-offset sensitivity" begin
+        xg = collect(1.0:5.0); yg = collect(1.0:5.0)
+        data = [sin(i) * cos(j) for i in 1:5, j in 1:5]
+        data_sv = [SA[Float64(i + j), 2.0(i + j), 3.0(i + j)] for i in 1:5, j in 1:5]
+
+        for fn in (linear_interp, cubic_interp)
+            # Gradient of scalar-output ND interp w.r.t. query
+            @test ForwardDiff.gradient(q -> fn((xg, yg), data)((q[1], q[2])), [2.5, 3.5]) isa Vector{Float64}
+            # Hessian — exercises nested Dual through the kernel
+            @test ForwardDiff.hessian(q -> fn((xg, yg), data)((q[1], q[2])), [2.5, 3.5]) isa Matrix{Float64}
+            # Gradient via one-shot 3-arg
+            @test ForwardDiff.gradient(q -> fn((xg, yg), data, (q[1], q[2])), [2.5, 3.5]) isa Vector{Float64}
+            # SVector component gradient (persistent + one-shot)
+            @test ForwardDiff.gradient(q -> fn((xg, yg), data_sv)((q[1], q[2]))[1], [2.5, 3.5]) isa Vector{Float64}
+            @test ForwardDiff.gradient(q -> fn((xg, yg), data_sv, (q[1], q[2]))[1], [2.5, 3.5]) isa Vector{Float64}
+            # ND grid-offset sensitivity via one-shot
+            @test ForwardDiff.derivative(δ -> fn((xg .+ δ, yg), data, (2.5, 3.5)), 0.0) isa Float64
+        end
+    end
+
+    @testset "Series + one-shot ForwardDiff.derivative on SVector component" begin
+        using FastInterpolations: Series
+        y_sv1 = [SA[Float64(i), 2.0i] for i in 1:10]
+        y_sv2 = [SA[-1.0*i, 0.5i] for i in 1:10]
+        s_sv = Series(y_sv1, y_sv2)
+        # `fn(x, series, t)` returns Vector{SVector} (one per series).
+        # ∂/∂t of series[1][component[1]] exercises the full Series + duck-Tq chain.
+        for fn in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            d = ForwardDiff.derivative(t -> fn(x_f, s_sv, t)[1][1], xq_f)
+            @test d isa Float64
+        end
+    end
+end
+
+# `CubicSeriesInterpolant` build-then-call path — distinct from the 3-arg
+# one-shot covered in the "Series path" testitem above.
+@testitem "CubicSeriesInterpolant persistent path — SVector × Dual carrier" begin
+    using StaticArrays, ForwardDiff
+    using FastInterpolations: Series
+
+    x = collect(1.0:10.0)
+    y_sv1 = [SA[Float64(i), 2.0i, 3.0i] for i in 1:10]
+    y_sv2 = [SA[-1.0 * i, 0.5i, 2.5i] for i in 1:10]
+    s_sv  = Series(y_sv1, y_sv2)
+    xq_d  = ForwardDiff.Dual{Nothing}(5.5, 1.0)
+    xq_dv = [ForwardDiff.Dual{Nothing}(2.0 + 0.1i, 1.0) for i in 1:5]
+    D = ForwardDiff.Dual{Nothing, Float64, 1}
+
+    sitp = cubic_interp(x, s_sv)
+
+    @testset "scalar Dual via persistent callable" begin
+        @test sitp(xq_d) isa Vector{SVector{3, D}}
+    end
+
+    @testset "batch Vector{Dual} via persistent callable" begin
+        @test sitp(xq_dv) isa Vector{Vector{SVector{3, D}}}
+    end
+end
+
+@testitem "Constant ND deriv-zero short-circuit propagates Tq carrier" begin
+    using ForwardDiff
+
+    D = ForwardDiff.Dual{Nothing, Float64, 1}
+
+    xg = collect(1.0:5.0); yg = collect(1.0:5.0)
+    data_int = [10i + j for i in 1:5, j in 1:5]
+    qd = (ForwardDiff.Dual{Nothing}(2.5, 1.0), ForwardDiff.Dual{Nothing}(3.5, 0.0))
+
+    @testset "Persistent ND scalar callable, deriv != EvalValue" begin
+        itp = constant_interp((xg, yg), data_int)
+        @test itp(qd; deriv = (DerivOp(1), EvalValue())) isa D
+    end
+
+    @testset "One-shot ND scalar callable, deriv != EvalValue" begin
+        @test constant_interp((xg, yg), data_int, qd; deriv = (DerivOp(1), EvalValue())) isa D
+    end
+end
+
+@testitem "Hermite one-shot preserves duck carrier in `dy`" begin
+    using ForwardDiff
+
+    D = ForwardDiff.Dual{Nothing, Float64, 1}
+
+    @testset "Float64 y + Vector{Dual} dy — batch one-shot" begin
+        x = collect(1.0:10.0)
+        y = sin.(x)
+        dy = [ForwardDiff.Dual{Nothing}(cos(xi), 1.0) for xi in x]
+        xq = collect(2.0:0.5:8.0)
+        @test hermite_interp(x, y, dy, xq) isa Vector{D}
+    end
+
+    @testset "ForwardDiff.derivative on slope perturbation" begin
+        x = collect(1.0:10.0)
+        y = sin.(x)
+        dy_base = cos.(x)
+        xq = 5.5
+        d = ForwardDiff.derivative(δ -> hermite_interp(x, y, dy_base .+ δ, [xq])[1], 0.0)
+        @test d isa Float64
+        @test isfinite(d)
+    end
+
+    @testset "Float32 y + Float64 dy precision pin" begin
+        # Scalar/vector parity: wider `eltype(dy)` widens the result.
+        x = Float32[0, 1, 2]
+        y = Float32[0, 1, 4]
+        dy = Float64[0, 2, 4]
+        xq_v = Float32[0.5]
+        @test eltype(hermite_interp(x, y, dy, xq_v)) === Float64
+    end
+end
+
+# ND deriv-zero short-circuits multiply by `one(eltype(query[1]))` (axis-1).
+# Heterogeneous-axis queries like `(Float, Dual)` lose the non-axis-1 carrier
+# unless the short-circuit folds `one` over every axis (mirroring the forward
+# kernel's per-axis `* one(dL_d)`).
+@testitem "ND deriv-zero short-circuit per-axis carrier" begin
+    using ForwardDiff
+
+    D = ForwardDiff.Dual{Nothing, Float64, 1}
+
+    xg = collect(1.0:5.0); yg = collect(1.0:5.0)
+    data_int = [10i + j for i in 1:5, j in 1:5]
+    # Axis 1 Float, axis 2 Dual — Dual carrier lives on axis 2 only.
+    q_het = (2.5, ForwardDiff.Dual{Nothing}(3.5, 1.0))
+    q_het_batch = [q_het]
+
+    @testset "Constant ND persistent scalar — (Float, Dual) × mixed deriv" begin
+        itp = constant_interp((xg, yg), data_int)
+        @test itp(q_het; deriv = (EvalValue(), DerivOp(1))) isa D
+    end
+
+    @testset "Constant ND one-shot scalar — (Float, Dual) × mixed deriv" begin
+        @test constant_interp((xg, yg), data_int, q_het; deriv = (EvalValue(), DerivOp(1))) isa D
+    end
+
+    @testset "Constant ND one-shot batch — (Float, Dual) × mixed deriv" begin
+        @test constant_interp((xg, yg), data_int, q_het_batch; deriv = (EvalValue(), DerivOp(1))) isa Vector{D}
+    end
+
+    @testset "Linear ND persistent scalar 2nd-deriv (zero-fill) — (Float, Dual)" begin
+        # LinearInterpolantND _deriv_zero_fill triggers on 2nd-order deriv.
+        data_f = [Float64(10i + j) for i in 1:5, j in 1:5]
+        itp_l = linear_interp((xg, yg), data_f)
+        @test itp_l(q_het; deriv = (EvalValue(), DerivOp(2))) isa D
+    end
+end

@@ -185,7 +185,8 @@ end
     _validate_nd_domain(itp.grids, query, itp.extraps)
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
-    _deriv_zero_fill(itp, ops, Val(N)) && return 0 * _zero_ref(itp)
+    # `prod(one, query)` folds carrier over every axis; identity for plain Float.
+    _deriv_zero_fill(itp, ops, Val(N)) && return 0 * _zero_ref(itp) * prod(one, query)
     cell = _locate_cell(itp, query, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
 end

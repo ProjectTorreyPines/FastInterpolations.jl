@@ -94,10 +94,11 @@ end
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp}
     ) where {Tg, Tv, N}
-    if _has_any_derivative(ops, Val(N))
-        return 0 * first(itp.data)
-    end
     data, stencils, hs, sides, q_eval, Ls = cell
+    if _has_any_derivative(ops, Val(N))
+        # `prod(one, q_eval)` folds carrier over every axis.
+        return 0 * first(itp.data) * prod(one, q_eval)
+    end
     return _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls)
 end
 

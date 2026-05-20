@@ -356,11 +356,12 @@ end
 Evaluate constant interpolant at multiple anchored query points.
 Returns newly allocated vector.
 """
-function (itp::ConstantInterpolant{T})(
-        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{T}};
+function (itp::ConstantInterpolant{Tg, Tv})(
+        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{Tg, Tq}};
         deriv::DerivOp = EvalValue()
-    ) where {T}
-    output = Vector{T}(undef, length(aq_vec))
+    ) where {Tg, Tv, Tq <: Real}
+    T_out = _output_eltype(Tv, Tg, Tq)
+    output = Vector{T_out}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _constant_eval_with_anchor(itp, aq_vec[i], deriv)
     end

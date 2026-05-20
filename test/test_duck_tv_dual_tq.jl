@@ -107,9 +107,6 @@ end
     end
 end
 
-# Series path: chain `_series_output_type(_output_eltype(...), Tq)` previously
-# collapsed `promote_type(SVector{F}, Dual)` to `Any` → MethodError on numeric
-# methods, silent `Vector{Any}` on Constant. Now unified `_output_eltype(Tv, Tg, Tq)`.
 @testitem "Series path — duck-Tv × duck-Tq carrier propagates" begin
     using StaticArrays, ForwardDiff
     using FastInterpolations: Series
@@ -434,5 +431,33 @@ end
         data_f = [Float64(10i + j) for i in 1:5, j in 1:5]
         itp_l = linear_interp((xg, yg), data_f)
         @test itp_l(q_het; deriv = (EvalValue(), DerivOp(2))) isa D
+    end
+end
+
+# Anchored-vector batch callable lets advanced users pre-build queries and
+# reuse them across interpolants. Linear's path uses `_output_eltype(Tv, Tg, Tq)`
+# for the output buffer; Constant + Quadratic only used `Vector{Tg}` so a
+# duck-Tq anchor lost its carrier on `setindex!` convert.
+@testitem "Anchored-vector callable propagates Tq carrier" begin
+    using ForwardDiff
+    using FastInterpolations: _ConstantAnchoredQuery, _QuadraticAnchoredQuery, _fill_anchors!
+
+    D = ForwardDiff.Dual{Nothing, Float64, 1}
+    x = collect(0.0:0.1:1.0)
+    y = sin.(x)
+    xq_d = [ForwardDiff.Dual{Nothing}(0.15 + 0.1i, 1.0) for i in 0:4]
+
+    @testset "Constant" begin
+        itp = constant_interp(x, y)
+        aq_vec = Vector{_ConstantAnchoredQuery{Float64, D}}(undef, length(xq_d))
+        _fill_anchors!(aq_vec, x, xq_d, Val(:constant))
+        @test itp(aq_vec) isa Vector{D}
+    end
+
+    @testset "Quadratic" begin
+        itp = quadratic_interp(x, y)
+        aq_vec = Vector{_QuadraticAnchoredQuery{Float64, D}}(undef, length(xq_d))
+        _fill_anchors!(aq_vec, x, xq_d, Val(:quadratic))
+        @test itp(aq_vec) isa Vector{D}
     end
 end

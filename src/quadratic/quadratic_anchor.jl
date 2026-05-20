@@ -329,11 +329,12 @@ end
 Evaluate quadratic interpolant at multiple anchored query points.
 Returns newly allocated vector.
 """
-function (itp::QuadraticInterpolant{T})(
-        aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}};
+function (itp::QuadraticInterpolant{Tg, Tv})(
+        aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{Tg, Tq}};
         deriv::DerivOp = EvalValue()
-    ) where {T}
-    output = Vector{T}(undef, length(aq_vec))
+    ) where {Tg, Tv, Tq <: Real}
+    T_out = _output_eltype(Tv, Tg, Tq)
+    output = Vector{T_out}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _quadratic_eval_with_anchor(itp, aq_vec[i], deriv)
     end

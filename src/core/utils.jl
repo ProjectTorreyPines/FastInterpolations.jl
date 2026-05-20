@@ -113,25 +113,9 @@ Determine the output value type from y element type and grid type.
 # values are not promoted to grid type (no grid-parameter partials in y).
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg} = T
 
-"""
-    _series_output_type(::Type{Tv}, ::Type{Tq}) -> Type
-
-Compute output element type for series evaluation.
-
-For standard numerics, uses `promote_type(Tv, Tq)` to widen correctly
-(e.g., Float64 + Dual → Dual for AD support).
-
-For custom Tv without `promote_rule`, `promote_type` falls back to an
-abstract typejoin (e.g., Number), which makes the output vector untyped.
-In that case, falls back to Tv since the kernel always returns Tv.
-"""
-@inline function _series_output_type(::Type{Tv}, ::Type{Tq}) where {Tv, Tq}
-    Tout = promote_type(Tv, Tq)
-    return isconcretetype(Tout) ? Tout : Tv
-end
-
-# Universal kernel-shape op: every interp kernel produces `Tv + α·Tv` where α
-# carries Tq. Used as the inference probe in the `_output_eltype` duck fallback.
+# Inference probe for `_output_eltype` duck fallback. Standard kernels
+# (Linear/Cubic/Quadratic/Hermite) produce `Tv + α·Tv` shapes; Constant's
+# `Tv * one(Tq)` lives in the same promotion space.
 @inline _kernel_shape_op(yv, q) = yv * q + yv
 
 """

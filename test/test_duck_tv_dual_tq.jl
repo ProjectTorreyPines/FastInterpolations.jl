@@ -105,6 +105,45 @@ end
     end
 end
 
+@testitem "Adjoint path — duck-Tv y_bar widens correctly" begin
+    using StaticArrays, ForwardDiff
+
+    x = collect(1.0:10.0)
+    y_for_slope = sin.(x)
+    xq_for_adj = [2.5, 5.5, 8.5]
+    y_bar_sv = [SA[0.1, 0.2, 0.3], SA[0.4, 0.5, 0.6], SA[0.7, 0.8, 0.9]]
+    y_bar_dv = [ForwardDiff.Dual{Nothing}(0.1 + i, 1.0) for i in 1:3]
+    D = ForwardDiff.Dual{Nothing, Float64, 1}
+
+    @testset "1D — slope-free adjoints (Linear/Constant/Cubic/Quadratic)" begin
+        for fn in (linear_adjoint, constant_adjoint, cubic_adjoint, quadratic_adjoint)
+            @test fn(x, xq_for_adj)(y_bar_sv) isa Vector{SVector{3, Float64}}
+            @test fn(x, xq_for_adj)(y_bar_dv) isa Vector{D}
+        end
+    end
+
+    @testset "1D — Hermite-family adjoints" begin
+        for fn in (hermite_adjoint, cardinal_adjoint)
+            @test fn(x, xq_for_adj)(y_bar_sv) isa Vector{SVector{3, Float64}}
+            @test fn(x, xq_for_adj)(y_bar_dv) isa Vector{D}
+        end
+        # Pchip/Akima carry y in the constructor (slope is data-dependent).
+        for fn in (pchip_adjoint, akima_adjoint)
+            @test fn(x, y_for_slope, xq_for_adj)(y_bar_sv) isa Vector{SVector{3, Float64}}
+            @test fn(x, y_for_slope, xq_for_adj)(y_bar_dv) isa Vector{D}
+        end
+    end
+
+    @testset "ND adjoints (Linear/Constant/Cubic/Quadratic)" begin
+        xg = collect(1.0:5.0); yg = collect(1.0:5.0)
+        xq_nd = [(2.5, 3.5), (3.0, 4.0), (4.0, 2.5)]
+        for fn in (linear_adjoint, constant_adjoint, cubic_adjoint, quadratic_adjoint)
+            @test fn((xg, yg), xq_nd)(y_bar_sv) isa Matrix{SVector{3, Float64}}
+            @test fn((xg, yg), xq_nd)(y_bar_dv) isa Matrix{D}
+        end
+    end
+end
+
 @testitem "Type stability + raw-eltype contracts" begin
     using Test, StaticArrays, ForwardDiff
     using FastInterpolations: _output_eltype

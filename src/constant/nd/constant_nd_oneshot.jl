@@ -105,7 +105,18 @@ function _constant_interp_nd_oneshot_batch(
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tg, Tv, N}
-    output = Vector{Tv}(undef, _query_length(queries))
+    nq = _query_length(queries)
+    if nq == 0
+        return Vector{Tv}(undef, 0)
+    end
+    # Sample-first: Constant's `y * one(dL)` kernel produces a type that depends
+    # on the query carrier (Int×Float→Float, SVector×Dual→SVector{Dual}); the
+    # trait would over-predict via the Float upgrade so we read the actual
+    # kernel return type from a single scalar eval.
+    policies, _ = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
+    first_q = _extract_query_point(queries, 1, Val(N))
+    first_val = _constant_interp_nd_oneshot(grids, data, first_q, bcs, extraps_val, side_vals, policies, nothing)
+    output = Vector{typeof(first_val)}(undef, nq)
     return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, search, hint)
 end
 
@@ -181,10 +192,6 @@ function constant_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    if _is_any_deriv(deriv)
-        return zeros(Tv, _query_length(queries))
-    end
-
     grids_typed, _, _ = _nd_promote_grids_raw(grids, data)
     _validate_nd_grids(grids_typed, data)
 
@@ -192,9 +199,17 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
 
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
+    if _is_any_deriv(deriv)
+        # Derivative is identically zero; size with the actual kernel output
+        # type via a single sample so Tq carrier (Dual, etc.) propagates.
+        nq = _query_length(queries)
+        nq == 0 && return Vector{Tv}(undef, 0)
+        zero_sample = 0 * first(data) * one(eltype(_extract_query_point(queries, 1, Val(N))[1]))
+        return fill(zero_sample, nq)
+    end
     return _constant_nd_batch_dispatch(
         grids_typed, data, queries, bcs, extraps_val, sides, search, hint
-    )::Vector{Tv}
+    )
 end
 
 # ========================================

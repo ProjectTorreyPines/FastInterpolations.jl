@@ -367,15 +367,15 @@ end
         @test r isa Float64
     end
 
-    @testset "ND oneshot batch — current behavior pinned (allocator follow-up)" begin
+    @testset "ND oneshot batch — Float xq carrier propagated through kernel" begin
         x = 0:1:4
         y = 0:1:3
         data = [10 * i + j for i in 1:5, j in 1:4]
         queries = [(2.5, 1.5), (0.5, 0.5), (3.5, 2.5)]
-        # ND oneshot 3-arg batch allocator does not yet sample-first; pin
-        # current Vector{Int} return so a future migration is intentional.
+        # Float xq + Int data → Float (kernel does y * one(dL)). Sample-first
+        # allocator (constant_nd_oneshot.jl) reads the actual kernel return type.
         vals = constant_interp((x, y), data, queries)
-        @test vals isa Vector{Int}
+        @test vals isa Vector{Float64}
         @test length(vals) == 3
     end
 
@@ -656,8 +656,7 @@ end
         @test itp((0.5, 0.5)) === 10.0
         @test itp([(0.5, 0.5)]) == [10.0]
         @test itp([(0.5, 0.5)]) isa Vector{Float64}
-        # ND oneshot 3-arg allocator pending sample-first migration; pin current.
-        @test constant_interp((x, y), data, [(0.5, 0.5)]) isa Vector{Int}
+        @test constant_interp((x, y), data, [(0.5, 0.5)]) isa Vector{Float64}
     end
 
     @testset "1D persistent Dual → carrier preserved (scalar + batch)" begin

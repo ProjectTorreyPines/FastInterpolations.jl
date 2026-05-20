@@ -112,7 +112,7 @@ function (adj::AbstractAdjoint1D{Tg})(
     ) where {Tg}
     nq = _n_queries(adj)
     length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    Tv = promote_type(eltype(y_bar), Tg)
+    Tv = _output_eltype(eltype(y_bar), Tg)
     f_bar = zeros(Tv, _adjoint_internal_length(adj))
     _adjoint_1d_apply!(f_bar, adj, y_bar, deriv)
     return _adjoint_1d_finalize(f_bar, adj)
@@ -122,7 +122,7 @@ function (adj::AbstractAdjoint1D{Tg})(
         y_bar::Real; deriv::DerivOp = EvalValue(), _extra...
     ) where {Tg}
     _n_queries(adj) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, _n_queries(adj))
-    Tv = promote_type(typeof(y_bar), Tg)
+    Tv = _output_eltype(typeof(y_bar), Tg)
     f_bar = zeros(Tv, _adjoint_internal_length(adj))
     _adjoint_1d_apply!(f_bar, adj, (y_bar,), deriv)
     return _adjoint_1d_finalize(f_bar, adj)
@@ -133,7 +133,7 @@ function (adj::AbstractAdjoint1D{Tg})(
     ) where {Tg}
     nq = _n_queries(adj)
     length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    Tv = promote_type(eltype(y_bar), Tg)
+    Tv = _output_eltype(eltype(y_bar), Tg)
     f_bar = zeros(Tv, _adjoint_internal_length(adj))
     _adjoint_1d_apply!(f_bar, adj, y_bar, deriv)
     return _adjoint_1d_finalize(f_bar, adj)
@@ -350,7 +350,7 @@ function (adj::AbstractAdjointND{Tg, N})(
     ops = _resolve_deriv_nd(deriv, Val(N))
     nq = _n_queries(adj)
     length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    Tv = promote_type(eltype(y_bar), Tg)
+    Tv = _output_eltype(eltype(y_bar), Tg)
     f_bar = zeros(Tv, _grid_size(adj)...)
     _adjoint_nd_apply!(f_bar, adj, y_bar, ops)
     return _adjoint_nd_finalize(f_bar, adj)
@@ -365,7 +365,7 @@ function (adj::AbstractAdjointND{Tg, N})(
     ) where {Tg, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
     _n_queries(adj) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, _n_queries(adj))
-    Tv = promote_type(typeof(y_bar), Tg)
+    Tv = _output_eltype(typeof(y_bar), Tg)
     f_bar = zeros(Tv, _grid_size(adj)...)
     _adjoint_nd_apply!(f_bar, adj, y_bar, ops)
     return _adjoint_nd_finalize(f_bar, adj)
@@ -381,7 +381,7 @@ function (adj::AbstractAdjointND{Tg, N})(
     ops = _resolve_deriv_nd(deriv, Val(N))
     nq = _n_queries(adj)
     length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    Tv = promote_type(eltype(y_bar), Tg)
+    Tv = _output_eltype(eltype(y_bar), Tg)
     f_bar = zeros(Tv, _grid_size(adj)...)
     _adjoint_nd_apply!(f_bar, adj, y_bar, ops)
     return _adjoint_nd_finalize(f_bar, adj)

@@ -130,24 +130,27 @@ In that case, falls back to Tv since the kernel always returns Tv.
     return isconcretetype(Tout) ? Tout : Tv
 end
 
+# Universal kernel-shape op: every interp kernel produces `Tv + α·Tv` where α
+# carries Tq. Used as the inference probe in the `_output_eltype` duck fallback.
+@inline _kernel_shape_op(yv, q) = yv * q + yv
+
 """
     _output_eltype(::Type{Tv}, types...) -> Type
 
-Compute output element type for ND one-shot batch evaluation.
-
-Uses `promote_type(Tv, types...)` for standard numerics. For custom/duck
-types where `promote_type` falls back to a non-concrete type (e.g., `Any`),
-returns `Tv` directly since the interpolation kernel always returns `Tv`.
-
-Same logic as `_series_output_type` but accepts varargs for ND promotion
-chains like `promote_type(Tv, Tg, Tq)`.
+Output element type for one-shot batch allocation. Concrete `promote_type`
+result gets Int→Float upgrade; otherwise queries `Base.promote_op` on
+`_kernel_shape_op` (constant-folded at compile time) to see through duck
+carriers like `SVector × Dual`. Falls back to `Tv` if the op is undefined.
 """
 @inline function _output_eltype(::Type{Tv}, types::Type...) where {Tv}
     Tr = promote_type(Tv, types...)
-    Tc = isconcretetype(Tr) ? Tr : Tv
-    # Ensure standard numerics produce Float coefficients (Int→Float64).
-    # Duck types (MyStruct etc.) pass through — float() would MethodError.
-    return (Tc <: _PromotableValue && !(Tc <: AbstractFloat)) ? float(Tc) : Tc
+    if isconcretetype(Tr)
+        return (Tr <: _PromotableValue && !(Tr <: AbstractFloat)) ? float(Tr) : Tr
+    end
+    Tq = length(types) == 0 ? Tv : promote_type(types...)
+    Top = Base.promote_op(_kernel_shape_op, Tv, Tq)
+    (Top === Union{} || Top === Any) && return Tv
+    return Top
 end
 
 """

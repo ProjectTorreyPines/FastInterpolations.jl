@@ -30,12 +30,10 @@
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
     if _extract_primal(xi) == _extract_primal(last(x))
-        # `last(x)` for `_ExclusivePeriodicAxis` is the *virtual* `inner[1] + period`
-        # (the seam right endpoint). The corresponding y at that virtual slot is
-        # `last(y) = inner[1]` for `_ExclusivePeriodicData` — cyclic via the data
-        # wrapper. For raw vectors both `last`s are the user's last entry.
-        # Single uniform `last(y)` handles both cases — no `_resolve_idx` needed.
-        return op isa EvalValue ? last(y) : 0 * first(y)
+        # `last(y)` covers both raw vectors and `_ExclusivePeriodicData` (cyclic
+        # `inner[1]`). `* one(xi)` propagates Tq carrier to match the kernel
+        # path below (without it, Int y + Float xq returns Union{Int,Float}).
+        return op isa EvalValue ? last(y) * one(xi) : 0 * first(y) * one(xi)
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
@@ -108,7 +106,7 @@ end
     # the exact boundary. `last(_ExclusivePeriodicData) = inner[1]` so `:exclusive`
     # cyclic wrap is preserved; raw Vector yields `y[n]`.
     _extract_primal(xi_wrapped) == _extract_primal(last(x)) &&
-        return op isa EvalValue ? last(y) : 0 * first(y)
+        return op isa EvalValue ? last(y) * one(xi_wrapped) : 0 * first(y) * one(xi_wrapped)
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     # Unwrap data once: `search_interval` already resolved the seam (idx_R = 1

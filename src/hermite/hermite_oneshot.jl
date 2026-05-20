@@ -90,7 +90,9 @@ function hermite_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg, Tv, Tq <: Real}
-    Tr = _output_eltype(Tv, _promote_grid_float(Tg, Tv), Tq, eltype(dy))
+    # `eltype(dy)` dropped: it usually equals Tv, and including it can collapse
+    # the trait's internal `promote_type(...)` to `Any` on duck inputs.
+    Tr = _output_eltype(Tv, _promote_grid_float(Tg, Tv), Tq)
     output = Vector{Tr}(undef, length(x_query))
     hermite_interp!(output, x, y, dy, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output

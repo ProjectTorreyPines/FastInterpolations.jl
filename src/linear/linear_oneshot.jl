@@ -336,7 +336,8 @@ function linear_interp(
         search::AbstractSearchPolicy = AutoSearch()
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
-    T_out = _output_eltype(eltype(y), Tg)
+    # Tq included so the trait sees the carrier chain (e.g., SVector × Dual).
+    T_out = _output_eltype(eltype(y), Tg, eltype(x_targets))
     output = Vector{T_out}(undef, length(x_targets))
     linear_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
     return output

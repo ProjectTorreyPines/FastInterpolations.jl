@@ -136,23 +136,33 @@
         @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
     end
 
-    @testset "Eltype contract: Integer series stays Int" begin
-        x_f = collect(0.0:1.0:4.0)
+    @testset "Eltype contract: fully-Int chain stays Int" begin
+        # Series routes through the canonical kernel-shape trait, so the
+        # output eltype promotes via `xq - xL`. The "stays Int" contract
+        # requires a *fully-Int* chain (Int grid + Int y + Int xq). Float
+        # xq with Int grid would (correctly) widen to Float — pinned in
+        # test_constant_eltype.jl's "Float xq carrier" testset.
+        x_i = 0:4
         y1_int = [0, 1, 3, 4, 7]
         y2_int = [2, 3, 1, 0, 5]
-        vals = constant_interp(x_f, Series(y1_int, y2_int), 1.5)
+        vals = constant_interp(x_i, Series(y1_int, y2_int), 2)
         @test vals isa Vector{Int}
-        @test vals[1] == constant_interp(x_f, y1_int, 1.5)
+        @test vals[1] == constant_interp(x_i, y1_int, 2)
     end
 
     @testset "Eltype contract: FillExtrap fill_value must be compatible with y eltype" begin
-        x_f = collect(0.0:1.0:4.0)
+        # Fully-Int chain so the output buffer is Vector{Int}; mismatched
+        # Float fill_value then surfaces as InexactError on assign. Float
+        # grid/xq would promote the buffer and silently absorb the Float
+        # fill — that case is not what this contract tries to catch.
+        x_i = 0:4
         y_int = [0, 1, 3, 4, 7]
-        # Int series + Int fill_value → output is Int.
-        vals = constant_interp(x_f, Series(y_int), 5.0; extrap = FillExtrap(9))
+        # Int series + Int fill_value → output stays Int, fill stores cleanly.
+        vals = constant_interp(x_i, Series(y_int), 5; extrap = FillExtrap(9))
+        @test vals isa Vector{Int}
         @test vals[1] == 9
-        # Int series + Float fill_value → InexactError (raw eltype contract is strict).
-        @test_throws InexactError constant_interp(x_f, Series(y_int), 5.0; extrap = FillExtrap(0.5))
+        # Int series + Float fill_value → InexactError on Int-buffer assign.
+        @test_throws InexactError constant_interp(x_i, Series(y_int), 5; extrap = FillExtrap(0.5))
     end
 
     @testset "Scalar: Vector-of-Vectors" begin

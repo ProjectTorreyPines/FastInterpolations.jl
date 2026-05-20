@@ -121,11 +121,21 @@ Determine the output value type from y element type and grid type.
 """
     _output_eltype(::Type{Tv}, types...) -> Type
 
-Output element type for arithmetic-kernel allocators (Linear/Cubic/Quadratic
-/Hermite). Concrete `promote_type` gets Int→Float upgrade (these kernels
-divide — Int chains widen naturally); otherwise queries `Base.promote_op`
-on `_kernel_shape_op` to see through duck carriers like `SVector × Dual`.
-Falls back to `Tv` if the op is undefined.
+Generic output-eltype probe via the universal arithmetic kernel shape
+`y*q + y` (`_kernel_shape_op`). Currently used by:
+
+- Internal coefficient eltype (Cubic `Tz`, Quadratic `Tc`).
+- Adjoint allocators (`adjoint_protocol.jl`).
+- Hetero ND legacy paths and a few series callsites.
+
+Concrete `promote_type` gets Int→Float upgrade (arithmetic kernels divide
+— Int chains widen naturally); duck carriers (e.g. `SVector × Dual`) fall
+through to `Base.promote_op` on `_kernel_shape_op`, with final fallback
+to `Tv` if the op is undefined.
+
+For method-aware output-buffer sizing (Linear/Cubic/Quadratic/Constant/
+Hermite), prefer the kernel-op overload below — it predicts the method's
+exact kernel return type via `Base.promote_op`.
 """
 @inline function _output_eltype(::Type{Tv}, types::Type...) where {Tv}
     Tr = promote_type(Tv, types...)

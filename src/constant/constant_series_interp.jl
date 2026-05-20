@@ -394,7 +394,9 @@ Returns a vector of values, one per y-series.
 
 # AD Support
 Plain queries (`Tq <: _PromotableValue`) → output eltype `Tv` unchanged.
-Duck-typed queries (e.g. `ForwardDiff.Dual`) widen to `promote_type(Tv, Tq)`.
+Duck-typed queries (e.g. `ForwardDiff.Dual`) route through `_output_eltype`
+(`Base.promote_op` on the kernel shape) so carriers like `SVector × Dual`
+resolve correctly instead of collapsing to `Vector{Any}`.
 """
 function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         xq::Tq;

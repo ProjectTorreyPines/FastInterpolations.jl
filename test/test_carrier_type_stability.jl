@@ -32,7 +32,7 @@
 
     @testset "1D oneshot scalar — deriv-zero × Dual query" begin
         @test (@inferred linear_interp(x1, y1, xq_d; deriv=DerivOp(2))) isa D
-        @test_broken (@inferred cubic_interp(x1, y1, xq_d; deriv=DerivOp(4))) isa D
+        @test (@inferred cubic_interp(x1, y1, xq_d; deriv=DerivOp(4))) isa D
         @test_broken (@inferred pchip_interp(x1, y1, xq_d; deriv=DerivOp(4))) isa D
         @test_broken (@inferred cardinal_interp(x1, y1, xq_d; deriv=DerivOp(4))) isa D
         @test_broken (@inferred akima_interp(x1, y1, xq_d; deriv=DerivOp(4))) isa D
@@ -50,7 +50,7 @@
 
     @testset "1D persistent scalar — deriv-zero × Dual query" begin
         @test (@inferred linear_interp(x1, y1)(xq_d; deriv=DerivOp(2))) isa D
-        @test_broken (@inferred cubic_interp(x1, y1)(xq_d; deriv=DerivOp(4))) isa D
+        @test (@inferred cubic_interp(x1, y1)(xq_d; deriv=DerivOp(4))) isa D
     end
 
     @testset "1D persistent allocating batch — deriv-zero × Dual query" begin
@@ -91,18 +91,18 @@ end
     @testset "1D oneshot scalar Dual return for non-zero deriv" begin
         @test linear_interp(x1, y1, xq_d; deriv=DerivOp(1)) isa D
         @test_broken quadratic_interp(x1, y1, xq_d; deriv=DerivOp(2)) isa D
-        @test_broken cubic_interp(x1, y1, xq_d; deriv=DerivOp(3)) isa D
+        @test cubic_interp(x1, y1, xq_d; deriv=DerivOp(3)) isa D
         @test_broken pchip_interp(x1, y1, xq_d; deriv=DerivOp(3)) isa D
     end
 
     @testset "1D persistent scalar Dual return for non-zero deriv" begin
         @test linear_interp(x1, y1)(xq_d; deriv=DerivOp(1)) isa D
-        @test_broken cubic_interp(x1, y1)(xq_d; deriv=DerivOp(3)) isa D
+        @test cubic_interp(x1, y1)(xq_d; deriv=DerivOp(3)) isa D
     end
 
     @testset "1D oneshot scalar Dual return for zero-order deriv" begin
         @test linear_interp(x1, y1, xq_d; deriv=DerivOp(2)) isa D
-        @test_broken cubic_interp(x1, y1, xq_d; deriv=DerivOp(4)) isa D
+        @test cubic_interp(x1, y1, xq_d; deriv=DerivOp(4)) isa D
         @test_broken pchip_interp(x1, y1, xq_d; deriv=DerivOp(4)) isa D
     end
 end

@@ -94,7 +94,7 @@ end
 end
 
 # Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
-@inline _value_sample(itp::LinearInterpolantND) = @inbounds first(itp.data)
+@inline _sample_data(itp::LinearInterpolantND) = @inbounds first(itp.data)
 
 # ========================================
 # Derivative Check

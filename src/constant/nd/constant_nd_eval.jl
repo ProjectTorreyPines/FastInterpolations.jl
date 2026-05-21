@@ -33,7 +33,7 @@ end
     _has_any_derivative(ops, Val(N))
 
 # Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
-@inline _value_sample(itp::ConstantInterpolantND) = @inbounds first(itp.data)
+@inline _sample_data(itp::ConstantInterpolantND) = @inbounds first(itp.data)
 
 # ========================================
 # CELL LOCATION (locate once, evaluate many)

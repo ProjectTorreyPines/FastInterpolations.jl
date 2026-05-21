@@ -113,7 +113,7 @@ end
 end
 
 # Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
-@inline _value_sample(itp::CubicInterpolantND) = @inbounds first(itp.nodal_derivs.partials)
+@inline _sample_data(itp::CubicInterpolantND) = @inbounds first(itp.nodal_derivs.partials)
 
 # ========================================
 # @GENERATED TENSOR PRODUCT KERNEL

@@ -125,7 +125,7 @@ end
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
-    zref = _value_sample(itp)
+    zref = _sample_data(itp)
     @inbounds for k in 1:_query_length(queries)
         query_k = _extract_query_point(queries, k, Val(N))
         # `extraps_eff` carries per-axis `InBounds()` from `_check_domain_nd`
@@ -164,7 +164,7 @@ end
 # resolves search/hints/ops then delegates here.
 #
 # Trait dispatch: `_deriv_zero_fill(itp, ops, Val(N))` (Linear: 2nd+ deriv,
-# Constant: any deriv, Cubic/Quadratic default false). `_value_sample(itp)`
+# Constant: any deriv, Cubic/Quadratic default false). `_sample_data(itp)`
 # supplies the per-method zero element (data first / partials first).
 #
 # Hetero is *not* routed through here — its callable has GridIdx/NoInterp
@@ -180,12 +180,12 @@ end
     ) where {Tg, Tv, N}
     # NoExtrap throw must precede FillExtrap short-circuit (mixed-extrap configs).
     _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _value_sample(itp))
+    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
     if _deriv_zero_fill(itp, ops, Val(N))
         Tq = promote_type(map(typeof, query)...)
         T_out = _output_eltype(itp, Tq)
-        return _deriv_zero_value(T_out, _value_sample(itp), query)
+        return _deriv_zero_value(T_out, _sample_data(itp), query)
     end
     cell = _locate_cell(itp, query, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
@@ -254,7 +254,7 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
             Tq = _query_eltype(queries)
             T_out = _output_eltype(itp, Tq)
             first_q = _extract_query_point(queries, 1, Val(N))
-            fill!(output, _deriv_zero_value(T_out, _value_sample(itp), first_q))
+            fill!(output, _deriv_zero_value(T_out, _sample_data(itp), first_q))
         end
         return output
     end

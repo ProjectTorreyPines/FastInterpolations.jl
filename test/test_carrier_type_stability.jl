@@ -31,11 +31,11 @@
     q_het = (2.5, ForwardDiff.Dual{Nothing}(3.5, 1.0)); q_het_b = [q_het]
 
     @testset "1D oneshot scalar — deriv-zero × Dual query" begin
-        @test (@inferred linear_interp(x1, y1, xq_d; deriv=DerivOp(2))) isa D
-        @test (@inferred cubic_interp(x1, y1, xq_d; deriv=DerivOp(4))) isa D
-        @test (@inferred pchip_interp(x1, y1, xq_d; deriv=DerivOp(4))) isa D
-        @test (@inferred cardinal_interp(x1, y1, xq_d; deriv=DerivOp(4))) isa D
-        @test (@inferred akima_interp(x1, y1, xq_d; deriv=DerivOp(4))) isa D
+        @test (@inferred linear_interp(x1, y1, xq_d; deriv = DerivOp(2))) isa D
+        @test (@inferred cubic_interp(x1, y1, xq_d; deriv = DerivOp(4))) isa D
+        @test (@inferred pchip_interp(x1, y1, xq_d; deriv = DerivOp(4))) isa D
+        @test (@inferred cardinal_interp(x1, y1, xq_d; deriv = DerivOp(4))) isa D
+        @test (@inferred akima_interp(x1, y1, xq_d; deriv = DerivOp(4))) isa D
     end
 
     # 1D vector batch paths (alloc + persist alloc) and the entire 2D matrix
@@ -43,37 +43,37 @@
     # to lock the GREEN behavior in (regression guard); the still-broken cells
     # remain on `@test_broken` above.
     @testset "1D oneshot allocating batch — deriv-zero × Dual query" begin
-        @test (@inferred linear_interp(x1, y1, xq_d_b; deriv=DerivOp(2))) isa Vector{D}
-        @test (@inferred cubic_interp(x1, y1, xq_d_b; deriv=DerivOp(4))) isa Vector{D}
-        @test (@inferred pchip_interp(x1, y1, xq_d_b; deriv=DerivOp(4))) isa Vector{D}
+        @test (@inferred linear_interp(x1, y1, xq_d_b; deriv = DerivOp(2))) isa Vector{D}
+        @test (@inferred cubic_interp(x1, y1, xq_d_b; deriv = DerivOp(4))) isa Vector{D}
+        @test (@inferred pchip_interp(x1, y1, xq_d_b; deriv = DerivOp(4))) isa Vector{D}
     end
 
     @testset "1D persistent scalar — deriv-zero × Dual query" begin
-        @test (@inferred linear_interp(x1, y1)(xq_d; deriv=DerivOp(2))) isa D
-        @test (@inferred cubic_interp(x1, y1)(xq_d; deriv=DerivOp(4))) isa D
+        @test (@inferred linear_interp(x1, y1)(xq_d; deriv = DerivOp(2))) isa D
+        @test (@inferred cubic_interp(x1, y1)(xq_d; deriv = DerivOp(4))) isa D
     end
 
     @testset "1D persistent allocating batch — deriv-zero × Dual query" begin
-        @test (@inferred linear_interp(x1, y1)(xq_d_b; deriv=DerivOp(2))) isa Vector{D}
-        @test (@inferred cubic_interp(x1, y1)(xq_d_b; deriv=DerivOp(4))) isa Vector{D}
+        @test (@inferred linear_interp(x1, y1)(xq_d_b; deriv = DerivOp(2))) isa Vector{D}
+        @test (@inferred cubic_interp(x1, y1)(xq_d_b; deriv = DerivOp(4))) isa Vector{D}
     end
 
     @testset "2D oneshot scalar — deriv-zero × heterogeneous Dual query" begin
-        @test (@inferred linear_interp((xg, yg), d2, q_het; deriv=(EvalValue(), DerivOp(2)))) isa D
-        @test (@inferred cubic_interp((xg, yg), d2, q_het; deriv=(EvalValue(), DerivOp(4)))) isa D
+        @test (@inferred linear_interp((xg, yg), d2, q_het; deriv = (EvalValue(), DerivOp(2)))) isa D
+        @test (@inferred cubic_interp((xg, yg), d2, q_het; deriv = (EvalValue(), DerivOp(4)))) isa D
     end
 
     @testset "2D oneshot allocating batch — deriv-zero × heterogeneous Dual query" begin
-        @test (@inferred constant_interp((xg, yg), d2, q_het_b; deriv=(EvalValue(), DerivOp(1)))) isa Vector{D}
-        @test (@inferred linear_interp((xg, yg), d2, q_het_b; deriv=(EvalValue(), DerivOp(2)))) isa Vector{D}
-        @test (@inferred cubic_interp((xg, yg), d2, q_het_b; deriv=(EvalValue(), DerivOp(4)))) isa Vector{D}
+        @test (@inferred constant_interp((xg, yg), d2, q_het_b; deriv = (EvalValue(), DerivOp(1)))) isa Vector{D}
+        @test (@inferred linear_interp((xg, yg), d2, q_het_b; deriv = (EvalValue(), DerivOp(2)))) isa Vector{D}
+        @test (@inferred cubic_interp((xg, yg), d2, q_het_b; deriv = (EvalValue(), DerivOp(4)))) isa Vector{D}
     end
 
     @testset "2D persistent paths — deriv-zero × heterogeneous Dual query" begin
         itp_c = constant_interp((xg, yg), d2)
         itp_l = linear_interp((xg, yg), d2)
-        @test (@inferred itp_c(q_het_b; deriv=(EvalValue(), DerivOp(1)))) isa Vector{D}
-        @test (@inferred itp_l(q_het_b; deriv=(EvalValue(), DerivOp(2)))) isa Vector{D}
+        @test (@inferred itp_c(q_het_b; deriv = (EvalValue(), DerivOp(1)))) isa Vector{D}
+        @test (@inferred itp_l(q_het_b; deriv = (EvalValue(), DerivOp(2)))) isa Vector{D}
     end
 end
 
@@ -89,21 +89,21 @@ end
     # kernels now carry `* one(α)` (Phase 2) — Cubic/Quadratic/PCHIP still
     # pending.
     @testset "1D oneshot scalar Dual return for non-zero deriv" begin
-        @test linear_interp(x1, y1, xq_d; deriv=DerivOp(1)) isa D
-        @test quadratic_interp(x1, y1, xq_d; deriv=DerivOp(2)) isa D
-        @test cubic_interp(x1, y1, xq_d; deriv=DerivOp(3)) isa D
-        @test pchip_interp(x1, y1, xq_d; deriv=DerivOp(3)) isa D
+        @test linear_interp(x1, y1, xq_d; deriv = DerivOp(1)) isa D
+        @test quadratic_interp(x1, y1, xq_d; deriv = DerivOp(2)) isa D
+        @test cubic_interp(x1, y1, xq_d; deriv = DerivOp(3)) isa D
+        @test pchip_interp(x1, y1, xq_d; deriv = DerivOp(3)) isa D
     end
 
     @testset "1D persistent scalar Dual return for non-zero deriv" begin
-        @test linear_interp(x1, y1)(xq_d; deriv=DerivOp(1)) isa D
-        @test cubic_interp(x1, y1)(xq_d; deriv=DerivOp(3)) isa D
+        @test linear_interp(x1, y1)(xq_d; deriv = DerivOp(1)) isa D
+        @test cubic_interp(x1, y1)(xq_d; deriv = DerivOp(3)) isa D
     end
 
     @testset "1D oneshot scalar Dual return for zero-order deriv" begin
-        @test linear_interp(x1, y1, xq_d; deriv=DerivOp(2)) isa D
-        @test cubic_interp(x1, y1, xq_d; deriv=DerivOp(4)) isa D
-        @test pchip_interp(x1, y1, xq_d; deriv=DerivOp(4)) isa D
+        @test linear_interp(x1, y1, xq_d; deriv = DerivOp(2)) isa D
+        @test cubic_interp(x1, y1, xq_d; deriv = DerivOp(4)) isa D
+        @test pchip_interp(x1, y1, xq_d; deriv = DerivOp(4)) isa D
     end
 end
 
@@ -122,14 +122,14 @@ end
 
     # ── Reference rows: scalar paths already propagate NaN end-to-end ──
     @testset "ND Constant oneshot scalar — reference (already GREEN)" begin
-        r = constant_interp((xg, yg), data_nan, q_het; deriv=dv)
+        r = constant_interp((xg, yg), data_nan, q_het; deriv = dv)
         @test r isa D
         @test isnan(ForwardDiff.value(r))
         @test isnan(ForwardDiff.partials(r)[1])
     end
 
     @testset "ND Constant oneshot allocating — reference (already GREEN)" begin
-        r = constant_interp((xg, yg), data_nan, q_het_b; deriv=dv)
+        r = constant_interp((xg, yg), data_nan, q_het_b; deriv = dv)
         @test r isa Vector{D}
         @test isnan(ForwardDiff.value(r[1]))
         @test isnan(ForwardDiff.partials(r[1])[1])
@@ -137,7 +137,7 @@ end
 
     @testset "ND Constant persist scalar — reference (already GREEN)" begin
         itp = constant_interp((xg, yg), data_nan)
-        r = itp(q_het; deriv=dv)
+        r = itp(q_het; deriv = dv)
         @test r isa D
         @test isnan(ForwardDiff.value(r))
         @test isnan(ForwardDiff.partials(r)[1])
@@ -146,14 +146,14 @@ end
     # ── ACTIVE RED rows: the codex finding + sibling persist paths ──
     @testset "ND Constant oneshot in-place — NaN partials must propagate" begin
         o = Vector{D}(undef, 1)
-        constant_interp!(o, (xg, yg), data_nan, q_het_b; deriv=dv)
+        constant_interp!(o, (xg, yg), data_nan, q_het_b; deriv = dv)
         @test isnan(ForwardDiff.value(o[1]))
         @test isnan(ForwardDiff.partials(o[1])[1])    # RED: currently 0.0
     end
 
     @testset "ND Constant persist allocating — NaN must propagate" begin
         itp = constant_interp((xg, yg), data_nan)
-        r = itp(q_het_b; deriv=dv)
+        r = itp(q_het_b; deriv = dv)
         @test r isa Vector{D}
         @test isnan(ForwardDiff.value(r[1]))           # RED: currently 0.0
         @test isnan(ForwardDiff.partials(r[1])[1])
@@ -162,17 +162,18 @@ end
     @testset "ND Constant persist in-place — NaN partials must propagate" begin
         itp = constant_interp((xg, yg), data_nan)
         o = Vector{D}(undef, 1)
-        itp(o, q_het_b; deriv=dv)
+        itp(o, q_het_b; deriv = dv)
         @test isnan(ForwardDiff.value(o[1]))           # RED: currently 0.0
         @test isnan(ForwardDiff.partials(o[1])[1])
     end
 
     # ── BROKEN pin: same invariant for other ND methods (next phase) ──
     @testset "ND Linear deriv=2 in-place NaN partials (broken pin)" begin
-        data_f = [Float64(10i + j) for i in 1:5, j in 1:5]; data_f[1, 1] = NaN
+        data_f = [Float64(10i + j) for i in 1:5, j in 1:5]
+        data_f[1, 1] = NaN
         dv_lin = (EvalValue(), DerivOp(2))
         o = Vector{D}(undef, 1)
-        linear_interp!(o, (xg, yg), data_f, q_het_b; deriv=dv_lin)
+        linear_interp!(o, (xg, yg), data_f, q_het_b; deriv = dv_lin)
         @test_broken isnan(ForwardDiff.value(o[1])) && isnan(ForwardDiff.partials(o[1])[1])
     end
 end
@@ -187,17 +188,17 @@ end
     dv = (EvalValue(), DerivOp(1))
 
     # Compute each path independently, then assert pairwise equivalence.
-    ref_scalar    = constant_interp((xg, yg), data_nan, q_het; deriv=dv)
-    alloc_first   = constant_interp((xg, yg), data_nan, q_het_b; deriv=dv)[1]
+    ref_scalar = constant_interp((xg, yg), data_nan, q_het; deriv = dv)
+    alloc_first = constant_interp((xg, yg), data_nan, q_het_b; deriv = dv)[1]
 
-    inplace_buf   = Vector{D}(undef, 1)
-    constant_interp!(inplace_buf, (xg, yg), data_nan, q_het_b; deriv=dv)
+    inplace_buf = Vector{D}(undef, 1)
+    constant_interp!(inplace_buf, (xg, yg), data_nan, q_het_b; deriv = dv)
     inplace_first = inplace_buf[1]
 
     itp = constant_interp((xg, yg), data_nan)
-    persist_scalar  = itp(q_het; deriv=dv)
-    persist_alloc   = itp(q_het_b; deriv=dv)[1]
-    persist_in_buf  = Vector{D}(undef, 1); itp(persist_in_buf, q_het_b; deriv=dv)
+    persist_scalar = itp(q_het; deriv = dv)
+    persist_alloc = itp(q_het_b; deriv = dv)[1]
+    persist_in_buf = Vector{D}(undef, 1); itp(persist_in_buf, q_het_b; deriv = dv)
     persist_inplace = persist_in_buf[1]
 
     @testset "scalar ↔ allocating batch (already GREEN)" begin

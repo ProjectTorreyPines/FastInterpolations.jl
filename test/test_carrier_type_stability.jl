@@ -31,7 +31,7 @@
     q_het = (2.5, ForwardDiff.Dual{Nothing}(3.5, 1.0)); q_het_b = [q_het]
 
     @testset "1D oneshot scalar — deriv-zero × Dual query" begin
-        @test_broken (@inferred linear_interp(x1, y1, xq_d; deriv=DerivOp(2))) isa D
+        @test (@inferred linear_interp(x1, y1, xq_d; deriv=DerivOp(2))) isa D
         @test_broken (@inferred cubic_interp(x1, y1, xq_d; deriv=DerivOp(4))) isa D
         @test_broken (@inferred pchip_interp(x1, y1, xq_d; deriv=DerivOp(4))) isa D
         @test_broken (@inferred cardinal_interp(x1, y1, xq_d; deriv=DerivOp(4))) isa D
@@ -48,8 +48,8 @@
         @test (@inferred pchip_interp(x1, y1, xq_d_b; deriv=DerivOp(4))) isa Vector{D}
     end
 
-    @testset "1D persistent scalar — deriv-zero × Dual query (BROKEN)" begin
-        @test_broken (@inferred linear_interp(x1, y1)(xq_d; deriv=DerivOp(2))) isa D
+    @testset "1D persistent scalar — deriv-zero × Dual query" begin
+        @test (@inferred linear_interp(x1, y1)(xq_d; deriv=DerivOp(2))) isa D
         @test_broken (@inferred cubic_interp(x1, y1)(xq_d; deriv=DerivOp(4))) isa D
     end
 
@@ -84,23 +84,24 @@ end
     x1 = collect(1.0:5.0); y1 = [Float64(10i) for i in 1:5]
     xq_d = ForwardDiff.Dual{Nothing}(2.5, 1.0)
 
-    # 1D scalar paths currently drop Dual → Float64 for non-zero deriv ≥ 1
-    # (the kernel computes a Float deriv and returns it raw, bypassing the
-    # `* one(xi)` carrier-fold that the value branch applies).
+    # 1D scalar paths drop Dual → Float64 for non-zero deriv ≥ 1 when the
+    # kernel branch doesn't multiply through the query carrier. Linear's
+    # kernels now carry `* one(α)` (Phase 2) — Cubic/Quadratic/PCHIP still
+    # pending.
     @testset "1D oneshot scalar Dual return for non-zero deriv" begin
-        @test_broken linear_interp(x1, y1, xq_d; deriv=DerivOp(1)) isa D
+        @test linear_interp(x1, y1, xq_d; deriv=DerivOp(1)) isa D
         @test_broken quadratic_interp(x1, y1, xq_d; deriv=DerivOp(2)) isa D
         @test_broken cubic_interp(x1, y1, xq_d; deriv=DerivOp(3)) isa D
         @test_broken pchip_interp(x1, y1, xq_d; deriv=DerivOp(3)) isa D
     end
 
     @testset "1D persistent scalar Dual return for non-zero deriv" begin
-        @test_broken linear_interp(x1, y1)(xq_d; deriv=DerivOp(1)) isa D
+        @test linear_interp(x1, y1)(xq_d; deriv=DerivOp(1)) isa D
         @test_broken cubic_interp(x1, y1)(xq_d; deriv=DerivOp(3)) isa D
     end
 
     @testset "1D oneshot scalar Dual return for zero-order deriv" begin
-        @test_broken linear_interp(x1, y1, xq_d; deriv=DerivOp(2)) isa D
+        @test linear_interp(x1, y1, xq_d; deriv=DerivOp(2)) isa D
         @test_broken cubic_interp(x1, y1, xq_d; deriv=DerivOp(4)) isa D
         @test_broken pchip_interp(x1, y1, xq_d; deriv=DerivOp(4)) isa D
     end

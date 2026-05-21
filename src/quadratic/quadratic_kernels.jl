@@ -53,8 +53,8 @@ Evaluate second derivative of quadratic polynomial.
 
 Formula: S''(x) = 2*a (constant within interval)
 """
-@inline function _quadratic_kernel(::EvalDeriv2, a, _, _, _::Td) where {Td}
-    return a + a  # 2*a (avoids type conversion issues)
+@inline function _quadratic_kernel(::EvalDeriv2, a, _, _, dL::Td) where {Td}
+    return (a + a) * one(dL)  # 2*a, carrier-aware via `* one(dL)`
 end
 
 """
@@ -63,11 +63,11 @@ end
 Third derivative of quadratic spline is always zero.
 Uses `0 * a` for duck-typing support and NaN propagation.
 """
-@inline function _quadratic_kernel(::EvalDeriv3, a, _, _, _::Td) where {Td}
-    return 0 * a
+@inline function _quadratic_kernel(::EvalDeriv3, a, _, _, dL::Td) where {Td}
+    return 0 * a * one(dL)
 end
 
 """Generic fallback: N-th derivative of degree-2 polynomial is zero for N ≥ 3."""
-@inline function _quadratic_kernel(::DerivOp{N}, a, _, _, _::Td) where {N, Td}
-    return 0 * a
+@inline function _quadratic_kernel(::DerivOp{N}, a, _, _, dL::Td) where {N, Td}
+    return 0 * a * one(dL)
 end

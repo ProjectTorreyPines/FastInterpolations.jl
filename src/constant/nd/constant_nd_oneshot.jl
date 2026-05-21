@@ -234,7 +234,15 @@ function constant_interp!(
     ) where {Tv, N}
     _query_check_ndims(queries, Val(N))
     if _is_any_deriv(deriv)
-        fill!(output, 0 * first(data))
+        nq = _query_length(queries)
+        length(output) == nq || _throw_query_output_mismatch(nq, length(output))
+        if nq > 0
+            Tq = _query_eltype(queries)
+            Tg = eltype(first(grids))
+            T_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
+            first_q = _extract_query_point(queries, 1, Val(N))
+            fill!(output, _deriv_zero_value(T_out, first(data), first_q))
+        end
         return output
     end
 

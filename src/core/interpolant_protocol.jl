@@ -182,8 +182,11 @@ end
     _validate_nd_domain(itp.grids, query, itp.extraps)
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
-    # `prod(one, query)` folds carrier over every axis; identity for plain Float.
-    _deriv_zero_fill(itp, ops, Val(N)) && return 0 * _zero_ref(itp) * prod(one, query)
+    if _deriv_zero_fill(itp, ops, Val(N))
+        Tq = promote_type(map(typeof, query)...)
+        T_out = _output_eltype(itp, Tq)
+        return _deriv_zero_value(T_out, _zero_ref(itp), query)
+    end
     cell = _locate_cell(itp, query, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
 end
@@ -246,7 +249,13 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _check_mono_nd(policies, queries)
     if _deriv_zero_fill(itp, ops, Val(N))
-        fill!(output, zero(eltype(output)))
+        nq = _query_length(queries)
+        if nq > 0
+            Tq = _query_eltype(queries)
+            T_out = _output_eltype(itp, Tq)
+            first_q = _extract_query_point(queries, 1, Val(N))
+            fill!(output, _deriv_zero_value(T_out, _zero_ref(itp), first_q))
+        end
         return output
     end
     _interp_nd_batch!(output, itp, queries, extraps_eff, ops, policies, hints, mono)

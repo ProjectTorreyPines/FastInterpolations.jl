@@ -381,7 +381,7 @@ end
         )
     end
     _validate_nd_domain(itp.grids, resolved, itp.extraps)
-    oob_result = _try_fill_oob(resolved, itp.grids, itp.extraps, ops, _zero_ref(itp))
+    oob_result = _try_fill_oob(resolved, itp.grids, itp.extraps, ops, _value_sample(itp))
     oob_result !== nothing && return oob_result
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
@@ -492,9 +492,9 @@ end
 # Required Traits
 # ========================================
 
-@inline _zero_ref(itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array}) where {Tg, Tv, N, G, M, E, P} =
+@inline _value_sample(itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array}) where {Tg, Tv, N, G, M, E, P} =
     @inbounds first(itp.data)
-@inline _zero_ref(itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials}) where {Tg, Tv, N, G, M, E, P} =
+@inline _value_sample(itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials}) where {Tg, Tv, N, G, M, E, P} =
     @inbounds itp.data.partials[1]
 
 @inline _deriv_zero_fill(::HeteroInterpolantND, ::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} = false

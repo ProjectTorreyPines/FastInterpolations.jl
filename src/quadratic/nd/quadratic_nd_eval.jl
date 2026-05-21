@@ -134,7 +134,7 @@ end
 end
 
 # Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
-@inline _zero_ref(itp::QuadraticInterpolantND) = @inbounds first(itp.nodal_derivs.partials)
+@inline _value_sample(itp::QuadraticInterpolantND) = @inbounds first(itp.nodal_derivs.partials)
 
 # ========================================
 # @GENERATED TENSOR PRODUCT KERNEL (Quadratic)

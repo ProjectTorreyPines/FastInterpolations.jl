@@ -496,5 +496,3 @@ end
     @inbounds first(itp.data)
 @inline _sample_data(itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials}) where {Tg, Tv, N, G, M, E, P} =
     @inbounds itp.data.partials[1]
-
-@inline _deriv_zero_fill(::HeteroInterpolantND, ::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} = false

@@ -30,12 +30,11 @@ end
 
 # In-place batch evaluation (SoA + AoS) is handled by the unified
 # AbstractInterpolantND callable in nd_interpolant_protocol.jl. Scalar
-# evaluation routes through the generic `_eval_nd_at_point` there —
-# 2nd+ derivative zero-fill is wired via the `_deriv_zero_fill` trait below.
-
-# Derivative zero-fill trait: linear has zero 2nd+ derivative
-@inline _deriv_zero_fill(::LinearInterpolantND, ops::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} =
-    _has_second_or_higher_derivative(ops, Val(N))
+# evaluation routes through the generic `_eval_nd_at_point` there.
+# Linear's "deriv ≥ 2 → 0" rule is handled inside the kernel itself
+# (`_linear_weight(::EvalDeriv2+, ...) = zero(α)` — see below) so the
+# cell-local corner sum produces a carrier-aware zero without any
+# protocol-level short-circuit.
 
 # ========================================
 # CELL LOCATION (locate once, evaluate many)
@@ -80,15 +79,15 @@ end
     return (itp.data, (_IdxPair(ix, ix + 1), _IdxPair(iy, iy + 1)), (inv_hx, inv_hy), (αx, αy))
 end
 
-# Evaluate kernel at a pre-located cell with given derivative ops
+# Evaluate kernel at a pre-located cell with given derivative ops.
+# Deriv ≥ 2 → 0 is handled inside the kernel itself via
+# `_linear_weight(::EvalDeriv2+, …) = zero(α)`, so the corner sum produces a
+# cell-local, carrier-aware zero without a protocol-level short-circuit.
 @inline function _eval_at_cell(
         itp::LinearInterpolantND{Tg, Tv, N},
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp}
     ) where {Tg, Tv, N}
-    if _has_second_or_higher_derivative(ops, Val(N))
-        return 0 * first(itp.data)
-    end
     data, stencils, inv_hs, αs = cell
     return _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
 end
@@ -181,7 +180,7 @@ end
 @inline _linear_weight(::EvalDeriv1, α, inv_h, ::Val{0}) = -inv_h
 @inline _linear_weight(::EvalDeriv1, α, inv_h, ::Val{1}) = inv_h
 
-# Second and higher derivatives are zero (handled by `_deriv_zero_fill` trait
+# Second and higher derivatives are zero (handled cell-locally by
 # routing the scalar/batch entry points to a zero return before kernel reaches
 # here). Defined for completeness in case `_eval_at_cell` is invoked directly.
 @inline _linear_weight(::EvalDeriv2, α, inv_h, ::Val{B}) where {B} = zero(α)

@@ -98,12 +98,6 @@ end
 # ║       ND Interpolant Protocol        ║
 # ╚══════════════════════════════════════╝
 
-# ── Derivative zero-fill trait ──
-# Linear: 2nd+ derivative → all zeros. Constant: any derivative → all zeros.
-# Default: no zero-fill (Cubic, Quadratic evaluate all derivative orders).
-
-@inline _deriv_zero_fill(::AbstractInterpolantND, ::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} = false
-
 # ── Output eltype trait (ND) — mirrors the 1D version. ──
 @inline _output_eltype(::AbstractInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
     _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
@@ -159,13 +153,9 @@ end
 # ========================================
 #
 # Single scalar entry point for AbstractInterpolantND subtypes whose eval
-# structure matches `validate → try_fill_oob → deriv_zero_fill → locate →
-# eval` (Cubic / Linear / Constant / Quadratic). Each method's callable
-# resolves search/hints/ops then delegates here.
-#
-# Trait dispatch: `_deriv_zero_fill(itp, ops, Val(N))` (Linear: 2nd+ deriv,
-# Constant: any deriv, Cubic/Quadratic default false). `_sample_data(itp)`
-# supplies the per-method zero element (data first / partials first).
+# structure matches `validate → try_fill_oob → locate → eval` (Cubic /
+# Linear / Constant / Quadratic). Each method's callable resolves
+# search/hints/ops then delegates here.
 #
 # Hetero is *not* routed through here — its callable has GridIdx/NoInterp
 # branches and `_eval_hetero_nd` uses a non-`_locate_cell` path (recursive
@@ -182,11 +172,6 @@ end
     _validate_nd_domain(itp.grids, query, itp.extraps)
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
-    if _deriv_zero_fill(itp, ops, Val(N))
-        Tq = promote_type(map(typeof, query)...)
-        T_out = _output_eltype(itp, Tq)
-        return _deriv_zero_value(T_out, _sample_data(itp), query)
-    end
     cell = _locate_cell(itp, query, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
 end
@@ -248,16 +233,6 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _check_mono_nd(policies, queries)
-    if _deriv_zero_fill(itp, ops, Val(N))
-        nq = _query_length(queries)
-        if nq > 0
-            Tq = _query_eltype(queries)
-            T_out = _output_eltype(itp, Tq)
-            first_q = _extract_query_point(queries, 1, Val(N))
-            fill!(output, _deriv_zero_value(T_out, _sample_data(itp), first_q))
-        end
-        return output
-    end
     _interp_nd_batch!(output, itp, queries, extraps_eff, ops, policies, hints, mono)
     return output
 end

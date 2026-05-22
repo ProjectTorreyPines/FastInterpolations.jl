@@ -170,15 +170,6 @@ end
 # matching the codebase's standard type-parameter order.
 @inline _arithmetic_kernel_shape(h, yv, dL) = yv + yv * (dL / h)
 
-# Carrier-aware deriv-zero value: `zero(T_out)` pins the kernel's promotion
-# lattice; `0 * sampled_data * <q>` annihilates the values while threading
-# NaN/Inf from `sampled_data` through every carrier slot (Dual partials,
-# Measurement uncertainty, …) via IEEE multiplication's product rule.
-@inline _deriv_zero_value(::Type{T_out}, sampled_data, sampled_query::Real) where {T_out} =
-    zero(T_out) + 0 * sampled_data * sampled_query
-@inline _deriv_zero_value(::Type{T_out}, sampled_data, sampled_query::Tuple) where {T_out} =
-    zero(T_out) + 0 * sampled_data * prod(sampled_query)
-
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type
 

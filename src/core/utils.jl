@@ -574,7 +574,7 @@ end
 # agrees with batch path's trait-sized buffer.
 @inline _promote_extrap_val(val::AbstractArray, xq::Number) = val .+ zero(xq) .* zero(eltype(val))
 @inline _promote_extrap_val(val, xq) = val
-@inline _promote_extrap_zero(val::Number, xq::Number) = zero(xq) * zero(val)
+@inline _promote_extrap_zero(val::Number, xq::Number) = 0 * val + zero(xq) * zero(val)
 @inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* zero(eltype(val))
 @inline _promote_extrap_zero(val, xq) = 0 * val
 

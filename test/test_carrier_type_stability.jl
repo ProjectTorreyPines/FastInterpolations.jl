@@ -13,6 +13,7 @@
 #   Cat B  — Dual query → Dual result (carrier preservation, sub-zero deriv)
 #   Cat C  — Cell-local NaN propagation through ND deriv-zero short-circuits
 #   Cat D  — cross-path equivalence (same input → same `Dual` answer on every path)
+#   Cat E  — OOB cell-local NaN through `_promote_extrap_zero` (Number case)
 
 @testitem "Cat A: @inferred type stability across deriv-aware paths" begin
     using ForwardDiff
@@ -265,5 +266,69 @@ end
 
     @testset "scalar ↔ persistent in-place" begin
         @test isequal(ref_scalar, persist_inplace)
+    end
+end
+
+# OOB ClampExtrap/FillExtrap × deriv routes through
+# `_eval_extrapolation(::DerivOp, …)` → `_promote_extrap_zero(y_bnd, xq)`.
+# The `Number` overload currently strips `val` via `zero(xq) * zero(val)`
+# (type-only zero) while the `AbstractArray` overload uses `0 .* val .+ …`
+# (NaN propagates element-wise). The asymmetry is the bug — boundary NaN
+# disappears at OOB deriv queries for scalar `Tv`, but propagates for
+# Array `Tv`. The fix mirrors the Array form on the Number form
+# (`0 * val + zero(xq) * zero(val)`), unifying cell-local boundary-data
+# carrier behavior under OOB deriv queries.
+#
+# Scope: only the chosen-side boundary's NaN must propagate (e.g.,
+# `y[1] = NaN` with OOB_LEFT query → NaN; same `y` with OOB_RIGHT query
+# → finite). Out-of-cell NaN must NOT leak through OOB extrap.
+@testitem "Cat E: OOB cell-local NaN through _promote_extrap_zero (Number case)" begin
+    using ForwardDiff
+    using FastInterpolations: _promote_extrap_zero
+
+    @testset "_promote_extrap_zero helper — Number vs Array consistency" begin
+        # Array case already propagates NaN element-wise — sanity baseline.
+        res_arr = _promote_extrap_zero([NaN, 1.0], 0.5)
+        @test isnan(res_arr[1])
+
+        # Number case must match: NaN at boundary propagates as NaN result.
+        @test isnan(_promote_extrap_zero(NaN, 0.5))
+
+        # Carrier preserved + primal NaN propagated through Dual xq.
+        xq_d = ForwardDiff.Dual{Nothing}(0.5, 1.0)
+        res_d = _promote_extrap_zero(NaN, xq_d)
+        @test res_d isa typeof(xq_d)
+        @test isnan(ForwardDiff.value(res_d))
+    end
+
+    @testset "1D OOB ClampExtrap × deriv: queried-boundary NaN propagates" begin
+        x = collect(1.0:5.0)
+        y_nan_left = [NaN, 20.0, 30.0, 40.0, 50.0]
+        y_nan_right = [10.0, 20.0, 30.0, 40.0, NaN]
+        xq_oob_lo, xq_oob_hi = -1.0, 7.0
+
+        for method in (linear_interp, constant_interp, pchip_interp, cardinal_interp, akima_interp)
+            @test isnan(method(x, y_nan_left, xq_oob_lo; extrap = ClampExtrap(), deriv = DerivOp(1)))
+            @test isnan(method(x, y_nan_right, xq_oob_hi; extrap = ClampExtrap(), deriv = DerivOp(1)))
+            # Cell-local: NaN at the OTHER boundary does NOT propagate.
+            @test !isnan(method(x, y_nan_left, xq_oob_hi; extrap = ClampExtrap(), deriv = DerivOp(1)))
+            @test !isnan(method(x, y_nan_right, xq_oob_lo; extrap = ClampExtrap(), deriv = DerivOp(1)))
+        end
+    end
+
+    @testset "1D OOB FillExtrap × deriv: queried-boundary NaN propagates" begin
+        # FillExtrap routes y_bnd (boundary data, not fill_value) into
+        # `_promote_extrap_zero` for deriv. Consistent with Array case behavior.
+        x = collect(1.0:5.0)
+        y_nan_left = [NaN, 20.0, 30.0, 40.0, 50.0]
+        y_nan_right = [10.0, 20.0, 30.0, 40.0, NaN]
+        xq_oob_lo, xq_oob_hi = -1.0, 7.0
+
+        for method in (linear_interp, constant_interp, pchip_interp, cardinal_interp, akima_interp)
+            @test isnan(method(x, y_nan_left, xq_oob_lo; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
+            @test isnan(method(x, y_nan_right, xq_oob_hi; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
+            @test !isnan(method(x, y_nan_left, xq_oob_hi; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
+            @test !isnan(method(x, y_nan_right, xq_oob_lo; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
+        end
     end
 end

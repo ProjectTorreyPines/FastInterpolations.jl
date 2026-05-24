@@ -147,15 +147,15 @@ end
 end
 
 @inline function _constant_extrap_boundary_value(
-        y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
+        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
     ) where {Tv}
-    return 0 * first(y)
+    @inbounds return 0 * y[_boundary_point_index(side, n_pts), k]
 end
 
 @inline function _constant_extrap_boundary_value(
-        y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::DerivOp{N}, ::_ClampOrFill
+        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::DerivOp{N}, ::_ClampOrFill
     ) where {Tv, N}
-    return 0 * first(y)
+    @inbounds return 0 * y[_boundary_point_index(side, n_pts), k]
 end
 
 """
@@ -187,21 +187,21 @@ end
 end
 
 @inline function _fill_constant_extrap_simd!(
-        out::AbstractVector{Tv}, y::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
+        out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
     ) where {Tv}
-    z = 0 * first(y)
+    idx = _boundary_point_index(side, n_pts)
     @inbounds @simd for k in axes(out, 1)
-        out[k] = z
+        out[k] = 0 * y_point[k, idx]
     end
     return out
 end
 
 @inline function _fill_constant_extrap_simd!(
-        out::AbstractVector{Tv}, y::Matrix{Tv}, ::UInt8, ::Int, ::DerivOp{N}, ::_ClampOrFill
+        out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::DerivOp{N}, ::_ClampOrFill
     ) where {Tv, N}
-    z = 0 * first(y)
+    idx = _boundary_point_index(side, n_pts)
     @inbounds @simd for k in axes(out, 1)
-        out[k] = z
+        out[k] = 0 * y_point[k, idx]
     end
     return out
 end

@@ -14,6 +14,7 @@
 #   Cat C  — Cell-local NaN propagation through ND deriv-zero short-circuits
 #   Cat D  — cross-path equivalence (same input → same `Dual` answer on every path)
 #   Cat E  — OOB cell-local NaN through `_promote_extrap_zero` (Number case)
+#   Cat F  — Constant 1D right-edge + Series cell-local NaN (`0 * first(y)` → cell-local idx)
 
 @testitem "Cat A: @inferred type stability across deriv-aware paths" begin
     using ForwardDiff
@@ -332,6 +333,106 @@ end
             @test isnan(method(x, y_nan_right, xq_oob_hi; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
             @test !isnan(method(x, y_nan_left, xq_oob_hi; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
             @test !isnan(method(x, y_nan_right, xq_oob_lo; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
+        end
+    end
+end
+
+# Constant 1D `_constant_eval_at_point` / `_constant_eval_at_anchor` short-
+# circuit at `xi == last(x)` (right-edge seam) and Constant Series boundary
+# / in-domain deriv branches use `0 * first(y)` for the deriv-zero result —
+# not cell-local: NaN at `y[1]` leaks even when the queried cell is the
+# right-edge cell `(y[end-1], y[end])`. The EvalValue sibling branches
+# already use cell-local `y[idxR]` / `y[n_pts, k]` / etc. — fixing the
+# deriv branches to mirror that pattern restores the cell-local NaN
+# invariant established by Phase 3 + Cat E.
+@testitem "Cat F: Constant 1D right-edge + Series cell-local NaN" begin
+    x = collect(1.0:5.0)
+    y_nan_right = [10.0, 20.0, 30.0, 40.0, NaN]
+    y_nan_left = [NaN, 20.0, 30.0, 40.0, 50.0]
+    xi_edge = 5.0  # == last(x), triggers the right-edge short-circuit
+
+    @testset "1D oneshot scalar — right-edge cell-local" begin
+        # NaN at right-edge boundary cell propagates through deriv-zero.
+        @test isnan(constant_interp(x, y_nan_right, xi_edge; deriv = DerivOp(1)))
+        # NaN at far (left) boundary does NOT leak through right-edge query.
+        @test !isnan(constant_interp(x, y_nan_left, xi_edge; deriv = DerivOp(1)))
+        # ClampExtrap also routes through the same short-circuit when in-domain.
+        @test isnan(constant_interp(x, y_nan_right, xi_edge; extrap = ClampExtrap(), deriv = DerivOp(1)))
+        @test !isnan(constant_interp(x, y_nan_left, xi_edge; extrap = ClampExtrap(), deriv = DerivOp(1)))
+        # WrapExtrap right-edge short-circuit (`xi_wrapped == last(x)`)
+        @test isnan(constant_interp(x, y_nan_right, xi_edge; extrap = WrapExtrap(), deriv = DerivOp(1)))
+        @test !isnan(constant_interp(x, y_nan_left, xi_edge; extrap = WrapExtrap(), deriv = DerivOp(1)))
+    end
+
+    @testset "1D persistent scalar — right-edge cell-local" begin
+        itp_right = constant_interp(x, y_nan_right)
+        itp_left = constant_interp(x, y_nan_left)
+        @test isnan(itp_right(xi_edge; deriv = DerivOp(1)))
+        @test !isnan(itp_left(xi_edge; deriv = DerivOp(1)))
+        # Same for ClampExtrap / FillExtrap variants of the anchor path.
+        itp_right_clamp = constant_interp(x, y_nan_right; extrap = ClampExtrap())
+        itp_left_clamp = constant_interp(x, y_nan_left; extrap = ClampExtrap())
+        @test isnan(itp_right_clamp(xi_edge; deriv = DerivOp(1)))
+        @test !isnan(itp_left_clamp(xi_edge; deriv = DerivOp(1)))
+        itp_right_fill = constant_interp(x, y_nan_right; extrap = FillExtrap(0.0))
+        itp_left_fill = constant_interp(x, y_nan_left; extrap = FillExtrap(0.0))
+        @test isnan(itp_right_fill(xi_edge; deriv = DerivOp(1)))
+        @test !isnan(itp_left_fill(xi_edge; deriv = DerivOp(1)))
+    end
+
+    @testset "Series scalar — right-boundary cell-local per series" begin
+        # Series matrix layout: y[time_idx, series_k]. NaN at right-boundary of
+        # ONE series → only that series's result is NaN; other series unaffected.
+        Y = [Float64(10i + j) for i in 1:5, j in 1:3]
+        Y[5, 2] = NaN  # right boundary, series 2 only
+        sitp = constant_interp(x, Series(Y))
+        res = sitp(xi_edge; deriv = DerivOp(1))
+        @test !isnan(res[1])
+        @test isnan(res[2])
+        @test !isnan(res[3])
+    end
+
+    @testset "Series batch — in-domain cell-local per series" begin
+        # `_eval_constant_series_anchored` line 627 deriv branch uses
+        # `0 * first(y)` — strips series-k. Batch path hits this; scalar
+        # path takes a different per-series-aware route already.
+        Y = [Float64(10i + j) for i in 1:5, j in 1:3]
+        Y[3, 2] = NaN  # interior cell corner, series 2 only
+        sitp = constant_interp(x, Series(Y))
+        xq_batch = [2.5, 3.5]  # 3.5 hits cell (3, 4); 2.5 hits cell (2, 3)
+        res = sitp(xq_batch; deriv = DerivOp(1))
+        # Layout: res[k][j] — outer per series, inner per query.
+        @test !isnan(res[1][2])     # series 1 at 3.5
+        @test isnan(res[2][2])      # series 2 at 3.5 — cell-local NaN propagates
+        @test !isnan(res[3][2])     # series 3 at 3.5
+        @test !isnan(res[2][1])     # series 2 at 2.5 — out-of-cell NaN stays hidden
+    end
+
+    @testset "Series scalar OOB ClampExtrap × deriv — cell-local per series" begin
+        # `_constant_extrap_boundary_value` deriv overload uses `0 * first(y)`
+        # — strips series-k AND drops NaN at boundary of non-first series.
+        Y = [Float64(10i + j) for i in 1:5, j in 1:3]
+        Y[5, 2] = NaN  # right boundary, series 2 only
+        sitp = constant_interp(x, Series(Y); extrap = ClampExtrap())
+        res = sitp(7.0; deriv = DerivOp(1))  # OOB_RIGHT
+        @test !isnan(res[1])
+        @test isnan(res[2])
+        @test !isnan(res[3])
+    end
+
+    @testset "Series batch OOB ClampExtrap × deriv — cell-local per series" begin
+        # `_fill_constant_extrap_simd!` deriv overload fills uniformly with
+        # `0 * first(y)` — same per-series leak as the scalar variant.
+        Y = [Float64(10i + j) for i in 1:5, j in 1:3]
+        Y[5, 2] = NaN
+        sitp = constant_interp(x, Series(Y); extrap = ClampExtrap())
+        xq_batch = [7.0, 8.0]  # all OOB_RIGHT
+        res = sitp(xq_batch; deriv = DerivOp(1))
+        # Layout: res[k][j] — outer per series, inner per query.
+        for j in eachindex(xq_batch)
+            @test !isnan(res[1][j])
+            @test isnan(res[2][j])
+            @test !isnan(res[3][j])
         end
     end
 end

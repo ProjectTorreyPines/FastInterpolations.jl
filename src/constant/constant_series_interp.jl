@@ -211,7 +211,10 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
     y_point = _ensure_point_layout!(sitp)
     n_pts = n_points(sitp)
 
-    # Special case: at right boundary (use primal for comparison)
+    # Special case: at right boundary (use primal for comparison).
+    # Deriv branch loops per-k with cell-local `y_point[k, n_pts]` (right-edge
+    # endpoint of series k) — `0 * first(y_point)` would strip series-k and
+    # leak NaN at one series into all series.
     xq_primal = _extract_primal(xq)
     if xq_primal == _extract_primal(last(sitp.x))
         if op isa EvalValue
@@ -219,9 +222,8 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
                 output[k] = y_point[k, n_pts]
             end
         else
-            z = 0 * first(y_point)
             @inbounds @simd for k in axes(output, 1)
-                output[k] = z
+                output[k] = 0 * y_point[k, n_pts]
             end
         end
         return output
@@ -589,11 +591,13 @@ Internal: Evaluate single series at single query point with extrapolation handli
         op::AbstractEvalOp
     ) where {Tg, Tv}
     # Special case: at right boundary (MUST be preserved!)
+    # Deriv branch uses cell-local `y[n_pts, k]` (right-edge endpoint of series k)
+    # not `first(y) = y[1, 1]` — keeps per-series NaN cell-local.
     if aq.xq == x_max
         if op isa EvalValue
             @inbounds return y[n_pts, k]
         else
-            return 0 * first(y)  # Derivatives of step function are zero
+            @inbounds return 0 * y[n_pts, k]
         end
     end
 
@@ -622,9 +626,12 @@ Internal: Core constant evaluation for series k at anchored query point.
         side_val::AbstractSide,
         op::AbstractEvalOp
     ) where {Tg, Tv}
-    # Derivatives of constant (step) function are zero
+    # Derivatives of constant (step) function are zero.
+    # Use cell-local `y[aq.idxL, k]` (left cell endpoint of series k) not
+    # `first(y)` so NaN at the queried cell propagates per series while NaN
+    # elsewhere stays hidden.
     if !(op isa EvalValue)
-        return 0 * first(y)
+        @inbounds return 0 * y[aq.idxL, k]
     end
 
     idxL = aq.idxL

@@ -280,7 +280,7 @@ end
         y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
         op::AbstractEvalOp, side_param::AbstractSide, ::AbstractExtrap
     )
-    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq)) : 0 * first(y) * one(aq.xq))
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq)) : @inbounds 0 * y[aq.idxR] * one(aq.xq))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
@@ -290,7 +290,7 @@ end
         op::AbstractEvalOp, side_param::AbstractSide, ::NoExtrap
     )
     aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
-    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq)) : 0 * first(y) * one(aq.xq))
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq)) : @inbounds 0 * y[aq.idxR] * one(aq.xq))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
@@ -303,7 +303,7 @@ end
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     end
-    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq)) : 0 * first(y) * one(aq.xq))
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq)) : @inbounds 0 * y[aq.idxR] * one(aq.xq))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 

@@ -15,6 +15,7 @@
 #   Cat D  — cross-path equivalence (same input → same `Dual` answer on every path)
 #   Cat E  — OOB cell-local NaN through `_promote_extrap_zero` (Number case)
 #   Cat F  — Constant 1D right-edge + Series cell-local NaN (`0 * first(y)` → cell-local idx)
+#   Cat G  — Hetero `NoInterp` deriv cell-local NaN (`zero(Tz)` → `data[slice] * zero(Tz)`)
 
 @testitem "Cat A: @inferred type stability across deriv-aware paths" begin
     using ForwardDiff
@@ -434,5 +435,61 @@ end
             @test isnan(res[2][j])
             @test !isnan(res[3][j])
         end
+    end
+end
+
+# Hetero `NoInterp` axes are structurally lookup-only (no math, like Constant).
+# When a non-zero `DerivOp` is requested on a `NoInterp` axis, the result is
+# mathematically zero — but the existing short-circuits return `zero(Tz)` of
+# the promoted type, dropping any cell-local NaN in the queried data slice.
+# This mirrors the Constant Phase 3 bug and is closed via `data[slice] * zero(Tz)`
+# (cell-local NaN propagation, type-promoted).
+#
+# Scope: covers the all-NoInterp persistent (`_eval_nointerp`, `N_r == 0`) and
+# all-GridIdx oneshot (`_interp_nointerp_oneshot`, `grids_r === ()`) paths
+# where the data is fully sliced to a single cell. The mixed case
+# (`_interp_nointerp_oneshot` line ~489 with Real axes still present) is a
+# known scope exception — strict cell-local requires running the Real-axis
+# interp first, deferred as a separate follow-up.
+@testitem "Cat G: Hetero NoInterp deriv cell-local NaN" begin
+    x = collect(1.0:5.0)
+    y = collect(1.0:5.0)
+
+    @testset "All-NoInterp persistent — cell-local NaN propagates" begin
+        data = [Float64(10i + j) for i in 1:5, j in 1:5]
+        data[2, 3] = NaN
+        itp = interp((x, y), data; method = (NoInterp(), NoInterp()))
+        @test isnan(itp((GridIdx(2), GridIdx(3)); deriv = (DerivOp(1), EvalValue())))
+    end
+
+    @testset "All-NoInterp persistent — out-of-cell NaN stays hidden" begin
+        data = [Float64(10i + j) for i in 1:5, j in 1:5]
+        data[1, 1] = NaN
+        itp = interp((x, y), data; method = (NoInterp(), NoInterp()))
+        @test !isnan(itp((GridIdx(2), GridIdx(3)); deriv = (DerivOp(1), EvalValue())))
+    end
+
+    @testset "All-GridIdx oneshot — cell-local NaN propagates" begin
+        data = [Float64(10i + j) for i in 1:5, j in 1:5]
+        data[2, 3] = NaN
+        @test isnan(
+            interp(
+                (x, y), data, (GridIdx(2), GridIdx(3));
+                method = (NoInterp(), NoInterp()),
+                deriv = (DerivOp(1), EvalValue())
+            )
+        )
+    end
+
+    @testset "All-GridIdx oneshot — out-of-cell NaN stays hidden" begin
+        data = [Float64(10i + j) for i in 1:5, j in 1:5]
+        data[1, 1] = NaN
+        @test !isnan(
+            interp(
+                (x, y), data, (GridIdx(2), GridIdx(3));
+                method = (NoInterp(), NoInterp()),
+                deriv = (DerivOp(1), EvalValue())
+            )
+        )
     end
 end

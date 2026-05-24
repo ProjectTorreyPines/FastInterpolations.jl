@@ -262,9 +262,9 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         [fieldtype(M, d) for d in real_dims]
     )
 
-    # Check if any NoInterp axis has a non-zero DerivOp → return zero
-    # (discrete axes have zero derivatives by definition)
-    # NOTE: guard runs AFTER domain validation so OOB queries still error.
+    # Check if any NoInterp axis has a non-zero DerivOp → cell-local zero
+    # (discrete axes have zero derivatives by definition). Guard runs AFTER
+    # domain validation so OOB queries still error.
     nointerp_deriv_checks = [:(deriv_order(ops_full[$d]) != 0) for d in nointerp_dims]
     nointerp_deriv_cond = if isempty(nointerp_deriv_checks)
         nothing
@@ -276,12 +276,6 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
     # Use promoted type for zero (fixes Float32 data + Float64 query type mismatch)
     real_query_types = [fieldtype(Q, d) for d in real_dims]
     Tz_expr = isempty(real_query_types) ? Tv : :(promote_type($(real_query_types...), $Tg, $Tv))
-    nointerp_deriv_guard = nointerp_deriv_cond === nothing ? :() :
-        :(
-            if $nointerp_deriv_cond
-                return zero($Tz_expr)
-        end
-        )
 
     # Write GridIdx index into hint for NoInterp axes (consistent hint semantics)
     hint_nointerp_writes = [:(hint[$d][] = query[$d].idx) for d in nointerp_dims]
@@ -293,25 +287,37 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         )
 
     if N_r == 0
-        # All-NoInterp: pure table lookup (or zero if any deriv requested)
-        if D <: _HeteroPartials
-            return quote
-                Base.@_inline_meta
-                $(bounds_checks...)
-                $hint_nointerp_update
-                $nointerp_deriv_guard
-                @inbounds itp.data.partials[1, $(slice_args...)]
+        # All-NoInterp: pure table lookup; deriv on NoInterp axis → multiply
+        # cell-local data by `zero(Tz)` so NaN in the queried cell propagates
+        # while still returning a type-promoted zero (mirrors Constant Phase 3
+        # `kernel * 0` pattern).
+        data_expr = D <: _HeteroPartials ?
+            :(itp.data.partials[1, $(slice_args...)]) :
+            :(itp.data[$(slice_args...)])
+        nointerp_deriv_guard = nointerp_deriv_cond === nothing ? :() :
+            :(
+                if $nointerp_deriv_cond
+                    return @inbounds $data_expr * zero($Tz_expr)
             end
-        else
-            return quote
-                Base.@_inline_meta
-                $(bounds_checks...)
-                $hint_nointerp_update
-                $nointerp_deriv_guard
-                @inbounds itp.data[$(slice_args...)]
-            end
+            )
+        return quote
+            Base.@_inline_meta
+            $(bounds_checks...)
+            $hint_nointerp_update
+            $nointerp_deriv_guard
+            @inbounds $data_expr
         end
     end
+
+    # Mixed case (N_r > 0): keep the existing `zero(Tz)` short-circuit —
+    # strict cell-local would require running the Real-axis interp first
+    # (deferred follow-up; mirror with `_interp_nointerp_oneshot` line ~489).
+    nointerp_deriv_guard = nointerp_deriv_cond === nothing ? :() :
+        :(
+            if $nointerp_deriv_cond
+                return zero($Tz_expr)
+        end
+        )
 
     if D <: _HeteroPartials
         return quote
@@ -468,11 +474,13 @@ function _interp_nointerp_oneshot(
     # Resolve per-axis kwargs to N-tuples
     deriv_t = deriv isa DerivOp ? ntuple(_ -> deriv, Val(N)) : deriv
 
-    # All-GridIdx edge case: pure table lookup (or zero if any deriv requested)
+    # All-GridIdx edge case: pure table lookup (deriv on NoInterp axis → zero,
+    # but cell-local — `data_r[] * zero(Tz)` propagates NaN at the queried
+    # cell while still returning a type-promoted zero).
     if grids_r === ()
         if _any_nointerp_grididx_has_nonzero_deriv(query, method_tuple, deriv_t)
             Tg = float(_promote_grid_eltype(grids))
-            return zero(_output_eltype(eltype(data), Tg))
+            return data_r[] * zero(_output_eltype(eltype(data), Tg))
         end
         return data_r[]
     end

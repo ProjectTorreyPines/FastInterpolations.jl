@@ -288,15 +288,18 @@ end
 
     @testset "_promote_extrap_zero helper — Number vs Array consistency" begin
         # Array case already propagates NaN element-wise — sanity baseline.
-        res_arr = _promote_extrap_zero([NaN, 1.0], 0.5)
+        # `@inferred` pins type stability against future regressions on the
+        # OOB extrap helper path (Cat A only covers in-domain).
+        res_arr = @inferred _promote_extrap_zero([NaN, 1.0], 0.5)
         @test isnan(res_arr[1])
 
         # Number case must match: NaN at boundary propagates as NaN result.
+        @test (@inferred _promote_extrap_zero(NaN, 0.5)) isa Float64
         @test isnan(_promote_extrap_zero(NaN, 0.5))
 
         # Carrier preserved + primal NaN propagated through Dual xq.
         xq_d = ForwardDiff.Dual{Nothing}(0.5, 1.0)
-        res_d = _promote_extrap_zero(NaN, xq_d)
+        res_d = @inferred _promote_extrap_zero(NaN, xq_d)
         @test res_d isa typeof(xq_d)
         @test isnan(ForwardDiff.value(res_d))
     end

@@ -261,19 +261,16 @@ end
     D = ForwardDiff.Dual{Nothing, Float64, 1}
 
     @testset "Dual x grid carrier flows through Tv × Tq" begin
-        # Dual grid + Float query has latent Union{Float, Dual} inference for
-        # some (fn, y) combos — runtime returns the right type, but `@inferred`
-        # surfaces the Union. Plain `isa` until the inference is fixed.
         for fn in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
-            @test fn(x_dg, y_f)(xq_f) isa D
-            @test fn(x_dg, y_f)(xq_d) isa D
-            @test fn(x_dg, y_sv)(xq_f) isa SVector{3, D}
-            @test fn(x_dg, y_sv)(xq_d) isa SVector{3, D}
-            @test fn(x_dg, y_f, xq_d) isa D
-            @test fn(x_dg, y_sv, xq_d) isa SVector{3, D}
+            @test (@inferred fn(x_dg, y_f)(xq_f)) isa D
+            @test (@inferred fn(x_dg, y_f)(xq_d)) isa D
+            @test (@inferred fn(x_dg, y_sv)(xq_f)) isa SVector{3, D}
+            @test (@inferred fn(x_dg, y_sv)(xq_d)) isa SVector{3, D}
+            @test (@inferred fn(x_dg, y_f, xq_d)) isa D
+            @test (@inferred fn(x_dg, y_sv, xq_d)) isa SVector{3, D}
         end
-        @test hermite_interp(x_dg, y_f, dy_f)(xq_d) isa D
-        @test hermite_interp(x_dg, y_sv, dy_sv)(xq_d) isa SVector{3, D}
+        @test (@inferred hermite_interp(x_dg, y_f, dy_f)(xq_d)) isa D
+        @test (@inferred hermite_interp(x_dg, y_sv, dy_sv)(xq_d)) isa SVector{3, D}
     end
 
     @testset "ForwardDiff.derivative w.r.t. grid offset" begin

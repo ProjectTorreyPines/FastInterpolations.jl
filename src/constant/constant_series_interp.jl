@@ -624,9 +624,6 @@ Internal: Core constant evaluation for series k at anchored query point.
         side_val::AbstractSide,
         op::AbstractEvalOp
     ) where {Tg, Tv}
-    # Derivatives of constant (step) function are zero.
-    # Broadcast `first(y)` (not cell-local) for hot-loop perf — see
-    # `_constant_extrap_boundary_value` for the parallel rationale.
     if !(op isa EvalValue)
         return 0 * first(y)
     end

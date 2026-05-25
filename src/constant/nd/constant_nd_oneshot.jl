@@ -31,7 +31,7 @@ function _constant_interp_nd_oneshot(
     ) where {Tg, Tv, N}
     grids_eff = map(_resolve_axis, grids, bcs)
     _validate_nd_domain(grids_eff, query, extraps_val)
-    oob_result = _try_fill_oob(query, grids_eff, extraps_val, EvalValue(), @inbounds first(data))
+    oob_result = _try_fill_oob(query, grids_eff, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
@@ -68,7 +68,7 @@ function _constant_interp_nd_oneshot_batch!(
     extraps_eff = _check_domain_nd(grids_eff, queries, extraps_eff)
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids_eff, extraps_eff, EvalValue(), first(data))
+        oob_val = _try_fill_oob(query_k, grids_eff, extraps_eff, ops, first(data))
         if oob_val !== nothing
             output[k] = oob_val
             continue

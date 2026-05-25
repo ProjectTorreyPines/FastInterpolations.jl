@@ -346,6 +346,26 @@ end
             @test !isnan(method(x, y_nan_right, xq_oob_lo; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
         end
     end
+
+    @testset "Constant ND oneshot OOB FillExtrap × deriv returns zero, not fill_value" begin
+        # `_try_fill_oob` must dispatch on `ops` (not hardcoded `EvalValue()`)
+        # so deriv queries return zero rather than the fill_value.
+        xg = collect(1.0:5.0)
+        yg = collect(1.0:5.0)
+        data = [Float64(10i + j) for i in 1:5, j in 1:5]
+        q_oob = (7.0, 3.5)
+        # Scalar oneshot
+        @test constant_interp((xg, yg), data, q_oob; extrap = FillExtrap(99.0),
+            deriv = (DerivOp(1), EvalValue())) == 0.0
+        @test constant_interp((xg, yg), data, q_oob; extrap = FillExtrap(99.0),
+            deriv = (EvalValue(), DerivOp(1))) == 0.0
+        # Batch oneshot
+        @test constant_interp((xg, yg), data, [q_oob]; extrap = FillExtrap(99.0),
+            deriv = (DerivOp(1), EvalValue())) == [0.0]
+        # Persistent (already correct on master) — sanity check
+        itp = constant_interp((xg, yg), data; extrap = FillExtrap(99.0))
+        @test itp(q_oob; deriv = (DerivOp(1), EvalValue())) == 0.0
+    end
 end
 
 # Constant 1D `_constant_eval_at_point` / `_constant_eval_at_anchor` short-

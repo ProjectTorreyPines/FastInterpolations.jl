@@ -180,9 +180,8 @@ end
 @inline _linear_weight(::EvalDeriv1, α, inv_h, ::Val{0}) = -inv_h
 @inline _linear_weight(::EvalDeriv1, α, inv_h, ::Val{1}) = inv_h
 
-# Second and higher derivatives are zero (handled cell-locally by
-# routing the scalar/batch entry points to a zero return before kernel reaches
-# here). Defined for completeness in case `_eval_at_cell` is invoked directly.
+# Second and higher derivatives: weight is `zero(α)` at every corner. The
+# multilinear sum then yields cell-local NaN propagation via IEEE `NaN * 0 = NaN`.
 @inline _linear_weight(::EvalDeriv2, α, inv_h, ::Val{B}) where {B} = zero(α)
 @inline _linear_weight(::EvalDeriv3, α, inv_h, ::Val{B}) where {B} = zero(α)
 

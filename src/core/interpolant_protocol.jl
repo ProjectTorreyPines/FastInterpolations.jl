@@ -57,9 +57,9 @@ end
 # 1D Vector Call — Allocating
 # ========================================
 # Buffer eltype comes from the `_output_eltype(itp, Tq)` trait — generic for
-# arithmetic kernels (Int→Float upgrade) and `_select_output_eltype` for
-# selection kernels (Constant). Duck `SVector × Dual` resolves via the
-# trait's `Base.promote_op` fallback.
+# arithmetic kernels via `_arithmetic_kernel_shape` (Int→Float upgrade) and
+# `_constant_kernel_shape` for selection kernels (Constant). Duck
+# `SVector × Dual` resolves via the trait's `Base.promote_op` fallback.
 
 function (itp::AbstractInterpolant1D{Tg, Tv})(
         xq::AbstractVector{Tq};

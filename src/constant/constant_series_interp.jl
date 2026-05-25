@@ -212,10 +212,7 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
     n_pts = n_points(sitp)
 
     # Special case: at right boundary (use primal for comparison).
-    # Deriv branch uses broadcast `z = 0 * first(y_point)` to match
-    # `_fill_constant_extrap_simd!`'s revert (same SIMD pattern → same
-    # perf-vs-cell-local tradeoff): per-k cell-local NaN propagation is
-    # deferred for both paths until NaN-presence detection is added.
+    # Deriv branch uses broadcast (not per-k cell-local) for SIMD perf.
     xq_primal = _extract_primal(xq)
     if xq_primal == _extract_primal(last(sitp.x))
         if op isa EvalValue
@@ -592,10 +589,8 @@ Internal: Evaluate single series at single query point with extrapolation handli
         side_val::AbstractSide,
         op::AbstractEvalOp
     ) where {Tg, Tv}
-    # Special case: at right boundary (MUST be preserved!)
-    # NOTE: deriv branch uses broadcast `0 * first(y)` (perf-revert — per-k
-    # cell-local `0 * y[n_pts, k]` deferred until NaN-presence detection
-    # branch is added, mirroring `_constant_extrap_boundary_value`).
+    # Special case: at right boundary (MUST be preserved!).
+    # Deriv branch uses broadcast `0 * first(y)` (not per-k) for hot-loop perf.
     if aq.xq == x_max
         if op isa EvalValue
             @inbounds return y[n_pts, k]
@@ -630,11 +625,8 @@ Internal: Core constant evaluation for series k at anchored query point.
         op::AbstractEvalOp
     ) where {Tg, Tv}
     # Derivatives of constant (step) function are zero.
-    # NOTE: broadcast `0 * first(y)` rather than per-k cell-local
-    # `0 * y[aq.idxL, k]`. Series batch eval calls this K×Q times — per-k
-    # indexed load on a hot inner loop adds measurable cost (mirror of
-    # `_constant_extrap_boundary_value`'s revert). Per-series cell-local
-    # NaN deferred until NaN-presence detection branch is added.
+    # Broadcast `first(y)` (not cell-local) for hot-loop perf — see
+    # `_constant_extrap_boundary_value` for the parallel rationale.
     if !(op isa EvalValue)
         return 0 * first(y)
     end

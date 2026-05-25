@@ -14,7 +14,7 @@
 #   Cat C  — Cell-local NaN propagation through ND deriv-zero short-circuits
 #   Cat D  — cross-path equivalence (same input → same `Dual` answer on every path)
 #   Cat E  — OOB cell-local NaN through `_promote_extrap_zero` (Number case)
-#   Cat F  — Constant 1D right-edge + Series cell-local NaN (`0 * first(y)` → cell-local idx)
+#   Cat F  — Constant 1D right-edge cell-local NaN (Series subtests pinned `@test_broken`)
 #   Cat G  — Hetero `NoInterp` deriv cell-local NaN (`zero(Tz)` → `data[slice] * zero(Tz)`)
 
 @testitem "Cat A: @inferred type stability across deriv-aware paths" begin
@@ -35,6 +35,7 @@
     @testset "1D oneshot scalar — deriv-zero × Dual query" begin
         @test (@inferred linear_interp(x1, y1, xq_d; deriv = DerivOp(2))) isa D
         @test (@inferred cubic_interp(x1, y1, xq_d; deriv = DerivOp(4))) isa D
+        @test (@inferred quadratic_interp(x1, y1, xq_d; deriv = DerivOp(3))) isa D
         @test (@inferred pchip_interp(x1, y1, xq_d; deriv = DerivOp(4))) isa D
         @test (@inferred cardinal_interp(x1, y1, xq_d; deriv = DerivOp(4))) isa D
         @test (@inferred akima_interp(x1, y1, xq_d; deriv = DerivOp(4))) isa D
@@ -49,6 +50,7 @@
     @testset "1D persistent scalar — deriv-zero × Dual query" begin
         @test (@inferred linear_interp(x1, y1)(xq_d; deriv = DerivOp(2))) isa D
         @test (@inferred cubic_interp(x1, y1)(xq_d; deriv = DerivOp(4))) isa D
+        @test (@inferred quadratic_interp(x1, y1)(xq_d; deriv = DerivOp(3))) isa D
     end
 
     @testset "1D persistent allocating batch — deriv-zero × Dual query" begin
@@ -269,6 +271,14 @@ end
     @testset "scalar ↔ persistent in-place" begin
         @test isequal(ref_scalar, persist_inplace)
     end
+
+    # Linear ND: kernel-native cell-local via `_linear_weight(::EvalDeriv2+) = zero(α)`.
+    @testset "Linear ND — scalar ↔ in-place batch" begin
+        ref_l = linear_interp((xg, yg), cell_data, q_het; deriv = (EvalValue(), DerivOp(2)))
+        buf_l = Vector{D}(undef, 1)
+        linear_interp!(buf_l, (xg, yg), cell_data, q_het_b; deriv = (EvalValue(), DerivOp(2)))
+        @test isequal(ref_l, buf_l[1])
+    end
 end
 
 # OOB ClampExtrap/FillExtrap × deriv routes through
@@ -312,7 +322,7 @@ end
         y_nan_right = [10.0, 20.0, 30.0, 40.0, NaN]
         xq_oob_lo, xq_oob_hi = -1.0, 7.0
 
-        for method in (linear_interp, constant_interp, pchip_interp, cardinal_interp, akima_interp)
+        for method in (linear_interp, constant_interp, cubic_interp, quadratic_interp, pchip_interp, cardinal_interp, akima_interp)
             @test isnan(method(x, y_nan_left, xq_oob_lo; extrap = ClampExtrap(), deriv = DerivOp(1)))
             @test isnan(method(x, y_nan_right, xq_oob_hi; extrap = ClampExtrap(), deriv = DerivOp(1)))
             # Cell-local: NaN at the OTHER boundary does NOT propagate.
@@ -322,14 +332,14 @@ end
     end
 
     @testset "1D OOB FillExtrap × deriv: queried-boundary NaN propagates" begin
-        # FillExtrap routes y_bnd (boundary data, not fill_value) into
-        # `_promote_extrap_zero` for deriv. Consistent with Array case behavior.
+        # FillExtrap routes `y_bnd` (boundary data) into `_promote_extrap_zero`
+        # for deriv — boundary NaN propagates regardless of `fill_value`.
         x = collect(1.0:5.0)
         y_nan_left = [NaN, 20.0, 30.0, 40.0, 50.0]
         y_nan_right = [10.0, 20.0, 30.0, 40.0, NaN]
         xq_oob_lo, xq_oob_hi = -1.0, 7.0
 
-        for method in (linear_interp, constant_interp, pchip_interp, cardinal_interp, akima_interp)
+        for method in (linear_interp, constant_interp, cubic_interp, quadratic_interp, pchip_interp, cardinal_interp, akima_interp)
             @test isnan(method(x, y_nan_left, xq_oob_lo; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
             @test isnan(method(x, y_nan_right, xq_oob_hi; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
             @test !isnan(method(x, y_nan_left, xq_oob_hi; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
@@ -382,12 +392,8 @@ end
     end
 
     @testset "Series scalar — right-boundary cell-local per series" begin
-        # Series matrix layout: y[time_idx, series_k]. NaN at right-boundary of
-        # ONE series → only that series's result is NaN; other series unaffected.
-        # `@test_broken`: `_eval_constant_series_point!` right-boundary deriv uses
-        # broadcast `z = 0 * first(y_point)` for SIMD-friendly fill — per-k
-        # cell-local would be ~2x slower on this hot path. Future fix: detect
-        # NaN at construction and branch.
+        # Per-series NaN propagation deferred for hot-loop perf —
+        # see series_utils.jl `_fill_constant_extrap_simd!`.
         Y = [Float64(10i + j) for i in 1:5, j in 1:3]
         Y[5, 2] = NaN  # right boundary, series 2 only
         sitp = constant_interp(x, Series(Y))
@@ -398,9 +404,8 @@ end
     end
 
     @testset "Series batch — in-domain cell-local per series" begin
-        # `@test_broken`: `_eval_constant_series_anchored` deriv branch uses
-        # broadcast `0 * first(y)` (perf-reverted — per-k indexed load adds
-        # cost on the K×Q hot inner loop). Future fix: NaN-presence detection.
+        # Per-series NaN propagation deferred for hot-loop perf —
+        # see constant_series_interp.jl `_eval_constant_series_anchored`.
         Y = [Float64(10i + j) for i in 1:5, j in 1:3]
         Y[3, 2] = NaN  # interior cell corner, series 2 only
         sitp = constant_interp(x, Series(Y))
@@ -414,12 +419,8 @@ end
     end
 
     @testset "Series scalar OOB ClampExtrap × deriv — cell-local per series" begin
-        # `@test_broken`: scalar series OOB routes through
-        # `_eval_constant_series_point_extrap!` → `_fill_constant_extrap_simd!`,
-        # which uses the broadcast `z = 0 * first(y_point)` (perf-reverted —
-        # see series_utils.jl). Batch OOB takes a different route through
-        # `_constant_extrap_boundary_value` (per-k, kept cell-local) so the
-        # batch test below still passes.
+        # Series deriv fills use broadcast `0 * first(y)` (perf trade-off);
+        # per-series NaN propagation deferred.
         Y = [Float64(10i + j) for i in 1:5, j in 1:3]
         Y[5, 2] = NaN  # right boundary, series 2 only
         sitp = constant_interp(x, Series(Y); extrap = ClampExtrap())
@@ -430,9 +431,8 @@ end
     end
 
     @testset "Series batch OOB ClampExtrap × deriv — cell-local per series" begin
-        # `@test_broken`: batch OOB routes through `_constant_extrap_boundary_value`,
-        # reverted to broadcast `0 * first(y)` to keep batch hot loop cheap
-        # (K×Q calls — per-k load was the +94% regression on bench).
+        # Per-series NaN propagation deferred for hot-loop perf —
+        # see series_utils.jl `_constant_extrap_boundary_value`.
         Y = [Float64(10i + j) for i in 1:5, j in 1:3]
         Y[5, 2] = NaN
         sitp = constant_interp(x, Series(Y); extrap = ClampExtrap())

@@ -149,11 +149,8 @@ end
 @inline function _constant_extrap_boundary_value(
         y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
     ) where {Tv}
-    # NOTE: broadcast `0 * first(y)` rather than per-k cell-local
-    # `0 * y[_boundary_point_index(side, n_pts), k]`. The batch series eval
-    # calls this K×Q times — per-k indexed load adds ~1ns/call (=50μs on a
-    # 1000-series × 50-query batch, +94% on this hot path). Future fix:
-    # NaN-presence detection at construction.
+    # `first(y)` is intentionally not cell-local (per-series NaN propagation
+    # is sacrificed for hot-loop perf — this is called K×Q times in batch eval).
     return 0 * first(y)
 end
 
@@ -194,12 +191,8 @@ end
 @inline function _fill_constant_extrap_simd!(
         out::AbstractVector{Tv}, y_point::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
     ) where {Tv}
-    # NOTE: broadcast `z = 0 * first(y_point)` rather than per-k cell-local
-    # `0 * y_point[k, idx]`. Per-series cell-local NaN propagation is desirable
-    # in principle (consistency with `_eval_constant_series_anchored`) but the
-    # per-k indexed load doubles cost on this hot batch-OOB-deriv path
-    # (~+94% in 1000-series × 50-query benchmark) for a niche correctness
-    # benefit. Future: detect NaN presence at construction and branch.
+    # Broadcast fill (not per-k cell-local) — trades per-series NaN propagation
+    # for SIMD-friendly hot-loop perf.
     z = 0 * first(y_point)
     @inbounds @simd for k in axes(out, 1)
         out[k] = z

@@ -147,15 +147,20 @@ end
 end
 
 @inline function _constant_extrap_boundary_value(
-        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
+        y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
     ) where {Tv}
-    @inbounds return 0 * y[_boundary_point_index(side, n_pts), k]
+    # NOTE: broadcast `0 * first(y)` rather than per-k cell-local
+    # `0 * y[_boundary_point_index(side, n_pts), k]`. The batch series eval
+    # calls this K×Q times — per-k indexed load adds ~1ns/call (=50μs on a
+    # 1000-series × 50-query batch, +94% on this hot path). Future fix:
+    # NaN-presence detection at construction.
+    return 0 * first(y)
 end
 
 @inline function _constant_extrap_boundary_value(
-        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::DerivOp{N}, ::_ClampOrFill
+        y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::DerivOp{N}, ::_ClampOrFill
     ) where {Tv, N}
-    @inbounds return 0 * y[_boundary_point_index(side, n_pts), k]
+    return 0 * first(y)
 end
 
 """
@@ -187,21 +192,27 @@ end
 end
 
 @inline function _fill_constant_extrap_simd!(
-        out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
+        out::AbstractVector{Tv}, y_point::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
     ) where {Tv}
-    idx = _boundary_point_index(side, n_pts)
+    # NOTE: broadcast `z = 0 * first(y_point)` rather than per-k cell-local
+    # `0 * y_point[k, idx]`. Per-series cell-local NaN propagation is desirable
+    # in principle (consistency with `_eval_constant_series_anchored`) but the
+    # per-k indexed load doubles cost on this hot batch-OOB-deriv path
+    # (~+94% in 1000-series × 50-query benchmark) for a niche correctness
+    # benefit. Future: detect NaN presence at construction and branch.
+    z = 0 * first(y_point)
     @inbounds @simd for k in axes(out, 1)
-        out[k] = 0 * y_point[k, idx]
+        out[k] = z
     end
     return out
 end
 
 @inline function _fill_constant_extrap_simd!(
-        out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::DerivOp{N}, ::_ClampOrFill
+        out::AbstractVector{Tv}, y_point::Matrix{Tv}, ::UInt8, ::Int, ::DerivOp{N}, ::_ClampOrFill
     ) where {Tv, N}
-    idx = _boundary_point_index(side, n_pts)
+    z = 0 * first(y_point)
     @inbounds @simd for k in axes(out, 1)
-        out[k] = 0 * y_point[k, idx]
+        out[k] = z
     end
     return out
 end

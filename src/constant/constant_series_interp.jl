@@ -212,9 +212,10 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
     n_pts = n_points(sitp)
 
     # Special case: at right boundary (use primal for comparison).
-    # Deriv branch loops per-k with cell-local `y_point[k, n_pts]` (right-edge
-    # endpoint of series k) — `0 * first(y_point)` would strip series-k and
-    # leak NaN at one series into all series.
+    # Deriv branch uses broadcast `z = 0 * first(y_point)` to match
+    # `_fill_constant_extrap_simd!`'s revert (same SIMD pattern → same
+    # perf-vs-cell-local tradeoff): per-k cell-local NaN propagation is
+    # deferred for both paths until NaN-presence detection is added.
     xq_primal = _extract_primal(xq)
     if xq_primal == _extract_primal(last(sitp.x))
         if op isa EvalValue
@@ -222,8 +223,9 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
                 output[k] = y_point[k, n_pts]
             end
         else
+            z = 0 * first(y_point)
             @inbounds @simd for k in axes(output, 1)
-                output[k] = 0 * y_point[k, n_pts]
+                output[k] = z
             end
         end
         return output
@@ -591,13 +593,14 @@ Internal: Evaluate single series at single query point with extrapolation handli
         op::AbstractEvalOp
     ) where {Tg, Tv}
     # Special case: at right boundary (MUST be preserved!)
-    # Deriv branch uses cell-local `y[n_pts, k]` (right-edge endpoint of series k)
-    # not `first(y) = y[1, 1]` — keeps per-series NaN cell-local.
+    # NOTE: deriv branch uses broadcast `0 * first(y)` (perf-revert — per-k
+    # cell-local `0 * y[n_pts, k]` deferred until NaN-presence detection
+    # branch is added, mirroring `_constant_extrap_boundary_value`).
     if aq.xq == x_max
         if op isa EvalValue
             @inbounds return y[n_pts, k]
         else
-            @inbounds return 0 * y[n_pts, k]
+            return 0 * first(y)
         end
     end
 
@@ -627,11 +630,13 @@ Internal: Core constant evaluation for series k at anchored query point.
         op::AbstractEvalOp
     ) where {Tg, Tv}
     # Derivatives of constant (step) function are zero.
-    # Use cell-local `y[aq.idxL, k]` (left cell endpoint of series k) not
-    # `first(y)` so NaN at the queried cell propagates per series while NaN
-    # elsewhere stays hidden.
+    # NOTE: broadcast `0 * first(y)` rather than per-k cell-local
+    # `0 * y[aq.idxL, k]`. Series batch eval calls this K×Q times — per-k
+    # indexed load on a hot inner loop adds measurable cost (mirror of
+    # `_constant_extrap_boundary_value`'s revert). Per-series cell-local
+    # NaN deferred until NaN-presence detection branch is added.
     if !(op isa EvalValue)
-        @inbounds return 0 * y[aq.idxL, k]
+        return 0 * first(y)
     end
 
     idxL = aq.idxL

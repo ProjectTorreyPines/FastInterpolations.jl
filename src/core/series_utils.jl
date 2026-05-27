@@ -154,14 +154,16 @@ end
     return e.fill_value * one(aq.xq)
 end
 
-# Deriv at boundary is zero for both Clamp and Fill extrap. Source the zero
-# from the boundary `y[idx, k]` (NOT `e.fill_value`) so cell-local NaN in
-# the data propagates while a NaN-bearing `fill_value` does NOT leak — this
-# preserves the contract "OOB FillExtrap × deriv returns 0, not fill_value".
+# Deriv at boundary: source the zero from the extrap's OOB-cell "data" via
+# `_extrap_deriv_source` — boundary `y[idx, k]` for ClampExtrap (preserves
+# cell-local NaN), `e.fill_value` for FillExtrap (NaN fill_value propagates,
+# finite fill_value × 0 = 0). Mirrors the 1D `_eval_extrapolation(::DerivOp)`
+# contract.
 @inline function _constant_extrap_boundary_value(
-        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::AbstractEvalOp, ::_ClampOrFill, aq
+        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::AbstractEvalOp, ext::_ClampOrFill, aq
     ) where {Tv}
-    @inbounds return 0 * y[_boundary_point_index(side, n_pts), k] * one(aq.xq)
+    src = _extrap_deriv_source(ext, @inbounds(y[_boundary_point_index(side, n_pts), k]))
+    return 0 * src * one(aq.xq)
 end
 
 """
@@ -194,15 +196,16 @@ end
     return out
 end
 
-# Deriv at boundary is zero for both Clamp and Fill extrap (sourced from
-# `y_point[k, idx]`, not `e.fill_value`; same rationale as the scalar helper).
+# Deriv at boundary: per-k cell-local source via `_extrap_deriv_source` —
+# ClampExtrap pulls `y_point[k, idx]` (boundary y, NaN propagates),
+# FillExtrap pulls `e.fill_value` (NaN fill_value propagates, finite → 0).
 @inline function _fill_constant_extrap_simd!(
-        out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::AbstractEvalOp, ::_ClampOrFill, aq
+        out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::AbstractEvalOp, ext::_ClampOrFill, aq
     ) where {Tv}
     idx = _boundary_point_index(side, n_pts)
     xq_carrier = one(aq.xq)
     @inbounds @simd for k in axes(out, 1)
-        out[k] = 0 * y_point[k, idx] * xq_carrier
+        out[k] = 0 * _extrap_deriv_source(ext, y_point[k, idx]) * xq_carrier
     end
     return out
 end

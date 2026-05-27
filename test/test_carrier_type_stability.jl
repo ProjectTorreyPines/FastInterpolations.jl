@@ -348,31 +348,28 @@ end
     end
 end
 
-# OOB ClampExtrap/FillExtrap × deriv routes through
-# `_eval_extrapolation(::DerivOp, …)` → `_promote_extrap_zero(y_bnd, xq)`.
-# The `Number` overload currently strips `val` via `zero(xq) * zero(val)`
-# (type-only zero) while the `AbstractArray` overload uses `0 .* val .+ …`
-# (NaN propagates element-wise). The asymmetry is the bug — boundary NaN
-# disappears at OOB deriv queries for scalar `Tv`, but propagates for
-# Array `Tv`. The fix mirrors the Array form on the Number form
-# (`0 * val + zero(xq) * zero(val)`), unifying cell-local boundary-data
-# carrier behavior under OOB deriv queries.
+# OOB extrap × deriv contract (cell-local "OOB cell = fill-value data"):
 #
-# Scope: only the chosen-side boundary's NaN must propagate (e.g.,
-# `y[1] = NaN` with OOB_LEFT query → NaN; same `y` with OOB_RIGHT query
-# → finite). Out-of-cell NaN must NOT leak through OOB extrap.
-@testitem "Cat E: OOB cell-local NaN through _promote_extrap_zero (Number case)" begin
+#   ClampExtrap: OOB cell's data = `y_bnd` (boundary y value). Deriv = `0 * y_bnd`
+#                — NaN at `y_bnd` propagates (boundary cell-local NaN).
+#   FillExtrap:  OOB cell's data = `e.fill_value`. Deriv = `0 * fill_value`
+#                — NaN `fill_value` propagates, finite `fill_value` → 0.
+#                Boundary `y_bnd` is NOT consulted (fill_value IS the data
+#                in the OOB region).
+#
+# This mirrors the strict cell-local interpretation: OOB data is whatever
+# the extrap rule fills there, and derivative is computed from THAT data.
+@testitem "Cat E: OOB extrap × deriv — fill_value-as-data contract" begin
     using ForwardDiff
     using FastInterpolations: _promote_extrap_zero
 
+    methods_1d = (linear_interp, constant_interp, cubic_interp, quadratic_interp,
+                  pchip_interp, cardinal_interp, akima_interp)
+
     @testset "_promote_extrap_zero helper — Number vs Array consistency" begin
-        # Array case already propagates NaN element-wise — sanity baseline.
-        # `@inferred` pins type stability against future regressions on the
-        # OOB extrap helper path (Cat A only covers in-domain).
+        # NaN at the data source propagates through deriv-zero promotion.
         res_arr = @inferred _promote_extrap_zero([NaN, 1.0], 0.5)
         @test isnan(res_arr[1])
-
-        # Number case must match: NaN at boundary propagates as NaN result.
         @test (@inferred _promote_extrap_zero(NaN, 0.5)) isa Float64
         @test isnan(_promote_extrap_zero(NaN, 0.5))
 
@@ -383,13 +380,14 @@ end
         @test isnan(ForwardDiff.value(res_d))
     end
 
-    @testset "1D OOB ClampExtrap × deriv: queried-boundary NaN propagates" begin
+    # ── ClampExtrap (unchanged): y_bnd is the OOB data ──
+    @testset "1D OOB ClampExtrap × deriv: queried-boundary y NaN propagates" begin
         x = collect(1.0:5.0)
         y_nan_left = [NaN, 20.0, 30.0, 40.0, 50.0]
         y_nan_right = [10.0, 20.0, 30.0, 40.0, NaN]
         xq_oob_lo, xq_oob_hi = -1.0, 7.0
 
-        for method in (linear_interp, constant_interp, cubic_interp, quadratic_interp, pchip_interp, cardinal_interp, akima_interp)
+        for method in methods_1d
             @test isnan(method(x, y_nan_left, xq_oob_lo; extrap = ClampExtrap(), deriv = DerivOp(1)))
             @test isnan(method(x, y_nan_right, xq_oob_hi; extrap = ClampExtrap(), deriv = DerivOp(1)))
             # Cell-local: NaN at the OTHER boundary does NOT propagate.
@@ -398,46 +396,99 @@ end
         end
     end
 
-    @testset "1D OOB FillExtrap × deriv: queried-boundary NaN propagates" begin
-        # FillExtrap routes `y_bnd` (boundary data) into `_promote_extrap_zero`
-        # for deriv — boundary NaN propagates regardless of `fill_value`.
+    # ── FillExtrap: fill_value is the OOB data, y_bnd is IGNORED ──
+    @testset "1D OOB FillExtrap(NaN) × deriv: fill_value NaN propagates" begin
         x = collect(1.0:5.0)
-        y_nan_left = [NaN, 20.0, 30.0, 40.0, 50.0]
-        y_nan_right = [10.0, 20.0, 30.0, 40.0, NaN]
-        xq_oob_lo, xq_oob_hi = -1.0, 7.0
-
-        for method in (linear_interp, constant_interp, cubic_interp, quadratic_interp, pchip_interp, cardinal_interp, akima_interp)
-            @test isnan(method(x, y_nan_left, xq_oob_lo; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
-            @test isnan(method(x, y_nan_right, xq_oob_hi; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
-            @test !isnan(method(x, y_nan_left, xq_oob_hi; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
-            @test !isnan(method(x, y_nan_right, xq_oob_lo; extrap = FillExtrap(0.0), deriv = DerivOp(1)))
+        y_finite = [10.0, 20.0, 30.0, 40.0, 50.0]
+        for method in methods_1d
+            # fill_value = NaN → deriv = NaN (regardless of finite y_bnd)
+            @test isnan(method(x, y_finite, -1.0; extrap = FillExtrap(NaN), deriv = DerivOp(1)))
+            @test isnan(method(x, y_finite,  7.0; extrap = FillExtrap(NaN), deriv = DerivOp(1)))
         end
     end
 
-    @testset "Constant ND oneshot OOB FillExtrap × deriv returns zero, not fill_value" begin
-        # `_try_fill_oob` must dispatch on `ops` (not hardcoded `EvalValue()`)
-        # so deriv queries return zero rather than the fill_value.
-        xg = collect(1.0:5.0)
-        yg = collect(1.0:5.0)
+    @testset "1D OOB FillExtrap(finite) × deriv: returns 0 (fill_value × 0)" begin
+        x = collect(1.0:5.0)
+        y_finite = [10.0, 20.0, 30.0, 40.0, 50.0]
+        for method in methods_1d
+            @test method(x, y_finite, -1.0; extrap = FillExtrap(99.0), deriv = DerivOp(1)) == 0.0
+            @test method(x, y_finite,  7.0; extrap = FillExtrap(99.0), deriv = DerivOp(1)) == 0.0
+        end
+    end
+
+    @testset "1D OOB FillExtrap × deriv: y_bnd NaN is IGNORED" begin
+        # Key new contract: under FillExtrap, y_bnd is not the OOB data —
+        # fill_value is. y_bnd NaN must NOT propagate through deriv.
+        x = collect(1.0:5.0)
+        y_nan_left  = [NaN, 20.0, 30.0, 40.0, 50.0]
+        y_nan_right = [10.0, 20.0, 30.0, 40.0, NaN]
+        for method in methods_1d
+            @test method(x, y_nan_left,  -1.0; extrap = FillExtrap(0.0), deriv = DerivOp(1)) == 0.0
+            @test method(x, y_nan_right,  7.0; extrap = FillExtrap(0.0), deriv = DerivOp(1)) == 0.0
+        end
+    end
+
+    # ── ND OOB FillExtrap × deriv: fill_value-as-data ──
+    @testset "ND OOB FillExtrap × deriv: fill_value-as-data" begin
+        xg = collect(1.0:5.0); yg = collect(1.0:5.0)
         data = [Float64(10i + j) for i in 1:5, j in 1:5]
         q_oob = (7.0, 3.5)
-        # Scalar oneshot
-        @test constant_interp(
-            (xg, yg), data, q_oob; extrap = FillExtrap(99.0),
-            deriv = (DerivOp(1), EvalValue())
-        ) == 0.0
-        @test constant_interp(
-            (xg, yg), data, q_oob; extrap = FillExtrap(99.0),
-            deriv = (EvalValue(), DerivOp(1))
-        ) == 0.0
-        # Batch oneshot
-        @test constant_interp(
-            (xg, yg), data, [q_oob]; extrap = FillExtrap(99.0),
-            deriv = (DerivOp(1), EvalValue())
-        ) == [0.0]
-        # Persistent (already correct on master) — sanity check
-        itp = constant_interp((xg, yg), data; extrap = FillExtrap(99.0))
-        @test itp(q_oob; deriv = (DerivOp(1), EvalValue())) == 0.0
+
+        # finite fill_value × deriv → 0 (any axis with deriv)
+        @test constant_interp((xg, yg), data, q_oob; extrap = FillExtrap(99.0),
+                              deriv = (DerivOp(1), EvalValue())) == 0.0
+        @test constant_interp((xg, yg), data, q_oob; extrap = FillExtrap(99.0),
+                              deriv = (EvalValue(), DerivOp(1))) == 0.0
+        @test constant_interp((xg, yg), data, [q_oob]; extrap = FillExtrap(99.0),
+                              deriv = (DerivOp(1), EvalValue())) == [0.0]
+        itp99 = constant_interp((xg, yg), data; extrap = FillExtrap(99.0))
+        @test itp99(q_oob; deriv = (DerivOp(1), EvalValue())) == 0.0
+
+        # NaN fill_value × deriv → NaN
+        @test isnan(constant_interp((xg, yg), data, q_oob; extrap = FillExtrap(NaN),
+                                    deriv = (DerivOp(1), EvalValue())))
+        @test isnan(constant_interp((xg, yg), data, q_oob; extrap = FillExtrap(NaN),
+                                    deriv = (EvalValue(), DerivOp(1))))
+        @test isnan(constant_interp((xg, yg), data, [q_oob]; extrap = FillExtrap(NaN),
+                                    deriv = (DerivOp(1), EvalValue()))[1])
+        itp_nan = constant_interp((xg, yg), data; extrap = FillExtrap(NaN))
+        @test isnan(itp_nan(q_oob; deriv = (DerivOp(1), EvalValue())))
+
+        # Same contract on Linear ND (non-Constant) — sanity that the
+        # `_fill_extrap_result` dispatch applies uniformly.
+        @test linear_interp((xg, yg), data, q_oob; extrap = FillExtrap(99.0),
+                            deriv = (DerivOp(1), EvalValue())) == 0.0
+        @test isnan(linear_interp((xg, yg), data, q_oob; extrap = FillExtrap(NaN),
+                                  deriv = (DerivOp(1), EvalValue())))
+    end
+
+    # ── Hetero mixed Real + NoInterp: OOB FillExtrap × NoInterp deriv ──
+    # The Real-axis OOB result IS the fill_value-as-data (no boundary y leak),
+    # and the NoInterp axis's `* 0` carries IEEE multiplication.
+    @testset "Hetero mixed OOB FillExtrap × NoInterp deriv: fill_value-as-data" begin
+        xg = collect(1.0:5.0); yg = collect(1.0:5.0)
+        data = [Float64(10i + j) for i in 1:5, j in 1:5]
+        q_oob = (7.0, GridIdx(2))  # Real-axis 7.0 OOB; NoInterp idx 2 in-domain
+
+        # finite fill_value → 0 (oneshot + persistent)
+        @test interp((xg, yg), data, q_oob;
+                     method = (LinearInterp(), NoInterp()),
+                     extrap = FillExtrap(99.0),
+                     deriv = (EvalValue(), DerivOp(1))) == 0.0
+        itp99 = interp((xg, yg), data;
+                       method = (LinearInterp(), NoInterp()),
+                       extrap = FillExtrap(99.0))
+        @test itp99(q_oob; deriv = (EvalValue(), DerivOp(1))) == 0.0
+
+        # NaN fill_value → NaN (oneshot + persistent)
+        @test isnan(interp((xg, yg), data, q_oob;
+                           method = (LinearInterp(), NoInterp()),
+                           extrap = FillExtrap(NaN),
+                           deriv = (EvalValue(), DerivOp(1))))
+        itp_nan = interp((xg, yg), data;
+                         method = (LinearInterp(), NoInterp()),
+                         extrap = FillExtrap(NaN))
+        @test isnan(itp_nan(q_oob; deriv = (EvalValue(), DerivOp(1))))
     end
 end
 

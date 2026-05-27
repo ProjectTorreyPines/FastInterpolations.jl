@@ -43,7 +43,7 @@ function _constant_interp_nd_oneshot(
 end
 
 """
-    _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, search, hint)
+    _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, search, ops, hint)
 
 In-place batch one-shot ND constant evaluation.
 """
@@ -83,7 +83,7 @@ function _constant_interp_nd_oneshot_batch!(
 end
 
 """
-    _constant_interp_nd_oneshot_batch(grids, data, queries, bcs, extraps_val, side_vals, search, hint)
+    _constant_interp_nd_oneshot_batch(grids, data, queries, bcs, extraps_val, side_vals, search, ops, hint)
 
 Allocating wrapper: creates output vector, delegates to in-place batch.
 """

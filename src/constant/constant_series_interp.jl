@@ -3,8 +3,7 @@
 # ║         Multiple y-data series sharing the same x-grid                    ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
-# Phase E.2: Unified matrix storage for optimal performance.
-# Key optimization: Adaptive layout with lazy transpose for scalar queries.
+# Unified matrix storage with adaptive layout — lazy transpose for scalar queries.
 #
 # Include order: ... → constant_anchor.jl → constant_series_interp.jl
 #

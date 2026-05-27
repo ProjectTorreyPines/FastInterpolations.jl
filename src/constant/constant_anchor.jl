@@ -274,8 +274,8 @@ end
 # Used by both interpolant anchor dispatch AND series one-shot evaluation.
 
 # Default case (extension, wrap, inbounds): kernel with right-boundary check.
-# Short-circuits use `* one(aq.xq)` to match the kernel's `* one(dL)` carrier
-# propagation — without it, Int y + Float xq returns Union{Int,Float}.
+# Right-edge short-circuits thread both Tq (`one(aq.xq)`) and Tg (`one(x_last)`)
+# carriers and use cell-local `y[aq.idxR]` so NaN at the queried cell propagates.
 @inline function _constant_eval_at_anchor(
         y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
         op::AbstractEvalOp, side_param::AbstractSide, ::AbstractExtrap
@@ -319,21 +319,16 @@ end
 # Interpolant Anchor Dispatch (thin wrappers)
 # ========================================
 
-# No extrapolation: enriched error message with domain bounds
+# No extrapolation: enriched error message with domain bounds, then delegate
+# to the shared cell-local path (right-edge & in-cell carrier handling).
 @inline function _constant_anchor_dispatch(
-        itp::ConstantInterpolant{T},
-        aq::_ConstantAnchoredQuery{T},
-        op::O,
-        ::NoExtrap
-    ) where {T, O <: AbstractEvalOp}
+        itp::ConstantInterpolant, aq::_ConstantAnchoredQuery, op::AbstractEvalOp, ::NoExtrap
+    )
     if aq.state != IN_DOMAIN
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end
-    if aq.xq == last(itp.x)
-        return op isa EvalValue ? (@inbounds itp.y[aq.idxR] * one(aq.xq)) : zero(T) * one(aq.xq)
-    end
-    @inbounds return _constant_kernel(op, itp.y[aq.idxL], itp.y[aq.idxR], aq.h, aq.dL, itp.side)
+    return _constant_eval_at_anchor(itp.y, last(itp.x), aq, op, itp.side, NoExtrap())
 end
 
 # Inside domain or extension mode: delegate to shared

@@ -447,21 +447,29 @@ end
         @test !isnan(itp_left_fill(xi_edge; deriv = DerivOp(1)))
     end
 
+    @testset "1D anchored-query — right-edge cell-local (all extraps)" begin
+        # Hits `_constant_anchor_dispatch` (NoExtrap variant has its own
+        # right-edge branch separate from the shared `_constant_eval_at_anchor`).
+        aq = FastInterpolations._anchor_query(x, xi_edge, Val(:constant))
+        for extrap in (NoExtrap(), ClampExtrap(), FillExtrap(0.0))
+            itp_r = constant_interp(x, y_nan_right; extrap)
+            itp_l = constant_interp(x, y_nan_left; extrap)
+            @test isnan(itp_r(aq; deriv = DerivOp(1)))
+            @test !isnan(itp_l(aq; deriv = DerivOp(1)))
+        end
+    end
+
     @testset "Series scalar — right-boundary cell-local per series" begin
-        # Per-series NaN propagation deferred for hot-loop perf —
-        # see series_utils.jl `_fill_constant_extrap_simd!`.
         Y = [Float64(10i + j) for i in 1:5, j in 1:3]
         Y[5, 2] = NaN  # right boundary, series 2 only
         sitp = constant_interp(x, Series(Y))
         res = sitp(xi_edge; deriv = DerivOp(1))
         @test !isnan(res[1])
-        @test_broken isnan(res[2])
+        @test isnan(res[2])
         @test !isnan(res[3])
     end
 
     @testset "Series batch — in-domain cell-local per series" begin
-        # Per-series NaN propagation deferred for hot-loop perf —
-        # see constant_series_interp.jl `_eval_constant_series_anchored`.
         Y = [Float64(10i + j) for i in 1:5, j in 1:3]
         Y[3, 2] = NaN  # interior cell corner, series 2 only
         sitp = constant_interp(x, Series(Y))

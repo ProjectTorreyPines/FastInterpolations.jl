@@ -92,7 +92,7 @@ end
     return _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
 end
 
-# Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
+# Per-method sample of `Tv` for fill-value paths (e.g. `_try_fill_oob`).
 @inline _sample_data(itp::LinearInterpolantND) = @inbounds first(itp.data)
 
 # ========================================

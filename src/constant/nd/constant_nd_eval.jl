@@ -101,15 +101,18 @@ end
 # path; the deriv fallback multiplies the cell-local kernel result by `0`.
 # The cell-local NaN/Inf carrier survives `* 0` via IEEE (`NaN * 0 = NaN`),
 # so NaN data in the queried cell propagates through value and partials slots.
+# Intentionally NOT a `fill!`/`zero(Tv)` shortcut: NaN propagation, Dual
+# carrier, and duck-typed Tq all require running the kernel — the cost
+# matches the value path.
 @inline _constant_nd_evaluate(
-        data, stencils, hs, sides, q_eval, Ls,
-        ::NTuple{N, EvalValue}, ::Val{N}
-    ) where {N} = _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls)
+    data, stencils, hs, sides, q_eval, Ls,
+    ::NTuple{N, EvalValue}, ::Val{N}
+) where {N} = _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls)
 
 @inline _constant_nd_evaluate(
-        data, stencils, hs, sides, q_eval, Ls,
-        ::NTuple{N, AbstractEvalOp}, ::Val{N}
-    ) where {N} = _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls) * 0
+    data, stencils, hs, sides, q_eval, Ls,
+    ::NTuple{N, AbstractEvalOp}, ::Val{N}
+) where {N} = _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls) * 0
 
 # ========================================
 # Derivative Check

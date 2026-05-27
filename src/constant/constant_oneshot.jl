@@ -31,13 +31,12 @@
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
     if _extract_primal(xi) == _extract_primal(last(x))
         # `last(y)` for both raw vectors and `_ExclusivePeriodicData` (cyclic
-        # `inner[1]`). `one(xi) * one(eltype(x))` threads both Tq and Tg
-        # carriers — the kernel branch picks up Tg via `aq.dL`, so the short-
-        # circuit must match or inference becomes `Union{Tv, Dual}` when grid
-        # is Dual and query is Float.
+        # `inner[1]`). `one(Tq) * one(Tg)` threads both query and grid carriers
+        # — must match the kernel branch (which threads Tg via `dL`), else
+        # inference becomes `Union{Tv, Dual}` when grid is Dual and query is Float.
         return op isa EvalValue ?
-            last(y) * one(xi) * one(eltype(x)) :
-            0 * last(y) * one(xi) * one(eltype(x))
+            last(y) * one(Tq) * one(Tg) :
+            0 * last(y) * one(Tq) * one(Tg)
     end
     idx, idx_R, xL, xR = search_interval(searcher, x, xi)
     dL = xi - xL
@@ -111,8 +110,8 @@ end
     # cyclic wrap is preserved; raw Vector yields `y[n]`.
     _extract_primal(xi_wrapped) == _extract_primal(last(x)) &&
         return op isa EvalValue ?
-            last(y) * one(xi_wrapped) * one(eltype(x)) :
-            0 * last(y) * one(xi_wrapped) * one(eltype(x))
+        last(y) * one(Tq) * one(Tg) :
+        0 * last(y) * one(Tq) * one(Tg)
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     # Unwrap data once: `search_interval` already resolved the seam (idx_R = 1
@@ -154,7 +153,7 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `NearestSide()` (default): nearest neighbor (left tie-breaking at midpoint)
   - `LeftSide()`: always use left value
   - `RightSide()`: use right value (except at grid points)
-- `deriv::DerivOp`: Derivative order (`EvalValue()`, `DerivOp(1)`, or `DerivOp(2)`). Derivatives are always 0.
+- `deriv::DerivOp`: Derivative order — `EvalValue()` for value, or any `DerivOp(n)` for nth derivative (constant interpolation has zero derivative at all orders ≥ 1).
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `BinarySearch()` (default): O(log n) binary search, stateless
   - `LinearBinarySearch(linear_window=0)`: O(1) if hint valid, O(log n) fallback

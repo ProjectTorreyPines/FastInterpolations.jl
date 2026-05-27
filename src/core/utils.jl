@@ -565,7 +565,11 @@ end
 # Dispatches on op (EvalValue vs derivatives) and extrap type (Clamp vs Fill).
 #
 # _promote_extrap_val:  promotes an extrap result value to match kernel return type.
-# _promote_extrap_zero: promotes a zero result (derivative of constant) to match kernel type.
+# _promote_extrap_zero: carrier-aware zero for the OOB deriv-zero path under
+#                       flat extrapolation (Clamp/Fill, any method family).
+#                       The leading `0 * val` preserves NaN/Inf at the boundary
+#                       sample (IEEE: `0 * NaN = NaN`); `zero(xq) * zero(val)`
+#                       carries the query carrier (Dual, etc.) into the result.
 # Named _promote_extrap_val (not _promote_extrap) to avoid collision with the struct
 # promoter in eval_ops.jl which promotes FillExtrap fill_value at construction time.
 @inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * zero(val)

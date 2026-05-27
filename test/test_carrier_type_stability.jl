@@ -111,34 +111,67 @@ end
     # (Linear D2+, Cubic D4+ — `_linear_weight(::EvalDeriv2+) = zero(α)`
     # carries Tq via the zero itself). Below pin the *kernel* branch that
     # mathematically returns a non-zero gradient: Linear D1's per-corner
-    # `±inv_h` weight, Cubic D3, Quadratic D2 — these must still thread Tq
-    # even though `α` does not appear in the weight expression.
+    # `±inv_h` weight, Cubic D3, Quadratic D2 etc. — these must still
+    # thread Tq even though `α` does not appear in the weight expression.
+    #
+    # Helpers below take `fn::F` so `@inferred` specializes per concrete
+    # method; iterating without them collapses `fn` to a Union and breaks
+    # the inference check.
     xg = collect(1.0:5.0)
     yg = collect(1.0:5.0)
     d2 = [Float64(10i + j) for i in 1:5, j in 1:5]
-    # (Float, Dual) — Tq lives on axis 2 only.
+    # (Float, Dual) — Tq lives on axis 2 only (per-axis carrier).
     q_het = (2.5, ForwardDiff.Dual{Nothing}(3.5, 1.0))
-    # (Dual, Dual) — Tq on both axes (exposes mixed-partial weight product).
+    # (Dual, Dual) — Tq on both axes (mixed-partial weight product).
     q_both = (ForwardDiff.Dual{Nothing}(2.5, 1.0), ForwardDiff.Dual{Nothing}(3.5, 1.0))
+    q_het_b = [q_het]
+    q_both_b = [q_both]
 
-    @testset "ND oneshot scalar Dual return for non-zero deriv" begin
-        # Linear ND non-zero deriv (D1) — per-axis and mixed-partial.
-        @test (@inferred linear_interp((xg, yg), d2, q_het; deriv = (EvalValue(), DerivOp(1)))) isa D
-        @test (@inferred linear_interp((xg, yg), d2, q_both; deriv = (DerivOp(1), DerivOp(1)))) isa D
-        # Cubic ND non-zero deriv (D3).
-        @test (@inferred cubic_interp((xg, yg), d2, q_het; deriv = (EvalValue(), DerivOp(3)))) isa D
-        @test (@inferred cubic_interp((xg, yg), d2, q_both; deriv = (DerivOp(1), DerivOp(1)))) isa D
-        # Quadratic ND non-zero deriv (D2).
-        @test (@inferred quadratic_interp((xg, yg), d2, q_het; deriv = (EvalValue(), DerivOp(2)))) isa D
+    # (function, axis-2 non-zero deriv level for the `(EvalValue, Dk)` pattern)
+    nd_methods_nonzero = (
+        (linear_interp,    DerivOp(1)),
+        (cubic_interp,     DerivOp(3)),
+        (quadratic_interp, DerivOp(2)),
+        (pchip_interp,     DerivOp(3)),
+        (cardinal_interp,  DerivOp(3)),
+        (akima_interp,     DerivOp(3)),
+    )
+
+    function _check_oneshot_scalar(::Type{Dt}, fn::F, grids, data, qh, qb, dk) where {F, Dt}
+        @test (@inferred fn(grids, data, qh; deriv = (EvalValue(), dk))) isa Dt
+        @test (@inferred fn(grids, data, qb; deriv = (DerivOp(1), DerivOp(1)))) isa Dt
+    end
+    function _check_oneshot_batch(::Type{Dt}, fn::F, grids, data, qhb, qbb, dk) where {F, Dt}
+        @test (@inferred fn(grids, data, qhb; deriv = (EvalValue(), dk))) isa Vector{Dt}
+        @test (@inferred fn(grids, data, qbb; deriv = (DerivOp(1), DerivOp(1)))) isa Vector{Dt}
+    end
+    function _check_persistent(::Type{Dt}, fn::F, grids, data, qh, qb, qhb, qbb, dk) where {F, Dt}
+        itp = fn(grids, data)
+        @test (@inferred itp(qh; deriv = (EvalValue(), dk))) isa Dt
+        @test (@inferred itp(qb; deriv = (DerivOp(1), DerivOp(1)))) isa Dt
+        @test (@inferred itp(qhb; deriv = (EvalValue(), dk))) isa Vector{Dt}
+        @test (@inferred itp(qbb; deriv = (DerivOp(1), DerivOp(1)))) isa Vector{Dt}
     end
 
-    @testset "ND persistent scalar Dual return for non-zero deriv" begin
-        itp_l = linear_interp((xg, yg), d2)
-        itp_c = cubic_interp((xg, yg), d2)
-        @test (@inferred itp_l(q_het; deriv = (EvalValue(), DerivOp(1)))) isa D
-        @test (@inferred itp_l(q_both; deriv = (DerivOp(1), DerivOp(1)))) isa D
-        @test (@inferred itp_c(q_het; deriv = (EvalValue(), DerivOp(3)))) isa D
-        @test (@inferred itp_c(q_both; deriv = (DerivOp(1), DerivOp(1)))) isa D
+    @testset "ND oneshot scalar — non-zero deriv (per-axis + mixed-partial)" begin
+        for (fn, dk) in nd_methods_nonzero
+            _check_oneshot_scalar(D, fn, (xg, yg), d2, q_het, q_both, dk)
+        end
+    end
+
+    # The Linear `_linear_weight(::EvalDeriv1)` bug surfaced here first as
+    # `TypeError` — batch buffer is allocated as `Vector{Dt}`, the kernel
+    # returned plain `Tv`, so the per-query store failed the typeassert.
+    @testset "ND oneshot batch — non-zero deriv (Linear bug surface site)" begin
+        for (fn, dk) in nd_methods_nonzero
+            _check_oneshot_batch(D, fn, (xg, yg), d2, q_het_b, q_both_b, dk)
+        end
+    end
+
+    @testset "ND persistent — non-zero deriv (scalar + batch)" begin
+        for (fn, dk) in nd_methods_nonzero
+            _check_persistent(D, fn, (xg, yg), d2, q_het, q_both, q_het_b, q_both_b, dk)
+        end
     end
 end
 

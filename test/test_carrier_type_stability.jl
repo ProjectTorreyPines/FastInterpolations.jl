@@ -439,6 +439,32 @@ end
         itp = constant_interp((xg, yg), data; extrap = FillExtrap(99.0))
         @test itp(q_oob; deriv = (DerivOp(1), EvalValue())) == 0.0
     end
+
+    # Mirrors the Constant ND testset above for the Hetero mixed Real+NoInterp
+    # path through `_interp_nointerp_oneshot` and `_eval_nointerp` @generated.
+    # The contract holds for both finite and non-finite (NaN) `fill_value` —
+    # a user-supplied NaN sentinel must not leak through `* 0` on the deriv
+    # path. Real-axis EvalValue + NoInterp axis DerivOp(1) is the canonical
+    # case: NoInterp deriv is mathematically 0 regardless of Real-axis OOB.
+    @testset "Hetero mixed OOB FillExtrap × NoInterp deriv returns zero, not fill_value" begin
+        xg = collect(1.0:5.0); yg = collect(1.0:5.0)
+        data = [Float64(10i + j) for i in 1:5, j in 1:5]
+        q_oob = (7.0, GridIdx(2))  # Real-axis 7.0 OOB; NoInterp idx 2 in-domain
+
+        for fill in (99.0, NaN)
+            extrap = FillExtrap(fill)
+            r_one = interp(
+                (xg, yg), data, q_oob;
+                method = (LinearInterp(), NoInterp()),
+                extrap, deriv = (EvalValue(), DerivOp(1))
+            )
+            @test r_one == 0.0  # NaN == 0.0 is false, so this fails if NaN leaks
+
+            itp = interp((xg, yg), data; method = (LinearInterp(), NoInterp()), extrap)
+            r_persist = itp(q_oob; deriv = (EvalValue(), DerivOp(1)))
+            @test r_persist == 0.0
+        end
+    end
 end
 
 # Constant 1D right-edge + Series in-domain / boundary deriv paths route

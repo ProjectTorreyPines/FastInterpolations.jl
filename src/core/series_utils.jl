@@ -155,14 +155,14 @@ end
 end
 
 # Deriv at boundary: source the zero from the extrap's OOB-cell "data" via
-# `_extrap_deriv_source` — boundary `y[idx, k]` for ClampExtrap (preserves
+# `_extrap_oob_data` — boundary `y[idx, k]` for ClampExtrap (preserves
 # cell-local NaN), `e.fill_value` for FillExtrap (NaN fill_value propagates,
 # finite fill_value × 0 = 0). Mirrors the 1D `_eval_extrapolation(::DerivOp)`
 # contract.
 @inline function _constant_extrap_boundary_value(
         y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::AbstractEvalOp, ext::_ClampOrFill, aq
     ) where {Tv}
-    src = _extrap_deriv_source(ext, @inbounds(y[_boundary_point_index(side, n_pts), k]))
+    src = _extrap_oob_data(ext, @inbounds(y[_boundary_point_index(side, n_pts), k]))
     return 0 * src * one(aq.xq)
 end
 
@@ -196,7 +196,7 @@ end
     return out
 end
 
-# Deriv at boundary: per-k cell-local source via `_extrap_deriv_source` —
+# Deriv at boundary: per-k cell-local source via `_extrap_oob_data` —
 # ClampExtrap pulls `y_point[k, idx]` (boundary y, NaN propagates),
 # FillExtrap pulls `e.fill_value` (NaN fill_value propagates, finite → 0).
 @inline function _fill_constant_extrap_simd!(
@@ -205,7 +205,7 @@ end
     idx = _boundary_point_index(side, n_pts)
     xq_carrier = one(aq.xq)
     @inbounds @simd for k in axes(out, 1)
-        out[k] = 0 * _extrap_deriv_source(ext, y_point[k, idx]) * xq_carrier
+        out[k] = 0 * _extrap_oob_data(ext, y_point[k, idx]) * xq_carrier
     end
     return out
 end

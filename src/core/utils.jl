@@ -582,20 +582,18 @@ end
 @inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* zero(eltype(val))
 @inline _promote_extrap_zero(val, xq) = 0 * val
 
-# _extrap_deriv_source: per-extrap "what data sits in the OOB cell" for deriv paths.
-#   ClampExtrap: boundary y data (`y_bnd`)            → NaN at boundary y propagates.
-#   FillExtrap : user-supplied fill_value             → NaN fill_value propagates;
-#                                                        finite fill_value × 0 = 0.
+# _extrap_oob_data: per-extrap "what data sits in the OOB cell".
+#   ClampExtrap → `y_bnd`         (boundary y is extended into the OOB region).
+#   FillExtrap  → `e.fill_value`  (fill_value is the OOB cell's data).
 # `@inline` + singleton dispatch — LLVM specializes per concrete extrap type
 # and dead-branch-eliminates; zero overhead on the OOB cold path.
-@inline _extrap_deriv_source(::ClampExtrap, y_bnd) = y_bnd
-@inline _extrap_deriv_source(e::FillExtrap, _) = e.fill_value
+@inline _extrap_oob_data(::ClampExtrap, y_bnd) = y_bnd
+@inline _extrap_oob_data(e::FillExtrap, _) = e.fill_value
 
-# Deriv at OOB under flat extrapolation: cell-local zero from the extrap's data.
-# Single Union method (collapses prior 2 overloads) — `_extrap_deriv_source`
-# picks the correct source per extrap type.
+# Deriv at OOB under flat extrapolation: cell-local zero from the extrap's
+# OOB-cell data. Single Union method (collapses prior 2 overloads).
 @inline _eval_extrapolation(::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
-    _promote_extrap_zero(_extrap_deriv_source(ext, y_bnd), xq)
+    _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq)
 # Specific: EvalValue (= DerivOp{0}) → return boundary or fill value
 @inline _eval_extrapolation(::EvalValue, y_bnd, ::ClampExtrap, xq) = _promote_extrap_val(y_bnd, xq)
 @inline _eval_extrapolation(::EvalValue, _, e::FillExtrap, xq) = _promote_extrap_val(e.fill_value, xq)

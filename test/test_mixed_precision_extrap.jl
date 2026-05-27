@@ -48,13 +48,19 @@
             @test itp(xq_hi) ≈ Float64(y32[end])
         end
 
-        @testset "FillExtrap derivatives" begin
-            itp = cubic_interp(x32, y32; extrap = FillExtrap(Float32(NaN)))
-            # Derivative of constant fill → zero, promoted to Float64
-            @test @inferred(itp(xq_lo; deriv = DerivOp(1))) isa Float64
-            @test itp(xq_lo; deriv = DerivOp(1)) == 0.0
-            @test @inferred(itp(xq_lo; deriv = DerivOp(2))) isa Float64
-            @test itp(xq_lo; deriv = DerivOp(2)) == 0.0
+        @testset "FillExtrap derivatives — type stability + fill_value-as-data" begin
+            # Cell-local "OOB cell = extrap's data" contract: deriv = 0 * fill_value.
+            # Float32 NaN fill_value × 0 = NaN, promoted to Float64 (Tq promotion).
+            itp_nan = cubic_interp(x32, y32; extrap = FillExtrap(Float32(NaN)))
+            @test @inferred(itp_nan(xq_lo; deriv = DerivOp(1))) isa Float64
+            @test isnan(itp_nan(xq_lo; deriv = DerivOp(1)))
+            @test @inferred(itp_nan(xq_lo; deriv = DerivOp(2))) isa Float64
+            @test isnan(itp_nan(xq_lo; deriv = DerivOp(2)))
+
+            # Finite fill_value × 0 = 0 (still Float64 promoted).
+            itp_zero = cubic_interp(x32, y32; extrap = FillExtrap(0.0f0))
+            @test @inferred(itp_zero(xq_lo; deriv = DerivOp(1))) isa Float64
+            @test itp_zero(xq_lo; deriv = DerivOp(1)) == 0.0
         end
 
         @testset "Same-type no regression" begin

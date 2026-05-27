@@ -110,11 +110,12 @@ end
             @test FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 2, FI.EvalDeriv2(), ClampExtrap(), aq) == 0.0
         end
 
-        @testset "FillExtrap deriv returns 0 even when fill_value is NaN" begin
-            # Cell-local-from-y contract: deriv sources its zero from y[idx, k],
-            # NOT from e.fill_value, so a NaN fill_value does NOT leak.
-            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 1, FI.EvalDeriv1(), FillExtrap(NaN), aq) == 0.0
-            @test FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 2, FI.EvalDeriv1(), FillExtrap(NaN), aq) == 0.0
+        @testset "FillExtrap deriv: fill_value-as-data (NaN propagates, finite × 0 = 0)" begin
+            # Cell-local "OOB cell = extrap's data" contract: deriv = 0 * fill_value.
+            # NaN fill_value propagates through deriv; finite fill_value × 0 = 0.
+            @test isnan(FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 1, FI.EvalDeriv1(), FillExtrap(NaN), aq))
+            @test isnan(FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 2, FI.EvalDeriv1(), FillExtrap(NaN), aq))
+            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 1, FI.EvalDeriv1(), FillExtrap(99.0), aq) == 0.0
         end
     end
 
@@ -155,9 +156,13 @@ end
             @test out == [0.0, 0.0, 0.0]
         end
 
-        @testset "FillExtrap deriv fills zeros (NaN fill_value does NOT leak)" begin
+        @testset "FillExtrap deriv: fill_value-as-data (NaN propagates, finite → 0)" begin
             out = ones(3)
             FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_LEFT, n_pts, FI.EvalDeriv1(), FillExtrap(NaN), aq)
+            @test all(isnan, out)
+
+            out = ones(3)
+            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_LEFT, n_pts, FI.EvalDeriv1(), FillExtrap(99.0), aq)
             @test out == [0.0, 0.0, 0.0]
         end
 

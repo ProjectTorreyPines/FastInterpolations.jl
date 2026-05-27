@@ -211,19 +211,16 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
     y_point = _ensure_point_layout!(sitp)
     n_pts = n_points(sitp)
 
-    # Special case: at right boundary (use primal for comparison).
-    # Deriv branch uses broadcast (not per-k cell-local) for SIMD perf.
+    # Right boundary: yL == yR == y_point[k, n_pts]. `_constant_kernel(op, ...)`
+    # produces `y_at_max * one(dL)` for EvalValue, `0 * y_at_max * one(dL)` for
+    # deriv — cell-local NaN and Tq carrier propagate through both.
     xq_primal = _extract_primal(xq)
     if xq_primal == _extract_primal(last(sitp.x))
-        if op isa EvalValue
-            @inbounds @simd for k in axes(output, 1)
-                output[k] = y_point[k, n_pts]
-            end
-        else
-            z = 0 * first(y_point)
-            @inbounds @simd for k in axes(output, 1)
-                output[k] = z
-            end
+        h = aq.h
+        dL = aq.dL
+        @inbounds @simd for k in axes(output, 1)
+            y_at_max = y_point[k, n_pts]
+            output[k] = _constant_kernel(op, y_at_max, y_at_max, h, dL, sitp.side)
         end
         return output
     end
@@ -274,13 +271,13 @@ end
         n_pts::Int,
         ::Tg,
         ::Tg,
-        ::_ConstantAnchoredQuery{Tg},
+        aq::_ConstantAnchoredQuery{Tg},
         extrap::_ClampOrFill,
         ::AbstractSide,
         op::AbstractEvalOp,
         side::UInt8
     ) where {Tg, Tv}
-    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap)
+    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap, aq)
 end
 
 # ExtendExtrap - extend using same constant value at boundary interval
@@ -589,14 +586,12 @@ Internal: Evaluate single series at single query point with extrapolation handli
         side_val::AbstractSide,
         op::AbstractEvalOp
     ) where {Tg, Tv}
-    # Special case: at right boundary (MUST be preserved!).
-    # Deriv branch uses broadcast `0 * first(y)` (not per-k) for hot-loop perf.
+    # Right boundary: yL == yR == y[n_pts, k]. Kernel handles op-dispatch
+    # (value = y_at_max * one(dL), deriv = 0 * y_at_max * one(dL)) so the
+    # cell-local NaN and Tq carrier both propagate.
     if aq.xq == x_max
-        if op isa EvalValue
-            @inbounds return y[n_pts, k]
-        else
-            return 0 * first(y)
-        end
+        @inbounds y_at_max = y[n_pts, k]
+        return _constant_kernel(op, y_at_max, y_at_max, aq.h, aq.dL, side_val)
     end
 
     # Inside domain: normal evaluation
@@ -608,7 +603,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
     if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_constant_series_anchored(y, k, aq, side_val, op)
     elseif extrap isa _ClampOrFill
-        return _constant_extrap_boundary_value(y, aq.state, n_pts, k, op, extrap)
+        return _constant_extrap_boundary_value(y, aq.state, n_pts, k, op, extrap, aq)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
@@ -616,6 +611,8 @@ end
 
 """
 Internal: Core constant evaluation for series k at anchored query point.
+Value and deriv share `_constant_kernel(op, ...)` — deriv returns
+`0 * y_left * one(dL)` so cell-local NaN and Tq carrier propagate.
 """
 @inline function _eval_constant_series_anchored(
         y::Matrix{Tv},
@@ -624,15 +621,9 @@ Internal: Core constant evaluation for series k at anchored query point.
         side_val::AbstractSide,
         op::AbstractEvalOp
     ) where {Tg, Tv}
-    if !(op isa EvalValue)
-        return 0 * first(y)
-    end
-
-    idxL = aq.idxL
-    idxR = aq.idxR
     @inbounds begin
-        y_left = y[idxL, k]
-        y_right = y[idxR, k]
+        y_left = y[aq.idxL, k]
+        y_right = y[aq.idxR, k]
     end
-    return _constant_kernel(EvalValue(), y_left, y_right, aq.h, aq.dL, side_val)
+    return _constant_kernel(op, y_left, y_right, aq.h, aq.dL, side_val)
 end

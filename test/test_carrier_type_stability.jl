@@ -389,27 +389,29 @@ end
         data = [Float64(10i + j) for i in 1:5, j in 1:5]
         q_oob = (7.0, 3.5)
         # Scalar oneshot
-        @test constant_interp((xg, yg), data, q_oob; extrap = FillExtrap(99.0),
-            deriv = (DerivOp(1), EvalValue())) == 0.0
-        @test constant_interp((xg, yg), data, q_oob; extrap = FillExtrap(99.0),
-            deriv = (EvalValue(), DerivOp(1))) == 0.0
+        @test constant_interp(
+            (xg, yg), data, q_oob; extrap = FillExtrap(99.0),
+            deriv = (DerivOp(1), EvalValue())
+        ) == 0.0
+        @test constant_interp(
+            (xg, yg), data, q_oob; extrap = FillExtrap(99.0),
+            deriv = (EvalValue(), DerivOp(1))
+        ) == 0.0
         # Batch oneshot
-        @test constant_interp((xg, yg), data, [q_oob]; extrap = FillExtrap(99.0),
-            deriv = (DerivOp(1), EvalValue())) == [0.0]
+        @test constant_interp(
+            (xg, yg), data, [q_oob]; extrap = FillExtrap(99.0),
+            deriv = (DerivOp(1), EvalValue())
+        ) == [0.0]
         # Persistent (already correct on master) — sanity check
         itp = constant_interp((xg, yg), data; extrap = FillExtrap(99.0))
         @test itp(q_oob; deriv = (DerivOp(1), EvalValue())) == 0.0
     end
 end
 
-# Constant 1D `_constant_eval_at_point` / `_constant_eval_at_anchor` short-
-# circuit at `xi == last(x)` (right-edge seam) and Constant Series boundary
-# / in-domain deriv branches use `0 * first(y)` for the deriv-zero result —
-# not cell-local: NaN at `y[1]` leaks even when the queried cell is the
-# right-edge cell `(y[end-1], y[end])`. The EvalValue sibling branches
-# already use cell-local `y[idxR]` / `y[n_pts, k]` / etc. — fixing the
-# deriv branches to mirror that pattern restores the cell-local NaN
-# invariant established by Phase 3 + Cat E.
+# Constant 1D right-edge + Series in-domain / boundary deriv paths route
+# through `_constant_kernel(op, ...)` (1D) or per-k cell-local `0 * y[idx, k]
+# * one(aq.dL)` (Series), so cell-local NaN propagates through deriv-zero
+# in parallel to the value path (Cat E pins the OOB extrap leg).
 @testitem "Cat F: Constant 1D right-edge + Series cell-local NaN" begin
     x = collect(1.0:5.0)
     y_nan_right = [10.0, 20.0, 30.0, 40.0, NaN]
@@ -467,26 +469,22 @@ end
         res = sitp(xq_batch; deriv = DerivOp(1))
         # Layout: res[k][j] — outer per series, inner per query.
         @test !isnan(res[1][2])         # series 1 at 3.5
-        @test_broken isnan(res[2][2])   # series 2 at 3.5 — cell-local NaN deferred
+        @test isnan(res[2][2])          # series 2 at 3.5 — cell-local NaN now propagates
         @test !isnan(res[3][2])         # series 3 at 3.5
         @test !isnan(res[2][1])         # series 2 at 2.5 — out-of-cell NaN stays hidden
     end
 
     @testset "Series scalar OOB ClampExtrap × deriv — cell-local per series" begin
-        # Series deriv fills use broadcast `0 * first(y)` (perf trade-off);
-        # per-series NaN propagation deferred.
         Y = [Float64(10i + j) for i in 1:5, j in 1:3]
         Y[5, 2] = NaN  # right boundary, series 2 only
         sitp = constant_interp(x, Series(Y); extrap = ClampExtrap())
         res = sitp(7.0; deriv = DerivOp(1))  # OOB_RIGHT
         @test !isnan(res[1])
-        @test_broken isnan(res[2])
+        @test isnan(res[2])
         @test !isnan(res[3])
     end
 
     @testset "Series batch OOB ClampExtrap × deriv — cell-local per series" begin
-        # Per-series NaN propagation deferred for hot-loop perf —
-        # see series_utils.jl `_constant_extrap_boundary_value`.
         Y = [Float64(10i + j) for i in 1:5, j in 1:3]
         Y[5, 2] = NaN
         sitp = constant_interp(x, Series(Y); extrap = ClampExtrap())
@@ -495,7 +493,7 @@ end
         # Layout: res[k][j] — outer per series, inner per query.
         for j in eachindex(xq_batch)
             @test !isnan(res[1][j])
-            @test_broken isnan(res[2][j])
+            @test isnan(res[2][j])
             @test !isnan(res[3][j])
         end
     end
@@ -505,15 +503,12 @@ end
 # When a non-zero `DerivOp` is requested on a `NoInterp` axis, the result is
 # mathematically zero — but the existing short-circuits return `zero(Tz)` of
 # the promoted type, dropping any cell-local NaN in the queried data slice.
-# This mirrors the Constant Phase 3 bug and is closed via `data[slice] * zero(Tz)`
-# (cell-local NaN propagation, type-promoted).
+# Closed via `data[slice] * zero(Tz)` (cell-local NaN propagation, type-promoted).
 #
 # Scope: covers the all-NoInterp persistent (`_eval_nointerp`, `N_r == 0`) and
 # all-GridIdx oneshot (`_interp_nointerp_oneshot`, `grids_r === ()`) paths
-# where the data is fully sliced to a single cell. The mixed case
-# (`_interp_nointerp_oneshot` line ~489 with Real axes still present) is a
-# known scope exception — strict cell-local requires running the Real-axis
-# interp first, deferred as a separate follow-up.
+# covering all-NoInterp (single-cell slice) and mixed Real + NoInterp (Real-axis
+# kernel result × `0` if any NoInterp axis has a non-zero deriv).
 @testitem "Cat G: Hetero NoInterp deriv cell-local NaN" begin
     x = collect(1.0:5.0)
     y = collect(1.0:5.0)

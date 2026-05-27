@@ -215,7 +215,7 @@ end
         op::AbstractEvalOp
     ) where {Tg, Tv, Tc, Tq <: Real}
     return if aq.state != IN_DOMAIN  # outside domain
-        _fill_constant_extrap_simd!(output, y_point, aq.state, n_pts, op, extrap)
+        _fill_constant_extrap_simd!(output, y_point, aq.state, n_pts, op, extrap, aq)
     else
         _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
     end

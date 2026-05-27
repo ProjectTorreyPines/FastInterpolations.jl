@@ -126,86 +126,74 @@ code size in the hot interpolation loops.
 end
 
 """
-    _constant_extrap_boundary_value(y, side, n_pts, k, op, extrap) -> T
+    _constant_extrap_boundary_value(y, side, n_pts, k, op, extrap, aq) -> T
 
 Get the boundary value for constant/fill extrapolation in scalar series evaluation path.
 
-For `EvalValue` + `ClampExtrap`, returns the boundary y-value.
-For `EvalValue` + `FillExtrap`, returns the fill value.
-For derivatives, returns zero via `0 * y` (duck-typing compatible).
+For `EvalValue`: returns boundary y-value (or fill value) threaded through `* one(aq.xq)` for Tq carrier.
+For derivatives: returns `0 * y_bnd * one(aq.xq)` — cell-local in k, threads Tv + Tq carriers.
 """
 @inline function _constant_extrap_boundary_value(
-        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampExtrap
+        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampExtrap, aq
     ) where {Tv}
-    @inbounds return y[_boundary_point_index(side, n_pts), k]
+    @inbounds return y[_boundary_point_index(side, n_pts), k] * one(aq.xq)
 end
 
 @inline function _constant_extrap_boundary_value(
-        ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::EvalValue, e::FillExtrap
+        ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::EvalValue, e::FillExtrap, aq
     ) where {Tv}
-    return e.fill_value
+    return e.fill_value * one(aq.xq)
 end
 
+# Deriv at boundary is zero for both Clamp and Fill extrap. Source the zero
+# from the boundary `y[idx, k]` (NOT `e.fill_value`) so cell-local NaN in
+# the data propagates while a NaN-bearing `fill_value` does NOT leak — this
+# preserves the contract "OOB FillExtrap × deriv returns 0, not fill_value".
 @inline function _constant_extrap_boundary_value(
-        y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
+        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::AbstractEvalOp, ::_ClampOrFill, aq
     ) where {Tv}
-    # `first(y)` is intentionally not cell-local (per-series NaN propagation
-    # is sacrificed for hot-loop perf — this is called K×Q times in batch eval).
-    return 0 * first(y)
-end
-
-@inline function _constant_extrap_boundary_value(
-        y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::DerivOp{N}, ::_ClampOrFill
-    ) where {Tv, N}
-    return 0 * first(y)
+    @inbounds return 0 * y[_boundary_point_index(side, n_pts), k] * one(aq.xq)
 end
 
 """
-    _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap) -> out
+    _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap, aq) -> out
 
 Fill output vector with boundary/fill values for constant/fill extrapolation (SIMD path).
 
-For `EvalValue` + `ClampExtrap`, fills with boundary y-values.
-For `EvalValue` + `FillExtrap`, fills with the fill value.
-For derivatives, fills with zeros.
+`aq.xq` is the common Tq carrier field across all anchored-query types.
+`one(aq.xq)` is loop-invariant so LLVM hoists it; the SIMD loop body
+remains a single load/mul per `k`.
 """
 @inline function _fill_constant_extrap_simd!(
-        out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::EvalValue, ::ClampExtrap
+        out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::EvalValue, ::ClampExtrap, aq
     ) where {Tv}
     idx = _boundary_point_index(side, n_pts)
+    xq_carrier = one(aq.xq)
     @inbounds @simd for k in axes(out, 1)
-        out[k] = y_point[k, idx]
+        out[k] = y_point[k, idx] * xq_carrier
     end
     return out
 end
 
 @inline function _fill_constant_extrap_simd!(
-        out::AbstractVector{Tv}, ::Matrix{Tv}, ::UInt8, ::Int, ::EvalValue, e::FillExtrap
+        out::AbstractVector{Tv}, ::Matrix{Tv}, ::UInt8, ::Int, ::EvalValue, e::FillExtrap, aq
     ) where {Tv}
-    @inbounds @simd for k in axes(out, 1)
-        out[k] = e.fill_value
-    end
-    return out
-end
-
-@inline function _fill_constant_extrap_simd!(
-        out::AbstractVector{Tv}, y_point::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
-    ) where {Tv}
-    # Broadcast fill (not per-k cell-local) — trades per-series NaN propagation
-    # for SIMD-friendly hot-loop perf.
-    z = 0 * first(y_point)
+    z = e.fill_value * one(aq.xq)
     @inbounds @simd for k in axes(out, 1)
         out[k] = z
     end
     return out
 end
 
+# Deriv at boundary is zero for both Clamp and Fill extrap (sourced from
+# `y_point[k, idx]`, not `e.fill_value`; same rationale as the scalar helper).
 @inline function _fill_constant_extrap_simd!(
-        out::AbstractVector{Tv}, y_point::Matrix{Tv}, ::UInt8, ::Int, ::DerivOp{N}, ::_ClampOrFill
-    ) where {Tv, N}
-    z = 0 * first(y_point)
+        out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::AbstractEvalOp, ::_ClampOrFill, aq
+    ) where {Tv}
+    idx = _boundary_point_index(side, n_pts)
+    xq_carrier = one(aq.xq)
     @inbounds @simd for k in axes(out, 1)
-        out[k] = z
+        out[k] = 0 * y_point[k, idx] * xq_carrier
     end
     return out
 end

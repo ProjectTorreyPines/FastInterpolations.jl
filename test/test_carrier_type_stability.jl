@@ -129,12 +129,12 @@ end
 
     # (function, axis-2 non-zero deriv level for the `(EvalValue, Dk)` pattern)
     nd_methods_nonzero = (
-        (linear_interp,    DerivOp(1)),
-        (cubic_interp,     DerivOp(3)),
+        (linear_interp, DerivOp(1)),
+        (cubic_interp, DerivOp(3)),
         (quadratic_interp, DerivOp(2)),
-        (pchip_interp,     DerivOp(3)),
-        (cardinal_interp,  DerivOp(3)),
-        (akima_interp,     DerivOp(3)),
+        (pchip_interp, DerivOp(3)),
+        (cardinal_interp, DerivOp(3)),
+        (akima_interp, DerivOp(3)),
     )
 
     function _check_oneshot_scalar(::Type{Dt}, fn::F, grids, data, qh, qb, dk) where {F, Dt}

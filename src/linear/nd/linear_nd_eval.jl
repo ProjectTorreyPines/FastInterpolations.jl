@@ -176,9 +176,11 @@ end
 @inline _linear_weight(::EvalValue, α, inv_h, ::Val{0}) = one(α) - α
 @inline _linear_weight(::EvalValue, α, inv_h, ::Val{1}) = α
 
-# For first derivative: -inv_h for bit=0, +inv_h for bit=1
-@inline _linear_weight(::EvalDeriv1, α, inv_h, ::Val{0}) = -inv_h
-@inline _linear_weight(::EvalDeriv1, α, inv_h, ::Val{1}) = inv_h
+# For first derivative: -inv_h for bit=0, +inv_h for bit=1. `* one(α)` threads
+# Tq even when α does not appear in the weight expression (mixed-partial
+# `(D1, D1)` etc.); for Float α the `1.0` factor is const-folded by LLVM.
+@inline _linear_weight(::EvalDeriv1, α, inv_h, ::Val{0}) = -inv_h * one(α)
+@inline _linear_weight(::EvalDeriv1, α, inv_h, ::Val{1}) =  inv_h * one(α)
 
 # Second and higher derivatives: weight is `zero(α)` at every corner. The
 # multilinear sum then yields cell-local NaN propagation via IEEE `NaN * 0 = NaN`.

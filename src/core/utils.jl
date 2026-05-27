@@ -590,10 +590,15 @@ end
 @inline _extrap_oob_data(::ClampExtrap, y_bnd) = y_bnd
 @inline _extrap_oob_data(e::FillExtrap, _) = e.fill_value
 
-# Deriv at OOB under flat extrapolation: cell-local zero from the extrap's
-# OOB-cell data. Single Union method (collapses prior 2 overloads).
-@inline _eval_extrapolation(::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
+# OOB evaluation under flat extrapolation (Clamp / Fill): the OOB cell's
+# data is fetched via `_extrap_oob_data` (ClampExtrap → `y_bnd`, FillExtrap
+# → `fill_value`), then promoted by the op-specific kernel:
+#   `EvalValue` → `data + carrier`         (value path)
+#   `DerivOp`   → `0 * data + carrier`     (deriv path — 0 × OOB cell data)
+# This `data → promote` split makes the deriv path's `_extrap_oob_data`
+# call read naturally: we're not asking "what's the derivative" but "what's
+# the cell data" — the `0 *` happens inside `_promote_extrap_zero`.
+@inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
+    _promote_extrap_val(_extrap_oob_data(ext, y_bnd), xq)
+@inline _eval_extrapolation(::DerivOp,   y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
     _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq)
-# Specific: EvalValue (= DerivOp{0}) → return boundary or fill value
-@inline _eval_extrapolation(::EvalValue, y_bnd, ::ClampExtrap, xq) = _promote_extrap_val(y_bnd, xq)
-@inline _eval_extrapolation(::EvalValue, _, e::FillExtrap, xq) = _promote_extrap_val(e.fill_value, xq)

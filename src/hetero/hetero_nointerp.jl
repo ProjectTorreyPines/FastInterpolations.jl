@@ -317,21 +317,6 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         :(return result) :
         :(return $nointerp_deriv_cond ? result * 0 : result)
 
-    # OOB short-circuit: if Real-axis OOB AND NoInterp axis carries a non-zero
-    # deriv, return slab-local zero (sourced from the data slice's first
-    # element) rather than `oob` — `_try_fill_oob` returns `fill_value` for
-    # Real-axis EvalValue + FillExtrap, and a `NaN` fill_value would otherwise
-    # leak through `* 0`. The slice element is from real cell data, so
-    # cell-local NaN at the slab survives (slab-local approximation).
-    _oob_wrap(slice_sym) = nointerp_deriv_cond === nothing ?
-        :(oob !== nothing && return oob) :
-        :(
-            if oob !== nothing
-                return $nointerp_deriv_cond ?
-                    @inbounds($(slice_sym)[1]) * zero($Tz_expr) : oob
-            end
-        )
-
     if D <: _HeteroPartials
         return quote
             Base.@_inline_meta
@@ -349,7 +334,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
 
             _validate_nd_domain(rg, rq, re)
             oob = _try_fill_oob(rq, rg, re, ro, @inbounds p_sliced[1])
-            $(_oob_wrap(:p_sliced))
+            oob !== nothing && return oob
 
             q_eval = _handle_all_extraps(rq, rg, re)
             rsrc = ($(r_searches...),)
@@ -380,7 +365,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
 
                 _validate_nd_domain(rg, rq, re)
                 oob = _try_fill_oob(rq, rg, re, ro, @inbounds d_sliced[1])
-                $(_oob_wrap(:d_sliced))
+                oob !== nothing && return oob
 
                 q_eval = _handle_all_extraps(rq, rg, re)
                 rsrc = ($(r_searches...),)
@@ -415,7 +400,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
 
             _validate_nd_domain(rg, rq, re)
             oob = _try_fill_oob(rq, rg, re, ro, @inbounds d_sliced[1])
-            $(_oob_wrap(:d_sliced))
+            oob !== nothing && return oob
 
             q_eval = _handle_all_extraps(rq, rg, re)
             rsrc = ($(r_searches...),)
@@ -511,29 +496,15 @@ function _interp_nointerp_oneshot(
     hint !== nothing && _update_grididx_hints!(hint, query)
     hint_r = hint === nothing ? nothing : _filter_real_axes(hint, QT)
 
-    has_nointerp_deriv = _any_nointerp_grididx_has_nonzero_deriv(query, method_tuple, deriv_t)
-
-    # When a NoInterp axis carries a non-zero deriv AND the Real-axis query is
-    # OOB on `FillExtrap`, running `interp(...)` would return `fill_value` and
-    # `result * 0` would leak it (`NaN * 0 = NaN`). Source the zero from the
-    # data slice instead — finite `fill_value` and cell-local NaN at the Real
-    # cell are both handled by the in-domain `result * 0` path below.
-    if has_nointerp_deriv
-        oob = _try_fill_oob(query_r, grids_r, extrap_r, deriv_r, @inbounds data_r[1])
-        if oob !== nothing
-            Tg = float(_promote_grid_eltype(grids))
-            return @inbounds(data_r[1]) *
-                zero(_output_eltype(eltype(data), Tg, typeof.(query_r)...))
-        end
-    end
-
-    # In-domain: run Real-axis kernel; `* 0` preserves cell-local NaN + Tq.
+    # Run Real-axis interp normally — `result * 0` if any NoInterp axis carries
+    # a non-zero deriv preserves the Real-axis carrier (cell-local NaN, Tq).
     result = interp(
         grids_r, data_r, query_r;
         method = methods_r, deriv = deriv_r, extrap = extrap_r,
         search = search_r, hint = hint_r
     )
-    return has_nointerp_deriv ? result * 0 : result
+    return _any_nointerp_grididx_has_nonzero_deriv(query, method_tuple, deriv_t) ?
+        result * 0 : result
 end
 
 # ========================================

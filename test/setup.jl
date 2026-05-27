@@ -14,32 +14,6 @@ using TestItemRunner
     const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240
 end
 
-# Version-conditional `@inferred` for tests that hit Julia inference gaps
-# present only on older releases (e.g. 1.10 LTS doesn't propagate a locally-
-# bound `Type{T}` from a function return into a closure body, even when the
-# function is fully concrete-inferred in isolation). On the modern release
-# (≥1.12) `@maybe_inferred expr` is exactly `Test.@inferred expr`. On older
-# releases it returns `expr` unchanged — the surrounding `isa` / `==` check
-# still runs as a runtime contract, but the inference assertion is skipped.
-#
-# Use sparingly: the right first response to an `@inferred` failure is to
-# fix the source (e.g. extract a `::Type{T}` barrier — see
-# `_alloc_series_batch_outputs` in `src/core/series_utils.jl`). Reach for
-# `@maybe_inferred` only when the inference gap is in third-party code or
-# in a pattern that can't be reshaped without API churn.
-#
-# Pairs cleanly with `@test (@maybe_inferred expr) isa T`.
-@testsnippet InferredCompat begin
-    using Test
-    macro maybe_inferred(ex)
-        if VERSION >= v"1.12"
-            return esc(:(Test.@inferred $ex))
-        else
-            return esc(ex)
-        end
-    end
-end
-
 # DuckFloat5 type + shared 1D/2D fixtures for the duck-typing comprehensive
 # tests (test_duck_typing_comprehensive.jl). Extracted as a snippet so the
 # testitem split inside that file can reuse the same setup without copy-paste.

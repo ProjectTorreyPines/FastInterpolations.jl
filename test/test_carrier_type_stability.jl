@@ -550,4 +550,41 @@ end
             )
         )
     end
+
+    @testset "Mixed Linear + NoInterp persistent — cell-local NaN propagates" begin
+        # Real axis (Linear) cell (3, 4) × NoInterp axis idx 2 → data[3..4, 2]
+        # NaN at data[3, 2] sits in the Real-axis cell → propagates through
+        # `result * 0` when NoInterp axis carries DerivOp(1).
+        data = [Float64(10i + j) for i in 1:5, j in 1:5]
+        data[3, 2] = NaN
+        itp = interp((x, y), data; method = (LinearInterp(), NoInterp()))
+        @test isnan(itp((3.5, GridIdx(2)); deriv = (EvalValue(), DerivOp(1))))
+        # Out-of-cell NaN (data[1,1] not in queried Real-axis cell [3,4]) — hidden.
+        data2 = [Float64(10i + j) for i in 1:5, j in 1:5]
+        data2[1, 1] = NaN
+        itp2 = interp((x, y), data2; method = (LinearInterp(), NoInterp()))
+        @test !isnan(itp2((3.5, GridIdx(2)); deriv = (EvalValue(), DerivOp(1))))
+    end
+
+    @testset "Mixed Linear + GridIdx oneshot — cell-local NaN propagates" begin
+        data = [Float64(10i + j) for i in 1:5, j in 1:5]
+        data[3, 2] = NaN
+        @test isnan(
+            interp(
+                (x, y), data, (3.5, GridIdx(2));
+                method = (LinearInterp(), NoInterp()),
+                deriv = (EvalValue(), DerivOp(1))
+            )
+        )
+        # Out-of-cell NaN stays hidden.
+        data2 = [Float64(10i + j) for i in 1:5, j in 1:5]
+        data2[1, 1] = NaN
+        @test !isnan(
+            interp(
+                (x, y), data2, (3.5, GridIdx(2));
+                method = (LinearInterp(), NoInterp()),
+                deriv = (EvalValue(), DerivOp(1))
+            )
+        )
+    end
 end

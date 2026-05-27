@@ -36,6 +36,15 @@ const _SERIES_BATCH_K_THRESHOLD = 256
 @inline _series_use_kq_loop(NQ::Int, K::Int) =
     NQ > _SERIES_BATCH_NQ_THRESHOLD || K >= _SERIES_BATCH_K_THRESHOLD
 
+# Build the Vector{Vector{Tv}} container for a Series batch-allocating one-shot.
+# Lives behind a typed barrier because comprehensions that close over a locally-
+# bound `Tv = _output_eltype(...)` lose concreteness in Julia 1.10's inference
+# (the type doesn't propagate from the local binding into the closure body).
+# Passing `Tv` as a `Type{Tv}` argument restores concrete `Vector{Vector{Tv}}`
+# inference on 1.10 LTS while remaining a no-cost @inline on 1.11+/1.12+.
+@inline _alloc_series_batch_outputs(::Type{Tv}, K::Int, NQ::Int) where {Tv} =
+    [Vector{Tv}(undef, NQ) for _ in 1:K]
+
 # ========================================
 # Output Validation
 # ========================================

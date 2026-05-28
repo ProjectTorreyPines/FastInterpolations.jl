@@ -10,3 +10,4 @@ include("hermite_oneshot.jl")          # 6. hermite_interp / hermite_interp!
 include("hermite_interpolant.jl")      # 7. 2-arg hermite_interp + protocol traits
 include("hermite_adjoint.jl")          # 8. HermiteAdjoint1D + shared scatter core
 include("hermite_integrate.jl")        # 9. integrate(itp::AbstractHermiteInterpolant1D)
+include("nd/nd.jl")                    # 10. ND cubic Hermite with user-supplied partials (Phase 1a)

@@ -135,6 +135,7 @@ _format_bc(bc::PeriodicBC{:inclusive}) = bc.period === nothing ? "Periodic" : "P
 _format_bc(bc::PeriodicBC{:exclusive}) = bc.period === nothing ? "Periodic (exclusive)" : "Periodic (exclusive, period≈$(Printf.@sprintf("%.4g", bc.period)))"
 _format_bc(bc::PeriodicBC{:extended}) = bc.period === nothing ? "Periodic (extended from :exclusive)" : "Periodic (extended from :exclusive, period≈$(Printf.@sprintf("%.4g", bc.period)))"
 _format_bc(::PeriodicBC) = "Periodic"
+_format_bc(::NoBC) = "NoBC"
 _format_bc(bc::Deriv1) = "Deriv1($(bc.val))"
 _format_bc(bc::Deriv2) = "Deriv2($(bc.val))"
 _format_bc(bc::Deriv3) = "Deriv3($(bc.val))"
@@ -520,6 +521,7 @@ function Base.show(io::IO, ::MIME"text/plain", adj::AbstractAdjoint1D{Tg}) where
 end
 
 # Short BC name for compact display
+_short_bc_name(::NoBC) = "NoBC"
 _short_bc_name(::PeriodicBC{:inclusive}) = "Periodic"
 _short_bc_name(::PeriodicBC{:exclusive}) = "Periodic(excl)"
 _short_bc_name(::PeriodicBC{:extended}) = "Periodic(ext)"
@@ -1052,6 +1054,36 @@ function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolantND{Tg, T
     end
 
     # Boundary conditions
+    return _show_nd_bc_summary(io, true, itp.bcs)
+end
+
+# ========================================
+# CubicHermiteInterpolantND Show Methods
+# ========================================
+
+function Base.show(io::IO, itp::CubicHermiteInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
+    sizes = join([string(length(g)) for g in itp.grids], "×")
+    bc_name = _short_bc_name_nd(itp.bcs)
+    _show_type_header_nd(io, "CubicHermiteInterpolantND", Tg, Tv, N)
+    return print(io, "($sizes, $bc_name)")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", itp::CubicHermiteInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
+    _show_type_header_nd(io, "CubicHermiteInterpolantND", Tg, Tv, N)
+    println(io)
+
+    _show_nd_grids_summary(io, false, itp.grids)
+    println(io)
+
+    _show_nd_config_row(io, false, "Extrap:", itp.extraps, _format_extrap)
+    println(io)
+
+    has_vector_grid = any(g -> !(g isa AbstractRange), itp.grids)
+    if has_vector_grid
+        _show_nd_config_row(io, false, "Search:", itp.searches, _format_search)
+        println(io)
+    end
+
     return _show_nd_bc_summary(io, true, itp.bcs)
 end
 

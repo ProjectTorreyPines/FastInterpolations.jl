@@ -112,8 +112,8 @@ end
     return _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
 end
 
-# Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
-@inline _zero_ref(itp::CubicInterpolantND) = @inbounds first(itp.nodal_derivs.partials)
+# Per-method sample of `Tv` for fill-value paths (e.g. `_try_fill_oob`).
+@inline _sample_data(itp::CubicInterpolantND) = @inbounds first(itp.nodal_derivs.partials)
 
 # ========================================
 # @GENERATED TENSOR PRODUCT KERNEL

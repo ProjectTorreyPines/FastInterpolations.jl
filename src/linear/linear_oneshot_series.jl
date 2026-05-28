@@ -321,7 +321,7 @@ function linear_interp(
     K = n_series(s)
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
     Tv_out = _output_eltype(_arithmetic_kernel_shape, Tg_p, _series_eltype(s), Tq)
-    outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
+    outputs = _alloc_series_batch_outputs(Tv_out, K, length(xqs))
     linear_interp!(outputs, x, s, xqs; bc, extrap, deriv, search)
     return outputs
 end

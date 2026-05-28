@@ -314,7 +314,7 @@ function cubic_interp(
     K = n_series(s)
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
     Tv = _output_eltype(_arithmetic_kernel_shape, Tg_float, _series_eltype(s), Tq)
-    outputs = [Vector{Tv}(undef, length(xqs)) for _ in 1:K]
+    outputs = _alloc_series_batch_outputs(Tv, K, length(xqs))
     cubic_interp!(outputs, x, s, xqs; bc, extrap, autocache, deriv, search)
     return outputs
 end

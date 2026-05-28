@@ -41,11 +41,13 @@ end
 """
     _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
 
-Evaluate first derivative (slope) of linear interpolation.
-Returns constant slope: (yR - yL) * inv_h. `α` is unused — DCE'd.
+Evaluate first derivative (slope) of linear interpolation: `(yR - yL) * inv_h`.
+The trailing `* one(α)` carries the query's carrier (Dual partials,
+Measurement uncertainty, …) — for plain `Real` `α`, LLVM const-folds the
+`1.0` factor away.
 """
 @inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
-    return (yR - yL) * inv_h
+    return (yR - yL) * inv_h * one(α)
 end
 
 """
@@ -58,7 +60,7 @@ Note: Mathematically, the second derivative is a Dirac delta at knots,
 but we return zero everywhere as a practical approximation.
 """
 @inline function _linear_kernel(::EvalDeriv2, yL::Tv, ::Tv, inv_h::Tg, α) where {Tg, Tv}
-    return 0 * yL
+    return 0 * yL * one(α)
 end
 
 """
@@ -68,10 +70,10 @@ Third derivative of linear interpolation is always zero.
 Linear functions have constant first derivative (slope), zero second and third derivatives.
 """
 @inline function _linear_kernel(::EvalDeriv3, yL::Tv, ::Tv, inv_h::Tg, α) where {Tg, Tv}
-    return 0 * yL
+    return 0 * yL * one(α)
 end
 
 """Generic fallback: N-th derivative of degree-1 polynomial is zero for N ≥ 2."""
 @inline function _linear_kernel(::DerivOp{N}, yL::Tv, ::Tv, ::Tg, α) where {N, Tg, Tv}
-    return 0 * yL
+    return 0 * yL * one(α)
 end

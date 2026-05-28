@@ -144,9 +144,9 @@ Third derivative (constant, independent of x within interval):
 @inline function _cubic_kernel(
         ::EvalDeriv3,
         zL::Tz, zR::Tz, _, _,
-        ::Tg, inv_h::Tg, ::Td, ::Td
+        ::Tg, inv_h::Tg, dL::Td, ::Td
     ) where {Tg, Tz, Td <: Real}
-    return (zR - zL) * inv_h
+    return (zR - zL) * inv_h * one(dL)
 end
 
 """
@@ -158,7 +158,7 @@ Julia dispatch ensures `DerivOp{0..3}` methods (more specific) are selected firs
 @inline function _cubic_kernel(
         ::DerivOp{N},
         zL::Tz, _, _, _,
-        ::Tg, ::Tg, ::Td, ::Td
+        ::Tg, ::Tg, dL::Td, ::Td
     ) where {N, Tg, Tz, Td <: Real}
-    return 0 * zL
+    return 0 * zL * one(dL)
 end

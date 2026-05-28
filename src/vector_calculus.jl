@@ -42,7 +42,7 @@
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            zref = _zero_ref(itp)
+            zref = _sample_data(itp)
             return tuple($(zero_tuple...))
         end
         cell = _locate_cell(itp, query_r, policies, hints, mono)
@@ -117,7 +117,7 @@ end
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            zref = _zero_ref(itp)
+            zref = _sample_data(itp)
             @inbounds for i in 1:$N
                 G[i] = 0 * zref
             end
@@ -203,7 +203,7 @@ end
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            zref = _zero_ref(itp)
+            zref = _sample_data(itp)
             fill_val = _first_fill_value(itp.extraps)
             return (fill_val, tuple($(zero_tuple...)))
         end
@@ -482,7 +482,7 @@ end
         hints = _ensure_hint_nd(hint, Val($N))
         mono = _scalar_mono(hint, Val($N))
         if _is_fill_oob(query_r, itp.grids, itp.extraps)
-            return 0 * _zero_ref(itp)
+            return 0 * _sample_data(itp)
         end
         cell = _locate_cell(itp, query_r, policies, hints, mono)
         return +($(deriv_calls...))

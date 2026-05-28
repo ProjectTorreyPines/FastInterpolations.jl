@@ -285,7 +285,7 @@ function constant_interp(
     K = n_series(s)
     Tv = _series_eltype(s)
     Tv_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
-    outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
+    outputs = _alloc_series_batch_outputs(Tv_out, K, length(xqs))
     constant_interp!(outputs, x, s, xqs; bc, side, extrap, deriv, search)
     return outputs
 end

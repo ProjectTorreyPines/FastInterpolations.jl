@@ -565,7 +565,11 @@ end
 # Dispatches on op (EvalValue vs derivatives) and extrap type (Clamp vs Fill).
 #
 # _promote_extrap_val:  promotes an extrap result value to match kernel return type.
-# _promote_extrap_zero: promotes a zero result (derivative of constant) to match kernel type.
+# _promote_extrap_zero: carrier-aware zero for the OOB deriv-zero path under
+#                       flat extrapolation (Clamp/Fill, any method family).
+#                       The leading `0 * val` preserves NaN/Inf at the boundary
+#                       sample (IEEE: `0 * NaN = NaN`); `zero(xq) * zero(val)`
+#                       carries the query carrier (Dual, etc.) into the result.
 # Named _promote_extrap_val (not _promote_extrap) to avoid collision with the struct
 # promoter in eval_ops.jl which promotes FillExtrap fill_value at construction time.
 @inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * zero(val)
@@ -574,13 +578,27 @@ end
 # agrees with batch path's trait-sized buffer.
 @inline _promote_extrap_val(val::AbstractArray, xq::Number) = val .+ zero(xq) .* zero(eltype(val))
 @inline _promote_extrap_val(val, xq) = val
-@inline _promote_extrap_zero(val::Number, xq::Number) = zero(xq) * zero(val)
+@inline _promote_extrap_zero(val::Number, xq::Number) = 0 * val + zero(xq) * zero(val)
 @inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* zero(eltype(val))
 @inline _promote_extrap_zero(val, xq) = 0 * val
 
-# Generic: any derivative order → zero (flat extrapolation has zero derivatives)
-@inline _eval_extrapolation(::DerivOp, y_bnd, ::ClampExtrap, xq) = _promote_extrap_zero(y_bnd, xq)
-@inline _eval_extrapolation(::DerivOp, y_bnd, ::FillExtrap, xq) = _promote_extrap_zero(y_bnd, xq)
-# Specific: EvalValue (= DerivOp{0}) → return boundary or fill value
-@inline _eval_extrapolation(::EvalValue, y_bnd, ::ClampExtrap, xq) = _promote_extrap_val(y_bnd, xq)
-@inline _eval_extrapolation(::EvalValue, _, e::FillExtrap, xq) = _promote_extrap_val(e.fill_value, xq)
+# _extrap_oob_data: per-extrap "what data sits in the OOB cell".
+#   ClampExtrap → `y_bnd`         (boundary y is extended into the OOB region).
+#   FillExtrap  → `e.fill_value`  (fill_value is the OOB cell's data).
+# `@inline` + singleton dispatch — LLVM specializes per concrete extrap type
+# and dead-branch-eliminates; zero overhead on the OOB cold path.
+@inline _extrap_oob_data(::ClampExtrap, y_bnd) = y_bnd
+@inline _extrap_oob_data(e::FillExtrap, _) = e.fill_value
+
+# OOB evaluation under flat extrapolation (Clamp / Fill): the OOB cell's
+# data is fetched via `_extrap_oob_data` (ClampExtrap → `y_bnd`, FillExtrap
+# → `fill_value`), then promoted by the op-specific kernel:
+#   `EvalValue` → `data + carrier`         (value path)
+#   `DerivOp`   → `0 * data + carrier`     (deriv path — 0 × OOB cell data)
+# This `data → promote` split makes the deriv path's `_extrap_oob_data`
+# call read naturally: we're not asking "what's the derivative" but "what's
+# the cell data" — the `0 *` happens inside `_promote_extrap_zero`.
+@inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
+    _promote_extrap_val(_extrap_oob_data(ext, y_bnd), xq)
+@inline _eval_extrapolation(::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
+    _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq)

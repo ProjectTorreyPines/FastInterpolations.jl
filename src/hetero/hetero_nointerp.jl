@@ -262,9 +262,9 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         [fieldtype(M, d) for d in real_dims]
     )
 
-    # Check if any NoInterp axis has a non-zero DerivOp → return zero
-    # (discrete axes have zero derivatives by definition)
-    # NOTE: guard runs AFTER domain validation so OOB queries still error.
+    # Check if any NoInterp axis has a non-zero DerivOp → cell-local zero
+    # (discrete axes have zero derivatives by definition). Guard runs AFTER
+    # domain validation so OOB queries still error.
     nointerp_deriv_checks = [:(deriv_order(ops_full[$d]) != 0) for d in nointerp_dims]
     nointerp_deriv_cond = if isempty(nointerp_deriv_checks)
         nothing
@@ -276,12 +276,6 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
     # Use promoted type for zero (fixes Float32 data + Float64 query type mismatch)
     real_query_types = [fieldtype(Q, d) for d in real_dims]
     Tz_expr = isempty(real_query_types) ? Tv : :(promote_type($(real_query_types...), $Tg, $Tv))
-    nointerp_deriv_guard = nointerp_deriv_cond === nothing ? :() :
-        :(
-            if $nointerp_deriv_cond
-                return zero($Tz_expr)
-        end
-        )
 
     # Write GridIdx index into hint for NoInterp axes (consistent hint semantics)
     hint_nointerp_writes = [:(hint[$d][] = query[$d].idx) for d in nointerp_dims]
@@ -293,25 +287,48 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
         )
 
     if N_r == 0
-        # All-NoInterp: pure table lookup (or zero if any deriv requested)
-        if D <: _HeteroPartials
-            return quote
-                Base.@_inline_meta
-                $(bounds_checks...)
-                $hint_nointerp_update
-                $nointerp_deriv_guard
-                @inbounds itp.data.partials[1, $(slice_args...)]
+        # All-NoInterp: pure table lookup; deriv on NoInterp axis → multiply
+        # cell-local data by `zero(Tz)` so NaN in the queried cell propagates
+        # while still returning a type-promoted zero (mirrors `_constant_nd_evaluate`'s
+        # `kernel * 0` dispatch).
+        data_expr = D <: _HeteroPartials ?
+            :(itp.data.partials[1, $(slice_args...)]) :
+            :(itp.data[$(slice_args...)])
+        nointerp_deriv_guard = nointerp_deriv_cond === nothing ? :() :
+            :(
+                if $nointerp_deriv_cond
+                    return @inbounds $data_expr * zero($Tz_expr)
             end
-        else
-            return quote
-                Base.@_inline_meta
-                $(bounds_checks...)
-                $hint_nointerp_update
-                $nointerp_deriv_guard
-                @inbounds itp.data[$(slice_args...)]
-            end
+            )
+        return quote
+            Base.@_inline_meta
+            $(bounds_checks...)
+            $hint_nointerp_update
+            $nointerp_deriv_guard
+            @inbounds $data_expr
         end
     end
+
+    # Mixed case (N_r > 0): run the Real-axis interp normally, then multiply
+    # by `0` if any NoInterp axis has a non-zero deriv. `result * 0` preserves
+    # the carrier (Tg/Tq/Tv) from the cell-local Real-axis computation —
+    # mirrors `_constant_nd_evaluate`'s `kernel * 0` dispatch.
+    deriv_zero_wrap = nointerp_deriv_cond === nothing ?
+        :(return result) :
+        :(return $nointerp_deriv_cond ? result * 0 : result)
+
+    # OOB short-circuit wrap: `_try_fill_oob` returns the cell-local fill_value
+    # under the option-B contract (see `_fill_extrap_result` in `nd_utils.jl`).
+    # If a NoInterp axis carries a non-zero deriv, multiply by `0` so the
+    # mathematical "NoInterp deriv ⇒ 0" rule applies — `fill_value * 0` keeps
+    # NaN propagation (NaN × 0 = NaN), finite × 0 = 0.
+    oob_wrap = nointerp_deriv_cond === nothing ?
+        :(oob !== nothing && return oob) :
+        :(
+            if oob !== nothing
+                return $nointerp_deriv_cond ? oob * 0 : oob
+        end
+        )
 
     if D <: _HeteroPartials
         return quote
@@ -328,11 +345,9 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             ro = ($(r_ops...),)
             rm = ($(r_methods...),)
 
-            # Domain validation BEFORE deriv zero check
             _validate_nd_domain(rg, rq, re)
             oob = _try_fill_oob(rq, rg, re, ro, @inbounds p_sliced[1])
-            oob !== nothing && return oob
-            $nointerp_deriv_guard
+            $oob_wrap
 
             q_eval = _handle_all_extraps(rq, rg, re)
             rsrc = ($(r_searches...),)
@@ -340,15 +355,15 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
             idxs, Ls, _ = _search_all_intervals(q_eval, rg, search_r, hint_r)
             hs, inv_hs, dLs = _compute_all_local_params(q_eval, rg, idxs, Ls)
-            return _eval_hetero_nd_cell(p_sliced, idxs, hs, inv_hs, dLs, ro, rm)
+            result = _eval_hetero_nd_cell(p_sliced, idxs, hs, inv_hs, dLs, ro, rm)
+            $deriv_zero_wrap
         end
     else
         # OnTheFly: slice data, delegate to reduced-dim _collapse_dims.
-        # Phase 5b: when at least one real axis is local-Hermite, pre-search the cell once
-        # in the *real-axis-only* coordinate system, build cell-local windows for the real
-        # axes, slice the already-NoInterp-sliced `d_sliced`/`rg` further, and call the
-        # kernel with relative windows. Pure global-solve real-axis tuples skip the
-        # pre-search and fall through to the existing full-windows path.
+        # When at least one real axis is local-Hermite, pre-search the cell once in
+        # the real-axis-only coordinate system, build per-axis cell-local windows,
+        # slice further, and call the kernel with relative windows. Pure global-solve
+        # real-axis tuples skip the pre-search and fall through to the full-windows path.
         if rm_has_local
             return quote
                 Base.@_inline_meta
@@ -363,8 +378,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
 
                 _validate_nd_domain(rg, rq, re)
                 oob = _try_fill_oob(rq, rg, re, ro, @inbounds d_sliced[1])
-                oob !== nothing && return oob
-                $nointerp_deriv_guard
+                $oob_wrap
 
                 q_eval = _handle_all_extraps(rq, rg, re)
                 rsrc = ($(r_searches...),)
@@ -380,11 +394,12 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
                 d_local = view(d_sliced, windows_r...)
                 rg_local = map(view, rg, windows_r)
                 rel_windows_r = map(Base.OneTo ∘ length, windows_r)
-                return _collapse_dims(Tr, d_local, rg_local, rm, re, q_eval, ro, search_r, nothing, rel_windows_r)
+                result = _collapse_dims(Tr, d_local, rg_local, rm, re, q_eval, ro, search_r, nothing, rel_windows_r)
+                $deriv_zero_wrap
             end
         end
 
-        # Pure global-solve real-axis tuple: zero-overhead full-window path.
+        # Pure global-solve real-axis tuple: full-window path.
         return quote
             Base.@_inline_meta
             $(bounds_checks...)
@@ -398,8 +413,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
 
             _validate_nd_domain(rg, rq, re)
             oob = _try_fill_oob(rq, rg, re, ro, @inbounds d_sliced[1])
-            oob !== nothing && return oob
-            $nointerp_deriv_guard
+            $oob_wrap
 
             q_eval = _handle_all_extraps(rq, rg, re)
             rsrc = ($(r_searches...),)
@@ -407,7 +421,8 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
             Tr = _output_eltype(eltype(d_sliced), $Tg, typeof.(q_eval)...)
             full_windows_r = ($(r_full_windows...),)
-            return _collapse_dims(Tr, d_sliced, rg, rm, re, q_eval, ro, search_r, hint_r, full_windows_r)
+            result = _collapse_dims(Tr, d_sliced, rg, rm, re, q_eval, ro, search_r, hint_r, full_windows_r)
+            $deriv_zero_wrap
         end
     end
 end
@@ -468,26 +483,22 @@ function _interp_nointerp_oneshot(
     # Resolve per-axis kwargs to N-tuples
     deriv_t = deriv isa DerivOp ? ntuple(_ -> deriv, Val(N)) : deriv
 
-    # All-GridIdx edge case: pure table lookup (or zero if any deriv requested)
+    # All-GridIdx edge case: pure table lookup (deriv on NoInterp axis → zero,
+    # but cell-local — `data_r[] * zero(Tz)` propagates NaN at the queried
+    # cell while still returning a type-promoted zero).
     if grids_r === ()
         if _any_nointerp_grididx_has_nonzero_deriv(query, method_tuple, deriv_t)
             Tg = float(_promote_grid_eltype(grids))
-            return zero(_output_eltype(eltype(data), Tg))
+            return data_r[] * zero(_output_eltype(eltype(data), Tg))
         end
         return data_r[]
     end
 
-    # Domain validation on Real axes BEFORE deriv zero check
-    # (so OOB on Real axes raises DomainError even when NoInterp axis has deriv)
+    # Domain validation on Real axes (so OOB on Real axes raises DomainError
+    # regardless of NoInterp deriv).
     extrap_t = extrap isa AbstractExtrap ? ntuple(_ -> extrap, Val(N)) : extrap
     extrap_r = _filter_real_axes(extrap_t, QT)
     _validate_nd_domain(grids_r, query_r, extrap_r)
-
-    # Check if any GridIdx axis has non-zero deriv → return zero (with promoted type)
-    if _any_nointerp_grididx_has_nonzero_deriv(query, method_tuple, deriv_t)
-        Tg = float(_promote_grid_eltype(grids))
-        return zero(_output_eltype(eltype(data), Tg, typeof.(query_r)...))
-    end
 
     # Filter remaining kwargs to Real axes
     search_t = search isa AbstractSearchPolicy ? ntuple(_ -> search, Val(N)) : search
@@ -498,11 +509,19 @@ function _interp_nointerp_oneshot(
     hint !== nothing && _update_grididx_hints!(hint, query)
     hint_r = hint === nothing ? nothing : _filter_real_axes(hint, QT)
 
-    return interp(
+    # Run Real-axis interp normally. `result * 0` when a NoInterp axis carries
+    # non-zero deriv: applies the "NoInterp deriv ⇒ 0" rule while preserving
+    # the Real-axis carrier. `result` already reflects the OOB cell-local
+    # contract from `_eval_extrapolation` / `_fill_extrap_result` (fill_value-
+    # as-data for FillExtrap, boundary y for ClampExtrap), so NaN propagation
+    # — whether from cell data or from a NaN fill_value — flows through `* 0`.
+    result = interp(
         grids_r, data_r, query_r;
         method = methods_r, deriv = deriv_r, extrap = extrap_r,
         search = search_r, hint = hint_r
     )
+    return _any_nointerp_grididx_has_nonzero_deriv(query, method_tuple, deriv_t) ?
+        result * 0 : result
 end
 
 # ========================================

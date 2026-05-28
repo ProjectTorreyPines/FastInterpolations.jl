@@ -185,13 +185,15 @@
             end
 
             # --- FillExtrap: OOB exercises _fill_constant_extrap_simd! ---
+            # Cell-local "fill_value-as-data" contract: deriv at OOB = `0 * fill_value`.
+            # NaN fill_value propagates; in-domain results stay 0 for `D(4)` on cubic.
             @testset "FillExtrap" begin
                 sitp_c = cubic_interp(x, ys; extrap = FillExtrap(NaN))
-                @test sitp_c(xq; deriv = DerivOp(4)) == z2
-                @test sitp_c(-0.1; deriv = DerivOp(4)) == z2   # deriv → zero, not fill
+                @test sitp_c(xq; deriv = DerivOp(4)) == z2  # in-domain: D4 of cubic = 0
+                @test all(isnan, sitp_c(-0.1; deriv = DerivOp(4)))  # OOB + NaN fill → NaN
 
                 sitp_q = quadratic_interp(x, ys; extrap = FillExtrap(NaN))
-                @test sitp_q(-0.1; deriv = DerivOp(4)) == z2
+                @test all(isnan, sitp_q(-0.1; deriv = DerivOp(4)))
             end
 
             # --- WrapExtrap: maps OOB back into domain ---

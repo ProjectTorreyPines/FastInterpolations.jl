@@ -57,9 +57,9 @@ end
 # 1D Vector Call — Allocating
 # ========================================
 # Buffer eltype comes from the `_output_eltype(itp, Tq)` trait — generic for
-# arithmetic kernels (Int→Float upgrade) and `_select_output_eltype` for
-# selection kernels (Constant). Duck `SVector × Dual` resolves via the
-# trait's `Base.promote_op` fallback.
+# arithmetic kernels via `_arithmetic_kernel_shape` (Int→Float upgrade) and
+# `_constant_kernel_shape` for selection kernels (Constant). Duck
+# `SVector × Dual` resolves via the trait's `Base.promote_op` fallback.
 
 function (itp::AbstractInterpolant1D{Tg, Tv})(
         xq::AbstractVector{Tq};
@@ -98,12 +98,6 @@ end
 # ║       ND Interpolant Protocol        ║
 # ╚══════════════════════════════════════╝
 
-# ── Derivative zero-fill trait ──
-# Linear: 2nd+ derivative → all zeros. Constant: any derivative → all zeros.
-# Default: no zero-fill (Cubic, Quadratic evaluate all derivative orders).
-
-@inline _deriv_zero_fill(::AbstractInterpolantND, ::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} = false
-
 # ── Output eltype trait (ND) — mirrors the 1D version. ──
 @inline _output_eltype(::AbstractInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
     _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
@@ -125,7 +119,7 @@ end
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
-    zref = _zero_ref(itp)
+    zref = _sample_data(itp)
     @inbounds for k in 1:_query_length(queries)
         query_k = _extract_query_point(queries, k, Val(N))
         # `extraps_eff` carries per-axis `InBounds()` from `_check_domain_nd`
@@ -159,13 +153,9 @@ end
 # ========================================
 #
 # Single scalar entry point for AbstractInterpolantND subtypes whose eval
-# structure matches `validate → try_fill_oob → deriv_zero_fill → locate →
-# eval` (Cubic / Linear / Constant / Quadratic). Each method's callable
-# resolves search/hints/ops then delegates here.
-#
-# Trait dispatch: `_deriv_zero_fill(itp, ops, Val(N))` (Linear: 2nd+ deriv,
-# Constant: any deriv, Cubic/Quadratic default false). `_zero_ref(itp)`
-# supplies the per-method zero element (data first / partials first).
+# structure matches `validate → try_fill_oob → locate → eval` (Cubic /
+# Linear / Constant / Quadratic). Each method's callable resolves
+# search/hints/ops then delegates here.
 #
 # Hetero is *not* routed through here — its callable has GridIdx/NoInterp
 # branches and `_eval_hetero_nd` uses a non-`_locate_cell` path (recursive
@@ -180,10 +170,8 @@ end
     ) where {Tg, Tv, N}
     # NoExtrap throw must precede FillExtrap short-circuit (mixed-extrap configs).
     _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
+    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
-    # `prod(one, query)` folds carrier over every axis; identity for plain Float.
-    _deriv_zero_fill(itp, ops, Val(N)) && return 0 * _zero_ref(itp) * prod(one, query)
     cell = _locate_cell(itp, query, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
 end
@@ -245,10 +233,6 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _check_mono_nd(policies, queries)
-    if _deriv_zero_fill(itp, ops, Val(N))
-        fill!(output, zero(eltype(output)))
-        return output
-    end
     _interp_nd_batch!(output, itp, queries, extraps_eff, ops, policies, hints, mono)
     return output
 end

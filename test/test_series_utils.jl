@@ -74,6 +74,9 @@ end
         end
     end
 
+    # Stub anchor — helpers only access `aq.xq` for Tq carrier threading.
+    aq = (; xq = 0.5)
+
     @testset "_constant_extrap_boundary_value" begin
         # Test matrix: 5 points × 3 series
         y = [
@@ -87,24 +90,32 @@ end
 
         @testset "EvalValue returns boundary value" begin
             # Left boundary (index 1)
-            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 1, FI.EvalValue(), ClampExtrap()) == 1.0
-            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 2, FI.EvalValue(), ClampExtrap()) == 10.0
-            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 3, FI.EvalValue(), ClampExtrap()) == 100.0
+            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 1, FI.EvalValue(), ClampExtrap(), aq) == 1.0
+            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 2, FI.EvalValue(), ClampExtrap(), aq) == 10.0
+            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 3, FI.EvalValue(), ClampExtrap(), aq) == 100.0
 
             # Right boundary (index n_pts)
-            @test FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 1, FI.EvalValue(), ClampExtrap()) == 5.0
-            @test FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 2, FI.EvalValue(), ClampExtrap()) == 50.0
-            @test FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 3, FI.EvalValue(), ClampExtrap()) == 500.0
+            @test FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 1, FI.EvalValue(), ClampExtrap(), aq) == 5.0
+            @test FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 2, FI.EvalValue(), ClampExtrap(), aq) == 50.0
+            @test FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 3, FI.EvalValue(), ClampExtrap(), aq) == 500.0
         end
 
         @testset "EvalDeriv1 returns zero" begin
-            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 1, FI.EvalDeriv1(), ClampExtrap()) == 0.0
-            @test FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 2, FI.EvalDeriv1(), ClampExtrap()) == 0.0
+            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 1, FI.EvalDeriv1(), ClampExtrap(), aq) == 0.0
+            @test FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 2, FI.EvalDeriv1(), ClampExtrap(), aq) == 0.0
         end
 
         @testset "EvalDeriv2 returns zero" begin
-            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 1, FI.EvalDeriv2(), ClampExtrap()) == 0.0
-            @test FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 2, FI.EvalDeriv2(), ClampExtrap()) == 0.0
+            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 1, FI.EvalDeriv2(), ClampExtrap(), aq) == 0.0
+            @test FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 2, FI.EvalDeriv2(), ClampExtrap(), aq) == 0.0
+        end
+
+        @testset "FillExtrap deriv: fill_value-as-data (NaN propagates, finite × 0 = 0)" begin
+            # Cell-local "OOB cell = extrap's data" contract: deriv = 0 * fill_value.
+            # NaN fill_value propagates through deriv; finite fill_value × 0 = 0.
+            @test isnan(FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 1, FI.EvalDeriv1(), FillExtrap(NaN), aq))
+            @test isnan(FI._constant_extrap_boundary_value(y, FI.OOB_RIGHT, n_pts, 2, FI.EvalDeriv1(), FillExtrap(NaN), aq))
+            @test FI._constant_extrap_boundary_value(y, FI.OOB_LEFT, n_pts, 1, FI.EvalDeriv1(), FillExtrap(99.0), aq) == 0.0
         end
     end
 
@@ -121,33 +132,43 @@ end
         @testset "EvalValue fills boundary values" begin
             out = zeros(3)
             # Left boundary (point 1) - should fill column 1
-            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_LEFT, n_pts, FI.EvalValue(), ClampExtrap())
+            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_LEFT, n_pts, FI.EvalValue(), ClampExtrap(), aq)
             @test out == [1.0, 10.0, 100.0]
 
             # Right boundary (point n_pts) - should fill column 5
-            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_RIGHT, n_pts, FI.EvalValue(), ClampExtrap())
+            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_RIGHT, n_pts, FI.EvalValue(), ClampExtrap(), aq)
             @test out == [5.0, 50.0, 500.0]
         end
 
         @testset "EvalDeriv1 fills zeros" begin
             out = ones(3)  # Start with non-zero to verify fill
-            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_LEFT, n_pts, FI.EvalDeriv1(), ClampExtrap())
+            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_LEFT, n_pts, FI.EvalDeriv1(), ClampExtrap(), aq)
             @test out == [0.0, 0.0, 0.0]
 
             out = ones(3)
-            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_RIGHT, n_pts, FI.EvalDeriv1(), ClampExtrap())
+            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_RIGHT, n_pts, FI.EvalDeriv1(), ClampExtrap(), aq)
             @test out == [0.0, 0.0, 0.0]
         end
 
         @testset "EvalDeriv2 fills zeros" begin
             out = ones(3)
-            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_LEFT, n_pts, FI.EvalDeriv2(), ClampExtrap())
+            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_LEFT, n_pts, FI.EvalDeriv2(), ClampExtrap(), aq)
+            @test out == [0.0, 0.0, 0.0]
+        end
+
+        @testset "FillExtrap deriv: fill_value-as-data (NaN propagates, finite → 0)" begin
+            out = ones(3)
+            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_LEFT, n_pts, FI.EvalDeriv1(), FillExtrap(NaN), aq)
+            @test all(isnan, out)
+
+            out = ones(3)
+            FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_LEFT, n_pts, FI.EvalDeriv1(), FillExtrap(99.0), aq)
             @test out == [0.0, 0.0, 0.0]
         end
 
         @testset "returns output vector" begin
             out = zeros(3)
-            result = FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_LEFT, n_pts, FI.EvalValue(), ClampExtrap())
+            result = FI._fill_constant_extrap_simd!(out, y_point, FI.OOB_LEFT, n_pts, FI.EvalValue(), ClampExtrap(), aq)
             @test result === out
         end
     end

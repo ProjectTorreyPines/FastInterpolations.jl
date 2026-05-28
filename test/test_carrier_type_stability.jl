@@ -363,8 +363,10 @@ end
     using ForwardDiff
     using FastInterpolations: _promote_extrap_zero
 
-    methods_1d = (linear_interp, constant_interp, cubic_interp, quadratic_interp,
-                  pchip_interp, cardinal_interp, akima_interp)
+    methods_1d = (
+        linear_interp, constant_interp, cubic_interp, quadratic_interp,
+        pchip_interp, cardinal_interp, akima_interp,
+    )
 
     @testset "_promote_extrap_zero helper — Number vs Array consistency" begin
         # NaN at the data source propagates through deriv-zero promotion.
@@ -403,7 +405,7 @@ end
         for method in methods_1d
             # fill_value = NaN → deriv = NaN (regardless of finite y_bnd)
             @test isnan(method(x, y_finite, -1.0; extrap = FillExtrap(NaN), deriv = DerivOp(1)))
-            @test isnan(method(x, y_finite,  7.0; extrap = FillExtrap(NaN), deriv = DerivOp(1)))
+            @test isnan(method(x, y_finite, 7.0; extrap = FillExtrap(NaN), deriv = DerivOp(1)))
         end
     end
 
@@ -412,7 +414,7 @@ end
         y_finite = [10.0, 20.0, 30.0, 40.0, 50.0]
         for method in methods_1d
             @test method(x, y_finite, -1.0; extrap = FillExtrap(99.0), deriv = DerivOp(1)) == 0.0
-            @test method(x, y_finite,  7.0; extrap = FillExtrap(99.0), deriv = DerivOp(1)) == 0.0
+            @test method(x, y_finite, 7.0; extrap = FillExtrap(99.0), deriv = DerivOp(1)) == 0.0
         end
     end
 
@@ -420,11 +422,11 @@ end
         # Key new contract: under FillExtrap, y_bnd is not the OOB data —
         # fill_value is. y_bnd NaN must NOT propagate through deriv.
         x = collect(1.0:5.0)
-        y_nan_left  = [NaN, 20.0, 30.0, 40.0, 50.0]
+        y_nan_left = [NaN, 20.0, 30.0, 40.0, 50.0]
         y_nan_right = [10.0, 20.0, 30.0, 40.0, NaN]
         for method in methods_1d
-            @test method(x, y_nan_left,  -1.0; extrap = FillExtrap(0.0), deriv = DerivOp(1)) == 0.0
-            @test method(x, y_nan_right,  7.0; extrap = FillExtrap(0.0), deriv = DerivOp(1)) == 0.0
+            @test method(x, y_nan_left, -1.0; extrap = FillExtrap(0.0), deriv = DerivOp(1)) == 0.0
+            @test method(x, y_nan_right, 7.0; extrap = FillExtrap(0.0), deriv = DerivOp(1)) == 0.0
         end
     end
 
@@ -435,31 +437,55 @@ end
         q_oob = (7.0, 3.5)
 
         # finite fill_value × deriv → 0 (any axis with deriv)
-        @test constant_interp((xg, yg), data, q_oob; extrap = FillExtrap(99.0),
-                              deriv = (DerivOp(1), EvalValue())) == 0.0
-        @test constant_interp((xg, yg), data, q_oob; extrap = FillExtrap(99.0),
-                              deriv = (EvalValue(), DerivOp(1))) == 0.0
-        @test constant_interp((xg, yg), data, [q_oob]; extrap = FillExtrap(99.0),
-                              deriv = (DerivOp(1), EvalValue())) == [0.0]
+        @test constant_interp(
+            (xg, yg), data, q_oob; extrap = FillExtrap(99.0),
+            deriv = (DerivOp(1), EvalValue())
+        ) == 0.0
+        @test constant_interp(
+            (xg, yg), data, q_oob; extrap = FillExtrap(99.0),
+            deriv = (EvalValue(), DerivOp(1))
+        ) == 0.0
+        @test constant_interp(
+            (xg, yg), data, [q_oob]; extrap = FillExtrap(99.0),
+            deriv = (DerivOp(1), EvalValue())
+        ) == [0.0]
         itp99 = constant_interp((xg, yg), data; extrap = FillExtrap(99.0))
         @test itp99(q_oob; deriv = (DerivOp(1), EvalValue())) == 0.0
 
         # NaN fill_value × deriv → NaN
-        @test isnan(constant_interp((xg, yg), data, q_oob; extrap = FillExtrap(NaN),
-                                    deriv = (DerivOp(1), EvalValue())))
-        @test isnan(constant_interp((xg, yg), data, q_oob; extrap = FillExtrap(NaN),
-                                    deriv = (EvalValue(), DerivOp(1))))
-        @test isnan(constant_interp((xg, yg), data, [q_oob]; extrap = FillExtrap(NaN),
-                                    deriv = (DerivOp(1), EvalValue()))[1])
+        @test isnan(
+            constant_interp(
+                (xg, yg), data, q_oob; extrap = FillExtrap(NaN),
+                deriv = (DerivOp(1), EvalValue())
+            )
+        )
+        @test isnan(
+            constant_interp(
+                (xg, yg), data, q_oob; extrap = FillExtrap(NaN),
+                deriv = (EvalValue(), DerivOp(1))
+            )
+        )
+        @test isnan(
+            constant_interp(
+                (xg, yg), data, [q_oob]; extrap = FillExtrap(NaN),
+                deriv = (DerivOp(1), EvalValue())
+            )[1]
+        )
         itp_nan = constant_interp((xg, yg), data; extrap = FillExtrap(NaN))
         @test isnan(itp_nan(q_oob; deriv = (DerivOp(1), EvalValue())))
 
         # Same contract on Linear ND (non-Constant) — sanity that the
         # `_fill_extrap_result` dispatch applies uniformly.
-        @test linear_interp((xg, yg), data, q_oob; extrap = FillExtrap(99.0),
-                            deriv = (DerivOp(1), EvalValue())) == 0.0
-        @test isnan(linear_interp((xg, yg), data, q_oob; extrap = FillExtrap(NaN),
-                                  deriv = (DerivOp(1), EvalValue())))
+        @test linear_interp(
+            (xg, yg), data, q_oob; extrap = FillExtrap(99.0),
+            deriv = (DerivOp(1), EvalValue())
+        ) == 0.0
+        @test isnan(
+            linear_interp(
+                (xg, yg), data, q_oob; extrap = FillExtrap(NaN),
+                deriv = (DerivOp(1), EvalValue())
+            )
+        )
     end
 
     # ── Hetero mixed Real + NoInterp: OOB FillExtrap × NoInterp deriv ──
@@ -471,23 +497,33 @@ end
         q_oob = (7.0, GridIdx(2))  # Real-axis 7.0 OOB; NoInterp idx 2 in-domain
 
         # finite fill_value → 0 (oneshot + persistent)
-        @test interp((xg, yg), data, q_oob;
-                     method = (LinearInterp(), NoInterp()),
-                     extrap = FillExtrap(99.0),
-                     deriv = (EvalValue(), DerivOp(1))) == 0.0
-        itp99 = interp((xg, yg), data;
-                       method = (LinearInterp(), NoInterp()),
-                       extrap = FillExtrap(99.0))
+        @test interp(
+            (xg, yg), data, q_oob;
+            method = (LinearInterp(), NoInterp()),
+            extrap = FillExtrap(99.0),
+            deriv = (EvalValue(), DerivOp(1))
+        ) == 0.0
+        itp99 = interp(
+            (xg, yg), data;
+            method = (LinearInterp(), NoInterp()),
+            extrap = FillExtrap(99.0)
+        )
         @test itp99(q_oob; deriv = (EvalValue(), DerivOp(1))) == 0.0
 
         # NaN fill_value → NaN (oneshot + persistent)
-        @test isnan(interp((xg, yg), data, q_oob;
-                           method = (LinearInterp(), NoInterp()),
-                           extrap = FillExtrap(NaN),
-                           deriv = (EvalValue(), DerivOp(1))))
-        itp_nan = interp((xg, yg), data;
-                         method = (LinearInterp(), NoInterp()),
-                         extrap = FillExtrap(NaN))
+        @test isnan(
+            interp(
+                (xg, yg), data, q_oob;
+                method = (LinearInterp(), NoInterp()),
+                extrap = FillExtrap(NaN),
+                deriv = (EvalValue(), DerivOp(1))
+            )
+        )
+        itp_nan = interp(
+            (xg, yg), data;
+            method = (LinearInterp(), NoInterp()),
+            extrap = FillExtrap(NaN)
+        )
         @test isnan(itp_nan(q_oob; deriv = (EvalValue(), DerivOp(1))))
     end
 end

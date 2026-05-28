@@ -600,5 +600,5 @@ end
 # the cell data" — the `0 *` happens inside `_promote_extrap_zero`.
 @inline _eval_extrapolation(::EvalValue, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
     _promote_extrap_val(_extrap_oob_data(ext, y_bnd), xq)
-@inline _eval_extrapolation(::DerivOp,   y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
+@inline _eval_extrapolation(::DerivOp, y_bnd, ext::Union{ClampExtrap, FillExtrap}, xq) =
     _promote_extrap_zero(_extrap_oob_data(ext, y_bnd), xq)

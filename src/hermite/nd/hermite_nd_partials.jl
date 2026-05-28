@@ -1,5 +1,5 @@
 # ========================================
-# HermiteFullPartials — multiindex-keyed user-input constructor
+# HermitePartials — multiindex-keyed user-input constructor
 # ========================================
 #
 # Public entry for assembling a `HermitePartials{N, Tv, K, A}` from user
@@ -8,7 +8,7 @@
 # with a single common `Tv`.
 
 """
-    HermiteFullPartials(pairs::Pair{<:NTuple{N, Int}, <:AbstractArray}...) -> HermitePartials
+    HermitePartials(pairs::Pair{<:NTuple{N, Int}, <:AbstractArray}...) -> HermitePartials
 
 Construct user-supplied full mixed partial derivatives for ND cubic Hermite
 interpolation.
@@ -31,18 +31,18 @@ across (grid, data, partials) yields the storage `Tv`.
 
 # Example (N=2)
 ```julia
-partials = HermiteFullPartials(
+partials = HermitePartials(
     (1, 0) => dfdx,
     (0, 1) => dfdy,
     (1, 1) => d2fdxdy,
 )
 ```
 """
-function HermiteFullPartials(pairs::Pair{<:NTuple{N, Int}, <:AbstractArray}...) where {N}
-    N >= 1 || throw(ArgumentError("HermiteFullPartials requires N >= 1"))
+function HermitePartials(pairs::Pair{<:NTuple{N, Int}, <:AbstractArray}...) where {N}
+    N >= 1 || throw(ArgumentError("HermitePartials requires N >= 1"))
     K = (1 << N) - 1
     length(pairs) == K || throw(ArgumentError(
-        "HermiteFullPartials{N=$N} requires exactly $K (mask=1..$K) partials, got $(length(pairs))",
+        "HermitePartials{N=$N} requires exactly $K (mask=1..$K) partials, got $(length(pairs))",
     ))
 
     _validate_hermite_full_pairs(Val(N), pairs)
@@ -63,32 +63,32 @@ end
 
 @noinline function _throw_bad_multiindex_entry(mi::NTuple{N, Int}, slot::Int, val::Int) where {N}
     throw(ArgumentError(
-        "HermiteFullPartials: multiindex $(mi) has entry $val at axis $slot; " *
+        "HermitePartials: multiindex $(mi) has entry $val at axis $slot; " *
         "Phase 1a requires every entry ∈ {0, 1}",
     ))
 end
 
 @noinline function _throw_zero_multiindex(N::Int)
     throw(ArgumentError(
-        "HermiteFullPartials: multiindex $(ntuple(_ -> 0, N)) (function value) " *
+        "HermitePartials: multiindex $(ntuple(_ -> 0, N)) (function value) " *
         "is not allowed — pass data as the `data` argument to `hermite_interp` instead",
     ))
 end
 
 @noinline function _throw_duplicate_multiindex(mi)
-    throw(ArgumentError("HermiteFullPartials: duplicate multiindex $(mi)"))
+    throw(ArgumentError("HermitePartials: duplicate multiindex $(mi)"))
 end
 
 @noinline function _throw_missing_multiindex(mi, mask::Int)
     throw(ArgumentError(
-        "HermiteFullPartials: missing multiindex $(mi) (mask=$mask); " *
+        "HermitePartials: missing multiindex $(mi) (mask=$mask); " *
         "supply every non-zero entry of {0,1}^N",
     ))
 end
 
 @noinline function _throw_size_mismatch_partials(mask_ref, sz_ref, mask_cur, sz_cur)
     throw(DimensionMismatch(
-        "HermiteFullPartials: array for mask=$mask_cur has size $sz_cur, " *
+        "HermitePartials: array for mask=$mask_cur has size $sz_cur, " *
         "but mask=$mask_ref has size $sz_ref — all partials must match",
     ))
 end
@@ -98,7 +98,7 @@ function _validate_hermite_full_pairs(
         pairs::NTuple{K, Pair{<:NTuple{N, Int}, <:AbstractArray}},
     ) where {N, K}
     K == (1 << N) - 1 || throw(ArgumentError(
-        "HermiteFullPartials{N=$N}: expected $((1<<N)-1) pairs, got $K",
+        "HermitePartials{N=$N}: expected $((1<<N)-1) pairs, got $K",
     ))
     seen = fill(false, 1 << N)   # index 1 ↔ mask 0 (sentinel; never set for FullPartials)
     sz_ref = size(last(pairs[1]))
@@ -115,7 +115,7 @@ function _validate_hermite_full_pairs(
         seen[m + 1] && _throw_duplicate_multiindex(mi)
         seen[m + 1] = true
         ndims(arr) == N || throw(DimensionMismatch(
-            "HermiteFullPartials: array for multiindex $(mi) is $(ndims(arr))-D, expected $N-D",
+            "HermitePartials: array for multiindex $(mi) is $(ndims(arr))-D, expected $N-D",
         ))
         if k > 1
             sz_cur = size(arr)

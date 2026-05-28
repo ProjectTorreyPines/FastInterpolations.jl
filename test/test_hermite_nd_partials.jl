@@ -10,7 +10,7 @@
 # - Derivative output (`deriv` kwarg)
 # - One-shot scalar + batch + in-place
 
-@testitem "Hermite ND Full Partials (Phase 1a)" setup = [AllocConstants] begin
+@testitem "Hermite ND Partials (Phase 1a)" setup = [AllocConstants] begin
 
 # Helper: central FDM along axis `d` of N-D array, using grid `g` (length n_d).
 # Interior: (arr[..., j+1, ...] - arr[..., j-1, ...]) / (g[j+1] - g[j-1])
@@ -44,7 +44,7 @@ end
     A = zeros(n, n)
 
     @testset "Happy path" begin
-        p = HermiteFullPartials(
+        p = HermitePartials(
             (1, 0) => copy(A),
             (0, 1) => copy(A),
             (1, 1) => copy(A),
@@ -55,7 +55,7 @@ end
     @testset "Mixed eltypes promote to common Tv" begin
         A32 = zeros(Float32, n, n)
         A64 = zeros(Float64, n, n)
-        p = HermiteFullPartials(
+        p = HermitePartials(
             (1, 0) => A32,         # Float32
             (0, 1) => A64,         # Float64
             (1, 1) => A32,         # Float32
@@ -64,12 +64,12 @@ end
     end
 
     @testset "Wrong pair count" begin
-        @test_throws ArgumentError HermiteFullPartials(
+        @test_throws ArgumentError HermitePartials(
             (1, 0) => copy(A),
             (0, 1) => copy(A),
             # missing (1, 1)
         )
-        @test_throws ArgumentError HermiteFullPartials(
+        @test_throws ArgumentError HermitePartials(
             (1, 0) => copy(A),
             (0, 1) => copy(A),
             (1, 1) => copy(A),
@@ -78,7 +78,7 @@ end
     end
 
     @testset "Duplicate multiindex" begin
-        @test_throws ArgumentError HermiteFullPartials(
+        @test_throws ArgumentError HermitePartials(
             (1, 0) => copy(A),
             (0, 1) => copy(A),
             (0, 1) => copy(A),  # duplicate
@@ -86,7 +86,7 @@ end
     end
 
     @testset "Zero multiindex disallowed" begin
-        @test_throws ArgumentError HermiteFullPartials(
+        @test_throws ArgumentError HermitePartials(
             (0, 0) => copy(A),
             (1, 0) => copy(A),
             (0, 1) => copy(A),
@@ -94,7 +94,7 @@ end
     end
 
     @testset "Out-of-range multiindex entry" begin
-        @test_throws ArgumentError HermiteFullPartials(
+        @test_throws ArgumentError HermitePartials(
             (1, 0) => copy(A),
             (0, 1) => copy(A),
             (2, 0) => copy(A),  # entry == 2, not 0 or 1
@@ -103,7 +103,7 @@ end
 
     @testset "Mismatched array sizes" begin
         B = zeros(n + 1, n)
-        @test_throws DimensionMismatch HermiteFullPartials(
+        @test_throws DimensionMismatch HermitePartials(
             (1, 0) => copy(A),
             (0, 1) => copy(B),
             (1, 1) => copy(A),
@@ -112,7 +112,7 @@ end
 
     @testset "Wrong array ndims" begin
         v = zeros(n)
-        @test_throws DimensionMismatch HermiteFullPartials(
+        @test_throws DimensionMismatch HermitePartials(
             (1, 0) => copy(A),
             (0, 1) => v,        # 1-D, not 2-D
             (1, 1) => copy(A),
@@ -127,7 +127,7 @@ end
     dfdx = [yj for xi in x, yj in y]
     dfdy = [xi for xi in x, yj in y]
     d2   = ones(5, 5)
-    p = HermiteFullPartials((1, 0) => dfdx, (0, 1) => dfdy, (1, 1) => d2)
+    p = HermitePartials((1, 0) => dfdx, (0, 1) => dfdy, (1, 1) => d2)
 
     # NoBC, PeriodicBC ok
     @test hermite_interp((x, y), data, p) isa CubicHermiteInterpolantND
@@ -157,7 +157,7 @@ end
     dfdx = [Fx(xi, yj) for xi in x, yj in y]
     dfdy = [Fy(xi, yj) for xi in x, yj in y]
     d2   = [Fxy(xi, yj) for xi in x, yj in y]
-    p    = HermiteFullPartials((1,0) => dfdx, (0,1) => dfdy, (1,1) => d2)
+    p    = HermitePartials((1,0) => dfdx, (0,1) => dfdy, (1,1) => d2)
 
     itp = hermite_interp((x, y), data, p)
 
@@ -197,7 +197,7 @@ end
     dfdy_fdm = _central_fdm_along_axis(data, y, 2)
     d2_fdm   = _central_fdm_along_axis(dfdx_fdm, y, 2)
 
-    p = HermiteFullPartials((1,0) => dfdx_fdm, (0,1) => dfdy_fdm, (1,1) => d2_fdm)
+    p = HermitePartials((1,0) => dfdx_fdm, (0,1) => dfdy_fdm, (1,1) => d2_fdm)
     itp_h = hermite_interp((x, y), data, p)
     itp_c = cardinal_interp((x, y), data)
 
@@ -227,7 +227,7 @@ end
     y = collect(range(-1.0, 1.0, length=5))
 
     data = [F(xi, yj) for xi in x, yj in y]
-    p = HermiteFullPartials(
+    p = HermitePartials(
         (1, 0) => [Fx(xi, yj)  for xi in x, yj in y],
         (0, 1) => [Fy(xi, yj)  for xi in x, yj in y],
         (1, 1) => [Fxy(xi, yj) for xi in x, yj in y],
@@ -261,7 +261,7 @@ end
     y = collect(range(0.0, 2π, length=n))
 
     data = [F(xi, yj) for xi in x, yj in y]
-    p = HermiteFullPartials(
+    p = HermitePartials(
         (1,0) => [Fx(xi, yj)  for xi in x, yj in y],
         (0,1) => [Fy(xi, yj)  for xi in x, yj in y],
         (1,1) => [Fxy(xi, yj) for xi in x, yj in y],
@@ -294,7 +294,7 @@ end
     y = range(0.0, 2π * (n - 1) / n, length=n)
 
     data = [F(xi, yj) for xi in x, yj in y]
-    p = HermiteFullPartials(
+    p = HermitePartials(
         (1,0) => [Fx(xi, yj)  for xi in x, yj in y],
         (0,1) => [Fy(xi, yj)  for xi in x, yj in y],
         (1,1) => [Fxy(xi, yj) for xi in x, yj in y],
@@ -329,7 +329,7 @@ end
         dfdx = [yj for xi in x, yj in y]
         dfdy = [xi for xi in x, yj in y]
         d2   = ones(5, 5)
-        p = HermiteFullPartials((1, 0) => dfdx, (0, 1) => dfdy, (1, 1) => d2)
+        p = HermitePartials((1, 0) => dfdx, (0, 1) => dfdy, (1, 1) => d2)
 
         itp = hermite_interp((x, y), data, p)
         val_before = itp((0.5, 0.5))
@@ -340,7 +340,7 @@ end
         fill!(dfdy, NaN)
         fill!(d2,   NaN)
         # `p.partials[k]` is the *same array* as the dfdx/dfdy/d2 we just
-        # nuked — these are aliases established by `HermiteFullPartials`
+        # nuked — these are aliases established by `HermitePartials`
         # (zero-copy when eltypes match). Confirm:
         @test all(isnan, p.partials[1])
         @test all(isnan, p.partials[2])
@@ -360,7 +360,7 @@ end
         y = range(0.0, 1.0, length=4)
         data = [xi*yj for xi in x, yj in y]
         original_data = copy(data)
-        p = HermiteFullPartials(
+        p = HermitePartials(
             (1, 0) => [yj for xi in x, yj in y],
             (0, 1) => [xi for xi in x, yj in y],
             (1, 1) => ones(4, 4),
@@ -378,7 +378,7 @@ end
         x = range(0.0, 1.0, length=5)
         y = range(0.0, 1.0, length=5)
         data = [xi*yj for xi in x, yj in y]
-        p = HermiteFullPartials(
+        p = HermitePartials(
             (1, 0) => [yj for xi in x, yj in y],
             (0, 1) => [xi for xi in x, yj in y],
             (1, 1) => ones(5, 5),
@@ -407,7 +407,7 @@ end
         x = range(0.0, 1.0, length=20)
         y = range(0.0, 1.0, length=20)
         data = [xi*yj for xi in x, yj in y]
-        p = HermiteFullPartials(
+        p = HermitePartials(
             (1, 0) => [yj for xi in x, yj in y],
             (0, 1) => [xi for xi in x, yj in y],
             (1, 1) => ones(20, 20),
@@ -430,7 +430,7 @@ end
         xp = range(0.0, 2π * 19/20, length=20)
         yp = range(0.0, 2π * 19/20, length=20)
         dp = [sin(xi)*cos(yj) for xi in xp, yj in yp]
-        pp = HermiteFullPartials(
+        pp = HermitePartials(
             (1, 0) => [ cos(xi)*cos(yj) for xi in xp, yj in yp],
             (0, 1) => [-sin(xi)*sin(yj) for xi in xp, yj in yp],
             (1, 1) => [-cos(xi)*sin(yj) for xi in xp, yj in yp],
@@ -453,7 +453,7 @@ end
         xi2 = range(0.0, 2π, length=20)
         yi2 = range(0.0, 2π, length=20)
         di = [cos(xi)*cos(yj) for xi in xi2, yj in yi2]
-        pi2 = HermiteFullPartials(
+        pi2 = HermitePartials(
             (1, 0) => [-sin(xi)*cos(yj) for xi in xi2, yj in yi2],
             (0, 1) => [-cos(xi)*sin(yj) for xi in xi2, yj in yi2],
             (1, 1) => [ sin(xi)*sin(yj) for xi in xi2, yj in yi2],
@@ -476,7 +476,7 @@ end
         x = range(0.0, 1.0, length=20)
         y = range(0.0, 1.0, length=20)
         data = [xi*yj for xi in x, yj in y]
-        p = HermiteFullPartials(
+        p = HermitePartials(
             (1, 0) => [yj for xi in x, yj in y],
             (0, 1) => [xi for xi in x, yj in y],
             (1, 1) => ones(20, 20),
@@ -491,7 +491,7 @@ end
         x = range(0.0, 1.0, length=20)
         y = range(0.0, 1.0, length=20)
         data = [xi*yj for xi in x, yj in y]
-        p = HermiteFullPartials(
+        p = HermitePartials(
             (1, 0) => [yj for xi in x, yj in y],
             (0, 1) => [xi for xi in x, yj in y],
             (1, 1) => ones(20, 20),

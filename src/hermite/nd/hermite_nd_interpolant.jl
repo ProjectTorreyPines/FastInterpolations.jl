@@ -71,7 +71,7 @@ end
     throw(ArgumentError(
         "CubicHermiteInterpolantND (Phase 1a): partials must contain every " *
         "non-zero multiindex in {0,1}^N (K = 2^N - 1 = $expected for N=$N), got K=$K. " *
-        "Construct via `HermiteFullPartials(...)`.",
+        "Construct via `HermitePartials(...)`.",
     ))
 end
 
@@ -106,7 +106,7 @@ restrictions.
 x = range(0.0, 1.0, 11)
 y = range(0.0, 2π, 21)
 data = [sin(xi) * cos(yj) for xi in x, yj in y]
-partials = HermiteFullPartials(
+partials = HermitePartials(
     (1, 0) => [ cos(xi) * cos(yj) for xi in x, yj in y],
     (0, 1) => [-sin(xi) * sin(yj) for xi in x, yj in y],
     (1, 1) => [-cos(xi) * sin(yj) for xi in x, yj in y],

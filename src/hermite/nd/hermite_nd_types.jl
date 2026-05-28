@@ -32,7 +32,7 @@ derivative for mask `m ∈ 1:K`, where bit `d-1` set in `m` means
 (mask `0`) is **not** stored here — it is supplied as the separate `data`
 argument to `hermite_interp`.
 
-Phase 1a: the only public constructor is `HermiteFullPartials(...)`, which
+Phase 1a: the only public constructor is `HermitePartials(...)`, which
 populates every non-zero multiindex in `{0, 1}^N` (so `K == 2^N - 1`).
 
 # Type parameters

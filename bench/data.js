@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779314731902,
+  "lastUpdate": 1779989294367,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -52738,6 +52738,330 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 837.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d7f8048a0780e219ef4a6b2fa134763c52c77c51",
+          "message": "(fix+refac): Cell-local NaN + Tq carrier through deriv-zero paths (#147)\n\n* (test): pin ND deriv-zero carrier propagation + cross-path invariants\n\nAdds `test/test_carrier_type_stability.jl` with four `@testitem` blocks\nthat combine `@inferred` and `isa T` into single assertions, locking\nboth type-stability and carrier-shape in one place.\n\n  - Cat A: `@inferred` across deriv-aware paths (mostly broken pin\n    for 1D scalar Float-drop; Phase 2 will close).\n  - Cat B: Dual carrier preservation through sub-zero deriv paths\n    (broken pin — 1D scalar Float-drop, Phase 2).\n  - Cat C: NaN propagation through Dual partials on ND deriv-zero\n    short-circuits — currently RED for in-place + persist-allocating\n    paths (Constant ND).\n  - Cat D: scalar / allocating / in-place / persistent path\n    cross-equivalence (currently RED — bleeds from Cat C).\n\nCreated as the RED phase for the carrier-aware deriv-zero helper\nrefactor; the next commit drives Cat C/D to GREEN. Cat A/B broken\npins are tracked for Phase 2.\n\n* (fix): carrier-aware deriv-zero fill via `_deriv_zero_value` helper\n\nThree ND Constant deriv-zero short-circuits previously diverged from the\ncarrier-propagation contract the scalar / one-shot allocating paths\nalready honor:\n\n  - `interpolant_protocol.jl:249` filled with `zero(eltype(output))`,\n    dropping both the data's NaN/Inf and the query's carrier shape.\n  - `constant_nd_oneshot.jl:237` filled with `0 * first(data)`,\n    preserving NaN value but losing the carrier-shape lift (Dual\n    partials collapsed to 0).\n  - `interpolant_protocol.jl:186` was hand-coded with the right pattern\n    but duplicated across call sites.\n\nAdds `_deriv_zero_value(::Type{T_out}, sample_data, sample_query)` in\n`src/core/utils.jl` with `Real` / `Tuple` dispatch:\n\n    zero(T_out) + 0 * sample_data * <prod-folded-q>\n\nThree layers split the work:\n\n  - `zero(T_out)` pins the kernel's promotion lattice. `T_out` comes\n    from `_output_eltype(itp, Tq)` (or the method-trait route for\n    one-shot, no-`itp` callers), so it carries `Tg`-aware widening\n    that the multiplicative body alone cannot reach. For the Constant\n    lattice (`Tv * Tq`) this term is identity and LLVM removes it.\n  - `sample_data` carries `Tv` and any NaN/Inf pattern; the leading\n    `0 *` annihilates value while IEEE keeps the NaN bits live.\n  - `sample_query` (the same scalar/tuple the caller already holds\n    from `_extract_query_point`) supplies `Tq` and threads NaN into\n    every hidden carrier slot (Dual partials, Measurement uncertainty,\n    …) via the product rule.\n\nAll three deriv-zero short-circuits route through the new helper.\nCloses 5 NaN-partials failures + 3 cross-path equivalence failures\nin `test/test_carrier_type_stability.jl` (Cat C + Cat D, ND Constant).\n\nThe arithmetic-lattice methods (Linear/Cubic/Quadratic/Hermite) will\ninherit the helper without further changes when Phase 2 audits each\nmethod's own one-shot in-place branch.\n\n* (refac): rename `_zero_ref` trait → `_value_sample`\n\nThe `_zero_ref` name was misleading — the trait does not return a \"zero\nvalue\" but rather a representative `Tv` element used as a sample in the\nderiv-zero short-circuit (`first(itp.data)` for Constant/Linear,\n`first(itp.nodal_derivs.partials)` for Cubic/Quadratic, similar for\nHetero). Callers always multiply this by `0`, so the actual value is\nirrelevant — only its type and any NaN/Inf pattern matter.\n\n`_value_sample` better captures the trait's role: \"a sample of the\nvalue type Tv\". Pure rename across 5 definitions + 11 use sites in\n7 files; no behavior change.\n\n* (refac): rename `_value_sample` trait → `_sample_data`\n\nAligns the trait name with the helper's argument name (`sample_data`\nin `_deriv_zero_value(::Type{T_out}, sample_data, sample_query)`),\nmaking call sites read `_deriv_zero_value(T_out, _sample_data(itp),\nfirst_q)` — same token on both sides of the assignment. Pure rename;\nno behavior change.\n\n* (refac): rename `_deriv_zero_value` args `sample_data` / `sample_query` → `sampled_data` / `sampled_query`\n\nDisambiguates the helper's parameter names from the `_sample_data(itp)`\ntrait introduced in b50f56e41. Past-participle form (\"already sampled\")\ndistinguishes the *result* (helper argument) from the *extraction\nfunction* (trait), reducing visual noise at call sites.\n\nPure rename; no behavior change.\n\n* (fix): linear 1D kernel deriv branches thread query carrier via `* one(α)`\n\nThe EvalDeriv1/2/3 and generic DerivOp{N} branches of `_linear_kernel`\ncomputed slope/zero results that ignored the query parameter `α`,\ndropping Dual carrier on the 1D scalar path. Multiplying by `one(α)`\nthreads the query carrier (Dual partials, Measurement uncertainty, …)\nthrough the kernel output; for plain `Real` `α` LLVM const-folds the\n`1.0` factor away, so perf is unchanged.\n\nPromotes 5 broken pins in `test_carrier_type_stability.jl`:\n  - Cat A 1D oneshot/persist scalar @inferred linear deriv=2\n  - Cat B 1D oneshot scalar Linear DerivOp(1) Dual return\n  - Cat B 1D persist scalar Linear DerivOp(1) Dual return\n  - Cat B 1D oneshot scalar Linear DerivOp(2) Dual return\n\nPerf-neutral (within ±2% noise across 1D scalar / batch / 2D / persistent\npaths, zero allocations preserved):\n  1D scalar       baseline 5-7 ns   →  post-fix 5-7 ns\n  1D batch alloc  baseline 42-57 ns →  post-fix 41-58 ns\n  2D scalar       baseline 14 ns    →  post-fix 14 ns\n\nCubic/Quadratic/PCHIP/Cardinal/Akima still pending (same kernel pattern,\nto be applied in follow-up commits).\n\n* (fix): cubic 1D kernel deriv branches thread query carrier via `* one(dL)`\n\nEvalDeriv3 and the generic DerivOp{N≥4} branches of `_cubic_kernel`\nignored the query offset `dL`/`dR` (both underscored), dropping Dual\ncarrier on the 1D scalar path. Naming `dL` in the signature and\nmultiplying the result by `one(dL)` threads the query carrier through;\nEvalValue/EvalDeriv1/EvalDeriv2 already use `dL`/`dR` in their formulas\nso they were carrier-aware by construction.\n\nPromotes 5 broken pins in `test_carrier_type_stability.jl`:\n  - Cat A 1D oneshot/persist scalar @inferred cubic deriv=4\n  - Cat B 1D oneshot scalar Cubic DerivOp(3) Dual return\n  - Cat B 1D persist scalar Cubic DerivOp(3) Dual return\n  - Cat B 1D oneshot scalar Cubic DerivOp(4) Dual return\n\nPerf-neutral (1D scalar 74-83 ns oneshot, 4-7 ns persistent, 0 allocs).\nPCHIP/Cardinal/Akima/Hermite still pending — same pattern.\n\n* (fix): quadratic 1D kernel deriv branches thread query carrier via `* one(dL)`\n\nEvalDeriv2/3 and the generic DerivOp{N≥3} branches of `_quadratic_kernel`\nunderscored the `dL` argument and returned values that ignored the query,\ndropping Dual carrier on the 1D scalar path. Naming `dL` and multiplying\nby `one(dL)` threads the query carrier through. EvalValue/EvalDeriv1\nalready use `dL` in their formulas so they were carrier-aware.\n\nPromotes 1 broken pin in `test_carrier_type_stability.jl`:\n  - Cat B 1D oneshot scalar Quadratic DerivOp(2) Dual return\n\nPCHIP/Cardinal/Akima/Hermite still pending.\n\n* (fix): hermite 1D kernel deriv branches thread query carrier via `* one(dL)`\n\n`_hermite_kernel_1d` is shared by all Hermite-family methods (PCHIP /\nCardinal / Akima / Hermite). EvalDeriv3 ignored `dL` (third derivative\nis constant) and DerivOp{N≥4} had it underscored, dropping Dual carrier\non the 1D scalar path. EvalValue/EvalDeriv1/EvalDeriv2 already thread\n`dL` through `t = dL * inv_h` so they were carrier-aware.\n\nPromotes 5 broken pins in `test_carrier_type_stability.jl`:\n  - Cat A 1D oneshot scalar @inferred PCHIP/Cardinal/Akima deriv=4\n  - Cat B 1D oneshot scalar PCHIP DerivOp(3) Dual return\n  - Cat B 1D oneshot scalar PCHIP DerivOp(4) Dual return\n\nSingle kernel fix → all 4 Hermite-family methods carrier-aware on the\n1D scalar deriv path. Regression sweep (test_pchip / test_cardinal /\ntest_akima / test_hermite) all green; perf neutral.\n\n* Runic formatting\n\n* (refac): cell-local carrier-aware deriv-zero — remove protocol short-circuits\n\nReplace the Phase 1 protocol-level deriv-zero short-circuits (which used\n`first(data)` as a global sample, conflating NaN policy across the whole\narray) with a cell-local kernel-native mechanism. The kernel's own\n`zero(α)` / per-corner weight × 0 flow already produces a carrier-aware\nzero from the cell-local data corners — protocol short-circuits were both\nunnecessary and overly conservative.\n\nConstant ND (kernel only handled EvalValue):\n  • Add multi-dispatch wrapper `_constant_nd_evaluate`:\n      ::NTuple{N, EvalValue}     → forward to `_constant_nd_kernel`\n      ::NTuple{N, AbstractEvalOp} → `_constant_nd_kernel(...) * 0`\n    Cell-local kernel result carries NaN/Inf via IEEE `NaN * 0 = NaN`;\n    Tq carrier rides on the kernel's per-axis `* one(dL_d)`.\n  • Thread `ops::NTuple{N, AbstractEvalOp}` through the oneshot stack\n    (`_constant_interp_nd_oneshot{,_batch,_batch!}`, `_constant_nd_batch_dispatch{!,}`).\n\nLinear ND (kernel already handled deriv ≥ 2 via `_linear_weight(::EvalDeriv2+, …) = zero(α)`):\n  • Drop the `_eval_at_cell` short-circuit that returned `0 * first(itp.data)` and\n    dropped non-axis-1 Tq carrier on heterogeneous queries.\n  • Kernel's existing per-corner `data[corner] * weights_product` (with one factor\n    being `zero(α)`) produces the cell-local carrier-aware zero naturally.\n\nRemoved dead helpers / traits:\n  • `_deriv_zero_value`, `_deriv_zero_fill` + Constant/Linear/Hetero specializations\n  • `_is_any_deriv` (Constant ND oneshot)\n  • Protocol-level early returns in `_eval_nd_at_point` and the ND in-place\n    batch loop in `interpolant_protocol.jl`\n\nTests (`test/test_carrier_type_stability.jl`):\n  • Cat A (@inferred type stability) + Cat B (sub-zero deriv carrier) unchanged.\n  • Cat C/D restructured around *cell-local* NaN: a NaN at a cell corner the\n    query reads must propagate; a NaN outside the query's cell must NOT.\n  • Scope note: cell-local applies to kernel-local methods (Constant, Linear,\n    Hermite-family). Cubic/Quadratic perform a global tridiagonal solve at\n    build, so a single NaN oxidizes every coefficient — by-design global,\n    not covered by this contract.\n\n* (fix): cell-local NaN propagates through `_promote_extrap_zero` (Number case)\n\nMirror the `AbstractArray` overload's NaN-propagating pattern on the\n`Number` overload — Array case already does `0 .* val .+ …`, but Number\ncase did `zero(xq) * zero(val)`, stripping `val`'s NaN (cell-local\nboundary data) at every OOB ClampExtrap/FillExtrap deriv query.\n\nPath: `_eval_extrapolation(::DerivOp, y_bnd, ::ClampExtrap, xq)` /\n`(::FillExtrap, xq)` → `_promote_extrap_zero(y_bnd, xq)`. `y_bnd` is the\ncell-local boundary value (`first(y)` for OOB_LEFT, `last(y)` for\nOOB_RIGHT) — its NaN carrier must propagate to match the in-domain\nkernel's `0 * y_left * one(dL)` behavior and the Array overload's\nexisting `0 .* val .+ …` form. Affects all 7 methods (Linear / Constant /\nCubic / Quadratic / Pchip / Cardinal / Akima) uniformly via the shared\nhelper.\n\nTests (`test/test_carrier_type_stability.jl` — new Cat E):\n- Helper-level Number vs Array consistency\n- 1D OOB ClampExtrap × deriv × 5 cell-local methods × {OOB_LEFT, OOB_RIGHT}\n- 1D OOB FillExtrap × deriv × 5 cell-local methods × {OOB_LEFT, OOB_RIGHT}\n- Cell-local invariant: NaN at the OTHER boundary stays hidden\n- Carrier preservation: Dual xq + NaN val → Dual{NaN, 0} (matches `_promote_extrap_val`)\n\n22 RED tests, then GREEN after the 1-line fix. Full regression sweep\nclean (10458 lines, 96% coverage, all tests passed).\n\n* (test): pin Cat E helper-level OOB type stability via `@inferred`\n\nCat A pins `@inferred` on in-domain × deriv (NoExtrap default) paths;\nCat E exercises a new path — OOB × ClampExtrap/FillExtrap × deriv\nthrough `_eval_extrapolation` → `_promote_extrap_zero` — which Cat A\ndoesn't cover. Add `@inferred` at the helper level for both overloads\n(Number, Array, Dual carrier) so the recent fix's type stability is\nlocked against future regressions.\n\n* (fix): cell-local NaN at Constant 1D right-edge + Series boundary/fill paths\n\nPhase 3 + Bundle A established the cell-local NaN policy at the ND\nkernel and OOB extrap helper layers; this commit closes the remaining\nConstant-family gaps where deriv-zero branches used `0 * first(y)`\n(non-cell-local) while their EvalValue siblings already used cell-local\nindices like `last(y)` / `y[aq.idxR]` / `y[n_pts, k]` / `y_point[k, idx]`.\n\nSites (4 files, 11 lines):\n- `constant_oneshot.jl` (2): InBounds + WrapExtrap right-edge seam.\n  `0 * first(y) * one(xi)` → `0 * last(y) * one(xi)` — cell-local right\n  endpoint, mirrors EvalValue branch.\n- `constant_anchor.jl` (3): NoExtrap, AbstractExtrap default, ClampOrFill\n  in-domain at `aq.xq == x_last`. `0 * first(y) * one(aq.xq)` →\n  `@inbounds 0 * y[aq.idxR] * one(aq.xq)` — symmetric with EvalValue.\n- `constant_series_interp.jl` (3): scalar series right-boundary\n  (`_eval_constant_series_point!`) + anchored right-boundary\n  (`_eval_constant_series_with_extrap`) + anchored in-domain deriv\n  (`_eval_constant_series_anchored`). Per-series loops use\n  `y_point[k, n_pts]` / `y[n_pts, k]` / `y[aq.idxL, k]` instead of\n  `first(y)` — keeps per-series NaN cell-local.\n- `series_utils.jl` (4): `_constant_extrap_boundary_value` (layout\n  `[time, series]`) + `_fill_constant_extrap_simd!` (layout\n  `[series, time]`, named `y_point`). Both deriv overloads now consume\n  the previously-unused `side` / `n_pts` / `k` args via\n  `_boundary_point_index` for per-series cell-local zero.\n\nTests (`test_carrier_type_stability.jl` Cat F, 30 assertions):\n- 1D oneshot scalar — right-edge × {NoExtrap, ClampExtrap, WrapExtrap}\n- 1D persistent scalar — right-edge × {NoExtrap, ClampExtrap, FillExtrap}\n- Series batch in-domain — per-series cell-local at NaN-bearing cell\n- Series scalar right-boundary — per-series cell-local at right edge\n- Series scalar/batch OOB ClampExtrap — per-series cell-local via fills\n- Cell-local invariant: NaN at the OTHER side stays hidden (13 asserts)\n\n17 RED before fix → 30 GREEN after. Targeted regression (test_carrier_\ntype_stability + 7 Constant/Series/extrap test files) all pass.\n\n* (fix): cell-local NaN at Hetero NoInterp deriv-zero short-circuits\n\nNoInterp axes are structurally lookup-only (no math, like Constant).\nWhen a non-zero DerivOp targets a NoInterp axis, the existing short-\ncircuits returned `zero(Tz)` of the promoted type — dropping any cell-\nlocal NaN in the queried data slice. Mirror the Constant Phase 3 pattern\nby multiplying the cell-local data by `zero(Tz)`: the sliced data carries\nNaN, `zero(Tz)` enforces type promotion; together they yield a type-\ncorrect, NaN-aware deriv-zero.\n\nSites fixed (2 of 3):\n- `_eval_nointerp` line ~282 (all-NoInterp persistent, `N_r == 0`):\n  hoist `data_expr` (covers both `_HeteroPartials` and raw `Array`\n  storage), wrap deriv guard with `$data_expr * zero($Tz_expr)`.\n- `_interp_nointerp_oneshot` line ~475 (all-GridIdx oneshot,\n  `grids_r === ()`): `data_r[] * zero(_output_eltype(...))`.\n\nScope exception: `_interp_nointerp_oneshot` line ~489 (mixed Real +\nNoInterp axes with deriv on NoInterp) still returns plain `zero(Tz)` —\nstrict cell-local would require running the Real-axis interp first\n(potential doubled work for global-solve methods); deferred as a\nseparate follow-up.\n\nTests (`test_carrier_type_stability.jl` Cat G, 4 assertions):\n- All-NoInterp persistent — cell-local NaN propagates + out-of-cell stays hidden\n- All-GridIdx oneshot — cell-local NaN propagates + out-of-cell stays hidden\n\n2 RED before fix → 4 GREEN after. Targeted regression (test_carrier_\ntype_stability + test_nointerp) all pass.\n\n* (revert): Series cell-local deriv sites — restore master broadcast pattern for perf\n\nBundle B+C's per-series cell-local NaN propagation in Constant Series\nderiv-zero paths is reverted to master's broadcast `0 * first(y)` pattern.\nThe cell-local indexed loads add ~1 ns per call on the batch series eval\ninner loop (called K × Q times — 50k iterations on a 1000-series × 50-\nquery batch), measuring **+49% per-call cost** (21.6 → 32.2 μs) on the\nbenchmark scenario.\n\nReverted sites (4):\n- `series_utils.jl`     — `_constant_extrap_boundary_value` (2 overloads)\n- `constant_series_interp.jl` — `_eval_constant_series_point!`\n  right-boundary deriv (scalar in-domain edge)\n- `constant_series_interp.jl` — `_eval_constant_series_with_extrap`\n  `aq.xq == x_max` deriv branch (anchor-clipped OOB) ← actual perf culprit\n- `constant_series_interp.jl` — `_eval_constant_series_anchored`\n  in-domain deriv branch\n- `series_utils.jl`     — `_fill_constant_extrap_simd!` (already reverted\n  for SIMD broadcast — kept consistent with renamed `y_point` arg)\n\nThe Hetero / 1D right-edge / `_promote_extrap_zero` / NoInterp cell-local\nchanges (Bundles A, B 1D, D) are KEPT — those sites have ≤ noise perf\nimpact (verified via master worktree benchmark, all < 5 ns/call).\n\nTests (`test_carrier_type_stability.jl` Cat F):\n- 4 series cell-local assertions marked `@test_broken` with explanatory\n  comments — future fix path noted (NaN-presence detection at construction).\n- Out-of-cell invariant assertions kept as `@test` (still hold under\n  broadcast since `first(y)` is one fixed cell).\n\nPerf verification: master 21.6 μs → branch (post-revert) 21.6 μs on the\ncanonical bench (1000-series × 50-query Series batch OOB ClampExtrap\nderiv). Other paths unchanged at noise level.\n\n* (chore): address pre-merge code review feedback\n\nComments + test coverage cleanup before merging.\n\nComments:\n- `linear_nd_eval.jl` deriv-≥2 weight: correct stale description (Phase 3\n  removed the protocol short-circuit; kernel handles it cell-locally).\n- `interpolant_protocol.jl`: replace dead `_select_output_eltype` reference\n  with `_arithmetic_kernel_shape` / `_constant_kernel_shape`.\n- Series perf-trade-off comments (4 sites): trim to one-line \"why broadcast\".\n- Cat F header + `@test_broken` testset comments: drop dev-history phrasing.\n\nTest coverage:\n- Cat A: add `quadratic_interp` `@inferred` for oneshot scalar + persistent\n  scalar (DerivOp(3) — beyond polynomial degree).\n- Cat E: extend OOB ClampExtrap/FillExtrap × deriv NaN loop to include\n  `cubic_interp` and `quadratic_interp` (both route through\n  `_promote_extrap_zero` at OOB, so the Bundle A fix applies).\n- Cat D: add Linear ND scalar ↔ in-place batch cross-path check\n  (verifies kernel-native `_linear_weight(::EvalDeriv2+) = zero(α)`).\n\n* (chore): drop redundant deriv-zero comment in `_eval_constant_series_anchored`\n\n\"Derivatives of constant (step) function are zero\" restates what the\n`0 * first(y)` expression already shows. The perf rationale comment is\ncovered at `_constant_extrap_boundary_value` (the first occurrence).\n\n* (test): extend `@test (@inferred EXPR) isa T` to duck-typing tests\n\nWrap plain `@test EXPR isa T` checks in duck-typing tests with `@inferred`\nso they pin both result type AND inference stability — same pattern as\nCat A in `test_carrier_type_stability.jl`.\n\n- `test_duck_tv_dual_tq.jl`: 84 conversions (SVector/Dual Tv/Tq carriers).\n- `test_duck_typing_comprehensive.jl`: 66 conversions (DuckFloat-style Tv).\n\nTwo test groups in `test_duck_tv_dual_tq.jl` kept as plain `isa`:\n- ND `ForwardDiff.gradient/hessian/derivative` (lines 306-317): AD wrappers\n  have `Any` internal inference; `@inferred` is over-strict for these.\n- \"Dual x grid carrier flows through Tv × Tq\" (lines 266-275): some\n  `(fn, y, xq)` combos infer `Union{Float64, Dual}` even though the\n  runtime returns the right type. Latent type instability surfaces here.\n\n* (fix): Constant right-edge short-circuit threads grid carrier (Tg)\n\nConstant 1D right-edge short-circuit (`xi == last(x)`) returned\n`y[idxR] * one(xi)` — only the query carrier `Tq`. The kernel path picks\nup the grid carrier `Tg` via `aq.dL` / `dL = xq - xL`. For Dual grid +\nFloat query, the two paths returned `Float` and `Dual` respectively →\ninference `Union{Tv, Dual}` even though runtime returns the right type.\n\nAdd `* one(eltype(x))` (oneshot) / `* one(x_last)` (anchor) to thread Tg\nthrough the short-circuit. For Float grid this is a no-op (multiply by\n1.0); for Dual grid it lifts to Dual. Now both branches return the\nsame type, inference is clean.\n\nSites (5):\n- `constant_anchor.jl` 3 short-circuits (NoExtrap, AbstractExtrap default,\n  ClampOrFill in-domain).\n- `constant_oneshot.jl` InBounds + WrapExtrap.\n\nTest: re-promote `test_duck_tv_dual_tq.jl` \"Dual x grid carrier flows\nthrough Tv × Tq\" testset to `@test (@inferred …) isa T` (was reverted to\nplain `isa` in the previous commit; this latent inference bug was the\nroot cause).\n\n* (fix): Constant ND oneshot OOB FillExtrap deriv returns zero, not fill_value\n\n`_constant_interp_nd_oneshot{,_batch!}` passed a hardcoded `EvalValue()`\nto `_try_fill_oob`, so OOB queries under `FillExtrap` always returned\nthe fill_value — even for deriv queries that should return zero.\n\nPhase 3 (commit 364c3e4d3) removed a protocol-level `_is_any_deriv`\nshort-circuit at the public entry, which previously intercepted deriv\nqueries before they reached `_try_fill_oob`. The hardcoded `EvalValue()`\nwas correct under that short-circuit but became a regression once removed.\n\nPersistent path (`interpolant_protocol.jl:131,173`) correctly passes\n`ops` — only the oneshot path was missing the threading. Fix: pass `ops`\nthrough `_try_fill_oob` at both scalar and batch oneshot sites.\n\nTest (`test_carrier_type_stability.jl` Cat E): 4 assertions covering\nscalar (mixed-axis deriv) + batch oneshot + persistent sanity check.\n\n* (fix): Linear ND `_linear_weight(::EvalDeriv1)` threads Tq carrier\n\n`_linear_weight(::EvalDeriv1, α, inv_h, ::Val{B}) = ±inv_h` returned `Tg`\nonly — for a `Dual` query whose carrier source was an `EvalDeriv1` axis\n(mixed partial `(D1, D1)`, or `(EvalValue, D1)` with axis-2 Dual), the\nmultilinear corner sum dropped Tq and the batch path failed with\n`TypeError` (buffer eltype Dual vs kernel return Float).\n\nFix mirrors the `EvalDeriv2+` pattern: `* one(α)` threads Tq even when\n`α` does not appear in the weight expression. LLVM const-folds the `1.0`\nfactor on plain Float queries (zero cost). For Dual queries it costs one\nextra Dual mul per corner — necessary for AD correctness.\n\nPre-existing on master; this PR's carrier-propagation contract surfaces\nthe gap. Test coverage extended in Cat B with an ND counterpart of the\nexisting 1D \"non-zero deriv\" testset, including mixed-partial\n`(D1, D1)` on Linear / Cubic ND.\n\n* (fix): Constant Series deriv path — unified `_constant_kernel(op, ...)` + per-k cell-local OOB helpers\n\nSeries deriv branches used broadcast `0 * first(y)` (single-element load,\nSIMD-friendly) which dropped both cell-local NaN and Tq carrier — only\nNaN at `y[1]` could leak, regardless of which series cell was queried,\nand `Dual` queries returned the underlying `Tv` without carrier.\n\nThis commit routes the deriv path through the value path's exact\nmechanism on every Series eval site:\n\n  * `_eval_constant_series_anchored` and the scalar in-domain right-edge\n    branch in `_eval_constant_series_point!` collapse to a single\n    `_constant_kernel(op, y_left, y_right, h, dL, side)` call — value\n    and deriv share one code path. The 1D `_constant_kernel(::EvalDeriv*)`\n    overloads already follow the unified `0 * y * one(dL)` pattern.\n\n  * Shared OOB helpers `_constant_extrap_boundary_value` and\n    `_fill_constant_extrap_simd!` (in `core/series_utils.jl`, used by\n    Linear/Cubic/Quadratic/Constant Series alike) take an `aq` argument\n    and thread `* one(aq.xq)` for Tq carrier. `aq.xq` is the only common\n    field across the four anchored-query types, so dispatch stays\n    duck-typed. Clamp/Fill deriv overloads merged onto `::_ClampOrFill`\n    and source their zero from boundary `y[idx, k]` (not `e.fill_value`)\n    so a NaN-bearing `fill_value` does NOT leak through deriv while a\n    NaN at the boundary cell still does — preserves the existing OOB\n    FillExtrap × deriv contract.\n\nPerformance: per-k cell-local indexing inside the SIMD loop replaces a\nsingle broadcast value, but `one(aq.xq)` hoists out of the inner loop\nso the body is one load + one mul per `k`. Series scalar deriv paths\nare ~14–17% slower (102 ns vs 88 ns); batch deriv is bounded by the\nvalue-path cost (now ≈ value).\n\nCat F's four `@test_broken` assertions (Series in-domain / right-edge /\nOOB ClampExtrap × deriv) flip to `@test`. Direct-call tests in\n`test/test_series_utils.jl` updated for the new signature; bonus\nregression pin for FillExtrap(NaN) × deriv = 0.\n\n* (fix): Hetero mixed-axes deriv-zero — `result * 0` carrier-preserving pattern\n\nWhen a `HeteroInterpolantND` query has `Real` axes + at least one\n`NoInterp` axis (mixed case) AND a non-zero deriv on a NoInterp axis,\nthe `@generated _eval_nointerp` body short-circuited with\n`return zero($Tz_expr)` — a type-only zero that strips both cell-local\nNaN at the queried slice and any Tq carrier from the Real-axis search.\n\nSame pattern as Constant ND's `_constant_nd_kernel(...) * 0` dispatch:\nremove the early-return, run the Real-axis kernel\n(`_eval_hetero_nd_cell` / `_collapse_dims`) normally, and wrap the\nresult with `result * 0` when any NoInterp axis carries a non-zero\nderiv. `result` is already carrier-threaded by the Real-axis kernel\n(IEEE: `0 * Dual = Dual(0, 0)`, `0 * NaN = NaN`), so the late `* 0`\npreserves Tq + Tg + Tv while zeroing the value.\n\nApplied to three branches of the `@generated` body\n(`_HeteroPartials` / OnTheFly local / OnTheFly global) and to the\n`_interp_nointerp_oneshot` mixed case. The runtime cost is one extra\nmultiplication on the deriv path — Real-axis search would have been\nrequired anyway for a strict cell-local contract, so the saving from\nthe prior early-return was conceptually unavailable.\n\nAlso drops a stale \"Constant Phase 3\" label in the all-NoInterp\ncomment (the pattern it references is now the regular\n`_constant_nd_evaluate` dispatch).\n\nCat G extended with Mixed Linear+NoInterp persistent + oneshot\ncell-local NaN tests.\n\n* (chore): pre-merge code-review followups\n\nSweeps the small fixes surfaced by the pre-merge code-review pass:\n\n* Constant `NoExtrap` anchored-query right-edge bug\n  (`_constant_anchor_dispatch(NoExtrap)` at `aq.xq == last(itp.x)`):\n  the wrapper used `zero(T) * one(aq.xq)`, dropping Tg carrier and\n  stripping NaN at the boundary cell. Now delegates to the shared\n  `_constant_eval_at_anchor(::NoExtrap)` path which mirrors the cell-\n  local pattern used by the other three sibling overloads. Pinned by a\n  new \"1D anchored-query — right-edge cell-local\" subtest in Cat F.\n\n* `constant_oneshot.jl`: scalar `_constant_eval_at_point` right-edge\n  short-circuits switched from `one(xi) * one(eltype(x))` to\n  `one(Tq) * one(Tg)` — the function signature already binds both type\n  parameters, so use them directly. Same shape semantically, more\n  explicit at the call site.\n\n* Stale `_sample_data` trait comments (Linear / Cubic / Quadratic ND\n  eval): \"Zero-ref for fill-value derivative computation\" → \"Per-method\n  sample of `Tv` for fill-value paths (e.g. `_try_fill_oob`)\" to match\n  the wording landed for Constant ND in the trait rename series.\n\n* Stale comment in `constant_anchor.jl` describing the right-edge\n  short-circuit pattern: now mentions both Tq and Tg threading via\n  `one(aq.xq) * one(x_last)`.\n\n* `_promote_extrap_zero` docstring (`core/utils.jl`): broadened from\n  \"derivative of constant\" to the actual current contract\n  (carrier-aware zero under flat extrapolation, all method families).\n  Explains why the `0 * val` prefix is structurally required for NaN\n  propagation.\n\n* Phase label cleanup in `constant_series_interp.jl` (\"Phase E.2:\") and\n  in `test_carrier_type_stability.jl` Cat F / Cat G headers (stray\n  \"Phase 3\" / \"Constant Phase 3\" references). Removes plan-era labels\n  that age poorly once the plan lands.\n\n* `constant_oneshot.jl` scalar entry docstring: lists `EvalValue()` +\n  any `DerivOp(n)` (was capped at `DerivOp(2)`). Public API supports\n  arbitrary N already.\n\n* `constant_nd_oneshot.jl` batch docstring: missing `ops` arg added to\n  both `_constant_interp_nd_oneshot_batch!` / `..._batch` signatures.\n\n* `_constant_nd_evaluate` (`constant_nd_eval.jl`): rationale comment\n  added explaining why this path intentionally runs the kernel + `* 0`\n  rather than falling back to a `fill!` shortcut — guards future\n  reverts that might be tempted by the perf delta vs master.\n\n* (test): Cat B ND non-zero deriv — full method × path sweep\n\nReplaces the hand-rolled Linear/Cubic-only Cat B ND subtests with a\nloop over all six ND methods (Linear D1 / Cubic D3 / Quadratic D2 /\nPCHIP D3 / Cardinal D3 / Akima D3) and three path families (oneshot\nscalar / oneshot batch / persistent scalar+batch), each covering both\nthe per-axis `(EvalValue, Dk)` pattern and the mixed-partial\n`(DerivOp(1), DerivOp(1))` pattern.\n\nHelpers `_check_oneshot_scalar` / `_check_oneshot_batch` /\n`_check_persistent` take `fn::F` so `@inferred` can specialize per\nconcrete method; the for-loop body would otherwise see `fn` as a\nUnion and collapse the inference check.\n\nCoverage matrix after this commit (Cat B ND, all `@inferred + isa`):\n\n  | method     | oneshot scalar | oneshot batch | persistent scalar+batch |\n  |------------|:--------------:|:-------------:|:-----------------------:|\n  | Linear     |    ✓ × 2       |    ✓ × 2      |        ✓ × 4            |\n  | Cubic      |    ✓ × 2       |    ✓ × 2      |        ✓ × 4            |\n  | Quadratic  |    ✓ × 2       |    ✓ × 2      |        ✓ × 4            |\n  | PCHIP      |    ✓ × 2       |    ✓ × 2      |        ✓ × 4            |\n  | Cardinal   |    ✓ × 2       |    ✓ × 2      |        ✓ × 4            |\n  | Akima      |    ✓ × 2       |    ✓ × 2      |        ✓ × 4            |\n\nCat B grows from 14 → 57 assertions. The batch path is the most\nload-bearing: Linear's prior `_linear_weight(::EvalDeriv1)` Tq gap\nshowed up there first as `TypeError` (buffer eltype `Dual` vs kernel\nreturn `Float`), which scalar-only coverage missed.\n\n* Runic formatting\n\n* (fix): Hetero mixed OOB + FillExtrap × NoInterp deriv must not leak fill_value\n\nMirrors the Constant ND OOB FillExtrap contract pinned in Cat E:\n\"deriv at OOB returns 0, not fill_value\". The Hetero mixed Real +\nGridIdx/NoInterp path violated this on both oneshot and persistent:\n\n  * Oneshot (`_interp_nointerp_oneshot`) — regression introduced by the\n    `result * 0` change: a Real-axis OOB query under `FillExtrap(NaN)`\n    used to early-return `zero(Tz)` (master), but the new flow lets\n    `interp(...)` compute `fill_value = NaN` and then multiplies by `0`,\n    yielding `NaN` (`NaN * 0 = NaN`).\n\n  * Persistent (`_eval_nointerp` @generated) — pre-existing master bug:\n    the OOB `_try_fill_oob` short-circuit runs BEFORE the NoInterp\n    deriv check, so any `FillExtrap` (incl. `NaN`) leaks regardless of\n    the NoInterp axis derivative.\n\nFix in both paths: when any NoInterp axis carries a non-zero deriv AND\nthe Real-axis query is OOB, return a slab-local zero sourced from the\ndata slice's first element (`data_r[1] * zero(Tz)`) — finite cells\nyield 0, a NaN at the slab survives, and the user-supplied `fill_value`\ncannot reach the result. The in-domain Real-axis path is unchanged\n(still runs the kernel + `result * 0` for cell-local NaN).\n\nCat E gets a new testset \"Hetero mixed OOB FillExtrap × NoInterp deriv\nreturns zero, not fill_value\" — runs both `99.0` and `NaN` fill values\nthrough oneshot and persistent. Pre-existing structural gap: Cat E\ncovered OOB contracts only for 1D + Constant ND, and Cat G covered\nHetero NoInterp only in-domain; the Hetero × OOB intersection was\nunpinned. New testset closes it.\n\n* Revert \"(fix): Hetero mixed OOB + FillExtrap × NoInterp deriv must not leak fill_value\"\n\nThis reverts commit 5f20143c84774d3299c7dd1a2784075c8e64ca22.\n\n* (fix): Series oneshot batch — restore LTS @inferred via type-arg barrier\n\n`outputs = [Vector{Tv_out}(undef, NQ) for _ in 1:K]` infers as `Vector`\n(non-concrete) on Julia 1.10 LTS when `Tv_out` is bound from a function\nreturn. The comprehension is lowered to a closure, and 1.10's inference\ncan't propagate the locally-bound `Type{T}` from the outer scope into\nthe closure body — even though `_output_eltype(...)` is fully concrete\nin isolation. Verified by isolating: an inline type literal in the\ncomprehension infers correctly, a local-variable type does not, a\ntype-as-argument barrier does.\n\nExtracts the pattern into `_alloc_series_batch_outputs(::Type{Tv}, K, NQ)`\nin series_utils.jl. All four Series oneshot batch entry points (Linear /\nCubic / Quadratic / Constant) route through it.\n\nEffect on LTS: `linear_interp(x, ::Series, ::Vector{<:Dual})` etc. now\ninfer concretely as `Vector{Vector{Tv_out}}` instead of `Vector`,\nmatching 1.11+/1.12+. Removes downstream type-instability that\npreviously propagated to callers on LTS only.\n\nUnblocks the 4 batched-Dual @inferred tests in test_duck_tv_dual_tq.jl\n\"Series path — duck-Tv × duck-Tq carrier propagates\" that were failing\non the LTS CI job.\n\n* (test): InferredCompat @testsnippet with `@maybe_inferred` macro\n\nProvides a version-conditional `@inferred` for tests that hit Julia\ninference gaps present only on older releases (e.g. 1.10 LTS doesn't\npropagate a locally-bound `Type{T}` from a function return into a\nclosure body, even when the function is concrete-inferred in isolation).\n\n`@maybe_inferred expr` expands to:\n  - `Test.@inferred expr` on ≥1.12\n  - `expr` unchanged on older releases (runtime contract via the\n    surrounding `isa` / `==` still applies; inference assertion skipped)\n\nOpt-in via `setup=[InferredCompat]` on `@testitem`. Use sparingly —\nprefer fixing the source (e.g. extract a `::Type{T}` barrier, see\n`_alloc_series_batch_outputs`) when the inference gap is in this\npackage's own code.\n\n* (chore): drop unused `@maybe_inferred` / `InferredCompat` snippet\n\nAdded in 5408d2c1d as a defensive utility for hypothetical future LTS-only\ninference gaps. Never referenced by any testitem — the source-level\n`_alloc_series_batch_outputs` barrier (a9b8458ba) fully covers the only\ngap we hit on LTS, and no other test was waiting on this. Removed per\nYAGNI; if a real callsite shows up later, the macro is 6 lines.\n\n* (fix + refac): FillExtrap × deriv — cell-local \"fill_value-as-data\" contract\n\nUnifies the OOB deriv contract across all paths so it matches the strict\ncell-local interpretation: the OOB cell's data IS whatever the extrap\nrule puts there. For `FillExtrap(c)`, that's `c` — so deriv = `0 * c`\n(NaN propagates, finite × 0 = 0). Master's contract sourced deriv from\n`y_bnd` regardless of extrap type, which inconsistently ignored the\nfill_value as a NaN sentinel for AD / OOB-detection use cases.\n\nSingle-dispatch helper `_extrap_deriv_source(extrap, y_bnd)`:\n  - `ClampExtrap` → `y_bnd`        (unchanged — boundary y NaN propagates)\n  - `FillExtrap`  → `e.fill_value` (NaN fill_value propagates as data)\n\nThreaded through every OOB deriv site:\n  * 1D `_eval_extrapolation(::DerivOp, ...)` collapsed to one Union method\n    using the helper. ClampExtrap behavior unchanged; FillExtrap now\n    sources from fill_value.\n  * ND `_fill_extrap_result(::AbstractEvalOp, fill_val, _, qe)` switched\n    from `zero_ref` to `fill_val` (signature stable, `zero_ref` retained\n    but unused). Tuple-ops overload likewise.\n  * Series `_constant_extrap_boundary_value` / `_fill_constant_extrap_simd!`\n    Clamp/Fill deriv collapsed to a single Union overload using the helper.\n  * Hetero mixed `_eval_nointerp` @generated body: OOB short-circuit now\n    runs `oob * 0` when a NoInterp axis has non-zero deriv — `oob` is\n    already `_promote_extrap_zero(fill_value, ...)` post-fix, so finite\n    fill → 0 and NaN fill propagates. Closes pre-existing master bug\n    where the OOB shortcut returned `fill_value` without applying\n    NoInterp deriv's `* 0`.\n  * Hetero mixed `_interp_nointerp_oneshot`: no code change — `result * 0`\n    already does the right thing once `_eval_extrapolation` is fixed.\n\nPerf: every change site is on the OOB cold path. Helper is `@inline`\nwith singleton dispatch (LLVM dead-branch elimination). In-domain paths\nremain bit-identical; ClampExtrap-only callers see no behavior change.\n\nTests:\n  * `Cat E` rewritten — pins the new contract end-to-end across 1D\n    (all 7 methods), ND Constant/Linear, Hetero mixed. 89 assertions.\n    Old \"queried-boundary NaN propagates\" tests for `FillExtrap` repurposed\n    to \"y_bnd NaN is IGNORED\" (the new contract distinction).\n  * `test_constextrap_fill.jl` updates: \"Cubic with fill value\",\n    \"Linear with fill value\", and \"ND derivatives under FillExtrap\"\n    flipped from `iszero` to `isnan` for `FillExtrap(NaN)` × deriv;\n    finite-fill assertions retained as-is.\n\nReverts the previous patch (5f20143c8) which sourced the OOB zero from\nthe data slice's first element under the prior contract — the option-B\nflow sources from `fill_value` instead, so that patch's `data_r[1]`\nshort-circuit is unnecessary and was reverted in 81f221c36.\n\n* (refac): rename `_extrap_deriv_source` → `_extrap_oob_data`\n\nThe helper returns \"what data sits in the OOB cell\" — a property of the\nextrap, not specific to derivative evaluation. The old name\n(`_deriv_source`) implied deriv-only scope, but the underlying concept\nis the same `y_bnd` vs `fill_value` dispatch that already drives the\n`EvalValue` extrap path. Generalizing the name allows future callers\n(e.g. value-path consolidation) to reuse the helper without semantic\nmismatch.\n\nBehavior unchanged. 4 call sites renamed (`core/utils.jl` definition +\n`_eval_extrapolation` use; `core/series_utils.jl` × 2).\n\n* (test): update remaining FillExtrap × deriv tests for option-B contract\n\nThree test files still pinned the prior contract (\"FillExtrap(NaN) × deriv\nreturns 0, fill_value-as-sentinel\"). Flipped to the new \"fill_value-as-data\"\nsemantics — NaN fill propagates through deriv via `0 * NaN = NaN`, finite\nfill × 0 = 0 unchanged.\n\n* `test_derivatives.jl` FillExtrap block: `D(4)` on cubic/quadratic at OOB\n  with NaN fill now expects `all(isnan, res)` per series; in-domain D(4)\n  for cubic stays `== z2`.\n* `test_series_utils.jl` direct-call tests for `_constant_extrap_boundary_value`\n  and `_fill_constant_extrap_simd!`: FillExtrap deriv with NaN fill flips to\n  `isnan`; added explicit finite-fill (99.0) → 0 assertions.\n* `test_mixed_precision_extrap.jl` FillExtrap derivatives: Float32 NaN fill\n  + Float64 query now expects `isnan` with Float64 promotion; added\n  finite-fill (0.0f0) sibling case to keep the Tq promotion test alive.\n\n* (refac): unify `_eval_extrapolation` value + deriv paths via `_extrap_oob_data`\n\nThe two `::EvalValue` methods (ClampExtrap, FillExtrap) used the same\n`y_bnd` vs `fill_value` dispatch already centralized in `_extrap_oob_data`\n— but expressed it inline as separate overloads. Collapsing them onto\nthe Union method that mirrors the `::DerivOp` shape makes the parallel\nstructure explicit:\n\n  EvalValue → `data + carrier`         (value-promotion of OOB cell data)\n  DerivOp   → `0 * data + carrier`     (deriv-promotion: 0 × OOB cell data)\n\nThe shared scaffolding clarifies the deriv-path read: `_extrap_oob_data`\nfetches the cell's data and `_promote_extrap_zero` applies the `0 *` —\nthe helper is asking \"what data?\", not \"what derivative?\".\n\nBehavior unchanged. ClampExtrap / FillExtrap value-path output bit-equal\nto before (the dispatch chain still resolves to the same source); deriv\npath also unchanged. Verified across `test_carrier_type_stability`,\n`test_constextrap_fill`, `test_constant`, `test_derivatives`.\n\n* Runic formatting\n\n* (test): update ext/test_recipes.jl derivative view for option-B contract\n\nThe \"derivative view with fill value\" testset pinned the prior contract\n(`FillExtrap(NaN) × deriv → 0`, no NaN in the recipe output). Under the\nnew \"fill_value-as-data\" contract the OOB tails of `deriv1(itp)` carry\n`0 * NaN = NaN`, which Plots draws as gaps (intended visual outcome).\n\nFlipped the assertion to `any(isnan, yq)` for the NaN-fill case and added\na finite-fill (`FillExtrap(0.0)`) sibling that still asserts no NaN.",
+          "timestamp": "2026-05-28T10:19:52-07:00",
+          "tree_id": "fe511d173b7250070d45852c4c42a1da54eea15f",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/d7f8048a0780e219ef4a6b2fa134763c52c77c51"
+        },
+        "date": 1779989284592,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 37600,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83880\nallocs=29\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 607.12,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 352470,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515320\nallocs=40\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1714.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1435.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 16.32,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 7.51,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3238.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 33.27,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 13.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4230.92,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4223.52,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9376.36,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3205.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_rand_rand",
+            "value": 66096.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_sort_rand",
+            "value": 62968.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_sort_sort",
+            "value": 58841.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_rand_rand",
+            "value": 15919.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_sort_rand",
+            "value": 9392,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_sort_sort",
+            "value": 5677.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "14_series_oneshot_batch/constant_inplace_vec_k8_q1000_rand",
+            "value": 18041.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "14_series_oneshot_batch/linear_inplace_vec_k8_q1000_rand",
+            "value": 18365.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 541.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 43543.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1390.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4512\nallocs=11\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12678.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40392\nallocs=16\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 22.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 445.44,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 42618.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 25.35,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 18744.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 35.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 323.91,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.21,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 195.36,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 18489.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 10.41,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 660.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4512.06,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 39835.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 811.34,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1785.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2298.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11415.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3336.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 46370.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 561.06,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 421739.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1039.9,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

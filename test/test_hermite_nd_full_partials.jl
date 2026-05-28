@@ -319,6 +319,85 @@ end
     @test itp((0.3, 0.5)) ≈ itp((0.3, 0.5))
 end
 
+@testset "Hermite ND — Input isolation (persistent copies, oneshot snapshots)" begin
+    # ── Persistent: build snapshots inputs; user mutations after build are
+    #    not visible to the interpolant.
+    @testset "Persistent: itp isolated from post-build user mutation" begin
+        x = range(0.0, 1.0, length=5)
+        y = range(0.0, 1.0, length=5)
+        data = [xi*yj for xi in x, yj in y]
+        dfdx = [yj for xi in x, yj in y]
+        dfdy = [xi for xi in x, yj in y]
+        d2   = ones(5, 5)
+        p = HermiteFullPartials((1, 0) => dfdx, (0, 1) => dfdy, (1, 1) => d2)
+
+        itp = hermite_interp((x, y), data, p)
+        val_before = itp((0.5, 0.5))
+
+        # Trash every user-owned input array
+        fill!(data, NaN)
+        fill!(dfdx, NaN)
+        fill!(dfdy, NaN)
+        fill!(d2,   NaN)
+        # `p.partials[k]` is the *same array* as the dfdx/dfdy/d2 we just
+        # nuked — these are aliases established by `HermiteFullPartials`
+        # (zero-copy when eltypes match). Confirm:
+        @test all(isnan, p.partials[1])
+        @test all(isnan, p.partials[2])
+        @test all(isnan, p.partials[3])
+
+        # Despite user-side trashing, itp still reproduces the original value:
+        # the build-time copy into `nodal_derivs.partials` decoupled it.
+        val_after = itp((0.5, 0.5))
+        @test val_after == val_before
+        @test !isnan(val_after)
+    end
+
+    # ── Persistent: the stored packed buffer is also independent (a third
+    #    snapshot — mutate itp.nodal_derivs internally, user data untouched).
+    @testset "Persistent: user data unaffected by itp internal mutation" begin
+        x = range(0.0, 1.0, length=4)
+        y = range(0.0, 1.0, length=4)
+        data = [xi*yj for xi in x, yj in y]
+        original_data = copy(data)
+        p = HermiteFullPartials(
+            (1, 0) => [yj for xi in x, yj in y],
+            (0, 1) => [xi for xi in x, yj in y],
+            (1, 1) => ones(4, 4),
+        )
+        itp = hermite_interp((x, y), data, p)
+        # Stomp the internal packed buffer
+        fill!(itp.nodal_derivs.partials, 99.0)
+        # User's `data` is unchanged
+        @test data == original_data
+    end
+
+    # ── One-shot: each call snapshots the *current* user data. Mutating
+    #    between calls is safe and reflected in the next return.
+    @testset "One-shot: snapshots current data per call" begin
+        x = range(0.0, 1.0, length=5)
+        y = range(0.0, 1.0, length=5)
+        data = [xi*yj for xi in x, yj in y]
+        p = HermiteFullPartials(
+            (1, 0) => [yj for xi in x, yj in y],
+            (0, 1) => [xi for xi in x, yj in y],
+            (1, 1) => ones(5, 5),
+        )
+        v1 = hermite_interp((x, y), data, p, (0.5, 0.5))
+        # Replace data in-place with a constant; result must follow.
+        # Partials still describe the OLD data, but for cubic Hermite the
+        # value at a node is the corresponding data entry exactly — so at
+        # interior the eval is a polynomial mix of {data, partials}. Easier
+        # invariant: at a *grid node* the eval reduces to `data[i, j]`.
+        data .= 7.5
+        v2 = hermite_interp((x, y), data, p, (x[3], y[3]))   # grid node
+        @test v2 == 7.5
+        # And the original call shouldn't have been retroactively affected
+        # (no aliasing back into user's array via the pool).
+        @test v1 == 0.25   # x[3]*y[3] when data was xi*yj; sanity
+    end
+end
+
 @testset "Hermite ND — Pool-based oneshot zero-alloc" begin
     # All measurements live inside one function so locals are type-stable and
     # `@allocated` reports the steady-state, post-warmup cost (no @testset

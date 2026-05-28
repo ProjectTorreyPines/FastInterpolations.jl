@@ -319,5 +319,118 @@ end
     @test itp((0.3, 0.5)) ≈ itp((0.3, 0.5))
 end
 
+@testset "Hermite ND — Pool-based oneshot zero-alloc" begin
+    # All measurements live inside one function so locals are type-stable and
+    # `@allocated` reports the steady-state, post-warmup cost (no @testset
+    # try/catch artifacts). Bulk-loop divisor confirms per-call alloc.
+
+    function _measure_nobc(n_iters)
+        x = range(0.0, 1.0, length=20)
+        y = range(0.0, 1.0, length=20)
+        data = [xi*yj for xi in x, yj in y]
+        p = HermiteFullPartials(
+            (1, 0) => [yj for xi in x, yj in y],
+            (0, 1) => [xi for xi in x, yj in y],
+            (1, 1) => ones(20, 20),
+        )
+        # warmup
+        hermite_interp((x, y), data, p, (0.5, 0.5))
+        function loop!(out, x, y, data, p, queries, n)
+            @inbounds for k in 1:n
+                out[k] = hermite_interp((x, y), data, p, queries[k])
+            end
+            return nothing
+        end
+        queries = [(0.1 + 0.0001*k, 0.5) for k in 1:n_iters]
+        out = Vector{Float64}(undef, n_iters)
+        loop!(out, x, y, data, p, queries, n_iters)
+        return @allocated loop!(out, x, y, data, p, queries, n_iters)
+    end
+
+    function _measure_excl(n_iters)
+        xp = range(0.0, 2π * 19/20, length=20)
+        yp = range(0.0, 2π * 19/20, length=20)
+        dp = [sin(xi)*cos(yj) for xi in xp, yj in yp]
+        pp = HermiteFullPartials(
+            (1, 0) => [ cos(xi)*cos(yj) for xi in xp, yj in yp],
+            (0, 1) => [-sin(xi)*sin(yj) for xi in xp, yj in yp],
+            (1, 1) => [-cos(xi)*sin(yj) for xi in xp, yj in yp],
+        )
+        bc = (PeriodicBC(endpoint = :exclusive), PeriodicBC(endpoint = :exclusive))
+        hermite_interp((xp, yp), dp, pp, (0.5, 0.5); bc)
+        function loop!(out, xp, yp, dp, pp, queries, n, bc)
+            @inbounds for k in 1:n
+                out[k] = hermite_interp((xp, yp), dp, pp, queries[k]; bc)
+            end
+            return nothing
+        end
+        queries = [(0.1 + 0.0001*k, 0.5) for k in 1:n_iters]
+        out = Vector{Float64}(undef, n_iters)
+        loop!(out, xp, yp, dp, pp, queries, n_iters, bc)
+        return @allocated loop!(out, xp, yp, dp, pp, queries, n_iters, bc)
+    end
+
+    function _measure_inc(n_iters)
+        xi2 = range(0.0, 2π, length=20)
+        yi2 = range(0.0, 2π, length=20)
+        di = [cos(xi)*cos(yj) for xi in xi2, yj in yi2]
+        pi2 = HermiteFullPartials(
+            (1, 0) => [-sin(xi)*cos(yj) for xi in xi2, yj in yi2],
+            (0, 1) => [-cos(xi)*sin(yj) for xi in xi2, yj in yi2],
+            (1, 1) => [ sin(xi)*sin(yj) for xi in xi2, yj in yi2],
+        )
+        bc = (PeriodicBC(endpoint = :inclusive), PeriodicBC(endpoint = :inclusive))
+        hermite_interp((xi2, yi2), di, pi2, (0.5, 0.5); bc)
+        function loop!(out, xi2, yi2, di, pi2, queries, n, bc)
+            @inbounds for k in 1:n
+                out[k] = hermite_interp((xi2, yi2), di, pi2, queries[k]; bc)
+            end
+            return nothing
+        end
+        queries = [(0.1 + 0.0001*k, 0.5) for k in 1:n_iters]
+        out = Vector{Float64}(undef, n_iters)
+        loop!(out, xi2, yi2, di, pi2, queries, n_iters, bc)
+        return @allocated loop!(out, xi2, yi2, di, pi2, queries, n_iters, bc)
+    end
+
+    function _measure_batch_inplace()
+        x = range(0.0, 1.0, length=20)
+        y = range(0.0, 1.0, length=20)
+        data = [xi*yj for xi in x, yj in y]
+        p = HermiteFullPartials(
+            (1, 0) => [yj for xi in x, yj in y],
+            (0, 1) => [xi for xi in x, yj in y],
+            (1, 1) => ones(20, 20),
+        )
+        queries = [(0.13, 0.42), (0.77, 0.51), (0.23, 0.83)]
+        out = Vector{Float64}(undef, 3)
+        hermite_interp!(out, (x, y), data, p, queries)
+        return @allocated hermite_interp!(out, (x, y), data, p, queries)
+    end
+
+    function _measure_persistent_eval()
+        x = range(0.0, 1.0, length=20)
+        y = range(0.0, 1.0, length=20)
+        data = [xi*yj for xi in x, yj in y]
+        p = HermiteFullPartials(
+            (1, 0) => [yj for xi in x, yj in y],
+            (0, 1) => [xi for xi in x, yj in y],
+            (1, 1) => ones(20, 20),
+        )
+        itp = hermite_interp((x, y), data, p)
+        itp((0.5, 0.5))
+        return @allocated itp((0.7, 0.3))
+    end
+
+    # Bulk-loop measurements amortize single-call setup noise.
+    # 1000-iter bulk / 1000 must be exactly 0.
+    @test _measure_nobc(1000) == 0
+    @test _measure_excl(1000) == 0
+    @test _measure_inc(1000)  == 0
+    # Single-call batch & persistent eval (already inside function barrier).
+    @test _measure_batch_inplace() <= ALLOC_THRESHOLD
+    @test _measure_persistent_eval() <= ALLOC_THRESHOLD
+end
+
 end  # @testitem
 

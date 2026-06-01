@@ -36,3 +36,18 @@ _adjoint_kwargs_from_itp(itp::QuadraticInterpolantND) = (bc = itp.bcs, extrap = 
 _adjoint_kwargs_from_itp(itp::LinearInterpolantND) = (extrap = itp.extraps,)
 _adjoint_kwargs_from_itp(itp::ConstantInterpolantND) = (side = itp.sides, extrap = itp.extraps)
 _adjoint_kwargs_from_itp(itp::HeteroInterpolantND) = (methods = itp.methods, extrap = itp.extraps)
+
+# CubicHermiteInterpolantND has no adjoint yet (user supplies data + 2^N-1
+# separate partial arrays, so the single-`data`-tangent protocol does not
+# apply). It subtypes `AbstractInterpolantND`, so the generic reverse-mode
+# rrules reach these traits — guard with a clear error instead of a MethodError.
+# Forward eval and `gradient`/`hessian`/`laplacian` are unaffected.
+@noinline _throw_hermite_nd_adjoint_unsupported() = throw(
+    ArgumentError(
+        "CubicHermiteInterpolantND does not support reverse-mode AD (adjoint) yet. " *
+            "Forward `gradient`/`hessian`/`laplacian` work; for ∂/∂data use an auto-slope " *
+            "ND method (`cubic_interp`, `pchip_interp`, …) until the Hermite ND adjoint lands.",
+    )
+)
+_adjoint_func_from_itp(::CubicHermiteInterpolantND) = _throw_hermite_nd_adjoint_unsupported()
+_adjoint_kwargs_from_itp(::CubicHermiteInterpolantND) = _throw_hermite_nd_adjoint_unsupported()

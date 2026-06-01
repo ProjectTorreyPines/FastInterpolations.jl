@@ -777,4 +777,27 @@
         @test_throws ArgumentError hermite_interp((x, y), data, bad, (0.5, 0.5))  # one-shot path
     end
 
+    @testset "Hermite ND — nodal_partials access + adjoint guard" begin
+        x = range(0.0, 1.0, length = 5)
+        y = range(0.0, 1.0, length = 5)
+        data = [0.3 + xi * yj for xi in x, yj in y]
+        dfdx = [yj for xi in x, yj in y]
+        dfdy = [xi for xi in x, yj in y]
+        d2 = ones(5, 5)
+        p = HermitePartials((1, 0) => dfdx, (0, 1) => dfdy, (1, 1) => d2)
+        itp = hermite_interp((x, y), data, p)
+
+        # The packed buffer exposes the user inputs via `nodal_partials`:
+        # order (0,0) = value, (1,0)/(0,1) = first partials, (1,1) = mixed.
+        @test nodal_partials(itp, (0, 0)) == data
+        @test nodal_partials(itp, (1, 0)) == dfdx
+        @test nodal_partials(itp, (0, 1)) == dfdy
+        @test nodal_partials(itp, (1, 1)) == d2
+
+        # Reverse-mode AD is unimplemented: the generic ND rrule reaches these
+        # traits, which must raise a clear error rather than a MethodError.
+        @test_throws ArgumentError FastInterpolations._adjoint_func_from_itp(itp)
+        @test_throws ArgumentError FastInterpolations._adjoint_kwargs_from_itp(itp)
+    end
+
 end  # @testitem

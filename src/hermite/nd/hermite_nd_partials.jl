@@ -112,7 +112,7 @@ function _validate_hermite_full_pairs(
             "HermitePartials{N=$N}: expected $((1 << N) - 1) pairs, got $K",
         )
     )
-    seen = fill(false, 1 << N)   # index 1 ↔ mask 0 (sentinel; never set for FullPartials)
+    seen = fill(false, 1 << N)   # index 1 ↔ mask 0 (function-value sentinel; never set here)
     sz_ref = size(last(pairs[1]))
     mask_ref = _multiindex_to_mask(first(pairs[1]))
     @inbounds for (k, p) in enumerate(pairs)

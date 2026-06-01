@@ -238,16 +238,14 @@ end
 # A naïve slot-major fill `buf[slot, :, :, ...] .= src` is a stride-`2^N`
 # write pattern, repeated `2^N` times — every cache line of `buf` is touched
 # `2^N` times (once per slot) with only one of `2^N` writes landing on it
-# per pass. For grids that spill the L1 (≥40 KB packed buffer at 100×100
-# Float64 N=2), the line is re-fetched on each subsequent pass, costing
-# multiple memory round-trips per cache line.
+# per pass. For grids large enough to spill the L1 cache, the line is
+# re-fetched on each subsequent pass, costing multiple memory round-trips
+# per cache line.
 #
 # Node-major with the slot loop unrolled at compile time fixes this: each
 # iteration writes all `2^N` partials at one grid node — those writes are
 # *contiguous* (mask is the fastest-iterating axis), so one cache line is
-# fully populated in a single burst. Empirically ~2.7× faster than
-# slot-major at 100×100 + larger, and saturates single-channel DDR4
-# bandwidth (~5.4 GW/s Float64).
+# fully populated in a single burst before moving on.
 #
 # Reads come from `K_total = 2^N` separate source arrays (data + every
 # user partial) streamed linearly — the hardware prefetcher handles the

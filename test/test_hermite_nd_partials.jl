@@ -328,9 +328,10 @@
             end
         end
 
-        # Round-trip: value at xq must equal value at xq + 2π (within wrap-aware extrap, but
-        # PeriodicBC at build time bakes in the wrap so domain query inside [0, 2π) is exact)
-        @test itp((0.3, 0.5)) ≈ itp((0.3, 0.5))
+        # Period wrap: a query shifted by one full period (2π on each axis)
+        # must return the same value. Periodic axes resolve to WrapExtrap, so
+        # the out-of-domain shifted query folds back into the base cell.
+        @test itp((0.3 + 2π, 0.5 + 2π)) ≈ itp((0.3, 0.5))
     end
 
     @testset "Hermite ND — Input isolation (persistent copies, oneshot snapshots)" begin

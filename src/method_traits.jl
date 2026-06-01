@@ -45,8 +45,9 @@ _adjoint_kwargs_from_itp(itp::HeteroInterpolantND) = (methods = itp.methods, ext
 @noinline _throw_hermite_nd_adjoint_unsupported() = throw(
     ArgumentError(
         "CubicHermiteInterpolantND does not support reverse-mode AD (adjoint) yet. " *
-            "Forward `gradient`/`hessian`/`laplacian` work; for ∂/∂data use an auto-slope " *
-            "ND method (`cubic_interp`, `pchip_interp`, …) until the Hermite ND adjoint lands.",
+            "Forward `gradient`/`hessian`/`laplacian` work; for reverse-mode ∂/∂data use an " *
+            "ND method that supports it (`cubic_interp`, `pchip_interp`, `cardinal_interp`, " *
+            "`akima_interp`) until the Hermite ND adjoint lands.",
     )
 )
 _adjoint_func_from_itp(::CubicHermiteInterpolantND) = _throw_hermite_nd_adjoint_unsupported()

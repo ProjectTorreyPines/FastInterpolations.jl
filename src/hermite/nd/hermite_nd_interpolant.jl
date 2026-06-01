@@ -2,15 +2,11 @@
 # CubicHermiteInterpolantND — outer ctor, callable, protocol traits
 # ========================================
 #
-# Wires `hermite_interp(grids, data, partials; …)` into the build path,
-# implements `_locate_cell` / `_eval_at_cell` (the `AbstractInterpolantND`
-# protocol traits — they let the shared callable in `interpolant_protocol.jl`
-# do scalar evaluation, batch evaluation, gradient/hessian/laplacian, etc.
-# with no further work), and provides the direct scalar callable.
-#
-# The eval kernel `_eval_nd_cell` lives in `src/cubic/nd/cubic_nd_eval.jl` —
-# it operates on the packed `_NodalDerivativesND.partials` we share with
-# `CubicInterpolantND`, so no kernel duplication is required.
+# Wires `hermite_interp(grids, data, partials; …)` into the build path and
+# implements the `AbstractInterpolantND` protocol traits `_locate_cell` /
+# `_eval_at_cell`, which give scalar/batch eval and gradient/hessian/laplacian
+# for free via the shared callable. The `_eval_nd_cell` kernel is reused from
+# `CubicInterpolantND` (same packed `_NodalDerivativesND` layout).
 
 # ========================================
 # OUTER CONSTRUCTOR — public build entry
@@ -154,11 +150,8 @@ end
 # PROTOCOL TRAITS — _locate_cell + _eval_at_cell
 # ========================================
 #
-# These mirror the CubicInterpolantND implementations verbatim because the
-# storage layout (packed `_NodalDerivativesND.partials`) and the eval kernel
-# (`_eval_nd_cell` from `cubic_nd_eval.jl`) are identical. The only
-# difference between the two interpolants is *how* `nodal_derivs` was filled
-# — auto-solved (Cubic) vs. user-supplied (CubicHermite).
+# Identical to CubicInterpolantND — shared storage layout + `_eval_nd_cell`
+# kernel; only the fill of `nodal_derivs` differs (user-supplied here).
 
 @inline function _locate_cell(
         itp::CubicHermiteInterpolantND{Tg, Tv, N},

@@ -2,18 +2,12 @@
 # CubicHermiteInterpolantND — One-shot Evaluation (Pool-based)
 # ========================================
 #
-# Zero-allocation one-shot API. The packed `_NodalDerivativesND`-shaped buffer
-# and any Vector-grid extension are acquired from a thread-local
-# `AbstractArrayPool` via `@with_pool` (mirrors `_cubic_interp_nd_oneshot`).
-# After the first warmup call, every subsequent one-shot — scalar or batch —
-# re-uses the same pool buffers, so user loops over many queries with
-# changing data / partials see zero per-call allocation.
-#
-# Internal contract: the pool buffer returned from
-# `_pack_and_extend_nodal_derivs_pooled` MUST NOT escape the enclosing
-# `@with_pool` block. We satisfy this by consuming it in-line through
-# `_eval_nd_cell` and returning a scalar value (or writing into a
-# pre-allocated caller-owned `output` for batch).
+# Zero-allocation one-shot API. The packed buffer and any Vector-grid
+# extension are acquired from a thread-local pool via `@with_pool`, so loops
+# over many queries (even with changing data / partials) see zero per-call
+# alloc after warmup. The pool buffer must not escape the `@with_pool` block:
+# it is consumed in-line through `_eval_nd_cell`, returning a scalar (or
+# writing into the caller-owned `output` for batch).
 
 # ========================================
 # Public API entries (scalar + batch + in-place)
@@ -107,9 +101,8 @@ end
 # Shared prepare path (kwarg normalization + validation)
 # ========================================
 #
-# Pulled out so scalar/batch APIs share the same validation order and any
-# type promotion happens exactly once per call. The actual pool-acquiring
-# work happens later inside `_hermite_interp_nd_oneshot[_batch!]`.
+# Shared by scalar/batch so validation + promotion run once, identically.
+# Pool acquisition happens later in `_hermite_interp_nd_oneshot[_batch!]`.
 @inline function _hermite_oneshot_prepare(
         grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{<:Any, N},
@@ -142,10 +135,8 @@ end
 # Pool-based oneshot — scalar
 # ========================================
 #
-# Mirrors `_cubic_interp_nd_oneshot`: validate domain → fill-OOB short
-# circuit → pool-acquire packed buffer + extend grids/data wrap rows → run
-# the shared search + eval pipeline → return scalar. Pool buffers are
-# reclaimed on `@with_pool` rewind.
+# validate domain → fill-OOB short circuit → pool-pack + extend → shared
+# search + eval → scalar.
 @with_pool pool function _hermite_interp_nd_oneshot(
         grids::Tuple{Vararg{AbstractVector{Tg}, N}},
         data::AbstractArray{Tv, N},
@@ -161,12 +152,12 @@ end
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    grids_p, buf, bcs_p = _pack_and_extend_nodal_derivs_pooled(pool, grids, data, partials, bcs)
+    # `bcs_post` (3rd return) is unused: no partial-solve step here, and
+    # extrap is materialized from `extraps_val` + `grids_p`.
+    grids_p, buf, _ = _pack_and_extend_nodal_derivs_pooled(pool, grids, data, partials, bcs)
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
 
-    # Use the shared hint helper so the per-axis Ref allocation stays local
-    # (stack-elidable). `mono` is `(true,…,true)` for a single point — no
-    # monotone-hint optimization needed for one query.
+    # `mono` is all-true for a single point (no monotone-hint optimization).
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
 
@@ -199,7 +190,8 @@ end
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
 
-    grids_p, buf, bcs_p = _pack_and_extend_nodal_derivs_pooled(pool, grids, data, partials, bcs)
+    # `bcs_post` (3rd return) is unused here — see the scalar path note.
+    grids_p, buf, _ = _pack_and_extend_nodal_derivs_pooled(pool, grids, data, partials, bcs)
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
     extraps_eff = _check_domain_nd(grids_p, queries, extraps_eff)
 

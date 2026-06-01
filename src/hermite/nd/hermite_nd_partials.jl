@@ -145,12 +145,9 @@ function _validate_hermite_full_pairs(
     return nothing
 end
 
-# Reorder pairs into canonical mask order (1, 2, ..., 2^N-1) and coerce each
-# array to `Array{Tv, N}`. `convert` is a no-op when the input already
-# satisfies the target type (zero-copy alias); otherwise allocates one new
-# dense Array per mismatching entry. Wrapper types (OffsetArray, SubArray,
-# ReshapedArray, ...) are materialized to plain `Array` because the
-# downstream packed buffer uses 1-based indexing.
+# Reorder pairs into canonical mask order and coerce each array to
+# `Array{Tv, N}` (zero-copy when already matching; wrappers like OffsetArray
+# are materialized since the packed buffer is 1-based).
 function _reorder_pairs_by_mask(
         ::Val{N},
         pairs::NTuple{K, Pair{<:NTuple{N, Int}, <:AbstractArray}},

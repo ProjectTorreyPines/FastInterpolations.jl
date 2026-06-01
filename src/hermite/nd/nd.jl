@@ -1,6 +1,4 @@
 # ND Cubic Hermite (user-supplied partials) module aggregator.
-# Phase 1a: full mixed partials only. See
-# docs/superpowers/specs/2026-05-28-hermite-nd-full-partials-design.md
 
 include("hermite_nd_types.jl")        # 1. HermitePartials, CubicHermiteInterpolantND
 include("hermite_nd_partials.jl")     # 2. HermitePartials constructor + validation

@@ -2,20 +2,10 @@
 # ND Cubic Hermite Interpolation Types (User-Supplied Partials)
 # ========================================
 #
-# Type definitions for ND cubic Hermite interpolation with user-supplied
-# partial derivatives at grid nodes. Phase 1a: user provides every non-zero
-# element of `{0, 1}^N` ("full mixed partials").
-#
-# Mirrors the storage conventions of `QuadraticInterpolantND` and
-# `CubicInterpolantND`: data + all 2^N - 1 mixed partials are packed into a
-# single `_NodalDerivativesND{Tv, N, N+1}` of shape `(2^N, n_ext_1, ..., n_ext_N)`,
-# enabling reuse of the existing tensor-product `_eval_nd_cell` kernel.
-#
-# Future-extension note: alternative input modes (e.g. user supplies only
-# first-order ∂f/∂xᵢ and the build estimates mixed terms internally) would
-# reintroduce a "Completeness" type parameter on `HermitePartials` and a new
-# public constructor — neither affects the current storage layout or
-# evaluation kernel.
+# User supplies every non-zero partial in `{0,1}^N` ("full mixed partials").
+# Data + all 2^N-1 mixed partials pack into one `_NodalDerivativesND{Tv, N, N+1}`
+# of shape `(2^N, n_ext...)`, reusing the tensor-product `_eval_nd_cell` kernel
+# shared with `CubicInterpolantND` / `QuadraticInterpolantND`.
 
 # ========================================
 # HermitePartials — user-input container

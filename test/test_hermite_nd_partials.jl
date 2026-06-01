@@ -120,7 +120,7 @@
         end
     end
 
-    @testset "Hermite ND — Build-time BC rejection (Phase 1a)" begin
+    @testset "Hermite ND — Build-time BC rejection" begin
         x = range(0.0, 1.0, length = 5)
         y = range(0.0, 1.0, length = 5)
         data = [xi * yj for xi in x, yj in y]

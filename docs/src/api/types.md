@@ -26,6 +26,13 @@ AutoCoeffs
 CubicInterpolantND
 ```
 
+### ND Cubic Hermite (User-Supplied Partials)
+
+```@docs
+HermitePartials
+CubicHermiteInterpolantND
+```
+
 ### Unified API Types
 
 ```@docs

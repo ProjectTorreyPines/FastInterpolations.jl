@@ -19,7 +19,7 @@ Build a cubic Hermite ND interpolant from grid vectors, function values, and
 user-supplied mixed partials. Mirrors the option shape of `cubic_interp` /
 `quadratic_interp` (per-axis `bc` / `extrap` / `search`).
 
-# Phase 1a BC restrictions
+# BC restrictions
 Only `NoBC()`, `PeriodicBC(...; endpoint=:inclusive)`, and
 `PeriodicBC(...; endpoint=:exclusive)` are accepted. User partials supersede
 any BC-derived ones, so richer BC families (BCPair, CubicFit, ...) have no
@@ -33,9 +33,8 @@ function CubicHermiteInterpolantND(
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     ) where {N, Tv_part, K}
-    # Phase 1a only accepts full mixed partials (K = 2^N - 1). Future
-    # FirstOnly support would dispatch on K (or reintroduce a Completeness
-    # marker) — for now we hard-reject any other K so the contract is loud.
+    # Only the full mixed set (K = 2^N - 1) is accepted. `HermitePartials`
+    # already enforces this, so this guards direct struct construction.
     K == (1 << N) - 1 || _throw_partials_not_full_mixed(N, K)
 
     # Promote across (grid, data, partials) to a single Tv.
@@ -50,7 +49,7 @@ function CubicHermiteInterpolantND(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    _validate_hermite_nd_bcs_phase1a(bcs)
+    _validate_hermite_nd_bcs(bcs)
     _validate_partial_sizes(data_typed, partials_typed)
     _validate_inclusive_seams(data_typed, partials_typed, bcs)
 
@@ -66,7 +65,7 @@ end
     expected = (1 << N) - 1
     throw(
         ArgumentError(
-            "CubicHermiteInterpolantND (Phase 1a): partials must contain every " *
+            "CubicHermiteInterpolantND: partials must contain every " *
                 "non-zero multiindex in {0,1}^N (K = 2^N - 1 = $expected for N=$N), got K=$K. " *
                 "Construct via `HermitePartials(...)`.",
         )
@@ -96,8 +95,7 @@ end
     hermite_interp(grids::Tuple, data, partials::HermitePartials; bc, extrap, search) -> CubicHermiteInterpolantND
 
 ND cubic Hermite interpolant from user-supplied data + mixed partials. See
-[`CubicHermiteInterpolantND`](@ref) for option semantics and Phase 1a BC
-restrictions.
+[`CubicHermiteInterpolantND`](@ref) for option semantics and BC restrictions.
 
 # Example (N=2)
 ```julia

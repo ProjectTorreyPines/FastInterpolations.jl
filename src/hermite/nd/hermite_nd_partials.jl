@@ -14,7 +14,7 @@ Construct user-supplied full mixed partial derivatives for ND cubic Hermite
 interpolation.
 
 Each `pair` is `multiindex => array`, where `multiindex::NTuple{N, Int}` encodes
-the derivative order per axis. For Phase 1a, each entry must be `0` or `1`.
+the derivative order per axis. Each entry must be `0` or `1`.
 
 # Required pairs (count `2^N - 1`)
 Exactly the non-zero multiindices in `{0, 1}^N`. Order is irrelevant — the
@@ -67,7 +67,7 @@ end
     throw(
         ArgumentError(
             "HermitePartials: multiindex $(mi) has entry $val at axis $slot; " *
-                "Phase 1a requires every entry ∈ {0, 1}",
+                "every entry must be ∈ {0, 1}",
         )
     )
 end

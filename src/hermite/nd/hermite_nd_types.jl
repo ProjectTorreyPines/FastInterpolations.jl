@@ -22,8 +22,8 @@ derivative for mask `m ∈ 1:K`, where bit `d-1` set in `m` means
 (mask `0`) is **not** stored here — it is supplied as the separate `data`
 argument to `hermite_interp`.
 
-Phase 1a: the only public constructor is `HermitePartials(...)`, which
-populates every non-zero multiindex in `{0, 1}^N` (so `K == 2^N - 1`).
+The only public constructor is `HermitePartials(...)`; it populates every
+non-zero multiindex in `{0, 1}^N` (so `K == 2^N - 1`).
 
 # Type parameters
 - `N` : spatial dimension
@@ -39,8 +39,8 @@ end
 # Multiindex → mask conversion (internal)
 # ========================================
 
-# Convert a derivative-order multiindex (each entry ∈ {0, 1} for Phase 1a)
-# to the canonical bitmask: bit `d-1` ← `mi[d] & 1`. Compile-time foldable.
+# Convert a derivative-order multiindex (each entry ∈ {0, 1}) to the
+# canonical bitmask: bit `d-1` ← `mi[d] & 1`. Compile-time foldable.
 #
 # Examples (N=2):
 #   (0, 0) → 0  (data slot — not stored on HermitePartials)

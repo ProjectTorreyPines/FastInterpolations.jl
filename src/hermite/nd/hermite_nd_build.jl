@@ -17,7 +17,7 @@
 @noinline function _throw_unsupported_hermite_nd_bc(d::Int, bc)
     throw(
         ArgumentError(
-            "CubicHermiteInterpolantND (Phase 1a): bc[$d] = $(bc) is unsupported. " *
+            "CubicHermiteInterpolantND: bc[$d] = $(bc) is unsupported. " *
                 "Only `NoBC()`, `PeriodicBC(...; endpoint=:inclusive)`, and " *
                 "`PeriodicBC(...; endpoint=:exclusive)` are accepted because user " *
                 "partials supersede BC-derived ones. Use the auto-slope methods " *
@@ -30,7 +30,7 @@ end
 @inline _is_hermite_nd_bc_allowed(::PeriodicBC) = true
 @inline _is_hermite_nd_bc_allowed(::AbstractBC) = false
 
-function _validate_hermite_nd_bcs_phase1a(bcs::Tuple{Vararg{AbstractBC, N}}) where {N}
+function _validate_hermite_nd_bcs(bcs::Tuple{Vararg{AbstractBC, N}}) where {N}
     @inbounds for d in 1:N
         _is_hermite_nd_bc_allowed(bcs[d]) || _throw_unsupported_hermite_nd_bc(d, bcs[d])
     end

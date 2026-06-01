@@ -121,7 +121,7 @@ end
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    _validate_hermite_nd_bcs_phase1a(bcs)
+    _validate_hermite_nd_bcs(bcs)
     _validate_partial_sizes(data_typed, partials_typed)
     _validate_inclusive_seams(data_typed, partials_typed, bcs)
 

@@ -59,20 +59,22 @@ is zero after warmup.
 function hermite_interp(
         grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
-        partials::HermitePartials{N},
+        partials::HermitePartials{N, Tv_part},
         queries;
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
-    ) where {Tv, N}
+    ) where {Tv, N, Tv_part}
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
-    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, promote_type(Tv, Tv_part), Tq)
     output = Vector{Tr}(undef, _query_length(queries))
-    hermite_interp!(output, grids, data, partials, queries;
-                    deriv, bc, extrap, search, hint)
+    hermite_interp!(
+        output, grids, data, partials, queries;
+        deriv, bc, extrap, search, hint
+    )
     return output
 end
 
@@ -118,12 +120,12 @@ end
 
     grids_typed, _, Tv_promoted, _ = _nd_promote_grids(grids, data)
     Tv = promote_type(Tv_promoted, Tv_part)
-    data_typed     = _coerce_data_eltype(data, Tv, Val(N))
+    data_typed = _coerce_data_eltype(data, Tv, Val(N))
     partials_typed = _coerce_partials_eltype(partials, Tv, Val(N))
 
     _validate_nd_grids(grids_typed, data_typed)
 
-    bcs      = _resolve_bcs_nd(bc, Val(N))
+    bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
     _validate_hermite_nd_bcs_phase1a(bcs)
@@ -131,7 +133,7 @@ end
     _validate_inclusive_seams(data_typed, partials_typed, bcs)
 
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
-    ops         = _resolve_deriv_nd(deriv, Val(N))
+    ops = _resolve_deriv_nd(deriv, Val(N))
 
     return grids_typed, data_typed, partials_typed, bcs, extraps_val, searches, ops
 end
@@ -166,7 +168,7 @@ end
     # (stack-elidable). `mono` is `(true,…,true)` for a single point — no
     # monotone-hint optimization needed for one query.
     hints = _ensure_hint_nd(hint, Val(N))
-    mono  = _scalar_mono(hint, Val(N))
+    mono = _scalar_mono(hint, Val(N))
 
     q_evals = _handle_all_extraps(query, grids_p, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_evals, grids_p, searches, hints, mono)

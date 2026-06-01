@@ -46,12 +46,12 @@ function CubicHermiteInterpolantND(
     grids_typed, _, Tv_promoted, _ = _nd_promote_grids(grids, data)
     Tv = promote_type(Tv_promoted, Tv_part)
 
-    data_typed     = _coerce_data_eltype(data, Tv, Val(N))
+    data_typed = _coerce_data_eltype(data, Tv, Val(N))
     partials_typed = _coerce_partials_eltype(partials, Tv, Val(N))
 
     _validate_nd_grids(grids_typed, data_typed)
 
-    bcs      = _resolve_bcs_nd(bc, Val(N))
+    bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
     _validate_hermite_nd_bcs_phase1a(bcs)
@@ -68,11 +68,13 @@ end
 
 @noinline function _throw_partials_not_full_mixed(N::Int, K::Int)
     expected = (1 << N) - 1
-    throw(ArgumentError(
-        "CubicHermiteInterpolantND (Phase 1a): partials must contain every " *
-        "non-zero multiindex in {0,1}^N (K = 2^N - 1 = $expected for N=$N), got K=$K. " *
-        "Construct via `HermitePartials(...)`.",
-    ))
+    throw(
+        ArgumentError(
+            "CubicHermiteInterpolantND (Phase 1a): partials must contain every " *
+                "non-zero multiindex in {0,1}^N (K = 2^N - 1 = $expected for N=$N), got K=$K. " *
+                "Construct via `HermitePartials(...)`.",
+        )
+    )
 end
 
 # Zero-copy when eltype already matches; broadcast-convert otherwise.

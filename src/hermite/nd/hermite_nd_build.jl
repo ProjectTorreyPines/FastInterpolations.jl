@@ -17,13 +17,15 @@
 # ========================================
 
 @noinline function _throw_unsupported_hermite_nd_bc(d::Int, bc)
-    throw(ArgumentError(
-        "CubicHermiteInterpolantND (Phase 1a): bc[$d] = $(bc) is unsupported. " *
-        "Only `NoBC()`, `PeriodicBC(...; endpoint=:inclusive)`, and " *
-        "`PeriodicBC(...; endpoint=:exclusive)` are accepted because user " *
-        "partials supersede BC-derived ones. Use the auto-slope methods " *
-        "(`pchip_interp`, `cardinal_interp`, `akima_interp`) for richer BC families.",
-    ))
+    throw(
+        ArgumentError(
+            "CubicHermiteInterpolantND (Phase 1a): bc[$d] = $(bc) is unsupported. " *
+                "Only `NoBC()`, `PeriodicBC(...; endpoint=:inclusive)`, and " *
+                "`PeriodicBC(...; endpoint=:exclusive)` are accepted because user " *
+                "partials supersede BC-derived ones. Use the auto-slope methods " *
+                "(`pchip_interp`, `cardinal_interp`, `akima_interp`) for richer BC families.",
+        )
+    )
 end
 
 @inline _is_hermite_nd_bc_allowed(::NoBC) = true
@@ -42,10 +44,12 @@ end
 # ========================================
 
 @noinline function _throw_data_partial_size_mismatch(sz_data, mask::Int, sz_part)
-    throw(DimensionMismatch(
-        "CubicHermiteInterpolantND: data size $(sz_data) ≠ partial size $(sz_part) " *
-        "for mask=$mask. data and every partial array must share `size`.",
-    ))
+    throw(
+        DimensionMismatch(
+            "CubicHermiteInterpolantND: data size $(sz_data) ≠ partial size $(sz_part) " *
+                "for mask=$mask. data and every partial array must share `size`.",
+        )
+    )
 end
 
 function _validate_partial_sizes(
@@ -68,11 +72,13 @@ end
 # build time so downstream search/eval can assume the invariant.
 
 @noinline function _throw_inclusive_seam_mismatch(slot_name::String, d::Int)
-    throw(ArgumentError(
-        "CubicHermiteInterpolantND: $slot_name has unequal endpoints along axis $d " *
-        "but `bcs[$d]` is PeriodicBC{:inclusive}. Either fix the data or use " *
-        "`endpoint=:exclusive`.",
-    ))
+    throw(
+        ArgumentError(
+            "CubicHermiteInterpolantND: $slot_name has unequal endpoints along axis $d " *
+                "but `bcs[$d]` is PeriodicBC{:inclusive}. Either fix the data or use " *
+                "`endpoint=:exclusive`.",
+        )
+    )
 end
 
 # Per-eltype tolerance matching `_check_periodic_endpoints` in
@@ -101,7 +107,7 @@ end
     end
     @inbounds for I in CartesianIndices(other_sizes)
         idx_first = ntuple(Val(N)) do i
-            i == d ? 1   : I[i]
+            i == d ? 1 : I[i]
         end
         idx_last = ntuple(Val(N)) do i
             i == d ? n_d : I[i]
@@ -129,16 +135,18 @@ end
     # specializes per-axis and the per-element index tuples stay inferable.
     blocks = Expr[]
     for d in 1:N
-        push!(blocks, quote
-            if bcs[$d] isa PeriodicBC{:inclusive}
-                _check_inclusive_seam_along!(data, Val($d)) ||
-                    _throw_inclusive_seam_mismatch("data", $d)
-                @inbounds for m in 1:K
-                    _check_inclusive_seam_along!(partials.partials[m], Val($d)) ||
-                        _throw_inclusive_seam_mismatch("partials[mask=$m]", $d)
+        push!(
+            blocks, quote
+                if bcs[$d] isa PeriodicBC{:inclusive}
+                    _check_inclusive_seam_along!(data, Val($d)) ||
+                        _throw_inclusive_seam_mismatch("data", $d)
+                    @inbounds for m in 1:K
+                        _check_inclusive_seam_along!(partials.partials[m], Val($d)) ||
+                            _throw_inclusive_seam_mismatch("partials[mask=$m]", $d)
+                    end
                 end
             end
-        end)
+        )
     end
     return Expr(:block, blocks..., :(return nothing))
 end
@@ -336,10 +344,12 @@ end
     _validate_exclusive_period(grid, period)
     x_end = first(grid) + Tg(period)
     last(grid) < x_end ||
-        throw(ArgumentError(
+        throw(
+        ArgumentError(
             "CubicHermiteInterpolantND: exclusive-axis grid last point $(last(grid)) " *
-            "≥ extended endpoint $(x_end); check the period.",
-        ))
+                "≥ extended endpoint $(x_end); check the period.",
+        )
+    )
     if grid isa AbstractRange
         return range(first(grid); step = step(grid), length = length(grid) + 1)
     else
@@ -410,10 +420,12 @@ end
     _validate_exclusive_period(grid, period)
     x_end = first(grid) + Tg(period)
     last(grid) < x_end ||
-        throw(ArgumentError(
+        throw(
+        ArgumentError(
             "CubicHermiteInterpolantND: exclusive-axis grid last point $(last(grid)) " *
-            "≥ extended endpoint $(x_end); check the period.",
-        ))
+                "≥ extended endpoint $(x_end); check the period.",
+        )
+    )
     if grid isa AbstractRange
         return range(first(grid); step = step(grid), length = length(grid) + 1)
     else

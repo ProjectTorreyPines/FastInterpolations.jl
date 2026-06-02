@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779989294367,
+  "lastUpdate": 1780417370842,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -53062,6 +53062,330 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1039.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "05c2b3401dc25c91d379eb4d88da47419cf17b9c",
+          "message": "(feat): ND cubic Hermite with user-supplied mixed partials (#148)\n\n* (feat): ND cubic Hermite with user-supplied full mixed partials\n\nAdd `hermite_interp(grids, data, partials)` for arbitrary-N tensor-product\ncubic Hermite interpolation where the user supplies every mixed partial at\ngrid nodes. Closes the 1D-only gap (`hermite_interp(x, y, dy)`) for users\nwith analytic / externally-computed partials — instead of being forced\ninto PCHIP/Cardinal/Akima auto-slope methods, they can pass partials\nexplicitly via multiindex-keyed pairs.\n\nPublic API:\n\n  partials = HermiteFullPartials(\n      (1, 0) => dfdx,\n      (0, 1) => dfdy,\n      (1, 1) => d2fdxdy,\n  )\n  itp = hermite_interp((x, y), data, partials;\n                       bc=NoBC(), extrap=NoExtrap(), search=AutoSearch())\n  itp((qx, qy))\n  itp((qx, qy); deriv=(DerivOp(1), DerivOp(0)))   # partial derivative\n  hermite_interp((x, y), data, partials, query)        # scalar one-shot\n  hermite_interp((x, y), data, partials, queries)      # batch one-shot\n  hermite_interp!(out, (x, y), data, partials, queries)\n\nPhase 1a scope: user supplies every non-zero multiindex in {0,1}^N\n(K = 2^N - 1 arrays). Per-axis BCs limited to NoBC and PeriodicBC\n({:inclusive, :exclusive}); other BCs are rejected because user partials\nsupersede BC-derived ones. Auto-slope / FDM-estimated modes (FirstOnly)\nand the pool-based zero-alloc one-shot path are deferred — both are\ndocumented as future hooks in the design spec.\n\nImplementation reuses existing ND infrastructure:\n\n  - Storage: `_NodalDerivativesND{Tv, N, N+1}` (the same packed\n    `(2^N, n_ext_1, ..., n_ext_N)` layout Quadratic ND PreCompute already\n    uses), so the existing tensor-product `_eval_nd_cell` kernel works\n    unchanged. New code is types, multiindex-key constructor, build-time\n    pack/extend, and protocol traits (`_locate_cell` / `_eval_at_cell`)\n    that delegate to the shared kernel.\n\n  - Periodic axes follow the established `:exclusive → :extended`\n    promotion. The new `_pack_and_extend_nodal_derivs` helper extends\n    data and all 2^N-1 partial arrays along every `:exclusive` axis in\n    a single pass (vs. calling `_prepare_periodic_nd` once per array).\n\n  - Element-type handling: `HermiteFullPartials` derives a common Tv via\n    `promote_type` across all input arrays and converts each to\n    `Array{Tv, N}` (zero-copy when eltype matches). The outer\n    interpolant constructor promotes once more across (grid, data,\n    partials).\n\n  - Storage layout (`HermitePartials{N, Tv, K, A}`) intentionally\n    matches the future-extension shape: when a \"first-only\" mode lands\n    later, reintroducing a `Completeness` type parameter is a 1-param\n    addition with no field changes.\n\nCross-validation test: feeding `hermite_interp` with manually-computed\ncentral FDM partials reproduces `cardinal_interp` ND at interior query\npoints within `atol=1e-10`, validating that the user-partial pipeline is\nmathematically equivalent to the auto-slope path with the same numerical\nslope rule.\n\nTests: 140 new tests across 7 testsets — construction validation, BC\nrejection, polynomial exactness (bicubic), Cardinal cross-validation,\none-shot variants, periodic :inclusive, periodic :exclusive (extension).\n\nShow methods + `_short_bc_name(::NoBC)` / `_format_bc(::NoBC)` helpers\nadded for compact and text/plain display (other ND interpolants already\nhad show methods but never carried `NoBC` because their default BC is a\npolynomial-fit family).\n\n* (perf): pool-based zero-alloc oneshot for ND cubic Hermite\n\nReroute `hermite_interp(grids, data, partials, query)` (scalar + batch)\nthrough a `@with_pool` pipeline so per-call allocation drops from\n`2^N × ∏n_d × sizeof(Tv)` (≈13 KB at 20×20 Float64, 8 MB at 50³ Float64)\nto **0 bytes** after warmup. Persistent-build path is unchanged.\n\nMirrors the existing `_cubic_interp_nd_oneshot` template: the public\nentry resolves kwargs and validates, then delegates to a pool-decorated\ninternal function that acquires the packed `(2^N, n_ext...)` partials\nbuffer (and any Vector-grid extension) from a thread-local\n`AdaptiveArrayPool`. Buffers are reclaimed on `@with_pool` rewind, so\nloops over many calls reuse the same allocation.\n\nNew / modified internals:\n\n  - `_pack_and_extend_nodal_derivs_pooled(pool, grids, data, partials,\n    bcs)` — pool variant of the heap packer. `acquire!(pool, Tv,\n    (K_total, n_ext...))` instead of `Array(undef, ...)`.\n  - `_extend_grid_one_axis_pooled(pool, grid, bc, Tg)` — Range case\n    preserves Range type (alloc-free); Vector case uses\n    `acquire!(pool, Tg, n+1)` + `copyto!` (mirrors\n    `_PoolGridExtender` in core/periodic.jl).\n  - `_hermite_interp_nd_oneshot(...)` and\n    `_hermite_interp_nd_oneshot_batch!(...)` — `@with_pool`-decorated\n    scalar + batch entry points; validate domain, fill-OOB short\n    circuit, pool-pack, run the shared search + `_eval_nd_cell`\n    pipeline.\n  - `_hermite_oneshot_prepare(...)` — shared kwarg normalization +\n    validation factored out so scalar and batch APIs route identically\n    up to the pool block.\n\nAllocation pitfalls fixed along the way:\n\n  - `_fill_mask_slot_with_wrap!` previously created `mask_view = view(\n    buf, slot, Colon(), ..., Colon())` unconditionally and looped over\n    `selectdim` calls with runtime `d::Int`. Runtime `d` meant\n    `ntuple(j -> j==d ? i : (:), ndims)` returned a Union-typed tuple\n    and the resulting SubArrays escaped to heap (~5.5 KB residual at\n    PeriodicBC{:exclusive}). Replaced with an `@inline +\n    @generated` pair (`_wrap_one_axis_in_buf_slot!` per compile-time\n    `Val(d)`, unrolled by `_wrap_all_axes_in_buf_slot!`) — same pattern\n    `_extend_slice_along!` + `_extend_all_slices!` already use in\n    core/periodic.jl. Stack-elides the views.\n\n  - `_validate_inclusive_seams` similarly used `selectdim(arr,\n    d::Int, ...)` + `isapprox(::SubArray, ::SubArray)`. Replaced with\n    `_check_inclusive_seam_along!(arr, Val(d))` (CartesianIndices loop,\n    no view chain) and an `@generated` unroll over axes. Tolerance per\n    eltype matches `_check_periodic_endpoints` from core/periodic.jl\n    exactly (`atol = 8 * eps(T), rtol = sqrt(eps(T))` for floats; exact\n    `==` for integer / duck-type fallbacks).\n\n  - `_pack_and_extend_nodal_derivs_pooled` builds `grids_ext` and\n    `bcs_post` via `map(grids, bcs) do ...` (per-element concrete\n    dispatch) instead of `ntuple(d -> bcs[d] isa ...)`, eliminating\n    Union return boxing on the periodic axis branch. See MEMORY.md\n    \"ND Constructor Inferrability Pattern\".\n\nVerified zero-alloc (measurements inside one function body to avoid\n@testset/closure capture artifacts; 1000-iter bulk loop divided by N\nfor steady-state per-call cost):\n\n  Path                                       bytes/call\n  Hermite ND oneshot scalar (NoBC)                0\n  Hermite ND oneshot scalar (PeriodicBC:inc)      0\n  Hermite ND oneshot scalar (PeriodicBC:exc)      0\n  Hermite ND oneshot batch! (NoBC)                0\n  Hermite ND persistent eval                      0   (unchanged)\n\n5 new tests under \"Hermite ND — Pool-based oneshot zero-alloc\" enforce\nthis regression bar (1000-iter bulk-loop `@allocated == 0` for the\nthree BC modes; `<= ALLOC_THRESHOLD` for the batch-inplace and\npersistent-eval single-call variants). Total: 145/145 tests pass.\n\n* (test): persistent input isolation + oneshot snapshot semantics for ND Hermite\n\nDocument and lock in the safety contract that the persistent and one-shot\nND-Hermite paths each enforce a per-call snapshot of user inputs:\n\n  - Persistent build (`hermite_interp(grids, data, partials)`) copies data\n    and every partial array into the freshly-allocated packed\n    `nodal_derivs.partials` during `_fill_mask_slot_with_wrap!` (element-\n    wise broadcast assign). After build, mutating the user's `data`,\n    `partials.partials[k]`, or any aliased input has no effect on the\n    returned interpolant — `itp(query)` keeps reproducing the original\n    surface. Symmetric: trashing `itp.nodal_derivs.partials` cannot\n    bleed back into the user's arrays.\n\n  - One-shot (`hermite_interp(grids, data, partials, query)`) snapshots\n    user inputs into the pool buffer at each call — between two\n    sequential calls, mutating `data` is safe and the next call reflects\n    the new values. No retroactive aliasing of prior return values.\n\n8 new tests under \"Hermite ND — Input isolation\" enforce these invariants:\n- itp result unchanged after `fill!(data, NaN)` + `fill!(p.partials[k], NaN)`\n- user `data` unchanged after `fill!(itp.nodal_derivs.partials, 99)`\n- two oneshot calls bracket a `data .= constant` and the second call returns\n  the new constant at a grid-node query (where Hermite reduces to data exactly),\n  while the first call's value is preserved by the caller.\n\n* (perf): ~4× faster build/oneshot fill via @generated node-major unroll\n\nSwitch the packed-buffer fill from slot-major (one full grid pass per\nmask slot, repeated `2^N` times) to node-major (all `2^N` slots at one\nnode written in a single straight-line burst, repeated grid_size times).\nSame total writes — different memory access pattern.\n\nResult on this branch's machine (Float64, N=2):\n\n  Grid     persistent build / oneshot scalar    one-shot batch (100q amortized)\n  20×20      1.37 µs  → 380 ns   (3.6×)            21.5 ns/q → 12.0 ns/q   (1.8×)\n  100×100   32.0 µs  → 7.92 µs   (4.0×)             329 ns/q → 84.4 ns/q   (3.9×)\n  300×300    274 µs  → 69.7 µs   (3.9×)            2750 ns/q →  705 ns/q   (3.9×)\n\nThe slot-major pattern's stride-`2^N` writes touched every cache line of\nthe packed buffer `2^N` times (once per mask slot). For grids that spill\nthe L1 (≥40 KB packed buffer at 100×100 Float64 N=2) the cache line was\nre-fetched on each subsequent pass — `2^N`× memory round-trips per line.\nThe node-major pattern writes all `2^N` slots at one node contiguously\n(mask is the fastest-iterating axis), so each cache line is fully\npopulated in one burst.\n\nImplementation:\n\n  - `_fill_packed_src_region!(buf, sources::Tuple)` →\n    `_fill_packed_src_region_unrolled!(buf, sources, Val(N))` which is\n    `@generated`. The body emits the `K = 2^N` per-slot scalar writes as\n    literal `sources[k]` indexings (concrete tuple slot at codegen, no\n    runtime boxing) inside a column-major nested for loop (innermost =\n    first data axis).\n\n  - `_wrap_all_axes_all_slots!` + `_wrap_one_axis_all_slots!` replace\n    the per-slot wrap calls. One `copyto!(view(buf, :, dst...), view(buf,\n    :, src...))` wraps every mask slot at the same boundary index in a\n    single call. Same `@inline + @generated` per-axis unroll pattern as\n    `_extend_all_slices!` in core/periodic.jl.\n\n  - `_fill_mask_slot_with_wrap!`, `_wrap_one_axis_in_buf_slot!`, and\n    `_wrap_all_axes_in_buf_slot!` deleted — superseded.\n\nBoth build paths (`_pack_and_extend_nodal_derivs` heap and\n`_pack_and_extend_nodal_derivs_pooled` pool) route through the new\nhelpers; the public API surface is unchanged. Zero-alloc verified\npost-change (1000-iter bulk loop @allocated == 0 for both NoBC and\nPeriodicBC{:exclusive}). All 153 tests still pass.\n\nReads scale as `2^N` linear streams from separate source arrays —\nhardware prefetcher handles the few-stream pattern. Writes saturate\nsingle-channel DDR4 (~5.4 GW/s Float64) on this machine for grids that\nfit in last-level cache, matching what `memcpy` from N+1 separate\nsources should achieve.\n\nBottom line for users:\n\n  - persistent build cost drops by ~4×\n  - one-shot scalar (=fill + eval) drops by ~4× — fill no longer\n    overwhelms eval anywhere near as much (e.g., 100×100 ratio\n    fill/eval was 4000×, now ~1000×)\n  - persistent eval and zero-alloc contract unchanged\n\n* (refac): drop \"Full\" qualifier from `HermitePartials` constructor\n\nRename the public constructor `HermiteFullPartials(pairs...)` →\n`HermitePartials(pairs...)`. The \"Full\" qualifier was anticipatory for a\nfuture `HermiteFirstOrderPartials(...)` variant, but that mode has been\ndeferred (see \"Out of scope\" in the design spec) and the unqualified\ndefault conflicts with no existing API — leaving `Full` on the only\nconstructor reads as Java-y noise rather than a meaningful distinction.\n\nConvention now matches Julia stdlib (`Dict(...)` is unqualified;\n`OrderedDict(...)` / `DefaultDict(...)` carry the qualifier on the\nvariant, not the default). Type and constructor share the name\n`HermitePartials` — same pattern as `Matrix{T}` / `Matrix(...)`.\n\nTouches:\n\n  - src/hermite/nd/hermite_nd_partials.jl — constructor function name +\n    all validation throw messages\n  - src/hermite/nd/hermite_nd_types.jl — docstring reference\n  - src/hermite/nd/hermite_nd_interpolant.jl — outer-ctor throw message\n    + docstring example\n  - src/hermite/nd/nd.jl — include comment\n  - src/FastInterpolations.jl — export line collapses to single\n    `HermitePartials`\n  - test/test_hermite_nd_full_partials.jl renamed to\n    test/test_hermite_nd_partials.jl; outer @testitem retitled\n    \"Hermite ND Partials (Phase 1a)\"\n\nFuture-extension hook is unchanged: when (if) FirstOnly arrives later,\n`HermiteFirstOrderPartials(...)` returns the same parametric\n`HermitePartials{N, Tv, K, A}` with K=N instead of K=2^N-1 — dispatch\nkey (K type-param) is already in place. No additional struct fields\nor eval-kernel changes required to add the variant.\n\nAll 153 tests pass; zero-alloc contract on oneshot + persistent eval\npreserved.\n\n* Runic formatting\n\n* (docs): drop stale type refs + machine-specific perf numbers from ND Hermite comments\n\n- nd.jl: remove nonexistent `FullMixed` from the include comment\n- hermite_nd_partials.jl: `FullPartials` (pre-rename name) -> function-value sentinel\n- hermite_nd_build.jl: drop this-machine numbers (~2.7x, DDR4, ~5.4 GW/s, 40 KB)\n  from the node-major fill rationale; keep the cache-line reasoning\n\n* (test): N>=3, extrap modes, higher-order/oneshot derivs, introspection for ND Hermite\n\nClose Tier 4 coverage gaps:\n- N=3 full mixed partials (7 arrays) exactness + gradient/hessian/laplacian\n  -> first instantiation of the @generated fill/wrap/seam code beyond N=2\n- inclusive-seam validation throw paths (data + per-partial mismatch)\n- extrapolation modes: Clamp / Fill / Wrap / NoExtrap OOB (persistent + oneshot)\n- Vector (non-Range) grid exclusive periodic (vcat + pooled copyto! branches)\n- higher-order DerivOp(2)/(3) + one-shot deriv kwarg (scalar + batch)\n- introspection (ndims/size/axes/num_partials/show) + wrong-K rejection\n\n* (perf/docs): map-based heterogeneous build inference + trim verbose comments\n\n- _pack_and_extend_nodal_derivs: ntuple-over-bcs[d] -> map so heterogeneous\n  axes dispatch concretely; return type goes non-concrete -> concrete, build\n  alloc 3328 -> 2640 bytes. Matches the pooled twin.\n- one-shot: drop dead bcs_p binding (3rd return unused on this path)\n- condense design-diary comments across src/hermite/nd/*: remove cross-file\n  'mirrors X' / MEMORY.md / docs-spec references and machine-specific notes,\n  delete a stale 'one mask slot' fill comment that no longer matched the code\n  (net -92 comment lines, no code change beyond the two above)\n\n* (refac): drop transient \"Phase 1a\" plan labels from ND Hermite src\n\n- remove \"Phase 1a\" from 3 user-facing error messages, several docstrings\n  and comments (it leaked into thrown exceptions, meaningless to users)\n- rename _validate_hermite_nd_bcs_phase1a -> _validate_hermite_nd_bcs\n  (the NoBC/Periodic-only restriction is this family's standing invariant,\n  not a phase-specific one)\n- runic formatting\n\n* (feat): nodal_partials for ND Hermite + clear adjoint-unsupported guard\n\n- nodal_partials(itp, order) now works for CubicHermiteInterpolantND: the\n  packed buffer already holds data + every user partial in canonical mask\n  order, so _partials_array + the binary-order index path apply directly.\n- reverse-mode AD guard: CubicHermiteInterpolantND subtypes\n  AbstractInterpolantND, so the generic ND rrules reach _adjoint_func_from_itp;\n  with no adjoint defined that was a confusing MethodError. Override both\n  traits to throw a clear ArgumentError (forward gradient/hessian/laplacian\n  unaffected). Full Hermite ND adjoint deferred to its own PR.\n- tests cover both.\n\n* refac: rename testset for build-time BC rejection in ND Hermite tests\n\n* fix: update error message for unsupported Hermite ND adjoint and clarify periodic wrap behavior in tests\n\n* feat: add documentation for ND Cubic Hermite user-supplied partials",
+          "timestamp": "2026-06-02T09:17:52-07:00",
+          "tree_id": "cd32757741040433fc1ba0a1646462fac2bf3013",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/05c2b3401dc25c91d379eb4d88da47419cf17b9c"
+        },
+        "date": 1780417361850,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 37551,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83880\nallocs=29\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 608.94,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 355206,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515320\nallocs=40\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1677.12,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1436.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 16.32,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 7.51,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3251,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 33.66,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 13.52,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4270.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4219.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9367.52,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3204.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_rand_rand",
+            "value": 65274.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_sort_rand",
+            "value": 62137.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_sort_sort",
+            "value": 58071.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_rand_rand",
+            "value": 19221.44,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_sort_rand",
+            "value": 9675.14,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_sort_sort",
+            "value": 5715.32,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "14_series_oneshot_batch/constant_inplace_vec_k8_q1000_rand",
+            "value": 19236,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "14_series_oneshot_batch/linear_inplace_vec_k8_q1000_rand",
+            "value": 17920.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 540.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 43528.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1386.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4512\nallocs=11\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12722.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40392\nallocs=16\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 19.94,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 442.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 42635.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 25.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 18805.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 33.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 303.87,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.51,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 196.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 18516.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 8.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 11.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 647.82,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4460.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 40208.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 827.36,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1813.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2286.68,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11421.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3352.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 45192.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 539.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 426524.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1040,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

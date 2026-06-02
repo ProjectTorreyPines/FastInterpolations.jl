@@ -51,6 +51,7 @@ export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInt
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticSeriesInterpolant, QuadraticInterpolantND
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, CubicSeriesInterpolant
 export hermite_interp, hermite_interp!, CubicHermiteInterpolant1D  # Cubic Hermite with user-supplied slopes
+export CubicHermiteInterpolantND, HermitePartials  # ND cubic Hermite (user-supplied full mixed partials, Phase 1a)
 export pchip_interp, pchip_interp!, PchipInterpolant1D  # PCHIP monotone interpolation
 export cardinal_interp, cardinal_interp!, CardinalInterpolant1D  # Cardinal spline (CatmullRom default)
 export akima_interp, akima_interp!, AkimaInterpolant1D  # Akima outlier-robust interpolation

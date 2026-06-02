@@ -38,6 +38,8 @@ end
 
 @inline _partials_array(itp::CubicInterpolantND) = itp.nodal_derivs.partials
 @inline _partials_array(itp::QuadraticInterpolantND) = itp.nodal_derivs.partials
+# User-supplied: the packed buffer already holds data + every mixed partial.
+@inline _partials_array(itp::CubicHermiteInterpolantND) = itp.nodal_derivs.partials
 
 @inline function _partials_array(itp::HeteroInterpolantND)
     if itp.data isa _HeteroPartials
@@ -88,7 +90,7 @@ end
 # --- Validate + compute index ---
 
 @inline function _validate_and_index(
-        ::Union{CubicInterpolantND, QuadraticInterpolantND},
+        ::Union{CubicInterpolantND, QuadraticInterpolantND, CubicHermiteInterpolantND},
         order::NTuple{N, Integer},
     ) where {N}
     _validate_binary_order(order)
@@ -170,6 +172,7 @@ For heterogeneous interpolants, only axes using `CubicInterp` or
 # Supported types
 - `CubicInterpolantND` — all `2^N` derivative combinations
 - `QuadraticInterpolantND` — all `2^N` combinations (mixed partials are zero)
+- `CubicHermiteInterpolantND` — all `2^N` combinations (user-supplied partials)
 - `HeteroInterpolantND` with `PreCompute()` — per-axis validation
 """
 function nodal_partials end

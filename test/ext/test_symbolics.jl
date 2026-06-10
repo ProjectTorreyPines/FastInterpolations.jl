@@ -208,6 +208,43 @@ if SYMBOLICS_7_API
             duu_f = build_function(duu_expr, [u, v]; expression = Val{false})
             @test duu_f([u_val, v_val]) ≈ itp((u_val, v_val); deriv = DerivOp(2, 0))
         end
+
+        # ========================================
+        # Registration hook contracts (direct invocation)
+        # Pins the defensive promote_symtype/promote_shape overloads that the
+        # Symbolics term machinery only invokes on non-default tracing paths.
+        # ========================================
+        @testset "registration hook contracts" begin
+            ext = Base.get_extension(FastInterpolations, :FastInterpolationsSymbolicsExt)
+            scalar = SymbolicUtils.ShapeVecT()
+
+            x = collect(range(0.0, 1.0, 11))
+            y = sin.(2π .* x)
+            itp1 = cubic_interp(x, y; extrap = ExtendExtrap())
+
+            xg = range(0.0, 1.0, 11)
+            data = [sin(xi) * cos(yj) for xi in xg, yj in xg]
+            itpN = cubic_interp((xg, xg), data; extrap = ExtendExtrap())
+            d = ext.DifferentiatedInterpolantND(itpN, (1, 0))
+
+            # 1D wrapper hooks (_derivative_symbolic)
+            @test SymbolicUtils.promote_symtype(
+                ext._derivative_symbolic, typeof(itp1), Float64, Int
+            ) === Real
+            @test SymbolicUtils.promote_shape(
+                ext._derivative_symbolic, scalar, scalar, scalar
+            ) == scalar
+
+            # ND hooks (plain + differentiated)
+            @test SymbolicUtils.promote_symtype(itpN, Float64, Float64) === Real
+            @test SymbolicUtils.promote_shape(itpN, scalar, scalar) == scalar
+            @test SymbolicUtils.promote_symtype(d, Float64, Float64) === Real
+            @test SymbolicUtils.promote_shape(d, scalar, scalar) == scalar
+
+            # DifferentiatedInterpolantND identity + numeric callable
+            @test Base.nameof(d) === :DifferentiatedFastInterpolationND
+            @test d(0.3, 0.7) ≈ itpN((0.3, 0.7); deriv = DerivOp(1, 0))
+        end
     end
 else
     @info "Symbolics $(pkgversion(Symbolics)) / SymbolicUtils $(pkgversion(SymbolicUtils)): " *

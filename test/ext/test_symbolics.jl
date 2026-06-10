@@ -126,4 +126,69 @@ using Symbolics
         compiled_dv = dv_f([u_val, v_val])
         @test compiled_dv ≈ numeric_dv
     end
+
+    # ========================================
+    # nameof registration (1D + ND)
+    # ========================================
+    @testset "nameof" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = sin.(2π .* x)
+        itp1 = cubic_interp(x, y; extrap = ExtendExtrap())
+        @test Base.nameof(itp1) === :FastInterpolation
+
+        xg = range(0.0, 1.0, 11)
+        yg = range(0.0, 1.0, 11)
+        data = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+        itpN = cubic_interp((xg, yg), data; extrap = ExtendExtrap())
+        @test Base.nameof(itpN) === :FastInterpolationND
+    end
+
+    # ========================================
+    # ND varargs symbolic form: itp(u, v) (vs the tuple form itp((u, v)))
+    # ========================================
+    @testset "ND Symbolic Calling (varargs)" begin
+        xg = range(0.0, 1.0, 11)
+        yg = range(0.0, 1.0, 11)
+        data = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+
+        @variables u v
+        itp = cubic_interp((xg, yg), data; extrap = ExtendExtrap())
+
+        expr = itp(u, v)
+        @test expr isa Num
+
+        f = build_function(expr, [u, v]; expression = Val{false})
+        u_val, v_val = 0.3, 0.7
+        @test f([u_val, v_val]) ≈ itp((u_val, v_val))
+    end
+
+    # ========================================
+    # Higher-order / mixed ND derivatives
+    # (exercises DifferentiatedInterpolantND accumulation + varargs path)
+    # ========================================
+    @testset "ND Symbolic Derivatives (higher-order)" begin
+        xg = range(0.0, 1.0, 21)
+        yg = range(0.0, 1.0, 21)
+        data = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+
+        @variables u v
+        Du = Differential(u)
+        Dv = Differential(v)
+        itp = cubic_interp((xg, yg), data; extrap = ExtendExtrap())
+
+        expr = itp((u, v))
+        u_val, v_val = 0.3, 0.7
+
+        # Mixed second partial d²/dudv: accumulates orders on DifferentiatedInterpolantND
+        duv_expr = expand_derivatives(Du(Dv(expr)))
+        @test duv_expr isa Num
+        duv_f = build_function(duv_expr, [u, v]; expression = Val{false})
+        @test duv_f([u_val, v_val]) ≈ itp((u_val, v_val); deriv = DerivOp(1, 1))
+
+        # Pure second partial d²/du²
+        duu_expr = expand_derivatives(Du(Du(expr)))
+        @test duu_expr isa Num
+        duu_f = build_function(duu_expr, [u, v]; expression = Val{false})
+        @test duu_f([u_val, v_val]) ≈ itp((u_val, v_val); deriv = DerivOp(2, 0))
+    end
 end

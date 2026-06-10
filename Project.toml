@@ -1,6 +1,6 @@
 name = "FastInterpolations"
 uuid = "9ea80cae-fc13-4c00-8066-6eaedb12f34b"
-version = "0.4.12"
+version = "0.4.11"
 authors = ["Min-Gu Yoo <mgyoo86@gmail.com>"]
 
 [deps]

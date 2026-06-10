@@ -27,6 +27,13 @@ using Symbolics
 using Symbolics: Num, unwrap, wrap
 import SymbolicUtils
 
+# This extension targets the Symbolics 7 / SymbolicUtils 4 symbolic API
+# (`SymbolicUtils.TypeT` / `ShapeT` / `@register_derivative`). On the older
+# Symbolics 6 / SymbolicUtils 3 generation that API is absent, so the symbolic
+# interpolation glue is compiled out and the extension loads as a no-op. Numeric
+# interpolation in the FastInterpolations core is unaffected on either generation.
+@static if isdefined(SymbolicUtils, :TypeT)
+
 # ========================================
 # 1D Interpolant Registration
 # ========================================
@@ -190,5 +197,7 @@ end
     new_d = DifferentiatedInterpolantND{Nargs, typeof(d.interp)}(d.interp, orders)
     SymbolicUtils.term(new_d, args...; type = Real)
 end
+
+end # @static if isdefined(SymbolicUtils, :TypeT)
 
 end # module

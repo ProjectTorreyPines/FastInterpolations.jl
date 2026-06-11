@@ -16,8 +16,31 @@
 # _eval_extrapolation helper is defined in core/utils.jl (shared by all methods).
 # _get_h(x, xL, xR) dispatches to x.h (_CachedRange) or xR-xL (Vector).
 
-# NoExtrap / InBounds: domain check + search + kernel.
-# (OOB impossible: NoExtrap throws, InBounds guarantees in-domain)
+# Core in-bounds path: `last(x) == xi` seam handling + search + kernel.
+# All non-InBounds extrap overloads delegate here after preprocessing — see
+# cubic_eval.jl for the same `InBounds = core fast path` pattern. WrapExtrap
+# uses a separate periodic-seam-aware core (`_raw(y)`) below.
+@inline function _constant_eval_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xi::Tq,
+        ::InBounds,
+        side::AbstractSide,
+        op::AbstractEvalOp,
+        searcher::S
+    ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    if _extract_primal(xi) == _extract_primal(last(x))
+        # `last(y)` covers both raw vectors and `_ExclusivePeriodicData` (cyclic
+        # `inner[1]`). `* one(xi)` propagates Tq carrier to match the kernel
+        # path below (without it, Int y + Float xq returns Union{Int,Float}).
+        return op isa EvalValue ? last(y) * one(xi) : 0 * first(y) * one(xi)
+    end
+    idx, idx_R, xL, xR = search_interval(searcher, x, xi)
+    dL = xi - xL
+    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, idx, xL, xR), dL, side)
+end
+
+# NoExtrap / others matching AbstractExtrap: domain check → delegate.
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -28,21 +51,12 @@
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
     @boundscheck _check_domain(x, xi, extrap)
-    if _extract_primal(xi) == _extract_primal(last(x))
-        # `last(x)` for `_ExclusivePeriodicAxis` is the *virtual* `inner[1] + period`
-        # (the seam right endpoint). The corresponding y at that virtual slot is
-        # `last(y) = inner[1]` for `_ExclusivePeriodicData` — cyclic via the data
-        # wrapper. For raw vectors both `last`s are the user's last entry.
-        # Single uniform `last(y)` handles both cases — no `_resolve_idx` needed.
-        return op isa EvalValue ? last(y) : 0 * first(y)
-    end
-    idx, idx_R, xL, xR = search_interval(searcher, x, xi)
-    dL = xi - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xL, xR), dL, side)
+    return _constant_eval_at_point(x, y, xi, InBounds(), side, op, searcher)
 end
 
-# ExtendExtrap: constant function has zero slope → extend = clamp.
-# Cannot use catch-all because kernel is side-dependent and OOB dL > h gives wrong side.
+# ExtendExtrap: constant has zero slope → extend = clamp. Route through
+# ClampExtrap so OOB queries return the boundary value (in-bounds case
+# eventually reaches the InBounds core).
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -55,7 +69,7 @@ end
     return _constant_eval_at_point(x, y, xi, ClampExtrap(), side, op, searcher)
 end
 
-# ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
+# ClampExtrap / FillExtrap: boundary check → extrap value or delegate.
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -68,15 +82,10 @@ end
     xi_primal = _extract_primal(xi)
     xi_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xi)
     xi_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xi)
-    if xi_primal == _extract_primal(last(x))
-        return op isa EvalValue ? last(y) : 0 * first(y)
-    end
-    idx, idx_R, xL, xR = search_interval(searcher, x, xi)
-    dL = xi - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, xL, xR), dL, side)
+    return _constant_eval_at_point(x, y, xi, InBounds(), side, op, searcher)
 end
 
-# WrapExtrap: wrap query to domain → search + kernel.
+# WrapExtrap: wrap query to domain → right-edge short-circuit → search + kernel.
 # `_wrap_to_domain(xi, x, ::WrapExtrap)` reads `(first(x), last(x))` from the
 # axis — `_ExclusivePeriodicAxis` exposes the precomputed virtual endpoint via
 # `last(g)`, so the wrap domain naturally spans one period for `:exclusive`.
@@ -90,14 +99,22 @@ end
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
     xi_wrapped = _wrap_to_domain(xi, x)
+    # Right-edge short-circuit (closed-domain): `xi == last(x)` collapses
+    # uniformly to `last(y)`, bypassing side semantics. Mirrors the InBounds
+    # core's identical guard and the persistent anchor path's `aq.xq == x_last`
+    # short-circuit so scalar oneshot agrees with the persistent interpolant at
+    # the exact boundary. `last(_ExclusivePeriodicData) = inner[1]` so `:exclusive`
+    # cyclic wrap is preserved; raw Vector yields `y[n]`.
+    _extract_primal(xi_wrapped) == _extract_primal(last(x)) &&
+        return op isa EvalValue ? last(y) * one(xi_wrapped) : 0 * first(y) * one(xi_wrapped)
     idx, idx_R, xL, xR = search_interval(searcher, x, xi_wrapped)
     dL = xi_wrapped - xL
     # Unwrap data once: `search_interval` already resolved the seam (idx_R = 1
     # at seam cell), so direct inner access skips the wrapper's cyclic
-    # `Base.getindex` branch on each `y[idx]` / `y[idx_R]`. The 3-arg
-    # `_get_h(x, xL, xR)` is already wrapper-aware and branch-free.
+    # `Base.getindex` branch on each `y[idx]` / `y[idx_R]`. The 4-arg
+    # `_get_h(x, idx, xL, xR)` is wrapper- and cache-aware.
     yi = _raw(y)
-    @inbounds return _constant_kernel(op, yi[idx], yi[idx_R], _get_h(x, xL, xR), dL, side)
+    @inbounds return _constant_kernel(op, yi[idx], yi[idx_R], _get_h(x, idx, xL, xR), dL, side)
 end
 
 
@@ -126,7 +143,7 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `NoExtrap()` (default): throws DomainError if outside domain
   - `ClampExtrap()`: clamp to boundary values
   - `ExtendExtrap()`: same as ClampExtrap (slope=0)
-  - `WrapExtrap()`: wrap to [x_min, x_max)
+  - `WrapExtrap()`: wrap to closed domain [x_min, x_max] (xq==x_max returns y[end])
 - `side::AbstractSide`: Side selection
   - `NearestSide()` (default): nearest neighbor (left tie-breaking at midpoint)
   - `LeftSide()`: always use left value
@@ -138,7 +155,8 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `LinearBinarySearch(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns
-- Interpolated value (Float type)
+- Interpolated value, eltype `promote_type(eltype(y), eltype(xq))` (the
+  kernel's `* one(dL)` carrier propagation; fully-Int chain preserves Int).
 
 # Example
 ```julia
@@ -157,8 +175,8 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 ```
 """
 # Public scalar one-shot API.
-# Zero-alloc: _prepare_grid returns Vector as-is, Range → _CachedRange (stack).
-# Kernel arithmetic auto-promotes Int×Float via _get_h float() wrappers.
+# Zero-alloc: _resolve_axis returns Vector as-is, Range → _CachedRange (stack).
+# Selection kernel (no `inv_h * dL` arithmetic) — raw Int grids pass through.
 @inline function constant_interp(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -177,10 +195,8 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    searcher = _resolve_search(x_eff, xi, search, hint, NoBC())
-    result = _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
-    # Single-exit coerce: Int/Rational y returns y[idx] directly; promote to Float.
-    return Tv <: _PromotableValue && !(Tv <: AbstractFloat) ? float(result) : result
+    searcher = _resolve_search(x_eff, xi, search, hint)
+    return _constant_eval_at_point(x_eff, y_eff, xi, extrap_eff, side, deriv, searcher)
 end
 
 # ========================================
@@ -212,8 +228,8 @@ output = zeros(1000)
 constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
-# Unified in-place entry point. Handles promotion internally via _promote_itp_inputs,
-# so no separate Real/Mixed-type wrapper is needed (same pattern as the scalar API).
+# Unified in-place entry. Resolvers normalize inputs; selection kernel
+# preserves `eltype(y)`. No Real/Mixed wrapper needed.
 function constant_interp!(
         output::AbstractVector,
         x::AbstractVector,
@@ -232,7 +248,7 @@ function constant_interp!(
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    searcher = _resolve_search(x_eff, x_targets, search, nothing, NoBC())
+    searcher = _resolve_search(x_eff, x_targets, search, nothing)
     _constant_vector_loop!(output, x_eff, y_eff, x_targets, extrap_eff, side, deriv, searcher)
     return output
 end
@@ -258,8 +274,10 @@ sorted_queries = sort(rand(1000))
 vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
-# Unified allocating vector one-shot. Calls the unified constant_interp! which
-# handles promotion internally. Output type includes Tg for duck grids.
+# Buffer eltype via Constant's kernel shape — Julia infers the return type
+# from `_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`, matching the
+# actual kernel reality (Int×Int×Int → Int; SVector × Dual → SVector{Dual};
+# Float y × Dual grid → Dual carrier via `xq - xL`).
 function constant_interp(
         x::AbstractVector,
         y::AbstractVector,
@@ -270,9 +288,9 @@ function constant_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    Tg = _promote_grid_float(eltype(x), eltype(y))
-    T_out = _output_eltype(eltype(y), Tg)
-    output = Vector{T_out}(undef, length(x_targets))
+    output = Vector{_output_eltype(_constant_kernel_shape, eltype(x), eltype(y), eltype(x_targets))}(
+        undef, length(x_targets)
+    )
     constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)
     return output
 end

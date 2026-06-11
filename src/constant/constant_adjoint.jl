@@ -20,7 +20,7 @@
 # ========================================
 
 """
-    ConstantAdjoint{Tg, SD, EP}
+    ConstantAdjoint{Tg, Tq, BC, SD, EP}
 
 Adjoint (transpose) operator for 1D constant interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward constant interpolation weight matrix.
@@ -30,6 +30,8 @@ The same adjoint can be applied to any `ȳ` vector.
 
 # Type Parameters
 - `Tg`: Grid type (unconstrained — supports duck types like ForwardDiff.Dual)
+- `Tq`: Anchor query coordinate type, `promote_type(Tg, eltype(x_query))`
+- `BC`: Boundary condition type
 - `SD`: Side selection mode (`NearestSide`, `LeftSide`, `RightSide`)
 - `EP`: Extrapolation policy type (`NoExtrap`, `ExtendExtrap`, `ClampExtrap`, `FillExtrap`, `WrapExtrap`)
 
@@ -56,10 +58,11 @@ itp = constant_interp(x, f; side=NearestSide())
 @assert dot(itp.(xq), y_bar) ≈ dot(f, adj(y_bar))
 ```
 """
-struct ConstantAdjoint{Tg, SD <: AbstractSide, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
-    anchors::Vector{_ConstantAnchoredQuery{Tg, Tg}}
-    grid_size::Int
+struct ConstantAdjoint{Tg, Tq, BC <: AbstractBC, SD <: AbstractSide, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+    anchors::Vector{_ConstantAnchoredQuery{Tg, Tq}}
+    grid_size::Int  # internal length: n+1 for PeriodicBC{:exclusive}, n otherwise
     x_hi::Tg
+    bc::BC
     side::SD
     extrap::EP
 end
@@ -67,11 +70,11 @@ end
 # ========================================
 # 1D Adjoint Protocol Accessors
 # ========================================
-# Callables (6 overloads), Base.size, and Base.Matrix are inherited
-# from AbstractAdjoint via src/core/adjoint_protocol.jl.
+# Callables (6 overloads), Base.size, Base.Matrix, and exclusive-periodic
+# in-place seam fold are inherited from AbstractAdjoint1D via
+# src/core/adjoint_protocol.jl.
 
 @inline _n_queries(adj::ConstantAdjoint) = length(adj.anchors)
-@inline _adjoint_output_length(adj::ConstantAdjoint) = adj.grid_size
 
 @inline _adjoint_1d_apply!(f_bar, adj::ConstantAdjoint, y_bar, deriv) =
     _constant_adjoint_apply!(f_bar, adj, y_bar, deriv)
@@ -164,16 +167,16 @@ gets `state=IN_DOMAIN` (inside). This restores the correct OOB state flag based 
 original query position, so scatter can skip OOB contributions.
 """
 function _fixup_constant_anchor_state!(
-        anchors::Vector{_ConstantAnchoredQuery{Tg, Tg}},
+        anchors::Vector{_ConstantAnchoredQuery{Tg, Tq}},
         xq_original::AbstractVector,
         x_lo, x_hi
-    ) where {Tg}
+    ) where {Tg, Tq}
     @inbounds for i in eachindex(anchors)
         xq_i = xq_original[i]
         (x_lo <= xq_i <= x_hi) && continue
         state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
         aq = anchors[i]
-        anchors[i] = _ConstantAnchoredQuery{Tg, Tg}(
+        anchors[i] = _ConstantAnchoredQuery{Tg, Tq}(
             aq.stencil, aq.xq, state, aq.h, aq.dL
         )
     end
@@ -220,21 +223,32 @@ f_bar = adj(y_bar)
 - `NoExtrap` validates all queries are in-domain at construction time.
 """
 function constant_adjoint(
-        x::AbstractVector,
+        x::AbstractVector{Tg},
         x_query::AbstractVector;
+        bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
-    )
-    x_p, xq_p, Tg = _promote_adjoint_inputs(x, x_query)
+    ) where {Tg}
+    # Grid stays raw `Tg` (no `_promote_adjoint_inputs` Float widening).
+    # Adjoint buffer eltype comes from the protocol's `_output_eltype`.
+    x_p = x
+    xq_p = _promote_query_typed(x_query, Tg)
 
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
-    x_hi = last(x_p)
+    # BC-aware axis wrap: `:exclusive` periodic → `_ExclusivePeriodicAxis` with
+    # logical length n+1. Anchors at the seam cell store stencil = (n, n+1);
+    # the protocol's exclusive-periodic in-place callable folds f_work[1] +=
+    # f_work[n+1] before trim. Right-boundary special case `xq == x_hi` also
+    # writes to f_bar[n+1] (the virtual seam endpoint), so it folds correctly.
+    x_axis = _cache_axis(x_p, bc, Tg)
+    extrap_eff = _resolve_extrap(extrap, bc, x_axis)
+    x_hi = last(x_axis)
 
-    # NoExtrap: validate all queries in-domain (use primal for Dual grid boundaries)
-    if extrap isa NoExtrap
-        x_lo_p, x_hi_p = _extract_primal(first(x_p)), _extract_primal(last(x_p))
+    # NoExtrap: validate all queries in-domain (uses x_axis bounds, which include
+    # the virtual seam endpoint for `:exclusive`).
+    if extrap_eff isa NoExtrap
+        x_lo_p, x_hi_p = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
             (x_lo_p <= xq_i <= x_hi_p) || throw(
@@ -244,33 +258,36 @@ function constant_adjoint(
     end
 
     # Build anchored queries with extrap-specific preprocessing
-    wrap = extrap isa WrapExtrap
-    if extrap isa _ClampOrFill || extrap isa ExtendExtrap
+    wrap = extrap_eff isa WrapExtrap
+    if extrap_eff isa _ClampOrFill || extrap_eff isa ExtendExtrap
         # For constant interp, ExtendExtrap == ClampExtrap (slope=0).
         # Clamp OOB queries to boundary for correct anchor geometry.
         # Then restore side flags so scatter can skip OOB contributions.
-        x_lo_p, x_hi_p = _extract_primal(first(x_p)), _extract_primal(last(x_p))
+        x_lo_p, x_hi_p = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
         xq_clamped = clamp.(xq_p, x_lo_p, x_hi_p)
-        anchors = _anchor_query(x_p, xq_clamped, Val(:constant), false)
+        anchors = _anchor_query(x_axis, xq_clamped, Val(:constant), false)
         _fixup_constant_anchor_state!(anchors, xq_p, x_lo_p, x_hi_p)
     else
-        # WrapExtrap: wraps to domain (correct)
-        # NoExtrap: already validated in-domain above
-        anchors = _anchor_query(x_p, xq_p, Val(:constant), wrap)
+        # WrapExtrap: wraps to domain (covers periodic auto-promotion).
+        # NoExtrap: already validated in-domain above.
+        anchors = _anchor_query(x_axis, xq_p, Val(:constant), wrap)
     end
 
-    return ConstantAdjoint{Tg, typeof(side), typeof(extrap)}(anchors, length(x_p), x_hi, side, extrap)
+    Tq = eltype(anchors).parameters[2]
+    return ConstantAdjoint{Tg, Tq, typeof(bc), typeof(side), typeof(extrap_eff)}(
+        anchors, length(x_axis), x_hi, bc, side, extrap_eff
+    )
 end
 
 # Scalar query convenience
 function constant_adjoint(
         x::AbstractVector,
         x_query::Real;
+        bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
-        _extra...
     )
-    return constant_adjoint(x, [x_query]; side = side, extrap = extrap)
+    return constant_adjoint(x, [x_query]; bc = bc, side = side, extrap = extrap)
 end
 
 # Matrix materialization inherited from AbstractAdjoint (adjoint_protocol.jl)

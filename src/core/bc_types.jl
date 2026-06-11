@@ -59,13 +59,11 @@ abstract type AbstractBC end
     NoBC <: AbstractBC
 
 Sentinel boundary-condition value meaning "no BC requested; use the method's
-built-in endpoint rule". Currently the default `bc` kwarg for **Constant and
-Linear** interpolation (the only non-cubic methods wired for `bc` in this
-release). PCHIP / Cardinal / Akima will adopt the same default when their
-`bc` kwarg is added (planned next phase).
+built-in endpoint rule". Default `bc` for all five 1D non-cubic method families
+(Linear, Constant, PCHIP, Cardinal, Akima).
 
-For supported methods, `bc=NoBC()` preserves existing behavior, and
-`bc=PeriodicBC(...)` engages the periodic build path.
+`bc=NoBC()` preserves the built-in endpoint behavior; `bc=PeriodicBC(...)`
+engages the periodic build path.
 
 Cubic and Quadratic do not use `NoBC` because their coefficient systems are
 under-determined without a concrete closure condition (they default to
@@ -203,15 +201,22 @@ Periodic boundary condition: S(x_0) = S(x_n), S'(x_0) = S'(x_n), S''(x_0) = S''(
 Internally, periodic BC uses Sherman-Morrison solver with `PeriodicData{T}` for the cache.
 
 # Type Parameters
-- `E::Symbol`: `:inclusive` or `:exclusive` (compile-time endpoint convention)
+- `E::Symbol`: `:inclusive`, `:exclusive`, or `:extended` (compile-time endpoint convention).
+  `:extended` is **internal-only** — produced by `_bc_after_extend` after a persistent build
+  promotes an `:exclusive` input to length-(n+1) closed-cycle storage. It cannot be
+  constructed via the keyword form; see `claudedocs/design/bc_extended_symbol.md`.
 - `P`: `Nothing` (inclusive or auto-infer) or `<:AbstractFloat` (explicit period)
-- `C::Bool`: whether to validate `y[1] ≈ y[end]` at construction time (default `true`)
+- `C::Bool`: whether to validate `y[1] ≈ y[end]` at construction time (default `true`).
+  Pinned to `false` for `:extended` since extension constructs the seam.
 
 # Endpoint Conventions
 - **Inclusive** (`endpoint=:inclusive`, default): `y[1] ≈ y[end]` required (standard convention)
 - **Exclusive** (`endpoint=:exclusive`): `y[end]` is the last unique data point; the period boundary
   is handled internally. For `AbstractRange` grids, the period is inferred from `step(x) * length(x)`.
   For non-uniform grids, `period` must be provided explicitly.
+- **Extended** (internal): appears in `itp.bc` after a persistent build promoted an `:exclusive`
+  input. The internal data layout is length-(n+1) closed-cycle, but `user_n = grid_len - 1`
+  is preserved for adjoint output sizing.
 
 # Examples
 ```julia
@@ -233,7 +238,8 @@ struct PeriodicBC{E, P, C} <: AbstractBC
     period::P         # Nothing or AbstractFloat
     function PeriodicBC{E, P, C}(period::P) where {E, P, C}
         E isa Symbol || error("PeriodicBC type parameter E must be a Symbol")
-        E in (:inclusive, :exclusive) || error("PeriodicBC type parameter E must be :inclusive or :exclusive")
+        E in (:inclusive, :exclusive, :extended) ||
+            error("PeriodicBC type parameter E must be :inclusive, :exclusive, or :extended")
         C isa Bool || error("PeriodicBC type parameter C must be a Bool")
         return new{E, P, C}(period)
     end
@@ -546,6 +552,7 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 @inline _normalize_bc(::ZeroSlopeBC, sample) = (z = 0 * sample; BCPair(Deriv1(z), Deriv1(z)))
 @inline _normalize_bc(bc::BCPair) = bc
 @inline _normalize_bc(bc::PointBC) = BCPair(bc, bc)
+@inline _normalize_bc(bc::NoBC) = bc
 # Fallback: ignore second arg for all other BC types (only ZeroCurv/ZeroSlope need it)
 @inline _normalize_bc(bc::AbstractBC, _sample) = _normalize_bc(bc)
 
@@ -668,6 +675,24 @@ Check if a boundary condition is periodic.
 """
 @inline _is_periodic_bc(::AbstractBC) = false  # default for all BC types
 @inline _is_periodic_bc(::PeriodicBC) = true   # only PeriodicBC is periodic
+
+"""
+    _is_periodic_seam_folded(bc::AbstractBC) -> Bool
+
+True iff the adjoint output along this axis must seam-fold the (n+1)-th
+contribution into element 1 and trim to length n. Covers `:exclusive`
+(OneShot wrap) and `:extended` (persistent promotion).
+
+This is the stable contract for "axis carries a folded seam" — external
+extensions (custom AD rules, ChainRules-style replays, foreign cache
+builders) should dispatch on this trait rather than `isa
+PeriodicBC{:exclusive}`. The latter silently misses `:extended` BCs that
+`_bc_after_extend` produces for persistent builds, while this trait
+covers both forms uniformly.
+"""
+@inline _is_periodic_seam_folded(::AbstractBC) = false
+@inline _is_periodic_seam_folded(::PeriodicBC{:exclusive}) = true
+@inline _is_periodic_seam_folded(::PeriodicBC{:extended}) = true
 
 # ── @noinline throw helpers (keep cold error paths out of hot code) ──
 

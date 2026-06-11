@@ -19,16 +19,15 @@ end
     return _linear_vector_loop!(output, itp.x, itp.y, xq, extrap, op, searcher)
 end
 
+# Linear uses the default `_arithmetic_kernel_shape` route (inherited from
+# `AbstractInterpolant1D`) — no explicit override needed.
+
 # ========================================
 # Vector Loop (Function Barrier)
 # ========================================
-# Julia specializes on concrete Searcher type P, eliminating Union-split
-# overhead when adaptive AutoSearch resolves to BinarySearch or LinearBinarySearch.
-# CRITICAL: All arguments must be fully typed — untyped args prevent SROA
-# of RefHint's Ref, causing 16-byte heap allocation per call.
-# Single 7-arg signature: persistent vs oneshot strategy is dispatched on the
-# grid type itself inside `_linear_eval_at_point` (via `_alpha_of`/`_get_inv_h`
-# specializations on `_CachedRange`/`_CachedVector` vs raw `AbstractVector`).
+# Outer resolves the `_check_domain` Union; inner sees concrete `extrap`,
+# union-splitting the per-iter dispatch. Args must be fully typed — untyped
+# blocks SROA of RefHint's Ref (16 B/call alloc).
 @inline function _linear_vector_loop!(
         output::AbstractVector,
         x::AbstractVector{Tg},
@@ -38,10 +37,23 @@ end
         deriv::O,
         searcher::P
     ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    extrap = _check_domain(x, xq, extrap)
-    return @inbounds for i in eachindex(xq, output)
+    extrap_eff = _check_domain(x, xq, extrap)
+    return _linear_vector_loop_inner!(output, x, y, xq, extrap_eff, deriv, searcher)
+end
+
+@inline function _linear_vector_loop_inner!(
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::AbstractVector{<:Real},
+        extrap::E,
+        deriv::O,
+        searcher::P
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    @inbounds for i in eachindex(xq, output)
         output[i] = _linear_eval_at_point(x, y, xq[i], extrap, deriv, searcher)
     end
+    return output
 end
 
 # ========================================
@@ -140,28 +152,10 @@ function linear_interp end
         search::AbstractSearchPolicy = AutoSearch()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
-    # Surface-level BC-aware resolvers (`periodic_axis.jl`) compose the right
-    # per-(grid×bc) wrapper SHAPE without owning storage:
-    #   Vector + :exclusive → `_ExclusivePeriodicAxis(_CachedVector(x), period)`
-    #                          (aliases `x` in `_CachedVector.inner`,
-    #                           allocates fresh `h`/`inv_h`)
-    #   Vector + non-excl   → `_CachedVector(x)` (same aliasing rule)
-    #   Range  + :exclusive → `_ExclusivePeriodicAxis(_to_float(x, ...), period)`
-    #   Range  + non-excl   → `_to_float(x, ...)` (immutable `_CachedRange`)
-    # `_resolve_data(y, bc)` is reference-only: passthrough for non-`:exclusive`
-    # (with optional `:inclusive` endpoint check), `_ExclusivePeriodicData(y)`
-    # for `:exclusive`. Ownership copy + element-type promotion happens INSIDE
-    # the inner constructor via `_convert_copy(x, Tg)` / `_convert_copy(y, Tv)`,
-    # mirroring `y`'s flow — single copy point, no double-copy.
-    # Thread the promoted `Tg` so Range inputs convert directly to the
-    # correct float type (e.g. `Int` range + `Float32` y → `_CachedRange{Float32}`).
-    # Without `Tg`, the 2-arg form would default `Int` → `Float64` and break the
-    # documented Float32 promotion contract.
-    x_eff = _cache_axis(x, bc, Tg)
-    y_eff = _resolve_data(y, bc)
-    # Periodic BCs auto-promote `extrap` to `WrapExtrap` against the resolved
-    # axis span. `_resolve_extrap` handles materialization.
-    extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
+    # Persistent: extend-promote for `:exclusive` (matches PCHIP/Cardinal/Akima/Cubic).
+    # OneShot path continues to use the lazy wrapper (linear_oneshot.jl).
+    x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
+    x_eff = _cache_axis(x_ext, bc_eff, Tg)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
-    return LinearInterpolant(x_eff, y_eff, extrap_p, search; bc = bc)
+    return LinearInterpolant(x_eff, y_ext, extrap_p, search; bc = bc_eff)
 end

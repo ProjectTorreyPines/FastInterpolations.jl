@@ -58,15 +58,22 @@
 
         sitp = constant_interp(x, Series(y1, y2))
 
-        # x promoted to Float64, y promoted to ComplexF64
-        @test sitp isa ConstantSeriesInterpolant{Float64, ComplexF64}
+        # Storage Tg/Tv preserved on the struct (no Float-lift for Constant).
+        @test sitp isa ConstantSeriesInterpolant{Int, Complex{Int}}
 
+        # Float xq + Int grid → kernel-shape trait promotes via `xq - xL`,
+        # so output widens to `ComplexF64` (matches the 1D plain path's
+        # `Int y + Float xq → Float` rule extended to Complex carriers).
         vals = sitp(5.5)
         @test vals isa Vector{ComplexF64}
+        @test vals[1] === 5.0 + 10.0im
 
-        # Constant interpolation returns step value (nearest by default)
-        # At 5.5 with NearestSide(), rounds to index 6 (x=5) → value 5+10i
-        @test isapprox(vals[1], 5.0 + 10.0im, rtol = 1.0e-10)
+        # Fully-Int chain (Int xq + Int grid + Complex{Int} y) stays
+        # `Complex{Int}` — matches the `test_constant_eltype.jl` Series ↔
+        # plain agreement pin for fully-Int chains.
+        vals_int = sitp(5)
+        @test vals_int isa Vector{Complex{Int}}
+        @test vals_int[1] === 5 + 10im
     end
 
     # ========================================
@@ -79,8 +86,8 @@
 
         sitp = constant_interp(x, Series(y1, y2))
 
-        # Grid promoted to Float64 to match Complex{Float64}
-        @test sitp isa ConstantSeriesInterpolant{Float64, ComplexF64}
+        # Constant duck-types: Float32 grid preserved, ComplexF64 preserved.
+        @test sitp isa ConstantSeriesInterpolant{Float32, ComplexF64}
 
         vals = sitp(0.5)
         @test vals isa Vector{ComplexF64}
@@ -268,8 +275,11 @@
     # ========================================
     # Tg Calculation Policy (Query Independence)
     # ========================================
-    @testset "Lossless type promotion" begin
-        # Float32 data + Float64 query → Float64 output (wider type wins)
+    @testset "Eltype contract: kernel-shape trait promotes via xq - xL" begin
+        # Series routes through `_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`,
+        # so output eltype is `promote_type(Tv, promote_type(Tg, Tq))`. This
+        # matches the 1D plain path rule — query type widens the output when
+        # it's wider than Tg/Tv.
         x32 = Float32.(0:0.1:1)
         y1 = sin.(x32)
         y2 = cos.(x32)
@@ -277,9 +287,13 @@
         sitp = constant_interp(x32, Series(y1, y2))
         @test sitp isa ConstantSeriesInterpolant{Float32, Float32}
 
-        # Float64 query promotes output to Float64 (lossless - wider type)
-        result = sitp(0.5)  # 0.5 is Float64
-        @test eltype(result) === Float64
+        # Float64 xq with Float32 grid/y → output widens to Float64.
+        result64 = sitp(0.5)
+        @test eltype(result64) === Float64
+
+        # Float32 xq with Float32 grid/y → fully-Float32 chain stays Float32.
+        result32 = sitp(0.5f0)
+        @test eltype(result32) === Float32
     end
 
 end

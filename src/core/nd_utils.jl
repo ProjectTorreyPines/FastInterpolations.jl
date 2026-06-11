@@ -149,21 +149,21 @@ end
     error("unreachable: _first_fill_value called without FillExtrap")
 end
 
-# ── _resolve_extrap: ND variants (expand + promote [+ materialize]) ──
+# ── _resolve_extrap: ND variants (expand + promote [+ per-axis resolve]) ──
 #
 # Continues the `_resolve_extrap` family from `src/core/periodic.jl` (primitive
 # per-axis + 1D bundled + ND bundled-with-data). These ND methods handle the
 # scalar→NTuple expansion, periodic-BC override, and FillExtrap value-type
 # promotion. Two shapes by arity:
 #
-# - 4-arg (extrap, bcs, Val(N), Tv): expand + promote. Returns NTuple with
-#   possibly-unmaterialized `WrapExtrap{Nothing}` on periodic axes. Used by
-#   callers that materialize separately (post-extension persistent paths
-#   where bc-aware materialize would trip the pre-extension `<` check).
+# - 4-arg (extrap, bcs, Val(N), Tv): expand + promote. Returns NTuple per axis,
+#   forcing `WrapExtrap` where `bcs[d]` is periodic. Used by callers that
+#   resolve against the grid separately (post-extension persistent paths
+#   where the BC-aware check would trip the pre-extension `<` invariant).
 #
-# - 5-arg (extrap, bcs, grids, Val(N), Tv): above + per-axis materialize.
-#   `bcs::NTuple` → 3-arg primitive (bc-aware); `bcs::Nothing` → 2-arg primitive
-#   (grid-span only, no periodic override needed).
+# - 5-arg (extrap, bcs, grids, Val(N), Tv): above + per-axis passthrough
+#   against `grids`. `bcs::NTuple` → 3-arg primitive (bc-aware);
+#   `bcs::Nothing` → 2-arg primitive (no periodic override).
 
 # ── 4-arg: expand + promote (no materialize) ──
 
@@ -559,8 +559,12 @@ end
     return q
 end
 
-@inline function _handle_axis_extrap(q, axis::AbstractVector, extrap::WrapExtrap)
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::WrapExtrap)
     return _wrap_to_domain(q, axis)
+end
+
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::InBounds)
+    return q
 end
 
 # ========================================
@@ -820,23 +824,47 @@ end
 # by Julia escape analysis → 0 heap bytes/call.
 
 # Per-axis inline: build Searcher + run search_interval in one body.
-# 3-arg `search_interval` (no spacing) — Range uses _search_direct's own step,
-# Vector uses _search_binary; the
-# stencil-using callers compute `h` from the search-returned `(xL, xR)` via
-# 3-arg `_get_h(grid, xL, xR)` dispatch.
-@inline _search_axis_stencil(grid, q, search, hint, bc) =
-    @inbounds search_interval(_resolve_search(grid, q, search, hint, bc), grid, q)
+# Callers pre-wrap grids via `_resolve_axis` (or pass already-wrapped axes),
+# so seam handling is via axis-level dispatch in `periodic_axis.jl`.
+@inline _search_axis_stencil(grid, q, search, hint) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q)
 
 @inline function _search_all_intervals_stencil(
         q_evals::Tuple{Vararg{Real, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
-        hints::Union{Nothing, Tuple{Vararg{Base.RefValue{Int}, N}}},
-        bcs::Tuple{Vararg{AbstractBC, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
     ) where {N}
-    hints_eff = _ensure_hint_nd(hints, Val(N))
-    results = map(_search_axis_stencil, grids, q_evals, searches, hints_eff, bcs)
+    results = map(_search_axis_stencil, grids, q_evals, searches, hints)
     return _project_search_results(results, _getstencil)
+end
+
+# Nothing-hint overload — scalar oneshot entries only. Batch must use the
+# 4-arg NTuple form (hint allocation hoisted via `_resolve_oneshot_search_nd`).
+@inline function _search_all_intervals_stencil(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing,
+    ) where {N}
+    hints = _ensure_hint_nd(nothing, Val(N))
+    return _search_all_intervals_stencil(q_evals, grids, searches, hints)
+end
+
+
+"""
+    _resolve_oneshot_search_nd(search, queries, hint, Val(N)) -> (policies, hints)
+
+Per-axis adaptive policy + persistent hint tuple. Call once outside the
+per-query loop in every ND oneshot batch path. `hint::Nothing` produces a
+fresh `Ref{Int}` per axis; user-supplied Refs pass through unchanged.
+"""
+@inline function _resolve_oneshot_search_nd(
+        search, queries, hint, ::Val{N}
+    ) where {N}
+    policies = _resolve_search_nd(search, Val(N), queries, hint)
+    hints = _ensure_hint_nd(hint, Val(N))
+    return policies, hints
 end
 
 # ========================================
@@ -1086,4 +1114,28 @@ grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
     Tv = _value_type(Tv_raw, Tg)
     Tz = _output_eltype(Tv, Tg)
     return grids_typed, Tg, Tv, Tz
+end
+
+"""
+    _nd_promote_grids_raw(grids, data) -> (grids_typed, Tg, Tv)
+
+Raw-eltype variant of `_nd_promote_grids`: skips the `float()` widening, keeps
+`Tv = eltype(data)`. Used by selection-kernel methods (Constant) where there
+is no x·y arithmetic and the output contract follows `eltype(data)` directly.
+
+- `Tg = promote_type(eltype.(grids)...)` (via `@generated` `_promote_grid_eltype`,
+  unrolled at compile time — zero alloc).
+- `Tv = eltype(data)` — no promotion.
+- `grids_typed`: each axis converted to share `Tg` (container heterogeneity
+  preserved — Range stays Range, Vector stays Vector).
+
+Arithmetic methods keep `_nd_promote_grids` (Float-widened Tg, value-promoted Tv).
+"""
+@inline function _nd_promote_grids_raw(
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N}
+    ) where {Tv, N}
+    Tg = _promote_grid_eltype(grids)
+    grids_typed = _convert_grids_typed(grids, Tg)
+    return grids_typed, Tg, Tv
 end

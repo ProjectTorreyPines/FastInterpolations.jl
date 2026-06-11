@@ -1,6 +1,6 @@
 @testitem "_resolve_axis — type correctness across (grid, bc) combinations" begin
     using FastInterpolations:
-        _resolve_axis, _resolve_data, _resolve_axis_copied,
+        _resolve_axis, _resolve_data,
         _CachedRange, _CachedVector, _ExclusivePeriodicAxis, _ExclusivePeriodicData,
         NoBC, PeriodicBC
 
@@ -78,17 +78,21 @@ end
     end
 end
 
-@testitem "_resolve_axis_copied — interpolant variant with caching layer" begin
+@testitem "_cache_axis(_convert_copy(x, T), bc) — persistent build pattern (cubic-style)" begin
     using FastInterpolations:
-        _resolve_axis_copied, _CachedRange, _CachedVector, _ExclusivePeriodicAxis,
+        _cache_axis, _convert_copy, _CachedRange, _CachedVector, _ExclusivePeriodicAxis,
         NoBC, PeriodicBC
+
+    # Canonical owned-axis pattern used by `_build_derivative_bc_cache` /
+    # `_build_periodic_cache` in cubic_solver.jl: copy buffer + promote eltype
+    # (one allocation pass), then alias the fresh buffer and build h/inv_h.
 
     bc_no = NoBC()
     bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
-    @testset "Vector + non-exclusive → _CachedVector" begin
+    @testset "Vector + non-exclusive → _CachedVector (owned)" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        xc = _resolve_axis_copied(x, bc_no, Float64)
+        xc = _cache_axis(_convert_copy(x, Float64), bc_no)
         @test xc isa _CachedVector{Float64, Float64}
         @test xc.inner == x                          # copied
         @test xc.inner !== x                         # NOT same object (mutation-safe)
@@ -97,7 +101,7 @@ end
 
     @testset "Vector + :exclusive → _ExclusivePeriodicAxis{_CachedVector inner}" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        ax = _resolve_axis_copied(x, bc_excl, Float64)
+        ax = _cache_axis(_convert_copy(x, Float64), bc_excl)
         @test ax isa _ExclusivePeriodicAxis{Float64, _CachedVector{Float64, Float64}, Float64}
         @test ax.inner isa _CachedVector
         @test ax.inner.h ≈ [1.0, 1.0, 1.0]           # inner is cached
@@ -107,61 +111,40 @@ end
 
     @testset "Range + non-exclusive → _CachedRange (length n)" begin
         r = 0.0:1.0:3.0
-        cr = _resolve_axis_copied(r, bc_no, Float64)
+        cr = _cache_axis(_convert_copy(r, Float64), bc_no)
         @test cr isa _CachedRange{Float64}
         @test length(cr) == 4
     end
 
     @testset "Range + :exclusive → _ExclusivePeriodicAxis(_CachedRange, period)" begin
         r = 0.0:1.0:3.0
-        cr = _resolve_axis_copied(r, bc_excl, Float64)
+        cr = _cache_axis(_convert_copy(r, Float64), bc_excl)
         @test cr isa FastInterpolations._ExclusivePeriodicAxis
         @test cr.inner isa _CachedRange{Float64}
         @test length(cr) == 5
         @test length(cr.inner) == 4
     end
 
-    @testset "Pre-wrapped re-entry: same-eltype passthrough, different-eltype rebuild" begin
-        # `_resolve_axis_copied` on already-wrapped inputs:
-        #   - Same eltype as Tg → true passthrough (returns input as-is). The
-        #     canonical outer→inner constructor flow re-enters with a wrapper
-        #     produced by an earlier `_resolve_axis_copied` call; re-copying
-        #     would double allocations. Internal API contract: the wrapper
-        #     must already own its inner buffer.
-        #   - Different eltype → wrapper-aware `_convert_copy` rebuild
-        #     (preserves wrapper type, promotes eltype, single-pass).
+    @testset "Float32 → Float64 eltype promotion" begin
+        # Vector path
+        x32 = Float32[1.0, 2.0, 3.0]
+        out = _cache_axis(_convert_copy(x32, Float64), bc_no)
+        @test out isa _CachedVector{Float64, Float64}
+        @test eltype(out) === Float64
 
-        # _CachedVector same-eltype: passthrough
-        x_cv = _CachedVector([0.0, 1.0, 2.0])
-        out_cv = _resolve_axis_copied(x_cv, bc_no, Float64)
-        @test out_cv === x_cv               # true passthrough, no copy
-
-        # _CachedRange: immutable struct, always returned as-is
-        x_cr = FastInterpolations._to_float(0.0:1.0:3.0, Float64)
-        out_cr = _resolve_axis_copied(x_cr, bc_no, Float64)
-        @test out_cr isa _CachedRange{Float64}
-        @test out_cr === x_cr               # safe to share — no buffer
-
-        # _ExclusivePeriodicAxis same-eltype: passthrough
-        x_ax = _ExclusivePeriodicAxis([0.0, 1.0, 2.0], 3.0)
-        out_ax = _resolve_axis_copied(x_ax, bc_excl, Float64)
-        @test out_ax === x_ax               # true passthrough
-
-        # Type promotion across wrapper boundary — different eltype rebuilds
-        x_cv32 = _CachedVector(Float32[1.0, 2.0, 3.0])
-        out_cv32 = _resolve_axis_copied(x_cv32, bc_no, Float64)
-        @test out_cv32 isa _CachedVector{Float64, Float64}  # eltype promoted
-        @test out_cv32.inner !== x_cv32.inner               # fresh inner buffer
-
-        x_cr32 = FastInterpolations._to_float(0.0f0:1.0f0:3.0f0, Float32)
-        out_cr32 = _resolve_axis_copied(x_cr32, bc_no, Float64)
-        @test out_cr32 isa _CachedRange{Float64}            # eltype promoted
+        # _CachedRange path — cubic flow pre-normalizes Range via outer
+        # `_resolve_axis(x)` before reaching this pattern, so the input here
+        # is `_CachedRange`, not a raw `AbstractRange`. The same-shape rebuild
+        # preserves Range type through `_convert_copy(::_CachedRange, T)`.
+        cr32 = FastInterpolations._to_float(0.0f0:1.0f0:3.0f0, Float32)
+        out_r = _cache_axis(_convert_copy(cr32, Float64), bc_no)
+        @test out_r isa _CachedRange{Float64}
     end
 end
 
 @testitem "Resolvers are type-stable when used inside a function" begin
     using FastInterpolations:
-        _resolve_axis, _resolve_data, _resolve_axis_copied,
+        _resolve_axis, _resolve_data, _cache_axis, _convert_copy,
         _CachedRange, _CachedVector, _ExclusivePeriodicAxis, _ExclusivePeriodicData,
         NoBC, PeriodicBC
 
@@ -202,13 +185,13 @@ end
         @test f(y, bc_excl) isa _ExclusivePeriodicData{Float64, 1, Vector{Float64}}
     end
 
-    @testset "_resolve_axis_copied type stability" begin
+    @testset "_cache_axis(_convert_copy(x, Tg), bc) type stability (cubic build pattern)" begin
         x_vec = [0.0, 1.0, 2.0, 3.0]
         x_rng = 0.0:1.0:3.0
         bc_no = NoBC()
         bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
-        f(x, bc, Tg) = _resolve_axis_copied(x, bc, Tg)
+        f(x, bc, Tg) = _cache_axis(_convert_copy(x, Tg), bc)
         @inferred f(x_vec, bc_no, Float64)
         @inferred f(x_vec, bc_excl, Float64)
         @inferred f(x_rng, bc_no, Float64)
@@ -478,4 +461,371 @@ end
     @test g64.inner !== g32.inner               # fresh wrapper
     @test g64.period == 4.0f0                   # period kept (its own type)
     @test collect(g64.inner.inner) == [0.0, 1.0, 2.0, 3.0]
+end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dedicated dispatch tests for `_cache_axis` 3-arg Tg form
+# ─────────────────────────────────────────────────────────────────────────────
+# These lock in the dispatch table documented in the "Tg-aware 3-arg overloads"
+# section of `src/core/periodic_axis.jl`.
+# They distinguish:
+#   • RAW inputs (Vector/Range) → Tg respected via `_to_float`
+#   • PRE-WRAPPED inputs (_CachedRange/_CachedVector/_ExclusivePeriodicAxis)
+#     → Tg INTENTIONALLY ignored (passthrough; downstream `_convert_copy`
+#     handles the eltype work in the canonical two-step pattern).
+
+@testitem "_cache_axis 3-arg Tg respected: raw Vector (eltype mismatch)" begin
+    using FastInterpolations: _cache_axis, _CachedVector, NoBC, PeriodicBC
+
+    bc_no = NoBC()
+    bc_inc = PeriodicBC(endpoint = :inclusive)
+    bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
+
+    # Suppress the `_warn_type_conversion` one-shot warning that
+    # `_to_float(::AbstractVector, Tg)` emits when broadcasting.
+    x32 = Float32[0.0, 1.0, 2.0, 3.0]
+
+    @testset "Vector{Float32} + Tg=Float64 promotes via _to_float" begin
+        c = _cache_axis(x32, bc_no, Float64)
+        @test c isa _CachedVector{Float64}
+        @test eltype(c) === Float64
+        @test eltype(c.h) === Float64
+        @test eltype(c.inv_h) === Float64
+    end
+
+    @testset "Vector{Float32} + :inclusive + Tg=Float64" begin
+        c = _cache_axis(x32, bc_inc, Float64)
+        @test c isa _CachedVector{Float64}
+        @test eltype(c) === Float64
+    end
+
+    @testset "Vector{Float32} + :exclusive + Tg=Float64" begin
+        ax = _cache_axis(x32, bc_excl, Float64)
+        @test ax isa FastInterpolations._ExclusivePeriodicAxis
+        @test eltype(ax.inner) === Float64           # inner promoted to Tg
+        @test ax.inner isa _CachedVector{Float64}
+    end
+end
+
+@testitem "_cache_axis 3-arg Tg respected: raw Range (eltype mismatch)" begin
+    using FastInterpolations: _cache_axis, _CachedRange, _ExclusivePeriodicAxis, NoBC, PeriodicBC
+
+    bc_no = NoBC()
+    bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
+
+    @testset "Int range + Tg=Float32 → _CachedRange{Float32}" begin
+        r = 0:1:3                                     # eltype Int
+        cr = _cache_axis(r, bc_no, Float32)
+        @test cr isa _CachedRange{Float32}
+        @test eltype(cr) === Float32
+    end
+
+    @testset "Float64 range + Tg=Float32 → _CachedRange{Float32}" begin
+        r = 0.0:1.0:3.0
+        cr = _cache_axis(r, bc_no, Float32)
+        @test cr isa _CachedRange{Float32}
+    end
+
+    @testset "Int range + :exclusive + Tg=Float64" begin
+        r = 0:1:3
+        ax = _cache_axis(r, bc_excl, Float64)
+        @test ax isa _ExclusivePeriodicAxis
+        @test ax.inner isa _CachedRange{Float64}     # inner promoted to Tg
+    end
+end
+
+@testitem "_cache_axis 3-arg Tg INTENTIONALLY IGNORED: pre-wrapped inputs" begin
+    using FastInterpolations:
+        _cache_axis, _CachedRange, _CachedVector, _ExclusivePeriodicAxis,
+        _to_float, NoBC, PeriodicBC
+
+    # CONTRACT LOCK-IN: `_cache_axis(pre-wrapped, bc, Tg)` is a passthrough
+    # regardless of `Tg` — the wrapper's eltype is preserved verbatim. The
+    # canonical persistent pattern is `_convert_copy(_cache_axis(x, bc, Tg), Tg)`
+    # which separates wrapping (this call) from eltype enforcement (`_convert_copy`).
+    # If this passthrough behavior changes silently, every persistent inner ctor
+    # that follows the two-step pattern would acquire a hidden double-conversion.
+    bc_no = NoBC()
+    bc_inc = PeriodicBC(endpoint = :inclusive)
+    bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
+
+    @testset "_CachedRange{Float64} + Tg=Float32 → passthrough (still Float64)" begin
+        cr64 = _to_float(0.0:1.0:3.0, Float64)
+        out = _cache_axis(cr64, bc_no, Float32)
+        @test out === cr64                            # exact identity
+        @test out isa _CachedRange{Float64}
+        @test eltype(out) === Float64                 # NOT Float32 — passthrough
+    end
+
+    @testset "_CachedVector{Float64} + Tg=Float32 → passthrough" begin
+        cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        out = _cache_axis(cv64, bc_no, Float32)
+        @test out === cv64                            # exact identity
+        @test eltype(out) === Float64
+    end
+
+    @testset "_CachedVector{Float64} + :exclusive + Tg=Float32 wraps but keeps inner eltype" begin
+        cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        ax = _cache_axis(cv64, bc_excl, Float32)
+        @test ax isa _ExclusivePeriodicAxis
+        @test ax.inner === cv64                       # inner is the SAME wrapper
+        @test eltype(ax.inner) === Float64            # NOT Float32 — passthrough
+    end
+
+    @testset "_CachedRange{Float32} + :inclusive + Tg=Float64 → passthrough" begin
+        cr32 = _to_float(0.0f0:1.0f0:3.0f0, Float32)
+        out = _cache_axis(cr32, bc_inc, Float64)
+        @test out === cr32
+        @test eltype(out) === Float32                 # NOT Float64
+    end
+
+    @testset "_ExclusivePeriodicAxis + Tg → idempotent (Tg ignored)" begin
+        cv32 = _CachedVector(Float32[0.0, 1.0, 2.0, 3.0])
+        g = _ExclusivePeriodicAxis(cv32, 4.0f0)
+        @test _cache_axis(g, bc_no, Float64) === g    # passthrough; eltype Float32 kept
+        @test _cache_axis(g, bc_excl, Float64) === g
+    end
+end
+
+@testitem "_cache_axis canonical two-step pattern enforces Tg" begin
+    using FastInterpolations:
+        _cache_axis, _convert_copy, _CachedVector, _CachedRange, _ExclusivePeriodicAxis,
+        NoBC, PeriodicBC
+
+    # Verify that `_convert_copy(_cache_axis(x, bc, Tg), Tg)` produces a
+    # Tg-typed owned axis for BOTH raw and pre-wrapped inputs. This is the
+    # contract that justifies `_cache_axis` 3-arg's passthrough-on-pre-wrapped
+    # behavior — the eltype enforcement is delegated to `_convert_copy`.
+    bc_no = NoBC()
+    bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
+
+    @testset "Raw Vector{Float32} → Float64 owned _CachedVector" begin
+        x32 = Float32[0.0, 1.0, 2.0, 3.0]
+        xc = _convert_copy(_cache_axis(x32, bc_no, Float64), Float64)
+        @test xc isa _CachedVector{Float64}
+        @test eltype(xc) === Float64
+        @test xc.inner !== x32                        # owned (independent buffer)
+    end
+
+    @testset "Pre-wrapped _CachedVector{Float32} → Float64 owned" begin
+        cv32 = _CachedVector(Float32[0.0, 1.0, 2.0, 3.0])
+        xc = _convert_copy(_cache_axis(cv32, bc_no, Float64), Float64)
+        @test xc isa _CachedVector{Float64}
+        @test eltype(xc) === Float64                  # `_convert_copy` enforced Tg
+        @test xc !== cv32                             # fresh wrapper
+    end
+
+    @testset "Raw Int range → Float64 owned with :exclusive" begin
+        r = 0:1:3
+        ax = _convert_copy(_cache_axis(r, bc_excl, Float64), Float64)
+        @test ax isa _ExclusivePeriodicAxis
+        @test eltype(ax.inner) === Float64
+    end
+
+    @testset "Pre-wrapped _ExclusivePeriodicAxis{Float32} → Float64 owned" begin
+        cv32 = _CachedVector(Float32[0.0, 1.0, 2.0, 3.0])
+        g32 = _ExclusivePeriodicAxis(cv32, 4.0f0)
+        g64 = _convert_copy(_cache_axis(g32, bc_excl, Float64), Float64)
+        @test g64 isa _ExclusivePeriodicAxis
+        @test eltype(g64) === Float64
+        @test g64.inner.inner !== cv32.inner          # fresh user-buffer
+    end
+end
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dedicated dispatch tests for `_cache_axis_pooled` (one-shot variant)
+# ─────────────────────────────────────────────────────────────────────────────
+# These lock in the dispatch table documented at `cached_vector.jl` — the
+# pool-backed twin of `_cache_axis`. Unlike persistent `_cache_axis`, the
+# pooled 3-arg form does NOT have a downstream `_convert_copy` stage, so it
+# threads `Tg` uniformly via `_to_float` (catch-all) for every input type.
+
+@testitem "_cache_axis_pooled 2-arg dispatch table" begin
+    using FastInterpolations: _cache_axis_pooled, _CachedRange, _CachedVector, _to_float
+    using AdaptiveArrayPools: @with_pool
+
+    # Assertions live inside the `@with_pool` scope so pool-owned `h`/`inv_h`
+    # buffers never escape — recycled storage would otherwise let stale reads
+    # slip in once a sibling test re-acquires the same slots.
+    @with_pool pool function _smoke()
+        x_vec = [0.0, 1.0, 2.5, 4.0]
+        x_range = 0.0:1.0:3.0
+        x_int_range = 0:1:3
+        cr64 = _to_float(x_range, Float64)
+        cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
+
+        cv_out = _cache_axis_pooled(pool, x_vec)
+        cr_out = _cache_axis_pooled(pool, x_range)
+        cr_int_out = _cache_axis_pooled(pool, x_int_range)
+        cv_pass = _cache_axis_pooled(pool, cv64)
+        cr_pass = _cache_axis_pooled(pool, cr64)
+
+        @testset "Pool wrap / passthrough rules (no Tg)" begin
+            # Vector{Float64} → pool-backed _CachedVector{Float64}
+            @test cv_out isa _CachedVector{Float64}
+            @test eltype(cv_out) === Float64
+            @test length(cv_out.h) == 3                   # n-1
+            @test cv_out.h ≈ [1.0, 1.5, 1.5]
+
+            # Float Range → _CachedRange{Float64}
+            @test cr_out isa _CachedRange{Float64}
+            @test eltype(cr_out) === Float64
+
+            # Int Range → _CachedRange{Float64} (float-defaulted via `float(eltype(x))`)
+            @test cr_int_out isa _CachedRange{Float64}
+            @test eltype(cr_int_out) === Float64
+
+            # Pre-wrapped inputs round-trip unchanged (===)
+            @test cv_pass === cv64
+            @test cr_pass === cr64
+        end
+        return nothing
+    end
+
+    _smoke()
+end
+
+@testitem "_cache_axis_pooled 3-arg Tg respected: raw inputs" begin
+    using FastInterpolations: _cache_axis_pooled, _CachedRange, _CachedVector
+    using AdaptiveArrayPools: @with_pool
+
+    # Assertions live inside the `@with_pool` scope so pool-owned `h`/`inv_h`
+    # buffers never escape.
+    @with_pool pool function _smoke()
+        x32 = Float32[0.0, 1.0, 2.0, 3.0]              # raw Vector{Float32}
+        r_int = 0:1:3                                  # Int range
+        r_f64 = 0.0:1.0:3.0                            # Float64 range
+
+        # Suppress repeated warning emission by warmup.
+        _cache_axis_pooled(pool, x32, Float64)         # warms _warn_type_conversion
+        cv_promoted = _cache_axis_pooled(pool, x32, Float64)
+        cr_int_promoted = _cache_axis_pooled(pool, r_int, Float32)
+        cr_f64_demoted = _cache_axis_pooled(pool, r_f64, Float32)
+
+        @testset "Vector{Float32} + Tg=Float64 → _CachedVector{Float64}" begin
+            @test cv_promoted isa _CachedVector{Float64}
+            @test eltype(cv_promoted) === Float64
+        end
+
+        @testset "Int range + Tg=Float32 → _CachedRange{Float32}" begin
+            @test cr_int_promoted isa _CachedRange{Float32}
+            @test eltype(cr_int_promoted) === Float32
+        end
+
+        @testset "Float64 range + Tg=Float32 → _CachedRange{Float32} (demotion)" begin
+            @test cr_f64_demoted isa _CachedRange{Float32}
+            @test eltype(cr_f64_demoted) === Float32
+        end
+        return nothing
+    end
+
+    _smoke()
+end
+
+@testitem "_cache_axis_pooled 3-arg Tg same-eltype identity passthrough" begin
+    using FastInterpolations: _cache_axis_pooled, _CachedRange, _CachedVector, _to_float
+    using AdaptiveArrayPools: @with_pool
+
+    # When `Tg == eltype(x)`, the `_to_float` delegation hits the identity
+    # `_to_float(::AbstractVector{T}, ::Type{T}) = x` overload (utils.jl:33),
+    # so the 3-arg form behaves exactly like the 2-arg form — no conversion,
+    # no warning, no extra allocation beyond the 2-arg path's pool work.
+    # Assertions live inside the `@with_pool` scope so pool-owned `h`/`inv_h`
+    # buffers never escape.
+    @with_pool pool function _smoke()
+        x64 = [0.0, 1.0, 2.0, 3.0]
+        r64 = 0.0:1.0:3.0
+        cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        cr64 = _to_float(r64, Float64)
+
+        cv_a = _cache_axis_pooled(pool, x64, Float64)         # raw vector, same Tg
+        cr_a = _cache_axis_pooled(pool, r64, Float64)         # raw range, same Tg
+        cv_b = _cache_axis_pooled(pool, cv64, Float64)        # pre-wrapped vector, same Tg
+        cr_b = _cache_axis_pooled(pool, cr64, Float64)        # pre-wrapped range, same Tg
+
+        @test cv_a isa _CachedVector{Float64}
+        @test cr_a isa _CachedRange{Float64}
+        @test cv_b === cv64                                   # passthrough
+        @test cr_b === cr64                                   # passthrough
+        return nothing
+    end
+
+    _smoke()
+end
+
+@testitem "_cache_axis_pooled pool DATA-buffer reuse after warmup" setup = [AllocConstants] begin
+    using FastInterpolations: _cache_axis_pooled, _CachedVector
+    using AdaptiveArrayPools: @with_pool
+
+    # CONTRACT: after warmup, `acquire!(pool, T, n-1)` REUSES the same pool
+    # buffer for `h`/`inv_h` — no fresh n-sized `Vector{T}` per call. Pool
+    # reuse happens ACROSS function invocations (cursor rewinds at scope
+    # exit), so warmups are separate calls of `_measure_*`.
+    #
+    # JIT NOTE: `_measure_*` is defined ONCE at testitem scope so JIT runs
+    # only on the first invocation. Don't wrap `@allocated` in another helper
+    # — that wrapper's first call would pay its own JIT cost (~400 B).
+    #
+    # End-to-end zero-alloc of `quadratic_interp` is enforced by
+    # `test_quadratic.jl`; this test isolates the pool-DATA contract for
+    # `_cache_axis_pooled` standalone.
+
+    # Wrapper aliases pool buffers — MUST NOT escape `@with_pool` scope
+    # (CLAUDE.md "Pool Safety Rules"). Extract a scalar inside the scope.
+    @with_pool pool function _measure_vec(x)
+        c = _cache_axis_pooled(pool, x)
+        return c.h[1] + c.inv_h[1]
+    end
+    @with_pool pool function _measure_range(r)
+        c = _cache_axis_pooled(pool, r)
+        return Float64(c[1])
+    end
+
+    @testset "Raw Vector (n=257) — pool DATA reused (no fresh n-sized Vector)" begin
+        x = [(i - 1) * 1.0 for i in 1:257]
+        _measure_vec(x)                  # warmup 1 (JIT + pool grow)
+        _measure_vec(x)                  # warmup 2 (pool reuses)
+        @test (@allocated _measure_vec(x)) <= ALLOC_THRESHOLD
+    end
+
+    @testset "Raw Range — `_CachedRange` is value-typed (no n-sized alloc)" begin
+        r = 0.0:1.0:256.0
+        _measure_range(r)
+        _measure_range(r)
+        @test (@allocated _measure_range(r)) <= ALLOC_THRESHOLD
+    end
+end
+
+@testitem "_cache_axis_pooled — view input pool-acquires inner (no heap alloc)" setup = [AllocConstants] begin
+    using FastInterpolations: _cache_axis_pooled, _CachedVector
+    using AdaptiveArrayPools: @with_pool
+
+    # `inner::Vector{T}` is forced for cache-key uniformity. Non-Vector input
+    # (view, OffsetArray, etc.) is copied into a pool-acquired Vector instead
+    # of `Vector{T}(x)`, so view input stays zero-heap after warmup.
+    WRAPPER_OVERHEAD_LIMIT = 512
+
+    @with_pool pool function _measure_view(vw)
+        c = _cache_axis_pooled(pool, vw)
+        return c.inner[1] + c.h[1] + c.inv_h[1]
+    end
+
+    @testset "View input → inner materialized to Vector{T} (single concrete type)" begin
+        @with_pool pool function _check_type(vw)
+            c = _cache_axis_pooled(pool, vw)
+            return (c isa _CachedVector{Float64, Float64}, c.inner isa Vector{Float64})
+        end
+        big = [0.0, 1.0, 2.5, 4.0, 6.0, 9.0, 12.0, 15.0]
+        is_concrete, inner_is_vector = _check_type(@view big[2:7])
+        @test is_concrete
+        @test inner_is_vector
+    end
+
+    @testset "View input — zero heap alloc after warmup (pool reuses inner)" begin
+        big = [0.0, 1.0, 2.5, 4.0, 6.0, 9.0, 12.0, 15.0]
+        vw = @view big[2:7]
+        _measure_view(vw)                       # warmup 1 (pool grow)
+        _measure_view(vw)                       # warmup 2 (pool reuse)
+        @test (@allocated _measure_view(vw)) <= WRAPPER_OVERHEAD_LIMIT
+    end
 end

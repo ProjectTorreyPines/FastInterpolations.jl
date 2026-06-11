@@ -10,7 +10,7 @@
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # Scalar — periodic BC physically extends grid via `_periodic_extend_1d`
-# (length n+1 with closed cycle), then `_prepare_grid` wraps the result so
+# (length n+1 with closed cycle); the public API has already normalized the
 # `_get_h(x, idx)` reads cached h. Slope kernels need physical data of length
 # n+1 — wrapper-based axis (`_ExclusivePeriodicAxis`) only supports virtual
 # n+1 access via `_getindex`, which the slope kernels don't use.
@@ -26,13 +26,14 @@
         hint::Union{Nothing, Base.RefValue{Int}}
     ) where {Tg, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
-    x_ext, y_ext, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    bc_eff = _bc_after_extend(bc)
-    x_eff = _prepare_grid(x_ext)
+    # `_periodic_extend_1d` already returns a normalized grid (Range or
+    # `_CachedRange`/Vector) — the public `cardinal_interp` API pre-resolved
+    # via `_resolve_axis(x)` before dispatching here, so no extra prep needed.
+    x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
     Tdy = _output_eltype(Tv, float(eltype(x_eff)))
     dy = acquire!(pool, Tdy, length(y_ext))
     _cardinal_slopes!(dy, x_eff, y_ext, tension; bc = bc_eff)
-    searcher = _resolve_search(x_eff, xq, search, hint, bc_eff)
+    searcher = _resolve_search(x_eff, xq, search, hint)
     return _hermite_eval_at_point(x_eff, y_ext, dy, xq, extrap_eff, deriv, searcher)
 end
 
@@ -51,14 +52,12 @@ end
     ) where {Tg, Tv}
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
-    x_ext, y_ext, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    bc_eff = _bc_after_extend(bc)
-    x_eff = _prepare_grid(x_ext)
+    x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
 
     Tdy = _output_eltype(Tv, float(eltype(x_eff)))
     dy = acquire!(pool, Tdy, length(y_ext))
     _cardinal_slopes!(dy, x_eff, y_ext, tension; bc = bc_eff)
-    searcher = _resolve_search(x_eff, x_query, search, hint, bc_eff)
+    searcher = _resolve_search(x_eff, x_query, search, hint)
     return _hermite_vector_loop!(output, x_eff, y_ext, dy, x_query, extrap_eff, deriv, searcher)
 end
 
@@ -93,7 +92,7 @@ end
     # `x[n+1]`, so `Base.getindex` raw passthrough on the wrapper is safe.
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
-    searcher = _resolve_search(x_eff, xq, search, hint, NoBC())
+    searcher = _resolve_search(x_eff, xq, search, hint)
     return _hermite_eval_at_point(x_eff, y_eff, CardinalSlopes(tension, bc), xq, extrap, deriv, searcher)
 end
 
@@ -115,7 +114,7 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x_eff = _resolve_axis(x, bc)
     y_eff = _resolve_data(y, bc)
-    searcher = _resolve_search(x_eff, x_query, search, hint, NoBC())
+    searcher = _resolve_search(x_eff, x_query, search, hint)
     return _hermite_vector_loop!(output, x_eff, y_eff, CardinalSlopes(tension, bc), x_query, extrap, deriv, searcher)
 end
 
@@ -145,7 +144,7 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _prepare_grid(x)
+    x = _resolve_axis(x)
     tension_f = float(eltype(x))(tension)
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, xq)
@@ -173,7 +172,7 @@ In-place cardinal spline interpolation.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _prepare_grid(x)
+    x = _resolve_axis(x)
     tension_f = float(eltype(x))(tension)
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)
@@ -200,7 +199,7 @@ function cardinal_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    Tr = _output_eltype(Tv, _promote_grid_float(Tg, Tv), Tq)
+    Tr = _output_eltype(_arithmetic_kernel_shape, _promote_grid_float(Tg, Tv), Tv, Tq)
     output = Vector{Tr}(undef, length(x_query))
     cardinal_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, tension = tension, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output

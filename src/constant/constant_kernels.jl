@@ -17,7 +17,11 @@
 # AD Support:
 # - dL can be ForwardDiff.Dual for automatic differentiation
 # - Comparisons use _extract_primal(dL) to get Float value
-# - Output is always Tv (no AD propagation through constant interp - derivative is 0)
+# - Multiplying the selection by `one(dL)` propagates `Tq`'s carrier (Dual,
+#   Float, …) into the result while keeping the value unchanged — aligns
+#   in-domain type with `_promote_extrap_val`'s OOB output. Derivative
+#   branches use `0 * y_left * one(dL)` so they only require `*(::Int, ::Tv)`
+#   and `*(::Tv, ::Real)` (no `zero(::Tv)` assumption beyond master's).
 #
 # Grid point behavior: When dL == 0 (exactly at grid point),
 # all side modes return y_left (the value at that grid point).
@@ -30,7 +34,7 @@ Always returns the left boundary value `y_left`.
 dL can be any Real (including ForwardDiff.Dual for AD).
 """
 @inline function _constant_kernel(::EvalValue, y_left::Tv, ::Tv, ::Tg, dL::Td, ::LeftSide) where {Tv, Tg, Td <: Real}
-    return y_left
+    return y_left * one(dL)
 end
 
 """
@@ -43,7 +47,8 @@ dL can be any Real (including ForwardDiff.Dual for AD).
 @inline function _constant_kernel(::EvalValue, y_left::Tv, y_right::Tv, ::Tg, dL::Td, ::RightSide) where {Tv, Tg, Td <: Real}
     # Use primal value for comparison (supports ForwardDiff.Dual)
     dL_primal = _extract_primal(dL)
-    return iszero(dL_primal) ? y_left : y_right
+    selected = iszero(dL_primal) ? y_left : y_right
+    return selected * one(dL)
 end
 
 """
@@ -56,7 +61,8 @@ dL can be any Real (including ForwardDiff.Dual for AD).
 @inline function _constant_kernel(::EvalValue, y_left::Tv, y_right::Tv, h::Tg, dL::Td, ::NearestSide) where {Tv, Tg, Td <: Real}
     # Use primal value for comparison (supports ForwardDiff.Dual)
     dL_primal = _extract_primal(dL)
-    return dL_primal <= h / 2 ? y_left : y_right
+    selected = dL_primal <= h / 2 ? y_left : y_right
+    return selected * one(dL)
 end
 
 """
@@ -67,7 +73,7 @@ Always returns zero (constant function has no slope).
 Uses `0 * y_left` for duck-typing support and NaN propagation.
 """
 @inline function _constant_kernel(::EvalDeriv1, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td <: Real}
-    return 0 * y_left
+    return 0 * y_left * one(dL)
 end
 
 """
@@ -77,7 +83,7 @@ Second derivative of constant interpolation.
 Always returns zero (constant function has no curvature).
 """
 @inline function _constant_kernel(::EvalDeriv2, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td <: Real}
-    return 0 * y_left
+    return 0 * y_left * one(dL)
 end
 
 """
@@ -86,12 +92,12 @@ end
 Third derivative of constant interpolation is always zero.
 """
 @inline function _constant_kernel(::EvalDeriv3, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg, Td <: Real}
-    return 0 * y_left
+    return 0 * y_left * one(dL)
 end
 
 """Generic fallback: N-th derivative of degree-0 (constant) is zero for N ≥ 1."""
-@inline function _constant_kernel(::DerivOp{N}, y_left::Tv, ::Tv, ::Tg, ::Td, ::AbstractSide) where {N, Tv, Tg, Td <: Real}
-    return 0 * y_left
+@inline function _constant_kernel(::DerivOp{N}, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {N, Tv, Tg, Td <: Real}
+    return 0 * y_left * one(dL)
 end
 
 # ========================================

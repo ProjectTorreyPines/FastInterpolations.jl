@@ -50,9 +50,9 @@
 
         @testset "Allocating vector call" begin
             @test result_vec ≈ result_broadcast rtol = PRECISION_RTOL
-            @test eltype(result_vec) == Float64  # Output should be promoted
-            # Note: broadcast may return Tv (value type) which is Float32 for constant
-            # This is acceptable as constant interpolation returns y[idx] directly
+            # Zero-slope arithmetic propagates the Float64 xq carrier:
+            # Float32 y * one(Float64) = Float64. Scalar / broadcast / batch agree.
+            @test eltype(result_vec) == Float64
         end
 
         @testset "In-place vector call" begin

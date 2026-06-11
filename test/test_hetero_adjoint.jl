@@ -512,6 +512,20 @@
             )
             @test allocs <= ND_ALLOC_THRESHOLD
         end
+
+        # Linear axis with PeriodicBC{:exclusive} routes through `_cache_axis`
+        # wrapping in `grids_ext` and the generic seam-fold post-apply hook.
+        # The fb result must remain user-`n` shape (axis trimmed).
+        @testset "Linear(PeriodicBC{:exclusive})×Cubic (zero alloc)" begin
+            x_p = range(0.0, step = 1.0 / length(x_a), length = length(x_a))
+            bc_x = PeriodicBC(endpoint = :exclusive, period = 1.0)
+            fb = zeros(length(x_p), length(y_a))
+            allocs = _test_hetero_adjoint_alloc(
+                (collect(x_p), y_a), (xq_a, yq_a), fb, y_bar_a;
+                methods = (LinearInterp(bc = bc_x), CubicInterp())
+            )
+            @test allocs <= ND_ALLOC_THRESHOLD
+        end
     end
 
     # ════════════════════════════════════════════════════════════════════════
@@ -701,6 +715,83 @@
         W_T = Matrix(adj)
         @test size(adj(1.0)) == size(data)
         @test itp((1.0, 0.5)) ≈ dot(W_T[:, 1], f_vec) atol = 1.0e-10
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # COVERAGE: PeriodicBC{:exclusive} on a Linear axis — full forward+adjoint
+    # — exercises the `LinearInterp(bc=...)` tag-struct field end-to-end:
+    #   (1) Hetero forward wraps via `_cache_axis_for_method`.
+    #   (2) Hetero adjoint wraps via `_cache_axis` in `grids_ext`, the generic
+    #       seam-fold post-apply hook trims back to user-`n` via
+    #       `_adjoint_output_size`.
+    # Mixed Linear+Cubic so we cover both wrap strategies in a single call.
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "PeriodicBC{:exclusive} on Linear axis (mixed Linear+Cubic)" begin
+        nx, ny = 12, 10
+        n_query = 18
+        x = collect(range(0.0, step = 2π / nx, length = nx))   # exclusive n-point
+        y = range(0.0, 1.0, ny)
+        data = [sin(xi) * yj for xi in x, yj in y]
+        f_vec = vec(data)
+
+        bc_x = PeriodicBC(endpoint = :exclusive, period = 2π)
+        methods = (LinearInterp(bc = bc_x), CubicInterp(bc = ZeroSlopeBC()))
+
+        # Forward — verify wrap-around eval works through the unified API
+        itp = interp((x, y), data; method = methods)
+        # Query past inner-grid last knot (= 11·2π/12 ≈ 5.76) into the seam
+        # region [x[end], x[1]+period).
+        xq_wrap = x[end] + 0.34
+        v_wrap = itp((xq_wrap, 0.5))
+        α = (xq_wrap - x[end]) / (2π - x[end])
+        v_expected = (1 - α) * (sin(x[end]) * 0.5) + α * 0.0
+        @test v_wrap ≈ v_expected atol = 1.0e-10
+
+        # Adjoint — dot-product identity ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩.
+        # Queries cover both inner and seam (wrap) regions to exercise the
+        # full periodic adjoint path.
+        xq = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+        yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        adj = hetero_adjoint((x, y), (xq, yq); methods = methods)
+        # Adjoint output shape = user's n-point shape (n+1 → n trim happens)
+        @test size(adj(zeros(n_query))) == size(data)
+        W_T = Matrix(adj)
+        @test size(W_T) == (length(data), n_query)
+        for k in 1:n_query
+            @test itp((xq[k], yq[k])) ≈ dot(W_T[:, k], f_vec) atol = 1.0e-10
+        end
+
+        # Dot-product (golden-rule) identity ⟨W·f, ȳ⟩ = ⟨f, Wᵀ·ȳ⟩ via
+        # the actual `adj(y_bar)` path (not just per-column reconstruction).
+        # Catches mistakes in the seam-fold + trim post-apply hook.
+        y_bar = randn(n_query)
+        forward_vec = [itp((xq[k], yq[k])) for k in 1:n_query]
+        @test dot(forward_vec, y_bar) ≈ dot(f_vec, vec(adj(y_bar))) atol = 1.0e-10
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # Persistent-rrule replay path: `hetero_adjoint(itp.grids, ...; methods=itp.methods)`.
+    # The forward stores extended grids (length n+1) while the method tag
+    # retains `bc=PeriodicBC{:exclusive}`. ChainRules / Zygote rrule replays
+    # adjoint construction with `itp.grids` + `itp.methods` — the axis package
+    # builder must NOT re-extend an already-extended grid.
+    # ════════════════════════════════════════════════════════════════════════
+    @testset "Stored-grid rrule replay — no double extension" begin
+        nx, ny = 8, 6
+        x = collect(range(0.0, step = 2π / nx, length = nx))
+        y_grid = range(0.0, 1.0, ny)
+        data = [sin(xi) * yj for xi in x, yj in y_grid]
+        bc_x = PeriodicBC(endpoint = :exclusive, period = 2π)
+        methods = (LinearInterp(bc = bc_x), CubicInterp(bc = ZeroSlopeBC()))
+        itp = interp((x, y_grid), data; method = methods)
+
+        # The rrule replays adjoint construction this way:
+        #     adj_fn(itp.grids, (query_tuple,); methods=itp.methods, ...)
+        # `itp.grids[1]` is already extended to length nx+1 with the seam
+        # endpoint at `first(grid)+period`. Re-wrapping must be a no-op.
+        adj = hetero_adjoint(itp.grids, ([0.5], [0.5]); methods = itp.methods)
+        @test size(adj(zeros(1))) == size(data)
     end
 
     # ════════════════════════════════════════════════════════════════════════

@@ -94,7 +94,7 @@ Create an anchored query for ultra-fast constant interpolation at a fixed point.
 - `x`: Grid points (must match grid used for interpolant construction)
 - `xq`: Query point (scalar)
 - `::Val{:constant}`: Type tag to distinguish from other anchor types
-- `wrap`: If true, wrap `xq` to domain [x[1], x[end]) before anchoring.
+- `wrap`: If true, wrap `xq` to closed domain [x[1], x[end]] before anchoring.
           Used for `extrap=WrapExtrap()` mode.
 
 # Returns
@@ -112,8 +112,8 @@ itp1(aq)              # Ultra-fast: skips interval search
 itp2(aq)              # Reuses same anchor
 ```
 """
-# Unified scalar anchor construction. _constant_anchor_query_impl handles
-# Tg conversion internally, so no separate Real wrapper is needed.
+# Pass xq as-is — `_constant_anchor_query_impl` handles `oftype` promotion
+# so narrower grids never truncate wider queries.
 @inline function _anchor_query(
         x::AbstractVector{T},
         xq,
@@ -121,7 +121,7 @@ itp2(aq)              # Reuses same anchor
         wrap::Bool = false,
         searcher::P = DEFAULT_SEARCHER
     ) where {T, P <: Searcher}
-    return _constant_anchor_query_impl(x, T(xq), wrap, _resolve_searcher_for_grid(x, searcher))
+    return _constant_anchor_query_impl(x, xq, wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
 """
@@ -136,7 +136,7 @@ the grid used for interpolant construction.
 - `x`: Grid points (must match interpolant's grid)
 - `xq`: Query points (any Real type, auto-promoted to T)
 - `::Val{:constant}`: Type tag
-- `wrap`: If true, wrap query points to domain [x[1], x[end]) before anchoring.
+- `wrap`: If true, wrap query points to closed domain [x[1], x[end]] before anchoring.
 
 # Example
 ```julia
@@ -158,10 +158,11 @@ function _anchor_query(
         searcher::P = _to_searcher(LinearBinarySearch())
     ) where {T, S <: Real, P <: Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
-    output = Vector{_ConstantAnchoredQuery{T, T}}(undef, length(xq))
+    Tq = promote_type(T, S)
+    output = Vector{_ConstantAnchoredQuery{T, Tq}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
-        output[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
+        output[k] = _constant_anchor_query_impl(x, xq[k], wrap, searcher_resolved)
     end
     return output
 end
@@ -178,24 +179,24 @@ the caller reuses `buffer`. Writes `length(xq)` entries.
 - `x::AbstractVector{T}`: Grid points (must match interpolant's grid)
 - `xq::AbstractVector`: Query points (any Real type, auto-promoted to T)
 - `::Val{:constant}`: Type tag for constant interpolation
-- `wrap::Bool=false`: If true, wrap query points to domain [x[1], x[end])
+- `wrap::Bool=false`: If true, wrap query points to closed domain [x[1], x[end]]
 
 # Returns
 The same `buffer` object, filled with anchored queries.
 """
 @inline function _fill_anchors!(
-        buffer::AbstractVector{_ConstantAnchoredQuery{T, T}},
+        buffer::AbstractVector{_ConstantAnchoredQuery{T, Tq}},
         x::AbstractVector{T},
         xq::AbstractVector{S},
         ::Val{:constant},
         wrap::Bool = false,
         searcher::P = _to_searcher(LinearBinarySearch())
-    ) where {T, S <: Real, P <: Searcher}
+    ) where {T, Tq, S <: Real, P <: Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
     @inbounds for k in eachindex(xq)
-        buffer[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
+        buffer[k] = _constant_anchor_query_impl(x, xq[k], wrap, searcher_resolved)
     end
     return buffer
 end
@@ -220,7 +221,7 @@ Internal implementation of _anchor_query for constant interpolation.
     loc = _anchor_loc(x, xq, wrap, policy)
 
     # Compute geometry (constant-internal concern)
-    h = _get_h(x, loc.xL, loc.xR)
+    h = _get_h(x, loc.idx, loc.xL, loc.xR)
     dL = loc.xq - loc.xL
     # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual)
     xq_promoted = oftype(dL, loc.xq)
@@ -272,12 +273,14 @@ end
 # Canonical evaluation functions that take raw y vector + explicit params.
 # Used by both interpolant anchor dispatch AND series one-shot evaluation.
 
-# Default case (extension, wrap, inbounds): kernel with right-boundary check
+# Default case (extension, wrap, inbounds): kernel with right-boundary check.
+# Short-circuits use `* one(aq.xq)` to match the kernel's `* one(dL)` carrier
+# propagation — without it, Int y + Float xq returns Union{Int,Float}.
 @inline function _constant_eval_at_anchor(
         y::AbstractVector, x_last, aq::_ConstantAnchoredQuery,
         op::AbstractEvalOp, side_param::AbstractSide, ::AbstractExtrap
     )
-    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq)) : 0 * first(y) * one(aq.xq))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
@@ -287,7 +290,7 @@ end
         op::AbstractEvalOp, side_param::AbstractSide, ::NoExtrap
     )
     aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
-    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq)) : 0 * first(y) * one(aq.xq))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
@@ -300,7 +303,7 @@ end
         y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
         return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
     end
-    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[end]) : 0 * first(y))
+    aq.xq == x_last && return (op isa EvalValue ? (@inbounds y[aq.idxR] * one(aq.xq)) : 0 * first(y) * one(aq.xq))
     @inbounds return _constant_kernel(op, y[aq.idxL], y[aq.idxR], aq.h, aq.dL, side_param)
 end
 
@@ -328,7 +331,7 @@ end
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end
     if aq.xq == last(itp.x)
-        return op isa EvalValue ? (@inbounds itp.y[end]) : zero(T)
+        return op isa EvalValue ? (@inbounds itp.y[aq.idxR] * one(aq.xq)) : zero(T) * one(aq.xq)
     end
     @inbounds return _constant_kernel(op, itp.y[aq.idxL], itp.y[aq.idxR], aq.h, aq.dL, itp.side)
 end
@@ -353,11 +356,12 @@ end
 Evaluate constant interpolant at multiple anchored query points.
 Returns newly allocated vector.
 """
-function (itp::ConstantInterpolant{T})(
-        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{T}};
+function (itp::ConstantInterpolant{Tg, Tv})(
+        aq_vec::AbstractVector{<:_ConstantAnchoredQuery{Tg, Tq}};
         deriv::DerivOp = EvalValue()
-    ) where {T}
-    output = Vector{T}(undef, length(aq_vec))
+    ) where {Tg, Tv, Tq <: Real}
+    T_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
+    output = Vector{T_out}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _constant_eval_with_anchor(itp, aq_vec[i], deriv)
     end

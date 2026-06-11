@@ -126,11 +126,13 @@
         # WrapExtrap — wraps to domain
         val_wrap = hermite_interp(x, y, dy, 3.2; extrap = WrapExtrap())
         @test isfinite(val_wrap)
-        # WrapExtrap — vector fast-path includes x_max (no unnecessary wrap overhead)
+        # WrapExtrap — vector fast-path includes x_max (closed `[first(x), last(x)]`;
+        # PR refac/wrap_closed). Exact `x[end]` is in-domain → returns `y[end]`
+        # (was wrap-to-`y[1]` under prior half-open semantics).
         xq_boundary = [x[end]]
         out_boundary = similar(xq_boundary)
         hermite_interp!(out_boundary, x, y, dy, xq_boundary; extrap = WrapExtrap())
-        @test isfinite(out_boundary[1])
+        @test out_boundary[1] == y[end]
 
         # Callable with extrap
         itp = hermite_interp(x, y, dy; extrap = ClampExtrap())

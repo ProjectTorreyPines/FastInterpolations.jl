@@ -95,11 +95,18 @@ The same adjoint can be applied to any `ȳ` vector.
          no separate `spacings` field needed.
 - `C`:   Per-axis cache tuple (CubicSplineCache for cubic, Nothing for others)
 - `MC`:  Per-axis mixed-partial cache tuple
-- `BP`:  Per-axis adjoint-BC tuple. For cubic axes: `BCPair`/`PeriodicBC`;
-         for quadratic axes: normalized `AbstractBC` (e.g. `Left`, `Right`, `MinCurvFit`);
-         for non-derivative axes (Linear/Constant): `nothing` sentinel.
+- `BP`:  Per-axis adjoint-BC tuple, uniformly `<: AbstractBC`.
+         Cubic axes: `BCPair`/`PeriodicBC` (drives the periodic seam fold +
+         Sherman-Morrison transpose). Quadratic axes: normalized `AbstractBC`
+         (`Left`, `Right`, `MinCurvFit`). Linear / Constant / local-Hermite
+         axes: `method.bc` verbatim — only the `PeriodicBC{:exclusive}`
+         discriminant matters and drives the same generic seam-fold path
+         used by the dedicated 1D ND adjoints. `NoInterp` /
+         `CubicHermiteInterp` (no `.bc` field): `NoBC()`.
 - `MBP`: Per-axis mixed-BC tuple, analogous to `BP` but for mixed-partial
-         directions; `nothing` when no mixed-partial BC is required.
+         directions. Inert on axes that don't participate in mixed-partial
+         solving (Linear / Constant / local-Hermite carry `method.bc` for
+         shape consistency; `NoInterp` / `CubicHermiteInterp` carry `NoBC()`).
 
 # Architecture — Mixed-Radix Compact Storage
 Uses `prod(sizes)` partials instead of `2^N`, where `sizes[d] = _deriv_size(methods[d])`.
@@ -156,8 +163,9 @@ end
 @inline _n_queries(adj::HeteroAdjointND) = length(adj.anchors)
 @inline _grid_size(adj::HeteroAdjointND) = adj.grid_size
 
-# For periodic finalization: return per-axis BC for derivative methods,
-# nothing sentinel for non-derivative methods (never matches PeriodicBC{:exclusive}).
+# Per-axis adjoint-BC tuple — uniform `<: AbstractBC` (no `Nothing` sentinel).
+# Consumed by `_has_seam_fold` / `_adjoint_output_size` to drive the
+# generic seam-fold + trim post-apply hook.
 @inline _adjoint_bcs(adj::HeteroAdjointND) = adj.bcs
 
 @inline _adjoint_nd_apply!(f_bar, adj::HeteroAdjointND, y_bar, ops) =

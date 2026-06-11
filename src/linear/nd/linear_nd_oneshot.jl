@@ -43,7 +43,6 @@ function _linear_interp_nd_oneshot(
     # encoded in the axis type, the searcher carries `NoBC()` — the wrapper's
     # dispatch handles seam regardless.
     grids_eff = map(_resolve_axis, grids, bcs)
-    nobcs = ntuple(_ -> NoBC(), Val(N))
     # NoExtrap domain check must precede FillExtrap short-circuit
     _validate_nd_domain(grids_eff, query, extraps_val)
     oob_result = _try_fill_oob(query, grids_eff, extraps_val, ops, @inbounds first(data))
@@ -51,18 +50,20 @@ function _linear_interp_nd_oneshot(
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
-    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, nobcs)
+    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints)
     αs = map(_alpha_of, q_eval, Ls, Rs, grids_eff)
-    inv_hs = map(_get_inv_h, grids_eff, Ls, Rs)
+    # 4-arg `_get_inv_h(g, idx, xL, xR)` — `_CachedVector`/`_CachedRange` use
+    # cached fields (idx-indexed or scalar); raw `Vector` falls back to
+    # `inv(xR - xL)`. `first(stencil)` = idxL for K=2 (linear) stencils.
+    idxLs = map(first, stencils)
+    inv_hs = map(_get_inv_h, grids_eff, idxLs, Ls, Rs)
     return _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
 end
 
 """
-    _linear_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, policies, ops, hints, mono)
+    _linear_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, ops, search, hint)
 
 In-place batch one-shot ND multilinear evaluation.
-Uses query protocol (`_query_length`, `_query_extract`) — works with any query format.
-Writes results into `output`. No heap allocation beyond spacings.
 """
 function _linear_interp_nd_oneshot_batch!(
         output::AbstractVector,
@@ -71,37 +72,40 @@ function _linear_interp_nd_oneshot_batch!(
         queries,
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        policies::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
-        hints,  # Nothing or NTuple{N, Ref{Int}}
-        mono::NTuple{N, Bool},
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tg, Tv, N}
+    # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
+    policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
     grids_eff = map(_resolve_axis, grids, bcs)
-    nobcs = ntuple(_ -> NoBC(), Val(N))
-    _validate_nd_domain(grids_eff, queries, extraps_val)
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
+    # Batch-level InBounds promotion: replaces `_validate_nd_domain` throw +
+    # elides per-query wrap/clamp/fill on in-bounds axes via the @generated
+    # `_is_fill_oob` and `_handle_axis_extrap(::InBounds)` no-op.
+    extraps_eff = _check_domain_nd(grids_eff, queries, extraps_eff)
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids_eff, extraps_val, ops, first(data))
+        oob_val = _try_fill_oob(query_k, grids_eff, extraps_eff, ops, first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end
         q_eval = _handle_all_extraps(query_k, grids_eff, extraps_eff)
-        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints, nobcs)
+        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints)
         αs = map(_alpha_of, q_eval, Ls, Rs, grids_eff)
-        inv_hs = map(_get_inv_h, grids_eff, Ls, Rs)
+        idxLs = map(first, stencils)
+        inv_hs = map(_get_inv_h, grids_eff, idxLs, Ls, Rs)
         output[k] = _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
     end
     return output
 end
 
-# Function barrier: forces Julia to runtime-dispatch on the concrete
-# searches tuple type before entering the @with_pool boundary.
-function _linear_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps, policies, ops, hints, mono)
-    return _linear_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps, policies, ops, hints, mono)
+# Function barrier — specializes on concrete `search` type.
+function _linear_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps_val, ops, search, hint)
+    return _linear_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, ops, search, hint)
 end
 
 # ========================================
@@ -126,7 +130,7 @@ function linear_interp(
     ) where {Tv, N}
     grids_typed, Tg, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
-    Tr = _output_eltype(Tv, Tg, typeof.(query)...)
+    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, promote_type(typeof.(query)...))
 
     searches = _resolve_search_nd(search, Val(N), query)  # scalar: type-based (no monotonicity check)
 
@@ -155,7 +159,7 @@ function linear_interp(
     ) where {Tv, N}
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
-    Tr = _output_eltype(Tv, Tg, Tq)
+    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
     linear_interp!(output, grids, data, queries; bc, extrap, search, deriv, hint)
     return output
@@ -187,12 +191,8 @@ function linear_interp!(
     grids_typed, _, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
 
-    policies = _resolve_search_nd(search, Val(N))
-    hints_nd = hint
-    mono = _check_mono_nd(policies, queries)
-
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _linear_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, policies, ops, hints_nd, mono)
+    return _linear_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, ops, search, hint)
 end

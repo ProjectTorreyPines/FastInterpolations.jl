@@ -30,7 +30,7 @@
             end
             @test err isa ArgumentError
             @test occursin("not yet implemented for Hermite family ND", err.msg)
-            @test occursin("hermite_nd_precompute.md", err.msg)
+            @test occursin("PreCompute backend has not been written", err.msg)
             # Must not give the misleading "use PreCompute" advice.
             @test !occursin("coeffs=PreCompute()", err.msg)
         end
@@ -70,7 +70,7 @@
         end
         @test err isa ArgumentError
         @test occursin("not yet implemented for HeteroInterpolantND", err.msg)
-        @test occursin("hermite_onthefly_integrate_and_nd_adjoint.md", err.msg)
+        @test occursin("tensor-product integration", err.msg)
         @test occursin("cubic_interp", err.msg)  # suggests homogeneous workaround
     end
 
@@ -107,7 +107,8 @@
             end
             @test err isa ArgumentError
             @test occursin("not yet implemented for", err.msg)
-            @test occursin("hermite_onthefly_integrate_and_nd_adjoint.md", err.msg)
+            @test occursin("Hermite family", err.msg)
+            @test occursin("Workarounds", err.msg)
             @test occursin("ForwardDiff", err.msg)  # suggested workaround
         end
     end

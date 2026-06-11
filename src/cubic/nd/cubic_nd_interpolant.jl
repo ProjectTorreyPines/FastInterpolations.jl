@@ -106,8 +106,9 @@ function _build_nd_interpolant(
         searches::NTuple{N, AbstractSearchPolicy},
         ::PreCompute
     ) where {Tg, Tv, N}
-    # Extend grids/data for exclusive periodic axes; bcs are normalized to
-    # `:inclusive` per axis (via `_bc_after_extend` inside the helper).
+    # Extend grids/data for exclusive periodic axes; periodic bcs are
+    # promoted to `:extended` per axis (via `_bc_after_extend` inside the
+    # helper) so downstream dispatch reflects the closed-cycle layout.
     grids, data, bcs = _prepare_periodic_nd(grids, data, bcs)
 
     # Wrap extended raw grids into cached axes so eval reads `_get_h(grids[d], i)`

@@ -33,9 +33,9 @@
     bcs_periodic = map(_bc_for_periodic_check, methods)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs_periodic)
 
-    # 1a. Per-axis materialization: upgrade WrapExtrap{Nothing} → WrapExtrap{T} against
-    # the post-extension grid so the downstream eval pipeline never sees the singleton.
-    # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
+    # 1a. Per-axis extrap passthrough against the post-extension grid.
+    # Post-extension: each axis's `(first, last)` IS the wrap domain — the
+    # 2-arg primitive is identity for tag-struct extraps.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
 
     # 2. Pool-allocate compact partials (widened with Tg for Dual grid support)
@@ -68,15 +68,15 @@ end
         queries,
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        policies::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
-        hints,  # Nothing or NTuple{N, Ref{Int}}
-        mono::NTuple{N, Bool},
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tg, N}
+    # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
+    policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
-    _validate_nd_domain(grids, queries, extraps_val)
 
     # Build phase (ONE-TIME)
     bcs_periodic = map(_bc_for_periodic_check, methods)
@@ -85,6 +85,8 @@ end
     # Per-axis materialization against the (possibly extended) grid.
     # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
+    # Batch-level InBounds promotion: see cubic_nd_oneshot.jl for pattern.
+    extraps_eff = _check_domain_nd(grids_p, queries, extraps_eff)
 
     Tv = _value_type(eltype(data), Tg)
     Tz = _output_eltype(Tv, Tg)
@@ -96,27 +98,22 @@ end
     # Eval loop (per query) — axis-only helpers read `h`/`inv_h` from `grids_p`
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
+        oob_val = _try_fill_oob(query_k, grids_p, extraps_eff, ops, first(data_p))
         if oob_val !== nothing
             output[k] = oob_val
             continue
         end
         q_eval = _handle_all_extraps(query_k, grids_p, extraps_eff)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, policies, hints, mono)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, policies, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_p, indices, Ls)
         output[k] = _eval_hetero_nd_cell(partials, indices, hs, inv_hs, dLs, ops, methods)
     end
     return output
 end
 
-# ========================================
-# Function Barrier
-# ========================================
-# Forces search type specialization before entering @with_pool boundary.
-# NOT @inline — specialization requires real call.
-
-function _interp_nd_hetero_batch_dispatch!(output, grids, data, queries, methods, extraps, policies, ops, hints, mono)
-    return _interp_nd_hetero_oneshot_batch!(output, grids, data, queries, methods, extraps, policies, ops, hints, mono)
+# Function barrier — specializes on concrete `search` type.
+function _interp_nd_hetero_batch_dispatch!(output, grids, data, queries, methods, extraps, ops, search, hint)
+    return _interp_nd_hetero_oneshot_batch!(output, grids, data, queries, methods, extraps, ops, search, hint)
 end
 
 # ========================================
@@ -170,7 +167,7 @@ end
     if _has_any_local_method(methods) && !_has_grididx(typeof(query))
         # BC-aware per-axis search; on `PeriodicBC{:exclusive}` axes the seam
         # cell returns `idx_R=1` so the windowing below picks the right cell.
-        stencils, _, _ = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, bcs)
+        stencils, _, _ = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints)
         indices = map(first, stencils)
         # Per-axis windows — generic `AbstractVector{Int}`:
         #   - non-periodic windowable: `UnitRange{Int}` (cell-local, asymmetric clamp)
@@ -218,10 +215,11 @@ end
 
 function _interp_nd_oneshot_dispatch(
         grids, data, query,
-        ::Tuple{LinearInterp, Vararg{LinearInterp}},
+        methods::Tuple{LinearInterp, Vararg{LinearInterp}},
         deriv, extrap, search, hints, coeffs,
     )
-    return linear_interp(grids, data, query; extrap = extrap, search = search, deriv = deriv, hint = hints)
+    bcs = map(m -> m.bc, methods)
+    return linear_interp(grids, data, query; bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
 
 function _interp_nd_oneshot_dispatch(
@@ -239,7 +237,8 @@ function _interp_nd_oneshot_dispatch(
         deriv, extrap, search, hints, coeffs,
     )
     sides = map(m -> m.side, methods)
-    return constant_interp(grids, data, query; side = sides, extrap = extrap, search = search, deriv = deriv, hint = hints)
+    bcs = map(m -> m.bc, methods)
+    return constant_interp(grids, data, query; side = sides, bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
 
 # Heterogeneous fallback → resolve kwargs → OnTheFly or PreCompute pool core
@@ -287,10 +286,11 @@ end
 
 function _interp_nd_oneshot_batch_dispatch!(
         output, grids, data, queries,
-        ::Tuple{LinearInterp, Vararg{LinearInterp}},
+        methods::Tuple{LinearInterp, Vararg{LinearInterp}},
         deriv, extrap, search, hints, coeffs,
     )
-    return linear_interp!(output, grids, data, queries; extrap = extrap, search = search, deriv = deriv, hint = hints)
+    bcs = map(m -> m.bc, methods)
+    return linear_interp!(output, grids, data, queries; bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
 
 function _interp_nd_oneshot_batch_dispatch!(
@@ -308,7 +308,8 @@ function _interp_nd_oneshot_batch_dispatch!(
         deriv, extrap, search, hints, coeffs,
     )
     sides = map(m -> m.side, methods)
-    return constant_interp!(output, grids, data, queries; side = sides, extrap = extrap, search = search, deriv = deriv, hint = hints)
+    bcs = map(m -> m.bc, methods)
+    return constant_interp!(output, grids, data, queries; side = sides, bc = bcs, extrap = extrap, search = search, deriv = deriv, hint = hints)
 end
 
 # Heterogeneous fallback → resolve kwargs → function barrier → pool batch.
@@ -327,8 +328,6 @@ end
     # bc-aware extrap (matches scalar dispatch).
     bcs = map(_bc_for_periodic_check, methods)
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
-    policies = _resolve_search_nd(search, Val(N))
-    mono = _check_mono_nd(policies, queries)
     ops = _resolve_deriv_nd(deriv, Val(N))
     _validate_axis_methods(grids_typed, methods, extraps_val)
 
@@ -336,18 +335,24 @@ end
         nq = _query_length(queries)
         length(output) == nq || _throw_query_output_mismatch(nq, length(output))
         _query_validate(queries)
-        # Validate inclusive periodic boundary slices ONCE per batch (not per
-        # query). `_interp_nd_oneshot_onthefly` skips the validation since both
-        # callers (here + scalar dispatch) hoist it above their hot path.
+        # Validate inclusive periodic boundary slices ONCE per batch.
         _validate_periodic_slices_nd(data, bcs, Val(N))
+        # OTF batch uses the master shape: pass `search` (unresolved AutoSearch
+        # tuple) + `hints` (as-is) per query. Eager 4-arg resolution + pre-built
+        # hints would propagate Union policies across `_interp_nd_oneshot_onthefly`'s
+        # function boundary — it's too large to inline, so the Union element
+        # boxes into 4 allocs/query (≈ 100 B/query). The architectural fix is a
+        # dedicated OTF batch function that hosts the per-query work locally
+        # (follow-up).
+        searches = _resolve_search_nd(search, Val(N))
         @inbounds for k in 1:nq
             query_k = _extract_query_point(queries, k, Val(N))
-            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, policies, ops, hints)
+            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, searches, ops, hints)
         end
         return output
     end
 
-    return _interp_nd_hetero_batch_dispatch!(output, grids_typed, data, queries, methods, extraps_val, policies, ops, hints, mono)
+    return _interp_nd_hetero_batch_dispatch!(output, grids_typed, data, queries, methods, extraps_val, ops, search, hints)
 end
 
 # ========================================

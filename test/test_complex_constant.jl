@@ -56,9 +56,10 @@
 
         itp = constant_interp(x, y)
 
-        # x promoted to Float64, y promoted to ComplexF64
-        @test itp isa ConstantInterpolant{Float64, ComplexF64}
+        # Storage stays raw: Int grid, Complex{Int} y.
+        @test itp isa ConstantInterpolant{Int, Complex{Int}}
 
+        # Float64 xq carrier propagates: Complex{Int} * one(Float64) = ComplexF64.
         val = itp(0.5)
         @test val isa ComplexF64
     end
@@ -72,8 +73,8 @@
 
         itp = constant_interp(x, y)
 
-        # Grid promoted to Float64 to match Complex{Float64}
-        @test itp isa ConstantInterpolant{Float64, ComplexF64}
+        # Constant duck-types: Float32 grid preserved, ComplexF64 preserved.
+        @test itp isa ConstantInterpolant{Float32, ComplexF64}
 
         val = itp(0.5)
         @test val isa ComplexF64

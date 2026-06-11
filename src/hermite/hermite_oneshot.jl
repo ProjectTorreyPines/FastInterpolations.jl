@@ -30,7 +30,7 @@ C\$^1\$ continuous — slopes are used directly, no global spline solve.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg, Tv, Tq <: Real}
-    x = _prepare_grid(x)
+    x = _resolve_axis(x)
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
     @boundscheck length(x) >= 2 || throw(ArgumentError("Hermite interpolation requires at least 2 points, got $(length(x))"))
@@ -60,7 +60,7 @@ function hermite_interp!(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg, Tv, Tq <: Real}
-    x = _prepare_grid(x)
+    x = _resolve_axis(x)
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
@@ -90,7 +90,15 @@ function hermite_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg, Tv, Tq <: Real}
-    Tr = _output_eltype(Tv, _promote_grid_float(Tg, Tv), Tq, eltype(dy))
+    # Disjoint chains for `Tv` and `eltype(dy)` over the shared kernel shape —
+    # a single trait call would let SVector `eltype(dy)` collapse the duck-Tq
+    # fallback to `Any`. Mirrors the `AbstractHermiteInterpolant1D` persistent
+    # override that pulls `eltype(itp.dy)` at the type level.
+    Tg_p = _promote_grid_float(Tg, Tv)
+    Tr = promote_type(
+        _output_eltype(_arithmetic_kernel_shape, Tg_p, Tv, Tq),
+        _output_eltype(_arithmetic_kernel_shape, Tg_p, eltype(dy), Tq),
+    )
     output = Vector{Tr}(undef, length(x_query))
     hermite_interp!(output, x, y, dy, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output

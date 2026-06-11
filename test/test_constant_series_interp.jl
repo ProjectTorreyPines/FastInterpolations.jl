@@ -370,38 +370,40 @@
     # Type Promotion Tests (coverage for Real type wrappers)
     # ========================================
 
-    @testset "type promotion" begin
-        @testset "Integer x with Float y vectors (promotes to Float64)" begin
-            x_int = collect(1:10)  # Integer vector
+    # Constant duck-types eltype: Int x stays Int (no Float widening), Float y
+    # series stays Float. Output tracks Series eltype.
+    @testset "eltype contract (raw eltype, no Float promotion)" begin
+        @testset "Integer x with Float y vectors → Tg=Int, Tv=Float64" begin
+            x_int = collect(1:10)
             y1 = sin.(Float64.(x_int))
             y2 = cos.(Float64.(x_int))
 
             sitp = constant_interp(x_int, Series(y1, y2))
-            @test sitp isa FI.ConstantSeriesInterpolant{Float64}
+            @test sitp isa FI.ConstantSeriesInterpolant{Int, Float64}
 
             result = sitp(5.5)
             @test length(result) == 2
             @test all(isfinite, result)
         end
 
-        @testset "Integer x with Integer y vectors (promotes to Float64)" begin
+        @testset "Integer x with Integer y vectors → Tg=Int, Tv=Int" begin
             x_int = collect(1:10)
             y1_int = collect(1:10)
             y2_int = collect(10:-1:1)
 
             sitp = constant_interp(x_int, Series(y1_int, y2_int))
-            @test sitp isa FI.ConstantSeriesInterpolant{Float64}
+            @test sitp isa FI.ConstantSeriesInterpolant{Int, Int}
 
             result = sitp(5.5)
             @test length(result) == 2
         end
 
-        @testset "Integer x with Integer y matrix (promotes to Float64)" begin
+        @testset "Integer x with Integer y matrix → Tg=Int, Tv=Int" begin
             x_int = collect(1:10)
             Y_int = [i * j for i in 1:10, j in 1:3]
 
             sitp = constant_interp(x_int, Series(Y_int))
-            @test sitp isa FI.ConstantSeriesInterpolant{Float64}
+            @test sitp isa FI.ConstantSeriesInterpolant{Int, Int}
             @test FI.n_series(sitp) == 3
 
             result = sitp(5.5)

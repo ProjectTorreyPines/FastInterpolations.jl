@@ -57,17 +57,20 @@ function constant_interp(
     # Validate grid dimensions
     _validate_nd_grids(grids, data)
 
-    # Promote grid/data types
-    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
-    data_typed = Tv === Tv_raw ? data : Tv.(data)
+    # Raw storage (no Float widening): `Tg = promote_type(eltype.(grids)...)`,
+    # `Tv = eltype(data)`. Kernel handles return-type widening via per-axis
+    # `* one(dL_d)`.
+    grids_typed, _, Tv = _nd_promote_grids_raw(grids, data)
+    data_typed = data
 
     # Resolve per-axis configuration
     bcs = _resolve_bcs_nd(bc, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    # Extend `:exclusive` axes/data to `:inclusive` form, then per-axis
-    # `_cache_axis` (raw → wrapped, pre-wrapped → passthrough).
+    # Extend `:exclusive` axes/data to closed-cycle (n+1) layout; periodic
+    # bcs are promoted to `:extended` by `_prepare_periodic_nd`, then per-axis
+    # `_cache_axis` wraps (raw → wrapped, pre-wrapped → passthrough).
     grids_typed, data_typed, bcs_post = _prepare_periodic_nd(grids_typed, data_typed, bcs)
     grids_typed = map(_cache_axis, grids_typed, bcs_post)
 

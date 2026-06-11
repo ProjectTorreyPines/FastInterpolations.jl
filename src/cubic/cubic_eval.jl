@@ -19,20 +19,22 @@
 # (`WrapExtrap` vs others), which `_resolve_extrap` materializes from `cache.bc`
 # at construction time.
 
-# NoExtrap / ExtendExtrap: direct search + kernel.
+# Core in-bounds path: search + kernel only. All other extrap overloads do
+# their preprocessing (boundary check / wrap / OOB return) and then delegate
+# here once the query is known to be inside the domain. `_resolve_grididx`
+# is called here as well so direct InBounds-dispatch callers (e.g., the
+# `_cubic_vector_loop!` Union-splitting fast path) get GridIdx resolution
+# without going through a preprocess overload.
 @inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         z::AbstractVector,
         xq::Tq,
-        extrap::AbstractExtrap,
+        ::InBounds,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    # Resolve bare `GridIdx(k)` (carries `val=NaN` until bound) to its grid
-    # coordinate so subsequent arithmetic sees a real value.
     xq = _resolve_grididx(xq, x)
-    @boundscheck _check_domain(x, xq, extrap)
     idx, idx_R, xL, xR = search_interval(searcher, x, xq)
     dL = xq - xL
     dR = xR - xq
@@ -45,7 +47,23 @@
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
-# ClampExtrap / FillExtrap: boundary check → extrap value or kernel.
+# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check
+# (no-op for non-NoExtrap fallback, throws for NoExtrap on OOB) → delegate.
+@inline function _eval_cubic_at_point(
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        z::AbstractVector,
+        xq::Tq,
+        extrap::AbstractExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    xq = _resolve_grididx(xq, x)
+    @boundscheck _check_domain(x, xq, extrap)
+    return _eval_cubic_at_point(x, y, z, xq, InBounds(), op, searcher)
+end
+
+# ClampExtrap / FillExtrap: boundary check → extrap value or delegate.
 @inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -59,43 +77,22 @@ end
     xq_primal = _extract_primal(xq)
     xq_primal < first(x) && return _eval_extrapolation(op, first(y), extrap, xq)
     xq_primal > last(x) && return _eval_extrapolation(op, last(y), extrap, xq)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq)
-    dL = xq - xL
-    dR = xR - xq
-    h = _get_h(x, idx)
-    inv_h = _get_inv_h(x, idx)
-    @inbounds begin
-        zL = z[idx]; zR = z[idx_R]
-        yL = y[idx]; yR = y[idx_R]
-    end
-    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
+    return _eval_cubic_at_point(x, y, z, xq, InBounds(), op, searcher)
 end
 
-# WrapExtrap: wrap query to domain → search + kernel.
-# Wrap domain `[first(x), last(x))` is read directly from the (possibly-wrapped) axis.
+# WrapExtrap: wrap query to domain → delegate with wrapped value.
 @inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         z::AbstractVector,
         xq::Tq,
-        extrap::WrapExtrap,
+        ::WrapExtrap,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq = _resolve_grididx(xq, x)
-    xq_wrapped = _wrap_to_domain(xq, x)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
-    dL = xq_wrapped - xL
-    dR = xR - xq_wrapped
-    h = _get_h(x, idx)
-    inv_h = _get_inv_h(x, idx)
-    @inbounds begin
-        zL = z[idx]; zR = z[idx_R]
-        yL = y[idx]; yR = y[idx_R]
-    end
-    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
+    xq_wrapped = _wrap_to_domain(_resolve_grididx(xq, x), x)
+    return _eval_cubic_at_point(x, y, z, xq_wrapped, InBounds(), op, searcher)
 end
-
 
 # ========================================
 # Vector Loop Function
@@ -117,10 +114,30 @@ end
         op::O,
         searcher::P
     ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
-    ev = _check_domain(cache.x, x_query, ev)
-    return @inbounds for k in eachindex(x_query, output)
+    # Resolve domain here so the inner kernel sees a concrete `ev` type.
+    # `_check_domain` for Clamp/Fill/Wrap returns `Union{InBounds, E}` —
+    # passing through a function-barrier call lets Julia's union-splitting
+    # specialize the inner loop per concrete `ev` (no per-iteration union
+    # dispatch). For `NoExtrap` paths return type is already `InBounds`, so
+    # this is a no-op.
+    ev_eff = _check_domain(cache.x, x_query, ev)
+    return _cubic_vector_loop_inner!(output, cache, y, z, x_query, ev_eff, op, searcher)
+end
+
+@inline function _cubic_vector_loop_inner!(
+        output::AbstractVector,
+        cache::CubicSplineCache{Tg},
+        y::AbstractVector{Tv},
+        z::AbstractVector,
+        x_query::AbstractVector{<:Real},
+        ev::E,
+        op::O,
+        searcher::P
+    ) where {Tg, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    @inbounds for k in eachindex(x_query, output)
         output[k] = _eval_cubic_at_point(cache.x, y, z, x_query[k], ev, op, searcher)
     end
+    return output
 end
 
 # ========================================
@@ -150,6 +167,8 @@ Uses task-local pool for workspace allocation.
 
     searcher = _resolve_search(cache.x, x_query, search, hint)
     extrap_eff = _resolve_extrap(extrap, cache.bc, cache.x)
-    @boundscheck _check_domain(cache.x, x_query, extrap_eff)
+    # Domain check delegated to `_eval_cubic_at_point(::AbstractExtrap)`
+    # below — its inner `@boundscheck _check_domain` handles NoExtrap throw,
+    # while Clamp/Fill/Wrap specialized methods handle OOB without checking.
     _eval_cubic_at_point(cache.x, y, z, x_query, extrap_eff, deriv, searcher)
 end

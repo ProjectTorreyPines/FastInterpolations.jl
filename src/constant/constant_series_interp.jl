@@ -348,15 +348,8 @@ function constant_interp(
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg}
-    # Type promotion: widen grid if y's float base is wider than Tg
-    Tv = _series_eltype(s)
-    Tg_new = _promote_grid_float(Tg, Tv)
-    if Tg_new !== Tg
-        return constant_interp(_to_float(x, Tg_new), s; bc, side, extrap, search)
-    end
-
+    Tv_out = _series_eltype(s)
     n_pts = length(x)
-    Tv_out = _value_type(Tv, Tg)
     y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
 
     # Periodic path: extend x + y_mat to `:inclusive` form, normalize BC label
@@ -400,8 +393,12 @@ Returns a vector of values, one per y-series.
 - `deriv=DerivOp(1),DerivOp(2)`: Returns zeros (step function derivative is zero everywhere)
 
 # AD Support
-When `xq` is a ForwardDiff.Dual, the output type is promoted to preserve
-derivatives. Output type is `promote_type(Tv, Tq)`.
+Output eltype routes through the kernel-shape trait
+`_output_eltype(_constant_kernel_shape, Tg, Tv, Tq)`. `Base.promote_op` on
+`yv * one(xq - xL)` jointly considers grid (Tg), value (Tv) and query (Tq),
+so duck carriers on either Tg (e.g. `Dual` grid + `Float` xq) or Tq (`Float`
+grid + `Dual` xq) propagate uniformly. Carriers like `SVector × Dual`
+resolve correctly instead of collapsing to `Vector{Any}`.
 """
 function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         xq::Tq;
@@ -409,7 +406,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    T_out = _series_output_type(Tv, Tq)
+    T_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)
 end
@@ -461,10 +458,10 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
 
-    # Explicit Vector{Vector{Tv}} for type stability on Julia LTS
-    outputs = Vector{Vector{Tv}}(undef, n_ser)
+    T_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
+    outputs = Vector{Vector{T_out}}(undef, n_ser)
     @inbounds for k in 1:n_ser
-        outputs[k] = Vector{Tv}(undef, n_query)
+        outputs[k] = Vector{T_out}(undef, n_query)
     end
     sitp(outputs, xq_typed; deriv = deriv, search = search, hint = hint)
 
@@ -486,7 +483,7 @@ query on the stack and reused for all K series, staying in registers across
 the K evals. No pool, no `aq_vec` scratch.
 """
 function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
-        outputs::AbstractVector{<:AbstractVector{Tv}},
+        outputs::AbstractVector{<:AbstractVector},
         xq::AbstractVector{<:Real};
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = sitp.search_policy,
@@ -499,8 +496,8 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
     return _constant_series_inplace_kernel!(outputs, sitp, xq_typed, searcher, deriv)
 end
 
-# Thin function barrier: see comment on `_linear_series_inplace_kernel!`.
-@inline function _constant_series_inplace_kernel!(
+# Q×K — small-NQ fast path. Stack-resident anchor per query, no pool.
+@inline function _constant_series_qk!(
         outputs::AbstractVector{<:AbstractVector},
         sitp::ConstantSeriesInterpolant{Tg},
         xq_typed::AbstractVector,
@@ -516,7 +513,6 @@ end
     side_val = sitp.side
     x_min = Tg(first(sitp.x))
     x_max = Tg(last(sitp.x))
-
     @inbounds for j in eachindex(xq_typed)
         aq = _anchor_query(x_grid, xq_typed[j], Val(:constant), wrap, searcher)
         for k in 1:n_ser
@@ -526,6 +522,55 @@ end
         end
     end
     return outputs
+end
+
+# K×Q — large-NQ fast path. Pool-acquired anchor vector, sequential `outputs[k]`
+# inner loop (SIMD-able).
+@inline @with_pool pool function _constant_series_kq!(
+        outputs::AbstractVector{<:AbstractVector},
+        sitp::ConstantSeriesInterpolant{Tg},
+        xq_typed::AbstractVector,
+        searcher::Searcher,
+        deriv::DerivOp
+    ) where {Tg}
+    wrap = _should_wrap(sitp)
+    y = sitp.y
+    x_grid = sitp.x
+    n_pts = n_points(sitp)
+    n_ser = n_series(sitp)
+    extrap = sitp.extrap
+    side_val = sitp.side
+    x_min = Tg(first(sitp.x))
+    x_max = Tg(last(sitp.x))
+    NQ = length(xq_typed)
+    Tqp = promote_type(Tg, eltype(xq_typed))
+    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg, Tqp}, NQ)
+    _fill_anchors!(aq_vec, x_grid, xq_typed, Val(:constant), wrap, searcher)
+    @inbounds for k in 1:n_ser
+        for j in 1:NQ
+            outputs[k][j] = _eval_constant_series_with_extrap(
+                y, x_grid, n_pts, x_min, x_max, k, aq_vec[j], extrap, side_val, deriv
+            )
+        end
+    end
+    return outputs
+end
+
+# Thin function barrier: see comment on `_linear_series_inplace_kernel!`.
+# Adaptive: `length(xq_typed)` and `n_series(sitp)` feed `_series_use_kq_loop`
+# to select the loop order — see `src/core/series_utils.jl`.
+@inline function _constant_series_inplace_kernel!(
+        outputs::AbstractVector{<:AbstractVector},
+        sitp::ConstantSeriesInterpolant{Tg},
+        xq_typed::AbstractVector,
+        searcher::Searcher,
+        deriv::DerivOp
+    ) where {Tg}
+    if _series_use_kq_loop(length(xq_typed), n_series(sitp))
+        return _constant_series_kq!(outputs, sitp, xq_typed, searcher, deriv)
+    else
+        return _constant_series_qk!(outputs, sitp, xq_typed, searcher, deriv)
+    end
 end
 
 """

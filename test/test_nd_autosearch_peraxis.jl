@@ -1,6 +1,8 @@
 @testitem "ND Per-Axis Adaptive AutoSearch Resolution" begin
+    using Random: MersenneTwister
     using FastInterpolations: _resolve_search_nd, _resolve_search_policy,
         _is_axis_likely_monotone, _check_mono_nd, _query_extract, _query_length,
+        _resolve_oneshot_search_nd,
         AutoSearch, BinarySearch, LinearBinarySearch
 
     # ========================================
@@ -98,6 +100,117 @@
         result = _resolve_search_nd(AutoSearch(), Val(2), (sorted, sorted), hints)
         @test result[1] isa LinearBinarySearch
         @test result[2] isa LinearBinarySearch
+    end
+
+    # ========================================
+    # Oneshot batch resolution — `_resolve_oneshot_search_nd`
+    # ========================================
+    # Single resolution point hoisted outside the per-query loop. Verifies
+    # the (policies, hints) shape across (sort/random × hint/no-hint) combos.
+
+    @testset "Oneshot ND batch resolution — `_resolve_oneshot_search_nd`" begin
+        sorted = collect(1.0:50.0)
+        random = [
+            3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0,
+            7.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0,
+        ]
+
+        @testset "no-hint, sort × sort → both LB + fresh persistent Refs" begin
+            policies, hints = _resolve_oneshot_search_nd(
+                AutoSearch(), (sorted, sorted), nothing, Val(2)
+            )
+            @test policies[1] isa LinearBinarySearch
+            @test policies[2] isa LinearBinarySearch
+            @test hints[1] isa Base.RefValue{Int}
+            @test hints[2] isa Base.RefValue{Int}
+            @test hints[1][] == 1 && hints[2][] == 1  # fresh start at idx=1
+        end
+
+        @testset "no-hint, rand × rand → both Binary (no walk overhead)" begin
+            policies, _hints = _resolve_oneshot_search_nd(
+                AutoSearch(), (random, random), nothing, Val(2)
+            )
+            @test policies[1] isa BinarySearch
+            @test policies[2] isa BinarySearch
+        end
+
+        @testset "no-hint, mixed → per-axis (LB, Binary)" begin
+            policies, _hints = _resolve_oneshot_search_nd(
+                AutoSearch(), (sorted, random), nothing, Val(2)
+            )
+            @test policies[1] isa LinearBinarySearch
+            @test policies[2] isa BinarySearch
+        end
+
+        @testset "user-supplied hint → preserved, random axis still LB" begin
+            # With explicit hint, "caller wants locality" → both axes LB.
+            user_hint = (Ref(7), Ref(13))
+            policies, hints = _resolve_oneshot_search_nd(
+                AutoSearch(), (random, random), user_hint, Val(2)
+            )
+            @test policies[1] isa LinearBinarySearch
+            @test policies[2] isa LinearBinarySearch
+            @test hints === user_hint
+            @test hints[1][] == 7 && hints[2][] == 13
+        end
+
+        @testset "explicit BinarySearch passthrough" begin
+            policies, _hints = _resolve_oneshot_search_nd(
+                BinarySearch(), (sorted, sorted), nothing, Val(2)
+            )
+            @test policies[1] isa BinarySearch
+            @test policies[2] isa BinarySearch
+        end
+
+        @testset "3D mixed: (sort, rand, descending) → (LB, Binary, LB)" begin
+            descending = collect(50.0:-1.0:1.0)
+            policies, hints = _resolve_oneshot_search_nd(
+                AutoSearch(), (sorted, random, descending), nothing, Val(3)
+            )
+            @test policies[1] isa LinearBinarySearch
+            @test policies[2] isa BinarySearch
+            @test policies[3] isa LinearBinarySearch
+            @test length(hints) == 3
+        end
+    end
+
+    @testset "Behavioral equivalence: AutoSearch (no hint) ≡ LB + persistent user hint" begin
+        # AutoSearch on sorted queries must produce bit-identical output to an
+        # explicit `search=LinearBinarySearch()` + user-supplied persistent Ref.
+        xs = collect(range(0.0, 10.0, 51))
+        ys = collect(range(0.0, 10.0, 51))
+        data = [Float64(x + y) for x in xs, y in ys]
+
+        sorted_xq = collect(0.1:0.1:9.9)
+        sorted_yq = collect(0.1:0.1:9.9)
+        nq = length(sorted_xq)
+        out_auto = Vector{Float64}(undef, nq)
+        out_lb_hint = Vector{Float64}(undef, nq)
+
+        linear_interp!(out_auto, (xs, ys), data, (sorted_xq, sorted_yq))
+        linear_interp!(
+            out_lb_hint, (xs, ys), data, (sorted_xq, sorted_yq);
+            search = LinearBinarySearch(), hint = (Ref(1), Ref(1))
+        )
+        @test out_auto == out_lb_hint   # bit-exact: same algorithm, same hints semantics
+    end
+
+    @testset "Behavioral equivalence: random AutoSearch ≡ explicit BinarySearch" begin
+        # Random queries must produce bit-identical output to explicit BinarySearch.
+        xs = collect(range(0.0, 10.0, 51))
+        ys = collect(range(0.0, 10.0, 51))
+        data = [Float64(x + y) for x in xs, y in ys]
+
+        rng = MersenneTwister(0x1234abcd)
+        random_xq = rand(rng, 100) .* 9.9
+        random_yq = rand(rng, 100) .* 9.9
+        nq = length(random_xq)
+        out_auto = Vector{Float64}(undef, nq)
+        out_binary = Vector{Float64}(undef, nq)
+
+        linear_interp!(out_auto, (xs, ys), data, (random_xq, random_yq))
+        linear_interp!(out_binary, (xs, ys), data, (random_xq, random_yq); search = BinarySearch())
+        @test out_auto == out_binary
     end
 
     # ========================================

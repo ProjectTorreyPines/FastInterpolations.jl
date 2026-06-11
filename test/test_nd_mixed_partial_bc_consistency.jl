@@ -4,9 +4,8 @@
 # These tests pin the mathematical invariants that the mixed-partial BC fix
 # restores. They were authored as the RED phase of the TDD cycle for the fix
 # in `_get_effective_bc` / `_get_effective_bc_quadratic`. On the pre-fix commit
-# they FAIL by the bug magnitudes documented in
-#   claudedocs/TODO/00_HIGHEST_PRIORITY_mixed_partial_bc_fix.md
-# (cubic ~1e-10, quadratic ~1e-5). After the fix they pass to machine epsilon.
+# they FAIL by the documented bug magnitudes (cubic ~1e-10, quadratic ~1e-5);
+# after the fix they pass to machine epsilon.
 #
 # Three groups, each cubic + quadratic, 2D + 3D where applicable:
 #

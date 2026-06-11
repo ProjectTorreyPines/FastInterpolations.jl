@@ -113,42 +113,62 @@ Determine the output value type from y element type and grid type.
 # values are not promoted to grid type (no grid-parameter partials in y).
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg} = T
 
-"""
-    _series_output_type(::Type{Tv}, ::Type{Tq}) -> Type
-
-Compute output element type for series evaluation.
-
-For standard numerics, uses `promote_type(Tv, Tq)` to widen correctly
-(e.g., Float64 + Dual → Dual for AD support).
-
-For custom Tv without `promote_rule`, `promote_type` falls back to an
-abstract typejoin (e.g., Number), which makes the output vector untyped.
-In that case, falls back to Tv since the kernel always returns Tv.
-"""
-@inline function _series_output_type(::Type{Tv}, ::Type{Tq}) where {Tv, Tq}
-    Tout = promote_type(Tv, Tq)
-    return isconcretetype(Tout) ? Tout : Tv
-end
+# Inference probe for `_output_eltype` duck fallback. Standard kernels
+# (Linear/Cubic/Quadratic/Hermite) produce `Tv + α·Tv` shapes; Constant's
+# `Tv * one(Tq)` lives in the same promotion space.
+@inline _kernel_shape_op(yv, q) = yv * q + yv
 
 """
     _output_eltype(::Type{Tv}, types...) -> Type
 
-Compute output element type for ND one-shot batch evaluation.
+Generic output-eltype probe via the universal arithmetic kernel shape
+`y*q + y` (`_kernel_shape_op`). Currently used by:
 
-Uses `promote_type(Tv, types...)` for standard numerics. For custom/duck
-types where `promote_type` falls back to a non-concrete type (e.g., `Any`),
-returns `Tv` directly since the interpolation kernel always returns `Tv`.
+- Internal coefficient eltype (Cubic `Tz`, Quadratic `Tc`).
+- Adjoint allocators (`adjoint_protocol.jl`).
+- Hetero ND legacy paths and a few series callsites.
 
-Same logic as `_series_output_type` but accepts varargs for ND promotion
-chains like `promote_type(Tv, Tg, Tq)`.
+Concrete `promote_type` gets Int→Float upgrade (arithmetic kernels divide
+— Int chains widen naturally); duck carriers (e.g. `SVector × Dual`) fall
+through to `Base.promote_op` on `_kernel_shape_op`, with final fallback
+to `Tv` if the op is undefined.
+
+For method-aware output-buffer sizing (Linear/Cubic/Quadratic/Constant/
+Hermite), prefer the kernel-op overload below — it predicts the method's
+exact kernel return type via `Base.promote_op`.
 """
 @inline function _output_eltype(::Type{Tv}, types::Type...) where {Tv}
     Tr = promote_type(Tv, types...)
-    Tc = isconcretetype(Tr) ? Tr : Tv
-    # Ensure standard numerics produce Float coefficients (Int→Float64).
-    # Duck types (MyStruct etc.) pass through — float() would MethodError.
-    return (Tc <: _PromotableValue && !(Tc <: AbstractFloat)) ? float(Tc) : Tc
+    if isconcretetype(Tr)
+        return (Tr <: _PromotableValue && !(Tr <: AbstractFloat)) ? float(Tr) : Tr
+    end
+    Tq = length(types) == 0 ? Tv : promote_type(types...)
+    Top = Base.promote_op(_kernel_shape_op, Tv, Tq)
+    (Top === Union{} || Top === Any) && return Tv
+    return Top
 end
+
+"""
+    _output_eltype(kernel_op, ::Type{Tv}, types...) -> Type
+
+Method-aware output element type via `Base.promote_op` on the method's own
+kernel shape. Lets Julia inference predict the kernel's exact return type
+— no hand-coded Float upgrade, no `_PromotableValue` enumeration. Use this
+overload from a method that declares its kernel shape (e.g., Constant's
+`_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`).
+"""
+@inline function _output_eltype(kernel_op::F, ::Type{Tv}, types::Type...) where {F, Tv}
+    Top = Base.promote_op(kernel_op, Tv, types...)
+    (Top === Union{} || Top === Any) && return Tv
+    return Top
+end
+
+# Shared kernel shape for arithmetic methods (Linear/Cubic/Quadratic/Hermite):
+# `y + y * (dL/h)` captures the division-by-`h` that drives the Int→Float
+# widening — Julia inference predicts the exact kernel return type. Args are
+# ordered `(Tg, Tv, Tq)` so callers use `_output_eltype(shape, Tg, Tv, Tq)`,
+# matching the codebase's standard type-parameter order.
+@inline _arithmetic_kernel_shape(h, yv, dL) = yv + yv * (dL / h)
 
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type
@@ -296,19 +316,6 @@ end
 # ========================================
 # Query & Adjoint Promotion Helpers
 """
-    _prepare_grid(x) -> x (or _CachedRange)
-
-Zero-alloc grid preparation for one-shot evaluation paths.
-- `AbstractVector`: returned as-is (no heap allocation, search handles mixed types)
-- `AbstractRange`: converted to `_CachedRange{float(T)}` (stack allocation)
-
-Unlike `_promote_grid_only`, this does NOT allocate a new Vector for type promotion.
-Kernel arithmetic auto-promotes Int×Float via Julia's built-in promotion rules.
-"""
-@inline _prepare_grid(x::AbstractVector) = x
-@inline _prepare_grid(x::AbstractRange) = _to_float(x, float(eltype(x)))
-
-"""
     _store_grid(x, ::Type{Tg}) -> stored grid
 
 Single-allocation grid storage for interpolant constructors.
@@ -340,19 +347,13 @@ Used in interpolant inner constructors to merge promotion + immutability copy.
 """
     _promote_query_typed(xq::AbstractVector, ::Type{Tg}) -> AbstractVector
 
-Convert query vector to the appropriate float type for the given grid type `Tg`.
-
-Standard numeric queries (`_PromotableValue`: Integer, AbstractFloat, Rational)
-are promoted to grid precision (or `float(Tq)` if grid is duck-typed).
-Duck-typed queries (e.g. `Dual` for query-side AD) pass through unchanged —
-same `_PromotableValue` guard as value promotion in `_promote_itp_inputs`.
+Widen query vector to `promote_type(Tg, Tq)` — never narrows query precision.
+Duck-typed queries (`Dual`, `Measurement`, …) pass through unchanged.
 """
 @inline function _promote_query_typed(xq::AbstractVector{Tq}, ::Type{Tg}) where {Tq <: Real, Tg}
     if Tq <: _PromotableValue
-        # Standard numeric: promote to grid type (duck or float)
-        return _to_float(xq, Tg)
+        return _to_float(xq, promote_type(Tg, Tq))
     else
-        # Duck type (Dual, Measurement, etc.) — pass through unchanged
         return xq
     end
 end
@@ -487,30 +488,75 @@ end
 # scan is skipped but the extrap conversion still happens.
 # ----------------------------------------
 
-"Vector domain check for NoExtrap: validate batch, return InBounds()."
+"""
+Vector domain check for NoExtrap: validate batch, return `InBounds()`.
+
+Delegates the batch in-domain test to `_is_all_inbounds`, which dispatches
+on axis type (using `domain_lo/hi` for `_CachedRange`'s wider TwicePrecision
+bracket on x86_64) and is partial-sign-safe under ForwardDiff. Throw
+message uses `first(x)/last(x)` — exact endpoints, not the widened bracket.
+"""
 @inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap)
-    @boundscheck begin
-        x_min, x_max = _extract_primal(first(x)), _extract_primal(last(x))
-        xq_min, xq_max = minimum(xi), maximum(xi)
-        (xq_min < x_min || xq_max > x_max) &&
-            _throw_domain_error(xq_min < x_min ? xq_min : xq_max, x_min, x_max)
-    end
+    @boundscheck _is_all_inbounds(x, xi) || _throw_batch_oob(x, xi)
     return InBounds()
 end
 
-# _CachedRange: use domain_lo/domain_hi for vector domain checks.
-@inline function _check_domain(x::_CachedRange, xi::AbstractVector{<:Real}, ::NoExtrap)
-    @boundscheck begin
-        lo, hi = _extract_primal(x.domain_lo), _extract_primal(x.domain_hi)
-        xq_min, xq_max = minimum(xi), maximum(xi)
-        (xq_min < lo || xq_max > hi) &&
-            _throw_domain_error(xq_min < lo ? xq_min : xq_max, _extract_primal(x.lo), _extract_primal(x.hi))
-    end
-    return InBounds()
+@noinline function _throw_batch_oob(x::AbstractVector, xi::AbstractVector{<:Real})
+    qmin, qmax = minimum(xi), maximum(xi)
+    x_min = _extract_primal(first(x))
+    x_max = _extract_primal(last(x))
+    _throw_domain_error(qmin < x_min ? qmin : qmax, x_min, x_max)
 end
 
 "No-op vector domain check for non-NoExtrap modes: pass-through extrap."
 @inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, extrap::AbstractExtrap) = extrap
+
+# Closed-domain batch fast path: every OOB policy (`ClampExtrap`, `FillExtrap`,
+# `WrapExtrap`) treats `[first(x), last(x)]` as the in-domain interval, so they
+# share one batch promotion to `InBounds()`.
+@inline function _check_domain(
+        x::AbstractVector, xi::AbstractVector{<:Real},
+        e::Union{ClampExtrap, FillExtrap, WrapExtrap}
+    )
+    return _is_all_inbounds(x, xi) ? InBounds() : e
+end
+
+"""
+True iff every element of `queries` lies in the closed domain
+`[first(x), last(x)]`. Enables batch-level fast paths that elide per-query
+domain handling (e.g. `_wrap_to_domain` for PeriodicBC, which only needs
+to apply when a query is strictly outside `[first, last]`) when no
+element is OOB.
+
+Uses two `&&`-chained reductions rather than `extrema`:
+- pre-1.13 `extrema` carries a (min, max) tuple dep across the loop that
+  blocks LLVM auto-vectorization (~30× slower on Vector{Float64} N=1000)
+- `&&` short-circuits when `minimum` is already OOB, skipping the
+  `maximum` scan entirely — strictly ≤ `extrema`'s work in all cases
+
+1.13 fixes the SIMD issue, but the short-circuit advantage remains for
+the OOB slow-path, so this form stays preferred even post-1.10-LTS.
+"""
+# `_extract_primal` is required on `first(x)` / `last(x)` here because
+# ForwardDiff's `Real <= Dual` comparison includes partial-sign tie-breaking
+# at equal primals — so a Float query exactly at the boundary against a
+# Dual grid endpoint can flip in/out of bounds based on the partial sign
+# alone (see `test/ext/test_linear_dual_grid.jl` "Domain boundary:
+# primal-based NoExtrap check (partial-independent)"). Inline calls keep
+# the `&&` short-circuit intact.
+@inline function _is_all_inbounds(x::AbstractVector, queries::AbstractVector{<:Real})
+    isempty(queries) && return true
+    return minimum(queries) >= _extract_primal(first(x)) &&
+        maximum(queries) <= _extract_primal(last(x))
+end
+
+# `_CachedRange`: `domain_lo`/`domain_hi` (≈1 ULP wider than `lo`/`hi` on
+# x86_64 TwicePrecision normalization) for safe bounds. Fields are typed
+# `T <: AbstractFloat` per the struct, so no `_extract_primal` is needed.
+@inline function _is_all_inbounds(x::_CachedRange, queries::AbstractVector{<:Real})
+    isempty(queries) && return true
+    return minimum(queries) >= x.domain_lo && maximum(queries) <= x.domain_hi
+end
 
 # ========================================
 # Extrapolation value helpers (shared by all interpolation methods)
@@ -523,8 +569,13 @@ end
 # Named _promote_extrap_val (not _promote_extrap) to avoid collision with the struct
 # promoter in eval_ops.jl which promotes FillExtrap fill_value at construction time.
 @inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * zero(val)
+# AbstractArray Tv (e.g. `SVector` y) — broadcast the carrier-propagating
+# pattern so scalar OOB matches in-domain kernel's `y * one(dL)` shape and
+# agrees with batch path's trait-sized buffer.
+@inline _promote_extrap_val(val::AbstractArray, xq::Number) = val .+ zero(xq) .* zero(eltype(val))
 @inline _promote_extrap_val(val, xq) = val
 @inline _promote_extrap_zero(val::Number, xq::Number) = zero(xq) * zero(val)
+@inline _promote_extrap_zero(val::AbstractArray, xq::Number) = 0 .* val .+ zero(xq) .* zero(eltype(val))
 @inline _promote_extrap_zero(val, xq) = 0 * val
 
 # Generic: any derivative order → zero (flat extrapolation has zero derivatives)

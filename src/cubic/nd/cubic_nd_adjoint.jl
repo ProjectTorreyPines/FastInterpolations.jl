@@ -135,7 +135,7 @@ For OOB queries, weights are zeroed per-axis following the same logic as 1D `_fi
 Reads `_get_h(grids[d], idx)` directly via the spacings-free 4-arg
 `_bake_nd_anchors_generic` overload. Each `grids[d]` here is a wrapped axis
 extracted from `caches[d].x` (already `_CachedRange` / `_CachedVector` /
-`_ExclusivePeriodicAxis` per `_resolve_axis_copied`).
+`_ExclusivePeriodicAxis` per `_cache_axis`).
 """
 function _bake_nd_anchors(
         grids::NTuple{N, AbstractVector{Tg}},
@@ -371,7 +371,7 @@ barriers — no `spacings` parameter needed.
     return nothing
 end
 
-# NOTE: _has_exclusive_periodic, _adjoint_output_size(adj), _adjoint_nd_finalize,
+# NOTE: _has_seam_fold, _adjoint_output_size(adj), _adjoint_nd_finalize,
 # _adjoint_apply_exclusive_nd!, and all 6 callable methods (Vector/Real/Tuple ×
 # alloc/in-place) are now shared on AbstractAdjointND in nd_adjoint_protocol.jl.
 # CubicAdjointND inherits them via _n_queries, _grid_size, _adjoint_bcs,
@@ -549,18 +549,13 @@ function _build_nd_adjoint(
         end
     end
 
-    # Per-axis: normalize BC for cache + polyfit construction
-    # Periodic axes store PeriodicBC as-is; non-periodic normalize to BCPair
+    # Per-axis: periodic → _bc_after_extend (:exclusive → :extended); non-periodic → BCPair.
     norm_bcs = map(bcs) do bc_d
-        _is_periodic_bc(bc_d) ? bc_d : _normalize_bc(bc_d)
+        _is_periodic_bc(bc_d) ? _bc_after_extend(bc_d) : _normalize_bc(bc_d)
     end
 
     caches = map(grids_ext, norm_bcs) do grid_d, bp_d
-        if _is_periodic_bc(bp_d)
-            _get_cubic_cache(grid_d, PeriodicBC(), _effective_autocache(autocache, Tg))
-        else
-            _get_cubic_cache(grid_d, bp_d, _effective_autocache(autocache, Tg))
-        end
+        _get_cubic_cache(grid_d, bp_d, _effective_autocache(autocache, Tg))
     end
 
     # Mixed-partial BC pairs (p_src > 1): _get_effective_bc determines the BC.
@@ -570,17 +565,18 @@ function _build_nd_adjoint(
     # makes the two diverge. The dual-cache plumbing is retained as a no-op here
     # for safety; a follow-up PR can collapse `mixed_caches` into `caches` once
     # the adjoint hot path is verified to never observe them as distinct types.
+    # Symmetric with `norm_bcs`: promote periodic mixed BCs to `:extended` here
+    # so `mixed_caches` below operates on already-normalized BCs (no per-call
+    # `_bc_after_extend` inside the cache-build map). `_get_effective_bc`
+    # returns the user BC verbatim for periodic input (rule 2), so the
+    # promotion must happen here, not via `norm_bcs`.
     mixed_bcs = map(grids_ext, bcs) do grid_d, bc_d
         mixed_bc = _get_effective_bc(bc_d, 2, grid_d)
-        _is_periodic_bc(mixed_bc) ? mixed_bc : _normalize_bc(mixed_bc)
+        _is_periodic_bc(mixed_bc) ? _bc_after_extend(mixed_bc) : _normalize_bc(mixed_bc)
     end
 
     mixed_caches = map(grids_ext, mixed_bcs) do grid_d, mbp_d
-        if _is_periodic_bc(mbp_d)
-            _get_cubic_cache(grid_d, PeriodicBC(), _effective_autocache(autocache, Tg))
-        else
-            _get_cubic_cache(grid_d, mbp_d, _effective_autocache(autocache, Tg))
-        end
+        _get_cubic_cache(grid_d, mbp_d, _effective_autocache(autocache, Tg))
     end
 
     # Bake per-query anchors (extrap handles periodic wrapping + OOB weight fixup).

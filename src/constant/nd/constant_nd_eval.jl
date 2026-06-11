@@ -9,7 +9,6 @@
 # Callable Interface
 # ========================================
 
-# Scalar tuple query
 @inline function (itp::ConstantInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
@@ -21,85 +20,37 @@
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
-    return _eval_constant_nd(itp, resolved, ops, policies, hints, mono)
+    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
 end
 
-# In-place batch evaluation (SoA + AoS) is handled by the unified
-# AbstractInterpolantND callable in nd_interpolant_protocol.jl.
-# Zero-fill for any derivative is handled by _deriv_zero_fill trait below.
+# In-place + allocating batch use the inherited `AbstractInterpolantND`
+# protocol (trait-sized allocator via `_output_eltype`). Scalar routes
+# through `_eval_nd_at_point`; Constant's "any derivative → 0" rule is
+# wired via `_deriv_zero_fill` below.
 
 # Derivative zero-fill trait: constant has zero derivative at all orders
 @inline _deriv_zero_fill(::ConstantInterpolantND, ops::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} =
     _has_any_derivative(ops, Val(N))
 
-# ========================================
-# Core Evaluation Logic
-# ========================================
-
-"""
-    _eval_constant_nd(itp, query, ops, search_tuple)
-
-Evaluate ConstantInterpolantND at a single point.
-
-For constant interpolation:
-- If any derivative order > 0, return zero via `0 * y` (duck-typing compatible)
-- Otherwise, find interval and select corner based on side mode
-"""
 # Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
 @inline _zero_ref(itp::ConstantInterpolantND) = @inbounds first(itp.data)
-
-# Generic N-dimensional version (uses _locate_cell + _eval_at_cell)
-@inline function _eval_constant_nd(
-        itp::ConstantInterpolantND{Tg, Tv, N},
-        query::Tuple{Vararg{Real, N}},
-        ops::NTuple{N, AbstractEvalOp},
-        policies::NTuple{N, AbstractSearchPolicy},
-        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
-        mono::NTuple{N, Bool},
-    ) where {Tg, Tv, N}
-    _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
-    oob_result !== nothing && return oob_result
-    if _has_any_derivative(ops, Val(N))
-        return 0 * first(itp.data)
-    end
-    cell = _locate_cell(itp, query, policies, hints, mono)
-    return _eval_at_cell(itp, cell, ops)
-end
-
-# N=2 specialization: dispatches to N=2 _locate_cell via type
-@inline function _eval_constant_nd(
-        itp::ConstantInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{Real, 2}},
-        ops::NTuple{2, AbstractEvalOp},
-        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
-        mono::Tuple{Bool, Bool},
-    ) where {Tg, Tv}
-    _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
-    oob_result !== nothing && return oob_result
-    op_x, op_y = ops
-    if !(op_x isa EvalValue) || !(op_y isa EvalValue)
-        return 0 * first(itp.data)
-    end
-    cell = _locate_cell(itp, query, policies, hints, mono)
-    return _eval_at_cell(itp, cell, ops)
-end
 
 # ========================================
 # CELL LOCATION (locate once, evaluate many)
 # ========================================
 
-# Generic N-dimensional
+# Generic N-dimensional. `extraps` carries batch-level InBounds promotion
+# from `_check_domain_nd` when applicable; scalar callers route via the
+# 5-arg forwarder (interpolant_protocol.jl) injecting `itp.extraps`.
 @inline function _locate_cell(
         itp::ConstantInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
-    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
+    q_eval = _handle_all_extraps(query, itp.grids, extraps)
     indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
     # h-lift: the kernel now takes precomputed `hs` instead of computing
     # `_get_h(grids[d], indices[d])` inside the @generated body. Persistent
@@ -115,12 +66,13 @@ end
 @inline function _locate_cell(
         itp::ConstantInterpolantND{Tg, Tv, 2},
         query::Tuple{Vararg{Real, 2}},
+        extraps::Tuple{AbstractExtrap, AbstractExtrap},
         policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
         hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
         mono::Tuple{Bool, Bool},
     ) where {Tg, Tv}
     x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, itp.grids, itp.extraps, policies, hints, mono
+        query, itp.grids, extraps, policies, hints, mono
     )
     # Lift h + wrap indices into stencils, matching the generic-N path.
     hx = _get_h(itp.grids[1], ix)
@@ -141,10 +93,11 @@ end
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp}
     ) where {Tg, Tv, N}
-    if _has_any_derivative(ops, Val(N))
-        return 0 * first(itp.data)
-    end
     data, stencils, hs, sides, q_eval, Ls = cell
+    if _has_any_derivative(ops, Val(N))
+        # `prod(one, q_eval)` folds carrier over every axis.
+        return 0 * first(itp.data) * prod(one, q_eval)
+    end
     return _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls)
 end
 
@@ -237,7 +190,9 @@ paths share this signature.
     end
     idx_expr = Expr(:tuple, idx_parts...)
 
-    push!(exprs, :(@inbounds data[$idx_expr...]))
+    # Per-axis `* one(dL_d)` propagates each axis's `Tq` carrier (mirrors 1D).
+    ones_expr = Expr(:call, :*, [:(one($(Symbol("dL_", d)))) for d in 1:N]...)
+    push!(exprs, :(@inbounds data[$idx_expr...] * $ones_expr))
 
     return Expr(:block, :(Base.@_inline_meta), exprs...)
 end

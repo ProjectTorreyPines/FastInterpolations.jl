@@ -76,7 +76,7 @@ Create an anchored query for ultra-fast quadratic interpolation at a fixed point
 - `x`: Grid points (must match grid used for interpolant construction)
 - `xq`: Query point (scalar, can be Float or ForwardDiff.Dual for AD)
 - `::Val{:quadratic}`: Type tag to distinguish from other anchor types
-- `wrap`: If true, wrap `xq` to domain [x[1], x[end]) before anchoring.
+- `wrap`: If true, wrap `xq` to closed domain [x[1], x[end]] before anchoring.
           Used for `extrap=WrapExtrap()` mode.
 
 # Returns
@@ -116,7 +116,7 @@ the grid used for interpolant construction.
 - `x`: Grid points (must match interpolant's grid)
 - `xq`: Query points (any Real type, auto-promoted to T)
 - `::Val{:quadratic}`: Type tag
-- `wrap`: If true, wrap query points to domain [x[1], x[end]) before anchoring.
+- `wrap`: If true, wrap query points to closed domain [x[1], x[end]] before anchoring.
 
 # Example
 ```julia
@@ -161,7 +161,7 @@ In-place version of `_anchor_query(x, xq, Val(:quadratic))` for zero-allocation 
 - `x::AbstractVector{T}`: Grid points (must match interpolant's grid)
 - `xq::AbstractVector`: Query points (any Real type, auto-promoted to T)
 - `::Val{:quadratic}`: Type tag for quadratic interpolation
-- `wrap::Bool=false`: If true, wrap query points to domain [x[1], x[end])
+- `wrap::Bool=false`: If true, wrap query points to closed domain [x[1], x[end]]
 
 # Returns
 The same `buffer` object, filled with anchored queries.
@@ -329,11 +329,12 @@ end
 Evaluate quadratic interpolant at multiple anchored query points.
 Returns newly allocated vector.
 """
-function (itp::QuadraticInterpolant{T})(
-        aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}};
+function (itp::QuadraticInterpolant{Tg, Tv})(
+        aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{Tg, Tq}};
         deriv::DerivOp = EvalValue()
-    ) where {T}
-    output = Vector{T}(undef, length(aq_vec))
+    ) where {Tg, Tv, Tq <: Real}
+    T_out = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+    output = Vector{T_out}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _quadratic_eval_with_anchor(itp, aq_vec[i], deriv)
     end

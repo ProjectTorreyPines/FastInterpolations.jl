@@ -7,13 +7,15 @@
 #
 # ── 1D Subtypes must implement:
 #   _n_queries(adj)::Int
-#   _adjoint_output_length(adj)::Int
 #   _adjoint_1d_apply!(f_bar, adj, y_bar, deriv)
 #
-# ── 1D Subtypes may override (for periodic BC):
+# ── 1D Subtypes inherit (assuming `adj.bc::AbstractBC` and `adj.grid_size::Int`):
+#   _adjoint_output_length(adj)::Int
 #   _adjoint_internal_length(adj)::Int
-#   _adjoint_1d_has_exclusive_periodic(adj)::Bool
+#   _adjoint_1d_has_seam_fold(adj)::Bool
 #   _adjoint_1d_finalize(f_bar, adj)
+# Override these only if the subtype lacks the assumed fields (e.g.,
+# `CubicAdjoint` reads `length(adj.cache.x)` instead of `adj.grid_size`).
 #
 # ── ND Subtypes must implement:
 #   _n_queries(adj)::Int
@@ -58,11 +60,43 @@
 # ║           1D Adjoint Protocol        ║
 # ╚══════════════════════════════════════╝
 
-# ── 1D Defaults (non-periodic types inherit these as-is) ──
+# ── 1D Defaults ──
+# Assume `adj.bc::AbstractBC` and `adj.grid_size::Int` fields. Concrete subtypes
+# without those fields (e.g., `CubicAdjoint` uses `length(adj.cache.x)`) override.
 
-@inline _adjoint_internal_length(adj::AbstractAdjoint1D) = _adjoint_output_length(adj)
-@inline _adjoint_1d_has_exclusive_periodic(::AbstractAdjoint1D) = false
-@inline _adjoint_1d_finalize(f_bar::AbstractVector, ::AbstractAdjoint1D) = f_bar
+@inline _adjoint_output_length(adj::AbstractAdjoint1D) =
+    _is_periodic_seam_folded(adj.bc) ? adj.grid_size - 1 : adj.grid_size
+
+@inline _adjoint_internal_length(adj::AbstractAdjoint1D) = adj.grid_size
+
+@inline _adjoint_1d_has_seam_fold(adj::AbstractAdjoint1D) =
+    _is_periodic_seam_folded(adj.bc)
+
+# Dispatches on `adj.bc`. Subtypes without `.bc` (`HermiteAdjoint1D`) override directly.
+@inline _adjoint_1d_finalize(f_bar::AbstractVector, adj::AbstractAdjoint1D) =
+    _adjoint_1d_finalize(adj.bc, f_bar, adj)
+
+@inline _adjoint_1d_finalize(::AbstractBC, f_bar::AbstractVector, ::AbstractAdjoint1D) = f_bar
+
+# Seam-fold + in-place shrink. `resize!` on `Vector` is O(1) (no copy);
+# slicing `f_bar[1:n-1]` would heap-allocate a copy on every call.
+# `:extended` shares the seam-fold finalization with `:exclusive` (same body).
+@inline function _adjoint_1d_finalize(
+        ::PeriodicBC{:exclusive}, f_bar::Vector, adj::AbstractAdjoint1D,
+    )
+    n_internal = _adjoint_internal_length(adj)
+    @inbounds f_bar[1] += f_bar[n_internal]
+    resize!(f_bar, n_internal - 1)
+    return f_bar
+end
+@inline function _adjoint_1d_finalize(
+        ::PeriodicBC{:extended}, f_bar::Vector, adj::AbstractAdjoint1D,
+    )
+    n_internal = _adjoint_internal_length(adj)
+    @inbounds f_bar[1] += f_bar[n_internal]
+    resize!(f_bar, n_internal - 1)
+    return f_bar
+end
 
 # ── Size / Introspection ──
 
@@ -78,7 +112,7 @@ function (adj::AbstractAdjoint1D{Tg})(
     ) where {Tg}
     nq = _n_queries(adj)
     length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    Tv = promote_type(eltype(y_bar), Tg)
+    Tv = _output_eltype(_arithmetic_kernel_shape, Tg, eltype(y_bar), Tg)
     f_bar = zeros(Tv, _adjoint_internal_length(adj))
     _adjoint_1d_apply!(f_bar, adj, y_bar, deriv)
     return _adjoint_1d_finalize(f_bar, adj)
@@ -88,7 +122,7 @@ function (adj::AbstractAdjoint1D{Tg})(
         y_bar::Real; deriv::DerivOp = EvalValue(), _extra...
     ) where {Tg}
     _n_queries(adj) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, _n_queries(adj))
-    Tv = promote_type(typeof(y_bar), Tg)
+    Tv = _output_eltype(_arithmetic_kernel_shape, Tg, typeof(y_bar), Tg)
     f_bar = zeros(Tv, _adjoint_internal_length(adj))
     _adjoint_1d_apply!(f_bar, adj, (y_bar,), deriv)
     return _adjoint_1d_finalize(f_bar, adj)
@@ -99,7 +133,7 @@ function (adj::AbstractAdjoint1D{Tg})(
     ) where {Tg}
     nq = _n_queries(adj)
     length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    Tv = promote_type(eltype(y_bar), Tg)
+    Tv = _output_eltype(_arithmetic_kernel_shape, Tg, eltype(y_bar), Tg)
     f_bar = zeros(Tv, _adjoint_internal_length(adj))
     _adjoint_1d_apply!(f_bar, adj, y_bar, deriv)
     return _adjoint_1d_finalize(f_bar, adj)
@@ -117,7 +151,7 @@ function (adj::AbstractAdjoint1D{Tg})(
     length(f_bar) == n_out || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), n_out)
     nq = _n_queries(adj)
     length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    if _adjoint_1d_has_exclusive_periodic(adj)
+    if _adjoint_1d_has_seam_fold(adj)
         _adjoint_1d_apply_exclusive_inplace!(f_bar, adj, y_bar, deriv)
     else
         fill!(f_bar, zero(eltype(f_bar)))
@@ -133,7 +167,7 @@ function (adj::AbstractAdjoint1D{Tg})(
     n_out = _adjoint_output_length(adj)
     length(f_bar) == n_out || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), n_out)
     _n_queries(adj) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, _n_queries(adj))
-    if _adjoint_1d_has_exclusive_periodic(adj)
+    if _adjoint_1d_has_seam_fold(adj)
         _adjoint_1d_apply_exclusive_inplace!(f_bar, adj, (y_bar,), deriv)
     else
         fill!(f_bar, zero(eltype(f_bar)))
@@ -150,7 +184,7 @@ function (adj::AbstractAdjoint1D{Tg})(
     length(f_bar) == n_out || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), n_out)
     nq = _n_queries(adj)
     length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    if _adjoint_1d_has_exclusive_periodic(adj)
+    if _adjoint_1d_has_seam_fold(adj)
         _adjoint_1d_apply_exclusive_inplace!(f_bar, adj, y_bar, deriv)
     else
         fill!(f_bar, zero(eltype(f_bar)))
@@ -219,32 +253,28 @@ end
 # ║           ND Adjoint Protocol        ║
 # ╚══════════════════════════════════════╝
 
-# ── Output size (exclusive periodic axes shrink by 1) ──
+# ── Output size (axis is always n+1 inclusive layout; seam-fold BCs shrink user dim by 1) ──
+@inline _adjoint_output_size(adj::AbstractAdjointND{<:Any, N}) where {N} =
+    map(
+    (bc, n) -> _is_periodic_seam_folded(bc) ? n - 1 : n,
+    _adjoint_bcs(adj), _grid_size(adj)
+)
 
-@inline function _adjoint_output_size(adj::AbstractAdjointND{<:Any, N}) where {N}
-    gs = _grid_size(adj)
-    bcs = _adjoint_bcs(adj)
-    return ntuple(Val(N)) do d
-        bcs[d] isa PeriodicBC{:exclusive} ? gs[d] - 1 : gs[d]
-    end
-end
+# ── Seam-fold detection (covers :exclusive AND :extended) ──
 
-# ── Exclusive periodic detection ──
+@inline _has_seam_fold(bcs::Tuple) = any(_is_periodic_seam_folded, bcs)
 
-@inline _has_exclusive_periodic(bcs::Tuple) =
-    any(bp -> bp isa PeriodicBC{:exclusive}, bcs)
-
-# ── Periodic finalization (fold exclusive endpoint + truncate) ──
+# ── Periodic finalization (fold seam-fold axes + truncate to user dim) ──
 
 function _adjoint_nd_finalize(
         f_bar::AbstractArray{<:Any, N},
         adj::AbstractAdjointND{<:Any, N}
     ) where {N}
     bcs = _adjoint_bcs(adj)
-    if _has_exclusive_periodic(bcs)
+    if _has_seam_fold(bcs)
         gs = _grid_size(adj)
         for d in 1:N
-            if bcs[d] isa PeriodicBC{:exclusive}
+            if _is_periodic_seam_folded(bcs[d])
                 selectdim(f_bar, d, 1) .+= selectdim(f_bar, d, gs[d])
             end
         end
@@ -255,22 +285,22 @@ function _adjoint_nd_finalize(
     return f_bar
 end
 
-# ── Exclusive periodic in-place (pool-allocated work buffer) ──
+# ── Seam-fold in-place (pool-allocated work buffer) ──
 
 # Per-axis seam fold: literal dimension `d` ensures `selectdim(_, d, _)`
 # specializes at compile time — runtime `d` produces SubArrays whose type
 # depends on the dim, forcing per-call boxing on heterogeneous BC tuples.
+# `:extended` shares the seam-fold mechanism with `:exclusive` (same body).
 @inline _seam_fold_axis!(f_work, ::Val{d}, gs_d::Int, ::PeriodicBC{:exclusive}) where {d} =
     (selectdim(f_work, d, 1) .+= selectdim(f_work, d, gs_d); nothing)
+@inline _seam_fold_axis!(f_work, ::Val{d}, gs_d::Int, ::PeriodicBC{:extended}) where {d} =
+    (selectdim(f_work, d, 1) .+= selectdim(f_work, d, gs_d); nothing)
 @inline _seam_fold_axis!(f_work, ::Val{d}, ::Int, ::AbstractBC) where {d} = nothing
-# `HeteroAdjointND` stores `nothing` for non-derivative (Linear/Constant) axes,
-# which can never be `PeriodicBC{:exclusive}` — treat as no-op.
-@inline _seam_fold_axis!(f_work, ::Val{d}, ::Int, ::Nothing) where {d} = nothing
 
 # Compile-time-unrolled seam-fold loop (one branch per axis, all literal `d`).
 @generated function _apply_seam_fold!(
         f_work::AbstractArray{T, N},
-        bcs::NTuple{N, Union{AbstractBC, Nothing}},
+        bcs::NTuple{N, AbstractBC},
         gs::NTuple{N, Int}
     ) where {T, N}
     body = [:(_seam_fold_axis!(f_work, Val($d), gs[$d], bcs[$d])) for d in 1:N]
@@ -320,7 +350,7 @@ function (adj::AbstractAdjointND{Tg, N})(
     ops = _resolve_deriv_nd(deriv, Val(N))
     nq = _n_queries(adj)
     length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    Tv = promote_type(eltype(y_bar), Tg)
+    Tv = _output_eltype(_arithmetic_kernel_shape, Tg, eltype(y_bar), Tg)
     f_bar = zeros(Tv, _grid_size(adj)...)
     _adjoint_nd_apply!(f_bar, adj, y_bar, ops)
     return _adjoint_nd_finalize(f_bar, adj)
@@ -335,7 +365,7 @@ function (adj::AbstractAdjointND{Tg, N})(
     ) where {Tg, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
     _n_queries(adj) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, _n_queries(adj))
-    Tv = promote_type(typeof(y_bar), Tg)
+    Tv = _output_eltype(_arithmetic_kernel_shape, Tg, typeof(y_bar), Tg)
     f_bar = zeros(Tv, _grid_size(adj)...)
     _adjoint_nd_apply!(f_bar, adj, y_bar, ops)
     return _adjoint_nd_finalize(f_bar, adj)
@@ -351,7 +381,7 @@ function (adj::AbstractAdjointND{Tg, N})(
     ops = _resolve_deriv_nd(deriv, Val(N))
     nq = _n_queries(adj)
     length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    Tv = promote_type(eltype(y_bar), Tg)
+    Tv = _output_eltype(_arithmetic_kernel_shape, Tg, eltype(y_bar), Tg)
     f_bar = zeros(Tv, _grid_size(adj)...)
     _adjoint_nd_apply!(f_bar, adj, y_bar, ops)
     return _adjoint_nd_finalize(f_bar, adj)
@@ -373,7 +403,7 @@ function (adj::AbstractAdjointND{Tg, N})(
     size(f_bar) == out_size || _throw_adjoint_size_mismatch(size(f_bar), out_size)
     nq = _n_queries(adj)
     length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    if _has_exclusive_periodic(_adjoint_bcs(adj))
+    if _has_seam_fold(_adjoint_bcs(adj))
         _adjoint_apply_exclusive_nd!(f_bar, adj, y_bar, ops)
     else
         fill!(f_bar, zero(Tv))
@@ -394,7 +424,7 @@ function (adj::AbstractAdjointND{Tg, N})(
     out_size = _adjoint_output_size(adj)
     size(f_bar) == out_size || _throw_adjoint_size_mismatch(size(f_bar), out_size)
     _n_queries(adj) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, _n_queries(adj))
-    if _has_exclusive_periodic(_adjoint_bcs(adj))
+    if _has_seam_fold(_adjoint_bcs(adj))
         _adjoint_apply_exclusive_nd!(f_bar, adj, y_bar, ops)
     else
         fill!(f_bar, zero(Tv))
@@ -416,7 +446,7 @@ function (adj::AbstractAdjointND{Tg, N})(
     size(f_bar) == out_size || _throw_adjoint_size_mismatch(size(f_bar), out_size)
     nq = _n_queries(adj)
     length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    if _has_exclusive_periodic(_adjoint_bcs(adj))
+    if _has_seam_fold(_adjoint_bcs(adj))
         _adjoint_apply_exclusive_nd!(f_bar, adj, y_bar, ops)
     else
         fill!(f_bar, zero(Tv))

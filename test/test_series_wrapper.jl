@@ -199,7 +199,9 @@
     end
 
     # ────────────────────────────────────────────
-    # Int grid + Float32 values: grid narrows to Float32
+    # Int grid + Float32 values: arithmetic methods narrow Tg to Float32 via
+    # `_promote_grid_float`; Constant keeps raw `Tg = eltype(x) = Int` because
+    # its selection kernel returns `y[idx]::Tv` without x·y arithmetic.
     # ────────────────────────────────────────────
     @testset "Int grid + Float32 values promotion" begin
         x_int = collect(1:10)
@@ -209,8 +211,9 @@
         sitp_lin = linear_interp(x_int, Series(y_f32a, y_f32b))
         @test grid_type(sitp_lin) == Float32
 
+        # Constant duck-types: grid stays Int (no narrowing), Tv stays Float32.
         sitp_cst = constant_interp(x_int, Series(y_f32a, y_f32b))
-        @test grid_type(sitp_cst) == Float32
+        @test grid_type(sitp_cst) == Int
 
         sitp_quad = quadratic_interp(x_int, Series(y_f32a, y_f32b))
         @test grid_type(sitp_quad) == Float32

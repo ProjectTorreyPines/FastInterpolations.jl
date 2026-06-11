@@ -151,10 +151,14 @@ end
 # Cycle period for `mod1(k, cycle)` index wrap.
 # - Inclusive (y[1]==y[n]): cycle = n-1, so x[n] ≡ x[1] + period.
 # - Exclusive (n distinct samples on [x[1], x[1]+period)): cycle = n.
+# - Extended (library-promoted from :exclusive — same length-(n+1) layout
+#   as :inclusive, only the BC symbol records origin): cycle = n-1.
 @inline _wrap_cycle(::PeriodicBC{:inclusive}, n::Int) = n - 1
+@inline _wrap_cycle(::PeriodicBC{:extended}, n::Int) = n - 1
 @inline _wrap_cycle(::PeriodicBC{:exclusive}, n::Int) = n
 
 @inline _wrap_period(x::AbstractVector, ::PeriodicBC{:inclusive}) = last(x) - first(x)
+@inline _wrap_period(x::AbstractVector, ::PeriodicBC{:extended}) = last(x) - first(x)
 @inline _wrap_period(x::AbstractVector, bc::PeriodicBC{:exclusive}) = _resolve_exclusive_period(x, bc)
 
 # ── BC strip helpers: PeriodicBC → NoBC, WrapExtrap → NoExtrap ──

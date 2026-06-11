@@ -155,7 +155,9 @@ end
         @test constant_interp(x, y, -1.0; extrap = ExtendExtrap()) == 10.0
         @test constant_interp(x, y, 5.0; extrap = ExtendExtrap()) == 50.0
 
-        @test constant_interp(x, y, 4.0; extrap = WrapExtrap()) == 10.0
+        # Closed `[first(x), last(x)]` (PR refac/wrap_closed): exact last(x) is in-domain,
+        # returns y[end]. Strictly-OOB queries still wrap.
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap()) == 50.0
         @test constant_interp(x, y, 4.5; extrap = WrapExtrap()) == 10.0
 
         @test constant_interp(x, y, -1.0; extrap = ClampExtrap(), deriv = DerivOp(1)) == 0.0
@@ -164,9 +166,14 @@ end
     @testset "Real type wrapper (Integer input)" begin
         x_int = [0, 1, 2, 3, 4]
         y_int = [10, 20, 30, 40, 50]
+        # Float64 xq → Float64 result (Int y * one(Float64) = Float64).
         result = constant_interp(x_int, y_int, 1.5)
         @test result isa Float64
         @test result == 20.0
+        # Fully-Int chain preserves Int.
+        result_int = constant_interp(x_int, y_int, 1)
+        @test result_int isa Int
+        @test result_int == 20
     end
 
     @testset "Real→Float wrappers (coverage)" begin
@@ -187,12 +194,11 @@ end
         itp(out, [0, 1, 2])  # Integer query vector
         @test out ≈ [10.0, 20.0, 30.0]
 
-        # Test 3: Vector allocating Real→Float wrapper (lines 422-434)
-        # constant_interp(x::AbstractVector{T}, y::AbstractVector{T}, x_targets::AbstractVector{S})
-        # where T<:Real (Integer grid + Integer query)
+        # Test 3: Vector allocating with Integer grid + Integer query.
+        # Kernel-shape trait keeps Int×Int×Int in Int; matches scalar path.
         result_vec = constant_interp(x_int, y_int, [0, 1, 2])
-        @test result_vec isa Vector{Float64}
-        @test result_vec ≈ [10.0, 20.0, 30.0]
+        @test result_vec isa Vector{Int}
+        @test result_vec == [10, 20, 30]
 
         # Test 4: In-place Real→Float wrapper (lines 440-468)
         # constant_interp!(output, x::AbstractVector{T}, y::AbstractVector{T}, x_targets::AbstractVector{S})
@@ -222,7 +228,8 @@ end
         itp_left = constant_interp(x_int, y_int; side = LeftSide())
         @test itp_left(0.9) == 10.0
         itp_wrap = constant_interp(x_int, y_int; extrap = WrapExtrap())
-        @test itp_wrap(4.0) == 10.0
+        # Closed-domain: xq == last(x) returns y[end]; was y[1] under prior half-open.
+        @test itp_wrap(4.0) == 50
     end
 
     @testset "ConstantInterpolant - 2-arg form" begin
@@ -258,7 +265,8 @@ end
 
     @testset "ConstantInterpolant - Options" begin
         itp_wrap = constant_interp(x, y; extrap = WrapExtrap())
-        @test itp_wrap(4.0) == 10.0
+        # Closed-domain: xq == last(x) returns y[end].
+        @test itp_wrap(4.0) == 50.0
 
         itp_const = constant_interp(x, y; extrap = ClampExtrap())
         @test itp_const(-1.0) == 10.0
@@ -502,16 +510,24 @@ end
     end
 
     @testset "Edge: xi == x[end] with extrap modes" begin
+        # Closed-domain (PR refac/wrap_closed): every extrap policy now agrees
+        # at the exact right boundary — xq == last(x) returns y[end].
         @test constant_interp(x, y, 4.0; extrap = NoExtrap()) == 50.0
         @test constant_interp(x, y, 4.0; extrap = ClampExtrap()) == 50.0
         @test constant_interp(x, y, 4.0; extrap = ExtendExtrap()) == 50.0
-        @test constant_interp(x, y, 4.0; extrap = WrapExtrap()) == 10.0
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap()) == 50.0
     end
 
     @testset "Edge: Wrap boundary cases" begin
-        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = LeftSide()) == 10.0
-        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = RightSide()) == 10.0
-        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = NearestSide()) == 10.0
+        # Closed `[first(x), last(x)]`: xq == last(x) returns y[end] via the
+        # x_last short-circuit in `_constant_eval_at_anchor` (which now uses
+        # `y[aq.idxR]`; idxR == n for non-periodic). Side flag is irrelevant
+        # at the exact right edge because both LeftSide/RightSide/NearestSide
+        # collapse onto the single boundary point.
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = LeftSide()) == 50.0
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = RightSide()) == 50.0
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = NearestSide()) == 50.0
+        # Strictly-OOB queries still wrap as before.
         @test constant_interp(x, y, 4.5; extrap = WrapExtrap(), side = NearestSide()) == 10.0
         @test constant_interp(x, y, 5.0; extrap = WrapExtrap(), side = NearestSide()) == 20.0
     end

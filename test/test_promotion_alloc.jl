@@ -119,7 +119,8 @@
         y_int = [0, 1, 3, 2, 5]
         xq_test = [0.5, 1.5, 2.5, 3.5]
 
-        # Allocating batch (all methods)
+        # Allocating batch (all methods). Float64 xq carrier propagates;
+        # Constant returns Vector{Float64} for Int y + Float xq via zero-slope arithmetic.
         @test linear_interp(x_int, y_int, xq_test) isa Vector{Float64}
         @test constant_interp(x_int, y_int, xq_test) isa Vector{Float64}
         @test quadratic_interp(x_int, y_int, xq_test) isa Vector{Float64}
@@ -306,5 +307,37 @@
         # Allow small overhead for intermediate computations but not a full extra vector.
         extra_vector_bytes = sizeof(Float64) * n  # 8000 bytes for n=1000
         @test alloc_f32 - alloc_f64 < extra_vector_bytes ÷ 2  # less than half an extra vector
+    end
+end
+
+# Persistent batch in-place callable `itp(out, xq)` must be zero-alloc across
+# all methods. This pins the kernel-loop invariant directly: no sample-first
+# eval leftover, no scratch buffer, no closure capture on the hot path. The
+# allocating form `itp(xq)` is `Vector{T_out}(undef, n)` + this in-place call,
+# so this single contract covers both paths.
+@testitem "Persistent batch in-place: zero-alloc kernel loop" setup = [AllocConstants] begin
+    x = collect(0.0:0.1:10.0)
+    y = sin.(x)
+    xq = collect(0.5:0.01:9.5)
+    out = Vector{Float64}(undef, length(xq))
+
+    # Function barrier — closure capture would box `itp`, `out`, `xq`.
+    function _bench_persistent_inplace!(itp, out, xq)
+        itp(out, xq)
+        return nothing
+    end
+
+    for builder in (
+            () -> linear_interp(x, y),
+            () -> cubic_interp(x, y),
+            () -> quadratic_interp(x, y),
+            () -> pchip_interp(x, y),
+            () -> cardinal_interp(x, y),
+            () -> akima_interp(x, y),
+            () -> constant_interp(x, y),
+        )
+        itp = builder()
+        _bench_persistent_inplace!(itp, out, xq)   # warmup
+        @test (@allocated _bench_persistent_inplace!(itp, out, xq)) <= ALLOC_THRESHOLD
     end
 end

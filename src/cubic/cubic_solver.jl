@@ -104,7 +104,7 @@ end
 """
 Build cache for periodic cubic spline using Sherman-Morrison formula.
 
-The axis is wrapped via `_resolve_axis_copied(x, bc, T)`:
+The axis is wrapped via `_cache_axis(_convert_copy(x, T), bc)`:
 - `:inclusive` → `_CachedRange`/`_CachedVector` (length n+1, user-supplied closed cycle)
 - `:exclusive` → `_ExclusivePeriodicAxis(...)` (virtual length n+1, raw n-cell inner)
 
@@ -114,7 +114,7 @@ The seam-cell positivity check that previously lived here is now enforced
 by the `_ExclusivePeriodicAxis` constructor.
 """
 function _build_periodic_cache(x::AbstractVector{T}, bc::PeriodicBC) where {T}
-    cache_x = _resolve_axis_copied(x, bc, T)
+    cache_x = _cache_axis(_convert_copy(x, T), bc)
     n = length(cache_x) - 1   # n_cells (uniform across :inclusive / :exclusive)
 
     n >= 3 || throw(ArgumentError("Periodic spline requires at least 3 cells (length(x) >= 4 for inclusive, >= 3 for exclusive)"))
@@ -186,7 +186,7 @@ function _build_derivative_bc_cache(
         left_bc::L,
         right_bc::R
     ) where {T, L <: PointBC, R <: PointBC}
-    cache_x = _resolve_axis_copied(x, NoBC(), T)   # `_CachedRange`/`_CachedVector` for non-periodic
+    cache_x = _cache_axis(_convert_copy(x, T), NoBC())   # `_CachedRange`/`_CachedVector` for non-periodic
     n = length(cache_x) - 1
 
     # Validate PolyFit requirements: PolyFit{D} requires D+1 points
@@ -422,19 +422,12 @@ eval can read `z[n+1]` at the closed-cycle endpoint.
         z_workspace[i] = y_temp[i] - factor * q[i]
     end
 
-    # `:inclusive` eval may read `z[n+1]` (closed-cycle endpoint) — mirror.
-    # `:exclusive` eval folds `idx_R = 1` at seam (wrapper specialization), so
-    # `z[n+1]` is never accessed; the mirror is still safe (z is length n+1
-    # always, callers allocate with cache.x length).
-    _finalize_z_periodic_seam!(z_workspace, cache.bc)
+    # Mirror seam: every PeriodicBC variant (:inclusive / :exclusive / :extended)
+    # uses a closed-cycle length-(n+1) z buffer with z[n+1] == z[1].
+    @inbounds z_workspace[n + 1] = z_workspace[1]
 
     return z_workspace
 end
-
-@inline _finalize_z_periodic_seam!(z::AbstractVector, ::PeriodicBC{:inclusive}) =
-    (@inbounds z[end] = z[1]; nothing)
-@inline _finalize_z_periodic_seam!(z::AbstractVector, ::PeriodicBC{:exclusive}) =
-    (@inbounds z[end] = z[1]; nothing)
 
 # ========================================
 # Unified System Solver Entry Point

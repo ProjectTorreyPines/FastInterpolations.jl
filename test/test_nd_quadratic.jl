@@ -435,9 +435,30 @@
 
         @testset "unsupported BC" begin
             data = rand(11, 6)
+            # Inclusive PeriodicBC: rejected at `_slope_1d_quadratic!` fallback
+            # via clear `ArgumentError("Unsupported boundary condition ...")`.
             @test_throws ArgumentError quadratic_interp(
                 (x, y), data;
                 bc = PeriodicBC()
+            )
+            # Exclusive PeriodicBC: must also raise `ArgumentError`, not a
+            # misleading `AssertionError`/`DimensionMismatch` from the wrapped
+            # virtual-`n+1` grid being passed through `_cache_axis` before BC
+            # validation runs.
+            @test_throws ArgumentError quadratic_interp(
+                (x, y), data;
+                bc = PeriodicBC(endpoint = :exclusive)
+            )
+            # Same exclusive guard with per-axis BC tuple — must also raise
+            # `ArgumentError`, regardless of whether the unsupported BC is on
+            # the first axis or a later one.
+            @test_throws ArgumentError quadratic_interp(
+                (x, y), data;
+                bc = (PeriodicBC(endpoint = :exclusive), Left(QuadraticFit()))
+            )
+            @test_throws ArgumentError quadratic_interp(
+                (x, y), data;
+                bc = (Left(QuadraticFit()), PeriodicBC(endpoint = :exclusive))
             )
         end
     end

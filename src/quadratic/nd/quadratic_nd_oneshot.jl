@@ -35,25 +35,29 @@ Zero-allocation after warmup (pool reuse).
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    # 1. Pool-allocate partials array (THE KEY: pool instead of heap)
+    # 1. Pool-backed per-axis cache — build phase reuses h/inv_h across slices.
+    # `map` over the tuple dispatches per-element on the concrete axis type
+    # (Range vs Vector); `ntuple(d -> grids[d], ...)` would Union-box.
+    grids_c = map(g -> _cache_axis_pooled(pool, g), grids)
+
+    # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
     Tz = _output_eltype(Tv, Tg)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
 
-    # 2. Compute all partial derivatives in-place
-    _compute_nd_partials_quadratic!(partials, grids, data, bcs)
+    # 3. Compute all partial derivatives in-place
+    _compute_nd_partials_quadratic!(partials, grids_c, data, bcs)
 
-    # 3. Materialize WrapExtrap{Nothing} against grids so the eval pipeline never
-    # sees the singleton.
-    extraps_eff = map(_resolve_extrap, extraps_val, grids)
+    # 4. Per-axis extrap passthrough against the (possibly extended) grid.
+    extraps_eff = map(_resolve_extrap, extraps_val, grids_c)
 
-    # 4. Eval pipeline (axis-only — grids carry `h`/`inv_h` directly)
-    q_eval = _handle_all_extraps(query, grids, extraps_eff)
-    indices, Ls, _ = _search_all_intervals(q_eval, grids, searches, hints)
-    hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids, indices, Ls)
+    # 5. Eval pipeline (axis-only — grids carry `h`/`inv_h` directly)
+    q_eval = _handle_all_extraps(query, grids_c, extraps_eff)
+    indices, Ls, _ = _search_all_intervals(q_eval, grids_c, searches, hints)
+    hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls)
 
-    # 5. Tensor-product kernel evaluation
+    # 6. Tensor-product kernel evaluation
     return _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
 end
 
@@ -71,43 +75,49 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
         queries,
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        policies::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
-        hints,  # Nothing or NTuple{N, Ref{Int}}
-        mono::NTuple{N, Bool},
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tg, Tv, N}
+    # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
+    policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
-    _validate_nd_domain(grids, queries, extraps_val)
+
+    # Pool-backed per-axis cache — build phase + eval loop reuse h/inv_h.
+    # `map` over the tuple dispatches per-element on concrete axis type;
+    # `ntuple(d -> grids[d], ...)` would Union-box heterogeneous tuples.
+    grids_c = map(g -> _cache_axis_pooled(pool, g), grids)
 
     # Build phase (done once)
     Tz = _output_eltype(Tv, Tg)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
-    _compute_nd_partials_quadratic!(partials, grids, data, bcs)
-    # Materialize WrapExtrap{Nothing} before the eval loop.
-    extraps_eff = map(_resolve_extrap, extraps_val, grids)
+    _compute_nd_partials_quadratic!(partials, grids_c, data, bcs)
+    extraps_eff = map(_resolve_extrap, extraps_val, grids_c)
+    # Batch-level InBounds promotion (see cubic_nd_oneshot.jl). Subsumes
+    # `_validate_nd_domain` and elides per-query wrap/clamp/fill branches on
+    # in-bounds axes.
+    extraps_eff = _check_domain_nd(grids_c, queries, extraps_eff)
 
-    # Eval loop — axis-only helpers read `h`/`inv_h` from `grids`
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids, extraps_val, ops, first(data))
+        oob_val = _try_fill_oob(query_k, grids_c, extraps_eff, ops, first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end
-        q_eval = _handle_all_extraps(query_k, grids, extraps_eff)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids, policies, hints, mono)
-        hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids, indices, Ls)
+        q_eval = _handle_all_extraps(query_k, grids_c, extraps_eff)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_c, policies, hints)
+        hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls)
         output[k] = _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
     end
     return output
 end
 
-# Function barrier: forces Julia to runtime-dispatch on the concrete
-# searches tuple type before entering the @with_pool boundary.
-function _quadratic_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps, policies, ops, hints, mono)
-    return _quadratic_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps, policies, ops, hints, mono)
+# Function barrier — specializes on concrete `search` type.
+function _quadratic_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps, ops, search, hint)
+    return _quadratic_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps, ops, search, hint)
 end
 
 # ========================================
@@ -135,9 +145,7 @@ Zero-allocation after warmup.
 
 `PreCompute()` and `OnTheFly()` are equivalent up to a few ULPs of FP
 reordering noise for every user BC, but **not** bit-identical — that is why
-quadratic `AutoCoeffs` defaults to `PreCompute`. This was not the case prior
-to the mixed-partial BC consistency fix; see
-`claudedocs/TODO/DONE/mixed_partial_bc_fix.md` for the history.
+quadratic `AutoCoeffs` defaults to `PreCompute`.
 """
 function quadratic_interp(
         grids::NTuple{N, AbstractVector},
@@ -152,7 +160,7 @@ function quadratic_interp(
     ) where {Tv, N}
     grids_typed, Tg, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
-    Tr = _output_eltype(Tv, Tg, typeof.(query)...)
+    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, promote_type(typeof.(query)...))
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
@@ -193,7 +201,7 @@ function quadratic_interp(
     ) where {Tv, N}
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
-    Tr = _output_eltype(Tv, Tg, Tq)
+    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
     quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output
@@ -227,11 +235,7 @@ function quadratic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    policies = _resolve_search_nd(search, Val(N))
-    hints_nd = hint
-    mono = _check_mono_nd(policies, queries)
-
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _quadratic_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, policies, ops, hints_nd, mono)
+    return _quadratic_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, ops, search, hint)
 end

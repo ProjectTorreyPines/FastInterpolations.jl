@@ -266,8 +266,7 @@ end
         policies::NTuple{N, AbstractSearchPolicy},
         hints,
     ) where {Tg, Tv, N, G, M, E, P}
-    bcs = map(_bc_for_periodic_check, itp.methods)
-    stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints, bcs)
+    stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints)
     indices = map(first, stencils)
     windows = map((m, x, ix) -> _axis_window_pooled(pool, m, x, ix), itp.methods, itp.grids, indices)
     grids_local = map((m, x, w, ix) -> _axis_grid_pooled(pool, m, x, w, ix), itp.methods, itp.grids, windows, indices)
@@ -304,8 +303,7 @@ end
         policies::NTuple{N, AbstractSearchPolicy},
         hints,
     ) where {Tg, Tv, N, G, M, E, P}
-    bcs = map(_bc_for_periodic_check, itp.methods)
-    stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints, bcs)
+    stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints)
     indices = map(first, stencils)
     windows = map(_axis_window_heap, itp.methods, itp.grids, indices)
     grids_local = map(_axis_grid_heap, itp.methods, itp.grids, windows, indices)
@@ -415,11 +413,12 @@ end
 @inline function _locate_cell(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, M, E, P}
-    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
+    q_eval = _handle_all_extraps(query, itp.grids, extraps)
 
     # Periodic wrap-aware path: build the wrap-aware cell ONCE here so the
     # generic `_gradient_generic` / `_hessian_generic` / `_laplacian_generic`
@@ -439,6 +438,10 @@ end
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
         data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)
         # Inner kernel uses policies for fiber re-search on sliced grids.
+        # Pass user-facing `itp.extraps` here (not InBounds-promoted `extraps`):
+        # the recursive 1D collapse runs its own per-axis `_check_domain` and
+        # benefits from the 1D-level InBounds promotion — promotion happens
+        # naturally inside each 1D oneshot call.
         return (data_local, grids_local, itp.methods, itp.extraps, q_eval, policies, nothing, rel_windows)
     end
 
@@ -465,11 +468,12 @@ end
 @inline function _locate_cell(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials},
         query::Tuple{Vararg{Real, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, M, E, P}
-    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
+    q_eval = _handle_all_extraps(query, itp.grids, extraps)
     indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, itp.grids, indices, Ls)
     return (itp.data.partials, indices, hs, inv_hs, dLs)

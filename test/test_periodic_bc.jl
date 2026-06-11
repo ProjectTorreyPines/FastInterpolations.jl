@@ -30,7 +30,7 @@
             @test result[2] ≈ sin(0.5) atol = 1.0e-3  # 2π + 0.5 wraps to 0.5
             @test result[3] ≈ sin(2π - 0.5) atol = 1.0e-3  # -0.5 wraps to 2π - 0.5 = -sin(0.5)
 
-            # Fast path: all queries inside domain [x_min, x_max) → uses extension path
+            # Fast path: all queries inside closed domain [x_min, x_max] → uses extension path
             inside_query = [0.5, 1.0, 2.0]
             inside_result = linear_interp(x, y, inside_query; extrap = WrapExtrap())
             @test inside_result ≈ sin.(inside_query) atol = 1.0e-3
@@ -365,8 +365,11 @@
     end
 
     @testset "_check_periodic_endpoints validation (Cubic only)" begin
-        # NOTE: Linear interpolation with extrap=WrapExtrap() does NOT check endpoints!
-        # Only cubic bc=PeriodicBC() checks that y[1] ≈ y[end] (isapprox for _PromotableValue)
+        # NOTE: Linear interpolation with extrap=WrapExtrap() does NOT check endpoints.
+        # Under closed-domain semantics (PR refac/wrap_closed), `xq == last(x)` is an
+        # in-domain boundary query that returns `y[end]` via the search path — no
+        # `y[1] ≈ y[end]` validation is needed for plain WrapExtrap. Only Cubic
+        # bc=PeriodicBC() checks endpoint match (required for the periodic Thomas solve).
         x = range(0.0, 2π, 101)
 
         @testset "Valid periodic data — exact endpoints (Float64)" begin

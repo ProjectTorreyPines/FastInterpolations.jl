@@ -77,10 +77,13 @@ end
     _validate_series_lengths(s, length(x))
     x = _to_float(x, Tg)
     K = n_series(s)
-    Tv_out = _value_type(_series_eltype(s), Tg)
+    Tv = _series_eltype(s)
+    Tv_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
     output = Vector{Tv_out}(undef, K)
     if _is_periodic_bc(bc)
-        searcher = _resolve_search(x, xq, search, hint, bc)
+        # Helper wraps `x` via `_resolve_axis(x, bc)` and searches against the
+        # wrapped axis — axis dispatch handles seam, no `bc` thread needed.
+        searcher = _resolve_search(x, xq, search, hint)
         return _constant_oneshot_series_periodic!(output, x, s, xq, bc, deriv, side, searcher)
     end
     _check_domain(x, xq, extrap)
@@ -112,7 +115,7 @@ end
     length(output) == n_series(s) || _throw_series_dim_mismatch(length(output), n_series(s))
     x = _to_float(x, Tg)
     if _is_periodic_bc(bc)
-        searcher = _resolve_search(x, xq, search, hint, bc)
+        searcher = _resolve_search(x, xq, search, hint)
         return _constant_oneshot_series_periodic!(output, x, s, xq, bc, deriv, side, searcher)
     end
     _check_domain(x, xq, extrap)
@@ -130,10 +133,116 @@ end
 # ║                         VECTOR ONE-SHOT API                              ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# Zero-pool vector-batch: Q outer × K inner, mirrors the Linear counterpart
-# with `side` + `x_last` propagation. `x_last = Tg(last(x))` on the ORIGINAL
-# grid — preserves the right-continuous short-circuit inside
-# `_constant_eval_at_anchor` for inclusive queries at `xq == x[n]`.
+# Q outer × K inner — small-NQ fast path. Anchor is stack-resident across
+# the K-inner loop. No pool acquired, so callers with tiny `xqs` don't pay
+# pool-setup overhead. `_is_periodic_bc(bc)` is compile-time-resolved.
+@inline function _constant_series_batch_qk!(
+        outputs::AbstractVector{<:AbstractVector},
+        x::AbstractVector,
+        vecs,
+        xqs::AbstractVector,
+        bc::AbstractBC,
+        op::AbstractEvalOp,
+        side::AbstractSide,
+        extrap::AbstractExtrap,
+        search::AbstractSearchPolicy
+    )
+    K = length(vecs)
+    NQ = length(xqs)
+    Tg_actual = eltype(x)
+
+    if _is_periodic_bc(bc)
+        x_eff = _resolve_axis(x, bc)
+        extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
+        searcher = _resolve_search(x_eff, xqs, search, nothing)
+        x_last = @inbounds Tg_actual(last(x_eff))
+        @inbounds for j in 1:NQ
+            xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
+            idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
+            h = _get_h(x_eff, idxL)
+            dL = xq_wrapped - xL
+            xq_promoted = oftype(dL, xq_wrapped)
+            aq = _ConstantAnchoredQuery(_IdxPair(idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
+            for k in 1:K
+                outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, op, side, extrap_p)
+            end
+        end
+        return outputs
+    end
+
+    extrap_eff = _check_domain(x, xqs, extrap)
+    searcher = _resolve_search(x, xqs, search, nothing)
+    wrap = extrap_eff isa WrapExtrap
+    x_last = @inbounds Tg_actual(last(x))
+    @inbounds for j in 1:NQ
+        aq = _anchor_query(x, xqs[j], Val(:constant), wrap, searcher)
+        for k in 1:K
+            outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, op, side, extrap_eff)
+        end
+    end
+    return outputs
+end
+
+# K outer × Q inner with pool-acquired anchor vector — large-NQ fast path.
+# Inner loop streams a single `outputs[k]` Vector, which LLVM auto-SIMDs
+# (~K× fewer cache-line jumps on the write side than the Q×K shape).
+@inline @with_pool pool function _constant_series_batch_kq!(
+        outputs::AbstractVector{<:AbstractVector},
+        x::AbstractVector{Tg},
+        vecs,
+        xqs::AbstractVector{Tq},
+        bc::AbstractBC,
+        op::AbstractEvalOp,
+        side::AbstractSide,
+        extrap::AbstractExtrap,
+        search::AbstractSearchPolicy
+    ) where {Tg, Tq <: Real}
+    K = length(vecs)
+    NQ = length(xqs)
+    Tg_actual = eltype(x)
+    Tqp = promote_type(Tg_actual, Tq)
+
+    if _is_periodic_bc(bc)
+        x_eff = _resolve_axis(x, bc)
+        extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
+        searcher = _resolve_search(x_eff, xqs, search, nothing)
+        x_last = @inbounds Tg_actual(last(x_eff))
+        aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg_actual, Tqp}, NQ)
+        @inbounds for j in 1:NQ
+            xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
+            idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
+            h = _get_h(x_eff, idxL)
+            dL = xq_wrapped - xL
+            xq_promoted = oftype(dL, xq_wrapped)
+            aq_vec[j] = _ConstantAnchoredQuery(_IdxPair(idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
+        end
+        @inbounds for k in 1:K
+            for j in 1:NQ
+                outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq_vec[j], op, side, extrap_p)
+            end
+        end
+        return outputs
+    end
+
+    extrap_eff = _check_domain(x, xqs, extrap)
+    searcher = _resolve_search(x, xqs, search, nothing)
+    wrap = extrap_eff isa WrapExtrap
+    x_last = @inbounds Tg_actual(last(x))
+    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg_actual, Tqp}, NQ)
+    _fill_anchors!(aq_vec, x, xqs, Val(:constant), wrap, searcher)
+    @inbounds for k in 1:K
+        for j in 1:NQ
+            outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq_vec[j], op, side, extrap_eff)
+        end
+    end
+    return outputs
+end
+
+# Adaptive entry. `length(xqs)` and `K` feed `_series_use_kq_loop` to select
+# the loop order — see `src/core/series_utils.jl`.
+# `x_last = Tg(last(x))` is computed inside each helper from the same
+# `x_eff` it uses (preserves the right-continuous short-circuit inside
+# `_constant_eval_at_anchor` for inclusive queries at `xq == x[n]`).
 @inline function constant_interp!(
         outputs::AbstractVector{<:AbstractVector},
         x::AbstractVector{Tg},
@@ -150,45 +259,17 @@ end
     K = n_series(s)
     _validate_series_outputs(outputs, K, length(xqs))
     vecs = _series_vectors(s)
-    Tg_actual = eltype(x)
-
-    if _is_periodic_bc(bc)
-        if bc isa PeriodicBC{:inclusive}
-            @inbounds for k in 1:K
-                _check_periodic_endpoints(bc, vecs[k])
-            end
-        end
-        x_eff = _resolve_axis(x, bc)
-        extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
-        searcher = _resolve_search(x_eff, xqs, search, nothing, NoBC())
-        x_last = @inbounds Tg_actual(last(x_eff))
-        @inbounds for j in eachindex(xqs)
-            xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
-            idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
-            # Index-based dispatch (cached step on Range, seam width on wrapper).
-            h = _get_h(x_eff, idxL)
-            dL = xq_wrapped - xL
-            xq_promoted = oftype(dL, xq_wrapped)
-            aq = _ConstantAnchoredQuery(_IdxPair(idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
-            for k in 1:K
-                outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap_p)
-            end
-        end
-        return outputs
-    end
-
-    # Non-periodic: `_anchor_query` handles WrapExtrap query-wrap + OOB state.
-    extrap_eff = _check_domain(x, xqs, extrap)
-    searcher = _resolve_search(x, xqs, search, nothing)
-    wrap = extrap_eff isa WrapExtrap
-    x_last = @inbounds Tg_actual(last(x))
-    @inbounds for j in eachindex(xqs)
-        aq = _anchor_query(x, xqs[j], Val(:constant), wrap, searcher)
-        for k in 1:K
-            outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap_eff)
+    if bc isa PeriodicBC{:inclusive}
+        @inbounds for k in 1:K
+            _check_periodic_endpoints(bc, vecs[k])
         end
     end
-    return outputs
+
+    if _series_use_kq_loop(length(xqs), K)
+        return _constant_series_batch_kq!(outputs, x, vecs, xqs, bc, deriv, side, extrap, search)
+    else
+        return _constant_series_batch_qk!(outputs, x, vecs, xqs, bc, deriv, side, extrap, search)
+    end
 end
 
 function constant_interp(
@@ -202,13 +283,9 @@ function constant_interp(
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tq <: Real}
     K = n_series(s)
-    Tv_out = _value_type(_series_eltype(s), Tg)
+    Tv = _series_eltype(s)
+    Tv_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
     outputs = [Vector{Tv_out}(undef, length(xqs)) for _ in 1:K]
     constant_interp!(outputs, x, s, xqs; bc, side, extrap, deriv, search)
     return outputs
 end
-
-# NOTE: the former Real type promotion wrappers (Tg <: Real) have been removed.
-# The hot-path methods above now use unconstrained Tg, and _to_float handles
-# grid normalization for all types (Int, Float, Dual, etc.), preventing
-# infinite recursion on duck types like ForwardDiff.Dual <: Real.

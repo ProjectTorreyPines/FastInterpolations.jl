@@ -37,9 +37,9 @@ function cubic_interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     # Type promotion + validation (same as constructor path)
-    grids_typed, Tg, Tv_p, Tz = _nd_promote_grids(grids, data)
+    grids_typed, Tg, Tv_p, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
-    Tr = _output_eltype(Tv_p, Tg, typeof.(query)...)
+    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, promote_type(typeof.(query)...))
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
@@ -80,7 +80,7 @@ function cubic_interp(
     ) where {Tv, N}
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
-    Tr = _output_eltype(Tv, Tg, Tq)
+    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
     cubic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output
@@ -125,10 +125,9 @@ Zero-allocation after warmup (pool reuse).
     # 1. Extend exclusive periodic axes (pool-based, zero heap alloc)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
 
-    # 1a. Per-axis materialization: upgrade WrapExtrap{Nothing} → WrapExtrap{T} against
-    # the extended grid and force WrapExtrap on periodic axes so `_handle_all_extraps`
-    # hits the typed form (kernels never see WrapExtrap{Nothing}).
-    # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
+    # 1a. Per-axis extrap passthrough against the extended grid.
+    # Post-extension: each axis's `(first, last)` IS the wrap domain — the
+    # 2-arg primitive is identity for tag-struct extraps (Wrap, Clamp, ...).
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
@@ -168,21 +167,26 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
         queries,
         bcs::NTuple{N, AbstractBC},
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        policies::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
-        hints,  # Nothing or NTuple{N, Ref{Int}}
-        mono::NTuple{N, Bool},
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tg, Tv, N}
+    # Resolve here so the fresh Ref tuple stays local to this frame (stack-elidable).
+    policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
-    _validate_nd_domain(grids, queries, extraps_val)
 
     # Build phase (same as scalar, done once)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
     # Per-axis materialization of extraps against the (possibly extended) grid.
     # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
+    # Batch-level InBounds promotion: per-axis if all queries are in-bounds,
+    # axis gets `InBounds()` so per-query `_try_fill_oob` / `_handle_all_extraps`
+    # branches compile away. Subsumes the prior `_validate_nd_domain` throw
+    # (NoExtrap path goes through 1D `_check_domain`'s `@boundscheck`).
+    extraps_eff = _check_domain_nd(grids_p, queries, extraps_eff)
     Tz = _output_eltype(Tv, Tg)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
@@ -192,23 +196,21 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # `h`/`inv_h` directly from `grids_p` (no transient pool spacings).
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
-        oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
+        oob_val = _try_fill_oob(query_k, grids_p, extraps_eff, ops, first(data_p))
         if oob_val !== nothing
             output[k] = oob_val; continue
         end
         q_evals = _handle_all_extraps(query_k, grids_p, extraps_eff)
-        indices, Ls, _ = _search_all_intervals(q_evals, grids_p, policies, hints, mono)
+        indices, Ls, _ = _search_all_intervals(q_evals, grids_p, policies, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls)
         output[k] = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
     end
     return output
 end
 
-# Function barrier: forces Julia to runtime-dispatch on the concrete
-# searches tuple type, resolving per-element Union{BinarySearch,LinearBinarySearch} before
-# entering the @with_pool boundary. NOT @inline — specialization requires real call.
-function _cubic_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps, policies, ops, hints, mono)
-    return _cubic_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps, policies, ops, hints, mono)
+# Function barrier — specializes on concrete `search` type.
+function _cubic_nd_batch_dispatch!(output, grids, data, queries, bcs, extraps, ops, search, hint)
+    return _cubic_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps, ops, search, hint)
 end
 
 # ========================================
@@ -239,13 +241,9 @@ function cubic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    policies = _resolve_search_nd(search, Val(N))
-    hints_nd = hint  # pass user hints as-is (nothing or NTuple{N,Ref{Int}})
-    mono = _check_mono_nd(policies, queries)
-
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv_p)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _cubic_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, policies, ops, hints_nd, mono)
+    return _cubic_nd_batch_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, ops, search, hint)
 end

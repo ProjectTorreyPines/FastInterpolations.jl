@@ -20,6 +20,16 @@ end
     return _constant_vector_loop!(output, itp.x, itp.y, xq, extrap, itp.side, op, searcher)
 end
 
+# Constant declares its kernel shape — selection (`y * one(dL)`, no division).
+# Args mirror the real kernel: `(xL, yv, xq)` so `xq - xL` exposes the actual
+# `dL` carrier (e.g. `Dual` grid + `Float` xq → `Dual` dL). Trait infers the
+# exact return type via `promote_op`, so scalar/batch agree (Int×Int×Int → Int;
+# SVector × Dual → SVector{Dual}; Float y × Dual grid → Dual; etc.).
+@inline _constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)
+
+@inline _output_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
+    _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
+
 # ─────────────────────────────────────────────────────────────
 # Vector loop (function barrier)
 # Julia specializes on concrete Searcher type P, eliminating Union-split
@@ -100,26 +110,21 @@ end
 # ========================================
 # Generic Constructor (User API)
 # ========================================
-# Handles all Real grid types (Int, Float32, Float64, etc.)
-# Type promotion done here, then forwards to typed ConstantInterpolant constructor.
-#
-# PERFORMANCE: Typed signature enables compile-time specialization.
-# _promote_itp_inputs becomes no-op when types already match (Float64 → Float64).
+# Storage parametrized on `{Tg, Tv}` directly — no `_promote_grid_float`
+# indirection. Return type widens via the kernel's `* one(dL)` carrier
+# propagation (handled per-callable, not at construction).
 @inline function constant_interp(
-        x::AbstractVector{TX},
-        y::AbstractVector{TY};
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv};
         bc::AbstractBC = NoBC(),
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch()
-    ) where {TX, TY}
-    Tg = _promote_grid_float(TX, TY)
-    # BC-aware caching wrap (zero-copy of buffer); ownership copy + element
-    # promotion is delegated to the inner constructor's `_convert_copy(x, Tg)`
-    # / `_convert_copy(y, Tv)` symmetric pair. Same template as Linear.
-    x_eff = _cache_axis(x, bc, Tg)
-    y_eff = _resolve_data(y, bc)
-    extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
-    return ConstantInterpolant(x_eff, y_eff, extrap_p, side, search; bc = bc)
+    ) where {Tg, Tv}
+    # Persistent: extend-promote for `:exclusive` (matches PCHIP/Cardinal/Akima/Cubic/Linear).
+    # OneShot path continues to use the lazy wrapper (constant_oneshot.jl).
+    x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
+    x_eff = _cache_axis(x_ext, bc_eff, Tg)
+    extrap_p = _promote_extrap(extrap_eff, Tv)
+    return ConstantInterpolant(x_eff, y_ext, extrap_p, side, search; bc = bc_eff)
 end

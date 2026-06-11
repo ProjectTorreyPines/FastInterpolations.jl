@@ -215,9 +215,7 @@ so the pool memory can be safely reused after this function returns.
     tmp_z = acquire!(pool, Tz, length(y))
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc_pair)
-    # Materialize WrapExtrap{Nothing} to typed form so the struct never holds
-    # the unmaterialized singleton.
-    # 3-arg: materialize WrapExtrap{Nothing} + promote FillExtrap value type.
+    # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
     extrap_p = _resolve_extrap(extrap, cache.x, Tv)
     return CubicInterpolant(cache, y, tmp_z, bc_pair, extrap_p, search)
 end
@@ -242,7 +240,7 @@ so the pool memory can be safely reused after this function returns.
     ) where {Tg, Tv}
     x, y = _prepare_periodic(x, y, bc)
     _check_periodic_endpoints(bc, y)
-    cache = _get_cubic_cache(x, PeriodicBC(), _effective_autocache(autocache, Tg))
+    cache = _get_cubic_cache(x, _bc_after_extend(bc), _effective_autocache(autocache, Tg))
     Tz = _output_eltype(eltype(y), eltype(cache.x))
     tmp_z = acquire!(pool, Tz, length(y))
     _solve_system!(tmp_z, cache, y, cache.bc)
@@ -250,9 +248,7 @@ so the pool memory can be safely reused after this function returns.
     # materialized for introspection. Prevents re-extension when this
     # interpolant is later passed to `cubic_adjoint(itp.cache.x; bc=itp.bc)`.
     bc_normalized = _with_resolved_period(_bc_after_extend(bc), cache.bc.period)
-    # Materialize WrapExtrap with the extended grid's span so the struct stores
-    # the typed form; kernels never see WrapExtrap{Nothing}.
-    return CubicInterpolant(cache, y, tmp_z, bc_normalized, WrapExtrap(cache.x), search)
+    return CubicInterpolant(cache, y, tmp_z, bc_normalized, WrapExtrap(), search)
 end
 
 # ========================================
@@ -378,13 +374,12 @@ so the pool memory can be safely reused after this function returns.
 
     if cache.bc isa PeriodicBC
         _check_periodic_endpoints(y)
-        return CubicInterpolant(cache, y, tmp_z, PeriodicBC(), WrapExtrap(cache.x), search)
+        # Store cache.bc verbatim (already :extended/:inclusive normalized).
+        return CubicInterpolant(cache, y, tmp_z, cache.bc, WrapExtrap(), search)
     end
 
     # cache.bc is BCPair - use it directly.
-    # Materialize WrapExtrap{Nothing} to typed form before storage so the struct
-    # never holds the unmaterialized singleton.
-    # 3-arg: materialize WrapExtrap{Nothing} + promote FillExtrap value type.
+    # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
     extrap_p = _resolve_extrap(extrap, cache.x, Tv)
     return CubicInterpolant(cache, y, tmp_z, cache.bc, extrap_p, search)
 end

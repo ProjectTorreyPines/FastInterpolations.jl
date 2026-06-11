@@ -7,6 +7,36 @@
 #
 
 # ========================================
+# Series one-shot batch loop-order selection
+# ========================================
+# Vector-batch `*_interp!(outs, x, ::Series, xqs)` picks its loop order
+# adaptively from `(NQ, K) = (length(xqs), n_series(s))`:
+#
+#   Q outer × K inner with stack-resident anchor per query.
+#       Tight loop, no pool. Wins on tiny batches (no scratch buffer).
+#
+#   K outer × Q inner with pool-acquired anchor vector.
+#       Inner loop streams one `outputs[k]` Vector — LLVM auto-SIMDs
+#       and avoids the K-cache-line write jump per query of the Q×K
+#       shape. Wins once NQ or K is large.
+#
+# The crossover is K-dependent (thresholds empirically tuned on Linear /
+# Constant Series oneshot batch microbenchmarks):
+#   - K ≤ ~100: NQ ≈ 16 is the cleanest break (Q×K wins below, K×Q above).
+#   - K ≥ ~256: Q×K loses at every NQ — the K-inner loop can't SIMD across
+#     K separate output Vectors and the K-cache-line write thrash per
+#     query dominates. K×Q wins outright.
+#
+# `_series_use_kq_loop(NQ, K)` codifies both axes: route to the K×Q (pool)
+# path if either NQ exceeds the per-K threshold OR K is large enough that
+# Q×K can never beat the SIMD-friendly inner stream.
+const _SERIES_BATCH_NQ_THRESHOLD = 16
+const _SERIES_BATCH_K_THRESHOLD = 256
+
+@inline _series_use_kq_loop(NQ::Int, K::Int) =
+    NQ > _SERIES_BATCH_NQ_THRESHOLD || K >= _SERIES_BATCH_K_THRESHOLD
+
+# ========================================
 # Output Validation
 # ========================================
 

@@ -358,12 +358,12 @@ end
         n_pts::Int,
         ::Tg,
         ::Tg,
-        ::_CubicAnchoredQuery{Tg, Tq},
+        aq::_CubicAnchoredQuery{Tg, Tq},
         extrap::_ClampOrFill,
         op::AbstractEvalOp,
         side::UInt8
     ) where {Tg, Tv, Tq <: Real}
-    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap)
+    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap, aq)
 end
 
 # ExtendExtrap - extend polynomial (EvalValue)
@@ -994,7 +994,7 @@ Takes matrices as arguments for optimal performance.
     if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_series_anchored(y, z, k, aq, op)
     elseif extrap isa _ClampOrFill
-        return _constant_extrap_boundary_value(y, aq.state, n_pts, k, op, extrap)
+        return _constant_extrap_boundary_value(y, aq.state, n_pts, k, op, extrap, aq)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end

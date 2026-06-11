@@ -94,12 +94,16 @@
         @test itp_42(x_below) === 42.0
         @test itp_42(x_above) === 42.0
 
-        # Derivatives should return 0, not NaN (even with NaN fill)
-        # Note: 0 * negative_y gives -0.0, so use iszero() not === 0.0
-        @test iszero(itp_nan(x_below; deriv = DerivOp(1)))
-        @test iszero(itp_nan(x_above; deriv = DerivOp(1)))
-        @test iszero(itp_nan(x_below; deriv = DerivOp(2)))
-        @test iszero(itp_nan(x_above; deriv = DerivOp(2)))
+        # Derivative contract under FillExtrap (cell-local "fill_value-as-data"):
+        # OOB cell's "data" is `fill_value`, so deriv = `0 * fill_value`. Finite
+        # fill → 0; NaN fill propagates (`0 * NaN = NaN`).
+        @test isnan(itp_nan(x_below; deriv = DerivOp(1)))
+        @test isnan(itp_nan(x_above; deriv = DerivOp(1)))
+        @test isnan(itp_nan(x_below; deriv = DerivOp(2)))
+        @test isnan(itp_nan(x_above; deriv = DerivOp(2)))
+        # Finite fill (zero / 42) → deriv 0.
+        @test iszero(itp_zero(x_below; deriv = DerivOp(1)))
+        @test iszero(itp_42(x_above; deriv = DerivOp(1)))
     end
 
     @testset "Linear with fill value" begin
@@ -108,8 +112,8 @@
         @test isnan(itp(x_above))
         @test itp(2.5) ≈ linear_interp(x, y; extrap = ClampExtrap())(2.5)
 
-        # Derivative = 0
-        @test iszero(itp(x_below; deriv = DerivOp(1)))
+        # NaN fill_value × deriv → NaN (fill_value-as-data contract)
+        @test isnan(itp(x_below; deriv = DerivOp(1)))
     end
 
     @testset "Quadratic with fill value" begin
@@ -232,12 +236,19 @@
             @test itp((0.5, 1.0)) ≈ ref((0.5, 1.0))
         end
 
-        # -- Derivatives return zero (not fill value) --
-        @testset "ND derivatives return zero" begin
-            itp = cubic_interp((xg, yg), data2d; extrap = FillExtrap(NaN))
-            @test iszero(itp((-0.1, 1.0); deriv = DerivOp(1)))
-            @test iszero(itp((0.5, 2.5); deriv = (DerivOp(1), EvalValue())))
-            @test iszero(itp((-0.1, 1.0); deriv = (EvalValue(), DerivOp(1))))
+        # -- Derivative under FillExtrap: cell-local "fill_value-as-data" --
+        @testset "ND derivatives under FillExtrap" begin
+            # NaN fill_value → deriv = 0 * NaN = NaN at OOB.
+            itp_nan = cubic_interp((xg, yg), data2d; extrap = FillExtrap(NaN))
+            @test isnan(itp_nan((-0.1, 1.0); deriv = DerivOp(1)))
+            @test isnan(itp_nan((0.5, 2.5); deriv = (DerivOp(1), EvalValue())))
+            @test isnan(itp_nan((-0.1, 1.0); deriv = (EvalValue(), DerivOp(1))))
+
+            # Finite fill_value → deriv = 0 * fill_value = 0 at OOB.
+            itp_zero = cubic_interp((xg, yg), data2d; extrap = FillExtrap(0.0))
+            @test iszero(itp_zero((-0.1, 1.0); deriv = DerivOp(1)))
+            @test iszero(itp_zero((0.5, 2.5); deriv = (DerivOp(1), EvalValue())))
+            @test iszero(itp_zero((-0.1, 1.0); deriv = (EvalValue(), DerivOp(1))))
         end
 
         # -- Per-axis heterogeneous extrap --
@@ -602,28 +613,25 @@
     # ────────────────────────────────────────────
     # 1D derivative correctness with FillExtrap
     # ────────────────────────────────────────────
-    # OOB derivatives must be exactly zero for FillExtrap (constant flat region).
-    # NaN fill must NOT leak into derivative results (0 * y_bnd, not 0 * fill_value).
+    # Cell-local "fill_value-as-data" contract: OOB cell's data IS `fill_value`,
+    # so deriv = `0 * fill_value` — finite fill_value → 0, NaN propagates.
     @testset "1D derivative correctness: FillExtrap OOB" begin
         x = collect(range(0.0, 1.0, length = 21))
         y = @. sin(2π * x)
 
-        for (label, fill_val) in [("NaN", NaN), ("zero", 0.0), ("42", 42.0)]
-            @testset "$label fill ($fill_val)" begin
+        # Finite fill_value → deriv exactly 0 at OOB.
+        for (label, fill_val) in [("zero", 0.0), ("42", 42.0)]
+            @testset "$label fill ($fill_val) → deriv 0" begin
                 itp_c = cubic_interp(x, y; extrap = FillExtrap(fill_val))
                 itp_l = linear_interp(x, y; extrap = FillExtrap(fill_val))
                 itp_q = quadratic_interp(x, y; extrap = FillExtrap(fill_val))
 
                 for itp in (itp_c, itp_l, itp_q)
                     for xq_oob in (-0.5, 1.5)
-                        # 1st derivative: OOB → zero (0 * y_bnd may produce -0.0)
-                        d1 = itp(xq_oob; deriv = DerivOp(1))
-                        @test d1 == 0.0
+                        @test itp(xq_oob; deriv = DerivOp(1)) == 0.0
                     end
-
                     # In-domain at x=0.1: sin'(2π*0.1) = 2π*cos(0.2π) ≈ 5.08
-                    d1_in = itp(0.1; deriv = DerivOp(1))
-                    @test abs(d1_in) > 1.0
+                    @test abs(itp(0.1; deriv = DerivOp(1))) > 1.0
                 end
 
                 # 2nd and 3rd order derivatives (cubic only)
@@ -631,6 +639,25 @@
                     @test itp_c(xq_oob; deriv = DerivOp(2)) == 0.0
                     @test itp_c(xq_oob; deriv = DerivOp(3)) == 0.0
                 end
+            end
+        end
+
+        # NaN fill_value → deriv propagates NaN at OOB (cell-local-as-data).
+        @testset "NaN fill → deriv NaN at OOB" begin
+            itp_c = cubic_interp(x, y; extrap = FillExtrap(NaN))
+            itp_l = linear_interp(x, y; extrap = FillExtrap(NaN))
+            itp_q = quadratic_interp(x, y; extrap = FillExtrap(NaN))
+
+            for itp in (itp_c, itp_l, itp_q)
+                for xq_oob in (-0.5, 1.5)
+                    @test isnan(itp(xq_oob; deriv = DerivOp(1)))
+                end
+                # In-domain unchanged.
+                @test abs(itp(0.1; deriv = DerivOp(1))) > 1.0
+            end
+            for xq_oob in (-0.5, 1.5)
+                @test isnan(itp_c(xq_oob; deriv = DerivOp(2)))
+                @test isnan(itp_c(xq_oob; deriv = DerivOp(3)))
             end
         end
     end

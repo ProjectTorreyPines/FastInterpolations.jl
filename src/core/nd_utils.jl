@@ -128,14 +128,16 @@ Accepts both scalar `ops::AbstractEvalOp` and tuple `ops::Tuple{Vararg{AbstractE
 end
 
 # FillExtrap result dispatch: value for EvalValue, zero for any derivative.
-# Uses `0 * zero_ref` (not `0 * fill_val`) to handle NaN fill values correctly.
-# 4th arg `qe` (query element) promotes result to kernel return type for mixed-precision.
-# Uses _promote_extrap_val/_promote_extrap_zero from core/utils.jl (Number dispatch).
+# Both branches source from `fill_val` — the OOB cell's "data" IS the
+# fill_value (cell-local-as-data contract): finite fill_value × 0 = 0 for
+# deriv, NaN fill_value propagates through IEEE multiplication.
+# 4th arg `qe` (query element) promotes result to kernel return type.
+# `zero_ref` arg retained for signature stability; intentionally unused.
 @inline _fill_extrap_result(::EvalValue, fill_val, _, qe) = _promote_extrap_val(fill_val, qe)
-@inline _fill_extrap_result(::AbstractEvalOp, _, zero_ref, qe) = _promote_extrap_zero(zero_ref, qe)
-@inline function _fill_extrap_result(ops::Tuple{Vararg{AbstractEvalOp}}, fill_val, zero_ref, qe)
+@inline _fill_extrap_result(::AbstractEvalOp, fill_val, _, qe) = _promote_extrap_zero(fill_val, qe)
+@inline function _fill_extrap_result(ops::Tuple{Vararg{AbstractEvalOp}}, fill_val, _, qe)
     for i in 1:length(ops)
-        @inbounds ops[i] isa EvalValue || return _promote_extrap_zero(zero_ref, qe)
+        @inbounds ops[i] isa EvalValue || return _promote_extrap_zero(fill_val, qe)
     end
     return _promote_extrap_val(fill_val, qe)
 end

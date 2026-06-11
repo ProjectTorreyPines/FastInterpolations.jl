@@ -18,19 +18,19 @@
     D = ForwardDiff.Dual{Nothing, Float64, 1}
 
     @testset "scalar Dual" begin
-        @test linear_interp(x, y_sv)(xq_d) isa SVector{3, D}
-        @test cubic_interp(x, y_sv)(xq_d) isa SVector{3, D}
-        @test quadratic_interp(x, y_sv)(xq_d) isa SVector{3, D}
-        @test hermite_interp(x, y_sv, dy_sv)(xq_d) isa SVector{3, D}
-        @test constant_interp(x, y_sv)(xq_d) isa SVector{3, D}
+        @test (@inferred linear_interp(x, y_sv)(xq_d)) isa SVector{3, D}
+        @test (@inferred cubic_interp(x, y_sv)(xq_d)) isa SVector{3, D}
+        @test (@inferred quadratic_interp(x, y_sv)(xq_d)) isa SVector{3, D}
+        @test (@inferred hermite_interp(x, y_sv, dy_sv)(xq_d)) isa SVector{3, D}
+        @test (@inferred constant_interp(x, y_sv)(xq_d)) isa SVector{3, D}
     end
 
     @testset "batch Vector{Dual}" begin
-        @test linear_interp(x, y_sv)(xq_dv) isa Vector{SVector{3, D}}
-        @test cubic_interp(x, y_sv)(xq_dv) isa Vector{SVector{3, D}}
-        @test quadratic_interp(x, y_sv)(xq_dv) isa Vector{SVector{3, D}}
-        @test hermite_interp(x, y_sv, dy_sv)(xq_dv) isa Vector{SVector{3, D}}
-        @test constant_interp(x, y_sv)(xq_dv) isa Vector{SVector{3, D}}
+        @test (@inferred linear_interp(x, y_sv)(xq_dv)) isa Vector{SVector{3, D}}
+        @test (@inferred cubic_interp(x, y_sv)(xq_dv)) isa Vector{SVector{3, D}}
+        @test (@inferred quadratic_interp(x, y_sv)(xq_dv)) isa Vector{SVector{3, D}}
+        @test (@inferred hermite_interp(x, y_sv, dy_sv)(xq_dv)) isa Vector{SVector{3, D}}
+        @test (@inferred constant_interp(x, y_sv)(xq_dv)) isa Vector{SVector{3, D}}
     end
 
     @testset "ND batch — SVector data × Tuple{Dual, Dual}" begin
@@ -42,9 +42,9 @@
                     ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0),
                 ) for i in 1:5
         ]
-        @test linear_interp((xg, yg), data_sv)(q_dv) isa Vector{SVector{3, D}}
-        @test cubic_interp((xg, yg), data_sv)(q_dv) isa Vector{SVector{3, D}}
-        @test constant_interp((xg, yg), data_sv)(q_dv) isa Vector{SVector{3, D}}
+        @test (@inferred linear_interp((xg, yg), data_sv)(q_dv)) isa Vector{SVector{3, D}}
+        @test (@inferred cubic_interp((xg, yg), data_sv)(q_dv)) isa Vector{SVector{3, D}}
+        @test (@inferred constant_interp((xg, yg), data_sv)(q_dv)) isa Vector{SVector{3, D}}
     end
 
     @testset "ForwardDiff.derivative through indexed component (Issue #144 MWE)" begin
@@ -64,11 +64,11 @@
 
     @testset "Plain Float64 y + Vector{Dual} batch (non-regression)" begin
         y = sin.(x)
-        @test linear_interp(x, y)(xq_dv) isa Vector{D}
-        @test cubic_interp(x, y)(xq_dv) isa Vector{D}
-        @test quadratic_interp(x, y)(xq_dv) isa Vector{D}
-        @test hermite_interp(x, y, cos.(x))(xq_dv) isa Vector{D}
-        @test constant_interp(x, y)(xq_dv) isa Vector{D}
+        @test (@inferred linear_interp(x, y)(xq_dv)) isa Vector{D}
+        @test (@inferred cubic_interp(x, y)(xq_dv)) isa Vector{D}
+        @test (@inferred quadratic_interp(x, y)(xq_dv)) isa Vector{D}
+        @test (@inferred hermite_interp(x, y, cos.(x))(xq_dv)) isa Vector{D}
+        @test (@inferred constant_interp(x, y)(xq_dv)) isa Vector{D}
     end
 end
 
@@ -83,19 +83,19 @@ end
     D = ForwardDiff.Dual{Nothing, Float64, 1}
 
     @testset "1D scalar 3-arg" begin
-        @test linear_interp(x, y_sv, xq_d) isa SVector{3, D}
-        @test cubic_interp(x, y_sv, xq_d) isa SVector{3, D}
-        @test quadratic_interp(x, y_sv, xq_d) isa SVector{3, D}
-        @test hermite_interp(x, y_sv, dy_sv, xq_d) isa SVector{3, D}
-        @test constant_interp(x, y_sv, xq_d) isa SVector{3, D}
+        @test (@inferred linear_interp(x, y_sv, xq_d)) isa SVector{3, D}
+        @test (@inferred cubic_interp(x, y_sv, xq_d)) isa SVector{3, D}
+        @test (@inferred quadratic_interp(x, y_sv, xq_d)) isa SVector{3, D}
+        @test (@inferred hermite_interp(x, y_sv, dy_sv, xq_d)) isa SVector{3, D}
+        @test (@inferred constant_interp(x, y_sv, xq_d)) isa SVector{3, D}
     end
 
     @testset "1D batch 3-arg (the 4 cases broken before this fix)" begin
-        @test linear_interp(x, y_sv, xq_dv) isa Vector{SVector{3, D}}
-        @test cubic_interp(x, y_sv, xq_dv) isa Vector{SVector{3, D}}
-        @test quadratic_interp(x, y_sv, xq_dv) isa Vector{SVector{3, D}}
-        @test hermite_interp(x, y_sv, dy_sv, xq_dv) isa Vector{SVector{3, D}}
-        @test constant_interp(x, y_sv, xq_dv) isa Vector{SVector{3, D}}
+        @test (@inferred linear_interp(x, y_sv, xq_dv)) isa Vector{SVector{3, D}}
+        @test (@inferred cubic_interp(x, y_sv, xq_dv)) isa Vector{SVector{3, D}}
+        @test (@inferred quadratic_interp(x, y_sv, xq_dv)) isa Vector{SVector{3, D}}
+        @test (@inferred hermite_interp(x, y_sv, dy_sv, xq_dv)) isa Vector{SVector{3, D}}
+        @test (@inferred constant_interp(x, y_sv, xq_dv)) isa Vector{SVector{3, D}}
     end
 
     @testset "ND batch 3-arg" begin
@@ -107,11 +107,11 @@ end
                     ForwardDiff.Dual{Nothing}(3.5 + 0.1i, 0.0),
                 ) for i in 1:5
         ]
-        @test linear_interp((xg, yg), data_sv, q_dv) isa Vector{SVector{3, D}}
-        @test cubic_interp((xg, yg), data_sv, q_dv) isa Vector{SVector{3, D}}
-        @test quadratic_interp((xg, yg), data_sv, q_dv) isa Vector{SVector{3, D}}
+        @test (@inferred linear_interp((xg, yg), data_sv, q_dv)) isa Vector{SVector{3, D}}
+        @test (@inferred cubic_interp((xg, yg), data_sv, q_dv)) isa Vector{SVector{3, D}}
+        @test (@inferred quadratic_interp((xg, yg), data_sv, q_dv)) isa Vector{SVector{3, D}}
         # Constant ND oneshot batch — fixed in acfc95acf (was `::Vector{Tv}` typeassert).
-        @test constant_interp((xg, yg), data_sv, q_dv) isa Vector{SVector{3, D}}
+        @test (@inferred constant_interp((xg, yg), data_sv, q_dv)) isa Vector{SVector{3, D}}
     end
 end
 
@@ -129,18 +129,18 @@ end
 
     @testset "scalar Dual xq, SVector y per series" begin
         # Returns Vector{T_out} of length K = number of series.
-        @test linear_interp(x, s_sv, xq_d) isa Vector{SVector{3, D}}
-        @test cubic_interp(x, s_sv, xq_d) isa Vector{SVector{3, D}}
-        @test quadratic_interp(x, s_sv, xq_d) isa Vector{SVector{3, D}}
-        @test constant_interp(x, s_sv, xq_d) isa Vector{SVector{3, D}}
+        @test (@inferred linear_interp(x, s_sv, xq_d)) isa Vector{SVector{3, D}}
+        @test (@inferred cubic_interp(x, s_sv, xq_d)) isa Vector{SVector{3, D}}
+        @test (@inferred quadratic_interp(x, s_sv, xq_d)) isa Vector{SVector{3, D}}
+        @test (@inferred constant_interp(x, s_sv, xq_d)) isa Vector{SVector{3, D}}
     end
 
     @testset "batch Vector{Dual} xq, SVector y per series" begin
         # Returns Vector{Vector{T_out}}, one inner vector per series.
-        @test linear_interp(x, s_sv, xq_dv) isa Vector{Vector{SVector{3, D}}}
-        @test cubic_interp(x, s_sv, xq_dv) isa Vector{Vector{SVector{3, D}}}
-        @test quadratic_interp(x, s_sv, xq_dv) isa Vector{Vector{SVector{3, D}}}
-        @test constant_interp(x, s_sv, xq_dv) isa Vector{Vector{SVector{3, D}}}
+        @test (@inferred linear_interp(x, s_sv, xq_dv)) isa Vector{Vector{SVector{3, D}}}
+        @test (@inferred cubic_interp(x, s_sv, xq_dv)) isa Vector{Vector{SVector{3, D}}}
+        @test (@inferred quadratic_interp(x, s_sv, xq_dv)) isa Vector{Vector{SVector{3, D}}}
+        @test (@inferred constant_interp(x, s_sv, xq_dv)) isa Vector{Vector{SVector{3, D}}}
     end
 end
 
@@ -156,20 +156,20 @@ end
 
     @testset "1D — slope-free adjoints (Linear/Constant/Cubic/Quadratic)" begin
         for fn in (linear_adjoint, constant_adjoint, cubic_adjoint, quadratic_adjoint)
-            @test fn(x, xq_for_adj)(y_bar_sv) isa Vector{SVector{3, Float64}}
-            @test fn(x, xq_for_adj)(y_bar_dv) isa Vector{D}
+            @test (@inferred fn(x, xq_for_adj)(y_bar_sv)) isa Vector{SVector{3, Float64}}
+            @test (@inferred fn(x, xq_for_adj)(y_bar_dv)) isa Vector{D}
         end
     end
 
     @testset "1D — Hermite-family adjoints" begin
         for fn in (hermite_adjoint, cardinal_adjoint)
-            @test fn(x, xq_for_adj)(y_bar_sv) isa Vector{SVector{3, Float64}}
-            @test fn(x, xq_for_adj)(y_bar_dv) isa Vector{D}
+            @test (@inferred fn(x, xq_for_adj)(y_bar_sv)) isa Vector{SVector{3, Float64}}
+            @test (@inferred fn(x, xq_for_adj)(y_bar_dv)) isa Vector{D}
         end
         # Pchip/Akima carry y in the constructor (slope is data-dependent).
         for fn in (pchip_adjoint, akima_adjoint)
-            @test fn(x, y_for_slope, xq_for_adj)(y_bar_sv) isa Vector{SVector{3, Float64}}
-            @test fn(x, y_for_slope, xq_for_adj)(y_bar_dv) isa Vector{D}
+            @test (@inferred fn(x, y_for_slope, xq_for_adj)(y_bar_sv)) isa Vector{SVector{3, Float64}}
+            @test (@inferred fn(x, y_for_slope, xq_for_adj)(y_bar_dv)) isa Vector{D}
         end
     end
 
@@ -177,8 +177,8 @@ end
         xg = collect(1.0:5.0); yg = collect(1.0:5.0)
         xq_nd = [(2.5, 3.5), (3.0, 4.0), (4.0, 2.5)]
         for fn in (linear_adjoint, constant_adjoint, cubic_adjoint, quadratic_adjoint)
-            @test fn((xg, yg), xq_nd)(y_bar_sv) isa Matrix{SVector{3, Float64}}
-            @test fn((xg, yg), xq_nd)(y_bar_dv) isa Matrix{D}
+            @test (@inferred fn((xg, yg), xq_nd)(y_bar_sv)) isa Matrix{SVector{3, Float64}}
+            @test (@inferred fn((xg, yg), xq_nd)(y_bar_dv)) isa Matrix{D}
         end
     end
 end
@@ -224,7 +224,7 @@ end
         x = collect(1:10)
         y = collect(10:10:100)
         @test constant_interp(x, y)(3) === 30
-        @test constant_interp(x, y)([2, 5, 8]) isa Vector{Int}
+        @test (@inferred constant_interp(x, y)([2, 5, 8])) isa Vector{Int}
     end
 
     @testset "_output_eltype trait — type table" begin
@@ -261,18 +261,16 @@ end
     D = ForwardDiff.Dual{Nothing, Float64, 1}
 
     @testset "Dual x grid carrier flows through Tv × Tq" begin
-        # Persistent + one-shot, scalar + batch, both Float y and SVector y.
         for fn in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
-            @test fn(x_dg, y_f)(xq_f) isa D
-            @test fn(x_dg, y_f)(xq_d) isa D
-            @test fn(x_dg, y_sv)(xq_f) isa SVector{3, D}
-            @test fn(x_dg, y_sv)(xq_d) isa SVector{3, D}
-            # One-shot mirror
-            @test fn(x_dg, y_f, xq_d) isa D
-            @test fn(x_dg, y_sv, xq_d) isa SVector{3, D}
+            @test (@inferred fn(x_dg, y_f)(xq_f)) isa D
+            @test (@inferred fn(x_dg, y_f)(xq_d)) isa D
+            @test (@inferred fn(x_dg, y_sv)(xq_f)) isa SVector{3, D}
+            @test (@inferred fn(x_dg, y_sv)(xq_d)) isa SVector{3, D}
+            @test (@inferred fn(x_dg, y_f, xq_d)) isa D
+            @test (@inferred fn(x_dg, y_sv, xq_d)) isa SVector{3, D}
         end
-        @test hermite_interp(x_dg, y_f, dy_f)(xq_d) isa D
-        @test hermite_interp(x_dg, y_sv, dy_sv)(xq_d) isa SVector{3, D}
+        @test (@inferred hermite_interp(x_dg, y_f, dy_f)(xq_d)) isa D
+        @test (@inferred hermite_interp(x_dg, y_sv, dy_sv)(xq_d)) isa SVector{3, D}
     end
 
     @testset "ForwardDiff.derivative w.r.t. grid offset" begin
@@ -303,17 +301,14 @@ end
         data = [sin(i) * cos(j) for i in 1:5, j in 1:5]
         data_sv = [SA[Float64(i + j), 2.0(i + j), 3.0(i + j)] for i in 1:5, j in 1:5]
 
+        # ForwardDiff.{gradient,hessian,derivative} have `Any` internal inference;
+        # `@inferred` is over-strict for these AD wrappers.
         for fn in (linear_interp, cubic_interp)
-            # Gradient of scalar-output ND interp w.r.t. query
             @test ForwardDiff.gradient(q -> fn((xg, yg), data)((q[1], q[2])), [2.5, 3.5]) isa Vector{Float64}
-            # Hessian — exercises nested Dual through the kernel
             @test ForwardDiff.hessian(q -> fn((xg, yg), data)((q[1], q[2])), [2.5, 3.5]) isa Matrix{Float64}
-            # Gradient via one-shot 3-arg
             @test ForwardDiff.gradient(q -> fn((xg, yg), data, (q[1], q[2])), [2.5, 3.5]) isa Vector{Float64}
-            # SVector component gradient (persistent + one-shot)
             @test ForwardDiff.gradient(q -> fn((xg, yg), data_sv)((q[1], q[2]))[1], [2.5, 3.5]) isa Vector{Float64}
             @test ForwardDiff.gradient(q -> fn((xg, yg), data_sv, (q[1], q[2]))[1], [2.5, 3.5]) isa Vector{Float64}
-            # ND grid-offset sensitivity via one-shot
             @test ForwardDiff.derivative(δ -> fn((xg .+ δ, yg), data, (2.5, 3.5)), 0.0) isa Float64
         end
     end
@@ -349,11 +344,11 @@ end
     sitp = cubic_interp(x, s_sv)
 
     @testset "scalar Dual via persistent callable" begin
-        @test sitp(xq_d) isa Vector{SVector{3, D}}
+        @test (@inferred sitp(xq_d)) isa Vector{SVector{3, D}}
     end
 
     @testset "batch Vector{Dual} via persistent callable" begin
-        @test sitp(xq_dv) isa Vector{Vector{SVector{3, D}}}
+        @test (@inferred sitp(xq_dv)) isa Vector{Vector{SVector{3, D}}}
     end
 end
 
@@ -375,20 +370,20 @@ end
 
     @testset "Linear" begin
         sitp = linear_interp(x, s_sv)
-        @test sitp(xq_d) isa Vector{SVector{3, D}}
-        @test sitp(xq_dv) isa Vector{Vector{SVector{3, D}}}
+        @test (@inferred sitp(xq_d)) isa Vector{SVector{3, D}}
+        @test (@inferred sitp(xq_dv)) isa Vector{Vector{SVector{3, D}}}
     end
 
     @testset "Quadratic" begin
         sitp = quadratic_interp(x, s_sv)
-        @test sitp(xq_d) isa Vector{SVector{3, D}}
-        @test sitp(xq_dv) isa Vector{Vector{SVector{3, D}}}
+        @test (@inferred sitp(xq_d)) isa Vector{SVector{3, D}}
+        @test (@inferred sitp(xq_dv)) isa Vector{Vector{SVector{3, D}}}
     end
 
     @testset "Constant" begin
         sitp = constant_interp(x, s_sv)
-        @test sitp(xq_d) isa Vector{SVector{3, D}}
-        @test sitp(xq_dv) isa Vector{Vector{SVector{3, D}}}
+        @test (@inferred sitp(xq_d)) isa Vector{SVector{3, D}}
+        @test (@inferred sitp(xq_dv)) isa Vector{Vector{SVector{3, D}}}
     end
 end
 
@@ -403,11 +398,11 @@ end
 
     @testset "Persistent ND scalar callable, deriv != EvalValue" begin
         itp = constant_interp((xg, yg), data_int)
-        @test itp(qd; deriv = (DerivOp(1), EvalValue())) isa D
+        @test (@inferred itp(qd; deriv = (DerivOp(1), EvalValue()))) isa D
     end
 
     @testset "One-shot ND scalar callable, deriv != EvalValue" begin
-        @test constant_interp((xg, yg), data_int, qd; deriv = (DerivOp(1), EvalValue())) isa D
+        @test (@inferred constant_interp((xg, yg), data_int, qd; deriv = (DerivOp(1), EvalValue()))) isa D
     end
 end
 
@@ -421,7 +416,7 @@ end
         y = sin.(x)
         dy = [ForwardDiff.Dual{Nothing}(cos(xi), 1.0) for xi in x]
         xq = collect(2.0:0.5:8.0)
-        @test hermite_interp(x, y, dy, xq) isa Vector{D}
+        @test (@inferred hermite_interp(x, y, dy, xq)) isa Vector{D}
     end
 
     @testset "ForwardDiff.derivative on slope perturbation" begin
@@ -461,19 +456,19 @@ end
     xq_dv = [ForwardDiff.Dual{Nothing}(2.0 + 0.5i, 1.0) for i in 1:5]
 
     @testset "PCHIP — Float y + Dual xq" begin
-        @test pchip_interp(x, y_f, xq_d) isa D
-        @test pchip_interp(x, y_f, xq_dv) isa Vector{D}
+        @test (@inferred pchip_interp(x, y_f, xq_d)) isa D
+        @test (@inferred pchip_interp(x, y_f, xq_dv)) isa Vector{D}
     end
 
     @testset "Cardinal — SVector y + Dual xq" begin
         y_sv = [SA[Float64(i), 2.0i, 3.0i] for i in 1:10]
-        @test cardinal_interp(x, y_sv, xq_d) isa SVector{3, D}
-        @test cardinal_interp(x, y_sv, xq_dv) isa Vector{SVector{3, D}}
+        @test (@inferred cardinal_interp(x, y_sv, xq_d)) isa SVector{3, D}
+        @test (@inferred cardinal_interp(x, y_sv, xq_dv)) isa Vector{SVector{3, D}}
     end
 
     @testset "Akima — Float y + Dual xq" begin
-        @test akima_interp(x, y_f, xq_d) isa D
-        @test akima_interp(x, y_f, xq_dv) isa Vector{D}
+        @test (@inferred akima_interp(x, y_f, xq_d)) isa D
+        @test (@inferred akima_interp(x, y_f, xq_dv)) isa Vector{D}
     end
 end
 
@@ -494,22 +489,22 @@ end
 
     @testset "Constant ND persistent scalar — (Float, Dual) × mixed deriv" begin
         itp = constant_interp((xg, yg), data_int)
-        @test itp(q_het; deriv = (EvalValue(), DerivOp(1))) isa D
+        @test (@inferred itp(q_het; deriv = (EvalValue(), DerivOp(1)))) isa D
     end
 
     @testset "Constant ND one-shot scalar — (Float, Dual) × mixed deriv" begin
-        @test constant_interp((xg, yg), data_int, q_het; deriv = (EvalValue(), DerivOp(1))) isa D
+        @test (@inferred constant_interp((xg, yg), data_int, q_het; deriv = (EvalValue(), DerivOp(1)))) isa D
     end
 
     @testset "Constant ND one-shot batch — (Float, Dual) × mixed deriv" begin
-        @test constant_interp((xg, yg), data_int, q_het_batch; deriv = (EvalValue(), DerivOp(1))) isa Vector{D}
+        @test (@inferred constant_interp((xg, yg), data_int, q_het_batch; deriv = (EvalValue(), DerivOp(1)))) isa Vector{D}
     end
 
     @testset "Linear ND persistent scalar 2nd-deriv (zero-fill) — (Float, Dual)" begin
         # LinearInterpolantND _deriv_zero_fill triggers on 2nd-order deriv.
         data_f = [Float64(10i + j) for i in 1:5, j in 1:5]
         itp_l = linear_interp((xg, yg), data_f)
-        @test itp_l(q_het; deriv = (EvalValue(), DerivOp(2))) isa D
+        @test (@inferred itp_l(q_het; deriv = (EvalValue(), DerivOp(2)))) isa D
     end
 end
 
@@ -530,14 +525,14 @@ end
         itp = constant_interp(x, y)
         aq_vec = Vector{_ConstantAnchoredQuery{Float64, D}}(undef, length(xq_d))
         _fill_anchors!(aq_vec, x, xq_d, Val(:constant))
-        @test itp(aq_vec) isa Vector{D}
+        @test (@inferred itp(aq_vec)) isa Vector{D}
     end
 
     @testset "Quadratic" begin
         itp = quadratic_interp(x, y)
         aq_vec = Vector{_QuadraticAnchoredQuery{Float64, D}}(undef, length(xq_d))
         _fill_anchors!(aq_vec, x, xq_d, Val(:quadratic))
-        @test itp(aq_vec) isa Vector{D}
+        @test (@inferred itp(aq_vec)) isa Vector{D}
     end
 
     # Int-chain preservation: ConstantInterpolant's kernel is `yv * one(q)`,
@@ -833,13 +828,13 @@ end
     xq_batch = [2.5, 4.5, 6.5, 8.5]
 
     @testset "PCHIP" begin
-        @test pchip_interp(x, y_d, xq_scalar) isa DuckFloat
-        @test pchip_interp(x, y_d, xq_batch) isa Vector{DuckFloat}
+        @test (@inferred pchip_interp(x, y_d, xq_scalar)) isa DuckFloat
+        @test (@inferred pchip_interp(x, y_d, xq_batch)) isa Vector{DuckFloat}
     end
 
     @testset "Akima" begin
-        @test akima_interp(x, y_d, xq_scalar) isa DuckFloat
-        @test akima_interp(x, y_d, xq_batch) isa Vector{DuckFloat}
+        @test (@inferred akima_interp(x, y_d, xq_scalar)) isa DuckFloat
+        @test (@inferred akima_interp(x, y_d, xq_batch)) isa Vector{DuckFloat}
     end
 end
 

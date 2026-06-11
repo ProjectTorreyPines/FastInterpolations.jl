@@ -1,6 +1,6 @@
 name = "FastInterpolations"
 uuid = "9ea80cae-fc13-4c00-8066-6eaedb12f34b"
-version = "0.4.11"
+version = "0.4.12"
 authors = ["Min-Gu Yoo <mgyoo86@gmail.com>"]
 
 [deps]
@@ -36,5 +36,5 @@ Preferences = "1"
 Printf = "1"
 RecipesBase = "1"
 SymbolicUtils = "3, 4"
-Symbolics = "7"
+Symbolics = "6, 7"
 julia = "1.10"

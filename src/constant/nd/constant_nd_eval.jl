@@ -26,14 +26,13 @@ end
 # In-place + allocating batch use the inherited `AbstractInterpolantND`
 # protocol (trait-sized allocator via `_output_eltype`). Scalar routes
 # through `_eval_nd_at_point`; Constant's "any derivative → 0" rule is
-# wired via `_deriv_zero_fill` below.
+# applied inside `_eval_at_cell` (see below) via `_constant_nd_evaluate`'s
+# multi-dispatch — the cell-local kernel result is multiplied by `0` when
+# any deriv operator is non-EvalValue, so NaN/Inf in the queried cell's
+# data propagates through IEEE `NaN * 0 = NaN`.
 
-# Derivative zero-fill trait: constant has zero derivative at all orders
-@inline _deriv_zero_fill(::ConstantInterpolantND, ops::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} =
-    _has_any_derivative(ops, Val(N))
-
-# Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
-@inline _zero_ref(itp::ConstantInterpolantND) = @inbounds first(itp.data)
+# Per-method sample of `Tv` for fill-value paths (e.g. `_try_fill_oob`).
+@inline _sample_data(itp::ConstantInterpolantND) = @inbounds first(itp.data)
 
 # ========================================
 # CELL LOCATION (locate once, evaluate many)
@@ -94,12 +93,26 @@ end
         ops::NTuple{N, AbstractEvalOp}
     ) where {Tg, Tv, N}
     data, stencils, hs, sides, q_eval, Ls = cell
-    if _has_any_derivative(ops, Val(N))
-        # `prod(one, q_eval)` folds carrier over every axis.
-        return 0 * first(itp.data) * prod(one, q_eval)
-    end
-    return _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls)
+    return _constant_nd_evaluate(data, stencils, hs, sides, q_eval, Ls, ops, Val(N))
 end
+
+# Deriv-aware Constant ND evaluation via two-method dispatch (mirrors Linear's
+# `_linear_weight` pattern). `_constant_nd_kernel` only handles the EvalValue
+# path; the deriv fallback multiplies the cell-local kernel result by `0`.
+# The cell-local NaN/Inf carrier survives `* 0` via IEEE (`NaN * 0 = NaN`),
+# so NaN data in the queried cell propagates through value and partials slots.
+# Intentionally NOT a `fill!`/`zero(Tv)` shortcut: NaN propagation, Dual
+# carrier, and duck-typed Tq all require running the kernel — the cost
+# matches the value path.
+@inline _constant_nd_evaluate(
+    data, stencils, hs, sides, q_eval, Ls,
+    ::NTuple{N, EvalValue}, ::Val{N}
+) where {N} = _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls)
+
+@inline _constant_nd_evaluate(
+    data, stencils, hs, sides, q_eval, Ls,
+    ::NTuple{N, AbstractEvalOp}, ::Val{N}
+) where {N} = _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls) * 0
 
 # ========================================
 # Derivative Check

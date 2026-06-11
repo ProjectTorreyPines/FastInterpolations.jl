@@ -142,14 +142,20 @@ using RecipesBase
         end
 
         @testset "derivative view with fill value" begin
-            itp = cubic_interp(x, y; extrap = FillExtrap(NaN))
-            dv = deriv1(itp)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), dv)
-            @test !isempty(recipes)
-            # Derivative curve should not have NaN (0 * y_bnd, not 0 * NaN)
-            curve_data = recipes[end]
-            yq = curve_data.args[2]
-            @test !any(isnan, yq)
+            # NaN fill_value × deriv → NaN (fill_value-as-data contract).
+            # Recipe rendering OOB sections produce NaN segments — Plots draws
+            # nothing across NaN gaps, which is the desired visual outcome.
+            itp_nan = cubic_interp(x, y; extrap = FillExtrap(NaN))
+            recipes_nan = RecipesBase.apply_recipe(Dict{Symbol, Any}(), deriv1(itp_nan))
+            @test !isempty(recipes_nan)
+            yq_nan = recipes_nan[end].args[2]
+            @test any(isnan, yq_nan)  # OOB tails carry NaN through 0 * fill_value
+
+            # Finite fill_value × deriv → finite 0 in the OOB tails.
+            itp_zero = cubic_interp(x, y; extrap = FillExtrap(0.0))
+            recipes_zero = RecipesBase.apply_recipe(Dict{Symbol, Any}(), deriv1(itp_zero))
+            yq_zero = recipes_zero[end].args[2]
+            @test !any(isnan, yq_zero)
         end
 
         @testset "all 4 interp types with fill" begin

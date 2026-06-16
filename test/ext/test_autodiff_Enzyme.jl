@@ -538,6 +538,87 @@ else
                 end
             end
 
+            # ════════════════════════════════════════════════════════════════════════
+            # PCHIP DATA-ADJOINT (∂f/∂y) via EnzymeRules
+            # ════════════════════════════════════════════════════════════════════════
+            # PCHIP/Akima slopes are nonlinear in the data, so the reverse pass goes
+            # through pchip_adjoint(x, y, xq) / akima_adjoint(x, y, xq). Differentiate
+            # w.r.t. DATA (f) and cross-validate against ForwardDiff (exact at kinks too).
+
+            @testset "PCHIP data-adjoint (∂f/∂y) — Enzyme via EnzymeRules" begin
+                using ForwardDiff
+
+                x = collect(0.0:0.5:5.0)
+                f_data = sin.(x)
+                xq_vec = [0.75, 1.25, 2.75, 3.5, 4.25]
+                y_obs = cos.(xq_vec)
+
+                @testset "Vector query — L2 loss" begin
+                    loss_enz(y, y_obs, x, xq) = sum(abs2, pchip_interp(x, y, xq; extrap = ExtendExtrap()) .- y_obs)
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_enz, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(y_obs), Enzyme.Const(x), Enzyme.Const(xq_vec)
+                    )
+                    g_fd = ForwardDiff.gradient(
+                        y -> sum(abs2, pchip_interp(x, y, xq_vec; extrap = ExtendExtrap()) .- y_obs), f_data
+                    )
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+
+                @testset "Scalar query" begin
+                    loss_scalar(y, x, xq) = pchip_interp(x, y, xq; extrap = ExtendExtrap())
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_scalar, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(x), Enzyme.Const(1.25)
+                    )
+                    g_fd = ForwardDiff.gradient(y -> pchip_interp(x, y, 1.25; extrap = ExtendExtrap()), f_data)
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+            end
+
+            # ════════════════════════════════════════════════════════════════════════
+            # AKIMA DATA-ADJOINT (∂f/∂y) via EnzymeRules
+            # ════════════════════════════════════════════════════════════════════════
+
+            @testset "Akima data-adjoint (∂f/∂y) — Enzyme via EnzymeRules" begin
+                using ForwardDiff
+
+                x = collect(0.0:0.5:5.0)
+                f_data = sin.(x)
+                xq_vec = [0.75, 1.25, 2.75, 3.5, 4.25]
+                y_obs = cos.(xq_vec)
+
+                @testset "Vector query — L2 loss" begin
+                    loss_enz(y, y_obs, x, xq) = sum(abs2, akima_interp(x, y, xq; extrap = ExtendExtrap()) .- y_obs)
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_enz, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(y_obs), Enzyme.Const(x), Enzyme.Const(xq_vec)
+                    )
+                    g_fd = ForwardDiff.gradient(
+                        y -> sum(abs2, akima_interp(x, y, xq_vec; extrap = ExtendExtrap()) .- y_obs), f_data
+                    )
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+
+                @testset "Scalar query" begin
+                    loss_scalar(y, x, xq) = akima_interp(x, y, xq; extrap = ExtendExtrap())
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_scalar, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(x), Enzyme.Const(1.25)
+                    )
+                    g_fd = ForwardDiff.gradient(y -> akima_interp(x, y, 1.25; extrap = ExtendExtrap()), f_data)
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+            end
+
             # ════════════════════════════════════════════════════════════════
             # ND struct API — ∂/∂data via constructor + eval EnzymeRules
             # ════════════════════════════════════════════════════════════════

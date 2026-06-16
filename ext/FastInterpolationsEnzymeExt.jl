@@ -94,6 +94,86 @@ function EnzymeRules.reverse(
 end
 
 # ════════════════════════════════════════
+# Hermite family (PCHIP / Akima) — 1D data-adjoint (∂/∂data)
+# ════════════════════════════════════════
+# PCHIP and Akima compute their slopes as a nonlinear function of the data, so
+# their adjoint must be built as `f_adjoint(x, y, xq)`. The generic rules above
+# build `f_adjoint(x, xq)`, which has no method for these two (→ MethodError).
+# These concrete-type rules are strictly more specific than the Union-based
+# generic rules and thread `f.val` through, mirroring the specialized rrules in
+# the ChainRulesCore extension.
+const _DataDependentMethod = Union{typeof(pchip_interp), typeof(akima_interp)}
+
+function EnzymeRules.augmented_primal(
+        config::EnzymeRules.RevConfig,
+        func::Const{<:_DataDependentMethod},
+        RT::Type{<:Annotation},
+        x::Const{<:AbstractVector{Tg}},
+        f::Duplicated{<:AbstractVector},
+        xq::Const{<:AbstractVector{<:Real}};
+        kwargs...
+    ) where {Tg <: AbstractFloat}
+    y = func.val(x.val, f.val, xq.val; kwargs...)
+    primal = EnzymeRules.needs_primal(config) ? y : nothing
+    shadow = EnzymeRules.needs_shadow(config) ? zero(y) : nothing
+    adj = _adjoint_func(func.val)(x.val, f.val, xq.val; kwargs...)
+    deriv = get(kwargs, :deriv, EvalValue())
+    return EnzymeRules.AugmentedReturn(primal, shadow, (adj, deriv, shadow))
+end
+
+function EnzymeRules.reverse(
+        config::EnzymeRules.RevConfig,
+        func::Const{<:_DataDependentMethod},
+        ::Type{RT},
+        tape,
+        x::Const{<:AbstractVector{Tg}},
+        f::Duplicated{<:AbstractVector},
+        xq::Const{<:AbstractVector{<:Real}};
+        kwargs...
+    ) where {Tg <: AbstractFloat, RT}
+    adj, deriv_op, dy = tape
+    if dy !== nothing
+        f_bar = adj(dy; deriv = deriv_op)
+        f.dval .+= f_bar
+        dy .= zero(eltype(dy))
+    end
+    return (nothing, nothing, nothing)
+end
+
+function EnzymeRules.augmented_primal(
+        config::EnzymeRules.RevConfig,
+        func::Const{<:_DataDependentMethod},
+        RT::Type{<:Annotation},
+        x::Const{<:AbstractVector{Tg}},
+        f::Duplicated{<:AbstractVector},
+        xq::Const{<:Real};
+        kwargs...
+    ) where {Tg <: AbstractFloat}
+    y = func.val(x.val, f.val, xq.val; kwargs...)
+    primal = EnzymeRules.needs_primal(config) ? y : nothing
+    shadow = EnzymeRules.needs_shadow(config) ? zero(y) : nothing
+    adj = _adjoint_func(func.val)(x.val, f.val, [xq.val]; kwargs...)
+    deriv = get(kwargs, :deriv, EvalValue())
+    return EnzymeRules.AugmentedReturn(primal, shadow, (adj, deriv))
+end
+
+function EnzymeRules.reverse(
+        config::EnzymeRules.RevConfig,
+        func::Const{<:_DataDependentMethod},
+        dret::Active,
+        tape,
+        x::Const{<:AbstractVector{Tg}},
+        f::Duplicated{<:AbstractVector},
+        xq::Const{<:Real};
+        kwargs...
+    ) where {Tg <: AbstractFloat}
+    adj, deriv_op = tape
+    f_bar = adj([dret.val]; deriv = deriv_op)
+    f.dval .+= f_bar
+    return (nothing, nothing, nothing)
+end
+
+# ════════════════════════════════════════
 # 1D Scalar query — ∂/∂xq (f::Const, xq::Active)
 # ════════════════════════════════════════
 # Generic for all 4 types: computes derivative via DerivOp(1).

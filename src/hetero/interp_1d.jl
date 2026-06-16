@@ -35,13 +35,13 @@
 # ----------------------------------------------------------------------------
 # Per-method routing trait: (allocating fn, in-place fn, method-specific kwargs)
 # ----------------------------------------------------------------------------
-@inline _interp1d_route(m::CubicInterp)     = (cubic_interp,     cubic_interp!,     (; bc = m.bc))
-@inline _interp1d_route(m::LinearInterp)    = (linear_interp,    linear_interp!,    (; bc = m.bc))
+@inline _interp1d_route(m::CubicInterp) = (cubic_interp, cubic_interp!, (; bc = m.bc))
+@inline _interp1d_route(m::LinearInterp) = (linear_interp, linear_interp!, (; bc = m.bc))
 @inline _interp1d_route(m::QuadraticInterp) = (quadratic_interp, quadratic_interp!, (; bc = m.bc))
-@inline _interp1d_route(m::ConstantInterp)  = (constant_interp,  constant_interp!,  (; side = m.side, bc = m.bc))
-@inline _interp1d_route(m::PchipInterp)     = (pchip_interp,     pchip_interp!,     (; bc = m.bc))
-@inline _interp1d_route(m::CardinalInterp)  = (cardinal_interp,  cardinal_interp!,  (; bc = m.bc, tension = m.tension))
-@inline _interp1d_route(m::AkimaInterp)     = (akima_interp,     akima_interp!,     (; bc = m.bc))
+@inline _interp1d_route(m::ConstantInterp) = (constant_interp, constant_interp!, (; side = m.side, bc = m.bc))
+@inline _interp1d_route(m::PchipInterp) = (pchip_interp, pchip_interp!, (; bc = m.bc))
+@inline _interp1d_route(m::CardinalInterp) = (cardinal_interp, cardinal_interp!, (; bc = m.bc, tension = m.tension))
+@inline _interp1d_route(m::AkimaInterp) = (akima_interp, akima_interp!, (; bc = m.bc))
 
 # ----------------------------------------------------------------------------
 # Public forms — each consumes the routing trait generically.

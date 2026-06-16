@@ -29,34 +29,34 @@
 
     # Cubic — bc forwarded; result must equal cubic_interp(x, y; bc=...) and be a CubicInterpolant
     @test interp(x, y; method = CubicInterp()) isa CubicInterpolant
-    @test interp(x, y; method = CubicInterp())(q) ≈ cubic_interp(x, y; bc = CubicFit())(q) rtol = 1e-12
-    @test interp(x, y; method = CubicInterp(ZeroCurvBC()))(q) ≈ cubic_interp(x, y; bc = ZeroCurvBC())(q) rtol = 1e-12
+    @test interp(x, y; method = CubicInterp())(q) ≈ cubic_interp(x, y; bc = CubicFit())(q) rtol = 1.0e-12
+    @test interp(x, y; method = CubicInterp(ZeroCurvBC()))(q) ≈ cubic_interp(x, y; bc = ZeroCurvBC())(q) rtol = 1.0e-12
 
     # Linear — bc forwarded; result must be a LinearInterpolant
     @test interp(x, y; method = LinearInterp()) isa LinearInterpolant
-    @test interp(x, y; method = LinearInterp())(q) ≈ linear_interp(x, y; bc = NoBC())(q) rtol = 1e-12
+    @test interp(x, y; method = LinearInterp())(q) ≈ linear_interp(x, y; bc = NoBC())(q) rtol = 1.0e-12
 
     # Quadratic
     @test interp(x, y; method = QuadraticInterp()) isa QuadraticInterpolant
-    @test interp(x, y; method = QuadraticInterp())(q) ≈ quadratic_interp(x, y)(q) rtol = 1e-12
+    @test interp(x, y; method = QuadraticInterp())(q) ≈ quadratic_interp(x, y)(q) rtol = 1.0e-12
 
     # Constant — side forwarded
     @test interp(x, y; method = ConstantInterp()) isa ConstantInterpolant
-    @test interp(x, y; method = ConstantInterp())(q) ≈ constant_interp(x, y)(q) rtol = 1e-12
-    @test interp(x, y; method = ConstantInterp(LeftSide()))(q) ≈ constant_interp(x, y; side = LeftSide())(q) rtol = 1e-12
+    @test interp(x, y; method = ConstantInterp())(q) ≈ constant_interp(x, y)(q) rtol = 1.0e-12
+    @test interp(x, y; method = ConstantInterp(LeftSide()))(q) ≈ constant_interp(x, y; side = LeftSide())(q) rtol = 1.0e-12
 
     # PCHIP
     @test interp(x, y; method = PchipInterp()) isa PchipInterpolant1D
-    @test interp(x, y; method = PchipInterp())(q) ≈ pchip_interp(x, y)(q) rtol = 1e-12
+    @test interp(x, y; method = PchipInterp())(q) ≈ pchip_interp(x, y)(q) rtol = 1.0e-12
 
     # Cardinal — tension forwarded
     @test interp(x, y; method = CardinalInterp()) isa CardinalInterpolant1D
-    @test interp(x, y; method = CardinalInterp())(q) ≈ cardinal_interp(x, y)(q) rtol = 1e-12
-    @test interp(x, y; method = CardinalInterp(tension = 0.5))(q) ≈ cardinal_interp(x, y; tension = 0.5)(q) rtol = 1e-12
+    @test interp(x, y; method = CardinalInterp())(q) ≈ cardinal_interp(x, y)(q) rtol = 1.0e-12
+    @test interp(x, y; method = CardinalInterp(tension = 0.5))(q) ≈ cardinal_interp(x, y; tension = 0.5)(q) rtol = 1.0e-12
 
     # Akima
     @test interp(x, y; method = AkimaInterp()) isa AkimaInterpolant1D
-    @test interp(x, y; method = AkimaInterp())(q) ≈ akima_interp(x, y)(q) rtol = 1e-12
+    @test interp(x, y; method = AkimaInterp())(q) ≈ akima_interp(x, y)(q) rtol = 1.0e-12
 end
 
 @testitem "Unified 1D API: scalar one-shot interp(x, y, q; method=...)" begin
@@ -64,16 +64,16 @@ end
     y = sin.(x)
     q = 1.234
 
-    @test interp(x, y, q; method = CubicInterp()) ≈ cubic_interp(x, y, q) rtol = 1e-12
-    @test interp(x, y, q; method = CubicInterp(ZeroCurvBC())) ≈ cubic_interp(x, y, q; bc = ZeroCurvBC()) rtol = 1e-12
-    @test interp(x, y, q; method = LinearInterp()) ≈ linear_interp(x, y, q) rtol = 1e-12
-    @test interp(x, y, q; method = QuadraticInterp()) ≈ quadratic_interp(x, y, q) rtol = 1e-12
-    @test interp(x, y, q; method = ConstantInterp()) ≈ constant_interp(x, y, q) rtol = 1e-12
-    @test interp(x, y, q; method = ConstantInterp(LeftSide())) ≈ constant_interp(x, y, q; side = LeftSide()) rtol = 1e-12
-    @test interp(x, y, q; method = PchipInterp()) ≈ pchip_interp(x, y, q) rtol = 1e-12
-    @test interp(x, y, q; method = CardinalInterp()) ≈ cardinal_interp(x, y, q) rtol = 1e-12
-    @test interp(x, y, q; method = CardinalInterp(tension = 0.5)) ≈ cardinal_interp(x, y, q; tension = 0.5) rtol = 1e-12
-    @test interp(x, y, q; method = AkimaInterp()) ≈ akima_interp(x, y, q) rtol = 1e-12
+    @test interp(x, y, q; method = CubicInterp()) ≈ cubic_interp(x, y, q) rtol = 1.0e-12
+    @test interp(x, y, q; method = CubicInterp(ZeroCurvBC())) ≈ cubic_interp(x, y, q; bc = ZeroCurvBC()) rtol = 1.0e-12
+    @test interp(x, y, q; method = LinearInterp()) ≈ linear_interp(x, y, q) rtol = 1.0e-12
+    @test interp(x, y, q; method = QuadraticInterp()) ≈ quadratic_interp(x, y, q) rtol = 1.0e-12
+    @test interp(x, y, q; method = ConstantInterp()) ≈ constant_interp(x, y, q) rtol = 1.0e-12
+    @test interp(x, y, q; method = ConstantInterp(LeftSide())) ≈ constant_interp(x, y, q; side = LeftSide()) rtol = 1.0e-12
+    @test interp(x, y, q; method = PchipInterp()) ≈ pchip_interp(x, y, q) rtol = 1.0e-12
+    @test interp(x, y, q; method = CardinalInterp()) ≈ cardinal_interp(x, y, q) rtol = 1.0e-12
+    @test interp(x, y, q; method = CardinalInterp(tension = 0.5)) ≈ cardinal_interp(x, y, q; tension = 0.5) rtol = 1.0e-12
+    @test interp(x, y, q; method = AkimaInterp()) ≈ akima_interp(x, y, q) rtol = 1.0e-12
 end
 
 @testitem "Unified 1D API: scalar one-shot forwards deriv and extrap" begin
@@ -83,12 +83,12 @@ end
 
     # deriv kwarg routed to the dedicated one-shot
     @test interp(x, y, q; method = CubicInterp(), deriv = DerivOp(1)) ≈
-        cubic_interp(x, y, q; deriv = DerivOp(1)) rtol = 1e-12
+        cubic_interp(x, y, q; deriv = DerivOp(1)) rtol = 1.0e-12
 
     # extrap kwarg routed to the dedicated one-shot (out-of-bounds query)
     q_oob = 10.0
     @test interp(x, y, q_oob; method = CubicInterp(), extrap = ClampExtrap()) ≈
-        cubic_interp(x, y, q_oob; extrap = ClampExtrap()) rtol = 1e-12
+        cubic_interp(x, y, q_oob; extrap = ClampExtrap()) rtol = 1.0e-12
 end
 
 @testitem "Unified 1D API: batch allocating interp(x, y, qs; method=...)" begin
@@ -96,13 +96,13 @@ end
     y = sin.(x)
     qs = [0.5, 1.5, 2.5, 3.0, 5.0]
 
-    @test interp(x, y, qs; method = CubicInterp()) ≈ cubic_interp(x, y, qs) rtol = 1e-12
-    @test interp(x, y, qs; method = LinearInterp()) ≈ linear_interp(x, y, qs) rtol = 1e-12
-    @test interp(x, y, qs; method = QuadraticInterp()) ≈ quadratic_interp(x, y, qs) rtol = 1e-12
-    @test interp(x, y, qs; method = ConstantInterp()) ≈ constant_interp(x, y, qs) rtol = 1e-12
-    @test interp(x, y, qs; method = PchipInterp()) ≈ pchip_interp(x, y, qs) rtol = 1e-12
-    @test interp(x, y, qs; method = CardinalInterp()) ≈ cardinal_interp(x, y, qs) rtol = 1e-12
-    @test interp(x, y, qs; method = AkimaInterp()) ≈ akima_interp(x, y, qs) rtol = 1e-12
+    @test interp(x, y, qs; method = CubicInterp()) ≈ cubic_interp(x, y, qs) rtol = 1.0e-12
+    @test interp(x, y, qs; method = LinearInterp()) ≈ linear_interp(x, y, qs) rtol = 1.0e-12
+    @test interp(x, y, qs; method = QuadraticInterp()) ≈ quadratic_interp(x, y, qs) rtol = 1.0e-12
+    @test interp(x, y, qs; method = ConstantInterp()) ≈ constant_interp(x, y, qs) rtol = 1.0e-12
+    @test interp(x, y, qs; method = PchipInterp()) ≈ pchip_interp(x, y, qs) rtol = 1.0e-12
+    @test interp(x, y, qs; method = CardinalInterp()) ≈ cardinal_interp(x, y, qs) rtol = 1.0e-12
+    @test interp(x, y, qs; method = AkimaInterp()) ≈ akima_interp(x, y, qs) rtol = 1.0e-12
 end
 
 @testitem "Unified 1D API: in-place batch interp!(out, x, y, qs; method=...)" begin
@@ -115,15 +115,15 @@ end
 
     interp!(out_new, x, y, qs; method = CubicInterp())
     cubic_interp!(out_ref, x, y, qs)
-    @test out_new ≈ out_ref rtol = 1e-12
+    @test out_new ≈ out_ref rtol = 1.0e-12
 
     interp!(out_new, x, y, qs; method = LinearInterp())
     linear_interp!(out_ref, x, y, qs)
-    @test out_new ≈ out_ref rtol = 1e-12
+    @test out_new ≈ out_ref rtol = 1.0e-12
 
     interp!(out_new, x, y, qs; method = AkimaInterp())
     akima_interp!(out_ref, x, y, qs)
-    @test out_new ≈ out_ref rtol = 1e-12
+    @test out_new ≈ out_ref rtol = 1.0e-12
 end
 
 @testitem "Unified 1D API: allocation parity with dedicated 1D functions" begin
@@ -226,7 +226,7 @@ end
     q = 1.234
 
     @test interp(x, y; method = CubicInterp())(q) ≈
-        interp((x,), reshape(y, :); method = (CubicInterp(),))((q,)) rtol = 1e-12
+        interp((x,), reshape(y, :); method = (CubicInterp(),))((q,)) rtol = 1.0e-12
     @test interp(x, y, q; method = LinearInterp()) ≈
-        interp((x,), reshape(y, :), (q,); method = (LinearInterp(),)) rtol = 1e-12
+        interp((x,), reshape(y, :), (q,); method = (LinearInterp(),)) rtol = 1.0e-12
 end

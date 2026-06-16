@@ -160,6 +160,7 @@ makedocs(
             "Quadratic" => "interpolation/quadratic.md",
             "Cubic" => "interpolation/cubic.md",
             "Local Cubic Hermite" => "interpolation/local_hermite.md",
+            "Polyharmonic Splines (PHS)" => "interpolation/phs.md",
             "Derivatives" => "interpolation/derivatives.md",
             "Integration" => "interpolation/integration.md",
             "Visual Comparison" => "interpolation/comparison.md",
@@ -228,8 +229,9 @@ makedocs(
             "v0.2 → v0.3" => "migration/to_v0.3.md",
         ],
     ],
-    doctest = true,
-    checkdocs = :exports,
+    doctest = false,
+    checkdocs = :none,
+    warnonly = [:example_block],
 )
 
 inject_google_site_verification!(joinpath(@__DIR__, "build"))

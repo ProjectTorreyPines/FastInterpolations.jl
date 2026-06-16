@@ -1,2 +1,5 @@
 [AdaptiveArrayPools]
 runtime_check = false
+
+[FastInterpolations]
+cache_size = 8

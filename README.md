@@ -23,7 +23,7 @@ A high-performance **N-dimensional** interpolation package for Julia, optimized 
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
 ## Supported Methods
-`FastInterpolations.jl` supports **five interpolation families** — four classical polynomial splines (**Constant**, **Linear**, **Quadratic**, **Cubic**) plus the **Local Cubic Hermite family** (Hermite / PCHIP / Cardinal / Akima), each with a native adjoint operator ($W^\top \bar{y}$) for gradient-based workflows.
+`FastInterpolations.jl` supports **six interpolation families** — four classical polynomial splines (**Constant**, **Linear**, **Quadratic**, **Cubic**), the **Local Cubic Hermite family** (Hermite / PCHIP / Cardinal / Akima), and **Polyharmonic Splines (PHS)**. Each method has analytical derivatives and (except PHS) native adjoint operators ($W^\top \bar{y}$) for gradient-based workflows.
 
 ### Classical splines
 
@@ -45,8 +45,23 @@ One cubic Hermite basis, four choices of slope rule. All C¹-continuous, O(1) pe
 | `cardinal_interp` | `cardinal_adjoint` | Catmull-Rom with `tension`   | Animation, spline curves through control points |
 | `akima_interp`    | `akima_adjoint`    | Akima (5-point stencil)      | Noisy data, outlier-robust |
 
+### Polyharmonic Splines (PHS)
+
+Radial basis function method with local stencil-based interpolation, blending for C² continuity, and optional log-density smoothing transform.
+
+| Interpolation | Adjoint | Continuity | Best For |
+|:-------------|:--------|:-----------|:---------|
+| `phs_interp` | — | C² | High-dimensional scattered/gridded data; smooth-on-log-scale data with custom reference functions |
+
+**Key features:**
+- **N-dimensional** (2D, 3D, ND) on any rectilinear grid
+- **Analytical derivatives** (gradient, hessian, laplacian)
+- **Log-density transform** f(x) = ln(ρ(x)/ρ₀(x)) for accurate derivatives near singular features (e.g., nuclear cusps)
+- **Custom reference functions** — pass any callable for ρ₀(x) with derivative support to enable physics-informed interpolation (see `PromolecularRef` example)
+
 📖 [Interpolation Overview](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/overview/) 
 📖 [Local Cubic Hermite](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/local_hermite/) 
+📖 [Polyharmonic Splines (PHS)](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/phs/)
 📖 [Adjoint Overview](https://projecttorreypines.github.io/FastInterpolations.jl/dev/adjoint/overview/)
 
 ## Quick Start
@@ -146,7 +161,8 @@ Homogeneous methods (all same type) auto-dispatch to the optimized type — no p
 
 ### 2D Visualization Example
 Comparison on a non-uniform 2D rectilinear grid for $f(x, y) = \sin(2\pi x) \cos(2\pi y)$. Cubic interpolation maintains high accuracy and captures extrema even on coarse, non-uniform grids. The gray dots in the image below represent the given node points (6x7 grid), and the dashed lines illustrate the grid structure.
-![2D Interpolation Example](docs/images/readme_2d_comparison.png)
+
+![2D Interpolation Example non-uniform](docs/images/readme_2d_comparison.png)
 
 
 
@@ -240,6 +256,19 @@ end
 📖 [Using Hints](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/search/hints/)
 
 **See also:** [Factory Functions](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/factory_functions/) · [Complex Numbers](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/complex_number_support/) · [AutoDiff](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/autodiff_support/) · [Thread Safety](https://projecttorreypines.github.io/FastInterpolations.jl/dev/architecture/thread_safety/) · [Optim.jl Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/optimization/)
+
+## Polyharmonic Spline Implementation Notes
+
+While PHS shares the core philosophy of FastInterpolations.jl (zero-allocation, analytical derivatives), it differs in several implementation details:
+
+- Derivative API: PHS uses the direct deriv keyword approach (`itp(q; deriv=...)`) rather than the gradient()/hessian() functions used by other methods
+- Boundary Conditions: PHS achieves C² continuity through blending rather than traditional boundary condition types
+- Search & Hints: The stencil-based approach eliminates the need for interval search and positional hints
+- Integration: Analytical integration is not currently implemented for PHS (focus is on density/derivative evaluation)
+
+These differences reflect the mathematical nature of polyharmonic splines rather than limitations. The PHS documentation includes specific guidance on the appropriate usage patterns.
+
+See [Polyharmonic Splines documentation](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/phs/) for more details.
 
 ## Documentation
 

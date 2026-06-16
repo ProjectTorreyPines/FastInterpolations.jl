@@ -50,8 +50,10 @@ Thumbs.db
 /coverage/
 lcov.info
 
-# Scripts: downloaded data (large, auto-generated)
-/scripts/dat/wfc/
+# Scripts: wfc wavefunction files are auto-downloaded from critic2 (not committed).
+# The DFT grid (.pkl) and line cut (.csv) have no public download source, so they
+# stay committed under scripts/phs/dat/ (the script needs them to run).
+/scripts/phs/dat/wfc/
 
 # Generated example plots
 /examples/*.png

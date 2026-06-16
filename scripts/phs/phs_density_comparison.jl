@@ -60,9 +60,12 @@ end
 # ============================================================
 # Configuration — edit paths here
 # ============================================================
-const PKL_PATH = "dat/phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_ext3.pkl"
-const CSV_PATH = "dat/phenol-dimer_B3LYP_TZ2P_GO_line_O7_H21_N1000.csv"
-const XYZ_PATH = "dat/phenol-dimer_B3LYP_TZ2P_GO_atoms.xyz"
+# Paths are resolved relative to this script (@__DIR__) so it runs from any CWD.
+# wfc/ wavefunction files auto-download from critic2 (ensure_wfc_files); the .pkl
+# grid and .csv line cut are committed under dat/ (no public download source).
+const PKL_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_ext3.pkl")
+const CSV_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_line_O7_H21_N1000.csv")
+const XYZ_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_atoms.xyz")
 const WFC_DIR = joinpath(@__DIR__, "dat", "wfc")
 const OUT_PATH = "../docs/images/phs_density_comparison.png"
 

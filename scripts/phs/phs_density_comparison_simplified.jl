@@ -11,11 +11,11 @@
 #      hot-path using high-repetition timing loops.
 #
 # Run this script with:
-#   julia --project=scripts scripts/phs_density_comparison_simplified.jl
+#   julia --project=scripts scripts/phs/phs_density_comparison_simplified.jl
 # Or for tracking allocations:
-#   julia --project=scripts --track-allocation=user scripts/phs_density_comparison_simplified.jl
+#   julia --project=scripts --track-allocation=user scripts/phs/phs_density_comparison_simplified.jl
 # Or with standard Julia profiling:
-#   julia --project=scripts -e 'using Profile; include("scripts/phs_density_comparison_simplified.jl")'
+#   julia --project=scripts -e 'using Profile; include("scripts/phs/phs_density_comparison_simplified.jl")'
 #
 
 # ============================================================
@@ -56,11 +56,13 @@ Pickle.np_methods!(mt) = begin
 end
 
 # ============================================================
-# Configuration — Paths relative to scripts directory
+# Configuration — paths resolved relative to this script (@__DIR__)
 # ============================================================
-const PKL_PATH = "dat/phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_ext3.pkl"
-const CSV_PATH = "dat/phenol-dimer_B3LYP_TZ2P_GO_line_O7_H21_N1000.csv"
-const XYZ_PATH = "dat/phenol-dimer_B3LYP_TZ2P_GO_atoms.xyz"
+# wfc/ auto-downloads from critic2 (ensure_wfc_files); .pkl grid and .csv line cut
+# are committed under dat/ (no public download source).
+const PKL_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp0.236_ext3.pkl")
+const CSV_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_line_O7_H21_N1000.csv")
+const XYZ_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_atoms.xyz")
 const WFC_DIR = joinpath(@__DIR__, "dat", "wfc")
 const OUT_PATH = "../docs/images/phs_laplacian_comparison_simplified.png"
 
@@ -514,7 +516,7 @@ if BENCHMARK
 
     println("="^60)
     println("Profiling code can be run via: ")
-    println("  julia --project=scripts --track-allocation=user scripts/phs_density_comparison_simplified.jl")
+    println("  julia --project=scripts --track-allocation=user scripts/phs/phs_density_comparison_simplified.jl")
 end
 
 # ============================================================

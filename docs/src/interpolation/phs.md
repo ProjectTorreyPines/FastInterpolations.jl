@@ -129,7 +129,7 @@ itp = phs_interp((x, y, z), rho_data;
 
 ## Example: Quantum Chemistry
 
-The script [`scripts/phs_density_comparison.jl`](https://github.com/ProjectTorreyPines/FastInterpolations.jl/blob/feat/phs-interpolation/scripts/phs_density_comparison.jl) demonstrates PHS for **electron density interpolation** in a phenol dimer, recreating Figure 2 in [the paper](https://doi.org/10.1063/5.0090232). It uses:
+The script [`scripts/phs/phs_density_comparison.jl`](https://github.com/ProjectTorreyPines/FastInterpolations.jl/blob/master/scripts/phs/phs_density_comparison.jl) demonstrates PHS for **electron density interpolation** in a phenol dimer, recreating Figure 2 in [the paper](https://doi.org/10.1063/5.0090232). It uses:
 
 - **Data**: DFT-computed electron density on a 75×113×70 grid
 - **Reference**: Analytical promolecular density (sum of PBE atomic densities from [critic2](https://github.com/aoterodelaroza/critic2))
@@ -148,15 +148,13 @@ Polyharmonic spline interpolation was added specifically for applications to phy
 The script automatically downloads wavefunction files on first run:
 
 ```bash
-cd scripts/
-julia --project=. phs_density_comparison.jl
+julia --project=scripts scripts/phs/phs_density_comparison.jl
 ```
 
 To get timings that don't include JIT compilation and stencil caching, run the script twice:
 
 ```bash
-cd scripts/
-julia --project=. -e 'include("phs_density_comparison.jl"); include("phs_density_comparison.jl")'
+julia --project=scripts -e 'include("scripts/phs/phs_density_comparison.jl"); include("scripts/phs/phs_density_comparison.jl")'
 ```
 
 This generates `phs_density_comparison.png` and demonstrates:

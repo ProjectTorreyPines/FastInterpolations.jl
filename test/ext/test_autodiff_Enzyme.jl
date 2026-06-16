@@ -619,6 +619,86 @@ else
                 end
             end
 
+            # ════════════════════════════════════════════════════════════════════════
+            # PCHIP / AKIMA DATA-ADJOINT with deriv=DerivOp(1) via EnzymeRules
+            # ════════════════════════════════════════════════════════════════════════
+            # Regression guard: the one-shot data-adjoint `augmented_primal` must extract
+            # `deriv` explicitly and NOT forward it to pchip_adjoint/akima_adjoint, whose
+            # constructors accept bc/extrap only. Differentiating a derivative-evaluation
+            # w.r.t. DATA must match ForwardDiff (and must not raise MethodError).
+
+            @testset "PCHIP data-adjoint, deriv=DerivOp(1) — Enzyme" begin
+                using ForwardDiff
+
+                x = collect(0.0:0.5:5.0)
+                f_data = sin.(x)
+                xq_vec = [0.75, 1.25, 2.75, 3.5, 4.25]
+
+                @testset "Vector query" begin
+                    loss_d1(y, x, xq) = sum(pchip_interp(x, y, xq; deriv = DerivOp(1), extrap = ExtendExtrap()))
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_d1, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(x), Enzyme.Const(xq_vec)
+                    )
+                    g_fd = ForwardDiff.gradient(
+                        y -> sum(pchip_interp(x, y, xq_vec; deriv = DerivOp(1), extrap = ExtendExtrap())), f_data
+                    )
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+
+                @testset "Scalar query" begin
+                    loss_d1s(y, x, xq) = pchip_interp(x, y, xq; deriv = DerivOp(1), extrap = ExtendExtrap())
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_d1s, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(x), Enzyme.Const(1.25)
+                    )
+                    g_fd = ForwardDiff.gradient(
+                        y -> pchip_interp(x, y, 1.25; deriv = DerivOp(1), extrap = ExtendExtrap()), f_data
+                    )
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+            end
+
+            @testset "Akima data-adjoint, deriv=DerivOp(1) — Enzyme" begin
+                using ForwardDiff
+
+                x = collect(0.0:0.5:5.0)
+                f_data = sin.(x)
+                xq_vec = [0.75, 1.25, 2.75, 3.5, 4.25]
+
+                @testset "Vector query" begin
+                    loss_d1(y, x, xq) = sum(akima_interp(x, y, xq; deriv = DerivOp(1), extrap = ExtendExtrap()))
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_d1, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(x), Enzyme.Const(xq_vec)
+                    )
+                    g_fd = ForwardDiff.gradient(
+                        y -> sum(akima_interp(x, y, xq_vec; deriv = DerivOp(1), extrap = ExtendExtrap())), f_data
+                    )
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+
+                @testset "Scalar query" begin
+                    loss_d1s(y, x, xq) = akima_interp(x, y, xq; deriv = DerivOp(1), extrap = ExtendExtrap())
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_d1s, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(x), Enzyme.Const(1.25)
+                    )
+                    g_fd = ForwardDiff.gradient(
+                        y -> akima_interp(x, y, 1.25; deriv = DerivOp(1), extrap = ExtendExtrap()), f_data
+                    )
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+            end
+
             # ════════════════════════════════════════════════════════════════
             # ND struct API — ∂/∂data via constructor + eval EnzymeRules
             # ════════════════════════════════════════════════════════════════

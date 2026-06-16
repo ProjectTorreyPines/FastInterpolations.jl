@@ -111,13 +111,15 @@ function EnzymeRules.augmented_primal(
         x::Const{<:AbstractVector{Tg}},
         f::Duplicated{<:AbstractVector},
         xq::Const{<:AbstractVector{<:Real}};
+        deriv::DerivOp = EvalValue(),
         kwargs...
     ) where {Tg <: AbstractFloat}
-    y = func.val(x.val, f.val, xq.val; kwargs...)
+    y = func.val(x.val, f.val, xq.val; deriv = deriv, kwargs...)
     primal = EnzymeRules.needs_primal(config) ? y : nothing
     shadow = EnzymeRules.needs_shadow(config) ? zero(y) : nothing
+    # `deriv` extracted explicitly — it is an apply-time arg; the adjoint
+    # constructor (pchip/akima) accepts bc/extrap only and would `MethodError`.
     adj = _adjoint_func(func.val)(x.val, f.val, xq.val; kwargs...)
-    deriv = get(kwargs, :deriv, EvalValue())
     return EnzymeRules.AugmentedReturn(primal, shadow, (adj, deriv, shadow))
 end
 
@@ -147,13 +149,15 @@ function EnzymeRules.augmented_primal(
         x::Const{<:AbstractVector{Tg}},
         f::Duplicated{<:AbstractVector},
         xq::Const{<:Real};
+        deriv::DerivOp = EvalValue(),
         kwargs...
     ) where {Tg <: AbstractFloat}
-    y = func.val(x.val, f.val, xq.val; kwargs...)
+    y = func.val(x.val, f.val, xq.val; deriv = deriv, kwargs...)
     primal = EnzymeRules.needs_primal(config) ? y : nothing
     shadow = EnzymeRules.needs_shadow(config) ? zero(y) : nothing
+    # `deriv` extracted explicitly — it is an apply-time arg; the adjoint
+    # constructor (pchip/akima) accepts bc/extrap only and would `MethodError`.
     adj = _adjoint_func(func.val)(x.val, f.val, [xq.val]; kwargs...)
-    deriv = get(kwargs, :deriv, EvalValue())
     return EnzymeRules.AugmentedReturn(primal, shadow, (adj, deriv))
 end
 

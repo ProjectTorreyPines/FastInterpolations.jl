@@ -43,6 +43,25 @@
 @inline _interp1d_route(m::CardinalInterp) = (cardinal_interp, cardinal_interp!, (; bc = m.bc, tension = m.tension))
 @inline _interp1d_route(m::AkimaInterp) = (akima_interp, akima_interp!, (; bc = m.bc))
 
+# Fallback for any other `AbstractInterpMethod`. The public `interp`/`interp!`
+# keyword type is `AbstractInterpMethod`, so reachable-but-unroutable methods
+# (`NoInterp`, `CubicHermiteInterp`) would otherwise surface a `MethodError` on
+# this internal helper. They have no 1D bare-vector mapping by design —
+# `CubicHermiteInterp` carries no slopes to feed `hermite_interp`, and `NoInterp`
+# is an ND axis marker queried via `GridIdx` — so reject with a clear message.
+# `@noinline` keeps the error path off the hot path; the seven concrete routes
+# above are strictly more specific, so valid calls still dispatch (and inline)
+# directly with no added cost.
+@noinline _throw_unsupported_1d_method(m::AbstractInterpMethod) = throw(
+    ArgumentError(
+        "$(nameof(typeof(m))) is not supported by the 1D `interp(x, y; method=…)` API. " *
+            "Supported: CubicInterp, LinearInterp, QuadraticInterp, ConstantInterp, PchipInterp, " *
+            "CardinalInterp, AkimaInterp. (CubicHermiteInterp needs user-supplied slopes — use " *
+            "`hermite_interp` directly; NoInterp applies only to ND axes via GridIdx.)"
+    )
+)
+_interp1d_route(m::AbstractInterpMethod) = _throw_unsupported_1d_method(m)
+
 # ----------------------------------------------------------------------------
 # Public forms — each consumes the routing trait generically.
 # ----------------------------------------------------------------------------

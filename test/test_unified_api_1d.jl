@@ -219,6 +219,25 @@ end
     @test (@inferred interp!(out, x, y, qs; method = CardinalInterp(tension = 0.5))) isa typeof(out)
 end
 
+@testitem "Unified 1D API: unsupported method gives a clear ArgumentError" begin
+    # NoInterp and CubicHermiteInterp are exported `AbstractInterpMethod`s with no
+    # 1D bare-vector routing (NoInterp is an ND/GridIdx axis marker; CubicHermiteInterp
+    # carries no slopes). They must fail with a clear ArgumentError naming the supported
+    # methods — not a MethodError on the internal `_interp1d_route`.
+    x = collect(range(0.0, 2π, length = 9))
+    y = sin.(x)
+    q = 1.234
+    qs = [0.5, 1.5, 2.5]
+    out = similar(qs)
+
+    @test_throws ArgumentError interp(x, y; method = NoInterp())
+    @test_throws ArgumentError interp(x, y, q; method = NoInterp())
+    @test_throws ArgumentError interp(x, y, qs; method = NoInterp())
+    @test_throws ArgumentError interp!(out, x, y, qs; method = NoInterp())
+    @test_throws ArgumentError interp(x, y; method = CubicHermiteInterp())
+    @test_throws ArgumentError interp(x, y, q; method = CubicHermiteInterp())
+end
+
 @testitem "Unified 1D API: bare-vector call equals legacy 1-tuple workaround" begin
     # The direct 1D form must agree with the historical ND-via-1-tuple call.
     x = collect(range(0.0, 2π, length = 9))

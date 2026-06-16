@@ -64,7 +64,7 @@ const PKL_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_3dgrid_sp
 const CSV_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_line_O7_H21_N1000.csv")
 const XYZ_PATH = joinpath(@__DIR__, "dat", "phenol-dimer_B3LYP_TZ2P_GO_atoms.xyz")
 const WFC_DIR = joinpath(@__DIR__, "dat", "wfc")
-const OUT_PATH = "../docs/images/phs_laplacian_comparison_simplified.png"
+const OUT_PATH = normpath(joinpath(@__DIR__, "..", "..", "docs", "images", "phs_laplacian_comparison_simplified.png"))
 
 const BOHR2ANG = 0.529177210903   # 1 Bohr → Angstrom
 

@@ -85,7 +85,6 @@ indices — identical to the reference Fortran implementation.
 
 # Fields
 - `grids`:           Per-axis grid vectors
-- `spacings`:        Per-axis spacing (ScalarSpacing for uniform, VectorSpacing for non-uniform)
 - `data`:            N-D data array (or `log(ρ/ρ₀)` when transform is active)
 - `stencil_offsets`: Single canonical stencil: `stencil_size^N` integer offsets from origin
 - `phi_inv`:         Single Φ⁻¹ matrix for the canonical stencil
@@ -102,8 +101,8 @@ indices — identical to the reference Fortran implementation.
 - **Memory**: O(M²) for Φ⁻¹ plus O(prod(grid_sizes)) for data
 
 # Thread-Safety
-Immutable after construction; safe for concurrent read access.
-All mutable workspace lives in thread-local `AdaptiveArrayPools`.
+Safe to call concurrently from externally-threaded loops: the mutable per-thread
+coefficient cache is indexed by `Threads.threadid()` so each thread uses its own slot.
 """
 struct PHSInterpolantND{
         Tg,
@@ -126,7 +125,7 @@ struct PHSInterpolantND{
     hs::NTuple{N, Tg}                         # mean grid spacing per axis
     blend_a::Tg
     blend_a3::Tg                  # blend_a^3, precomputed for weight function kernels
-    blend_r_idx::NTuple{N, Int}   # ceil(blend_a / h_min) per axis
+    blend_r_idx::NTuple{N, Int}   # ceil(blend_a / h_d) per axis (h_d = that axis's spacing)
     transform::T
     extraps::E
     searches::P

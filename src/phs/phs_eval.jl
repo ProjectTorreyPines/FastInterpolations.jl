@@ -8,28 +8,26 @@
 #   2. _phs_eval_stencil       — evaluate one local PHS interpolant at a query point
 #   3. _phs_eval_blended       — weighted blend of multiple local interpolants (C² output)
 #
-# All mutable workspace (rhs, coeffs) is acquired from thread-local
+# All mutable scratch (rhs, coeffs) is acquired from task-local
 # AdaptiveArrayPools (via @with_pool) so the hot path is zero-allocation.
 
 # ======================================================
-# Stencil Coefficient Cache (thread-local)
+# Stencil Coefficient Cache (per-thread)
 # ======================================================
 #
-# Task-local cache of precomputed stencil coefficient vectors.
+# Per-thread cache of precomputed stencil coefficient vectors.
 # Key:   NTuple{N,Int}  — blend-neighbour base-node grid index
 # Value: Vector{Tg}     — coeff = Φ⁻¹ · rhs (length M = stencil_size^N + n_poly)
 #
 # Coefficients depend only on `itp.data` (fixed after construction) and the
-# stencil geometry (also fixed), so they are safe to cache indefinitely per task.
-# Thread safety is implicit: each Julia Task gets an independent Dict via
-# task_local_storage — no locks needed.
+# stencil geometry (also fixed), so they are safe to cache indefinitely.
+# Thread safety is implicit: each thread has its own Dict in `itp.coeff_caches`,
+# selected by Threads.threadid() — no locks needed.
 #
-# A per-interpolant sub-Dict (keyed by objectid) ensures that multiple
-# PHSInterpolantND instances co-exist in the same task without interference.
-# The cache is bounded to _PHS_COEFF_CACHE_MAX entries per interpolant to
-# prevent unbounded memory use when evaluating over large 3D grids.
+# Each PHSInterpolantND owns its own coeff_caches field, so multiple instances
+# co-exist without interference. The cache is bounded to _PHS_COEFF_CACHE_MAX
+# entries per thread to prevent unbounded memory use over large 3D grids.
 
-const _PHS_COEFF_CACHE_TKEY = :_phs_stencil_coeff_cache
 const _PHS_COEFF_CACHE_MAX = 5_000   # ≈ 20 MB for 516-coeff Float64 stencils
 
 @inline function _phs_get_coeff_cache(
@@ -648,7 +646,7 @@ Returns the stencil offsets, coefficient vector (aliasing `coeff_buf`), and grid
         val = itp.shift_cache[shift]
         val[1], val[2], val[3]
     end
-    # Check stencil coefficient cache (task-local; zero-alloc on hit after warm-up).
+    # Check stencil coefficient cache (per-thread; zero-alloc on hit after warm-up).
     # On cache hit, return cached vector directly — callers only read from it.
     coeff_cache = _phs_get_coeff_cache(itp)
     cached = get(coeff_cache, base_idx, nothing)
@@ -751,7 +749,7 @@ Algorithm:
 
     total_deriv = sum(deriv_order(ops[d]) for d in 1:N)
 
-    # Thread-local scratch space — M = max(phi_inv matrix size) across all stencils
+    # Task-local scratch space (pool buffers) — M = max(phi_inv matrix size) across all stencils
     M = size(itp.phi_inv, 1)
     rhs_buf = acquire!(pool, Tg, M)
     coeff_buf = acquire!(pool, Tg, M)

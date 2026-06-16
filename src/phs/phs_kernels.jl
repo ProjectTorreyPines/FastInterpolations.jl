@@ -22,7 +22,7 @@
     _phs_phi(r, ::Val{K}) -> T
 
 Evaluate the polyharmonic radial basis function φ(r) = r^K.
-Returns zero for r ≤ ε to avoid NaN at coincident points.
+Returns zero for r ≤ 0 (coincident points) to avoid NaN.
 """
 @inline function _phs_phi(r::T, ::Val{K}) where {T, K}
     r <= zero(T) && return zero(T)
@@ -48,8 +48,8 @@ end
     _phs_phi_prime(r, ::Val{K}) -> T
 
 First derivative φ'(r) = K * r^(K-1).
-Returns zero for r ≤ ε (derivative undefined/infinite at origin for K=1,
-but the weight w_i=0 there so the product w_i*φ'(r)/r is well-defined via L'Hôpital).
+Returns zero for r ≤ 0. (φ'(r)/r — the quantity used downstream — is singular at
+the origin for K=1, but w_i=0 there so the product w_i*φ'(r)/r is well-defined.)
 """
 @inline function _phs_phi_prime(r::T, ::Val{K}) where {T, K}
     r <= zero(T) && return zero(T)
@@ -74,7 +74,7 @@ end
     _phs_phi_dprime(r, ::Val{K}) -> T
 
 Second derivative φ''(r) = K*(K-1) * r^(K-2).
-Returns zero for r ≤ ε and for K=1 (since K*(K-1)=0).
+Returns zero for r ≤ 0 and for K=1 (since K*(K-1)=0).
 """
 @inline function _phs_phi_dprime(r::T, ::Val{K}) where {T, K}
     (r <= zero(T) || K == 1) && return zero(T)

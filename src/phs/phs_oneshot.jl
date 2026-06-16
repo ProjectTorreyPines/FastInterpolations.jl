@@ -37,7 +37,8 @@ end
 One-shot N-dimensional PHS interpolation at a batch of query points.
 `queries` is any query-protocol-compatible container (SoA tuple, AoS vector, etc.).
 
-Only allocates the output vector; all workspace is pool-allocated.
+Builds a temporary interpolant (same construction cost as `phs_interp(grids, data)`),
+then allocates and fills the output vector.
 """
 function phs_interp(
         grids::NTuple{N, AbstractVector},

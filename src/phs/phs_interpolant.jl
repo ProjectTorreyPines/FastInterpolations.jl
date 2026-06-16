@@ -9,7 +9,7 @@
 function _phs_blend_params(grids, blend_factor::Real)
     N = length(grids)
     Tg = eltype(first(grids))
-    # Maximum h per axis
+    # Mean grid spacing per axis
     h_max_per_axis = ntuple(N) do d
         g = grids[d]
         n = length(g)
@@ -207,7 +207,7 @@ In-place batch evaluation. `queries` can be:
   - `AbstractVector{<:NTuple{N}}` or `AbstractVector{<:AbstractVector}` (AoS)
 
 Evaluates serially for maximum compute, memory, and allocation efficiency.
-All workspace is thread-local (AdaptiveArrayPools) to support thread-safe concurrent evaluation.
+Per-thread caches (indexed by Threads.threadid()) and pool buffers make it safe to call from externally-threaded loops.
 """
 # Shared batch implementation — receives concrete ops tuple.
 function _phs_batch_impl!(

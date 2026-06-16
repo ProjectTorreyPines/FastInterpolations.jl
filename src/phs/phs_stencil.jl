@@ -60,8 +60,8 @@ end
 Build the (N_stencil + N_dim + 1) × (N_stencil + N_dim + 1) collocation matrix Φ
 and return its inverse via `inv(Symmetric(Φ))`.
 
-Φ is symmetric positive definite (for well-separated distinct stencil nodes),
-so `Symmetric` tells LinearAlgebra to exploit that structure.
+Φ is symmetric but indefinite (a saddle-point system: zero RBF diagonal, zero
+polynomial block), so `Symmetric` tells LinearAlgebra to exploit that symmetry.
 """
 function _phs_build_phi_inv(
         offsets::Vector{<:NTuple{N, Int}},
@@ -164,7 +164,7 @@ end
     _phs_compute_shift(base_idx, stencil_lo, stencil_hi, grid_sizes) -> NTuple{N,Int}
 
 Compute the per-axis effective clip (clamped offset floor) for boundary nodes.
-For each axis d, returns `max(0, 1 - base_idx[d])` (left clip) or
+For each axis d, returns `max(0, 1 - base_idx[d] - stencil_lo[d])` (left clip) or
 `min(0, grid_sizes[d] - base_idx[d] - stencil_hi[d])` (right clip):
 i.e., how many canonical negative offsets would go out-of-bounds to the left,
 and how far positive offsets exceed the grid to the right.
@@ -199,9 +199,6 @@ Precompute Φ⁻¹ for every unique boundary shift vector (stencil shifted as a
 block so it stays inside the grid).  Only built if the estimated total memory
 is ≤ 100 MB; otherwise returns an empty Dict and boundary nodes fall back to
 the canonical Φ⁻¹ (Fortran approach, acceptable when queries are interior).
-
-For small-to-moderate stencils (stencil_size ≤ 6, N ≤ 3) the cache is always
-built and guarantees exact polynomial reproduction everywhere.
 """
 function _phs_build_boundary_shift_cache(
         canonical_offsets::Vector{<:NTuple{N, Int}},
@@ -262,7 +259,7 @@ end
 # ----------------------------------------
 
 """
-    _phs_build_stencil(grids, spacings, stencil_size, degree)
+    _phs_build_stencil(grids, stencil_size, degree)
         -> (offsets, phi_inv, hs, stencil_lo, stencil_hi, shift_cache)
 
 Build the canonical stencil and precompute all boundary shift variants.

@@ -96,11 +96,15 @@ end
     # All three throw MethodError today → Broken. A real implementation agrees
     # with the deriv path (loose atol so any faithful impl flips the pin; a
     # zeros() stub would NOT agree and would correctly stay Broken).
-    @test_broken (g = gradient(itp, q);
+    @test_broken (
+        g = gradient(itp, q);
         length(g) == 2 &&
-            isapprox(g[1], gx_ref; atol = 1.0e-2) && isapprox(g[2], gy_ref; atol = 1.0e-2))
-    @test_broken (H = hessian(itp, q);
-        isapprox(H[1, 1], d2x_ref; atol = 1.0e-2) && isapprox(H[2, 2], d2y_ref; atol = 1.0e-2))
+            isapprox(g[1], gx_ref; atol = 1.0e-2) && isapprox(g[2], gy_ref; atol = 1.0e-2)
+    )
+    @test_broken (
+        H = hessian(itp, q);
+        isapprox(H[1, 1], d2x_ref; atol = 1.0e-2) && isapprox(H[2, 2], d2y_ref; atol = 1.0e-2)
+    )
     @test_broken isapprox(laplacian(itp, q), d2x_ref + d2y_ref; atol = 1.0e-2)
 end
 

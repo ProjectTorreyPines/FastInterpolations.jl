@@ -54,13 +54,9 @@ function _bake_constant_nd_anchors(
             h = _get_h(grids[d], idx)
             dL = xq_d - xL
 
-            # Determine OOB side flag
-            is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])
-            state_flag = if is_oob
-                xq_raw < first(grids[d]) ? OOB_LEFT : OOB_RIGHT
-            else
-                IN_DOMAIN
-            end
+            # OOB side flag via the shared (widened) classifier — a query at the
+            # true `_CachedRange` endpoint is IN_DOMAIN, matching the forward.
+            state_flag = _oob_state(grids[d], xq_raw)
 
             return _ConstantAnchoredQuery{Tg, Tq}(_IdxPair(idx, idxR), xq_d, state_flag, h, dL)
         end

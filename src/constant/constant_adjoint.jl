@@ -160,27 +160,34 @@ end
 # ========================================
 
 """
-Restore `state` flags for anchors built with clamped query positions.
+    _bake_constant_clampfill_anchors(x, xq) -> Vector{_ConstantAnchoredQuery}
 
-When ClampExtrap/FillExtrap queries are clamped before anchoring, the anchor
-gets `state=IN_DOMAIN` (inside). This restores the correct OOB state flag based on the
-original query position, so scatter can skip OOB contributions.
+Single-pass ClampExtrap/FillExtrap/ExtendExtrap adjoint anchor builder
+(`ExtendExtrap == ClampExtrap` for constant interp, slope 0).
+
+Clamps each query to the actual grid endpoints (`_clamp_to_grid`) for valid
+boundary geometry, anchors it, then restores the OOB side flag from the widened
+(`_oob_state`) classification for genuinely-OOB queries (scatter skips/keeps per
+extrap). In-domain and endpoint-sliver queries keep the anchor as built.
+
+Fuses the former clamp-broadcast + `_anchor_query` + state-fixup three passes
+into one loop — no transient clamped-query array. Construction-time only.
 """
-function _fixup_constant_anchor_state!(
-        anchors::Vector{_ConstantAnchoredQuery{Tg, Tq}},
-        xq_original::AbstractVector,
-        x_lo, x_hi
-    ) where {Tg, Tq}
-    @inbounds for i in eachindex(anchors)
-        xq_i = xq_original[i]
-        (x_lo <= xq_i <= x_hi) && continue
-        state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
-        aq = anchors[i]
-        anchors[i] = _ConstantAnchoredQuery{Tg, Tq}(
-            aq.stencil, aq.xq, state, aq.h, aq.dL
-        )
+function _bake_constant_clampfill_anchors(
+        x::AbstractVector{Tg},
+        xq::AbstractVector{Tq},
+        searcher::P = _to_searcher(LinearBinarySearch())
+    ) where {Tg, Tq <: Real, P <: Searcher}
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
+    output = Vector{_ConstantAnchoredQuery{Tg, promote_type(Tg, Tq)}}(undef, length(xq))
+    @inbounds for k in eachindex(xq)
+        xq_raw = xq[k]
+        aq = _constant_anchor_query_impl(x, _clamp_to_grid(xq_raw, x), false, searcher_resolved)
+        state = _oob_state(x, xq_raw)
+        output[k] = state == IN_DOMAIN ? aq :
+            typeof(aq)(aq.stencil, aq.xq, state, aq.h, aq.dL)
     end
-    return nothing
+    return output
 end
 
 # ========================================
@@ -248,25 +255,16 @@ function constant_adjoint(
     # NoExtrap: validate all queries in-domain (uses x_axis bounds, which include
     # the virtual seam endpoint for `:exclusive`).
     if extrap_eff isa NoExtrap
-        x_lo_p, x_hi_p = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
-        @inbounds for i in eachindex(xq_p)
-            xq_i = xq_p[i]
-            (x_lo_p <= xq_i <= x_hi_p) || throw(
-                DomainError(xq_i, "query point outside domain [$x_lo_p, $x_hi_p]")
-            )
-        end
+        _validate_domain(x_axis, xq_p)
     end
 
     # Build anchored queries with extrap-specific preprocessing
     wrap = extrap_eff isa WrapExtrap
     if extrap_eff isa _ClampOrFill || extrap_eff isa ExtendExtrap
-        # For constant interp, ExtendExtrap == ClampExtrap (slope=0).
-        # Clamp OOB queries to boundary for correct anchor geometry.
-        # Then restore side flags so scatter can skip OOB contributions.
-        x_lo_p, x_hi_p = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
-        xq_clamped = clamp.(xq_p, x_lo_p, x_hi_p)
-        anchors = _anchor_query(x_axis, xq_clamped, Val(:constant), false)
-        _fixup_constant_anchor_state!(anchors, xq_p, x_lo_p, x_hi_p)
+        # For constant interp, ExtendExtrap == ClampExtrap (slope=0). OOB queries
+        # get actual-endpoint geometry; the widened (`_oob_state`) classification
+        # restores side flags. Single fused pass (no temp array).
+        anchors = _bake_constant_clampfill_anchors(x_axis, xq_p)
     else
         # WrapExtrap: wraps to domain (covers periodic auto-promotion).
         # NoExtrap: already validated in-domain above.

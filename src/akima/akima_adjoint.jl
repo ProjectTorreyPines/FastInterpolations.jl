@@ -611,13 +611,7 @@ function akima_adjoint(
 
     # NoExtrap: validate queries against extended domain.
     if extrap_eff isa NoExtrap
-        x_lo, x_hi = first(x_ext), last(x_ext)
-        @inbounds for i in eachindex(xq_p)
-            xq_i = xq_p[i]
-            (_extract_primal(x_lo) <= xq_i <= _extract_primal(x_hi)) || throw(
-                DomainError(xq_i, "query point outside domain [$(_extract_primal(x_lo)), $(_extract_primal(x_hi))]")
-            )
-        end
+        _validate_domain(x_ext, xq_p)
     end
 
     # Bake anchors against the extended axis.

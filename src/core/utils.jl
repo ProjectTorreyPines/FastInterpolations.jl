@@ -365,6 +365,17 @@ Promote grid and query vectors for adjoint construction.
 
 Shared pattern across all 1D adjoint builders: cubic, linear, quadratic,
 constant, pchip, cardinal, akima.
+
+!!! note "Adjoint queries must be plain real numbers"
+    Adjoint constructors do not support `ForwardDiff.Dual` (or other non-grid-
+    eltype) *query* points: the anchor structs pin the query type to the grid
+    type `Tg` (e.g. `_LinearAnchoredQuery{Tg, Tg}`) and the Hermite-family weight
+    kernels are homogeneous in `Tg`, so a Dual query fails to construct. This is
+    a long-standing limitation, independent of the `_oob_state`/`_clamp_to_grid`
+    boundary helpers (which themselves preserve duck-type). For query-position
+    derivatives, differentiate the *forward* eval — it preserves `Dual` queries
+    end-to-end. (`constant_adjoint` happens to accept Dual queries because it
+    keeps a separate query-type param, but that is not a guaranteed contract.)
 """
 @inline function _promote_adjoint_inputs(
         x::AbstractVector,
@@ -457,17 +468,23 @@ _promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
 @noinline _throw_domain_error(xi, x_min, x_max) =
     throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
 
+# `_extract_primal(xi)` (query) as well as the bounds: at equal primals
+# ForwardDiff's `Dual <=> Real` tie-breaks on the partial sign, so a Dual query
+# exactly at the boundary would flip in/out of domain by its derivative direction
+# alone — same partial-independence rationale as `_is_all_inbounds`/`_oob_state`.
 "Scalar domain check for NoExtrap: throws DomainError if out of domain."
 @inline function _check_domain(x::AbstractVector, xi::Real, ::NoExtrap)
+    xip = _extract_primal(xi)
     x_min, x_max = _extract_primal(first(x)), _extract_primal(last(x))
-    (xi < x_min || xi > x_max) && _throw_domain_error(xi, x_min, x_max)
+    (xip < x_min || xip > x_max) && _throw_domain_error(xi, x_min, x_max)
     return nothing
 end
 
 # _CachedRange: use domain_lo/domain_hi (wider bracket on x86_64 fast path).
 @inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap)
+    xip = _extract_primal(xi)
     lo, hi = _extract_primal(x.domain_lo), _extract_primal(x.domain_hi)
-    (xi < lo || xi > hi) && _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi))
+    (xip < lo || xip > hi) && _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi))
     return nothing
 end
 
@@ -521,6 +538,29 @@ end
     return _is_all_inbounds(x, xi) ? InBounds() : e
 end
 
+# Safe domain bounds — single axis-dispatched source of truth for every in-domain
+# test (`_is_all_inbounds`, `_is_inbounds`, `_oob_state`), so they never disagree
+# at a boundary query. Plain `AbstractVector` → exact `first/last`; `_CachedRange`
+# → `domain_lo/hi`, ≈1 ULP wider than the stored `lo/hi` on the x86_64 fast path,
+# keeping a query at the true endpoint in-domain instead of falsely OOB.
+@inline _domain_bounds(x::AbstractVector) = (first(x), last(x))
+@inline _domain_bounds(x::_CachedRange) = (x.domain_lo, x.domain_hi)
+
+# Scalar in-domain test. `_extract_primal` on bounds and query keeps it partial-
+# sign independent for Dual grids (no-op on plain-Float `_CachedRange` fields).
+@inline function _is_inbounds(x::AbstractVector, xq::Real)
+    lo, hi = _domain_bounds(x)
+    xqp = _extract_primal(xq)
+    return _extract_primal(lo) <= xqp <= _extract_primal(hi)
+end
+
+# Clamp a query to the grid's physical span `[first(x), last(x)]`, never the
+# widened `_domain_bounds` bracket — adjoint anchor builders use it for valid OOB
+# boundary geometry while classification reads the widened bounds (keeps the
+# acceptance cushion out of geometry).
+@inline _clamp_to_grid(xq::Real, x::AbstractVector) =
+    clamp(xq, _extract_primal(first(x)), _extract_primal(last(x)))
+
 """
 True iff every element of `queries` lies in the closed domain
 `[first(x), last(x)]`. Enables batch-level fast paths that elide per-query
@@ -537,25 +577,15 @@ Uses two `&&`-chained reductions rather than `extrema`:
 1.13 fixes the SIMD issue, but the short-circuit advantage remains for
 the OOB slow-path, so this form stays preferred even post-1.10-LTS.
 """
-# `_extract_primal` is required on `first(x)` / `last(x)` here because
-# ForwardDiff's `Real <= Dual` comparison includes partial-sign tie-breaking
-# at equal primals — so a Float query exactly at the boundary against a
-# Dual grid endpoint can flip in/out of bounds based on the partial sign
-# alone (see `test/ext/test_linear_dual_grid.jl` "Domain boundary:
-# primal-based NoExtrap check (partial-independent)"). Inline calls keep
-# the `&&` short-circuit intact.
+# `_extract_primal` on the bounds: ForwardDiff's `Real <= Dual` tie-breaks on the
+# partial sign at equal primals, so a Float query at the boundary against a Dual
+# grid endpoint must classify on primal alone (see test/ext/test_linear_dual_grid.jl).
+# Routes through `_domain_bounds` (widened bracket in one place); `&&` short-circuits.
 @inline function _is_all_inbounds(x::AbstractVector, queries::AbstractVector{<:Real})
     isempty(queries) && return true
-    return minimum(queries) >= _extract_primal(first(x)) &&
-        maximum(queries) <= _extract_primal(last(x))
-end
-
-# `_CachedRange`: `domain_lo`/`domain_hi` (≈1 ULP wider than `lo`/`hi` on
-# x86_64 TwicePrecision normalization) for safe bounds. Fields are typed
-# `T <: AbstractFloat` per the struct, so no `_extract_primal` is needed.
-@inline function _is_all_inbounds(x::_CachedRange, queries::AbstractVector{<:Real})
-    isempty(queries) && return true
-    return minimum(queries) >= x.domain_lo && maximum(queries) <= x.domain_hi
+    lo, hi = _domain_bounds(x)
+    return minimum(queries) >= _extract_primal(lo) &&
+        maximum(queries) <= _extract_primal(hi)
 end
 
 # ========================================

@@ -18,6 +18,29 @@ const OOB_LEFT = 0x01
 const OOB_RIGHT = 0x02
 
 # ========================================
+# _oob_state: shared OOB classifier (single source of truth)
+# ========================================
+
+"""
+    _oob_state(x, xq) -> UInt8
+
+Classify query `xq` against grid `x` as `IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`.
+
+Single source of truth for the in-domain / which-side decision: bounds come from
+[`_domain_bounds`](@ref), so it matches the batch path and the `_CachedRange`
+widened bracket is handled in one place (a query at the true endpoint is
+`IN_DOMAIN`). `_extract_primal` on bounds and query keeps it partial-sign
+independent for Dual grids.
+"""
+@inline function _oob_state(x::AbstractVector, xq::Real)
+    lo, hi = _domain_bounds(x)
+    xqp = _extract_primal(xq)
+    xqp < _extract_primal(lo) && return OOB_LEFT
+    xqp > _extract_primal(hi) && return OOB_RIGHT
+    return IN_DOMAIN
+end
+
+# ========================================
 # _AnchorLoc: Location-Only Result
 # ========================================
 
@@ -54,7 +77,9 @@ end
     _anchor_loc(x, xq, wrap, policy) -> _AnchorLoc{Tg, Tq}
 
 Shared interval location for all interpolation methods.
-Performs: wrap → domain state classification → interval search.
+Performs: domain-state classification (`_oob_state`, widened `_CachedRange`
+bracket) → wrap-fold only for OOB queries when `wrap` (then re-classify) →
+interval search (boundary cell for OOB, `search_interval` otherwise).
 
 Returns `_AnchorLoc` with NO geometry — each method computes its own
 h/inv_h/dL/dR from `xL`, `xR`, `xq` as needed.
@@ -75,35 +100,31 @@ Dual type. The interval search uses `_extract_primal(xq)` for comparisons.
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
     ) where {Tg, Tq <: Real, P <: Searcher}
+    # Actual grid span — used only for wrap-fold geometry (period stays exactly
+    # `last - first`, not the widened bracket).
     x_min, x_max = first(x), last(x)
 
     # Use primal value for comparisons (supports ForwardDiff.Dual)
     xq_primal = _extract_primal(xq)
 
-    # Handle wrapping (for extrap=WrapExtrap() or periodic mode)
-    # Generic _wrap_to_domain handles AD primal extraction and returns Tg.
-    # Closed-domain convention: `xq == x_max` is in-domain — no wrap needed.
-    # Only strictly-OOB queries (`xq < x_min` or `xq > x_max`) take the slow
-    # `mod()` path inside `_wrap_to_domain` (which itself uses `xi <= x_max`).
-    if wrap && (xq_primal < x_min || xq_primal > x_max)
+    # Classify via the shared `_oob_state` (widened `_CachedRange` bracket → a
+    # query at the true endpoint is IN_DOMAIN, consistent with the batch path).
+    state = _oob_state(x, xq_primal)
+
+    # WrapExtrap/periodic: an IN_DOMAIN query never wraps. Strictly-OOB queries
+    # take the `mod()` path (folds against the actual span x_min/x_max, returns
+    # Tg with AD primal handled), then re-classify.
+    if wrap && state != IN_DOMAIN
         xq = _wrap_to_domain(xq, x_min, x_max)
         xq_primal = xq  # xq is now Tg, no need for _extract_primal
-    end
-
-    # Classify domain state
-    state = if xq_primal < x_min
-        OOB_LEFT
-    elseif xq_primal > x_max
-        OOB_RIGHT
-    else
-        IN_DOMAIN
+        state = _oob_state(x, xq_primal)
     end
 
     # Find interval
     # For outside-domain points, use boundary intervals for weight computation
-    idx, xL, xR = if xq_primal < x_min
+    idx, xL, xR = if state == OOB_LEFT
         @inbounds (1, x[1], x[2])
-    elseif xq_primal > x_max
+    elseif state == OOB_RIGHT
         n = length(x)
         @inbounds (n - 1, x[n - 1], x[n])
     else

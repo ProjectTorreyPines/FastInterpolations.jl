@@ -102,6 +102,11 @@ Base.IndexStyle(::Type{<:_ExclusivePeriodicAxis}) = IndexLinear()
 @inline Base.first(g::_ExclusivePeriodicAxis) = @inbounds g.inner[1]
 @inline Base.last(g::_ExclusivePeriodicAxis) = g._x_max
 
+# Classification bounds: inner's widened left endpoint (so the true left endpoint
+# maps to the first cell, not the seam) + the virtual seam `_x_max`. Wrap-fold
+# geometry still uses the actual `inner[1]`/`_x_max`.
+@inline _domain_bounds(g::_ExclusivePeriodicAxis) = (_domain_bounds(g.inner)[1], g._x_max)
+
 # Forward `step` to inner — meaningful only when inner is a Range/`_CachedRange`
 # (uniform-spacing). Vector inners will hit the inner's `MethodError(::step)`,
 # which is the desired behavior: callers asking for `step` already assume a
@@ -236,8 +241,13 @@ end
 #   - `g.inner[1]` instead of `first(g)` → `inner.lo` directly (no Base.first
 #     dispatch through wrapper → inner getindex chain).
 #   - `g._x_max` → cached field, single load.
-@inline _wrap_to_domain(xq, g::_ExclusivePeriodicAxis) =
-    _wrap_to_domain(xq, @inbounds(g.inner[1]), g._x_max)
+@inline function _wrap_to_domain(xq, g::_ExclusivePeriodicAxis)
+    # In-domain by the inner's widened bounds → no fold (the true left endpoint
+    # must stay in the first cell, not fold to the seam). Only genuinely-OOB
+    # queries fold against the actual seam span `[inner[1], _x_max]`.
+    _is_inbounds(g, xq) && return xq
+    return _wrap_to_domain(xq, @inbounds(g.inner[1]), g._x_max)
+end
 
 # 4-arg `(g, idx, xL, xR)` form. Search already produced all four; dispatch
 # picks the per-type cheapest path.

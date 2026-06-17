@@ -83,8 +83,9 @@ end
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
     xi_primal = _extract_primal(xi)
-    xi_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xi)
-    xi_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xi)
+    st = _oob_state(x, xi_primal)
+    st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xi)
+    st == OOB_RIGHT && return _eval_extrapolation(op, last(y), extrap, xi)
     return _constant_eval_at_point(x, y, xi, InBounds(), side, op, searcher)
 end
 

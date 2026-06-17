@@ -118,6 +118,17 @@ end
 #
 # Non-NoExtrap axes are no-ops via _check_domain dispatch.
 
+# 1D NoExtrap domain validation: throw `DomainError` for any out-of-domain query.
+# Routes per-query through `_check_domain`, so the `_CachedRange` widened-bracket
+# acceptance is applied and the error reports the physical endpoints — callers
+# (the 1D adjoints) never touch `_domain_bounds` directly.
+@inline function _validate_domain(axis::AbstractVector, queries::AbstractVector)
+    @inbounds for i in eachindex(queries)
+        _check_domain(axis, queries[i], NoExtrap())
+    end
+    return nothing
+end
+
 # Scalar point: per-axis scalar check (for oneshot single-point paths)
 # Uses map (not for-loop) to dispatch per-element with concrete types,
 # avoiding Union boxing on heterogeneous extrap tuples.

@@ -52,7 +52,9 @@ function _bake_linear_nd_anchors(
             h = _get_h(grids[d], idx)
             inv_h = _get_inv_h(grids[d], idx)
             α = (xq_d - xL) * inv_h
-            is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])
+            # Widened classification (matches forward `_oob_state`): a query at
+            # the true `_CachedRange` endpoint is in-domain, not zeroed-OOB.
+            is_oob = _oob_state(grids[d], xq_raw) != IN_DOMAIN
             w_val = (one(Tg) - α, α)
             w_der = (-inv_h, inv_h)
             return (idx, w_val, w_der, is_oob)

@@ -214,3 +214,71 @@ end
     @test linear_interp(cr, y, 0.0; bc = bc, deriv = DerivOp(1)) ≈
         linear_interp(xref, y, 0.0; bc = bc, deriv = DerivOp(1))  atol = 1.0e-9
 end
+
+# ════════════════════════════════════════════════════════════════════════════
+# Duck-type (ForwardDiff.Dual query) preservation through the boundary helpers
+# and the forward eval. The boundary classifier/clamp helpers must classify a
+# Dual query by its primal and preserve the Dual TYPE — including at the widened
+# `_CachedRange` sliver. (Adjoint constructors do NOT support Dual queries — a
+# pre-existing struct-level limitation, see `_promote_adjoint_inputs` — so only
+# the helper + forward contract is pinned here.)
+# ════════════════════════════════════════════════════════════════════════════
+
+@testitem "Boundary helpers preserve duck-type (ForwardDiff.Dual queries)" setup = [InwardCR] begin
+    using FastInterpolations
+    using FastInterpolations: _oob_state, _is_inbounds, _clamp_to_grid,
+        IN_DOMAIN, OOB_LEFT, OOB_RIGHT
+    import ForwardDiff
+    Dl = ForwardDiff.Dual
+    n = 5
+    cr = inward_cr_right(0.0, 2.0, n)   # widened _CachedRange; domain_hi recovers true endpoint 2.0
+
+    # Classification reads the Dual via its primal — including the widened sliver:
+    # the true endpoint (== domain_hi, one ULP past the stored `last`) is IN_DOMAIN.
+    @test _oob_state(cr, Dl(1.0, 1.0)) == IN_DOMAIN
+    @test _oob_state(cr, Dl(2.0, 1.0)) == IN_DOMAIN     # true endpoint (sliver)
+    @test _oob_state(cr, Dl(2.5, 1.0)) == OOB_RIGHT
+    @test _oob_state(cr, Dl(-0.5, 1.0)) == OOB_LEFT
+    @test _is_inbounds(cr, Dl(2.0, 1.0))
+    @test !_is_inbounds(cr, Dl(2.5, 1.0))
+
+    # `_clamp_to_grid` preserves the Dual TYPE; in-domain keeps the partial, a
+    # genuinely-OOB query clamps to the actual endpoint with a zeroed partial
+    # (a clamped value sits at a constant boundary → zero query-sensitivity).
+    c_in = _clamp_to_grid(Dl(1.0, 1.0), cr)
+    @test c_in isa ForwardDiff.Dual
+    @test ForwardDiff.value(c_in) == 1.0
+    @test ForwardDiff.partials(c_in)[1] == 1.0
+    c_oob = _clamp_to_grid(Dl(2.5, 1.0), cr)
+    @test c_oob isa ForwardDiff.Dual
+    @test ForwardDiff.value(c_oob) == last(cr)          # clamped to the actual endpoint
+    @test ForwardDiff.partials(c_oob)[1] == 0.0
+end
+
+@testitem "Boundary forward eval preserves duck-type (Dual query at widened endpoint)" setup = [InwardCR] begin
+    using FastInterpolations
+    import ForwardDiff
+    Dl = ForwardDiff.Dual
+    n = 5
+    y = collect(10.0:10.0:50.0)
+    crR = inward_cr_right(0.0, 2.0, n)
+    ref = collect(range(0.0, 2.0, n))
+    qd = Dl(2.0, 1.0)   # Dual query AT the true endpoint (== domain_hi, the sliver)
+
+    # Forward eval keeps the query's Dual type and value across extrap modes; the
+    # true endpoint is in-domain, so FillExtrap must NOT leak the fill value.
+    for m in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+        for E in (FillExtrap(-999.0), ClampExtrap(), NoExtrap())
+            r = m(crR, y, qd; extrap = E)
+            @test r isa ForwardDiff.Dual
+            @test ForwardDiff.value(r) ≈ m(ref, y, 2.0; extrap = E)  atol = 1.0e-7
+            @test ForwardDiff.value(r) != -999.0
+        end
+    end
+
+    # Sharp guard: the Dual partial = d(interp)/d(query). At the in-domain true
+    # endpoint it is the boundary-cell slope, NOT 0 (0 would mean the sliver was
+    # misclassified OOB and fill/clamp flattened it).
+    rL = linear_interp(crR, y, qd; extrap = FillExtrap(0.0))
+    @test ForwardDiff.partials(rL)[1] ≈ (y[end] - y[end - 1]) / crR.h  atol = 1.0e-6
+end

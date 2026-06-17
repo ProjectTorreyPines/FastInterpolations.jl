@@ -365,6 +365,17 @@ Promote grid and query vectors for adjoint construction.
 
 Shared pattern across all 1D adjoint builders: cubic, linear, quadratic,
 constant, pchip, cardinal, akima.
+
+!!! note "Adjoint queries must be plain real numbers"
+    Adjoint constructors do not support `ForwardDiff.Dual` (or other non-grid-
+    eltype) *query* points: the anchor structs pin the query type to the grid
+    type `Tg` (e.g. `_LinearAnchoredQuery{Tg, Tg}`) and the Hermite-family weight
+    kernels are homogeneous in `Tg`, so a Dual query fails to construct. This is
+    a long-standing limitation, independent of the `_oob_state`/`_clamp_to_grid`
+    boundary helpers (which themselves preserve duck-type). For query-position
+    derivatives, differentiate the *forward* eval — it preserves `Dual` queries
+    end-to-end. (`constant_adjoint` happens to accept Dual queries because it
+    keeps a separate query-type param, but that is not a guaranteed contract.)
 """
 @inline function _promote_adjoint_inputs(
         x::AbstractVector,
@@ -457,17 +468,23 @@ _promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
 @noinline _throw_domain_error(xi, x_min, x_max) =
     throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
 
+# `_extract_primal(xi)` (query) as well as the bounds: at equal primals
+# ForwardDiff's `Dual <=> Real` tie-breaks on the partial sign, so a Dual query
+# exactly at the boundary would flip in/out of domain by its derivative direction
+# alone — same partial-independence rationale as `_is_all_inbounds`/`_oob_state`.
 "Scalar domain check for NoExtrap: throws DomainError if out of domain."
 @inline function _check_domain(x::AbstractVector, xi::Real, ::NoExtrap)
+    xip = _extract_primal(xi)
     x_min, x_max = _extract_primal(first(x)), _extract_primal(last(x))
-    (xi < x_min || xi > x_max) && _throw_domain_error(xi, x_min, x_max)
+    (xip < x_min || xip > x_max) && _throw_domain_error(xi, x_min, x_max)
     return nothing
 end
 
 # _CachedRange: use domain_lo/domain_hi (wider bracket on x86_64 fast path).
 @inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap)
+    xip = _extract_primal(xi)
     lo, hi = _extract_primal(x.domain_lo), _extract_primal(x.domain_hi)
-    (xi < lo || xi > hi) && _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi))
+    (xip < lo || xip > hi) && _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi))
     return nothing
 end
 

@@ -174,12 +174,11 @@ original query position, so scatter can skip OOB contributions.
 function _fixup_linear_anchor_state!(
         anchors::Vector{<:_LinearAnchoredQuery},
         xq_original::AbstractVector,
-        x_lo, x_hi
+        x::AbstractVector
     )
     @inbounds for i in eachindex(anchors)
-        xq_i = xq_original[i]
-        (x_lo <= xq_i <= x_hi) && continue
-        state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
+        state = _oob_state(x, xq_original[i])
+        state == IN_DOMAIN && continue
         aq = anchors[i]
         anchors[i] = typeof(aq)(
             aq.stencil, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha
@@ -252,26 +251,17 @@ function linear_adjoint(
     # NoExtrap: validate all queries in-domain (uses x_axis bounds, which include
     # the virtual seam endpoint for `:exclusive`). Use primal for Dual grid boundaries.
     if extrap_eff isa NoExtrap
-        x_lo, x_hi = map(_extract_primal, _domain_bounds(x_axis))  # widened: accept true endpoint
-        @inbounds for i in eachindex(xq_p)
-            xq_i = xq_p[i]
-            (x_lo <= xq_i <= x_hi) || throw(
-                DomainError(xq_i, "query point outside domain [$x_lo, $x_hi]")
-            )
-        end
+        _validate_domain(x_axis, xq_p)
     end
 
     # Build anchored queries with extrap-specific preprocessing
     wrap = extrap_eff isa WrapExtrap
     if extrap_eff isa _ClampOrFill
-        # Clamp OOB queries to boundary for correct anchor weights (alpha ∈ [0,1]).
-        # Then restore side flags so scatter can skip OOB contributions.
-        # Safe (widened) bounds for classification — clamp/fixup against these so
-        # a query at the true `_CachedRange` endpoint stays in-domain.
-        x_lo_p, x_hi_p = map(_extract_primal, _domain_bounds(x_axis))
-        xq_clamped = clamp.(xq_p, x_lo_p, x_hi_p)
+        # OOB queries get actual-endpoint geometry (`_clamp_to_grid`); `_fixup`
+        # restores the side flags from the widened (`_oob_state`) classification.
+        xq_clamped = _clamp_to_grid.(xq_p, Ref(x_axis))
         anchors = _anchor_query(x_axis, xq_clamped, Val(:linear), false)
-        _fixup_linear_anchor_state!(anchors, xq_p, x_lo_p, x_hi_p)
+        _fixup_linear_anchor_state!(anchors, xq_p, x_axis)
     else
         # ExtendExtrap: OOB uses boundary interval with extrapolated alpha (correct)
         # WrapExtrap: wraps to domain (correct; covers periodic auto-promotion)

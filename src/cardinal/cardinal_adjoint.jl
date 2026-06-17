@@ -283,13 +283,7 @@ function cardinal_adjoint(
 
     # NoExtrap: validate queries against extended domain.
     if extrap_eff isa NoExtrap
-        x_lo, x_hi = map(_extract_primal, _domain_bounds(x_ext))  # widened: accept true endpoint
-        @inbounds for i in eachindex(xq_p)
-            xq_i = xq_p[i]
-            (x_lo <= xq_i <= x_hi) || throw(
-                DomainError(xq_i, "query point outside domain [$x_lo, $x_hi]")
-            )
-        end
+        _validate_domain(x_ext, xq_p)
     end
 
     # Wrap the extended grid for cached `h`/`inv_h` (matches forward

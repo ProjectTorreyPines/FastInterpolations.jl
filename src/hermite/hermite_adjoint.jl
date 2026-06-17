@@ -101,10 +101,9 @@ function _bake_hermite_adjoint_anchors(
         xq::AbstractVector,
         extrap::AbstractExtrap
     ) where {Tg}
-    # Safe (widened) classification bounds — matches the forward `_oob_state`, so
-    # a query at the true `_CachedRange` endpoint is in-domain, not zeroed-OOB.
-    x_lo, x_hi = _domain_bounds(x)
-
+    # Classification (`_is_inbounds`, widened bounds) and clamp geometry
+    # (`_clamp_to_grid`, actual endpoints) stay in separate helpers; the wrap
+    # routes through the 2-arg axis-aware form, so the widened bracket never leaks.
     need_clamp = extrap isa Union{ClampExtrap, FillExtrap}
     wrap = extrap isa WrapExtrap
 
@@ -114,7 +113,7 @@ function _bake_hermite_adjoint_anchors(
 
         # Preprocess query point based on extrap mode
         xq_eval = if need_clamp
-            clamp(xq_raw, x_lo, x_hi)
+            _clamp_to_grid(xq_raw, x)
         elseif wrap
             _wrap_to_domain(xq_raw, x)
         else
@@ -131,7 +130,7 @@ function _bake_hermite_adjoint_anchors(
         w0, w1, w2, w3 = _compute_hermite_adjoint_weights(t, h, inv_h)
 
         # OOB weight fixup (bake into weights at construction)
-        is_oob = xq_raw < x_lo || xq_raw > x_hi
+        is_oob = !_is_inbounds(x, xq_raw)
         if is_oob
             z = zero(Tg)
             z4 = (z, z, z, z)
@@ -435,13 +434,7 @@ function hermite_adjoint(
 
     # NoExtrap: validate all queries in-domain
     if extrap isa NoExtrap
-        x_lo, x_hi = _domain_bounds(x_p)  # widened: accept true endpoint
-        @inbounds for i in eachindex(xq_p)
-            xq_i = xq_p[i]
-            (_extract_primal(x_lo) <= xq_i <= _extract_primal(x_hi)) || throw(
-                DomainError(xq_i, "query point outside domain [$(_extract_primal(x_lo)), $(_extract_primal(x_hi))]")
-            )
-        end
+        _validate_domain(x_p, xq_p)
     end
 
     # Caching wrap (transient — used only for anchor baking). Range from

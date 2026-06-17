@@ -547,6 +547,14 @@ end
     return _extract_primal(lo) <= xqp <= _extract_primal(hi)
 end
 
+# Clamp a query to the grid's *physical* span `[first(x), last(x)]` — the actual
+# endpoints, never the widened `_domain_bounds` bracket. Adjoint anchor builders
+# use this to give an OOB query valid boundary geometry, while classification
+# (`_oob_state`/`_is_inbounds`) independently reads the widened bounds. Keeping
+# the two apart is what stops the acceptance cushion from leaking into geometry.
+@inline _clamp_to_grid(xq::Real, x::AbstractVector) =
+    clamp(xq, _extract_primal(first(x)), _extract_primal(last(x)))
+
 """
 True iff every element of `queries` lies in the closed domain
 `[first(x), last(x)]`. Enables batch-level fast paths that elide per-query

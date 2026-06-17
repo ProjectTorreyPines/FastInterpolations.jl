@@ -87,11 +87,9 @@ function _bake_quadratic_adjoint_anchors(
         xq::AbstractVector{Tg},
         extrap::AbstractExtrap
     ) where {Tg}
-    # Safe (widened) classification bounds — matches the forward `_oob_state`, so
-    # a query at the true `_CachedRange` endpoint is in-domain, not zeroed-OOB.
-    x_lo, x_hi = _domain_bounds(x)
-
-    # For ClampExtrap/FillExtrap, clamp queries to domain before anchoring
+    # Classification (`_is_inbounds`, widened bounds) and clamp geometry
+    # (`_clamp_to_grid`, actual endpoints) stay in separate helpers, so the
+    # widened acceptance cushion never leaks into the clamp target or wrap period.
     need_clamp = extrap isa Union{ClampExtrap, FillExtrap}
     wrap = extrap isa WrapExtrap
 
@@ -101,9 +99,9 @@ function _bake_quadratic_adjoint_anchors(
 
         # Preprocess query point based on extrap mode
         xq_eval = if need_clamp
-            clamp(xq_raw, x_lo, x_hi)
+            _clamp_to_grid(xq_raw, x)
         elseif wrap
-            _wrap_to_domain(xq_raw, x_lo, x_hi)
+            _wrap_to_domain(xq_raw, x)   # 2-arg axis-aware: actual period + in-domain guard
         else
             xq_raw
         end
@@ -120,7 +118,7 @@ function _bake_quadratic_adjoint_anchors(
         w0, w1, w2 = _compute_quadratic_adjoint_weights(t, h, inv_h)
 
         # OOB weight fixup (bake into weights at construction)
-        is_oob = xq_raw < x_lo || xq_raw > x_hi
+        is_oob = !_is_inbounds(x, xq_raw)
         if is_oob
             z = zero(Tg)
             z3 = (z, z, z)
@@ -616,13 +614,7 @@ function quadratic_adjoint(
 
     # Validate domain for NoExtrap
     if extrap isa NoExtrap
-        x_lo, x_hi = _domain_bounds(x_p)  # widened: accept true endpoint
-        for i in eachindex(xq_p)
-            xq_i = xq_p[i]
-            (x_lo <= xq_i <= x_hi) || throw(
-                DomainError(xq_i, "query point outside domain [$x_lo, $x_hi]")
-            )
-        end
+        _validate_domain(x_p, xq_p)
     end
 
     # Cache axis for bake loop + per-apply `_compute_mincurv_C` reuse.

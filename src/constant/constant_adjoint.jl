@@ -169,12 +169,11 @@ original query position, so scatter can skip OOB contributions.
 function _fixup_constant_anchor_state!(
         anchors::Vector{_ConstantAnchoredQuery{Tg, Tq}},
         xq_original::AbstractVector,
-        x_lo, x_hi
+        x::AbstractVector
     ) where {Tg, Tq}
     @inbounds for i in eachindex(anchors)
-        xq_i = xq_original[i]
-        (x_lo <= xq_i <= x_hi) && continue
-        state = xq_i < x_lo ? OOB_LEFT : OOB_RIGHT
+        state = _oob_state(x, xq_original[i])
+        state == IN_DOMAIN && continue
         aq = anchors[i]
         anchors[i] = _ConstantAnchoredQuery{Tg, Tq}(
             aq.stencil, aq.xq, state, aq.h, aq.dL
@@ -248,27 +247,18 @@ function constant_adjoint(
     # NoExtrap: validate all queries in-domain (uses x_axis bounds, which include
     # the virtual seam endpoint for `:exclusive`).
     if extrap_eff isa NoExtrap
-        x_lo_p, x_hi_p = map(_extract_primal, _domain_bounds(x_axis))  # widened: accept true endpoint
-        @inbounds for i in eachindex(xq_p)
-            xq_i = xq_p[i]
-            (x_lo_p <= xq_i <= x_hi_p) || throw(
-                DomainError(xq_i, "query point outside domain [$x_lo_p, $x_hi_p]")
-            )
-        end
+        _validate_domain(x_axis, xq_p)
     end
 
     # Build anchored queries with extrap-specific preprocessing
     wrap = extrap_eff isa WrapExtrap
     if extrap_eff isa _ClampOrFill || extrap_eff isa ExtendExtrap
         # For constant interp, ExtendExtrap == ClampExtrap (slope=0).
-        # Clamp OOB queries to boundary for correct anchor geometry.
-        # Then restore side flags so scatter can skip OOB contributions.
-        # Safe (widened) bounds for classification — clamp/fixup against these so
-        # a query at the true `_CachedRange` endpoint stays in-domain.
-        x_lo_p, x_hi_p = map(_extract_primal, _domain_bounds(x_axis))
-        xq_clamped = clamp.(xq_p, x_lo_p, x_hi_p)
+        # OOB queries get actual-endpoint geometry (`_clamp_to_grid`); `_fixup`
+        # restores side flags from the widened (`_oob_state`) classification.
+        xq_clamped = _clamp_to_grid.(xq_p, Ref(x_axis))
         anchors = _anchor_query(x_axis, xq_clamped, Val(:constant), false)
-        _fixup_constant_anchor_state!(anchors, xq_p, x_lo_p, x_hi_p)
+        _fixup_constant_anchor_state!(anchors, xq_p, x_axis)
     else
         # WrapExtrap: wraps to domain (covers periodic auto-promotion).
         # NoExtrap: already validated in-domain above.

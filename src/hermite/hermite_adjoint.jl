@@ -101,7 +101,9 @@ function _bake_hermite_adjoint_anchors(
         xq::AbstractVector,
         extrap::AbstractExtrap
     ) where {Tg}
-    x_lo, x_hi = first(x), last(x)
+    # Safe (widened) classification bounds — matches the forward `_oob_state`, so
+    # a query at the true `_CachedRange` endpoint is in-domain, not zeroed-OOB.
+    x_lo, x_hi = _domain_bounds(x)
 
     need_clamp = extrap isa Union{ClampExtrap, FillExtrap}
     wrap = extrap isa WrapExtrap
@@ -433,7 +435,7 @@ function hermite_adjoint(
 
     # NoExtrap: validate all queries in-domain
     if extrap isa NoExtrap
-        x_lo, x_hi = first(x_p), last(x_p)
+        x_lo, x_hi = _domain_bounds(x_p)  # widened: accept true endpoint
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
             (_extract_primal(x_lo) <= xq_i <= _extract_primal(x_hi)) || throw(

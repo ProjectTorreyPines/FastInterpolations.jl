@@ -1,0 +1,80 @@
+# ════════════════════════════════════════════════════════════════════════════
+# RED-phase guards: the reverse-mode adjoint must classify a range-grid boundary
+# query the same way the forward eval does. The forward fix routed every forward
+# OOB decision through `_oob_state`/`_domain_bounds`; the adjoints still derived
+# OOB state from raw `first`/`last`, so a query at the true endpoint was clamped
+# and flagged OOB → its scatter contribution was skipped → an all-zero
+# sensitivity row (FillExtrap), instead of the boundary cell's weights.
+#
+# Contract: at an in-domain boundary query the adjoint `∂out/∂y` must sum to 1
+# (value interpolation reproduces constants — perturbing every y by +c shifts the
+# output by +c). The bug makes the row all-zero, so the sum is 0.
+#
+# Uses the same synthetic widened `_CachedRange` (`InwardCR` snippet, defined in
+# test_fillextrap_domain_boundary.jl), so the x86 bug reproduces on any arch.
+# ════════════════════════════════════════════════════════════════════════════
+
+@testitem "Adjoint boundary FillExtrap — sensitivity row sums to 1 at the true endpoint" setup = [InwardCR] begin
+    using FastInterpolations
+    n = 5
+    crR = inward_cr_right(0.0, 2.0, n)   # query true endpoint 2.0 (> stored hi)
+    crL = inward_cr_left(1.0, 3.0, n)    # query true endpoint 1.0 (< stored lo)
+    y = collect(10.0:10.0:50.0)
+    fv = FillExtrap(0.0)
+
+    rowsum(adj) = sum(vec(Base.Matrix(adj)))
+
+    # Data-independent adjoints (linear in y, no y argument).
+    @test rowsum(linear_adjoint(crR, 2.0; extrap = fv))                    ≈ 1.0  atol = 1.0e-9
+    @test rowsum(linear_adjoint(crL, 1.0; extrap = fv))                    ≈ 1.0  atol = 1.0e-9
+    @test rowsum(cubic_adjoint(crR, 2.0; extrap = fv))                     ≈ 1.0  atol = 1.0e-9
+    @test rowsum(cubic_adjoint(crL, 1.0; extrap = fv))                     ≈ 1.0  atol = 1.0e-9
+    @test rowsum(quadratic_adjoint(crR, 2.0; extrap = fv))                 ≈ 1.0  atol = 1.0e-9
+    @test rowsum(quadratic_adjoint(crL, 1.0; extrap = fv))                 ≈ 1.0  atol = 1.0e-9
+    @test rowsum(constant_adjoint(crR, 2.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
+    @test rowsum(constant_adjoint(crL, 1.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
+    @test rowsum(cardinal_adjoint(crR, 2.0; tension = 0.0, extrap = fv))   ≈ 1.0  atol = 1.0e-9
+    @test rowsum(cardinal_adjoint(crL, 1.0; tension = 0.0, extrap = fv))   ≈ 1.0  atol = 1.0e-9
+
+    # Data-dependent adjoints (slope-from-data; need y).
+    @test rowsum(pchip_adjoint(crR, y, 2.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
+    @test rowsum(pchip_adjoint(crL, y, 1.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
+    @test rowsum(akima_adjoint(crR, y, 2.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
+    @test rowsum(akima_adjoint(crL, y, 1.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
+end
+
+@testitem "Adjoint boundary NoExtrap — true endpoint accepted (no DomainError)" setup = [InwardCR] begin
+    using FastInterpolations
+    n = 5
+    crR = inward_cr_right(0.0, 2.0, n)
+    crL = inward_cr_left(1.0, 3.0, n)
+    y = collect(10.0:10.0:50.0)
+    no = NoExtrap()
+    # Forward NoExtrap accepts the true endpoint (it checks `domain_lo/hi`); the
+    # adjoint validation must agree, not throw a DomainError one ULP early.
+    @test (linear_adjoint(crR, 2.0; extrap = no); true)
+    @test (linear_adjoint(crL, 1.0; extrap = no); true)
+    @test (constant_adjoint(crR, 2.0; extrap = no); true)
+    @test (cubic_adjoint(crR, 2.0; extrap = no); true)
+    @test (quadratic_adjoint(crR, 2.0; extrap = no); true)
+    @test (cardinal_adjoint(crR, 2.0; tension = 0.0, extrap = no); true)
+    @test (pchip_adjoint(crR, y, 2.0; extrap = no); true)
+    @test (akima_adjoint(crR, y, 2.0; extrap = no); true)
+end
+
+@testitem "Adjoint boundary — reverse matches forward (Matrix·y ≈ itp) for linear-in-y methods" setup = [InwardCR] begin
+    using FastInterpolations
+    n = 5
+    cr = inward_cr_right(0.0, 2.0, n)
+    y = collect(10.0:10.0:50.0)
+    fv = FillExtrap(-7.0)   # distinctive fill: a leak would show as ≈ -7, not y[end]
+
+    # For methods whose interpolant is linear in y, the adjoint IS the forward
+    # linear map, so Matrix(adj)·y must equal the forward value at the boundary.
+    @test sum(vec(Base.Matrix(linear_adjoint(cr, 2.0; extrap = fv))) .* y) ≈
+        linear_interp(cr, y, 2.0; extrap = fv)  atol = 1.0e-9
+    @test sum(vec(Base.Matrix(cubic_adjoint(cr, 2.0; extrap = fv))) .* y) ≈
+        cubic_interp(cr, y, 2.0; extrap = fv)  atol = 1.0e-9
+    @test sum(vec(Base.Matrix(constant_adjoint(cr, 2.0; extrap = fv))) .* y) ≈
+        constant_interp(cr, y, 2.0; extrap = fv)  atol = 1.0e-9
+end

@@ -248,7 +248,7 @@ function constant_adjoint(
     # NoExtrap: validate all queries in-domain (uses x_axis bounds, which include
     # the virtual seam endpoint for `:exclusive`).
     if extrap_eff isa NoExtrap
-        x_lo_p, x_hi_p = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
+        x_lo_p, x_hi_p = map(_extract_primal, _domain_bounds(x_axis))  # widened: accept true endpoint
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
             (x_lo_p <= xq_i <= x_hi_p) || throw(
@@ -263,7 +263,9 @@ function constant_adjoint(
         # For constant interp, ExtendExtrap == ClampExtrap (slope=0).
         # Clamp OOB queries to boundary for correct anchor geometry.
         # Then restore side flags so scatter can skip OOB contributions.
-        x_lo_p, x_hi_p = _extract_primal(first(x_axis)), _extract_primal(last(x_axis))
+        # Safe (widened) bounds for classification — clamp/fixup against these so
+        # a query at the true `_CachedRange` endpoint stays in-domain.
+        x_lo_p, x_hi_p = map(_extract_primal, _domain_bounds(x_axis))
         xq_clamped = clamp.(xq_p, x_lo_p, x_hi_p)
         anchors = _anchor_query(x_axis, xq_clamped, Val(:constant), false)
         _fixup_constant_anchor_state!(anchors, xq_p, x_lo_p, x_hi_p)

@@ -87,7 +87,9 @@ function _bake_quadratic_adjoint_anchors(
         xq::AbstractVector{Tg},
         extrap::AbstractExtrap
     ) where {Tg}
-    x_lo, x_hi = first(x), last(x)
+    # Safe (widened) classification bounds — matches the forward `_oob_state`, so
+    # a query at the true `_CachedRange` endpoint is in-domain, not zeroed-OOB.
+    x_lo, x_hi = _domain_bounds(x)
 
     # For ClampExtrap/FillExtrap, clamp queries to domain before anchoring
     need_clamp = extrap isa Union{ClampExtrap, FillExtrap}
@@ -614,7 +616,7 @@ function quadratic_adjoint(
 
     # Validate domain for NoExtrap
     if extrap isa NoExtrap
-        x_lo, x_hi = first(x_p), last(x_p)
+        x_lo, x_hi = _domain_bounds(x_p)  # widened: accept true endpoint
         for i in eachindex(xq_p)
             xq_i = xq_p[i]
             (x_lo <= xq_i <= x_hi) || throw(

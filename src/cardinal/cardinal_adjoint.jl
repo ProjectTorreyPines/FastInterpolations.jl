@@ -283,7 +283,7 @@ function cardinal_adjoint(
 
     # NoExtrap: validate queries against extended domain.
     if extrap_eff isa NoExtrap
-        x_lo, x_hi = _extract_primal(first(x_ext)), _extract_primal(last(x_ext))
+        x_lo, x_hi = map(_extract_primal, _domain_bounds(x_ext))  # widened: accept true endpoint
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
             (x_lo <= xq_i <= x_hi) || throw(

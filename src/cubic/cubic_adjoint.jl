@@ -455,7 +455,9 @@ function cubic_adjoint(
     wrap = extrap isa WrapExtrap
     if extrap isa Union{ClampExtrap, FillExtrap}
         # Clamp OOB queries to boundary for valid anchor indices, then fix weights
-        x_lo, x_hi = first(cache.x), last(cache.x)
+        # Safe (widened) bounds for classification — clamp/fixup against these so
+        # a query at the true `_CachedRange` endpoint stays in-domain.
+        x_lo, x_hi = _domain_bounds(cache.x)
         xq_clamped = clamp.(xq_p, x_lo, x_hi)
         anchors = _anchor_query(cache.x, xq_clamped, Val(:cubic), false)
         _fixup_clampfill_anchors!(anchors, xq_p, x_lo, x_hi, extrap)

@@ -429,7 +429,7 @@ function pchip_adjoint(
     # fires inside `_periodic_extend_1d` for periodic BCs, so non-periodic
     # NoExtrap still validates here).
     if extrap_eff isa NoExtrap
-        x_lo, x_hi = first(x_ext), last(x_ext)
+        x_lo, x_hi = _domain_bounds(x_ext)  # widened: accept true endpoint
         @inbounds for i in eachindex(xq_p)
             xq_i = xq_p[i]
             (_extract_primal(x_lo) <= xq_i <= _extract_primal(x_hi)) || throw(

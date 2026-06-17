@@ -215,7 +215,7 @@ Pool-based exclusive extension: zero-alloc after warmup.
     # inside `_eval_cubic_at_point(::WrapExtrap)`). OOB queries fall to
     # the wrap path. Mirrors the batch loop's function-barrier pattern.
     xq_p = _extract_primal(xq)
-    return if first(cache.x) <= xq_p <= last(cache.x)
+    return if _is_inbounds(cache.x, xq_p)
         _eval_cubic_at_point(cache.x, y_p, z, xq, InBounds(), op, searcher)
     else
         _eval_cubic_at_point(cache.x, y_p, z, xq, WrapExtrap(), op, searcher)

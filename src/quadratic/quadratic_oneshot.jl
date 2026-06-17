@@ -67,8 +67,9 @@ end
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     xq_primal = _extract_primal(xq)
-    xq_primal < _extract_primal(first(x)) && return _eval_extrapolation(op, first(y), extrap, xq)
-    xq_primal > _extract_primal(last(x)) && return _eval_extrapolation(op, last(y), extrap, xq)
+    st = _oob_state(x, xq_primal)
+    st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq)
+    st == OOB_RIGHT && return _eval_extrapolation(op, last(y), extrap, xq)
     return _quadratic_eval_at_point(x, y, a, d, xq, InBounds(), op, searcher)
 end
 

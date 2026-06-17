@@ -1,0 +1,191 @@
+# ════════════════════════════════════════════════════════════════════════════
+# RED-phase guards: range-grid boundary OOB classification must use the
+# axis-aware *safe* domain bounds (`domain_lo`/`domain_hi`), not raw
+# `first(x)`/`last(x)`.
+#
+# Root cause: on the x86_64 `_CachedRange` fast path the stored `lo`/`hi`
+# (`first`/`last`) can round 1 ULP *inward* of the true endpoint; the widened
+# `domain_lo`/`domain_hi` are the safe cushion. Forward-eval OOB classification
+# (scalar `_anchor_loc`, one-shot, ND) reads `first/last`, so a query at the
+# *true* endpoint (== `domain_hi`) is misclassified out-of-bounds and FillExtrap
+# returns the fill value instead of the boundary value. The BATCH path is
+# already correct (it dispatches `_is_all_inbounds` on axis type), so these
+# tests pin every scalar/one-shot/ND path to agree with the batch reference.
+#
+# These tests inject a synthetic `_CachedRange` whose `hi` rounds inward and
+# whose `domain_hi` recovers the true endpoint. The struct survives the
+# `_to_float(::_CachedRange{T}, ::Type{T}) = x` identity passthrough, so the
+# bug reproduces deterministically on ANY architecture (incl. aarch64, where
+# real range inputs never trigger the x86_64 widening).
+# ════════════════════════════════════════════════════════════════════════════
+
+@testsnippet InwardCR begin
+    using FastInterpolations: _CachedRange
+
+    # Right boundary: stored `hi = prevfloat(true_hi)` (1 ULP inward),
+    # `domain_hi = nextfloat(hi) = true_hi` (the cushion recovers it).
+    function inward_cr_right(lo, true_hi, n)
+        hi = prevfloat(true_hi)
+        h = (hi - lo) / (n - 1)
+        return _CachedRange{Float64, Float64}(lo, hi, h, inv(h), n, lo, nextfloat(hi))
+    end
+
+    # Left boundary: stored `lo = nextfloat(true_lo)` (1 ULP inward),
+    # `domain_lo = prevfloat(lo) = true_lo`.
+    function inward_cr_left(true_lo, hi, n)
+        lo = nextfloat(true_lo)
+        h = (hi - lo) / (n - 1)
+        return _CachedRange{Float64, Float64}(lo, hi, h, inv(h), n, prevfloat(lo), hi)
+    end
+
+    # Both endpoints inward (the real x86 case where `first` AND `last` round
+    # toward the interior): stored `lo = nextfloat(true_lo)`, `hi = prevfloat(true_hi)`,
+    # `domain = [true_lo, true_hi]`. Used to mirror the KernelDensity.jl pattern
+    # (`pdf(k, k.x, k.y)` queries every grid point, incl. both boundaries).
+    function inward_cr_both(true_lo, true_hi, n)
+        lo = nextfloat(true_lo)
+        hi = prevfloat(true_hi)
+        h = (hi - lo) / (n - 1)
+        return _CachedRange{Float64, Float64}(lo, hi, h, inv(h), n, prevfloat(lo), nextfloat(hi))
+    end
+end
+
+@testitem "Boundary FillExtrap — scalar persistent == batch (right endpoint)" setup = [InwardCR] begin
+    using FastInterpolations
+    n = 5
+    cr = inward_cr_right(0.0, 2.0, n)
+    y = [10.0, 20.0, 30.0, 40.0, 50.0]
+    fv = -999.0
+    true_hi = 2.0   # == cr.domain_hi, but > cr.hi
+    for m in (linear_interp, cubic_interp, quadratic_interp, constant_interp,
+            pchip_interp, cardinal_interp, akima_interp)
+        itp = m(cr, y; extrap = FillExtrap(fv))
+        scalar = itp(true_hi)
+        batch = itp([true_hi])[1]
+        @test scalar != fv                      # fill must NOT leak at the true boundary
+        @test scalar ≈ y[end]  atol = 1.0e-7    # returns the boundary value
+        @test scalar ≈ batch   atol = 1.0e-9    # scalar agrees with the correct batch path
+    end
+end
+
+@testitem "Boundary FillExtrap — scalar persistent == batch (left endpoint)" setup = [InwardCR] begin
+    using FastInterpolations
+    n = 5
+    cr = inward_cr_left(1.0, 3.0, n)
+    y = [10.0, 20.0, 30.0, 40.0, 50.0]
+    fv = -999.0
+    true_lo = 1.0   # == cr.domain_lo, but < cr.lo
+    for m in (linear_interp, cubic_interp, quadratic_interp, constant_interp,
+            pchip_interp, cardinal_interp, akima_interp)
+        itp = m(cr, y; extrap = FillExtrap(fv))
+        scalar = itp(true_lo)
+        batch = itp([true_lo])[1]
+        @test scalar != fv
+        @test scalar ≈ y[begin]  atol = 1.0e-7
+        @test scalar ≈ batch     atol = 1.0e-9
+    end
+end
+
+@testitem "Boundary FillExtrap — one-shot == batch (right endpoint)" setup = [InwardCR] begin
+    using FastInterpolations
+    n = 5
+    cr = inward_cr_right(0.0, 2.0, n)
+    y = [10.0, 20.0, 30.0, 40.0, 50.0]
+    fv = -999.0
+    true_hi = 2.0
+    for m in (linear_interp, cubic_interp, quadratic_interp, constant_interp,
+            pchip_interp, cardinal_interp, akima_interp)
+        oneshot = m(cr, y, true_hi; extrap = FillExtrap(fv))
+        batch = m(cr, y, [true_hi]; extrap = FillExtrap(fv))[1]
+        @test oneshot != fv
+        @test oneshot ≈ y[end]  atol = 1.0e-7
+        @test oneshot ≈ batch   atol = 1.0e-9
+    end
+end
+
+@testitem "Boundary FillExtrap — ND corner query returns the corner, not fill" setup = [InwardCR] begin
+    using FastInterpolations
+    n = 5
+    crx = inward_cr_right(0.0, 2.0, n)
+    cry = inward_cr_right(0.0, 2.0, n)
+    data = [10.0 * i + j for i in 1:n, j in 1:n]
+    fv = -999.0
+    corner = (2.0, 2.0)   # both axes at their true endpoint
+    for m in (linear_interp, cubic_interp, constant_interp)
+        itp = m((crx, cry), data; extrap = FillExtrap(fv))
+        scalar = itp(corner)
+        @test scalar != fv
+        @test scalar ≈ data[end, end]  atol = 1.0e-7
+    end
+end
+
+@testitem "Boundary FillExtrap(0) — ND full-grid boundary (KernelDensity.jl pdf pattern)" setup = [InwardCR] begin
+    using FastInterpolations
+    # Direct mirror of the real KernelDensity.jl failure: `pdf(k, k.x, k.y)` on a
+    # 2D range grid with FillExtrap(0) returned an all-zero first row because the
+    # boundary grid point (queried at its true value) was misclassified OOB and
+    # leaked the 0 fill. Here both axes round inward (x86 fast path), fill = 0,
+    # and we evaluate the boundary rows/columns — none may collapse to 0.
+    n = 5
+    crx = inward_cr_both(0.0, 2.0, n)
+    cry = inward_cr_both(0.0, 2.0, n)
+    data = [10.0 * i + j for i in 1:n, j in 1:n]   # every entry nonzero
+    lo, hi = 0.0, 2.0                              # == domain_lo / domain_hi
+    mid = crx[3]                                   # an interior grid point
+    for m in (linear_interp, cubic_interp, constant_interp)
+        itp = m((crx, cry), data; extrap = FillExtrap(0.0))
+        # Four corners return the corner density (not the 0 fill).
+        @test itp((lo, lo)) ≈ data[1, 1]  atol = 1.0e-7
+        @test itp((lo, hi)) ≈ data[1, n]  atol = 1.0e-7
+        @test itp((hi, lo)) ≈ data[n, 1]  atol = 1.0e-7
+        @test itp((hi, hi)) ≈ data[n, n]  atol = 1.0e-7
+        # Boundary edges (one axis at the true endpoint) — the "first row/column"
+        # case: must interpolate, not collapse to the 0 fill.
+        @test itp((lo, mid)) != 0.0
+        @test itp((hi, mid)) != 0.0
+        @test itp((mid, lo)) != 0.0
+        @test itp((mid, hi)) != 0.0
+    end
+end
+
+@testitem "Boundary FillExtrap — scalar and batch must not disagree" setup = [InwardCR] begin
+    using FastInterpolations
+    # The sharpest statement of the bug: the same interpolant returns the fill
+    # value for a scalar query but the boundary value for the batch of one.
+    n = 5
+    y = [10.0, 20.0, 30.0, 40.0, 50.0]
+    fv = -999.0
+    crR = inward_cr_right(0.0, 2.0, n)
+    itpR = linear_interp(crR, y; extrap = FillExtrap(fv))
+    @test itpR(2.0) ≈ itpR([2.0])[1]  atol = 1.0e-9
+    crL = inward_cr_left(1.0, 3.0, n)
+    itpL = linear_interp(crL, y; extrap = FillExtrap(fv))
+    @test itpL(1.0) ≈ itpL([1.0])[1]  atol = 1.0e-9
+end
+
+@testitem "Boundary WrapExtrap — true endpoint is in-domain (returns y[end])" setup = [InwardCR] begin
+    using FastInterpolations
+    # WrapExtrap shares the same `first/last` classification: a query at the
+    # true endpoint must be treated as the closed-domain boundary (y[end]),
+    # not wrapped back to y[1].
+    n = 5
+    cr = inward_cr_right(0.0, 2.0, n)
+    y = [10.0, 20.0, 30.0, 40.0, 50.0]
+    scalar = linear_interp(cr, y, 2.0; extrap = WrapExtrap())
+    batch = linear_interp(cr, y, [2.0]; extrap = WrapExtrap())[1]
+    @test scalar ≈ y[end]  atol = 1.0e-7
+    @test scalar ≈ batch   atol = 1.0e-9
+end
+
+@testitem "Boundary derivative — slope at the true endpoint, not zero" setup = [InwardCR] begin
+    using FastInterpolations
+    # ClampExtrap value is correct either way (y[end]), but the DERIVATIVE
+    # exposes the misclassification: OOB-clamp yields a flat (zero) derivative,
+    # while the correct in-domain classification yields the boundary slope.
+    n = 5
+    cr = inward_cr_right(0.0, 2.0, n)
+    y = [10.0, 20.0, 30.0, 40.0, 50.0]
+    g = linear_interp(cr, y, 2.0; extrap = ClampExtrap(), deriv = DerivOp(1))
+    @test g != 0.0
+    @test g ≈ (y[end] - y[end - 1]) / cr.h  atol = 1.0e-6
+end

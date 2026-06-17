@@ -260,11 +260,9 @@ end
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
     xq_primal = _extract_primal(xq)
-    if xq_primal < first(x)
-        return _eval_extrapolation(op, first(y), extrap, xq)
-    elseif xq_primal > last(x)
-        return _eval_extrapolation(op, last(y), extrap, xq)
-    end
+    st = _oob_state(x, xq_primal)
+    st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq)
+    st == OOB_RIGHT && return _eval_extrapolation(op, last(y), extrap, xq)
     return _linear_eval_at_point(x, y, xq, InBounds(), op, searcher)
 end
 

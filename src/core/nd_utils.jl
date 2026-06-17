@@ -72,13 +72,9 @@ Returns `false` at compile time when no axis has FillExtrap (dead-code eliminate
     fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
     isempty(fill_dims) && return :(false)
 
-    oob_checks = [
-        :(
-                let qp = _extract_primal(query[$d])
-                    qp < first(grids[$d]) || qp > last(grids[$d])
-            end
-            ) for d in fill_dims
-    ]
+    # Per-axis OOB via the shared `_oob_state` (widened `_CachedRange` bracket →
+    # a query at the true endpoint is in-domain, matching the 1D paths).
+    oob_checks = [:(_oob_state(grids[$d], query[$d]) != IN_DOMAIN) for d in fill_dims]
     oob_expr = length(oob_checks) == 1 ? oob_checks[1] :
         foldl((a, b) -> :($a || $b), oob_checks)
 
@@ -107,13 +103,9 @@ Accepts both scalar `ops::AbstractEvalOp` and tuple `ops::Tuple{Vararg{AbstractE
     fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
     isempty(fill_dims) && return :(nothing)
 
-    oob_checks = [
-        :(
-                let qp = _extract_primal(query[$d])
-                    qp < first(grids[$d]) || qp > last(grids[$d])
-            end
-            ) for d in fill_dims
-    ]
+    # Per-axis OOB via the shared `_oob_state` (widened `_CachedRange` bracket →
+    # a query at the true endpoint is in-domain, matching the 1D paths).
+    oob_checks = [:(_oob_state(grids[$d], query[$d]) != IN_DOMAIN) for d in fill_dims]
     oob_expr = length(oob_checks) == 1 ? oob_checks[1] :
         foldl((a, b) -> :($a || $b), oob_checks)
 
@@ -551,9 +543,12 @@ end
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::_ClampOrFill) where {Tg}
     q_primal = _extract_primal(q)
-    lo, hi = first(axis), last(axis)
-    q_primal < lo && return oftype(q, lo)
-    q_primal > hi && return oftype(q, hi)
+    # Classify with the shared (widened) `_oob_state`, but clamp to the *actual*
+    # endpoint — a query in the `_CachedRange` widened sliver is in-domain and
+    # passes through unclamped; only genuinely-OOB queries clamp to first/last.
+    st = _oob_state(axis, q_primal)
+    st == OOB_LEFT && return oftype(q, first(axis))
+    st == OOB_RIGHT && return oftype(q, last(axis))
     return q
 end
 

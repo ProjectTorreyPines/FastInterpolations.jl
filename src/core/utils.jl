@@ -521,37 +521,26 @@ end
     return _is_all_inbounds(x, xi) ? InBounds() : e
 end
 
-# ----------------------------------------
-# Safe domain bounds — single axis-dispatched source of truth.
-#
-# `(lo, hi)` are the bounds every in-domain test classifies against: the batch
-# `_is_all_inbounds`, the scalar `_is_inbounds`, and the per-query classify in
-# `_anchor_loc`. Routing them all through here means they never disagree at a
-# boundary query.
-#
-# Plain `AbstractVector` → exact endpoints. `_CachedRange` → `domain_lo`/
-# `domain_hi`, which are ≈1 ULP wider than the stored `lo`/`hi` on the x86_64
-# TwicePrecision fast path (where `first`/`last` can round inward of the true
-# endpoint). Classifying against the widened bounds keeps a query at the *true*
-# endpoint in-domain instead of falsely OOB.
+# Safe domain bounds — single axis-dispatched source of truth for every in-domain
+# test (`_is_all_inbounds`, `_is_inbounds`, `_oob_state`), so they never disagree
+# at a boundary query. Plain `AbstractVector` → exact `first/last`; `_CachedRange`
+# → `domain_lo/hi`, ≈1 ULP wider than the stored `lo/hi` on the x86_64 fast path,
+# keeping a query at the true endpoint in-domain instead of falsely OOB.
 @inline _domain_bounds(x::AbstractVector) = (first(x), last(x))
 @inline _domain_bounds(x::_CachedRange) = (x.domain_lo, x.domain_hi)
 
-# Scalar in-domain test. `_extract_primal` on both bounds and the query so a
-# Float query at the boundary against a Dual grid endpoint classifies on primal
-# value alone (partial-sign independent) — same rationale as `_is_all_inbounds`.
-# No-op on the plain-Float `_CachedRange` fields.
+# Scalar in-domain test. `_extract_primal` on bounds and query keeps it partial-
+# sign independent for Dual grids (no-op on plain-Float `_CachedRange` fields).
 @inline function _is_inbounds(x::AbstractVector, xq::Real)
     lo, hi = _domain_bounds(x)
     xqp = _extract_primal(xq)
     return _extract_primal(lo) <= xqp <= _extract_primal(hi)
 end
 
-# Clamp a query to the grid's *physical* span `[first(x), last(x)]` — the actual
-# endpoints, never the widened `_domain_bounds` bracket. Adjoint anchor builders
-# use this to give an OOB query valid boundary geometry, while classification
-# (`_oob_state`/`_is_inbounds`) independently reads the widened bounds. Keeping
-# the two apart is what stops the acceptance cushion from leaking into geometry.
+# Clamp a query to the grid's physical span `[first(x), last(x)]`, never the
+# widened `_domain_bounds` bracket — adjoint anchor builders use it for valid OOB
+# boundary geometry while classification reads the widened bounds (keeps the
+# acceptance cushion out of geometry).
 @inline _clamp_to_grid(xq::Real, x::AbstractVector) =
     clamp(xq, _extract_primal(first(x)), _extract_primal(last(x)))
 
@@ -571,15 +560,10 @@ Uses two `&&`-chained reductions rather than `extrema`:
 1.13 fixes the SIMD issue, but the short-circuit advantage remains for
 the OOB slow-path, so this form stays preferred even post-1.10-LTS.
 """
-# `_extract_primal` is required on the bounds here because ForwardDiff's
-# `Real <= Dual` comparison includes partial-sign tie-breaking at equal
-# primals — so a Float query exactly at the boundary against a Dual grid
-# endpoint can flip in/out of bounds based on the partial sign alone (see
-# `test/ext/test_linear_dual_grid.jl` "Domain boundary: primal-based NoExtrap
-# check (partial-independent)"). Inline calls keep the `&&` short-circuit
-# intact. Routes through `_domain_bounds`, so the `_CachedRange` widened
-# bracket is handled in one place (no `_extract_primal` cost on its plain-Float
-# fields — the call is the identity there).
+# `_extract_primal` on the bounds: ForwardDiff's `Real <= Dual` tie-breaks on the
+# partial sign at equal primals, so a Float query at the boundary against a Dual
+# grid endpoint must classify on primal alone (see test/ext/test_linear_dual_grid.jl).
+# Routes through `_domain_bounds` (widened bracket in one place); `&&` short-circuits.
 @inline function _is_all_inbounds(x::AbstractVector, queries::AbstractVector{<:Real})
     isempty(queries) && return true
     lo, hi = _domain_bounds(x)

@@ -26,16 +26,11 @@ const OOB_RIGHT = 0x02
 
 Classify query `xq` against grid `x` as `IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`.
 
-The single source of truth for every "is `xq` in domain, and if not which side?"
-decision — `_anchor_loc` and every scalar/one-shot eval site route through here.
-Bounds come from [`_domain_bounds`](@ref), so classification matches the batch
-path (`_is_all_inbounds`) and the `_CachedRange` widened bracket (≈1 ULP past the
-stored `first`/`last` on the x86_64 fast path) is handled in exactly one place —
-a query at the *true* endpoint is `IN_DOMAIN`, not falsely OOB.
-
-`_extract_primal` on both bounds and query so a Float query at the boundary
-against a Dual grid endpoint classifies on primal value alone (no-op on plain
-Float / `_CachedRange` fields).
+Single source of truth for the in-domain / which-side decision: bounds come from
+[`_domain_bounds`](@ref), so it matches the batch path and the `_CachedRange`
+widened bracket is handled in one place (a query at the true endpoint is
+`IN_DOMAIN`). `_extract_primal` on bounds and query keeps it partial-sign
+independent for Dual grids.
 """
 @inline function _oob_state(x::AbstractVector, xq::Real)
     lo, hi = _domain_bounds(x)
@@ -105,8 +100,8 @@ Dual type. The interval search uses `_extract_primal(xq)` for comparisons.
         wrap::Bool,
         policy::P = DEFAULT_SEARCHER
     ) where {Tg, Tq <: Real, P <: Searcher}
-    # Actual grid span (= x[1], x[n]) — used only for wrap-fold geometry, so the
-    # periodic period stays exactly `last - first` (not the widened bracket).
+    # Actual grid span — used only for wrap-fold geometry (period stays exactly
+    # `last - first`, not the widened bracket).
     x_min, x_max = first(x), last(x)
 
     # Use primal value for comparisons (supports ForwardDiff.Dual)
@@ -116,11 +111,9 @@ Dual type. The interval search uses `_extract_primal(xq)` for comparisons.
     # query at the true endpoint is IN_DOMAIN, consistent with the batch path).
     state = _oob_state(x, xq_primal)
 
-    # Handle wrapping (for extrap=WrapExtrap() or periodic mode)
-    # Generic _wrap_to_domain handles AD primal extraction and returns Tg.
-    # Closed-domain convention: an IN_DOMAIN query never wraps. Only strictly-OOB
-    # queries take the slow `mod()` path (which folds against the actual grid
-    # span x_min/x_max), then re-classify (the folded query is in-domain).
+    # WrapExtrap/periodic: an IN_DOMAIN query never wraps. Strictly-OOB queries
+    # take the `mod()` path (folds against the actual span x_min/x_max, returns
+    # Tg with AD primal handled), then re-classify.
     if wrap && state != IN_DOMAIN
         xq = _wrap_to_domain(xq, x_min, x_max)
         xq_primal = xq  # xq is now Tg, no need for _extract_primal

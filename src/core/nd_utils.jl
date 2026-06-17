@@ -543,9 +543,8 @@ end
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::_ClampOrFill) where {Tg}
     q_primal = _extract_primal(q)
-    # Classify with the shared (widened) `_oob_state`, but clamp to the *actual*
-    # endpoint — a query in the `_CachedRange` widened sliver is in-domain and
-    # passes through unclamped; only genuinely-OOB queries clamp to first/last.
+    # Classify with the widened `_oob_state` but clamp to the actual endpoint:
+    # a sliver query is in-domain and passes through; only genuinely-OOB clamps.
     st = _oob_state(axis, q_primal)
     st == OOB_LEFT && return oftype(q, first(axis))
     st == OOB_RIGHT && return oftype(q, last(axis))

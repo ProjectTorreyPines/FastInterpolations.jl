@@ -1,22 +1,11 @@
 # ════════════════════════════════════════════════════════════════════════════
-# RED-phase guards: range-grid boundary OOB classification must use the
-# axis-aware *safe* domain bounds (`domain_lo`/`domain_hi`), not raw
-# `first(x)`/`last(x)`.
-#
-# Root cause: on the x86_64 `_CachedRange` fast path the stored `lo`/`hi`
-# (`first`/`last`) can round 1 ULP *inward* of the true endpoint; the widened
-# `domain_lo`/`domain_hi` are the safe cushion. Forward-eval OOB classification
-# (scalar `_anchor_loc`, one-shot, ND) reads `first/last`, so a query at the
-# *true* endpoint (== `domain_hi`) is misclassified out-of-bounds and FillExtrap
-# returns the fill value instead of the boundary value. The BATCH path is
-# already correct (it dispatches `_is_all_inbounds` on axis type), so these
-# tests pin every scalar/one-shot/ND path to agree with the batch reference.
-#
-# These tests inject a synthetic `_CachedRange` whose `hi` rounds inward and
-# whose `domain_hi` recovers the true endpoint. The struct survives the
-# `_to_float(::_CachedRange{T}, ::Type{T}) = x` identity passthrough, so the
-# bug reproduces deterministically on ANY architecture (incl. aarch64, where
-# real range inputs never trigger the x86_64 widening).
+# Range-grid boundary OOB classification must use the axis-aware widened bounds
+# (`domain_lo`/`domain_hi`), not raw `first`/`last`: on the x86_64 `_CachedRange`
+# fast path the stored `lo`/`hi` can round 1 ULP inward of the true endpoint, so a
+# query at the true endpoint (== `domain_hi`) is otherwise flagged OOB and
+# FillExtrap leaks the fill. The batch path already classifies on `domain_lo/hi`;
+# these tests pin every scalar/one-shot/ND path to it. The synthetic `_CachedRange`
+# below forces the inward rounding, so the bug reproduces on any architecture.
 # ════════════════════════════════════════════════════════════════════════════
 
 @testsnippet InwardCR begin
@@ -38,10 +27,8 @@
         return _CachedRange{Float64, Float64}(lo, hi, h, inv(h), n, prevfloat(lo), hi)
     end
 
-    # Both endpoints inward (the real x86 case where `first` AND `last` round
-    # toward the interior): stored `lo = nextfloat(true_lo)`, `hi = prevfloat(true_hi)`,
-    # `domain = [true_lo, true_hi]`. Used to mirror the KernelDensity.jl pattern
-    # (`pdf(k, k.x, k.y)` queries every grid point, incl. both boundaries).
+    # Both endpoints inward (the real x86 case): stored `lo`/`hi` round toward
+    # the interior, `domain_lo`/`domain_hi` recover the true endpoints.
     function inward_cr_both(true_lo, true_hi, n)
         lo = nextfloat(true_lo)
         hi = prevfloat(true_hi)
@@ -125,13 +112,11 @@ end
     end
 end
 
-@testitem "Boundary FillExtrap(0) — ND full-grid boundary (KernelDensity.jl pdf pattern)" setup = [InwardCR] begin
+@testitem "Boundary FillExtrap(0) — ND full-grid boundary" setup = [InwardCR] begin
     using FastInterpolations
-    # Direct mirror of the real KernelDensity.jl failure: `pdf(k, k.x, k.y)` on a
-    # 2D range grid with FillExtrap(0) returned an all-zero first row because the
-    # boundary grid point (queried at its true value) was misclassified OOB and
-    # leaked the 0 fill. Here both axes round inward (x86 fast path), fill = 0,
-    # and we evaluate the boundary rows/columns — none may collapse to 0.
+    # Both axes round inward (x86 fast path), fill = 0. A boundary grid point
+    # queried at its true value must interpolate, not collapse to the 0 fill —
+    # i.e. no boundary row/column may go all-zero.
     n = 5
     crx = inward_cr_both(0.0, 2.0, n)
     cry = inward_cr_both(0.0, 2.0, n)

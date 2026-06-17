@@ -102,11 +102,9 @@ Base.IndexStyle(::Type{<:_ExclusivePeriodicAxis}) = IndexLinear()
 @inline Base.first(g::_ExclusivePeriodicAxis) = @inbounds g.inner[1]
 @inline Base.last(g::_ExclusivePeriodicAxis) = g._x_max
 
-# Classification bounds propagate the inner's widened LEFT endpoint (the inner
-# `_CachedRange` may round `first` inward of the true endpoint on the x86_64 fast
-# path), so a query at the inner's true left endpoint is in-domain and maps to
-# the first cell instead of folding to the seam. Right bound is the virtual seam
-# `_x_max`; wrap-fold geometry stays on the actual `inner[1]`/`_x_max`.
+# Classification bounds: inner's widened left endpoint (so the true left endpoint
+# maps to the first cell, not the seam) + the virtual seam `_x_max`. Wrap-fold
+# geometry still uses the actual `inner[1]`/`_x_max`.
 @inline _domain_bounds(g::_ExclusivePeriodicAxis) = (_domain_bounds(g.inner)[1], g._x_max)
 
 # Forward `step` to inner — meaningful only when inner is a Range/`_CachedRange`
@@ -244,10 +242,9 @@ end
 #     dispatch through wrapper → inner getindex chain).
 #   - `g._x_max` → cached field, single load.
 @inline function _wrap_to_domain(xq, g::_ExclusivePeriodicAxis)
-    # In-domain by the inner's widened bounds → no fold; the inner `_CachedRange`
-    # may have rounded its left endpoint inward of the true value, and that true
-    # endpoint must stay in the first cell rather than fold to the seam. Only
-    # genuinely-OOB queries fold against the actual seam span `[inner[1], _x_max]`.
+    # In-domain by the inner's widened bounds → no fold (the true left endpoint
+    # must stay in the first cell, not fold to the seam). Only genuinely-OOB
+    # queries fold against the actual seam span `[inner[1], _x_max]`.
     _is_inbounds(g, xq) && return xq
     return _wrap_to_domain(xq, @inbounds(g.inner[1]), g._x_max)
 end

@@ -43,10 +43,9 @@ end
 # Arg order `(xq, x)`: matches the 3-arg primitive `(xq, x_min, x_max)` —
 # the operand always comes first; axis bounds (or extracted bounds) follow.
 @inline function _wrap_to_domain(xq, x::AbstractVector)
-    # In-domain by the safe (widened) bounds → no fold. The `_CachedRange`
-    # widened sliver just past the stored `last` is the true endpoint, not a
-    # wrap-around point — folding it would jump to `first`. Genuinely-OOB queries
-    # fold against the *actual* grid span (exact period `last - first`).
+    # In-domain by the widened bounds → no fold (the sliver just past `last` is the
+    # true endpoint, not a wrap point). Genuinely-OOB queries fold against the
+    # actual grid span (exact period `last - first`).
     _is_inbounds(x, xq) && return xq
     return _wrap_to_domain(xq, first(x), last(x))
 end

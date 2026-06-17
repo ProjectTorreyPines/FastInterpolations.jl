@@ -1,17 +1,11 @@
 # ════════════════════════════════════════════════════════════════════════════
-# RED-phase guards: the reverse-mode adjoint must classify a range-grid boundary
-# query the same way the forward eval does. The forward fix routed every forward
-# OOB decision through `_oob_state`/`_domain_bounds`; the adjoints still derived
-# OOB state from raw `first`/`last`, so a query at the true endpoint was clamped
-# and flagged OOB → its scatter contribution was skipped → an all-zero
-# sensitivity row (FillExtrap), instead of the boundary cell's weights.
+# The reverse-mode adjoint must classify a range-grid boundary query the same way
+# the forward eval does. Previously the adjoints derived OOB state from raw
+# `first`/`last`, so a query at the true endpoint was flagged OOB → its scatter
+# contribution skipped → an all-zero sensitivity row under FillExtrap.
 #
-# Contract: at an in-domain boundary query the adjoint `∂out/∂y` must sum to 1
-# (value interpolation reproduces constants — perturbing every y by +c shifts the
-# output by +c). The bug makes the row all-zero, so the sum is 0.
-#
-# Uses the same synthetic widened `_CachedRange` (`InwardCR` snippet, defined in
-# test_fillextrap_domain_boundary.jl), so the x86 bug reproduces on any arch.
+# Contract: at an in-domain boundary query `∂out/∂y` sums to 1 (value interp
+# reproduces constants). Uses the synthetic widened `_CachedRange` (`InwardCR`).
 # ════════════════════════════════════════════════════════════════════════════
 
 @testitem "Adjoint boundary FillExtrap — sensitivity row sums to 1 at the true endpoint" setup = [InwardCR] begin

@@ -82,7 +82,9 @@ end
     _anchor_loc(x, xq, wrap, policy) -> _AnchorLoc{Tg, Tq}
 
 Shared interval location for all interpolation methods.
-Performs: wrap → domain state classification → interval search.
+Performs: domain-state classification (`_oob_state`, widened `_CachedRange`
+bracket) → wrap-fold only for OOB queries when `wrap` (then re-classify) →
+interval search (boundary cell for OOB, `search_interval` otherwise).
 
 Returns `_AnchorLoc` with NO geometry — each method computes its own
 h/inv_h/dL/dR from `xL`, `xR`, `xq` as needed.

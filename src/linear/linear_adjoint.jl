@@ -165,26 +165,35 @@ end
 # ========================================
 
 """
-Restore `state` flags for anchors built with clamped query positions.
+    _bake_linear_clampfill_anchors(x, xq) -> Vector{_LinearAnchoredQuery}
 
-When ClampExtrap/FillExtrap queries are clamped before anchoring, the anchor
-gets `state=IN_DOMAIN` (inside). This restores the correct OOB state flag based on the
-original query position, so scatter can skip OOB contributions.
+Single-pass ClampExtrap/FillExtrap adjoint anchor builder.
+
+Each query is clamped to the *actual* grid endpoints (`_clamp_to_grid`) for
+valid boundary-cell geometry, anchored, then genuinely-OOB queries get their
+side flag restored from the widened (`_oob_state`) classification so scatter
+skips (FillExtrap) or keeps (ClampExtrap) the boundary weight per extrap. An
+in-domain or endpoint-sliver query keeps the anchor as built.
+
+Fuses the former clamp-broadcast + `_anchor_query` + state-fixup three passes
+into one loop, dropping the transient clamped-query array. Construction-time
+only; the apply path consumes the baked anchors unchanged.
 """
-function _fixup_linear_anchor_state!(
-        anchors::Vector{<:_LinearAnchoredQuery},
-        xq_original::AbstractVector,
-        x::AbstractVector
-    )
-    @inbounds for i in eachindex(anchors)
-        state = _oob_state(x, xq_original[i])
-        state == IN_DOMAIN && continue
-        aq = anchors[i]
-        anchors[i] = typeof(aq)(
-            aq.stencil, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha
-        )
+function _bake_linear_clampfill_anchors(
+        x::AbstractVector{Tg},
+        xq::AbstractVector{Tq},
+        searcher::P = _to_searcher(LinearBinarySearch())
+    ) where {Tg, Tq <: Real, P <: Searcher}
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
+    output = Vector{_LinearAnchoredQuery{Tg, promote_type(Tq, Tg)}}(undef, length(xq))
+    @inbounds for k in eachindex(xq)
+        xq_raw = xq[k]
+        aq = _linear_anchor_query_impl(x, _clamp_to_grid(xq_raw, x), false, searcher_resolved)
+        state = _oob_state(x, xq_raw)
+        output[k] = state == IN_DOMAIN ? aq :
+            typeof(aq)(aq.stencil, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha)
     end
-    return nothing
+    return output
 end
 
 # ========================================
@@ -257,11 +266,9 @@ function linear_adjoint(
     # Build anchored queries with extrap-specific preprocessing
     wrap = extrap_eff isa WrapExtrap
     if extrap_eff isa _ClampOrFill
-        # OOB queries get actual-endpoint geometry (`_clamp_to_grid`); `_fixup`
-        # restores the side flags from the widened (`_oob_state`) classification.
-        xq_clamped = _clamp_to_grid.(xq_p, Ref(x_axis))
-        anchors = _anchor_query(x_axis, xq_clamped, Val(:linear), false)
-        _fixup_linear_anchor_state!(anchors, xq_p, x_axis)
+        # OOB queries get actual-endpoint geometry; the widened (`_oob_state`)
+        # classification restores side flags. Single fused pass (no temp array).
+        anchors = _bake_linear_clampfill_anchors(x_axis, xq_p)
     else
         # ExtendExtrap: OOB uses boundary interval with extrapolated alpha (correct)
         # WrapExtrap: wraps to domain (correct; covers periodic auto-promotion)

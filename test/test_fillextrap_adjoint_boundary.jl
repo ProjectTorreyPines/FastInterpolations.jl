@@ -25,22 +25,22 @@
     rowsum(adj) = sum(vec(Base.Matrix(adj)))
 
     # Data-independent adjoints (linear in y, no y argument).
-    @test rowsum(linear_adjoint(crR, 2.0; extrap = fv))                    ≈ 1.0  atol = 1.0e-9
-    @test rowsum(linear_adjoint(crL, 1.0; extrap = fv))                    ≈ 1.0  atol = 1.0e-9
-    @test rowsum(cubic_adjoint(crR, 2.0; extrap = fv))                     ≈ 1.0  atol = 1.0e-9
-    @test rowsum(cubic_adjoint(crL, 1.0; extrap = fv))                     ≈ 1.0  atol = 1.0e-9
-    @test rowsum(quadratic_adjoint(crR, 2.0; extrap = fv))                 ≈ 1.0  atol = 1.0e-9
-    @test rowsum(quadratic_adjoint(crL, 1.0; extrap = fv))                 ≈ 1.0  atol = 1.0e-9
-    @test rowsum(constant_adjoint(crR, 2.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
-    @test rowsum(constant_adjoint(crL, 1.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
-    @test rowsum(cardinal_adjoint(crR, 2.0; tension = 0.0, extrap = fv))   ≈ 1.0  atol = 1.0e-9
-    @test rowsum(cardinal_adjoint(crL, 1.0; tension = 0.0, extrap = fv))   ≈ 1.0  atol = 1.0e-9
+    @test rowsum(linear_adjoint(crR, 2.0; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(linear_adjoint(crL, 1.0; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(cubic_adjoint(crR, 2.0; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(cubic_adjoint(crL, 1.0; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(quadratic_adjoint(crR, 2.0; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(quadratic_adjoint(crL, 1.0; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(constant_adjoint(crR, 2.0; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(constant_adjoint(crL, 1.0; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(cardinal_adjoint(crR, 2.0; tension = 0.0, extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(cardinal_adjoint(crL, 1.0; tension = 0.0, extrap = fv)) ≈ 1.0  atol = 1.0e-9
 
     # Data-dependent adjoints (slope-from-data; need y).
-    @test rowsum(pchip_adjoint(crR, y, 2.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
-    @test rowsum(pchip_adjoint(crL, y, 1.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
-    @test rowsum(akima_adjoint(crR, y, 2.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
-    @test rowsum(akima_adjoint(crL, y, 1.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
+    @test rowsum(pchip_adjoint(crR, y, 2.0; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(pchip_adjoint(crL, y, 1.0; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(akima_adjoint(crR, y, 2.0; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(akima_adjoint(crL, y, 1.0; extrap = fv)) ≈ 1.0  atol = 1.0e-9
 end
 
 @testitem "ND adjoint boundary FillExtrap — sensitivity sums to 1 at the corner" setup = [InwardCR] begin
@@ -55,13 +55,17 @@ end
     # 2D adjoint ∂out/∂data at an in-domain corner must sum to 1 (value
     # interpolation reproduces constants). The per-axis `is_oob` flag (computed
     # from raw first/last) misclassified the corner → weights zeroed → sum 0.
-    @test rowsum(linear_adjoint((crx, cry), corner; extrap = fv))    ≈ 1.0  atol = 1.0e-9
-    @test rowsum(cubic_adjoint((crx, cry), corner; extrap = fv))     ≈ 1.0  atol = 1.0e-9
-    @test rowsum(constant_adjoint((crx, cry), corner; extrap = fv))  ≈ 1.0  atol = 1.0e-9
+    @test rowsum(linear_adjoint((crx, cry), corner; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(cubic_adjoint((crx, cry), corner; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(constant_adjoint((crx, cry), corner; extrap = fv)) ≈ 1.0  atol = 1.0e-9
     @test rowsum(quadratic_adjoint((crx, cry), corner; extrap = fv)) ≈ 1.0  atol = 1.0e-9
     # Heterogeneous per-axis methods route through the shared ND anchor builder.
-    @test rowsum(hetero_adjoint((crx, cry), corner;
-        methods = (LinearInterp(), CubicInterp()), extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(
+        hetero_adjoint(
+            (crx, cry), corner;
+            methods = (LinearInterp(), CubicInterp()), extrap = fv
+        )
+    ) ≈ 1.0  atol = 1.0e-9
 
     # Left corner (both axes round inward from below).
     crxL = inward_cr_left(1.0, 3.0, n)
@@ -104,4 +108,40 @@ end
         cubic_interp(cr, y, 2.0; extrap = fv)  atol = 1.0e-9
     @test sum(vec(Base.Matrix(constant_adjoint(cr, 2.0; extrap = fv))) .* y) ≈
         constant_interp(cr, y, 2.0; extrap = fv)  atol = 1.0e-9
+end
+
+@testitem "Adjoint golden-rule (transpose identity) on widened _CachedRange boundary" setup = [InwardCR] begin
+    using FastInterpolations
+    using LinearAlgebra: dot
+    # Golden rule for an interpolant linear in the data f: the adjoint IS Wᵀ, so
+    #   ⟨W·f, ȳ⟩ == ⟨f, Wᵀȳ⟩   ⇔   dot(itp.(xq), ȳ) == dot(f, adj(ȳ)).
+    # Checked on the synthetic widened `_CachedRange` (stored lo/hi rounded inward,
+    # domain_lo/hi recover the true endpoints) with the query set INCLUDING the
+    # true endpoint (the 1-ULP sliver). This pins the fused ClampExtrap/FillExtrap
+    # adjoint builder to a map consistent with the forward at the widened boundary.
+    # (atol 1e-7 absorbs the intended ~1e-14 forward-sliver-vs-adjoint-snap gap:
+    #  forward leaves the sliver query at t⪆1, the adjoint clamps it to t==1.)
+    n = 5
+    f = [10.0, 20.0, 30.0, 40.0, 50.0]
+    ȳ = [1.0, -2.0, 3.0]
+
+    for (cr, ep) in ((inward_cr_right(0.0, 2.0, n), 2.0), (inward_cr_left(1.0, 3.0, n), 1.0))
+        xq = [ep, cr[2], cr[3]]          # true-endpoint sliver + two interior points
+        for extrap in (FillExtrap(-7.0), ClampExtrap())
+            for (madj, mfwd) in (
+                    (linear_adjoint, linear_interp),
+                    (cubic_adjoint, cubic_interp),
+                    (constant_adjoint, constant_interp),
+                    (quadratic_adjoint, quadratic_interp),
+                )
+                itp = mfwd(cr, f; extrap = extrap)
+                adj = madj(cr, xq; extrap = extrap)
+                @test dot(itp.(xq), ȳ) ≈ dot(f, adj(ȳ))  atol = 1.0e-7
+            end
+            # cardinal carries a tension kwarg (tension 0 ⇒ Catmull–Rom, linear in f)
+            itpc = cardinal_interp(cr, f; tension = 0.0, extrap = extrap)
+            adjc = cardinal_adjoint(cr, xq; tension = 0.0, extrap = extrap)
+            @test dot(itpc.(xq), ȳ) ≈ dot(f, adjc(ȳ))  atol = 1.0e-7
+        end
+    end
 end

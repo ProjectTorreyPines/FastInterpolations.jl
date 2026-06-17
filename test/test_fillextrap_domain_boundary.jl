@@ -57,8 +57,10 @@ end
     y = [10.0, 20.0, 30.0, 40.0, 50.0]
     fv = -999.0
     true_hi = 2.0   # == cr.domain_hi, but > cr.hi
-    for m in (linear_interp, cubic_interp, quadratic_interp, constant_interp,
-            pchip_interp, cardinal_interp, akima_interp)
+    for m in (
+            linear_interp, cubic_interp, quadratic_interp, constant_interp,
+            pchip_interp, cardinal_interp, akima_interp,
+        )
         itp = m(cr, y; extrap = FillExtrap(fv))
         scalar = itp(true_hi)
         batch = itp([true_hi])[1]
@@ -75,8 +77,10 @@ end
     y = [10.0, 20.0, 30.0, 40.0, 50.0]
     fv = -999.0
     true_lo = 1.0   # == cr.domain_lo, but < cr.lo
-    for m in (linear_interp, cubic_interp, quadratic_interp, constant_interp,
-            pchip_interp, cardinal_interp, akima_interp)
+    for m in (
+            linear_interp, cubic_interp, quadratic_interp, constant_interp,
+            pchip_interp, cardinal_interp, akima_interp,
+        )
         itp = m(cr, y; extrap = FillExtrap(fv))
         scalar = itp(true_lo)
         batch = itp([true_lo])[1]
@@ -93,8 +97,10 @@ end
     y = [10.0, 20.0, 30.0, 40.0, 50.0]
     fv = -999.0
     true_hi = 2.0
-    for m in (linear_interp, cubic_interp, quadratic_interp, constant_interp,
-            pchip_interp, cardinal_interp, akima_interp)
+    for m in (
+            linear_interp, cubic_interp, quadratic_interp, constant_interp,
+            pchip_interp, cardinal_interp, akima_interp,
+        )
         oneshot = m(cr, y, true_hi; extrap = FillExtrap(fv))
         batch = m(cr, y, [true_hi]; extrap = FillExtrap(fv))[1]
         @test oneshot != fv

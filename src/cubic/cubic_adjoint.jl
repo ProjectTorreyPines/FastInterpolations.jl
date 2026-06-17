@@ -352,35 +352,49 @@ end
 # ========================================
 
 """
-Fix anchor weights for OOB queries under ClampExtrap or FillExtrap.
+    _bake_cubic_clampfill_anchors(x, xq, extrap) -> Vector{_CubicAnchoredQuery}
 
-- **ClampExtrap**: forward returns `f[boundary]` for EvalValue, `0` for derivatives.
-  Keep w0 (clamped to boundary gives correct [1,0,0,0] or [0,1,0,0] weights),
-  zero out w1/w2/w3 (derivatives are zero for constant extrapolation).
+Single-pass ClampExtrap/FillExtrap adjoint anchor builder.
+
+Clamps each query to the actual grid endpoints (`_clamp_to_grid`) for valid
+boundary-cell geometry, anchors it, then bakes the OOB weight semantics for
+genuinely-OOB queries (widened `_is_inbounds` classification):
+
+- **ClampExtrap**: forward returns `f[boundary]` for EvalValue, `0` for
+  derivatives. Keep w0 (clamped boundary weights = [1,0,0,0] or [0,1,0,0]),
+  zero w1/w2/w3.
 - **FillExtrap**: forward returns fill constant → gradient w.r.t. f is zero.
-  Zero out all weights (w0/w1/w2/w3).
+  Zero all weights.
 
-Modifies `anchors` in-place by replacing OOB entries with corrected structs.
-Only called at construction time; no runtime overhead.
+In-domain and endpoint-sliver queries keep the anchor as built. Fuses the
+former clamp-broadcast + `_anchor_query` + weight-fixup three passes into one
+loop — no transient clamped-query array. Construction-time only.
 """
-function _fixup_clampfill_anchors!(
-        anchors::Vector{_CubicAnchoredQuery{Tg, Tg}},
-        xq_original::AbstractVector{Tg},
-        x::AbstractVector{Tg},
-        extrap::AbstractExtrap
-    ) where {Tg}
+function _bake_cubic_clampfill_anchors(
+        x::AbstractVector{T},
+        xq::AbstractVector{S},
+        extrap::AbstractExtrap,
+        searcher::P = _to_searcher(LinearBinarySearch())
+    ) where {T, S <: Real, P <: Searcher}
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     keep_w0 = extrap isa ClampExtrap
-    z = zero(Tg)
-    @inbounds for i in eachindex(anchors)
-        _is_inbounds(x, xq_original[i]) && continue
-        aq = anchors[i]
-        w0_new = keep_w0 ? aq.w0 : (z, z, z, z)
-        anchors[i] = _CubicAnchoredQuery{Tg, Tg}(
-            getfield(aq, :stencil), aq.xq, IN_DOMAIN,
-            w0_new, (z, z, z, z), (z, z), (z, z)
-        )
+    z = zero(T)
+    z4 = (z, z, z, z)
+    output = Vector{_CubicAnchoredQuery{T, T}}(undef, length(xq))
+    @inbounds for k in eachindex(xq)
+        xq_raw = xq[k]
+        aq = _anchor_query_impl(x, _promote_for_anchor(_clamp_to_grid(xq_raw, x), T), false, searcher_resolved)
+        if _is_inbounds(x, xq_raw)
+            output[k] = aq
+        else
+            w0_new = keep_w0 ? aq.w0 : z4
+            output[k] = _CubicAnchoredQuery{T, T}(
+                getfield(aq, :stencil), aq.xq, IN_DOMAIN,
+                w0_new, z4, (z, z), (z, z)
+            )
+        end
     end
-    return nothing
+    return output
 end
 
 # ========================================
@@ -454,11 +468,9 @@ function cubic_adjoint(
     # Build anchored queries with extrap-specific preprocessing
     wrap = extrap isa WrapExtrap
     if extrap isa Union{ClampExtrap, FillExtrap}
-        # OOB queries get actual-endpoint geometry (`_clamp_to_grid`); `_fixup`
-        # classifies via the widened (`_is_inbounds`) bounds.
-        xq_clamped = _clamp_to_grid.(xq_p, Ref(cache.x))
-        anchors = _anchor_query(cache.x, xq_clamped, Val(:cubic), false)
-        _fixup_clampfill_anchors!(anchors, xq_p, cache.x, extrap)
+        # OOB queries get actual-endpoint geometry; the widened (`_is_inbounds`)
+        # classification bakes OOB weights. Single fused pass (no temp array).
+        anchors = _bake_cubic_clampfill_anchors(cache.x, xq_p, extrap)
     else
         anchors = _anchor_query(cache.x, xq_p, Val(:cubic), wrap)
     end

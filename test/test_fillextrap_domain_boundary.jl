@@ -189,3 +189,37 @@ end
     @test g != 0.0
     @test g ≈ (y[end] - y[end - 1]) / cr.h  atol = 1.0e-6
 end
+
+@testitem "Boundary Series — true endpoint returns the boundary curve" setup = [InwardCR] begin
+    using FastInterpolations
+    # Series interpolants classify via `_anchor_loc`, so a query at the true
+    # `_CachedRange` endpoint returns the boundary curve (matches the exact
+    # Vector grid), not an OOB result. Regression guard for the inherited fix.
+    n = 5
+    Y = [10.0 * i + j for i in 1:n, j in 1:2]
+    crL = inward_cr_left(1.0, 3.0, n)
+    refL = collect(range(1.0, 3.0, n))
+    crR = inward_cr_right(0.0, 2.0, n)
+    refR = collect(range(0.0, 2.0, n))
+    for m in (linear_interp, quadratic_interp, cubic_interp, constant_interp)
+        @test m(crL, Series(Y))(1.0) ≈ m(refL, Series(Y))(1.0)  atol = 1.0e-7
+        @test m(crR, Series(Y))(2.0) ≈ m(refR, Series(Y))(2.0)  atol = 1.0e-7
+    end
+end
+
+@testitem "Boundary exclusive-periodic — true endpoint uses first cell, not seam" setup = [InwardCR] begin
+    using FastInterpolations
+    # Inner `_CachedRange` with an inward-rounded left endpoint (lo = nextfloat(0),
+    # domain_lo = 0). Under `:exclusive` PeriodicBC the inner's widening does not
+    # reach `_ExclusivePeriodicAxis` classification, so the true left endpoint was
+    # wrapped to the seam cell. Value is y[1] either way; the derivative is the
+    # sharp guard — it must be the FIRST-cell slope, not the seam-cell slope.
+    cr = inward_cr_left(0.0, 1.0, 2)
+    xref = [0.0, 1.0]
+    y = [10.0, 30.0]
+    bc = PeriodicBC(endpoint = :exclusive, period = 2.0)
+    @test linear_interp(cr, y, 0.0; bc = bc) ≈
+        linear_interp(xref, y, 0.0; bc = bc)  atol = 1.0e-9
+    @test linear_interp(cr, y, 0.0; bc = bc, deriv = DerivOp(1)) ≈
+        linear_interp(xref, y, 0.0; bc = bc, deriv = DerivOp(1))  atol = 1.0e-9
+end

@@ -204,7 +204,9 @@ function _bake_nd_anchors_generic(
             inv_h = _get_inv_h(grids[d], idx)
             t = (xq_d - xL) * inv_h
             dL = xq_d - xL
-            is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])
+            # Widened classification (matches forward `_oob_state`): a query at
+            # the true `_CachedRange` endpoint is in-domain, not zeroed-OOB.
+            is_oob = _oob_state(grids[d], xq_raw) != IN_DOMAIN
             return (idx, weight_fn(d, t, h, inv_h, dL), is_oob)
         end
         indices = ntuple(d -> idx_and_weights[d][1], Val(N))

@@ -43,6 +43,33 @@
     @test rowsum(akima_adjoint(crL, y, 1.0; extrap = fv))                  ≈ 1.0  atol = 1.0e-9
 end
 
+@testitem "ND adjoint boundary FillExtrap — sensitivity sums to 1 at the corner" setup = [InwardCR] begin
+    using FastInterpolations
+    n = 5
+    crx = inward_cr_both(0.0, 2.0, n)
+    cry = inward_cr_both(0.0, 2.0, n)
+    fv = FillExtrap(0.0)
+    rowsum(adj) = sum(Base.Matrix(adj))
+    corner = (2.0, 2.0)   # both axes at the true endpoint
+
+    # 2D adjoint ∂out/∂data at an in-domain corner must sum to 1 (value
+    # interpolation reproduces constants). The per-axis `is_oob` flag (computed
+    # from raw first/last) misclassified the corner → weights zeroed → sum 0.
+    @test rowsum(linear_adjoint((crx, cry), corner; extrap = fv))    ≈ 1.0  atol = 1.0e-9
+    @test rowsum(cubic_adjoint((crx, cry), corner; extrap = fv))     ≈ 1.0  atol = 1.0e-9
+    @test rowsum(constant_adjoint((crx, cry), corner; extrap = fv))  ≈ 1.0  atol = 1.0e-9
+    @test rowsum(quadratic_adjoint((crx, cry), corner; extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    # Heterogeneous per-axis methods route through the shared ND anchor builder.
+    @test rowsum(hetero_adjoint((crx, cry), corner;
+        methods = (LinearInterp(), CubicInterp()), extrap = fv)) ≈ 1.0  atol = 1.0e-9
+
+    # Left corner (both axes round inward from below).
+    crxL = inward_cr_left(1.0, 3.0, n)
+    cryL = inward_cr_left(1.0, 3.0, n)
+    @test rowsum(linear_adjoint((crxL, cryL), (1.0, 1.0); extrap = fv)) ≈ 1.0  atol = 1.0e-9
+    @test rowsum(cubic_adjoint((crxL, cryL), (1.0, 1.0); extrap = fv)) ≈ 1.0  atol = 1.0e-9
+end
+
 @testitem "Adjoint boundary NoExtrap — true endpoint accepted (no DomainError)" setup = [InwardCR] begin
     using FastInterpolations
     n = 5

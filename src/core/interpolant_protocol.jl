@@ -168,6 +168,9 @@ end
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
+    # Promote the query once, before both fill-check and kernel, so they share one
+    # coordinate type (no Int/Float mismatch). No-op for matched Float64.
+    query = map(_promote_query_for_eval, query, itp.grids)
     # NoExtrap throw must precede FillExtrap short-circuit (mixed-extrap configs).
     _validate_nd_domain(itp.grids, query, itp.extraps)
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _sample_data(itp))
@@ -175,6 +178,10 @@ end
     cell = _locate_cell(itp, query, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
 end
+
+# GridIdx stays an index marker; every other coordinate promotes to the grid float type.
+@inline _promote_query_for_eval(q::GridIdx, _grid) = q
+@inline _promote_query_for_eval(q, grid) = _promote_for_anchor(q, float(eltype(grid)))
 
 # ========================================
 # ND Scalar: Vector query → tuple conversion

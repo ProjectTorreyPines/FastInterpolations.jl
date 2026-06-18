@@ -532,7 +532,11 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
         queries::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
-    return map(_extrap_axis, queries, grids, extraps)
+    # Promote queries to grid-float once, above the (extrap-independent) per-axis
+    # dispatch, so every handler returns one type. No-op for matched Float64;
+    # int→float for Int/Float32; Dual/GridIdx-safe.
+    qp = map(_promote_query_for_eval, queries, grids)
+    return map(_extrap_axis, qp, grids, extraps)
 end
 
 # Per-extrap type handling (unconstrained q for duck-type compatibility: Dual, etc.)
@@ -541,14 +545,10 @@ end
     return q
 end
 
-@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::_ClampOrFill) where {Tg}
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::_ClampOrFill)
+    # `q` is pre-promoted by `_handle_all_extraps`, so OOB and in-domain share one type.
+    # Classify with widened `_oob_state`; clamp to the actual endpoint (sliver passes).
     q_primal = _extract_primal(q)
-    # Classify with the widened `_oob_state` but clamp to the actual endpoint:
-    # a sliver query is in-domain and passes through; only genuinely-OOB clamps.
-    # Return the endpoint via `_promote_extrap_val` (same idiom as the FillExtrap
-    # result above): it promotes to the natural query⊕grid type and carries the
-    # query carrier (Dual, …) with a zeroed partial — never `oftype(q, …)`, which
-    # would coerce a fractional Float endpoint into an Int query (InexactError).
     st = _oob_state(axis, q_primal)
     st == OOB_LEFT && return _promote_extrap_val(first(axis), q)
     st == OOB_RIGHT && return _promote_extrap_val(last(axis), q)
@@ -560,6 +560,7 @@ end
 end
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::WrapExtrap)
+    # `q` is already promoted by `_handle_all_extraps`; wrapped and in-domain share a type.
     return _wrap_to_domain(q, axis)
 end
 

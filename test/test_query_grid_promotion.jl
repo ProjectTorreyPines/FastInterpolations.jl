@@ -3,19 +3,11 @@
 #
 # Duck-type promotion contract for MISMATCHED query/grid element types.
 #
-# The package promotes; it must never coerce one side into the other's type.
-# Oracle: a type-mismatched query coordinate (Int query on a Float grid, or
-# Float query on an Int grid) MUST return the same value as the naturally
-# promoted (all-Float) query.
-#
-# RED at introduction (regression from commit 356259340 / surfaced via #153):
-#   `_handle_axis_extrap(q, axis, ::_ClampOrFill)` clamps an OOB query with
-#   `oftype(q, first(axis))` — coercing the FLOAT boundary into the QUERY type.
-#   For a Float grid with a non-integer endpoint + an Int OOB query this is
-#   `convert(Int, 0.5)` → InexactError. Every ND method funnels coordinate
-#   clamping through that one shared helper, so all ND methods fail identically
-#   under ClampExtrap. 1D and every other extrap were already green and are
-#   locked here against future regression.
+# Oracle: a type-mismatched query (Int query on a Float grid, or vice versa) MUST
+# return the same value as the naturally-promoted (all-Float) query — the package
+# promotes, never coerces one side into the other's type. Covers value correctness,
+# exact-boundary clamping, AD carrier, and type-stability of ND extrap handling
+# (no OOB-vs-in-domain Union, which would leak to a public `Any` for Hermite ND).
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @testitem "Duck-type query/grid promotion across extraps (1D + ND)" begin
@@ -108,12 +100,9 @@
     end
 
     # ── DISCRIMINATING EXTREME CASES ─────────────────────────────────────
-    # These pass under the robust `_promote_extrap_val(first(axis), q)` idiom
-    # but FAIL (or silently misbehave) under weaker "fixes":
-    #   - oftype(q, b)  (the current bug)  → InexactError on Int query / fractional endpoint
-    #   - returning `q` unclamped          → fails the exact-boundary-value lock below
-    # (The `clamp(q, lo, hi)` variant's failure — snapping `_CachedRange` sliver
-    #  queries — is already pinned by test_fillextrap_domain_boundary.jl.)
+    # Pass under promotion; fail under weaker fixes: `oftype` (InexactError on
+    # Int/fractional endpoint) or returning `q` unclamped (exact-boundary lock).
+    # (clamp(q,lo,hi)'s sliver bug is pinned by test_fillextrap_domain_boundary.jl.)
 
     @testset "Exact boundary value — clamp lands on the grid corner node" begin
         # The OOB corner must clamp to the exact grid-corner datum, never an
@@ -146,12 +135,8 @@
 end
 
 # ── AD robustness lock (ForwardDiff) ─────────────────────────────────────────
-# Green under the current oftype code (Dual queries never trigger InexactError),
-# but a forward-looking guard against a weaker fix: the robust `_promote_extrap_val`
-# idiom preserves the Dual carrier and zeroes the partial in the flat OOB region.
-# A `clamp(q, lo, hi)`-style fix would still pass here on finite endpoints but
-# diverges on NaN endpoints / sliver queries — those are pinned elsewhere; this
-# locks the core "carrier preserved + zero gradient in the clamped region" contract.
+# Locks the clamp AD contract: Dual carrier preserved, zero gradient in the flat
+# OOB region. Green today; guards against a weaker fix that would break it.
 @testitem "ND ClampExtrap — AD carrier preserved, zero gradient in flat region" begin
     using ForwardDiff
     approx(a, b) = isapprox(a, b; rtol = 1e-12, atol = 1e-12)
@@ -176,5 +161,80 @@ end
             @test approx(ForwardDiff.value(r), itp(-5.0, 3.0))
             @test ForwardDiff.partials(r)[1] == 0.0
         end
+    end
+end
+
+# ── Type-stability of ND extrap handling (no OOB-vs-in-domain Union) ──────────
+# A mismatched query eltype (Int/Float32 on a Float64 grid) must not make the OOB
+# and in-domain branches differ in type — that Union costs union-split per query
+# and leaks to a public `Any` for Hermite ND. Pinned internally + publicly.
+
+@testitem "Type stability — ND _handle_all_extraps concrete for every (query-eltype, extrap)" begin
+    using FastInterpolations: _handle_all_extraps
+    # `_handle_all_extraps` promotes each axis query before dispatch → concrete
+    # output tuple for every query eltype.
+    gridsets = ((0.5:1.0:9.5, 0.5:1.0:9.5), (collect(0.5:1.0:9.5), collect(0.5:1.0:9.5)))
+    exs = (NoExtrap(), ClampExtrap(), FillExtrap(fill_value = 0.0),
+        ExtendExtrap(), WrapExtrap(), InBounds())
+    for gs in gridsets, ex in exs, Q in (Int, Float32, Float64)
+        extraps = (ex, ex)
+        rt = Base.return_types(_handle_all_extraps, Tuple{Tuple{Q, Q}, typeof(gs), typeof(extraps)})
+        @test length(rt) == 1 && isconcretetype(rt[1])
+    end
+
+    # Stronger: @inferred + isa pins the EXACT promoted coordinate type (Float64 grid
+    # ⊕ any mismatched query eltype → Float64 coordinates). @inferred throws on a
+    # non-concrete inference.
+    g = (0.5:1.0:9.5, 0.5:1.0:9.5)
+    for ex in (ClampExtrap(), FillExtrap(fill_value = 0.0), WrapExtrap(), ExtendExtrap(), InBounds())
+        e2 = (ex, ex)
+        @test (@inferred _handle_all_extraps((-5, -5), g, e2)) isa Tuple{Float64, Float64}        # Int OOB
+        @test (@inferred _handle_all_extraps((3, 3), g, e2)) isa Tuple{Float64, Float64}          # Int in-domain
+        @test (@inferred _handle_all_extraps((3.0f0, 3.0f0), g, e2)) isa Tuple{Float64, Float64}  # Float32
+        @test (@inferred _handle_all_extraps((3.0, 3.0), g, e2)) isa Tuple{Float64, Float64}      # Float64
+    end
+end
+
+@testitem "Type stability — ND public return concrete for mismatched query eltype (all methods)" begin
+    g = 0.5:1.0:9.5
+    data = [Float64(i + j) for i in 1:10, j in 1:10]
+    builders = (linear_interp, constant_interp, cubic_interp, quadratic_interp,
+        pchip_interp, cardinal_interp, akima_interp)
+    exs = (ClampExtrap(), FillExtrap(fill_value = 0.0), ExtendExtrap(), WrapExtrap())
+    for mk in builders, ex in exs
+        itp = mk((g, g), data; extrap = ex)
+        for Q in (Int, Float32)
+            rt = Base.return_types(itp, Tuple{Q, Q})
+            @test length(rt) == 1 && isconcretetype(rt[1])
+        end
+    end
+
+    # Stronger: @inferred + isa on the public call — pins the Hermite-family `Any`
+    # leak (pchip/cardinal/akima) that union-split alone wouldn't expose.
+    for mk in builders
+        itp = mk((g, g), data; extrap = ClampExtrap())
+        @test (@inferred itp(3, 4)) isa Float64      # in-domain Int query
+        @test (@inferred itp(-5, 4)) isa Float64     # OOB Int query
+    end
+end
+
+@testitem "Type stability — 1D public return concrete for mismatched query eltype (lock)" begin
+    g = 0.5:1.0:9.5
+    y = collect(Float64, 1:10)
+    builders = (linear_interp, constant_interp, cubic_interp, quadratic_interp,
+        pchip_interp, cardinal_interp, akima_interp)
+    exs = (ClampExtrap(), FillExtrap(fill_value = 0.0), ExtendExtrap(), WrapExtrap())
+    for mk in builders, ex in exs, Q in (Int, Float32)
+        itp = mk(g, y; extrap = ex)
+        rt = Base.return_types(itp, Tuple{Q})
+        @test length(rt) == 1 && isconcretetype(rt[1])
+    end
+
+    # Stronger: @inferred + isa (green locks — 1D value-clamps, so it is
+    # structurally stable; this guards against a future 1D regression).
+    for mk in builders
+        itp = mk(g, y; extrap = ClampExtrap())
+        @test (@inferred itp(3)) isa Float64       # in-domain Int query
+        @test (@inferred itp(-5)) isa Float64      # OOB Int query
     end
 end

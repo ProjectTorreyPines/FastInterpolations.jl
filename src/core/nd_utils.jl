@@ -545,9 +545,13 @@ end
     q_primal = _extract_primal(q)
     # Classify with the widened `_oob_state` but clamp to the actual endpoint:
     # a sliver query is in-domain and passes through; only genuinely-OOB clamps.
+    # Return the endpoint via `_promote_extrap_val` (same idiom as the FillExtrap
+    # result above): it promotes to the natural query⊕grid type and carries the
+    # query carrier (Dual, …) with a zeroed partial — never `oftype(q, …)`, which
+    # would coerce a fractional Float endpoint into an Int query (InexactError).
     st = _oob_state(axis, q_primal)
-    st == OOB_LEFT && return oftype(q, first(axis))
-    st == OOB_RIGHT && return oftype(q, last(axis))
+    st == OOB_LEFT && return _promote_extrap_val(first(axis), q)
+    st == OOB_RIGHT && return _promote_extrap_val(last(axis), q)
     return q
 end
 

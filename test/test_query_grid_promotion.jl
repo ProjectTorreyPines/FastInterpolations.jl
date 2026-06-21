@@ -238,3 +238,32 @@ end
         @test (@inferred itp(-5)) isa Float64      # OOB Int query
     end
 end
+
+# ── Type stability of the N=2 BATCH coordinate path (_locate_cell_2d_preamble) ──
+# The persistent batch path (`_interp_nd_batch!`) hands the RAW per-query tuple straight
+# to the N=2 `_locate_cell` specialization → `_locate_cell_2d_preamble`, which — unlike
+# the generic-N `_handle_all_extraps` chokepoint — did NOT promote. So a mismatched-eltype
+# query (Int on a Float64 grid) made the ClampExtrap OOB branch return Float64 while the
+# in-domain branch returned the Int `q` → a `Union{Int,Float64}` `x_eval`/`y_eval` that
+# union-splits per query inside the batch loop. (The scalar path promotes up in
+# `_eval_nd_at_point`, so the Union is hidden there; the leak is batch-only, and it does
+# not escape `_locate_cell`'s own return type — only the preamble exposes it.)
+@testitem "Type stability — N=2 _locate_cell_2d_preamble concrete for mismatched query eltype" begin
+    using FastInterpolations: _locate_cell_2d_preamble
+
+    g = 0.5:1.0:9.5
+    data = [Float64(i + j) for i in 1:10, j in 1:10]
+    itp = linear_interp((g, g), data; extrap = ClampExtrap())
+
+    grids = itp.grids
+    extraps = itp.extraps
+    policies = itp.searches          # (AutoSearch(), AutoSearch())
+    hints = (Ref(1), Ref(1))
+    mono = (false, false)
+
+    # Float64 grid ⊕ Int query → Float64 coordinates → fully concrete 6-tuple.
+    RT = Tuple{Float64, Float64, Int, Int, Float64, Float64}
+    @test (@inferred _locate_cell_2d_preamble((3, 4), grids, extraps, policies, hints, mono)) isa RT     # both in-domain
+    @test (@inferred _locate_cell_2d_preamble((-5, 4), grids, extraps, policies, hints, mono)) isa RT    # OOB axis-1
+    @test (@inferred _locate_cell_2d_preamble((3, 99), grids, extraps, policies, hints, mono)) isa RT    # OOB axis-2
+end

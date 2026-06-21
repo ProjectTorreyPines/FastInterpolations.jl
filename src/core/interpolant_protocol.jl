@@ -153,7 +153,7 @@ end
 # ========================================
 #
 # Single scalar entry point for AbstractInterpolantND subtypes whose eval
-# structure matches `validate → try_fill_oob → locate → eval` (Cubic /
+# structure matches `promote → validate → try_fill_oob → locate → eval` (Cubic /
 # Linear / Constant / Quadratic). Each method's callable resolves
 # search/hints/ops then delegates here.
 #

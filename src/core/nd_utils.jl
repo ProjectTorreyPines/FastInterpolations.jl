@@ -517,7 +517,10 @@ end
 """
     _handle_all_extraps(queries, grids, extraps) -> NTuple{N}
 
-Apply extrapolation handling to all query coordinates.
+Apply extrapolation handling to all query coordinates. First promotes each query to
+its grid's float type (`_promote_query_for_eval`), then dispatches per-axis extrap
+handling — so the OOB and in-domain coordinate branches return one shared type (no
+per-query `Union` split for a mismatched query eltype). No-op for a matched `Float64`.
 Returns tuple of processed query values ready for interpolation.
 
 Accepts heterogeneous tuples (e.g., mixed grid types, per-axis extrap modes).
@@ -546,7 +549,9 @@ end
 end
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::_ClampOrFill)
-    # `q` is pre-promoted by `_handle_all_extraps`, so OOB and in-domain share one type.
+    # `q` arrives pre-promoted to grid-float from every caller — `_handle_all_extraps`
+    # (oneshot/generic-N), `_locate_cell_2d_preamble` (scalar+batch N=2), and the adjoint
+    # `Tg(query_q[d])` cast — so the OOB and in-domain branches share one coordinate type.
     # Classify with widened `_oob_state`; clamp to the actual endpoint (sliver passes).
     q_primal = _extract_primal(q)
     st = _oob_state(axis, q_primal)
@@ -560,7 +565,8 @@ end
 end
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::WrapExtrap)
-    # `q` is already promoted by `_handle_all_extraps`; wrapped and in-domain share a type.
+    # `q` arrives pre-promoted to grid-float (see the `_ClampOrFill` note above); the
+    # wrapped and in-domain results then share one coordinate type.
     return _wrap_to_domain(q, axis)
 end
 
@@ -884,8 +890,15 @@ end
         hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
         mono::Tuple{Bool, Bool},
     )
-    xq, yq = query
     grid_x, grid_y = grids
+    # Promote each axis query to grid-float up front so the OOB and in-domain
+    # coordinate branches share one type. The scalar path promotes in
+    # `_eval_nd_at_point`, but the batch path hands `query_k` here raw — without
+    # this, a mismatched-eltype query union-splits per batch query. Mirrors the
+    # generic-N `_handle_all_extraps` chokepoint; idempotent on an already-promoted
+    # scalar query.
+    xq = _promote_query_for_eval(query[1], grid_x)
+    yq = _promote_query_for_eval(query[2], grid_y)
     extrap_x, extrap_y = extraps
     policy_x, policy_y = policies
     hint_x, hint_y = hints

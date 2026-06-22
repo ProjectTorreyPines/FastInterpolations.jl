@@ -211,7 +211,7 @@ so the pool memory can be safely reused after this function returns.
     ) where {Tg, Tv, L <: PointBC, R <: PointBC}
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc_pair, _effective_autocache(autocache, Tg))
-    Tz = _output_eltype(Tv, eltype(cache.x))
+    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), Tv)
     tmp_z = acquire!(pool, Tz, length(y))
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc_pair)
@@ -241,7 +241,7 @@ so the pool memory can be safely reused after this function returns.
     x, y = _prepare_periodic(x, y, bc)
     _check_periodic_endpoints(bc, y)
     cache = _get_cubic_cache(x, _bc_after_extend(bc), _effective_autocache(autocache, Tg))
-    Tz = _output_eltype(eltype(y), eltype(cache.x))
+    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), eltype(y))
     tmp_z = acquire!(pool, Tz, length(y))
     _solve_system!(tmp_z, cache, y, cache.bc)
     # Normalize stored bc to `:inclusive` (matching cache state) with period
@@ -368,7 +368,7 @@ so the pool memory can be safely reused after this function returns.
         extrap::AbstractExtrap = NoExtrap(),
         search::P = AutoSearch()
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
-    Tz = _output_eltype(Tv, eltype(cache.x))
+    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), Tv)
     tmp_z = acquire!(pool, Tz, length(y))
     _solve_system!(tmp_z, cache, y, cache.bc)
 

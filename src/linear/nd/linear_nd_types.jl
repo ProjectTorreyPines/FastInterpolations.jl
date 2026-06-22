@@ -121,5 +121,5 @@ Return the grid vectors for all dimensions.
 """
 Base.axes(itp::LinearInterpolantND) = itp.grids
 
-# Linear ND uses the default `_arithmetic_kernel_shape` route (inherited from
+# Linear ND uses the default `_interp_op` route (inherited from
 # `AbstractInterpolantND`) — no explicit override needed.

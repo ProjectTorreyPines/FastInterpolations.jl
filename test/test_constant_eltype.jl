@@ -489,7 +489,7 @@ end
     import FastInterpolations: ConstantInterpolantND
 
     @testset "1D Series scalar — Int y + Float xq → Float carrier" begin
-        # Series persistent now routes through `_constant_kernel_shape` like
+        # Series persistent now routes through `_select_op` like
         # the plain 1D path — `Int y + Float xq` widens to Float.
         x = collect(0.0:0.1:1.0)
         y1 = collect(1:11)
@@ -617,7 +617,7 @@ end
     end
 
     @testset "Float xq carrier — plain and Series oneshot agree" begin
-        # Both plain and Series route through `_constant_kernel_shape` →
+        # Both plain and Series route through `_select_op` →
         # `Int y + Float xq → Float`.
         @test constant_interp(x, y, [0.5, 1.5]) isa Vector{Float64}
         @test constant_interp(x, s, 0.5) isa Vector{Float64}
@@ -633,7 +633,7 @@ end
 end
 
 # ============================================================================
-# Group 10: Natural promote — output eltype = `_output_eltype(Tv, Tg, Tq)`
+# Group 10: Natural promote — output eltype = `_promote_eltype(Tv, Tg, Tq)`
 # ============================================================================
 # Constant's kernel propagates `Tq` via `* one(dL)`, so scalar / `itp([xq])` /
 # `itp.([xq])` / oneshot all agree on the naturally-promoted type. `Int y` +
@@ -654,7 +654,7 @@ end
 
     @testset "1D Int y + Int xq — scalar/batch both stay Int" begin
         # Constant's `y * one(dL)` kernel produces Int for fully-Int chain.
-        # Trait routes through `_constant_kernel_shape`, so batch matches.
+        # Trait routes through `_select_op`, so batch matches.
         itp = constant_interp([0, 1, 2, 3], [10, 20, 30, 40])
         @test itp(0) === 10
         @test itp([0, 1]) isa Vector{Int}

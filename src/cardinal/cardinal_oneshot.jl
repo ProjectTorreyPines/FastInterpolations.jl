@@ -30,7 +30,7 @@
     # `_CachedRange`/Vector) — the public `cardinal_interp` API pre-resolved
     # via `_resolve_axis(x)` before dispatching here, so no extra prep needed.
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    Tdy = _output_eltype(Tv, float(eltype(x_eff)))
+    Tdy = _promote_eltype(Tv, float(eltype(x_eff)))
     dy = acquire!(pool, Tdy, length(y_ext))
     _cardinal_slopes!(dy, x_eff, y_ext, tension; bc = bc_eff)
     searcher = _resolve_search(x_eff, xq, search, hint)
@@ -54,7 +54,7 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
 
-    Tdy = _output_eltype(Tv, float(eltype(x_eff)))
+    Tdy = _promote_eltype(Tv, float(eltype(x_eff)))
     dy = acquire!(pool, Tdy, length(y_ext))
     _cardinal_slopes!(dy, x_eff, y_ext, tension; bc = bc_eff)
     searcher = _resolve_search(x_eff, x_query, search, hint)
@@ -199,7 +199,7 @@ function cardinal_interp(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    Tr = _output_eltype(_arithmetic_kernel_shape, _promote_grid_float(Tg, Tv), Tv, Tq)
+    Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, Tv), Tv, Tq)
     output = Vector{Tr}(undef, length(x_query))
     cardinal_interp!(output, x, y, x_query; bc = bc, coeffs = coeffs, tension = tension, extrap = extrap, deriv = deriv, search = search, hint = hint)
     return output

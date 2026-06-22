@@ -1113,7 +1113,7 @@ grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
     Tg = float(_promote_grid_eltype(grids))
     grids_typed = _convert_grids_typed(grids, Tg)
     Tv = _value_type(Tv_raw, Tg)
-    Tz = _output_eltype(Tv, Tg)
+    Tz = _promote_eltype(Tv, Tg)
     return grids_typed, Tg, Tv, Tz
 end
 

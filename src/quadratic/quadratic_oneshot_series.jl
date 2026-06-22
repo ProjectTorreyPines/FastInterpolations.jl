@@ -33,8 +33,8 @@
     aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
     Tv_out = _value_type(_series_eltype(s), Tg)
     Tg_actual = eltype(x)
-    Tcoeff = _output_eltype(_series_eltype(s), Tg_actual)
-    output = Vector{_output_eltype(_arithmetic_kernel_shape, Tg_actual, _series_eltype(s), Tq)}(undef, K)
+    Tcoeff = _promote_eltype(_divdiff_op, Tg_actual, _series_eltype(s))
+    output = Vector{_promote_eltype(_interp_op, Tg_actual, _series_eltype(s), Tq)}(undef, K)
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
@@ -71,7 +71,7 @@ end
     aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
     Tv_out = _value_type(_series_eltype(s), Tg)
     Tg_actual = eltype(x)
-    Tcoeff = _output_eltype(_series_eltype(s), Tg_actual)
+    Tcoeff = _promote_eltype(_divdiff_op, Tg_actual, _series_eltype(s))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     y_buf = acquire!(pool, Tv_out, nx)
@@ -111,7 +111,7 @@ end
     vecs = _series_vectors(s)
     Tv_out = _value_type(_series_eltype(s), Tg)
     Tg_actual = eltype(x)
-    Tcoeff = _output_eltype(_series_eltype(s), Tg_actual)
+    Tcoeff = _promote_eltype(_divdiff_op, Tg_actual, _series_eltype(s))
 
     # Pre-compute anchors once (search Q times, not K×Q)
     Tq_w = promote_type(Tq, Tg_actual)
@@ -144,7 +144,7 @@ function quadratic_interp(
     ) where {Tg, Tq <: Real}
     K = n_series(s)
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    Tv_out = _output_eltype(_arithmetic_kernel_shape, Tg_float, _series_eltype(s), Tq)
+    Tv_out = _promote_eltype(_interp_op, Tg_float, _series_eltype(s), Tq)
     outputs = _alloc_series_batch_outputs(Tv_out, K, length(xqs))
     quadratic_interp!(outputs, x, s, xqs; bc, extrap, deriv, search)
     return outputs

@@ -165,7 +165,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     # Compute coefficients using temporary arrays from pool. The grid `x`
     # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)
-    Tcoeff = _output_eltype(eltype(y), eltype(x))
+    Tcoeff = _promote_eltype(_divdiff_op, eltype(x), eltype(y))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
@@ -222,7 +222,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     # Compute coefficients using temporary arrays from pool. The grid `x`
     # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)
-    Tcoeff = _output_eltype(eltype(y), eltype(x))
+    Tcoeff = _promote_eltype(_divdiff_op, eltype(x), eltype(y))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
@@ -264,7 +264,7 @@ function quadratic_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tq <: Real}
-    Tr = _output_eltype(_arithmetic_kernel_shape, _promote_grid_float(Tg, eltype(y)), eltype(y), Tq)
+    Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, eltype(y)), eltype(y), Tq)
     output = Vector{Tr}(undef, length(x_targets))
     quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
     return output

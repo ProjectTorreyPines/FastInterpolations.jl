@@ -68,7 +68,7 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 - `E`: Extrapolation mode type (compile-time specialized)
 - `P`: Search policy type (AutoSearch, BinarySearch, LinearBinarySearch, etc.)
 - `BC`: Boundary condition type (BCPair or PeriodicBC)
-- `Tz`: Element type of z coefficients (`= _output_eltype(Tv, Tg)` — Dual when grid is Dual)
+- `Tz`: Element type of z coefficients (`= _promote_eltype(Tv, Tg)` — Dual when grid is Dual)
 
 # Fields
 - `cache::C`: Pre-computed CubicSplineCache (LU factorization)
@@ -106,7 +106,7 @@ val = itp(0.5)  # returns ComplexF64
 struct CubicInterpolant{Tg, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC, Tz} <: AbstractInterpolant1D{Tg, Tv}
     cache::C
     y::Vector{Tv}
-    z::Vector{Tz}  # Second derivative coefficients: Tz = _output_eltype(Tv, Tg)
+    z::Vector{Tz}  # Second derivative coefficients: Tz = _promote_eltype(Tv, Tg)
     bc::BC  # Boundary condition used for this interpolant
     extrap::E  # Extrapolation mode (compile-time specialized via type parameter)
     search_policy::P  # Default search policy (immutable, thread-safe)

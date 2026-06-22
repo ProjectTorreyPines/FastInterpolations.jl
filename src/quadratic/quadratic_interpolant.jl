@@ -138,7 +138,7 @@ end
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
     validate_polyfit_points(bc_p, length(x_eff))
 
-    # Compute coefficients (d::Tc, a::Tc where Tc = _output_eltype(Tv, Tg)).
+    # Compute coefficients (d::Tc, a::Tc where Tc = _promote_eltype(Tv, Tg)).
     # Solver's output buffer is allocated with the right element type
     # regardless of y's raw eltype, so passing raw y is safe. The wrapped
     # axis `x_eff` carries `h`/`inv_h` directly via `_get_h(x, i)`.

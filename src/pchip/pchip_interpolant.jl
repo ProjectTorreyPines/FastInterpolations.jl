@@ -65,7 +65,7 @@ itp(1.5; deriv=DerivOp(1))       # first derivative
         return PchipInterpolant1D(x_eff, y_eff, PchipSlopes(bc_eff), extrap_p, search)
     end
     # PreCompute: build dy with bc_eff-aware endpoint dispatch.
-    Tdy = _output_eltype(_value_type(eltype(y_eff), Tg), Tg)
+    Tdy = _promote_eltype(_divdiff_op, Tg, _value_type(eltype(y_eff), Tg))
     dy = Vector{Tdy}(undef, length(x_eff))
     xf = _to_float(x_eff, Tg)
     _pchip_slopes!(dy, xf, y_eff; bc = bc_eff)

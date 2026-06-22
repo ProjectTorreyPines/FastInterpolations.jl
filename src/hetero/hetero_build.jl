@@ -182,7 +182,7 @@ function _build_nd_coeffs_hetero(
 
     # Single allocation: (prod(sizes), n₁, n₂, ..., nₙ)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    Tz = _output_eltype(Tv, Tg)
+    Tz = _promote_eltype(Tv, Tg)
     n_partials = prod(sizes)
     partials = Array{Tz, N + 1}(undef, n_partials, size(data)...)
 

@@ -24,7 +24,7 @@ Returned by `quadratic_interp(x, y)` (2-argument form).
 - `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
 - `P<:AbstractSearchPolicy`: Search policy type
 - `BC<:QuadraticBC`: Boundary condition type (retained for adjoint/matrix convenience)
-- `Tc`: Coefficient element type (`_output_eltype(Tv, Tg)` — may be Dual for duck grids)
+- `Tc`: Coefficient element type (`_promote_eltype(Tv, Tg)` — may be Dual for duck grids)
 
 # Fields
 - `x::X`: x-coordinates (sorted, wrapped — grid is the source of truth for spacing)
@@ -62,8 +62,8 @@ val = itp(0.5; search=BinarySearch())  # per-call override
 struct QuadraticInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC, Tc} <: AbstractInterpolant1D{Tg, Tv}
     x::X
     y::Y
-    a::Vector{Tc}       # Quadratic coefficients (Tc = _output_eltype(Tv, Tg))
-    d::Vector{Tc}       # Slope coefficients (Tc = _output_eltype(Tv, Tg))
+    a::Vector{Tc}       # Quadratic coefficients (Tc = _promote_eltype(Tv, Tg))
+    d::Vector{Tc}       # Slope coefficients (Tc = _promote_eltype(Tv, Tg))
     extrap::E           # Extrapolation mode (compile-time specialized)
     search_policy::P    # Default search policy (immutable, thread-safe)
     bc::BC              # Boundary condition (retained for Matrix(itp, xq) convenience)

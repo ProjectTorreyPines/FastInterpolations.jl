@@ -391,7 +391,7 @@ Returns a vector of values, one per y-series.
 
 # AD Support
 Output eltype routes through the kernel-shape trait
-`_output_eltype(_constant_kernel_shape, Tg, Tv, Tq)`. `Base.promote_op` on
+`_promote_eltype(_select_op, Tg, Tv, Tq)`. `Base.promote_op` on
 `yv * one(xq - xL)` jointly considers grid (Tg), value (Tv) and query (Tq),
 so duck carriers on either Tg (e.g. `Dual` grid + `Float` xq) or Tq (`Float`
 grid + `Dual` xq) propagate uniformly. Carriers like `SVector × Dual`
@@ -403,7 +403,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    T_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
+    T_out = _promote_eltype(_select_op, Tg, Tv, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv = deriv, search = search, hint = hint)
 end
@@ -455,7 +455,7 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
 
-    T_out = _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
+    T_out = _promote_eltype(_select_op, Tg, Tv, Tq)
     outputs = Vector{Vector{T_out}}(undef, n_ser)
     @inbounds for k in 1:n_ser
         outputs[k] = Vector{T_out}(undef, n_query)

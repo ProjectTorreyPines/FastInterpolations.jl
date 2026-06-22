@@ -89,7 +89,7 @@ mutable struct CubicSeriesInterpolant{
     const cache::C                    # Shared cache with LU factorization
     const bc_for_solve::B             # BC config for solving
     const y::Matrix{Tv}               # Series-contiguous y (n_points × n_series)
-    const z::Matrix{Tz}               # Series-contiguous z: Tz = _output_eltype(Tv, Tg)
+    const z::Matrix{Tz}               # Series-contiguous z: Tz = _promote_eltype(Tv, Tg)
     const _transpose::LazyTransposePair{Tv, Tz}  # Lazy point-contiguous layout
     const extrap::E                   # Extrapolation mode (compile-time specialized)
     const search_policy::P            # Default search policy (immutable, thread-safe)
@@ -646,7 +646,7 @@ function cubic_interp(
 
     # Build z matrix by solving tridiagonal systems
     # z coefficients mix y (Tv_out) with grid spacing (Tg) → Dual when grid is Dual
-    Tz = _output_eltype(Tv_out, Tg)
+    Tz = _promote_eltype(_divdiff_op, Tg, Tv_out)
     z_mat = Matrix{Tz}(undef, n_pts, n_ser)
 
     if bc isa AbstractVector
@@ -708,7 +708,7 @@ function _build_series_periodic(
     cache = _get_cubic_cache(x, PeriodicBC(), _effective_autocache(autocache, eltype(x)))
 
     # Build z matrix (Dual when grid is Dual)
-    Tz = _output_eltype(Tv, eltype(cache.x))
+    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), Tv)
     z_mat = Matrix{Tz}(undef, n_pts, n_series_count)
     _solve_series_coefficients!(z_mat, y_mat, cache, cache.bc)
 
@@ -745,7 +745,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
     ) where {Tg, Tv, Tq <: Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_coord(xq, Tg)
-    T_out = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, typeof(xq_promoted))
+    T_out = _promote_eltype(_interp_op, Tg, Tv, typeof(xq_promoted))
     output = Vector{T_out}(undef, n_series(sitp))
 
     # Build anchor preserving Dual type in xq
@@ -805,7 +805,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
     ) where {Tg, Tv, Tq <: Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+    T_out = _promote_eltype(_interp_op, Tg, Tv, Tq)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)

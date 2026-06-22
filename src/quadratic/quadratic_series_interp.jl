@@ -78,8 +78,8 @@ plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 mutable struct QuadraticSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, Tc} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                                 # Wrapped grid (`_CachedRange`/`_CachedVector` carrying cached `h`/`inv_h`)
     const y::Matrix{Tv}                        # Series-contiguous y (n_points × n_series)
-    const a::Matrix{Tc}                        # Series-contiguous a: Tc = _output_eltype(Tv, Tg)
-    const d::Matrix{Tc}                        # Series-contiguous d: Tc = _output_eltype(Tv, Tg)
+    const a::Matrix{Tc}                        # Series-contiguous a: Tc = _promote_eltype(Tv, Tg)
+    const d::Matrix{Tc}                        # Series-contiguous d: Tc = _promote_eltype(Tv, Tg)
     const _transpose::LazyTransposeTriple{Tv, Tc} # Lazy point-contiguous layout
     const extrap::E                            # Extrapolation mode (compile-time specialized)
     const search_policy::P                     # Default search policy
@@ -375,7 +375,7 @@ function quadratic_interp(
     y_mat, n_ser = _build_series_mat(s, n_pts, Tv_out)
 
     # Allocate coefficient matrices (Dual when grid is Dual)
-    Tc = _output_eltype(Tv_out, eltype(x))
+    Tc = _promote_eltype(_divdiff_op, eltype(x), Tv_out)
     a_mat = Matrix{Tc}(undef, n_pts, n_ser)
     d_mat = Matrix{Tc}(undef, n_pts, n_ser)
 
@@ -425,7 +425,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
     ) where {Tg, Tv, P, Tq <: Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_coord(xq, Tg)
-    T_out = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, typeof(xq_promoted))
+    T_out = _promote_eltype(_interp_op, Tg, Tv, typeof(xq_promoted))
     aq = _make_anchor(sitp, xq_promoted, _resolve_search(sitp.x, xq, search, hint))
 
     output = Vector{T_out}(undef, n_series(sitp))
@@ -479,7 +479,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
     ) where {Tg, Tv, P, Tq <: Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+    T_out = _promote_eltype(_interp_op, Tg, Tv, Tq)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)

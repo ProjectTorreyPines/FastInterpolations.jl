@@ -100,7 +100,7 @@ function _constant_interp_nd_oneshot_batch(
     ) where {Tg, Tv, N}
     # Buffer eltype via Constant's kernel shape (mirrors 1D oneshot wrapper).
     Tq = _query_eltype(queries)
-    output = Vector{_output_eltype(_constant_kernel_shape, Tg, Tv, Tq)}(undef, _query_length(queries))
+    output = Vector{_promote_eltype(_select_op, Tg, Tv, Tq)}(undef, _query_length(queries))
     return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, bcs, extraps_val, side_vals, search, ops, hint)
 end
 

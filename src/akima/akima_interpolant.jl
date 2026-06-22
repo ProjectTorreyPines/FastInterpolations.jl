@@ -43,7 +43,7 @@ itp(0.5; deriv=DerivOp(1))
         return AkimaInterpolant1D(x_eff, y_eff, AkimaSlopes(bc_eff), extrap_p, search)
     end
     # PreCompute
-    Tdy = _output_eltype(_value_type(eltype(y_eff), Tg), Tg)
+    Tdy = _promote_eltype(_divdiff_op, Tg, _value_type(eltype(y_eff), Tg))
     dy = Vector{Tdy}(undef, length(x_eff))
     xf = _to_float(x_eff, Tg)
     _akima_slopes!(dy, xf, y_eff; bc = bc_eff)

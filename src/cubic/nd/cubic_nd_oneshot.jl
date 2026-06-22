@@ -39,7 +39,7 @@ function cubic_interp(
     # Type promotion + validation (same as constructor path)
     grids_typed, Tg, Tv_p, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
-    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, promote_type(typeof.(query)...))
+    Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
@@ -80,7 +80,7 @@ function cubic_interp(
     ) where {Tv, N}
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
-    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+    Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
     cubic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output
@@ -132,7 +132,7 @@ Zero-allocation after warmup (pool reuse).
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    Tz = _output_eltype(Tv, Tg)
+    Tz = _promote_eltype(_divdiff_op, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
 
@@ -187,7 +187,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # branches compile away. Subsumes the prior `_validate_nd_domain` throw
     # (NoExtrap path goes through 1D `_check_domain`'s `@boundscheck`).
     extraps_eff = _check_domain_nd(grids_p, queries, extraps_eff)
-    Tz = _output_eltype(Tv, Tg)
+    Tz = _promote_eltype(_divdiff_op, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
     _compute_nd_partials!(partials, grids_p, data_p, bcs_p)

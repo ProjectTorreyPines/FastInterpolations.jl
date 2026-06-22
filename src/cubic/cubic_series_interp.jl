@@ -89,7 +89,7 @@ mutable struct CubicSeriesInterpolant{
     const cache::C                    # Shared cache with LU factorization
     const bc_for_solve::B             # BC config for solving
     const y::Matrix{Tv}               # Series-contiguous y (n_points × n_series)
-    const z::Matrix{Tz}               # Series-contiguous z: Tz = _promote_eltype(Tv, Tg)
+    const z::Matrix{Tz}               # Series-contiguous z: Tz = _promote_eltype(_coeff_op, Tg, Tv)
     const _transpose::LazyTransposePair{Tv, Tz}  # Lazy point-contiguous layout
     const extrap::E                   # Extrapolation mode (compile-time specialized)
     const search_policy::P            # Default search policy (immutable, thread-safe)

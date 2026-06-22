@@ -27,4 +27,3 @@ module FastInterpolationsForwardDiffExt
     # an Int-backed Dual to a Float-backed one, matching the old `xq + zero(Tg)`.
 
 end # module
-0

@@ -175,10 +175,12 @@ end
 # in type when `h` is the (floated) grid type, which it always is at eltype sites.
 @inline _interp_op(h::Tg, yv::Tv, dL::Tq) where {Tg, Tv, Tq} = yv + yv * (dL / h)
 
-# `_coeff_op` (2-arg): divided difference `Δy/h` → the COEFFICIENT eltype. Modeled
-# as `yv * inv(h)`, NOT `yv / h`: the real solve multiplies by a precomputed float
-# `inv_h`, so this stays duck-safe — a custom value type needs only `*(Tv, Tg)`, not
-# `/(Tv, Tg)` — while `inv(h)` still floats Int grids (`inv(Int)::Float64`). QUERY-FREE:
+# `_coeff_op` (2-arg): divided difference `Δy/h`, accumulated by the solve → the
+# COEFFICIENT eltype. Modeled as `yv + yv * inv(h)`. Two faithful pieces: `* inv(h)`
+# (NOT `/ h`) mirrors the real solve, which multiplies by a precomputed float `inv_h`
+# — duck-safe (a value type needs `*(Tv, Tg)`, not `/(Tv, Tg)`) while `inv(h)` still
+# floats Int grids (`inv(Int)::Float64`); the leading `yv +` mirrors the solve summing
+# scaled values (`+(Tv, Tv)`, which any linear solve already requires). QUERY-FREE:
 # coefficients (cubic `z`, quadratic `a`/`d`, hermite `dy`) are solved before any query.
 @inline _coeff_op(h::Tg, yv::Tv) where {Tg, Tv} = yv + yv * inv(h)
 

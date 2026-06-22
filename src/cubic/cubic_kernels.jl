@@ -19,7 +19,7 @@ Evaluate cubic spline value using moment (z) formulation.
 
 # Type Parameters
 - `Tg`: Grid type for h, inv_h (AbstractFloat or duck-typed, e.g. ForwardDiff.Dual)
-- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(Tv, Tg)` — Dual when grid is Dual)
+- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op, Tg, Tv)` — Dual when grid is Dual)
 - `Tv`: Value type for yL, yR (unconstrained, typically Float)
 - `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
 
@@ -62,7 +62,7 @@ Evaluate first derivative of cubic spline.
 
 # Type Parameters
 - `Tg`: Grid type for h, inv_h (AbstractFloat or duck-typed, e.g. ForwardDiff.Dual)
-- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(Tv, Tg)` — Dual when grid is Dual)
+- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op, Tg, Tv)` — Dual when grid is Dual)
 - `Tv`: Value type for yL, yR (unconstrained, typically Float)
 - `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
 
@@ -102,7 +102,7 @@ This is simply a linear interpolation of the z (moment) values.
 
 # Type Parameters
 - `Tg`: Grid type for h, inv_h (AbstractFloat or duck-typed, e.g. ForwardDiff.Dual)
-- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(Tv, Tg)` — Dual when grid is Dual)
+- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op, Tg, Tv)` — Dual when grid is Dual)
 - `Tv`: Value type for yL, yR (unconstrained, typically Float)
 - `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
 
@@ -124,7 +124,7 @@ Third derivative of cubic spline (constant within each interval).
 
 # Type Parameters
 - `Tg`: Grid type for h, inv_h (AbstractFloat or duck-typed, e.g. ForwardDiff.Dual)
-- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(Tv, Tg)` — Dual when grid is Dual)
+- `Tz`: Coefficient type for zL, zR (= `_promote_eltype(_coeff_op, Tg, Tv)` — Dual when grid is Dual)
 - `Tv`: Value type for yL, yR (unconstrained, typically Float)
 - `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
 

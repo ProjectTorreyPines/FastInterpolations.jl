@@ -78,8 +78,8 @@ plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 mutable struct QuadraticSeriesInterpolant{Tg, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}, Tc} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                                 # Wrapped grid (`_CachedRange`/`_CachedVector` carrying cached `h`/`inv_h`)
     const y::Matrix{Tv}                        # Series-contiguous y (n_points × n_series)
-    const a::Matrix{Tc}                        # Series-contiguous a: Tc = _promote_eltype(Tv, Tg)
-    const d::Matrix{Tc}                        # Series-contiguous d: Tc = _promote_eltype(Tv, Tg)
+    const a::Matrix{Tc}                        # Series-contiguous a: Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    const d::Matrix{Tc}                        # Series-contiguous d: Tc = _promote_eltype(_coeff_op, Tg, Tv)
     const _transpose::LazyTransposeTriple{Tv, Tc} # Lazy point-contiguous layout
     const extrap::E                            # Extrapolation mode (compile-time specialized)
     const search_policy::P                     # Default search policy

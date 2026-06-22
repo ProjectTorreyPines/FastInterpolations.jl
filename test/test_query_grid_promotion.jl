@@ -11,7 +11,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @testitem "Duck-type query/grid promotion across extraps (1D + ND)" begin
-    approx(a, b) = isapprox(a, b; rtol = 1e-12, atol = 1e-12)
+    approx(a, b) = isapprox(a, b; rtol = 1.0e-12, atol = 1.0e-12)
 
     # ── Grids ────────────────────────────────────────────────────────────
     # Fractional-endpoint Float grids so `Int(boundary)` would InexactError.
@@ -139,7 +139,7 @@ end
 # OOB region. Green today; guards against a weaker fix that would break it.
 @testitem "ND ClampExtrap — AD carrier preserved, zero gradient in flat region" begin
     using ForwardDiff
-    approx(a, b) = isapprox(a, b; rtol = 1e-12, atol = 1e-12)
+    approx(a, b) = isapprox(a, b; rtol = 1.0e-12, atol = 1.0e-12)
 
     xr_f = 0.5:1.0:9.5
     data = [Float64(i + j) for i in 1:10, j in 1:10]
@@ -174,8 +174,10 @@ end
     # `_handle_all_extraps` promotes each axis query before dispatch → concrete
     # output tuple for every query eltype.
     gridsets = ((0.5:1.0:9.5, 0.5:1.0:9.5), (collect(0.5:1.0:9.5), collect(0.5:1.0:9.5)))
-    exs = (NoExtrap(), ClampExtrap(), FillExtrap(fill_value = 0.0),
-        ExtendExtrap(), WrapExtrap(), InBounds())
+    exs = (
+        NoExtrap(), ClampExtrap(), FillExtrap(fill_value = 0.0),
+        ExtendExtrap(), WrapExtrap(), InBounds(),
+    )
     for gs in gridsets, ex in exs, Q in (Int, Float32, Float64)
         extraps = (ex, ex)
         rt = Base.return_types(_handle_all_extraps, Tuple{Tuple{Q, Q}, typeof(gs), typeof(extraps)})
@@ -198,8 +200,10 @@ end
 @testitem "Type stability — ND public return concrete for mismatched query eltype (all methods)" begin
     g = 0.5:1.0:9.5
     data = [Float64(i + j) for i in 1:10, j in 1:10]
-    builders = (linear_interp, constant_interp, cubic_interp, quadratic_interp,
-        pchip_interp, cardinal_interp, akima_interp)
+    builders = (
+        linear_interp, constant_interp, cubic_interp, quadratic_interp,
+        pchip_interp, cardinal_interp, akima_interp,
+    )
     exs = (ClampExtrap(), FillExtrap(fill_value = 0.0), ExtendExtrap(), WrapExtrap())
     for mk in builders, ex in exs
         itp = mk((g, g), data; extrap = ex)
@@ -221,8 +225,10 @@ end
 @testitem "Type stability — 1D public return concrete for mismatched query eltype (lock)" begin
     g = 0.5:1.0:9.5
     y = collect(Float64, 1:10)
-    builders = (linear_interp, constant_interp, cubic_interp, quadratic_interp,
-        pchip_interp, cardinal_interp, akima_interp)
+    builders = (
+        linear_interp, constant_interp, cubic_interp, quadratic_interp,
+        pchip_interp, cardinal_interp, akima_interp,
+    )
     exs = (ClampExtrap(), FillExtrap(fill_value = 0.0), ExtendExtrap(), WrapExtrap())
     for mk in builders, ex in exs, Q in (Int, Float32)
         itp = mk(g, y; extrap = ex)

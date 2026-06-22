@@ -428,37 +428,54 @@ Resolves at specialization time — zero runtime cost on the Float hot path.
 # Arithmetic then auto-promotes GridIdx → g.val via promote_rule.
 
 """
-    _promote_for_anchor(xq::Tq, ::Type{Tg}) -> promoted_xq
+    _coord_eltype(::Type{Tq}, ::Type{Tg}) -> Type
 
-Promote query point for anchor construction.
+Canonical coordinate element type — the structural twin of [`_output_eltype`](@ref):
+`Base.promote_op` of the coordinate operation, with a `promote_type` fallback when
+inference can't resolve the op.
+
+The coordinate operation is **subtraction** (`xq - xL`, comparisons) — *not* the
+kernel's `/h`. Subtraction does not widen `Int`, so `Int - Int === Int`: an `Int`
+grid + `Int` query keeps an `Int` coordinate (the kernel floats the *output* via
+`inv_h`, not the coordinate). `Int - Float === Float` and `Float - Dual === Dual`
+fall out for free, and any duck type defining `-` participates without a
+`promote_rule`. No `float()` patch — coordinates must not over-float.
+
+This is method-agnostic on purpose: the ND coordinate gateway (`_extrap_axis` /
+`_handle_all_extraps`) has no method information, and the only per-method widening
+(`/h`) belongs to the value path (`_output_eltype`), not the coordinate.
+"""
+@inline function _coord_eltype(::Type{Tq}, ::Type{Tg}) where {Tq, Tg}
+    Tc = Base.promote_op(-, Tq, Tg)
+    return (Tc === Union{} || Tc === Any) ? promote_type(Tq, Tg) : Tc
+end
+
+"""
+    _promote_coord(xq, ::Type{Tg}) -> promoted_xq
+
+Promote a query into the grid's coordinate space via the canonical
+[`_coord_eltype`](@ref) rule (grid ⊕ query), once, at the eval surface — so the
+in-domain kernel and the OOB/fill paths share one concrete coordinate type. The
+`convert` is identity on the Float64 hot path, a no-op for a matched `Int` grid,
+and a zero-partial lift for a Float query on a `Dual` grid.
 
 # Behavior
-- ForwardDiff.Dual: preserved as-is (for AD support, see extension)
-- AbstractFloat: uses promote_type(Tq, Tg) to preserve precision
-  - Float64 on Float32 grid → Float64 (preserves query precision)
-  - Float32 on Float64 grid → Float64 (uses grid precision)
-- Other Real (Int, Rational): converted to grid type Tg
-
-This is needed for cubic anchors which store precomputed weight tuples.
-Unlike quadratic (which stores only dL), cubic weights involve complex
-floating-point arithmetic that can't be represented as Int/Rational.
+- AbstractFloat × AbstractFloat: preserves the wider precision.
+- Int/Rational × Float grid: converted to the grid float type.
+- Float query × Dual grid: lifts to a zero-partial Dual (AD-with-respect-to-grid).
+- Dual query × Float grid: stays Dual (`convert` is identity, or lifts the value type).
+- `GridIdx`: passed through unchanged (auto-promotes via its `promote_rule` downstream).
 
 # Example
 ```julia
-_promote_for_anchor(0, Float64)      # → 0.0 (Float64)
-_promote_for_anchor(1//2, Float64)   # → 0.5 (Float64)
-_promote_for_anchor(0.5, Float32)    # → 0.5 (Float64, preserves precision)
-_promote_for_anchor(0.5f0, Float32)  # → 0.5f0 (Float32)
-_promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
+_promote_coord(0, Float64)      # → 0.0 (Float64)
+_promote_coord(1//2, Float64)   # → 0.5 (Float64)
+_promote_coord(0.5, Float32)    # → 0.5 (Float64, preserves precision)
+_promote_coord(0.5f0, Float32)  # → 0.5f0 (Float32)
 ```
 """
-# For AbstractFloat queries on AbstractFloat grids: preserve precision using wider type
-@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq <: AbstractFloat, Tg <: AbstractFloat} = convert(promote_type(Tq, Tg), xq)
-# For other Real queries (Int, Rational) on AbstractFloat grids: convert to grid type
-@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq <: Real, Tg <: AbstractFloat} = Tg(xq)
-# For duck grids (e.g. Dual): keep xq as-is. Kernel arithmetic auto-promotes via Julia's
-# type system (Float * Dual → Dual). Converting xq to Dual would inject zero partials.
-@inline _promote_for_anchor(xq, ::Type{Tg}) where {Tg} = xq
+@inline _promote_coord(xq::GridIdx, ::Type{Tg}) where {Tg} = xq
+@inline _promote_coord(xq, ::Type{Tg}) where {Tg} = convert(_coord_eltype(typeof(xq), Tg), xq)
 
 
 # ========================================

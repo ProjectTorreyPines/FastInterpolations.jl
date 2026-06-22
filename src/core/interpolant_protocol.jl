@@ -168,11 +168,18 @@ end
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
+    # Promote each axis query to its coordinate type Tc ONCE at the eval surface,
+    # before validate / try_fill_oob. This (a) makes the OOB/fill VALUE carry the
+    # coordinate carrier (Dual grid → Dual fill, via _promote_extrap_val) so the
+    # public return is concrete, and (b) runs the OOB classification on the widened
+    # type (Float grid + Int query → Float). Identity on the Float64 hot path; Int
+    # grids stay Int. Search remains primal-safe (_oob_state / search extract primal).
+    qc = map(_promote_coord, query, map(eltype, itp.grids))
     # NoExtrap throw must precede FillExtrap short-circuit (mixed-extrap configs).
-    _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _sample_data(itp))
+    _validate_nd_domain(itp.grids, qc, itp.extraps)
+    oob_result = _try_fill_oob(qc, itp.grids, itp.extraps, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
-    cell = _locate_cell(itp, query, policies, hints, mono)
+    cell = _locate_cell(itp, qc, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
 end
 

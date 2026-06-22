@@ -744,7 +744,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
-    xq_promoted = _promote_for_anchor(xq, Tg)
+    xq_promoted = _promote_coord(xq, Tg)
     T_out = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, typeof(xq_promoted))
     output = Vector{T_out}(undef, n_series(sitp))
 
@@ -773,7 +773,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
     _validate_scalar_output(output, n_series(sitp))
 
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
-    xq_promoted = _promote_for_anchor(xq, Tg)
+    xq_promoted = _promote_coord(xq, Tg)
 
     # Build anchor preserving Dual type in xq (for AD)
     aq = _make_anchor(sitp, xq_promoted, _resolve_search(sitp.cache.x, xq, search, hint))

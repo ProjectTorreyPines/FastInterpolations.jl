@@ -82,6 +82,9 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
+    # Dual), matching the in-domain selection. Identity on Float64; Int grids stay Int.
+    xi = _promote_coord(xi, eltype(x))
     xi_primal = _extract_primal(xi)
     st = _oob_state(x, xi_primal)
     st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xi)

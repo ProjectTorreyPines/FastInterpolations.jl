@@ -176,7 +176,7 @@ itp2(aq; deriv=DerivOp(1))     # Reuses same anchor for derivative
 ```
 """
 # Unified scalar anchor construction. The outer constructor of _LinearAnchoredQuery
-# handles Tg×Tq type promotion, so no _promote_for_anchor call is needed here.
+# handles Tg×Tq type promotion, so no _promote_coord call is needed here.
 @inline function _anchor_query(
         x::AbstractVector{Tg},
         xq,

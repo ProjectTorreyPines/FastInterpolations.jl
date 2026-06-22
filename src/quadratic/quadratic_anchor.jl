@@ -169,7 +169,7 @@ The same `buffer` object, filled with anchored queries.
 # Note
 When buffer element type is `{Tg, Tq}` and `xq` element type is `S`:
 - If `Tq === S`: uses `xq[k]` directly (preserves precision)
-- Otherwise: uses `_promote_for_anchor(xq[k], Tg)` for lossless promotion
+- Otherwise: uses `_promote_coord(xq[k], Tg)` for lossless promotion
 """
 @inline function _fill_anchors!(
         buffer::AbstractVector{_QuadraticAnchoredQuery{Tg, Tq}},
@@ -184,7 +184,7 @@ When buffer element type is `{Tg, Tq}` and `xq` element type is `S`:
 
     @inbounds for k in eachindex(xq)
         # Promote query point: preserves precision when S is wider than Tg
-        xq_promoted = _promote_for_anchor(xq[k], Tg)
+        xq_promoted = _promote_coord(xq[k], Tg)
         buffer[k] = _quadratic_anchor_query_impl(x, xq_promoted, wrap, searcher_resolved)
     end
     return buffer

@@ -380,13 +380,17 @@ end
             deriv, itp.extraps, search, hint,
         )
     end
-    _validate_nd_domain(itp.grids, resolved, itp.extraps)
-    oob_result = _try_fill_oob(resolved, itp.grids, itp.extraps, ops, _sample_data(itp))
+    # Promote each axis query to Tc before validate / fill so the OOB/fill VALUE
+    # carries the grid carrier (Dual grid → Dual), matching the OnTheFly collapse.
+    # Identity on Float64; Int grids stay Int. (GridIdx branch above returns early.)
+    qc = map(_promote_coord, resolved, map(eltype, itp.grids))
+    _validate_nd_domain(itp.grids, qc, itp.extraps)
+    oob_result = _try_fill_oob(qc, itp.grids, itp.extraps, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
-    return _eval_hetero_nd(itp, resolved, ops, policies, hints, mono)
+    return _eval_hetero_nd(itp, qc, ops, policies, hints, mono)
 end
 
 # Vararg form: itp(0.5, 0.3) or itp(0.5, GridIdx(3)) → itp((0.5, ...))

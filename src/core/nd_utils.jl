@@ -524,12 +524,12 @@ Accepts heterogeneous tuples (e.g., mixed grid types, per-axis extrap modes).
 Uses map over named helper so each axis receives its concrete type directly,
 avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
-# Single per-axis gateway: promote the query to the grid eltype (`_promote_for_anchor`, as
+# Single per-axis gateway: promote the query to the grid eltype (`_promote_coord`, as
 # 1D does) so handlers see one concrete coordinate type — no OOB/in-domain `Union` (→ `Any`
 # for Hermite ND). No-op for matched/non-float grids (Int-grid Int queries stay Int); GridIdx skips it.
 @inline _extrap_axis(q::GridIdx, grid, extrap) = q
 @inline _extrap_axis(q, grid, extrap) =
-    @inbounds _handle_axis_extrap(_promote_for_anchor(q, eltype(grid)), grid, extrap)
+    @inbounds _handle_axis_extrap(_promote_coord(q, eltype(grid)), grid, extrap)
 
 @inline function _handle_all_extraps(
         queries::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},

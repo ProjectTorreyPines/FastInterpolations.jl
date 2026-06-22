@@ -424,7 +424,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
-    xq_promoted = _promote_for_anchor(xq, Tg)
+    xq_promoted = _promote_coord(xq, Tg)
     T_out = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, typeof(xq_promoted))
     aq = _make_anchor(sitp, xq_promoted, _resolve_search(sitp.x, xq, search, hint))
 
@@ -452,7 +452,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
     _validate_scalar_output(output, n_series(sitp))
 
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
-    xq_promoted = _promote_for_anchor(xq, Tg)
+    xq_promoted = _promote_coord(xq, Tg)
 
     aq = _make_anchor(sitp, xq_promoted, _resolve_search(sitp.x, xq, search, hint))
 
@@ -519,7 +519,7 @@ Pool handles both same-type and mixed-type cases efficiently.
         _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic), _should_wrap(sitp), searcher)
     else
         # Mixed type: convert query points to preserve precision
-        xq_promoted = _promote_for_anchor.(xq, Tg)
+        xq_promoted = _promote_coord.(xq, Tg)
         _fill_anchors!(aq_vec, sitp.x, xq_promoted, Val(:quadratic), _should_wrap(sitp), searcher)
     end
 
@@ -531,7 +531,7 @@ end
 """
 Evaluate all series using pre-built anchors.
 
-The anchor's `dL` field already has the correct precision (via `_promote_for_anchor`).
+The anchor's `dL` field already has the correct precision (via `_promote_coord`).
 """
 function _eval_series_anchored!(
         outputs::AbstractVector{<:AbstractVector},

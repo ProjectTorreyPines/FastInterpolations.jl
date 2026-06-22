@@ -17,8 +17,10 @@
     mkdual(r) = [Dual{Nothing}(Float64(v), 1.0) for v in r]
     gd = (mkdual(0.5:1.0:9.5), mkdual(0.5:1.0:9.5))
 
-    exs = (NoExtrap(), ClampExtrap(), FillExtrap(fill_value = 0.0),
-           ExtendExtrap(), WrapExtrap(), InBounds())
+    exs = (
+        NoExtrap(), ClampExtrap(), FillExtrap(fill_value = 0.0),
+        ExtendExtrap(), WrapExtrap(), InBounds(),
+    )
     # Float query on a Dual grid: the returned coordinate tuple must be CONCRETE
     # (no Union{Float64, Dual} per axis).  RED before the rule fix.
     for ex in exs
@@ -33,8 +35,10 @@ end
     mkdual(r) = [Dual{Nothing}(Float64(v), 1.0) for v in r]
     g = mkdual(0.5:1.0:9.5)
     data = [Float64(i + j) for i in 1:10, j in 1:10]
-    builders = (linear_interp, constant_interp, cubic_interp,
-                pchip_interp, cardinal_interp, akima_interp)
+    builders = (
+        linear_interp, constant_interp, cubic_interp,
+        pchip_interp, cardinal_interp, akima_interp,
+    )
     exs = (ClampExtrap(), FillExtrap(fill_value = 0.0), ExtendExtrap(), WrapExtrap())
     for mk in builders, ex in exs
         itp = mk((g, g), data; extrap = ex)
@@ -49,8 +53,10 @@ end
     mkdual(r) = [Dual{Nothing}(Float64(v), 1.0) for v in r]
     g = mkdual(0.5:1.0:9.5)
     y = collect(Float64, 1:10)
-    builders = (linear_interp, constant_interp, cubic_interp, quadratic_interp,
-                pchip_interp, cardinal_interp, akima_interp)
+    builders = (
+        linear_interp, constant_interp, cubic_interp, quadratic_interp,
+        pchip_interp, cardinal_interp, akima_interp,
+    )
     exs = (ClampExtrap(), FillExtrap(fill_value = 0.0), ExtendExtrap(), WrapExtrap())
     for mk in builders, ex in exs
         itp = mk(g, y; extrap = ex)
@@ -71,7 +77,7 @@ end
     # Linear interp on a unit-spaced grid: shifting the grid by δ moves the sample
     # point relative to the grid by -δ, so df/dδ = -(local slope). Slope here is 1.0.
     @test isfinite(d)
-    @test d ≈ -1.0 rtol = 1e-9
+    @test d ≈ -1.0 rtol = 1.0e-9
 end
 
 # ── Perf invariant I5: Float64 hot path is a compile-time no-op + zero alloc ──
@@ -119,8 +125,10 @@ end
     y = collect(Float64, 1:10)
     data = [Float64(i + j) for i in 1:10, j in 1:10]
 
-    builders1d = (linear_interp, cubic_interp, constant_interp, quadratic_interp,
-                  pchip_interp, cardinal_interp, akima_interp)
+    builders1d = (
+        linear_interp, cubic_interp, constant_interp, quadratic_interp,
+        pchip_interp, cardinal_interp, akima_interp,
+    )
     for mk in builders1d, ex in (ClampExtrap(), FillExtrap(fill_value = 0.0))
         itp = mk(g, y; extrap = ex)
         out = itp([3.0, 4.0, -5.0, 15.0])        # in-domain + OOB-left + OOB-right
@@ -130,8 +138,10 @@ end
         @test value(out[3]) ≈ value(itp(-5.0))   # OOB primal matches
     end
 
-    buildersnd = (linear_interp, cubic_interp, constant_interp,
-                  pchip_interp, cardinal_interp, akima_interp)
+    buildersnd = (
+        linear_interp, cubic_interp, constant_interp,
+        pchip_interp, cardinal_interp, akima_interp,
+    )
     for mk in buildersnd, ex in (ClampExtrap(), FillExtrap(fill_value = 0.0))
         itp = mk((g, g), data; extrap = ex)
         xs = [3.0, -5.0, 15.0]; ys = [4.0, 4.0, 4.0]   # SoA: tuple of coordinate vectors

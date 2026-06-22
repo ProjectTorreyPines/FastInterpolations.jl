@@ -171,8 +171,8 @@ end
 
 @testitem "Type stability — ND _handle_all_extraps concrete for every (query-eltype, extrap)" begin
     using FastInterpolations: _handle_all_extraps
-    # `_handle_all_extraps` promotes each axis query before dispatch → concrete
-    # output tuple for every query eltype.
+    # Must be CONCRETE for every (query-eltype × extrap) — no OOB-vs-in-domain `Union`
+    # (which would leak to a public `Any` for Hermite ND).
     gridsets = ((0.5:1.0:9.5, 0.5:1.0:9.5), (collect(0.5:1.0:9.5), collect(0.5:1.0:9.5)))
     exs = (
         NoExtrap(), ClampExtrap(), FillExtrap(fill_value = 0.0),
@@ -184,9 +184,8 @@ end
         @test length(rt) == 1 && isconcretetype(rt[1])
     end
 
-    # Stronger: @inferred + isa pins the EXACT promoted coordinate type (Float64 grid
-    # ⊕ any mismatched query eltype → Float64 coordinates). @inferred throws on a
-    # non-concrete inference.
+    # Float grid: every extrap promotes a mismatched query to Float64 (via `_extrap_axis`,
+    # mirroring 1D) — this closes the Hermite `Any` leak.
     g = (0.5:1.0:9.5, 0.5:1.0:9.5)
     for ex in (ClampExtrap(), FillExtrap(fill_value = 0.0), WrapExtrap(), ExtendExtrap(), InBounds())
         e2 = (ex, ex)
@@ -194,6 +193,28 @@ end
         @test (@inferred _handle_all_extraps((3, 3), g, e2)) isa Tuple{Float64, Float64}          # Int in-domain
         @test (@inferred _handle_all_extraps((3.0f0, 3.0f0), g, e2)) isa Tuple{Float64, Float64}  # Float32
         @test (@inferred _handle_all_extraps((3.0, 3.0), g, e2)) isa Tuple{Float64, Float64}      # Float64
+    end
+    # Int grid: promotion is a no-op (mirrors 1D) — Int query stays Int, not over-promoted.
+    # Pins the regression `float(eltype(grid))` would cause.
+    gi = (1:5, 1:5)
+    for ex in (ClampExtrap(), ExtendExtrap(), WrapExtrap(), InBounds())
+        e2 = (ex, ex)
+        @test (@inferred _handle_all_extraps((2, 2), gi, e2)) isa Tuple{Int, Int}
+    end
+end
+
+# ── Hermite-family ND `Any` leak — the type-stability bug this design fixes ───────
+# Hermite ND (pchip/cardinal/akima) runs the OnTheFly kernel, which propagates a non-concrete
+# coordinate to a public `Any` (linear/cubic collapse it). The mismatched-Int `Union` coordinate
+# leaked here — RED before the `_extrap_axis` promotion, GREEN after.
+@testitem "Type stability — Hermite ND no `Any` leak for mismatched Int query (all extraps)" begin
+    g = 0.5:1.0:9.5
+    data = [Float64(i + j) for i in 1:10, j in 1:10]
+    hermite = (pchip_interp, cardinal_interp, akima_interp)
+    for mk in hermite, ex in (ClampExtrap(), FillExtrap(fill_value = 0.0), WrapExtrap(), ExtendExtrap())
+        itp = mk((g, g), data; extrap = ex)
+        @test Base.return_types(itp, Tuple{Int, Int}) == [Float64]
+        @test (@inferred itp(3, 4)) isa Float64     # in-domain Int query
     end
 end
 
@@ -245,15 +266,10 @@ end
     end
 end
 
-# ── Type stability of the N=2 BATCH coordinate path (_locate_cell_2d_preamble) ──
-# The persistent batch path (`_interp_nd_batch!`) hands the RAW per-query tuple straight
-# to the N=2 `_locate_cell` specialization → `_locate_cell_2d_preamble`, which — unlike
-# the generic-N `_handle_all_extraps` chokepoint — did NOT promote. So a mismatched-eltype
-# query (Int on a Float64 grid) made the ClampExtrap OOB branch return Float64 while the
-# in-domain branch returned the Int `q` → a `Union{Int,Float64}` `x_eval`/`y_eval` that
-# union-splits per query inside the batch loop. (The scalar path promotes up in
-# `_eval_nd_at_point`, so the Union is hidden there; the leak is batch-only, and it does
-# not escape `_locate_cell`'s own return type — only the preamble exposes it.)
+# ── Type stability of the N=2 batch coordinate path (_locate_cell_2d_preamble) ──
+# The batch path hands a RAW per-query tuple to the N=2 preamble, which routes each axis
+# through `_extrap_axis` (as generic-N) → concrete coordinate even for a mismatched Int query
+# (no `Union` to union-split per batch query).
 @testitem "Type stability — N=2 _locate_cell_2d_preamble concrete for mismatched query eltype" begin
     using FastInterpolations: _locate_cell_2d_preamble
 

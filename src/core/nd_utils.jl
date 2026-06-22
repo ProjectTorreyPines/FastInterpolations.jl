@@ -517,29 +517,25 @@ end
 """
     _handle_all_extraps(queries, grids, extraps) -> NTuple{N}
 
-Apply extrapolation handling to all query coordinates. First promotes each query to
-its grid's float type (`_promote_query_for_eval`), then dispatches per-axis extrap
-handling — so the OOB and in-domain coordinate branches return one shared type (no
-per-query `Union` split for a mismatched query eltype). No-op for a matched `Float64`.
+Apply extrapolation handling to all query coordinates.
 Returns tuple of processed query values ready for interpolation.
 
 Accepts heterogeneous tuples (e.g., mixed grid types, per-axis extrap modes).
 Uses map over named helper so each axis receives its concrete type directly,
 avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
-# GridIdx: in-domain by construction (bounds-checked at resolution), skip extrap entirely
+# Single per-axis gateway: promote the query to the grid eltype (`_promote_for_anchor`, as
+# 1D does) so handlers see one concrete coordinate type — no OOB/in-domain `Union` (→ `Any`
+# for Hermite ND). No-op for matched/non-float grids (Int-grid Int queries stay Int); GridIdx skips it.
 @inline _extrap_axis(q::GridIdx, grid, extrap) = q
-@inline _extrap_axis(q, grid, extrap) = @inbounds _handle_axis_extrap(q, grid, extrap)
+@inline _extrap_axis(q, grid, extrap) =
+    @inbounds _handle_axis_extrap(_promote_for_anchor(q, eltype(grid)), grid, extrap)
 
 @inline function _handle_all_extraps(
         queries::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
-    # Promote queries to grid-float once, above the (extrap-independent) per-axis
-    # dispatch, so every handler returns one type. No-op for matched Float64;
-    # int→float for Int/Float32; Dual/GridIdx-safe.
-    qp = map(_promote_query_for_eval, queries, grids)
-    return map(_extrap_axis, qp, grids, extraps)
+    return map(_extrap_axis, queries, grids, extraps)
 end
 
 # Per-extrap type handling (unconstrained q for duck-type compatibility: Dual, etc.)
@@ -549,10 +545,8 @@ end
 end
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::_ClampOrFill)
-    # `q` arrives pre-promoted to grid-float from every caller — `_handle_all_extraps`
-    # (oneshot/generic-N), `_locate_cell_2d_preamble` (scalar+batch N=2), and the adjoint
-    # `Tg(query_q[d])` cast — so the OOB and in-domain branches share one coordinate type.
-    # Classify with widened `_oob_state`; clamp to the actual endpoint (sliver passes).
+    # `q` is pre-promoted by `_extrap_axis`. Classify via the widened `_oob_state`; clamp to
+    # the actual endpoint via `_promote_extrap_val` (not `oftype`, which InexactErrors an Int query).
     q_primal = _extract_primal(q)
     st = _oob_state(axis, q_primal)
     st == OOB_LEFT && return _promote_extrap_val(first(axis), q)
@@ -565,8 +559,6 @@ end
 end
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::WrapExtrap)
-    # `q` arrives pre-promoted to grid-float (see the `_ClampOrFill` note above); the
-    # wrapped and in-domain results then share one coordinate type.
     return _wrap_to_domain(q, axis)
 end
 
@@ -890,22 +882,17 @@ end
         hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
         mono::Tuple{Bool, Bool},
     )
+    xq, yq = query
     grid_x, grid_y = grids
-    # Promote each axis query to grid-float up front so the OOB and in-domain
-    # coordinate branches share one type. The scalar path promotes in
-    # `_eval_nd_at_point`, but the batch path hands `query_k` here raw — without
-    # this, a mismatched-eltype query union-splits per batch query. Mirrors the
-    # generic-N `_handle_all_extraps` chokepoint; idempotent on an already-promoted
-    # scalar query.
-    xq = _promote_query_for_eval(query[1], grid_x)
-    yq = _promote_query_for_eval(query[2], grid_y)
     extrap_x, extrap_y = extraps
     policy_x, policy_y = policies
     hint_x, hint_y = hints
     mono_x, mono_y = mono
 
-    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
-    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
+    # Via `_extrap_axis` (like generic-N) so the N=2 path gets the same query promotion —
+    # keeps a mismatched-eltype coordinate concrete (no batch-loop union-split).
+    x_eval = _extrap_axis(xq, grid_x, extrap_x)
+    y_eval = _extrap_axis(yq, grid_y, extrap_y)
     ix, _, xL, _ = _search_axis_adaptive(x_eval, grid_x, policy_x, hint_x, mono_x)
     iy, _, yL, _ = _search_axis_adaptive(y_eval, grid_y, policy_y, hint_y, mono_y)
 

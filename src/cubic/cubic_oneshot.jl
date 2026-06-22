@@ -40,7 +40,7 @@ Thread-safe: workspaces allocated from task-local pool.
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
 
-    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), Tv)
+    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
     z = acquire!(pool, Tz, length(y))
     _solve_system!(z, cache, y, cache.bc)
 
@@ -87,7 +87,7 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
 
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
-    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), eltype(y))
+    Tz = _promote_eltype(_coeff_op, eltype(cache.x), eltype(y))
     z = acquire!(pool, Tz, length(y))
     # Solve uses original BC for proper RHS materialization
     _solve_system!(z, cache, y, bc)
@@ -118,7 +118,7 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     ) where {Tg, Tv, Tq <: Real, L <: PointBC, R <: PointBC, O <: AbstractEvalOp, S <: Searcher}
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
-    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), Tv)
+    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
     tmp_z = acquire!(pool, Tz, length(y))
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc)
@@ -161,7 +161,7 @@ lifetime). `y_eff` returned for caller convenience — same object as `y`
     # `_resolve_data` handles the per-bc endpoint validation (`:inclusive`
     # checks `y[1] ≈ y[end]`; `:exclusive` is a no-op wrap to length n+1).
     y_eff = _resolve_data(y, bc)
-    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), Tv)
+    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
     z = acquire!(pool, Tz, length(cache.x))
     _solve_system!(z, cache, y_eff, cache.bc)
 

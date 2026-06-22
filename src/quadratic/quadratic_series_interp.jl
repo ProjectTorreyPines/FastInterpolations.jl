@@ -375,7 +375,7 @@ function quadratic_interp(
     y_mat, n_ser = _build_series_mat(s, n_pts, Tv_out)
 
     # Allocate coefficient matrices (Dual when grid is Dual)
-    Tc = _promote_eltype(_divdiff_op, eltype(x), Tv_out)
+    Tc = _promote_eltype(_coeff_op, eltype(x), Tv_out)
     a_mat = Matrix{Tc}(undef, n_pts, n_ser)
     d_mat = Matrix{Tc}(undef, n_pts, n_ser)
 

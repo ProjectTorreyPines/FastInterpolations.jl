@@ -646,7 +646,7 @@ function cubic_interp(
 
     # Build z matrix by solving tridiagonal systems
     # z coefficients mix y (Tv_out) with grid spacing (Tg) → Dual when grid is Dual
-    Tz = _promote_eltype(_divdiff_op, Tg, Tv_out)
+    Tz = _promote_eltype(_coeff_op, Tg, Tv_out)
     z_mat = Matrix{Tz}(undef, n_pts, n_ser)
 
     if bc isa AbstractVector
@@ -708,7 +708,7 @@ function _build_series_periodic(
     cache = _get_cubic_cache(x, PeriodicBC(), _effective_autocache(autocache, eltype(x)))
 
     # Build z matrix (Dual when grid is Dual)
-    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), Tv)
+    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
     z_mat = Matrix{Tz}(undef, n_pts, n_series_count)
     _solve_series_coefficients!(z_mat, y_mat, cache, cache.bc)
 

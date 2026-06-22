@@ -165,8 +165,8 @@ end
 
 # Type-witness OPS for `_promote_eltype` — small expressions whose return type (via
 # `Base.promote_op`) equals the real computation's element type. They are NOT the real
-# kernels; they exist only to drive inference, capturing the `/h` division that floats
-# Int. Args named/ordered `(grid, value[, query])` → `_promote_eltype(op, Tg, Tv[, Tq])`.
+# kernels; they exist only to drive inference, capturing the spacing reciprocal that
+# floats Int. Args named/ordered `(grid, value[, query])` → `_promote_eltype(op, Tg, Tv[, Tq])`.
 # (Constant's selection op `_select_op(xL, yv, xq) = yv * one(xq - xL)` lives in
 # constant_interpolant.jl — no division, so it keeps Int.)
 #
@@ -175,10 +175,12 @@ end
 # in type when `h` is the (floated) grid type, which it always is at eltype sites.
 @inline _interp_op(h::Tg, yv::Tv, dL::Tq) where {Tg, Tv, Tq} = yv + yv * (dL / h)
 
-# `_divdiff_op` (2-arg): divided difference `Δy/h` — value over grid spacing → the
-# COEFFICIENT eltype. QUERY-FREE: the coefficients (cubic `z`, quadratic `a`/`d`,
-# hermite `dy`) are solved at construction, before any query exists.
-@inline _divdiff_op(h::Tg, yv::Tv) where {Tg, Tv} = yv + yv / h
+# `_coeff_op` (2-arg): divided difference `Δy/h` → the COEFFICIENT eltype. Modeled
+# as `yv * inv(h)`, NOT `yv / h`: the real solve multiplies by a precomputed float
+# `inv_h`, so this stays duck-safe — a custom value type needs only `*(Tv, Tg)`, not
+# `/(Tv, Tg)` — while `inv(h)` still floats Int grids (`inv(Int)::Float64`). QUERY-FREE:
+# coefficients (cubic `z`, quadratic `a`/`d`, hermite `dy`) are solved before any query.
+@inline _coeff_op(h::Tg, yv::Tv) where {Tg, Tv} = yv + yv * inv(h)
 
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type

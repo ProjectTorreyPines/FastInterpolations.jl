@@ -42,7 +42,7 @@ Zero-allocation after warmup (pool reuse).
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    Tz = _promote_eltype(_divdiff_op, Tg, Tv)
+    Tz = _promote_eltype(_coeff_op, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
 
@@ -91,7 +91,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     grids_c = map(g -> _cache_axis_pooled(pool, g), grids)
 
     # Build phase (done once)
-    Tz = _promote_eltype(_divdiff_op, Tg, Tv)
+    Tz = _promote_eltype(_coeff_op, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
     _compute_nd_partials_quadratic!(partials, grids_c, data, bcs)

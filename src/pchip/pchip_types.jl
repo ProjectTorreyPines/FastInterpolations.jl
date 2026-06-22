@@ -56,7 +56,7 @@ struct PchipInterpolant1D{
         Tv = _value_type(eltype(y), Tg)
         xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
-        Tdy = _promote_eltype(_divdiff_op, Tg, Tv)
+        Tdy = _promote_eltype(_coeff_op, Tg, Tv)
         dy = Vector{Tdy}(undef, length(yc))
         _pchip_slopes!(dy, xc, yc)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dy), E, P, PreCompute}(
@@ -76,7 +76,7 @@ struct PchipInterpolant1D{
         Tv = _value_type(eltype(y), Tg)
         xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
         yc = _convert_copy(y, Tv)
-        Tdy = _promote_eltype(_divdiff_op, Tg, Tv)
+        Tdy = _promote_eltype(_coeff_op, Tg, Tv)
         dyc = _convert_copy(dy, Tdy)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, PreCompute}(
             xc, yc, dyc, extrap, search

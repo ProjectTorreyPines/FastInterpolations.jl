@@ -164,7 +164,7 @@ Uses task-local pool for workspace allocation.
     ) where {Tg, Tv, Tq <: Real}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
-    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), Tv)
+    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
     z = acquire!(pool, Tz, length(y))
     _solve_system!(z, cache, y, cache.bc)
 

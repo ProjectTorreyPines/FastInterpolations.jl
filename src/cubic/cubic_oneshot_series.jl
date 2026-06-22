@@ -30,7 +30,7 @@
     aq = _anchor_query(cache.x, xq, Val(:cubic), extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     Tv_out = _value_type(_series_eltype(s), Tg)
-    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), _series_eltype(s))
+    Tz = _promote_eltype(_coeff_op, eltype(cache.x), _series_eltype(s))
     n = length(first(vecs))
     z = acquire!(pool, Tz, n)
     y_buf = acquire!(pool, Tv_out, n)
@@ -107,7 +107,7 @@ end
     # Solve + eval per series. For `:exclusive` periodic, wrap each `vecs[k]`
     # with `_ExclusivePeriodicData` so it reports virtual length n+1 to match
     # `length(cache.x)`; the solver and kernel see uniform indexing.
-    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), _series_eltype(s))
+    Tz = _promote_eltype(_coeff_op, eltype(cache.x), _series_eltype(s))
     z = acquire!(pool, Tz, length(cache.x))
     @inbounds for k in 1:K
         y_eff = _resolve_data(vecs[k], bc)
@@ -157,7 +157,7 @@ end
 
     # Solve per series, eval at all queries. For `:exclusive`, wrap `vecs[k]`
     # via `_ExclusivePeriodicData` so it reports virtual n+1 like `cache.x`.
-    Tz = _promote_eltype(_divdiff_op, Tg_c, _series_eltype(s))
+    Tz = _promote_eltype(_coeff_op, Tg_c, _series_eltype(s))
     z = acquire!(pool, Tz, length(cache.x))
     @inbounds for k in 1:K
         y_eff = _resolve_data(vecs[k], bc)
@@ -284,7 +284,7 @@ end
     searcher = _resolve_search(cache.x, xqs, search, nothing)
     _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), extrap_eff isa WrapExtrap, searcher)
 
-    Tz = _promote_eltype(_divdiff_op, eltype(cache.x), _series_eltype(s))
+    Tz = _promote_eltype(_coeff_op, eltype(cache.x), _series_eltype(s))
     z = acquire!(pool, Tz, n)
     y_buf = acquire!(pool, Tv_out, n)
 

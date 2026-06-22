@@ -336,7 +336,7 @@ function _build_nd_coeffs_quadratic(
     ) where {Tg, Tv, N}
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    Tz = _promote_eltype(_divdiff_op, Tg, Tv)
+    Tz = _promote_eltype(_coeff_op, Tg, Tv)
     n_partials = 1 << N
     partials_shape = (n_partials, size(data)...)
     partials = Array{Tz, N + 1}(undef, partials_shape)

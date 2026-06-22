@@ -132,7 +132,7 @@ Zero-allocation after warmup (pool reuse).
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    Tz = _promote_eltype(_divdiff_op, Tg, Tv)
+    Tz = _promote_eltype(_coeff_op, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
 
@@ -187,7 +187,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # branches compile away. Subsumes the prior `_validate_nd_domain` throw
     # (NoExtrap path goes through 1D `_check_domain`'s `@boundscheck`).
     extraps_eff = _check_domain_nd(grids_p, queries, extraps_eff)
-    Tz = _promote_eltype(_divdiff_op, Tg, Tv)
+    Tz = _promote_eltype(_coeff_op, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
     _compute_nd_partials!(partials, grids_p, data_p, bcs_p)

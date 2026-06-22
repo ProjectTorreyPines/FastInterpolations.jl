@@ -165,7 +165,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     # Compute coefficients using temporary arrays from pool. The grid `x`
     # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)
-    Tcoeff = _promote_eltype(_divdiff_op, eltype(x), eltype(y))
+    Tcoeff = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
@@ -222,7 +222,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     # Compute coefficients using temporary arrays from pool. The grid `x`
     # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)
-    Tcoeff = _promote_eltype(_divdiff_op, eltype(x), eltype(y))
+    Tcoeff = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))

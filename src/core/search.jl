@@ -840,6 +840,12 @@ end
 # Seam handling for `:exclusive` PeriodicBC is performed by axis-level dispatch on
 # `_ExclusivePeriodicAxis` (`periodic_axis.jl`); callers wrap the axis upstream.
 @inline function search_interval(s::Searcher, x::AbstractVector, xq::Real)
+    # Promote the query to the grid's coordinate type (`_coord_eltype`) so the
+    # interval search compares same-typed values — an Int query on a Float grid
+    # otherwise promotes per comparison (~log2(n)/query), which dominates a
+    # batch/loop. Identity on Float64 (compile-time no-op); Int grids stay Int
+    # (`promote_op(-)` keeps Int); Dual rides through (compared on primal).
+    xq = _promote_coord(xq, eltype(x))
     idx, xL, xR = _search_interval_real(s, x, xq)
     return idx, idx + 1, xL, xR
 end

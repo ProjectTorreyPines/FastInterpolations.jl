@@ -524,9 +524,12 @@ Accepts heterogeneous tuples (e.g., mixed grid types, per-axis extrap modes).
 Uses map over named helper so each axis receives its concrete type directly,
 avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
-# GridIdx: in-domain by construction (bounds-checked at resolution), skip extrap entirely
+# Single per-axis gateway: promote the query to the grid eltype (`_promote_for_anchor`, as
+# 1D does) so handlers see one concrete coordinate type — no OOB/in-domain `Union` (→ `Any`
+# for Hermite ND). No-op for matched/non-float grids (Int-grid Int queries stay Int); GridIdx skips it.
 @inline _extrap_axis(q::GridIdx, grid, extrap) = q
-@inline _extrap_axis(q, grid, extrap) = @inbounds _handle_axis_extrap(q, grid, extrap)
+@inline _extrap_axis(q, grid, extrap) =
+    @inbounds _handle_axis_extrap(_promote_for_anchor(q, eltype(grid)), grid, extrap)
 
 @inline function _handle_all_extraps(
         queries::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
@@ -541,13 +544,13 @@ end
     return q
 end
 
-@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::_ClampOrFill) where {Tg}
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::_ClampOrFill)
+    # `q` is pre-promoted by `_extrap_axis`. Classify via the widened `_oob_state`; clamp to
+    # the actual endpoint via `_promote_extrap_val` (not `oftype`, which InexactErrors an Int query).
     q_primal = _extract_primal(q)
-    # Classify with the widened `_oob_state` but clamp to the actual endpoint:
-    # a sliver query is in-domain and passes through; only genuinely-OOB clamps.
     st = _oob_state(axis, q_primal)
-    st == OOB_LEFT && return oftype(q, first(axis))
-    st == OOB_RIGHT && return oftype(q, last(axis))
+    st == OOB_LEFT && return _promote_extrap_val(first(axis), q)
+    st == OOB_RIGHT && return _promote_extrap_val(last(axis), q)
     return q
 end
 
@@ -886,8 +889,10 @@ end
     hint_x, hint_y = hints
     mono_x, mono_y = mono
 
-    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
-    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
+    # Via `_extrap_axis` (like generic-N) so the N=2 path gets the same query promotion —
+    # keeps a mismatched-eltype coordinate concrete (no batch-loop union-split).
+    x_eval = _extrap_axis(xq, grid_x, extrap_x)
+    y_eval = _extrap_axis(yq, grid_y, extrap_y)
     ix, _, xL, _ = _search_axis_adaptive(x_eval, grid_x, policy_x, hint_x, mono_x)
     iy, _, yL, _ = _search_axis_adaptive(y_eval, grid_y, policy_y, hint_y, mono_y)
 

@@ -276,8 +276,8 @@ end
         lo2::Tuple{Vararg{Any, N}},
         hi2::Tuple{Vararg{Any, N}}
     ) where {Tv, Tg, N}
-    Tout = promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...)
-    return isconcretetype(Tout) ? Tout : Tv
+    Tspan = promote_type(map(typeof, lo2)..., map(typeof, hi2)...)
+    return _promote_eltype(_integrate_op, Tg, Tv, Tspan)
 end
 
 # ── CubicInterpolantND bounded ──

@@ -59,3 +59,23 @@ end
         @test integrate(mk(x, y), 2.0, 7.0) ≈ integrate(mk(xf, y), 2.0, 7.0)
     end
 end
+
+@testitem "integrate — ND all-Int grid floats to Float64 (ConstantND InexactError fix)" begin
+    xg = collect(1:6)
+    data_i = [i + 2j for i in 1:6, j in 1:6]      # Int data
+    data_f = float.(data_i)
+    xf = float.(xg)
+    # ConstantND: the headline InexactError case.
+    ci = constant_interp((xg, xg), data_i)
+    cf = constant_interp((xf, xf), data_f)
+    rb = integrate(ci, (2, 2), (5, 5))
+    @test rb isa Float64
+    @test rb ≈ integrate(cf, (2.0, 2.0), (5.0, 5.0))
+    @test integrate(ci) isa Float64
+    @test integrate(ci) ≈ integrate(cf)
+    # Cubic/Linear/Quadratic ND already float at construction — regression pin.
+    for mk in (linear_interp, cubic_interp, quadratic_interp)
+        ii = mk((xg, xg), data_f); ff = mk((xf, xf), data_f)
+        @test integrate(ii, (2.0, 2.0), (5.0, 5.0)) ≈ integrate(ff, (2.0, 2.0), (5.0, 5.0))
+    end
+end

@@ -40,7 +40,7 @@
 
     # 2. Pool-allocate compact partials (widened with Tg for Dual grid support)
     Tv = _value_type(eltype(data), Tg)
-    Tz = _promote_eltype(Tv, Tg)
+    Tz = _promote_eltype(_coeff_op, Tg, Tv)
     sizes = map(_deriv_size, methods)
     n_partials = prod(sizes)
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))
@@ -89,7 +89,7 @@ end
     extraps_eff = _check_domain_nd(grids_p, queries, extraps_eff)
 
     Tv = _value_type(eltype(data), Tg)
-    Tz = _promote_eltype(Tv, Tg)
+    Tz = _promote_eltype(_coeff_op, Tg, Tv)
     sizes = map(_deriv_size, methods)
     n_partials = prod(sizes)
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))

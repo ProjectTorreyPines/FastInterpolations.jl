@@ -132,32 +132,16 @@ end
     _cache_axis_pooled(pool, _to_float(x, Tg))
 
 # ========================================
-# Unified 2-arg accessors: _get_h, _get_inv_h
+# _get_h / _get_inv_h accessors (Vector hierarchy)
 # ========================================
-#
-# After this file loads, the dispatch surface for `_get_h(grid, i)` is:
-#   _CachedVector → cached vector lookup (this file)
-#   _CachedRange  → cached scalar       (this file, also covers AbstractRange via inheritance)
-#   AbstractRange → step()              (this file, fallback for non-_CachedRange ranges)
-#   AbstractVector → on-the-fly diff    (this file, fallback for raw Vectors / one-shot path)
+# Vector forms only; the Range forms (`_CachedRange`, `AbstractRange`) live in cached_range.jl.
 
 # _CachedVector — cached vector lookup (most specific for AbstractVector hierarchy)
 @inline Base.@propagate_inbounds _get_h(x::_CachedVector, i::Int) = @inbounds x.h[i]
 @inline Base.@propagate_inbounds _get_inv_h(x::_CachedVector, i::Int) = @inbounds x.inv_h[i]
 
-# _CachedRange — cached scalar (most specific for AbstractRange hierarchy)
-@inline _get_h(x::_CachedRange, ::Int) = x.h
-@inline _get_inv_h(x::_CachedRange, ::Int) = x.inv_h
-
-# AbstractRange (non-_CachedRange) — uniform spacing via step()
-@inline _get_h(x::AbstractRange, ::Int) = step(x)
-@inline _get_inv_h(x::AbstractRange, ::Int) = inv(step(x))
-
-# AbstractVector — compute on-the-fly (one-shot path, no cache available).
-# Raw eltype preserved (`Int → Int`, `Rational → Rational`). Arithmetic kernels
-# that follow this with `inv_h * y * dL` auto-promote naturally — no need to
-# eager-Float here. `_get_inv_h` returns `typeof(inv(h))` (Float64 for Int h,
-# Rational for Rational h, T for Float T).
+# AbstractVector — on-the-fly diff (one-shot, no cache). Raw eltype preserved
+# (`Int→Int`, `Rational→Rational`); downstream kernels auto-promote, so no eager-Float.
 @inline Base.@propagate_inbounds _get_h(x::AbstractVector, i::Int) =
     @inbounds x[i + 1] - x[i]
 @inline Base.@propagate_inbounds _get_inv_h(x::AbstractVector, i::Int) =

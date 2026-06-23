@@ -156,12 +156,24 @@ end
 @inline _convert_copy(r::_CachedRange{T, Tinv}, ::Type{T}) where {T, Tinv} = r
 @inline _convert_copy(r::_CachedRange, ::Type{T}) where {T} = _to_float(r, T)
 
-# 4-arg grid-based accessors: `(x, idx, xL, xR)`. All four are produced by
-# `search_interval`; the dispatch picks the cheapest field per axis type.
-# `_CachedRange` ignores all three because `h`/`inv_h` are scalar fields
-# (uniform spacing — same value for every cell).
-@inline _get_h(x::_CachedRange, ::Int, ::Real, ::Real) = x.h
-@inline _get_inv_h(x::_CachedRange, ::Int, ::Real, ::Real) = x.inv_h
+# `_get_h` / `_get_inv_h` accessors. A `_CachedRange` is uniform, so one cached
+# `h`/`inv_h` answers every cell: all shapes delegate to the no-arg form, where the
+# `_UnitStep` (h ≡ inv_h ≡ 1) literal `one(T)` lives — LLVM then folds every
+# downstream `×h`/`×inv_h` to identity.
+@inline _get_h(x::_CachedRange) = x.h
+@inline _get_inv_h(x::_CachedRange) = x.inv_h
+@inline _get_h(::_CachedRange{T, Tinv, _UnitStep}) where {T, Tinv} = one(T)
+@inline _get_inv_h(::_CachedRange{T, Tinv, _UnitStep}) where {T, Tinv} = one(Tinv)
+# idx-shaped forms — `(x, idx)` (solver/coeff) and `(x, idx, xL, xR)` (from
+# `search_interval`) — ignore the extra args and delegate to the no-arg form.
+@inline _get_h(x::_CachedRange, ::Int) = _get_h(x)
+@inline _get_inv_h(x::_CachedRange, ::Int) = _get_inv_h(x)
+@inline _get_h(x::_CachedRange, ::Int, ::Real, ::Real) = _get_h(x)
+@inline _get_inv_h(x::_CachedRange, ::Int, ::Real, ::Real) = _get_inv_h(x)
+
+# Raw `AbstractRange` (non-_CachedRange) fallback via `step()` — pre-normalization paths only.
+@inline _get_h(x::AbstractRange, ::Int) = step(x)
+@inline _get_inv_h(x::AbstractRange, ::Int) = inv(step(x))
 
 # ========================================
 # `_resolve_axis` — one-shot Range wrapping

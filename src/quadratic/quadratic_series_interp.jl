@@ -512,7 +512,7 @@ Pool handles both same-type and mixed-type cases efficiently.
     _validate_series_outputs(outputs, n_series(sitp), n_query)
 
     # Build anchors - pool handles both same-type and mixed-type cases
-    Tq_eff = promote_type(Tq, Tg)
+    Tq_eff = _coord_eltype(Tq, Tg)
     aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg, Tq_eff}, n_query)
     searcher = _resolve_search(sitp.x, xq, search, hint)
     if Tq === Tg

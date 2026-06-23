@@ -19,11 +19,11 @@
 end
 
 @testitem "integrate — Constant 1D over all-Int grid floats to Float64" begin
-    x  = collect(1:10)            # Vector{Int} grid
-    y  = collect(1:10) .^ 2       # Vector{Int} data
+    x = collect(1:10)            # Vector{Int} grid
+    y = collect(1:10) .^ 2       # Vector{Int} data
     xf = float.(x); yf = float.(y)
     for side in (LeftSide(), RightSide(), NearestSide())
-        itp_i = constant_interp(x,  y;  side = side)
+        itp_i = constant_interp(x, y; side = side)
         itp_f = constant_interp(xf, yf; side = side)
         # bounded (Int bounds) — @inferred pins type stability, isa pins the concrete type
         r = @inferred integrate(itp_i, 2, 7)
@@ -43,11 +43,11 @@ end
 @testitem "integrate — Dual grid (AD wrt nodes) returns concrete Dual for non-Hermite 1D" begin
     using ForwardDiff: Dual, value
     mkdual(r) = [Dual{Nothing}(Float64(v), 1.0) for v in r]
-    g  = mkdual(0.5:1.0:9.5)
+    g = mkdual(0.5:1.0:9.5)
     gf = value.(g)                       # Float64 reference grid
-    y  = collect(Float64, 1:10)
+    y = collect(Float64, 1:10)
     for mk in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
-        itp  = mk(g,  y)
+        itp = mk(g, y)
         itpf = mk(gf, y)
         I = @inferred integrate(itp, 1.0, 5.0)        # @inferred pins concrete-Dual stability
         @test I isa Dual{Nothing, Float64, 1}
@@ -58,7 +58,7 @@ end
 @testitem "integrate — Dual-grid partial matches finite difference (AD-wrt-grid correctness)" begin
     using ForwardDiff: Dual, value, partials
     xb = collect(0.5:1.0:9.5)
-    y  = collect(Float64, 1:10)
+    y = collect(Float64, 1:10)
     # I(s) = ∫_{1.3}^{4.7} of the interpolant built on the grid scaled by s. Bounds avoid
     # nodes (0.5,1.5,…) and Constant NearestSide midpoints (1,2,…) so I(s) is smooth at s=1
     # for every family (no subgradient kink), making the AD partial comparable to a finite diff.
@@ -75,8 +75,10 @@ end
 @testitem "integrate — non-Constant 1D Int grids stay correct (regression pin)" begin
     x = collect(1:10); y = float.(collect(1:10) .^ 2)
     xf = float.(x)
-    for mk in (linear_interp, cubic_interp, quadratic_interp,
-               pchip_interp, cardinal_interp, akima_interp)
+    for mk in (
+            linear_interp, cubic_interp, quadratic_interp,
+            pchip_interp, cardinal_interp, akima_interp,
+        )
         @test (@inferred integrate(mk(x, y), 2.0, 7.0)) ≈ integrate(mk(xf, y), 2.0, 7.0)
     end
 end

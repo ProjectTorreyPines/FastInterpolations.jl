@@ -79,3 +79,18 @@ end
         @test integrate(ii, (2.0, 2.0), (5.0, 5.0)) ≈ integrate(ff, (2.0, 2.0), (5.0, 5.0))
     end
 end
+
+@testitem "integrate — Float-path values + zero-alloc unchanged after witness routing" setup = [AllocConstants] begin
+    x = collect(range(0.0, 1.0, length = 21))
+    y = @. 3x - 1
+    # Affine reference: ∫_a^b (3x-1) dx = [1.5x² - x]_a^b
+    a, b = 0.15, 0.85
+    itp = linear_interp(x, y; extrap = NoExtrap())
+    @test integrate(itp, a, b) ≈ (1.5b^2 - b) - (1.5a^2 - a) atol = 1.0e-12
+
+    # Zero-alloc on the Float path, measured in a function barrier (avoids @testset
+    # try/catch polluting @allocated).
+    probe(it, p, q) = (it(p); integrate(it, p, q); @allocated integrate(it, p, q))
+    probe(itp, a, b)                       # warmup/compile
+    @test probe(itp, a, b) <= ALLOC_THRESHOLD
+end

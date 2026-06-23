@@ -40,7 +40,17 @@ normalized to `_CachedRange` via `_to_float` at public API boundaries.
 - `domain_lo::T`, `domain_hi::T` — safe bounds for domain checks (= `lo`/`hi`
   on the exact path; widened by ≈1 ULP on the x86_64 TwicePrecision fast path)
 """
-struct _CachedRange{T, Tinv} <: AbstractRange{T}
+# Grid tag (3rd type param): a generic type-level marker for grid properties,
+# kept open so future kinds (log-spaced, reversed, …) — and `_CachedVector` —
+# can reuse `_AxisTag`. Only `_search_direct`/`_alpha_of` specialize on `_UnitStep`
+# (step ≡ 1, statically known → skip the ×inv_h/×h multiplies). Every other call
+# site dispatches on `::_CachedRange{T,Tinv}` (= `…{T,Tinv,Tag} where Tag`), which
+# matches all tags, so nothing else needs to change.
+abstract type _AxisTag end
+struct _Generic <: _AxisTag end    # default: step is a runtime field
+struct _UnitStep <: _AxisTag end   # step ≡ 1 (from an AbstractUnitRange grid)
+
+struct _CachedRange{T, Tinv, Tag <: _AxisTag} <: AbstractRange{T}
     lo::T
     hi::T
     h::T
@@ -50,10 +60,15 @@ struct _CachedRange{T, Tinv} <: AbstractRange{T}
     domain_hi::T
 end
 
-# Exact 5-arg ctor: `domain_lo == lo`, `domain_hi == hi` (non-TwicePrecision).
-@inline function _CachedRange{T, Tinv}(lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv}
-    return _CachedRange{T, Tinv}(lo, hi, h, inv_h, len, lo, hi)
-end
+# Default-tag convenience ctors: keep every existing `_CachedRange{T,Tinv}(…)`
+# call site (and `::_CachedRange{T,Tinv}` dispatch) working — fills `Tag=_Generic`.
+@inline _CachedRange{T, Tinv}(lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv} =
+    _CachedRange{T, Tinv, _Generic}(lo, hi, h, inv_h, len, lo, hi)
+@inline _CachedRange{T, Tinv}(lo::T, hi::T, h::T, inv_h::Tinv, len::Int, dlo::T, dhi::T) where {T, Tinv} =
+    _CachedRange{T, Tinv, _Generic}(lo, hi, h, inv_h, len, dlo, dhi)
+# 5-arg with explicit tag (exact domain = lo/hi) — used by the unit-step fast path.
+@inline _CachedRange{T, Tinv, Tag}(lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv, Tag} =
+    _CachedRange{T, Tinv, Tag}(lo, hi, h, inv_h, len, lo, hi)
 
 # Identity passthrough — re-wrapping would discard the cached fields.
 _CachedRange(x::_CachedRange) = x

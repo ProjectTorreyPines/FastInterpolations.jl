@@ -114,6 +114,8 @@ end
 # `inv_hs` (only needed by EvalDeriv1 kernel weights).
 @inline _alpha_of(q::Real, L::Real, inv_h::Real) = (q - L) * inv_h
 @inline _alpha_of(q::Real, L::Real, R::Real, x::_CachedRange) = (q - L) * x.inv_h
+# Unit-step (`_UnitStep` tag): inv_h ≡ 1, so α = q - L (skip the ×inv_h).
+@inline _alpha_of(q::Real, L::Real, R::Real, ::_CachedRange{T, Tinv, _UnitStep}) where {T, Tinv} = q - L
 @inline _alpha_of(q::Real, L::Real, R::Real, ::AbstractVector) = (q - L) / float(R - L)
 
 # ========================================

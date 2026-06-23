@@ -540,6 +540,18 @@ Uses precomputed `inv_h` (multiply instead of divide) for the index calculation.
     return idx, xL, xR
 end
 
+
+# Unit-step fast path (`_UnitStep` tag = step ≡ 1, statically known): drop the
+# `×inv_h` in the index and the `×h` muladd for the left edge — both are `×1`.
+# Bit-identical to the generic muladd path for a unit-step grid.
+@inline function _search_direct(x::_CachedRange{T, Tinv, _UnitStep}, xq::Real) where {T, Tinv}
+    idx = clamp(unsafe_trunc(Int, _extract_primal((xq - x.lo) + 1)), 1, x.len - 1)
+    xL = (idx - 1) + x.lo
+    xR = xL + x.h
+    return idx, xL, xR
+end
+
+
 """
     _search_binary(x::AbstractVector{T}, xq::Real) where {T<:Real}
 

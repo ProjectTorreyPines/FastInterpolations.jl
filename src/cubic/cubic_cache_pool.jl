@@ -48,7 +48,12 @@ abstract type AbstractCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}} end
 # Vector → `_CachedVector{T, Tinv}`. `:exclusive` periodic adds an outer
 # `_ExclusivePeriodicAxis` wrapper. Cubic always promotes to float, so pin
 # `Tinv = T` to keep `EntryType` concrete.
-@inline _cached_axis_type(::Type{<:AbstractRange}, ::Type{T}) where {T} = _CachedRange{T, T}
+# Mirror `_to_float`'s axis-tag decision so the banked cache type matches the
+# real grid type: AbstractUnitRange{<:Integer} → `_UnitStep`, else `_Generic`;
+# an already-wrapped `_CachedRange` preserves its tag.
+@inline _cached_axis_type(::Type{<:AbstractRange}, ::Type{T}) where {T} = _CachedRange{T, T, _Generic}
+@inline _cached_axis_type(::Type{<:AbstractUnitRange}, ::Type{T}) where {T} = _CachedRange{T, T, _UnitStep}
+@inline _cached_axis_type(::Type{<:_CachedRange{S, Si, Tag}}, ::Type{T}) where {S, Si, Tag, T} = _CachedRange{T, T, Tag}
 @inline _cached_axis_type(::Type{<:AbstractVector}, ::Type{T}) where {T} =
     _CachedVector{T, typeof(inv(oneunit(T)))}
 
@@ -714,7 +719,7 @@ end
 # _CachedRange: bank keyed on _CachedRange{T, T} (Tinv == T for Float grids).
 # objectid is deterministic for isbits → fast hit.
 @inline function _get_derivative_cache_impl(x::_CachedRange{T, T}, bc_pair::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
-    bank = _get_derivative_bank(_CachedRange{T, T}, bc_pair)
+    bank = _get_derivative_bank(typeof(x), bc_pair)   # concrete (carries the axis tag)
     return _lookup_or_insert!(bank, x, bc_pair)
 end
 
@@ -757,7 +762,7 @@ end
 
 # _CachedRange: bank keyed on _CachedRange{T, T} (Tinv == T for Float grids).
 @inline function _get_periodic_cache_impl(x::_CachedRange{T, T}, bc::PeriodicBC) where {T <: AbstractFloat}
-    bank = _get_periodic_bank(_CachedRange{T, T}, bc)
+    bank = _get_periodic_bank(typeof(x), bc)   # concrete (carries the axis tag)
     return _lookup_or_insert!(bank, x, bc)
 end
 

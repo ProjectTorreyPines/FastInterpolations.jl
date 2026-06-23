@@ -48,15 +48,38 @@ end
     @test length(rt) == 1 && rt[1] === Type{Float64}
 end
 
-@testitem "Hetero all-Constant Int eval keeps Int output (Phase 4 corner) + I5 floats elsewhere" begin
+@testitem "Hetero mixed-method output via _hetero_output_eltype fold (behavior-preserving at generic sites); all-Constant served by homogeneous path" begin
+    using ForwardDiff: Dual
+    # NOTE: all-Constant hetero is SHORT-CIRCUITED to the homogeneous ConstantInterpolantND path
+    # (hetero_interpolant.jl Tuple{ConstantInterp,Vararg{ConstantInterp}} dispatch, and
+    # hetero_oneshot.jl lines 236 + 307) BEFORE reaching the 4 wired generic eval sites.
+    # Therefore `itp_c(2,3) isa Int` below pins the PUBLIC CONTRACT (homogeneous path honors
+    # Int grid/data), NOT the fold at the wired generic sites.
+    # The fold's Int-keeping is unit-pinned in Task 5 (`_hetero_output_eltype((C,C),Int,Int,(1,1)) === Int`)
+    # and becomes end-to-end observable via the NoInterp path in Task 7.
+    # The assertions on `itp_m` (Constant×Linear) ARE served by the generic wired sites and
+    # genuinely exercise the fold's behavior-preservation there.
+
     g = collect(0:1:5)                                  # Int grid
     data = [Int(i + 2j) for i in 1:6, j in 1:6]         # Int data
-    # all-Constant hetero + Int query → output keeps Int (legacy over-floated to Float64).
+
+    # Public-contract pin: all-Constant + Int → keeps Int (via homogeneous short-circuit path).
     itp_c = interp((g, g), data; method = (ConstantInterp(RightSide(), NoBC()),
                                            ConstantInterp(RightSide(), NoBC())))
     @test (@inferred itp_c(2, 3)) isa Int
-    # one dividing axis → floats (unchanged)
+
+    # Mixed (Constant×Linear): reaches the 4 wired generic sites — dividing Linear axis floats.
     itp_m = interp((g, g), data; method = (ConstantInterp(RightSide(), NoBC()),
                                            LinearInterp(NoBC())))
     @test (@inferred itp_m(2, 3)) isa Float64
+
+    # Dual-carrier through the generic site: mixed interpolant on a Dual grid must carry Dual
+    # through `_hetero_output_eltype` at the wired call sites.
+    gd = [Dual{Nothing}(Float64(v), 1.0) for v in 0:1:5]
+    data_f = [Float64(i + 2j) for i in 1:6, j in 1:6]
+    itp_dual = interp((gd, gd), data_f; method = (ConstantInterp(RightSide(), NoBC()),
+                                                    LinearInterp(NoBC())))
+    @test (@inferred itp_dual(2.0, 3.0)) isa Dual
+    rt = Base.return_types(itp_dual, Tuple{Float64, Float64})
+    @test length(rt) == 1 && isconcretetype(rt[1])
 end

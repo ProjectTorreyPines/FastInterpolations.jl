@@ -97,9 +97,9 @@ end
 @inline function integrate(
         itp::AbstractInterpolant{Tg, Tv};
         search = nothing, hint = nothing
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = _grid_1d(itp)
-    Tout = promote_type(Tv, Tg)
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     return _integrate_1d_fulldomain(x, _full_cell_fn(itp), Tout)
 end
 
@@ -108,9 +108,9 @@ end
 @inline function integrate(
         itp::ConstantInterpolant{Tg, Tv};
         search = nothing, hint = nothing
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = _grid_1d(itp)
-    Tout = promote_type(Tv, Tg)
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     return _integrate_1d_fulldomain(x, _full_cell_fn(itp, itp.side), Tout)
 end
 
@@ -125,9 +125,9 @@ end
 @inline function integrate(
         sitp::AbstractSeriesInterpolant{Tg, Tv};
         search = nothing, hint = nothing
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = _grid_1d(sitp)
-    Tout = promote_type(Tv, Tg)
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
     @inbounds for k in 1:n
@@ -140,9 +140,9 @@ end
 @inline function integrate(
         sitp::ConstantSeriesInterpolant{Tg, Tv};
         search = nothing, hint = nothing
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = _grid_1d(sitp)
-    Tout = promote_type(Tv, Tg)
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
     @inbounds for k in 1:n
@@ -238,7 +238,7 @@ end
         search = nothing,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
-    Tout = promote_type(Tv, Tg)
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     total = Tout <: Number ? zero(Tout) : 0 * _nd_sample_value(itp)
     cell_ranges = ntuple(d -> 1:(length(itp.grids[d]) - 1), Val(N))
     for I in CartesianIndices(cell_ranges)
@@ -277,7 +277,7 @@ end
 # (PreCompute + OnTheFly via `_full_cell_fn`'s trait dispatch on `itp.dy`).
 function cumulative_integrate!(
         out::AbstractVector, itp::AbstractInterpolant{Tg, Tv}
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = _grid_1d(itp)
     _check_cumulative_out(out, length(x))
     return _cumulative_integrate_1d!(out, x, _full_cell_fn(itp))
@@ -287,15 +287,15 @@ end
 # so `_full_cell_fn(itp, side)` dispatches to a distinct specialized method.
 function cumulative_integrate!(
         out::AbstractVector, itp::ConstantInterpolant{Tg, Tv}
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = _grid_1d(itp)
     _check_cumulative_out(out, length(x))
     return _cumulative_integrate_1d!(out, x, _full_cell_fn(itp, itp.side))
 end
 
 # Allocating wrappers: allocate output vector then forward to the in-place path.
-function cumulative_integrate(itp::AbstractInterpolant{Tg, Tv}) where {Tg <: AbstractFloat, Tv}
-    Tout = promote_type(Tv, Tg)
+function cumulative_integrate(itp::AbstractInterpolant{Tg, Tv}) where {Tg <: Real, Tv}
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     out = Vector{Tout}(undef, length(_grid_1d(itp)))
     return cumulative_integrate!(out, itp)
 end
@@ -303,9 +303,9 @@ end
 # Generic Series: catches Cubic, Linear, Quadratic series
 function cumulative_integrate(
         sitp::AbstractSeriesInterpolant{Tg, Tv}
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = _grid_1d(sitp)
-    Tout = promote_type(Tv, Tg)
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     n_pts = length(x)
     n_ser = n_series(sitp)
     result = Matrix{Tout}(undef, n_pts, n_ser)
@@ -318,9 +318,9 @@ end
 # Constant Series override: side is parametric → compiler knows concrete type
 function cumulative_integrate(
         sitp::ConstantSeriesInterpolant{Tg, Tv}
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = _grid_1d(sitp)
-    Tout = promote_type(Tv, Tg)
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tg)
     n_pts = length(x)
     n_ser = n_series(sitp)
     result = Matrix{Tout}(undef, n_pts, n_ser)

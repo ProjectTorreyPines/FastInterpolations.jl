@@ -13,3 +13,49 @@
     @test _promote_eltype(_integrate_op, Float64, Float64, D) === D          # AD wrt bounds
     @test _promote_eltype(_integrate_op, Float64, Int, Float64) === Float64  # Int data floats
 end
+
+@testitem "integrate — Constant 1D over all-Int grid floats to Float64" begin
+    x  = collect(1:10)            # Vector{Int} grid
+    y  = collect(1:10) .^ 2       # Vector{Int} data
+    xf = float.(x); yf = float.(y)
+    for side in (LeftSide(), RightSide(), NearestSide())
+        itp_i = constant_interp(x,  y;  side = side)
+        itp_f = constant_interp(xf, yf; side = side)
+        # bounded (Int bounds)
+        r = integrate(itp_i, 2, 7)
+        @test r isa Float64
+        @test r ≈ integrate(itp_f, 2.0, 7.0)
+        # full-domain
+        rf = integrate(itp_i)
+        @test rf isa Float64
+        @test rf ≈ integrate(itp_f)
+        # cumulative
+        rc = cumulative_integrate(itp_i)
+        @test eltype(rc) === Float64
+        @test rc ≈ cumulative_integrate(itp_f)
+    end
+end
+
+@testitem "integrate — Dual grid (AD wrt nodes) returns Dual for non-Hermite 1D" begin
+    using ForwardDiff: Dual, value
+    mkdual(r) = [Dual{Nothing}(Float64(v), 1.0) for v in r]
+    g  = mkdual(0.5:1.0:9.5)
+    gf = value.(g)                       # Float64 reference grid
+    y  = collect(Float64, 1:10)
+    for mk in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+        itp  = mk(g,  y)
+        itpf = mk(gf, y)
+        I = integrate(itp, 1.0, 5.0)
+        @test I isa Dual
+        @test value(I) ≈ integrate(itpf, 1.0, 5.0)
+    end
+end
+
+@testitem "integrate — non-Constant 1D Int grids stay correct (regression pin)" begin
+    x = collect(1:10); y = float.(collect(1:10) .^ 2)
+    xf = float.(x)
+    for mk in (linear_interp, cubic_interp, quadratic_interp,
+               pchip_interp, cardinal_interp, akima_interp)
+        @test integrate(mk(x, y), 2.0, 7.0) ≈ integrate(mk(xf, y), 2.0, 7.0)
+    end
+end

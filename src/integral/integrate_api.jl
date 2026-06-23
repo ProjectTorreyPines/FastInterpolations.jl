@@ -16,11 +16,12 @@ end
         x0::Real, x1::Real;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = itp.cache.x
     y = itp.y
     z = itp.z
-    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    Tspan = promote_type(typeof(x0), typeof(x1))
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(x, x0, search, hint)
 
     partial = @inline (i, xL, h, a2, b2) -> begin
@@ -46,10 +47,11 @@ end
         x0::Real, x1::Real;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = itp.x
     y = itp.y
-    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    Tspan = promote_type(typeof(x0), typeof(x1))
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(x, x0, search, hint)
 
     partial = @inline (i, xL, h, a2, b2) -> begin
@@ -75,9 +77,10 @@ end
         x0::Real, x1::Real;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = itp.x
-    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    Tspan = promote_type(typeof(x0), typeof(x1))
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(x, x0, search, hint)
 
     partial = @inline (i, xL, h, a2, b2) -> begin
@@ -103,8 +106,9 @@ end
         x0::Real, x1::Real;
         search::AbstractSearchPolicy = itp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
-    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    ) where {Tg <: Real, Tv}
+    Tspan = promote_type(typeof(x0), typeof(x1))
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(itp.x, x0, search, hint)
     return _integrate_constant_1d_impl(itp.x, itp.y, itp.side, itp.extrap, x0, x1, searcher, Tg, Tout)
 end
@@ -142,11 +146,12 @@ end
         x0::Real, x1::Real;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = sitp.cache.x
     y = sitp.y
     z = sitp.z
-    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    Tspan = promote_type(typeof(x0), typeof(x1))
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(x, x0, search, hint)
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
@@ -170,10 +175,11 @@ end
         x0::Real, x1::Real;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = sitp.x
     y = sitp.y
-    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    Tspan = promote_type(typeof(x0), typeof(x1))
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(x, x0, search, hint)
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
@@ -197,9 +203,10 @@ end
         x0::Real, x1::Real;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
+    ) where {Tg <: Real, Tv}
     x = sitp.x
-    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    Tspan = promote_type(typeof(x0), typeof(x1))
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(x, x0, search, hint)
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
@@ -223,8 +230,9 @@ end
         x0::Real, x1::Real;
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
-    ) where {Tg <: AbstractFloat, Tv}
-    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    ) where {Tg <: Real, Tv}
+    Tspan = promote_type(typeof(x0), typeof(x1))
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(sitp.x, x0, search, hint)
     return _integrate_constant_series_1d(sitp.x, sitp.y, sitp.side, sitp.extrap, x0, x1, searcher, Tg, Tout)
 end

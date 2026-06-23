@@ -12,9 +12,9 @@
 # with pre-absorbed coefficients a4=a/4, b3=b/3, c2=c/2.
 @inline function _cubic_integral_kernel(
         ::_EvalIntegralPartial,
-        zL::Tv, zR::Tv, yL::Tv, yR::Tv,
+        zL::Tz, zR::Tz, yL::Ty, yR::Ty,
         h::Tg, u0::Td, u1::Td
-    ) where {Tv, Tg <: AbstractFloat, Td <: Real}
+    ) where {Tz, Ty, Tg <: Real, Td <: Real}
     inv_h = inv(h)
     a4 = (zR - zL) * (inv_h * inv(Tg(24)))   # a/4 = (zR-zL)/(24h)
     b3 = inv(Tg(6)) * zL                     # b/3 = zL/6
@@ -27,8 +27,8 @@ end
 # --- Full-cell integral: ∫_0^h S(u) du = h/2·(yL+yR) - h³/24·(zL+zR) ---
 @inline function _cubic_integral_kernel(
         ::_EvalIntegralCell,
-        zL::Tv, zR::Tv, yL::Tv, yR::Tv, h::Tg
-    ) where {Tv, Tg <: AbstractFloat}
+        zL::Tz, zR::Tz, yL::Ty, yR::Ty, h::Tg
+    ) where {Tz, Ty, Tg <: Real}
     h2 = h * h
     return (h / 2) * muladd(-(h2 * inv(Tg(12))), zL + zR, yL + yR)
 end
@@ -44,7 +44,7 @@ end
 @inline function _linear_integral_kernel(
         ::_EvalIntegralPartial,
         yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td
-    ) where {Tv, Tg <: AbstractFloat, Td <: Real}
+    ) where {Tv, Tg <: Real, Td <: Real}
     du = u1 - u0
     half_slope = (yR - yL) * inv(2h)
     return du * muladd(half_slope, u1 + u0, yL)
@@ -54,7 +54,7 @@ end
 @inline function _linear_integral_kernel(
         ::_EvalIntegralCell,
         yL::Tv, yR::Tv, h::Tg
-    ) where {Tv, Tg <: AbstractFloat}
+    ) where {Tv, Tg <: Real}
     return (h / 2) * (yL + yR)
 end
 
@@ -69,8 +69,8 @@ end
 # Horner form: F(u) = u·@evalpoly(u, y0, d/2, a/3)
 @inline function _quadratic_integral_kernel(
         ::_EvalIntegralPartial,
-        a::Tv, d::Tv, y0::Tv, u0::Td, u1::Td
-    ) where {Tv, Td <: Real}
+        a::Ta, d::Td2, y0::Ty, u0::Td, u1::Td
+    ) where {Ta, Td2, Ty, Td <: Real}
     a_3 = inv(Td(3)) * a
     d_2 = inv(Td(2)) * d
     return u1 * @evalpoly(u1, y0, d_2, a_3) -
@@ -80,8 +80,8 @@ end
 # --- Full-cell integral: ∫_0^h S(u) du = a/3·h³ + d/2·h² + y₀·h ---
 @inline function _quadratic_integral_kernel(
         ::_EvalIntegralCell,
-        a::Tv, d::Tv, y0::Tv, h::Tg
-    ) where {Tv, Tg <: AbstractFloat}
+        a::Ta, d::Td2, y0::Ty, h::Tg
+    ) where {Ta, Td2, Ty, Tg <: Real}
     return h * @evalpoly(h, y0, inv(Tg(2)) * d, inv(Tg(3)) * a)
 end
 
@@ -94,7 +94,7 @@ end
 @inline function _constant_integral_kernel(
         ::_EvalIntegralPartial,
         yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::LeftSide
-    ) where {Tv, Tg <: AbstractFloat, Td <: Real}
+    ) where {Tv, Tg <: Real, Td <: Real}
     return yL * (u1 - u0)
 end
 
@@ -102,7 +102,7 @@ end
 @inline function _constant_integral_kernel(
         ::_EvalIntegralPartial,
         yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::RightSide
-    ) where {Tv, Tg <: AbstractFloat, Td <: Real}
+    ) where {Tv, Tg <: Real, Td <: Real}
     return yR * (u1 - u0)
 end
 
@@ -110,7 +110,7 @@ end
 @inline function _constant_integral_kernel(
         ::_EvalIntegralPartial,
         yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::NearestSide
-    ) where {Tv, Tg <: AbstractFloat, Td <: Real}
+    ) where {Tv, Tg <: Real, Td <: Real}
     mid = h / 2
     if u1 <= mid
         return yL * (u1 - u0)

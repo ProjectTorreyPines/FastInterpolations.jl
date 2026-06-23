@@ -20,5 +20,5 @@ end
     @test (@inferred itp(2.5, 3.5)) isa Float64
     h(it, a, b) = (it(a, b); @allocated it(a, b))
     h(itp, 2.5, 3.5)                            # warmup
-    @test h(itp, 2.5, 3.5) <= 240               # scalar eval pool-bounded
+    @test h(itp, 2.5, 3.5) <= ALLOC_THRESHOLD   # scalar eval pool-bounded
 end

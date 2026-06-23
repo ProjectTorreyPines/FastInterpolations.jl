@@ -11,7 +11,7 @@
     outs = [Vector{Float64}(undef, length(xq)) for _ in 1:3]
     e(it, o, q) = (it(o, q); @allocated it(o, q))
     e(sitp, outs, xq)                                   # warmup
-    @test e(sitp, outs, xq) <= 240
+    @test e(sitp, outs, xq) <= ALLOC_THRESHOLD
 
     gd = [Dual{Nothing}(v, 1.0) for v in g]
     sitp_d = cubic_interp(gd, Series(Y))

@@ -83,3 +83,30 @@ end
     rt = Base.return_types(itp_dual, Tuple{Float64, Float64})
     @test length(rt) == 1 && isconcretetype(rt[1])
 end
+
+@testitem "Hetero NoInterp + Constant on real axes — _eval_nointerp @generated path, eval correct" begin
+    # NOTE: in HeteroInterpolantND the grid is always float-promoted (Tg=Float64 for Int grids),
+    # so _hetero_output_eltype and _promote_eltype both return Float64 for standard numeric types.
+    # There is no observable type difference between old and new code here; this test pins the
+    # _eval_nointerp OnTheFly path correctness (the 2 wired @generated sites) and type-stability.
+    #
+    # axis 1: NoInterp (index lookup via GridIdx), axis 2: Constant (real coord)
+    # reduced method tuple after NoInterp removal: rm = (ConstantInterp(...),)
+    # OnTheFly path (coeffs=OnTheFly()) forces the @generated body's else branch
+    # where the 2 wired Tr sites live.
+    g = collect(0.0:1.0:5.0)                             # Float64 grid, 6 points
+    data = [Float64(i + 2j) for i in 1:6, j in 1:6]     # Float64 data
+    itp = interp((g, g), data;
+        method = (NoInterp(), ConstantInterp(RightSide(), NoBC())), coeffs = OnTheFly())
+    # GridIdx(2) selects row 2 of data; coord 3.0 is within grid 0:1:5
+    @test (@inferred itp(GridIdx(2), 3.0)) isa Float64
+    # correctness: Constant(RightSide) on axis 2 at coord 3.0
+    @test itp(GridIdx(2), 3.0) ≈ constant_interp(g, data[2, :], 3.0; side = RightSide())
+
+    # Dual query on real (Constant) axis — fold must carry Dual through correctly
+    using ForwardDiff
+    xq_dual = ForwardDiff.Dual{Nothing}(3.0, 1.0)
+    val_dual = @inferred itp(GridIdx(2), xq_dual)
+    @test val_dual isa ForwardDiff.Dual
+    @test ForwardDiff.value(val_dual) ≈ constant_interp(g, data[2, :], 3.0; side = RightSide())
+end

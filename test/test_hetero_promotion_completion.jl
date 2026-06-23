@@ -22,3 +22,28 @@ end
     h(itp, 2.5, 3.5)                            # warmup
     @test h(itp, 2.5, 3.5) <= ALLOC_THRESHOLD   # scalar eval pool-bounded
 end
+
+@testitem "_hetero_output_eltype — per-axis fold keeps/floats/duals correctly" begin
+    using FastInterpolations: _hetero_output_eltype
+    C = ConstantInterp(RightSide(), NoBC())   # Int-keeping axis
+    L = LinearInterp(NoBC()); K = CubicInterp(NoBC())        # dividing axes
+    # all-Constant + all-Int → keeps Int (the corner the legacy form over-floats)
+    @test _hetero_output_eltype((C, C), Int, Int, (1, 1)) === Int
+    # any dividing axis → floats
+    @test _hetero_output_eltype((C, L), Int, Int, (1, 1)) === Float64
+    @test _hetero_output_eltype((K, C), Int, Int, (1, 1)) === Float64
+    # Float64 everywhere → Float64
+    @test _hetero_output_eltype((K, L), Float64, Float64, (1.0, 1.0)) === Float64
+end
+
+@testitem "_hetero_output_eltype — Dual rides through; type-level (zero-arg-eval)" begin
+    using FastInterpolations: _hetero_output_eltype
+    using ForwardDiff: Dual
+    DT = Dual{Nothing, Float64, 1}
+    L = LinearInterp(NoBC()); K = CubicInterp(NoBC())
+    @test _hetero_output_eltype((K, L), DT, Float64, (1.0, 1.0)) <: Dual          # Dual grid
+    @test _hetero_output_eltype((K, L), Float64, DT, (1.0, 1.0)) <: Dual          # Dual data
+    # Pure type-level: return_types is concrete (the fold constant-folds)
+    rt = Base.return_types(_hetero_output_eltype, Tuple{Tuple{typeof(K), typeof(L)}, Type{Float64}, Type{Float64}, Tuple{Float64, Float64}})
+    @test length(rt) == 1 && rt[1] === Type{Float64}
+end

@@ -498,7 +498,7 @@ end
 Evaluate all series at multiple query points (in-place, zero allocation when types match).
 
 # Precision Preservation
-Uses pooled anchors with promoted type `promote_type(Tq, Tg)` to preserve precision.
+Uses pooled anchors with promoted type `_coord_eltype(Tq, Tg)` to preserve precision.
 Pool handles both same-type and mixed-type cases efficiently.
 """
 @with_pool pool function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(

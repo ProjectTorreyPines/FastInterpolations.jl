@@ -4,7 +4,7 @@
 
 @testitem "Adjoint coordinate type stays grid-pinned (D4)" begin
     using FastInterpolations: _LinearAnchoredQuery, _CubicAnchoredQuery
-    x = collect(0.0:1.0:9.0); y = collect(Float64, 1:10); xq = [1.5, 4.5, 7.5]
+    x = collect(0.0:1.0:9.0); xq = [1.5, 4.5, 7.5]
     la = linear_adjoint(x, xq)
     @test eltype(la.anchors) <: _LinearAnchoredQuery{Float64, Float64}   # {Tg, Tg}
     ca = cubic_adjoint(x, xq)

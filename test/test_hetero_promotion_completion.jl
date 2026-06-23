@@ -1,6 +1,5 @@
-# Pins the hetero promotion-completion contract: coefficient partials are Dual-concrete
-# on a Dual grid (Phase 2), and the per-axis output fold keeps Int for all-Constant and
-# floats for any dividing axis (Phase 4). See completion spec phases 2 & 4.
+# Pins the Phase-2 hetero coefficient _coeff_op migration contract: partials are
+# Dual-concrete on a Dual grid, and the Float64 scalar-eval path is inferred + zero-alloc.
 
 @testitem "Hetero partials concrete on Dual grid (Phase 2 coefficient eltype)" begin
     using ForwardDiff: Dual

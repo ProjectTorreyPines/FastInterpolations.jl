@@ -384,7 +384,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
                 rsrc = ($(r_searches...),)
                 search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
                 hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
-                Tr = _hetero_output_eltype(rm, $Tg, eltype(d_sliced), q_eval)
+                Tr = _promote_eltype(eltype(d_sliced), $Tg, typeof.(q_eval)...)
 
                 # Pre-search: mutates user hints (real-axis subset) to absolute indices.
                 idxs_r, _, _ = _search_all_intervals(q_eval, rg, search_r, hint_r)
@@ -419,7 +419,7 @@ positions, filters all per-axis tuples to Real-only axes, delegates to existing 
             rsrc = ($(r_searches...),)
             search_r = _resolve_search_nd(rsrc, Val($N_r), rq)
             hint_r = hint === nothing ? nothing : ($([:(hint[$d]) for d in real_dims]...),)
-            Tr = _hetero_output_eltype(rm, $Tg, eltype(d_sliced), q_eval)
+            Tr = _promote_eltype(eltype(d_sliced), $Tg, typeof.(q_eval)...)
             full_windows_r = ($(r_full_windows...),)
             result = _collapse_dims(Tr, d_sliced, rg, rm, re, q_eval, ro, search_r, hint_r, full_windows_r)
             $deriv_zero_wrap

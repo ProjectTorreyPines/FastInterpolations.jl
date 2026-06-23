@@ -1,8 +1,8 @@
-# Series/anchor-pool coordinate-type contract: vector evaluation of Cubic/Quadratic
-# Series interpolants stays concrete and rides the grid (I2) for a Dual grid, stays
-# real for Dual data (I3), keeps Int for Int grids, and is zero-alloc/inferred on Float64.
+# Series/anchor-pool coordinate-type contract: vector evaluation of Cubic/Quadratic Series
+# interpolants stays concrete and rides the grid for a Dual grid (AD wrt grid nodes), stays
+# real for Dual data, keeps Int for Int grids, and is zero-alloc/inferred on Float64.
 
-@testitem "Cubic Series vector eval — Dual grid concrete (I2) + Float64 zero-alloc (I5)" setup = [AllocConstants] begin
+@testitem "Cubic Series vector eval — Dual grid concrete + Float64 zero-alloc" setup = [AllocConstants] begin
     using ForwardDiff: Dual
     g = collect(0.0:1.0:9.0)
     Y = [Float64(i + 2s) for i in 1:10, s in 1:3]      # 10 points × 3 series

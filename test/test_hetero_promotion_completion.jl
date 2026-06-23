@@ -1,7 +1,7 @@
-# Pins the Phase-2 hetero coefficient _coeff_op migration contract: partials are
-# Dual-concrete on a Dual grid, and the Float64 scalar-eval path is inferred + zero-alloc.
+# Hetero coefficient (partials) eltype contract: partials are Dual-concrete on a Dual
+# grid, and the Float64 scalar-eval path is inferred + zero-alloc.
 
-@testitem "Hetero partials concrete on Dual grid (Phase 2 coefficient eltype)" begin
+@testitem "Hetero partials concrete on Dual grid" begin
     using ForwardDiff: Dual
     g = [Dual{Nothing}(Float64(v), 1.0) for v in 0.0:1.0:5.0]
     data = [Float64(i + 2j) for i in 1:6, j in 1:6]
@@ -12,7 +12,7 @@
     @test (@inferred itp(2.5, 3.5)) isa Dual
 end
 
-@testitem "Hetero partials — Float64 path inferred + zero-alloc (I5)" setup = [AllocConstants] begin
+@testitem "Hetero partials — Float64 path inferred + zero-alloc" setup = [AllocConstants] begin
     g = collect(0.0:1.0:5.0)
     data = [Float64(i + 2j) for i in 1:6, j in 1:6]
     itp = interp((g, g), data; method = (CubicInterp(), PchipInterp()))

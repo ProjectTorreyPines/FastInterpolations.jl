@@ -1,8 +1,6 @@
-# Pins the Hermite ONESHOT (3-arg) slope-buffer eltype contract across grid/query
-# eltypes. The 6 oneshot slope sites migrate from `_promote_eltype(Tv, float(eltype(x_eff)))`
-# to `_promote_eltype(_coeff_op, eltype(x_eff), Tv)` — behavior-preserving. Float64/Int/Dual
-# only: the Hermite eval kernel uses `/(value, Float64)` so a `/`-less duck cannot eval here
-# (out of scope). Dual grids already exercised for the 2-arg form in test_dual_grid_coord_promotion.jl.
+# Hermite ONESHOT (3-arg) slope-buffer eltype contract across grid/query eltypes.
+# Float64/Int/Dual only: the Hermite eval kernel divides by the grid (`/(value, Float64)`),
+# so a `/`-less duck value type cannot evaluate here.
 
 @testitem "Hermite oneshot slope eltype — Float64 inferred + zero-alloc + value matches PreCompute" setup = [AllocConstants] begin
     x = collect(0.0:1.0:9.0)

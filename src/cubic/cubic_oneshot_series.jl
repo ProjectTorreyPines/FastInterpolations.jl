@@ -146,7 +146,7 @@ end
 
     # Pre-fill seam-aware anchors via `_build_periodic_cubic_anchor`.
     Tg_c = eltype(cache.x)
-    Tq_w = promote_type(Tq, Tg_c)
+    Tq_w = _coord_eltype(Tq, Tg_c)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg_c, Tq_w}, length(xqs))
     # `cache.x` is wrapped (`_ExclusivePeriodicAxis(_CachedVector, period)` for
     # `:exclusive`) — axis-level seam dispatch fires via `g.period`. No `bc` thread.
@@ -279,7 +279,7 @@ end
     cache = _get_cubic_cache(x, bc_pair, _effective_autocache(autocache, Tg))
 
     # Pre-compute anchors once (search Q times, not K×Q)
-    Tq_w = promote_type(Tq, eltype(cache.x))
+    Tq_w = _coord_eltype(Tq, eltype(cache.x))
     aq_vec = acquire!(pool, _CubicAnchoredQuery{eltype(cache.x), Tq_w}, length(xqs))
     searcher = _resolve_search(cache.x, xqs, search, nothing)
     _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), extrap_eff isa WrapExtrap, searcher)

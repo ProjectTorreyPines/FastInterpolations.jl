@@ -114,7 +114,7 @@ end
     Tcoeff = _promote_eltype(_coeff_op, Tg_actual, _series_eltype(s))
 
     # Pre-compute anchors once (search Q times, not K×Q)
-    Tq_w = promote_type(Tq, Tg_actual)
+    Tq_w = _coord_eltype(Tq, Tg_actual)
     aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg_actual, Tq_w}, length(xqs))
     searcher = _resolve_search(x, xqs, search, nothing)
     _fill_anchors!(aq_vec, x, xqs, Val(:quadratic), extrap_eff isa WrapExtrap, searcher)

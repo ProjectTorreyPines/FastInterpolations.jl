@@ -24,7 +24,7 @@
     # Grid pre-normalized by the public `akima_interp` API via `_resolve_axis(x)`
     # before dispatching here; `_periodic_extend_1d` preserves the normalization.
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    Tdy = _promote_eltype(Tv, float(eltype(x_eff)))
+    Tdy = _promote_eltype(_coeff_op, eltype(x_eff), Tv)
     dy = acquire!(pool, Tdy, length(y_ext))
     _akima_slopes!(dy, x_eff, y_ext; bc = bc_eff)
     searcher = _resolve_search(x_eff, xq, search, hint)
@@ -47,7 +47,7 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
 
-    Tdy = _promote_eltype(Tv, float(eltype(x_eff)))
+    Tdy = _promote_eltype(_coeff_op, eltype(x_eff), Tv)
     dy = acquire!(pool, Tdy, length(y_ext))
     _akima_slopes!(dy, x_eff, y_ext; bc = bc_eff)
     searcher = _resolve_search(x_eff, x_query, search, hint)

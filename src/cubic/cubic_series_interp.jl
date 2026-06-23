@@ -863,8 +863,8 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
         end
     end
 
-    # Build anchors — Tq widens via promote_type (Float32 on Float64 grid → Float64)
-    Tq_w = promote_type(Tq, Tg)
+    # Build anchors — Tq widens via _coord_eltype (Float32 on Float64 grid → Float64)
+    Tq_w = _coord_eltype(Tq, Tg)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg, Tq_w}, n_query)
     searcher = _resolve_search(sitp.cache.x, xq, search, hint)
     _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic), _should_wrap(sitp), searcher)

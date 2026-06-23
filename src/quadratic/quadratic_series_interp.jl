@@ -498,7 +498,7 @@ end
 Evaluate all series at multiple query points (in-place, zero allocation when types match).
 
 # Precision Preservation
-Uses pooled anchors with promoted type `promote_type(Tq, Tg)` to preserve precision.
+Uses pooled anchors with promoted type `_coord_eltype(Tq, Tg)` to preserve precision.
 Pool handles both same-type and mixed-type cases efficiently.
 """
 @with_pool pool function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
@@ -512,7 +512,7 @@ Pool handles both same-type and mixed-type cases efficiently.
     _validate_series_outputs(outputs, n_series(sitp), n_query)
 
     # Build anchors - pool handles both same-type and mixed-type cases
-    Tq_eff = promote_type(Tq, Tg)
+    Tq_eff = _coord_eltype(Tq, Tg)
     aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg, Tq_eff}, n_query)
     searcher = _resolve_search(sitp.x, xq, search, hint)
     if Tq === Tg

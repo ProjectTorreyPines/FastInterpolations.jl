@@ -52,6 +52,9 @@ itp = linear_interp(x, f)
 ```
 """
 struct LinearAdjoint{Tg, BC <: AbstractBC, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+    # Coordinate type is grid-pinned (`Tc = Tg`), not the canonical `_coord_eltype(Tq, Tg)`:
+    # the adjoint operates on baked coefficients, so AD-through-adjoint is unsupported. The
+    # forward Dual-grid contract is satisfied independently.
     anchors::Vector{_LinearAnchoredQuery{Tg, Tg}}
     grid_size::Int  # internal length: n+1 for PeriodicBC{:exclusive}, n otherwise
     bc::BC

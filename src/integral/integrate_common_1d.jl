@@ -118,16 +118,16 @@ end
 
     if i0 == i1
         h = _get_h(x, i0)
-        return sign * partial_fn(i0, xL0, h, lo, hi)
+        return convert(Tout, sign * partial_fn(i0, xL0, h, lo, hi))
     end
 
     h0 = _get_h(x, i0)
-    total = partial_fn(i0, xL0, h0, lo, xL0 + h0)
+    total = convert(Tout, partial_fn(i0, xL0, h0, lo, xL0 + h0))
     @inbounds for i in (i0 + 1):(i1 - 1)
-        total += full_fn(i, _get_h(x, i))
+        total += convert(Tout, full_fn(i, _get_h(x, i)))
     end
     h1 = _get_h(x, i1)
-    total += partial_fn(i1, xL1, h1, xL1, hi)
+    total += convert(Tout, partial_fn(i1, xL1, h1, xL1, hi))
 
     return sign * total
 end

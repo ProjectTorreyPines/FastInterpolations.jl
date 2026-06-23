@@ -152,14 +152,10 @@ end
     end
 end
 
-# ── Derived quantities on a Dual grid: vector calculus (ND) must return a
-# concrete carrier (the audit flagged hand-coded promote_type in vector_calculus.jl).
-# RED would show Union/Any or a wrong eltype.
-# NOTE: `integrate`/`cumulative_integrate` are constrained to `Tg <: AbstractFloat`,
-# so a Dual grid throws a clean `ArgumentError` (an unimplemented-feature gap, NOT a
-# leak — no silent Union/Any). AD-w.r.t-grid through an integral is out of scope here. ──
-@testitem "Dual grid (AD-w.r.t-grid) — vector calculus stays concrete; integrate gap is a clean throw" begin
-    using ForwardDiff: Dual
+# ── Derived quantities on a Dual grid: vector calculus (ND) must return a concrete
+# carrier, and integrate now rides the grid (AD-w.r.t-grid through the integral). ──
+@testitem "Dual grid (AD-w.r.t-grid) — vector calculus + integrate stay concrete Dual" begin
+    using ForwardDiff: Dual, value
     mkdual(r) = [Dual{Nothing}(Float64(v), 1.0) for v in r]
     g = mkdual(0.5:1.0:9.5)
     y = collect(Float64, 1:10)
@@ -176,9 +172,11 @@ end
         @test L isa Dual && isconcretetype(typeof(L))
     end
 
-    # integrate on a Dual grid: a clean ArgumentError (feature gap), not a silent leak.
+    # integrate on a Dual grid: rides the grid, value matches the Float64-grid reference.
     itp1 = linear_interp(g, y)
-    @test_throws ArgumentError integrate(itp1, 1.0, 5.0)
+    I = integrate(itp1, 1.0, 5.0)
+    @test I isa Dual
+    @test value(I) ≈ integrate(linear_interp(value.(g), y), 1.0, 5.0)
 end
 
 # ── Quadratic ND completeness (the public-ND test above omits quadratic). ──

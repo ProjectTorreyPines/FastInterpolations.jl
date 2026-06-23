@@ -25,7 +25,8 @@ end
     ) where {Tg, Tv}
     x = itp.x
     y = itp.y
-    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    Tspan = promote_type(typeof(x0), typeof(x1))
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(x, x0, search, hint)
 
     # Axis-as-truth: `x` is the wrapped axis (`_CachedRange`/`_CachedVector`),
@@ -67,7 +68,8 @@ end
     ) where {Tg, Tv}
     x = itp.x
     y = itp.y
-    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    Tspan = promote_type(typeof(x0), typeof(x1))
+    Tout = _promote_eltype(_integrate_op, Tg, Tv, Tspan)
     searcher = _resolve_search(x, x0, search, hint)
 
     in_domain = @inline (a, b) -> _integrate_hermite_onthefly_inner(

@@ -184,6 +184,16 @@ end
 # coefficients (cubic `z`, quadratic `a`/`d`, hermite `dy`) are solved before any query.
 @inline _coeff_op(h::Tg, yv::Tv) where {Tg, Tv} = yv + yv * inv(h)
 
+# `_integrate_op` (3-arg): the definite-integral element type — value × spacing.
+# ∫ ≈ Σ yᵢ·hᵢ is dimensionally distinct from the eval witnesses (which weight the value
+# by the dimensionless offset `dL/h`). `span` is the integration length (`b2 - xL` for a
+# partial cell, the cell width `h` for a full cell). The `inv(h)` term is load-bearing: it
+# floats Int grids (`inv(Int)::Float64`) and lifts Dual (`inv(Dual)::Dual`), so Tout is
+# correct for all-Int integrate (the kernels divide) and for AD-wrt-grid/bounds. Duck-safe:
+# `yv` sees only `*`/`+`, a subset of what the integral kernels already require.
+@inline _integrate_op(h::Tg, yv::Tv, span::Ts) where {Tg, Tv, Ts} =
+    yv * span + yv * (span * inv(h))
+
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type
 

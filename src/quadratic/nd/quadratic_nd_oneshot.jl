@@ -42,7 +42,7 @@ Zero-allocation after warmup (pool reuse).
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
     # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    Tz = _output_eltype(Tv, Tg)
+    Tz = _promote_eltype(_coeff_op, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
 
@@ -91,7 +91,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     grids_c = map(g -> _cache_axis_pooled(pool, g), grids)
 
     # Build phase (done once)
-    Tz = _output_eltype(Tv, Tg)
+    Tz = _promote_eltype(_coeff_op, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
     _compute_nd_partials_quadratic!(partials, grids_c, data, bcs)
@@ -160,7 +160,7 @@ function quadratic_interp(
     ) where {Tv, N}
     grids_typed, Tg, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
-    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, promote_type(typeof.(query)...))
+    Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
@@ -201,7 +201,7 @@ function quadratic_interp(
     ) where {Tv, N}
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
-    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+    Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
     quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output

@@ -63,7 +63,7 @@ function hermite_interp(
     ) where {Tv, N, Tv_part}
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
-    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, promote_type(Tv, Tv_part), Tq)
+    Tr = _promote_eltype(_interp_op, Tg, promote_type(Tv, Tv_part), Tq)
     output = Vector{Tr}(undef, _query_length(queries))
     hermite_interp!(
         output, grids, data, partials, queries;

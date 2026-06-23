@@ -276,7 +276,7 @@
     # Tg Calculation Policy (Query Independence)
     # ========================================
     @testset "Eltype contract: kernel-shape trait promotes via xq - xL" begin
-        # Series routes through `_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`,
+        # Series routes through `_select_op(xL, yv, xq) = yv * one(xq - xL)`,
         # so output eltype is `promote_type(Tv, promote_type(Tg, Tq))`. This
         # matches the 1D plain path rule — query type widens the output when
         # it's wider than Tg/Tv.

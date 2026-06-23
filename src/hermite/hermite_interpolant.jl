@@ -23,14 +23,14 @@ end
 end
 
 # Hermite-family kernel mixes `y` and `dy` (`h00·y0 + h01·y1 + h10·h·dy0 + h11·h·dy1`).
-# Two-call pattern over `_arithmetic_kernel_shape` keeps `Tv` and `eltype(dy)` in
+# Two-call pattern over `_interp_op` keeps `Tv` and `eltype(dy)` in
 # disjoint promote chains so a duck-typed `dy` (e.g., Float64 y + Vector{Dual} dy
 # for AD on slopes) widens the result without poisoning the `y` chain.
-@inline function _output_eltype(itp::AbstractHermiteInterpolant1D{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq}
+@inline function _promote_eltype(itp::AbstractHermiteInterpolant1D{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq}
     Tdy = eltype(itp.dy)
     return promote_type(
-        _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq),
-        _output_eltype(_arithmetic_kernel_shape, Tg, Tdy, Tq),
+        _promote_eltype(_interp_op, Tg, Tv, Tq),
+        _promote_eltype(_interp_op, Tg, Tdy, Tq),
     )
 end
 

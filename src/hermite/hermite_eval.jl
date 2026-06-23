@@ -57,7 +57,9 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq = _resolve_grididx(xq, x)
+    # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
+    # Dual), matching the in-domain kernel. Identity on Float64; Int grids stay Int.
+    xq = _promote_coord(_resolve_grididx(xq, x), eltype(x))
     xq_primal = _extract_primal(xq)
     st = _oob_state(x, xq_primal)
     st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq)
@@ -166,7 +168,9 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq = _resolve_grididx(xq, x)
+    # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
+    # Dual), matching the in-domain kernel. Identity on Float64; Int grids stay Int.
+    xq = _promote_coord(_resolve_grididx(xq, x), eltype(x))
     xq_primal = _extract_primal(xq)
     st = _oob_state(x, xq_primal)
     st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq)

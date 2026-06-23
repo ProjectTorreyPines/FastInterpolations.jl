@@ -1,7 +1,7 @@
 # Duck-typing tests for non-promotable Tv (e.g., SVector) crossed with non-
 # promotable Tq (e.g., ForwardDiff.Dual).
 #
-# These cases hit `_output_eltype(Tv, Tg, Tq)`'s `Base.promote_op` fallback —
+# These cases hit `_promote_eltype(Tv, Tg, Tq)`'s `Base.promote_op` fallback —
 # `promote_type` can't model `SVector × Dual` and similar third-party chains.
 # Tests pin the expected return types and container concreteness for both
 # the persistent callable path and the one-shot path, plus type-stability
@@ -185,7 +185,7 @@ end
 
 @testitem "Type stability + raw-eltype contracts" begin
     using Test, StaticArrays, ForwardDiff
-    using FastInterpolations: _output_eltype
+    using FastInterpolations: _promote_eltype
 
     D = ForwardDiff.Dual{Nothing, Float64, 1}
 
@@ -219,7 +219,7 @@ end
 
     @testset "Constant Int → Int contract (scalar = batch consistency)" begin
         # Kernel `y * one(dL)` keeps Int×Int×Int chains in Int — trait now
-        # routes through `_constant_kernel_shape`, so scalar/batch outputs
+        # routes through `_select_op`, so scalar/batch outputs
         # agree at the type level.
         x = collect(1:10)
         y = collect(10:10:100)
@@ -227,21 +227,21 @@ end
         @test (@inferred constant_interp(x, y)([2, 5, 8])) isa Vector{Int}
     end
 
-    @testset "_output_eltype trait — type table" begin
-        @test _output_eltype(Float64, Float64, Float64) === Float64
-        @test _output_eltype(Int, Int, Int) === Float64                       # Int → Float upgrade
-        @test _output_eltype(Int, Int, Float64) === Float64
-        @test _output_eltype(Float32, Float64, Float64) === Float64
-        @test _output_eltype(SVector{3, Float64}, Float64, Float64) === SVector{3, Float64}
-        @test _output_eltype(SVector{3, Float64}, Float64, D) === SVector{3, D}         # Issue #144
-        @test _output_eltype(SVector{3, Int}, Float64, Float64) === SVector{3, Float64} # silent Int-truncation fix
-        @test _output_eltype(SVector{3, Int}, Float64, D) === SVector{3, D}
-        @test _output_eltype(Complex{Int}, Float64, Float64) === ComplexF64
-        @test _output_eltype(D, Float64, Float64) === D
+    @testset "_promote_eltype trait — type table" begin
+        @test _promote_eltype(Float64, Float64, Float64) === Float64
+        @test _promote_eltype(Int, Int, Int) === Float64                       # Int → Float upgrade
+        @test _promote_eltype(Int, Int, Float64) === Float64
+        @test _promote_eltype(Float32, Float64, Float64) === Float64
+        @test _promote_eltype(SVector{3, Float64}, Float64, Float64) === SVector{3, Float64}
+        @test _promote_eltype(SVector{3, Float64}, Float64, D) === SVector{3, D}         # Issue #144
+        @test _promote_eltype(SVector{3, Int}, Float64, Float64) === SVector{3, Float64} # silent Int-truncation fix
+        @test _promote_eltype(SVector{3, Int}, Float64, D) === SVector{3, D}
+        @test _promote_eltype(Complex{Int}, Float64, Float64) === ComplexF64
+        @test _promote_eltype(D, Float64, Float64) === D
 
         # Duck-type fallback: when `*` is undefined, return Tv unchanged.
         struct _DuckNoOp end
-        @test _output_eltype(_DuckNoOp, Float64, Float64) === _DuckNoOp
+        @test _promote_eltype(_DuckNoOp, Float64, Float64) === _DuckNoOp
     end
 end
 
@@ -440,7 +440,7 @@ end
 end
 
 # PCHIP/Cardinal/Akima oneshot allocators were switched to the kernel-shape
-# trait via `_output_eltype(_arithmetic_kernel_shape, ...)`. Confirm the trait
+# trait via `_promote_eltype(_interp_op, ...)`. Confirm the trait
 # fires on the duck-Tq path (scalar + batch). PCHIP/Akima slope formulas use
 # `sign`/`abs` on slopes so SVector y is not a supported carrier for those
 # two; their `Tv` duck coverage is exercised via duck Tq on Float y.
@@ -509,7 +509,7 @@ end
 end
 
 # Anchored-vector batch callable lets advanced users pre-build queries and
-# reuse them across interpolants. Linear's path uses `_output_eltype(Tv, Tg, Tq)`
+# reuse them across interpolants. Linear's path uses `_promote_eltype(Tv, Tg, Tq)`
 # for the output buffer; Constant + Quadratic only used `Vector{Tg}` so a
 # duck-Tq anchor lost its carrier on `setindex!` convert.
 @testitem "Anchored-vector callable propagates Tq carrier" begin
@@ -537,7 +537,7 @@ end
 
     # Int-chain preservation: ConstantInterpolant's kernel is `yv * one(q)`,
     # so a fully-Int chain (`Tv = Int, Tq = Int`) must stay Int through the
-    # anchored callable. The legacy 2-arg `_output_eltype` Float-upgraded any
+    # anchored callable. The legacy 2-arg `_promote_eltype` Float-upgraded any
     # `Tr <: _PromotableValue && !<:AbstractFloat`, producing Vector{Float64}
     # for the same input — the scalar/oneshot paths already preserved Int.
     @testset "Constant Int-chain preservation" begin
@@ -631,7 +631,7 @@ end
     end
 
     @testset "Constant Int chain — scalar/batch type-stable Int" begin
-        # Kernel-shape trait: `_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`
+        # Kernel-shape trait: `_select_op(xL, yv, xq) = yv * one(xq - xL)`
         # → Int×Int×Int inferred as Int (no spurious Float upgrade).
         xi = collect(1:10); yi = collect(10:10:100)
         let k = constant_interp(xi, yi)
@@ -689,18 +689,18 @@ end
 # `_PromotableValue` enumeration over-predicted Float (because `Rational <:
 # _PromotableValue` triggered `float(...)`).
 @testitem "Kernel-shape trait pins Rational chain (no spurious Float upgrade)" begin
-    using FastInterpolations: _arithmetic_kernel_shape, _constant_kernel_shape, _output_eltype
+    using FastInterpolations: _interp_op, _select_op, _promote_eltype
 
     @testset "Trait-level — `@inferred` type table" begin
         # Arithmetic shape: `Rational + Rational * (Rational/Rational) = Rational`.
-        @test (@inferred _output_eltype(_arithmetic_kernel_shape, Rational{Int}, Rational{Int}, Rational{Int})) === Rational{Int}
+        @test (@inferred _promote_eltype(_interp_op, Rational{Int}, Rational{Int}, Rational{Int})) === Rational{Int}
         # Sanity: Int/Float baselines match the previous trait.
-        @test (@inferred _output_eltype(_arithmetic_kernel_shape, Int, Int, Int)) === Float64
-        @test (@inferred _output_eltype(_arithmetic_kernel_shape, Float64, Float64, Float64)) === Float64
-        @test (@inferred _output_eltype(_arithmetic_kernel_shape, Int, Complex{Int}, Int)) === ComplexF64
+        @test (@inferred _promote_eltype(_interp_op, Int, Int, Int)) === Float64
+        @test (@inferred _promote_eltype(_interp_op, Float64, Float64, Float64)) === Float64
+        @test (@inferred _promote_eltype(_interp_op, Int, Complex{Int}, Int)) === ComplexF64
         # Selection shape: `Rational * one(Rational - Rational) = Rational`.
-        @test (@inferred _output_eltype(_constant_kernel_shape, Rational{Int}, Rational{Int}, Rational{Int})) === Rational{Int}
-        @test (@inferred _output_eltype(_constant_kernel_shape, Int, Int, Int)) === Int
+        @test (@inferred _promote_eltype(_select_op, Rational{Int}, Rational{Int}, Rational{Int})) === Rational{Int}
+        @test (@inferred _promote_eltype(_select_op, Int, Int, Int)) === Int
     end
 
     @testset "Constant — end-to-end Rational preserved (storage stays raw)" begin
@@ -738,7 +738,7 @@ end
     # SAME barrier as Linear plus a second one: their internal coefficient
     # eltype (`Tz` for cubic z, `Tc`/`Tcoeff` for quadratic a/d, slope
     # coefficients for Hermite-family) is sized via the legacy 2-arg
-    # `_output_eltype(Tv, Tg)` which also Float-forces. Both barriers must
+    # `_promote_eltype(Tv, Tg)` which also Float-forces. Both barriers must
     # relax before Rational reaches the user; until then these pin BROKEN.
     # Use enough points to satisfy each method's minimum (Akima needs ≥5).
     @testset "Cubic — Rational user-visible blocked (BROKEN)" begin

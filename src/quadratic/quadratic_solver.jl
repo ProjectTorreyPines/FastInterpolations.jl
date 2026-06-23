@@ -365,7 +365,7 @@ function _compute_quadratic_coeffs(
     nx = length(x)
 
     # Allocate arrays — widened type when grid is duck-typed (e.g. Dual)
-    Tcoeff = _output_eltype(eltype(y), Tg)
+    Tcoeff = _promote_eltype(_coeff_op, Tg, eltype(y))
     d = Vector{Tcoeff}(undef, nx)
     a = Vector{Tcoeff}(undef, nx - 1)
 

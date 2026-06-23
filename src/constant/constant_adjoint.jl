@@ -237,7 +237,7 @@ function constant_adjoint(
         extrap::AbstractExtrap = NoExtrap(),
     ) where {Tg}
     # Grid stays raw `Tg` (no `_promote_adjoint_inputs` Float widening).
-    # Adjoint buffer eltype comes from the protocol's `_output_eltype`.
+    # Adjoint buffer eltype comes from the protocol's `_promote_eltype`.
     x_p = x
     xq_p = _promote_query_typed(x_query, Tg)
 

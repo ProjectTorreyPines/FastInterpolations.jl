@@ -383,7 +383,7 @@ function _bake_cubic_clampfill_anchors(
     output = Vector{_CubicAnchoredQuery{T, T}}(undef, length(xq))
     @inbounds for k in eachindex(xq)
         xq_raw = xq[k]
-        aq = _anchor_query_impl(x, _promote_for_anchor(_clamp_to_grid(xq_raw, x), T), false, searcher_resolved)
+        aq = _anchor_query_impl(x, _promote_coord(_clamp_to_grid(xq_raw, x), T), false, searcher_resolved)
         if _is_inbounds(x, xq_raw)
             output[k] = aq
         else

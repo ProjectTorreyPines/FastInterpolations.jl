@@ -49,7 +49,7 @@ itp(0.5)
         return CardinalInterpolant1D(x_eff, y_eff, CardinalSlopes(tens_t, bc_eff), extrap_p, search, tens_t)
     end
     # PreCompute
-    Tdy = _output_eltype(_value_type(eltype(y_eff), Tg), Tg)
+    Tdy = _promote_eltype(_coeff_op, Tg, _value_type(eltype(y_eff), Tg))
     dy = Vector{Tdy}(undef, length(x_eff))
     xf = _to_float(x_eff, Tg)
     _cardinal_slopes!(dy, xf, y_eff, tens_t; bc = bc_eff)

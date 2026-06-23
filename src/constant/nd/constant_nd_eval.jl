@@ -24,7 +24,7 @@
 end
 
 # In-place + allocating batch use the inherited `AbstractInterpolantND`
-# protocol (trait-sized allocator via `_output_eltype`). Scalar routes
+# protocol (trait-sized allocator via `_promote_eltype`). Scalar routes
 # through `_eval_nd_at_point`; Constant's "any derivative → 0" rule is
 # applied inside `_eval_at_cell` (see below) via `_constant_nd_evaluate`'s
 # multi-dispatch — the cell-local kernel result is multiplied by `0` when

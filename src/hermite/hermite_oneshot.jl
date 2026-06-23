@@ -96,8 +96,8 @@ function hermite_interp(
     # override that pulls `eltype(itp.dy)` at the type level.
     Tg_p = _promote_grid_float(Tg, Tv)
     Tr = promote_type(
-        _output_eltype(_arithmetic_kernel_shape, Tg_p, Tv, Tq),
-        _output_eltype(_arithmetic_kernel_shape, Tg_p, eltype(dy), Tq),
+        _promote_eltype(_interp_op, Tg_p, Tv, Tq),
+        _promote_eltype(_interp_op, Tg_p, eltype(dy), Tq),
     )
     output = Vector{Tr}(undef, length(x_query))
     hermite_interp!(output, x, y, dy, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)

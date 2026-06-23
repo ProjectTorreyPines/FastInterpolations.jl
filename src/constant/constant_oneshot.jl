@@ -82,6 +82,9 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
+    # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
+    # Dual), matching the in-domain selection. Identity on Float64; Int grids stay Int.
+    xi = _promote_coord(xi, eltype(x))
     xi_primal = _extract_primal(xi)
     st = _oob_state(x, xi_primal)
     st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xi)
@@ -281,7 +284,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 ```
 """
 # Buffer eltype via Constant's kernel shape — Julia infers the return type
-# from `_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`, matching the
+# from `_select_op(xL, yv, xq) = yv * one(xq - xL)`, matching the
 # actual kernel reality (Int×Int×Int → Int; SVector × Dual → SVector{Dual};
 # Float y × Dual grid → Dual carrier via `xq - xL`).
 function constant_interp(
@@ -294,7 +297,7 @@ function constant_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     )
-    output = Vector{_output_eltype(_constant_kernel_shape, eltype(x), eltype(y), eltype(x_targets))}(
+    output = Vector{_promote_eltype(_select_op, eltype(x), eltype(y), eltype(x_targets))}(
         undef, length(x_targets)
     )
     constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)

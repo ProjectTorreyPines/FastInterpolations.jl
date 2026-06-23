@@ -176,7 +176,7 @@ itp2(aq; deriv=DerivOp(1))     # Reuses same anchor for derivative
 ```
 """
 # Unified scalar anchor construction. The outer constructor of _LinearAnchoredQuery
-# handles Tg×Tq type promotion, so no _promote_for_anchor call is needed here.
+# handles Tg×Tq type promotion, so no _promote_coord call is needed here.
 @inline function _anchor_query(
         x::AbstractVector{Tg},
         xq,
@@ -419,7 +419,7 @@ function (itp::LinearInterpolant{Tg, Tv})(
         aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg, Tq}};
         deriv::DerivOp = EvalValue()
     ) where {Tg, Tv, Tq <: Real}
-    T_out = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+    T_out = _promote_eltype(_interp_op, Tg, Tv, Tq)
     output = Vector{T_out}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _linear_eval_with_anchor(itp, aq_vec[i], deriv)

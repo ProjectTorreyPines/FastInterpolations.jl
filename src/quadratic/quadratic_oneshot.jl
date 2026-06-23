@@ -66,6 +66,9 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
+    # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
+    # Dual), matching the in-domain kernel. Identity on Float64; Int grids stay Int.
+    xq = _promote_coord(xq, eltype(x))
     xq_primal = _extract_primal(xq)
     st = _oob_state(x, xq_primal)
     st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq)
@@ -162,7 +165,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     # Compute coefficients using temporary arrays from pool. The grid `x`
     # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)
-    Tcoeff = _output_eltype(eltype(y), eltype(x))
+    Tcoeff = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
@@ -219,7 +222,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     # Compute coefficients using temporary arrays from pool. The grid `x`
     # carries cached `h`/`inv_h` when wrapped, or computes them on the fly.
     nx = length(x)
-    Tcoeff = _output_eltype(eltype(y), eltype(x))
+    Tcoeff = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
     bc_promoted = _normalize_bc(bc, first(y))
@@ -261,7 +264,7 @@ function quadratic_interp(
         deriv::DerivOp = EvalValue(),
         search::AbstractSearchPolicy = AutoSearch()
     ) where {Tg, Tq <: Real}
-    Tr = _output_eltype(_arithmetic_kernel_shape, _promote_grid_float(Tg, eltype(y)), eltype(y), Tq)
+    Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, eltype(y)), eltype(y), Tq)
     output = Vector{Tr}(undef, length(x_targets))
     quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
     return output

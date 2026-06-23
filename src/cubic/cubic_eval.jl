@@ -73,7 +73,9 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq = _resolve_grididx(xq, x)
+    # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
+    # Dual), matching the in-domain kernel. Identity on Float64; Int grids stay Int.
+    xq = _promote_coord(_resolve_grididx(xq, x), eltype(x))
     xq_primal = _extract_primal(xq)
     st = _oob_state(x, xq_primal)
     st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq)
@@ -162,7 +164,7 @@ Uses task-local pool for workspace allocation.
     ) where {Tg, Tv, Tq <: Real}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
-    Tz = _output_eltype(Tv, eltype(cache.x))
+    Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
     z = acquire!(pool, Tz, length(y))
     _solve_system!(z, cache, y, cache.bc)
 

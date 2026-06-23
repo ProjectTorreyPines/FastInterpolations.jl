@@ -130,7 +130,7 @@ function linear_interp(
     ) where {Tv, N}
     grids_typed, Tg, _, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
-    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, promote_type(typeof.(query)...))
+    Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
 
     searches = _resolve_search_nd(search, Val(N), query)  # scalar: type-based (no monotonicity check)
 
@@ -159,7 +159,7 @@ function linear_interp(
     ) where {Tv, N}
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
-    Tr = _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+    Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
     linear_interp!(output, grids, data, queries; bc, extrap, search, deriv, hint)
     return output

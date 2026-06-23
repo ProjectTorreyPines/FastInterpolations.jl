@@ -113,13 +113,13 @@ Determine the output value type from y element type and grid type.
 # values are not promoted to grid type (no grid-parameter partials in y).
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg} = T
 
-# Inference probe for `_output_eltype` duck fallback. Standard kernels
+# Inference probe for `_promote_eltype` duck fallback. Standard kernels
 # (Linear/Cubic/Quadratic/Hermite) produce `Tv + α·Tv` shapes; Constant's
 # `Tv * one(Tq)` lives in the same promotion space.
 @inline _kernel_shape_op(yv, q) = yv * q + yv
 
 """
-    _output_eltype(::Type{Tv}, types...) -> Type
+    _promote_eltype(::Type{Tv}, types...) -> Type
 
 Generic output-eltype probe via the universal arithmetic kernel shape
 `y*q + y` (`_kernel_shape_op`). Currently used by:
@@ -137,7 +137,7 @@ For method-aware output-buffer sizing (Linear/Cubic/Quadratic/Constant/
 Hermite), prefer the kernel-op overload below — it predicts the method's
 exact kernel return type via `Base.promote_op`.
 """
-@inline function _output_eltype(::Type{Tv}, types::Type...) where {Tv}
+@inline function _promote_eltype(::Type{Tv}, types::Type...) where {Tv}
     Tr = promote_type(Tv, types...)
     if isconcretetype(Tr)
         return (Tr <: _PromotableValue && !(Tr <: AbstractFloat)) ? float(Tr) : Tr
@@ -149,26 +149,40 @@ exact kernel return type via `Base.promote_op`.
 end
 
 """
-    _output_eltype(kernel_op, ::Type{Tv}, types...) -> Type
+    _promote_eltype(kernel_op, ::Type{Tv}, types...) -> Type
 
 Method-aware output element type via `Base.promote_op` on the method's own
 kernel shape. Lets Julia inference predict the kernel's exact return type
 — no hand-coded Float upgrade, no `_PromotableValue` enumeration. Use this
 overload from a method that declares its kernel shape (e.g., Constant's
-`_constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)`).
+`_select_op(xL, yv, xq) = yv * one(xq - xL)`).
 """
-@inline function _output_eltype(kernel_op::F, ::Type{Tv}, types::Type...) where {F, Tv}
+@inline function _promote_eltype(kernel_op::F, ::Type{Tv}, types::Type...) where {F, Tv}
     Top = Base.promote_op(kernel_op, Tv, types...)
     (Top === Union{} || Top === Any) && return Tv
     return Top
 end
 
-# Shared kernel shape for arithmetic methods (Linear/Cubic/Quadratic/Hermite):
-# `y + y * (dL/h)` captures the division-by-`h` that drives the Int→Float
-# widening — Julia inference predicts the exact kernel return type. Args are
-# ordered `(Tg, Tv, Tq)` so callers use `_output_eltype(shape, Tg, Tv, Tq)`,
-# matching the codebase's standard type-parameter order.
-@inline _arithmetic_kernel_shape(h, yv, dL) = yv + yv * (dL / h)
+# Type-witness OPS for `_promote_eltype` — small expressions whose return type (via
+# `Base.promote_op`) equals the real computation's element type. They are NOT the real
+# kernels; they exist only to drive inference, capturing the spacing reciprocal that
+# floats Int. Args named/ordered `(grid, value[, query])` → `_promote_eltype(op, Tg, Tv[, Tq])`.
+# (Constant's selection op `_select_op(xL, yv, xq) = yv * one(xq - xL)` lives in
+# constant_interpolant.jl — no division, so it keeps Int.)
+#
+# `_interp_op` (3-arg): interpolation eval — value weighted by the query offset `dL/h`
+# → the OUTPUT eltype (query-dependent). Models `yv + yv*(dL*inv_h)`; `dL/h ≡ dL*inv_h`
+# in type when `h` is the (floated) grid type, which it always is at eltype sites.
+@inline _interp_op(h::Tg, yv::Tv, dL::Tq) where {Tg, Tv, Tq} = yv + yv * (dL / h)
+
+# `_coeff_op` (2-arg): divided difference `Δy/h`, accumulated by the solve → the
+# COEFFICIENT eltype. Modeled as `yv + yv * inv(h)`. Two faithful pieces: `* inv(h)`
+# (NOT `/ h`) mirrors the real solve, which multiplies by a precomputed float `inv_h`
+# — duck-safe (a value type needs `*(Tv, Tg)`, not `/(Tv, Tg)`) while `inv(h)` still
+# floats Int grids (`inv(Int)::Float64`); the leading `yv +` mirrors the solve summing
+# scaled values (`+(Tv, Tv)`, which any linear solve already requires). QUERY-FREE:
+# coefficients (cubic `z`, quadratic `a`/`d`, hermite `dy`) are solved before any query.
+@inline _coeff_op(h::Tg, yv::Tv) where {Tg, Tv} = yv + yv * inv(h)
 
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type
@@ -428,37 +442,54 @@ Resolves at specialization time — zero runtime cost on the Float hot path.
 # Arithmetic then auto-promotes GridIdx → g.val via promote_rule.
 
 """
-    _promote_for_anchor(xq::Tq, ::Type{Tg}) -> promoted_xq
+    _coord_eltype(::Type{Tq}, ::Type{Tg}) -> Type
 
-Promote query point for anchor construction.
+Canonical coordinate element type — the structural twin of [`_promote_eltype`](@ref):
+`Base.promote_op` of the coordinate operation, with a `promote_type` fallback when
+inference can't resolve the op.
+
+The coordinate operation is **subtraction** (`xq - xL`, comparisons) — *not* the
+kernel's `/h`. Subtraction does not widen `Int`, so `Int - Int === Int`: an `Int`
+grid + `Int` query keeps an `Int` coordinate (the kernel floats the *output* via
+`inv_h`, not the coordinate). `Int - Float === Float` and `Float - Dual === Dual`
+fall out for free, and any duck type defining `-` participates without a
+`promote_rule`. No `float()` patch — coordinates must not over-float.
+
+This is method-agnostic on purpose: the ND coordinate gateway (`_extrap_axis` /
+`_handle_all_extraps`) has no method information, and the only per-method widening
+(`/h`) belongs to the value path (`_promote_eltype`), not the coordinate.
+"""
+@inline function _coord_eltype(::Type{Tq}, ::Type{Tg}) where {Tq, Tg}
+    Tc = Base.promote_op(-, Tq, Tg)
+    return (Tc === Union{} || Tc === Any) ? promote_type(Tq, Tg) : Tc
+end
+
+"""
+    _promote_coord(xq, ::Type{Tg}) -> promoted_xq
+
+Promote a query into the grid's coordinate space via the canonical
+[`_coord_eltype`](@ref) rule (grid ⊕ query), once, at the eval surface — so the
+in-domain kernel and the OOB/fill paths share one concrete coordinate type. The
+`convert` is identity on the Float64 hot path, a no-op for a matched `Int` grid,
+and a zero-partial lift for a Float query on a `Dual` grid.
 
 # Behavior
-- ForwardDiff.Dual: preserved as-is (for AD support, see extension)
-- AbstractFloat: uses promote_type(Tq, Tg) to preserve precision
-  - Float64 on Float32 grid → Float64 (preserves query precision)
-  - Float32 on Float64 grid → Float64 (uses grid precision)
-- Other Real (Int, Rational): converted to grid type Tg
-
-This is needed for cubic anchors which store precomputed weight tuples.
-Unlike quadratic (which stores only dL), cubic weights involve complex
-floating-point arithmetic that can't be represented as Int/Rational.
+- AbstractFloat × AbstractFloat: preserves the wider precision.
+- Int/Rational × Float grid: converted to the grid float type.
+- Float query × Dual grid: lifts to a zero-partial Dual (AD-with-respect-to-grid).
+- Dual query × Float grid: stays Dual (`convert` is identity, or lifts the value type).
+- `GridIdx`: passed through unchanged (auto-promotes via its `promote_rule` downstream).
 
 # Example
 ```julia
-_promote_for_anchor(0, Float64)      # → 0.0 (Float64)
-_promote_for_anchor(1//2, Float64)   # → 0.5 (Float64)
-_promote_for_anchor(0.5, Float32)    # → 0.5 (Float64, preserves precision)
-_promote_for_anchor(0.5f0, Float32)  # → 0.5f0 (Float32)
-_promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
+_promote_coord(0, Float64)      # → 0.0 (Float64)
+_promote_coord(1//2, Float64)   # → 0.5 (Float64)
+_promote_coord(0.5, Float32)    # → 0.5 (Float64, preserves precision)
+_promote_coord(0.5f0, Float32)  # → 0.5f0 (Float32)
 ```
 """
-# For AbstractFloat queries on AbstractFloat grids: preserve precision using wider type
-@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq <: AbstractFloat, Tg <: AbstractFloat} = convert(promote_type(Tq, Tg), xq)
-# For other Real queries (Int, Rational) on AbstractFloat grids: convert to grid type
-@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq <: Real, Tg <: AbstractFloat} = Tg(xq)
-# For duck grids (e.g. Dual): keep xq as-is. Kernel arithmetic auto-promotes via Julia's
-# type system (Float * Dual → Dual). Converting xq to Dual would inject zero partials.
-@inline _promote_for_anchor(xq, ::Type{Tg}) where {Tg} = xq
+@inline _promote_coord(xq::GridIdx, ::Type{Tg}) where {Tg} = xq
+@inline _promote_coord(xq, ::Type{Tg}) where {Tg} = convert(_coord_eltype(typeof(xq), Tg), xq)
 
 
 # ========================================

@@ -108,7 +108,7 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
     x = _to_float(x, Tg_p)
     K = n_series(s)
     Tg_actual = eltype(x)
-    Tv = _output_eltype(_arithmetic_kernel_shape, Tg_actual, _series_eltype(s), Tq)
+    Tv = _promote_eltype(_interp_op, Tg_actual, _series_eltype(s), Tq)
     output = Vector{Tv}(undef, K)
     if _is_periodic_bc(bc)
         # Helper wraps `x` via `_resolve_axis(x, bc)` and searches against the
@@ -320,7 +320,7 @@ function linear_interp(
     ) where {Tg, Tq <: Real}
     K = n_series(s)
     Tg_p = _promote_grid_float(Tg, _series_eltype(s))
-    Tv_out = _output_eltype(_arithmetic_kernel_shape, Tg_p, _series_eltype(s), Tq)
+    Tv_out = _promote_eltype(_interp_op, Tg_p, _series_eltype(s), Tq)
     outputs = _alloc_series_batch_outputs(Tv_out, K, length(xqs))
     linear_interp!(outputs, x, s, xqs; bc, extrap, deriv, search)
     return outputs

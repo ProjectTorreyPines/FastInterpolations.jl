@@ -26,10 +26,10 @@
 
 # ── Output eltype trait ──
 # Default: arithmetic kernels (Linear/Cubic/Quadratic) divide by `h`, so route
-# through the shared `_arithmetic_kernel_shape` for Julia inference. Selection
+# through the shared `_interp_op` for Julia inference. Selection
 # kernels (Constant) and Hermite-family (with `dy`) override this default.
-@inline _output_eltype(::AbstractInterpolant1D{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
-    _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+@inline _promote_eltype(::AbstractInterpolant1D{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
+    _promote_eltype(_interp_op, Tg, Tv, Tq)
 
 # ========================================
 # 1D Scalar Call — Hot Path
@@ -56,9 +56,9 @@ end
 # ========================================
 # 1D Vector Call — Allocating
 # ========================================
-# Buffer eltype comes from the `_output_eltype(itp, Tq)` trait — generic for
-# arithmetic kernels via `_arithmetic_kernel_shape` (Int→Float upgrade) and
-# `_constant_kernel_shape` for selection kernels (Constant). Duck
+# Buffer eltype comes from the `_promote_eltype(itp, Tq)` trait — generic for
+# arithmetic kernels via `_interp_op` (Int→Float upgrade) and
+# `_select_op` for selection kernels (Constant). Duck
 # `SVector × Dual` resolves via the trait's `Base.promote_op` fallback.
 
 function (itp::AbstractInterpolant1D{Tg, Tv})(
@@ -69,7 +69,7 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     ) where {Tg, Tv, Tq <: Real}
     grid = _itp_grid(itp)
     extrap = _itp_extrap(itp)
-    output = Vector{_output_eltype(itp, Tq)}(undef, length(xq))
+    output = Vector{_promote_eltype(itp, Tq)}(undef, length(xq))
     searcher = _resolve_search(grid, xq, search, hint)
     _itp_vector_loop!(output, itp, xq, extrap, deriv, searcher)
     return output
@@ -99,8 +99,8 @@ end
 # ╚══════════════════════════════════════╝
 
 # ── Output eltype trait (ND) — mirrors the 1D version. ──
-@inline _output_eltype(::AbstractInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
-    _output_eltype(_arithmetic_kernel_shape, Tg, Tv, Tq)
+@inline _promote_eltype(::AbstractInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
+    _promote_eltype(_interp_op, Tg, Tv, Tq)
 
 # ========================================
 # Unified Batch Interpolant Evaluation (Generic ND)
@@ -168,11 +168,18 @@ end
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
+    # Promote each axis query to its coordinate type Tc ONCE at the eval surface,
+    # before validate / try_fill_oob. This (a) makes the OOB/fill VALUE carry the
+    # coordinate carrier (Dual grid → Dual fill, via _promote_extrap_val) so the
+    # public return is concrete, and (b) runs the OOB classification on the widened
+    # type (Float grid + Int query → Float). Identity on the Float64 hot path; Int
+    # grids stay Int. Search remains primal-safe (_oob_state / search extract primal).
+    qc = map(_promote_coord, query, map(eltype, itp.grids))
     # NoExtrap throw must precede FillExtrap short-circuit (mixed-extrap configs).
-    _validate_nd_domain(itp.grids, query, itp.extraps)
-    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _sample_data(itp))
+    _validate_nd_domain(itp.grids, qc, itp.extraps)
+    oob_result = _try_fill_oob(qc, itp.grids, itp.extraps, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
-    cell = _locate_cell(itp, query, policies, hints, mono)
+    cell = _locate_cell(itp, qc, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
 end
 
@@ -240,7 +247,7 @@ end
 # ========================================
 # ND Allocating Batch — Unified
 # ========================================
-# Buffer eltype from `_output_eltype(itp, Tq)` (see 1D variant for kernel-
+# Buffer eltype from `_promote_eltype(itp, Tq)` (see 1D variant for kernel-
 # type rationale); delegates to in-place — no sample-first eval.
 
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
@@ -250,6 +257,6 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     Tq = _query_eltype(queries)
-    output = Vector{_output_eltype(itp, Tq)}(undef, _query_length(queries))
+    output = Vector{_promote_eltype(itp, Tq)}(undef, _query_length(queries))
     return itp(output, queries; deriv = deriv, search = search, hint = hint)
 end

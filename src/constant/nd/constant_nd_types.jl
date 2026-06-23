@@ -80,7 +80,7 @@ end
 @inline grid_type(::ConstantInterpolantND{Tg}) where {Tg} = Tg
 @inline value_type(::ConstantInterpolantND{Tg, Tv}) where {Tg, Tv} = Tv
 
-# Mirrors the 1D override: trait routes to `_constant_kernel_shape` so the
+# Mirrors the 1D override: trait routes to `_select_op` so the
 # inferred return matches the kernel's actual `y * one(dL)` shape.
-@inline _output_eltype(::ConstantInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
-    _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
+@inline _promote_eltype(::ConstantInterpolantND{Tg, Tv, N}, ::Type{Tq}) where {Tg, Tv, N, Tq} =
+    _promote_eltype(_select_op, Tg, Tv, Tq)

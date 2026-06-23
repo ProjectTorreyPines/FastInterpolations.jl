@@ -25,10 +25,10 @@ end
 # `dL` carrier (e.g. `Dual` grid + `Float` xq → `Dual` dL). Trait infers the
 # exact return type via `promote_op`, so scalar/batch agree (Int×Int×Int → Int;
 # SVector × Dual → SVector{Dual}; Float y × Dual grid → Dual; etc.).
-@inline _constant_kernel_shape(xL, yv, xq) = yv * one(xq - xL)
+@inline _select_op(xL, yv, xq) = yv * one(xq - xL)
 
-@inline _output_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
-    _output_eltype(_constant_kernel_shape, Tg, Tv, Tq)
+@inline _promote_eltype(::ConstantInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} =
+    _promote_eltype(_select_op, Tg, Tv, Tq)
 
 # ─────────────────────────────────────────────────────────────
 # Vector loop (function barrier)

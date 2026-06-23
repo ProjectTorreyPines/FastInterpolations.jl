@@ -258,7 +258,10 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
-    xq = _resolve_grididx(xq, x)
+    # Promote to the coordinate type Tc so the OOB extrap VALUE carries the grid
+    # carrier (Dual grid → Dual fill via _eval_extrapolation), matching the
+    # in-domain kernel. Identity on Float64; Int grids stay Int. Classify on primal.
+    xq = _promote_coord(_resolve_grididx(xq, x), eltype(x))
     xq_primal = _extract_primal(xq)
     st = _oob_state(x, xq_primal)
     st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq)
@@ -334,7 +337,7 @@ function linear_interp(
         search::AbstractSearchPolicy = AutoSearch()
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
-    T_out = _output_eltype(_arithmetic_kernel_shape, Tg, eltype(y), eltype(x_targets))
+    T_out = _promote_eltype(_interp_op, Tg, eltype(y), eltype(x_targets))
     output = Vector{T_out}(undef, length(x_targets))
     linear_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
     return output

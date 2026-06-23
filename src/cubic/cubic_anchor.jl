@@ -227,7 +227,7 @@ in `xq` and weight fields, enabling automatic differentiation.
     ) where {Tg, Tq <: Real, P <: Searcher}
     # Promote query for anchor: preserve Dual, promote Int/Rational to grid type
     # Cubic anchors store weight tuples with complex arithmetic that requires Float
-    xq_promoted = _promote_for_anchor(xq, Tg)
+    xq_promoted = _promote_coord(xq, Tg)
     return _anchor_query_impl(x, xq_promoted, wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
@@ -272,11 +272,11 @@ function _anchor_query(
     isempty(xq) && return _CubicAnchoredQuery{T, T}[]
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     # First anchor determines concrete element type (Tq may widen for duck-typed grids)
-    aq1 = _anchor_query_impl(x, _promote_for_anchor(xq[1], T), wrap, searcher_resolved)
+    aq1 = _anchor_query_impl(x, _promote_coord(xq[1], T), wrap, searcher_resolved)
     output = Vector{typeof(aq1)}(undef, length(xq))
     @inbounds output[1] = aq1
     @inbounds for k in 2:length(xq)
-        output[k] = _anchor_query_impl(x, _promote_for_anchor(xq[k], T), wrap, searcher_resolved)
+        output[k] = _anchor_query_impl(x, _promote_coord(xq[k], T), wrap, searcher_resolved)
     end
     return output
 end
@@ -317,7 +317,7 @@ _fill_anchors!(buffer, x, xq, Val(:cubic))
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
     @inbounds for k in eachindex(xq)
-        buffer[k] = _anchor_query_impl(x, _promote_for_anchor(xq[k], Tg), wrap, searcher_resolved)
+        buffer[k] = _anchor_query_impl(x, _promote_coord(xq[k], Tg), wrap, searcher_resolved)
     end
     return buffer
 end

@@ -4,7 +4,7 @@
 # only: the Hermite eval kernel uses `/(value, Float64)` so a `/`-less duck cannot eval here
 # (out of scope). Dual grids already exercised for the 2-arg form in test_dual_grid_coord_promotion.jl.
 
-@testitem "Hermite oneshot slope eltype — Float64 inferred + zero-alloc + value matches PreCompute" setup=[AllocConstants] begin
+@testitem "Hermite oneshot slope eltype — Float64 inferred + zero-alloc + value matches PreCompute" setup = [AllocConstants] begin
     x = collect(0.0:1.0:9.0)
     y = @. sin(x) + 0.5x
     xq = 3.7

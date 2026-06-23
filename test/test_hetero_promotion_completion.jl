@@ -12,7 +12,7 @@
     @test (@inferred itp(2.5, 3.5)) isa Dual
 end
 
-@testitem "Hetero partials — Float64 path inferred + zero-alloc (I5)" setup=[AllocConstants] begin
+@testitem "Hetero partials — Float64 path inferred + zero-alloc (I5)" setup = [AllocConstants] begin
     g = collect(0.0:1.0:5.0)
     data = [Float64(i + 2j) for i in 1:6, j in 1:6]
     itp = interp((g, g), data; method = (CubicInterp(), PchipInterp()))

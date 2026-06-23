@@ -47,3 +47,16 @@ end
     rt = Base.return_types(_hetero_output_eltype, Tuple{Tuple{typeof(K), typeof(L)}, Type{Float64}, Type{Float64}, Tuple{Float64, Float64}})
     @test length(rt) == 1 && rt[1] === Type{Float64}
 end
+
+@testitem "Hetero all-Constant Int eval keeps Int output (Phase 4 corner) + I5 floats elsewhere" begin
+    g = collect(0:1:5)                                  # Int grid
+    data = [Int(i + 2j) for i in 1:6, j in 1:6]         # Int data
+    # all-Constant hetero + Int query → output keeps Int (legacy over-floated to Float64).
+    itp_c = interp((g, g), data; method = (ConstantInterp(RightSide(), NoBC()),
+                                           ConstantInterp(RightSide(), NoBC())))
+    @test (@inferred itp_c(2, 3)) isa Int
+    # one dividing axis → floats (unchanged)
+    itp_m = interp((g, g), data; method = (ConstantInterp(RightSide(), NoBC()),
+                                           LinearInterp(NoBC())))
+    @test (@inferred itp_m(2, 3)) isa Float64
+end

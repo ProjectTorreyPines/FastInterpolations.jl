@@ -151,7 +151,7 @@ end
     # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
     # Grid eltype included: when grid is Dual, 1D oneshot returns Dual-typed results
     # that must fit into _collapse_dims intermediate buffers.
-    Tr = _promote_eltype(Tv, Tg, typeof.(q_eval)...)
+    Tr = _hetero_output_eltype(methods, Tg, Tv, q_eval)
 
     # GridIdx safety gate: same reason as the persistent path — a GridIdx on a
     # windowable axis would be aliased to the wrong grid entry once the data
@@ -249,7 +249,7 @@ function _interp_nd_oneshot_dispatch(
     ) where {N}
     grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
     _validate_nd_grids(grids_typed, data)
-    Tr = _promote_eltype(eltype(data), Tg, typeof.(query)...)
+    Tr = _hetero_output_eltype(methods, Tg, eltype(data), query)
 
     # bc-aware extrap: NoExtrap → WrapExtrap on PeriodicBC axes.
     bcs = map(_bc_for_periodic_check, methods)

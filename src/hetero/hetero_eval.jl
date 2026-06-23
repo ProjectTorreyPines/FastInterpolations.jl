@@ -196,7 +196,7 @@ end
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-    Tr = _promote_eltype(Tv, Tg, typeof.(q_eval)...)
+    Tr = _hetero_output_eltype(itp.methods, Tg, Tv, q_eval)
 
     # Wrap-aware path: routed only when at least one axis is a periodic local
     # Hermite method. Pool scope (and the wrap-aware buffers) live entirely
@@ -464,7 +464,7 @@ end
     ) where {Tg, Tv, N, G, M, E, P}
     data, grids, methods, extraps, q_eval, searches, hints, windows = cell
     # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
-    Tr = _promote_eltype(Tv, Tg, typeof.(q_eval)...)
+    Tr = _hetero_output_eltype(methods, Tg, Tv, q_eval)
     return _collapse_dims(Tr, data, grids, methods, extraps, q_eval, ops, searches, hints, windows)
 end
 

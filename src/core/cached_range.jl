@@ -81,14 +81,14 @@ function _to_float(x::AbstractRange, ::Type{T}) where {T}
     return _CachedRange{T, typeof(inv_h)}(T(first(x)), T(last(x)), h, inv_h, length(x))
 end
 
-# Unit-step fast-path: `AbstractUnitRange{<:Integer}` (`UnitRange`, `Base.OneTo`,
-# offset-array axes) has step ≡ 1 by type, so `h = inv_h = one(T)` — skip the
-# `step(x)` extraction and the `inv()` divide of the generic path. Bit-identical to
-# the generic result for a unit range (which computes `h = T(1)`, `inv_h = inv(1) =
-# one(T)`); both use the exact 5-arg ctor (`domain_lo = lo`, `domain_hi = hi`).
-# Image-axis grids (`Base.OneTo`) hit this on construction.
+# Unit-step fast-path: `AbstractUnitRange` (`UnitRange`/`Base.OneTo`) has step ≡ 1 by
+# type, so the grid is built from literal constants (`h = one(T)`, `inv_h = one(Tinv)`)
+# with no runtime division — `inv` is only in the compile-time type
+# `Tinv = typeof(inv(oneunit(T)))` (Float64 for `T=Int`, `T` for Float, per the
+# `_CachedRange` contract; skips the generic path's runtime `inv(step(x))`).
 @inline function _to_float(x::AbstractUnitRange, ::Type{T}) where {T}
-    return _CachedRange{T, T, _UnitStep}(T(first(x)), T(last(x)), one(T), one(T), length(x))
+    Tinv = typeof(inv(oneunit(T)))
+    return _CachedRange{T, Tinv, _UnitStep}(T(first(x)), T(last(x)), one(T), one(Tinv), length(x))
 end
 
 # x86_64: TwicePrecision first()/last() ~9ns each on Intel — bypass via plain-T muladd.

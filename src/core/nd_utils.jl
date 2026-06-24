@@ -544,18 +544,17 @@ end
     return q
 end
 
-# Branchless per-axis ClampExtrap: one `min/max` clamp instead of the `_oob_state` classify
-# + two branches — kills the boundary-OOB misprediction hump (2D 5%-OOB: 3.50→2.78 ns/q).
-# `min/max` promote, so it's symmetric for a Dual query and/or grid (carries query partials
-# in-domain, endpoint partials when clamped — correct chain rule both ways).
-# NOTE: clamps to exact `first/last`; match `_oob_state` exactly by clamping to the
-# ~1-ULP-widened `domain_lo/hi` (no difference on integer/imresize grids).
+# Branchless per-axis ClampExtrap: one `min/max` clamp (vs the `_oob_state` classify + 2
+# branches) — removes the boundary-OOB misprediction hump. Clamp to the real endpoints
+# `first/last` (geometry, matching `_clamp_to_grid`); the widened `domain_lo/hi` are for OOB
+# *classification* only (Fill/NoExtrap). `min/max` promote → symmetric for a Dual query/grid.
 @inline _handle_axis_extrap(q, axis::AbstractVector, ::ClampExtrap) =
     _clamp(q, first(axis), last(axis))
 
+# FillExtrap keeps the branchy `_oob_state` clamp: Fill needs `_oob_state` anyway for the
+# `_try_fill_oob` decision, and the compiler CSEs it with this coordinate classify (so
+# `return q` is free). Branchless `min/max` here can't be CSEd → adds ops (measured slower).
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::FillExtrap)
-    # `q` is pre-promoted by `_extrap_axis`. Classify via the widened `_oob_state`; clamp to
-    # the actual endpoint via `_promote_extrap_val` (not `oftype`, which InexactErrors an Int query).
     q_primal = _extract_primal(q)
     st = _oob_state(axis, q_primal)
     st == OOB_LEFT && return _promote_extrap_val(first(axis), q)

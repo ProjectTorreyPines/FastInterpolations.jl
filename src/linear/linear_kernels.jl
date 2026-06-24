@@ -77,3 +77,16 @@ end
 @inline function _linear_kernel(::DerivOp{N}, yL::Tv, ::Tv, ::Tg, α) where {N, Tg, Tv}
     return 0 * yL * one(α)
 end
+
+# ========================================
+# Normalized cell coordinate: α = (q - L) / h
+# ========================================
+# Shared by 1D (`linear_oneshot.jl`) and ND (`linear_nd_eval.jl`); grid-type dispatched:
+#   - `inv_h` form: caller supplies the reciprocal (ND `_locate_cell`).
+#   - `_CachedRange`: pull cached `inv_h` via the accessor — a `_UnitStep` grid returns
+#     `one`, so LLVM folds the `×inv_h` away (α = q - L). No `_UnitStep` method needed.
+#   - plain `AbstractVector`: divide by the on-the-fly `R - L` (EvalValue can then DCE
+#     the separately-extracted `inv_h`, which only EvalDeriv1 kernels use).
+@inline _alpha_of(q::Real, L::Real, inv_h::Real) = (q - L) * inv_h
+@inline _alpha_of(q::Real, L::Real, R::Real, x::_CachedRange) = (q - L) * _get_inv_h(x)
+@inline _alpha_of(q::Real, L::Real, R::Real, ::AbstractVector) = (q - L) / float(R - L)

@@ -531,14 +531,20 @@ end
 `_CachedRange` specialization: geometry fields are plain `T`, `inv_h` is `Tinv`
 (equals `T` for Float grids, `Float64` for `T = Int`) — no TwicePrecision arithmetic.
 Uses precomputed `inv_h` (multiply instead of divide) for the index calculation.
+Pulls `h`/`inv_h` through the accessors so a `_UnitStep` grid (which returns the
+literal `one`) lets LLVM fold the `×inv_h` index muladd and the `×h` left-edge
+muladd to identity — no separate `_UnitStep` method needed.
 """
 @inline function _search_direct(x::_CachedRange{T, Tinv}, xq::Real) where {T, Tinv}
     # Primal-based index: see _search_direct(::AbstractRange, ...) comment.
-    idx = clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - x.lo, x.inv_h, 1))), 1, x.len - 1)
-    xL = muladd(idx - 1, x.h, x.lo)
-    xR = xL + x.h
+    inv_h = _get_inv_h(x)
+    h = _get_h(x)
+    idx = clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - x.lo, inv_h, 1))), 1, x.len - 1)
+    xL = muladd(idx - 1, h, x.lo)
+    xR = xL + h
     return idx, xL, xR
 end
+
 
 """
     _search_binary(x::AbstractVector{T}, xq::Real) where {T<:Real}

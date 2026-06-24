@@ -40,12 +40,13 @@ end
 # Without this method, any code that windows or slices a `_CachedRange` (e.g. the
 # Hermite ND cell-local OnTheFly path in hetero_eval.jl) would silently degrade
 # its grid to a non-range type.
-@inline function Base.getindex(r::_CachedRange{T, Tinv}, idx::AbstractUnitRange{<:Integer}) where {T, Tinv}
+# Slice preserves the axis tag (a sub-range of a unit-step grid is still unit-step).
+@inline function Base.getindex(r::_CachedRange{T, Tinv, Tag}, idx::AbstractUnitRange{<:Integer}) where {T, Tinv, Tag}
     @boundscheck checkbounds(r, idx)
     new_len = length(idx)
     # Empty slice: return a length-0 _CachedRange anchored at r.lo (callers that
     # would dereference this hit the same checkbounds wall they would on r itself).
-    new_len == 0 && return _CachedRange{T, Tinv}(r.lo, r.lo, r.h, r.inv_h, 0)
+    new_len == 0 && return _CachedRange{T, Tinv, Tag}(r.lo, r.lo, r.h, r.inv_h, 0)
     i_lo = Int(first(idx))
     i_hi = Int(last(idx))
     # Reuse cached endpoints when the slice touches them — preserves the exact-bit
@@ -53,7 +54,7 @@ end
     # any downstream Tg-precision comparison stable.
     new_lo = i_lo == 1 ? r.lo : muladd(i_lo - 1, r.h, r.lo)
     new_hi = i_hi == r.len ? r.hi : muladd(i_hi - 1, r.h, r.lo)
-    return _CachedRange{T, Tinv}(new_lo, new_hi, r.h, r.inv_h, new_len)
+    return _CachedRange{T, Tinv, Tag}(new_lo, new_hi, r.h, r.inv_h, new_len)
 end
 
 # `view` follows `getindex` semantics for ranges — both return a fresh range, no
@@ -78,6 +79,16 @@ function _to_float(x::AbstractRange, ::Type{T}) where {T}
     h = T(step(x))
     inv_h = inv(h)
     return _CachedRange{T, typeof(inv_h)}(T(first(x)), T(last(x)), h, inv_h, length(x))
+end
+
+# Unit-step fast-path: `AbstractUnitRange` (`UnitRange`/`Base.OneTo`) has step ≡ 1 by
+# type, so the grid is built from literal constants (`h = one(T)`, `inv_h = one(Tinv)`)
+# with no runtime division — `inv` is only in the compile-time type
+# `Tinv = typeof(inv(oneunit(T)))` (Float64 for `T=Int`, `T` for Float, per the
+# `_CachedRange` contract; skips the generic path's runtime `inv(step(x))`).
+@inline function _to_float(x::AbstractUnitRange, ::Type{T}) where {T}
+    Tinv = typeof(inv(oneunit(T)))
+    return _CachedRange{T, Tinv, _UnitStep}(T(first(x)), T(last(x)), one(T), one(Tinv), length(x))
 end
 
 # x86_64: TwicePrecision first()/last() ~9ns each on Intel — bypass via plain-T muladd.
@@ -105,10 +116,10 @@ _to_float(x::_CachedRange{T, Tinv}, ::Type{T}) where {T, Tinv} = x
 # Uses 5-arg constructor (domain = exact). Any x86_64 domain widening from the source
 # is intentionally dropped: the type conversion itself introduces fresh rounding,
 # so re-widening would need to be based on the new FT, not the old T.
-function _to_float(x::_CachedRange, ::Type{T}) where {T}
+function _to_float(x::_CachedRange{S, Si, Tag}, ::Type{T}) where {S, Si, Tag, T}
     h = T(x.h)
     inv_h = inv(h)
-    return _CachedRange{T, typeof(inv_h)}(T(x.lo), T(x.hi), h, inv_h, x.len)
+    return _CachedRange{T, typeof(inv_h), Tag}(T(x.lo), T(x.hi), h, inv_h, x.len)
 end
 
 """
@@ -123,9 +134,9 @@ Dispatch:
 """
 # domain_hi = hi_new (exact): the extension uses cached plain-T fields only
 # (no TwicePrecision involved), so no additional rounding uncertainty.
-@inline function _to_float_adding_endpoint(x::_CachedRange{T, Tinv}, ::Type{T}) where {T, Tinv}
+@inline function _to_float_adding_endpoint(x::_CachedRange{T, Tinv, Tag}, ::Type{T}) where {T, Tinv, Tag}
     hi_new = x.hi + x.h
-    return _CachedRange{T, Tinv}(
+    return _CachedRange{T, Tinv, Tag}(
         x.lo, hi_new, x.h, x.inv_h, x.len + 1,
         x.domain_lo, hi_new
     )
@@ -145,12 +156,24 @@ end
 @inline _convert_copy(r::_CachedRange{T, Tinv}, ::Type{T}) where {T, Tinv} = r
 @inline _convert_copy(r::_CachedRange, ::Type{T}) where {T} = _to_float(r, T)
 
-# 4-arg grid-based accessors: `(x, idx, xL, xR)`. All four are produced by
-# `search_interval`; the dispatch picks the cheapest field per axis type.
-# `_CachedRange` ignores all three because `h`/`inv_h` are scalar fields
-# (uniform spacing — same value for every cell).
-@inline _get_h(x::_CachedRange, ::Int, ::Real, ::Real) = x.h
-@inline _get_inv_h(x::_CachedRange, ::Int, ::Real, ::Real) = x.inv_h
+# `_get_h` / `_get_inv_h` accessors. A `_CachedRange` is uniform, so one cached
+# `h`/`inv_h` answers every cell: all shapes delegate to the no-arg form, where the
+# `_UnitStep` (h ≡ inv_h ≡ 1) literal `one(T)` lives — LLVM then folds every
+# downstream `×h`/`×inv_h` to identity.
+@inline _get_h(x::_CachedRange) = x.h
+@inline _get_inv_h(x::_CachedRange) = x.inv_h
+@inline _get_h(::_CachedRange{T, Tinv, _UnitStep}) where {T, Tinv} = one(T)
+@inline _get_inv_h(::_CachedRange{T, Tinv, _UnitStep}) where {T, Tinv} = one(Tinv)
+# idx-shaped forms — `(x, idx)` (solver/coeff) and `(x, idx, xL, xR)` (from
+# `search_interval`) — ignore the extra args and delegate to the no-arg form.
+@inline _get_h(x::_CachedRange, ::Int) = _get_h(x)
+@inline _get_inv_h(x::_CachedRange, ::Int) = _get_inv_h(x)
+@inline _get_h(x::_CachedRange, ::Int, ::Real, ::Real) = _get_h(x)
+@inline _get_inv_h(x::_CachedRange, ::Int, ::Real, ::Real) = _get_inv_h(x)
+
+# Raw `AbstractRange` (non-_CachedRange) fallback via `step()` — pre-normalization paths only.
+@inline _get_h(x::AbstractRange, ::Int) = step(x)
+@inline _get_inv_h(x::AbstractRange, ::Int) = inv(step(x))
 
 # ========================================
 # `_resolve_axis` — one-shot Range wrapping

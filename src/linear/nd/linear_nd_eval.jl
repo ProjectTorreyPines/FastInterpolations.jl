@@ -108,13 +108,8 @@ end
     return false
 end
 
-# 3-arg form: caller supplies cached `inv_h` (persistent path).
-# 4-arg form: dispatch on grid type (oneshot path) — plain `AbstractVector`
-# uses direct division so EvalValue queries can DCE the separately-extracted
-# `inv_hs` (only needed by EvalDeriv1 kernel weights).
-@inline _alpha_of(q::Real, L::Real, inv_h::Real) = (q - L) * inv_h
-@inline _alpha_of(q::Real, L::Real, R::Real, x::_CachedRange) = (q - L) * x.inv_h
-@inline _alpha_of(q::Real, L::Real, R::Real, ::AbstractVector) = (q - L) / float(R - L)
+# `_alpha_of` (normalized cell coordinate, shared by 1D + ND) is defined in
+# linear_kernels.jl. The `_ExclusivePeriodicAxis` overload lives in periodic_axis.jl.
 
 # ========================================
 # Multilinear Interpolation Kernel

@@ -518,7 +518,7 @@ via arithmetic rather than iterative search, exploiting uniform grid spacing.
     # _extract_primal: index calculation is inherently integer (trunc discards fractional
     # part), so only the primal value matters. Computing the full Dual muladd and then
     # truncating would give the same idx but waste partial arithmetic.
-    idx = clamp(unsafe_trunc(Int, _extract_primal((xq - x_min) / dx) + 1), 1, n - 1)
+    idx = _clamp(unsafe_trunc(Int, _extract_primal((xq - x_min) / dx) + 1), 1, n - 1)
     # xL/xR keep full T (may be Dual) for kernel partial propagation.
     xL = muladd(idx - 1, dx, x_min)
     xR = xL + dx
@@ -539,7 +539,7 @@ muladd to identity — no separate `_UnitStep` method needed.
     # Primal-based index: see _search_direct(::AbstractRange, ...) comment.
     inv_h = _get_inv_h(x)
     h = _get_h(x)
-    idx = clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - x.lo, inv_h, 1))), 1, x.len - 1)
+    idx = _clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - x.lo, inv_h, 1))), 1, x.len - 1)
     xL = muladd(idx - 1, h, x.lo)
     xR = xL + h
     return idx, xL, xR
@@ -611,7 +611,7 @@ No bounds checking (except initial clamp), no binary fallback.
     n = length(x)
     @inbounds begin
         # Clamp once at start (handles bad initial hint)
-        ix = clamp(ix, 1, n - 1)
+        ix = _clamp(ix, 1, n - 1)
 
         # Direct hit - most common case for monotonic queries
         if x[ix] <= xq < x[ix + 1]

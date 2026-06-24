@@ -43,13 +43,11 @@ Abstract type for cache entries. Subtypes must have:
 """
 abstract type AbstractCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}} end
 
-# Map a user input grid type to the cache's wrapped axis type — mirrors `_to_float`
-# so the banked cache type matches the real grid: `Tinv = typeof(inv(oneunit(T)))`,
-# AbstractUnitRange → `_UnitStep` else `_Generic` (a wrapped `_CachedRange` keeps its
-# tag), Vector → `_CachedVector`, `:exclusive` → outer `_ExclusivePeriodicAxis`.
-@inline _cached_axis_type(::Type{<:AbstractRange}, ::Type{T}) where {T} = _CachedRange{T, typeof(inv(oneunit(T))), _Generic}
-@inline _cached_axis_type(::Type{<:AbstractUnitRange}, ::Type{T}) where {T} = _CachedRange{T, typeof(inv(oneunit(T))), _UnitStep}
-@inline _cached_axis_type(::Type{<:_CachedRange{S, Si, Tag}}, ::Type{T}) where {S, Si, Tag, T} = _CachedRange{T, typeof(inv(oneunit(T))), Tag}
+# Banked axis type for an already-normalized cache grid: `_CachedRange{T}` (tag preserved)
+# or `Vector{T}`. Raw ranges are `_to_float`-converted upstream, so they never reach here;
+# `:exclusive` adds an outer `_ExclusivePeriodicAxis`.
+@inline _cached_axis_type(::Type{<:_CachedRange{S, Si, Tag}}, ::Type{T}) where {S, Si, Tag, T} =
+    _CachedRange{T, typeof(inv(oneunit(T))), Tag}
 @inline _cached_axis_type(::Type{<:AbstractVector}, ::Type{T}) where {T} =
     _CachedVector{T, typeof(inv(oneunit(T)))}
 

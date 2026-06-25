@@ -1743,3 +1743,66 @@
     end  # @testset "GridIdx search_interval dispatch"
 
 end  # @testset "Search Module"
+
+@testitem "GridIdx short-circuit survives ClampExtrap value eval" begin
+    using FastInterpolations: GridIdx
+
+    # Instrumented axis that counts element reads. A `GridIdx` query carries a
+    # pre-resolved index, so its evaluation must touch the grid a number of
+    # times that is CONSTANT in the grid length (the index short-circuit). A
+    # coordinate search instead reads O(log n) extra elements — observable as a
+    # read count that grows with grid size.
+    mutable struct CountedAxis{T} <: AbstractVector{T}
+        data::Vector{T}
+        nread::Base.RefValue{Int}
+    end
+    CountedAxis(d::AbstractVector) = CountedAxis(collect(d), Ref(0))
+    Base.size(v::CountedAxis) = size(v.data)
+    Base.IndexStyle(::Type{<:CountedAxis}) = IndexLinear()
+    Base.@propagate_inbounds function Base.getindex(v::CountedAxis, i::Int)
+        v.nread[] += 1
+        return v.data[i]
+    end
+
+    # Grid reads for one query of each kind on a length-`n` grid.
+    function grid_reads(n)
+        x = CountedAxis(range(0.0, 10.0; length = n))
+        y = collect(sin.(x.data))
+        k = (n + 1) ÷ 2                       # interior node
+        # warm up compilation before measuring
+        linear_interp(x, y, GridIdx(k); extrap = ClampExtrap())
+        linear_interp(x, y, GridIdx(k); extrap = NoExtrap())
+        linear_interp(x, y, 5.0; extrap = ClampExtrap())
+        reads(call) = (x.nread[] = 0; call(); x.nread[])
+        return (
+            grididx_clamp = reads(() -> linear_interp(x, y, GridIdx(k); extrap = ClampExtrap())),
+            grididx_noex = reads(() -> linear_interp(x, y, GridIdx(k); extrap = NoExtrap())),
+            coord_clamp = reads(() -> linear_interp(x, y, 5.0; extrap = ClampExtrap())),
+        )
+    end
+
+    small = grid_reads(33)
+    large = grid_reads(1025)
+
+    @testset "instrument detects a coordinate search" begin
+        # Sanity: a real-coordinate ClampExtrap query searches → reads grow with n.
+        @test large.coord_clamp > small.coord_clamp
+    end
+
+    @testset "GridIdx + ClampExtrap value short-circuits (zero search cost)" begin
+        # Reads are constant in grid length ⇒ no coordinate search performed.
+        # (A search would read O(log n) more on the larger grid — see coord_clamp.)
+        @test large.grididx_clamp == small.grididx_clamp
+        # ...and strictly cheaper than an actual coordinate search.
+        @test large.grididx_clamp < large.coord_clamp
+    end
+
+    @testset "GridIdx + ClampExtrap value is bit-identical to the fast path" begin
+        x = collect(range(0.0, 10.0; length = 1025))
+        y = sin.(x)
+        @test linear_interp(x, y, GridIdx(500); extrap = ClampExtrap()) ===
+            linear_interp(x, y, GridIdx(500); extrap = NoExtrap())
+        @test linear_interp(x, y, GridIdx(length(x)); extrap = ClampExtrap()) ===
+            linear_interp(x, y, GridIdx(length(x)); extrap = NoExtrap())
+    end
+end

@@ -17,6 +17,11 @@
 # emit identical branchless code (`cmp; csinc; cmp; csel`), so the search-index clamps are
 # unaffected — the helper is used there only to keep one consistent call site.
 @inline _clamp(x, lo, hi) = min(max(x, lo), hi)
+# A GridIdx is in-domain by construction (bounds-checked at resolution), so clamping it to
+# the grid domain is a no-op: skip the `min/max` entirely and pass it through. This also
+# keeps the value a GridIdx so the downstream `search_interval` takes the index
+# short-circuit instead of promoting it to a plain, searched coordinate.
+@inline _clamp(xq::GridIdx, ::Any, ::Any) = xq
 
 # ========================================
 # Interval Search (IN search.jl)

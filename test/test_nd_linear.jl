@@ -950,6 +950,8 @@ end
         # ForwardDiff Dual query stays type-stable (carrier propagates through muladd).
         g = ForwardDiff.gradient(p -> itp((p[1], p[2])), [0.3, 0.7])
         @test length(g) == 2 && all(isfinite, g)
+        # Direct Dual query: the value kernel's carrier must stay type-stable (no Union/boxing).
+        @test (@inferred itp((ForwardDiff.Dual(0.3, 1.0), ForwardDiff.Dual(0.7, 1.0)))) isa ForwardDiff.Dual
     end
 
     @testset "2D zero-alloc scalar value" begin
@@ -981,6 +983,9 @@ end
             @test itp(q) ≈ _ref_trilinear(A, q...) rtol = 1.0e-12
         end
         @test (@inferred itp((0.3, 0.7, 0.2))) isa Float64
+        h3() = itp((0.3, 0.7, 0.2))
+        h3()                                   # warmup/compile
+        @test (@allocated h3()) <= ND_ALLOC_THRESHOLD
         # deriv unchanged: ∂/∂y of a separable linear field
         B = [1.0xi + 2.0yj + 4.0zk for xi in x, yj in y, zk in z]
         jtp = linear_interp((x, y, z), B)

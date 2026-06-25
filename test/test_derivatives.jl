@@ -100,6 +100,20 @@
             @test constant_interp(x, y_const, xq; deriv = DerivOp(4)) == 0.0
         end
 
+        @testset "1D linear deriv≥2 NaN is endpoint-local" begin
+            # deriv≥2 ≡ 0, but a NaN at *either* cell endpoint must propagate — the
+            # shared `_linear_kernel` must touch both yL and yR, not just yL.
+            xl = 0.0:1.0:3.0
+            for k in (1, 2)                          # lo / hi endpoint of cell 1
+                yk = ones(4); yk[k] = NaN
+                @test isnan(linear_interp(xl, yk, 0.5; deriv = DerivOp(2)))
+                @test isnan(linear_interp(xl, yk, 0.5; deriv = DerivOp(3)))
+                @test isnan(linear_interp(xl, yk, 0.5; deriv = DerivOp(4)))
+            end
+            @test linear_interp(xl, ones(4), 0.5; deriv = DerivOp(2)) == 0           # finite → 0
+            @test linear_interp(xl, fill(1.0e308, 4), 0.5; deriv = DerivOp(2)) == 0  # no overflow
+        end
+
         @testset "1D anchored (interpolant) — all types" begin
             y = sin.(2π .* x)
 

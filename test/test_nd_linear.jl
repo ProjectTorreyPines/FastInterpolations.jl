@@ -902,3 +902,122 @@ end
         @test (@allocated itp((0.5, 0.5))) <= ALLOC_THRESHOLD
     end
 end
+
+@testitem "LinearInterpolantND nested value kernel" setup = [AllocConstants] begin
+    using Random, ForwardDiff
+
+    # Reference flat bilinear on a unit-offset grid x[i]=i-1, y[j]=j-1.
+    function _ref_bilinear(A, a, b)
+        nx, ny = size(A)
+        ix = clamp(floor(Int, a) + 1, 1, nx - 1)
+        iy = clamp(floor(Int, b) + 1, 1, ny - 1)
+        fx = a - (ix - 1); fy = b - (iy - 1)
+        return (1 - fx) * (1 - fy) * A[ix, iy] + fx * (1 - fy) * A[ix + 1, iy] +
+            (1 - fx) * fy * A[ix, iy + 1] + fx * fy * A[ix + 1, iy + 1]
+    end
+
+    @testset "2D value matches reference bilinear" begin
+        x = 0.0:1.0:5.0; y = 0.0:1.0:4.0
+        A = rand(MersenneTwister(42), 6, 5)        # non-linear data → nested≠flat matters
+        itp = linear_interp((x, y), A)
+        for (a, b) in [(0.3, 0.7), (2.5, 1.5), (4.9, 3.1), (1.0, 2.0), (0.0, 0.0), (5.0, 4.0)]
+            @test itp((a, b)) ≈ _ref_bilinear(A, a, b) rtol = 1.0e-12
+        end
+    end
+
+    @testset "2D derivatives unchanged" begin
+        x = 0.0:1.0:5.0; y = 0.0:1.0:4.0
+        A = [2.0xi + 3.0yj + 0.5xi * yj for xi in x, yj in y]
+        itp = linear_interp((x, y), A)
+        # ∂/∂x of 2x+3y+0.5xy at (1.5,2.0) = 2 + 0.5*2 = 3.0 ; ∂/∂y = 3 + 0.5*1.5 = 3.75
+        @test itp((1.5, 2.0); deriv = (DerivOp(1), DerivOp(0))) ≈ 3.0 rtol = 1.0e-12
+        @test itp((1.5, 2.0); deriv = (DerivOp(0), DerivOp(1))) ≈ 3.75 rtol = 1.0e-12
+    end
+
+    @testset "2D NaN propagation is cell-local" begin
+        x = 0.0:1.0:3.0; y = 0.0:1.0:3.0
+        A = ones(4, 4); A[2, 2] = NaN          # taints cells touching node (2,2)
+        itp = linear_interp((x, y), A)
+        @test isnan(itp((0.5, 0.5)))           # cell (1,1)-(2,2) touches the NaN corner
+        @test isfinite(itp((2.5, 2.5)))        # cell far from the NaN corner
+    end
+
+    @testset "deriv≥2 NaN is cell-local on every corner/axis" begin
+        # deriv≥2 ≡ 0 for finite data, but a NaN anywhere in the queried cell must
+        # still propagate — crucially on the *hi* side of the differentiated axis,
+        # which the nested collapse must touch (regression: dropped hi-corner NaN).
+        xa = 0.0:1.0:3.0
+        for ci in 1:2, cj in 1:2                # every corner of cell (1,1)
+            B = ones(4, 4); B[ci, cj] = NaN
+            jt = linear_interp((xa, xa), B)
+            @test isnan(jt((0.5, 0.5); deriv = (DerivOp(2), DerivOp(0))))   # ∂²/∂x²
+            @test isnan(jt((0.5, 0.5); deriv = (DerivOp(0), DerivOp(2))))   # ∂²/∂y²
+            @test isnan(jt((0.5, 0.5); deriv = (DerivOp(3), DerivOp(0))))   # ∂³/∂x³
+            @test isnan(jt((0.5, 0.5); deriv = (DerivOp(4), DerivOp(0))))   # ∂⁴/∂x⁴ (DerivOp{N} fallback)
+        end
+        # 3D — NaN at the all-hi corner (2,2,2); each axis differentiated at order 2.
+        B3 = ones(4, 4, 4); B3[2, 2, 2] = NaN
+        jt3 = linear_interp((xa, xa, xa), B3)
+        @test isnan(jt3((0.5, 0.5, 0.5); deriv = (DerivOp(2), DerivOp(0), DerivOp(0))))
+        @test isnan(jt3((0.5, 0.5, 0.5); deriv = (DerivOp(0), DerivOp(2), DerivOp(0))))
+        @test isnan(jt3((0.5, 0.5, 0.5); deriv = (DerivOp(0), DerivOp(0), DerivOp(2))))
+        # finite cell → clean 0; large-finite must NOT overflow into a spurious NaN.
+        F = ones(4, 4); G = fill(1.0e308, 4, 4)
+        @test linear_interp((xa, xa), F)((0.5, 0.5); deriv = (DerivOp(2), DerivOp(0))) == 0
+        @test linear_interp((xa, xa), G)((0.5, 0.5); deriv = (DerivOp(2), DerivOp(0))) == 0
+        # type stability: deriv≥2 stays concrete (value + Dual carrier).
+        itpF = linear_interp((xa, xa), F)
+        @test (@inferred itpF((0.5, 0.5); deriv = (DerivOp(2), DerivOp(0)))) isa Float64
+        @test (@inferred itpF((ForwardDiff.Dual(0.5, 1.0), ForwardDiff.Dual(0.5, 1.0)); deriv = (DerivOp(2), DerivOp(0)))) isa ForwardDiff.Dual
+    end
+
+    @testset "2D type-stability + carrier" begin
+        x = 0.0:1.0:5.0; y = 0.0:1.0:4.0
+        A = rand(MersenneTwister(7), 6, 5)
+        itp = linear_interp((x, y), A)
+        @test (@inferred itp((0.3, 0.7))) isa Float64
+        # ForwardDiff Dual query stays type-stable (carrier propagates through muladd).
+        g = ForwardDiff.gradient(p -> itp((p[1], p[2])), [0.3, 0.7])
+        @test length(g) == 2 && all(isfinite, g)
+        # Direct Dual query: the value kernel's carrier must stay type-stable (no Union/boxing).
+        @test (@inferred itp((ForwardDiff.Dual(0.3, 1.0), ForwardDiff.Dual(0.7, 1.0)))) isa ForwardDiff.Dual
+    end
+
+    @testset "2D zero-alloc scalar value" begin
+        x = 0.0:1.0:5.0; y = 0.0:1.0:4.0
+        A = rand(MersenneTwister(9), 6, 5)
+        itp = linear_interp((x, y), A)
+        f() = itp((0.3, 0.7))
+        f()                                    # warmup/compile
+        @test (@allocated f()) <= ND_ALLOC_THRESHOLD
+    end
+
+    @testset "3D value matches reference trilinear" begin
+        function _ref_trilinear(A, a, b, c)
+            nx, ny, nz = size(A)
+            ix = clamp(floor(Int, a) + 1, 1, nx - 1); fx = a - (ix - 1)
+            iy = clamp(floor(Int, b) + 1, 1, ny - 1); fy = b - (iy - 1)
+            iz = clamp(floor(Int, c) + 1, 1, nz - 1); fz = c - (iz - 1)
+            v = 0.0
+            for (dx, wx) in ((0, 1 - fx), (1, fx)), (dy, wy) in ((0, 1 - fy), (1, fy)),
+                    (dz, wz) in ((0, 1 - fz), (1, fz))
+                v += wx * wy * wz * A[ix + dx, iy + dy, iz + dz]
+            end
+            return v
+        end
+        x = 0.0:1.0:4.0; y = 0.0:1.0:3.0; z = 0.0:1.0:3.0
+        A = rand(MersenneTwister(11), 5, 4, 4)
+        itp = linear_interp((x, y, z), A)
+        for q in [(0.3, 0.7, 0.2), (2.5, 1.5, 2.5), (3.9, 2.1, 0.0)]
+            @test itp(q) ≈ _ref_trilinear(A, q...) rtol = 1.0e-12
+        end
+        @test (@inferred itp((0.3, 0.7, 0.2))) isa Float64
+        h3() = itp((0.3, 0.7, 0.2))
+        h3()                                   # warmup/compile
+        @test (@allocated h3()) <= ND_ALLOC_THRESHOLD
+        # deriv unchanged: ∂/∂y of a separable linear field
+        B = [1.0xi + 2.0yj + 4.0zk for xi in x, yj in y, zk in z]
+        jtp = linear_interp((x, y, z), B)
+        @test jtp((1.5, 1.5, 1.5); deriv = (DerivOp(0), DerivOp(1), DerivOp(0))) ≈ 2.0 rtol = 1.0e-12
+    end
+end

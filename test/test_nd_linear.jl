@@ -942,6 +942,35 @@ end
         @test isfinite(itp((2.5, 2.5)))        # cell far from the NaN corner
     end
 
+    @testset "deriv≥2 NaN is cell-local on every corner/axis" begin
+        # deriv≥2 ≡ 0 for finite data, but a NaN anywhere in the queried cell must
+        # still propagate — crucially on the *hi* side of the differentiated axis,
+        # which the nested collapse must touch (regression: dropped hi-corner NaN).
+        xa = 0.0:1.0:3.0
+        for ci in 1:2, cj in 1:2                # every corner of cell (1,1)
+            B = ones(4, 4); B[ci, cj] = NaN
+            jt = linear_interp((xa, xa), B)
+            @test isnan(jt((0.5, 0.5); deriv = (DerivOp(2), DerivOp(0))))   # ∂²/∂x²
+            @test isnan(jt((0.5, 0.5); deriv = (DerivOp(0), DerivOp(2))))   # ∂²/∂y²
+            @test isnan(jt((0.5, 0.5); deriv = (DerivOp(3), DerivOp(0))))   # ∂³/∂x³
+            @test isnan(jt((0.5, 0.5); deriv = (DerivOp(4), DerivOp(0))))   # ∂⁴/∂x⁴ (DerivOp{N} fallback)
+        end
+        # 3D — NaN at the all-hi corner (2,2,2); each axis differentiated at order 2.
+        B3 = ones(4, 4, 4); B3[2, 2, 2] = NaN
+        jt3 = linear_interp((xa, xa, xa), B3)
+        @test isnan(jt3((0.5, 0.5, 0.5); deriv = (DerivOp(2), DerivOp(0), DerivOp(0))))
+        @test isnan(jt3((0.5, 0.5, 0.5); deriv = (DerivOp(0), DerivOp(2), DerivOp(0))))
+        @test isnan(jt3((0.5, 0.5, 0.5); deriv = (DerivOp(0), DerivOp(0), DerivOp(2))))
+        # finite cell → clean 0; large-finite must NOT overflow into a spurious NaN.
+        F = ones(4, 4); G = fill(1.0e308, 4, 4)
+        @test linear_interp((xa, xa), F)((0.5, 0.5); deriv = (DerivOp(2), DerivOp(0))) == 0
+        @test linear_interp((xa, xa), G)((0.5, 0.5); deriv = (DerivOp(2), DerivOp(0))) == 0
+        # type stability: deriv≥2 stays concrete (value + Dual carrier).
+        itpF = linear_interp((xa, xa), F)
+        @test (@inferred itpF((0.5, 0.5); deriv = (DerivOp(2), DerivOp(0)))) isa Float64
+        @test (@inferred itpF((ForwardDiff.Dual(0.5, 1.0), ForwardDiff.Dual(0.5, 1.0)); deriv = (DerivOp(2), DerivOp(0)))) isa ForwardDiff.Dual
+    end
+
     @testset "2D type-stability + carrier" begin
         x = 0.0:1.0:5.0; y = 0.0:1.0:4.0
         A = rand(MersenneTwister(7), 6, 5)

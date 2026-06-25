@@ -53,14 +53,18 @@ end
 """
     _linear_kernel(::EvalDeriv2, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
 
-Evaluate second derivative of linear interpolation.
-Always returns zero (linear function has no curvature).
+Evaluate second derivative of linear interpolation. Zero for finite data
+(linear function has no curvature); a NaN/Inf in either cell endpoint still
+propagates (cell-local, matching the flat weight form).
 
 Note: Mathematically, the second derivative is a Dirac delta at knots,
 but we return zero everywhere as a practical approximation.
 """
-@inline function _linear_kernel(::EvalDeriv2, yL::Tv, ::Tv, inv_h::Tg, α) where {Tg, Tv}
-    return 0 * yL * one(α)
+@inline function _linear_kernel(::EvalDeriv2, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
+    # ×0 (no curvature), but touch BOTH endpoints so a NaN/Inf in either cell corner
+    # survives the multiply (cell-local propagation). `0*yL + 0*yR` avoids the overflow
+    # of `yL+yR`/`yL*yR` that would manufacture a spurious NaN from large finite data.
+    return (0 * yL + 0 * yR) * one(α)
 end
 
 """
@@ -69,13 +73,13 @@ end
 Third derivative of linear interpolation is always zero.
 Linear functions have constant first derivative (slope), zero second and third derivatives.
 """
-@inline function _linear_kernel(::EvalDeriv3, yL::Tv, ::Tv, inv_h::Tg, α) where {Tg, Tv}
-    return 0 * yL * one(α)
+@inline function _linear_kernel(::EvalDeriv3, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
+    return (0 * yL + 0 * yR) * one(α)  # touch both endpoints for cell-local NaN — see EvalDeriv2
 end
 
 """Generic fallback: N-th derivative of degree-1 polynomial is zero for N ≥ 2."""
-@inline function _linear_kernel(::DerivOp{N}, yL::Tv, ::Tv, ::Tg, α) where {N, Tg, Tv}
-    return 0 * yL * one(α)
+@inline function _linear_kernel(::DerivOp{N}, yL::Tv, yR::Tv, ::Tg, α) where {N, Tg, Tv}
+    return (0 * yL + 0 * yR) * one(α)  # touch both endpoints for cell-local NaN — see EvalDeriv2
 end
 
 # ========================================

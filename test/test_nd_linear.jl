@@ -960,4 +960,30 @@ end
         f()                                    # warmup/compile
         @test (@allocated f()) <= ND_ALLOC_THRESHOLD
     end
+
+    @testset "3D value matches reference trilinear" begin
+        function _ref_trilinear(A, a, b, c)
+            nx, ny, nz = size(A)
+            ix = clamp(floor(Int, a) + 1, 1, nx - 1); fx = a - (ix - 1)
+            iy = clamp(floor(Int, b) + 1, 1, ny - 1); fy = b - (iy - 1)
+            iz = clamp(floor(Int, c) + 1, 1, nz - 1); fz = c - (iz - 1)
+            v = 0.0
+            for (dx, wx) in ((0, 1 - fx), (1, fx)), (dy, wy) in ((0, 1 - fy), (1, fy)),
+                    (dz, wz) in ((0, 1 - fz), (1, fz))
+                v += wx * wy * wz * A[ix + dx, iy + dy, iz + dz]
+            end
+            return v
+        end
+        x = 0.0:1.0:4.0; y = 0.0:1.0:3.0; z = 0.0:1.0:3.0
+        A = rand(MersenneTwister(11), 5, 4, 4)
+        itp = linear_interp((x, y, z), A)
+        for q in [(0.3, 0.7, 0.2), (2.5, 1.5, 2.5), (3.9, 2.1, 0.0)]
+            @test itp(q) ≈ _ref_trilinear(A, q...) rtol = 1.0e-12
+        end
+        @test (@inferred itp((0.3, 0.7, 0.2))) isa Float64
+        # deriv unchanged: ∂/∂y of a separable linear field
+        B = [1.0xi + 2.0yj + 4.0zk for xi in x, yj in y, zk in z]
+        jtp = linear_interp((x, y, z), B)
+        @test jtp((1.5, 1.5, 1.5); deriv = (DerivOp(0), DerivOp(1), DerivOp(0))) ≈ 2.0 rtol = 1.0e-12
+    end
 end

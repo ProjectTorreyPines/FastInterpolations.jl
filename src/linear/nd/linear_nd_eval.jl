@@ -194,6 +194,54 @@ end
     end
 end
 
+# Generic-N: @generated staged collapse, mirrors cubic's `_eval_nd_cell` minus the
+# derivative corners. Serves N ≥ 3 (N=2 hits the hand-written method above — more
+# specific concrete `Val{2}`). Axis `s` is always the lowest remaining corner bit,
+# so each stage pairs adjacent positions (even = bit 0 = lo, odd = bit 1 = hi).
+@generated function _multilinear_sum(
+        data::AbstractArray{Tv, N},
+        stencils::NTuple{N, _IdxStencil{2}},
+        ::NTuple{N},
+        αs::Tuple{Vararg{Real, N}},
+        ::NTuple{N, EvalValue},
+        ::Val{N}
+    ) where {Tv, N}
+    stmts = Expr[]
+    αsyms = ntuple(d -> Symbol("α_", d), N)
+    ssyms = ntuple(d -> Symbol("s_", d), N)
+    push!(stmts, :(($(αsyms...),) = αs))
+    push!(stmts, :(($(ssyms...),) = stencils))
+    # Stage 0: read the 2^N corners.
+    num = 1 << N
+    cur = Vector{Symbol}(undef, num)
+    for c in 0:(num - 1)
+        idx = [:($(ssyms[d])[$(((c >> (d - 1)) & 1) + 1)]) for d in 1:N]
+        v = Symbol("g0_", c)
+        push!(stmts, :($v = data[$(idx...)]))
+        cur[c + 1] = v
+    end
+    # Stages 1..N: collapse one axis per stage.
+    for s in 1:N
+        α = αsyms[s]
+        half = length(cur) ÷ 2
+        nxt = Vector{Symbol}(undef, half)
+        for j in 0:(half - 1)
+            lo = cur[2j + 1]; hi = cur[2j + 2]
+            v = Symbol("g", s, "_", j)
+            push!(stmts, :($v = muladd($α, $hi - $lo, $lo)))
+            nxt[j + 1] = v
+        end
+        cur = nxt
+    end
+    return quote
+        Base.@_inline_meta
+        @inbounds begin
+            $(stmts...)
+            return $(cur[1])
+        end
+    end
+end
+
 # ========================================
 # Linear Weight Functions
 # ========================================

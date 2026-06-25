@@ -524,15 +524,16 @@ _promote_coord(0.5f0, Float32)  # → 0.5f0 (Float32)
 @noinline _throw_domain_error(xi, x_min, x_max) =
     throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
 
-# `_extract_primal(xi)` (query) as well as the bounds: at equal primals
-# ForwardDiff's `Dual <=> Real` tie-breaks on the partial sign, so a Dual query
-# exactly at the boundary would flip in/out of domain by its derivative direction
-# alone — same partial-independence rationale as `_is_all_inbounds`/`_oob_state`.
+# NoExtrap domain check. OOB iff the branchless `_clamp` (min/max) alters the query:
+# `_clamp(xip,lo,hi) != xip` is 1 compare + 1 branch vs `(xip<lo || xip>hi)`'s two
+# branches — a saving that compounds across axes in ND's `_validate_nd_domain`.
+# Compares the extracted primal, so a Dual query at the boundary classifies by value,
+# not partial sign (cf. `_is_all_inbounds`/`_oob_state`).
 "Scalar domain check for NoExtrap: throws DomainError if out of domain."
 @inline function _check_domain(x::AbstractVector, xi::Real, ::NoExtrap)
     xip = _extract_primal(xi)
     x_min, x_max = _extract_primal(first(x)), _extract_primal(last(x))
-    (xip < x_min || xip > x_max) && _throw_domain_error(xi, x_min, x_max)
+    (_clamp(xip, x_min, x_max) != xip) && _throw_domain_error(xi, x_min, x_max)
     return nothing
 end
 
@@ -540,7 +541,7 @@ end
 @inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap)
     xip = _extract_primal(xi)
     lo, hi = _extract_primal(x.domain_lo), _extract_primal(x.domain_hi)
-    (xip < lo || xip > hi) && _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi))
+    (_clamp(xip, lo, hi) != xip) && _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi))
     return nothing
 end
 

@@ -524,6 +524,12 @@ _promote_coord(0.5f0, Float32)  # → 0.5f0 (Float32)
 @noinline _throw_domain_error(xi, x_min, x_max) =
     throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
 
+# _CachedRange overload: pull the physical endpoints (`lo`/`hi`, distinct from the
+# `domain_lo`/`domain_hi` the hot check clamps against) inside this @noinline cold path,
+# so the in-domain hot path never materializes them — guaranteed, not LLVM-sink-dependent.
+@noinline _throw_domain_error(xi, x::_CachedRange) =
+    _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi))
+
 # NoExtrap domain check. OOB iff the branchless `_clamp` (min/max) alters the query:
 # `_clamp(xip,lo,hi) != xip` is 1 compare + 1 branch vs `(xip<lo || xip>hi)`'s two
 # branches — a saving that compounds across axes in ND's `_validate_nd_domain`.
@@ -541,7 +547,7 @@ end
 @inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap)
     xip = _extract_primal(xi)
     lo, hi = _extract_primal(x.domain_lo), _extract_primal(x.domain_hi)
-    (_clamp(xip, lo, hi) != xip) && _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi))
+    (_clamp(xip, lo, hi) != xip) && _throw_domain_error(xi, x)
     return nothing
 end
 

@@ -8,6 +8,21 @@
 @noinline _throw_grid_too_small(n::Int) =
     throw(ArgumentError("x must have at least 2 elements, got $n"))
 
+# ── Branchless clamp ──
+# Float: `min(max(x, lo), hi)` lowers to 2 ops (`fmax; fmin`); `Base.clamp(x, lo, hi)`
+# lowers to 4 (`fcmp; fcsel; fcmp; fcsel`) — also branchless (conditional-select, NOT
+# branches), but a longer dependency chain. So min/max is a constant ~2-op win on the
+# critical path, independent of query distribution: there is no branch to mispredict, so
+# the margin is flat across OOB ratios (measured on arm64, incl. 0% OOB). Int: both forms
+# emit identical branchless code (`cmp; csinc; cmp; csel`), so the search-index clamps are
+# unaffected — the helper is used there only to keep one consistent call site.
+@inline _clamp(x, lo, hi) = min(max(x, lo), hi)
+# A GridIdx is in-domain by construction (bounds-checked at resolution), so clamping it to
+# the grid domain is a no-op: skip the `min/max` entirely and pass it through. This also
+# keeps the value a GridIdx so the downstream `search_interval` takes the index
+# short-circuit instead of promoting it to a plain, searched coordinate.
+@inline _clamp(xq::GridIdx, ::Any, ::Any) = xq
+
 # ========================================
 # Interval Search (IN search.jl)
 # ========================================
@@ -600,7 +615,7 @@ end
 # boundary geometry while classification reads the widened bounds (keeps the
 # acceptance cushion out of geometry).
 @inline _clamp_to_grid(xq::Real, x::AbstractVector) =
-    clamp(xq, _extract_primal(first(x)), _extract_primal(last(x)))
+    _clamp(xq, _extract_primal(first(x)), _extract_primal(last(x)))
 
 """
 True iff every element of `queries` lies in the closed domain

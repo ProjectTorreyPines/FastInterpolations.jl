@@ -323,10 +323,14 @@
         @test itp(aq_below) ≈ y[1]
         @test itp(aq_below) ≈ itp(-0.5)
 
-        # Above domain returns last y
+        # Above domain returns last y.
+        # The scalar path clamps the coordinate to last(x) then runs the kernel
+        # (muladd at α=1), so it equals y[end] only to ≤1 ULP; near a zero-valued
+        # endpoint (sin(2π)≈0) that gap is large relative to the value, so compare
+        # with an absolute tolerance rather than the default relative ≈.
         aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:linear))
         @test itp(aq_above) ≈ y[end]
-        @test itp(aq_above) ≈ itp(1.5)
+        @test itp(aq_above) ≈ itp(1.5) atol = 1.0e-14
 
         # Inside domain still interpolates
         aq_mid = FastInterpolations._anchor_query(x, 0.35, Val(:linear))

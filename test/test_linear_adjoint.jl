@@ -20,7 +20,14 @@
 
         lhs = dot(Wf, y_bar)
         rhs = dot(f, WTy)
-        return lhs, rhs, isapprox(lhs, rhs; atol = atol, rtol = rtol)
+        # The adjoint identity ⟨Wf, ȳ⟩ = ⟨f, Wᵀȳ⟩ holds exactly, but the two dot products
+        # accumulate floating-point rounding differently. A relative-only tolerance is
+        # fragile when the sum cancels (|lhs| ≪ Σ|terms|) — common with randn data and
+        # tight in Float32. Measure the error against the un-cancelled summation scale
+        # (the dot product's condition), which is robust to cancellation while staying
+        # sqrt(eps)-tight; a genuine adjoint bug still fails (large scale-relative error).
+        scale = dot(abs.(Wf), abs.(y_bar))
+        return lhs, rhs, isapprox(lhs, rhs; atol = max(atol, rtol * scale), rtol = rtol)
     end
 
 

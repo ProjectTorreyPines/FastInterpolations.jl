@@ -163,6 +163,37 @@ directly from `_search_all_intervals_stencil`.
         @inbounds $sum_expr
     end
 end
+
+# ========================================
+# Nested value kernel (value-only fast path)
+# ========================================
+# Repeated linear interpolation: collapse one axis at a time via
+# `muladd(α, hi − lo, lo)`. Fewer mul-adds than the flat 2^N weight-expansion
+# above, and the form cubic/quadratic ND already use. Value-only — every
+# derivative / mixed-partial query keeps the flat method (more specific `ops`
+# slot: `NTuple{N,EvalValue}` ⊂ `NTuple{N,AbstractEvalOp}`). Corners are read
+# through `stencils[d][bit+1]`, so periodic-seam wrap (`idx_R == 1`) is preserved.
+
+# N=2 hand-written: collapse axis 1 then axis 2.
+@inline function _multilinear_sum(
+        data::AbstractArray{Tv, 2},
+        stencils::NTuple{2, _IdxStencil{2}},
+        ::NTuple{2},
+        αs::Tuple{Vararg{Real, 2}},
+        ::Tuple{EvalValue, EvalValue},
+        ::Val{2}
+    ) where {Tv}
+    sx, sy = stencils
+    αx, αy = αs
+    @inbounds begin
+        c00 = data[sx[1], sy[1]]; c10 = data[sx[2], sy[1]]
+        c01 = data[sx[1], sy[2]]; c11 = data[sx[2], sy[2]]
+        g0 = muladd(αx, c10 - c00, c00)   # bit_y = 0 edge
+        g1 = muladd(αx, c11 - c01, c01)   # bit_y = 1 edge
+        return muladd(αy, g1 - g0, g0)
+    end
+end
+
 # ========================================
 # Linear Weight Functions
 # ========================================

@@ -902,3 +902,62 @@ end
         @test (@allocated itp((0.5, 0.5))) <= ALLOC_THRESHOLD
     end
 end
+
+@testitem "LinearInterpolantND nested value kernel" setup = [AllocConstants] begin
+    using Random, ForwardDiff
+
+    # Reference flat bilinear on a unit-offset grid x[i]=i-1, y[j]=j-1.
+    function _ref_bilinear(A, a, b)
+        nx, ny = size(A)
+        ix = clamp(floor(Int, a) + 1, 1, nx - 1)
+        iy = clamp(floor(Int, b) + 1, 1, ny - 1)
+        fx = a - (ix - 1); fy = b - (iy - 1)
+        return (1 - fx) * (1 - fy) * A[ix, iy] + fx * (1 - fy) * A[ix + 1, iy] +
+            (1 - fx) * fy * A[ix, iy + 1] + fx * fy * A[ix + 1, iy + 1]
+    end
+
+    @testset "2D value matches reference bilinear" begin
+        x = 0.0:1.0:5.0; y = 0.0:1.0:4.0
+        A = rand(MersenneTwister(42), 6, 5)        # non-linear data → nested≠flat matters
+        itp = linear_interp((x, y), A)
+        for (a, b) in [(0.3, 0.7), (2.5, 1.5), (4.9, 3.1), (1.0, 2.0), (0.0, 0.0), (5.0, 4.0)]
+            @test itp((a, b)) ≈ _ref_bilinear(A, a, b) rtol = 1.0e-12
+        end
+    end
+
+    @testset "2D derivatives unchanged" begin
+        x = 0.0:1.0:5.0; y = 0.0:1.0:4.0
+        A = [2.0xi + 3.0yj + 0.5xi * yj for xi in x, yj in y]
+        itp = linear_interp((x, y), A)
+        # ∂/∂x of 2x+3y+0.5xy at (1.5,2.0) = 2 + 0.5*2 = 3.0 ; ∂/∂y = 3 + 0.5*1.5 = 3.75
+        @test itp((1.5, 2.0); deriv = (DerivOp(1), DerivOp(0))) ≈ 3.0 rtol = 1.0e-12
+        @test itp((1.5, 2.0); deriv = (DerivOp(0), DerivOp(1))) ≈ 3.75 rtol = 1.0e-12
+    end
+
+    @testset "2D NaN propagation is cell-local" begin
+        x = 0.0:1.0:3.0; y = 0.0:1.0:3.0
+        A = ones(4, 4); A[2, 2] = NaN          # taints cells touching node (2,2)
+        itp = linear_interp((x, y), A)
+        @test isnan(itp((0.5, 0.5)))           # cell (1,1)-(2,2) touches the NaN corner
+        @test isfinite(itp((2.5, 2.5)))        # cell far from the NaN corner
+    end
+
+    @testset "2D type-stability + carrier" begin
+        x = 0.0:1.0:5.0; y = 0.0:1.0:4.0
+        A = rand(MersenneTwister(7), 6, 5)
+        itp = linear_interp((x, y), A)
+        @test (@inferred itp((0.3, 0.7))) isa Float64
+        # ForwardDiff Dual query stays type-stable (carrier propagates through muladd).
+        g = ForwardDiff.gradient(p -> itp((p[1], p[2])), [0.3, 0.7])
+        @test length(g) == 2 && all(isfinite, g)
+    end
+
+    @testset "2D zero-alloc scalar value" begin
+        x = 0.0:1.0:5.0; y = 0.0:1.0:4.0
+        A = rand(MersenneTwister(9), 6, 5)
+        itp = linear_interp((x, y), A)
+        f() = itp((0.3, 0.7))
+        f()                                    # warmup/compile
+        @test (@allocated f()) <= ND_ALLOC_THRESHOLD
+    end
+end

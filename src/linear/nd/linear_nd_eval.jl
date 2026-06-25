@@ -32,8 +32,8 @@ end
 # AbstractInterpolantND callable in nd_interpolant_protocol.jl. Scalar
 # evaluation routes through the generic `_eval_nd_at_point` there.
 # Linear's "deriv ≥ 2 → 0" rule is handled inside the kernel itself
-# (`_linear_weight(::EvalDeriv2+, ...) = zero(α)` — see below) so the
-# cell-local corner sum produces a carrier-aware zero without any
+# (`_linear_kernel(::EvalDeriv2+, …)` → carrier-aware 0) so the nested
+# collapse produces a cell-local, carrier-aware zero without any
 # protocol-level short-circuit.
 
 # ========================================
@@ -81,8 +81,8 @@ end
 
 # Evaluate kernel at a pre-located cell with given derivative ops.
 # Deriv ≥ 2 → 0 is handled inside the kernel itself via
-# `_linear_weight(::EvalDeriv2+, …) = zero(α)`, so the corner sum produces a
-# cell-local, carrier-aware zero without a protocol-level short-circuit.
+# `_linear_kernel(::EvalDeriv2+, …)` → carrier-aware 0, so the nested collapse
+# produces a cell-local, carrier-aware zero without a protocol-level short-circuit.
 @inline function _eval_at_cell(
         itp::LinearInterpolantND{Tg, Tv, N},
         cell::Tuple,
@@ -118,24 +118,23 @@ end
 """
     _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
 
-Compute the multilinear interpolation sum over 2^N corners.
+N-dimensional multilinear interpolation by **nested repeated-linear collapse**:
+read the 2^N cell corners, then collapse one axis per stage via the shared 1D
+kernel `_linear_kernel(ops[s], lo, hi, inv_hs[s], αs[s])`. The op selects the
+per-axis operation — EvalValue → `muladd(α, hi−lo, lo)` (value blend); EvalDeriv1
+→ `(hi−lo)·inv_h·one(α)` (slope along that axis); EvalDeriv2+ → carrier-aware `0`
+(preserves cell-local `NaN·0 = NaN`). Mixed partials fall out by using the slope
+kernel on each differentiated axis. Costs `2^N − 1` `_linear_kernel` calls vs the
+old flat weight-expansion's `N·2^N` products; matches cubic/quadratic ND's collapse.
 
-`stencils[d]::_IdxStencil{2}` carries `(idx_L_d, idx_R_d)` — for each corner
-bit pattern `b ∈ {0,1}^N`, the corner address on axis `d` is
-`stencils[d][b_d + 1]` (bit 0 → left `idx_L_d`, bit 1 → right `idx_R_d`).
-For non-periodic cells `idx_R == idx_L + 1`; for periodic-exclusive seam
-cells `idx_R == 1` (wrap), so the kernel reads the wrapped neighbor without
-any data extension.
+`stencils[d]::_IdxStencil{2}` carries `(idx_L_d, idx_R_d)` — corner `b ∈ {0,1}^N`
+reads `stencils[d][b_d + 1]` (bit 0 → `idx_L_d`, bit 1 → `idx_R_d`). Non-periodic
+cells have `idx_R == idx_L + 1`; periodic-exclusive seam cells have `idx_R == 1`
+(wrap), so the kernel reads the wrapped neighbor without data extension.
 
-Per-corner weight: `∏ᵢ _linear_weight(ops[i], αs[i], inv_hs[i], bᵢ)`. The
-weight function depends on the evaluation op — EvalValue: `(1-α)` for `b=0`,
-`α` for `b=1` (inv_h unused); EvalDeriv1: `-inv_h` for `b=0`, `+inv_h` for
-`b=1` (precomputed reciprocal — no `inv()` at the kernel).
-
-Single-overload, stencil-only kernel. Persistent callers wrap their
-single-index `indices` via `map(i -> _IdxPair(i, i+1), indices)` at the
-call site before invoking; BC oneshot callers receive seam-aware stencils
-directly from `_search_all_intervals_stencil`.
+Single stencil-only kernel for all ops. Persistent callers wrap single-index
+`indices` via `map(i -> _IdxPair(i, i+1), indices)`; BC oneshot callers receive
+seam-aware stencils from `_search_all_intervals_stencil`.
 """
 @generated function _multilinear_sum(
         data::AbstractArray{Tv, N},
@@ -145,52 +144,16 @@ directly from `_search_all_intervals_stencil`.
         ops::NTuple{N, AbstractEvalOp},
         ::Val{N}
     ) where {Tv, N}
-    num_corners = 1 << N  # 2^N
-    corner_exprs = []
-    for corner in 0:(num_corners - 1)
-        bits = ntuple(d -> (corner >> (d - 1)) & 1, N)
-        idx_expr = Expr(:tuple, [:(stencils[$d][$(bits[d] + 1)]) for d in 1:N]...)
-        weight_exprs = [
-            :(_linear_weight(ops[$d], αs[$d], inv_hs[$d], Val($(bits[d]))))
-                for d in 1:N
-        ]
-        weight_expr = foldl((a, b) -> :($a * $b), weight_exprs)
-        push!(corner_exprs, :(@inbounds data[$idx_expr...] * $weight_expr))
-    end
-    sum_expr = foldl((a, b) -> :($a + $b), corner_exprs)
-    return quote
-        Base.@_inline_meta
-        @inbounds $sum_expr
-    end
-end
-
-# ========================================
-# Nested value kernel (value-only fast path)
-# ========================================
-# Repeated linear interpolation: collapse one axis at a time via
-# `muladd(α, hi − lo, lo)`. Fewer mul-adds than the flat 2^N weight-expansion
-# above, and the form cubic/quadratic ND already use. Value-only — every
-# derivative / mixed-partial query keeps the flat method (more specific `ops`
-# slot: `NTuple{N,EvalValue}` ⊂ `NTuple{N,AbstractEvalOp}`). Corners are read
-# through `stencils[d][bit+1]`, so periodic-seam wrap (`idx_R == 1`) is preserved.
-
-# Generic-N: @generated staged collapse, mirrors cubic's `_eval_nd_cell` minus the
-# derivative corners. Serves N ≥ 2. Axis `s` is always the lowest remaining corner bit,
-# so each stage pairs adjacent positions (even = bit 0 = lo, odd = bit 1 = hi).
-@generated function _multilinear_sum(
-        data::AbstractArray{Tv, N},
-        stencils::NTuple{N, _IdxStencil{2}},
-        ::NTuple{N},
-        αs::Tuple{Vararg{Real, N}},
-        ::NTuple{N, EvalValue},
-        ::Val{N}
-    ) where {Tv, N}
     stmts = Expr[]
     αsyms = ntuple(d -> Symbol("α_", d), N)
     ssyms = ntuple(d -> Symbol("s_", d), N)
+    ihsyms = ntuple(d -> Symbol("ih_", d), N)
+    opsyms = ntuple(d -> Symbol("op_", d), N)
     push!(stmts, :(($(αsyms...),) = αs))
     push!(stmts, :(($(ssyms...),) = stencils))
-    # Stage 0: read the 2^N corners.
+    push!(stmts, :(($(ihsyms...),) = inv_hs))
+    push!(stmts, :(($(opsyms...),) = ops))
+    # Stage 0: read the 2^N corners through the (seam-aware) stencils.
     num = 1 << N
     cur = Vector{Symbol}(undef, num)
     for c in 0:(num - 1)
@@ -199,15 +162,18 @@ end
         push!(stmts, :($v = data[$(idx...)]))
         cur[c + 1] = v
     end
-    # Stages 1..N: collapse one axis per stage.
+    # Stages 1..N: collapse one axis per stage via the op-specific 1D kernel
+    # `_linear_kernel` (EvalValue → muladd blend; EvalDeriv1 → slope ×inv_h;
+    # EvalDeriv2+ → carrier-aware 0, preserving cell-local `NaN·0 = NaN`). Axis `s`
+    # is the lowest remaining corner bit, so each stage pairs adjacent positions
+    # (even = bit 0 = lo, odd = bit 1 = hi).
     for s in 1:N
-        α = αsyms[s]
         half = length(cur) ÷ 2
         nxt = Vector{Symbol}(undef, half)
         for j in 0:(half - 1)
             lo = cur[2j + 1]; hi = cur[2j + 2]
             v = Symbol("g", s, "_", j)
-            push!(stmts, :($v = muladd($α, $hi - $lo, $lo)))
+            push!(stmts, :($v = _linear_kernel($(opsyms[s]), $lo, $hi, $(ihsyms[s]), $(αsyms[s]))))
             nxt[j + 1] = v
         end
         cur = nxt
@@ -221,24 +187,8 @@ end
     end
 end
 
-# ========================================
-# Linear Weight Functions
-# ========================================
-
-# For value evaluation: (1-α) for bit=0, α for bit=1 (inv_h unused)
-@inline _linear_weight(::EvalValue, α, inv_h, ::Val{0}) = one(α) - α
-@inline _linear_weight(::EvalValue, α, inv_h, ::Val{1}) = α
-
-# For first derivative: -inv_h for bit=0, +inv_h for bit=1. `* one(α)` threads
-# Tq even when α does not appear in the weight expression (mixed-partial
-# `(D1, D1)` etc.); for Float α the `1.0` factor is const-folded by LLVM.
-@inline _linear_weight(::EvalDeriv1, α, inv_h, ::Val{0}) = -inv_h * one(α)
-@inline _linear_weight(::EvalDeriv1, α, inv_h, ::Val{1}) = inv_h * one(α)
-
-# Second and higher derivatives: weight is `zero(α)` at every corner. The
-# multilinear sum then yields cell-local NaN propagation via IEEE `NaN * 0 = NaN`.
-@inline _linear_weight(::EvalDeriv2, α, inv_h, ::Val{B}) where {B} = zero(α)
-@inline _linear_weight(::EvalDeriv3, α, inv_h, ::Val{B}) where {B} = zero(α)
-
-# Generic fallback: N-th derivative weight is zero for N ≥ 2
-@inline _linear_weight(::DerivOp{N}, α, inv_h, ::Val{B}) where {N, B} = zero(α)
+# NOTE: the per-stage 1D kernel `_linear_kernel(op, yL, yR, inv_h, α)` lives in
+# `linear/linear_kernels.jl` (shared with the 1D path) and dispatches the op:
+# EvalValue → `muladd(α, yR−yL, yL)`, EvalDeriv1 → `(yR−yL)·inv_h·one(α)`,
+# EvalDeriv2+ → carrier-aware `0`. The old flat-form `_linear_weight` helpers are
+# gone — the nested collapse calls `_linear_kernel` directly per axis.

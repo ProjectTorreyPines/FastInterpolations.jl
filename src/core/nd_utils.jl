@@ -1007,8 +1007,12 @@ Compute local cell parameters for all axes via `_get_h(grid, idx)` /
         indices::NTuple{N, Int},
         Ls::Tuple{Vararg{Real, N}},
     ) where {N}
+    # `float(...)` so a raw Int axis yields a Float cell width: `_eval_nd_*_cell`
+    # (@generated on a Float `h`) has no Int method, and integer spacings are exact
+    # in Float64 so this is bit-identical. Identity (zero-cost) for the Float/Dual
+    # grids every existing caller passes.
     hs = ntuple(Val(N)) do d
-        @inbounds _get_h(grids[d], indices[d])
+        @inbounds float(_get_h(grids[d], indices[d]))
     end
     inv_hs = ntuple(Val(N)) do d
         @inbounds _get_inv_h(grids[d], indices[d])

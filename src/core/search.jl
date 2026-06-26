@@ -546,6 +546,27 @@ muladd to identity — no separate `_UnitStep` method needed.
 end
 
 
+# ----------------------------------------
+# Promote-then-compare ordering helpers
+# ----------------------------------------
+# Promote both operands first so dispatch hits the homogeneous `<=(T, T)`, not
+# Base's *exact* mixed `<=(Int, Float)` (which round-trips through an Int reconvert,
+# ~1.7x slower/compare; its >2^53 exactness is moot for float-representable grids).
+# Bit-identical to `a <= b` for Int/Float/Rational/Dual (a Dual's value-tie order is
+# preserved, unlike a primal strip), zero-overhead identity on a Float grid. Only the
+# `Bool` is produced — coordinates keep their `_promote_coord` type. `_ge`/`_gt`
+# delegate (Base-style `>=(x, y) = y <= x`) so call sites keep natural operand order.
+@inline function _le(a, b)
+    pa, pb = promote(a, b)
+    return pa <= pb
+end
+@inline function _lt(a, b)
+    pa, pb = promote(a, b)
+    return pa < pb
+end
+@inline _ge(a, b) = _le(b, a)
+@inline _gt(a, b) = _lt(b, a)
+
 """
     _search_binary(x::AbstractVector{T}, xq::Real) where {T<:Real}
 
@@ -561,9 +582,11 @@ compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
         # Endpoint guards via `first`/`last` (not `x[1]`/`x[end]`) so a wrapper's
         # `@inbounds` endpoint overrides are reused — CSE-shared with the domain
         # check instead of re-walking `inner`. Identity for raw `Vector`.
-        if xq <= first(x)
+        # Comparisons go through `_le` so an Int/Rational grid is promoted
+        # per-compare (no exact mixed `<=`); identity on a Float grid.
+        if _le(xq, first(x))
             idx = 1
-        elseif xq >= last(x)
+        elseif _ge(xq, last(x))
             idx = n - 1
         else
             lo, hi = 1, n
@@ -573,7 +596,7 @@ compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
             iters = 64 - leading_zeros((hi - lo - 1) % UInt64)
             for _ in 1:iters
                 mid = (lo + hi) >> 1
-                cond = x[mid] <= xq
+                cond = _le(x[mid], xq)
                 lo = ifelse(cond, mid, lo)
                 hi = ifelse(cond, hi, mid)
             end
@@ -617,17 +640,17 @@ No bounds checking (except initial clamp), no binary fallback.
         ix = _clamp(ix, 1, n - 1)
 
         # Direct hit - most common case for monotonic queries
-        if x[ix] <= xq < x[ix + 1]
+        if _le(x[ix], xq) && _lt(xq, x[ix + 1])
             return ix, x[ix], x[ix + 1]
         end
 
         # LinearSearch walk - NO bounds check, NO fallback
-        if xq < x[ix]
-            while x[ix] > xq
+        if _lt(xq, x[ix])
+            while _gt(x[ix], xq)
                 ix -= 1
             end
         else  # xq >= x[ix + 1]
-            while x[ix + 1] <= xq
+            while _le(x[ix + 1], xq)
                 ix += 1
             end
         end
@@ -668,7 +691,7 @@ Walk left up to MAX steps. Returns `(ix, found)`.
                 stmts, quote
                     ix <= 1 && return (ix, false)
                     ix -= 1
-                    @inbounds x[ix] <= xq && return (ix, true)
+                    @inbounds _le(x[ix], xq) && return (ix, true)
                 end
             )
         end
@@ -682,7 +705,7 @@ Walk left up to MAX steps. Returns `(ix, found)`.
             lo = max(1, ix - $MAX)
             @inbounds while ix > lo
                 ix -= 1
-                x[ix] <= xq && return (ix, true)
+                _le(x[ix], xq) && return (ix, true)
             end
             return (ix, false)
         end
@@ -702,7 +725,7 @@ Same @generated strategy as `_walk_left`.
                 stmts, quote
                     ix >= n - 1 && return (ix, false)
                     ix += 1
-                    @inbounds xq < x[ix + 1] && return (ix, true)
+                    @inbounds _lt(xq, x[ix + 1]) && return (ix, true)
                 end
             )
         end
@@ -715,7 +738,7 @@ Same @generated strategy as `_walk_left`.
             hi = min(n - 1, ix + $MAX)
             @inbounds while ix < hi
                 ix += 1
-                xq < x[ix + 1] && return (ix, true)
+                _lt(xq, x[ix + 1]) && return (ix, true)
             end
             return (ix, false)
         end
@@ -750,9 +773,9 @@ Optimal for monotonic query sequences.
         # Direct hit — most common for sorted/monotonic queries
         xL = x[ix]
         xR = x[ix + 1]
-        xL <= xq < xR && return ix, xL, xR  # no hint write (ix unchanged)
+        _le(xL, xq) && _lt(xq, xR) && return ix, xL, xR  # no hint write (ix unchanged)
 
-        if xq < xL
+        if _lt(xq, xL)
             # Walk left: xq < x[ix] guaranteed ⟹ after ix-=1,
             # x[ix+1] = old x[ix] > xq — right bound already satisfied.
             # Only need: x[ix] <= xq  (single comparison per step)

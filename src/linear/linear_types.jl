@@ -75,13 +75,14 @@ struct LinearInterpolant{
     # direct-ctor callers request periodic without the factory.
     function LinearInterpolant(
             x::AbstractVector, y::AbstractVector, ev::E, search::P;
-            bc::AbstractBC = NoBC()
+            bc::AbstractBC = NoBC(),
+            store::StorePolicy = StorePolicy()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         _check_compatible_length(x, y)
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
-        yc = _convert_copy(y, Tv)
+        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        yc = _own_or_ref_values(y, Tv, store)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, P}(xc, yc, ev, search)
     end
 end
@@ -93,9 +94,10 @@ end
         y::AbstractVector;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
     x_eff = _cache_axis(x, bc, Tg)
-    return LinearInterpolant(x_eff, y, _resolve_extrap(extrap, x_eff), search; bc = bc)
+    return LinearInterpolant(x_eff, y, _resolve_extrap(extrap, x_eff), search; bc = bc, store = store)
 end

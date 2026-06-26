@@ -65,12 +65,13 @@ struct ConstantInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{
     # indirection (storage stays raw; the kernel handles return-type widening).
     function ConstantInterpolant(
             x::AbstractVector{Tg}, y::AbstractVector{Tv}, ev::E, sv::SD, search::P;
-            bc::AbstractBC = NoBC()
+            bc::AbstractBC = NoBC(),
+            store::StorePolicy = StorePolicy()
         ) where {Tg, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         _check_compatible_length(x, y)
         length(x) >= 2 || _throw_grid_too_small(length(x))
-        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
-        yc = _convert_copy(y, Tv)
+        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        yc = _own_or_ref_values(y, Tv, store)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, SD, P}(xc, yc, ev, sv, search)
     end
 end
@@ -83,8 +84,9 @@ end
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         side::AbstractSide = NearestSide(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     ) where {Tg}
     x_eff = _cache_axis(x, bc, Tg)
-    return ConstantInterpolant(x_eff, y, extrap, side, search; bc = bc)
+    return ConstantInterpolant(x_eff, y, extrap, side, search; bc = bc, store = store)
 end

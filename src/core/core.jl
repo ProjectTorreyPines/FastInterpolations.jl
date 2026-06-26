@@ -14,6 +14,7 @@ include("search.jl")           # 6. Search policy + interval search
 include("idx_stencil.jl")      # 6a. _IdxStencil{K} — wrap-aware per-axis index stencil
 include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)
 include("utils.jl")            # 7. Shared utilities (1D)
+include("store_policy.jl")     # 7b. StorePolicy (copy vs reference storage) + own/ref helpers
 include("periodic.jl")         # 8. Periodic BC helpers (wrapping, validation, exclusive endpoint)
 include("periodic_axis.jl")    # 8b. _ExclusivePeriodicAxis wrapper (axis-side representation transform for `:exclusive` BC on Vector grids)
 include("periodic_data.jl")    # 8c. _ExclusivePeriodicData wrapper (data-side cyclic-indexing companion)

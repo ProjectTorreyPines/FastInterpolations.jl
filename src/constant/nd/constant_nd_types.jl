@@ -67,11 +67,12 @@ struct ConstantInterpolantND{
             extraps::Tuple{Vararg{AbstractExtrap, N}},
             sides::Tuple{Vararg{AbstractSide, N}},
             searches::Tuple{Vararg{AbstractSearchPolicy, N}};
-            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N))
+            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N)),
+            store::StorePolicy = StorePolicy()
         ) where {Tg, Tv, N}
-        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
+        grids_c = map((g, bc) -> _own_or_ref_axis(_cache_axis(g, bc, Tg), Tg, store), grids, bcs)
         return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(sides), typeof(searches)}(
-            grids_c, Array(data), extraps, sides, searches
+            grids_c, _own_or_ref_data(data, store), extraps, sides, searches
         )
     end
 end

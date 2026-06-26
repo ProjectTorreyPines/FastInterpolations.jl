@@ -52,7 +52,8 @@ function constant_interp(
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch()
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     ) where {N, Tv_raw}
     # Validate grid dimensions
     _validate_nd_grids(grids, data)
@@ -77,5 +78,5 @@ function constant_interp(
     # Per-axis extrap: validate + auto-promote `WrapExtrap` on periodic axes.
     extrap_vals = _resolve_extrap(extrap, bcs, Val(N), Tv)
     extrap_vals = map(_resolve_extrap, extrap_vals, grids_typed)
-    return ConstantInterpolantND(grids_typed, data_typed, extrap_vals, sides, searches; bcs = bcs_post)
+    return ConstantInterpolantND(grids_typed, data_typed, extrap_vals, sides, searches; bcs = bcs_post, store = store)
 end

@@ -27,6 +27,7 @@ The interpolation is exact at grid points and linearly blended between them.
   cached `h`/`inv_h` directly — no separate spacings field needed.
 - `E<:Tuple{Vararg{AbstractExtrap,N}}`: Extrapolation mode tuple type
 - `P<:Tuple{Vararg{AbstractSearchPolicy,N}}`: Search policy tuple type
+- `D<:AbstractArray{Tv,N}`: Value container — a dense `Array` when owned (default), or an aliased `AbstractArray` (e.g. a `view`) under `StorePolicy(copy=false)`
 
 # Fields
 - `grids`: N-tuple of (wrapped) grid vectors for each dimension

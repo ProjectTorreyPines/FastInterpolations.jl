@@ -20,6 +20,7 @@ N-dimensional constant (step) interpolation with per-axis configuration.
 - `E<:Tuple{Vararg{AbstractExtrap, N}}`: Extrapolation mode tuple type
 - `SD<:Tuple{Vararg{AbstractSide, N}}`: Side selection tuple type
 - `P<:NTuple{N, AbstractSearchPolicy}`: Search policy tuple type
+- `D<:AbstractArray{Tv,N}`: Value container — a dense `Array` when owned (default), or an aliased `AbstractArray` (e.g. a `view`) under `StorePolicy(copy=false)`
 
 # Fields
 - `grids`: Tuple of (wrapped) grid vectors, one per dimension

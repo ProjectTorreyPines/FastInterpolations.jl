@@ -547,7 +547,7 @@ end
 
 
 # ----------------------------------------
-# Promote-then-compare ordering helpers (interval search only)
+# Promote-then-compare ordering helpers
 # ----------------------------------------
 # Promote both operands first so dispatch hits the homogeneous `<=(T, T)`, not
 # Base's *exact* mixed `<=(Int, Float)` (which round-trips through an Int reconvert,

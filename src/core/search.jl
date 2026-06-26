@@ -558,9 +558,12 @@ compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
 @inline function _search_binary(x::AbstractVector{T}, xq::Real) where {T <: Real}
     n = length(x)
     @inbounds begin
-        if xq <= x[1]
+        # Endpoint guards via `first`/`last` (not `x[1]`/`x[end]`) so a wrapper's
+        # `@inbounds` endpoint overrides are reused — CSE-shared with the domain
+        # check instead of re-walking `inner`. Identity for raw `Vector`.
+        if xq <= first(x)
             idx = 1
-        elseif xq >= x[end]
+        elseif xq >= last(x)
             idx = n - 1
         else
             lo, hi = 1, n

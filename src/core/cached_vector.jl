@@ -20,6 +20,12 @@ Base.length(c::_CachedVector) = length(c.inner)
 @inline Base.@propagate_inbounds Base.getindex(c::_CachedVector, i::Int) = c.inner[i]
 @inline Base.firstindex(::_CachedVector) = 1
 @inline Base.lastindex(c::_CachedVector) = length(c.inner)
+# Endpoint accessors: index `inner` directly under `@inbounds` — shared via CSE
+# with the domain check and `_search_binary`'s guard, bounds check dropped (n≥2
+# by ctor). `last` doesn't propagate `@inbounds`, so index explicitly
+# (`@inbounds last(c.inner)` would keep the check).
+@inline Base.first(c::_CachedVector) = @inbounds c.inner[1]
+@inline Base.last(c::_CachedVector) = @inbounds c.inner[end]
 Base.eltype(::Type{<:_CachedVector{T}}) where {T} = T
 Base.IndexStyle(::Type{<:_CachedVector}) = IndexLinear()
 

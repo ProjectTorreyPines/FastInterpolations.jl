@@ -110,6 +110,31 @@ end
         @test typeof(hc) === typeof(hr)
         @test all(hc(q) ≈ hr(q) for q in qs)
     end
+
+    @testset "slope family via OnTheFly coeffs (alias on OnTheFly inner ctor)" begin
+        # Default coeffs route through the PreCompute (dy) inner ctor; coeffs=OnTheFly()
+        # routes through the distinct OnTheFly inner ctor, whose own ref branch needs
+        # exercising with an aliased value vector.
+        for f in (akima_interp, pchip_interp, cardinal_interp)
+            ic = f(x, y; coeffs = OnTheFly())
+            ir = f(x, y; coeffs = OnTheFly(), store = StorePolicy(copy = false))
+            @test ir.y === y && ic.y !== y
+            @test typeof(ic) === typeof(ir)
+            @test all(ic(q) ≈ ir(q) for q in qs)
+        end
+    end
+
+    @testset "cubic periodic builder (value-ref through periodic path)" begin
+        # Non-periodic cubic ref is covered above; the periodic builder is a separate
+        # store-threaded path (_build_interpolant_periodic).
+        xp = collect(range(0.0, 1.0, 40))
+        yp = sin.(2π .* xp)
+        yp[end] = yp[1]                       # periodic-consistent endpoints
+        ic = cubic_interp(xp, yp; bc = PeriodicBC())
+        ir = cubic_interp(xp, yp; bc = PeriodicBC(), store = StorePolicy(copy = false))
+        @test typeof(ic) === typeof(ir)
+        @test all(ic(q) ≈ ir(q) for q in range(0.05, 0.95, 25))
+    end
 end
 
 @testitem "Store Policy - ND reference" begin

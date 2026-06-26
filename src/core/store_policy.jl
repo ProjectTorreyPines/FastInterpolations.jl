@@ -82,3 +82,19 @@ struct StorePolicy{CopyGrid, CopyValues} end
     Array(data)
 @inline _own_or_ref_data(data::AbstractArray, ::StorePolicy{CG, false}) where {CG} =
     data
+
+# ---------- unsupported-path guard ----------
+# Some constructors cannot honor reference storage (e.g. PreCompute ND that
+# transforms data into a derived partials array). When the caller explicitly
+# asks for reference there, warn once and fall back to copy — never silently
+# ignore the request, never error.
+# Per-`what` `_id` gives each distinct path its own `maxlog` budget, so every
+# unsupported method warns once with its own message (vs one warning total).
+@noinline _warn_store_unsupported(what) = @warn(
+    "store=StorePolicy(copy=false) is not supported for $what — falling back to copy. " *
+        "See the StorePolicy docstring for the methods/strategies that support reference storage.",
+    maxlog = 1,
+    _id = Symbol("store_ref_unsupported_", what),
+)
+@inline _check_store(::StorePolicy{true, true}, _) = nothing        # default (copy) — no-op
+@inline _check_store(::StorePolicy, what) = _warn_store_unsupported(what)

@@ -447,6 +447,9 @@ function interp(
         return _build_hetero_nd(grids, data, method_tuple, extrap, search; store = store)
     end
 
-    # PreCompute → homogeneous dispatch to specialized ND types
+    # PreCompute → homogeneous dispatch to specialized ND types. Reference is not
+    # threaded through this path (the specialized PreCompute builders own their data);
+    # warn + copy if it was requested.
+    _check_store(store, "interp(...; coeffs=PreCompute())")
     return _interp_nd_dispatch(grids, data, method_tuple, coeffs_resolved, extrap, search)
 end

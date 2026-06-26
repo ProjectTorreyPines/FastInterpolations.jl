@@ -177,6 +177,19 @@ end
         pts = [(3.4, 5.6), (10.2, 19.9), (29.0, 1.0)]
         @test all(ic(p) ≈ ir(p) for p in pts)
     end
+
+    @testset "unsupported ND reference → warn + copy (and cubic-ND OnTheFly honors)" begin
+        g = (1:10, 1:10)
+        d = rand(10, 10)
+        ref = StorePolicy(copy = false)
+        # cubic ND PreCompute: cannot alias (derived partials) → warns once, still correct
+        @test cubic_interp(g, d; store = ref)((3.3, 4.4)) ≈ cubic_interp(g, d)((3.3, 4.4))
+        # cubic ND OnTheFly routes through hetero → data-ref honored
+        @test cubic_interp(g, d; coeffs = OnTheFly(), store = ref).data === d
+        # interp(...; PreCompute) homogeneous dispatch: warns once, still correct
+        @test interp(g, d; method = CubicInterp(), coeffs = PreCompute(), store = ref)((3.3, 4.4)) ≈
+            interp(g, d; method = CubicInterp(), coeffs = PreCompute())((3.3, 4.4))
+    end
 end
 
 @testitem "Store Policy - cross-cutting" begin

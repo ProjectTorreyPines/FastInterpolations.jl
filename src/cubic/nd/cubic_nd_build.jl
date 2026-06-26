@@ -396,25 +396,27 @@ end
 end
 
 @inline _validate_nd_bcs!(
-    grids::NTuple{N, AbstractVector{Tg}},
+    grids::NTuple{N, AbstractVector},
     bcs::NTuple{N, AbstractBC},
     data::AbstractArray{Tv, N},
     ::Val{N}
-) where {Tv, Tg, N} = _validate_nd_bcs!(grids, bcs, data, Val(1), Val(N))
+) where {Tv, N} = _validate_nd_bcs!(grids, bcs, data, Val(1), Val(N))
 
 @inline function _validate_nd_bcs!(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         bcs::NTuple{N, AbstractBC},
         data::AbstractArray{Tv, N},
         ::Val{D},
         ::Val{N}
-    ) where {Tv, Tg, D, N}
+    ) where {Tv, D, N}
     # Only validate inclusive PeriodicBC: for exclusive, the endpoint is not yet present
     # in the data (it is added by _prepare_periodic_nd/_prepare_periodic_nd_pooled after
     # this validation).  Checking data[1] ≈ data[end] on unextended exclusive data would
     # produce false positives for perfectly valid periodic inputs.
+    # `grids` may be raw/heterogeneous-eltype (scalar one-shot passes them unconverted);
+    # the periodic tolerance uses the float-promoted grid type either way.
     if bcs[D] isa PeriodicBC{:inclusive} && periodic_check(bcs[D])
-        _check_periodic_data_noalloc!(data, Val(D), Tg)
+        _check_periodic_data_noalloc!(data, Val(D), float(_promote_grid_eltype(grids)))
     end
     polyfit_deg = get_polyfit_degree(bcs[D])
     if polyfit_deg > 0 && length(grids[D]) < polyfit_deg + 1

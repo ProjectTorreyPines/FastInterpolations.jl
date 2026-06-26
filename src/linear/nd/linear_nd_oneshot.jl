@@ -131,10 +131,12 @@ function linear_interp(
     # Scalar one-shot: search/evaluate the RAW grids. The kernel's own
     # `map(_resolve_axis, …)` shapes each axis (Range→`_CachedRange`, Vector→
     # passthrough) and the search promote-compares, so no axis needs an eager
-    # `Tg.(x)` heap copy (mirrors 1D one-shot). Only the type `Tg` is needed,
-    # for the `::Tr` boxing guard. (Batch keeps eager-convert — it amortises the
-    # conversion over all queries, where per-query promote-compare costs more.)
-    Tg = float(_promote_grid_eltype(grids))
+    # `Tg.(x)` heap copy (mirrors 1D one-shot). `Tr` (the `::Tr` boxing guard)
+    # comes from op-shape inference: `_interp_op`'s `dL/h` floats Int internally,
+    # so a *raw* grid type is correct — no manual `float()`. (Batch keeps eager-
+    # convert — it amortises the conversion over all queries, where per-query
+    # promote-compare costs more.)
+    Tg = _promote_grid_eltype(grids)
     _validate_nd_grids(grids, data)
     Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
 

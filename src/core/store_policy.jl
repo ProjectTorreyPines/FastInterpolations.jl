@@ -20,11 +20,24 @@
 """
     StorePolicy(; copy=true, copy_grid=copy, copy_values=copy)
 
-Storage policy for persistent interpolant constructors (`linear_interp`,
-`constant_interp`). Controls whether the grid and value arrays are **copied**
-(owned, immutable — the default) or **aliased** (referenced, zero-copy).
+Storage policy passed via the `store=` keyword to the persistent interpolant
+constructors — `linear_interp`, `constant_interp`, `cubic_interp`, `akima_interp`,
+`pchip_interp`, `cardinal_interp`, `hermite_interp`, and `interp`. Controls whether
+the grid and value arrays are **copied** (owned, immutable — the default) or
+**aliased** (referenced, zero-copy).
 
 `copy` is the master switch; `copy_grid` / `copy_values` override per component.
+
+# Support
+
+`copy=false` is best-effort — it aliases what each method can and copies the rest:
+- **Full** grid + value/data reference: `linear` / `constant` (1D + ND, including
+  `view`s), `akima` / `pchip` / `cardinal` / `hermite` (1D), and `interp` / cubic
+  ND **OnTheFly**.
+- **Value-only** (grid stays owned, in the spline cache): `cubic` 1D.
+- **PreCompute ND** (`cubic` ND, `interp(...; coeffs=PreCompute())`) builds a derived
+  partials array and keeps no raw data, so reference cannot be honored — it **warns
+  once and copies**.
 
 # Examples
 ```julia
@@ -90,11 +103,12 @@ struct StorePolicy{CopyGrid, CopyValues} end
 # ignore the request, never error.
 # Per-`what` `_id` gives each distinct path its own `maxlog` budget, so every
 # unsupported method warns once with its own message (vs one warning total).
-@noinline _warn_store_unsupported(what) = @warn(
-    "store=StorePolicy(copy=false) is not supported for $what — falling back to copy. " *
+@noinline _warn_store_unsupported(store, what) = @warn(
+    "reference storage (copy_grid=$(copies_grid(store)), copy_values=$(copies_values(store))) " *
+        "is not supported for $what — falling back to copy. " *
         "See the StorePolicy docstring for the methods/strategies that support reference storage.",
     maxlog = 1,
     _id = Symbol("store_ref_unsupported_", what),
 )
 @inline _check_store(::StorePolicy{true, true}, _) = nothing        # default (copy) — no-op
-@inline _check_store(::StorePolicy, what) = _warn_store_unsupported(what)
+@inline _check_store(store::StorePolicy, what) = _warn_store_unsupported(store, what)

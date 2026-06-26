@@ -257,3 +257,53 @@ end
         @test all(itp(q) ≈ vc(q) for q in 0.05:0.1:0.95)
     end
 end
+
+@testitem "Store Policy - slope-family inner constructors" begin
+    # Direct coverage of every inner ctor of akima/pchip/cardinal under both copy
+    # (default) and reference store. The `::Type{PreCompute}` inner ctor has no
+    # public factory route (the *_interp factory builds slopes inline and calls the
+    # `dy` ctor), so it needs a direct unit test; the `dy` and OnTheFly ctors are
+    # exercised explicitly here too so each path is unambiguously covered.
+    using FastInterpolations: AkimaInterpolant1D, PchipInterpolant1D, CardinalInterpolant1D
+
+    x = collect(range(0.0, 1.0, 24))
+    y = @. sin(2π * x) + 0.3 * x^2
+    qs = range(0.03, 0.97, 23)
+    ref = StorePolicy(copy = false)
+
+    @testset "akima" begin
+        fac = akima_interp(x, y)
+        # PreCompute inner ctor (auto slopes) — copy + reference
+        @test all(AkimaInterpolant1D(x, y, PreCompute, NoExtrap(), AutoSearch())(q) ≈ fac(q) for q in qs)
+        pcr = AkimaInterpolant1D(x, y, PreCompute, NoExtrap(), AutoSearch(); store = ref)
+        @test pcr.y === y && all(pcr(q) ≈ fac(q) for q in qs)
+        # dy inner ctor (caller-supplied slopes) — copy + reference
+        @test all(AkimaInterpolant1D(x, y, fac.dy, NoExtrap(), AutoSearch())(q) ≈ fac(q) for q in qs)
+        @test AkimaInterpolant1D(x, y, fac.dy, NoExtrap(), AutoSearch(); store = ref).y === y
+        # OnTheFly inner ctor (via factory route) — copy + reference
+        @test all(akima_interp(x, y; coeffs = OnTheFly())(q) ≈ fac(q) for q in qs)
+        @test akima_interp(x, y; coeffs = OnTheFly(), store = ref).y === y
+    end
+
+    @testset "pchip" begin
+        fac = pchip_interp(x, y)
+        @test all(PchipInterpolant1D(x, y, PreCompute, NoExtrap(), AutoSearch())(q) ≈ fac(q) for q in qs)
+        pcr = PchipInterpolant1D(x, y, PreCompute, NoExtrap(), AutoSearch(); store = ref)
+        @test pcr.y === y && all(pcr(q) ≈ fac(q) for q in qs)
+        @test all(PchipInterpolant1D(x, y, fac.dy, NoExtrap(), AutoSearch())(q) ≈ fac(q) for q in qs)
+        @test PchipInterpolant1D(x, y, fac.dy, NoExtrap(), AutoSearch(); store = ref).y === y
+        @test all(pchip_interp(x, y; coeffs = OnTheFly())(q) ≈ fac(q) for q in qs)
+        @test pchip_interp(x, y; coeffs = OnTheFly(), store = ref).y === y
+    end
+
+    @testset "cardinal" begin
+        fac = cardinal_interp(x, y)                       # tension = 0.0 default
+        @test all(CardinalInterpolant1D(x, y, PreCompute, NoExtrap(), AutoSearch(), 0.0)(q) ≈ fac(q) for q in qs)
+        pcr = CardinalInterpolant1D(x, y, PreCompute, NoExtrap(), AutoSearch(), 0.0; store = ref)
+        @test pcr.y === y && all(pcr(q) ≈ fac(q) for q in qs)
+        @test all(CardinalInterpolant1D(x, y, fac.dy, NoExtrap(), AutoSearch(), 0.0)(q) ≈ fac(q) for q in qs)
+        @test CardinalInterpolant1D(x, y, fac.dy, NoExtrap(), AutoSearch(), 0.0; store = ref).y === y
+        @test all(cardinal_interp(x, y; coeffs = OnTheFly())(q) ≈ fac(q) for q in qs)
+        @test cardinal_interp(x, y; coeffs = OnTheFly(), store = ref).y === y
+    end
+end

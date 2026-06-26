@@ -14,7 +14,8 @@
 
 @testitem "Promote-compare ordering helpers" begin
     using FastInterpolations
-    using FastInterpolations: _le, _lt, _ge, _gt, _search_binary
+    using FastInterpolations: _le, _lt, _ge, _gt, _search_binary,
+        _oob_state, _is_inbounds, _is_all_inbounds, OOB_LEFT, OOB_RIGHT, IN_DOMAIN
     using ForwardDiff: Dual, derivative
 
     # ── 1. Equivalence to Base operators ─────────────────────────────────────
@@ -148,5 +149,84 @@
             d = derivative(q -> linear_interp(ints, yv, q; extrap = ExtendExtrap()), q0)
             @test d ≈ 2 * floor(Int, q0) + 1
         end
+    end
+
+    # ── 5. Domain classification (`_oob_state` / `_is_inbounds`) ──────────────
+    # Same promote-compare fix, applied to OOB classification. Both strip the
+    # primal of query AND bounds first, so they classify by VALUE (partial-sign
+    # independent) — intentionally different from the search ordering helpers,
+    # which preserve the Dual total order.
+    @testset "classification ≡ across grid eltypes (Int/Float32/Rational/Dual)" begin
+        flt = Float64.(collect(0:10))            # reference grid, domain [0, 10]
+        ducks = (
+            collect(0:10),                        # Int
+            collect(0.0f0:1.0f0:10.0f0),          # Float32
+            Rational{Int}.(0:10),                 # Rational
+            [Dual(Float64(i), 1.0) for i in 0:10],  # Dual grid
+        )
+        qs = vcat(collect(range(-3.0, 13.0; length = 321)), 0.0, 10.0)  # incl endpoints
+        for g in ducks, q in qs
+            @test _oob_state(g, q) === _oob_state(flt, q)
+            @test _is_inbounds(g, q) === _is_inbounds(flt, q)
+        end
+        # Rational + Dual queries (duck query types) vs the float grid
+        gi = collect(0:10)
+        for q in (11 // 2, 21 // 2, -1 // 2, Dual(5.5, 1.0), Dual(-1.0, 1.0), Dual(11.0, 1.0))
+            @test _oob_state(gi, q) === _oob_state(flt, q)
+            @test _is_inbounds(gi, q) === _is_inbounds(flt, q)
+        end
+    end
+
+    @testset "classification: explicit values + boundaries" begin
+        g = collect(0:10)                        # Int grid, domain [0, 10]
+        @test _oob_state(g, -0.5) === OOB_LEFT
+        @test _oob_state(g, 10.5) === OOB_RIGHT
+        @test _oob_state(g, 5.5) === IN_DOMAIN
+        @test _oob_state(g, 0.0) === IN_DOMAIN   # exact endpoints are in-domain
+        @test _oob_state(g, 10.0) === IN_DOMAIN
+        @test _is_inbounds(g, 0.0) === true
+        @test _is_inbounds(g, 10.0) === true
+        @test _is_inbounds(g, prevfloat(0.0)) === false
+        @test _is_inbounds(g, nextfloat(10.0)) === false
+    end
+
+    @testset "classification: Dual is value-based (partial-independent)" begin
+        g = collect(0:10)
+        @test _oob_state(g, Dual(5.0, 1.0)) === IN_DOMAIN
+        @test _oob_state(g, Dual(0.0, -9.0)) === IN_DOMAIN   # boundary, any partial
+        @test _oob_state(g, Dual(10.0, 9.0)) === IN_DOMAIN
+        @test _oob_state(g, Dual(-0.5, 9.0)) === OOB_LEFT
+        @test _oob_state(g, Dual(10.5, -9.0)) === OOB_RIGHT
+        @test _is_inbounds(g, Dual(10.0, 5.0)) === true      # in by value
+        @test _is_inbounds(g, Dual(10.5, -5.0)) === false
+        # Dual grid (differentiate wrt knot positions): bounds primal-stripped too
+        dg = [Dual(Float64(i), 1.0) for i in 0:10]
+        @test _oob_state(dg, 5.5) === IN_DOMAIN
+        @test _oob_state(dg, -1.0) === OOB_LEFT
+        @test _is_inbounds(dg, 10.0) === true
+    end
+
+    @testset "_is_all_inbounds (batch) ≡ across grid eltypes" begin
+        flt = Float64.(collect(0:10))
+        ducks = (
+            collect(0:10), collect(0.0f0:1.0f0:10.0f0), Rational{Int}.(0:10),
+            [Dual(Float64(i), 1.0) for i in 0:10],
+        )
+        batches = (
+            [1.5, 5.0, 9.0],                    # all in
+            [-0.5, 5.0],                        # one OOB-left
+            [5.0, 10.5],                        # one OOB-right
+            [0.0, 10.0],                        # exact endpoints (in)
+            Float64[],                          # empty → true
+            [Dual(2.0, 1.0), Dual(8.0, 1.0)],   # Dual query batch
+        )
+        for g in ducks, b in batches
+            @test _is_all_inbounds(g, b) === _is_all_inbounds(flt, b)
+        end
+        gi = collect(0:10)
+        @test _is_all_inbounds(gi, [0.0, 10.0]) === true
+        @test _is_all_inbounds(gi, [0.0, nextfloat(10.0)]) === false
+        @test _is_all_inbounds(gi, [prevfloat(0.0), 5.0]) === false
+        @test _is_all_inbounds(gi, Float64[]) === true
     end
 end

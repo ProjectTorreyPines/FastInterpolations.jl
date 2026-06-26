@@ -35,8 +35,10 @@ independent for Dual grids.
 @inline function _oob_state(x::AbstractVector, xq::Real)
     lo, hi = _domain_bounds(x)
     xqp = _extract_primal(xq)
-    xqp < _extract_primal(lo) && return OOB_LEFT
-    xqp > _extract_primal(hi) && return OOB_RIGHT
+    # `_lt`/`_gt` promote-compare: dodge Base's exact mixed `<(Int, Float)` on an
+    # Int/Rational grid (no-op on a Float grid). See ordering helpers in search.jl.
+    _lt(xqp, _extract_primal(lo)) && return OOB_LEFT
+    _gt(xqp, _extract_primal(hi)) && return OOB_RIGHT
     return IN_DOMAIN
 end
 

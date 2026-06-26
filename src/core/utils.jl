@@ -621,7 +621,9 @@ end
 @inline function _is_inbounds(x::AbstractVector, xq::Real)
     lo, hi = _domain_bounds(x)
     xqp = _extract_primal(xq)
-    return _extract_primal(lo) <= xqp <= _extract_primal(hi)
+    # `_le` promote-compare: dodge Base's exact mixed `<=(Int, Float)` on an
+    # Int/Rational grid (no-op on a Float grid). See ordering helpers in search.jl.
+    return _le(_extract_primal(lo), xqp) && _le(xqp, _extract_primal(hi))
 end
 
 # Clamp a query to the grid's physical span `[first(x), last(x)]`, never the
@@ -654,8 +656,11 @@ the OOB slow-path, so this form stays preferred even post-1.10-LTS.
 @inline function _is_all_inbounds(x::AbstractVector, queries::AbstractVector{<:Real})
     isempty(queries) && return true
     lo, hi = _domain_bounds(x)
-    return minimum(queries) >= _extract_primal(lo) &&
-        maximum(queries) <= _extract_primal(hi)
+    # `_ge`/`_le` promote-compare (see search.jl): dodge Base's exact mixed
+    # `>=(Float, Int)` on an Int/Rational grid. Amortized over the min/max scan
+    # (one compare per batch), but free on a Float grid.
+    return _ge(minimum(queries), _extract_primal(lo)) &&
+        _le(maximum(queries), _extract_primal(hi))
 end
 
 # ========================================

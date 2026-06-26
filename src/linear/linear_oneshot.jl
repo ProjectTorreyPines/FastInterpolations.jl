@@ -249,25 +249,11 @@ end
     return _linear_eval_at_point(x, y, xq, InBounds(), op, searcher)
 end
 
-# ClampExtrap VALUE: branchless coordinate clamp — an OOB query freezes at the boundary
-# node, so the kernel there IS the boundary value (no chain-rule factor needed). Replaces the
-# `_oob_state` classify + branches with one `min/max` clamp. Derivatives stay on the
-# `_ClampOrFill` path below (faster `_oob_state` short-circuit; ∂ = 0 outside the domain).
-@inline function _linear_eval_at_point(
-        x::AbstractVector{Tg},
-        y::AbstractVector{Tv},
-        xq::Tq,
-        ::ClampExtrap,
-        op::EvalValue,
-        searcher::S
-    ) where {Tg, Tv, Tq, S <: Searcher}
-    xqc = _clamp(_resolve_grididx(xq, x), first(x), last(x))
-    idx, idx_R, xL, xR = search_interval(searcher, x, xqc)
-    α = _alpha_of(xqc, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
-end
-
-# FillExtrap (all ops) + ClampExtrap DERIV: boundary check → extrap value or delegate.
+# ClampExtrap / FillExtrap (all ops): boundary check → extrap value or delegate.
+# An OOB query under flat extrapolation freezes at the boundary node, so the result IS the
+# boundary sample (value) or zero (derivative) — short-circuit, skipping search + kernel. The
+# saving scales with the OOB fraction (each OOB query is ~half a full eval), so this dominates
+# an always-clamp-then-evaluate path on extrapolation-heavy batches.
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},

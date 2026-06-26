@@ -675,6 +675,10 @@ end
 #                       The leading `0 * val` preserves NaN/Inf at the boundary
 #                       sample (IEEE: `0 * NaN = NaN`); `zero(xq) * zero(val)`
 #                       carries the query carrier (Dual, etc.) into the result.
+# These arithmetic forms are LOAD-BEARING — do NOT fold them to `oftype`/`convert` to drop the
+# `+ 0.0`: the trailing add also normalizes signed zero (`-0.0 → +0.0`) and keeps Unitful
+# dimension-correctness (`oftype(zero(val)+zero(xq), val)` throws on `Quantity` + plain query).
+# Guarded by test/test_extrap_carrier_guards.jl.
 # Named _promote_extrap_val (not _promote_extrap) to avoid collision with the struct
 # promoter in eval_ops.jl which promotes FillExtrap fill_value at construction time.
 @inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * zero(val)

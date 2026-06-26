@@ -38,8 +38,8 @@ end
     @test _own_or_ref_data(d, StorePolicy()) == d
     @test _own_or_ref_data(d, StorePolicy()) !== d
     dv = @view d[:, :]
-    @test _own_or_ref_data(dv, StorePolicy(copy = false)) == d
-    @test _own_or_ref_data(dv, StorePolicy(copy = false)) isa Array{Float64, 2}
+    @test _own_or_ref_data(dv, StorePolicy(copy = false)) === dv        # ref aliases the view as-is
+    @test _own_or_ref_data(dv, StorePolicy()) isa Array{Float64, 2}     # copy materializes dense
 
     # grid axis wrapper: alias vs own-copy
     x = [0.0, 1.0, 2.0, 3.0]
@@ -160,4 +160,33 @@ end
     @test itp_v.y === yview
     itp_vc = linear_interp(xv, collect(yview))
     @test all(itp_v(q) ≈ itp_vc(q) for q in 0.05:0.1:0.95)
+end
+
+@testitem "Store Policy - ND view aliasing (Phase 2 data::D)" begin
+    big = rand(50, 50)
+    dview = @view big[1:40, 1:30]              # non-dense SubArray
+    grids = (collect(1.0:40.0), collect(1.0:30.0))
+    pts = [(3.4, 5.6), (10.2, 19.9), (39.0, 1.0)]
+    lo, hi = (3.0, 4.0), (35.0, 25.0)
+
+    # linear: reference aliases the view directly (no materialization)
+    itp = linear_interp(grids, dview; store = StorePolicy(copy = false))
+    @test itp.data === dview
+    @test itp.data isa SubArray
+    base = linear_interp(grids, collect(dview))
+    @test all(itp(p) ≈ base(p) for p in pts)
+    @test itp((10.2, 19.9); deriv = DerivOp(1, 0)) ≈ base((10.2, 19.9); deriv = DerivOp(1, 0))
+    @test integrate(itp, lo, hi) ≈ integrate(base, lo, hi)   # exercises relaxed AbstractArray kernel
+
+    # constant ND view aliasing
+    citp = constant_interp(grids, dview; store = StorePolicy(copy = false))
+    @test citp.data === dview
+    cbase = constant_interp(grids, collect(dview))
+    @test all(citp(p) ≈ cbase(p) for p in pts)
+    @test integrate(citp, lo, hi) ≈ integrate(cbase, lo, hi)
+
+    # copy mode still materializes a dense Array (default unchanged)
+    itp_copy = linear_interp(grids, dview)
+    @test itp_copy.data isa Array{Float64, 2}
+    @test itp_copy.data !== dview
 end

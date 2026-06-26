@@ -11,7 +11,7 @@
 # - N:  Number of dimensions
 
 """
-    LinearInterpolantND{Tg, Tv, N, G, E, P}
+    LinearInterpolantND{Tg, Tv, N, G, E, P, D}
 
 N-dimensional multilinear interpolant for tensor-product linear interpolation.
 
@@ -74,9 +74,10 @@ struct LinearInterpolantND{
         G <: Tuple{Vararg{AbstractVector, N}},
         E <: Tuple{Vararg{AbstractExtrap, N}},
         P <: Tuple{Vararg{AbstractSearchPolicy, N}},
+        D <: AbstractArray{Tv, N},
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    data::Array{Tv, N}
+    data::D
     extraps::E
     searches::P
 
@@ -91,8 +92,9 @@ struct LinearInterpolantND{
             store::StorePolicy = StorePolicy()
         ) where {Tg, Tv, N}
         grids_c = map((g, bc) -> _own_or_ref_axis(_cache_axis(g, bc, Tg), Tg, store), grids, bcs)
-        return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(searches)}(
-            grids_c, _own_or_ref_data(data, store), extraps, searches
+        data_c = _own_or_ref_data(data, store)
+        return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(searches), typeof(data_c)}(
+            grids_c, data_c, extraps, searches
         )
     end
 end

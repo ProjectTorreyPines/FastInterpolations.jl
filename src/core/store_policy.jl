@@ -67,11 +67,10 @@ struct StorePolicy{CopyGrid, CopyValues} end
 @inline _own_or_ref_values(y::AbstractVector, ::Type{Tv}, ::StorePolicy{CG, false}) where {Tv, CG} =
     _convert_copy(y, Tv)
 
-# ND data: copy → materialize a fresh dense `Array`. Reference + dense `Array`
-# of the stored eltype → alias. Reference + non-dense/mismatched → materialize.
+# ND data: copy → materialize a fresh dense `Array` (owned). Reference → alias
+# the caller's array as-is — any `AbstractArray` (dense `Array`, `SubArray`,
+# reshaped, …). The interpolant's parametric `data::D` field absorbs the type.
 @inline _own_or_ref_data(data::AbstractArray, ::StorePolicy{CG, true}) where {CG} =
     Array(data)
-@inline _own_or_ref_data(data::Array{Tv, N}, ::StorePolicy{CG, false}) where {Tv, N, CG} =
-    data
 @inline _own_or_ref_data(data::AbstractArray, ::StorePolicy{CG, false}) where {CG} =
-    Array(data)
+    data

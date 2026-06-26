@@ -6,7 +6,7 @@
 # Each axis independently selects left or right neighbor based on side mode.
 
 """
-    ConstantInterpolantND{Tg,Tv,N,G,E,SD,P}
+    ConstantInterpolantND{Tg,Tv,N,G,E,SD,P,D}
 
 N-dimensional constant (step) interpolation with per-axis configuration.
 
@@ -53,9 +53,10 @@ struct ConstantInterpolantND{
         E <: Tuple{Vararg{AbstractExtrap, N}},
         SD <: Tuple{Vararg{AbstractSide, N}},
         P <: NTuple{N, AbstractSearchPolicy},
+        D <: AbstractArray{Tv, N},
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    data::Array{Tv, N}
+    data::D
     extraps::E
     sides::SD
     searches::P
@@ -71,8 +72,9 @@ struct ConstantInterpolantND{
             store::StorePolicy = StorePolicy()
         ) where {Tg, Tv, N}
         grids_c = map((g, bc) -> _own_or_ref_axis(_cache_axis(g, bc, Tg), Tg, store), grids, bcs)
-        return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(sides), typeof(searches)}(
-            grids_c, _own_or_ref_data(data, store), extraps, sides, searches
+        data_c = _own_or_ref_data(data, store)
+        return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(sides), typeof(searches), typeof(data_c)}(
+            grids_c, data_c, extraps, sides, searches
         )
     end
 end

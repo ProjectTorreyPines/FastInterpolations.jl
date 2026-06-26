@@ -207,7 +207,8 @@ so the pool memory can be safely reused after this function returns.
         bc_pair::BCPair{L, R},
         extrap::AbstractExtrap,
         autocache::Bool,
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch();
+        store::StorePolicy = StorePolicy()
     ) where {Tg, Tv, L <: PointBC, R <: PointBC}
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc_pair, _effective_autocache(autocache, Tg))
@@ -217,7 +218,7 @@ so the pool memory can be safely reused after this function returns.
     _solve_system!(tmp_z, cache, y, bc_pair)
     # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
     extrap_p = _resolve_extrap(extrap, cache.x, Tv)
-    return CubicInterpolant(cache, y, tmp_z, bc_pair, extrap_p, search)
+    return CubicInterpolant(cache, y, tmp_z, bc_pair, extrap_p, search; store = store)
 end
 
 """
@@ -236,7 +237,8 @@ so the pool memory can be safely reused after this function returns.
         y::AbstractVector{Tv},
         bc::PeriodicBC,
         autocache::Bool,
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch();
+        store::StorePolicy = StorePolicy()
     ) where {Tg, Tv}
     x, y = _prepare_periodic(x, y, bc)
     _check_periodic_endpoints(bc, y)
@@ -248,7 +250,7 @@ so the pool memory can be safely reused after this function returns.
     # materialized for introspection. Prevents re-extension when this
     # interpolant is later passed to `cubic_adjoint(itp.cache.x; bc=itp.bc)`.
     bc_normalized = _with_resolved_period(_bc_after_extend(bc), cache.bc.period)
-    return CubicInterpolant(cache, y, tmp_z, bc_normalized, WrapExtrap(), search)
+    return CubicInterpolant(cache, y, tmp_z, bc_normalized, WrapExtrap(), search; store = store)
 end
 
 # ========================================
@@ -317,13 +319,14 @@ val = itp(0.5)  # returns ComplexF64
         bc::AbstractBC,
         extrap::AbstractExtrap,
         autocache::Bool,
-        search::P = AutoSearch()
+        search::P = AutoSearch();
+        store::StorePolicy = StorePolicy()
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
     if _is_periodic_bc(bc)
-        return _build_interpolant_periodic(x, y, bc, autocache, search)
+        return _build_interpolant_periodic(x, y, bc, autocache, search; store = store)
     else
         bc_pair = _normalize_bc(bc, first(y))
-        return _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache, search)
+        return _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache, search; store = store)
     end
 end
 
@@ -334,13 +337,14 @@ function cubic_interp(
         bc::AbstractBC = CubicFit(),
         extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true,
-        search::P = AutoSearch()
+        search::P = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
     Tg_f = _promote_grid_float(Tg, Tv)
     xc = _store_grid(x, Tg_f)
     Tv_out = _value_type(Tv, Tg_f)
     bc_promoted = _promote_bc(bc, Tv_out)
-    return _cubic_interp_impl(xc, y, bc_promoted, extrap, autocache, search)
+    return _cubic_interp_impl(xc, y, bc_promoted, extrap, autocache, search; store = store)
 end
 
 """
@@ -366,7 +370,8 @@ so the pool memory can be safely reused after this function returns.
         cache::CubicSplineCache{Tg},
         y::AbstractVector{Tv};
         extrap::AbstractExtrap = NoExtrap(),
-        search::P = AutoSearch()
+        search::P = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     ) where {Tg, Tv, P <: AbstractSearchPolicy}
     Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
     tmp_z = acquire!(pool, Tz, length(y))
@@ -375,13 +380,13 @@ so the pool memory can be safely reused after this function returns.
     if cache.bc isa PeriodicBC
         _check_periodic_endpoints(y)
         # Store cache.bc verbatim (already :extended/:inclusive normalized).
-        return CubicInterpolant(cache, y, tmp_z, cache.bc, WrapExtrap(), search)
+        return CubicInterpolant(cache, y, tmp_z, cache.bc, WrapExtrap(), search; store = store)
     end
 
     # cache.bc is BCPair - use it directly.
     # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
     extrap_p = _resolve_extrap(extrap, cache.x, Tv)
-    return CubicInterpolant(cache, y, tmp_z, cache.bc, extrap_p, search)
+    return CubicInterpolant(cache, y, tmp_z, cache.bc, extrap_p, search; store = store)
 end
 
 

@@ -31,7 +31,8 @@ itp(0.5)
         tension::Real = 0.0,
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     ) where {TX, TY}
     # Periodic extension (no-op for NoBC). bc_eff flips :exclusive → :extended
     # post-extension; :inclusive passes through. Slope-side dispatches on bc_eff.
@@ -46,12 +47,12 @@ itp(0.5)
     x_eff = _cache_axis(x_eff, bc_eff, Tg)
 
     if resolved isa OnTheFly
-        return CardinalInterpolant1D(x_eff, y_eff, CardinalSlopes(tens_t, bc_eff), extrap_p, search, tens_t)
+        return CardinalInterpolant1D(x_eff, y_eff, CardinalSlopes(tens_t, bc_eff), extrap_p, search, tens_t; store = store)
     end
     # PreCompute
     Tdy = _promote_eltype(_coeff_op, Tg, _value_type(eltype(y_eff), Tg))
     dy = Vector{Tdy}(undef, length(x_eff))
     xf = _to_float(x_eff, Tg)
     _cardinal_slopes!(dy, xf, y_eff, tens_t; bc = bc_eff)
-    return CardinalInterpolant1D(x_eff, y_eff, dy, extrap_p, search, tens_t)
+    return CardinalInterpolant1D(x_eff, y_eff, dy, extrap_p, search, tens_t; store = store)
 end

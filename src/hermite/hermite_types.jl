@@ -59,15 +59,16 @@ struct CubicHermiteInterpolant1D{
     function CubicHermiteInterpolant1D(
             x::AbstractVector, y::AbstractVector, dy::AbstractVector,
             extrap::E, search::P;
-            bc::AbstractBC = NoBC()
+            bc::AbstractBC = NoBC(),
+            store::StorePolicy = StorePolicy()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) == length(dy) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
         length(x) >= 2 || throw(ArgumentError("Hermite interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
-        yc = _convert_copy(y, Tv)
+        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        yc = _own_or_ref_values(y, Tv, store)
         dyc = copy(dy)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, PreCompute}(
             xc, yc, dyc, extrap, search

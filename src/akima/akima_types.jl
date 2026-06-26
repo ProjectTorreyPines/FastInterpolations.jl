@@ -45,14 +45,15 @@ struct AkimaInterpolant1D{
     # PreCompute inner: builds slopes via Akima weighted-average algorithm.
     function AkimaInterpolant1D(
             x::AbstractVector, y::AbstractVector, ::Type{PreCompute}, extrap::E, search::P;
-            bc::AbstractBC = NoBC()
+            bc::AbstractBC = NoBC(),
+            store::StorePolicy = StorePolicy()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
-        yc = _convert_copy(y, Tv)
+        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        yc = _own_or_ref_values(y, Tv, store)
         Tdy = _promote_eltype(_coeff_op, Tg, Tv)
         dy = Vector{Tdy}(undef, length(yc))
         _akima_slopes!(dy, xc, yc)
@@ -64,15 +65,16 @@ struct AkimaInterpolant1D{
     # Pre-computed slopes inner: caller-supplied `dy` (used by periodic path).
     function AkimaInterpolant1D(
             x::AbstractVector, y::AbstractVector, dy::AbstractVector, extrap::E, search::P;
-            bc::AbstractBC = NoBC()
+            bc::AbstractBC = NoBC(),
+            store::StorePolicy = StorePolicy()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(dy) == length(y) || throw(ArgumentError("dy length ($(length(dy))) must match y length ($(length(y)))"))
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
-        yc = _convert_copy(y, Tv)
+        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        yc = _own_or_ref_values(y, Tv, store)
         Tdy = _promote_eltype(_coeff_op, Tg, Tv)
         dyc = _convert_copy(dy, Tdy)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(dyc), E, P, PreCompute}(
@@ -83,14 +85,15 @@ struct AkimaInterpolant1D{
     # OnTheFly inner: stores slope_strategy tag.
     function AkimaInterpolant1D(
             x::AbstractVector, y::AbstractVector, slope_strategy::AbstractSlopeMethod, extrap::E, search::P;
-            bc::AbstractBC = NoBC()
+            bc::AbstractBC = NoBC(),
+            store::StorePolicy = StorePolicy()
         ) where {E <: AbstractExtrap, P <: AbstractSearchPolicy}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || throw(ArgumentError("Akima interpolation requires at least 2 points, got $(length(x))"))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
-        yc = _convert_copy(y, Tv)
+        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        yc = _own_or_ref_values(y, Tv, store)
         return new{Tg, Tv, typeof(xc), typeof(yc), typeof(slope_strategy), E, P, OnTheFly}(
             xc, yc, slope_strategy, extrap, search
         )
@@ -105,9 +108,10 @@ end
         slope_strategy::AbstractSlopeMethod;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
     x_eff = _cache_axis(x, bc, Tg)
-    return AkimaInterpolant1D(x_eff, y, slope_strategy, extrap, search; bc = bc)
+    return AkimaInterpolant1D(x_eff, y, slope_strategy, extrap, search; bc = bc, store = store)
 end

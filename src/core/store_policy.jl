@@ -35,9 +35,17 @@ linear_interp(x, y; store = StorePolicy(copy_values = false))# alias values, cop
 
 !!! warning "Lifetime contract"
     Under `copy*=false` the caller must not mutate, resize, or free the aliased
-    arrays for the interpolant's lifetime. Mutating an aliased **grid** is the
-    silent trap: spacing caches (`h`/`inv_h`) are snapshotted at construction and
-    would go stale.
+    arrays for the interpolant's lifetime. The failure mode is method-dependent:
+
+    - **grid** mutation always goes silently stale — spacing caches (`h`/`inv_h`),
+      and any spline/slope coefficients, are snapshotted at construction.
+    - **value** mutation is read live by `linear`/`constant`, but goes silently
+      stale for coefficient-building methods (`cubic`/`akima`/`pchip`/`cardinal`/
+      `hermite`), whose slopes / second-derivatives are derived from the values at
+      construction.
+
+    The rule: a stored array that feeds a build-time derived cache cannot be
+    mutated without silently invalidating results.
 """
 struct StorePolicy{CopyGrid, CopyValues} end
 

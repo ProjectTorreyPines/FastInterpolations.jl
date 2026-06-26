@@ -1,192 +1,221 @@
 # Tests for StorePolicy (copy vs reference / zero-copy storage).
-# Phase 1: linear + constant, 1D + ND, dense-array aliasing, type-transparent.
+# Coverage: linear/constant (1D + ND), cubic 1D, local-Hermite family
+# (akima/pchip/cardinal/cubic-hermite) 1D, hetero ND OnTheFly. Reference mode is
+# type-transparent: aliases when the stored eltype is unchanged (Float/Range/dense
+# -> zero-copy); non-float falls back to copy.
 
-@testitem "Store Policy - tag and factory" begin
-    using FastInterpolations: StorePolicy, copies_grid, copies_values
+@testitem "Store Policy - tag, factory, helpers" begin
+    using FastInterpolations: StorePolicy, copies_grid, copies_values,
+        _own_or_ref_axis, _own_or_ref_values, _own_or_ref_data, _cache_axis
 
-    @test StorePolicy() === StorePolicy{true, true}()
-    @test StorePolicy(copy = false) === StorePolicy{false, false}()
-    @test StorePolicy(copy_values = false) === StorePolicy{true, false}()
-    @test StorePolicy(copy_grid = false) === StorePolicy{false, true}()
-    @test StorePolicy(copy = false, copy_grid = true) === StorePolicy{true, false}()
+    @testset "tag and factory" begin
+        @test StorePolicy() === StorePolicy{true, true}()
+        @test StorePolicy(copy = false) === StorePolicy{false, false}()
+        @test StorePolicy(copy_values = false) === StorePolicy{true, false}()
+        @test StorePolicy(copy_grid = false) === StorePolicy{false, true}()
+        @test StorePolicy(copy = false, copy_grid = true) === StorePolicy{true, false}()
 
-    @test copies_grid(StorePolicy()) === true
-    @test copies_grid(StorePolicy(copy = false)) === false
-    @test copies_values(StorePolicy()) === true
-    @test copies_values(StorePolicy(copy = false)) === false
+        @test copies_grid(StorePolicy()) === true
+        @test copies_grid(StorePolicy(copy = false)) === false
+        @test copies_values(StorePolicy()) === true
+        @test copies_values(StorePolicy(copy = false)) === false
+    end
+
+    @testset "value helper: copy vs alias vs eltype-mismatch fallback" begin
+        y = [1.0, 2.0, 3.0]
+        yc = _own_or_ref_values(y, Float64, StorePolicy())
+        @test yc == y && yc !== y                                   # copy → fresh
+        @test _own_or_ref_values(y, Float64, StorePolicy(copy = false)) === y   # ref + match → alias
+        yi = [1, 2, 3]
+        yf = _own_or_ref_values(yi, Float64, StorePolicy(copy = false))
+        @test yf == [1.0, 2.0, 3.0] && eltype(yf) === Float64 && yf !== yi      # ref + mismatch → copy
+    end
+
+    @testset "ND data helper: dense/view alias vs copy" begin
+        d = [1.0 2.0; 3.0 4.0]
+        @test _own_or_ref_data(d, StorePolicy(copy = false)) === d
+        @test _own_or_ref_data(d, StorePolicy()) == d && _own_or_ref_data(d, StorePolicy()) !== d
+        dv = @view d[:, :]
+        @test _own_or_ref_data(dv, StorePolicy(copy = false)) === dv            # ref aliases the view
+        @test _own_or_ref_data(dv, StorePolicy()) isa Array{Float64, 2}         # copy materializes
+    end
+
+    @testset "grid axis helper: alias vs own-copy" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        xc = _cache_axis(x, NoBC(), Float64)
+        @test _own_or_ref_axis(xc, Float64, StorePolicy(copy = false)) === xc
+        @test _own_or_ref_axis(xc, Float64, StorePolicy()) !== xc
+    end
 end
 
-@testitem "Store Policy - storage helpers (copy vs alias)" begin
-    using FastInterpolations: StorePolicy, _own_or_ref_axis, _own_or_ref_values,
-        _own_or_ref_data, _cache_axis
+@testitem "Store Policy - 1D reference" begin
+    x = collect(range(0.0, 1.0, 60))
+    y = sin.(2π .* x)
+    qs = range(0.05, 0.95, 31)
 
-    # 1D values: copy → fresh, reference+match → alias, reference+mismatch → copy
-    y = [1.0, 2.0, 3.0]
-    yc = _own_or_ref_values(y, Float64, StorePolicy())
-    @test yc == y
-    @test yc !== y
-    @test _own_or_ref_values(y, Float64, StorePolicy(copy = false)) === y
-    yi = [1, 2, 3]
-    yf = _own_or_ref_values(yi, Float64, StorePolicy(copy = false))
-    @test yf == [1.0, 2.0, 3.0]
-    @test eltype(yf) === Float64
-    @test yf !== yi
+    @testset "linear (alias + type-stable + alloc saved)" begin
+        ic = linear_interp(x, y)
+        ir = linear_interp(x, y; store = StorePolicy(copy = false))
+        @test ir.y === y                      # value aliased
+        @test ir.x.inner === x                # grid inner aliased too (Vector grid, copy_grid=false)
+        @test ic.y !== y
+        @test ic.x.inner !== x                # default owns a private grid copy
+        @test typeof(ic) === typeof(ir)
+        @test all(ic(q) ≈ ir(q) for q in qs)
 
-    # ND data: dense alias vs materialize
-    d = [1.0 2.0; 3.0 4.0]
-    @test _own_or_ref_data(d, StorePolicy(copy = false)) === d
-    @test _own_or_ref_data(d, StorePolicy()) == d
-    @test _own_or_ref_data(d, StorePolicy()) !== d
-    dv = @view d[:, :]
-    @test _own_or_ref_data(dv, StorePolicy(copy = false)) === dv        # ref aliases the view as-is
-    @test _own_or_ref_data(dv, StorePolicy()) isa Array{Float64, 2}     # copy materializes dense
+        build_ref(xx, yy) = linear_interp(xx, yy; store = StorePolicy(copy = false))
+        @test (@inferred build_ref(x, y)) isa LinearInterpolant
+        build_ref(x, y)
+        @test (@allocated build_ref(x, y)) < (@allocated linear_interp(x, y))
+    end
 
-    # grid axis wrapper: alias vs own-copy
-    x = [0.0, 1.0, 2.0, 3.0]
-    xc = _cache_axis(x, NoBC(), Float64)
-    @test _own_or_ref_axis(xc, Float64, StorePolicy(copy = false)) === xc
-    @test _own_or_ref_axis(xc, Float64, StorePolicy()) !== xc
+    @testset "constant" begin
+        ic = constant_interp(x, y)
+        ir = constant_interp(x, y; store = StorePolicy(copy = false))
+        @test ir.y === y && ic.y !== y
+        @test typeof(ic) === typeof(ir)
+        @test all(ic(q) ≈ ir(q) for q in qs)
+    end
+
+    @testset "cubic (value-ref; grid stays owned via cache)" begin
+        ic = cubic_interp(x, y)
+        ir = cubic_interp(x, y; store = StorePolicy(copy = false))
+        @test ir.y === y && ic.y !== y
+        @test typeof(ic) === typeof(ir)
+        @test all(ic(q) ≈ ir(q) for q in qs)
+        @test all(ic(q; deriv = DerivOp(1)) ≈ ir(q; deriv = DerivOp(1)) for q in qs)
+
+        # parametric y::Y → can alias a view (Phase 3 generalization)
+        yv = @view y[:]
+        irv = cubic_interp(x, yv; store = StorePolicy(copy = false))
+        @test irv.y === yv && irv.y isa SubArray
+        @test all(irv(q) ≈ ic(q) for q in qs)
+    end
+
+    @testset "local-Hermite slope family (akima/pchip/cardinal)" begin
+        for f in (akima_interp, pchip_interp, cardinal_interp)
+            ic = f(x, y)
+            ir = f(x, y; store = StorePolicy(copy = false))
+            @test ir.y === y && ic.y !== y
+            @test typeof(ic) === typeof(ir)
+            @test all(ic(q) ≈ ir(q) for q in qs)
+        end
+    end
+
+    @testset "cubic-hermite (user-supplied dy)" begin
+        dy = (2π) .* cos.(2π .* x)
+        hc = hermite_interp(x, y, dy)
+        hr = hermite_interp(x, y, dy; store = StorePolicy(copy = false))
+        @test hr.y === y && hc.y !== y
+        @test typeof(hc) === typeof(hr)
+        @test all(hc(q) ≈ hr(q) for q in qs)
+    end
 end
 
-@testitem "Store Policy - linear 1D reference" begin
-    x = collect(range(0.0, 1.0, 64))
-    y = sin.(x)
+@testitem "Store Policy - ND reference" begin
+    using FastInterpolations: CubicInterp, LinearInterp
 
-    itp_copy = linear_interp(x, y)
-    itp_ref = linear_interp(x, y; store = StorePolicy(copy = false))
+    @testset "linear ND (image: Range axes + dense data)" begin
+        m, n = 40, 60
+        data = [sin(i / 7) * cos(j / 9) for i in 1:m, j in 1:n]
+        grids = (1:m, 1:n)
+        ic = linear_interp(grids, data)
+        ir = linear_interp(grids, data; store = StorePolicy(copy = false))
+        pts = [(3.4, 5.6), (10.2, 41.9), (39.0, 1.0), (1.0, 60.0)]
+        @test all(ic(p) ≈ ir(p) for p in pts)
+        @test ir.data === data && ic.data !== data
+        @test typeof(ic) === typeof(ir)
+        @test ic((10.2, 41.9); deriv = DerivOp(1, 0)) ≈ ir((10.2, 41.9); deriv = DerivOp(1, 0))
+        build_ref(g, d) = linear_interp(g, d; store = StorePolicy(copy = false))
+        build_ref(grids, data)
+        @test (@allocated build_ref(grids, data)) < (@allocated linear_interp(grids, data))
+    end
 
-    qs = range(0.05, 0.95, 37)
-    @test all(itp_copy(q) ≈ itp_ref(q) for q in qs)
+    @testset "constant ND" begin
+        m, n = 32, 24
+        data = Float64[i + 2j for i in 1:m, j in 1:n]
+        grids = (1:m, 1:n)
+        ic = constant_interp(grids, data)
+        ir = constant_interp(grids, data; store = StorePolicy(copy = false))
+        pts = [(3.4, 5.6), (10.2, 19.9), (32.0, 1.0)]
+        @test all(ic(p) ≈ ir(p) for p in pts)
+        @test ir.data === data && ic.data !== data
+        @test typeof(ic) === typeof(ir)
+    end
 
-    @test itp_ref.y === y          # values aliased
-    @test itp_copy.y !== y         # default owns a copy
-    @test typeof(itp_copy) === typeof(itp_ref)   # type-transparent for Float input
+    @testset "view/SubArray aliasing (parametric data::D)" begin
+        big = rand(50, 50)
+        dview = @view big[1:40, 1:30]
+        grids = (collect(1.0:40.0), collect(1.0:30.0))
+        pts = [(3.4, 5.6), (10.2, 19.9), (39.0, 1.0)]
+        lo, hi = (3.0, 4.0), (35.0, 25.0)
 
-    # type-stable construction (literal store inside a function → constprop)
-    build_ref(xx, yy) = linear_interp(xx, yy; store = StorePolicy(copy = false))
-    @test (@inferred build_ref(x, y)) isa LinearInterpolant
+        itp = linear_interp(grids, dview; store = StorePolicy(copy = false))
+        @test itp.data === dview && itp.data isa SubArray
+        base = linear_interp(grids, collect(dview))
+        @test all(itp(p) ≈ base(p) for p in pts)
+        @test itp((10.2, 19.9); deriv = DerivOp(1, 0)) ≈ base((10.2, 19.9); deriv = DerivOp(1, 0))
+        @test integrate(itp, lo, hi) ≈ integrate(base, lo, hi)
 
-    # reference saves the O(n) value copy
-    build_ref(x, y)
-    @test (@allocated build_ref(x, y)) < (@allocated linear_interp(x, y))
+        citp = constant_interp(grids, dview; store = StorePolicy(copy = false))
+        cbase = constant_interp(grids, collect(dview))
+        @test citp.data === dview
+        @test all(citp(p) ≈ cbase(p) for p in pts)
+        @test integrate(citp, lo, hi) ≈ integrate(cbase, lo, hi)
+
+        @test linear_interp(grids, dview).data isa Array{Float64, 2}   # copy still materializes
+    end
+
+    @testset "hetero ND OnTheFly (data alias)" begin
+        m, n = 30, 24
+        data = rand(m, n)
+        grids = (collect(1.0:m), collect(1.0:n))
+        meth = (CubicInterp(), LinearInterp())
+        ic = interp(grids, data; method = meth, coeffs = OnTheFly())
+        ir = interp(grids, data; method = meth, coeffs = OnTheFly(), store = StorePolicy(copy = false))
+        @test ir.data === data && ic.data !== data
+        pts = [(3.4, 5.6), (10.2, 19.9), (29.0, 1.0)]
+        @test all(ic(p) ≈ ir(p) for p in pts)
+    end
 end
 
-@testitem "Store Policy - constant 1D reference" begin
-    x = collect(range(0.0, 1.0, 50))
-    y = cos.(x)
+@testitem "Store Policy - cross-cutting" begin
+    @testset "Int input → type-transparent copy fallback" begin
+        xi = collect(0:9)
+        yi = collect(10:19)
+        ic = linear_interp(xi, yi)
+        ir = linear_interp(xi, yi; store = StorePolicy(copy = false))
+        @test typeof(ic) === typeof(ir)
+        @test all(ic(q) ≈ ir(q) for q in 0.5:1.0:8.5)
+    end
 
-    itp_copy = constant_interp(x, y)
-    itp_ref = constant_interp(x, y; store = StorePolicy(copy = false))
+    @testset "mixed component: alias values, copy grid" begin
+        x = collect(range(0.0, 1.0, 32))
+        y = exp.(x)
+        itp = linear_interp(x, y; store = StorePolicy(copy_values = false))
+        @test itp.y === y
+        plain = linear_interp(x, y)
+        @test all(itp(q) ≈ plain(q) for q in 0.1:0.1:0.9)
+    end
 
-    qs = range(0.02, 0.98, 41)
-    @test all(itp_copy(q) ≈ itp_ref(q) for q in qs)
-    @test itp_ref.y === y
-    @test itp_copy.y !== y
-    @test typeof(itp_copy) === typeof(itp_ref)
-end
+    @testset ":exclusive PeriodicBC degrades to copy, still correct" begin
+        xp = collect(1.0:6.0)
+        yp = [1.0, 2.0, 3.0, 4.0, 3.0, 1.0]
+        ir = linear_interp(
+            xp, yp; bc = PeriodicBC(endpoint = :exclusive, period = 6.0),
+            store = StorePolicy(copy = false)
+        )
+        icp = linear_interp(xp, yp; bc = PeriodicBC(endpoint = :exclusive, period = 6.0))
+        @test all(ir(q) ≈ icp(q) for q in 1.5:1.0:5.5)
+    end
 
-@testitem "Store Policy - linear ND reference (image case)" begin
-    m, n = 40, 60
-    data = [sin(i / 7) * cos(j / 9) for i in 1:m, j in 1:n]
-    grids = (1:m, 1:n)
-
-    itp_copy = linear_interp(grids, data)
-    itp_ref = linear_interp(grids, data; store = StorePolicy(copy = false))
-
-    pts = [(3.4, 5.6), (10.2, 41.9), (39.0, 1.0), (1.0, 60.0)]
-    @test all(itp_copy(p) ≈ itp_ref(p) for p in pts)
-
-    @test itp_ref.data === data          # the dominant win: data aliased
-    @test itp_copy.data !== data
-    @test typeof(itp_copy) === typeof(itp_ref)
-
-    # gradient still correct under reference
-    g_copy = itp_copy((10.2, 41.9); deriv = DerivOp(1, 0))
-    g_ref = itp_ref((10.2, 41.9); deriv = DerivOp(1, 0))
-    @test g_copy ≈ g_ref
-
-    build_ref(g, d) = linear_interp(g, d; store = StorePolicy(copy = false))
-    build_ref(grids, data)
-    @test (@allocated build_ref(grids, data)) < (@allocated linear_interp(grids, data))
-end
-
-@testitem "Store Policy - constant ND reference" begin
-    m, n = 32, 24
-    data = Float64[i + 2j for i in 1:m, j in 1:n]
-    grids = (1:m, 1:n)
-
-    itp_copy = constant_interp(grids, data)
-    itp_ref = constant_interp(grids, data; store = StorePolicy(copy = false))
-
-    pts = [(3.4, 5.6), (10.2, 19.9), (32.0, 1.0)]
-    @test all(itp_copy(p) ≈ itp_ref(p) for p in pts)
-    @test itp_ref.data === data
-    @test itp_copy.data !== data
-    @test typeof(itp_copy) === typeof(itp_ref)
-end
-
-@testitem "Store Policy - cross-cutting (Int fallback, mixed, exclusive, view)" begin
-    # Int input → type-transparent copy fallback (types match copy mode)
-    xi = collect(0:9)
-    yi = collect(10:19)
-    itp_i_copy = linear_interp(xi, yi)
-    itp_i_ref = linear_interp(xi, yi; store = StorePolicy(copy = false))
-    @test typeof(itp_i_copy) === typeof(itp_i_ref)
-    @test all(itp_i_copy(q) ≈ itp_i_ref(q) for q in 0.5:1.0:8.5)
-
-    # mixed component: alias values, copy grid
-    x = collect(range(0.0, 1.0, 32))
-    y = exp.(x)
-    itp_mix = linear_interp(x, y; store = StorePolicy(copy_values = false))
-    @test itp_mix.y === y
-    itp_plain = linear_interp(x, y)
-    @test all(itp_mix(q) ≈ itp_plain(q) for q in 0.1:0.1:0.9)
-
-    # :exclusive PeriodicBC degrades to copy internally, still correct
-    xp = collect(1.0:6.0)
-    yp = [1.0, 2.0, 3.0, 4.0, 3.0, 1.0]
-    itp_excl_ref = linear_interp(
-        xp, yp; bc = PeriodicBC(endpoint = :exclusive, period = 6.0),
-        store = StorePolicy(copy = false)
-    )
-    itp_excl_copy = linear_interp(xp, yp; bc = PeriodicBC(endpoint = :exclusive, period = 6.0))
-    @test all(itp_excl_ref(q) ≈ itp_excl_copy(q) for q in 1.5:1.0:5.5)
-
-    # 1D view aliasing (Y is parametric → view stored directly)
-    ybig = sin.(range(0.0, 2.0, 128))
-    yview = @view ybig[1:64]
-    xv = collect(range(0.0, 1.0, 64))
-    itp_v = linear_interp(xv, yview; store = StorePolicy(copy = false))
-    @test itp_v.y === yview
-    itp_vc = linear_interp(xv, collect(yview))
-    @test all(itp_v(q) ≈ itp_vc(q) for q in 0.05:0.1:0.95)
-end
-
-@testitem "Store Policy - ND view aliasing (Phase 2 data::D)" begin
-    big = rand(50, 50)
-    dview = @view big[1:40, 1:30]              # non-dense SubArray
-    grids = (collect(1.0:40.0), collect(1.0:30.0))
-    pts = [(3.4, 5.6), (10.2, 19.9), (39.0, 1.0)]
-    lo, hi = (3.0, 4.0), (35.0, 25.0)
-
-    # linear: reference aliases the view directly (no materialization)
-    itp = linear_interp(grids, dview; store = StorePolicy(copy = false))
-    @test itp.data === dview
-    @test itp.data isa SubArray
-    base = linear_interp(grids, collect(dview))
-    @test all(itp(p) ≈ base(p) for p in pts)
-    @test itp((10.2, 19.9); deriv = DerivOp(1, 0)) ≈ base((10.2, 19.9); deriv = DerivOp(1, 0))
-    @test integrate(itp, lo, hi) ≈ integrate(base, lo, hi)   # exercises relaxed AbstractArray kernel
-
-    # constant ND view aliasing
-    citp = constant_interp(grids, dview; store = StorePolicy(copy = false))
-    @test citp.data === dview
-    cbase = constant_interp(grids, collect(dview))
-    @test all(citp(p) ≈ cbase(p) for p in pts)
-    @test integrate(citp, lo, hi) ≈ integrate(cbase, lo, hi)
-
-    # copy mode still materializes a dense Array (default unchanged)
-    itp_copy = linear_interp(grids, dview)
-    @test itp_copy.data isa Array{Float64, 2}
-    @test itp_copy.data !== dview
+    @testset "1D view aliasing (parametric Y)" begin
+        ybig = sin.(range(0.0, 2.0, 128))
+        yview = @view ybig[1:64]
+        xv = collect(range(0.0, 1.0, 64))
+        itp = linear_interp(xv, yview; store = StorePolicy(copy = false))
+        @test itp.y === yview
+        vc = linear_interp(xv, collect(yview))
+        @test all(itp(q) ≈ vc(q) for q in 0.05:0.1:0.95)
+    end
 end

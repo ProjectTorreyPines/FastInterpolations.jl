@@ -19,7 +19,7 @@ Zero-allocation scalar one-shot ND constant evaluation.
 Evaluates directly from grids + data without constructing a ConstantInterpolantND.
 """
 function _constant_interp_nd_oneshot(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}},
         bcs::NTuple{N, AbstractBC},
@@ -28,7 +28,7 @@ function _constant_interp_nd_oneshot(
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     grids_eff = map(_resolve_axis, grids, bcs)
     _validate_nd_domain(grids_eff, query, extraps_val)
     oob_result = _try_fill_oob(query, grids_eff, extraps_val, ops, @inbounds first(data))
@@ -133,8 +133,11 @@ function constant_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    grids_typed, _, _ = _nd_promote_grids_raw(grids, data)
-    _validate_nd_grids(grids_typed, data)
+    # Scalar one-shot: raw grids — the kernel shapes each axis via
+    # `map(_resolve_axis, …)` and the selection follows `eltype(data)`, so no
+    # eager grid conversion is needed. (Batch keeps eager-convert; see the
+    # `linear_interp` scalar note on the amortisation tradeoff.)
+    _validate_nd_grids(grids, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     sides = _resolve_side_nd(side, Val(N))
@@ -143,7 +146,7 @@ function constant_interp(
 
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     return _constant_interp_nd_oneshot(
-        grids_typed, data, query, bcs, extraps_val, sides, searches, ops, hint
+        grids, data, query, bcs, extraps_val, sides, searches, ops, hint
     )
 end
 

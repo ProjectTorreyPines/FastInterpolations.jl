@@ -25,7 +25,7 @@ original `data`. Expect ~1× parity with persistent ND interpolant for periodic
 exclusive (was ~365× pre-refactor due to per-query N-dim data copy).
 """
 function _linear_interp_nd_oneshot(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}},
         bcs::NTuple{N, AbstractBC},
@@ -33,7 +33,7 @@ function _linear_interp_nd_oneshot(
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     # Per-axis BC-aware axis resolution: `:exclusive` axes (Vector or Range) →
     # `_ExclusivePeriodicAxis` carrying the precomputed virtual endpoint and
     # period; non-periodic → passthrough or cached float form. After this,
@@ -128,8 +128,14 @@ function linear_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    grids_typed, Tg, _, _ = _nd_promote_grids(grids, data)
-    _validate_nd_grids(grids_typed, data)
+    # Scalar one-shot: search/evaluate the RAW grids. The kernel's own
+    # `map(_resolve_axis, …)` shapes each axis (Range→`_CachedRange`, Vector→
+    # passthrough) and the search promote-compares, so no axis needs an eager
+    # `Tg.(x)` heap copy (mirrors 1D one-shot). Only the type `Tg` is needed,
+    # for the `::Tr` boxing guard. (Batch keeps eager-convert — it amortises the
+    # conversion over all queries, where per-query promote-compare costs more.)
+    Tg = float(_promote_grid_eltype(grids))
+    _validate_nd_grids(grids, data)
     Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
 
     searches = _resolve_search_nd(search, Val(N), query)  # scalar: type-based (no monotonicity check)
@@ -137,7 +143,7 @@ function linear_interp(
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _linear_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops, hint)::Tr
+    return _linear_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
 
 """

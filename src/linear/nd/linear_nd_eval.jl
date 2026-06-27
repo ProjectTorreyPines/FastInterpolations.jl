@@ -139,7 +139,7 @@ seam-aware stencils from `_search_all_intervals_stencil`.
 @generated function _multilinear_sum(
         data::AbstractArray{Tv, N},
         stencils::NTuple{N, _IdxStencil{2}},
-        inv_hs::NTuple{N},
+        inv_hs::Tuple{Vararg{Real, N}},   # heterogeneous-tolerant (raw mixed-precision grids); each axis used independently
         αs::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
         ::Val{N}

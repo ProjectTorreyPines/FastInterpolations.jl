@@ -286,7 +286,8 @@ function _build_hetero_nd(
         data::AbstractArray{Tv_raw, N},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extrap,
-        search,
+        search;
+        store::StorePolicy = StorePolicy(),
     ) where {N, Tv_raw}
     # 1. Validate grid dimensions (NoInterp axes exempt from 2-point minimum)
     if _has_nointerp_method(typeof(methods))
@@ -297,7 +298,7 @@ function _build_hetero_nd(
 
     # 2-5. Promote grid + data types
     grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
-    data_typed = Tv === Tv_raw ? Array(data) : Array{Tv}(data)
+    data_typed = Tv === Tv_raw ? _own_or_ref_data(data, store) : Array{Tv}(data)
 
     # 6. Resolve per-axis configuration (OnTheFly: no extension, bc-aware materialize).
     bcs = map(_bc_for_periodic_check, methods)
@@ -323,7 +324,7 @@ function _build_hetero_nd(
     # 7. Per-axis method validation
     _validate_axis_methods(grids_typed, methods, extraps)
 
-    return HeteroInterpolantND(grids_typed, data_typed, methods, extraps, searches; bcs = bcs)
+    return HeteroInterpolantND(grids_typed, data_typed, methods, extraps, searches; bcs = bcs, store = store)
 end
 
 # ========================================
@@ -430,6 +431,7 @@ function interp(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        store::StorePolicy = StorePolicy(),
     ) where {N}
     method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
     coeffs_resolved = _resolve_coeffs(coeffs, Val(N), method_tuple)
@@ -442,9 +444,12 @@ function interp(
 
     # OnTheFly → always Hetero path (no specialized ND type supports OnTheFly natively)
     if coeffs_resolved isa OnTheFly
-        return _build_hetero_nd(grids, data, method_tuple, extrap, search)
+        return _build_hetero_nd(grids, data, method_tuple, extrap, search; store = store)
     end
 
-    # PreCompute → homogeneous dispatch to specialized ND types
+    # PreCompute → homogeneous dispatch to specialized ND types. Reference is not
+    # threaded through this path (the specialized PreCompute builders own their data);
+    # warn + copy if it was requested.
+    _check_store(store, "interp(...; coeffs=PreCompute())")
     return _interp_nd_dispatch(grids, data, method_tuple, coeffs_resolved, extrap, search)
 end

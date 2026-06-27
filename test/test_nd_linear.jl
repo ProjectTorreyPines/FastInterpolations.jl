@@ -870,8 +870,8 @@ end
         itp = linear_interp((x, y), data)
 
         @test !hasfield(typeof(itp), :spacings)
-        # Was 7 (Tg, Tv, N, G, S, E, P), now 6 (drops S)
-        @test length(typeof(itp).parameters) == 6
+        # Params: Tg, Tv, N, G, E, P, D (D = parametric data container for reference/view storage)
+        @test length(typeof(itp).parameters) == 7
         # Bilinear of data[i,j]=i+j at (1.5, 1.5): corners (4, 5, 5, 6) → avg 5.0
         @test itp((1.5, 1.5)) ≈ 5.0
     end

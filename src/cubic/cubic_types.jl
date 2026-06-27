@@ -56,7 +56,7 @@ end
 # AbstractExtrap types are defined in eval_ops.jl (shared across all interpolants)
 
 """
-    CubicInterpolant{Tg, Tv, C, E, P, BC, Tz}
+    CubicInterpolant{Tg, Tv, C, E, P, BC, Tz, Y}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `cubic_interp(x, y)` (2-argument form).
@@ -72,7 +72,7 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 
 # Fields
 - `cache::C`: Pre-computed CubicSplineCache (LU factorization)
-- `y::Vector{Tv}`: y-values (function values at grid points)
+- `y::Y`: y-values (`Y<:AbstractVector{Tv}` — `Vector` when owned; may be a view under `StorePolicy(copy=false)`)
 - `z::Vector{Tz}`: Pre-computed second derivative coefficients (solves system once!)
 - `bc::BC`: Boundary condition used for this interpolant
 - `extrap::E`: Extrapolation mode (compile-time specialized via type parameter)
@@ -103,9 +103,9 @@ val = itp(0.5)  # returns ComplexF64
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Extrapolation mode uses type-parametrized dispatch for zero overhead
 """
-struct CubicInterpolant{Tg, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC, Tz} <: AbstractInterpolant1D{Tg, Tv}
+struct CubicInterpolant{Tg, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC, Tz, Y <: AbstractVector{Tv}} <: AbstractInterpolant1D{Tg, Tv}
     cache::C
-    y::Vector{Tv}
+    y::Y
     z::Vector{Tz}  # Second derivative coefficients: Tz = _promote_eltype(_coeff_op, Tg, Tv)
     bc::BC  # Boundary condition used for this interpolant
     extrap::E  # Extrapolation mode (compile-time specialized via type parameter)
@@ -116,13 +116,15 @@ struct CubicInterpolant{Tg, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, 
             z::AbstractVector,
             bc::BC,
             extrap::E,
-            search::P = AutoSearch()
+            search::P = AutoSearch();
+            store::StorePolicy = StorePolicy()
         ) where {Tg, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC}
         length(cache.x) == length(y) || _throw_length_mismatch(length(cache.x), length(y))
         length(cache.x) == length(z) || _throw_length_mismatch(length(cache.x), length(z), "grid", "z")
         Tv = _value_type(eltype(y), Tg)
         Tz = eltype(z)
-        return new{Tg, Tv, C, E, P, BC, Tz}(cache, _convert_copy(y, Tv), Vector{Tz}(z), bc, extrap, search)
+        yc = _own_or_ref_values(y, Tv, store)
+        return new{Tg, Tv, C, E, P, BC, Tz, typeof(yc)}(cache, yc, Vector{Tz}(z), bc, extrap, search)
     end
 end
 

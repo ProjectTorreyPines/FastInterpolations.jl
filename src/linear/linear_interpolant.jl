@@ -149,7 +149,8 @@ function linear_interp end
         y::AbstractVector{TY};
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
     # Persistent: extend-promote for `:exclusive` (matches PCHIP/Cardinal/Akima/Cubic).
@@ -157,5 +158,5 @@ function linear_interp end
     x_ext, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
     x_eff = _cache_axis(x_ext, bc_eff, Tg)
     extrap_p = _promote_extrap(extrap_eff, _value_type(TY, Tg))
-    return LinearInterpolant(x_eff, y_ext, extrap_p, search; bc = bc_eff)
+    return LinearInterpolant(x_eff, y_ext, extrap_p, search; bc = bc_eff, store = store)
 end

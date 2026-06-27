@@ -257,7 +257,7 @@ end
 end
 
 @inline @generated function _integrate_linear_nd_cell(
-        data::Array{Tv, N},
+        data::AbstractArray{Tv, N},
         idx::NTuple{N, Int},
         hs::NTuple{N},
         ulo::NTuple{N},
@@ -391,7 +391,7 @@ end
 @inline _cw1(u0, u1, h, ::NearestSide) = max(zero(u0), u1 - max(u0, h / 2))
 
 @inline @generated function _integrate_constant_nd_cell(
-        data::Array{Tv, N},
+        data::AbstractArray{Tv, N},
         idx::NTuple{N, Int},
         hs::NTuple{N},
         ulo::NTuple{N},

@@ -11,7 +11,7 @@
 # - N:  Number of dimensions
 
 """
-    LinearInterpolantND{Tg, Tv, N, G, E, P}
+    LinearInterpolantND{Tg, Tv, N, G, E, P, D}
 
 N-dimensional multilinear interpolant for tensor-product linear interpolation.
 
@@ -27,6 +27,7 @@ The interpolation is exact at grid points and linearly blended between them.
   cached `h`/`inv_h` directly — no separate spacings field needed.
 - `E<:Tuple{Vararg{AbstractExtrap,N}}`: Extrapolation mode tuple type
 - `P<:Tuple{Vararg{AbstractSearchPolicy,N}}`: Search policy tuple type
+- `D<:AbstractArray{Tv,N}`: Value container — a dense `Array` when owned (default), or an aliased `AbstractArray` (e.g. a `view`) under `StorePolicy(copy=false)`
 
 # Fields
 - `grids`: N-tuple of (wrapped) grid vectors for each dimension
@@ -74,9 +75,10 @@ struct LinearInterpolantND{
         G <: Tuple{Vararg{AbstractVector, N}},
         E <: Tuple{Vararg{AbstractExtrap, N}},
         P <: Tuple{Vararg{AbstractSearchPolicy, N}},
+        D <: AbstractArray{Tv, N},
     } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
-    data::Array{Tv, N}
+    data::D
     extraps::E
     searches::P
 
@@ -87,11 +89,13 @@ struct LinearInterpolantND{
             data::AbstractArray{Tv, N},
             extraps::Tuple{Vararg{AbstractExtrap, N}},
             searches::Tuple{Vararg{AbstractSearchPolicy, N}};
-            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N))
+            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N)),
+            store::StorePolicy = StorePolicy()
         ) where {Tg, Tv, N}
-        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
-        return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(searches)}(
-            grids_c, Array(data), extraps, searches
+        grids_c = map((g, bc) -> _own_or_ref_axis(_cache_axis(g, bc, Tg), Tg, store), grids, bcs)
+        data_c = _own_or_ref_data(data, store)
+        return new{Tg, Tv, N, typeof(grids_c), typeof(extraps), typeof(searches), typeof(data_c)}(
+            grids_c, data_c, extraps, searches
         )
     end
 end

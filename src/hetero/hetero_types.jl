@@ -78,10 +78,11 @@ struct HeteroInterpolantND{
             methods::Tuple{Vararg{AbstractInterpMethod, N}},
             extraps::Tuple{Vararg{AbstractExtrap, N}},
             searches::Tuple{Vararg{AbstractSearchPolicy, N}};
-            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N))
+            bcs::NTuple{N, AbstractBC} = ntuple(_ -> NoBC(), Val(N)),
+            store::StorePolicy = StorePolicy()
         ) where {Tg, N}
         Tv = eltype(data)
-        grids_c = map((g, bc, m) -> _convert_copy(_cache_axis_for_method(g, bc, Tg, m), Tg), grids, bcs, methods)
+        grids_c = map((g, bc, m) -> _own_or_ref_axis(_cache_axis_for_method(g, bc, Tg, m), Tg, store), grids, bcs, methods)
         return new{Tg, Tv, N, typeof(grids_c), typeof(methods), typeof(extraps), typeof(searches), typeof(data)}(
             grids_c, data, methods, extraps, searches
         )

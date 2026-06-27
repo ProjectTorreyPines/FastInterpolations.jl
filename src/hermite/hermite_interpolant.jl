@@ -46,11 +46,12 @@ end
         dy::AbstractVector;
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
     x_eff = _cache_axis(x, bc, Tg)
-    return CubicHermiteInterpolant1D(x_eff, y, dy, extrap, search; bc = bc)
+    return CubicHermiteInterpolant1D(x_eff, y, dy, extrap, search; bc = bc, store = store)
 end
 
 # ========================================
@@ -93,10 +94,11 @@ itp(1.0; deriv=DerivOp(1))       # ≈ cos(1.0)
         dy::AbstractVector;
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy(),
     ) where {TX, TY}
     x_p, y_p, dy_p = _promote_hermite_inputs(x, y, dy)
     extrap_p = _resolve_extrap(extrap, x_p, eltype(y_p))
     # Caching wrap (zero-copy of buffer); ownership copy in inner ctor.
     x_p = _cache_axis(x_p, NoBC())
-    return CubicHermiteInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search)
+    return CubicHermiteInterpolant1D(x_p, y_p, dy_p; extrap = extrap_p, search, store = store)
 end

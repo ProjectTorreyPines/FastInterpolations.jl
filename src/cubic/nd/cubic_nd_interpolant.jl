@@ -63,7 +63,8 @@ function cubic_interp(
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-        coeffs::AbstractCoeffStrategy = PreCompute()
+        coeffs::AbstractCoeffStrategy = PreCompute(),
+        store::StorePolicy = StorePolicy()
     ) where {N, Tv_raw}
     # Zero-allocation type promotion + grid conversion
     grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
@@ -83,9 +84,12 @@ function cubic_interp(
     # OnTheFly → delegate to HeteroInterpolantND (sequential 1D collapse)
     if coeffs isa OnTheFly
         methods = map(CubicInterp, bcs)
-        return _build_hetero_nd(grids, data, methods, extrap, search)
+        return _build_hetero_nd(grids, data, methods, extrap, search; store = store)
     end
 
+    # PreCompute keeps no raw data (it builds a 2^N nodal-derivatives array) →
+    # data-ref is structurally N/A; warn + copy if reference was requested.
+    _check_store(store, "cubic ND PreCompute (CubicInterpolantND)")
     return _build_nd_interpolant(grids_typed, data_typed, bcs, extraps_val, searches, coeffs)
 end
 

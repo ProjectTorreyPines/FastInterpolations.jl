@@ -810,8 +810,8 @@ end
         itp = constant_interp((x, y), data)
 
         @test !hasfield(typeof(itp), :spacings)
-        # Was 8 (Tg, Tv, N, G, S, E, SD, P), now 7 (drops S)
-        @test length(typeof(itp).parameters) == 7
+        # Params: Tg, Tv, N, G, E, SD, P, D (D = parametric data container for reference/view storage)
+        @test length(typeof(itp).parameters) == 8
         @test isfinite(itp((1.5, 1.5)))
     end
 

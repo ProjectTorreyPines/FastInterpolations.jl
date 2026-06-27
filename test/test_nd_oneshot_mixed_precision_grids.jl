@@ -57,3 +57,41 @@ end
         @test all(isfinite, g)
     end
 end
+
+@testitem "Cubic/Quadratic/Hermite ND one-shot — AD wrt grid nodes" begin
+    using ForwardDiff
+    using FastInterpolations: HermitePartials
+    x = [0.0, 1, 2, 3, 4, 5]
+    y = [0.0, 1, 2, 3, 4]
+    q = (3.4, 2.6)
+    # Central-difference reference for ∂value/∂(x-nodes); the all-Float64 path works today.
+    fdx(f) = map(eachindex(x)) do i
+        xp = copy(x)
+        xm = copy(x)
+        xp[i] += 1.0e-6
+        xm[i] -= 1.0e-6
+        (f((xp, y)) - f((xm, y))) / 2.0e-6
+    end
+    data = [sin(0.7a) + cos(0.5b) for a in x, b in y]
+    @testset "cubic ∂/∂x-nodes finite & matches FD" begin
+        g = ForwardDiff.gradient(xx -> cubic_interp((xx, y), data, q), x)
+        @test all(isfinite, g)
+        @test g ≈ fdx(gg -> cubic_interp(gg, data, q)) atol = 1.0e-3
+    end
+    @testset "quadratic ∂/∂x-nodes finite & matches FD" begin
+        g = ForwardDiff.gradient(xx -> quadratic_interp((xx, y), data, q), x)
+        @test all(isfinite, g)
+        @test g ≈ fdx(gg -> quadratic_interp(gg, data, q)) atol = 1.0e-3
+    end
+    @testset "hermite ∂/∂x-nodes finite & matches FD" begin
+        p = HermitePartials(
+            (1, 0) => [cos(1.0a) * cos(1.0b) for a in x, b in y],
+            (0, 1) => [-sin(1.0a) * sin(1.0b) for a in x, b in y],
+            (1, 1) => [-cos(1.0a) * sin(1.0b) for a in x, b in y],
+        )
+        dH = [sin(1.0a) * cos(1.0b) for a in x, b in y]
+        g = ForwardDiff.gradient(xx -> hermite_interp((xx, y), dH, p, q), x)
+        @test all(isfinite, g)
+        @test g ≈ fdx(gg -> hermite_interp(gg, dH, p, q)) atol = 1.0e-3
+    end
+end

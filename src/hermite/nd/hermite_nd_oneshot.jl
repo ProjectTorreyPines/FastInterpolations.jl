@@ -112,7 +112,8 @@ end
     K == (1 << N) - 1 || _throw_partials_not_full_mixed(N, K)
 
     # Raw grids: the pack + cell-eval float the cell width, so no eager `Tg.(x)` copy.
-    Tv_promoted = _promote_eltype(_coeff_op, _promote_grid_eltype(grids), eltype(data))
+    Tg = _promote_grid_eltype(grids)
+    Tv_promoted = _promote_eltype(_coeff_op, Tg, eltype(data))
     Tv = promote_type(Tv_promoted, Tv_part)
     data_typed = _coerce_data_eltype(data, Tv, Val(N))
     partials_typed = _coerce_partials_eltype(partials, Tv, Val(N))

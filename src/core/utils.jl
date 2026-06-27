@@ -57,8 +57,14 @@ the same broadcast applies — `T.(x)` dispatches to ForwardDiff's `convert`.
 """
 function _to_float(x::AbstractVector, ::Type{T}) where {T}
     _warn_type_conversion(T)
-    return T.(x)
+    return _to_float_nowarn(x, T)
 end
+
+# Conversion without the user-facing "pre-convert" warning, for cache/pool build
+# paths whose converted result is stored (the one-time build alloc is not the
+# per-call cost the warning is about; warm calls hit the cache zero-alloc).
+_to_float_nowarn(x::AbstractVector{T}, ::Type{T}) where {T} = x
+_to_float_nowarn(x::AbstractVector, ::Type{T}) where {T} = T.(x)
 
 @noinline function _warn_type_conversion(::Type{T}) where {T}
     @warn "Non-matching vector element type detected — allocating type conversion. " *

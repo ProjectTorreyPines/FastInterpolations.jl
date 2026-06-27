@@ -493,9 +493,10 @@ end
 end
 
 # Non-AbstractFloat Real input (Int, Rational): convert to float, build cache.
-# Only called on cache miss — subsequent hits are zero-alloc.
+# Only called on cache miss — subsequent hits are zero-alloc, so use the
+# non-warning conversion (the cached copy is not a per-call allocation).
 @inline function _build_cache(::Type{<:CacheEntry{T, L, R}}, x::AbstractVector, bc::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
-    return _build_derivative_bc_cache(_to_float(x, T), bc.left, bc.right)
+    return _build_derivative_bc_cache(_to_float_nowarn(x, T), bc.left, bc.right)
 end
 
 # Build cache for periodic BC entry. The `bc::PeriodicBC{E}` argument is required
@@ -506,9 +507,10 @@ end
     return _build_periodic_cache(x, bc)
 end
 
-# Non-AbstractFloat Real input: convert to float for periodic cache.
+# Non-AbstractFloat Real input: convert to float for periodic cache (cache-miss
+# only — converted copy is cached, so no per-call warning).
 @inline function _build_cache(::Type{<:PeriodicCacheEntry{T, X, E}}, x::AbstractVector, bc::PeriodicBC{E}) where {T <: AbstractFloat, X, E}
-    return _build_periodic_cache(_to_float(x, T), bc)
+    return _build_periodic_cache(_to_float_nowarn(x, T), bc)
 end
 
 # ---------------------------------------------------------------

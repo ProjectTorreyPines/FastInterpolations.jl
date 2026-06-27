@@ -1,7 +1,8 @@
-# The warm Int-Vector-grid cubic one-shot is zero-alloc, yet currently emits a
-# `@warn "...allocating type conversion..."` from the internal pooled cubic rebuild
-# on the windowed Int view — wrongly telling users to pre-convert for zero-alloc.
-# `maxlog=1` makes in-process log capture order-dependent, so assert in a fresh process.
+# The grid type-conversion warning was removed as obsolete (one-shot Int grids are
+# zero-alloc via the cache; persistent construction allocates a grid copy regardless,
+# so "pre-convert for zero-allocation" never applied). Guard against re-introducing a
+# spurious per-call warning on the warm Int-grid cubic one-shot — asserted in a fresh
+# process since a `maxlog`-throttled warning would be order-dependent in-process.
 
 @testitem "Cubic Int-grid one-shot — no spurious 'allocating conversion' warning" begin
     code = """

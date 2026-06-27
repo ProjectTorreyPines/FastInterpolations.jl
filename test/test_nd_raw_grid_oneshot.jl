@@ -20,7 +20,7 @@
     # Function barriers: setup + warmup + @allocated inside one function to
     # avoid @testset-scope boxing artifacts (mirrors test_nd_constant.jl).
     function _alloc_linear_int_vec_2d()
-        x = [0, 1, 2, 3, 4]      # Int Vector axis — was `Float64.(x)` per call
+        x = [0, 1, 2, 3, 4]      # Int Vector axis
         y = [0, 1, 2, 3]
         data = [2.0 * xi + 3.0 * yj for xi in x, yj in y]
         q = (1.5, 2.5)
@@ -401,20 +401,14 @@ end
 end
 
 # ============================================================================
-# RED PHASE — heterogeneous / mixed-eltype grids on the build methods.
+# Heterogeneous / mixed-eltype grids on the build methods.
 # ============================================================================
 #
-# The eager-convert path unified every axis to a single `Tg`, hiding a homogeneity
-# assumption. The raw-grid migration exposes it: quad's build chain
-# (`_compute_nd_partials_quadratic!{Tg}`) wants one grid eltype, and `_eval_nd_cell`
-# couples `hs`/`inv_hs` as `NTuple{N, Tg}`. So a heterogeneous-eltype grid
-# (`Int × Float64`), a mixed-precision grid (`Float32 × Float64`), or a
-# Range×Vector mix (a Range floats to Float64 while a Vector{Int} stays Int) breaks
-# — even though the all-Float64 grid evaluates fine. These worked before the
-# migration; pinned RED to drive the heterogeneous-grid fix. The earlier testsets
-# only exercised homogeneous Int grids and missed this.
+# Raw grids expose a homogeneity assumption: `_eval_nd_cell` couples `hs`/`inv_hs`
+# as `NTuple{N, Tg}`, so mixed grids (Int×Float64, Float32×Float64, Range×Vector)
+# must promote spacings to one `Tg` (via `_compute_all_local_params`).
 
-@testitem "ND build-method one-shot — heterogeneous/mixed grids (RED)" setup = [AllocConstants] begin
+@testitem "ND build-method one-shot — heterogeneous/mixed grids" setup = [AllocConstants] begin
     using FastInterpolations: HermitePartials
 
     fq(a, b) = sin(0.3 * a) + cos(0.2 * b)

@@ -253,8 +253,7 @@ end
 # Generic ND Partial Derivative Computation (Quadratic)
 # ========================================
 
-# `grids` may be heterogeneous-eltype (raw scalar one-shot): each dimension is
-# differentiated independently via `grids[D]`, so no single grid `Tg` is needed.
+# Raw/heterogeneous grids: each dimension differentiates independently via `grids[D]`.
 @inline _build_nd_partials_dim_quadratic!(
     partials::AbstractArray{Tv, NP1},
     grids::NTuple{N, AbstractVector},

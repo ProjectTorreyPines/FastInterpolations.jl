@@ -36,14 +36,9 @@ function cubic_interp(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    # Scalar one-shot: raw grids. The per-axis cubic cache (`_get_cubic_cache`)
-    # memoises by grid object id, so a stable raw grid hits the cache after the
-    # first build — the eager `Tg.(x)` copy gave a fresh id every call, defeating
-    # the memo (and adding a heap alloc). The OnTheFly path runs raw; PreCompute
-    # converts internally (its cell-eval needs Float spacing). Output types come
-    # from op-shape inference (`_promote_eltype`): the witness ops float Int via
-    # `inv(h)`/`dL/h`, so a *raw* `Tg` is correct — no manual `float()`/`_value_type`.
-    # (Batch keeps eager-convert; see the linear_interp scalar note.)
+    # Scalar one-shot: raw grids — a stable grid id lets `_get_cubic_cache` memoise
+    # (a per-call `Tg.(x)` copy would miss every time + alloc). Output types from
+    # op-shape inference (`inv(h)`/`dL/h` float Int). Batch keeps eager-convert.
     Tg = _promote_grid_eltype(grids)
     Tv_p = _promote_eltype(_coeff_op, Tg, Tv)
     _validate_nd_grids(grids, data)
@@ -125,11 +120,8 @@ Zero-allocation after warmup (pool reuse).
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
     ) where {Tv, N}
-    # Raw grids (no eager `Tg.(x)` copy): `_compute_nd_partials!` differentiates each
-    # axis independently (its per-axis spline cache memoises by id → zero-alloc warm
-    # on Int), and the shared `_compute_all_local_params` promotes the cell width so
-    # `_eval_nd_cell` takes a raw/heterogeneous axis. `Tg` (op-form, raw) only types
-    # the pooled partials buffer — `_coeff_op`'s `inv(h)` floats Int internally.
+    # Raw grids: per-axis partials + `_compute_all_local_params` (promotes the cell
+    # width) accept a raw/heterogeneous axis. `Tg` only types the pooled buffer.
     Tg = _promote_grid_eltype(grids)
     # 0. NoExtrap domain check must precede FillExtrap short-circuit
     _validate_nd_domain(grids, query, extraps_val)

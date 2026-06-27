@@ -41,8 +41,7 @@ Zero-allocation after warmup (pool reuse).
     grids_c = map(g -> _cache_axis_pooled(pool, g), grids)
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
-    # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
-    # `Tg` from op-shape inference floats a raw Int grid; `_coeff_op`'s `inv(h)` does it.
+    # Tz widens Tv with Tg (Dual grid → Dual derivs). `Tg` raw; `_coeff_op` floats Int.
     Tg = _promote_grid_eltype(grids)
     Tz = _promote_eltype(_coeff_op, Tg, Tv)
     n_partials = 1 << N
@@ -160,11 +159,8 @@ function quadratic_interp(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    # Scalar one-shot: raw grids. Both the PreCompute kernel (wraps each axis via
-    # `_cache_axis_pooled` internally) and the OnTheFly kernel accept raw grids, and
-    # `_compute_all_local_params` floats the cell width so the PreCompute cell-eval
-    # takes a raw Int axis — no eager `Tg.(x)` copy. Output type via op-shape
-    # inference. (Batch keeps eager-convert; see the linear_interp scalar note.)
+    # Scalar one-shot: raw grids — both PreCompute and OnTheFly accept them
+    # (`_compute_all_local_params` floats the cell width). Batch keeps eager-convert.
     Tg = _promote_grid_eltype(grids)
     _validate_nd_grids(grids, data)
     Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))

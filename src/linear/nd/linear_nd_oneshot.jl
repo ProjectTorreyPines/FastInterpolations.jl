@@ -22,7 +22,7 @@ exclusive periodic axes. Per-axis bc is projected into typed `WrapExtrap` via
 `_resolve_extrap` (validation + materialization); BC-aware `Searcher` returns `(idx_L=n, idx_R=1)`
 at periodic seam cells so the kernel reads wrapped corners directly from the
 original `data`. Expect ~1× parity with persistent ND interpolant for periodic
-exclusive (was ~365× pre-refactor due to per-query N-dim data copy).
+exclusive (no per-query N-dim data copy).
 """
 function _linear_interp_nd_oneshot(
         grids::NTuple{N, AbstractVector},
@@ -128,14 +128,9 @@ function linear_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    # Scalar one-shot: search/evaluate the RAW grids. The kernel's own
-    # `map(_resolve_axis, …)` shapes each axis (Range→`_CachedRange`, Vector→
-    # passthrough) and the search promote-compares, so no axis needs an eager
-    # `Tg.(x)` heap copy (mirrors 1D one-shot). `Tr` (the `::Tr` boxing guard)
-    # comes from op-shape inference: `_interp_op`'s `dL/h` floats Int internally,
-    # so a *raw* grid type is correct — no manual `float()`. (Batch keeps eager-
-    # convert — it amortises the conversion over all queries, where per-query
-    # promote-compare costs more.)
+    # Scalar one-shot: raw grids — the kernel's `map(_resolve_axis, …)` shapes each
+    # axis and the search promote-compares, so no eager `Tg.(x)` copy. `Tr` from
+    # op-shape inference (`dL/h` floats Int). Batch keeps eager-convert (amortised).
     Tg = _promote_grid_eltype(grids)
     _validate_nd_grids(grids, data)
     Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))

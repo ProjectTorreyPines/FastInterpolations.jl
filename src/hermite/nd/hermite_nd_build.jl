@@ -318,8 +318,8 @@ end
         partials::HermitePartials{N, Tv, K},
         bcs::Tuple{Vararg{AbstractBC, N}},
     ) where {Tv, N, K}
-    # `Tg` only feeds the `:exclusive` virtual-endpoint extension below (the common
-    # non-periodic path leaves each axis untouched); raw grids may be Int/heterogeneous.
+    # `Tg` only feeds the `:exclusive` virtual-endpoint extension below; raw grids
+    # may be Int/heterogeneous.
     Tg = _promote_grid_eltype(grids)
     extended = ntuple(d -> bcs[d] isa PeriodicBC{:exclusive}, Val(N))
     n_orig = size(data)

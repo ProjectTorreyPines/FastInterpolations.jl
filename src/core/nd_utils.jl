@@ -1007,15 +1007,9 @@ Compute local cell parameters for all axes via `_get_h(grid, idx)` /
         indices::NTuple{N, Int},
         Ls::Tuple{Vararg{Real, N}},
     ) where {N}
-    # Promote `hs` AND `inv_hs` to one common float type `Tg` (= float(promote of
-    # the axis eltypes)). `_eval_nd_*_cell` is `@generated` and couples them as
-    # `NTuple{N, Tg}`, so a heterogeneous / mixed-precision raw grid (e.g.
-    # `Float32 × Float64`, or a Range that floats to Float64 beside a `Vector{Int}`)
-    # would have no matching method otherwise. This is a pre-promotion of the N
-    # spacing scalars (the `_le` promote-then-use idea), NOT a grid conversion: the
-    # grid stays raw and the search promote-compares it. Integer spacings are exact
-    # in Float64 so it is bit-identical, and it is a zero-cost identity for the
-    # homogeneous Float/Dual grids every existing caller passes.
+    # Promote `hs`/`inv_hs` to one common float `Tg`: `_eval_nd_*_cell` is `@generated`
+    # and couples them as `NTuple{N, Tg}`, so heterogeneous/mixed-precision raw grids
+    # need them unified. Bit-identical for the homogeneous Float/Dual callers.
     Tg = float(_promote_grid_eltype(grids))
     hs = ntuple(Val(N)) do d
         @inbounds convert(Tg, _get_h(grids[d], indices[d]))
@@ -1120,7 +1114,7 @@ Returns:
 
 Callers destructure only what they need:
 ```julia
-grids_typed, _, _, _ = _nd_promote_grids(grids, data)   # grid-only (constant/adjoint)
+grids_typed, _, _, _ = _nd_promote_grids(grids, data)   # grid-only (batch dispatch)
 grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
 ```
 """
@@ -1148,7 +1142,7 @@ is no x·y arithmetic and the output contract follows `eltype(data)` directly.
 - `grids_typed`: each axis converted to share `Tg` (container heterogeneity
   preserved — Range stays Range, Vector stays Vector).
 
-Arithmetic methods keep `_nd_promote_grids` (Float-widened Tg, value-promoted Tv).
+Arithmetic batch/constructor paths keep `_nd_promote_grids` (Float-widened Tg, value-promoted Tv).
 """
 @inline function _nd_promote_grids_raw(
         grids::NTuple{N, AbstractVector},

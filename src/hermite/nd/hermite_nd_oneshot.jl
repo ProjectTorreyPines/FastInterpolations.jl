@@ -111,9 +111,7 @@ end
     ) where {N, Tv_part, K}
     K == (1 << N) - 1 || _throw_partials_not_full_mixed(N, K)
 
-    # Raw grids: the pack + cell-eval accept them (the eval floats the cell width),
-    # so no eager `Tg.(x)` copy. `Tv_promoted` (data eltype at grid precision) is
-    # type-only via op-shape inference — `_coeff_op`'s `inv(h)` floats a raw Int grid.
+    # Raw grids: the pack + cell-eval float the cell width, so no eager `Tg.(x)` copy.
     Tv_promoted = _promote_eltype(_coeff_op, _promote_grid_eltype(grids), eltype(data))
     Tv = promote_type(Tv_promoted, Tv_part)
     data_typed = _coerce_data_eltype(data, Tv, Val(N))

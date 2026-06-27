@@ -133,10 +133,8 @@ function constant_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    # Scalar one-shot: raw grids — the kernel shapes each axis via
-    # `map(_resolve_axis, …)` and the selection follows `eltype(data)`, so no
-    # eager grid conversion is needed. (Batch keeps eager-convert; see the
-    # `linear_interp` scalar note on the amortisation tradeoff.)
+    # Scalar one-shot: raw grids (kernel resolves each axis; selection follows
+    # `eltype(data)`). Batch keeps eager-convert.
     _validate_nd_grids(grids, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))

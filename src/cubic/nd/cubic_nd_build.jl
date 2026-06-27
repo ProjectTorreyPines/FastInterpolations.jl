@@ -413,8 +413,7 @@ end
     # in the data (it is added by _prepare_periodic_nd/_prepare_periodic_nd_pooled after
     # this validation).  Checking data[1] ≈ data[end] on unextended exclusive data would
     # produce false positives for perfectly valid periodic inputs.
-    # `grids` may be raw/heterogeneous-eltype (scalar one-shot passes them unconverted);
-    # the periodic tolerance uses the float-promoted grid type either way.
+    # `grids` may be raw/heterogeneous (scalar one-shot); use the float-promoted type.
     if bcs[D] isa PeriodicBC{:inclusive} && periodic_check(bcs[D])
         _check_periodic_data_noalloc!(data, Val(D), float(_promote_grid_eltype(grids)))
     end
@@ -453,8 +452,7 @@ end
     return nothing
 end
 
-# `grids` may be heterogeneous-eltype (raw scalar one-shot): each dimension is
-# differentiated independently via `grids[D]`, so no single grid `Tg` is needed.
+# Raw/heterogeneous grids: each dimension differentiates independently via `grids[D]`.
 @inline _build_nd_partials_dim!(
     partials::AbstractArray{Tv, NP1},
     grids::NTuple{N, AbstractVector},

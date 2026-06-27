@@ -148,11 +148,8 @@ end
     # O(boundary-size) check once per batch instead of once per query.
     extraps_eff = map(_resolve_extrap, extraps_val, bcs, grids_eff)
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
-    # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
-    # Grid eltype included: when grid is Dual, 1D oneshot returns Dual-typed results
-    # that must fit into _collapse_dims intermediate buffers. `_promote_eltype` floats
-    # Int internally, so a *raw* grid type is correct (and Dual-preserving) — no manual
-    # `float()`; raw grids may be Int/heterogeneous (the cubic scalar one-shot passes them).
+    # Tr promotes data with grid + query eltypes → Dual-safe pool buffers for AD.
+    # Raw grids may be Int/heterogeneous; `_promote_eltype` floats Int internally.
     Tg = _promote_grid_eltype(grids)
     Tr = _promote_eltype(Tv, Tg, typeof.(q_eval)...)
 

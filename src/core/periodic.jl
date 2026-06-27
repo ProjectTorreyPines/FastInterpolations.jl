@@ -649,9 +649,8 @@ end
     # Fast path: purely inclusive → no extension needed.
     _has_any_bc(bcs, Val(N), PeriodicBC{:exclusive}) || return (grids, data, bcs)
 
-    # Common float grid type for the per-axis exclusive extension below. Only the
-    # exclusive-periodic path needs it (non-periodic axes returned raw above), and
-    # the extension homogenises those axes to `Tg` — `grids` may be raw/heterogeneous.
+    # Common float grid type for the exclusive-periodic extension below (non-periodic
+    # axes already returned raw above; `grids` may be raw/heterogeneous).
     Tg = float(_promote_grid_eltype(grids))
 
     # Per-axis grid extension + bc resolution. `map` with `ntuple(identity, Val(N))`

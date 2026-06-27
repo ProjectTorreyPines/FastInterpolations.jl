@@ -634,12 +634,12 @@ end
 # pool reference is carried via a type parameter — concrete dispatch, no Box).
 # ────────────────────────────────────────────────────────
 @inline function _prepare_periodic_nd_impl(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC},
         extend_vector_grid::F_ext,
         allocate_data::F_alloc,
-    ) where {Tg, Tv, N, F_ext, F_alloc}
+    ) where {Tv, N, F_ext, F_alloc}
     # Ultra-fast path: non-periodic call-sites collapse this to a no-op via
     # the `@generated` predicate (zero runtime cost on the hot non-periodic path).
     _has_any_bc(bcs, Val(N), PeriodicBC) || return (grids, data, bcs)
@@ -648,6 +648,11 @@ end
     _validate_periodic_slices_nd(data, bcs, Val(N))
     # Fast path: purely inclusive → no extension needed.
     _has_any_bc(bcs, Val(N), PeriodicBC{:exclusive}) || return (grids, data, bcs)
+
+    # Common float grid type for the per-axis exclusive extension below. Only the
+    # exclusive-periodic path needs it (non-periodic axes returned raw above), and
+    # the extension homogenises those axes to `Tg` — `grids` may be raw/heterogeneous.
+    Tg = float(_promote_grid_eltype(grids))
 
     # Per-axis grid extension + bc resolution. `map` with `ntuple(identity, Val(N))`
     # dispatches per-element with concrete (grid, bc) types → each closure call
@@ -724,10 +729,10 @@ via `acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
 """
 @inline function _prepare_periodic_nd_pooled(
         pool::AbstractArrayPool,
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     return _prepare_periodic_nd_impl(
         grids, data, bcs,
         _PoolGridExtender(pool),

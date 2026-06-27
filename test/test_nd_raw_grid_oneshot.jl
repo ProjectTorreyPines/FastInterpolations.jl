@@ -159,9 +159,19 @@ end
         end
         @allocated cubic_interp((x, y), data, q)
     end
-    # NB: only the default OnTheFly path is zero-alloc on raw Int grids. PreCompute
-    # (opt-in) converts grids internally (its cell-eval needs Float spacing), so it
-    # is intentionally NOT zero-alloc on Int grids — no alloc test for it here.
+    # PreCompute (the practically-used cubic strategy) is now also raw: each axis's
+    # spline cache memoises by id and the cell width is promoted, so warm Int-grid
+    # one-shot is zero-alloc here too — no internal `Tg.(x)` convert.
+    function _alloc_cubic_nd_int_pre_2d()
+        x = [0, 1, 2, 3, 4, 5, 6, 7]
+        y = [0, 1, 2, 3, 4, 5]
+        data = [sin(1.0 * a) + cos(1.0 * b) for a in x, b in y]
+        q = (3.4, 2.6)
+        for _ in 1:3
+            cubic_interp((x, y), data, q; coeffs = PreCompute())
+        end
+        @allocated cubic_interp((x, y), data, q; coeffs = PreCompute())
+    end
     function _alloc_cubic_nd_int_otf_3d()
         x = [0, 1, 2, 3, 4, 5]
         y = [0, 1, 2, 3, 4]
@@ -174,9 +184,10 @@ end
         @allocated cubic_interp((x, y, z), data, q)
     end
 
-    @testset "warm zero-alloc scalar one-shot on Int Vector grids (OnTheFly)" begin
+    @testset "warm zero-alloc scalar one-shot on Int Vector grids" begin
         @test _alloc_cubic_nd_int_otf_2d() <= ND_ALLOC_THRESHOLD
         @test _alloc_cubic_nd_int_otf_3d() <= ND_ALLOC_THRESHOLD
+        @test _alloc_cubic_nd_int_pre_2d() <= ND_ALLOC_THRESHOLD   # PreCompute now raw
     end
 
     # ---- bit-identical: raw Int grid === Float64 grid (value) ----
@@ -420,6 +431,18 @@ end
             data = [fq(a, b) for a in collect(gx), b in collect(gy)]
             ref = quadratic_interp((Float64.(collect(gx)), Float64.(collect(gy))), data, (3.4, 2.6))
             @test quadratic_interp((gx, gy), data, (3.4, 2.6)) ≈ ref rtol = 1.0e-6
+        end
+    end
+
+    # Cubic: both the OnTheFly default and the (now-raw) PreCompute strategy.
+    for (name, gx, gy) in quad_mixes
+        @testset "cubic $name === all-Float64" begin
+            data = [fq(a, b) for a in collect(gx), b in collect(gy)]
+            gxf = Float64.(collect(gx))
+            gyf = Float64.(collect(gy))
+            @test cubic_interp((gx, gy), data, (3.4, 2.6)) ≈ cubic_interp((gxf, gyf), data, (3.4, 2.6)) rtol = 1.0e-6
+            @test cubic_interp((gx, gy), data, (3.4, 2.6); coeffs = PreCompute()) ≈
+                cubic_interp((gxf, gyf), data, (3.4, 2.6); coeffs = PreCompute()) rtol = 1.0e-6
         end
     end
 

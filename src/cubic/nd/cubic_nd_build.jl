@@ -367,18 +367,18 @@ end
 
 @inline _validate_nd_partials_dims!(
     partials::AbstractArray,
-    grids::NTuple{N, AbstractVector{Tg}},
+    grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     ::Val{N}
-) where {Tv, Tg, N} = _validate_nd_partials_dims!(partials, grids, data, Val(1), Val(N))
+) where {Tv, N} = _validate_nd_partials_dims!(partials, grids, data, Val(1), Val(N))
 
 @inline function _validate_nd_partials_dims!(
         partials::AbstractArray,
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         ::Val{D},
         ::Val{N}
-    ) where {Tv, Tg, D, N}
+    ) where {Tv, D, N}
     size(partials, D + 1) == size(data, D) || throw(
         DimensionMismatch(
             "partials dim $(D + 1) must match data dim $D"
@@ -453,20 +453,22 @@ end
     return nothing
 end
 
+# `grids` may be heterogeneous-eltype (raw scalar one-shot): each dimension is
+# differentiated independently via `grids[D]`, so no single grid `Tg` is needed.
 @inline _build_nd_partials_dim!(
     partials::AbstractArray{Tv, NP1},
-    grids::NTuple{N, AbstractVector{Tg}},
+    grids::NTuple{N, AbstractVector},
     bcs::NTuple{N, AbstractBC},
     ::Val{N}
-) where {Tv, Tg, N, NP1} = _build_nd_partials_dim!(partials, grids, bcs, Val(1), Val(N))
+) where {Tv, N, NP1} = _build_nd_partials_dim!(partials, grids, bcs, Val(1), Val(N))
 
 @inline function _build_nd_partials_dim!(
         partials::AbstractArray{Tv, NP1},
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         bcs::NTuple{N, AbstractBC},
         ::Val{D},
         ::Val{N}
-    ) where {Tv, Tg, D, N, NP1}
+    ) where {Tv, D, N, NP1}
     bit_d = 1 << (D - 1)
     @inbounds for p_src in 1:bit_d
         p_dst = p_src + bit_d
@@ -532,10 +534,10 @@ For d = 1 to N:
 """
 function _compute_nd_partials!(
         partials::AbstractArray{Tz, NP1},
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tz, Tv, Tg, N, NP1}
+    ) where {Tz, Tv, N, NP1}
     # Validate dimensions (fast, no allocation)
     @boundscheck begin
         NP1 == N + 1 || throw(DimensionMismatch("partials must have N+1 dimensions"))

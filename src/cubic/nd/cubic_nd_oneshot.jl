@@ -125,12 +125,12 @@ Zero-allocation after warmup (pool reuse).
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
     ) where {Tv, N}
-    # PreCompute cell-eval needs Float spacing (`hs = xR - xL`): a raw Int axis
-    # would give Int `hs`, which `_eval_nd_cell` (@generated on a Float `h`) has no
-    # method for. The OnTheFly path memoises raw grids per-axis; PreCompute (opt-in)
-    # converts up front instead, so this path keeps its baseline behaviour.
-    Tg = float(_promote_grid_eltype(grids))
-    grids = _convert_grids_typed(grids, Tg)
+    # Raw grids (no eager `Tg.(x)` copy): `_compute_nd_partials!` differentiates each
+    # axis independently (its per-axis spline cache memoises by id → zero-alloc warm
+    # on Int), and the shared `_compute_all_local_params` promotes the cell width so
+    # `_eval_nd_cell` takes a raw/heterogeneous axis. `Tg` (op-form, raw) only types
+    # the pooled partials buffer — `_coeff_op`'s `inv(h)` floats Int internally.
+    Tg = _promote_grid_eltype(grids)
     # 0. NoExtrap domain check must precede FillExtrap short-circuit
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))

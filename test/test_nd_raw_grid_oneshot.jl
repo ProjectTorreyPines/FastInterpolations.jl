@@ -388,3 +388,60 @@ end
         @test g ≈ gf atol = 1.0e-10
     end
 end
+
+# ============================================================================
+# RED PHASE — heterogeneous / mixed-eltype grids on the build methods.
+# ============================================================================
+#
+# The eager-convert path unified every axis to a single `Tg`, hiding a homogeneity
+# assumption. The raw-grid migration exposes it: quad's build chain
+# (`_compute_nd_partials_quadratic!{Tg}`) wants one grid eltype, and `_eval_nd_cell`
+# couples `hs`/`inv_hs` as `NTuple{N, Tg}`. So a heterogeneous-eltype grid
+# (`Int × Float64`), a mixed-precision grid (`Float32 × Float64`), or a
+# Range×Vector mix (a Range floats to Float64 while a Vector{Int} stays Int) breaks
+# — even though the all-Float64 grid evaluates fine. These worked before the
+# migration; pinned RED to drive the heterogeneous-grid fix. The earlier testsets
+# only exercised homogeneous Int grids and missed this.
+
+@testitem "ND build-method one-shot — heterogeneous/mixed grids (RED)" setup = [AllocConstants] begin
+    using FastInterpolations: HermitePartials
+
+    fq(a, b) = sin(0.3 * a) + cos(0.2 * b)
+
+    quad_mixes = [
+        ("Int × Float64", [0, 1, 2, 3, 4, 5], Float64.(0:4)),
+        ("Float32 × Float64", Float32.(0:5), Float64.(0:4)),
+        ("Int × Float32", [0, 1, 2, 3, 4, 5], Float32.(0:4)),
+        ("IntRange × IntVec", 0:5, [0, 1, 2, 3, 4]),
+        ("Float64Range × IntVec", 0.0:5.0, [0, 1, 2, 3, 4]),
+    ]
+    for (name, gx, gy) in quad_mixes
+        @testset "quadratic $name === all-Float64" begin
+            data = [fq(a, b) for a in collect(gx), b in collect(gy)]
+            ref = quadratic_interp((Float64.(collect(gx)), Float64.(collect(gy))), data, (3.4, 2.6))
+            @test quadratic_interp((gx, gy), data, (3.4, 2.6)) ≈ ref rtol = 1.0e-6
+        end
+    end
+
+    hp(x, y) = HermitePartials(
+        (1, 0) => [cos(1.0 * a) * cos(1.0 * b) for a in x, b in y],
+        (0, 1) => [-sin(1.0 * a) * sin(1.0 * b) for a in x, b in y],
+        (1, 1) => [-cos(1.0 * a) * sin(1.0 * b) for a in x, b in y],
+    )
+    hdata(x, y) = [sin(1.0 * a) * cos(1.0 * b) for a in x, b in y]
+    herm_mixes = [
+        ("Float32 × Float64", Float32.(0:5), Float64.(0:4)),
+        ("Int × Float32", [0, 1, 2, 3, 4, 5], Float32.(0:4)),
+        ("IntRange × IntVec", 0:5, [0, 1, 2, 3, 4]),
+    ]
+    for (name, gx, gy) in herm_mixes
+        @testset "hermite $name === all-Float64" begin
+            xc = collect(gx)
+            yc = collect(gy)
+            data = hdata(xc, yc)
+            p = hp(xc, yc)
+            ref = hermite_interp((Float64.(xc), Float64.(yc)), data, p, (3.4, 2.6))
+            @test hermite_interp((gx, gy), data, p, (3.4, 2.6)) ≈ ref rtol = 1.0e-6
+        end
+    end
+end

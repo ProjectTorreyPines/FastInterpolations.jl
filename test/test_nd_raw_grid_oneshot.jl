@@ -313,3 +313,78 @@ end
         @test g ≈ gf atol = 1.0e-10
     end
 end
+
+# ============================================================================
+# Hermite ND one-shot — raw Int grid (user-supplied nodal partials)
+# ============================================================================
+#
+# Hermite ND one-shot packs the user partials into a pool buffer and evaluates
+# via the shared `_compute_all_local_params` (now floats the cell width) +
+# `_eval_nd_cell`. Passing raw grids (no eager `Tg.(x)` copy) makes the warm
+# scalar one-shot on an Int Vector grid zero-alloc. Batch keeps pool packing.
+
+@testitem "Hermite ND one-shot raw-grid (no eager convert)" setup = [AllocConstants] begin
+    using FastInterpolations: HermitePartials
+    using ForwardDiff
+
+    _hp(x, y) = HermitePartials(
+        (1, 0) => [cos(1.0 * a) * cos(1.0 * b) for a in x, b in y],
+        (0, 1) => [-sin(1.0 * a) * sin(1.0 * b) for a in x, b in y],
+        (1, 1) => [-cos(1.0 * a) * sin(1.0 * b) for a in x, b in y],
+    )
+    _hdata(x, y) = [sin(1.0 * a) * cos(1.0 * b) for a in x, b in y]
+
+    function _alloc_hermite_nd_int_2d()
+        x = [0, 1, 2, 3, 4, 5]
+        y = [0, 1, 2, 3, 4]
+        data = _hdata(x, y)
+        p = _hp(x, y)
+        q = (3.4, 2.6)
+        for _ in 1:3
+            hermite_interp((x, y), data, p, q)
+        end
+        @allocated hermite_interp((x, y), data, p, q)
+    end
+
+    @testset "warm zero-alloc scalar one-shot on Int Vector grid" begin
+        @test _alloc_hermite_nd_int_2d() <= ND_ALLOC_THRESHOLD
+    end
+
+    # ---- bit-identical: raw Int grid === Float64 grid ----
+    @testset "Int Vector grid === Float64 grid" begin
+        x = [0, 1, 2, 3, 4, 5]
+        y = [0, 1, 2, 3, 4]
+        data = _hdata(x, y)
+        p = _hp(x, y)
+        xf = Float64.(x)
+        yf = Float64.(y)
+        for q in [(3.4, 2.6), (0.3, 0.7), (4.9, 3.1)]
+            @test hermite_interp((x, y), data, p, q) === hermite_interp((xf, yf), data, p, q)
+        end
+    end
+
+    # ---- one-shot === persistent interpolant ----
+    @testset "one-shot === persistent hermite interpolant" begin
+        x = [0, 1, 2, 3, 4, 5]
+        y = [0, 1, 2, 3, 4]
+        data = _hdata(x, y)
+        p = _hp(x, y)
+        itp = hermite_interp((x, y), data, p)
+        for q in [(3.4, 2.6), (0.3, 0.7), (4.9, 3.1)]
+            @test hermite_interp((x, y), data, p, q) === itp(q)
+        end
+    end
+
+    # ---- type stability + ForwardDiff through the query ----
+    @testset "type-stable + ForwardDiff on Int grid" begin
+        x = [0, 1, 2, 3, 4, 5]
+        y = [0, 1, 2, 3, 4]
+        data = _hdata(x, y)
+        p = _hp(x, y)
+        q = (3.4, 2.6)
+        @test (@inferred hermite_interp((x, y), data, p, q)) isa Float64
+        g = ForwardDiff.gradient(pp -> hermite_interp((x, y), data, p, (pp[1], pp[2])), [3.4, 2.6])
+        gf = ForwardDiff.gradient(pp -> hermite_interp((Float64.(x), Float64.(y)), data, p, (pp[1], pp[2])), [3.4, 2.6])
+        @test g ≈ gf atol = 1.0e-10
+    end
+end

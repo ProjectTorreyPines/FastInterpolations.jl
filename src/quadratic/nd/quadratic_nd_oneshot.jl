@@ -21,7 +21,7 @@ Computes 2^N partial derivatives in a pool buffer and evaluates at a single poin
 Zero-allocation after warmup (pool reuse).
 """
 @with_pool pool function _quadratic_interp_nd_oneshot(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}},
         bcs::NTuple{N, AbstractBC},
@@ -29,7 +29,7 @@ Zero-allocation after warmup (pool reuse).
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     # 0. NoExtrap domain check must precede FillExtrap short-circuit
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
@@ -41,7 +41,8 @@ Zero-allocation after warmup (pool reuse).
     grids_c = map(g -> _cache_axis_pooled(pool, g), grids)
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
-    # Tz widens Tv with Tg: when grid is Dual, derivatives = data × inv_h → Dual-typed.
+    # Tz widens Tv with Tg (Dual grid → Dual derivs). `Tg` raw; `_coeff_op` floats Int.
+    Tg = _promote_grid_eltype(grids)
     Tz = _promote_eltype(_coeff_op, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
@@ -158,8 +159,10 @@ function quadratic_interp(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    grids_typed, Tg, _, _ = _nd_promote_grids(grids, data)
-    _validate_nd_grids(grids_typed, data)
+    # Scalar one-shot: raw grids — both PreCompute and OnTheFly accept them
+    # (`_compute_all_local_params` floats the cell width). Batch keeps eager-convert.
+    Tg = _promote_grid_eltype(grids)
+    _validate_nd_grids(grids, data)
     Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
 
     bcs = _resolve_bcs_nd(bc, Val(N))
@@ -174,10 +177,10 @@ function quadratic_interp(
     if coeffs_resolved isa OnTheFly
         sample = @inbounds first(data)
         methods = map(bc_i -> QuadraticInterp(_to_quadratic_bc(bc_i, sample)), bcs)
-        return _interp_nd_oneshot_onthefly(grids_typed, data, query, methods, extraps_val, searches, ops, hint)::Tr
+        return _interp_nd_oneshot_onthefly(grids, data, query, methods, extraps_val, searches, ops, hint)::Tr
     end
     return _quadratic_interp_nd_oneshot(
-        grids_typed, data, query, bcs, extraps_val, searches, ops, hint
+        grids, data, query, bcs, extraps_val, searches, ops, hint
     )::Tr
 end
 

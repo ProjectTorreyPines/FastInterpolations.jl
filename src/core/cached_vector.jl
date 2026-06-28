@@ -132,8 +132,7 @@ end
 #
 # Bottom line: `_cache_axis_pooled(pool, x, Tg)` *always* returns a wrapper
 # with eltype `Tg`. The fast paths (same-eltype Vector/Range/wrapped) are
-# zero-alloc; eltype mismatches incur a one-time conversion alloc (and warn
-# on raw `Vector{S}` per `_to_float`'s `_warn_type_conversion`).
+# zero-alloc; eltype mismatches incur a one-time conversion alloc.
 @inline _cache_axis_pooled(pool, x, ::Type{Tg}) where {Tg} =
     _cache_axis_pooled(pool, _to_float(x, Tg))
 

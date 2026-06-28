@@ -253,21 +253,22 @@ end
 # Generic ND Partial Derivative Computation (Quadratic)
 # ========================================
 
+# Raw/heterogeneous grids: each dimension differentiates independently via `grids[D]`.
 @inline _build_nd_partials_dim_quadratic!(
     partials::AbstractArray{Tv, NP1},
-    grids::NTuple{N, AbstractVector{Tg}},
+    grids::NTuple{N, AbstractVector},
     bcs::NTuple{N, AbstractBC},
     ::Val{N}
-) where {Tv, Tg, N, NP1} =
+) where {Tv, N, NP1} =
     _build_nd_partials_dim_quadratic!(partials, grids, bcs, Val(1), Val(N))
 
 @inline function _build_nd_partials_dim_quadratic!(
         partials::AbstractArray{Tv, NP1},
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         bcs::NTuple{N, AbstractBC},
         ::Val{D},
         ::Val{N}
-    ) where {Tv, Tg, D, N, NP1}
+    ) where {Tv, D, N, NP1}
     bit_d = 1 << (D - 1)
     @inbounds for p_src in 1:bit_d
         p_dst = p_src + bit_d
@@ -292,10 +293,10 @@ recurrence for 1D differentiation instead of Thomas tridiagonal.
 """
 function _compute_nd_partials_quadratic!(
         partials::AbstractArray{Tz, NP1},
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         bcs::NTuple{N, AbstractBC}
-    ) where {Tz, Tv, Tg, N, NP1}
+    ) where {Tz, Tv, N, NP1}
     # Validate dimensions
     @boundscheck begin
         NP1 == N + 1 || throw(DimensionMismatch("partials must have N+1 dimensions"))

@@ -36,16 +36,19 @@ function cubic_interp(
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    # Type promotion + validation (same as constructor path)
-    grids_typed, Tg, Tv_p, _ = _nd_promote_grids(grids, data)
-    _validate_nd_grids(grids_typed, data)
+    # Scalar one-shot: raw grids — a stable grid id lets `_get_cubic_cache` memoise
+    # (a per-call `Tg.(x)` copy would miss every time + alloc). Output types from
+    # op-shape inference (`inv(h)`/`dL/h` float Int). Batch keeps eager-convert.
+    Tg = _promote_grid_eltype(grids)
+    Tv_p = _promote_eltype(_coeff_op, Tg, Tv)
+    _validate_nd_grids(grids, data)
     Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
     # Validate BC requirements (once, before dispatch).
-    _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
+    _validate_nd_bcs!(grids, bcs, data, Val(N))
 
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv_p)
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -54,9 +57,9 @@ function cubic_interp(
     coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, query, ntuple(_ -> CubicInterp(), Val(N)))
     if coeffs_resolved isa OnTheFly
         methods = map(CubicInterp, bcs)
-        return _interp_nd_oneshot_onthefly(grids_typed, data, query, methods, extraps_val, searches, ops, hint)::Tr
+        return _interp_nd_oneshot_onthefly(grids, data, query, methods, extraps_val, searches, ops, hint)::Tr
     end
-    return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops, hint)::Tr
+    return _cubic_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
 
 """
@@ -108,7 +111,7 @@ Zero-allocation after warmup (pool reuse).
 (e.g., `(NoExtrap(), ClampExtrap())`), computed via `_resolve_extrap_nd` in the API layer.
 """
 @with_pool pool function _cubic_interp_nd_oneshot(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}},
         bcs::NTuple{N, AbstractBC},
@@ -116,7 +119,10 @@ Zero-allocation after warmup (pool reuse).
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
+    # Raw grids: per-axis partials + `_compute_all_local_params` (promotes the cell
+    # width) accept a raw/heterogeneous axis. `Tg` only types the pooled buffer.
+    Tg = _promote_grid_eltype(grids)
     # 0. NoExtrap domain check must precede FillExtrap short-circuit
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))

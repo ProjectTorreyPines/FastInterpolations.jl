@@ -1007,11 +1007,17 @@ Compute local cell parameters for all axes via `_get_h(grid, idx)` /
         indices::NTuple{N, Int},
         Ls::Tuple{Vararg{Real, N}},
     ) where {N}
+    # Promote `hs`/`inv_hs` to one common float `Tg`: `_eval_nd_*_cell` is `@generated`
+    # and couples them as `NTuple{N, Tg}`, so heterogeneous/mixed-precision raw grids
+    # need them unified. Bit-identical for the homogeneous Float/Dual callers.
+    # (N=0 edge: `float(promote_type())` = `float(Union{})` throws; the ntuples are
+    # empty there, so this placeholder is never used.)
+    Tg = N == 0 ? Float64 : float(_promote_grid_eltype(grids))
     hs = ntuple(Val(N)) do d
-        @inbounds _get_h(grids[d], indices[d])
+        @inbounds convert(Tg, _get_h(grids[d], indices[d]))
     end
     inv_hs = ntuple(Val(N)) do d
-        @inbounds _get_inv_h(grids[d], indices[d])
+        @inbounds convert(Tg, _get_inv_h(grids[d], indices[d]))
     end
     dLs = ntuple(Val(N)) do d
         @inbounds q_evals[d] - Ls[d]
@@ -1110,7 +1116,7 @@ Returns:
 
 Callers destructure only what they need:
 ```julia
-grids_typed, _, _, _ = _nd_promote_grids(grids, data)   # grid-only (constant/adjoint)
+grids_typed, _, _, _ = _nd_promote_grids(grids, data)   # grid-only (batch dispatch)
 grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
 ```
 """
@@ -1138,7 +1144,7 @@ is no x·y arithmetic and the output contract follows `eltype(data)` directly.
 - `grids_typed`: each axis converted to share `Tg` (container heterogeneity
   preserved — Range stays Range, Vector stays Vector).
 
-Arithmetic methods keep `_nd_promote_grids` (Float-widened Tg, value-promoted Tv).
+Arithmetic batch/constructor paths keep `_nd_promote_grids` (Float-widened Tg, value-promoted Tv).
 """
 @inline function _nd_promote_grids_raw(
         grids::NTuple{N, AbstractVector},

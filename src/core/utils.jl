@@ -50,21 +50,10 @@ _to_float(x::AbstractVector{T}, ::Type{T}) where {T} = x
 """
     _to_float(x::AbstractVector, ::Type{T}) where {T}
 
-Convert a Vector to target type (element-wise broadcast).
-For standard numerics (Int→Float64, Float32→Float64), emits a one-time warning
-since this allocates a new vector. For duck types (e.g. `Dual{Int}→Dual{Float64}`),
-the same broadcast applies — `T.(x)` dispatches to ForwardDiff's `convert`.
+Convert a Vector to target type (element-wise broadcast). For duck types
+(e.g. `Dual{Int}→Dual{Float64}`), `T.(x)` dispatches to ForwardDiff's `convert`.
 """
-function _to_float(x::AbstractVector, ::Type{T}) where {T}
-    _warn_type_conversion(T)
-    return T.(x)
-end
-
-@noinline function _warn_type_conversion(::Type{T}) where {T}
-    @warn "Non-matching vector element type detected — allocating type conversion. " *
-        "For zero-allocation, pre-convert your data: `x_typed = $T.(x)`" maxlog = 1
-    return nothing
-end
+_to_float(x::AbstractVector, ::Type{T}) where {T} = T.(x)
 
 # ========================================
 # Value Type Helpers (for Complex support)

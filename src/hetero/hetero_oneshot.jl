@@ -124,7 +124,7 @@ end
 # Periodic BC is handled internally by each _oneshot_eval_1d call.
 
 @inline @with_pool pool function _interp_nd_oneshot_onthefly(
-        grids::NTuple{N, AbstractVector{Tg}},
+        grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
@@ -132,7 +132,7 @@ end
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
-    ) where {Tg, Tv, N}
+    ) where {Tv, N}
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
@@ -148,9 +148,9 @@ end
     # O(boundary-size) check once per batch instead of once per query.
     extraps_eff = map(_resolve_extrap, extraps_val, bcs, grids_eff)
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
-    # Tr promotes data eltype with grid + query eltypes → Dual-safe pool buffers for AD.
-    # Grid eltype included: when grid is Dual, 1D oneshot returns Dual-typed results
-    # that must fit into _collapse_dims intermediate buffers.
+    # Tr promotes data with grid + query eltypes → Dual-safe pool buffers for AD.
+    # Raw grids may be Int/heterogeneous; `_promote_eltype` floats Int internally.
+    Tg = _promote_grid_eltype(grids)
     Tr = _promote_eltype(Tv, Tg, typeof.(q_eval)...)
 
     # GridIdx safety gate: same reason as the persistent path — a GridIdx on a

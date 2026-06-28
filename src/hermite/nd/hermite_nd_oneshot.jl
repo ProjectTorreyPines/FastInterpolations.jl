@@ -61,7 +61,7 @@ function hermite_interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {Tv, N, Tv_part}
-    _, Tg, _, _ = _nd_promote_grids(grids, data)
+    Tg = _promote_grid_eltype(grids)
     Tq = _query_eltype(queries)
     Tr = _promote_eltype(_interp_op, Tg, promote_type(Tv, Tv_part), Tq)
     output = Vector{Tr}(undef, _query_length(queries))
@@ -111,12 +111,14 @@ end
     ) where {N, Tv_part, K}
     K == (1 << N) - 1 || _throw_partials_not_full_mixed(N, K)
 
-    grids_typed, _, Tv_promoted, _ = _nd_promote_grids(grids, data)
+    # Raw grids: the pack + cell-eval float the cell width, so no eager `Tg.(x)` copy.
+    Tg = _promote_grid_eltype(grids)
+    Tv_promoted = _promote_eltype(_coeff_op, Tg, eltype(data))
     Tv = promote_type(Tv_promoted, Tv_part)
     data_typed = _coerce_data_eltype(data, Tv, Val(N))
     partials_typed = _coerce_partials_eltype(partials, Tv, Val(N))
 
-    _validate_nd_grids(grids_typed, data_typed)
+    _validate_nd_grids(grids, data_typed)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
@@ -128,7 +130,7 @@ end
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
 
-    return grids_typed, data_typed, partials_typed, bcs, extraps_val, searches, ops
+    return grids, data_typed, partials_typed, bcs, extraps_val, searches, ops
 end
 
 # ========================================
@@ -138,7 +140,7 @@ end
 # validate domain → fill-OOB short circuit → pool-pack + extend → shared
 # search + eval → scalar.
 @with_pool pool function _hermite_interp_nd_oneshot(
-        grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         partials::HermitePartials{N, Tv, K},
         query::Tuple{Vararg{Real, N}},
@@ -147,7 +149,7 @@ end
         searches::NTuple{N, AbstractSearchPolicy},
         ops::NTuple{N, AbstractEvalOp},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
-    ) where {Tg, Tv, N, K}
+    ) where {Tv, N, K}
     _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
@@ -175,7 +177,7 @@ end
 # happens ONCE; then a tight per-query eval loop writes into `output`.
 @with_pool pool function _hermite_interp_nd_oneshot_batch!(
         output::AbstractVector,
-        grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         partials::HermitePartials{N, Tv, K},
         queries,
@@ -184,7 +186,7 @@ end
         ops::NTuple{N, AbstractEvalOp},
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
-    ) where {Tg, Tv, N, K}
+    ) where {Tv, N, K}
     policies, hints = _resolve_oneshot_search_nd(search, queries, hint, Val(N))
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))

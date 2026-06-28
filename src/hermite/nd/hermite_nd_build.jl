@@ -313,11 +313,14 @@ end
 # through `_eval_nd_cell` and returns a scalar.
 @inline function _pack_and_extend_nodal_derivs_pooled(
         pool::AbstractArrayPool,
-        grids::Tuple{Vararg{AbstractVector{Tg}, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
         data::AbstractArray{Tv, N},
         partials::HermitePartials{N, Tv, K},
         bcs::Tuple{Vararg{AbstractBC, N}},
-    ) where {Tg, Tv, N, K}
+    ) where {Tv, N, K}
+    # `Tg` only feeds the `:exclusive` virtual-endpoint extension below; raw grids
+    # may be Int/heterogeneous.
+    Tg = _promote_grid_eltype(grids)
     extended = ntuple(d -> bcs[d] isa PeriodicBC{:exclusive}, Val(N))
     n_orig = size(data)
     n_ext = ntuple(d -> extended[d] ? n_orig[d] + 1 : n_orig[d], Val(N))
@@ -328,13 +331,11 @@ end
     _fill_packed_src_region!(buf, (data, partials.partials...))
     _wrap_all_axes_all_slots!(buf, extended, Val(N))
 
-    # `map` (not `ntuple` over `bcs[d]`) so each axis dispatches concretely
-    # without boxing the Union — see the heap twin.
-    grids_ext = map(grids, bcs) do grid_d, bc_d
-        bc_d isa PeriodicBC{:exclusive} ?
-            _extend_grid_one_axis_pooled(pool, grid_d, bc_d, Tg) :
-            grid_d
-    end
+    # Per-axis grid extension via a `::Type{Tg}` function barrier: `Tg` must reach
+    # the closure as a static parameter, not a captured type-valued local — Julia
+    # 1.10 boxes such a local, making the extended grid abstract (256 B/call on the
+    # exclusive one-shot). Mirrors `_extend_periodic_nd_axes` (cubic/quad twin).
+    grids_ext = _extend_hermite_nd_grids_pooled(pool, grids, bcs, Tg)
 
     bcs_post = map(bcs, grids_ext) do bc_d, grid_ext_d
         bc_eff = _bc_after_extend(bc_d)
@@ -344,6 +345,25 @@ end
     end
 
     return grids_ext, buf, bcs_post
+end
+
+# Per-axis exclusive-periodic grid extension, factored out so `Tg` reaches the
+# closure as a static `::Type` parameter (not a captured type-valued local) —
+# Julia 1.10 boxes such a local → abstract extended grid → 256 B/call on the
+# exclusive one-shot. `map` (not `ntuple` over `bcs[d]`) keeps each axis's
+# dispatch concrete without boxing the per-axis Union. Mirrors the cubic/quad
+# twin `_extend_periodic_nd_axes`.
+@inline function _extend_hermite_nd_grids_pooled(
+        pool::AbstractArrayPool,
+        grids::Tuple{Vararg{AbstractVector, N}},
+        bcs::Tuple{Vararg{AbstractBC, N}},
+        ::Type{Tg},
+    ) where {N, Tg}
+    return map(grids, bcs) do grid_d, bc_d
+        bc_d isa PeriodicBC{:exclusive} ?
+            _extend_grid_one_axis_pooled(pool, grid_d, bc_d, Tg) :
+            grid_d
+    end
 end
 
 # Pool-based per-axis grid extension. Range case preserves Range type

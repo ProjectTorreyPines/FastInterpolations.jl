@@ -481,8 +481,7 @@ end
     bc_inc = PeriodicBC(endpoint = :inclusive)
     bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
 
-    # Suppress the `_warn_type_conversion` one-shot warning that
-    # `_to_float(::AbstractVector, Tg)` emits when broadcasting.
+    # Float32 grid promotes to Float64 via `_to_float` broadcasting.
     x32 = Float32[0.0, 1.0, 2.0, 3.0]
 
     @testset "Vector{Float32} + Tg=Float64 promotes via _to_float" begin
@@ -696,8 +695,8 @@ end
         r_int = 0:1:3                                  # Int range
         r_f64 = 0.0:1.0:3.0                            # Float64 range
 
-        # Suppress repeated warning emission by warmup.
-        _cache_axis_pooled(pool, x32, Float64)         # warms _warn_type_conversion
+        # Warm up compilation/pool before the allocation assertions below.
+        _cache_axis_pooled(pool, x32, Float64)
         cv_promoted = _cache_axis_pooled(pool, x32, Float64)
         cr_int_promoted = _cache_axis_pooled(pool, r_int, Float32)
         cr_f64_demoted = _cache_axis_pooled(pool, r_f64, Float32)

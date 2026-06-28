@@ -217,7 +217,7 @@
             println(string("OK:", typeof(e)))
         end
         """
-        result = readchomp(`julia --startup-file=no --project=$project_dir -e $batch_script`)
+        result = readchomp(`$(Base.julia_cmd()) --startup-file=no --project=$project_dir -e $batch_script`)
         @test endswith(result, "OK:DomainError")
 
         # Scalar oneshot path
@@ -232,7 +232,7 @@
             println(string("OK:", typeof(e)))
         end
         """
-        result2 = readchomp(`julia --startup-file=no --project=$project_dir -e $scalar_script`)
+        result2 = readchomp(`$(Base.julia_cmd()) --startup-file=no --project=$project_dir -e $scalar_script`)
         @test endswith(result2, "OK:DomainError")
 
         # Interpolant scalar path (the gap found in code review)
@@ -248,7 +248,7 @@
             println(string("OK:", typeof(e)))
         end
         """
-        result3 = readchomp(`julia --startup-file=no --project=$project_dir -e $itp_scalar_script`)
+        result3 = readchomp(`$(Base.julia_cmd()) --startup-file=no --project=$project_dir -e $itp_scalar_script`)
         @test endswith(result3, "OK:DomainError")
 
         # AoS query path
@@ -265,7 +265,7 @@
             println(string("OK:", typeof(e)))
         end
         """
-        result4 = readchomp(`julia --startup-file=no --project=$project_dir -e $aos_script`)
+        result4 = readchomp(`$(Base.julia_cmd()) --startup-file=no --project=$project_dir -e $aos_script`)
         @test endswith(result4, "OK:DomainError")
     end
 

@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782521370592,
+  "lastUpdate": 1782626162420,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -59860,6 +59860,330 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/tricubic_3d",
             "value": 390586.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 900.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c095e265b5baaf05f27b731cd8537701551b1494",
+          "message": "perf(nd): zero-alloc Int-grid scalar one-shot (#166)\n\n* perf(nd): raw-grid scalar one-shot eval for Linear/Constant ND (zero-alloc)\n\nND scalar one-shot now searches/evaluates the raw grid tuple instead of\neagerly materialising Tg.(x) for non-Tg Vector axes. The kernel's own\nmap(_resolve_axis, ...) already shapes each axis (Range->_CachedRange,\nVector->passthrough) and the search promote-compares, so Int and\nheterogeneous Vector axes no longer pay a per-call heap copy (mirrors the\n1D one-shot path). Tg is kept type-only (float(_promote_grid_eltype)) for\nthe ::Tr boxing guard; relaxes the two scalar kernel signatures to accept\nheterogeneous-eltype axes.\n\nScalar one-shot on Int Vector grids: ~3-4x faster, zero alloc\n(linear 2D 86->22ns/1632->0B, 3D 83->28ns/960->0B, Int x Float64\n65->21ns/928->0B; constant Int already 0B).\n\nBatch paths intentionally keep the baseline eager-convert: they amortise\nthe one-time conversion across all queries, where per-query promote-compare\ncosts ~19% more (measured) and the alloc it would save is a trivial\none-time 1632 B/call.\n\nAdds test/test_nd_raw_grid_oneshot.jl: zero-alloc on Int Vector grids,\nbit-identical (===) vs Float64-grid and persistent interpolant, @inferred\n/::Tr type stability on raw + heterogeneous axes, ForwardDiff through the\nND query, and Float32 Vector axis within ULP of the Float64 reference.\n\n* perf(nd): raw-grid Cubic ND scalar one-shot (OnTheFly warm zero-alloc on Int)\n\nCubic ND scalar one-shot now passes RAW grids. The default OnTheFly path\nsearches/evaluates them directly and hits the per-axis isequal-keyed Float\ncache by stable object id, so warm scalar one-shot on an Int Vector grid is\nzero-alloc (was 560 B / 496 B per call from _nd_promote_grids -> Tg.(x), which\nproduced a fresh id every call -> permanent cache miss). Restores the kernel's\ndocumented zero-allocation-after-warmup for Int grids, matching 1D cubic.\nPreCompute (opt-in) converts internally up front because its @generated\ncell-eval needs Float spacing -- baseline behaviour preserved.\n\n- Relax the shared _interp_nd_oneshot_onthefly kernel + the cubic PreCompute\n  kernel to accept raw/heterogeneous grids; compute Tg inside.\n- Relax _validate_nd_bcs! (both arities) for heterogeneous-eltype grids.\n- Output types via op-shape inference (_promote_eltype): the witness ops float\n  Int internally, so a raw Tg is correct -- drop the manual float()/_value_type.\n  Retro-applied to the Linear ND scalar one-shot too.\n\nBatch keeps eager-convert (amortises across queries). Quad/Hermite ND scalar\nAPIs still eager-convert; their OnTheFly routes through the now-raw-capable\nshared kernel unchanged.\n\nExtends test/test_nd_raw_grid_oneshot.jl with a Cubic ND testitem: warm Int\nzero-alloc (OnTheFly), Int===Float64, one-shot ~= persistent, @inferred/::Tr\non raw + heterogeneous axes, ForwardDiff through the query.\n\n* perf(nd): raw-grid Quadratic ND scalar one-shot (default PreCompute zero-alloc on Int)\n\nQuadratic ND scalar one-shot now passes RAW grids. Quad's AutoCoeffs defaults to\nPreCompute (for bit-exact AD-rule matching), so the default scalar path is the\nPreCompute cell-eval. Two changes make it accept a raw Int axis without an eager\nTg.(x) copy:\n\n- _compute_all_local_params now floats the cell width hs. _eval_nd_*_cell is\n  @generated on a Float h and has no Int method; integer spacings are exact in\n  Float64 so this is bit-identical, and it is a zero-cost identity for the\n  Float/Dual grids every existing caller passes (15 shared call sites across\n  cubic/quad/hermite/hetero, oneshot + persistent).\n- The quad PreCompute kernel already wraps each axis via _cache_axis_pooled into\n  pool buffers, so it needs no pre-converted grid; relax its signature and take\n  Tg from op-shape inference (_promote_eltype, raw grid type correct).\n\nResult: warm scalar one-shot on an Int Vector grid is zero-alloc on the DEFAULT\npath (was a per-call Tg.(x) heap copy), bit-identical to the Float64-grid /\npersistent-interpolant result, AD-correct. Batch keeps eager-convert.\n\nExtends test/test_nd_raw_grid_oneshot.jl with a Quadratic ND testitem.\n\n* perf(nd): raw-grid Hermite ND one-shot (warm zero-alloc on Int)\n\nHermite ND one-shot now passes RAW grids. The shared _hermite_oneshot_prepare is\ntype-only (Tv_promoted via op-shape inference, no _nd_promote_grids), and the pack\n+ cell-eval accept raw grids (the shared _compute_all_local_params floats the cell\nwidth). So warm scalar one-shot on an Int Vector grid is zero-alloc -- no per-call\nTg.(x) copy -- bit-identical to the Float64-grid / persistent result, AD-correct.\n\n- Relax _hermite_interp_nd_oneshot (scalar + batch) and _pack_and_extend_nodal_\n  derivs_pooled to accept raw/heterogeneous grids; Tg (periodic-exclusive virtual\n  endpoint only) is computed inside the pack.\n- Output type via op-shape inference (_promote_eltype).\n\nScalar and batch share the prepare, so both run raw; hermite batch is\npack-dominated, so the per-query promote-compare cost is negligible against\npacking 2^N partials.\n\nExtends test/test_nd_raw_grid_oneshot.jl with a Hermite ND testitem (warm Int\nzero-alloc, Int===Float64, one-shot===persistent, @inferred, ForwardDiff).\n\n* fix(nd): heterogeneous & mixed-precision grids for Quadratic/Hermite ND one-shot\n\nThe raw-grid scalar one-shot regressed heterogeneous-eltype and mixed-precision\ngrids that the old eager-convert had unified to one Tg. Two spots assumed a single\ngrid type:\n\n- _eval_nd_*_cell is @generated and couples hs/inv_hs as NTuple{N,Tg}. A grid like\n  Float32 x Float64, or a Range (floats to Float64) beside a Vector{Int}, produced\n  heterogeneous hs/inv_hs with no matching method. Fix: promote BOTH hs and inv_hs\n  to one common float type in _compute_all_local_params -- a pre-promotion of N\n  spacing scalars (the _le promote-then-compare idea), bit-identical and a zero-cost\n  identity for the homogeneous grids every existing caller passes.\n- _compute_nd_partials_quadratic! / _build_nd_partials_dim_quadratic! bound the\n  whole grid tuple to one eltype Tg, but each dimension is differentiated\n  independently via grids[D]. Fix: relax the tuple-level signatures to\n  NTuple{N, AbstractVector}.\n\nThese cases (Int x Float64, Float32 x Float64, Range x Vector) worked before the\nraw-grid migration and now work again. Pinned by tests in\ntest/test_nd_raw_grid_oneshot.jl (quad + hermite x heterogeneous/mixed grids, each\n=== the all-Float64 reference). Homogeneous/AD paths unchanged; the 15\n_compute_all_local_params callers (incl. persistent evals) verified green.\n\n* refactor(nd): raw-grid Cubic ND PreCompute (drop internal-convert; consistent with quad/hermite)\n\nCubic's scalar one-shot PreCompute -- the practically-used strategy, since OnTheFly\nrecomputes z per query -- previously converted grids internally via\n_convert_grids_typed, so it still allocated Tg.(x) on Int grids and only the slow\nOnTheFly default was zero-alloc. Now PreCompute passes raw grids too:\n\n- Drop the internal _convert_grids_typed; type the pooled partials buffer from the\n  raw grid eltype via op-shape inference (_promote_eltype; _coeff_op's inv(h)\n  floats Int).\n- Relax the cubic build chain (_compute_nd_partials!, _build_nd_partials_dim!,\n  _validate_nd_partials_dims!) and _prepare_periodic_nd_pooled/_impl to accept\n  heterogeneous-eltype grids: each axis is built/extended independently, so no\n  single grid Tg is needed (the exclusive-periodic path computes the common Tg\n  inside for its extension).\n\nResult: cubic PreCompute warm scalar one-shot on an Int grid is zero-alloc (the\nraw Int grid retrieves its Float spline cache via the cross-type isequal hit),\nbit-identical to the all-Float result, and handles heterogeneous / mixed-precision\ngrids. All build methods (cubic/quad/hermite) are now consistent: raw grids, no\neager Tg.(x), heterogeneous-capable. One-shot PreCompute per-query cost stays\nO(grid-size) (it rebuilds the 2^N partials each call) -- use a persistent\ninterpolant for many repeated queries.\n\nTests: cubic PreCompute Int zero-alloc + cubic heterogeneous/mixed grids in\ntest/test_nd_raw_grid_oneshot.jl. Persistent/periodic/hetero suites unaffected.\n\n* fix(nd): linear ND one-shot on heterogeneous mixed-precision grids\n\n`_multilinear_sum` constrained `inv_hs::NTuple{N}` (homogeneous), so a\nmixed-eltype grid (Float32 × Float64, Int × Float32) or AD-wrt-grid (a Dual\naxis beside a Float axis) threw MethodError after the raw-grid migration — the\nold eager `Tg.(x)` convert had homogenised every axis. The `@generated` body\nuses each `inv_hs[d]` independently, so relax the signature to\n`Tuple{Vararg{Real, N}}` (matching `αs`). Bit-identical for homogeneous grids.\n\nPinned by test_nd_oneshot_mixed_precision_grids.jl (linear/constant mixed grids\n+ AD-wrt-grid; cubic/quad/hermite already promote via _compute_all_local_params,\nconstant is a selection kernel).\n\n* fix(cubic): drop spurious \"allocating conversion\" warning on pooled Int-grid cache build\n\nThe cubic pooled cache builder (`_build_cache`, cache-miss path) converted an\nInt/Rational grid via `_to_float`, which emits a one-time `@warn` advising users\nto \"pre-convert your data for zero-allocation\". But the converted copy is cached,\nso warm calls are already zero-alloc — the advice is wrong for this path, and it\nfired on every cold ND/1D cubic Int-grid one-shot (both OnTheFly and PreCompute\ngo through this builder). Route the cache-build conversion through a new\nnon-warning `_to_float_nowarn`; the public `_to_float` (persistent constructor /\nnon-cached paths) keeps its legitimate warning.\n\nPinned by test_cubic_oneshot_no_spurious_warning.jl (fresh-process log capture,\nrobust to the `maxlog=1` throttle).\n\n* docs(nd): trim verbose/duplicated raw-grid comments to essentials\n\nThe raw-grid migration left long, repeated rationale blocks across the ND\none-shot/build paths (the \"scalar=raw / batch eager-convert\" note duplicated in\nfive files, changelog narration like \"was `Tg.(x)` per call\"). Condense each to\n1-2 core lines, drop the fragile \"see the linear_interp scalar note\" cross-refs,\nand keep the load-bearing `@generated` `NTuple{N, Tg}` coupling rationale in\n`_compute_all_local_params`. Also fix two now-stale docstrings (`_nd_promote_grids`\nno longer has a constant scalar caller; scope note) and drop the stale \"RED PHASE\"\nlabel/narration in test_nd_raw_grid_oneshot.jl (those tests are green). Comments\nonly — no code or behavior change.\n\n* refactor(core): remove the obsolete grid type-conversion warning\n\n`_warn_type_conversion` advised \"pre-convert your data for zero-allocation\", but\nthat no longer holds: ND/1D one-shot Int grids are already zero-alloc (raw grids +\ncached spline/axis), and persistent construction allocates a stored grid copy\nregardless of eltype (measured 720 B Float64 vs 816 B Int — never zero). Its\noriginal per-call-conversion purpose is gone, so drop it entirely, along with the\n`_to_float_nowarn` workaround it had forced in the cubic cache builder (revert\n`_build_cache` to plain `_to_float`). Supersedes the scoped suppression earlier on\nthis branch. No behavior change beyond log output; values bit-identical.\n\n* test(nd): pin cubic/quad/hermite AD-wrt-grid one-shot; tidy hermite Tg binding\n\nAdds AD-through-grid-node coverage for the cubic/quadratic/hermite ND scalar\none-shot (gradient finite + matches central finite-diff) — the path worked but\nwas unpinned (only linear had it). Names `Tg = _promote_grid_eltype(grids)` in\n`_hermite_oneshot_prepare` to match the sibling one-shot convention (compile-time\nfold, no behavior change).\n\n* fix(nd): guard N=0 edge in `_compute_all_local_params`\n\nThe heterogeneous-grid spacing promotion `Tg = float(_promote_grid_eltype(grids))`\nthrows on the degenerate N=0 (empty-grid) call: `_promote_grid_eltype(())` is\n`Union{}` and `float(Union{})` errors (`cannot construct a value of type Union{}`).\nThe spacing ntuples are empty for N=0, so guard with a placeholder that is never\nused. Restores the master behaviour pinned by `test_nd_utils_shared.jl`\n(`_compute_all_local_params((), (), (), ()) === ((), (), ())`).\n\n* fix(tests): replace hardcoded julia command with Base.julia_cmd() for consistency\n\n* fix(nd): refactor per-axis grid extension to use static type parameter for improved inference\n\n* fix(hermite): refactor per-axis grid extension to use static type parameter for zero-alloc performance",
+          "timestamp": "2026-06-27T22:47:34-07:00",
+          "tree_id": "cb7ba649e96e71207398027bf0808a153a2d0129",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/c095e265b5baaf05f27b731cd8537701551b1494"
+        },
+        "date": 1782626153239,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 39458,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83880\nallocs=29\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 845.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 332599,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515320\nallocs=40\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 2115.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1549.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 17.72,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 7.71,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3536.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 37.75,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 13.92,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4651.44,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4648.84,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9777.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3206.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_rand_rand",
+            "value": 66699,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_sort_rand",
+            "value": 61521.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bicubic_2d_sort_sort",
+            "value": 59159,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_rand_rand",
+            "value": 18563.08,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_sort_rand",
+            "value": 9700.66,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "13_nd_oneshot_gridquery/bilinear_2d_sort_sort",
+            "value": 4697.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "14_series_oneshot_batch/constant_inplace_vec_k8_q1000_rand",
+            "value": 18936.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "14_series_oneshot_batch/linear_inplace_vec_k8_q1000_rand",
+            "value": 18293.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 559.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 47902.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1534.66,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4512\nallocs=11\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 14080.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40392\nallocs=16\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 25.63,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 485.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 47025.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 27.04,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 19375.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 36.55,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 259.08,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=8072\nallocs=3\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 10.01,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 202.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 19231.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 9.31,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 11.41,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 683.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4881.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 44249,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 820,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 1831.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 2507.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11714.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 3568.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 45657.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 472.08,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 379810.3,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           },

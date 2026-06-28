@@ -50,7 +50,7 @@ Anchored evaluation is faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search.
 
 # Efficiency
-- `alpha` for EvalValue: `muladd(alpha, yR - yL, yL)` (no division)
+- `alpha` for EvalValue: `alpha*yR + (1-alpha)*yL` (convex blend, no division)
 - `inv_h` for EvalDeriv1: `(yR - yL) * inv_h` (no division)
 """
 struct _LinearAnchoredQuery{Tg, Tq <: Real}

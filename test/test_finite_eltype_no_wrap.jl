@@ -340,3 +340,69 @@ end
     itpU = FI.cubic_interp(x, yU)
     @test (@inferred itpU(3.3)) isa Float64
 end
+
+# Convex value-kernel contract: endpoint-exact at α=0,1 and bounded within
+# [min(yL,yR), max(yL,yR)] for α∈[0,1] — i.e. the result can never overshoot the
+# endpoints (the old slope form was not endpoint-exact; a narrow-eltype subtraction
+# could wrap past the range, e.g. midpoint of UInt8[200,50] returned 253).
+@testitem "linear convex value: endpoint-exact + bounded (no overshoot)" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    cells = ((0.2, 0.9), (0.9, 0.2), (-0.3, 0.7), (UInt8(50), UInt8(200)), (UInt8(200), UInt8(50)))
+    for (yL, yR) in cells
+        lo = min(Float64(yL), Float64(yR)); hi = max(Float64(yL), Float64(yR))
+        @test FI._linear_kernel(FI.EvalValue(), yL, yR, 1.0, 0.0) == Float64(yL)   # α=0 → yL exact
+        @test FI._linear_kernel(FI.EvalValue(), yL, yR, 1.0, 1.0) == Float64(yR)   # α=1 → yR exact
+        for α in 0.0:0.05:1.0
+            v = Float64(FI._linear_kernel(FI.EvalValue(), yL, yR, 1.0, α))
+            @test lo <= v <= hi                                                    # never overshoots
+        end
+    end
+
+    # End-to-end on a descending UInt8 grid: every value stays in the data range.
+    x = [1.0, 2.0, 3.0, 4.0]
+    yU = UInt8[200, 50, 150, 40]
+    itp = FI.linear_interp(x, yU)
+    lo = Float64(minimum(yU)); hi = Float64(maximum(yU))
+    for q in range(1.0, 4.0; length = 31)
+        @test lo <= Float64(itp(q)) <= hi
+    end
+end
+
+# n=2 / n=3 use dedicated `_fielddiff` secant branches, distinct from the general
+# interior loop and the n∈5:9 sweep. Use Gray{N0f8}, NOT UInt8 — the constructors
+# promote integers to Float before the slope kernels, which would hide a `_fielddiff`
+# revert; colorant carriers reach the slope builders un-promoted, so reverting
+# `_fielddiff` would wrap the n=2/3 secants. (pchip excluded: monotonicity needs
+# `sign`, undefined on Gray.) Narrow build must equal the float-channel build.
+@testitem "no-wrap: n=2 / n=3 special-case slope paths" begin
+    using FastInterpolations
+    using FixedPointNumbers, ColorTypes, ColorVectorSpace
+    const FI = FastInterpolations
+    for (x, g) in (
+            ([1.0, 2.0], Gray{N0f8}.([0.9, 0.1])),
+            ([1.0, 2.0, 3.0], Gray{N0f8}.([0.9, 0.1, 0.8])),
+        )
+        gf = Float64.(gray.(g))
+        for ctor in (FI.linear_interp, FI.constant_interp, FI.akima_interp, FI.cardinal_interp)
+            itpG = ctor(x, g); itpF = ctor(x, gf)
+            for q in range(first(x), last(x); length = 7)
+                @test isapprox(Float64(gray(itpG(q))), Float64(itpF(q)); atol = 1.0e-9)
+            end
+        end
+    end
+end
+
+# Cubic PeriodicBC seam RHS (`compute_rhs_periodic!`) `_fielddiff` sites: narrow
+# build must equal float (cubic is omitted from the seam loop above — no `coeffs`).
+@testitem "build-overflow: cubic periodic seam" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    x = collect(1.0:1.0:6.0)
+    yU = UInt8[200, 50, 150, 40, 210, 200]   # closed cycle (y[1] == y[end])
+    itpN = FI.cubic_interp(x, yU; bc = FI.PeriodicBC())
+    itpF = FI.cubic_interp(x, Float64.(yU); bc = FI.PeriodicBC())
+    for q in (1.5, 2.5, 4.5, 5.5)
+        @test isapprox(Float64(itpN(q)), Float64(itpF(q)); atol = 1.0e-9)
+    end
+end

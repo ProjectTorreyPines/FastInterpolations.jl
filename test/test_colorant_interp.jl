@@ -50,3 +50,22 @@ end
         @test isapprox(Float64(gray(fi(qx, qy))), Float64(gray(ip(qx, qy))); atol = 1.0e-2)
     end
 end
+
+# Build-time slope kernels (`_fielddiff`) are exercised by un-promoted duck/colorant
+# inputs — the linear coverage above does not reach cubic/akima builders. A
+# Gray{N0f8} build must equal the float-channel build and never wrap.
+@testitem "colorant Gray{N0f8} cubic + akima builders" begin
+    using FastInterpolations
+    using FixedPointNumbers, ColorTypes, ColorVectorSpace
+    const FI = FastInterpolations
+    x = [1.0, 2.0, 3.0, 4.0, 5.0]
+    g = Gray{N0f8}.([0.9, 0.1, 0.8, 0.2, 0.7])       # descending cells exercise no-wrap
+    gf = Float64.(gray.(g))
+    for ctor in (FI.cubic_interp, FI.akima_interp)
+        itpG = ctor(x, g)
+        itpF = ctor(x, gf)
+        for q in (1.5, 2.5, 3.5, 4.5, 2.25)
+            @test isapprox(Float64(gray(itpG(q))), Float64(itpF(q)); atol = 1.0e-9)
+        end
+    end
+end

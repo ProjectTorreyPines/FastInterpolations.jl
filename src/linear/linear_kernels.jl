@@ -51,7 +51,8 @@ Measurement uncertainty, …) — for plain `Real` `α`, LLVM const-folds the
 `1.0` factor away.
 """
 @inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
-    return (yR - yL) * inv_h * one(α)
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    return _fielddiff(Tc, yR, yL) * inv_h * one(α)
 end
 
 """

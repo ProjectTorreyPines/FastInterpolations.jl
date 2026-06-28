@@ -48,6 +48,23 @@ end
     end
 end
 
+@testitem "linear deriv kernel no-wrap" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    # slope across a descending UInt8 cell: (50-200)/1 = -150
+    @test FI._linear_kernel(FI.EvalDeriv1(), UInt8(200), UInt8(50), 1.0, 0.5) == -150.0
+    aq = FI._anchor_query([1.0, 2.0], 1.5, Val(:linear))   # inv_h=1.0
+    @test FI._linear_kernel(FI.EvalDeriv1(), UInt8(200), UInt8(50), aq) == -150.0
+    # Float bit-identical
+    @test FI._linear_kernel(FI.EvalDeriv1(), 0.2, 0.9, 2.0, 0.5) === (0.9 - 0.2) * 2.0 * one(0.5)
+end
+
+@testitem "linear deriv kernel inferred" begin
+    using FastInterpolations, Test
+    const FI = FastInterpolations
+    @test (@inferred FI._linear_kernel(FI.EvalDeriv1(), 0.2, 0.9, 2.0, 0.5)) isa Float64
+end
+
 @testitem "no-wrap helpers preserve natural promotion (no forced convert)" begin
     using FastInterpolations: _fielddiff, _fieldsum
     using ForwardDiff: Dual

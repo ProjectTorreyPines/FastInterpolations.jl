@@ -127,7 +127,8 @@ Evaluate first derivative using anchor's precomputed inv_h.
 No division: uses (yR - yL) * inv_h.
 """
 @inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, aq::_LinearAnchoredQuery{Tg}) where {Tg, Tv}
-    return (yR - yL) * aq.inv_h
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    return _fielddiff(Tc, yR, yL) * aq.inv_h
 end
 
 """Second derivative of linear is always zero."""

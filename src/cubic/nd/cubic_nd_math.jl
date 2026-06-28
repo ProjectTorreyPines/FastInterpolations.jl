@@ -183,7 +183,7 @@ Evaluate third derivative: d³P/dx³ = (d³P/dt³) / h³ (constant within interv
     ) where {Tg, Tinv, Tq}
     # Third derivatives are constants: d³h00/dt³=12, d³h10/dt³=6, d³h01/dt³=-12, d³h11/dt³=6
     # Auto-promote naturally through arithmetic with value types
-    value_contrib = 12 * _fielddiff(Base.promote_op(*, Tg, typeof(yL)), yL, yR)
+    value_contrib = 12 * _fielddiff(_promote_eltype(_coeff_op, Tg, typeof(yL)), yL, yR)
     deriv_contrib = 6 * h * (dyL + dyR)
 
     d3P_dt3 = value_contrib + deriv_contrib

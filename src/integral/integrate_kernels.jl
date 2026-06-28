@@ -46,7 +46,7 @@ end
         yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td
     ) where {Tv, Tg <: Real, Td <: Real}
     du = u1 - u0
-    Tc = Base.promote_op(*, Tg, Tv)
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
     half_slope = _fielddiff(Tc, yR, yL) * inv(2h)
     return du * muladd(half_slope, u1 + u0, yL)
 end
@@ -56,7 +56,7 @@ end
         ::_EvalIntegralCell,
         yL::Tv, yR::Tv, h::Tg
     ) where {Tv, Tg <: Real}
-    Tc = Base.promote_op(*, Tg, Tv)
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
     return (h / 2) * _fieldsum(Tc, yL, yR)
 end
 
@@ -295,7 +295,7 @@ end
 
 # Horner form: F(u) = u · @evalpoly(u, fL, dfL/2, a/3)
 @inline function _quadratic_integral_kernel_nd(fL, fR, dfL, h, inv_h, u0, u1)
-    s = _fielddiff(Base.promote_op(*, typeof(inv_h), typeof(fL)), fR, fL) * inv_h
+    s = _fielddiff(_promote_eltype(_coeff_op, typeof(inv_h), typeof(fL)), fR, fL) * inv_h
     a_3 = (s - dfL) * (inv_h * inv(oftype(h, 3)))  # a/3
     d_2 = inv(oftype(h, 2)) * dfL   # Tg * Tv
     return u1 * @evalpoly(u1, fL, d_2, a_3) -

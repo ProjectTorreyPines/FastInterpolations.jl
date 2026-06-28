@@ -31,7 +31,7 @@ Note: Unlike Hermite, quadratic works in physical coordinates so `h` is not need
         fL, fR, dfL,
         inv_h, dL
     )
-    s = _fielddiff(Base.promote_op(*, typeof(inv_h), typeof(fL)), fR, fL) * inv_h    # secant slope
+    s = _fielddiff(_promote_eltype(_coeff_op, typeof(inv_h), typeof(fL)), fR, fL) * inv_h    # secant slope
     a = (s - dfL) * inv_h     # quadratic coefficient
     return _quadratic_kernel(op, a, dfL, fL, dL)
 end

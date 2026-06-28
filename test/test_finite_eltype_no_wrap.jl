@@ -104,6 +104,23 @@ end
     end
 end
 
+# Direct-kernel pin for the PolyFit *homogeneous* deriv overload (f::NTuple{N,T},
+# inv_h::T). The public API always supplies a float inv_h → mixed overload, so the
+# homogeneous narrow path needs its own pin: its coefficient-field type must widen a
+# narrow T (the footgun was `Base.promote_op(*, T, T) === UInt8`, which did not widen
+# → the divided difference wrapped: (50-200) read as 106). Degree-1 only — for it the
+# field type is the sole determinant (no `-inv_h/2` coefficient on a raw narrow inv_h).
+@testitem "no-wrap: PolyFit homogeneous deriv field type (degree 1)" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    for side in (FI.LeftSide(), FI.RightSide())
+        @test FI._compute_deriv1(FI.PolyFit{1}(), side, (UInt8(200), UInt8(50)), UInt8(1)) ==
+            FI._compute_deriv1(FI.PolyFit{1}(), side, (200.0, 50.0), 1.0)
+        @test FI._compute_deriv1(FI.PolyFit{1}(), side, (Int8(100), Int8(-50)), Int8(1)) ==
+            FI._compute_deriv1(FI.PolyFit{1}(), side, (100.0, -50.0), 1.0)
+    end
+end
+
 @testitem "build-overflow: quadratic" begin
     using FastInterpolations
     const FI = FastInterpolations
@@ -302,6 +319,26 @@ end
         fN = Float64.(AN(v))
         fF = Float64.(AF(v))
         @test isapprox(fN, fF; atol = 1.0e-7)
+    end
+end
+
+# Fixed-point `Real` (N0f8) is NOT in `_PromotableValue`, so `_promote_itp_inputs`
+# does NOT float it at the adjoint boundary (unlike UInt8 above). The adjoint's own
+# secant recomputation must therefore be wrap-free — else the raw `y[k+1]-y[k]` on
+# N0f8 wraps, flipping `sign(δ)` monotonicity branches and corrupting the gradient.
+@testitem "no-wrap: N0f8 adjoint (un-promoted carrier)" begin
+    using FastInterpolations
+    using FixedPointNumbers
+    const FI = FastInterpolations
+    x = collect(1.0:1.0:6.0)
+    yN = N0f8.([0.9, 0.1, 0.8, 0.2, 0.7, 0.3])   # descending cells exercise the wrap
+    yf = Float64.(yN)
+    qs = [1.5, 2.5, 3.5, 4.5, 5.5]
+    v = [0.1, -0.3, 0.7, -0.5, 0.2]
+    for ctor_adj in (FI.pchip_adjoint, FI.akima_adjoint)
+        AN = ctor_adj(x, yN, qs)
+        AF = ctor_adj(x, yf, qs)
+        @test isapprox(Float64.(AN(v)), Float64.(AF(v)); atol = 1.0e-7)
     end
 end
 

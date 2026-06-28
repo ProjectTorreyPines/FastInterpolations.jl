@@ -252,3 +252,30 @@ end
         end
     end
 end
+
+@testitem "no-wrap invariant property sweep" setup = [] begin
+    using FastInterpolations, Random
+    const FI = FastInterpolations
+    rng = MersenneTwister(20260627)
+    ctors = (
+        FI.linear_interp,
+        FI.constant_interp,
+        FI.quadratic_interp,
+        FI.cubic_interp,
+        FI.pchip_interp,
+        FI.akima_interp,
+        FI.cardinal_interp,
+    )
+    for _ in 1:25
+        n = rand(rng, 5:9)
+        x = collect(1.0:1.0:n)
+        yU = rand(rng, UInt8, n)               # random ⇒ many descending cells
+        for ctor in ctors
+            itpN = ctor(x, yU)
+            itpF = ctor(x, Float64.(yU))
+            for q in range(1.0, Float64(n); length = 13)
+                @test isapprox(Float64(itpN(q)), Float64(itpF(q)); atol = 1.0e-7)
+            end
+        end
+    end
+end

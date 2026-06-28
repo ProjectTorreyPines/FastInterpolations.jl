@@ -190,6 +190,52 @@ end
     end
 end
 
+@testitem "build-overflow: integrals" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+
+    # The integral kernels are called directly with raw corner values (yL, yR).
+    # For the stored interpolant, UInt8 is promoted to Float64 by the constructor,
+    # so the high-level integrate() path does not exercise the raw-UInt8 arithmetic.
+    # These tests validate the kernel functions directly — the same code paths that
+    # external consumers (e.g. duck-typed colorant grids) would exercise.
+
+    # ── linear partial: (yR - yL) wrap ─────────────────────────────────────────
+    # UInt8(50) - UInt8(200) = UInt8(106) wraps; correct result is -150 → integral = 125
+    # Full-span partial (u0=0, u1=h=1): du*(half_slope*(u1+u0) + yL)
+    @test FI._linear_integral_kernel(FI._EvalIntegralPartial(), UInt8(200), UInt8(50), 1.0, 0.0, 1.0) ≈ 125.0
+    @test FI._linear_integral_kernel(FI._EvalIntegralPartial(), Int8(100), Int8(-30), 1.0, 0.0, 0.5) ≈
+        FI._linear_integral_kernel(FI._EvalIntegralPartial(), 100.0, -30.0, 1.0, 0.0, 0.5)
+
+    # ── linear full-cell: (yL + yR) wrap ────────────────────────────────────────
+    # UInt8(200) + UInt8(220) = 420 mod 256 = 164; correct is 420 → h/2*420 = 210
+    @test FI._linear_integral_kernel(FI._EvalIntegralCell(), UInt8(200), UInt8(220), 1.0) ≈ 210.0
+    @test FI._linear_integral_kernel(FI._EvalIntegralCell(), Int8(100), Int8(100), 1.0) ≈ 100.0
+
+    # ── cubic partial: (yR - yL) wrap ───────────────────────────────────────────
+    # zL=zR=0 → c2 = (yR-yL)*(inv_h/2); with UInt8 yR=50, yL=200: wrap → 53*inv_h
+    # With z=0, full span: integral = h/2*(yL+yR) = 125 (same as linear cell)
+    @test FI._cubic_integral_kernel(FI._EvalIntegralPartial(), 0.0, 0.0, UInt8(200), UInt8(50), 1.0, 0.0, 1.0) ≈ 125.0
+    @test FI._cubic_integral_kernel(FI._EvalIntegralPartial(), 0.0, 0.0, Int8(100), Int8(-30), 1.0, 0.0, 1.0) ≈
+        FI._cubic_integral_kernel(FI._EvalIntegralPartial(), 0.0, 0.0, 100.0, -30.0, 1.0, 0.0, 1.0)
+
+    # ── cubic full-cell: (yL + yR) wrap ─────────────────────────────────────────
+    # h/2 * muladd(-(h²/12)*(zL+zR), yL+yR); with z=0: h/2*(yL+yR)
+    @test FI._cubic_integral_kernel(FI._EvalIntegralCell(), 0.0, 0.0, UInt8(200), UInt8(220), 1.0) ≈ 210.0
+    @test FI._cubic_integral_kernel(FI._EvalIntegralCell(), 0.0, 0.0, Int8(100), Int8(100), 1.0) ≈ 100.0
+
+    # ── Float64 bit-identical (fast path) ───────────────────────────────────────
+    @test FI._linear_integral_kernel(FI._EvalIntegralPartial(), 200.0, 50.0, 1.0, 0.0, 1.0) === 125.0
+    @test FI._linear_integral_kernel(FI._EvalIntegralCell(), 200.0, 220.0, 1.0) === 210.0
+    @test FI._cubic_integral_kernel(FI._EvalIntegralPartial(), 0.0, 0.0, 200.0, 50.0, 1.0, 0.0, 1.0) === 125.0
+    @test FI._cubic_integral_kernel(FI._EvalIntegralCell(), 0.0, 0.0, 200.0, 220.0, 1.0) === 210.0
+
+    # ── quadratic ND kernel: (fR - fL) wrap ─────────────────────────────────────
+    # _quadratic_integral_kernel_nd: s = (fR - fL) * inv_h; with dfL=0, u0=0, u1=1
+    @test FI._quadratic_integral_kernel_nd(UInt8(200), UInt8(50), 0.0, 1.0, 1.0, 0.0, 1.0) ≈
+        FI._quadratic_integral_kernel_nd(200.0, 50.0, 0.0, 1.0, 1.0, 0.0, 1.0)
+end
+
 @testitem "build-overflow: periodic seams" begin
     using FastInterpolations
     const FI = FastInterpolations

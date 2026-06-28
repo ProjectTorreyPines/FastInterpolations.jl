@@ -198,6 +198,21 @@ end
 @inline _integrate_op(h::Tg, yv::Tv, span::Ts) where {Tg, Tv, Ts} =
     yv * span + yv * (span * inv(h))
 
+# ── Wrap-free field arithmetic at unavoidable difference/sum sites ──
+# `Tc` is the method's existing coefficient/output field type (e.g. eltype of a
+# coeff array, or `_promote_eltype(_coeff_op, Tg, Tv)`). Promoting operands into
+# the field BEFORE ±/+ is bit-identical for Float (`convert(Float64,·)` is the
+# identity there) and wrap-free for finite/modular eltypes (UInt8, N0f8, …),
+# where the raw `value − value` / `value + value` would overflow/wrap.
+@inline _fielddiff(::Type{Tc}, a, b) where {Tc} = convert(Tc, a) - convert(Tc, b)
+@inline _fieldsum(::Type{Tc}, a, b) where {Tc} = convert(Tc, a) + convert(Tc, b)
+
+# Convex (weighted-sum) linear value blend = α·yR + (1−α)·yL. The negation lands
+# on the float weight `α`, never on data, so finite/colorant values appear only as
+# `weight × value`. Bounded & monotone (result ∈ [min(yL,yR), max(yL,yR)]) ⇒ safe
+# in-place write into a fixed-point output; endpoint-exact at α=0,1.
+@inline _linear_value_blend(α, yL, yR) = muladd(α, yR, muladd(-α, yL, yL))
+
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type
 

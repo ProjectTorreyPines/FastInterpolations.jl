@@ -18,6 +18,36 @@
     @test _linear_value_blend(0.5, 0.2, 0.8) ≈ 0.5
 end
 
+@testitem "linear value kernel no-wrap" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+
+    # Raw 1D kernel with native UInt8 (external-consumer style): descending cell.
+    @test FI._linear_kernel(FI.EvalValue(), UInt8(200), UInt8(50), 1.0, 0.5) == 125.0
+
+    # Anchored value kernel: build a real anchor on a unit cell (alpha=0.5,
+    # inv_h=1.0) via the internal builder, then feed native UInt8 corner values.
+    aq = FI._anchor_query([1.0, 2.0], 1.5, Val(:linear))   # alpha=0.5, inv_h=1.0
+    @test FI._linear_kernel(FI.EvalValue(), UInt8(200), UInt8(50), aq) == 125.0
+
+    # Bilinear (ND) collapses through the 1D value kernel — spot-check the helper
+    # form is endpoint-exact so an N0f8-range write stays in-range.
+    @test FI._linear_kernel(FI.EvalValue(), UInt8(200), UInt8(50), 1.0, 1.0) == 50.0
+end
+
+@testitem "linear value convex: Float behavior" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    # Endpoint-exact (the reason for convex over slope form)
+    @test FI._linear_kernel(FI.EvalValue(), 0.2, 0.9, 1.0, 1.0) === 0.9
+    @test FI._linear_kernel(FI.EvalValue(), 0.2, 0.9, 1.0, 0.0) === 0.2
+    # Bounded: interior stays within [yL,yR]
+    for α in 0.0:0.1:1.0
+        v = FI._linear_kernel(FI.EvalValue(), 0.2, 0.9, 1.0, α)
+        @test 0.2 <= v <= 0.9
+    end
+end
+
 @testitem "no-wrap helpers preserve natural promotion (no forced convert)" begin
     using FastInterpolations: _fielddiff, _fieldsum
     using ForwardDiff: Dual

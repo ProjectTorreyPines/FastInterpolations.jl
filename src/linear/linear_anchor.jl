@@ -113,10 +113,11 @@ end
     _linear_kernel(::EvalValue, yL, yR, aq::_LinearAnchoredQuery)
 
 Evaluate linear interpolation using anchor's precomputed alpha.
-No division: uses muladd(alpha, yR - yL, yL).
+Returns: α*yR + (1-α)*yL (convex form — wrap-free, bounded, endpoint-exact).
+No division: uses `_linear_value_blend(alpha, yL, yR)`.
 """
 @inline function _linear_kernel(::EvalValue, yL::Tv, yR::Tv, aq::_LinearAnchoredQuery) where {Tv}
-    return muladd(aq.alpha, yR - yL, yL)
+    return _linear_value_blend(aq.alpha, yL, yR)
 end
 
 """

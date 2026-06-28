@@ -28,14 +28,18 @@
     _linear_kernel(::EvalValue, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
 
 Evaluate linear interpolation value at normalized cell coordinate `α`.
-Returns: yL + α*(yR - yL). `α` is typically in [0, 1] for in-domain
+Returns: α*yR + (1-α)*yL (convex form). `α` is typically in [0, 1] for in-domain
 queries but may fall outside that range under linear extrapolation
 (`ExtendExtrap`/`WrapExtrap`) where callers intentionally evaluate
 outside the cell. `inv_h` is unused for value eval — DCE'd by LLVM
 when the caller's `inv_h` extraction has no other live use.
+
+The convex form `_linear_value_blend(α, yL, yR)` is wrap-free for non-field
+eltypes (e.g. UInt8, N0f8): it never subtracts endpoints, so finite-range
+values remain in-range. It is also endpoint-exact: α=0 → yL, α=1 → yR.
 """
 @inline function _linear_kernel(::EvalValue, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
-    return muladd(α, yR - yL, yL)  # yL + α*(yR-yL)
+    return _linear_value_blend(α, yL, yR)  # α*yR + (1-α)*yL — convex, wrap-free, endpoint-exact
 end
 
 """

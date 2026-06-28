@@ -7,9 +7,36 @@
     @test _fieldsum(Float64, UInt8(200), UInt8(200)) == 400.0    # raw UInt8 add would wrap
     @test _fieldsum(Float64, 1.5, 2.5) === 4.0
 
+    # signed-overflow (Int8) is also fixed: raw Int8(-128) - Int8(1) wraps to +127
+    @test _fielddiff(Float64, Int8(-128), Int8(1)) == -129.0
+    @test _fieldsum(Float64, Int8(100), Int8(100)) == 200.0   # raw Int8 add would wrap to -56
+
     # convex linear blend: endpoint-exact + correct on descending finite cell
     @test _linear_value_blend(1.0, UInt8(200), UInt8(50)) == 50.0   # t=1 → yR exactly
     @test _linear_value_blend(0.0, UInt8(200), UInt8(50)) == 200.0  # t=0 → yL exactly
     @test _linear_value_blend(0.5, UInt8(200), UInt8(50)) == 125.0  # true midpoint (raw wrap → 253)
     @test _linear_value_blend(0.5, 0.2, 0.8) ≈ 0.5
+end
+
+@testitem "no-wrap helpers preserve natural promotion (no forced convert)" begin
+    using FastInterpolations: _fielddiff, _fieldsum
+    using ForwardDiff: Dual
+
+    # Field types: the fast-path method (a::Tc, b::Tc) is plain `a - b`/`a + b` —
+    # byte-for-byte identical to the old code, NO convert.
+    @test _fielddiff(Float64, 3.0, 1.0) === 3.0 - 1.0
+    @test _fieldsum(Float64, 3.0, 1.0) === 3.0 + 1.0
+    @test _fielddiff(Float32, 3.0f0, 1.0f0) === 3.0f0 - 1.0f0
+    @test _fielddiff(ComplexF64, 2.0 + 1im, 1.0 + 0im) === (2.0 + 1im) - (1.0 + 0im)
+
+    # Duck/AD types take the natural-promotion path (Tc === the duck type) — the
+    # result is the exact Dual, partials intact, never flattened through Float.
+    d1 = Dual(3.0, 1.0); d2 = Dual(1.0, 0.0)
+    Td = typeof(d1)
+    @test _fielddiff(Td, d1, d2) === d1 - d2          # identity, partials preserved
+    @test _fieldsum(Td, d1, d2) === d1 + d2
+
+    # Mixed field lift (e.g. Float operand in a Dual coefficient field, as in
+    # AD-wrt-grid): convert lifts to the field exactly as natural promotion would.
+    @test _fielddiff(Td, 3.0, 1.0) === Td(3.0) - Td(1.0)
 end

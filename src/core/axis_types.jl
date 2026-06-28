@@ -122,9 +122,21 @@ struct _ExclusivePeriodicAxis{Tg, X <: AbstractVector{Tg}, Tp} <: AbstractVector
     end
 end
 
-# Convenience outer ctor — type params inferred from inputs.
-@inline _ExclusivePeriodicAxis(inner::AbstractVector{Tg}, period) where {Tg} =
-    _ExclusivePeriodicAxis{Tg, typeof(inner), typeof(period)}(inner, period)
+# Convenience outer ctor — type params inferred from inputs. The element type
+# must hold the virtual seam point `inner[1] + period`, so widen a narrow grid
+# eltype against the period type before wrapping (an Int grid with a float period
+# would otherwise force `Int(period)` and throw). Zero-copy in the common
+# float-grid case (the period is float, so the widen is a no-op there).
+@inline function _ExclusivePeriodicAxis(inner::AbstractVector{Tg}, period) where {Tg}
+    Te = promote_type(Tg, typeof(period))
+    inner_e = _widen_axis_inner(inner, Te)
+    return _ExclusivePeriodicAxis{Te, typeof(inner_e), typeof(period)}(inner_e, period)
+end
+
+# Widen the wrapped grid to `Te` only when needed — dispatch (not a `?:`) keeps
+# the no-op case zero-copy and type-stable for the per-query one-shot path.
+@inline _widen_axis_inner(inner::AbstractVector{Te}, ::Type{Te}) where {Te} = inner
+@inline _widen_axis_inner(inner::AbstractVector, ::Type{Te}) where {Te} = _convert_copy(inner, Te)
 
 # Inner-ctor validation. No-op for Vector inners (period unverifiable);
 # Range inners cross-validate against `step × length` (= one period for the

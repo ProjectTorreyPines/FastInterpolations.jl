@@ -164,13 +164,13 @@ end
 # Mixed-type _compute_deriv1 for Complex value support
 # f::NTuple{N,Tv} values (can be Complex)
 # inv_h::Tg inverse grid spacing (always real)
-# Returns Tv (same as value type)
+# Returns Tc = promote_op(*, Tv, Tg)
 # ----------------------------------------
 
 # PolyFit{1} (LinearFit) - 2 points, O(h) - Mixed type
 @inline function _compute_deriv1(::PolyFit{1}, ::LeftSide, f::NTuple{2, Tv}, inv_h::Tg) where {Tv, Tg}
     Tc = Base.promote_op(*, Tv, Tg)
-    return _fielddiff(Tc, f[2], f[1]) * inv_h  # Tv * Tg → Tv
+    return _fielddiff(Tc, f[2], f[1]) * inv_h
 end
 
 @inline function _compute_deriv1(::PolyFit{1}, ::RightSide, f::NTuple{2, Tv}, inv_h::Tg) where {Tv, Tg}

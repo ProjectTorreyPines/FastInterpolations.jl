@@ -124,7 +124,7 @@ end
     _linear_kernel(::EvalDeriv1, yL, yR, aq::_LinearAnchoredQuery)
 
 Evaluate first derivative using anchor's precomputed inv_h.
-No division: uses (yR - yL) * inv_h.
+No division: uses `_fielddiff(Tc, yR, yL) * inv_h` (wrap-safe).
 """
 @inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, aq::_LinearAnchoredQuery{Tg}) where {Tg, Tv}
     Tc = _promote_eltype(_coeff_op, Tg, Tv)

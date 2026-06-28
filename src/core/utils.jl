@@ -199,31 +199,20 @@ end
     yv * span + yv * (span * inv(h))
 
 # ── Wrap-free field arithmetic at unavoidable difference/sum sites ──
-# `Tc` is the method's EXISTING coefficient/output field type (e.g. eltype of a
-# coeff array, or `_promote_eltype(_coeff_op, Tg, Tv)`) — never a forced `Float`.
-#
-# Design: PRESERVE existing behavior, ADDITIVELY fix only the wrap gap.
-#   • Fast path `a::Tc, b::Tc` → plain `a - b`/`a + b`: fires whenever the operand
-#     is already the coefficient type. That covers Float (Tc === Float) AND every
-#     duck/AD value type — for those `_promote_eltype`'s duck fallback returns `Tv`,
-#     so `Tc === Tv` and we take the natural-promotion subtraction, byte-for-byte
-#     identical to the old code. NO `convert`, NO Float-convertibility assumption.
-#   • Promote path fires ONLY when `typeof(operand) !== Tc`, i.e. the coefficient
-#     machinery genuinely widens the operand (UInt8/N0f8 → Float, Gray{N0f8} →
-#     Gray{Float64}, or a Float operand lifted into a Dual grid field). There the
-#     `convert` into the field is exactly the promotion that the surrounding `* w`
-#     / store-into-coeff-array already performs — only moved BEFORE the ±, which is
-#     what kills the modular wrap. `promote(a,b)` cannot widen here (both operands
-#     share the narrow type), so `convert(Tc, ·)` against the field is required.
+# `Tc` is the method's coefficient/output field type (e.g. `eltype` of a coeff
+# array, or `_promote_eltype(_coeff_op, Tg, Tv)`) — never a forced `Float`.
+# Fast path (operand already `Tc`): plain `a ± b`, zero overhead, identical for
+# floats and duck/AD types. Promote path (narrow operand, e.g. UInt8/N0f8): widen
+# into the field BEFORE the `±` so modular/overflow wrap cannot occur.
 @inline _fielddiff(::Type{Tc}, a::Tc, b::Tc) where {Tc} = a - b
 @inline _fielddiff(::Type{Tc}, a, b) where {Tc} = convert(Tc, a) - convert(Tc, b)
 @inline _fieldsum(::Type{Tc}, a::Tc, b::Tc) where {Tc} = a + b
 @inline _fieldsum(::Type{Tc}, a, b) where {Tc} = convert(Tc, a) + convert(Tc, b)
 
-# Convex (weighted-sum) linear value blend = α·yR + (1−α)·yL. The negation lands
-# on the float weight `α`, never on data, so finite/colorant values appear only as
-# `weight × value`. Bounded & monotone (result ∈ [min(yL,yR), max(yL,yR)]) ⇒ safe
-# in-place write into a fixed-point output; endpoint-exact at α=0,1.
+# Convex linear value blend = α·yR + (1−α)·yL. The negation lands on the float
+# weight `α`, never on data, so finite/colorant values appear only as `weight ×
+# value` (wrap-free). Endpoint-exact at α=0,1; bounded within [min(yL,yR),
+# max(yL,yR)] for α∈[0,1] (extrapolation intentionally passes α outside [0,1]).
 @inline _linear_value_blend(α, yL, yR) = muladd(α, yR, muladd(-α, yL, yL))
 
 """

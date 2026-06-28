@@ -159,3 +159,18 @@ end
         end
     end
 end
+
+@testitem "build-overflow: akima (precompute + onthefly)" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    x = collect(1.0:1.0:8.0)
+    yU = UInt8[200, 50, 150, 40, 210, 30, 180, 60]
+    yI = Int8[100, -50, 60, -30, 90, -40, 70, -20]
+    for yN in (yU, yI), strat in (FI.PreCompute(), FI.OnTheFly())
+        itpN = FI.akima_interp(x, yN; coeffs = strat)
+        itpF = FI.akima_interp(x, Float64.(yN); coeffs = strat)
+        for q in (1.5, 3.5, 5.5, 6.5, 4.25)
+            @test isapprox(Float64(itpN(q)), Float64(itpF(q)); atol = 1.0e-9)
+        end
+    end
+end

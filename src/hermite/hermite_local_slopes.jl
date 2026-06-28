@@ -197,7 +197,8 @@ end
         if sm.bc isa PeriodicBC
             return _akima_local_4secant_periodic(xr, yr, i, n, sm.bc)
         end
-        @inbounds return (yr[2] - yr[1]) / (xr[2] - xr[1])
+        Tc = _promote_eltype(_coeff_op, Tg, Tv)
+        @inbounds return _fielddiff(Tc, yr[2], yr[1]) / (xr[2] - xr[1])
     end
 
     # Special case: 3 points
@@ -208,9 +209,10 @@ end
         if sm.bc isa PeriodicBC
             return _akima_local_4secant_periodic(xr, yr, i, n, sm.bc)
         end
+        Tc = _promote_eltype(_coeff_op, Tg, Tv)
         @inbounds begin
-            m1 = (yr[2] - yr[1]) / (xr[2] - xr[1])
-            m2 = (yr[3] - yr[2]) / (xr[3] - xr[2])
+            m1 = _fielddiff(Tc, yr[2], yr[1]) / (xr[2] - xr[1])
+            m2 = _fielddiff(Tc, yr[3], yr[2]) / (xr[3] - xr[2])
         end
         i == 1 && return m1
         i == 3 && return m2
@@ -242,7 +244,8 @@ end
     # Real secant range: 1 to n-1.
     # Out-of-range secants are virtual (linearly extrapolated from the secant sequence).
 
-    @inline _secant(j) = @inbounds (y[j + 1] - y[j]) / (x[j + 1] - x[j])
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    @inline _secant(j) = @inbounds _fielddiff(Tc, y[j + 1], y[j]) / (x[j + 1] - x[j])
 
     # Virtual secants extend the real sequence linearly:
     #   m[0]   = 2*m[1] - m[2]

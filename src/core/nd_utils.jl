@@ -1010,7 +1010,9 @@ Compute local cell parameters for all axes via `_get_h(grid, idx)` /
     # Promote `hs`/`inv_hs` to one common float `Tg`: `_eval_nd_*_cell` is `@generated`
     # and couples them as `NTuple{N, Tg}`, so heterogeneous/mixed-precision raw grids
     # need them unified. Bit-identical for the homogeneous Float/Dual callers.
-    Tg = float(_promote_grid_eltype(grids))
+    # (N=0 edge: `float(promote_type())` = `float(Union{})` throws; the ntuples are
+    # empty there, so this placeholder is never used.)
+    Tg = N == 0 ? Float64 : float(_promote_grid_eltype(grids))
     hs = ntuple(Val(N)) do d
         @inbounds convert(Tg, _get_h(grids[d], indices[d]))
     end

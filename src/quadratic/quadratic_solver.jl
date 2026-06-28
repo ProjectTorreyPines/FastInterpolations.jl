@@ -42,7 +42,7 @@ Compute secant slopes: s[i] = (y[i+1] - y[i]) * inv_h[i]
 @inline function _compute_quadratic_secants!(s::AbstractVector{Tc}, y::AbstractVector, axis::AbstractVector{Tg}) where {Tc, Tg}
     n = length(y) - 1
     @inbounds for i in 1:n
-        s[i] = (y[i + 1] - y[i]) * _get_inv_h(axis, i)  # Tv * Tg → Tv
+        s[i] = _fielddiff(Tc, y[i + 1], y[i]) * _get_inv_h(axis, i)  # promote y into secant field Tc
     end
     return s
 end

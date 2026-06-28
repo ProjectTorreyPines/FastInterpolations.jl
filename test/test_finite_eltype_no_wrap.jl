@@ -88,6 +88,20 @@ end
     @test _fielddiff(Td, 3.0, 1.0) === Td(3.0) - Td(1.0)
 end
 
+@testitem "build-overflow: quadratic" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    x = [1.0, 2.0, 3.0, 4.0]
+    yU = UInt8[200, 50, 100, 30]
+    yI = Int8[100, -50, 60, -30]
+    for yN in (yU, yI)
+        itpN = FI.quadratic_interp(x, yN); itpF = FI.quadratic_interp(x, Float64.(yN))
+        for q in (1.5, 2.5, 3.5, 2.25, 3.75)
+            @test isapprox(Float64(itpN(q)), Float64(itpF(q)); atol = 1.0e-9)
+        end
+    end
+end
+
 @testitem "build-overflow: cubic" begin
     using FastInterpolations
     const FI = FastInterpolations

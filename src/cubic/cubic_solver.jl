@@ -253,7 +253,7 @@ end
 @inline function _compute_rhs_first!(
         d::AbstractVector, bc::Deriv1, y::AbstractVector, x::AbstractVector{Tg}
     ) where {Tg}
-    d[1] = 6 * ((y[2] - y[1]) * _get_inv_h(x, 1) - convert(eltype(d), bc.val))
+    d[1] = 6 * (_fielddiff(eltype(d), y[2], y[1]) * _get_inv_h(x, 1) - convert(eltype(d), bc.val))
     return nothing
 end
 
@@ -270,7 +270,7 @@ end
         d::AbstractVector, bc::Deriv1, y::AbstractVector, x::AbstractVector{Tg}
     ) where {Tg}
     n = length(y) - 1
-    d[end] = 6 * (convert(eltype(d), bc.val) - (y[end] - y[end - 1]) * _get_inv_h(x, n))
+    d[end] = 6 * (convert(eltype(d), bc.val) - _fielddiff(eltype(d), y[end], y[end - 1]) * _get_inv_h(x, n))
     return nothing
 end
 
@@ -323,7 +323,8 @@ derivative estimation.
     n = length(y) - 1
     _compute_rhs_first!(d, bc_pair.left, y, x)
     @inbounds for i in 2:n
-        d[i] = 6 * ((y[i + 1] - y[i]) * _get_inv_h(x, i) - (y[i] - y[i - 1]) * _get_inv_h(x, i - 1))
+        Tc = eltype(d)
+        d[i] = 6 * (_fielddiff(Tc, y[i + 1], y[i]) * _get_inv_h(x, i) - _fielddiff(Tc, y[i], y[i - 1]) * _get_inv_h(x, i - 1))
     end
     _compute_rhs_last!(d, bc_pair.right, y, x)
     return nothing
@@ -354,8 +355,9 @@ Interior rows (2 .. n-1) reference only real (non-seam) cells.
 
     # Seam-touching endpoint rows go through the wrapper for cyclic indexing
     # (`y[n+1]` = y[1]) and seam-cell width (`_get_inv_h(x, n)`).
-    @inbounds d[1] = 6 * (y[2] - y[1]) * _get_inv_h(x, 1) - 6 * (y[1] - y[n]) * _get_inv_h(x, n)
-    @inbounds d[n] = 6 * (y[n + 1] - y[n]) * _get_inv_h(x, n) - 6 * (y[n] - y[n - 1]) * _get_inv_h(x, n - 1)
+    Tc = eltype(d)
+    @inbounds d[1] = 6 * _fielddiff(Tc, y[2], y[1]) * _get_inv_h(x, 1) - 6 * _fielddiff(Tc, y[1], y[n]) * _get_inv_h(x, n)
+    @inbounds d[n] = 6 * _fielddiff(Tc, y[n + 1], y[n]) * _get_inv_h(x, n) - 6 * _fielddiff(Tc, y[n], y[n - 1]) * _get_inv_h(x, n - 1)
 
     # Interior rows: i ∈ 2..n-1 → all `xi`/`yi` indices land in `1..n`, which
     # is `≤ length(_raw(x))` (= `length(_raw(y))` = n). Unwrap once and run a
@@ -363,7 +365,7 @@ Interior rows (2 .. n-1) reference only real (non-seam) cells.
     xi = _raw(x)
     yi = _raw(y)
     @inbounds for i in 2:(n - 1)
-        d[i] = 6 * (yi[i + 1] - yi[i]) * _get_inv_h(xi, i) - 6 * (yi[i] - yi[i - 1]) * _get_inv_h(xi, i - 1)
+        d[i] = 6 * _fielddiff(Tc, yi[i + 1], yi[i]) * _get_inv_h(xi, i) - 6 * _fielddiff(Tc, yi[i], yi[i - 1]) * _get_inv_h(xi, i - 1)
     end
 
     return nothing

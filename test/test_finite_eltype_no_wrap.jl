@@ -87,3 +87,30 @@ end
     # AD-wrt-grid): convert lifts to the field exactly as natural promotion would.
     @test _fielddiff(Td, 3.0, 1.0) === Td(3.0) - Td(1.0)
 end
+
+@testitem "build-overflow: cubic" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+
+    # Float64 reference must match the narrow-eltype build (no wrap).
+    function assert_no_wrap(ctor, x, yN; qs = (1.5, 2.5, 3.5, 2.25, 3.75), atol = 1.0e-9)
+        itpN = ctor(x, yN)
+        itpF = ctor(x, Float64.(yN))
+        for q in qs
+            @test isapprox(Float64(itpN(q)), Float64(itpF(q)); atol = atol)
+        end
+        return itpN
+    end
+
+    x = [1.0, 2.0, 3.0, 4.0]
+    # Descending cells so yR < yL triggers unsigned/overflow wrap.
+    yU = UInt8[200, 50, 100, 30]
+    yI = Int8[100, -50, 60, -30]
+
+    assert_no_wrap(FI.cubic_interp, x, yU)
+    assert_no_wrap(FI.cubic_interp, x, yI)
+
+    # Direct deriv1 kernel wrap pin (z already coeff-typed; yR-yL is the wrap site).
+    # cubic EvalDeriv1: with zL=zR=0, slope reduces to (yR-yL)*inv_h.
+    @test FI._cubic_kernel(FI.EvalDeriv1(), 0.0, 0.0, UInt8(200), UInt8(50), 1.0, 1.0, 0.0, 1.0) == -150.0
+end

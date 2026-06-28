@@ -118,7 +118,7 @@ function coeffs end
     z_sum = muladd(Tg(2), zL, zR)                       # 2zL + zR       fmadd
     a = (zR - zL) * inv_6h                               # (zR-zL)/(6h)   fsub, fmul
     b = zL * inv(Tg(2))                                  # zL/2           fmul
-    c = muladd(-h_inv6, z_sum, (yR - yL) * inv_h)        # (yR-yL)/h - h(2zL+zR)/6  fsub, fmul, fnmsub
+    c = muladd(-h_inv6, z_sum, _fielddiff(typeof(zL), yR, yL) * inv_h)  # promote y into moment field
     d = yL
     return CellPoly{4, Tv, Tg}((d, c, b, a), xL, xR)
 end

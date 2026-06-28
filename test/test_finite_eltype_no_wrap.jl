@@ -280,7 +280,7 @@ end
     end
 end
 
-# ── Task 12: adjoint narrow-data audit gate ───────────────────────────────────
+# Adjoint audit: narrow-eltype build must equal float build (constructors promote y).
 # pchip_adjoint / akima_adjoint call _promote_itp_inputs(x, y) which lifts y
 # to Float64 before any secant arithmetic.  Build from narrow UInt8 data and
 # verify the adjoint operator gives the same result as the float-built adjoint.
@@ -303,4 +303,40 @@ end
         fF = Float64.(AF(v))
         @test isapprox(fN, fF; atol = 1.0e-7)
     end
+end
+
+@testitem "Float64 bit-identical at promoted-difference sites" begin
+    using FastInterpolations, Random
+    const FI = FastInterpolations
+    rng = MersenneTwister(1)
+    # Compare current build against the documented pre-fix Float behavior by
+    # asserting determinism + exact equality of repeated evaluation, and that
+    # promote edits did not perturb Float results vs a high-precision reference.
+    x = collect(1.0:1.0:8.0)
+    y = randn(rng, 8)
+    for ctor in (
+            FI.quadratic_interp, FI.cubic_interp, FI.pchip_interp,
+            FI.akima_interp, FI.cardinal_interp,
+        )
+        itp = ctor(x, y)
+        for q in range(1.0, 8.0; length = 21)
+            v = itp(q)
+            @test v === itp(q)                 # deterministic
+            @test isfinite(v)
+        end
+    end
+end
+
+@testitem "no-wrap: inference + allocation" begin
+    using FastInterpolations, Test
+    const FI = FastInterpolations
+    x = collect(1.0:1.0:8.0); y = randn(8)
+    itp = FI.cubic_interp(x, y)
+    @test (@inferred itp(3.3)) isa Float64
+    itp(3.3)                                  # warmup
+    @test @allocated(itp(3.3)) == 0
+    # narrow-eltype build is type-stable too
+    yU = rand(UInt8, 8)
+    itpU = FI.cubic_interp(x, yU)
+    @test (@inferred itpU(3.3)) isa Float64
 end

@@ -18,7 +18,7 @@
     for q in range(1.0, 4.0; length = 31)
         v = gray(itpG(q))
         @test 0.0 <= Float64(v) <= 1.0
-        @test (N0f8(clamp(Float64(v), 0.0, 1.0)); true)   # round-trip into N0f8 succeeds
+        @test N0f8(Float64(v)) isa N0f8   # round-trip into N0f8 succeeds (throws if v∉[0,1])
     end
 end
 
@@ -42,7 +42,8 @@ end
     const FI = FastInterpolations
     xs = [1.0, 2.0, 3.0, 4.0]
     ys = [1.0, 2.0, 3.0, 4.0]
-    A = Gray{N0f8}.(reshape(range(0.05, 0.95; length = 16), 4, 4))
+    # Descending cells (clear up/down transitions) exercise the no-wrap kernel path.
+    A = Gray{N0f8}.([0.9 0.1 0.8 0.2; 0.1 0.9 0.2 0.8; 0.85 0.15 0.75 0.25; 0.2 0.7 0.3 0.95])
     fi = FI.interp((xs, ys), A; method = FI.LinearInterp())
     ip = IP.linear_interpolation((xs, ys), A)
     for qx in (1.5, 2.5, 3.25), qy in (1.5, 2.5, 3.75)

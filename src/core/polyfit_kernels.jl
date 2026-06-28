@@ -117,37 +117,47 @@ Compute first derivative on uniform grid using D+1 point stencil.
 """
 # PolyFit{1} (LinearFit) - 2 points, O(h)
 @inline function _compute_deriv1(::PolyFit{1}, ::LeftSide, f::NTuple{2, T}, inv_h::T) where {T}
-    return (f[2] - f[1]) * inv_h
+    Tc = Base.promote_op(*, T, T)
+    return _fielddiff(Tc, f[2], f[1]) * inv_h
 end
 
 @inline function _compute_deriv1(::PolyFit{1}, ::RightSide, f::NTuple{2, T}, inv_h::T) where {T}
-    return (f[2] - f[1]) * inv_h  # Same as left for linear
+    Tc = Base.promote_op(*, T, T)
+    return _fielddiff(Tc, f[2], f[1]) * inv_h  # Same as left for linear
 end
 
 # PolyFit{2} (QuadraticFit) - 3 points, O(h²)
 @inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3, T}, inv_h::T) where {T}
     # Coefficients: -(3, -4, 1) / 2
+    Tc = Base.promote_op(*, T, T)
+    fp = map(v -> convert(Tc, v), f)
     coeff = -inv_h / 2
-    return muladd(3, f[1], muladd(-4, f[2], f[3])) * coeff
+    return muladd(3, fp[1], muladd(-4, fp[2], fp[3])) * coeff
 end
 
 @inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3, T}, inv_h::T) where {T}
     # Coefficients: (1, -4, 3) / 2
+    Tc = Base.promote_op(*, T, T)
+    fp = map(v -> convert(Tc, v), f)
     coeff = inv_h / 2
-    return muladd(1, f[1], muladd(-4, f[2], 3 * f[3])) * coeff
+    return muladd(1, fp[1], muladd(-4, fp[2], 3 * fp[3])) * coeff
 end
 
 # PolyFit{3} (CubicFit) - 4 points, O(h³)
 @inline function _compute_deriv1(::PolyFit{3}, ::LeftSide, f::NTuple{4, T}, inv_h::T) where {T}
     # Coefficients: (-11, 18, -9, 2) / 6
+    Tc = Base.promote_op(*, T, T)
+    fp = map(v -> convert(Tc, v), f)
     coeff = inv_h / 6
-    return muladd(-11, f[1], muladd(18, f[2], muladd(-9, f[3], 2 * f[4]))) * coeff
+    return muladd(-11, fp[1], muladd(18, fp[2], muladd(-9, fp[3], 2 * fp[4]))) * coeff
 end
 
 @inline function _compute_deriv1(::PolyFit{3}, ::RightSide, f::NTuple{4, T}, inv_h::T) where {T}
     # Coefficients: (-2, 9, -18, 11) / 6
+    Tc = Base.promote_op(*, T, T)
+    fp = map(v -> convert(Tc, v), f)
     coeff = inv_h / 6
-    return muladd(-2, f[1], muladd(9, f[2], muladd(-18, f[3], 11 * f[4]))) * coeff
+    return muladd(-2, fp[1], muladd(9, fp[2], muladd(-18, fp[3], 11 * fp[4]))) * coeff
 end
 
 # ----------------------------------------
@@ -159,37 +169,47 @@ end
 
 # PolyFit{1} (LinearFit) - 2 points, O(h) - Mixed type
 @inline function _compute_deriv1(::PolyFit{1}, ::LeftSide, f::NTuple{2, Tv}, inv_h::Tg) where {Tv, Tg}
-    return (f[2] - f[1]) * inv_h  # Tv * Tg → Tv
+    Tc = Base.promote_op(*, Tv, Tg)
+    return _fielddiff(Tc, f[2], f[1]) * inv_h  # Tv * Tg → Tv
 end
 
 @inline function _compute_deriv1(::PolyFit{1}, ::RightSide, f::NTuple{2, Tv}, inv_h::Tg) where {Tv, Tg}
-    return (f[2] - f[1]) * inv_h
+    Tc = Base.promote_op(*, Tv, Tg)
+    return _fielddiff(Tc, f[2], f[1]) * inv_h
 end
 
 # PolyFit{2} (QuadraticFit) - 3 points, O(h²) - Mixed type
 @inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: -(3, -4, 1) / 2
+    Tc = Base.promote_op(*, Tv, Tg)
+    fp = map(v -> convert(Tc, v), f)
     coeff = -inv_h / 2
-    return muladd(3, f[1], muladd(-4, f[2], f[3])) * coeff
+    return muladd(3, fp[1], muladd(-4, fp[2], fp[3])) * coeff
 end
 
 @inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (1, -4, 3) / 2
+    Tc = Base.promote_op(*, Tv, Tg)
+    fp = map(v -> convert(Tc, v), f)
     coeff = inv_h / 2
-    return muladd(1, f[1], muladd(-4, f[2], 3 * f[3])) * coeff
+    return muladd(1, fp[1], muladd(-4, fp[2], 3 * fp[3])) * coeff
 end
 
 # PolyFit{3} (CubicFit) - 4 points, O(h³) - Mixed type
 @inline function _compute_deriv1(::PolyFit{3}, ::LeftSide, f::NTuple{4, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (-11, 18, -9, 2) / 6
+    Tc = Base.promote_op(*, Tv, Tg)
+    fp = map(v -> convert(Tc, v), f)
     coeff = inv_h / 6
-    return muladd(-11, f[1], muladd(18, f[2], muladd(-9, f[3], 2 * f[4]))) * coeff
+    return muladd(-11, fp[1], muladd(18, fp[2], muladd(-9, fp[3], 2 * fp[4]))) * coeff
 end
 
 @inline function _compute_deriv1(::PolyFit{3}, ::RightSide, f::NTuple{4, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (-2, 9, -18, 11) / 6
+    Tc = Base.promote_op(*, Tv, Tg)
+    fp = map(v -> convert(Tc, v), f)
     coeff = inv_h / 6
-    return muladd(-2, f[1], muladd(9, f[2], muladd(-18, f[3], 11 * f[4]))) * coeff
+    return muladd(-2, fp[1], muladd(9, fp[2], muladd(-18, fp[3], 11 * fp[4]))) * coeff
 end
 
 # Generic fallback for D > 3 (uses barycentric differentiation)

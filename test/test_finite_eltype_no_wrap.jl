@@ -88,6 +88,22 @@ end
     @test _fielddiff(Td, 3.0, 1.0) === Td(3.0) - Td(1.0)
 end
 
+@testitem "build-overflow: PolyFit/BC stencils" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    # Use AbstractRange grid so _compute_deriv1 (not _weighted_sum) is exercised.
+    x = 1.0:1.0:5.0
+    yU = UInt8[200, 50, 150, 40, 210]
+    # CubicFit / QuadraticFit / LinearFit endpoint-derivative BCs exercise the PolyFit kernels.
+    for bc in (FI.CubicFit(), FI.QuadraticFit(), FI.LinearFit())
+        itpN = FI.cubic_interp(x, yU; bc = bc)
+        itpF = FI.cubic_interp(x, Float64.(yU); bc = bc)
+        for q in (1.5, 2.5, 3.5, 4.5)
+            @test isapprox(Float64(itpN(q)), Float64(itpF(q)); atol = 1.0e-9)
+        end
+    end
+end
+
 @testitem "build-overflow: quadratic" begin
     using FastInterpolations
     const FI = FastInterpolations

@@ -653,34 +653,11 @@ end
     # axes already returned raw above; `grids` may be raw/heterogeneous).
     Tg = float(_promote_grid_eltype(grids))
 
-    # Per-axis grid extension + bc resolution. `map` with `ntuple(identity, Val(N))`
-    # dispatches per-element with concrete (grid, bc) types → each closure call
-    # compiles to a specialization with concrete return type. A `do d …` with
-    # runtime indexing `bcs[d]` / `grids[d]` over a heterogeneous tuple would
-    # leave the return type as `Union{...}` → heap-boxed Refs (~2 KB/query).
-    # See MEMORY.md "ND Constructor Inferrability Pattern".
-    processed = map(ntuple(identity, Val(N)), grids, bcs) do d, grid_d, bc_d
-        bc_d isa PeriodicBC{:exclusive} || return (grid_d, bc_d)
-        period = _resolve_exclusive_period(grid_d, bc_d)
-        _validate_exclusive_period(grid_d, period)
-        x_end = first(grid_d) + Tg(period)
-        last(grid_d) < x_end ||
-            _throw_prepare_periodic_nd_endpoint(d, period, x_end, last(grid_d))
-        # Range axes use type-preserving `_to_float_adding_endpoint`; Vector axes
-        # delegate to the caller-supplied `extend_vector_grid` (vcat vs pool).
-        grid_ext = grid_d isa AbstractRange ?
-            _to_float_adding_endpoint(grid_d, Tg) :
-            extend_vector_grid(grid_d, x_end, Tg)
-        # Promote bc to `:extended` post-extension: the extended grid IS a
-        # closed-cycle layout (length n+1, last point at x[1]+period). The
-        # `:extended` symbol records this promotion so downstream solvers and
-        # cache builders can distinguish "user gave :exclusive, we extended"
-        # from "user gave :inclusive" while still routing through the
-        # `_is_periodic_seam_folded` trait. Without this, BC-aware solvers
-        # (e.g. cubic) would interpret `:exclusive` as "raw n-grid" and
-        # miscount the cycle.
-        return (grid_ext, _bc_after_extend(bc_d))
-    end
+    # Per-axis grid extension + bc resolution via a `::Type{Tg}` function barrier:
+    # `Tg` must reach the extension closure as a static parameter, not a captured
+    # type-valued local — Julia 1.10 boxes such a local, making the extended grid
+    # type abstract (→ alloc + @inferred failure on the periodic-exclusive ctor).
+    processed = _extend_periodic_nd_axes(grids, bcs, extend_vector_grid, Tg)
     grids_out = map(first, processed)
     bcs_out = map(last, processed)
 
@@ -697,6 +674,34 @@ end
     _extend_all_slices!(data_out, data, bcs, Val(N))
 
     return (grids_out, data_out, bcs_out)
+end
+
+# Per-axis exclusive-periodic extension, factored out so `Tg` reaches the closure
+# as a static `::Type` parameter (not a captured type-valued local). Julia 1.10
+# boxes such a local → the extended grid type goes abstract (alloc + @inferred
+# failure on the periodic-exclusive constructor); the barrier keeps it concrete.
+@inline function _extend_periodic_nd_axes(
+        grids::Tuple{Vararg{AbstractVector, N}},
+        bcs::Tuple{Vararg{AbstractBC, N}},
+        extend_vector_grid::F_ext,
+        ::Type{Tg},
+    ) where {N, F_ext, Tg}
+    return map(ntuple(identity, Val(N)), grids, bcs) do d, grid_d, bc_d
+        bc_d isa PeriodicBC{:exclusive} || return (grid_d, bc_d)
+        period = _resolve_exclusive_period(grid_d, bc_d)
+        _validate_exclusive_period(grid_d, period)
+        x_end = first(grid_d) + Tg(period)
+        last(grid_d) < x_end ||
+            _throw_prepare_periodic_nd_endpoint(d, period, x_end, last(grid_d))
+        # Range axes use type-preserving `_to_float_adding_endpoint`; Vector axes
+        # delegate to the caller-supplied `extend_vector_grid` (vcat vs pool).
+        grid_ext = grid_d isa AbstractRange ?
+            _to_float_adding_endpoint(grid_d, Tg) :
+            extend_vector_grid(grid_d, x_end, Tg)
+        # Promote bc to `:extended` post-extension so downstream solvers / cache
+        # builders route the closed cycle (records the exclusive→extended step).
+        return (grid_ext, _bc_after_extend(bc_d))
+    end
 end
 
 # Cold-path error body (kept out of the happy-path inlined code).

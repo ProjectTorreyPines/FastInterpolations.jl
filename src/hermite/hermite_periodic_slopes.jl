@@ -64,7 +64,8 @@ grid secants directly.
 @inline function _periodic_secant(x::AbstractVector, y::AbstractVector, j::Int, n::Int, ::PeriodicBC{:inclusive})
     nm1 = n - 1
     jw = mod1(j, nm1)
-    @inbounds return (y[jw + 1] - y[jw]) / (x[jw + 1] - x[jw])
+    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
+    @inbounds return _fielddiff(Tc, y[jw + 1], y[jw]) / (x[jw + 1] - x[jw])
 end
 
 # `:extended` shares the `:inclusive` data layout (length n+1 closed-cycle);
@@ -72,7 +73,8 @@ end
 @inline function _periodic_secant(x::AbstractVector, y::AbstractVector, j::Int, n::Int, ::PeriodicBC{:extended})
     nm1 = n - 1
     jw = mod1(j, nm1)
-    @inbounds return (y[jw + 1] - y[jw]) / (x[jw + 1] - x[jw])
+    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
+    @inbounds return _fielddiff(Tc, y[jw + 1], y[jw]) / (x[jw + 1] - x[jw])
 end
 
 # Cast the resolved exclusive period to the grid's promoted-float type so
@@ -94,9 +96,11 @@ end
     if jw == n
         period = _resolve_seam_period(x, bc)
         seam_h = period - (@inbounds x[n] - x[1])
-        @inbounds return (y[1] - y[n]) / seam_h
+        Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
+        @inbounds return _fielddiff(Tc, y[1], y[n]) / seam_h
     end
-    @inbounds return (y[jw + 1] - y[jw]) / (x[jw + 1] - x[jw])
+    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
+    @inbounds return _fielddiff(Tc, y[jw + 1], y[jw]) / (x[jw + 1] - x[jw])
 end
 
 """

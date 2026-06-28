@@ -189,3 +189,20 @@ end
         end
     end
 end
+
+@testitem "build-overflow: periodic seams" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    x = collect(1.0:1.0:6.0)
+    # closed cycle: y[1] == y[end] for :inclusive
+    yU = UInt8[200, 50, 150, 40, 210, 200]
+    bc = FI.PeriodicBC()   # :inclusive by default
+    for ctor in (FI.pchip_interp, FI.akima_interp, FI.cardinal_interp),
+            strat in (FI.PreCompute(), FI.OnTheFly())
+        itpN = ctor(x, yU; bc = bc, coeffs = strat)
+        itpF = ctor(x, Float64.(yU); bc = bc, coeffs = strat)
+        for q in (1.5, 2.5, 4.5, 5.5)
+            @test isapprox(Float64(itpN(q)), Float64(itpF(q)); atol = 1.0e-9)
+        end
+    end
+end

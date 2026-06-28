@@ -174,3 +174,18 @@ end
         end
     end
 end
+
+@testitem "build-overflow: cardinal (precompute + onthefly)" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    x = collect(1.0:1.0:6.0)
+    yU = UInt8[200, 50, 150, 40, 210, 30]
+    yI = Int8[100, -50, 60, -30, 90, -40]
+    for yN in (yU, yI), strat in (FI.PreCompute(), FI.OnTheFly())
+        itpN = FI.cardinal_interp(x, yN; coeffs = strat)
+        itpF = FI.cardinal_interp(x, Float64.(yN); coeffs = strat)
+        for q in (1.5, 2.5, 3.5, 4.5, 3.25)
+            @test isapprox(Float64(itpN(q)), Float64(itpF(q)); atol = 1.0e-9)
+        end
+    end
+end

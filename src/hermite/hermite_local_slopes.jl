@@ -135,26 +135,29 @@ end
     yr = _raw(y)
     scale = one(Tg) - sm.tension
 
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+
     # Special case: 2 points. PeriodicBC must use wrap-aware central FD so the
     # seam-cell secant is folded in (see PCHIP n=2 note above).
     if n == 2
         if sm.bc isa PeriodicBC
             return _cardinal_boundary_slope(xr, yr, i, n, scale, sm.bc)
         end
-        @inbounds return scale * (yr[2] - yr[1]) / (xr[2] - xr[1])
+        @inbounds return scale * _fielddiff(Tc, yr[2], yr[1]) / (xr[2] - xr[1])
     end
 
     if i == 1 || i == n
         return _cardinal_boundary_slope(xr, yr, i, n, scale, sm.bc)
     end
-    @inbounds return scale * (yr[i + 1] - yr[i - 1]) / (xr[i + 1] - xr[i - 1])
+    @inbounds return scale * _fielddiff(Tc, yr[i + 1], yr[i - 1]) / (xr[i + 1] - xr[i - 1])
 end
 
 @inline function _cardinal_boundary_slope(x, y, i, n, scale, ::NoBC)
+    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     return if i == 1
-        @inbounds scale * (y[2] - y[1]) / (x[2] - x[1])
+        @inbounds scale * _fielddiff(Tc, y[2], y[1]) / (x[2] - x[1])
     else
-        @inbounds scale * (y[n] - y[n - 1]) / (x[n] - x[n - 1])
+        @inbounds scale * _fielddiff(Tc, y[n], y[n - 1]) / (x[n] - x[n - 1])
     end
 end
 

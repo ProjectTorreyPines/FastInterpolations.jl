@@ -48,7 +48,8 @@
         if sm.bc isa PeriodicBC
             return _pchip_boundary_slope(xr, yr, i, n, sm.bc)
         end
-        @inbounds return (yr[2] - yr[1]) / (xr[2] - xr[1])
+        Tc = _promote_eltype(_coeff_op, Tg, Tv)
+        @inbounds return _fielddiff(Tc, yr[2], yr[1]) / (xr[2] - xr[1])
     end
 
     if i == 1 || i == n
@@ -56,14 +57,15 @@
     end
 
     # Interior: weighted harmonic mean (Fritsch-Carlson)
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
     @inbounds begin
         h_prev = xr[i] - xr[i - 1]
         h_curr = xr[i + 1] - xr[i]
-        δ_prev = (yr[i] - yr[i - 1]) / h_prev
-        δ_curr = (yr[i + 1] - yr[i]) / h_curr
+        δ_prev = _fielddiff(Tc, yr[i], yr[i - 1]) / h_prev
+        δ_curr = _fielddiff(Tc, yr[i + 1], yr[i]) / h_curr
     end
     if sign(δ_prev) != sign(δ_curr)
-        return zero(Tv)
+        return zero(_promote_eltype(_coeff_op, Tg, Tv))
     else
         w1 = 2 * h_curr + h_prev
         w2 = h_curr + 2 * h_prev
@@ -74,20 +76,21 @@ end
 # ── PCHIP boundary slope dispatch ──
 # NoBC: original 3-point one-sided FD with monotonicity clamping
 @inline function _pchip_boundary_slope(x, y, i, n, ::NoBC)
+    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     if i == 1
         @inbounds begin
             h1 = x[2] - x[1]
             h2 = x[3] - x[2]
-            δ1 = (y[2] - y[1]) / h1
-            δ2 = (y[3] - y[2]) / h2
+            δ1 = _fielddiff(Tc, y[2], y[1]) / h1
+            δ2 = _fielddiff(Tc, y[3], y[2]) / h2
         end
         return _pchip_endpoint_slope(h1, h2, δ1, δ2)
     else  # i == n
         @inbounds begin
             h_last = x[n] - x[n - 1]
             h_prev = x[n - 1] - x[n - 2]
-            δ_last = (y[n] - y[n - 1]) / h_last
-            δ_prev = (y[n - 1] - y[n - 2]) / h_prev
+            δ_last = _fielddiff(Tc, y[n], y[n - 1]) / h_last
+            δ_prev = _fielddiff(Tc, y[n - 1], y[n - 2]) / h_prev
         end
         return _pchip_endpoint_slope(h_last, h_prev, δ_last, δ_prev)
     end

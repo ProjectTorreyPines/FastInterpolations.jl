@@ -144,3 +144,18 @@ end
     # cubic EvalDeriv1: with zL=zR=0, slope reduces to (yR-yL)*inv_h.
     @test FI._cubic_kernel(FI.EvalDeriv1(), 0.0, 0.0, UInt8(200), UInt8(50), 1.0, 1.0, 0.0, 1.0) == -150.0
 end
+
+@testitem "build-overflow: pchip (precompute + onthefly)" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    x = [1.0, 2.0, 3.0, 4.0, 5.0]
+    yU = UInt8[200, 50, 150, 40, 210]
+    yI = Int8[100, -50, 60, -30, 90]
+    for yN in (yU, yI), strat in (FI.PreCompute(), FI.OnTheFly())
+        itpN = FI.pchip_interp(x, yN; coeffs = strat)
+        itpF = FI.pchip_interp(x, Float64.(yN); coeffs = strat)
+        for q in (1.5, 2.5, 3.5, 4.5, 2.25)
+            @test isapprox(Float64(itpN(q)), Float64(itpF(q)); atol = 1.0e-9)
+        end
+    end
+end

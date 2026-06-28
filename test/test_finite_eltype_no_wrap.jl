@@ -279,3 +279,28 @@ end
         end
     end
 end
+
+# ── Task 12: adjoint narrow-data audit gate ───────────────────────────────────
+# pchip_adjoint / akima_adjoint call _promote_itp_inputs(x, y) which lifts y
+# to Float64 before any secant arithmetic.  Build from narrow UInt8 data and
+# verify the adjoint operator gives the same result as the float-built adjoint.
+# cardinal_adjoint has NO y parameter (slopes are linear in y; it is data-free)
+# so it is excluded — there is no narrow-data path to audit for it.
+@testitem "adjoint narrow-data audit" begin
+    using FastInterpolations, LinearAlgebra
+    const FI = FastInterpolations
+
+    x = collect(1.0:1.0:6.0)
+    yU = UInt8[200, 50, 150, 40, 210, 30]
+    qs = [1.5, 2.5, 3.5, 4.5, 5.5]
+    v = [0.1, -0.3, 0.7, -0.5, 0.2]   # fixed seed so test is deterministic
+
+    for ctor_adj in (FI.pchip_adjoint, FI.akima_adjoint)
+        AN = ctor_adj(x, yU, qs)
+        AF = ctor_adj(x, Float64.(yU), qs)
+        # adj(v) maps co-tangent vector v ∈ ℝ^|qs| → f_bar ∈ ℝ^|x|
+        fN = Float64.(AN(v))
+        fF = Float64.(AF(v))
+        @test isapprox(fN, fF; atol = 1.0e-7)
+    end
+end

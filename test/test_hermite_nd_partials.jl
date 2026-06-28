@@ -519,6 +519,9 @@
         # Bulk-loop measurements amortize single-call setup noise.
         # 1000-iter bulk / 1000 must be exactly 0.
         @test _measure_nobc(1000) == 0
+        # Periodic-EXCLUSIVE extends the grid; the extension routes `Tg` through a
+        # `::Type{Tg}` function barrier (`_extend_hermite_nd_grids_pooled`) so it
+        # stays zero-alloc on 1.10 too — a captured type-valued `Tg` boxes ~256 B/call.
         @test _measure_excl(1000) == 0
         @test _measure_inc(1000) == 0
         # Single-call batch & persistent eval (already inside function barrier).

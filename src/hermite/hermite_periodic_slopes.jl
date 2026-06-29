@@ -64,8 +64,7 @@ grid secants directly.
 @inline function _periodic_secant(x::AbstractVector, y::AbstractVector, j::Int, n::Int, ::PeriodicBC{:inclusive})
     nm1 = n - 1
     jw = mod1(j, nm1)
-    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
-    @inbounds return _fielddiff(Tc, y[jw + 1], y[jw]) / (x[jw + 1] - x[jw])
+    return _forward_secant(x, y, jw)
 end
 
 # `:extended` shares the `:inclusive` data layout (length n+1 closed-cycle);
@@ -73,8 +72,7 @@ end
 @inline function _periodic_secant(x::AbstractVector, y::AbstractVector, j::Int, n::Int, ::PeriodicBC{:extended})
     nm1 = n - 1
     jw = mod1(j, nm1)
-    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
-    @inbounds return _fielddiff(Tc, y[jw + 1], y[jw]) / (x[jw + 1] - x[jw])
+    return _forward_secant(x, y, jw)
 end
 
 # Cast the resolved exclusive period to the grid's promoted-float type so
@@ -99,8 +97,7 @@ end
         Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
         @inbounds return _fielddiff(Tc, y[1], y[n]) / seam_h
     end
-    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
-    @inbounds return _fielddiff(Tc, y[jw + 1], y[jw]) / (x[jw + 1] - x[jw])
+    return _forward_secant(x, y, jw)
 end
 
 """
@@ -113,14 +110,14 @@ width (PCHIP harmonic mean) in addition to the secant value.
 @inline function _periodic_cell_width(x::AbstractVector, j::Int, n::Int, ::PeriodicBC{:inclusive})
     nm1 = n - 1
     jw = mod1(j, nm1)
-    @inbounds return x[jw + 1] - x[jw]
+    return _get_h(x, jw)
 end
 
 # `:extended` shares the `:inclusive` data layout — cell-width logic is identical.
 @inline function _periodic_cell_width(x::AbstractVector, j::Int, n::Int, ::PeriodicBC{:extended})
     nm1 = n - 1
     jw = mod1(j, nm1)
-    @inbounds return x[jw + 1] - x[jw]
+    return _get_h(x, jw)
 end
 
 @inline function _periodic_cell_width(x::AbstractVector, j::Int, n::Int, bc::PeriodicBC{:exclusive})
@@ -129,7 +126,7 @@ end
         period = _resolve_seam_period(x, bc)
         return period - (@inbounds x[n] - x[1])
     end
-    @inbounds return x[jw + 1] - x[jw]
+    return _get_h(x, jw)
 end
 
 # `_bc_after_extend` lives in `src/core/periodic.jl` next to `_periodic_extend_1d`

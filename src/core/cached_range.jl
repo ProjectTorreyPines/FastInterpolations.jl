@@ -164,6 +164,13 @@ end
 @inline _get_inv_h(x::_CachedRange) = x.inv_h
 @inline _get_h(::_CachedRange{T, Tinv, _UnitStep}) where {T, Tinv} = one(T)
 @inline _get_inv_h(::_CachedRange{T, Tinv, _UnitStep}) where {T, Tinv} = one(Tinv)
+# Inverse of the 2-cell span x[i+1]-x[i-1] (central-difference / cardinal interior).
+# A uniform range has span = 2h, so inv = inv_h/2; `_UnitStep` folds to one/2 = 0.5
+# (no division). 0.5 is exact (power of two) → one cached load + one multiply.
+@inline function _get_inv_2cell(x::_CachedRange, i::Int)
+    inv_h = _get_inv_h(x, i)
+    return inv_h * oftype(inv_h, 0.5)
+end
 # idx-shaped forms — `(x, idx)` (solver/coeff) and `(x, idx, xL, xR)` (from
 # `search_interval`) — ignore the extra args and delegate to the no-arg form.
 @inline _get_h(x::_CachedRange, ::Int) = _get_h(x)

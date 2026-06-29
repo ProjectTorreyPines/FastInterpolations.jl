@@ -47,8 +47,7 @@ function _cardinal_slopes!(
             return dy
         end
         @inbounds begin
-            Tc = eltype(dy)
-            δ = _fielddiff(Tc, y[2], y[1]) / (x[2] - x[1])
+            δ = _forward_secant(x, y, 1)
             dy[1] = scale * δ
             dy[2] = scale * δ
         end
@@ -59,9 +58,8 @@ function _cardinal_slopes!(
     @inbounds dy[1] = _cardinal_boundary_slope(x, y, 1, n, scale, bc)
 
     # Interior: central finite difference (K=3, no wrap needed).
-    Tc = eltype(dy)
     @inbounds for k in 2:(n - 1)
-        dy[k] = scale * _fielddiff(Tc, y[k + 1], y[k - 1]) / (x[k + 1] - x[k - 1])
+        dy[k] = scale * _centered_secant(x, y, k)
     end
 
     # Right endpoint: same bc-dispatched helper. PeriodicBC{:inclusive} yields

@@ -212,6 +212,26 @@ end
 @inline _fieldsum(::Type{Tc}, a::Tc, b::Tc) where {Tc} = a + b
 @inline _fieldsum(::Type{Tc}, a, b) where {Tc} = convert(Tc, a) + convert(Tc, b)
 
+# ── Secant helpers (cached-inverse, axis-aware) ──────────────────────────────
+# Single-cell forward secant (y[i+1]-y[i]) / h_i. Routes through `_get_inv_h`, so a
+# `_CachedVector`/`_CachedRange` axis uses the cached reciprocal (no division) and a
+# `_UnitStep` range folds the multiply to identity. Raw `AbstractVector` computes
+# `inv(h)` on the fly (≤1 ULP vs `/h`, perf-neutral: the extra multiply runs free in
+# the divider's shadow). `Tc` matches every call site.
+@inline function _forward_secant(x, y, i)
+    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
+    return @inbounds _fielddiff(Tc, y[i + 1], y[i]) * _get_inv_h(x, i)
+end
+
+# Backward secant at i is the forward secant of the previous cell (denominator h_{i-1}).
+@inline _backward_secant(x, y, i) = _forward_secant(x, y, i - 1)
+
+# Centered (2-cell-span) secant (y[i+1]-y[i-1]) / (x[i+1]-x[i-1]) via `_get_inv_2cell`.
+@inline function _centered_secant(x, y, i)
+    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
+    return @inbounds _fielddiff(Tc, y[i + 1], y[i - 1]) * _get_inv_2cell(x, i)
+end
+
 # Convex linear value blend = α·yR + (1−α)·yL. The negation lands on the float
 # weight `α`, never on data, so finite/colorant values appear only as `weight ×
 # value` (wrap-free). Endpoint-exact at α=0,1; bounded within [min(yL,yR),

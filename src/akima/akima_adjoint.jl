@@ -89,7 +89,10 @@ end
 #
 # Derivatives of dy w.r.t. the 4 secants (m_km2, m_km1, m_k, m_kp1):
 #
-# Let s1 = sign(m_kp1 - m_k), s2 = sign(m_km1 - m_km2).
+# Let s1, s2 be the `abs` sub-derivatives of (m_kp1 - m_k) and (m_km1 - m_km2) — via
+# `_abs_subderiv`, NOT `sign`. At an exact secant tie (m_kp1 == m_k, e.g. symmetric
+# data) `sign` returns 0, but the forward's `abs` differentiates to ±1 (ForwardDiff
+# convention), so `sign` would make the hand-adjoint disagree with ForwardDiff there.
 #
 # If wsum > 0 (weighted branch):
 #   ∂dy/∂m_km2 = s2*(dy - m_k) / wsum
@@ -99,6 +102,10 @@ end
 #
 # If wsum == 0 (equal-weight fallback):
 #   ∂dy/∂m_km1 = 1/2, ∂dy/∂m_k = 1/2, others = 0
+
+# d|u|/du with ForwardDiff's convention (flipsign: +1 at +0.0, -1 at -0.0). Replaces
+# `sign` so the adjoint stays the exact transpose of the forward's `abs` at exact ties.
+@inline _abs_subderiv(u) = flipsign(one(u), u)
 
 """
     _akima_slope_adjoint_weighted(dy, m_km1, m_k, w1, w2, wsum, s1, s2)
@@ -240,13 +247,13 @@ end
     end
 
     # General case: n ≥ 4
-    # Recompute secants on the fly (same approach as forward pass). `Tc` widens
-    # narrow/fixed-point y before the difference so `sign`-based Akima weights don't
-    # flip on a wrapped secant (N0f8 reaches here un-promoted — see `_PromotableValue`).
-    Tc = _promote_eltype(_coeff_op, Tg, Tv)
-    @inbounds m1 = _fielddiff(Tc, y[2], y[1]) / (x[2] - x[1])
-    @inbounds m2 = _fielddiff(Tc, y[3], y[2]) / (x[3] - x[2])
-    @inbounds m3 = _fielddiff(Tc, y[4], y[3]) / (x[4] - x[3])
+    # Recompute secants via the SAME `_forward_secant` helper the forward uses, so the
+    # slope-limiter sees bit-identical secants — a ≤1-ULP `/h` vs `*inv_h` gap can flip an
+    # Akima `abs` weight branch at an exact tie. `_forward_secant` also widens narrow/
+    # fixed-point y before the difference (N0f8 reaches here un-promoted — see `_PromotableValue`).
+    @inbounds m1 = _forward_secant(x, y, 1)
+    @inbounds m2 = _forward_secant(x, y, 2)
+    @inbounds m3 = _forward_secant(x, y, 3)
 
     # Virtual secants for left boundary
     m_neg1 = 3 * m1 - 2 * m2
@@ -265,8 +272,8 @@ end
             _akima_scatter_secant_adjoint!(f_bar, db / 2, 1, x, n)
         else
             dy_k = (w1 * m_0 + w2 * m1) / wsum
-            s1 = sign(m2 - m1)
-            s2 = sign(m_0 - m_neg1)
+            s1 = _abs_subderiv(m2 - m1)
+            s2 = _abs_subderiv(m_0 - m_neg1)
             d_km2, d_km1, d_k, d_kp1 = _akima_slope_adjoint_weighted(
                 dy_k, m_0, m1, w1, w2, wsum, s1, s2
             )
@@ -289,8 +296,8 @@ end
             _akima_scatter_secant_adjoint!(f_bar, db / 2, 2, x, n)
         else
             dy_k = (w1 * m1 + w2 * m2) / wsum
-            s1 = sign(m3 - m2)
-            s2 = sign(m1 - m_0)
+            s1 = _abs_subderiv(m3 - m2)
+            s2 = _abs_subderiv(m1 - m_0)
             d_km2, d_km1, d_k, d_kp1 = _akima_slope_adjoint_weighted(
                 dy_k, m1, m2, w1, w2, wsum, s1, s2
             )
@@ -309,7 +316,7 @@ end
     m_k = m3
 
     @inbounds for k in 3:(n - 2)
-        m_kp1 = _fielddiff(Tc, y[k + 2], y[k + 1]) / (x[k + 2] - x[k + 1])
+        m_kp1 = _forward_secant(x, y, k + 1)
         w1 = abs(m_kp1 - m_k)
         w2 = abs(m_km1 - m_km2)
         wsum = w1 + w2
@@ -319,8 +326,8 @@ end
             _akima_scatter_secant_adjoint!(f_bar, db / 2, k, x, n)
         else
             dy_kv = (w1 * m_km1 + w2 * m_k) / wsum
-            s1 = sign(m_kp1 - m_k)
-            s2 = sign(m_km1 - m_km2)
+            s1 = _abs_subderiv(m_kp1 - m_k)
+            s2 = _abs_subderiv(m_km1 - m_km2)
             d_km2, d_km1, d_k, d_kp1 = _akima_slope_adjoint_weighted(
                 dy_kv, m_km1, m_k, w1, w2, wsum, s1, s2
             )
@@ -353,8 +360,8 @@ end
             _akima_scatter_secant_adjoint!(f_bar, db / 2, n - 1, x, n)
         else
             dy_kv = (w1 * m_km1 + w2 * m_k) / wsum
-            s1 = sign(m_np1 - m_k)
-            s2 = sign(m_km1 - m_km2)
+            s1 = _abs_subderiv(m_np1 - m_k)
+            s2 = _abs_subderiv(m_km1 - m_km2)
             d_km2, d_km1, d_k, d_kp1 = _akima_slope_adjoint_weighted(
                 dy_kv, m_km1, m_k, w1, w2, wsum, s1, s2
             )
@@ -377,8 +384,8 @@ end
             _akima_scatter_secant_adjoint!(f_bar, db / 2, n, x, n)
         else
             dy_kv = (w1 * m_k + w2 * m_np1) / wsum
-            s1 = sign(m_np2 - m_np1)
-            s2 = sign(m_k - m_km1)
+            s1 = _abs_subderiv(m_np2 - m_np1)
+            s2 = _abs_subderiv(m_k - m_km1)
             d_km2, d_km1, d_k, d_kp1 = _akima_slope_adjoint_weighted(
                 dy_kv, m_k, m_np1, w1, w2, wsum, s1, s2
             )
@@ -416,16 +423,18 @@ end
         x::AbstractVector{Tg}, y::AbstractVector,
         k::Int, j_km2::Int, j_km1::Int, j_k::Int, j_kp1::Int
     ) where {Tg}
-    Tc = _promote_eltype(_coeff_op, Tg, eltype(y))
     @inbounds begin
         h_km2 = x[j_km2 + 1] - x[j_km2]
         h_km1 = x[j_km1 + 1] - x[j_km1]
         h_k = x[j_k + 1] - x[j_k]
         h_kp1 = x[j_kp1 + 1] - x[j_kp1]
-        m_km2 = _fielddiff(Tc, y[j_km2 + 1], y[j_km2]) / h_km2
-        m_km1 = _fielddiff(Tc, y[j_km1 + 1], y[j_km1]) / h_km1
-        m_k = _fielddiff(Tc, y[j_k + 1], y[j_k]) / h_k
-        m_kp1 = _fielddiff(Tc, y[j_kp1 + 1], y[j_kp1]) / h_kp1
+        # Secant VALUES must match the forward bit-for-bit (`_forward_secant` = Δy·inv_h):
+        # a ≤1-ULP `/h` vs `*inv_h` gap can flip the Akima |Δsecant| slope-limiter branch
+        # and disagree with ForwardDiff. `h_*` retained for the ∂m/∂y partials below.
+        m_km2 = _forward_secant(x, y, j_km2)
+        m_km1 = _forward_secant(x, y, j_km1)
+        m_k = _forward_secant(x, y, j_k)
+        m_kp1 = _forward_secant(x, y, j_kp1)
     end
 
     w1 = abs(m_kp1 - m_k)
@@ -446,8 +455,8 @@ end
         end
     else
         dy_k = (w1 * m_km1 + w2 * m_k) / wsum
-        s1 = sign(m_kp1 - m_k)
-        s2 = sign(m_km1 - m_km2)
+        s1 = _abs_subderiv(m_kp1 - m_k)
+        s2 = _abs_subderiv(m_km1 - m_km2)
         d_km2, d_km1, d_k, d_kp1 = _akima_slope_adjoint_weighted(
             dy_k, m_km1, m_k, w1, w2, wsum, s1, s2
         )

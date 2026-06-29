@@ -41,6 +41,21 @@ Clamped endpoint slope that preserves monotonicity.
 end
 
 """
+    _pchip_harmonic_mean(w1, w2, δp, δc)
+
+Fritsch–Carlson weighted harmonic mean of two secants, single-division form.
+Algebraically `(w1+w2)/(w1/δp + w2/δc) == (w1+w2)·δp·δc / (w1·δc + w2·δp)`, which
+trades 3 divisions for 1. Called only from the monotone branch where
+`sign(δp) == sign(δc)`, so the denominator is nonzero unless both secants are
+exactly zero (flat data) — the `iszero(den)` guard maps that 0·0/0 case to `0`,
+matching the old form's `Inf`-arithmetic limit (and avoiding a NaN).
+"""
+@inline function _pchip_harmonic_mean(w1, w2, δp, δc)
+    den = w1 * δc + w2 * δp
+    return iszero(den) ? zero(den) : (w1 + w2) * δp * δc / den
+end
+
+"""
     _pchip_slopes!(dy, x, y)
 
 Compute PCHIP (Fritsch-Carlson) monotone-preserving slopes in-place.
@@ -79,9 +94,8 @@ function _pchip_slopes!(
             @inbounds dy[2] = _pchip_boundary_slope(x, y, 2, n, bc)
             return dy
         end
-        Tc = eltype(dy)
         @inbounds begin
-            δ = _fielddiff(Tc, y[2], y[1]) / (x[2] - x[1])
+            δ = _forward_secant(x, y, 1)
             dy[1] = δ
             dy[2] = δ
         end
@@ -91,11 +105,11 @@ function _pchip_slopes!(
     Tc = eltype(dy)
 
     # Compute secant slopes for first two intervals (needed for first interior)
-    @inbounds h_prev = x[2] - x[1]
-    @inbounds δ_prev = _fielddiff(Tc, y[2], y[1]) / h_prev
+    @inbounds h_prev = _get_h(x, 1)
+    @inbounds δ_prev = _forward_secant(x, y, 1)
 
-    @inbounds h_curr = x[3] - x[2]
-    @inbounds δ_curr = _fielddiff(Tc, y[3], y[2]) / h_curr
+    @inbounds h_curr = _get_h(x, 2)
+    @inbounds δ_curr = _forward_secant(x, y, 2)
 
     # Left endpoint: bc-dispatched helper.
     # NoBC: one-sided 3-point FD with monotonicity clamping.
@@ -111,15 +125,15 @@ function _pchip_slopes!(
             # Weighted harmonic mean (Fritsch-Carlson formula)
             w1 = 2 * h_curr + h_prev
             w2 = h_curr + 2 * h_prev
-            dy[k] = (w1 + w2) / (w1 / δ_prev + w2 / δ_curr)
+            dy[k] = _pchip_harmonic_mean(w1, w2, δ_prev, δ_curr)
         end
 
         # Advance to next interval (k < n-1 means there's a next interval)
         if k < n - 1
             h_prev = h_curr
             δ_prev = δ_curr
-            h_curr = x[k + 2] - x[k + 1]
-            δ_curr = _fielddiff(Tc, y[k + 2], y[k + 1]) / h_curr
+            h_curr = _get_h(x, k + 1)
+            δ_curr = _forward_secant(x, y, k + 1)
         end
     end
 

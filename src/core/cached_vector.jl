@@ -145,6 +145,16 @@ end
 @inline Base.@propagate_inbounds _get_h(x::_CachedVector, i::Int) = @inbounds x.h[i]
 @inline Base.@propagate_inbounds _get_inv_h(x::_CachedVector, i::Int) = @inbounds x.inv_h[i]
 
+# Inverse of the 2-cell span x[i+1]-x[i-1] (central-difference / cardinal interior).
+# `_CachedVector` has no cached inverse for h[i-1]+h[i], so one (necessary) division —
+# but the widths come from the cache (no re-subtraction).
+@inline Base.@propagate_inbounds _get_inv_2cell(x::_CachedVector, i::Int) =
+    @inbounds inv(x.h[i - 1] + x.h[i])
+
+# Raw AbstractVector fallback: direct span (one necessary division).
+@inline Base.@propagate_inbounds _get_inv_2cell(x::AbstractVector, i::Int) =
+    @inbounds inv(x[i + 1] - x[i - 1])
+
 # AbstractVector — on-the-fly diff (one-shot, no cache). Raw eltype preserved
 # (`Int→Int`, `Rational→Rational`); downstream kernels auto-promote, so no eager-Float.
 @inline Base.@propagate_inbounds _get_h(x::AbstractVector, i::Int) =

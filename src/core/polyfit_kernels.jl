@@ -99,6 +99,13 @@ end
 # Computes first derivative directly using known stencil coefficients.
 # Dispatches on PolyFit{D} (degree) and LeftSide/RightSide (endpoint).
 
+# Widen a stencil tuple into the coefficient field `Tc`. A `v -> convert(Tc, v)`
+# closure would capture the caller's local `Tc = _promote_eltype(...)` and box on
+# Julia 1.10's inference (the type doesn't propagate into the closure body — same
+# issue as series_utils `_alloc_series_batch_outputs`). Threading `Tc` as a
+# `::Type{Tc}` argument keeps it concrete → zero-alloc on the LTS, no-cost on 1.11+.
+@inline _convert_stencil(::Type{Tc}, f::Tuple) where {Tc} = map(Base.Fix1(convert, Tc), f)
+
 """
     _compute_deriv1(::PolyFit{D}, ::Val{Side}, f::NTuple, inv_h) -> Tc
 
@@ -134,7 +141,7 @@ end
 @inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3, T}, inv_h::T) where {T}
     # Coefficients: -(3, -4, 1) / 2
     Tc = _promote_eltype(_coeff_op, T, T)
-    fp = map(v -> convert(Tc, v), f)
+    fp = _convert_stencil(Tc, f)
     coeff = -inv_h / 2
     return muladd(3, fp[1], muladd(-4, fp[2], fp[3])) * coeff
 end
@@ -142,7 +149,7 @@ end
 @inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3, T}, inv_h::T) where {T}
     # Coefficients: (1, -4, 3) / 2
     Tc = _promote_eltype(_coeff_op, T, T)
-    fp = map(v -> convert(Tc, v), f)
+    fp = _convert_stencil(Tc, f)
     coeff = inv_h / 2
     return muladd(1, fp[1], muladd(-4, fp[2], 3 * fp[3])) * coeff
 end
@@ -151,7 +158,7 @@ end
 @inline function _compute_deriv1(::PolyFit{3}, ::LeftSide, f::NTuple{4, T}, inv_h::T) where {T}
     # Coefficients: (-11, 18, -9, 2) / 6
     Tc = _promote_eltype(_coeff_op, T, T)
-    fp = map(v -> convert(Tc, v), f)
+    fp = _convert_stencil(Tc, f)
     coeff = inv_h / 6
     return muladd(-11, fp[1], muladd(18, fp[2], muladd(-9, fp[3], 2 * fp[4]))) * coeff
 end
@@ -159,7 +166,7 @@ end
 @inline function _compute_deriv1(::PolyFit{3}, ::RightSide, f::NTuple{4, T}, inv_h::T) where {T}
     # Coefficients: (-2, 9, -18, 11) / 6
     Tc = _promote_eltype(_coeff_op, T, T)
-    fp = map(v -> convert(Tc, v), f)
+    fp = _convert_stencil(Tc, f)
     coeff = inv_h / 6
     return muladd(-2, fp[1], muladd(9, fp[2], muladd(-18, fp[3], 11 * fp[4]))) * coeff
 end
@@ -186,7 +193,7 @@ end
 @inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: -(3, -4, 1) / 2
     Tc = _promote_eltype(_coeff_op, Tg, Tv)
-    fp = map(v -> convert(Tc, v), f)
+    fp = _convert_stencil(Tc, f)
     coeff = -inv_h / 2
     return muladd(3, fp[1], muladd(-4, fp[2], fp[3])) * coeff
 end
@@ -194,7 +201,7 @@ end
 @inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (1, -4, 3) / 2
     Tc = _promote_eltype(_coeff_op, Tg, Tv)
-    fp = map(v -> convert(Tc, v), f)
+    fp = _convert_stencil(Tc, f)
     coeff = inv_h / 2
     return muladd(1, fp[1], muladd(-4, fp[2], 3 * fp[3])) * coeff
 end
@@ -203,7 +210,7 @@ end
 @inline function _compute_deriv1(::PolyFit{3}, ::LeftSide, f::NTuple{4, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (-11, 18, -9, 2) / 6
     Tc = _promote_eltype(_coeff_op, Tg, Tv)
-    fp = map(v -> convert(Tc, v), f)
+    fp = _convert_stencil(Tc, f)
     coeff = inv_h / 6
     return muladd(-11, fp[1], muladd(18, fp[2], muladd(-9, fp[3], 2 * fp[4]))) * coeff
 end
@@ -211,7 +218,7 @@ end
 @inline function _compute_deriv1(::PolyFit{3}, ::RightSide, f::NTuple{4, Tv}, inv_h::Tg) where {Tv, Tg}
     # Coefficients: (-2, 9, -18, 11) / 6
     Tc = _promote_eltype(_coeff_op, Tg, Tv)
-    fp = map(v -> convert(Tc, v), f)
+    fp = _convert_stencil(Tc, f)
     coeff = inv_h / 6
     return muladd(-2, fp[1], muladd(9, fp[2], muladd(-18, fp[3], 11 * fp[4]))) * coeff
 end

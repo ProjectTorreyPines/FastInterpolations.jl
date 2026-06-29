@@ -100,7 +100,7 @@ end
 # Dispatches on PolyFit{D} (degree) and LeftSide/RightSide (endpoint).
 
 """
-    _compute_deriv1(::PolyFit{D}, ::Val{Side}, f::NTuple, inv_h) -> T
+    _compute_deriv1(::PolyFit{D}, ::Val{Side}, f::NTuple, inv_h) -> Tc
 
 Compute first derivative on uniform grid using D+1 point stencil.
 
@@ -114,6 +114,10 @@ Compute first derivative on uniform grid using D+1 point stencil.
 - PolyFit{1} (LinearFit): 2 points, O(h) accuracy
 - PolyFit{2} (QuadraticFit): 3 points, O(h²) accuracy
 - PolyFit{3} (CubicFit): 4 points, O(h³) accuracy
+
+# Returns
+`Tc = _promote_eltype(_coeff_op, …)` — the coefficient field. Widens a narrow stencil
+eltype (e.g. UInt8/N0f8) so the divided difference is wrap-free; `Tc ≡ T` for floats.
 """
 # PolyFit{1} (LinearFit) - 2 points, O(h)
 @inline function _compute_deriv1(::PolyFit{1}, ::LeftSide, f::NTuple{2, T}, inv_h::T) where {T}
@@ -584,7 +588,8 @@ end
 # Mixed-type _estimate_endpoint_derivative for Complex value support
 # xs::AbstractVector{Tg} grid coordinates (always real)
 # ys::AbstractVector{Tv} function values (can be Complex)
-# Returns Tv (same as value type)
+# Returns: Range overload → Tc = _promote_eltype(_coeff_op, Tg, Tv) (via _compute_deriv1);
+#          Vector overload → Tv (via _weighted_sum)
 # ----------------------------------------
 @inline function _estimate_endpoint_derivative(
         xs::AbstractRange{Tg}, ys::AbstractVector{Tv}, side::AbstractSide, pf::PolyFit{D}

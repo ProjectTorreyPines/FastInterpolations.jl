@@ -45,7 +45,7 @@ end
 """
     _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, inv_h::Tg, α) where {Tg, Tv}
 
-Evaluate first derivative (slope) of linear interpolation: `(yR - yL) * inv_h`.
+Evaluate first derivative (slope) of linear interpolation: `_fielddiff(Tc, yR, yL) * inv_h` (wrap-safe).
 The trailing `* one(α)` carries the query's carrier (Dual partials,
 Measurement uncertainty, …) — for plain `Real` `α`, LLVM const-folds the
 `1.0` factor away.

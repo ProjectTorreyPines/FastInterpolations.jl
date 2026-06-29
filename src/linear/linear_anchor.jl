@@ -51,7 +51,7 @@ as it eliminates O(log n) binary search.
 
 # Efficiency
 - `alpha` for EvalValue: `alpha*yR + (1-alpha)*yL` (convex blend, no division)
-- `inv_h` for EvalDeriv1: `(yR - yL) * inv_h` (no division)
+- `inv_h` for EvalDeriv1: `_fielddiff(Tc, yR, yL) * inv_h` (wrap-safe, no division)
 """
 struct _LinearAnchoredQuery{Tg, Tq <: Real}
     # Corner-index stencil: `stencil[1]` is the left index (idxL), `stencil[2]`

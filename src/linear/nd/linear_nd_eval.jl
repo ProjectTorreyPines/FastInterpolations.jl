@@ -163,7 +163,7 @@ seam-aware stencils from `_search_all_intervals_stencil`.
         cur[c + 1] = v
     end
     # Stages 1..N: collapse one axis per stage via the op-specific 1D kernel
-    # `_linear_kernel` (EvalValue → muladd blend; EvalDeriv1 → slope ×inv_h;
+    # `_linear_kernel` (EvalValue → convex value blend; EvalDeriv1 → slope ×inv_h;
     # EvalDeriv2+ → carrier-aware 0, preserving cell-local `NaN·0 = NaN`). Axis `s`
     # is the lowest remaining corner bit, so each stage pairs adjacent positions
     # (even = bit 0 = lo, odd = bit 1 = hi).

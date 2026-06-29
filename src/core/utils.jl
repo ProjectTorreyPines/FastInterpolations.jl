@@ -204,6 +204,9 @@ end
 # Fast path (operand already `Tc`): plain `a ± b`, zero overhead, identical for
 # floats and duck/AD types. Promote path (narrow operand, e.g. UInt8/N0f8): widen
 # into the field BEFORE the `±` so modular/overflow wrap cannot occur.
+# Result is PINNED to `Tc` via `convert` — don't swap to `promote(a, b)` (cf. search.jl
+# `_lt`/`_le`, which `promote` for a Bool): a promoted pair can be narrower than `Tc`
+# and re-introduce the wrap.
 @inline _fielddiff(::Type{Tc}, a::Tc, b::Tc) where {Tc} = a - b
 @inline _fielddiff(::Type{Tc}, a, b) where {Tc} = convert(Tc, a) - convert(Tc, b)
 @inline _fieldsum(::Type{Tc}, a::Tc, b::Tc) where {Tc} = a + b

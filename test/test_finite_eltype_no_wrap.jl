@@ -342,13 +342,14 @@ end
     end
 end
 
-@testitem "Float64 bit-identical at promoted-difference sites" begin
+@testitem "Float64 determinism + finiteness at promoted-difference sites" begin
     using FastInterpolations, Random
     const FI = FastInterpolations
     rng = MersenneTwister(1)
-    # Compare current build against the documented pre-fix Float behavior by
-    # asserting determinism + exact equality of repeated evaluation, and that
-    # promote edits did not perturb Float results vs a high-precision reference.
+    # Non-linear methods route their Float difference sites through the `_fielddiff`
+    # fast path (`a::Tc, b::Tc → a - b`), so Float results are unchanged. This smoke
+    # only checks determinism + finiteness; the linear VALUE path uses the convex
+    # form (intentionally not bit-identical) and is pinned separately below.
     x = collect(1.0:1.0:8.0)
     y = randn(rng, 8)
     for ctor in (
@@ -442,4 +443,114 @@ end
     for q in (1.5, 2.5, 4.5, 5.5)
         @test isapprox(Float64(itpN(q)), Float64(itpF(q)); atol = 1.0e-9)
     end
+end
+
+# Convex value-FORM pin: the public linear path must use the convex blend
+# `muladd(α, yR, muladd(-α, yL, yL))` exactly. A revert to the slope form
+# `muladd(α, yR-yL, yL)` perturbs the low bits, so pin the public eval bit-exactly
+# against the convex helper (with inv_h=1 so α = q - xL is exact).
+@testitem "linear convex value: public path uses convex form (bit-exact)" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    for (yL, yR, q) in ((0.1, 0.7, 1.3), (0.2, 0.8, 1.25), (-0.3, 0.9, 1.6), (1.7, 0.4, 1.8))
+        itp = FI.linear_interp([1.0, 2.0], [yL, yR])
+        α = q - 1.0                                  # inv_h = 1 → α = q - xL exactly
+        @test itp(q) === FI._linear_value_blend(α, yL, yR)
+    end
+end
+
+# Quadratic ND eval `_fielddiff` (quadratic_nd_eval.jl): un-promoted N0f8 data
+# reaches the eval kernel; the secant `(fR-fL)` must not wrap. UInt8 would be
+# floated by the constructor, so use N0f8 — it stays narrow into the kernel.
+@testitem "no-wrap: quadratic ND eval (N0f8)" begin
+    using FastInterpolations
+    using FixedPointNumbers
+    const FI = FastInterpolations
+    x = [1.0, 2.0, 3.0, 4.0]
+    y = [1.0, 2.0, 3.0, 4.0]
+    AN = N0f8.([0.9 0.1 0.8 0.2; 0.1 0.9 0.2 0.8; 0.85 0.15 0.75 0.25; 0.2 0.7 0.3 0.95])
+    itpN = FI.quadratic_interp((x, y), AN)
+    itpF = FI.quadratic_interp((x, y), Float64.(AN))
+    for qx in (1.5, 2.5, 3.25), qy in (1.5, 2.5, 3.75)
+        @test isapprox(Float64(itpN(qx, qy)), Float64(itpF(qx, qy)); atol = 1.0e-9)
+    end
+end
+
+# OnTheFly pchip/akima/cardinal route through `hermite_local_slopes.jl` `_local_slope`
+# (a DISTINCT path from the PreCompute `*_slopes.jl` builders). Un-promoted N0f8 must
+# not wrap those secants. UInt8 is floated by the constructor → use N0f8.
+@testitem "no-wrap: OnTheFly hermite local slopes (N0f8)" begin
+    using FastInterpolations
+    using FixedPointNumbers
+    const FI = FastInterpolations
+    x = collect(1.0:1.0:7.0)
+    yN = N0f8.([0.9, 0.1, 0.8, 0.2, 0.7, 0.3, 0.85])   # descending cells exercise the wrap
+    yF = Float64.(yN)
+    for ctor in (FI.pchip_interp, FI.akima_interp, FI.cardinal_interp)
+        itpN = ctor(x, yN; coeffs = FI.OnTheFly())
+        itpF = ctor(x, yF; coeffs = FI.OnTheFly())
+        for q in (1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 3.25)
+            @test isapprox(Float64(itpN(q)), Float64(itpF(q)); atol = 1.0e-9)
+        end
+    end
+end
+
+# OnTheFly + PeriodicBC routes through `hermite_periodic_slopes.jl` `_periodic_secant`
+# (seam secant `(y[1]-y[n])/seam_h`, plus `mod1`-wrapped cycle secants). Un-promoted
+# N0f8 must not wrap. The PreCompute "periodic seams" test above excludes hermite.
+@testitem "no-wrap: OnTheFly hermite periodic slopes (N0f8)" begin
+    using FastInterpolations
+    using FixedPointNumbers
+    const FI = FastInterpolations
+    x = collect(1.0:1.0:6.0)
+    yN = N0f8.([0.9, 0.1, 0.8, 0.2, 0.7, 0.9])   # closed cycle: y[1] == y[end] for :inclusive
+    yF = Float64.(yN)
+    bc = FI.PeriodicBC()
+    for ctor in (FI.pchip_interp, FI.akima_interp, FI.cardinal_interp)
+        itpN = ctor(x, yN; bc = bc, coeffs = FI.OnTheFly())
+        itpF = ctor(x, yF; bc = bc, coeffs = FI.OnTheFly())
+        for q in (1.5, 2.5, 4.5, 5.5)
+            @test isapprox(Float64(itpN(q)), Float64(itpF(q)); atol = 1.0e-9)
+        end
+    end
+end
+
+# AD-through-query on a narrow-carrier interpolant: the eval kernels must carry
+# ForwardDiff partials (α is a Dual, the data is N0f8) — the convex blend / `_fielddiff`
+# sites take the natural-promotion path, never flattening through Float. The derivative
+# must be finite and match the float-built interpolant's.
+@testitem "no-wrap: ForwardDiff through query (N0f8 carrier)" begin
+    using FastInterpolations
+    using FixedPointNumbers, ForwardDiff
+    const FI = FastInterpolations
+    x = collect(1.0:1.0:6.0)
+    yN = N0f8.([0.9, 0.1, 0.8, 0.2, 0.7, 0.3])
+    yF = Float64.(yN)
+    for ctor in (FI.linear_interp, FI.pchip_interp, FI.cubic_interp)
+        itpN = ctor(x, yN)
+        itpF = ctor(x, yF)
+        for q in (1.5, 2.5, 3.5, 4.5)
+            dN = ForwardDiff.derivative(itpN, q)
+            dF = ForwardDiff.derivative(itpF, q)
+            @test isfinite(dN)
+            @test isapprox(dN, dF; atol = 1.0e-7)
+        end
+    end
+end
+
+# Batch eval dispatches through a separate (pre-allocated output) path; a narrow
+# carrier must stay wrap-free, match the float build elementwise, and stay bounded.
+@testitem "no-wrap: batch eval (N0f8 carrier)" begin
+    using FastInterpolations
+    using FixedPointNumbers
+    const FI = FastInterpolations
+    x = collect(1.0:1.0:5.0)
+    qs = [1.5, 2.5, 3.5, 4.5, 2.25, 3.75]
+    yN = N0f8.([0.9, 0.1, 0.8, 0.2, 0.7])
+    itpN = FI.linear_interp(x, yN)
+    itpF = FI.linear_interp(x, Float64.(yN))
+    rN = Float64.(itpN(qs))
+    @test all(isapprox.(rN, Float64.(itpF(qs)); atol = 1.0e-9))
+    lo = Float64(minimum(yN)); hi = Float64(maximum(yN))
+    @test all(lo - 1.0e-9 .<= rN .<= hi + 1.0e-9)   # bounded — no overshoot/wrap
 end

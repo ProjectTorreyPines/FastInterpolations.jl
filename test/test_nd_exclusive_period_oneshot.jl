@@ -53,3 +53,44 @@ end
             FI.hermite_interp((xf, yf), data, p, q; bc = bc)
     end
 end
+
+# Unit pin at the fix's source: the `_ExclusivePeriodicAxis` outer ctor must widen an
+# Int Vector grid against a non-integer period (zero-copy when the grid is already
+# float). Targets `axis_types.jl` directly — a small guard for the regression that the
+# ND integration tests cover with ~50 lines of setup.
+@testitem "_ExclusivePeriodicAxis widens Int vector grid for float period" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+    ax = FI._ExclusivePeriodicAxis(collect(0:2), 2.5)   # Int grid + non-integer period
+    @test eltype(ax) === Float64
+    @test ax.inner isa Vector{Float64}
+    @test ax[end] ≈ 2.5                                  # virtual seam = inner[1] + period
+    @test length(ax) == 4                                # n + 1
+    # Float grid + float period stays zero-copy (same inner object, no widen).
+    g = [0.0, 1.0, 2.0]
+    @test FI._ExclusivePeriodicAxis(g, 2.5).inner === g
+end
+
+# The `_ExclusivePeriodicAxis` ctor widening is shared by every ND method on the
+# raw-grid one-shot path. The fix landed for cubic/hermite (above) plus linear/constant;
+# pin those two here too (quadratic ND has no `:exclusive` support).
+@testitem "ND :exclusive one-shot on Int vector grid — linear & constant" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+
+    x = collect(0:2)
+    y = collect(0:2)                         # Int Vector grids
+    data = Float64[1 2 3; 4 5 6; 7 8 9]
+    bc = FI.PeriodicBC(endpoint = :exclusive, period = 2.5)
+    xf = Float64.(x)
+    yf = Float64.(y)
+
+    for ctor in (FI.linear_interp, FI.constant_interp)
+        itp = ctor((x, y), data; bc = bc)    # persistent reference (always worked)
+        for q in ((0.5, 0.5), (1.5, 0.5), (2.25, 1.75), (0.0, 2.4))
+            @test ctor((x, y), data, q; bc = bc) ≈ itp(q...)           # one-shot == persistent
+            @test ctor((x, y), data, q; bc = bc) ≈
+                ctor((xf, yf), data, q; bc = bc)                       # no Int wrap/inexact
+        end
+    end
+end

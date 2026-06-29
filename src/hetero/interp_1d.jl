@@ -73,9 +73,9 @@ Build a 1D interpolant. Equivalent to calling the dedicated 1D constructor for
 `method` directly (e.g. `method=CubicInterp()` → `cubic_interp(x, y)`), with the
 method's boundary condition / side / tension forwarded.
 
-`store` is forwarded to the dedicated constructor, so `StorePolicy(copy=false)`
-builds a copy-free (reference) interpolant for every supported method — see the
-[`StorePolicy`](@ref) docstring for per-method aliasing detail.
+`store` is forwarded to the dedicated constructor; `StorePolicy(copy=false)`
+aliases the caller's arrays where the method supports it (the extent is
+method-dependent) — see the [`StorePolicy`](@ref) docstring for per-method detail.
 
 ```julia
 itp = interp(x, y; method = CubicInterp())              # === cubic_interp(x, y)

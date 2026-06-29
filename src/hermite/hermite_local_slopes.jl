@@ -48,7 +48,8 @@
         if sm.bc isa PeriodicBC
             return _pchip_boundary_slope(xr, yr, i, n, sm.bc)
         end
-        @inbounds return (yr[2] - yr[1]) / (xr[2] - xr[1])
+        Tc = _promote_eltype(_coeff_op, Tg, Tv)
+        @inbounds return _fielddiff(Tc, yr[2], yr[1]) / (xr[2] - xr[1])
     end
 
     if i == 1 || i == n
@@ -56,14 +57,15 @@
     end
 
     # Interior: weighted harmonic mean (Fritsch-Carlson)
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
     @inbounds begin
         h_prev = xr[i] - xr[i - 1]
         h_curr = xr[i + 1] - xr[i]
-        δ_prev = (yr[i] - yr[i - 1]) / h_prev
-        δ_curr = (yr[i + 1] - yr[i]) / h_curr
+        δ_prev = _fielddiff(Tc, yr[i], yr[i - 1]) / h_prev
+        δ_curr = _fielddiff(Tc, yr[i + 1], yr[i]) / h_curr
     end
     if sign(δ_prev) != sign(δ_curr)
-        return zero(Tv)
+        return zero(_promote_eltype(_coeff_op, Tg, Tv))
     else
         w1 = 2 * h_curr + h_prev
         w2 = h_curr + 2 * h_prev
@@ -74,20 +76,21 @@ end
 # ── PCHIP boundary slope dispatch ──
 # NoBC: original 3-point one-sided FD with monotonicity clamping
 @inline function _pchip_boundary_slope(x, y, i, n, ::NoBC)
+    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     if i == 1
         @inbounds begin
             h1 = x[2] - x[1]
             h2 = x[3] - x[2]
-            δ1 = (y[2] - y[1]) / h1
-            δ2 = (y[3] - y[2]) / h2
+            δ1 = _fielddiff(Tc, y[2], y[1]) / h1
+            δ2 = _fielddiff(Tc, y[3], y[2]) / h2
         end
         return _pchip_endpoint_slope(h1, h2, δ1, δ2)
     else  # i == n
         @inbounds begin
             h_last = x[n] - x[n - 1]
             h_prev = x[n - 1] - x[n - 2]
-            δ_last = (y[n] - y[n - 1]) / h_last
-            δ_prev = (y[n - 1] - y[n - 2]) / h_prev
+            δ_last = _fielddiff(Tc, y[n], y[n - 1]) / h_last
+            δ_prev = _fielddiff(Tc, y[n - 1], y[n - 2]) / h_prev
         end
         return _pchip_endpoint_slope(h_last, h_prev, δ_last, δ_prev)
     end
@@ -132,26 +135,29 @@ end
     yr = _raw(y)
     scale = one(Tg) - sm.tension
 
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+
     # Special case: 2 points. PeriodicBC must use wrap-aware central FD so the
     # seam-cell secant is folded in (see PCHIP n=2 note above).
     if n == 2
         if sm.bc isa PeriodicBC
             return _cardinal_boundary_slope(xr, yr, i, n, scale, sm.bc)
         end
-        @inbounds return scale * (yr[2] - yr[1]) / (xr[2] - xr[1])
+        @inbounds return scale * _fielddiff(Tc, yr[2], yr[1]) / (xr[2] - xr[1])
     end
 
     if i == 1 || i == n
         return _cardinal_boundary_slope(xr, yr, i, n, scale, sm.bc)
     end
-    @inbounds return scale * (yr[i + 1] - yr[i - 1]) / (xr[i + 1] - xr[i - 1])
+    @inbounds return scale * _fielddiff(Tc, yr[i + 1], yr[i - 1]) / (xr[i + 1] - xr[i - 1])
 end
 
 @inline function _cardinal_boundary_slope(x, y, i, n, scale, ::NoBC)
+    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     return if i == 1
-        @inbounds scale * (y[2] - y[1]) / (x[2] - x[1])
+        @inbounds scale * _fielddiff(Tc, y[2], y[1]) / (x[2] - x[1])
     else
-        @inbounds scale * (y[n] - y[n - 1]) / (x[n] - x[n - 1])
+        @inbounds scale * _fielddiff(Tc, y[n], y[n - 1]) / (x[n] - x[n - 1])
     end
 end
 
@@ -194,7 +200,8 @@ end
         if sm.bc isa PeriodicBC
             return _akima_local_4secant_periodic(xr, yr, i, n, sm.bc)
         end
-        @inbounds return (yr[2] - yr[1]) / (xr[2] - xr[1])
+        Tc = _promote_eltype(_coeff_op, Tg, Tv)
+        @inbounds return _fielddiff(Tc, yr[2], yr[1]) / (xr[2] - xr[1])
     end
 
     # Special case: 3 points
@@ -205,9 +212,10 @@ end
         if sm.bc isa PeriodicBC
             return _akima_local_4secant_periodic(xr, yr, i, n, sm.bc)
         end
+        Tc = _promote_eltype(_coeff_op, Tg, Tv)
         @inbounds begin
-            m1 = (yr[2] - yr[1]) / (xr[2] - xr[1])
-            m2 = (yr[3] - yr[2]) / (xr[3] - xr[2])
+            m1 = _fielddiff(Tc, yr[2], yr[1]) / (xr[2] - xr[1])
+            m2 = _fielddiff(Tc, yr[3], yr[2]) / (xr[3] - xr[2])
         end
         i == 1 && return m1
         i == 3 && return m2
@@ -239,7 +247,8 @@ end
     # Real secant range: 1 to n-1.
     # Out-of-range secants are virtual (linearly extrapolated from the secant sequence).
 
-    @inline _secant(j) = @inbounds (y[j + 1] - y[j]) / (x[j + 1] - x[j])
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    @inline _secant(j) = @inbounds _fielddiff(Tc, y[j + 1], y[j]) / (x[j + 1] - x[j])
 
     # Virtual secants extend the real sequence linearly:
     #   m[0]   = 2*m[1] - m[2]

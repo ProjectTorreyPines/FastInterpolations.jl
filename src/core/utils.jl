@@ -198,6 +198,26 @@ end
 @inline _integrate_op(h::Tg, yv::Tv, span::Ts) where {Tg, Tv, Ts} =
     yv * span + yv * (span * inv(h))
 
+# ── Wrap-free field arithmetic at unavoidable difference/sum sites ──
+# `Tc` is the method's coefficient/output field type (e.g. `eltype` of a coeff
+# array, or `_promote_eltype(_coeff_op, Tg, Tv)`) — never a forced `Float`.
+# Fast path (operand already `Tc`): plain `a ± b`, zero overhead, identical for
+# floats and duck/AD types. Promote path (narrow operand, e.g. UInt8/N0f8): widen
+# into the field BEFORE the `±` so modular/overflow wrap cannot occur.
+# Result is PINNED to `Tc` via `convert` — don't swap to `promote(a, b)` (cf. search.jl
+# `_lt`/`_le`, which `promote` for a Bool): a promoted pair can be narrower than `Tc`
+# and re-introduce the wrap.
+@inline _fielddiff(::Type{Tc}, a::Tc, b::Tc) where {Tc} = a - b
+@inline _fielddiff(::Type{Tc}, a, b) where {Tc} = convert(Tc, a) - convert(Tc, b)
+@inline _fieldsum(::Type{Tc}, a::Tc, b::Tc) where {Tc} = a + b
+@inline _fieldsum(::Type{Tc}, a, b) where {Tc} = convert(Tc, a) + convert(Tc, b)
+
+# Convex linear value blend = α·yR + (1−α)·yL. The negation lands on the float
+# weight `α`, never on data, so finite/colorant values appear only as `weight ×
+# value` (wrap-free). Endpoint-exact at α=0,1; bounded within [min(yL,yR),
+# max(yL,yR)] for α∈[0,1] (extrapolation intentionally passes α outside [0,1]).
+@inline _linear_value_blend(α, yL, yR) = muladd(α, yR, muladd(-α, yL, yL))
+
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type
 

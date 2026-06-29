@@ -28,10 +28,12 @@ Note: Unlike Hermite, quadratic works in physical coordinates so `h` is not need
 """
 @inline function _quadratic_kernel_nd(
         op::AbstractEvalOp,
-        fL, fR, dfL,
-        inv_h, dL
-    )
-    s = (fR - fL) * inv_h    # secant slope
+        fL::Tv, fR, dfL,
+        inv_h::Tinv, dL
+    ) where {Tinv, Tv}
+    # No `h` here (physical coords) — `inv_h` is the only spacing arg and is its own
+    # type `Tinv` (≠ grid `Tg`: `inv(Int)::Float`). Witness the coeff field through it.
+    s = _fielddiff(_promote_eltype(_coeff_op, Tinv, Tv), fR, fL) * inv_h    # secant slope
     a = (s - dfL) * inv_h     # quadratic coefficient
     return _quadratic_kernel(op, a, dfL, fL, dL)
 end

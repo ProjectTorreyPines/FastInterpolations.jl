@@ -18,7 +18,7 @@
     inv_h = inv(h)
     a4 = (zR - zL) * (inv_h * inv(Tg(24)))   # a/4 = (zR-zL)/(24h)
     b3 = inv(Tg(6)) * zL                     # b/3 = zL/6
-    c2 = (yR - yL) * (inv_h / 2) - (h * inv(Tg(12))) * (2zL + zR)  # c/2
+    c2 = _fielddiff(Tz, yR, yL) * (inv_h / 2) - (h * inv(Tg(12))) * (2zL + zR)  # c/2
     d = yL
     return u1 * @evalpoly(u1, d, c2, b3, a4) -
         u0 * @evalpoly(u0, d, c2, b3, a4)
@@ -30,7 +30,7 @@ end
         zL::Tz, zR::Tz, yL::Ty, yR::Ty, h::Tg
     ) where {Tz, Ty, Tg <: Real}
     h2 = h * h
-    return (h / 2) * muladd(-(h2 * inv(Tg(12))), zL + zR, yL + yR)
+    return (h / 2) * muladd(-(h2 * inv(Tg(12))), zL + zR, _fieldsum(Tz, yL, yR))
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -46,7 +46,8 @@ end
         yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td
     ) where {Tv, Tg <: Real, Td <: Real}
     du = u1 - u0
-    half_slope = (yR - yL) * inv(2h)
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    half_slope = _fielddiff(Tc, yR, yL) * inv(2h)
     return du * muladd(half_slope, u1 + u0, yL)
 end
 
@@ -55,7 +56,8 @@ end
         ::_EvalIntegralCell,
         yL::Tv, yR::Tv, h::Tg
     ) where {Tv, Tg <: Real}
-    return (h / 2) * (yL + yR)
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    return (h / 2) * _fieldsum(Tc, yL, yR)
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -292,8 +294,11 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 # Horner form: F(u) = u · @evalpoly(u, fL, dfL/2, a/3)
-@inline function _quadratic_integral_kernel_nd(fL, fR, dfL, h, inv_h, u0, u1)
-    s = (fR - fL) * inv_h
+@inline function _quadratic_integral_kernel_nd(fL::Tv, fR, dfL, h::Tg, inv_h::Tinv, u0, u1) where {Tg, Tinv, Tv}
+    # `Tg` = grid type (from `h`); `inv_h::Tinv` is its reciprocal (`inv(Int)::Float`, so
+    # `Tinv` ≠ `Tg` on Int grids). Witness the coeff field through the grid `Tg` (the
+    # `_coeff_op` convention — `inv(h)` floats Int grids), matching `_hermite_kernel_1d`.
+    s = _fielddiff(_promote_eltype(_coeff_op, Tg, Tv), fR, fL) * inv_h
     a_3 = (s - dfL) * (inv_h * inv(oftype(h, 3)))  # a/3
     d_2 = inv(oftype(h, 2)) * dfL   # Tg * Tv
     return u1 * @evalpoly(u1, fL, d_2, a_3) -

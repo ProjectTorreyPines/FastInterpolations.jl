@@ -109,11 +109,15 @@ end
 
     # Recompute secants for all intervals (O(n), no allocation needed beyond stack)
     # We'll do a single forward pass, maintaining running secant values.
+    # `Tc` widens narrow/fixed-point y before the difference so `sign(δ)` branches
+    # don't flip on a wrapped secant (N0f8 reaches here un-promoted — see
+    # `_PromotableValue`).
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
 
     @inbounds h_prev = x[2] - x[1]
-    @inbounds δ_prev = (y[2] - y[1]) / h_prev
+    @inbounds δ_prev = _fielddiff(Tc, y[2], y[1]) / h_prev
     @inbounds h_curr = x[3] - x[2]
-    @inbounds δ_curr = (y[3] - y[2]) / h_curr
+    @inbounds δ_curr = _fielddiff(Tc, y[3], y[2]) / h_curr
 
     # ── Left endpoint (k=1) ──────────────────────────────────────────────
     # d = ((2h1+h2)*δ1 - h1*δ2) / (h1+h2)
@@ -155,9 +159,9 @@ end
     # ── Interior slopes (k=2..n-1) ──────────────────────────────────────
     # Reset running secants
     @inbounds h_prev = x[2] - x[1]
-    @inbounds δ_prev = (y[2] - y[1]) / h_prev
+    @inbounds δ_prev = _fielddiff(Tc, y[2], y[1]) / h_prev
     @inbounds h_curr = x[3] - x[2]
-    @inbounds δ_curr = (y[3] - y[2]) / h_curr
+    @inbounds δ_curr = _fielddiff(Tc, y[3], y[2]) / h_curr
 
     @inbounds for k in 2:(n - 1)
         if sign(δ_prev) != sign(δ_curr)
@@ -193,7 +197,7 @@ end
             h_prev = h_curr
             δ_prev = δ_curr
             h_curr = x[k + 2] - x[k + 1]
-            δ_curr = (y[k + 2] - y[k + 1]) / h_curr
+            δ_curr = _fielddiff(Tc, y[k + 2], y[k + 1]) / h_curr
         end
     end
 
@@ -300,11 +304,12 @@ end
         x::AbstractVector{Tg}, y::AbstractVector,
         k::Int, j_prev::Int, j_curr::Int
     ) where {Tg}
+    Tc = _promote_eltype(_coeff_op, Tg, eltype(y))
     @inbounds begin
         h_prev = x[j_prev + 1] - x[j_prev]
         h_curr = x[j_curr + 1] - x[j_curr]
-        δ_prev = (y[j_prev + 1] - y[j_prev]) / h_prev
-        δ_curr = (y[j_curr + 1] - y[j_curr]) / h_curr
+        δ_prev = _fielddiff(Tc, y[j_prev + 1], y[j_prev]) / h_prev
+        δ_curr = _fielddiff(Tc, y[j_curr + 1], y[j_curr]) / h_curr
 
         # Zero-clamped branch: dy[k] = 0 → all derivatives zero, skip.
         sign(δ_prev) != sign(δ_curr) && return nothing

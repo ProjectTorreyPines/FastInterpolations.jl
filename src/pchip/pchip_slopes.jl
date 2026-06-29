@@ -79,20 +79,23 @@ function _pchip_slopes!(
             @inbounds dy[2] = _pchip_boundary_slope(x, y, 2, n, bc)
             return dy
         end
+        Tc = eltype(dy)
         @inbounds begin
-            δ = (y[2] - y[1]) / (x[2] - x[1])
+            δ = _fielddiff(Tc, y[2], y[1]) / (x[2] - x[1])
             dy[1] = δ
             dy[2] = δ
         end
         return dy
     end
 
+    Tc = eltype(dy)
+
     # Compute secant slopes for first two intervals (needed for first interior)
     @inbounds h_prev = x[2] - x[1]
-    @inbounds δ_prev = (y[2] - y[1]) / h_prev
+    @inbounds δ_prev = _fielddiff(Tc, y[2], y[1]) / h_prev
 
     @inbounds h_curr = x[3] - x[2]
-    @inbounds δ_curr = (y[3] - y[2]) / h_curr
+    @inbounds δ_curr = _fielddiff(Tc, y[3], y[2]) / h_curr
 
     # Left endpoint: bc-dispatched helper.
     # NoBC: one-sided 3-point FD with monotonicity clamping.
@@ -103,7 +106,7 @@ function _pchip_slopes!(
     @inbounds for k in 2:(n - 1)
         if sign(δ_prev) != sign(δ_curr)
             # Local extremum: zero slope preserves monotonicity
-            dy[k] = zero(eltype(dy))
+            dy[k] = zero(Tc)
         else
             # Weighted harmonic mean (Fritsch-Carlson formula)
             w1 = 2 * h_curr + h_prev
@@ -116,7 +119,7 @@ function _pchip_slopes!(
             h_prev = h_curr
             δ_prev = δ_curr
             h_curr = x[k + 2] - x[k + 1]
-            δ_curr = (y[k + 2] - y[k + 1]) / h_curr
+            δ_curr = _fielddiff(Tc, y[k + 2], y[k + 1]) / h_curr
         end
     end
 

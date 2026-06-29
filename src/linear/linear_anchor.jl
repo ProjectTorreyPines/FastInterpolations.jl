@@ -50,8 +50,8 @@ Anchored evaluation is faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search.
 
 # Efficiency
-- `alpha` for EvalValue: `muladd(alpha, yR - yL, yL)` (no division)
-- `inv_h` for EvalDeriv1: `(yR - yL) * inv_h` (no division)
+- `alpha` for EvalValue: `alpha*yR + (1-alpha)*yL` (convex blend, no division)
+- `inv_h` for EvalDeriv1: `_fielddiff(Tc, yR, yL) * inv_h` (wrap-safe, no division)
 """
 struct _LinearAnchoredQuery{Tg, Tq <: Real}
     # Corner-index stencil: `stencil[1]` is the left index (idxL), `stencil[2]`
@@ -113,20 +113,22 @@ end
     _linear_kernel(::EvalValue, yL, yR, aq::_LinearAnchoredQuery)
 
 Evaluate linear interpolation using anchor's precomputed alpha.
-No division: uses muladd(alpha, yR - yL, yL).
+Returns: α*yR + (1-α)*yL (convex form — wrap-free, bounded, endpoint-exact).
+No division: uses `_linear_value_blend(alpha, yL, yR)`.
 """
 @inline function _linear_kernel(::EvalValue, yL::Tv, yR::Tv, aq::_LinearAnchoredQuery) where {Tv}
-    return muladd(aq.alpha, yR - yL, yL)
+    return _linear_value_blend(aq.alpha, yL, yR)
 end
 
 """
     _linear_kernel(::EvalDeriv1, yL, yR, aq::_LinearAnchoredQuery)
 
 Evaluate first derivative using anchor's precomputed inv_h.
-No division: uses (yR - yL) * inv_h.
+No division: uses `_fielddiff(Tc, yR, yL) * inv_h` (wrap-safe).
 """
 @inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, aq::_LinearAnchoredQuery{Tg}) where {Tg, Tv}
-    return (yR - yL) * aq.inv_h
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    return _fielddiff(Tc, yR, yL) * aq.inv_h
 end
 
 """Second derivative of linear is always zero."""

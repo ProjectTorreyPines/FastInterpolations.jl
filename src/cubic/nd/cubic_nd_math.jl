@@ -182,8 +182,8 @@ Evaluate third derivative: d³P/dx³ = (d³P/dt³) / h³ (constant within interv
         h::Tg, inv_h::Tinv, dL::Tq
     ) where {Tg, Tinv, Tq}
     # Third derivatives are constants: d³h00/dt³=12, d³h10/dt³=6, d³h01/dt³=-12, d³h11/dt³=6
-    # Auto-promote naturally through arithmetic with value types
-    value_contrib = 12 * (yL - yR)
+    # `(yL - yR)` is widened into the moment field via `_fielddiff` so narrow y can't wrap.
+    value_contrib = 12 * _fielddiff(_promote_eltype(_coeff_op, Tg, typeof(yL)), yL, yR)
     deriv_contrib = 6 * h * (dyL + dyR)
 
     d3P_dt3 = value_contrib + deriv_contrib
@@ -247,7 +247,7 @@ function _moments_to_derivatives_1d!(
         h1 = _get_h(x, 1)
         inv_h1 = _get_inv_h(x, 1)
         h_over_6 = h1 * inv_6
-        linear_slope = (y[2] - y[1]) * inv_h1
+        linear_slope = _fielddiff(Tv, y[2], y[1]) * inv_h1
         moment_sum = muladd(Tg(2), m[1], m[2])
         dydx[1] = muladd(-h_over_6, moment_sum, linear_slope)
     end
@@ -257,7 +257,7 @@ function _moments_to_derivatives_1d!(
         h = _get_h(x, i)
         inv_h = _get_inv_h(x, i)
         h_over_6 = h * inv_6
-        linear_slope = (y[i + 1] - y[i]) * inv_h
+        linear_slope = _fielddiff(Tv, y[i + 1], y[i]) * inv_h
         moment_sum = muladd(Tg(2), m[i + 1], m[i])
         dydx[i + 1] = muladd(h_over_6, moment_sum, linear_slope)
     end

@@ -319,8 +319,9 @@ end
         bcs::Tuple{Vararg{AbstractBC, N}},
     ) where {Tv, N, K}
     # `Tg` only feeds the `:exclusive` virtual-endpoint extension below; raw grids
-    # may be Int/heterogeneous.
-    Tg = _promote_grid_eltype(grids)
+    # may be Int/heterogeneous, so float it — a non-integer period on an Int grid
+    # must not be forced through `Int` (mirrors the cubic/quad twin in periodic.jl).
+    Tg = float(_promote_grid_eltype(grids))
     extended = ntuple(d -> bcs[d] isa PeriodicBC{:exclusive}, Val(N))
     n_orig = size(data)
     n_ext = ntuple(d -> extended[d] ? n_orig[d] + 1 : n_orig[d], Val(N))
@@ -367,10 +368,12 @@ end
 end
 
 # Pool-based per-axis grid extension. Range case preserves Range type
-# (alloc-free); Vector case acquires a pool buffer + writes the wrap endpoint.
+# (alloc-free); Vector case acquires a `Tg` pool buffer + writes the wrap
+# endpoint. `Tg` (the floated grid type) is decoupled from the grid's own eltype
+# so a raw Int grid can be widened into a float buffer for a non-integer period.
 @inline function _extend_grid_one_axis_pooled(
         pool::AbstractArrayPool,
-        grid::AbstractVector{Tg}, bc::PeriodicBC{:exclusive}, ::Type{Tg},
+        grid::AbstractVector, bc::PeriodicBC{:exclusive}, ::Type{Tg},
     ) where {Tg}
     period = _resolve_exclusive_period(grid, bc)
     _validate_exclusive_period(grid, period)

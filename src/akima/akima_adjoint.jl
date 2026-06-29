@@ -240,10 +240,13 @@ end
     end
 
     # General case: n ≥ 4
-    # Recompute secants on the fly (same approach as forward pass)
-    @inbounds m1 = (y[2] - y[1]) / (x[2] - x[1])
-    @inbounds m2 = (y[3] - y[2]) / (x[3] - x[2])
-    @inbounds m3 = (y[4] - y[3]) / (x[4] - x[3])
+    # Recompute secants on the fly (same approach as forward pass). `Tc` widens
+    # narrow/fixed-point y before the difference so `sign`-based Akima weights don't
+    # flip on a wrapped secant (N0f8 reaches here un-promoted — see `_PromotableValue`).
+    Tc = _promote_eltype(_coeff_op, Tg, Tv)
+    @inbounds m1 = _fielddiff(Tc, y[2], y[1]) / (x[2] - x[1])
+    @inbounds m2 = _fielddiff(Tc, y[3], y[2]) / (x[3] - x[2])
+    @inbounds m3 = _fielddiff(Tc, y[4], y[3]) / (x[4] - x[3])
 
     # Virtual secants for left boundary
     m_neg1 = 3 * m1 - 2 * m2
@@ -306,7 +309,7 @@ end
     m_k = m3
 
     @inbounds for k in 3:(n - 2)
-        m_kp1 = (y[k + 2] - y[k + 1]) / (x[k + 2] - x[k + 1])
+        m_kp1 = _fielddiff(Tc, y[k + 2], y[k + 1]) / (x[k + 2] - x[k + 1])
         w1 = abs(m_kp1 - m_k)
         w2 = abs(m_km1 - m_km2)
         wsum = w1 + w2
@@ -413,15 +416,16 @@ end
         x::AbstractVector{Tg}, y::AbstractVector,
         k::Int, j_km2::Int, j_km1::Int, j_k::Int, j_kp1::Int
     ) where {Tg}
+    Tc = _promote_eltype(_coeff_op, Tg, eltype(y))
     @inbounds begin
         h_km2 = x[j_km2 + 1] - x[j_km2]
         h_km1 = x[j_km1 + 1] - x[j_km1]
         h_k = x[j_k + 1] - x[j_k]
         h_kp1 = x[j_kp1 + 1] - x[j_kp1]
-        m_km2 = (y[j_km2 + 1] - y[j_km2]) / h_km2
-        m_km1 = (y[j_km1 + 1] - y[j_km1]) / h_km1
-        m_k = (y[j_k + 1] - y[j_k]) / h_k
-        m_kp1 = (y[j_kp1 + 1] - y[j_kp1]) / h_kp1
+        m_km2 = _fielddiff(Tc, y[j_km2 + 1], y[j_km2]) / h_km2
+        m_km1 = _fielddiff(Tc, y[j_km1 + 1], y[j_km1]) / h_km1
+        m_k = _fielddiff(Tc, y[j_k + 1], y[j_k]) / h_k
+        m_kp1 = _fielddiff(Tc, y[j_kp1 + 1], y[j_kp1]) / h_kp1
     end
 
     w1 = abs(m_kp1 - m_k)

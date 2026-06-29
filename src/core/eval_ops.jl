@@ -147,7 +147,15 @@ end
 # Defined here (loaded early) so that eval_ops.jl and all subsequent files
 # (utils.jl, nd_utils.jl, etc.) can reference it.
 
-"""Standard Julia numeric types that should be auto-promoted in convenience wrappers."""
+"""
+Standard Julia numeric types that should be auto-promoted in convenience wrappers.
+
+This is the **eager-promotion whitelist** (which carrier types `_promote_itp_inputs`
+floats to the grid field). It is **not** a wrap-safety predicate: carriers outside it
+(`FixedPoint`/`N0f8`, `Gray{N0f8}`, AD `Dual`) are intentionally kept un-promoted, so
+arithmetic correctness for them must be handled per-site by `_fielddiff`/`_fieldsum`
+— do not gate divided-difference correctness on membership here.
+"""
 const _PromotableValue = Union{Integer, AbstractFloat, Rational, Complex}
 
 

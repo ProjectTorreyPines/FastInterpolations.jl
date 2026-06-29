@@ -91,7 +91,7 @@ Formula:
     z_term = muladd(inv_2h, z_mix, (zL - zR) * h_div6)
 
     # (yR-yL)/h + z_term
-    return muladd(inv_h, yR - yL, z_term)
+    return muladd(inv_h, _fielddiff(Tz, yR, yL), z_term)
 end
 
 """

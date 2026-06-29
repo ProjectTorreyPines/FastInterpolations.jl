@@ -121,7 +121,7 @@ end
 N-dimensional multilinear interpolation by **nested repeated-linear collapse**:
 read the 2^N cell corners, then collapse one axis per stage via the shared 1D
 kernel `_linear_kernel(ops[s], lo, hi, inv_hs[s], αs[s])`. The op selects the
-per-axis operation — EvalValue → `muladd(α, hi−lo, lo)` (value blend); EvalDeriv1
+per-axis operation — EvalValue → `α·hi + (1−α)·lo` (convex value blend); EvalDeriv1
 → `(hi−lo)·inv_h·one(α)` (slope along that axis); EvalDeriv2+ → carrier-aware `0`
 (preserves cell-local `NaN·0 = NaN`). Mixed partials fall out by using the slope
 kernel on each differentiated axis. Costs `2^N − 1` `_linear_kernel` calls vs the
@@ -163,7 +163,7 @@ seam-aware stencils from `_search_all_intervals_stencil`.
         cur[c + 1] = v
     end
     # Stages 1..N: collapse one axis per stage via the op-specific 1D kernel
-    # `_linear_kernel` (EvalValue → muladd blend; EvalDeriv1 → slope ×inv_h;
+    # `_linear_kernel` (EvalValue → convex value blend; EvalDeriv1 → slope ×inv_h;
     # EvalDeriv2+ → carrier-aware 0, preserving cell-local `NaN·0 = NaN`). Axis `s`
     # is the lowest remaining corner bit, so each stage pairs adjacent positions
     # (even = bit 0 = lo, odd = bit 1 = hi).
@@ -189,6 +189,6 @@ end
 
 # NOTE: the per-stage 1D kernel `_linear_kernel(op, yL, yR, inv_h, α)` lives in
 # `linear/linear_kernels.jl` (shared with the 1D path) and dispatches the op:
-# EvalValue → `muladd(α, yR−yL, yL)`, EvalDeriv1 → `(yR−yL)·inv_h·one(α)`,
+# EvalValue → `α·yR + (1−α)·yL` (convex), EvalDeriv1 → `(yR−yL)·inv_h·one(α)`,
 # EvalDeriv2+ → carrier-aware `0`. The old flat-form `_linear_weight` helpers are
 # gone — the nested collapse calls `_linear_kernel` directly per axis.

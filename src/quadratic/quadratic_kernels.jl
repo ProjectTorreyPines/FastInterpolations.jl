@@ -17,7 +17,7 @@
 # - Td: Offset type for dL (can be Tg, or promoted Tg×Tq for AD)
 # - Value args (a, d, y) are untyped for duck-type support (Dual coefficients
 #   on duck grids). The typed `dL::Td` provides the LLVM specialization anchor
-#   (same pattern as _hermite_kernel_1d's h::Tg, inv_h::Tg, dL::Tq).
+#   (same pattern as _hermite_kernel_1d's h::Tg, inv_h::Tinv, dL::Tq).
 
 """
     _quadratic_kernel(::EvalValue, a, d, y, dL) -> value

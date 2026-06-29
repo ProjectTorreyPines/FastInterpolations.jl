@@ -111,3 +111,51 @@ end
         @test isapprox(Float64(gray(itpg(q))), itpf(q); atol = 1.0e-2)
     end
 end
+
+@testitem "carrier-aware blend: hermite/nodal fused-ALT parity + ND coverage" setup = [AllocConstants] begin
+    import FastInterpolations as FI
+    using FastInterpolations: _hermite_value
+    using FixedPointNumbers, ColorTypes, ColorVectorSpace, Random
+
+    # fused/ALT agree on floats (algebraically equal, ≤ few ULP)
+    function _herm_parity_maxreldiff(n)
+        rng = MersenneTwister(5)
+        m = 0.0
+        for _ in 1:n
+            b00, b10, b01, b11 = rand(rng), rand(rng), rand(rng), rand(rng)
+            h = 0.5 + rand(rng)
+            yL, yR, dyL, dyR = randn(rng), randn(rng), randn(rng), randn(rng)
+            a = _hermite_value(Val(true), b00, b10, b01, b11, h, yL, yR, dyL, dyR)
+            b = _hermite_value(Val(false), b00, b10, b01, b11, h, yL, yR, dyL, dyR)
+            m = max(m, abs(a - b) / (abs(a) + 1.0e-12))
+        end
+        return m
+    end
+    @test _herm_parity_maxreldiff(5_000) <= 1.0e-12
+
+    # OnTheFly Hermite 1D: cubic-polynomial exactness still holds (value unchanged for Float)
+    p(t) = 1 + 2t - 0.5t^2 + 0.3t^3
+    dp(t) = 2 - t + 0.9t^2
+    xx = collect(range(0.0, 3.0, 20))
+    yy = p.(xx)
+    dyy = dp.(xx)
+    for xq in (0.15, 0.7, 1.33, 2.5, 2.99)
+        @test FI.hermite_interp(xx, yy, dyy, xq) ≈ p(xq) atol = 1.0e-12
+    end
+
+    # Cubic ND PreCompute (2D) — routes through _hermite_kernel_1d. Float type-stable + zero-alloc.
+    xg = collect(range(0.0, 1.0, 20))
+    A = [sin(2π * i) * cos(2π * j) for i in xg, j in xg]
+    itp2 = FI.interp((xg, xg), A; method = FI.CubicInterp())
+    itp2(0.5, 0.5)
+    @test (@inferred itp2(0.5, 0.5)) isa Float64
+    @test (@allocated itp2(0.5, 0.5)) <= ND_ALLOC_THRESHOLD
+
+    # Cubic ND on color: routes ALT, stays correct vs Float reference
+    Ag = Gray{N0f8}.(rand(MersenneTwister(6), 20, 20))
+    itpg2 = FI.interp((xg, xg), Ag; method = FI.CubicInterp())
+    itpf2 = FI.interp((xg, xg), Float64.(gray.(Ag)); method = FI.CubicInterp())
+    for (qi, qj) in ((0.3, 0.7), (0.55, 0.22))
+        @test isapprox(Float64(gray(itpg2(qi, qj))), itpf2(qi, qj); atol = 1.0e-2)
+    end
+end

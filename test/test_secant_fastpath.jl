@@ -40,6 +40,37 @@ end
     @test _centered_secant(us, yv, 2) === (yv[3] - yv[1]) * 0.5   # *0.5
 end
 
+@testitem "_pchip_harmonic_mean (3-div → 1-div rewrite)" setup = [AllocConstants] begin
+    using FastInterpolations: _pchip_harmonic_mean
+    using Random: MersenneTwister
+
+    # Reference: original 3-division Fritsch–Carlson form.
+    ref(w1, w2, δp, δc) = (w1 + w2) / (w1 / δp + w2 / δc)
+
+    rng = MersenneTwister(11)
+    for _ in 1:2000
+        w1 = 5rand(rng) + 0.05
+        w2 = 5rand(rng) + 0.05
+        s = ifelse(rand(rng) < 0.5, -1.0, 1.0)        # same sign (monotone region)
+        δp = s * (3rand(rng) + 1.0e-3)
+        δc = s * (3rand(rng) + 1.0e-3)
+        a = ref(w1, w2, δp, δc)
+        b = _pchip_harmonic_mean(w1, w2, δp, δc)
+        @test abs(a - b) <= 4 * eps(abs(a))            # ≤ a few ULP
+    end
+
+    # Equal secants ⇒ harmonic mean is that secant.
+    @test _pchip_harmonic_mean(2.0, 3.0, 0.7, 0.7) ≈ 0.7 rtol = 1.0e-14
+
+    # Degenerate flat data (δp == δc == 0): must be 0, NOT NaN (the 0·0/0 trap).
+    @test _pchip_harmonic_mean(2.0, 3.0, 0.0, 0.0) == 0.0
+    @test !isnan(_pchip_harmonic_mean(2.0, 3.0, 0.0, 0.0))
+    # One zero secant ⇒ 0 (matches old Inf-limit behavior).
+    @test _pchip_harmonic_mean(2.0, 3.0, 0.0, 1.5) == 0.0
+
+    @test _pchip_harmonic_mean(2.0, 3.0, 0.5, 0.9) isa Float64
+end
+
 @testitem "secant fast-path: method equivalence + monotonicity" setup = [AllocConstants] begin
     using Random: MersenneTwister
 

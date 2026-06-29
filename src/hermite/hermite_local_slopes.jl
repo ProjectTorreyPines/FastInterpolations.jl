@@ -67,7 +67,7 @@
     else
         w1 = 2 * h_curr + h_prev
         w2 = h_curr + 2 * h_prev
-        return (w1 + w2) / (w1 / δ_prev + w2 / δ_curr)
+        return _pchip_harmonic_mean(w1, w2, δ_prev, δ_curr)
     end
 end
 
@@ -113,7 +113,7 @@ end
     else
         w1 = 2 * h_curr + h_prev
         w2 = h_curr + 2 * h_prev
-        return (w1 + w2) / (w1 / δ_prev + w2 / δ_curr)
+        return _pchip_harmonic_mean(w1, w2, δ_prev, δ_curr)
     end
 end
 

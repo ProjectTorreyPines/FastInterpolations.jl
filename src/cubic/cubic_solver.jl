@@ -322,8 +322,8 @@ derivative estimation.
     ) where {Tg, L <: PointBC, R <: PointBC}
     n = length(y) - 1
     _compute_rhs_first!(d, bc_pair.left, y, x)
+    Tc = eltype(d)   # coefficient field — loop-invariant, matches compute_rhs_periodic!
     @inbounds for i in 2:n
-        Tc = eltype(d)
         d[i] = 6 * (_fielddiff(Tc, y[i + 1], y[i]) * _get_inv_h(x, i) - _fielddiff(Tc, y[i], y[i - 1]) * _get_inv_h(x, i - 1))
     end
     _compute_rhs_last!(d, bc_pair.right, y, x)

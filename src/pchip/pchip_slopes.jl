@@ -106,7 +106,7 @@ function _pchip_slopes!(
     @inbounds for k in 2:(n - 1)
         if sign(δ_prev) != sign(δ_curr)
             # Local extremum: zero slope preserves monotonicity
-            dy[k] = zero(eltype(dy))
+            dy[k] = zero(Tc)
         else
             # Weighted harmonic mean (Fritsch-Carlson formula)
             w1 = 2 * h_curr + h_prev

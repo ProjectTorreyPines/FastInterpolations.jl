@@ -247,7 +247,7 @@ function _moments_to_derivatives_1d!(
         h1 = _get_h(x, 1)
         inv_h1 = _get_inv_h(x, 1)
         h_over_6 = h1 * inv_6
-        linear_slope = _fielddiff(eltype(dydx), y[2], y[1]) * inv_h1
+        linear_slope = _fielddiff(Tv, y[2], y[1]) * inv_h1
         moment_sum = muladd(Tg(2), m[1], m[2])
         dydx[1] = muladd(-h_over_6, moment_sum, linear_slope)
     end
@@ -257,7 +257,7 @@ function _moments_to_derivatives_1d!(
         h = _get_h(x, i)
         inv_h = _get_inv_h(x, i)
         h_over_6 = h * inv_6
-        linear_slope = _fielddiff(eltype(dydx), y[i + 1], y[i]) * inv_h
+        linear_slope = _fielddiff(Tv, y[i + 1], y[i]) * inv_h
         moment_sum = muladd(Tg(2), m[i + 1], m[i])
         dydx[i + 1] = muladd(h_over_6, moment_sum, linear_slope)
     end

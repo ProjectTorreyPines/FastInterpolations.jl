@@ -22,11 +22,15 @@
     yf = Float64.(y)
 
     for q in ((0.5, 0.5), (1.5, 0.5), (2.25, 1.75), (0.0, 2.4))
-        # one-shot must (a) not throw and (b) match persistent
-        @test FI.cubic_interp((x, y), data, q; bc = bc) ≈ itp(q...)
+        # one-shot must (a) not throw and (b) match persistent. `atol` (not bare `≈`):
+        # the value is ~0 for some q, where one-shot/persistent take slightly different
+        # FP-reduction orders on some LTS arches (≤1 ULP; `≈` vs 0.0 has no rtol).
+        @test isapprox(FI.cubic_interp((x, y), data, q; bc = bc), itp(q...); atol = 1.0e-12)
         # and equal the same one-shot built from a float grid (no Int wrap/inexact)
-        @test FI.cubic_interp((x, y), data, q; bc = bc) ≈
-            FI.cubic_interp((xf, yf), data, q; bc = bc)
+        @test isapprox(
+            FI.cubic_interp((x, y), data, q; bc = bc),
+            FI.cubic_interp((xf, yf), data, q; bc = bc); atol = 1.0e-12,
+        )
     end
 end
 
@@ -48,9 +52,11 @@ end
     yf = Float64.(y)
 
     for q in ((0.5, 0.5), (1.5, 0.5), (2.25, 1.75), (0.0, 2.4))
-        @test FI.hermite_interp((x, y), data, p, q; bc = bc) ≈ itp(q...)
-        @test FI.hermite_interp((x, y), data, p, q; bc = bc) ≈
-            FI.hermite_interp((xf, yf), data, p, q; bc = bc)
+        @test isapprox(FI.hermite_interp((x, y), data, p, q; bc = bc), itp(q...); atol = 1.0e-12)
+        @test isapprox(
+            FI.hermite_interp((x, y), data, p, q; bc = bc),
+            FI.hermite_interp((xf, yf), data, p, q; bc = bc); atol = 1.0e-12,
+        )
     end
 end
 
@@ -88,9 +94,12 @@ end
     for ctor in (FI.linear_interp, FI.constant_interp)
         itp = ctor((x, y), data; bc = bc)    # persistent reference (always worked)
         for q in ((0.5, 0.5), (1.5, 0.5), (2.25, 1.75), (0.0, 2.4))
-            @test ctor((x, y), data, q; bc = bc) ≈ itp(q...)           # one-shot == persistent
-            @test ctor((x, y), data, q; bc = bc) ≈
-                ctor((xf, yf), data, q; bc = bc)                       # no Int wrap/inexact
+            # one-shot == persistent; no Int wrap/inexact (≤1 ULP on some LTS arches)
+            @test isapprox(ctor((x, y), data, q; bc = bc), itp(q...); atol = 1.0e-12)
+            @test isapprox(
+                ctor((x, y), data, q; bc = bc),
+                ctor((xf, yf), data, q; bc = bc); atol = 1.0e-12,
+            )
         end
     end
 end

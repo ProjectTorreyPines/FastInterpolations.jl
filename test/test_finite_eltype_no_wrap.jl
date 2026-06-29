@@ -365,14 +365,16 @@ end
     end
 end
 
-@testitem "no-wrap: inference + allocation" begin
+@testitem "no-wrap: inference + allocation" setup = [AllocConstants] begin
     using FastInterpolations, Test
     const FI = FastInterpolations
     x = collect(1.0:1.0:8.0); y = randn(8)
     itp = FI.cubic_interp(x, y)
     @test (@inferred itp(3.3)) isa Float64
     itp(3.3)                                  # warmup
-    @test @allocated(itp(3.3)) == 0
+    # 0 on 1.12+; LTS inference leaves a tiny residual box on scalar eval, so use
+    # the shared version-aware threshold (0 on 1.12, slack on 1.10) like the ND tests.
+    @test @allocated(itp(3.3)) <= ALLOC_THRESHOLD
     # narrow-eltype build is type-stable too
     yU = rand(UInt8, 8)
     itpU = FI.cubic_interp(x, yU)

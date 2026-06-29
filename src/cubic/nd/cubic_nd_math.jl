@@ -109,25 +109,11 @@ Returns interpolated function value.
     h01_val = _hermite_h01(t)
     h11_val = _hermite_h11(t)
 
-    # Carrier-aware: classify on the weighted-arithmetic result over ALL value
-    # carriers (values yL/yR + slopes dyL/dyR). Float/Complex-float keep the
-    # verbatim form (×h on the slope sum); non-fusable carriers fold h into scalars.
-    Tc = Base.promote_op(
-        *, promote_type(Tg, Tinv, Tq),
-        promote_type(typeof(yL), typeof(yR), typeof(dyL), typeof(dyR))
-    )
-    return _hermite_value(_blend_fuses(Tc), h00_val, h10_val, h01_val, h11_val, h, yL, yR, dyL, dyR)
+    value_contrib = muladd(h00_val, yL, h01_val * yR)
+    deriv_contrib = muladd(h10_val, dyL, h11_val * dyR) * h
+
+    return value_contrib + deriv_contrib
 end
-
-# Val(true): verbatim form — derivative contribution scaled by `h` AFTER the carrier
-# combine (one extra carrier-multiply). Float/Complex-float keep this.
-@inline _hermite_value(::Val{true}, b00, b10, b01, b11, h, yL, yR, dyL, dyR) =
-    muladd(b00, yL, b01 * yR) + muladd(b10, dyL, b11 * dyR) * h
-
-# Val(false): `h` folded into the SCALAR basis weights (b10*h, b11*h are scalar mults),
-# removing the carrier-multiply on the combined slope sum.
-@inline _hermite_value(::Val{false}, b00, b10, b01, b11, h, yL, yR, dyL, dyR) =
-    muladd(b00, yL, b01 * yR) + muladd(b10 * h, dyL, (b11 * h) * dyR)
 
 """
     _hermite_kernel_1d(::EvalDeriv1, yL, yR, dyL, dyR, h, inv_h, dL)

@@ -51,8 +51,6 @@ function _akima_slopes!(
     @assert length(y) == n "y length must match x"
     @assert length(dy) == n "dy length must match x"
 
-    Tc = eltype(dy)   # coefficient field — loop-invariant, hoisted once
-
     # Special case: 2 points. PeriodicBC routes through the wrap-aware
     # 4-secant helper (cycle=2 for `:exclusive` yields a 2-secant alternation).
     if n == 2
@@ -62,7 +60,7 @@ function _akima_slopes!(
             return dy
         end
         @inbounds begin
-            δ = _fielddiff(Tc, y[2], y[1]) / (x[2] - x[1])
+            δ = _forward_secant(x, y, 1)
             dy[1] = δ
             dy[2] = δ
         end
@@ -80,8 +78,8 @@ function _akima_slopes!(
             return dy
         end
         @inbounds begin
-            m1 = _fielddiff(Tc, y[2], y[1]) / (x[2] - x[1])
-            m2 = _fielddiff(Tc, y[3], y[2]) / (x[3] - x[2])
+            m1 = _forward_secant(x, y, 1)
+            m2 = _forward_secant(x, y, 2)
             dy[1] = m1
             dy[2] = (m1 + m2) / 2
             dy[3] = m2
@@ -103,9 +101,9 @@ function _akima_slopes!(
     # Simplification: extrapolate m sequence linearly.
 
     # Compute all n-1 secant slopes
-    @inbounds m1 = _fielddiff(Tc, y[2], y[1]) / (x[2] - x[1])
-    @inbounds m2 = _fielddiff(Tc, y[3], y[2]) / (x[3] - x[2])
-    @inbounds m3 = _fielddiff(Tc, y[4], y[3]) / (x[4] - x[3])
+    @inbounds m1 = _forward_secant(x, y, 1)
+    @inbounds m2 = _forward_secant(x, y, 2)
+    @inbounds m3 = _forward_secant(x, y, 3)
 
     # Boundary virtual / wrapped secants for the LEFT side of the domain.
     # NoBC:                          linear extrapolation (Akima's original).
@@ -135,7 +133,7 @@ function _akima_slopes!(
     m_k = m3
 
     @inbounds for k in 3:(n - 2)
-        m_kp1 = _fielddiff(Tc, y[k + 2], y[k + 1]) / (x[k + 2] - x[k + 1])
+        m_kp1 = _forward_secant(x, y, k + 1)
         dy[k] = _akima_weighted_slope(m_km2, m_km1, m_k, m_kp1)
         m_km2 = m_km1
         m_km1 = m_k

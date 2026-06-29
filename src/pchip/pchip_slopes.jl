@@ -79,9 +79,8 @@ function _pchip_slopes!(
             @inbounds dy[2] = _pchip_boundary_slope(x, y, 2, n, bc)
             return dy
         end
-        Tc = eltype(dy)
         @inbounds begin
-            δ = _fielddiff(Tc, y[2], y[1]) / (x[2] - x[1])
+            δ = _forward_secant(x, y, 1)
             dy[1] = δ
             dy[2] = δ
         end
@@ -91,11 +90,11 @@ function _pchip_slopes!(
     Tc = eltype(dy)
 
     # Compute secant slopes for first two intervals (needed for first interior)
-    @inbounds h_prev = x[2] - x[1]
-    @inbounds δ_prev = _fielddiff(Tc, y[2], y[1]) / h_prev
+    @inbounds h_prev = _get_h(x, 1)
+    @inbounds δ_prev = _forward_secant(x, y, 1)
 
-    @inbounds h_curr = x[3] - x[2]
-    @inbounds δ_curr = _fielddiff(Tc, y[3], y[2]) / h_curr
+    @inbounds h_curr = _get_h(x, 2)
+    @inbounds δ_curr = _forward_secant(x, y, 2)
 
     # Left endpoint: bc-dispatched helper.
     # NoBC: one-sided 3-point FD with monotonicity clamping.
@@ -118,8 +117,8 @@ function _pchip_slopes!(
         if k < n - 1
             h_prev = h_curr
             δ_prev = δ_curr
-            h_curr = x[k + 2] - x[k + 1]
-            δ_curr = _fielddiff(Tc, y[k + 2], y[k + 1]) / h_curr
+            h_curr = _get_h(x, k + 1)
+            δ_curr = _forward_secant(x, y, k + 1)
         end
     end
 

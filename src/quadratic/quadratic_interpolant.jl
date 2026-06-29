@@ -63,7 +63,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=NoExtrap(), search=AutoSearch()) -> QuadraticInterpolant
+    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=NoExtrap(), search=AutoSearch(), store=StorePolicy()) -> QuadraticInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -73,6 +73,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `bc`: Boundary condition (Left, Right, MinCurvFit, or Left/Right with QuadraticFit)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `search::AbstractSearchPolicy`: Default search policy (default: `AutoSearch()`)
+- `store::StorePolicy`: Copy (default) or alias the grid/values; see [`StorePolicy`](@ref)
 
 # Returns
 `QuadraticInterpolant` object for scalar/broadcast evaluation.
@@ -124,14 +125,15 @@ end
         y::AbstractVector{TY};
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
     Tv = _value_type(TY, Tg)
     # Caching wrap (zero-copy of buffer): Range → `_CachedRange{Tg}`,
     # Vector → `_CachedVector{Tg, Tinv}` aliasing user buffer. Mirrors
-    # Linear/Constant — outer is reference-only, inner constructor takes
-    # ownership via `_convert_copy(x, Tg)` / `_convert_copy(y, Tv)`.
+    # Linear/Constant — outer is reference-only; the inner constructor copies
+    # (default) or aliases per `store` via `_own_or_ref_{axis,values}`.
     x_eff = _cache_axis(x, NoBC(), Tg)
     bc_p = _normalize_bc(bc, first(y))
 
@@ -146,5 +148,5 @@ end
 
     # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
     extrap_p = _resolve_extrap(extrap, x_eff, Tv)
-    return QuadraticInterpolant(x_eff, y, a, d, extrap_p, search, bc_p)
+    return QuadraticInterpolant(x_eff, y, a, d, extrap_p, search, bc_p; store = store)
 end

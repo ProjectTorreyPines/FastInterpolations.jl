@@ -67,16 +67,21 @@ _interp1d_route(m::AbstractInterpMethod) = _throw_unsupported_1d_method(m)
 # ----------------------------------------------------------------------------
 
 """
-    interp(x::AbstractVector, y::AbstractVector; method, extrap=NoExtrap(), search=AutoSearch())
+    interp(x::AbstractVector, y::AbstractVector; method, extrap=NoExtrap(), search=AutoSearch(), store=StorePolicy())
 
 Build a 1D interpolant. Equivalent to calling the dedicated 1D constructor for
 `method` directly (e.g. `method=CubicInterp()` → `cubic_interp(x, y)`), with the
 method's boundary condition / side / tension forwarded.
 
+`store` is forwarded to the dedicated constructor; `StorePolicy(copy=false)`
+aliases the caller's arrays where the method supports it (the extent is
+method-dependent) — see the [`StorePolicy`](@ref) docstring for per-method detail.
+
 ```julia
 itp = interp(x, y; method = CubicInterp())              # === cubic_interp(x, y)
 itp = interp(x, y; method = LinearInterp(bc = PeriodicBC()))
 itp = interp(x, y; method = CardinalInterp(tension = 0.5))
+itp = interp(x, y; method = PchipInterp(), store = StorePolicy(copy = false))  # zero-copy
 ```
 """
 @inline function interp(
@@ -85,9 +90,10 @@ itp = interp(x, y; method = CardinalInterp(tension = 0.5))
         method::AbstractInterpMethod,
         extrap::AbstractExtrap = NoExtrap(),
         search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy(),
     )
     fn, _, opts = _interp1d_route(method)
-    return fn(x, y; opts..., extrap = extrap, search = search)
+    return fn(x, y; opts..., extrap = extrap, search = search, store = store)
 end
 
 """

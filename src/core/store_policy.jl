@@ -21,10 +21,10 @@
     StorePolicy(; copy=true, copy_grid=copy, copy_values=copy)
 
 Storage policy passed via the `store=` keyword to the persistent interpolant
-constructors — `linear_interp`, `constant_interp`, `cubic_interp`, `akima_interp`,
-`pchip_interp`, `cardinal_interp`, `hermite_interp`, and `interp`. Controls whether
-the grid and value arrays are **copied** (owned, immutable — the default) or
-**aliased** (referenced, zero-copy).
+constructors — `linear_interp`, `constant_interp`, `quadratic_interp`, `cubic_interp`,
+`akima_interp`, `pchip_interp`, `cardinal_interp`, `hermite_interp`, and `interp`.
+Controls whether the grid and value arrays are **copied** (owned, immutable — the
+default) or **aliased** (referenced, zero-copy).
 
 `copy` is the master switch; `copy_grid` / `copy_values` override per component.
 
@@ -32,8 +32,8 @@ the grid and value arrays are **copied** (owned, immutable — the default) or
 
 `copy=false` is best-effort — it aliases what each method can and copies the rest:
 - **Full** grid + value/data reference: `linear` / `constant` (1D + ND, including
-  `view`s), `akima` / `pchip` / `cardinal` / `hermite` (1D), and `interp` / cubic
-  ND **OnTheFly**.
+  `view`s), `quadratic` / `akima` / `pchip` / `cardinal` / `hermite` (1D), and
+  `interp` / cubic ND **OnTheFly**.
 - **Value-only** (grid stays owned, in the spline cache): `cubic` 1D.
 - **PreCompute ND** (`cubic` ND, `interp(...; coeffs=PreCompute())`) builds a derived
   partials array and keeps no raw data, so reference cannot be honored — it **warns
@@ -53,9 +53,9 @@ linear_interp(x, y; store = StorePolicy(copy_values = false))# alias values, cop
     - **grid** mutation always goes silently stale — spacing caches (`h`/`inv_h`),
       and any spline/slope coefficients, are snapshotted at construction.
     - **value** mutation is read live by `linear`/`constant`, but goes silently
-      stale for coefficient-building methods (`cubic`/`akima`/`pchip`/`cardinal`/
-      `hermite`), whose slopes / second-derivatives are derived from the values at
-      construction.
+      stale for coefficient-building methods (`quadratic`/`cubic`/`akima`/`pchip`/
+      `cardinal`/`hermite`), whose slopes / second-derivatives are derived from the
+      values at construction.
 
     The rule: a stored array that feeds a build-time derived cache cannot be
     mutated without silently invalidating results.

@@ -380,7 +380,7 @@ end
 # ========================================
 
 """
-    interp(grids, data; method, coeffs=PreCompute(), extrap=NoExtrap(), search=AutoSearch())
+    interp(grids, data; method, coeffs=AutoCoeffs(), extrap=NoExtrap(), search=AutoSearch(), store=StorePolicy())
 
 Unified N-dimensional interpolation constructor with per-axis method specification.
 
@@ -404,6 +404,9 @@ Automatically dispatches to the optimal implementation:
   - `OnTheFly()`: Build 1D per query (zero build cost, O(n) eval)
 - `extrap=NoExtrap()`: Extrapolation mode(s) — single or per-axis tuple
 - `search=AutoSearch()`: Search policy(ies) — single or per-axis tuple
+- `store=StorePolicy()`: Grid/data storage policy. `StorePolicy(copy=false)` aliases
+  the caller's arrays (zero-copy) on the **OnTheFly** path; **PreCompute** retains
+  only derived partials, so it warns once and copies. See [`StorePolicy`](@ref).
 
 # Examples
 ```julia

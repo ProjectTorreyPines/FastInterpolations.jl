@@ -70,18 +70,20 @@ struct QuadraticInterpolant{Tg, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector
 
     # Inner: `_cache_axis` (insurance, passes the polynomial `bc::QuadraticBC`
     # through — these are not `PeriodicBC` so it just caches h/inv_h) then
-    # `_convert_copy` for ownership. `a`/`d` come freshly-allocated from the
-    # outer ctor's solver.
+    # `_own_or_ref_{axis,values}` for ownership (copy by default, alias under
+    # `StorePolicy(copy=false)`). `a`/`d` always come freshly-allocated from the
+    # outer ctor's solver, so they are never aliased.
     function QuadraticInterpolant(
             x::AbstractVector, y::AbstractVector,
-            a::Vector{Tc}, d::Vector{Tc}, ev::E, search::P, bc::BC
+            a::Vector{Tc}, d::Vector{Tc}, ev::E, search::P, bc::BC;
+            store::StorePolicy = StorePolicy()
         ) where {Tc, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || _throw_grid_too_small(length(x))
         Tg = _promote_grid_float(eltype(x), eltype(y))
         Tv = _value_type(eltype(y), Tg)
-        xc = _convert_copy(_cache_axis(x, bc, Tg), Tg)
-        yc = _convert_copy(y, Tv)
+        xc = _own_or_ref_axis(_cache_axis(x, bc, Tg), Tg, store)
+        yc = _own_or_ref_values(y, Tv, store)
         return new{Tg, Tv, typeof(xc), typeof(yc), E, P, BC, Tc}(xc, yc, a, d, ev, search, bc)
     end
 end

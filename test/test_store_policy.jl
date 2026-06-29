@@ -137,6 +137,59 @@ end
     end
 end
 
+@testitem "Store Policy - quadratic 1D reference" begin
+    # Quadratic was added to StorePolicy alongside the other 1D methods so the
+    # unified `interp(x, y; method=QuadraticInterp())` can build copy-free too.
+    x = collect(range(0.0, 1.0, 60))
+    y = @. sin(2π * x) + 0.2 * x
+    qs = range(0.05, 0.95, 31)
+
+    ic = quadratic_interp(x, y)
+    ir = quadratic_interp(x, y; store = StorePolicy(copy = false))
+    @test ir.y === y                       # value aliased
+    @test ir.x.inner === x                 # grid inner aliased (Vector grid, copy_grid=false)
+    @test ic.y !== y
+    @test ic.x.inner !== x                  # default owns a private grid copy
+    @test typeof(ic) === typeof(ir)
+    @test all(ic(q) ≈ ir(q) for q in qs)
+    @test all(ic(q; deriv = DerivOp(1)) ≈ ir(q; deriv = DerivOp(1)) for q in qs)
+
+    build_ref(xx, yy) = quadratic_interp(xx, yy; store = StorePolicy(copy = false))
+    @test (@inferred build_ref(x, y)) isa QuadraticInterpolant
+    build_ref(x, y)
+    @test (@allocated build_ref(x, y)) < (@allocated quadratic_interp(x, y))
+
+    # parametric y::Y → can alias a view
+    yv = @view y[:]
+    irv = quadratic_interp(x, yv; store = StorePolicy(copy = false))
+    @test irv.y === yv && irv.y isa SubArray
+    @test all(irv(q) ≈ ic(q) for q in qs)
+end
+
+@testitem "Store Policy - unified 1D interp(x, y; method, store)" begin
+    using FastInterpolations: LinearInterp, ConstantInterp, QuadraticInterp,
+        CubicInterp, PchipInterp, CardinalInterp, AkimaInterp
+
+    x = collect(range(0.0, 1.0, 50))
+    y = @. cos(3x) + 0.1 * x
+    qs = range(0.05, 0.95, 25)
+    ref = StorePolicy(copy = false)
+
+    # Every 1D method routed by the unified API must thread `store` through to its
+    # dedicated constructor and alias the user's value vector (zero-copy).
+    for m in (
+            LinearInterp(), ConstantInterp(), QuadraticInterp(), CubicInterp(),
+            PchipInterp(), CardinalInterp(), AkimaInterp(),
+        )
+        ic = interp(x, y; method = m)
+        ir = interp(x, y; method = m, store = ref)
+        @test ir.y === y                    # value aliased through the unified API
+        @test ic.y !== y                    # default still owns a private copy
+        @test typeof(ic) === typeof(ir)
+        @test all(ic(q) ≈ ir(q) for q in qs)
+    end
+end
+
 @testitem "Store Policy - ND reference" begin
     using FastInterpolations: CubicInterp, LinearInterp
 

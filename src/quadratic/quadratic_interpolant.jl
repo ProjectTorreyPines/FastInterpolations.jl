@@ -124,7 +124,8 @@ end
         y::AbstractVector{TY};
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        store::StorePolicy = StorePolicy()
     ) where {TX, TY}
     Tg = _promote_grid_float(TX, TY)
     Tv = _value_type(TY, Tg)
@@ -146,5 +147,5 @@ end
 
     # 3-arg form: promote FillExtrap value type to Tv (no-op for other extraps).
     extrap_p = _resolve_extrap(extrap, x_eff, Tv)
-    return QuadraticInterpolant(x_eff, y, a, d, extrap_p, search, bc_p)
+    return QuadraticInterpolant(x_eff, y, a, d, extrap_p, search, bc_p; store = store)
 end

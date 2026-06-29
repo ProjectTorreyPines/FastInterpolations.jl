@@ -39,19 +39,6 @@ for FMA (Fused Multiply-Add) hardware instructions, reducing total FP operations
         zL::Tz, zR::Tz, yL::Tv, yR::Tv,
         h::Tg, inv_h::Tg, dL::Td, dR::Td
     ) where {Tg, Tz, Tv, Td <: Real}
-    # Carrier-aware: classify on the weighted-arithmetic result over ALL value
-    # carriers (yL/yR + moments zL/zR). Float/Complex-float → fused moment form
-    # (unchanged); non-fusable carriers → single-touch precomputed-weight form.
-    Tc = Base.promote_op(*, promote_type(Tg, Td), promote_type(Tz, Tv))
-    return _cubic_value(_blend_fuses(Tc), zL, zR, yL, yR, h, inv_h, dL, dR)
-end
-
-# Val(true): verbatim moment form (touches each moment twice) — float/Complex-float keep this.
-@inline function _cubic_value(
-        ::Val{true},
-        zL::Tz, zR::Tz, yL::Tv, yR::Tv,
-        h::Tg, inv_h::Tg, dL::Td, dR::Td
-    ) where {Tg, Tz, Tv, Td <: Real}
     # Native (ARM64) instruction breakdown:
     div6 = inv(Tg(6))                                   # (const-folded)
     # inv_h passed as parameter (fdiv eliminated)
@@ -67,17 +54,6 @@ end
     return muladd(inv_h, y_mix, z_term)                 # fmadd
 end
 # Total: 0 fdiv + 9 fmul + 4 fmadd + 1 fmsub = 14 FP ops
-
-# Val(false): precomputed SCALAR weights (reuse the anchor-weight form), each carrier
-# touched once. Algebraically identical; the surplus moment-touch moves onto scalars.
-@inline function _cubic_value(
-        ::Val{false},
-        zL::Tz, zR::Tz, yL::Tv, yR::Tv,
-        h::Tg, inv_h::Tg, dL::Td, dR::Td
-    ) where {Tg, Tz, Tv, Td <: Real}
-    wyL, wyR, wzL, wzR = _compute_anchor_weights(EvalValue(), h, inv_h, dL, dR)
-    return muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
-end
 
 """
     _cubic_kernel(::EvalDeriv1, zL, zR, yL, yR, h, inv_h, dL, dR)

@@ -61,25 +61,9 @@ end
     return (itp.data, stencils, inv_hs, αs)
 end
 
-# N=2 specialization: direct destructuring eliminates ntuple closure overhead
-@inline function _locate_cell(
-        itp::LinearInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{Real, 2}},
-        extraps::Tuple{AbstractExtrap, AbstractExtrap},
-        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
-        mono::Tuple{Bool, Bool},
-    ) where {Tg, Tv}
-    x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, itp.grids, extraps, policies, hints, mono
-    )
-
-    inv_hx = _get_inv_h(itp.grids[1], ix)
-    inv_hy = _get_inv_h(itp.grids[2], iy)
-    αx = (x_eval - xL) * inv_hx
-    αy = (y_eval - yL) * inv_hy
-    return (itp.data, (_IdxPair(ix, ix + 1), _IdxPair(iy, iy + 1)), (inv_hx, inv_hy), (αx, αy))
-end
+# No N=2 specialization: the generic-N locate above inlines to the same code at
+# N=2 (the `map`/closure forms compile away), so a hand-destructured 2D variant
+# is equal-or-slower — verified bit-identical via same-process method-swap A/B.
 
 # Evaluate kernel at a pre-located cell with given derivative ops.
 # Deriv ≥ 2 → 0 is handled inside the kernel itself via

@@ -913,39 +913,6 @@ fresh `Ref{Int}` per axis; user-supplied Refs pass through unchanged.
 end
 
 # ========================================
-# N=2 Specialized Cell Location Preamble
-# ========================================
-#
-# Shared 2D preamble for all N=2 _locate_cell specializations.
-# Extracts query, handles extrapolation, and performs interval search.
-# Returns raw (x_eval, y_eval, ix, iy, xL, yL) for type-specific post-processing.
-
-# N=2 preamble: per-axis adaptive search inside function barrier
-@inline function _locate_cell_2d_preamble(
-        query::Tuple{Vararg{Real, 2}},
-        grids, extraps,
-        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
-        mono::Tuple{Bool, Bool},
-    )
-    xq, yq = query
-    grid_x, grid_y = grids
-    extrap_x, extrap_y = extraps
-    policy_x, policy_y = policies
-    hint_x, hint_y = hints
-    mono_x, mono_y = mono
-
-    # Via `_extrap_axis` (like generic-N) so the N=2 path gets the same query promotion —
-    # keeps a mismatched-eltype coordinate concrete (no batch-loop union-split).
-    x_eval = _extrap_axis(xq, grid_x, extrap_x)
-    y_eval = _extrap_axis(yq, grid_y, extrap_y)
-    ix, _, xL, _ = _search_axis_adaptive(x_eval, grid_x, policy_x, hint_x, mono_x, extrap_x)
-    iy, _, yL, _ = _search_axis_adaptive(y_eval, grid_y, policy_y, hint_y, mono_y, extrap_y)
-
-    return (x_eval, y_eval, ix, iy, xL, yL)
-end
-
-# ========================================
 # Zero-Allocation Grid Type Helpers
 # ========================================
 #

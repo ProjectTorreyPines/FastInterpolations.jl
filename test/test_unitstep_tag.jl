@@ -1,7 +1,8 @@
 # Coverage for the `_UnitStep` axis tag: which inputs earn it, the `Tinv`
 # reciprocal-type contract, the accessor fold invariant, and that persistent
-# interpolants (1D + ND) carry the intended tag — for both `_UnitStep` and
-# `_Generic`.
+# interpolants (1D + ND) carry the intended tag. A unit range earns `_UnitStep`;
+# a Float range is non-unit-step (`_Generic` on aarch64, `_WidenedDomain` on the
+# x86_64 TwicePrecision fast path), so its assertions check `!== _UnitStep`.
 
 @testitem "Axis tag — resolver assigns _UnitStep iff AbstractUnitRange" begin
     using FastInterpolations:
@@ -23,7 +24,7 @@
         @test tagof(_cache_axis(1:1:100, NoBC(), Float64)) === _Generic
         # Float StepRangeLen is _Generic on aarch64; the x86_64 TwicePrecision fast
         # path tags it _WidenedDomain. Either way it is never _UnitStep, which is what
-        # this testset pins (the concrete widen tag is covered in test_widendomain_tag).
+        # this testset pins (the concrete widen tag is covered in test_widened_domain_tag).
         for g in (1.0:100.0, 0.0:0.5:50.0, range(0.0, 1.0; length = 100))
             @test tagof(_resolve_axis(g)) !== _UnitStep
             @test tagof(_cache_axis(g, NoBC(), Float64)) !== _UnitStep
@@ -42,13 +43,15 @@
         @test cr32.inv_h === 1.0f0
     end
 
-    @testset "Accessors fold to one(Tinv) on _UnitStep; return field on _Generic" begin
+    @testset "Accessors fold to one(Tinv) on _UnitStep, return the field otherwise" begin
         u = _to_float(1:4, Float64)           # _UnitStep — h ≡ inv_h ≡ 1
         @test _get_h(u) === 1.0 && _get_inv_h(u) === 1.0
         @test _get_h(u, 1) === 1.0 && _get_inv_h(u, 1) === 1.0                  # 2-arg delegates
         @test _get_h(u, 1, 0.0, 0.0) === 1.0 && _get_inv_h(u, 1, 0.0, 0.0) === 1.0  # 4-arg delegates
-        g = _to_float(0.0:0.5:5.0, Float64)   # _Generic — non-unit step
-        @test tagof(g) === _Generic
+        # Non-unit-step Float range: _Generic on aarch64, _WidenedDomain on x86_64 —
+        # either way not _UnitStep, so the accessors return the field (no fold).
+        g = _to_float(0.0:0.5:5.0, Float64)
+        @test tagof(g) !== _UnitStep
         @test _get_h(g) === 0.5 && _get_inv_h(g) === 2.0
     end
 end
@@ -60,12 +63,15 @@ end
     y = collect(Float64, 1:60) .^ 2
     data = [Float64(i + j) for i in 1:60, j in 1:60]
 
-    @testset "1D — UnitRange → _UnitStep, Float range → _Generic" begin
-        # grid field path differs by method: linear/quad/pchip `.x`, cubic `.cache.x`
+    @testset "1D — UnitRange → _UnitStep, Float range → non-_UnitStep" begin
+        # grid field path differs by method: linear/quad/pchip `.x`, cubic `.cache.x`.
+        # A Float StepRangeLen is _Generic on aarch64 / _WidenedDomain on x86_64; the
+        # invariant that survives the build is "not _UnitStep" (the exact x86 widen
+        # tag is pinned in test_widened_domain_tag.jl).
         @test tagof(linear_interp(1:60, y).x) === _UnitStep
-        @test tagof(linear_interp(1.0:60.0, y).x) === _Generic
+        @test tagof(linear_interp(1.0:60.0, y).x) !== _UnitStep
         @test tagof(cubic_interp(1:60, y).cache.x) === _UnitStep
-        @test tagof(cubic_interp(1.0:60.0, y).cache.x) === _Generic
+        @test tagof(cubic_interp(1.0:60.0, y).cache.x) !== _UnitStep
         @test tagof(quadratic_interp(1:60, y).x) === _UnitStep
         @test tagof(pchip_interp(1:60, y).x) === _UnitStep
     end
@@ -75,10 +81,10 @@ end
         @test c.x isa _CachedRange{Int, Float64, _UnitStep}
     end
 
-    @testset "ND — per-axis tags are independent (mixed _UnitStep/_Generic)" begin
+    @testset "ND — per-axis tags are independent (UnitRange _UnitStep, Float non-_UnitStep)" begin
         itp = linear_interp((1:60, 1.0:60.0), data)
         @test tagof(itp.grids[1]) === _UnitStep
-        @test tagof(itp.grids[2]) === _Generic
+        @test tagof(itp.grids[2]) !== _UnitStep        # Float axis: _Generic / _WidenedDomain (x86)
         itp2 = linear_interp((1:60, Base.OneTo(60)), data)
         @test all(tagof.(itp2.grids) .=== _UnitStep)
     end

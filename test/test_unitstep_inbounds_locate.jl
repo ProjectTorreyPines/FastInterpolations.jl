@@ -343,3 +343,34 @@ end
         @test isfinite(le(13.5))
     end
 end
+
+@testitem "InBounds at the exact endpoints x[1]/x[end] === NoExtrap (the dangerous x[end])" begin
+    # InBounds treats the exact endpoints as in-domain, so the lean searches MUST return the
+    # same bracketing cell as the standard search — in particular `idx == n-1` at `x[end]`
+    # (NOT `n`, which would read `x[idx+1]` out of bounds). This pins the contract for both
+    # lean searches at both ends:
+    #   • range  (`_search_direct_inbounds`): the lean drops only the lower `max(·,1)` and
+    #     KEEPS the upper `min(·,n-1)` cap, so `x[end]` clamps to `n-1` even with FP rounding.
+    #   • vector (`_search_binary_inbounds`): the binary loop bounds `lo ∈ [1,n-1]`.
+    # Covers a non-unit-step range (FP-risky `muladd` near `n`) and a large-offset range
+    # (cancellation-risky), plus a vector grid.
+    using FastInterpolations: InBounds
+
+    grids = (
+        ("range 1:12", 1.0:1.0:12.0),
+        ("range(0,10,64)", range(0.0, 10.0; length = 64)),          # non-unit-step h = 10/63
+        ("range(1e8,0.1,40)", range(1.0e8; step = 0.1, length = 40)), # large-offset
+        ("vector", [1.0, 1.5, 3.0, 4.2, 7.0, 9.5, 12.0]),
+    )
+    for (lbl, x) in grids
+        y = [sin(0.3i) + 0.1i for i in 1:length(x)]
+        for f in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            itp_ib = f(x, y; extrap = InBounds())
+            itp_ne = f(x, y)
+            @test itp_ib(first(x)) === itp_ne(first(x))    # x[1]
+            @test itp_ib(last(x)) === itp_ne(last(x))      # x[end] — the dangerous endpoint
+        end
+        # concrete value pin: linear at x[end] is the right-node value (α = 1 on cell [n-1,n])
+        @test linear_interp(x, y; extrap = InBounds())(last(x)) ≈ y[end]
+    end
+end

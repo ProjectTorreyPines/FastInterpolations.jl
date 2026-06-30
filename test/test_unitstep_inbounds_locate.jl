@@ -374,3 +374,45 @@ end
         @test linear_interp(x, y; extrap = InBounds())(last(x)) ≈ y[end]
     end
 end
+
+@testitem "hetero ND PreCompute InBounds lean === NoExtrap (+ ExtendExtrap-OOB safe)" begin
+    # Hetero (mixed method per axis) PreCompute paths thread `extraps` into the ND search, so
+    # an InBounds range axis takes the lean direct search — bit-identical, per-axis (no 1D
+    # shared-core, so an ExtendExtrap axis clamps). Cubic×Linear is a PreCompute hetero.
+    using FastInterpolations: InBounds, ExtendExtrap, CubicInterp, LinearInterp
+
+    x = 1.0:1.0:8.0
+    y = 2.0:1.0:9.0
+    data = [sin(0.3i) + cos(0.2j) + 0.01i * j for i in 1:8, j in 1:8]
+    method = (CubicInterp(), LinearInterp())
+    qs = ((1.5, 2.5), (4.4, 6.2), (8.0, 9.0))       # in-domain incl. right boundary
+    IB = (InBounds(), InBounds())
+
+    @testset "persistent: InBounds === NoExtrap" begin
+        itp_ib = interp((x, y), data; method = method, extrap = IB)
+        itp_ne = interp((x, y), data; method = method)
+        for q in qs
+            @test itp_ib(q) === itp_ne(q)
+        end
+    end
+
+    @testset "one-shot scalar + batch: InBounds === NoExtrap" begin
+        for q in qs
+            @test interp((x, y), data, q; method = method, extrap = IB) ===
+                interp((x, y), data, q; method = method)
+        end
+        qxs = Float64[q[1] for q in qs]
+        qys = Float64[q[2] for q in qs]
+        o_ib = similar(qxs)
+        o_ne = similar(qxs)
+        interp!(o_ib, (x, y), data, (qxs, qys); method = method, extrap = IB)
+        interp!(o_ne, (x, y), data, (qxs, qys); method = method)
+        @test o_ib == o_ne
+    end
+
+    @testset "ExtendExtrap OOB on a hetero axis stays finite (per-axis search clamps)" begin
+        itp_ext = interp((x, y), data; method = method, extrap = (ExtendExtrap(), ExtendExtrap()))
+        @test isfinite(itp_ext((0.3, 1.5)))
+        @test isfinite(itp_ext((9.5, 10.0)))
+    end
+end

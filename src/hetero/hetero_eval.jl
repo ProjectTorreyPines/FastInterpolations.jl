@@ -478,7 +478,9 @@ end
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, extraps)
-    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
+    # 6-arg search: per-axis `extraps` let an InBounds range axis take the lean direct
+    # search. Per-axis dispatch (no 1D-style shared core), so ExtendExtrap axes clamp.
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono, extraps)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, itp.grids, indices, Ls)
     return (itp.data.partials, indices, hs, inv_hs, dLs)
 end

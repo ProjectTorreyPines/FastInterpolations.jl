@@ -24,7 +24,7 @@
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, _ = search_interval(searcher, x, xq)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, InBounds())
     dL = xq - xL
     h = _get_h(x, idx)
     inv_h = _get_inv_h(x, idx)
@@ -44,7 +44,13 @@ end
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
     @boundscheck _check_domain(x, xq, extrap)
-    return _hermite_eval_at_point(x, y, dy, xq, InBounds(), op, searcher)
+    # ExtendExtrap may arrive OOB → standard two-sided-clamp search (not the lean InBounds
+    # core, whose one-sided clamp would give idx ≤ 0 OOB-left); boundary cell extrapolates.
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, extrap)
+    dL = xq - xL
+    h = _get_h(x, idx)
+    inv_h = _get_inv_h(x, idx)
+    @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or delegate.
@@ -134,7 +140,7 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, _ = search_interval(searcher, x, xq)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, InBounds())
     n = _data_length(x)
     dyL = _local_slope(sm, x, y, idx, n)
     dyR = _local_slope(sm, x, y, idx_R, n)
@@ -156,7 +162,17 @@ end
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
     @boundscheck _check_domain(x, xq, extrap)
-    return _hermite_eval_at_point(x, y, sm, xq, InBounds(), op, searcher)
+    # ExtendExtrap may arrive OOB → standard two-sided-clamp search (not the lean InBounds
+    # core, whose one-sided clamp would give idx ≤ 0 OOB-left); boundary cell extrapolates.
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, extrap)
+    n = _data_length(x)
+    dyL = _local_slope(sm, x, y, idx, n)
+    dyR = _local_slope(sm, x, y, idx_R, n)
+    dL = xq - xL
+    h = _get_h(x, idx)
+    inv_h = _get_inv_h(x, idx)
+    yr = _raw(y)
+    @inbounds return _hermite_kernel_1d(op, yr[idx], yr[idx_R], dyL, dyR, h, inv_h, dL)
 end
 
 @inline function _hermite_eval_at_point(

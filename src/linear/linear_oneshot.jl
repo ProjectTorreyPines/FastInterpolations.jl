@@ -223,7 +223,7 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq, InBounds())
     # Independent computation of `α` and `inv_h`. The kernel uses only one
     # (EvalValue → α, `DerivOp(1)` → inv_h, `DerivOp(2)` → neither), so the
     # unused branch's fdiv is dead-code-eliminated by LLVM. `_alpha_of`
@@ -234,8 +234,12 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
 end
 
-# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check
-# (NoExtrap throws on OOB; others are no-op fallbacks) → delegate.
+# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check (NoExtrap throws
+# on OOB; ExtendExtrap is a no-op and may arrive OOB). Runs the standard two-sided-clamp
+# search + kernel HERE — it must NOT delegate to the lean `::InBounds` core, whose one-sided
+# clamp would return idx ≤ 0 on an OOB-left ExtendExtrap query. Passing `extrap` routes to
+# the clamping `search_interval` overload; the boundary cell (idx ∈ [1, n-1]) lets `α`
+# extrapolate past the ends.
 @inline function _linear_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -246,7 +250,9 @@ end
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
     @boundscheck _check_domain(x, xq, extrap)
-    return _linear_eval_at_point(x, y, xq, InBounds(), op, searcher)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq, extrap)
+    α = _alpha_of(xq, xL, xR, x)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
 end
 
 # ClampExtrap / FillExtrap (all ops): boundary check → extrap value or delegate.

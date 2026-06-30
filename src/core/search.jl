@@ -901,6 +901,21 @@ end
     return idx, idx + 1, xL, xR
 end
 
+# Extrap-aware 1D search. ONLY a genuine `InBounds` query on a normalized range takes the
+# lean `_search_direct_inbounds` (one-sided clamp — the lower `max(·,1)` is dead when the
+# query is in-domain), bit-identical to the standard search for an in-bounds query, and
+# still writes the hint (symmetry with `_search_direct!`; `NoHint` no-ops via `_write_hint!`).
+# The genuine `::InBounds` eval cores pass `InBounds()` here. Every other `(grid, xq, extrap)`
+# — vector grids, GridIdx, AND any non-InBounds extrap (e.g. ExtendExtrap, which may be OOB
+# and needs the two-sided clamp) — delegates to the standard 4-arg search.
+@inline function search_interval(s::Searcher, x::_CachedRange, xq::Real, ::InBounds)
+    idx, xL, xR = _search_direct_inbounds(x, xq)
+    _write_hint!(s.hint, idx)
+    return idx, idx + 1, xL, xR
+end
+@inline search_interval(s::Searcher, x::AbstractVector, xq, ::AbstractExtrap) =
+    search_interval(s, x, xq)
+
 # --- Layer 2: Policy-specific Real dispatch ---
 
 # BinarySearch + NoHint (zero-overhead)

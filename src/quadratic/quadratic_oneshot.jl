@@ -34,13 +34,15 @@
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
-    idx, _, xL, _ = search_interval(searcher, x, xq)
+    idx, _, xL, _ = search_interval(searcher, x, xq, InBounds())
     dt = xq - xL  # Can be Dual for AD
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
-# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check
-# → delegate. `_check_domain(::NoExtrap)` throws on OOB; others are no-op.
+# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check (NoExtrap throws
+# on OOB; ExtendExtrap is a no-op and may arrive OOB). Runs the standard two-sided-clamp
+# search + kernel HERE — must NOT delegate to the lean `::InBounds` core, whose one-sided
+# clamp would return idx ≤ 0 on an OOB-left ExtendExtrap query; the boundary cell extrapolates.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -52,7 +54,9 @@ end
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
-    return _quadratic_eval_at_point(x, y, a, d, xq, InBounds(), op, searcher)
+    idx, _, xL, _ = search_interval(searcher, x, xq, extrap)
+    dt = xq - xL
+    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or delegate.

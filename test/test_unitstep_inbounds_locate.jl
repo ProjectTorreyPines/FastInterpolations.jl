@@ -132,6 +132,59 @@ end
     end
 end
 
+@testitem "1D InBounds lean vs ExtendExtrap OOB — lean only the genuinely-in-domain path" begin
+    # RED pin for the 1D lean search. The lean `_search_direct_inbounds` uses a ONE-SIDED
+    # clamp (no lower `max(·,1)`), valid ONLY when the query is in-domain. `ExtendExtrap`
+    # reaches the eval core with an OOB query and extrapolates off the *boundary cell* — it
+    # MUST take the standard two-sided-clamp search, not the lean one. If the generic
+    # `::AbstractExtrap` eval delegates an OOB ExtendExtrap query to the lean core, the
+    # one-sided clamp returns idx ≤ 0 → BoundsError. This test fails (errors) on that bug
+    # and passes once InBounds (lean) and ExtendExtrap (clamp) are split.
+    using FastInterpolations: InBounds, ExtendExtrap
+
+    x = 1.0:1.0:12.0
+    y = [sin(0.3i) + 0.1i for i in 1:length(x)]
+    qs_in = (1.5, 3.4, 6.25, 9.99, 12.0)         # in-domain
+    q_left = 0.4                                  # OOB-left  (< x[1] = 1)
+    q_right = 13.7                                # OOB-right (> x[end] = 12)
+
+    @testset "genuine InBounds === NoExtrap in-domain (lean is bit-identical)" begin
+        for f in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            itp_ib = f(x, y; extrap = InBounds())
+            itp_ne = f(x, y)
+            for q in qs_in
+                @test itp_ib(q) === itp_ne(q)
+            end
+        end
+    end
+
+    @testset "ExtendExtrap OOB extrapolates (must NOT hit the lean one-sided clamp)" begin
+        for f in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            itp_ext = f(x, y; extrap = ExtendExtrap())
+            @test isfinite(itp_ext(q_left))      # OOB-left: lean would BoundsError at idx ≤ 0
+            @test isfinite(itp_ext(q_right))     # OOB-right
+        end
+    end
+
+    @testset "linear ExtendExtrap matches the boundary-segment extension (value pin)" begin
+        li = linear_interp(x, y; extrap = ExtendExtrap())
+        @test li(q_left) ≈ y[1] + (q_left - x[1]) * (y[2] - y[1]) / (x[2] - x[1])
+        @test li(q_right) ≈ y[end - 1] + (q_right - x[end - 1]) * (y[end] - y[end - 1]) / (x[end] - x[end - 1])
+    end
+
+    @testset "hermite (precomputed slopes): InBounds lean + ExtendExtrap OOB safe" begin
+        dy = [0.3cos(0.3i) + 0.1 for i in 1:length(x)]
+        hib = hermite_interp(x, y, dy; extrap = InBounds())
+        hne = hermite_interp(x, y, dy)
+        for q in qs_in
+            @test hib(q) === hne(q)
+        end
+        hext = hermite_interp(x, y, dy; extrap = ExtendExtrap())
+        @test isfinite(hext(q_left))
+        @test isfinite(hext(q_right))
+    end
+end
+
 @testitem "UnitStep InBounds locate — persistent hint write-back === NoExtrap (symmetry)" begin
     # Regression: the lean InBounds direct search must still write the persistent hint
     # back to the found interval. It previously dropped the write, so an explicitly

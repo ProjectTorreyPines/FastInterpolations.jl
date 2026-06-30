@@ -131,3 +131,58 @@ end
         @test mixed((3.5, 100.0)) === allclamp((3.5, 100.0))
     end
 end
+
+@testitem "UnitStep InBounds locate — persistent hint write-back === NoExtrap (symmetry)" begin
+    # Regression: the lean InBounds direct search must still write the persistent hint
+    # back to the found interval. It previously dropped the write, so an explicitly
+    # provided hint Ref was left STALE under InBounds while NoExtrap/Clamp updated it
+    # (per-axis: a mixed `(InBounds, NoExtrap)` query updated only the NoExtrap axis).
+    #
+    # This pins the PERSISTENT `itp(q; hint)` path (the 6-arg `_search_all_intervals`
+    # InBounds overload). The existing oneshot-hint tests use a different search and so
+    # never exercised this. The contract is symmetry: InBounds writes the same interval
+    # the generic NoExtrap path does — and actually writes it (sentinel 0 must be gone).
+    using FastInterpolations: InBounds, NoExtrap, GridIdx
+
+    axx, axy = 1:7, 2:9
+    data = [0.1i + 0.3j + 0.01i * j for i in 1:length(axx), j in 1:length(axy)]
+    q = (3.4, 6.2)   # in-domain
+
+    @testset "all-axes InBounds writes the hint like NoExtrap — per method" begin
+        for ctor in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            itp_ib = ctor((axx, axy), data; extrap = (InBounds(), InBounds()))
+            itp_ne = ctor((axx, axy), data)                  # default NoExtrap reference
+            hib = (Ref(0), Ref(0))
+            hne = (Ref(0), Ref(0))
+            itp_ib(q; hint = hib)
+            itp_ne(q; hint = hne)
+            # chained compare: equal to the NoExtrap interval AND non-sentinel (written).
+            @test hib[1][] == hne[1][] != 0
+            @test hib[2][] == hne[2][] != 0
+        end
+    end
+
+    @testset "per-axis mixed: the InBounds axis is not left stale" begin
+        for ex in ((InBounds(), NoExtrap()), (NoExtrap(), InBounds()))
+            itp = linear_interp((axx, axy), data; extrap = ex)
+            ref = linear_interp((axx, axy), data)
+            h = (Ref(0), Ref(0))
+            hr = (Ref(0), Ref(0))
+            itp(q; hint = h)
+            ref(q; hint = hr)
+            @test h[1][] == hr[1][] != 0   # x axis written (InBounds or NoExtrap)
+            @test h[2][] == hr[2][] != 0   # y axis written — the InBounds axis must update too
+        end
+    end
+
+    @testset "GridIdx InBounds writes the hint like NoExtrap" begin
+        itp_ib = linear_interp((axx, axy), data; extrap = (InBounds(), InBounds()))
+        itp_ne = linear_interp((axx, axy), data)
+        hib = (Ref(0), Ref(0))
+        hne = (Ref(0), Ref(0))
+        itp_ib((GridIdx(3), 6.2); hint = hib)
+        itp_ne((GridIdx(3), 6.2); hint = hne)
+        @test hib[1][] == hne[1][] != 0
+        @test hib[2][] == hne[2][] != 0
+    end
+end

@@ -29,21 +29,26 @@ end
     @test _linear_value_blend(0.0f0, 0.2f0, 0.9f0) === 0.2f0
     @test _linear_value_blend(1.0f0, 0.2f0, 0.9f0) === 0.9f0
 
-    # ALT form is a faithful refactor of the FMA form on floats (≤1 ULP; measured 0)
-    function _maxulp_probe(n)
+    # The FMA and min-op forms are algebraically identical; they agree to ~1 ULP
+    # *relative to the input scale*. (Bit-identical on Julia ≥1.12, where LLVM
+    # contracts both to the same FMA; on older LLVM the rounding differs slightly.
+    # A result-ULP metric is the wrong gauge — it explodes near cancellation, where
+    # the result is tiny but |a−b| is still ~1 ULP of the inputs.) Floats ship the
+    # FMA form regardless, so this only pins the min-op form as a faithful refactor.
+    function _maxreldiff(n)
         rng = MersenneTwister(1)
-        mu = 0
+        m = 0.0
         for _ in 1:n
             α = rand(rng)
             yL = (rand(rng) - 0.5) * 20
             yR = (rand(rng) - 0.5) * 20
             a = _linear_value_blend(Val(true), α, yL, yR)
             b = _linear_value_blend(Val(false), α, yL, yR)
-            mu = max(mu, abs(reinterpret(Int64, a) - reinterpret(Int64, b)))
+            m = max(m, abs(a - b) / max(abs(yL), abs(yR), abs(a)))
         end
-        return mu
+        return m
     end
-    @test _maxulp_probe(200_000) <= 1
+    @test _maxreldiff(200_000) <= 8 * eps(Float64)
 end
 
 @testitem "carrier-aware blend: linear type-stable + zero-alloc + carriers correct" setup = [AllocConstants] begin

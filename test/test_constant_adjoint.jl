@@ -1,5 +1,9 @@
 @testitem "ConstantAdjoint" setup = [AllocConstants] begin
-    using LinearAlgebra: dot
+    using LinearAlgebra: dot, norm
+    using Random: seed!
+    # Deterministic random fixtures: the Float32 dot-product identity below is
+    # sensitive to platform FMA/BLAS reduction order, so pin the random draw.
+    seed!(1234)
 
     # ========================================
     # Helper: Dot-product test for adjoint correctness
@@ -179,11 +183,15 @@
         # cancel. Platforms differ in their FMA / BLAS reduction lane choices
         # (Windows+Julia 1.12 x86_64 observed to cross `sqrt(eps(Float32))`
         # on the LeftSide random instance). Use a looser tolerance that is
-        # still tight enough to catch real adjoint-operator bugs (which fail
-        # by `O(1)` relative error, not a few ULP).
+        # still tight enough to catch real adjoint-operator bugs (which fail by
+        # `O(1)` relative error, not a few ULP). The `atol` floor extends that same
+        # relative tol to the term scale (‖f‖·‖ȳ‖), so a near-zero, sign-cancelled
+        # dot product stays robust instead of making `rtol` meaningless.
         _, _, ok = constant_dot_product_test(
             x32, xq32, f32, yb32;
-            side = side_mode, rtol = 10 * sqrt(eps(Float32))
+            side = side_mode,
+            rtol = 10 * sqrt(eps(Float32)),
+            atol = 10 * sqrt(eps(Float32)) * norm(f32) * norm(yb32),
         )
         @test ok
     end

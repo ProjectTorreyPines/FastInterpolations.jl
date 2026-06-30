@@ -626,6 +626,35 @@ compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
     return idx, xL, xR
 end
 
+"""
+    _search_binary_inbounds(x::AbstractVector, xq::Real)
+
+`InBounds` variant of [`_search_binary`](@ref): drops the upfront `_le(xq, first(x))` /
+`_ge(xq, last(x))` boundary guards. Those are an early-out for boundary/OOB queries, NOT
+needed for correctness — the binary loop itself keeps `lo ∈ [1, n-1]`, so it returns the
+same bracketing cell as `_search_binary` for any query (including the exact endpoints). For
+an in-domain query the guards are always-false branches; removing them is bit-identical and
+~8-13% faster (the two branches are a meaningful fraction of a small binary search). Routed
+to only when the extrap is `InBounds` (the standard search keeps the guards for the OOB
+early-out that Clamp/Fill/Extend rely on).
+"""
+@inline function _search_binary_inbounds(x::AbstractVector{T}, xq::Real) where {T <: Real}
+    n = length(x)
+    @inbounds begin
+        lo, hi = 1, n
+        iters = 64 - leading_zeros((hi - lo - 1) % UInt64)
+        for _ in 1:iters
+            mid = (lo + hi) >> 1
+            cond = _le(x[mid], xq)
+            lo = ifelse(cond, mid, lo)
+            hi = ifelse(cond, hi, mid)
+        end
+        idx = lo
+        xL, xR = x[idx], x[idx + 1]
+    end
+    return idx, xL, xR
+end
+
 # ========================================
 # 3. Hinted Search Implementations
 # ========================================
@@ -901,16 +930,25 @@ end
     return idx, idx + 1, xL, xR
 end
 
-# Extrap-aware 1D search. ONLY a genuine `InBounds` query on a normalized range takes the
-# lean `_search_direct_inbounds` (one-sided clamp — the lower `max(·,1)` is dead when the
-# query is in-domain), bit-identical to the standard search for an in-bounds query, and
-# still writes the hint (symmetry with `_search_direct!`; `NoHint` no-ops via `_write_hint!`).
-# The genuine `::InBounds` eval cores pass `InBounds()` here. Every other `(grid, xq, extrap)`
-# — vector grids, GridIdx, AND any non-InBounds extrap (e.g. ExtendExtrap, which may be OOB
-# and needs the two-sided clamp) — delegates to the standard 4-arg search.
+# Extrap-aware 1D search. A genuine `InBounds` query leans per grid type, both bit-identical
+# to the standard search for an in-bounds query and both writing the hint (symmetry with
+# `_search_direct!`; `NoHint` no-ops via `_write_hint!`):
+#   • normalized `_CachedRange` → `_search_direct_inbounds` (one-sided clamp; the lower
+#     `max(·,1)` is dead in-domain).
+#   • non-uniform vector grid   → `_search_binary_inbounds` (drops the binary search's
+#     `first`/`last` boundary guards, which are always-false branches in-domain).
+# The genuine `::InBounds` eval cores pass `InBounds()` here. GridIdx and any non-InBounds
+# extrap (e.g. ExtendExtrap, which may be OOB and needs the two-sided clamp) delegate to the
+# standard 4-arg search. `_CachedRange` is the more-specific overload, so it wins over the
+# `AbstractVector` one.
 @inline function search_interval(s::Searcher, x::_CachedRange, xq::Real, ::InBounds)
     idx, xL, xR = _search_direct_inbounds(x, xq)
     _write_hint!(s.hint, idx)
+    return idx, idx + 1, xL, xR
+end
+@inline function search_interval(s::Searcher, x::AbstractVector, xq::Real, ::InBounds)
+    xq = _promote_coord(xq, eltype(x))
+    idx, xL, xR = _search_interval_real_inbounds(s, x, xq)
     return idx, idx + 1, xL, xR
 end
 @inline search_interval(s::Searcher, x::AbstractVector, xq, ::AbstractExtrap) =
@@ -944,6 +982,20 @@ end
 # DirectSearch + RefHint (Range grids with persistent hint)
 @inline _search_interval_real(p::Searcher{DirectSearch, RefHint}, x::AbstractRange, xq::Real) =
     _search_direct!(x, xq, p.hint.idx)
+
+# --- Layer 2 (InBounds): vector grids skip the binary search's boundary guards (in-domain
+# ⇒ always-false). Only `BinarySearch` has those guards; `LinearSearch`/`LinearBinarySearch`
+# walk from the hint (no upfront guards) and `DirectSearch` is the range path, so they fall
+# through to the standard dispatch unchanged. Hint write-back is preserved (RefHint). ---
+@inline _search_interval_real_inbounds(::Searcher{BinarySearch, NoHint}, x::AbstractVector, xq::Real) =
+    _search_binary_inbounds(x, xq)
+@inline function _search_interval_real_inbounds(p::Searcher{BinarySearch, RefHint}, x::AbstractVector, xq::Real)
+    idx, xL, xR = _search_binary_inbounds(x, xq)
+    p.hint.idx[] = idx
+    return idx, xL, xR
+end
+@inline _search_interval_real_inbounds(s::Searcher, x::AbstractVector, xq::Real) =
+    _search_interval_real(s, x, xq)
 
 # ========================================
 # 5. Internal Aliases (for module-internal use)

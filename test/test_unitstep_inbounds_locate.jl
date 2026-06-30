@@ -303,3 +303,43 @@ end
         end
     end
 end
+
+@testitem "vector (non-uniform) grid InBounds lean === standard (boundary-guard skip)" begin
+    # A non-uniform vector grid uses binary search; InBounds drops the `_le(xq,first)` /
+    # `_ge(xq,last)` boundary guards (`_search_binary_inbounds`). Bit-identical to NoExtrap
+    # for in-domain queries INCLUDING the exact endpoints (where the guards would have
+    # early-returned, and the loop returns the same cell). Characterization test; the win is
+    # perf. ExtendExtrap on a vector grid stays safe — the generic uses the standard guarded
+    # search, and the boundary-guard-free loop clamps OOB naturally anyway.
+    using FastInterpolations: InBounds, ExtendExtrap
+
+    xv = [1.0, 1.5, 3.0, 4.2, 7.0, 9.5, 12.0]
+    y = [sin(0.3i) + 0.1i for i in 1:length(xv)]
+    qs = (1.0, 2.7, 5.5, 9.5, 12.0)             # in-domain incl. both exact endpoints
+
+    @testset "InBounds === NoExtrap (bit-identical), scalar + vector" begin
+        for f in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            itp_ib = f(xv, y; extrap = InBounds())
+            itp_ne = f(xv, y)
+            for q in qs
+                @test itp_ib(q) === itp_ne(q)
+            end
+            qv = collect(range(xv[1], xv[end]; length = 16))
+            @test itp_ib(qv) == itp_ne(qv)
+        end
+    end
+
+    @testset "explicit hint updates under InBounds (vector grid)" begin
+        h_ib = Ref(1)
+        h_ne = Ref(1)
+        linear_interp(xv, y; extrap = InBounds())(5.5; hint = h_ib)
+        linear_interp(xv, y)(5.5; hint = h_ne)
+        @test h_ib[] == h_ne[] != 1
+    end
+
+    @testset "ExtendExtrap OOB on a vector grid stays finite (no lean hazard)" begin
+        le = linear_interp(xv, y; extrap = ExtendExtrap())
+        @test isfinite(le(0.3))
+        @test isfinite(le(13.5))
+    end
+end

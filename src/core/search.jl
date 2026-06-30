@@ -545,6 +545,25 @@ muladd to identity — no separate `_UnitStep` method needed.
     return idx, xL, xR
 end
 
+"""
+    _search_direct_inbounds(x::_CachedRange, xq::Real)
+
+`InBounds` variant of [`_search_direct`](@ref): the query is already known in-domain
+(an `InBounds` extrap axis, or a `NoExtrap` axis whose `_check_domain` has passed), so
+`xq ≥ lo` ⇒ `idx ≥ 1` and the lower `max(·, 1)` half of `_clamp(idx, 1, len-1)` is
+provably dead — only the top-cell cap `min(·, len-1)` remains. `xL`/`xR` are computed
+identically, so the returned interval is **bit-identical** to `_search_direct` for any
+in-bounds `xq`. A `_UnitStep` axis folds the `×inv_h`/`×h` to identity.
+"""
+@inline function _search_direct_inbounds(x::_CachedRange{T, Tinv}, xq::Real) where {T, Tinv}
+    inv_h = _get_inv_h(x)
+    h = _get_h(x)
+    idx = min(unsafe_trunc(Int, _extract_primal(muladd(xq - x.lo, inv_h, 1))), x.len - 1)
+    xL = muladd(idx - 1, h, x.lo)
+    xR = xL + h
+    return idx, xL, xR
+end
+
 
 # ----------------------------------------
 # Promote-then-compare ordering helpers

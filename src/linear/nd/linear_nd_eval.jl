@@ -52,7 +52,9 @@ end
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     q_eval = _handle_all_extraps(query, itp.grids, extraps)
-    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
+    # 6-arg search: per-axis `extraps` let InBounds range axes take the lean direct
+    # search (one-sided clamp, no hint write-back) — bit-identical, per-axis.
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono, extraps)
     inv_hs = map(_get_inv_h, itp.grids, indices)
     αs = map(_alpha_of, q_eval, Ls, inv_hs)
     stencils = map(i -> _IdxPair(i, i + 1), indices)

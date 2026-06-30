@@ -17,12 +17,16 @@
         end
     end
 
-    @testset "Non-unit-range (incl. step-1 StepRange) → _Generic" begin
-        # `1:1:100` is a StepRange, NOT an AbstractUnitRange — its unit step is a
-        # runtime field, not a type fact — so it correctly stays `_Generic`.
-        for g in (1:1:100, 1.0:100.0, 0.0:0.5:50.0, range(0.0, 1.0; length = 100))
-            @test _resolve_axis(g) isa _CachedRange{Float64, Float64, _Generic}
-            @test _cache_axis(g, NoBC(), Float64) isa _CachedRange{Float64, Float64, _Generic}
+    @testset "Non-unit-range (incl. step-1 StepRange) → not _UnitStep" begin
+        # `1:1:100` is a StepRange (never TwicePrecision) → _Generic on every arch.
+        @test tagof(_resolve_axis(1:1:100)) === _Generic
+        @test tagof(_cache_axis(1:1:100, NoBC(), Float64)) === _Generic
+        # Float StepRangeLen is _Generic on aarch64; the x86_64 TwicePrecision fast
+        # path tags it _WidenDomain. Either way it is never _UnitStep, which is what
+        # this testset pins (the concrete widen tag is covered in test_widendomain_tag).
+        for g in (1.0:100.0, 0.0:0.5:50.0, range(0.0, 1.0; length = 100))
+            @test tagof(_resolve_axis(g)) !== _UnitStep
+            @test tagof(_cache_axis(g, NoBC(), Float64)) !== _UnitStep
         end
     end
 

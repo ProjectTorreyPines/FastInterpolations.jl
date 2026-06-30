@@ -78,7 +78,7 @@ on `StepRangeLen`, `LinRange`, `OrdinalRange`, etc.
 function _to_float(x::AbstractRange, ::Type{T}) where {T}
     h = T(step(x))
     inv_h = inv(h)
-    return _CachedRange{T, typeof(inv_h)}(T(first(x)), T(last(x)), h, inv_h, length(x))
+    return _cached_range(_Generic(), T(first(x)), T(last(x)), h, inv_h, length(x))
 end
 
 # Unit-step fast-path: `AbstractUnitRange` (`UnitRange`/`Base.OneTo`) has step ≡ 1 by
@@ -88,11 +88,12 @@ end
 # `_CachedRange` contract; skips the generic path's runtime `inv(step(x))`).
 @inline function _to_float(x::AbstractUnitRange, ::Type{T}) where {T}
     Tinv = typeof(inv(oneunit(T)))
-    return _CachedRange{T, Tinv, _UnitStep}(T(first(x)), T(last(x)), one(T), one(Tinv), length(x))
+    return _cached_range(_UnitStep(), T(first(x)), T(last(x)), one(T), one(Tinv), length(x))
 end
 
 # x86_64: TwicePrecision first()/last() ~9ns each on Intel — bypass via plain-T muladd.
-# lo/hi may be ±1 ULP vs exact; domain_lo/domain_hi widened for safe _check_domain.
+# lo/hi may be ±1 ULP vs exact; the `_WidenDomain` factory widens the domain bracket
+# for safe `_check_domain`.
 # ARM: TwicePrecision is fast, so generic AbstractRange path above is used instead.
 @static if Sys.ARCH === :x86_64
     function _to_float(
@@ -102,10 +103,7 @@ end
         h = FT(x.step)
         lo = muladd(1 - x.offset, h, FT(x.ref))
         hi = muladd(x.len - x.offset, h, FT(x.ref))
-
-        domain_lo = prevfloat(lo)
-        domain_hi = nextfloat(hi)
-        return _CachedRange{FT, FT}(lo, hi, h, inv(h), length(x), domain_lo, domain_hi)
+        return _cached_range(_WidenDomain(), lo, hi, h, inv(h), length(x))
     end
 end
 

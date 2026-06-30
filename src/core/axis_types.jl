@@ -40,17 +40,21 @@ normalized to `_CachedRange` via `_to_float` at public API boundaries.
 - `domain_lo::T`, `domain_hi::T` — safe bounds for domain checks (= `lo`/`hi`
   on the exact path; widened by ≈1 ULP on the x86_64 TwicePrecision fast path)
 """
-# Grid tag (3rd type param): a generic type-level marker for grid properties,
-# kept open so future kinds (log-spaced, reversed, …) — and `_CachedVector` —
-# can reuse `_AxisTag`. Only `_search_direct`/`_alpha_of` specialize on `_UnitStep`
-# (step ≡ 1, statically known → skip the ×inv_h/×h multiplies). Every other call
-# site dispatches on `::_CachedRange{T,Tinv}` (= `…{T,Tinv,Tag} where Tag`), which
-# matches all tags, so nothing else needs to change.
-abstract type _AxisTag end
-struct _Generic <: _AxisTag end    # default: step is a runtime field
-struct _UnitStep <: _AxisTag end   # step ≡ 1 (from an AbstractUnitRange grid)
+# Grid tag (3rd type param): a type-level marker for grid properties, kept open so
+# future kinds (log-spaced, reversed, …) — and `_CachedVector` — can reuse
+# `_AbstractAxisTag`. `_UnitStep` (step ≡ 1, statically known) lets
+# `_get_h`/`_get_inv_h`/`_search_direct`/`_alpha_of` skip the ×inv_h/×h multiplies;
+# `_WidenDomain` lets `_domain_bounds` read the widened x86_64 bracket instead of
+# `lo`/`hi`. Every other call site dispatches on `::_CachedRange{T,Tinv}`
+# (= `…{T,Tinv,Tag} where Tag`), which matches all tags.
+abstract type _AbstractAxisTag end
+struct _Generic <: _AbstractAxisTag end    # default: step is a runtime field
+struct _UnitStep <: _AbstractAxisTag end   # step ≡ 1 (from an AbstractUnitRange grid)
+# Widened 1-ULP domain bracket (x86_64 TwicePrecision reconstruction cushion);
+# mutually exclusive with `_UnitStep`.
+struct _WidenDomain <: _AbstractAxisTag end
 
-struct _CachedRange{T, Tinv, Tag <: _AxisTag} <: AbstractRange{T}
+struct _CachedRange{T, Tinv, Tag <: _AbstractAxisTag} <: AbstractRange{T}
     lo::T
     hi::T
     h::T
@@ -60,15 +64,24 @@ struct _CachedRange{T, Tinv, Tag <: _AxisTag} <: AbstractRange{T}
     domain_hi::T
 end
 
-# Default-tag convenience ctors: keep every existing `_CachedRange{T,Tinv}(…)`
-# call site (and `::_CachedRange{T,Tinv}` dispatch) working — fills `Tag=_Generic`.
-@inline _CachedRange{T, Tinv}(lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv} =
-    _CachedRange{T, Tinv, _Generic}(lo, hi, h, inv_h, len, lo, hi)
-@inline _CachedRange{T, Tinv}(lo::T, hi::T, h::T, inv_h::Tinv, len::Int, dlo::T, dhi::T) where {T, Tinv} =
-    _CachedRange{T, Tinv, _Generic}(lo, hi, h, inv_h, len, dlo, dhi)
-# 5-arg with explicit tag (exact domain = lo/hi) — used by the unit-step fast path.
+# 5-arg explicit-tag ctor (exact domain = lo/hi) — used by slicing and diff-type
+# conversion to rebuild from recomputed endpoints. Fresh construction goes through
+# the `_cached_range` factory below.
 @inline _CachedRange{T, Tinv, Tag}(lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv, Tag} =
     _CachedRange{T, Tinv, Tag}(lo, hi, h, inv_h, len, lo, hi)
+
+# Construction factory: build a `_CachedRange` from raw geometry, deriving the
+# domain bracket from the tag *instance* (idiomatic trait dispatch, as with
+# `NoExtrap()` / `EvalValue()`). The generic method recovers the concrete tag via
+# `typeof(tag)` (constant-folded under specialization); `T`/`Tinv` are inferred
+# from the value arguments, so call sites carry no type parameters. This is the
+# single home of the widening computation.
+@inline function _cached_range(tag::_AbstractAxisTag, lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv}
+    return _CachedRange{T, Tinv, typeof(tag)}(lo, hi, h, inv_h, len, lo, hi)
+end
+@inline function _cached_range(::_WidenDomain, lo::T, hi::T, h::T, inv_h::Tinv, len::Int) where {T, Tinv}
+    return _CachedRange{T, Tinv, _WidenDomain}(lo, hi, h, inv_h, len, prevfloat(lo), nextfloat(hi))
+end
 
 # Identity passthrough — re-wrapping would discard the cached fields.
 _CachedRange(x::_CachedRange) = x

@@ -599,11 +599,12 @@ _promote_coord(0.5f0, Float32)  # → 0.5f0 (Float32)
     return nothing
 end
 
-# _CachedRange: use domain_lo/domain_hi (wider bracket on x86_64 fast path).
+# _CachedRange: bounds via `_domain_bounds` — `lo`/`hi` for exact tags (shared
+# with the search's `lo` load), the widened bracket only for `_WidenDomain`.
 @inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap)
     xip = _extract_primal(xi)
-    lo, hi = _extract_primal(x.domain_lo), _extract_primal(x.domain_hi)
-    c = _clamp(xip, lo, hi)
+    lo, hi = _domain_bounds(x)
+    c = _clamp(xip, _extract_primal(lo), _extract_primal(hi))
     (c != oftype(c, xip)) && _throw_domain_error(xi, x)
     return nothing
 end
@@ -660,11 +661,15 @@ end
 
 # Safe domain bounds — single axis-dispatched source of truth for every in-domain
 # test (`_is_all_inbounds`, `_is_inbounds`, `_oob_state`), so they never disagree
-# at a boundary query. Plain `AbstractVector` → exact `first/last`; `_CachedRange`
-# → `domain_lo/hi`, ≈1 ULP wider than the stored `lo/hi` on the x86_64 fast path,
-# keeping a query at the true endpoint in-domain instead of falsely OOB.
+# at a boundary query. Plain `AbstractVector` → exact `first/last`; exact-domain
+# `_CachedRange` (`_Generic`/`_UnitStep`) → `lo/hi` (sharing the load with the
+# search that follows); only a `_WidenDomain` range → its `domain_lo/hi`, ≈1 ULP
+# wider than the stored `lo/hi` on the x86_64 fast path, keeping a query at the
+# true endpoint in-domain instead of falsely OOB.
 @inline _domain_bounds(x::AbstractVector) = (first(x), last(x))
-@inline _domain_bounds(x::_CachedRange) = (x.domain_lo, x.domain_hi)
+@inline _domain_bounds(x::_CachedRange) = (x.lo, x.hi)                # _Generic / _UnitStep: exact
+@inline _domain_bounds(x::_CachedRange{T, Tinv, _WidenDomain}) where {T, Tinv} =
+    (x.domain_lo, x.domain_hi)                                        # widened bracket
 
 # Scalar in-domain test. `_extract_primal` on bounds and query keeps it partial-
 # sign independent for Dual grids (no-op on plain-Float `_CachedRange` fields).

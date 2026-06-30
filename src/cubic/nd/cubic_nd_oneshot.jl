@@ -150,7 +150,7 @@ Zero-allocation after warmup (pool reuse).
     # Axis-only forms — `grids_p` axes carry `h`/`inv_h` directly via `_get_h`/
     # `_get_inv_h` (cached lookup for wrapped axes, on-the-fly diff for raw Vector).
     q_evals = _handle_all_extraps(query, grids_p, extraps_eff)
-    indices, Ls, _ = _search_all_intervals(q_evals, grids_p, searches, hints)
+    indices, Ls, _ = _search_all_intervals(q_evals, grids_p, searches, hints, extraps_eff)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls)
 
     # 6. Tensor-product kernel evaluation
@@ -207,7 +207,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
             output[k] = oob_val; continue
         end
         q_evals = _handle_all_extraps(query_k, grids_p, extraps_eff)
-        indices, Ls, _ = _search_all_intervals(q_evals, grids_p, policies, hints)
+        indices, Ls, _ = _search_all_intervals(q_evals, grids_p, policies, hints, extraps_eff)
         hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls)
         output[k] = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
     end

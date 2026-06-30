@@ -186,3 +186,67 @@ end
         @test hib[2][] == hne[2][] != 0
     end
 end
+
+@testitem "one-shot InBounds lean search === NoExtrap (all methods, scalar + batch)" begin
+    # The one-shot path threads `extraps` into its search (`_search_all_intervals_stencil`
+    # for linear/constant, `_search_all_intervals` for cubic/quad), so an InBounds range
+    # axis takes the lean `_search_direct_inbounds`. This must be bit-identical to the
+    # generic NoExtrap one-shot for in-domain queries — a characterization test (green
+    # before and after; the win is perf, verified by benchmark).
+    using FastInterpolations: InBounds
+
+    axx, axy = 1:7, 2:9
+    data = [0.1i + 0.3j + 0.01i * j for i in 1:length(axx), j in 1:length(axy)]
+    qs = ((1.5, 3.5), (3.4, 6.2), (6.99, 8.9), (7.0, 9.0))   # in-domain incl. right boundary
+    qxs = Float64[q[1] for q in qs]
+    qys = Float64[q[2] for q in qs]
+    IBt = (InBounds(), InBounds())
+
+    @testset "scalar one-shot: InBounds === NoExtrap (bit-identical)" begin
+        for oneshot in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            for q in qs
+                @test oneshot((axx, axy), data, q; extrap = IBt) === oneshot((axx, axy), data, q)
+            end
+        end
+    end
+
+    @testset "batch one-shot: InBounds === NoExtrap (bit-identical)" begin
+        for oneshot! in (linear_interp!, cubic_interp!, quadratic_interp!, constant_interp!)
+            o_ib = similar(qxs)
+            o_ne = similar(qxs)
+            oneshot!(o_ib, (axx, axy), data, (qxs, qys); extrap = IBt)
+            oneshot!(o_ne, (axx, axy), data, (qxs, qys))
+            @test o_ib == o_ne
+        end
+    end
+end
+
+@testitem "one-shot periodic-exclusive seam preserved (InBounds fast path must not touch it)" begin
+    # The seam wrap `(n, 1, …)` for `PeriodicBC{:exclusive}` is produced by `search_interval`
+    # on `_ExclusivePeriodicAxis` (`<: AbstractVector`, NOT `_CachedRange`) under `WrapExtrap`
+    # (never `InBounds`). The lean fast path requires `_CachedRange` + `InBounds`, so it can
+    # never match a periodic axis — its `_search_axis_stencil` fallback runs the unchanged
+    # code. Pin it: the one-shot at the seam must equal the (unaffected) persistent path.
+    using FastInterpolations: PeriodicBC, NoBC
+
+    axx = 1:7
+    dataP = [sin(0.4i) + 0.3j for i in 1:7, j in 1:8]
+    bcP = (NoBC(), PeriodicBC(endpoint = :exclusive, period = 8.0))
+    itp_persist = linear_interp((axx, 1:8), dataP; bc = bcP)
+
+    seam = ((3.5, 8.5), (3.5, 8.99), (1.2, 8.5), (6.8, 8.5))    # all in the seam cell [8, 9)
+    @testset "scalar one-shot === persistent at the seam" begin
+        for q in seam
+            @test linear_interp((axx, 1:8), dataP, q; bc = bcP) ≈ itp_persist(q)
+        end
+    end
+    @testset "batch one-shot === persistent at the seam" begin
+        qxs = Float64[q[1] for q in seam]
+        qys = Float64[q[2] for q in seam]
+        out = similar(qxs)
+        linear_interp!(out, (axx, 1:8), dataP, (qxs, qys); bc = bcP)
+        for k in eachindex(qxs)
+            @test out[k] ≈ itp_persist((qxs[k], qys[k]))
+        end
+    end
+end

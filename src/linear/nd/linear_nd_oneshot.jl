@@ -50,7 +50,7 @@ function _linear_interp_nd_oneshot(
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
-    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints)
+    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, extraps_eff)
     αs = map(_alpha_of, q_eval, Ls, Rs, grids_eff)
     # 4-arg `_get_inv_h(g, idx, xL, xR)` — `_CachedVector`/`_CachedRange` use
     # cached fields (idx-indexed or scalar); raw `Vector` falls back to
@@ -94,7 +94,7 @@ function _linear_interp_nd_oneshot_batch!(
             output[k] = oob_val; continue
         end
         q_eval = _handle_all_extraps(query_k, grids_eff, extraps_eff)
-        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints)
+        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints, extraps_eff)
         αs = map(_alpha_of, q_eval, Ls, Rs, grids_eff)
         idxLs = map(first, stencils)
         inv_hs = map(_get_inv_h, grids_eff, idxLs, Ls, Rs)

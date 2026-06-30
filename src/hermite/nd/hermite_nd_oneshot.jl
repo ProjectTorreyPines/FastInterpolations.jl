@@ -164,7 +164,7 @@ end
     mono = _scalar_mono(hint, Val(N))
 
     q_evals = _handle_all_extraps(query, grids_p, extraps_eff)
-    indices, Ls, _ = _search_all_intervals(q_evals, grids_p, searches, hints, mono)
+    indices, Ls, _ = _search_all_intervals(q_evals, grids_p, searches, hints, mono, extraps_eff)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls)
     return _eval_nd_cell(buf, indices, hs, inv_hs, dLs, ops)
 end
@@ -205,7 +205,7 @@ end
             continue
         end
         q_evals = _handle_all_extraps(query_k, grids_p, extraps_eff)
-        indices, Ls, _ = _search_all_intervals(q_evals, grids_p, policies, hints)
+        indices, Ls, _ = _search_all_intervals(q_evals, grids_p, policies, hints, extraps_eff)
         hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls)
         output[k] = _eval_nd_cell(buf, indices, hs, inv_hs, dLs, ops)
     end

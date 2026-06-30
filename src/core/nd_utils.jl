@@ -845,6 +845,48 @@ end
     return _project_search_results(results, _getidx)
 end
 
+# Extrap-aware per-axis oneshot search (indices path, used by cubic/quad/hermite oneshot).
+# An InBounds axis on a normalized range takes the lean `_search_direct_inbounds`
+# (one-sided clamp), bit-identical to the standard search for an in-bounds query, and
+# still writes the hint (symmetry). EVERY other `(q, grid, extrap)` — GridIdx queries,
+# vector grids, and periodic axes (always WrapExtrap, never InBounds; the `_ExclusivePeriodicAxis`
+# seam wrap in `search_interval` is untouched) — delegates to the 4-arg form verbatim.
+@inline function _search_axis_oneshot_hint(q::Real, grid::_CachedRange, search, hint::Base.RefValue{Int}, ::InBounds)
+    idx, xL, xR = _search_direct_inbounds(grid, q)
+    hint[] = idx
+    return idx, idx + 1, xL, xR
+end
+@inline _search_axis_oneshot_hint(q, grid, search, hint, ::AbstractExtrap) =
+    _search_axis_oneshot_hint(q, grid, search, hint)
+
+# 5-arg extrap-aware `_search_all_intervals` (oneshot indices path): the 4-arg hint form
+# plus a trailing per-axis `extraps`, threaded into `_search_axis_oneshot_hint` so InBounds
+# range axes take the lean direct search. The trailing `AbstractExtrap`-tuple is type-distinct
+# from the 5-arg `mono::NTuple{N,Bool}` form, so they never collide for N >= 1.
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    results = map(_search_axis_oneshot_hint, q_evals, grids, searches, hints, extraps)
+    return _project_search_results(results, _getidx)
+end
+
+# Nothing-hint 5-arg extrap-aware (scalar oneshot): throwaway Refs (stack-elided), then
+# the with-hint extrap-aware search. The InBounds hint write lands on the throwaway Ref
+# and is DCE'd, so the lean fast path is still 0-alloc.
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing,
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    return _search_all_intervals(q_evals, grids, searches, _ensure_hint_nd(nothing, Val(N)), extraps)
+end
+
 # Aqua-required N=0 disambiguators. The grid-only and spacings-based 4-arg
 # / 5-arg variants of `_search_all_intervals` bind to `Tuple{}` ambiguously
 # when N=0 (slot 3+ is `NTuple{0, X}` regardless of `X`). ND interpolants
@@ -853,6 +895,11 @@ end
 @inline _search_all_intervals(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}) =
     ((), (), ())
 @inline _search_all_intervals(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}) =
+    ((), (), ())
+# Nothing-hint 5-arg N=0: the `(…, ::Nothing, mono::NTuple{N,Bool})` and
+# `(…, ::Nothing, extraps::NTuple{N,AbstractExtrap})` forms both collapse to a `Tuple{}`
+# 5th slot at N=0 — this `::Nothing`-4th disambiguator resolves the pair.
+@inline _search_all_intervals(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Nothing, ::Tuple{}) =
     ((), (), ())
 
 # ────────────────────────────────────────────────────────
@@ -900,6 +947,46 @@ end
     ) where {N}
     hints = _ensure_hint_nd(nothing, Val(N))
     return _search_all_intervals_stencil(q_evals, grids, searches, hints)
+end
+
+# Extrap-aware per-axis stencil search (stencil path, used by linear/constant oneshot).
+# An InBounds axis on a normalized range takes the lean `_search_direct_inbounds`
+# (one-sided clamp) and emits the non-seam stencil `(idx, idx+1, …)` — bit-identical to
+# the standard stencil for an in-bounds query. EVERY other `(grid, q, extrap)` delegates
+# to the 4-arg `_search_axis_stencil`: crucially `_ExclusivePeriodicAxis` (always
+# WrapExtrap, never InBounds, and `<: AbstractVector` not `_CachedRange`) keeps its
+# `search_interval` seam wrap `(n, 1, …)` untouched, as do GridIdx and vector grids.
+@inline function _search_axis_stencil(grid::_CachedRange, q::Real, search, hint::Base.RefValue{Int}, ::InBounds)
+    idx, xL, xR = _search_direct_inbounds(grid, q)
+    hint[] = idx
+    return idx, idx + 1, xL, xR
+end
+@inline _search_axis_stencil(grid, q, search, hint, ::AbstractExtrap) =
+    _search_axis_stencil(grid, q, search, hint)
+
+# 5-arg extrap-aware `_search_all_intervals_stencil`: the 4-arg hint form plus a trailing
+# per-axis `extraps`, threaded into `_search_axis_stencil` so InBounds range axes take the
+# lean direct search. Non-InBounds / non-range / periodic axes are unaffected.
+@inline function _search_all_intervals_stencil(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    results = map(_search_axis_stencil, grids, q_evals, searches, hints, extraps)
+    return _project_search_results(results, _getstencil)
+end
+
+# Nothing-hint 5-arg extrap-aware stencil (scalar oneshot): throwaway Refs (stack-elided).
+@inline function _search_all_intervals_stencil(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing,
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    return _search_all_intervals_stencil(q_evals, grids, searches, _ensure_hint_nd(nothing, Val(N)), extraps)
 end
 
 

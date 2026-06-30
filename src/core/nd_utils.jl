@@ -743,18 +743,24 @@ end
 # new modifier and matches the other per-axis extrap helpers (`_extrap_axis(q, grid,
 # extrap)`, `_handle_axis_extrap`, `_check_domain`, which all put `extrap` last), so the
 # first five arguments keep the 5-arg positions verbatim. An `InBounds` axis on a
-# normalized range takes the lean `_search_direct_inbounds` (one-sided clamp, no hint
-# write-back); the interval is bit-identical to the generic path for an in-bounds query.
-# PER-AXIS — a mixed `(InBounds, ClampExtrap)` query leans only the InBounds axis. Every
-# other `(extrap, grid)` pair delegates to the 5-arg form unchanged. Any ND `_locate_cell`
-# that threads its `extraps` into the search picks this up; 5-arg callers are unaffected.
-@inline function _search_axis_adaptive(q, grid::_CachedRange, ::AbstractSearchPolicy, _hint, _mono, ::InBounds)
+# normalized range takes the lean `_search_direct_inbounds` (one-sided clamp — the lower
+# `max(·,1)` is dead when the query is in-domain); the interval is bit-identical to the
+# generic path. The persistent hint is still written back (symmetry with the standard
+# `_search_direct!` / `_search_grididx!` path): an explicitly-provided hint must report
+# the found interval regardless of extrap. PER-AXIS — a mixed `(InBounds, ClampExtrap)`
+# query leans only the InBounds axis. Every other `(extrap, grid)` pair delegates to the
+# 5-arg form unchanged. Any ND `_locate_cell` that threads its `extraps` into the search
+# picks this up; 5-arg callers are unaffected. `hint` is always a concrete `Ref{Int}` here
+# (the 6-arg `_search_all_intervals` is reached only from persistent `_locate_cell`).
+@inline function _search_axis_adaptive(q, grid::_CachedRange, ::AbstractSearchPolicy, hint::Base.RefValue{Int}, _mono, ::InBounds)
     idx, xL, xR = _search_direct_inbounds(grid, q)
+    hint[] = idx
     return idx, idx + 1, xL, xR
 end
-@inline function _search_axis_adaptive(q::GridIdx, grid::_CachedRange, ::AbstractSearchPolicy, _hint, _mono, ::InBounds)
+@inline function _search_axis_adaptive(q::GridIdx, grid::_CachedRange, ::AbstractSearchPolicy, hint::Base.RefValue{Int}, _mono, ::InBounds)
     @boundscheck (grid.len >= 2 && 1 <= q.idx <= grid.len) || throw(BoundsError(grid, q.idx))
     idx = min(q.idx, grid.len - 1)
+    hint[] = idx
     return idx, idx + 1, (@inbounds grid[idx]), (@inbounds grid[idx + 1])
 end
 @inline _search_axis_adaptive(q, grid::AbstractVector, policy::AbstractSearchPolicy, hint, mono, ::AbstractExtrap) =

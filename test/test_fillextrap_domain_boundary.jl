@@ -9,14 +9,14 @@
 # ════════════════════════════════════════════════════════════════════════════
 
 @testsnippet InwardCR begin
-    using FastInterpolations: _CachedRange, _WidenDomain
+    using FastInterpolations: _CachedRange, _WidenedDomain
 
     # Right boundary: stored `hi = prevfloat(true_hi)` (1 ULP inward),
     # `domain_hi = nextfloat(hi) = true_hi` (the cushion recovers it).
     function inward_cr_right(lo, true_hi, n)
         hi = prevfloat(true_hi)
         h = (hi - lo) / (n - 1)
-        return _CachedRange{Float64, Float64, _WidenDomain}(lo, hi, h, inv(h), n, lo, nextfloat(hi))
+        return _CachedRange{Float64, Float64, _WidenedDomain}(lo, hi, h, inv(h), n, lo, nextfloat(hi))
     end
 
     # Left boundary: stored `lo = nextfloat(true_lo)` (1 ULP inward),
@@ -24,7 +24,7 @@
     function inward_cr_left(true_lo, hi, n)
         lo = nextfloat(true_lo)
         h = (hi - lo) / (n - 1)
-        return _CachedRange{Float64, Float64, _WidenDomain}(lo, hi, h, inv(h), n, prevfloat(lo), hi)
+        return _CachedRange{Float64, Float64, _WidenedDomain}(lo, hi, h, inv(h), n, prevfloat(lo), hi)
     end
 
     # Both endpoints inward (the real x86 case): stored `lo`/`hi` round toward
@@ -33,7 +33,7 @@
         lo = nextfloat(true_lo)
         hi = prevfloat(true_hi)
         h = (hi - lo) / (n - 1)
-        return _CachedRange{Float64, Float64, _WidenDomain}(lo, hi, h, inv(h), n, prevfloat(lo), nextfloat(hi))
+        return _CachedRange{Float64, Float64, _WidenedDomain}(lo, hi, h, inv(h), n, prevfloat(lo), nextfloat(hi))
     end
 end
 

@@ -22,7 +22,7 @@
         @test tagof(_resolve_axis(1:1:100)) === _Generic
         @test tagof(_cache_axis(1:1:100, NoBC(), Float64)) === _Generic
         # Float StepRangeLen is _Generic on aarch64; the x86_64 TwicePrecision fast
-        # path tags it _WidenDomain. Either way it is never _UnitStep, which is what
+        # path tags it _WidenedDomain. Either way it is never _UnitStep, which is what
         # this testset pins (the concrete widen tag is covered in test_widendomain_tag).
         for g in (1.0:100.0, 0.0:0.5:50.0, range(0.0, 1.0; length = 100))
             @test tagof(_resolve_axis(g)) !== _UnitStep

@@ -574,9 +574,10 @@ _promote_coord(0.5f0, Float32)  # → 0.5f0 (Float32)
 @noinline _throw_domain_error(xi, x_min, x_max) =
     throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
 
-# _CachedRange overload: pull the physical endpoints (`lo`/`hi`, distinct from the
-# `domain_lo`/`domain_hi` the hot check clamps against) inside this @noinline cold path,
-# so the in-domain hot path never materializes them — guaranteed, not LLVM-sink-dependent.
+# _CachedRange overload: pull the physical endpoints (`lo`/`hi`, the exact span for the
+# error message — distinct from the possibly-widened bracket the hot check clamps
+# against) inside this @noinline cold path, so the in-domain hot path never
+# materializes them — guaranteed, not LLVM-sink-dependent.
 @noinline _throw_domain_error(xi, x::_CachedRange) =
     _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi))
 
@@ -599,11 +600,12 @@ _promote_coord(0.5f0, Float32)  # → 0.5f0 (Float32)
     return nothing
 end
 
-# _CachedRange: use domain_lo/domain_hi (wider bracket on x86_64 fast path).
+# _CachedRange: bounds via `_domain_bounds` — `lo`/`hi` for exact tags (shared
+# with the search's `lo` load), the widened bracket only for `_WidenedDomain`.
 @inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap)
     xip = _extract_primal(xi)
-    lo, hi = _extract_primal(x.domain_lo), _extract_primal(x.domain_hi)
-    c = _clamp(xip, lo, hi)
+    lo, hi = _domain_bounds(x)
+    c = _clamp(xip, _extract_primal(lo), _extract_primal(hi))
     (c != oftype(c, xip)) && _throw_domain_error(xi, x)
     return nothing
 end
@@ -629,9 +631,10 @@ end
 Vector domain check for NoExtrap: validate batch, return `InBounds()`.
 
 Delegates the batch in-domain test to `_is_all_inbounds`, which dispatches
-on axis type (using `domain_lo/hi` for `_CachedRange`'s wider TwicePrecision
-bracket on x86_64) and is partial-sign-safe under ForwardDiff. Throw
-message uses `first(x)/last(x)` — exact endpoints, not the widened bracket.
+on axis type (a `_WidenedDomain` `_CachedRange` uses its widened `domain_lo/hi`;
+exact `_CachedRange`s and Vectors use `lo/hi` / `first/last`) and is
+partial-sign-safe under ForwardDiff. Throw message uses `first(x)/last(x)` —
+exact endpoints, not the widened bracket.
 """
 @inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap)
     @boundscheck _is_all_inbounds(x, xi) || _throw_batch_oob(x, xi)
@@ -660,11 +663,15 @@ end
 
 # Safe domain bounds — single axis-dispatched source of truth for every in-domain
 # test (`_is_all_inbounds`, `_is_inbounds`, `_oob_state`), so they never disagree
-# at a boundary query. Plain `AbstractVector` → exact `first/last`; `_CachedRange`
-# → `domain_lo/hi`, ≈1 ULP wider than the stored `lo/hi` on the x86_64 fast path,
-# keeping a query at the true endpoint in-domain instead of falsely OOB.
+# at a boundary query. Plain `AbstractVector` → exact `first/last`; exact-domain
+# `_CachedRange` (`_Generic`/`_UnitStep`) → `lo/hi` (sharing the load with the
+# search that follows); only a `_WidenedDomain` range → its `domain_lo/hi`, ≈1 ULP
+# wider than the stored `lo/hi` on the x86_64 fast path, keeping a query at the
+# true endpoint in-domain instead of falsely OOB.
 @inline _domain_bounds(x::AbstractVector) = (first(x), last(x))
-@inline _domain_bounds(x::_CachedRange) = (x.domain_lo, x.domain_hi)
+@inline _domain_bounds(x::_CachedRange) = (x.lo, x.hi)                # _Generic / _UnitStep: exact
+@inline _domain_bounds(x::_CachedRange{T, Tinv, _WidenedDomain}) where {T, Tinv} =
+    (x.domain_lo, x.domain_hi)                                        # widened bracket
 
 # Scalar in-domain test. `_extract_primal` on bounds and query keeps it partial-
 # sign independent for Dual grids (no-op on plain-Float `_CachedRange` fields).

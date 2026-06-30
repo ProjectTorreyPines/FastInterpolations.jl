@@ -40,13 +40,17 @@ end
 # Without this method, any code that windows or slices a `_CachedRange` (e.g. the
 # Hermite ND cell-local OnTheFly path in hetero_eval.jl) would silently degrade
 # its grid to a non-range type.
-# Slice preserves the axis tag (a sub-range of a unit-step grid is still unit-step).
+# Slice preserves the axis tag and re-derives its domain bracket through the
+# `_cached_range` factory: a sub-range of a unit-step grid is still unit-step, and a
+# sub-range of a `_WidenedDomain` grid stays widened — its endpoints are `muladd`
+# reconstructions too, so they keep the ±1-ULP cushion (a boundary-touching slice
+# recovers the original `prevfloat(lo)`/`nextfloat(hi)`).
 @inline function Base.getindex(r::_CachedRange{T, Tinv, Tag}, idx::AbstractUnitRange{<:Integer}) where {T, Tinv, Tag}
     @boundscheck checkbounds(r, idx)
     new_len = length(idx)
     # Empty slice: return a length-0 _CachedRange anchored at r.lo (callers that
     # would dereference this hit the same checkbounds wall they would on r itself).
-    new_len == 0 && return _CachedRange{T, Tinv, Tag}(r.lo, r.lo, r.h, r.inv_h, 0)
+    new_len == 0 && return _cached_range(Tag(), r.lo, r.lo, r.h, r.inv_h, 0)
     i_lo = Int(first(idx))
     i_hi = Int(last(idx))
     # Reuse cached endpoints when the slice touches them — preserves the exact-bit
@@ -54,7 +58,7 @@ end
     # any downstream Tg-precision comparison stable.
     new_lo = i_lo == 1 ? r.lo : muladd(i_lo - 1, r.h, r.lo)
     new_hi = i_hi == r.len ? r.hi : muladd(i_hi - 1, r.h, r.lo)
-    return _CachedRange{T, Tinv, Tag}(new_lo, new_hi, r.h, r.inv_h, new_len)
+    return _cached_range(Tag(), new_lo, new_hi, r.h, r.inv_h, new_len)
 end
 
 # `view` follows `getindex` semantics for ranges — both return a fresh range, no
@@ -78,7 +82,7 @@ on `StepRangeLen`, `LinRange`, `OrdinalRange`, etc.
 function _to_float(x::AbstractRange, ::Type{T}) where {T}
     h = T(step(x))
     inv_h = inv(h)
-    return _CachedRange{T, typeof(inv_h)}(T(first(x)), T(last(x)), h, inv_h, length(x))
+    return _cached_range(_Generic(), T(first(x)), T(last(x)), h, inv_h, length(x))
 end
 
 # Unit-step fast-path: `AbstractUnitRange` (`UnitRange`/`Base.OneTo`) has step ≡ 1 by
@@ -88,11 +92,12 @@ end
 # `_CachedRange` contract; skips the generic path's runtime `inv(step(x))`).
 @inline function _to_float(x::AbstractUnitRange, ::Type{T}) where {T}
     Tinv = typeof(inv(oneunit(T)))
-    return _CachedRange{T, Tinv, _UnitStep}(T(first(x)), T(last(x)), one(T), one(Tinv), length(x))
+    return _cached_range(_UnitStep(), T(first(x)), T(last(x)), one(T), one(Tinv), length(x))
 end
 
 # x86_64: TwicePrecision first()/last() ~9ns each on Intel — bypass via plain-T muladd.
-# lo/hi may be ±1 ULP vs exact; domain_lo/domain_hi widened for safe _check_domain.
+# lo/hi may be ±1 ULP vs exact; the `_WidenedDomain` factory widens the domain bracket
+# for safe `_check_domain`.
 # ARM: TwicePrecision is fast, so generic AbstractRange path above is used instead.
 @static if Sys.ARCH === :x86_64
     function _to_float(
@@ -102,24 +107,21 @@ end
         h = FT(x.step)
         lo = muladd(1 - x.offset, h, FT(x.ref))
         hi = muladd(x.len - x.offset, h, FT(x.ref))
-
-        domain_lo = prevfloat(lo)
-        domain_hi = nextfloat(hi)
-        return _CachedRange{FT, FT}(lo, hi, h, inv(h), length(x), domain_lo, domain_hi)
+        return _cached_range(_WidenedDomain(), lo, hi, h, inv(h), length(x))
     end
 end
 
 # _CachedRange same-type pass-through: already normalized, return as-is.
 _to_float(x::_CachedRange{T, Tinv}, ::Type{T}) where {T, Tinv} = x
 
-# _CachedRange type-mismatch (e.g. Float32 → Float64 via _convert_grid):
-# Uses 5-arg constructor (domain = exact). Any x86_64 domain widening from the source
-# is intentionally dropped: the type conversion itself introduces fresh rounding,
-# so re-widening would need to be based on the new FT, not the old T.
+# _CachedRange type-mismatch (e.g. Float32 → Float64 via _convert_grid): re-derive the
+# domain bracket on the new-`T` endpoints through the factory, so a `_WidenedDomain`
+# source stays widened — its `prevfloat`/`nextfloat` cushion is recomputed for `T`,
+# which is the correct basis after the conversion's fresh rounding.
 function _to_float(x::_CachedRange{S, Si, Tag}, ::Type{T}) where {S, Si, Tag, T}
     h = T(x.h)
     inv_h = inv(h)
-    return _CachedRange{T, typeof(inv_h), Tag}(T(x.lo), T(x.hi), h, inv_h, x.len)
+    return _cached_range(Tag(), T(x.lo), T(x.hi), h, inv_h, x.len)
 end
 
 """

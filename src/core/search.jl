@@ -805,11 +805,18 @@ Same @generated strategy as `_walk_left`.
     end
 end
 
+# Window-overflow binary fallback selector for `_search_linear_binary!`: leans to
+# `_search_binary_inbounds` when the search came through the `InBounds` path (query in-domain →
+# the binary `first`/`last` guards are dead), guarded otherwise. Compile-time singleton dispatch.
+@inline _lb_binary_fallback(x, xq, ::AbstractExtrap) = _search_binary(x, xq)
+@inline _lb_binary_fallback(x, xq, ::InBounds) = _search_binary_inbounds(x, xq)
+
 """
-    _search_linear_binary!(x, xq, hint_ref, ::Val{MAX}) -> (idx, xL, xR)
+    _search_linear_binary!(x, xq, hint_ref, ::Val{MAX}[, fallback]) -> (idx, xL, xR)
 
 Bounded linear search within MAX-sized window, then binary fallback.
-Optimal for monotonic query sequences.
+Optimal for monotonic query sequences. The optional `fallback` extrap only selects the
+window-overflow binary variant (`InBounds()` → lean); the hint `clamp` is always kept.
 
 # Optimizations over naive implementation:
 - Hint clamped once at start: guards against user-provided out-of-range hints (e.g. Ref(0),
@@ -824,6 +831,7 @@ Optimal for monotonic query sequences.
         xq::Real,
         hint_ref::Base.RefValue{Int},
         ::Val{MAX},
+        fallback::AbstractExtrap = NoExtrap(),
     ) where {T <: Real, MAX}
     ix = hint_ref[]
     n = length(x)
@@ -849,8 +857,11 @@ Optimal for monotonic query sequences.
             found && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
         end
     end
-    # BinarySearch fallback — full range (narrowing saves < 1 iteration, not worth extra branches)
-    idx, xL, xR = _search_binary(x, xq)
+    # BinarySearch fallback — full range (narrowing saves < 1 iteration, not worth extra branches).
+    # `_lb_binary_fallback` leans to `_search_binary_inbounds` on the `InBounds` path (query in-domain
+    # → `first`/`last` guards dead); guarded otherwise. Singleton dispatch — the default guarded path's
+    # codegen is unchanged.
+    idx, xL, xR = _lb_binary_fallback(x, xq, fallback)
     hint_ref[] = idx
     return idx, xL, xR
 end
@@ -1006,10 +1017,12 @@ end
 @inline _search_interval_real(p::Searcher{DirectSearch, RefHint}, x::AbstractRange, xq::Real) =
     _search_direct!(x, xq, p.hint.idx)
 
-# --- Layer 2 (InBounds): vector grids skip the binary search's boundary guards (in-domain
-# ⇒ always-false). Only `BinarySearch` has those guards; `LinearSearch`/`LinearBinarySearch`
-# walk from the hint (no upfront guards) and `DirectSearch` is the range path, so they fall
-# through to the standard dispatch unchanged. Hint write-back is preserved (RefHint). ---
+# --- Layer 2 (InBounds): drop the guards that only a bad *query* would need (the query is
+# in-domain here). `BinarySearch` drops its `first`/`last` boundary guards. `LinearBinarySearch`
+# KEEPS its hint `clamp` (a *hint* guard — a promoted `NoExtrap` may still carry a bad user hint)
+# but passes `InBounds()` so its window-overflow binary fallback leans. `LinearSearch` has no binary
+# fallback, and `DirectSearch` is the `_CachedRange` path (handled one level up), so both fall through
+# unchanged. Hint write-back is preserved (RefHint). ---
 @inline _search_interval_real_inbounds(::Searcher{BinarySearch, NoHint}, x::AbstractVector, xq::Real) =
     _search_binary_inbounds(x, xq)
 @inline function _search_interval_real_inbounds(p::Searcher{BinarySearch, RefHint}, x::AbstractVector, xq::Real)
@@ -1017,6 +1030,8 @@ end
     p.hint.idx[] = idx
     return idx, xL, xR
 end
+@inline _search_interval_real_inbounds(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, xq::Real) where {MAX} =
+    _search_linear_binary!(x, xq, p.hint.idx, Val(MAX), InBounds())
 @inline _search_interval_real_inbounds(s::Searcher, x::AbstractVector, xq::Real) =
     _search_interval_real(s, x, xq)
 

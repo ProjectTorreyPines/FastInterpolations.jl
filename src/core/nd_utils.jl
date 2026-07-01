@@ -765,6 +765,16 @@ end
 end
 @inline _search_axis_adaptive(q, grid::AbstractVector, policy::AbstractSearchPolicy, hint, mono, ::AbstractExtrap) =
     _search_axis_adaptive(q, grid, policy, hint, mono)
+# InBounds vector grid: reuse the guarded path's Searcher choice (mono → LinearBinarySearch walk,
+# else BinarySearch), but route through the 4-arg lean `search_interval` so a BinarySearch axis drops
+# the `first`/`last` guards; LinearBinarySearch/Linear fall through (no lean). GridIdx is handled by
+# the 4-arg dispatch (index short-circuit). Range keeps the more-specific `_CachedRange` method above;
+# `::AbstractSearchPolicy` (not `::AutoSearch`) keeps this from tying with it on dispatch.
+@inline _axis_vec_searcher(::AutoSearch, hint, is_mono) =
+    is_mono ? _to_searcher(LinearBinarySearch(), hint) : _to_searcher(BinarySearch(), hint)
+@inline _axis_vec_searcher(policy::AbstractSearchPolicy, hint, _is_mono) = _to_searcher(policy, hint)
+@inline _search_axis_adaptive(q, grid::AbstractVector, policy::AbstractSearchPolicy, hint, is_mono, ::InBounds) =
+    @inbounds search_interval(_axis_vec_searcher(policy, hint, is_mono), grid, q, InBounds())
 
 # 5-arg `_search_all_intervals` (mono variant, no spacings).
 @inline function _search_all_intervals(
@@ -862,6 +872,10 @@ end
     _search_axis_oneshot_hint(q, grid, search, hint)
 @inline _search_axis_oneshot_hint(q, grid, search, hint, ::AbstractExtrap) =
     _search_axis_oneshot_hint(q, grid, search, hint)
+# InBounds vector grid: thread InBounds into the resolved-searcher search so a BinarySearch axis
+# leans; GridIdx routed by the 4-arg dispatch. Range uses the `_CachedRange` method above.
+@inline _search_axis_oneshot_hint(q, grid::AbstractVector, search, hint::Base.RefValue{Int}, ::InBounds) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q, InBounds())
 
 # 5-arg extrap-aware `_search_all_intervals` (oneshot indices path): the 4-arg hint form
 # plus a trailing per-axis `extraps`, threaded into `_search_axis_oneshot_hint` so InBounds
@@ -971,6 +985,11 @@ end
     _search_axis_stencil(grid, q, search, hint)
 @inline _search_axis_stencil(grid, q, search, hint, ::AbstractExtrap) =
     _search_axis_stencil(grid, q, search, hint)
+# InBounds vector grid: thread InBounds into the resolved-searcher search (BinarySearch axis leans).
+# Range uses the `_CachedRange` method above; periodic axes are `<: AbstractVector` but never arrive
+# InBounds (always WrapExtrap), so they stay on the `::AbstractExtrap` seam path.
+@inline _search_axis_stencil(grid::AbstractVector, q, search, hint::Base.RefValue{Int}, ::InBounds) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q, InBounds())
 
 # 5-arg extrap-aware `_search_all_intervals_stencil`: the 4-arg hint form plus a trailing
 # per-axis `extraps`, threaded into `_search_axis_stencil` so InBounds range axes take the

@@ -1,0 +1,63 @@
+name: CI (parallel experiment)
+
+# Experimental: runs the ReTestItems parallel runner (test/runtests_parallel.jl) and
+# verifies coverage still merges. Compare its wall-clock against the SEQUENTIAL run
+# that the production CI.yml already does (no need to re-run sequential here).
+# It never runs on master or PRs, so CI.yml is untouched. Promote the parallel step
+# into CI.yml once the speedup is proven worthwhile.
+on:
+  workflow_dispatch:
+    inputs:
+      nworkers:
+        description: "Worker processes for the parallel run"
+        default: "2"
+  push:
+    branches:
+      - ci/retest
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parallel:
+    name: parallel — Julia ${{ matrix.version }}
+    runs-on: ubuntu-latest        # GitHub-hosted Linux = 2 vCPUs ("the 2 cores per runner")
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+
+      - uses: julia-actions/cache@v2
+
+      - uses: julia-actions/julia-buildpkg@v1
+
+      # The runner activates test/Project.toml; instantiate it so workers see the test deps
+      # (ReTestItems is a test-only dependency declared there).
+      - name: Instantiate the test environment
+        run: julia --color=yes --project=test -e 'using Pkg; Pkg.instantiate()'
+
+      - name: "Parallel run (nworkers=${{ github.event.inputs.nworkers || '2' }}) + coverage"
+        run: |
+          julia --color=yes --code-coverage=user test/runtests_parallel.jl \
+            --nworkers ${{ github.event.inputs.nworkers || '2' }}
+
+      # Workers write src/*.cov (one per PID); process merges them (per-line max).
+      - uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: src
+
+      - name: Upload merged coverage (lcov.info) for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-parallel
+          path: lcov.info

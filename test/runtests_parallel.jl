@@ -39,10 +39,12 @@ Pkg.activate(REALTEST; io = devnull)
 try
     @eval using ReTestItems
 catch
-    error("""
-    ReTestItems not found in the test environment. Instantiate it once:
-        julia --project=test -e 'using Pkg; Pkg.instantiate()'
-    """)
+    error(
+        """
+        ReTestItems not found in the test environment. Instantiate it once:
+            julia --project=test -e 'using Pkg; Pkg.instantiate()'
+        """
+    )
 end
 
 # ── args (in a function so assignments aren't trapped in a hard local scope) ──
@@ -230,12 +232,12 @@ function build_and_run(shadow, keyword, nworkers)
             logs = :issues,
         )
     end
-    println("\n>>> partest done: $(length(selected)) files · nworkers=$nworkers · $(round(t, digits = 2)) s")
+    return println("\n>>> partest done: $(length(selected)) files · nworkers=$nworkers · $(round(t, digits = 2)) s")
 end
 
 function main()
     keyword, nworkers = parse_args(ARGS)
-    with_shadow(SHADOW) do shadow
+    return with_shadow(SHADOW) do shadow
         build_and_run(shadow, keyword, nworkers)
     end
 end

@@ -175,11 +175,12 @@ end
     # type (Float grid + Int query → Float). Identity on the Float64 hot path; Int
     # grids stay Int. Search remains primal-safe (_oob_state / search extract primal).
     qc = map(_promote_coord, query, map(eltype, itp.grids))
-    # NoExtrap throw must precede FillExtrap short-circuit (mixed-extrap configs).
-    _validate_nd_domain(itp.grids, qc, itp.extraps)
-    oob_result = _try_fill_oob(qc, itp.grids, itp.extraps, ops, _sample_data(itp))
+    # Validate (NoExtrap throw must precede the FillExtrap short-circuit) AND promote per axis:
+    # an in-domain NoExtrap axis becomes InBounds for the search (lean), mirroring the batch path.
+    extraps_eff = _check_domain_nd(itp.grids, qc, itp.extraps)
+    oob_result = _try_fill_oob(qc, itp.grids, extraps_eff, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
-    cell = _locate_cell(itp, qc, policies, hints, mono)
+    cell = _locate_cell(itp, qc, extraps_eff, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
 end
 

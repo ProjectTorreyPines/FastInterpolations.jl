@@ -146,8 +146,9 @@ end
     # Handle extrapolation
     q_eval = _handle_all_extraps(query, grids, extraps)
 
-    # Cell location
-    indices, Ls, _ = _search_all_intervals(q_eval, grids, policies, hints, mono)
+    # Cell location — `extraps` is domain-checked + per-axis InBounds-promoted, so an in-domain
+    # NoExtrap range axis takes the lean search (6-arg extrap-aware form).
+    indices, Ls, _ = _search_all_intervals(q_eval, grids, policies, hints, mono, extraps)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids, indices, Ls)
 
     # Evaluate kernel with compact partials

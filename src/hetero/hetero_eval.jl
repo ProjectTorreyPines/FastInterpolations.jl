@@ -190,12 +190,16 @@ end
 @inline function _eval_hetero_nd(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, M, E, P}
-    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
+    # `extraps` is the domain-checked, per-axis InBounds-promoted tuple. `_handle_all_extraps`
+    # folds Clamp/Wrap/Fill (unchanged by promotion) and no-ops on InBounds/NoExtrap. The inner
+    # `_collapse_dims` keeps the ORIGINAL `itp.extraps` so each 1D fiber promotes for itself.
+    q_eval = _handle_all_extraps(query, itp.grids, extraps)
     Tr = _promote_eltype(Tv, Tg, typeof.(q_eval)...)
 
     # Wrap-aware path: routed only when at least one axis is a periodic local
@@ -279,13 +283,15 @@ end
 @inline function _eval_hetero_nd(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials},
         query::Tuple{Vararg{Real, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, M, E, P}
+    # Direct ND kernel (no inner 1D fibers) → thread the promoted `extraps` into the ND search.
     return _eval_hetero_precomputed(
-        itp.data, itp.grids, itp.methods, itp.extraps,
+        itp.data, itp.grids, itp.methods, extraps,
         query, ops, policies, hints, mono,
     )
 end
@@ -384,13 +390,16 @@ end
     # carries the grid carrier (Dual grid → Dual), matching the OnTheFly collapse.
     # Identity on Float64; Int grids stay Int. (GridIdx branch above returns early.)
     qc = map(_promote_coord, resolved, map(eltype, itp.grids))
-    _validate_nd_domain(itp.grids, qc, itp.extraps)
-    oob_result = _try_fill_oob(qc, itp.grids, itp.extraps, ops, _sample_data(itp))
+    # Validate + per-axis promote (in-domain NoExtrap → InBounds for the search), mirroring the
+    # homogeneous ND scalar path. PreCompute threads `extraps_eff` to its ND search; the OnTheFly
+    # collapse keeps promoting transitively inside each 1D fiber (see `_locate_cell`).
+    extraps_eff = _check_domain_nd(itp.grids, qc, itp.extraps)
+    oob_result = _try_fill_oob(qc, itp.grids, extraps_eff, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
-    return _eval_hetero_nd(itp, qc, ops, policies, hints, mono)
+    return _eval_hetero_nd(itp, qc, extraps_eff, ops, policies, hints, mono)
 end
 
 # Vararg form: itp(0.5, 0.3) or itp(0.5, GridIdx(3)) → itp((0.5, ...))

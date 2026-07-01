@@ -203,16 +203,19 @@ end
     return map(_check_domain, grids, queries, extraps)
 end
 
-# Scalar point: no batch-level promotion to do — defer to per-axis `_check_domain`
-# inside the eval path. Validate via existing `_validate_nd_domain` then return
-# `extraps` unchanged.
+# Scalar point: per-axis `_check_domain` both validates (NoExtrap throws OOB) AND returns the
+# effective search extrap — a NoExtrap axis promotes to `InBounds()` once in-domain, exactly like
+# the SoA batch above (same `map`). The scalar 1D `_check_domain(grid, q, extrap)` returns
+# `InBounds()` / the extrap, so the map yields the per-axis promoted tuple; threading it into the
+# eval lets each in-domain NoExtrap range axis take the lean search. (`_try_fill_oob` /
+# `_handle_axis_extrap` treat InBounds and NoExtrap identically for an in-domain query — both
+# no-op — so the whole promoted tuple is safe to thread, not just a search-only copy.)
 @inline function _check_domain_nd(
         grids::NTuple{N, AbstractVector},
         query::Tuple{Vararg{Real, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
-    _validate_nd_domain(grids, query, extraps)
-    return extraps
+    return map(_check_domain, grids, query, extraps)
 end
 
 # Generic / AoS: deferred — single linear pass with per-axis min/max accumulators

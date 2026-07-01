@@ -30,6 +30,8 @@ Zero-allocation after warmup (pool reuse).
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
     ) where {Tv, N}
+    # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
+    query = map(_resolve_grididx, query, grids)
     # 0. Validate (NoExtrap throw must precede FillExtrap short-circuit) AND promote per axis:
     #    an in-domain NoExtrap axis becomes InBounds for the lean search; InBounds no-ops through
     #    `_try_fill_oob` / `_resolve_extrap` / `_handle_all_extraps`.

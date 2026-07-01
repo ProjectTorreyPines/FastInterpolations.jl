@@ -123,6 +123,8 @@ Zero-allocation after warmup (pool reuse).
     # Raw grids: per-axis partials + `_compute_all_local_params` (promotes the cell
     # width) accept a raw/heterogeneous axis. `Tg` only types the pooled buffer.
     Tg = _promote_grid_eltype(grids)
+    # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
+    query = map(_resolve_grididx, query, grids)
     # 0. Validate (NoExtrap throw must precede FillExtrap short-circuit) AND promote per axis:
     #    an in-domain NoExtrap axis becomes InBounds for the search (lean); InBounds is a no-op
     #    for `_try_fill_oob` / periodic extension / `_handle_all_extraps` and reaches the

@@ -561,3 +561,7 @@ end
 # in-bounds branch, which passes `InBounds()` on a `_ExclusivePeriodicAxis` grid.
 @inline search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq::Real, ::InBounds) =
     search_interval(s, g, xq)
+# Disambiguate `_ExclusivePeriodicAxis × GridIdx × InBounds` (vs the generic GridIdx short-circuit)
+# → seam-aware 3-arg search, which has its own periodic `::GridIdx` overload.
+@inline search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq::GridIdx, ::InBounds) =
+    search_interval(s, g, xq)

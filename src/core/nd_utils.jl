@@ -856,6 +856,10 @@ end
     hint[] = idx
     return idx, idx + 1, xL, xR
 end
+# GridIdx → 4-arg short-circuit (exact .idx), not the coordinate lean (which can pick an off-by-one
+# cell on non-unit-step ranges). Mirrors the persistent `_search_axis_adaptive(q::GridIdx, …)`.
+@inline _search_axis_oneshot_hint(q::GridIdx, grid::_CachedRange, search, hint::Base.RefValue{Int}, ::InBounds) =
+    _search_axis_oneshot_hint(q, grid, search, hint)
 @inline _search_axis_oneshot_hint(q, grid, search, hint, ::AbstractExtrap) =
     _search_axis_oneshot_hint(q, grid, search, hint)
 
@@ -961,6 +965,10 @@ end
     hint[] = idx
     return idx, idx + 1, xL, xR
 end
+# GridIdx → short-circuit (exact `.idx`), not the coordinate lean — see the same overload on
+# `_search_axis_oneshot_hint` above for the off-by-one rationale.
+@inline _search_axis_stencil(grid::_CachedRange, q::GridIdx, search, hint::Base.RefValue{Int}, ::InBounds) =
+    _search_axis_stencil(grid, q, search, hint)
 @inline _search_axis_stencil(grid, q, search, hint, ::AbstractExtrap) =
     _search_axis_stencil(grid, q, search, hint)
 

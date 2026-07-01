@@ -150,7 +150,10 @@ end
         ops::NTuple{N, AbstractEvalOp},
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}},
     ) where {Tv, N, K}
-    _validate_nd_domain(grids, query, extraps_val)
+    # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
+    query = map(_resolve_grididx, query, grids)
+    # Validate + per-axis NoExtrap→InBounds promotion, matching the other ND one-shot scalar paths.
+    extraps_val = _check_domain_nd(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 

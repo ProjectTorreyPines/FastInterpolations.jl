@@ -645,7 +645,8 @@ end
 needed for correctness — the binary loop itself keeps `lo ∈ [1, n-1]`, so it returns the
 same bracketing cell as `_search_binary` for any query (including the exact endpoints). For
 an in-domain query the guards are always-false branches; removing them is bit-identical and
-~8-13% faster (the two branches are a meaningful fraction of a small binary search). Routed
+faster for small grids (the two dropped branches are a larger fraction of a short binary
+search; the win shrinks as `n` grows). Routed
 to only when the extrap is `InBounds` (the standard search keeps the guards for the OOB
 early-out that Clamp/Fill/Extend rely on).
 """
@@ -968,6 +969,10 @@ end
 # coordinate search. Reached from any GridIdx query that reaches InBounds — e.g. Clamp/Fill's
 # in-domain short-circuit delegates with an explicit `InBounds()`.
 @inline search_interval(s::Searcher, x::AbstractVector, xq::GridIdx, ::InBounds) =
+    search_interval(s, x, xq)
+# Disambiguate `_CachedRange × GridIdx × InBounds` (matches both the range-lean above and the
+# GridIdx short-circuit below) → route to the GridIdx index short-circuit, never the coordinate lean.
+@inline search_interval(s::Searcher, x::_CachedRange, xq::GridIdx, ::InBounds) =
     search_interval(s, x, xq)
 @inline search_interval(s::Searcher, x::AbstractVector, xq, ::AbstractExtrap) =
     search_interval(s, x, xq)

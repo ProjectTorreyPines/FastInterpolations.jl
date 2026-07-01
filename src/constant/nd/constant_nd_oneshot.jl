@@ -30,6 +30,8 @@ function _constant_interp_nd_oneshot(
         hints = nothing
     ) where {Tv, N}
     grids_eff = map(_resolve_axis, grids, bcs)
+    # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
+    query = map(_resolve_grididx, query, grids_eff)
     # Validate AND promote per axis: an in-domain NoExtrap axis becomes InBounds for the lean
     # search; InBounds no-ops through `_try_fill_oob` / `_resolve_extrap` / `_handle_all_extraps`.
     extraps_val = _check_domain_nd(grids_eff, query, extraps_val)

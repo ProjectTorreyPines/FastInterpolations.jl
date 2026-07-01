@@ -43,6 +43,8 @@ function _linear_interp_nd_oneshot(
     # encoded in the axis type, the searcher carries `NoBC()` — the wrapper's
     # dispatch handles seam regardless.
     grids_eff = map(_resolve_axis, grids, bcs)
+    # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
+    query = map(_resolve_grididx, query, grids_eff)
     # Validate (NoExtrap throw must precede the FillExtrap short-circuit) AND promote per axis:
     # an in-domain NoExtrap axis becomes InBounds for the search (lean), mirroring the persistent
     # path. InBounds passes through `_try_fill_oob` / `_resolve_extrap` / `_handle_all_extraps`

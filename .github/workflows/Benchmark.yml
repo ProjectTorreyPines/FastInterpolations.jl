@@ -34,7 +34,7 @@ on:
         default: false
         type: boolean
       commit_sha:
-        description: 'Re-benchmark this exact master commit SHA and overwrite its stored point with the min (fix a noisy/spiking graph point). Implies a gh-pages store. Only works for commits that already have the storage-capable harness.'
+        description: 'Re-benchmark this master commit and overwrite its stored point with the min (fix a noisy/spiking graph point). Short SHA / branch / tag are accepted (resolved to the full SHA). Implies a gh-pages store. Only works for commits that already have the storage-capable harness.'
         required: false
         default: ''
         type: string
@@ -53,12 +53,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Resolve a short SHA / branch / tag to the full 40-char SHA before checkout,
+      # so both checkout and the exact-string data.js key matching work.
+      - name: Resolve commit_sha
+        id: resolve
+        if: inputs.commit_sha != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FULL=$(gh api "repos/${{ github.repository }}/commits/${{ inputs.commit_sha }}" --jq .sha)
+          if [ -z "$FULL" ]; then
+            echo "::error::Could not resolve commit '${{ inputs.commit_sha }}' to a full SHA"
+            exit 1
+          fi
+          echo "full_sha=$FULL" >> "$GITHUB_OUTPUT"
+          echo "Resolved '${{ inputs.commit_sha }}' -> $FULL"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           # Empty for normal runs (default ref). For a "fix this commit" dispatch,
           # check out that exact commit so we benchmark its code with its own harness.
-          ref: ${{ inputs.commit_sha }}
+          ref: ${{ steps.resolve.outputs.full_sha }}
 
       # Refuse to re-benchmark a commit whose checked-out harness predates storage
       # support — we'd otherwise fail deep in the run or, worse, mis-store.
@@ -119,8 +135,9 @@ jobs:
           if [ -n "${{ inputs.commit_sha }}" ]; then STORE=true; fi   # fixing a specific commit always stores
           echo "store=$STORE" >> "$GITHUB_OUTPUT"
           # master_sha = the commit whose stored point we (over)write with the min
+          # (full SHA: resolved input for a fix-dispatch, else this run's commit)
           if [ -n "${{ inputs.commit_sha }}" ]; then
-            echo "master_sha=${{ inputs.commit_sha }}" >> "$GITHUB_OUTPUT"
+            echo "master_sha=${{ steps.resolve.outputs.full_sha }}" >> "$GITHUB_OUTPUT"
           else
             echo "master_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi

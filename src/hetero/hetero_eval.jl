@@ -158,9 +158,11 @@ end
 # threads concrete types (itp.methods, itp.grids, itp.data) through the
 # windowing logic. Inlining lets the compiler specialize on the interpolant's
 # concrete type and unroll the per-axis `map` calls into straight-line code.
-@inline function _build_windowed_cell(itp, q_eval, policies, hints, mono)
+@inline function _build_windowed_cell(itp, q_eval, extraps, policies, hints, mono)
     # Pre-search via per-axis adaptive function barriers (hint state mutated in-place).
-    indices, _, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
+    # Thread `extraps` so an InBounds range axis leans the WINDOW-location search too (bit-identical
+    # index). Inner `_collapse_dims` still re-promotes per 1D fiber via `itp.extraps`.
+    indices, _, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono, extraps)
     # Per-axis window: cell-local for windowable methods, full axis for global-solve.
     # `map` over heterogeneous tuples is unrolled by the compiler with no closure
     # capture, which is more allocation-robust than `ntuple(d -> ..., Val(N))` for
@@ -211,7 +213,7 @@ end
     end
 
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
-        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)
+        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, extraps, policies, hints, mono)
         # Inner kernel uses policies for fiber re-search on sliced grids.
         # Pass `nothing` as hints — tiny inner search on 2–6 point fibers is negligible.
         return _collapse_dims(
@@ -449,7 +451,7 @@ end
     end
 
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
-        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)
+        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, extraps, policies, hints, mono)
         # Inner kernel uses policies for fiber re-search on sliced grids.
         # Pass user-facing `itp.extraps` here (not InBounds-promoted `extraps`):
         # the recursive 1D collapse runs its own per-axis `_check_domain` and

@@ -46,7 +46,7 @@
     @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, idx, xL, xR), dL, side)
 end
 
-# NoExtrap / others matching AbstractExtrap: domain check → delegate.
+# NoExtrap / others matching AbstractExtrap: domain check → threaded search + kernel.
 @inline function _constant_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -56,8 +56,18 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, S <: Searcher}
-    @boundscheck _check_domain(x, xi, extrap)
-    return _constant_eval_at_point(x, y, xi, InBounds(), side, op, searcher)
+    # Thread `extrap_eff` into the search (not a hardcoded InBounds()) so this core matches the other
+    # 1D wrappers and stays correct for any extrap that reaches it — today only NoExtrap does
+    # (ExtendExtrap → ClampExtrap; Clamp/Fill/Wrap have own methods). Seam branch mirrors the InBounds core.
+    extrap_eff = _check_domain(x, xi, extrap)
+    if _extract_primal(xi) == _extract_primal(last(x))
+        return op isa EvalValue ?
+            last(y) * one(Tq) * one(Tg) :
+            0 * last(y) * one(Tq) * one(Tg)
+    end
+    idx, idx_R, xL, xR = search_interval(searcher, x, xi, extrap_eff)
+    dL = xi - xL
+    @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, idx, xL, xR), dL, side)
 end
 
 # ExtendExtrap: constant has zero slope → extend = clamp. Route through

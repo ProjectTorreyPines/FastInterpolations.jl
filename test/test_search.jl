@@ -1805,4 +1805,4 @@ end  # @testset "Search Module"
         @test linear_interp(x, y, GridIdx(length(x)); extrap = ClampExtrap()) ===
             linear_interp(x, y, GridIdx(length(x)); extrap = NoExtrap())
     end
-end
+end  # @testitem "GridIdx short-circuit survives ClampExtrap value eval"

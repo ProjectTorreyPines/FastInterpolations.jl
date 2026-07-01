@@ -457,6 +457,26 @@ end
     end
 end
 
+@testitem "lean range search on a _WidenedDomain range keeps the lower clamp (idx ≥ 1)" begin
+    # Regression pin: a `_WidenedDomain` `_CachedRange` accepts the widened bracket
+    # [domain_lo, domain_hi] ⊋ the grid [lo, hi]. A query in [domain_lo, lo) is IN_DOMAIN (so the
+    # domain check / `_oob_state` passes and it reaches the lean search) but sits BELOW the first
+    # grid point → arithmetic `idx < 1`. The lean's dropped lower `max(·,1)` would then return
+    # `idx ≤ 0` → BoundsError in the caller. The lean MUST keep the two-sided clamp for this tag
+    # (fall back to `_search_direct`); only `_UnitStep`/`_Generic` (grid == domain) can drop it.
+    using FastInterpolations: _CachedRange, _WidenedDomain, _search_direct_inbounds, _search_direct
+    n = 5
+    lo = nextfloat(1.0)
+    hi = 3.0
+    h = (hi - lo) / (n - 1)
+    cr = _CachedRange{Float64, Float64, _WidenedDomain}(lo, hi, h, inv(h), n, prevfloat(lo), hi)  # domain_lo = 1.0 < lo
+    for xq in (1.0, prevfloat(lo), lo, 1.5, 2.0, hi)   # widened-below · grid-lo · interior · grid-hi
+        res = _search_direct_inbounds(cr, xq)
+        @test 1 <= res[1] <= n - 1               # never idx ≤ 0 (the widened-region hazard)
+        @test res === _search_direct(cr, xq)     # bit-identical to the guarded two-sided clamp
+    end
+end
+
 @testitem "scalar NoExtrap promotion === InBounds (still throws OOB, Extend still extrapolates)" begin
     # After the domain check passes, a scalar 1D NoExtrap eval promotes to InBounds FOR THE SEARCH
     # (lean guard-free search, coupled to the check: `_check_domain` returns InBounds). This must be

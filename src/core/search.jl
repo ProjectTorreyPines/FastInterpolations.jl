@@ -564,6 +564,17 @@ in-bounds `xq`. A `_UnitStep` axis folds the `×inv_h`/`×h` to identity.
     return idx, xL, xR
 end
 
+# `_WidenedDomain` exception: the accepted domain `[domain_lo, domain_hi]` is 1 ULP wider than the
+# grid `[lo, hi]` (x86_64 TwicePrecision reconstruction cushion). An in-domain query in
+# `[domain_lo, lo)` sits BELOW the first grid point, so `muladd(xq - lo, inv_h, 1) < 1` — the lower
+# `max(·, 1)` half of the clamp is NOT dead here (unlike the exact tags, where `lo == domain_lo` ⇒
+# in-domain ⇒ `idx ≥ 1`). Keep the two-sided clamp by falling back to the guarded `_search_direct`,
+# which stays bit-identical to it. (The search's cell arithmetic uses grid `x.lo` by convention —
+# `domain_lo/hi` are read by `_domain_bounds` for the domain check only; using `domain_lo` as the
+# coordinate reference here would shift every interior cell by the cushion on zero-crossing ranges.)
+@inline _search_direct_inbounds(x::_CachedRange{T, Tinv, _WidenedDomain}, xq::Real) where {T, Tinv} =
+    _search_direct(x, xq)
+
 
 # ----------------------------------------
 # Promote-then-compare ordering helpers
@@ -951,6 +962,13 @@ end
     idx, xL, xR = _search_interval_real_inbounds(s, x, xq)
     return idx, idx + 1, xL, xR
 end
+# GridIdx carries a pre-resolved index → route InBounds to the index short-circuit fast path (the
+# 3-arg GridIdx `search_interval` above), NOT the coordinate lean `_search_interval_real_inbounds`:
+# `GridIdx <: Real` would otherwise match the `::Real, ::InBounds` overload and re-run an O(log n)
+# coordinate search. Reached from any GridIdx query that reaches InBounds — e.g. Clamp/Fill's
+# in-domain short-circuit delegates with an explicit `InBounds()`.
+@inline search_interval(s::Searcher, x::AbstractVector, xq::GridIdx, ::InBounds) =
+    search_interval(s, x, xq)
 @inline search_interval(s::Searcher, x::AbstractVector, xq, ::AbstractExtrap) =
     search_interval(s, x, xq)
 

@@ -627,11 +627,14 @@ end
 @inline _check_domain(::AbstractVector, ::Real, extrap::AbstractExtrap) = extrap
 
 "GridIdx is in-domain by construction (bounds-checked at resolution time)."
+# GridIdx must NOT promote to InBounds: it has its own `search_interval(s, x, ::GridIdx)` fast path
+# (index short-circuit, O(1), no coordinate search). Promoting NoExtrap→InBounds would route it into
+# the coordinate lean `search_interval(..., ::InBounds)` (GridIdx <: Real), losing the short-circuit
+# (O(log n) reads). Return the extrap unchanged so it keeps the GridIdx fast path.
 @inline _check_domain(::AbstractVector, ::GridIdx, extrap::AbstractExtrap) = extrap
-# Disambiguation: GridIdx <: Real creates ambiguity with _CachedRange × NoExtrap methods.
-# GridIdx always wins (in-domain by construction); NoExtrap promotes to InBounds for the search.
-@inline _check_domain(::_CachedRange, ::GridIdx, ::NoExtrap) = InBounds()
-@inline _check_domain(::AbstractVector, ::GridIdx, ::NoExtrap) = InBounds()
+# Disambiguation: GridIdx <: Real creates ambiguity with the _CachedRange × NoExtrap methods.
+@inline _check_domain(::_CachedRange, ::GridIdx, extrap::NoExtrap) = extrap
+@inline _check_domain(::AbstractVector, ::GridIdx, extrap::NoExtrap) = extrap
 
 # ----------------------------------------
 # Vector domain checks: validate batch, return InBounds() for per-element elision.

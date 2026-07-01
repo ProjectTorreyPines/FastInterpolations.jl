@@ -32,6 +32,9 @@ LocalPreferences.toml
 *.cov
 *.mem
 
+# Transient shadow dir created by test/runtests_parallel.jl (parallel test runner)
+/_partest_shadow/
+
 # IDE and editor
 .vscode/
 .idea/

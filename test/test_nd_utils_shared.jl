@@ -347,9 +347,12 @@ end
     @test dLs[2] ≈ 0.5     # 1.0 - 0.5
 end
 
-@testitem "_locate_cell_2d_preamble — grid-only overload" begin
+# The 2D `_locate_cell_2d_preamble` was consolidated into the generic-N locate (extrap-aware
+# `_handle_all_extraps` + 6-arg `_search_all_intervals`, commit `refactor(nd): collapse
+# 2D-specialized locate into extrap-aware generic-N`). Test that surviving path directly.
+@testitem "N=2 cell locate (generic path) — grid-only, mixed range+vector" begin
     using FastInterpolations:
-        _locate_cell_2d_preamble, _ensure_hint_nd, NoExtrap, AutoSearch, _CachedVector
+        _search_all_intervals, _handle_all_extraps, _ensure_hint_nd, NoExtrap, AutoSearch, _CachedVector
 
     rng_grid = FastInterpolations._to_float(0.0:1.0:5.0, Float64)
     vec_grid = FastInterpolations._CachedVector([0.0, 0.5, 1.5, 3.0, 5.0])
@@ -360,16 +363,15 @@ end
     mono = (false, false)
     query = (2.5, 1.0)
 
-    x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, grids, extraps, policies, hints, mono
-    )
+    q_eval = _handle_all_extraps(query, grids, extraps)
+    indices, Ls, _ = _search_all_intervals(q_eval, grids, policies, hints, mono, extraps)
 
-    @test x_eval ≈ 2.5
-    @test y_eval ≈ 1.0
-    @test ix == 3
-    @test iy == 2
-    @test xL ≈ 2.0
-    @test yL ≈ 0.5
+    @test q_eval[1] ≈ 2.5
+    @test q_eval[2] ≈ 1.0
+    @test indices[1] == 3
+    @test indices[2] == 2
+    @test Ls[1] ≈ 2.0
+    @test Ls[2] ≈ 0.5
 end
 
 @testitem "N=0 Aqua disambiguators — coverage" begin

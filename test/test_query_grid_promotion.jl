@@ -266,10 +266,9 @@ end
     end
 end
 
-# ── Type stability of the N=2 batch coordinate path (_locate_cell_2d_preamble) ──
-# The batch path hands a RAW per-query tuple to the N=2 preamble, which routes each axis
-# through `_extrap_axis` (as generic-N) → concrete coordinate even for a mismatched Int query
-# (no `Union` to union-split per batch query).
+# ── Type stability of the N=2 coordinate path (now the generic-N locate) ──
+# The 2D locate routes each axis through `_extrap_axis` → a concrete coordinate even for a
+# mismatched Int query (no `Union` to union-split). Verified end-to-end via the public eval.
 @testitem "Type stability — N=2 generic locate concrete for mismatched query eltype" begin
     # `_locate_cell_2d_preamble` was folded into the generic-N locate; test the same property
     # (Int query on a Float grid → no `Union` boxing on the coordinate) END-TO-END via the public

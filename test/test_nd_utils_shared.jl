@@ -348,8 +348,7 @@ end
 end
 
 # The 2D `_locate_cell_2d_preamble` was consolidated into the generic-N locate (extrap-aware
-# `_handle_all_extraps` + 6-arg `_search_all_intervals`, commit `refactor(nd): collapse
-# 2D-specialized locate into extrap-aware generic-N`). Test that surviving path directly.
+# `_handle_all_extraps` + 6-arg `_search_all_intervals`). Test that surviving path directly.
 @testitem "N=2 cell locate (generic path) — grid-only, mixed range+vector" begin
     using FastInterpolations:
         _search_all_intervals, _handle_all_extraps, _ensure_hint_nd, NoExtrap, AutoSearch, _CachedVector

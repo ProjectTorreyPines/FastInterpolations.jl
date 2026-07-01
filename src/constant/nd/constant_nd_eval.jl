@@ -51,7 +51,7 @@ end
     ) where {Tg, Tv, N}
     q_eval = _handle_all_extraps(query, itp.grids, extraps)
     # 6-arg search: per-axis `extraps` let InBounds range axes take the lean direct
-    # search (one-sided clamp, no hint write-back) — bit-identical, per-axis, all N.
+    # search (one-sided clamp; hint still written back) — bit-identical, per-axis, all N.
     indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono, extraps)
     # h-lift: the kernel now takes precomputed `hs` instead of computing
     # `_get_h(grids[d], indices[d])` inside the @generated body. Persistent

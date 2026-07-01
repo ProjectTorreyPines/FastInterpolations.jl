@@ -161,7 +161,7 @@ end
     ) where {Tg, Tv, N}
     q_evals = _handle_all_extraps(query, itp.grids, extraps)
     # 6-arg search: per-axis `extraps` let InBounds range axes take the lean direct
-    # search (one-sided clamp, no hint write-back) — bit-identical, per-axis, all N.
+    # search (one-sided clamp; hint still written back) — bit-identical, per-axis, all N.
     indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono, extraps)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls)
     return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)

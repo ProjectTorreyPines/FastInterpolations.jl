@@ -5,7 +5,7 @@
 # N-dimensional quadratic interpolation with:
 # - Tg/Tv type separation (grid vs value types)
 # - @generated tensor product for zero-allocation O(1) evaluation
-# - N=2 specialization for optimal performance
+# - Generic-N tensor-product locate (no N=2 specialization — verified equal-or-slower)
 # - AD support (query type preserved through evaluation)
 #
 # Key difference from cubic: uses 3 nodal values (fL, fR, dfL) per dimension
@@ -97,7 +97,7 @@ end
     ) where {Tg, Tv, N}
     q_evals = _handle_all_extraps(query, itp.grids, extraps)
     # 6-arg search: per-axis `extraps` let InBounds range axes take the lean direct
-    # search (one-sided clamp, no hint write-back) — bit-identical, per-axis, all N.
+    # search (one-sided clamp; hint still written back) — bit-identical, per-axis, all N.
     # `_compute_all_local_params` uses the spacings-free overload (cached h/inv_h).
     indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono, extraps)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls)

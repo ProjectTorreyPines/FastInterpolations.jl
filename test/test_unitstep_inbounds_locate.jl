@@ -416,7 +416,7 @@ end
     #     when the query is guaranteed in-domain (NoExtrap's domain check throws first; InBounds /
     #     `@inbounds` is the caller's promise). The guarded `_search_direct` stays two-sided-safe.
     using FastInterpolations: _search_binary, _search_binary_inbounds, _search_direct,
-        _search_direct_inbounds
+        _search_direct_inbounds, _CachedRange, _WidenedDomain
 
     @testset "vector lean is OOB-safe both sides (=== guarded search)" begin
         xv = [0.0, 0.5, 1.7, 2.2, 3.9, 5.0]
@@ -448,11 +448,15 @@ end
             idx, _, _ = _search_direct_inbounds(xr, xq)
             @test 1 <= idx <= n - 1
         end
-        # OOB-LEFT: the dropped lower clamp yields idx ≤ 0. Pinned to lock the asymmetry — a lean
-        # range search is only reached under an in-domain guarantee; do not "fix" this to clamp.
+        # OOB-LEFT asymmetry is arch-dependent, because the tag of a float `StepRangeLen` differs:
+        #   • non-widened (`_Generic`/`_UnitStep`, e.g. arm64): the dropped lower clamp yields idx ≤ 0.
+        #     Pinned to lock the asymmetry — do NOT "fix" this to clamp.
+        #   • `_WidenedDomain` (x86_64 StepRangeLen fast path): keeps the two-sided clamp (a below-lo
+        #     query can be in-domain there), so OOB-left clamps to idx = 1.
+        widened = xr isa _CachedRange{Float64, Float64, _WidenedDomain}
         for xq in (-1.0e-9, -3.0, -100.0)
             idx, _, _ = _search_direct_inbounds(xr, xq)
-            @test idx <= 0
+            widened ? (@test 1 <= idx <= n - 1) : (@test idx <= 0)
         end
     end
 end
@@ -728,7 +732,9 @@ end
             @test itp.x.domain_lo <= xq < itp.x.lo   # it really is in the cushion region
             r = itp(xq)                              # pre-fix hazard: one-sided clamp → idx ≤ 0 BoundsError
             @test isfinite(r)
-            @test r ≈ yv[1]                          # clamps into the first cell → first node value
+            # clamps into the first cell → ≈ first node value. `atol`, not bare `≈`: yv[1] == 0 here,
+            # and a below-lo query's denormal α makes r a denormal (~1e-323), not exactly 0.
+            @test isapprox(r, yv[1]; atol = 1.0e-9)
         else
             @test itp.x.domain_lo == itp.x.lo        # non-x86: exact tag, no cushion to exercise
         end

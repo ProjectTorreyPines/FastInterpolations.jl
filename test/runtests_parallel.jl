@@ -146,16 +146,21 @@ end
 # test/ files, so failures point at the original source (line numbers already match).
 function run_rewriting(f)
     prev_out, prev_err = stdout, stderr
-    # <shadow>/X_tests.jl -> test/X.jl, matching both absolute and relative occurrences.
-    # Keep the literal dir name in sync with SHADOW's basename ("_partest_shadow").
-    rx = r"(^|[/\s])_partest_shadow/([^\s/:]+?)_tests\.jl"
+    # <shadow>/X_tests.jl -> test/X.jl, matching absolute and relative occurrences with
+    # either path separator (Windows prints backslashes). Keep the literal dir name in
+    # sync with SHADOW's basename ("_partest_shadow").
+    rx = r"(^|[/\\\s])_partest_shadow[/\\]([^\s/\\:]+?)_tests\.jl"
     pipe = Pipe()
     Base.link_pipe!(pipe; reader_supports_async = true, writer_supports_async = true)
     redirect_stdout(pipe.in)
     redirect_stderr(pipe.in)
     reader = @async for line in eachline(pipe.out)
         if occursin("_partest_shadow", line)
-            line = replace(line, "_partest_shadow/aa_wrapper_testsetup.jl" => "test/setup.jl")
+            line = replace(
+                line,
+                "_partest_shadow/aa_wrapper_testsetup.jl" => "test/setup.jl",
+                "_partest_shadow\\aa_wrapper_testsetup.jl" => "test/setup.jl",
+            )
             line = replace(line, rx => s"\1test/\2.jl")
             line = replace(line, "_partest_shadow" => "test")   # bare dir name (e.g. summary group)
         end

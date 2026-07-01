@@ -403,6 +403,96 @@ end
     end
 end
 
+@testitem "lean search OOB safety — vector two-sided-safe, range one-sided (contract pin)" begin
+    # Direct function-level pin of the search primitives' OOB behavior — the safety contract
+    # the NoExtrap/InBounds fast path depends on. Two lean searches, OPPOSITE OOB safety:
+    #   • vector `_search_binary_inbounds`: the binary loop keeps `lo ∈ [1, n-1]` for ANY query,
+    #     so it returns a valid bracketing cell — and is bit-identical to the guarded
+    #     `_search_binary` — even for OOB inputs on BOTH sides. Structurally OOB-safe: promotion
+    #     to the lean vector search is safe with or without a preceding domain check.
+    #   • range `_search_direct_inbounds`: drops only the lower `max(·,1)` clamp (keeps the upper
+    #     `min(·,n-1)` cap). OOB-RIGHT is capped safe; OOB-LEFT returns `idx ≤ 0` (INVALID). This
+    #     is the documented hazard, not a bug — it is WHY a lean range search must be reached only
+    #     when the query is guaranteed in-domain (NoExtrap's domain check throws first; InBounds /
+    #     `@inbounds` is the caller's promise). The guarded `_search_direct` stays two-sided-safe.
+    using FastInterpolations: _search_binary, _search_binary_inbounds, _search_direct,
+        _search_direct_inbounds
+
+    @testset "vector lean is OOB-safe both sides (=== guarded search)" begin
+        xv = [0.0, 0.5, 1.7, 2.2, 3.9, 5.0]
+        n = length(xv)
+        # OOB-left · exact endpoints · interior grid points · interior · OOB-right
+        for xq in (-100.0, -3.0, -1.0e-9, 0.0, 0.25, 2.2, 3.0, 5.0, 5.0 + 1.0e-9, 99.0)
+            res = _search_binary_inbounds(xv, xq)
+            idx, xL, xR = res
+            @test 1 <= idx <= n - 1                     # never idx ≤ 0 or ≥ n
+            @test res === _search_binary(xv, xq)        # bit-identical to the guarded search
+            @test xL == xv[idx] && xR == xv[idx + 1]
+        end
+    end
+
+    @testset "range guarded search is OOB-safe both sides" begin
+        xr = linear_interp(0.0:1.0:5.0, zeros(6)).x     # _CachedRange
+        n = length(xr)
+        for xq in (-100.0, -3.0, -1.0e-9, 0.0, 0.25, 5.0, 5.0 + 1.0e-9, 99.0)
+            idx, _, _ = _search_direct(xr, xq)
+            @test 1 <= idx <= n - 1
+        end
+    end
+
+    @testset "range lean is one-sided: OOB-right capped, OOB-left INVALID (contract)" begin
+        xr = linear_interp(0.0:1.0:5.0, zeros(6)).x
+        n = length(xr)
+        # in-domain (incl. both endpoints) and OOB-right: valid, upper-capped to n-1
+        for xq in (0.0, 0.25, 4.9, 5.0, 5.0 + 1.0e-9, 99.0)
+            idx, _, _ = _search_direct_inbounds(xr, xq)
+            @test 1 <= idx <= n - 1
+        end
+        # OOB-LEFT: the dropped lower clamp yields idx ≤ 0. Pinned to lock the asymmetry — a lean
+        # range search is only reached under an in-domain guarantee; do not "fix" this to clamp.
+        for xq in (-1.0e-9, -3.0, -100.0)
+            idx, _, _ = _search_direct_inbounds(xr, xq)
+            @test idx <= 0
+        end
+    end
+end
+
+@testitem "scalar NoExtrap promotion === InBounds (still throws OOB, Extend still extrapolates)" begin
+    # After the domain check passes, a scalar 1D NoExtrap eval promotes to InBounds FOR THE SEARCH
+    # (lean guard-free search, coupled to the check: `_check_domain` returns InBounds). This must be
+    # bit-identical to an explicit InBounds interpolant on the in-domain contract, while NoExtrap's
+    # throw-on-OOB and ExtendExtrap's OOB extrapolation are untouched (Extend passes through the
+    # wrapper unchanged and keeps the guarded two-sided-clamp search). Covers all 5 methods on both
+    # a uniform range (one-sided range lean) and a non-uniform vector (guard-free binary lean).
+    using FastInterpolations: InBounds, ExtendExtrap, NoExtrap
+
+    for (glbl, x) in (("range", 0.0:1.0:10.0), ("vector", [0.0, 0.7, 1.9, 3.3, 5.0, 6.1, 8.4, 10.0]))
+        y = [sin(0.4i) + 0.1i for i in 1:length(x)]
+        dy = [0.4cos(0.4i) + 0.1 for i in 1:length(x)]
+        builders = (
+            ("linear", e -> linear_interp(x, y; extrap = e)),
+            ("cubic", e -> cubic_interp(x, y; extrap = e)),
+            ("quadratic", e -> quadratic_interp(x, y; extrap = e)),
+            ("hermite", e -> hermite_interp(x, y, dy; extrap = e)),
+            ("constant", e -> constant_interp(x, y; extrap = e)),
+        )
+        for (mname, build) in builders
+            itp_ne = build(NoExtrap())
+            itp_ib = build(InBounds())
+            itp_ex = build(ExtendExtrap())
+            @testset "$mname/$glbl" begin
+                for q in (first(x), 2.3, 5.0, 7.777, last(x))      # in-domain incl. exact endpoints
+                    @test itp_ne(q) === itp_ib(q)                  # promotion is bit-identical
+                end
+                @test_throws Exception itp_ne(first(x) - 1.0)      # NoExtrap check survives promotion
+                @test_throws Exception itp_ne(last(x) + 1.0)
+                @test isfinite(itp_ex(first(x) - 1.0))             # Extend NOT promoted → extrapolates
+                @test isfinite(itp_ex(last(x) + 1.0))
+            end
+        end
+    end
+end
+
 @testitem "hetero ND PreCompute InBounds lean === NoExtrap (+ ExtendExtrap-OOB safe)" begin
     # Hetero (mixed method per axis) PreCompute paths thread `extraps` into the ND search, so
     # an InBounds range axis takes the lean direct search — bit-identical, per-axis (no 1D

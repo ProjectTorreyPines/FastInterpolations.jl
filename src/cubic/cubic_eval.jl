@@ -62,8 +62,10 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    @boundscheck _check_domain(x, xq, extrap)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq, extrap)
+    # NoExtrap → InBounds for the search once the domain check passes (lean guard-free search);
+    # ExtendExtrap passes through and keeps the two-sided-clamp search (it may arrive OOB).
+    extrap_eff = _check_domain(x, xq, extrap)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq, extrap_eff)
     dL = xq - xL
     dR = xR - xq
     h = _get_h(x, idx)

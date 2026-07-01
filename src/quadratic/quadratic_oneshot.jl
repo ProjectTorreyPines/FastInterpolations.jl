@@ -53,8 +53,10 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
-    @boundscheck _check_domain(x, xq, extrap)
-    idx, _, xL, _ = search_interval(searcher, x, xq, extrap)
+    # NoExtrap → InBounds for the search once the domain check passes (lean guard-free search);
+    # ExtendExtrap passes through and keeps the two-sided-clamp search (it may arrive OOB).
+    extrap_eff = _check_domain(x, xq, extrap)
+    idx, _, xL, _ = search_interval(searcher, x, xq, extrap_eff)
     dt = xq - xL
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end

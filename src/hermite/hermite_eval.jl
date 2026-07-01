@@ -43,10 +43,11 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    @boundscheck _check_domain(x, xq, extrap)
-    # ExtendExtrap may arrive OOB → standard two-sided-clamp search (not the lean InBounds
-    # core, whose one-sided clamp would give idx ≤ 0 OOB-left); boundary cell extrapolates.
-    idx, idx_R, xL, _ = search_interval(searcher, x, xq, extrap)
+    # NoExtrap → InBounds for the search once the domain check passes (lean guard-free search).
+    # ExtendExtrap passes through: it may arrive OOB → standard two-sided-clamp search (not the
+    # lean InBounds one, whose one-sided clamp would give idx ≤ 0 OOB-left); boundary cell extrapolates.
+    extrap_eff = _check_domain(x, xq, extrap)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, extrap_eff)
     dL = xq - xL
     h = _get_h(x, idx)
     inv_h = _get_inv_h(x, idx)
@@ -161,10 +162,11 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    @boundscheck _check_domain(x, xq, extrap)
-    # ExtendExtrap may arrive OOB → standard two-sided-clamp search (not the lean InBounds
-    # core, whose one-sided clamp would give idx ≤ 0 OOB-left); boundary cell extrapolates.
-    idx, idx_R, xL, _ = search_interval(searcher, x, xq, extrap)
+    # NoExtrap → InBounds for the search once the domain check passes (lean guard-free search).
+    # ExtendExtrap passes through: it may arrive OOB → standard two-sided-clamp search (not the
+    # lean InBounds one, whose one-sided clamp would give idx ≤ 0 OOB-left); boundary cell extrapolates.
+    extrap_eff = _check_domain(x, xq, extrap)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, extrap_eff)
     n = _data_length(x)
     dyL = _local_slope(sm, x, y, idx, n)
     dyR = _local_slope(sm, x, y, idx_R, n)

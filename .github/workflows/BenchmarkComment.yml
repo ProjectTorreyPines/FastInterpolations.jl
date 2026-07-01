@@ -15,7 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request'
+      (github.event.workflow_run.event == 'pull_request' ||
+       github.event.workflow_run.event == 'workflow_dispatch')
 
     steps:
       - name: Download benchmark results
@@ -31,19 +32,42 @@ jobs:
           if [ -f pr_number ]; then
             echo "pr_number=$(cat pr_number)" >> $GITHUB_OUTPUT
             echo "pr_sha=$(cat pr_head_sha)" >> $GITHUB_OUTPUT
+            echo "has_pr=true" >> $GITHUB_OUTPUT
           else
-            echo "::error::PR metadata not found in artifact"
-            exit 1
+            echo "No PR metadata in artifact (non-PR run) -> nothing to comment"
+            echo "has_pr=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Generate benchmark comment
+        if: steps.pr-info.outputs.has_pr == 'true'
         env:
           PR_SHA: ${{ steps.pr-info.outputs.pr_sha }}
         run: |
           PR_SHORT="${PR_SHA:0:8}"
 
+          # Hidden machine-readable blob: prior best times + flagged names for
+          # this SHA. The next re-run of the same commit reads it back to
+          # min-merge (see Benchmark.yml "Read previous benchmark comment").
+          BENCH_DATA=""
+          if [ -f regression_report.json ]; then
+            BENCH_DATA=$(jq -c --arg sha "$PR_SHA" '{
+              sha: $sha,
+              benches: [.benchmarks[] | {name, value}],
+              flagged: [.benchmarks[] | select(.was_flagged == true) | .name]
+            }' regression_report.json)
+          elif [ -f benchmark_flat.json ]; then
+            BENCH_DATA=$(jq -c --arg sha "$PR_SHA" '{
+              sha: $sha,
+              benches: [.[] | {name, value}],
+              flagged: []
+            }' benchmark_flat.json)
+          fi
+
           {
             echo "<!-- benchmark-comment -->"
+            if [ -n "$BENCH_DATA" ]; then
+              echo "<!-- BENCH_DATA:${BENCH_DATA} -->"
+            fi
             echo "# FastInterpolations.jl Benchmarks"
             echo ""
 
@@ -112,6 +136,7 @@ jobs:
           } > comment_body.md
 
       - name: Post or update PR comment
+        if: steps.pr-info.outputs.has_pr == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.pr-info.outputs.pr_number }}

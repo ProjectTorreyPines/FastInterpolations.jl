@@ -201,7 +201,11 @@ function build_and_run(shadow, keyword, nworkers)
         dst = joinpath(shadow, replace(f, r"\.jl$" => "") * "_tests.jl")
         src, cuts = scanned[real]
         if isempty(cuts)
-            symlink(real, dst)
+            try
+                symlink(real, dst)
+            catch                    # Windows / filesystems without symlink privilege
+                cp(real, dst)
+            end
         else
             buf = src
             for (a, b) in sort(cuts; by = first, rev = true)

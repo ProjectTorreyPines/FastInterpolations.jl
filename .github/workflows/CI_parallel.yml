@@ -1,16 +1,17 @@
 name: CI (parallel experiment)
 
-# Experimental: runs the ReTestItems parallel runner (test/runtests_parallel.jl) and
-# verifies coverage still merges. Compare its wall-clock against the SEQUENTIAL run
-# that the production CI.yml already does (no need to re-run sequential here).
-# It never runs on master or PRs, so CI.yml is untouched. Promote the parallel step
-# into CI.yml once the speedup is proven worthwhile.
+# Experimental REPLICA of CI.yml: same OS/version matrix, same thread-safety +
+# extension + coverage steps — the ONLY difference is the main @testitem suite runs
+# in PARALLEL via test/runtests_parallel.jl instead of the sequential julia-runtest.
+# Purpose: confirm every test matches CI.yml (so you can fully migrate), and measure
+# the parallel wall-clock against it. Runs only on workflow_dispatch / ci/retest
+# pushes — never master or PRs, so CI.yml is untouched.
 on:
   workflow_dispatch:
     inputs:
       nworkers:
-        description: "Worker processes for the parallel run"
-        default: "2"
+        description: "Override workers for ALL jobs (blank = per-OS default: ubuntu/windows 4, macos 3)"
+        default: ""
   push:
     branches:
       - ci/retest
@@ -20,15 +21,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  parallel:
-    name: parallel — Julia ${{ matrix.version }}
-    runs-on: ubuntu-latest        # GitHub-hosted Linux = 2 vCPUs ("the 2 cores per runner")
+  test:
+    name: parallel — Julia ${{ matrix.version }} · ${{ matrix.os }} · nworkers=${{ matrix.nworkers }}
+    runs-on: ${{ matrix.os }}     # public repo: ubuntu/windows = 4 vCPUs, macos = 3; each its own VM
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        version:
-          - "1"
+        version: ["1.x", "lts"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            nworkers: 4
+          - os: macos-latest
+            nworkers: 3
+          - os: windows-latest
+            nworkers: 4
 
     steps:
       - uses: actions/checkout@v4
@@ -41,23 +49,67 @@ jobs:
 
       - uses: julia-actions/julia-buildpkg@v1
 
-      # The runner activates test/Project.toml; instantiate it so workers see the test deps
-      # (ReTestItems is a test-only dependency declared there).
+      # runtests_parallel.jl activates test/Project.toml; instantiate it so the workers
+      # see the test deps (ReTestItems is a test-only dep declared there).
       - name: Instantiate the test environment
         run: julia --color=yes --project=test -e 'using Pkg; Pkg.instantiate()'
 
-      - name: "Parallel run (nworkers=${{ github.event.inputs.nworkers || '2' }}) + coverage"
+      # Main @testitem suite — PARALLEL. Replaces CI.yml's `julia-runtest` (SKIP_EXTENSIONS);
+      # the runner never touches ext/ either. Coverage on → workers write src/*.cov.
+      - name: "Main @testitem suite (parallel, nworkers=${{ matrix.nworkers }}) + coverage"
         run: |
           julia --color=yes --code-coverage=user test/runtests_parallel.jl \
-            --nworkers ${{ github.event.inputs.nworkers || '2' }}
+            --nworkers ${{ github.event.inputs.nworkers || matrix.nworkers }}
 
-      # Workers write src/*.cov (one per PID); process merges them (per-line max).
+      # Thread-safety — identical to CI.yml, multi-threaded in ONE process (bumped 2 → 4).
+      # These use plain Pkg.test (TestItemRunner), since the point is real threads, not workers.
+      - name: Thread Safety Tests (4 threads)
+        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=true, julia_args=["-t", "4"], test_args=["test_thread_safety.jl"])'
+
+      - name: Thread Safety Tests (Oversubscribe with 16 threads)
+        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=true, julia_args=["-t", "16"], test_args=["test_thread_safety.jl"])'
+
       - uses: julia-actions/julia-processcoverage@v1
         with:
           directories: src
 
-      - name: Upload merged coverage (lcov.info) for inspection
-        uses: actions/upload-artifact@v4
+      - uses: codecov/codecov-action@v5
         with:
-          name: lcov-parallel
-          path: lcov.info
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  test-extensions:
+    name: parallel — Extensions Julia ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["1.x", "lts"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+
+      - uses: julia-actions/cache@v2
+
+      - uses: julia-actions/julia-buildpkg@v1
+
+      # Extension tests are legacy @testset (not @testitem), so the parallel runner
+      # doesn't touch them — run them exactly as CI.yml does, in their own process.
+      - name: Extension Tests (AD / Recipes / Symbolics)
+        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=true, test_args=["ext/runtests.jl"])'
+
+      - uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: src,ext
+
+      - uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

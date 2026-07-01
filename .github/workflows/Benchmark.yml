@@ -5,8 +5,10 @@ on:
     branches:
       - master
   pull_request:
-    branches:
-      - master
+    # Any base branch (not just master) so stacked / non-master PRs also get
+    # benchmarked. The baseline is always gh-pages master history, and the
+    # gh-pages store only ever runs on push-to-master, so non-master PRs just
+    # get a comparison comment.
     paths:
       - "src/**"
       - "ext/**"
@@ -21,6 +23,21 @@ on:
         required: false
         default: false
         type: boolean
+      pr_number:
+        description: 'PR number to attach results to (enables prev-best min-merge / flagged-only re-run)'
+        required: false
+        default: ''
+        type: string
+      only_flagged:
+        description: 'Re-run only the benchmarks flagged in the existing PR comment (cheaper; slightly optimistic — measured in isolation)'
+        required: false
+        default: false
+        type: boolean
+      commit_sha:
+        description: 'Re-benchmark this master commit and overwrite its stored point with the min (fix a noisy/spiking graph point). Short SHA / branch / tag are accepted (resolved to the full SHA). Implies a gh-pages store. Only works for commits that already have the storage-capable harness.'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -28,6 +45,7 @@ concurrency:
 
 permissions:
   contents: write
+  pull-requests: read   # read the existing benchmark comment for prev-best min-merge
 
 jobs:
   benchmark:
@@ -35,8 +53,39 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Resolve a short SHA / branch / tag to the full 40-char SHA before checkout,
+      # so both checkout and the exact-string data.js key matching work.
+      - name: Resolve commit_sha
+        id: resolve
+        if: inputs.commit_sha != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FULL=$(gh api "repos/${{ github.repository }}/commits/${{ inputs.commit_sha }}" --jq .sha)
+          if [ -z "$FULL" ]; then
+            echo "::error::Could not resolve commit '${{ inputs.commit_sha }}' to a full SHA"
+            exit 1
+          fi
+          echo "full_sha=$FULL" >> "$GITHUB_OUTPUT"
+          echo "Resolved '${{ inputs.commit_sha }}' -> $FULL"
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Empty for normal runs (default ref). For a "fix this commit" dispatch,
+          # check out that exact commit so we benchmark its code with its own harness.
+          ref: ${{ steps.resolve.outputs.full_sha }}
+
+      # Refuse to re-benchmark a commit whose checked-out harness predates storage
+      # support — we'd otherwise fail deep in the run or, worse, mis-store.
+      - name: Guard commit_sha harness
+        if: inputs.commit_sha != ''
+        run: |
+          if ! grep -q -- '--master-sha' benchmark/ci_benchmark.jl || [ ! -f benchmark/update_gh_pages_data.jl ]; then
+            echo "::error::Commit ${{ inputs.commit_sha }} predates the storage-capable benchmark harness — cannot re-benchmark & overwrite its point. Use 'Re-run' on its original run + benchmark/dedup_history.jl instead."
+            exit 1
+          fi
+          echo "Re-benchmarking $(git rev-parse HEAD) with its own storage-capable harness"
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -49,8 +98,52 @@ jobs:
       - name: Install dependencies
         run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
 
+      # Resolve the PR this run should attach to (empty for plain master pushes).
+      # On a pull_request re-run the original event context is preserved, so the
+      # PR head SHA is stable across re-runs — that is what powers the min-merge.
+      - name: Resolve PR context
+        id: ctx
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "pr_number=${{ github.event.number }}" >> "$GITHUB_OUTPUT"
+            echo "pr_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.commit_sha }}" ]; then
+            # Re-benchmark a specific commit -> master store keyed to it, no PR attach.
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
+            echo "pr_sha=" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.pr_number }}" ]; then
+            # Guard: the dispatch must be started from the PR's head commit, else
+            # we'd benchmark unrelated code but attach it to the PR (and the
+            # SHA-guarded min-merge would silently reset). Fail fast on mismatch.
+            PR_HEAD=$(gh pr view "${{ inputs.pr_number }}" --repo "${{ github.repository }}" --json headRefOid --jq .headRefOid)
+            if [ "$PR_HEAD" != "${{ github.sha }}" ]; then
+              echo "::error::Dispatch is at ${{ github.sha }} but PR #${{ inputs.pr_number }} head is ${PR_HEAD}. Re-dispatch from the PR's head commit."
+              exit 1
+            fi
+            echo "pr_number=${{ inputs.pr_number }}" >> "$GITHUB_OUTPUT"
+            echo "pr_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
+            echo "pr_sha=" >> "$GITHUB_OUTPUT"
+          fi
+          # store = this run publishes a master data point to gh-pages
+          STORE=false
+          if [ "${{ github.event_name }}" = "push" ]; then STORE=true; fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.push_results }}" = "true" ] && [ "${{ inputs.only_flagged }}" != "true" ]; then STORE=true; fi
+          if [ -n "${{ inputs.commit_sha }}" ]; then STORE=true; fi   # fixing a specific commit always stores
+          echo "store=$STORE" >> "$GITHUB_OUTPUT"
+          # master_sha = the commit whose stored point we (over)write with the min
+          # (full SHA: resolved input for a fix-dispatch, else this run's commit)
+          if [ -n "${{ inputs.commit_sha }}" ]; then
+            echo "master_sha=${{ steps.resolve.outputs.full_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "master_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Fetch baseline from gh-pages
-        if: github.event_name == 'pull_request'
+        if: steps.ctx.outputs.pr_number != '' || steps.ctx.outputs.store == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -58,19 +151,69 @@ jobs:
             --header 'Accept: application/vnd.github.raw+json' \
             > baseline_data.js 2>/dev/null || true
 
+      # Read prior best times from the existing PR comment so re-running the same
+      # commit only lowers measured times (min-merge) and clears CI-noise flags.
+      # Fully best-effort: any missing comment / missing blob / SHA mismatch /
+      # parse error leaves prev_best.json absent -> a normal full fresh run.
+      - name: Read previous benchmark comment
+        if: steps.ctx.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.ctx.outputs.pr_number }}
+          CUR_SHA: ${{ steps.ctx.outputs.pr_sha }}
+        run: |
+          set +e
+          BODY=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
+            --jq '[.[] | select(.body | contains("<!-- benchmark-comment -->"))] | last | .body // ""')
+          BLOB=$(printf '%s\n' "$BODY" | grep -o '<!-- BENCH_DATA:.*-->' | head -1 \
+            | sed 's/^<!-- BENCH_DATA://; s/ *-->$//')
+          if [ -z "$BLOB" ]; then
+            echo "No prior benchmark data blob found -> full fresh run"
+            exit 0
+          fi
+          BLOB_SHA=$(printf '%s' "$BLOB" | jq -r '.sha // ""' 2>/dev/null)
+          if [ "$BLOB_SHA" != "$CUR_SHA" ]; then
+            echo "Comment SHA ($BLOB_SHA) != current ($CUR_SHA) -> reset (full fresh run)"
+            exit 0
+          fi
+          printf '%s' "$BLOB" | jq -e '.benches' > prev_best.json 2>/dev/null \
+            && echo "Loaded prev-best ($(jq length prev_best.json) benches) for SHA $CUR_SHA" \
+            || { echo "Blob parse failed -> full fresh run"; rm -f prev_best.json; }
+          printf '%s' "$BLOB" | jq -r '.flagged // [] | join(",")' > flagged_names.txt 2>/dev/null || true
+
       - name: Run benchmarks
         run: |
           BASELINE_ARG=""
           if [ -s baseline_data.js ]; then
             BASELINE_ARG="--baseline baseline_data.js"
           fi
-          julia --project=benchmark benchmark/ci_benchmark.jl $BASELINE_ARG
+          EXTRA_ARG=""
+          if [ "${{ steps.ctx.outputs.store }}" = "true" ]; then
+            # Master store: regression-check vs previous master + same-commit min
+            # floor. Runs even without a baseline (bootstraps the first point).
+            EXTRA_ARG="--master-sha ${{ steps.ctx.outputs.master_sha }}"
+          else
+            # PR: cross-run min-merge from the comment (+ optional flagged-only subset)
+            if [ -s prev_best.json ]; then
+              EXTRA_ARG="--prev-best prev_best.json"
+            fi
+            if [ "${{ inputs.only_flagged }}" = "true" ] && [ -s flagged_names.txt ]; then
+              NAMES="$(cat flagged_names.txt)"
+              if [ -n "$NAMES" ]; then
+                EXTRA_ARG="$EXTRA_ARG --only $NAMES"
+                echo "Flagged-only re-run: $NAMES"
+              else
+                echo "only_flagged requested but no flagged names -> full suite"
+              fi
+            fi
+          fi
+          julia --project=benchmark benchmark/ci_benchmark.jl $BASELINE_ARG $EXTRA_ARG
 
       - name: Save PR metadata and flatten results
-        if: github.event_name == 'pull_request'
+        if: steps.ctx.outputs.pr_number != ''
         run: |
-          echo "${{ github.event.number }}" > pr_number
-          echo "${{ github.event.pull_request.head.sha }}" > pr_head_sha
+          echo "${{ steps.ctx.outputs.pr_number }}" > pr_number
+          echo "${{ steps.ctx.outputs.pr_sha }}" > pr_head_sha
           julia --project=benchmark -e '
             using JSON, BenchmarkTools
             results = BenchmarkTools.load("output.json")[1]
@@ -94,21 +237,66 @@ jobs:
             output.json
             benchmark_flat.json
             regression_report.json
+            hardware.json
             pr_number
             pr_head_sha
 
-      - name: Store benchmark result (push only)
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_results == true)
-        uses: benchmark-action/github-action-benchmark@v1
-        with:
-          name: FastInterpolations.jl Benchmarks
-          tool: 'julia'
-          output-file-path: output.json
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: true
-          alert-threshold: '115%'
-          comment-always: true
-          comment-on-alert: true
-          fail-on-alert: false
-          gh-pages-branch: gh-pages
-          benchmark-data-dir-path: bench
+      # Publish the master data point to gh-pages, keyed by commit SHA:
+      #   - re-running a commit REPLACES its entry with the per-benchmark min
+      #     (no duplicate/noisy points), instead of the stock action's append.
+      #   - forward-only: other commits' entries are never touched here.
+      # A flagged-only subset run never stores (partial, measured in isolation).
+      - name: Store benchmark result on gh-pages (push only)
+        if: steps.ctx.outputs.store == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          # master_sha == github.sha for a normal push; == inputs.commit_sha when
+          # re-benchmarking a specific commit, so we key/overwrite the right entry.
+          SHA: ${{ steps.ctx.outputs.master_sha }}
+        run: |
+          if [ ! -s master_benches.json ]; then
+            echo "No master_benches.json (no baseline yet?) -> nothing to store"
+            exit 0
+          fi
+
+          # Commit metadata via API (safe: no multi-line message through env/YAML)
+          gh api "repos/${REPO}/commits/${SHA}" > commit_api.json
+          jq '{
+            id: .sha,
+            message: .commit.message,
+            timestamp: .commit.author.date,
+            url: .html_url,
+            author: {name: .commit.author.name, email: .commit.author.email},
+            committer: {name: .commit.committer.name, email: .commit.committer.email},
+            date_ms: ((.commit.author.date | fromdateiso8601) * 1000)
+          }' commit_api.json > commit_meta.json
+
+          # Shallow gh-pages checkout (keeps bench/index.html; we only rewrite data.js)
+          git clone --depth=1 --branch gh-pages \
+            "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" gh-pages-wt
+          mkdir -p gh-pages-wt/bench
+          SRC=gh-pages-wt/bench/data.js
+          [ -f "$SRC" ] || SRC=/dev/null
+
+          BENCH_SHA="$SHA" BENCH_COMMIT_META="$PWD/commit_meta.json" BENCH_HARDWARE="$PWD/hardware.json" \
+            julia --project=benchmark benchmark/update_gh_pages_data.jl \
+              "$SRC" master_benches.json gh-pages-wt/bench/data.js
+
+          cd gh-pages-wt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bench/data.js
+          if git diff --cached --quiet; then
+            echo "data.js unchanged -> nothing to push"
+            exit 0
+          fi
+          git commit -m "bench: ${SHA}"
+          # Retry against concurrent gh-pages pushes (e.g. docs deploy)
+          for i in 1 2 3; do
+            if git push origin gh-pages; then exit 0; fi
+            echo "push failed, rebasing (attempt $i)..."
+            git pull --rebase origin gh-pages || true
+          done
+          echo "::error::failed to push benchmark data to gh-pages after retries"
+          exit 1

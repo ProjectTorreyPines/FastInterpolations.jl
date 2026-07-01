@@ -554,3 +554,284 @@ end
         @test isfinite(itp_ext((9.5, 10.0)))
     end
 end
+
+@testitem "1D GridIdx query under InBounds on a range grid (ambiguity regression)" begin
+    # RED pin: the `(_CachedRange, ::GridIdx, ::InBounds)` search dispatch was ambiguous with the
+    # `(AbstractVector, ::GridIdx, ::InBounds)` short-circuit → `itp(GridIdx(k))` on an InBounds
+    # range interpolant threw `MethodError: ... is ambiguous` for linear/cubic/quadratic/hermite.
+    # Pin: no throw, a real (non-NaN) value, and bit-identical to the NoExtrap short-circuit.
+    using FastInterpolations: InBounds
+
+    x = 0.0:1.0:10.0
+    y = [sin(0.3i) + 0.1i for i in 1:length(x)]
+    dy = [0.3cos(0.3i) + 0.1 for i in 1:length(x)]
+    builders = (
+        ("linear", e -> linear_interp(x, y; extrap = e)),
+        ("cubic", e -> cubic_interp(x, y; extrap = e)),
+        ("quadratic", e -> quadratic_interp(x, y; extrap = e)),
+        ("hermite", e -> hermite_interp(x, y, dy; extrap = e)),
+        ("constant", e -> constant_interp(x, y; extrap = e)),
+    )
+    for (mname, build) in builders
+        itp_ib = build(InBounds())
+        itp_ne = build(NoExtrap())
+        @testset "$mname" begin
+            for k in (1, 4, length(x))          # incl. both exact endpoints
+                r = itp_ib(GridIdx(k))          # pre-fix: MethodError (ambiguous)
+                @test !isnan(r)                 # pre-fix quadratic: NaN (missing _resolve_grididx)
+                @test r === itp_ne(GridIdx(k))  # bit-identical to the NoExtrap short-circuit
+            end
+        end
+    end
+end
+
+@testitem "ND one-shot GridIdx under InBounds === NoExtrap, non-NaN (resolve regression)" begin
+    # RED pin: the one-shot ND path never resolved a bare `GridIdx(k)` (val = NaN), so the value
+    # kernel (`_alpha_of`) produced NaN — for BOTH NoExtrap and InBounds. And under InBounds the
+    # lean search treated the GridIdx as a coordinate (searching on NaN, and on a non-unit-step
+    # range an off-by-one cell for cubic/quad). Fix: resolve at entry + a GridIdx exact-index
+    # search overload. Pin: non-NaN, InBounds === NoExtrap one-shot, and ≈ the persistent path.
+    using FastInterpolations: InBounds
+
+    IB = (InBounds(), InBounds())
+    grids_cases = (
+        ("unit 1:7 / 2:9", (1:7, 2:9)),
+        ("nonunit range(-3,7,50)^2", (range(-3.0, 7.0; length = 50), range(-3.0, 7.0; length = 50))),
+    )
+    for (glbl, g) in grids_cases
+        n1, n2 = length(g[1]), length(g[2])
+        data = [0.1i + 0.3j + 0.01i * j for i in 1:n1, j in 1:n2]
+        qs = ((GridIdx(3), 6.0), (GridIdx(2), GridIdx(4)), (2.5, GridIdx(5)), (GridIdx(1), GridIdx(1)), (GridIdx(n1), GridIdx(n2)))
+        for (mname, f) in (("linear", linear_interp), ("cubic", cubic_interp), ("quadratic", quadratic_interp), ("constant", constant_interp))
+            itp_persist = f(g, data; extrap = IB)
+            @testset "$glbl/$mname" begin
+                for q in qs
+                    r_ib = f(g, data, q; extrap = IB)
+                    r_ne = f(g, data, q)
+                    @test !isnan(r_ib)                     # pre-fix: NaN
+                    @test r_ib === r_ne                    # InBounds promotion is bit-identical (one-shot)
+                    @test r_ib ≈ itp_persist(q)            # matches the (already-correct) persistent path
+                end
+            end
+        end
+    end
+end
+
+@testitem "periodic-exclusive GridIdx under InBounds resolves (ambiguity #2 regression)" begin
+    # RED pin: `(_ExclusivePeriodicAxis, ::GridIdx, ::InBounds)` was ambiguous with the generic
+    # `(AbstractVector, ::GridIdx, ::InBounds)` short-circuit (periodic axis is an AbstractVector,
+    # GridIdx <: Real). A GridIdx query on a periodic cubic axis (InBounds hoisted) threw. Pin: it
+    # resolves to the seam-aware search and returns a finite value equal to the persistent path.
+    using FastInterpolations: PeriodicBC, WrapExtrap
+
+    x = range(0.0; step = 0.1, length = 20)
+    y = range(0.0; step = 0.2, length = 10)
+    data = [sin(2π * xi) * cos(2π * yj) for xi in x, yj in y]
+    bc = PeriodicBC(endpoint = :exclusive, period = 2.0)
+    itp_persist = cubic_interp((x, y), data; bc = bc, extrap = WrapExtrap())
+    for q in ((GridIdx(5), 0.5), (GridIdx(1), GridIdx(1)), (0.35, GridIdx(4)))
+        r = cubic_interp((x, y), data, q; bc = bc, extrap = WrapExtrap())   # pre-fix: MethodError
+        @test isfinite(r)
+        @test isapprox(r, itp_persist(q); atol = 1.0e-10)   # atol: values can be ~0 at grid nodes
+    end
+end
+
+@testitem "Hermite ND (PreCompute) InBounds === NoExtrap (persistent + one-shot + batch + GridIdx)" begin
+    # D1: hermite ND (CubicHermiteInterpolantND) changed the same _search_all_intervals sites as the
+    # other methods, but was absent from every ND InBounds pin. Its one-shot scalar path had also
+    # lagged on validate-only (no promotion) and never resolved GridIdx (→ NaN). Pin the full matrix.
+    using FastInterpolations: InBounds, HermitePartials
+
+    x = collect(range(-1.0, 1.5; length = 8))
+    y = collect(range(-0.8, 1.2; length = 7))
+    F(a, b) = sin(0.7a) + cos(0.5b) + 0.1a * b
+    data = [F(xi, yj) for xi in x, yj in y]
+    dfdx = [0.7cos(0.7xi) + 0.1yj for xi in x, yj in y]
+    dfdy = [-0.5sin(0.5yj) + 0.1xi for xi in x, yj in y]
+    d2 = [0.1 for xi in x, yj in y]
+    p = HermitePartials((1, 0) => dfdx, (0, 1) => dfdy, (1, 1) => d2)
+    IB = (InBounds(), InBounds())
+    qs = ((-0.5, 0.3), (1.0, 1.0), (1.5, 1.2), (0.2, -0.5))
+
+    itp_ib = hermite_interp((x, y), data, p; extrap = IB)
+    itp_ne = hermite_interp((x, y), data, p)
+    @testset "persistent scalar" begin
+        for q in qs
+            @test itp_ib(q) === itp_ne(q)
+        end
+    end
+    @testset "one-shot scalar (incl. GridIdx, non-NaN)" begin
+        for q in (qs..., (GridIdx(3), 0.3), (GridIdx(2), GridIdx(4)))
+            r = hermite_interp((x, y), data, p, q; extrap = IB)
+            @test !isnan(r)
+            @test r === hermite_interp((x, y), data, p, q)
+        end
+    end
+    @testset "one-shot batch" begin
+        qxs = Float64[q[1] for q in qs]
+        qys = Float64[q[2] for q in qs]
+        @test hermite_interp((x, y), data, p, (qxs, qys); extrap = IB) ==
+            hermite_interp((x, y), data, p, (qxs, qys))
+    end
+    @testset "persistent hint write-back === NoExtrap" begin
+        hib = (Ref(0), Ref(0))
+        hne = (Ref(0), Ref(0))
+        itp_ib((0.3, 0.4); hint = hib)   # interior on both axes → both hints written
+        itp_ne((0.3, 0.4); hint = hne)
+        @test hib[1][] == hne[1][] != 0
+        @test hib[2][] == hne[2][] != 0
+    end
+end
+
+@testitem "homogeneous ND ExtendExtrap OOB safety on a mixed InBounds/Extend axis (D2)" begin
+    # D2: the per-axis `_search_axis_*` dispatch must route an ExtendExtrap ND axis away from the
+    # lean one-sided-clamp path (which would BoundsError on an OOB-left query). Covered for 1D and
+    # hetero, but not for the homogeneous ND methods whose per-axis code is what changed.
+    using FastInterpolations: InBounds, ExtendExtrap
+
+    x = 1.0:1.0:8.0
+    y = 2.0:1.0:9.0
+    for (mname, f) in (("linear", linear_interp), ("cubic", cubic_interp), ("quadratic", quadratic_interp), ("constant", constant_interp))
+        data = [sin(0.3i) + cos(0.2j) + 0.01i * j for i in 1:8, j in 1:8]
+        mixed = f((x, y), data; extrap = (InBounds(), ExtendExtrap()))     # axis-1 lean, axis-2 may be OOB
+        allext = f((x, y), data; extrap = (ExtendExtrap(), ExtendExtrap()))
+        @testset "$mname" begin
+            # axis-2 OOB both directions; axis-1 stays in-domain (InBounds, no check)
+            for q in ((3.5, 1.0), (3.5, 12.0), (8.0, 0.5))
+                r = mixed(q)
+                @test isfinite(r)          # pre-fix hazard: lean one-sided clamp → BoundsError
+                @test r === allext(q)      # InBounds axis in-domain == ExtendExtrap axis in-domain
+            end
+        end
+    end
+    # value pin (linear): the Extend axis extends off the boundary segment
+    data = [0.1i + 0.3j for i in 1:8, j in 1:8]
+    li = linear_interp((x, y), data; extrap = (InBounds(), ExtendExtrap()))
+    yq = 12.0
+    ref = data[4, 8] + (yq - y[8]) * (data[4, 8] - data[4, 7]) / (y[8] - y[7])   # x=4.0 node, y extends
+    @test li((4.0, yq)) ≈ ref
+end
+
+@testitem "WidenedDomain end-to-end: in-domain query below grid lo stays finite (arch-gated, D3)" begin
+    # D3: the primitive-level pin covers `_search_direct_inbounds` on a widened `_CachedRange`; this
+    # exercises the FULL promotion path (`_check_domain` → InBounds → search → eval) with a query in
+    # `[domain_lo, lo)`. `_WidenedDomain` only arises from the x86_64 StepRangeLen fast path, so the
+    # widened-region assertion is arch-gated; on other arches the grid is exact (nothing to widen).
+    using FastInterpolations: _CachedRange, _WidenedDomain, InBounds
+
+    xr = 0.0:0.1:1.0
+    yv = [sin(3xi) + 0.2xi for xi in xr]
+    for build in (() -> linear_interp(xr, yv; extrap = InBounds()), () -> linear_interp(xr, yv))
+        itp = build()
+        if itp.x isa _CachedRange{Float64, Float64, _WidenedDomain}
+            xq = prevfloat(first(xr))               # in [domain_lo, lo): in-domain but below grid lo
+            @test itp.x.domain_lo <= xq < itp.x.lo   # it really is in the cushion region
+            r = itp(xq)                              # pre-fix hazard: one-sided clamp → idx ≤ 0 BoundsError
+            @test isfinite(r)
+            @test r ≈ yv[1]                          # clamps into the first cell → first node value
+        else
+            @test itp.x.domain_lo == itp.x.lo        # non-x86: exact tag, no cushion to exercise
+        end
+    end
+end
+
+@testitem "AD: Dual query under InBounds === NoExtrap (value + partials, 1D + ND) (D6)" begin
+    # D6: the lean searches compare via `_extract_primal`; a Dual query must give the SAME value and
+    # partials as the NoExtrap path (bit-identical), 1D and ND. `Dual === Dual` compares value+partials.
+    using FastInterpolations: InBounds
+    import ForwardDiff
+
+    @testset "1D scalar Dual === (all methods, range + vector)" begin
+        for (glbl, x) in (("range", 0.0:1.0:10.0), ("vector", [0.0, 0.7, 1.9, 3.3, 5.0, 6.1, 8.4, 10.0]))
+            yv = [sin(0.4i) + 0.1i for i in 1:length(x)]
+            dyv = [0.4cos(0.4i) + 0.1 for i in 1:length(x)]
+            builders = (
+                ("linear", e -> linear_interp(x, yv; extrap = e)),
+                ("cubic", e -> cubic_interp(x, yv; extrap = e)),
+                ("quadratic", e -> quadratic_interp(x, yv; extrap = e)),
+                ("hermite", e -> hermite_interp(x, yv, dyv; extrap = e)),
+                ("constant", e -> constant_interp(x, yv; extrap = e)),
+            )
+            for (mname, build) in builders
+                ib = build(InBounds())
+                ne = build(NoExtrap())
+                for q in (2.3, 5.0, 7.777)
+                    d = ForwardDiff.Dual(q, 1.0)
+                    @test ib(d) === ne(d)        # value AND partial bit-identical
+                end
+            end
+        end
+    end
+    @testset "ND gradient InBounds === NoExtrap" begin
+        g = (1:7, 2:9)
+        data = [0.1i + 0.3j + 0.01i * j for i in 1:7, j in 1:8]
+        for f in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            ib = f(g, data; extrap = (InBounds(), InBounds()))
+            ne = f(g, data)
+            for q in ([3.3, 5.5], [1.2, 2.4], [6.8, 8.7])
+                @test ForwardDiff.gradient(v -> ib((v[1], v[2])), q) ==
+                    ForwardDiff.gradient(v -> ne((v[1], v[2])), q)
+            end
+        end
+    end
+end
+
+@testitem "InBounds lean path is zero-alloc: 1D scalar + 3D ND (D5)" begin
+    # D5: the only alloc pin in this file is the 2D scalar loop. Extend to 1D and 3D so a regression
+    # that reintroduces an allocation on those InBounds paths is caught.
+    using FastInterpolations: InBounds
+
+    @testset "1D scalar InBounds loop is 0-alloc" begin
+        function fill1d!(out, itp, qs)
+            @inbounds for i in eachindex(qs)
+                out[i] = itp(qs[i])
+            end
+            return out
+        end
+        for (f, x) in ((linear_interp, 0.0:1.0:10.0), (cubic_interp, 0.0:1.0:10.0))
+            yv = [sin(0.3i) + 0.1i for i in 1:11]
+            itp = f(x, yv; extrap = InBounds())
+            qs = collect(range(0.05, 9.95; length = 64))
+            out = similar(qs)
+            fill1d!(out, itp, qs)                                   # warm up
+            @test (@allocated fill1d!(out, itp, qs)) == 0
+        end
+    end
+    @testset "3D ND scalar InBounds loop is 0-alloc" begin
+        ax = (1:5, 1:6, 1:7)
+        data = [0.1i + 0.2j + 0.3k for i in 1:5, j in 1:6, k in 1:7]
+        itp = linear_interp(ax, data; extrap = (InBounds(), InBounds(), InBounds()))
+        function fill3d!(out, itp, qx, qy, qz)
+            @inbounds for i in eachindex(qx, qy, qz)
+                out[i] = itp((qx[i], qy[i], qz[i]))
+            end
+            return out
+        end
+        qx = collect(range(1.1, 4.9; length = 48))
+        qy = collect(range(1.1, 5.9; length = 48))
+        qz = collect(range(1.1, 6.9; length = 48))
+        out = similar(qx)
+        fill3d!(out, itp, qx, qy, qz)                              # warm up
+        @test (@allocated fill3d!(out, itp, qx, qy, qz)) == 0
+    end
+end
+
+@testitem "one-shot ND explicit hint under InBounds === NoExtrap (D7)" begin
+    # D7: the one-shot indices path (`_search_axis_oneshot_hint`) has its own hint write-back, never
+    # exercised with an explicit user `Ref` under InBounds. Pin: writes the same non-sentinel interval
+    # the NoExtrap one-shot does.
+    using FastInterpolations: InBounds
+
+    g = (1:7, 2:9)
+    data = [0.1i + 0.3j + 0.01i * j for i in 1:7, j in 1:8]
+    q = (3.4, 6.2)
+    for f in (cubic_interp, quadratic_interp)   # cubic/quad use the indices (_search_all_intervals) path
+        hib = (Ref(0), Ref(0))
+        hne = (Ref(0), Ref(0))
+        r_ib = f(g, data, q; extrap = (InBounds(), InBounds()), hint = hib)
+        r_ne = f(g, data, q; hint = hne)
+        @test r_ib === r_ne
+        @test hib[1][] == hne[1][] != 0
+        @test hib[2][] == hne[2][] != 0
+    end
+end

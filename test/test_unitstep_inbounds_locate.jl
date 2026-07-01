@@ -769,8 +769,12 @@ end
             ib = f(g, data; extrap = (InBounds(), InBounds()))
             ne = f(g, data)
             for q in ([3.3, 5.5], [1.2, 2.4], [6.8, 8.7])
-                @test ForwardDiff.gradient(v -> ib((v[1], v[2])), q) ==
-                    ForwardDiff.gradient(v -> ne((v[1], v[2])), q)
+                # `rtol` not `==`: the interpolant's AD is bit-identical (the direct-Dual 1D test
+                # above pins it with `===`), but `ForwardDiff.gradient`'s closure lets LLVM contract
+                # the shared cubic kernel's FMAs differently across the InBounds vs NoExtrap prologues
+                # on Julia 1.10 — a few-ULP codegen artifact, gone on 1.11+.
+                @test ForwardDiff.gradient(v -> ib((v[1], v[2])), q) ≈
+                    ForwardDiff.gradient(v -> ne((v[1], v[2])), q) rtol = 1.0e-12
             end
         end
     end

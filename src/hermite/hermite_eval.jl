@@ -43,7 +43,7 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    # NoExtrap → InBounds for the search once the domain check passes (lean guard-free search).
+    # NoExtrap → InBounds for the search once the domain check passes (lean search).
     # ExtendExtrap passes through: it may arrive OOB → standard two-sided-clamp search (not the
     # lean InBounds one, whose one-sided clamp would give idx ≤ 0 OOB-left); boundary cell extrapolates.
     extrap_eff = _check_domain(x, xq, extrap)
@@ -162,7 +162,7 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    # NoExtrap → InBounds for the search once the domain check passes (lean guard-free search).
+    # NoExtrap → InBounds for the search once the domain check passes (lean search).
     # ExtendExtrap passes through: it may arrive OOB → standard two-sided-clamp search (not the
     # lean InBounds one, whose one-sided clamp would give idx ≤ 0 OOB-left); boundary cell extrapolates.
     extrap_eff = _check_domain(x, xq, extrap)

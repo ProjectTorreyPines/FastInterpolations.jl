@@ -593,7 +593,7 @@ _promote_coord(0.5f0, Float32)  # → 0.5f0 (Float32)
 # not partial sign (cf. `_is_all_inbounds`/`_oob_state`).
 # Scalar domain check. Throws `DomainError` for a NoExtrap OOB query, and RETURNS the extrap to
 # hand the interval search: once the check establishes in-domain, NoExtrap is equivalent to
-# `InBounds()` FOR THE SEARCH, so it promotes to the guard-free lean search
+# `InBounds()` FOR THE SEARCH, so it promotes to the lean search
 # (`search_interval(..., ::InBounds)`) instead of re-paying the boundary guards. Every other mode
 # passes through unchanged (ExtendExtrap keeps the two-sided-clamp guarded search — it legitimately
 # arrives OOB). The promotion is thus the OUTPUT of the check: an eval core reaches the lean search

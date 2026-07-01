@@ -79,6 +79,21 @@ end
 
 merged_entry = Dict{String, Any}("commit" => commit, "date" => entry_date, "benches" => merged_benches)
 
+# Diagnostic hardware fingerprint of the run that produced this point (annotation
+# only — the graph tooltip / our tooling can flag anomalously-fast hardware).
+hw_path = get(ENV, "BENCH_HARDWARE", "")
+if !isempty(hw_path) && isfile(hw_path)
+    merged_entry["cpu"] = JSON.parsefile(hw_path)
+else
+    # Carry a prior fingerprint forward on a re-run with no fresh one.
+    for e in same
+        if haskey(e, "cpu")
+            merged_entry["cpu"] = e["cpu"]
+            break
+        end
+    end
+end
+
 new_suite = vcat(others, [merged_entry])
 sort!(new_suite, by = _date)
 entries_all[SUITE] = new_suite

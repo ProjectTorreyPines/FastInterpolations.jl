@@ -178,6 +178,7 @@ jobs:
             output.json
             benchmark_flat.json
             regression_report.json
+            hardware.json
             pr_number
             pr_head_sha
 
@@ -217,7 +218,7 @@ jobs:
           SRC=gh-pages-wt/bench/data.js
           [ -f "$SRC" ] || SRC=/dev/null
 
-          BENCH_SHA="$SHA" BENCH_COMMIT_META="$PWD/commit_meta.json" \
+          BENCH_SHA="$SHA" BENCH_COMMIT_META="$PWD/commit_meta.json" BENCH_HARDWARE="$PWD/hardware.json" \
             julia --project=benchmark benchmark/update_gh_pages_data.jl \
               "$SRC" master_benches.json gh-pages-wt/bench/data.js
 

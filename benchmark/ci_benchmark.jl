@@ -38,6 +38,35 @@ const EVALS_MED = 50        # ~500ns-2μs benchmarks (50 evals still < 1% timer 
 const EVALS_SLOW = 10       # ~30-100μs benchmarks
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Hardware fingerprint (diagnostic only)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# GitHub's shared runner fleet mixes CPU generations, so a run can land on a
+# noticeably faster box. We record a per-run fingerprint so an anomalously fast
+# point on the dashboard can be traced to its hardware. This is annotation only
+# — it does NOT gate the min-merge.
+
+function hardware_fingerprint()
+    ci = Sys.cpu_info()
+    return Dict{String, Any}(
+        "cpu_name" => Sys.CPU_NAME,          # LLVM uarch target (skylake, znver3, ...)
+        "arch" => String(Sys.ARCH),
+        "model" => isempty(ci) ? "" : ci[1].model,
+        "speed_mhz" => isempty(ci) ? 0 : ci[1].speed,
+        "ncores" => length(ci),
+        "cpu_threads" => Sys.CPU_THREADS,
+        "julia" => string(VERSION),
+    )
+end
+
+let hw = hardware_fingerprint()
+    println("Runner hardware: $(hw["cpu_name"]) | $(hw["model"]) | $(hw["ncores"]) cores | julia $(hw["julia"])")
+    open("hardware.json", "w") do io
+        JSON.print(io, hw)
+    end
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Setup
 # ══════════════════════════════════════════════════════════════════════════════
 

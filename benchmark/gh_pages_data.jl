@@ -68,11 +68,19 @@ earliest date, and the commit metadata from the earliest-dated entry.
 """
 function collapse_entries(entries)
     i_earliest = argmin([_date(e) for e in entries])
-    return Dict{String, Any}(
+    collapsed = Dict{String, Any}(
         "commit" => entries[i_earliest]["commit"],
         "date" => entries[i_earliest]["date"],
         "benches" => merge_benches(entries),
     )
+    # Preserve a hardware fingerprint if any of the collapsed entries carries one.
+    for e in entries
+        if haskey(e, "cpu")
+            collapsed["cpu"] = e["cpu"]
+            break
+        end
+    end
+    return collapsed
 end
 
 """

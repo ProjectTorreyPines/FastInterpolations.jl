@@ -567,10 +567,14 @@ end
 # ══════════════════════════════════════════════════════════════════════════════
 
 const _HAS_BASELINE = !isempty(BASELINE_PATH) && isfile(BASELINE_PATH) && filesize(BASELINE_PATH) > 0
+const _HAS_PREVBEST = !isempty(PREVBEST_PATH) && isfile(PREVBEST_PATH) && filesize(PREVBEST_PATH) > 0
 
-# Master store always runs (even with no baseline: bootstraps the first point);
-# PR verification requires a baseline to compare against.
-if !IS_FILTERED && (!isempty(MASTER_SHA) || _HAS_BASELINE)
+# Enter whenever there is something to do: master store (always — bootstraps the
+# first point), a baseline to compare against, OR a prior-best to min-merge. The
+# last case matters when the gh-pages baseline fetch failed transiently on a PR
+# re-run: we still apply the floor and emit the report so the BENCH_DATA blob
+# keeps the cross-run minimum instead of resetting to this run's raw values.
+if !IS_FILTERED && (!isempty(MASTER_SHA) || _HAS_BASELINE || _HAS_PREVBEST)
     include(joinpath(@__DIR__, "regression_check.jl"))
 
     println("\n" * "="^70)
@@ -600,23 +604,30 @@ if !IS_FILTERED && (!isempty(MASTER_SHA) || _HAS_BASELINE)
         write_master_benches("master_benches.json", effective, results)
         println("Wrote master_benches.json ($(length(effective)) benches)")
     else
-        latest, window_avg = load_baseline(BASELINE_PATH)
-
-        # Prior best times for this commit (from the existing PR comment). Empty on
-        # the first run / when the stored SHA didn't match — degrades to a plain
-        # full-suite run with no merge.
+        # ── PR mode ────────────────────────────────────────────────────────
+        # Prior best times for this commit (from the existing PR comment). Empty
+        # on the first run / when the stored SHA didn't match.
         prev_best = Dict{String, Float64}()
-        if !isempty(PREVBEST_PATH) && isfile(PREVBEST_PATH) && filesize(PREVBEST_PATH) > 0
+        if _HAS_PREVBEST
             for e in JSON.parsefile(PREVBEST_PATH)
                 prev_best[String(e["name"])] = Float64(e["value"])
             end
             println("Loaded $(length(prev_best)) prior-best value(s) for cross-run min-merge")
         end
 
-        if !isempty(latest)
-            # Effective = min(this run, prior best) per benchmark, plus any
-            # benchmark present only in prev_best (not re-run in a subset run).
-            effective = compute_effective(results, prev_best)
+        # Min-merge is applied UNCONDITIONALLY (not gated on the baseline): a
+        # re-run only ever lowers values, and the report we emit — hence the
+        # BENCH_DATA blob — preserves the cross-run minimum even when the
+        # baseline is missing. Only the regression *comparison* needs a baseline.
+        effective = compute_effective(results, prev_best)
+
+        latest = Dict{String, Float64}()
+        window_avg = Dict{String, Float64}()
+        flagged = FlaggedBench[]
+        confirmed = FlaggedBench[]
+
+        if _HAS_BASELINE
+            latest, window_avg = load_baseline(BASELINE_PATH)
             flagged = detect_regressions(effective, latest, window_avg)
 
             if !isempty(flagged)
@@ -646,15 +657,13 @@ if !IS_FILTERED && (!isempty(MASTER_SHA) || _HAS_BASELINE)
                 end
             else
                 println("No regressions detected")
-                flagged = FlaggedBench[]
-                confirmed = FlaggedBench[]
             end
-
-            write_regression_report("regression_report.json", effective, latest, window_avg, flagged, confirmed)
-            println("Wrote regression_report.json")
         else
-            println("No baseline data available, skipping verification")
+            println("No baseline available — applied prev-best min-merge, skipped regression comparison")
         end
+
+        write_regression_report("regression_report.json", effective, latest, window_avg, flagged, confirmed)
+        println("Wrote regression_report.json")
     end   # master-store vs PR mode
 end
 

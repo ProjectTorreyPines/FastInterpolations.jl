@@ -87,7 +87,7 @@ jobs:
               echo "| Benchmark | Current: ${PR_SHORT} | Previous | Imm. Ratio | Grad. Ratio |"
               echo "|-----------|---------------------:|----------:|-----------:|------------:|"
               jq -r '.benchmarks[] |
-                "| `\(.name)` | `\(.value)` ns | `\(.prev_value // "-")` ns | `\(.ratio_immediate // "-")` | `\(.ratio_gradual // "-")` |"
+                "| `\(.name)` | `\((.value * 100 | round) / 100)` ns | `\(.prev_value // "-")` ns | `\(.ratio_immediate // "-")` | `\(.ratio_gradual // "-")` |"
               ' regression_report.json
               echo ""
               echo "</details>"
@@ -102,7 +102,7 @@ jobs:
                 echo "| Benchmark | Current | Previous | Imm. Ratio | Grad. Ratio | Tier |"
                 echo "|-----------|--------:|----------:|-----------:|------------:|------|"
                 jq -r '.benchmarks[] | select(.regression == true) |
-                  "| `\(.name)` | `\(.value)` ns | `\(.prev_value // "-")` ns | `\(.ratio_immediate // "-")` | `\(.ratio_gradual // "-")` | \(if .ratio_immediate != null and .ratio_immediate > '"$IMM_TH"' then (if .ratio_gradual != null and .ratio_gradual > '"$GRAD_TH"' then "both" else "immediate" end) else "gradual" end) |"
+                  "| `\(.name)` | `\((.value * 100 | round) / 100)` ns | `\(.prev_value // "-")` ns | `\(.ratio_immediate // "-")` | `\(.ratio_gradual // "-")` | \(if .ratio_immediate != null and .ratio_immediate > '"$IMM_TH"' then (if .ratio_gradual != null and .ratio_gradual > '"$GRAD_TH"' then "both" else "immediate" end) else "gradual" end) |"
                 ' regression_report.json
                 echo ""
                 echo "> Thresholds: immediate > ${IMM_TH}x (vs latest master), gradual > ${GRAD_TH}x (vs sliding window)"

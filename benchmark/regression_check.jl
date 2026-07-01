@@ -327,7 +327,10 @@ function write_regression_report(
 
         entry = Dict{String, Any}(
             "name" => full_name,
-            "value" => round(current_ns, digits = 1),
+            # Exact (not rounded): this value is reused as the cross-run min-merge
+            # floor via the BENCH_DATA blob, so rounding would bias the floor.
+            # The comment rounds for display.
+            "value" => current_ns,
             "unit" => "ns",
         )
 

@@ -5,8 +5,10 @@ on:
     branches:
       - master
   pull_request:
-    branches:
-      - master
+    # Any base branch (not just master) so stacked / non-master PRs also get
+    # benchmarked. The baseline is always gh-pages master history, and the
+    # gh-pages store only ever runs on push-to-master, so non-master PRs just
+    # get a comparison comment.
     paths:
       - "src/**"
       - "ext/**"
@@ -65,11 +67,21 @@ jobs:
       # PR head SHA is stable across re-runs — that is what powers the min-merge.
       - name: Resolve PR context
         id: ctx
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "pr_number=${{ github.event.number }}" >> "$GITHUB_OUTPUT"
             echo "pr_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.pr_number }}" ]; then
+            # Guard: the dispatch must be started from the PR's head commit, else
+            # we'd benchmark unrelated code but attach it to the PR (and the
+            # SHA-guarded min-merge would silently reset). Fail fast on mismatch.
+            PR_HEAD=$(gh pr view "${{ inputs.pr_number }}" --repo "${{ github.repository }}" --json headRefOid --jq .headRefOid)
+            if [ "$PR_HEAD" != "${{ github.sha }}" ]; then
+              echo "::error::Dispatch is at ${{ github.sha }} but PR #${{ inputs.pr_number }} head is ${PR_HEAD}. Re-dispatch from the PR's head commit."
+              exit 1
+            fi
             echo "pr_number=${{ inputs.pr_number }}" >> "$GITHUB_OUTPUT"
             echo "pr_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else

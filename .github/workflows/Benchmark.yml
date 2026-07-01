@@ -33,6 +33,11 @@ on:
         required: false
         default: false
         type: boolean
+      commit_sha:
+        description: 'Re-benchmark this exact master commit SHA and overwrite its stored point with the min (fix a noisy/spiking graph point). Implies a gh-pages store. Only works for commits that already have the storage-capable harness.'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -50,6 +55,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Empty for normal runs (default ref). For a "fix this commit" dispatch,
+          # check out that exact commit so we benchmark its code with its own harness.
+          ref: ${{ inputs.commit_sha }}
+
+      # Refuse to re-benchmark a commit whose checked-out harness predates storage
+      # support — we'd otherwise fail deep in the run or, worse, mis-store.
+      - name: Guard commit_sha harness
+        if: inputs.commit_sha != ''
+        run: |
+          if ! grep -q -- '--master-sha' benchmark/ci_benchmark.jl || [ ! -f benchmark/update_gh_pages_data.jl ]; then
+            echo "::error::Commit ${{ inputs.commit_sha }} predates the storage-capable benchmark harness — cannot re-benchmark & overwrite its point. Use 'Re-run' on its original run + benchmark/dedup_history.jl instead."
+            exit 1
+          fi
+          echo "Re-benchmarking $(git rev-parse HEAD) with its own storage-capable harness"
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -73,6 +93,10 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "pr_number=${{ github.event.number }}" >> "$GITHUB_OUTPUT"
             echo "pr_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.commit_sha }}" ]; then
+            # Re-benchmark a specific commit -> master store keyed to it, no PR attach.
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
+            echo "pr_sha=" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.pr_number }}" ]; then
             # Guard: the dispatch must be started from the PR's head commit, else
             # we'd benchmark unrelated code but attach it to the PR (and the
@@ -92,8 +116,14 @@ jobs:
           STORE=false
           if [ "${{ github.event_name }}" = "push" ]; then STORE=true; fi
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.push_results }}" = "true" ] && [ "${{ inputs.only_flagged }}" != "true" ]; then STORE=true; fi
+          if [ -n "${{ inputs.commit_sha }}" ]; then STORE=true; fi   # fixing a specific commit always stores
           echo "store=$STORE" >> "$GITHUB_OUTPUT"
-          echo "master_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          # master_sha = the commit whose stored point we (over)write with the min
+          if [ -n "${{ inputs.commit_sha }}" ]; then
+            echo "master_sha=${{ inputs.commit_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "master_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Fetch baseline from gh-pages
         if: steps.ctx.outputs.pr_number != '' || steps.ctx.outputs.store == 'true'
@@ -204,7 +234,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          SHA: ${{ github.sha }}
+          # master_sha == github.sha for a normal push; == inputs.commit_sha when
+          # re-benchmarking a specific commit, so we key/overwrite the right entry.
+          SHA: ${{ steps.ctx.outputs.master_sha }}
         run: |
           if [ ! -s master_benches.json ]; then
             echo "No master_benches.json (no baseline yet?) -> nothing to store"

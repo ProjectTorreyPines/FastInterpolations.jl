@@ -23,8 +23,10 @@
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
     ) where {Tg, N}
-    # 0. Domain check + FillExtrap short-circuit
-    _validate_nd_domain(grids, query, extraps_val)
+    # 0. Validate + promote (in-domain NoExtrap axis → InBounds for the lean search) + FillExtrap
+    #    short-circuit. InBounds no-ops through `_try_fill_oob` / periodic extension /
+    #    `_resolve_extrap` / `_handle_all_extraps` and reaches the extrap-aware search below.
+    extraps_val = _check_domain_nd(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 

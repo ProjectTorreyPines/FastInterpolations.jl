@@ -43,8 +43,11 @@ function _linear_interp_nd_oneshot(
     # encoded in the axis type, the searcher carries `NoBC()` — the wrapper's
     # dispatch handles seam regardless.
     grids_eff = map(_resolve_axis, grids, bcs)
-    # NoExtrap domain check must precede FillExtrap short-circuit
-    _validate_nd_domain(grids_eff, query, extraps_val)
+    # Validate (NoExtrap throw must precede the FillExtrap short-circuit) AND promote per axis:
+    # an in-domain NoExtrap axis becomes InBounds for the search (lean), mirroring the persistent
+    # path. InBounds passes through `_try_fill_oob` / `_resolve_extrap` / `_handle_all_extraps`
+    # (all no-op on it) and reaches the extrap-aware `_search_all_intervals_stencil` below.
+    extraps_val = _check_domain_nd(grids_eff, query, extraps_val)
     oob_result = _try_fill_oob(query, grids_eff, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 

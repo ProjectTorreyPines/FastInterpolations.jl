@@ -30,8 +30,10 @@ Zero-allocation after warmup (pool reuse).
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
     ) where {Tv, N}
-    # 0. NoExtrap domain check must precede FillExtrap short-circuit
-    _validate_nd_domain(grids, query, extraps_val)
+    # 0. Validate (NoExtrap throw must precede FillExtrap short-circuit) AND promote per axis:
+    #    an in-domain NoExtrap axis becomes InBounds for the lean search; InBounds no-ops through
+    #    `_try_fill_oob` / `_resolve_extrap` / `_handle_all_extraps`.
+    extraps_val = _check_domain_nd(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 

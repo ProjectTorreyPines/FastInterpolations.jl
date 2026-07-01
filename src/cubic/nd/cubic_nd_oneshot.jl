@@ -123,8 +123,11 @@ Zero-allocation after warmup (pool reuse).
     # Raw grids: per-axis partials + `_compute_all_local_params` (promotes the cell
     # width) accept a raw/heterogeneous axis. `Tg` only types the pooled buffer.
     Tg = _promote_grid_eltype(grids)
-    # 0. NoExtrap domain check must precede FillExtrap short-circuit
-    _validate_nd_domain(grids, query, extraps_val)
+    # 0. Validate (NoExtrap throw must precede FillExtrap short-circuit) AND promote per axis:
+    #    an in-domain NoExtrap axis becomes InBounds for the search (lean); InBounds is a no-op
+    #    for `_try_fill_oob` / periodic extension / `_handle_all_extraps` and reaches the
+    #    extrap-aware `_search_all_intervals` below.
+    extraps_val = _check_domain_nd(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 

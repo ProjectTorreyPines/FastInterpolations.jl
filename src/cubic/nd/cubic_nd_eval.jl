@@ -65,7 +65,7 @@ end
 # evaluate the kernel multiple times with different derivative ops.
 
 # Generic N-dimensional. `extraps` is the per-axis effective extrap tuple —
-# batch callers pass an InBounds-promoted version from `_check_domain_nd`;
+# batch callers pass an InBounds-promoted version from `_validate_nd_domain`;
 # scalar callers go through the 5-arg forwarder which injects `itp.extraps`.
 @inline function _locate_cell(
         itp::CubicInterpolantND{Tg, Tv, N},

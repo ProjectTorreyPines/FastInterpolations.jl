@@ -395,7 +395,7 @@ end
     # Validate + per-axis promote (in-domain NoExtrap → InBounds for the search), mirroring the
     # homogeneous ND scalar path. PreCompute threads `extraps_eff` to its ND search; the OnTheFly
     # collapse keeps promoting transitively inside each 1D fiber (see `_locate_cell`).
-    extraps_eff = _check_domain_nd(itp.grids, qc, itp.extraps)
+    extraps_eff = _validate_nd_domain(itp.grids, qc, itp.extraps)
     oob_result = _try_fill_oob(qc, itp.grids, extraps_eff, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
     policies = _resolve_search_nd(search, Val(N))

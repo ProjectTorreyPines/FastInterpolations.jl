@@ -129,7 +129,7 @@ Zero-allocation after warmup (pool reuse).
     #    an in-domain NoExtrap axis becomes InBounds for the search (lean); InBounds is a no-op
     #    for `_try_fill_oob` / periodic extension / `_handle_all_extraps` and reaches the
     #    extrap-aware `_search_all_intervals` below.
-    extraps_val = _check_domain_nd(grids, query, extraps_val)
+    extraps_val = _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
@@ -193,11 +193,10 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # Per-axis materialization of extraps against the (possibly extended) grid.
     # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
-    # Batch-level InBounds promotion: per-axis if all queries are in-bounds,
-    # axis gets `InBounds()` so per-query `_try_fill_oob` / `_handle_all_extraps`
-    # branches compile away. Subsumes the prior `_validate_nd_domain` throw
-    # (NoExtrap path goes through 1D `_check_domain`'s `@boundscheck`).
-    extraps_eff = _check_domain_nd(grids_p, queries, extraps_eff)
+    # Validate + batch-level InBounds promotion: throws on OOB NoExtrap and returns `InBounds()`
+    # per axis when all its queries are in-bounds, so the per-query `_try_fill_oob` /
+    # `_handle_all_extraps` branches compile away.
+    extraps_eff = _validate_nd_domain(grids_p, queries, extraps_eff)
     Tz = _promote_eltype(_coeff_op, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data_p)...))

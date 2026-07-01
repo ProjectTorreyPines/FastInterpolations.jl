@@ -39,7 +39,7 @@ end
 # ========================================
 
 # Generic N-dimensional. `extraps` carries batch-level InBounds promotion
-# from `_check_domain_nd` when applicable; scalar callers route via the
+# from `_validate_nd_domain` when applicable; scalar callers route via the
 # 5-arg forwarder (interpolant_protocol.jl) injecting `itp.extraps`.
 @inline function _locate_cell(
         itp::ConstantInterpolantND{Tg, Tv, N},

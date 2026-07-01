@@ -153,7 +153,7 @@ end
     # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
     query = map(_resolve_grididx, query, grids)
     # Validate + per-axis NoExtrap→InBounds promotion, matching the other ND one-shot scalar paths.
-    extraps_val = _check_domain_nd(grids, query, extraps_val)
+    extraps_val = _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
@@ -198,7 +198,7 @@ end
     # `bcs_post` (3rd return) is unused here — see the scalar path note.
     grids_p, buf, _ = _pack_and_extend_nodal_derivs_pooled(pool, grids, data, partials, bcs)
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
-    extraps_eff = _check_domain_nd(grids_p, queries, extraps_eff)
+    extraps_eff = _validate_nd_domain(grids_p, queries, extraps_eff)
 
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))

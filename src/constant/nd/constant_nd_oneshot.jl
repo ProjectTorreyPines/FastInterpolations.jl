@@ -34,7 +34,7 @@ function _constant_interp_nd_oneshot(
     query = map(_resolve_grididx, query, grids_eff)
     # Validate AND promote per axis: an in-domain NoExtrap axis becomes InBounds for the lean
     # search; InBounds no-ops through `_try_fill_oob` / `_resolve_extrap` / `_handle_all_extraps`.
-    extraps_val = _check_domain_nd(grids_eff, query, extraps_val)
+    extraps_val = _validate_nd_domain(grids_eff, query, extraps_val)
     oob_result = _try_fill_oob(query, grids_eff, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
@@ -69,7 +69,7 @@ function _constant_interp_nd_oneshot_batch!(
     _query_validate(queries)
     grids_eff = map(_resolve_axis, grids, bcs)
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
-    extraps_eff = _check_domain_nd(grids_eff, queries, extraps_eff)
+    extraps_eff = _validate_nd_domain(grids_eff, queries, extraps_eff)
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, grids_eff, extraps_eff, ops, first(data))

@@ -130,7 +130,13 @@ Dual type. The interval search uses `_extract_primal(xq)` for comparisons.
         n = length(x)
         @inbounds (n - 1, x[n - 1], x[n])
     else
-        _i, _, _xL, _xR = search_interval(policy, x, xq_primal)
+        # IN_DOMAIN: `_oob_state` already established the (possibly wrapped) query is in-domain, so
+        # the interval search takes the guard-free lean path (InBounds) — bit-identical to guarded,
+        # coupled to the `_oob_state` classification above. A `_ExclusivePeriodicAxis` routes to its
+        # seam-aware search via the InBounds overload (periodic_axis.jl). (Perf-neutral in practice:
+        # the search is amortized over K series and `_oob_state` already pays the boundary compares;
+        # kept for consistency with the other in-domain search paths.)
+        _i, _, _xL, _xR = search_interval(policy, x, xq_primal, InBounds())
         (_i, _xL, _xR)
     end
 

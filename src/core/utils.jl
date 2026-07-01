@@ -591,13 +591,26 @@ _promote_coord(0.5f0, Float32)  # → 0.5f0 (Float32)
 # On the Float64 hot path `oftype(c, xip)` is identity, so this is free.
 # Compares the extracted primal, so a Dual query at the boundary classifies by value,
 # not partial sign (cf. `_is_all_inbounds`/`_oob_state`).
-"Scalar domain check for NoExtrap: throws DomainError if out of domain."
+# Scalar domain check. Throws `DomainError` for a NoExtrap OOB query, and RETURNS the extrap to
+# hand the interval search: once the check establishes in-domain, NoExtrap is equivalent to
+# `InBounds()` FOR THE SEARCH, so it promotes to the lean search
+# (`search_interval(..., ::InBounds)`) instead of re-paying the boundary guards. Every other mode
+# passes through unchanged (ExtendExtrap keeps the two-sided-clamp guarded search — it legitimately
+# arrives OOB). The promotion is thus the OUTPUT of the check: an eval core reaches the lean search
+# only by threading this return, never from a bare `search_interval(..., ::NoExtrap)` (which stays
+# guarded), so an unchecked NoExtrap search can never hit the one-sided lean clamp.
+#
+# The throw is UNCONDITIONAL (not wrapped in `@boundscheck`): `_validate_domain` calls this inside
+# an `@inbounds for` and relies on it always throwing, and the scalar eval surface never wraps a
+# core in `@inbounds` — so the cores' former `@boundscheck _check_domain` never actually elided.
+# Mirrors the vector/batch `_check_domain` (which likewise returns `InBounds()` / the extrap).
+"Scalar domain check for NoExtrap: throws DomainError if OOB, else promotes to InBounds."
 @inline function _check_domain(x::AbstractVector, xi::Real, ::NoExtrap)
     xip = _extract_primal(xi)
     x_min, x_max = _extract_primal(first(x)), _extract_primal(last(x))
     c = _clamp(xip, x_min, x_max)
     (c != oftype(c, xip)) && _throw_domain_error(xi, x_min, x_max)
-    return nothing
+    return InBounds()
 end
 
 # _CachedRange: bounds via `_domain_bounds` — `lo`/`hi` for exact tags (shared
@@ -607,18 +620,21 @@ end
     lo, hi = _domain_bounds(x)
     c = _clamp(xip, _extract_primal(lo), _extract_primal(hi))
     (c != oftype(c, xip)) && _throw_domain_error(xi, x)
-    return nothing
+    return InBounds()
 end
 
-"No-op scalar domain check for non-NoExtrap modes (including InBounds)."
-@inline _check_domain(::AbstractVector, ::Real, ::AbstractExtrap) = nothing
+"No-op scalar domain check for non-NoExtrap modes: returns the extrap unchanged (InBounds stays lean)."
+@inline _check_domain(::AbstractVector, ::Real, extrap::AbstractExtrap) = extrap
 
 "GridIdx is in-domain by construction (bounds-checked at resolution time)."
-@inline _check_domain(::AbstractVector, ::GridIdx, ::AbstractExtrap) = nothing
-# Disambiguation: GridIdx <: Real creates ambiguity with _CachedRange × NoExtrap methods.
-# GridIdx always wins (in-domain by construction).
-@inline _check_domain(::_CachedRange, ::GridIdx, ::NoExtrap) = nothing
-@inline _check_domain(::AbstractVector, ::GridIdx, ::NoExtrap) = nothing
+# GridIdx must NOT promote to InBounds: it has its own `search_interval(s, x, ::GridIdx)` fast path
+# (index short-circuit, O(1), no coordinate search). Promoting NoExtrap→InBounds would route it into
+# the coordinate lean `search_interval(..., ::InBounds)` (GridIdx <: Real), losing the short-circuit
+# (O(log n) reads). Return the extrap unchanged so it keeps the GridIdx fast path.
+@inline _check_domain(::AbstractVector, ::GridIdx, extrap::AbstractExtrap) = extrap
+# Disambiguation: GridIdx <: Real creates ambiguity with the _CachedRange × NoExtrap methods.
+@inline _check_domain(::_CachedRange, ::GridIdx, extrap::NoExtrap) = extrap
+@inline _check_domain(::AbstractVector, ::GridIdx, extrap::NoExtrap) = extrap
 
 # ----------------------------------------
 # Vector domain checks: validate batch, return InBounds() for per-element elision.

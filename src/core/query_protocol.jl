@@ -129,72 +129,26 @@ end
     return nothing
 end
 
-# Scalar point: per-axis scalar check (for oneshot single-point paths)
-# Uses map (not for-loop) to dispatch per-element with concrete types,
-# avoiding Union boxing on heterogeneous extrap tuples.
+# ── ND domain validation, returning the per-axis effective (search) extrap ──
+# Validates (a NoExtrap axis throws `DomainError` when OOB) AND returns the effective per-axis
+# extrap: an in-domain NoExtrap axis promotes to `InBounds()` (→ lean search), every other mode
+# passes through. Callers needing only validation ignore the return. Mirrors the scalar 1D
+# `_check_domain`; the heterogeneous `map` specializes per axis → a concrete tuple (no boxing).
+#
+# Scalar point (oneshot single-point paths). `map` dispatches per-axis on concrete types.
 @inline function _validate_nd_domain(
         grids::NTuple{N, AbstractVector},
         query::Tuple{Vararg{Real, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
-    map(_check_domain, grids, query, extraps)
-    return nothing
+    return map(_check_domain, grids, query, extraps)
 end
 
-# SoA queries: O(nq) per axis via minimum/maximum reduction
-# Uses map for same reason as scalar (heterogeneous extrap safety).
+# SoA batch (Real vectors): per-axis vector `_check_domain` (O(nq) min/max). All-in-bounds →
+# `InBounds()` for that axis, else the original extrap; empty batch → `extraps` unchanged. The
+# `<:Real` bound is load-bearing: batch `_check_domain` is only defined for `AbstractVector{<:Real}`,
+# so a non-Real / duck-typed SoA batch falls to the generic method below (validate, no promotion).
 @inline function _validate_nd_domain(
-        grids::NTuple{N, AbstractVector},
-        queries::Tuple{AbstractVector, Vararg{AbstractVector}},
-        extraps::Tuple{Vararg{AbstractExtrap, N}}
-    ) where {N}
-    isempty(first(queries)) && return nothing
-    map(_check_domain, grids, queries, extraps)
-    return nothing
-end
-
-# Generic queries (AoS, etc.): per-query per-axis scalar check.
-# Uses map over (grids, extraps, axes) to avoid runtime-Int indexing of
-# heterogeneous grid tuples — prevents Union boxing on mixed-grid combos.
-function _validate_nd_domain(
-        grids::NTuple{N, AbstractVector},
-        queries,
-        extraps::Tuple{Vararg{AbstractExtrap, N}}
-    ) where {N}
-    any(e -> e isa NoExtrap, extraps) || return nothing
-    nq = _query_length(queries)
-    axes = ntuple(identity, Val(N))
-    for q in 1:nq
-        query_q = _extract_query_point(queries, q, Val(N))
-        map(grids, extraps, axes) do grid, extrap, d
-            extrap isa NoExtrap && _check_domain(grid, query_q[d], NoExtrap())
-            nothing
-        end
-    end
-    return nothing
-end
-
-# ── Batch-level domain check returning per-axis InBounds-or-original ──
-#
-# ND analog of 1D `_check_domain(x, xi::AbstractVector, extrap) -> InBounds | extrap`.
-# Per-axis: if all queries on axis d are in-bounds, return `InBounds()` for that
-# axis; otherwise keep the original extrap. Result is `NTuple{N, AbstractExtrap}`
-# where each slot is `Union{InBounds, original}` — Julia specializes the map per
-# axis (heterogeneous map, no boxing) into a concrete tuple type.
-#
-# Downstream `_handle_axis_extrap(q, axis, ::InBounds) = q` (nd_utils.jl) is a
-# no-op for InBounds axes, eliding wrap/clamp/fill per-query branches when all
-# queries are in-bounds. Fixes Julia 1.10+ deep-`@inbounds`-non-propagation
-# overhead (ND NoExtrap batch N=2 Nq=1000: 2000 calls → 0 calls expected).
-#
-# SoA only — AoS/generic fallback returns `extraps` unchanged (per-axis min/max
-# would require a linear pass via `_query_extract`; deferred follow-up).
-
-# SoA batch: reuse 1D vector `_check_domain` per axis. NoExtrap throws via the
-# 1D `@boundscheck _is_all_inbounds || _throw_batch_oob`; Wrap/Clamp/Fill return
-# `InBounds()` when all in-bounds, original extrap otherwise; ExtendExtrap (and
-# any fallback) returns itself unchanged.
-@inline function _check_domain_nd(
         grids::NTuple{N, AbstractVector},
         queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
@@ -203,26 +157,24 @@ end
     return map(_check_domain, grids, queries, extraps)
 end
 
-# Scalar point: no batch-level promotion to do — defer to per-axis `_check_domain`
-# inside the eval path. Validate via existing `_validate_nd_domain` then return
-# `extraps` unchanged.
-@inline function _check_domain_nd(
-        grids::NTuple{N, AbstractVector},
-        query::Tuple{Vararg{Real, N}},
-        extraps::Tuple{Vararg{AbstractExtrap, N}}
-    ) where {N}
-    _validate_nd_domain(grids, query, extraps)
-    return extraps
-end
-
-# Generic / AoS: deferred — single linear pass with per-axis min/max accumulators
-# could enable AoS promotion later. For now, validate (NoExtrap throw) and
-# return `extraps` unchanged so the inner per-query path handles each axis.
-@inline function _check_domain_nd(
+# Generic (AoS, etc.): per-query per-axis NoExtrap check (min/max promotion deferred), so return
+# `extraps` unchanged. `map` over (grids, extraps, axes) dodges runtime-Int indexing of the
+# heterogeneous grid tuple (no Union boxing on mixed-grid combos).
+function _validate_nd_domain(
         grids::NTuple{N, AbstractVector},
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
-    _validate_nd_domain(grids, queries, extraps)
+    if any(e -> e isa NoExtrap, extraps)
+        nq = _query_length(queries)
+        axes = ntuple(identity, Val(N))
+        for q in 1:nq
+            query_q = _extract_query_point(queries, q, Val(N))
+            map(grids, extraps, axes) do grid, extrap, d
+                extrap isa NoExtrap && _check_domain(grid, query_q[d], NoExtrap())
+                nothing
+            end
+        end
+    end
     return extraps
 end

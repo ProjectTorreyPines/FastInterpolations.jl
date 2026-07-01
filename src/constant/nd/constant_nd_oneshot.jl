@@ -30,13 +30,17 @@ function _constant_interp_nd_oneshot(
         hints = nothing
     ) where {Tv, N}
     grids_eff = map(_resolve_axis, grids, bcs)
-    _validate_nd_domain(grids_eff, query, extraps_val)
+    # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
+    query = map(_resolve_grididx, query, grids_eff)
+    # Validate AND promote per axis: an in-domain NoExtrap axis becomes InBounds for the lean
+    # search; InBounds no-ops through `_try_fill_oob` / `_resolve_extrap` / `_handle_all_extraps`.
+    extraps_val = _validate_nd_domain(grids_eff, query, extraps_val)
     oob_result = _try_fill_oob(query, grids_eff, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
-    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints)
+    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, extraps_eff)
     idxLs = map(first, stencils)
     hs = map(_get_h, grids_eff, idxLs, Ls, Rs)
     return _constant_nd_evaluate(data, stencils, hs, side_vals, q_eval, Ls, ops, Val(N))
@@ -65,7 +69,7 @@ function _constant_interp_nd_oneshot_batch!(
     _query_validate(queries)
     grids_eff = map(_resolve_axis, grids, bcs)
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
-    extraps_eff = _check_domain_nd(grids_eff, queries, extraps_eff)
+    extraps_eff = _validate_nd_domain(grids_eff, queries, extraps_eff)
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, grids_eff, extraps_eff, ops, first(data))
@@ -74,7 +78,7 @@ function _constant_interp_nd_oneshot_batch!(
             continue
         end
         q_eval = _handle_all_extraps(query_k, grids_eff, extraps_eff)
-        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints)
+        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints, extraps_eff)
         idxLs = map(first, stencils)
         hs = map(_get_h, grids_eff, idxLs, Ls, Rs)
         output[k] = _constant_nd_evaluate(data, stencils, hs, side_vals, q_eval, Ls, ops, Val(N))

@@ -31,15 +31,16 @@ end
 end
 
 @testitem "WidenedDomain — NoExtrap accepts the widened boundary, rejects beyond" begin
-    using FastInterpolations: _cached_range, _WidenedDomain, _Generic, _check_domain, NoExtrap
+    using FastInterpolations: _cached_range, _WidenedDomain, _Generic, _check_domain, NoExtrap, InBounds
 
+    # In-domain NoExtrap now returns `InBounds()` (the search-promotion contract), not `nothing`.
     w = _cached_range(_WidenedDomain(), 0.0, 10.0, 1.0, 1.0, 11)
-    @test _check_domain(w, 10.0, NoExtrap()) === nothing
-    @test _check_domain(w, nextfloat(10.0), NoExtrap()) === nothing          # == domain_hi, in-domain
+    @test _check_domain(w, 10.0, NoExtrap()) === InBounds()
+    @test _check_domain(w, nextfloat(10.0), NoExtrap()) === InBounds()       # == domain_hi, in-domain
     @test_throws DomainError _check_domain(w, nextfloat(nextfloat(10.0)), NoExtrap())
 
     g = _cached_range(_Generic(), 0.0, 10.0, 1.0, 1.0, 11)
-    @test _check_domain(g, 10.0, NoExtrap()) === nothing
+    @test _check_domain(g, 10.0, NoExtrap()) === InBounds()
     @test_throws DomainError _check_domain(g, nextfloat(10.0), NoExtrap())   # no cushion
 end
 

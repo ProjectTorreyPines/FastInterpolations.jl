@@ -266,26 +266,18 @@ end
     end
 end
 
-# ── Type stability of the N=2 batch coordinate path (_locate_cell_2d_preamble) ──
-# The batch path hands a RAW per-query tuple to the N=2 preamble, which routes each axis
-# through `_extrap_axis` (as generic-N) → concrete coordinate even for a mismatched Int query
-# (no `Union` to union-split per batch query).
-@testitem "Type stability — N=2 _locate_cell_2d_preamble concrete for mismatched query eltype" begin
-    using FastInterpolations: _locate_cell_2d_preamble
-
+# ── Type stability of the N=2 coordinate path (now the generic-N locate) ──
+# The 2D locate routes each axis through `_extrap_axis` → a concrete coordinate even for a
+# mismatched Int query (no `Union` to union-split). Verified end-to-end via the public eval.
+@testitem "Type stability — N=2 generic locate concrete for mismatched query eltype" begin
+    # `_locate_cell_2d_preamble` was folded into the generic-N locate; test the same property
+    # (Int query on a Float grid → no `Union` boxing on the coordinate) END-TO-END via the public
+    # eval, which is type-unstable iff the internal locate is. Covers in-domain + both OOB axes.
     g = 0.5:1.0:9.5
     data = [Float64(i + j) for i in 1:10, j in 1:10]
     itp = linear_interp((g, g), data; extrap = ClampExtrap())
 
-    grids = itp.grids
-    extraps = itp.extraps
-    policies = itp.searches          # (AutoSearch(), AutoSearch())
-    hints = (Ref(1), Ref(1))
-    mono = (false, false)
-
-    # Float64 grid ⊕ Int query → Float64 coordinates → fully concrete 6-tuple.
-    RT = Tuple{Float64, Float64, Int, Int, Float64, Float64}
-    @test (@inferred _locate_cell_2d_preamble((3, 4), grids, extraps, policies, hints, mono)) isa RT     # both in-domain
-    @test (@inferred _locate_cell_2d_preamble((-5, 4), grids, extraps, policies, hints, mono)) isa RT    # OOB axis-1
-    @test (@inferred _locate_cell_2d_preamble((3, 99), grids, extraps, policies, hints, mono)) isa RT    # OOB axis-2
+    @test (@inferred itp((3, 4))) isa Float64      # both in-domain, Int query on Float grid
+    @test (@inferred itp((-5, 4))) isa Float64     # OOB axis-1 (ClampExtrap)
+    @test (@inferred itp((3, 99))) isa Float64     # OOB axis-2 (ClampExtrap)
 end

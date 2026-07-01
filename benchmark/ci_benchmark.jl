@@ -38,6 +38,35 @@ const EVALS_MED = 50        # ~500ns-2μs benchmarks (50 evals still < 1% timer 
 const EVALS_SLOW = 10       # ~30-100μs benchmarks
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Hardware fingerprint (diagnostic only)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# GitHub's shared runner fleet mixes CPU generations, so a run can land on a
+# noticeably faster box. We record a per-run fingerprint so an anomalously fast
+# point on the dashboard can be traced to its hardware. This is annotation only
+# — it does NOT gate the min-merge.
+
+function hardware_fingerprint()
+    ci = Sys.cpu_info()
+    return Dict{String, Any}(
+        "cpu_name" => Sys.CPU_NAME,          # LLVM uarch target (skylake, znver3, ...)
+        "arch" => String(Sys.ARCH),
+        "model" => isempty(ci) ? "" : ci[1].model,
+        "speed_mhz" => isempty(ci) ? 0 : ci[1].speed,
+        "ncores" => length(ci),
+        "cpu_threads" => Sys.CPU_THREADS,
+        "julia" => string(VERSION),
+    )
+end
+
+let hw = hardware_fingerprint()
+    println("Runner hardware: $(hw["cpu_name"]) | $(hw["model"]) | $(hw["ncores"]) cores | julia $(hw["julia"])")
+    open("hardware.json", "w") do io
+        JSON.print(io, hw)
+    end
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Setup
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -428,17 +457,32 @@ end
 # CLI Argument Parsing
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Extract --baseline <path> flag (consumed before group number parsing)
-const BASELINE_PATH = let path = ""
-    idx = findfirst(==("--baseline"), ARGS)
-    if !isnothing(idx)
-        idx < length(ARGS) || error("--baseline requires a file path argument")
-        path = ARGS[idx + 1]
-    end
-    path
+# Value-carrying flags consumed before positional (group-number) parsing.
+# --baseline <path>    gh-pages baseline data.js for regression verification
+# --prev-best <path>   JSON array [{name,value}] of prior best times for this
+#                      commit (from the existing PR comment); enables cross-run
+#                      min-merge so re-running a flagged commit only lowers times
+# --only <names>       comma-separated benchmark full-names ("group/bench") to
+#                      run in isolation (flagged-only subset re-run)
+function _extract_flag_value(args, flag)
+    idx = findfirst(==(flag), args)
+    isnothing(idx) && return ""
+    idx < length(args) || error("$flag requires an argument")
+    return args[idx + 1]
 end
 
-# Strip --baseline <path> from ARGS for group parsing
+# --master-sha <sha>   store mode: min-merge/regression-check the master commit's
+#                      point vs the *previous* master and emit master_benches.json
+const _VALUE_FLAGS = ("--baseline", "--prev-best", "--only", "--master-sha")
+
+const BASELINE_PATH = _extract_flag_value(ARGS, "--baseline")
+const PREVBEST_PATH = _extract_flag_value(ARGS, "--prev-best")
+const MASTER_SHA = _extract_flag_value(ARGS, "--master-sha")
+const ONLY_NAMES = let raw = _extract_flag_value(ARGS, "--only")
+    isempty(raw) ? Set{String}() : Set(String.(filter(!isempty, split(raw, ','))))
+end
+
+# Strip value flags (and their arguments) from ARGS for group-number parsing
 const _POSITIONAL_ARGS = let filtered = String[]
     skip_next = false
     for arg in ARGS
@@ -446,7 +490,7 @@ const _POSITIONAL_ARGS = let filtered = String[]
             skip_next = false
             continue
         end
-        if arg == "--baseline"
+        if arg in _VALUE_FLAGS
             skip_next = true
             continue
         end
@@ -487,6 +531,22 @@ if IS_FILTERED
     println("\nFiltered to groups: $(join(FILTER_GROUPS, ", ")) → $(length(suite)) group(s)")
 end
 
+# --only: keep only the named benchmarks ("group/bench"). Used for flagged-only
+# subset re-runs. Non-run benchmarks are filled from --prev-best at report time,
+# so the emitted report stays complete. If no name matches (e.g. stale names),
+# the suite empties and the run degrades to producing a report purely from
+# prev_best — never a crash.
+const IS_ONLY = !isempty(ONLY_NAMES)
+if IS_ONLY
+    for gkey in collect(keys(suite))
+        for bkey in collect(keys(suite[gkey]))
+            "$gkey/$bkey" ∉ ONLY_NAMES && delete!(suite[gkey], bkey)
+        end
+        isempty(suite[gkey]) && delete!(suite, gkey)
+    end
+    println("\nRestricted to $(length(ONLY_NAMES)) named benchmark(s) → $(sum(length, values(suite); init = 0)) kept")
+end
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Run and Save
 # ══════════════════════════════════════════════════════════════════════════════
@@ -506,54 +566,105 @@ end
 # Regression Verification (when --baseline is provided)
 # ══════════════════════════════════════════════════════════════════════════════
 
-if !IS_FILTERED && !isempty(BASELINE_PATH) && isfile(BASELINE_PATH) && filesize(BASELINE_PATH) > 0
+const _HAS_BASELINE = !isempty(BASELINE_PATH) && isfile(BASELINE_PATH) && filesize(BASELINE_PATH) > 0
+const _HAS_PREVBEST = !isempty(PREVBEST_PATH) && isfile(PREVBEST_PATH) && filesize(PREVBEST_PATH) > 0
+
+# Enter whenever there is something to do: master store (always — bootstraps the
+# first point), a baseline to compare against, OR a prior-best to min-merge. The
+# last case matters when the gh-pages baseline fetch failed transiently on a PR
+# re-run: we still apply the floor and emit the report so the BENCH_DATA blob
+# keeps the cross-run minimum instead of resetting to this run's raw values.
+if !IS_FILTERED && (!isempty(MASTER_SHA) || _HAS_BASELINE || _HAS_PREVBEST)
     include(joinpath(@__DIR__, "regression_check.jl"))
 
     println("\n" * "="^70)
     println("REGRESSION VERIFICATION")
     println("="^70)
 
-    latest, window_avg = load_baseline(BASELINE_PATH)
-
-    if !isempty(latest)
-        flagged = detect_regressions(results, latest, window_avg)
-
-        if !isempty(flagged)
-            println("Flagged $(length(flagged)) benchmark(s) for re-verification:")
-            for fb in flagged
-                tier_str = fb.tier == :both ? "immediate+gradual" : string(fb.tier)
-                r_imm = isnothing(fb.ratio_immediate) ? "-" : string(round(fb.ratio_immediate, digits = 3))
-                r_grad = isnothing(fb.ratio_gradual) ? "-" : string(round(fb.ratio_gradual, digits = 3))
-                println("  [$tier_str] $(fb.full_name)  imm=$(r_imm) grad=$(r_grad)")
-            end
-
-            println("\nRe-running flagged benchmarks $(RERUN_N) time(s)...")
-            rerun_and_merge!(suite, results, flagged, RERUN_N, latest, window_avg)
-
-            # Re-evaluate after merge
-            confirmed = detect_regressions(results, latest, window_avg)
-
-            if !isempty(confirmed)
-                println("\nConfirmed $(length(confirmed)) regression(s) after re-verification:")
-                for fb in confirmed
-                    r_imm = isnothing(fb.ratio_immediate) ? "-" : string(round(fb.ratio_immediate, digits = 3))
-                    r_grad = isnothing(fb.ratio_gradual) ? "-" : string(round(fb.ratio_gradual, digits = 3))
-                    println("  $(fb.full_name)  imm=$(r_imm) grad=$(r_grad)")
-                end
-            else
-                println("\nAll flagged benchmarks verified as noise after re-run")
-            end
-        else
-            println("No regressions detected")
-            flagged = FlaggedBench[]
-            confirmed = FlaggedBench[]
+    if !isempty(MASTER_SHA)
+        # ── Master store mode ──────────────────────────────────────────────
+        # prev_best = same-commit floor (re-run only lowers the stored point);
+        # latest/window_avg = the *previous* master, for regression detection.
+        prev_best, latest, window_avg = load_master_baseline(BASELINE_PATH, MASTER_SHA)
+        if !isempty(prev_best)
+            println("Loaded $(length(prev_best)) same-commit prior value(s) for SHA $(MASTER_SHA[1:min(8, lastindex(MASTER_SHA))]) (floor)")
         end
 
-        write_regression_report("regression_report.json", results, latest, window_avg, flagged, confirmed)
-        println("Wrote regression_report.json")
+        effective = compute_effective(results, prev_best)
+        flagged = detect_regressions(effective, latest, window_avg)
+        if !isempty(flagged)
+            println("Flagged $(length(flagged)) benchmark(s) vs previous master; re-running $(RERUN_N)×...")
+            rerun_and_merge!(suite, results, effective, flagged, RERUN_N, prev_best, latest, window_avg)
+            confirmed = detect_regressions(effective, latest, window_avg)
+            println("$(length(confirmed)) still above threshold after re-run (stored as measured; the graph shows the trend)")
+        else
+            println("No regressions vs previous master")
+        end
+
+        write_master_benches("master_benches.json", effective, results)
+        println("Wrote master_benches.json ($(length(effective)) benches)")
     else
-        println("No baseline data available, skipping verification")
-    end
+        # ── PR mode ────────────────────────────────────────────────────────
+        # Prior best times for this commit (from the existing PR comment). Empty
+        # on the first run / when the stored SHA didn't match.
+        prev_best = Dict{String, Float64}()
+        if _HAS_PREVBEST
+            for e in JSON.parsefile(PREVBEST_PATH)
+                prev_best[String(e["name"])] = Float64(e["value"])
+            end
+            println("Loaded $(length(prev_best)) prior-best value(s) for cross-run min-merge")
+        end
+
+        # Min-merge is applied UNCONDITIONALLY (not gated on the baseline): a
+        # re-run only ever lowers values, and the report we emit — hence the
+        # BENCH_DATA blob — preserves the cross-run minimum even when the
+        # baseline is missing. Only the regression *comparison* needs a baseline.
+        effective = compute_effective(results, prev_best)
+
+        latest = Dict{String, Float64}()
+        window_avg = Dict{String, Float64}()
+        flagged = FlaggedBench[]
+        confirmed = FlaggedBench[]
+
+        if _HAS_BASELINE
+            latest, window_avg = load_baseline(BASELINE_PATH)
+            flagged = detect_regressions(effective, latest, window_avg)
+
+            if !isempty(flagged)
+                println("Flagged $(length(flagged)) benchmark(s) for re-verification:")
+                for fb in flagged
+                    tier_str = fb.tier == :both ? "immediate+gradual" : string(fb.tier)
+                    r_imm = isnothing(fb.ratio_immediate) ? "-" : string(round(fb.ratio_immediate, digits = 3))
+                    r_grad = isnothing(fb.ratio_gradual) ? "-" : string(round(fb.ratio_gradual, digits = 3))
+                    println("  [$tier_str] $(fb.full_name)  imm=$(r_imm) grad=$(r_grad)")
+                end
+
+                println("\nRe-running flagged benchmarks $(RERUN_N) time(s)...")
+                rerun_and_merge!(suite, results, effective, flagged, RERUN_N, prev_best, latest, window_avg)
+
+                # Re-evaluate after merge
+                confirmed = detect_regressions(effective, latest, window_avg)
+
+                if !isempty(confirmed)
+                    println("\nConfirmed $(length(confirmed)) regression(s) after re-verification:")
+                    for fb in confirmed
+                        r_imm = isnothing(fb.ratio_immediate) ? "-" : string(round(fb.ratio_immediate, digits = 3))
+                        r_grad = isnothing(fb.ratio_gradual) ? "-" : string(round(fb.ratio_gradual, digits = 3))
+                        println("  $(fb.full_name)  imm=$(r_imm) grad=$(r_grad)")
+                    end
+                else
+                    println("\nAll flagged benchmarks verified as noise after re-run")
+                end
+            else
+                println("No regressions detected")
+            end
+        else
+            println("No baseline available — applied prev-best min-merge, skipped regression comparison")
+        end
+
+        write_regression_report("regression_report.json", effective, latest, window_avg, flagged, confirmed)
+        println("Wrote regression_report.json")
+    end   # master-store vs PR mode
 end
 
 # ══════════════════════════════════════════════════════════════════════════════

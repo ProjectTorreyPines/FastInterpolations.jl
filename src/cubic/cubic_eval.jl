@@ -35,7 +35,7 @@
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq, InBounds())
     dL = xq - xL
     dR = xR - xq
     h = _get_h(x, idx)
@@ -47,8 +47,11 @@
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
-# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check
-# (no-op for non-NoExtrap fallback, throws for NoExtrap on OOB) → delegate.
+# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check (NoExtrap throws
+# on OOB; ExtendExtrap is a no-op and may arrive OOB). Runs the standard two-sided-clamp
+# search + kernel HERE — must NOT delegate to the lean `::InBounds` core, whose one-sided
+# clamp would return idx ≤ 0 on an OOB-left ExtendExtrap query. The boundary cell (idx ∈
+# [1, n-1]) lets `dL`/`dR` extrapolate past the ends.
 @inline function _eval_cubic_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -59,8 +62,19 @@ end
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    @boundscheck _check_domain(x, xq, extrap)
-    return _eval_cubic_at_point(x, y, z, xq, InBounds(), op, searcher)
+    # NoExtrap → InBounds for the search once the domain check passes (lean search);
+    # ExtendExtrap passes through and keeps the two-sided-clamp search (it may arrive OOB).
+    extrap_eff = _check_domain(x, xq, extrap)
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq, extrap_eff)
+    dL = xq - xL
+    dR = xR - xq
+    h = _get_h(x, idx)
+    inv_h = _get_inv_h(x, idx)
+    @inbounds begin
+        zL = z[idx]; zR = z[idx_R]
+        yL = y[idx]; yR = y[idx_R]
+    end
+    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or delegate.

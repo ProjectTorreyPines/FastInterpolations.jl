@@ -23,8 +23,10 @@
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing,
     ) where {Tg, N}
-    # 0. Domain check + FillExtrap short-circuit
-    _validate_nd_domain(grids, query, extraps_val)
+    # 0. Validate + promote (in-domain NoExtrap axis → InBounds for the lean search) + FillExtrap
+    #    short-circuit. InBounds no-ops through `_try_fill_oob` / periodic extension /
+    #    `_resolve_extrap` / `_handle_all_extraps` and reaches the extrap-aware search below.
+    extraps_val = _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
@@ -50,7 +52,8 @@
 
     # 4. Eval pipeline (axis-only — `grids_p` carries `h`/`inv_h` directly)
     q_eval = _handle_all_extraps(query, grids_p, extraps_eff)
-    indices, Ls, _ = _search_all_intervals(q_eval, grids_p, searches, hints)
+    # 5-arg search: per-axis `extraps_eff` → InBounds range axes take the lean direct search.
+    indices, Ls, _ = _search_all_intervals(q_eval, grids_p, searches, hints, extraps_eff)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_p, indices, Ls)
 
     # 6. Heterogeneous tensor-product kernel
@@ -86,7 +89,7 @@ end
     # Post-extension: grid-span IS the wrap domain → 2-arg primitive per-axis.
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
     # Batch-level InBounds promotion: see cubic_nd_oneshot.jl for pattern.
-    extraps_eff = _check_domain_nd(grids_p, queries, extraps_eff)
+    extraps_eff = _validate_nd_domain(grids_p, queries, extraps_eff)
 
     Tv = _value_type(eltype(data), Tg)
     Tz = _promote_eltype(_coeff_op, Tg, Tv)
@@ -104,7 +107,9 @@ end
             continue
         end
         q_eval = _handle_all_extraps(query_k, grids_p, extraps_eff)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, policies, hints)
+        # 5-arg search: `extraps_eff` is InBounds-promoted (via `_validate_nd_domain` above) for
+        # an in-domain batch → InBounds range axes take the lean direct search.
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, policies, hints, extraps_eff)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_p, indices, Ls)
         output[k] = _eval_hetero_nd_cell(partials, indices, hs, inv_hs, dLs, ops, methods)
     end

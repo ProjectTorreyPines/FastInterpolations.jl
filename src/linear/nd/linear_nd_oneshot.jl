@@ -43,14 +43,19 @@ function _linear_interp_nd_oneshot(
     # encoded in the axis type, the searcher carries `NoBC()` — the wrapper's
     # dispatch handles seam regardless.
     grids_eff = map(_resolve_axis, grids, bcs)
-    # NoExtrap domain check must precede FillExtrap short-circuit
-    _validate_nd_domain(grids_eff, query, extraps_val)
+    # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
+    query = map(_resolve_grididx, query, grids_eff)
+    # Validate (NoExtrap throw must precede the FillExtrap short-circuit) AND promote per axis:
+    # an in-domain NoExtrap axis becomes InBounds for the search (lean), mirroring the persistent
+    # path. InBounds passes through `_try_fill_oob` / `_resolve_extrap` / `_handle_all_extraps`
+    # (all no-op on it) and reaches the extrap-aware `_search_all_intervals_stencil` below.
+    extraps_val = _validate_nd_domain(grids_eff, query, extraps_val)
     oob_result = _try_fill_oob(query, grids_eff, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
-    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints)
+    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, extraps_eff)
     αs = map(_alpha_of, q_eval, Ls, Rs, grids_eff)
     # 4-arg `_get_inv_h(g, idx, xL, xR)` — `_CachedVector`/`_CachedRange` use
     # cached fields (idx-indexed or scalar); raw `Vector` falls back to
@@ -83,10 +88,10 @@ function _linear_interp_nd_oneshot_batch!(
     _query_validate(queries)
     grids_eff = map(_resolve_axis, grids, bcs)
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
-    # Batch-level InBounds promotion: replaces `_validate_nd_domain` throw +
-    # elides per-query wrap/clamp/fill on in-bounds axes via the @generated
-    # `_is_fill_oob` and `_handle_axis_extrap(::InBounds)` no-op.
-    extraps_eff = _check_domain_nd(grids_eff, queries, extraps_eff)
+    # Validate + batch-level InBounds promotion: throws on an OOB NoExtrap axis and returns
+    # per-axis `InBounds()` when all queries on an axis are in-bounds, eliding the per-query
+    # wrap/clamp/fill via `_handle_axis_extrap(::InBounds)`.
+    extraps_eff = _validate_nd_domain(grids_eff, queries, extraps_eff)
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, grids_eff, extraps_eff, ops, first(data))
@@ -94,7 +99,7 @@ function _linear_interp_nd_oneshot_batch!(
             output[k] = oob_val; continue
         end
         q_eval = _handle_all_extraps(query_k, grids_eff, extraps_eff)
-        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints)
+        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints, extraps_eff)
         αs = map(_alpha_of, q_eval, Ls, Rs, grids_eff)
         idxLs = map(first, stencils)
         inv_hs = map(_get_inv_h, grids_eff, idxLs, Ls, Rs)

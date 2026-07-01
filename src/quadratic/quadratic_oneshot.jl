@@ -34,13 +34,16 @@
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
-    idx, _, xL, _ = search_interval(searcher, x, xq)
+    xq = _resolve_grididx(xq, x)
+    idx, _, xL, _ = search_interval(searcher, x, xq, InBounds())
     dt = xq - xL  # Can be Dual for AD
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
-# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check
-# → delegate. `_check_domain(::NoExtrap)` throws on OOB; others are no-op.
+# NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check (NoExtrap throws
+# on OOB; ExtendExtrap is a no-op and may arrive OOB). Runs the standard two-sided-clamp
+# search + kernel HERE — must NOT delegate to the lean `::InBounds` core, whose one-sided
+# clamp would return idx ≤ 0 on an OOB-left ExtendExtrap query; the boundary cell extrapolates.
 @inline function _quadratic_eval_at_point(
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
@@ -51,8 +54,13 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
-    @boundscheck _check_domain(x, xq, extrap)
-    return _quadratic_eval_at_point(x, y, a, d, xq, InBounds(), op, searcher)
+    xq = _resolve_grididx(xq, x)
+    # NoExtrap → InBounds for the search once the domain check passes (lean search);
+    # ExtendExtrap passes through and keeps the two-sided-clamp search (it may arrive OOB).
+    extrap_eff = _check_domain(x, xq, extrap)
+    idx, _, xL, _ = search_interval(searcher, x, xq, extrap_eff)
+    dt = xq - xL
+    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
 # ClampExtrap / FillExtrap: boundary check → extrap value or delegate.
@@ -68,7 +76,7 @@ end
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     # Promote to Tc so the OOB extrap value carries the grid carrier (Dual grid →
     # Dual), matching the in-domain kernel. Identity on Float64; Int grids stay Int.
-    xq = _promote_coord(xq, eltype(x))
+    xq = _promote_coord(_resolve_grididx(xq, x), eltype(x))
     xq_primal = _extract_primal(xq)
     st = _oob_state(x, xq_primal)
     st == OOB_LEFT && return _eval_extrapolation(op, first(y), extrap, xq)
@@ -87,7 +95,7 @@ end
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
-    xq_wrapped = _wrap_to_domain(xq, x)
+    xq_wrapped = _wrap_to_domain(_resolve_grididx(xq, x), x)
     return _quadratic_eval_at_point(x, y, a, d, xq_wrapped, InBounds(), op, searcher)
 end
 

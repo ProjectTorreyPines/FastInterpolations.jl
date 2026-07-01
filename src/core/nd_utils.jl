@@ -738,6 +738,44 @@ end
     return @inbounds search_interval(searcher, grid, q)
 end
 
+# ── Extrap-aware per-axis search (6-arg) ──────────────────────────────────────
+# The 5-arg form above plus a trailing per-axis `extrap` — trailing because it is the
+# new modifier and matches the other per-axis extrap helpers (`_extrap_axis(q, grid,
+# extrap)`, `_handle_axis_extrap`, `_check_domain`, which all put `extrap` last), so the
+# first five arguments keep the 5-arg positions verbatim. An `InBounds` axis on a
+# normalized range takes the lean `_search_direct_inbounds` (one-sided clamp — the lower
+# `max(·,1)` is dead when the query is in-domain); the interval is bit-identical to the
+# generic path. The persistent hint is still written back (symmetry with the standard
+# `_search_direct!` / `_search_grididx!` path): an explicitly-provided hint must report
+# the found interval regardless of extrap. PER-AXIS — a mixed `(InBounds, ClampExtrap)`
+# query leans only the InBounds axis. Every other `(extrap, grid)` pair delegates to the
+# 5-arg form unchanged. Any ND `_locate_cell` that threads its `extraps` into the search
+# picks this up; 5-arg callers are unaffected. `hint` is always a concrete `Ref{Int}` here
+# (the 6-arg `_search_all_intervals` is reached only from persistent `_locate_cell`).
+@inline function _search_axis_adaptive(q, grid::_CachedRange, ::AbstractSearchPolicy, hint::Base.RefValue{Int}, _mono, ::InBounds)
+    idx, xL, xR = _search_direct_inbounds(grid, q)
+    hint[] = idx
+    return idx, idx + 1, xL, xR
+end
+@inline function _search_axis_adaptive(q::GridIdx, grid::_CachedRange, ::AbstractSearchPolicy, hint::Base.RefValue{Int}, _mono, ::InBounds)
+    @boundscheck (grid.len >= 2 && 1 <= q.idx <= grid.len) || throw(BoundsError(grid, q.idx))
+    idx = min(q.idx, grid.len - 1)
+    hint[] = idx
+    return idx, idx + 1, (@inbounds grid[idx]), (@inbounds grid[idx + 1])
+end
+@inline _search_axis_adaptive(q, grid::AbstractVector, policy::AbstractSearchPolicy, hint, mono, ::AbstractExtrap) =
+    _search_axis_adaptive(q, grid, policy, hint, mono)
+# InBounds vector grid: reuse the guarded path's Searcher choice (mono → LinearBinarySearch walk,
+# else BinarySearch), but route through the 4-arg lean `search_interval` so a BinarySearch axis drops
+# the `first`/`last` guards; LinearBinarySearch/Linear fall through (no lean). GridIdx is handled by
+# the 4-arg dispatch (index short-circuit). Range keeps the more-specific `_CachedRange` method above;
+# `::AbstractSearchPolicy` (not `::AutoSearch`) keeps this from tying with it on dispatch.
+@inline _axis_vec_searcher(::AutoSearch, hint, is_mono) =
+    is_mono ? _to_searcher(LinearBinarySearch(), hint) : _to_searcher(BinarySearch(), hint)
+@inline _axis_vec_searcher(policy::AbstractSearchPolicy, hint, _is_mono) = _to_searcher(policy, hint)
+@inline _search_axis_adaptive(q, grid::AbstractVector, policy::AbstractSearchPolicy, hint, is_mono, ::InBounds) =
+    @inbounds search_interval(_axis_vec_searcher(policy, hint, is_mono), grid, q, InBounds())
+
 # 5-arg `_search_all_intervals` (mono variant, no spacings).
 @inline function _search_all_intervals(
         q_evals::Tuple{Vararg{Real, N}},
@@ -747,6 +785,22 @@ end
         mono::NTuple{N, Bool},
     ) where {N}
     results = map(_search_axis_adaptive, q_evals, grids, policies, hints, mono)
+    return _project_search_results(results, _getidx)
+end
+
+# 6-arg extrap-aware variant: the 5-arg form plus a trailing `extraps` (positions of the
+# first five match the 5-arg form), threaded per-axis into `_search_axis_adaptive` so
+# InBounds range axes take the lean direct search. Callers with `extraps` in hand (every
+# persistent `_locate_cell`) route here; the 5-arg form stays for callers that do not.
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        policies::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        mono::NTuple{N, Bool},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    results = map(_search_axis_adaptive, q_evals, grids, policies, hints, mono, extraps)
     return _project_search_results(results, _getidx)
 end
 
@@ -801,6 +855,56 @@ end
     return _project_search_results(results, _getidx)
 end
 
+# Extrap-aware per-axis oneshot search (indices path, used by cubic/quad/hermite oneshot).
+# An InBounds axis on a normalized range takes the lean `_search_direct_inbounds`
+# (one-sided clamp), bit-identical to the standard search for an in-bounds query, and
+# still writes the hint (symmetry). EVERY other `(q, grid, extrap)` — GridIdx queries,
+# vector grids, and periodic axes (always WrapExtrap, never InBounds; the `_ExclusivePeriodicAxis`
+# seam wrap in `search_interval` is untouched) — delegates to the 4-arg form verbatim.
+@inline function _search_axis_oneshot_hint(q::Real, grid::_CachedRange, search, hint::Base.RefValue{Int}, ::InBounds)
+    idx, xL, xR = _search_direct_inbounds(grid, q)
+    hint[] = idx
+    return idx, idx + 1, xL, xR
+end
+# GridIdx → 4-arg short-circuit (exact .idx), not the coordinate lean (which can pick an off-by-one
+# cell on non-unit-step ranges). Mirrors the persistent `_search_axis_adaptive(q::GridIdx, …)`.
+@inline _search_axis_oneshot_hint(q::GridIdx, grid::_CachedRange, search, hint::Base.RefValue{Int}, ::InBounds) =
+    _search_axis_oneshot_hint(q, grid, search, hint)
+@inline _search_axis_oneshot_hint(q, grid, search, hint, ::AbstractExtrap) =
+    _search_axis_oneshot_hint(q, grid, search, hint)
+# InBounds vector grid: thread InBounds into the resolved-searcher search so a BinarySearch axis
+# leans; GridIdx routed by the 4-arg dispatch. Range uses the `_CachedRange` method above.
+@inline _search_axis_oneshot_hint(q, grid::AbstractVector, search, hint::Base.RefValue{Int}, ::InBounds) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q, InBounds())
+
+# 5-arg extrap-aware `_search_all_intervals` (oneshot indices path): the 4-arg hint form
+# plus a trailing per-axis `extraps`, threaded into `_search_axis_oneshot_hint` so InBounds
+# range axes take the lean direct search. The trailing `AbstractExtrap`-tuple is type-distinct
+# from the 5-arg `mono::NTuple{N,Bool}` form, so they never collide for N >= 1.
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    results = map(_search_axis_oneshot_hint, q_evals, grids, searches, hints, extraps)
+    return _project_search_results(results, _getidx)
+end
+
+# Nothing-hint 5-arg extrap-aware (scalar oneshot): throwaway Refs (stack-elided), then
+# the with-hint extrap-aware search. The InBounds hint write lands on the throwaway Ref
+# and is DCE'd, so the lean fast path is still 0-alloc.
+@inline function _search_all_intervals(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing,
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    return _search_all_intervals(q_evals, grids, searches, _ensure_hint_nd(nothing, Val(N)), extraps)
+end
+
 # Aqua-required N=0 disambiguators. The grid-only and spacings-based 4-arg
 # / 5-arg variants of `_search_all_intervals` bind to `Tuple{}` ambiguously
 # when N=0 (slot 3+ is `NTuple{0, X}` regardless of `X`). ND interpolants
@@ -809,6 +913,11 @@ end
 @inline _search_all_intervals(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}) =
     ((), (), ())
 @inline _search_all_intervals(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}) =
+    ((), (), ())
+# Nothing-hint 5-arg N=0: the `(…, ::Nothing, mono::NTuple{N,Bool})` and
+# `(…, ::Nothing, extraps::NTuple{N,AbstractExtrap})` forms both collapse to a `Tuple{}`
+# 5th slot at N=0 — this `::Nothing`-4th disambiguator resolves the pair.
+@inline _search_all_intervals(::Tuple{}, ::Tuple{}, ::Tuple{}, ::Nothing, ::Tuple{}) =
     ((), (), ())
 
 # ────────────────────────────────────────────────────────
@@ -858,6 +967,55 @@ end
     return _search_all_intervals_stencil(q_evals, grids, searches, hints)
 end
 
+# Extrap-aware per-axis stencil search (stencil path, used by linear/constant oneshot).
+# An InBounds axis on a normalized range takes the lean `_search_direct_inbounds`
+# (one-sided clamp) and emits the non-seam stencil `(idx, idx+1, …)` — bit-identical to
+# the standard stencil for an in-bounds query. EVERY other `(grid, q, extrap)` delegates
+# to the 4-arg `_search_axis_stencil`: crucially `_ExclusivePeriodicAxis` (always
+# WrapExtrap, never InBounds, and `<: AbstractVector` not `_CachedRange`) keeps its
+# `search_interval` seam wrap `(n, 1, …)` untouched, as do GridIdx and vector grids.
+@inline function _search_axis_stencil(grid::_CachedRange, q::Real, search, hint::Base.RefValue{Int}, ::InBounds)
+    idx, xL, xR = _search_direct_inbounds(grid, q)
+    hint[] = idx
+    return idx, idx + 1, xL, xR
+end
+# GridIdx → short-circuit (exact `.idx`), not the coordinate lean — see the same overload on
+# `_search_axis_oneshot_hint` above for the off-by-one rationale.
+@inline _search_axis_stencil(grid::_CachedRange, q::GridIdx, search, hint::Base.RefValue{Int}, ::InBounds) =
+    _search_axis_stencil(grid, q, search, hint)
+@inline _search_axis_stencil(grid, q, search, hint, ::AbstractExtrap) =
+    _search_axis_stencil(grid, q, search, hint)
+# InBounds vector grid: thread InBounds into the resolved-searcher search (BinarySearch axis leans).
+# Range uses the `_CachedRange` method above; periodic axes are `<: AbstractVector` but never arrive
+# InBounds (always WrapExtrap), so they stay on the `::AbstractExtrap` seam path.
+@inline _search_axis_stencil(grid::AbstractVector, q, search, hint::Base.RefValue{Int}, ::InBounds) =
+    @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q, InBounds())
+
+# 5-arg extrap-aware `_search_all_intervals_stencil`: the 4-arg hint form plus a trailing
+# per-axis `extraps`, threaded into `_search_axis_stencil` so InBounds range axes take the
+# lean direct search. Non-InBounds / non-range / periodic axes are unaffected.
+@inline function _search_all_intervals_stencil(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    results = map(_search_axis_stencil, grids, q_evals, searches, hints, extraps)
+    return _project_search_results(results, _getstencil)
+end
+
+# Nothing-hint 5-arg extrap-aware stencil (scalar oneshot): throwaway Refs (stack-elided).
+@inline function _search_all_intervals_stencil(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing,
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ) where {N}
+    return _search_all_intervals_stencil(q_evals, grids, searches, _ensure_hint_nd(nothing, Val(N)), extraps)
+end
+
 
 """
     _resolve_oneshot_search_nd(search, queries, hint, Val(N)) -> (policies, hints)
@@ -872,39 +1030,6 @@ fresh `Ref{Int}` per axis; user-supplied Refs pass through unchanged.
     policies = _resolve_search_nd(search, Val(N), queries, hint)
     hints = _ensure_hint_nd(hint, Val(N))
     return policies, hints
-end
-
-# ========================================
-# N=2 Specialized Cell Location Preamble
-# ========================================
-#
-# Shared 2D preamble for all N=2 _locate_cell specializations.
-# Extracts query, handles extrapolation, and performs interval search.
-# Returns raw (x_eval, y_eval, ix, iy, xL, yL) for type-specific post-processing.
-
-# N=2 preamble: per-axis adaptive search inside function barrier
-@inline function _locate_cell_2d_preamble(
-        query::Tuple{Vararg{Real, 2}},
-        grids, extraps,
-        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
-        mono::Tuple{Bool, Bool},
-    )
-    xq, yq = query
-    grid_x, grid_y = grids
-    extrap_x, extrap_y = extraps
-    policy_x, policy_y = policies
-    hint_x, hint_y = hints
-    mono_x, mono_y = mono
-
-    # Via `_extrap_axis` (like generic-N) so the N=2 path gets the same query promotion —
-    # keeps a mismatched-eltype coordinate concrete (no batch-loop union-split).
-    x_eval = _extrap_axis(xq, grid_x, extrap_x)
-    y_eval = _extrap_axis(yq, grid_y, extrap_y)
-    ix, _, xL, _ = _search_axis_adaptive(x_eval, grid_x, policy_x, hint_x, mono_x)
-    iy, _, yL, _ = _search_axis_adaptive(y_eval, grid_y, policy_y, hint_y, mono_y)
-
-    return (x_eval, y_eval, ix, iy, xL, yL)
 end
 
 # ========================================

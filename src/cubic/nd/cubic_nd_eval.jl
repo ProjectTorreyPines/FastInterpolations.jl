@@ -5,7 +5,7 @@
 # N-dimensional cubic Hermite interpolation with:
 # - Tg/Tv type separation (grid vs value types)
 # - @generated tensor product for zero-allocation O(1) evaluation
-# - N=2 specialization for optimal batch performance
+# - Generic-N tensor-product locate (no N=2 specialization — verified equal-or-slower)
 # - AD support (query type preserved through evaluation)
 
 const _DEBUG_GENERATED_CELL = Ref(false)  # Debug: inspect @generated code
@@ -65,7 +65,7 @@ end
 # evaluate the kernel multiple times with different derivative ops.
 
 # Generic N-dimensional. `extraps` is the per-axis effective extrap tuple —
-# batch callers pass an InBounds-promoted version from `_check_domain_nd`;
+# batch callers pass an InBounds-promoted version from `_validate_nd_domain`;
 # scalar callers go through the 5-arg forwarder which injects `itp.extraps`.
 @inline function _locate_cell(
         itp::CubicInterpolantND{Tg, Tv, N},
@@ -76,31 +76,17 @@ end
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N}
     q_evals = _handle_all_extraps(query, itp.grids, extraps)
-    indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono)
+    # 6-arg search: per-axis `extraps` let InBounds range axes take the lean direct
+    # search (one-sided clamp; hint still written back) — bit-identical, per-axis, all N.
+    indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, policies, hints, mono, extraps)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.grids, indices, Ls)
 
     return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)
 end
 
-# N=2 specialization: direct destructuring eliminates ntuple closure overhead
-@inline function _locate_cell(
-        itp::CubicInterpolantND{Tg, Tv, 2},
-        query::Tuple{Vararg{Real, 2}},
-        extraps::Tuple{AbstractExtrap, AbstractExtrap},
-        policies::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-        hints::Tuple{Base.RefValue{Int}, Base.RefValue{Int}},
-        mono::Tuple{Bool, Bool},
-    ) where {Tg, Tv}
-    x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, itp.grids, extraps, policies, hints, mono
-    )
-
-    hx = _get_h(itp.grids[1], ix);  hy = _get_h(itp.grids[2], iy)
-    inv_hx = _get_inv_h(itp.grids[1], ix); inv_hy = _get_inv_h(itp.grids[2], iy)
-    dLx = x_eval - xL;  dLy = y_eval - yL
-
-    return (itp.nodal_derivs.partials, (ix, iy), (hx, hy), (inv_hx, inv_hy), (dLx, dLy))
-end
+# No N=2 specialization: the generic-N locate above inlines to the same code at
+# N=2, so a hand-destructured 2D variant is equal-or-slower (verified via
+# same-process method-swap A/B).
 
 # Evaluate kernel at a pre-located cell with given derivative ops
 @inline function _eval_at_cell(

@@ -30,8 +30,12 @@ Zero-allocation after warmup (pool reuse).
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
     ) where {Tv, N}
-    # 0. NoExtrap domain check must precede FillExtrap short-circuit
-    _validate_nd_domain(grids, query, extraps_val)
+    # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
+    query = map(_resolve_grididx, query, grids)
+    # 0. Validate (NoExtrap throw must precede FillExtrap short-circuit) AND promote per axis:
+    #    an in-domain NoExtrap axis becomes InBounds for the lean search; InBounds no-ops through
+    #    `_try_fill_oob` / `_resolve_extrap` / `_handle_all_extraps`.
+    extraps_val = _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
@@ -55,7 +59,7 @@ Zero-allocation after warmup (pool reuse).
 
     # 5. Eval pipeline (axis-only — grids carry `h`/`inv_h` directly)
     q_eval = _handle_all_extraps(query, grids_c, extraps_eff)
-    indices, Ls, _ = _search_all_intervals(q_eval, grids_c, searches, hints)
+    indices, Ls, _ = _search_all_intervals(q_eval, grids_c, searches, hints, extraps_eff)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls)
 
     # 6. Tensor-product kernel evaluation
@@ -97,10 +101,9 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
     _compute_nd_partials_quadratic!(partials, grids_c, data, bcs)
     extraps_eff = map(_resolve_extrap, extraps_val, grids_c)
-    # Batch-level InBounds promotion (see cubic_nd_oneshot.jl). Subsumes
-    # `_validate_nd_domain` and elides per-query wrap/clamp/fill branches on
-    # in-bounds axes.
-    extraps_eff = _check_domain_nd(grids_c, queries, extraps_eff)
+    # Validate + batch-level InBounds promotion (see cubic_nd_oneshot.jl): all-in-bounds axes get
+    # `InBounds()`, eliding per-query wrap/clamp/fill branches.
+    extraps_eff = _validate_nd_domain(grids_c, queries, extraps_eff)
 
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))
@@ -109,7 +112,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
             output[k] = oob_val; continue
         end
         q_eval = _handle_all_extraps(query_k, grids_c, extraps_eff)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids_c, policies, hints)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_c, policies, hints, extraps_eff)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls)
         output[k] = _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
     end

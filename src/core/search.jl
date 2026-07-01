@@ -545,6 +545,36 @@ muladd to identity — no separate `_UnitStep` method needed.
     return idx, xL, xR
 end
 
+"""
+    _search_direct_inbounds(x::_CachedRange, xq::Real)
+
+`InBounds` variant of [`_search_direct`](@ref): the query is already known in-domain
+(an `InBounds` extrap axis, or a `NoExtrap` axis whose `_check_domain` has passed), so
+`xq ≥ lo` ⇒ `idx ≥ 1` and the lower `max(·, 1)` half of `_clamp(idx, 1, len-1)` is
+provably dead — only the top-cell cap `min(·, len-1)` remains. `xL`/`xR` are computed
+identically, so the returned interval is **bit-identical** to `_search_direct` for any
+in-bounds `xq`. A `_UnitStep` axis folds the `×inv_h`/`×h` to identity.
+"""
+@inline function _search_direct_inbounds(x::_CachedRange{T, Tinv}, xq::Real) where {T, Tinv}
+    inv_h = _get_inv_h(x)
+    h = _get_h(x)
+    idx = min(unsafe_trunc(Int, _extract_primal(muladd(xq - x.lo, inv_h, 1))), x.len - 1)
+    xL = muladd(idx - 1, h, x.lo)
+    xR = xL + h
+    return idx, xL, xR
+end
+
+# `_WidenedDomain` exception: the accepted domain `[domain_lo, domain_hi]` is 1 ULP wider than the
+# grid `[lo, hi]` (x86_64 TwicePrecision reconstruction cushion). An in-domain query in
+# `[domain_lo, lo)` sits BELOW the first grid point, so `muladd(xq - lo, inv_h, 1) < 1` — the lower
+# `max(·, 1)` half of the clamp is NOT dead here (unlike the exact tags, where `lo == domain_lo` ⇒
+# in-domain ⇒ `idx ≥ 1`). Keep the two-sided clamp by falling back to the guarded `_search_direct`,
+# which stays bit-identical to it. (The search's cell arithmetic uses grid `x.lo` by convention —
+# `domain_lo/hi` are read by `_domain_bounds` for the domain check only; using `domain_lo` as the
+# coordinate reference here would shift every interior cell by the cushion on zero-crossing ranges.)
+@inline _search_direct_inbounds(x::_CachedRange{T, Tinv, _WidenedDomain}, xq::Real) where {T, Tinv} =
+    _search_direct(x, xq)
+
 
 # ----------------------------------------
 # Promote-then-compare ordering helpers
@@ -604,6 +634,36 @@ compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
         end
     end
     @inbounds xL, xR = x[idx], x[idx + 1]
+    return idx, xL, xR
+end
+
+"""
+    _search_binary_inbounds(x::AbstractVector, xq::Real)
+
+`InBounds` variant of [`_search_binary`](@ref): drops the upfront `_le(xq, first(x))` /
+`_ge(xq, last(x))` boundary guards. Those are an early-out for boundary/OOB queries, NOT
+needed for correctness — the binary loop itself keeps `lo ∈ [1, n-1]`, so it returns the
+same bracketing cell as `_search_binary` for any query (including the exact endpoints). For
+an in-domain query the guards are always-false branches; removing them is bit-identical and
+faster for small grids (the two dropped branches are a larger fraction of a short binary
+search; the win shrinks as `n` grows). Routed
+to only when the extrap is `InBounds` (the standard search keeps the guards for the OOB
+early-out that Clamp/Fill/Extend rely on).
+"""
+@inline function _search_binary_inbounds(x::AbstractVector{T}, xq::Real) where {T <: Real}
+    n = length(x)
+    @inbounds begin
+        lo, hi = 1, n
+        iters = 64 - leading_zeros((hi - lo - 1) % UInt64)
+        for _ in 1:iters
+            mid = (lo + hi) >> 1
+            cond = _le(x[mid], xq)
+            lo = ifelse(cond, mid, lo)
+            hi = ifelse(cond, hi, mid)
+        end
+        idx = lo
+        xL, xR = x[idx], x[idx + 1]
+    end
     return idx, xL, xR
 end
 
@@ -745,11 +805,18 @@ Same @generated strategy as `_walk_left`.
     end
 end
 
+# Window-overflow binary fallback selector for `_search_linear_binary!`: leans to
+# `_search_binary_inbounds` when the search came through the `InBounds` path (query in-domain →
+# the binary `first`/`last` guards are dead), guarded otherwise. Compile-time singleton dispatch.
+@inline _lb_binary_fallback(x, xq, ::AbstractExtrap) = _search_binary(x, xq)
+@inline _lb_binary_fallback(x, xq, ::InBounds) = _search_binary_inbounds(x, xq)
+
 """
-    _search_linear_binary!(x, xq, hint_ref, ::Val{MAX}) -> (idx, xL, xR)
+    _search_linear_binary!(x, xq, hint_ref, ::Val{MAX}[, fallback]) -> (idx, xL, xR)
 
 Bounded linear search within MAX-sized window, then binary fallback.
-Optimal for monotonic query sequences.
+Optimal for monotonic query sequences. The optional `fallback` extrap only selects the
+window-overflow binary variant (`InBounds()` → lean); the hint `clamp` is always kept.
 
 # Optimizations over naive implementation:
 - Hint clamped once at start: guards against user-provided out-of-range hints (e.g. Ref(0),
@@ -764,6 +831,7 @@ Optimal for monotonic query sequences.
         xq::Real,
         hint_ref::Base.RefValue{Int},
         ::Val{MAX},
+        fallback::AbstractExtrap = NoExtrap(),
     ) where {T <: Real, MAX}
     ix = hint_ref[]
     n = length(x)
@@ -789,8 +857,11 @@ Optimal for monotonic query sequences.
             found && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
         end
     end
-    # BinarySearch fallback — full range (narrowing saves < 1 iteration, not worth extra branches)
-    idx, xL, xR = _search_binary(x, xq)
+    # BinarySearch fallback — full range (narrowing saves < 1 iteration, not worth extra branches).
+    # `_lb_binary_fallback` leans to `_search_binary_inbounds` on the `InBounds` path (query in-domain
+    # → `first`/`last` guards dead); guarded otherwise. Singleton dispatch — the default guarded path's
+    # codegen is unchanged.
+    idx, xL, xR = _lb_binary_fallback(x, xq, fallback)
     hint_ref[] = idx
     return idx, xL, xR
 end
@@ -882,6 +953,41 @@ end
     return idx, idx + 1, xL, xR
 end
 
+# Extrap-aware 1D search. A genuine `InBounds` query leans per grid type, both bit-identical
+# to the standard search for an in-bounds query and both writing the hint (symmetry with
+# `_search_direct!`; `NoHint` no-ops via `_write_hint!`):
+#   • normalized `_CachedRange` → `_search_direct_inbounds` (one-sided clamp; the lower
+#     `max(·,1)` is dead in-domain).
+#   • non-uniform vector grid   → `_search_binary_inbounds` (drops the binary search's
+#     `first`/`last` boundary guards, which are always-false branches in-domain).
+# The genuine `::InBounds` eval cores pass `InBounds()` here. GridIdx and any non-InBounds
+# extrap (e.g. ExtendExtrap, which may be OOB and needs the two-sided clamp) delegate to the
+# standard 4-arg search. `_CachedRange` is the more-specific overload, so it wins over the
+# `AbstractVector` one.
+@inline function search_interval(s::Searcher, x::_CachedRange, xq::Real, ::InBounds)
+    idx, xL, xR = _search_direct_inbounds(x, xq)
+    _write_hint!(s.hint, idx)
+    return idx, idx + 1, xL, xR
+end
+@inline function search_interval(s::Searcher, x::AbstractVector, xq::Real, ::InBounds)
+    xq = _promote_coord(xq, eltype(x))
+    idx, xL, xR = _search_interval_real_inbounds(s, x, xq)
+    return idx, idx + 1, xL, xR
+end
+# GridIdx carries a pre-resolved index → route InBounds to the index short-circuit fast path (the
+# 3-arg GridIdx `search_interval` above), NOT the coordinate lean `_search_interval_real_inbounds`:
+# `GridIdx <: Real` would otherwise match the `::Real, ::InBounds` overload and re-run an O(log n)
+# coordinate search. Reached from any GridIdx query that reaches InBounds — e.g. Clamp/Fill's
+# in-domain short-circuit delegates with an explicit `InBounds()`.
+@inline search_interval(s::Searcher, x::AbstractVector, xq::GridIdx, ::InBounds) =
+    search_interval(s, x, xq)
+# Disambiguate `_CachedRange × GridIdx × InBounds` (matches both the range-lean above and the
+# GridIdx short-circuit below) → route to the GridIdx index short-circuit, never the coordinate lean.
+@inline search_interval(s::Searcher, x::_CachedRange, xq::GridIdx, ::InBounds) =
+    search_interval(s, x, xq)
+@inline search_interval(s::Searcher, x::AbstractVector, xq, ::AbstractExtrap) =
+    search_interval(s, x, xq)
+
 # --- Layer 2: Policy-specific Real dispatch ---
 
 # BinarySearch + NoHint (zero-overhead)
@@ -910,6 +1016,24 @@ end
 # DirectSearch + RefHint (Range grids with persistent hint)
 @inline _search_interval_real(p::Searcher{DirectSearch, RefHint}, x::AbstractRange, xq::Real) =
     _search_direct!(x, xq, p.hint.idx)
+
+# --- Layer 2 (InBounds): drop the guards that only a bad *query* would need (the query is
+# in-domain here). `BinarySearch` drops its `first`/`last` boundary guards. `LinearBinarySearch`
+# KEEPS its hint `clamp` (a *hint* guard — a promoted `NoExtrap` may still carry a bad user hint)
+# but passes `InBounds()` so its window-overflow binary fallback leans. `LinearSearch` has no binary
+# fallback, and `DirectSearch` is the `_CachedRange` path (handled one level up), so both fall through
+# unchanged. Hint write-back is preserved (RefHint). ---
+@inline _search_interval_real_inbounds(::Searcher{BinarySearch, NoHint}, x::AbstractVector, xq::Real) =
+    _search_binary_inbounds(x, xq)
+@inline function _search_interval_real_inbounds(p::Searcher{BinarySearch, RefHint}, x::AbstractVector, xq::Real)
+    idx, xL, xR = _search_binary_inbounds(x, xq)
+    p.hint.idx[] = idx
+    return idx, xL, xR
+end
+@inline _search_interval_real_inbounds(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, xq::Real) where {MAX} =
+    _search_linear_binary!(x, xq, p.hint.idx, Val(MAX), InBounds())
+@inline _search_interval_real_inbounds(s::Searcher, x::AbstractVector, xq::Real) =
+    _search_interval_real(s, x, xq)
 
 # ========================================
 # 5. Internal Aliases (for module-internal use)

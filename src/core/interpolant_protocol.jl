@@ -122,7 +122,7 @@ end
     zref = _sample_data(itp)
     @inbounds for k in 1:_query_length(queries)
         query_k = _extract_query_point(queries, k, Val(N))
-        # `extraps_eff` carries per-axis `InBounds()` from `_check_domain_nd`
+        # `extraps_eff` carries per-axis `InBounds()` from `_validate_nd_domain`
         # when all batch queries on that axis are in-bounds (1D `_check_domain`
         # union-split per axis via the heterogeneous `map`). `_try_fill_oob` and
         # `_locate_cell` compile away the wrap/clamp/fill per-query branches on
@@ -175,11 +175,12 @@ end
     # type (Float grid + Int query → Float). Identity on the Float64 hot path; Int
     # grids stay Int. Search remains primal-safe (_oob_state / search extract primal).
     qc = map(_promote_coord, query, map(eltype, itp.grids))
-    # NoExtrap throw must precede FillExtrap short-circuit (mixed-extrap configs).
-    _validate_nd_domain(itp.grids, qc, itp.extraps)
-    oob_result = _try_fill_oob(qc, itp.grids, itp.extraps, ops, _sample_data(itp))
+    # Validate (NoExtrap throw must precede the FillExtrap short-circuit) AND promote per axis:
+    # an in-domain NoExtrap axis becomes InBounds for the search (lean), mirroring the batch path.
+    extraps_eff = _validate_nd_domain(itp.grids, qc, itp.extraps)
+    oob_result = _try_fill_oob(qc, itp.grids, extraps_eff, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
-    cell = _locate_cell(itp, qc, policies, hints, mono)
+    cell = _locate_cell(itp, qc, extraps_eff, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
 end
 
@@ -231,12 +232,9 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
-    # Batch-level InBounds promotion: SoA queries get per-axis InBounds when
-    # every query on that axis is in-bounds; AoS/generic stays original.
-    # Subsumes the NoExtrap throw via 1D `_check_domain`'s `@boundscheck
-    # _is_all_inbounds || _throw_batch_oob`, so the separate `_validate_nd_domain`
-    # call is no longer needed.
-    extraps_eff = _check_domain_nd(itp.grids, queries, itp.extraps)
+    # Validate + batch-level InBounds promotion: throws on OOB NoExtrap and returns per-axis
+    # `InBounds()` for SoA queries all in-bounds on an axis (AoS/generic stays original).
+    extraps_eff = _validate_nd_domain(itp.grids, queries, itp.extraps)
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _check_mono_nd(policies, queries)

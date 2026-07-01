@@ -158,9 +158,11 @@ end
 # threads concrete types (itp.methods, itp.grids, itp.data) through the
 # windowing logic. Inlining lets the compiler specialize on the interpolant's
 # concrete type and unroll the per-axis `map` calls into straight-line code.
-@inline function _build_windowed_cell(itp, q_eval, policies, hints, mono)
+@inline function _build_windowed_cell(itp, q_eval, extraps, policies, hints, mono)
     # Pre-search via per-axis adaptive function barriers (hint state mutated in-place).
-    indices, _, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
+    # Thread `extraps` so an InBounds range axis leans the WINDOW-location search too (bit-identical
+    # index). Inner `_collapse_dims` still re-promotes per 1D fiber via `itp.extraps`.
+    indices, _, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono, extraps)
     # Per-axis window: cell-local for windowable methods, full axis for global-solve.
     # `map` over heterogeneous tuples is unrolled by the compiler with no closure
     # capture, which is more allocation-robust than `ntuple(d -> ..., Val(N))` for
@@ -190,12 +192,16 @@ end
 @inline function _eval_hetero_nd(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:Array},
         query::Tuple{Vararg{Real, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, M, E, P}
-    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
+    # `extraps` is the domain-checked, per-axis InBounds-promoted tuple. `_handle_all_extraps`
+    # folds Clamp/Wrap/Fill (unchanged by promotion) and no-ops on InBounds/NoExtrap. The inner
+    # `_collapse_dims` keeps the ORIGINAL `itp.extraps` so each 1D fiber promotes for itself.
+    q_eval = _handle_all_extraps(query, itp.grids, extraps)
     Tr = _promote_eltype(Tv, Tg, typeof.(q_eval)...)
 
     # Wrap-aware path: routed only when at least one axis is a periodic local
@@ -207,7 +213,7 @@ end
     end
 
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
-        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)
+        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, extraps, policies, hints, mono)
         # Inner kernel uses policies for fiber re-search on sliced grids.
         # Pass `nothing` as hints — tiny inner search on 2–6 point fibers is negligible.
         return _collapse_dims(
@@ -279,13 +285,15 @@ end
 @inline function _eval_hetero_nd(
         itp::HeteroInterpolantND{Tg, Tv, N, G, M, E, P, <:_HeteroPartials},
         query::Tuple{Vararg{Real, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         ops::NTuple{N, AbstractEvalOp},
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, M, E, P}
+    # Direct ND kernel (no inner 1D fibers) → thread the promoted `extraps` into the ND search.
     return _eval_hetero_precomputed(
-        itp.data, itp.grids, itp.methods, itp.extraps,
+        itp.data, itp.grids, itp.methods, extraps,
         query, ops, policies, hints, mono,
     )
 end
@@ -384,13 +392,16 @@ end
     # carries the grid carrier (Dual grid → Dual), matching the OnTheFly collapse.
     # Identity on Float64; Int grids stay Int. (GridIdx branch above returns early.)
     qc = map(_promote_coord, resolved, map(eltype, itp.grids))
-    _validate_nd_domain(itp.grids, qc, itp.extraps)
-    oob_result = _try_fill_oob(qc, itp.grids, itp.extraps, ops, _sample_data(itp))
+    # Validate + per-axis promote (in-domain NoExtrap → InBounds for the search), mirroring the
+    # homogeneous ND scalar path. PreCompute threads `extraps_eff` to its ND search; the OnTheFly
+    # collapse keeps promoting transitively inside each 1D fiber (see `_locate_cell`).
+    extraps_eff = _validate_nd_domain(itp.grids, qc, itp.extraps)
+    oob_result = _try_fill_oob(qc, itp.grids, extraps_eff, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
-    return _eval_hetero_nd(itp, qc, ops, policies, hints, mono)
+    return _eval_hetero_nd(itp, qc, extraps_eff, ops, policies, hints, mono)
 end
 
 # Vararg form: itp(0.5, 0.3) or itp(0.5, GridIdx(3)) → itp((0.5, ...))
@@ -440,7 +451,7 @@ end
     end
 
     if _has_any_windowable_method(itp.methods) && !_has_grididx(typeof(query))
-        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, policies, hints, mono)
+        data_local, grids_local, rel_windows = _build_windowed_cell(itp, q_eval, extraps, policies, hints, mono)
         # Inner kernel uses policies for fiber re-search on sliced grids.
         # Pass user-facing `itp.extraps` here (not InBounds-promoted `extraps`):
         # the recursive 1D collapse runs its own per-axis `_check_domain` and
@@ -478,7 +489,9 @@ end
         mono::NTuple{N, Bool},
     ) where {Tg, Tv, N, G, M, E, P}
     q_eval = _handle_all_extraps(query, itp.grids, extraps)
-    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono)
+    # 6-arg search: per-axis `extraps` let an InBounds range axis take the lean direct
+    # search. Per-axis dispatch (no 1D-style shared core), so ExtendExtrap axes clamp.
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono, extraps)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, itp.grids, indices, Ls)
     return (itp.data.partials, indices, hs, inv_hs, dLs)
 end

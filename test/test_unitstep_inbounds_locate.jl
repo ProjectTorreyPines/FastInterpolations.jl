@@ -304,6 +304,34 @@ end
     end
 end
 
+@testitem "InBounds on _ExclusivePeriodicAxis routes through the seam, not the lean bypass" begin
+    # Regression pin for a latent bug in the InBounds lean work: the generic
+    # `search_interval(s, x::AbstractVector, xq, ::InBounds)` overload catches a
+    # `_ExclusivePeriodicAxis` and delegates to `_search_interval_real(s, g, xq)` — undefined for
+    # the periodic axis (only `g.inner` is searchable; a seam query needs the wrap cell) → a
+    # MethodError. A periodic axis is never genuinely InBounds-lean (WrapExtrap semantics), so
+    # InBounds must route to the seam-aware 3-arg `search_interval`. Triggered by an INTERIOR query
+    # on cubic — its periodic scalar core hoists `_is_inbounds` and passes `InBounds()`, and the ND
+    # one-shot OnTheFly collapse builds the `_ExclusivePeriodicAxis` per fiber. The existing seam
+    # testitem missed it (linear has no InBounds-periodic branch, and it queried the seam cell only).
+    using FastInterpolations: PeriodicBC, WrapExtrap
+
+    x = range(0.0, step = 0.1, length = 20)
+    y = range(0.0, step = 0.2, length = 10)
+    data = [sin(2π * xi) * cos(2π * yj) for xi in x, yj in y]
+    bc = PeriodicBC(endpoint = :exclusive, period = 2.0)
+    interior = ((0.5, 0.5), (0.05, 0.3), (1.3, 1.1), (0.5, 1.85))   # all strictly in-domain
+
+    # Persistent path searches the periodic axis via the seam method directly (never the 1D-InBounds
+    # bypass), so it is unaffected by the bug → use it as the value reference.
+    itp_persist = cubic_interp((x, y), data; bc = bc, extrap = WrapExtrap())
+    for q in interior
+        r = cubic_interp((x, y), data, q; bc = bc, extrap = WrapExtrap())   # pre-fix: MethodError
+        @test isfinite(r)
+        @test r ≈ itp_persist(q)
+    end
+end
+
 @testitem "vector (non-uniform) grid InBounds lean === standard (boundary-guard skip)" begin
     # A non-uniform vector grid uses binary search; InBounds drops the `_le(xq,first)` /
     # `_ge(xq,last)` boundary guards (`_search_binary_inbounds`). Bit-identical to NoExtrap

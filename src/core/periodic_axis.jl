@@ -550,3 +550,14 @@ end
     idx, xL, xR = _search_interval_real(s, g.inner, xq)
     return idx, idx + 1, xL, xR
 end
+
+# InBounds fast path must NOT bypass the seam. The generic
+# `search_interval(s, x::AbstractVector, xq, ::InBounds)` (search.jl) routes any `AbstractVector`
+# — including `_ExclusivePeriodicAxis` — into `_search_interval_real_inbounds`, which delegates to
+# `_search_interval_real(s, g, xq)`: undefined for the periodic axis (the *inner* range is the
+# searchable object, and a seam query needs the wrap cell). A periodic axis is never genuinely
+# `InBounds`-lean (WrapExtrap semantics), so route it to the seam-aware 3-arg search verbatim —
+# restoring the pre-lean-work dispatch. Reached e.g. from `_cubic_interp_periodic_scalar`'s
+# in-bounds branch, which passes `InBounds()` on a `_ExclusivePeriodicAxis` grid.
+@inline search_interval(s::Searcher, g::_ExclusivePeriodicAxis, xq::Real, ::InBounds) =
+    search_interval(s, g, xq)

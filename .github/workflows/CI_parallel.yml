@@ -57,6 +57,7 @@ jobs:
       # Main @testitem suite — PARALLEL. Replaces CI.yml's `julia-runtest` (SKIP_EXTENSIONS);
       # the runner never touches ext/ either. Coverage on → workers write src/*.cov.
       - name: "Main @testitem suite (parallel, nworkers=${{ matrix.nworkers }}) + coverage"
+        shell: bash    # Windows defaults to pwsh, where `\` is not a line continuation
         run: |
           julia --color=yes --code-coverage=user test/runtests_parallel.jl \
             --nworkers ${{ github.event.inputs.nworkers || matrix.nworkers }}

@@ -18,13 +18,19 @@
 #     julia --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 #
 # Usage (from the repo root):
-#     julia test/runtests_parallel.jl --keyword linear              # linear files, 2 workers
-#     julia test/runtests_parallel.jl --keyword cubic  --nworkers 4
-#     julia test/runtests_parallel.jl --keyword linear --nworkers 0 # sequential baseline (compare!)
+#     julia test/runtests_parallel.jl linear                        # linear files, 2 workers
+#     julia test/runtests_parallel.jl cubic --nworkers 4
+#     julia test/runtests_parallel.jl linear --nworkers 0           # sequential baseline (compare!)
+#     julia test/runtests_parallel.jl "Store Policy"                # testitem NAMES match too
+#     julia test/runtests_parallel.jl --regex '^Cubic .* Adjoint'   # regex, name or filename
+#     julia test/runtests_parallel.jl linear "Store Policy"         # multiple patterns = OR
 #     julia test/runtests_parallel.jl                               # whole suite, 2 workers
 #     julia --code-coverage=user test/runtests_parallel.jl          # + coverage (.cov in src/; merge as usual)
 #
-# --keyword matches the file NAME (like `cc-julia-test-runner . linear`, case-insensitive).
+# Patterns match the FILENAME or the @testitem NAME — same semantics as runtests.jl's
+# ARGS filter (`cc-julia-test-runner . "Cubic Adjoint"`). Plain patterns (positional or
+# --keyword) are case-insensitive substrings; --regex takes a Julia regex. A bare "."
+# is ignored (cc-julia-test-runner muscle memory).
 # NOTE: parallelism pays off on LARGE runs (full suite / CI). On a small keyword subset
 # dominated by a few heavy-compile items, workers can't share compilation, so
 # `--nworkers 0` (or plain cc-julia-test-runner) is often faster locally.
@@ -78,24 +84,37 @@ let mf = joinpath(REALTEST, "Manifest.toml")
 end
 
 # ── args (in a function so assignments aren't trapped in a hard local scope) ──
+# Returns (patterns, nworkers). Patterns: String = case-insensitive substring,
+# Regex = as-is; matched against filenames AND @testitem names, OR-combined.
 function parse_args(args)
-    keyword = ""
+    patterns = Union{String, Regex}[]
     nworkers = 2
     i = firstindex(args)
     while i <= lastindex(args)
         a = args[i]
         if a in ("--keyword", "-k")
             i < lastindex(args) || error("--keyword needs a value")
-            keyword = args[i + 1]; i += 2
+            push!(patterns, String(args[i + 1])); i += 2
+        elseif a in ("--regex", "-r")
+            i < lastindex(args) || error("--regex needs a value")
+            push!(patterns, Regex(args[i + 1])); i += 2
         elseif a in ("--nworkers", "-n")
             i < lastindex(args) || error("--nworkers needs a value")
             nworkers = parse(Int, args[i + 1]); i += 2
+        elseif a == "."
+            i += 1                       # cc-julia-test-runner habit: project-path arg
+        elseif startswith(a, "-")
+            error("unknown flag: $(repr(a))  (use PATTERN / --keyword KW / --regex RX / --nworkers N)")
         else
-            error("unknown arg: $(repr(a))  (use --keyword KW / --nworkers N)")
+            push!(patterns, String(a)); i += 1   # positional pattern
         end
     end
-    return keyword, nworkers
+    return patterns, nworkers
 end
+
+_matches(p::String, s) = occursin(lowercase(p), lowercase(s))
+_matches(p::Regex, s) = occursin(p, s)
+_matches_any(patterns, s) = any(p -> _matches(p, s), patterns)
 
 # ── file scan: keep @testitem/@testsetup, blank everything else ──────────────
 # ReTestItems requires files to contain ONLY @testitem/@testsetup. Walk a file's
@@ -108,6 +127,7 @@ function scan_file(path)
     src = read(path, String)
     snips = Tuple{String, String}[]     # @testsnippet (name, body-source) to convert
     cuts = Tuple{Int, Int}[]            # ranges to blank in the shadow copy
+    names = String[]                    # literal @testitem names (for pattern matching)
     pos = firstindex(src)
     while true
         ex, np = Meta.parse(src, pos; raise = false)
@@ -118,6 +138,9 @@ function scan_file(path)
             mname = ex.args[1]
             if mname === Symbol("@testitem") || mname === Symbol("@testsetup")
                 keep = true
+                if mname === Symbol("@testitem") && length(ex.args) >= 3 && ex.args[3] isa String
+                    push!(names, ex.args[3])
+                end
             elseif mname === Symbol("@testsnippet")
                 chunk = src[pos:stop]
                 b = findfirst("begin", chunk)
@@ -133,7 +156,7 @@ function scan_file(path)
         np > lastindex(src) && break
         pos = np
     end
-    return src, snips, cuts
+    return src, snips, cuts, names
 end
 
 # A @testsetup module needs its OWN imports (unlike @testsnippet, which inlines into
@@ -217,31 +240,37 @@ function run_rewriting(f)
 end
 
 # Populate `shadow`, then run the selected tests through ReTestItems.
-function build_and_run(shadow, keyword, nworkers)
-    # Scan every test/ file once: collect @testsnippet defs (→ @testsetup modules) and,
-    # per file, the ranges of non-@testitem/@testsetup top-level exprs to blank.
-    scanned = Dict{String, Tuple{String, Vector{Tuple{Int, Int}}}}()   # path => (src, cuts)
+function build_and_run(shadow, patterns, nworkers)
+    # Scan every test/ file once: collect @testsnippet defs (→ @testsetup modules), per-file
+    # blank ranges (non-@testitem/@testsetup top-level exprs), and @testitem names.
+    scanned = Dict{String, Tuple{String, Vector{Tuple{Int, Int}}, Vector{String}}}()
     snippet_defs = String[]
     for f in readdir(REALTEST; join = true)
         endswith(f, ".jl") || continue
-        src, snips, cuts = scan_file(f)
-        scanned[f] = (src, cuts)
+        src, snips, cuts, names = scan_file(f)
+        scanned[f] = (src, cuts, names)
         for (nm, body) in snips
             push!(snippet_defs, to_testsetup(nm, body))
         end
     end
     write(joinpath(shadow, "aa_wrapper_testsetup.jl"), join(snippet_defs, "\n\n"))
 
-    # Select test_*.jl by filename keyword; shadow each as *_tests.jl. Files with only
-    # @testitem/@testsetup are symlinked; those with other top-level exprs get a copy with
-    # those ranges blanked (line numbers preserved).
+    # Select test_*.jl whose FILENAME or any @testitem NAME matches a pattern (parity with
+    # runtests.jl's ARGS filter); shadow each as *_tests.jl. `allowed` collects the item
+    # names to run: all of them for filename-matched files, the matching ones otherwise.
+    # (An item whose name is computed rather than a literal can only be selected via its
+    # filename.) Files with only @testitem/@testsetup are symlinked; those with other
+    # top-level exprs get a copy with those ranges blanked (line numbers preserved).
     selected = String[]
+    allowed = Set{String}()
     for f in sort(readdir(REALTEST))
         (startswith(f, "test_") && endswith(f, ".jl")) || continue
-        isempty(keyword) || occursin(lowercase(keyword), lowercase(f)) || continue
         real = joinpath(REALTEST, f)
+        src, cuts, names = scanned[real]
+        file_hit = isempty(patterns) || _matches_any(patterns, f)
+        hits = file_hit ? names : Base.filter(n -> _matches_any(patterns, n), names)
+        (file_hit || !isempty(hits)) || continue
         dst = joinpath(shadow, replace(f, r"\.jl$" => "") * "_tests.jl")
-        src, cuts = scanned[real]
         if isempty(cuts)
             try
                 symlink(real, dst)
@@ -256,8 +285,10 @@ function build_and_run(shadow, keyword, nworkers)
             write(dst, buf)
         end
         push!(selected, dst)
+        union!(allowed, hits)
     end
-    isempty(selected) && error("no test files matched keyword $(repr(keyword))")
+    isempty(selected) && error("no test files or testitem names matched $(join(repr.(patterns), ", "))")
+    ti_filter = isempty(patterns) ? Returns(true) : (ti -> ti.name in allowed)
 
     # Spoof :SOURCE_PATH = the package's real runtests.jl so ReTestItems takes its clean
     # path (skips TestEnv.activate) and uses the already-active test env. ReTestItems walks
@@ -265,12 +296,13 @@ function build_and_run(shadow, keyword, nworkers)
     task_local_storage(:SOURCE_PATH, joinpath(REALTEST, "runtests.jl"))
     setupfile = joinpath(shadow, "aa_wrapper_testsetup.jl")
 
-    println("── partest ─ files=$(length(selected))  nworkers=$nworkers  keyword=$(repr(keyword)) ──")
+    sel = isempty(patterns) ? "all" : join(repr.(patterns), ", ") * " → $(length(allowed)) item(s)"
+    println("── partest ─ files=$(length(selected))  nworkers=$nworkers  patterns: $sel ──")
     flush(stdout)
     # Rewrite shadow paths → real test/ paths in ReTestItems' streamed output.
     t = run_rewriting() do
         @elapsed runtests(
-            setupfile, selected...;
+            ti_filter, setupfile, selected...;
             nworkers = nworkers,
             nworker_threads = 1,
             verbose_results = false,
@@ -282,9 +314,9 @@ function build_and_run(shadow, keyword, nworkers)
 end
 
 function main()
-    keyword, nworkers = parse_args(ARGS)
+    patterns, nworkers = parse_args(ARGS)
     return with_shadow(SHADOW) do shadow
-        build_and_run(shadow, keyword, nworkers)
+        build_and_run(shadow, patterns, nworkers)
     end
 end
 

@@ -91,13 +91,19 @@ jobs:
           fail_ci_if_error: false
 
   test-extensions:
-    name: Extensions - Julia ${{ matrix.version }}
+    name: Extensions ${{ matrix.chunk }} - Julia ${{ matrix.version }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         version: ["1.x", "lts"]
+        # Split by EXT_TEST_CHUNK (see test/ext/runtests.jl): the Enzyme testset
+        # alone is ~36 min on Julia 1.12 (vs ~15 min for ALL the rest), so giving
+        # it a dedicated job cuts the Extensions wall time to max(enzyme, rest).
+        # Each chunk is its own process, so the Enzyme-before-ChainRulesCore
+        # loading constraint holds trivially within each job.
+        chunk: [enzyme, rest]
 
     steps:
       - uses: actions/checkout@v4
@@ -114,6 +120,8 @@ jobs:
       # never touches them — run them exactly as CI.yml does, in their own process.
       - name: Extension Tests (AD / Recipes / Symbolics)
         run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=true, test_args=["ext/runtests.jl"])'
+        env:
+          EXT_TEST_CHUNK: ${{ matrix.chunk }}
 
       - uses: julia-actions/julia-processcoverage@v1
         with:

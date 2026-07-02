@@ -4,11 +4,10 @@
 One-time (idempotent) cleanup of the gh-pages benchmark history: collapse every
 group of entries that share a **(commit id, machine)** into a single entry
 holding the per-benchmark **minimum** across that group's runs, keeping the
-earliest date and commit metadata. Points are then re-split by machine into the
-canonical suite (primary machine) + per-machine secondary suites and re-sorted
-chronologically.
+earliest date and commit metadata. Points are then folded onto ONE continuous,
+date-sorted line (the single canonical suite), each annotated with its runner CPU.
 
-This de-noises the graph (each commit becomes one point per machine at its best
+This de-noises the graph (each (commit, machine) becomes one point at its best
 measurement) and removes duplicate points left by past re-runs. Grouping is
 per-machine so a commit measured on two different boxes stays two points —
 collapsing across machines would mix incomparable timings.
@@ -17,7 +16,6 @@ Intended to be run locally against a fresh `gh-pages` checkout; the resulting
 `data.js` is then pushed deliberately (this script never pushes).
 
     out defaults to overwriting the input path.
-    BENCH_PRIMARY_MACHINE (optional) pins the canonical series; else most-common.
 """
 
 include(joinpath(@__DIR__, "gh_pages_data.jl"))
@@ -43,9 +41,15 @@ end
 
 collapsed = [collapse_entries(group) for group in values(by_key)]
 
-primary = primary_machine(collapsed, get(ENV, "BENCH_PRIMARY_MACHINE", ""))
-suites = split_by_machine(collapsed, primary)
-apply_suite_split!(data, suites)
+# One continuous, additive line: fold every (commit, machine) point into the
+# single canonical suite, date-sorted, each annotated with its runner CPU.
+annotate_runner!(collapsed)
+sort!(collapsed, by = _date)
+entries_all = get!(data, "entries", Dict{String, Any}())
+for name in collect(keys(entries_all))
+    (name == SUITE || startswith(name, "$SUITE (")) && delete!(entries_all, name)
+end
+entries_all[SUITE] = collapsed
 data["lastUpdate"] = round(Int, maximum(_date, collapsed))
 
 write_data_js(OUT_PATH, data)
@@ -53,5 +57,5 @@ write_data_js(OUT_PATH, data)
 n_dupe = count(>(1) ∘ length, values(by_key))
 println(
     "Deduped: $(length(all_entries)) entries → $(length(collapsed)) unique (commit,machine) points " *
-        "($(n_dupe) had duplicates); $(length(suites)) machine series (primary=$primary)"
+        "($(n_dupe) had duplicates) on one annotated line"
 )

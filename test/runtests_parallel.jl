@@ -17,6 +17,9 @@
 # package-scoped coverage, exactly like the sequential CI:
 #     RETESTITEMS_NWORKERS=4 julia --project -e 'using Pkg; Pkg.test()'
 #     RETESTITEMS_NWORKERS=2 cc-julia-test-runner . linear
+#     RETESTITEMS_NWORKERS=2 cc-julia-test-runner . "Store Policy"       # testitem name
+#     RETESTITEMS_NWORKERS=2 cc-julia-test-runner . "re:^Cubic .* Anchor" # regex (re: prefix —
+#                                       # the --regex flag can't pass the bash wrapper)
 #
 # ── Standalone use: direct invocation (fast local iteration) ─────────────────
 # Skips the Pkg.test sandbox; the test env must be instantiated once with the
@@ -127,8 +130,12 @@ function parse_args(args)
             nworkers = parse(Int, args[i + 1]); i += 2
         elseif a == "."
             i += 1                       # cc-julia-test-runner habit: project-path arg
+        elseif startswith(a, "re:")
+            # positional regex — flags like --regex can't pass through cc-julia-test-runner
+            # (its bash parser rejects unknown options), a `re:` prefix survives any wrapper
+            push!(patterns, Regex(chopprefix(a, "re:"))); i += 1
         elseif startswith(a, "-")
-            error("unknown flag: $(repr(a))  (use PATTERN / --keyword KW / --regex RX / --nworkers N)")
+            error("unknown flag: $(repr(a))  (use PATTERN / re:REGEX / --keyword KW / --regex RX / --nworkers N)")
         else
             push!(patterns, String(a)); i += 1   # positional pattern
         end

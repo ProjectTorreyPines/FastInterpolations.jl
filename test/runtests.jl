@@ -33,11 +33,12 @@ else
     # Allocation thresholds and AAP_RUNTIME_CHECK live in @testsnippet
     # AllocConstants (test/setup.jl); each @testitem opts in via setup=[AllocConstants].
     # Extension tests in test/ext/ are self-contained (see test/ext/runtests.jl).
-    # ARGS-based filter: pass testitem name OR filename substring.
+    # ARGS-based filter: pass testitem name OR filename substring, or a `re:` regex.
     # Examples:
     #   cc-julia-test-runner . cubic                # all testitems matching "cubic" in name or filename
     #   cc-julia-test-runner . test_grid_spacing    # by filename
     #   cc-julia-test-runner . "Cubic Adjoint"      # by testitem name
+    #   cc-julia-test-runner . "re:^Cubic .* Anchor"  # regex on name or filename
     # NB: the PACKAGE ROOT, exactly what @run_package_tests expands to — run_tests
     # reads the package name from root Project.toml to auto-inject
     # `using FastInterpolations` into every testitem.
@@ -46,7 +47,10 @@ else
         verbose = true,
         filter = ti -> begin
             isempty(ARGS) && return true
-            return any(arg -> occursin(arg, ti.name) || occursin(arg, ti.filename), ARGS)
+            return any(ARGS) do arg
+                p = startswith(arg, "re:") ? Regex(chopprefix(arg, "re:")) : arg
+                return occursin(p, ti.name) || occursin(p, ti.filename)
+            end
         end,
     )
 

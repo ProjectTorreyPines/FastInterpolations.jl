@@ -300,13 +300,25 @@ end
 end
 # Val(true): verbatim FMA form (2 FMA/node) — float/Complex-float keep this, unchanged.
 @inline _linear_value_blend(::Val{true}, α, yL, yR) = muladd(α, yR, muladd(-α, yL, yL))
-# Val(false): generic form — complement formed on the SCALAR weight, value
-# touched once fewer per node. Algebraically identical, also wrap-free,
-# endpoint-exact. Routed through `_lincomb2`: the generic style expands to the
-# exact same muladd(α, yR, (one(α) - α) * yL) expression (bit-identical), while
-# componentwise-capable value types (parametric colorants via the
-# ColorVectorSpace extension) recover per-channel scalar FMA here.
-@inline _linear_value_blend(::Val{false}, α, yL, yR) = _lincomb2(one(α) - α, yL, α, yR)
+# Val(false): style-dispatched on the SAME (weight, value) trait as _lincomb2.
+# Generic expands through _lincomb2 to the exact pre-lincomb expression
+# muladd(α, yR, (one(α) - α) * yL) — bit-identical, complement on the SCALAR
+# weight, wrap-free, endpoint-exact. Componentwise value types get a
+# BLEND-level hook (per family, in extensions/user code) rather than being
+# lowered to _lincomb2: the convex structure (weights are α and 1−α) must
+# survive down to the channels so each channel takes the verbatim 2-FMA form
+# above — flattening to a generic (a, b) weight pair costs the channel fusion
+# and about half the measured colorant win. The core componentwise method is
+# the totality safety net (no matching specialization ⇒ generic expression).
+@inline _linear_value_blend(::Val{false}, α, yL, yR) =
+    _linear_value_blend(
+    _lincomb_style(typeof(α), promote_type(typeof(yL), typeof(yR))),
+    α, yL, yR,
+)
+@inline _linear_value_blend(::_LincombGeneric, α, yL, yR) =
+    _lincomb2(one(α) - α, yL, α, yR)
+@inline _linear_value_blend(::_LincombComponentwise, α, yL, yR) =
+    _lincomb2(one(α) - α, yL, α, yR)
 
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type

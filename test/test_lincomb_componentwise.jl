@@ -67,12 +67,12 @@ end
     @test @inferred(_lincomb_style(Float64, AGray{N0f8})) === _LincombComponentwise()
     @test @inferred(_lincomb_style(Float64, GrayA{N0f8})) === _LincombComponentwise()
 
-    # 4-channel families: native-float channels only — the N0f8 variants
-    # regress on the real kernel path (benchmark-gated; see the ext comment)
+    # 4-channel families: all eligible channels — wins hinge on the convex
+    # blend hook preserving α into the channels (benchmark-gated; ext comment)
     @test @inferred(_lincomb_style(Float64, RGBA{Float64})) === _LincombComponentwise()
     @test @inferred(_lincomb_style(Float64, ARGB{Float64})) === _LincombComponentwise()
-    @test _lincomb_style(Float64, RGBA{N0f8}) === _LincombGeneric()
-    @test _lincomb_style(Float64, ARGB{N0f8}) === _LincombGeneric()
+    @test @inferred(_lincomb_style(Float64, RGBA{N0f8})) === _LincombComponentwise()
+    @test @inferred(_lincomb_style(Float64, ARGB{N0f8})) === _LincombComponentwise()
 
     # ineligible weight or channel → generic (gate includes the weight type)
     @test _lincomb_style(BigFloat, Gray{BigFloat}) === _LincombGeneric()

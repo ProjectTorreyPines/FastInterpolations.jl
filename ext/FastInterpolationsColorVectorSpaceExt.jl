@@ -20,6 +20,7 @@ import FastInterpolations:
     _channel_blend_fuses,
     _lincomb2,
     _lincomb_style,
+    _linear_value_blend,
     _style_from_fuses
 
 @inline _lincomb_style(::Type{A}, ::Type{Gray{T}}) where {A, T} =
@@ -30,23 +31,33 @@ import FastInterpolations:
     _style_from_fuses(_channel_blend_fuses(A, T))
 @inline _lincomb_style(::Type{A}, ::Type{GrayA{T}}) where {A, T} =
     _style_from_fuses(_channel_blend_fuses(A, T))
-# 4-channel families opt in for native-float channels ONLY. RGBA{N0f8}/
-# ARGB{N0f8} measurably regress (~1.5×) on the real 2D kernel path despite
-# passing the channel-FMA gate: three 4-channel FMA chains plus the N0f8
-# conversions exceed the kernel's register/inlining budget (the isolated
-# value-stream blend shows parity — the effect is kernel-context only).
-@inline _lincomb_style(::Type{A}, ::Type{RGBA{T}}) where {A, T <: Base.IEEEFloat} =
+# 4-channel families included: with the CONVEX blend hook below (α preserved
+# into each channel), RGBA{N0f8}/ARGB{N0f8} win on the real 2D kernel
+# (interleaved min 8.39 vs 9.27 / 8.39 vs 9.83 ns/eval, M1). Under the earlier
+# α-flattened `_lincomb2(1-α, xc, α, yc)` channel form they LOST 2-4% — the
+# convex structure is load-bearing, as is the blend method's @inline (without
+# it the 4-channel N0f8 body exceeds the inline cost threshold and a
+# per-node call costs ~55%).
+@inline _lincomb_style(::Type{A}, ::Type{RGBA{T}}) where {A, T} =
     _style_from_fuses(_channel_blend_fuses(A, T))
-@inline _lincomb_style(::Type{A}, ::Type{ARGB{T}}) where {A, T <: Base.IEEEFloat} =
+@inline _lincomb_style(::Type{A}, ::Type{ARGB{T}}) where {A, T} =
     _style_from_fuses(_channel_blend_fuses(A, T))
 
-# Componentwise blend for SAME-type colorant pairs: per-channel scalar
-# `_lincomb2` (native FMA), reassembled by `mapc` into the widened arithmetic
-# color type (Float64 channel results ⇒ e.g. RGB{N0f8} → RGB{Float64}, matching
-# the generic path's output). A mixed concrete pair skips this method and falls
-# to the core safety net — reachable only through a direct `_lincomb2` call:
-# FI's linear kernel constrains both endpoints to one `Tv`, so kernel traffic
-# is always same-type.
+# Componentwise CONVEX blend for SAME-type colorant pairs: α is preserved into
+# each channel so the per-channel call re-enters `_linear_value_blend` and
+# takes the verbatim 2-FMA float form (muladd(α, yc, muladd(-α, xc, xc))).
+# Lowering to `_lincomb2(1-α, xc, α, yc)` instead loses the convex structure —
+# the channel gets mul+muladd, the fusion breaks, and roughly half the win
+# evaporates (and 4-channel N0f8 turns into a small loss). `mapc` reassembles
+# the widened arithmetic color type (RGB{N0f8} → RGB{Float64}, matching the
+# generic path's output). A mixed concrete pair skips this method and falls to
+# the core safety net — FI's linear kernel constrains both endpoints to one
+# `Tv`, so kernel traffic is always same-type.
+@inline _linear_value_blend(::_LincombComponentwise, α, x::C, y::C) where {C <: Colorant} =
+    mapc((xc, yc) -> _linear_value_blend(α, xc, yc), x, y)
+
+# General weighted-pair primitive for direct `_lincomb2` users (future kernels
+# with non-convex weights). The linear blend above does NOT route through this.
 @inline _lincomb2(::_LincombComponentwise, a, x::C, b, y::C) where {C <: Colorant} =
     mapc((xc, yc) -> _lincomb2(a, xc, b, yc), x, y)
 

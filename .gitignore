@@ -29,6 +29,7 @@ LocalPreferences.toml
 
 # Test artifacts
 /test/Manifest.toml
+/test/Manifest-v*.toml
 *.cov
 *.mem
 

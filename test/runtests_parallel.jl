@@ -22,6 +22,11 @@
 # Skips the Pkg.test sandbox; the test env must be instantiated once with the
 # package dev-pinned (a guard below fails loud if not):
 #     julia --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+# Cross-version note: test manifests are per-Julia-version (`Manifest-vX.Y.toml`),
+# so 1.12 ↔ lts switching can't clobber. The CANONICAL path needs no manifest at
+# all (the sandbox resolves fresh) — prefer it on non-primary versions: a
+# dev-pinned manifest for a 1.10 version makes that version's Pkg.test unable to
+# merge ("can not merge projects").
 #
 #     julia test/runtests_parallel.jl linear                        # linear files, 2 workers
 #     julia test/runtests_parallel.jl cubic --nworkers 4
@@ -64,7 +69,11 @@ if STANDALONE
     # registered release. `[sources]` pins it on Julia 1.11+, but LTS (1.10) ignores
     # that section and falls back to the registry — silently testing the wrong code
     # (UndefVarError on unreleased internals, stale behavior). Fail loud instead.
-    let mf = joinpath(REALTEST, "Manifest.toml")
+    # Manifests are per-Julia-version (`Manifest-vX.Y.toml`, Julia 1.10.8+): each
+    # version resolves its own, so switching 1.12 ↔ lts can't clobber or conflict.
+    let mfv = joinpath(REALTEST, "Manifest-v$(VERSION.major).$(VERSION.minor).toml"),
+            mf = isfile(mfv) ? mfv : joinpath(REALTEST, "Manifest.toml")
+
         entry = nothing
         if isfile(mf)
             deps = get(TOML.parsefile(mf), "deps", Dict{String, Any}())
@@ -74,10 +83,12 @@ if STANDALONE
         if !(entry isa AbstractDict && haskey(entry, "path"))
             error(
                 """
-                test/Manifest.toml does not pin FastInterpolations to this checkout
+                test/$(basename(mf)) does not pin FastInterpolations to this checkout
                 (no `path` entry — on Julia $(VERSION) the `[sources]` section may be
                 unsupported, so Pkg resolved the REGISTERED release instead). Fix once with:
                     julia --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+                (Or skip standalone mode on this Julia version and use the canonical path,
+                which needs no manifest: RETESTITEMS_NWORKERS=2 cc-julia-test-runner .)
                 """
             )
         end

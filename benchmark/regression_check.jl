@@ -29,9 +29,10 @@ const SUITE_NAME = "FastInterpolations.jl Benchmarks"
 """
     read_suite_entries(data_js_path) -> Vector
 
-Parse a gh-pages `data.js` and return the chronological entry array for this
-package's benchmark suite (each entry: `Dict` with "commit", "date",
-"benches"). Returns an empty vector on missing / empty / unparseable input.
+Parse a gh-pages `data.js` and return every entry for this package across the
+canonical suite AND any per-machine secondary suites (`"<suite> (<key>)"`),
+flattened. Callers filter by machine key. Returns an empty vector on missing /
+empty / unparseable input.
 """
 function read_suite_entries(data_js_path::String)
     (isfile(data_js_path) && filesize(data_js_path) > 0) || return Any[]
@@ -45,10 +46,54 @@ function read_suite_entries(data_js_path::String)
     data = JSON.parse(json_str)
     entries_dict = get(data, "entries", Dict())
     isempty(entries_dict) && return Any[]
-    return get(entries_dict, SUITE_NAME, get(entries_dict, first(keys(entries_dict)), Any[]))
+
+    out = Any[]
+    for (name, es) in entries_dict
+        (name == SUITE_NAME || startswith(name, "$SUITE_NAME (")) && append!(out, es)
+    end
+    # Fallback for a foreign single-suite file whose name we don't recognise.
+    isempty(out) && return get(entries_dict, first(keys(entries_dict)), Any[])
+    return out
 end
 
 _commit_id(entry) = get(get(entry, "commit", Dict{String, Any}()), "id", "")
+
+_entry_date(entry) = Float64(entry["date"])
+
+# Machine key of a stored point — mirror of gh_pages_data.jl's entry_machine_key
+# (machine_key comes from bench_machine.jl, in scope via ci_benchmark.jl).
+function _entry_machine_key(entry)
+    haskey(entry, "cpu") || return "unknown"
+    hw = entry["cpu"]
+    (haskey(hw, "cpu_name") && haskey(hw, "ncores")) || return "unknown"
+    return machine_key(hw)
+end
+
+# One machine's series, chronologically. Baselines are computed within a single
+# machine so a slower/faster box never confounds the regression comparison.
+function _same_machine(entries, key::AbstractString)
+    filtered = [e for e in entries if _entry_machine_key(e) == key]
+    sort!(filtered, by = _entry_date)
+    return filtered
+end
+
+"""
+    latest_master_machine(data_js_path) -> String
+
+Machine key of the most-recent master commit's point overall (any machine) — the
+natural immediate baseline the PR's ratios stand next to. `"unknown"` when that
+point carries no fingerprint (older history); `""` when there is no history. Used
+to warn when a PR ran on a different CPU than the baseline it is compared against.
+"""
+function latest_master_machine(data_js_path::String)
+    entries = try
+        read_suite_entries(data_js_path)
+    catch
+        return ""
+    end
+    isempty(entries) && return ""
+    return _entry_machine_key(argmax(_entry_date, entries))
+end
 
 _benches_to_dict(benches) = Dict{String, Float64}(b["name"] => Float64(b["value"]) for b in benches)
 
@@ -79,16 +124,18 @@ function _window_average(entries)
 end
 
 """
-    load_baseline(data_js_path) -> (latest, window_avg)
+    load_baseline(data_js_path, key) -> (latest, window_avg)
 
-Parse gh-pages `data.js` and extract two baselines (PR mode):
-- `latest`: Dict{String,Float64} from the most recent push
-- `window_avg`: Dict{String,Float64} averaged over WINDOW_W commits around LOOKBACK_M ago
+Parse gh-pages `data.js` and extract two baselines (PR mode) from the `key`
+machine's series only, so a PR is never compared against a point measured on a
+different box:
+- `latest`: Dict{String,Float64} from the most recent same-machine push
+- `window_avg`: averaged over WINDOW_W same-machine commits around LOOKBACK_M ago
 """
-function load_baseline(data_js_path::String)
+function load_baseline(data_js_path::String, key::AbstractString)
     empty_result = (Dict{String, Float64}(), Dict{String, Float64}())
     entries = try
-        read_suite_entries(data_js_path)
+        _same_machine(read_suite_entries(data_js_path), key)
     catch
         return empty_result
     end
@@ -99,20 +146,22 @@ function load_baseline(data_js_path::String)
 end
 
 """
-    load_master_baseline(data_js_path, current_sha) -> (prev_best, latest, window_avg)
+    load_master_baseline(data_js_path, current_sha, key) -> (prev_best, latest, window_avg)
 
-Master-store variant. Splits the history relative to `current_sha`:
-- `prev_best`: per-benchmark min across ALL existing entries for `current_sha`
-  (robust to pre-existing duplicate points) — the cross-run floor that makes a
-  re-run of the same master commit only lower the stored value.
-- `latest` / `window_avg`: baselines from entries of *other* commits (the true
-  previous master state), so regression detection never compares a commit to
-  its own earlier run.
+Master-store variant, restricted to the `key` machine's series. Splits that
+history relative to `current_sha`:
+- `prev_best`: per-benchmark min across existing entries for `current_sha` **on
+  this machine** — the same-box cross-run floor that makes a re-run only lower
+  the stored value.
+- `latest` / `window_avg`: baselines from *other* commits on the same machine,
+  so regression detection never compares a commit to its own earlier run nor to
+  a different box. Empty (⇒ comparison skipped) the first time this machine
+  appears.
 """
-function load_master_baseline(data_js_path::String, current_sha::AbstractString)
+function load_master_baseline(data_js_path::String, current_sha::AbstractString, key::AbstractString)
     empty_result = (Dict{String, Float64}(), Dict{String, Float64}(), Dict{String, Float64}())
     entries = try
-        read_suite_entries(data_js_path)
+        _same_machine(read_suite_entries(data_js_path), key)
     catch
         return empty_result
     end
@@ -316,6 +365,8 @@ function write_regression_report(
         window_avg::Dict{String, Float64},
         initially_flagged::Vector{FlaggedBench},
         confirmed::Vector{FlaggedBench},
+        current_machine::AbstractString = "",
+        baseline_machine::AbstractString = "",
     )
     flagged_names = Set(fb.full_name for fb in initially_flagged)
     confirmed_names = Set(fb.full_name for fb in confirmed)
@@ -367,6 +418,14 @@ function write_regression_report(
             "total" => length(benchmarks),
             "initially_flagged" => length(initially_flagged),
             "confirmed_regressions" => length(confirmed),
+        ),
+        # Machine provenance for the comment's cross-CPU warning: `current` is the
+        # runner this PR measured on; `baseline` is the CPU of master's most-recent
+        # commit (the natural comparison baseline; "unknown" if unfingerprinted).
+        "machine" => Dict{String, Any}(
+            "current" => current_machine,
+            "baseline" => baseline_machine,
+            "baseline_same" => baseline_machine == current_machine,
         ),
         "benchmarks" => benchmarks,
     )

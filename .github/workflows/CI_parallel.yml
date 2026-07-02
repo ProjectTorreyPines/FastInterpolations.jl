@@ -51,15 +51,23 @@ jobs:
 
       # runtests_parallel.jl activates test/Project.toml; instantiate it so the workers
       # see the test deps (ReTestItems is a test-only dep declared there).
-      - name: Instantiate the test environment
-        run: julia --color=yes --project=test -e 'using Pkg; Pkg.instantiate()'
+      # Pkg.develop(path=".") pins FastInterpolations to THIS CHECKOUT: the [sources]
+      # entry in test/Project.toml is Julia 1.11+ only — on LTS (1.10) Pkg ignores it
+      # and resolves the REGISTERED version, silently testing the wrong code.
+      - name: Instantiate the test environment (dev this checkout)
+        run: julia --color=yes --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 
       # Main @testitem suite — PARALLEL. Replaces CI.yml's `julia-runtest` (SKIP_EXTENSIONS);
       # the runner never touches ext/ either. Coverage on → workers write src/*.cov.
+      # --check-bounds=yes matches Pkg.test (sequential CI): it neutralizes @inbounds,
+      # which both catches out-of-bounds bugs AND pins the FP codegen the suite's tight
+      # ULP tolerances were calibrated against (with @inbounds active, x86_64 SIMD
+      # reassociation drifts extension-polynomial results by ~4e-14 past atol=1e-14).
+      # Workers inherit the flag via Base.julia_cmd().
       - name: "Main @testitem suite (parallel, nworkers=${{ matrix.nworkers }}) + coverage"
         shell: bash    # Windows defaults to pwsh, where `\` is not a line continuation
         run: |
-          julia --color=yes --code-coverage=user test/runtests_parallel.jl \
+          julia --color=yes --check-bounds=yes --code-coverage=user test/runtests_parallel.jl \
             --nworkers ${{ github.event.inputs.nworkers || matrix.nworkers }}
 
       # Thread-safety — identical to CI.yml, multi-threaded in ONE process (bumped 2 → 4).

@@ -33,10 +33,13 @@ jobs:
         include:
           - os: ubuntu-latest
             nworkers: 4
+            precompile_tasks: 4
           - os: macos-latest
             nworkers: 3
+            precompile_tasks: 2    # 7 GB runner: 3 concurrent Enzyme/Symbolics-class precompiles swap-storm
           - os: windows-latest
             nworkers: 4
+            precompile_tasks: 4
 
     steps:
       - uses: actions/checkout@v4
@@ -54,8 +57,14 @@ jobs:
       # Pkg.develop(path=".") pins FastInterpolations to THIS CHECKOUT: the [sources]
       # entry in test/Project.toml is Julia 1.11+ only — on LTS (1.10) Pkg ignores it
       # and resolves the REGISTERED version, silently testing the wrong code.
+      # --check-bounds=yes here matches the suite step: on Julia 1.11+ pkgimages are
+      # keyed on that flag, so precompiling under it lets every worker load cached
+      # native code instead of re-JITting the dep stack.
       - name: Instantiate the test environment (dev this checkout)
-        run: julia --color=yes --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+        timeout-minutes: 30      # a wedged precompile should fail fast, not eat the job's 120min
+        env:
+          JULIA_NUM_PRECOMPILE_TASKS: ${{ matrix.precompile_tasks }}
+        run: julia --color=yes --check-bounds=yes --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 
       # Main @testitem suite — PARALLEL. Replaces CI.yml's `julia-runtest` (SKIP_EXTENSIONS);
       # the runner never touches ext/ either. Coverage on → workers write src/*.cov.
@@ -64,14 +73,24 @@ jobs:
       # ULP tolerances were calibrated against (with @inbounds active, x86_64 SIMD
       # reassociation drifts extension-polynomial results by ~4e-14 past atol=1e-14).
       # Workers inherit the flag via Base.julia_cmd().
+      # Coverage is PACKAGE-SCOPED (@workspace), matching Pkg.test — `user` would
+      # instrument every dependency, which disables their native caches and forces
+      # each worker to re-JIT the whole dep stack (~2x suite wall-clock).
       - name: "Main @testitem suite (parallel, nworkers=${{ matrix.nworkers }}) + coverage"
         shell: bash    # Windows defaults to pwsh, where `\` is not a line continuation
         run: |
-          julia --color=yes --check-bounds=yes --code-coverage=user test/runtests_parallel.jl \
+          julia --color=yes --check-bounds=yes --code-coverage=@"$GITHUB_WORKSPACE" test/runtests_parallel.jl \
             --nworkers ${{ github.event.inputs.nworkers || matrix.nworkers }}
 
       # Thread-safety — identical to CI.yml, multi-threaded in ONE process (bumped 2 → 4).
       # These use plain Pkg.test (TestItemRunner), since the point is real threads, not workers.
+      # The dev-pinned test/Manifest.toml from the instantiate step must go first: on
+      # Julia 1.10 Pkg.test cannot merge a manifest that already devs the package
+      # ("can not merge projects"). Pkg.test builds its own sandbox anyway.
+      - name: Drop the dev-pinned test manifest (Pkg.test builds its own sandbox)
+        shell: bash
+        run: rm -f test/Manifest.toml
+
       - name: Thread Safety Tests (4 threads)
         run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=true, julia_args=["-t", "4"], test_args=["test_thread_safety.jl"])'
 

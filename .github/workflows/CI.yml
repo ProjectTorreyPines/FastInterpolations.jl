@@ -1,5 +1,13 @@
 name: CI
 
+# The main @testitem suite runs in PARALLEL: RETESTITEMS_NWORKERS routes
+# test/runtests.jl through ReTestItems worker processes (see
+# test/runtests_parallel.jl). The suite still runs under Pkg.test via
+# julia-runtest, so the sandbox (this checkout auto-dev'd),
+# --check-bounds=yes, and package-scoped coverage all match the former
+# sequential CI. Extensions are split into enzyme/rest chunk jobs
+# (EXT_TEST_CHUNK, see test/ext/runtests.jl) — the Enzyme testset alone
+# dominates the extension suite on Julia 1.12.
 on:
   push:
     branches:
@@ -13,6 +21,10 @@ on:
       - "Project.toml"
       - ".github/workflows/CI.yml"
   workflow_dispatch:
+    inputs:
+      nworkers:
+        description: "Override workers for ALL jobs (blank = per-OS default: ubuntu/windows 4, macos 3)"
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -21,17 +33,30 @@ concurrency:
 jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}     # public repo: ubuntu/windows = 4 vCPUs, macos = 3
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        version:
-          - "1.x"
-          - "lts"
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
+        version: ["1.x", "lts"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          # coverage: ubuntu only. The suite is OS-identical, so ubuntu's upload fully
+          # covers codecov; skipping it elsewhere trims the scoped-coverage overhead
+          # (package re-JIT with instrumentation + per-worker .cov writeout) on the
+          # slowest runners. Flip to true anywhere to re-measure.
+          - os: ubuntu-latest
+            nworkers: 4
+            precompile_tasks: 4
+            coverage: true
+          - os: macos-latest
+            nworkers: 3
+            precompile_tasks: 2    # 7 GB runner: 3 concurrent Enzyme-class precompiles swap-storm
+            coverage: false
+          - os: windows-latest
+            nworkers: 4
+            precompile_tasks: 4
+            coverage: false
 
     steps:
       - uses: actions/checkout@v4
@@ -44,35 +69,49 @@ jobs:
 
       - uses: julia-actions/julia-buildpkg@v1
 
+      # RETESTITEMS_NWORKERS flips test/runtests.jl to the parallel path.
       - uses: julia-actions/julia-runtest@v1
+        with:
+          coverage: ${{ matrix.coverage }}
         env:
           SKIP_EXTENSIONS: "true"
+          RETESTITEMS_NWORKERS: ${{ github.event.inputs.nworkers || matrix.nworkers }}
+          JULIA_NUM_PRECOMPILE_TASKS: ${{ matrix.precompile_tasks }}
 
-      - name: Thread Safety Tests (2 threads)
-        run: julia --project -e 'using Pkg; Pkg.test(; coverage=true, julia_args=["-t", "2"], test_args=["test_thread_safety.jl"])'
+      # Thread-safety — multi-threaded in ONE process. RETESTITEMS_NWORKERS is
+      # unset here, so these take the sequential TestItemRunner path.
+      - name: Thread Safety Tests (4 threads)
+        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=${{ matrix.coverage }}, julia_args=["-t", "4"], test_args=["test_thread_safety.jl"])'
 
       - name: Thread Safety Tests (Oversubscribe with 16 threads)
-        run: julia --project -e 'using Pkg; Pkg.test(; coverage=true, julia_args=["-t", "16"], test_args=["test_thread_safety.jl"])'
+        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=${{ matrix.coverage }}, julia_args=["-t", "16"], test_args=["test_thread_safety.jl"])'
 
       - uses: julia-actions/julia-processcoverage@v1
+        if: ${{ matrix.coverage }}
         with:
           directories: src
 
       - uses: codecov/codecov-action@v5
+        if: ${{ matrix.coverage }}
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
   test-extensions:
-    name: Extensions - Julia ${{ matrix.version }}
+    name: Extensions ${{ matrix.chunk }} - Julia ${{ matrix.version }}
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        version:
-          - "1.x"
-          - "lts"
+        version: ["1.x", "lts"]
+        # Split by EXT_TEST_CHUNK (see test/ext/runtests.jl): the Enzyme testset
+        # alone is ~36 min on Julia 1.12 (vs ~15 min for ALL the rest), so giving
+        # it a dedicated job cuts the Extensions wall time to max(enzyme, rest).
+        # Each chunk is its own process, so the Enzyme-before-ChainRulesCore
+        # loading constraint holds trivially within each job.
+        chunk: [enzyme, rest]
 
     steps:
       - uses: actions/checkout@v4
@@ -85,8 +124,12 @@ jobs:
 
       - uses: julia-actions/julia-buildpkg@v1
 
+      # Extension tests are legacy @testset (not @testitem), so the parallel path
+      # never touches them — run them in their own process, as before.
       - name: Extension Tests (AD / Recipes / Symbolics)
-        run: julia --project -e 'using Pkg; Pkg.test(; coverage=true, test_args=["ext/runtests.jl"])'
+        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=true, test_args=["ext/runtests.jl"])'
+        env:
+          EXT_TEST_CHUNK: ${{ matrix.chunk }}
 
       - uses: julia-actions/julia-processcoverage@v1
         with:

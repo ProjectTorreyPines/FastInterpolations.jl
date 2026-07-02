@@ -1,8 +1,9 @@
 @testitem "Aqua.jl" begin
     using Aqua
     # Load the ColorVectorSpace extension so the ambiguity check covers its
-    # `_lincomb_style`/`_lincomb2` methods against the core fallbacks (without
-    # this the ext is absent here and the check is vacuous for it).
+    # `_linear_blend_style`/`_linear_value_blend` methods against the core
+    # fallbacks (without this the ext is absent here and the check is
+    # vacuous for it).
     using ColorTypes, ColorVectorSpace
     Aqua.test_all(
         FastInterpolations;

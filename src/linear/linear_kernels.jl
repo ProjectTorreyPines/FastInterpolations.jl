@@ -27,8 +27,10 @@
 # `promote_op(*, α, value)` — fixed-point values (N0f8) under a float weight
 # classify as native-FMA. The negation lands on the float weight `α`, never on
 # data, so finite/colorant values appear only as `weight × value` (wrap-free).
-# Endpoint-exact at α=0,1; bounded within [min(yL,yR), max(yL,yR)] for α∈[0,1]
-# (extrapolation intentionally passes α outside [0,1]).
+# Endpoint-exact at α=0,1. For ordered real values the α∈[0,1] result stays
+# within [min(yL,yR), max(yL,yR)]; composite carriers (complex, colorants)
+# inherit that per real component. Extrapolation intentionally passes α
+# outside [0,1].
 #
 #   _LinearBlendFMA     — result is IEEEFloat/Complex{IEEEFloat}: verbatim
 #                         2-FMA form (free-addend fusion).

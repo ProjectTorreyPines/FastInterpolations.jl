@@ -203,13 +203,13 @@ end
 # arithmetic lands in `IEEEFloat` or `Complex{IEEEFloat}` (native free-addend FMA).
 # Classify on the RESULT type `Tc = promote_op(*, weight, value)` — so fixed-point
 # inputs (N0f8), which promote to Float under a real weight, stay fused — and over
-# ALL of a kernel's value carriers (any one non-fusable ⇒ ALT). Used to keep
+# ALL of a kernel's value carriers (any one non-fusable ⇒ generic). Used to keep
 # float/Complex-float on the unchanged FMA form and route only non-fusable carriers
-# (colorants, Dual, BigFloat) to the min-op factoring (one fewer carrier op/node).
+# (colorants, Dual, BigFloat) to the generic factoring (one fewer carrier op/node).
 @inline _blend_fuses(::Type{T}) where {T <: Base.IEEEFloat} = Val(true)
 @inline _blend_fuses(::Type{Complex{T}}) where {T <: Base.IEEEFloat} = Val(true)
 @inline _blend_fuses(::Type) = Val(false)
-@inline _blend_fuses(::Type{Union{}}) = Val(false)   # undefined `*` ⇒ safe ALT (also disambiguates ⊥)
+@inline _blend_fuses(::Type{Union{}}) = Val(false)   # undefined `*` ⇒ safe generic (also disambiguates ⊥)
 
 # ── Wrap-free field arithmetic at unavoidable difference/sum sites ──
 # `Tc` is the method's coefficient/output field type (e.g. `eltype` of a coeff
@@ -245,6 +245,51 @@ end
     return @inbounds _fielddiff(Tc, y[i + 1], y[i - 1]) * _get_inv_2cell(x, i)
 end
 
+# ── Lincomb value arithmetic (Holy-trait styled) ─────────────────────────────
+# `_lincomb2(a, x, b, y)` = "compute a*x + b*y with the best FI-known value
+# arithmetic". The style is looked up on (weight, value) TYPE pairs after
+# promote_type-collapsing both weights and both values — symmetric in (a, b)
+# and (x, y), and a single 2-type hook covers any future fixed arity
+# (`_lincomb3`, `_lincomb4`, …).
+#
+#   _LincombGeneric       — duck-safe default: muladd(b, y, a*x), the exact
+#                           expression the generic blend below always used.
+#   _LincombComponentwise — opt-in for value types with independent scalar
+#                           components whose per-channel blend lands in a
+#                           native-FMA type (gate: `_channel_blend_fuses`).
+#                           Implementations are per type family (package
+#                           extensions / user code own their types); the core
+#                           method is a safety net so a componentwise style
+#                           with no matching specialization degrades to the
+#                           generic expression, never a MethodError. (FI's
+#                           kernels always pass same-type value pairs — the
+#                           net matters for direct `_lincomb2` callers and
+#                           future kernels.)
+abstract type _LincombStyle end
+struct _LincombGeneric <: _LincombStyle end
+struct _LincombComponentwise <: _LincombStyle end
+
+@inline _lincomb_style(::Type, ::Type) = _LincombGeneric()
+
+@inline function _lincomb2(a, x, b, y)
+    style = _lincomb_style(
+        promote_type(typeof(a), typeof(b)),
+        promote_type(typeof(x), typeof(y)),
+    )
+    return _lincomb2(style, a, x, b, y)
+end
+@inline _lincomb2(::_LincombGeneric, a, x, b, y) = muladd(b, y, a * x)
+@inline _lincomb2(::_LincombComponentwise, a, x, b, y) = muladd(b, y, a * x)
+
+# Channel eligibility for componentwise opt-ins: does `weight × channel` land
+# in a native-FMA type? Same classifier as the blend (`_blend_fuses`), applied
+# to the CHANNEL result type — the weight type matters (a Dual/BigFloat weight
+# disqualifies even native-float channels).
+@inline _channel_blend_fuses(::Type{A}, ::Type{T}) where {A, T} =
+    _blend_fuses(Base.promote_op(*, A, T))
+@inline _style_from_fuses(::Val{true}) = _LincombComponentwise()
+@inline _style_from_fuses(::Val{false}) = _LincombGeneric()
+
 # Convex linear value blend = α·yR + (1−α)·yL. The negation lands on the float
 # weight `α`, never on data, so finite/colorant values appear only as `weight ×
 # value` (wrap-free). Endpoint-exact at α=0,1; bounded within [min(yL,yR),
@@ -255,9 +300,13 @@ end
 end
 # Val(true): verbatim FMA form (2 FMA/node) — float/Complex-float keep this, unchanged.
 @inline _linear_value_blend(::Val{true}, α, yL, yR) = muladd(α, yR, muladd(-α, yL, yL))
-# Val(false): min-op form — complement formed on the SCALAR weight, value touched
-# once fewer per node. Algebraically identical, also wrap-free, endpoint-exact.
-@inline _linear_value_blend(::Val{false}, α, yL, yR) = muladd(α, yR, (one(α) - α) * yL)
+# Val(false): generic form — complement formed on the SCALAR weight, value
+# touched once fewer per node. Algebraically identical, also wrap-free,
+# endpoint-exact. Routed through `_lincomb2`: the generic style expands to the
+# exact same muladd(α, yR, (one(α) - α) * yL) expression (bit-identical), while
+# componentwise-capable value types (parametric colorants via the
+# ColorVectorSpace extension) recover per-channel scalar FMA here.
+@inline _linear_value_blend(::Val{false}, α, yL, yR) = _lincomb2(one(α) - α, yL, α, yR)
 
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type

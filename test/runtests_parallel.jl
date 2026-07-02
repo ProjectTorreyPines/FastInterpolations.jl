@@ -12,8 +12,10 @@
 #   3. ReTestItems.runtests(...) runs on its "clean" path (dynamic work-stealing
 #      across `nworkers` worker processes), then the shadow dir is removed.
 #
-# Prereq (once): instantiate the test env — ReTestItems is a test-only dependency there:
-#     julia --project=test -e 'using Pkg; Pkg.instantiate()'
+# Prereq (once): instantiate the test env — ReTestItems is a test-only dependency there.
+# `Pkg.develop(path=".")` pins FastInterpolations to this checkout even on Julia 1.10,
+# where the `[sources]` section of test/Project.toml is ignored:
+#     julia --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 #
 # Usage (from the repo root):
 #     julia test/runtests_parallel.jl --keyword linear              # linear files, 2 workers
@@ -26,8 +28,13 @@
 # NOTE: parallelism pays off on LARGE runs (full suite / CI). On a small keyword subset
 # dominated by a few heavy-compile items, workers can't share compilation, so
 # `--nworkers 0` (or plain cc-julia-test-runner) is often faster locally.
+# CI parity: `Pkg.test` (sequential CI) always runs `--check-bounds=yes`; to reproduce
+# CI-exact results (incl. the suite's tight ULP tolerances on x86_64) launch as
+#     julia --check-bounds=yes test/runtests_parallel.jl ...
+# Workers inherit the flag automatically via Base.julia_cmd().
 
 import Pkg
+import TOML
 
 const FI = normpath(joinpath(@__DIR__, ".."))
 const REALTEST = joinpath(FI, "test")
@@ -42,9 +49,32 @@ catch
     error(
         """
         ReTestItems not found in the test environment. Instantiate it once:
-            julia --project=test -e 'using Pkg; Pkg.instantiate()'
+            julia --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
         """
     )
+end
+
+# Guard: the test env must resolve FastInterpolations to THIS checkout, not the
+# registered release. `[sources]` pins it on Julia 1.11+, but LTS (1.10) ignores that
+# section and falls back to the registry — silently testing the wrong code (UndefVarError
+# on unreleased internals, stale behavior). Fail loud with the fix instead.
+let mf = joinpath(REALTEST, "Manifest.toml")
+    entry = nothing
+    if isfile(mf)
+        deps = get(TOML.parsefile(mf), "deps", Dict{String, Any}())
+        e = get(deps, "FastInterpolations", nothing)
+        entry = e isa Vector ? first(e) : e
+    end
+    if !(entry isa AbstractDict && haskey(entry, "path"))
+        error(
+            """
+            test/Manifest.toml does not pin FastInterpolations to this checkout
+            (no `path` entry — on Julia $(VERSION) the `[sources]` section may be
+            unsupported, so Pkg resolved the REGISTERED release instead). Fix once with:
+                julia --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+            """
+        )
+    end
 end
 
 # ── args (in a function so assignments aren't trapped in a hard local scope) ──
@@ -132,13 +162,20 @@ function blank_range(s, a, b)
 end
 
 # Run `f(shadow)` in a freshly-created shadow dir, guaranteeing removal afterwards.
+# Exception: under --code-coverage the runtime writes .cov files for shadow-loaded
+# code AT PROCESS EXIT — after this `finally` — so the dir must outlive us then.
+# It is gitignored and recreated fresh on the next run.
 function with_shadow(f, dir)
     isdir(dir) && rm(dir; recursive = true, force = true)
     mkpath(dir)
     try
         return f(dir)
     finally
-        rm(dir; recursive = true, force = true)
+        if Base.JLOptions().code_coverage == 0
+            rm(dir; recursive = true, force = true)
+        else
+            println("(kept $(basename(dir))/ for the exit-time coverage writeout — gitignored)")
+        end
     end
 end
 

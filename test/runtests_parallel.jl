@@ -1,31 +1,34 @@
-#!/usr/bin/env julia
-#
-# runtests_parallel.jl — run the FastInterpolations test suite in PARALLEL via ReTestItems,
-# WITHOUT migrating the repo. Nothing under test/ is renamed or edited, so the
-# VS Code "Julia test" integration (TestItemRunner) keeps working exactly as before.
+# runtests_parallel.jl — run the FastInterpolations @testitem suite in PARALLEL via
+# ReTestItems, WITHOUT migrating the repo. Nothing under test/ is renamed or edited,
+# so the VS Code "Julia test" integration (TestItemRunner) keeps working as before.
 #
 # How it works (all transient — the shadow dir is git-ignored and removed on exit):
 #   1. `test_*.jl`  ->  symlinked as `*_tests.jl`   (ReTestItems only discovers the
 #                                                    *_test(s).jl suffix, not our prefix)
 #   2. every `@testsnippet Name begin … end`  ->  `@testsetup module Name … end`
 #      (ReTestItems has no @testsnippet; it only knows @testsetup modules)
-#   3. ReTestItems.runtests(...) runs on its "clean" path (dynamic work-stealing
-#      across `nworkers` worker processes), then the shadow dir is removed.
+#   3. ReTestItems.runtests(...) runs with dynamic work-stealing across `nworkers`
+#      worker processes, then the shadow dir is removed.
 #
-# Prereq (once): instantiate the test env — ReTestItems is a test-only dependency there.
-# `Pkg.develop(path=".")` pins FastInterpolations to this checkout even on Julia 1.10,
-# where the `[sources]` section of test/Project.toml is ignored:
+# ── Canonical use: through Pkg.test (recommended) ────────────────────────────
+# test/runtests.jl routes here when RETESTITEMS_NWORKERS > 0, so the usual entry
+# points just work — Pkg.test provides the sandbox (this checkout auto-dev'd, so
+# the Julia-1.10 `[sources]` pitfall is moot), --check-bounds=yes, and
+# package-scoped coverage, exactly like the sequential CI:
+#     RETESTITEMS_NWORKERS=4 julia --project -e 'using Pkg; Pkg.test()'
+#     RETESTITEMS_NWORKERS=2 cc-julia-test-runner . linear
+#
+# ── Standalone use: direct invocation (fast local iteration) ─────────────────
+# Skips the Pkg.test sandbox; the test env must be instantiated once with the
+# package dev-pinned (a guard below fails loud if not):
 #     julia --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 #
-# Usage (from the repo root):
 #     julia test/runtests_parallel.jl linear                        # linear files, 2 workers
 #     julia test/runtests_parallel.jl cubic --nworkers 4
 #     julia test/runtests_parallel.jl linear --nworkers 0           # sequential baseline (compare!)
 #     julia test/runtests_parallel.jl "Store Policy"                # testitem NAMES match too
 #     julia test/runtests_parallel.jl --regex '^Cubic .* Adjoint'   # regex, name or filename
-#     julia test/runtests_parallel.jl linear "Store Policy"         # multiple patterns = OR
-#     julia test/runtests_parallel.jl                               # whole suite, 2 workers
-#     julia --code-coverage=user test/runtests_parallel.jl          # + coverage (.cov in src/; merge as usual)
+#     julia --check-bounds=yes test/runtests_parallel.jl linear     # CI-exact codegen (see below)
 #
 # Patterns match the FILENAME or the @testitem NAME — same semantics as runtests.jl's
 # ARGS filter (`cc-julia-test-runner . "Cubic Adjoint"`). Plain patterns (positional or
@@ -34,61 +37,71 @@
 # NOTE: parallelism pays off on LARGE runs (full suite / CI). On a small keyword subset
 # dominated by a few heavy-compile items, workers can't share compilation, so
 # `--nworkers 0` (or plain cc-julia-test-runner) is often faster locally.
-# CI parity: `Pkg.test` (sequential CI) always runs `--check-bounds=yes`; to reproduce
-# CI-exact results (incl. the suite's tight ULP tolerances on x86_64) launch as
-#     julia --check-bounds=yes test/runtests_parallel.jl ...
-# Workers inherit the flag automatically via Base.julia_cmd().
-
-import Pkg
-import TOML
+# CI parity: `Pkg.test` always runs `--check-bounds=yes`, which pins the FP codegen the
+# suite's tight ULP tolerances were calibrated against — standalone runs wanting
+# CI-exact results must pass it explicitly. Workers inherit flags via Base.julia_cmd().
 
 const FI = normpath(joinpath(@__DIR__, ".."))
 const REALTEST = joinpath(FI, "test")
 const SHADOW = joinpath(FI, "_partest_shadow")   # in-repo (git-ignored); NOT dot-prefixed
 
-# Activate the test env — it provides the package's test deps AND ReTestItems (a
-# test-only dependency, invisible to users who install the package).
-Pkg.activate(REALTEST; io = devnull)
+# Standalone = launched as the program (`julia test/runtests_parallel.jl ...`).
+# Canonical = include()d by test/runtests.jl under Pkg.test — the sandbox is already
+# active with the package dev'd and all test deps present, so no bootstrap needed.
+const STANDALONE = !isempty(PROGRAM_FILE) && abspath(PROGRAM_FILE) == abspath(@__FILE__)
+
+if STANDALONE
+    # Pkg/TOML load from @stdlib in a normal session; under the Pkg.test sandbox
+    # (canonical mode) they are NOT loadable — and not needed.
+    import Pkg
+    import TOML
+
+    # Activate the test env — it provides the package's test deps AND ReTestItems (a
+    # test-only dependency, invisible to users who install the package).
+    Pkg.activate(REALTEST; io = devnull)
+
+    # Guard: the test env must resolve FastInterpolations to THIS checkout, not the
+    # registered release. `[sources]` pins it on Julia 1.11+, but LTS (1.10) ignores
+    # that section and falls back to the registry — silently testing the wrong code
+    # (UndefVarError on unreleased internals, stale behavior). Fail loud instead.
+    let mf = joinpath(REALTEST, "Manifest.toml")
+        entry = nothing
+        if isfile(mf)
+            deps = get(TOML.parsefile(mf), "deps", Dict{String, Any}())
+            e = get(deps, "FastInterpolations", nothing)
+            entry = e isa Vector ? first(e) : e
+        end
+        if !(entry isa AbstractDict && haskey(entry, "path"))
+            error(
+                """
+                test/Manifest.toml does not pin FastInterpolations to this checkout
+                (no `path` entry — on Julia $(VERSION) the `[sources]` section may be
+                unsupported, so Pkg resolved the REGISTERED release instead). Fix once with:
+                    julia --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+                """
+            )
+        end
+    end
+end
+
 try
     @eval using ReTestItems
 catch
     error(
         """
-        ReTestItems not found in the test environment. Instantiate it once:
+        ReTestItems not found in the active environment. Instantiate the test env once:
             julia --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
         """
     )
 end
 
-# Guard: the test env must resolve FastInterpolations to THIS checkout, not the
-# registered release. `[sources]` pins it on Julia 1.11+, but LTS (1.10) ignores that
-# section and falls back to the registry — silently testing the wrong code (UndefVarError
-# on unreleased internals, stale behavior). Fail loud with the fix instead.
-let mf = joinpath(REALTEST, "Manifest.toml")
-    entry = nothing
-    if isfile(mf)
-        deps = get(TOML.parsefile(mf), "deps", Dict{String, Any}())
-        e = get(deps, "FastInterpolations", nothing)
-        entry = e isa Vector ? first(e) : e
-    end
-    if !(entry isa AbstractDict && haskey(entry, "path"))
-        error(
-            """
-            test/Manifest.toml does not pin FastInterpolations to this checkout
-            (no `path` entry — on Julia $(VERSION) the `[sources]` section may be
-            unsupported, so Pkg resolved the REGISTERED release instead). Fix once with:
-                julia --project=test -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
-            """
-        )
-    end
-end
-
 # ── args (in a function so assignments aren't trapped in a hard local scope) ──
 # Returns (patterns, nworkers). Patterns: String = case-insensitive substring,
 # Regex = as-is; matched against filenames AND @testitem names, OR-combined.
+# nworkers is `nothing` unless --nworkers was passed (mode default applied in main).
 function parse_args(args)
     patterns = Union{String, Regex}[]
-    nworkers = 2
+    nworkers = nothing
     i = firstindex(args)
     while i <= lastindex(args)
         a = args[i]
@@ -290,9 +303,10 @@ function build_and_run(shadow, patterns, nworkers)
     isempty(selected) && error("no test files or testitem names matched $(join(repr.(patterns), ", "))")
     ti_filter = isempty(patterns) ? Returns(true) : (ti -> ti.name in allowed)
 
-    # Spoof :SOURCE_PATH = the package's real runtests.jl so ReTestItems takes its clean
-    # path (skips TestEnv.activate) and uses the already-active test env. ReTestItems walks
-    # up from the shadow files to FI/Project.toml, so `testfile(FI)` = test/runtests.jl.
+    # Set :SOURCE_PATH = the package's runtests.jl so ReTestItems takes its "running
+    # under Pkg.test" path (skips TestEnv.activate) and uses the already-active env.
+    # Canonical mode: truthful — we ARE one include() below runtests.jl (include just
+    # re-pointed the tls to this file). Standalone: the same spoof opts into that path.
     task_local_storage(:SOURCE_PATH, joinpath(REALTEST, "runtests.jl"))
     setupfile = joinpath(shadow, "aa_wrapper_testsetup.jl")
 
@@ -314,7 +328,13 @@ function build_and_run(shadow, patterns, nworkers)
 end
 
 function main()
-    patterns, nworkers = parse_args(ARGS)
+    patterns, nworkers_cli = parse_args(ARGS)
+    # --nworkers wins; otherwise canonical mode follows RETESTITEMS_NWORKERS (what
+    # routed runtests.jl here) and standalone defaults to 2.
+    nworkers = something(
+        nworkers_cli,
+        STANDALONE ? 2 : parse(Int, get(ENV, "RETESTITEMS_NWORKERS", "2"))
+    )
     return with_shadow(SHADOW) do shadow
         build_and_run(shadow, patterns, nworkers)
     end

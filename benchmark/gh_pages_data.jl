@@ -14,6 +14,8 @@ Schema (per suite):
 
 using JSON
 
+include(joinpath(@__DIR__, "bench_machine.jl"))   # machine_key / hardware_fingerprint
+
 const SUITE = "FastInterpolations.jl Benchmarks"
 
 """
@@ -81,6 +83,139 @@ function collapse_entries(entries)
         end
     end
     return collapsed
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Machine-aware keying
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# The runner fleet mixes CPUs, so a bare per-commit line jitters as consecutive
+# commits land on different boxes and a same-commit re-run on a faster box would
+# wrongly `min` away a real number. We key every point by machine and never merge
+# or compare across keys.
+
+"""
+    entry_machine_key(entry) -> String
+
+Machine key of a stored point, from its `cpu` fingerprint. Legacy / fingerprint-
+less points (or malformed ones) key as `"unknown"` so they form their own series
+rather than contaminating a real machine's.
+"""
+function entry_machine_key(entry)
+    haskey(entry, "cpu") || return "unknown"
+    hw = entry["cpu"]
+    (haskey(hw, "cpu_name") && haskey(hw, "ncores")) || return "unknown"
+    return machine_key(hw)
+end
+
+"""
+    store_measurement(all_entries, sha, key, new_benches, cpu, fallback_commit, fallback_date)
+        -> (updated_entries, merged_entry)
+
+Merge this run's measurement into `all_entries`, keyed by **(commit, machine)**:
+
+- Entries sharing this `sha` **and** `key` are collapsed with `new_benches` to the
+  per-benchmark minimum (a same-box re-run only ever lowers the point).
+- Every other entry — different commit **or** different machine — is left
+  untouched (forward-only; no cross-machine `min`).
+- On a re-run the earliest date + original commit metadata are kept; a first-time
+  (commit, machine) uses `fallback_commit` / `fallback_date`.
+"""
+function store_measurement(all_entries, sha, key, new_benches, cpu, fallback_commit, fallback_date)
+    same = [e for e in all_entries if commit_id(e) == sha && entry_machine_key(e) == key]
+    others = [e for e in all_entries if !(commit_id(e) == sha && entry_machine_key(e) == key)]
+
+    merged_benches = merge_benches(vcat(same, [Dict{String, Any}("benches" => new_benches)]))
+
+    if !isempty(same)
+        i_earliest = argmin([_date(e) for e in same])
+        date = same[i_earliest]["date"]
+        commit = same[i_earliest]["commit"]
+    else
+        date = fallback_date
+        commit = fallback_commit
+    end
+
+    merged_entry = Dict{String, Any}("commit" => commit, "date" => date, "benches" => merged_benches, "cpu" => cpu)
+    return (vcat(others, [merged_entry]), merged_entry)
+end
+
+"""
+    primary_machine(all_entries, override) -> String
+
+The machine whose series is shown as the canonical trend line. `override`
+(`BENCH_PRIMARY_MACHINE`) wins when non-empty — this is the knob a future
+self-hosted "official" runner sets. Otherwise the most-common key across the
+history is used (ties broken lexicographically for determinism).
+"""
+function primary_machine(all_entries, override)
+    isempty(override) || return override
+    isempty(all_entries) && return "unknown"
+    counts = Dict{String, Int}()
+    for e in all_entries
+        k = entry_machine_key(e)
+        counts[k] = get(counts, k, 0) + 1
+    end
+    best, bestn = "unknown", -1
+    for k in sort(collect(keys(counts)))   # deterministic tie-break
+        if counts[k] > bestn
+            best, bestn = k, counts[k]
+        end
+    end
+    return best
+end
+
+"""
+    split_by_machine(all_entries, primary_key) -> Dict{suite_name => Vector{entry}}
+
+Presentation transform: the primary machine's points go under the canonical
+`SUITE` (the main, first chart), every other machine under `"SUITE (<key>)"`
+(secondary charts). Each series is sorted by date. Storage stays lossless — this
+only decides which suite name each point renders under.
+"""
+function split_by_machine(all_entries, primary_key)
+    suites = Dict{String, Any}()
+    for e in all_entries
+        k = entry_machine_key(e)
+        name = k == primary_key ? SUITE : "$SUITE ($k)"
+        push!(get!(suites, name, Any[]), e)
+    end
+    for es in values(suites)
+        sort!(es, by = _date)
+    end
+    return suites
+end
+
+"""
+    collect_suite_entries(data) -> Vector
+
+Gather every FastInterpolations point across the canonical suite and any
+per-machine secondary suites into one flat list (for re-keying / re-splitting).
+"""
+function collect_suite_entries(data)
+    entries_all = get(data, "entries", Dict{String, Any}())
+    out = Any[]
+    for (name, es) in entries_all
+        (name == SUITE || startswith(name, "$SUITE (")) && append!(out, es)
+    end
+    return out
+end
+
+"""
+    apply_suite_split!(data, suites)
+
+Replace all FastInterpolations suites in `data` with the machine-split `suites`
+(canonical + secondaries), leaving unrelated suites untouched.
+"""
+function apply_suite_split!(data, suites)
+    entries_all = get!(data, "entries", Dict{String, Any}())
+    for name in collect(keys(entries_all))
+        (name == SUITE || startswith(name, "$SUITE (")) && delete!(entries_all, name)
+    end
+    for (name, es) in suites
+        entries_all[name] = es
+    end
+    return data
 end
 
 """

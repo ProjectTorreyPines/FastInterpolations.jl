@@ -92,7 +92,15 @@ function latest_master_machine(data_js_path::String)
         return ""
     end
     isempty(entries) && return ""
-    return _entry_machine_key(argmax(_entry_date, entries))
+    # The same commit re-benchmarked on two CPUs yields two entries sharing the
+    # commit date, so the max-date point can tie. Resolve deterministically:
+    # prefer a fingerprinted CPU over "unknown", then lexicographically — the
+    # baseline machine (and the cross-CPU warning) must not flip on identical
+    # history from Dict/suite iteration order.
+    dmax = maximum(_entry_date, entries)
+    keys_at_max = sort!(unique([_entry_machine_key(e) for e in entries if _entry_date(e) == dmax]))
+    known = filter(!=("unknown"), keys_at_max)
+    return isempty(known) ? "unknown" : first(known)
 end
 
 _benches_to_dict(benches) = Dict{String, Float64}(b["name"] => Float64(b["value"]) for b in benches)

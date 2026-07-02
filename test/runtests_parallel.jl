@@ -109,6 +109,55 @@ catch
     )
 end
 
+# ── Windows teardown-race workaround (upstream: ReTestItems workers.jl terminate!) ──
+# terminate! kill()s the worker at least once BEFORE checking process_exited. A worker
+# that already exited cleanly (its socket EOF races the coordinator's close) is then
+# signalled dead: Unix reports ESRCH, which Base.kill tolerates — Windows reports
+# EACCES, which THROWS, failing the whole run after every test item already passed.
+# Overwrite terminate! with the same body plus (a) a process_exited pre-check and
+# (b) kill tolerating IOError on an already-dead process. Coordinator-side only
+# (workers never call it). Pinned to the exact upstream version whose body this
+# mirrors: on any other version the patch self-disables (and warns, so a Windows CI
+# log explains a returning flake) instead of silently overwriting unknown code.
+if Sys.iswindows()
+    if pkgversion(ReTestItems) == v"1.35.1"
+        @eval ReTestItems.Workers function terminate!(w::Worker, from::Symbol = :manual)
+            already_terminated = @atomicswap :monotonic w.terminated = true
+            if !already_terminated
+                @debug "terminating $(w) from $(from)"
+            end
+            wte = WorkerTerminatedException(w)
+            @lock w.lock begin
+                for (_, fut) in w.futures
+                    close(fut.value, wte)
+                end
+                empty!(w.futures)
+            end
+            signal = Base.SIGTERM
+            while !process_exited(w.process)
+                try
+                    kill(w.process, signal)
+                catch e
+                    # already-exited process: Windows kill → EACCES (Unix → ESRCH,
+                    # which Base.kill swallows). Dead is the goal state; stop signalling.
+                    e isa Base.IOError || rethrow()
+                    break
+                end
+                signal = signal == Base.SIGTERM ? Base.SIGINT : Base.SIGKILL
+                process_exited(w.process) && break
+                sleep(0.1)
+            end
+            if !(w.socket.status == Base.StatusUninit || w.socket.status == Base.StatusInit || w.socket.handle === C_NULL)
+                close(w.socket)
+            end
+            return
+        end
+    else
+        @warn "ReTestItems $(pkgversion(ReTestItems)) ≠ 1.35.1: Windows terminate! EACCES \
+               workaround NOT applied — clean-exit teardown may flake (see comment above)."
+    end
+end
+
 # ── args (in a function so assignments aren't trapped in a hard local scope) ──
 # Returns (patterns, nworkers). Patterns: String = case-insensitive substring,
 # Regex = as-is; matched against filenames AND @testitem names, OR-combined.

@@ -44,48 +44,66 @@ end
     @test @inferred(_linear_value_blend(α, yL, yR)) isa BigFloat
 end
 
-@testitem "componentwise colorants: ext gate + entry ownership" begin
+@testitem "componentwise colorants: ext style rule + ownership" begin
     using FastInterpolations
-    using FastInterpolations: _linear_value_blend
+    using FastInterpolations: _LinearBlendGeneric, _linear_blend_style, _linear_value_blend
     using FixedPointNumbers, ColorTypes, ColorVectorSpace, ForwardDiff
     const FI = FastInterpolations
     EXT = Base.get_extension(FI, :FastInterpolationsColorVectorSpaceExt)
     @test EXT !== nothing
+    CW = EXT._LinearBlendComponentwise()
 
-    # gate = the core style rule applied to the CHANNEL type
-    @test @inferred(EXT._color_linear_blend_style(Float64, Gray{N0f8})) === Val(:componentwise)
-    @test @inferred(EXT._color_linear_blend_style(Float32, RGB{N0f8})) === Val(:componentwise)
-    @test @inferred(EXT._color_linear_blend_style(Float64, RGB{Float64})) === Val(:componentwise)
-    @test @inferred(EXT._color_linear_blend_style(Float64, AGray{N0f8})) === Val(:componentwise)
-    @test @inferred(EXT._color_linear_blend_style(Float64, GrayA{N0f8})) === Val(:componentwise)
-    @test @inferred(EXT._color_linear_blend_style(Float64, RGBA{N0f8})) === Val(:componentwise)
-    @test @inferred(EXT._color_linear_blend_style(Float64, RGBA{Float64})) === Val(:componentwise)
-    @test @inferred(EXT._color_linear_blend_style(Float64, ARGB{N0f8})) === Val(:componentwise)
-    @test @inferred(EXT._color_linear_blend_style(Float64, ARGB{Float64})) === Val(:componentwise)
+    # the ext extends the CORE style rule: eligible colorant pairs classify
+    # as a third, ext-owned style (channel is native-FMA under the weight)
+    @test @inferred(_linear_blend_style(Float64, Gray{N0f8})) === CW
+    @test @inferred(_linear_blend_style(Float32, RGB{N0f8})) === CW
+    @test @inferred(_linear_blend_style(Float64, RGB{Float64})) === CW
+    @test @inferred(_linear_blend_style(Float64, AGray{N0f8})) === CW
+    @test @inferred(_linear_blend_style(Float64, GrayA{N0f8})) === CW
+    @test @inferred(_linear_blend_style(Float64, RGBA{N0f8})) === CW
+    @test @inferred(_linear_blend_style(Float64, RGBA{Float64})) === CW
+    @test @inferred(_linear_blend_style(Float64, ARGB{N0f8})) === CW
+    @test @inferred(_linear_blend_style(Float64, ARGB{Float64})) === CW
 
-    # ineligible weight or channel → generic escape (gate condition 1)
-    @test EXT._color_linear_blend_style(BigFloat, Gray{BigFloat}) === Val(:generic)
-    @test EXT._color_linear_blend_style(ForwardDiff.Dual{Nothing, Float64, 2}, RGB{Float64}) ===
-        Val(:generic)
+    # ineligible weight or channel → generic (rule condition 1)
+    @test _linear_blend_style(BigFloat, Gray{BigFloat}) === _LinearBlendGeneric()
+    @test _linear_blend_style(ForwardDiff.Dual{Nothing, Float64, 2}, RGB{Float64}) ===
+        _LinearBlendGeneric()
 
-    # packed colorants → generic escape (gate condition 2: mapc reconstruction
-    # type Gray24 ≠ natural arithmetic type Gray{Float64} — never re-quantized)
-    @test @inferred(EXT._color_linear_blend_style(Float64, Gray24)) === Val(:generic)
-    @test @inferred(EXT._color_linear_blend_style(Float64, RGB24)) === Val(:generic)
-    @test @inferred(EXT._color_linear_blend_style(Float64, ARGB32)) === Val(:generic)
+    # packed colorants → generic (rule condition 2: mapc reconstruction type
+    # Gray24 ≠ natural arithmetic type Gray{Float64} — never re-quantized)
+    @test @inferred(_linear_blend_style(Float64, Gray24)) === _LinearBlendGeneric()
+    @test @inferred(_linear_blend_style(Float64, RGB24)) === _LinearBlendGeneric()
+    @test @inferred(_linear_blend_style(Float64, ARGB32)) === _LinearBlendGeneric()
+    # …and the rule's `if` constant-folds: were the branch alive, the packed
+    # entry would infer Union{Gray24, Gray{Float64}} and @inferred would fail
+    @test @inferred(_linear_value_blend(0.3, Gray24(0.2), Gray24(0.6))) isa Gray{Float64}
 
-    # promotion-match gate generalizes: memory-layout RGB variants opt in
+    # promotion-match rule generalizes: memory-layout RGB variants opt in
     # automatically (mapc BGR{N0f8} → BGR{Float64} ≡ CVS arithmetic result)
-    @test @inferred(EXT._color_linear_blend_style(Float64, BGR{N0f8})) === Val(:componentwise)
+    @test @inferred(_linear_blend_style(Float64, BGR{N0f8})) === CW
 
-    # entry ownership: arithmetic colorants (incl. packed — gate-escaped)
-    # dispatch to the EXT entry; non-arithmetic color spaces (HSV — CVS defines
-    # no arithmetic; channelwise hue blending would be wrong) and mixed
-    # concrete pairs fall through to the CORE untyped entry
-    @test which(_linear_value_blend, Tuple{Float64, RGB{N0f8}, RGB{N0f8}}).module === EXT
-    @test which(_linear_value_blend, Tuple{Float64, Gray24, Gray24}).module === EXT
-    @test which(_linear_value_blend, Tuple{Float64, HSV{Float32}, HSV{Float32}}).module === FI
-    @test which(_linear_value_blend, Tuple{Float64, Gray{N0f8}, Gray{Float32}}).module === FI
+    # ownership: the ext owns ONLY the style rule for arithmetic colorants
+    # (incl. packed — rule-escaped) and the componentwise styled body; the
+    # blend ENTRY is the core duck method for every value type, and
+    # non-arithmetic color spaces (HSV — CVS defines no arithmetic;
+    # channelwise hue blending would be wrong) classify through the core rule
+    @test which(_linear_blend_style, Tuple{Type{Float64}, Type{RGB{N0f8}}}).module === EXT
+    @test which(_linear_blend_style, Tuple{Type{Float64}, Type{Gray24}}).module === EXT
+    @test which(_linear_blend_style, Tuple{Type{Float64}, Type{HSV{Float32}}}).module === FI
+    @test which(_linear_value_blend, Tuple{Float64, RGB{N0f8}, RGB{N0f8}}).module === FI
+    @test which(
+        _linear_value_blend, Tuple{typeof(CW), Float64, RGB{N0f8}, RGB{N0f8}}
+    ).module === EXT
+
+    # mixed concrete pair: the entry styles on promote_type → componentwise,
+    # but the styled body requires a same-type pair → escape → generic body
+    yL, yR = Gray{N0f8}(0.2), Gray{Float32}(0.6)
+    @test which(
+        _linear_value_blend, Tuple{typeof(CW), Float64, typeof(yL), typeof(yR)}
+    ).module === EXT
+    @test @inferred(_linear_value_blend(0.3, yL, yR)) ===
+        _linear_value_blend(_LinearBlendGeneric(), 0.3, yL, yR)
 end
 
 @testitem "componentwise colorants: output types stay widened" begin

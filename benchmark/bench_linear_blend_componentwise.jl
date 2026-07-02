@@ -54,12 +54,13 @@ function bench_family(::Type{V}) where {V}
     return minimum(t1).time / N, minimum(t2).time / N
 end
 
-# ── A/B toggle: replace the family's blend ENTRY method at top level ────────
-# The shipped ext defines one `_linear_value_blend(α, yL::C, yR::C)` entry per
-# parametric family; redefining the SAME signature from Main swaps the family
-# between componentwise (mapc, α preserved per channel) and the core generic
-# styled escape. The cw form here is ungated (benchmark uses eligible
-# channels only).
+# ── A/B toggle: pin the family via an entry-level method from Main ──────────
+# The shipped path styles colorants through the core rule (the ext adds a
+# componentwise style — no entry override). Defining a family-scoped ENTRY
+# method here outranks the core duck entry, pinning the family to one body
+# regardless of the shipped rule: componentwise (mapc, α preserved per
+# channel) vs the core generic styled escape. The cw form here is ungated
+# (benchmark uses eligible channels only).
 gate_expr(F) = quote
     @inline FI._linear_value_blend(α, yL::C, yR::C) where {C <: $F} =
         mapc((l, r) -> FI._linear_value_blend(α, l, r), yL, yR)
@@ -91,11 +92,6 @@ const CASES = [
 ]
 
 function main(; rounds::Int = 3)
-    # transparent variants: temporary opt-in for measurement
-    for f in (:AGray, :GrayA, :ARGB)
-        swap!(f, :componentwise)
-    end
-
     # correctness/identity control BEFORE timing: Float64 values must be
     # bit-identical across a swap (their path never consults the trait)
     dctl = [randc(Float64) for _ in 1:16]
@@ -105,9 +101,8 @@ function main(; rounds::Int = 3)
     vals_b = [Base.invokelatest(ictl, q) for q in Q1[1:64]]
     swap!(:Gray, :componentwise)
     @assert vals_a == vals_b "Float64 control drifted across style swap"
-    EXT = Base.get_extension(FI, :FastInterpolationsColorVectorSpaceExt)
-    @assert Base.invokelatest(EXT._color_linear_blend_style, Float64, Gray{BigFloat}) ===
-        Val(:generic) "BigFloat channel must stay generic"
+    @assert Base.invokelatest(FI._linear_blend_style, Float64, Gray{BigFloat}) ===
+        FI._LinearBlendGeneric() "BigFloat channel must stay generic"
 
     results = Dict{Any, Vector{NTuple{2, Float64}}}()
     for round_i in 1:rounds, mode in (:componentwise, :generic)

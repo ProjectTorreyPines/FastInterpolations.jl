@@ -37,12 +37,13 @@
 #                         SCALAR weight, value touched once fewer per node.
 #
 # Componentwise colorant support lives ENTIRELY in the ColorVectorSpace
-# extension: it overrides the untyped entry for same-type parametric colorant
-# pairs and, when the CHANNEL result is native-FMA, maps each channel back
-# into this styled blend (α preserved ⇒ channels take the 2-FMA form; the
-# convex structure must not be flattened to a generic weight pair — that
-# costs the channel fusion). Mixed/packed/ineligible colorants simply fall
-# through to `_LinearBlendGeneric` here — no safety net needed.
+# extension, through this same style protocol: it adds a third style plus a
+# `_linear_blend_style` method returning it for eligible colorant pairs, and
+# the matching styled body maps each channel back into this blend (α
+# preserved ⇒ channels take the 2-FMA form; the convex structure must not be
+# flattened to a generic weight pair — that costs the channel fusion).
+# Ineligible colorants classify as `_LinearBlendGeneric` — no safety net
+# needed.
 abstract type _LinearBlendStyle end
 struct _LinearBlendFMA <: _LinearBlendStyle end
 struct _LinearBlendGeneric <: _LinearBlendStyle end

@@ -42,19 +42,16 @@ import FastInterpolations:
     _linear_blend_style,
     _linear_value_blend
 
-# Entry overrides — one per parametric family (keeps per-family opt-out
-# possible and packed types structurally excluded).
-@inline _linear_value_blend(α, yL::C, yR::C) where {C <: Gray} =
-    _color_linear_value_blend(_color_linear_blend_style(typeof(α), C), α, yL, yR)
-@inline _linear_value_blend(α, yL::C, yR::C) where {C <: RGB} =
-    _color_linear_value_blend(_color_linear_blend_style(typeof(α), C), α, yL, yR)
-@inline _linear_value_blend(α, yL::C, yR::C) where {C <: RGBA} =
-    _color_linear_value_blend(_color_linear_blend_style(typeof(α), C), α, yL, yR)
-@inline _linear_value_blend(α, yL::C, yR::C) where {C <: AGray} =
-    _color_linear_value_blend(_color_linear_blend_style(typeof(α), C), α, yL, yR)
-@inline _linear_value_blend(α, yL::C, yR::C) where {C <: GrayA} =
-    _color_linear_value_blend(_color_linear_blend_style(typeof(α), C), α, yL, yR)
-@inline _linear_value_blend(α, yL::C, yR::C) where {C <: ARGB} =
+# Single entry override for SAME-type parametric colorant pairs. The family
+# union keeps two exclusions STRUCTURAL (no gate logic, provable by `which`):
+# packed colorants are Colorants but not members of these parametric families
+# (`Gray24 ⊄ Gray`), and a mixed concrete pair cannot bind the single `C` —
+# both fall through to the core generic entry (widened output, never
+# re-quantized). A future per-family deviation stays cheap: a more specific
+# `where {C <: RGBA}` override outranks this union method.
+const _ParametricColorant = Union{AGray, ARGB, Gray, GrayA, RGB, RGBA}
+
+@inline _linear_value_blend(α, yL::C, yR::C) where {C <: _ParametricColorant} =
     _color_linear_value_blend(_color_linear_blend_style(typeof(α), C), α, yL, yR)
 
 # Gate = the core style rule applied to the CHANNEL type (weight included:

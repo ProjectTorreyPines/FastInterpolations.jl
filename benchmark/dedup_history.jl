@@ -2,18 +2,22 @@
     dedup_history.jl <data.js> [<out.js>]
 
 One-time (idempotent) cleanup of the gh-pages benchmark history: collapse every
-group of entries that share a commit id into a single entry holding the
-per-benchmark **minimum** across that commit's runs, keeping the earliest date
-and commit metadata. Entries are re-sorted chronologically.
+group of entries that share a **(commit id, machine)** into a single entry
+holding the per-benchmark **minimum** across that group's runs, keeping the
+earliest date and commit metadata. Points are then re-split by machine into the
+canonical suite (primary machine) + per-machine secondary suites and re-sorted
+chronologically.
 
-This de-noises the graph (each commit becomes one point at its best measurement)
-and removes the duplicate points left by past re-runs of the stock benchmark
-action. Running it again is a no-op once the history is already unique.
+This de-noises the graph (each commit becomes one point per machine at its best
+measurement) and removes duplicate points left by past re-runs. Grouping is
+per-machine so a commit measured on two different boxes stays two points —
+collapsing across machines would mix incomparable timings.
 
 Intended to be run locally against a fresh `gh-pages` checkout; the resulting
 `data.js` is then pushed deliberately (this script never pushes).
 
     out defaults to overwriting the input path.
+    BENCH_PRIMARY_MACHINE (optional) pins the canonical series; else most-common.
 """
 
 include(joinpath(@__DIR__, "gh_pages_data.jl"))
@@ -23,30 +27,31 @@ const DATA_PATH = ARGS[1]
 const OUT_PATH = length(ARGS) >= 2 ? ARGS[2] : ARGS[1]
 
 data = parse_data_js(DATA_PATH)
-entries_all = get(data, "entries", Dict{String, Any}())
-suite_entries = get(entries_all, SUITE, Any[])
+all_entries = collect_suite_entries(data)
 
-if isempty(suite_entries)
-    println("No entries for suite '$SUITE' — nothing to do")
+if isempty(all_entries)
+    println("No FastInterpolations entries — nothing to do")
     exit(0)
 end
 
-# Group by commit id (dupes from past re-runs land in the same group).
-by_id = Dict{String, Vector{Any}}()
-for e in suite_entries
-    push!(get!(by_id, commit_id(e), Any[]), e)
+# Group by (commit id, machine): dupes from past re-runs of the SAME box land in
+# the same group; different boxes stay separate.
+by_key = Dict{Tuple{String, String}, Vector{Any}}()
+for e in all_entries
+    push!(get!(by_key, (commit_id(e), entry_machine_key(e)), Any[]), e)
 end
 
-collapsed = [collapse_entries(group) for group in values(by_id)]
-sort!(collapsed, by = _date)
+collapsed = [collapse_entries(group) for group in values(by_key)]
 
-entries_all[SUITE] = collapsed
-data["entries"] = entries_all
+primary = primary_machine(collapsed, get(ENV, "BENCH_PRIMARY_MACHINE", ""))
+suites = split_by_machine(collapsed, primary)
+apply_suite_split!(data, suites)
+data["lastUpdate"] = round(Int, maximum(_date, collapsed))
 
 write_data_js(OUT_PATH, data)
 
-n_dupe_commits = count(>(1) ∘ length, values(by_id))
+n_dupe = count(>(1) ∘ length, values(by_key))
 println(
-    "Deduped '$SUITE': $(length(suite_entries)) entries → $(length(collapsed)) unique commits " *
-        "($(n_dupe_commits) commit(s) had duplicates)"
+    "Deduped: $(length(all_entries)) entries → $(length(collapsed)) unique (commit,machine) points " *
+        "($(n_dupe) had duplicates); $(length(suites)) machine series (primary=$primary)"
 )

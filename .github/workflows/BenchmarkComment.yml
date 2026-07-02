@@ -45,22 +45,47 @@ jobs:
         run: |
           PR_SHORT="${PR_SHA:0:8}"
 
-          # Hidden machine-readable blob: prior best times + flagged names for
-          # this SHA. The next re-run of the same commit reads it back to
-          # min-merge (see Benchmark.yml "Read previous benchmark comment").
-          BENCH_DATA=""
+          MK=$( [ -f machine_key.txt ] && cat machine_key.txt || echo "unknown" )
+          CPU=$( [ -f hardware.json ] && cat hardware.json || echo '{}' )
+
+          # Machine whose numbers the previous comment displayed (for a change
+          # note), read from the v2 blob we carried forward. Only meaningful on
+          # the same commit — the read step drops the blob on a SHA change.
+          PREV_SHOWN=""
+          if [ -s prev_blob.json ] && jq -e '.v==2' prev_blob.json >/dev/null 2>&1; then
+            PREV_SHOWN=$(jq -r '.shown // ""' prev_blob.json)
+          fi
+
+          # CPU of master's most-recent commit — the baseline the ratios stand
+          # next to. When it differs from this runner the comparison is cross-CPU
+          # and unreliable; "unknown" means that master point had no fingerprint.
+          # (Compare the string directly, not .baseline_same — jq's `// true`
+          # would turn a genuine `false` into `true` and silence the warning.)
+          BASE_MACHINE=""
           if [ -f regression_report.json ]; then
-            BENCH_DATA=$(jq -c --arg sha "$PR_SHA" '{
-              sha: $sha,
-              benches: [.benchmarks[] | {name, value}],
-              flagged: [.benchmarks[] | select(.was_flagged == true) | .name]
-            }' regression_report.json)
+            BASE_MACHINE=$(jq -r '.machine.baseline // ""' regression_report.json)
+          fi
+
+          # This run's slice: the current machine's (min-merged) numbers + flags.
+          CUR=""
+          if [ -f regression_report.json ]; then
+            CUR=$(jq -c '{benches: [.benchmarks[] | {name, value}], flagged: [.benchmarks[] | select(.was_flagged == true) | .name]}' regression_report.json)
           elif [ -f benchmark_flat.json ]; then
-            BENCH_DATA=$(jq -c --arg sha "$PR_SHA" '{
-              sha: $sha,
-              benches: [.[] | {name, value}],
-              flagged: []
-            }' benchmark_flat.json)
+            CUR=$(jq -c '{benches: [.[] | {name, value}], flagged: []}' benchmark_flat.json)
+          fi
+
+          # Hidden machine-readable blob (v2): best times keyed BY MACHINE. The
+          # next re-run reads back this machine's slice to min-merge; other
+          # machines' floors are preserved so a fleet flip never discards them.
+          BENCH_DATA=""
+          if [ -n "$CUR" ]; then
+            BASE='{"v":2,"machines":{}}'
+            if [ -s prev_blob.json ] && jq -e '.v==2' prev_blob.json >/dev/null 2>&1; then
+              BASE=$(cat prev_blob.json)
+            fi
+            BENCH_DATA=$(printf '%s' "$BASE" | jq -c \
+              --arg mk "$MK" --arg sha "$PR_SHA" --argjson cur "$CUR" --argjson cpu "$CPU" \
+              '.v = 2 | .sha = $sha | .shown = $mk | .machines[$mk] = ($cur + {cpu: $cpu})')
           fi
 
           {
@@ -70,6 +95,29 @@ jobs:
             fi
             echo "# FastInterpolations.jl Benchmarks"
             echo ""
+
+            # PRIMARY warning: the regression baseline (master's latest commit)
+            # was measured on a different CPU than this PR — a cross-CPU ratio is
+            # unreliable. Fires on a real mismatch AND on an unfingerprinted
+            # ("unknown") master point.
+            if [ -n "$BASE_MACHINE" ] && [ "$BASE_MACHINE" != "$MK" ]; then
+              echo "> ## :rotating_light: Regression baseline is a different CPU"
+              echo "> "
+              echo "> | | CPU |"
+              echo "> |---|---|"
+              echo "> | **This PR run** | \`$MK\` |"
+              echo "> | **Master baseline (latest commit)** | \`$BASE_MACHINE\` |"
+              echo "> "
+              echo "> The **Previous / Imm. Ratio / Grad. Ratio** columns compare against master history, but master's most recent commit was benchmarked on a **different CPU** — so a naive comparison is cross-CPU and unreliable. The ratios below use only same-\`$MK\` history and are blank if master has none on this CPU yet."
+              echo ""
+            fi
+
+            # Secondary (nice-to-have): the previous COMMENT's numbers were from a
+            # different CPU than this run. Compact one-liner.
+            if [ -n "$PREV_SHOWN" ] && [ "$PREV_SHOWN" != "$MK" ]; then
+              echo "> :information_source: The previous comment's numbers were measured on \`$PREV_SHOWN\`; this run is \`$MK\`. Each CPU keeps its own min-merge floor."
+              echo ""
+            fi
 
             if [ -f regression_report.json ]; then
               # ── Rich report from regression verification ──
@@ -133,7 +181,7 @@ jobs:
 
             if [ -f hardware.json ]; then
               echo ""
-              echo "> Runner: \`$(jq -r '.cpu_name' hardware.json)\` — $(jq -r '.model' hardware.json) ($(jq -r '.ncores' hardware.json) cores). A faster runner can make times look artificially low."
+              echo "> Runner: \`$MK\` — $(jq -r '.model' hardware.json), julia $(jq -r '.julia' hardware.json). Times are min-merged and compared only against this same machine's history."
             fi
 
             echo ""

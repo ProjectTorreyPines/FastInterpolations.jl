@@ -38,29 +38,18 @@ const EVALS_MED = 50        # ~500ns-2μs benchmarks (50 evals still < 1% timer 
 const EVALS_SLOW = 10       # ~30-100μs benchmarks
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Hardware fingerprint (diagnostic only)
+# Hardware fingerprint
 # ══════════════════════════════════════════════════════════════════════════════
 #
 # GitHub's shared runner fleet mixes CPU generations, so a run can land on a
-# noticeably faster box. We record a per-run fingerprint so an anomalously fast
-# point on the dashboard can be traced to its hardware. This is annotation only
-# — it does NOT gate the min-merge.
+# noticeably faster/slower box than the last. We record a per-run fingerprint and
+# derive a machine key from it (see bench_machine.jl); the key gates the
+# min-merge and the master store so we only ever compare like-with-like.
 
-function hardware_fingerprint()
-    ci = Sys.cpu_info()
-    return Dict{String, Any}(
-        "cpu_name" => Sys.CPU_NAME,          # LLVM uarch target (skylake, znver3, ...)
-        "arch" => String(Sys.ARCH),
-        "model" => isempty(ci) ? "" : ci[1].model,
-        "speed_mhz" => isempty(ci) ? 0 : ci[1].speed,
-        "ncores" => length(ci),
-        "cpu_threads" => Sys.CPU_THREADS,
-        "julia" => string(VERSION),
-    )
-end
+include(joinpath(@__DIR__, "bench_machine.jl"))
 
 let hw = hardware_fingerprint()
-    println("Runner hardware: $(hw["cpu_name"]) | $(hw["model"]) | $(hw["ncores"]) cores | julia $(hw["julia"])")
+    println("Runner hardware: $(hw["cpu_name"]) | $(hw["model"]) | $(hw["ncores"]) cores | julia $(hw["julia"]) | key=$(machine_key(hw))")
     open("hardware.json", "w") do io
         JSON.print(io, hw)
     end
@@ -583,9 +572,9 @@ if !IS_FILTERED && (!isempty(MASTER_SHA) || _HAS_BASELINE || _HAS_PREVBEST)
 
     if !isempty(MASTER_SHA)
         # ── Master store mode ──────────────────────────────────────────────
-        # prev_best = same-commit floor (re-run only lowers the stored point);
-        # latest/window_avg = the *previous* master, for regression detection.
-        prev_best, latest, window_avg = load_master_baseline(BASELINE_PATH, MASTER_SHA)
+        # prev_best = same-(commit,machine) floor (re-run only lowers the point);
+        # latest/window_avg = the *previous* master on THIS machine, for detection.
+        prev_best, latest, window_avg = load_master_baseline(BASELINE_PATH, MASTER_SHA, machine_key())
         if !isempty(prev_best)
             println("Loaded $(length(prev_best)) same-commit prior value(s) for SHA $(MASTER_SHA[1:min(8, lastindex(MASTER_SHA))]) (floor)")
         end
@@ -627,7 +616,7 @@ if !IS_FILTERED && (!isempty(MASTER_SHA) || _HAS_BASELINE || _HAS_PREVBEST)
         confirmed = FlaggedBench[]
 
         if _HAS_BASELINE
-            latest, window_avg = load_baseline(BASELINE_PATH)
+            latest, window_avg = load_baseline(BASELINE_PATH, machine_key())
             flagged = detect_regressions(effective, latest, window_avg)
 
             if !isempty(flagged)
@@ -662,8 +651,16 @@ if !IS_FILTERED && (!isempty(MASTER_SHA) || _HAS_BASELINE || _HAS_PREVBEST)
             println("No baseline available — applied prev-best min-merge, skipped regression comparison")
         end
 
-        write_regression_report("regression_report.json", effective, latest, window_avg, flagged, confirmed)
-        println("Wrote regression_report.json")
+        # Record which CPU this run measured on vs the CPU of master's most-recent
+        # commit (the natural baseline) so the comment can warn on a cross-CPU
+        # comparison — the more dangerous mismatch than a mere runner change.
+        cur_machine = machine_key()
+        base_machine = _HAS_BASELINE ? latest_master_machine(BASELINE_PATH) : ""
+        write_regression_report(
+            "regression_report.json", effective, latest, window_avg, flagged, confirmed,
+            cur_machine, base_machine,
+        )
+        println("Wrote regression_report.json (runner=$cur_machine, master-baseline=$(isempty(base_machine) ? "none" : base_machine))")
     end   # master-store vs PR mode
 end
 

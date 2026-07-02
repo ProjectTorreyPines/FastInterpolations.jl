@@ -17,24 +17,37 @@
     @test _linear_blend_style(Int, String) === _LinearBlendGeneric()             # undefined `*` ⇒ Union{}
     @test _linear_blend_style(Union{}) === _LinearBlendGeneric()
 
-    # styled bodies are directly callable (the ext's generic escape relies on this)
-    @test _linear_value_blend(_LinearBlendFMA(), 0.3, 0.2, 0.9) ===
-        muladd(0.3, 0.9, muladd(-0.3, 0.2, 0.2))
-    @test _linear_value_blend(_LinearBlendGeneric(), 0.3, 0.2, 0.9) ===
-        muladd(0.3, 0.9, (1 - 0.3) * 0.2)
+    # styled bodies are directly callable (the ext's generic escape relies on
+    # this). NOT bitwise: `muladd` may legally fuse or not per compilation
+    # context, so the constant-folded literal reference can land one
+    # contraction rounding away from the runtime body — tolerance, not bits.
+    @test isapprox(
+        _linear_value_blend(_LinearBlendFMA(), 0.3, 0.2, 0.9),
+        muladd(0.3, 0.9, muladd(-0.3, 0.2, 0.2)); rtol = 1.0e-15,
+    )
+    @test isapprox(
+        _linear_value_blend(_LinearBlendGeneric(), 0.3, 0.2, 0.9),
+        muladd(0.3, 0.9, (1 - 0.3) * 0.2); rtol = 1.0e-15,
+    )
 end
 
 @testitem "linear blend: entry dispatch is a faithful refactor" begin
     using FastInterpolations: _linear_value_blend
 
-    # FMA style: verbatim 2-FMA form, endpoint-exact
-    @test _linear_value_blend(0.3, 0.2, 0.9) ===
-        muladd(0.3, 0.9, muladd(-0.3, 0.2, 0.2))
+    # FMA style: verbatim 2-FMA form (tolerance ∵ muladd contraction is
+    # compilation-context-dependent — see the styled-forms testitem), and
+    # endpoint-exact (α∈{0,1} is exact under either contraction choice)
+    @test isapprox(
+        _linear_value_blend(0.3, 0.2, 0.9),
+        muladd(0.3, 0.9, muladd(-0.3, 0.2, 0.2)); rtol = 1.0e-15,
+    )
     @test _linear_value_blend(0.0, 0.2, 0.9) === 0.2
     @test _linear_value_blend(1.0, 0.2, 0.9) === 0.9
     z1, z2 = 1.0 + 2.0im, 3.0 - 1.0im
-    @test _linear_value_blend(0.3, z1, z2) ===
-        muladd(0.3, z2, muladd(-0.3, z1, z1))
+    @test isapprox(
+        _linear_value_blend(0.3, z1, z2),
+        muladd(0.3, z2, muladd(-0.3, z1, z1)); rtol = 1.0e-15,
+    )
 
     # generic style: exact pre-refactor expression, bit-identically
     α, yL, yR = big"0.3", big"0.2", big"0.9"

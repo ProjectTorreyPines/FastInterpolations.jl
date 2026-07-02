@@ -23,8 +23,12 @@ end
     using FastInterpolations: _LinearBlendFMA, _LinearBlendGeneric, _linear_value_blend
     using Random
 
-    # Float path: dispatched form == verbatim FMA form (bit-identical), endpoint-exact
-    @test _linear_value_blend(0.3, 0.2, 0.9) === muladd(0.3, 0.9, muladd(-0.3, 0.2, 0.2))
+    # Float path: dispatched form == verbatim FMA form (tolerance ∵ muladd
+    # contraction is compilation-context-dependent), endpoint-exact
+    @test isapprox(
+        _linear_value_blend(0.3, 0.2, 0.9),
+        muladd(0.3, 0.9, muladd(-0.3, 0.2, 0.2)); rtol = 1.0e-15,
+    )
     @test _linear_value_blend(0.0, 0.2, 0.9) === 0.2
     @test _linear_value_blend(1.0, 0.2, 0.9) === 0.9
     @test _linear_value_blend(0.0f0, 0.2f0, 0.9f0) === 0.2f0

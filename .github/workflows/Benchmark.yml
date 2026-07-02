@@ -98,6 +98,18 @@ jobs:
       - name: Install dependencies
         run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
 
+      # Machine key of THIS runner (e.g. "znver3|4c"). The fleet mixes CPUs, so
+      # we only ever min-merge / compare against the same machine. Dependency-free
+      # and fast (~1s, no project). Used below to pick the matching prev-best slice
+      # from the PR comment blob, and carried into the comment for a change note.
+      - name: Fingerprint runner
+        id: fingerprint
+        run: |
+          MK=$(julia -e 'include("benchmark/bench_machine.jl"); print(machine_key())')
+          echo "$MK" > machine_key.txt
+          echo "machine_key=$MK" >> "$GITHUB_OUTPUT"
+          echo "Runner machine key: $MK"
+
       # Resolve the PR this run should attach to (empty for plain master pushes).
       # On a pull_request re-run the original event context is preserved, so the
       # PR head SHA is stable across re-runs — that is what powers the min-merge.
@@ -152,15 +164,18 @@ jobs:
             > baseline_data.js 2>/dev/null || true
 
       # Read prior best times from the existing PR comment so re-running the same
-      # commit only lowers measured times (min-merge) and clears CI-noise flags.
-      # Fully best-effort: any missing comment / missing blob / SHA mismatch /
-      # parse error leaves prev_best.json absent -> a normal full fresh run.
+      # commit on the SAME machine only lowers measured times (min-merge) and
+      # clears CI-noise flags. The blob is machine-keyed (v2): we pick this
+      # runner's slice; a different/absent machine -> fresh full run for it.
+      # Fully best-effort: any missing comment / SHA mismatch / v1 blob / parse
+      # error leaves prev_best.json absent -> a normal full fresh run.
       - name: Read previous benchmark comment
         if: steps.ctx.outputs.pr_number != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.ctx.outputs.pr_number }}
           CUR_SHA: ${{ steps.ctx.outputs.pr_sha }}
+          MK: ${{ steps.fingerprint.outputs.machine_key }}
         run: |
           set +e
           BODY=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
@@ -171,15 +186,24 @@ jobs:
             echo "No prior benchmark data blob found -> full fresh run"
             exit 0
           fi
+          # Carry the whole blob forward so the comment step can rebuild it while
+          # preserving other machines' floors.
+          printf '%s' "$BLOB" > prev_blob.json
           BLOB_SHA=$(printf '%s' "$BLOB" | jq -r '.sha // ""' 2>/dev/null)
           if [ "$BLOB_SHA" != "$CUR_SHA" ]; then
             echo "Comment SHA ($BLOB_SHA) != current ($CUR_SHA) -> reset (full fresh run)"
+            rm -f prev_blob.json   # different commit: don't carry stale machines forward
             exit 0
           fi
-          printf '%s' "$BLOB" | jq -e '.benches' > prev_best.json 2>/dev/null \
-            && echo "Loaded prev-best ($(jq length prev_best.json) benches) for SHA $CUR_SHA" \
-            || { echo "Blob parse failed -> full fresh run"; rm -f prev_best.json; }
-          printf '%s' "$BLOB" | jq -r '.flagged // [] | join(",")' > flagged_names.txt 2>/dev/null || true
+          # v2 machine-keyed blob: select this runner's slice. A v1 blob (no
+          # .machines) or an unseen machine yields no floor -> fresh full run.
+          if printf '%s' "$BLOB" | jq -e --arg mk "$MK" '.machines[$mk].benches' > prev_best.json 2>/dev/null; then
+            echo "Loaded prev-best floor for machine $MK ($(jq length prev_best.json) benches) on SHA $CUR_SHA"
+            printf '%s' "$BLOB" | jq -r --arg mk "$MK" '.machines[$mk].flagged // [] | join(",")' > flagged_names.txt 2>/dev/null || true
+          else
+            echo "No prior entry for machine $MK on SHA $CUR_SHA -> fresh full run for this machine"
+            rm -f prev_best.json
+          fi
 
       - name: Run benchmarks
         run: |
@@ -238,8 +262,11 @@ jobs:
             benchmark_flat.json
             regression_report.json
             hardware.json
+            machine_key.txt
+            prev_blob.json
             pr_number
             pr_head_sha
+          if-no-files-found: ignore
 
       # Publish the master data point to gh-pages, keyed by commit SHA:
       #   - re-running a commit REPLACES its entry with the per-benchmark min

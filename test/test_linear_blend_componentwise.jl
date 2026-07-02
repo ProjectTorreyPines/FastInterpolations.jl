@@ -63,18 +63,28 @@ end
     @test @inferred(EXT._color_linear_blend_style(Float64, ARGB{N0f8})) === Val(:componentwise)
     @test @inferred(EXT._color_linear_blend_style(Float64, ARGB{Float64})) === Val(:componentwise)
 
-    # ineligible weight or channel → generic escape (gate includes the weight)
+    # ineligible weight or channel → generic escape (gate condition 1)
     @test EXT._color_linear_blend_style(BigFloat, Gray{BigFloat}) === Val(:generic)
     @test EXT._color_linear_blend_style(ForwardDiff.Dual{Nothing, Float64, 2}, RGB{Float64}) ===
         Val(:generic)
 
-    # entry ownership: parametric same-type pairs dispatch to the EXT method;
-    # packed and mixed concrete pairs fall through to the CORE untyped entry
-    # (structural exclusion — no gate/safety net needed for them)
+    # packed colorants → generic escape (gate condition 2: mapc reconstruction
+    # type Gray24 ≠ natural arithmetic type Gray{Float64} — never re-quantized)
+    @test @inferred(EXT._color_linear_blend_style(Float64, Gray24)) === Val(:generic)
+    @test @inferred(EXT._color_linear_blend_style(Float64, RGB24)) === Val(:generic)
+    @test @inferred(EXT._color_linear_blend_style(Float64, ARGB32)) === Val(:generic)
+
+    # promotion-match gate generalizes: memory-layout RGB variants opt in
+    # automatically (mapc BGR{N0f8} → BGR{Float64} ≡ CVS arithmetic result)
+    @test @inferred(EXT._color_linear_blend_style(Float64, BGR{N0f8})) === Val(:componentwise)
+
+    # entry ownership: arithmetic colorants (incl. packed — gate-escaped)
+    # dispatch to the EXT entry; non-arithmetic color spaces (HSV — CVS defines
+    # no arithmetic; channelwise hue blending would be wrong) and mixed
+    # concrete pairs fall through to the CORE untyped entry
     @test which(_linear_value_blend, Tuple{Float64, RGB{N0f8}, RGB{N0f8}}).module === EXT
-    @test which(_linear_value_blend, Tuple{Float64, Gray24, Gray24}).module === FI
-    @test which(_linear_value_blend, Tuple{Float64, RGB24, RGB24}).module === FI
-    @test which(_linear_value_blend, Tuple{Float64, ARGB32, ARGB32}).module === FI
+    @test which(_linear_value_blend, Tuple{Float64, Gray24, Gray24}).module === EXT
+    @test which(_linear_value_blend, Tuple{Float64, HSV{Float32}, HSV{Float32}}).module === FI
     @test which(_linear_value_blend, Tuple{Float64, Gray{N0f8}, Gray{Float32}}).module === FI
 end
 
@@ -94,6 +104,8 @@ end
         ([GrayA{N0f8}(0.2, 0.9), GrayA{N0f8}(0.7, 0.3), GrayA{N0f8}(0.4, 0.6)], GrayA{Float64}),
         ([RGBA{Float64}(0.9, 0.1, 0.5, 0.8), RGBA{Float64}(0.1, 0.8, 0.2, 0.3), RGBA{Float64}(0.7, 0.3, 0.9, 0.6)], RGBA{Float64}),
         ([ARGB{Float64}(0.9, 0.1, 0.5, 0.8), ARGB{Float64}(0.1, 0.8, 0.2, 0.3), ARGB{Float64}(0.7, 0.3, 0.9, 0.6)], ARGB{Float64}),
+        # layout-variant RGB: promotion-match gate opts it in automatically
+        ([BGR{N0f8}(0.9, 0.1, 0.5), BGR{N0f8}(0.1, 0.8, 0.2), BGR{N0f8}(0.7, 0.3, 0.9)], BGR{Float64}),
         # packed: still widen — the componentwise path must NOT capture these
         ([Gray24(0.2), Gray24(0.7), Gray24(0.4)], Gray{Float64}),
         ([RGB24(0.9, 0.1, 0.5), RGB24(0.1, 0.8, 0.2), RGB24(0.7, 0.3, 0.9)], RGB{Float64}),

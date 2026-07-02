@@ -21,6 +21,49 @@
 # - α: Unconstrained — can be Tg or Dual{Tg} for AD support
 
 # ========================================
+# Convex value blend (EvalValue's final 2-value combine)
+# ========================================
+# α·yR + (1−α)·yL, style-dispatched on the weighted RESULT type
+# `promote_op(*, α, value)` — fixed-point values (N0f8) under a float weight
+# classify as native-FMA. The negation lands on the float weight `α`, never on
+# data, so finite/colorant values appear only as `weight × value` (wrap-free).
+# Endpoint-exact at α=0,1; bounded within [min(yL,yR), max(yL,yR)] for α∈[0,1]
+# (extrapolation intentionally passes α outside [0,1]).
+#
+#   _LinearBlendFMA     — result is IEEEFloat/Complex{IEEEFloat}: verbatim
+#                         2-FMA form (free-addend fusion).
+#   _LinearBlendGeneric — duck-safe factoring for everything else (colorants,
+#                         Dual, BigFloat, undefined `*`): complement on the
+#                         SCALAR weight, value touched once fewer per node.
+#
+# Componentwise colorant support lives ENTIRELY in the ColorVectorSpace
+# extension: it overrides the untyped entry for same-type parametric colorant
+# pairs and, when the CHANNEL result is native-FMA, maps each channel back
+# into this styled blend (α preserved ⇒ channels take the 2-FMA form; the
+# convex structure must not be flattened to a generic weight pair — that
+# costs the channel fusion). Mixed/packed/ineligible colorants simply fall
+# through to `_LinearBlendGeneric` here — no safety net needed.
+abstract type _LinearBlendStyle end
+struct _LinearBlendFMA <: _LinearBlendStyle end
+struct _LinearBlendGeneric <: _LinearBlendStyle end
+
+@inline _linear_blend_style(::Type{A}, ::Type{Y}) where {A, Y} =
+    _linear_blend_style(Base.promote_op(*, A, Y))
+@inline _linear_blend_style(::Type{T}) where {T <: Base.IEEEFloat} = _LinearBlendFMA()
+@inline _linear_blend_style(::Type{Complex{T}}) where {T <: Base.IEEEFloat} = _LinearBlendFMA()
+@inline _linear_blend_style(::Type) = _LinearBlendGeneric()
+@inline _linear_blend_style(::Type{Union{}}) = _LinearBlendGeneric()   # undefined `*` ⇒ safe generic (also disambiguates ⊥)
+
+@inline function _linear_value_blend(α, yL, yR)
+    style = _linear_blend_style(typeof(α), promote_type(typeof(yL), typeof(yR)))
+    return _linear_value_blend(style, α, yL, yR)
+end
+@inline _linear_value_blend(::_LinearBlendFMA, α, yL, yR) =
+    muladd(α, yR, muladd(-α, yL, yL))
+@inline _linear_value_blend(::_LinearBlendGeneric, α, yL, yR) =
+    muladd(α, yR, (one(α) - α) * yL)
+
+# ========================================
 # Standard Kernel (inv_h, α signature)
 # ========================================
 

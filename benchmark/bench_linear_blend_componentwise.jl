@@ -1,5 +1,5 @@
-# Same-process runtime-swap A/B for the componentwise lincomb path.
-#   A = componentwise (ext styles active)   B = generic (styles swapped by @eval)
+# Same-process runtime-swap A/B for the componentwise colorant blend.
+#   A = componentwise (ext entries active)   B = generic (entries swapped by @eval)
 # Public scalar path, 1D + 2D UnitStep grids (1:16), InBounds — the real kernel
 # shape (matches claudedocs/scratch/color_component_actual_shape_bench.jl).
 # Interleaved rounds; report min ns/eval. Float64/ComplexF64 are controls
@@ -54,22 +54,19 @@ function bench_family(::Type{V}) where {V}
     return minimum(t1).time / N, minimum(t2).time / N
 end
 
-# ── A/B toggle: redefine the family style methods at top level ──────────────
-# Both the unrestricted AND the IEEEFloat-restricted signatures are swapped:
-# the shipped ext defines `where {A, T <: Base.IEEEFloat}` methods for the
-# 4-channel families, which are MORE SPECIFIC than the unrestricted swap and
-# would silently outrank a generic-mode redefinition (cw would be measured in
-# both modes for RGBA{Float64}/ARGB{Float64}).
+# ── A/B toggle: replace the family's blend ENTRY method at top level ────────
+# The shipped ext defines one `_linear_value_blend(α, yL::C, yR::C)` entry per
+# parametric family; redefining the SAME signature from Main swaps the family
+# between componentwise (mapc, α preserved per channel) and the core generic
+# styled escape. The cw form here is ungated (benchmark uses eligible
+# channels only).
 gate_expr(F) = quote
-    FI._lincomb_style(::Type{A}, ::Type{$F{T}}) where {A, T} =
-        FI._style_from_fuses(FI._channel_blend_fuses(A, T))
-    FI._lincomb_style(::Type{A}, ::Type{$F{T}}) where {A, T <: Base.IEEEFloat} =
-        FI._style_from_fuses(FI._channel_blend_fuses(A, T))
+    @inline FI._linear_value_blend(α, yL::C, yR::C) where {C <: $F} =
+        mapc((l, r) -> FI._linear_value_blend(α, l, r), yL, yR)
 end
 generic_expr(F) = quote
-    FI._lincomb_style(::Type{A}, ::Type{$F{T}}) where {A, T} = FI._LincombGeneric()
-    FI._lincomb_style(::Type{A}, ::Type{$F{T}}) where {A, T <: Base.IEEEFloat} =
-        FI._LincombGeneric()
+    @inline FI._linear_value_blend(α, yL::C, yR::C) where {C <: $F} =
+        FI._linear_value_blend(FI._LinearBlendGeneric(), α, yL, yR)
 end
 
 const FAMILY_SYMS = (:Gray, :RGB, :RGBA, :AGray, :GrayA, :ARGB)
@@ -108,8 +105,9 @@ function main(; rounds::Int = 3)
     vals_b = [Base.invokelatest(ictl, q) for q in Q1[1:64]]
     swap!(:Gray, :componentwise)
     @assert vals_a == vals_b "Float64 control drifted across style swap"
-    @assert Base.invokelatest(FI._lincomb_style, Float64, Gray{BigFloat}) ===
-        FI._LincombGeneric() "BigFloat channel must stay generic"
+    EXT = Base.get_extension(FI, :FastInterpolationsColorVectorSpaceExt)
+    @assert Base.invokelatest(EXT._color_linear_blend_style, Float64, Gray{BigFloat}) ===
+        Val(:generic) "BigFloat channel must stay generic"
 
     results = Dict{Any, Vector{NTuple{2, Float64}}}()
     for round_i in 1:rounds, mode in (:componentwise, :generic)

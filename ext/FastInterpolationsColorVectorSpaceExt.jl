@@ -1,64 +1,76 @@
-# Componentwise lincomb opt-in for parametric arithmetic colorants.
+# Componentwise convex blend for parametric arithmetic colorants.
 #
-# Gate: a family opts into `_LincombComponentwise` only when the per-channel
-# blend `weight × channel` lands in a native-FMA type (`_channel_blend_fuses`)
-# — `Float64 × Gray{N0f8}` qualifies (channel math is Float64); BigFloat/Dual
-# weights or channels stay generic. Packed colorants (Gray24/RGB24/ARGB32) get
-# NO style method: they keep the generic path and its widened arithmetic output
-# (a naive mapc would re-quantize into the packed type — wrong value AND type).
+# The core blend (`_linear_value_blend`, src/linear/linear_kernels.jl) knows
+# only FMA/Generic. This extension owns ALL colorant dispatch: it overrides
+# the blend ENTRY for same-type parametric colorant pairs and picks per pair:
+#
+#   componentwise — when the CHANNEL result `weight × channel` is native-FMA
+#                   (the core `_linear_blend_style` rule applied to the
+#                   channel type): `mapc` re-enters the styled blend per
+#                   channel with α PRESERVED, so each channel takes the
+#                   verbatim 2-FMA float form. Flattening α to a generic
+#                   weight pair instead costs the channel fusion (~half the
+#                   win, and 4-channel N0f8 turns into a small loss).
+#   generic       — ineligible channels (BigFloat) or weights (Dual/BigFloat):
+#                   explicit escape to the core generic styled method — the
+#                   plain ColorVectorSpace arithmetic path, no recursion.
+#
+# Coverage is per parametric family (Gray/RGB/RGBA/AGray/GrayA/ARGB), every
+# gate-eligible channel — benchmark-verified wins on the real 2D kernel
+# (M1, min ns/eval vs generic: Gray{N0f8} 2.93/3.43, RGB{Float64} 3.08/4.10,
+# RGBA{N0f8} 8.39/9.27, AGray{N0f8} 4.69/19.11). Packed colorants
+# (Gray24/RGB24/ARGB32) do NOT match these entries (`Gray24 <: AbstractGray`
+# but not `<: Gray`) and mixed concrete pairs fail the same-`C` constraint —
+# both fall through to the core generic path and keep the widened arithmetic
+# output (a naive mapc would re-quantize packed storage: wrong value AND type).
 #
 # ColorVectorSpace is a trigger (not just ColorTypes) so this extension is a
 # pure perf overlay on arithmetic that already exists — it must never make
 # color interpolation newly work without ColorVectorSpace loaded.
+#
+# `@inline` is load-bearing on the blend entries: without it the 4-channel
+# N0f8 body exceeds the inline cost threshold and a per-node call costs ~55%.
 module FastInterpolationsColorVectorSpaceExt
 
 using ColorTypes: AGray, ARGB, Colorant, Gray, GrayA, RGB, RGBA, mapc
 using ColorVectorSpace: ColorVectorSpace
 using FastInterpolations
 import FastInterpolations:
-    _LincombComponentwise,
-    _channel_blend_fuses,
-    _lincomb2,
-    _lincomb_style,
-    _linear_value_blend,
-    _style_from_fuses
+    _LinearBlendFMA,
+    _LinearBlendGeneric,
+    _LinearBlendStyle,
+    _linear_blend_style,
+    _linear_value_blend
 
-@inline _lincomb_style(::Type{A}, ::Type{Gray{T}}) where {A, T} =
-    _style_from_fuses(_channel_blend_fuses(A, T))
-@inline _lincomb_style(::Type{A}, ::Type{RGB{T}}) where {A, T} =
-    _style_from_fuses(_channel_blend_fuses(A, T))
-@inline _lincomb_style(::Type{A}, ::Type{AGray{T}}) where {A, T} =
-    _style_from_fuses(_channel_blend_fuses(A, T))
-@inline _lincomb_style(::Type{A}, ::Type{GrayA{T}}) where {A, T} =
-    _style_from_fuses(_channel_blend_fuses(A, T))
-# 4-channel families included: with the CONVEX blend hook below (α preserved
-# into each channel), RGBA{N0f8}/ARGB{N0f8} win on the real 2D kernel
-# (interleaved min 8.39 vs 9.27 / 8.39 vs 9.83 ns/eval, M1). Under the earlier
-# α-flattened `_lincomb2(1-α, xc, α, yc)` channel form they LOST 2-4% — the
-# convex structure is load-bearing, as is the blend method's @inline (without
-# it the 4-channel N0f8 body exceeds the inline cost threshold and a
-# per-node call costs ~55%).
-@inline _lincomb_style(::Type{A}, ::Type{RGBA{T}}) where {A, T} =
-    _style_from_fuses(_channel_blend_fuses(A, T))
-@inline _lincomb_style(::Type{A}, ::Type{ARGB{T}}) where {A, T} =
-    _style_from_fuses(_channel_blend_fuses(A, T))
+# Entry overrides — one per parametric family (keeps per-family opt-out
+# possible and packed types structurally excluded).
+@inline _linear_value_blend(α, yL::C, yR::C) where {C <: Gray} =
+    _color_linear_value_blend(_color_linear_blend_style(typeof(α), C), α, yL, yR)
+@inline _linear_value_blend(α, yL::C, yR::C) where {C <: RGB} =
+    _color_linear_value_blend(_color_linear_blend_style(typeof(α), C), α, yL, yR)
+@inline _linear_value_blend(α, yL::C, yR::C) where {C <: RGBA} =
+    _color_linear_value_blend(_color_linear_blend_style(typeof(α), C), α, yL, yR)
+@inline _linear_value_blend(α, yL::C, yR::C) where {C <: AGray} =
+    _color_linear_value_blend(_color_linear_blend_style(typeof(α), C), α, yL, yR)
+@inline _linear_value_blend(α, yL::C, yR::C) where {C <: GrayA} =
+    _color_linear_value_blend(_color_linear_blend_style(typeof(α), C), α, yL, yR)
+@inline _linear_value_blend(α, yL::C, yR::C) where {C <: ARGB} =
+    _color_linear_value_blend(_color_linear_blend_style(typeof(α), C), α, yL, yR)
 
-# Componentwise CONVEX blend for SAME-type colorant pairs: α is preserved into
-# each channel so the per-channel call re-enters `_linear_value_blend` and
-# takes the verbatim 2-FMA float form (muladd(α, yc, muladd(-α, xc, xc))).
-# Lowering to `_lincomb2(1-α, xc, α, yc)` instead loses the convex structure —
-# the channel gets mul+muladd, the fusion breaks, and roughly half the win
-# evaporates (and 4-channel N0f8 turns into a small loss). `mapc` reassembles
-# the widened arithmetic color type (RGB{N0f8} → RGB{Float64}, matching the
-# generic path's output). A mixed concrete pair skips this method and falls to
-# the core safety net — FI's linear kernel constrains both endpoints to one
-# `Tv`, so kernel traffic is always same-type.
-@inline _linear_value_blend(::_LincombComponentwise, α, x::C, y::C) where {C <: Colorant} =
-    mapc((xc, yc) -> _linear_value_blend(α, xc, yc), x, y)
+# Gate = the core style rule applied to the CHANNEL type (weight included:
+# a Dual/BigFloat weight disqualifies even native-float channels).
+@inline _color_linear_blend_style(::Type{A}, ::Type{C}) where {A, C <: Colorant} =
+    _color_style_tag(_linear_blend_style(A, eltype(C)))
+@inline _color_style_tag(::_LinearBlendFMA) = Val(:componentwise)
+@inline _color_style_tag(::_LinearBlendStyle) = Val(:generic)
 
-# General weighted-pair primitive for direct `_lincomb2` users (future kernels
-# with non-convex weights). The linear blend above does NOT route through this.
-@inline _lincomb2(::_LincombComponentwise, a, x::C, b, y::C) where {C <: Colorant} =
-    mapc((xc, yc) -> _lincomb2(a, xc, b, yc), x, y)
+# Componentwise: α preserved into each channel; `mapc` reassembles the widened
+# arithmetic color type (RGB{N0f8} → RGB{Float64}, matching the generic path).
+@inline _color_linear_value_blend(::Val{:componentwise}, α, yL, yR) =
+    mapc((l, r) -> _linear_value_blend(α, l, r), yL, yR)
+# Generic: explicit escape to the core styled method (no recursion through
+# the colorant entries above).
+@inline _color_linear_value_blend(::Val{:generic}, α, yL, yR) =
+    _linear_value_blend(_LinearBlendGeneric(), α, yL, yR)
 
 end

@@ -1,44 +1,33 @@
-@testitem "lincomb2: styles, generic expression, safety net" begin
+@testitem "linear blend: style rule + styled forms" begin
     using FastInterpolations:
-        _LincombComponentwise,
-        _LincombGeneric,
-        _LincombStyle,
-        _channel_blend_fuses,
-        _lincomb2,
-        _lincomb_style,
-        _style_from_fuses
+        _LinearBlendFMA,
+        _LinearBlendGeneric,
+        _LinearBlendStyle,
+        _linear_blend_style,
+        _linear_value_blend
     using FixedPointNumbers
 
-    # default style is generic for arbitrary type pairs
-    @test @inferred(_lincomb_style(Float64, Float64)) === _LincombGeneric()
-    @test @inferred(_lincomb_style(Float64, BigFloat)) === _LincombGeneric()
-    @test _lincomb_style(Int, String) === _LincombGeneric()
+    # ONE rule on the weighted RESULT type: native-FMA → FMA, else generic
+    @test @inferred(_linear_blend_style(Float64, Float64)) === _LinearBlendFMA()
+    @test @inferred(_linear_blend_style(Float64, N0f8)) === _LinearBlendFMA()    # result Float64
+    @test @inferred(_linear_blend_style(Float32, N0f8)) === _LinearBlendFMA()    # result Float32
+    @test @inferred(_linear_blend_style(Float64, ComplexF64)) === _LinearBlendFMA()
+    @test @inferred(_linear_blend_style(Float64, BigFloat)) === _LinearBlendGeneric()
+    @test @inferred(_linear_blend_style(BigFloat, BigFloat)) === _LinearBlendGeneric()
+    @test _linear_blend_style(Int, String) === _LinearBlendGeneric()             # undefined `*` ⇒ Union{}
+    @test _linear_blend_style(Union{}) === _LinearBlendGeneric()
 
-    # generic expression is exactly muladd(b, y, a*x)
-    a, x, b, y = 0.3, 1.7, 0.7, -2.2
-    @test @inferred(_lincomb2(a, x, b, y)) === muladd(b, y, a * x)
-    @test _lincomb2(0.25f0, 2.0f0, 0.75f0, 4.0f0) ===
-        muladd(0.75f0, 4.0f0, 0.25f0 * 2.0f0)
-    # complex values ride the generic expression too (Base componentwise muladd)
-    @test _lincomb2(0.3, 1.0 + 2.0im, 0.7, 3.0 - 1.0im) ===
-        muladd(0.7, 3.0 - 1.0im, 0.3 * (1.0 + 2.0im))
-
-    # safety net: componentwise style with no specialized method degrades to generic
-    @test _lincomb2(_LincombComponentwise(), a, x, b, y) === muladd(b, y, a * x)
-
-    # channel-eligibility helpers
-    @test _channel_blend_fuses(Float64, N0f8) === Val(true)   # Float64 × N0f8 → Float64
-    @test _channel_blend_fuses(Float32, N0f8) === Val(true)
-    @test _channel_blend_fuses(Float64, Float64) === Val(true)
-    @test _channel_blend_fuses(BigFloat, BigFloat) === Val(false)
-    @test _style_from_fuses(Val(true)) === _LincombComponentwise()
-    @test _style_from_fuses(Val(false)) === _LincombGeneric()
+    # styled bodies are directly callable (the ext's generic escape relies on this)
+    @test _linear_value_blend(_LinearBlendFMA(), 0.3, 0.2, 0.9) ===
+        muladd(0.3, 0.9, muladd(-0.3, 0.2, 0.2))
+    @test _linear_value_blend(_LinearBlendGeneric(), 0.3, 0.2, 0.9) ===
+        muladd(0.3, 0.9, (1 - 0.3) * 0.2)
 end
 
-@testitem "lincomb2: blend delegation is a faithful refactor" begin
+@testitem "linear blend: entry dispatch is a faithful refactor" begin
     using FastInterpolations: _linear_value_blend
 
-    # Val(true) FMA path untouched: verbatim FMA form, endpoint-exact
+    # FMA style: verbatim 2-FMA form, endpoint-exact
     @test _linear_value_blend(0.3, 0.2, 0.9) ===
         muladd(0.3, 0.9, muladd(-0.3, 0.2, 0.2))
     @test _linear_value_blend(0.0, 0.2, 0.9) === 0.2
@@ -47,8 +36,7 @@ end
     @test _linear_value_blend(0.3, z1, z2) ===
         muladd(0.3, z2, muladd(-0.3, z1, z1))
 
-    # Val(false) generic path: delegation through _lincomb2 reproduces the
-    # pre-lincomb expression muladd(α, yR, (one(α) - α) * yL) bit-identically
+    # generic style: exact pre-refactor expression, bit-identically
     α, yL, yR = big"0.3", big"0.2", big"0.9"
     @test _linear_value_blend(α, yL, yR) == muladd(α, yR, (one(α) - α) * yL)
     @test _linear_value_blend(big"0.0", yL, yR) == yL
@@ -56,33 +44,38 @@ end
     @test @inferred(_linear_value_blend(α, yL, yR)) isa BigFloat
 end
 
-@testitem "componentwise colorants: style gating" begin
-    using FastInterpolations: _LincombComponentwise, _LincombGeneric, _lincomb_style
+@testitem "componentwise colorants: ext gate + entry ownership" begin
+    using FastInterpolations
+    using FastInterpolations: _linear_value_blend
     using FixedPointNumbers, ColorTypes, ColorVectorSpace, ForwardDiff
+    const FI = FastInterpolations
+    EXT = Base.get_extension(FI, :FastInterpolationsColorVectorSpaceExt)
+    @test EXT !== nothing
 
-    # eligible: weight × channel lands in a native-FMA type
-    @test @inferred(_lincomb_style(Float64, Gray{N0f8})) === _LincombComponentwise()
-    @test @inferred(_lincomb_style(Float32, RGB{N0f8})) === _LincombComponentwise()
-    @test @inferred(_lincomb_style(Float64, RGB{Float64})) === _LincombComponentwise()
-    @test @inferred(_lincomb_style(Float64, AGray{N0f8})) === _LincombComponentwise()
-    @test @inferred(_lincomb_style(Float64, GrayA{N0f8})) === _LincombComponentwise()
+    # gate = the core style rule applied to the CHANNEL type
+    @test @inferred(EXT._color_linear_blend_style(Float64, Gray{N0f8})) === Val(:componentwise)
+    @test @inferred(EXT._color_linear_blend_style(Float32, RGB{N0f8})) === Val(:componentwise)
+    @test @inferred(EXT._color_linear_blend_style(Float64, RGB{Float64})) === Val(:componentwise)
+    @test @inferred(EXT._color_linear_blend_style(Float64, AGray{N0f8})) === Val(:componentwise)
+    @test @inferred(EXT._color_linear_blend_style(Float64, GrayA{N0f8})) === Val(:componentwise)
+    @test @inferred(EXT._color_linear_blend_style(Float64, RGBA{N0f8})) === Val(:componentwise)
+    @test @inferred(EXT._color_linear_blend_style(Float64, RGBA{Float64})) === Val(:componentwise)
+    @test @inferred(EXT._color_linear_blend_style(Float64, ARGB{N0f8})) === Val(:componentwise)
+    @test @inferred(EXT._color_linear_blend_style(Float64, ARGB{Float64})) === Val(:componentwise)
 
-    # 4-channel families: all eligible channels — wins hinge on the convex
-    # blend hook preserving α into the channels (benchmark-gated; ext comment)
-    @test @inferred(_lincomb_style(Float64, RGBA{Float64})) === _LincombComponentwise()
-    @test @inferred(_lincomb_style(Float64, ARGB{Float64})) === _LincombComponentwise()
-    @test @inferred(_lincomb_style(Float64, RGBA{N0f8})) === _LincombComponentwise()
-    @test @inferred(_lincomb_style(Float64, ARGB{N0f8})) === _LincombComponentwise()
+    # ineligible weight or channel → generic escape (gate includes the weight)
+    @test EXT._color_linear_blend_style(BigFloat, Gray{BigFloat}) === Val(:generic)
+    @test EXT._color_linear_blend_style(ForwardDiff.Dual{Nothing, Float64, 2}, RGB{Float64}) ===
+        Val(:generic)
 
-    # ineligible weight or channel → generic (gate includes the weight type)
-    @test _lincomb_style(BigFloat, Gray{BigFloat}) === _LincombGeneric()
-    @test _lincomb_style(ForwardDiff.Dual{Nothing, Float64, 2}, RGB{Float64}) ===
-        _LincombGeneric()
-
-    # packed colorants have no style method → generic (never re-quantized)
-    @test _lincomb_style(Float64, Gray24) === _LincombGeneric()
-    @test _lincomb_style(Float64, RGB24) === _LincombGeneric()
-    @test _lincomb_style(Float64, ARGB32) === _LincombGeneric()
+    # entry ownership: parametric same-type pairs dispatch to the EXT method;
+    # packed and mixed concrete pairs fall through to the CORE untyped entry
+    # (structural exclusion — no gate/safety net needed for them)
+    @test which(_linear_value_blend, Tuple{Float64, RGB{N0f8}, RGB{N0f8}}).module === EXT
+    @test which(_linear_value_blend, Tuple{Float64, Gray24, Gray24}).module === FI
+    @test which(_linear_value_blend, Tuple{Float64, RGB24, RGB24}).module === FI
+    @test which(_linear_value_blend, Tuple{Float64, ARGB32, ARGB32}).module === FI
+    @test which(_linear_value_blend, Tuple{Float64, Gray{N0f8}, Gray{Float32}}).module === FI
 end
 
 @testitem "componentwise colorants: output types stay widened" begin
@@ -112,9 +105,9 @@ end
     end
 end
 
-@testitem "componentwise colorants: parity, endpoints, safety net" begin
+@testitem "componentwise colorants: parity, endpoints, mixed fallback" begin
     using FastInterpolations
-    using FastInterpolations: _lincomb2, _linear_value_blend
+    using FastInterpolations: _linear_value_blend
     using FixedPointNumbers, ColorTypes, ColorVectorSpace
     const FI = FastInterpolations
 
@@ -153,14 +146,14 @@ end
         end
     end
 
-    # safety net: mixed concrete colorant types — no MethodError, result
-    # equals the generic expression bit-identically. (Unit-level by design:
-    # FI's linear kernel constrains both endpoints to one Tv, so mixed pairs
-    # can only reach _lincomb2 through direct calls / future kernels.)
+    # mixed concrete colorant types miss the ext's same-`C` entries and fall
+    # to the CORE generic path — no MethodError, exact generic expression.
+    # (Unit-level by design: FI's linear kernel constrains both endpoints to
+    # one Tv, so mixed pairs only arise from direct calls / future kernels.)
     ga = Gray{N0f8}(0.2)
     gb = Gray{Float32}(0.5)
-    v = _lincomb2(0.3, ga, 0.7, gb)
-    @test v == muladd(0.7, gb, 0.3 * ga)
+    v = _linear_value_blend(0.3, ga, gb)
+    @test v == muladd(0.3, gb, (1 - 0.3) * ga)
 end
 
 @testitem "componentwise colorants: alpha-channel parity (AGray/ARGB)" begin
@@ -176,8 +169,8 @@ end
     @test isapprox(gray(cw), gray(gen); rtol = 1.0e-13, atol = 1.0e-15)
     @test isapprox(alpha(cw), alpha(gen); rtol = 1.0e-13, atol = 1.0e-15)
 
-    # ARGB{Float64}: the positive branch of the IEEEFloat-restricted 4-channel
-    # opt-in — alpha-first storage must not permute channels through mapc
+    # ARGB{Float64}: 4-channel, alpha-first storage — mapc must not permute
+    # channels
     r0 = ARGB{Float64}(0.9, 0.1, 0.5, 0.8)
     r1 = ARGB{Float64}(0.1, 0.8, 0.2, 0.3)
     cw4 = _linear_value_blend(0.25, r0, r1)

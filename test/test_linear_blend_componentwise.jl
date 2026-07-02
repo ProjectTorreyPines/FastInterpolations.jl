@@ -96,6 +96,17 @@ end
     # automatically (mapc BGR{N0f8} → BGR{Float64} ≡ CVS arithmetic result)
     @test @inferred(_linear_blend_style(Float64, BGR{N0f8})) === CW
 
+    # the inference probe must compute exactly what the componentwise path
+    # computes — `promote_op` on it is only truthful while the two stay in
+    # sync (tolerance: muladd contraction is compilation-context-dependent)
+    p0, p1 = RGB{N0f8}(0.9, 0.1, 0.5), RGB{N0f8}(0.1, 0.8, 0.2)
+    probe = EXT._cw_blend_result(0.3, p0, p1)
+    shipped = _linear_value_blend(0.3, p0, p1)
+    @test typeof(probe) === typeof(shipped)
+    for ch in (red, green, blue)
+        @test isapprox(ch(probe), ch(shipped); rtol = 1.0e-15)
+    end
+
     # ownership: the ext owns ONLY the style rule for arithmetic colorants
     # (incl. packed — rule-escaped) and the componentwise styled body; the
     # blend ENTRY is the core duck method for every value type, and

@@ -630,6 +630,24 @@ exact endpoints, not the widened bracket.
     return InBounds()
 end
 
+# Unit-step axis: fused 3-outcome check — throw (OOB), `InBounds(last = :exclusive)`
+# (`maximum < last` proven → the batch loop rides the no-cap search), else closed.
+# Generic axes keep the closed-only method above (no Union; nothing to win there).
+# Extrema classify on primals: a Dual max whose VALUE == `last` must not tie-break
+# on its partial into a false exclusive promotion (→ no-cap OOB read).
+# Only the throws are `@boundscheck`-elidable; the promotion is build-mode independent.
+@inline function _check_domain(
+        x::_CachedRange{T, Tinv, Tag}, xi::AbstractVector{<:Real}, ::NoExtrap
+    ) where {T, Tinv, Tag <: _AbstractUnitStep}
+    isempty(xi) && return InBounds()
+    lo, hi = _domain_bounds(x)
+    @boundscheck _ge(_extract_primal(minimum(xi)), _extract_primal(lo)) || _throw_batch_oob(x, xi)
+    mx = _extract_primal(maximum(xi))
+    hip = _extract_primal(hi)
+    @boundscheck _le(mx, hip) || _throw_batch_oob(x, xi)
+    return _lt(mx, hip) ? InBounds(last = :exclusive) : InBounds()
+end
+
 @noinline function _throw_batch_oob(x::AbstractVector, xi::AbstractVector{<:Real})
     qmin, qmax = minimum(xi), maximum(xi)
     x_min = _extract_primal(first(x))
@@ -648,6 +666,21 @@ end
         e::Union{ClampExtrap, FillExtrap, WrapExtrap}
     )
     return _is_all_inbounds(x, xi) ? InBounds() : e
+end
+
+# Unit-step twin: original extrap (any OOB) / exclusive-last (strictly below `last`)
+# / closed (touches `last`). Primal extrema — see the NoExtrap twin.
+@inline function _check_domain(
+        x::_CachedRange{T, Tinv, Tag}, xi::AbstractVector{<:Real},
+        e::Union{ClampExtrap, FillExtrap, WrapExtrap}
+    ) where {T, Tinv, Tag <: _AbstractUnitStep}
+    isempty(xi) && return InBounds()
+    lo, hi = _domain_bounds(x)
+    _ge(_extract_primal(minimum(xi)), _extract_primal(lo)) || return e
+    mx = _extract_primal(maximum(xi))
+    hip = _extract_primal(hi)
+    _le(mx, hip) || return e
+    return _lt(mx, hip) ? InBounds(last = :exclusive) : InBounds()
 end
 
 # Safe domain bounds — single axis-dispatched source of truth for every in-domain
@@ -704,9 +737,11 @@ the OOB slow-path, so this form stays preferred even post-1.10-LTS.
     lo, hi = _domain_bounds(x)
     # `_ge`/`_le` promote-compare (see search.jl): dodge Base's exact mixed
     # `>=(Float, Int)` on an Int/Rational grid. Amortized over the min/max scan
-    # (one compare per batch), but free on a Float grid.
-    return _ge(minimum(queries), _extract_primal(lo)) &&
-        _le(maximum(queries), _extract_primal(hi))
+    # (one compare per batch), but free on a Float grid. Extrema classify on
+    # primals: a Dual query whose VALUE == a bound must not tie-break on its
+    # partial sign into a false OOB verdict (identity on the Float64 hot path).
+    return _ge(_extract_primal(minimum(queries)), _extract_primal(lo)) &&
+        _le(_extract_primal(maximum(queries)), _extract_primal(hi))
 end
 
 # ========================================

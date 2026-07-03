@@ -29,6 +29,133 @@
     # Inner constructor rejects raw bad parameters (Symbol-typed and otherwise).
     @test_throws ErrorException InBounds{:bad, :inclusive}()
     @test_throws ErrorException InBounds{:inclusive, 1}()
+
+    # Compact kwarg-form show (round-trips as constructor calls; GridIdx/DerivOp precedent).
+    @test repr(InBounds()) == "InBounds()"
+    @test repr(InBounds(last = :exclusive)) == "InBounds(last = :exclusive)"
+    @test repr(InBounds(first = :exclusive)) == "InBounds(first = :exclusive)"
+    @test repr(InBounds(first = :exclusive, last = :exclusive)) ==
+        "InBounds(first = :exclusive, last = :exclusive)"
+end
+
+@testitem "batch domain check promotes to exclusive-last on unit-step axes (proven)" begin
+    using FastInterpolations: _check_domain
+
+    # `_CachedRange` instances via the resolved ND grids (same extraction as the
+    # perf probes) — one per tag family.
+    cr(g) = linear_interp((g, g), zeros(length(g), length(g))).grids[1]
+    g_us = cr(1:16)                            # _UnitStep
+    g_ot = cr(Base.OneTo(16))                  # _OneTo (<: _AbstractUnitStep)
+    g_fs = cr(range(0.0, 1.0; length = 17))    # float-step → generic method (gate)
+
+    @testset "NoExtrap batch: strict → exclusive, touch-hi → closed, OOB → throw" begin
+        @test _check_domain(g_us, [2.0, 5.5, prevfloat(16.0)], NoExtrap()) ===
+            InBounds(last = :exclusive)
+        @test _check_domain(g_ot, [1.0, 15.5], NoExtrap()) === InBounds(last = :exclusive)
+        @test _check_domain(g_us, [2.0, 16.0], NoExtrap()) === InBounds()   # touches last
+        @test _check_domain(g_us, Float64[], NoExtrap()) === InBounds()     # empty → closed
+        @test_throws DomainError _check_domain(g_us, [0.5, 5.0], NoExtrap())
+        @test_throws DomainError _check_domain(g_us, [2.0, 16.5], NoExtrap())
+    end
+
+    @testset "float-step axis keeps the closed-only promotion (gate)" begin
+        @test _check_domain(g_fs, [0.1, 0.9], NoExtrap()) === InBounds()
+        @test _check_domain(g_fs, [0.1, 0.9], ClampExtrap()) === InBounds()
+        # Inference pin: the literal-false strict claim must constant-fold, keeping
+        # the non-unit-step promotion CONCRETE closed (no Union).
+        @test Base.promote_op(_check_domain, typeof(g_fs), Vector{Float64}, NoExtrap) ==
+            InBounds{:inclusive, :inclusive}
+    end
+
+    @testset "Clamp/Fill/Wrap batch: strict → exclusive, touch-hi → closed, OOB → original" begin
+        @test _check_domain(g_us, [2.0, 15.0], ClampExtrap()) === InBounds(last = :exclusive)
+        @test _check_domain(g_us, [2.0, 16.0], ClampExtrap()) === InBounds()
+        @test _check_domain(g_us, [0.0, 5.0], ClampExtrap()) === ClampExtrap()
+        @test _check_domain(g_us, [2.0, 15.0], FillExtrap(0.0)) === InBounds(last = :exclusive)
+        @test _check_domain(g_us, [2.0, 17.0], FillExtrap(0.0)) === FillExtrap(0.0)
+        @test _check_domain(g_us, [2.0, 15.0], WrapExtrap()) === InBounds(last = :exclusive)
+    end
+end
+
+@testitem "Dual-query batch touching last must NOT promote to exclusive (no-cap OOB guard)" begin
+    using FastInterpolations: _check_domain
+    using ForwardDiff
+    Dual = ForwardDiff.Dual
+
+    # `Dual(16,-1) < 16.0 === true` (partial tie-break at equal primals). A Dual batch
+    # whose max VALUE == last(x) must classify on primal, else it falsely promotes to
+    # exclusive and the no-cap search reads y[len+1] OOB.
+    cr(g) = linear_interp((g, g), zeros(length(g), length(g))).grids[1]
+    g = cr(1:16)
+
+    # max value == 16 == last(x), partial < 0 (the tie-break trap)
+    xi_touch = [Dual{:t}(2.0, 0.3), Dual{:t}(8.0, 0.1), Dual{:t}(16.0, -1.0)]
+    @test _check_domain(g, xi_touch, NoExtrap()) === InBounds()            # NOT exclusive
+    @test _check_domain(g, xi_touch, ClampExtrap()) === InBounds()
+
+    # strictly-interior Dual batch (max primal < last) still promotes
+    xi_interior = [Dual{:t}(2.0, 1.0), Dual{:t}(15.0, -1.0)]
+    @test _check_domain(g, xi_interior, NoExtrap()) === InBounds(last = :exclusive)
+
+    # end-to-end: gradient through a Dual batch touching last(x) must not OOB
+    x = 1:16
+    y = collect(1.0:16.0)
+    itp = linear_interp(x, y)
+    qs = [3.0, 16.0]                                    # includes the exact endpoint
+    J = ForwardDiff.jacobian(q -> itp(q), qs)          # batch value+partials, no OOB read
+    @test J ≈ [1.0 0.0; 0.0 1.0]
+end
+
+@testitem "generic batch domain check classifies Dual extrema on primals (no spurious throw)" begin
+    using FastInterpolations: _is_all_inbounds, _check_domain
+    using ForwardDiff
+    Dual = ForwardDiff.Dual
+
+    # `_is_all_inbounds` (the non-unit-step batch classifier) must not tie-break a Dual
+    # query whose VALUE == last(x) on its partial sign: a +partial there compares
+    # "greater" and would falsely reject a valid boundary batch (spurious DomainError).
+    for g in (range(0.0, 1.0; length = 11), collect(0.0:0.1:1.0))   # float-step range + vector
+        cr = linear_interp((g, g), zeros(length(g), length(g))).grids[1]
+        xi = [Dual{:t}(0.2, 1.0), Dual{:t}(1.0, 1.0)]              # max value == last, +partial
+        @test _is_all_inbounds(cr, xi)                              # in-domain on primal
+        @test _check_domain(cr, xi, NoExtrap()) === InBounds()      # no spurious throw
+    end
+
+    # end-to-end on a float-step grid (routes through `_is_all_inbounds`, not the
+    # unit-step method): jacobian over a batch touching last(x) must not throw.
+    gf = range(0.0, 1.0; length = 11)
+    itpf = linear_interp(gf, collect(0.0:0.1:1.0))                 # y == x ⇒ slope 1
+    J = ForwardDiff.jacobian(q -> itpf(q), [0.35, 1.0])
+    @test J[1, 1] ≈ 1.0 && J[2, 2] ≈ 1.0                          # endpoint query differentiates fine
+end
+
+@testitem "batch NoExtrap end-to-end rides the promoted contract, bit-identical" begin
+    x = 1:16
+    y = [sin(0.4i) for i in 1:16]
+    qs = [1.0, 2.25, 7.5, 15.999, prevfloat(16.0)]      # strictly interior batch
+    qs_hi = [2.0, 9.5, 16.0]                            # touches the right endpoint
+
+    for f in (linear_interp, cubic_interp, quadratic_interp, constant_interp, pchip_interp)
+        itp_ne = f(x, y)                                        # NoExtrap default
+        itp_ib = f(x, y; extrap = InBounds())
+        itp_ex = f(x, y; extrap = InBounds(last = :exclusive))
+        @test itp_ne(qs) == itp_ex(qs)      # promoted batch == explicit exclusive
+        @test itp_ne(qs) == itp_ib(qs)      # and still bit-identical to closed
+        @test itp_ne(qs_hi) == itp_ib(qs_hi)                    # closed fallback at last
+        @test itp_ne(qs_hi)[end] === itp_ib(qs_hi)[end]
+    end
+
+    # ND SoA per-axis: x-axis strictly interior (promotes), y-axis touches its
+    # last (stays closed) — the mixed per-axis tuple must stay bit-identical.
+    axx, axy = 1:7, 2:9
+    data = [0.1i + 0.3j + 0.01i * j for i in 1:7, j in 1:8]
+    qx = [1.5, 3.25, 6.9]
+    qy = [2.5, 9.0, 8.5]
+    out_ne = similar(qx)
+    out_ib = similar(qx)
+    linear_interp!(out_ne, (axx, axy), data, (qx, qy))
+    linear_interp!(out_ib, (axx, axy), data, (qx, qy); extrap = (InBounds(), InBounds()))
+    @test out_ne == out_ib
 end
 
 @testitem "1D exclusive-last === closed on unit-step grids (all families)" begin

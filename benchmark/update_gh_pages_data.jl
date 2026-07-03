@@ -11,16 +11,14 @@ by **(commit SHA, machine)**:
   `min` across machines (the fleet mixes CPUs, so that would mask real numbers).
 - **Forward-only**: entries for other commits/machines are left untouched.
 
-For display, points are split by machine across suite names: the primary
-machine's series is the canonical suite (the main chart), every other machine a
-secondary `"<suite> (<key>)"`. Storage stays lossless; the split only decides the
-suite name each point renders under.
+For display, all points live on ONE continuous line (the single canonical suite,
+date-sorted) and each bench is annotated with its runner CPU via `extra`, so a
+cross-CPU spike is explainable in the graph tooltip. Machine awareness lives in
+the (commit, machine) min-merge and the regression comparison — not the graph.
 
 Environment:
     BENCH_SHA              (required) commit id used as the merge key
     BENCH_HARDWARE         (required) path to hardware.json — keys the point by machine
-    BENCH_PRIMARY_MACHINE  (optional) machine key to pin as the canonical series;
-                           defaults to the most-common key in the history
     BENCH_COMMIT_META      (optional) JSON metadata for a brand-new entry:
                            {id,message,timestamp,url,author,committer,date_ms}
     BENCH_DATE_MS          (fallback) entry date in ms when no meta file is given
@@ -77,16 +75,25 @@ if isempty(merged_entry["benches"])
     exit(0)
 end
 
-primary = primary_machine(updated, get(ENV, "BENCH_PRIMARY_MACHINE", ""))
-suites = split_by_machine(updated, primary)
-apply_suite_split!(data, suites)
+# One continuous, additive line: every (commit, machine) point in the single
+# canonical suite, date-sorted, each bench annotated with its runner CPU so a
+# spike's cause (a different box) is visible in the graph tooltip. Machine
+# awareness lives in the min-merge above and in the regression comparison — the
+# graph stays one honest, continuous history.
+annotate_runner!(updated)
+sort!(updated, by = _date)
+entries_all = get!(data, "entries", Dict{String, Any}())
+for name in collect(keys(entries_all))
+    startswith(name, "$SUITE (") && delete!(entries_all, name)   # fold any prior per-machine split back in
+end
+entries_all[SUITE] = updated
 data["lastUpdate"] = round(Int, maximum(_date, updated))
 
 write_data_js(OUT_PATH, data)
 
 n_collapsed = count(e -> commit_id(e) == SHA && entry_machine_key(e) == CURRENT_KEY, all_entries)
 println(
-    "Stored SHA $(SHA[1:min(8, lastindex(SHA))]) on machine $CURRENT_KEY (primary=$primary): " *
+    "Stored SHA $(SHA[1:min(8, lastindex(SHA))]) on machine $CURRENT_KEY: " *
         "$(length(merged_entry["benches"])) benches; collapsed $n_collapsed prior same-(commit,machine) " *
-        "entr$(n_collapsed == 1 ? "y" : "ies"); history now $(length(updated)) points across $(length(suites)) machine series"
+        "entr$(n_collapsed == 1 ? "y" : "ies"); history now $(length(updated)) points on one annotated line"
 )

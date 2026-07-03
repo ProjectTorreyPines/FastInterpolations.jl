@@ -1,40 +1,45 @@
-@testitem "carrier-aware blend: _blend_fuses classification" setup = [AllocConstants] begin
-    using FastInterpolations: _blend_fuses
+@testitem "carrier-aware blend: native-FMA classification" setup = [AllocConstants] begin
+    using FastInterpolations: _LinearBlendFMA, _LinearBlendGeneric, _linear_blend_style
     using FixedPointNumbers, ColorTypes, ColorVectorSpace, ForwardDiff
 
-    # hardware-FMA-fusable result types → Val(true)
-    @test _blend_fuses(Float64) === Val(true)
-    @test _blend_fuses(Float32) === Val(true)
-    @test _blend_fuses(Float16) === Val(true)
-    @test _blend_fuses(ComplexF64) === Val(true)
-    @test _blend_fuses(ComplexF32) === Val(true)
-    # fixed-point promotes to float under a real weight → fused
-    @test _blend_fuses(Base.promote_op(*, Float64, N0f8)) === Val(true)   # == Float64
-    # non-fusable carriers → Val(false)
-    @test _blend_fuses(Gray{Float64}) === Val(false)
-    @test _blend_fuses(RGB{Float64}) === Val(false)
-    @test _blend_fuses(BigFloat) === Val(false)
-    @test _blend_fuses(ForwardDiff.Dual{Nothing, Float64, 2}) === Val(false)
-    @test _blend_fuses(Union{}) === Val(false)        # undefined `*` (no ColorVectorSpace) → safe ALT
+    # hardware-FMA-fusable result types → FMA style
+    @test _linear_blend_style(Float64) === _LinearBlendFMA()
+    @test _linear_blend_style(Float32) === _LinearBlendFMA()
+    @test _linear_blend_style(Float16) === _LinearBlendFMA()
+    @test _linear_blend_style(ComplexF64) === _LinearBlendFMA()
+    @test _linear_blend_style(ComplexF32) === _LinearBlendFMA()
+    # fixed-point promotes to float under a real weight → FMA
+    @test _linear_blend_style(Base.promote_op(*, Float64, N0f8)) === _LinearBlendFMA()   # == Float64
+    # non-fusable carriers → generic (the colorant COMPONENTWISE opt-in lives on
+    # the ext's colorant blend ENTRIES, not on this result-type classifier)
+    @test _linear_blend_style(Gray{Float64}) === _LinearBlendGeneric()
+    @test _linear_blend_style(RGB{Float64}) === _LinearBlendGeneric()
+    @test _linear_blend_style(BigFloat) === _LinearBlendGeneric()
+    @test _linear_blend_style(ForwardDiff.Dual{Nothing, Float64, 2}) === _LinearBlendGeneric()
+    @test _linear_blend_style(Union{}) === _LinearBlendGeneric()   # undefined `*` → safe generic
 end
 
-@testitem "carrier-aware blend: linear FMA path unchanged + ALT faithful" setup = [AllocConstants] begin
-    using FastInterpolations: _linear_value_blend
+@testitem "carrier-aware blend: linear FMA path unchanged + generic faithful" setup = [AllocConstants] begin
+    using FastInterpolations: _LinearBlendFMA, _LinearBlendGeneric, _linear_value_blend
     using Random
 
-    # Float path: dispatched form == verbatim FMA form (bit-identical), endpoint-exact
-    @test _linear_value_blend(0.3, 0.2, 0.9) === muladd(0.3, 0.9, muladd(-0.3, 0.2, 0.2))
+    # Float path: dispatched form == verbatim FMA form (tolerance ∵ muladd
+    # contraction is compilation-context-dependent), endpoint-exact
+    @test isapprox(
+        _linear_value_blend(0.3, 0.2, 0.9),
+        muladd(0.3, 0.9, muladd(-0.3, 0.2, 0.2)); rtol = 1.0e-15,
+    )
     @test _linear_value_blend(0.0, 0.2, 0.9) === 0.2
     @test _linear_value_blend(1.0, 0.2, 0.9) === 0.9
     @test _linear_value_blend(0.0f0, 0.2f0, 0.9f0) === 0.2f0
     @test _linear_value_blend(1.0f0, 0.2f0, 0.9f0) === 0.9f0
 
-    # The FMA and min-op forms are algebraically identical; they agree to ~1 ULP
+    # The FMA and generic forms are algebraically identical; they agree to ~1 ULP
     # *relative to the input scale*. (Bit-identical on Julia ≥1.12, where LLVM
     # contracts both to the same FMA; on older LLVM the rounding differs slightly.
     # A result-ULP metric is the wrong gauge — it explodes near cancellation, where
     # the result is tiny but |a−b| is still ~1 ULP of the inputs.) Floats ship the
-    # FMA form regardless, so this only pins the min-op form as a faithful refactor.
+    # FMA form regardless, so this only pins the generic form as a faithful refactor.
     function _maxreldiff(n)
         rng = MersenneTwister(1)
         m = 0.0
@@ -42,8 +47,8 @@ end
             α = rand(rng)
             yL = (rand(rng) - 0.5) * 20
             yR = (rand(rng) - 0.5) * 20
-            a = _linear_value_blend(Val(true), α, yL, yR)
-            b = _linear_value_blend(Val(false), α, yL, yR)
+            a = _linear_value_blend(_LinearBlendFMA(), α, yL, yR)
+            b = _linear_value_blend(_LinearBlendGeneric(), α, yL, yR)
             m = max(m, abs(a - b) / max(abs(yL), abs(yR), abs(a)))
         end
         return m

@@ -581,6 +581,7 @@ if !IS_FILTERED && (!isempty(MASTER_SHA) || _HAS_BASELINE || _HAS_PREVBEST)
 
         effective = compute_effective(results, prev_best)
         flagged = detect_regressions(effective, latest, window_avg)
+        confirmed = FlaggedBench[]
         if !isempty(flagged)
             println("Flagged $(length(flagged)) benchmark(s) vs previous master; re-running $(RERUN_N)×...")
             rerun_and_merge!(suite, results, effective, flagged, RERUN_N, prev_best, latest, window_avg)
@@ -592,6 +593,15 @@ if !IS_FILTERED && (!isempty(MASTER_SHA) || _HAS_BASELINE || _HAS_PREVBEST)
 
         write_master_benches("master_benches.json", effective, results)
         println("Wrote master_benches.json ($(length(effective)) benches)")
+
+        # Also emit the rich report so the push workflow can post/refresh a commit
+        # comment (same table as a PR): the master min-merge floor lives in
+        # gh-pages, so re-running a commit only lowers these numbers.
+        write_regression_report(
+            "regression_report.json", effective, latest, window_avg, flagged, confirmed,
+            machine_key(), latest_master_machine(BASELINE_PATH),
+        )
+        println("Wrote regression_report.json (for the commit comment)")
     else
         # ── PR mode ────────────────────────────────────────────────────────
         # Prior best times for this commit (from the existing PR comment). Empty

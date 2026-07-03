@@ -89,7 +89,10 @@ jobs:
       - uses: julia-actions/julia-processcoverage@v1
         if: ${{ matrix.coverage }}
         with:
-          directories: src
+          # src,ext: extension code exercised by the main @testitem suite
+          # (e.g. the ColorVectorSpace ext) is covered HERE, not in the
+          # test-extensions job (which only runs test/ext/runtests.jl).
+          directories: src,ext
 
       - uses: codecov/codecov-action@v5
         if: ${{ matrix.coverage }}

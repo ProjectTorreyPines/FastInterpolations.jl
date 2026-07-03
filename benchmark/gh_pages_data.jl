@@ -141,56 +141,30 @@ function store_measurement(all_entries, sha, key, new_benches, cpu, fallback_com
 end
 
 """
-    primary_machine(all_entries, override) -> String
+    annotate_runner!(entries) -> entries
 
-The machine whose series is shown as the canonical trend line. `override`
-(`BENCH_PRIMARY_MACHINE`) wins when non-empty — this is the knob a future
-self-hosted "official" runner sets. Otherwise the most-common key across the
-history is used (ties broken lexicographically for determinism).
+Tag each fingerprinted point's benches with `extra = "runner: <key>"`. The stock
+github-action-benchmark viewer renders a bench's `extra` in its tooltip, so on a
+single continuous line a cross-CPU spike becomes explainable on hover. Legacy
+points with no fingerprint ("unknown") are left untouched.
 """
-function primary_machine(all_entries, override)
-    isempty(override) || return override
-    isempty(all_entries) && return "unknown"
-    counts = Dict{String, Int}()
-    for e in all_entries
-        k = entry_machine_key(e)
-        counts[k] = get(counts, k, 0) + 1
-    end
-    best, bestn = "unknown", -1
-    for k in sort(collect(keys(counts)))   # deterministic tie-break
-        if counts[k] > bestn
-            best, bestn = k, counts[k]
+function annotate_runner!(entries)
+    for e in entries
+        key = entry_machine_key(e)
+        key == "unknown" && continue
+        for b in e["benches"]
+            b["extra"] = "runner: $key"
         end
     end
-    return best
-end
-
-"""
-    split_by_machine(all_entries, primary_key) -> Dict{suite_name => Vector{entry}}
-
-Presentation transform: the primary machine's points go under the canonical
-`SUITE` (the main, first chart), every other machine under `"SUITE (<key>)"`
-(secondary charts). Each series is sorted by date. Storage stays lossless — this
-only decides which suite name each point renders under.
-"""
-function split_by_machine(all_entries, primary_key)
-    suites = Dict{String, Any}()
-    for e in all_entries
-        k = entry_machine_key(e)
-        name = k == primary_key ? SUITE : "$SUITE ($k)"
-        push!(get!(suites, name, Any[]), e)
-    end
-    for es in values(suites)
-        sort!(es, by = _date)
-    end
-    return suites
+    return entries
 end
 
 """
     collect_suite_entries(data) -> Vector
 
 Gather every FastInterpolations point across the canonical suite and any
-per-machine secondary suites into one flat list (for re-keying / re-splitting).
+per-machine secondary suites left by an earlier split into one flat list, so the
+history can be folded back onto a single continuous line.
 """
 function collect_suite_entries(data)
     entries_all = get(data, "entries", Dict{String, Any}())
@@ -199,23 +173,6 @@ function collect_suite_entries(data)
         (name == SUITE || startswith(name, "$SUITE (")) && append!(out, es)
     end
     return out
-end
-
-"""
-    apply_suite_split!(data, suites)
-
-Replace all FastInterpolations suites in `data` with the machine-split `suites`
-(canonical + secondaries), leaving unrelated suites untouched.
-"""
-function apply_suite_split!(data, suites)
-    entries_all = get!(data, "entries", Dict{String, Any}())
-    for name in collect(keys(entries_all))
-        (name == SUITE || startswith(name, "$SUITE (")) && delete!(entries_all, name)
-    end
-    for (name, es) in suites
-        entries_all[name] = es
-    end
-    return data
 end
 
 """

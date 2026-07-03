@@ -198,19 +198,6 @@ end
 @inline _integrate_op(h::Tg, yv::Tv, span::Ts) where {Tg, Tv, Ts} =
     yv * span + yv * (span * inv(h))
 
-# ── Carrier-aware blend dispatch ─────────────────────────────────────────────
-# Does `weight × value (+ value)` fuse into a hardware FMA? True iff the weighted
-# arithmetic lands in `IEEEFloat` or `Complex{IEEEFloat}` (native free-addend FMA).
-# Classify on the RESULT type `Tc = promote_op(*, weight, value)` — so fixed-point
-# inputs (N0f8), which promote to Float under a real weight, stay fused — and over
-# ALL of a kernel's value carriers (any one non-fusable ⇒ ALT). Used to keep
-# float/Complex-float on the unchanged FMA form and route only non-fusable carriers
-# (colorants, Dual, BigFloat) to the min-op factoring (one fewer carrier op/node).
-@inline _blend_fuses(::Type{T}) where {T <: Base.IEEEFloat} = Val(true)
-@inline _blend_fuses(::Type{Complex{T}}) where {T <: Base.IEEEFloat} = Val(true)
-@inline _blend_fuses(::Type) = Val(false)
-@inline _blend_fuses(::Type{Union{}}) = Val(false)   # undefined `*` ⇒ safe ALT (also disambiguates ⊥)
-
 # ── Wrap-free field arithmetic at unavoidable difference/sum sites ──
 # `Tc` is the method's coefficient/output field type (e.g. `eltype` of a coeff
 # array, or `_promote_eltype(_coeff_op, Tg, Tv)`) — never a forced `Float`.
@@ -244,20 +231,6 @@ end
     Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
     return @inbounds _fielddiff(Tc, y[i + 1], y[i - 1]) * _get_inv_2cell(x, i)
 end
-
-# Convex linear value blend = α·yR + (1−α)·yL. The negation lands on the float
-# weight `α`, never on data, so finite/colorant values appear only as `weight ×
-# value` (wrap-free). Endpoint-exact at α=0,1; bounded within [min(yL,yR),
-# max(yL,yR)] for α∈[0,1] (extrapolation intentionally passes α outside [0,1]).
-@inline function _linear_value_blend(α, yL, yR)
-    Tc = Base.promote_op(*, typeof(α), promote_type(typeof(yL), typeof(yR)))
-    return _linear_value_blend(_blend_fuses(Tc), α, yL, yR)
-end
-# Val(true): verbatim FMA form (2 FMA/node) — float/Complex-float keep this, unchanged.
-@inline _linear_value_blend(::Val{true}, α, yL, yR) = muladd(α, yR, muladd(-α, yL, yL))
-# Val(false): min-op form — complement formed on the SCALAR weight, value touched
-# once fewer per node. Algebraically identical, also wrap-free, endpoint-exact.
-@inline _linear_value_blend(::Val{false}, α, yL, yR) = muladd(α, yR, (one(α) - α) * yL)
 
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type

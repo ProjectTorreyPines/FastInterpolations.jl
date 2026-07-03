@@ -341,11 +341,16 @@ end
 @inline function (itp::HeteroInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search = itp.searches,
         hint = nothing,
     ) where {Tg, Tv, N}
     resolved = map(_resolve_grididx, query, itp.grids)
     ops = _resolve_deriv_nd(deriv, Val(N))
+    # Call-time extrap override: `nothing` keeps the stored per-axis extraps;
+    # `InBounds` opts into the in-domain fast-path (broadcast or per-axis).
+    # Resolved via the generic `AbstractInterpolantND` method; other modes throw.
+    extraps0 = _resolve_extrap_overrides(itp, extrap)
     if _has_nointerp_method(typeof(itp.methods))
         _validate_nointerp_grididx(itp.methods, resolved)
         search_tuple = _resolve_search_nd(search, Val(N))
@@ -385,7 +390,7 @@ end
         promoted = _promote_grididx_to_nointerp(itp.methods, resolved)
         return _interp_nointerp_oneshot(
             itp.grids, itp.data, resolved, promoted,
-            deriv, itp.extraps, search, hint,
+            deriv, extraps0, search, hint,
         )
     end
     # Promote each axis query to Tc before validate / fill so the OOB/fill VALUE
@@ -395,7 +400,7 @@ end
     # Validate + per-axis promote (in-domain NoExtrap → InBounds for the search), mirroring the
     # homogeneous ND scalar path. PreCompute threads `extraps_eff` to its ND search; the OnTheFly
     # collapse keeps promoting transitively inside each 1D fiber (see `_locate_cell`).
-    extraps_eff = _validate_nd_domain(itp.grids, qc, itp.extraps)
+    extraps_eff = _validate_nd_domain(itp.grids, qc, extraps0)
     oob_result = _try_fill_oob(qc, itp.grids, extraps_eff, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
     policies = _resolve_search_nd(search, Val(N))
@@ -412,22 +417,6 @@ end
     ) where {Tg, Tv, N}
     return itp(q; kw...)
 end
-
-# Call-time `extrap` override guard. HeteroND shares the generic ND batch callable
-# (interpolant_protocol.jl), so without this a non-nothing override would silently
-# reach `_validate_nd_domain` un-threaded through HeteroND's bespoke eval. Threading
-# it through `_eval_hetero_nd` / the generated `_eval_nointerp` is a deferred follow-up;
-# until then reject loudly. `nothing` (the default) keeps the stored per-axis extraps.
-# (The scalar/vararg callables above have no `extrap` kwarg, so those reject naturally.)
-@inline _resolve_extrap_overrides(itp::HeteroInterpolantND, ::Nothing) = itp.extraps
-@noinline _resolve_extrap_overrides(::HeteroInterpolantND, over) = _throw_hetero_extrap_unsupported(over)
-
-@noinline _throw_hetero_extrap_unsupported(over) = throw(
-    ArgumentError(
-        "call-time `extrap` override ($(over)) is not yet supported for HeteroInterpolantND; " *
-            "rebuild with the desired per-axis extrap, or omit `extrap` to use the stored modes."
-    )
-)
 
 # ========================================
 # _locate_cell / _eval_at_cell Protocol

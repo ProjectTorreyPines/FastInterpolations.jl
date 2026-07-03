@@ -99,24 +99,86 @@ end
     end
 end
 
-@testitem "call-time extrap override — HeteroND guarded exclusion" begin
+@testitem "call-time extrap override — HeteroND (all forms)" setup = [AllocConstants] begin
+    using FastInterpolations: _resolve_extrap_overrides, HeteroInterpolantND
+    using ForwardDiff
+
     x = collect(range(0.0, 1.0, 6))
     y = collect(range(0.0, 1.0, 5))
-    data = [xi + 2yj for xi in x, yj in y]
-    itp = interp((x, y), data; method = (CubicInterp(), LinearInterp()))
-    q = (0.5, 0.5)
-    soa = ([0.3, 0.7], [0.2, 0.8])
+    data = [sin(xi) * cos(yj) + xi for xi in x, yj in y]
+    q = (0.5, 0.5)                                       # in-domain 2D query
+    qxs = collect(range(0.1, 0.9, 7))
+    qys = collect(range(0.15, 0.85, 7))
+    soa = (qxs, qys)                                     # SoA: tuple of coord vectors
+    aos = [(qxs[i], qys[i]) for i in eachindex(qxs)]     # AoS: vector of query tuples
 
-    @testset "default paths unchanged" begin
-        @test itp(q) isa Real
-        @test itp(soa) == itp(soa)
+    # Three HeteroInterpolantND realizations, each a distinct eval path guarded
+    # out of the tensor-product override PR:
+    #  - mixed global-solve OnTheFly (CubicInterp × LinearInterp)
+    #  - windowed OnTheFly with a local-Hermite axis (Pchip → OnTheFly Hermite ND)
+    #  - PreCompute (`_HeteroPartials`) — direct ND kernel, gets the full fast-path
+    builds = (
+        "mixed-OTF" => interp((x, y), data; method = (CubicInterp(), LinearInterp()), coeffs = OnTheFly()),
+        "windowed-OTF" => interp((x, y), data; method = (PchipInterp(), LinearInterp()), coeffs = OnTheFly()),
+        "PreCompute" => interp((x, y), data; method = (CubicInterp(), LinearInterp()), coeffs = PreCompute()),
+    )
+
+    @testset "$name: InBounds override == default (in-domain)" for (name, itp) in builds
+        @test itp isa HeteroInterpolantND
+        # scalar tuple + vararg forms; single InBounds broadcasts to all axes
+        @test itp(q; extrap = InBounds()) == itp(q)
+        @test itp(q...; extrap = InBounds()) == itp(q)
+        @test itp(q; extrap = InBounds(last = :exclusive)) == itp(q)
+        # per-axis tuple: `nothing` keeps that axis's stored mode
+        @test itp(q; extrap = (InBounds(), nothing)) == itp(q)
+        @test itp(q; extrap = (InBounds(), InBounds())) == itp(q)
+        # batch: SoA, AoS, in-place
+        @test itp(soa; extrap = InBounds()) == itp(soa)
+        @test itp(aos; extrap = InBounds()) == itp(aos)
+        out = similar(qxs)
+        itp(out, soa; extrap = InBounds())
+        @test out == itp(soa)
+        @test itp(soa; extrap = (InBounds(), nothing)) == itp(soa)
     end
 
-    @testset "call-time override rejected (not yet supported)" begin
-        # batch shares the generic callable → our friendly ArgumentError guard
-        @test_throws ArgumentError itp(soa; extrap = InBounds())
-        # scalar has its own callable without an `extrap` kwarg → unsupported keyword
-        @test_throws MethodError itp(q; extrap = InBounds())
+    @testset "$name: disallowed override errors" for (name, itp) in builds
+        @test_throws ArgumentError itp(q; extrap = ClampExtrap())
+        @test_throws ArgumentError itp(q; extrap = (ClampExtrap(), InBounds()))
+        @test_throws ArgumentError itp(q; extrap = (NoExtrap(), NoExtrap()))  # same-mode also errors
+        @test_throws ArgumentError itp(soa; extrap = ClampExtrap())
+        @test_throws TypeError itp(q; extrap = 5)                             # junk cut at kwarg boundary
+    end
+
+    @testset "type stability & allocation" begin
+        itp = builds[1].second                           # mixed-OTF
+        # @inferred + isa pins: concrete Float64 return, no Union in the hot path
+        @test @inferred(itp(q; extrap = InBounds())) isa Float64
+        @test @inferred(itp(q; extrap = InBounds(last = :exclusive))) isa Float64
+        @test @inferred(itp(q; extrap = (InBounds(), nothing))) isa Float64
+        # resolution must infer a CONCRETE per-axis tuple (guards the per-axis
+        # extrap-union boxing trap); default returns the stored tuple, same object
+        @test @inferred(_resolve_extrap_overrides(itp, (InBounds(), nothing))) isa
+            Tuple{<:InBounds, <:AbstractExtrap}
+        @test @inferred(_resolve_extrap_overrides(itp, nothing)) === itp.extraps
+
+        # allocation-free: bind the query INSIDE the barrier (a tuple passed as an
+        # argument boxes 16B at the call ABI — a measurement artifact, not the eval).
+        # Default path was measured 0-alloc for all three forms; the override must match.
+        ovr(f) = (p = (0.5, 0.5); f(p; extrap = InBounds()))
+        dfl(f) = (p = (0.5, 0.5); f(p))
+        for (_, itpb) in builds
+            ovr(itpb)
+            dfl(itpb)                                     # warm up each specialization
+            @test @allocated(ovr(itpb)) <= ALLOC_THRESHOLD
+            @test @allocated(dfl(itpb)) <= ALLOC_THRESHOLD   # default unchanged
+        end
+    end
+
+    @testset "Dual queries (AD) through InBounds override" begin
+        itp = builds[1].second
+        g_ib = ForwardDiff.gradient(p -> itp((p[1], p[2]); extrap = InBounds()), [0.5, 0.5])
+        g_df = ForwardDiff.gradient(p -> itp((p[1], p[2])), [0.5, 0.5])
+        @test g_ib ≈ g_df
     end
 end
 

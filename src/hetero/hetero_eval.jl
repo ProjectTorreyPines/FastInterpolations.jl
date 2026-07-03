@@ -413,6 +413,22 @@ end
     return itp(q; kw...)
 end
 
+# Call-time `extrap` override guard. HeteroND shares the generic ND batch callable
+# (interpolant_protocol.jl), so without this a non-nothing override would silently
+# reach `_validate_nd_domain` un-threaded through HeteroND's bespoke eval. Threading
+# it through `_eval_hetero_nd` / the generated `_eval_nointerp` is a deferred follow-up;
+# until then reject loudly. `nothing` (the default) keeps the stored per-axis extraps.
+# (The scalar/vararg callables above have no `extrap` kwarg, so those reject naturally.)
+@inline _resolve_extrap_overrides(itp::HeteroInterpolantND, ::Nothing) = itp.extraps
+@noinline _resolve_extrap_overrides(::HeteroInterpolantND, over) = _throw_hetero_extrap_unsupported(over)
+
+@noinline _throw_hetero_extrap_unsupported(over) = throw(
+    ArgumentError(
+        "call-time `extrap` override ($(over)) is not yet supported for HeteroInterpolantND; " *
+            "rebuild with the desired per-axis extrap, or omit `extrap` to use the stored modes."
+    )
+)
+
 # ========================================
 # _locate_cell / _eval_at_cell Protocol
 # ========================================

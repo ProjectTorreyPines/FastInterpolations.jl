@@ -12,6 +12,7 @@
 @inline function (itp::ConstantInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
@@ -20,7 +21,8 @@
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _scalar_mono(hint, Val(N))
-    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
+    extraps = _resolve_extrap_overrides(itp, extrap)
+    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono, extraps)
 end
 
 # In-place + allocating batch use the inherited `AbstractInterpolantND`

@@ -30,7 +30,7 @@ function Base.getindex(r::_CachedRange, i::Int)
     @boundscheck checkbounds(r, i)
     i == 1 && return r.lo
     i == r.len && return r.hi
-    return muladd(i - 1, r.h, r.lo)
+    return muladd(i - 1, _get_h(r), r.lo)   # accessor: unit-step family folds the ×h
 end
 
 # Range slicing — return a new _CachedRange instead of falling back to a generic

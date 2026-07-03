@@ -531,18 +531,36 @@ end
 `_CachedRange` specialization: geometry fields are plain `T`, `inv_h` is `Tinv`
 (equals `T` for Float grids, `Float64` for `T = Int`) — no TwicePrecision arithmetic.
 Uses precomputed `inv_h` (multiply instead of divide) for the index calculation.
-Pulls `h`/`inv_h` through the accessors so a `_UnitStep` grid (which returns the
-literal `one`) lets LLVM fold the `×inv_h` index muladd and the `×h` left-edge
-muladd to identity — no separate `_UnitStep` method needed.
+Pulls `h`/`inv_h` through the accessors; the unit-step family takes its own
+index-space method below.
 """
 @inline function _search_direct(x::_CachedRange{T, Tinv}, xq::Real) where {T, Tinv}
     # Primal-based index: see _search_direct(::AbstractRange, ...) comment.
     inv_h = _get_inv_h(x)
     h = _get_h(x)
-    idx = _clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - x.lo, inv_h, 1))), 1, x.len - 1)
-    xL = muladd(idx - 1, h, x.lo)
+    lo = first(x)
+    idx = _clamp(unsafe_trunc(Int, _extract_primal(muladd(xq - lo, inv_h, 1))), 1, length(x) - 1)
+    xL = muladd(idx - 1, h, lo)
     xR = xL + h
     return idx, xL, xR
+end
+
+# Unit-step family twin of the `_search_direct_inbounds` method below, keeping the
+# TWO-sided clamp: OOB queries legitimately reach the guarded search (ExtendExtrap
+# pins the boundary cell through it). Bit-identical for ALL xq — in-domain by the
+# exactness argument below; OOB because both forms clamp to the same boundary cell.
+@inline function _search_direct(
+        x::_CachedRange{T, Tinv, Tag}, xq::Real
+    ) where {T, Tinv, Tag <: _AbstractUnitStep}
+    if first(x) == one(T)
+        idx = _clamp(unsafe_trunc(Int, _extract_primal(xq)), 1, length(x) - 1)
+        xL = T(idx)
+        return idx, xL, xL + one(T)
+    end
+    lo = first(x)
+    idx = _clamp(unsafe_trunc(Int, _extract_primal(xq - lo + one(T))), 1, length(x) - 1)
+    xL = lo + (idx - 1)
+    return idx, xL, xL + one(T)
 end
 
 """
@@ -558,8 +576,9 @@ in-bounds `xq`. Unit-step grids take the `<:_AbstractUnitStep` method below.
 @inline function _search_direct_inbounds(x::_CachedRange{T, Tinv}, xq::Real) where {T, Tinv}
     inv_h = _get_inv_h(x)
     h = _get_h(x)
-    idx = min(unsafe_trunc(Int, _extract_primal(muladd(xq - x.lo, inv_h, 1))), x.len - 1)
-    xL = muladd(idx - 1, h, x.lo)
+    lo = first(x)
+    idx = min(unsafe_trunc(Int, _extract_primal(muladd(xq - lo, inv_h, 1))), length(x) - 1)
+    xL = muladd(idx - 1, h, lo)
     xR = xL + h
     return idx, xL, xR
 end
@@ -571,17 +590,20 @@ end
 # `first(x)` folds the test for `_OneTo` (literal `one(T)` by type); `_UnitStep` reads
 # the field — a loop-invariant, perfectly-predicted branch. The else-arm is the generic
 # body with `h ≡ inv_h ≡ 1` pre-folded; it assumes nothing about `lo` (offset AND
-# fractional-lo `UnitRange{Float64}` land there).
+# fractional-lo `UnitRange{Float64}` land there). `T(idx) ≡ sitofp(idx−1)+lo` needs
+# `idx` representable in `T` — always true for Float64; a Float32 axis past 2^24
+# cannot represent its own nodes and is outside the bit-identity contract.
 @inline function _search_direct_inbounds(
         x::_CachedRange{T, Tinv, Tag}, xq::Real
     ) where {T, Tinv, Tag <: _AbstractUnitStep}
     if first(x) == one(T)
-        idx = min(unsafe_trunc(Int, _extract_primal(xq)), x.len - 1)
+        idx = min(unsafe_trunc(Int, _extract_primal(xq)), length(x) - 1)
         xL = T(idx)
         return idx, xL, xL + one(T)
     end
-    idx = min(unsafe_trunc(Int, _extract_primal(xq - x.lo + one(T))), x.len - 1)
-    xL = x.lo + (idx - 1)
+    lo = first(x)
+    idx = min(unsafe_trunc(Int, _extract_primal(xq - lo + one(T))), length(x) - 1)
+    xL = lo + (idx - 1)
     return idx, xL, xL + one(T)
 end
 
@@ -590,7 +612,7 @@ end
 # `[domain_lo, lo)` sits BELOW the first grid point, so `muladd(xq - lo, inv_h, 1) < 1` — the lower
 # `max(·, 1)` half of the clamp is NOT dead here (unlike the exact tags, where `lo == domain_lo` ⇒
 # in-domain ⇒ `idx ≥ 1`). Keep the two-sided clamp by falling back to the guarded `_search_direct`,
-# which stays bit-identical to it. (The search's cell arithmetic uses grid `x.lo` by convention —
+# which stays bit-identical to it. (The search's cell arithmetic uses the grid lo (`first(x)`) by convention —
 # `domain_lo/hi` are read by `_domain_bounds` for the domain check only; using `domain_lo` as the
 # coordinate reference here would shift every interior cell by the cushion on zero-crossing ranges.)
 @inline _search_direct_inbounds(x::_CachedRange{T, Tinv, _WidenedDomain}, xq::Real) where {T, Tinv} =

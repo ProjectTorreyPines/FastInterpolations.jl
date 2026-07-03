@@ -652,13 +652,13 @@ end
 
 # Safe domain bounds — single axis-dispatched source of truth for every in-domain
 # test (`_is_all_inbounds`, `_is_inbounds`, `_oob_state`), so they never disagree
-# at a boundary query. Plain `AbstractVector` → exact `first/last`; exact-domain
-# `_CachedRange` (`_Generic`/`_UnitStep`) → `lo/hi` (sharing the load with the
-# search that follows); only a `_WidenedDomain` range → its `domain_lo/hi`, ≈1 ULP
-# wider than the stored `lo/hi` on the x86_64 fast path, keeping a query at the
-# true endpoint in-domain instead of falsely OOB.
+# at a boundary query. Exact-domain axes → `first/last` (field reads on
+# `_CachedRange`; `_OneTo` folds its lower bound to the literal `one(T)`); only a
+# `_WidenedDomain` range → its `domain_lo/hi`, ≈1 ULP wider than the stored
+# `lo/hi` on the x86_64 fast path, keeping a query at the true endpoint in-domain
+# instead of falsely OOB.
 @inline _domain_bounds(x::AbstractVector) = (first(x), last(x))
-@inline _domain_bounds(x::_CachedRange) = (x.lo, x.hi)                # _Generic / _UnitStep: exact
+@inline _domain_bounds(x::_CachedRange) = (first(x), last(x))
 @inline _domain_bounds(x::_CachedRange{T, Tinv, _WidenedDomain}) where {T, Tinv} =
     (x.domain_lo, x.domain_hi)                                        # widened bracket
 

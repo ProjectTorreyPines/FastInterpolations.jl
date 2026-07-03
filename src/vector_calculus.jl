@@ -78,6 +78,16 @@ See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`la
     return _gradient_generic(itp, query, hint)
 end
 
+# Splat convenience: gradient(itp, x, y) → gradient(itp, (x, y)). Scalar-only;
+# `Vararg{Real,N}` can't match a batch container, so it never intercepts one.
+@inline function gradient(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return gradient(itp, q; kw...)
+end
+
 # Vector API for compatibility with ForwardDiff patterns
 @inline function gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
@@ -159,6 +169,16 @@ See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _gradient_generic!(G, itp, query, hint)
+end
+
+# Splat convenience: gradient!(G, itp, x, y) → gradient!(G, itp, (x, y)).
+@inline function gradient!(
+        G::AbstractVector,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return gradient!(G, itp, q; kw...)
 end
 
 # Vector query API
@@ -257,6 +277,15 @@ See also: [`gradient`](@ref), [`gradient!`](@ref)
     return _value_gradient_generic(itp, query, hint)
 end
 
+# Splat convenience: value_gradient(itp, x, y) → value_gradient(itp, (x, y)).
+@inline function value_gradient(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return value_gradient(itp, q; kw...)
+end
+
 # Vector API
 @inline function value_gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
@@ -349,6 +378,15 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _hessian_generic(itp, query, hint)
+end
+
+# Splat convenience: hessian(itp, x, y) → hessian(itp, (x, y)).
+@inline function hessian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return hessian(itp, q; kw...)
 end
 
 # Vector API
@@ -444,6 +482,16 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
     return _hessian_generic!(H, itp, query, hint)
 end
 
+# Splat convenience: hessian!(H, itp, x, y) → hessian!(H, itp, (x, y)).
+@inline function hessian!(
+        H::AbstractMatrix,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return hessian!(H, itp, q; kw...)
+end
+
 # Vector query API
 @inline function hessian!(
         H::AbstractMatrix,
@@ -522,6 +570,15 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _laplacian_generic(itp, query, hint)
+end
+
+# Splat convenience: laplacian(itp, x, y) → laplacian(itp, (x, y)).
+@inline function laplacian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return laplacian(itp, q; kw...)
 end
 
 # Vector API

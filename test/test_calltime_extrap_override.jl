@@ -66,6 +66,7 @@ end
             @test_throws ArgumentError itp(q; extrap = ClampExtrap())
             @test_throws ArgumentError itp(q; extrap = (ClampExtrap(), InBounds()))
             @test_throws ArgumentError itp(q; extrap = (NoExtrap(), NoExtrap()))
+            @test_throws ArgumentError itp(q; extrap = (InBounds(),))  # wrong arity (1 elem for 2D)
             @test_throws TypeError itp(q; extrap = 5)                 # scalar junk cut at kwarg boundary
             @test_throws TypeError itp(q; extrap = (5, nothing))      # junk tuple element cut as TypeError
         end
@@ -99,8 +100,42 @@ end
     end
 end
 
+@testitem "call-time extrap override — Hermite ND + NoInterp Hetero" begin
+    # Two families whose construction differs from the tensor-product loops above.
+    x = collect(range(0.0, 1.0, 6))
+    y = collect(range(0.0, 1.0, 5))
+    data = [sin(xi) * cos(yj) + xi for xi in x, yj in y]
+    q = (0.5, 0.5)
+    soa = (collect(range(0.1, 0.9, 7)), collect(range(0.15, 0.85, 7)))
+
+    @testset "Hermite ND (user partials)" begin
+        dfdx = [cos(xi) * cos(yj) + 1 for xi in x, yj in y]
+        dfdy = [-sin(xi) * sin(yj) for xi in x, yj in y]
+        d2 = [-cos(xi) * sin(yj) for xi in x, yj in y]
+        p = HermitePartials((1, 0) => dfdx, (0, 1) => dfdy, (1, 1) => d2)
+        itp = hermite_interp((x, y), data, p)
+        @test itp(q; extrap = InBounds()) == itp(q)                # broadcast all axes
+        @test itp(q; extrap = (InBounds(), nothing)) == itp(q)     # per-axis
+        @test itp(soa; extrap = InBounds()) == itp(soa)            # batch
+        @test_throws ArgumentError itp(q; extrap = ClampExtrap())
+        @test_throws ArgumentError itp(q; extrap = (InBounds(),))  # wrong arity
+    end
+
+    @testset "NoInterp-axis Hetero: InBounds is a value-safe no-op" begin
+        # The NoInterp branch reads `itp.extraps` directly — the override is accepted
+        # (validated) but must not change the result; a disallowed mode still throws.
+        itp = interp((x, y), data; method = (CubicInterp(), NoInterp()))
+        for k in (1, 3, 5)
+            qn = (0.5, GridIdx(k))
+            @test itp(qn; extrap = InBounds()) == itp(qn)
+            @test itp(qn; extrap = (InBounds(), nothing)) == itp(qn)
+        end
+        @test_throws ArgumentError itp((0.5, GridIdx(2)); extrap = ClampExtrap())
+    end
+end
+
 @testitem "call-time extrap override — HeteroND (all forms)" setup = [AllocConstants] begin
-    using FastInterpolations: _resolve_extrap_overrides, HeteroInterpolantND
+    using FastInterpolations: _resolve_extrap_override_nd, HeteroInterpolantND
     using ForwardDiff
 
     x = collect(range(0.0, 1.0, 6))
@@ -112,8 +147,7 @@ end
     soa = (qxs, qys)                                     # SoA: tuple of coord vectors
     aos = [(qxs[i], qys[i]) for i in eachindex(qxs)]     # AoS: vector of query tuples
 
-    # Three HeteroInterpolantND realizations, each a distinct eval path guarded
-    # out of the tensor-product override PR:
+    # Three HeteroInterpolantND realizations, each a distinct eval path:
     #  - mixed global-solve OnTheFly (CubicInterp × LinearInterp)
     #  - windowed OnTheFly with a local-Hermite axis (Pchip → OnTheFly Hermite ND)
     #  - PreCompute (`_HeteroPartials`) — direct ND kernel, gets the full fast-path
@@ -158,9 +192,9 @@ end
         @test @inferred(itp(q; extrap = (InBounds(), nothing))) isa Float64
         # resolution must infer a CONCRETE per-axis tuple (guards the per-axis
         # extrap-union boxing trap); default returns the stored tuple, same object
-        @test @inferred(_resolve_extrap_overrides(itp, (InBounds(), nothing))) isa
+        @test @inferred(_resolve_extrap_override_nd(itp, (InBounds(), nothing))) isa
             Tuple{<:InBounds, <:AbstractExtrap}
-        @test @inferred(_resolve_extrap_overrides(itp, nothing)) === itp.extraps
+        @test @inferred(_resolve_extrap_override_nd(itp, nothing)) === itp.extraps
 
         # allocation-free: bind the query INSIDE the barrier (a tuple passed as an
         # argument boxes 16B at the call ABI — a measurement artifact, not the eval).

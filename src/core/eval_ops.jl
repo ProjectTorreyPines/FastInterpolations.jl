@@ -368,6 +368,12 @@ linear_interp(x, y, xq; extrap=InBounds())
 
 # Queries generated in [first(x), last(x)) — never touch the right endpoint
 linear_interp(x, y, xq; extrap=InBounds(last = :exclusive))
+
+# On a built interpolant, `InBounds` is the only per-call `extrap` override: it
+# opts a query into the fast path without rebuilding (any other mode errors —
+# the stored extrapolation contract is not swappable per call).
+itp = linear_interp(x, y; extrap=ClampExtrap())
+itp(xq; extrap=InBounds())   # opt into the in-domain fast path
 ```
 """
 struct InBounds{First, Last} <: AbstractExtrap

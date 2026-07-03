@@ -350,8 +350,10 @@ end
     # Call-time extrap override: `nothing` keeps the stored per-axis extraps;
     # `InBounds` opts into the in-domain fast-path (broadcast or per-axis).
     # Resolved via the generic `AbstractInterpolantND` method; other modes throw.
-    extraps0 = _resolve_extrap_overrides(itp, extrap)
+    extraps0 = _resolve_extrap_override_nd(itp, extrap)
     if _has_nointerp_method(typeof(itp.methods))
+        # InBounds override intentionally not threaded into the generated `_eval_nointerp`
+        # (it reads `itp.extraps`): value-correct, no fast-path — as for the OTF fibers.
         _validate_nointerp_grididx(itp.methods, resolved)
         search_tuple = _resolve_search_nd(search, Val(N))
         return _eval_nointerp(itp, resolved, ops, search_tuple, hint)

@@ -60,15 +60,15 @@
 #             (a disallowed element / single non-InBounds mode routes to the throw)
 # The itp-level entry resolves against the interpolant's stored per-axis `extraps`;
 # every `AbstractInterpolantND` (tensor-product and Hetero alike) shares this method.
-@inline _resolve_extrap_overrides(itp::AbstractInterpolantND, over) = _resolve_extrap_overrides(itp.extraps, over)
-@inline _resolve_extrap_overrides(stored::NTuple{N, AbstractExtrap}, ::Nothing) where {N} = stored
-@inline _resolve_extrap_overrides(stored::NTuple{N, AbstractExtrap}, over::InBounds) where {N} =
+@inline _resolve_extrap_override_nd(itp::AbstractInterpolantND, over) = _resolve_extrap_override_nd(itp.extraps, over)
+@inline _resolve_extrap_override_nd(stored::NTuple{N, AbstractExtrap}, ::Nothing) where {N} = stored
+@inline _resolve_extrap_override_nd(stored::NTuple{N, AbstractExtrap}, over::InBounds) where {N} =
     ntuple(_ -> over, Val(N))
-@inline function _resolve_extrap_overrides(stored::NTuple{N, AbstractExtrap}, over::Tuple) where {N}
+@inline function _resolve_extrap_override_nd(stored::NTuple{N, AbstractExtrap}, over::Tuple) where {N}
     length(over) == N || _throw_extrap_ndims(N, length(over))
     return map(_resolve_extrap_override, stored, over)
 end
-@noinline _resolve_extrap_overrides(stored::NTuple{N, AbstractExtrap}, over::AbstractExtrap) where {N} =
+@noinline _resolve_extrap_override_nd(stored::NTuple{N, AbstractExtrap}, over::AbstractExtrap) where {N} =
     _throw_extrap_not_overridable(stored, over)   # single non-InBounds mode never broadcasts
 
 @noinline _throw_extrap_ndims(want::Int, got::Int) = throw(
@@ -209,18 +209,12 @@ end
 #
 # Single scalar entry point for AbstractInterpolantND subtypes whose eval
 # structure matches `validate → try_fill_oob → locate → eval` (Cubic /
-# Linear / Constant / Quadratic). Each method's callable resolves
-# search/hints/ops then delegates here.
+# Linear / Constant / Quadratic). The per-family callables delegate to
+# `_eval_nd_scalar_query` (below), which resolves search/hints/ops then calls here.
 #
 # Hetero is *not* routed through here — its callable has GridIdx/NoInterp
 # branches and `_eval_hetero_nd` uses a non-`_locate_cell` path (recursive
 # `_collapse_dims` / `_eval_hetero_precomputed`).
-# 6-arg forwarder: scalar callers with no call-time override inject the stored
-# `itp.extraps`. The 7-arg form is the source of truth (accepts a resolved
-# per-axis extraps tuple, e.g. InBounds-promoted from a call-time override).
-@inline _eval_nd_at_point(itp::AbstractInterpolantND, query, ops, policies, hints, mono) =
-    _eval_nd_at_point(itp, query, ops, policies, hints, mono, itp.extraps)
-
 @inline function _eval_nd_at_point(
         itp::AbstractInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}},
@@ -245,6 +239,21 @@ end
     oob_result !== nothing && return oob_result
     cell = _locate_cell(itp, qc, extraps_eff, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
+end
+
+# Shared scalar-query entry for the tensor-product ND callables (Linear/Cubic/
+# Quadratic/Constant/Hermite): resolve query/ops/search/hints + the call-time
+# extrap override once, then delegate. Hetero keeps its own callable.
+@inline function _eval_nd_scalar_query(
+        itp::AbstractInterpolantND{Tg, Tv, N}, query, deriv, extrap, search, hint
+    ) where {Tg, Tv, N}
+    resolved = map(_resolve_grididx, query, itp.grids)
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    policies = _resolve_search_nd(search, Val(N))
+    hints = _ensure_hint_nd(hint, Val(N))
+    mono = _scalar_mono(hint, Val(N))
+    extraps = _resolve_extrap_override_nd(itp, extrap)
+    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono, extraps)
 end
 
 # ========================================
@@ -301,7 +310,7 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     # BEFORE domain validation — an InBounds axis then skips the O(n) domain scan.
     # HeteroND shares this batch callable and is fully supported: it is an
     # `AbstractInterpolantND`, so the same resolver threads the override.
-    extraps0 = _resolve_extrap_overrides(itp, extrap)
+    extraps0 = _resolve_extrap_override_nd(itp, extrap)
     # Validate + batch-level InBounds promotion: throws on OOB NoExtrap and returns per-axis
     # `InBounds()` for SoA queries all in-bounds on an axis (AoS/generic stays original).
     extraps_eff = _validate_nd_domain(itp.grids, queries, extraps0)

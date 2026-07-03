@@ -44,6 +44,12 @@ AbstractExtrap
 └── InBounds         # skip domain checks (advanced/internal)
 ```
 
+`InBounds` additionally accepts endpoint keywords that narrow the promised interval:
+`InBounds(last = :exclusive)` promises `first(x) ≤ xq < last(x)` and unlocks a leaner
+direct search on unit-step range grids (`1:n`, `Base.OneTo`, offset unit ranges). Like
+`Base.@inbounds`, violating the promise is undefined behavior — see the
+[`InBounds`](@ref) docstring for the full contract table.
+
 ## Examples
 
 ```@example extrap
@@ -192,6 +198,7 @@ vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
 | `WrapExtrap()` | Wraps coordinates (no smoothness) | Cyclic data (see [`PeriodicBC`](interpolation/cubic.md) for C² continuity) |
 | `FillExtrap(v)` | Returns constant `v` outside domain | Masking (`NaN`), zero-padding, sentinel values |
 | `InBounds()` | Skip domain checks | Pre-validated queries, batch inner loops |
+| `InBounds(last = :exclusive)` | Skip checks + promise `xq < last(x)` | Fastest unit-step range search for strictly-interior queries |
 
 ## See Also
 

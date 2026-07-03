@@ -30,12 +30,12 @@
         a::AbstractVector{Tc},
         d::AbstractVector{Tc},
         xq::Tq,
-        ::InBounds,
+        e::InBounds,
         op::AbstractEvalOp,
         searcher::S
     ) where {Tg, Tv, Tc, Tq, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    idx, _, xL, _ = search_interval(searcher, x, xq, InBounds())
+    idx, _, xL, _ = search_interval(searcher, x, xq, e)
     dt = xq - xL  # Can be Dual for AD
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end

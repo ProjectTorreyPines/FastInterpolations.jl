@@ -24,7 +24,7 @@
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xi::Tq,
-        ::InBounds,
+        e::InBounds,
         side::AbstractSide,
         op::AbstractEvalOp,
         searcher::S
@@ -41,7 +41,7 @@
     # Reached only in-domain (genuine InBounds; NoExtrap post-throw; Clamp/Fill/Extend after
     # their IN_DOMAIN check — ExtendExtrap is routed to Clamp above), so the lean InBounds
     # search is safe here. bit-identical to the standard search for an in-bounds query.
-    idx, idx_R, xL, xR = search_interval(searcher, x, xi, InBounds())
+    idx, idx_R, xL, xR = search_interval(searcher, x, xi, e)
     dL = xi - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx_R], _get_h(x, idx, xL, xR), dL, side)
 end

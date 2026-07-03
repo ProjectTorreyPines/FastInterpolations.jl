@@ -553,7 +553,7 @@ end
 `xq ≥ lo` ⇒ `idx ≥ 1` and the lower `max(·, 1)` half of `_clamp(idx, 1, len-1)` is
 provably dead — only the top-cell cap `min(·, len-1)` remains. `xL`/`xR` are computed
 identically, so the returned interval is **bit-identical** to `_search_direct` for any
-in-bounds `xq`. A `_UnitStep` axis folds the `×inv_h`/`×h` to identity.
+in-bounds `xq`. Unit-step grids take the `<:_AbstractUnitStep` method below.
 """
 @inline function _search_direct_inbounds(x::_CachedRange{T, Tinv}, xq::Real) where {T, Tinv}
     inv_h = _get_inv_h(x)
@@ -562,6 +562,27 @@ in-bounds `xq`. A `_UnitStep` axis folds the `×inv_h`/`×h` to identity.
     xL = muladd(idx - 1, h, x.lo)
     xR = xL + h
     return idx, xL, xR
+end
+
+# Unit-step family: 1-based grids take the index-space arm, dropping the whole
+# `(xq−lo)+1 → trunc → sitofp(idx−1)+lo` float chain ahead of the cell loads.
+# Bit-identical: in-domain `xq ≥ 1` makes `xq − 1` exact (Sterbenz / integral multiple
+# of ulp), so `trunc((xq−lo)+1) ≡ trunc(xq)` and `sitofp(idx−1)+lo ≡ T(idx)`.
+# `first(x)` folds the test for `_OneTo` (literal `one(T)` by type); `_UnitStep` reads
+# the field — a loop-invariant, perfectly-predicted branch. The else-arm is the generic
+# body with `h ≡ inv_h ≡ 1` pre-folded; it assumes nothing about `lo` (offset AND
+# fractional-lo `UnitRange{Float64}` land there).
+@inline function _search_direct_inbounds(
+        x::_CachedRange{T, Tinv, Tag}, xq::Real
+    ) where {T, Tinv, Tag <: _AbstractUnitStep}
+    if first(x) == one(T)
+        idx = min(unsafe_trunc(Int, _extract_primal(xq)), x.len - 1)
+        xL = T(idx)
+        return idx, xL, xL + one(T)
+    end
+    idx = min(unsafe_trunc(Int, _extract_primal(xq - x.lo + one(T))), x.len - 1)
+    xL = x.lo + (idx - 1)
+    return idx, xL, xL + one(T)
 end
 
 # `_WidenedDomain` exception: the accepted domain `[domain_lo, domain_hi]` is 1 ULP wider than the

@@ -43,16 +43,18 @@ normalized to `_CachedRange` via `_to_float` at public API boundaries.
 """
 # Grid tag (3rd type param): a type-level marker for grid properties, kept open so
 # future kinds (log-spaced, reversed, …) — and `_CachedVector` — can reuse
-# `_AbstractAxisTag`. `_UnitStep` (step ≡ 1, statically known) lets
-# `_get_h`/`_get_inv_h`/`_search_direct`/`_alpha_of` skip the ×inv_h/×h multiplies;
-# `_WidenedDomain` lets `_domain_bounds` read the widened x86_64 bracket instead of
-# `lo`/`hi`. Every other call site dispatches on `::_CachedRange{T,Tinv}`
-# (= `…{T,Tinv,Tag} where Tag`), which matches all tags.
+# `_AbstractAxisTag`. The `_AbstractUnitStep` family (mirrors Base's AbstractUnitRange)
+# pins step ≡ 1, folding ×h/×inv_h through the accessors; `_OneTo` additionally pins
+# `lo ≡ 1` (`first` returns a literal → `lo == 1` tests constant-fold). `_WidenedDomain`
+# lets `_domain_bounds` read the widened x86_64 bracket instead of `lo`/`hi`. Every
+# other call site dispatches on `::_CachedRange{T,Tinv}`, which matches all tags.
 abstract type _AbstractAxisTag end
-struct _Generic <: _AbstractAxisTag end    # default: step is a runtime field
-struct _UnitStep <: _AbstractAxisTag end   # step ≡ 1 (from an AbstractUnitRange grid)
+struct _Generic <: _AbstractAxisTag end       # default: step is a runtime field
+abstract type _AbstractUnitStep <: _AbstractAxisTag end
+struct _UnitStep <: _AbstractUnitStep end     # step ≡ 1 (from an AbstractUnitRange grid)
+struct _OneTo <: _AbstractUnitStep end        # step ≡ 1 AND lo ≡ 1 (from a Base.OneTo grid)
 # Widened 1-ULP domain bracket (x86_64 TwicePrecision reconstruction cushion);
-# mutually exclusive with `_UnitStep`.
+# mutually exclusive with the unit-step family.
 struct _WidenedDomain <: _AbstractAxisTag end
 
 struct _CachedRange{T, Tinv, Tag <: _AbstractAxisTag} <: AbstractRange{T}

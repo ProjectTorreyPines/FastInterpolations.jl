@@ -30,13 +30,19 @@
 # it never changes OOB behavior, since the caller guarantees no OOB query). `nothing`
 # (the omitted default) keeps the stored contract. Any other extrapolation mode would
 # silently change OOB semantics, so it errors. The callables annotate the kwarg
-# `Union{Nothing, AbstractExtrap[, Tuple]}`, so genuine junk (`extrap=5`) is cut at
-# the call boundary (`TypeError`) — only a valid-but-disallowed mode reaches this
-# friendly throw. Dispatch on the override type folds away at specialization (spec §3.1/§3.5).
+# `Union{Nothing, AbstractExtrap[, Tuple]}`, so scalar junk (`extrap=5`) is cut at
+# the call boundary (`TypeError`) — only a valid-but-disallowed mode reaches the
+# friendly throw. Dispatch on the override type folds away at specialization.
 @inline _resolve_extrap_override(stored, ::Nothing) = stored
 @inline _resolve_extrap_override(_stored, over::InBounds) = over
 @noinline _resolve_extrap_override(stored, over::AbstractExtrap) =
     _throw_extrap_not_overridable(stored, over)
+# Per-axis tuple elements reuse this resolver (via the `map` below). The tuple kwarg
+# annotation cannot check element types, so a junk element (e.g. `(5, nothing)`) is
+# cut here as a `TypeError` — matching the scalar boundary rather than surfacing an
+# internal `MethodError`.
+@noinline _resolve_extrap_override(_stored, over) =
+    throw(TypeError(:extrap, "per-axis override tuple element", Union{Nothing, AbstractExtrap}, over))
 
 @noinline _throw_extrap_not_overridable(stored, over) = throw(
     ArgumentError(
@@ -52,9 +58,8 @@
 #   InBounds → broadcast to every axis (fast-path on all axes)
 #   Tuple    → per-axis, each element `nothing` (keep stored) or `InBounds`
 #             (a disallowed element / single non-InBounds mode routes to the throw)
-# The itp-level entry dispatches on the interpolant so the Hetero guard (a more
-# specific method) can reject an override there; tensor-product ND resolves
-# against its stored `extraps`.
+# The itp-level entry resolves against the interpolant's stored per-axis `extraps`;
+# every `AbstractInterpolantND` (tensor-product and Hetero alike) shares this method.
 @inline _resolve_extrap_overrides(itp::AbstractInterpolantND, over) = _resolve_extrap_overrides(itp.extraps, over)
 @inline _resolve_extrap_overrides(stored::NTuple{N, AbstractExtrap}, ::Nothing) where {N} = stored
 @inline _resolve_extrap_overrides(stored::NTuple{N, AbstractExtrap}, over::InBounds) where {N} =
@@ -294,8 +299,8 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     _query_validate(queries)
     # `extrap` (nothing → stored; InBounds → fast-path; else errors) resolved per-axis
     # BEFORE domain validation — an InBounds axis then skips the O(n) domain scan.
-    # Dispatches on `itp`, so HeteroND (which shares this batch callable) rejects a
-    # non-nothing override here instead of silently half-supporting it (§3.4).
+    # HeteroND shares this batch callable and is fully supported: it is an
+    # `AbstractInterpolantND`, so the same resolver threads the override.
     extraps0 = _resolve_extrap_overrides(itp, extrap)
     # Validate + batch-level InBounds promotion: throws on OOB NoExtrap and returns per-axis
     # `InBounds()` for SoA queries all in-bounds on an axis (AoS/generic stays original).

@@ -1,8 +1,7 @@
 # Call-time `extrap` override on a persistent interpolant. The stored extrap is
 # the construction-time contract; the ONLY permitted per-call override is
 # `InBounds` (an in-domain fast-path assertion, not an extrapolation contract).
-# Any other explicit extrap errors. See
-# docs/superpowers/specs/2026-07-03-calltime-extrap-inbounds-override-design.md.
+# Any other explicit extrap errors.
 
 @testitem "call-time extrap override — 1D scalar+vector" begin
     x = collect(range(0.0, 10.0, 21))
@@ -67,7 +66,8 @@ end
             @test_throws ArgumentError itp(q; extrap = ClampExtrap())
             @test_throws ArgumentError itp(q; extrap = (ClampExtrap(), InBounds()))
             @test_throws ArgumentError itp(q; extrap = (NoExtrap(), NoExtrap()))
-            @test_throws TypeError itp(q; extrap = 5)      # junk cut at kwarg boundary
+            @test_throws TypeError itp(q; extrap = 5)                 # scalar junk cut at kwarg boundary
+            @test_throws TypeError itp(q; extrap = (5, nothing))      # junk tuple element cut as TypeError
         end
     end
 end
@@ -146,7 +146,8 @@ end
         @test_throws ArgumentError itp(q; extrap = (ClampExtrap(), InBounds()))
         @test_throws ArgumentError itp(q; extrap = (NoExtrap(), NoExtrap()))  # same-mode also errors
         @test_throws ArgumentError itp(soa; extrap = ClampExtrap())
-        @test_throws TypeError itp(q; extrap = 5)                             # junk cut at kwarg boundary
+        @test_throws TypeError itp(q; extrap = 5)                             # scalar junk cut at kwarg boundary
+        @test_throws TypeError itp(q; extrap = (5, nothing))                  # junk tuple element → TypeError
     end
 
     @testset "type stability & allocation" begin

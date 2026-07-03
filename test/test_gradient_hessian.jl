@@ -715,26 +715,26 @@ end
 @testitem "Vector Calculus: splatted args convenience" setup = [AllocConstants] begin
     # Splatted scalar queries — gradient(itp, x, y) — must be bit-identical to
     # the canonical tuple form gradient(itp, (x, y)) for all 6 functions.
-    # The splat bundler re-dispatches into the same tuple method, so `==` (exact).
-
-    # Assert splat == tuple for every vector-calculus function at one point.
+    # The splat bundler re-dispatches into the same tuple method, so the results
+    # are bit-identical; `isequal` (not `==`) checks that at the bit level
+    # (NaN == NaN, distinguishes ±0.0), matching the exactness intent.
     function check_splat_equiv(itp, q::Tuple{Vararg{Real, N}}; hint = nothing) where {N}
-        @test gradient(itp, q...; hint = hint) == gradient(itp, q; hint = hint)
-        @test value_gradient(itp, q...; hint = hint) == value_gradient(itp, q; hint = hint)
-        @test laplacian(itp, q...; hint = hint) == laplacian(itp, q; hint = hint)
-        @test hessian(itp, q...; hint = hint) == hessian(itp, q; hint = hint)
+        @test isequal(gradient(itp, q...; hint = hint), gradient(itp, q; hint = hint))
+        @test isequal(value_gradient(itp, q...; hint = hint), value_gradient(itp, q; hint = hint))
+        @test isequal(laplacian(itp, q...; hint = hint), laplacian(itp, q; hint = hint))
+        @test isequal(hessian(itp, q...; hint = hint), hessian(itp, q; hint = hint))
 
         Gs = zeros(N)
         Gt = zeros(N)
         gradient!(Gs, itp, q...; hint = hint)
         gradient!(Gt, itp, q; hint = hint)
-        @test Gs == Gt
+        @test isequal(Gs, Gt)
 
         Hs = zeros(N, N)
         Ht = zeros(N, N)
         hessian!(Hs, itp, q...; hint = hint)
         hessian!(Ht, itp, q; hint = hint)
-        @test Hs == Ht
+        @test isequal(Hs, Ht)
     end
 
     @testset "2D splat == tuple (cubic)" begin
@@ -808,7 +808,7 @@ end
         check_splat_equiv(itp, (Float32(1.7), 0.9)) # Float32 + Float64 (mixed width)
 
         # Sanity: a mixed-type splat call actually resolves (no MethodError).
-        @test gradient(itp, 2, 0.9) == gradient(itp, (2, 0.9))
+        @test isequal(gradient(itp, 2, 0.9), gradient(itp, (2, 0.9)))
     end
 
     @testset "GridIdx coordinates through splat" begin
@@ -821,6 +821,6 @@ end
 
         check_splat_equiv(itp, (GridIdx(3), GridIdx(5)))  # both GridIdx
         check_splat_equiv(itp, (GridIdx(3), 0.9))          # GridIdx + Float64
-        @test gradient(itp, GridIdx(3), 0.9) == gradient(itp, (GridIdx(3), 0.9))
+        @test isequal(gradient(itp, GridIdx(3), 0.9), gradient(itp, (GridIdx(3), 0.9)))
     end
 end

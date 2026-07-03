@@ -66,6 +66,7 @@ Uses locate-once optimization: interval search performed only once per query poi
 itp = cubic_interp((x, y), data)
 gradient(itp, (0.5, 0.5))    # → (∂f/∂x, ∂f/∂y)
 gradient(itp, [0.5, 0.5])    # Vector input also supported
+gradient(itp, 0.5, 0.5)      # splatted scalars also supported
 ```
 
 See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
@@ -154,6 +155,7 @@ itp = cubic_interp((x, y), data)
 G = zeros(2)
 gradient!(G, itp, (0.5, 0.5))    # G .= (∂f/∂x, ∂f/∂y)
 gradient!(G, itp, [0.5, 0.5])    # G .= (∂f/∂x, ∂f/∂y)
+gradient!(G, itp, 0.5, 0.5)      # splatted scalars also supported
 
 # Optim.jl compatible:
 grad!(G, x) = gradient!(G, itp, x)
@@ -250,6 +252,7 @@ interval search is performed only **once** per query point.
 itp = cubic_interp((x, y), data)
 val, grad = value_gradient(itp, (0.5, 0.5))   # → (f, (∂f/∂x, ∂f/∂y))
 val, grad = value_gradient(itp, [0.5, 0.5])    # Vector input also supported
+val, grad = value_gradient(itp, 0.5, 0.5)      # splatted scalars also supported
 
 # Optim.jl fg! pattern:
 function fg!(F, G, x)
@@ -366,6 +369,7 @@ Uses locate-once optimization: interval search performed only once per query poi
 ```julia
 itp = cubic_interp((x, y), data)
 H = hessian(itp, (0.5, 0.5))
+H = hessian(itp, 0.5, 0.5)    # splatted scalars also supported
 # H = [∂²f/∂x²    ∂²f/∂x∂y]
 #     [∂²f/∂x∂y   ∂²f/∂y² ]
 ```
@@ -465,6 +469,7 @@ Exploits symmetry: computes only `N(N+1)/2` unique elements.
 itp = cubic_interp((x, y), data)
 H = zeros(2, 2)
 hessian!(H, itp, (0.5, 0.5))
+hessian!(H, itp, 0.5, 0.5)    # splatted scalars also supported
 
 # Optim.jl compatible:
 hess!(H, x) = hessian!(H, itp, x)
@@ -552,6 +557,7 @@ Uses locate-once optimization: interval search performed only once per query poi
 ```julia
 itp = cubic_interp((x, y), data)
 ∇²f = laplacian(itp, (0.5, 0.5))  # ∂²f/∂x² + ∂²f/∂y²
+∇²f = laplacian(itp, 0.5, 0.5)    # splatted scalars also supported
 
 # Equivalent to (but faster than):
 # tr(hessian(itp, (0.5, 0.5)))

@@ -845,3 +845,103 @@ end
         @test hib[2][] == hne[2][] != 0
     end
 end
+
+@testitem "UnitStep lean search — ULP-edge sweep bit-identical (lo==1 and lo≠1)" begin
+    # Characterization sweep for the `_UnitStep` lean search arithmetic: every
+    # interior node ±1 ULP + exact nodes + half-cells + endpoints. Two independent
+    # references (the scalar NoExtrap path promotes to InBounds since the lean-search
+    # work, so it is NOT independent at the search stage):
+    #   1. unit level — `_search_direct_inbounds === _search_direct` for in-domain
+    #      queries is the documented contract of the lean search (one-sided clamp);
+    #   2. end-to-end — ClampExtrap does not promote, so its in-domain eval runs the
+    #      guarded generic search; `inb(q) === clamped(q)` pins idx/α/kernel to the ULP.
+    using FastInterpolations: InBounds, ClampExtrap, _to_float, _search_direct,
+        _search_direct_inbounds, _domain_bounds
+
+    function ulp_probes(ax)
+        lo, hi = Float64(first(ax)), Float64(last(ax))
+        ps = Float64[lo, hi]
+        for k in first(ax):last(ax)
+            fk = Float64(k)
+            fk > lo && push!(ps, prevfloat(fk))
+            push!(ps, fk)
+            fk < hi && push!(ps, nextfloat(fk))
+            fk + 0.5 < hi && push!(ps, fk + 0.5)
+        end
+        return ps
+    end
+
+    @testset "unit: lean search === guarded search (1D grids: lo 1, lo 5, OneTo)" begin
+        for ax in (1:9, 5:13, Base.OneTo(9))
+            itp = linear_interp(ax, sin.(0.4 .* (1:length(ax))); extrap = InBounds())
+            cr = itp.x
+            for q in ulp_probes(ax)
+                @test _search_direct_inbounds(cr, q) === _search_direct(cr, q)
+            end
+        end
+    end
+
+    @testset "OneTo grids: end-to-end === the equivalent 1:n UnitRange interpolant" begin
+        axx, axy = Base.OneTo(8), Base.OneTo(12)
+        data = [cos(0.3i) * sin(0.2j) + 0.01i * j for i in 1:8, j in 1:12]
+        i_ot = linear_interp((axx, axy), data; extrap = (InBounds(), InBounds()))
+        i_ur = linear_interp((1:8, 1:12), data; extrap = (InBounds(), InBounds()))
+        for qx in ulp_probes(axx), qy in ulp_probes(axy)
+            @test i_ot((qx, qy)) === i_ur((qx, qy))
+        end
+    end
+
+    @testset "Int-T UnitStep grid: Int and Float queries hit the lo==1 arm safely" begin
+        # `constant_interp(1:n, …)` keeps Tg=Int, so the index-space arm sees
+        # `unsafe_trunc(Int, ::Int)` for an Int query — pin both query eltypes.
+        cri = _to_float(1:6, Int)
+        for q in (1, 3, 6, 1.0, 2.5, prevfloat(4.0), 6.0)
+            @test _search_direct_inbounds(cri, q) === _search_direct(cri, q)
+        end
+    end
+
+    @testset "guarded _search_direct family arm === value-space reference (incl. OOB)" begin
+        # Independent reference: the pre-family value-space body with the two-sided
+        # clamp (raw fields carry the same 1.0 the accessors fold to). OOB probes pin
+        # the ExtendExtrap contract: both forms must clamp to the same boundary cell.
+        function ref_direct(x, q)
+            idx = clamp(unsafe_trunc(Int, muladd(q - x.lo, x.inv_h, 1)), 1, x.len - 1)
+            xL = muladd(idx - 1, x.h, x.lo)
+            return idx, xL, xL + x.h
+        end
+        for ax in (1:9, 5:13, Base.OneTo(9))
+            cr = _to_float(ax, Float64)
+            oob = [first(ax) - 2.7, first(ax) - 1.0e9, last(ax) + 0.3, last(ax) + 1.0e9]
+            for q in vcat(ulp_probes(ax), oob)
+                @test _search_direct(cr, q) === ref_direct(cr, q)
+            end
+        end
+    end
+
+    @testset "getindex accessor routing — family node values unchanged" begin
+        for ax in (1:9, 5:13, Base.OneTo(9))
+            cr = _to_float(ax, Float64)
+            @test all(cr[i] === Float64(ax[i]) for i in eachindex(ax))
+        end
+        frac = _to_float(UnitRange(1.5, 4.5), Float64)   # fractional-lo unit step
+        @test all(frac[i] === 1.5 + (i - 1) for i in 1:4)
+    end
+
+    @testset "_domain_bounds _OneTo literal, NoExtrap boundary behavior unchanged" begin
+        @test _domain_bounds(_to_float(Base.OneTo(9), Float64)) === (1.0, 9.0)
+        itp = linear_interp(Base.OneTo(9), collect(1.0:9.0))
+        @test itp(1.0) === 1.0 && itp(9.0) === 9.0
+        @test_throws DomainError itp(prevfloat(1.0))
+        @test_throws DomainError itp(nextfloat(9.0))
+    end
+
+    @testset "end-to-end 2D: InBounds === ClampExtrap (generic search) on mixed-lo grids" begin
+        axx, axy = 1:8, 5:12
+        data = [cos(0.3i) * sin(0.2j) + 0.01i * j for i in 1:length(axx), j in 1:length(axy)]
+        inb = linear_interp((axx, axy), data; extrap = (InBounds(), InBounds()))
+        clp = linear_interp((axx, axy), data; extrap = (ClampExtrap(), ClampExtrap()))
+        for qx in ulp_probes(axx), qy in ulp_probes(axy)
+            @test inb((qx, qy)) === clp((qx, qy))
+        end
+    end
+end

@@ -21,13 +21,16 @@ _CachedRange(x::AbstractRange{T}) where {T} = _to_float(x, T)
 Base.length(r::_CachedRange) = r.len
 Base.size(r::_CachedRange) = (r.len,)
 Base.first(r::_CachedRange) = r.lo
+# `_OneTo`: lo ≡ 1 is a type invariant — the literal return lets `lo == 1` tests
+# (e.g. the index-space search arm) constant-fold, like the `_get_h` ≡ one() fold.
+Base.first(r::_CachedRange{T, Tinv, _OneTo}) where {T, Tinv} = one(T)
 Base.last(r::_CachedRange) = r.hi
 Base.step(r::_CachedRange) = r.h
 function Base.getindex(r::_CachedRange, i::Int)
     @boundscheck checkbounds(r, i)
     i == 1 && return r.lo
     i == r.len && return r.hi
-    return muladd(i - 1, r.h, r.lo)
+    return muladd(i - 1, _get_h(r), r.lo)   # accessor: unit-step family folds the ×h
 end
 
 # Range slicing — return a new _CachedRange instead of falling back to a generic
@@ -45,12 +48,17 @@ end
 # sub-range of a `_WidenedDomain` grid stays widened — its endpoints are `muladd`
 # reconstructions too, so they keep the ±1-ULP cushion (a boundary-touching slice
 # recovers the original `prevfloat(lo)`/`nextfloat(hi)`).
+# Exception: `_OneTo` demotes to `_UnitStep` (`i_lo` is runtime, so the type-level
+# `lo ≡ 1` invariant can't survive a slice) — same folds; a 1-based slice still hits
+# the search's `lo == 1` arm.
+@inline _slice_tag(tag::_AbstractAxisTag) = tag
+@inline _slice_tag(::_OneTo) = _UnitStep()
 @inline function Base.getindex(r::_CachedRange{T, Tinv, Tag}, idx::AbstractUnitRange{<:Integer}) where {T, Tinv, Tag}
     @boundscheck checkbounds(r, idx)
     new_len = length(idx)
     # Empty slice: return a length-0 _CachedRange anchored at r.lo (callers that
     # would dereference this hit the same checkbounds wall they would on r itself).
-    new_len == 0 && return _cached_range(Tag(), r.lo, r.lo, r.h, r.inv_h, 0)
+    new_len == 0 && return _cached_range(_slice_tag(Tag()), r.lo, r.lo, r.h, r.inv_h, 0)
     i_lo = Int(first(idx))
     i_hi = Int(last(idx))
     # Reuse cached endpoints when the slice touches them — preserves the exact-bit
@@ -58,7 +66,7 @@ end
     # any downstream Tg-precision comparison stable.
     new_lo = i_lo == 1 ? r.lo : muladd(i_lo - 1, r.h, r.lo)
     new_hi = i_hi == r.len ? r.hi : muladd(i_hi - 1, r.h, r.lo)
-    return _cached_range(Tag(), new_lo, new_hi, r.h, r.inv_h, new_len)
+    return _cached_range(_slice_tag(Tag()), new_lo, new_hi, r.h, r.inv_h, new_len)
 end
 
 # `view` follows `getindex` semantics for ranges — both return a fresh range, no
@@ -85,7 +93,7 @@ function _to_float(x::AbstractRange, ::Type{T}) where {T}
     return _cached_range(_Generic(), T(first(x)), T(last(x)), h, inv_h, length(x))
 end
 
-# Unit-step fast-path: `AbstractUnitRange` (`UnitRange`/`Base.OneTo`) has step ≡ 1 by
+# Unit-step fast-path: `AbstractUnitRange` (`UnitRange` etc.) has step ≡ 1 by
 # type, so the grid is built from literal constants (`h = one(T)`, `inv_h = one(Tinv)`)
 # with no runtime division — `inv` is only in the compile-time type
 # `Tinv = typeof(inv(oneunit(T)))` (Float64 for `T=Int`, `T` for Float, per the
@@ -93,6 +101,15 @@ end
 @inline function _to_float(x::AbstractUnitRange, ::Type{T}) where {T}
     Tinv = typeof(inv(oneunit(T)))
     return _cached_range(_UnitStep(), T(first(x)), T(last(x)), one(T), one(Tinv), length(x))
+end
+
+# `Base.OneTo`: 1-based by type → `_OneTo` tag (index-space search; `first` folds).
+# `1:n` deliberately keeps `_UnitStep` — a runtime `first(x) == 1` tag promotion would
+# make the interpolant type value-dependent (2^N Union in ND); the search's predicted
+# `lo == 1` arm covers that case instead.
+@inline function _to_float(x::Base.OneTo, ::Type{T}) where {T}
+    Tinv = typeof(inv(oneunit(T)))
+    return _cached_range(_OneTo(), one(T), T(last(x)), one(T), one(Tinv), length(x))
 end
 
 # x86_64: TwicePrecision first()/last() ~9ns each on Intel — bypass via plain-T muladd.
@@ -164,8 +181,8 @@ end
 # downstream `×h`/`×inv_h` to identity.
 @inline _get_h(x::_CachedRange) = x.h
 @inline _get_inv_h(x::_CachedRange) = x.inv_h
-@inline _get_h(::_CachedRange{T, Tinv, _UnitStep}) where {T, Tinv} = one(T)
-@inline _get_inv_h(::_CachedRange{T, Tinv, _UnitStep}) where {T, Tinv} = one(Tinv)
+@inline _get_h(::_CachedRange{T, Tinv, Tag}) where {T, Tinv, Tag <: _AbstractUnitStep} = one(T)
+@inline _get_inv_h(::_CachedRange{T, Tinv, Tag}) where {T, Tinv, Tag <: _AbstractUnitStep} = one(Tinv)
 # Inverse of the 2-cell span x[i+1]-x[i-1] (central-difference / cardinal interior).
 # A uniform range has span = 2h, so inv = inv_h/2; `_UnitStep` folds to one/2 = 0.5
 # (no division). 0.5 is exact (power of two) → one cached load + one multiply.

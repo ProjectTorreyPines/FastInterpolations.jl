@@ -335,6 +335,7 @@ struct WrapExtrap <: AbstractExtrap end
 
 """
     InBounds <: AbstractExtrap
+    InBounds(; first = :inclusive, last = :inclusive)
 
 Caller guarantees all queries are within the interpolation domain.
 Skips domain validation for maximum performance.
@@ -343,13 +344,55 @@ Used internally by vector loops after batch `_check_domain` validation
 (NoExtrap → InBounds conversion), and available to advanced users who
 have pre-validated their query points.
 
+The endpoint keywords (each `:inclusive` or `:exclusive`) narrow the promised
+interval at the type level (`InBounds{First, Last}`):
+
+| extrap                                           | caller promises              |
+|:-------------------------------------------------|:-----------------------------|
+| `InBounds()`                                     | `first(x) ≤ xq ≤ last(x)`    |
+| `InBounds(last = :exclusive)`                    | `first(x) ≤ xq < last(x)`    |
+| `InBounds(first = :exclusive)`                   | `first(x) < xq ≤ last(x)`    |
+| `InBounds(first = :exclusive, last = :exclusive)`| `first(x) < xq < last(x)`    |
+
+Like `Base.@inbounds`, violating the promise is undefined for the optimized
+paths: the result may be a wrong cell, an out-of-bounds read, or a
+`BoundsError`. A stricter promise can only be exploited, never required —
+paths without a dedicated lean arm safely treat it as the closed contract.
+Currently `last = :exclusive` selects a no-top-cap direct search on unit-step
+range axes; `first` is accepted for API completeness and future use.
+
 # Example
 ```julia
 # Skip domain check when you know queries are in-domain
 linear_interp(x, y, xq; extrap=InBounds())
+
+# Queries generated in [first(x), last(x)) — never touch the right endpoint
+linear_interp(x, y, xq; extrap=InBounds(last = :exclusive))
 ```
 """
-struct InBounds <: AbstractExtrap end
+struct InBounds{First, Last} <: AbstractExtrap
+    function InBounds{First, Last}() where {First, Last}
+        First isa Symbol || error("InBounds type parameter First must be a Symbol")
+        Last isa Symbol || error("InBounds type parameter Last must be a Symbol")
+        First in (:inclusive, :exclusive) ||
+            error("InBounds type parameter First must be :inclusive or :exclusive")
+        Last in (:inclusive, :exclusive) ||
+            error("InBounds type parameter Last must be :inclusive or :exclusive")
+        return new{First, Last}()
+    end
+end
+
+# Keyword constructor with validation — mirrors `PeriodicBC(; endpoint=...)`. The
+# zero-arg `InBounds()` call constant-folds to the closed singleton, so the ~15
+# internal promotion sites (`_check_domain` returns, Clamp/Fill in-domain
+# delegations) stay zero-cost.
+function InBounds(; first::Symbol = :inclusive, last::Symbol = :inclusive)
+    first in (:inclusive, :exclusive) ||
+        throw(ArgumentError("first must be :inclusive or :exclusive, got :$first"))
+    last in (:inclusive, :exclusive) ||
+        throw(ArgumentError("last must be :inclusive or :exclusive, got :$last"))
+    return InBounds{first, last}()
+end
 
 # ========================================
 # Typed Side Selection Tags (Constant Interpolation)

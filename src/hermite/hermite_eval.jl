@@ -19,12 +19,12 @@
         y::AbstractVector{Tv},
         dy::AbstractVector,
         xq::Tq,
-        ::InBounds,
+        e::InBounds,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, _ = search_interval(searcher, x, xq, InBounds())
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, e)
     dL = xq - xL
     h = _get_h(x, idx)
     inv_h = _get_inv_h(x, idx)
@@ -136,12 +136,12 @@ end
         y::AbstractVector{Tv},
         sm::AbstractSlopeMethod,
         xq::Tq,
-        ::InBounds,
+        e::InBounds,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, _ = search_interval(searcher, x, xq, InBounds())
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, e)
     n = _data_length(x)
     dyL = _local_slope(sm, x, y, idx, n)
     dyR = _local_slope(sm, x, y, idx_R, n)

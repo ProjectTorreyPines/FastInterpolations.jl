@@ -618,6 +618,40 @@ end
 @inline _search_direct_inbounds(x::_CachedRange{T, Tinv, _WidenedDomain}, xq::Real) where {T, Tinv} =
     _search_direct(x, xq)
 
+# ── Endpoint-aware (3-arg) family: `_search_direct_inbounds(x, xq, e::InBounds)` ──
+# Default (closed) contract → the 2-arg helper above verbatim: top-cell cap kept,
+# `_WidenedDomain` keeps its guarded fallback through the same 2-arg dispatch. Range
+# call sites that hold the actual `e::InBounds` thread it here so a stricter endpoint
+# contract can select a leaner arm; everything else is bit-identical to the 2-arg form.
+@inline _search_direct_inbounds(x::_CachedRange, xq::Real, ::InBounds) =
+    _search_direct_inbounds(x, xq)
+
+# `last = :exclusive` + unit-step: NO top-cell cap. The caller promises
+# `lo ≤ xq < last`, and the unit-step index arithmetic is exact (`xq − lo` is a
+# same-scale subtraction of a value < len and `+1` stays representable — the same
+# chain as the 2-arg method's bit-identity argument), so `trunc(·) ≤ len−1` is
+# guaranteed: the `min(·, len−1)` cap is provably dead, dropping the remaining `len`
+# load + `cmp/csel` ahead of the cell loads. A violated promise (`xq == last`)
+# indexes the phantom cell `len` — undefined, exactly like an `InBounds()` promise
+# violated below `lo`. Float-step ranges do NOT get a no-cap arm: their
+# `muladd(xq−lo, inv_h, 1)` can overshoot `len` by rounding even for a valid
+# strictly-interior query, so the cap doubles as a rounding guard there — they stay
+# on the closed delegate above. `_WidenedDomain` is not `<: _AbstractUnitStep`, so
+# its 1-ULP-wider acceptance bracket can never reach this arm.
+@inline function _search_direct_inbounds(
+        x::_CachedRange{T, Tinv, Tag}, xq::Real, ::InBounds{First, :exclusive}
+    ) where {T, Tinv, First, Tag <: _AbstractUnitStep}
+    if first(x) == one(T)
+        idx = unsafe_trunc(Int, _extract_primal(xq))
+        xL = T(idx)
+        return idx, xL, xL + one(T)
+    end
+    lo = first(x)
+    idx = unsafe_trunc(Int, _extract_primal(xq - lo + one(T)))
+    xL = lo + (idx - 1)
+    return idx, xL, xL + one(T)
+end
+
 
 # ----------------------------------------
 # Promote-then-compare ordering helpers
@@ -1000,15 +1034,20 @@ end
 # to the standard search for an in-bounds query and both writing the hint (symmetry with
 # `_search_direct!`; `NoHint` no-ops via `_write_hint!`):
 #   • normalized `_CachedRange` → `_search_direct_inbounds` (one-sided clamp; the lower
-#     `max(·,1)` is dead in-domain).
+#     `max(·,1)` is dead in-domain). The extrap instance is threaded through so an
+#     endpoint contract (`InBounds{_, :exclusive}` on a unit-step axis) selects the
+#     no-top-cap arm; the closed default is bit-identical to before.
 #   • non-uniform vector grid   → `_search_binary_inbounds` (drops the binary search's
-#     `first`/`last` boundary guards, which are always-false branches in-domain).
-# The genuine `::InBounds` eval cores pass `InBounds()` here. GridIdx and any non-InBounds
-# extrap (e.g. ExtendExtrap, which may be OOB and needs the two-sided clamp) delegate to the
-# standard 4-arg search. `_CachedRange` is the more-specific overload, so it wins over the
+#     `first`/`last` boundary guards, which are always-false branches in-domain; the
+#     binary loop needs no top-cell cap, so endpoint contracts have nothing to elide —
+#     the instance is intentionally NOT threaded).
+# The genuine `::InBounds` eval cores thread their received extrap here (promotion sites
+# pass the closed `InBounds()` they proved). GridIdx and any non-InBounds extrap (e.g.
+# ExtendExtrap, which may be OOB and needs the two-sided clamp) delegate to the standard
+# 4-arg search. `_CachedRange` is the more-specific overload, so it wins over the
 # `AbstractVector` one.
-@inline function search_interval(s::Searcher, x::_CachedRange, xq::Real, ::InBounds)
-    idx, xL, xR = _search_direct_inbounds(x, xq)
+@inline function search_interval(s::Searcher, x::_CachedRange, xq::Real, e::InBounds)
+    idx, xL, xR = _search_direct_inbounds(x, xq, e)
     _write_hint!(s.hint, idx)
     return idx, idx + 1, xL, xR
 end

@@ -30,12 +30,12 @@
         y::AbstractVector{Tv},
         z::AbstractVector,
         xq::Tq,
-        ::InBounds,
+        e::InBounds,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq, InBounds())
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq, e)
     dL = xq - xL
     dR = xR - xq
     h = _get_h(x, idx)

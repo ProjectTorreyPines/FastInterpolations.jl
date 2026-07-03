@@ -1,0 +1,170 @@
+# Endpoint-contract tests for the parameterized `InBounds{First, Last}` extrap.
+#
+# `InBounds(last = :exclusive)` promises `first(x) ≤ xq < last(x)`; unit-step range
+# axes then drop the direct search's top-cell cap (`min(·, len−1)` — see
+# `_search_direct_inbounds(x, xq, ::InBounds{First, :exclusive})`). Pinned here:
+#   1. constructor surface: defaults, kwarg forms, validation errors;
+#   2. closed `InBounds()` semantics are UNCHANGED (incl. `xq == last(x)`);
+#   3. exclusive-last is BIT-IDENTICAL (`===`) to closed for strictly-interior
+#      queries on unit-step grids — 1D scalar/batch across families, 2D
+#      persistent + one-shot, mixed per-axis contracts;
+#   4. GridIdx keeps its index short-circuit under an endpoint contract;
+#   5. float-step ranges have NO no-cap arm (their cap doubles as a rounding
+#      guard) — exclusive-last delegates to the capped closed search there, so
+#      it stays bit-identical even at `xq == last(x)`.
+# `xq == last(x)` under exclusive-last on a UNIT-STEP axis is a violated promise
+# (undefined, like `Base.@inbounds`) and is deliberately never exercised.
+
+@testitem "InBounds endpoint constructors and validation" begin
+    @test InBounds() isa InBounds{:inclusive, :inclusive}
+    @test InBounds(last = :exclusive) isa InBounds{:inclusive, :exclusive}
+    @test InBounds(first = :exclusive) isa InBounds{:exclusive, :inclusive}
+    @test InBounds(first = :exclusive, last = :exclusive) isa InBounds{:exclusive, :exclusive}
+
+    # Singleton identity — internal promotion sites compare `=== InBounds()`.
+    @test InBounds() === InBounds{:inclusive, :inclusive}()
+
+    @test_throws ArgumentError InBounds(first = :closed)
+    @test_throws ArgumentError InBounds(last = :open)
+    # Inner constructor rejects raw bad parameters (Symbol-typed and otherwise).
+    @test_throws ErrorException InBounds{:bad, :inclusive}()
+    @test_throws ErrorException InBounds{:inclusive, 1}()
+end
+
+@testitem "1D exclusive-last === closed on unit-step grids (all families)" begin
+    x1 = 1:16                     # _UnitStep with lo == 1 → index-space arm
+    x2 = 3:18                     # _UnitStep with offset lo
+    excl = InBounds(last = :exclusive)
+
+    # Strictly-interior queries incl. the sharpest no-cap edge prevfloat(last).
+    qs(x) = [
+        float(first(x)), first(x) + 0.25, 0.5 * (first(x) + last(x)),
+        last(x) - 1.5, prevfloat(float(last(x))),
+    ]
+
+    for x in (x1, x2)
+        y = [sin(0.4i) + 0.01i for i in 1:length(x)]
+        for f in (linear_interp, cubic_interp, quadratic_interp, constant_interp, pchip_interp)
+            itp_c = f(x, y; extrap = InBounds())
+            itp_e = f(x, y; extrap = excl)
+            for q in qs(x)
+                @test itp_e(q) === itp_c(q)
+            end
+            # Batch: `_check_domain` passes a user InBounds through untouched,
+            # so the per-element search sees the exclusive contract.
+            @test itp_e(qs(x)) == itp_c(qs(x))
+            # One-shot scalar form.
+            @test f(x, y, first(x) + 0.75; extrap = excl) ===
+                f(x, y, first(x) + 0.75; extrap = InBounds())
+        end
+    end
+end
+
+@testitem "closed InBounds endpoint behavior unchanged (=== NoExtrap incl. xq == last)" begin
+    x = 1:12
+    y = [sin(0.5i) for i in 1:12]
+    for f in (linear_interp, cubic_interp)
+        itp_ib = f(x, y; extrap = InBounds())
+        itp_ne = f(x, y)                       # NoExtrap reference
+        for q in (1.0, 4.3, 11.999, 12.0)      # incl. the closed right endpoint
+            @test itp_ib(q) === itp_ne(q)
+        end
+    end
+end
+
+@testitem "2D exclusive-last === closed (persistent + one-shot + batch + mixed axes)" begin
+    axx, axy = 1:7, 2:9
+    data = [sin(0.3i) + cos(0.2j) + 0.01i * j for i in 1:length(axx), j in 1:length(axy)]
+
+    closed = (InBounds(), InBounds())
+    excl = (InBounds(last = :exclusive), InBounds(last = :exclusive))
+    mixed = (InBounds(last = :exclusive), InBounds())
+
+    qs = ((1.0, 2.0), (1.25, 4.75), (3.4, 6.2), (6.999, 8.5), (prevfloat(7.0), prevfloat(9.0)))
+
+    @testset "persistent: linear + cubic" begin
+        for f in (linear_interp, cubic_interp)
+            itp_c = f((axx, axy), data; extrap = closed)
+            itp_e = f((axx, axy), data; extrap = excl)
+            for q in qs
+                @test itp_e(q) === itp_c(q)
+            end
+        end
+    end
+
+    @testset "mixed per-axis: exclusive x-axis, closed y-axis may touch its endpoint" begin
+        itp_c = linear_interp((axx, axy), data; extrap = closed)
+        itp_m = linear_interp((axx, axy), data; extrap = mixed)
+        for q in ((1.5, 9.0), (prevfloat(7.0), 9.0), (2.2, 5.5))
+            @test itp_m(q) === itp_c(q)
+        end
+    end
+
+    @testset "one-shot scalar (all families) + batch (linear!)" begin
+        for f in (linear_interp, cubic_interp, quadratic_interp, constant_interp)
+            for q in qs
+                @test f((axx, axy), data, q; extrap = excl) ===
+                    f((axx, axy), data, q; extrap = closed)
+            end
+        end
+        qxs = Float64[q[1] for q in qs]
+        qys = Float64[q[2] for q in qs]
+        o_e = similar(qxs)
+        o_c = similar(qxs)
+        linear_interp!(o_e, (axx, axy), data, (qxs, qys); extrap = excl)
+        linear_interp!(o_c, (axx, axy), data, (qxs, qys); extrap = closed)
+        @test o_e == o_c
+    end
+end
+
+@testitem "GridIdx keeps the index short-circuit under an exclusive contract" begin
+    using FastInterpolations: GridIdx
+
+    x = 1:10
+    y = collect(1.0:10.0)
+    itp_c = linear_interp(x, y; extrap = InBounds())
+    itp_e = linear_interp(x, y; extrap = InBounds(last = :exclusive))
+    # GridIdx is in-domain by construction and coordinate-free — the endpoint
+    # contract must not reroute it into the coordinate lean. Includes the last
+    # node: the short-circuit never runs the no-cap coordinate arithmetic.
+    for k in (1, 3, 10)
+        @test itp_e(GridIdx(k)) === itp_c(GridIdx(k))
+        @test itp_e(GridIdx(k)) === y[k]
+    end
+
+    axx, axy = 1:7, 2:9
+    data = [0.1i + 0.3j + 0.01i * j for i in 1:length(axx), j in 1:length(axy)]
+    excl = (InBounds(last = :exclusive), InBounds(last = :exclusive))
+    closed = (InBounds(), InBounds())
+    for q in ((GridIdx(2), GridIdx(3)), (GridIdx(7), GridIdx(8)))
+        @test linear_interp((axx, axy), data, q; extrap = excl) ===
+            linear_interp((axx, axy), data, q; extrap = closed)
+    end
+end
+
+@testitem "float-step ranges: exclusive-last delegates to the capped closed search" begin
+    x = range(0.0, 1.0; length = 17)           # float-step _CachedRange, NOT unit-step
+    y = sin.(x)
+    itp_c = linear_interp(x, y; extrap = InBounds())
+    itp_e = linear_interp(x, y; extrap = InBounds(last = :exclusive))
+    # Same (capped) code path ⇒ bit-identical for every in-domain query, INCLUDING
+    # xq == last(x). This pins the safety property that float-step ranges never get
+    # a no-cap arm: their muladd index arithmetic can overshoot len by rounding, so
+    # the cap is a rounding guard there, not just endpoint semantics.
+    for q in (0.0, 0.123, 0.5, prevfloat(1.0), 1.0)
+        @test itp_e(q) === itp_c(q)
+    end
+end
+
+@testitem "AD: Dual query under exclusive-last === closed (value + derivative)" begin
+    using ForwardDiff
+
+    x = 1:16
+    y = [sin(0.4i) for i in 1:16]
+    itp_c = cubic_interp(x, y; extrap = InBounds())
+    itp_e = cubic_interp(x, y; extrap = InBounds(last = :exclusive))
+    for q in (1.5, 7.25, prevfloat(16.0))
+        @test itp_e(q) === itp_c(q)
+        @test ForwardDiff.derivative(itp_e, q) === ForwardDiff.derivative(itp_c, q)
+    end
+end

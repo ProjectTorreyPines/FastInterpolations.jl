@@ -752,8 +752,8 @@ end
 # 5-arg form unchanged. Any ND `_locate_cell` that threads its `extraps` into the search
 # picks this up; 5-arg callers are unaffected. `hint` is always a concrete `Ref{Int}` here
 # (the 6-arg `_search_all_intervals` is reached only from persistent `_locate_cell`).
-@inline function _search_axis_adaptive(q, grid::_CachedRange, ::AbstractSearchPolicy, hint::Base.RefValue{Int}, _mono, ::InBounds)
-    idx, xL, xR = _search_direct_inbounds(grid, q)
+@inline function _search_axis_adaptive(q, grid::_CachedRange, ::AbstractSearchPolicy, hint::Base.RefValue{Int}, _mono, e::InBounds)
+    idx, xL, xR = _search_direct_inbounds(grid, q, e)
     hint[] = idx
     return idx, idx + 1, xL, xR
 end
@@ -861,8 +861,8 @@ end
 # still writes the hint (symmetry). EVERY other `(q, grid, extrap)` — GridIdx queries,
 # vector grids, and periodic axes (always WrapExtrap, never InBounds; the `_ExclusivePeriodicAxis`
 # seam wrap in `search_interval` is untouched) — delegates to the 4-arg form verbatim.
-@inline function _search_axis_oneshot_hint(q::Real, grid::_CachedRange, search, hint::Base.RefValue{Int}, ::InBounds)
-    idx, xL, xR = _search_direct_inbounds(grid, q)
+@inline function _search_axis_oneshot_hint(q::Real, grid::_CachedRange, search, hint::Base.RefValue{Int}, e::InBounds)
+    idx, xL, xR = _search_direct_inbounds(grid, q, e)
     hint[] = idx
     return idx, idx + 1, xL, xR
 end
@@ -974,8 +974,8 @@ end
 # to the 4-arg `_search_axis_stencil`: crucially `_ExclusivePeriodicAxis` (always
 # WrapExtrap, never InBounds, and `<: AbstractVector` not `_CachedRange`) keeps its
 # `search_interval` seam wrap `(n, 1, …)` untouched, as do GridIdx and vector grids.
-@inline function _search_axis_stencil(grid::_CachedRange, q::Real, search, hint::Base.RefValue{Int}, ::InBounds)
-    idx, xL, xR = _search_direct_inbounds(grid, q)
+@inline function _search_axis_stencil(grid::_CachedRange, q::Real, search, hint::Base.RefValue{Int}, e::InBounds)
+    idx, xL, xR = _search_direct_inbounds(grid, q, e)
     hint[] = idx
     return idx, idx + 1, xL, xR
 end

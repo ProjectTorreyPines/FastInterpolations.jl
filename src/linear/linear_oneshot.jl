@@ -218,12 +218,12 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
         x::AbstractVector{Tg},
         y::AbstractVector{Tv},
         xq::Tq,
-        ::InBounds,
+        e::InBounds,
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq, InBounds())
+    idx, idx_R, xL, xR = search_interval(searcher, x, xq, e)
     # Independent computation of `α` and `inv_h`. The kernel uses only one
     # (EvalValue → α, `DerivOp(1)` → inv_h, `DerivOp(2)` → neither), so the
     # unused branch's fdiv is dead-code-eliminated by LLVM. `_alpha_of`

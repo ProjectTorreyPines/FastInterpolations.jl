@@ -148,13 +148,46 @@ end
 # `InBounds()` for that axis, else the original extrap; empty batch → `extraps` unchanged. The
 # `<:Real` bound is load-bearing: batch `_check_domain` is only defined for `AbstractVector{<:Real}`,
 # so a non-Real / duck-typed SoA batch falls to the generic method below (validate, no promotion).
+#
+# Exclusive-last promotions are DEMOTED to closed here (`_check_axis_batch_closed`):
+# unions nested in a tuple type don't union-split, so per-axis exclusive would send an
+# abstract extrap tuple into the batch locate loop (measured ~10× on 2D SoA). The
+# strict upgrade happens tuple-level on the all-NoExtrap lane below.
 @inline function _validate_nd_domain(
         grids::NTuple{N, AbstractVector},
         queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
     isempty(first(queries)) && return extraps
-    return map(_check_domain, grids, queries, extraps)
+    return map(_check_axis_batch_closed, grids, queries, extraps)
+end
+
+# Per-axis SoA check with concrete return shapes: validation/throw from the batch
+# `_check_domain` verbatim; only the exclusive upgrade collapses back to closed.
+@inline _check_axis_batch_closed(g, q, e::AbstractExtrap) = _check_domain(g, q, e)
+@inline function _check_axis_batch_closed(g, q, e::NoExtrap)
+    _check_domain(g, q, e)      # throws on OOB; promotion result intentionally discarded
+    return InBounds()
+end
+@inline function _check_axis_batch_closed(g, q, e::Union{ClampExtrap, FillExtrap, WrapExtrap})
+    r = _check_domain(g, q, e)
+    return r isa InBounds ? InBounds() : e
+end
+
+# All-unit-step, all-NoExtrap SoA lane: per-axis 3-outcome checks (validate/throw),
+# then ALL-OR-NOTHING — every axis exclusive → all-exclusive tuple, else all-closed.
+# The transient per-axis unions are consumed by one tuple type test and never reach
+# the locate loop; mixed-grid / mixed-extrap tuples take the demoting generic lane.
+@inline function _validate_nd_domain(
+        grids::NTuple{N, _CachedRange{<:Any, <:Any, <:_AbstractUnitStep}},
+        queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}},
+        extraps::NTuple{N, NoExtrap}
+    ) where {N}
+    isempty(first(queries)) && return extraps
+    effs = map(_check_domain, grids, queries, extraps)
+    return effs isa NTuple{N, InBounds{:inclusive, :exclusive}} ?
+        ntuple(_ -> InBounds(last = :exclusive), Val(N)) :
+        ntuple(_ -> InBounds(), Val(N))
 end
 
 # Generic (AoS, etc.): per-query per-axis NoExtrap check (min/max promotion deferred), so return

@@ -394,6 +394,15 @@ function InBounds(; first::Symbol = :inclusive, last::Symbol = :inclusive)
     return InBounds{first, last}()
 end
 
+# Kwarg-form show (`GridIdx`/`DerivOp` precedent): round-trips as `InBounds()` /
+# `InBounds(last = :exclusive)` instead of raw type parameters.
+function Base.show(io::IO, ::InBounds{First, Last}) where {First, Last}
+    parts = String[]
+    First === :inclusive || push!(parts, "first = :$First")
+    Last === :inclusive || push!(parts, "last = :$Last")
+    return print(io, "InBounds(", join(parts, ", "), ")")
+end
+
 # ========================================
 # Typed Side Selection Tags (Constant Interpolation)
 # ========================================

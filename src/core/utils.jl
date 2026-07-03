@@ -737,9 +737,11 @@ the OOB slow-path, so this form stays preferred even post-1.10-LTS.
     lo, hi = _domain_bounds(x)
     # `_ge`/`_le` promote-compare (see search.jl): dodge Base's exact mixed
     # `>=(Float, Int)` on an Int/Rational grid. Amortized over the min/max scan
-    # (one compare per batch), but free on a Float grid.
-    return _ge(minimum(queries), _extract_primal(lo)) &&
-        _le(maximum(queries), _extract_primal(hi))
+    # (one compare per batch), but free on a Float grid. Extrema classify on
+    # primals: a Dual query whose VALUE == a bound must not tie-break on its
+    # partial sign into a false OOB verdict (identity on the Float64 hot path).
+    return _ge(_extract_primal(minimum(queries)), _extract_primal(lo)) &&
+        _le(_extract_primal(maximum(queries)), _extract_primal(hi))
 end
 
 # ========================================

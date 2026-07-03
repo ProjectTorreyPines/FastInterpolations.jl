@@ -106,6 +106,29 @@ end
     @test J ≈ [1.0 0.0; 0.0 1.0]
 end
 
+@testitem "generic batch domain check classifies Dual extrema on primals (no spurious throw)" begin
+    using FastInterpolations: _is_all_inbounds, _check_domain
+    using ForwardDiff
+    Dual = ForwardDiff.Dual
+
+    # `_is_all_inbounds` (the non-unit-step batch classifier) must not tie-break a Dual
+    # query whose VALUE == last(x) on its partial sign: a +partial there compares
+    # "greater" and would falsely reject a valid boundary batch (spurious DomainError).
+    for g in (range(0.0, 1.0; length = 11), collect(0.0:0.1:1.0))   # float-step range + vector
+        cr = linear_interp((g, g), zeros(length(g), length(g))).grids[1]
+        xi = [Dual{:t}(0.2, 1.0), Dual{:t}(1.0, 1.0)]              # max value == last, +partial
+        @test _is_all_inbounds(cr, xi)                              # in-domain on primal
+        @test _check_domain(cr, xi, NoExtrap()) === InBounds()      # no spurious throw
+    end
+
+    # end-to-end on a float-step grid (routes through `_is_all_inbounds`, not the
+    # unit-step method): jacobian over a batch touching last(x) must not throw.
+    gf = range(0.0, 1.0; length = 11)
+    itpf = linear_interp(gf, collect(0.0:0.1:1.0))                 # y == x ⇒ slope 1
+    J = ForwardDiff.jacobian(q -> itpf(q), [0.35, 1.0])
+    @test J[1, 1] ≈ 1.0 && J[2, 2] ≈ 1.0                          # endpoint query differentiates fine
+end
+
 @testitem "batch NoExtrap end-to-end rides the promoted contract, bit-identical" begin
     x = 1:16
     y = [sin(0.4i) for i in 1:16]

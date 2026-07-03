@@ -292,3 +292,51 @@ end
             itp(collect(range(0.1, 6.0, 30)))
     end
 end
+
+@testitem "call-time extrap override — boundary-exact + exclusive arm + 3D" begin
+    # Regression pins for edges the family loops skip: exact endpoints, the
+    # `:exclusive` no-cap arm firing near the right endpoint, and N ≥ 3.
+
+    @testset "boundary-exact InBounds() == default" begin
+        x = collect(range(0.0, 10.0, 11))
+        y = sin.(x)
+        itp = cubic_interp(x, y)
+        for q in (first(x), last(x))                            # exact closed endpoints
+            @test itp(q; extrap = InBounds()) == itp(q)
+        end
+        xg = collect(range(0.0, 10.0, 11))
+        yg = collect(range(0.0, 5.0, 6))
+        data = [sin(a) * cos(b) for a in xg, b in yg]
+        nitp = cubic_interp((xg, yg), data)
+        for q in ((first(xg), first(yg)), (last(xg), last(yg)), (first(xg), last(yg)))
+            @test nitp(q; extrap = InBounds()) == nitp(q)       # exact corners
+        end
+    end
+
+    @testset "InBounds(last=:exclusive) no-cap arm near right endpoint" begin
+        # A unit-step range grid selects the exclusive no-cap direct-search arm; for
+        # queries in the last cell (strictly < last) it must match the default search.
+        for x in (0.0:1.0:10.0, collect(0.0:1.0:10.0))         # range (arm fires) + Vector
+            y = sin.(x)
+            itp = cubic_interp(x, y)
+            for q in (9.5, prevfloat(10.0))
+                @test itp(q; extrap = InBounds(last = :exclusive)) == itp(q)
+            end
+            xv = collect(range(0.5, prevfloat(10.0), 20))
+            @test itp(xv; extrap = InBounds(last = :exclusive)) == itp(xv)
+        end
+    end
+
+    @testset "3D broadcast + per-axis + wrong arity" begin
+        xg = collect(range(0.0, 1.0, 5))
+        yg = collect(range(0.0, 1.0, 4))
+        zg = collect(range(0.0, 1.0, 3))
+        data = [a + b + c for a in xg, b in yg, c in zg]
+        itp = linear_interp((xg, yg, zg), data)
+        q = (0.5, 0.5, 0.5)
+        @test itp(q; extrap = InBounds()) == itp(q)                        # ntuple(_->InBounds, Val(3))
+        @test itp(q; extrap = (InBounds(), nothing, InBounds())) == itp(q) # per-axis 3-tuple
+        @test_throws ArgumentError itp(q; extrap = (InBounds(), nothing))  # wrong arity (2 for 3D)
+        @test_throws ArgumentError itp(q; extrap = ClampExtrap())
+    end
+end

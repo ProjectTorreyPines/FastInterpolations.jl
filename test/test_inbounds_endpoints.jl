@@ -77,6 +77,35 @@ end
     end
 end
 
+@testitem "Dual-query batch touching last must NOT promote to exclusive (no-cap OOB guard)" begin
+    using FastInterpolations: _check_domain
+    using ForwardDiff
+    Dual = ForwardDiff.Dual
+
+    # `Dual(16,-1) < 16.0 === true` (partial tie-break at equal primals). A Dual batch
+    # whose max VALUE == last(x) must classify on primal, else it falsely promotes to
+    # exclusive and the no-cap search reads y[len+1] OOB.
+    cr(g) = linear_interp((g, g), zeros(length(g), length(g))).grids[1]
+    g = cr(1:16)
+
+    # max value == 16 == last(x), partial < 0 (the tie-break trap)
+    xi_touch = [Dual{:t}(2.0, 0.3), Dual{:t}(8.0, 0.1), Dual{:t}(16.0, -1.0)]
+    @test _check_domain(g, xi_touch, NoExtrap()) === InBounds()            # NOT exclusive
+    @test _check_domain(g, xi_touch, ClampExtrap()) === InBounds()
+
+    # strictly-interior Dual batch (max primal < last) still promotes
+    xi_interior = [Dual{:t}(2.0, 1.0), Dual{:t}(15.0, -1.0)]
+    @test _check_domain(g, xi_interior, NoExtrap()) === InBounds(last = :exclusive)
+
+    # end-to-end: gradient through a Dual batch touching last(x) must not OOB
+    x = 1:16
+    y = collect(1.0:16.0)
+    itp = linear_interp(x, y)
+    qs = [3.0, 16.0]                                    # includes the exact endpoint
+    J = ForwardDiff.jacobian(q -> itp(q), qs)          # batch value+partials, no OOB read
+    @test J ≈ [1.0 0.0; 0.0 1.0]
+end
+
 @testitem "batch NoExtrap end-to-end rides the promoted contract, bit-identical" begin
     x = 1:16
     y = [sin(0.4i) for i in 1:16]

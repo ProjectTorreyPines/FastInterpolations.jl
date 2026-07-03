@@ -633,14 +633,16 @@ end
 # Unit-step axis: fused 3-outcome check — throw (OOB), `InBounds(last = :exclusive)`
 # (`maximum < last` proven → the batch loop rides the no-cap search), else closed.
 # Generic axes keep the closed-only method above (no Union; nothing to win there).
+# Extrema classify on primals: a Dual max whose VALUE == `last` must not tie-break
+# on its partial into a false exclusive promotion (→ no-cap OOB read).
 # Only the throws are `@boundscheck`-elidable; the promotion is build-mode independent.
 @inline function _check_domain(
         x::_CachedRange{T, Tinv, Tag}, xi::AbstractVector{<:Real}, ::NoExtrap
     ) where {T, Tinv, Tag <: _AbstractUnitStep}
     isempty(xi) && return InBounds()
     lo, hi = _domain_bounds(x)
-    @boundscheck _ge(minimum(xi), _extract_primal(lo)) || _throw_batch_oob(x, xi)
-    mx = maximum(xi)
+    @boundscheck _ge(_extract_primal(minimum(xi)), _extract_primal(lo)) || _throw_batch_oob(x, xi)
+    mx = _extract_primal(maximum(xi))
     hip = _extract_primal(hi)
     @boundscheck _le(mx, hip) || _throw_batch_oob(x, xi)
     return _lt(mx, hip) ? InBounds(last = :exclusive) : InBounds()
@@ -667,15 +669,15 @@ end
 end
 
 # Unit-step twin: original extrap (any OOB) / exclusive-last (strictly below `last`)
-# / closed (touches `last`).
+# / closed (touches `last`). Primal extrema — see the NoExtrap twin.
 @inline function _check_domain(
         x::_CachedRange{T, Tinv, Tag}, xi::AbstractVector{<:Real},
         e::Union{ClampExtrap, FillExtrap, WrapExtrap}
     ) where {T, Tinv, Tag <: _AbstractUnitStep}
     isempty(xi) && return InBounds()
     lo, hi = _domain_bounds(x)
-    _ge(minimum(xi), _extract_primal(lo)) || return e
-    mx = maximum(xi)
+    _ge(_extract_primal(minimum(xi)), _extract_primal(lo)) || return e
+    mx = _extract_primal(maximum(xi))
     hip = _extract_primal(hi)
     _le(mx, hip) || return e
     return _lt(mx, hip) ? InBounds(last = :exclusive) : InBounds()

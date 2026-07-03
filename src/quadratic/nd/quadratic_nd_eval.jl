@@ -68,13 +68,7 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))      # ∂f/∂x only
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
-    resolved = map(_resolve_grididx, query, itp.grids)
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    policies = _resolve_search_nd(search, Val(N))
-    hints = _ensure_hint_nd(hint, Val(N))
-    mono = _scalar_mono(hint, Val(N))
-    extraps = _resolve_extrap_overrides(itp, extrap)
-    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono, extraps)
+    return _eval_nd_scalar_query(itp, query, deriv, extrap, search, hint)
 end
 
 # In-place batch evaluation (SoA + AoS) is handled by the unified

@@ -15,9 +15,10 @@ linear_interp(x, y, xq; extrap=Extrap(:extend))
 cubic_interp(x, y, xq; extrap=ClampExtrap())
 linear_interp(x, y, xq; extrap=ExtendExtrap())
 
-# Interpolant: extrap is fixed at creation
+# Interpolant: stored extrap is fixed at creation; a per-call `InBounds()` skips the domain check
 itp = cubic_interp(x, y; extrap=Extrap(:extend))
-itp(xq)  # uses ExtendExtrap
+itp(xq)                      # uses ExtendExtrap
+itp(xq; extrap=InBounds())   # in-domain fast-path (query must be in-domain)
 ```
 
 !!! tip "Factory Functions"

@@ -125,23 +125,21 @@ end
 # ========================================
 
 """
-    (itp::CubicHermiteInterpolantND)(query; deriv=EvalValue(), search=itp.searches)
+    (itp::CubicHermiteInterpolantND)(query; deriv=EvalValue(), extrap=nothing, search=itp.searches)
 
 Evaluate ND cubic Hermite at `query::NTuple{N, Real}`. Supports `deriv` as
-`DerivOp` (same order all axes) or `NTuple{N, DerivOp}` (per-axis).
+`DerivOp` (same order all axes) or `NTuple{N, DerivOp}` (per-axis). Pass
+`extrap=InBounds()` to skip the domain check for in-domain queries (`nothing`
+keeps the stored extrap; any other extrapolation mode errors).
 """
 @inline function (itp::CubicHermiteInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {Tg, Tv, N}
-    resolved = map(_resolve_grididx, query, itp.grids)
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    policies = _resolve_search_nd(search, Val(N))
-    hints = _ensure_hint_nd(hint, Val(N))
-    mono = _scalar_mono(hint, Val(N))
-    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
+    return _eval_nd_scalar_query(itp, query, deriv, extrap, search, hint)
 end
 
 # ========================================

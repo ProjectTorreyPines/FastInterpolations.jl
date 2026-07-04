@@ -24,6 +24,57 @@
 @inline _itp_extrap(itp::AbstractInterpolant1D) = itp.extrap
 @inline _itp_search(itp::AbstractInterpolant1D) = itp.search_policy
 
+# ── Call-time extrap override (singular: 1D / ND per-axis) ──
+# The stored extrap is the construction-time contract; the only per-call override
+# is `InBounds` (an in-domain fast-path ASSERTION, not an extrapolation contract —
+# it never changes OOB behavior, since the caller guarantees no OOB query). `nothing`
+# (the omitted default) keeps the stored contract. Any other extrapolation mode would
+# silently change OOB semantics, so it errors. The callables annotate the kwarg
+# `Union{Nothing, AbstractExtrap[, Tuple]}`, so scalar junk (`extrap=5`) is cut at
+# the call boundary (`TypeError`) — only a valid-but-disallowed mode reaches the
+# friendly throw. Dispatch on the override type folds away at specialization.
+@inline _resolve_extrap_override(stored, ::Nothing) = stored
+@inline _resolve_extrap_override(_stored, over::InBounds) = over
+@noinline _resolve_extrap_override(stored, over::AbstractExtrap) =
+    _throw_extrap_not_overridable(stored, over)
+# Per-axis tuple elements reuse this resolver (via the `map` below). The tuple kwarg
+# annotation cannot check element types, so a junk element (e.g. `(5, nothing)`) is
+# cut here as a `TypeError` — matching the scalar boundary rather than surfacing an
+# internal `MethodError`.
+@noinline _resolve_extrap_override(_stored, over) =
+    throw(TypeError(:extrap, "per-axis override tuple element", Union{Nothing, AbstractExtrap}, over))
+
+@noinline _throw_extrap_not_overridable(stored, over) = throw(
+    ArgumentError(
+        "call-time `extrap` override must be `InBounds(...)` (an in-domain fast-path); got $(over). " *
+            "The stored extrapolation mode ($(stored)) is the interpolant's contract and cannot be " *
+            "changed per call — rebuild the interpolant to use a different mode."
+    )
+)
+
+# ── ND per-axis resolution (plural: broadcast / tuple) ──
+# Resolve a call-time override against the stored per-axis extraps tuple:
+#   nothing  → stored (all axes unchanged)
+#   InBounds → broadcast to every axis (fast-path on all axes)
+#   Tuple    → per-axis, each element `nothing` (keep stored) or `InBounds`
+#             (a disallowed element / single non-InBounds mode routes to the throw)
+# The itp-level entry resolves against the interpolant's stored per-axis `extraps`;
+# every `AbstractInterpolantND` (tensor-product and Hetero alike) shares this method.
+@inline _resolve_extrap_override_nd(itp::AbstractInterpolantND, over) = _resolve_extrap_override_nd(itp.extraps, over)
+@inline _resolve_extrap_override_nd(stored::NTuple{N, AbstractExtrap}, ::Nothing) where {N} = stored
+@inline _resolve_extrap_override_nd(stored::NTuple{N, AbstractExtrap}, over::InBounds) where {N} =
+    ntuple(_ -> over, Val(N))
+@inline function _resolve_extrap_override_nd(stored::NTuple{N, AbstractExtrap}, over::Tuple) where {N}
+    length(over) == N || _throw_extrap_ndims(N, length(over))
+    return map(_resolve_extrap_override, stored, over)
+end
+@noinline _resolve_extrap_override_nd(stored::NTuple{N, AbstractExtrap}, over::AbstractExtrap) where {N} =
+    _throw_extrap_not_overridable(stored, over)   # single non-InBounds mode never broadcasts
+
+@noinline _throw_extrap_ndims(want::Int, got::Int) = throw(
+    ArgumentError("call-time `extrap` tuple must have $want elements to match grid dimensions, got $got")
+)
+
 # ── Output eltype trait ──
 # Default: arithmetic kernels (Linear/Cubic/Quadratic) divide by `h`, so route
 # through the shared `_interp_op` for Julia inference. Selection
@@ -40,17 +91,19 @@
 @inline function (itp::AbstractInterpolant1D{Tg, Tv})(
         xq;
         deriv::DerivOp = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv}
     grid = _itp_grid(itp)
-    extrap = _itp_extrap(itp)
+    # `nothing` → stored extrap; `InBounds` → per-call fast-path; else errors.
+    extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
     # Domain check is delegated to the per-method `_eval_*_at_point` callable
     # below — NoExtrap throws via that path's `@boundscheck _check_domain`,
     # while Clamp/Fill/Wrap handle OOB inside their specialized eval methods
     # without ever calling `_check_domain`. Outer redundancy removed.
     searcher = _resolve_search(grid, xq, search, hint)
-    return _itp_eval_scalar(itp, xq, extrap, deriv, searcher)
+    return _itp_eval_scalar(itp, xq, extrap_eff, deriv, searcher)
 end
 
 # ========================================
@@ -64,14 +117,15 @@ end
 function (itp::AbstractInterpolant1D{Tg, Tv})(
         xq::AbstractVector{Tq};
         deriv::DerivOp = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     grid = _itp_grid(itp)
-    extrap = _itp_extrap(itp)
+    extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
     output = Vector{_promote_eltype(itp, Tq)}(undef, length(xq))
     searcher = _resolve_search(grid, xq, search, hint)
-    _itp_vector_loop!(output, itp, xq, extrap, deriv, searcher)
+    _itp_vector_loop!(output, itp, xq, extrap_eff, deriv, searcher)
     return output
 end
 
@@ -83,14 +137,15 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
         output::AbstractVector,
         xq::AbstractVector{Tq};
         deriv::DerivOp = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap} = nothing,
         search::AbstractSearchPolicy = _itp_search(itp),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     @assert length(output) == length(xq) "output length must match xq length"
     grid = _itp_grid(itp)
-    extrap = _itp_extrap(itp)
+    extrap_eff = _resolve_extrap_override(_itp_extrap(itp), extrap)
     searcher = _resolve_search(grid, xq, search, hint)
-    _itp_vector_loop!(output, itp, xq, extrap, deriv, searcher)
+    _itp_vector_loop!(output, itp, xq, extrap_eff, deriv, searcher)
     return output
 end
 
@@ -154,8 +209,8 @@ end
 #
 # Single scalar entry point for AbstractInterpolantND subtypes whose eval
 # structure matches `validate → try_fill_oob → locate → eval` (Cubic /
-# Linear / Constant / Quadratic). Each method's callable resolves
-# search/hints/ops then delegates here.
+# Linear / Constant / Quadratic). The per-family callables delegate to
+# `_eval_nd_scalar_query` (below), which resolves search/hints/ops then calls here.
 #
 # Hetero is *not* routed through here — its callable has GridIdx/NoInterp
 # branches and `_eval_hetero_nd` uses a non-`_locate_cell` path (recursive
@@ -167,6 +222,7 @@ end
         policies::NTuple{N, AbstractSearchPolicy},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         mono::NTuple{N, Bool},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
     ) where {Tg, Tv, N}
     # Promote each axis query to its coordinate type Tc ONCE at the eval surface,
     # before validate / try_fill_oob. This (a) makes the OOB/fill VALUE carry the
@@ -177,11 +233,27 @@ end
     qc = map(_promote_coord, query, map(eltype, itp.grids))
     # Validate (NoExtrap throw must precede the FillExtrap short-circuit) AND promote per axis:
     # an in-domain NoExtrap axis becomes InBounds for the search (lean), mirroring the batch path.
-    extraps_eff = _validate_nd_domain(itp.grids, qc, itp.extraps)
+    # `extraps` carries any call-time InBounds override; an InBounds axis skips the domain scan.
+    extraps_eff = _validate_nd_domain(itp.grids, qc, extraps)
     oob_result = _try_fill_oob(qc, itp.grids, extraps_eff, ops, _sample_data(itp))
     oob_result !== nothing && return oob_result
     cell = _locate_cell(itp, qc, extraps_eff, policies, hints, mono)
     return _eval_at_cell(itp, cell, ops)
+end
+
+# Shared scalar-query entry for the tensor-product ND callables (Linear/Cubic/
+# Quadratic/Constant/Hermite): resolve query/ops/search/hints + the call-time
+# extrap override once, then delegate. Hetero keeps its own callable.
+@inline function _eval_nd_scalar_query(
+        itp::AbstractInterpolantND{Tg, Tv, N}, query, deriv, extrap, search, hint
+    ) where {Tg, Tv, N}
+    resolved = map(_resolve_grididx, query, itp.grids)
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    policies = _resolve_search_nd(search, Val(N))
+    hints = _ensure_hint_nd(hint, Val(N))
+    mono = _scalar_mono(hint, Val(N))
+    extraps = _resolve_extrap_override_nd(itp, extrap)
+    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono, extraps)
 end
 
 # ========================================
@@ -192,12 +264,13 @@ end
 @inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
         query::AbstractVector{<:Real};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(query) == N || _throw_ndims_mismatch("query elements", N, length(query))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-    return itp(query_tuple; deriv = deriv, search = search, hint = hint)
+    return itp(query_tuple; deriv = deriv, extrap = extrap, search = search, hint = hint)
 end
 
 # ========================================
@@ -225,6 +298,7 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         output::AbstractVector,
         queries;
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
@@ -232,9 +306,14 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
+    # `extrap` (nothing → stored; InBounds → fast-path; else errors) resolved per-axis
+    # BEFORE domain validation — an InBounds axis then skips the O(n) domain scan.
+    # HeteroND shares this batch callable and is fully supported: it is an
+    # `AbstractInterpolantND`, so the same resolver threads the override.
+    extraps0 = _resolve_extrap_override_nd(itp, extrap)
     # Validate + batch-level InBounds promotion: throws on OOB NoExtrap and returns per-axis
     # `InBounds()` for SoA queries all in-bounds on an axis (AoS/generic stays original).
-    extraps_eff = _validate_nd_domain(itp.grids, queries, itp.extraps)
+    extraps_eff = _validate_nd_domain(itp.grids, queries, extraps0)
     policies = _resolve_search_nd(search, Val(N))
     hints = _ensure_hint_nd(hint, Val(N))
     mono = _check_mono_nd(policies, queries)
@@ -251,10 +330,11 @@ end
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
         queries;
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     Tq = _query_eltype(queries)
     output = Vector{_promote_eltype(itp, Tq)}(undef, _query_length(queries))
-    return itp(output, queries; deriv = deriv, search = search, hint = hint)
+    return itp(output, queries; deriv = deriv, extrap = extrap, search = search, hint = hint)
 end

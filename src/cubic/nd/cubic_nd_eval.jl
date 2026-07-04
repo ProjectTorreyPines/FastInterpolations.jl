@@ -15,7 +15,7 @@ const _DEBUG_GENERATED_CELL = Ref(false)  # Debug: inspect @generated code
 # ========================================
 
 """
-    (itp::CubicInterpolantND)(query; deriv=EvalValue(), search=itp.searches)
+    (itp::CubicInterpolantND)(query; deriv=EvalValue(), extrap=nothing, search=itp.searches)
 
 Evaluate N-dimensional cubic Hermite interpolant.
 
@@ -23,6 +23,8 @@ Evaluate N-dimensional cubic Hermite interpolant.
 - `deriv`: Derivative specification
   - `DerivOp`: same order for all axes (fastest), e.g. `DerivOp(1)`
   - `NTuple{N,DerivOp}`: per-axis orders, e.g. `(DerivOp(1), EvalValue())` for ∂f/∂x
+- `extrap`: `InBounds()` opts into the in-domain fast-path (per-axis tuple allowed;
+  `nothing` keeps an axis's stored mode). Any other mode errors — extrap is a build-time contract.
 - `search`: Override search policy (single or per-axis tuple)
 
 # Examples
@@ -30,22 +32,18 @@ Evaluate N-dimensional cubic Hermite interpolant.
 itp((1.0, 0.5))                                  # value
 itp((1.0, 0.5); deriv=DerivOp(1))                # all first derivatives
 itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))  # ∂f/∂x only
+itp((1.0, 0.5); extrap=InBounds())               # skip the domain check (in-domain only)
 ```
 """
 # Single-point evaluation
 @inline function (itp::CubicInterpolantND{Tg, Tv, N})(
         query::Tuple{Vararg{Real, N}};  # Allow Real, Dual (AD), and GridIdx
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
-    # Resolve bare GridIdx → GridIdx{Tg}(idx, val). No-op for Real/Dual.
-    resolved = map(_resolve_grididx, query, itp.grids)
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    policies = _resolve_search_nd(search, Val(N))
-    hints = _ensure_hint_nd(hint, Val(N))
-    mono = _scalar_mono(hint, Val(N))
-    return _eval_nd_at_point(itp, resolved, ops, policies, hints, mono)
+    return _eval_nd_scalar_query(itp, query, deriv, extrap, search, hint)
 end
 
 # In-place batch evaluation (SoA + AoS) is handled by the unified

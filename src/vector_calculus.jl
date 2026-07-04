@@ -66,6 +66,7 @@ Uses locate-once optimization: interval search performed only once per query poi
 itp = cubic_interp((x, y), data)
 gradient(itp, (0.5, 0.5))    # → (∂f/∂x, ∂f/∂y)
 gradient(itp, [0.5, 0.5])    # Vector input also supported
+gradient(itp, 0.5, 0.5)      # splatted scalars also supported
 ```
 
 See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
@@ -76,6 +77,16 @@ See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`la
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _gradient_generic(itp, query, hint)
+end
+
+# Splat convenience: gradient(itp, x, y) → gradient(itp, (x, y)). Scalar-only;
+# `Vararg{Real,N}` can't match a batch container, so it never intercepts one.
+@inline function gradient(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return gradient(itp, q; kw...)
 end
 
 # Vector API for compatibility with ForwardDiff patterns
@@ -144,6 +155,7 @@ itp = cubic_interp((x, y), data)
 G = zeros(2)
 gradient!(G, itp, (0.5, 0.5))    # G .= (∂f/∂x, ∂f/∂y)
 gradient!(G, itp, [0.5, 0.5])    # G .= (∂f/∂x, ∂f/∂y)
+gradient!(G, itp, 0.5, 0.5)      # splatted scalars also supported
 
 # Optim.jl compatible:
 grad!(G, x) = gradient!(G, itp, x)
@@ -159,6 +171,16 @@ See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _gradient_generic!(G, itp, query, hint)
+end
+
+# Splat convenience: gradient!(G, itp, x, y) → gradient!(G, itp, (x, y)).
+@inline function gradient!(
+        G::AbstractVector,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return gradient!(G, itp, q; kw...)
 end
 
 # Vector query API
@@ -230,6 +252,7 @@ interval search is performed only **once** per query point.
 itp = cubic_interp((x, y), data)
 val, grad = value_gradient(itp, (0.5, 0.5))   # → (f, (∂f/∂x, ∂f/∂y))
 val, grad = value_gradient(itp, [0.5, 0.5])    # Vector input also supported
+val, grad = value_gradient(itp, 0.5, 0.5)      # splatted scalars also supported
 
 # Optim.jl fg! pattern:
 function fg!(F, G, x)
@@ -255,6 +278,15 @@ See also: [`gradient`](@ref), [`gradient!`](@ref)
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _value_gradient_generic(itp, query, hint)
+end
+
+# Splat convenience: value_gradient(itp, x, y) → value_gradient(itp, (x, y)).
+@inline function value_gradient(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return value_gradient(itp, q; kw...)
 end
 
 # Vector API
@@ -337,6 +369,7 @@ Uses locate-once optimization: interval search performed only once per query poi
 ```julia
 itp = cubic_interp((x, y), data)
 H = hessian(itp, (0.5, 0.5))
+H = hessian(itp, 0.5, 0.5)    # splatted scalars also supported
 # H = [∂²f/∂x²    ∂²f/∂x∂y]
 #     [∂²f/∂x∂y   ∂²f/∂y² ]
 ```
@@ -349,6 +382,15 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _hessian_generic(itp, query, hint)
+end
+
+# Splat convenience: hessian(itp, x, y) → hessian(itp, (x, y)).
+@inline function hessian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return hessian(itp, q; kw...)
 end
 
 # Vector API
@@ -427,6 +469,7 @@ Exploits symmetry: computes only `N(N+1)/2` unique elements.
 itp = cubic_interp((x, y), data)
 H = zeros(2, 2)
 hessian!(H, itp, (0.5, 0.5))
+hessian!(H, itp, 0.5, 0.5)    # splatted scalars also supported
 
 # Optim.jl compatible:
 hess!(H, x) = hessian!(H, itp, x)
@@ -442,6 +485,16 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _hessian_generic!(H, itp, query, hint)
+end
+
+# Splat convenience: hessian!(H, itp, x, y) → hessian!(H, itp, (x, y)).
+@inline function hessian!(
+        H::AbstractMatrix,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return hessian!(H, itp, q; kw...)
 end
 
 # Vector query API
@@ -504,6 +557,7 @@ Uses locate-once optimization: interval search performed only once per query poi
 ```julia
 itp = cubic_interp((x, y), data)
 ∇²f = laplacian(itp, (0.5, 0.5))  # ∂²f/∂x² + ∂²f/∂y²
+∇²f = laplacian(itp, 0.5, 0.5)    # splatted scalars also supported
 
 # Equivalent to (but faster than):
 # tr(hessian(itp, (0.5, 0.5)))
@@ -522,6 +576,15 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     return _laplacian_generic(itp, query, hint)
+end
+
+# Splat convenience: laplacian(itp, x, y) → laplacian(itp, (x, y)).
+@inline function laplacian(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        q::Vararg{Real, N};
+        kw...,
+    ) where {Tg, Tv, N}
+    return laplacian(itp, q; kw...)
 end
 
 # Vector API

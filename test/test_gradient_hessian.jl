@@ -711,3 +711,116 @@ end
     end
 
 end
+
+@testitem "Vector Calculus: splatted args convenience" setup = [AllocConstants] begin
+    # Splatted scalar queries — gradient(itp, x, y) — must be bit-identical to
+    # the canonical tuple form gradient(itp, (x, y)) for all 6 functions.
+    # The splat bundler re-dispatches into the same tuple method, so the results
+    # are bit-identical; `isequal` (not `==`) checks that at the bit level
+    # (NaN == NaN, distinguishes ±0.0), matching the exactness intent.
+    function check_splat_equiv(itp, q::Tuple{Vararg{Real, N}}; hint = nothing) where {N}
+        @test isequal(gradient(itp, q...; hint = hint), gradient(itp, q; hint = hint))
+        @test isequal(value_gradient(itp, q...; hint = hint), value_gradient(itp, q; hint = hint))
+        @test isequal(laplacian(itp, q...; hint = hint), laplacian(itp, q; hint = hint))
+        @test isequal(hessian(itp, q...; hint = hint), hessian(itp, q; hint = hint))
+
+        Gs = zeros(N)
+        Gt = zeros(N)
+        gradient!(Gs, itp, q...; hint = hint)
+        gradient!(Gt, itp, q; hint = hint)
+        @test isequal(Gs, Gt)
+
+        Hs = zeros(N, N)
+        Ht = zeros(N, N)
+        hessian!(Hs, itp, q...; hint = hint)
+        hessian!(Ht, itp, q; hint = hint)
+        @test isequal(Hs, Ht)
+    end
+
+    @testset "2D splat == tuple (cubic)" begin
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        check_splat_equiv(itp, (1.7, 0.9))
+    end
+
+    @testset "3D splat == tuple (cubic)" begin
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 17)
+        z = range(0.0, 1.0, 13)
+        data = [sin(xi) * cos(yj) * exp(zk) for xi in x, yj in y, zk in z]
+        itp = cubic_interp((x, y, z), data)
+        check_splat_equiv(itp, (1.7, 0.9, 0.4))
+    end
+
+    @testset "linear splat == tuple" begin
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = linear_interp((x, y), data)
+        check_splat_equiv(itp, (1.7, 0.9))
+    end
+
+    @testset "hetero routing: splat == tuple (Cubic, Linear)" begin
+        # Proves the abstract-level bundler delegates into the HeteroInterpolantND
+        # tuple override, not just the generic per-type path.
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = interp((x, y), data; method = (CubicInterp(), LinearInterp()))
+        check_splat_equiv(itp, (1.7, 0.9))
+    end
+
+    @testset "hint kwarg forwarded through splat" begin
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        hint = (Ref(1), Ref(1))
+        check_splat_equiv(itp, (1.7, 0.9); hint = hint)
+    end
+
+    @testset "splat does not intercept tuple or vector forms" begin
+        # A single Tuple arg and a single Vector arg must still hit their own
+        # methods (Vector form returns a Vector; tuple form an NTuple).
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        @test gradient(itp, (1.7, 0.9)) isa NTuple{2}
+        @test gradient(itp, [1.7, 0.9]) isa Vector
+        @test gradient(itp, 1.7, 0.9) isa NTuple{2}
+    end
+
+    @testset "mixed & non-Float64 Real coordinate types" begin
+        # Vararg{Real,N} accepts ANY Real subtype, mixed per-argument. Each case
+        # must not MethodError and must stay bit-identical to its tuple form.
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        check_splat_equiv(itp, (2, 0.9))          # Int + Float64 (mixed)
+        check_splat_equiv(itp, (2, 1))            # all Int
+        check_splat_equiv(itp, (1.7f0, 0.9f0))    # Float32
+        check_splat_equiv(itp, (17 // 10, 9 // 10)) # Rational
+        check_splat_equiv(itp, (Float32(1.7), 0.9)) # Float32 + Float64 (mixed width)
+
+        # Sanity: a mixed-type splat call actually resolves (no MethodError).
+        @test isequal(gradient(itp, 2, 0.9), gradient(itp, (2, 0.9)))
+    end
+
+    @testset "GridIdx coordinates through splat" begin
+        # GridIdx <: Real, so it flows through Vararg{Real,N} exactly like the
+        # forward callable path documents. Evaluates at the addressed grid node.
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        check_splat_equiv(itp, (GridIdx(3), GridIdx(5)))  # both GridIdx
+        check_splat_equiv(itp, (GridIdx(3), 0.9))          # GridIdx + Float64
+        @test isequal(gradient(itp, GridIdx(3), 0.9), gradient(itp, (GridIdx(3), 0.9)))
+    end
+end

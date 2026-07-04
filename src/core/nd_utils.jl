@@ -1249,7 +1249,10 @@ grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv_raw, N}
     ) where {Tv_raw, N}
-    Tg = float(_promote_grid_eltype(grids))
+    # Value-matched grid float (1D rule): Int/OneTo grid + Float32 data → Float32 grid, so the
+    # cheap grid converts and the O(nᴺ) data aliases under copy=false. The old grid-eltype-only
+    # `float(...)` gave Float64 and dragged Tv (and the data, via `Tv.(data)`) up with it.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv_raw)
     grids_typed = _convert_grids_typed(grids, Tg)
     Tv = _value_type(Tv_raw, Tg)
     Tz = _promote_eltype(Tv, Tg)

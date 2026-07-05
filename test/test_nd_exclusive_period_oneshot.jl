@@ -103,3 +103,30 @@ end
         end
     end
 end
+
+# RED PIN (#1): narrow-float (Float32) exclusive-periodic on an Int Vector grid. The arithmetic
+# kernels value-match `Tg` to the DATA width (Int grid + Float32 data → Float32), but the one-shot
+# `_resolve_axis` exclusive-Vector arm resolves the period against the RAW Int grid → Float64 period
+# → Float64 axis → the Float32 witness `::Tr` throws. Persistent already returns Float32 (verified);
+# the one-shot must match. (Range grids already work via the convert-first arm; only Vector regresses.)
+@testitem "ND :exclusive one-shot narrow-float (Float32) Int-vec grid — linear matches persistent" begin
+    using FastInterpolations
+    const FI = FastInterpolations
+
+    x = collect(0:2)
+    y = collect(0:2)                                     # Int Vector grids
+    data = Float32[1 2 3; 4 5 6; 7 8 9]                  # narrow float → value-matched Tg = Float32
+    bc = FI.PeriodicBC(endpoint = :exclusive, period = 2.5)
+    xf = Float32.(x)
+    yf = Float32.(y)
+
+    itp = FI.linear_interp((x, y), data; bc = bc)        # persistent reference → Float32 today
+    @test itp(0.5f0, 0.5f0) isa Float32
+
+    for q in ((0.5f0, 0.5f0), (1.5f0, 0.5f0), (2.25f0, 1.75f0), (0.0f0, 2.4f0))
+        r = FI.linear_interp((x, y), data, q; bc = bc)   # RED: currently TypeError (Float64 axis vs Float32 witness)
+        @test r isa Float32                              # value-matched output type
+        @test isapprox(r, itp(q...); atol = 1.0f-5)      # one-shot == persistent
+        @test isapprox(r, FI.linear_interp((xf, yf), data, q; bc = bc); atol = 1.0f-5)  # == Float32 grid
+    end
+end

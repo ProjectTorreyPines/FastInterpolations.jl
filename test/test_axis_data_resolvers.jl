@@ -107,11 +107,15 @@ end
         cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
         ax = _resolve_axis(cv64, bc_excl, Float64)
         @test ax isa _ExclusivePeriodicAxis
-        @test ax.inner === cv64                       # vector one-shot never converts
+        @test ax.inner isa _CachedVector{Float64}     # Tg respected (same-width converted copy)
         @test ax.period == 4.0
-        # Tg ignored for vectors even cross-eltype (search promote-compares instead).
+        # `:exclusive` converts to Tg — UNLIKE a non-periodic vector, the wrapped axis eltype flows
+        # into the value/witness path via the period seam, so it must follow Tg (matching the
+        # `_CachedRange` diagonal above and the raw-Vector arm). The old "never convert" contract
+        # produced a Float64 axis past a value-matched Float32 witness → crash.
         ax32 = _resolve_axis(cv64, bc_excl, Float32)
-        @test ax32.inner === cv64
+        @test ax32.inner isa _CachedVector{Float32}
+        @test ax32.period isa Float32
     end
 
     @testset "diagonals are type-stable" begin
@@ -915,4 +919,25 @@ end
         _measure_view(vw)                       # warmup 2 (pool reuse)
         @test (@allocated _measure_view(vw)) <= WRAPPER_OVERHEAD_LIMIT
     end
+end
+
+# RED PIN (#7 root / #1): the one-shot `_resolve_axis` :exclusive Vector arm must respect the
+# value-matched `Tg` exactly as the persistent `_cache_axis` does. Today `_resolve_axis` resolves
+# the period against the RAW grid (→ `float(Int)` = Float64) while `_cache_axis` converts-first
+# (→ Float32), so an Int Vector + Tg=Float32 diverges: Float64 axis vs Float32 axis. That divergence
+# IS the linear one-shot crash and the 2-arg/3-arg period-timing split — a `_wrap_exclusive`
+# helper shared by both families (always convert-first) would close it.
+@testitem "_resolve_axis :exclusive Vector respects Tg like _cache_axis (narrow-float root)" begin
+    using FastInterpolations: _resolve_axis, _cache_axis, PeriodicBC
+
+    bc = PeriodicBC(endpoint = :exclusive, period = 2.5)
+    x = collect(0:2)                                   # Int Vector; values exact in Float32
+
+    axr = _resolve_axis(x, bc, Float32)                # one-shot arm
+    axc = _cache_axis(x, bc, Float32)                  # persistent arm (reference; already narrow)
+
+    @test eltype(axc) === Float32                       # sanity: persistent narrows correctly
+    @test eltype(axr) === Float32                       # RED: one-shot currently Float64
+    @test axr.period isa Float32                        # RED: one-shot currently Float64
+    @test eltype(axr) === eltype(axc)                   # one-shot ≡ persistent axis width
 end

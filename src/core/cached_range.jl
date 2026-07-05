@@ -219,9 +219,20 @@ end
 # path and the natural `promote_type(grid, data, query)` output. Mirrors `_cache_axis(x, bc, Tg)`.
 @inline _resolve_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
 @inline _resolve_axis(c::_CachedRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _convert_copy(c, Tg)
+# Convert-first: the period is resolved AGAINST the Tg-typed axis (`_resolve_bc_period`
+# normalizes it to the axis eltype), so a wider period literal cannot re-widen a
+# value-matched Tg axis through the `_ExclusivePeriodicAxis` ctor's seam promote.
 @inline function _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, Tg), bc_resolved.period)
+    x_t = _to_float(x, Tg)
+    bc_resolved = _resolve_bc_period(x_t, bc)
+    return _ExclusivePeriodicAxis(x_t, bc_resolved.period)
+end
+# Diagonal (`_CachedRange` × `:exclusive`) — load-bearing against ambiguity between the
+# two arms above; same-type `_convert_copy` keeps the Tg-matched wrap allocation-free.
+@inline function _resolve_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
+    c_t = _convert_copy(c, Tg)
+    bc_resolved = _resolve_bc_period(c_t, bc)
+    return _ExclusivePeriodicAxis(c_t, bc_resolved.period)
 end
 
 # ========================================
@@ -249,10 +260,10 @@ end
 # see DISPATCH TABLE in `periodic_axis.jl`).
 @inline _cache_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
 @inline _cache_axis(c::_CachedRange, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
-@inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, Tg), bc_resolved.period)
-end
+# Convert-first delegate (mirrors the Vector-side 3-arg): the 2-arg `_CachedRange`
+# arm resolves the period against the Tg-typed axis, so the period follows Tg.
+@inline _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _cache_axis(_to_float(x, Tg), bc)
 @inline _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
 
 # ========================================

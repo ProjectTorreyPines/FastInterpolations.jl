@@ -45,6 +45,84 @@
     end
 end
 
+@testitem "_resolve_axis 3-arg Tg dispatch table (incl. pre-wrapped × :exclusive diagonal)" begin
+    using FastInterpolations:
+        _resolve_axis, _CachedRange, _CachedVector, _ExclusivePeriodicAxis,
+        _to_float, NoBC, PeriodicBC
+
+    # 3-arg `_resolve_axis(x, bc, Tg)` dispatch table. The pre-wrapped × `:exclusive`
+    # DIAGONAL methods are load-bearing against ambiguity: `_Cached* <: Abstract*`, so
+    # (specific container × generic BC) and (generic container × specific BC) cross
+    # without them — Aqua ambiguity RED + runtime MethodError in hetero one-shot.
+    bc_no = NoBC()
+    bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
+
+    @testset "raw Range + Tg → _CachedRange{Tg}" begin
+        @test _resolve_axis(0:1:3, bc_no, Float32) isa _CachedRange{Float32}
+        @test _resolve_axis(0.0:1.0:3.0, bc_no, Float64) isa _CachedRange{Float64}
+    end
+
+    @testset "_CachedRange + non-exclusive + Tg → _convert_copy (same-type identity)" begin
+        cr64 = _to_float(0.0:1.0:3.0, Float64)
+        @test _resolve_axis(cr64, bc_no, Float64) === cr64
+        @test _resolve_axis(cr64, bc_no, Float32) isa _CachedRange{Float32}
+    end
+
+    @testset "raw Vector / _CachedVector + non-exclusive + Tg → passthrough (Tg ignored)" begin
+        x32 = Float32[0.0, 1.0, 2.0, 3.0]
+        cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        @test _resolve_axis(x32, bc_no, Float64) === x32
+        @test _resolve_axis(cv64, bc_no, Float32) === cv64
+    end
+
+    @testset "raw Range/Vector + :exclusive + Tg → _ExclusivePeriodicAxis" begin
+        ax_r = _resolve_axis(0:1:3, bc_excl, Float32)
+        @test ax_r isa _ExclusivePeriodicAxis
+        @test ax_r.inner isa _CachedRange{Float32}    # Tg respected on raw Range
+        # Period follows the Tg-typed axis (`_resolve_bc_period` normalizes it): a
+        # Float64 period literal must NOT re-widen a value-matched Float32 axis.
+        @test ax_r.period isa Float32
+        @test eltype(ax_r) === Float32
+        x = [0.0, 1.0, 2.0, 3.0]
+        ax_v = _resolve_axis(x, bc_excl, Float64)
+        @test ax_v isa _ExclusivePeriodicAxis
+        @test ax_v.inner === x                        # raw Vector never converts
+    end
+
+    @testset "DIAGONAL: _CachedRange + :exclusive + Tg" begin
+        cr64 = _to_float(0.0:1.0:3.0, Float64)
+        ax = _resolve_axis(cr64, bc_excl, Float64)
+        @test ax isa _ExclusivePeriodicAxis
+        @test ax.inner === cr64                       # same-type `_convert_copy` identity
+        @test ax.period == 4.0
+        @test length(ax) == 5                         # virtual n+1
+        # Cross-eltype: the axis converts to Tg first, and the period is resolved
+        # against the CONVERTED axis — so it follows Tg instead of re-widening.
+        ax32 = _resolve_axis(cr64, bc_excl, Float32)
+        @test ax32.inner isa _CachedRange{Float32}
+        @test ax32.period isa Float32
+    end
+
+    @testset "DIAGONAL: _CachedVector + :exclusive + Tg" begin
+        cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        ax = _resolve_axis(cv64, bc_excl, Float64)
+        @test ax isa _ExclusivePeriodicAxis
+        @test ax.inner === cv64                       # vector one-shot never converts
+        @test ax.period == 4.0
+        # Tg ignored for vectors even cross-eltype (search promote-compares instead).
+        ax32 = _resolve_axis(cv64, bc_excl, Float32)
+        @test ax32.inner === cv64
+    end
+
+    @testset "diagonals are type-stable" begin
+        cr64 = _to_float(0.0:1.0:3.0, Float64)
+        cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        f(x, bc, ::Type{T}) where {T} = _resolve_axis(x, bc, T)
+        @test (@inferred f(cr64, bc_excl, Float64)) isa _ExclusivePeriodicAxis
+        @test (@inferred f(cv64, bc_excl, Float64)) isa _ExclusivePeriodicAxis
+    end
+end
+
 @testitem "_resolve_data — type correctness" begin
     using FastInterpolations: _resolve_data, _ExclusivePeriodicData, NoBC, PeriodicBC
 
@@ -530,6 +608,16 @@ end
         ax = _cache_axis(r, bc_excl, Float64)
         @test ax isa _ExclusivePeriodicAxis
         @test ax.inner isa _CachedRange{Float64}     # inner promoted to Tg
+    end
+
+    @testset "Int range + :exclusive + Float64 period + Tg=Float32 stays Float32" begin
+        # Convert-first contract: the period resolves against the Tg-typed axis,
+        # so a Float64 period literal cannot re-widen the value-matched axis.
+        r = 0:1:3
+        ax = _cache_axis(r, bc_excl, Float32)
+        @test ax isa _ExclusivePeriodicAxis
+        @test ax.inner isa _CachedRange{Float32}
+        @test ax.period isa Float32
     end
 end
 

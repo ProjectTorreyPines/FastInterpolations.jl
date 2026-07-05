@@ -221,6 +221,12 @@ end
     bc_resolved = _resolve_bc_period(x, bc)
     return _ExclusivePeriodicAxis(x, bc_resolved.period)
 end
+# Diagonal (`_CachedVector` × `:exclusive`) — load-bearing against ambiguity between the
+# two arms above. One-shot vector contract: inner never converts (Tg steers Ranges only).
+@inline function _resolve_axis(c::_CachedVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
+    bc_resolved = _resolve_bc_period(c, bc)
+    return _ExclusivePeriodicAxis(c, bc_resolved.period)
+end
 
 # ========================================
 # `_cache_axis` — persistent-path Vector wrapping

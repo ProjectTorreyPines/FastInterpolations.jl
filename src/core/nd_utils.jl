@@ -1138,6 +1138,20 @@ Compute local cell parameters for all axes via `_get_h(grid, idx)` /
     # (N=0 edge: `float(promote_type())` = `float(Union{})` throws; the ntuples are
     # empty there, so this placeholder is never used.)
     Tg = N == 0 ? Float64 : float(_promote_grid_eltype(grids))
+    return _compute_all_local_params(q_evals, grids, indices, Ls, Tg)
+end
+
+# Data-aware form: the caller supplies the width type `Tg` (value-matched, e.g.
+# `_promote_grid_float(grid eltype, Tv)` — Int grid + Float32 data → Float32), so raw
+# Int axes don't widen the eval to Float64 via `inv(Int)`. `dLs` deliberately keep
+# their natural `q - L` promotion — converting them would strip Dual-query partials.
+@inline function _compute_all_local_params(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        indices::NTuple{N, Int},
+        Ls::Tuple{Vararg{Real, N}},
+        ::Type{Tg},
+    ) where {N, Tg}
     hs = ntuple(Val(N)) do d
         @inbounds convert(Tg, _get_h(grids[d], indices[d]))
     end

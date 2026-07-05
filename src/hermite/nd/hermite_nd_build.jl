@@ -317,11 +317,11 @@ end
         data::AbstractArray{Tv, N},
         partials::HermitePartials{N, Tv, K},
         bcs::Tuple{Vararg{AbstractBC, N}},
-    ) where {Tv, N, K}
-    # `Tg` only feeds the `:exclusive` virtual-endpoint extension below; raw grids
-    # may be Int/heterogeneous, so float it — a non-integer period on an Int grid
-    # must not be forced through `Int` (mirrors the cubic/quad twin in periodic.jl).
-    Tg = float(_promote_grid_eltype(grids))
+        # `Tg` only feeds the `:exclusive` virtual-endpoint extension below — value-matched
+        # by the callers (Int grid + Float32 data → Float32) so an extended axis cannot
+        # reintroduce Float64 into `dL = q - xL`; still floats a non-integer period.
+        ::Type{Tg} = float(_promote_grid_eltype(grids)),
+    ) where {Tv, N, K, Tg}
     extended = ntuple(d -> bcs[d] isa PeriodicBC{:exclusive}, Val(N))
     n_orig = size(data)
     n_ext = ntuple(d -> extended[d] ? n_orig[d] + 1 : n_orig[d], Val(N))

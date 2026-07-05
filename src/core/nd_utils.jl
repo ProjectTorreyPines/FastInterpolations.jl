@@ -1259,16 +1259,27 @@ grids_typed, _, _, _ = _nd_promote_grids(grids, data)   # grid-only (batch dispa
 grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
 ```
 """
+@inline _nd_promote_grids(
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{Tv_raw, N}
+) where {Tv_raw, N} = _nd_promote_grids(grids, data, Tv_raw)
+
+# 3-arg form: `Tv_extra` widens the value space beyond `eltype(data)` BEFORE the grid
+# value-match — Hermite's value space is data ∪ partials (Float32 data + Float64
+# partials must give a Float64 grid, matching the one-shot rule). 2-arg delegates
+# with `Tv_extra = eltype(data)` (neutral).
 @inline function _nd_promote_grids(
         grids::NTuple{N, AbstractVector},
-        data::AbstractArray{Tv_raw, N}
-    ) where {Tv_raw, N}
+        data::AbstractArray{Tv_raw, N},
+        ::Type{Tv_extra}
+    ) where {Tv_raw, Tv_extra, N}
+    Tv_all = promote_type(Tv_raw, Tv_extra)
     # Value-matched grid float (1D rule): Int/OneTo grid + Float32 data → Float32 grid, so the
     # cheap grid converts and the O(nᴺ) data aliases under copy=false. The old grid-eltype-only
     # `float(...)` gave Float64 and dragged Tv (and the data, via `Tv.(data)`) up with it.
-    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv_raw)
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv_all)
     grids_typed = _convert_grids_typed(grids, Tg)
-    Tv = _value_type(Tv_raw, Tg)
+    Tv = _value_type(Tv_all, Tg)
     Tz = _promote_eltype(Tv, Tg)
     return grids_typed, Tg, Tv, Tz
 end

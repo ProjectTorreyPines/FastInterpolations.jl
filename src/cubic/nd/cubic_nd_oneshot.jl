@@ -42,7 +42,8 @@ function cubic_interp(
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
     Tv_p = _promote_eltype(_coeff_op, Tg, Tv)
     _validate_nd_grids(grids, data)
-    Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
+    Tq = promote_type(typeof.(query)...)
+    Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
@@ -59,7 +60,12 @@ function cubic_interp(
         methods = map(CubicInterp, bcs)
         return _interp_nd_oneshot_onthefly(grids, data, query, methods, extraps_val, searches, ops, hint)::Tr
     end
-    return _cubic_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops, hint)::Tr
+    # Temporary wrapper↔backend witness alignment: the PreCompute backend still evaluates
+    # at the legacy grid-only width (identity-memoised, data-unaware `_get_cubic_cache`),
+    # so assert ITS width here. True fix = value-matched backend (1D cubic-cache
+    # value-match phase); this then collapses back into `Tr`.
+    Tr_pc = _promote_eltype(_interp_op, float(_promote_grid_eltype(grids)), Tv, Tq)
+    return _cubic_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops, hint)::Tr_pc
 end
 
 """

@@ -17,6 +17,7 @@
         ("F32vec", Float32, () -> (collect(Float32, 1:7), collect(Float32, 1:7))),
         ("F64vec", Float64, () -> (collect(Float64, 1:7), collect(Float64, 1:7))),
         ("IntOneTo", :match, () -> (Base.OneTo(7), Base.OneTo(7))),
+        ("IntVec", :match, () -> (collect(1:7), collect(1:7))),
     )
 
     for (mname, build) in builders, (gname, gTg, gbuild) in gridspecs,
@@ -51,6 +52,7 @@ end
         ("F32vec", Float32, () -> (collect(Float32, 1:7), collect(Float32, 1:7))),
         ("F64vec", Float64, () -> (collect(Float64, 1:7), collect(Float64, 1:7))),
         ("IntOneTo", :match, () -> (Base.OneTo(7), Base.OneTo(7))),
+        ("IntVec", :match, () -> (collect(1:7), collect(1:7))),
     )
 
     for (mname, mfn) in methods, (gname, gTg, gbuild) in gridspecs,
@@ -78,6 +80,7 @@ end
         ("F32vec", Float32, () -> (collect(Float32, 1:5), collect(Float32, 1:5))),
         ("F64vec", Float64, () -> (collect(Float64, 1:5), collect(Float64, 1:5))),
         ("IntOneTo", :match, () -> (Base.OneTo(5), Base.OneTo(5))),
+        ("IntVec", :match, () -> (collect(1:5), collect(1:5))),
     )
 
     for (gname, gTg, gbuild) in gridspecs, Tv in (Float32, Float64), Tq in (Float32, Float64)

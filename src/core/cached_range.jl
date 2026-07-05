@@ -208,32 +208,32 @@ end
 @inline _resolve_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
 @inline _resolve_axis(c::_CachedRange) = c
 
-# `:exclusive` raw-input one-shot path — wrap into `_ExclusivePeriodicAxis`.
-@inline function _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
+# Shared convert-first wrapper for EVERY `:exclusive` axis site (one-shot + persistent, Range +
+# Vector — see cached_vector.jl). Resolving the period AGAINST the already-converted inner
+# (`_resolve_bc_period` normalizes it to the inner's eltype) is what stops a wider period literal
+# from re-widening a value-matched Tg axis through the `_ExclusivePeriodicAxis` ctor's seam
+# promote. Callers pass the inner at the width they want (`_to_float(x, Tg)` / raw / `_CachedVector`).
+@inline function _wrap_exclusive(inner, bc::PeriodicBC{:exclusive})
+    bc_resolved = _resolve_bc_period(inner, bc)
+    return _ExclusivePeriodicAxis(inner, bc_resolved.period)
 end
+
+# `:exclusive` raw-input one-shot path — wrap into `_ExclusivePeriodicAxis` (natural float width).
+@inline _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}) =
+    _wrap_exclusive(_to_float(x, float(eltype(x))), bc)
 
 # 3-arg Tg-aware one-shot resolution — value-matched grid float so an Int/OneTo grid beside
 # Float32 data floats to Float32 (not the blind `float(eltype)`=Float64), matching the persistent
 # path and the natural `promote_type(grid, data, query)` output. Mirrors `_cache_axis(x, bc, Tg)`.
 @inline _resolve_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
 @inline _resolve_axis(c::_CachedRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _convert_copy(c, Tg)
-# Convert-first: the period is resolved AGAINST the Tg-typed axis (`_resolve_bc_period`
-# normalizes it to the axis eltype), so a wider period literal cannot re-widen a
-# value-matched Tg axis through the `_ExclusivePeriodicAxis` ctor's seam promote.
-@inline function _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    x_t = _to_float(x, Tg)
-    bc_resolved = _resolve_bc_period(x_t, bc)
-    return _ExclusivePeriodicAxis(x_t, bc_resolved.period)
-end
-# Diagonal (`_CachedRange` × `:exclusive`) — load-bearing against ambiguity between the
-# two arms above; same-type `_convert_copy` keeps the Tg-matched wrap allocation-free.
-@inline function _resolve_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    c_t = _convert_copy(c, Tg)
-    bc_resolved = _resolve_bc_period(c_t, bc)
-    return _ExclusivePeriodicAxis(c_t, bc_resolved.period)
-end
+# `:exclusive` — convert-first to Tg, then `_wrap_exclusive` resolves the period against the
+# Tg-typed inner. Diagonal (`_CachedRange` × `:exclusive`) is load-bearing against ambiguity
+# between the two arms above; `_convert_copy` keeps the Tg-matched wrap allocation-free.
+@inline _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _wrap_exclusive(_to_float(x, Tg), bc)
+@inline _resolve_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _wrap_exclusive(_convert_copy(c, Tg), bc)
 
 # ========================================
 # `_cache_axis` — persistent-path Range wrapping
@@ -245,15 +245,10 @@ end
 @inline _cache_axis(c::_CachedRange) = c
 @inline _cache_axis(c::_CachedRange, ::AbstractBC) = c
 
-# `:exclusive` 2-arg variants — produce `_ExclusivePeriodicAxis`.
-@inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
-end
-@inline function _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(c, bc)
-    return _ExclusivePeriodicAxis(c, bc_resolved.period)
-end
+# `:exclusive` 2-arg variants — produce `_ExclusivePeriodicAxis` (natural float width).
+@inline _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}) =
+    _wrap_exclusive(_to_float(x, float(eltype(x))), bc)
+@inline _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}) = _wrap_exclusive(c, bc)
 
 # 3-arg Tg-aware. Raw Range respects Tg via `_to_float`. Pre-wrapped passes
 # through — downstream `_convert_copy(_, Tg)` enforces Tg (intentional contract;

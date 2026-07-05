@@ -207,26 +207,22 @@ end
 @inline _resolve_axis(x::AbstractVector, ::AbstractBC) = x
 @inline _resolve_axis(c::_CachedVector) = c
 
-# `:exclusive` raw-input one-shot path — wrap into `_ExclusivePeriodicAxis`.
-@inline function _resolve_axis(x::AbstractVector, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(x, bc_resolved.period)
-end
+# `:exclusive` raw-input one-shot path — raw inner (2-arg has no Tg; the ctor widens against the
+# period). `_wrap_exclusive` is the shared convert-first wrapper defined in cached_range.jl.
+@inline _resolve_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}) = _wrap_exclusive(x, bc)
 
-# 3-arg Tg-aware one-shot resolution — a raw Vector stays raw (the search promote-compares it,
-# no eager conversion), so `Tg` only steers Range axes; mirror the 2-arg passthrough here.
+# 3-arg Tg-aware one-shot resolution — a raw Vector stays raw for NON-periodic axes (the search
+# promote-compares it, no eager conversion), so `Tg` only steers Range axes there.
 @inline _resolve_axis(x::AbstractVector, ::AbstractBC, ::Type{Tg}) where {Tg} = x
 @inline _resolve_axis(c::_CachedVector, ::AbstractBC, ::Type{Tg}) where {Tg} = c
-@inline function _resolve_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(x, bc_resolved.period)
-end
-# Diagonal (`_CachedVector` × `:exclusive`) — load-bearing against ambiguity between the
-# two arms above. One-shot vector contract: inner never converts (Tg steers Ranges only).
-@inline function _resolve_axis(c::_CachedVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    bc_resolved = _resolve_bc_period(c, bc)
-    return _ExclusivePeriodicAxis(c, bc_resolved.period)
-end
+# `:exclusive` is the exception: the wrapped axis eltype is `promote(inner, period)`, so a raw Int
+# inner + `float(Int)`=Float64 period forces a Float64 axis past a value-matched Float32 witness
+# (crash). Convert-first to Tg — mirrors the Range arm + persistent `_cache_axis` — so the period
+# follows Tg. Diagonals are load-bearing against ambiguity between these two and the arms above.
+@inline _resolve_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _wrap_exclusive(_to_float(x, Tg), bc)
+@inline _resolve_axis(c::_CachedVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _wrap_exclusive(_convert_copy(c, Tg), bc)
 
 # ========================================
 # `_cache_axis` — persistent-path Vector wrapping
@@ -239,14 +235,9 @@ end
 @inline _cache_axis(c::_CachedVector, ::AbstractBC) = c
 
 # `:exclusive` 2-arg variants — produce `_ExclusivePeriodicAxis(_CachedVector, ·)`.
-@inline function _cache_axis(x::AbstractVector, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_CachedVector(x), bc_resolved.period)
-end
-@inline function _cache_axis(c::_CachedVector, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(c, bc)
-    return _ExclusivePeriodicAxis(c, bc_resolved.period)
-end
+@inline _cache_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}) =
+    _wrap_exclusive(_CachedVector(x), bc)
+@inline _cache_axis(c::_CachedVector, bc::PeriodicBC{:exclusive}) = _wrap_exclusive(c, bc)
 
 # 3-arg Tg-aware. Raw Vector respects Tg via `_to_float` then wraps.
 # Pre-wrapped `_CachedVector` passes through — downstream `_convert_copy(_, Tg)`

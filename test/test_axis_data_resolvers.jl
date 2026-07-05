@@ -941,3 +941,22 @@ end
     @test axr.period isa Float32                        # RED: one-shot currently Float64
     @test eltype(axr) === eltype(axc)                   # one-shot ≡ persistent axis width
 end
+
+# RED PIN (Copilot #182): `_resolve_axis` only has the 1-arg `_ExclusivePeriodicAxis` passthrough
+# (periodic_axis.jl), so the 2-arg/3-arg `:exclusive` forms fall through to the AbstractVector arms
+# and RE-WRAP an already-wrapped axis (`_ExclusivePeriodicAxis <: AbstractVector`) — nesting toward
+# length (n+1)+1, which actually throws in the ctor (`inner[end] < x_max` fails). `_cache_axis`
+# already defends this with a full passthrough set; `_resolve_axis` must mirror it.
+@testitem "_resolve_axis :exclusive passes through a pre-wrapped axis (no re-wrap)" begin
+    using FastInterpolations: _resolve_axis, _wrap_exclusive, _ExclusivePeriodicAxis, PeriodicBC
+
+    bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+    wrapped = _wrap_exclusive(collect(0.0:3.0), bc)     # _ExclusivePeriodicAxis, length n+1 = 5
+    @test wrapped isa _ExclusivePeriodicAxis
+    @test length(wrapped) == 5
+
+    # Feeding the already-wrapped axis back must PASS THROUGH (identity), not nest/throw.
+    @test _resolve_axis(wrapped, bc) === wrapped                 # 2-arg
+    @test _resolve_axis(wrapped, bc, Float64) === wrapped        # 3-arg Tg-aware
+    @test length(_resolve_axis(wrapped, bc, Float64)) == 5       # not (n+1)+1
+end

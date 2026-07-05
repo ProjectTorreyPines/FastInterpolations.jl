@@ -245,62 +245,66 @@ end
 # Quadratic ND one-shot — raw Int grid, default PreCompute path
 # ============================================================================
 #
-# Quad `AutoCoeffs` defaults to PreCompute (for bit-exact AD-rule matching), so the
-# DEFAULT scalar path is the PreCompute cell-eval. Passing raw grids + floating the
-# cell width in `_compute_all_local_params` makes the default warm scalar one-shot
-# on an Int Vector grid zero-alloc (the kernel wraps axes via `_cache_axis_pooled`
-# into pool buffers, so the Int grid needs no `Tg.(x)` copy). Batch keeps eager-convert.
+# Quad scalar `AutoCoeffs` routes through the shared `_resolve_coeffs_nd_oneshot`
+# policy (scalar → OnTheFly, batch → PreCompute), same as cubic. Both scalar
+# strategies stay zero-alloc on raw Int Vector grids: OnTheFly via pooled collapse,
+# explicit PreCompute via pooled value-matched axis conversion. Batch keeps eager-convert.
 
-@testitem "Quadratic ND one-shot raw-grid (default PreCompute, no eager convert)" setup = [AllocConstants] begin
+@testitem "Quadratic ND one-shot raw-grid (no eager convert)" setup = [AllocConstants] begin
     using ForwardDiff
 
-    function _alloc_quad_nd_int_2d()
+    function _alloc_quad_nd_int_2d(coeffs)
         x = [0, 1, 2, 3, 4, 5, 6]
         y = [0, 1, 2, 3, 4]
         data = [sin(1.0 * a) + cos(1.0 * b) for a in x, b in y]
         q = (3.4, 2.6)
         for _ in 1:3
-            quadratic_interp((x, y), data, q)
+            quadratic_interp((x, y), data, q; coeffs)
         end
-        @allocated quadratic_interp((x, y), data, q)
+        @allocated quadratic_interp((x, y), data, q; coeffs)
     end
-    function _alloc_quad_nd_int_3d()
+    function _alloc_quad_nd_int_3d(coeffs)
         x = [0, 1, 2, 3, 4]
         y = [0, 1, 2, 3]
         z = [0, 1, 2, 3, 4, 5]
         data = [a + 0.5b + 0.25c for a in x, b in y, c in z]
         q = (2.4, 1.6, 3.8)
         for _ in 1:3
-            quadratic_interp((x, y, z), data, q)
+            quadratic_interp((x, y, z), data, q; coeffs)
         end
-        @allocated quadratic_interp((x, y, z), data, q)
+        @allocated quadratic_interp((x, y, z), data, q; coeffs)
     end
 
-    @testset "warm zero-alloc scalar one-shot on Int Vector grids (default PreCompute)" begin
-        @test _alloc_quad_nd_int_2d() <= ND_ALLOC_THRESHOLD
-        @test _alloc_quad_nd_int_3d() <= ND_ALLOC_THRESHOLD
+    @testset "warm zero-alloc scalar one-shot on Int Vector grids ($label)" for (label, coeffs) in
+        (("default → OnTheFly", AutoCoeffs()), ("explicit PreCompute", PreCompute()))
+        @test _alloc_quad_nd_int_2d(coeffs) <= ND_ALLOC_THRESHOLD
+        @test _alloc_quad_nd_int_3d(coeffs) <= ND_ALLOC_THRESHOLD
     end
 
-    # ---- bit-identical: raw Int grid === Float64 grid (default PreCompute) ----
-    @testset "Int Vector grid === Float64 grid" begin
+    # ---- bit-identical: raw Int grid === Float64 grid (both scalar strategies) ----
+    @testset "Int Vector grid === Float64 grid ($label)" for (label, coeffs) in
+        (("default → OnTheFly", AutoCoeffs()), ("explicit PreCompute", PreCompute()))
         x = [0, 1, 2, 3, 4, 5, 6]
         y = [0, 1, 2, 3, 4]
         data = [sin(1.0 * a) + cos(1.0 * b) for a in x, b in y]
         xf = Float64.(x)
         yf = Float64.(y)
         for q in [(3.4, 2.6), (0.3, 0.7), (5.9, 3.1)]
-            @test quadratic_interp((x, y), data, q) === quadratic_interp((xf, yf), data, q)
+            @test quadratic_interp((x, y), data, q; coeffs) ===
+                quadratic_interp((xf, yf), data, q; coeffs)
         end
     end
 
-    # ---- one-shot === persistent QuadraticInterpolantND (both PreCompute) ----
-    @testset "one-shot === persistent QuadraticInterpolantND" begin
+    # ---- persistent parity: bit-exact is opt-in via coeffs=PreCompute();
+    #      the default (OnTheFly) matches to FP-reordering noise ----
+    @testset "one-shot vs persistent QuadraticInterpolantND" begin
         x = [0, 1, 2, 3, 4, 5, 6]
         y = [0, 1, 2, 3, 4]
         data = [sin(1.0 * a) + cos(1.0 * b) for a in x, b in y]
         itp = quadratic_interp((x, y), data)
         for q in [(3.4, 2.6), (0.3, 0.7), (5.9, 3.1)]
-            @test quadratic_interp((x, y), data, q) === itp(q)
+            @test quadratic_interp((x, y), data, q; coeffs = PreCompute()) === itp(q)
+            @test quadratic_interp((x, y), data, q) ≈ itp(q) rtol = 1.0e-12
         end
     end
 

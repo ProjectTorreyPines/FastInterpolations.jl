@@ -61,7 +61,8 @@ function hermite_interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {Tv, N, Tv_part}
-    Tg = _promote_grid_eltype(grids)
+    # `Tg` value-matched as in `_hermite_oneshot_prepare`, so `Tr` agrees with the eval.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), promote_type(Tv, Tv_part))
     Tq = _query_eltype(queries)
     Tr = _promote_eltype(_interp_op, Tg, promote_type(Tv, Tv_part), Tq)
     output = Vector{Tr}(undef, _query_length(queries))
@@ -112,13 +113,18 @@ end
     K == (1 << N) - 1 || _throw_partials_not_full_mixed(N, K)
 
     # Raw grids: the pack + cell-eval float the cell width, so no eager `Tg.(x)` copy.
-    Tg = _promote_grid_eltype(grids)
+    # `Tg` value-matched to data∪partials (Int grid + Float32 → Float32) keeps `Tv` narrow,
+    # so `_coerce_*_eltype` pass through instead of copying data + K partials per call.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), promote_type(eltype(data), Tv_part))
     Tv_promoted = _promote_eltype(_coeff_op, Tg, eltype(data))
     Tv = promote_type(Tv_promoted, Tv_part)
     data_typed = _coerce_data_eltype(data, Tv, Val(N))
     partials_typed = _coerce_partials_eltype(partials, Tv, Val(N))
+    # Float-mismatched axes convert to `Tg` (Int grid + Float32 data → `_CachedRange{F32}`) so
+    # the cell widths (`inv(h)`) don't reintroduce Float64; matching axes stay raw.
+    grids_eff = map(g -> float(eltype(g)) === Tg ? g : _convert_grid(g, Tg), grids)
 
-    _validate_nd_grids(grids, data_typed)
+    _validate_nd_grids(grids_eff, data_typed)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
@@ -130,7 +136,7 @@ end
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
 
-    return grids, data_typed, partials_typed, bcs, extraps_val, searches, ops
+    return grids_eff, data_typed, partials_typed, bcs, extraps_val, searches, ops
 end
 
 # ========================================

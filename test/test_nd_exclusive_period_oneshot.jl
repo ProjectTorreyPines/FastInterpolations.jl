@@ -105,11 +105,12 @@ end
 end
 
 # RED PIN (#1): narrow-float (Float32) exclusive-periodic on an Int Vector grid. The arithmetic
-# kernels value-match `Tg` to the DATA width (Int grid + Float32 data → Float32), but the one-shot
-# `_resolve_axis` exclusive-Vector arm resolves the period against the RAW Int grid → Float64 period
-# → Float64 axis → the Float32 witness `::Tr` throws. Persistent already returns Float32 (verified);
-# the one-shot must match. (Range grids already work via the convert-first arm; only Vector regresses.)
-@testitem "ND :exclusive one-shot narrow-float (Float32) Int-vec grid — linear matches persistent" begin
+# kernels (linear/cubic) value-match `Tg` to the DATA width (Int grid + Float32 data → Float32), but
+# the one-shot `_resolve_axis` exclusive-Vector arm resolved the period against the RAW Int grid →
+# Float64 axis → the Float32 witness `::Tr` threw. Persistent already returned Float32; the one-shot
+# must match. Range grids already worked via the convert-first arm; only the Vector arms regressed.
+# (Hermite uses a separate `_pack_and_extend` path — pinned in its own testitem above.)
+@testitem "ND :exclusive one-shot narrow-float (Float32) Int-vec grid — value-matches persistent" begin
     using FastInterpolations
     const FI = FastInterpolations
 
@@ -120,13 +121,29 @@ end
     xf = Float32.(x)
     yf = Float32.(y)
 
-    itp = FI.linear_interp((x, y), data; bc = bc)        # persistent reference → Float32 today
-    @test itp(0.5f0, 0.5f0) isa Float32
+    # Arithmetic kernels: Int grid + Float32 data → Float32 one-shot, equal to the persistent
+    # interpolant AND to the Float32-grid one-shot (the `_ExclusivePeriodicAxis` now follows Tg).
+    @testset "$name value-matches Float32" for (name, ctor) in
+        (("linear", FI.linear_interp), ("cubic", FI.cubic_interp))
+        itp = ctor((x, y), data; bc = bc)                # persistent reference → Float32
+        @test itp(0.5f0, 0.5f0) isa Float32
+        for q in ((0.5f0, 0.5f0), (1.5f0, 0.5f0), (2.25f0, 1.75f0), (0.0f0, 2.4f0))
+            r = ctor((x, y), data, q; bc = bc)           # pre-fix: TypeError (Float64 axis vs Float32 witness)
+            @test r isa Float32                          # value-matched output type
+            @test isapprox(r, itp(q...); atol = 1.0f-5)                          # == persistent
+            @test isapprox(r, ctor((xf, yf), data, q; bc = bc); atol = 1.0f-5)   # == Float32 grid
+        end
+    end
 
-    for q in ((0.5f0, 0.5f0), (1.5f0, 0.5f0), (2.25f0, 1.75f0), (0.0f0, 2.4f0))
-        r = FI.linear_interp((x, y), data, q; bc = bc)   # RED: currently TypeError (Float64 axis vs Float32 witness)
-        @test r isa Float32                              # value-matched output type
-        @test isapprox(r, itp(q...); atol = 1.0f-5)      # one-shot == persistent
-        @test isapprox(r, FI.linear_interp((xf, yf), data, q; bc = bc); atol = 1.0f-5)  # == Float32 grid
+    # Selection kernel (constant): the period floats Int→Float64, so its exclusive axis (and output)
+    # are Float64 for BOTH one-shot and persistent — a deliberate, consistent contract (NOT the
+    # arithmetic value-match). Pin the consistency so a future change can't silently split them.
+    @testset "constant stays consistent (Int→Float64, one-shot ≡ persistent)" begin
+        itpc = FI.constant_interp((x, y), data; bc = bc)
+        for q in ((0.5f0, 0.5f0), (2.25f0, 1.75f0), (0.0f0, 2.4f0))
+            rc = FI.constant_interp((x, y), data, q; bc = bc)
+            @test typeof(rc) === typeof(itpc(q...))      # both Float64 — must not diverge
+            @test rc == itpc(q...)                       # selection ⇒ exact match
+        end
     end
 end

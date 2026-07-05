@@ -134,8 +134,9 @@ C\$^1\$ continuous, monotonicity guaranteed for monotone input data.
     # Unified entry — bc flows through the BC-aware extrap/search resolvers and
     # into the slope routines. No `_is_periodic_bc` branch, no extension copy:
     # `_resolve_search`'s seam dispatch + bc-aware slope formulas handle the
-    # closed-cycle on the user's n-length grid (Linear pattern).
-    x = _resolve_axis(x)
+    # closed-cycle on the user's n-length grid (Linear pattern). Value-matched Tg:
+    # Int/OneTo grid + Float32 data → Float32 axis.
+    x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
@@ -161,7 +162,7 @@ In-place PCHIP interpolation with monotone-preserving slopes.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
+    x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly

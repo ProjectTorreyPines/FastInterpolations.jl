@@ -144,7 +144,8 @@ Default `tension=0` is Catmull-Rom. C\$^1\$ continuous.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
+    # Value-matched Tg: Int/OneTo grid + Float32 data → Float32 axis (tension follows).
+    x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     tension_f = float(eltype(x))(tension)
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, xq)
@@ -172,7 +173,7 @@ In-place cardinal spline interpolation.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
+    x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     tension_f = float(eltype(x))(tension)
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)

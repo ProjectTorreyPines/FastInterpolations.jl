@@ -108,22 +108,27 @@ end
     end
 end
 
-@testitem "KNOWN-RED: cubic explicit PreCompute Int-grid narrow-float (1D-phase scope)" begin
-    # `coeffs = PreCompute()` routes through the 1D `_get_cubic_cache` machinery, which is
-    # still data-unaware (floats an Int grid to Float64) — the value-matched witness (F32)
-    # would reject the F64 eval. Flips when the 1D one-shot value-match phase lands.
+@testitem "cubic explicit PreCompute: Range axes value-match; Vector axes legacy" begin
+    # The scalar PreCompute backend pre-normalizes Range axes to `_CachedRange{Tg}`
+    # (isbits → the per-axis spline caches still memoise), so Int/OneTo grids +
+    # Float32 data return Float32. Raw Int-VECTOR axes keep the identity-keyed
+    # legacy cache width (Float64) — value-matching them needs an eltype-aware
+    # cache key (deferred); the witness follows the per-axis width, so they stay
+    # well-typed instead of throwing.
     g = Base.OneTo(7)
     data = Float32.([sin(3.0x) + cos(2.0y) for x in 1:7, y in 1:7])
     q = (2.4f0, 3.6f0)
     v_otf = cubic_interp((g, g), data, q)
-    @test v_otf isa Float32                                               # default (OnTheFly): green
-    @test_broken cubic_interp((g, g), data, q; coeffs = PreCompute()) isa Float32
-
-    # HARD regression guard (master parity): explicit PreCompute must not throw — the
-    # wrapper asserts the backend's legacy width until the 1D phase lands — and the
-    # value matches OnTheFly to Float32 accuracy.
+    @test v_otf isa Float32                                               # default (OnTheFly)
     v_pc = cubic_interp((g, g), data, q; coeffs = PreCompute())
+    @test v_pc isa Float32
     @test v_pc ≈ v_otf rtol = 1.0f-5
+
+    gv = collect(1:7)
+    @test_broken cubic_interp((gv, gv), data, q; coeffs = PreCompute()) isa Float32
+    @test cubic_interp((gv, gv), data, q; coeffs = PreCompute()) isa Float64
+    # Mixed axes: the witness promotes per-axis (Range→F32, Int Vector→F64).
+    @test cubic_interp((g, gv), data, q; coeffs = PreCompute()) isa Float64
 end
 
 @testitem "ND Int-data output types: arithmetic float-forces, selection stays natural" begin

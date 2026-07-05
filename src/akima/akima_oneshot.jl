@@ -126,7 +126,8 @@ Outlier-robust, C\$^1\$ continuous.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
+    # Value-matched Tg: Int/OneTo grid + Float32 data → Float32 axis.
+    x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
@@ -152,7 +153,7 @@ In-place Akima interpolation with outlier-robust slopes.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
+    x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly

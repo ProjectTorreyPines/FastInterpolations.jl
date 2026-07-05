@@ -213,8 +213,10 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     # Surface-level BC-aware resolvers (zero-alloc reference wrapping). BC info
-    # lives in axis type after resolution → searcher uses `NoBC()`.
-    x_eff = _resolve_axis(x, bc)
+    # lives in axis type after resolution → searcher uses `NoBC()`. Raw Tg:
+    # the selection kernel keeps natural promotion (no float forcing) — an Int
+    # range stays `_CachedRange{Int}`, mirroring the ND constant scalar rule.
+    x_eff = _resolve_axis(x, bc, Tg)
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     searcher = _resolve_search(x_eff, xi, search, hint)
@@ -266,8 +268,9 @@ function constant_interp!(
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    # Surface-level BC-aware resolvers (same template as Linear oneshot).
-    x_eff = _resolve_axis(x, bc)
+    # Surface-level BC-aware resolvers (same template as Linear oneshot);
+    # raw Tg — selection kernel keeps natural promotion (no float forcing).
+    x_eff = _resolve_axis(x, bc, eltype(x))
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     searcher = _resolve_search(x_eff, x_targets, search, nothing)

@@ -188,6 +188,12 @@ end
 # coefficients (cubic `z`, quadratic `a`/`d`, hermite `dy`) are solved before any query.
 @inline _coeff_op(h::Tg, yv::Tv) where {Tg, Tv} = yv + yv * inv(h)
 
+# `_inv_op` (1-arg): reciprocal-spacing eltype — `inv(h)` for an axis already at the
+# value-matched width (compose: `_promote_eltype(_inv_op, _promote_grid_float(Tg, Tv))`).
+# Floats Int (`inv(Int)::Float64` never survives a narrow value space upstream), keeps
+# Unitful inverse units and duck carriers.
+@inline _inv_op(h) = inv(h)
+
 # `_integrate_op` (3-arg): the definite-integral element type — value × spacing.
 # ∫ ≈ Σ yᵢ·hᵢ is dimensionally distinct from the eval witnesses (which weight the value
 # by the dimensionless offset `dL/h`). `span` is the integration length (`b2 - xL` for a

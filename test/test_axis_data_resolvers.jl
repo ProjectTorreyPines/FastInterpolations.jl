@@ -125,6 +125,18 @@ end
         @test (@inferred f(cr64, bc_excl, Float64)) isa _ExclusivePeriodicAxis
         @test (@inferred f(cv64, bc_excl, Float64)) isa _ExclusivePeriodicAxis
     end
+
+    @testset "Tg-typed 2-arg (no BC): Ranges value-match, Vectors pass through" begin
+        # Used by the 1D one-shot entries (no bc concept at the normalize point).
+        @test _resolve_axis(0:1:3, Float32) isa _CachedRange{Float32}
+        cr64 = _to_float(0.0:1.0:3.0, Float64)
+        @test _resolve_axis(cr64, Float64) === cr64       # same-type identity
+        @test _resolve_axis(cr64, Float32) isa _CachedRange{Float32}
+        x32 = Float32[0.0, 1.0, 2.0, 3.0]
+        @test _resolve_axis(x32, Float64) === x32         # vectors never convert
+        cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        @test _resolve_axis(cv64, Float32) === cv64
+    end
 end
 
 @testitem "_resolve_data — type correctness" begin

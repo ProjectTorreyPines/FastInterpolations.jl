@@ -207,6 +207,10 @@ end
 @inline _resolve_axis(x::AbstractRange) = _to_float(x, float(eltype(x)))
 @inline _resolve_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
 @inline _resolve_axis(c::_CachedRange) = c
+# Tg-typed 2-arg (no BC): value-matched one-shot normalization — an Int/OneTo grid
+# beside Float32 data resolves to `_CachedRange{Float32}`, not the blind Float64.
+@inline _resolve_axis(x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+@inline _resolve_axis(c::_CachedRange, ::Type{Tg}) where {Tg} = _convert_copy(c, Tg)
 
 # Shared convert-first wrapper for EVERY `:exclusive` axis site (one-shot + persistent, Range +
 # Vector — see cached_vector.jl). Resolving the period AGAINST the already-converted inner

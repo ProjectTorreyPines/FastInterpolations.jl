@@ -30,7 +30,8 @@ C\$^1\$ continuous — slopes are used directly, no global spline solve.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
+    # Value space = y ∪ dy: the axis floats against both widths (matching ND partials).
+    x = _resolve_axis(x, _hermite_grid_float(Tg, Tv, eltype(dy)))
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
     @boundscheck length(x) >= 2 || throw(ArgumentError("Hermite interpolation requires at least 2 points, got $(length(x))"))
@@ -60,7 +61,7 @@ function hermite_interp!(
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing,
     ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
+    x = _resolve_axis(x, _hermite_grid_float(Tg, Tv, eltype(dy)))
     @boundscheck length(y) == length(x) || _throw_length_mismatch(length(x), length(y))
     @boundscheck length(dy) == length(x) || _throw_length_mismatch(length(x), length(dy), "x", "dy")
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
@@ -108,6 +109,13 @@ end
 # ║                  INPUT PROMOTION HELPER                                   ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
+# Hermite grid float: the value space is y ∪ dy, so the axis width must see both
+# (x::Float32 + y::Float32 + dy::Float64 → Float64; duck dy leaves the grid alone).
+@inline function _hermite_grid_float(::Type{TX}, ::Type{TY}, ::Type{TDY}) where {TX, TY, TDY}
+    Tg_y = _promote_grid_float(TX, TY)
+    return TDY <: _PromotableValue ? promote_type(Tg_y, float(_real_eltype(TDY))) : Tg_y
+end
+
 # Joint promotion of (x, y, dy) — grid type Tg considers all three inputs,
 # so e.g. x::Float32 + y::Float32 + dy::Float64 → Tg=Float64 (no precision loss).
 @inline function _promote_hermite_inputs(
@@ -115,8 +123,7 @@ end
         y::AbstractVector{TY},
         dy::AbstractVector{TDY},
     ) where {TX, TY, TDY}
-    Tg_y = _promote_grid_float(TX, TY)
-    Tg = TDY <: _PromotableValue ? promote_type(Tg_y, float(_real_eltype(TDY))) : Tg_y
+    Tg = _hermite_grid_float(TX, TY, TDY)
     x_p = _to_float(x, Tg)
     # Only promote values when Tg is a standard float type — duck-typed Tg (Dual etc.)
     # leaves y/dy as-is; Julia arithmetic promotion handles the rest in kernels.

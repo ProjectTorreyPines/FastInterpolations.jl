@@ -206,6 +206,10 @@ end
 @inline _resolve_axis(x::AbstractVector) = x
 @inline _resolve_axis(x::AbstractVector, ::AbstractBC) = x
 @inline _resolve_axis(c::_CachedVector) = c
+# Tg-typed 2-arg (no BC): vectors stay raw — Tg only steers Range axes (the search
+# promote-compares raw vectors; eager conversion would allocate).
+@inline _resolve_axis(x::AbstractVector, ::Type{Tg}) where {Tg} = x
+@inline _resolve_axis(c::_CachedVector, ::Type{Tg}) where {Tg} = c
 
 # `:exclusive` raw-input one-shot path — raw inner (2-arg has no Tg; the ctor widens against the
 # period). `_wrap_exclusive` is the shared convert-first wrapper defined in cached_range.jl.

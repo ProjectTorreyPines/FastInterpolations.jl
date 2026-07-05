@@ -108,13 +108,12 @@ end
     end
 end
 
-@testitem "cubic explicit PreCompute: Range axes value-match; Vector axes legacy" begin
-    # The scalar PreCompute backend pre-normalizes Range axes to `_CachedRange{Tg}`
-    # (isbits → the per-axis spline caches still memoise), so Int/OneTo grids +
-    # Float32 data return Float32. Raw Int-VECTOR axes keep the identity-keyed
-    # legacy cache width (Float64) — value-matching them needs an eltype-aware
-    # cache key (deferred); the witness follows the per-axis width, so they stay
-    # well-typed instead of throwing.
+@testitem "cubic explicit PreCompute value-matches all axis containers" begin
+    # The scalar PreCompute backend promotes grids exactly like the batch path
+    # (`_nd_promote_grids`): Ranges → isbits `_CachedRange{Tg}` (spline caches memoise
+    # via value-deterministic objectid), same-eltype Vectors pass by identity, and a
+    # mismatched Vector converts (the caches match it by content). So Int/OneTo/Vector
+    # grids + Float32 data all return Float32, matching the OnTheFly default.
     g = Base.OneTo(7)
     data = Float32.([sin(3.0x) + cos(2.0y) for x in 1:7, y in 1:7])
     q = (2.4f0, 3.6f0)
@@ -125,10 +124,8 @@ end
     @test v_pc ≈ v_otf rtol = 1.0f-5
 
     gv = collect(1:7)
-    @test_broken cubic_interp((gv, gv), data, q; coeffs = PreCompute()) isa Float32
-    @test cubic_interp((gv, gv), data, q; coeffs = PreCompute()) isa Float64
-    # Mixed axes: the witness promotes per-axis (Range→F32, Int Vector→F64).
-    @test cubic_interp((g, gv), data, q; coeffs = PreCompute()) isa Float64
+    @test cubic_interp((gv, gv), data, q; coeffs = PreCompute()) isa Float32
+    @test cubic_interp((g, gv), data, q; coeffs = PreCompute()) isa Float32  # mixed containers
 end
 
 @testitem "ND Int-data output types: arithmetic float-forces, selection stays natural" begin

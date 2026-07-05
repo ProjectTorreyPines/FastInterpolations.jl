@@ -60,19 +60,8 @@ function cubic_interp(
         methods = map(CubicInterp, bcs)
         return _interp_nd_oneshot_onthefly(grids, data, query, methods, extraps_val, searches, ops, hint)::Tr
     end
-    # The PreCompute backend value-matches RANGE axes (pre-normalized `_CachedRange{Tg}`
-    # keeps the spline-cache memoisation — isbits, objectid-deterministic); raw VECTOR
-    # axes stay at the legacy identity-keyed cache width. Assert the per-axis width.
-    Tr_pc = _promote_eltype(_interp_op, _cubic_pc_grid_float(grids, Tg), Tv, Tq)
-    return _cubic_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops, hint)::Tr_pc
+    return _cubic_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
-
-# Per-axis solve width of the scalar PreCompute backend: Range axes are pre-normalized
-# to the value-matched `Tg`; raw Vector axes keep the 1D spline-cache width
-# (`_cache_float_type` — identity-keyed cache, still data-unaware). All-Range grids
-# collapse this to `Tg`, i.e. full value-match.
-@inline _cubic_pc_grid_float(grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg} =
-    promote_type(map(g -> g isa AbstractRange ? Tg : _cache_float_type(eltype(g)), grids)...)
 
 """
     cubic_interp(grids, data, queries; deriv=EvalValue(), kwargs...)
@@ -132,13 +121,12 @@ Zero-allocation after warmup (pool reuse).
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
     ) where {Tv, N}
-    # Value-matched Range normalization: `_CachedRange{Tg}` is isbits (objectid-
-    # deterministic), so the per-axis spline caches still memoise. Raw Vector axes
-    # pass through at the legacy identity-keyed cache width; `Tg` types the pooled
-    # partials buffer at the per-axis solve width (all-Range → fully value-matched).
-    Tg_vm = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    Tg = _cubic_pc_grid_float(grids, Tg_vm)
-    grids = map(g -> _resolve_axis(g, Tg_vm), grids)
+    # Value-matched pooled wrap, symmetric with the quadratic scalar backend: Ranges
+    # → isbits `_CachedRange{Tg}` (the per-axis spline caches still memoise via
+    # value-deterministic objectid); a mismatched Vector converts into a POOL buffer
+    # (warm one-shots stay zero-alloc), so the whole solve pipeline runs at `Tg`.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    grids = map(g -> _cache_axis_pooled(pool, g, Tg), grids)
     # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
     query = map(_resolve_grididx, query, grids)
     # 0. Validate (NoExtrap throw must precede FillExtrap short-circuit) AND promote per axis:
@@ -169,10 +157,11 @@ Zero-allocation after warmup (pool reuse).
 
     # 4. Eval pipeline (all standalone functions, no Interpolant needed).
     # Axis-only forms — `grids_p` axes carry `h`/`inv_h` directly via `_get_h`/
-    # `_get_inv_h` (cached lookup for wrapped axes, on-the-fly diff for raw Vector).
+    # `_get_inv_h` (cached lookup for wrapped axes, on-the-fly diff for raw Vector);
+    # the data-aware form width-types hs/inv_hs at `Tg` (raw Int-Vector axes included).
     q_evals = _handle_all_extraps(query, grids_p, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_evals, grids_p, searches, hints, extraps_eff)
-    hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls)
+    hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls, Tg)
 
     # 6. Tensor-product kernel evaluation
     return _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)

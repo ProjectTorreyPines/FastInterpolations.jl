@@ -118,3 +118,43 @@ end
     @test cubic_interp((g, g), data, q) isa Float32                       # default (OnTheFly): green
     @test_broken cubic_interp((g, g), data, q; coeffs = PreCompute()) isa Float32
 end
+
+@testitem "ND Int-data output types: arithmetic float-forces, selection stays natural" begin
+    FI = FastInterpolations
+    dataI = [x + 2y for x in 1:7, y in 1:7]
+
+    gridspecs = (
+        ("IntOneTo", Int, () -> (Base.OneTo(7), Base.OneTo(7))),
+        ("IntVec", Int, () -> (collect(1:7), collect(1:7))),
+        ("F32vec", Float32, () -> (collect(Float32, 1:7), collect(Float32, 1:7))),
+        ("F64vec", Float64, () -> (collect(Float64, 1:7), collect(Float64, 1:7))),
+    )
+    arith = (
+        ("linear", linear_interp),
+        ("cubic", cubic_interp),
+        ("quadratic", quadratic_interp),
+    )
+
+    for (gname, Te, gbuild) in gridspecs, q in ((2.4f0, 3.6f0), (2.4, 3.6), (2, 3))
+        Tq = typeof(q[1])
+        gx, gy = gbuild()
+
+        # Arithmetic kernels divide → Int floats: Tg = float(promote(grid, Int)).
+        Tg = float(promote_type(Te, Int))
+        expected = promote_type(Tg, Tq)
+        for (mname, f) in arith
+            @testset "$mname $gname Int data Tq=$Tq → $expected" begin
+                @test f((gx, gy), dataI, q) isa expected
+                @test f((gx, gy), dataI)(q) isa expected     # one-shot ≡ persistent type
+            end
+        end
+
+        # Selection kernel (constant): no x·y arithmetic → pure natural promotion,
+        # NO float forcing (all-Int in → Int out); one-shot must match persistent.
+        expected_sel = promote_type(Te, Int, Tq)
+        @testset "constant $gname Int data Tq=$Tq → $expected_sel" begin
+            @test constant_interp((gx, gy), dataI, q) isa expected_sel
+            @test constant_interp((gx, gy), dataI)(q) isa expected_sel
+        end
+    end
+end

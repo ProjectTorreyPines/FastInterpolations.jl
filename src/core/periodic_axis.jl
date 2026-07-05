@@ -405,6 +405,12 @@ end
 # `_CachedRange`/`_CachedVector` → wrapper) live in their owner files
 # (`cached_range.jl` / `cached_vector.jl`).
 @inline _resolve_axis(g::_ExclusivePeriodicAxis) = g
+# 2-arg/3-arg `:exclusive`: a pre-wrapped axis passes through — do NOT re-wrap. Without these,
+# `_ExclusivePeriodicAxis <: AbstractVector` sends it into the raw-Vector `:exclusive` arms
+# (`cached_vector.jl`), nesting toward length (n+1)+1 and throwing in the ctor. Mirrors the
+# `_cache_axis` passthroughs below; non-exclusive 2-/3-arg forms already fall to the raw `= x` arm.
+@inline _resolve_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}) = g
+@inline _resolve_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = g
 @inline _cache_axis(g::_ExclusivePeriodicAxis) = g
 @inline _cache_axis(g::_ExclusivePeriodicAxis, ::AbstractBC) = g
 @inline _cache_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}) = g

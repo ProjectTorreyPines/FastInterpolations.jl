@@ -70,3 +70,37 @@ end
         end
     end
 end
+
+@testitem "Hermite ND output type = promote_type(grid, data∪partials, query), @inferred" begin
+    FI = FastInterpolations
+
+    gridspecs = (
+        ("F32vec", Float32, () -> (collect(Float32, 1:5), collect(Float32, 1:5))),
+        ("F64vec", Float64, () -> (collect(Float64, 1:5), collect(Float64, 1:5))),
+        ("IntOneTo", :match, () -> (Base.OneTo(5), Base.OneTo(5))),
+    )
+
+    for (gname, gTg, gbuild) in gridspecs, Tv in (Float32, Float64), Tq in (Float32, Float64)
+        gx, gy = gbuild()
+        xs, ys = 1:5, 1:5
+        data = Tv.([sin(0.5a) * cos(0.5b) for a in xs, b in ys])
+        p = HermitePartials(
+            (1, 0) => Tv.([0.5cos(0.5a) * cos(0.5b) for a in xs, b in ys]),
+            (0, 1) => Tv.([-0.5sin(0.5a) * sin(0.5b) for a in xs, b in ys]),
+            (1, 1) => Tv.([-0.25cos(0.5a) * sin(0.5b) for a in xs, b in ys]),
+        )
+        q = (Tq(2.4), Tq(3.6))
+        Tg = gTg === :match ? promote_type(Float32, Tv) : gTg   # Int/OneTo grid value-matches data float
+        expected = promote_type(Tg, Tv, Tq)
+
+        @testset "oneshot $gname Tv=$Tv Tq=$Tq → $expected" begin
+            @test hermite_interp((gx, gy), data, p, q) isa expected
+            @test (@inferred hermite_interp((gx, gy), data, p, q)) isa expected
+        end
+        itp = hermite_interp((gx, gy), data, p)
+        @testset "persistent $gname Tv=$Tv Tq=$Tq → $expected" begin
+            @test itp(q) isa expected
+            @test (@inferred itp(q)) isa expected
+        end
+    end
+end

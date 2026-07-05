@@ -113,10 +113,10 @@ end
 #   x type         + Tg            → result   (notes)
 #   ─────────────────────────────────────────────────────────────────────────
 #   Vector{Tg}      + Tg            → pool-backed `_CachedVector{Tg}`
-#                                       (`_to_float` identity → 2-arg pool wrap)
-#   Vector{S}       + Tg, S ≠ Tg    → pool-backed `_CachedVector{Tg}` ⚠️ warns once
-#                                       (`_to_float` heap-allocates `Tg.(x)` then
-#                                        2-arg builds the wrapper)
+#                                       (same-eltype overload → 2-arg pool wrap)
+#   Vector{S}       + Tg, S ≠ Tg    → pool-backed `_CachedVector{Tg}`, zero heap
+#                                       (converting `copyto!` into a POOLED buffer,
+#                                        then 2-arg builds the wrapper)
 #   AbstractRange   + Tg            → `_CachedRange{Tg}`  (zero pool, immutable
 #                                       struct; eltype always Tg)
 #   _CachedRange{Tg}  + Tg            → identity passthrough
@@ -132,9 +132,20 @@ end
 #
 # Bottom line: `_cache_axis_pooled(pool, x, Tg)` *always* returns a wrapper
 # with eltype `Tg`. The fast paths (same-eltype Vector/Range/wrapped) are
-# zero-alloc; eltype mismatches incur a one-time conversion alloc.
+# zero-alloc; wrapped-type eltype mismatches incur a one-time conversion alloc.
 @inline _cache_axis_pooled(pool, x, ::Type{Tg}) where {Tg} =
     _cache_axis_pooled(pool, _to_float(x, Tg))
+
+# Vector overloads (beat the catch-all): same-eltype → plain 2-arg pool wrap;
+# mismatched eltype (e.g. Int grid under a value-matched Tg) → converting
+# `copyto!` into a POOLED buffer, then 2-arg wrap — warm one-shots stay zero-alloc.
+@inline _cache_axis_pooled(pool, x::AbstractVector{Tg}, ::Type{Tg}) where {Tg} =
+    _cache_axis_pooled(pool, x)
+@inline function _cache_axis_pooled(pool, x::AbstractVector, ::Type{Tg}) where {Tg}
+    buf = acquire!(pool, Tg, length(x))
+    copyto!(buf, x)
+    return _cache_axis_pooled(pool, buf)
+end
 
 # ========================================
 # _get_h / _get_inv_h accessors (Vector hierarchy)
@@ -198,6 +209,15 @@ end
 
 # `:exclusive` raw-input one-shot path — wrap into `_ExclusivePeriodicAxis`.
 @inline function _resolve_axis(x::AbstractVector, bc::PeriodicBC{:exclusive})
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(x, bc_resolved.period)
+end
+
+# 3-arg Tg-aware one-shot resolution — a raw Vector stays raw (the search promote-compares it,
+# no eager conversion), so `Tg` only steers Range axes; mirror the 2-arg passthrough here.
+@inline _resolve_axis(x::AbstractVector, ::AbstractBC, ::Type{Tg}) where {Tg} = x
+@inline _resolve_axis(c::_CachedVector, ::AbstractBC, ::Type{Tg}) where {Tg} = c
+@inline function _resolve_axis(x::AbstractVector, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
     bc_resolved = _resolve_bc_period(x, bc)
     return _ExclusivePeriodicAxis(x, bc_resolved.period)
 end

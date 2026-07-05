@@ -214,6 +214,16 @@ end
     return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
 end
 
+# 3-arg Tg-aware one-shot resolution — value-matched grid float so an Int/OneTo grid beside
+# Float32 data floats to Float32 (not the blind `float(eltype)`=Float64), matching the persistent
+# path and the natural `promote_type(grid, data, query)` output. Mirrors `_cache_axis(x, bc, Tg)`.
+@inline _resolve_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+@inline _resolve_axis(c::_CachedRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _convert_copy(c, Tg)
+@inline function _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
+    bc_resolved = _resolve_bc_period(x, bc)
+    return _ExclusivePeriodicAxis(_to_float(x, Tg), bc_resolved.period)
+end
+
 # ========================================
 # `_cache_axis` — persistent-path Range wrapping
 # ========================================
@@ -251,3 +261,8 @@ end
 # Range types have stack-only `_CachedRange` — no pool buffer needed.
 @inline _cache_axis_pooled(_, x::AbstractRange) = _to_float(x, float(eltype(x)))
 @inline _cache_axis_pooled(_, x::_CachedRange) = x
+# 3-arg Tg-aware. Also load-bearing for dispatch: `AbstractRange <: AbstractVector`, so
+# without these a Range would fall into the pooled-Vector 3-arg overload (cached_vector.jl)
+# and lose its stack `_CachedRange` form.
+@inline _cache_axis_pooled(_, x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+@inline _cache_axis_pooled(_, x::_CachedRange, ::Type{Tg}) where {Tg} = _convert_copy(x, Tg)

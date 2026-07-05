@@ -42,7 +42,9 @@ function _linear_interp_nd_oneshot(
     # seam) so kernels read raw `data[..., idx_R, ...]` directly. With BC info
     # encoded in the axis type, the searcher carries `NoBC()` — the wrapper's
     # dispatch handles seam regardless.
-    grids_eff = map(_resolve_axis, grids, bcs)
+    # Value-matched grid float (Int grid + Float32 data → Float32) — eval matches the `Tr` witness.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    grids_eff = map((g, bc) -> _resolve_axis(g, bc, Tg), grids, bcs)
     # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
     query = map(_resolve_grididx, query, grids_eff)
     # Validate (NoExtrap throw must precede the FillExtrap short-circuit) AND promote per axis:
@@ -133,10 +135,9 @@ function linear_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    # Scalar one-shot: raw grids — the kernel's `map(_resolve_axis, …)` shapes each
-    # axis and the search promote-compares, so no eager `Tg.(x)` copy. `Tr` from
-    # op-shape inference (`dL/h` floats Int). Batch keeps eager-convert (amortised).
-    Tg = _promote_grid_eltype(grids)
+    # Scalar one-shot: raw grids shaped per axis by `_resolve_axis(…, Tg)` at the value-matched
+    # float (Int grid + Float32 data → Float32) — no eager copy, witness `Tr` matches the eval.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
     _validate_nd_grids(grids, data)
     Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
 

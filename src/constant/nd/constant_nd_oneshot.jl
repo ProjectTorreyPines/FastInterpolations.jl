@@ -29,7 +29,10 @@ function _constant_interp_nd_oneshot(
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
     ) where {Tv, N}
-    grids_eff = map(_resolve_axis, grids, bcs)
+    # Value-matched grid float (Int/OneTo grid + Float32 data → Float32, not blind Float64) so the
+    # selection output follows natural promote_type(grid, data, query).
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    grids_eff = map((g, bc) -> _resolve_axis(g, bc, Tg), grids, bcs)
     # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
     query = map(_resolve_grididx, query, grids_eff)
     # Validate AND promote per axis: an in-domain NoExtrap axis becomes InBounds for the lean

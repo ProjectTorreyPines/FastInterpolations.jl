@@ -39,14 +39,14 @@ Zero-allocation after warmup (pool reuse).
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
-    # 1. Pool-backed per-axis cache — build phase reuses h/inv_h across slices.
-    # `map` over the tuple dispatches per-element on the concrete axis type
-    # (Range vs Vector); `ntuple(d -> grids[d], ...)` would Union-box.
-    grids_c = map(g -> _cache_axis_pooled(pool, g), grids)
+    # 1. Value-matched grid float (Int/OneTo grid + Float32 data → Float32) shared by the pooled
+    # per-axis cache and the partials type, so the pool buffer + output follow natural promote_type.
+    # `map` dispatches per-element on the concrete axis type (Range vs Vector).
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    grids_c = map(g -> _cache_axis_pooled(pool, g, Tg), grids)
 
-    # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
-    # Tz widens Tv with Tg (Dual grid → Dual derivs). `Tg` raw; `_coeff_op` floats Int.
-    Tg = _promote_grid_eltype(grids)
+    # 2. Pool-allocate partials array (THE KEY: pool instead of heap). Tz widens Tv with Tg
+    # (Dual grid → Dual derivs); `_coeff_op` floats Int.
     Tz = _promote_eltype(_coeff_op, Tg, Tv)
     n_partials = 1 << N
     partials = acquire!(pool, Tz, (n_partials, size(data)...))
@@ -135,21 +135,13 @@ One-shot ND quadratic interpolation at a single point.
 Zero-allocation after warmup.
 
 # Strategy selection (`coeffs`)
-- `AutoCoeffs()` (default): resolves to `PreCompute()` for both scalar and
-  batch quadratic queries. This matches the interpolant constructor and AD
-  rules **bit-exactly**, at the cost of always building the `2^N` partial
-  array. Cubic `AutoCoeffs()` differs (it routes scalar queries to `OnTheFly`)
-  because cubic OnTheFly↔PreCompute equivalence holds at `≈ rtol=1e-10` and
-  AD seed agreement does not require strict equality there.
-- `PreCompute()`: explicitly build all nodal partial derivatives first, then
-  evaluate. The user `bc` is applied uniformly to every partial (pure and
-  mixed), so the stored mixed partials match OnTheFly's composition formula.
-- `OnTheFly()`: sequential 1D interpolation per fiber via `_collapse_dims`.
-  Applies the user-specified `bc` uniformly at every 1D step.
-
-`PreCompute()` and `OnTheFly()` are equivalent up to a few ULPs of FP
-reordering noise for every user BC, but **not** bit-identical — that is why
-quadratic `AutoCoeffs` defaults to `PreCompute`.
+- `AutoCoeffs()` (default): shared `_resolve_coeffs_nd_oneshot` policy, same as cubic —
+  scalar query → `OnTheFly()` (cell-local collapse, skips the `2^N` partial build),
+  batch → `PreCompute()` (amortized).
+- `PreCompute()`: build all nodal partials first — bit-identical to the persistent
+  interpolant (`quadratic_interp(grids, data)(q)`); opt in when `===` parity matters.
+- `OnTheFly()`: sequential 1D collapse; matches PreCompute to a few ULPs of
+  FP-reordering noise (not bit-exact) for every user `bc`.
 """
 function quadratic_interp(
         grids::NTuple{N, AbstractVector},
@@ -163,8 +155,9 @@ function quadratic_interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     # Scalar one-shot: raw grids — both PreCompute and OnTheFly accept them
-    # (`_compute_all_local_params` floats the cell width). Batch keeps eager-convert.
-    Tg = _promote_grid_eltype(grids)
+    # (`_compute_all_local_params` floats the cell width). `Tg` value-matched (Int/OneTo grid +
+    # Float32 data → Float32) so eval + witness `Tr` agree. Batch keeps eager-convert.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
     _validate_nd_grids(grids, data)
     Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
 
@@ -174,9 +167,9 @@ function quadratic_interp(
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
 
-    # Keep AutoCoeffs on the specialized PreCompute path so scalar one-shot
-    # calls match the interpolant constructor and AD rules.
-    coeffs_resolved = coeffs isa AutoCoeffs ? PreCompute() : coeffs
+    # Central policy (same as cubic): scalar AutoCoeffs → OnTheFly. Bit-exact parity
+    # with the persistent interpolant stays available via explicit coeffs=PreCompute().
+    coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, query, ntuple(_ -> QuadraticInterp(), Val(N)))
     if coeffs_resolved isa OnTheFly
         sample = @inbounds first(data)
         methods = map(bc_i -> QuadraticInterp(_to_quadratic_bc(bc_i, sample)), bcs)

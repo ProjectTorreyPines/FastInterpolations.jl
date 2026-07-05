@@ -37,9 +37,9 @@ function cubic_interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     # Scalar one-shot: raw grids — a stable grid id lets `_get_cubic_cache` memoise
-    # (a per-call `Tg.(x)` copy would miss every time + alloc). Output types from
-    # op-shape inference (`inv(h)`/`dL/h` float Int). Batch keeps eager-convert.
-    Tg = _promote_grid_eltype(grids)
+    # (a per-call copy would miss every time + alloc). `Tg` is value-matched (Int/OneTo grid +
+    # Float32 data → Float32), so the OnTheFly eval + witness `Tr` agree. Batch keeps eager-convert.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
     Tv_p = _promote_eltype(_coeff_op, Tg, Tv)
     _validate_nd_grids(grids, data)
     Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))

@@ -146,7 +146,9 @@ end
     # `_wrap_to_domain` / `search_interval` without the raw n-length Vector's
     # `last - first ≠ period` mismatch (Linear/Constant ND mirror this pattern).
     bcs = map(_bc_for_periodic_check, methods)
-    grids_eff = map(_resolve_axis, grids, bcs)
+    # Value-matched grid float (Int grid + Float32 data → Float32) — output matches the caller's witness.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    grids_eff = map((g, bc) -> _resolve_axis(g, bc, Tg), grids, bcs)
     # NOTE: inclusive PeriodicBC slice validation is NOT performed here — it is
     # hoisted to the callers (`_interp_nd_oneshot_dispatch` and the OnTheFly
     # branch of `_interp_nd_oneshot_batch_dispatch!`) so the batch path pays the
@@ -154,8 +156,7 @@ end
     extraps_eff = map(_resolve_extrap, extraps_val, bcs, grids_eff)
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
     # Tr promotes data with grid + query eltypes → Dual-safe pool buffers for AD.
-    # Raw grids may be Int/heterogeneous; `_promote_eltype` floats Int internally.
-    Tg = _promote_grid_eltype(grids)
+    # `Tg` (value-matched above) already floats Int; reuse it here.
     Tr = _promote_eltype(Tv, Tg, typeof.(q_eval)...)
 
     # GridIdx safety gate: same reason as the persistent path — a GridIdx on a
@@ -197,9 +198,12 @@ end
         )
     end
 
-    # Pure global-solve path: no pre-search, full windows, bit-for-bit pre-Phase-3 behavior.
+    # Global-solve path: RAW-form grids — the inner 1D one-shots wrap `:exclusive` axes
+    # themselves (need user length n, not the wrapped virtual n+1). Only float-mismatched
+    # axes convert to `Tg` (Int grid + Float32 data); matching axes stay raw (1D cache identity).
+    grids_raw = map(g -> float(eltype(g)) === Tg ? g : _convert_grid(g, Tg), grids)
     full_windows = map(Base.OneTo, size(data))
-    return _collapse_dims(Tr, data, grids, methods, extraps_eff, q_eval, ops, searches, hints, full_windows)
+    return _collapse_dims(Tr, data, grids_raw, methods, extraps_eff, q_eval, ops, searches, hints, full_windows)
 end
 
 # ========================================

@@ -94,11 +94,11 @@ end
 
 # N=1 batch one-shot → lean 1D batch one-shot (bit-identical). See linear_nd_interpolant.jl.
 @inline constant_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
-    constant_interp(only(grids), data, q; _unwrap_nd_batch_kwargs(values(kwargs))...)
+    constant_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
 @inline constant_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
-    constant_interp!(output, only(grids), data, q; _unwrap_nd_batch_kwargs(values(kwargs))...)
+    constant_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
 # Single-axis SoA `(xv,)` → 1D batch. See linear_nd_interpolant.jl.
 @inline constant_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
-    constant_interp(only(grids), data, only(q); _unwrap_nd_batch_kwargs(values(kwargs))...)
+    constant_interp(only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
 @inline constant_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
-    constant_interp!(output, only(grids), data, only(q); _unwrap_nd_batch_kwargs(values(kwargs))...)
+    constant_interp!(output, only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)

@@ -222,7 +222,8 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -239,7 +240,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(d, a, x, y, bc_promoted)
 
-    searcher = _resolve_search(x, x_targets, search, nothing)
+    searcher = _resolve_search(x, x_targets, search, hint)
     extrap_eff = _resolve_extrap(extrap, x)
     _quadratic_vector_loop!(output, x, y, a, d, x_targets, extrap_eff, deriv, searcher)
     return output
@@ -273,10 +274,11 @@ function quadratic_interp(
         bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tq <: Real}
     Tr = _promote_eltype(_interp_op, _promote_grid_float(Tg, eltype(y)), eltype(y), Tq)
     output = Vector{Tr}(undef, length(x_targets))
-    quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
+    quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search, hint)
     return output
 end

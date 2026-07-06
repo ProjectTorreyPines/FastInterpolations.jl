@@ -202,16 +202,22 @@ end
     out = similar(xq)
     ref = similar(xq)
 
-    # The ND batch one-shot threads a per-axis `hint`; the 1D batch one-shots for
-    # linear/cubic/quadratic/constant have no such kwarg. The collapse must drop it,
-    # not forward it — otherwise a bare-vector / SoA batch on a 1-tuple grid with an
-    # explicit (or default) `hint` throws MethodError. Values match the hint-less call.
+    # The ND batch one-shot threads a per-axis `hint` (mutable search state that
+    # advances through the batch). The collapse forwards it to the 1D one-shot, which
+    # now accepts `hint` (previously only the scalar one-shot / persistent callable did).
+    # `hint = nothing` (the GridIdx / NoInterp pre-slice default) must not throw; a real
+    # `(h,)` must advance `h[]` to the last query's cell — matching the ND N=1 contract.
     for f in (
             linear_interp, cubic_interp, quadratic_interp, constant_interp,
             pchip_interp, akima_interp, cardinal_interp,
         )
         @test f((x,), y, xq; hint = nothing) == f(x, y, xq)      # allocating, bare vector
         @test f((x,), y, (xq,); hint = nothing) == f(x, y, xq)   # allocating, SoA
+        # A real hint advances to the same cell the direct 1D one-shot lands on.
+        hc = Ref(1); f((x,), y, xq; hint = (hc,))
+        h1 = Ref(1); f(x, y, xq; hint = h1)
+        @test hc[] == h1[] > 1
+        hs = Ref(1); f((x,), y, (xq,); hint = (hs,)); @test hs[] == h1[]   # SoA advances too
     end
     for f! in (
             linear_interp!, cubic_interp!, quadratic_interp!, constant_interp!,
@@ -221,6 +227,9 @@ end
         @test out == (ref .= f!(similar(ref), x, y, xq))          # in-place, bare vector
         f!(out, (x,), y, (xq,); hint = nothing)
         @test out == ref                                          # in-place, SoA
+        hc = Ref(1); f!(out, (x,), y, xq; hint = (hc,))
+        h1 = Ref(1); f!(similar(out), x, y, xq; hint = h1)
+        @test hc[] == h1[] > 1                                     # in-place hint advances
     end
 
     # End-to-end: `interp!` with a `GridIdx` pins one axis and pre-slices to a 1-tuple

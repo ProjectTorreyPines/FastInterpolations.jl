@@ -34,13 +34,6 @@
 @inline _unwrap_axis1(x) = x
 @inline _unwrap_nd_kwargs(nt::NamedTuple) = map(_unwrap_axis1, nt)
 
-# Batch one-shot collapse: like `_unwrap_nd_kwargs` but also drops `hint`. The 1D batch
-# one-shots (linear/cubic/quadratic/constant) have no `hint` kwarg — it is the ND path's
-# per-axis sequential-access seed, threaded e.g. by the GridIdx pre-slice. Values are
-# unaffected (a batch reseeds its searcher regardless).
-@inline _unwrap_nd_batch_kwargs(nt::NamedTuple) =
-    map(_unwrap_axis1, Base.structdiff(nt, NamedTuple{(:hint,)}))
-
 # ── Call-time extrap override (singular: 1D / ND per-axis) ──
 # The stored extrap is the construction-time contract; the only per-call override
 # is `InBounds` (an in-domain fast-path ASSERTION, not an extrapolation contract —

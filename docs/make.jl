@@ -187,6 +187,7 @@ makedocs(
         "Factory Functions" => "guides/factory_functions.md",
         "Advanced Usage" => [
             "Overview" => "guides/advanced_overview.md",
+            "Performance Tips" => "guides/performance_tips.md",
             "Complex Numbers" => "guides/complex_number_support.md",
             "Autodiff (AD)" => [
                 "1D Interpolants" => "guides/autodiff_support.md",

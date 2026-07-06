@@ -2,7 +2,7 @@
 
 Once you're comfortable with basic interpolation, these features help optimize for specific use cases.
 
-## Grid Selection: Range vs Vector
+## [Grid Selection: Range vs Vector](@id grid_selection)
 
 The most impactful optimization is choosing the right grid type:
 
@@ -22,7 +22,7 @@ x = [0.0, 0.1, 0.3, 0.6, 1.0, 1.5, 2.5, 5.0, 10.0]
 x = collect(0.0:0.01:10.0)
 ```
 
-For **Vector grids**, see [**Search & Hints**](@ref search_hints) section help optimize lookup performance.
+For **Vector grids**, see [**Search & Hints**](@ref search_hints) section help optimize lookup performance. When a uniform grid is integer / unit-spaced, the `Range` type refines further (`UnitRange`, `Base.OneTo`) — see [**Performance Tips**](@ref perf-grid).
 
 ---
 

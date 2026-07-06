@@ -227,3 +227,36 @@ end
     # formula bound of 4640 B); tightened to measured + 15 %.
     @test allocs <= 3515
 end
+
+@testitem "fast paths: exact-node copy + identity elision (bit-exact)" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: _axis_anchors, LinearInterp, EvalValue
+
+    A = rand(32, 24)
+    itp = FI.linear_interp((1.0:32.0, 1.0:24.0), A; extrap = FI.ClampExtrap())
+
+    # exact-node targets on axis 2 (alpha == 0 columns) → bit-equal column copies
+    ty_nodes = collect(3.0:2.0:23.0)                 # every coordinate is a grid node
+    tx = collect(range(1.0, 32.0, 45))
+    C = itp(GriddedQuery((tx, ty_nodes)))
+    ref = [itp((x, y)) for x in tx, y in ty_nodes]
+    @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
+
+    # identity on axis 1 (targets ≡ grid) → single-pass, and STILL bit-consistent
+    tx_id = collect(1.0:32.0)
+    C1 = itp(GriddedQuery((tx_id, collect(range(1.0, 24.0, 37)))))
+    ref1 = [itp((x, y)) for x in tx_id, y in range(1.0, 24.0, 37)]
+    @test all(isapprox.(C1, ref1; rtol = 1.0e-14, atol = 1.0e-14))
+    # identity plan detected
+    p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx_id, itp.extraps[1], 1)
+    @test p1.identity
+
+    # double identity → exact copy of the data
+    Cid = itp(GriddedQuery((collect(1.0:32.0), collect(1.0:24.0))))
+    @test Cid == A
+
+    # in-place double identity as well
+    out = Matrix{Float64}(undef, 32, 24)
+    @test itp(out, GriddedQuery((collect(1.0:32.0), collect(1.0:24.0)))) == A
+end

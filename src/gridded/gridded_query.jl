@@ -57,8 +57,15 @@ function _pass_blend_dim2!(dest::AbstractMatrix, src::AbstractMatrix, plan::_Axi
     @inbounds for j in eachindex(anchors)
         a = anchors[j]
         jl = a.idx; jr = jl + 1
-        for r in 1:n1
-            dest[r, j] = _eval_anchor(a, src[r, jl], src[r, jr])
+        α = a.alpha
+        if iszero(α)                       # exact node hit → memcpy column jl
+            copyto!(view(dest, :, j), view(src, :, jl))
+        elseif isone(α)                    # exact right node → memcpy column jr
+            copyto!(view(dest, :, j), view(src, :, jr))
+        else
+            for r in 1:n1
+                dest[r, j] = _eval_anchor(a, src[r, jl], src[r, jr])
+            end
         end
     end
     return dest
@@ -115,7 +122,13 @@ end
     p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
     p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty, itp.extraps[2], 2)
     Tmid = _gridded_out_eltype(itp, tx, ty)
-    if _gridded_dim2_first(n1, n2, M, N)
+    if p1.identity && p2.identity
+        copyto!(out, A)                                   # M == n1, N == n2 by identity
+    elseif p2.identity
+        _pass_gather_dim1!(out, A, p1)                    # N == n2: single pass, no mid
+    elseif p1.identity
+        _pass_blend_dim2!(out, A, p2)                     # M == n1: single pass, no mid
+    elseif _gridded_dim2_first(n1, n2, M, N)
         B = acquire!(pool, Tmid, n1, N)
         _pass_blend_dim2!(B, A, p2)
         _pass_gather_dim1!(out, B, p1)

@@ -1314,6 +1314,26 @@ grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
 end
 
 """
+    _nd_promote_types(grids, data) -> (Tg, Tv, Tz)
+
+Type-only counterpart of [`_nd_promote_grids`](@ref): computes the same
+`(Tg, Tv, Tz)` from the grid/data *types* alone (via the `@generated`
+`_promote_grid_eltype`), skipping the `_convert_grids_typed` allocation. Callers
+that value-match each axis downstream (the OnTheFly hetero one-shot, whose inner
+1D one-shots resolve their own axes) use this to avoid an eager grid convert on
+raw Int/Rational axes.
+"""
+@inline function _nd_promote_types(
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv_raw, N}
+    ) where {Tv_raw, N}
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv_raw)
+    Tv = _value_type(Tv_raw, Tg)
+    Tz = _promote_eltype(Tv, Tg)
+    return Tg, Tv, Tz
+end
+
+"""
     _nd_promote_grids_raw(grids, data) -> (grids_typed, Tg, Tv)
 
 Raw-eltype variant of `_nd_promote_grids`: skips the `float()` widening, keeps

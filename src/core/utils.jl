@@ -223,20 +223,28 @@ end
 # `_CachedVector`/`_CachedRange` axis uses the cached reciprocal (no division) and a
 # `_UnitStep` range folds the multiply to identity. Raw `AbstractVector` computes
 # `inv(h)` on the fly (≤1 ULP vs `/h`, perf-neutral: the extra multiply runs free in
-# the divider's shadow). `Tc` matches every call site.
-@inline function _forward_secant(x, y, i)
-    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
-    return @inbounds _fielddiff(Tc, y[i + 1], y[i]) * _get_inv_h(x, i)
+# the divider's shadow).
+#
+# Width-first form: `Tw` is the value-matched coordinate width from the caller's
+# surface (`_promote_grid_float(Tg, Tv)`) — the reciprocal is born at `Tw`, so a raw
+# Int axis stops minting `inv(Int)::Float64` beside narrower data. The width-less
+# forms delegate with `Tw = eltype(x)`: bit-identical to the historic raw behavior.
+@inline function _forward_secant(::Type{Tw}, x, y, i) where {Tw}
+    Tc = _promote_eltype(_coeff_op, Tw, eltype(y))
+    return @inbounds _fielddiff(Tc, y[i + 1], y[i]) * _get_inv_h(Tw, x, i)
 end
+@inline _forward_secant(x, y, i) = _forward_secant(eltype(x), x, y, i)
 
 # Backward secant at i is the forward secant of the previous cell (denominator h_{i-1}).
-@inline _backward_secant(x, y, i) = _forward_secant(x, y, i - 1)
+@inline _backward_secant(::Type{Tw}, x, y, i) where {Tw} = _forward_secant(Tw, x, y, i - 1)
+@inline _backward_secant(x, y, i) = _forward_secant(eltype(x), x, y, i - 1)
 
 # Centered (2-cell-span) secant (y[i+1]-y[i-1]) / (x[i+1]-x[i-1]) via `_get_inv_2cell`.
-@inline function _centered_secant(x, y, i)
-    Tc = _promote_eltype(_coeff_op, eltype(x), eltype(y))
-    return @inbounds _fielddiff(Tc, y[i + 1], y[i - 1]) * _get_inv_2cell(x, i)
+@inline function _centered_secant(::Type{Tw}, x, y, i) where {Tw}
+    Tc = _promote_eltype(_coeff_op, Tw, eltype(y))
+    return @inbounds _fielddiff(Tc, y[i + 1], y[i - 1]) * _get_inv_2cell(Tw, x, i)
 end
+@inline _centered_secant(x, y, i) = _centered_secant(eltype(x), x, y, i)
 
 """
     _promote_query_eltype(::Type{Tv}, q::Tuple) -> Type

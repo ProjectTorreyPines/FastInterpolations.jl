@@ -75,6 +75,19 @@ end
     return _forward_secant(x, y, jw)
 end
 
+# ── Width-first forms — `Tw` = value-matched coordinate width (see utils.jl
+# secants). Real-cell secants/widths thread `Tw` straight through; the
+# `:exclusive` seam resolves its period AT `Tw` and differences span-first, so
+# neither the F64 period lift nor `inv(Int)` can widen narrower data.
+@inline function _periodic_secant(::Type{Tw}, x::AbstractVector, y::AbstractVector, j::Int, n::Int, ::PeriodicBC{:inclusive}) where {Tw}
+    jw = mod1(j, n - 1)
+    return _forward_secant(Tw, x, y, jw)
+end
+@inline function _periodic_secant(::Type{Tw}, x::AbstractVector, y::AbstractVector, j::Int, n::Int, ::PeriodicBC{:extended}) where {Tw}
+    jw = mod1(j, n - 1)
+    return _forward_secant(Tw, x, y, jw)
+end
+
 # Cast the resolved exclusive period to the grid's promoted-float type so
 # seam-cell arithmetic (`seam_h`, seam secant) stays in the grid eltype.
 # Without this cast, a `Float64` user-supplied period combined with a
@@ -98,6 +111,16 @@ end
         @inbounds return _fielddiff(Tc, y[1], y[n]) / seam_h
     end
     return _forward_secant(x, y, jw)
+end
+
+@inline function _periodic_secant(::Type{Tw}, x::AbstractVector, y::AbstractVector, j::Int, n::Int, bc::PeriodicBC{:exclusive}) where {Tw}
+    jw = mod1(j, n)
+    if jw == n
+        seam_h = _periodic_cell_width(Tw, x, n, n, bc)
+        Tc = _promote_eltype(_coeff_op, Tw, eltype(y))
+        @inbounds return _fielddiff(Tc, y[1], y[n]) / seam_h
+    end
+    return _forward_secant(Tw, x, y, jw)
 end
 
 """
@@ -127,6 +150,23 @@ end
         return period - (@inbounds x[n] - x[1])
     end
     return _get_h(x, jw)
+end
+
+# Width-first cell widths: real cells convert the span (exact for Int axes); the
+# `:exclusive` seam resolves period and span both AT `Tw`, so the seam width —
+# which feeds PCHIP's harmonic-mean weights and Cardinal's boundary divisor —
+# cannot re-widen a value-matched computation.
+@inline _periodic_cell_width(::Type{Tw}, x::AbstractVector, j::Int, n::Int, ::PeriodicBC{:inclusive}) where {Tw} =
+    _get_h(Tw, x, mod1(j, n - 1))
+@inline _periodic_cell_width(::Type{Tw}, x::AbstractVector, j::Int, n::Int, ::PeriodicBC{:extended}) where {Tw} =
+    _get_h(Tw, x, mod1(j, n - 1))
+@inline function _periodic_cell_width(::Type{Tw}, x::AbstractVector, j::Int, n::Int, bc::PeriodicBC{:exclusive}) where {Tw}
+    jw = mod1(j, n)
+    if jw == n
+        period = convert(Tw, _resolve_exclusive_period(x, bc))
+        return period - convert(Tw, @inbounds x[n] - x[1])
+    end
+    return _get_h(Tw, x, jw)
 end
 
 # `_bc_after_extend` lives in `src/core/periodic.jl` next to `_periodic_extend_1d`

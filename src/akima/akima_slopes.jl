@@ -40,12 +40,18 @@ secant sequence.
 # Complexity
 O(n), single pass, zero allocation (writes into `dy`).
 """
+# Width-less form: delegate with the axis's own eltype — bit-identical to the
+# historic raw behavior. One-shot PreCompute backends pass the value-matched `Tw`.
+_akima_slopes!(dy::AbstractVector, x::AbstractVector, y::AbstractVector; bc::AbstractBC = NoBC()) =
+    _akima_slopes!(dy, x, y, eltype(x); bc)
+
 function _akima_slopes!(
         dy::AbstractVector,
-        x::AbstractVector{Tg},
-        y::AbstractVector;
+        x::AbstractVector,
+        y::AbstractVector,
+        ::Type{Tw};
         bc::AbstractBC = NoBC()
-    ) where {Tg}
+    ) where {Tw}
     n = length(x)
     @assert n >= 2 "Akima requires at least 2 points"
     @assert length(y) == n "y length must match x"
@@ -55,12 +61,12 @@ function _akima_slopes!(
     # 4-secant helper (cycle=2 for `:exclusive` yields a 2-secant alternation).
     if n == 2
         if bc isa PeriodicBC
-            @inbounds dy[1] = _akima_local_4secant_periodic(x, y, 1, n, bc)
-            @inbounds dy[2] = _akima_local_4secant_periodic(x, y, 2, n, bc)
+            @inbounds dy[1] = _akima_local_4secant_periodic(Tw, x, y, 1, n, bc)
+            @inbounds dy[2] = _akima_local_4secant_periodic(Tw, x, y, 2, n, bc)
             return dy
         end
         @inbounds begin
-            δ = _forward_secant(x, y, 1)
+            δ = _forward_secant(Tw, x, y, 1)
             dy[1] = δ
             dy[2] = δ
         end
@@ -73,13 +79,13 @@ function _akima_slopes!(
             # Wrap-aware path: every index is within K=5 stencil reach of the
             # join, so use the closed-cycle 4-secant formula at all 3 points.
             @inbounds for i in 1:3
-                dy[i] = _akima_local_4secant_periodic(x, y, i, n, bc)
+                dy[i] = _akima_local_4secant_periodic(Tw, x, y, i, n, bc)
             end
             return dy
         end
         @inbounds begin
-            m1 = _forward_secant(x, y, 1)
-            m2 = _forward_secant(x, y, 2)
+            m1 = _forward_secant(Tw, x, y, 1)
+            m2 = _forward_secant(Tw, x, y, 2)
             dy[1] = m1
             dy[2] = (m1 + m2) / 2
             dy[3] = m2
@@ -101,9 +107,9 @@ function _akima_slopes!(
     # Simplification: extrapolate m sequence linearly.
 
     # Compute all n-1 secant slopes
-    @inbounds m1 = _forward_secant(x, y, 1)
-    @inbounds m2 = _forward_secant(x, y, 2)
-    @inbounds m3 = _forward_secant(x, y, 3)
+    @inbounds m1 = _forward_secant(Tw, x, y, 1)
+    @inbounds m2 = _forward_secant(Tw, x, y, 2)
+    @inbounds m3 = _forward_secant(Tw, x, y, 3)
 
     # Boundary virtual / wrapped secants for the LEFT side of the domain.
     # NoBC:                          linear extrapolation (Akima's original).
@@ -112,8 +118,8 @@ function _akima_slopes!(
     #                                (closed cycle on n cells, with virtual seam cell).
     # The `_periodic_secant` abstraction absorbs both PeriodicBC variants.
     if bc isa PeriodicBC
-        @inbounds m_0 = _periodic_secant(x, y, 0, n, bc)     # m[0]
-        @inbounds m_neg1 = _periodic_secant(x, y, -1, n, bc)    # m[-1]
+        @inbounds m_0 = _periodic_secant(Tw, x, y, 0, n, bc)     # m[0]
+        @inbounds m_neg1 = _periodic_secant(Tw, x, y, -1, n, bc)    # m[-1]
     else
         @inbounds m_0 = 2 * m1 - m2                          # virtual (NoBC)
         @inbounds m_neg1 = 3 * m1 - 2 * m2                      # virtual (NoBC)
@@ -133,7 +139,7 @@ function _akima_slopes!(
     m_k = m3
 
     @inbounds for k in 3:(n - 2)
-        m_kp1 = _forward_secant(x, y, k + 1)
+        m_kp1 = _forward_secant(Tw, x, y, k + 1)
         dy[k] = _akima_weighted_slope(m_km2, m_km1, m_k, m_kp1)
         m_km2 = m_km1
         m_km1 = m_k
@@ -147,8 +153,8 @@ function _akima_slopes!(
     # PeriodicBC{:inclusive}:        m[n]=m[1], m[n+1]=m[2] (closed cycle on n-1 cells).
     # PeriodicBC{:exclusive}:        m[n]=seam, m[n+1]=m[1] (closed cycle on n cells).
     if bc isa PeriodicBC
-        @inbounds m_np1 = _periodic_secant(x, y, n, n, bc)         # m[n]
-        @inbounds m_np2 = _periodic_secant(x, y, n + 1, n, bc)     # m[n+1]
+        @inbounds m_np1 = _periodic_secant(Tw, x, y, n, n, bc)         # m[n]
+        @inbounds m_np2 = _periodic_secant(Tw, x, y, n + 1, n, bc)     # m[n+1]
     else
         m_np1 = 2 * m_k - m_km1                                    # virtual (NoBC)
         m_np2 = 3 * m_k - 2 * m_km1                                # virtual (NoBC)

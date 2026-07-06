@@ -223,6 +223,14 @@ end
 @inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int) =
     idx < length(g.inner) ? _get_inv_h(g.inner, idx) : @inbounds(inv(g._x_max - g.inner[idx]))
 
+# Width-first shield (`_ExclusivePeriodicAxis <: AbstractVector` — must not fall
+# into the raw-span row in cached_vector.jl): interior cells thread `Tw` into the
+# inner's own width-first row; the seam converts its span first (span-then-convert,
+# see cached_vector.jl), so the reciprocal is born at `Tw`.
+@inline Base.@propagate_inbounds _get_inv_h(::Type{Tw}, g::_ExclusivePeriodicAxis, idx::Int) where {Tw} =
+    idx < length(g.inner) ? _get_inv_h(Tw, g.inner, idx) :
+    @inbounds(inv(convert(Tw, g._x_max - g.inner[idx])))
+
 # No `_CachedRange`-specific specialization for `_get_h` / `_get_inv_h`: the
 # generic wrapper overload above already does the right thing for both
 # `_CachedRange` and `_CachedVector` / `Vector` inners — interior cells

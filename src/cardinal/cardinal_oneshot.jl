@@ -30,9 +30,12 @@
     # `_CachedRange`/Vector) — the public `cardinal_interp` API pre-resolved
     # via `_resolve_axis(x)` before dispatching here, so no extra prep needed.
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    Tdy = _promote_eltype(_coeff_op, eltype(x_eff), Tv)
+    # Value-matched width: dy buffer + slope arithmetic (incl. the `1 - tension`
+    # scale) run at `Tw` — see pchip_oneshot.jl.
+    Tw = _promote_grid_float(eltype(x_eff), Tv)
+    Tdy = _promote_eltype(_coeff_op, Tw, Tv)
     dy = acquire!(pool, Tdy, length(y_ext))
-    _cardinal_slopes!(dy, x_eff, y_ext, tension; bc = bc_eff)
+    _cardinal_slopes!(dy, x_eff, y_ext, tension, Tw; bc = bc_eff)
     searcher = _resolve_search(x_eff, xq, search, hint)
     return _hermite_eval_at_point(x_eff, y_ext, dy, xq, extrap_eff, deriv, searcher)
 end
@@ -54,9 +57,12 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
 
-    Tdy = _promote_eltype(_coeff_op, eltype(x_eff), Tv)
+    # Value-matched width: dy buffer + slope arithmetic (incl. the `1 - tension`
+    # scale) run at `Tw` — see pchip_oneshot.jl.
+    Tw = _promote_grid_float(eltype(x_eff), Tv)
+    Tdy = _promote_eltype(_coeff_op, Tw, Tv)
     dy = acquire!(pool, Tdy, length(y_ext))
-    _cardinal_slopes!(dy, x_eff, y_ext, tension; bc = bc_eff)
+    _cardinal_slopes!(dy, x_eff, y_ext, tension, Tw; bc = bc_eff)
     searcher = _resolve_search(x_eff, x_query, search, hint)
     return _hermite_vector_loop!(output, x_eff, y_ext, dy, x_query, extrap_eff, deriv, searcher)
 end

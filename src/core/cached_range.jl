@@ -201,6 +201,17 @@ end
 @inline _get_h(x::AbstractRange, ::Int) = step(x)
 @inline _get_inv_h(x::AbstractRange, ::Int) = inv(step(x))
 
+# ── Width-first forms (Range hierarchy) — see cached_vector.jl for the contract.
+# `_CachedRange` reuses the cached reciprocal (convert is a no-op once the axis
+# is value-matched, e.g. `_CachedRange{Tw}` from `_resolve_axis(x, Tw)`); a raw
+# range differences via `step()` in its own eltype, converts the span, then divides.
+@inline _get_inv_h(::Type{Tw}, x::_CachedRange, i::Int) where {Tw} =
+    convert(_promote_eltype(_inv_op, Tw), _get_inv_h(x, i))
+@inline _get_inv_2cell(::Type{Tw}, x::_CachedRange, i::Int) where {Tw} =
+    convert(_promote_eltype(_inv_op, Tw), _get_inv_2cell(x, i))
+@inline _get_inv_h(::Type{Tw}, x::AbstractRange, ::Int) where {Tw} =
+    inv(convert(Tw, step(x)))
+
 # ========================================
 # `_resolve_axis` — one-shot Range wrapping
 # ========================================

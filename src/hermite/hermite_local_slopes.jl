@@ -30,7 +30,41 @@
 # Boundary (NoBC):       _pchip_endpoint_slope (3-point one-sided FD + monotonicity clamping)
 # Boundary (PeriodicBC): closed-cycle interior formula via abstraction
 
+# Two parallel forms per method: the width-less historic form (integrate /
+# adjoint callers — raw-eltype semantics, incl. Rational exactness and the
+# float-lifted `:exclusive` seam) and the width-first `(Tw, sm, …)` form the
+# eval paths use (hermite_eval.jl sm arms) with the value-matched `Tw`. The
+# width-first seam converts period/span AT `Tw`, so it must receive a real
+# (float/duck) width — never delegate it a bare Int eltype.
 @inline function _local_slope(sm::PchipSlopes, x::AbstractVector{Tg}, y::AbstractVector{Tv}, i::Int, n::Int) where {Tg, Tv}
+    # See the width-first body below for the `_raw` rationale.
+    xr = _raw(x)
+    yr = _raw(y)
+    if n == 2
+        if sm.bc isa PeriodicBC
+            return _pchip_boundary_slope(xr, yr, i, n, sm.bc)
+        end
+        return _forward_secant(xr, yr, 1)
+    end
+    if i == 1 || i == n
+        return _pchip_boundary_slope(xr, yr, i, n, sm.bc)
+    end
+    @inbounds begin
+        h_prev = _get_h(xr, i - 1)
+        h_curr = _get_h(xr, i)
+        δ_prev = _backward_secant(xr, yr, i)
+        δ_curr = _forward_secant(xr, yr, i)
+    end
+    if sign(δ_prev) != sign(δ_curr)
+        return zero(_promote_eltype(_coeff_op, Tg, Tv))
+    else
+        w1 = 2 * h_curr + h_prev
+        w2 = h_curr + 2 * h_prev
+        return _pchip_harmonic_mean(w1, w2, δ_prev, δ_curr)
+    end
+end
+
+@inline function _local_slope(::Type{Tw}, sm::PchipSlopes, x::AbstractVector, y::AbstractVector{Tv}, i::Int, n::Int) where {Tw, Tv}
     # Strip wrappers — all internal accesses are guaranteed in [1, n_raw] for
     # both NoBC and PeriodicBC paths (boundary helpers route via
     # `_periodic_secant`/`_periodic_cell_width` which special-case the seam
@@ -46,24 +80,26 @@
     # diverge from the persistent path's wrap-aware result.
     if n == 2
         if sm.bc isa PeriodicBC
-            return _pchip_boundary_slope(xr, yr, i, n, sm.bc)
+            return _pchip_boundary_slope(Tw, xr, yr, i, n, sm.bc)
         end
-        return _forward_secant(xr, yr, 1)
+        return _forward_secant(Tw, xr, yr, 1)
     end
 
     if i == 1 || i == n
-        return _pchip_boundary_slope(xr, yr, i, n, sm.bc)
+        return _pchip_boundary_slope(Tw, xr, yr, i, n, sm.bc)
     end
 
-    # Interior: weighted harmonic mean (Fritsch-Carlson)
+    # Interior: weighted harmonic mean (Fritsch-Carlson). Raw cell widths are
+    # width-neutral WEIGHTS (Int × Tc-secant stays Tc — no `inv`); only the
+    # secants carry the value-matched width.
     @inbounds begin
         h_prev = _get_h(xr, i - 1)
         h_curr = _get_h(xr, i)
-        δ_prev = _backward_secant(xr, yr, i)
-        δ_curr = _forward_secant(xr, yr, i)
+        δ_prev = _backward_secant(Tw, xr, yr, i)
+        δ_curr = _forward_secant(Tw, xr, yr, i)
     end
     if sign(δ_prev) != sign(δ_curr)
-        return zero(_promote_eltype(_coeff_op, Tg, Tv))
+        return zero(_promote_eltype(_coeff_op, Tw, Tv))
     else
         w1 = 2 * h_curr + h_prev
         w2 = h_curr + 2 * h_prev
@@ -117,6 +153,42 @@ end
     end
 end
 
+# ── Width-first boundary variants — secants (and the `:exclusive` seam width,
+# whose resolved period would otherwise carry Float64) run at `Tw`.
+@inline function _pchip_boundary_slope(::Type{Tw}, x::AbstractVector, y::AbstractVector, i, n, ::NoBC) where {Tw}
+    if i == 1
+        @inbounds begin
+            h1 = _get_h(x, 1)
+            h2 = _get_h(x, 2)
+            δ1 = _forward_secant(Tw, x, y, 1)
+            δ2 = _forward_secant(Tw, x, y, 2)
+        end
+        return _pchip_endpoint_slope(h1, h2, δ1, δ2)
+    else  # i == n
+        @inbounds begin
+            h_last = _get_h(x, n - 1)
+            h_prev = _get_h(x, n - 2)
+            δ_last = _backward_secant(Tw, x, y, n)
+            δ_prev = _backward_secant(Tw, x, y, n - 1)
+        end
+        return _pchip_endpoint_slope(h_last, h_prev, δ_last, δ_prev)
+    end
+end
+
+@inline function _pchip_boundary_slope(::Type{Tw}, x::AbstractVector, y::AbstractVector{Tv}, i, n, bc::PeriodicBC) where {Tw, Tv}
+    δ_prev = _periodic_secant(Tw, x, y, i - 1, n, bc)
+    δ_curr = _periodic_secant(Tw, x, y, i, n, bc)
+    h_prev = _periodic_cell_width(Tw, x, i - 1, n, bc)
+    h_curr = _periodic_cell_width(Tw, x, i, n, bc)
+    if sign(δ_prev) != sign(δ_curr)
+        return zero(_promote_eltype(_coeff_op, Tw, Tv))
+    else
+        w1 = 2 * h_curr + h_prev
+        w2 = h_curr + 2 * h_prev
+        return _pchip_harmonic_mean(w1, w2, δ_prev, δ_curr)
+    end
+end
+
 # ========================================
 # Cardinal Local Slope
 # ========================================
@@ -147,6 +219,27 @@ end
     @inbounds return scale * _centered_secant(xr, yr, i)
 end
 
+@inline function _local_slope(::Type{Tw}, sm::CardinalSlopes, x::AbstractVector, y::AbstractVector, i::Int, n::Int) where {Tw}
+    xr = _raw(x)
+    yr = _raw(y)
+    # Dimensionless scale at the value-matched width: `float(one(Tw))` is
+    # Unitful-safe (one(quantity) is dimensionless) and keeps a Float64 default
+    # `tension` from re-widening narrower computations.
+    Tsc = typeof(float(one(Tw)))
+    scale = one(Tsc) - convert(Tsc, sm.tension)
+
+    if n == 2
+        if sm.bc isa PeriodicBC
+            return _cardinal_boundary_slope(Tw, xr, yr, i, n, scale, sm.bc)
+        end
+        @inbounds return scale * _forward_secant(Tw, xr, yr, 1)
+    end
+    if i == 1 || i == n
+        return _cardinal_boundary_slope(Tw, xr, yr, i, n, scale, sm.bc)
+    end
+    @inbounds return scale * _centered_secant(Tw, xr, yr, i)
+end
+
 @inline function _cardinal_boundary_slope(x, y, i, n, scale, ::NoBC)
     return if i == 1
         @inbounds scale * _forward_secant(x, y, 1)
@@ -164,6 +257,25 @@ end
     h_curr = _periodic_cell_width(x, i, n, bc)
     m_prev = _periodic_secant(x, y, i - 1, n, bc)
     m_curr = _periodic_secant(x, y, i, n, bc)
+    return scale * (m_prev * h_prev + m_curr * h_curr) / (h_prev + h_curr)
+end
+
+# ── Width-first boundary variants — secants and the cell widths (this one
+# DIVIDES by them, and the `:exclusive` seam width carries the resolved
+# period) all run at `Tw`.
+@inline function _cardinal_boundary_slope(::Type{Tw}, x, y, i, n, scale, ::NoBC) where {Tw}
+    return if i == 1
+        @inbounds scale * _forward_secant(Tw, x, y, 1)
+    else
+        @inbounds scale * _backward_secant(Tw, x, y, n)
+    end
+end
+
+@inline function _cardinal_boundary_slope(::Type{Tw}, x, y, i, n, scale, bc::PeriodicBC) where {Tw}
+    h_prev = _periodic_cell_width(Tw, x, i - 1, n, bc)
+    h_curr = _periodic_cell_width(Tw, x, i, n, bc)
+    m_prev = _periodic_secant(Tw, x, y, i - 1, n, bc)
+    m_curr = _periodic_secant(Tw, x, y, i, n, bc)
     return scale * (m_prev * h_prev + m_curr * h_curr) / (h_prev + h_curr)
 end
 
@@ -222,11 +334,43 @@ end
     return _akima_local_4secant(xr, yr, i, n)
 end
 
+@inline function _local_slope(::Type{Tw}, sm::AkimaSlopes, x::AbstractVector, y::AbstractVector, i::Int, n::Int) where {Tw}
+    xr = _raw(x)
+    yr = _raw(y)
+    if n == 2
+        if sm.bc isa PeriodicBC
+            return _akima_local_4secant_periodic(Tw, xr, yr, i, n, sm.bc)
+        end
+        return _forward_secant(Tw, xr, yr, 1)
+    end
+    if n == 3
+        if sm.bc isa PeriodicBC
+            return _akima_local_4secant_periodic(Tw, xr, yr, i, n, sm.bc)
+        end
+        @inbounds begin
+            m1 = _forward_secant(Tw, xr, yr, 1)
+            m2 = _forward_secant(Tw, xr, yr, 2)
+        end
+        i == 1 && return m1
+        i == 3 && return m2
+        return (m1 + m2) / 2  # i == 2
+    end
+    if sm.bc isa PeriodicBC && (i <= 2 || i >= n - 1)
+        return _akima_local_4secant_periodic(Tw, xr, yr, i, n, sm.bc)
+    end
+    return _akima_local_4secant(Tw, xr, yr, i, n)
+end
+
 # Akima 4-secant computation with wrap-aware secant access. Dispatches via
 # `_periodic_secant` so inclusive (m_n = m_1 wrap, mod1 j n-1) and exclusive
 # (m_n = seam virtual, mod1 j n) both work with one body.
 @inline function _akima_local_4secant_periodic(x, y, i::Int, n::Int, bc::PeriodicBC)
     @inline _ws(j) = _periodic_secant(x, y, j, n, bc)
+    return _akima_weighted_slope(_ws(i - 2), _ws(i - 1), _ws(i), _ws(i + 1))
+end
+
+@inline function _akima_local_4secant_periodic(::Type{Tw}, x, y, i::Int, n::Int, bc::PeriodicBC) where {Tw}
+    @inline _ws(j) = _periodic_secant(Tw, x, y, j, n, bc)
     return _akima_weighted_slope(_ws(i - 2), _ws(i - 1), _ws(i), _ws(i + 1))
 end
 
@@ -246,6 +390,37 @@ end
     #   m[-1]  = 2*m[0] - m[1]  = 3*m[1] - 2*m[2]
     #   m[n]   = 2*m[n-1] - m[n-2]
     #   m[n+1] = 2*m[n] - m[n-1] = 3*m[n-1] - 2*m[n-2]
+
+    nm1 = n - 1  # last valid secant index
+
+    @inline function _safe_secant(j)
+        if 1 <= j <= nm1
+            return _secant(j)
+        elseif j == 0
+            return 2 * _secant(1) - _secant(2)
+        elseif j == -1
+            m1 = _secant(1)
+            m2 = _secant(2)
+            return 3 * m1 - 2 * m2
+        elseif j == nm1 + 1  # n
+            return 2 * _secant(nm1) - _secant(nm1 - 1)
+        elseif j == nm1 + 2  # n+1
+            m_last = _secant(nm1)
+            m_prev = _secant(nm1 - 1)
+            return 3 * m_last - 2 * m_prev
+        else
+            error("_safe_secant: j=$j out of expected range [-1, $(nm1 + 2)] for n=$(nm1 + 1)")
+        end
+    end
+
+    return _akima_weighted_slope(
+        _safe_secant(i - 2), _safe_secant(i - 1), _safe_secant(i), _safe_secant(i + 1)
+    )
+end
+
+# Width-first NoBC variant — same virtual-secant extrapolation, secants at `Tw`.
+@inline function _akima_local_4secant(::Type{Tw}, x::AbstractVector, y::AbstractVector, i::Int, n::Int) where {Tw}
+    @inline _secant(j) = _forward_secant(Tw, x, y, j)
 
     nm1 = n - 1  # last valid secant index
 

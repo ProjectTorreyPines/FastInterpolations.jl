@@ -188,6 +188,29 @@ end
 @inline _get_h(::AbstractVector, ::Int, xL::Real, xR::Real) = xR - xL
 @inline _get_inv_h(::AbstractVector, ::Int, xL::Real, xR::Real) = inv(xR - xL)
 
+# ── Width-first forms: `_get_*(Tw, x, i)` ────────────────────────────────────
+# `Tw` = value-matched coordinate width, computed ONCE at the caller's surface
+# (`_promote_grid_float(Tg, Tv)`). Raw axes difference in their OWN eltype first
+# (Int spans are exact; coordinates may exceed `Tw`'s ulp, so convert the SPAN,
+# never the endpoints), then divide — the reciprocal is BORN at `Tw`: no
+# `inv(Int)::Float64` minting beside narrower data. Wrapped axes (rows below and
+# in cached_range.jl) reuse their cached reciprocal; the convert is a no-op once
+# the axis is value-matched. `_get_h` needs no raw/wrapped split — converting
+# the span is exact either way, and the inner call dispatches to the cache.
+@inline Base.@propagate_inbounds _get_h(::Type{Tw}, x::AbstractVector, i::Int) where {Tw} =
+    convert(Tw, _get_h(x, i))
+@inline Base.@propagate_inbounds _get_inv_h(::Type{Tw}, x::AbstractVector, i::Int) where {Tw} =
+    inv(_get_h(Tw, x, i))
+@inline Base.@propagate_inbounds _get_inv_2cell(::Type{Tw}, x::AbstractVector, i::Int) where {Tw} =
+    @inbounds inv(convert(Tw, x[i + 1] - x[i - 1]))
+
+# Dispatch shields — `_CachedVector <: AbstractVector` must keep its cached
+# reciprocal (width-convert the cached value instead of re-dividing).
+@inline Base.@propagate_inbounds _get_inv_h(::Type{Tw}, x::_CachedVector, i::Int) where {Tw} =
+    convert(_promote_eltype(_inv_op, Tw), _get_inv_h(x, i))
+@inline Base.@propagate_inbounds _get_inv_2cell(::Type{Tw}, x::_CachedVector, i::Int) where {Tw} =
+    @inbounds inv(convert(Tw, x.h[i - 1] + x.h[i]))
+
 # Persistent axis wrapping is split into two stages (see `periodic_axis.jl`):
 #   - outer surface API: `_cache_axis(x, bc)` — bc-aware wrap, zero-copy
 #     of buffer (Vector → `_CachedVector`, Range → `_CachedRange`,

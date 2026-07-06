@@ -1,5 +1,5 @@
 # Does the FI GriddedQuery path match the hand-rolled anchor baseline speed?
-# All Float64, in the worktree env. Manual timing (no BenchmarkTools dep).
+# All Float64, in the worktree env. Manual timing throughout (no BenchmarkTools dep).
 import FastInterpolations as FI
 using FastInterpolations: GriddedQuery
 
@@ -68,12 +68,11 @@ report("256->1024 up", 256, 1024)
 report("512->768 up", 512, 768)
 
 # ── calibration + order-model verification ─────────────────────────────────
-using BenchmarkTools
 import FastInterpolations as FI
 using FastInterpolations: _axis_anchors, _pass_blend_dim2!, _pass_gather_dim1!,
     _gridded_dim2_first, LinearInterp, EvalValue
 
-function _bench_passes(TF, n1, n2, M, N)
+function _bench_passes(TF, n1, n2, M, N; reps = 50)
     A = rand(TF, n1, n2)
     itp = FI.linear_interp((TF.(1:n1), TF.(1:n2)), A; extrap = FI.ClampExtrap())
     tx = collect(range(TF(1), TF(n1), M)); ty = collect(range(TF(1), TF(n2), N))
@@ -81,11 +80,11 @@ function _bench_passes(TF, n1, n2, M, N)
     p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty, itp.extraps[2], 2)
     BA = Matrix{TF}(undef, n1, N); CA = Matrix{TF}(undef, M, N)
     BB = Matrix{TF}(undef, M, n2); CB = Matrix{TF}(undef, M, N)
-    tA = @belapsed (_pass_blend_dim2!($BA, $(itp.data), $p2); _pass_gather_dim1!($CA, $BA, $p1))
-    tB = @belapsed (_pass_gather_dim1!($BB, $(itp.data), $p1); _pass_blend_dim2!($CB, $BB, $p2))
+    tA = best(() -> (_pass_blend_dim2!(BA, itp.data, p2); _pass_gather_dim1!(CA, BA, p1)), reps)
+    tB = best(() -> (_pass_gather_dim1!(BB, itp.data, p1); _pass_blend_dim2!(CB, BB, p2)), reps)
     # per-element pass costs for calibration (blend cost from order A pass 1)
-    t_blend = @belapsed _pass_blend_dim2!($BA, $(itp.data), $p2)
-    t_gath = @belapsed _pass_gather_dim1!($CA, $BA, $p1)
+    t_blend = best(() -> _pass_blend_dim2!(BA, itp.data, p2), reps)
+    t_gath = best(() -> _pass_gather_dim1!(CA, BA, p1), reps)
     c_blend = t_blend * 1.0e9 / (n1 * N)
     c_gath = t_gath * 1.0e9 / (M * N)
     model_a = _gridded_dim2_first(n1, n2, M, N)

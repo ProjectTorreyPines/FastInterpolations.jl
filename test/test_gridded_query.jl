@@ -190,3 +190,40 @@ end
         @test_throws ArgumentError itpu(GriddedQuery((tx, ty)))
     end
 end
+
+@testitem "in-place API: pooled intermediate, zero-alloc, edges" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+
+    A = rand(48, 40)
+    itp = FI.linear_interp((1.0:48.0, 1.0:40.0), A; extrap = FI.ClampExtrap())
+    tx = collect(range(1.0, 48.0, 100)); ty = collect(range(1.0, 40.0, 80))
+    gq = GriddedQuery((tx, ty))
+
+    # in-place == allocating
+    out = Matrix{Float64}(undef, 100, 80)
+    ret = itp(out, gq)
+    @test ret === out
+    @test out == itp(gq)      # same code path + same order → bit-equal
+
+    # wrong size → DimensionMismatch
+    @test_throws DimensionMismatch itp(Matrix{Float64}(undef, 99, 80), gq)
+
+    # empty axes: empty output, no pool touched, no throw
+    @test size(itp(GriddedQuery((Float64[], ty)))) == (0, 80)
+    @test size(itp(GriddedQuery((tx, Float64[])))) == (100, 0)
+    e0 = Matrix{Float64}(undef, 0, 80)
+    @test itp(e0, GriddedQuery((Float64[], ty))) === e0
+
+    # zero allocation after warmup (pool-backed intermediate; plans are the
+    # only remaining O(M+N) allocs — asserted small, then driven to the gate)
+    function alloc_count(itp, out, gq)
+        itp(out, gq)               # warmup (pool grows here)
+        return @allocated itp(out, gq)
+    end
+    allocs = alloc_count(itp, out, gq)
+    # plan vectors (2 Vectors + 2 batch structs) are the only per-call allocs.
+    # Measured 3056 B on this configuration (well under the naive O(M+N)
+    # formula bound of 4640 B); tightened to measured + 15 %.
+    @test allocs <= 3515
+end

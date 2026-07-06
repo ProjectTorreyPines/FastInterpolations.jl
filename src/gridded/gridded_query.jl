@@ -94,25 +94,37 @@ end
 # Each pass resolves one axis's anchors once and reuses them across the grid.
 # The cost model picks which axis to fold first — the intermediate's shape
 # (n1×N vs M×n2) drives total work; both orders are mathematically equivalent.
-function _gridded_linear_2d(itp::LinearInterpolantND{Tg, Tv, 2}, tx, ty) where {Tg, Tv}
+# Pooled two-pass core. `@with_pool` scopes the intermediate; the pass kernels
+# stay pool-agnostic (hetero `_axis_window_pooled` convention). The
+# intermediate is kept in the promoted eltype so narrowing into a user `out`
+# happens exactly once (single-quantization contract).
+@with_pool pool function _gridded_linear_2d!(
+        out::AbstractMatrix,
+        itp::LinearInterpolantND{Tg, Tv, 2},
+        tx::AbstractVector,
+        ty::AbstractVector
+    ) where {Tg, Tv}
     A = itp.data
     n1, n2 = size(A)
     M = length(tx)
     N = length(ty)
+    size(out) == (M, N) || throw(
+        DimensionMismatch("output size $(size(out)) ≠ query size ($M, $N)")
+    )
+    (M == 0 || N == 0) && return out
     p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
     p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty, itp.extraps[2], 2)
-    Tout = _gridded_out_eltype(itp, tx, ty)
-    C = Matrix{Tout}(undef, M, N)
+    Tmid = _gridded_out_eltype(itp, tx, ty)
     if _gridded_dim2_first(n1, n2, M, N)
-        B = Matrix{Tout}(undef, n1, N)
+        B = acquire!(pool, Tmid, n1, N)
         _pass_blend_dim2!(B, A, p2)
-        _pass_gather_dim1!(C, B, p1)
+        _pass_gather_dim1!(out, B, p1)
     else
-        B = Matrix{Tout}(undef, M, n2)
+        B = acquire!(pool, Tmid, M, n2)
         _pass_gather_dim1!(B, A, p1)
-        _pass_blend_dim2!(C, B, p2)
+        _pass_blend_dim2!(out, B, p2)
     end
-    return C
+    return out
 end
 
 # ---- supported-extrap gate ---------------------------------------------------
@@ -133,12 +145,23 @@ end
 # ---- dispatch --------------------------------------------------------------
 """
     (itp::LinearInterpolantND{Tg,Tv,2})(gq::GriddedQuery)
+    (itp::LinearInterpolantND{Tg,Tv,2})(out::AbstractMatrix, gq::GriddedQuery)
 
-Evaluate a 2-D linear interpolant on a rectilinear grid of target coordinates,
-returning an `(length(gq.axes[1]) × length(gq.axes[2]))` array. Separable: each
-axis's weights are resolved once and reused across the grid.
+Evaluate a 2-D linear interpolant at every combination of `gq.axes`
+coordinates — separable: each axis's anchors are resolved once and reused
+across the grid. The 2-arg form writes into `out` (FI batch convention) with
+a pooled intermediate.
 """
 function (itp::LinearInterpolantND{Tg, Tv, 2})(gq::GriddedQuery{<:Tuple{Any, Any}}) where {Tg, Tv}
     _gridded_extrap_guard(itp.extraps)
-    return _gridded_linear_2d(itp, gq.axes[1], gq.axes[2])
+    tx, ty = gq.axes
+    out = Matrix{_gridded_out_eltype(itp, tx, ty)}(undef, length(tx), length(ty))
+    return _gridded_linear_2d!(out, itp, tx, ty)
+end
+function (itp::LinearInterpolantND{Tg, Tv, 2})(
+        out::AbstractMatrix,
+        gq::GriddedQuery{<:Tuple{Any, Any}}
+    ) where {Tg, Tv}
+    _gridded_extrap_guard(itp.extraps)
+    return _gridded_linear_2d!(out, itp, gq.axes[1], gq.axes[2])
 end

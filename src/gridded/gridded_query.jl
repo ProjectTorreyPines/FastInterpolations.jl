@@ -45,14 +45,6 @@ GriddedQuery(axes::AbstractVector...) = GriddedQuery(axes)
 Base.size(gq::GriddedQuery) = map(length, gq.axes)
 Base.ndims(::GriddedQuery{T}) where {T} = fieldcount(T)
 
-# ---- per-axis anchor resolution -------------------------------------------
-# ClampExtrap freezes an OOB query at the boundary node — clamp the weight to
-# [0,1] (the `_anchor_loc` boundary interval + α∈[0,1] reproduces the clamp).
-# ExtendExtrap keeps the (out-of-range) weight → linear extrapolation.
-@inline _resolve_alpha(α, ::ClampExtrap) = clamp(α, zero(α), one(α))
-@inline _resolve_alpha(α, ::ExtendExtrap) = α
-@inline _resolve_alpha(α, ::AbstractExtrap) = α
-
 """
     _axis_anchors(g, t, ex, [searcher]) -> (idx::Vector{Int}, α::Vector)
 

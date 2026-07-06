@@ -289,3 +289,8 @@ eval_type(itp_c, Float64)  # ComplexF64
 ```
 """
 @inline eval_type(::AbstractInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} = promote_type(Tv, Tq)
+
+# Op-aware axis anchor family — retained per-axis (grid × query) resolution artifacts
+# for gridded/separable evaluation. Concrete types live with their methods
+# (src/gridded/axis_anchor.jl). Design: claudedocs/design/2026-07-04-gridded-axisgeom-2d-linear-spec.md.
+abstract type _AbstractAxisAnchor end

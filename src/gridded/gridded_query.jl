@@ -49,36 +49,68 @@ Base.ndims(::GriddedQuery{T}) where {T} = fieldcount(T)
 @inline _gridded_out_eltype(::LinearInterpolantND{Tg, Tv, 2}, tx, ty) where {Tg, Tv} =
     _promote_eltype(_interp_op, Tg, Tv, promote_type(eltype(tx), eltype(ty)))
 
+# ---- pass kernels (pool-agnostic pure functions; hetero convention) --------
+# Contiguous column blend resolving axis 2: pure AXPY over stride-1 columns.
+function _pass_blend_dim2!(dest::AbstractMatrix, src::AbstractMatrix, plan::_AxisAnchorBatch)
+    n1 = size(src, 1)
+    anchors = plan.anchors
+    @inbounds for j in eachindex(anchors)
+        a = anchors[j]
+        jl = a.idx; jr = jl + 1
+        for r in 1:n1
+            dest[r, j] = _eval_anchor(a, src[r, jl], src[r, jr])
+        end
+    end
+    return dest
+end
+
+# Gather resolving axis 1: j outer keeps src columns hot; the two taps
+# (idx, idx+1) are memory-adjacent → load-pair on ARM, no hardware gather needed.
+function _pass_gather_dim1!(dest::AbstractMatrix, src::AbstractMatrix, plan::_AxisAnchorBatch)
+    anchors = plan.anchors
+    @inbounds for j in 1:size(src, 2)
+        for i in eachindex(anchors)
+            a = anchors[i]
+            il = a.idx
+            dest[i, j] = _eval_anchor(a, src[il, j], src[il + 1, j])
+        end
+    end
+    return dest
+end
+
+# ---- pass-order cost model --------------------------------------------------
+# Measured per-element seeds (Apple Silicon, predecessor investigation); the
+# benchmark suite re-calibrates. Order A = blend dim2 first (n1×N mid);
+# order B = gather dim1 first (M×n2 mid).
+const _GRIDDED_C_BLEND = 0.2
+const _GRIDDED_C_GATHER = 0.65
+@inline function _gridded_dim2_first(n1::Int, n2::Int, M::Int, N::Int)
+    cost_a = n1 * N * _GRIDDED_C_BLEND + M * N * _GRIDDED_C_GATHER
+    cost_b = M * n2 * _GRIDDED_C_GATHER + M * N * _GRIDDED_C_BLEND
+    return cost_a <= cost_b
+end
+
 # ---- 2D linear separable core ---------------------------------------------
-# pass 1 resizes dim2 (columns): contiguous-column AXPY, converts eltype once.
-# pass 2 resizes dim1 (rows): reuses the shared 1D kernel per output element.
-# Intermediate `B` is kept in the promoted (float) eltype so the (optional) final
-# narrowing happens once — matching a single-quantization tensor eval.
+# Each pass resolves one axis's anchors once and reuses them across the grid.
+# The cost model picks which axis to fold first — the intermediate's shape
+# (n1×N vs M×n2) drives total work; both orders are mathematically equivalent.
 function _gridded_linear_2d(itp::LinearInterpolantND{Tg, Tv, 2}, tx, ty) where {Tg, Tv}
     A = itp.data
-    n1 = size(A, 1)
+    n1, n2 = size(A)
     M = length(tx)
     N = length(ty)
     p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
     p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty, itp.extraps[2], 2)
     Tout = _gridded_out_eltype(itp, tx, ty)
-
-    B = Matrix{Tout}(undef, n1, N)                      # dim2-resolved (float mid)
-    @inbounds for j in 1:N
-        a = p2.anchors[j]
-        jl = a.idx; jr = jl + 1
-        for r in 1:n1
-            B[r, j] = _eval_anchor(a, A[r, jl], A[r, jr])
-        end
-    end
-
-    C = Matrix{Tout}(undef, M, N)                       # dim1-resolved (final)
-    @inbounds for j in 1:N
-        for i in 1:M
-            a = p1.anchors[i]
-            il = a.idx
-            C[i, j] = _eval_anchor(a, B[il, j], B[il + 1, j])
-        end
+    C = Matrix{Tout}(undef, M, N)
+    if _gridded_dim2_first(n1, n2, M, N)
+        B = Matrix{Tout}(undef, n1, N)
+        _pass_blend_dim2!(B, A, p2)
+        _pass_gather_dim1!(C, B, p1)
+    else
+        B = Matrix{Tout}(undef, M, n2)
+        _pass_gather_dim1!(B, A, p1)
+        _pass_blend_dim2!(C, B, p2)
     end
     return C
 end

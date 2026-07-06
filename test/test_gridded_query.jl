@@ -125,3 +125,41 @@ end
     ref = [itp2((x, y)) for x in tx, y in ty]
     @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
 end
+
+@testitem "pass kernels + cost-model order" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: _axis_anchors, _pass_blend_dim2!, _pass_gather_dim1!,
+        _gridded_dim2_first, LinearInterp, EvalValue
+
+    A = rand(24, 20)
+    itp = FI.linear_interp((1.0:24.0, 1.0:20.0), A; extrap = FI.ClampExtrap())
+    tx = collect(range(1.0, 24.0, 37)); ty = collect(range(1.0, 20.0, 31))
+    M, N = length(tx), length(ty)
+    p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
+    p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty, itp.extraps[2], 2)
+    ref = [itp((x, y)) for x in tx, y in ty]
+
+    # order A: blend dim2 (24×31 mid) then gather dim1
+    B1 = Matrix{Float64}(undef, 24, N)
+    CA = Matrix{Float64}(undef, M, N)
+    _pass_gather_dim1!(CA, _pass_blend_dim2!(B1, A, p2), p1)
+    # order B: gather dim1 (37×20 mid) then blend dim2
+    B2 = Matrix{Float64}(undef, M, 20)
+    CB = Matrix{Float64}(undef, M, N)
+    _pass_blend_dim2!(CB, _pass_gather_dim1!(B2, A, p1), p2)
+
+    # both orders are mathematically equivalent — machine-eps, NOT bit-identity
+    @test all(isapprox.(CA, ref; rtol = 1.0e-14, atol = 1.0e-14))
+    @test all(isapprox.(CB, ref; rtol = 1.0e-14, atol = 1.0e-14))
+    @test all(isapprox.(CA, CB; rtol = 1.0e-14, atol = 1.0e-14))
+
+    # the production entry agrees with both
+    C = itp(GriddedQuery((tx, ty)))
+    @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
+
+    # cost model sanity: strong upsampling → dim1-first (gather on the SMALL
+    # extent); strong downsampling → dim2-first
+    @test _gridded_dim2_first(512, 512, 64, 64) == true     # down: gather cost M·N small...
+    @test _gridded_dim2_first(64, 64, 512, 512) == false    # up: gather on M·n2=512·64 < M·N·c_g
+end

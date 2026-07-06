@@ -58,3 +58,70 @@
     @test !occursin("jl_box", llP)                        # no boxing
     @test abs(count('\n', llP) - count('\n', llC)) <= 2   # same instruction count (± label noise)
 end
+
+@testitem "_AxisAnchorBatch: batch builder + identity flag" begin
+    using FastInterpolations
+    using FastInterpolations: _axis_anchors, _AxisAnchorBatch, _LinearAnchor,
+        LinearInterp, EvalValue
+
+    g = collect(range(0.0, 1.0, 11))     # nodes 0.0, 0.1, ..., 1.0
+
+    # general targets
+    t = [0.05, 0.55, 0.999]
+    b = _axis_anchors(LinearInterp(), EvalValue(), g, t, ExtendExtrap(), 1)
+    @test b isa _AxisAnchorBatch
+    @test length(b) == 3
+    @test eltype(b.anchors) <: _LinearAnchor{Float64, EvalValue}
+    @test b.anchors[1].idx == 1 && b.anchors[1].alpha ≈ 0.5
+    @test b.identity == false
+
+    # identity: targets exactly the grid nodes → every (idx == k, alpha == 0)
+    bid = _axis_anchors(LinearInterp(), EvalValue(), g, copy(g), ClampExtrap(), 1)
+    @test bid.identity == true
+    # same nodes but different length → NOT identity (elision needs M == n)
+    bpart = _axis_anchors(LinearInterp(), EvalValue(), g, g[1:5], ClampExtrap(), 1)
+    @test bpart.identity == false
+
+    # Float32 grid+targets stay Float32
+    g32 = collect(Float32.(g)); t32 = Float32[0.05, 0.55]
+    b32 = _axis_anchors(LinearInterp(), EvalValue(), g32, t32, ClampExtrap(), 1)
+    @test eltype(b32.anchors) <: _LinearAnchor{Float32, EvalValue}
+end
+
+@testitem "GriddedQuery correctness matrix vs point-wise" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+
+    # {F64, F32} × {Clamp, Extend} × {up, down, mixed, non-monotonic, M == 1}
+    # (NoExtrap joins the matrix in the NoExtrap task.)
+    function check(itp, tx, ty; rtol = 1.0e-14, atol = 1.0e-14)
+        C = itp(GriddedQuery((tx, ty)))
+        ref = [itp((x, y)) for x in tx, y in ty]
+        @test eltype(C) == typeof(itp((first(tx), first(ty))))   # output-eltype pin
+        @test size(C) == (length(tx), length(ty))
+        @test all(isapprox.(C, ref; rtol, atol))
+    end
+
+    for TF in (Float64, Float32), ex in (ClampExtrap(), ExtendExtrap())
+        rt = TF == Float64 ? 1.0e-14 : 2.0f-6
+        A = rand(TF, 32, 24)
+        itp = FI.linear_interp((collect(TF, 1:32), collect(TF, 1:24)), A; extrap = ex)
+        up = (range(TF(1), TF(32), 57), range(TF(1), TF(24), 41))
+        down = (range(TF(1), TF(32), 13), range(TF(1), TF(24), 9))
+        mixed = (range(TF(1), TF(32), 57), range(TF(1), TF(24), 9))
+        oob = (range(TF(0), TF(33), 20), range(TF(0.5), TF(24.5), 20))  # extrap exercise
+        nonmono = (TF[7.3, 2.1, 30.9, 2.1], TF[11.0, 3.5])              # unsorted + repeat
+        single = (TF[15.5], TF[8.25])                                    # M == 1
+        for (tx, ty) in (up, down, mixed, oob, nonmono, single)
+            check(itp, collect(tx), collect(ty); rtol = rt, atol = rt)
+        end
+    end
+
+    # mixed per-axis extraps (Clamp × Extend)
+    A = rand(16, 16)
+    itp2 = FI.linear_interp((1.0:16.0, 1.0:16.0), A; extrap = (ClampExtrap(), ExtendExtrap()))
+    tx = collect(range(0.0, 17.0, 21)); ty = collect(range(0.0, 17.0, 21))
+    C = itp2(GriddedQuery((tx, ty)))
+    ref = [itp2((x, y)) for x in tx, y in ty]
+    @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
+end

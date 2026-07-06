@@ -68,3 +68,52 @@ Scalar builder for the Linear × EvalValue tier: geometry from an
     α = Tα(_alpha_of(loc.xq, loc.xL, loc.xR, g))
     return _LinearAnchor{Tα, EvalValue}(loc.idx, (alpha = _resolve_alpha(α, ex),))
 end
+
+# ---- batch plan: one per query axis ----------------------------------------
+"""
+    _AxisAnchorBatch{A}
+
+Per-axis gridded plan: AoS vector of axis anchors (both pass shapes consume
+`(idx, payload)` together, one element per fiber — nothing vectorizes ACROSS
+plan entries, and inline isbits AoS keeps both fields on one cache line).
+`identity == true` ⟺ the plan maps node k → node k for every k with zero
+weight AND covers the full axis — the pass may then be elided entirely.
+"""
+struct _AxisAnchorBatch{A <: _AbstractAxisAnchor}
+    anchors::Vector{A}
+    identity::Bool
+end
+Base.length(b::_AxisAnchorBatch) = length(b.anchors)
+
+"""
+    _axis_anchors(m, op, g, t, ex, dim, [searcher]) -> _AxisAnchorBatch
+
+Resolve every target coordinate in `t` against grid `g` once (the O(M) plan
+that O(M·N) passes reuse). `dim` names the axis in error messages.
+"""
+function _axis_anchors(
+        m::LinearInterp,
+        op::EvalValue,
+        g::AbstractVector,
+        t::AbstractVector,
+        ex::AbstractExtrap,
+        dim::Int,
+        searcher::Searcher = DEFAULT_SEARCHER
+    )
+    Tα = float(promote_type(eltype(g), eltype(t)))
+    A = _LinearAnchor{Tα, EvalValue, @NamedTuple{alpha::Tα}}
+    anchors = Vector{A}(undef, length(t))
+    is_identity = length(t) == length(g)
+    k = 0
+    @inbounds for tk in eachindex(t)
+        k += 1
+        loc = _anchor_loc(g, t[tk], false, searcher)
+        a = _axis_anchor(m, op, loc, g, ex, Tα)
+        anchors[k] = a
+        # node k is exactly represented either as (idx=k, alpha=0) or, for the
+        # last node, as (idx=k-1, alpha=1) — `_anchor_loc` clamps `idx` to
+        # `1:(n-1)`, so the right edge of the last interval reaches node n.
+        is_identity &= ((a.idx == k) & iszero(a.alpha)) | ((a.idx + 1 == k) & isone(a.alpha))
+    end
+    return _AxisAnchorBatch(anchors, is_identity)
+end

@@ -45,29 +45,9 @@ GriddedQuery(axes::AbstractVector...) = GriddedQuery(axes)
 Base.size(gq::GriddedQuery) = map(length, gq.axes)
 Base.ndims(::GriddedQuery{T}) where {T} = fieldcount(T)
 
-"""
-    _axis_anchors(g, t, ex, [searcher]) -> (idx::Vector{Int}, α::Vector)
-
-Resolve every target coordinate in `t` against grid `g` under extrap `ex` to a
-linear anchor `(idx, α)` with right node `idx+1`. Computed once per axis; reused
-across the whole grid.
-"""
-function _axis_anchors(
-        g::AbstractVector, t::AbstractVector, ex::AbstractExtrap,
-        searcher::Searcher = DEFAULT_SEARCHER
-    )
-    M = length(t)
-    Tα = float(promote_type(eltype(g), eltype(t)))
-    idxs = Vector{Int}(undef, M)
-    αs = Vector{Tα}(undef, M)
-    @inbounds for k in 1:M
-        loc = _anchor_loc(g, t[k], false, searcher)
-        α = _alpha_of(loc.xq, loc.xL, loc.xR, g)
-        idxs[k] = loc.idx
-        αs[k] = _resolve_alpha(Tα(α), ex)
-    end
-    return idxs, αs
-end
+# Output eltype: matches point-wise scalar eval's promotion (pinned by test).
+@inline _gridded_out_eltype(::LinearInterpolantND{Tg, Tv, 2}, tx, ty) where {Tg, Tv} =
+    _promote_eltype(_interp_op, Tg, Tv, promote_type(eltype(tx), eltype(ty)))
 
 # ---- 2D linear separable core ---------------------------------------------
 # pass 1 resizes dim2 (columns): contiguous-column AXPY, converts eltype once.
@@ -79,23 +59,25 @@ function _gridded_linear_2d(itp::LinearInterpolantND{Tg, Tv, 2}, tx, ty) where {
     n1 = size(A, 1)
     M = length(tx)
     N = length(ty)
-    ix, αx = _axis_anchors(itp.grids[1], tx, itp.extraps[1])
-    iy, αy = _axis_anchors(itp.grids[2], ty, itp.extraps[2])
-    Tout = _promote_eltype(_interp_op, Tg, Tv, eltype(tx))
+    p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
+    p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty, itp.extraps[2], 2)
+    Tout = _gridded_out_eltype(itp, tx, ty)
 
-    B = Matrix{Tout}(undef, n1, N)                      # dim2-resized (float mid)
+    B = Matrix{Tout}(undef, n1, N)                      # dim2-resolved (float mid)
     @inbounds for j in 1:N
-        jl = iy[j]; jr = jl + 1; a = αy[j]
+        a = p2.anchors[j]
+        jl = a.idx; jr = jl + 1
         for r in 1:n1
-            B[r, j] = _linear_value_blend(a, A[r, jl], A[r, jr])
+            B[r, j] = _eval_anchor(a, A[r, jl], A[r, jr])
         end
     end
 
-    C = Matrix{Tout}(undef, M, N)                       # dim1-resized (final)
+    C = Matrix{Tout}(undef, M, N)                       # dim1-resolved (final)
     @inbounds for j in 1:N
         for i in 1:M
-            il = ix[i]; ir = il + 1; a = αx[i]
-            C[i, j] = _linear_value_blend(a, B[il, j], B[ir, j])
+            a = p1.anchors[i]
+            il = a.idx
+            C[i, j] = _eval_anchor(a, B[il, j], B[il + 1, j])
         end
     end
     return C

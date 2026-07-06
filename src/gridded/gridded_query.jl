@@ -115,6 +115,21 @@ function _gridded_linear_2d(itp::LinearInterpolantND{Tg, Tv, 2}, tx, ty) where {
     return C
 end
 
+# ---- supported-extrap gate ---------------------------------------------------
+# Wrap needs seam-aware _IdxStencil{2} anchors; Fill needs per-axis OOB masks —
+# both are roadmap items, rejected loudly rather than silently mis-evaluated.
+@inline _gridded_extrap_guard1(::Union{ClampExtrap, ExtendExtrap, NoExtrap}) = nothing
+@inline _gridded_extrap_guard1(ex::AbstractExtrap) = throw(
+    ArgumentError(
+        "$(typeof(ex)) is not yet supported for GriddedQuery " *
+            "(supported: ClampExtrap, ExtendExtrap, NoExtrap)"
+    )
+)
+@inline function _gridded_extrap_guard(extraps::Tuple)
+    foreach(_gridded_extrap_guard1, extraps)
+    return nothing
+end
+
 # ---- dispatch --------------------------------------------------------------
 """
     (itp::LinearInterpolantND{Tg,Tv,2})(gq::GriddedQuery)
@@ -123,5 +138,7 @@ Evaluate a 2-D linear interpolant on a rectilinear grid of target coordinates,
 returning an `(length(gq.axes[1]) × length(gq.axes[2]))` array. Separable: each
 axis's weights are resolved once and reused across the grid.
 """
-(itp::LinearInterpolantND{Tg, Tv, 2})(gq::GriddedQuery{<:Tuple{Any, Any}}) where {Tg, Tv} =
-    _gridded_linear_2d(itp, gq.axes[1], gq.axes[2])
+function (itp::LinearInterpolantND{Tg, Tv, 2})(gq::GriddedQuery{<:Tuple{Any, Any}}) where {Tg, Tv}
+    _gridded_extrap_guard(itp.extraps)
+    return _gridded_linear_2d(itp, gq.axes[1], gq.axes[2])
+end

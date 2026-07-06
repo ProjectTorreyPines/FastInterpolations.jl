@@ -163,3 +163,30 @@ end
     @test _gridded_dim2_first(512, 512, 64, 64) == true     # down: gather cost M·N small...
     @test _gridded_dim2_first(64, 64, 512, 512) == false    # up: gather on M·n2=512·64 < M·N·c_g
 end
+
+@testitem "NoExtrap validation + unsupported-extrap guards" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+
+    A = rand(16, 12)
+    # NoExtrap: in-domain == point-wise; OOB throws BEFORE any work, naming the axis
+    itp = FI.linear_interp((1.0:16.0, 1.0:12.0), A; extrap = FI.NoExtrap())
+    tx = collect(range(1.0, 16.0, 21)); ty = collect(range(1.0, 12.0, 17))
+    C = itp(GriddedQuery((tx, ty)))
+    ref = [itp((x, y)) for x in tx, y in ty]
+    @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
+    @test_throws DomainError itp(GriddedQuery(([0.5, 8.0], ty)))          # axis 1 OOB
+    @test_throws DomainError itp(GriddedQuery((tx, [1.0, 12.001])))       # axis 2 OOB
+    err = try
+        itp(GriddedQuery(([0.5], ty)))
+    catch e
+        e
+    end
+    @test err isa DomainError && occursin("axis 1", sprint(showerror, err))
+
+    # Wrap / Fill: explicit ArgumentError at dispatch (both call forms)
+    for ex in (FI.WrapExtrap(), FI.FillExtrap(NaN))
+        itpu = FI.linear_interp((1.0:16.0, 1.0:12.0), A; extrap = ex)
+        @test_throws ArgumentError itpu(GriddedQuery((tx, ty)))
+    end
+end

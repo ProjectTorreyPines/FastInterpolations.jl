@@ -85,6 +85,13 @@ struct _AxisAnchorBatch{A <: _AbstractAxisAnchor}
 end
 Base.length(b::_AxisAnchorBatch) = length(b.anchors)
 
+# ---- NoExtrap: per-axis domain validation at plan build ---------------------
+# Fails BEFORE any O(M·N) buffer work; names the axis for diagnosis.
+@inline _guard_axis_state(::NoExtrap, state::UInt8, xq, dim::Int) =
+    state == IN_DOMAIN ||
+    throw(DomainError(xq, "GriddedQuery axis $dim: coordinate outside grid domain (NoExtrap)"))
+@inline _guard_axis_state(::AbstractExtrap, state::UInt8, xq, dim::Int) = true
+
 """
     _axis_anchors(m, op, g, t, ex, dim, [searcher]) -> _AxisAnchorBatch
 
@@ -108,6 +115,7 @@ function _axis_anchors(
     @inbounds for tk in eachindex(t)
         k += 1
         loc = _anchor_loc(g, t[tk], false, searcher)
+        _guard_axis_state(ex, loc.state, t[tk], dim)
         a = _axis_anchor(m, op, loc, g, ex, Tα)
         anchors[k] = a
         # node k is exactly represented either as (idx=k, alpha=0) or, for the

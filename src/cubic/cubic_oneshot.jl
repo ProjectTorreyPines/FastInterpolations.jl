@@ -85,8 +85,11 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
     @assert length(y) == length(x) "y length must match x"
     @assert length(output) == length(x_query) "output length must match x_query"
 
-    # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
-    cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
+    # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally).
+    # Value-matched `Tg_eff` (Int grid + Float32 data → Float32) selects the data-aware
+    # cache bank so `cache.x` — and thus the solve — is at the value width.
+    Tg_eff = _promote_grid_float(Tg, eltype(y))
+    cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg), Tg_eff)
     Tz = _promote_eltype(_coeff_op, eltype(cache.x), eltype(y))
     z = acquire!(pool, Tz, length(y))
     # Solve uses original BC for proper RHS materialization
@@ -116,8 +119,11 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq <: Real, L <: PointBC, R <: PointBC, O <: AbstractEvalOp, S <: Searcher}
-    # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
-    cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
+    # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally).
+    # Value-matched `Tg_eff` selects the data-aware cache bank (Int grid + Float32
+    # data → Float32 cache), so scalar ≡ batch ≡ persistent at the value width.
+    Tg_eff = _promote_grid_float(Tg, Tv)
+    cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg), Tg_eff)
     Tz = _promote_eltype(_coeff_op, eltype(cache.x), Tv)
     tmp_z = acquire!(pool, Tz, length(y))
     # Solve uses original BC for proper RHS materialization
@@ -157,7 +163,10 @@ lifetime). `y_eff` returned for caller convenience — same object as `y`
 
     # Build cache on the user's grid (BC-aware: `:inclusive` user length n+1 OR
     # `:exclusive` user length n → wrapped axis virtual n+1). Zero-copy.
-    cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
+    # Value-matched `Tg_eff` selects the data-aware cache bank (Int grid + Float32
+    # data → Float32 cache).
+    Tg_eff = _promote_grid_float(Tg, Tv)
+    cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg), Tg_eff)
     # `_resolve_data` handles the per-bc endpoint validation (`:inclusive`
     # checks `y[1] ≈ y[end]`; `:exclusive` is a no-op wrap to length n+1).
     y_eff = _resolve_data(y, bc)

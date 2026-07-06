@@ -309,14 +309,22 @@ end
         @test interp((x, y), data, q; method = (CubicInterp(), LinearInterp())) isa Float32
     end
 
-    @testset "warm zero-alloc (pooled arms)" begin
+    # Homogeneous arms are zero-alloc: the pooled PreCompute/linear wraps and — now
+    # that the inner 1D cubic value-matches raw Int axes (data-aware cache) — the
+    # homogeneous OnTheFly cubic collapse.
+    @testset "warm zero-alloc (homogeneous raw-grid arms)" begin
         @test _alloc_linear_int_f32_2d() <= ND_ALLOC_THRESHOLD
         @test _alloc_cubic_int_pre_f32_2d() <= ND_ALLOC_THRESHOLD
+        @test _alloc_cubic_int_otf_f32_2d() <= ND_ALLOC_THRESHOLD
     end
 
-    @testset "known heap-convert on the collapse bridge (RED until pooled)" begin
+    # The mixed-method hetero fallback still eagerly converts the grids via
+    # `_nd_promote_grids` (`_convert_grids_typed` → per-axis `Tg.(x)`, ~176 B on
+    # an Int Vector axis) BEFORE the OnTheFly collapse — a separate convert arm
+    # from the (deleted) `_bridge_axes_raw`. Making that dispatch pass raw grids
+    # (type-only promotion) is a follow-up beyond the cubic-cache scope.
+    @testset "mixed-method hetero fallback (RED until type-only promotion)" begin
         if ND_ALLOC_THRESHOLD == 0
-            @test_broken _alloc_cubic_int_otf_f32_2d() <= ND_ALLOC_THRESHOLD
             @test_broken _alloc_hetero_mixed_int_f32_2d() <= ND_ALLOC_THRESHOLD
         end
     end

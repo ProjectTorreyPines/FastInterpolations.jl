@@ -1261,23 +1261,6 @@ end
     return :(($(exprs...),))
 end
 
-# Raw-form bridge (hetero global-solve path): matching axes stay RAW (1D cache
-# identity); only float-mismatched axes convert. The branch is decided in the
-# GENERATOR — per-axis, from types alone. A generator runs in the world age of
-# this definition, so it must NOT call methods an extension defines later:
-# `float(::Type{Dual})` lands in ForwardDiff (world-age MethodError). Duck axes
-# satisfy the pure `Ti === Tg` identity when they match (`Tg` derives from their
-# own promote); `float` is only evaluated on Base numeric eltypes.
-@generated function _bridge_axes_raw(grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
-    exprs = map(1:N) do i
-        Ti = eltype(fieldtype(grids, i))
-        keep = Ti === Tg ||
-            (Ti <: Union{Integer, Rational, AbstractFloat} && float(Ti) === Tg)
-        keep ? :(grids[$i]) : :(_convert_grid(grids[$i], Tg))
-    end
-    return :(($(exprs...),))
-end
-
 # Width-typed reciprocal spans from search results (linear ND scalar one-shot).
 # Span-first via the width-first 5-arg `_get_inv_h` rows: raw axes difference in
 # their own eltype, convert the span once, divide at `Tg` — the reciprocal is

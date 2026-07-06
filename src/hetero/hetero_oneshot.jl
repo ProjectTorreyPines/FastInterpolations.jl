@@ -201,12 +201,14 @@ end
         )
     end
 
-    # Global-solve path: RAW-form grids — the inner 1D one-shots wrap `:exclusive` axes
-    # themselves (need user length n, not the wrapped virtual n+1). Only float-mismatched
-    # axes convert to `Tg` (Int grid + Float32 data); matching axes stay raw (1D cache identity).
-    grids_raw = _bridge_axes_raw(grids, Tg)  # @generated: per-axis raw/convert decided from types
+    # Global-solve path: grids straight through — the caller
+    # (`_interp_nd_oneshot_dispatch`) already promoted every axis to `Tg` via
+    # `_nd_promote_grids`, so no per-axis raw/convert split is needed here (the
+    # inner 1D one-shots wrap `:exclusive` axes themselves — user length n, not
+    # the wrapped virtual n+1). A future raw pass-through would move the promotion
+    # off the dispatch (type-only) and rely on the data-aware inner 1D caches.
     full_windows = map(Base.OneTo, size(data))
-    return _collapse_dims(Tr, data, grids_raw, methods, extraps_eff, q_eval, ops, searches, hints, full_windows)
+    return _collapse_dims(Tr, data, grids, methods, extraps_eff, q_eval, ops, searches, hints, full_windows)
 end
 
 # ========================================

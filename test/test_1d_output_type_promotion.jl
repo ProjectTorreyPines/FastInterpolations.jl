@@ -26,18 +26,11 @@
         expected = promote_type(Tg, Float32, Tq)
         g = gbuild()
         @testset "$(nameof(f)) $gname Tq=$Tq → $expected" begin
-            if f === cubic_interp && g isa Vector && Te === Int && expected !== Float64
-                # KNOWN-RED (follow-up): raw Int-VECTOR axes pass through untyped (the
-                # zero-alloc one-shot contract forbids converting them). All kernel/slope
-                # scalars are width-typed at the value-matched `Tw` (width-first
-                # `_get_inv_h(Tw, x, i)` / `_forward_secant(Tw, …)`), but cubic's spline
-                # cache is typed from the axis eltype alone — the data-aware cache key
-                # is a cache-policy change, deferred.
-                @test_broken f(g, data32, q) isa expected
-            else
-                @test f(g, data32, q) isa expected
-                @test (@inferred f(g, data32, q)) isa expected
-            end
+            # Every 1D one-shot value-matches: an Int-VECTOR axis beside Float32 data
+            # returns Float32. Cubic's spline cache is now data-aware (the eltype-aware
+            # bank routes Int + Float32 → a Float32 cache), so scalar ≡ batch ≡ persistent.
+            @test f(g, data32, q) isa expected
+            @test (@inferred f(g, data32, q)) isa expected
         end
     end
 

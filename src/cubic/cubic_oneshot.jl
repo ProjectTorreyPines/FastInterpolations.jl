@@ -245,14 +245,15 @@ In-place cubic spline interpolation with optional automatic caching.
         extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true,
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv}
     # Value-matched Tg: Int/OneTo grid + Float32 data → Float32 axis, so the spline
     # cache builds (and memoises — `_CachedRange` is isbits, objectid-deterministic)
     # at the value width instead of the blind Float64.
     x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     # No BC on Searcher: seam handled by axis-level dispatch on `cache.x` at eval.
-    searcher = _resolve_search(x, x_query, search, nothing)
+    searcher = _resolve_search(x, x_query, search, hint)
     # Periodic BC
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, deriv, searcher)
@@ -336,12 +337,13 @@ function cubic_interp(
         extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true,
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv}
     Tq = eltype(x_query)
     Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
     output = Vector{Tr}(undef, length(x_query))
-    cubic_interp!(output, x, y, x_query; bc, extrap, autocache, deriv, search)
+    cubic_interp!(output, x, y, x_query; bc, extrap, autocache, deriv, search, hint)
     return output
 end
 

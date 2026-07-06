@@ -64,7 +64,8 @@ function linear_interp!(
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -81,7 +82,7 @@ function linear_interp!(
     x_eff = _resolve_axis(x, bc, _promote_grid_float(eltype(x), eltype(y)))
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    searcher = _resolve_search(x_eff, x_targets, search, nothing)
+    searcher = _resolve_search(x_eff, x_targets, search, hint)
     return _linear_interp_loop!(output, x_eff, y_eff, x_targets, extrap_eff, deriv, searcher)
 end
 
@@ -349,12 +350,13 @@ function linear_interp(
         bc::AbstractBC = NoBC(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
     Tg = _promote_grid_float(eltype(x), eltype(y))
     T_out = _promote_eltype(_interp_op, Tg, eltype(y), eltype(x_targets))
     output = Vector{T_out}(undef, length(x_targets))
-    linear_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
+    linear_interp!(output, x, y, x_targets; bc, extrap, deriv, search, hint)
     return output
 end
 

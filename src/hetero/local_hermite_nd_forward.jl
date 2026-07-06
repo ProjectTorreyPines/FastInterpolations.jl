@@ -60,6 +60,29 @@ end
     return interp(grids, data; method = methods, kwargs...)
 end
 
+# N=1 collapse: a 1-axis grid tuple forwards to the native 1D pchip (skips the
+# HeteroInterpolantND wrapper entirely). Per-axis 1-tuple kwargs unwrap to scalar;
+# omitting `bc` lets the 1D NoBC() default apply. More specific than the `NTuple{N}`
+# forwarder above, so it only claims N=1.
+@inline pchip_interp(grids::Tuple{AbstractVector}, data::AbstractVector; kwargs...) =
+    pchip_interp(only(grids), data; _unwrap_nd_kwargs(values(kwargs))...)
+
+# N=1 scalar one-shot: bare scalar → scalar query `(q,)` → ND scalar one-shot
+# (scalar output, not `[val]`). See linear_nd_interpolant.jl.
+@inline pchip_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Real; kwargs...) =
+    pchip_interp(grids, data, (q,); kwargs...)
+
+# N=1 batch one-shot → lean 1D batch one-shot. See linear_nd_interpolant.jl.
+@inline pchip_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
+    pchip_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
+@inline pchip_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
+    pchip_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
+# Single-axis SoA `(xv,)` → 1D batch. See linear_nd_interpolant.jl.
+@inline pchip_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+    pchip_interp(only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline pchip_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+    pchip_interp!(output, only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
+
 @inline function pchip_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
@@ -106,6 +129,26 @@ end
     methods = _build_local_hermite_method_tuple(CardinalInterp, Val(N), bc, tension)
     return interp(grids, data; method = methods, kwargs...)
 end
+
+# N=1 collapse: forward to native 1D cardinal (`tension`/per-axis 1-tuple kwargs
+# unwrap to scalar). More specific than the `NTuple{N}` forwarder above.
+@inline cardinal_interp(grids::Tuple{AbstractVector}, data::AbstractVector; kwargs...) =
+    cardinal_interp(only(grids), data; _unwrap_nd_kwargs(values(kwargs))...)
+
+# N=1 scalar one-shot: bare scalar → scalar query `(q,)` → ND scalar one-shot.
+@inline cardinal_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Real; kwargs...) =
+    cardinal_interp(grids, data, (q,); kwargs...)
+
+# N=1 batch one-shot → lean 1D batch one-shot. See linear_nd_interpolant.jl.
+@inline cardinal_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
+    cardinal_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
+@inline cardinal_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
+    cardinal_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
+# Single-axis SoA `(xv,)` → 1D batch. See linear_nd_interpolant.jl.
+@inline cardinal_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+    cardinal_interp(only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline cardinal_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+    cardinal_interp!(output, only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
 
 @inline function cardinal_interp(
         grids::NTuple{N, AbstractVector},
@@ -155,6 +198,26 @@ end
     methods = _build_local_hermite_method_tuple(AkimaInterp, Val(N), bc)
     return interp(grids, data; method = methods, kwargs...)
 end
+
+# N=1 collapse: forward to native 1D akima (per-axis 1-tuple kwargs unwrap to
+# scalar). More specific than the `NTuple{N}` forwarder above.
+@inline akima_interp(grids::Tuple{AbstractVector}, data::AbstractVector; kwargs...) =
+    akima_interp(only(grids), data; _unwrap_nd_kwargs(values(kwargs))...)
+
+# N=1 scalar one-shot: bare scalar → scalar query `(q,)` → ND scalar one-shot.
+@inline akima_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Real; kwargs...) =
+    akima_interp(grids, data, (q,); kwargs...)
+
+# N=1 batch one-shot → lean 1D batch one-shot. See linear_nd_interpolant.jl.
+@inline akima_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
+    akima_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
+@inline akima_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
+    akima_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
+# Single-axis SoA `(xv,)` → 1D batch. See linear_nd_interpolant.jl.
+@inline akima_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+    akima_interp(only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline akima_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+    akima_interp!(output, only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
 
 @inline function akima_interp(
         grids::NTuple{N, AbstractVector},

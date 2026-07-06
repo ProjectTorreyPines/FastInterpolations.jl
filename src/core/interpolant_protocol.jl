@@ -24,6 +24,16 @@
 @inline _itp_extrap(itp::AbstractInterpolant1D) = itp.extrap
 @inline _itp_search(itp::AbstractInterpolant1D) = itp.search_policy
 
+# ── N=1 tuple-grid collapse: kwarg unwrapping ──
+# A 1-axis ND constructor `foo_interp((x,), y; ...)` and the 1D tuple-query shims
+# below both forward to the genuine 1D path. Per-axis kwargs arrive ND-style as
+# 1-tuples (`extrap=(WrapExtrap(),)`, `deriv=(DerivOp(1),)`); unwrap them to the
+# scalar the 1D signature expects. Non-tuple values (`store`, `tension`, a scalar
+# `extrap`) pass through untouched.
+@inline _unwrap_axis1(x::Tuple{Any}) = x[1]
+@inline _unwrap_axis1(x) = x
+@inline _unwrap_nd_kwargs(nt::NamedTuple) = map(_unwrap_axis1, nt)
+
 # ── Call-time extrap override (singular: 1D / ND per-axis) ──
 # The stored extrap is the construction-time contract; the only per-call override
 # is `InBounds` (an in-domain fast-path ASSERTION, not an extrapolation contract —
@@ -148,6 +158,19 @@ function (itp::AbstractInterpolant1D{Tg, Tv})(
     _itp_vector_loop!(output, itp, xq, extrap_eff, deriv, searcher)
     return output
 end
+
+# ── ND-style tuple queries on a 1D interpolant ──
+# A 1-axis grid collapses to the 1D path (see the `*_interp((x,), y)` forwarders),
+# so generic tensor code that issues tuple queries stays transparent: `itp((x,))`
+# (scalar), `itp(out, (xv,))` / `itp((xv,))` (SoA batch). Per-axis kwargs given as
+# 1-tuples (`extrap=(WrapExtrap(),)`, `deriv=(DerivOp(1),)`) unwrap to scalar. Each
+# just strips the 1-tuple and forwards to the positional 1D form above.
+@inline (itp::AbstractInterpolant1D)(q::Tuple{Real}; kwargs...) =
+    itp(q[1]; _unwrap_nd_kwargs(values(kwargs))...)
+@inline (itp::AbstractInterpolant1D)(output::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+    itp(output, q[1]; _unwrap_nd_kwargs(values(kwargs))...)
+@inline (itp::AbstractInterpolant1D)(q::Tuple{AbstractVector}; kwargs...) =
+    itp(q[1]; _unwrap_nd_kwargs(values(kwargs))...)
 
 # ╔══════════════════════════════════════╗
 # ║       ND Interpolant Protocol        ║

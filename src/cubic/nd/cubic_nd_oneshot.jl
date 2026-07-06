@@ -71,7 +71,12 @@ Accepts any query format implementing the query protocol
 (`_query_length`, `_query_extract`, `_query_eltype`).
 Zero-allocation for workspace after warmup; output vector is heap-allocated.
 """
-function cubic_interp(
+# Public ND allocating batch one-shot (N≥2; N=1 intercepted by the collapse method,
+# reaching here only for the no-1D-equivalent OnTheFly branch).
+@inline cubic_interp(grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}, queries; kwargs...) where {N} =
+    _cubic_interp_nd_oneshot_alloc(grids, data, queries; kwargs...)
+
+function _cubic_interp_nd_oneshot_alloc(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries;
@@ -86,7 +91,7 @@ function cubic_interp(
     Tq = _query_eltype(queries)
     Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
     output = Vector{Tr}(undef, _query_length(queries))
-    cubic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
+    _cubic_interp_nd_oneshot_batch!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output
 end
 
@@ -239,7 +244,12 @@ In-place one-shot ND cubic interpolation at multiple points (batch).
 Accepts any query format implementing the query protocol.
 Writes results into pre-allocated `output` vector.
 """
-function cubic_interp!(
+# Public ND in-place batch one-shot (N≥2; N=1 is intercepted by the collapse method
+# below and only reaches here via the OnTheFly branch, which has no 1D equivalent).
+@inline cubic_interp!(output::AbstractVector, grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}, queries; kwargs...) where {N} =
+    _cubic_interp_nd_oneshot_batch!(output, grids, data, queries; kwargs...)
+
+function _cubic_interp_nd_oneshot_batch!(
         output::AbstractVector,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},

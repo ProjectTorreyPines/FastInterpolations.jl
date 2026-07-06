@@ -263,7 +263,8 @@ function constant_interp!(
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -273,7 +274,7 @@ function constant_interp!(
     x_eff = _resolve_axis(x, bc, eltype(x))
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
-    searcher = _resolve_search(x_eff, x_targets, search, nothing)
+    searcher = _resolve_search(x_eff, x_targets, search, hint)
     _constant_vector_loop!(output, x_eff, y_eff, x_targets, extrap_eff, side, deriv, searcher)
     return output
 end
@@ -311,11 +312,12 @@ function constant_interp(
         side::AbstractSide = NearestSide(),
         extrap::AbstractExtrap = NoExtrap(),
         deriv::DerivOp = EvalValue(),
-        search::AbstractSearchPolicy = AutoSearch()
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
     )
     output = Vector{_promote_eltype(_select_op, eltype(x), eltype(y), eltype(x_targets))}(
         undef, length(x_targets)
     )
-    constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search)
+    constant_interp!(output, x, y, x_targets; bc, extrap, side, deriv, search, hint)
     return output
 end

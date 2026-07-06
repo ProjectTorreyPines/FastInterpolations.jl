@@ -88,3 +88,30 @@ function linear_interp(
     extrap_vals = map(_resolve_extrap, extrap_vals, grids_typed)
     return LinearInterpolantND(grids_typed, data_typed, extrap_vals, searches; bcs = bcs_post, store = store)
 end
+
+# N=1 collapse: a 1-axis grid tuple IS the 1D path. `axes(y)` (a 1-tuple of OneTo)
+# lands here — forwarding to the 1D constructor keeps the lean 1D batch loop (the
+# generic-N ND loop carries a small per-query tensor overhead). Per-axis 1-tuple
+# kwargs unwrap to scalar. Strictly more specific than the `NTuple{N}` method above,
+# so it only claims N=1.
+@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector; kwargs...) =
+    linear_interp(only(grids), data; _unwrap_nd_kwargs(values(kwargs))...)
+
+# N=1 scalar one-shot: a bare scalar on a 1-tuple grid is sugar for the scalar
+# query `(q,)` → ND scalar one-shot (scalar output), not the `[val]` length-1 batch
+# that a bare `queries` would otherwise trigger. Batch queries stay on the ND path.
+@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Real; kwargs...) =
+    linear_interp(grids, data, (q,); kwargs...)
+
+# N=1 batch one-shot: a plain-vector query on a 1-tuple grid forwards to the lean 1D
+# batch one-shot (bit-identical value; skips the generic-N per-query machinery). Per-axis
+# 1-tuple kwargs unwrap to scalar.
+@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
+    linear_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
+@inline linear_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
+    linear_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
+# Single-axis SoA `(xv,)` unwraps to the 1D batch (same vectorized domain check).
+@inline linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+    linear_interp(only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline linear_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+    linear_interp!(output, only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)

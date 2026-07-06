@@ -43,7 +43,7 @@ Zero-allocation after warmup (pool reuse).
     # per-axis cache and the partials type, so the pool buffer + output follow natural promote_type.
     # `map` dispatches per-element on the concrete axis type (Range vs Vector).
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    grids_c = map(g -> _cache_axis_pooled(pool, g, Tg), grids)
+    grids_c = map((g, T) -> _cache_axis_pooled(pool, g, T), grids, ntuple(_ -> Tg, Val(N)))  # Tg as arg, not a captured closure field (LTS const-prop)
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap). Tz widens Tv with Tg
     # (Dual grid → Dual derivs); `_coeff_op` floats Int.

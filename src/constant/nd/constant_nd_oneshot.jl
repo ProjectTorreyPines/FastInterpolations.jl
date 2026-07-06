@@ -33,7 +33,7 @@ function _constant_interp_nd_oneshot(
     # `_nd_promote_grids_raw`/batch/persistent. All-Int stays Int; the output follows the
     # natural promote_type(grid, data, query) — e.g. Int grid + Float32 query → Float32.
     Tg = _promote_grid_eltype(grids)
-    grids_eff = map((g, bc) -> _resolve_axis(g, bc, Tg), grids, bcs)
+    grids_eff = map(_resolve_axis, grids, bcs, ntuple(_ -> Tg, Val(N)))  # Tg as arg, not a captured closure field (LTS const-prop)
     # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
     query = map(_resolve_grididx, query, grids_eff)
     # Validate AND promote per axis: an in-domain NoExtrap axis becomes InBounds for the lean

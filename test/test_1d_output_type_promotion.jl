@@ -26,14 +26,13 @@
         expected = promote_type(Tg, Float32, Tq)
         g = gbuild()
         @testset "$(nameof(f)) $gname Tq=$Tq → $expected" begin
-            if f in (cubic_interp, pchip_interp, akima_interp, cardinal_interp) &&
-                    g isa Vector && Te === Int && expected !== Float64
+            if f === cubic_interp && g isa Vector && Te === Int && expected !== Float64
                 # KNOWN-RED (follow-up): raw Int-VECTOR axes pass through untyped (the
-                # zero-alloc one-shot contract forbids converting them). linear/hermite
-                # width-type the kernel inv_h (`_cell_geom`/`_typed_inv_h`) and quadratic
-                # pool-converts, but the slope families (pchip/akima/cardinal) compute
-                # local slopes reading x internally, and cubic needs an eltype-aware
-                # spline-cache key — both deferred.
+                # zero-alloc one-shot contract forbids converting them). All kernel/slope
+                # scalars are width-typed at the value-matched `Tw` (width-first
+                # `_get_inv_h(Tw, x, i)` / `_forward_secant(Tw, …)`), but cubic's spline
+                # cache is typed from the axis eltype alone — the data-aware cache key
+                # is a cache-policy change, deferred.
                 @test_broken f(g, data32, q) isa expected
             else
                 @test f(g, data32, q) isa expected

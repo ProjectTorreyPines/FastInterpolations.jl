@@ -972,3 +972,43 @@ end
     @test _resolve_axis(wrapped, bc, Float64) === wrapped        # 3-arg Tg-aware
     @test length(_resolve_axis(wrapped, bc, Float64)) == 5       # not (n+1)+1
 end
+
+# Width-first geometry primitives: `_get_*(Tw, x, i)` — the value-matched coordinate
+# width `Tw` comes from the caller's surface (`_promote_grid_float(Tg, Tv)`). Raw axes
+# difference in their OWN eltype first (Int spans are exact), convert the SPAN once,
+# then divide — the reciprocal is BORN at `Tw` (no `inv(Int)::Float64` minting), and
+# coordinates beyond `Tw`'s ulp cannot cancel (span-first, never endpoint-convert).
+# Wrapped axes reuse the cached reciprocal (convert is a no-op once value-matched).
+# Width-less forms keep the historic raw-eltype behavior via delegation.
+@testitem "width-first _get_h/_get_inv_h/_get_inv_2cell + secants" begin
+    using FastInterpolations: _get_h, _get_inv_h, _get_inv_2cell,
+        _forward_secant, _backward_secant, _centered_secant,
+        _cache_axis, _resolve_axis, NoBC
+
+    # raw Int vector: reciprocal born at Tw
+    x = [1, 3, 6]
+    @test _get_h(Float32, x, 1) === 2.0f0
+    @test _get_inv_h(Float32, x, 1) === 0.5f0
+    @test _get_inv_2cell(Float32, x, 2) === inv(5.0f0)
+    @test _get_inv_h(Float64, x, 2) === inv(3.0)
+
+    # span-first precision: Int coords beyond Float32's ulp — endpoint-convert
+    # would cancel to 0 (inv → Inf); the span itself is small and exact.
+    xb = [16_777_216, 16_777_218]
+    @test _get_inv_h(Float32, xb, 1) === 0.5f0
+
+    # wrapped axes: cached reciprocal reused; convert no-op when value-matched
+    c = _cache_axis(collect(Float32, 1:5), NoBC())
+    @test _get_inv_h(Float32, c, 2) === _get_inv_h(c, 2)
+    r = _resolve_axis(1:5, Float32)                    # _CachedRange{Float32}
+    @test _get_inv_h(Float32, r, 1) === 1.0f0
+    @test _get_h(Float32, r, 1) === 1.0f0
+
+    # width-first secants: Int axis + F32 data → Float32 end to end
+    y32 = Float32[1, 2, 4]
+    @test _forward_secant(Float32, x, y32, 1) === 0.5f0
+    @test _backward_secant(Float32, x, y32, 2) === 0.5f0
+    @test _centered_secant(Float32, x, y32, 2) === 0.6f0
+    # width-less forms keep the historic raw semantics (Int axis → Float64)
+    @test _forward_secant(x, y32, 1) isa Float64
+end

@@ -101,27 +101,40 @@ end
 # Each pass resolves one axis's anchors once and reuses them across the grid.
 # The cost model picks which axis to fold first — the intermediate's shape
 # (n1×N vs M×n2) drives total work; both orders are mathematically equivalent.
-# Pooled two-pass core. `@with_pool` scopes the intermediate; the pass kernels
-# stay pool-agnostic (hetero `_axis_window_pooled` convention). The
-# intermediate is kept in the promoted eltype so narrowing into a user `out`
-# happens exactly once (single-quantization contract).
-@with_pool pool function _gridded_linear_2d!(
-        out::AbstractMatrix,
-        itp::LinearInterpolantND{Tg, Tv, 2},
-        tx::AbstractVector,
-        ty::AbstractVector
-    ) where {Tg, Tv}
-    A = itp.data
-    n1, n2 = size(A)
-    M = length(tx)
-    N = length(ty)
-    size(out) == (M, N) || throw(
-        DimensionMismatch("output size $(size(out)) ≠ query size ($M, $N)")
-    )
-    (M == 0 || N == 0) && return out
+# Plan builder: both axis plans, built OUTSIDE the pool scope (plan Vectors
+# are owned, not pooled) and BEFORE any output allocation — this is where
+# NoExtrap's O(M)/O(N) domain validation fires (`_guard_axis_state`), so the
+# throw happens before the caller's O(M·N) buffer is acquired.
+@inline function _gridded_plans(itp::LinearInterpolantND{Tg, Tv, 2}, tx, ty) where {Tg, Tv}
     p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
     p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty, itp.extraps[2], 2)
-    Tmid = _gridded_out_eltype(itp, tx, ty)
+    return p1, p2
+end
+
+# Pooled two-pass core. `@with_pool` scopes the intermediate; the pass kernels
+# stay pool-agnostic (hetero `_axis_window_pooled` convention). The
+# intermediate is kept in `Tmid` (the promoted eltype, matching the
+# allocating path's `out` — NOT necessarily `eltype(out)`, since a caller may
+# pass a narrower `out` in the in-place form) so narrowing into `out` happens
+# exactly once (single-quantization contract). Plans are ALREADY built (and
+# thus already validated) by the caller — this core never touches
+# `itp.grids`/`itp.extraps` directly, so it never revalidates or reallocates
+# a plan.
+@with_pool pool function _gridded_apply!(
+        out::AbstractMatrix,
+        itp::LinearInterpolantND{Tg, Tv, 2},
+        p1::_AxisAnchorBatch,
+        p2::_AxisAnchorBatch,
+        ::Type{Tmid}
+    ) where {Tg, Tv, Tmid}
+    A = itp.data
+    n1, n2 = size(A)
+    M = size(out, 1)
+    N = size(out, 2)
+    size(out) == (length(p1), length(p2)) || throw(
+        DimensionMismatch("output size $(size(out)) ≠ query size ($(length(p1)), $(length(p2)))")
+    )
+    (M == 0 || N == 0) && return out
     if p1.identity && p2.identity
         copyto!(out, A)                                   # M == n1, N == n2 by identity
     elseif p2.identity
@@ -168,13 +181,18 @@ a pooled intermediate.
 function (itp::LinearInterpolantND{Tg, Tv, 2})(gq::GriddedQuery{<:Tuple{Any, Any}}) where {Tg, Tv}
     _gridded_extrap_guard(itp.extraps)
     tx, ty = gq.axes
-    out = Matrix{_gridded_out_eltype(itp, tx, ty)}(undef, length(tx), length(ty))
-    return _gridded_linear_2d!(out, itp, tx, ty)
+    p1, p2 = _gridded_plans(itp, tx, ty)          # validates (NoExtrap) before any alloc
+    Tmid = _gridded_out_eltype(itp, tx, ty)
+    out = Matrix{Tmid}(undef, length(tx), length(ty))
+    return _gridded_apply!(out, itp, p1, p2, Tmid)
 end
 function (itp::LinearInterpolantND{Tg, Tv, 2})(
         out::AbstractMatrix,
         gq::GriddedQuery{<:Tuple{Any, Any}}
     ) where {Tg, Tv}
     _gridded_extrap_guard(itp.extraps)
-    return _gridded_linear_2d!(out, itp, gq.axes[1], gq.axes[2])
+    tx, ty = gq.axes
+    p1, p2 = _gridded_plans(itp, tx, ty)          # validates (NoExtrap) before any work
+    Tmid = _gridded_out_eltype(itp, tx, ty)
+    return _gridded_apply!(out, itp, p1, p2, Tmid)
 end

@@ -184,6 +184,29 @@ end
     end
     @test err isa DomainError && occursin("axis 1", sprint(showerror, err))
 
+    # Structural guarantee: the allocating path validates NoExtrap BEFORE
+    # allocating the O(M·N) output, so a throwing query must not leave the
+    # full output matrix behind. Use a query large enough that erroneously
+    # allocating the full M×N output would dwarf a light allocation bound.
+    big_tx = collect(range(1.0, 16.0, 500))
+    bad_ty = vcat(collect(range(1.0, 12.0, 399)), [12.5])   # OOB tail on axis 2
+    gq_big = GriddedQuery((big_tx, bad_ty))
+    @test_throws DomainError itp(gq_big)
+    function alloc_on_throw(itp, gq)
+        try
+            itp(gq)   # warmup: compile the throwing method path
+        catch e
+            e isa DomainError || rethrow()
+        end
+        return @allocated try
+            itp(gq)
+        catch e
+            e isa DomainError || rethrow()
+        end
+    end
+    a_throw = alloc_on_throw(itp, gq_big)
+    @test a_throw < length(big_tx) * length(bad_ty) * sizeof(Float64)
+
     # Wrap / Fill: explicit ArgumentError at dispatch (both call forms)
     for ex in (FI.WrapExtrap(), FI.FillExtrap(NaN))
         itpu = FI.linear_interp((1.0:16.0, 1.0:12.0), A; extrap = ex)
@@ -222,10 +245,16 @@ end
         return @allocated itp(out, gq)
     end
     allocs = alloc_count(itp, out, gq)
-    # plan vectors (2 Vectors + 2 batch structs) are the only per-call allocs.
-    # Measured 3056 B on this configuration (well under the naive O(M+N)
-    # formula bound of 4640 B); tightened to measured + 15 %.
-    @test allocs <= 3515
+    # plan vectors (2 Vectors + 2 batch structs, each `_LinearAnchor{Float64,
+    # EvalValue,...}` @ 16 B) are the only per-call allocs — O(M+N), NOT
+    # O(M·N). Bound is proportional (survives Julia-version alloc-accounting
+    # drift) rather than a byte-exact literal from one measurement: 4×(M+N)
+    # anchors' worth of slack + a fixed struct/GC overhead allowance. This
+    # bound (M=100,N=80 → 4*180*16+1024 = 12544 B) stays far below the O(M·N)
+    # intermediate it must exclude (M*N*sizeof(Float64) = 64000 B) while
+    # comfortably covering the true O(M+N) plan cost.
+    bound = 4 * (length(tx) + length(ty)) * 16 + 1024
+    @test allocs <= bound
 end
 
 @testitem "fast paths: exact-node copy + identity elision (bit-exact)" begin
@@ -241,16 +270,28 @@ end
     tx = collect(range(1.0, 32.0, 45))
     C = itp(GriddedQuery((tx, ty_nodes)))
     ref = [itp((x, y)) for x in tx, y in ty_nodes]
-    @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
+    @test C == ref   # exact-node memcpy path goes through the same endpoint-exact
+    # kernel as the point-wise reference → bit-identical, not merely close.
 
     # identity on axis 1 (targets ≡ grid) → single-pass, and STILL bit-consistent
     tx_id = collect(1.0:32.0)
     C1 = itp(GriddedQuery((tx_id, collect(range(1.0, 24.0, 37)))))
     ref1 = [itp((x, y)) for x in tx_id, y in range(1.0, 24.0, 37)]
-    @test all(isapprox.(C1, ref1; rtol = 1.0e-14, atol = 1.0e-14))
+    @test C1 == ref1   # axis-1 identity elision → bit-identical (see above)
     # identity plan detected
     p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx_id, itp.extraps[1], 1)
     @test p1.identity
+
+    # mirror: identity on axis 2 (targets ≡ grid, axis 1 resampled) → single
+    # pass via `_pass_gather_dim1!` only (the p1.identity branch above uses
+    # `_pass_blend_dim2!` only — this exercises the complementary elision arm)
+    ty_id = collect(1.0:24.0)
+    tx_resampled = collect(range(1.0, 32.0, 37))
+    C2 = itp(GriddedQuery((tx_resampled, ty_id)))
+    ref2 = [itp((x, y)) for x in tx_resampled, y in ty_id]
+    @test all(isapprox.(C2, ref2; rtol = 1.0e-14, atol = 1.0e-14))
+    p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty_id, itp.extraps[2], 2)
+    @test p2.identity
 
     # double identity → exact copy of the data
     Cid = itp(GriddedQuery((collect(1.0:32.0), collect(1.0:24.0))))

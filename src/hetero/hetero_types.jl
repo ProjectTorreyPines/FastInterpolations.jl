@@ -82,7 +82,7 @@ struct HeteroInterpolantND{
             store::StorePolicy = StorePolicy()
         ) where {Tg, N}
         Tv = eltype(data)
-        grids_c = map((g, bc, m) -> _own_or_ref_axis(_cache_axis_for_method(g, bc, Tg, m), Tg, store), grids, bcs, methods)
+        grids_c = map((g, bc, m, T) -> _own_or_ref_axis(_cache_axis_for_method(g, bc, T, m), T, store), grids, bcs, methods, ntuple(_ -> Tg, Val(N)))
         return new{Tg, Tv, N, typeof(grids_c), typeof(methods), typeof(extraps), typeof(searches), typeof(data)}(
             grids_c, data, methods, extraps, searches
         )

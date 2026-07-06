@@ -105,7 +105,7 @@ struct CubicInterpolantND{
         # When the outer API has already wrapped + extended the grids, this
         # is just a per-axis `copy` of the wrapper (no buffer duplication
         # for Range-backed wrappers).
-        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
+        grids_c = map((g, bc, T) -> _convert_copy(_cache_axis(g, bc, T), T), grids, bcs, ntuple(_ -> Tg, Val(N)))
         return new{Tg, Tv, N, NP1, typeof(grids_c), typeof(bcs), typeof(extraps), typeof(searches)}(
             grids_c, nodal_derivs, bcs, extraps, searches
         )

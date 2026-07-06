@@ -80,3 +80,25 @@ function constant_interp(
     extrap_vals = map(_resolve_extrap, extrap_vals, grids_typed)
     return ConstantInterpolantND(grids_typed, data_typed, extrap_vals, sides, searches; bcs = bcs_post, store = store)
 end
+
+# N=1 collapse: a 1-axis grid tuple forwards to the genuine 1D constant path (lean
+# 1D batch loop; per-axis 1-tuple kwargs unwrap to scalar). More specific than the
+# `NTuple{N}` method above, so it only claims N=1. See linear_nd_interpolant.jl.
+@inline constant_interp(grids::Tuple{AbstractVector}, data::AbstractVector; kwargs...) =
+    constant_interp(only(grids), data; _unwrap_nd_kwargs(values(kwargs))...)
+
+# N=1 scalar one-shot: bare scalar → scalar query `(q,)` → ND scalar one-shot
+# (scalar output, not `[val]`). See linear_nd_interpolant.jl.
+@inline constant_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Real; kwargs...) =
+    constant_interp(grids, data, (q,); kwargs...)
+
+# N=1 batch one-shot → lean 1D batch one-shot (bit-identical). See linear_nd_interpolant.jl.
+@inline constant_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
+    constant_interp(only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
+@inline constant_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::AbstractVector{<:Real}; kwargs...) =
+    constant_interp!(output, only(grids), data, q; _unwrap_nd_kwargs(values(kwargs))...)
+# Single-axis SoA `(xv,)` → 1D batch. See linear_nd_interpolant.jl.
+@inline constant_interp(grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+    constant_interp(only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)
+@inline constant_interp!(output::AbstractVector, grids::Tuple{AbstractVector}, data::AbstractVector, q::Tuple{AbstractVector}; kwargs...) =
+    constant_interp!(output, only(grids), data, only(q); _unwrap_nd_kwargs(values(kwargs))...)

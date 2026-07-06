@@ -193,6 +193,52 @@ end
     @test out == ref
 end
 
+@testitem "N=1 batch collapse tolerates the ND-only `hint` kwarg (GridIdx regression)" begin
+    using FastInterpolations
+
+    x = collect(1.0:20.0)
+    y = @. sin(x) + 0.3 * x
+    xq = collect(range(2.0, 19.0, length = 6))
+    out = similar(xq)
+    ref = similar(xq)
+
+    # The ND batch one-shot threads a per-axis `hint`; the 1D batch one-shots for
+    # linear/cubic/quadratic/constant have no such kwarg. The collapse must drop it,
+    # not forward it — otherwise a bare-vector / SoA batch on a 1-tuple grid with an
+    # explicit (or default) `hint` throws MethodError. Values match the hint-less call.
+    for f in (
+            linear_interp, cubic_interp, quadratic_interp, constant_interp,
+            pchip_interp, akima_interp, cardinal_interp,
+        )
+        @test f((x,), y, xq; hint = nothing) == f(x, y, xq)      # allocating, bare vector
+        @test f((x,), y, (xq,); hint = nothing) == f(x, y, xq)   # allocating, SoA
+    end
+    for f! in (
+            linear_interp!, cubic_interp!, quadratic_interp!, constant_interp!,
+            pchip_interp!, akima_interp!, cardinal_interp!,
+        )
+        f!(out, (x,), y, xq; hint = nothing)
+        @test out == (ref .= f!(similar(ref), x, y, xq))          # in-place, bare vector
+        f!(out, (x,), y, (xq,); hint = nothing)
+        @test out == ref                                          # in-place, SoA
+    end
+
+    # End-to-end: `interp!` with a `GridIdx` pins one axis and pre-slices to a 1-tuple
+    # grid, threading `hint` into the collapse. This is the docs `unified_api.md` example.
+    gx = collect(range(0.0, 5.0, length = 11))
+    gy = collect(range(0.0, 5.0, length = 11))
+    data = [xi + yj for xi in gx, yj in gy]
+    output = zeros(5)
+    q = collect(range(0.5, 4.5, length = 5))
+    for m in (
+            LinearInterp(), CubicInterp(), QuadraticInterp(), ConstantInterp(),
+            PchipInterp(), AkimaInterp(), CardinalInterp(),
+        )
+        interp!(output, (gx, gy), data, (q, GridIdx(5)); method = m)
+        @test all(isfinite, output)
+    end
+end
+
 @testitem "1D interpolant accepts ND-style tuple queries" begin
     using FastInterpolations
 

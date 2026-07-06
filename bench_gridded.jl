@@ -66,3 +66,46 @@ report("512->256 down", 512, 256)
 report("256->512 up", 256, 512)
 report("256->1024 up", 256, 1024)
 report("512->768 up", 512, 768)
+
+# ── calibration + order-model verification ─────────────────────────────────
+using BenchmarkTools
+import FastInterpolations as FI
+using FastInterpolations: _axis_anchors, _pass_blend_dim2!, _pass_gather_dim1!,
+    _gridded_dim2_first, LinearInterp, EvalValue
+
+function _bench_passes(TF, n1, n2, M, N)
+    A = rand(TF, n1, n2)
+    itp = FI.linear_interp((TF.(1:n1), TF.(1:n2)), A; extrap = FI.ClampExtrap())
+    tx = collect(range(TF(1), TF(n1), M)); ty = collect(range(TF(1), TF(n2), N))
+    p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
+    p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty, itp.extraps[2], 2)
+    BA = Matrix{TF}(undef, n1, N); CA = Matrix{TF}(undef, M, N)
+    BB = Matrix{TF}(undef, M, n2); CB = Matrix{TF}(undef, M, N)
+    tA = @belapsed (_pass_blend_dim2!($BA, $(itp.data), $p2); _pass_gather_dim1!($CA, $BA, $p1))
+    tB = @belapsed (_pass_gather_dim1!($BB, $(itp.data), $p1); _pass_blend_dim2!($CB, $BB, $p2))
+    # per-element pass costs for calibration (blend cost from order A pass 1)
+    t_blend = @belapsed _pass_blend_dim2!($BA, $(itp.data), $p2)
+    t_gath = @belapsed _pass_gather_dim1!($CA, $BA, $p1)
+    c_blend = t_blend * 1.0e9 / (n1 * N)
+    c_gath = t_gath * 1.0e9 / (M * N)
+    model_a = _gridded_dim2_first(n1, n2, M, N)
+    winner_a = tA <= tB
+    agree = model_a == winner_a || abs(tA - tB) / min(tA, tB) < 0.1   # within-noise tolerance
+    println(
+        "$TF $(n1)x$(n2) -> $(M)x$(N) : A=$(round(tA * 1.0e6, digits = 1))µs B=$(round(tB * 1.0e6, digits = 1))µs ",
+        "model=$(model_a ? "A" : "B") measured=$(winner_a ? "A" : "B") agree=$agree ",
+        "c_blend=$(round(c_blend, digits = 2)) c_gather=$(round(c_gath, digits = 2))"
+    )
+    return agree
+end
+
+println("\n== order-model verification (agree must be true everywhere) ==")
+ok = true
+for TF in (Float64, Float32)
+    global ok &= _bench_passes(TF, 512, 512, 256, 256)   # down
+    global ok &= _bench_passes(TF, 256, 256, 512, 512)   # up
+    global ok &= _bench_passes(TF, 256, 256, 1024, 1024) # strong up
+    global ok &= _bench_passes(TF, 512, 512, 768, 768)   # mild up
+    global ok &= _bench_passes(TF, 512, 512, 1024, 64)   # mixed up/down
+end
+println(ok ? "MODEL OK" : "MODEL MISPICK — recalibrate _GRIDDED_C_* from the printed c_ values")

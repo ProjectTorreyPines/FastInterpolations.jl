@@ -10,6 +10,7 @@ using TestItemRunner
 # accessing FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK is safe.
 @testsnippet AllocConstants begin
     const AAP_RUNTIME_CHECK = FastInterpolations.AdaptiveArrayPools.RUNTIME_CHECK
+    # LTS keeps a small 240-byte margin for genuine warm-path noise; 1.12+ is strict (0).
     const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240
     const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240
 end

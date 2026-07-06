@@ -27,9 +27,12 @@
     # Grid pre-normalized by the public `pchip_interp` API via `_resolve_axis(x)`
     # before dispatching here; `_periodic_extend_1d` preserves the normalization.
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    Tdy = _promote_eltype(_coeff_op, eltype(x_eff), Tv)
+    # Value-matched width: the dy buffer AND the slope arithmetic inside the
+    # filler both run at `Tw` (raw Int axes stop minting `inv(Int)::Float64`).
+    Tw = _promote_grid_float(eltype(x_eff), Tv)
+    Tdy = _promote_eltype(_coeff_op, Tw, Tv)
     dy = acquire!(pool, Tdy, length(y_ext))
-    _pchip_slopes!(dy, x_eff, y_ext; bc = bc_eff)
+    _pchip_slopes!(dy, x_eff, y_ext, Tw; bc = bc_eff)
     searcher = _resolve_search(x_eff, xq, search, hint)
     return _hermite_eval_at_point(x_eff, y_ext, dy, xq, extrap_eff, deriv, searcher)
 end
@@ -50,9 +53,12 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
 
-    Tdy = _promote_eltype(_coeff_op, eltype(x_eff), Tv)
+    # Value-matched width: the dy buffer AND the slope arithmetic inside the
+    # filler both run at `Tw` (raw Int axes stop minting `inv(Int)::Float64`).
+    Tw = _promote_grid_float(eltype(x_eff), Tv)
+    Tdy = _promote_eltype(_coeff_op, Tw, Tv)
     dy = acquire!(pool, Tdy, length(y_ext))
-    _pchip_slopes!(dy, x_eff, y_ext; bc = bc_eff)
+    _pchip_slopes!(dy, x_eff, y_ext, Tw; bc = bc_eff)
     searcher = _resolve_search(x_eff, x_query, search, hint)
     return _hermite_vector_loop!(output, x_eff, y_ext, dy, x_query, extrap_eff, deriv, searcher)
 end
@@ -134,8 +140,9 @@ C\$^1\$ continuous, monotonicity guaranteed for monotone input data.
     # Unified entry — bc flows through the BC-aware extrap/search resolvers and
     # into the slope routines. No `_is_periodic_bc` branch, no extension copy:
     # `_resolve_search`'s seam dispatch + bc-aware slope formulas handle the
-    # closed-cycle on the user's n-length grid (Linear pattern).
-    x = _resolve_axis(x)
+    # closed-cycle on the user's n-length grid (Linear pattern). Value-matched Tg:
+    # Int/OneTo grid + Float32 data → Float32 axis.
+    x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
@@ -161,7 +168,7 @@ In-place PCHIP interpolation with monotone-preserving slopes.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
+    x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly

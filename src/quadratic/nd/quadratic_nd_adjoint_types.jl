@@ -87,7 +87,7 @@ struct QuadraticAdjointND{
         ) where {
             Tg, N, BP <: NTuple{N, AbstractBC},
         }
-        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
+        grids_c = map((g, bc, T) -> _convert_copy(_cache_axis(g, bc, T), T), grids, bcs, ntuple(_ -> Tg, Val(N)))
         return new{Tg, N, typeof(grids_c), BP}(grids_c, bcs, anchors, grid_size, mincurv_Cs)
     end
 end

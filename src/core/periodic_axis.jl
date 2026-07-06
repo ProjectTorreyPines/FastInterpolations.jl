@@ -223,6 +223,14 @@ end
 @inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int) =
     idx < length(g.inner) ? _get_inv_h(g.inner, idx) : @inbounds(inv(g._x_max - g.inner[idx]))
 
+# Width-first shield (`_ExclusivePeriodicAxis <: AbstractVector` — must not fall
+# into the raw-span row in cached_vector.jl): interior cells thread `Tw` into the
+# inner's own width-first row; the seam converts its span first (span-then-convert,
+# see cached_vector.jl), so the reciprocal is born at `Tw`.
+@inline Base.@propagate_inbounds _get_inv_h(::Type{Tw}, g::_ExclusivePeriodicAxis, idx::Int) where {Tw} =
+    idx < length(g.inner) ? _get_inv_h(Tw, g.inner, idx) :
+    @inbounds(inv(convert(Tw, g._x_max - g.inner[idx])))
+
 # No `_CachedRange`-specific specialization for `_get_h` / `_get_inv_h`: the
 # generic wrapper overload above already does the right thing for both
 # `_CachedRange` and `_CachedVector` / `Vector` inners — interior cells
@@ -260,6 +268,20 @@ end
     idx < length(g.inner) ? _get_h(g.inner, idx, xL, xR) : xR - xL
 @inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
     idx < length(g.inner) ? _get_inv_h(g.inner, idx, xL, xR) : inv(xR - xL)
+
+# Width-first search-result form: interior delegates to the inner axis's row
+# (cached reciprocal when wrapped); the seam cell has no stored width — span-first
+# from the search endpoints (`xR == g._x_max`), reciprocal born at `Tw`.
+@inline Base.@propagate_inbounds function _get_inv_h(
+        ::Type{Tw},
+        g::_ExclusivePeriodicAxis,
+        idx::Int,
+        xL::Real,
+        xR::Real,
+    ) where {Tw}
+    return idx < length(g.inner) ? _get_inv_h(Tw, g.inner, idx, xL, xR) :
+        inv(convert(Tw, xR - xL))
+end
 
 # `_alpha_of` for the wrapper: seam-aware so the value computation shares a
 # denominator with the 4-arg `_get_inv_h` at the seam cell.
@@ -405,6 +427,12 @@ end
 # `_CachedRange`/`_CachedVector` → wrapper) live in their owner files
 # (`cached_range.jl` / `cached_vector.jl`).
 @inline _resolve_axis(g::_ExclusivePeriodicAxis) = g
+# 2-arg/3-arg `:exclusive`: a pre-wrapped axis passes through — do NOT re-wrap. Without these,
+# `_ExclusivePeriodicAxis <: AbstractVector` sends it into the raw-Vector `:exclusive` arms
+# (`cached_vector.jl`), nesting toward length (n+1)+1 and throwing in the ctor. Mirrors the
+# `_cache_axis` passthroughs below; non-exclusive 2-/3-arg forms already fall to the raw `= x` arm.
+@inline _resolve_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}) = g
+@inline _resolve_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = g
 @inline _cache_axis(g::_ExclusivePeriodicAxis) = g
 @inline _cache_axis(g::_ExclusivePeriodicAxis, ::AbstractBC) = g
 @inline _cache_axis(g::_ExclusivePeriodicAxis, ::PeriodicBC{:exclusive}) = g

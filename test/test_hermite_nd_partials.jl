@@ -805,3 +805,36 @@
     end
 
 end  # @testitem
+
+@testitem "Mixed data/partial widths: grid promotion sees partials (persistent ≡ one-shot)" begin
+    # The persistent build's grid value-match must see `data ∪ partials` — matching Float32
+    # data alone would store Int coordinates as Float32, and above 2^24 those quantize:
+    # the persistent result then drifts from the one-shot path (which already promotes
+    # its grid width against data ∪ partials).
+    n = 6
+    base = 16_777_220                       # 2^24 = 16_777_216: Float32 integer limit
+    gx = base .+ collect(1:n)
+    gy = collect(1:n)
+    f(x, y) = 0.001x + 2.0y
+    data = Float32[f(x, y) for x in gx, y in gy]
+    parts = HermitePartials(
+        (1, 0) => [0.001 for _ in 1:n, _ in 1:n],
+        (0, 1) => [2.0 for _ in 1:n, _ in 1:n],
+        (1, 1) => [0.0 for _ in 1:n, _ in 1:n],
+    )
+
+    itp = hermite_interp((gx, gy), data, parts)
+    @test map(eltype, itp.grids) === (Float64, Float64)   # data(F32) ∪ partials(F64) → F64
+    q = (Float64(base) + 2.3, 3.7)
+    @test itp(q) ≈ hermite_interp((gx, gy), data, parts, q) rtol = 1.0e-12
+
+    # Guard the other direction: an all-Float32 value space must NOT over-widen the grids.
+    data32 = Float32[f(x, y) for x in 1:n, y in 1:n]
+    parts32 = HermitePartials(
+        (1, 0) => Float32[0.001 for _ in 1:n, _ in 1:n],
+        (0, 1) => Float32[2.0 for _ in 1:n, _ in 1:n],
+        (1, 1) => Float32[0.0 for _ in 1:n, _ in 1:n],
+    )
+    itp32 = hermite_interp((collect(1:n), collect(1:n)), data32, parts32)
+    @test map(eltype, itp32.grids) === (Float32, Float32)
+end

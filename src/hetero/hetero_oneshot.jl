@@ -146,7 +146,12 @@ end
     # `_wrap_to_domain` / `search_interval` without the raw n-length Vector's
     # `last - first ≠ period` mismatch (Linear/Constant ND mirror this pattern).
     bcs = map(_bc_for_periodic_check, methods)
-    grids_eff = map(_resolve_axis, grids, bcs)
+    # Value-matched grid float (Int grid + Float32 data → Float32) — output matches the caller's witness.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    # @generated static-Tg unroll: a Type captured in a closure (or an
+    # `ntuple(_ -> Tg, …)` element) de-optimizes under weak const-prop —
+    # LTS per-fiber heap, and per-axis dynamic dispatch on 1.12 CI workers.
+    grids_eff = _resolve_axes(grids, bcs, Tg)
     # NOTE: inclusive PeriodicBC slice validation is NOT performed here — it is
     # hoisted to the callers (`_interp_nd_oneshot_dispatch` and the OnTheFly
     # branch of `_interp_nd_oneshot_batch_dispatch!`) so the batch path pays the
@@ -154,8 +159,7 @@ end
     extraps_eff = map(_resolve_extrap, extraps_val, bcs, grids_eff)
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
     # Tr promotes data with grid + query eltypes → Dual-safe pool buffers for AD.
-    # Raw grids may be Int/heterogeneous; `_promote_eltype` floats Int internally.
-    Tg = _promote_grid_eltype(grids)
+    # `Tg` (value-matched above) already floats Int; reuse it here.
     Tr = _promote_eltype(Tv, Tg, typeof.(q_eval)...)
 
     # GridIdx safety gate: same reason as the persistent path — a GridIdx on a
@@ -197,7 +201,11 @@ end
         )
     end
 
-    # Pure global-solve path: no pre-search, full windows, bit-for-bit pre-Phase-3 behavior.
+    # Global-solve path: grids straight through. The caller
+    # (`_interp_nd_oneshot_dispatch`) promotes types only — the axes arrive raw,
+    # and each inner 1D one-shot value-matches its own axis via the data-aware
+    # cache / width-first geometry (and wraps `:exclusive` axes itself — user
+    # length n, not the wrapped virtual n+1). `_collapse_dims` emits `Tr` directly.
     full_windows = map(Base.OneTo, size(data))
     return _collapse_dims(Tr, data, grids, methods, extraps_eff, q_eval, ops, searches, hints, full_windows)
 end
@@ -252,8 +260,13 @@ function _interp_nd_oneshot_dispatch(
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         deriv, extrap, search, hints, coeffs,
     ) where {N}
-    grids_typed, Tg, Tv, _ = _nd_promote_grids(grids, data)
-    _validate_nd_grids(grids_typed, data)
+    # Type-only promotion: no eager grid convert. The OnTheFly path value-matches
+    # each raw axis at its own inner 1D surface (data-aware caches / width-first
+    # geometry), so it takes the raw `grids` straight through. The PreCompute path
+    # (`_interp_nd_hetero_oneshot`) requires homogeneous-eltype `Tg` grids and uses
+    # them directly, so it still gets the converted grids.
+    Tg, Tv, _ = _nd_promote_types(grids, data)
+    _validate_nd_grids(grids, data)
     Tr = _promote_eltype(eltype(data), Tg, typeof.(query)...)
 
     # bc-aware extrap: NoExtrap → WrapExtrap on PeriodicBC axes.
@@ -266,12 +279,12 @@ function _interp_nd_oneshot_dispatch(
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     searches = _resolve_search_nd(search, Val(N), query)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    _validate_axis_methods(grids_typed, methods, extraps_val)
+    _validate_axis_methods(grids, methods, extraps_val)
 
     if coeffs isa OnTheFly
-        return _interp_nd_oneshot_onthefly(grids_typed, data, query, methods, extraps_val, searches, ops, hints)::Tr
+        return _interp_nd_oneshot_onthefly(grids, data, query, methods, extraps_val, searches, ops, hints)::Tr
     end
-    return _interp_nd_hetero_oneshot(grids_typed, data, query, methods, extraps_val, searches, ops, hints)::Tr
+    return _interp_nd_hetero_oneshot(_convert_grids_typed(grids, Tg), data, query, methods, extraps_val, searches, ops, hints)::Tr
 end
 
 # ========================================
@@ -326,15 +339,17 @@ end
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         deriv, extrap, search, hints, coeffs,
     ) where {N}
-    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data)
-    _validate_nd_grids(grids_typed, data)
+    # Type-only promotion (see the scalar dispatch): OnTheFly takes raw `grids`
+    # and value-matches per axis; PreCompute gets the converted grids.
+    Tg, Tv, _ = _nd_promote_types(grids, data)
+    _validate_nd_grids(grids, data)
     _query_check_ndims(queries, Val(N))
 
     # bc-aware extrap (matches scalar dispatch).
     bcs = map(_bc_for_periodic_check, methods)
     extraps_val = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
-    _validate_axis_methods(grids_typed, methods, extraps_val)
+    _validate_axis_methods(grids, methods, extraps_val)
 
     if coeffs isa OnTheFly
         nq = _query_length(queries)
@@ -352,12 +367,12 @@ end
         searches = _resolve_search_nd(search, Val(N))
         @inbounds for k in 1:nq
             query_k = _extract_query_point(queries, k, Val(N))
-            output[k] = _interp_nd_oneshot_onthefly(grids_typed, data, query_k, methods, extraps_val, searches, ops, hints)
+            output[k] = _interp_nd_oneshot_onthefly(grids, data, query_k, methods, extraps_val, searches, ops, hints)
         end
         return output
     end
 
-    return _interp_nd_hetero_batch_dispatch!(output, grids_typed, data, queries, methods, extraps_val, ops, search, hints)
+    return _interp_nd_hetero_batch_dispatch!(output, _convert_grids_typed(grids, Tg), data, queries, methods, extraps_val, ops, search, hints)
 end
 
 # ========================================

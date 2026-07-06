@@ -116,7 +116,7 @@ function _build_nd_quadratic_interpolant(
     # Cache axes for the build phase — inner ctor of `QuadraticInterpolantND`
     # handles the owned `_convert_copy` separately, so we only wrap (no copy)
     # here. Already-cached axes pass through idempotently in the ctor.
-    grids_cached = map((g, bc) -> _cache_axis(g, bc, Tg), grids, bcs)
+    grids_cached = map(_cache_axis, grids, bcs, ntuple(_ -> Tg, Val(N)))
     nodal_derivs = _build_nd_coeffs_quadratic(grids_cached, data, bcs)
 
     return QuadraticInterpolantND(grids_cached, nodal_derivs, bcs, extraps_val, searches)

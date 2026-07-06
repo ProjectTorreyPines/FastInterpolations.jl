@@ -1138,6 +1138,20 @@ Compute local cell parameters for all axes via `_get_h(grid, idx)` /
     # (N=0 edge: `float(promote_type())` = `float(Union{})` throws; the ntuples are
     # empty there, so this placeholder is never used.)
     Tg = N == 0 ? Float64 : float(_promote_grid_eltype(grids))
+    return _compute_all_local_params(q_evals, grids, indices, Ls, Tg)
+end
+
+# Data-aware form: the caller supplies the width type `Tg` (value-matched, e.g.
+# `_promote_grid_float(grid eltype, Tv)` — Int grid + Float32 data → Float32), so raw
+# Int axes don't widen the eval to Float64 via `inv(Int)`. `dLs` deliberately keep
+# their natural `q - L` promotion — converting them would strip Dual-query partials.
+@inline function _compute_all_local_params(
+        q_evals::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        indices::NTuple{N, Int},
+        Ls::Tuple{Vararg{Real, N}},
+        ::Type{Tg},
+    ) where {N, Tg}
     hs = ntuple(Val(N)) do d
         @inbounds convert(Tg, _get_h(grids[d], indices[d]))
     end
@@ -1227,6 +1241,35 @@ Generates unrolled `(_convert_grid(grids[1], Tg), _convert_grid(grids[2], Tg), .
     return :(($(exprs...),))
 end
 
+# ── Static-Tg tuple maps for the one-shot hot paths (@generated) ─────────────
+# `map(f, grids, ntuple(_ -> Tg, Val(N)))` re-captures the Type witness in the
+# ntuple closure: under a degraded-inference context (a long-lived test worker)
+# the tuple elements decay to `DataType` and every per-axis call goes through
+# dynamic dispatch — 32 B/axis on Julia 1.12 CI, 60-90 KB downstream on LTS.
+# These unroll at codegen with `Tg` as a STATIC signature parameter: no closure
+# and no runtime `Type` value exist on any Julia version.
+
+# Pooled value-matched wrap (cubic/quadratic PreCompute scalar backends).
+@generated function _cache_axes_pooled(pool, grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
+    exprs = [:(_cache_axis_pooled(pool, grids[$i], Tg)) for i in 1:N]
+    return :(($(exprs...),))
+end
+
+# BC-aware one-shot resolve (linear/constant/hetero OnTheFly surfaces).
+@generated function _resolve_axes(grids::NTuple{N, AbstractVector}, bcs, ::Type{Tg}) where {N, Tg}
+    exprs = [:(_resolve_axis(grids[$i], bcs[$i], Tg)) for i in 1:N]
+    return :(($(exprs...),))
+end
+
+# Width-typed reciprocal spans from search results (linear ND scalar one-shot).
+# Span-first via the width-first 5-arg `_get_inv_h` rows: raw axes difference in
+# their own eltype, convert the span once, divide at `Tg` — the reciprocal is
+# born at `Tg` (an Int axis would otherwise mint Float64 via `inv(Int)`).
+@generated function _typed_inv_hs(grids::NTuple{N, AbstractVector}, idxs, Ls, Rs, ::Type{Tg}) where {N, Tg}
+    exprs = [:(_get_inv_h(Tg, grids[$i], idxs[$i], Ls[$i], Rs[$i])) for i in 1:N]
+    return :(($(exprs...),))
+end
+
 """
     _nd_promote_grids(grids, data) -> (grids_typed, Tg, Tv, Tz)
 
@@ -1245,15 +1288,49 @@ grids_typed, _, _, _ = _nd_promote_grids(grids, data)   # grid-only (batch dispa
 grids_typed, Tg, Tv, Tz = _nd_promote_grids(grids, data) # full (oneshot/build)
 ```
 """
+@inline _nd_promote_grids(
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{Tv_raw, N}
+) where {Tv_raw, N} = _nd_promote_grids(grids, data, Tv_raw)
+
+# 3-arg form: `Tv_extra` widens the value space beyond `eltype(data)` BEFORE the grid
+# value-match — Hermite's value space is data ∪ partials (Float32 data + Float64
+# partials must give a Float64 grid, matching the one-shot rule). 2-arg delegates
+# with `Tv_extra = eltype(data)` (neutral).
 @inline function _nd_promote_grids(
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv_raw, N},
+        ::Type{Tv_extra}
+    ) where {Tv_raw, Tv_extra, N}
+    Tv_all = promote_type(Tv_raw, Tv_extra)
+    # Value-matched grid float (1D rule): Int/OneTo grid + Float32 data → Float32 grid, so the
+    # cheap grid converts and the O(nᴺ) data aliases under copy=false. The old grid-eltype-only
+    # `float(...)` gave Float64 and dragged Tv (and the data, via `Tv.(data)`) up with it.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv_all)
+    grids_typed = _convert_grids_typed(grids, Tg)
+    Tv = _value_type(Tv_all, Tg)
+    Tz = _promote_eltype(Tv, Tg)
+    return grids_typed, Tg, Tv, Tz
+end
+
+"""
+    _nd_promote_types(grids, data) -> (Tg, Tv, Tz)
+
+Type-only counterpart of [`_nd_promote_grids`](@ref): computes the same
+`(Tg, Tv, Tz)` from the grid/data *types* alone (via the `@generated`
+`_promote_grid_eltype`), skipping the `_convert_grids_typed` allocation. Callers
+that value-match each axis downstream (the OnTheFly hetero one-shot, whose inner
+1D one-shots resolve their own axes) use this to avoid an eager grid convert on
+raw Int/Rational axes.
+"""
+@inline function _nd_promote_types(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv_raw, N}
     ) where {Tv_raw, N}
-    Tg = float(_promote_grid_eltype(grids))
-    grids_typed = _convert_grids_typed(grids, Tg)
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv_raw)
     Tv = _value_type(Tv_raw, Tg)
     Tz = _promote_eltype(Tv, Tg)
-    return grids_typed, Tg, Tv, Tz
+    return Tg, Tv, Tz
 end
 
 """

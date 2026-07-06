@@ -73,12 +73,19 @@ Compute PCHIP (Fritsch-Carlson) monotone-preserving slopes in-place.
 # Complexity
 O(n), single pass, zero allocation (writes into `dy`).
 """
+# Width-less form: delegate with the axis's own eltype — bit-identical to the
+# historic raw behavior. One-shot PreCompute backends pass the value-matched
+# `Tw` explicitly so slopes are born at the value width (raw Int axes included).
+_pchip_slopes!(dy::AbstractVector, x::AbstractVector, y::AbstractVector; bc::AbstractBC = NoBC()) =
+    _pchip_slopes!(dy, x, y, eltype(x); bc)
+
 function _pchip_slopes!(
         dy::AbstractVector,
-        x::AbstractVector{Tg},
-        y::AbstractVector;
+        x::AbstractVector,
+        y::AbstractVector,
+        ::Type{Tw};
         bc::AbstractBC = NoBC()
-    ) where {Tg}
+    ) where {Tw}
     n = length(x)
     @assert n >= 2 "PCHIP requires at least 2 points"
     @assert length(y) == n "y length must match x"
@@ -90,12 +97,12 @@ function _pchip_slopes!(
     # n=2 grids (where the seam secant can have opposite sign of cell-1).
     if n == 2
         if bc isa PeriodicBC
-            @inbounds dy[1] = _pchip_boundary_slope(x, y, 1, n, bc)
-            @inbounds dy[2] = _pchip_boundary_slope(x, y, 2, n, bc)
+            @inbounds dy[1] = _pchip_boundary_slope(Tw, x, y, 1, n, bc)
+            @inbounds dy[2] = _pchip_boundary_slope(Tw, x, y, 2, n, bc)
             return dy
         end
         @inbounds begin
-            δ = _forward_secant(x, y, 1)
+            δ = _forward_secant(Tw, x, y, 1)
             dy[1] = δ
             dy[2] = δ
         end
@@ -104,17 +111,19 @@ function _pchip_slopes!(
 
     Tc = eltype(dy)
 
-    # Compute secant slopes for first two intervals (needed for first interior)
+    # Compute secant slopes for first two intervals (needed for first interior).
+    # Cell widths stay raw — they are width-neutral WEIGHTS (Int × secant keeps
+    # the secant's type); only the secants carry the value-matched width.
     @inbounds h_prev = _get_h(x, 1)
-    @inbounds δ_prev = _forward_secant(x, y, 1)
+    @inbounds δ_prev = _forward_secant(Tw, x, y, 1)
 
     @inbounds h_curr = _get_h(x, 2)
-    @inbounds δ_curr = _forward_secant(x, y, 2)
+    @inbounds δ_curr = _forward_secant(Tw, x, y, 2)
 
     # Left endpoint: bc-dispatched helper.
     # NoBC: one-sided 3-point FD with monotonicity clamping.
     # PeriodicBC: closed-cycle interior formula via wrap-aware abstraction.
-    @inbounds dy[1] = _pchip_boundary_slope(x, y, 1, n, bc)
+    @inbounds dy[1] = _pchip_boundary_slope(Tw, x, y, 1, n, bc)
 
     # Interior slopes (k = 2:n-1) — unchanged. K=3 stencil never crosses join.
     @inbounds for k in 2:(n - 1)
@@ -133,7 +142,7 @@ function _pchip_slopes!(
             h_prev = h_curr
             δ_prev = δ_curr
             h_curr = _get_h(x, k + 1)
-            δ_curr = _forward_secant(x, y, k + 1)
+            δ_curr = _forward_secant(Tw, x, y, k + 1)
         end
     end
 
@@ -146,7 +155,7 @@ function _pchip_slopes!(
     #   differs from i=1's (m_0=seam, m_1) — dy[1] ≠ dy[n] in general, both
     #   correctly wrap-aware via the seam secant.
     # - NoBC: helper falls back to the original one-sided FD.
-    @inbounds dy[n] = _pchip_boundary_slope(x, y, n, n, bc)
+    @inbounds dy[n] = _pchip_boundary_slope(Tw, x, y, n, n, bc)
 
     return dy
 end

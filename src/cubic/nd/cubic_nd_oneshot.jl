@@ -37,12 +37,13 @@ function cubic_interp(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
     # Scalar one-shot: raw grids — a stable grid id lets `_get_cubic_cache` memoise
-    # (a per-call `Tg.(x)` copy would miss every time + alloc). Output types from
-    # op-shape inference (`inv(h)`/`dL/h` float Int). Batch keeps eager-convert.
-    Tg = _promote_grid_eltype(grids)
+    # (a per-call copy would miss every time + alloc). `Tg` is value-matched (Int/OneTo grid +
+    # Float32 data → Float32), so the OnTheFly eval + witness `Tr` agree. Batch keeps eager-convert.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
     Tv_p = _promote_eltype(_coeff_op, Tg, Tv)
     _validate_nd_grids(grids, data)
-    Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
+    Tq = promote_type(typeof.(query)...)
+    Tr = _promote_eltype(_interp_op, Tg, Tv, Tq)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
@@ -120,9 +121,12 @@ Zero-allocation after warmup (pool reuse).
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
     ) where {Tv, N}
-    # Raw grids: per-axis partials + `_compute_all_local_params` (promotes the cell
-    # width) accept a raw/heterogeneous axis. `Tg` only types the pooled buffer.
-    Tg = _promote_grid_eltype(grids)
+    # Value-matched pooled wrap, symmetric with the quadratic scalar backend: Ranges
+    # → isbits `_CachedRange{Tg}` (the per-axis spline caches still memoise via
+    # value-deterministic objectid); a mismatched Vector converts into a POOL buffer
+    # (warm one-shots stay zero-alloc), so the whole solve pipeline runs at `Tg`.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    grids = _cache_axes_pooled(pool, grids, Tg)  # @generated static-Tg unroll (no Type-captured closure)
     # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
     query = map(_resolve_grididx, query, grids)
     # 0. Validate (NoExtrap throw must precede FillExtrap short-circuit) AND promote per axis:
@@ -153,10 +157,11 @@ Zero-allocation after warmup (pool reuse).
 
     # 4. Eval pipeline (all standalone functions, no Interpolant needed).
     # Axis-only forms — `grids_p` axes carry `h`/`inv_h` directly via `_get_h`/
-    # `_get_inv_h` (cached lookup for wrapped axes, on-the-fly diff for raw Vector).
+    # `_get_inv_h` (cached lookup for wrapped axes, on-the-fly diff for raw Vector);
+    # the data-aware form width-types hs/inv_hs at `Tg` (raw Int-Vector axes included).
     q_evals = _handle_all_extraps(query, grids_p, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_evals, grids_p, searches, hints, extraps_eff)
-    hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls)
+    hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls, Tg)
 
     # 6. Tensor-product kernel evaluation
     return _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)

@@ -23,11 +23,16 @@
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    # Compile-time cell-geometry types at the value-matched width (y ∪ dy): the
+    # converts are no-ops for float/duck/Unitful axes and float an Int axis's
+    # `inv(h)::Float64` to the value width. dL keeps query blood (Dual partials).
+    Tw = _hermite_grid_float(Tg, Tv, eltype(dy))
+    Tinv = _promote_eltype(_inv_op, Tw)
     xq = _resolve_grididx(xq, x)
     idx, idx_R, xL, _ = search_interval(searcher, x, xq, e)
     dL = xq - xL
-    h = _get_h(x, idx)
-    inv_h = _get_inv_h(x, idx)
+    h = convert(Tw, _get_h(x, idx))
+    inv_h = convert(Tinv, _get_inv_h(x, idx))
     @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
@@ -46,11 +51,13 @@ end
     # NoExtrap → InBounds for the search once the domain check passes (lean search).
     # ExtendExtrap passes through: it may arrive OOB → standard two-sided-clamp search (not the
     # lean InBounds one, whose one-sided clamp would give idx ≤ 0 OOB-left); boundary cell extrapolates.
+    Tw = _hermite_grid_float(Tg, Tv, eltype(dy))
+    Tinv = _promote_eltype(_inv_op, Tw)
     extrap_eff = _check_domain(x, xq, extrap)
     idx, idx_R, xL, _ = search_interval(searcher, x, xq, extrap_eff)
     dL = xq - xL
-    h = _get_h(x, idx)
-    inv_h = _get_inv_h(x, idx)
+    h = convert(Tw, _get_h(x, idx))
+    inv_h = convert(Tinv, _get_inv_h(x, idx))
     @inbounds return _hermite_kernel_1d(op, y[idx], y[idx_R], dy[idx], dy[idx_R], h, inv_h, dL)
 end
 
@@ -140,14 +147,19 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    # Compile-time value-matched width (value space = y — slopes derive from y):
+    # local slopes AND the kernel cell geometry all run at `Tw`, so a raw Int
+    # axis stops minting `inv(Int)::Float64` beside narrower data. dL keeps
+    # query blood (Dual-query safety).
+    Tw = _promote_grid_float(Tg, Tv)
     xq = _resolve_grididx(xq, x)
     idx, idx_R, xL, _ = search_interval(searcher, x, xq, e)
     n = _data_length(x)
-    dyL = _local_slope(sm, x, y, idx, n)
-    dyR = _local_slope(sm, x, y, idx_R, n)
+    dyL = _local_slope(Tw, sm, x, y, idx, n)
+    dyR = _local_slope(Tw, sm, x, y, idx_R, n)
     dL = xq - xL
-    h = _get_h(x, idx)
-    inv_h = _get_inv_h(x, idx)
+    h = _get_h(Tw, x, idx)
+    inv_h = _get_inv_h(Tw, x, idx)
     yr = _raw(y)
     @inbounds return _hermite_kernel_1d(op, yr[idx], yr[idx_R], dyL, dyR, h, inv_h, dL)
 end
@@ -165,14 +177,16 @@ end
     # NoExtrap → InBounds for the search once the domain check passes (lean search).
     # ExtendExtrap passes through: it may arrive OOB → standard two-sided-clamp search (not the
     # lean InBounds one, whose one-sided clamp would give idx ≤ 0 OOB-left); boundary cell extrapolates.
+    # Value-matched width for slopes + cell geometry — see the InBounds arm above.
+    Tw = _promote_grid_float(Tg, Tv)
     extrap_eff = _check_domain(x, xq, extrap)
     idx, idx_R, xL, _ = search_interval(searcher, x, xq, extrap_eff)
     n = _data_length(x)
-    dyL = _local_slope(sm, x, y, idx, n)
-    dyR = _local_slope(sm, x, y, idx_R, n)
+    dyL = _local_slope(Tw, sm, x, y, idx, n)
+    dyR = _local_slope(Tw, sm, x, y, idx_R, n)
     dL = xq - xL
-    h = _get_h(x, idx)
-    inv_h = _get_inv_h(x, idx)
+    h = _get_h(Tw, x, idx)
+    inv_h = _get_inv_h(Tw, x, idx)
     yr = _raw(y)
     @inbounds return _hermite_kernel_1d(op, yr[idx], yr[idx_R], dyL, dyR, h, inv_h, dL)
 end

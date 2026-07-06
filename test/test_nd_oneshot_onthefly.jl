@@ -133,18 +133,24 @@ end
         @test val_auto ≈ val_pre rtol = 1.0e-10
     end
 
-    @testset "AutoCoeffs: quadratic AD seed matches PreCompute exactly" begin
+    @testset "AutoCoeffs: quadratic scalar IS the OnTheFly path (seed identity)" begin
         xq = range(0.0, 2.0, 15)
         yq = range(0.0, 2.0, 15)
         data_q = [sin(xi) * cos(yj) for xi in xq, yj in yq]
         q = (0.7, 0.9)
 
-        @test quadratic_interp((xq, yq), data_q, q) ==
-            quadratic_interp((xq, yq), data_q, q; coeffs = PreCompute())
-        @test quadratic_interp((xq, yq), data_q, q; deriv = (DerivOp(1), EvalValue())) ==
-            quadratic_interp((xq, yq), data_q, q; deriv = (DerivOp(1), EvalValue()), coeffs = PreCompute())
-        @test quadratic_interp((xq, yq), data_q, q; deriv = (EvalValue(), DerivOp(1))) ==
-            quadratic_interp((xq, yq), data_q, q; deriv = (EvalValue(), DerivOp(1)), coeffs = PreCompute())
+        # Default == explicit OnTheFly bit-exactly (same code path); PreCompute
+        # tracks within FP-reordering noise (bit-exact parity is opt-in via
+        # coeffs=PreCompute(), pinned in test_nd_raw_grid_oneshot.jl).
+        for deriv in (
+                (EvalValue(), EvalValue()),
+                (DerivOp(1), EvalValue()),
+                (EvalValue(), DerivOp(1)),
+            )
+            val_auto = quadratic_interp((xq, yq), data_q, q; deriv)
+            @test val_auto == quadratic_interp((xq, yq), data_q, q; deriv, coeffs = OnTheFly())
+            @test val_auto ≈ quadratic_interp((xq, yq), data_q, q; deriv, coeffs = PreCompute()) rtol = 1.0e-12
+        end
     end
 
     @testset "AutoCoeffs: interp scalar matches PreCompute" begin

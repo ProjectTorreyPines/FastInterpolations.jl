@@ -24,30 +24,41 @@ Compute cardinal spline slopes in-place.
 # Complexity
 O(n), single pass, zero allocation (writes into `dy`).
 """
+# Width-less form: delegate with the axis's own eltype (historic behavior; the
+# `float(one(Tw))` scale slot reproduces the old `one(Int) - tension::Float64`
+# promotion for Int axes). One-shot PreCompute backends pass the value-matched
+# `Tw` so slopes — including the `(1 - tension)` scale — are born at the value width.
+_cardinal_slopes!(dy::AbstractVector, x::AbstractVector, y::AbstractVector, tension; bc::AbstractBC = NoBC()) =
+    _cardinal_slopes!(dy, x, y, tension, eltype(x); bc)
+
 function _cardinal_slopes!(
         dy::AbstractVector,
-        x::AbstractVector{Tg},
+        x::AbstractVector,
         y::AbstractVector,
-        tension;
+        tension,
+        ::Type{Tw};
         bc::AbstractBC = NoBC()
-    ) where {Tg}
+    ) where {Tw}
     n = length(x)
     @assert n >= 2 "Cardinal spline requires at least 2 points"
     @assert length(y) == n "y length must match x"
     @assert length(dy) == n "dy length must match x"
 
-    scale = one(Tg) - tension
+    # Dimensionless scale at the value-matched width (`one(quantity)` strips
+    # units; `float` keeps Int axes on the historic Float64 arithmetic).
+    Tsc = typeof(float(one(Tw)))
+    scale = one(Tsc) - convert(Tsc, tension)
 
     # Special case: 2 points. PeriodicBC routes through the wrap-aware central
     # FD helper (see PCHIP n=2 note for rationale).
     if n == 2
         if bc isa PeriodicBC
-            @inbounds dy[1] = _cardinal_boundary_slope(x, y, 1, n, scale, bc)
-            @inbounds dy[2] = _cardinal_boundary_slope(x, y, 2, n, scale, bc)
+            @inbounds dy[1] = _cardinal_boundary_slope(Tw, x, y, 1, n, scale, bc)
+            @inbounds dy[2] = _cardinal_boundary_slope(Tw, x, y, 2, n, scale, bc)
             return dy
         end
         @inbounds begin
-            δ = _forward_secant(x, y, 1)
+            δ = _forward_secant(Tw, x, y, 1)
             dy[1] = scale * δ
             dy[2] = scale * δ
         end
@@ -55,18 +66,18 @@ function _cardinal_slopes!(
     end
 
     # Left endpoint: bc-dispatched helper.
-    @inbounds dy[1] = _cardinal_boundary_slope(x, y, 1, n, scale, bc)
+    @inbounds dy[1] = _cardinal_boundary_slope(Tw, x, y, 1, n, scale, bc)
 
     # Interior: central finite difference (K=3, no wrap needed).
     @inbounds for k in 2:(n - 1)
-        dy[k] = scale * _centered_secant(x, y, k)
+        dy[k] = scale * _centered_secant(Tw, x, y, k)
     end
 
     # Right endpoint: same bc-dispatched helper. PeriodicBC{:inclusive} yields
     # dy[n] == dy[1] automatically (closed-cycle symmetry); :exclusive yields
     # a different value using the seam secant — the helper handles both via
     # `_periodic_secant`/`_periodic_cell_width`.
-    @inbounds dy[n] = _cardinal_boundary_slope(x, y, n, n, scale, bc)
+    @inbounds dy[n] = _cardinal_boundary_slope(Tw, x, y, n, n, scale, bc)
 
     return dy
 end

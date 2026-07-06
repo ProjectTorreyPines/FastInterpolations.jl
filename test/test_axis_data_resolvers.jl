@@ -45,6 +45,100 @@
     end
 end
 
+@testitem "_resolve_axis 3-arg Tg dispatch table (incl. pre-wrapped × :exclusive diagonal)" begin
+    using FastInterpolations:
+        _resolve_axis, _CachedRange, _CachedVector, _ExclusivePeriodicAxis,
+        _to_float, NoBC, PeriodicBC
+
+    # 3-arg `_resolve_axis(x, bc, Tg)` dispatch table. The pre-wrapped × `:exclusive`
+    # DIAGONAL methods are load-bearing against ambiguity: `_Cached* <: Abstract*`, so
+    # (specific container × generic BC) and (generic container × specific BC) cross
+    # without them — Aqua ambiguity RED + runtime MethodError in hetero one-shot.
+    bc_no = NoBC()
+    bc_excl = PeriodicBC(endpoint = :exclusive, period = 4.0)
+
+    @testset "raw Range + Tg → _CachedRange{Tg}" begin
+        @test _resolve_axis(0:1:3, bc_no, Float32) isa _CachedRange{Float32}
+        @test _resolve_axis(0.0:1.0:3.0, bc_no, Float64) isa _CachedRange{Float64}
+    end
+
+    @testset "_CachedRange + non-exclusive + Tg → _convert_copy (same-type identity)" begin
+        cr64 = _to_float(0.0:1.0:3.0, Float64)
+        @test _resolve_axis(cr64, bc_no, Float64) === cr64
+        @test _resolve_axis(cr64, bc_no, Float32) isa _CachedRange{Float32}
+    end
+
+    @testset "raw Vector / _CachedVector + non-exclusive + Tg → passthrough (Tg ignored)" begin
+        x32 = Float32[0.0, 1.0, 2.0, 3.0]
+        cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        @test _resolve_axis(x32, bc_no, Float64) === x32
+        @test _resolve_axis(cv64, bc_no, Float32) === cv64
+    end
+
+    @testset "raw Range/Vector + :exclusive + Tg → _ExclusivePeriodicAxis" begin
+        ax_r = _resolve_axis(0:1:3, bc_excl, Float32)
+        @test ax_r isa _ExclusivePeriodicAxis
+        @test ax_r.inner isa _CachedRange{Float32}    # Tg respected on raw Range
+        # Period follows the Tg-typed axis (`_resolve_bc_period` normalizes it): a
+        # Float64 period literal must NOT re-widen a value-matched Float32 axis.
+        @test ax_r.period isa Float32
+        @test eltype(ax_r) === Float32
+        x = [0.0, 1.0, 2.0, 3.0]
+        ax_v = _resolve_axis(x, bc_excl, Float64)
+        @test ax_v isa _ExclusivePeriodicAxis
+        @test ax_v.inner === x                        # raw Vector never converts
+    end
+
+    @testset "DIAGONAL: _CachedRange + :exclusive + Tg" begin
+        cr64 = _to_float(0.0:1.0:3.0, Float64)
+        ax = _resolve_axis(cr64, bc_excl, Float64)
+        @test ax isa _ExclusivePeriodicAxis
+        @test ax.inner === cr64                       # same-type `_convert_copy` identity
+        @test ax.period == 4.0
+        @test length(ax) == 5                         # virtual n+1
+        # Cross-eltype: the axis converts to Tg first, and the period is resolved
+        # against the CONVERTED axis — so it follows Tg instead of re-widening.
+        ax32 = _resolve_axis(cr64, bc_excl, Float32)
+        @test ax32.inner isa _CachedRange{Float32}
+        @test ax32.period isa Float32
+    end
+
+    @testset "DIAGONAL: _CachedVector + :exclusive + Tg" begin
+        cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        ax = _resolve_axis(cv64, bc_excl, Float64)
+        @test ax isa _ExclusivePeriodicAxis
+        @test ax.inner isa _CachedVector{Float64}     # Tg respected (same-width converted copy)
+        @test ax.period == 4.0
+        # `:exclusive` converts to Tg — UNLIKE a non-periodic vector, the wrapped axis eltype flows
+        # into the value/witness path via the period seam, so it must follow Tg (matching the
+        # `_CachedRange` diagonal above and the raw-Vector arm). The old "never convert" contract
+        # produced a Float64 axis past a value-matched Float32 witness → crash.
+        ax32 = _resolve_axis(cv64, bc_excl, Float32)
+        @test ax32.inner isa _CachedVector{Float32}
+        @test ax32.period isa Float32
+    end
+
+    @testset "diagonals are type-stable" begin
+        cr64 = _to_float(0.0:1.0:3.0, Float64)
+        cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        f(x, bc, ::Type{T}) where {T} = _resolve_axis(x, bc, T)
+        @test (@inferred f(cr64, bc_excl, Float64)) isa _ExclusivePeriodicAxis
+        @test (@inferred f(cv64, bc_excl, Float64)) isa _ExclusivePeriodicAxis
+    end
+
+    @testset "Tg-typed 2-arg (no BC): Ranges value-match, Vectors pass through" begin
+        # Used by the 1D one-shot entries (no bc concept at the normalize point).
+        @test _resolve_axis(0:1:3, Float32) isa _CachedRange{Float32}
+        cr64 = _to_float(0.0:1.0:3.0, Float64)
+        @test _resolve_axis(cr64, Float64) === cr64       # same-type identity
+        @test _resolve_axis(cr64, Float32) isa _CachedRange{Float32}
+        x32 = Float32[0.0, 1.0, 2.0, 3.0]
+        @test _resolve_axis(x32, Float64) === x32         # vectors never convert
+        cv64 = _CachedVector([0.0, 1.0, 2.0, 3.0])
+        @test _resolve_axis(cv64, Float32) === cv64
+    end
+end
+
 @testitem "_resolve_data — type correctness" begin
     using FastInterpolations: _resolve_data, _ExclusivePeriodicData, NoBC, PeriodicBC
 
@@ -531,6 +625,16 @@ end
         @test ax isa _ExclusivePeriodicAxis
         @test ax.inner isa _CachedRange{Float64}     # inner promoted to Tg
     end
+
+    @testset "Int range + :exclusive + Float64 period + Tg=Float32 stays Float32" begin
+        # Convert-first contract: the period resolves against the Tg-typed axis,
+        # so a Float64 period literal cannot re-widen the value-matched axis.
+        r = 0:1:3
+        ax = _cache_axis(r, bc_excl, Float32)
+        @test ax isa _ExclusivePeriodicAxis
+        @test ax.inner isa _CachedRange{Float32}
+        @test ax.period isa Float32
+    end
 end
 
 @testitem "_cache_axis 3-arg Tg INTENTIONALLY IGNORED: pre-wrapped inputs" begin
@@ -827,4 +931,116 @@ end
         _measure_view(vw)                       # warmup 2 (pool reuse)
         @test (@allocated _measure_view(vw)) <= WRAPPER_OVERHEAD_LIMIT
     end
+end
+
+# RED PIN (#7 root / #1): the one-shot `_resolve_axis` :exclusive Vector arm must respect the
+# value-matched `Tg` exactly as the persistent `_cache_axis` does. Today `_resolve_axis` resolves
+# the period against the RAW grid (→ `float(Int)` = Float64) while `_cache_axis` converts-first
+# (→ Float32), so an Int Vector + Tg=Float32 diverges: Float64 axis vs Float32 axis. That divergence
+# IS the linear one-shot crash and the 2-arg/3-arg period-timing split — a `_wrap_exclusive`
+# helper shared by both families (always convert-first) would close it.
+@testitem "_resolve_axis :exclusive Vector respects Tg like _cache_axis (narrow-float root)" begin
+    using FastInterpolations: _resolve_axis, _cache_axis, PeriodicBC
+
+    bc = PeriodicBC(endpoint = :exclusive, period = 2.5)
+    x = collect(0:2)                                   # Int Vector; values exact in Float32
+
+    axr = _resolve_axis(x, bc, Float32)                # one-shot arm
+    axc = _cache_axis(x, bc, Float32)                  # persistent arm (reference; already narrow)
+
+    @test eltype(axc) === Float32                       # sanity: persistent narrows correctly
+    @test eltype(axr) === Float32                       # RED: one-shot currently Float64
+    @test axr.period isa Float32                        # RED: one-shot currently Float64
+    @test eltype(axr) === eltype(axc)                   # one-shot ≡ persistent axis width
+end
+
+# RED PIN (Copilot #182): `_resolve_axis` only has the 1-arg `_ExclusivePeriodicAxis` passthrough
+# (periodic_axis.jl), so the 2-arg/3-arg `:exclusive` forms fall through to the AbstractVector arms
+# and RE-WRAP an already-wrapped axis (`_ExclusivePeriodicAxis <: AbstractVector`) — nesting toward
+# length (n+1)+1, which actually throws in the ctor (`inner[end] < x_max` fails). `_cache_axis`
+# already defends this with a full passthrough set; `_resolve_axis` must mirror it.
+@testitem "_resolve_axis :exclusive passes through a pre-wrapped axis (no re-wrap)" begin
+    using FastInterpolations: _resolve_axis, _wrap_exclusive, _ExclusivePeriodicAxis, PeriodicBC
+
+    bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+    wrapped = _wrap_exclusive(collect(0.0:3.0), bc)     # _ExclusivePeriodicAxis, length n+1 = 5
+    @test wrapped isa _ExclusivePeriodicAxis
+    @test length(wrapped) == 5
+
+    # Feeding the already-wrapped axis back must PASS THROUGH (identity), not nest/throw.
+    @test _resolve_axis(wrapped, bc) === wrapped                 # 2-arg
+    @test _resolve_axis(wrapped, bc, Float64) === wrapped        # 3-arg Tg-aware
+    @test length(_resolve_axis(wrapped, bc, Float64)) == 5       # not (n+1)+1
+end
+
+# Width-first geometry primitives: `_get_*(Tw, x, i)` — the value-matched coordinate
+# width `Tw` comes from the caller's surface (`_promote_grid_float(Tg, Tv)`). Raw axes
+# difference in their OWN eltype first (Int spans are exact), convert the SPAN once,
+# then divide — the reciprocal is BORN at `Tw` (no `inv(Int)::Float64` minting), and
+# coordinates beyond `Tw`'s ulp cannot cancel (span-first, never endpoint-convert).
+# Wrapped axes reuse the cached reciprocal (convert is a no-op once value-matched).
+# Width-less forms keep the historic raw-eltype behavior via delegation.
+@testitem "width-first _get_h/_get_inv_h/_get_inv_2cell + secants" begin
+    using FastInterpolations: _get_h, _get_inv_h, _get_inv_2cell,
+        _forward_secant, _backward_secant, _centered_secant,
+        _cache_axis, _resolve_axis, NoBC
+
+    # raw Int vector: reciprocal born at Tw
+    x = [1, 3, 6]
+    @test _get_h(Float32, x, 1) === 2.0f0
+    @test _get_inv_h(Float32, x, 1) === 0.5f0
+    @test _get_inv_2cell(Float32, x, 2) === inv(5.0f0)
+    @test _get_inv_h(Float64, x, 2) === inv(3.0)
+
+    # span-first precision: Int coords beyond Float32's ulp — endpoint-convert
+    # would cancel to 0 (inv → Inf); the span itself is small and exact.
+    xb = [16_777_216, 16_777_218]
+    @test _get_inv_h(Float32, xb, 1) === 0.5f0
+
+    # wrapped axes: cached reciprocal reused; convert no-op when value-matched
+    c = _cache_axis(collect(Float32, 1:5), NoBC())
+    @test _get_inv_h(Float32, c, 2) === _get_inv_h(c, 2)
+    r = _resolve_axis(1:5, Float32)                    # _CachedRange{Float32}
+    @test _get_inv_h(Float32, r, 1) === 1.0f0
+    @test _get_h(Float32, r, 1) === 1.0f0
+
+    # width-first secants: Int axis + F32 data → Float32 end to end
+    y32 = Float32[1, 2, 4]
+    @test _forward_secant(Float32, x, y32, 1) === 0.5f0
+    @test _backward_secant(Float32, x, y32, 2) === 0.5f0
+    @test _centered_secant(Float32, x, y32, 2) === 0.6f0
+    # width-less forms keep the historic raw semantics (Int axis → Float64)
+    @test _forward_secant(x, y32, 1) isa Float64
+end
+
+# Width-first SEARCH-RESULT form `_get_inv_h(Tw, g, idx, xL, xR)` — the ND linear
+# scalar one-shot derives inv_h from the search endpoints. Same span-first doctrine
+# as the 3-arg family: raw axes difference in their OWN eltype, convert the span
+# once, divide at `Tw` (no `inv(Int)::Float64` minting). Cached/wrapped axes keep
+# their cached reciprocal (endpoint args ignored; convert no-op once value-matched).
+@testitem "width-first search-result _get_inv_h(Tw, g, idx, xL, xR)" begin
+    using FastInterpolations: _get_inv_h, _cache_axis, _resolve_axis,
+        NoBC, PeriodicBC
+
+    # raw Int vector: reciprocal born at Tw from the search endpoints
+    x = [1, 3, 6]
+    @test _get_inv_h(Float32, x, 1, 1, 3) === 0.5f0
+    @test _get_inv_h(Float64, x, 2, 3, 6) === inv(3.0)
+    # Int coords beyond Float32's ulp: the span is small and exact —
+    # endpoint-convert would cancel to 0 (inv → Inf)
+    xb = [16_777_216, 16_777_218]
+    @test _get_inv_h(Float32, xb, 1, 16_777_216, 16_777_218) === 0.5f0
+
+    # wrapped axes: cached reciprocal reused; endpoints ignored
+    c = _cache_axis(collect(Float32, 1:5), NoBC())
+    @test _get_inv_h(Float32, c, 2, 2.0f0, 3.0f0) === _get_inv_h(c, 2)
+    r = _resolve_axis(1:5, Float32)                    # _CachedRange{Float32}
+    @test _get_inv_h(Float32, r, 1, 1.0f0, 2.0f0) === 1.0f0
+
+    # :exclusive axis: interior delegates to the wrapped inner; the seam cell has
+    # no stored width — span-first from the search endpoints (wrap domain edge)
+    bc = PeriodicBC(endpoint = :exclusive, period = 8.0)
+    g = _resolve_axis([0, 2, 4, 6], bc, Float32)       # inner n=4, seam idx=4
+    @test _get_inv_h(Float32, g, 2, 2.0f0, 4.0f0) === 0.5f0
+    @test _get_inv_h(Float32, g, 4, 6.0f0, 8.0f0) === 0.5f0
 end

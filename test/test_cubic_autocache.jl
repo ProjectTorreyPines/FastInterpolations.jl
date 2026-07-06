@@ -1015,3 +1015,67 @@ end
     @test cache3 !== cache
     @test cache3.x isa FastInterpolations._CachedRange{Float64}
 end
+
+# =============================================================================
+# Eltype-aware bank: an explicit target float type routes an Int/Rational grid
+# to the value-matched cache bank (data-aware), instead of the grid's blind
+# natural float. The default (no target type) is unchanged.
+# =============================================================================
+@testitem "Cubic Cache: eltype-aware bank (data-aware float type)" begin
+    import FastInterpolations: _get_cubic_cache
+
+    clear_cubic_cache!()
+    xi = [0, 1, 2, 3, 4, 5, 6, 7]         # Vector{Int}
+    bc = BCPair(Deriv1(0.0), Deriv1(0.0)) # the pre-normalized form the one-shot passes
+
+    # Default 3-arg: an Int grid caches at its natural float (Float64).
+    c_default = _get_cubic_cache(xi, bc, true)
+    @test eltype(c_default.x) === Float64
+
+    # NEW 4-arg: an explicit target float type routes the Int grid to that bank.
+    c_f32 = _get_cubic_cache(xi, bc, true, Float32)
+    c_f64 = _get_cubic_cache(xi, bc, true, Float64)
+    @test eltype(c_f32.x) === Float32
+    @test eltype(c_f64.x) === Float64
+
+    # Distinct banks (Float32 vs Float64) — no objectid collision on one Int grid.
+    @test c_f32 !== c_f64
+    # Explicit-Float64 lands in the SAME bank as the default (grid natural float),
+    # so the common Int + Float64 case never fragments the cache.
+    @test c_f64 === c_default
+    # Warm re-lookup: same Int grid + same target → same cache object.
+    @test _get_cubic_cache(xi, bc, true, Float32) === c_f32
+end
+
+# =============================================================================
+# 1D one-shot value-match: Int Vector + Float32 data returns Float32 and agrees
+# bit-for-bit across scalar / batch / persistent (all F32-solve). Warm scalar
+# one-shot on the raw Int grid stays zero-alloc (cache hit via the Int objectid).
+# =============================================================================
+@testitem "Cubic 1D one-shot: Int Vector + Float32 value-matches (scalar ≡ batch ≡ persistent)" setup = [AllocConstants] begin
+    xi = [0, 1, 2, 3, 4, 5, 6, 7]
+    y = Float32[sin(1.3f0 * i) + 0.4f0 * i for i in xi]
+    q = 3.4f0
+
+    # value-matched: Int axis + Float32 data → Float32 out (not the blind Float64).
+    v_scalar = cubic_interp(xi, y, q)
+    @test v_scalar isa Float32
+
+    # scalar ≡ batch ≡ persistent (all F32-solve).
+    v_batch = cubic_interp(xi, y, [q])[1]
+    v_persist = cubic_interp(xi, y)(q)
+    @test v_scalar === v_batch
+    @test v_scalar === v_persist
+
+    # warm zero-alloc on the raw Int grid (cache hit via the Int grid's objectid).
+    function _alloc_cubic_scalar_int_f32()
+        x = [0, 1, 2, 3, 4, 5, 6, 7]
+        yy = Float32[sin(1.3f0 * i) for i in x]
+        qq = 3.4f0
+        for _ in 1:3
+            cubic_interp(x, yy, qq)
+        end
+        @allocated cubic_interp(x, yy, qq)
+    end
+    @test _alloc_cubic_scalar_int_f32() <= ALLOC_THRESHOLD
+end

@@ -37,9 +37,9 @@ function CubicHermiteInterpolantND(
     # already enforces this, so this guards direct struct construction.
     K == (1 << N) - 1 || _throw_partials_not_full_mixed(N, K)
 
-    # Promote across (grid, data, partials) to a single Tv.
-    grids_typed, _, Tv_promoted, _ = _nd_promote_grids(grids, data)
-    Tv = promote_type(Tv_promoted, Tv_part)
+    # Promote across (grid, data, partials) to a single Tv — the grid value-match must
+    # see the partials' width too (value space = data ∪ partials, matching one-shot).
+    grids_typed, _, Tv, _ = _nd_promote_grids(grids, data, Tv_part)
 
     data_typed = _coerce_data_eltype(data, Tv, Val(N))
     partials_typed = _coerce_partials_eltype(partials, Tv, Val(N))

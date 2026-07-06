@@ -61,7 +61,8 @@ function hermite_interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {Tv, N, Tv_part}
-    Tg = _promote_grid_eltype(grids)
+    # `Tg` value-matched as in `_hermite_oneshot_prepare`, so `Tr` agrees with the eval.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), promote_type(Tv, Tv_part))
     Tq = _query_eltype(queries)
     Tr = _promote_eltype(_interp_op, Tg, promote_type(Tv, Tv_part), Tq)
     output = Vector{Tr}(undef, _query_length(queries))
@@ -112,7 +113,9 @@ end
     K == (1 << N) - 1 || _throw_partials_not_full_mixed(N, K)
 
     # Raw grids: the pack + cell-eval float the cell width, so no eager `Tg.(x)` copy.
-    Tg = _promote_grid_eltype(grids)
+    # `Tg` value-matched to data∪partials (Int grid + Float32 → Float32) keeps `Tv` narrow,
+    # so `_coerce_*_eltype` pass through instead of copying data + K partials per call.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), promote_type(eltype(data), Tv_part))
     Tv_promoted = _promote_eltype(_coeff_op, Tg, eltype(data))
     Tv = promote_type(Tv_promoted, Tv_part)
     data_typed = _coerce_data_eltype(data, Tv, Val(N))
@@ -158,8 +161,10 @@ end
     oob_result !== nothing && return oob_result
 
     # `bcs_post` (3rd return) is unused: no partial-solve step here, and
-    # extrap is materialized from `extraps_val` + `grids_p`.
-    grids_p, buf, _ = _pack_and_extend_nodal_derivs_pooled(pool, grids, data, partials, bcs)
+    # extrap is materialized from `extraps_val` + `grids_p`. `Tg` value-matches the
+    # width/extension type (Int grid + Float32 data → Float32) — grids stay raw.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    grids_p, buf, _ = _pack_and_extend_nodal_derivs_pooled(pool, grids, data, partials, bcs, Tg)
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
 
     # `mono` is all-true for a single point (no monotone-hint optimization).
@@ -168,7 +173,7 @@ end
 
     q_evals = _handle_all_extraps(query, grids_p, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_evals, grids_p, searches, hints, mono, extraps_eff)
-    hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls)
+    hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls, Tg)
     return _eval_nd_cell(buf, indices, hs, inv_hs, dLs, ops)
 end
 
@@ -196,7 +201,8 @@ end
     _query_validate(queries)
 
     # `bcs_post` (3rd return) is unused here — see the scalar path note.
-    grids_p, buf, _ = _pack_and_extend_nodal_derivs_pooled(pool, grids, data, partials, bcs)
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    grids_p, buf, _ = _pack_and_extend_nodal_derivs_pooled(pool, grids, data, partials, bcs, Tg)
     extraps_eff = map(_resolve_extrap, extraps_val, grids_p)
     extraps_eff = _validate_nd_domain(grids_p, queries, extraps_eff)
 
@@ -209,7 +215,7 @@ end
         end
         q_evals = _handle_all_extraps(query_k, grids_p, extraps_eff)
         indices, Ls, _ = _search_all_intervals(q_evals, grids_p, policies, hints, extraps_eff)
-        hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls)
+        hs, inv_hs, dLs = _compute_all_local_params(q_evals, grids_p, indices, Ls, Tg)
         output[k] = _eval_nd_cell(buf, indices, hs, inv_hs, dLs, ops)
     end
     return output

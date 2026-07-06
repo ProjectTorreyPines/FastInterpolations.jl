@@ -24,9 +24,11 @@
     # Grid pre-normalized by the public `akima_interp` API via `_resolve_axis(x)`
     # before dispatching here; `_periodic_extend_1d` preserves the normalization.
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
-    Tdy = _promote_eltype(_coeff_op, eltype(x_eff), Tv)
+    # Value-matched width: dy buffer + slope arithmetic run at `Tw` — see pchip_oneshot.jl.
+    Tw = _promote_grid_float(eltype(x_eff), Tv)
+    Tdy = _promote_eltype(_coeff_op, Tw, Tv)
     dy = acquire!(pool, Tdy, length(y_ext))
-    _akima_slopes!(dy, x_eff, y_ext; bc = bc_eff)
+    _akima_slopes!(dy, x_eff, y_ext, Tw; bc = bc_eff)
     searcher = _resolve_search(x_eff, xq, search, hint)
     return _hermite_eval_at_point(x_eff, y_ext, dy, xq, extrap_eff, deriv, searcher)
 end
@@ -47,9 +49,11 @@ end
     @boundscheck length(output) == length(x_query) || _throw_length_mismatch(length(x_query), length(output), "x_query", "output")
     x_eff, y_ext, bc_eff, extrap_eff = _periodic_extend_1d(x, y, bc, extrap)
 
-    Tdy = _promote_eltype(_coeff_op, eltype(x_eff), Tv)
+    # Value-matched width: dy buffer + slope arithmetic run at `Tw` — see pchip_oneshot.jl.
+    Tw = _promote_grid_float(eltype(x_eff), Tv)
+    Tdy = _promote_eltype(_coeff_op, Tw, Tv)
     dy = acquire!(pool, Tdy, length(y_ext))
-    _akima_slopes!(dy, x_eff, y_ext; bc = bc_eff)
+    _akima_slopes!(dy, x_eff, y_ext, Tw; bc = bc_eff)
     searcher = _resolve_search(x_eff, x_query, search, hint)
     return _hermite_vector_loop!(output, x_eff, y_ext, dy, x_query, extrap_eff, deriv, searcher)
 end
@@ -126,7 +130,8 @@ Outlier-robust, C\$^1\$ continuous.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
+    # Value-matched Tg: Int/OneTo grid + Float32 data → Float32 axis.
+    x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, xq)
     if resolved isa OnTheFly
@@ -152,7 +157,7 @@ In-place Akima interpolation with outlier-robust slopes.
         search::AbstractSearchPolicy = AutoSearch(),
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, Tq <: Real}
-    x = _resolve_axis(x)
+    x = _resolve_axis(x, _promote_grid_float(Tg, Tv))
     extrap_eff = _resolve_extrap(extrap, bc, x, y)
     resolved = _resolve_coeffs(coeffs, x, x_query)
     if resolved isa OnTheFly

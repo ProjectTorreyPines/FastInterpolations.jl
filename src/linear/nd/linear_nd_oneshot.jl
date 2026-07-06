@@ -42,7 +42,9 @@ function _linear_interp_nd_oneshot(
     # seam) so kernels read raw `data[..., idx_R, ...]` directly. With BC info
     # encoded in the axis type, the searcher carries `NoBC()` — the wrapper's
     # dispatch handles seam regardless.
-    grids_eff = map(_resolve_axis, grids, bcs)
+    # Value-matched grid float (Int grid + Float32 data → Float32) — eval matches the `Tr` witness.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    grids_eff = _resolve_axes(grids, bcs, Tg)  # @generated static-Tg unroll (no Type-captured closure)
     # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
     query = map(_resolve_grididx, query, grids_eff)
     # Validate (NoExtrap throw must precede the FillExtrap short-circuit) AND promote per axis:
@@ -56,12 +58,14 @@ function _linear_interp_nd_oneshot(
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
     stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, extraps_eff)
-    αs = map(_alpha_of, q_eval, Ls, Rs, grids_eff)
-    # 4-arg `_get_inv_h(g, idx, xL, xR)` — `_CachedVector`/`_CachedRange` use
-    # cached fields (idx-indexed or scalar); raw `Vector` falls back to
-    # `inv(xR - xL)`. `first(stencil)` = idxL for K=2 (linear) stencils.
+    # Width-first `_get_inv_h(Tg, g, idx, xL, xR)` — `_CachedVector`/`_CachedRange`
+    # use cached fields; a raw `Vector` spans `xR - xL` in its own eltype and divides
+    # at the value-matched `Tg` (span-first: an Int axis would otherwise mint Float64
+    # via `inv(Int)`). α derives from the typed inv_h — query-blood promotion preserved
+    # (Dual query ⇒ Dual α) and the seam cell shares the deriv path's denominator.
     idxLs = map(first, stencils)
-    inv_hs = map(_get_inv_h, grids_eff, idxLs, Ls, Rs)
+    inv_hs = _typed_inv_hs(grids_eff, idxLs, Ls, Rs, Tg)
+    αs = map(_alpha_of, q_eval, Ls, inv_hs)
     return _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
 end
 
@@ -133,10 +137,9 @@ function linear_interp(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    # Scalar one-shot: raw grids — the kernel's `map(_resolve_axis, …)` shapes each
-    # axis and the search promote-compares, so no eager `Tg.(x)` copy. `Tr` from
-    # op-shape inference (`dL/h` floats Int). Batch keeps eager-convert (amortised).
-    Tg = _promote_grid_eltype(grids)
+    # Scalar one-shot: raw grids shaped per axis by `_resolve_axis(…, Tg)` at the value-matched
+    # float (Int grid + Float32 data → Float32) — no eager copy, witness `Tr` matches the eval.
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
     _validate_nd_grids(grids, data)
     Tr = _promote_eltype(_interp_op, Tg, Tv, promote_type(typeof.(query)...))
 

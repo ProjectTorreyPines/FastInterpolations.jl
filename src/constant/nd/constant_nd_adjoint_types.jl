@@ -74,7 +74,7 @@ struct ConstantAdjointND{
             Tg, N, B <: NTuple{N, AbstractBC},
             EP <: Tuple{Vararg{AbstractExtrap, N}}, SD <: Tuple{Vararg{AbstractSide, N}}, Tq,
         }
-        grids_c = map((g, bc) -> _convert_copy(_cache_axis(g, bc, Tg), Tg), grids, bcs)
+        grids_c = map((g, bc, T) -> _convert_copy(_cache_axis(g, bc, T), T), grids, bcs, ntuple(_ -> Tg, Val(N)))
         return new{Tg, N, typeof(grids_c), B, EP, SD, Tq}(grids_c, bcs, extraps, sides, anchors, grid_size)
     end
 end

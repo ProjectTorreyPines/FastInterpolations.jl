@@ -691,6 +691,55 @@ end
     end
 end
 
+# ---------------------------------------------------------------
+# Explicit target float type `Tg` (data-aware bank; one-shot value-match)
+# ---------------------------------------------------------------
+# The 3-arg forms above derive the cache float from the grid alone
+# (`_cache_float_type(eltype(x))`) — an Int grid always lands in the Float64
+# bank. These 4-arg forms take the value-matched float `Tg` (computed at the
+# one-shot surface as `_promote_grid_float(grid_eltype, data_eltype)`) so an
+# Int grid beside Float32 data is cached at Float32 (`cache.x` eltype = `Tg`).
+# Only the Integer/Rational bank routing changes; Float/Range/Dual grids already
+# carry their own float and ignore `Tg` (see the impl overloads below).
+@inline function _get_cubic_cache(
+        x::AbstractVector,
+        bc::BCPair{L, R},
+        autocache::Bool,
+        ::Type{Tg}
+    ) where {L <: PointBC, R <: PointBC, Tg}
+    bc_cache = _cache_bc_pair(bc, Tg)
+    x_norm = _resolve_axis(x)
+    if autocache
+        return _get_derivative_cache_impl(x_norm, bc_cache, Tg)
+    else
+        return _build_derivative_bc_cache(_to_float(x_norm, Tg), bc_cache.left, bc_cache.right)
+    end
+end
+
+@inline function _get_cubic_cache(
+        x::AbstractVector,
+        bc::AbstractBC,
+        autocache::Bool,
+        ::Type{Tg}
+    ) where {Tg}
+    x_norm = _resolve_axis(x)
+    return if autocache
+        if bc isa PeriodicBC
+            return _get_periodic_cache_impl(x_norm, bc, Tg)
+        else
+            return _get_derivative_cache_impl(x_norm, _normalize_bc(bc), Tg)
+        end
+    else
+        x_typed = _to_float(x_norm, Tg)
+        if _is_periodic_bc(bc)
+            return _build_periodic_cache(x_typed, bc)
+        else
+            bc_normalized = _normalize_bc(bc)
+            return _build_derivative_bc_cache(x_typed, bc_normalized.left, bc_normalized.right)
+        end
+    end
+end
+
 
 # ===============================================================
 # Internal: Cache Implementation
@@ -743,6 +792,22 @@ end
     return _build_derivative_bc_cache(_to_float(x, FT), bc_pair.left, bc_pair.right)
 end
 
+# ---- Explicit target float `Tg` (data-aware bank) ----
+# Integer/Rational grids route to the `Vector{Tg}` bank (value-matched) instead
+# of the blind `Vector{float(T)}`. All other grids (Float/Range/Dual) already
+# carry their own float or are ephemeral, so `Tg` is redundant — delegate to the
+# default 3-arg routing.
+@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L, R}, ::Type{Tg}) where {T <: Integer, L <: PointBC, R <: PointBC, Tg}
+    bank = _get_derivative_bank(Vector{Tg}, bc_pair)
+    return _lookup_or_insert!(bank, x, bc_pair)
+end
+@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L, R}, ::Type{Tg}) where {T <: Rational, L <: PointBC, R <: PointBC, Tg}
+    bank = _get_derivative_bank(Vector{Tg}, bc_pair)
+    return _lookup_or_insert!(bank, x, bc_pair)
+end
+@inline _get_derivative_cache_impl(x::AbstractVector, bc_pair::BCPair{L, R}, ::Type{Tg}) where {L <: PointBC, R <: PointBC, Tg} =
+    _get_derivative_cache_impl(x, bc_pair)
+
 """
 Internal implementation for periodic BC cache lookup. `bc` is threaded through
 so `_get_periodic_bank` selects the right E-variant bank — `:inclusive`,
@@ -781,3 +846,17 @@ end
 @inline function _get_periodic_cache_impl(x::AbstractVector, bc::PeriodicBC)
     return _build_periodic_cache(_to_float(x, _cache_float_type(eltype(x))), bc)
 end
+
+# ---- Explicit target float `Tg` (data-aware bank) ----
+# Same contract as the derivative impl: Integer/Rational route to `Vector{Tg}`;
+# other grids ignore `Tg` and delegate to the default routing.
+@inline function _get_periodic_cache_impl(x::AbstractVector{T}, bc::PeriodicBC, ::Type{Tg}) where {T <: Integer, Tg}
+    bank = _get_periodic_bank(Vector{Tg}, bc)
+    return _lookup_or_insert!(bank, x, bc)
+end
+@inline function _get_periodic_cache_impl(x::AbstractVector{T}, bc::PeriodicBC, ::Type{Tg}) where {T <: Rational, Tg}
+    bank = _get_periodic_bank(Vector{Tg}, bc)
+    return _lookup_or_insert!(bank, x, bc)
+end
+@inline _get_periodic_cache_impl(x::AbstractVector, bc::PeriodicBC, ::Type{Tg}) where {Tg} =
+    _get_periodic_cache_impl(x, bc)

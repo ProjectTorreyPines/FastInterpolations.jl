@@ -201,18 +201,57 @@ end
 @inline _get_h(x::AbstractRange, ::Int) = step(x)
 @inline _get_inv_h(x::AbstractRange, ::Int) = inv(step(x))
 
+# ── Width-first forms (Range hierarchy) — see cached_vector.jl for the contract.
+# `_CachedRange` reuses the cached reciprocal (convert is a no-op once the axis
+# is value-matched, e.g. `_CachedRange{Tw}` from `_resolve_axis(x, Tw)`); a raw
+# range differences via `step()` in its own eltype, converts the span, then divides.
+@inline _get_inv_h(::Type{Tw}, x::_CachedRange, i::Int) where {Tw} =
+    convert(_promote_eltype(_inv_op, Tw), _get_inv_h(x, i))
+@inline _get_inv_2cell(::Type{Tw}, x::_CachedRange, i::Int) where {Tw} =
+    convert(_promote_eltype(_inv_op, Tw), _get_inv_2cell(x, i))
+@inline _get_inv_h(::Type{Tw}, x::AbstractRange, ::Int) where {Tw} =
+    inv(convert(Tw, step(x)))
+# Search-result form: endpoints ignored — the cached (or step-derived) reciprocal wins.
+@inline _get_inv_h(::Type{Tw}, x::_CachedRange, i::Int, ::Real, ::Real) where {Tw} =
+    _get_inv_h(Tw, x, i)
+
 # ========================================
 # `_resolve_axis` — one-shot Range wrapping
 # ========================================
 @inline _resolve_axis(x::AbstractRange) = _to_float(x, float(eltype(x)))
 @inline _resolve_axis(x::AbstractRange, ::AbstractBC) = _to_float(x, float(eltype(x)))
 @inline _resolve_axis(c::_CachedRange) = c
+# Tg-typed 2-arg (no BC): value-matched one-shot normalization — an Int/OneTo grid
+# beside Float32 data resolves to `_CachedRange{Float32}`, not the blind Float64.
+@inline _resolve_axis(x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+@inline _resolve_axis(c::_CachedRange, ::Type{Tg}) where {Tg} = _convert_copy(c, Tg)
 
-# `:exclusive` raw-input one-shot path — wrap into `_ExclusivePeriodicAxis`.
-@inline function _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
+# Shared convert-first wrapper for EVERY `:exclusive` axis site (one-shot + persistent, Range +
+# Vector — see cached_vector.jl). Resolving the period AGAINST the already-converted inner
+# (`_resolve_bc_period` normalizes it to the inner's eltype) is what stops a wider period literal
+# from re-widening a value-matched Tg axis through the `_ExclusivePeriodicAxis` ctor's seam
+# promote. Callers pass the inner at the width they want (`_to_float(x, Tg)` / raw / `_CachedVector`).
+@inline function _wrap_exclusive(inner, bc::PeriodicBC{:exclusive})
+    bc_resolved = _resolve_bc_period(inner, bc)
+    return _ExclusivePeriodicAxis(inner, bc_resolved.period)
 end
+
+# `:exclusive` raw-input one-shot path — wrap into `_ExclusivePeriodicAxis` (natural float width).
+@inline _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}) =
+    _wrap_exclusive(_to_float(x, float(eltype(x))), bc)
+
+# 3-arg Tg-aware one-shot resolution — value-matched grid float so an Int/OneTo grid beside
+# Float32 data floats to Float32 (not the blind `float(eltype)`=Float64), matching the persistent
+# path and the natural `promote_type(grid, data, query)` output. Mirrors `_cache_axis(x, bc, Tg)`.
+@inline _resolve_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+@inline _resolve_axis(c::_CachedRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _convert_copy(c, Tg)
+# `:exclusive` — convert-first to Tg, then `_wrap_exclusive` resolves the period against the
+# Tg-typed inner. Diagonal (`_CachedRange` × `:exclusive`) is load-bearing against ambiguity
+# between the two arms above; `_convert_copy` keeps the Tg-matched wrap allocation-free.
+@inline _resolve_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _wrap_exclusive(_to_float(x, Tg), bc)
+@inline _resolve_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _wrap_exclusive(_convert_copy(c, Tg), bc)
 
 # ========================================
 # `_cache_axis` — persistent-path Range wrapping
@@ -224,25 +263,20 @@ end
 @inline _cache_axis(c::_CachedRange) = c
 @inline _cache_axis(c::_CachedRange, ::AbstractBC) = c
 
-# `:exclusive` 2-arg variants — produce `_ExclusivePeriodicAxis`.
-@inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, float(eltype(x))), bc_resolved.period)
-end
-@inline function _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive})
-    bc_resolved = _resolve_bc_period(c, bc)
-    return _ExclusivePeriodicAxis(c, bc_resolved.period)
-end
+# `:exclusive` 2-arg variants — produce `_ExclusivePeriodicAxis` (natural float width).
+@inline _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}) =
+    _wrap_exclusive(_to_float(x, float(eltype(x))), bc)
+@inline _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}) = _wrap_exclusive(c, bc)
 
 # 3-arg Tg-aware. Raw Range respects Tg via `_to_float`. Pre-wrapped passes
 # through — downstream `_convert_copy(_, Tg)` enforces Tg (intentional contract;
 # see DISPATCH TABLE in `periodic_axis.jl`).
 @inline _cache_axis(x::AbstractRange, ::AbstractBC, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
 @inline _cache_axis(c::_CachedRange, bc::AbstractBC, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
-@inline function _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg}
-    bc_resolved = _resolve_bc_period(x, bc)
-    return _ExclusivePeriodicAxis(_to_float(x, Tg), bc_resolved.period)
-end
+# Convert-first delegate (mirrors the Vector-side 3-arg): the 2-arg `_CachedRange`
+# arm resolves the period against the Tg-typed axis, so the period follows Tg.
+@inline _cache_axis(x::AbstractRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _cache_axis(_to_float(x, Tg), bc)
 @inline _cache_axis(c::_CachedRange, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} = _cache_axis(c, bc)
 
 # ========================================
@@ -251,3 +285,8 @@ end
 # Range types have stack-only `_CachedRange` — no pool buffer needed.
 @inline _cache_axis_pooled(_, x::AbstractRange) = _to_float(x, float(eltype(x)))
 @inline _cache_axis_pooled(_, x::_CachedRange) = x
+# 3-arg Tg-aware. Also load-bearing for dispatch: `AbstractRange <: AbstractVector`, so
+# without these a Range would fall into the pooled-Vector 3-arg overload (cached_vector.jl)
+# and lose its stack `_CachedRange` form.
+@inline _cache_axis_pooled(_, x::AbstractRange, ::Type{Tg}) where {Tg} = _to_float(x, Tg)
+@inline _cache_axis_pooled(_, x::_CachedRange, ::Type{Tg}) where {Tg} = _convert_copy(x, Tg)

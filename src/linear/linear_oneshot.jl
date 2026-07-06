@@ -77,7 +77,8 @@ function linear_interp!(
     #     for `:exclusive`).
     # BC info lives in the axis type after resolution → searcher uses `NoBC()`,
     # the seam is handled by the wrapper (or by the naturally-extended Range).
-    x_eff = _resolve_axis(x, bc)
+    # Value-matched Tg keeps the loop interior bit-consistent with the scalar path.
+    x_eff = _resolve_axis(x, bc, _promote_grid_float(eltype(x), eltype(y)))
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     searcher = _resolve_search(x_eff, x_targets, search, nothing)
@@ -204,11 +205,11 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
 # ========================================
 # Core eval: extrap dispatch → search → kernel (no intermediate layers)
 # ========================================
-# Oneshot path (no spacing): α via direct (q-L)/(R-L) on plain Vector grid
-# (`_alpha_of(q, L, R, grid)`); inv_h recomputed per query.
-# Persistent path (with spacing): α via cached `inv_h * (q-L)`; mirrors the ND
-# `_locate_cell` design — exact at knots is sacrificed for query-time speed
-# (1 ULP off possible at right knots; oneshot path remains exact).
+# Cell geometry enters at the value-matched width: `inv_h` converts to the
+# compile-time `typeof(inv(oneunit(Tw)))` (the `_CachedRange` Tinv idiom) — a no-op
+# for float/duck/Unitful axes, and the value-width float for an Int axis whose
+# `inv(h::Int)` would otherwise widen everything to Float64. α = (q−L)·inv_h keeps
+# query blood (Dual partials) and mirrors the persistent + ND `_locate_cell` form.
 
 # Core in-bounds path: search + kernel. All non-InBounds extrap overloads
 # delegate here after their preprocessing — see cubic_eval.jl for the same
@@ -222,16 +223,13 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    # Compile-time cell-geometry type: reciprocal spacing at the value-matched width.
+    Tinv = _promote_eltype(_inv_op, _promote_grid_float(Tg, Tv))
     xq = _resolve_grididx(xq, x)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq, e)
-    # Independent computation of `α` and `inv_h`. The kernel uses only one
-    # (EvalValue → α, `DerivOp(1)` → inv_h, `DerivOp(2)` → neither), so the
-    # unused branch's fdiv is dead-code-eliminated by LLVM. `_alpha_of`
-    # dispatches on grid type:
-    #   `_CachedRange`        → `(q-L) * x.inv_h` (cached fmul, no fdiv)
-    #   raw `AbstractVector`  → `(q-L) / float(R-L)` (single fdiv)
-    α = _alpha_of(xq, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, e)
+    inv_h = convert(Tinv, _get_inv_h(x, idx))
+    α = _alpha_of(xq, xL, inv_h)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], inv_h, α)
 end
 
 # NoExtrap / ExtendExtrap / others matching AbstractExtrap: domain check (NoExtrap throws
@@ -251,10 +249,12 @@ end
     xq = _resolve_grididx(xq, x)
     # NoExtrap → InBounds for the search once the domain check passes (lean search);
     # ExtendExtrap passes through and keeps the two-sided-clamp search (it may arrive OOB).
+    Tinv = _promote_eltype(_inv_op, _promote_grid_float(Tg, Tv))
     extrap_eff = _check_domain(x, xq, extrap)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq, extrap_eff)
-    α = _alpha_of(xq, xL, xR, x)
-    @inbounds return _linear_kernel(op, y[idx], y[idx_R], _get_inv_h(x, idx), α)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq, extrap_eff)
+    inv_h = convert(Tinv, _get_inv_h(x, idx))
+    α = _alpha_of(xq, xL, inv_h)
+    @inbounds return _linear_kernel(op, y[idx], y[idx_R], inv_h, α)
 end
 
 # ClampExtrap / FillExtrap (all ops): boundary check → extrap value or delegate.
@@ -295,11 +295,13 @@ end
         op::O,
         searcher::S
     ) where {Tg, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    Tinv = _promote_eltype(_inv_op, _promote_grid_float(Tg, Tv))
     xq_wrapped = _wrap_to_domain(_resolve_grididx(xq, x), x)
-    idx, idx_R, xL, xR = search_interval(searcher, x, xq_wrapped)
-    α = _alpha_of(xq_wrapped, xL, xR, x)
+    idx, idx_R, xL, _ = search_interval(searcher, x, xq_wrapped)
+    inv_h = convert(Tinv, _get_inv_h(x, idx))
+    α = _alpha_of(xq_wrapped, xL, inv_h)
     yi = _raw(y)
-    @inbounds return _linear_kernel(op, yi[idx], yi[idx_R], _get_inv_h(x, idx), α)
+    @inbounds return _linear_kernel(op, yi[idx], yi[idx_R], inv_h, α)
 end
 
 # Public scalar one-shot API.
@@ -320,8 +322,9 @@ end
     # Same surface-level resolution as the in-place vector form. Zero-alloc:
     # `_resolve_axis` returns either `x` (Vector passthrough), a stack-allocated
     # `_CachedRange`, or an `_ExclusivePeriodicAxis` reference wrapper.
-    # `_resolve_data` is reference-only.
-    x_eff = _resolve_axis(x, bc)
+    # `_resolve_data` is reference-only. The Tg is value-matched: an Int/OneTo
+    # grid beside Float32 data floats to Float32, not the blind Float64.
+    x_eff = _resolve_axis(x, bc, _promote_grid_float(Tg, Tv))
     y_eff = _resolve_data(y, bc)
     extrap_eff = _resolve_extrap(extrap, bc, x_eff, y_eff)
     searcher = _resolve_search(x_eff, xq, search, hint)

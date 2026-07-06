@@ -211,6 +211,14 @@ end
 @inline Base.@propagate_inbounds _get_inv_2cell(::Type{Tw}, x::_CachedVector, i::Int) where {Tw} =
     @inbounds inv(convert(Tw, x.h[i - 1] + x.h[i]))
 
+# Width-first SEARCH-RESULT form `(Tw, x, idx, xL, xR)` — same contract as above,
+# but the span comes from the search endpoints (raw axes never re-index). The
+# `_CachedVector` shield ignores the endpoints and reuses its cached reciprocal.
+@inline _get_inv_h(::Type{Tw}, ::AbstractVector, ::Int, xL::Real, xR::Real) where {Tw} =
+    inv(convert(Tw, xR - xL))
+@inline Base.@propagate_inbounds _get_inv_h(::Type{Tw}, x::_CachedVector, idx::Int, ::Real, ::Real) where {Tw} =
+    _get_inv_h(Tw, x, idx)
+
 # Persistent axis wrapping is split into two stages (see `periodic_axis.jl`):
 #   - outer surface API: `_cache_axis(x, bc)` — bc-aware wrap, zero-copy
 #     of buffer (Vector → `_CachedVector`, Range → `_CachedRange`,

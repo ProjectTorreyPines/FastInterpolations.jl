@@ -58,13 +58,13 @@ function _linear_interp_nd_oneshot(
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
     stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, extraps_eff)
-    # 4-arg `_get_inv_h(g, idx, xL, xR)` — `_CachedVector`/`_CachedRange` use cached
-    # fields; raw `Vector` falls back to `inv(xR - xL)`, width-typed to the value-matched
-    # `Tg` (an Int Vector axis would otherwise leak Float64 via `inv(Int)`). α derives
-    # from the typed inv_h — query-blood promotion preserved (Dual query ⇒ Dual α) and
-    # the seam cell shares the deriv path's denominator by construction.
+    # Width-first `_get_inv_h(Tg, g, idx, xL, xR)` — `_CachedVector`/`_CachedRange`
+    # use cached fields; a raw `Vector` spans `xR - xL` in its own eltype and divides
+    # at the value-matched `Tg` (span-first: an Int axis would otherwise mint Float64
+    # via `inv(Int)`). α derives from the typed inv_h — query-blood promotion preserved
+    # (Dual query ⇒ Dual α) and the seam cell shares the deriv path's denominator.
     idxLs = map(first, stencils)
-    inv_hs = _convert_inv_hs(grids_eff, idxLs, Ls, Rs, Tg)
+    inv_hs = _typed_inv_hs(grids_eff, idxLs, Ls, Rs, Tg)
     αs = map(_alpha_of, q_eval, Ls, inv_hs)
     return _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
 end

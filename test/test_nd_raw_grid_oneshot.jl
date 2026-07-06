@@ -159,9 +159,10 @@ end
         end
         @allocated cubic_interp((x, y), data, q)
     end
-    # PreCompute (the practically-used cubic strategy) is now also raw: each axis's
-    # spline cache memoises by id and the cell width is promoted, so warm Int-grid
-    # one-shot is zero-alloc here too — no internal `Tg.(x)` convert.
+    # PreCompute (the practically-used cubic strategy): axes go through the POOLED
+    # value-matched wrap (`_cache_axes_pooled` — acquire + copyto!, no heap `Tg.(x)`),
+    # and the spline autocache hits via its content-match pass (pooled buffers don't
+    # keep a stable objectid) — so the warm Int-grid one-shot stays zero-alloc.
     function _alloc_cubic_nd_int_pre_2d()
         x = [0, 1, 2, 3, 4, 5, 6, 7]
         y = [0, 1, 2, 3, 4, 5]
@@ -238,6 +239,86 @@ end
         g = ForwardDiff.gradient(pp -> cubic_interp((x, y), data, (pp[1], pp[2])), p)
         gf = ForwardDiff.gradient(pp -> cubic_interp((Float64.(x), Float64.(y)), data, (pp[1], pp[2])), p)
         @test g ≈ gf atol = 1.0e-10
+    end
+end
+
+# ============================================================================
+# Int Vector grids + Float32 data — the value-matched (Tg = Float32) arms
+# ============================================================================
+#
+# `float(Int) === Float64`, so the Int-axis + Float64-data pins above never
+# enter the eltype-mismatch arms (axes stay raw). Float32 data forces
+# `Tg = Float32` and every Int axis must convert: PreCompute and the linear
+# resolve go through POOLED wraps (zero heap), while the OnTheFly global
+# collapse bridge still heap-converts mismatched axes (`Tg.(x)` per call) —
+# pinned `@test_broken` on ≥ 1.12 until the bridge acquires from the pool.
+# (On LTS the allocation floor exceeds the defect size, so no bound is pinned.)
+
+@testitem "Int Vector grids + Float32 data (Tg = Float32 arms)" setup = [AllocConstants] begin
+    function _alloc_linear_int_f32_2d()
+        x = [0, 1, 2, 3, 4, 5, 6, 7]
+        y = [0, 1, 2, 3, 4, 5]
+        data = Float32[1.0f0 * a + 2.0f0 * b for a in x, b in y]
+        q = (3.4f0, 2.6f0)
+        for _ in 1:3
+            linear_interp((x, y), data, q)
+        end
+        @allocated linear_interp((x, y), data, q)
+    end
+    function _alloc_cubic_int_pre_f32_2d()
+        x = [0, 1, 2, 3, 4, 5, 6, 7]
+        y = [0, 1, 2, 3, 4, 5]
+        data = Float32[sin(1.0f0 * a) + cos(1.0f0 * b) for a in x, b in y]
+        q = (3.4f0, 2.6f0)
+        for _ in 1:3
+            cubic_interp((x, y), data, q; coeffs = PreCompute())
+        end
+        @allocated cubic_interp((x, y), data, q; coeffs = PreCompute())
+    end
+    function _alloc_cubic_int_otf_f32_2d()
+        x = [0, 1, 2, 3, 4, 5, 6, 7]
+        y = [0, 1, 2, 3, 4, 5]
+        data = Float32[sin(1.0f0 * a) + cos(1.0f0 * b) for a in x, b in y]
+        q = (3.4f0, 2.6f0)
+        for _ in 1:3
+            cubic_interp((x, y), data, q)
+        end
+        @allocated cubic_interp((x, y), data, q)
+    end
+    function _alloc_hetero_mixed_int_f32_2d()
+        x = [0, 1, 2, 3, 4, 5, 6, 7]
+        y = [0, 1, 2, 3, 4, 5]
+        data = Float32[sin(1.0f0 * a) + 2.0f0 * b for a in x, b in y]
+        q = (3.4f0, 2.6f0)
+        m = (CubicInterp(), LinearInterp())
+        for _ in 1:3
+            interp((x, y), data, q; method = m)
+        end
+        @allocated interp((x, y), data, q; method = m)
+    end
+
+    # value-match sanity: Int axes + Float32 data → Float32 out on every family
+    @testset "results are Float32" begin
+        x = [0, 1, 2, 3, 4]
+        y = [0, 1, 2, 3]
+        data = Float32[1.0f0 * a + 2.0f0 * b for a in x, b in y]
+        q = (1.4f0, 0.6f0)
+        @test linear_interp((x, y), data, q) isa Float32
+        @test cubic_interp((x, y), data, q) isa Float32
+        @test cubic_interp((x, y), data, q; coeffs = PreCompute()) isa Float32
+        @test interp((x, y), data, q; method = (CubicInterp(), LinearInterp())) isa Float32
+    end
+
+    @testset "warm zero-alloc (pooled arms)" begin
+        @test _alloc_linear_int_f32_2d() <= ND_ALLOC_THRESHOLD
+        @test _alloc_cubic_int_pre_f32_2d() <= ND_ALLOC_THRESHOLD
+    end
+
+    @testset "known heap-convert on the collapse bridge (RED until pooled)" begin
+        if ND_ALLOC_THRESHOLD == 0
+            @test_broken _alloc_cubic_int_otf_f32_2d() <= ND_ALLOC_THRESHOLD
+            @test_broken _alloc_hetero_mixed_int_f32_2d() <= ND_ALLOC_THRESHOLD
+        end
     end
 end
 

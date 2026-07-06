@@ -211,6 +211,9 @@ end
     convert(_promote_eltype(_inv_op, Tw), _get_inv_2cell(x, i))
 @inline _get_inv_h(::Type{Tw}, x::AbstractRange, ::Int) where {Tw} =
     inv(convert(Tw, step(x)))
+# Search-result form: endpoints ignored — the cached (or step-derived) reciprocal wins.
+@inline _get_inv_h(::Type{Tw}, x::_CachedRange, i::Int, ::Real, ::Real) where {Tw} =
+    _get_inv_h(Tw, x, i)
 
 # ========================================
 # `_resolve_axis` — one-shot Range wrapping

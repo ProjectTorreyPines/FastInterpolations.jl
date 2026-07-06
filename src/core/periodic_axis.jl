@@ -269,6 +269,20 @@ end
 @inline Base.@propagate_inbounds _get_inv_h(g::_ExclusivePeriodicAxis, idx::Int, xL::Real, xR::Real) =
     idx < length(g.inner) ? _get_inv_h(g.inner, idx, xL, xR) : inv(xR - xL)
 
+# Width-first search-result form: interior delegates to the inner axis's row
+# (cached reciprocal when wrapped); the seam cell has no stored width — span-first
+# from the search endpoints (`xR == g._x_max`), reciprocal born at `Tw`.
+@inline Base.@propagate_inbounds function _get_inv_h(
+        ::Type{Tw},
+        g::_ExclusivePeriodicAxis,
+        idx::Int,
+        xL::Real,
+        xR::Real,
+    ) where {Tw}
+    return idx < length(g.inner) ? _get_inv_h(Tw, g.inner, idx, xL, xR) :
+        inv(convert(Tw, xR - xL))
+end
+
 # `_alpha_of` for the wrapper: seam-aware so the value computation shares a
 # denominator with the 4-arg `_get_inv_h` at the seam cell.
 #   - Interior cell (`R != g._x_max`): defer to inner so `_CachedRange` uses

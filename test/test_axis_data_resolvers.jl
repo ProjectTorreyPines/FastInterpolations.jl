@@ -1012,3 +1012,35 @@ end
     # width-less forms keep the historic raw semantics (Int axis → Float64)
     @test _forward_secant(x, y32, 1) isa Float64
 end
+
+# Width-first SEARCH-RESULT form `_get_inv_h(Tw, g, idx, xL, xR)` — the ND linear
+# scalar one-shot derives inv_h from the search endpoints. Same span-first doctrine
+# as the 3-arg family: raw axes difference in their OWN eltype, convert the span
+# once, divide at `Tw` (no `inv(Int)::Float64` minting). Cached/wrapped axes keep
+# their cached reciprocal (endpoint args ignored; convert no-op once value-matched).
+@testitem "width-first search-result _get_inv_h(Tw, g, idx, xL, xR)" begin
+    using FastInterpolations: _get_inv_h, _cache_axis, _resolve_axis,
+        NoBC, PeriodicBC
+
+    # raw Int vector: reciprocal born at Tw from the search endpoints
+    x = [1, 3, 6]
+    @test _get_inv_h(Float32, x, 1, 1, 3) === 0.5f0
+    @test _get_inv_h(Float64, x, 2, 3, 6) === inv(3.0)
+    # Int coords beyond Float32's ulp: the span is small and exact —
+    # endpoint-convert would cancel to 0 (inv → Inf)
+    xb = [16_777_216, 16_777_218]
+    @test _get_inv_h(Float32, xb, 1, 16_777_216, 16_777_218) === 0.5f0
+
+    # wrapped axes: cached reciprocal reused; endpoints ignored
+    c = _cache_axis(collect(Float32, 1:5), NoBC())
+    @test _get_inv_h(Float32, c, 2, 2.0f0, 3.0f0) === _get_inv_h(c, 2)
+    r = _resolve_axis(1:5, Float32)                    # _CachedRange{Float32}
+    @test _get_inv_h(Float32, r, 1, 1.0f0, 2.0f0) === 1.0f0
+
+    # :exclusive axis: interior delegates to the wrapped inner; the seam cell has
+    # no stored width — span-first from the search endpoints (wrap domain edge)
+    bc = PeriodicBC(endpoint = :exclusive, period = 8.0)
+    g = _resolve_axis([0, 2, 4, 6], bc, Float32)       # inner n=4, seam idx=4
+    @test _get_inv_h(Float32, g, 2, 2.0f0, 4.0f0) === 0.5f0
+    @test _get_inv_h(Float32, g, 4, 6.0f0, 8.0f0) === 0.5f0
+end

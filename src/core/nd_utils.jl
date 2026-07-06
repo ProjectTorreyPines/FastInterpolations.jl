@@ -1241,6 +1241,44 @@ Generates unrolled `(_convert_grid(grids[1], Tg), _convert_grid(grids[2], Tg), .
     return :(($(exprs...),))
 end
 
+# ── Static-Tg tuple maps for the one-shot hot paths (@generated) ─────────────
+# `map(f, grids, ntuple(_ -> Tg, Val(N)))` re-captures the Type witness in the
+# ntuple closure: under a degraded-inference context (a long-lived test worker)
+# the tuple elements decay to `DataType` and every per-axis call goes through
+# dynamic dispatch — 32 B/axis on Julia 1.12 CI, 60-90 KB downstream on LTS.
+# These unroll at codegen with `Tg` as a STATIC signature parameter: no closure
+# and no runtime `Type` value exist on any Julia version.
+
+# Pooled value-matched wrap (cubic/quadratic PreCompute scalar backends).
+@generated function _cache_axes_pooled(pool, grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
+    exprs = [:(_cache_axis_pooled(pool, grids[$i], Tg)) for i in 1:N]
+    return :(($(exprs...),))
+end
+
+# BC-aware one-shot resolve (linear/constant/hetero OnTheFly surfaces).
+@generated function _resolve_axes(grids::NTuple{N, AbstractVector}, bcs, ::Type{Tg}) where {N, Tg}
+    exprs = [:(_resolve_axis(grids[$i], bcs[$i], Tg)) for i in 1:N]
+    return :(($(exprs...),))
+end
+
+# Raw-form bridge (hetero global-solve path): matching axes stay RAW (1D cache
+# identity); only float-mismatched axes convert. The branch is decided in the
+# GENERATOR — per-axis, from types alone.
+@generated function _bridge_axes_raw(grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
+    exprs = map(1:N) do i
+        float(eltype(fieldtype(grids, i))) === Tg ? :(grids[$i]) : :(_convert_grid(grids[$i], Tg))
+    end
+    return :(($(exprs...),))
+end
+
+# Width-typed reciprocal spans from search results (linear ND scalar one-shot).
+# Keeps today's convert-after form bit-for-bit (span-first harmonization is a
+# separate value-visible change).
+@generated function _convert_inv_hs(grids::NTuple{N, AbstractVector}, idxs, Ls, Rs, ::Type{Tg}) where {N, Tg}
+    exprs = [:(convert(Tg, _get_inv_h(grids[$i], idxs[$i], Ls[$i], Rs[$i]))) for i in 1:N]
+    return :(($(exprs...),))
+end
+
 """
     _nd_promote_grids(grids, data) -> (grids_typed, Tg, Tv, Tz)
 

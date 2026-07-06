@@ -44,7 +44,7 @@ function _linear_interp_nd_oneshot(
     # dispatch handles seam regardless.
     # Value-matched grid float (Int grid + Float32 data → Float32) — eval matches the `Tr` witness.
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    grids_eff = map(_resolve_axis, grids, bcs, ntuple(_ -> Tg, Val(N)))  # Tg as arg, not a captured closure field (LTS const-prop)
+    grids_eff = _resolve_axes(grids, bcs, Tg)  # @generated static-Tg unroll (no Type-captured closure)
     # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
     query = map(_resolve_grididx, query, grids_eff)
     # Validate (NoExtrap throw must precede the FillExtrap short-circuit) AND promote per axis:
@@ -64,7 +64,7 @@ function _linear_interp_nd_oneshot(
     # from the typed inv_h — query-blood promotion preserved (Dual query ⇒ Dual α) and
     # the seam cell shares the deriv path's denominator by construction.
     idxLs = map(first, stencils)
-    inv_hs = map((g, i, L, R, T) -> convert(T, _get_inv_h(g, i, L, R)), grids_eff, idxLs, Ls, Rs, ntuple(_ -> Tg, Val(N)))
+    inv_hs = _convert_inv_hs(grids_eff, idxLs, Ls, Rs, Tg)
     αs = map(_alpha_of, q_eval, Ls, inv_hs)
     return _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
 end

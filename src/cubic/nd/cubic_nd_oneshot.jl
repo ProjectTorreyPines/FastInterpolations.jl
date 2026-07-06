@@ -126,7 +126,7 @@ Zero-allocation after warmup (pool reuse).
     # value-deterministic objectid); a mismatched Vector converts into a POOL buffer
     # (warm one-shots stay zero-alloc), so the whole solve pipeline runs at `Tg`.
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    grids = map((g, T) -> _cache_axis_pooled(pool, g, T), grids, ntuple(_ -> Tg, Val(N)))  # Tg as arg, not a captured closure field (LTS const-prop)
+    grids = _cache_axes_pooled(pool, grids, Tg)  # @generated static-Tg unroll (no Type-captured closure)
     # Bare GridIdx(k).val is NaN → resolve to the grid coordinate for the value kernel (search still uses .idx).
     query = map(_resolve_grididx, query, grids)
     # 0. Validate (NoExtrap throw must precede FillExtrap short-circuit) AND promote per axis:

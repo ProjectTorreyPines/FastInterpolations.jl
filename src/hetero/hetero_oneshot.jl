@@ -148,9 +148,10 @@ end
     bcs = map(_bc_for_periodic_check, methods)
     # Value-matched grid float (Int grid + Float32 data → Float32) — output matches the caller's witness.
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    # Tg threaded as a `map` arg (not captured in a closure): a closure field of type
-    # `Type` de-optimizes on LTS (weak const-prop), heap-allocating downstream per-fiber.
-    grids_eff = map(_resolve_axis, grids, bcs, ntuple(_ -> Tg, Val(N)))
+    # @generated static-Tg unroll: a Type captured in a closure (or an
+    # `ntuple(_ -> Tg, …)` element) de-optimizes under weak const-prop —
+    # LTS per-fiber heap, and per-axis dynamic dispatch on 1.12 CI workers.
+    grids_eff = _resolve_axes(grids, bcs, Tg)
     # NOTE: inclusive PeriodicBC slice validation is NOT performed here — it is
     # hoisted to the callers (`_interp_nd_oneshot_dispatch` and the OnTheFly
     # branch of `_interp_nd_oneshot_batch_dispatch!`) so the batch path pays the
@@ -203,7 +204,7 @@ end
     # Global-solve path: RAW-form grids — the inner 1D one-shots wrap `:exclusive` axes
     # themselves (need user length n, not the wrapped virtual n+1). Only float-mismatched
     # axes convert to `Tg` (Int grid + Float32 data); matching axes stay raw (1D cache identity).
-    grids_raw = map((g, T) -> float(eltype(g)) === T ? g : _convert_grid(g, T), grids, ntuple(_ -> Tg, Val(N)))
+    grids_raw = _bridge_axes_raw(grids, Tg)  # @generated: per-axis raw/convert decided from types
     full_windows = map(Base.OneTo, size(data))
     return _collapse_dims(Tr, data, grids_raw, methods, extraps_eff, q_eval, ops, searches, hints, full_windows)
 end

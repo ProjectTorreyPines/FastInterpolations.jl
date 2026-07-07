@@ -128,7 +128,7 @@ end
         end
         loc = _anchor_loc(grid, xq, extrap isa WrapExtrap, searcher)
         if extrap isa NoExtrap && loc.state != IN_DOMAIN
-            throw(DomainError(xq, "GriddedQuery axis $dim: coordinate outside grid domain (NoExtrap)"))
+            _throw_domain_error(xq, grid, dim)   # canonical message, axis-named
         end
         inv_h = _get_inv_h(grid, loc.idx, loc.xL, loc.xR)
         α = T(_alpha_of(loc.xq, loc.xL, inv_h))

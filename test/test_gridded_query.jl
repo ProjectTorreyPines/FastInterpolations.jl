@@ -427,7 +427,12 @@ end
     catch e
         e
     end
-    @test err isa DomainError && occursin("axis 1", sprint(showerror, err))
+    # canonical axis-named message: same phrasing as scalar/ND, plus the offending
+    # axis and the physical domain bounds
+    msg = sprint(showerror, err)
+    @test err isa DomainError
+    @test occursin("query point on axis 1 outside interpolation domain", msg)
+    @test occursin("[1.0, 16.0]", msg)
 
     # Structural guarantee: the allocating path builds (and validates) the
     # anchors BEFORE allocating the O(M·N) output, so a throwing query must

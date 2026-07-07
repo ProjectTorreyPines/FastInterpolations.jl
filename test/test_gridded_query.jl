@@ -104,7 +104,7 @@ end
     ref = [itp((x, y)) for x in tx, y in ty]
 
     Cf = Matrix{Float64}(undef, M, N)
-    _gridded_fused!(Cf, A, ax, ay)
+    _gridded_fused!(Cf, A, (ax, ay))
     Cb1 = Matrix{Float64}(undef, M, N)
     _gridded_fullbuffer!(Cb1, A, ax, ay, Float64, true)    # blend dim2 first
     Cb2 = Matrix{Float64}(undef, M, N)
@@ -118,6 +118,45 @@ end
     # the public entry agrees with the cores
     C = itp(GriddedQuery((tx, ty)))
     @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
+end
+
+@testitem "generated fused kernel: 3D/4D vs point-wise" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: _gridded_anchors, _gridded_fused!
+
+    # 3D: {Clamp, Extend} incl. OOB targets — anchors fold extrap per axis
+    A3 = rand(12, 10, 8)
+    grids3 = (1.0:12.0, 1.0:10.0, 1.0:8.0)
+    for ex in (FI.ClampExtrap(), FI.ExtendExtrap())
+        itp = FI.linear_interp(grids3, A3; extrap = ex)
+        ts = (
+            collect(range(0.5, 12.5, 9)),
+            collect(range(1.0, 10.0, 7)),
+            [1.0, 3.75, 7.9],
+        )
+        anchors = ntuple(d -> _gridded_anchors(itp.grids[d], ts[d], itp.extraps[d], d), 3)
+        out = Array{Float64, 3}(undef, map(length, ts)...)
+        _gridded_fused!(out, A3, anchors)
+        ref = [itp((x, y, z)) for x in ts[1], y in ts[2], z in ts[3]]
+        @test all(isapprox.(out, ref; rtol = 1.0e-14, atol = 1.0e-14))
+    end
+
+    # 4D: expression nesting depth (15 blends / 16 corners per output)
+    A4 = rand(7, 6, 5, 4)
+    grids4 = (1.0:7.0, 1.0:6.0, 1.0:5.0, 1.0:4.0)
+    itp4 = FI.linear_interp(grids4, A4; extrap = FI.ClampExtrap())
+    ts4 = (
+        collect(range(1.0, 7.0, 5)),
+        [1.5, 4.25],
+        collect(range(1.0, 5.0, 4)),
+        [2.0, 3.5, 3.9],
+    )
+    anchors4 = ntuple(d -> _gridded_anchors(itp4.grids[d], ts4[d], itp4.extraps[d], d), 4)
+    out4 = Array{Float64, 4}(undef, map(length, ts4)...)
+    _gridded_fused!(out4, A4, anchors4)
+    ref4 = [itp4((x, y, z, w)) for x in ts4[1], y in ts4[2], z in ts4[3], w in ts4[4]]
+    @test all(isapprox.(out4, ref4; rtol = 1.0e-14, atol = 1.0e-14))
 end
 
 @testitem "NoExtrap validation + unsupported-extrap guards" begin

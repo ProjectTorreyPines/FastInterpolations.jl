@@ -101,30 +101,56 @@ function _gridded_anchors_pooled(pool, g::AbstractVector, t::AbstractVector, ex:
 end
 
 # ---- FUSED strategy ---------------------------------------------------------
-# One straight-line 3-blend per output (two axis-2 blends on the anchor's
-# column pair + one axis-1 blend), 4 corner reads, no intermediate buffer.
-# The corner loads have data-dependent addresses, so the loop does not
-# SIMD-vectorize; throughput comes from the branch-free body pipelining across
-# iterations (measured load-port-bound, ~2.3 cycles/output).
-function _gridded_fused!(
-        out::AbstractMatrix,
-        A::AbstractMatrix,
-        ax::Vector{<:_GriddedAnchor},
-        ay::Vector{<:_GriddedAnchor}
+# One straight-line (2^N − 1)-blend per output from the 2^N corners of the
+# anchor cell — no intermediate buffer. Generated over N: loop `d` loads
+# axis-d's anchor at its own nesting level (outer-axis loads amortize), axis 1
+# is innermost (stride-1 writes). The corner loads have data-dependent
+# addresses, so the loop does not SIMD-vectorize; throughput comes from the
+# branch-free body pipelining across iterations (2D measured load-port-bound,
+# ~2.3 cycles/output).
+
+# Expression builder for the generated kernel (defined before the generator;
+# the generator body assembles expressions only): nested corner collapse where
+# the axis-d blend wraps the two axis-d corners and axes d+1..N are collapsed
+# inside — for N = 2 this is exactly lo/hi = axis-2 blends, then the axis-1
+# blend.
+function _fused_corner_expr(N::Int, d::Int, idxs::Vector{Any})
+    d > N && return Expr(:ref, :A, idxs...)
+    lo = copy(idxs)
+    lo[d] = Symbol(:il_, d)
+    hi = copy(idxs)
+    hi[d] = :($(Symbol(:il_, d)) + 1)
+    return :(
+        _linear_value_blend(
+            $(Symbol(:alpha_, d)),
+            $(_fused_corner_expr(N, d + 1, lo)),
+            $(_fused_corner_expr(N, d + 1, hi)),
+        )
     )
-    @inbounds for j in eachindex(ay)
-        a2 = ay[j]
-        jl = a2.idx
-        jr = jl + 1
-        for i in eachindex(ax)
-            a1 = ax[i]
-            il = a1.idx
-            lo = _linear_value_blend(a2.alpha, A[il, jl], A[il, jr])
-            hi = _linear_value_blend(a2.alpha, A[il + 1, jl], A[il + 1, jr])
-            out[i, j] = _linear_value_blend(a1.alpha, lo, hi)
+end
+
+@generated function _gridded_fused!(
+        out::AbstractArray{<:Any, N},
+        A::AbstractArray{<:Any, N},
+        anchors::NTuple{N, Vector{<:_GriddedAnchor}}
+    ) where {N}
+    js = [Symbol(:j_, d) for d in 1:N]
+    body = :(out[$(js...)] = $(_fused_corner_expr(N, 1, Any[:_ for _ in 1:N])))
+    for d in 1:N   # d = 1 built first → innermost loop
+        a = Symbol(:a_, d)
+        body = quote
+            for $(js[d]) in eachindex(anchors[$d])
+                $a = anchors[$d][$(js[d])]
+                $(Symbol(:il_, d)) = $a.idx
+                $(Symbol(:alpha_, d)) = $a.alpha
+                $body
+            end
         end
     end
-    return out
+    return quote
+        @inbounds $body
+        return out
+    end
 end
 
 # ---- FULLBUFFER strategy ----------------------------------------------------
@@ -204,7 +230,7 @@ function _gridded_apply!(
     )
     (M == 0 || N == 0) && return out
     if M < n1 && N < n2
-        _gridded_fused!(out, A, ax, ay)
+        _gridded_fused!(out, A, (ax, ay))
     else
         dim2_first = 0.2 * (n1 * N) + 0.65 * (M * N) <= 0.65 * (M * n2) + 0.2 * (M * N)
         _gridded_fullbuffer!(out, A, ax, ay, Tmid, dim2_first)

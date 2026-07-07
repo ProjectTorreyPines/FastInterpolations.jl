@@ -11,9 +11,10 @@
     # in-domain: interval index + normalized in-cell weight
     b = _gridded_anchors(g, [3.25], ExtendExtrap(), 1)
     @test eltype(b) == _GriddedAnchor{Float64}
-    @test isbits(b[1]) && sizeof(b[1]) == 16
+    @test isbits(b[1]) && sizeof(b[1]) == 24
     @test b[1].idx == 3
     @test b[1].alpha ≈ 0.25
+    @test b[1].inv_h == 1.0   # unit-step grid → reciprocal cell width is exactly 1
 
     # Clamp folds the OOB weight to the boundary node; Extend keeps it
     bC = _gridded_anchors(g, [0.0], ClampExtrap(), 1)
@@ -105,10 +106,11 @@ end
 
     Cf = Matrix{Float64}(undef, M, N)
     _gridded_fused!(Cf, A, (ax, ay))
+    ops = (FastInterpolations.EvalValue(), FastInterpolations.EvalValue())
     Cb1 = Matrix{Float64}(undef, M, N)
-    _gridded_fullbuffer!(Cb1, A, ax, ay, Float64, true)    # blend dim2 first
+    _gridded_fullbuffer!(Cb1, A, ax, ay, ops, Float64, true)    # blend dim2 first
     Cb2 = Matrix{Float64}(undef, M, N)
-    _gridded_fullbuffer!(Cb2, A, ax, ay, Float64, false)   # gather dim1 first
+    _gridded_fullbuffer!(Cb2, A, ax, ay, ops, Float64, false)   # gather dim1 first
 
     # all strategies are mathematically equivalent — machine-eps, NOT bit-identity
     @test all(isapprox.(Cf, ref; rtol = 1.0e-14, atol = 1.0e-14))
@@ -159,6 +161,135 @@ end
     @test all(isapprox.(out4, ref4; rtol = 1.0e-14, atol = 1.0e-14))
 end
 
+@testitem "deriv ops: gridded == point-wise (2D public, 3D kernel)" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: _gridded_anchors, _gridded_fused!,
+        EvalValue, EvalDeriv1, EvalDeriv2
+
+    # 2D public path: {Clamp, Extend} × op combinations, OOB included
+    A = rand(24, 20)
+    for ex in (FI.ClampExtrap(), FI.ExtendExtrap())
+        itp = FI.linear_interp((1.0:24.0, 1.0:20.0), A; extrap = ex)
+        tx = collect(range(0.5, 24.5, 31))
+        ty = collect(range(1.0, 20.0, 27))
+        gq = GriddedQuery((tx, ty))
+        for deriv in (
+                (EvalDeriv1(), EvalValue()),
+                (EvalValue(), EvalDeriv1()),
+                (EvalDeriv1(), EvalDeriv1()),   # mixed partial
+                (EvalDeriv2(), EvalValue()),    # linear → carrier-aware zero
+            )
+            C = itp(gq; deriv = deriv)
+            ref = [itp((x, y); deriv = deriv) for x in tx, y in ty]
+            @test eltype(C) == eltype(ref)
+            @test all(isapprox.(C, ref; rtol = 1.0e-13, atol = 1.0e-13))
+        end
+        # in-place form carries the kwarg too
+        out = Matrix{Float64}(undef, 31, 27)
+        itp(out, gq; deriv = (EvalDeriv1(), EvalValue()))
+        refd = [itp((x, y); deriv = (EvalDeriv1(), EvalValue())) for x in tx, y in ty]
+        @test all(isapprox.(out, refd; rtol = 1.0e-13, atol = 1.0e-13))
+    end
+
+    # non-uniform Vector grid: inv_h is genuinely per-cell
+    gx = cumsum(0.5 .+ rand(24))
+    gy = cumsum(0.3 .+ rand(20))
+    itpv = FI.linear_interp((gx, gy), rand(24, 20); extrap = FI.ClampExtrap())
+    txv = collect(range(gx[1], gx[end], 29))
+    tyv = collect(range(gy[1], gy[end], 23))
+    Cv = itpv(GriddedQuery((txv, tyv)); deriv = (EvalDeriv1(), EvalValue()))
+    refv = [itpv((x, y); deriv = (EvalDeriv1(), EvalValue())) for x in txv, y in tyv]
+    @test all(isapprox.(Cv, refv; rtol = 1.0e-12, atol = 1.0e-12))
+
+    # 3D kernel level: per-axis ops through the generated collapse
+    A3 = rand(12, 10, 8)
+    itp3 = FI.linear_interp((1.0:12.0, 1.0:10.0, 1.0:8.0), A3; extrap = FI.ClampExtrap())
+    ts = (collect(range(1.0, 12.0, 9)), collect(range(0.5, 10.5, 7)), [1.0, 3.75, 7.9])
+    anchors = ntuple(d -> _gridded_anchors(itp3.grids[d], ts[d], itp3.extraps[d], d), 3)
+    for ops in (
+            (EvalDeriv1(), EvalValue(), EvalValue()),
+            (EvalValue(), EvalDeriv1(), EvalValue()),
+            (EvalValue(), EvalDeriv1(), EvalDeriv1()),
+        )
+        out3 = Array{Float64, 3}(undef, map(length, ts)...)
+        _gridded_fused!(out3, A3, anchors, ops)
+        ref3 = [itp3((x, y, z); deriv = ops) for x in ts[1], y in ts[2], z in ts[3]]
+        @test all(isapprox.(out3, ref3; rtol = 1.0e-13, atol = 1.0e-13))
+    end
+end
+
+@testitem "WrapExtrap: gridded == point-wise (2D public, 3D kernel)" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: _gridded_anchors, _gridded_fused!
+
+    A = rand(16, 12)
+    itp = FI.linear_interp((1.0:16.0, 1.0:12.0), A; extrap = FI.WrapExtrap())
+    tx = collect(range(-14.0, 45.0, 41))    # several periods out on both sides
+    ty = collect(range(-3.0, 26.0, 29))
+    C = itp(GriddedQuery((tx, ty)))
+    ref = [itp((x, y)) for x in tx, y in ty]
+    @test all(isapprox.(C, ref; rtol = 1.0e-13, atol = 1.0e-13))
+
+    # closed-domain contract: xq == last(x) hits the endpoint exactly
+    Ce = itp(GriddedQuery(([16.0], [12.0])))
+    @test Ce[1, 1] == A[16, 12]
+
+    # mixed per-axis (Wrap × Clamp)
+    itpm = FI.linear_interp((1.0:16.0, 1.0:12.0), A; extrap = (FI.WrapExtrap(), FI.ClampExtrap()))
+    Cm = itpm(GriddedQuery((tx, ty)))
+    refm = [itpm((x, y)) for x in tx, y in ty]
+    @test all(isapprox.(Cm, refm; rtol = 1.0e-13, atol = 1.0e-13))
+
+    # 3D kernel level
+    A3 = rand(10, 9, 8)
+    itp3 = FI.linear_interp((1.0:10.0, 1.0:9.0, 1.0:8.0), A3; extrap = FI.WrapExtrap())
+    ts = (collect(range(-8.0, 28.0, 13)), collect(range(0.0, 17.0, 9)), [-1.0, 4.5, 9.25])
+    anchors = ntuple(d -> _gridded_anchors(itp3.grids[d], ts[d], itp3.extraps[d], d), 3)
+    out3 = Array{Float64, 3}(undef, map(length, ts)...)
+    _gridded_fused!(out3, A3, anchors)
+    ref3 = [itp3((x, y, z)) for x in ts[1], y in ts[2], z in ts[3]]
+    @test all(isapprox.(out3, ref3; rtol = 1.0e-13, atol = 1.0e-13))
+end
+
+@testitem "FillExtrap: OOB slabs filled, matches point-wise" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: EvalValue, EvalDeriv1
+
+    agree(C, ref) = all(
+        i -> isnan(ref[i]) ? isnan(C[i]) :
+            isapprox(C[i], ref[i]; rtol = 1.0e-13, atol = 1.0e-13),
+        eachindex(C)
+    )
+
+    A = rand(16, 12)
+    itp = FI.linear_interp((1.0:16.0, 1.0:12.0), A; extrap = FI.FillExtrap(NaN))
+    tx = [0.25, 1.5, 8.0, 16.75]    # 2 OOB rows
+    ty = [1.0, 6.5, 12.5]           # 1 OOB column
+    C = itp(GriddedQuery((tx, ty)))
+    ref = [itp((x, y)) for x in tx, y in ty]
+    @test agree(C, ref)
+    @test count(isnan, C) == count(isnan, ref) > 0
+
+    # numeric fill + deriv (fill result for any deriv op is a carrier zero)
+    itp0 = FI.linear_interp((1.0:16.0, 1.0:12.0), A; extrap = FI.FillExtrap(-7.5))
+    C0 = itp0(GriddedQuery((tx, ty)))
+    ref0 = [itp0((x, y)) for x in tx, y in ty]
+    @test agree(C0, ref0)
+    Cd = itp0(GriddedQuery((tx, ty)); deriv = (EvalDeriv1(), EvalValue()))
+    refd = [itp0((x, y); deriv = (EvalDeriv1(), EvalValue())) for x in tx, y in ty]
+    @test agree(Cd, refd)
+
+    # mixed Fill × Clamp: OOB on the Clamp axis clamps (not filled)
+    itpm = FI.linear_interp((1.0:16.0, 1.0:12.0), A; extrap = (FI.FillExtrap(NaN), FI.ClampExtrap()))
+    Cm = itpm(GriddedQuery((tx, ty)))
+    refm = [itpm((x, y)) for x in tx, y in ty]
+    @test agree(Cm, refm)
+    @test !isnan(Cm[3, 3])   # in-domain x, OOB y on Clamp axis → clamped value
+end
+
 @testitem "NoExtrap validation + unsupported-extrap guards" begin
     using FastInterpolations
     import FastInterpolations as FI
@@ -201,14 +332,6 @@ end
     end
     a_throw = alloc_on_throw(itp, gq_big)
     @test a_throw < length(big_tx) * length(bad_ty) * sizeof(Float64)
-
-    # Wrap / Fill: explicit ArgumentError at dispatch (both call forms)
-    for ex in (FI.WrapExtrap(), FI.FillExtrap(NaN))
-        itpu = FI.linear_interp((1.0:16.0, 1.0:12.0), A; extrap = ex)
-        @test_throws ArgumentError itpu(GriddedQuery((tx, ty)))
-        out = Matrix{Float64}(undef, length(tx), length(ty))
-        @test_throws ArgumentError itpu(out, GriddedQuery((tx, ty)))
-    end
 end
 
 @testitem "in-place API: pooled buffers, zero-alloc, edges" begin

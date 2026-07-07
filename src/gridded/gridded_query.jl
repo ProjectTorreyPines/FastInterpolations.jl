@@ -43,6 +43,23 @@ GriddedQuery(axes::AbstractVector...) = GriddedQuery(axes)
 Base.size(gq::GriddedQuery) = map(length, gq.axes)
 Base.ndims(::GriddedQuery{T}) where {T} = fieldcount(T)
 
+# ---- ND query protocol ------------------------------------------------------
+# A GriddedQuery is a batch of ∏M_d cartesian-product points in COLUMN-MAJOR
+# order, so the generic `interp`/batch path consumes it like any other query
+# container. Its `_query_size` is the N-D `size(gq)` the GriddedQuery contract
+# promises, so the allocating path returns that array directly and in-place
+# callers pass a matching one. Point k unravels via `CartesianIndices` (axis 1
+# fastest), so linear-indexed writes land at the right N-D position.
+# `Val(fieldcount(T))` keeps the ntuple over the (heterogeneous) axes tuple
+# type-stable (a runtime axis index would box).
+@inline _query_length(gq::GriddedQuery) = prod(size(gq))
+@inline _query_size(gq::GriddedQuery) = size(gq)
+@inline _query_eltype(gq::GriddedQuery) = promote_type(map(eltype, gq.axes)...)
+@inline function _query_extract(gq::GriddedQuery{T}, k) where {T}
+    ci = @inbounds CartesianIndices(size(gq))[k]
+    return ntuple(d -> @inbounds(gq.axes[d][ci[d]]), Val(fieldcount(T)))
+end
+
 # ---- per-axis anchor --------------------------------------------------------
 # The retained per-axis resolution artifact: interval index + linear weight +
 # cell reciprocal width, with extrapolation already folded into the weight.
@@ -408,10 +425,19 @@ function _gridded_apply!(
     if all(map(<, out_size, size(A)))
         _gridded_fused!(out, A, anchors, ops)
     else
-        hulls = ntuple(d -> _gridded_hull(grids[d], targets[d], extraps[d]), Val(N))
-        _gridded_fullbuffer!(out, A, anchors, ops, hulls, Tmid)
+        _gridded_fullbuffer!(out, A, anchors, ops, _gridded_hulls(grids, targets, extraps, Val(N)), Tmid)
     end
     return out
+end
+
+# Per-axis hull tuple via literal-index construction (no capturing closure). An
+# `ntuple(d -> _gridded_hull(grids[d], targets[d], extraps[d]), Val(N))` boxes the
+# heterogeneous `targets` tuple into its closure on some axis-type combinations
+# (e.g. a `UnitRange{Int}` query axis beside a `Vector` — 3 allocs/call); the
+# @generated form assembles the tuple directly and stays allocation-free.
+@generated function _gridded_hulls(grids, targets, extraps, ::Val{N}) where {N}
+    exprs = [:(_gridded_hull(grids[$d], targets[$d], extraps[$d])) for d in 1:N]
+    return :(($(exprs...),))
 end
 
 # ---- FillExtrap post-pass ----------------------------------------------------
@@ -619,4 +645,26 @@ function linear_interp!(
     ops = _resolve_deriv_nd(deriv, Val(N))
     Tout = _gridded_out_eltype(Tg, Tv, targets)
     return _linear_gridded_oneshot!(out, grids, data, targets, ops, extraps, Tg, Tout)
+end
+
+# ---- unified `interp` fast-path ----------------------------------------------
+# `_try_gridded_separable!` is the `interp!` fast-path hook: for a (query, method)
+# that has a separable gridded evaluator it does the write and returns `true`; the
+# generic default returns `false`, so `interp!` falls through to its pointwise
+# batch. It runs BEFORE `interp!` flattens the output, so the N-D array reaches
+# the separable kernel with no reshape (zero extra allocation). Today only a
+# GriddedQuery on an all-`LinearInterp` method qualifies (per-axis anchors resolved
+# once, reused across ∏M_d outputs — 3–9× faster than pointwise, more in higher
+# dimensions). Adding a separable evaluator for another method (constant, cubic, …)
+# later is one more method here — no change to `interp!`.
+@inline _try_gridded_separable!(output, grids, data, queries, methods, extrap, deriv) = false
+function _try_gridded_separable!(
+        output, grids, data, gq::GriddedQuery,
+        methods::Tuple{LinearInterp, Vararg{LinearInterp}}, extrap, deriv
+    )
+    # already-N-D output is written directly; a flat vector (caller's choice) is
+    # reshaped (aliasing) to the query shape for the N-D kernel.
+    out_nd = output isa AbstractVector ? reshape(output, size(gq)) : output
+    linear_interp!(out_nd, grids, data, gq; bc = map(m -> m.bc, methods), extrap = extrap, deriv = deriv)
+    return true
 end

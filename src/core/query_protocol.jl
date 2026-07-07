@@ -20,6 +20,16 @@
 @inline _query_length(q::Tuple{Vararg{AbstractVector}}) = length(q[1])
 @inline _query_length(q) = length(q)
 
+# ── Optional: query output shape ──
+# The batch cores fill a length-`_query_length` buffer by LINEAR index, so a
+# query container that carries a shape reports it here: the allocating path
+# builds an output of that shape and in-place callers pass a matching array
+# (linear indexing lands each result at the right N-D position, column-major).
+# `_query_length == prod(_query_size)` mirrors Base's `length`/`size`. Default
+# is a flat 1-D output (a plain vector), so ordinary batch queries are unchanged.
+
+@inline _query_size(q) = (_query_length(q),)
+
 # ── Protocol function 2: k-th query point extraction ──
 # User-facing: simple getindex-like interface. No Val{N} needed.
 # Override this for custom query types — just return the k-th point (any indexable).

@@ -446,7 +446,7 @@ In-place one-shot N-dimensional interpolation at multiple points.
 Builds partials once, evaluates at all query points.
 """
 function interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
         queries;
@@ -457,23 +457,34 @@ function interp!(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint = nothing,
     ) where {N}
+    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    # Separable fast path (before any flattening, so the N-D output reaches the
+    # gridded kernel without a reshape): true iff a gridded evaluator exists for
+    # this (query, method) — a GriddedQuery on an all-linear method today.
+    _try_gridded_separable!(output, grids, data, queries, method_tuple, extrap, deriv) && return output
+    # The batch cores fill by LINEAR index, so a shaped output (e.g. an N-D array
+    # for a GriddedQuery) is written through a flat 1-D view. `vec`/`reshape`
+    # aliases (never copies), so the caller's array is filled in place; we hand
+    # back the caller's original `output`, not the flat view.
+    flat = output isa AbstractVector ? output : vec(output)
     # Mixed queries with GridIdx → delegate to GridIdx batch path. Forward
     # `coeffs` so the reduced (post-slice) sub-problem honors and validates the
     # caller's strategy choice rather than silently falling back to AutoCoeffs.
     if queries isa Tuple && _has_grididx(typeof(queries))
-        return _interp_batch_with_grididx!(
-            output, grids, data, queries;
+        _interp_batch_with_grididx!(
+            flat, grids, data, queries;
             method = method, deriv = deriv, extrap = extrap,
             search = search, hint = hint, coeffs = coeffs,
         )
+        return output
     end
-    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
     coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, queries, method_tuple)
     # Reject explicit unsupported combinations (PreCompute + local Hermite); the
     # AutoCoeffs path never trips this because resolution returns OnTheFly for
     # local methods. Mirrors the scalar `interp` validation at line 309.
     _validate_nd_coeffs(coeffs_resolved, method_tuple)
-    return _interp_nd_oneshot_batch_dispatch!(output, grids, data, queries, method_tuple, deriv, extrap, search, hint, coeffs_resolved)
+    _interp_nd_oneshot_batch_dispatch!(flat, grids, data, queries, method_tuple, deriv, extrap, search, hint, coeffs_resolved)
+    return output
 end
 
 # ========================================
@@ -500,7 +511,9 @@ function interp(
     _, Tg, _, _ = _nd_promote_grids(grids, data)
     Tq = _query_eltype(queries)
     Tr = _promote_eltype(Tv, Tg, Tq)
-    output = Vector{Tr}(undef, _query_length(queries))
+    # Output takes the query's shape: a flat vector for ordinary batches, the
+    # N-D `size(gq)` array for a shaped container like GriddedQuery.
+    output = Array{Tr}(undef, _query_size(queries))
     interp!(output, grids, data, queries; method = method, coeffs = coeffs, deriv = deriv, extrap = extrap, search = search, hint = hint)
     return output
 end

@@ -632,6 +632,41 @@ end
     @test os_alloc(out, gx, gy, A, gq) <= 1024
 end
 
+@testitem "GriddedQuery strategy: fused + fullbuffer both zero-alloc (incl. Int axes)" setup = [AllocConstants] begin
+    using FastInterpolations
+    import FastInterpolations as FI
+
+    # Int grid beside Int-`UnitRange` query axes — the combination whose
+    # heterogeneous `targets` tuple boxed the fullbuffer hull closure before
+    # `_gridded_hulls` was made @generated. The strategy (fused vs fullbuffer) is a
+    # runtime `all(out_size .< size(data))` branch, NOT a dispatch, so `@which`
+    # can't distinguish it; instead each case asserts that branch condition to
+    # document which path it takes, and both must be allocation-free.
+    grid = (1:10, 2:20)
+    data = rand(10, 19)
+    function alloc(o, g, d, q)
+        FI.linear_interp!(o, g, d, q; extrap = FI.ClampExtrap())   # warmup
+        return @allocated FI.linear_interp!(o, g, d, q; extrap = FI.ClampExtrap())
+    end
+
+    # FULLBUFFER: axis-1 out width == grid width → NOT strictly smaller everywhere
+    qfull = GriddedQuery((1:10, collect(range(3.0, 4.1, 50))))     # 10 × 50
+    ofull = Matrix{Float64}(undef, 10, 50)
+    @test !all(map(<, size(ofull), size(data)))                    # → fullbuffer branch
+    a_full = alloc(ofull, grid, data, qfull)                       # fills ofull, then measures
+    @test ofull == FI.linear_interp(grid, data, qfull; extrap = FI.ClampExtrap())
+    @test a_full <= ALLOC_THRESHOLD
+
+    # FUSED: out strictly smaller than the grid on every axis (pure downsampling),
+    # both query axes raw Int step-ranges
+    qfused = GriddedQuery((1:2:9, 2:3:17))                         # 5 × 6, both < (10, 19)
+    ofused = Matrix{Float64}(undef, 5, 6)
+    @test all(map(<, size(ofused), size(data)))                    # → fused branch
+    a_fused = alloc(ofused, grid, data, qfused)                    # fills ofused, then measures
+    @test ofused == FI.linear_interp(grid, data, qfused; extrap = FI.ClampExtrap())
+    @test a_fused <= ALLOC_THRESHOLD
+end
+
 @testitem "one-shot GriddedQuery: 3D + Fill parity" begin
     using FastInterpolations
     import FastInterpolations as FI
@@ -658,4 +693,86 @@ end
         )
     )
     @test FI.linear_interp(grids, A, gqf; extrap = FI.FillExtrap(0.0)) == itpf(gqf)
+end
+
+@testitem "unified interp: GriddedQuery flows through the batch query protocol" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+
+    grids = (1.0:16.0, 1.0:12.0)
+    A = rand(16, 12)
+    gq = GriddedQuery((collect(range(2.0, 15.0, 20)), collect(range(2.0, 11.0, 14))))
+
+    # `interp` (no GriddedQuery-specific method) routes through the generic batch
+    # query path (pointwise) and returns an N-D array of size(gq)
+    C = interp(grids, A, gq; method = LinearInterp(), extrap = FI.ClampExtrap())
+    @test size(C) == (20, 14)
+    itp = FI.linear_interp(grids, A; extrap = FI.ClampExtrap())
+    @test C ≈ [itp((x, y)) for x in gq.axes[1], y in gq.axes[2]]
+
+    # in-place interp! writes into a matching N-D array (shape from _query_size)
+    out = Matrix{Float64}(undef, 20, 14)
+    @test interp!(out, grids, A, gq; method = LinearInterp(), extrap = FI.ClampExtrap()) === out
+    @test out == C
+    # a flat length-∏M vector output is also accepted (caller's choice of container)
+    vout = Vector{Float64}(undef, 20 * 14)
+    interp!(vout, grids, A, gq; method = LinearInterp(), extrap = FI.ClampExtrap())
+    @test vout == vec(C)
+
+    # the generic path supports ANY method (the reason to route through it)
+    Cc = interp(grids, A, gq; method = CubicInterp(), extrap = FI.ClampExtrap())
+    @test size(Cc) == (20, 14)
+    ref_c = [
+        interp(grids, A, (x, y); method = CubicInterp(), extrap = FI.ClampExtrap())
+            for x in gq.axes[1], y in gq.axes[2]
+    ]
+    @test Cc ≈ ref_c
+
+    # protocol methods directly (column-major: axis 1 varies fastest)
+    @test FI._query_length(gq) == 20 * 14
+    @test FI._query_eltype(gq) === Float64
+    @test @inferred(FI._query_extract(gq, 1)) == (gq.axes[1][1], gq.axes[2][1])
+    @test FI._query_extract(gq, 2) == (gq.axes[1][2], gq.axes[2][1])
+    @test FI._query_extract(gq, 21) == (gq.axes[1][1], gq.axes[2][2])
+end
+
+@testitem "unified interp: GriddedQuery + linear uses separable fast path" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+
+    grids = (1.0:64.0, 1.0:48.0)
+    A = rand(64, 48)
+    gq = GriddedQuery((collect(range(2.0, 63.0, 120)), collect(range(2.0, 47.0, 90))))
+    fast = FI.linear_interp(grids, A, gq; extrap = FI.ClampExtrap())
+
+    # Correctness: interp on a GriddedQuery equals the separable path bit-for-bit.
+    # (For LINEAR this also equals pointwise batch — both share the `_linear_kernel`
+    # collapse — so equality alone can't prove routing; the `@which` block below does.)
+    @test interp(grids, A, gq; method = LinearInterp(), extrap = FI.ClampExtrap()) == fast
+    @test interp(grids, A, gq; method = (LinearInterp(), LinearInterp()), extrap = FI.ClampExtrap()) == fast
+
+    # in-place also routes to separable
+    out = Matrix{Float64}(undef, 120, 90)
+    @test interp!(out, grids, A, gq; method = LinearInterp(), extrap = FI.ClampExtrap()) === out
+    @test out == fast
+
+    # ROUTING PROOF (not values): interp!'s fast-path hook resolves to the
+    # separable arm (in gridded_query.jl) for a GriddedQuery + all-linear method,
+    # and to the generic `false` fallback for anything else. `which` inspects
+    # dispatch directly, so this proves routing even though separable and pointwise
+    # produce bit-identical linear values.
+    hook = FI._try_gridded_separable!
+    A2 = Matrix{Float64}(undef, 2, 3)
+    gqs = GriddedQuery(([2.0, 3.0], [2.0, 3.0, 4.0]))
+    m_lin = which(hook, typeof((A2, grids, A, gqs, (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    m_cub = which(hook, typeof((A2, grids, A, gqs, (CubicInterp(), CubicInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    m_soa = which(hook, typeof((A2, grids, A, ([2.0, 3.0], [2.0, 3.0]), (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    @test occursin("gridded_query", String(m_lin.file))   # separable arm
+    @test m_lin !== m_cub                                  # cubic → generic pointwise fallback
+    @test m_lin !== m_soa                                  # SoA linear → generic pointwise fallback
+    @test m_cub === m_soa                                  # both hit the same `false` fallback
+
+    # a non-linear method still works (pointwise fallback), N-D shaped
+    Cc = interp(grids, A, gq; method = CubicInterp(), extrap = FI.ClampExtrap())
+    @test size(Cc) == (120, 90)
 end

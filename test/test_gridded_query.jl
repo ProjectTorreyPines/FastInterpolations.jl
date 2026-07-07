@@ -89,10 +89,10 @@ end
     @test all(isapprox.(C2, ref2; rtol = 1.0e-14, atol = 1.0e-14))
 end
 
-@testitem "strategy cores: fused + both fullbuffer orders agree" begin
+@testitem "strategy cores: fused + both pass orders agree" begin
     using FastInterpolations
     import FastInterpolations as FI
-    using FastInterpolations: _gridded_anchors, _gridded_fused!, _gridded_fullbuffer!
+    using FastInterpolations: _gridded_anchors, _gridded_fused!, _gridded_pass!, EvalValue
 
     A = rand(24, 20)
     itp = FI.linear_interp((1.0:24.0, 1.0:20.0), A; extrap = FI.ClampExtrap())
@@ -106,11 +106,15 @@ end
 
     Cf = Matrix{Float64}(undef, M, N)
     _gridded_fused!(Cf, A, (ax, ay))
-    ops = (FastInterpolations.EvalValue(), FastInterpolations.EvalValue())
+    # explicit pass compositions: axis-2 first vs axis-1 first
+    B1 = Matrix{Float64}(undef, 24, N)
+    _gridded_pass!(B1, A, ay, EvalValue(), Val(2))
     Cb1 = Matrix{Float64}(undef, M, N)
-    _gridded_fullbuffer!(Cb1, A, ax, ay, ops, Float64, true)    # blend dim2 first
+    _gridded_pass!(Cb1, B1, ax, EvalValue(), Val(1))
+    B2 = Matrix{Float64}(undef, M, 20)
+    _gridded_pass!(B2, A, ax, EvalValue(), Val(1))
     Cb2 = Matrix{Float64}(undef, M, N)
-    _gridded_fullbuffer!(Cb2, A, ax, ay, ops, Float64, false)   # gather dim1 first
+    _gridded_pass!(Cb2, B2, ay, EvalValue(), Val(2))
 
     # all strategies are mathematically equivalent — machine-eps, NOT bit-identity
     @test all(isapprox.(Cf, ref; rtol = 1.0e-14, atol = 1.0e-14))
@@ -120,6 +124,52 @@ end
     # the public entry agrees with the cores
     C = itp(GriddedQuery((tx, ty)))
     @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
+end
+
+@testitem "3D public path: value/deriv/wrap/fill via GriddedQuery" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: EvalValue, EvalDeriv1
+
+    A = rand(24, 20, 16)
+    itp = FI.linear_interp((1.0:24.0, 1.0:20.0, 1.0:16.0), A; extrap = FI.ClampExtrap())
+    down = (collect(range(1.5, 23.5, 12)), collect(range(1.5, 19.5, 10)), collect(range(1.5, 15.5, 8)))
+    upmix = (collect(range(0.5, 24.5, 31)), collect(range(1.0, 20.0, 27)), collect(range(1.0, 16.0, 9)))
+    for ts in (down, upmix)   # fused strategy / multi-pass strategy
+        gq = GriddedQuery(ts)
+        C = itp(gq)
+        ref = [itp((x, y, z)) for x in ts[1], y in ts[2], z in ts[3]]
+        @test eltype(C) == eltype(ref)
+        @test size(C) == map(length, ts)
+        @test all(isapprox.(C, ref; rtol = 1.0e-13, atol = 1.0e-13))
+
+        Cd = itp(gq; deriv = (EvalDeriv1(), EvalValue(), EvalValue()))
+        refd = [itp((x, y, z); deriv = (EvalDeriv1(), EvalValue(), EvalValue())) for x in ts[1], y in ts[2], z in ts[3]]
+        @test all(isapprox.(Cd, refd; rtol = 1.0e-13, atol = 1.0e-13))
+
+        out = Array{Float64, 3}(undef, map(length, ts))
+        @test itp(out, gq) === out
+        @test out == C
+    end
+
+    # Wrap through the public path
+    itpw = FI.linear_interp((1.0:24.0, 1.0:20.0, 1.0:16.0), A; extrap = FI.WrapExtrap())
+    tsw = (collect(range(-10.0, 50.0, 17)), collect(range(0.0, 21.0, 11)), [-1.0, 8.5, 17.0])
+    Cw = itpw(GriddedQuery(tsw))
+    refw = [itpw((x, y, z)) for x in tsw[1], y in tsw[2], z in tsw[3]]
+    @test all(isapprox.(Cw, refw; rtol = 1.0e-13, atol = 1.0e-13))
+
+    # Fill through the public path (OOB slab along the MIDDLE axis)
+    itpf = FI.linear_interp((1.0:24.0, 1.0:20.0, 1.0:16.0), A; extrap = FI.FillExtrap(NaN))
+    tsf = ([2.0, 12.5], [0.5, 8.0, 20.5], [1.0, 15.9])
+    Cfill = itpf(GriddedQuery(tsf))
+    reff = [itpf((x, y, z)) for x in tsf[1], y in tsf[2], z in tsf[3]]
+    @test all(
+        i -> isnan(reff[i]) ? isnan(Cfill[i]) :
+            isapprox(Cfill[i], reff[i]; rtol = 1.0e-13, atol = 1.0e-13),
+        eachindex(Cfill)
+    )
+    @test count(isnan, Cfill) == count(isnan, reff) > 0
 end
 
 @testitem "generated fused kernel: 3D/4D vs point-wise" begin

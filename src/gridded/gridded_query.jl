@@ -9,16 +9,19 @@
 #   itp(GriddedQuery((x1d, y1d)))  ==  [itp((x1d[i], y1d[j])) for i, j]   (M×N)
 #
 # The ONE idea this path adds over point-wise evaluation is SEPARABILITY:
-# each axis's (interval index, weight) pair is resolved ONCE per axis — O(M+N)
-# anchors — and reused across all O(M·N) outputs, instead of re-searching and
-# re-weighting both axes at every output point.
+# each axis's (interval index, weight, cell width) is resolved ONCE per axis —
+# O(ΣM_d) anchors — and reused across all O(∏M_d) outputs, instead of
+# re-searching and re-weighting every axis at every output point.
 #
 # Two execution strategies consume the same anchors (measured on a fixed-source
 # ratio sweep):
-#   * FUSED      — straight 3-blend per output from the 4 corners, no
-#                  intermediate buffer. Wins all pure downsampling.
-#   * FULLBUFFER — classic separable two-pass through one pooled intermediate.
-#                  Wins same-size / upsampling / mixed (contiguous passes).
+#   * FUSED      — straight (2^N − 1)-blend per output from the 2^N corners,
+#                  no intermediate buffer. Wins pure downsampling.
+#   * FULLBUFFER — classic separable multi-pass through pooled intermediates,
+#                  one axis per pass. Wins same-size / upsampling / mixed
+#                  (contiguous passes).
+# Both are generated over N; per-axis derivative ops ride on the shared 1D
+# kernel `_linear_kernel(op, yL, yR, inv_h, α)`, exactly like point-wise ND.
 
 """
     GriddedQuery(axes::Tuple)
@@ -55,13 +58,13 @@ end
     _gridded_anchors!(anchors, g, t, ex, dim) -> anchors
 
 Resolve every target coordinate in `t` against grid `g` once — the O(M) work
-that both strategies reuse O(M·N) times. Extrapolation is folded here:
+that both strategies reuse O(∏M_d) times. Extrapolation is folded here:
 `WrapExtrap` folds the coordinate into the domain, `ClampExtrap`/`FillExtrap`
 clamp the weight to the boundary node (Fill's OOB slabs are overwritten by the
 [`_gridded_fill_oob!`](@ref) post-pass), `ExtendExtrap` keeps the out-of-range
 weight (linear extrapolation), and `NoExtrap` throws on the first
-out-of-domain coordinate — BEFORE any O(M·N) buffer exists. `dim` names the
-axis in that error.
+out-of-domain coordinate — BEFORE any output-sized buffer exists. `dim` names
+the axis in that error.
 """
 function _gridded_anchors!(
         anchors::Vector{_GriddedAnchor{T}},
@@ -171,139 +174,152 @@ _gridded_fused!(
 ) where {N} = _gridded_fused!(out, A, anchors, ntuple(_ -> EvalValue(), Val(N)))
 
 # ---- FULLBUFFER strategy ----------------------------------------------------
-# Classic separable two-pass; each pass is a 1D resolve of one axis.
-
-# Contiguous column blend resolving axis 2: stride-1 in both src and dest.
-function _gridded_blend_dim2!(
-        dest::AbstractMatrix,
-        src::AbstractMatrix,
-        ay::Vector{<:_GriddedAnchor},
-        op::AbstractEvalOp = EvalValue()
+# Classic separable multi-pass: each pass resolves ONE axis (`D`) through the
+# anchor combine and passes every other axis through. Generated over (N, D)
+# with axis 1 innermost — for D ≥ 2 both loops are stride-1 (contiguous
+# blend), for D = 1 the two taps (idx, idx+1) are memory-adjacent loads
+# (gather).
+@generated function _gridded_pass!(
+        dest::AbstractArray{<:Any, N},
+        src::AbstractArray{<:Any, N},
+        anchors::Vector{<:_GriddedAnchor},
+        op::AbstractEvalOp,
+        ::Val{D}
+    ) where {N, D}
+    js = [Symbol(:j_, d) for d in 1:N]
+    lo = Any[js[d] for d in 1:N]
+    lo[D] = :il
+    hi = copy(lo)
+    hi[D] = :(il + 1)
+    body = :(
+        dest[$(js...)] = _linear_kernel(op, src[$(lo...)], src[$(hi...)], a.inv_h, a.alpha)
     )
-    n1 = size(src, 1)
-    @inbounds for j in eachindex(ay)
-        a = ay[j]
-        jl = a.idx
-        jr = jl + 1
-        for r in 1:n1
-            dest[r, j] = _linear_kernel(op, src[r, jl], src[r, jr], a.inv_h, a.alpha)
+    for d in 1:N   # d = 1 built first → innermost loop
+        body = if d == D
+            quote
+                for $(js[d]) in eachindex(anchors)
+                    a = anchors[$(js[d])]
+                    il = a.idx
+                    $body
+                end
+            end
+        else
+            quote
+                for $(js[d]) in axes(src, $d)
+                    $body
+                end
+            end
         end
     end
-    return dest
-end
-
-# Gather resolving axis 1: j outer keeps src columns hot; the two taps
-# (idx, idx+1) are memory-adjacent loads.
-function _gridded_gather_dim1!(
-        dest::AbstractMatrix,
-        src::AbstractMatrix,
-        ax::Vector{<:_GriddedAnchor},
-        op::AbstractEvalOp = EvalValue()
-    )
-    @inbounds for j in 1:size(src, 2)
-        for i in eachindex(ax)
-            a = ax[i]
-            il = a.idx
-            dest[i, j] = _linear_kernel(op, src[il, j], src[il + 1, j], a.inv_h, a.alpha)
-        end
+    return quote
+        @inbounds $body
+        return dest
     end
-    return dest
 end
 
-# Two-pass core through one pooled intermediate held in `Tmid` (the promoted
+# Pass order: adjacent-exchange comparator on total cost with the measured
+# per-element pass costs (gather along axis 1 ≈ 0.65 ns, contiguous
+# otherwise ≈ 0.2 ns). Putting axis `d` before `e` is cheaper iff
+#   c_d·M_d·(n_e − M_e) ≤ c_e·M_e·(n_d − M_d)
+# (shrink-most-first, cost-weighted). For N = 2 this reduces exactly to the
+# old dim2-first model.
+@inline _gridded_pass_cost(d::Int) = d == 1 ? 0.65 : 0.2
+@inline function _gridded_pass_before(d::Int, e::Int, nsz::Dims, msz::Dims)
+    return _gridded_pass_cost(d) * msz[d] * (nsz[e] - msz[e]) <
+        _gridded_pass_cost(e) * msz[e] * (nsz[d] - msz[d])
+end
+
+# Multi-pass core through pooled intermediates held in `Tmid` (the promoted
 # output eltype — narrowing into a caller-supplied narrower `out` happens
-# exactly once). `dim2_first` picks the fold order: true → blend dim2 first
-# (n1×N mid), false → gather dim1 first (M×n2 mid). Both orders are
-# mathematically equivalent (machine-eps, not bit-identical).
+# exactly once, on the last pass). Passes run in the comparator order above;
+# each `_gridded_pass!` call is a function barrier (the running array type
+# alternates data → pooled intermediate → out).
 @with_pool pool function _gridded_fullbuffer!(
-        out::AbstractMatrix,
-        A::AbstractMatrix,
-        ax::Vector{<:_GriddedAnchor},
-        ay::Vector{<:_GriddedAnchor},
-        ops::Tuple{Vararg{AbstractEvalOp, 2}},
-        ::Type{Tmid},
-        dim2_first::Bool
-    ) where {Tmid}
-    if dim2_first
-        B = acquire!(pool, Tmid, size(A, 1), length(ay))
-        _gridded_blend_dim2!(B, A, ay, ops[2])
-        _gridded_gather_dim1!(out, B, ax, ops[1])
-    else
-        B = acquire!(pool, Tmid, length(ax), size(A, 2))
-        _gridded_gather_dim1!(B, A, ax, ops[1])
-        _gridded_blend_dim2!(out, B, ay, ops[2])
+        out::AbstractArray{<:Any, N},
+        A::AbstractArray{<:Any, N},
+        anchors::NTuple{N, Vector{<:_GriddedAnchor}},
+        ops::Tuple{Vararg{AbstractEvalOp, N}},
+        ::Type{Tmid}
+    ) where {N, Tmid}
+    nsz = size(A)
+    msz = map(length, anchors)
+    order = acquire!(pool, Int, N)
+    @inbounds for d in 1:N
+        order[d] = d
+    end
+    @inbounds for k in 2:N   # insertion sort by the pairwise cost comparator
+        j = k
+        while j > 1 && _gridded_pass_before(order[j], order[j - 1], nsz, msz)
+            order[j], order[j - 1] = order[j - 1], order[j]
+            j -= 1
+        end
+    end
+    sz = nsz
+    src = A
+    @inbounds for k in 1:N
+        d = order[k]
+        sz = Base.setindex(sz, msz[d], d)
+        dest = k == N ? out : acquire!(pool, Tmid, sz...)
+        _gridded_pass!(dest, src, anchors[d], ops[d], Val(d))
+        src = dest
     end
     return out
 end
 
 # ---- strategy selection ------------------------------------------------------
-# Measured map (fixed-source ratio sweep): fused wins all pure downsampling
-# (its per-output work shrinks with the output), fullbuffer wins same-size /
-# upsampling / mixed (contiguous passes amortize per-node work). Fold order
-# from measured per-element pass costs: contiguous blend ≈ 0.2 ns,
-# gather ≈ 0.65 ns.
+# Measured map (fixed-source ratio sweep): fused wins pure downsampling (its
+# per-output work shrinks with the output), fullbuffer wins same-size /
+# upsampling / mixed (contiguous passes amortize per-node work).
 function _gridded_apply!(
-        out::AbstractMatrix,
-        itp::LinearInterpolantND{Tg, Tv, 2},
-        ax::Vector{<:_GriddedAnchor},
-        ay::Vector{<:_GriddedAnchor},
-        ops::Tuple{Vararg{AbstractEvalOp, 2}},
+        out::AbstractArray{<:Any, N},
+        itp::LinearInterpolantND{Tg, Tv, N},
+        anchors::NTuple{N, Vector{<:_GriddedAnchor}},
+        ops::Tuple{Vararg{AbstractEvalOp, N}},
         ::Type{Tmid}
-    ) where {Tg, Tv, Tmid}
+    ) where {Tg, Tv, N, Tmid}
     A = itp.data
-    n1, n2 = size(A)
-    M = length(ax)
-    N = length(ay)
-    size(out) == (M, N) || throw(
-        DimensionMismatch("output size $(size(out)) != query size ($M, $N)")
+    msz = map(length, anchors)
+    size(out) == msz || throw(
+        DimensionMismatch("output size $(size(out)) != query size $msz")
     )
-    (M == 0 || N == 0) && return out
-    if M < n1 && N < n2
-        _gridded_fused!(out, A, (ax, ay), ops)
+    any(iszero, msz) && return out
+    if all(map(<, msz, size(A)))
+        _gridded_fused!(out, A, anchors, ops)
     else
-        dim2_first = 0.2 * (n1 * N) + 0.65 * (M * N) <= 0.65 * (M * n2) + 0.2 * (M * N)
-        _gridded_fullbuffer!(out, A, ax, ay, ops, Tmid, dim2_first)
+        _gridded_fullbuffer!(out, A, anchors, ops, Tmid)
     end
     return out
 end
 
-# FillExtrap post-pass — mirrors point-wise `_try_fill_oob`: ANY Fill-axis OOB
-# coordinate fills its whole output slab with the FIRST Fill axis's value
-# (EvalValue) or a carrier zero (any derivative op). Classification re-scans
-# the query axis with `_oob_state` (the same widened bracket the anchor build
-# used); compile-time no-op unless some axis is FillExtrap.
+# ---- FillExtrap post-pass ----------------------------------------------------
+# Mirrors point-wise `_try_fill_oob`: ANY Fill-axis OOB coordinate fills its
+# whole output slab with the FIRST Fill axis's value (EvalValue) or a carrier
+# zero (any derivative op). Classification re-scans the query axis with
+# `_oob_state` (the same widened bracket the anchor build used); compile-time
+# no-op unless some axis is FillExtrap.
+@inline _gridded_has_fill(::Tuple{}) = false
+@inline _gridded_has_fill(extraps::Tuple) =
+    extraps[1] isa FillExtrap || _gridded_has_fill(Base.tail(extraps))
+@inline _gridded_first_fill_value(extraps::Tuple) =
+    extraps[1] isa FillExtrap ? extraps[1].fill_value :
+    _gridded_first_fill_value(Base.tail(extraps))
+
 function _gridded_fill_oob!(
-        out::AbstractMatrix,
-        itp::LinearInterpolantND{Tg, Tv, 2},
-        tx,
-        ty,
-        ops::Tuple{Vararg{AbstractEvalOp, 2}}
-    ) where {Tg, Tv}
-    ex1, ex2 = itp.extraps
-    (ex1 isa FillExtrap || ex2 isa FillExtrap) || return out
-    fv = ex1 isa FillExtrap ? ex1.fill_value : ex2.fill_value
+        out::AbstractArray{<:Any, N},
+        itp::LinearInterpolantND{Tg, Tv, N},
+        ts::Tuple,
+        ops::Tuple{Vararg{AbstractEvalOp, N}}
+    ) where {Tg, Tv, N}
+    _gridded_has_fill(itp.extraps) || return out
+    fv = _gridded_first_fill_value(itp.extraps)
     zref = _sample_data(itp)
-    if ex1 isa FillExtrap
+    for d in 1:N
+        itp.extraps[d] isa FillExtrap || continue
         k = 0
-        @inbounds for xq in tx
+        for xq in ts[d]
             k += 1
-            if _oob_state(itp.grids[1], xq) != IN_DOMAIN
-                val = _fill_extrap_result(ops, fv, zref, xq)
-                for j in axes(out, 2)
-                    out[k, j] = val
-                end
-            end
-        end
-    end
-    if ex2 isa FillExtrap
-        k = 0
-        @inbounds for yq in ty
-            k += 1
-            if _oob_state(itp.grids[2], yq) != IN_DOMAIN
-                val = _fill_extrap_result(ops, fv, zref, yq)
-                for i in axes(out, 1)
-                    out[i, k] = val
-                end
+            if _oob_state(itp.grids[d], xq) != IN_DOMAIN
+                fill!(selectdim(out, d, k), _fill_extrap_result(ops, fv, zref, xq))
             end
         end
     end
@@ -312,65 +328,67 @@ end
 
 # ---- entry points ------------------------------------------------------------
 # Output eltype: matches point-wise scalar eval's promotion (pinned by test).
-@inline _gridded_out_eltype(::LinearInterpolantND{Tg, Tv, 2}, tx, ty) where {Tg, Tv} =
-    _promote_eltype(_interp_op, Tg, Tv, promote_type(eltype(tx), eltype(ty)))
+@inline _gridded_out_eltype(::LinearInterpolantND{Tg, Tv, N}, ts::Tuple) where {Tg, Tv, N} =
+    _promote_eltype(_interp_op, Tg, Tv, promote_type(map(eltype, ts)...))
 
-# Anchors are built (firing NoExtrap's O(M+N) validation) BEFORE the O(M·N)
-# output is allocated.
+# Anchors are built (firing NoExtrap's O(ΣM_d) validation) BEFORE the
+# output-sized array is allocated.
 @with_pool pool function _gridded_eval(
-        itp::LinearInterpolantND{Tg, Tv, 2},
-        tx,
-        ty,
-        ops::Tuple{Vararg{AbstractEvalOp, 2}},
+        itp::LinearInterpolantND{Tg, Tv, N},
+        ts::Tuple,
+        ops::Tuple{Vararg{AbstractEvalOp, N}},
         ::Type{Tout}
-    ) where {Tg, Tv, Tout}
-    ax = _gridded_anchors_pooled(pool, itp.grids[1], tx, itp.extraps[1], 1)
-    ay = _gridded_anchors_pooled(pool, itp.grids[2], ty, itp.extraps[2], 2)
-    out = Matrix{Tout}(undef, length(tx), length(ty))
-    _gridded_apply!(out, itp, ax, ay, ops, Tout)
-    return _gridded_fill_oob!(out, itp, tx, ty, ops)
+    ) where {Tg, Tv, N, Tout}
+    anchors = ntuple(
+        d -> _gridded_anchors_pooled(pool, itp.grids[d], ts[d], itp.extraps[d], d),
+        Val(N)
+    )
+    out = Array{Tout, N}(undef, map(length, ts))
+    _gridded_apply!(out, itp, anchors, ops, Tout)
+    return _gridded_fill_oob!(out, itp, ts, ops)
 end
 
 @with_pool pool function _gridded_eval!(
-        out::AbstractMatrix,
-        itp::LinearInterpolantND{Tg, Tv, 2},
-        tx,
-        ty,
-        ops::Tuple{Vararg{AbstractEvalOp, 2}},
+        out::AbstractArray{<:Any, N},
+        itp::LinearInterpolantND{Tg, Tv, N},
+        ts::Tuple,
+        ops::Tuple{Vararg{AbstractEvalOp, N}},
         ::Type{Tout}
-    ) where {Tg, Tv, Tout}
-    ax = _gridded_anchors_pooled(pool, itp.grids[1], tx, itp.extraps[1], 1)
-    ay = _gridded_anchors_pooled(pool, itp.grids[2], ty, itp.extraps[2], 2)
-    _gridded_apply!(out, itp, ax, ay, ops, Tout)
-    return _gridded_fill_oob!(out, itp, tx, ty, ops)
+    ) where {Tg, Tv, N, Tout}
+    anchors = ntuple(
+        d -> _gridded_anchors_pooled(pool, itp.grids[d], ts[d], itp.extraps[d], d),
+        Val(N)
+    )
+    _gridded_apply!(out, itp, anchors, ops, Tout)
+    return _gridded_fill_oob!(out, itp, ts, ops)
 end
 
 # ---- dispatch ----------------------------------------------------------------
 """
-    (itp::LinearInterpolantND{Tg,Tv,2})(gq::GriddedQuery; deriv = EvalValue())
-    (itp::LinearInterpolantND{Tg,Tv,2})(out::AbstractMatrix, gq::GriddedQuery; deriv = EvalValue())
+    (itp::LinearInterpolantND{Tg,Tv,N})(gq::GriddedQuery; deriv = EvalValue())
+    (itp::LinearInterpolantND{Tg,Tv,N})(out::AbstractArray, gq::GriddedQuery; deriv = EvalValue())
 
-Evaluate a 2-D linear interpolant at every combination of `gq.axes`
-coordinates. Each axis's anchors are resolved once (pooled, O(M+N)) and
+Evaluate an N-D linear interpolant at every combination of `gq.axes`
+coordinates. Each axis's anchors are resolved once (pooled, O(ΣM_d)) and
 reused across the grid; the strategy is picked per call — fused (no
-intermediate) for pure downsampling, two-pass full buffer otherwise. `deriv`
-takes a per-axis op tuple or a single op, exactly like point-wise ND eval.
-The 2-arg form writes into `out` (FI batch convention).
+intermediate) for pure downsampling, separable multi-pass full buffer
+otherwise. `deriv` takes a per-axis op tuple or a single op, exactly like
+point-wise ND eval. The 2-arg form writes into `out` (FI batch convention).
 """
-function (itp::LinearInterpolantND{Tg, Tv, 2})(
-        gq::GriddedQuery{<:Tuple{Any, Any}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, 2}}} = EvalValue()
-    ) where {Tg, Tv}
-    tx, ty = gq.axes
-    ops = _resolve_deriv_nd(deriv, Val(2))
-    return _gridded_eval(itp, tx, ty, ops, _gridded_out_eltype(itp, tx, ty))
+function (itp::LinearInterpolantND{Tg, Tv, N})(
+        gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+    ) where {Tg, Tv, N}
+    ts = gq.axes
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    return _gridded_eval(itp, ts, ops, _gridded_out_eltype(itp, ts))
 end
-function (itp::LinearInterpolantND{Tg, Tv, 2})(
-        out::AbstractMatrix,
-        gq::GriddedQuery{<:Tuple{Any, Any}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, 2}}} = EvalValue()
-    ) where {Tg, Tv}
-    tx, ty = gq.axes
-    ops = _resolve_deriv_nd(deriv, Val(2))
-    return _gridded_eval!(out, itp, tx, ty, ops, _gridded_out_eltype(itp, tx, ty))
+function (itp::LinearInterpolantND{Tg, Tv, N})(
+        out::AbstractArray{<:Any, N},
+        gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+    ) where {Tg, Tv, N}
+    ts = gq.axes
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    return _gridded_eval!(out, itp, ts, ops, _gridded_out_eltype(itp, ts))
 end

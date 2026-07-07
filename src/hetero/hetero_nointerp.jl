@@ -938,7 +938,7 @@ function _interp_batch_with_grididx!(
         hint = nothing,
         coeffs::AbstractCoeffStrategy = AutoCoeffs(),
     ) where {N}
-    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    method_tuple = _method_tuple(method, Val(N))
 
     # Quick check: filter Real-only axes for batch length
     queries_r_initial = _filter_real_batch_queries(queries)

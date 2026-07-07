@@ -24,6 +24,10 @@ include("hetero/interp_1d.jl")  # 1D bare-vector entry points for `interp`/`inte
 
 # Gridded (rectilinear / tensor-product) query — separable evaluation on a grid
 include("gridded/gridded_query.jl")
+include("gridded/axis_anchor.jl")       # shared per-axis anchor backbone (multi-method)
+include("gridded/gridded_constant.jl")  # constant gather fast path
+include("gridded/gridded_hermite.jl")   # local-Hermite fullbuffer fast path
+include("gridded/gridded_dispatch.jl")  # unified itp(gq) callable on AbstractInterpolantND
 
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")

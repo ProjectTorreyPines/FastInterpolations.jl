@@ -523,41 +523,36 @@ end
     return _gridded_fill_oob!(out, grids, data, targets, extraps, ops)
 end
 
-# ---- dispatch ----------------------------------------------------------------
-"""
-    (itp::LinearInterpolantND{Tg,Tv,N})(gq::GriddedQuery; deriv = EvalValue(), extrap = nothing)
-    (itp::LinearInterpolantND{Tg,Tv,N})(out::AbstractArray, gq::GriddedQuery; deriv = EvalValue(), extrap = nothing)
-
-Evaluate an N-D linear interpolant at every combination of `gq.axes`
-coordinates. Each axis's anchors are resolved once (pooled, O(ΣM_d)) and
-reused across the grid; the strategy is picked per call — fused (no
-intermediate) for pure downsampling, separable multi-pass full buffer
-otherwise. `deriv` takes a per-axis op tuple or a single op, and `extrap`
-the call-time `InBounds` override (single or per-axis tuple), exactly like
-point-wise ND eval. The 2-arg form writes into `out` (FI batch convention).
-"""
-function (itp::LinearInterpolantND{Tg, Tv, N})(
-        gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing
-    ) where {Tg, Tv, N}
-    targets = gq.axes
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    extraps = _resolve_extrap_override_nd(itp, extrap)
-    Tout = _gridded_out_eltype(Tg, Tv, targets)
-    return _gridded_eval(itp.grids, itp.data, targets, ops, extraps, Tout)
-end
-function (itp::LinearInterpolantND{Tg, Tv, N})(
+# ---- gridded method dispatch (linear separable arm) --------------------------
+# Prepared linear gridded evaluation: callers have already resolved/cached grids
+# and extrapolation modes. This is the single linear kernel entry used by both
+# one-shot `interp(..., gq; method = LinearInterp())` and persistent `itp(gq)`.
+@inline function _gridded_eval_methods!(
         out::AbstractArray{<:Any, N},
-        gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        targets::Tuple,
+        ::Tuple{LinearInterp, Vararg{LinearInterp}},
+        ops,
+        extraps
+    ) where {Tv, N}
+    Tg = _promote_grid_eltype(grids)
+    _gridded_eval!(out, grids, data, targets, ops, extraps, _gridded_out_eltype(Tg, Tv, targets))
+    return true
+end
+
+# Allocating override: `_gridded_eval` builds anchors (firing NoExtrap's throw)
+# BEFORE allocating the output, so a throwing query never leaves the full
+# O(∏M_d) matrix behind (pinned in test_gridded_query.jl).
+@inline function _gridded_alloc_itp(
+        itp::LinearInterpolantND{Tg, Tv, N},
+        gq::GriddedQuery,
+        ops,
+        extraps,
+        _search,
+        _hint
     ) where {Tg, Tv, N}
-    targets = gq.axes
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    extraps = _resolve_extrap_override_nd(itp, extrap)
-    Tout = _gridded_out_eltype(Tg, Tv, targets)
-    return _gridded_eval!(out, itp.grids, itp.data, targets, ops, extraps, Tout)
+    return _gridded_eval(itp.grids, itp.data, gq.axes, ops, extraps, _gridded_out_eltype(Tg, Tv, gq.axes))
 end
 
 # ---- one-shot API ------------------------------------------------------------
@@ -569,20 +564,6 @@ end
 # grid resolution shares its `@with_pool` frame with the eval; `_gridded_eval`'s
 # own nested pool holds the anchors + fullbuffer scratch (fullbuffer already
 # nests a pool, so this is an established pattern).
-@with_pool pool function _linear_gridded_oneshot(
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{<:Any, N},
-        targets::Tuple,
-        ops::Tuple{Vararg{AbstractEvalOp, N}},
-        extraps::Tuple{Vararg{AbstractExtrap, N}},
-        ::Type{Tg},
-        ::Type{Tout}
-    ) where {N, Tg, Tout}
-    grids_c = map(g -> _cache_axis_pooled(pool, g, Tg), grids)
-    extraps_c = map(_resolve_extrap, extraps, grids_c)
-    return _gridded_eval(grids_c, data, targets, ops, extraps_c, Tout)
-end
-
 @with_pool pool function _linear_gridded_oneshot!(
         out::AbstractArray{<:Any, N},
         grids::NTuple{N, AbstractVector},
@@ -595,7 +576,10 @@ end
     ) where {N, Tg, Tout}
     grids_c = map(g -> _cache_axis_pooled(pool, g, Tg), grids)
     extraps_c = map(_resolve_extrap, extraps, grids_c)
-    return _gridded_eval!(out, grids_c, data, targets, ops, extraps_c, Tout)
+    _gridded_eval_methods!(
+        out, grids_c, data, targets, ntuple(_ -> LinearInterp(NoBC()), Val(N)), ops, extraps_c
+    )
+    return out
 end
 
 """
@@ -603,68 +587,94 @@ end
     linear_interp!(out, grids, data, gq::GriddedQuery; bc, extrap, deriv)
 
 One-shot N-D linear interpolation at every combination of `gq.axes` coordinates
-(rectilinear resize). Builds no persistent interpolant: grids are pool-cached at
-the value-matched precision for the duration of the call, so the warm path is
-zero-allocation apart from the output array. `extrap` is the per-axis
-extrapolation policy (`NoExtrap`/`ClampExtrap`/`FillExtrap`/`ExtrapExtend`) — the
-same `WrapExtrap`/periodic support as the persistent gridded functor is reached
-by building the interpolant explicitly.
+(rectilinear resize), returning an N-D `size(gq)` array. Thin named spelling of
+`interp(grids, data, gq; method = LinearInterp(bc))` — identical output (linear
+is arithmetic, so its float-forcing eltype matches the generic path) and the
+same separable fast path via the `_try_gridded_separable!` hook. `extrap` is the
+per-axis policy (`NoExtrap`/`ClampExtrap`/`FillExtrap`/`ExtrapExtend`).
 """
 function linear_interp(
         grids::NTuple{N, AbstractVector},
-        data::AbstractArray{Tv, N},
+        data::AbstractArray{<:Any, N},
         gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
-    ) where {Tv, N}
-    _validate_nd_grids(grids, data)
-    targets = gq.axes
-    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps = _resolve_extrap(extrap, bcs, Val(N), Tv)
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    Tout = _gridded_out_eltype(Tg, Tv, targets)
-    return _linear_gridded_oneshot(grids, data, targets, ops, extraps, Tg, Tout)
+    ) where {N}
+    return interp(grids, data, gq; method = _linear_gridded_methods(bc, Val(N)), extrap = extrap, deriv = deriv)
 end
 
 function linear_interp!(
         out::AbstractArray{<:Any, N},
         grids::NTuple{N, AbstractVector},
-        data::AbstractArray{Tv, N},
+        data::AbstractArray{<:Any, N},
         gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+    ) where {N}
+    return interp!(out, grids, data, gq; method = _linear_gridded_methods(bc, Val(N)), extrap = extrap, deriv = deriv)
+end
+
+# N = 1 disambiguation: a flat vector IS the 1-D output array, but it also
+# matches the batch-protocol entry `linear_interp!(output::AbstractVector,
+# grids, data, queries)` — pin the intersection to the gridded arm.
+function linear_interp!(
+        out::AbstractVector,
+        grids::Tuple{AbstractVector},
+        data::AbstractVector,
+        gq::GriddedQuery{<:Tuple{Any}};
+        bc::Union{AbstractBC, Tuple{AbstractBC}} = NoBC(),
+        extrap::Union{AbstractExtrap, Tuple{AbstractExtrap}} = NoExtrap(),
+        deriv::Union{DerivOp, Tuple{DerivOp}} = EvalValue()
+    )
+    return interp!(out, grids, data, gq; method = _linear_gridded_methods(bc, Val(1)), extrap = extrap, deriv = deriv)
+end
+
+# `bc` (single or per-axis) → the per-axis `LinearInterp` method tuple `interp` wants.
+@inline _linear_gridded_methods(bc::AbstractBC, ::Val{N}) where {N} = ntuple(_ -> LinearInterp(bc), Val(N))
+@inline _linear_gridded_methods(bc::NTuple{N, AbstractBC}, ::Val{N}) where {N} = map(LinearInterp, bc)
+
+# ---- unified `interp` fast-path ----------------------------------------------
+# `_try_gridded_separable!` is the `interp!` fast-path hook. A `GriddedQuery`
+# reaches one method-tuple dispatcher; supported method families prepare raw
+# one-shot inputs and then call `_gridded_eval_methods!`. Unsupported tuples
+# return `false`, so `interp!` falls through to its point-wise batch.
+@inline _try_gridded_separable!(output, grids, data, queries, methods, extrap, deriv) = false
+@inline function _try_gridded_separable!(
+        output,
+        grids,
+        data::AbstractArray{Tv, N},
+        gq::GriddedQuery{<:Tuple{Vararg{Any, N}}},
+        methods::Tuple{Vararg{AbstractInterpMethod, N}},
+        extrap,
+        deriv
     ) where {Tv, N}
+    out_nd = output isa AbstractVector ? reshape(output, size(gq)) : output
+    return _try_gridded_oneshot_methods!(out_nd, grids, data, gq.axes, methods, extrap, deriv)
+end
+
+@inline _try_gridded_oneshot_methods!(out, grids, data, targets, methods, extrap, deriv) = false
+
+@inline function _try_gridded_oneshot_methods!(
+        out_nd::AbstractArray{<:Any, N},
+        grids,
+        data::AbstractArray{Tv, N},
+        targets::Tuple,
+        methods::Tuple{Vararg{LinearInterp, N}},
+        extrap,
+        deriv
+    ) where {Tv, N}
+    # Single resolution site for all linear-gridded one-shots — the named
+    # `linear_interp`/`linear_interp!` forward here through `interp`. Owns the
+    # arg resolution (was in `linear_interp!`) and calls the in-place core
+    # directly, so the forward chain doesn't re-enter the named function.
     _validate_nd_grids(grids, data)
-    targets = gq.axes
     Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
-    bcs = _resolve_bcs_nd(bc, Val(N))
+    bcs = map(m -> m.bc, methods)
     extraps = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     Tout = _gridded_out_eltype(Tg, Tv, targets)
-    return _linear_gridded_oneshot!(out, grids, data, targets, ops, extraps, Tg, Tout)
-end
-
-# ---- unified `interp` fast-path ----------------------------------------------
-# `_try_gridded_separable!` is the `interp!` fast-path hook: for a (query, method)
-# that has a separable gridded evaluator it does the write and returns `true`; the
-# generic default returns `false`, so `interp!` falls through to its pointwise
-# batch. It runs BEFORE `interp!` flattens the output, so the N-D array reaches
-# the separable kernel with no reshape (zero extra allocation). Today only a
-# GriddedQuery on an all-`LinearInterp` method qualifies (per-axis anchors resolved
-# once, reused across ∏M_d outputs — 3–9× faster than pointwise, more in higher
-# dimensions). Adding a separable evaluator for another method (constant, cubic, …)
-# later is one more method here — no change to `interp!`.
-@inline _try_gridded_separable!(output, grids, data, queries, methods, extrap, deriv) = false
-function _try_gridded_separable!(
-        output, grids, data, gq::GriddedQuery,
-        methods::Tuple{LinearInterp, Vararg{LinearInterp}}, extrap, deriv
-    )
-    # already-N-D output is written directly; a flat vector (caller's choice) is
-    # reshaped (aliasing) to the query shape for the N-D kernel.
-    out_nd = output isa AbstractVector ? reshape(output, size(gq)) : output
-    linear_interp!(out_nd, grids, data, gq; bc = map(m -> m.bc, methods), extrap = extrap, deriv = deriv)
+    _linear_gridded_oneshot!(out_nd, grids, data, targets, ops, extraps, Tg, Tout)
     return true
 end

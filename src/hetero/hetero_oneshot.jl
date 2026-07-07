@@ -412,7 +412,7 @@ function interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {N}
-    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    method_tuple = _method_tuple(method, Val(N))
     resolved_query = map(_resolve_grididx, query, grids)
     # GridIdx auto-promotion: when all derivs are EvalValue (scalar or tuple),
     # GridIdx axes need no interpolation — replace their method with NoInterp()
@@ -457,10 +457,10 @@ function interp!(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint = nothing,
     ) where {N}
-    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    method_tuple = _method_tuple(method, Val(N))
     # Separable fast path (before any flattening, so the N-D output reaches the
     # gridded kernel without a reshape): true iff a gridded evaluator exists for
-    # this (query, method) — a GriddedQuery on an all-linear method today.
+    # this (query, method) tuple.
     _try_gridded_separable!(output, grids, data, queries, method_tuple, extrap, deriv) && return output
     # The batch cores fill by LINEAR index, so a shaped output (e.g. an N-D array
     # for a GriddedQuery) is written through a flat 1-D view. `vec`/`reshape`
@@ -491,6 +491,28 @@ end
 # Public API — Batch Allocating
 # ========================================
 
+@inline function _interp_nd_output_eltype(
+        ::Tuple{Vararg{AbstractInterpMethod}},
+        grids::NTuple{N, AbstractVector},
+        ::Type{Tv},
+        ::Type{Tq};
+        shape_op = _interp_op
+    ) where {N, Tv, Tq}
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    return _promote_eltype(shape_op, Tg, Tv, Tq)
+end
+
+@inline function _interp_nd_output_eltype(
+        ::Tuple{ConstantInterp, Vararg{ConstantInterp}},
+        grids::NTuple{N, AbstractVector},
+        ::Type{Tv},
+        ::Type{Tq};
+        shape_op = _select_op
+    ) where {N, Tv, Tq}
+    Tg = _promote_grid_eltype(grids)
+    return _promote_eltype(shape_op, Tg, Tv, Tq)
+end
+
 """
     interp(grids, data, queries; method, coeffs=AutoCoeffs(), kwargs...)
 
@@ -508,12 +530,12 @@ function interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {Tv, N}
-    _, Tg, _, _ = _nd_promote_grids(grids, data)
+    method_tuple = _method_tuple(method, Val(N))
     Tq = _query_eltype(queries)
-    Tr = _promote_eltype(Tv, Tg, Tq)
+    Tr = _interp_nd_output_eltype(method_tuple, grids, Tv, Tq)
     # Output takes the query's shape: a flat vector for ordinary batches, the
     # N-D `size(gq)` array for a shaped container like GriddedQuery.
     output = Array{Tr}(undef, _query_size(queries))
-    interp!(output, grids, data, queries; method = method, coeffs = coeffs, deriv = deriv, extrap = extrap, search = search, hint = hint)
+    interp!(output, grids, data, queries; method = method_tuple, coeffs = coeffs, deriv = deriv, extrap = extrap, search = search, hint = hint)
     return output
 end

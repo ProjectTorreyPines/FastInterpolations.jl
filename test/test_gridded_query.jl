@@ -756,23 +756,444 @@ end
     @test interp!(out, grids, A, gq; method = LinearInterp(), extrap = FI.ClampExtrap()) === out
     @test out == fast
 
-    # ROUTING PROOF (not values): interp!'s fast-path hook resolves to the
-    # separable arm (in gridded_query.jl) for a GriddedQuery + all-linear method,
-    # and to the generic `false` fallback for anything else. `which` inspects
-    # dispatch directly, so this proves routing even though separable and pointwise
-    # produce bit-identical linear values.
+    # ROUTING PROOF (not values): interp!'s GriddedQuery hook is one canonical
+    # gate, and the method-tuple dispatcher behind it resolves all-linear to the
+    # separable arm. `which` inspects dispatch directly, so this proves routing
+    # even though separable and pointwise produce bit-identical linear values.
     hook = FI._try_gridded_separable!
     A2 = Matrix{Float64}(undef, 2, 3)
     gqs = GriddedQuery(([2.0, 3.0], [2.0, 3.0, 4.0]))
-    m_lin = which(hook, typeof((A2, grids, A, gqs, (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue())))
-    m_cub = which(hook, typeof((A2, grids, A, gqs, (CubicInterp(), CubicInterp()), FI.ClampExtrap(), FI.EvalValue())))
-    m_soa = which(hook, typeof((A2, grids, A, ([2.0, 3.0], [2.0, 3.0]), (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    mhook_gq = which(hook, typeof((A2, grids, A, gqs, (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    mhook_soa = which(hook, typeof((A2, grids, A, ([2.0, 3.0], [2.0, 3.0]), (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    @test occursin("gridded_query", String(mhook_gq.file))
+    @test mhook_gq !== mhook_soa
+
+    dispatch = FI._try_gridded_oneshot_methods!
+    m_lin = which(dispatch, typeof((A2, grids, A, gqs.axes, (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    m_cub = which(dispatch, typeof((A2, grids, A, gqs.axes, (CubicInterp(), CubicInterp()), FI.ClampExtrap(), FI.EvalValue())))
     @test occursin("gridded_query", String(m_lin.file))   # separable arm
     @test m_lin !== m_cub                                  # cubic → generic pointwise fallback
-    @test m_lin !== m_soa                                  # SoA linear → generic pointwise fallback
-    @test m_cub === m_soa                                  # both hit the same `false` fallback
 
     # a non-linear method still works (pointwise fallback), N-D shaped
     Cc = interp(grids, A, gq; method = CubicInterp(), extrap = FI.ClampExtrap())
     @test size(Cc) == (120, 90)
+end
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Multi-method separable evaluation (_AxisAnchor backbone)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@testitem "gridded constant: gather == point-wise (sides × extraps, deriv, Int grids)" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: GriddedQuery, ConstantInterp, NearestSide, LeftSide, RightSide
+
+    x = collect(range(0.0, 10.0, 24))
+    y = collect(range(-3.0, 5.0, 20))
+    A = rand(24, 20)
+    tx = collect(range(-0.8, 10.9, 17))    # OOB both sides
+    ty = collect(range(-3.4, 5.6, 13))
+    gq = GriddedQuery((tx, ty))
+
+    # index selection is arithmetic-free → exact equality, OOB included.
+    # RightSide × Clamp pins the coordinate-fold: a raw OOB-left dL < 0 would
+    # flip its `iszero` test to the wrong node.
+    for side in (NearestSide(), LeftSide(), RightSide()),
+            ex in (FI.ClampExtrap(), FI.ExtendExtrap(), FI.WrapExtrap())
+
+        C = interp((x, y), A, gq; method = ConstantInterp(side = side), extrap = ex)
+        ref = [
+            interp((x, y), A, (qx, qy); method = ConstantInterp(side = side), extrap = ex)
+                for qx in tx, qy in ty
+        ]
+        @test C == ref
+        @test eltype(C) == eltype(ref)
+    end
+
+    # any-deriv arm (`* 0` short-circuit mirrors `_constant_nd_evaluate`)
+    for deriv in ((FI.EvalDeriv1(), FI.EvalValue()), (FI.EvalDeriv1(), FI.EvalDeriv1()))
+        Cd = interp((x, y), A, gq; method = ConstantInterp(), extrap = FI.ClampExtrap(), deriv = deriv)
+        refd = [
+            interp((x, y), A, (qx, qy); method = ConstantInterp(), extrap = FI.ClampExtrap(), deriv = deriv)
+                for qx in tx, qy in ty
+        ]
+        @test Cd == refd
+    end
+
+    # Fill parity (post-pass slabs)
+    CF = interp((x, y), A, gq; method = ConstantInterp(), extrap = FI.FillExtrap(-7.5))
+    refF = [
+        interp((x, y), A, (qx, qy); method = ConstantInterp(), extrap = FI.FillExtrap(-7.5))
+            for qx in tx, qy in ty
+    ]
+    @test CF == refF
+
+    # named one-shot + persistent functor agree with the unified path
+    Cu = interp((x, y), A, gq; method = ConstantInterp(), extrap = FI.ClampExtrap())
+    @test constant_interp((x, y), A, gq; extrap = FI.ClampExtrap()) == Cu
+    itp = constant_interp((x, y), A; extrap = FI.ClampExtrap())
+    @test itp(gq) == Cu
+    out = similar(Cu)
+    @test itp(out, gq) === out
+    @test out == Cu
+
+    # Int grid + Int query axis (heterogeneous-tuple boxing guard case)
+    gi = (1:10, 2:20)
+    Ai = rand(10, 19)
+    gqi = GriddedQuery((1:10, collect(range(3.0, 15.0, 30))))
+    Ci = interp(gi, Ai, gqi; method = ConstantInterp(), extrap = FI.ClampExtrap())
+    refi = [
+        interp(gi, Ai, (qx, qy); method = ConstantInterp(), extrap = FI.ClampExtrap())
+            for qx in gqi.axes[1], qy in gqi.axes[2]
+    ]
+    @test Ci == refi
+
+    # 3D
+    A3 = rand(12, 10, 8)
+    g3 = (1.0:12.0, 1.0:10.0, 1.0:8.0)
+    t3 = (collect(range(0.5, 12.4, 7)), collect(range(1.2, 9.7, 6)), collect(range(0.5, 8.5, 5)))
+    C3 = interp(g3, A3, GriddedQuery(t3); method = ConstantInterp(), extrap = FI.ClampExtrap())
+    ref3 = [
+        interp(g3, A3, (a, b, c); method = ConstantInterp(), extrap = FI.ClampExtrap())
+            for a in t3[1], b in t3[2], c in t3[3]
+    ]
+    @test C3 == ref3
+
+    # NoExtrap throws the canonical axis-named error BEFORE writing output
+    err = try
+        interp((x, y), A, gq; method = ConstantInterp(), extrap = FI.NoExtrap())
+        nothing
+    catch e
+        e
+    end
+    @test err isa DomainError
+    @test occursin("axis 1", sprint(showerror, err))
+end
+
+@testitem "gridded hermite: fullbuffer == point-wise (flavors × extraps × ops)" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: GriddedQuery, PchipInterp, CardinalInterp, AkimaInterp
+
+    x = collect(range(0.0, 10.0, 24))
+    y = collect(range(-3.0, 5.0, 20))
+    A = rand(24, 20)
+    tx = collect(range(-0.8, 10.9, 17))    # OOB both sides
+    ty = collect(range(-3.4, 5.6, 13))
+    gq = GriddedQuery((tx, ty))
+
+    # FMA contraction is inline-context-dependent; use a small absolute floor
+    # for derivative entries near zero. Eltype is pinned exactly below.
+    isclose(a, b) = size(a) == size(b) && all(isapprox.(a, b; rtol = 8.0e-15, atol = 1.0e-13))
+
+    for m in (PchipInterp(), CardinalInterp(0.0), CardinalInterp(0.5), AkimaInterp()),
+            ex in (FI.ClampExtrap(), FI.ExtendExtrap(), FI.WrapExtrap())
+
+        H = interp((x, y), A, gq; method = m, extrap = ex)
+        ref = [interp((x, y), A, (qx, qy); method = m, extrap = ex) for qx in tx, qy in ty]
+        @test isclose(H, ref)
+        @test eltype(H) == eltype(ref)
+    end
+
+    # deriv ops through Clamp with OOB targets — the point-wise ND surface
+    # clamps the COORDINATE and still evaluates the kernel (a Clamp-OOB
+    # derivative is the boundary cell polynomial's slope, not zero); the
+    # anchor's dL fold must reproduce that.
+    for deriv in (
+            (FI.EvalDeriv1(), FI.EvalValue()),
+            (FI.EvalValue(), FI.EvalDeriv1()),
+            (FI.EvalDeriv1(), FI.EvalDeriv1()),
+            (FI.EvalDeriv2(), FI.EvalValue()),
+        )
+        Hd = interp((x, y), A, gq; method = PchipInterp(), extrap = FI.ClampExtrap(), deriv = deriv)
+        refd = [
+            interp((x, y), A, (qx, qy); method = PchipInterp(), extrap = FI.ClampExtrap(), deriv = deriv)
+                for qx in tx, qy in ty
+        ]
+        @test isclose(Hd, refd)
+    end
+
+    # Fill parity (post-pass slabs, value + deriv carrier zero)
+    for deriv in (FI.EvalValue(), (FI.EvalDeriv1(), FI.EvalValue()))
+        HF = interp((x, y), A, gq; method = PchipInterp(), extrap = FI.FillExtrap(-7.5), deriv = deriv)
+        refF = [
+            interp((x, y), A, (qx, qy); method = PchipInterp(), extrap = FI.FillExtrap(-7.5), deriv = deriv)
+                for qx in tx, qy in ty
+        ]
+        @test isclose(HF, refF)
+    end
+
+    # in-domain queries share every operation with point-wise → bit-identical here
+    # (kept as a strict pin on THIS comparison; cross-context FMA drift is why the
+    # OOB/deriv comparisons above use rtol)
+    txi = collect(range(0.2, 9.9, 17))
+    tyi = collect(range(-2.9, 4.9, 13))
+    gq_in = GriddedQuery((txi, tyi))
+    Hin = interp((x, y), A, gq_in; method = PchipInterp(), extrap = FI.NoExtrap())
+    @test Hin == [interp((x, y), A, (qx, qy); method = PchipInterp(), extrap = FI.NoExtrap()) for qx in txi, qy in tyi]
+
+    # mixed flavors compose per axis
+    Hm = interp((x, y), A, gq_in; method = (PchipInterp(), AkimaInterp()), extrap = FI.NoExtrap())
+    refm = [
+        interp((x, y), A, (qx, qy); method = (PchipInterp(), AkimaInterp()), extrap = FI.NoExtrap())
+            for qx in txi, qy in tyi
+    ]
+    @test isclose(Hm, refm)
+
+    # 3D, fixed pass order == collapse order
+    A3 = rand(12, 10, 8)
+    g3 = (1.0:12.0, 1.0:10.0, 1.0:8.0)
+    t3 = (collect(range(0.5, 12.4, 7)), collect(range(1.2, 9.7, 6)), collect(range(0.5, 8.5, 5)))
+    H3 = interp(g3, A3, GriddedQuery(t3); method = PchipInterp(), extrap = FI.ClampExtrap())
+    ref3 = [
+        interp(g3, A3, (a, b, c); method = PchipInterp(), extrap = FI.ClampExtrap())
+            for a in t3[1], b in t3[2], c in t3[3]
+    ]
+    @test isclose(H3, ref3)
+
+    # Float32 value-matched width; Int grid beside Float targets
+    A32 = rand(Float32, 16, 12)
+    g32 = (collect(Float32, 1:16), collect(Float32, 1:12))
+    t32 = (collect(Float32, range(1.5f0, 15.5f0, 9)), collect(Float32, range(1.2f0, 11.8f0, 7)))
+    H32 = interp(g32, A32, GriddedQuery(t32); method = PchipInterp(), extrap = FI.ClampExtrap())
+    ref32 = [
+        interp(g32, A32, (qx, qy); method = PchipInterp(), extrap = FI.ClampExtrap())
+            for qx in t32[1], qy in t32[2]
+    ]
+    @test eltype(H32) == eltype(ref32)
+    @test isclose(H32, ref32)
+
+    gi = (1:10, 2:20)
+    Ai = rand(10, 19)
+    gqi = GriddedQuery((1:10, collect(range(3.0, 15.0, 30))))
+    Hi = interp(gi, Ai, gqi; method = PchipInterp(), extrap = FI.ClampExtrap())
+    refi = [
+        interp(gi, Ai, (qx, qy); method = PchipInterp(), extrap = FI.ClampExtrap())
+            for qx in gqi.axes[1], qy in gqi.axes[2]
+    ]
+    @test isclose(Hi, refi)
+
+    # NoExtrap throws axis-named before writing
+    err = try
+        interp((x, y), A, gq; method = PchipInterp(), extrap = FI.NoExtrap())
+        nothing
+    catch e
+        e
+    end
+    @test err isa DomainError
+    @test occursin("axis 1", sprint(showerror, err))
+end
+
+@testitem "gridded routing: constant/hermite hooks, PeriodicBC + mixed-method fallback" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: GriddedQuery, ConstantInterp, PchipInterp, LinearInterp, PeriodicBC
+    using InteractiveUtils: which
+
+    x = collect(range(0.0, 2π, 25))
+    A = [sin(xi) + cos(yi) for xi in x, yi in x]
+    tq = collect(range(0.3, 6.0, 11))
+    gq = GriddedQuery((tq, tq))
+    out = zeros(11, 11)
+    hook = FI._try_gridded_oneshot_methods!
+
+    m_c = which(hook, typeof((out, (x, x), A, gq.axes, (ConstantInterp(), ConstantInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    m_h = which(hook, typeof((out, (x, x), A, gq.axes, (PchipInterp(), PchipInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    @test occursin("gridded_constant", String(m_c.file))
+    @test occursin("gridded_hermite", String(m_h.file))
+
+    # PeriodicBC slope stencils and mixed method families fall through to the
+    # generic `false` fallback (point-wise batch) — and stay correct there.
+    mper = PchipInterp(PeriodicBC())
+    m_p = which(hook, typeof((out, (x, x), A, gq.axes, (mper, mper), FI.WrapExtrap(), FI.EvalValue())))
+    m_mix = which(hook, typeof((out, (x, x), A, gq.axes, (ConstantInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    m_gen = which(hook, typeof((out, (x, x), A, gq.axes, (CubicInterp(), CubicInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    @test m_p === m_gen
+    @test m_mix === m_gen
+
+    Hp = interp((x, x), A, gq; method = mper, extrap = FI.WrapExtrap())
+    refp = [interp((x, x), A, (qx, qy); method = mper, extrap = FI.WrapExtrap()) for qx in tq, qy in tq]
+    @test Hp == refp
+    Hmix = interp((x, x), A, gq; method = (ConstantInterp(), LinearInterp()), extrap = FI.ClampExtrap())
+    refmix = [
+        interp((x, x), A, (qx, qy); method = (ConstantInterp(), LinearInterp()), extrap = FI.ClampExtrap())
+            for qx in tq, qy in tq
+    ]
+    @test Hmix == refmix
+end
+
+@testitem "gridded constant/hermite: zero-alloc warm (Vector + Int axes)" setup = [AllocConstants] begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: GriddedQuery, ConstantInterp, PchipInterp, AkimaInterp
+
+    # First execution of an @allocated call site can catch one-time pool
+    # first-touch growth (~290 KB, shared with the linear path on the same
+    # axes) — measure twice, assert the steady state.
+    function meas(out, grids, data, gq, m)
+        interp!(out, grids, data, gq; method = m, extrap = FI.ClampExtrap())
+        return @allocated interp!(out, grids, data, gq; method = m, extrap = FI.ClampExtrap())
+    end
+    steady(out, grids, data, gq, m) = (meas(out, grids, data, gq, m); meas(out, grids, data, gq, m))
+
+    x = collect(range(0.0, 10.0, 24))
+    y = collect(range(-3.0, 5.0, 20))
+    A = rand(24, 20)
+    gq = GriddedQuery((collect(range(-0.8, 10.9, 17)), collect(range(-3.4, 5.6, 13))))
+    out = zeros(17, 13)
+    @test steady(out, (x, y), A, gq, ConstantInterp()) <= ALLOC_THRESHOLD
+    @test steady(out, (x, y), A, gq, PchipInterp()) <= ALLOC_THRESHOLD
+    @test steady(out, (x, y), A, gq, AkimaInterp()) <= ALLOC_THRESHOLD
+
+    # Int grid + Int query axis (heterogeneous-tuple boxing guard)
+    gi = (1:10, 2:20)
+    Ai = rand(10, 19)
+    gqi = GriddedQuery((1:10, collect(range(3.0, 15.0, 30))))
+    outi = zeros(10, 30)
+    @test steady(outi, gi, Ai, gqi, ConstantInterp()) <= ALLOC_THRESHOLD
+    @test steady(outi, gi, Ai, gqi, PchipInterp()) <= ALLOC_THRESHOLD
+
+    # 3D hermite (pooled intermediates recycled across passes)
+    A3 = rand(12, 10, 8)
+    g3 = (collect(1.0:12.0), collect(1.0:10.0), collect(1.0:8.0))
+    gq3 = GriddedQuery((collect(range(1.0, 12.0, 7)), collect(range(1.2, 9.7, 6)), collect(range(0.5, 8.5, 5))))
+    out3 = zeros(7, 6, 5)
+    @test steady(out3, g3, A3, gq3, PchipInterp()) <= ALLOC_THRESHOLD
+end
+
+@testitem "gridded N=1: flat-vector out disambiguation vs batch protocol" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: GriddedQuery, ConstantInterp, PchipInterp
+
+    # `out::AbstractVector` + 1-axis GriddedQuery sits in the ambiguity
+    # intersection with the generic batch entries (`queries::Any`) — these pins
+    # keep the N = 1 disambiguation methods routed to the gridded arm.
+    x = collect(range(0.0, 10.0, 24))
+    v = sin.(x)
+    tq = collect(range(-0.5, 10.5, 9))
+    gq = GriddedQuery((tq,))
+    out = zeros(9)
+
+    # 1D-scalar reference crosses inline contexts → elementwise rtol=1e-15
+    # (FMA contraction is inline-context-dependent; established policy)
+    ref = [FI.linear_interp(x, v, q; extrap = FI.ClampExtrap()) for q in tq]
+    linear_interp!(out, (x,), v, gq; extrap = FI.ClampExtrap())
+    @test all(isapprox.(out, ref; rtol = 1.0e-15))
+
+    refc = [interp((x,), v, (q,); method = ConstantInterp(), extrap = FI.ClampExtrap()) for q in tq]
+    constant_interp!(out, (x,), v, gq; extrap = FI.ClampExtrap())
+    @test out == refc
+    interp!(out, (x,), v, gq; method = ConstantInterp(), extrap = FI.ClampExtrap())
+    @test out == refc
+
+    H = interp((x,), v, gq; method = PchipInterp(), extrap = FI.ClampExtrap())
+    refh = [interp((x,), v, (q,); method = PchipInterp(), extrap = FI.ClampExtrap()) for q in tq]
+    @test size(H) == (9,)
+    @test all(isapprox.(H, refh; rtol = 1.0e-15))
+end
+
+@testitem "unified itp(gq): one AbstractInterpolantND callable, N-D shape for all methods" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: GriddedQuery, ConstantInterp, EvalDeriv1
+    using InteractiveUtils: which
+
+    x = collect(range(0.0, 10.0, 24))
+    y = collect(range(-3.0, 5.0, 20))
+    A = rand(24, 20)
+    tx = collect(range(-0.5, 10.5, 15))
+    ty = collect(range(-3.2, 5.4, 11))
+    gq = GriddedQuery((tx, ty))
+    rt(a, b) = size(a) == size(b) && all(isapprox.(a, b; rtol = 1.0e-13, atol = 1.0e-12))
+
+    # Every persistent ND interpolant evaluates a GriddedQuery through ONE
+    # callable and returns an N-D size(gq) array — including cubic/quadratic,
+    # which previously fell through to the generic batch functor and returned a
+    # FLAT vector (the inconsistency this unification fixes).
+    for (label, itp) in (
+            ("linear", FI.linear_interp((x, y), A; extrap = FI.ClampExtrap())),
+            ("constant", FI.constant_interp((x, y), A; extrap = FI.ClampExtrap())),
+            ("cubic", FI.cubic_interp((x, y), A; extrap = FI.ClampExtrap())),
+            ("quadratic", FI.quadratic_interp((x, y), A; extrap = FI.ClampExtrap())),
+        )
+        C = itp(gq)
+        @test C isa AbstractMatrix
+        @test size(C) == (15, 11)
+        ref = [itp((qx, qy)) for qx in tx, qy in ty]
+        @test rt(C, ref)
+        out = similar(C)
+        @test itp(out, gq) === out
+        @test rt(out, ref)
+    end
+
+    # The unified callable resolves to gridded_dispatch.jl for ALL ND methods
+    # (the concrete per-type functors are gone). The separable/pointwise choice
+    # is delegated to the prepared method-tuple dispatcher.
+    itpL = FI.linear_interp((x, y), A; extrap = FI.ClampExtrap())
+    itpCub = FI.cubic_interp((x, y), A; extrap = FI.ClampExtrap())
+    @test occursin("gridded_dispatch", String(which(itpL, typeof((gq,))).file))
+    @test occursin("gridded_dispatch", String(which(itpCub, typeof((gq,))).file))
+    eit = FI._gridded_eval_itp!
+    args = (zeros(15, 11), gq, (FI.EvalValue(), FI.EvalValue()), (FI.ClampExtrap(), FI.ClampExtrap()), nothing, nothing)
+    @test occursin("gridded_dispatch", String(which(eit, typeof((args[1], itpL, args[2:end]...))).file))
+    @test occursin("gridded_dispatch", String(which(eit, typeof((args[1], FI.constant_interp((x, y), A), args[2:end]...))).file))
+    @test occursin("gridded_dispatch", String(which(eit, typeof((args[1], itpCub, args[2:end]...))).file))
+    emit = FI._gridded_eval_methods!
+    ops = (FI.EvalValue(), FI.EvalValue())
+    extraps = (FI.ClampExtrap(), FI.ClampExtrap())
+    @test occursin("gridded_query", String(which(emit, typeof((args[1], itpL.grids, itpL.data, gq.axes, (LinearInterp(), LinearInterp()), ops, extraps))).file))
+    itpConst = FI.constant_interp((x, y), A; extrap = FI.ClampExtrap())
+    @test occursin("gridded_constant", String(which(emit, typeof((args[1], itpConst.grids, itpConst.data, gq.axes, (ConstantInterp(), ConstantInterp()), ops, extraps))).file))
+    @test occursin("gridded_dispatch", String(which(emit, typeof((args[1], itpCub.grids, A, gq.axes, (CubicInterp(), CubicInterp()), ops, extraps))).file))
+
+    # deriv + call-time InBounds override still thread through the unified path
+    Cd = itpL(gq; deriv = (EvalDeriv1(), FI.EvalValue()))
+    @test rt(Cd, [itpL((qx, qy); deriv = (EvalDeriv1(), FI.EvalValue())) for qx in tx, qy in ty])
+
+    # ordinary (non-gridded) batch queries are unaffected — still a flat Vector
+    b = itpL(([2.0, 3.0, 4.0], [1.0, 2.0, 3.0]))
+    @test b isa AbstractVector && length(b) == 3
+end
+
+@testitem "persistent hermite itp(gq): fast arm (not pointwise default), == one-shot" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: GriddedQuery, PchipInterp, AkimaInterp, CardinalInterp, LinearInterp
+    using InteractiveUtils: which
+
+    x = collect(range(0.0, 10.0, 24))
+    y = collect(range(-3.0, 5.0, 20))
+    A = rand(24, 20)
+    gq = GriddedQuery((collect(range(-0.5, 10.5, 15)), collect(range(-3.2, 5.4, 11))))
+    isclose(a, b) = size(a) == size(b) && all(isapprox.(a, b; rtol = 1.0e-15, atol = 1.0e-300))
+    arm(itp) = String(which(FI._gridded_eval_methods!, typeof((zeros(15, 11), itp.grids, itp.data, gq.axes, itp.methods, (FI.EvalValue(), FI.EvalValue()), (FI.ClampExtrap(), FI.ClampExtrap())))).file)
+
+    # A local-hermite HeteroInterpolantND (OnTheFly) evaluates a GriddedQuery via
+    # the SAME separable kernel as the one-shot — persistent itp(gq) is no longer
+    # the point-wise default. Values must equal the one-shot and the point-wise ref.
+    for m in (PchipInterp(), AkimaInterp(), CardinalInterp(0.5))
+        itp = interp((x, y), A; method = m, extrap = FI.ClampExtrap())
+        @test occursin("gridded_hermite", arm(itp))              # fast arm, not gridded_dispatch default
+        G = itp(gq)
+        ref = [itp((qx, qy)) for qx in gq.axes[1], qy in gq.axes[2]]
+        oneshot = interp((x, y), A, gq; method = m, extrap = FI.ClampExtrap())
+        @test isclose(G, ref)
+        @test isclose(G, oneshot)
+        out = similar(G)
+        @test itp(out, gq) === out
+        @test isclose(out, ref)
+    end
+
+    # deriv threads through the persistent fast arm
+    itp = interp((x, y), A; method = PchipInterp(), extrap = FI.ClampExtrap())
+    Gd = itp(gq; deriv = (FI.EvalDeriv1(), FI.EvalValue()))
+    @test isclose(Gd, [itp((qx, qy); deriv = (FI.EvalDeriv1(), FI.EvalValue())) for qx in gq.axes[1], qy in gq.axes[2]])
+
+    # mixed families (linear × pchip) and PreCompute (cubic) hetero stay on the
+    # point-wise default arm — and stay correct there.
+    itpm = interp((x, y), A; method = (LinearInterp(), PchipInterp()), extrap = FI.ClampExtrap())
+    @test isclose(itpm(gq), [itpm((qx, qy)) for qx in gq.axes[1], qy in gq.axes[2]])
+    itpc = interp((x, y), A; method = FI.CubicInterp(), extrap = FI.ClampExtrap())
+    @test isclose(itpc(gq), [itpc((qx, qy)) for qx in gq.axes[1], qy in gq.axes[2]])
 end

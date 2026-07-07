@@ -41,6 +41,10 @@ end
 @inline Base.propertynames(a::_LinearAnchor) =
     (:idx, propertynames(getfield(a, :payload))...)
 
+# Payload scalar type of an anchor type (each anchor family declares its own —
+# avoids positional `A.parameters[...]` access at use sites).
+@inline _anchor_scalar_type(::Type{<:_LinearAnchor{T}}) where {T} = T
+
 # ---- extrap folding (weight-level; ClampExtrap freezes OOB at the boundary
 # node — `_anchor_loc`'s boundary interval + clamped alpha reproduces it) ----
 @inline _resolve_alpha(α, ::ClampExtrap) = clamp(α, zero(α), one(α))
@@ -71,7 +75,7 @@ end
 
 # ---- batch plan: one per query axis ----------------------------------------
 """
-    _AxisAnchorBatch{A}
+    _AxisPlan{A}
 
 Per-axis gridded plan: AoS vector of axis anchors (both pass shapes consume
 `(idx, payload)` together, one element per fiber — nothing vectorizes ACROSS
@@ -79,11 +83,28 @@ plan entries, and inline isbits AoS keeps both fields on one cache line).
 `identity == true` ⟺ the plan maps node k → node k for every k with zero
 weight AND covers the full axis — the pass may then be elided entirely.
 """
-struct _AxisAnchorBatch{A <: _AbstractAxisAnchor}
+abstract type _AbstractAxisPlan end
+
+struct _AxisPlan{A <: _AbstractAxisAnchor} <: _AbstractAxisPlan
     anchors::Vector{A}
     identity::Bool
 end
-Base.length(b::_AxisAnchorBatch) = length(b.anchors)
+Base.length(b::_AxisPlan) = length(b.anchors)
+
+# Plan contract consumed by the pass kernels; alternative plan representations
+# (e.g. the experimental lazy Range plan) implement these three.
+@inline _axis_identity(p::_AxisPlan) = p.identity
+@inline _axis_anchor_at(p::_AxisPlan, k::Int) = @inbounds p.anchors[k]
+
+@inline function _axis_anchor_type(
+        ::LinearInterp,
+        ::EvalValue,
+        g::AbstractVector,
+        t::AbstractVector
+    )
+    Tα = float(promote_type(eltype(g), eltype(t)))
+    return _LinearAnchor{Tα, EvalValue, @NamedTuple{alpha::Tα}}
+end
 
 # ---- NoExtrap: per-axis domain validation at plan build ---------------------
 # Fails BEFORE any O(M·N) buffer work; names the axis for diagnosis.
@@ -93,7 +114,7 @@ Base.length(b::_AxisAnchorBatch) = length(b.anchors)
 @inline _guard_axis_state(::AbstractExtrap, state::UInt8, xq, dim::Int) = true
 
 """
-    _axis_anchors(m, op, g, t, ex, dim, [searcher]) -> _AxisAnchorBatch
+    _axis_anchors(m, op, g, t, ex, dim, [searcher]) -> _AxisPlan
 
 Resolve every target coordinate in `t` against grid `g` once (the O(M) plan
 that O(M·N) passes reuse). `dim` names the axis in error messages.
@@ -107,21 +128,65 @@ function _axis_anchors(
         dim::Int,
         searcher::Searcher = DEFAULT_SEARCHER
     )
-    Tα = float(promote_type(eltype(g), eltype(t)))
-    A = _LinearAnchor{Tα, EvalValue, @NamedTuple{alpha::Tα}}
+    A = _axis_anchor_type(m, op, g, t)
     anchors = Vector{A}(undef, length(t))
+    return _axis_anchors!(anchors, m, op, g, t, ex, dim, searcher)
+end
+
+function _axis_anchors_pooled(
+        pool,
+        m::LinearInterp,
+        op::EvalValue,
+        g::AbstractVector,
+        t::AbstractVector,
+        ex::AbstractExtrap,
+        dim::Int,
+        searcher::Searcher = DEFAULT_SEARCHER
+    )
+    A = _axis_anchor_type(m, op, g, t)
+    buf = acquire!(pool, A, length(t))
+    return _axis_anchors!(buf, m, op, g, t, ex, dim, searcher)
+end
+
+"""
+    _axis_anchors!(anchors, m, op, g, t, ex, dim, [searcher])
+
+Pool/workspace-friendly variant of [`_axis_anchors`](@ref). The returned batch
+borrows `anchors`, so it must not outlive the caller-owned storage.
+"""
+function _axis_anchors!(
+        anchors::Vector{A},
+        m::LinearInterp,
+        op::EvalValue,
+        g::AbstractVector,
+        t::AbstractVector,
+        ex::AbstractExtrap,
+        dim::Int,
+        searcher::Searcher = DEFAULT_SEARCHER
+    ) where {A <: _AbstractAxisAnchor}
+    length(anchors) == length(t) || throw(
+        DimensionMismatch("anchor buffer length $(length(anchors)) != query length $(length(t))")
+    )
+    Tα = _anchor_scalar_type(A)
+    searcher_resolved = _resolve_searcher_for_grid(g, searcher)
     is_identity = length(t) == length(g)
     k = 0
     @inbounds for tk in eachindex(t)
         k += 1
-        loc = _anchor_loc(g, t[tk], false, searcher)
+        loc = _anchor_loc(g, t[tk], false, searcher_resolved)
         _guard_axis_state(ex, loc.state, t[tk], dim)
         a = _axis_anchor(m, op, loc, g, ex, Tα)
         anchors[k] = a
-        # node k is exactly represented either as (idx=k, alpha=0) or, for the
-        # last node, as (idx=k-1, alpha=1) — `_anchor_loc` clamps `idx` to
-        # `1:(n-1)`, so the right edge of the last interval reaches node n.
-        is_identity &= ((a.idx == k) & iszero(a.alpha)) | ((a.idx + 1 == k) & isone(a.alpha))
+        # Identity accumulation is gated: once false (always, for resize calls
+        # where lengths differ) the predictable branch costs ~nothing — the
+        # ungated `&=` form measured +27% of range-grid plan build.
+        if is_identity
+            # node k is exactly represented either as (idx=k, alpha=0) or, for
+            # the last node, as (idx=k-1, alpha=1) — `_anchor_loc` clamps `idx`
+            # to `1:(n-1)`, so the right edge of the last interval reaches
+            # node n. Exact-match only: ULP-off float ranges stay non-identity.
+            is_identity = ((a.idx == k) & iszero(a.alpha)) | ((a.idx + 1 == k) & isone(a.alpha))
+        end
     end
-    return _AxisAnchorBatch(anchors, is_identity)
+    return _AxisPlan(anchors, is_identity)
 end

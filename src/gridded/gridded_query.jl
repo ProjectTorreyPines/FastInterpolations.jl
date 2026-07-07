@@ -51,11 +51,10 @@ Base.ndims(::GriddedQuery{T}) where {T} = fieldcount(T)
 
 # ---- pass kernels (pool-agnostic pure functions; hetero convention) --------
 # Contiguous column blend resolving axis 2: pure AXPY over stride-1 columns.
-function _pass_blend_dim2!(dest::AbstractMatrix, src::AbstractMatrix, plan::_AxisAnchorBatch)
+function _pass_blend_dim2!(dest::AbstractMatrix, src::AbstractMatrix, plan::_AbstractAxisPlan)
     n1 = size(src, 1)
-    anchors = plan.anchors
-    @inbounds for j in eachindex(anchors)
-        a = anchors[j]
+    @inbounds for j in 1:length(plan)
+        a = _axis_anchor_at(plan, j)
         jl = a.idx; jr = jl + 1
         α = a.alpha
         if iszero(α)                       # exact node hit → memcpy column jl
@@ -73,11 +72,10 @@ end
 
 # Gather resolving axis 1: j outer keeps src columns hot; the two taps
 # (idx, idx+1) are memory-adjacent → load-pair on ARM, no hardware gather needed.
-function _pass_gather_dim1!(dest::AbstractMatrix, src::AbstractMatrix, plan::_AxisAnchorBatch)
-    anchors = plan.anchors
+function _pass_gather_dim1!(dest::AbstractMatrix, src::AbstractMatrix, plan::_AbstractAxisPlan)
     @inbounds for j in 1:size(src, 2)
-        for i in eachindex(anchors)
-            a = anchors[i]
+        for i in 1:length(plan)
+            a = _axis_anchor_at(plan, i)
             il = a.idx
             dest[i, j] = _eval_anchor(a, src[il, j], src[il + 1, j])
         end
@@ -85,29 +83,48 @@ function _pass_gather_dim1!(dest::AbstractMatrix, src::AbstractMatrix, plan::_Ax
     return dest
 end
 
-# ---- pass-order cost model --------------------------------------------------
-# Measured per-element seeds (Apple Silicon, predecessor investigation); the
-# benchmark suite re-calibrates. Order A = blend dim2 first (n1×N mid);
-# order B = gather dim1 first (M×n2 mid).
-const _GRIDDED_C_BLEND = 0.2
-const _GRIDDED_C_GATHER = 0.65
-@inline function _gridded_dim2_first(n1::Int, n2::Int, M::Int, N::Int)
-    cost_a = n1 * N * _GRIDDED_C_BLEND + M * N * _GRIDDED_C_GATHER
-    cost_b = M * n2 * _GRIDDED_C_GATHER + M * N * _GRIDDED_C_BLEND
-    return cost_a <= cost_b
+# Fused anchored tensor core: no O(M·N)-proportional intermediate. Straight-line
+# 3-blend per output (2 axis-2 blends + 1 axis-1 blend from the 4 corners) —
+# search/weight construction is amortized to the per-axis plans, and the fixed
+# branch-free body lets LLVM vectorize the whole inner loop. A same-cell
+# run-reuse variant (share row_lo/row_hi across outputs in one source cell) was
+# measured 26–61% SLOWER at every ratio: the data-dependent run scan plus
+# tiny variable-length SIMD loops cost more than the two recomputed blends.
+function _pass_fused_linear_2d!(dest::AbstractMatrix, src::AbstractMatrix, p1::_AxisPlan, p2::_AxisPlan)
+    ax = p1.anchors
+    ay = p2.anchors
+    @inbounds for j in eachindex(ay)
+        a2 = ay[j]
+        jl = a2.idx
+        jr = jl + 1
+        @simd for i in eachindex(ax)
+            a1 = ax[i]
+            il = a1.idx
+            row_lo = _eval_anchor(a2, src[il, jl], src[il, jr])
+            row_hi = _eval_anchor(a2, src[il + 1, jl], src[il + 1, jr])
+            dest[i, j] = _eval_anchor(a1, row_lo, row_hi)
+        end
+    end
+    return dest
 end
 
 # ---- 2D linear separable core ---------------------------------------------
 # Each pass resolves one axis's anchors once and reuses them across the grid.
-# The cost model picks which axis to fold first — the intermediate's shape
-# (n1×N vs M×n2) drives total work; both orders are mathematically equivalent.
-# Plan builder: both axis plans, built OUTSIDE the pool scope (plan Vectors
-# are owned, not pooled) and BEFORE any output allocation — this is where
-# NoExtrap's O(M)/O(N) domain validation fires (`_guard_axis_state`), so the
-# throw happens before the caller's O(M·N) buffer is acquired.
-@inline function _gridded_plans(itp::LinearInterpolantND{Tg, Tv, 2}, tx, ty) where {Tg, Tv}
-    p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
-    p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty, itp.extraps[2], 2)
+# NO automatic strategy/order selection lives here: callers name the strategy
+# entry point explicitly, and two-pass entries take the fold order as an
+# explicit argument — pure kernel behavior, no selector overhead. (The measured
+# strategy map, fixed 512×384 sweep: fused wins ALL pure downsampling,
+# two-pass wins same-size/upsampling/mixed; pass-order/orientation seeds from
+# the retired auto models: blend ≈ 0.2, gather ≈ 0.65 ns/elem.)
+# Plan builder: both axis plans, pooled, built BEFORE any output allocation —
+# this is where NoExtrap's O(M)/O(N) domain validation fires
+# (`_guard_axis_state`), so the throw happens before the caller's O(M·N)
+# buffer is allocated.
+@inline function _gridded_plans_pooled(pool, itp::LinearInterpolantND{Tg, Tv, 2}, tx, ty) where {Tg, Tv}
+    m = LinearInterp()
+    op = EvalValue()
+    p1 = _axis_anchors_pooled(pool, m, op, itp.grids[1], tx, itp.extraps[1], 1)
+    p2 = _axis_anchors_pooled(pool, m, op, itp.grids[2], ty, itp.extraps[2], 2)
     return p1, p2
 end
 
@@ -120,19 +137,23 @@ end
 # thus already validated) by the caller — this core never touches
 # `itp.grids`/`itp.extraps` directly, so it never revalidates or reallocates
 # a plan.
-@with_pool pool function _gridded_apply!(
+# `dim2_first` is the caller's EXPLICIT fold order (no internal cost model):
+# true → blend dim2 first (n1×N mid), false → gather dim1 first (M×n2 mid).
+# Both orders are mathematically equivalent (machine-eps, not bit-identical).
+@with_pool pool function _gridded_apply_fullbuffer!(
         out::AbstractMatrix,
         itp::LinearInterpolantND{Tg, Tv, 2},
-        p1::_AxisAnchorBatch,
-        p2::_AxisAnchorBatch,
-        ::Type{Tmid}
+        p1::_AxisPlan,
+        p2::_AxisPlan,
+        ::Type{Tmid},
+        dim2_first::Bool
     ) where {Tg, Tv, Tmid}
     A = itp.data
     n1, n2 = size(A)
     M = size(out, 1)
     N = size(out, 2)
     size(out) == (length(p1), length(p2)) || throw(
-        DimensionMismatch("output size $(size(out)) ≠ query size ($(length(p1)), $(length(p2)))")
+        DimensionMismatch("output size $(size(out)) != query size ($(length(p1)), $(length(p2)))")
     )
     (M == 0 || N == 0) && return out
     if p1.identity && p2.identity
@@ -141,7 +162,7 @@ end
         _pass_gather_dim1!(out, A, p1)                    # N == n2: single pass, no mid
     elseif p1.identity
         _pass_blend_dim2!(out, A, p2)                     # M == n1: single pass, no mid
-    elseif _gridded_dim2_first(n1, n2, M, N)
+    elseif dim2_first
         B = acquire!(pool, Tmid, n1, N)
         _pass_blend_dim2!(B, A, p2)
         _pass_gather_dim1!(out, B, p1)
@@ -151,6 +172,86 @@ end
         _pass_blend_dim2!(out, B, p2)
     end
     return out
+end
+
+function _gridded_apply_fused!(
+        out::AbstractMatrix,
+        itp::LinearInterpolantND{Tg, Tv, 2},
+        p1::_AbstractAxisPlan,
+        p2::_AbstractAxisPlan,
+        ::Type{Tmid}
+    ) where {Tg, Tv, Tmid}
+    A = itp.data
+    M = size(out, 1)
+    N = size(out, 2)
+    size(out) == (length(p1), length(p2)) || throw(
+        DimensionMismatch("output size $(size(out)) != query size ($(length(p1)), $(length(p2)))")
+    )
+    (M == 0 || N == 0) && return out
+    if _axis_identity(p1) && _axis_identity(p2)
+        copyto!(out, A)
+    elseif _axis_identity(p2)
+        _pass_gather_dim1!(out, A, p1)
+    elseif _axis_identity(p1)
+        _pass_blend_dim2!(out, A, p2)
+    else
+        _pass_fused_linear_2d!(out, A, p1, p2)
+    end
+    return out
+end
+
+@with_pool pool function _gridded_apply_fused_pooled!(
+        out::AbstractMatrix,
+        itp::LinearInterpolantND{Tg, Tv, 2},
+        tx,
+        ty,
+        ::Type{Tmid}
+    ) where {Tg, Tv, Tmid}
+    p1, p2 = _gridded_plans_pooled(pool, itp, tx, ty)
+    return _gridded_apply_fused!(out, itp, p1, p2, Tmid)
+end
+
+# Full-buffer strategy behind pooled plans: the anchor buffers come from the
+# same pool scope that outlives the apply, so the whole candidate is
+# allocation-free after pool warmup (the O(n1·N / M·n2) intermediate is pooled
+# inside `_gridded_apply_fullbuffer!`'s own nested scope).
+@with_pool pool function _gridded_apply_fullbuffer_pooled!(
+        out::AbstractMatrix,
+        itp::LinearInterpolantND{Tg, Tv, 2},
+        tx,
+        ty,
+        ::Type{Tmid},
+        dim2_first::Bool
+    ) where {Tg, Tv, Tmid}
+    p1, p2 = _gridded_plans_pooled(pool, itp, tx, ty)
+    return _gridded_apply_fullbuffer!(out, itp, p1, p2, Tmid, dim2_first)
+end
+
+# Public default strategy: FUSED anchors. Chosen for robustness, not a
+# selector: flat ~0.7–1.6 ns/out across the whole ratio sweep, wins all pure
+# downsampling outright, bounded ≤3× behind two-pass at strong upsampling,
+# and needs no O(mid)/O(line) scratch — only the O(M+N) plans. Callers who
+# know their shape call a strategy entry explicitly.
+@with_pool pool function _gridded_apply!(
+        out::AbstractMatrix,
+        itp::LinearInterpolantND{Tg, Tv, 2},
+        tx,
+        ty,
+        ::Type{Tmid}
+    ) where {Tg, Tv, Tmid}
+    p1, p2 = _gridded_plans_pooled(pool, itp, tx, ty)
+    return _gridded_apply_fused!(out, itp, p1, p2, Tmid)
+end
+
+@with_pool pool function _gridded_eval(
+        itp::LinearInterpolantND{Tg, Tv, 2},
+        tx,
+        ty,
+        ::Type{Tmid}
+    ) where {Tg, Tv, Tmid}
+    p1, p2 = _gridded_plans_pooled(pool, itp, tx, ty)
+    out = Matrix{Tmid}(undef, length(tx), length(ty))
+    return _gridded_apply_fused!(out, itp, p1, p2, Tmid)
 end
 
 # ---- supported-extrap gate ---------------------------------------------------
@@ -174,17 +275,19 @@ end
     (itp::LinearInterpolantND{Tg,Tv,2})(out::AbstractMatrix, gq::GriddedQuery)
 
 Evaluate a 2-D linear interpolant at every combination of `gq.axes`
-coordinates — separable: each axis's anchors are resolved once and reused
-across the grid. The 2-arg form writes into `out` (FI batch convention) with
-a pooled intermediate.
+coordinates. Each axis's anchors are resolved once (pooled, O(M+N)) and
+reused across the grid; the default strategy is the FUSED anchored tensor
+core (no intermediate buffer). The 2-arg form writes into `out` (FI batch
+convention). Explicit strategy entries expose the alternatives with
+caller-chosen order: `_gridded_apply_fused_pooled!` and
+`_gridded_apply_fullbuffer_pooled!` here; the sliding-window and lazy-plan
+candidates live in gridded_experimental.jl.
 """
 function (itp::LinearInterpolantND{Tg, Tv, 2})(gq::GriddedQuery{<:Tuple{Any, Any}}) where {Tg, Tv}
     _gridded_extrap_guard(itp.extraps)
     tx, ty = gq.axes
-    p1, p2 = _gridded_plans(itp, tx, ty)          # validates (NoExtrap) before any alloc
     Tmid = _gridded_out_eltype(itp, tx, ty)
-    out = Matrix{Tmid}(undef, length(tx), length(ty))
-    return _gridded_apply!(out, itp, p1, p2, Tmid)
+    return _gridded_eval(itp, tx, ty, Tmid)       # validates (NoExtrap) before output alloc
 end
 function (itp::LinearInterpolantND{Tg, Tv, 2})(
         out::AbstractMatrix,
@@ -192,7 +295,6 @@ function (itp::LinearInterpolantND{Tg, Tv, 2})(
     ) where {Tg, Tv}
     _gridded_extrap_guard(itp.extraps)
     tx, ty = gq.axes
-    p1, p2 = _gridded_plans(itp, tx, ty)          # validates (NoExtrap) before any work
     Tmid = _gridded_out_eltype(itp, tx, ty)
-    return _gridded_apply!(out, itp, p1, p2, Tmid)
+    return _gridded_apply!(out, itp, tx, ty, Tmid) # validates (NoExtrap) before output writes
 end

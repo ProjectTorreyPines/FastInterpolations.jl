@@ -59,9 +59,9 @@
     @test abs(count('\n', llP) - count('\n', llC)) <= 2   # same instruction count (± label noise)
 end
 
-@testitem "_AxisAnchorBatch: batch builder + identity flag" begin
+@testitem "_AxisPlan: batch builder + identity flag" begin
     using FastInterpolations
-    using FastInterpolations: _axis_anchors, _AxisAnchorBatch, _LinearAnchor,
+    using FastInterpolations: _axis_anchors, _AxisPlan, _LinearAnchor,
         LinearInterp, EvalValue
 
     g = collect(range(0.0, 1.0, 11))     # nodes 0.0, 0.1, ..., 1.0
@@ -69,7 +69,7 @@ end
     # general targets
     t = [0.05, 0.55, 0.999]
     b = _axis_anchors(LinearInterp(), EvalValue(), g, t, ExtendExtrap(), 1)
-    @test b isa _AxisAnchorBatch
+    @test b isa _AxisPlan
     @test length(b) == 3
     @test eltype(b.anchors) <: _LinearAnchor{Float64, EvalValue}
     @test b.anchors[1].idx == 1 && b.anchors[1].alpha ≈ 0.5
@@ -126,11 +126,11 @@ end
     @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
 end
 
-@testitem "pass kernels + cost-model order" begin
+@testitem "pass kernels: explicit fold orders agree" begin
     using FastInterpolations
     import FastInterpolations as FI
     using FastInterpolations: _axis_anchors, _pass_blend_dim2!, _pass_gather_dim1!,
-        _gridded_dim2_first, LinearInterp, EvalValue
+        LinearInterp, EvalValue
 
     A = rand(24, 20)
     itp = FI.linear_interp((1.0:24.0, 1.0:20.0), A; extrap = FI.ClampExtrap())
@@ -157,11 +157,94 @@ end
     # the production entry agrees with both
     C = itp(GriddedQuery((tx, ty)))
     @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
+end
 
-    # cost model sanity: strong upsampling → dim1-first (gather on the SMALL
-    # extent); strong downsampling → dim2-first
-    @test _gridded_dim2_first(512, 512, 64, 64) == true     # down: gather cost M·N small...
-    @test _gridded_dim2_first(64, 64, 512, 512) == false    # up: gather on M·n2=512·64 < M·N·c_g
+@testitem "windowed anchored core: sorted Vector axes, no large intermediate" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: _axis_anchors, _gridded_apply_windowed!, _gridded_apply_fullbuffer!,
+        _gridded_apply_fullbuffer_pooled!,
+        LinearInterp, EvalValue
+
+    A = rand(64, 48)
+    itp = FI.linear_interp(
+        (collect(range(1.0, 64.0, 64)), collect(range(1.0, 48.0, 48))), A;
+        extrap = FI.ClampExtrap()
+    )
+    # Sorted but non-range query vectors: repeated cells exercise same-cell runs,
+    # while the concrete Vector form keeps this off the image-resize-only path.
+    tx = sort!(vcat(1.0 .+ 63.0 .* rand(150), collect(range(2.25, 62.75, 30))))
+    ty = sort!(vcat(1.0 .+ 47.0 .* rand(95), collect(range(3.5, 46.5, 20))))
+    p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
+    p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty, itp.extraps[2], 2)
+
+    Cf = Matrix{Float64}(undef, length(tx), length(ty))
+    Cf2 = similar(Cf)
+    Cb = similar(Cf)
+    Cb2 = similar(Cf)
+    _gridded_apply_windowed!(Cf, itp, p1, p2, Float64, true)     # column windows
+    _gridded_apply_windowed!(Cf2, itp, p1, p2, Float64, false)   # row windows
+    _gridded_apply_fullbuffer!(Cb, itp, p1, p2, Float64, true)   # blend dim2 first
+    _gridded_apply_fullbuffer!(Cb2, itp, p1, p2, Float64, false) # gather dim1 first
+    ref = [itp((x, y)) for x in tx, y in ty]
+
+    @test all(isapprox.(Cf, ref; rtol = 1.0e-14, atol = 1.0e-14))
+    @test all(isapprox.(Cf2, ref; rtol = 1.0e-14, atol = 1.0e-14))
+    @test all(isapprox.(Cf, Cb; rtol = 1.0e-14, atol = 1.0e-14))
+    @test all(isapprox.(Cb2, ref; rtol = 1.0e-14, atol = 1.0e-14))
+
+    out = similar(Cf)
+    gq = GriddedQuery((tx, ty))
+    itp(out, gq)  # warm pool
+    allocs = @allocated itp(out, gq)
+    # The public path (fused default) pools only the per-axis anchor buffers —
+    # never an O(M*N) intermediate. Allow fixed pool/bookkeeping drift, but
+    # keep the bound far below one output-sized Float64 scratch.
+    @test allocs < div(length(tx) * length(ty) * sizeof(Float64), 4)
+
+    # Pooled full-buffer candidate: identical plans + identical pass kernels
+    # + same explicit order → bit-identical to the owned-plan result, and
+    # (unlike the owned-plan form) allocation-free after pool warmup.
+    Cp = similar(Cf)
+    _gridded_apply_fullbuffer_pooled!(Cp, itp, tx, ty, Float64, true)
+    @test Cp == Cb
+    allocs_fullp = @allocated _gridded_apply_fullbuffer_pooled!(Cp, itp, tx, ty, Float64, true)
+    @test allocs_fullp < div(length(tx) * length(ty) * sizeof(Float64), 4)
+end
+
+@testitem "Range axes: lazy and materialized plans agree" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: _axis_anchors, _axis_plan, _axis_anchor_at,
+        _gridded_apply_fused_pooled!, _gridded_apply_fused_lazy_pooled!,
+        _LazyAxisPlan, LinearInterp, EvalValue
+
+    A = rand(33, 27)
+    itp = FI.linear_interp(
+        (range(0.0, 2.0, length = 33), range(-1.0, 3.0, length = 27)), A;
+        extrap = FI.ClampExtrap()
+    )
+    tx = range(0.02, 1.98, length = 71)
+    ty = range(-0.9, 2.9, length = 59)
+
+    lazy = _axis_plan(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
+    mat = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
+    @test lazy isa _LazyAxisPlan
+    @test length(lazy) == length(mat)
+    for k in (1, 2, 17, length(tx) - 1, length(tx))
+        a_lazy = _axis_anchor_at(lazy, k)
+        a_mat = mat.anchors[k]
+        @test a_lazy.idx == a_mat.idx
+        @test a_lazy.alpha ≈ a_mat.alpha
+    end
+
+    Cw = itp(GriddedQuery((tx, ty)))
+    Cf = similar(Cw)
+    Cl = similar(Cw)
+    _gridded_apply_fused_pooled!(Cf, itp, tx, ty, Float64)
+    _gridded_apply_fused_lazy_pooled!(Cl, itp, tx, ty, Float64)
+    @test all(isapprox.(Cf, Cw; rtol = 1.0e-14, atol = 1.0e-14))
+    @test all(isapprox.(Cl, Cw; rtol = 1.0e-14, atol = 1.0e-14))
 end
 
 @testitem "NoExtrap validation + unsupported-extrap guards" begin

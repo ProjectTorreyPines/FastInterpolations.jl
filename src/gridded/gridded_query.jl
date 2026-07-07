@@ -227,22 +227,10 @@ end
     return _gridded_apply_fullbuffer!(out, itp, p1, p2, Tmid, dim2_first)
 end
 
-# Public default strategy: FUSED anchors. Chosen for robustness, not a
-# selector: flat ~0.7–1.6 ns/out across the whole ratio sweep, wins all pure
-# downsampling outright, bounded ≤3× behind two-pass at strong upsampling,
-# and needs no O(mid)/O(line) scratch — only the O(M+N) plans. Callers who
-# know their shape call a strategy entry explicitly.
-@with_pool pool function _gridded_apply!(
-        out::AbstractMatrix,
-        itp::LinearInterpolantND{Tg, Tv, 2},
-        tx,
-        ty,
-        ::Type{Tmid}
-    ) where {Tg, Tv, Tmid}
-    p1, p2 = _gridded_plans_pooled(pool, itp, tx, ty)
-    return _gridded_apply_fused!(out, itp, p1, p2, Tmid)
-end
-
+# Allocating public entry. This is the ONE place that cannot reuse
+# `_gridded_apply_fused_pooled!`: the plans must be built (firing NoExtrap's
+# per-axis validation) BEFORE the O(M·N) output is allocated, so the plan
+# build and the allocation live in the same pool scope.
 @with_pool pool function _gridded_eval(
         itp::LinearInterpolantND{Tg, Tv, 2},
         tx,
@@ -296,5 +284,5 @@ function (itp::LinearInterpolantND{Tg, Tv, 2})(
     _gridded_extrap_guard(itp.extraps)
     tx, ty = gq.axes
     Tmid = _gridded_out_eltype(itp, tx, ty)
-    return _gridded_apply!(out, itp, tx, ty, Tmid) # validates (NoExtrap) before output writes
+    return _gridded_apply_fused_pooled!(out, itp, tx, ty, Tmid) # validates (NoExtrap) before output writes
 end

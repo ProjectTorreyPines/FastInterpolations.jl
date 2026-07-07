@@ -558,3 +558,99 @@ end
     out = Matrix{Float64}(undef, 32, 24)
     @test itp(out, GriddedQuery((collect(1.0:32.0), collect(1.0:24.0)))) == A
 end
+
+@testitem "one-shot GriddedQuery: linear_interp(grids, data, gq) == persistent" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+
+    # Reference persistent interpolants for each grid flavor; the one-shot form
+    # must reproduce them bit-for-bit (same value-matched Tg, same anchors,
+    # same fused/fullbuffer strategy) — it is a thin front over the same eval.
+    for (grids, data, extrap) in (
+            ((1.0:64.0, 1.0:48.0), rand(64, 48), FI.ClampExtrap()),
+            ((collect(1.0:64.0), collect(1.0:48.0)), rand(64, 48), FI.ClampExtrap()),
+            ((Base.OneTo(64), Base.OneTo(48)), rand(64, 48), FI.NoExtrap()),
+            ((sort!(rand(64)) .* 63 .+ 1, sort!(rand(48)) .* 47 .+ 1), rand(64, 48), FI.ClampExtrap()),
+        )
+        itp = FI.linear_interp(grids, data; extrap = extrap, store = FI.StorePolicy(; copy = false))
+        tx = collect(range(2.0, 63.0, 120))
+        ty = collect(range(2.0, 47.0, 90))
+        gq = GriddedQuery((tx, ty))
+
+        # allocating one-shot == persistent
+        os = FI.linear_interp(grids, data, gq; extrap = extrap)
+        @test os == itp(gq)
+
+        # in-place one-shot == persistent
+        out = Matrix{eltype(os)}(undef, 120, 90)
+        @test FI.linear_interp!(out, grids, data, gq; extrap = extrap) === out
+        @test out == itp(gq)
+
+        # per-axis derivative op matches persistent
+        osd = FI.linear_interp(grids, data, gq; extrap = extrap, deriv = (FI.EvalDeriv1(), FI.EvalValue()))
+        @test osd == itp(gq; deriv = (FI.EvalDeriv1(), FI.EvalValue()))
+    end
+end
+
+@testitem "one-shot GriddedQuery: value-match narrow float + zero-alloc" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+
+    # OneTo/Int grid beside Float32 data must solve at Float32 (value-matched Tg),
+    # not blindly widen through the grid — same rule as scalar/batch one-shot.
+    A32 = rand(Float32, 48, 40)
+    gq32 = GriddedQuery(
+        (
+            collect(Float32, range(2.0f0, 47.0f0, 100)),
+            collect(Float32, range(2.0f0, 39.0f0, 80)),
+        )
+    )
+    os32 = FI.linear_interp((Base.OneTo(48), Base.OneTo(40)), A32, gq32; extrap = FI.ClampExtrap())
+    @test eltype(os32) === Float32
+    itp32 = FI.linear_interp((Base.OneTo(48), Base.OneTo(40)), A32; extrap = FI.ClampExtrap(), store = FI.StorePolicy(; copy = false))
+    @test os32 == itp32(gq32)
+
+    # zero net allocation for the in-place one-shot even on Vector grids: the
+    # value-matched grid cache is pool-backed (`_cache_axis_pooled`), released
+    # at call scope. Bound stays far below one output Float64 scratch (100*80*8).
+    gx = sort!(rand(48)) .* 47 .+ 1
+    gy = sort!(rand(40)) .* 39 .+ 1
+    A = rand(48, 40)
+    tx = collect(range(2.0, 47.0, 100))
+    ty = collect(range(2.0, 39.0, 80))
+    gq = GriddedQuery((tx, ty))
+    out = Matrix{Float64}(undef, 100, 80)
+    function os_alloc(out, gx, gy, A, gq)
+        FI.linear_interp!(out, (gx, gy), A, gq; extrap = FI.ClampExtrap())  # warmup
+        return @allocated FI.linear_interp!(out, (gx, gy), A, gq; extrap = FI.ClampExtrap())
+    end
+    @test os_alloc(out, gx, gy, A, gq) <= 1024
+end
+
+@testitem "one-shot GriddedQuery: 3D + Fill parity" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+
+    A = rand(24, 20, 16)
+    grids = (1.0:24.0, 1.0:20.0, 1.0:16.0)
+    itp = FI.linear_interp(grids, A; extrap = FI.ClampExtrap(), store = FI.StorePolicy(; copy = false))
+    gq = GriddedQuery(
+        (
+            collect(range(2.0, 23.0, 40)),
+            collect(range(2.0, 19.0, 32)),
+            collect(range(2.0, 15.0, 24)),
+        )
+    )
+    @test FI.linear_interp(grids, A, gq; extrap = FI.ClampExtrap()) == itp(gq)
+
+    # Fill parity (OOB slabs) — one-shot passes the resolved per-axis extraps
+    itpf = FI.linear_interp(grids, A; extrap = FI.FillExtrap(0.0), store = FI.StorePolicy(; copy = false))
+    gqf = GriddedQuery(
+        (
+            collect(range(-2.0, 27.0, 40)),
+            collect(range(2.0, 19.0, 32)),
+            collect(range(2.0, 15.0, 24)),
+        )
+    )
+    @test FI.linear_interp(grids, A, gqf; extrap = FI.FillExtrap(0.0)) == itpf(gqf)
+end

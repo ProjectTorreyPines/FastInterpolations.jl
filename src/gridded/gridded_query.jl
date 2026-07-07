@@ -391,14 +391,15 @@ end
 # upsampling / mixed (contiguous passes amortize per-node work).
 function _gridded_apply!(
         out::AbstractArray{<:Any, N},
-        itp::LinearInterpolantND{Tg, Tv, N},
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
         targets::Tuple,
         anchors::NTuple{N, Vector{<:_GriddedAnchor}},
         ops::Tuple{Vararg{AbstractEvalOp, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         ::Type{Tmid}
-    ) where {Tg, Tv, N, Tmid}
-    A = itp.data
+    ) where {N, Tmid}
+    A = data
     out_size = map(length, anchors)
     size(out) == out_size || throw(
         DimensionMismatch("output size $(size(out)) != query size $out_size")
@@ -407,7 +408,7 @@ function _gridded_apply!(
     if all(map(<, out_size, size(A)))
         _gridded_fused!(out, A, anchors, ops)
     else
-        hulls = ntuple(d -> _gridded_hull(itp.grids[d], targets[d], extraps[d]), Val(N))
+        hulls = ntuple(d -> _gridded_hull(grids[d], targets[d], extraps[d]), Val(N))
         _gridded_fullbuffer!(out, A, anchors, ops, hulls, Tmid)
     end
     return out
@@ -428,20 +429,21 @@ end
 
 function _gridded_fill_oob!(
         out::AbstractArray{<:Any, N},
-        itp::LinearInterpolantND{Tg, Tv, N},
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
         targets::Tuple,
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         ops::Tuple{Vararg{AbstractEvalOp, N}}
-    ) where {Tg, Tv, N}
+    ) where {N}
     _gridded_has_fill(extraps) || return out
     fill_value = _gridded_first_fill_value(extraps)
-    data_sample = _sample_data(itp)
+    data_sample = @inbounds first(data)
     for d in 1:N
         extraps[d] isa FillExtrap || continue
         k = 0
         for xq in targets[d]
             k += 1
-            if _oob_state(itp.grids[d], xq) != IN_DOMAIN
+            if _oob_state(grids[d], xq) != IN_DOMAIN
                 fill!(selectdim(out, d, k), _fill_extrap_result(ops, fill_value, data_sample, xq))
             end
         end
@@ -451,41 +453,48 @@ end
 
 # ---- entry points ------------------------------------------------------------
 # Output eltype: matches point-wise scalar eval's promotion (pinned by test).
-@inline _gridded_out_eltype(::LinearInterpolantND{Tg, Tv, N}, targets::Tuple) where {Tg, Tv, N} =
+# `Tg`/`Tv` are the value-matched grid float and value type; both the persistent
+# functor and the one-shot front resolve them the same way before this call.
+@inline _gridded_out_eltype(::Type{Tg}, ::Type{Tv}, targets::Tuple) where {Tg, Tv} =
     _promote_eltype(_interp_op, Tg, Tv, promote_type(map(eltype, targets)...))
 
+# `grids` here are already resolved to the value-matched `Tg` (persistent: the
+# interpolant's cached axes; one-shot: `_cache_axis_pooled`) — the eval reads
+# them as a plain `(grids, data)` pair, decoupled from any interpolant struct.
 # Anchors are built (firing NoExtrap's O(ΣM_d) validation) BEFORE the
 # output-sized array is allocated.
 @with_pool pool function _gridded_eval(
-        itp::LinearInterpolantND{Tg, Tv, N},
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
         targets::Tuple,
         ops::Tuple{Vararg{AbstractEvalOp, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         ::Type{Tout}
-    ) where {Tg, Tv, N, Tout}
+    ) where {N, Tout}
     anchors = ntuple(
-        d -> _gridded_anchors_pooled(pool, itp.grids[d], targets[d], extraps[d], d),
+        d -> _gridded_anchors_pooled(pool, grids[d], targets[d], extraps[d], d),
         Val(N)
     )
     out = Array{Tout, N}(undef, map(length, targets))
-    _gridded_apply!(out, itp, targets, anchors, ops, extraps, Tout)
-    return _gridded_fill_oob!(out, itp, targets, extraps, ops)
+    _gridded_apply!(out, grids, data, targets, anchors, ops, extraps, Tout)
+    return _gridded_fill_oob!(out, grids, data, targets, extraps, ops)
 end
 
 @with_pool pool function _gridded_eval!(
         out::AbstractArray{<:Any, N},
-        itp::LinearInterpolantND{Tg, Tv, N},
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
         targets::Tuple,
         ops::Tuple{Vararg{AbstractEvalOp, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         ::Type{Tout}
-    ) where {Tg, Tv, N, Tout}
+    ) where {N, Tout}
     anchors = ntuple(
-        d -> _gridded_anchors_pooled(pool, itp.grids[d], targets[d], extraps[d], d),
+        d -> _gridded_anchors_pooled(pool, grids[d], targets[d], extraps[d], d),
         Val(N)
     )
-    _gridded_apply!(out, itp, targets, anchors, ops, extraps, Tout)
-    return _gridded_fill_oob!(out, itp, targets, extraps, ops)
+    _gridded_apply!(out, grids, data, targets, anchors, ops, extraps, Tout)
+    return _gridded_fill_oob!(out, grids, data, targets, extraps, ops)
 end
 
 # ---- dispatch ----------------------------------------------------------------
@@ -509,7 +518,8 @@ function (itp::LinearInterpolantND{Tg, Tv, N})(
     targets = gq.axes
     ops = _resolve_deriv_nd(deriv, Val(N))
     extraps = _resolve_extrap_override_nd(itp, extrap)
-    return _gridded_eval(itp, targets, ops, extraps, _gridded_out_eltype(itp, targets))
+    Tout = _gridded_out_eltype(Tg, Tv, targets)
+    return _gridded_eval(itp.grids, itp.data, targets, ops, extraps, Tout)
 end
 function (itp::LinearInterpolantND{Tg, Tv, N})(
         out::AbstractArray{<:Any, N},
@@ -520,5 +530,93 @@ function (itp::LinearInterpolantND{Tg, Tv, N})(
     targets = gq.axes
     ops = _resolve_deriv_nd(deriv, Val(N))
     extraps = _resolve_extrap_override_nd(itp, extrap)
-    return _gridded_eval!(out, itp, targets, ops, extraps, _gridded_out_eltype(itp, targets))
+    Tout = _gridded_out_eltype(Tg, Tv, targets)
+    return _gridded_eval!(out, itp.grids, itp.data, targets, ops, extraps, Tout)
+end
+
+# ---- one-shot API ------------------------------------------------------------
+# `linear_interp(grids, data, gq)` mirrors the persistent gridded functor with
+# no interpolant kept alive. Raw grids are resolved to the value-matched `Tg` in
+# a POOL-backed `_CachedVector`/`_CachedRange` (`_cache_axis_pooled`), released
+# at call scope — so a `Vector` grid pays no permanent cache allocation and the
+# gridded machinery sees exactly the axis type the persistent path feeds it. The
+# grid resolution shares its `@with_pool` frame with the eval; `_gridded_eval`'s
+# own nested pool holds the anchors + fullbuffer scratch (fullbuffer already
+# nests a pool, so this is an established pattern).
+@with_pool pool function _linear_gridded_oneshot(
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
+        targets::Tuple,
+        ops::Tuple{Vararg{AbstractEvalOp, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+        ::Type{Tg},
+        ::Type{Tout}
+    ) where {N, Tg, Tout}
+    grids_c = map(g -> _cache_axis_pooled(pool, g, Tg), grids)
+    extraps_c = map(_resolve_extrap, extraps, grids_c)
+    return _gridded_eval(grids_c, data, targets, ops, extraps_c, Tout)
+end
+
+@with_pool pool function _linear_gridded_oneshot!(
+        out::AbstractArray{<:Any, N},
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
+        targets::Tuple,
+        ops::Tuple{Vararg{AbstractEvalOp, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+        ::Type{Tg},
+        ::Type{Tout}
+    ) where {N, Tg, Tout}
+    grids_c = map(g -> _cache_axis_pooled(pool, g, Tg), grids)
+    extraps_c = map(_resolve_extrap, extraps, grids_c)
+    return _gridded_eval!(out, grids_c, data, targets, ops, extraps_c, Tout)
+end
+
+"""
+    linear_interp(grids, data, gq::GriddedQuery; bc, extrap, deriv)
+    linear_interp!(out, grids, data, gq::GriddedQuery; bc, extrap, deriv)
+
+One-shot N-D linear interpolation at every combination of `gq.axes` coordinates
+(rectilinear resize). Builds no persistent interpolant: grids are pool-cached at
+the value-matched precision for the duration of the call, so the warm path is
+zero-allocation apart from the output array. `extrap` is the per-axis
+extrapolation policy (`NoExtrap`/`ClampExtrap`/`FillExtrap`/`ExtrapExtend`) — the
+same `WrapExtrap`/periodic support as the persistent gridded functor is reached
+by building the interpolant explicitly.
+"""
+function linear_interp(
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+    ) where {Tv, N}
+    _validate_nd_grids(grids, data)
+    targets = gq.axes
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    bcs = _resolve_bcs_nd(bc, Val(N))
+    extraps = _resolve_extrap(extrap, bcs, Val(N), Tv)
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    Tout = _gridded_out_eltype(Tg, Tv, targets)
+    return _linear_gridded_oneshot(grids, data, targets, ops, extraps, Tg, Tout)
+end
+
+function linear_interp!(
+        out::AbstractArray{<:Any, N},
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = NoBC(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+    ) where {Tv, N}
+    _validate_nd_grids(grids, data)
+    targets = gq.axes
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    bcs = _resolve_bcs_nd(bc, Val(N))
+    extraps = _resolve_extrap(extrap, bcs, Val(N), Tv)
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    Tout = _gridded_out_eltype(Tg, Tv, targets)
+    return _linear_gridded_oneshot!(out, grids, data, targets, ops, extraps, Tg, Tout)
 end

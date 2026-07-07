@@ -23,9 +23,7 @@ include("hetero/local_hermite_nd_forward.jl")  # pchip/cardinal/akima ND forward
 include("hetero/interp_1d.jl")  # 1D bare-vector entry points for `interp`/`interp!`
 
 # Gridded (rectilinear / tensor-product) query — separable evaluation on a grid
-include("gridded/axis_anchor.jl")
 include("gridded/gridded_query.jl")
-include("gridded/gridded_experimental.jl")
 
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")

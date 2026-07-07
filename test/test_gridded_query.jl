@@ -1,91 +1,41 @@
-# GriddedQuery separable 2D-linear evaluation + op-aware axis-anchor primitive.
-# Design spec: claudedocs/design/2026-07-04-gridded-axisgeom-2d-linear-spec.md
-# (main checkout; claudedocs is gitignored).
+# GriddedQuery separable 2D-linear evaluation.
+# Per-axis anchors (idx + weight) are precomputed once and reused by two
+# strategies: fused (pure downsampling) and two-pass full buffer (otherwise).
 
-@testitem "_LinearAnchor primitive: forwarder, kernel pair, layout" begin
+@testitem "_GriddedAnchor: builder + extrap fold" begin
     using FastInterpolations
-    using FastInterpolations: _LinearAnchor, _eval_anchor, _axis_anchor, _resolve_alpha,
-        _anchor_loc, _linear_value_blend, LinearInterp, EvalValue, _AbstractAxisAnchor
-    using InteractiveUtils: code_llvm
+    using FastInterpolations: _GriddedAnchor, _gridded_anchors
 
-    # ── construction + named-field access through the Val forwarder ──────────
-    a = _LinearAnchor{Float64, EvalValue}(3, (alpha = 0.25,))
-    @test a isa _AbstractAxisAnchor
-    @test a.idx == 3
-    @test a.alpha == 0.25
-    @test propertynames(a) == (:idx, :alpha)
-    @test isbits(a)
-    @test sizeof(a) == 16   # Int + Float64, NamedTuple layout == raw field layout
-
-    # Float32 payload stays Float32 (no silent widening)
-    a32 = _LinearAnchor{Float32, EvalValue}(2, (alpha = 0.5f0,))
-    @test a32.alpha === 0.5f0
-    @test sizeof(a32) == 12 || sizeof(a32) == 16   # padding is platform-defined
-
-    # ── matched-pair kernel ≡ the underlying blend, bit-exact ────────────────
-    yL, yR = 1.5, 4.5
-    @test _eval_anchor(a, yL, yR) === _linear_value_blend(0.25, yL, yR)
-
-    # ── scalar builder: locate → alpha → extrap fold ─────────────────────────
     g = collect(1.0:10.0)
-    loc = _anchor_loc(g, 3.25, false)
-    b = _axis_anchor(LinearInterp(), EvalValue(), loc, g, FastInterpolations.ExtendExtrap(), Float64)
-    @test b.idx == 3
-    @test b.alpha ≈ 0.25
 
-    # Clamp folds OOB weight to the boundary node (left: idx=1, alpha=0)
-    locL = _anchor_loc(g, 0.0, false)
-    bL = _axis_anchor(LinearInterp(), EvalValue(), locL, g, FastInterpolations.ClampExtrap(), Float64)
-    @test bL.idx == 1
-    @test bL.alpha === 0.0
-    # Extend keeps the out-of-range weight (linear extrapolation)
-    bE = _axis_anchor(LinearInterp(), EvalValue(), locL, g, FastInterpolations.ExtendExtrap(), Float64)
-    @test bE.alpha === -1.0
+    # in-domain: interval index + normalized in-cell weight
+    b = _gridded_anchors(g, [3.25], ExtendExtrap(), 1)
+    @test eltype(b) == _GriddedAnchor{Float64}
+    @test isbits(b[1]) && sizeof(b[1]) == 16
+    @test b[1].idx == 3
+    @test b[1].alpha ≈ 0.25
 
-    # ── forwarder pin: Val-dispatch getproperty folds to plain getfield ──────
-    # Twin struct with native fields = the reference codegen.
-    # (Defined at testitem top level so code_llvm sees a concrete method.)
-    kernP(x::_LinearAnchor{Float64, EvalValue}, l, r) = _eval_anchor(x, l, r)
-    struct _TwinAnchor
-        idx::Int
-        alpha::Float64
+    # Clamp folds the OOB weight to the boundary node; Extend keeps it
+    bC = _gridded_anchors(g, [0.0], ClampExtrap(), 1)
+    @test bC[1].idx == 1 && bC[1].alpha === 0.0
+    bE = _gridded_anchors(g, [0.0], ExtendExtrap(), 1)
+    @test bE[1].idx == 1 && bE[1].alpha === -1.0
+
+    # NoExtrap throws on the first OOB coordinate, naming the axis
+    @test_throws DomainError _gridded_anchors(g, [0.5], NoExtrap(), 2)
+    err = try
+        _gridded_anchors(g, [0.5], NoExtrap(), 2)
+    catch e
+        e
     end
-    kernC(x::_TwinAnchor, l, r) = _linear_value_blend(x.alpha, l, r)
-    llP = sprint(io -> code_llvm(io, kernP, Tuple{typeof(a), Float64, Float64}; debuginfo = :none))
-    llC = sprint(io -> code_llvm(io, kernC, Tuple{_TwinAnchor, Float64, Float64}; debuginfo = :none))
-    @test count("br ", llP) == count("br ", llC)          # no forwarder branch survives
-    @test count("select", llP) == count("select", llC)
-    @test !occursin("jl_box", llP)                        # no boxing
-    @test abs(count('\n', llP) - count('\n', llC)) <= 2   # same instruction count (± label noise)
-end
+    @test err isa DomainError && occursin("axis 2", sprint(showerror, err))
+    # domain endpoints are in-domain
+    @test length(_gridded_anchors(g, [1.0, 10.0], NoExtrap(), 1)) == 2
 
-@testitem "_AxisPlan: batch builder + identity flag" begin
-    using FastInterpolations
-    using FastInterpolations: _axis_anchors, _AxisPlan, _LinearAnchor,
-        LinearInterp, EvalValue
-
-    g = collect(range(0.0, 1.0, 11))     # nodes 0.0, 0.1, ..., 1.0
-
-    # general targets
-    t = [0.05, 0.55, 0.999]
-    b = _axis_anchors(LinearInterp(), EvalValue(), g, t, ExtendExtrap(), 1)
-    @test b isa _AxisPlan
-    @test length(b) == 3
-    @test eltype(b.anchors) <: _LinearAnchor{Float64, EvalValue}
-    @test b.anchors[1].idx == 1 && b.anchors[1].alpha ≈ 0.5
-    @test b.identity == false
-
-    # identity: targets exactly the grid nodes → every (idx == k, alpha == 0)
-    bid = _axis_anchors(LinearInterp(), EvalValue(), g, copy(g), ClampExtrap(), 1)
-    @test bid.identity == true
-    # same nodes but different length → NOT identity (elision needs M == n)
-    bpart = _axis_anchors(LinearInterp(), EvalValue(), g, g[1:5], ClampExtrap(), 1)
-    @test bpart.identity == false
-
-    # Float32 grid+targets stay Float32
-    g32 = collect(Float32.(g)); t32 = Float32[0.05, 0.55]
-    b32 = _axis_anchors(LinearInterp(), EvalValue(), g32, t32, ClampExtrap(), 1)
-    @test eltype(b32.anchors) <: _LinearAnchor{Float32, EvalValue}
+    # Float32 grid + targets stay Float32 (no silent widening)
+    b32 = _gridded_anchors(collect(Float32, 1:10), Float32[2.5], ClampExtrap(), 1)
+    @test eltype(b32) == _GriddedAnchor{Float32}
+    @test b32[1].alpha === 0.5f0
 end
 
 @testitem "GriddedQuery correctness matrix vs point-wise" begin
@@ -93,7 +43,6 @@ end
     import FastInterpolations as FI
 
     # {F64, F32} × {Clamp, Extend} × {up, down, mixed, non-monotonic, M == 1}
-    # (NoExtrap joins the matrix in the NoExtrap task.)
     function check(itp, tx, ty; rtol = 1.0e-14, atol = 1.0e-14)
         C = itp(GriddedQuery((tx, ty)))
         ref = [itp((x, y)) for x in tx, y in ty]
@@ -117,134 +66,58 @@ end
         end
     end
 
-    # mixed per-axis extraps (Clamp × Extend)
-    A = rand(16, 16)
-    itp2 = FI.linear_interp((1.0:16.0, 1.0:16.0), A; extrap = (ClampExtrap(), ExtendExtrap()))
-    tx = collect(range(0.0, 17.0, 21)); ty = collect(range(0.0, 17.0, 21))
-    C = itp2(GriddedQuery((tx, ty)))
-    ref = [itp2((x, y)) for x in tx, y in ty]
-    @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
-end
-
-@testitem "pass kernels: explicit fold orders agree" begin
-    using FastInterpolations
-    import FastInterpolations as FI
-    using FastInterpolations: _axis_anchors, _pass_blend_dim2!, _pass_gather_dim1!,
-        LinearInterp, EvalValue
-
-    A = rand(24, 20)
-    itp = FI.linear_interp((1.0:24.0, 1.0:20.0), A; extrap = FI.ClampExtrap())
-    tx = collect(range(1.0, 24.0, 37)); ty = collect(range(1.0, 20.0, 31))
-    M, N = length(tx), length(ty)
-    p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
-    p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty, itp.extraps[2], 2)
-    ref = [itp((x, y)) for x in tx, y in ty]
-
-    # order A: blend dim2 (24×31 mid) then gather dim1
-    B1 = Matrix{Float64}(undef, 24, N)
-    CA = Matrix{Float64}(undef, M, N)
-    _pass_gather_dim1!(CA, _pass_blend_dim2!(B1, A, p2), p1)
-    # order B: gather dim1 (37×20 mid) then blend dim2
-    B2 = Matrix{Float64}(undef, M, 20)
-    CB = Matrix{Float64}(undef, M, N)
-    _pass_blend_dim2!(CB, _pass_gather_dim1!(B2, A, p1), p2)
-
-    # both orders are mathematically equivalent — machine-eps, NOT bit-identity
-    @test all(isapprox.(CA, ref; rtol = 1.0e-14, atol = 1.0e-14))
-    @test all(isapprox.(CB, ref; rtol = 1.0e-14, atol = 1.0e-14))
-    @test all(isapprox.(CA, CB; rtol = 1.0e-14, atol = 1.0e-14))
-
-    # the production entry agrees with both
-    C = itp(GriddedQuery((tx, ty)))
-    @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
-end
-
-@testitem "windowed anchored core: sorted Vector axes, no large intermediate" begin
-    using FastInterpolations
-    import FastInterpolations as FI
-    using FastInterpolations: _axis_anchors, _gridded_apply_windowed!, _gridded_apply_fullbuffer!,
-        _gridded_apply_fullbuffer_pooled!,
-        LinearInterp, EvalValue
-
-    A = rand(64, 48)
-    itp = FI.linear_interp(
-        (collect(range(1.0, 64.0, 64)), collect(range(1.0, 48.0, 48))), A;
-        extrap = FI.ClampExtrap()
-    )
-    # Sorted but non-range query vectors: repeated cells exercise same-cell runs,
-    # while the concrete Vector form keeps this off the image-resize-only path.
-    tx = sort!(vcat(1.0 .+ 63.0 .* rand(150), collect(range(2.25, 62.75, 30))))
-    ty = sort!(vcat(1.0 .+ 47.0 .* rand(95), collect(range(3.5, 46.5, 20))))
-    p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
-    p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty, itp.extraps[2], 2)
-
-    Cf = Matrix{Float64}(undef, length(tx), length(ty))
-    Cf2 = similar(Cf)
-    Cb = similar(Cf)
-    Cb2 = similar(Cf)
-    _gridded_apply_windowed!(Cf, itp, p1, p2, Float64, true)     # column windows
-    _gridded_apply_windowed!(Cf2, itp, p1, p2, Float64, false)   # row windows
-    _gridded_apply_fullbuffer!(Cb, itp, p1, p2, Float64, true)   # blend dim2 first
-    _gridded_apply_fullbuffer!(Cb2, itp, p1, p2, Float64, false) # gather dim1 first
-    ref = [itp((x, y)) for x in tx, y in ty]
-
-    @test all(isapprox.(Cf, ref; rtol = 1.0e-14, atol = 1.0e-14))
-    @test all(isapprox.(Cf2, ref; rtol = 1.0e-14, atol = 1.0e-14))
-    @test all(isapprox.(Cf, Cb; rtol = 1.0e-14, atol = 1.0e-14))
-    @test all(isapprox.(Cb2, ref; rtol = 1.0e-14, atol = 1.0e-14))
-
-    out = similar(Cf)
-    gq = GriddedQuery((tx, ty))
-    itp(out, gq)  # warm pool
-    allocs = @allocated itp(out, gq)
-    # The public path (fused default) pools only the per-axis anchor buffers —
-    # never an O(M*N) intermediate. Allow fixed pool/bookkeeping drift, but
-    # keep the bound far below one output-sized Float64 scratch.
-    @test allocs < div(length(tx) * length(ty) * sizeof(Float64), 4)
-
-    # Pooled full-buffer candidate: identical plans + identical pass kernels
-    # + same explicit order → bit-identical to the owned-plan result, and
-    # (unlike the owned-plan form) allocation-free after pool warmup.
-    Cp = similar(Cf)
-    _gridded_apply_fullbuffer_pooled!(Cp, itp, tx, ty, Float64, true)
-    @test Cp == Cb
-    allocs_fullp = @allocated _gridded_apply_fullbuffer_pooled!(Cp, itp, tx, ty, Float64, true)
-    @test allocs_fullp < div(length(tx) * length(ty) * sizeof(Float64), 4)
-end
-
-@testitem "Range axes: lazy and materialized plans agree" begin
-    using FastInterpolations
-    import FastInterpolations as FI
-    using FastInterpolations: _axis_anchors, _axis_plan, _axis_anchor_at,
-        _gridded_apply_fused_pooled!, _gridded_apply_fused_lazy_pooled!,
-        _LazyAxisPlan, LinearInterp, EvalValue
-
+    # Range query axes (image-resize shape) through the public entry
     A = rand(33, 27)
-    itp = FI.linear_interp(
+    itpr = FI.linear_interp(
         (range(0.0, 2.0, length = 33), range(-1.0, 3.0, length = 27)), A;
         extrap = FI.ClampExtrap()
     )
     tx = range(0.02, 1.98, length = 71)
     ty = range(-0.9, 2.9, length = 59)
+    C = itpr(GriddedQuery((tx, ty)))
+    ref = [itpr((x, y)) for x in tx, y in ty]
+    @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
 
-    lazy = _axis_plan(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
-    mat = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx, itp.extraps[1], 1)
-    @test lazy isa _LazyAxisPlan
-    @test length(lazy) == length(mat)
-    for k in (1, 2, 17, length(tx) - 1, length(tx))
-        a_lazy = _axis_anchor_at(lazy, k)
-        a_mat = mat.anchors[k]
-        @test a_lazy.idx == a_mat.idx
-        @test a_lazy.alpha ≈ a_mat.alpha
-    end
+    # mixed per-axis extraps (Clamp × Extend)
+    A2 = rand(16, 16)
+    itp2 = FI.linear_interp((1.0:16.0, 1.0:16.0), A2; extrap = (ClampExtrap(), ExtendExtrap()))
+    tx2 = collect(range(0.0, 17.0, 21))
+    ty2 = collect(range(0.0, 17.0, 21))
+    C2 = itp2(GriddedQuery((tx2, ty2)))
+    ref2 = [itp2((x, y)) for x in tx2, y in ty2]
+    @test all(isapprox.(C2, ref2; rtol = 1.0e-14, atol = 1.0e-14))
+end
 
-    Cw = itp(GriddedQuery((tx, ty)))
-    Cf = similar(Cw)
-    Cl = similar(Cw)
-    _gridded_apply_fused_pooled!(Cf, itp, tx, ty, Float64)
-    _gridded_apply_fused_lazy_pooled!(Cl, itp, tx, ty, Float64)
-    @test all(isapprox.(Cf, Cw; rtol = 1.0e-14, atol = 1.0e-14))
-    @test all(isapprox.(Cl, Cw; rtol = 1.0e-14, atol = 1.0e-14))
+@testitem "strategy cores: fused + both fullbuffer orders agree" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: _gridded_anchors, _gridded_fused!, _gridded_fullbuffer!
+
+    A = rand(24, 20)
+    itp = FI.linear_interp((1.0:24.0, 1.0:20.0), A; extrap = FI.ClampExtrap())
+    # sorted non-range query vectors with repeats (same-cell runs)
+    tx = sort!(vcat(1.0 .+ 23.0 .* rand(60), collect(range(2.25, 22.75, 17))))
+    ty = sort!(vcat(1.0 .+ 19.0 .* rand(45), collect(range(3.5, 18.5, 12))))
+    M, N = length(tx), length(ty)
+    ax = _gridded_anchors(itp.grids[1], tx, itp.extraps[1], 1)
+    ay = _gridded_anchors(itp.grids[2], ty, itp.extraps[2], 2)
+    ref = [itp((x, y)) for x in tx, y in ty]
+
+    Cf = Matrix{Float64}(undef, M, N)
+    _gridded_fused!(Cf, A, ax, ay)
+    Cb1 = Matrix{Float64}(undef, M, N)
+    _gridded_fullbuffer!(Cb1, A, ax, ay, Float64, true)    # blend dim2 first
+    Cb2 = Matrix{Float64}(undef, M, N)
+    _gridded_fullbuffer!(Cb2, A, ax, ay, Float64, false)   # gather dim1 first
+
+    # all strategies are mathematically equivalent — machine-eps, NOT bit-identity
+    @test all(isapprox.(Cf, ref; rtol = 1.0e-14, atol = 1.0e-14))
+    @test all(isapprox.(Cb1, ref; rtol = 1.0e-14, atol = 1.0e-14))
+    @test all(isapprox.(Cb2, ref; rtol = 1.0e-14, atol = 1.0e-14))
+
+    # the public entry agrees with the cores
+    C = itp(GriddedQuery((tx, ty)))
+    @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
 end
 
 @testitem "NoExtrap validation + unsupported-extrap guards" begin
@@ -254,7 +127,8 @@ end
     A = rand(16, 12)
     # NoExtrap: in-domain == point-wise; OOB throws BEFORE any work, naming the axis
     itp = FI.linear_interp((1.0:16.0, 1.0:12.0), A; extrap = FI.NoExtrap())
-    tx = collect(range(1.0, 16.0, 21)); ty = collect(range(1.0, 12.0, 17))
+    tx = collect(range(1.0, 16.0, 21))
+    ty = collect(range(1.0, 12.0, 17))
     C = itp(GriddedQuery((tx, ty)))
     ref = [itp((x, y)) for x in tx, y in ty]
     @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
@@ -267,10 +141,9 @@ end
     end
     @test err isa DomainError && occursin("axis 1", sprint(showerror, err))
 
-    # Structural guarantee: the allocating path validates NoExtrap BEFORE
-    # allocating the O(M·N) output, so a throwing query must not leave the
-    # full output matrix behind. Use a query large enough that erroneously
-    # allocating the full M×N output would dwarf a light allocation bound.
+    # Structural guarantee: the allocating path builds (and validates) the
+    # anchors BEFORE allocating the O(M·N) output, so a throwing query must
+    # not leave the full output matrix behind.
     big_tx = collect(range(1.0, 16.0, 500))
     bad_ty = vcat(collect(range(1.0, 12.0, 399)), [12.5])   # OOB tail on axis 2
     gq_big = GriddedQuery((big_tx, bad_ty))
@@ -294,93 +167,72 @@ end
     for ex in (FI.WrapExtrap(), FI.FillExtrap(NaN))
         itpu = FI.linear_interp((1.0:16.0, 1.0:12.0), A; extrap = ex)
         @test_throws ArgumentError itpu(GriddedQuery((tx, ty)))
+        out = Matrix{Float64}(undef, length(tx), length(ty))
+        @test_throws ArgumentError itpu(out, GriddedQuery((tx, ty)))
     end
 end
 
-@testitem "in-place API: pooled intermediate, zero-alloc, edges" begin
+@testitem "in-place API: pooled buffers, zero-alloc, edges" begin
     using FastInterpolations
     import FastInterpolations as FI
 
     A = rand(48, 40)
     itp = FI.linear_interp((1.0:48.0, 1.0:40.0), A; extrap = FI.ClampExtrap())
-    tx = collect(range(1.0, 48.0, 100)); ty = collect(range(1.0, 40.0, 80))
+    tx = collect(range(1.0, 48.0, 100))
+    ty = collect(range(1.0, 40.0, 80))
     gq = GriddedQuery((tx, ty))
 
-    # in-place == allocating
+    # in-place == allocating (same anchors + same strategy → bit-equal)
     out = Matrix{Float64}(undef, 100, 80)
     ret = itp(out, gq)
     @test ret === out
-    @test out == itp(gq)      # same code path + same order → bit-equal
+    @test out == itp(gq)
 
     # wrong size → DimensionMismatch
     @test_throws DimensionMismatch itp(Matrix{Float64}(undef, 99, 80), gq)
 
-    # empty axes: empty output, no pool touched, no throw
+    # empty axes: empty output, no throw
     @test size(itp(GriddedQuery((Float64[], ty)))) == (0, 80)
     @test size(itp(GriddedQuery((tx, Float64[])))) == (100, 0)
     e0 = Matrix{Float64}(undef, 0, 80)
     @test itp(e0, GriddedQuery((Float64[], ty))) === e0
 
-    # zero allocation after warmup (pool-backed intermediate; plans are the
-    # only remaining O(M+N) allocs — asserted small, then driven to the gate)
+    # zero allocation after warmup: anchors AND the fullbuffer intermediate
+    # are pool-backed. Bound allows fixed pool/bookkeeping drift but stays far
+    # below one output-sized Float64 scratch (100*80*8 = 64000 B).
     function alloc_count(itp, out, gq)
         itp(out, gq)               # warmup (pool grows here)
         return @allocated itp(out, gq)
     end
     allocs = alloc_count(itp, out, gq)
-    # plan vectors (2 Vectors + 2 batch structs, each `_LinearAnchor{Float64,
-    # EvalValue,...}` @ 16 B) are the only per-call allocs — O(M+N), NOT
-    # O(M·N). Bound is proportional (survives Julia-version alloc-accounting
-    # drift) rather than a byte-exact literal from one measurement: 4×(M+N)
-    # anchors' worth of slack + a fixed struct/GC overhead allowance. This
-    # bound (M=100,N=80 → 4*180*16+1024 = 12544 B) stays far below the O(M·N)
-    # intermediate it must exclude (M*N*sizeof(Float64) = 64000 B) while
-    # comfortably covering the true O(M+N) plan cost.
-    bound = 4 * (length(tx) + length(ty)) * 16 + 1024
-    @test allocs <= bound
+    @test allocs <= 1024
+
+    # a pure-downsampling query exercises the fused strategy's pool scope
+    gq_down = GriddedQuery((collect(range(1.0, 48.0, 20)), collect(range(1.0, 40.0, 16))))
+    out_down = Matrix{Float64}(undef, 20, 16)
+    allocs_down = alloc_count(itp, out_down, gq_down)
+    @test allocs_down <= 1024
 end
 
-@testitem "fast paths: exact-node copy + identity elision (bit-exact)" begin
+@testitem "exact-node queries: bit-exact via endpoint-exact blend" begin
     using FastInterpolations
     import FastInterpolations as FI
-    using FastInterpolations: _axis_anchors, LinearInterp, EvalValue
 
     A = rand(32, 24)
     itp = FI.linear_interp((1.0:32.0, 1.0:24.0), A; extrap = FI.ClampExtrap())
 
-    # exact-node targets on axis 2 (alpha == 0 columns) → bit-equal column copies
-    ty_nodes = collect(3.0:2.0:23.0)                 # every coordinate is a grid node
+    # node-aligned axis-2 targets (alpha ∈ {0, 1}): `_linear_value_blend` is
+    # endpoint-exact, so node hits reproduce point-wise results bit-exactly —
+    # no special-case copy path needed.
+    ty_nodes = collect(3.0:2.0:23.0)
     tx = collect(range(1.0, 32.0, 45))
     C = itp(GriddedQuery((tx, ty_nodes)))
     ref = [itp((x, y)) for x in tx, y in ty_nodes]
-    @test C == ref   # exact-node memcpy path goes through the same endpoint-exact
-    # kernel as the point-wise reference → bit-identical, not merely close.
+    @test C == ref
 
-    # identity on axis 1 (targets ≡ grid) → single-pass, and STILL bit-consistent
-    tx_id = collect(1.0:32.0)
-    C1 = itp(GriddedQuery((tx_id, collect(range(1.0, 24.0, 37)))))
-    ref1 = [itp((x, y)) for x in tx_id, y in range(1.0, 24.0, 37)]
-    @test C1 == ref1   # axis-1 identity elision → bit-identical (see above)
-    # identity plan detected
-    p1 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[1], tx_id, itp.extraps[1], 1)
-    @test p1.identity
-
-    # mirror: identity on axis 2 (targets ≡ grid, axis 1 resampled) → single
-    # pass via `_pass_gather_dim1!` only (the p1.identity branch above uses
-    # `_pass_blend_dim2!` only — this exercises the complementary elision arm)
-    ty_id = collect(1.0:24.0)
-    tx_resampled = collect(range(1.0, 32.0, 37))
-    C2 = itp(GriddedQuery((tx_resampled, ty_id)))
-    ref2 = [itp((x, y)) for x in tx_resampled, y in ty_id]
-    @test all(isapprox.(C2, ref2; rtol = 1.0e-14, atol = 1.0e-14))
-    p2 = _axis_anchors(LinearInterp(), EvalValue(), itp.grids[2], ty_id, itp.extraps[2], 2)
-    @test p2.identity
-
-    # double identity → exact copy of the data
+    # both axes ≡ grid nodes → exact reproduction of the data
     Cid = itp(GriddedQuery((collect(1.0:32.0), collect(1.0:24.0))))
     @test Cid == A
-
-    # in-place double identity as well
     out = Matrix{Float64}(undef, 32, 24)
     @test itp(out, GriddedQuery((collect(1.0:32.0), collect(1.0:24.0)))) == A
 end

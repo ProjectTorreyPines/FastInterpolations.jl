@@ -659,3 +659,39 @@ end
     )
     @test FI.linear_interp(grids, A, gqf; extrap = FI.FillExtrap(0.0)) == itpf(gqf)
 end
+
+@testitem "unified interp: GriddedQuery routes to linear gridded one-shot" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+
+    grids = (1.0:64.0, 1.0:48.0)
+    A = rand(64, 48)
+    gq = GriddedQuery((collect(range(2.0, 63.0, 120)), collect(range(2.0, 47.0, 90))))
+
+    # `interp(...; method=LinearInterp())` == the direct linear one-shot
+    ref = FI.linear_interp(grids, A, gq; extrap = FI.ClampExtrap())
+    os = interp(grids, A, gq; method = LinearInterp(), extrap = FI.ClampExtrap())
+    @test os == ref
+
+    # in-place unified interp! agrees
+    out = Matrix{Float64}(undef, 120, 90)
+    @test interp!(out, grids, A, gq; method = LinearInterp(), extrap = FI.ClampExtrap()) === out
+    @test out == ref
+
+    # per-axis method tuple (all linear) also works + deriv forwards
+    osd = interp(
+        grids, A, gq; method = (LinearInterp(), LinearInterp()),
+        extrap = FI.ClampExtrap(), deriv = (FI.EvalDeriv1(), FI.EvalValue())
+    )
+    @test osd == FI.linear_interp(grids, A, gq; extrap = FI.ClampExtrap(), deriv = (FI.EvalDeriv1(), FI.EvalValue()))
+
+    # a non-linear method on any axis is rejected with a clear error (gridded is linear-only)
+    @test_throws ArgumentError interp(grids, A, gq; method = CubicInterp())
+    @test_throws ArgumentError interp(grids, A, gq; method = (CubicInterp(), LinearInterp()))
+    err = try
+        interp(grids, A, gq; method = CubicInterp())
+    catch e
+        e
+    end
+    @test err isa ArgumentError && occursin("LinearInterp", sprint(showerror, err))
+end

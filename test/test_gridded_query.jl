@@ -62,7 +62,8 @@ end
         oob = (range(TF(0), TF(33), 20), range(TF(0.5), TF(24.5), 20))  # extrap exercise
         nonmono = (TF[7.3, 2.1, 30.9, 2.1], TF[11.0, 3.5])              # unsorted + repeat
         single = (TF[15.5], TF[8.25])                                    # M == 1
-        for (tx, ty) in (up, down, mixed, oob, nonmono, single)
+        zoom = (range(TF(10), TF(12), 41), range(TF(5), TF(6), 33))     # dense sub-window
+        for (tx, ty) in (up, down, mixed, oob, nonmono, single, zoom)
             check(itp, collect(tx), collect(ty); rtol = rt, atol = rt)
         end
     end

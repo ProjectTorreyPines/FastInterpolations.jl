@@ -39,6 +39,33 @@
     @test b32[1].alpha === 0.5f0
 end
 
+@testitem "anchor-build searcher: hint chaining for clustered targets" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: _gridded_build_searcher, Searcher, BinarySearch,
+        LinearBinarySearch, NoHint
+
+    gv = sort!(rand(512)) .* 511.0 .+ 1.0                    # Vector grid
+    clustered = collect(range(100.0, 110.0, 256))            # zoom: stride ≪ 1 cell
+    sparse = collect(range(2.0, 511.0, 32))                  # stride ≈ 16 cells
+    @test _gridded_build_searcher(gv, clustered) isa Searcher{<:LinearBinarySearch}
+    @test _gridded_build_searcher(gv, sparse) isa Searcher{BinarySearch, NoHint}
+    @test _gridded_build_searcher(gv, [5.0]) isa Searcher{BinarySearch, NoHint}   # M < 2
+    # range grids keep their direct arm regardless of clustering
+    itp_r = FI.linear_interp((1.0:512.0, 1.0:512.0), rand(512, 512))
+    @test !(_gridded_build_searcher(itp_r.grids[1], clustered) isa Searcher{<:LinearBinarySearch})
+
+    # hinted arm produces correct results end-to-end (Vector grid, zoom query)
+    A = rand(512, 384)
+    gy = sort!(rand(384)) .* 383.0 .+ 1.0
+    itp = FI.linear_interp((gv, gy), A; extrap = FI.ClampExtrap())
+    tx = collect(range(100.0, 110.0, 96))                    # clustered → hinted
+    ty = collect(range(200.0, 204.0, 72))
+    C = itp(GriddedQuery((tx, ty)))
+    ref = [itp((x, y)) for x in tx, y in ty]
+    @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
+end
+
 @testitem "GriddedQuery correctness matrix vs point-wise" begin
     using FastInterpolations
     import FastInterpolations as FI

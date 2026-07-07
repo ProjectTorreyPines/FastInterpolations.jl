@@ -66,6 +66,26 @@ weight (linear extrapolation), and `NoExtrap` throws on the first
 out-of-domain coordinate — BEFORE any output-sized buffer exists. `dim` names
 the axis in that error.
 """
+# Anchor-build searcher. Range grids resolve to the O(1) direct arm as usual.
+# For search-based (Vector) grids, CLUSTERED targets chain a hint instead
+# (LinearBinarySearch, walk window 8): each search starts at the previous
+# anchor's interval. The winning regime is mean consecutive-target stride
+# within a few cells — measured on a n=2048 Vector grid (sorted targets):
+# 6.9x at 0.25-cell stride, 4.3x at 2, 1.2x at 6, LOSES at 8 (walk exhaust
+# then binary fallback) — threshold 4 leaves margin for non-uniform cells.
+# The stride estimate uses first/last (exact for sorted targets; an unsorted
+# misestimate degrades gracefully — a bad hint just falls back to binary).
+@inline function _gridded_build_searcher(grid::AbstractVector, targets::AbstractVector)
+    s = _resolve_searcher_for_grid(grid, DEFAULT_SEARCHER)
+    s isa Searcher{BinarySearch, NoHint} || return s
+    M = length(targets)
+    M >= 2 || return s
+    span_t = abs(float(last(targets)) - float(first(targets)))
+    span_g = float(last(grid)) - float(first(grid))
+    span_t * (length(grid) - 1) <= 4 * span_g * (M - 1) || return s
+    return _to_searcher(LinearBinarySearch())
+end
+
 function _gridded_anchors!(
         anchors::Vector{_GriddedAnchor{T}},
         grid::AbstractVector,
@@ -76,7 +96,23 @@ function _gridded_anchors!(
     length(anchors) == length(targets) || throw(
         DimensionMismatch("anchor buffer length $(length(anchors)) != query length $(length(targets))")
     )
-    searcher = _resolve_searcher_for_grid(grid, DEFAULT_SEARCHER)
+    return _gridded_anchors_loop!(anchors, grid, targets, extrap, dim, _gridded_build_searcher(grid, targets))
+end
+
+# The searcher union (direct / binary / hinted) splits at this call, keeping
+# the fill loop fully specialized per arm. @inline is LOAD-BEARING: it keeps
+# the hinted arm's fresh `RefHint` inside the caller's compiled unit, so
+# escape analysis elides the `Ref(1)` heap allocation — the same mechanism
+# that keeps `_ensure_hint_nd`'s per-call Refs allocation-free on the scalar
+# ND path. A non-inlined barrier here measured 32 B/axis.
+@inline function _gridded_anchors_loop!(
+        anchors::Vector{_GriddedAnchor{T}},
+        grid::AbstractVector,
+        targets::AbstractVector,
+        extrap::AbstractExtrap,
+        dim::Int,
+        searcher::Searcher
+    ) where {T}
     k = 0
     @inbounds for xq in targets
         k += 1

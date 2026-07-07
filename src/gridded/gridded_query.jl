@@ -80,6 +80,16 @@ function _gridded_anchors!(
     k = 0
     @inbounds for xq in targets
         k += 1
+        if extrap isa InBounds
+            # caller-asserted in-domain (call-time override): skip the domain
+            # classification and take the lean search directly — the same call
+            # the default path reaches after its `_oob_state` check, so
+            # in-domain anchors are bit-identical to the default path's.
+            idx, _, xL, xR = search_interval(searcher, grid, xq, extrap)
+            inv_h = _get_inv_h(grid, idx, xL, xR)
+            anchors[k] = _GriddedAnchor{T}(idx, T(_alpha_of(xq, xL, inv_h)), T(inv_h))
+            continue
+        end
         loc = _anchor_loc(grid, xq, extrap isa WrapExtrap, searcher)
         if extrap isa NoExtrap && loc.state != IN_DOMAIN
             throw(DomainError(xq, "GriddedQuery axis $dim: coordinate outside grid domain (NoExtrap)"))
@@ -323,13 +333,14 @@ function _gridded_fill_oob!(
         out::AbstractArray{<:Any, N},
         itp::LinearInterpolantND{Tg, Tv, N},
         targets::Tuple,
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         ops::Tuple{Vararg{AbstractEvalOp, N}}
     ) where {Tg, Tv, N}
-    _gridded_has_fill(itp.extraps) || return out
-    fill_value = _gridded_first_fill_value(itp.extraps)
+    _gridded_has_fill(extraps) || return out
+    fill_value = _gridded_first_fill_value(extraps)
     data_sample = _sample_data(itp)
     for d in 1:N
-        itp.extraps[d] isa FillExtrap || continue
+        extraps[d] isa FillExtrap || continue
         k = 0
         for xq in targets[d]
             k += 1
@@ -352,15 +363,16 @@ end
         itp::LinearInterpolantND{Tg, Tv, N},
         targets::Tuple,
         ops::Tuple{Vararg{AbstractEvalOp, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         ::Type{Tout}
     ) where {Tg, Tv, N, Tout}
     anchors = ntuple(
-        d -> _gridded_anchors_pooled(pool, itp.grids[d], targets[d], itp.extraps[d], d),
+        d -> _gridded_anchors_pooled(pool, itp.grids[d], targets[d], extraps[d], d),
         Val(N)
     )
     out = Array{Tout, N}(undef, map(length, targets))
     _gridded_apply!(out, itp, anchors, ops, Tout)
-    return _gridded_fill_oob!(out, itp, targets, ops)
+    return _gridded_fill_oob!(out, itp, targets, extraps, ops)
 end
 
 @with_pool pool function _gridded_eval!(
@@ -368,42 +380,48 @@ end
         itp::LinearInterpolantND{Tg, Tv, N},
         targets::Tuple,
         ops::Tuple{Vararg{AbstractEvalOp, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         ::Type{Tout}
     ) where {Tg, Tv, N, Tout}
     anchors = ntuple(
-        d -> _gridded_anchors_pooled(pool, itp.grids[d], targets[d], itp.extraps[d], d),
+        d -> _gridded_anchors_pooled(pool, itp.grids[d], targets[d], extraps[d], d),
         Val(N)
     )
     _gridded_apply!(out, itp, anchors, ops, Tout)
-    return _gridded_fill_oob!(out, itp, targets, ops)
+    return _gridded_fill_oob!(out, itp, targets, extraps, ops)
 end
 
 # ---- dispatch ----------------------------------------------------------------
 """
-    (itp::LinearInterpolantND{Tg,Tv,N})(gq::GriddedQuery; deriv = EvalValue())
-    (itp::LinearInterpolantND{Tg,Tv,N})(out::AbstractArray, gq::GriddedQuery; deriv = EvalValue())
+    (itp::LinearInterpolantND{Tg,Tv,N})(gq::GriddedQuery; deriv = EvalValue(), extrap = nothing)
+    (itp::LinearInterpolantND{Tg,Tv,N})(out::AbstractArray, gq::GriddedQuery; deriv = EvalValue(), extrap = nothing)
 
 Evaluate an N-D linear interpolant at every combination of `gq.axes`
 coordinates. Each axis's anchors are resolved once (pooled, O(ΣM_d)) and
 reused across the grid; the strategy is picked per call — fused (no
 intermediate) for pure downsampling, separable multi-pass full buffer
-otherwise. `deriv` takes a per-axis op tuple or a single op, exactly like
+otherwise. `deriv` takes a per-axis op tuple or a single op, and `extrap`
+the call-time `InBounds` override (single or per-axis tuple), exactly like
 point-wise ND eval. The 2-arg form writes into `out` (FI batch convention).
 """
 function (itp::LinearInterpolantND{Tg, Tv, N})(
         gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing
     ) where {Tg, Tv, N}
     targets = gq.axes
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _gridded_eval(itp, targets, ops, _gridded_out_eltype(itp, targets))
+    extraps = _resolve_extrap_override_nd(itp, extrap)
+    return _gridded_eval(itp, targets, ops, extraps, _gridded_out_eltype(itp, targets))
 end
 function (itp::LinearInterpolantND{Tg, Tv, N})(
         out::AbstractArray{<:Any, N},
         gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing
     ) where {Tg, Tv, N}
     targets = gq.axes
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _gridded_eval!(out, itp, targets, ops, _gridded_out_eltype(itp, targets))
+    extraps = _resolve_extrap_override_nd(itp, extrap)
+    return _gridded_eval!(out, itp, targets, ops, extraps, _gridded_out_eltype(itp, targets))
 end

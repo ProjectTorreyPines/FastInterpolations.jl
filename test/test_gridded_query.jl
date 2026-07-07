@@ -385,6 +385,48 @@ end
     @test a_throw < length(big_tx) * length(bad_ty) * sizeof(Float64)
 end
 
+@testitem "call-time extrap override: InBounds anchor fast path" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: EvalValue, EvalDeriv1
+
+    A = rand(24, 20)
+    itp = FI.linear_interp((1.0:24.0, 1.0:20.0), A; extrap = FI.NoExtrap())
+    tx = collect(range(1.0, 24.0, 31))
+    ty = collect(range(1.0, 20.0, 27))
+    gq = GriddedQuery((tx, ty))
+    C0 = itp(gq)
+
+    # single InBounds broadcasts to all axes; in-domain queries take the same
+    # lean search the default path uses internally → bit-identical
+    C1 = itp(gq; extrap = FI.InBounds())
+    @test C1 == C0
+    # per-axis tuple form
+    C2 = itp(gq; extrap = (FI.InBounds(), FI.InBounds()))
+    @test C2 == C0
+    # in-place form
+    out = similar(C0)
+    @test itp(out, gq; extrap = FI.InBounds()) === out
+    @test out == C0
+    # composes with deriv
+    Cd0 = itp(gq; deriv = (EvalDeriv1(), EvalValue()))
+    Cd1 = itp(gq; deriv = (EvalDeriv1(), EvalValue()), extrap = FI.InBounds())
+    @test Cd1 == Cd0
+    # matches point-wise under the same override
+    refI = [itp((x, y); extrap = FI.InBounds()) for x in tx, y in ty]
+    @test all(isapprox.(C1, refI; rtol = 1.0e-14, atol = 1.0e-14))
+    # single non-InBounds mode never broadcasts (point-wise contract)
+    @test_throws ArgumentError itp(gq; extrap = FI.ClampExtrap())
+
+    # 3D
+    A3 = rand(12, 10, 8)
+    itp3 = FI.linear_interp((1.0:12.0, 1.0:10.0, 1.0:8.0), A3; extrap = FI.ClampExtrap())
+    ts3 = (collect(range(1.0, 12.0, 15)), collect(range(1.0, 10.0, 13)), [1.0, 4.5, 8.0])
+    C3 = itp3(GriddedQuery(ts3))
+    C3I = itp3(GriddedQuery(ts3); extrap = FI.InBounds())
+    @test C3I == C3
+end
+
 @testitem "in-place API: pooled buffers, zero-alloc, edges" begin
     using FastInterpolations
     import FastInterpolations as FI

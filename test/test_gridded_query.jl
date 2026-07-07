@@ -154,6 +154,46 @@ end
     @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
 end
 
+@testitem "pass hull restriction: identical entries, untouched outside" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: _gridded_anchors, _gridded_hull, _gridded_pass!, EvalValue
+
+    A = rand(64, 48)
+    itp = FI.linear_interp((1.0:64.0, 1.0:48.0), A; extrap = FI.ClampExtrap())
+    tx = collect(range(20.0, 24.0, 37))     # clustered windows (zoom profile)
+    ty = collect(range(30.0, 33.0, 29))
+    ax = _gridded_anchors(itp.grids[1], tx, itp.extraps[1], 1)
+    ay = _gridded_anchors(itp.grids[2], ty, itp.extraps[2], 2)
+
+    # coordinate-extrema hull == anchor tap extrema (monotone coord → idx map)
+    hx = _gridded_hull(itp.grids[1], tx, itp.extraps[1])
+    hy = _gridded_hull(itp.grids[2], ty, itp.extraps[2])
+    @test first(hx) == minimum(a -> a.idx, ax) && last(hx) == maximum(a -> a.idx, ax) + 1
+    @test first(hy) == minimum(a -> a.idx, ay) && last(hy) == maximum(a -> a.idx, ay) + 1
+    @test issubset(hx, 1:64) && issubset(hy, 1:48)
+    @test length(hy) < 48   # the zoom window is a strict sub-range
+    # unsorted targets: extrema (not first/last) drives the hull
+    @test _gridded_hull(itp.grids[1], [24.0, 20.0, 22.5], itp.extraps[1]) == hx
+    # Wrap folds coordinates → conservative full axis
+    @test _gridded_hull(itp.grids[1], tx, FI.WrapExtrap()) == 1:64
+
+    # hull-restricted pass: bit-identical on computed entries, untouched outside
+    full = fill(NaN, 37, 48)
+    _gridded_pass!(full, A, ax, EvalValue(), Val(1))
+    part = fill(NaN, 37, 48)
+    _gridded_pass!(part, A, ax, EvalValue(), Val(1), (1:37, hy))   # ranges[1] ignored (D = 1)
+    @test part[:, hy] == full[:, hy]
+    @test all(isnan, part[:, setdiff(1:48, hy)])
+
+    # public zoom-up (fullbuffer strategy + hull) still matches point-wise
+    txu = collect(range(20.0, 24.0, 96))
+    tyu = collect(range(30.0, 33.0, 72))
+    C = itp(GriddedQuery((txu, tyu)))
+    ref = [itp((x, y)) for x in txu, y in tyu]
+    @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
+end
+
 @testitem "3D public path: value/deriv/wrap/fill via GriddedQuery" begin
     using FastInterpolations
     import FastInterpolations as FI

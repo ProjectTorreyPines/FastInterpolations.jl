@@ -239,13 +239,17 @@ _gridded_fused!(
 # anchor combine and passes every other axis through. Generated over (N, D)
 # with axis 1 innermost — for D ≥ 2 both loops are stride-1 (contiguous
 # blend), for D = 1 the two taps (idx, idx+1) are memory-adjacent loads
-# (gather).
+# (gather). `ranges[e]` bounds each pass-through axis `e` (`ranges[D]` is
+# ignored): the multi-pass core passes tap HULLS there so slabs no
+# downstream pass will ever read are never computed (a pure loop-bounds
+# tightening — identical arithmetic on the entries that are computed).
 @generated function _gridded_pass!(
         dest::AbstractArray{<:Any, N},
         src::AbstractArray{<:Any, N},
         anchors::Vector{<:_GriddedAnchor},
         op::AbstractEvalOp,
-        ::Val{D}
+        ::Val{D},
+        ranges::NTuple{N, UnitRange{Int}}
     ) where {N, D}
     js = [Symbol(:j_, d) for d in 1:N]
     lo = Any[js[d] for d in 1:N]
@@ -266,7 +270,7 @@ _gridded_fused!(
             end
         else
             quote
-                for $(js[d]) in axes(src, $d)
+                for $(js[d]) in ranges[$d]
                     $body
                 end
             end
@@ -276,6 +280,56 @@ _gridded_fused!(
         @inbounds $body
         return dest
     end
+end
+
+# Full-range convenience form (explicit compositions, tests).
+_gridded_pass!(
+    dest::AbstractArray{<:Any, N},
+    src::AbstractArray{<:Any, N},
+    anchors::Vector{<:_GriddedAnchor},
+    op::AbstractEvalOp,
+    v::Val
+) where {N} = _gridded_pass!(dest, src, anchors, op, v, map(UnitRange{Int}, axes(src)))
+
+# Static dispatch over the runtime axis id: a generated if-chain on `d`
+# turns the pass call into N STATIC call sites (literal Val / anchors[k] /
+# ops[k]), so isbits arguments — the ranges tuple — cross in registers. A
+# single runtime-Val(d) dynamic call here boxed the tuple (96 B/call).
+@generated function _gridded_pass_dim!(
+        dest::AbstractArray{<:Any, N},
+        src::AbstractArray{<:Any, N},
+        anchors::NTuple{N, Vector{<:_GriddedAnchor}},
+        ops::Tuple{Vararg{AbstractEvalOp, N}},
+        d::Int,
+        ranges::NTuple{N, UnitRange{Int}}
+    ) where {N}
+    ex = :(throw(ArgumentError("pass axis out of range")))
+    for k in N:-1:1
+        ex = :(
+            d == $k ? _gridded_pass!(dest, src, anchors[$k], ops[$k], Val($k), ranges) : $ex
+        )
+    end
+    return ex
+end
+
+# Tap hull of one query axis: the only source/intermediate slab range any
+# pass consuming that axis's anchors will ever read. Full-domain queries give
+# the whole axis; clustered (zoom) queries shrink upstream pass work to the
+# window. Computed as a coordinate `extrema` (contiguous SIMD reduction over
+# the raw targets — an anchor-vector idx scan is a strided 24 B walk) mapped
+# through two locates: coordinate → interval index is monotone for every
+# non-wrapping extrap (OOB resolves to a boundary cell), so the coordinate
+# extrema ARE the tap extrema. Wrap folds coordinates and breaks that
+# monotonicity — it keeps the full axis.
+_gridded_hull(grid::AbstractVector, targets::AbstractVector, ::WrapExtrap) =
+    1:length(grid)
+function _gridded_hull(grid::AbstractVector, targets::AbstractVector, ::AbstractExtrap)
+    # separate minimum/maximum: each SIMD-vectorizes (~0.15 ns/elem measured);
+    # Base.extrema's tuple-mapreduce is ~34x slower and was end-to-end visible
+    lo = minimum(targets)
+    hi = maximum(targets)
+    searcher = _resolve_searcher_for_grid(grid, DEFAULT_SEARCHER)
+    return _anchor_loc(grid, lo, false, searcher).idx:(_anchor_loc(grid, hi, false, searcher).idx + 1)
 end
 
 # Pass order: adjacent-exchange comparator on total cost with the measured
@@ -300,28 +354,32 @@ end
         A::AbstractArray{<:Any, N},
         anchors::NTuple{N, Vector{<:_GriddedAnchor}},
         ops::Tuple{Vararg{AbstractEvalOp, N}},
+        hulls::NTuple{N, UnitRange{Int}},
         ::Type{Tmid}
     ) where {N, Tmid}
     src_size = size(A)
     out_size = map(length, anchors)
-    order = acquire!(pool, Int, N)
-    @inbounds for d in 1:N
-        order[d] = d
-    end
+    order = ntuple(identity, Val(N))
     @inbounds for k in 2:N   # insertion sort by the pairwise cost comparator
         j = k
         while j > 1 && _gridded_pass_before(order[j], order[j - 1], src_size, out_size)
-            order[j], order[j - 1] = order[j - 1], order[j]
+            oj = order[j]
+            order = Base.setindex(Base.setindex(order, order[j - 1], j), oj, j - 1)
             j -= 1
         end
     end
+    # Pass-through bounds: an unresolved axis only needs its tap hull (zoom
+    # queries shrink upstream passes to the window); once axis d is resolved
+    # its full target extent is needed downstream.
+    ranges = hulls
     cur_size = src_size
     src = A
     @inbounds for k in 1:N
         d = order[k]
         cur_size = Base.setindex(cur_size, out_size[d], d)
         dest = k == N ? out : acquire!(pool, Tmid, cur_size...)
-        _gridded_pass!(dest, src, anchors[d], ops[d], Val(d))
+        _gridded_pass_dim!(dest, src, anchors, ops, d, ranges)
+        ranges = Base.setindex(ranges, 1:out_size[d], d)
         src = dest
     end
     return out
@@ -334,8 +392,10 @@ end
 function _gridded_apply!(
         out::AbstractArray{<:Any, N},
         itp::LinearInterpolantND{Tg, Tv, N},
+        targets::Tuple,
         anchors::NTuple{N, Vector{<:_GriddedAnchor}},
         ops::Tuple{Vararg{AbstractEvalOp, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         ::Type{Tmid}
     ) where {Tg, Tv, N, Tmid}
     A = itp.data
@@ -347,7 +407,8 @@ function _gridded_apply!(
     if all(map(<, out_size, size(A)))
         _gridded_fused!(out, A, anchors, ops)
     else
-        _gridded_fullbuffer!(out, A, anchors, ops, Tmid)
+        hulls = ntuple(d -> _gridded_hull(itp.grids[d], targets[d], extraps[d]), Val(N))
+        _gridded_fullbuffer!(out, A, anchors, ops, hulls, Tmid)
     end
     return out
 end
@@ -407,7 +468,7 @@ end
         Val(N)
     )
     out = Array{Tout, N}(undef, map(length, targets))
-    _gridded_apply!(out, itp, anchors, ops, Tout)
+    _gridded_apply!(out, itp, targets, anchors, ops, extraps, Tout)
     return _gridded_fill_oob!(out, itp, targets, extraps, ops)
 end
 
@@ -423,7 +484,7 @@ end
         d -> _gridded_anchors_pooled(pool, itp.grids[d], targets[d], extraps[d], d),
         Val(N)
     )
-    _gridded_apply!(out, itp, anchors, ops, Tout)
+    _gridded_apply!(out, itp, targets, anchors, ops, extraps, Tout)
     return _gridded_fill_oob!(out, itp, targets, extraps, ops)
 end
 

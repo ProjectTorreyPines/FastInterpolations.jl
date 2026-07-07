@@ -55,10 +55,10 @@ struct _GriddedAnchor{T <: Real}
 end
 
 """
-    _gridded_anchors!(anchors, g, t, ex, dim) -> anchors
+    _gridded_anchors!(anchors, grid, targets, extrap, dim) -> anchors
 
-Resolve every target coordinate in `t` against grid `g` once — the O(M) work
-that both strategies reuse O(∏M_d) times. Extrapolation is folded here:
+Resolve every target coordinate in `targets` against `grid` once — the O(M)
+work that both strategies reuse O(∏M_d) times. Extrapolation is folded here:
 `WrapExtrap` folds the coordinate into the domain, `ClampExtrap`/`FillExtrap`
 clamp the weight to the boundary node (Fill's OOB slabs are overwritten by the
 [`_gridded_fill_oob!`](@ref) post-pass), `ExtendExtrap` keeps the out-of-range
@@ -68,25 +68,25 @@ the axis in that error.
 """
 function _gridded_anchors!(
         anchors::Vector{_GriddedAnchor{T}},
-        g::AbstractVector,
-        t::AbstractVector,
-        ex::AbstractExtrap,
+        grid::AbstractVector,
+        targets::AbstractVector,
+        extrap::AbstractExtrap,
         dim::Int
     ) where {T}
-    length(anchors) == length(t) || throw(
-        DimensionMismatch("anchor buffer length $(length(anchors)) != query length $(length(t))")
+    length(anchors) == length(targets) || throw(
+        DimensionMismatch("anchor buffer length $(length(anchors)) != query length $(length(targets))")
     )
-    searcher = _resolve_searcher_for_grid(g, DEFAULT_SEARCHER)
+    searcher = _resolve_searcher_for_grid(grid, DEFAULT_SEARCHER)
     k = 0
-    @inbounds for xq in t
+    @inbounds for xq in targets
         k += 1
-        loc = _anchor_loc(g, xq, ex isa WrapExtrap, searcher)
-        if ex isa NoExtrap && loc.state != IN_DOMAIN
+        loc = _anchor_loc(grid, xq, extrap isa WrapExtrap, searcher)
+        if extrap isa NoExtrap && loc.state != IN_DOMAIN
             throw(DomainError(xq, "GriddedQuery axis $dim: coordinate outside grid domain (NoExtrap)"))
         end
-        inv_h = _get_inv_h(g, loc.idx, loc.xL, loc.xR)
+        inv_h = _get_inv_h(grid, loc.idx, loc.xL, loc.xR)
         α = T(_alpha_of(loc.xq, loc.xL, inv_h))
-        if ex isa Union{ClampExtrap, FillExtrap}
+        if extrap isa Union{ClampExtrap, FillExtrap}
             α = clamp(α, zero(T), one(T))
         end
         anchors[k] = _GriddedAnchor{T}(loc.idx, α, T(inv_h))
@@ -95,17 +95,32 @@ function _gridded_anchors!(
 end
 
 # Weight type: float promotion of grid × query (Float32 grid+query stays Float32).
-@inline _gridded_alpha_type(g::AbstractVector, t::AbstractVector) =
-    float(promote_type(eltype(g), eltype(t)))
+@inline _gridded_alpha_type(grid::AbstractVector, targets::AbstractVector) =
+    float(promote_type(eltype(grid), eltype(targets)))
 
-function _gridded_anchors(g::AbstractVector, t::AbstractVector, ex::AbstractExtrap, dim::Int)
-    T = _gridded_alpha_type(g, t)
-    return _gridded_anchors!(Vector{_GriddedAnchor{T}}(undef, length(t)), g, t, ex, dim)
+function _gridded_anchors(
+        grid::AbstractVector,
+        targets::AbstractVector,
+        extrap::AbstractExtrap,
+        dim::Int
+    )
+    T = _gridded_alpha_type(grid, targets)
+    return _gridded_anchors!(
+        Vector{_GriddedAnchor{T}}(undef, length(targets)), grid, targets, extrap, dim
+    )
 end
 
-function _gridded_anchors_pooled(pool, g::AbstractVector, t::AbstractVector, ex::AbstractExtrap, dim::Int)
-    T = _gridded_alpha_type(g, t)
-    return _gridded_anchors!(acquire!(pool, _GriddedAnchor{T}, length(t)), g, t, ex, dim)
+function _gridded_anchors_pooled(
+        pool,
+        grid::AbstractVector,
+        targets::AbstractVector,
+        extrap::AbstractExtrap,
+        dim::Int
+    )
+    T = _gridded_alpha_type(grid, targets)
+    return _gridded_anchors!(
+        acquire!(pool, _GriddedAnchor{T}, length(targets)), grid, targets, extrap, dim
+    )
 end
 
 # ---- FUSED strategy ---------------------------------------------------------
@@ -224,9 +239,9 @@ end
 # (shrink-most-first, cost-weighted). For N = 2 this reduces exactly to the
 # old dim2-first model.
 @inline _gridded_pass_cost(d::Int) = d == 1 ? 0.65 : 0.2
-@inline function _gridded_pass_before(d::Int, e::Int, nsz::Dims, msz::Dims)
-    return _gridded_pass_cost(d) * msz[d] * (nsz[e] - msz[e]) <
-        _gridded_pass_cost(e) * msz[e] * (nsz[d] - msz[d])
+@inline function _gridded_pass_before(d::Int, e::Int, src_size::Dims, out_size::Dims)
+    return _gridded_pass_cost(d) * out_size[d] * (src_size[e] - out_size[e]) <
+        _gridded_pass_cost(e) * out_size[e] * (src_size[d] - out_size[d])
 end
 
 # Multi-pass core through pooled intermediates held in `Tmid` (the promoted
@@ -241,25 +256,25 @@ end
         ops::Tuple{Vararg{AbstractEvalOp, N}},
         ::Type{Tmid}
     ) where {N, Tmid}
-    nsz = size(A)
-    msz = map(length, anchors)
+    src_size = size(A)
+    out_size = map(length, anchors)
     order = acquire!(pool, Int, N)
     @inbounds for d in 1:N
         order[d] = d
     end
     @inbounds for k in 2:N   # insertion sort by the pairwise cost comparator
         j = k
-        while j > 1 && _gridded_pass_before(order[j], order[j - 1], nsz, msz)
+        while j > 1 && _gridded_pass_before(order[j], order[j - 1], src_size, out_size)
             order[j], order[j - 1] = order[j - 1], order[j]
             j -= 1
         end
     end
-    sz = nsz
+    cur_size = src_size
     src = A
     @inbounds for k in 1:N
         d = order[k]
-        sz = Base.setindex(sz, msz[d], d)
-        dest = k == N ? out : acquire!(pool, Tmid, sz...)
+        cur_size = Base.setindex(cur_size, out_size[d], d)
+        dest = k == N ? out : acquire!(pool, Tmid, cur_size...)
         _gridded_pass!(dest, src, anchors[d], ops[d], Val(d))
         src = dest
     end
@@ -278,12 +293,12 @@ function _gridded_apply!(
         ::Type{Tmid}
     ) where {Tg, Tv, N, Tmid}
     A = itp.data
-    msz = map(length, anchors)
-    size(out) == msz || throw(
-        DimensionMismatch("output size $(size(out)) != query size $msz")
+    out_size = map(length, anchors)
+    size(out) == out_size || throw(
+        DimensionMismatch("output size $(size(out)) != query size $out_size")
     )
-    any(iszero, msz) && return out
-    if all(map(<, msz, size(A)))
+    any(iszero, out_size) && return out
+    if all(map(<, out_size, size(A)))
         _gridded_fused!(out, A, anchors, ops)
     else
         _gridded_fullbuffer!(out, A, anchors, ops, Tmid)
@@ -307,19 +322,19 @@ end
 function _gridded_fill_oob!(
         out::AbstractArray{<:Any, N},
         itp::LinearInterpolantND{Tg, Tv, N},
-        ts::Tuple,
+        targets::Tuple,
         ops::Tuple{Vararg{AbstractEvalOp, N}}
     ) where {Tg, Tv, N}
     _gridded_has_fill(itp.extraps) || return out
-    fv = _gridded_first_fill_value(itp.extraps)
-    zref = _sample_data(itp)
+    fill_value = _gridded_first_fill_value(itp.extraps)
+    data_sample = _sample_data(itp)
     for d in 1:N
         itp.extraps[d] isa FillExtrap || continue
         k = 0
-        for xq in ts[d]
+        for xq in targets[d]
             k += 1
             if _oob_state(itp.grids[d], xq) != IN_DOMAIN
-                fill!(selectdim(out, d, k), _fill_extrap_result(ops, fv, zref, xq))
+                fill!(selectdim(out, d, k), _fill_extrap_result(ops, fill_value, data_sample, xq))
             end
         end
     end
@@ -328,39 +343,39 @@ end
 
 # ---- entry points ------------------------------------------------------------
 # Output eltype: matches point-wise scalar eval's promotion (pinned by test).
-@inline _gridded_out_eltype(::LinearInterpolantND{Tg, Tv, N}, ts::Tuple) where {Tg, Tv, N} =
-    _promote_eltype(_interp_op, Tg, Tv, promote_type(map(eltype, ts)...))
+@inline _gridded_out_eltype(::LinearInterpolantND{Tg, Tv, N}, targets::Tuple) where {Tg, Tv, N} =
+    _promote_eltype(_interp_op, Tg, Tv, promote_type(map(eltype, targets)...))
 
 # Anchors are built (firing NoExtrap's O(ΣM_d) validation) BEFORE the
 # output-sized array is allocated.
 @with_pool pool function _gridded_eval(
         itp::LinearInterpolantND{Tg, Tv, N},
-        ts::Tuple,
+        targets::Tuple,
         ops::Tuple{Vararg{AbstractEvalOp, N}},
         ::Type{Tout}
     ) where {Tg, Tv, N, Tout}
     anchors = ntuple(
-        d -> _gridded_anchors_pooled(pool, itp.grids[d], ts[d], itp.extraps[d], d),
+        d -> _gridded_anchors_pooled(pool, itp.grids[d], targets[d], itp.extraps[d], d),
         Val(N)
     )
-    out = Array{Tout, N}(undef, map(length, ts))
+    out = Array{Tout, N}(undef, map(length, targets))
     _gridded_apply!(out, itp, anchors, ops, Tout)
-    return _gridded_fill_oob!(out, itp, ts, ops)
+    return _gridded_fill_oob!(out, itp, targets, ops)
 end
 
 @with_pool pool function _gridded_eval!(
         out::AbstractArray{<:Any, N},
         itp::LinearInterpolantND{Tg, Tv, N},
-        ts::Tuple,
+        targets::Tuple,
         ops::Tuple{Vararg{AbstractEvalOp, N}},
         ::Type{Tout}
     ) where {Tg, Tv, N, Tout}
     anchors = ntuple(
-        d -> _gridded_anchors_pooled(pool, itp.grids[d], ts[d], itp.extraps[d], d),
+        d -> _gridded_anchors_pooled(pool, itp.grids[d], targets[d], itp.extraps[d], d),
         Val(N)
     )
     _gridded_apply!(out, itp, anchors, ops, Tout)
-    return _gridded_fill_oob!(out, itp, ts, ops)
+    return _gridded_fill_oob!(out, itp, targets, ops)
 end
 
 # ---- dispatch ----------------------------------------------------------------
@@ -379,16 +394,16 @@ function (itp::LinearInterpolantND{Tg, Tv, N})(
         gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
     ) where {Tg, Tv, N}
-    ts = gq.axes
+    targets = gq.axes
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _gridded_eval(itp, ts, ops, _gridded_out_eltype(itp, ts))
+    return _gridded_eval(itp, targets, ops, _gridded_out_eltype(itp, targets))
 end
 function (itp::LinearInterpolantND{Tg, Tv, N})(
         out::AbstractArray{<:Any, N},
         gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
     ) where {Tg, Tv, N}
-    ts = gq.axes
+    targets = gq.axes
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _gridded_eval!(out, itp, ts, ops, _gridded_out_eltype(itp, ts))
+    return _gridded_eval!(out, itp, targets, ops, _gridded_out_eltype(itp, targets))
 end

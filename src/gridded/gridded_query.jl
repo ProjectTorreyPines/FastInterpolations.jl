@@ -461,9 +461,19 @@ function _gridded_fill_oob!(
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         ops::Tuple{Vararg{AbstractEvalOp, N}}
     ) where {N}
+    return _gridded_fill_oob_sample!(out, grids, @inbounds(first(data)), targets, extraps, ops)
+end
+
+function _gridded_fill_oob_sample!(
+        out::AbstractArray{<:Any, N},
+        grids::NTuple{N, AbstractVector},
+        data_sample,
+        targets::Tuple,
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
+        ops::Tuple{Vararg{AbstractEvalOp, N}}
+    ) where {N}
     _gridded_has_fill(extraps) || return out
     fill_value = _gridded_first_fill_value(extraps)
-    data_sample = @inbounds first(data)
     for d in 1:N
         extraps[d] isa FillExtrap || continue
         k = 0
@@ -640,7 +650,9 @@ end
 # reaches one method-tuple dispatcher; supported method families prepare raw
 # one-shot inputs and then call `_gridded_eval_methods!`. Unsupported tuples
 # return `false`, so `interp!` falls through to its point-wise batch.
-@inline _try_gridded_separable!(output, grids, data, queries, methods, extrap, deriv) = false
+@inline _try_gridded_separable!(output, grids, data, queries, methods, extrap, deriv) =
+    _try_gridded_separable!(output, grids, data, queries, methods, extrap, deriv, AutoCoeffs())
+@inline _try_gridded_separable!(output, grids, data, queries, methods, extrap, deriv, coeffs) = false
 @inline function _try_gridded_separable!(
         output,
         grids,
@@ -648,13 +660,28 @@ end
         gq::GriddedQuery{<:Tuple{Vararg{Any, N}}},
         methods::Tuple{Vararg{AbstractInterpMethod, N}},
         extrap,
-        deriv
+        deriv,
+        coeffs
     ) where {Tv, N}
     out_nd = output isa AbstractVector ? reshape(output, size(gq)) : output
-    return _try_gridded_oneshot_methods!(out_nd, grids, data, gq.axes, methods, extrap, deriv)
+    return _try_gridded_oneshot_methods!(out_nd, grids, data, gq, methods, extrap, deriv, coeffs)
 end
 
 @inline _try_gridded_oneshot_methods!(out, grids, data, targets, methods, extrap, deriv) = false
+@inline _try_gridded_oneshot_methods!(out, grids, data, gq::GriddedQuery, methods, extrap, deriv, _coeffs) =
+    _try_gridded_oneshot_methods!(out, grids, data, gq.axes, methods, extrap, deriv)
+@inline function _try_gridded_oneshot_methods!(
+        out_nd::AbstractArray{<:Any, 0},
+        grids,
+        data::AbstractArray{Tv, 0},
+        gq::GriddedQuery{<:Tuple{}},
+        methods::Tuple{},
+        extrap,
+        deriv,
+        coeffs
+    ) where {Tv}
+    return false
+end
 
 @inline function _try_gridded_oneshot_methods!(
         out_nd::AbstractArray{<:Any, N},

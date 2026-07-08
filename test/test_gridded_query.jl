@@ -763,18 +763,18 @@ end
     hook = FI._try_gridded_separable!
     A2 = Matrix{Float64}(undef, 2, 3)
     gqs = GriddedQuery(([2.0, 3.0], [2.0, 3.0, 4.0]))
-    mhook_gq = which(hook, typeof((A2, grids, A, gqs, (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue())))
-    mhook_soa = which(hook, typeof((A2, grids, A, ([2.0, 3.0], [2.0, 3.0]), (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    mhook_gq = which(hook, typeof((A2, grids, A, gqs, (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue(), FI.AutoCoeffs())))
+    mhook_soa = which(hook, typeof((A2, grids, A, ([2.0, 3.0], [2.0, 3.0]), (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue(), FI.AutoCoeffs())))
     @test occursin("gridded_query", String(mhook_gq.file))
     @test mhook_gq !== mhook_soa
 
     dispatch = FI._try_gridded_oneshot_methods!
-    m_lin = which(dispatch, typeof((A2, grids, A, gqs.axes, (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue())))
-    m_cub = which(dispatch, typeof((A2, grids, A, gqs.axes, (CubicInterp(), CubicInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    m_lin = which(dispatch, typeof((A2, grids, A, gqs, (LinearInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue(), FI.AutoCoeffs())))
+    m_cub = which(dispatch, typeof((A2, grids, A, gqs, (CubicInterp(), CubicInterp()), FI.ClampExtrap(), FI.EvalValue(), FI.AutoCoeffs())))
     @test occursin("gridded_query", String(m_lin.file))   # separable arm
-    @test m_lin !== m_cub                                  # cubic → generic pointwise fallback
+    @test occursin("gridded_partials", String(m_cub.file)) # cubic fused-anchor arm
 
-    # a non-linear method still works (pointwise fallback), N-D shaped
+    # a non-linear method still works, N-D shaped
     Cc = interp(grids, A, gq; method = CubicInterp(), extrap = FI.ClampExtrap())
     @test size(Cc) == (120, 90)
 end
@@ -984,6 +984,66 @@ end
     @test occursin("axis 1", sprint(showerror, err))
 end
 
+@testitem "gridded cubic/quadratic: fused anchors == point-wise" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: GriddedQuery, CubicInterp, QuadraticInterp, EvalDeriv1
+    using InteractiveUtils: which
+
+    x = collect(range(0.0, 1.0, 22))
+    y = collect(range(-1.0, 2.0, 19))
+    A = [sin(4xi) + cos(3yi) + 0.1sin(xi * yi) for xi in x, yi in y]
+    tx = collect(range(-0.05, 1.05, 13))
+    ty = collect(range(-0.8, 1.8, 11))
+    gq = GriddedQuery((tx, ty))
+    close(a, b) = size(a) == size(b) && all(isapprox.(a, b; rtol = 2.0e-12, atol = 2.0e-12))
+
+    for method in (CubicInterp(), QuadraticInterp())
+        for ex in (FI.ClampExtrap(), FI.FillExtrap(-7.25))
+            C = interp((x, y), A, gq; method = method, extrap = ex)
+            ref = [
+                interp((x, y), A, (qx, qy); method = method, extrap = ex)
+                    for qx in tx, qy in ty
+            ]
+            @test close(C, ref)
+
+            itp = interp((x, y), A; method = method, extrap = ex)
+            @test close(itp(gq), ref)
+            out = similar(C)
+            @test itp(out, gq) === out
+            @test close(out, ref)
+        end
+
+        Cd = interp(
+            (x, y), A, gq;
+            method = method, extrap = FI.ClampExtrap(),
+            deriv = (EvalDeriv1(), FI.EvalValue()),
+        )
+        refd = [
+            interp(
+                    (x, y), A, (qx, qy);
+                    method = method, extrap = FI.ClampExtrap(),
+                    deriv = (EvalDeriv1(), FI.EvalValue()),
+                )
+                for qx in tx, qy in ty
+        ]
+        @test close(Cd, refd)
+    end
+
+    out = zeros(length(tx), length(ty))
+    hook = FI._try_gridded_oneshot_methods!
+    m_cub = which(hook, typeof((out, (x, y), A, gq, (CubicInterp(), CubicInterp()), FI.ClampExtrap(), FI.EvalValue(), FI.AutoCoeffs())))
+    m_quad = which(hook, typeof((out, (x, y), A, gq, (QuadraticInterp(), QuadraticInterp()), FI.ClampExtrap(), FI.EvalValue(), FI.AutoCoeffs())))
+    @test occursin("gridded_partials", String(m_cub.file))
+    @test occursin("gridded_partials", String(m_quad.file))
+
+    out_onfly = fill(NaN, length(tx), length(ty))
+    @test hook(out_onfly, (x, y), A, gq, (CubicInterp(), CubicInterp()), FI.ClampExtrap(), FI.EvalValue(), FI.OnTheFly()) === false
+    @test all(isnan, out_onfly)
+    @test hook(out_onfly, (x, y), A, gq, (QuadraticInterp(), QuadraticInterp()), FI.ClampExtrap(), FI.EvalValue(), FI.OnTheFly()) === false
+    @test all(isnan, out_onfly)
+end
+
 @testitem "gridded routing: constant/hermite hooks, PeriodicBC + mixed-method fallback" begin
     using FastInterpolations
     import FastInterpolations as FI
@@ -997,6 +1057,9 @@ end
     out = zeros(11, 11)
     hook = FI._try_gridded_oneshot_methods!
 
+    m_bridge = which(hook, typeof((out, (x, x), A, gq, (ConstantInterp(), ConstantInterp()), FI.ClampExtrap(), FI.EvalValue(), FI.AutoCoeffs())))
+    @test occursin("gridded_query", String(m_bridge.file))
+
     m_c = which(hook, typeof((out, (x, x), A, gq.axes, (ConstantInterp(), ConstantInterp()), FI.ClampExtrap(), FI.EvalValue())))
     m_h = which(hook, typeof((out, (x, x), A, gq.axes, (PchipInterp(), PchipInterp()), FI.ClampExtrap(), FI.EvalValue())))
     @test occursin("gridded_constant", String(m_c.file))
@@ -1007,7 +1070,7 @@ end
     mper = PchipInterp(PeriodicBC())
     m_p = which(hook, typeof((out, (x, x), A, gq.axes, (mper, mper), FI.WrapExtrap(), FI.EvalValue())))
     m_mix = which(hook, typeof((out, (x, x), A, gq.axes, (ConstantInterp(), LinearInterp()), FI.ClampExtrap(), FI.EvalValue())))
-    m_gen = which(hook, typeof((out, (x, x), A, gq.axes, (CubicInterp(), CubicInterp()), FI.ClampExtrap(), FI.EvalValue())))
+    m_gen = m_mix
     @test m_p === m_gen
     @test m_mix === m_gen
 

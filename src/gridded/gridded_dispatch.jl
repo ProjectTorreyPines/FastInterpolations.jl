@@ -22,10 +22,11 @@
     (itp::AbstractInterpolantND)(out::AbstractArray, gq::GriddedQuery; deriv = EvalValue(), extrap = nothing, search, hint)
 
 Evaluate an N-D interpolant at every combination of `gq.axes` coordinates
-(rectilinear / tensor-product), returning an N-D array of `size(gq)`. Linear,
-constant, and local-Hermite interpolants take the separable fast path (per-axis
-anchors resolved once, reused across the grid); other methods evaluate point-wise.
-`deriv`/`extrap` mirror point-wise ND eval; the 2-arg form writes into `out`.
+(rectilinear / tensor-product), returning an N-D array of `size(gq)`.
+Supported method families take the gridded fast path by resolving per-axis
+anchors once and reusing them across the grid; unsupported methods evaluate
+point-wise. `deriv`/`extrap` mirror point-wise ND eval; the 2-arg form writes
+into `out`.
 """
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
         gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};

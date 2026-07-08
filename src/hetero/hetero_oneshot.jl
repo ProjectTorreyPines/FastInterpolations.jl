@@ -461,7 +461,7 @@ function interp!(
     # Separable fast path (before any flattening, so the N-D output reaches the
     # gridded kernel without a reshape): true iff a gridded evaluator exists for
     # this (query, method) tuple.
-    _try_gridded_separable!(output, grids, data, queries, method_tuple, extrap, deriv) && return output
+    _try_gridded_separable!(output, grids, data, queries, method_tuple, extrap, deriv, coeffs) && return output
     # The batch cores fill by LINEAR index, so a shaped output (e.g. an N-D array
     # for a GriddedQuery) is written through a flat 1-D view. `vec`/`reshape`
     # aliases (never copies), so the caller's array is filled in place; we hand

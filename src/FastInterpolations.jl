@@ -28,6 +28,7 @@ include("gridded/axis_anchor.jl")       # shared per-axis anchor backbone (multi
 include("gridded/gridded_constant.jl")  # constant gather fast path
 include("gridded/gridded_hermite.jl")   # local-Hermite fullbuffer fast path
 include("gridded/gridded_dispatch.jl")  # unified itp(gq) callable on AbstractInterpolantND
+include("gridded/gridded_partials.jl")  # cubic/quadratic fused-anchor fast path
 
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")

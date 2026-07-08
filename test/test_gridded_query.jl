@@ -813,10 +813,10 @@ end
     out = Matrix{Float64}(undef, 20, 14)
     @test interp!(out, grids, A, gq; method = LinearInterp(), extrap = FI.ClampExtrap()) === out
     @test out == C
-    # a flat length-∏M vector output is also accepted (caller's choice of container)
+    # GriddedQuery's in-place one-shot output is N-D: callers must provide size(gq),
+    # not a flat batch buffer.
     vout = Vector{Float64}(undef, 20 * 14)
-    interp!(vout, grids, A, gq; method = LinearInterp(), extrap = FI.ClampExtrap())
-    @test vout == vec(C)
+    @test_throws DimensionMismatch interp!(vout, grids, A, gq; method = LinearInterp(), extrap = FI.ClampExtrap())
 
     # the generic path supports ANY method (the reason to route through it)
     Cc = interp(grids, A, gq; method = CubicInterp(), extrap = FI.ClampExtrap())

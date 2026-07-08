@@ -439,23 +439,19 @@ end
 # Public API — Batch In-Place
 # ========================================
 
-"""
-    interp!(output, grids, data, queries; method, coeffs=AutoCoeffs(), kwargs...)
-
-In-place one-shot N-dimensional interpolation at multiple points.
-Builds partials once, evaluates at all query points.
-"""
-function interp!(
+# Shared body for the public batch `interp!` methods. Query-specific contracts
+# such as GriddedQuery's shaped output requirement are checked before entry.
+function _interp_nd_oneshot_batch_public!(
         output::AbstractArray,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
-        queries;
+        queries,
         method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
-        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-        hint = nothing,
+        coeffs::AbstractCoeffStrategy,
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}},
+        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}},
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}},
+        hint,
     ) where {N}
     method_tuple = _method_tuple(method, Val(N))
     # Separable fast path (before any flattening, so the N-D output reaches the
@@ -485,6 +481,29 @@ function interp!(
     _validate_nd_coeffs(coeffs_resolved, method_tuple)
     _interp_nd_oneshot_batch_dispatch!(flat, grids, data, queries, method_tuple, deriv, extrap, search, hint, coeffs_resolved)
     return output
+end
+
+"""
+    interp!(output, grids, data, queries; method, coeffs=AutoCoeffs(), kwargs...)
+
+In-place one-shot N-dimensional interpolation at multiple points.
+Builds partials once, evaluates at all query points.
+"""
+function interp!(
+        output::AbstractArray,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
+        queries;
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        hint = nothing,
+    ) where {N}
+    return _interp_nd_oneshot_batch_public!(
+        output, grids, data, queries, method, coeffs, deriv, extrap, search, hint
+    )
 end
 
 # ========================================

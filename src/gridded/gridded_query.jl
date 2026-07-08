@@ -605,14 +605,15 @@ end
 
 # ---- unified `interp` fast-path ----------------------------------------------
 # `_try_gridded_separable!` is the `interp!` fast-path hook. A `GriddedQuery`
-# reaches one method-tuple dispatcher; supported method families prepare raw
-# one-shot inputs and then call `_gridded_eval_methods!`. Unsupported tuples
-# return `false`, so `interp!` falls through to its point-wise batch.
+# reaches one method-tuple dispatcher with an already shaped N-D output;
+# supported method families prepare raw one-shot inputs and then call
+# `_gridded_eval_methods!`. Unsupported tuples return `false`, so `interp!`
+# falls through to its point-wise batch.
 @inline _try_gridded_separable!(output, grids, data, queries, methods, extrap, deriv) =
     _try_gridded_separable!(output, grids, data, queries, methods, extrap, deriv, AutoCoeffs())
 @inline _try_gridded_separable!(output, grids, data, queries, methods, extrap, deriv, coeffs) = false
 @inline function _try_gridded_separable!(
-        output,
+        output::AbstractArray{<:Any, N},
         grids,
         data::AbstractArray{Tv, N},
         gq::GriddedQuery{<:Tuple{Vararg{Any, N}}},
@@ -621,8 +622,42 @@ end
         deriv,
         coeffs
     ) where {Tv, N}
-    out_nd = output isa AbstractVector ? reshape(output, size(gq)) : output
-    return _try_gridded_oneshot_methods!(out_nd, grids, data, gq, methods, extrap, deriv, coeffs)
+    return _try_gridded_oneshot_methods!(output, grids, data, gq, methods, extrap, deriv, coeffs)
+end
+
+function interp!(
+        output::AbstractArray{Tout, N},
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
+        gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        hint = nothing,
+    ) where {Tout, N}
+    size(output) == size(gq) || throw(
+        DimensionMismatch("output size $(size(output)) != query size $(size(gq))")
+    )
+    return _interp_nd_oneshot_batch_public!(
+        output, grids, data, gq, method, coeffs, deriv, extrap, search, hint
+    )
+end
+
+function interp!(
+        output::AbstractArray,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
+        gq::GriddedQuery{<:Tuple{Vararg{Any, N}}};
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        coeffs::AbstractCoeffStrategy = AutoCoeffs(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        hint = nothing,
+    ) where {N}
+    throw(DimensionMismatch("output size $(size(output)) != query size $(size(gq))"))
 end
 
 @inline _try_gridded_oneshot_methods!(out, grids, data, targets, methods, extrap, deriv) = false

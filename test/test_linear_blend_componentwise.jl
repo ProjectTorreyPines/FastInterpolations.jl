@@ -210,6 +210,119 @@ end
     @test v == muladd(0.3, gb, (1 - 0.3) * ga)
 end
 
+@testitem "componentwise colorants: flat extrapolation inference across 1D ND GQ" begin
+    using FastInterpolations
+    using FixedPointNumbers, ColorTypes, ColorVectorSpace
+    const FI = FastInterpolations
+
+    x = [1.0, 2.0, 3.0]
+    c = [
+        RGB{N0f8}(0.9, 0.1, 0.5),
+        RGB{N0f8}(0.1, 0.8, 0.2),
+        RGB{N0f8}(0.7, 0.3, 0.9),
+    ]
+    fill = RGB{N0f8}(0.2, 0.3, 0.4)
+    A = [
+        RGB{N0f8}(0.15 * i, 0.2 * j, 0.1 + 0.05 * i)
+            for i in 1:3, j in 1:3
+    ]
+
+    let extrap = FI.ClampExtrap()
+        itp1 = FI.linear_interp(x, c; extrap)
+
+        # 1D flat-extrap shortcut: OOB returns the boundary sample without
+        # entering the interpolation kernel, so it must still widen like the
+        # in-domain colorant kernel.
+        @test @inferred(itp1(1.5)) isa RGB{Float64}
+        @test @inferred(itp1(0.5)) isa RGB{Float64}
+        @test @inferred(itp1(3.5)) isa RGB{Float64}
+        @test @inferred(itp1(0.5; deriv = FI.EvalDeriv1())) isa RGB{Float64}
+        @test @inferred(FI.linear_interp(x, c, 0.5; extrap)) isa RGB{Float64}
+        @test itp1(0.5) == RGB{Float64}(c[1])
+        @test itp1(3.5) == RGB{Float64}(c[end])
+
+        out1 = Vector{RGB{Float64}}(undef, 2)
+        @test @inferred(itp1(out1, [0.5, 1.5])) === out1
+
+        # ND ClampExtrap clamps coordinates then uses the normal kernel; keep it
+        # in the same contract so a future shortcut cannot reintroduce a raw
+        # RGB{N0f8} OOB result.
+        itp2 = FI.linear_interp((x, x), A; extrap, store = FI.StorePolicy(; copy = false))
+        @test @inferred(itp2(0.5, 1.5)) isa RGB{Float64}
+        @test @inferred(itp2((0.5, 1.5))) isa RGB{Float64}
+        @test @inferred(itp2(0.5, 1.5; deriv = (FI.EvalDeriv1(), FI.EvalValue()))) isa RGB{Float64}
+        @test @inferred(FI.linear_interp((x, x), A, (0.5, 1.5); extrap)) isa RGB{Float64}
+
+        outb = Vector{RGB{Float64}}(undef, 2)
+        @test @inferred(itp2(outb, ([0.5, 1.5], [1.5, 2.5]))) === outb
+
+        gq = FI.GriddedQuery(([0.5, 1.5], [1.5, 2.5]))
+        @test @inferred(itp2(gq)) isa Matrix{RGB{Float64}}
+
+        outg = Matrix{RGB{Float64}}(undef, 2, 2)
+        @test @inferred(itp2(outg, gq)) === outg
+        @test (
+            @inferred(FI.interp((x, x), A, gq; method = FI.LinearInterp(), extrap))
+        ) isa Matrix{RGB{Float64}}
+
+        outg2 = similar(outg)
+        @test @inferred(FI.interp!(outg2, (x, x), A, gq; method = FI.LinearInterp(), extrap)) === outg2
+    end
+
+    let extrap = FI.FillExtrap(fill)
+        itp1 = FI.linear_interp(x, c; extrap)
+
+        # 1D FillExtrap takes the same OOB shortcut as ClampExtrap, but with the
+        # fill value as the OOB cell data.
+        @test @inferred(itp1(1.5)) isa RGB{Float64}
+        @test @inferred(itp1(0.5)) isa RGB{Float64}
+        @test @inferred(itp1(3.5)) isa RGB{Float64}
+        @test @inferred(itp1(0.5; deriv = FI.EvalDeriv1())) isa RGB{Float64}
+        @test @inferred(FI.linear_interp(x, c, 0.5; extrap)) isa RGB{Float64}
+        @test itp1(0.5) == RGB{Float64}(fill)
+        @test itp1(3.5) == RGB{Float64}(fill)
+
+        out1 = Vector{RGB{Float64}}(undef, 2)
+        @test @inferred(itp1(out1, [0.5, 1.5])) === out1
+
+        # ND FillExtrap has its own `_try_fill_oob` shortcut before cell
+        # location/evaluation. That shortcut must match the in-domain widened
+        # kernel result type for both scalar and batch calls.
+        itp2 = FI.linear_interp((x, x), A; extrap, store = FI.StorePolicy(; copy = false))
+        @test @inferred(itp2(0.5, 1.5)) isa RGB{Float64}
+        @test @inferred(itp2((0.5, 1.5))) isa RGB{Float64}
+        @test @inferred(itp2(0.5, 1.5; deriv = (FI.EvalDeriv1(), FI.EvalValue()))) isa RGB{Float64}
+        @test @inferred(FI.linear_interp((x, x), A, (0.5, 1.5); extrap)) isa RGB{Float64}
+        @test itp2(0.5, 1.5) == RGB{Float64}(fill)
+
+        outb = Vector{RGB{Float64}}(undef, 2)
+        @test @inferred(itp2(outb, ([0.5, 1.5], [1.5, 2.5]))) === outb
+        @test outb[1] == RGB{Float64}(fill)
+
+        # GriddedQuery FillExtrap uses the separable kernel first, then a slab
+        # fill post-pass. The filled slabs must keep the same widened output
+        # type as the separable in-domain cells.
+        gq = FI.GriddedQuery(([0.5, 1.5], [1.5, 3.5]))
+        G = @inferred(itp2(gq))
+        @test G isa Matrix{RGB{Float64}}
+        @test G[1, 1] == RGB{Float64}(fill)
+        @test G[1, 2] == RGB{Float64}(fill)
+        @test G[2, 2] == RGB{Float64}(fill)
+
+        outg = Matrix{RGB{Float64}}(undef, 2, 2)
+        @test @inferred(itp2(outg, gq)) === outg
+        @test outg[1, 1] == RGB{Float64}(fill)
+
+        @test (
+            @inferred(FI.interp((x, x), A, gq; method = FI.LinearInterp(), extrap))
+        ) isa Matrix{RGB{Float64}}
+
+        outg2 = similar(outg)
+        @test @inferred(FI.interp!(outg2, (x, x), A, gq; method = FI.LinearInterp(), extrap)) === outg2
+        @test outg2[1, 1] == RGB{Float64}(fill)
+    end
+end
+
 @testitem "componentwise colorants: alpha-channel parity (AGray/ARGB)" begin
     using FastInterpolations: _linear_value_blend
     using FixedPointNumbers, ColorTypes, ColorVectorSpace

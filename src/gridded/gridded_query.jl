@@ -60,29 +60,7 @@ Base.ndims(::GriddedQuery{T}) where {T} = fieldcount(T)
     return ntuple(d -> @inbounds(gq.axes[d][ci[d]]), Val(fieldcount(T)))
 end
 
-# ---- per-axis anchor --------------------------------------------------------
-# The retained per-axis resolution artifact: interval index + linear weight +
-# cell reciprocal width, with extrapolation already folded into the weight.
-# 24 B isbits; one Vector per query axis is the whole precomputation. `inv_h`
-# feeds the derivative kernels (DCE'd by value-only evaluation).
-struct _GriddedAnchor{T <: Real}
-    idx::Int    # left node index (right node = idx + 1)
-    alpha::T    # normalized in-cell weight; may leave [0, 1] under ExtendExtrap
-    inv_h::T    # reciprocal cell width 1/(x[idx+1] - x[idx])
-end
-
-"""
-    _gridded_anchors!(anchors, grid, targets, extrap, dim) -> anchors
-
-Resolve every target coordinate in `targets` against `grid` once — the O(M)
-work that both strategies reuse O(∏M_d) times. Extrapolation is folded here:
-`WrapExtrap` folds the coordinate into the domain, `ClampExtrap`/`FillExtrap`
-clamp the weight to the boundary node (Fill's OOB slabs are overwritten by the
-[`_gridded_fill_oob!`](@ref) post-pass), `ExtendExtrap` keeps the out-of-range
-weight (linear extrapolation), and `NoExtrap` throws on the first
-out-of-domain coordinate — BEFORE any output-sized buffer exists. `dim` names
-the axis in that error.
-"""
+# ---- per-axis anchor resolution --------------------------------------------
 # Anchor-build searcher. Range grids resolve to the O(1) direct arm as usual.
 # For search-based (Vector) grids, CLUSTERED targets chain a hint instead
 # (LinearBinarySearch, walk window 8): each search starts at the previous
@@ -103,63 +81,11 @@ the axis in that error.
     return _to_searcher(LinearBinarySearch())
 end
 
-function _gridded_anchors!(
-        anchors::Vector{_GriddedAnchor{T}},
-        grid::AbstractVector,
-        targets::AbstractVector,
-        extrap::AbstractExtrap,
-        dim::Int
-    ) where {T}
-    length(anchors) == length(targets) || throw(
-        DimensionMismatch("anchor buffer length $(length(anchors)) != query length $(length(targets))")
-    )
-    return _gridded_anchors_loop!(anchors, grid, targets, extrap, dim, _gridded_build_searcher(grid, targets))
-end
-
-# The searcher union (direct / binary / hinted) splits at this call, keeping
-# the fill loop fully specialized per arm. @inline is LOAD-BEARING: it keeps
-# the hinted arm's fresh `RefHint` inside the caller's compiled unit, so
-# escape analysis elides the `Ref(1)` heap allocation — the same mechanism
-# that keeps `_ensure_hint_nd`'s per-call Refs allocation-free on the scalar
-# ND path. A non-inlined barrier here measured 32 B/axis.
-@inline function _gridded_anchors_loop!(
-        anchors::Vector{_GriddedAnchor{T}},
-        grid::AbstractVector,
-        targets::AbstractVector,
-        extrap::AbstractExtrap,
-        dim::Int,
-        searcher::Searcher
-    ) where {T}
-    k = 0
-    @inbounds for xq in targets
-        k += 1
-        if extrap isa InBounds
-            # caller-asserted in-domain (call-time override): skip the domain
-            # classification and take the lean search directly — the same call
-            # the default path reaches after its `_oob_state` check, so
-            # in-domain anchors are bit-identical to the default path's.
-            idx, _, xL, xR = search_interval(searcher, grid, xq, extrap)
-            inv_h = _get_inv_h(grid, idx, xL, xR)
-            anchors[k] = _GriddedAnchor{T}(idx, T(_alpha_of(xq, xL, inv_h)), T(inv_h))
-            continue
-        end
-        loc = _anchor_loc(grid, xq, extrap isa WrapExtrap, searcher)
-        if extrap isa NoExtrap && loc.state != IN_DOMAIN
-            _throw_domain_error(xq, grid, dim)   # canonical message, axis-named
-        end
-        inv_h = _get_inv_h(grid, loc.idx, loc.xL, loc.xR)
-        α = T(_alpha_of(loc.xq, loc.xL, inv_h))
-        if extrap isa Union{ClampExtrap, FillExtrap}
-            α = clamp(α, zero(T), one(T))
-        end
-        anchors[k] = _GriddedAnchor{T}(loc.idx, α, T(inv_h))
-    end
-    return anchors
-end
-
 # Weight type: float promotion of grid × query (Float32 grid+query stays Float32).
 @inline _gridded_alpha_type(grid::AbstractVector, targets::AbstractVector) =
     float(promote_type(eltype(grid), eltype(targets)))
+
+@inline _linear_gridded_anchor_method() = LinearInterp(NoBC())
 
 function _gridded_anchors(
         grid::AbstractVector,
@@ -168,9 +94,31 @@ function _gridded_anchors(
         dim::Int
     )
     T = _gridded_alpha_type(grid, targets)
-    return _gridded_anchors!(
-        Vector{_GriddedAnchor{T}}(undef, length(targets)), grid, targets, extrap, dim
-    )
+    return _gridded_anchors(grid, targets, extrap, dim, T)
+end
+
+function _gridded_anchors(
+        grid::AbstractVector,
+        targets::AbstractVector,
+        extrap::AbstractExtrap,
+        dim::Int,
+        ::Type{Tvals}
+    ) where {Tvals}
+    m = _linear_gridded_anchor_method()
+    A = _axis_anchor_type(m, grid, targets, Tvals)
+    anchors = Vector{A}(undef, length(targets))
+    return _axis_anchors_loop!(anchors, m, grid, targets, extrap, dim, _gridded_build_searcher(grid, targets))
+end
+
+function _gridded_anchors_pooled(
+        pool,
+        grid::AbstractVector,
+        targets::AbstractVector,
+        extrap::AbstractExtrap,
+        dim::Int,
+        ::Type{Tvals}
+    ) where {Tvals}
+    return _axis_anchors_pooled(pool, _linear_gridded_anchor_method(), grid, targets, extrap, dim, Tvals)
 end
 
 function _gridded_anchors_pooled(
@@ -181,9 +129,7 @@ function _gridded_anchors_pooled(
         dim::Int
     )
     T = _gridded_alpha_type(grid, targets)
-    return _gridded_anchors!(
-        acquire!(pool, _GriddedAnchor{T}, length(targets)), grid, targets, extrap, dim
-    )
+    return _gridded_anchors_pooled(pool, grid, targets, extrap, dim, T)
 end
 
 # ---- FUSED strategy ---------------------------------------------------------
@@ -202,12 +148,19 @@ end
 # the axis-1 combine. The combine is the shared 1D kernel
 # `_linear_kernel(op, yL, yR, inv_h, α)`, so the per-axis op selects value
 # blend / slope / carrier-zero exactly as point-wise ND eval does.
+@inline _linear_gridded_anchor_components(a) =
+    _linear_gridded_anchor_components(a, a.payload)
+@inline _linear_gridded_anchor_components(a, p::Tuple{Tα, Tinv}) where {Tα, Tinv} =
+    (a.idx + 1, p[1], p[2])
+@inline _linear_gridded_anchor_components(a, p::Tuple{Int, Tα, Tinv}) where {Tα, Tinv} =
+    (p[1], p[2], p[3])
+
 function _fused_corner_expr(N::Int, d::Int, idxs::Vector{Any})
     d > N && return Expr(:ref, :A, idxs...)
     lo = copy(idxs)
     lo[d] = Symbol(:il_, d)
     hi = copy(idxs)
-    hi[d] = :($(Symbol(:il_, d)) + 1)
+    hi[d] = Symbol(:ir_, d)
     return :(
         _linear_kernel(
             ops[$d],
@@ -222,7 +175,7 @@ end
 @generated function _gridded_fused!(
         out::AbstractArray{<:Any, N},
         A::AbstractArray{<:Any, N},
-        anchors::NTuple{N, Vector{<:_GriddedAnchor}},
+        anchors::NTuple{N, Vector},
         ops::Tuple{Vararg{AbstractEvalOp, N}}
     ) where {N}
     js = [Symbol(:j_, d) for d in 1:N]
@@ -233,8 +186,8 @@ end
             for $(js[d]) in eachindex(anchors[$d])
                 $a = anchors[$d][$(js[d])]
                 $(Symbol(:il_, d)) = $a.idx
-                $(Symbol(:alpha_, d)) = $a.alpha
-                $(Symbol(:invh_, d)) = $a.inv_h
+                $(Symbol(:ir_, d)), $(Symbol(:alpha_, d)), $(Symbol(:invh_, d)) =
+                    _linear_gridded_anchor_components($a)
                 $body
             end
         end
@@ -248,7 +201,7 @@ end
 _gridded_fused!(
     out::AbstractArray{<:Any, N},
     A::AbstractArray{<:Any, N},
-    anchors::NTuple{N, Vector{<:_GriddedAnchor}}
+    anchors::NTuple{N, Vector}
 ) where {N} = _gridded_fused!(out, A, anchors, ntuple(_ -> EvalValue(), Val(N)))
 
 # ---- FULLBUFFER strategy ----------------------------------------------------
@@ -263,7 +216,7 @@ _gridded_fused!(
 @generated function _gridded_pass!(
         dest::AbstractArray{<:Any, N},
         src::AbstractArray{<:Any, N},
-        anchors::Vector{<:_GriddedAnchor},
+        anchors::Vector,
         op::AbstractEvalOp,
         ::Val{D},
         ranges::NTuple{N, UnitRange{Int}}
@@ -272,9 +225,9 @@ _gridded_fused!(
     lo = Any[js[d] for d in 1:N]
     lo[D] = :il
     hi = copy(lo)
-    hi[D] = :(il + 1)
+    hi[D] = :ir
     body = :(
-        dest[$(js...)] = _linear_kernel(op, src[$(lo...)], src[$(hi...)], a.inv_h, a.alpha)
+        dest[$(js...)] = _linear_kernel(op, src[$(lo...)], src[$(hi...)], invh, alpha)
     )
     for d in 1:N   # d = 1 built first → innermost loop
         body = if d == D
@@ -282,6 +235,7 @@ _gridded_fused!(
                 for $(js[d]) in eachindex(anchors)
                     a = anchors[$(js[d])]
                     il = a.idx
+                    ir, alpha, invh = _linear_gridded_anchor_components(a)
                     $body
                 end
             end
@@ -303,7 +257,7 @@ end
 _gridded_pass!(
     dest::AbstractArray{<:Any, N},
     src::AbstractArray{<:Any, N},
-    anchors::Vector{<:_GriddedAnchor},
+    anchors::Vector,
     op::AbstractEvalOp,
     v::Val
 ) where {N} = _gridded_pass!(dest, src, anchors, op, v, map(UnitRange{Int}, axes(src)))
@@ -315,7 +269,7 @@ _gridded_pass!(
 @generated function _gridded_pass_dim!(
         dest::AbstractArray{<:Any, N},
         src::AbstractArray{<:Any, N},
-        anchors::NTuple{N, Vector{<:_GriddedAnchor}},
+        anchors::NTuple{N, Vector},
         ops::Tuple{Vararg{AbstractEvalOp, N}},
         d::Int,
         ranges::NTuple{N, UnitRange{Int}}
@@ -339,7 +293,7 @@ end
 # extrema ARE the tap extrema. Wrap folds coordinates and breaks that
 # monotonicity — it keeps the full axis.
 _gridded_hull(grid::AbstractVector, targets::AbstractVector, ::WrapExtrap) =
-    1:length(grid)
+    1:_data_length(grid)
 function _gridded_hull(grid::AbstractVector, targets::AbstractVector, ::AbstractExtrap)
     # separate minimum/maximum: each SIMD-vectorizes (~0.15 ns/elem measured);
     # Base.extrema's tuple-mapreduce is ~34x slower and was end-to-end visible
@@ -369,7 +323,7 @@ end
 @with_pool pool function _gridded_fullbuffer!(
         out::AbstractArray{<:Any, N},
         A::AbstractArray{<:Any, N},
-        anchors::NTuple{N, Vector{<:_GriddedAnchor}},
+        anchors::NTuple{N, Vector},
         ops::Tuple{Vararg{AbstractEvalOp, N}},
         hulls::NTuple{N, UnitRange{Int}},
         ::Type{Tmid}
@@ -411,7 +365,7 @@ function _gridded_apply!(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
         targets::Tuple,
-        anchors::NTuple{N, Vector{<:_GriddedAnchor}},
+        anchors::NTuple{N, Vector},
         ops::Tuple{Vararg{AbstractEvalOp, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         ::Type{Tmid}
@@ -508,7 +462,7 @@ end
         ::Type{Tout}
     ) where {N, Tout}
     anchors = ntuple(
-        d -> _gridded_anchors_pooled(pool, grids[d], targets[d], extraps[d], d),
+        d -> _gridded_anchors_pooled(pool, grids[d], targets[d], extraps[d], d, Tout),
         Val(N)
     )
     out = Array{Tout, N}(undef, map(length, targets))
@@ -526,7 +480,7 @@ end
         ::Type{Tout}
     ) where {N, Tout}
     anchors = ntuple(
-        d -> _gridded_anchors_pooled(pool, grids[d], targets[d], extraps[d], d),
+        d -> _gridded_anchors_pooled(pool, grids[d], targets[d], extraps[d], d, Tout),
         Val(N)
     )
     _gridded_apply!(out, grids, data, targets, anchors, ops, extraps, Tout)
@@ -579,18 +533,24 @@ end
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
         targets::Tuple,
+        bcs::NTuple{N, AbstractBC},
         ops::Tuple{Vararg{AbstractEvalOp, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         ::Type{Tg},
         ::Type{Tout}
     ) where {N, Tg, Tout}
-    grids_c = map(g -> _cache_axis_pooled(pool, g, Tg), grids)
-    extraps_c = map(_resolve_extrap, extraps, grids_c)
+    grids_c = map((g, bc) -> _linear_gridded_axis_pooled(pool, g, bc, Tg), grids, bcs)
+    extraps_c = _resolve_extrap(extraps, bcs, grids_c, data, Val(N))
     _gridded_eval_methods!(
         out, grids_c, data, targets, ntuple(_ -> LinearInterp(NoBC()), Val(N)), ops, extraps_c
     )
     return out
 end
+
+@inline _linear_gridded_axis_pooled(pool, grid, ::AbstractBC, ::Type{Tg}) where {Tg} =
+    _cache_axis_pooled(pool, grid, Tg)
+@inline _linear_gridded_axis_pooled(pool, grid, bc::PeriodicBC{:exclusive}, ::Type{Tg}) where {Tg} =
+    _cache_axis(_cache_axis_pooled(pool, grid, Tg), bc)
 
 """
     linear_interp(grids, data, gq::GriddedQuery; bc, extrap, deriv)
@@ -634,11 +594,9 @@ function linear_interp!(
         grids::Tuple{AbstractVector},
         data::AbstractVector,
         gq::GriddedQuery{<:Tuple{Any}};
-        bc::Union{AbstractBC, Tuple{AbstractBC}} = NoBC(),
-        extrap::Union{AbstractExtrap, Tuple{AbstractExtrap}} = NoExtrap(),
-        deriv::Union{DerivOp, Tuple{DerivOp}} = EvalValue()
+        kwargs...
     )
-    return interp!(out, grids, data, gq; method = _linear_gridded_methods(bc, Val(1)), extrap = extrap, deriv = deriv)
+    return linear_interp!(out, only(grids), data, only(gq.axes); _unwrap_nd_kwargs(values(kwargs))...)
 end
 
 # `bc` (single or per-axis) → the per-axis `LinearInterp` method tuple `interp` wants.
@@ -702,6 +660,6 @@ end
     extraps = _resolve_extrap(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     Tout = _gridded_out_eltype(Tg, Tv, targets)
-    _linear_gridded_oneshot!(out_nd, grids, data, targets, ops, extraps, Tg, Tout)
+    _linear_gridded_oneshot!(out_nd, grids, data, targets, bcs, ops, extraps, Tg, Tout)
     return true
 end

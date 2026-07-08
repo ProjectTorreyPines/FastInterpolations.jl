@@ -23,6 +23,7 @@ end
         ::Type{_AxisAnchor{M, Tuple{Tdl, Tw, Tw2}}},
         grid::AbstractVector,
         idx::Int,
+        idxR::Int,
         xq,
         xL,
         xR,

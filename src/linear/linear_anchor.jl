@@ -296,11 +296,7 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
     inv_h = _get_inv_h(x, loc.idx)
     alpha = (loc.xq - loc.xL) * inv_h
 
-    # `_anchor_loc` never returns a periodic-exclusive seam pair — it operates
-    # on a fixed grid with at most wrap-to-domain remapping — so `idxR = idxL+1`
-    # here. Periodic-exclusive seam anchors are constructed via `_LinearAnchoredQuery(...)`
-    # directly in the exclusive periodic one-shot helpers (bypassing `_anchor_loc`).
-    return _LinearAnchoredQuery(_IdxPair(loc.idx, loc.idx + 1), loc.xq, loc.state, loc.xL, h, inv_h, alpha)
+    return _LinearAnchoredQuery(_IdxPair(loc.idx, loc.idxR), loc.xq, loc.state, loc.xL, h, inv_h, alpha)
 end
 
 # ========================================

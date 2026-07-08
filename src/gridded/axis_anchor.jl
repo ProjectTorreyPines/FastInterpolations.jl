@@ -2,11 +2,10 @@
 # _AxisAnchor — shared per-axis anchor backbone for gridded (separable) eval
 # ============================================================================
 #
-# Generalizes the linear-only `_GriddedAnchor` pattern to any method: the
-# RESOLUTION scaffold (searcher selection + hint chaining, InBounds lean arm,
-# NoExtrap throwing BEFORE any output-sized allocation) is shared, while each
-# method defines its own isbits payload via `_resolve_anchor`. Kernels and
-# pass generators stay per-family — linear's tuned generators are untouched.
+# Shared RESOLUTION scaffold (searcher selection + hint chaining, InBounds lean
+# arm, NoExtrap throwing BEFORE any output-sized allocation). Each method
+# defines its own isbits payload via `_resolve_anchor`, and consuming kernels
+# stay per-family.
 #
 # `M` is the method type (phantom tag): it routes the consuming pass primitive
 # and keeps same-shape payloads of different methods from cross-wiring.
@@ -28,6 +27,30 @@ end
     ) where {Tvals}
     Tone = promote_type(eltype(grid), eltype(targets))
     return _AxisAnchor{typeof(m), Tuple{Tone}}
+end
+
+@inline function _axis_anchor_type(
+        m::LinearInterp,
+        grid::AbstractVector,
+        targets::AbstractVector,
+        ::Type{Tvals}
+    ) where {Tvals}
+    Tw = _promote_grid_float(eltype(grid), Tvals)
+    Tinv = _promote_eltype(_inv_op, Tw)
+    Tα = promote_type(eltype(grid), eltype(targets), Tinv)
+    return _AxisAnchor{typeof(m), Tuple{Tα, Tinv}}
+end
+
+@inline function _axis_anchor_type(
+        m::LinearInterp,
+        grid::_ExclusivePeriodicAxis,
+        targets::AbstractVector,
+        ::Type{Tvals}
+    ) where {Tvals}
+    Tw = _promote_grid_float(eltype(grid), Tvals)
+    Tinv = _promote_eltype(_inv_op, Tw)
+    Tα = promote_type(eltype(grid), eltype(targets), Tinv)
+    return _AxisAnchor{typeof(m), Tuple{Int, Tα, Tinv}}
 end
 
 @inline function _axis_anchor_type(
@@ -54,6 +77,7 @@ end
         ::Type{_AxisAnchor{M, Tuple{Tone}}},
         grid::AbstractVector,
         idx::Int,
+        idxR::Int,
         xq,
         xL,
         xR,
@@ -68,6 +92,44 @@ end
     return _AxisAnchor{M, Tuple{Tone}}(idx + off, (Tone(one(dL)),))
 end
 
+@inline function _resolve_anchor(
+        ::LinearInterp,
+        ::Type{_AxisAnchor{M, Tuple{Tα, Tinv}}},
+        grid::AbstractVector,
+        idx::Int,
+        idxR::Int,
+        xq,
+        xL,
+        xR,
+        extrap::AbstractExtrap
+    ) where {M, Tα, Tinv}
+    inv_h = Tinv(_get_inv_h(grid, idx, xL, xR))
+    α = Tα(_alpha_of(xq, xL, inv_h))
+    if extrap isa Union{ClampExtrap, FillExtrap}
+        α = clamp(α, zero(Tα), one(Tα))
+    end
+    return _AxisAnchor{M, Tuple{Tα, Tinv}}(idx, (α, inv_h))
+end
+
+@inline function _resolve_anchor(
+        ::LinearInterp,
+        ::Type{_AxisAnchor{M, Tuple{Int, Tα, Tinv}}},
+        grid::AbstractVector,
+        idx::Int,
+        idxR::Int,
+        xq,
+        xL,
+        xR,
+        extrap::AbstractExtrap
+    ) where {M, Tα, Tinv}
+    inv_h = Tinv(_get_inv_h(grid, idx, xL, xR))
+    α = Tα(_alpha_of(xq, xL, inv_h))
+    if extrap isa Union{ClampExtrap, FillExtrap}
+        α = clamp(α, zero(Tα), one(Tα))
+    end
+    return _AxisAnchor{M, Tuple{Int, Tα, Tinv}}(idx, (idxR, α, inv_h))
+end
+
 # Local Hermite: location-only payload `(dL, h, inv_h)` — slopes are
 # data-dependent (and nonlinear), computed in-pass; geometry runs at the
 # value-matched `Tw` exactly like the point-wise 1D arm. Clamp/Fill folds the
@@ -80,6 +142,7 @@ end
         ::Type{_AxisAnchor{M, Tuple{Tdl, Tw, Tw2}}},
         grid::AbstractVector,
         idx::Int,
+        idxR::Int,
         xq,
         xL,
         xR,
@@ -114,15 +177,15 @@ end
         if extrap isa InBounds
             # caller-asserted in-domain: lean search, same call the default
             # path reaches after its `_oob_state` check (bit-identical anchors).
-            idx, _, xL, xR = search_interval(searcher, grid, xq, extrap)
-            anchors[k] = _resolve_anchor(m, A, grid, idx, xq, xL, xR, extrap)
+            idx, idxR, xL, xR = search_interval(searcher, grid, xq, extrap)
+            anchors[k] = _resolve_anchor(m, A, grid, idx, idxR, xq, xL, xR, extrap)
             continue
         end
         loc = _anchor_loc(grid, xq, extrap isa WrapExtrap, searcher)
         if extrap isa NoExtrap && loc.state != IN_DOMAIN
             _throw_domain_error(xq, grid, dim)
         end
-        anchors[k] = _resolve_anchor(m, A, grid, loc.idx, loc.xq, loc.xL, loc.xR, extrap)
+        anchors[k] = _resolve_anchor(m, A, grid, loc.idx, loc.idxR, loc.xq, loc.xL, loc.xR, extrap)
     end
     return anchors
 end

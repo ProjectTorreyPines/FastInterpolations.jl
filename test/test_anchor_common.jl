@@ -79,6 +79,41 @@
         @test loc.xq ≈ 0.25
     end
 
+    @testset "_anchor_loc — _ExclusivePeriodicAxis preserves search idxR" begin
+        x = collect(0.0:3.0)
+        bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+        xper = FI._cache_axis(x, bc)
+        searcher = FI._to_searcher(BinarySearch())
+
+        # The seam cell's right tap is the physical first node. `_anchor_loc`
+        # should preserve the same 4-tuple contract as search_interval instead
+        # of manufacturing a virtual idxR by hand.
+        expected = FI.search_interval(searcher, xper, 4.25)
+        loc = FI._anchor_loc(xper, 4.25, false, searcher)
+        @test expected[1] == 4
+        @test expected[2] == 1
+        @test loc.state == FI.OOB_RIGHT
+        @test loc.idx == expected[1]
+        @test loc.idxR == expected[2]
+        @test loc.xL == expected[3]
+        @test loc.xR == expected[4]
+
+        aq_linear = FI._anchor_query(xper, 4.25, Val(:linear), false, searcher)
+        aq_constant = FI._anchor_query(xper, 4.25, Val(:constant), false, searcher)
+        aq_cubic = FI._anchor_query(xper, 4.25, Val(:cubic), false, searcher)
+        @test aq_linear.idxL == 4 && aq_linear.idxR == 1
+        @test aq_constant.idxL == 4 && aq_constant.idxR == 1
+        @test aq_cubic.idxL == 4 && aq_cubic.idxR == 1
+
+        # Periodic wrap remains caller-owned: strict OOB values are folded
+        # before search and then use the normal interior interval.
+        loc_wrap = FI._anchor_loc(xper, 4.25, true, searcher)
+        @test loc_wrap.state == FI.IN_DOMAIN
+        @test loc_wrap.xq ≈ 0.25
+        @test loc_wrap.idx == 1
+        @test loc_wrap.idxR == 2
+    end
+
     # ========================================
     # _anchor_loc with _CachedRange
     # ========================================

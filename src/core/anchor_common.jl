@@ -56,15 +56,16 @@ with NO geometry (h, inv_h, dL, dR). Geometry is each method's internal concern.
 - `Tg <: AbstractFloat`: grid element type (for `xL`, `xR`)
 - `Tq <: Real`: query type (preserves ForwardDiff.Dual for AD)
 
-# Fields
-- `idx::Int`: interval index ∈ 1:(n-1)
+- `idx::Int`: left interval index
+- `idxR::Int`: right interval index; may wrap for exclusive-periodic axes
 - `xq::Tq`: query point (possibly wrapped), preserves Dual for AD
 - `state::UInt8`: domain state — `IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`
 - `xL::Tg`: left node x[idx]
-- `xR::Tg`: right node x[idx+1]
+- `xR::Tg`: right coordinate paired with `idxR`
 """
 struct _AnchorLoc{Tg, Tq <: Real}
     idx::Int
+    idxR::Int
     xq::Tq
     state::UInt8
     xL::Tg
@@ -81,7 +82,8 @@ end
 Shared interval location for all interpolation methods.
 Performs: domain-state classification (`_oob_state`, widened `_CachedRange`
 bracket) → wrap-fold only for OOB queries when `wrap` (then re-classify) →
-interval search (boundary cell for OOB, `search_interval` otherwise).
+interval search (lean `InBounds` for in-domain, guarded `search_interval` for
+OOB).
 
 Returns `_AnchorLoc` with NO geometry — each method computes its own
 h/inv_h/dL/dR from `xL`, `xR`, `xq` as needed.
@@ -122,23 +124,20 @@ Dual type. The interval search uses `_extract_primal(xq)` for comparisons.
         state = _oob_state(x, xq_primal)
     end
 
-    # Find interval
-    # For outside-domain points, use boundary intervals for weight computation
-    idx, xL, xR = if state == OOB_LEFT
-        @inbounds (1, x[1], x[2])
-    elseif state == OOB_RIGHT
-        n = length(x)
-        @inbounds (n - 1, x[n - 1], x[n])
-    else
+    # Find interval. OOB queries still use the guarded search so boundary
+    # clamping and wrapper-specific contracts (notably `_ExclusivePeriodicAxis`
+    # seam `idxR == 1`) stay centralized in `search_interval`.
+    idx, idxR, xL, xR = if state == IN_DOMAIN
         # IN_DOMAIN: `_oob_state` already established the (possibly wrapped) query is in-domain, so
         # the interval search takes the lean path (InBounds) — bit-identical to guarded,
         # coupled to the `_oob_state` classification above. A `_ExclusivePeriodicAxis` routes to its
         # seam-aware search via the InBounds overload (periodic_axis.jl). (Perf-neutral in practice:
         # the search is amortized over K series and `_oob_state` already pays the boundary compares;
         # kept for consistency with the other in-domain search paths.)
-        _i, _, _xL, _xR = search_interval(policy, x, xq_primal, InBounds())
-        (_i, _xL, _xR)
+        search_interval(policy, x, xq_primal, InBounds())
+    else
+        search_interval(policy, x, xq_primal)
     end
 
-    return _AnchorLoc{Tg, typeof(xq)}(idx, xq, state, xL, xR)
+    return _AnchorLoc{Tg, typeof(xq)}(idx, idxR, xq, state, xL, xR)
 end

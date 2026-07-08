@@ -1,26 +1,29 @@
 # GriddedQuery separable 2D-linear evaluation.
-# Per-axis anchors (idx + weight) are precomputed once and reused by two
-# strategies: fused (pure downsampling) and two-pass full buffer (otherwise).
+# Per-axis anchors are precomputed once and reused by two strategies: fused
+# (pure downsampling) and multi-pass full buffer (otherwise).
 
-@testitem "_GriddedAnchor: builder + extrap fold" begin
+@testitem "_AxisAnchor: linear builder + extrap fold" begin
     using FastInterpolations
-    using FastInterpolations: _GriddedAnchor, _gridded_anchors
+    import FastInterpolations as FI
+    using FastInterpolations: _AxisAnchor, _gridded_anchors
 
     g = collect(1.0:10.0)
+    linear_anchor_type = _AxisAnchor{typeof(LinearInterp(NoBC())), Tuple{Float64, Float64}}
+    @test !isdefined(FI, :_GriddedAnchor)
 
     # in-domain: interval index + normalized in-cell weight
     b = _gridded_anchors(g, [3.25], ExtendExtrap(), 1)
-    @test eltype(b) == _GriddedAnchor{Float64}
+    @test eltype(b) == linear_anchor_type
     @test isbits(b[1]) && sizeof(b[1]) == 24
     @test b[1].idx == 3
-    @test b[1].alpha ≈ 0.25
-    @test b[1].inv_h == 1.0   # unit-step grid → reciprocal cell width is exactly 1
+    @test b[1].payload[1] ≈ 0.25
+    @test b[1].payload[2] == 1.0   # unit-step grid → reciprocal cell width is exactly 1
 
     # Clamp folds the OOB weight to the boundary node; Extend keeps it
     bC = _gridded_anchors(g, [0.0], ClampExtrap(), 1)
-    @test bC[1].idx == 1 && bC[1].alpha === 0.0
+    @test bC[1].idx == 1 && bC[1].payload[1] === 0.0
     bE = _gridded_anchors(g, [0.0], ExtendExtrap(), 1)
-    @test bE[1].idx == 1 && bE[1].alpha === -1.0
+    @test bE[1].idx == 1 && bE[1].payload[1] === -1.0
 
     # NoExtrap throws on the first OOB coordinate, naming the axis
     @test_throws DomainError _gridded_anchors(g, [0.5], NoExtrap(), 2)
@@ -35,8 +38,18 @@
 
     # Float32 grid + targets stay Float32 (no silent widening)
     b32 = _gridded_anchors(collect(Float32, 1:10), Float32[2.5], ClampExtrap(), 1)
-    @test eltype(b32) == _GriddedAnchor{Float32}
-    @test b32[1].alpha === 0.5f0
+    @test eltype(b32) == _AxisAnchor{typeof(LinearInterp(NoBC())), Tuple{Float32, Float32}}
+    @test b32[1].payload[1] === 0.5f0
+
+    # Exclusive periodic axes are the only linear gridded anchors that need to
+    # retain a right tap; the seam cell wraps to the physical first node.
+    bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+    gx = FI._cache_axis(collect(0.0:3.0), bc)
+    bx = _gridded_anchors(gx, [3.75], WrapExtrap(), 1)
+    @test eltype(bx) == _AxisAnchor{typeof(LinearInterp(NoBC())), Tuple{Int, Float64, Float64}}
+    @test bx[1].idx == 4
+    @test bx[1].payload[1] == 1
+    @test bx[1].payload[2] ≈ 0.75
 end
 
 @testitem "anchor-build searcher: hint chaining for clustered targets" begin
@@ -597,6 +610,80 @@ end
     end
 end
 
+@testitem "one-shot GriddedQuery: linear PeriodicBC exclusive seam parity" begin
+    using FastInterpolations
+    import FastInterpolations as FI
+
+    # 1D named one-shot GriddedQuery must follow the BC-aware 1D path: the
+    # exclusive seam cell is virtual, so the right endpoint wraps to y[1].
+    x = collect(range(0.0, 3.0, length = 4))
+    y = [0.0, 10.0, 20.0, 30.0]
+    bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
+    tx = [-0.5, 0.0, 0.25, 2.5, 3.25, 3.75, 4.0, 4.5]
+    gq = GriddedQuery((tx,))
+    os = FI.linear_interp((x,), y, gq; bc = bc)
+    ref_vec = FI.linear_interp(x, y, tx; bc = bc)
+    itp = FI.linear_interp(x, y; bc = bc)
+    @test vec(os) ≈ ref_vec atol = 1.0e-14 rtol = 1.0e-14
+    @test vec(os) ≈ itp(tx) atol = 1.0e-14 rtol = 1.0e-14
+    osd = FI.linear_interp((x,), y, gq; bc = bc, deriv = FI.EvalDeriv1())
+    ref_vec_d = FI.linear_interp(x, y, tx; bc = bc, deriv = FI.EvalDeriv1())
+    @test vec(osd) ≈ ref_vec_d atol = 1.0e-14 rtol = 1.0e-14
+
+    out = similar(os)
+    @test FI.linear_interp!(out, (x,), y, gq; bc = (bc,)) === out
+    @test vec(out) ≈ ref_vec atol = 1.0e-14 rtol = 1.0e-14
+    @test_throws ArgumentError FI.linear_interp((x,), y, gq; bc = PeriodicBC(endpoint = :exclusive, period = 2.0))
+    @test_throws ArgumentError FI.linear_interp((x,), y, GriddedQuery(([0.25],)); bc = PeriodicBC())
+
+    # 2D one-shot must match point-wise scalar one-shot on seam and OOB
+    # wrapped coordinates, including a mixed periodic/non-periodic BC tuple.
+    xs = collect(range(0.0, 3.0, length = 4))
+    ys = collect(range(-1.0, 1.0, length = 5))
+    data = [sin(xi) + 0.2cos(3yj) for xi in xs, yj in ys]
+    tx2 = [-0.25, 0.0, 2.75, 3.25, 3.75, 4.25]
+    ty2 = [-1.0, -0.25, 0.7, 1.0]
+    bc2 = (bc, NoBC())
+    gq2 = GriddedQuery((tx2, ty2))
+    got = FI.linear_interp((xs, ys), data, gq2; bc = bc2, extrap = (FI.NoExtrap(), FI.NoExtrap()))
+    ref = [
+        FI.linear_interp((xs, ys), data, (qx, qy); bc = bc2, extrap = (FI.NoExtrap(), FI.NoExtrap()))
+            for qx in tx2, qy in ty2
+    ]
+    itp2 = FI.linear_interp((xs, ys), data; bc = bc2, extrap = FI.NoExtrap())
+    @test got ≈ ref atol = 1.0e-14 rtol = 1.0e-14
+    @test itp2(gq2) ≈ ref atol = 1.0e-14 rtol = 1.0e-14
+
+    out2 = similar(got)
+    @test FI.linear_interp!(out2, (xs, ys), data, gq2; bc = bc2, extrap = FI.NoExtrap()) === out2
+    @test out2 ≈ ref atol = 1.0e-14 rtol = 1.0e-14
+
+    for deriv in (
+            (FI.EvalDeriv1(), FI.EvalValue()),
+            (FI.EvalValue(), FI.EvalDeriv1()),
+            (FI.EvalDeriv1(), FI.EvalDeriv1()),
+            (FI.EvalDeriv2(), FI.EvalValue()),
+        )
+        gotd = FI.linear_interp((xs, ys), data, gq2; bc = bc2, extrap = FI.NoExtrap(), deriv = deriv)
+        refd = [
+            FI.linear_interp((xs, ys), data, (qx, qy); bc = bc2, extrap = FI.NoExtrap(), deriv = deriv)
+                for qx in tx2, qy in ty2
+        ]
+        @test gotd ≈ refd atol = 1.0e-14 rtol = 1.0e-14
+    end
+
+    # Periodic linear GriddedQuery must still use the separable gridded kernel,
+    # not the generic point-wise batch fallback.
+    fast = similar(got)
+    @test FI._try_gridded_oneshot_methods!(
+        fast, (xs, ys), data, gq2, (LinearInterp(bc), LinearInterp(NoBC())),
+        FI.NoExtrap(), FI.EvalValue(), FI.AutoCoeffs(),
+    ) === true
+    @test fast ≈ ref atol = 1.0e-14 rtol = 1.0e-14
+
+    @test_throws ArgumentError FI.linear_interp((xs, ys), data, gq2; bc = (PeriodicBC(), NoBC()))
+end
+
 @testitem "one-shot GriddedQuery: value-match narrow float + zero-alloc" begin
     using FastInterpolations
     import FastInterpolations as FI
@@ -665,6 +752,18 @@ end
     a_fused = alloc(ofused, grid, data, qfused)                    # fills ofused, then measures
     @test ofused == FI.linear_interp(grid, data, qfused; extrap = FI.ClampExtrap())
     @test a_fused <= ALLOC_THRESHOLD
+
+    # 3D pure downsampling hits the generated fused kernel. This is a small
+    # allocation pin for the path that carries the largest regression risk.
+    grid3 = (1:12, 1:10, 1:8)
+    data3 = rand(12, 10, 8)
+    q3 = GriddedQuery((1:3:10, 1:3:10, 1:3:7))                    # 4 × 4 × 3
+    out3 = Array{Float64, 3}(undef, size(q3))
+    @test all(map(<, size(out3), size(data3)))                    # → fused branch
+    a3 = alloc(out3, grid3, data3, q3)
+    ref3 = FI.linear_interp(grid3, data3, q3; extrap = FI.ClampExtrap())
+    @test out3 == ref3
+    @test a3 <= ALLOC_THRESHOLD
 end
 
 @testitem "one-shot GriddedQuery: 3D + Fill parity" begin

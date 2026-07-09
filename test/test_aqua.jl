@@ -17,6 +17,6 @@
         # loaded CI runner (parallel workers, 7 GB macOS). A REAL leaked
         # task hangs the subprocess forever, so it still fails at any tmax —
         # raising it only removes the timeout false positive.
-        persistent_tasks = (tmax = 120,),
+        persistent_tasks = (tmax = 300,),
     )
 end

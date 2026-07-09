@@ -597,8 +597,15 @@ end
 # to avoid GC overhead consuming the time budget (~100ms/sample → only ~30 samples)
 println("\nRunning benchmarks (evals preset, no tuning)...")
 results = BenchmarkGroup()
+function _reset_task_local_pool!()
+    # Isolate groups from setup/run history. `reset!` keeps fallback typed pools
+    # registered, which can change @with_pool checkpoint cost for later groups.
+    empty!(FastInterpolations.AdaptiveArrayPools.get_task_local_pool())
+    return nothing
+end
 for group_key in sort(collect(keys(suite)))
     GC.gc()
+    _reset_task_local_pool!()
     println("  Running [$group_key]...")
     results[group_key] = run(suite[group_key], verbose = true)
 end

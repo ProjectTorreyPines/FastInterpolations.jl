@@ -816,7 +816,6 @@ end
 end
 
 @testitem "unified interp: GriddedQuery + linear uses separable fast path" setup = [Basic] begin
-
     grids = (1.0:64.0, 1.0:48.0)
     A = rand(64, 48)
     gq = GriddedQuery((range(2.0, 63.0, 120), range(2.0, 47.0, 90)))
@@ -959,10 +958,6 @@ end
     tx = range(-0.8, 10.9, 17)    # OOB both sides
     ty = range(-3.4, 5.6, 13)
     gq = GriddedQuery((tx, ty))
-
-    # FMA contraction is inline-context-dependent; use a small absolute floor
-    # for derivative entries near zero. Eltype is pinned exactly below.
-    isclose(a, b) = size(a) == size(b) && all(isapprox.(a, b; rtol = 8.0e-15, atol = 50 * max(eps(eltype(a)), eps(eltype(b)))))
 
     for m in (PchipInterp(), CardinalInterp(0.0), CardinalInterp(0.5), AkimaInterp()),
             ex in (ClampExtrap(), ExtendExtrap(), WrapExtrap())
@@ -1359,7 +1354,6 @@ end
     y = range(-3.0, 5.0, 20)
     A = rand(24, 20)
     gq = GriddedQuery((range(-0.5, 10.5, 15), range(-3.2, 5.4, 11)))
-    isclose(a, b) = size(a) == size(b) && all(isapprox.(a, b; rtol = 1.0e-15, atol = 50 * max(eps(eltype(a)), eps(eltype(b)))))
     arm(itp) = String(which(FI._gridded_eval_methods!, typeof((zeros(15, 11), itp.grids, itp.data, gq.axes, itp.methods, (EvalValue(), EvalValue()), (ClampExtrap(), ClampExtrap())))).file)
 
     # A local-hermite HeteroInterpolantND (OnTheFly) evaluates a GriddedQuery via

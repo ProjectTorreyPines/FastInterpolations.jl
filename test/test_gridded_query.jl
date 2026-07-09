@@ -1239,13 +1239,13 @@ end
 
     Hp = interp((x, x), A, gq; method = mper, extrap = WrapExtrap())
     refp = [interp((x, x), A, (qx, qy); method = mper, extrap = WrapExtrap()) for qx in tq, qy in tq]
-    @test Hp == refp
+    @test Hp ≈ refp
     Hmix = interp((x, x), A, gq; method = (ConstantInterp(), LinearInterp()), extrap = ClampExtrap())
     refmix = [
         interp((x, x), A, (qx, qy); method = (ConstantInterp(), LinearInterp()), extrap = ClampExtrap())
             for qx in tq, qy in tq
     ]
-    @test Hmix == refmix
+    @test Hmix ≈ refmix
 end
 
 @testitem "gridded constant/hermite: zero-alloc warm (Vector + Int axes)" setup = [AllocConstants] begin

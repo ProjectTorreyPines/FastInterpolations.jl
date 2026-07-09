@@ -22,6 +22,14 @@ include("hetero/hetero.jl")
 include("hetero/local_hermite_nd_forward.jl")  # pchip/cardinal/akima ND forwarders to `interp`
 include("hetero/interp_1d.jl")  # 1D bare-vector entry points for `interp`/`interp!`
 
+# Gridded (rectilinear / tensor-product) query — separable evaluation on a grid
+include("gridded/gridded_query.jl")
+include("gridded/axis_anchor.jl")       # shared per-axis anchor backbone (multi-method)
+include("gridded/gridded_constant.jl")  # constant gather fast path
+include("gridded/gridded_hermite.jl")   # local-Hermite fullbuffer fast path
+include("gridded/gridded_dispatch.jl")  # unified itp(gq) callable on AbstractInterpolantND
+include("gridded/gridded_partials.jl")  # cubic/quadratic fused-anchor fast path
+
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")
 
@@ -46,6 +54,7 @@ include("nodal_partials.jl")
 # Exports
 export AbstractInterpolant, AbstractInterpolant1D, AbstractHermiteInterpolant1D, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjoint1D, AbstractAdjointND
 export Series, n_series
+export GriddedQuery
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
 export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant, LinearInterpolantND
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant, ConstantInterpolantND

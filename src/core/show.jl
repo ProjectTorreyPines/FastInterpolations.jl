@@ -1248,3 +1248,55 @@ function Base.show(io::IO, ::MIME"text/plain", itp::HeteroInterpolantND{Tg, Tv, 
     end
     return
 end
+
+# ========================================
+# GriddedQuery Show Methods
+# ========================================
+# Per-axis query summary: dimensionality, Range/Vector per axis, point count,
+# and the [min, max] extent each axis samples. Uses min/max (not first/last) so
+# an unsorted query axis still reports the region it covers honestly.
+function _show_gridded_axes(io::IO, axes::Tuple)
+    N = length(axes)
+    sizes = join([string(length(a)) for a in axes], "×")
+    _show_print(io, "└─ ", :light_black)
+    _show_print(io, "Axes: ", :light_black)
+    print(io, "$(N)D, $sizes points")
+    println(io)
+    for d in 1:N
+        a = axes[d]
+        axis_prefix = d == N ? "└─ " : "├─ "
+        grid_type = a isa AbstractRange ? "Range" : "Vector"
+        _show_print(io, "   ", :light_black)
+        _show_print(io, axis_prefix, :light_black)
+        _show_print(io, "x", :light_black)
+        _show_print(io, _subscript_digit(d), :light_black)
+        print(io, ": ")
+        _show_print(io, grid_type, :magenta)
+        if isempty(a)
+            print(io, ", 0 pts (empty)")
+        else
+            print(io, ", $(length(a)) pts ∈ [$(_format_num(minimum(a))), $(_format_num(maximum(a)))]")
+        end
+        d < N && println(io)
+    end
+    return
+end
+
+function Base.show(io::IO, gq::GriddedQuery)
+    axes = gq.axes
+    N = length(axes)
+    Tq = N == 0 ? Union{} : promote_type(map(eltype, axes)...)
+    sizes = join([string(length(a)) for a in axes], "×")
+    _show_type_header_nd(io, "GriddedQuery", Tq, Tq, N)
+    return print(io, "($sizes)")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", gq::GriddedQuery)
+    axes = gq.axes
+    N = length(axes)
+    Tq = N == 0 ? Union{} : promote_type(map(eltype, axes)...)
+    _show_type_header_nd(io, "GriddedQuery", Tq, Tq, N)
+    println(io)
+    _show_gridded_axes(io, axes)
+    return
+end

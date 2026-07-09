@@ -55,7 +55,9 @@ import FastInterpolations:
     _LinearBlendGeneric,
     _LinearBlendStyle,
     _linear_blend_style,
-    _linear_value_blend
+    _linear_value_blend,
+    _promote_extrap_val,
+    _promote_extrap_zero
 
 const _ArithColorant =
     Union{AbstractGray, AbstractRGB, TransparentGray, TransparentRGB}
@@ -83,5 +85,14 @@ end
 # Mixed-pair escape → core generic body (no recursion).
 @inline _linear_value_blend(::_LinearBlendComponentwise, α, yL, yR) =
     _linear_value_blend(_LinearBlendGeneric(), α, yL, yR)
+
+# Match the in-domain linear kernel's widened colorant result on flat OOB paths
+# (`ClampExtrap`/`FillExtrap`). Without this, scalar 1D Clamp can infer
+# `Union{RGB{N0f8},RGB{Float64}}`: OOB returns the raw boundary sample while
+# in-domain interpolation widens through ColorVectorSpace arithmetic.
+@inline _promote_extrap_val(val::_ArithColorant, xq::Number) =
+    val + zero(xq) * zero(val)
+@inline _promote_extrap_zero(val::_ArithColorant, xq::Number) =
+    0 * val + zero(xq) * zero(val)
 
 end

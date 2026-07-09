@@ -436,7 +436,7 @@ function interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         store::StorePolicy = StorePolicy(),
     ) where {N}
-    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    method_tuple = _method_tuple(method, Val(N))
     coeffs_resolved = _resolve_coeffs(coeffs, Val(N), method_tuple)
     # Validate before any path. The OnTheFly hetero shortcut below skips
     # `_interp_nd_dispatch` (which is the only other validation site), so we

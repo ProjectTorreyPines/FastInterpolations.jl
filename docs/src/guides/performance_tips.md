@@ -12,6 +12,7 @@ numbers.
 |:------|:----------|
 | [Grid type](@ref perf-grid) | Represent a uniform grid with the most specific `Range` type that is still correct. |
 | [Batch queries](@ref perf-batch) | Pass a vector; never loop over scalar calls. Use the `!` in-place form in hot loops. |
+| [`GriddedQuery`](@ref perf-gridded-query) | For tensor-product ND queries, pass one query axis per dimension and write into shaped output. |
 | [Search hints](@ref perf-hints) | For sequential access, pass `hint = Ref(1)`. |
 | [`InBounds`](@ref perf-inbounds) | When queries are known in-domain, skip the domain check. |
 | [`value_gradient`](@ref perf-valgrad) | Need value **and** gradient? Locate the interval once. |
@@ -94,6 +95,66 @@ See [Memory & Allocation](@ref memory_allocation) for the full treatment.
 
 ---
 
+## [Use `GriddedQuery` for Tensor-Product ND Batches](@id perf-gridded-query)
+
+The usual ND batch query `(xqs, yqs)` evaluates pairwise points:
+`(xqs[i], yqs[i])` for each `i`, and returns a vector. For image resize,
+coarse-to-fine resampling, or any rectilinear output grid where you want every
+combination of one query axis per dimension, wrap the axes in
+[`GriddedQuery`](@ref):
+
+```@example perf_gridded_query
+using FastInterpolations # hide
+x = range(0.0, 1.0, 128) # hide
+y = range(-1.0, 1.0, 96) # hide
+data = [sin(4xi) * cos(3yi) for xi in x, yi in y] # hide
+itp = linear_interp((x, y), data)
+
+xq = range(first(x), last(x), 512)
+yq = [first(y), (first(y) + last(y)) / 2, last(y)]
+
+# Slow pattern: one scalar call per output point.
+naive = [itp((xi, yi)) for xi in xq, yi in yq]
+
+# Fast pattern: resolve each query axis once, then reuse it across the output grid.
+gq = GriddedQuery(xq, yq)        # Range axis + Vector axis; no collect needed
+img = itp(gq)                    # size(img) == (512, 3)
+isapprox(img, naive)             # same values, much less work
+@assert isapprox(img, naive) # hide
+nothing # hide
+```
+
+In hot loops, pre-allocate an `N`-D output whose size exactly matches `size(gq)`:
+
+```@example perf_gridded_query
+img_oneshot = linear_interp((x, y), data, gq)   # allocating one-shot path
+
+out = Matrix{Float64}(undef, size(gq))
+itp(out, gq)                     # persistent path
+
+linear_interp!(out, (x, y), data, gq)   # one-shot linear path
+@assert isapprox(img_oneshot, img) && isapprox(out, img) # hide
+nothing # hide
+```
+
+For method-selected one-shot calls such as cubic or quadratic, use the unified
+`interp` / `interp!` API so the shaped `GriddedQuery` output reaches the gridded
+fast path:
+
+```@example perf_gridded_query
+cubic_img = interp((x, y), data, gq; method = CubicInterp(), extrap = ClampExtrap())
+interp!(out, (x, y), data, gq; method = CubicInterp(), extrap = ClampExtrap())
+@assert size(cubic_img) == size(gq) && size(out) == size(gq) # hide
+nothing # hide
+```
+
+`GriddedQuery` accepts any `AbstractVector` query axis, including `AbstractRange`.
+Keeping range axes as ranges preserves their O(1) lookup behavior and avoids an
+unnecessary allocation. For `N > 1`, the in-place output must be an `N`-D array;
+a flat vector is not reshaped automatically.
+
+---
+
 ## [Search Hints for Sequential Access](@id perf-hints)
 
 On **`Vector`** grids the interval search matters (uniform `Range` grids are
@@ -172,5 +233,6 @@ See [Optimization](@ref optimization_guide) for the full `fg!` pattern.
 - [Memory & Allocation](@ref memory_allocation) — grid choice, batch API, zero-alloc
 - [Search & Hints](@ref search_hints) — search policies and hint patterns
 - [Extrapolation](../extrapolation.md) — `InBounds` and the full extrapolation contract
+- [Multi-Dimensional Interpolation](../nd/overview.md) — ND query modes and `GriddedQuery`
 - [Optimization (Optim.jl)](@ref optimization_guide) — `value_gradient`, analytical derivatives
 - [Benchmarks](@ref) — measured comparisons against Interpolations.jl

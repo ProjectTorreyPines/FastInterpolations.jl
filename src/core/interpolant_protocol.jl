@@ -328,12 +328,26 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     ops = _resolve_deriv_nd(deriv, Val(N))
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
-    _query_validate(queries)
-    # `extrap` (nothing → stored; InBounds → fast-path; else errors) resolved per-axis
-    # BEFORE domain validation — an InBounds axis then skips the O(n) domain scan.
-    # HeteroND shares this batch callable and is fully supported: it is an
-    # `AbstractInterpolantND`, so the same resolver threads the override.
+    # `extrap` (nothing → stored; InBounds → fast-path; else errors) resolved per-axis.
     extraps0 = _resolve_extrap_override_nd(itp, extrap)
+    return _nd_batch_pointwise!(output, itp, queries, ops, extraps0, search, hint)
+end
+
+# Point-wise batch core, shared by the generic in-place callable above and the
+# unified `GriddedQuery` functor's fallback branch (a non-separable method's
+# gridded eval is this core into a flat view of its N-D output). `extraps0` is
+# already override-resolved; `ops` already per-axis. HeteroND rides this too —
+# it is an `AbstractInterpolantND`, so the resolver threads its stored state.
+@inline function _nd_batch_pointwise!(
+        output::AbstractVector,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        queries,
+        ops::Tuple{Vararg{AbstractEvalOp, N}},
+        extraps0,
+        search,
+        hint
+    ) where {Tg, Tv, N}
+    _query_validate(queries)
     # Validate + batch-level InBounds promotion: throws on OOB NoExtrap and returns per-axis
     # `InBounds()` for SoA queries all in-bounds on an axis (AoS/generic stays original).
     extraps_eff = _validate_nd_domain(itp.grids, queries, extraps0)

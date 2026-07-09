@@ -412,7 +412,7 @@ function interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {N}
-    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
+    method_tuple = _method_tuple(method, Val(N))
     resolved_query = map(_resolve_grididx, query, grids)
     # GridIdx auto-promotion: when all derivs are EvalValue (scalar or tuple),
     # GridIdx axes need no interpolation — replace their method with NoInterp()
@@ -439,14 +439,60 @@ end
 # Public API — Batch In-Place
 # ========================================
 
+# Shared body for the public batch `interp!` methods. Query-specific contracts
+# such as GriddedQuery's shaped output requirement are checked before entry.
+function _interp_nd_oneshot_batch_public!(
+        output::AbstractArray,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{<:Any, N},
+        queries,
+        method::Union{AbstractInterpMethod, Tuple{Vararg{AbstractInterpMethod, N}}},
+        coeffs::AbstractCoeffStrategy,
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}},
+        extrap::Union{AbstractExtrap, Tuple{Vararg{AbstractExtrap, N}}},
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}},
+        hint,
+    ) where {N}
+    method_tuple = _method_tuple(method, Val(N))
+    # Separable fast path (before any flattening, so the N-D output reaches the
+    # gridded kernel without a reshape): true iff a gridded evaluator exists for
+    # this (query, method) tuple.
+    _try_gridded_separable!(output, grids, data, queries, method_tuple, extrap, deriv, coeffs) && return output
+    # The batch cores fill by LINEAR index, so a shaped output (e.g. an N-D array
+    # for a GriddedQuery) is written through a flat 1-D view. `vec`/`reshape`
+    # aliases (never copies), so the caller's array is filled in place; we hand
+    # back the caller's original `output`, not the flat view.
+    flat = output isa AbstractVector ? output : vec(output)
+    # Mixed queries with GridIdx → delegate to GridIdx batch path. Forward
+    # `coeffs` so the reduced (post-slice) sub-problem honors and validates the
+    # caller's strategy choice rather than silently falling back to AutoCoeffs.
+    if queries isa Tuple && _has_grididx(typeof(queries))
+        _interp_batch_with_grididx!(
+            flat, grids, data, queries;
+            method = method, deriv = deriv, extrap = extrap,
+            search = search, hint = hint, coeffs = coeffs,
+        )
+        return output
+    end
+    coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, queries, method_tuple)
+    # Reject explicit unsupported combinations (PreCompute + local Hermite); the
+    # AutoCoeffs path never trips this because resolution returns OnTheFly for
+    # local methods. Mirrors the scalar `interp` validation at line 309.
+    _validate_nd_coeffs(coeffs_resolved, method_tuple)
+    _interp_nd_oneshot_batch_dispatch!(flat, grids, data, queries, method_tuple, deriv, extrap, search, hint, coeffs_resolved)
+    return output
+end
+
 """
     interp!(output, grids, data, queries; method, coeffs=AutoCoeffs(), kwargs...)
 
 In-place one-shot N-dimensional interpolation at multiple points.
-Builds partials once, evaluates at all query points.
+Builds partials once, evaluates at all query points. `output` must match the
+shape requested by `queries`: ordinary batch queries write a vector, while
+shaped query containers such as `GriddedQuery` write an N-dimensional array.
 """
 function interp!(
-        output::AbstractVector,
+        output::AbstractArray,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{<:Any, N},
         queries;
@@ -457,34 +503,44 @@ function interp!(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint = nothing,
     ) where {N}
-    # Mixed queries with GridIdx → delegate to GridIdx batch path. Forward
-    # `coeffs` so the reduced (post-slice) sub-problem honors and validates the
-    # caller's strategy choice rather than silently falling back to AutoCoeffs.
-    if queries isa Tuple && _has_grididx(typeof(queries))
-        return _interp_batch_with_grididx!(
-            output, grids, data, queries;
-            method = method, deriv = deriv, extrap = extrap,
-            search = search, hint = hint, coeffs = coeffs,
-        )
-    end
-    method_tuple = method isa AbstractInterpMethod ? ntuple(_ -> method, Val(N)) : method
-    coeffs_resolved = _resolve_coeffs_nd_oneshot(coeffs, queries, method_tuple)
-    # Reject explicit unsupported combinations (PreCompute + local Hermite); the
-    # AutoCoeffs path never trips this because resolution returns OnTheFly for
-    # local methods. Mirrors the scalar `interp` validation at line 309.
-    _validate_nd_coeffs(coeffs_resolved, method_tuple)
-    return _interp_nd_oneshot_batch_dispatch!(output, grids, data, queries, method_tuple, deriv, extrap, search, hint, coeffs_resolved)
+    return _interp_nd_oneshot_batch_public!(
+        output, grids, data, queries, method, coeffs, deriv, extrap, search, hint
+    )
 end
 
 # ========================================
 # Public API — Batch Allocating
 # ========================================
 
+@inline function _interp_nd_output_eltype(
+        ::Tuple{Vararg{AbstractInterpMethod}},
+        grids::NTuple{N, AbstractVector},
+        ::Type{Tv},
+        ::Type{Tq};
+        shape_op = _interp_op
+    ) where {N, Tv, Tq}
+    Tg = _promote_grid_float(_promote_grid_eltype(grids), Tv)
+    return _promote_eltype(shape_op, Tg, Tv, Tq)
+end
+
+@inline function _interp_nd_output_eltype(
+        ::Tuple{ConstantInterp, Vararg{ConstantInterp}},
+        grids::NTuple{N, AbstractVector},
+        ::Type{Tv},
+        ::Type{Tq};
+        shape_op = _select_op
+    ) where {N, Tv, Tq}
+    Tg = _promote_grid_eltype(grids)
+    return _promote_eltype(shape_op, Tg, Tv, Tq)
+end
+
 """
     interp(grids, data, queries; method, coeffs=AutoCoeffs(), kwargs...)
 
 Allocating one-shot N-dimensional interpolation at multiple points.
-Returns a `Vector` of interpolated values.
+Allocates the output shape requested by `queries`: ordinary batch queries
+return a vector, while shaped query containers such as `GriddedQuery` return an
+N-dimensional array.
 """
 function interp(
         grids::NTuple{N, AbstractVector},
@@ -497,10 +553,12 @@ function interp(
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing,
     ) where {Tv, N}
-    _, Tg, _, _ = _nd_promote_grids(grids, data)
+    method_tuple = _method_tuple(method, Val(N))
     Tq = _query_eltype(queries)
-    Tr = _promote_eltype(Tv, Tg, Tq)
-    output = Vector{Tr}(undef, _query_length(queries))
-    interp!(output, grids, data, queries; method = method, coeffs = coeffs, deriv = deriv, extrap = extrap, search = search, hint = hint)
+    Tr = _interp_nd_output_eltype(method_tuple, grids, Tv, Tq)
+    # Output takes the query's shape: a flat vector for ordinary batches, the
+    # N-D `size(gq)` array for a shaped container like GriddedQuery.
+    output = Array{Tr}(undef, _query_size(queries))
+    interp!(output, grids, data, queries; method = method_tuple, coeffs = coeffs, deriv = deriv, extrap = extrap, search = search, hint = hint)
     return output
 end

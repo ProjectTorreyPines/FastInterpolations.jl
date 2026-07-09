@@ -42,12 +42,9 @@
     return output
 end
 
-# Build a seam-aware cubic anchor for one query against a (possibly raw
-# n-size) periodic cache. Bypasses `_anchor_query_impl` because that helper's
-# `_anchor_loc` discards `idx_R`, so it cannot represent the periodic-exclusive
-# seam pair `(n, 1)`. Search returns the 4-tuple directly; `_periodic_cell_h`
-# supplies the seam-aware width (`bc.h_n` at the seam, spacing accessor
-# elsewhere). Used by both scalar and vector periodic series helpers.
+# Build a seam-aware cubic anchor for one query against a periodic cache.
+# Search returns the 4-tuple directly so the periodic series helpers keep their
+# tight scalar/vector path while preserving the exclusive seam pair `(n, 1)`.
 @inline function _build_periodic_cubic_anchor(
         cache::CubicSplineCache,
         xq,

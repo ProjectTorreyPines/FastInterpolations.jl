@@ -226,10 +226,7 @@ Internal implementation of _anchor_query for constant interpolation.
     # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual)
     xq_promoted = oftype(dL, loc.xq)
 
-    # `_anchor_loc` never returns a periodic-exclusive seam pair, so
-    # `idxR = idxL + 1` here. Seam-pair anchors are constructed directly in
-    # the exclusive periodic series helper via `_ConstantAnchoredQuery(...)`.
-    return _ConstantAnchoredQuery(_IdxPair(loc.idx, loc.idx + 1), xq_promoted, loc.state, h, dL)
+    return _ConstantAnchoredQuery(_IdxPair(loc.idx, loc.idxR), xq_promoted, loc.state, h, dL)
 end
 
 # ========================================

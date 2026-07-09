@@ -558,15 +558,23 @@ _promote_coord(0.5f0, Float32)  # → 0.5f0 (Float32)
 # Domain Validation Helpers
 # ========================================
 
-@noinline _throw_domain_error(xi, x_min, x_max) =
-    throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
+# `dim == 0` → axis-agnostic message (1D, or when the axis is unknown); `dim > 0`
+# names the offending axis (ND scalar / GriddedQuery, which carry the index).
+@noinline function _throw_domain_error(xi, x_min, x_max, dim::Int = 0)
+    at = dim == 0 ? "query point" : "query point on axis $dim"
+    throw(DomainError(xi, "$at outside interpolation domain [$x_min, $x_max]"))
+end
 
 # _CachedRange overload: pull the physical endpoints (`lo`/`hi`, the exact span for the
 # error message — distinct from the possibly-widened bracket the hot check clamps
 # against) inside this @noinline cold path, so the in-domain hot path never
 # materializes them — guaranteed, not LLVM-sink-dependent.
-@noinline _throw_domain_error(xi, x::_CachedRange) =
-    _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi))
+@noinline _throw_domain_error(xi, x::_CachedRange, dim::Int = 0) =
+    _throw_domain_error(xi, _extract_primal(x.lo), _extract_primal(x.hi), dim)
+
+# Generic vector overload (Vector / `_CachedVector`): physical endpoints via first/last.
+@noinline _throw_domain_error(xi, x::AbstractVector, dim::Int = 0) =
+    _throw_domain_error(xi, _extract_primal(first(x)), _extract_primal(last(x)), dim)
 
 # NoExtrap domain check. OOB iff the branchless `_clamp` (min/max) alters the query:
 # `_clamp(xip,lo,hi) != xip` is 1 compare + 1 branch vs `(xip<lo || xip>hi)`'s two
@@ -592,23 +600,29 @@ _promote_coord(0.5f0, Float32)  # → 0.5f0 (Float32)
 # core in `@inbounds` — so the cores' former `@boundscheck _check_domain` never actually elided.
 # Mirrors the vector/batch `_check_domain` (which likewise returns `InBounds()` / the extrap).
 "Scalar domain check for NoExtrap: throws DomainError if OOB, else promotes to InBounds."
-@inline function _check_domain(x::AbstractVector, xi::Real, ::NoExtrap)
+@inline function _check_domain(x::AbstractVector, xi::Real, ::NoExtrap, dim::Int = 0)
     xip = _extract_primal(xi)
     x_min, x_max = _extract_primal(first(x)), _extract_primal(last(x))
     c = _clamp(xip, x_min, x_max)
-    (c != oftype(c, xip)) && _throw_domain_error(xi, x_min, x_max)
+    (c != oftype(c, xip)) && _throw_domain_error(xi, x_min, x_max, dim)
     return InBounds()
 end
 
 # _CachedRange: bounds via `_domain_bounds` — `lo`/`hi` for exact tags (shared
 # with the search's `lo` load), the widened bracket only for `_WidenedDomain`.
-@inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap)
+@inline function _check_domain(x::_CachedRange, xi::Real, ::NoExtrap, dim::Int = 0)
     xip = _extract_primal(xi)
     lo, hi = _domain_bounds(x)
     c = _clamp(xip, _extract_primal(lo), _extract_primal(hi))
-    (c != oftype(c, xip)) && _throw_domain_error(xi, x)
+    (c != oftype(c, xip)) && _throw_domain_error(xi, x, dim)
     return InBounds()
 end
+
+# Axis-tagged scalar/batch check: only NoExtrap throws, so only it needs the axis
+# index for the message; every other mode ignores `dim` and takes the plain check.
+# Lets `_validate_nd_domain` thread the axis without touching the no-op overloads.
+@inline _check_domain_axis(x, xi, extrap::AbstractExtrap, dim::Int) = _check_domain(x, xi, extrap)
+@inline _check_domain_axis(x, xi, extrap::NoExtrap, dim::Int) = _check_domain(x, xi, extrap, dim)
 
 "No-op scalar domain check for non-NoExtrap modes: returns the extrap unchanged (InBounds stays lean)."
 @inline _check_domain(::AbstractVector, ::Real, extrap::AbstractExtrap) = extrap
@@ -639,8 +653,8 @@ exact `_CachedRange`s and Vectors use `lo/hi` / `first/last`) and is
 partial-sign-safe under ForwardDiff. Throw message uses `first(x)/last(x)` —
 exact endpoints, not the widened bracket.
 """
-@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap)
-    @boundscheck _is_all_inbounds(x, xi) || _throw_batch_oob(x, xi)
+@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap, dim::Int = 0)
+    @boundscheck _is_all_inbounds(x, xi) || _throw_batch_oob(x, xi, dim)
     return InBounds()
 end
 
@@ -651,22 +665,22 @@ end
 # on its partial into a false exclusive promotion (→ no-cap OOB read).
 # Only the throws are `@boundscheck`-elidable; the promotion is build-mode independent.
 @inline function _check_domain(
-        x::_CachedRange{T, Tinv, Tag}, xi::AbstractVector{<:Real}, ::NoExtrap
+        x::_CachedRange{T, Tinv, Tag}, xi::AbstractVector{<:Real}, ::NoExtrap, dim::Int = 0
     ) where {T, Tinv, Tag <: _AbstractUnitStep}
     isempty(xi) && return InBounds()
     lo, hi = _domain_bounds(x)
-    @boundscheck _ge(_extract_primal(minimum(xi)), _extract_primal(lo)) || _throw_batch_oob(x, xi)
+    @boundscheck _ge(_extract_primal(minimum(xi)), _extract_primal(lo)) || _throw_batch_oob(x, xi, dim)
     mx = _extract_primal(maximum(xi))
     hip = _extract_primal(hi)
-    @boundscheck _le(mx, hip) || _throw_batch_oob(x, xi)
+    @boundscheck _le(mx, hip) || _throw_batch_oob(x, xi, dim)
     return _lt(mx, hip) ? InBounds(last = :exclusive) : InBounds()
 end
 
-@noinline function _throw_batch_oob(x::AbstractVector, xi::AbstractVector{<:Real})
+@noinline function _throw_batch_oob(x::AbstractVector, xi::AbstractVector{<:Real}, dim::Int = 0)
     qmin, qmax = minimum(xi), maximum(xi)
     x_min = _extract_primal(first(x))
     x_max = _extract_primal(last(x))
-    _throw_domain_error(qmin < x_min ? qmin : qmax, x_min, x_max)
+    _throw_domain_error(qmin < x_min ? qmin : qmax, x_min, x_max, dim)
 end
 
 "No-op vector domain check for non-NoExtrap modes: pass-through extrap."

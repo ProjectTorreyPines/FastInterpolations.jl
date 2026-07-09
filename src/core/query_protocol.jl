@@ -20,6 +20,16 @@
 @inline _query_length(q::Tuple{Vararg{AbstractVector}}) = length(q[1])
 @inline _query_length(q) = length(q)
 
+# ── Optional: query output shape ──
+# The batch cores fill a length-`_query_length` buffer by LINEAR index, so a
+# query container that carries a shape reports it here: the allocating path
+# builds an output of that shape and in-place callers pass a matching array
+# (linear indexing lands each result at the right N-D position, column-major).
+# `_query_length == prod(_query_size)` mirrors Base's `length`/`size`. Default
+# is a flat 1-D output (a plain vector), so ordinary batch queries are unchanged.
+
+@inline _query_size(q) = (_query_length(q),)
+
 # ── Protocol function 2: k-th query point extraction ──
 # User-facing: simple getindex-like interface. No Val{N} needed.
 # Override this for custom query types — just return the k-th point (any indexable).
@@ -141,7 +151,9 @@ end
         query::Tuple{Vararg{Real, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
-    return map(_check_domain, grids, query, extraps)
+    # thread the axis index so a NoExtrap OOB names the offending axis (`_check_domain_axis`
+    # forwards `dim` only to the NoExtrap thrower; all other modes ignore it).
+    return map(_check_domain_axis, grids, query, extraps, ntuple(identity, Val(N)))
 end
 
 # SoA batch (Real vectors): per-axis vector `_check_domain` (O(nq) min/max). All-in-bounds →
@@ -159,17 +171,18 @@ end
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
     isempty(first(queries)) && return extraps
-    return map(_check_axis_batch_closed, grids, queries, extraps)
+    return map(_check_axis_batch_closed, grids, queries, extraps, ntuple(identity, Val(N)))
 end
 
 # Per-axis SoA check with concrete return shapes: validation/throw from the batch
 # `_check_domain` verbatim; only the exclusive upgrade collapses back to closed.
-@inline _check_axis_batch_closed(g, q, e::AbstractExtrap) = _check_domain(g, q, e)
-@inline function _check_axis_batch_closed(g, q, e::NoExtrap)
-    _check_domain(g, q, e)      # throws on OOB; promotion result intentionally discarded
+# `dim` reaches only the NoExtrap thrower (axis-named message); other modes ignore it.
+@inline _check_axis_batch_closed(g, q, e::AbstractExtrap, dim::Int) = _check_domain(g, q, e)
+@inline function _check_axis_batch_closed(g, q, e::NoExtrap, dim::Int)
+    _check_domain(g, q, e, dim)      # throws on OOB; promotion result intentionally discarded
     return InBounds()
 end
-@inline function _check_axis_batch_closed(g, q, e::Union{ClampExtrap, FillExtrap, WrapExtrap})
+@inline function _check_axis_batch_closed(g, q, e::Union{ClampExtrap, FillExtrap, WrapExtrap}, dim::Int)
     r = _check_domain(g, q, e)
     return r isa InBounds ? InBounds() : e
 end
@@ -184,7 +197,7 @@ end
         extraps::NTuple{N, NoExtrap}
     ) where {N}
     isempty(first(queries)) && return extraps
-    effs = map(_check_domain, grids, queries, extraps)
+    effs = map(_check_domain_axis, grids, queries, extraps, ntuple(identity, Val(N)))
     return effs isa NTuple{N, InBounds{:inclusive, :exclusive}} ?
         ntuple(_ -> InBounds(last = :exclusive), Val(N)) :
         ntuple(_ -> InBounds(), Val(N))
@@ -204,7 +217,7 @@ function _validate_nd_domain(
         for q in 1:nq
             query_q = _extract_query_point(queries, q, Val(N))
             map(grids, extraps, axes) do grid, extrap, d
-                extrap isa NoExtrap && _check_domain(grid, query_q[d], NoExtrap())
+                extrap isa NoExtrap && _check_domain(grid, query_q[d], NoExtrap(), d)
                 nothing
             end
         end

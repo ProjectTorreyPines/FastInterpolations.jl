@@ -443,6 +443,58 @@ let b = @benchmarkable constant_interp!($outs_ser, $x_ser, $Ys_ser, $q_ser_rand)
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
+# GriddedQuery Benchmarks (shaped in-place tensor-product query)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Catches regressions in the GriddedQuery fast paths before they become visible
+# in downstream resize-style workloads. The shaped in-place API avoids timing
+# output allocation; persistent and one-shot entries are both included because
+# they route through different public surfaces.
+
+println("Setting up GriddedQuery benchmarks...")
+
+const gq2d_bench = GriddedQuery((range(0.05, 9.95, 40), range(0.05, 5.95, 32)))
+const out_gq2d = Matrix{Float64}(undef, size(gq2d_bench))
+
+const gq3d_bench = GriddedQuery((range(0.1, 9.9, 12), range(0.1, 5.9, 10), range(0.1, 3.9, 8)))
+const out_gq3d = Array{Float64, 3}(undef, size(gq3d_bench))
+const GQ_CUBIC_METHOD = CubicInterp()
+
+# 15. GriddedQuery: persistent and one-shot shaped in-place paths
+let b = @benchmarkable $itp_linear_2d($out_gq2d, $gq2d_bench)
+    b.params.evals = EVALS_MED
+    suite["15_gridded_query"]["linear_persistent_2d_40x32"] = b
+end
+
+let b = @benchmarkable linear_interp!($out_gq2d, ($x2d, $y2d), $data2d, $gq2d_bench)
+    b.params.evals = EVALS_MED
+    suite["15_gridded_query"]["linear_oneshot_2d_40x32"] = b
+end
+
+let b = @benchmarkable $itp_linear_3d($out_gq3d, $gq3d_bench)
+    b.params.evals = EVALS_MED
+    suite["15_gridded_query"]["linear_persistent_3d_12x10x8"] = b
+end
+
+let b = @benchmarkable linear_interp!($out_gq3d, ($x3d, $y3d, $z3d), $data3d, $gq3d_bench)
+    b.params.evals = EVALS_MED
+    suite["15_gridded_query"]["linear_oneshot_3d_12x10x8"] = b
+end
+
+# Cubic's named ND batch API writes a flat vector by contract; the shaped
+# GriddedQuery one-shot fast path is exposed through unified `interp!`.
+interp!(out_gq2d, (x2d, y2d), data2d, gq2d_bench; method = GQ_CUBIC_METHOD)
+let b = @benchmarkable $itp_cubic_2d($out_gq2d, $gq2d_bench)
+    b.params.evals = EVALS_SLOW
+    suite["15_gridded_query"]["cubic_persistent_2d_40x32"] = b
+end
+
+let b = @benchmarkable interp!($out_gq2d, ($x2d, $y2d), $data2d, $gq2d_bench; method = $GQ_CUBIC_METHOD)
+    b.params.evals = EVALS_SLOW
+    suite["15_gridded_query"]["cubic_oneshot_2d_40x32"] = b
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
 # CLI Argument Parsing
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -545,8 +597,15 @@ end
 # to avoid GC overhead consuming the time budget (~100ms/sample → only ~30 samples)
 println("\nRunning benchmarks (evals preset, no tuning)...")
 results = BenchmarkGroup()
+function _reset_task_local_pool!()
+    # Isolate groups from setup/run history. `reset!` keeps fallback typed pools
+    # registered, which can change @with_pool checkpoint cost for later groups.
+    empty!(FastInterpolations.AdaptiveArrayPools.get_task_local_pool())
+    return nothing
+end
 for group_key in sort(collect(keys(suite)))
     GC.gc()
+    _reset_task_local_pool!()
     println("  Running [$group_key]...")
     results[group_key] = run(suite[group_key], verbose = true)
 end

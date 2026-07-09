@@ -19,7 +19,7 @@ data = [sin(xi) * cos(yi) for xi in x, yi in y]
 
 # Interpolant API (recommended)
 itp = cubic_interp((x, y), data)
-itp((1.0, 0.5))                         # scalar query
+itp(1.0, 0.5)                            # scalar query
 
 # One-shot API
 cubic_interp((x, y), data, (1.0, 0.5))  # same result
@@ -34,7 +34,7 @@ Every 1D argument becomes a Tuple in ND. This applies uniformly:
 | Concept | 1D | ND |
 |:--------|:---|:---|
 | Grid | `x` | `(x, y)` or `(x, y, z)` |
-| Query (scalar) | `xq` | `(xq, yq)` |
+| Query (scalar) | `xq` | `(xq, yq)` or `itp(xq, yq)` |
 | Query (batch) | `xqs::Vector` | `(xqs, yqs)` |
 | BC | `bc=CubicFit()` | `bc=(CubicFit(), PeriodicBC())` |
 | Extrap | `extrap=ClampExtrap()` | `extrap=(ClampExtrap(), WrapExtrap())` |
@@ -76,16 +76,84 @@ itp = cubic_interp((x, y), data)   # mixed grid works
 ## Query Modes
 
 ### Scalar Query
-```julia
-itp((0.5, 1.0))  # returns a single value
+```@example nd_query_modes
+using FastInterpolations # hide
+x = range(0.0, 1.0, 100) # hide
+y = range(0.0, 2.0, 80) # hide
+data = [sin(xi) * cos(yi) for xi in x, yi in y] # hide
+itp = linear_interp((x, y), data) # hide
+itp((0.5, 1.0))  # explicit tuple form
+itp(0.5, 1.0)    # equivalent scalar convenience form
+@assert itp((0.5, 1.0)) ≈ itp(0.5, 1.0) # hide
+nothing # hide
 ```
 
 ### Batch Query (SoA — Structure of Arrays)
-```julia
+```@example nd_query_modes
 xqs = range(0.0, 1.0, 50)
 yqs = range(0.0, 2.0, 50)
 itp((xqs, yqs))  # returns Vector of length 50
+@assert length(itp((xqs, yqs))) == 50 # hide
+nothing # hide
 ```
+
+This form is **pairwise**: it evaluates `(xqs[i], yqs[i])` for each `i`.
+
+### Rectilinear Query (`GriddedQuery`)
+
+Use [`GriddedQuery`](@ref) when you want every combination of one query axis per
+dimension, such as image resizing, resampling a coarse field onto a denser grid,
+or sampling a surface on a regular output grid:
+
+```@example nd_query_modes
+x = 1:10
+y = 1:20
+data = [sin(xi) + cos(yi) for xi in x, yi in y]
+itp = linear_interp((x, y), data)
+
+# This is often what you want for image resize or coarse-to-fine resampling:
+naive = [itp((xq, yq)) for xq in 1:10, yq in [5, 6, 7]]
+
+# GriddedQuery computes the same tensor-product output with less repeated work.
+gq = GriddedQuery(1:10, [5, 6, 7])     # Range axis + Vector axis
+
+itp(gq)                              # returns Matrix with size (10, 3)
+@assert isapprox(itp(gq), naive) # hide
+nothing # hide
+```
+
+The in-place form writes to an output array with the same dimensionality and
+size:
+
+```@example nd_query_modes
+out = Matrix{Float64}(undef, size(gq))
+itp(out, gq)
+@assert isapprox(out, naive) # hide
+nothing # hide
+```
+
+Named one-shot calls can allocate the shaped output directly, or fill one you
+provide:
+
+```@example nd_query_modes
+vals = linear_interp((x, y), data, gq)
+linear_interp!(out, (x, y), data, gq)
+@assert isapprox(vals, naive) && isapprox(out, naive) # hide
+nothing # hide
+```
+
+For method-selected one-shot calls, use `interp` / `interp!` with the same
+`GriddedQuery`:
+
+```@example nd_query_modes
+cubic_vals = interp((x, y), data, gq; method = CubicInterp(), extrap = ClampExtrap())
+interp!(out, (x, y), data, gq; method = CubicInterp(), extrap = ClampExtrap())
+@assert size(cubic_vals) == size(gq) && size(out) == size(gq) # hide
+nothing # hide
+```
+
+For `N > 1`, `GriddedQuery` does not accept a flat vector output; allocate an
+`N`-D array with `size(gq)`.
 
 ### Batch Query (AoS — Array of Structures)
 ```julia

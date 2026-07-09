@@ -1161,6 +1161,52 @@ end
     @test all(isnan, out_onfly)
 end
 
+@testitem "F7 gridded cubic/quadratic: persistent + one-shot zero-alloc warm" setup = [AllocConstants] begin
+    using FastInterpolations
+    import FastInterpolations as FI
+    using FastInterpolations: GriddedQuery, CubicInterp, QuadraticInterp
+
+    function persistent_alloc(out, grids, data, gq, method)
+        itp = interp(grids, data; method = method, extrap = FI.ClampExtrap())
+        itp(out, gq)
+        itp(out, gq)
+        return @allocated itp(out, gq)
+    end
+
+    function oneshot_alloc(out, grids, data, gq, method)
+        interp!(out, grids, data, gq; method = method, extrap = FI.ClampExtrap())
+        interp!(out, grids, data, gq; method = method, extrap = FI.ClampExtrap())
+        return @allocated interp!(out, grids, data, gq; method = method, extrap = FI.ClampExtrap())
+    end
+
+    x = collect(range(0.0, 1.0, 22))
+    y = collect(range(-1.0, 2.0, 19))
+    A = [sin(4xi) + cos(3yi) + 0.1sin(xi * yi) for xi in x, yi in y]
+    gq = GriddedQuery((collect(range(0.05, 0.95, 13)), collect(range(-0.8, 1.8, 11))))
+    out = zeros(size(gq))
+    for method in (CubicInterp(), QuadraticInterp())
+        @test persistent_alloc(out, (x, y), A, gq, method) <= ALLOC_THRESHOLD
+        @test oneshot_alloc(out, (x, y), A, gq, method) <= ALLOC_THRESHOLD
+    end
+
+    g3 = (
+        collect(range(0.0, 1.0, 12)),
+        collect(range(-1.0, 1.0, 10)),
+        collect(range(0.0, 2.0, 8)),
+    )
+    A3 = [sin(3x1) + cos(2x2) + 0.1x3 for x1 in g3[1], x2 in g3[2], x3 in g3[3]]
+    gq3 = GriddedQuery((
+        collect(range(0.1, 0.9, 5)),
+        collect(range(-0.8, 0.8, 4)),
+        collect(range(0.2, 1.8, 3)),
+    ))
+    out3 = zeros(size(gq3))
+    for method in (CubicInterp(), QuadraticInterp())
+        @test persistent_alloc(out3, g3, A3, gq3, method) <= ALLOC_THRESHOLD
+        @test oneshot_alloc(out3, g3, A3, gq3, method) <= ALLOC_THRESHOLD
+    end
+end
+
 @testitem "gridded routing: constant/hermite hooks, PeriodicBC + mixed-method fallback" begin
     using FastInterpolations
     import FastInterpolations as FI

@@ -487,7 +487,9 @@ end
     interp!(output, grids, data, queries; method, coeffs=AutoCoeffs(), kwargs...)
 
 In-place one-shot N-dimensional interpolation at multiple points.
-Builds partials once, evaluates at all query points.
+Builds partials once, evaluates at all query points. `output` must match the
+shape requested by `queries`: ordinary batch queries write a vector, while
+shaped query containers such as `GriddedQuery` write an N-dimensional array.
 """
 function interp!(
         output::AbstractArray,
@@ -536,7 +538,9 @@ end
     interp(grids, data, queries; method, coeffs=AutoCoeffs(), kwargs...)
 
 Allocating one-shot N-dimensional interpolation at multiple points.
-Returns a `Vector` of interpolated values.
+Allocates the output shape requested by `queries`: ordinary batch queries
+return a vector, while shaped query containers such as `GriddedQuery` return an
+N-dimensional array.
 """
 function interp(
         grids::NTuple{N, AbstractVector},

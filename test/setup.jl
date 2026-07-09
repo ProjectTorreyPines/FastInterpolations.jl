@@ -15,6 +15,28 @@ using TestItemRunner
     const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : (2 * AAP_RUNTIME_CHECK + 1) * 240
 end
 
+# Basic setup: the fixtures nearly every testitem needs — the `FI` alias and the
+# ULP-scaled `isclose`. Compose with AllocConstants (`setup=[Basic, AllocConstants]`)
+# when a testitem also needs allocation thresholds. The threshold consts are kept
+# in AllocConstants only (not duplicated here) so the two snippets never redefine
+# the same binding; a later suite-wide migration can fold them together.
+@testsnippet Basic begin
+    import FastInterpolations as FI
+
+    # Elementwise CONSISTENCY check (fused vs point-wise), not an accuracy check:
+    # the two paths differ only by FMA/muladd contraction, which is inline- and
+    # Julia/LLVM-version dependent. Tolerance is in ULP multiples so it scales
+    # across eltypes (Float64/Float32); atol shares the same floor and assumes
+    # O(1)-scale data. Tighten `nulps` to pin bit-identical paths; widen it for
+    # heavier reassociation.
+    function isclose(a, b; nulps = 256)
+        size(a) == size(b) || return false
+        T = float(real(promote_type(eltype(a), eltype(b))))
+        tol = nulps * eps(T)
+        return all(isapprox.(a, b; rtol = tol, atol = tol))
+    end
+end
+
 # DuckFloat5 type + shared 1D/2D fixtures for the duck-typing comprehensive
 # tests (test_duck_typing_comprehensive.jl). Extracted as a snippet so the
 # testitem split inside that file can reuse the same setup without copy-paste.

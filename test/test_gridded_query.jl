@@ -2,9 +2,8 @@
 # Per-axis anchors are precomputed once and reused by two strategies: fused
 # (pure downsampling) and multi-pass full buffer (otherwise).
 
-@testitem "_AxisAnchor: linear builder + extrap fold" begin
+@testitem "_AxisAnchor: linear builder + extrap fold" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: _AxisAnchor, _gridded_anchors
 
     g = collect(1.0:10.0)
@@ -52,9 +51,8 @@
     @test bx[1].payload[2] ≈ 0.75
 end
 
-@testitem "anchor-build searcher: hint chaining for clustered targets" begin
+@testitem "anchor-build searcher: hint chaining for clustered targets" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: _gridded_build_searcher, Searcher, BinarySearch,
         LinearBinarySearch, NoHint
 
@@ -79,9 +77,8 @@ end
     @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
 end
 
-@testitem "GriddedQuery correctness matrix vs point-wise" begin
+@testitem "GriddedQuery correctness matrix vs point-wise" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
 
     # {F64, F32} × {Clamp, Extend} × {up, down, mixed, non-monotonic, M == 1}
     function check(itp, tx, ty; rtol = 1.0e-14, atol = 1.0e-14)
@@ -130,9 +127,8 @@ end
     @test all(isapprox.(C2, ref2; rtol = 1.0e-14, atol = 1.0e-14))
 end
 
-@testitem "strategy cores: fused + both pass orders agree" begin
+@testitem "strategy cores: fused + both pass orders agree" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: _gridded_anchors, _gridded_fused!, _gridded_pass!, EvalValue
 
     A = rand(24, 20)
@@ -167,9 +163,8 @@ end
     @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
 end
 
-@testitem "pass hull restriction: identical entries, untouched outside" begin
+@testitem "pass hull restriction: identical entries, untouched outside" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: _gridded_anchors, _gridded_hull, _gridded_pass!, EvalValue
 
     A = rand(64, 48)
@@ -207,9 +202,8 @@ end
     @test all(isapprox.(C, ref; rtol = 1.0e-14, atol = 1.0e-14))
 end
 
-@testitem "3D public path: value/deriv/wrap/fill via GriddedQuery" begin
+@testitem "3D public path: value/deriv/wrap/fill via GriddedQuery" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: EvalValue, EvalDeriv1
 
     A = rand(24, 20, 16)
@@ -253,9 +247,8 @@ end
     @test count(isnan, Cfill) == count(isnan, reff) > 0
 end
 
-@testitem "generated fused kernel: 3D/4D vs point-wise" begin
+@testitem "generated fused kernel: 3D/4D vs point-wise" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: _gridded_anchors, _gridded_fused!
 
     # 3D: {Clamp, Extend} incl. OOB targets — anchors fold extrap per axis
@@ -292,9 +285,8 @@ end
     @test all(isapprox.(out4, ref4; rtol = 1.0e-14, atol = 1.0e-14))
 end
 
-@testitem "deriv ops: gridded == point-wise (2D public, 3D kernel)" begin
+@testitem "deriv ops: gridded == point-wise (2D public, 3D kernel)" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: _gridded_anchors, _gridded_fused!,
         EvalValue, EvalDeriv1, EvalDeriv2
 
@@ -350,9 +342,8 @@ end
     end
 end
 
-@testitem "WrapExtrap: gridded == point-wise (2D public, 3D kernel)" begin
+@testitem "WrapExtrap: gridded == point-wise (2D public, 3D kernel)" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: _gridded_anchors, _gridded_fused!
 
     A = rand(16, 12)
@@ -384,9 +375,8 @@ end
     @test all(isapprox.(out3, ref3; rtol = 1.0e-13, atol = 1.0e-13))
 end
 
-@testitem "FillExtrap: OOB slabs filled, matches point-wise" begin
+@testitem "FillExtrap: OOB slabs filled, matches point-wise" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: EvalValue, EvalDeriv1
 
     agree(C, ref) = all(
@@ -421,9 +411,8 @@ end
     @test !isnan(Cm[3, 3])   # in-domain x, OOB y on Clamp axis → clamped value
 end
 
-@testitem "NoExtrap validation + unsupported-extrap guards" begin
+@testitem "NoExtrap validation + unsupported-extrap guards" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
 
     A = rand(16, 12)
     # NoExtrap: in-domain == point-wise; OOB throws BEFORE any work, naming the axis
@@ -470,9 +459,8 @@ end
     @test a_throw < length(big_tx) * length(bad_ty) * sizeof(Float64)
 end
 
-@testitem "call-time extrap override: InBounds anchor fast path" begin
+@testitem "call-time extrap override: InBounds anchor fast path" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: EvalValue, EvalDeriv1
 
     A = rand(24, 20)
@@ -512,9 +500,8 @@ end
     @test C3I == C3
 end
 
-@testitem "in-place API: pooled buffers, zero-alloc, edges" begin
+@testitem "in-place API: pooled buffers, zero-alloc, edges" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
 
     A = rand(48, 40)
     itp = linear_interp((1.0:48.0, 1.0:40.0), A; extrap = ClampExtrap())
@@ -554,9 +541,8 @@ end
     @test allocs_down <= 1024
 end
 
-@testitem "exact-node queries: bit-exact via endpoint-exact blend" begin
+@testitem "exact-node queries: bit-exact via endpoint-exact blend" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
 
     A = rand(32, 24)
     itp = linear_interp((1.0:32.0, 1.0:24.0), A; extrap = ClampExtrap())
@@ -577,9 +563,8 @@ end
     @test itp(out, GriddedQuery((collect(1.0:32.0), collect(1.0:24.0)))) == A
 end
 
-@testitem "one-shot GriddedQuery: linear_interp(grids, data, gq) == persistent" begin
+@testitem "one-shot GriddedQuery: linear_interp(grids, data, gq) == persistent" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
 
     # Reference persistent interpolants for each grid flavor; the one-shot form
     # must reproduce them bit-for-bit (same value-matched Tg, same anchors,
@@ -610,9 +595,8 @@ end
     end
 end
 
-@testitem "one-shot GriddedQuery: linear PeriodicBC exclusive seam parity" begin
+@testitem "one-shot GriddedQuery: linear PeriodicBC exclusive seam parity" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
 
     # 1D named one-shot GriddedQuery must follow the BC-aware 1D path: the
     # exclusive seam cell is virtual, so the right endpoint wraps to y[1].
@@ -684,9 +668,8 @@ end
     @test_throws ArgumentError linear_interp((xs, ys), data, gq2; bc = (PeriodicBC(), NoBC()))
 end
 
-@testitem "one-shot GriddedQuery: value-match narrow float + zero-alloc" begin
+@testitem "one-shot GriddedQuery: value-match narrow float + zero-alloc" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
 
     # OneTo/Int grid beside Float32 data must solve at Float32 (value-matched Tg),
     # not blindly widen through the grid — same rule as scalar/batch one-shot.
@@ -719,9 +702,8 @@ end
     @test os_alloc(out, gx, gy, A, gq) <= 1024
 end
 
-@testitem "GriddedQuery strategy: fused + fullbuffer both zero-alloc (incl. Int axes)" setup = [AllocConstants] begin
+@testitem "GriddedQuery strategy: fused + fullbuffer both zero-alloc (incl. Int axes)" setup = [Basic, AllocConstants] begin
     using FastInterpolations
-    import FastInterpolations as FI
 
     # Int grid beside Int-`UnitRange` query axes — the combination whose
     # heterogeneous `targets` tuple boxed the fullbuffer hull closure before
@@ -766,9 +748,8 @@ end
     @test a3 <= ALLOC_THRESHOLD
 end
 
-@testitem "one-shot GriddedQuery: 3D + Fill parity" begin
+@testitem "one-shot GriddedQuery: 3D + Fill parity" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
 
     A = rand(24, 20, 16)
     grids = (1.0:24.0, 1.0:20.0, 1.0:16.0)
@@ -794,7 +775,7 @@ end
     @test linear_interp(grids, A, gqf; extrap = FillExtrap(0.0)) == itpf(gqf)
 end
 
-@testitem "unified interp: GriddedQuery flows through the batch query protocol" begin
+@testitem "unified interp: GriddedQuery flows through the batch query protocol" setup = [Basic] begin
     using FastInterpolations: _query_length, _query_eltype, _query_extract
 
     grids = (1.0:16.0, 1.0:12.0)
@@ -834,8 +815,7 @@ end
     @test _query_extract(gq, 21) == (gq.axes[1][1], gq.axes[2][2])
 end
 
-@testitem "unified interp: GriddedQuery + linear uses separable fast path" begin
-    import FastInterpolations as FI
+@testitem "unified interp: GriddedQuery + linear uses separable fast path" setup = [Basic] begin
 
     grids = (1.0:64.0, 1.0:48.0)
     A = rand(64, 48)
@@ -880,9 +860,8 @@ end
 # Multi-method separable evaluation (_AxisAnchor backbone)
 # ═══════════════════════════════════════════════════════════════════════════
 
-@testitem "gridded constant: gather == point-wise (sides × extraps, deriv, Int grids)" begin
+@testitem "gridded constant: gather == point-wise (sides × extraps, deriv, Int grids)" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: GriddedQuery, ConstantInterp, NearestSide, LeftSide, RightSide
 
     x = range(0.0, 10.0, 24)
@@ -970,9 +949,8 @@ end
     @test size(interp((x, y), A, GriddedQuery((tx, Float64[])); method = ConstantInterp(), extrap = ClampExtrap())) == (length(tx), 0)
 end
 
-@testitem "gridded hermite: fullbuffer == point-wise (flavors × extraps × ops)" begin
+@testitem "gridded hermite: fullbuffer == point-wise (flavors × extraps × ops)" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: GriddedQuery, PchipInterp, CardinalInterp, AkimaInterp
 
     x = range(0.0, 10.0, 24)
@@ -1087,9 +1065,8 @@ end
     @test size(interp((x, y), A, GriddedQuery((tx, Float64[])); method = PchipInterp(), extrap = ClampExtrap())) == (length(tx), 0)
 end
 
-@testitem "gridded cubic/quadratic: fused anchors == point-wise" begin
+@testitem "gridded cubic/quadratic: fused anchors == point-wise" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: GriddedQuery, CubicInterp, QuadraticInterp, EvalDeriv1
     using InteractiveUtils: which
 
@@ -1159,9 +1136,8 @@ end
     @test all(isnan, out_onfly)
 end
 
-@testitem "F7 gridded cubic/quadratic: persistent + one-shot zero-alloc warm" setup = [AllocConstants] begin
+@testitem "F7 gridded cubic/quadratic: persistent + one-shot zero-alloc warm" setup = [Basic, AllocConstants] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: GriddedQuery, CubicInterp, QuadraticInterp
 
     function persistent_alloc(out, grids, data, gq, method)
@@ -1207,9 +1183,8 @@ end
     end
 end
 
-@testitem "gridded routing: constant/hermite hooks, PeriodicBC + mixed-method fallback" begin
+@testitem "gridded routing: constant/hermite hooks, PeriodicBC + mixed-method fallback" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: GriddedQuery, ConstantInterp, PchipInterp, LinearInterp, PeriodicBC
     using InteractiveUtils: which
 
@@ -1248,9 +1223,8 @@ end
     @test Hmix ≈ refmix
 end
 
-@testitem "gridded constant/hermite: zero-alloc warm (Vector + Int axes)" setup = [AllocConstants] begin
+@testitem "gridded constant/hermite: zero-alloc warm (Vector + Int axes)" setup = [Basic, AllocConstants] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: GriddedQuery, ConstantInterp, PchipInterp, AkimaInterp
 
     # First execution of an @allocated call site can catch one-time pool
@@ -1287,9 +1261,8 @@ end
     @test steady(out3, g3, A3, gq3, PchipInterp()) <= ALLOC_THRESHOLD
 end
 
-@testitem "gridded N=1: flat-vector out disambiguation vs batch protocol" begin
+@testitem "gridded N=1: flat-vector out disambiguation vs batch protocol" setup = [Basic] begin
     using FastInterpolations
-    import FastInterpolations as FI
     using FastInterpolations: GriddedQuery, ConstantInterp, PchipInterp
 
     # `out::AbstractVector` + 1-axis GriddedQuery sits in the ambiguity
@@ -1319,8 +1292,7 @@ end
     @test all(isapprox.(H, refh; rtol = 1.0e-15, atol = 1.0e-13))
 end
 
-@testitem "unified itp(gq): one AbstractInterpolantND callable, N-D shape for all methods" begin
-    import FastInterpolations as FI
+@testitem "unified itp(gq): one AbstractInterpolantND callable, N-D shape for all methods" setup = [Basic] begin
     using InteractiveUtils: which
 
     x = range(0.0, 10.0, 24)
@@ -1380,8 +1352,7 @@ end
     @test b isa AbstractVector && length(b) == 3
 end
 
-@testitem "persistent hermite itp(gq): fast arm (not pointwise default), == one-shot" begin
-    import FastInterpolations as FI
+@testitem "persistent hermite itp(gq): fast arm (not pointwise default), == one-shot" setup = [Basic] begin
     using InteractiveUtils: which
 
     x = range(0.0, 10.0, 24)

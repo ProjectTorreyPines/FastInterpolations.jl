@@ -52,6 +52,12 @@ interp
 interp!
 ```
 
+### Query Containers
+
+```@docs
+GriddedQuery
+```
+
 ### Type Accessors
 
 ```@docs

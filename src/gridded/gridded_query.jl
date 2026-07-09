@@ -6,7 +6,7 @@
 # interpolant at it computes the interpolant at every combination (outer/tensor
 # product) of those coordinates, returning an N-D array sized `map(length, axes)`.
 #
-#   itp(GriddedQuery((x1d, y1d)))  ==  [itp((x1d[i], y1d[j])) for i, j]   (M×N)
+#   itp(GriddedQuery(x1d, y1d))  ==  [itp((x1d[i], y1d[j])) for i, j]   (M×N)
 #
 # The ONE idea this path adds over point-wise evaluation is SEPARABILITY:
 # each axis's (interval index, weight, cell width) is resolved ONCE per axis —
@@ -24,16 +24,33 @@
 # kernel `_linear_kernel(op, yL, yR, inv_h, α)`, exactly like point-wise ND.
 
 """
-    GriddedQuery(axes::Tuple)
     GriddedQuery(x1d, y1d, ...)
+    GriddedQuery(axes::Tuple{Vararg{AbstractVector}})
 
 A rectilinear (tensor-product) query: one coordinate vector per axis. Evaluating
 an interpolant at a `GriddedQuery` returns the interpolant sampled at every
-combination of the per-axis coordinates — an `N`-D array of size
+combination of the per-axis coordinates - an `N`-D array of size
 `map(length, axes)`.
 
-The coordinate vectors are arbitrary `AbstractVector`s (not restricted to
-ranges); uniform (`AbstractRange`) axes are the image-resize special case.
+The coordinate axes are arbitrary `AbstractVector`s. `AbstractRange` axes work
+directly; do not `collect` them unless you really need a `Vector`.
+
+# Examples
+
+```julia
+data = rand(10, 20)
+itp = linear_interp((1:10, 1:20), data)
+gq = GriddedQuery(range(1, 10, 40), [5, 6, 7])
+
+A = itp(gq)                    # size(A) == (40, 3)
+B = linear_interp((1:10, 1:20), data, gq)
+out = similar(A)
+itp(out, gq)                   # writes into the shaped output array
+```
+
+This is different from the usual ND batch query `(xqs, yqs)`, which evaluates
+pairwise points `(xqs[i], yqs[i])` and returns a vector. `GriddedQuery(xqs,
+yqs)` evaluates all combinations and returns a matrix.
 """
 struct GriddedQuery{T <: Tuple}
     axes::T

@@ -21,7 +21,12 @@ end
 # in AllocConstants only (not duplicated here) so the two snippets never redefine
 # the same binding; a later suite-wide migration can fold them together.
 @testsnippet Basic begin
-    import FastInterpolations as FI
+    # `const` (not `import ... as FI`): a snippet is a module and testitems pull in
+    # its bindings via `using`, which only re-exports names the module OWNS. An
+    # import-alias is non-owned and would be invisible under the ReTestItems runner
+    # (parallel CI), so `FI` must be an owned const. `using FastInterpolations` is
+    # auto-injected, so the module object is in scope here.
+    const FI = FastInterpolations
 
     # Elementwise CONSISTENCY check (fused vs point-wise), not an accuracy check:
     # the two paths differ only by FMA/muladd contraction, which is inline- and

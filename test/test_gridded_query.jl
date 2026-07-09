@@ -967,6 +967,9 @@ end
     end
     @test err isa DomainError
     @test occursin("axis 1", sprint(showerror, err))
+
+    @test size(interp((x, y), A, GriddedQuery((Float64[], ty)); method = ConstantInterp(), extrap = FI.ClampExtrap())) == (0, length(ty))
+    @test size(interp((x, y), A, GriddedQuery((tx, Float64[])); method = ConstantInterp(), extrap = FI.ClampExtrap())) == (length(tx), 0)
 end
 
 @testitem "gridded hermite: fullbuffer == point-wise (flavors × extraps × ops)" begin
@@ -1081,6 +1084,9 @@ end
     end
     @test err isa DomainError
     @test occursin("axis 1", sprint(showerror, err))
+
+    @test size(interp((x, y), A, GriddedQuery((Float64[], ty)); method = PchipInterp(), extrap = FI.ClampExtrap())) == (0, length(ty))
+    @test size(interp((x, y), A, GriddedQuery((tx, Float64[])); method = PchipInterp(), extrap = FI.ClampExtrap())) == (length(tx), 0)
 end
 
 @testitem "gridded cubic/quadratic: fused anchors == point-wise" begin
@@ -1098,7 +1104,7 @@ end
     close(a, b) = size(a) == size(b) && all(isapprox.(a, b; rtol = 2.0e-12, atol = 2.0e-12))
 
     for method in (CubicInterp(), QuadraticInterp())
-        for ex in (FI.ClampExtrap(), FI.FillExtrap(-7.25))
+        for ex in (FI.ClampExtrap(), FI.FillExtrap(-7.25), FI.WrapExtrap())
             C = interp((x, y), A, gq; method = method, extrap = ex)
             ref = [
                 interp((x, y), A, (qx, qy); method = method, extrap = ex)
@@ -1127,6 +1133,18 @@ end
                 for qx in tx, qy in ty
         ]
         @test close(Cd, refd)
+
+        err = try
+            interp((x, y), A, gq; method = method, extrap = FI.NoExtrap())
+            nothing
+        catch e
+            e
+        end
+        @test err isa DomainError
+        @test occursin("axis 1", sprint(showerror, err))
+
+        @test size(interp((x, y), A, GriddedQuery((Float64[], ty)); method = method, extrap = FI.ClampExtrap())) == (0, length(ty))
+        @test size(interp((x, y), A, GriddedQuery((tx, Float64[])); method = method, extrap = FI.ClampExtrap())) == (length(tx), 0)
     end
 
     out = zeros(length(tx), length(ty))

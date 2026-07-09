@@ -561,7 +561,7 @@ One-shot N-D linear interpolation at every combination of `gq.axes` coordinates
 `interp(grids, data, gq; method = LinearInterp(bc))` — identical output (linear
 is arithmetic, so its float-forcing eltype matches the generic path) and the
 same separable fast path via the `_try_gridded_separable!` hook. `extrap` is the
-per-axis policy (`NoExtrap`/`ClampExtrap`/`FillExtrap`/`ExtrapExtend`).
+per-axis policy (`NoExtrap`/`ClampExtrap`/`FillExtrap`/`ExtendExtrap`).
 """
 function linear_interp(
         grids::NTuple{N, AbstractVector},

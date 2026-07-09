@@ -167,3 +167,16 @@ end
         end
     end
 end
+
+@testitem "ND generic SoA batch output type: constant selection stays natural" begin
+    grids = (collect(1:5), collect(1:6))
+    data = [x + 10y for x in grids[1], y in grids[2]]
+    queries = ([1, 3, 5], [2, 4, 6])
+
+    c = interp(grids, data, queries; method = ConstantInterp())
+    @test eltype(c) === Int
+    @test c == [interp(grids, data, (x, y); method = ConstantInterp()) for (x, y) in zip(queries...)]
+
+    l = interp(grids, data, queries; method = LinearInterp())
+    @test eltype(l) === Float64
+end

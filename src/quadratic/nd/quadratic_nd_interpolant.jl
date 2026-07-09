@@ -125,7 +125,12 @@ end
 # N=1 collapse: a 1-axis grid tuple forwards to the genuine 1D quadratic path (lean
 # 1D batch loop; per-axis 1-tuple kwargs unwrap to scalar). More specific than the
 # `NTuple{N}` method above, so it only claims N=1. See linear_nd_interpolant.jl.
-@inline quadratic_interp(grids::Tuple{AbstractVector}, data::AbstractVector; kwargs...) =
+@inline quadratic_interp(
+    grids::Tuple{AbstractVector},
+    data::AbstractVector;
+    coeffs::AbstractCoeffStrategy = AutoCoeffs(),
+    kwargs...
+) =
     quadratic_interp(only(grids), data; _unwrap_nd_kwargs(values(kwargs))...)
 
 # N=1 scalar one-shot: bare scalar → scalar query `(q,)` → ND scalar one-shot

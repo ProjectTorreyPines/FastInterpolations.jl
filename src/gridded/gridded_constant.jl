@@ -13,6 +13,54 @@
 # Gather generator over N. The ops tuple type picks the point-wise formula at
 # compile time: all-EvalValue → plain gather × carrier; any deriv → `* 0`
 # (a constant's derivative is zero everywhere — same promote, zero value).
+
+# ---- anchor payload + resolution (constant) ----------------------------------
+# Constant: the physical interval is stored; `select_right` picks the node at
+# gather time. Carrier `one(Tq)` is reconstructed from the type param (op-agnostic
+# — the derivative `* 0` is a gather-kernel concern, not a payload one).
+struct _ConstantValuePayload{Tq}
+    select_right::Bool
+end
+@inline _carrier(::_ConstantValuePayload{Tq}) where {Tq} = one(Tq)
+
+@inline function _axis_anchor_type(
+        m::ConstantInterp,
+        grid::AbstractVector,
+        targets::AbstractVector,
+        op::AbstractEvalOp,
+        ::Type{Tvals}
+    ) where {Tvals}
+    Tone = promote_type(eltype(grid), eltype(targets))
+    return _AxisAnchor{_interval_type(grid), _ConstantValuePayload{Tone}}
+end
+
+# The side offset selects the node at gather time (`select_right`); the anchor
+# stores the physical interval, not a folded index. Clamp/Fill folds the
+# coordinate into the boundary cell (`dL ∈ [0, h]`) — the point-wise ND surface
+# clamps the query COORDINATE before its kernel, so an OOB-left raw `dL < 0`
+# would flip `RightSide`'s `iszero` test to the wrong node. Wrap folds in
+# `_anchor_loc`, Fill's slabs are a post-pass, NoExtrap throws in the loop.
+@inline function _resolve_anchor(
+        m::ConstantInterp,
+        ::Type{_AxisAnchor{I, _ConstantValuePayload{Tone}}},
+        grid::AbstractVector,
+        idxL::Int,
+        idxR::Int,
+        xq,
+        xL,
+        xR,
+        extrap::AbstractExtrap
+    ) where {I, Tone}
+    h = _get_h(grid, idxL, xL, xR)
+    dL = xq - xL
+    if extrap isa Union{ClampExtrap, FillExtrap}
+        dL = clamp(dL, zero(dL), oftype(dL, h))
+    end
+    select_right = _compute_single_offset(m.side, h, dL) == 1
+    interval = _interval_indices(grid, idxL, idxR)
+    return _AxisAnchor{I, _ConstantValuePayload{Tone}}(interval, _ConstantValuePayload{Tone}(select_right))
+end
+
 @generated function _constant_gridded_gather!(
         out::AbstractArray{<:Any, N},
         data::AbstractArray{<:Any, N},

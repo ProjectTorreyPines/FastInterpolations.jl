@@ -32,6 +32,54 @@
 @inline _gridded_slope_method(m::CardinalInterp) = CardinalSlopes(m.tension)
 @inline _gridded_slope_method(::AkimaInterp) = AkimaSlopes()
 
+# ---- anchor payload + resolution (local Hermite) -----------------------------
+# Geometry-only `(dL, h, inv_h)`; slopes are data-dependent and computed in-pass.
+# All fields are consumed by the Hermite basis for every op, so the payload is
+# not op-minimal (unlike Linear).
+struct _LocalHermitePayload{Tdl, Th, Tinv}
+    dL::Tdl
+    h::Th
+    inv_h::Tinv
+end
+
+@inline function _axis_anchor_type(
+        m::AbstractLocalHermiteInterp,
+        grid::AbstractVector,
+        targets::AbstractVector,
+        op::AbstractEvalOp,
+        ::Type{Tvals}
+    ) where {Tvals}
+    Tw = _promote_grid_float(eltype(grid), Tvals)
+    Tdl = promote_type(eltype(grid), eltype(targets), Tw)
+    return _AxisAnchor{_interval_type(grid), _LocalHermitePayload{Tdl, Tw, Tw}}
+end
+
+# Clamp/Fill folds the coordinate into the cell (`dL ∈ [0, h]`), matching the
+# point-wise ND surface, which clamps the query coordinate and still evaluates
+# the kernel (a Clamp-OOB derivative is the boundary cell polynomial's slope):
+# t = 0 is basis-exact; t = 1 is `h·inv_h` (≤ ~1 ulp). Geometry runs at the
+# value-matched `Tw` exactly like the point-wise 1D arm.
+@inline function _resolve_anchor(
+        m::AbstractLocalHermiteInterp,
+        ::Type{_AxisAnchor{I, _LocalHermitePayload{Tdl, Tw, Tw2}}},
+        grid::AbstractVector,
+        idxL::Int,
+        idxR::Int,
+        xq,
+        xL,
+        xR,
+        extrap::AbstractExtrap
+    ) where {I, Tdl, Tw, Tw2}
+    h = _get_h(Tw, grid, idxL)
+    inv_h = _get_inv_h(Tw, grid, idxL)
+    dL = Tdl(xq - xL)
+    if extrap isa Union{ClampExtrap, FillExtrap}
+        dL = clamp(dL, zero(Tdl), Tdl(h))
+    end
+    interval = _interval_indices(grid, idxL, idxR)
+    return _AxisAnchor{I, _LocalHermitePayload{Tdl, Tw, Tw2}}(interval, _LocalHermitePayload{Tdl, Tw, Tw2}(dL, Tw(h), Tw2(inv_h)))
+end
+
 # One separable pass: resolve axis `D` through the Hermite combine, pass every
 # other axis through (`ranges[e]` bounds; `ranges[D]` ignored). Loop nest and
 # static-dispatch mirror `_gridded_pass!` — axis 1 innermost (stride-1), the

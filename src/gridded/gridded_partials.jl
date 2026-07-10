@@ -10,6 +10,18 @@
 # Cubic/quadratic partials cell geometry: distinct named payloads (byte-equal
 # fields today, but the quadratic cell kernel does not consume `h`). One method
 # per method type so each carries its own payload identity.
+struct _CubicPartialsPayload{Tdl, Th, Tinv}
+    dL::Tdl
+    h::Th
+    inv_h::Tinv
+end
+
+struct _QuadraticPartialsPayload{Tdl, Th, Tinv}
+    dL::Tdl
+    h::Th
+    inv_h::Tinv
+end
+
 @inline function _axis_anchor_type(
         m::CubicInterp,
         grid::AbstractVector,

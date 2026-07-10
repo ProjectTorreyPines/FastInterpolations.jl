@@ -319,7 +319,11 @@ end
     x_inc = vcat(x_exc, x_exc[1] + period)
     n_q = 30
     xq = vcat(0.5 * h, period - 0.5 * h, period .* rand(n_q - 2))
-    y_bar = randn(n_q)
+    # Cardinal slopes are f-independent, so the NoBC−Periodic adjoint gap is
+    # rank-1 — a single scalar δ = Σ wq·ȳq with wq ≥ 0 (h10 ≥ 0, −h11 ≥ 0 on
+    # boundary cells). Mixed-sign randn ȳ cancels δ below rtol on ~1.4% of
+    # draws (CI flake). Positive ȳ: every term ≥ 0, pinned queries give δ ≥ 1/8.
+    y_bar = 1.0 .+ rand(n_q)
     bc_inc = PeriodicBC()
     bc_exc = PeriodicBC(endpoint = :exclusive, period = period)
 

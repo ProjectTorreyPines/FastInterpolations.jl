@@ -12,7 +12,7 @@
 # ========================================
 
 """
-    _ConstantAnchoredQuery{Tg, Tq}
+    _ConstantAnchoredQuery{Tg, Tq, I}
 
 Precomputed geometry for ultra-fast constant interpolation at a fixed query point.
 Internal API: no runtime grid validation; callers must ensure the anchor
@@ -21,9 +21,11 @@ matches the interpolant grid.
 # Type Parameters
 - `Tg`: Grid element type (stored in `h`)
 - `Tq <: Real`: Query point type (stored in `xq`, `dL`); may widen `Tg` (e.g. `Dual` for AD)
+- `I <: _AbstractIndices{2}`: Interval representation — `_ContiguousIndices{2}` (one Int) for
+  ordinary grids, `_ExplicitIndices{2}` (two Int) for periodic-exclusive seam cells
 
 # Fields
-- `interval::_ExplicitIndices{2}`: Physical cell interval; `interval[1]` is the left index, `interval[2]` the right
+- `interval::I`: Physical cell interval; `interval[1]` is the left index, `interval[2]` the right
   (legacy `aq.idxL` / `aq.idxR` virtual properties read through `getproperty` — see below).
   For non-periodic cells `idxR == idxL + 1`; at periodic-exclusive seam `idxL == n`, `idxR == 1` (wrap).
 - `xq`: Original query point (or wrapped value for periodic)
@@ -47,14 +49,15 @@ itp2(aq)              # Reuses same anchor
 Anchored evaluation is faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search.
 """
-struct _ConstantAnchoredQuery{Tg, Tq <: Real}
-    # Physical cell interval: `interval[1]` is the left index (idxL),
-    # `interval[2]` is the right index (idxR). For non-periodic cells
-    # `idxR == idxL + 1`; for periodic-exclusive seam cells `idxR == 1` (wrap).
-    # Unified across all wrap-aware methods via `_ExplicitIndices{K}`
-    # (src/core/axis_indices.jl). Legacy `aq.idxL` / `aq.idxR` accessors are
-    # preserved via `getproperty` below.
-    interval::_ExplicitIndices{2}
+struct _ConstantAnchoredQuery{Tg, Tq <: Real, I <: _AbstractIndices{2}}
+    # Physical cell interval: `interval[1]` is the left index (idxL), `interval[2]`
+    # is the right index (idxR). For non-periodic cells `idxR == idxL + 1`; for
+    # periodic-exclusive seam cells `idxR == 1` (wrap). Ordinary grids store the
+    # compact `_ContiguousIndices{2}` (one Int); periodic-exclusive seam cells
+    # store `_ExplicitIndices{2}` (src/core/axis_indices.jl).
+    # Legacy `aq.idxL` / `aq.idxR` accessors are preserved via `getproperty`
+    # below — every existing call site reads through the virtual property.
+    interval::I
     xq::Tq                     # query point (possibly wrapped, may be Dual for AD)
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     h::Tg                      # interval width
@@ -75,11 +78,13 @@ end
 @inline Base.propertynames(::_ConstantAnchoredQuery) =
     (:interval, :idxL, :idxR, :xq, :state, :h, :dL)
 
-# Stencil-native outer — infers `Tg, Tq` from arg types so callers can write
-# `_ConstantAnchoredQuery(_ExplicitIndices(idxL, idxR), xq, state, h, dL)` without
-# specifying type params. Mirrors Linear's interval-native outer.
-@inline _ConstantAnchoredQuery(interval::_ExplicitIndices{2}, xq::Tq, state::UInt8, h::Tg, dL::Tq) where {Tg, Tq} =
-    _ConstantAnchoredQuery{Tg, Tq}(interval, xq, state, h, dL)
+# Outer constructor: infers `Tg, Tq, I` from arg types so callers can write
+# `_ConstantAnchoredQuery(interval, xq, state, h, dL)` without specifying type
+# params. `I` is inferred from the caller's `interval` (contiguous for ordinary
+# grids, explicit at periodic-exclusive seams — chosen local to the call site).
+# Mirrors Linear's interval-native outer.
+@inline _ConstantAnchoredQuery(interval::I, xq::Tq, state::UInt8, h::Tg, dL::Tq) where {Tg, Tq, I <: _AbstractIndices{2}} =
+    _ConstantAnchoredQuery{Tg, Tq, I}(interval, xq, state, h, dL)
 
 # ========================================
 # Anchor Construction
@@ -159,7 +164,7 @@ function _anchor_query(
     ) where {T, S <: Real, P <: Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     Tq = promote_type(T, S)
-    output = Vector{_ConstantAnchoredQuery{T, Tq}}(undef, length(xq))
+    output = Vector{_ConstantAnchoredQuery{T, Tq, _interval_type(x)}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
         output[k] = _constant_anchor_query_impl(x, xq[k], wrap, searcher_resolved)
@@ -185,7 +190,7 @@ the caller reuses `buffer`. Writes `length(xq)` entries.
 The same `buffer` object, filled with anchored queries.
 """
 @inline function _fill_anchors!(
-        buffer::AbstractVector{_ConstantAnchoredQuery{T, Tq}},
+        buffer::AbstractVector{<:_ConstantAnchoredQuery{T, Tq}},
         x::AbstractVector{T},
         xq::AbstractVector{S},
         ::Val{:constant},
@@ -226,7 +231,7 @@ Internal implementation of _anchor_query for constant interpolation.
     # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual)
     xq_promoted = oftype(dL, loc.xq)
 
-    return _ConstantAnchoredQuery(_ExplicitIndices(loc.idxL, loc.idxR), xq_promoted, loc.state, h, dL)
+    return _ConstantAnchoredQuery(loc.interval, xq_promoted, loc.state, h, dL)
 end
 
 # ========================================

@@ -62,7 +62,7 @@
     h = _get_h(x_eff, idxL)
     inv_h = _get_inv_h(x_eff, idxL)
     alpha = (xq_wrapped - xL) * inv_h
-    aq = _LinearAnchoredQuery(_ExplicitIndices(idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
+    aq = _LinearAnchoredQuery(_interval_indices(x_eff, idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
 
     @inbounds for k in 1:K
         output[k] = _linear_eval_at_anchor(vecs[k], aq, op, extrap_p)
@@ -198,7 +198,7 @@ In-place one-shot linear interpolation at multiple query points.
             h = _get_h(x_eff, idxL)
             inv_h = _get_inv_h(x_eff, idxL)
             alpha = (xq_wrapped - xL) * inv_h
-            aq = _LinearAnchoredQuery(_ExplicitIndices(idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
+            aq = _LinearAnchoredQuery(_interval_indices(x_eff, idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
             for k in 1:K
                 outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, op, extrap_p)
             end
@@ -240,14 +240,14 @@ end
         x_eff = _resolve_axis(x, bc)
         extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
         searcher = _resolve_search(x_eff, xqs, search, nothing)
-        aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_actual, Tqp}, NQ)
+        aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_actual, Tqp, _interval_type(x_eff)}, NQ)
         @inbounds for j in 1:NQ
             xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
             idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
             h = _get_h(x_eff, idxL)
             inv_h = _get_inv_h(x_eff, idxL)
             alpha = (xq_wrapped - xL) * inv_h
-            aq_vec[j] = _LinearAnchoredQuery(_ExplicitIndices(idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
+            aq_vec[j] = _LinearAnchoredQuery(_interval_indices(x_eff, idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
         end
         @inbounds for k in 1:K
             for j in 1:NQ
@@ -260,7 +260,7 @@ end
     extrap_eff = _check_domain(x, xqs, extrap)
     searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap_eff isa WrapExtrap
-    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_actual, Tqp}, NQ)
+    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_actual, Tqp, _interval_type(x)}, NQ)
     _fill_anchors!(aq_vec, x, xqs, Val(:linear), wrap, searcher)
     @inbounds for k in 1:K
         for j in 1:NQ

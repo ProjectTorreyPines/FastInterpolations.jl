@@ -12,7 +12,7 @@
 # ========================================
 
 """
-    _CubicAnchoredQuery{Tg, Tq}
+    _CubicAnchoredQuery{Tg, Tq, I}
 
 Precomputed weights for ultra-fast cubic spline evaluation at a fixed query point.
 Internal API: no runtime grid validation; callers must ensure the anchor
@@ -21,9 +21,11 @@ matches the interpolant grid.
 # Type Parameters
 - `Tg`: Grid float type (Float32 or Float64)
 - `Tq`: Query type (Float or ForwardDiff.Dual for AD support)
+- `I <: _AbstractIndices{2}`: Interval representation — `_ContiguousIndices{2}` (one Int) for
+  ordinary grids, `_ExplicitIndices{2}` (two Int) for periodic-exclusive seam cells
 
 # Fields
-- `interval`: `_ExplicitIndices{2}` carrying the corner pair `(idxL, idxR)`.
+- `interval::I`: Physical cell interval carrying the corner pair `(idxL, idxR)`.
   `idxR == idxL + 1` for non-seam cells; `idxR == 1` at periodic-exclusive
   seam cells (wrap). Virtual properties `aq.idx` (= `idxL`), `aq.idxL`,
   and `aq.idxR` are exposed via `getproperty` for ergonomics.
@@ -60,12 +62,14 @@ When `xq` is a `ForwardDiff.Dual`, the anchor preserves the Dual type
 in both `xq` and weight fields, enabling automatic differentiation through
 series interpolant evaluation.
 """
-struct _CubicAnchoredQuery{Tg, Tq <: Real}
+struct _CubicAnchoredQuery{Tg, Tq <: Real, I <: _AbstractIndices{2}}
     # Physical cell interval: `interval[1]` is the left index (idxL), `interval[2]`
     # is the right index (idxR). For non-periodic cells `idxR == idxL + 1`; for
-    # periodic-exclusive seam cells `idxR == 1` (wrap). Mirrors `_LinearAnchoredQuery`.
+    # periodic-exclusive seam cells `idxR == 1` (wrap). Ordinary grids store the
+    # compact `_ContiguousIndices{2}` (one Int); periodic-exclusive seam cells
+    # store `_ExplicitIndices{2}` (src/core/axis_indices.jl). Mirrors `_LinearAnchoredQuery`.
     # Legacy `aq.idx` accessor is preserved via `getproperty` (= idxL).
-    interval::_ExplicitIndices{2}
+    interval::I
     xq::Tq                     # query point (possibly wrapped), Float or Dual
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     w0::NTuple{4, Tq}           # (wyL, wyR, wzL, wzR) for value
@@ -88,11 +92,13 @@ end
     (:interval, :idx, :idxL, :idxR, :xq, :state, :w0, :w1, :w2, :w3)
 
 # Outer constructor: infer Tq from weight element type (not from input xq).
-# When grid is Dual, weights are Dual even if xq is Float64.
+# When grid is Dual, weights are Dual even if xq is Float64. `I` is inferred
+# from the caller's `interval` (contiguous for ordinary grids, explicit at
+# periodic-exclusive seams — chosen local to the call site).
 # Widens xq to match weight type for struct consistency.
-@inline function _CubicAnchoredQuery(interval::_ExplicitIndices{2}, xq, state::UInt8, w0::NTuple{4, Tw}, w1::NTuple{4, Tw}, w2::NTuple{2, Tw}, w3::NTuple{2, Tw}, ::Type{Tg}) where {Tg, Tw}
+@inline function _CubicAnchoredQuery(interval::I, xq, state::UInt8, w0::NTuple{4, Tw}, w1::NTuple{4, Tw}, w2::NTuple{2, Tw}, w3::NTuple{2, Tw}, ::Type{Tg}) where {Tg, Tw, I <: _AbstractIndices{2}}
     xq_p = convert(Tw, xq)
-    return _CubicAnchoredQuery{Tg, Tw}(interval, xq_p, state, w0, w1, w2, w3)
+    return _CubicAnchoredQuery{Tg, Tw, I}(interval, xq_p, state, w0, w1, w2, w3)
 end
 
 # ========================================
@@ -269,7 +275,7 @@ function _anchor_query(
         wrap::Bool = false,
         searcher::P = _to_searcher(LinearBinarySearch())
     ) where {T, S <: Real, P <: Searcher}
-    isempty(xq) && return _CubicAnchoredQuery{T, T}[]
+    isempty(xq) && return _CubicAnchoredQuery{T, T, _interval_type(x)}[]
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     # First anchor determines concrete element type (Tq may widen for duck-typed grids)
     aq1 = _anchor_query_impl(x, _promote_coord(xq[1], T), wrap, searcher_resolved)
@@ -288,7 +294,7 @@ Fill a pre-allocated buffer with anchored queries for cubic spline evaluation.
 In-place version of `_anchor_query(x, xq, Val(:cubic))` for zero-allocation pooled usage.
 
 # Arguments
-- `buffer::AbstractVector{_CubicAnchoredQuery{Tg,Tq}}`: Pre-allocated buffer (length >= length(xq))
+- `buffer::AbstractVector{<:_CubicAnchoredQuery{Tg,Tq}}`: Pre-allocated buffer (length >= length(xq))
 - `x::AbstractVector{Tg}`: Grid points (must match interpolant's grid)
 - `xq::AbstractVector{Tq}`: Query points (must match buffer's query type)
 - `::Val{:cubic}`: Type tag for cubic interpolation
@@ -301,12 +307,12 @@ The same `buffer` object, filled with anchored queries.
 ```julia
 x = collect(range(0.0, 1.0, 101))
 xq = [0.15, 0.35, 0.75]
-buffer = Vector{_CubicAnchoredQuery{Float64,Float64}}(undef, length(xq))
+buffer = Vector{_CubicAnchoredQuery{Float64,Float64,_ContiguousIndices{2}}}(undef, length(xq))
 _fill_anchors!(buffer, x, xq, Val(:cubic))
 ```
 """
 @inline function _fill_anchors!(
-        buffer::AbstractVector{_CubicAnchoredQuery{Tg, Tq}},
+        buffer::AbstractVector{<:_CubicAnchoredQuery{Tg, Tq}},
         x::AbstractVector{Tg},
         xq::AbstractVector{S},
         ::Val{:cubic},
@@ -360,7 +366,7 @@ while preserving the full Dual value for weight computation.
     w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
     w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
 
-    return _CubicAnchoredQuery(_ExplicitIndices(loc.idxL, loc.idxR), loc.xq, loc.state, w0, w1, w2, w3, Tg)
+    return _CubicAnchoredQuery(loc.interval, loc.xq, loc.state, w0, w1, w2, w3, Tg)
 end
 
 # ========================================

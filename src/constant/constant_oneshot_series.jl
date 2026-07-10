@@ -47,7 +47,7 @@
     dL = xq_wrapped - xL
     # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual).
     xq_promoted = oftype(dL, xq_wrapped)
-    aq = _ConstantAnchoredQuery(_ExplicitIndices(idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
+    aq = _ConstantAnchoredQuery(_interval_indices(x_eff, idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
 
     x_last = @inbounds Tg(last(x_eff))
 
@@ -162,7 +162,7 @@ end
             h = _get_h(x_eff, idxL)
             dL = xq_wrapped - xL
             xq_promoted = oftype(dL, xq_wrapped)
-            aq = _ConstantAnchoredQuery(_ExplicitIndices(idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
+            aq = _ConstantAnchoredQuery(_interval_indices(x_eff, idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
             for k in 1:K
                 outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, op, side, extrap_p)
             end
@@ -207,14 +207,14 @@ end
         extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
         searcher = _resolve_search(x_eff, xqs, search, nothing)
         x_last = @inbounds Tg_actual(last(x_eff))
-        aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg_actual, Tqp}, NQ)
+        aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg_actual, Tqp, _interval_type(x_eff)}, NQ)
         @inbounds for j in 1:NQ
             xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
             idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
             h = _get_h(x_eff, idxL)
             dL = xq_wrapped - xL
             xq_promoted = oftype(dL, xq_wrapped)
-            aq_vec[j] = _ConstantAnchoredQuery(_ExplicitIndices(idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
+            aq_vec[j] = _ConstantAnchoredQuery(_interval_indices(x_eff, idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
         end
         @inbounds for k in 1:K
             for j in 1:NQ
@@ -228,7 +228,7 @@ end
     searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap_eff isa WrapExtrap
     x_last = @inbounds Tg_actual(last(x))
-    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg_actual, Tqp}, NQ)
+    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg_actual, Tqp, _interval_type(x)}, NQ)
     _fill_anchors!(aq_vec, x, xqs, Val(:constant), wrap, searcher)
     @inbounds for k in 1:K
         for j in 1:NQ

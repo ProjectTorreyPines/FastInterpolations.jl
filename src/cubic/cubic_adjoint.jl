@@ -55,7 +55,7 @@ end
 # ========================================
 
 """
-    CubicAdjoint{Tg, C, BC}
+    CubicAdjoint{Tg, C, BC, I}
 
 Adjoint (transpose) operator for cubic spline interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward interpolation weight matrix.
@@ -67,6 +67,7 @@ The same adjoint can be applied to any `ȳ` vector regardless of value type.
 - `Tg`: Grid float type (Float32 or Float64)
 - `C`: `CubicSplineCache` type (reused from forward interpolation)
 - `BC`: `BCPair` or `PeriodicBC` (normalized boundary condition)
+- `I`: Per-axis interval representation — `_ContiguousIndices{2}` (ordinary grid) or `_ExplicitIndices{2}` (exclusive-periodic seam)
 
 # Usage
 ```julia
@@ -96,12 +97,12 @@ Here `A` is the tridiagonal moment matrix, `R` the finite-difference RHS operato
 PolyFit stencil coefficients and periodic `q_transpose = A'^{-T}u` are computed on the
 fly at each `adj(ȳ)` call (O(D) and O(n) respectively, negligible vs overall pipeline).
 """
-struct CubicAdjoint{Tg, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}} <: AbstractAdjoint1D{Tg}
+struct CubicAdjoint{Tg, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}, I <: _AbstractIndices{2}} <: AbstractAdjoint1D{Tg}
     cache::C
     # Coordinate type is grid-pinned (`Tc = Tg`), not the canonical `_coord_eltype(Tq, Tg)`:
     # the adjoint operates on baked coefficients, so AD-through-adjoint is unsupported. The
     # forward Dual-grid contract is satisfied independently.
-    anchors::Vector{_CubicAnchoredQuery{Tg, Tg}}
+    anchors::Vector{_CubicAnchoredQuery{Tg, Tg, I}}
     bc::BC
 end
 
@@ -383,7 +384,7 @@ function _bake_cubic_clampfill_anchors(
     keep_w0 = extrap isa ClampExtrap
     z = zero(T)
     z4 = (z, z, z, z)
-    output = Vector{_CubicAnchoredQuery{T, T}}(undef, length(xq))
+    output = Vector{_CubicAnchoredQuery{T, T, _interval_type(x)}}(undef, length(xq))
     @inbounds for k in eachindex(xq)
         xq_raw = xq[k]
         aq = _anchor_query_impl(x, _promote_coord(_clamp_to_grid(xq_raw, x), T), false, searcher_resolved)
@@ -391,7 +392,7 @@ function _bake_cubic_clampfill_anchors(
             output[k] = aq
         else
             w0_new = keep_w0 ? aq.w0 : z4
-            output[k] = _CubicAnchoredQuery{T, T}(
+            output[k] = _CubicAnchoredQuery{T, T, _interval_type(x)}(
                 getfield(aq, :interval), aq.xq, IN_DOMAIN,
                 w0_new, z4, (z, z), (z, z)
             )

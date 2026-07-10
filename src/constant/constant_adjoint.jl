@@ -20,7 +20,7 @@
 # ========================================
 
 """
-    ConstantAdjoint{Tg, Tq, BC, SD, EP}
+    ConstantAdjoint{Tg, Tq, BC, SD, EP, I}
 
 Adjoint (transpose) operator for 1D constant interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward constant interpolation weight matrix.
@@ -34,6 +34,8 @@ The same adjoint can be applied to any `ȳ` vector.
 - `BC`: Boundary condition type
 - `SD`: Side selection mode (`NearestSide`, `LeftSide`, `RightSide`)
 - `EP`: Extrapolation policy type (`NoExtrap`, `ExtendExtrap`, `ClampExtrap`, `FillExtrap`, `WrapExtrap`)
+- `I <: _AbstractIndices{2}`: Interval representation — `_ContiguousIndices{2}` (one Int) for
+  ordinary grids, `_ExplicitIndices{2}` (two Int) for periodic-exclusive seam cells
 
 # Fields
 - `anchors`: Pre-computed `_ConstantAnchoredQuery` per query point
@@ -58,8 +60,8 @@ itp = constant_interp(x, f; side=NearestSide())
 @assert dot(itp.(xq), y_bar) ≈ dot(f, adj(y_bar))
 ```
 """
-struct ConstantAdjoint{Tg, Tq, BC <: AbstractBC, SD <: AbstractSide, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
-    anchors::Vector{_ConstantAnchoredQuery{Tg, Tq}}
+struct ConstantAdjoint{Tg, Tq, BC <: AbstractBC, SD <: AbstractSide, EP <: AbstractExtrap, I <: _AbstractIndices{2}} <: AbstractAdjoint1D{Tg}
+    anchors::Vector{_ConstantAnchoredQuery{Tg, Tq, I}}
     grid_size::Int  # internal length: n+1 for PeriodicBC{:exclusive}, n otherwise
     x_hi::Tg
     bc::BC
@@ -179,7 +181,7 @@ function _bake_constant_clampfill_anchors(
         searcher::P = _to_searcher(LinearBinarySearch())
     ) where {Tg, Tq <: Real, P <: Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
-    output = Vector{_ConstantAnchoredQuery{Tg, promote_type(Tg, Tq)}}(undef, length(xq))
+    output = Vector{_ConstantAnchoredQuery{Tg, promote_type(Tg, Tq), _interval_type(x)}}(undef, length(xq))
     @inbounds for k in eachindex(xq)
         xq_raw = xq[k]
         aq = _constant_anchor_query_impl(x, _clamp_to_grid(xq_raw, x), false, searcher_resolved)
@@ -272,7 +274,7 @@ function constant_adjoint(
     end
 
     Tq = eltype(anchors).parameters[2]
-    return ConstantAdjoint{Tg, Tq, typeof(bc), typeof(side), typeof(extrap_eff)}(
+    return ConstantAdjoint{Tg, Tq, typeof(bc), typeof(side), typeof(extrap_eff), _interval_type(x_axis)}(
         anchors, length(x_axis), x_hi, bc, side, extrap_eff
     )
 end

@@ -540,7 +540,7 @@
             expected = FI._anchor_query(x, xq, Val(:cubic))
 
             # In-place version
-            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64}}(undef, length(xq))
+            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:cubic))
 
             # Verify all fields match exactly (bit-wise)
@@ -562,7 +562,7 @@
             expected = FI._anchor_query(x, xq, Val(:cubic), true)
 
             # In-place
-            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64}}(undef, length(xq))
+            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:cubic), true)
 
             for i in eachindex(xq)
@@ -576,7 +576,7 @@
         @testset "length assertion when buffer too small" begin
             x = collect(range(0.0, 1.0, 101))
             xq = [0.15, 0.35, 0.5, 0.75]  # 4 points
-            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64}}(undef, 2)  # Only 2 slots
+            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, 2)  # Only 2 slots
 
             @test_throws AssertionError FI._fill_anchors!(buffer, x, xq, Val(:cubic))
         end
@@ -584,7 +584,7 @@
         @testset "empty vector case" begin
             x = collect(range(0.0, 1.0, 101))
             xq = Float64[]
-            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64}}(undef, 0)
+            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, 0)
 
             # Should not throw
             FI._fill_anchors!(buffer, x, xq, Val(:cubic))
@@ -595,7 +595,7 @@
             x = Float32.(collect(range(0.0f0, 1.0f0, 101)))
             xq = Float32[0.15f0, 0.35f0, 0.5f0]  # Float32 queries
 
-            buffer = Vector{FI._CubicAnchoredQuery{Float32, Float32}}(undef, length(xq))
+            buffer = Vector{FI._CubicAnchoredQuery{Float32, Float32, FI._ContiguousIndices{2}}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:cubic))
 
             @test all(aq -> aq isa FI._CubicAnchoredQuery{Float32, Float32}, buffer)
@@ -604,7 +604,7 @@
         @testset "zero allocation after warmup" begin
             x = collect(range(0.0, 1.0, 101))
             xq = collect(range(0.1, 0.9, 50))
-            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64}}(undef, length(xq))
+            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, length(xq))
 
             # Warmup
             FI._fill_anchors!(buffer, x, xq, Val(:cubic))

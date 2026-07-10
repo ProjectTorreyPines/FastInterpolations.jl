@@ -26,7 +26,8 @@ include("hetero/interp_1d.jl")  # 1D bare-vector entry points for `interp`/`inte
 # Backbone first (defines `_AxisAnchor` + the resolution loop); each method file
 # then owns its payload + `_axis_anchor_type` + `_resolve_anchor` + kernels.
 include("gridded/axis_anchor.jl")       # shared per-axis anchor backbone (multi-method)
-include("gridded/gridded_query.jl")     # GriddedQuery type + protocol + linear separable path
+include("gridded/gridded_query.jl")     # GriddedQuery type + protocol + shared helpers
+include("gridded/gridded_linear.jl")    # linear separable path (default method)
 include("gridded/gridded_constant.jl")  # constant gather fast path
 include("gridded/gridded_hermite.jl")   # local-Hermite fullbuffer fast path
 include("gridded/gridded_dispatch.jl")  # unified itp(gq) callable on AbstractInterpolantND

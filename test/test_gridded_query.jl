@@ -1324,7 +1324,7 @@ end
     emit = FI._gridded_eval_methods!
     ops = (EvalValue(), EvalValue())
     extraps = (ClampExtrap(), ClampExtrap())
-    @test occursin("gridded_query", String(which(emit, typeof((args[1], itpL.grids, itpL.data, gq.axes, (LinearInterp(), LinearInterp()), ops, extraps))).file))
+    @test occursin("gridded_linear", String(which(emit, typeof((args[1], itpL.grids, itpL.data, gq.axes, (LinearInterp(), LinearInterp()), ops, extraps))).file))
     itpConst = constant_interp((x, y), A; extrap = ClampExtrap())
     @test occursin("gridded_constant", String(which(emit, typeof((args[1], itpConst.grids, itpConst.data, gq.axes, (ConstantInterp(), ConstantInterp()), ops, extraps))).file))
     @test occursin("gridded_dispatch", String(which(emit, typeof((args[1], itpCub.grids, A, gq.axes, (CubicInterp(), CubicInterp()), ops, extraps))).file))

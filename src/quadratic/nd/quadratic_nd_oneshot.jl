@@ -60,10 +60,10 @@ Zero-allocation after warmup (pool reuse).
     # 5. Eval pipeline (axis-only — grids carry `h`/`inv_h` directly)
     q_eval = _handle_all_extraps(query, grids_c, extraps_eff)
     indices, Ls, _ = _search_all_intervals(q_eval, grids_c, searches, hints, extraps_eff)
-    hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls)
+    _, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls)
 
-    # 6. Tensor-product kernel evaluation
-    return _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
+    # 6. Tensor-product kernel evaluation (quadratic uses only inv_h/dL)
+    return _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
 end
 
 """
@@ -113,8 +113,8 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
         end
         q_eval = _handle_all_extraps(query_k, grids_c, extraps_eff)
         indices, Ls, _ = _search_all_intervals(q_eval, grids_c, policies, hints, extraps_eff)
-        hs, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls)
-        output[k] = _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
+        _, inv_hs, dLs = _compute_all_local_params(q_eval, grids_c, indices, Ls)
+        output[k] = _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
     end
     return output
 end

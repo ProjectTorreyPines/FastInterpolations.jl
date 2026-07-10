@@ -1,6 +1,9 @@
 # Anchor Indices and Gridded Payload Refactor
 
-> Status: implementation handoff; Phase 1 complete
+> Status: Phases 1–5 complete on `refac/gridded-query`. Phase 4 landed as the
+> **minimal swap** (`_IdxStencil{2}` → `_ExplicitIndices{2}`, Series anchor sizes
+> unchanged); the full per-anchor `I` parameterization + size reductions are a
+> deferred incremental follow-up (the `interval` field is already in place).
 >
 > Working branch: `refac/gridded-query`
 >
@@ -356,7 +359,8 @@ Status: **complete**.
 
 ## Phase 2 — Canonical `_AnchorLoc` interval
 
-Status: **not started**.
+Status: **complete**. `_AnchorLoc{I,Tg,Tq}` carries `interval::I`; ordinary
+40 B / explicit 48 B; all six location consumers migrated to `loc.idxL`.
 
 ### RED
 
@@ -406,7 +410,14 @@ Also run Runic and `git diff --check`.
 
 ## Phase 3 — Canonical Gridded anchor and named op-aware payloads
 
-Status: **not started**.
+Status: **complete** (landed as 3a structural + 3b op-minimal). `_AxisAnchor{I,P}`
+with named payloads, phantom `M` removed, exclusive-periodic idxR-in-payload hack
+gone. Op-minimal Linear payloads (value → alpha only, deriv1 → inv_h only,
+deriv2+ → zero-size) thread `op` into `_axis_anchor_type` only; `_resolve_anchor`
+and kernels dispatch on the payload type. Perf A/B vs Phase 2: all hot paths
+within run-to-run noise (<5% gate), zero warm allocs. NOTE: gridded anchors are
+now op-specific (rebuilt per eval) — a low-level test that reused a value anchor
+under a deriv op was updated to build op-matched anchors.
 
 This is the main PR cleanup phase.
 
@@ -489,7 +500,13 @@ Interpretation:
 
 ## Phase 4 — Series and legacy ND migration
 
-Status: **not started**.
+Status: **complete (minimal swap)**. `_IdxStencil`/`_IdxPair` and
+`src/core/idx_stencil.jl` + `test/test_idx_stencil.jl` deleted; Series anchors,
+one-shot Series, 1D/ND adjoints, and ND Linear/Constant kernels now use
+`_ExplicitIndices{2}` (field `stencil` → `interval`, `Val`-indexed accessors).
+Anchor sizes are **unchanged** (48/64/128) — the size reductions in the table
+below require the deferred full `I`-parameterization (which cascades into four
+adjoint/ND anchor-storage structs). Quadratic's single-`Int` anchor left as-is.
 
 ### RED
 
@@ -556,7 +573,15 @@ Gridded payload access is zero.
 
 ## Phase 5 — Cleanup and final validation
 
-Status: **not started**.
+Status: **complete**. Stale "corner stencil" prose retired; `interval` vs future
+`support` indices documented in `axis_indices.jl`. Verified: no abstract fields
+or abstract-element anchor vectors (`_anchor_loc`, gridded, and Series anchors
+all concrete + isbits), accessors infer to `Int`/carrier and are zero-alloc in a
+loop, Runic + `git diff --check` clean on every touched file. The complete
+package test suite + minimum-Julia run remain the maintainer's pre-PR step.
+Deferred to a follow-up: full per-anchor `I` parameterization (Series size
+reductions), `stencils`/`_getstencil` internal renames, and the periodic
+Local-Hermite separable `support` fast path (roadmap §10).
 
 - [ ] Remove stale comments describing tuple payload layouts.
 - [ ] Remove stale “corner stencil” terminology where the object is now a

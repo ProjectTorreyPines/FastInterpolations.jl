@@ -23,7 +23,7 @@ matches the interpolant grid.
 - `Tq`: Query type (widened to `promote_type(Tq, Tg)` by the outer constructor)
 
 # Fields
-- `interval::_ExplicitIndices{2}`: Corner-index interval; `interval[1]` is the left index, `interval[2]` the right
+- `interval::_ExplicitIndices{2}`: Physical cell interval; `interval[1]` is the left index, `interval[2]` the right
   (legacy `aq.idxL` / `aq.idxR` virtual properties read through `getproperty` — see below).
   For non-periodic cells `idxR == idxL + 1`; at periodic-exclusive seam `idxL == n`, `idxR == 1` (wrap).
 - `xq`: Original query point (or wrapped value for periodic), preserves original precision
@@ -54,7 +54,7 @@ as it eliminates O(log n) binary search.
 - `inv_h` for EvalDeriv1: `_fielddiff(Tc, yR, yL) * inv_h` (wrap-safe, no division)
 """
 struct _LinearAnchoredQuery{Tg, Tq <: Real}
-    # Corner-index interval: `interval[1]` is the left index (idxL), `interval[2]`
+    # Physical cell interval: `interval[1]` is the left index (idxL), `interval[2]`
     # is the right index (idxR). For non-periodic cells `idxR == idxL + 1`; for
     # periodic-exclusive seam cells `idxR == 1` (wrap). Unified across all
     # wrap-aware methods via `_ExplicitIndices{K}` (src/core/axis_indices.jl).

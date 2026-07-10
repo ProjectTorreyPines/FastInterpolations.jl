@@ -598,7 +598,7 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 @inline _getL(r) = r[3]
 @inline _getR(r) = r[4]
 
-# Stencil-valued interval tuple per axis: `stencils[d] = _ExplicitIndices{2}((idx_L_d, idx_R_d))`.
+# Interval tuple per axis: `stencils[d] = _ExplicitIndices{2}((idx_L_d, idx_R_d))`.
 # Consumers (periodic-aware ND kernels) read corner addresses via
 # `stencils[d][bit_d + 1]` — `bit=0 → idx_L`, `bit=1 → idx_R`. For non-periodic
 # axes `idx_R == idx_L + 1`; for periodic-exclusive axes at the seam `idx_R == 1`

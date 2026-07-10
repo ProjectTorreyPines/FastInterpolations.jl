@@ -61,7 +61,7 @@ in both `xq` and weight fields, enabling automatic differentiation through
 series interpolant evaluation.
 """
 struct _CubicAnchoredQuery{Tg, Tq <: Real}
-    # Corner-index interval: `interval[1]` is the left index (idxL), `interval[2]`
+    # Physical cell interval: `interval[1]` is the left index (idxL), `interval[2]`
     # is the right index (idxR). For non-periodic cells `idxR == idxL + 1`; for
     # periodic-exclusive seam cells `idxR == 1` (wrap). Mirrors `_LinearAnchoredQuery`.
     # Legacy `aq.idx` accessor is preserved via `getproperty` (= idxL).

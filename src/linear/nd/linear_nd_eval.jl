@@ -114,7 +114,7 @@ reads `stencils[d][b_d + 1]` (bit 0 → `idx_L_d`, bit 1 → `idx_R_d`). Non-per
 cells have `idx_R == idx_L + 1`; periodic-exclusive seam cells have `idx_R == 1`
 (wrap), so the kernel reads the wrapped neighbor without data extension.
 
-Single stencil-only kernel for all ops. Persistent callers wrap single-index
+Single interval-only kernel for all ops. Persistent callers wrap single-index
 `indices` via `map(i -> _ExplicitIndices(i, i+1), indices)`; BC oneshot callers receive
 seam-aware stencils from `_search_all_intervals_stencil`.
 """

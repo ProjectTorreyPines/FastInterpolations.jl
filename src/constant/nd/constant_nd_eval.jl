@@ -125,7 +125,7 @@ on the persistent fast lane, 3-arg dispatch form on the BC oneshot path).
 The kernel itself is now geometry-agnostic and matches the shape of
 `_multilinear_sum`.
 
-Single-overload, stencil-only kernel — both persistent and BC oneshot
+Single-overload, interval-only kernel — both persistent and BC oneshot
 paths share this signature.
 """
 @generated function _constant_nd_kernel(

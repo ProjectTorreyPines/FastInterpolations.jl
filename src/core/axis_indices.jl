@@ -12,6 +12,16 @@
 # The types deliberately do not subtype `AbstractVector`. Hot kernels need only
 # fixed-size indexing and length; avoiding the array interface keeps the
 # protocol small and prevents generic array fallbacks from entering core paths.
+#
+# `K` is the number of ordered indices along ONE axis, not the spatial dimension.
+# Two distinct roles use this family:
+#   * `interval` (K=2): the physical cell endpoints `(idxL, idxR)` returned by
+#     `search_interval` — what every anchor carries today.
+#   * `support` (K=4/6, future): the broader data neighborhood a Local-Hermite
+#     method needs to estimate both endpoint slopes. Not stored until a kernel
+#     consumes it (dead payload otherwise), and periodic support additionally
+#     needs geometry (`x[1] + period` after `x[n]`) kept separate from the index
+#     collection — see `_periodic_secant` / `_periodic_cell_width`.
 
 abstract type _AbstractIndices{K} end
 

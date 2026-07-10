@@ -151,3 +151,117 @@ end
     end
     return buffer
 end
+
+# ─── Bare payload kernels ────────────────────────────────────────────────────
+# Bodies mirror the full-anchor kernels exactly — matrix layout mirrors
+# `_eval_series_anchored`, raw-vector layout mirrors `_cubic_eval_kernel` —
+# with weights read from the payload (`a.w`) instead of the op-selected field.
+# Named for the payload family, not "series": any future lean-anchor consumer
+# (e.g. unified `interp` batch routing) reuses them as-is.
+
+# matrix layout (series-contiguous column k)
+@inline function _cubic_payload_kernel(
+        y::Matrix, z::Matrix, k::Int,
+        a::_AxisAnchor{<:_AbstractIndices{2}, <:Union{_CubicValuePayload1D, _CubicDeriv1Payload1D}}
+    )
+    wyL, wyR, wzL, wzR = a.w
+    idxL = a.idxL
+    idxR = a.idxR
+    @inbounds return muladd(
+        wyR, y[idxR, k], muladd(
+            wyL, y[idxL, k],
+            muladd(wzR, z[idxR, k], wzL * z[idxL, k])
+        )
+    )
+end
+
+@inline function _cubic_payload_kernel(
+        y::Matrix, z::Matrix, k::Int,
+        a::_AxisAnchor{<:_AbstractIndices{2}, <:Union{_CubicDeriv2Payload1D, _CubicDeriv3Payload1D}}
+    )
+    wzL, wzR = a.w
+    @inbounds return muladd(wzR, z[a.idxR, k], wzL * z[a.idxL, k])
+end
+
+@inline function _cubic_payload_kernel(
+        y::Matrix, ::Matrix, k::Int,
+        a::_AxisAnchor{<:_AbstractIndices{2}, <:_CubicZeroPayload1D}
+    )
+    @inbounds return 0 * y[a.idxL, k]
+end
+
+# raw-vector layout (one-shot Series)
+@inline function _cubic_payload_kernel(
+        y::AbstractVector, z::AbstractVector,
+        a::_AxisAnchor{<:_AbstractIndices{2}, <:Union{_CubicValuePayload1D, _CubicDeriv1Payload1D}}
+    )
+    wyL, wyR, wzL, wzR = a.w
+    idxL = a.idxL
+    idxR = a.idxR
+    @inbounds return muladd(
+        wyR, y[idxR], muladd(
+            wyL, y[idxL],
+            muladd(wzR, z[idxR], wzL * z[idxL])
+        )
+    )
+end
+
+@inline function _cubic_payload_kernel(
+        ::AbstractVector, z::AbstractVector,
+        a::_AxisAnchor{<:_AbstractIndices{2}, <:Union{_CubicDeriv2Payload1D, _CubicDeriv3Payload1D}}
+    )
+    wzL, wzR = a.w
+    @inbounds return muladd(wzR, z[a.idxR], wzL * z[a.idxL])
+end
+
+@inline function _cubic_payload_kernel(
+        y::AbstractVector, ::AbstractVector,
+        a::_AxisAnchor{<:_AbstractIndices{2}, <:_CubicZeroPayload1D}
+    )
+    return 0 * (@inbounds y[a.idxL])
+end
+
+# ─── Surface extrap adapters ─────────────────────────────────────────────────
+# These ARE surface-specific: each preserves its surface's CURRENT OOB formula
+# bit-exactly (they differ on signed zero — see the OOB pins):
+#   * persistent matrix:  `val * one(Tq)`         (series_utils helpers)
+#   * one-shot raw-vector: `_eval_extrapolation(op, val, extrap, zero(Tq))`
+# `one(Tq)`/`zero(Tq)` are value-independent, so no `xq` is stored. In-domain
+# delegates to the bare kernel through a rebuilt bare anchor (isbits, zero-cost).
+
+@inline _payload_eltype(::Type{_CubicValuePayload1D{Tq}}) where {Tq} = Tq
+@inline _payload_eltype(::Type{_CubicDeriv1Payload1D{Tq}}) where {Tq} = Tq
+@inline _payload_eltype(::Type{_CubicDeriv2Payload1D{Tq}}) where {Tq} = Tq
+@inline _payload_eltype(::Type{_CubicDeriv3Payload1D{Tq}}) where {Tq} = Tq
+@inline _payload_eltype(::Type{_CubicZeroPayload1D{Tq}}) where {Tq} = Tq
+
+@inline function _cubic_series_eval(
+        y::Matrix, z::Matrix, k::Int,
+        a::_AxisAnchor{I, _StatefulPayload{P}},
+        extrap::AbstractExtrap
+    ) where {I <: _AbstractIndices{2}, P}
+    if a.state != IN_DOMAIN
+        return _constant_extrap_boundary_value(
+            y, a.state, size(y, 1), k, _payload_op(P), extrap, _payload_eltype(P)
+        )
+    end
+    return _cubic_payload_kernel(y, z, k, _AxisAnchor(getfield(a, :interval), a.inner))
+end
+
+@inline _cubic_series_eval(y::Matrix, z::Matrix, k::Int, a::_AxisAnchor, ::AbstractExtrap) =
+    _cubic_payload_kernel(y, z, k, a)
+
+@inline function _cubic_series_eval(
+        y::AbstractVector, z::AbstractVector,
+        a::_AxisAnchor{I, _StatefulPayload{P}},
+        extrap::AbstractExtrap
+    ) where {I <: _AbstractIndices{2}, P}
+    if a.state != IN_DOMAIN
+        y_bnd = a.state == OOB_LEFT ? first(y) : last(y)
+        return _eval_extrapolation(_payload_op(P), y_bnd, extrap, zero(_payload_eltype(P)))
+    end
+    return _cubic_payload_kernel(y, z, _AxisAnchor(getfield(a, :interval), a.inner))
+end
+
+@inline _cubic_series_eval(y::AbstractVector, z::AbstractVector, a::_AxisAnchor, ::AbstractExtrap) =
+    _cubic_payload_kernel(y, z, a)

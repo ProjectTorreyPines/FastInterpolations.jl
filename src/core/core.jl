@@ -11,6 +11,7 @@ include("axis_types.jl")       # 4b. Axis struct definitions (_CachedRange / _Ca
 include("cached_range.jl")     # 5. _CachedRange methods (_to_float, _get_h, _resolve_axis, _cache_axis*)
 include("cached_vector.jl")    # 5c. _CachedVector methods (build ctor, _get_h, _resolve_axis, _cache_axis*)
 include("search.jl")           # 6. Search policy + interval search
+include("axis_indices.jl")     # 6a. Compact/explicit fixed-size per-axis indices
 include("idx_stencil.jl")      # 6a. _IdxStencil{K} — wrap-aware per-axis index stencil
 include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)
 include("utils.jl")            # 7. Shared utilities (1D)

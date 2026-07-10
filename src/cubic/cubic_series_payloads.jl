@@ -152,6 +152,32 @@ end
     return buffer
 end
 
+# Periodic (seam-aware) lean anchor: mirrors `_build_periodic_cubic_anchor`
+# exactly (wrap → 4-tuple search → 2-arg cached geometry) while baking only the
+# requested op's weights. Periodic Series eval has no extrap dispatch (queries
+# always wrap in-domain), so the payload is always bare.
+@inline function _build_periodic_series_anchor(
+        ::Type{_AxisAnchor{I, P}},
+        cache::CubicSplineCache,
+        xq,
+        searcher::Searcher
+    ) where {I <: _AbstractIndices{2}, P}
+    xq_wrapped = _wrap_to_domain(xq, cache.x)
+    idxL, idxR, xL, xR = search_interval(searcher, cache.x, xq_wrapped)
+    h = _get_h(cache.x, idxL)
+    inv_h = _get_inv_h(cache.x, idxL)
+    dL = xq_wrapped - xL
+    dR = xR - xq_wrapped
+    return _AxisAnchor{I, P}(
+        _interval_indices(cache.x, idxL, idxR), _make_series_payload(P, h, inv_h, dL, dR)
+    )
+end
+
+@inline _make_series_payload(::Type{P}, h, inv_h, dL, dR) where {P <: _CubicWeightedPayload1D} =
+    P(_compute_anchor_weights(_payload_op(P), h, inv_h, dL, dR))
+@inline _make_series_payload(::Type{_CubicZeroPayload1D{Tq}}, h, inv_h, dL, dR) where {Tq} =
+    _CubicZeroPayload1D{Tq}()
+
 # ─── Bare payload kernels ────────────────────────────────────────────────────
 # Bodies mirror the full-anchor kernels exactly — matrix layout mirrors
 # `_eval_series_anchored`, raw-vector layout mirrors `_cubic_eval_kernel` —

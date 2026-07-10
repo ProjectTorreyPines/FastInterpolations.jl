@@ -392,7 +392,7 @@ function _bake_cubic_clampfill_anchors(
         else
             w0_new = keep_w0 ? aq.w0 : z4
             output[k] = _CubicAnchoredQuery{T, T}(
-                getfield(aq, :stencil), aq.xq, IN_DOMAIN,
+                getfield(aq, :interval), aq.xq, IN_DOMAIN,
                 w0_new, z4, (z, z), (z, z)
             )
         end

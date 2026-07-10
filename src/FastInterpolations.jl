@@ -22,9 +22,12 @@ include("hetero/hetero.jl")
 include("hetero/local_hermite_nd_forward.jl")  # pchip/cardinal/akima ND forwarders to `interp`
 include("hetero/interp_1d.jl")  # 1D bare-vector entry points for `interp`/`interp!`
 
-# Gridded (rectilinear / tensor-product) query — separable evaluation on a grid
-include("gridded/gridded_query.jl")
+# Gridded (rectilinear / tensor-product) query — separable evaluation on a grid.
+# Backbone first (defines `_AxisAnchor` + the resolution loop); each method file
+# then owns its payload + `_axis_anchor_type` + `_resolve_anchor` + kernels.
 include("gridded/axis_anchor.jl")       # shared per-axis anchor backbone (multi-method)
+include("gridded/gridded_query.jl")     # GriddedQuery type + protocol + shared helpers
+include("gridded/gridded_linear.jl")    # linear separable path (default method)
 include("gridded/gridded_constant.jl")  # constant gather fast path
 include("gridded/gridded_hermite.jl")   # local-Hermite fullbuffer fast path
 include("gridded/gridded_dispatch.jl")  # unified itp(gq) callable on AbstractInterpolantND

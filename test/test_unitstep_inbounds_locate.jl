@@ -241,7 +241,7 @@ end
 end
 
 @testitem "one-shot InBounds lean search === NoExtrap (all methods, scalar + batch)" begin
-    # The one-shot path threads `extraps` into its search (`_search_all_intervals_stencil`
+    # The one-shot path threads `extraps` into its search (`_search_all_axis_intervals`
     # for linear/constant, `_search_all_intervals` for cubic/quad), so an InBounds range
     # axis takes the lean `_search_direct_inbounds`. This must be bit-identical to the
     # generic NoExtrap one-shot for in-domain queries — a characterization test (green
@@ -278,7 +278,7 @@ end
     # The seam wrap `(n, 1, …)` for `PeriodicBC{:exclusive}` is produced by `search_interval`
     # on `_ExclusivePeriodicAxis` (`<: AbstractVector`, NOT `_CachedRange`) under `WrapExtrap`
     # (never `InBounds`). The lean fast path requires `_CachedRange` + `InBounds`, so it can
-    # never match a periodic axis — its `_search_axis_stencil` fallback runs the unchanged
+    # never match a periodic axis — its `_search_axis_interval` fallback runs the unchanged
     # code. Pin it: the one-shot at the seam must equal the (unaffected) persistent path.
     using FastInterpolations: PeriodicBC, NoBC
 

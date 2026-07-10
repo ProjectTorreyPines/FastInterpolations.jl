@@ -23,7 +23,7 @@ matches the interpolant grid.
 - `Tq`: Query type (Float or ForwardDiff.Dual for AD support)
 
 # Fields
-- `stencil`: `_IdxStencil{2}` carrying the corner pair `(idxL, idxR)`.
+- `interval`: `_ExplicitIndices{2}` carrying the corner pair `(idxL, idxR)`.
   `idxR == idxL + 1` for non-seam cells; `idxR == 1` at periodic-exclusive
   seam cells (wrap). Virtual properties `aq.idx` (= `idxL`), `aq.idxL`,
   and `aq.idxR` are exposed via `getproperty` for ergonomics.
@@ -61,11 +61,11 @@ in both `xq` and weight fields, enabling automatic differentiation through
 series interpolant evaluation.
 """
 struct _CubicAnchoredQuery{Tg, Tq <: Real}
-    # Corner-index stencil: `stencil[1]` is the left index (idxL), `stencil[2]`
+    # Physical cell interval: `interval[1]` is the left index (idxL), `interval[2]`
     # is the right index (idxR). For non-periodic cells `idxR == idxL + 1`; for
     # periodic-exclusive seam cells `idxR == 1` (wrap). Mirrors `_LinearAnchoredQuery`.
     # Legacy `aq.idx` accessor is preserved via `getproperty` (= idxL).
-    stencil::_IdxStencil{2}
+    interval::_ExplicitIndices{2}
     xq::Tq                     # query point (possibly wrapped), Float or Dual
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     w0::NTuple{4, Tq}           # (wyL, wyR, wzL, wzR) for value
@@ -77,22 +77,22 @@ end
 # Virtual property accessors — legacy `aq.idx` ergonomics + new `aq.idxL`/`aq.idxR`.
 # Val-dispatch (rather than a single `getproperty` with `===` branches) forces
 # per-property compile-time specialization so each lookup inlines to a single
-# `getfield` (+ tuple index for the stencil paths). Avoids the union-typed
+# `getfield` (+ tuple index for the interval paths). Avoids the union-typed
 # return that would otherwise box weights/state in hot loops.
 @inline Base.getproperty(aq::_CubicAnchoredQuery, s::Symbol) = _get_cub_prop(aq, Val(s))
-@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{:idx}) = getfield(aq, :stencil)[1]
-@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{:idxL}) = getfield(aq, :stencil)[1]
-@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{:idxR}) = getfield(aq, :stencil)[2]
+@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{:idx}) = getfield(aq, :interval)[Val(1)]
+@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{:idxL}) = getfield(aq, :interval)[Val(1)]
+@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{:idxR}) = getfield(aq, :interval)[Val(2)]
 @inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{s}) where {s} = getfield(aq, s)
 @inline Base.propertynames(::_CubicAnchoredQuery) =
-    (:stencil, :idx, :idxL, :idxR, :xq, :state, :w0, :w1, :w2, :w3)
+    (:interval, :idx, :idxL, :idxR, :xq, :state, :w0, :w1, :w2, :w3)
 
 # Outer constructor: infer Tq from weight element type (not from input xq).
 # When grid is Dual, weights are Dual even if xq is Float64.
 # Widens xq to match weight type for struct consistency.
-@inline function _CubicAnchoredQuery(stencil::_IdxStencil{2}, xq, state::UInt8, w0::NTuple{4, Tw}, w1::NTuple{4, Tw}, w2::NTuple{2, Tw}, w3::NTuple{2, Tw}, ::Type{Tg}) where {Tg, Tw}
+@inline function _CubicAnchoredQuery(interval::_ExplicitIndices{2}, xq, state::UInt8, w0::NTuple{4, Tw}, w1::NTuple{4, Tw}, w2::NTuple{2, Tw}, w3::NTuple{2, Tw}, ::Type{Tg}) where {Tg, Tw}
     xq_p = convert(Tw, xq)
-    return _CubicAnchoredQuery{Tg, Tw}(stencil, xq_p, state, w0, w1, w2, w3)
+    return _CubicAnchoredQuery{Tg, Tw}(interval, xq_p, state, w0, w1, w2, w3)
 end
 
 # ========================================
@@ -349,8 +349,8 @@ while preserving the full Dual value for weight computation.
     # Compute geometry (cubic-internal concern)
     # h and inv_h are Tg (grid type)
     # dL and dR preserve Dual type for AD (via loc.xq)
-    h = _get_h(x, loc.idx, loc.xL, loc.xR)
-    inv_h = _get_inv_h(x, loc.idx, loc.xL, loc.xR)
+    h = _get_h(x, loc.idxL, loc.xL, loc.xR)
+    inv_h = _get_inv_h(x, loc.idxL, loc.xL, loc.xR)
     dL = loc.xq - loc.xL
     dR = loc.xR - loc.xq
 
@@ -360,7 +360,7 @@ while preserving the full Dual value for weight computation.
     w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
     w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
 
-    return _CubicAnchoredQuery(_IdxPair(loc.idx, loc.idxR), loc.xq, loc.state, w0, w1, w2, w3, Tg)
+    return _CubicAnchoredQuery(_ExplicitIndices(loc.idxL, loc.idxR), loc.xq, loc.state, w0, w1, w2, w3, Tg)
 end
 
 # ========================================

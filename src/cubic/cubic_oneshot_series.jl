@@ -66,10 +66,10 @@ end
     w1 = _compute_anchor_weights(EvalDeriv1(), h, inv_h, dL, dR)
     w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
     w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
-    return _CubicAnchoredQuery(_IdxPair(idxL, idxR), xq_wrapped, IN_DOMAIN, w0, w1, w2, w3, eltype(cache.x))
+    return _CubicAnchoredQuery(_ExplicitIndices(idxL, idxR), xq_wrapped, IN_DOMAIN, w0, w1, w2, w3, eltype(cache.x))
 end
 
-# Periodic scalar: zero-copy. One search → seam-aware `_IdxPair` anchor → loop
+# Periodic scalar: zero-copy. One search → seam-aware `_ExplicitIndices` anchor → loop
 # solve+eval per series. No grid extension, no `y_p` rebuild.
 #
 # Mirrors `_linear_oneshot_series_periodic!`: wrap query, search once, anchor

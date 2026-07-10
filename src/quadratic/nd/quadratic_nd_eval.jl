@@ -111,8 +111,8 @@ end
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp}
     ) where {N}
-    partials, indices, hs, inv_hs, dLs = cell
-    return _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
+    partials, indices, _, inv_hs, dLs = cell   # `hs` in the cell tuple is unused by quadratic
+    return _eval_nd_quad_cell(partials, indices, inv_hs, dLs, ops)
 end
 
 # Per-method sample of `Tv` for fill-value paths (e.g. `_try_fill_oob`).
@@ -128,7 +128,6 @@ end
 @inline @generated function _eval_nd_quad_cell(
         partials::AbstractArray{Tv, NP1},
         indices::NTuple{N, Int},
-        hs::NTuple{N, Tg},
         inv_hs::NTuple{N, Tg},
         dLs::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp}
@@ -137,9 +136,10 @@ end
 
     stmts = Expr[]
 
-    # Unpack tuples using destructuring
+    # Unpack tuples using destructuring. Quadratic reads only `inv_h`/`dL` — the
+    # cell width `h` never reaches `_quadratic_kernel_nd` (physical-coord form).
     for (prefix, source) in [
-            ("idx_", :indices), ("h_", :hs), ("inv_h_", :inv_hs),
+            ("idx_", :indices), ("inv_h_", :inv_hs),
             ("dL_", :dLs), ("op_", :ops),
         ]
         syms = ntuple(d -> Symbol(prefix, d), N)

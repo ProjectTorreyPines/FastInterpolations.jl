@@ -58,7 +58,7 @@ function _bake_constant_nd_anchors(
             # true `_CachedRange` endpoint is IN_DOMAIN, matching the forward.
             state_flag = _oob_state(grids[d], xq_raw)
 
-            return _ConstantAnchoredQuery{Tg, Tq}(_IdxPair(idx, idxR), xq_d, state_flag, h, dL)
+            return _ConstantAnchoredQuery{Tg, Tq}(_ExplicitIndices(idx, idxR), xq_d, state_flag, h, dL)
         end
         anchors[q] = per_axis
     end

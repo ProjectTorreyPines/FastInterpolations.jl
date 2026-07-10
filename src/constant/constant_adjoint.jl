@@ -185,7 +185,7 @@ function _bake_constant_clampfill_anchors(
         aq = _constant_anchor_query_impl(x, _clamp_to_grid(xq_raw, x), false, searcher_resolved)
         state = _oob_state(x, xq_raw)
         output[k] = state == IN_DOMAIN ? aq :
-            typeof(aq)(aq.stencil, aq.xq, state, aq.h, aq.dL)
+            typeof(aq)(aq.interval, aq.xq, state, aq.h, aq.dL)
     end
     return output
 end
@@ -244,7 +244,7 @@ function constant_adjoint(
     length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
 
     # BC-aware axis wrap: `:exclusive` periodic → `_ExclusivePeriodicAxis` with
-    # logical length n+1. Anchors at the seam cell store stencil = (n, n+1);
+    # logical length n+1. Anchors at the seam cell store interval = (n, n+1);
     # the protocol's exclusive-periodic in-place callable folds f_work[1] +=
     # f_work[n+1] before trim. Right-boundary special case `xq == x_hi` also
     # writes to f_bar[n+1] (the virtual seam endpoint), so it folds correctly.

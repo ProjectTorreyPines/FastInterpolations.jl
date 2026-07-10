@@ -194,7 +194,7 @@ function _bake_linear_clampfill_anchors(
         aq = _linear_anchor_query_impl(x, _clamp_to_grid(xq_raw, x), false, searcher_resolved)
         state = _oob_state(x, xq_raw)
         output[k] = state == IN_DOMAIN ? aq :
-            typeof(aq)(aq.stencil, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha)
+            typeof(aq)(aq.interval, aq.xq, state, aq.xL, aq.h, aq.inv_h, aq.alpha)
     end
     return output
 end
@@ -253,7 +253,7 @@ function linear_adjoint(
 
     # BC-aware axis wrap: `:exclusive` periodic → `_ExclusivePeriodicAxis` with
     # logical length n+1 (virtual seam endpoint `inner[1] + period`). Anchors
-    # at the seam cell store stencil = (n, n+1); the protocol's exclusive-
+    # at the seam cell store interval = (n, n+1); the protocol's exclusive-
     # periodic in-place callable folds f_work[1] += f_work[n+1] before trim.
     x_axis = _cache_axis(x_p, bc, Tg)
     # Periodic BCs auto-promote `extrap` to `WrapExtrap` against the wrapped axis;

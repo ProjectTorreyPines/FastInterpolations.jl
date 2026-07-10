@@ -47,37 +47,69 @@ end
 # ========================================
 
 """
-    _AnchorLoc{Tg, Tq}
+    _AnchorLoc{I, Tg, Tq}
 
-Result of `_anchor_loc`: interval location + domain state classification,
+Result of `_anchor_loc`: physical search interval + domain state classification,
 with NO geometry (h, inv_h, dL, dR). Geometry is each method's internal concern.
 
 # Type Parameters
+- `I <: _AbstractIndices{2}`: concrete interval representation — `_ContiguousIndices{2}`
+  for ordinary axes, `_ExplicitIndices{2}` for exclusive-periodic axes. Selected
+  per axis type (see [`_interval_indices`](@ref)), so the parameter is concrete.
 - `Tg <: AbstractFloat`: grid element type (for `xL`, `xR`)
 - `Tq <: Real`: query type (preserves ForwardDiff.Dual for AD)
 
-- `idx::Int`: left interval index
-- `idxR::Int`: right interval index; may wrap for exclusive-periodic axes
+# Fields
+- `interval::I`: the physical `(idxL, idxR)` cell returned by `search_interval`.
+  Ordinary axes store only the left index (`idxR == idxL + 1`); exclusive-periodic
+  axes store both, so the seam cell `(n, 1)` survives.
 - `xq::Tq`: query point (possibly wrapped), preserves Dual for AD
 - `state::UInt8`: domain state — `IN_DOMAIN`, `OOB_LEFT`, or `OOB_RIGHT`
-- `xL::Tg`: left node x[idx]
-- `xR::Tg`: right coordinate paired with `idxR`
+- `xL::Tg`: left node coordinate paired with `idxL`
+- `xR::Tg`: right node coordinate paired with `idxR`
+
+`idxL`/`idxR` are Val-dispatched virtual properties reading through `interval`.
 """
-struct _AnchorLoc{Tg, Tq <: Real}
-    idx::Int
-    idxR::Int
+struct _AnchorLoc{
+        I <: _AbstractIndices{2},
+        Tg,
+        Tq <: Real,
+    }
+    interval::I
     xq::Tq
     state::UInt8
     xL::Tg
     xR::Tg
 end
 
+# ──────────────────────────────────────────────────────────────
+# Virtual property accessors — `loc.idxL` / `loc.idxR` read through `interval`
+# ──────────────────────────────────────────────────────────────
+# `idxL`/`idxR` always mean the physical search-interval endpoints. Val-dispatch
+# forces compile-time specialization so each access inlines to `getfield` + a
+# folded index op (a single-method Symbol branch would union the return types
+# — Int / Tq / UInt8 / Tg / I — and defeat inference in hot loops).
+@inline Base.getproperty(loc::_AnchorLoc, s::Symbol) = _get_anchor_loc_property(loc, Val(s))
+@inline _get_anchor_loc_property(loc::_AnchorLoc, ::Val{:idxL}) = getfield(loc, :interval)[Val(1)]
+@inline _get_anchor_loc_property(loc::_AnchorLoc, ::Val{:idxR}) = getfield(loc, :interval)[Val(2)]
+@inline _get_anchor_loc_property(loc::_AnchorLoc, ::Val{s}) where {s} = getfield(loc, s)
+@inline Base.propertynames(::_AnchorLoc) = (:interval, :idxL, :idxR, :xq, :state, :xL, :xR)
+
+# ──────────────────────────────────────────────────────────────
+# Interval representation selector — chosen per axis type, not per query
+# ──────────────────────────────────────────────────────────────
+# Ordinary axes never store a redundant right index; exclusive-periodic axes
+# always store the explicit pair (including interior queries) so one anchor
+# vector has one concrete element type.
+@inline _interval_indices(::AbstractVector, idxL::Int, idxR::Int) = _ContiguousIndices{2}(idxL)
+@inline _interval_indices(::_ExclusivePeriodicAxis, idxL::Int, idxR::Int) = _ExplicitIndices(idxL, idxR)
+
 # ========================================
 # _anchor_loc: Shared Location Function
 # ========================================
 
 """
-    _anchor_loc(x, xq, wrap, policy) -> _AnchorLoc{Tg, Tq}
+    _anchor_loc(x, xq, wrap, policy) -> _AnchorLoc{I, Tg, Tq}
 
 Shared interval location for all interpolation methods.
 Performs: domain-state classification (`_oob_state`, widened `_CachedRange`
@@ -124,9 +156,8 @@ Dual type. The interval search uses `_extract_primal(xq)` for comparisons.
         state = _oob_state(x, xq_primal)
     end
 
-    # Find interval. For ordinary axes, the right index is always `idx + 1`.
-    # Keeping that relationship local preserves the old anchor-construction
-    # code shape; seam-aware axes specialize this method below.
+    # Find interval. For ordinary axes, the right index is always `idx + 1`, so
+    # `_interval_indices` stores only the left index (contiguous).
     idx, xL, xR = if state == OOB_LEFT
         @inbounds (1, x[1], x[2])
     elseif state == OOB_RIGHT
@@ -140,7 +171,8 @@ Dual type. The interval search uses `_extract_primal(xq)` for comparisons.
         (_i, _xL, _xR)
     end
 
-    return _AnchorLoc{Tg, typeof(xq)}(idx, idx + 1, xq, state, xL, xR)
+    interval = _interval_indices(x, idx, idx + 1)
+    return _AnchorLoc{typeof(interval), Tg, typeof(xq)}(interval, xq, state, xL, xR)
 end
 
 @inline function _anchor_loc(
@@ -170,12 +202,14 @@ end
     end
 
     # Seam-aware axes must preserve the right index returned by their search
-    # overload: the seam cell is `(idx, idxR) == (n, 1)`.
+    # overload: the seam cell is `(idx, idxR) == (n, 1)`. `_interval_indices`
+    # stores both indices explicitly for every query on this axis.
     idx, idxR, xL, xR = if state == IN_DOMAIN
         search_interval(policy, x, xq_primal, InBounds())
     else
         search_interval(policy, x, xq_primal)
     end
 
-    return _AnchorLoc{Tg, typeof(xq)}(idx, idxR, xq, state, xL, xR)
+    interval = _interval_indices(x, idx, idxR)
+    return _AnchorLoc{typeof(interval), Tg, typeof(xq)}(interval, xq, state, xL, xR)
 end

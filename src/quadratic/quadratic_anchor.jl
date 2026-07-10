@@ -217,7 +217,7 @@ while preserving the full Dual value for `dL` computation.
     # Compute dL: offset from interval start (preserves Dual type)
     dL = loc.xq - loc.xL
 
-    return _QuadraticAnchoredQuery(loc.idx, loc.xq, loc.state, dL, Tg)
+    return _QuadraticAnchoredQuery(loc.idxL, loc.xq, loc.state, dL, Tg)
 end
 
 # ========================================

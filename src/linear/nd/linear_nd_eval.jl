@@ -53,8 +53,8 @@ end
     indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, policies, hints, mono, extraps)
     inv_hs = map(_get_inv_h, itp.grids, indices)
     αs = map(_alpha_of, q_eval, Ls, inv_hs)
-    stencils = map(i -> _IdxPair(i, i + 1), indices)
-    return (itp.data, stencils, inv_hs, αs)
+    intervals = map(i -> _ExplicitIndices(i, i + 1), indices)
+    return (itp.data, intervals, inv_hs, αs)
 end
 
 # No N=2 specialization: the generic-N locate above inlines to the same code at
@@ -70,8 +70,8 @@ end
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp}
     ) where {Tg, Tv, N}
-    data, stencils, inv_hs, αs = cell
-    return _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
+    data, intervals, inv_hs, αs = cell
+    return _multilinear_sum(data, intervals, inv_hs, αs, ops, Val(N))
 end
 
 # Per-method sample of `Tv` for fill-value paths (e.g. `_try_fill_oob`).
@@ -98,7 +98,7 @@ end
 # ========================================
 
 """
-    _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
+    _multilinear_sum(data, intervals, inv_hs, αs, ops, Val(N))
 
 N-dimensional multilinear interpolation by **nested repeated-linear collapse**:
 read the 2^N cell corners, then collapse one axis per stage via the shared 1D
@@ -109,18 +109,18 @@ per-axis operation — EvalValue → `α·hi + (1−α)·lo` (convex value blend
 kernel on each differentiated axis. Costs `2^N − 1` `_linear_kernel` calls vs the
 old flat weight-expansion's `N·2^N` products; matches cubic/quadratic ND's collapse.
 
-`stencils[d]::_IdxStencil{2}` carries `(idx_L_d, idx_R_d)` — corner `b ∈ {0,1}^N`
-reads `stencils[d][b_d + 1]` (bit 0 → `idx_L_d`, bit 1 → `idx_R_d`). Non-periodic
+`intervals[d]::_ExplicitIndices{2}` carries `(idx_L_d, idx_R_d)` — corner `b ∈ {0,1}^N`
+reads `intervals[d][b_d + 1]` (bit 0 → `idx_L_d`, bit 1 → `idx_R_d`). Non-periodic
 cells have `idx_R == idx_L + 1`; periodic-exclusive seam cells have `idx_R == 1`
 (wrap), so the kernel reads the wrapped neighbor without data extension.
 
-Single stencil-only kernel for all ops. Persistent callers wrap single-index
-`indices` via `map(i -> _IdxPair(i, i+1), indices)`; BC oneshot callers receive
-seam-aware stencils from `_search_all_intervals_stencil`.
+Single interval-only kernel for all ops. Persistent callers wrap single-index
+`indices` via `map(i -> _ExplicitIndices(i, i+1), indices)`; BC oneshot callers receive
+seam-aware intervals from `_search_all_axis_intervals`.
 """
 @generated function _multilinear_sum(
         data::AbstractArray{Tv, N},
-        stencils::NTuple{N, _IdxStencil{2}},
+        intervals::NTuple{N, _ExplicitIndices{2}},
         inv_hs::Tuple{Vararg{Real, N}},   # heterogeneous-tolerant (raw mixed-precision grids); each axis used independently
         αs::Tuple{Vararg{Real, N}},
         ops::NTuple{N, AbstractEvalOp},
@@ -132,10 +132,10 @@ seam-aware stencils from `_search_all_intervals_stencil`.
     ihsyms = ntuple(d -> Symbol("ih_", d), N)
     opsyms = ntuple(d -> Symbol("op_", d), N)
     push!(stmts, :(($(αsyms...),) = αs))
-    push!(stmts, :(($(ssyms...),) = stencils))
+    push!(stmts, :(($(ssyms...),) = intervals))
     push!(stmts, :(($(ihsyms...),) = inv_hs))
     push!(stmts, :(($(opsyms...),) = ops))
-    # Stage 0: read the 2^N corners through the (seam-aware) stencils.
+    # Stage 0: read the 2^N corners through the (seam-aware) intervals.
     num = 1 << N
     cur = Vector{Symbol}(undef, num)
     for c in 0:(num - 1)

@@ -3,25 +3,30 @@
 # (pure downsampling) and multi-pass full buffer (otherwise).
 
 @testitem "_AxisAnchor: linear builder + extrap fold" setup = [Basic] begin
-    using FastInterpolations: _AxisAnchor, _gridded_anchors
+    using FastInterpolations: _AxisAnchor, _gridded_anchors, _LinearPayload,
+        _ContiguousIndices, _ExplicitIndices
 
     g = collect(1.0:10.0)
-    linear_anchor_type = _AxisAnchor{typeof(LinearInterp(NoBC())), Tuple{Float64, Float64}}
+    # `_AxisAnchor{I, P}`: physical interval `I` + named payload `P` (no phantom
+    # method tag, no positional tuple payload).
+    linear_anchor_type = _AxisAnchor{_ContiguousIndices{2}, _LinearPayload{Float64, Float64}}
     @test !isdefined(FI, :_GriddedAnchor)
 
-    # in-domain: interval index + normalized in-cell weight
+    # in-domain: contiguous interval + named in-cell weight / reciprocal width
     b = _gridded_anchors(g, [3.25], ExtendExtrap(), 1)
     @test eltype(b) == linear_anchor_type
     @test isbits(b[1]) && sizeof(b[1]) == 24
-    @test b[1].idx == 3
-    @test b[1].payload[1] ≈ 0.25
-    @test b[1].payload[2] == 1.0   # unit-step grid → reciprocal cell width is exactly 1
+    @test b[1].interval isa _ContiguousIndices{2}
+    @test b[1].idxL == 3
+    @test b[1].idxR == 4          # ordinary cell derives the right tap
+    @test b[1].alpha ≈ 0.25
+    @test b[1].inv_h == 1.0       # unit-step grid → reciprocal cell width is exactly 1
 
     # Clamp folds the OOB weight to the boundary node; Extend keeps it
     bC = _gridded_anchors(g, [0.0], ClampExtrap(), 1)
-    @test bC[1].idx == 1 && bC[1].payload[1] === 0.0
+    @test bC[1].idxL == 1 && bC[1].alpha === 0.0
     bE = _gridded_anchors(g, [0.0], ExtendExtrap(), 1)
-    @test bE[1].idx == 1 && bE[1].payload[1] === -1.0
+    @test bE[1].idxL == 1 && bE[1].alpha === -1.0
 
     # NoExtrap throws on the first OOB coordinate, naming the axis
     @test_throws DomainError _gridded_anchors(g, [0.5], NoExtrap(), 2)
@@ -36,18 +41,20 @@
 
     # Float32 grid + targets stay Float32 (no silent widening)
     b32 = _gridded_anchors(collect(Float32, 1:10), Float32[2.5], ClampExtrap(), 1)
-    @test eltype(b32) == _AxisAnchor{typeof(LinearInterp(NoBC())), Tuple{Float32, Float32}}
-    @test b32[1].payload[1] === 0.5f0
+    @test eltype(b32) == _AxisAnchor{_ContiguousIndices{2}, _LinearPayload{Float32, Float32}}
+    @test b32[1].alpha === 0.5f0
 
     # Exclusive periodic axes are the only linear gridded anchors that need to
-    # retain a right tap; the seam cell wraps to the physical first node.
+    # retain a right tap; the seam cell wraps to the physical first node, and the
+    # explicit interval — not the payload — now carries it.
     bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
     gx = FI._cache_axis(collect(0.0:3.0), bc)
     bx = _gridded_anchors(gx, [3.75], WrapExtrap(), 1)
-    @test eltype(bx) == _AxisAnchor{typeof(LinearInterp(NoBC())), Tuple{Int, Float64, Float64}}
-    @test bx[1].idx == 4
-    @test bx[1].payload[1] == 1
-    @test bx[1].payload[2] ≈ 0.75
+    @test eltype(bx) == _AxisAnchor{_ExplicitIndices{2}, _LinearPayload{Float64, Float64}}
+    @test bx[1].interval isa _ExplicitIndices{2}
+    @test bx[1].idxL == 4
+    @test bx[1].idxR == 1
+    @test bx[1].alpha ≈ 0.75
 end
 
 @testitem "anchor-build searcher: hint chaining for clustered targets" setup = [Basic] begin
@@ -171,8 +178,8 @@ end
     # coordinate-extrema hull == anchor tap extrema (monotone coord → idx map)
     hx = _gridded_hull(itp.grids[1], tx, itp.extraps[1])
     hy = _gridded_hull(itp.grids[2], ty, itp.extraps[2])
-    @test first(hx) == minimum(a -> a.idx, ax) && last(hx) == maximum(a -> a.idx, ax) + 1
-    @test first(hy) == minimum(a -> a.idx, ay) && last(hy) == maximum(a -> a.idx, ay) + 1
+    @test first(hx) == minimum(a -> a.idxL, ax) && last(hx) == maximum(a -> a.idxL, ax) + 1
+    @test first(hy) == minimum(a -> a.idxL, ay) && last(hy) == maximum(a -> a.idxL, ay) + 1
     @test issubset(hx, 1:64) && issubset(hy, 1:48)
     @test length(hy) < 48   # the zoom window is a strict sub-range
     # unsorted targets: extrema (not first/last) drives the hull

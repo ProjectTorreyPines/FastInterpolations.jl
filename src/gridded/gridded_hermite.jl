@@ -66,8 +66,10 @@
             quote
                 for $(js[d]) in eachindex(anchors)
                     a = anchors[$(js[d])]
-                    il = a.idx
-                    dL_a, h_a, invh_a = a.payload
+                    il = a.idxL
+                    dL_a = a.dL
+                    h_a = a.h
+                    invh_a = a.inv_h
                     $body
                 end
             end

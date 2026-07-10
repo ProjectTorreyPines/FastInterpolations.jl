@@ -164,13 +164,9 @@ end
 # collapsed inside — for N = 2 this is exactly lo/hi = axis-2 combines, then
 # the axis-1 combine. The combine is the shared 1D kernel
 # `_linear_kernel(op, yL, yR, inv_h, α)`, so the per-axis op selects value
-# blend / slope / carrier-zero exactly as point-wise ND eval does.
-@inline _linear_gridded_anchor_components(a) =
-    _linear_gridded_anchor_components(a, a.payload)
-@inline _linear_gridded_anchor_components(a, p::Tuple{Tα, Tinv}) where {Tα, Tinv} =
-    (a.idx + 1, p[1], p[2])
-@inline _linear_gridded_anchor_components(a, p::Tuple{Int, Tα, Tinv}) where {Tα, Tinv} =
-    (p[1], p[2], p[3])
+# blend / slope / carrier-zero exactly as point-wise ND eval does. The left/
+# right taps come straight from the anchor's interval (`a.idxL`/`a.idxR`) — the
+# ordinary cell derives the right tap, the exclusive-periodic seam stores it.
 
 function _fused_corner_expr(N::Int, d::Int, idxs::Vector{Any})
     d > N && return Expr(:ref, :A, idxs...)
@@ -202,9 +198,10 @@ end
         body = quote
             for $(js[d]) in eachindex(anchors[$d])
                 $a = anchors[$d][$(js[d])]
-                $(Symbol(:il_, d)) = $a.idx
-                $(Symbol(:ir_, d)), $(Symbol(:alpha_, d)), $(Symbol(:invh_, d)) =
-                    _linear_gridded_anchor_components($a)
+                $(Symbol(:il_, d)) = $a.idxL
+                $(Symbol(:ir_, d)) = $a.idxR
+                $(Symbol(:alpha_, d)) = $a.alpha
+                $(Symbol(:invh_, d)) = $a.inv_h
                 $body
             end
         end
@@ -251,8 +248,10 @@ _gridded_fused!(
             quote
                 for $(js[d]) in eachindex(anchors)
                     a = anchors[$(js[d])]
-                    il = a.idx
-                    ir, alpha, invh = _linear_gridded_anchor_components(a)
+                    il = a.idxL
+                    ir = a.idxR
+                    alpha = a.alpha
+                    invh = a.inv_h
                     $body
                 end
             end

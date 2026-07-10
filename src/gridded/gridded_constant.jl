@@ -31,8 +31,8 @@
         body = quote
             for $(js[d]) in eachindex(anchors[$d])
                 $a = anchors[$d][$(js[d])]
-                $(sels[d]) = $a.idx
-                $(ones_[d]) = $a.payload[1]
+                $(sels[d]) = ifelse($a.select_right, $a.idxR, $a.idxL)
+                $(ones_[d]) = _carrier($a.payload)
                 $body
             end
         end

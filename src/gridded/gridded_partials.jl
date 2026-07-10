@@ -7,35 +7,71 @@
 # anchors resolve each target axis once, then a fused output loop calls the
 # existing scalar cell kernels without per-output interval search.
 
+# Cubic/quadratic partials cell geometry: distinct named payloads (byte-equal
+# fields today, but the quadratic cell kernel does not consume `h`). One method
+# per method type so each carries its own payload identity.
 @inline function _axis_anchor_type(
-        m::Union{CubicInterp, QuadraticInterp},
+        m::CubicInterp,
         grid::AbstractVector,
         targets::AbstractVector,
         ::Type{Tvals}
     ) where {Tvals}
     Tw = _promote_grid_float(eltype(grid), Tvals)
     Tdl = promote_type(eltype(grid), eltype(targets), Tw)
-    return _AxisAnchor{typeof(m), Tuple{Tdl, Tw, Tw}}
+    return _AxisAnchor{_interval_type(grid), _CubicPartialsPayload{Tdl, Tw, Tw}}
+end
+
+@inline function _axis_anchor_type(
+        m::QuadraticInterp,
+        grid::AbstractVector,
+        targets::AbstractVector,
+        ::Type{Tvals}
+    ) where {Tvals}
+    Tw = _promote_grid_float(eltype(grid), Tvals)
+    Tdl = promote_type(eltype(grid), eltype(targets), Tw)
+    return _AxisAnchor{_interval_type(grid), _QuadraticPartialsPayload{Tdl, Tw, Tw}}
 end
 
 @inline function _resolve_anchor(
-        m::Union{CubicInterp, QuadraticInterp},
-        ::Type{_AxisAnchor{M, Tuple{Tdl, Tw, Tw2}}},
+        m::CubicInterp,
+        ::Type{_AxisAnchor{I, _CubicPartialsPayload{Tdl, Tw, Tw2}}},
         grid::AbstractVector,
-        idx::Int,
+        idxL::Int,
         idxR::Int,
         xq,
         xL,
         xR,
         extrap::AbstractExtrap
-    ) where {M, Tdl, Tw, Tw2}
-    h = _get_h(Tw, grid, idx)
-    inv_h = _get_inv_h(Tw, grid, idx)
+    ) where {I, Tdl, Tw, Tw2}
+    h = _get_h(Tw, grid, idxL)
+    inv_h = _get_inv_h(Tw, grid, idxL)
     dL = Tdl(xq - xL)
     if extrap isa Union{ClampExtrap, FillExtrap}
         dL = clamp(dL, zero(Tdl), Tdl(h))
     end
-    return _AxisAnchor{M, Tuple{Tdl, Tw, Tw2}}(idx, (dL, Tw(h), Tw2(inv_h)))
+    interval = _interval_indices(grid, idxL, idxR)
+    return _AxisAnchor{I, _CubicPartialsPayload{Tdl, Tw, Tw2}}(interval, _CubicPartialsPayload{Tdl, Tw, Tw2}(dL, Tw(h), Tw2(inv_h)))
+end
+
+@inline function _resolve_anchor(
+        m::QuadraticInterp,
+        ::Type{_AxisAnchor{I, _QuadraticPartialsPayload{Tdl, Tw, Tw2}}},
+        grid::AbstractVector,
+        idxL::Int,
+        idxR::Int,
+        xq,
+        xL,
+        xR,
+        extrap::AbstractExtrap
+    ) where {I, Tdl, Tw, Tw2}
+    h = _get_h(Tw, grid, idxL)
+    inv_h = _get_inv_h(Tw, grid, idxL)
+    dL = Tdl(xq - xL)
+    if extrap isa Union{ClampExtrap, FillExtrap}
+        dL = clamp(dL, zero(Tdl), Tdl(h))
+    end
+    interval = _interval_indices(grid, idxL, idxR)
+    return _AxisAnchor{I, _QuadraticPartialsPayload{Tdl, Tw, Tw2}}(interval, _QuadraticPartialsPayload{Tdl, Tw, Tw2}(dL, Tw(h), Tw2(inv_h)))
 end
 
 @generated function _gridded_fused_partials!(
@@ -72,8 +108,10 @@ end
         body = quote
             for $(js[d]) in eachindex(anchors[$d])
                 $a = anchors[$d][$(js[d])]
-                $(idxs[d]) = $a.idx
-                $(dls[d]), $(hs[d]), $(invhs[d]) = $a.payload
+                $(idxs[d]) = $a.idxL
+                $(dls[d]) = $a.dL
+                $(hs[d]) = $a.h
+                $(invhs[d]) = $a.inv_h
                 $body
             end
         end

@@ -14,12 +14,12 @@
         aq = FastInterpolations._anchor_query(x, xq, Val(:constant))
 
         @test aq isa FastInterpolations._ConstantAnchoredQuery{Float64}
-        # `idxL` and `idxR` are virtual properties backed by `stencil::_IdxStencil{2}`
-        # since the _IdxStencil migration — `hasproperty` handles both real and
+        # `idxL` and `idxR` are virtual properties backed by
+        # `interval::_ExplicitIndices{2}` — `hasproperty` handles both real and
         # virtual fields.
         @test hasproperty(aq, :idxL)
         @test hasproperty(aq, :idxR)
-        @test hasfield(typeof(aq), :stencil)
+        @test hasfield(typeof(aq), :interval)
         @test hasfield(typeof(aq), :xq)
         @test hasfield(typeof(aq), :state)
         @test hasfield(typeof(aq), :h)

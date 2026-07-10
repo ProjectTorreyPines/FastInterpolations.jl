@@ -55,7 +55,7 @@ end
     hs = map(_get_h, itp.grids, indices)
     # Wrap raw indices into the unified stencil shape so the kernel has a
     # single signature across persistent and BC oneshot callers.
-    stencils = map(i -> _IdxPair(i, i + 1), indices)
+    stencils = map(i -> _ExplicitIndices(i, i + 1), indices)
     return (itp.data, stencils, hs, itp.sides, q_eval, Ls)
 end
 
@@ -113,7 +113,7 @@ end
 
 @generated kernel that unrolls the constant interpolation lookup for N dimensions.
 
-`stencils[d]::_IdxStencil{2}` carries `(idx_L_d, idx_R_d)` — corner address
+`stencils[d]::_ExplicitIndices{2}` carries `(idx_L_d, idx_R_d)` — corner address
 on axis `d` is `stencils[d][offset_d + 1]` (offset 0 → left `idx_L`, offset 1
 → right `idx_R`). For non-periodic cells `idx_R == idx_L + 1`; for
 periodic-exclusive seam cells `idx_R == 1` (wrap), so the kernel reads the
@@ -130,7 +130,7 @@ paths share this signature.
 """
 @generated function _constant_nd_kernel(
         data::AbstractArray{Tv, N},
-        stencils::NTuple{N, _IdxStencil{2}},
+        stencils::NTuple{N, _ExplicitIndices{2}},
         hs::Tuple{Vararg{Real, N}},
         sides::Tuple{Vararg{AbstractSide, N}},
         q_eval::Tuple{Vararg{Real, N}},

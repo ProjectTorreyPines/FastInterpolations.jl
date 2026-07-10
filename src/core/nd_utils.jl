@@ -598,21 +598,21 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 @inline _getL(r) = r[3]
 @inline _getR(r) = r[4]
 
-# Stencil-valued interval tuple per axis: `stencils[d] = _IdxStencil{2}((idx_L_d, idx_R_d))`.
+# Stencil-valued interval tuple per axis: `stencils[d] = _ExplicitIndices{2}((idx_L_d, idx_R_d))`.
 # Consumers (periodic-aware ND kernels) read corner addresses via
 # `stencils[d][bit_d + 1]` — `bit=0 → idx_L`, `bit=1 → idx_R`. For non-periodic
 # axes `idx_R == idx_L + 1`; for periodic-exclusive axes at the seam `idx_R == 1`
 # (wrap) so eval reads the periodic neighbor without data extension.
-# The `_IdxStencil{K}` wrapper (src/core/idx_stencil.jl) unifies this shape across
+# The `_ExplicitIndices{K}` wrapper (src/core/axis_indices.jl) unifies this shape across
 # method families and carries K as a type parameter for future K > 2 variants
 # (ND Hermite bicubic, etc.).
-@inline _getstencil(r) = _IdxStencil((r[1], r[2]))
+@inline _getstencil(r) = _ExplicitIndices((r[1], r[2]))
 
 # Shared projector for all `_search_all_intervals*` overloads. Every variant
 # boils down to "run `map(search_fn, ...)` then extract `(indices, Ls, Rs)`
 # from each result". Only the index extractor differs:
 #   - `_getidx`     → `NTuple{N, Int}`             (single corner per axis)
-#   - `_getstencil` → `NTuple{N, _IdxStencil{2}}`  (left/right pair per axis)
+#   - `_getstencil` → `NTuple{N, _ExplicitIndices{2}}`  (left/right pair per axis)
 # Centralizing the `(map(_getL, ...), map(_getR, ...))` tail keeps all variants
 # in sync when the 4-tuple `search_interval` return shape evolves.
 @inline _project_search_results(results, proj::F) where {F} =
@@ -927,7 +927,7 @@ end
 # into each `Searcher` so `PeriodicBC{:exclusive}` axes return
 # `(n, 1, x[n], x[1]+L)` at seam cells via the BC-aware `search_interval`
 # dispatch. Returns `(stencils, Ls, Rs)` where
-# `stencils[d] = _IdxStencil{2}((idx_L_d, idx_R_d))` — non-periodic axes have
+# `stencils[d] = _ExplicitIndices{2}((idx_L_d, idx_R_d))` — non-periodic axes have
 # `idx_R == idx_L + 1`; periodic-exclusive axes at seam have `idx_R == 1` (wrap).
 #
 # Structurally mirrors persistent's `_search_all_intervals`: one `map` that

@@ -23,7 +23,7 @@ matches the interpolant grid.
 - `Tq <: Real`: Query point type (stored in `xq`, `dL`); may widen `Tg` (e.g. `Dual` for AD)
 
 # Fields
-- `stencil::_IdxStencil{2}`: Corner-index stencil; `stencil[1]` is the left index, `stencil[2]` the right
+- `interval::_ExplicitIndices{2}`: Corner-index interval; `interval[1]` is the left index, `interval[2]` the right
   (legacy `aq.idxL` / `aq.idxR` virtual properties read through `getproperty` — see below).
   For non-periodic cells `idxR == idxL + 1`; at periodic-exclusive seam `idxL == n`, `idxR == 1` (wrap).
 - `xq`: Original query point (or wrapped value for periodic)
@@ -48,13 +48,13 @@ Anchored evaluation is faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search.
 """
 struct _ConstantAnchoredQuery{Tg, Tq <: Real}
-    # Corner-index stencil: `stencil[1]` is the left index (idxL),
-    # `stencil[2]` is the right index (idxR). For non-periodic cells
+    # Corner-index interval: `interval[1]` is the left index (idxL),
+    # `interval[2]` is the right index (idxR). For non-periodic cells
     # `idxR == idxL + 1`; for periodic-exclusive seam cells `idxR == 1` (wrap).
-    # Unified across all wrap-aware methods via `_IdxStencil{K}`
-    # (src/core/idx_stencil.jl). Legacy `aq.idxL` / `aq.idxR` accessors are
+    # Unified across all wrap-aware methods via `_ExplicitIndices{K}`
+    # (src/core/axis_indices.jl). Legacy `aq.idxL` / `aq.idxR` accessors are
     # preserved via `getproperty` below.
-    stencil::_IdxStencil{2}
+    interval::_ExplicitIndices{2}
     xq::Tq                     # query point (possibly wrapped, may be Dual for AD)
     state::UInt8               # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
     h::Tg                      # interval width
@@ -69,17 +69,17 @@ end
 # (+ tuple index) with concrete return type — no boxing from union-wide
 # `getproperty` return.
 @inline Base.getproperty(aq::_ConstantAnchoredQuery, s::Symbol) = _get_const_prop(aq, Val(s))
-@inline _get_const_prop(aq::_ConstantAnchoredQuery, ::Val{:idxL}) = getfield(aq, :stencil)[1]
-@inline _get_const_prop(aq::_ConstantAnchoredQuery, ::Val{:idxR}) = getfield(aq, :stencil)[2]
+@inline _get_const_prop(aq::_ConstantAnchoredQuery, ::Val{:idxL}) = getfield(aq, :interval)[Val(1)]
+@inline _get_const_prop(aq::_ConstantAnchoredQuery, ::Val{:idxR}) = getfield(aq, :interval)[Val(2)]
 @inline _get_const_prop(aq::_ConstantAnchoredQuery, ::Val{s}) where {s} = getfield(aq, s)
 @inline Base.propertynames(::_ConstantAnchoredQuery) =
-    (:stencil, :idxL, :idxR, :xq, :state, :h, :dL)
+    (:interval, :idxL, :idxR, :xq, :state, :h, :dL)
 
 # Stencil-native outer — infers `Tg, Tq` from arg types so callers can write
-# `_ConstantAnchoredQuery(_IdxPair(idxL, idxR), xq, state, h, dL)` without
-# specifying type params. Mirrors Linear's stencil-native outer.
-@inline _ConstantAnchoredQuery(stencil::_IdxStencil{2}, xq::Tq, state::UInt8, h::Tg, dL::Tq) where {Tg, Tq} =
-    _ConstantAnchoredQuery{Tg, Tq}(stencil, xq, state, h, dL)
+# `_ConstantAnchoredQuery(_ExplicitIndices(idxL, idxR), xq, state, h, dL)` without
+# specifying type params. Mirrors Linear's interval-native outer.
+@inline _ConstantAnchoredQuery(interval::_ExplicitIndices{2}, xq::Tq, state::UInt8, h::Tg, dL::Tq) where {Tg, Tq} =
+    _ConstantAnchoredQuery{Tg, Tq}(interval, xq, state, h, dL)
 
 # ========================================
 # Anchor Construction
@@ -226,7 +226,7 @@ Internal implementation of _anchor_query for constant interpolation.
     # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual)
     xq_promoted = oftype(dL, loc.xq)
 
-    return _ConstantAnchoredQuery(_IdxPair(loc.idxL, loc.idxR), xq_promoted, loc.state, h, dL)
+    return _ConstantAnchoredQuery(_ExplicitIndices(loc.idxL, loc.idxR), xq_promoted, loc.state, h, dL)
 end
 
 # ========================================

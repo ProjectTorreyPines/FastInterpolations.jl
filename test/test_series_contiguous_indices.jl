@@ -22,3 +22,17 @@ end
     @test iv isa FI._ExplicitIndices{2}
     @test iv[Val(1)] == idxL && iv[Val(2)] == idxR
 end
+
+@testitem "Linear anchor: contiguous is bit-identical to explicit + smaller" begin
+    const FI = FastInterpolations
+    x = collect(range(0.0, 1.0, 101)); y = sin.(x)
+    itp = FI.linear_interp(x, y)
+    aqc = FI._anchor_query(x, 0.37, Val(:linear))                       # contiguous
+    aqe = FI._LinearAnchoredQuery(
+        FI._ExplicitIndices(aqc.idxL, aqc.idxR),
+        aqc.xq, aqc.state, aqc.xL, aqc.h, aqc.inv_h, aqc.alpha
+    )
+    @test itp(aqc) === itp(aqe)                                         # bitwise
+    @test itp(aqc; deriv = FI.DerivOp(1)) === itp(aqe; deriv = FI.DerivOp(1))
+    @test sizeof(aqc) < sizeof(aqe)                                     # 56 < 64
+end

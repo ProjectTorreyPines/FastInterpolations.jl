@@ -51,11 +51,11 @@ itp = linear_interp(x, f)
 @assert dot(itp.(xq), y_bar) ≈ dot(f, adj(y_bar))
 ```
 """
-struct LinearAdjoint{Tg, BC <: AbstractBC, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
+struct LinearAdjoint{Tg, BC <: AbstractBC, EP <: AbstractExtrap, I <: _AbstractIndices{2}} <: AbstractAdjoint1D{Tg}
     # Coordinate type is grid-pinned (`Tc = Tg`), not the canonical `_coord_eltype(Tq, Tg)`:
     # the adjoint operates on baked coefficients, so AD-through-adjoint is unsupported. The
     # forward Dual-grid contract is satisfied independently.
-    anchors::Vector{_LinearAnchoredQuery{Tg, Tg}}
+    anchors::Vector{_LinearAnchoredQuery{Tg, Tg, I}}
     grid_size::Int  # internal length: n+1 for PeriodicBC{:exclusive}, n otherwise
     bc::BC
     extrap::EP
@@ -188,7 +188,7 @@ function _bake_linear_clampfill_anchors(
         searcher::P = _to_searcher(LinearBinarySearch())
     ) where {Tg, Tq <: Real, P <: Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
-    output = Vector{_LinearAnchoredQuery{Tg, promote_type(Tq, Tg)}}(undef, length(xq))
+    output = Vector{_LinearAnchoredQuery{Tg, promote_type(Tq, Tg), _interval_type(x)}}(undef, length(xq))
     @inbounds for k in eachindex(xq)
         xq_raw = xq[k]
         aq = _linear_anchor_query_impl(x, _clamp_to_grid(xq_raw, x), false, searcher_resolved)
@@ -279,7 +279,7 @@ function linear_adjoint(
         anchors = _anchor_query(x_axis, xq_p, Val(:linear), wrap)
     end
 
-    return LinearAdjoint{Tg, typeof(bc), typeof(extrap_eff)}(
+    return LinearAdjoint{Tg, typeof(bc), typeof(extrap_eff), _interval_type(x_axis)}(
         anchors, length(x_axis), bc, extrap_eff
     )
 end

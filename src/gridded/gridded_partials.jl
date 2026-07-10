@@ -10,7 +10,7 @@
 # Cubic/quadratic partials cell geometry: distinct named payloads (byte-equal
 # fields today, but the quadratic cell kernel does not consume `h`). One method
 # per method type so each carries its own payload identity.
-struct _CubicPartialsPayload{Tdl, Th, Tinv}
+struct _CubicPartialsPayloadND{Tdl, Th, Tinv}
     dL::Tdl
     h::Th
     inv_h::Tinv
@@ -18,7 +18,7 @@ end
 
 # Quadratic omits `h`: its cell kernel (`_quadratic_kernel_nd`) works in physical
 # coords and consumes only `inv_h`/`dL`.
-struct _QuadraticPartialsPayload{Tdl, Tinv}
+struct _QuadraticPartialsPayloadND{Tdl, Tinv}
     dL::Tdl
     inv_h::Tinv
 end
@@ -32,7 +32,7 @@ end
     ) where {Tvals}
     Tw = _promote_grid_float(eltype(grid), Tvals)
     Tdl = promote_type(eltype(grid), eltype(targets), Tw)
-    return _AxisAnchor{_interval_type(grid), _CubicPartialsPayload{Tdl, Tw, Tw}}
+    return _AxisAnchor{_interval_type(grid), _CubicPartialsPayloadND{Tdl, Tw, Tw}}
 end
 
 @inline function _axis_anchor_type(
@@ -44,12 +44,12 @@ end
     ) where {Tvals}
     Tw = _promote_grid_float(eltype(grid), Tvals)
     Tdl = promote_type(eltype(grid), eltype(targets), Tw)
-    return _AxisAnchor{_interval_type(grid), _QuadraticPartialsPayload{Tdl, Tw}}
+    return _AxisAnchor{_interval_type(grid), _QuadraticPartialsPayloadND{Tdl, Tw}}
 end
 
 @inline function _resolve_anchor(
         m::CubicInterp,
-        ::Type{_AxisAnchor{I, _CubicPartialsPayload{Tdl, Tw, Tw2}}},
+        ::Type{_AxisAnchor{I, _CubicPartialsPayloadND{Tdl, Tw, Tw2}}},
         grid::AbstractVector,
         idxL::Int,
         idxR::Int,
@@ -65,12 +65,12 @@ end
         dL = clamp(dL, zero(Tdl), Tdl(h))
     end
     interval = _interval_indices(grid, idxL, idxR)
-    return _AxisAnchor{I, _CubicPartialsPayload{Tdl, Tw, Tw2}}(interval, _CubicPartialsPayload{Tdl, Tw, Tw2}(dL, Tw(h), Tw2(inv_h)))
+    return _AxisAnchor{I, _CubicPartialsPayloadND{Tdl, Tw, Tw2}}(interval, _CubicPartialsPayloadND{Tdl, Tw, Tw2}(dL, Tw(h), Tw2(inv_h)))
 end
 
 @inline function _resolve_anchor(
         m::QuadraticInterp,
-        ::Type{_AxisAnchor{I, _QuadraticPartialsPayload{Tdl, Tinv}}},
+        ::Type{_AxisAnchor{I, _QuadraticPartialsPayloadND{Tdl, Tinv}}},
         grid::AbstractVector,
         idxL::Int,
         idxR::Int,
@@ -86,7 +86,7 @@ end
         dL = clamp(dL, zero(Tdl), Tdl(_get_h(Tinv, grid, idxL)))
     end
     interval = _interval_indices(grid, idxL, idxR)
-    return _AxisAnchor{I, _QuadraticPartialsPayload{Tdl, Tinv}}(interval, _QuadraticPartialsPayload{Tdl, Tinv}(dL, inv_h))
+    return _AxisAnchor{I, _QuadraticPartialsPayloadND{Tdl, Tinv}}(interval, _QuadraticPartialsPayloadND{Tdl, Tinv}(dL, inv_h))
 end
 
 @generated function _gridded_fused_partials!(

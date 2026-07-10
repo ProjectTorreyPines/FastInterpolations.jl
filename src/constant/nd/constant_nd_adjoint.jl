@@ -44,7 +44,7 @@ function _bake_constant_nd_anchors(
 
     # Tq widens to query precision so narrower grids never truncate.
     Tq = promote_type(Tg, _query_eltype(queries))
-    anchors = Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tq}}}(undef, nq)
+    anchors = Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tq, _ExplicitIndices{2}}}}(undef, nq)
     @inbounds for q in 1:nq
         query_q = _extract_query_point(queries, q, Val(N))
         per_axis = ntuple(Val(N)) do d
@@ -58,7 +58,7 @@ function _bake_constant_nd_anchors(
             # true `_CachedRange` endpoint is IN_DOMAIN, matching the forward.
             state_flag = _oob_state(grids[d], xq_raw)
 
-            return _ConstantAnchoredQuery{Tg, Tq}(_ExplicitIndices(idx, idxR), xq_d, state_flag, h, dL)
+            return _ConstantAnchoredQuery{Tg, Tq, _ExplicitIndices{2}}(_ExplicitIndices(idx, idxR), xq_d, state_flag, h, dL)
         end
         anchors[q] = per_axis
     end

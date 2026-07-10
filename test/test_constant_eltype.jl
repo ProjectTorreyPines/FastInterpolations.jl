@@ -521,7 +521,7 @@ end
 # end-to-end via the forward/adjoint dot-product identity.
 @testitem "Constant anchor: Tq = promote_type(Tg, eltype(xq))" begin
     using LinearAlgebra: dot
-    import FastInterpolations: ConstantAdjoint, _ConstantAnchoredQuery
+    import FastInterpolations: ConstantAdjoint, _ConstantAnchoredQuery, _ContiguousIndices
 
     @testset "Int grid + Float query — 1D adjoint, dot identity" begin
         x = collect(0:9)
@@ -532,7 +532,7 @@ end
         itp = constant_interp(x, y)
         adj = constant_adjoint(x, xq)
         @test adj isa ConstantAdjoint{Int, Float64}
-        @test eltype(adj.anchors) === _ConstantAnchoredQuery{Int, Float64}
+        @test eltype(adj.anchors) === _ConstantAnchoredQuery{Int, Float64, _ContiguousIndices{2}}
         @test dot(itp.(xq), y_bar) ≈ dot(y, adj(y_bar))
     end
 

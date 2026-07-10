@@ -541,7 +541,7 @@ end
     x_max = Tg(last(sitp.x))
     NQ = length(xq_typed)
     Tqp = promote_type(Tg, eltype(xq_typed))
-    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg, Tqp}, NQ)
+    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg, Tqp, _interval_type(x_grid)}, NQ)
     _fill_anchors!(aq_vec, x_grid, xq_typed, Val(:constant), wrap, searcher)
     @inbounds for k in 1:n_ser
         for j in 1:NQ

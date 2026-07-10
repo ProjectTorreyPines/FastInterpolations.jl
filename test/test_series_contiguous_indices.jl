@@ -50,3 +50,16 @@ end
     @test itp(aqc; deriv = FI.DerivOp(1)) === itp(aqe; deriv = FI.DerivOp(1))
     @test sizeof(aqc) < sizeof(aqe)                                     # 120 < 128
 end
+
+@testitem "Constant anchor: contiguous is bit-identical to explicit + smaller" begin
+    const FI = FastInterpolations
+    x = collect(range(0.0, 1.0, 101)); y = sin.(x)
+    itp = FI.constant_interp(x, y; side = FI.NearestSide())
+    aqc = FI._anchor_query(x, 0.37, Val(:constant))
+    aqe = FI._ConstantAnchoredQuery(
+        FI._ExplicitIndices(aqc.idxL, aqc.idxR),
+        aqc.xq, aqc.state, aqc.h, aqc.dL
+    )
+    @test itp(aqc) === itp(aqe)
+    @test sizeof(aqc) < sizeof(aqe)                                     # 40 < 48
+end

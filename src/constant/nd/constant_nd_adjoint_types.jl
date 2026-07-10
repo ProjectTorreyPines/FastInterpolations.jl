@@ -62,14 +62,18 @@ struct ConstantAdjointND{
     bcs::B
     extraps::EP
     sides::SD
-    anchors::Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tq}}}
+    # Pinned to `_ExplicitIndices{2}` (not a free `I` param): axes can differ
+    # per-axis (mixed periodic/ordinary), so one concrete anchor type across
+    # all N axes needs a single interval representation. No size/behavior
+    # change — the 1D `ConstantAdjoint` still gets the compact-grid win.
+    anchors::Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tq, _ExplicitIndices{2}}}}
     grid_size::NTuple{N, Int}
 
     # Inner ctor: ownership copy via wrapper-aware `_convert_copy`,
     # idempotent `_cache_axis` insurance for direct ctor calls.
     function ConstantAdjointND(
             grids::Tuple{Vararg{AbstractVector{Tg}, N}}, bcs::B, extraps::EP, sides::SD,
-            anchors::Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tq}}}, grid_size::NTuple{N, Int}
+            anchors::Vector{NTuple{N, _ConstantAnchoredQuery{Tg, Tq, _ExplicitIndices{2}}}}, grid_size::NTuple{N, Int}
         ) where {
             Tg, N, B <: NTuple{N, AbstractBC},
             EP <: Tuple{Vararg{AbstractExtrap, N}}, SD <: Tuple{Vararg{AbstractSide, N}}, Tq,

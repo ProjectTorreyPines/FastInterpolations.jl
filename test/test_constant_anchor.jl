@@ -396,7 +396,7 @@
             xq = [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
 
             expected = FI._anchor_query(x, xq, Val(:constant))
-            buffer = Vector{FI._ConstantAnchoredQuery{Float64, Float64}}(undef, length(xq))
+            buffer = Vector{FI._ConstantAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:constant))
 
             for i in eachindex(xq)
@@ -413,7 +413,7 @@
             xq = [-0.3, 0.5, 1.3, 2.5]
 
             expected = FI._anchor_query(x, xq, Val(:constant), true)
-            buffer = Vector{FI._ConstantAnchoredQuery{Float64, Float64}}(undef, length(xq))
+            buffer = Vector{FI._ConstantAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:constant), true)
 
             for i in eachindex(xq)
@@ -426,7 +426,7 @@
         @testset "length assertion when buffer too small" begin
             x = collect(range(0.0, 1.0, 101))
             xq = [0.15, 0.35, 0.5, 0.75]
-            buffer = Vector{FI._ConstantAnchoredQuery{Float64, Float64}}(undef, 2)
+            buffer = Vector{FI._ConstantAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, 2)
 
             @test_throws AssertionError FI._fill_anchors!(buffer, x, xq, Val(:constant))
         end
@@ -434,7 +434,7 @@
         @testset "zero allocation after warmup" begin
             x = collect(range(0.0, 1.0, 101))
             xq = collect(range(0.1, 0.9, 50))
-            buffer = Vector{FI._ConstantAnchoredQuery{Float64, Float64}}(undef, length(xq))
+            buffer = Vector{FI._ConstantAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}}(undef, length(xq))
 
             FI._fill_anchors!(buffer, x, xq, Val(:constant))
             allocs = @allocated FI._fill_anchors!(buffer, x, xq, Val(:constant))

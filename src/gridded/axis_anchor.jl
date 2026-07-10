@@ -8,9 +8,9 @@
 #   * the shared resolution loop (`_axis_anchors_loop!`/`_pooled`/`_all`).
 #
 # Each method owns its own payload type + `_axis_anchor_type` + `_resolve_anchor`
-# + consuming kernels in its own file (gridded_query.jl for Linear,
-# gridded_constant.jl, gridded_hermite.jl, gridded_partials.jl). The backbone
-# only calls those through the generic functions, so it never names a payload.
+# + consuming kernels in its own file (gridded_linear.jl, gridded_constant.jl,
+# gridded_hermite.jl, gridded_partials.jl). The backbone only calls those through
+# the generic functions, so it never names a payload.
 #
 # `interval::I` is the physical search cell (shared `_AbstractIndices{2}` layer,
 # same as `_AnchorLoc`): ordinary axes store one index (`_ContiguousIndices{2}`,

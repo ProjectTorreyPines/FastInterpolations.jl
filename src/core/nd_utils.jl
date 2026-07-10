@@ -598,21 +598,21 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 @inline _getL(r) = r[3]
 @inline _getR(r) = r[4]
 
-# Interval tuple per axis: `stencils[d] = _ExplicitIndices{2}((idx_L_d, idx_R_d))`.
+# Interval tuple per axis: `intervals[d] = _ExplicitIndices{2}((idx_L_d, idx_R_d))`.
 # Consumers (periodic-aware ND kernels) read corner addresses via
-# `stencils[d][bit_d + 1]` — `bit=0 → idx_L`, `bit=1 → idx_R`. For non-periodic
+# `intervals[d][bit_d + 1]` — `bit=0 → idx_L`, `bit=1 → idx_R`. For non-periodic
 # axes `idx_R == idx_L + 1`; for periodic-exclusive axes at the seam `idx_R == 1`
 # (wrap) so eval reads the periodic neighbor without data extension.
 # The `_ExplicitIndices{K}` wrapper (src/core/axis_indices.jl) unifies this shape across
 # method families and carries K as a type parameter for future K > 2 variants
 # (ND Hermite bicubic, etc.).
-@inline _getstencil(r) = _ExplicitIndices((r[1], r[2]))
+@inline _result_interval(r) = _ExplicitIndices((r[1], r[2]))
 
 # Shared projector for all `_search_all_intervals*` overloads. Every variant
 # boils down to "run `map(search_fn, ...)` then extract `(indices, Ls, Rs)`
 # from each result". Only the index extractor differs:
 #   - `_getidx`     → `NTuple{N, Int}`             (single corner per axis)
-#   - `_getstencil` → `NTuple{N, _ExplicitIndices{2}}`  (left/right pair per axis)
+#   - `_result_interval` → `NTuple{N, _ExplicitIndices{2}}`  (left/right pair per axis)
 # Centralizing the `(map(_getL, ...), map(_getR, ...))` tail keeps all variants
 # in sync when the 4-tuple `search_interval` return shape evolves.
 @inline _project_search_results(results, proj::F) where {F} =
@@ -926,8 +926,8 @@ end
 # Parallel in purpose to `_search_all_intervals`, but threads per-axis `bcs`
 # into each `Searcher` so `PeriodicBC{:exclusive}` axes return
 # `(n, 1, x[n], x[1]+L)` at seam cells via the BC-aware `search_interval`
-# dispatch. Returns `(stencils, Ls, Rs)` where
-# `stencils[d] = _ExplicitIndices{2}((idx_L_d, idx_R_d))` — non-periodic axes have
+# dispatch. Returns `(intervals, Ls, Rs)` where
+# `intervals[d] = _ExplicitIndices{2}((idx_L_d, idx_R_d))` — non-periodic axes have
 # `idx_R == idx_L + 1`; periodic-exclusive axes at seam have `idx_R == 1` (wrap).
 #
 # Structurally mirrors persistent's `_search_all_intervals`: one `map` that
@@ -942,78 +942,78 @@ end
 # Per-axis inline: build Searcher + run search_interval in one body.
 # Callers pre-wrap grids via `_resolve_axis` (or pass already-wrapped axes),
 # so seam handling is via axis-level dispatch in `periodic_axis.jl`.
-@inline _search_axis_stencil(grid, q, search, hint) =
+@inline _search_axis_interval(grid, q, search, hint) =
     @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q)
 
-@inline function _search_all_intervals_stencil(
+@inline function _search_all_axis_intervals(
         q_evals::Tuple{Vararg{Real, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
     ) where {N}
-    results = map(_search_axis_stencil, grids, q_evals, searches, hints)
-    return _project_search_results(results, _getstencil)
+    results = map(_search_axis_interval, grids, q_evals, searches, hints)
+    return _project_search_results(results, _result_interval)
 end
 
 # Nothing-hint overload — scalar oneshot entries only. Batch must use the
 # 4-arg NTuple form (hint allocation hoisted via `_resolve_oneshot_search_nd`).
-@inline function _search_all_intervals_stencil(
+@inline function _search_all_axis_intervals(
         q_evals::Tuple{Vararg{Real, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         ::Nothing,
     ) where {N}
     hints = _ensure_hint_nd(nothing, Val(N))
-    return _search_all_intervals_stencil(q_evals, grids, searches, hints)
+    return _search_all_axis_intervals(q_evals, grids, searches, hints)
 end
 
 # Extrap-aware per-axis stencil search (stencil path, used by linear/constant oneshot).
 # An InBounds axis on a normalized range takes the lean `_search_direct_inbounds`
 # (one-sided clamp) and emits the non-seam stencil `(idx, idx+1, …)` — bit-identical to
 # the standard stencil for an in-bounds query. EVERY other `(grid, q, extrap)` delegates
-# to the 4-arg `_search_axis_stencil`: crucially `_ExclusivePeriodicAxis` (always
+# to the 4-arg `_search_axis_interval`: crucially `_ExclusivePeriodicAxis` (always
 # WrapExtrap, never InBounds, and `<: AbstractVector` not `_CachedRange`) keeps its
 # `search_interval` seam wrap `(n, 1, …)` untouched, as do GridIdx and vector grids.
-@inline function _search_axis_stencil(grid::_CachedRange, q::Real, search, hint::Base.RefValue{Int}, e::InBounds)
+@inline function _search_axis_interval(grid::_CachedRange, q::Real, search, hint::Base.RefValue{Int}, e::InBounds)
     idx, xL, xR = _search_direct_inbounds(grid, q, e)
     hint[] = idx
     return idx, idx + 1, xL, xR
 end
 # GridIdx → short-circuit (exact `.idx`), not the coordinate lean — see the same overload on
 # `_search_axis_oneshot_hint` above for the off-by-one rationale.
-@inline _search_axis_stencil(grid::_CachedRange, q::GridIdx, search, hint::Base.RefValue{Int}, ::InBounds) =
-    _search_axis_stencil(grid, q, search, hint)
-@inline _search_axis_stencil(grid, q, search, hint, ::AbstractExtrap) =
-    _search_axis_stencil(grid, q, search, hint)
+@inline _search_axis_interval(grid::_CachedRange, q::GridIdx, search, hint::Base.RefValue{Int}, ::InBounds) =
+    _search_axis_interval(grid, q, search, hint)
+@inline _search_axis_interval(grid, q, search, hint, ::AbstractExtrap) =
+    _search_axis_interval(grid, q, search, hint)
 # InBounds vector grid: thread InBounds into the resolved-searcher search (BinarySearch axis leans).
 # Range uses the `_CachedRange` method above; periodic axes are `<: AbstractVector` but never arrive
 # InBounds (always WrapExtrap), so they stay on the `::AbstractExtrap` seam path.
-@inline _search_axis_stencil(grid::AbstractVector, q, search, hint::Base.RefValue{Int}, ::InBounds) =
+@inline _search_axis_interval(grid::AbstractVector, q, search, hint::Base.RefValue{Int}, ::InBounds) =
     @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, q, InBounds())
 
-# 5-arg extrap-aware `_search_all_intervals_stencil`: the 4-arg hint form plus a trailing
-# per-axis `extraps`, threaded into `_search_axis_stencil` so InBounds range axes take the
+# 5-arg extrap-aware `_search_all_axis_intervals`: the 4-arg hint form plus a trailing
+# per-axis `extraps`, threaded into `_search_axis_interval` so InBounds range axes take the
 # lean direct search. Non-InBounds / non-range / periodic axes are unaffected.
-@inline function _search_all_intervals_stencil(
+@inline function _search_all_axis_intervals(
         q_evals::Tuple{Vararg{Real, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints::Tuple{Vararg{Base.RefValue{Int}, N}},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
     ) where {N}
-    results = map(_search_axis_stencil, grids, q_evals, searches, hints, extraps)
-    return _project_search_results(results, _getstencil)
+    results = map(_search_axis_interval, grids, q_evals, searches, hints, extraps)
+    return _project_search_results(results, _result_interval)
 end
 
 # Nothing-hint 5-arg extrap-aware stencil (scalar oneshot): throwaway Refs (stack-elided).
-@inline function _search_all_intervals_stencil(
+@inline function _search_all_axis_intervals(
         q_evals::Tuple{Vararg{Real, N}},
         grids::Tuple{Vararg{AbstractVector, N}},
         searches::Tuple{Vararg{AbstractSearchPolicy, N}},
         ::Nothing,
         extraps::Tuple{Vararg{AbstractExtrap, N}},
     ) where {N}
-    return _search_all_intervals_stencil(q_evals, grids, searches, _ensure_hint_nd(nothing, Val(N)), extraps)
+    return _search_all_axis_intervals(q_evals, grids, searches, _ensure_hint_nd(nothing, Val(N)), extraps)
 end
 
 

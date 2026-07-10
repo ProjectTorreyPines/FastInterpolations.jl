@@ -50,23 +50,23 @@ function _linear_interp_nd_oneshot(
     # Validate (NoExtrap throw must precede the FillExtrap short-circuit) AND promote per axis:
     # an in-domain NoExtrap axis becomes InBounds for the search (lean), mirroring the persistent
     # path. InBounds passes through `_try_fill_oob` / `_resolve_extrap` / `_handle_all_extraps`
-    # (all no-op on it) and reaches the extrap-aware `_search_all_intervals_stencil` below.
+    # (all no-op on it) and reaches the extrap-aware `_search_all_axis_intervals` below.
     extraps_val = _validate_nd_domain(grids_eff, query, extraps_val)
     oob_result = _try_fill_oob(query, grids_eff, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
-    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, extraps_eff)
+    intervals, Ls, Rs = _search_all_axis_intervals(q_eval, grids_eff, searches, hints, extraps_eff)
     # Width-first `_get_inv_h(Tg, g, idx, xL, xR)` — `_CachedVector`/`_CachedRange`
     # use cached fields; a raw `Vector` spans `xR - xL` in its own eltype and divides
     # at the value-matched `Tg` (span-first: an Int axis would otherwise mint Float64
     # via `inv(Int)`). α derives from the typed inv_h — query-blood promotion preserved
     # (Dual query ⇒ Dual α) and the seam cell shares the deriv path's denominator.
-    idxLs = map(first, stencils)
+    idxLs = map(first, intervals)
     inv_hs = _typed_inv_hs(grids_eff, idxLs, Ls, Rs, Tg)
     αs = map(_alpha_of, q_eval, Ls, inv_hs)
-    return _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
+    return _multilinear_sum(data, intervals, inv_hs, αs, ops, Val(N))
 end
 
 """
@@ -103,11 +103,11 @@ function _linear_interp_nd_oneshot_batch!(
             output[k] = oob_val; continue
         end
         q_eval = _handle_all_extraps(query_k, grids_eff, extraps_eff)
-        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints, extraps_eff)
+        intervals, Ls, Rs = _search_all_axis_intervals(q_eval, grids_eff, policies, hints, extraps_eff)
         αs = map(_alpha_of, q_eval, Ls, Rs, grids_eff)
-        idxLs = map(first, stencils)
+        idxLs = map(first, intervals)
         inv_hs = map(_get_inv_h, grids_eff, idxLs, Ls, Rs)
-        output[k] = _multilinear_sum(data, stencils, inv_hs, αs, ops, Val(N))
+        output[k] = _multilinear_sum(data, intervals, inv_hs, αs, ops, Val(N))
     end
     return output
 end

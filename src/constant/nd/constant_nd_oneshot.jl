@@ -44,10 +44,10 @@ function _constant_interp_nd_oneshot(
 
     extraps_eff = _resolve_extrap(extraps_val, bcs, grids_eff, data, Val(N))
     q_eval = _handle_all_extraps(query, grids_eff, extraps_eff)
-    stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints, extraps_eff)
-    idxLs = map(first, stencils)
+    intervals, Ls, Rs = _search_all_axis_intervals(q_eval, grids_eff, searches, hints, extraps_eff)
+    idxLs = map(first, intervals)
     hs = map(_get_h, grids_eff, idxLs, Ls, Rs)
-    return _constant_nd_evaluate(data, stencils, hs, side_vals, q_eval, Ls, ops, Val(N))
+    return _constant_nd_evaluate(data, intervals, hs, side_vals, q_eval, Ls, ops, Val(N))
 end
 
 """
@@ -82,10 +82,10 @@ function _constant_interp_nd_oneshot_batch!(
             continue
         end
         q_eval = _handle_all_extraps(query_k, grids_eff, extraps_eff)
-        stencils, Ls, Rs = _search_all_intervals_stencil(q_eval, grids_eff, policies, hints, extraps_eff)
-        idxLs = map(first, stencils)
+        intervals, Ls, Rs = _search_all_axis_intervals(q_eval, grids_eff, policies, hints, extraps_eff)
+        idxLs = map(first, intervals)
         hs = map(_get_h, grids_eff, idxLs, Ls, Rs)
-        output[k] = _constant_nd_evaluate(data, stencils, hs, side_vals, q_eval, Ls, ops, Val(N))
+        output[k] = _constant_nd_evaluate(data, intervals, hs, side_vals, q_eval, Ls, ops, Val(N))
     end
     return output
 end

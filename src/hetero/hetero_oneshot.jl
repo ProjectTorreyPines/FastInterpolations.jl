@@ -176,8 +176,8 @@ end
     if _has_any_local_method(methods) && !_has_grididx(typeof(query))
         # BC-aware per-axis search; on `PeriodicBC{:exclusive}` axes the seam
         # cell returns `idx_R=1` so the windowing below picks the right cell.
-        stencils, _, _ = _search_all_intervals_stencil(q_eval, grids_eff, searches, hints)
-        indices = map(first, stencils)
+        intervals, _, _ = _search_all_axis_intervals(q_eval, grids_eff, searches, hints)
+        indices = map(first, intervals)
         # Per-axis windows — generic `AbstractVector{Int}`:
         #   - non-periodic windowable: `UnitRange{Int}` (cell-local, asymmetric clamp)
         #   - periodic windowable:     `Vector{Int}` from pool (wrap-aware indices)

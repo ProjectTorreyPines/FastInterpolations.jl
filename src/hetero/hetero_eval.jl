@@ -236,7 +236,7 @@ end
 # branch in `_interp_nd_oneshot_onthefly`. Pool scope is local to this function
 # so the NoBC `_eval_hetero_nd` branch never enters a `@with_pool` setup.
 #
-# `mono` is intentionally unused: BC-aware search via `_search_all_intervals_stencil`
+# `mono` is intentionally unused: BC-aware search via `_search_all_axis_intervals`
 # is required for `PeriodicBC{:exclusive}` seam queries (`q ≥ x[n]` must return
 # `idx_L = n`, not the clamped `n-1` that the non-BC `_search_all_intervals` would
 # produce). The stencil search resolves `Searcher{...,<:PeriodicBC{:exclusive}}`
@@ -272,8 +272,8 @@ end
         policies::NTuple{N, AbstractSearchPolicy},
         hints,
     ) where {Tg, Tv, N, G, M, E, P}
-    stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints)
-    indices = map(first, stencils)
+    intervals, _, _ = _search_all_axis_intervals(q_eval, itp.grids, policies, hints)
+    indices = map(first, intervals)
     windows = map((m, x, ix) -> _axis_window_pooled(pool, m, x, ix), itp.methods, itp.grids, indices)
     grids_local = map((m, x, w, ix) -> _axis_grid_pooled(pool, m, x, w, ix), itp.methods, itp.grids, windows, indices)
     methods_inner = map(_strip_periodic_bc, itp.methods)
@@ -311,8 +311,8 @@ end
         policies::NTuple{N, AbstractSearchPolicy},
         hints,
     ) where {Tg, Tv, N, G, M, E, P}
-    stencils, _, _ = _search_all_intervals_stencil(q_eval, itp.grids, policies, hints)
-    indices = map(first, stencils)
+    intervals, _, _ = _search_all_axis_intervals(q_eval, itp.grids, policies, hints)
+    indices = map(first, intervals)
     windows = map(_axis_window_heap, itp.methods, itp.grids, indices)
     grids_local = map(_axis_grid_heap, itp.methods, itp.grids, windows, indices)
     methods_inner = map(_strip_periodic_bc, itp.methods)

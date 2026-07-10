@@ -55,8 +55,8 @@ end
     hs = map(_get_h, itp.grids, indices)
     # Wrap raw indices into the unified stencil shape so the kernel has a
     # single signature across persistent and BC oneshot callers.
-    stencils = map(i -> _ExplicitIndices(i, i + 1), indices)
-    return (itp.data, stencils, hs, itp.sides, q_eval, Ls)
+    intervals = map(i -> _ExplicitIndices(i, i + 1), indices)
+    return (itp.data, intervals, hs, itp.sides, q_eval, Ls)
 end
 
 # No N=2 specialization: the generic-N locate above inlines to the same code at
@@ -69,8 +69,8 @@ end
         cell::Tuple,
         ops::NTuple{N, AbstractEvalOp}
     ) where {Tg, Tv, N}
-    data, stencils, hs, sides, q_eval, Ls = cell
-    return _constant_nd_evaluate(data, stencils, hs, sides, q_eval, Ls, ops, Val(N))
+    data, intervals, hs, sides, q_eval, Ls = cell
+    return _constant_nd_evaluate(data, intervals, hs, sides, q_eval, Ls, ops, Val(N))
 end
 
 # Deriv-aware Constant ND evaluation via two-method dispatch (mirrors Linear's
@@ -82,14 +82,14 @@ end
 # carrier, and duck-typed Tq all require running the kernel — the cost
 # matches the value path.
 @inline _constant_nd_evaluate(
-    data, stencils, hs, sides, q_eval, Ls,
+    data, intervals, hs, sides, q_eval, Ls,
     ::NTuple{N, EvalValue}, ::Val{N}
-) where {N} = _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls)
+) where {N} = _constant_nd_kernel(data, intervals, hs, sides, q_eval, Ls)
 
 @inline _constant_nd_evaluate(
-    data, stencils, hs, sides, q_eval, Ls,
+    data, intervals, hs, sides, q_eval, Ls,
     ::NTuple{N, AbstractEvalOp}, ::Val{N}
-) where {N} = _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls) * 0
+) where {N} = _constant_nd_kernel(data, intervals, hs, sides, q_eval, Ls) * 0
 
 # ========================================
 # Derivative Check
@@ -109,12 +109,12 @@ end
 # ========================================
 
 """
-    _constant_nd_kernel(data, stencils, hs, sides, q_eval, Ls)
+    _constant_nd_kernel(data, intervals, hs, sides, q_eval, Ls)
 
 @generated kernel that unrolls the constant interpolation lookup for N dimensions.
 
-`stencils[d]::_ExplicitIndices{2}` carries `(idx_L_d, idx_R_d)` — corner address
-on axis `d` is `stencils[d][offset_d + 1]` (offset 0 → left `idx_L`, offset 1
+`intervals[d]::_ExplicitIndices{2}` carries `(idx_L_d, idx_R_d)` — corner address
+on axis `d` is `intervals[d][offset_d + 1]` (offset 0 → left `idx_L`, offset 1
 → right `idx_R`). For non-periodic cells `idx_R == idx_L + 1`; for
 periodic-exclusive seam cells `idx_R == 1` (wrap), so the kernel reads the
 wrapped neighbor without any data extension.
@@ -130,7 +130,7 @@ paths share this signature.
 """
 @generated function _constant_nd_kernel(
         data::AbstractArray{Tv, N},
-        stencils::NTuple{N, _ExplicitIndices{2}},
+        intervals::NTuple{N, _ExplicitIndices{2}},
         hs::Tuple{Vararg{Real, N}},
         sides::Tuple{Vararg{AbstractSide, N}},
         q_eval::Tuple{Vararg{Real, N}},
@@ -158,9 +158,9 @@ paths share this signature.
         push!(exprs, :($offset_sym = _compute_single_offset(sides[$d], $h_sym, $dL_sym)))
     end
 
-    # Corner address: offset 0 → stencils[d][1] (idx_L), offset 1 → stencils[d][2] (idx_R).
+    # Corner address: offset 0 → intervals[d][1] (idx_L), offset 1 → intervals[d][2] (idx_R).
     # `ifelse` produces a branchless CSEL on x86/ARM and avoids the dynamic
-    # NTuple lookup `stencils[d][offset_d + 1]`, which would compile to a
+    # NTuple lookup `intervals[d][offset_d + 1]`, which would compile to a
     # bounds-check + indexed load. Constant's `offset_d` is runtime (from
     # `_compute_single_offset`), unlike Linear where bit patterns are
     # compile-time constants — so the explicit `ifelse` is what keeps the
@@ -172,8 +172,8 @@ paths share this signature.
             idx_parts, :(
                 ifelse(
                     $offset_sym == 0,
-                    @inbounds(stencils[$d][1]),
-                    @inbounds(stencils[$d][2])
+                    @inbounds(intervals[$d][1]),
+                    @inbounds(intervals[$d][2])
                 )
             )
         )

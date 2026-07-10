@@ -55,7 +55,7 @@ end
 # ========================================
 
 """
-    CubicAdjoint{Tg, C, BC}
+    CubicAdjoint{Tg, C, BC, I}
 
 Adjoint (transpose) operator for cubic spline interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward interpolation weight matrix.
@@ -67,6 +67,7 @@ The same adjoint can be applied to any `ȳ` vector regardless of value type.
 - `Tg`: Grid float type (Float32 or Float64)
 - `C`: `CubicSplineCache` type (reused from forward interpolation)
 - `BC`: `BCPair` or `PeriodicBC` (normalized boundary condition)
+- `I`: Per-axis interval representation — `_ContiguousIndices{2}` (ordinary grid) or `_ExplicitIndices{2}` (exclusive-periodic seam)
 
 # Usage
 ```julia

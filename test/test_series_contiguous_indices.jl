@@ -63,3 +63,24 @@ end
     @test itp(aqc) === itp(aqe)
     @test sizeof(aqc) < sizeof(aqe)                                     # 40 < 48
 end
+
+@testitem "Series adjoints pin anchor representation" begin
+    const FI = FastInterpolations
+    # ordinary grid ⇒ adjoint storage uses compact _ContiguousIndices
+    x = collect(range(0.0, 1.0, 21)); xq = collect(range(0.05, 0.95, 15))
+    ladj = linear_adjoint(x, xq)
+    cadj = cubic_adjoint(x, xq)                          # default bc = CubicFit()
+    @test eltype(ladj.anchors) === FI._LinearAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}
+    @test eltype(cadj.anchors) === FI._CubicAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}
+
+    # Exclusive-periodic representation is method-specific — both correct, same seam
+    # cell: Linear wraps the axis (`_ExclusivePeriodicAxis` ⇒ explicit seam pair),
+    # while Cubic materializes the extended inclusive grid so the seam is an ordinary
+    # contiguous interior cell (n, n+1), folded to index 1 at scatter time.
+    xper = collect(range(0.0, 2π, 21))[1:(end - 1)]; xqp = collect(range(0.3, 5.5, 15))
+    bcp = PeriodicBC(endpoint = :exclusive, period = 2π)
+    ladjp = linear_adjoint(xper, xqp; bc = bcp)
+    cadjp = cubic_adjoint(xper, xqp; bc = bcp)
+    @test eltype(ladjp.anchors) === FI._LinearAnchoredQuery{Float64, Float64, FI._ExplicitIndices{2}}
+    @test eltype(cadjp.anchors) === FI._CubicAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}
+end

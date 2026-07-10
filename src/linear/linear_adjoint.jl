@@ -17,7 +17,7 @@
 # ========================================
 
 """
-    LinearAdjoint{Tg, EP}
+    LinearAdjoint{Tg, BC, EP, I}
 
 Adjoint (transpose) operator for 1D linear interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward linear interpolation weight matrix.
@@ -27,7 +27,9 @@ The same adjoint can be applied to any `ȳ` vector.
 
 # Type Parameters
 - `Tg`: Grid float type (Float32 or Float64)
+- `BC`: Boundary condition type (normalized)
 - `EP`: Extrapolation policy type (`NoExtrap`, `ExtendExtrap`, `ClampExtrap`, `FillExtrap`, `WrapExtrap`)
+- `I`: Per-axis interval representation — `_ContiguousIndices{2}` (ordinary grid) or `_ExplicitIndices{2}` (exclusive-periodic seam)
 
 # Fields
 - `anchors`: Pre-computed `_LinearAnchoredQuery` per query point

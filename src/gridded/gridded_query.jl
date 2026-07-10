@@ -317,7 +317,7 @@ function _gridded_hull(grid::AbstractVector, targets::AbstractVector, ::Abstract
     lo = minimum(targets)
     hi = maximum(targets)
     searcher = _resolve_searcher_for_grid(grid, DEFAULT_SEARCHER)
-    return _anchor_loc(grid, lo, false, searcher).idx:(_anchor_loc(grid, hi, false, searcher).idx + 1)
+    return _anchor_loc(grid, lo, false, searcher).idxL:(_anchor_loc(grid, hi, false, searcher).idxL + 1)
 end
 
 # Pass order: adjacent-exchange comparator on total cost with the measured

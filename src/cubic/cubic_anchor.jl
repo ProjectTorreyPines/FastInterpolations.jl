@@ -349,8 +349,8 @@ while preserving the full Dual value for weight computation.
     # Compute geometry (cubic-internal concern)
     # h and inv_h are Tg (grid type)
     # dL and dR preserve Dual type for AD (via loc.xq)
-    h = _get_h(x, loc.idx, loc.xL, loc.xR)
-    inv_h = _get_inv_h(x, loc.idx, loc.xL, loc.xR)
+    h = _get_h(x, loc.idxL, loc.xL, loc.xR)
+    inv_h = _get_inv_h(x, loc.idxL, loc.xL, loc.xR)
     dL = loc.xq - loc.xL
     dR = loc.xR - loc.xq
 
@@ -360,7 +360,7 @@ while preserving the full Dual value for weight computation.
     w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
     w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
 
-    return _CubicAnchoredQuery(_IdxPair(loc.idx, loc.idxR), loc.xq, loc.state, w0, w1, w2, w3, Tg)
+    return _CubicAnchoredQuery(_IdxPair(loc.idxL, loc.idxR), loc.xq, loc.state, w0, w1, w2, w3, Tg)
 end
 
 # ========================================

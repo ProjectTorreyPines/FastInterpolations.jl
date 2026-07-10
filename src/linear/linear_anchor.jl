@@ -292,11 +292,11 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
     # falls back to `xR - xL` on AbstractVector, which loses precision on
     # large-offset Ranges (e.g. `range(1e8, step=0.1, ...)`) due to floating-
     # point cancellation.
-    h = _get_h(x, loc.idx)
-    inv_h = _get_inv_h(x, loc.idx)
+    h = _get_h(x, loc.idxL)
+    inv_h = _get_inv_h(x, loc.idxL)
     alpha = (loc.xq - loc.xL) * inv_h
 
-    return _LinearAnchoredQuery(_IdxPair(loc.idx, loc.idxR), loc.xq, loc.state, loc.xL, h, inv_h, alpha)
+    return _LinearAnchoredQuery(_IdxPair(loc.idxL, loc.idxR), loc.xq, loc.state, loc.xL, h, inv_h, alpha)
 end
 
 # ========================================

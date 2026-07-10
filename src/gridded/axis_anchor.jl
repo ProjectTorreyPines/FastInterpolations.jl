@@ -185,7 +185,7 @@ end
         if extrap isa NoExtrap && loc.state != IN_DOMAIN
             _throw_domain_error(xq, grid, dim)
         end
-        anchors[k] = _resolve_anchor(m, A, grid, loc.idx, loc.idxR, loc.xq, loc.xL, loc.xR, extrap)
+        anchors[k] = _resolve_anchor(m, A, grid, loc.idxL, loc.idxR, loc.xq, loc.xL, loc.xR, extrap)
     end
     return anchors
 end

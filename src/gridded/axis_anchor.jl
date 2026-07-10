@@ -1,42 +1,17 @@
 # ============================================================================
-# _AxisAnchor — shared per-axis anchor backbone for gridded (separable) eval
+# _AxisAnchor — shared per-axis anchor RESOLUTION for gridded (separable) eval
 # ============================================================================
 #
-# This file holds ONLY the method-agnostic backbone:
-#   * the `_AxisAnchor{I,P}` struct + virtual-property accessors,
-#   * the per-axis-type interval representation selector (`_interval_type`),
-#   * the shared resolution loop (`_axis_anchors_loop!`/`_pooled`/`_all`).
+# The `_AxisAnchor{I,P}` struct, its virtual properties, `_interval_type`, and
+# the generic `_StatefulPayload` wrapper live in core/axis_anchor_types.jl
+# (included before the method modules so 1D method files can consume them).
+# This file holds the gridded-specific machinery: the shared resolution loop
+# (`_axis_anchors_loop!`/`_pooled`/`_all`).
 #
 # Each method owns its own payload type + `_axis_anchor_type` + `_resolve_anchor`
 # + consuming kernels in its own file (gridded_linear.jl, gridded_constant.jl,
 # gridded_hermite.jl, gridded_partials.jl). The backbone only calls those through
 # the generic functions, so it never names a payload.
-#
-# `interval::I` is the physical search cell (shared `_AbstractIndices{2}` layer,
-# same as `_AnchorLoc`): ordinary axes store one index (`_ContiguousIndices{2}`,
-# right tap derived), exclusive-periodic axes store both (`_ExplicitIndices{2}`,
-# the seam wraps). `payload::P` is a concrete named type — its identity is the
-# method/op tag, so no phantom method parameter is needed.
-
-struct _AxisAnchor{I <: _AbstractIndices{2}, P}
-    interval::I
-    payload::P
-end
-
-# Virtual properties: `idxL`/`idxR` read through the interval; every other
-# symbol forwards to the named payload's field (`alpha`, `inv_h`, `dL`, `h`,
-# `select_right`, …). Val-dispatch keeps each access a single folded `getfield`.
-@inline Base.getproperty(a::_AxisAnchor, s::Symbol) = _get_axis_anchor_property(a, Val(s))
-@inline _get_axis_anchor_property(a::_AxisAnchor, ::Val{:interval}) = getfield(a, :interval)
-@inline _get_axis_anchor_property(a::_AxisAnchor, ::Val{:payload}) = getfield(a, :payload)
-@inline _get_axis_anchor_property(a::_AxisAnchor, ::Val{:idxL}) = getfield(a, :interval)[Val(1)]
-@inline _get_axis_anchor_property(a::_AxisAnchor, ::Val{:idxR}) = getfield(a, :interval)[Val(2)]
-@inline _get_axis_anchor_property(a::_AxisAnchor, ::Val{s}) where {s} = getproperty(getfield(a, :payload), s)
-
-# Interval representation per axis type — reuses the `_AnchorLoc` selector's
-# invariant (contiguous ordinary / explicit exclusive-periodic).
-@inline _interval_type(::AbstractVector) = _ContiguousIndices{2}
-@inline _interval_type(::_ExclusivePeriodicAxis) = _ExplicitIndices{2}
 
 # ---- shared resolution loop ---------------------------------------------------
 # Mirrors `_gridded_anchors_loop!` (see its notes): the searcher union splits at

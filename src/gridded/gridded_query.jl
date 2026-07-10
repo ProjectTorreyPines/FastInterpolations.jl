@@ -104,14 +104,16 @@ end
 
 @inline _linear_gridded_anchor_method() = LinearInterp(NoBC())
 
+# `op` selects the op-minimal payload (value → alpha, deriv1 → inv_h, higher →
+# zero-size); it defaults to EvalValue for the resize case and direct/test use.
 function _gridded_anchors(
         grid::AbstractVector,
         targets::AbstractVector,
         extrap::AbstractExtrap,
-        dim::Int
+        dim::Int,
+        op::AbstractEvalOp = EvalValue()
     )
-    T = _gridded_alpha_type(grid, targets)
-    return _gridded_anchors(grid, targets, extrap, dim, T)
+    return _gridded_anchors(grid, targets, extrap, dim, op, _gridded_alpha_type(grid, targets))
 end
 
 function _gridded_anchors(
@@ -119,10 +121,11 @@ function _gridded_anchors(
         targets::AbstractVector,
         extrap::AbstractExtrap,
         dim::Int,
+        op::AbstractEvalOp,
         ::Type{Tvals}
     ) where {Tvals}
     m = _linear_gridded_anchor_method()
-    A = _axis_anchor_type(m, grid, targets, Tvals)
+    A = _axis_anchor_type(m, grid, targets, op, Tvals)
     anchors = Vector{A}(undef, length(targets))
     return _axis_anchors_loop!(anchors, m, grid, targets, extrap, dim, _gridded_build_searcher(grid, targets))
 end
@@ -133,9 +136,10 @@ function _gridded_anchors_pooled(
         targets::AbstractVector,
         extrap::AbstractExtrap,
         dim::Int,
+        op::AbstractEvalOp,
         ::Type{Tvals}
     ) where {Tvals}
-    return _axis_anchors_pooled(pool, _linear_gridded_anchor_method(), grid, targets, extrap, dim, Tvals)
+    return _axis_anchors_pooled(pool, _linear_gridded_anchor_method(), grid, targets, extrap, dim, op, Tvals)
 end
 
 function _gridded_anchors_pooled(
@@ -143,10 +147,10 @@ function _gridded_anchors_pooled(
         grid::AbstractVector,
         targets::AbstractVector,
         extrap::AbstractExtrap,
-        dim::Int
+        dim::Int,
+        op::AbstractEvalOp = EvalValue()
     )
-    T = _gridded_alpha_type(grid, targets)
-    return _gridded_anchors_pooled(pool, grid, targets, extrap, dim, T)
+    return _gridded_anchors_pooled(pool, grid, targets, extrap, dim, op, _gridded_alpha_type(grid, targets))
 end
 
 # ---- FUSED strategy ---------------------------------------------------------
@@ -174,13 +178,15 @@ function _fused_corner_expr(N::Int, d::Int, idxs::Vector{Any})
     lo[d] = Symbol(:il_, d)
     hi = copy(idxs)
     hi[d] = Symbol(:ir_, d)
+    # The op-minimal anchor supplies whichever geometry `ops[d]` needs (alpha for
+    # value, inv_h for deriv1, nothing for higher) — passed whole so the kernel
+    # reads only the field its payload carries.
     return :(
         _linear_kernel(
             ops[$d],
             $(_fused_corner_expr(N, d + 1, lo)),
             $(_fused_corner_expr(N, d + 1, hi)),
-            $(Symbol(:invh_, d)),
-            $(Symbol(:alpha_, d)),
+            $(Symbol(:a_, d)),
         )
     )
 end
@@ -200,8 +206,6 @@ end
                 $a = anchors[$d][$(js[d])]
                 $(Symbol(:il_, d)) = $a.idxL
                 $(Symbol(:ir_, d)) = $a.idxR
-                $(Symbol(:alpha_, d)) = $a.alpha
-                $(Symbol(:invh_, d)) = $a.inv_h
                 $body
             end
         end
@@ -241,7 +245,7 @@ _gridded_fused!(
     hi = copy(lo)
     hi[D] = :ir
     body = :(
-        dest[$(js...)] = _linear_kernel(op, src[$(lo...)], src[$(hi...)], invh, alpha)
+        dest[$(js...)] = _linear_kernel(op, src[$(lo...)], src[$(hi...)], a)
     )
     for d in 1:N   # d = 1 built first → innermost loop
         body = if d == D
@@ -250,8 +254,6 @@ _gridded_fused!(
                     a = anchors[$(js[d])]
                     il = a.idxL
                     ir = a.idxR
-                    alpha = a.alpha
-                    invh = a.inv_h
                     $body
                 end
             end
@@ -478,7 +480,7 @@ end
         ::Type{Tout}
     ) where {N, Tout}
     anchors = ntuple(
-        d -> _gridded_anchors_pooled(pool, grids[d], targets[d], extraps[d], d, Tout),
+        d -> _gridded_anchors_pooled(pool, grids[d], targets[d], extraps[d], d, ops[d], Tout),
         Val(N)
     )
     out = Array{Tout, N}(undef, map(length, targets))
@@ -496,7 +498,7 @@ end
         ::Type{Tout}
     ) where {N, Tout}
     anchors = ntuple(
-        d -> _gridded_anchors_pooled(pool, grids[d], targets[d], extraps[d], d, Tout),
+        d -> _gridded_anchors_pooled(pool, grids[d], targets[d], extraps[d], d, ops[d], Tout),
         Val(N)
     )
     _gridded_apply!(out, grids, data, targets, anchors, ops, extraps, Tout)

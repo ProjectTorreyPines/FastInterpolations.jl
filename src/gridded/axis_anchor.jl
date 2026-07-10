@@ -40,11 +40,41 @@ struct _ConstantValuePayload{Tq}
 end
 @inline _carrier(::_ConstantValuePayload{Tq}) where {Tq} = one(Tq)
 
-# Linear: in-cell weight `alpha` (value) + reciprocal width `inv_h` (deriv).
-struct _LinearPayload{Talpha, Tinv}
+# Linear op-minimal payloads: EvalValue keeps only `alpha`; EvalDeriv1 keeps
+# only `inv_h` (the carrier arithmetic type is retained as `Talpha` so the
+# kernel can reconstruct `one(Talpha)` without storing `alpha`); every higher
+# derivative of a degree-1 polynomial is zero → a zero-size payload. The per-op
+# payload type is chosen once in `_axis_anchor_type`; `_resolve_anchor` and the
+# consuming kernel then dispatch on it.
+struct _LinearValuePayload{Talpha}
     alpha::Talpha
+end
+struct _LinearDeriv1Payload{Talpha, Tinv}
     inv_h::Tinv
 end
+struct _LinearZeroPayload{Talpha} end
+
+@inline _linear_payload_type(::EvalValue, ::Type{Tα}, ::Type{Tinv}) where {Tα, Tinv} = _LinearValuePayload{Tα}
+@inline _linear_payload_type(::EvalDeriv1, ::Type{Tα}, ::Type{Tinv}) where {Tα, Tinv} = _LinearDeriv1Payload{Tα, Tinv}
+@inline _linear_payload_type(::AbstractEvalOp, ::Type{Tα}, ::Type{Tinv}) where {Tα, Tinv} = _LinearZeroPayload{Tα}
+
+# Op-minimal gridded combine: the fused/fullbuffer kernels pass the whole anchor
+# so each op reads only the field its payload carries. Results match the
+# point-wise 1D `_linear_kernel(op, yL, yR, inv_h, α)` exactly (value blend /
+# slope / carrier zero); the carrier `one(Tα)` is reconstructed from the payload
+# type parameter rather than stored. (These live here, beside the payloads, so
+# the `_AxisAnchor` signatures are in scope — gridded_query.jl is included
+# first.)
+@inline _linear_kernel(::EvalValue, yL::Tv, yR::Tv, a::_AxisAnchor{<:Any, <:_LinearValuePayload}) where {Tv} =
+    _linear_value_blend(a.alpha, yL, yR)
+
+@inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, a::_AxisAnchor{<:Any, _LinearDeriv1Payload{Tα, Tinv}}) where {Tv, Tα, Tinv}
+    Tc = _promote_eltype(_coeff_op, Tinv, Tv)
+    return _fielddiff(Tc, yR, yL) * a.inv_h * one(Tα)
+end
+
+@inline _linear_kernel(::AbstractEvalOp, yL::Tv, yR::Tv, a::_AxisAnchor{<:Any, _LinearZeroPayload{Tα}}) where {Tv, Tα} =
+    (0 * yL + 0 * yR) * one(Tα)
 
 # Local Hermite: geometry-only `(dL, h, inv_h)`; slopes are data-dependent and
 # computed in-pass. All fields consumed by the Hermite basis for every op.
@@ -77,10 +107,13 @@ end
 # the eltype of the array the consuming pass READS (raw data for pass 1 /
 # raw-local methods; the promoted intermediate for later Hermite passes) —
 # it feeds the value-matched width type exactly like point-wise eval.
+# `op` selects op-minimal payloads (only Linear specializes; the others keep one
+# payload per method and ignore it).
 @inline function _axis_anchor_type(
         m::ConstantInterp,
         grid::AbstractVector,
         targets::AbstractVector,
+        op::AbstractEvalOp,
         ::Type{Tvals}
     ) where {Tvals}
     Tone = promote_type(eltype(grid), eltype(targets))
@@ -88,23 +121,26 @@ end
 end
 
 # One method covers ordinary AND exclusive-periodic Linear: the interval type
-# selector carries the right-tap distinction, so the payload is identical.
+# selector carries the right-tap distinction, so only the op-minimal payload
+# type varies (value → `alpha`, deriv1 → `inv_h`, higher → zero-size).
 @inline function _axis_anchor_type(
         m::LinearInterp,
         grid::AbstractVector,
         targets::AbstractVector,
+        op::AbstractEvalOp,
         ::Type{Tvals}
     ) where {Tvals}
     Tw = _promote_grid_float(eltype(grid), Tvals)
     Tinv = _promote_eltype(_inv_op, Tw)
     Tα = promote_type(eltype(grid), eltype(targets), Tinv)
-    return _AxisAnchor{_interval_type(grid), _LinearPayload{Tα, Tinv}}
+    return _AxisAnchor{_interval_type(grid), _linear_payload_type(op, Tα, Tinv)}
 end
 
 @inline function _axis_anchor_type(
         m::AbstractLocalHermiteInterp,
         grid::AbstractVector,
         targets::AbstractVector,
+        op::AbstractEvalOp,
         ::Type{Tvals}
     ) where {Tvals}
     Tw = _promote_grid_float(eltype(grid), Tvals)
@@ -140,9 +176,33 @@ end
     return _AxisAnchor{I, _ConstantValuePayload{Tone}}(interval, _ConstantValuePayload{Tone}(select_right))
 end
 
+# EvalValue: only the in-cell weight `alpha` (Clamp/Fill fold it into [0, 1]).
 @inline function _resolve_anchor(
         ::LinearInterp,
-        ::Type{_AxisAnchor{I, _LinearPayload{Tα, Tinv}}},
+        ::Type{_AxisAnchor{I, _LinearValuePayload{Tα}}},
+        grid::AbstractVector,
+        idxL::Int,
+        idxR::Int,
+        xq,
+        xL,
+        xR,
+        extrap::AbstractExtrap
+    ) where {I, Tα}
+    inv_h = _get_inv_h(grid, idxL, xL, xR)
+    α = Tα(_alpha_of(xq, xL, inv_h))
+    if extrap isa Union{ClampExtrap, FillExtrap}
+        α = clamp(α, zero(Tα), one(Tα))
+    end
+    interval = _interval_indices(grid, idxL, idxR)
+    return _AxisAnchor{I, _LinearValuePayload{Tα}}(interval, _LinearValuePayload{Tα}(α))
+end
+
+# EvalDeriv1: only the reciprocal width. Clamp/Fill needs no fold — the boundary
+# cell's slope is exactly this cell's `inv_h` (the coordinate already resolved
+# to the boundary cell during search).
+@inline function _resolve_anchor(
+        ::LinearInterp,
+        ::Type{_AxisAnchor{I, _LinearDeriv1Payload{Tα, Tinv}}},
         grid::AbstractVector,
         idxL::Int,
         idxR::Int,
@@ -152,12 +212,24 @@ end
         extrap::AbstractExtrap
     ) where {I, Tα, Tinv}
     inv_h = Tinv(_get_inv_h(grid, idxL, xL, xR))
-    α = Tα(_alpha_of(xq, xL, inv_h))
-    if extrap isa Union{ClampExtrap, FillExtrap}
-        α = clamp(α, zero(Tα), one(Tα))
-    end
     interval = _interval_indices(grid, idxL, idxR)
-    return _AxisAnchor{I, _LinearPayload{Tα, Tinv}}(interval, _LinearPayload{Tα, Tinv}(α, inv_h))
+    return _AxisAnchor{I, _LinearDeriv1Payload{Tα, Tinv}}(interval, _LinearDeriv1Payload{Tα, Tinv}(inv_h))
+end
+
+# EvalDeriv2 and higher: the derivative is zero everywhere → no stored geometry.
+@inline function _resolve_anchor(
+        ::LinearInterp,
+        ::Type{_AxisAnchor{I, _LinearZeroPayload{Tα}}},
+        grid::AbstractVector,
+        idxL::Int,
+        idxR::Int,
+        xq,
+        xL,
+        xR,
+        extrap::AbstractExtrap
+    ) where {I, Tα}
+    interval = _interval_indices(grid, idxL, idxR)
+    return _AxisAnchor{I, _LinearZeroPayload{Tα}}(interval, _LinearZeroPayload{Tα}())
 end
 
 # Local Hermite: location-only payload `(dL, h, inv_h)` — slopes are
@@ -228,9 +300,10 @@ function _axis_anchors_pooled(
         targets::AbstractVector,
         extrap::AbstractExtrap,
         dim::Int,
+        op::AbstractEvalOp,
         ::Type{Tvals}
     ) where {Tvals}
-    A = _axis_anchor_type(m, grid, targets, Tvals)
+    A = _axis_anchor_type(m, grid, targets, op, Tvals)
     anchors = acquire!(pool, A, length(targets))
     return _axis_anchors_loop!(anchors, m, grid, targets, extrap, dim, _gridded_build_searcher(grid, targets))
 end
@@ -247,6 +320,7 @@ end
         grids,
         targets,
         extraps,
+        ops,
         ::Type{T1},
         ::Type{Trest},
         ::Val{N}
@@ -255,7 +329,7 @@ end
         :(
                 _axis_anchors_pooled(
                     pool, methods[$d], grids[$d], targets[$d], extraps[$d], $d,
-                    $(d == 1 ? :T1 : :Trest)
+                    ops[$d], $(d == 1 ? :T1 : :Trest)
                 )
             )
             for d in 1:N

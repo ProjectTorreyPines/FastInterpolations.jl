@@ -14,6 +14,7 @@
         m::CubicInterp,
         grid::AbstractVector,
         targets::AbstractVector,
+        op::AbstractEvalOp,
         ::Type{Tvals}
     ) where {Tvals}
     Tw = _promote_grid_float(eltype(grid), Tvals)
@@ -25,6 +26,7 @@ end
         m::QuadraticInterp,
         grid::AbstractVector,
         targets::AbstractVector,
+        op::AbstractEvalOp,
         ::Type{Tvals}
     ) where {Tvals}
     Tw = _promote_grid_float(eltype(grid), Tvals)
@@ -136,7 +138,7 @@ end
     size(out) == out_size || throw(
         DimensionMismatch("output size $(size(out)) != query size $out_size")
     )
-    anchors = _axis_anchors_all(pool, methods, grids, targets, extraps, Tp, Tp, Val(N))
+    anchors = _axis_anchors_all(pool, methods, grids, targets, extraps, ops, Tp, Tp, Val(N))
     if !any(iszero, out_size)
         _gridded_fused_partials!(out, partials, anchors, ops, Val(:cubic))
     end
@@ -157,7 +159,7 @@ end
     size(out) == out_size || throw(
         DimensionMismatch("output size $(size(out)) != query size $out_size")
     )
-    anchors = _axis_anchors_all(pool, methods, grids, targets, extraps, Tp, Tp, Val(N))
+    anchors = _axis_anchors_all(pool, methods, grids, targets, extraps, ops, Tp, Tp, Val(N))
     if !any(iszero, out_size)
         _gridded_fused_partials!(out, partials, anchors, ops, Val(:quadratic))
     end

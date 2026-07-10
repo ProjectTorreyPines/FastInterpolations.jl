@@ -3,24 +3,35 @@
 # (pure downsampling) and multi-pass full buffer (otherwise).
 
 @testitem "_AxisAnchor: linear builder + extrap fold" setup = [Basic] begin
-    using FastInterpolations: _AxisAnchor, _gridded_anchors, _LinearPayload,
-        _ContiguousIndices, _ExplicitIndices
+    using FastInterpolations: _AxisAnchor, _gridded_anchors, _LinearValuePayload,
+        _LinearDeriv1Payload, _LinearZeroPayload, _ContiguousIndices, _ExplicitIndices,
+        EvalValue, EvalDeriv1, EvalDeriv2
 
     g = collect(1.0:10.0)
-    # `_AxisAnchor{I, P}`: physical interval `I` + named payload `P` (no phantom
-    # method tag, no positional tuple payload).
-    linear_anchor_type = _AxisAnchor{_ContiguousIndices{2}, _LinearPayload{Float64, Float64}}
+    # `_AxisAnchor{I, P}`: physical interval `I` + op-minimal named payload `P`
+    # (no phantom method tag, no positional tuple payload). The default op is
+    # EvalValue, whose payload stores only `alpha`.
+    value_anchor_type = _AxisAnchor{_ContiguousIndices{2}, _LinearValuePayload{Float64}}
     @test !isdefined(FI, :_GriddedAnchor)
 
-    # in-domain: contiguous interval + named in-cell weight / reciprocal width
+    # in-domain value anchor: contiguous interval + `alpha` only (no `inv_h`).
     b = _gridded_anchors(g, [3.25], ExtendExtrap(), 1)
-    @test eltype(b) == linear_anchor_type
-    @test isbits(b[1]) && sizeof(b[1]) == 24
+    @test eltype(b) == value_anchor_type
+    @test isbits(b[1]) && sizeof(b[1]) == 16   # interval(8) + alpha(8)
     @test b[1].interval isa _ContiguousIndices{2}
     @test b[1].idxL == 3
     @test b[1].idxR == 4          # ordinary cell derives the right tap
     @test b[1].alpha ≈ 0.25
-    @test b[1].inv_h == 1.0       # unit-step grid → reciprocal cell width is exactly 1
+
+    # EvalDeriv1 anchor stores only `inv_h` (the carrier arithmetic type is kept
+    # as a payload type parameter); EvalDeriv2+ needs no stored field at all.
+    bd1 = _gridded_anchors(g, [3.25], ExtendExtrap(), 1, EvalDeriv1())
+    @test eltype(bd1) == _AxisAnchor{_ContiguousIndices{2}, _LinearDeriv1Payload{Float64, Float64}}
+    @test bd1[1].idxL == 3 && bd1[1].idxR == 4
+    @test bd1[1].inv_h == 1.0     # unit-step grid → reciprocal cell width is exactly 1
+    bd2 = _gridded_anchors(g, [3.25], ExtendExtrap(), 1, EvalDeriv2())
+    @test eltype(bd2) == _AxisAnchor{_ContiguousIndices{2}, _LinearZeroPayload{Float64}}
+    @test isbits(bd2[1]) && sizeof(bd2[1]) == 8   # interval(8) + zero-size payload
 
     # Clamp folds the OOB weight to the boundary node; Extend keeps it
     bC = _gridded_anchors(g, [0.0], ClampExtrap(), 1)
@@ -41,7 +52,7 @@
 
     # Float32 grid + targets stay Float32 (no silent widening)
     b32 = _gridded_anchors(collect(Float32, 1:10), Float32[2.5], ClampExtrap(), 1)
-    @test eltype(b32) == _AxisAnchor{_ContiguousIndices{2}, _LinearPayload{Float32, Float32}}
+    @test eltype(b32) == _AxisAnchor{_ContiguousIndices{2}, _LinearValuePayload{Float32}}
     @test b32[1].alpha === 0.5f0
 
     # Exclusive periodic axes are the only linear gridded anchors that need to
@@ -50,7 +61,7 @@
     bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
     gx = FI._cache_axis(collect(0.0:3.0), bc)
     bx = _gridded_anchors(gx, [3.75], WrapExtrap(), 1)
-    @test eltype(bx) == _AxisAnchor{_ExplicitIndices{2}, _LinearPayload{Float64, Float64}}
+    @test eltype(bx) == _AxisAnchor{_ExplicitIndices{2}, _LinearValuePayload{Float64}}
     @test bx[1].interval isa _ExplicitIndices{2}
     @test bx[1].idxL == 4
     @test bx[1].idxR == 1
@@ -323,16 +334,17 @@ end
     refv = [itpv((x, y); deriv = (EvalDeriv1(), EvalValue())) for x in txv, y in tyv]
     @test all(isapprox.(Cv, refv; rtol = 1.0e-12, atol = 1.0e-12))
 
-    # 3D kernel level: per-axis ops through the generated collapse
+    # 3D kernel level: per-axis ops through the generated collapse. Op-minimal
+    # payloads make the anchor op-specific, so each axis is built with its own op.
     A3 = rand(12, 10, 8)
     itp3 = linear_interp((1.0:12.0, 1.0:10.0, 1.0:8.0), A3; extrap = ClampExtrap())
     ts = (range(1.0, 12.0, 9), range(0.5, 10.5, 7), [1.0, 3.75, 7.9])
-    anchors = ntuple(d -> _gridded_anchors(itp3.grids[d], ts[d], itp3.extraps[d], d), 3)
     for ops in (
             (EvalDeriv1(), EvalValue(), EvalValue()),
             (EvalValue(), EvalDeriv1(), EvalValue()),
             (EvalValue(), EvalDeriv1(), EvalDeriv1()),
         )
+        anchors = ntuple(d -> _gridded_anchors(itp3.grids[d], ts[d], itp3.extraps[d], d, ops[d]), 3)
         out3 = Array{Float64, 3}(undef, map(length, ts)...)
         _gridded_fused!(out3, A3, anchors, ops)
         ref3 = [itp3((x, y, z); deriv = ops) for x in ts[1], y in ts[2], z in ts[3]]

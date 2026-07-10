@@ -59,7 +59,7 @@ end
     size(out) == out_size || throw(
         DimensionMismatch("output size $(size(out)) != query size $out_size")
     )
-    anchors = _axis_anchors_all(pool, methods, grids, targets, extraps, Tv, Tv, Val(N))
+    anchors = _axis_anchors_all(pool, methods, grids, targets, extraps, ops, Tv, Tv, Val(N))
     any(iszero, out_size) && return out
     _constant_gridded_gather!(out, data, anchors, ops)
     return _gridded_fill_oob!(out, grids, data, targets, extraps, ops)

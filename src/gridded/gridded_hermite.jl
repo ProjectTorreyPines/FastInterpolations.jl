@@ -159,7 +159,7 @@ end
     size(out) == out_size || throw(
         DimensionMismatch("output size $(size(out)) != query size $out_size")
     )
-    anchors = _axis_anchors_all(pool, methods, grids, targets, extraps, Tv, Tmid, Val(N))
+    anchors = _axis_anchors_all(pool, methods, grids, targets, extraps, ops, Tv, Tmid, Val(N))
     if !any(iszero, out_size)
         _hermite_gridded_fullbuffer!(out, grids, data, anchors, methods, ops, Tmid)
     end

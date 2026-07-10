@@ -36,3 +36,17 @@ end
     @test itp(aqc; deriv = FI.DerivOp(1)) === itp(aqe; deriv = FI.DerivOp(1))
     @test sizeof(aqc) < sizeof(aqe)                                     # 56 < 64
 end
+
+@testitem "Cubic anchor: contiguous is bit-identical to explicit + smaller" begin
+    const FI = FastInterpolations
+    x = collect(range(0.0, 1.0, 101)); y = sin.(x)
+    itp = FI.cubic_interp(x, y)
+    aqc = FI._anchor_query(x, 0.37, Val(:cubic))
+    aqe = FI._CubicAnchoredQuery(
+        FI._ExplicitIndices(aqc.idxL, aqc.idxR),
+        aqc.xq, aqc.state, aqc.w0, aqc.w1, aqc.w2, aqc.w3, eltype(x)
+    )
+    @test itp(aqc) === itp(aqe)
+    @test itp(aqc; deriv = FI.DerivOp(1)) === itp(aqe; deriv = FI.DerivOp(1))
+    @test sizeof(aqc) < sizeof(aqe)                                     # 120 < 128
+end

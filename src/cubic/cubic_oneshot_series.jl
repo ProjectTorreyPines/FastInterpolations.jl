@@ -66,7 +66,7 @@ end
     w1 = _compute_anchor_weights(EvalDeriv1(), h, inv_h, dL, dR)
     w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
     w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
-    return _CubicAnchoredQuery(_ExplicitIndices(idxL, idxR), xq_wrapped, IN_DOMAIN, w0, w1, w2, w3, eltype(cache.x))
+    return _CubicAnchoredQuery(_interval_indices(cache.x, idxL, idxR), xq_wrapped, IN_DOMAIN, w0, w1, w2, w3, eltype(cache.x))
 end
 
 # Periodic scalar: zero-copy. One search → seam-aware `_ExplicitIndices` anchor → loop
@@ -144,7 +144,7 @@ end
     # Pre-fill seam-aware anchors via `_build_periodic_cubic_anchor`.
     Tg_c = eltype(cache.x)
     Tq_w = _coord_eltype(Tq, Tg_c)
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg_c, Tq_w}, length(xqs))
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg_c, Tq_w, _interval_type(cache.x)}, length(xqs))
     # `cache.x` is wrapped (`_ExclusivePeriodicAxis(_CachedVector, period)` for
     # `:exclusive`) — axis-level seam dispatch fires via `g.period`. No `bc` thread.
     searcher = _resolve_search(cache.x, xqs, search, nothing)
@@ -277,7 +277,7 @@ end
 
     # Pre-compute anchors once (search Q times, not K×Q)
     Tq_w = _coord_eltype(Tq, eltype(cache.x))
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{eltype(cache.x), Tq_w}, length(xqs))
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{eltype(cache.x), Tq_w, _interval_type(cache.x)}, length(xqs))
     searcher = _resolve_search(cache.x, xqs, search, nothing)
     _fill_anchors!(aq_vec, cache.x, xqs, Val(:cubic), extrap_eff isa WrapExtrap, searcher)
 

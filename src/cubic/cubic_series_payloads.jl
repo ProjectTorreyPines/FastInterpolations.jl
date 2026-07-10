@@ -1,0 +1,153 @@
+# ========================================
+# Cubic Series lean anchors (op/extrap-aware payloads)
+# ========================================
+# Lean `_AxisAnchor{I, P}` payloads for the Series batch surfaces, which know
+# the eval op AND the extrap at anchor-build time. Each payload bakes only its
+# op's weights (vs the 96 B all-ops `_CubicAnchoredQuery`); flat extraps
+# (Clamp/Fill) wrap the payload in the generic `_StatefulPayload` so the OOB
+# state branch stays eval-time, exactly like the full-anchor path.
+# Design: docs/design/cubic_series_payload_anchor.md
+#
+# Weight formulas reuse `_compute_anchor_weights` verbatim → bit-identical to
+# the corresponding `_CubicAnchoredQuery` field (w0/w1/w2/w3) by construction.
+
+struct _CubicValuePayload1D{Tq}
+    w::NTuple{4, Tq}
+end
+struct _CubicDeriv1Payload1D{Tq}
+    w::NTuple{4, Tq}
+end
+struct _CubicDeriv2Payload1D{Tq}
+    w::NTuple{2, Tq}
+end
+struct _CubicDeriv3Payload1D{Tq}
+    w::NTuple{2, Tq}
+end
+struct _CubicZeroPayload1D{Tq} end   # DerivOp{N≥4}: result is a carrier zero, no weights
+
+# Weighted payloads share one resolve arm; the zero payload has its own.
+const _CubicWeightedPayload1D = Union{
+    _CubicValuePayload1D, _CubicDeriv1Payload1D,
+    _CubicDeriv2Payload1D, _CubicDeriv3Payload1D,
+}
+
+# Payload identity → op instance (kernels and OOB arms stay op-argument-free).
+@inline _payload_op(::Type{<:_CubicValuePayload1D}) = EvalValue()
+@inline _payload_op(::Type{<:_CubicDeriv1Payload1D}) = EvalDeriv1()
+@inline _payload_op(::Type{<:_CubicDeriv2Payload1D}) = EvalDeriv2()
+@inline _payload_op(::Type{<:_CubicDeriv3Payload1D}) = EvalDeriv3()
+@inline _payload_op(::Type{<:_CubicZeroPayload1D}) = DerivOp(4)   # any N≥4 is equivalent downstream
+@inline _payload_op(::Type{_StatefulPayload{P}}) where {P} = _payload_op(P)
+
+# ─── Payload/anchor type selection ───────────────────────────────────────────
+# op → payload; Clamp/Fill → stateful wrap. Both compile-time (op and extrap
+# are known at the batch entry), so the anchor type is fully concrete.
+
+@inline _cubic_series_payload_type(::EvalValue, ::Type{Tq}) where {Tq} = _CubicValuePayload1D{Tq}
+@inline _cubic_series_payload_type(::EvalDeriv1, ::Type{Tq}) where {Tq} = _CubicDeriv1Payload1D{Tq}
+@inline _cubic_series_payload_type(::EvalDeriv2, ::Type{Tq}) where {Tq} = _CubicDeriv2Payload1D{Tq}
+@inline _cubic_series_payload_type(::EvalDeriv3, ::Type{Tq}) where {Tq} = _CubicDeriv3Payload1D{Tq}
+@inline _cubic_series_payload_type(::DerivOp, ::Type{Tq}) where {Tq} = _CubicZeroPayload1D{Tq}
+
+@inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}) where {P} = _StatefulPayload{P}
+@inline _maybe_stateful_payload(::AbstractExtrap, ::Type{P}) where {P} = P
+
+@inline function _cubic_series_anchor_type(
+        op::AbstractEvalOp,
+        extrap::AbstractExtrap,
+        x::AbstractVector,
+        ::Type{Tq}
+    ) where {Tq}
+    return _AxisAnchor{_interval_type(x), _maybe_stateful_payload(extrap, _cubic_series_payload_type(op, Tq))}
+end
+
+# ─── Resolution ──────────────────────────────────────────────────────────────
+# Mirrors the ND partials overloads' shape (`gridded_partials.jl`); only the
+# payload type inside `A` differs, so dispatch stays collision-free.
+
+@inline function _resolve_anchor(
+        ::CubicInterp,
+        ::Type{_AxisAnchor{I, P}},
+        grid::AbstractVector,
+        idxL::Int,
+        idxR::Int,
+        xq,
+        xL,
+        xR,
+        ::AbstractExtrap
+    ) where {I, P <: _CubicWeightedPayload1D}
+    h = _get_h(grid, idxL, xL, xR)
+    inv_h = _get_inv_h(grid, idxL, xL, xR)
+    dL = xq - xL
+    dR = xR - xq
+    w = _compute_anchor_weights(_payload_op(P), h, inv_h, dL, dR)
+    return _AxisAnchor{I, P}(_interval_indices(grid, idxL, idxR), P(w))
+end
+
+@inline function _resolve_anchor(
+        ::CubicInterp,
+        ::Type{_AxisAnchor{I, _CubicZeroPayload1D{Tq}}},
+        grid::AbstractVector,
+        idxL::Int,
+        idxR::Int,
+        xq,
+        xL,
+        xR,
+        ::AbstractExtrap
+    ) where {I, Tq}
+    return _AxisAnchor{I, _CubicZeroPayload1D{Tq}}(
+        _interval_indices(grid, idxL, idxR), _CubicZeroPayload1D{Tq}()
+    )
+end
+
+# Stateful variant needs `loc.state`, which the gridded backbone loop does not
+# thread — the Series-owned build loop below passes the whole `loc`.
+@inline function _resolve_series_anchor(
+        m::CubicInterp,
+        ::Type{_AxisAnchor{I, _StatefulPayload{P}}},
+        grid::AbstractVector,
+        loc,
+        extrap::AbstractExtrap
+    ) where {I <: _AbstractIndices{2}, P}
+    bare = _resolve_anchor(m, _AxisAnchor{I, P}, grid, loc.idxL, loc.idxR, loc.xq, loc.xL, loc.xR, extrap)
+    return _AxisAnchor{I, _StatefulPayload{P}}(
+        getfield(bare, :interval), _StatefulPayload(getfield(bare, :payload), loc.state)
+    )
+end
+
+@inline function _resolve_series_anchor(
+        m::CubicInterp,
+        ::Type{A},
+        grid::AbstractVector,
+        loc,
+        extrap::AbstractExtrap
+    ) where {A <: _AxisAnchor}
+    return _resolve_anchor(m, A, grid, loc.idxL, loc.idxR, loc.xq, loc.xL, loc.xR, extrap)
+end
+
+# ─── Series-owned build loop ─────────────────────────────────────────────────
+# Mirrors `_fill_anchors!` (search → optional wrap → resolve), with two
+# differences: the anchor type (hence op/extrap representation) comes from the
+# buffer eltype, and NoExtrap throws HERE — before any output is written — via
+# the untyped `_throw_domain_error` (mixed-precision-safe `DomainError`,
+# axis-agnostic `dim = 0` phrasing).
+
+@inline function _fill_series_anchors!(
+        buffer::AbstractVector{A},
+        x::AbstractVector{Tg},
+        xqs::AbstractVector{S},
+        extrap::AbstractExtrap,
+        wrap::Bool,
+        searcher::SR
+    ) where {A <: _AxisAnchor, Tg, S <: Real, SR <: Searcher}
+    m = CubicInterp()
+    @inbounds for j in eachindex(xqs)
+        xq = xqs[j]
+        loc = _anchor_loc(x, _promote_coord(xq, Tg), wrap, searcher)
+        if extrap isa NoExtrap && loc.state != IN_DOMAIN
+            _throw_domain_error(xq, x)
+        end
+        buffer[j] = _resolve_series_anchor(m, A, x, loc, extrap)
+    end
+    return buffer
+end

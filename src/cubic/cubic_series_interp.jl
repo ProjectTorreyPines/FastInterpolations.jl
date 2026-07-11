@@ -863,11 +863,16 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
         end
     end
 
-    # Build anchors — Tq widens via _coord_eltype (Float32 on Float64 grid → Float64)
+    # Build lean op/extrap-aware anchors — Tq widens via _coord_eltype
+    # (Float32 on Float64 grid → Float64). Payload carries only this op's
+    # weights; Clamp/Fill select the stateful wrapper. NoExtrap throws during
+    # this build (before any output is written) with a mixed-precision-safe
+    # DomainError.
     Tq_w = _coord_eltype(Tq, Tg)
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg, Tq_w, _interval_type(sitp.cache.x)}, n_query)
+    A = _cubic_series_anchor_type(deriv, sitp.extrap, sitp.cache.x, Tq_w)
+    anchors = acquire!(pool, A, n_query)
     searcher = _resolve_search(sitp.cache.x, xq, search, hint)
-    _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic), _should_wrap(sitp), searcher)
+    _fill_series_anchors!(anchors, sitp.cache.x, xq, sitp.extrap, _should_wrap(sitp), searcher)
 
     # Extract matrices for argument-passing pattern (series-contiguous layout)
     # This is faster than point-contiguous for vector queries because:
@@ -875,14 +880,15 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
     # - y[:, k] is contiguous, reads are sequential
     # - No temp buffer or scatter loop needed
     y, z = sitp.y, sitp.z
-    n_pts = n_points(sitp)
     n = n_series(sitp)
     extrap = sitp.extrap
-    x_min, x_max = Tg(first(sitp.cache.x)), Tg(last(sitp.cache.x))
 
     # Evaluate all series using series-contiguous layout
     @inbounds for k in 1:n
-        _eval_series_vector!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, deriv)
+        out_k = outputs[k]
+        for j in eachindex(out_k, anchors)
+            out_k[j] = _cubic_series_eval(y, z, k, anchors[j], extrap)
+        end
     end
     return outputs
 end

@@ -166,6 +166,29 @@ end
     return 0 * src * one(aq.xq)
 end
 
+# Type-carrier twins of the three `aq` forms above, for lean stateful anchors
+# that store no `xq` (`one(xq)` is value-independent — only the query TYPE
+# matters). MUST stay formula-identical to the `aq` forms; the OOB pins in
+# test/test_cubic_series_oob_pins.jl guard the shared contract.
+@inline function _constant_extrap_boundary_value(
+        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampExtrap, ::Type{Tq}
+    ) where {Tv, Tq <: Real}
+    @inbounds return y[_boundary_point_index(side, n_pts), k] * one(Tq)
+end
+
+@inline function _constant_extrap_boundary_value(
+        ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::EvalValue, e::FillExtrap, ::Type{Tq}
+    ) where {Tv, Tq <: Real}
+    return e.fill_value * one(Tq)
+end
+
+@inline function _constant_extrap_boundary_value(
+        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::AbstractEvalOp, ext::_ClampOrFill, ::Type{Tq}
+    ) where {Tv, Tq <: Real}
+    src = _extrap_oob_data(ext, @inbounds(y[_boundary_point_index(side, n_pts), k]))
+    return 0 * src * one(Tq)
+end
+
 """
     _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap, aq) -> out
 

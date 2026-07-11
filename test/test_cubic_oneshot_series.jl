@@ -255,6 +255,44 @@
         @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
     end
 
+    @testset "Zero allocation (in-place vector, OOB stateful wrappers)" begin
+        # Fill/Clamp OOB select the stateful payload wrapper; deriv ≥ 4 selects the
+        # zero payload. Both must stay warm-alloc-free on the vector-batch surface.
+        # extrap/op are baked in as literals, NOT passed as args (under the @testset
+        # try/catch, LTS won't const-propagate through extrap/op arguments). Two
+        # warmup calls, not one: the first-ever call of each (extrap, DerivOp{k})
+        # specialization pays a one-time ~190 KB JIT cost that a single warmup does
+        # not fully absorb on LTS; the second clears it. A recurring per-call box
+        # (e.g. a runtime-typed anchor) would survive both warmups and still trip.
+        function measure_fill_d0(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            xqs = [-0.5, 0.37, 1.5]                # OOB-left, in, OOB-right
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            cubic_interp!(outputs, x, s, xqs; extrap = FillExtrap(999.0), deriv = DerivOp(0))
+            cubic_interp!(outputs, x, s, xqs; extrap = FillExtrap(999.0), deriv = DerivOp(0))
+            return @allocated cubic_interp!(outputs, x, s, xqs; extrap = FillExtrap(999.0), deriv = DerivOp(0))
+        end
+        function measure_clamp_d3(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            xqs = [-0.5, 0.37, 1.5]
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            cubic_interp!(outputs, x, s, xqs; extrap = ClampExtrap(), deriv = DerivOp(3))
+            cubic_interp!(outputs, x, s, xqs; extrap = ClampExtrap(), deriv = DerivOp(3))
+            return @allocated cubic_interp!(outputs, x, s, xqs; extrap = ClampExtrap(), deriv = DerivOp(3))
+        end
+        function measure_fill_d5(x, y_sin, y_cos)
+            s = Series(y_sin, y_cos)
+            xqs = [-0.5, 0.37, 1.5]
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            cubic_interp!(outputs, x, s, xqs; extrap = FillExtrap(NaN), deriv = DerivOp(5))
+            cubic_interp!(outputs, x, s, xqs; extrap = FillExtrap(NaN), deriv = DerivOp(5))
+            return @allocated cubic_interp!(outputs, x, s, xqs; extrap = FillExtrap(NaN), deriv = DerivOp(5))
+        end
+        @test measure_fill_d0(x, y_sin, y_cos) <= ALLOC_THRESHOLD
+        @test measure_clamp_d3(x, y_sin, y_cos) <= ALLOC_THRESHOLD
+        @test measure_fill_d5(x, y_sin, y_cos) <= ALLOC_THRESHOLD
+    end
+
     @testset "Extrapolation modes" begin
         xq_oob = 1.5
         @test_throws DomainError cubic_interp(x, Series(y_sin, y_cos), xq_oob)

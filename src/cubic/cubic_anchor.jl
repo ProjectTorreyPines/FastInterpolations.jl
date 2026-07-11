@@ -54,9 +54,10 @@ depend only on z-values, not y-values. This reduces anchor size by 16 bytes
 per query for Float64.
 
 # AD Support
-When `xq` is a `ForwardDiff.Dual`, the anchor preserves the Dual type
-in both `xq` and weight fields, enabling automatic differentiation through
-series interpolant evaluation.
+When the grid or `xq` is a `ForwardDiff.Dual`, the anchor preserves the Dual
+type in both `xq` and the weight fields. This keeps the adjoint's grid-pinned
+reverse pass differentiable; forward evaluation itself goes through `itp(xq)`
+(see Usage), not this anchor.
 """
 struct _CubicAdjointAnchor{Tg, Tq <: Real, I <: _AbstractIndices{2}}
     # Physical cell interval: `interval[1]` is the left index (idxL), `interval[2]`

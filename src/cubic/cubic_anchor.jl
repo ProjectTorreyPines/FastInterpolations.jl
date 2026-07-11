@@ -1,9 +1,9 @@
 # ========================================
-# Cubic Anchored Query
+# Cubic Adjoint Anchor
 # ========================================
-# Precomputed geometry weights for ultra-fast cubic spline evaluation
-# at a fixed query point. Enables 2-4x speedup by eliminating interval
-# search and geometry setup for repeated evaluations.
+# Precomputed geometry weights baked at a fixed query point, consumed by the
+# 1D cubic adjoint (cubic_adjoint.jl) to select the per-DerivOp weight field in
+# the reverse pass without repeating the interval search or geometry setup.
 #
 # Include order: ops.jl → ... → cubic_types.jl → cubic_anchor.jl → cubic_interpolant.jl
 #
@@ -37,20 +37,15 @@ matches the interpolant grid.
 - `w3`: Precomputed weights for third derivative (wzL, wzR) - optimized, no y-weights
 
 # Usage
-```julia
-x = collect(range(0.0, 1.0, 101))
-aq = _anchor_query(x, 0.35, Val(:cubic))
-
-itp1 = cubic_interp(x, sin.(2π .* x))
-itp2 = cubic_interp(x, cos.(2π .* x))
-
-itp1(aq)              # Ultra-fast: skips interval search
-itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
-```
+Consumed only by the 1D cubic adjoint (`src/cubic/cubic_adjoint.jl`), which
+bakes an anchor per query at construction via `_anchor_query(x, xq, Val(:cubic))`
+and reuses the precomputed weights across the reverse pass. Not a forward-eval
+entry point — forward evaluation goes through `itp(xq)`.
 
 # Performance
-Anchored evaluation is 2-4x faster than `itp(xq)` for non-uniform grids,
-as it eliminates O(log n) binary search and geometry setup.
+Baking all four op weights once lets the adjoint select the right field
+(`w0`..`w3`) per `DerivOp{N}` in the pullback without repeating the O(log n)
+interval search or geometry setup.
 
 # Memory Optimization
 w2 and w3 store only (wzL, wzR) since second and third derivatives
@@ -206,19 +201,9 @@ Create an anchored query for ultra-fast cubic spline evaluation at a fixed point
 
 # Example
 ```julia
-x = range(0.0, 1.0, 101)
-itp1 = cubic_interp(collect(x), sin.(2π .* x))
-itp2 = cubic_interp(collect(x), cos.(2π .* x))
-
-aq = _anchor_query(collect(x), 0.35, Val(:cubic))
-
-itp1(aq)              # Ultra-fast: skips interval search
-itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
+x = collect(range(0.0, 1.0, 101))
+aq = _anchor_query(x, 0.35, Val(:cubic))  # baked and stored by the cubic adjoint
 ```
-
-# Performance
-Anchored evaluation is 2-4x faster than `itp(xq)` for non-uniform grids,
-as it eliminates O(log n) binary search and geometry setup.
 
 # AD Support
 When `xq` is a ForwardDiff.Dual, the anchor preserves the Dual type
@@ -255,13 +240,7 @@ the grid used for interpolant construction.
 # Example
 ```julia
 x = collect(range(0.0, 1.0, 101))
-aq_vec = _anchor_query(x, [0.15, 0.35, 0.75], Val(:cubic))
-
-itp1 = cubic_interp(x, sin.(2π .* x))
-itp2 = cubic_interp(x, cos.(2π .* x))
-
-vals1 = itp1(aq_vec)  # Batch evaluation
-vals2 = itp2(aq_vec)  # Reuse same anchors
+aq_vec = _anchor_query(x, [0.15, 0.35, 0.75], Val(:cubic))  # anchor per query for the adjoint pullback
 ```
 
 # Note

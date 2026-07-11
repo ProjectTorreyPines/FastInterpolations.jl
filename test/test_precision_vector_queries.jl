@@ -216,10 +216,13 @@
     end
 
     @testset "Cubic Series: vector vs per-point scalar" begin
-        # Known limitation: the out-of-place CubicSeriesInterpolant vector path
-        # does not fully promote a Float32 grid against Float64 queries the way the
-        # scalar path does, so vector-vs-scalar disagree here. Tracked separately
-        # from this refactor.
+        # Known limitation: on a Float32 grid with Float64 queries, the out-of-place
+        # vector path (series-contiguous batch kernel) and the per-point scalar path
+        # (point-contiguous kernel) can disagree past PRECISION_RTOL on cancellation-
+        # heavy points (e.g. cosine at π/2: ~1.66e-9 relative, ~8e-19 absolute). Both
+        # paths already produce Float64 — the divergence is FMA/SIMD scheduling across
+        # the two load layouts, not a missing promotion. Pre-existing (both layouts
+        # were SIMD before the scalar-unify refactor); tracked separately.
         @test_broken begin
             x = Float32.(collect(range(0.0, 2π, 51)))
             y1 = Float32.(sin.(x))

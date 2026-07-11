@@ -1,10 +1,13 @@
 # Phase 2 equivalence gate for the lean point-contiguous scalar kernel.
 # The lean point path (build one shared _AxisAnchor, then `_cubic_series_eval!`
-# over the interpolant's point-contiguous layout) must match the already-lean
-# BATCH path bit-for-bit — the two kernels share weights/indices and differ only
-# in load pattern. This validates the kernel BEFORE Phase 3 wires the scalar
-# entries to it. DerivOp≥4's per-k zero arm now matches batch (resolving the
-# master scalar(-0.0)/batch(+0.0) divergence pinned sign-agnostically in Phase 1).
+# over the interpolant's point-contiguous layout) matches the already-lean BATCH
+# path up to FMA-scheduling ULP — the two kernels share weights/indices and differ
+# only in load pattern, so the point-vs-series load order can reorder FMA
+# contraction (hence `egal_or_ulp`, egal for zeros/non-finites, ≤16 ULP for finite
+# nonzeros; it is NOT universally bit-identical near heavy cancellation). This
+# validates the kernel BEFORE Phase 3 wires the scalar entries to it. DerivOp≥4's
+# per-k zero arm matches batch exactly (resolving the master scalar(-0.0)/batch(+0.0)
+# divergence pinned sign-agnostically in Phase 1).
 
 @testsnippet PointKernelOracle begin
     const FI = FastInterpolations

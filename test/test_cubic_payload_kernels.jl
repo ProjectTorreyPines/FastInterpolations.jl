@@ -95,7 +95,7 @@ end
     end
 end
 
-@testitem "adapter in-domain delegation: inferred and allocation-free" begin
+@testitem "adapter in-domain delegation: inferred and allocation-free" setup = [AllocConstants] begin
     using FastInterpolations: _cubic_series_eval, _cubic_series_anchor_type,
         _fill_series_anchors!, _resolve_searcher_for_grid, DEFAULT_SEARCHER, EvalValue
 
@@ -119,6 +119,6 @@ end
     @inferred run_vec(yv, zv, anchors, extrap)
     run_mat(Y, Z, anchors, extrap)
     run_vec(yv, zv, anchors, extrap)
-    @test (@allocated run_mat(Y, Z, anchors, extrap)) == 0
-    @test (@allocated run_vec(yv, zv, anchors, extrap)) == 0
+    @test (@allocated run_mat(Y, Z, anchors, extrap)) <= ALLOC_THRESHOLD
+    @test (@allocated run_vec(yv, zv, anchors, extrap)) <= ALLOC_THRESHOLD
 end

@@ -191,9 +191,9 @@ end
     _CubicZeroPayload1D{Tq}()
 
 # ─── Bare payload kernels ────────────────────────────────────────────────────
-# Bodies mirror the full-anchor kernels exactly — matrix layout mirrors
-# `_eval_series_anchored`, raw-vector layout mirrors `_cubic_eval_kernel` —
-# with weights read from the payload (`a.w`) instead of the op-selected field.
+# Bodies are the cubic Hermite dot product (`muladd(wyR, yR, muladd(wyL, yL, …))`)
+# in two data layouts — matrix (series-contiguous `y[idx, k]`) and raw-vector —
+# with weights read from the payload (`a.w`) instead of an op-selected field.
 # Named for the payload family, not "series": any future lean-anchor consumer
 # (e.g. unified `interp` batch routing) reuses them as-is.
 

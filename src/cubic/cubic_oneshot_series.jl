@@ -6,9 +6,9 @@
 # Provides `cubic_interp(x, Series(y1,y2,...), xq; bc=...)` without constructing
 # a CubicSeriesInterpolant. Uses pool allocation for z-buffer reuse.
 #
-# Include order: ... → cubic_anchor.jl → cubic_oneshot_series.jl → ...
-# Shared kernel: _cubic_eval_kernel(y, z, aq, op) in cubic_anchor.jl
-# Shared extrap: _cubic_eval_at_anchor(y, z, aq, op, extrap) in cubic_anchor.jl
+# Include order: ... → cubic_anchor.jl → cubic_series_payloads.jl → this file.
+# Eval goes through the lean payload adapters (`_cubic_series_eval`,
+# `_cubic_payload_kernel`) in cubic_series_payloads.jl.
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                      INTERNAL: NON-PERIODIC CORE                         ║

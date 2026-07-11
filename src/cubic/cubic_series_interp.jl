@@ -138,41 +138,6 @@ end
 """Return the interpolation method kind for kernel dispatch."""
 @inline _method_kind(::Type{<:CubicSeriesInterpolant}) = Val(:cubic)
 
-"""
-    _make_anchor(sitp::CubicSeriesInterpolant, xq::Tq) -> _CubicAnchoredQuery{Tg, Tq}
-
-Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
-
-# AD Support
-When `xq` is a ForwardDiff.Dual, the returned anchor preserves the Dual type.
-"""
-@inline function _make_anchor(sitp::CubicSeriesInterpolant{Tg}, xq::Tq, searcher::P = DEFAULT_SEARCHER) where {Tg, Tq <: Real, P <: Searcher}
-    return _anchor_query(sitp.cache.x, xq, Val(:cubic), _should_wrap(sitp), searcher)
-end
-
-"""
-    _eval_series_at_anchor!(output, sitp::CubicSeriesInterpolant, aq, op)
-
-Evaluate all series at the given anchor point. Required trait for AbstractSeriesInterpolant.
-Uses point-contiguous layout for SIMD optimization.
-
-# AD Support
-When `aq` has Dual type weights (from Dual query), the output will have promoted type.
-"""
-@inline function _eval_series_at_anchor!(
-        output::AbstractVector,
-        sitp::CubicSeriesInterpolant{Tg, Tv},
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        op::AbstractEvalOp
-    ) where {Tg, Tv, Tq <: Real}
-    y_point, z_point = _ensure_point_layout!(sitp)
-    n_pts = n_points(sitp)
-    x_min, x_max = Tg(first(sitp.cache.x)), Tg(last(sitp.cache.x))
-
-    _eval_series_point_with_extrap!(output, y_point, z_point, n_pts, x_min, x_max, aq, sitp.extrap, op)
-    return output
-end
-
 # ========================================
 # Lazy Point-Layout Management
 # ========================================
@@ -197,298 +162,6 @@ function precompute_transpose!(sitp::CubicSeriesInterpolant)
     return sitp
 end
 
-# ========================================
-# SIMD Scalar Evaluation Kernels
-# ========================================
-
-"""
-    _eval_series_point!(out, y_point, z_point, aq, op)
-
-SIMD-optimized evaluation for point-contiguous layout (n_series × n_points).
-Contiguous column access enables vectorization across series dimension.
-
-Dispatches on concrete EvalOp for optimal performance:
-- EvalValue, EvalDeriv1: Full 4-term evaluation
-- EvalDeriv2, EvalDeriv3: Optimized 2-term evaluation (no y-loads)
-"""
-# EvalValue: Full 4-term evaluation
-@inline function _eval_series_point!(
-        out::AbstractVector,
-        y_point::Matrix{Tv},
-        z_point::Matrix{Tz},
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        ::EvalValue
-    ) where {Tg, Tv, Tz, Tq <: Real}
-    idx = aq.idx
-    idx1 = idx + 1
-    wyL, wyR, wzL, wzR = aq.w0
-
-    @inbounds @simd for k in axes(out, 1)
-        yL = y_point[k, idx]
-        yR = y_point[k, idx1]
-        zL = z_point[k, idx]
-        zR = z_point[k, idx1]
-        out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
-    end
-    return out
-end
-
-# EvalDeriv1: Full 4-term evaluation
-@inline function _eval_series_point!(
-        out::AbstractVector,
-        y_point::Matrix{Tv},
-        z_point::Matrix{Tz},
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        ::EvalDeriv1
-    ) where {Tg, Tv, Tz, Tq <: Real}
-    idx = aq.idx
-    idx1 = idx + 1
-    wyL, wyR, wzL, wzR = aq.w1
-
-    @inbounds @simd for k in axes(out, 1)
-        yL = y_point[k, idx]
-        yR = y_point[k, idx1]
-        zL = z_point[k, idx]
-        zR = z_point[k, idx1]
-        out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
-    end
-    return out
-end
-
-# EvalDeriv2: Optimized 2-term evaluation (no y-loads)
-@inline function _eval_series_point!(
-        out::AbstractVector,
-        y_point::Matrix{Tv},
-        z_point::Matrix{Tz},
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        ::EvalDeriv2
-    ) where {Tg, Tv, Tz, Tq <: Real}
-    idx = aq.idx
-    idx1 = idx + 1
-    wzL, wzR = aq.w2
-
-    @inbounds @simd for k in axes(out, 1)
-        zL = z_point[k, idx]
-        zR = z_point[k, idx1]
-        out[k] = muladd(wzR, zR, wzL * zL)
-    end
-    return out
-end
-
-# EvalDeriv3: Optimized 2-term evaluation (no y-loads)
-@inline function _eval_series_point!(
-        out::AbstractVector,
-        y_point::Matrix{Tv},
-        z_point::Matrix{Tz},
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        ::EvalDeriv3
-    ) where {Tg, Tv, Tz, Tq <: Real}
-    idx = aq.idx
-    idx1 = idx + 1
-    wzL, wzR = aq.w3
-
-    @inbounds @simd for k in axes(out, 1)
-        zL = z_point[k, idx]
-        zR = z_point[k, idx1]
-        out[k] = muladd(wzR, zR, wzL * zL)
-    end
-    return out
-end
-
-@inline function _eval_series_point!(
-        out::AbstractVector,
-        y_point::Matrix{Tv},
-        z_point::Matrix{Tz},
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        ::DerivOp{N}
-    ) where {Tg, Tv, Tz, Tq <: Real, N}
-    z = 0 * (@inbounds y_point[1, aq.idx])
-    @inbounds @simd for k in axes(out, 1)
-        out[k] = z
-    end
-    return out
-end
-
-"""
-    _eval_series_point_with_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op)
-
-SIMD evaluation with extrapolation handling for multi-series.
-"""
-@inline function _eval_series_point_with_extrap!(
-        out::AbstractVector,
-        y_point::Matrix{Tv},
-        z_point::Matrix{Tz},
-        n_pts::Int,
-        x_min::Tg,
-        x_max::Tg,
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        extrap::AbstractExtrap,
-        op::AbstractEvalOp
-    ) where {Tg, Tv, Tz, Tq <: Real}
-    # Inside domain: normal evaluation
-    if aq.state == IN_DOMAIN
-        return _eval_series_point!(out, y_point, z_point, aq, op)
-    end
-
-    # Outside domain: dispatch on extrap mode
-    return _eval_series_point_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op, aq.state)
-end
-
-# NoExtrap - throw DomainError
-@inline function _eval_series_point_extrap!(
-        ::AbstractVector,
-        ::Matrix{Tv},
-        ::Matrix{Tv},
-        ::Int,
-        x_min::Tg,
-        x_max::Tg,
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        ::NoExtrap,
-        ::AbstractEvalOp,
-        ::UInt8
-    ) where {Tg, Tv, Tq <: Real}
-    _throw_extrap_domain_error(aq.xq, x_min, x_max)
-end
-
-# ClampExtrap - clamp to boundary (value only, derivatives are zero)
-@inline function _eval_series_point_extrap!(
-        out::AbstractVector,
-        y_point::Matrix{Tv},
-        ::Matrix{Tv},
-        n_pts::Int,
-        ::Tg,
-        ::Tg,
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        extrap::_ClampOrFill,
-        op::AbstractEvalOp,
-        side::UInt8
-    ) where {Tg, Tv, Tq <: Real}
-    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap, aq)
-end
-
-# ExtendExtrap - extend polynomial (EvalValue)
-@inline function _eval_series_point_extrap!(
-        out::AbstractVector,
-        y_point::Matrix{Tv},
-        z_point::Matrix{Tz},
-        n_pts::Int,
-        ::Tg,
-        ::Tg,
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        ::ExtendExtrap,
-        ::EvalValue,
-        side::UInt8
-    ) where {Tg, Tv, Tz, Tq <: Real}
-    idx = side == OOB_LEFT ? 1 : (n_pts - 1)
-    idx1 = idx + 1
-    wyL, wyR, wzL, wzR = aq.w0
-
-    @inbounds @simd for k in axes(out, 1)
-        yL = y_point[k, idx]
-        yR = y_point[k, idx1]
-        zL = z_point[k, idx]
-        zR = z_point[k, idx1]
-        out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
-    end
-    return out
-end
-
-# ExtendExtrap - extend polynomial (EvalDeriv1)
-@inline function _eval_series_point_extrap!(
-        out::AbstractVector,
-        y_point::Matrix{Tv},
-        z_point::Matrix{Tz},
-        n_pts::Int,
-        ::Tg,
-        ::Tg,
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        ::ExtendExtrap,
-        ::EvalDeriv1,
-        side::UInt8
-    ) where {Tg, Tv, Tz, Tq <: Real}
-    idx = side == OOB_LEFT ? 1 : (n_pts - 1)
-    idx1 = idx + 1
-    wyL, wyR, wzL, wzR = aq.w1
-
-    @inbounds @simd for k in axes(out, 1)
-        yL = y_point[k, idx]
-        yR = y_point[k, idx1]
-        zL = z_point[k, idx]
-        zR = z_point[k, idx1]
-        out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
-    end
-    return out
-end
-
-# ExtendExtrap - extend polynomial (EvalDeriv2) - optimized, no y-loads
-@inline function _eval_series_point_extrap!(
-        out::AbstractVector,
-        y_point::Matrix{Tv},
-        z_point::Matrix{Tz},
-        n_pts::Int,
-        ::Tg,
-        ::Tg,
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        ::ExtendExtrap,
-        ::EvalDeriv2,
-        side::UInt8
-    ) where {Tg, Tv, Tz, Tq <: Real}
-    idx = side == OOB_LEFT ? 1 : (n_pts - 1)
-    idx1 = idx + 1
-    wzL, wzR = aq.w2
-
-    @inbounds @simd for k in axes(out, 1)
-        zL = z_point[k, idx]
-        zR = z_point[k, idx1]
-        out[k] = muladd(wzR, zR, wzL * zL)
-    end
-    return out
-end
-
-# ExtendExtrap - extend polynomial (EvalDeriv3) - optimized, no y-loads
-@inline function _eval_series_point_extrap!(
-        out::AbstractVector,
-        y_point::Matrix{Tv},
-        z_point::Matrix{Tz},
-        n_pts::Int,
-        ::Tg,
-        ::Tg,
-        aq::_CubicAnchoredQuery{Tg, Tq},
-        ::ExtendExtrap,
-        ::EvalDeriv3,
-        side::UInt8
-    ) where {Tg, Tv, Tz, Tq <: Real}
-    idx = side == OOB_LEFT ? 1 : (n_pts - 1)
-    idx1 = idx + 1
-    wzL, wzR = aq.w3
-
-    @inbounds @simd for k in axes(out, 1)
-        zL = z_point[k, idx]
-        zR = z_point[k, idx1]
-        out[k] = muladd(wzR, zR, wzL * zL)
-    end
-    return out
-end
-
-# ExtendExtrap - 4th+ derivative of cubic is zero → fill zeros
-@inline function _eval_series_point_extrap!(
-        out::AbstractVector,
-        y_point::Matrix{Tv},
-        ::Matrix{Tv},
-        ::Int,
-        ::Tg,
-        ::Tg,
-        ::_CubicAnchoredQuery{Tg, Tq},
-        ::ExtendExtrap,
-        ::DerivOp{N},
-        ::UInt8
-    ) where {Tg, Tv, Tq <: Real, N}
-    z = 0 * first(y_point)
-    @inbounds @simd for k in axes(out, 1)
-        out[k] = z
-    end
-    return out
-end
 
 # ========================================
 # Internal: Coefficient Solver
@@ -747,11 +420,8 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
     xq_promoted = _promote_coord(xq, Tg)
     T_out = _promote_eltype(_interp_op, Tg, Tv, typeof(xq_promoted))
     output = Vector{T_out}(undef, n_series(sitp))
-
-    # Build anchor preserving Dual type in xq
-    aq = _make_anchor(sitp, xq_promoted, _resolve_search(sitp.cache.x, xq, search, hint))
-
-    _eval_series_at_anchor!(output, sitp, aq, deriv)
+    # Delegate to in-place (holds the shared lean anchor build + point-layout eval)
+    sitp(output, xq; deriv = deriv, search = search, hint = hint)
     return output
 end
 
@@ -772,13 +442,17 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
     ) where {Tg, Tv, Tq <: Real}
     _validate_scalar_output(output, n_series(sitp))
 
-    # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
-    xq_promoted = _promote_coord(xq, Tg)
+    # One lean op/extrap-aware anchor, built from the statically-typed `sitp.extrap`
+    # (same helpers as the batch path). NoExtrap throws OOB inside the build.
+    A = _cubic_series_anchor_type(deriv, sitp.extrap, sitp.cache.x, _coord_eltype(Tq, Tg))
+    a = _build_series_anchor(
+        A, sitp.cache.x, xq, sitp.extrap, _should_wrap(sitp),
+        _resolve_search(sitp.cache.x, xq, search, hint)
+    )
 
-    # Build anchor preserving Dual type in xq (for AD)
-    aq = _make_anchor(sitp, xq_promoted, _resolve_search(sitp.cache.x, xq, search, hint))
-
-    _eval_series_at_anchor!(output, sitp, aq, deriv)
+    # Point-contiguous layout: `out[k]` streams across the K series (SIMD).
+    y_point, z_point = _ensure_point_layout!(sitp)
+    _cubic_series_eval!(output, y_point, z_point, a, sitp.extrap)
     return output
 end
 

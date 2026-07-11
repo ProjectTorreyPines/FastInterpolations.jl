@@ -73,11 +73,10 @@ end
     end
 end
 
-@testitem "scalar ≈ batch: DerivOp≥4 zero payload (sign-agnostic; Phase 3 tightens to ===)" setup = [ScalarUnifyOracles] begin
-    # A ≥4 derivative of a cubic is exactly 0; its SIGN is non-contractual and
-    # currently diverges scalar (-0.0) vs batch (+0.0) because they use different
-    # kernels. Assert both are zero here; once Phase 3 routes scalar through the
-    # batch point kernel this can tighten to `scalar_eq_batch` (strict, signed).
+@testitem "scalar ≡ batch: DerivOp≥4 zero payload (signed, bit-identical)" setup = [ScalarUnifyOracles] begin
+    # A ≥4 derivative of a cubic is exactly 0. Now that scalar routes through the
+    # lean per-k zero arm, its signed zero matches batch bit-for-bit (on master
+    # they diverged scalar(-0.0)/batch(+0.0) via different kernels).
     x = collect(range(0.0, 1.0, 11))
     y1 = vcat(-0.0, collect(1.0:9.0), 2.0)
     y2 = collect(range(2.0, 3.0, 11))
@@ -85,9 +84,7 @@ end
         sitp = cubic_interp(x, Series(y1, y2); extrap = extrap)
         dom = (extrap isa NoExtrap || extrap isa InBounds) ? (0.05, 0.37, 0.94) : (0.05, 0.37, 0.94, -0.5, 1.5)
         for xq in dom, op in (DerivOp(4), DerivOp(5))
-            s = sitp(xq; deriv = op)
-            b = sitp([xq]; deriv = op)
-            @test all(iszero, s) && all(k -> iszero(b[k][1]), eachindex(b))
+            @test scalar_eq_batch(sitp, xq, op)
         end
     end
 end
@@ -127,24 +124,49 @@ end
     end
 end
 
-@testitem "RED: mixed-precision / Dual scalar OOB (Phase 3 flips these to @test)" setup = [ScalarUnifyOracles] begin
-    # (a) NoExtrap mixed precision OOB: today MethodError, must become DomainError.
+@testitem "persistent scalar: zero-alloc after warmup (lean point path)" setup = [AllocConstants] begin
+    # extrap/op baked in as literals + two warmups (LTS won't const-prop through
+    # args under the @testset try/catch, and the first call of each specialization
+    # pays a one-time JIT cost a single warmup misses). See test_cubic_oneshot_series.jl.
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    function m_clamp_oob(x, y1, y2)
+        sitp = cubic_interp(x, Series(y1, y2); extrap = ClampExtrap())
+        out = zeros(2)
+        sitp(out, 1.5; deriv = DerivOp(1))
+        sitp(out, 1.5; deriv = DerivOp(1))
+        return @allocated sitp(out, 1.5; deriv = DerivOp(1))
+    end
+    function m_fill_indom(x, y1, y2)
+        sitp = cubic_interp(x, Series(y1, y2); extrap = FillExtrap(9.0))
+        out = zeros(2)
+        sitp(out, 0.37; deriv = EvalValue())
+        sitp(out, 0.37; deriv = EvalValue())
+        return @allocated sitp(out, 0.37; deriv = EvalValue())
+    end
+    @test m_clamp_oob(x, y1, y2) <= ALLOC_THRESHOLD
+    @test m_fill_indom(x, y1, y2) <= ALLOC_THRESHOLD
+end
+
+@testitem "scalar OOB now correct: mixed-precision / Dual (was MethodError on master)" setup = [ScalarUnifyOracles] begin
+    # (a) NoExtrap mixed precision OOB: now throws DomainError (was MethodError).
     x32 = collect(Float32, range(0.0f0, 1.0f0, 11))
     y1 = collect(Float32, range(1, 2, 11))
     y2 = collect(Float32, range(2, 3, 11))
     sN = cubic_interp(x32, Series(y1, y2); extrap = NoExtrap())
-    @test_broken throws_domain(() -> sN(1.5))                      # 1.5::Float64 OOB on F32 grid
+    @test throws_domain(() -> sN(1.5))                            # 1.5::Float64 OOB on F32 grid
 
-    # (b) Clamp/Fill mixed precision OOB: today MethodError, must return batch value.
+    # (b) Clamp/Fill mixed precision OOB: now returns the batch value.
     sC = cubic_interp(x32, Series(y1, y2); extrap = ClampExtrap())
     sF = cubic_interp(x32, Series(y1, y2); extrap = FillExtrap(9.0))
-    @test_broken scalar_eq_batch(sC, 1.5, EvalValue())
-    @test_broken scalar_eq_batch(sF, 1.5, EvalValue())
+    @test scalar_eq_batch(sC, 1.5, EvalValue())
+    @test scalar_eq_batch(sF, 1.5, EvalValue())
 
-    # (c) Dual-query Clamp OOB: today MethodError, must return batch value.
+    # (c) Dual-query Clamp OOB: now returns the batch value.
     x = collect(range(0.0, 1.0, 11))
     z1 = collect(range(1.0, 2.0, 11))
     z2 = collect(range(2.0, 3.0, 11))
     sCd = cubic_interp(x, Series(z1, z2); extrap = ClampExtrap())
-    @test_broken scalar_eq_batch(sCd, Dual(1.5, 1.0), EvalValue(), dual_match)
+    @test scalar_eq_batch(sCd, Dual(1.5, 1.0), EvalValue(), dual_match)
 end

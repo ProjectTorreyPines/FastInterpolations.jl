@@ -14,7 +14,8 @@
 """
     _CubicAdjointAnchor{Tg, Tq, I}
 
-Precomputed weights for ultra-fast cubic spline evaluation at a fixed query point.
+Precomputed cubic weights baked at a fixed query point, consumed by the cubic
+adjoint's reverse pass (not a forward-eval entry point; see Usage).
 Internal API: no runtime grid validation; callers must ensure the anchor
 matches the interpolant grid.
 
@@ -187,7 +188,8 @@ end
 """
     _anchor_query(x::AbstractVector{Tg}, xq::Tq, ::Val{:cubic}; wrap::Bool=false) -> _CubicAdjointAnchor{Tg, Tq}
 
-Create an anchored query for ultra-fast cubic spline evaluation at a fixed point.
+Create an anchored query at a fixed point, baked once and reused by the cubic
+adjoint's reverse pass.
 
 # Arguments
 - `x`: Grid points (must match grid used for interpolant construction)

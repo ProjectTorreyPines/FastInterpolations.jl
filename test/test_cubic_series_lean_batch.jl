@@ -158,6 +158,7 @@ end
             (FillExtrap(NaN), xq_oob),
             (FillExtrap(7.5), xq_oob),
             (WrapExtrap(), xq_oob),
+            (InBounds(), xq_in),
         )
         for op in (EvalValue(), DerivOp(1), DerivOp(2), DerivOp(3), DerivOp(5))
             got = cubic_interp(x, Series(y1, y2), xq; extrap = extrap, deriv = op)
@@ -190,8 +191,10 @@ end
     y2 = cos.(2π .* x)
     xqs = [0.02, 0.55, 0.93, 0.99]              # last two live in the seam cell
 
+    # ops span the deriv2 (NTuple{2}), deriv3 and ≥4 (zero) payload arms so each
+    # bare-payload type is exercised through the periodic-seam builder.
     for bc in (PeriodicBC(endpoint = :exclusive, period = 1.0),)
-        for op in (EvalValue(), DerivOp(1), DerivOp(2))
+        for op in (EvalValue(), DerivOp(1), DerivOp(2), DerivOp(3), DerivOp(5))
             got = cubic_interp(x, Series(y1, y2), xqs; bc = bc, deriv = op)
             for j in eachindex(xqs)
                 want = cubic_interp(x, Series(y1, y2), xqs[j]; bc = bc, deriv = op)

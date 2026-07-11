@@ -10,7 +10,13 @@
 
 @testsnippet ScalarUnifyOracles begin
     const FI = FastInterpolations
-    import ForwardDiff: Dual, value, partials
+    # Owned `const` alias (not `import`): only owned snippet bindings propagate
+    # into testitem modules under ReTestItems parallel workers; a bare `import`
+    # here leaves `FD.Dual` undefined in the testitem body (CI-only, hidden
+    # locally by the non-parallel splice). Aliasing the module (not the names)
+    # avoids shadowing the common `value`/`partials` identifiers.
+    import ForwardDiff
+    const FD = ForwardDiff
 
     # egal-or-tiny-ULP (LTS FMA-scheduling slack), egal for zeros/non-finites so
     # signed-zero / NaN still bite. Mirrors test_cubic_series_lean_batch.jl.
@@ -20,9 +26,9 @@
     )
 
     # Dual-aware element compare: value + each partial through egal_or_ulp.
-    dual_match(g::Dual, w::Dual) =
-        egal_or_ulp(value(g), value(w)) &&
-        all(egal_or_ulp.(Tuple(partials(g)), Tuple(partials(w))))
+    dual_match(g::FD.Dual, w::FD.Dual) =
+        egal_or_ulp(FD.value(g), FD.value(w)) &&
+        all(egal_or_ulp.(Tuple(FD.partials(g)), Tuple(FD.partials(w))))
 
     # scalar (out-of-place) ≡ length-1 batch, elementwise across the K series.
     function scalar_eq_batch(sitp, xq, op, cmp = egal_or_ulp)
@@ -119,7 +125,7 @@ end
     for extrap in (ClampExtrap(), ExtendExtrap())
         sitp = cubic_interp(x, Series(y1, y2); extrap = extrap)
         for xq in (0.05, 0.37, 0.94), op in (EvalValue(), DerivOp(1), DerivOp(2))
-            @test scalar_eq_batch(sitp, Dual(xq, 1.0), op, dual_match)
+            @test scalar_eq_batch(sitp, FD.Dual(xq, 1.0), op, dual_match)
         end
     end
 end
@@ -168,5 +174,5 @@ end
     z1 = collect(range(1.0, 2.0, 11))
     z2 = collect(range(2.0, 3.0, 11))
     sCd = cubic_interp(x, Series(z1, z2); extrap = ClampExtrap())
-    @test scalar_eq_batch(sCd, Dual(1.5, 1.0), EvalValue(), dual_match)
+    @test scalar_eq_batch(sCd, FD.Dual(1.5, 1.0), EvalValue(), dual_match)
 end

@@ -11,14 +11,20 @@
 
 @testsnippet PointKernelOracle begin
     const FI = FastInterpolations
-    import ForwardDiff: Dual, value, partials
+    # Owned `const` alias (not `import`): only owned snippet bindings propagate
+    # into testitem modules under ReTestItems parallel workers; a bare `import`
+    # here leaves `FD.Dual` undefined in the testitem body (CI-only, hidden
+    # locally by the non-parallel splice). Aliasing the module (not the names)
+    # avoids shadowing the common `value`/`partials` identifiers.
+    import ForwardDiff
+    const FD = ForwardDiff
 
     egal_or_ulp(g, w) = g === w || (
         isfinite(g) && isfinite(w) && !iszero(g) && !iszero(w) &&
             abs(g - w) <= 16 * eps(max(abs(g), abs(w)))
     )
-    dual_match(g::Dual, w::Dual) =
-        egal_or_ulp(value(g), value(w)) && all(egal_or_ulp.(Tuple(partials(g)), Tuple(partials(w))))
+    dual_match(g::FD.Dual, w::FD.Dual) =
+        egal_or_ulp(FD.value(g), FD.value(w)) && all(egal_or_ulp.(Tuple(FD.partials(g)), Tuple(FD.partials(w))))
 
     # Replicates exactly what Phase 3 will place in the scalar entries: one shared
     # anchor (built from the statically-typed extrap) + the point-layout eval.
@@ -95,6 +101,6 @@ end
     z1 = collect(range(1.0, 2.0, 11)); z2 = collect(range(2.0, 3.0, 11))
     sCd = cubic_interp(x, Series(z1, z2); extrap = ClampExtrap())
     for xq in (0.37, -0.5, 1.5), op in (EvalValue(), DerivOp(1))
-        @test point_eq_batch(sCd, Dual(xq, 1.0), op, dual_match)
+        @test point_eq_batch(sCd, FD.Dual(xq, 1.0), op, dual_match)
     end
 end

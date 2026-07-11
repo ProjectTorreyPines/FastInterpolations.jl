@@ -34,7 +34,7 @@
         Tq_w = FI._coord_eltype(typeof(xq), Tg)
         A = FI._cubic_series_anchor_type(op, sitp.extrap, sitp.cache.x, Tq_w)
         searcher = FI._resolve_search(sitp.cache.x, xq, sitp.search_policy, nothing)
-        a = FI._build_series_anchor(A, sitp.cache.x, xqp, sitp.extrap, FI._should_wrap(sitp), searcher)
+        a = FI._build_series_anchor(FI.CubicInterp(), A, sitp.cache.x, xqp, sitp.extrap, FI._should_wrap(sitp), searcher)
         yp, zp = FI._ensure_point_layout!(sitp)
         T_out = FI._promote_eltype(FI._interp_op, Tg, eltype(sitp.y), typeof(xqp))
         out = Vector{T_out}(undef, FI.n_series(sitp))

@@ -20,6 +20,7 @@ include("periodic_axis.jl")    # 8b. _ExclusivePeriodicAxis wrapper (axis-side r
 include("periodic_data.jl")    # 8c. _ExclusivePeriodicData wrapper (data-side cyclic-indexing companion)
 include("anchor_common.jl")    # 8c. Shared _AnchorLoc + _anchor_loc (all methods, 1D/ND)
 include("axis_anchor_types.jl") # 8d. _AxisAnchor backbone types + _StatefulPayload (method payloads live with each method; gridded resolution loop stays in gridded/)
+include("series_lean_anchors.jl") # 8e. Family-agnostic lean Series build loop (dispatches on interp method; family payloads/kernels live per-method)
 include("nd_utils.jl")            # 9. ND-specific utilities (shared by constant/linear/cubic ND)
 include("query_protocol.jl")           # 9b. Query protocol (query_length, extract, eltype, validate)
 include("interpolant_protocol.jl")     # 9c. Interpolant callable interface (1D + ND)

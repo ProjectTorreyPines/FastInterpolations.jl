@@ -88,7 +88,7 @@ end
         for (op, wfield) in ((EvalValue(), :w0), (EvalDeriv1(), :w1), (EvalDeriv2(), :w2), (EvalDeriv3(), :w3))
             A = _cubic_series_anchor_type(op, ExtendExtrap(), x, Float64)
             anchors = Vector{A}(undef, length(xqs))
-            _fill_series_anchors!(anchors, x, xqs, ExtendExtrap(), false, searcher)
+            _fill_series_anchors!(FastInterpolations.CubicInterp(), anchors, x, xqs, ExtendExtrap(), false, searcher)
             for j in eachindex(xqs)
                 @test anchors[j].w === getproperty(full[j], wfield)
                 @test anchors[j].idxL == full[j].idxL
@@ -109,7 +109,7 @@ end
 
     A = _cubic_series_anchor_type(EvalValue(), WrapExtrap(), x, Float64)
     anchors = Vector{A}(undef, length(xqs))
-    _fill_series_anchors!(anchors, x, xqs, WrapExtrap(), true, searcher)
+    _fill_series_anchors!(FastInterpolations.CubicInterp(), anchors, x, xqs, WrapExtrap(), true, searcher)
     for j in eachindex(xqs)
         @test anchors[j].w === full[j].w0
         @test anchors[j].idxL == full[j].idxL
@@ -128,7 +128,7 @@ end
     for extrap in (ClampExtrap(), FillExtrap(NaN))
         A = _cubic_series_anchor_type(EvalValue(), extrap, x, Float64)
         anchors = Vector{A}(undef, 3)
-        result = _fill_series_anchors!(anchors, x, xqs, extrap, false, searcher)
+        result = _fill_series_anchors!(FastInterpolations.CubicInterp(), anchors, x, xqs, extrap, false, searcher)
         @test result === anchors
         @test anchors[1].state === OOB_LEFT
         @test anchors[2].state === IN_DOMAIN
@@ -148,7 +148,7 @@ end
     searcher = _resolve_searcher_for_grid(x, DEFAULT_SEARCHER)
     A = _cubic_series_anchor_type(EvalValue(), NoExtrap(), x, Float64)
     anchors = Vector{A}(undef, 2)
-    @test_throws DomainError _fill_series_anchors!(anchors, x, [0.5, 1.5], NoExtrap(), false, searcher)
+    @test_throws DomainError _fill_series_anchors!(FastInterpolations.CubicInterp(), anchors, x, [0.5, 1.5], NoExtrap(), false, searcher)
 
     # Mixed precision: Float32 grid + Float64 query must ALSO be DomainError
     # (the typed `_throw_extrap_domain_error` would MethodError here — design §7).
@@ -157,7 +157,7 @@ end
     A32 = _cubic_series_anchor_type(EvalValue(), NoExtrap(), x32, Float64)
     anchors32 = Vector{A32}(undef, 2)
     err = try
-        _fill_series_anchors!(anchors32, x32, [0.5, 1.5], NoExtrap(), false, searcher32)
+        _fill_series_anchors!(FastInterpolations.CubicInterp(), anchors32, x32, [0.5, 1.5], NoExtrap(), false, searcher32)
         nothing
     catch e
         e
@@ -177,6 +177,6 @@ end
     for (op, extrap) in ((EvalValue(), ExtendExtrap()), (EvalDeriv2(), ClampExtrap()))
         A = _cubic_series_anchor_type(op, extrap, x, Float64)
         anchors = Vector{A}(undef, 2)
-        @inferred _fill_series_anchors!(anchors, x, xqs, extrap, false, searcher)
+        @inferred _fill_series_anchors!(FastInterpolations.CubicInterp(), anchors, x, xqs, extrap, false, searcher)
     end
 end

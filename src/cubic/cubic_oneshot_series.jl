@@ -270,18 +270,20 @@ end
         return _cubic_oneshot_series_periodic_vec!(pool, outputs, x, s, xqs, bc, deriv, autocache, search)
     end
 
-    # Domain check: NoExtrap → throws if OOB, returns InBounds(); others → pass-through
-    extrap_eff = _check_domain(x, xqs, extrap)
-
     bc_pair = _normalize_bc(bc)
     cache = _get_cubic_cache(x, bc_pair, _effective_autocache(autocache, Tg))
 
-    # Pre-compute lean op/extrap-aware anchors once (search Q times, not K×Q)
+    # Pre-compute lean op/extrap-aware anchors once (search Q times, not K×Q),
+    # built from the statically-typed `extrap` so the pooled anchor vector stays
+    # concretely typed. `_check_domain`'s in-domain promotion returns a Union for
+    # Clamp/Fill/Wrap; deriving the anchor type from it would box the pool acquire.
+    # Mirrors the persistent batch entry: per-query state comes from the search and
+    # NoExtrap throws OOB inside this build, before any output is written.
     Tq_w = _coord_eltype(Tq, eltype(cache.x))
-    A = _cubic_series_anchor_type(deriv, extrap_eff, cache.x, Tq_w)
+    A = _cubic_series_anchor_type(deriv, extrap, cache.x, Tq_w)
     anchors = acquire!(pool, A, length(xqs))
     searcher = _resolve_search(cache.x, xqs, search, nothing)
-    _fill_series_anchors!(anchors, cache.x, xqs, extrap_eff, extrap_eff isa WrapExtrap, searcher)
+    _fill_series_anchors!(anchors, cache.x, xqs, extrap, extrap isa WrapExtrap, searcher)
 
     Tz = _promote_eltype(_coeff_op, eltype(cache.x), _series_eltype(s))
     z = acquire!(pool, Tz, n)
@@ -294,7 +296,7 @@ end
         copyto!(y_buf, 1, vecs[k], 1, n)
         _solve_system!(z, cache, y_buf, bc_pair)
         for j in eachindex(xqs)
-            outputs[k][j] = _cubic_series_eval(vecs[k], z, anchors[j], extrap_eff)
+            outputs[k][j] = _cubic_series_eval(vecs[k], z, anchors[j], extrap)
         end
     end
     return outputs

@@ -255,6 +255,21 @@
         @test measure(x, y_sin, y_cos) <= ALLOC_THRESHOLD
     end
 
+    @testset "Zero allocation (in-place vector, OOB stateful wrappers)" begin
+        # Fill/Clamp OOB select the stateful payload wrapper; deriv ≥ 4 selects the
+        # zero payload. Both must stay warm-alloc-free on the vector-batch surface.
+        function measure(x, y_sin, y_cos, extrap, op)
+            s = Series(y_sin, y_cos)
+            xqs = [-0.5, 0.37, 1.5]                # OOB-left, in, OOB-right
+            outputs = [zeros(length(xqs)) for _ in 1:2]
+            cubic_interp!(outputs, x, s, xqs; extrap = extrap, deriv = op)  # warmup
+            return @allocated cubic_interp!(outputs, x, s, xqs; extrap = extrap, deriv = op)
+        end
+        @test measure(x, y_sin, y_cos, FillExtrap(999.0), DerivOp(0)) <= ALLOC_THRESHOLD
+        @test measure(x, y_sin, y_cos, ClampExtrap(), DerivOp(3)) <= ALLOC_THRESHOLD
+        @test measure(x, y_sin, y_cos, FillExtrap(NaN), DerivOp(5)) <= ALLOC_THRESHOLD
+    end
+
     @testset "Extrapolation modes" begin
         xq_oob = 1.5
         @test_throws DomainError cubic_interp(x, Series(y_sin, y_cos), xq_oob)

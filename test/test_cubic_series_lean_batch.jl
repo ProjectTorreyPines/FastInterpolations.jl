@@ -30,22 +30,24 @@
         ]
     end
 
-    # Elementwise equivalence compare. The lean kernel and the full-anchor recipe
-    # are algebraically identical, so on 1.12+ they match bit-for-bit (`===`, which
+    # Scalar equivalence compare. The lean path and its full-anchor reference are
+    # algebraically identical, so on 1.12+ they match bit-for-bit (`===`, which
     # also makes `NaN === NaN` and the signed-zero OOB pins bite). On some codegen
     # (LTS) FMA contraction is scheduled differently between the two call sites,
     # perturbing cancellation-heavy derivatives by a few ULP (observed ≤4). Accept
     # a small ULP budget for nonzero finite pairs only — zeros and non-finites
     # still require egal, so signed-zero / NaN-propagation regressions are caught.
+    function egal_or_ulp(g, w)
+        g === w && return true
+        return isfinite(g) && isfinite(w) && !iszero(g) && !iszero(w) &&
+            abs(g - w) <= 16 * eps(max(abs(g), abs(w)))
+    end
+
+    # Elementwise wrapper over a Vector{Vector} pair; returns the first offending
+    # (k, j, got, want) or nothing.
     function assert_egal(got, want)
         for k in eachindex(want), j in eachindex(want[k])
-            g, w = got[k][j], want[k][j]
-            g === w && continue
-            (
-                isfinite(g) && isfinite(w) && !iszero(g) && !iszero(w) &&
-                    abs(g - w) <= 16 * eps(max(abs(g), abs(w)))
-            ) && continue
-            return (k, j, g, w)
+            egal_or_ulp(got[k][j], want[k][j]) || return (k, j, got[k][j], want[k][j])
         end
         return nothing
     end
@@ -140,7 +142,7 @@ end
     end
 end
 
-@testitem "one-shot lean batch === scalar one-shot path (op × extrap × precision)" begin
+@testitem "one-shot lean batch === scalar one-shot path (op × extrap × precision)" setup = [LeanBatchOracles] begin
     # The scalar one-shot path keeps full anchors in this PR — it is the
     # unchanged reference for the vector batch (scalar/vector symmetry contract).
     x = collect(range(0.0, 1.0, 11))
@@ -161,8 +163,8 @@ end
             got = cubic_interp(x, Series(y1, y2), xq; extrap = extrap, deriv = op)
             for j in eachindex(xq)
                 want = cubic_interp(x, Series(y1, y2), xq[j]; extrap = extrap, deriv = op)
-                @test got[1][j] === want[1]
-                @test got[2][j] === want[2]
+                @test egal_or_ulp(got[1][j], want[1])
+                @test egal_or_ulp(got[2][j], want[2])
             end
         end
     end
@@ -175,13 +177,13 @@ end
         got = cubic_interp(xg, Series(ya, 2 .* ya), xqm; extrap = ClampExtrap())
         for j in eachindex(xqm)
             want = cubic_interp(xg, Series(ya, 2 .* ya), xqm[j]; extrap = ClampExtrap())
-            @test got[1][j] === want[1]
-            @test got[2][j] === want[2]
+            @test egal_or_ulp(got[1][j], want[1])
+            @test egal_or_ulp(got[2][j], want[2])
         end
     end
 end
 
-@testitem "one-shot lean batch: exclusive-periodic seam === scalar path" begin
+@testitem "one-shot lean batch: exclusive-periodic seam === scalar path" setup = [LeanBatchOracles] begin
     # exclusive grid: last point omitted; queries past x[end] wrap through the seam
     x = collect(range(0.0, 0.9, 10))            # period 1.0, seam cell (x[10], virtual 1.0)
     y1 = sin.(2π .* x)
@@ -193,8 +195,8 @@ end
             got = cubic_interp(x, Series(y1, y2), xqs; bc = bc, deriv = op)
             for j in eachindex(xqs)
                 want = cubic_interp(x, Series(y1, y2), xqs[j]; bc = bc, deriv = op)
-                @test got[1][j] === want[1]
-                @test got[2][j] === want[2]
+                @test egal_or_ulp(got[1][j], want[1])
+                @test egal_or_ulp(got[2][j], want[2])
             end
         end
     end

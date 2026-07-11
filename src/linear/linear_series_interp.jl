@@ -413,16 +413,17 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    n_ser = n_series(sitp)
+    _validate_scalar_output(output, n_series(sitp))
 
-    # Validate output length
-    _validate_scalar_output(output, n_ser)
-
-    # Build anchor — _anchor_loc inside handles primal extraction for search,
-    # outer constructor widens xq to match grid arithmetic type.
-    aq = _make_anchor(sitp, xq, _resolve_search(sitp.x, xq, search, hint))
-
-    _eval_linear_series_point!(output, sitp, aq, deriv)
+    # One lean op/extrap-aware anchor (shared build; NoExtrap throws OOB inside),
+    # then the point-contiguous SIMD eval streaming across the K series.
+    A = _linear_series_anchor_type(deriv, sitp.extrap, sitp.x, _coord_eltype(Tq, Tg))
+    a = _build_series_anchor(
+        LinearInterp(), A, sitp.x, xq, sitp.extrap, _should_wrap(sitp),
+        _resolve_search(sitp.x, xq, search, hint)
+    )
+    y_point = _ensure_point_layout!(sitp)
+    _linear_series_eval!(output, y_point, a, sitp.extrap)
     return output
 end
 
@@ -500,17 +501,13 @@ end
     wrap = _should_wrap(sitp)
     y = sitp.y
     x_grid = sitp.x
-    n_pts = n_points(sitp)
     n_ser = n_series(sitp)
     extrap = sitp.extrap
-    x_min = Tg(first(sitp.x))
-    x_max = Tg(last(sitp.x))
+    A = _linear_series_anchor_type(deriv, extrap, x_grid, _coord_eltype(eltype(xq), Tg))
     @inbounds for j in eachindex(xq)
-        aq = _anchor_query(x_grid, xq[j], Val(:linear), wrap, searcher)
+        a = _build_series_anchor(LinearInterp(), A, x_grid, xq[j], extrap, wrap, searcher)
         for k in 1:n_ser
-            outputs[k][j] = _eval_linear_series_with_extrap(
-                y, x_grid, n_pts, x_min, x_max, k, aq, extrap, deriv
-            )
+            outputs[k][j] = _linear_series_eval(y, k, a, extrap)
         end
     end
     return outputs
@@ -528,20 +525,15 @@ end
     wrap = _should_wrap(sitp)
     y = sitp.y
     x_grid = sitp.x
-    n_pts = n_points(sitp)
     n_ser = n_series(sitp)
     extrap = sitp.extrap
-    x_min = Tg(first(sitp.x))
-    x_max = Tg(last(sitp.x))
     NQ = length(xq)
-    Tqp = promote_type(Tg, eltype(xq))
-    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tqp, _interval_type(x_grid)}, NQ)
-    _fill_anchors!(aq_vec, x_grid, xq, Val(:linear), wrap, searcher)
+    A = _linear_series_anchor_type(deriv, extrap, x_grid, _coord_eltype(eltype(xq), Tg))
+    anchors = acquire!(pool, A, NQ)
+    _fill_series_anchors!(LinearInterp(), anchors, x_grid, xq, extrap, wrap, searcher)
     @inbounds for k in 1:n_ser
         for j in 1:NQ
-            outputs[k][j] = _eval_linear_series_with_extrap(
-                y, x_grid, n_pts, x_min, x_max, k, aq_vec[j], extrap, deriv
-            )
+            outputs[k][j] = _linear_series_eval(y, k, anchors[j], extrap)
         end
     end
     return outputs

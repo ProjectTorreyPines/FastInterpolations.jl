@@ -89,3 +89,38 @@ end
 
 @inline _linear_series_eval!(out::AbstractVector, y_point::Matrix, a::_AxisAnchor, ::AbstractExtrap) =
     _linear_payload_kernel!(out, y_point, a)
+
+# ─── Series-contiguous matrix kernel + adapter (batch loops: `y[idx, k]`) ─────
+# Per-series scalar return (vs the point kernel's whole-`out` write) for the
+# Q×K / K×Q batch loops. Mirrors the point kernel; only the load pattern
+# (`y[idx, k]`) and the OOB helper (`_constant_extrap_boundary_value` scalar
+# form) differ. Zero payload is single-term `0 * y[idxL, k]` (see point kernel).
+@inline function _linear_payload_kernel(
+        y::Matrix, k::Int, a::_AxisAnchor{I, P}
+    ) where {I <: _AbstractIndices{2}, P}
+    idxL = a.idxL
+    idxR = a.idxR
+    @inbounds return _linear_kernel(_payload_op(P), y[idxL, k], y[idxR, k], a)
+end
+
+@inline function _linear_payload_kernel(
+        y::Matrix, k::Int, a::_AxisAnchor{I, <:_LinearZeroPayload}
+    ) where {I <: _AbstractIndices{2}}
+    @inbounds return 0 * y[a.idxL, k]
+end
+
+@inline function _linear_series_eval(
+        y::Matrix, k::Int,
+        a::_AxisAnchor{I, _StatefulPayload{P}},
+        extrap::AbstractExtrap
+    ) where {I <: _AbstractIndices{2}, P}
+    if a.state != IN_DOMAIN
+        return _constant_extrap_boundary_value(
+            y, a.state, size(y, 1), k, _payload_op(P), extrap, _payload_eltype(P)
+        )
+    end
+    return _linear_payload_kernel(y, k, _AxisAnchor(getfield(a, :interval), a.inner))
+end
+
+@inline _linear_series_eval(y::Matrix, k::Int, a::_AxisAnchor, ::AbstractExtrap) =
+    _linear_payload_kernel(y, k, a)

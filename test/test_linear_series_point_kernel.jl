@@ -43,6 +43,30 @@
         end
         return true
     end
+
+    # The lean batch surface, replicated: fill one shared anchor, then the
+    # series-contiguous matrix kernel per series k (the layout the batch loops use).
+    function lean_matrix_eval(sitp, xq, op)
+        Tg = eltype(sitp.x)
+        xqp = FI._promote_coord(xq, Tg)
+        Tq_w = FI._coord_eltype(typeof(xq), Tg)
+        A = FI._linear_series_anchor_type(op, sitp.extrap, sitp.x, Tq_w)
+        searcher = FI._resolve_search(sitp.x, xq, sitp.search_policy, nothing)
+        a = FI._build_series_anchor(FI.LinearInterp(), A, sitp.x, xqp, sitp.extrap, FI._should_wrap(sitp), searcher)
+        y = sitp.y
+        return [FI._linear_series_eval(y, k, a, sitp.extrap) for k in 1:FI.n_series(sitp)]
+    end
+
+    # lean matrix (series-contiguous) path ≡ current path, elementwise
+    function matrix_eq_current(sitp, xq, op, cmp = egal_or_ulp)
+        s = lean_matrix_eval(sitp, xq, op)
+        b = sitp([xq]; deriv = op)
+        length(s) == length(b) || return false
+        for k in eachindex(s)
+            cmp(s[k], b[k][1]) || return false
+        end
+        return true
+    end
 end
 
 @testitem "linear lean point kernel ≡ current (ops × extraps, incl. signed zero)" setup = [LinearPointKernelOracle] begin
@@ -92,5 +116,30 @@ end
     sCd = linear_interp(x, Series(z1, z2); extrap = ClampExtrap())
     for xq in (0.37, -0.5, 1.5), op in (EvalValue(), DerivOp(1))
         @test point_eq_current(sCd, FD.Dual(xq, 1.0), op, dual_match)
+    end
+end
+
+@testitem "linear lean MATRIX kernel ≡ current (batch layout: ops × extraps, incl. signed zero)" setup = [LinearPointKernelOracle] begin
+    x = collect(range(0.0, 1.0, 11))
+    y1 = vcat(-0.0, collect(1.0:9.0), 2.0)
+    y2 = collect(range(2.0, 3.0, 11))
+    ops = (EvalValue(), DerivOp(1), DerivOp(2), DerivOp(3))
+    for extrap in (ExtendExtrap(), ClampExtrap(), FillExtrap(NaN), FillExtrap(7.5), WrapExtrap(), InBounds())
+        sitp = linear_interp(x, Series(y1, y2); extrap = extrap)
+        dom = extrap isa InBounds ? (0.05, 0.37, 0.94) : (0.05, 0.37, 0.94, -0.5, 1.5)
+        for xq in dom, op in ops
+            @test matrix_eq_current(sitp, xq, op)
+        end
+    end
+    # mixed precision (F32 grid + F64 query) — the deriv1 inv_h-width case
+    for (Tg, Tq) in ((Float64, Float32), (Float32, Float64), (Float32, Float32))
+        xg = collect(Tg, range(zero(Tg), one(Tg), 11))
+        ya = collect(Tg, range(1, 2, 11)); yb = collect(Tg, range(2, 3, 11))
+        for extrap in (ClampExtrap(), ExtendExtrap(), FillExtrap(Tg(9)))
+            sM = linear_interp(xg, Series(ya, yb); extrap = extrap)
+            for xq in Tq.((0.37, -0.5, 1.5)), op in (EvalValue(), DerivOp(1))
+                @test matrix_eq_current(sM, xq, op)
+            end
+        end
     end
 end

@@ -124,3 +124,62 @@ end
 
 @inline _linear_series_eval(y::Matrix, k::Int, a::_AxisAnchor, ::AbstractExtrap) =
     _linear_payload_kernel(y, k, a)
+
+# ─── Raw-vector kernel + adapter (one-shot: per series-vector `y[idx]`) ────────
+# The one-shot surfaces eval each series y-vector independently. OOB formula is
+# the one-shot form `_eval_extrapolation(op, y_bnd, extrap, zero(Tq))` (differs
+# from the persistent `val*one(Tq)` on signed zero; `_eval_extrapolation` reads
+# the carrier only via `zero`, so no `xq` is stored). Zero payload: `0 * y[idxL]`.
+@inline function _linear_payload_kernel(
+        y::AbstractVector, a::_AxisAnchor{I, P}
+    ) where {I <: _AbstractIndices{2}, P}
+    @inbounds return _linear_kernel(_payload_op(P), y[a.idxL], y[a.idxR], a)
+end
+
+@inline function _linear_payload_kernel(
+        y::AbstractVector, a::_AxisAnchor{I, <:_LinearZeroPayload}
+    ) where {I <: _AbstractIndices{2}}
+    @inbounds return 0 * y[a.idxL]
+end
+
+@inline function _linear_series_eval(
+        y::AbstractVector,
+        a::_AxisAnchor{I, _StatefulPayload{P}},
+        extrap::AbstractExtrap
+    ) where {I <: _AbstractIndices{2}, P}
+    if a.state != IN_DOMAIN
+        y_bnd = a.state == OOB_LEFT ? first(y) : last(y)
+        return _eval_extrapolation(_payload_op(P), y_bnd, extrap, zero(_payload_eltype(P)))
+    end
+    return _linear_payload_kernel(y, _AxisAnchor(getfield(a, :interval), a.inner))
+end
+
+@inline _linear_series_eval(y::AbstractVector, a::_AxisAnchor, ::AbstractExtrap) =
+    _linear_payload_kernel(y, a)
+
+# ─── Periodic (seam-aware) lean anchor ────────────────────────────────────────
+# Periodic Series eval always wraps in-domain → bare payload. Mirrors the current
+# periodic builder's 2-arg cached geometry (`_get_inv_h(x_eff, idxL)`) — NOT the
+# gridded 4-arg `1/(xR-xL)`, which cancels on large-offset ranges (see the
+# persistent path). The seam pair `(idxL, idxR)` (idxR == 1 at the seam) rides in
+# the interval; kernels are oblivious.
+@inline _resolve_linear_periodic(
+    ::Type{_AxisAnchor{I, _LinearValuePayload{Tα}}}, interval, alpha, inv_h
+) where {I, Tα} =
+    _AxisAnchor{I, _LinearValuePayload{Tα}}(interval, _LinearValuePayload{Tα}(Tα(alpha)))
+@inline _resolve_linear_periodic(
+    ::Type{_AxisAnchor{I, _LinearDeriv1Payload{Tα, Tinv}}}, interval, alpha, inv_h
+) where {I, Tα, Tinv} =
+    _AxisAnchor{I, _LinearDeriv1Payload{Tα, Tinv}}(interval, _LinearDeriv1Payload{Tα, Tinv}(Tinv(inv_h)))
+@inline _resolve_linear_periodic(
+    ::Type{_AxisAnchor{I, _LinearZeroPayload{Tα}}}, interval, alpha, inv_h
+) where {I, Tα} =
+    _AxisAnchor{I, _LinearZeroPayload{Tα}}(interval, _LinearZeroPayload{Tα}())
+
+@inline function _build_linear_periodic_series_anchor(
+        ::Type{A}, x_eff, xq_wrapped, idxL::Int, idxR::Int, xL
+    ) where {A <: _AxisAnchor}
+    inv_h = _get_inv_h(x_eff, idxL)
+    alpha = (xq_wrapped - xL) * inv_h
+    return _resolve_linear_periodic(A, _interval_indices(x_eff, idxL, idxR), alpha, inv_h)
+end

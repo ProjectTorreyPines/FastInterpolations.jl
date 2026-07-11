@@ -55,17 +55,14 @@
     x_eff = _resolve_axis(x, bc)
     extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)   # PeriodicBC → WrapExtrap()
     xq_wrapped = _wrap_to_domain(xq, x_eff)
-    idxL, idxR, xL, xR = search_interval(searcher, x_eff, xq_wrapped)
-    # Index-based 2-arg `_get_h(x, idx)` reads `_CachedRange.h` (exact cached
-    # step) and the wrapper's seam width directly — avoids `xR - xL` cancellation
-    # on large-offset Ranges and matches the persistent interpolant path.
-    h = _get_h(x_eff, idxL)
-    inv_h = _get_inv_h(x_eff, idxL)
-    alpha = (xq_wrapped - xL) * inv_h
-    aq = _LinearAnchoredQuery(_interval_indices(x_eff, idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
+    idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
+    # 2-arg cached geometry (see `_build_linear_periodic_series_anchor`): avoids
+    # `xR - xL` cancellation on large-offset Ranges, matches the persistent path.
+    A = _linear_series_anchor_type(op, extrap_p, x_eff, _coord_eltype(typeof(xq), eltype(x_eff)))
+    a = _build_linear_periodic_series_anchor(A, x_eff, xq_wrapped, idxL, idxR, xL)
 
     @inbounds for k in 1:K
-        output[k] = _linear_eval_at_anchor(vecs[k], aq, op, extrap_p)
+        output[k] = _linear_series_eval(vecs[k], a, extrap_p)
     end
     return output
 end
@@ -118,10 +115,11 @@ vals = linear_interp(x, Series(y_sin, y_cos), 0.5)  # → [sin(0.5), cos(0.5)]
     end
     _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
-    aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
+    A = _linear_series_anchor_type(deriv, extrap, x, _coord_eltype(Tq, Tg_actual))
+    a = _build_series_anchor(LinearInterp(), A, x, xq, extrap, extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     @inbounds for k in 1:K
-        output[k] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap)
+        output[k] = _linear_series_eval(vecs[k], a, extrap)
     end
     return output
 end
@@ -154,10 +152,11 @@ In-place one-shot linear interpolation of multiple y-series at a single query po
     end
     _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
-    aq = _anchor_query(x, xq, Val(:linear), extrap isa WrapExtrap, searcher)
+    A = _linear_series_anchor_type(deriv, extrap, x, _coord_eltype(Tq, eltype(x)))
+    a = _build_series_anchor(LinearInterp(), A, x, xq, extrap, extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     @inbounds for k in eachindex(output)
-        output[k] = _linear_eval_at_anchor(vecs[k], aq, deriv, extrap)
+        output[k] = _linear_series_eval(vecs[k], a, extrap)
     end
     return output
 end
@@ -192,15 +191,13 @@ In-place one-shot linear interpolation at multiple query points.
         x_eff = _resolve_axis(x, bc)
         extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
         searcher = _resolve_search(x_eff, xqs, search, nothing)
+        A = _linear_series_anchor_type(op, extrap_p, x_eff, _coord_eltype(eltype(xqs), eltype(x_eff)))
         @inbounds for j in 1:NQ
             xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
             idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
-            h = _get_h(x_eff, idxL)
-            inv_h = _get_inv_h(x_eff, idxL)
-            alpha = (xq_wrapped - xL) * inv_h
-            aq = _LinearAnchoredQuery(_interval_indices(x_eff, idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
+            a = _build_linear_periodic_series_anchor(A, x_eff, xq_wrapped, idxL, idxR, xL)
             for k in 1:K
-                outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, op, extrap_p)
+                outputs[k][j] = _linear_series_eval(vecs[k], a, extrap_p)
             end
         end
         return outputs
@@ -209,10 +206,11 @@ In-place one-shot linear interpolation at multiple query points.
     extrap_eff = _check_domain(x, xqs, extrap)
     searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap_eff isa WrapExtrap
+    A = _linear_series_anchor_type(op, extrap_eff, x, _coord_eltype(eltype(xqs), eltype(x)))
     @inbounds for j in 1:NQ
-        aq = _anchor_query(x, xqs[j], Val(:linear), wrap, searcher)
+        a = _build_series_anchor(LinearInterp(), A, x, xqs[j], extrap_eff, wrap, searcher)
         for k in 1:K
-            outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq, op, extrap_eff)
+            outputs[k][j] = _linear_series_eval(vecs[k], a, extrap_eff)
         end
     end
     return outputs
@@ -233,25 +231,21 @@ end
     ) where {Tg, Tq <: Real}
     K = length(vecs)
     NQ = length(xqs)
-    Tg_actual = eltype(x)
-    Tqp = promote_type(Tg_actual, Tq)
 
     if _is_periodic_bc(bc)
         x_eff = _resolve_axis(x, bc)
         extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
         searcher = _resolve_search(x_eff, xqs, search, nothing)
-        aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_actual, Tqp, _interval_type(x_eff)}, NQ)
+        A = _linear_series_anchor_type(op, extrap_p, x_eff, _coord_eltype(Tq, eltype(x_eff)))
+        anchors = acquire!(pool, A, NQ)
         @inbounds for j in 1:NQ
             xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
             idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
-            h = _get_h(x_eff, idxL)
-            inv_h = _get_inv_h(x_eff, idxL)
-            alpha = (xq_wrapped - xL) * inv_h
-            aq_vec[j] = _LinearAnchoredQuery(_interval_indices(x_eff, idxL, idxR), xq_wrapped, IN_DOMAIN, xL, h, inv_h, alpha)
+            anchors[j] = _build_linear_periodic_series_anchor(A, x_eff, xq_wrapped, idxL, idxR, xL)
         end
         @inbounds for k in 1:K
             for j in 1:NQ
-                outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq_vec[j], op, extrap_p)
+                outputs[k][j] = _linear_series_eval(vecs[k], anchors[j], extrap_p)
             end
         end
         return outputs
@@ -260,11 +254,12 @@ end
     extrap_eff = _check_domain(x, xqs, extrap)
     searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap_eff isa WrapExtrap
-    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg_actual, Tqp, _interval_type(x)}, NQ)
-    _fill_anchors!(aq_vec, x, xqs, Val(:linear), wrap, searcher)
+    A = _linear_series_anchor_type(op, extrap_eff, x, _coord_eltype(Tq, eltype(x)))
+    anchors = acquire!(pool, A, NQ)
+    _fill_series_anchors!(LinearInterp(), anchors, x, xqs, extrap_eff, wrap, searcher)
     @inbounds for k in 1:K
         for j in 1:NQ
-            outputs[k][j] = _linear_eval_at_anchor(vecs[k], aq_vec[j], op, extrap_eff)
+            outputs[k][j] = _linear_series_eval(vecs[k], anchors[j], extrap_eff)
         end
     end
     return outputs

@@ -143,3 +143,27 @@ end
         end
     end
 end
+
+@testitem "linear lean RAW-VECTOR kernel ≡ current one-shot (ops × extraps, signed zero)" setup = [LinearPointKernelOracle] begin
+    x = collect(range(0.0, 1.0, 11))
+    y1 = vcat(-0.0, collect(1.0:9.0), 2.0)
+    y2 = collect(range(2.0, 3.0, 11))
+    vecs = (y1, y2)
+    ops = (EvalValue(), DerivOp(1), DerivOp(2), DerivOp(3))
+    for extrap in (ExtendExtrap(), ClampExtrap(), FillExtrap(NaN), FillExtrap(7.5), WrapExtrap(), InBounds())
+        dom = extrap isa InBounds ? (0.05, 0.37, 0.94) : (0.05, 0.37, 0.94, -0.5, 1.5)
+        for xq in dom, op in ops
+            Tg = eltype(x)
+            xqp = FI._promote_coord(xq, Tg)
+            Tq_w = FI._coord_eltype(typeof(xq), Tg)
+            A = FI._linear_series_anchor_type(op, extrap, x, Tq_w)
+            searcher = FI._resolve_search(x, xq, AutoSearch(), nothing)
+            a = FI._build_series_anchor(FI.LinearInterp(), A, x, xqp, extrap, extrap isa WrapExtrap, searcher)
+            lean = [FI._linear_series_eval(v, a, extrap) for v in vecs]
+            cur = linear_interp(x, Series(y1, y2), xq; extrap = extrap, deriv = op)
+            for k in 1:2
+                @test egal_or_ulp(lean[k], cur[k])
+            end
+        end
+    end
+end

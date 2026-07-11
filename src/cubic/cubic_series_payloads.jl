@@ -132,22 +132,34 @@ end
 # the untyped `_throw_domain_error` (mixed-precision-safe `DomainError`,
 # axis-agnostic `dim = 0` phrasing).
 
+# Single lean anchor for one query — the shared build body. Scalar surfaces call
+# this directly; the batch loop below calls it per query. NoExtrap throws HERE,
+# before any output is written, via the untyped `_throw_domain_error`.
+@inline function _build_series_anchor(
+        ::Type{A},
+        x::AbstractVector{Tg},
+        xq::Real,
+        extrap::AbstractExtrap,
+        wrap::Bool,
+        searcher::Searcher
+    ) where {A <: _AxisAnchor, Tg}
+    loc = _anchor_loc(x, _promote_coord(xq, Tg), wrap, searcher)
+    if extrap isa NoExtrap && loc.state != IN_DOMAIN
+        _throw_domain_error(xq, x)
+    end
+    return _resolve_series_anchor(CubicInterp(), A, x, loc, extrap)
+end
+
 @inline function _fill_series_anchors!(
         buffer::AbstractVector{A},
-        x::AbstractVector{Tg},
+        x::AbstractVector,
         xqs::AbstractVector{S},
         extrap::AbstractExtrap,
         wrap::Bool,
         searcher::SR
-    ) where {A <: _AxisAnchor, Tg, S <: Real, SR <: Searcher}
-    m = CubicInterp()
+    ) where {A <: _AxisAnchor, S <: Real, SR <: Searcher}
     @inbounds for j in eachindex(xqs)
-        xq = xqs[j]
-        loc = _anchor_loc(x, _promote_coord(xq, Tg), wrap, searcher)
-        if extrap isa NoExtrap && loc.state != IN_DOMAIN
-            _throw_domain_error(xq, x)
-        end
-        buffer[j] = _resolve_series_anchor(m, A, x, loc, extrap)
+        buffer[j] = _build_series_anchor(A, x, xqs[j], extrap, wrap, searcher)
     end
     return buffer
 end
@@ -291,3 +303,69 @@ end
 
 @inline _cubic_series_eval(y::AbstractVector, z::AbstractVector, a::_AxisAnchor, ::AbstractExtrap) =
     _cubic_payload_kernel(y, z, a)
+
+# ─── Point-contiguous kernels + adapter (persistent SCALAR) ──────────────────
+# Bodies mirror the matrix kernels/adapter above, transposed to point-contiguous
+# `y_point[k, idx]` (n_series × n_points) so the k-loop SIMD-streams across the
+# series dimension — the layout the scalar surface needs. The `!` bang marks the
+# whole-`out` write (vs the matrix kernel's per-k scalar return). Weights/indices
+# still come from the shared payload/anchor; only the load pattern differs. The
+# zero-payload arm is per-k (`0 * y_point[k, idxL]`) so scalar matches the matrix
+# kernel bit-for-bit, including the derivative-≥4 signed zero.
+@inline function _cubic_payload_kernel!(
+        out::AbstractVector, y_point::Matrix, z_point::Matrix,
+        a::_AxisAnchor{<:_AbstractIndices{2}, <:Union{_CubicValuePayload1D, _CubicDeriv1Payload1D}}
+    )
+    wyL, wyR, wzL, wzR = a.w
+    idxL = a.idxL
+    idxR = a.idxR
+    @inbounds @simd for k in axes(out, 1)
+        out[k] = muladd(
+            wyR, y_point[k, idxR], muladd(
+                wyL, y_point[k, idxL],
+                muladd(wzR, z_point[k, idxR], wzL * z_point[k, idxL])
+            )
+        )
+    end
+    return out
+end
+
+@inline function _cubic_payload_kernel!(
+        out::AbstractVector, ::Matrix, z_point::Matrix,
+        a::_AxisAnchor{<:_AbstractIndices{2}, <:Union{_CubicDeriv2Payload1D, _CubicDeriv3Payload1D}}
+    )
+    wzL, wzR = a.w
+    idxL = a.idxL
+    idxR = a.idxR
+    @inbounds @simd for k in axes(out, 1)
+        out[k] = muladd(wzR, z_point[k, idxR], wzL * z_point[k, idxL])
+    end
+    return out
+end
+
+@inline function _cubic_payload_kernel!(
+        out::AbstractVector, y_point::Matrix, ::Matrix,
+        a::_AxisAnchor{<:_AbstractIndices{2}, <:_CubicZeroPayload1D}
+    )
+    idxL = a.idxL
+    @inbounds @simd for k in axes(out, 1)
+        out[k] = 0 * y_point[k, idxL]
+    end
+    return out
+end
+
+@inline function _cubic_series_eval!(
+        out::AbstractVector, y_point::Matrix, z_point::Matrix,
+        a::_AxisAnchor{I, _StatefulPayload{P}},
+        extrap::AbstractExtrap
+    ) where {I <: _AbstractIndices{2}, P}
+    if a.state != IN_DOMAIN
+        return _fill_constant_extrap_simd!(
+            out, y_point, a.state, size(y_point, 2), _payload_op(P), extrap, _payload_eltype(P)
+        )
+    end
+    return _cubic_payload_kernel!(out, y_point, z_point, _AxisAnchor(getfield(a, :interval), a.inner))
+end
+
+@inline _cubic_series_eval!(out::AbstractVector, y_point::Matrix, z_point::Matrix, a::_AxisAnchor, ::AbstractExtrap) =
+    _cubic_payload_kernel!(out, y_point, z_point, a)

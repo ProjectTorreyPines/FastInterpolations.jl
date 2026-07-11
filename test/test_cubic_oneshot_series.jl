@@ -108,7 +108,7 @@
 
     # Float32 grid + Float64 period: `WrapExtrap(x, bc)` must cast the period to
     # the grid's float type, otherwise OOB-wrapped queries widen to Float64 and
-    # break the preallocated `_CubicAnchoredQuery{Float32, Float32}` buffer.
+    # break the preallocated `_CubicAdjointAnchor{Float32, Float32}` buffer.
     @testset "Float32 grid + Float64 period vector series" begin
         x32 = collect(range(0.0f0, step = 0.1f0, length = 10))   # Float32, span 0.9
         # Keep y in Float32 (default `2π` is Float64 → broadcast widens).

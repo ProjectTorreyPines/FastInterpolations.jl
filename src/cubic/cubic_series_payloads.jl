@@ -3,13 +3,13 @@
 # ========================================
 # Lean `_AxisAnchor{I, P}` payloads for the Series batch surfaces, which know
 # the eval op AND the extrap at anchor-build time. Each payload bakes only its
-# op's weights (vs the 96 B all-ops `_CubicAnchoredQuery`); flat extraps
+# op's weights (vs the 96 B all-ops `_CubicAdjointAnchor`); flat extraps
 # (Clamp/Fill) wrap the payload in the generic `_StatefulPayload` so the OOB
 # state branch stays eval-time, exactly like the full-anchor path.
 # Design: docs/design/cubic_series_payload_anchor.md
 #
 # Weight formulas reuse `_compute_anchor_weights` verbatim → bit-identical to
-# the corresponding `_CubicAnchoredQuery` field (w0/w1/w2/w3) by construction.
+# the corresponding `_CubicAdjointAnchor` field (w0/w1/w2/w3) by construction.
 
 struct _CubicValuePayload1D{Tq}
     w::NTuple{4, Tq}

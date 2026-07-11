@@ -1,15 +1,15 @@
 # Adjoint operators keep the coordinate type param pinned to the grid type
-# (_LinearAnchoredQuery{Tg, Tg}, _CubicAnchoredQuery{Tg, Tg}): they operate on baked
+# (_LinearAnchoredQuery{Tg, Tg}, _CubicAdjointAnchor{Tg, Tg}): they operate on baked
 # coefficients, so AD-through-adjoint is unsupported. Guards against an accidental
 # coordinate-widening refactor.
 
 @testitem "Adjoint coordinate type stays grid-pinned" begin
-    using FastInterpolations: _LinearAnchoredQuery, _CubicAnchoredQuery
+    using FastInterpolations: _LinearAnchoredQuery, _CubicAdjointAnchor
     x = collect(0.0:1.0:9.0); xq = [1.5, 4.5, 7.5]
     la = linear_adjoint(x, xq)
     @test eltype(la.anchors) <: _LinearAnchoredQuery{Float64, Float64}   # {Tg, Tg}
     ca = cubic_adjoint(x, xq)
-    @test eltype(ca.anchors) <: _CubicAnchoredQuery{Float64, Float64}    # {Tg, Tg}
+    @test eltype(ca.anchors) <: _CubicAdjointAnchor{Float64, Float64}    # {Tg, Tg}
 end
 
 @testitem "Linear anchor coordinate derivation matches _coord_eltype" begin

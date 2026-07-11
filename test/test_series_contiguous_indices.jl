@@ -27,13 +27,14 @@
         @test litp(la; deriv = FI.DerivOp(1)) === litp(le; deriv = FI.DerivOp(1))
         @test sizeof(la) < sizeof(le)                   # 56 < 64
 
-        citp = FI.cubic_interp(x, y)
+        # Cubic anchor forward eval is now adjoint-internal (no `itp(aq)`); the
+        # contiguous vs explicit anchor differ only in the indices field, so the
+        # taps match by construction and the size win is the check here.
         ca = FI._anchor_query(x, 0.37, Val(:cubic))
-        ce = FI._CubicAnchoredQuery(
+        ce = FI._CubicAdjointAnchor(
             FI._ExplicitIndices(ca.idxL, ca.idxR), ca.xq, ca.state, ca.w0, ca.w1, ca.w2, ca.w3, eltype(x)
         )
-        @test citp(ca) === citp(ce)
-        @test citp(ca; deriv = FI.DerivOp(1)) === citp(ce; deriv = FI.DerivOp(1))
+        @test (ca.idxL, ca.idxR) === (ce.idxL, ce.idxR)  # same taps
         @test sizeof(ca) < sizeof(ce)                   # 120 < 128
 
         kitp = FI.constant_interp(x, y; side = FI.NearestSide())
@@ -50,7 +51,7 @@
         ladj = linear_adjoint(xa, xqa)
         cadj = cubic_adjoint(xa, xqa)                   # default bc = CubicFit()
         @test eltype(ladj.anchors) === FI._LinearAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}
-        @test eltype(cadj.anchors) === FI._CubicAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}
+        @test eltype(cadj.anchors) === FI._CubicAdjointAnchor{Float64, Float64, FI._ContiguousIndices{2}}
 
         # Exclusive-periodic representation is method-specific — both correct, same seam
         # cell: Linear wraps the axis (`_ExclusivePeriodicAxis` ⇒ explicit seam pair),
@@ -61,6 +62,6 @@
         ladjp = linear_adjoint(xper, xqp; bc = bcp)
         cadjp = cubic_adjoint(xper, xqp; bc = bcp)
         @test eltype(ladjp.anchors) === FI._LinearAnchoredQuery{Float64, Float64, FI._ExplicitIndices{2}}
-        @test eltype(cadjp.anchors) === FI._CubicAnchoredQuery{Float64, Float64, FI._ContiguousIndices{2}}
+        @test eltype(cadjp.anchors) === FI._CubicAdjointAnchor{Float64, Float64, FI._ContiguousIndices{2}}
     end
 end

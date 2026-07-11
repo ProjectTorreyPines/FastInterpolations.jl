@@ -6,7 +6,7 @@
 # The adjoint pipeline reverses the forward: scatter → transpose solve → Rᵀ.
 #
 # Dependencies (already included before this file):
-# - CubicSplineCache, _CubicAnchoredQuery (cubic_types.jl, cubic_anchor.jl)
+# - CubicSplineCache, _CubicAdjointAnchor (cubic_types.jl, cubic_anchor.jl)
 # - _anchor_query, _fill_anchors! (cubic_anchor.jl)
 # - _get_cubic_cache (cubic_cache_pool.jl)
 # - _ldiv_tridiagonal_transpose! (thomas_lu_solver.jl)
@@ -102,7 +102,7 @@ struct CubicAdjoint{Tg, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicB
     # Coordinate type is grid-pinned (`Tc = Tg`), not the canonical `_coord_eltype(Tq, Tg)`:
     # the adjoint operates on baked coefficients, so AD-through-adjoint is unsupported. The
     # forward Dual-grid contract is satisfied independently.
-    anchors::Vector{_CubicAnchoredQuery{Tg, Tg, I}}
+    anchors::Vector{_CubicAdjointAnchor{Tg, Tg, I}}
     bc::BC
 end
 
@@ -162,14 +162,14 @@ end
 
 """
 Scatter query-space sensitivities to grid-space using precomputed anchor weights.
-Dispatches on `DerivOp{N}` to select the appropriate weight field from `_CubicAnchoredQuery`.
+Dispatches on `DerivOp{N}` to select the appropriate weight field from `_CubicAdjointAnchor`.
 
 - `EvalValue`/`EvalDeriv1`: 4-weight scatter (wyL, wyR, wzL, wzR) → f_bar + z_bar
 - `EvalDeriv2`/`EvalDeriv3`: 2-weight scatter (wzL, wzR) → z_bar only (y-weights are zero)
 """
 @inline function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
+        anchors::Vector{<:_CubicAdjointAnchor}, y_bar,  # AbstractVector or Tuple
         ::EvalValue
     )
     @inbounds for q in eachindex(y_bar)
@@ -188,7 +188,7 @@ end
 
 @inline function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
+        anchors::Vector{<:_CubicAdjointAnchor}, y_bar,  # AbstractVector or Tuple
         ::EvalDeriv1
     )
     @inbounds for q in eachindex(y_bar)
@@ -207,7 +207,7 @@ end
 
 @inline function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
+        anchors::Vector{<:_CubicAdjointAnchor}, y_bar,  # AbstractVector or Tuple
         ::EvalDeriv2
     )
     @inbounds for q in eachindex(y_bar)
@@ -222,7 +222,7 @@ end
 
 @inline function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
+        anchors::Vector{<:_CubicAdjointAnchor}, y_bar,  # AbstractVector or Tuple
         ::EvalDeriv3
     )
     @inbounds for q in eachindex(y_bar)
@@ -238,7 +238,7 @@ end
 # Generic fallback: 4th+ derivative of cubic is zero → no scatter
 @inline function _scatter_eval_adjoint!(
         ::AbstractVector, ::AbstractVector,
-        ::Vector{<:_CubicAnchoredQuery}, ::Any,
+        ::Vector{<:_CubicAdjointAnchor}, ::Any,
         ::DerivOp{N}
     ) where {N}
     return nothing
@@ -356,7 +356,7 @@ end
 # ========================================
 
 """
-    _bake_cubic_clampfill_anchors(x, xq, extrap) -> Vector{_CubicAnchoredQuery}
+    _bake_cubic_clampfill_anchors(x, xq, extrap) -> Vector{_CubicAdjointAnchor}
 
 Single-pass ClampExtrap/FillExtrap adjoint anchor builder.
 
@@ -384,7 +384,7 @@ function _bake_cubic_clampfill_anchors(
     keep_w0 = extrap isa ClampExtrap
     z = zero(T)
     z4 = (z, z, z, z)
-    output = Vector{_CubicAnchoredQuery{T, T, _interval_type(x)}}(undef, length(xq))
+    output = Vector{_CubicAdjointAnchor{T, T, _interval_type(x)}}(undef, length(xq))
     @inbounds for k in eachindex(xq)
         xq_raw = xq[k]
         aq = _anchor_query_impl(x, _promote_coord(_clamp_to_grid(xq_raw, x), T), false, searcher_resolved)
@@ -392,7 +392,7 @@ function _bake_cubic_clampfill_anchors(
             output[k] = aq
         else
             w0_new = keep_w0 ? aq.w0 : z4
-            output[k] = _CubicAnchoredQuery{T, T, _interval_type(x)}(
+            output[k] = _CubicAdjointAnchor{T, T, _interval_type(x)}(
                 getfield(aq, :interval), aq.xq, IN_DOMAIN,
                 w0_new, z4, (z, z), (z, z)
             )

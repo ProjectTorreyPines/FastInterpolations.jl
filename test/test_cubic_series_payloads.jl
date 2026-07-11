@@ -1,5 +1,5 @@
 # Unit tests for the cubic Series lean anchor layer: op/extrap-aware payload
-# selection, weight bit-identity vs the full `_CubicAnchoredQuery` (same
+# selection, weight bit-identity vs the full `_CubicAdjointAnchor` (same
 # `_compute_anchor_weights` must be reused verbatim), and the Series-owned
 # anchor build loop (wrap handling, OOB state classification, NoExtrap throw).
 # Design: docs/design/cubic_series_payload_anchor.md

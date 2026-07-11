@@ -1,19 +1,42 @@
 # Equivalence gate for the lean payload-anchor batch surfaces.
-# Oracles are the RETAINED full-anchor building blocks, composed exactly like
-# the pre-migration batch entries — so these tests pass BEFORE the wiring
-# (validating the oracle reconstruction) and must still pass AFTER it — bit-for-bit
-# on 1.12+, within a small ULP budget on codegen (LTS) that schedules FMA
-# contraction differently between the two call sites (see `assert_egal`).
+# The reference is the pre-migration full-anchor series formula, ported inline in
+# the snippet (`_ref_with_extrap`) after the src kernels were removed — full
+# anchors are still built via the retained `_fill_anchors!` (used by the adjoints).
+# The lean batch must match it bit-for-bit on 1.12+, within a small ULP budget on
+# codegen (LTS) that schedules FMA contraction differently (see `assert_egal`).
 # Design: docs/design/cubic_series_payload_anchor.md §8
 
 @testsnippet LeanBatchOracles begin
     const FI = FastInterpolations
 
-    # Pre-migration persistent batch recipe: full anchors + _eval_series_with_extrap
+    # Independent reference for the lean batch: full anchors (still built via the
+    # retained `_fill_anchors!`, used by the adjoints) fed the pre-migration series
+    # formula, ported here self-contained after the src kernels were removed. Keeps
+    # the exact series OOB formula (`_constant_extrap_boundary_value`, `val*one(xq)`)
+    # so the signed-zero / NaN pins still bite against the shipped lean path.
+    function _ref_anchored(y, z, k, aq, op)
+        idx = aq.idx
+        if op isa EvalValue || op isa FI.EvalDeriv1
+            wyL, wyR, wzL, wzR = op isa EvalValue ? aq.w0 : aq.w1
+            return muladd(wyR, y[idx + 1, k], muladd(wyL, y[idx, k], muladd(wzR, z[idx + 1, k], wzL * z[idx, k])))
+        elseif op isa FI.EvalDeriv2 || op isa FI.EvalDeriv3
+            wzL, wzR = op isa FI.EvalDeriv2 ? aq.w2 : aq.w3
+            return muladd(wzR, z[idx + 1, k], wzL * z[idx, k])
+        else
+            return 0 * y[idx, k]                       # DerivOp{N≥4}
+        end
+    end
+    function _ref_with_extrap(y, z, n_pts, x_min, x_max, k, aq, extrap, op)
+        (aq.state == FI.IN_DOMAIN || extrap isa ExtendExtrap || extrap isa WrapExtrap) &&
+            return _ref_anchored(y, z, k, aq, op)
+        extrap isa FI._ClampOrFill &&
+            return FI._constant_extrap_boundary_value(y, aq.state, n_pts, k, op, extrap, aq)
+        return FI._throw_extrap_domain_error(aq.xq, x_min, x_max)
+    end
     function persistent_oracle(sitp, xq::AbstractVector, op)
         Tg = eltype(sitp.cache.x)
         Tq_w = FI._coord_eltype(eltype(xq), Tg)
-        aq_vec = Vector{FI._CubicAnchoredQuery{Tg, Tq_w, FI._interval_type(sitp.cache.x)}}(undef, length(xq))
+        aq_vec = Vector{FI._CubicAdjointAnchor{Tg, Tq_w, FI._interval_type(sitp.cache.x)}}(undef, length(xq))
         searcher = FI._resolve_search(sitp.cache.x, xq, sitp.search_policy, nothing)
         FI._fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic), FI._should_wrap(sitp), searcher)
         n_pts = FI.n_points(sitp)
@@ -21,9 +44,7 @@
         K = FI.n_series(sitp)
         return [
             [
-                    FI._eval_series_with_extrap(
-                        sitp.y, sitp.z, n_pts, x_min, x_max, k, aq_vec[j], sitp.extrap, op
-                    )
+                    _ref_with_extrap(sitp.y, sitp.z, n_pts, x_min, x_max, k, aq_vec[j], sitp.extrap, op)
                     for j in eachindex(xq)
                 ]
                 for k in 1:K
@@ -143,8 +164,8 @@ end
 end
 
 @testitem "one-shot lean batch === scalar one-shot path (op × extrap × precision)" setup = [LeanBatchOracles] begin
-    # The scalar one-shot path keeps full anchors in this PR — it is the
-    # unchanged reference for the vector batch (scalar/vector symmetry contract).
+    # Scalar and vector one-shot now share the lean anchor build + raw-vector
+    # adapter; this pins their agreement (scalar/vector symmetry contract).
     x = collect(range(0.0, 1.0, 11))
     y1 = vcat(-0.0, collect(1.0:9.0), 2.0)
     y2 = collect(range(2.0, 3.0, 11))

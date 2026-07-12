@@ -135,41 +135,16 @@ code size in the hot interpolation loops.
 end
 
 """
-    _constant_extrap_boundary_value(y, side, n_pts, k, op, extrap, aq) -> T
+    _constant_extrap_boundary_value(y, side, n_pts, k, op, extrap, ::Type{Tq}) -> T
 
-Get the boundary value for constant/fill extrapolation in scalar series evaluation path.
-
-For `EvalValue`: returns boundary y-value (or fill value) threaded through `* one(aq.xq)` for Tq carrier.
-For derivatives: returns `0 * y_bnd * one(aq.xq)` — cell-local in k, threads Tv + Tq carriers.
+Boundary value for constant/fill extrapolation in the series-contiguous (batch)
+OOB path. `EvalValue` returns the boundary y (or fill value); derivatives return
+`0 * oob_data`. Threaded through `* one(Tq)` for the query carrier — `Tq` is the
+type only, since the lean stateful anchors store no `xq`. The deriv source is the
+OOB-cell data via `_extrap_oob_data` (ClampExtrap → boundary y, preserving
+cell-local NaN; FillExtrap → fill_value). The OOB pins in
+test/test_cubic_series_oob_pins.jl guard the shared contract.
 """
-@inline function _constant_extrap_boundary_value(
-        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampExtrap, aq
-    ) where {Tv}
-    @inbounds return y[_boundary_point_index(side, n_pts), k] * one(aq.xq)
-end
-
-@inline function _constant_extrap_boundary_value(
-        ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::EvalValue, e::FillExtrap, aq
-    ) where {Tv}
-    return e.fill_value * one(aq.xq)
-end
-
-# Deriv at boundary: source the zero from the extrap's OOB-cell "data" via
-# `_extrap_oob_data` — boundary `y[idx, k]` for ClampExtrap (preserves
-# cell-local NaN), `e.fill_value` for FillExtrap (NaN fill_value propagates,
-# finite fill_value × 0 = 0). Mirrors the 1D `_eval_extrapolation(::DerivOp)`
-# contract.
-@inline function _constant_extrap_boundary_value(
-        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::AbstractEvalOp, ext::_ClampOrFill, aq
-    ) where {Tv}
-    src = _extrap_oob_data(ext, @inbounds(y[_boundary_point_index(side, n_pts), k]))
-    return 0 * src * one(aq.xq)
-end
-
-# Type-carrier twins of the three `aq` forms above, for lean stateful anchors
-# that store no `xq` (`one(xq)` is value-independent — only the query TYPE
-# matters). MUST stay formula-identical to the `aq` forms; the OOB pins in
-# test/test_cubic_series_oob_pins.jl guard the shared contract.
 @inline function _constant_extrap_boundary_value(
         y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampExtrap, ::Type{Tq}
     ) where {Tv, Tq <: Real}
@@ -190,54 +165,17 @@ end
 end
 
 """
-    _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap, aq) -> out
+    _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap, ::Type{Tq}) -> out
 
-Fill output vector with boundary/fill values for constant/fill extrapolation (SIMD path).
-
-`aq.xq` is the common Tq carrier field across all anchored-query types.
-`one(aq.xq)` is loop-invariant so LLVM hoists it; the SIMD loop body
-remains a single load/mul per `k`.
+Fill `out` with boundary/fill values for constant/fill extrapolation (SIMD path,
+point-contiguous OOB). Threaded through `* one(Tq)` — `Tq` is the type only,
+since the lean stateful anchors store no `xq`; the carrier is loop-invariant so
+LLVM hoists it and the loop stays a single load/mul per `k`. The deriv source is
+per-`k` cell-local via `_extrap_oob_data` (ClampExtrap → `y_point[k, idx]`,
+NaN-preserving; FillExtrap → `e.fill_value`). The shared-`Tv` constraint on
+`out`/`y_point` is intentionally dropped: mixed-precision and Dual OOB queries
+need `out` to carry a wider type than the stored `y_point`.
 """
-@inline function _fill_constant_extrap_simd!(
-        out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::EvalValue, ::ClampExtrap, aq
-    ) where {Tv}
-    idx = _boundary_point_index(side, n_pts)
-    xq_carrier = one(aq.xq)
-    @inbounds @simd for k in axes(out, 1)
-        out[k] = y_point[k, idx] * xq_carrier
-    end
-    return out
-end
-
-@inline function _fill_constant_extrap_simd!(
-        out::AbstractVector{Tv}, ::Matrix{Tv}, ::UInt8, ::Int, ::EvalValue, e::FillExtrap, aq
-    ) where {Tv}
-    z = e.fill_value * one(aq.xq)
-    @inbounds @simd for k in axes(out, 1)
-        out[k] = z
-    end
-    return out
-end
-
-# Deriv at boundary: per-k cell-local source via `_extrap_oob_data` —
-# ClampExtrap pulls `y_point[k, idx]` (boundary y, NaN propagates),
-# FillExtrap pulls `e.fill_value` (NaN fill_value propagates, finite → 0).
-@inline function _fill_constant_extrap_simd!(
-        out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::AbstractEvalOp, ext::_ClampOrFill, aq
-    ) where {Tv}
-    idx = _boundary_point_index(side, n_pts)
-    xq_carrier = one(aq.xq)
-    @inbounds @simd for k in axes(out, 1)
-        out[k] = 0 * _extrap_oob_data(ext, y_point[k, idx]) * xq_carrier
-    end
-    return out
-end
-
-# Type-carrier twins of the three SIMD fills above, for lean stateful anchors
-# that store no `xq` (`one(Tq)` is value-independent). MUST stay formula-identical
-# to the `aq` forms — the OOB pins guard the shared contract. The shared-`Tv`
-# constraint on `out`/`y_point` is intentionally dropped: mixed-precision and
-# Dual OOB queries need `out` to carry a wider type than the stored `y_point`.
 @inline function _fill_constant_extrap_simd!(
         out::AbstractVector, y_point::Matrix, side::UInt8, n_pts::Int, ::EvalValue, ::ClampExtrap, ::Type{Tq}
     ) where {Tq <: Real}

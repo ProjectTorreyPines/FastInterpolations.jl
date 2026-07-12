@@ -244,7 +244,10 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
     # One lean dL-baking anchor (shared build; NoExtrap throws OOB inside), then
     # the point-contiguous op-threaded kernel over the stored y/a/d coefficients.
     A = _quadratic_series_anchor_type(sitp.extrap, sitp.x, _coord_eltype(Tq, Tg))
-    a = _build_series_anchor(QuadraticInterp(), A, sitp.x, xq_promoted, sitp.extrap, _should_wrap(sitp), _resolve_search(sitp.x, xq, search, hint))
+    searcher = _resolve_search(sitp.x, xq, search, hint)
+    a = @_narrow_searcher searcher _build_series_anchor(
+        QuadraticInterp(), A, sitp.x, xq_promoted, sitp.extrap, _should_wrap(sitp), searcher
+    )
     y_point, a_point, d_point = _ensure_point_layout!(sitp)
     _quadratic_series_eval!(output, y_point, a_point, d_point, a, deriv, sitp.extrap)
     return output
@@ -272,7 +275,10 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
     xq_promoted = _promote_coord(xq, Tg)
 
     A = _quadratic_series_anchor_type(sitp.extrap, sitp.x, _coord_eltype(Tq, Tg))
-    a = _build_series_anchor(QuadraticInterp(), A, sitp.x, xq_promoted, sitp.extrap, _should_wrap(sitp), _resolve_search(sitp.x, xq, search, hint))
+    searcher = _resolve_search(sitp.x, xq, search, hint)
+    a = @_narrow_searcher searcher _build_series_anchor(
+        QuadraticInterp(), A, sitp.x, xq_promoted, sitp.extrap, _should_wrap(sitp), searcher
+    )
     y_point, a_point, d_point = _ensure_point_layout!(sitp)
     _quadratic_series_eval!(output, y_point, a_point, d_point, a, deriv, sitp.extrap)
     return output
@@ -334,7 +340,9 @@ Pool handles both same-type and mixed-type cases efficiently.
     A = _quadratic_series_anchor_type(sitp.extrap, sitp.x, _coord_eltype(Tq, Tg))
     anchors = acquire!(pool, A, n_query)
     searcher = _resolve_search(sitp.x, xq, search, hint)
-    _fill_series_anchors!(QuadraticInterp(), anchors, sitp.x, xq, sitp.extrap, _should_wrap(sitp), searcher)
+    @_narrow_searcher searcher _fill_series_anchors!(
+        QuadraticInterp(), anchors, sitp.x, xq, sitp.extrap, _should_wrap(sitp), searcher
+    )
 
     y = sitp.y
     a = sitp.a

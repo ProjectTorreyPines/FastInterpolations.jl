@@ -94,7 +94,7 @@ end
 Compute all 4 derivative-order weight tuples for one axis at normalized position `t`.
 Each `wk` is `(w_fL, w_fR, w_dyL, w_dyR)` for DerivOp(k).
 
-Matches the 1D `_CubicAnchoredQuery` pattern: bake all weights at construction so
+Matches the 1D `_CubicAdjointAnchor` pattern: bake all weights at construction so
 the adjoint `adj(ȳ)` hot path does zero weight computation.
 """
 @inline function _compute_nd_anchor_weights(t::Tg, h::Tg, inv_h::Tg) where {Tg}

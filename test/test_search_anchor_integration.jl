@@ -1,6 +1,6 @@
 @testitem "Search Policy Anchor Integration" begin
     using FastInterpolations: _anchor_query, _fill_anchors!,
-        _LinearAnchoredQuery, _ConstantAnchoredQuery, _QuadraticAnchoredQuery, _CubicAnchoredQuery,
+        _LinearAnchoredQuery, _ConstantAnchoredQuery, _QuadraticAnchoredQuery, _CubicAdjointAnchor,
         _ContiguousIndices, Searcher, LinearBinarySearch, RefHint
 
     # ========================================
@@ -106,18 +106,18 @@
 
         @testset "Single Query" begin
             aq = _anchor_query(x, 0.5, Val(:cubic))
-            @test aq isa _CubicAnchoredQuery{Float64}
+            @test aq isa _CubicAdjointAnchor{Float64}
             @test aq.idx == 51
         end
 
         @testset "Vector Query" begin
             xq = collect(range(0.1, 0.9, 9))
-            buffer = Vector{_CubicAnchoredQuery{Float64, Float64, _ContiguousIndices{2}}}(undef, length(xq))
+            buffer = Vector{_CubicAdjointAnchor{Float64, Float64, _ContiguousIndices{2}}}(undef, length(xq))
 
             _fill_anchors!(buffer, x, xq, Val(:cubic))
 
             for i in eachindex(xq)
-                @test buffer[i] isa _CubicAnchoredQuery{Float64, Float64}
+                @test buffer[i] isa _CubicAdjointAnchor{Float64, Float64}
             end
         end
     end
@@ -164,7 +164,7 @@
         end
 
         @testset "Cubic Type Stable" begin
-            @test @inferred(_anchor_query(x, 0.5, Val(:cubic))) isa _CubicAnchoredQuery{Float64, Float64}
+            @test @inferred(_anchor_query(x, 0.5, Val(:cubic))) isa _CubicAdjointAnchor{Float64, Float64}
         end
     end
 

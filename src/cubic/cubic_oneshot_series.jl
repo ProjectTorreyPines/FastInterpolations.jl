@@ -6,9 +6,9 @@
 # Provides `cubic_interp(x, Series(y1,y2,...), xq; bc=...)` without constructing
 # a CubicSeriesInterpolant. Uses pool allocation for z-buffer reuse.
 #
-# Include order: ... → cubic_anchor.jl → cubic_oneshot_series.jl → ...
-# Shared kernel: _cubic_eval_kernel(y, z, aq, op) in cubic_anchor.jl
-# Shared extrap: _cubic_eval_at_anchor(y, z, aq, op, extrap) in cubic_anchor.jl
+# Include order: ... → cubic_anchor.jl → cubic_series_payloads.jl → this file.
+# Eval goes through the lean payload adapters (`_cubic_series_eval`,
+# `_cubic_payload_kernel`) in cubic_series_payloads.jl.
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                      INTERNAL: NON-PERIODIC CORE                         ║
@@ -27,7 +27,10 @@
         searcher
     ) where {Tg}
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
-    aq = _anchor_query(cache.x, xq, Val(:cubic), extrap isa WrapExtrap, searcher)
+    # One lean op/extrap-aware anchor, built from the statically-typed `extrap`
+    # (same helpers as the vector one-shot path); raw-vector eval per series.
+    A = _cubic_series_anchor_type(op, extrap, cache.x, _coord_eltype(typeof(xq), eltype(cache.x)))
+    a = _build_series_anchor(A, cache.x, xq, extrap, extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     Tv_out = _value_type(_series_eltype(s), Tg)
     Tz = _promote_eltype(_coeff_op, eltype(cache.x), _series_eltype(s))
@@ -37,36 +40,9 @@
     @inbounds for k in eachindex(output)
         copyto!(y_buf, 1, vecs[k], 1, n)
         _solve_system!(z, cache, y_buf, bc)
-        output[k] = _cubic_eval_at_anchor(y_buf, z, aq, op, extrap)
+        output[k] = _cubic_series_eval(y_buf, z, a, extrap)
     end
     return output
-end
-
-# Build a seam-aware cubic anchor for one query against a periodic cache.
-# Search returns the 4-tuple directly so the periodic series helpers keep their
-# tight scalar/vector path while preserving the exclusive seam pair `(n, 1)`.
-@inline function _build_periodic_cubic_anchor(
-        cache::CubicSplineCache,
-        xq,
-        extrap_p::AbstractExtrap,
-        searcher::Searcher,
-    )
-    # `cache.x` is the wrapped axis: `_CachedRange`/`_CachedVector` for
-    # `:inclusive`, `_ExclusivePeriodicAxis` for `:exclusive` (virtual length n+1
-    # with cached `_x_max`). `_wrap_to_domain(xq, cache.x)` reads `(first, last)`
-    # uniformly. The wrapper's `search_interval` returns `idx_R = 1` at seam so
-    # raw `y[idx_R]` indexing in the eval kernel works without a data wrapper.
-    xq_wrapped = _wrap_to_domain(xq, cache.x)
-    idxL, idxR, xL, xR = search_interval(searcher, cache.x, xq_wrapped)
-    h = _get_h(cache.x, idxL)
-    inv_h = _get_inv_h(cache.x, idxL)
-    dL = xq_wrapped - xL
-    dR = xR - xq_wrapped
-    w0 = _compute_anchor_weights(EvalValue(), h, inv_h, dL, dR)
-    w1 = _compute_anchor_weights(EvalDeriv1(), h, inv_h, dL, dR)
-    w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
-    w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
-    return _CubicAnchoredQuery(_interval_indices(cache.x, idxL, idxR), xq_wrapped, IN_DOMAIN, w0, w1, w2, w3, eltype(cache.x))
 end
 
 # Periodic scalar: zero-copy. One search → seam-aware `_ExplicitIndices` anchor → loop
@@ -98,8 +74,9 @@ end
 
     # Build cache on the user's grid (BC-aware: `_build_periodic_cache`).
     cache = _get_cubic_cache(x, bc, _effective_autocache(autocache, Tg))
-    extrap_p = _resolve_extrap(NoExtrap(), bc, cache.x, first(vecs))
-    aq = _build_periodic_cubic_anchor(cache, xq, extrap_p, searcher)
+    # Seam-aware LEAN anchor (bare payload — periodic eval always wraps in-domain).
+    A = _AxisAnchor{_interval_type(cache.x), _cubic_series_payload_type(op, _coord_eltype(typeof(xq), eltype(cache.x)))}
+    a = _build_periodic_series_anchor(A, cache, xq, searcher)
 
     # Solve + eval per series. For `:exclusive` periodic, wrap each `vecs[k]`
     # with `_ExclusivePeriodicData` so it reports virtual length n+1 to match
@@ -109,7 +86,7 @@ end
     @inbounds for k in 1:K
         y_eff = _resolve_data(vecs[k], bc)
         _solve_system!(z, cache, y_eff, cache.bc)
-        output[k] = _cubic_eval_kernel(y_eff, z, aq, op)
+        output[k] = _cubic_payload_kernel(y_eff, z, a)
     end
     return output
 end

@@ -117,7 +117,7 @@
         @testset "1D anchored (interpolant) — all types" begin
             y = sin.(2π .* x)
 
-            # Cubic anchored (uses _eval_anchored_kernel fallback)
+            # Cubic: 4th+ derivative of a cubic is exactly zero
             itp_c = cubic_interp(x, y)
             @test itp_c(xq; deriv = DerivOp(4)) == 0.0
             @test itp_c(xq; deriv = DerivOp(5)) == 0.0

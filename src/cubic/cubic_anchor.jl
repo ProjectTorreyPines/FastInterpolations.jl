@@ -1,20 +1,21 @@
 # ========================================
-# Cubic Anchored Query
+# Cubic Adjoint Anchor
 # ========================================
-# Precomputed geometry weights for ultra-fast cubic spline evaluation
-# at a fixed query point. Enables 2-4x speedup by eliminating interval
-# search and geometry setup for repeated evaluations.
+# Precomputed geometry weights baked at a fixed query point, consumed by the
+# 1D cubic adjoint (cubic_adjoint.jl) to select the per-DerivOp weight field in
+# the reverse pass without repeating the interval search or geometry setup.
 #
 # Include order: ops.jl → ... → cubic_types.jl → cubic_anchor.jl → cubic_interpolant.jl
 #
 # ========================================
-# _CubicAnchoredQuery Type (Internal)
+# _CubicAdjointAnchor Type (Internal)
 # ========================================
 
 """
-    _CubicAnchoredQuery{Tg, Tq, I}
+    _CubicAdjointAnchor{Tg, Tq, I}
 
-Precomputed weights for ultra-fast cubic spline evaluation at a fixed query point.
+Precomputed cubic weights baked at a fixed query point, consumed by the cubic
+adjoint's reverse pass (not a forward-eval entry point; see Usage).
 Internal API: no runtime grid validation; callers must ensure the anchor
 matches the interpolant grid.
 
@@ -37,20 +38,15 @@ matches the interpolant grid.
 - `w3`: Precomputed weights for third derivative (wzL, wzR) - optimized, no y-weights
 
 # Usage
-```julia
-x = collect(range(0.0, 1.0, 101))
-aq = _anchor_query(x, 0.35, Val(:cubic))
-
-itp1 = cubic_interp(x, sin.(2π .* x))
-itp2 = cubic_interp(x, cos.(2π .* x))
-
-itp1(aq)              # Ultra-fast: skips interval search
-itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
-```
+Consumed only by the 1D cubic adjoint (`src/cubic/cubic_adjoint.jl`), which
+bakes an anchor per query at construction via `_anchor_query(x, xq, Val(:cubic))`
+and reuses the precomputed weights across the reverse pass. Not a forward-eval
+entry point — forward evaluation goes through `itp(xq)`.
 
 # Performance
-Anchored evaluation is 2-4x faster than `itp(xq)` for non-uniform grids,
-as it eliminates O(log n) binary search and geometry setup.
+Baking all four op weights once lets the adjoint select the right field
+(`w0`..`w3`) per `DerivOp{N}` in the pullback without repeating the O(log n)
+interval search or geometry setup.
 
 # Memory Optimization
 w2 and w3 store only (wzL, wzR) since second and third derivatives
@@ -58,11 +54,12 @@ depend only on z-values, not y-values. This reduces anchor size by 16 bytes
 per query for Float64.
 
 # AD Support
-When `xq` is a `ForwardDiff.Dual`, the anchor preserves the Dual type
-in both `xq` and weight fields, enabling automatic differentiation through
-series interpolant evaluation.
+When the grid or `xq` is a `ForwardDiff.Dual`, the anchor preserves the Dual
+type in both `xq` and the weight fields. This keeps the adjoint's grid-pinned
+reverse pass differentiable; forward evaluation itself goes through `itp(xq)`
+(see Usage), not this anchor.
 """
-struct _CubicAnchoredQuery{Tg, Tq <: Real, I <: _AbstractIndices{2}}
+struct _CubicAdjointAnchor{Tg, Tq <: Real, I <: _AbstractIndices{2}}
     # Physical cell interval: `interval[1]` is the left index (idxL), `interval[2]`
     # is the right index (idxR). For non-periodic cells `idxR == idxL + 1`; for
     # periodic-exclusive seam cells `idxR == 1` (wrap). Ordinary grids store the
@@ -83,12 +80,12 @@ end
 # per-property compile-time specialization so each lookup inlines to a single
 # `getfield` (+ tuple index for the interval paths). Avoids the union-typed
 # return that would otherwise box weights/state in hot loops.
-@inline Base.getproperty(aq::_CubicAnchoredQuery, s::Symbol) = _get_cub_prop(aq, Val(s))
-@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{:idx}) = getfield(aq, :interval)[Val(1)]
-@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{:idxL}) = getfield(aq, :interval)[Val(1)]
-@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{:idxR}) = getfield(aq, :interval)[Val(2)]
-@inline _get_cub_prop(aq::_CubicAnchoredQuery, ::Val{s}) where {s} = getfield(aq, s)
-@inline Base.propertynames(::_CubicAnchoredQuery) =
+@inline Base.getproperty(aq::_CubicAdjointAnchor, s::Symbol) = _get_cub_prop(aq, Val(s))
+@inline _get_cub_prop(aq::_CubicAdjointAnchor, ::Val{:idx}) = getfield(aq, :interval)[Val(1)]
+@inline _get_cub_prop(aq::_CubicAdjointAnchor, ::Val{:idxL}) = getfield(aq, :interval)[Val(1)]
+@inline _get_cub_prop(aq::_CubicAdjointAnchor, ::Val{:idxR}) = getfield(aq, :interval)[Val(2)]
+@inline _get_cub_prop(aq::_CubicAdjointAnchor, ::Val{s}) where {s} = getfield(aq, s)
+@inline Base.propertynames(::_CubicAdjointAnchor) =
     (:interval, :idx, :idxL, :idxR, :xq, :state, :w0, :w1, :w2, :w3)
 
 # Outer constructor: infer Tq from weight element type (not from input xq).
@@ -96,9 +93,9 @@ end
 # from the caller's `interval` (contiguous for ordinary grids, explicit at
 # periodic-exclusive seams — chosen local to the call site).
 # Widens xq to match weight type for struct consistency.
-@inline function _CubicAnchoredQuery(interval::I, xq, state::UInt8, w0::NTuple{4, Tw}, w1::NTuple{4, Tw}, w2::NTuple{2, Tw}, w3::NTuple{2, Tw}, ::Type{Tg}) where {Tg, Tw, I <: _AbstractIndices{2}}
+@inline function _CubicAdjointAnchor(interval::I, xq, state::UInt8, w0::NTuple{4, Tw}, w1::NTuple{4, Tw}, w2::NTuple{2, Tw}, w3::NTuple{2, Tw}, ::Type{Tg}) where {Tg, Tw, I <: _AbstractIndices{2}}
     xq_p = convert(Tw, xq)
-    return _CubicAnchoredQuery{Tg, Tw, I}(interval, xq_p, state, w0, w1, w2, w3)
+    return _CubicAdjointAnchor{Tg, Tw, I}(interval, xq_p, state, w0, w1, w2, w3)
 end
 
 # ========================================
@@ -190,9 +187,10 @@ end
 # ========================================
 
 """
-    _anchor_query(x::AbstractVector{Tg}, xq::Tq, ::Val{:cubic}; wrap::Bool=false) -> _CubicAnchoredQuery{Tg, Tq}
+    _anchor_query(x::AbstractVector{Tg}, xq::Tq, ::Val{:cubic}; wrap::Bool=false) -> _CubicAdjointAnchor{Tg, Tq}
 
-Create an anchored query for ultra-fast cubic spline evaluation at a fixed point.
+Create an anchored query at a fixed point, baked once and reused by the cubic
+adjoint's reverse pass.
 
 # Arguments
 - `x`: Grid points (must match grid used for interpolant construction)
@@ -202,23 +200,13 @@ Create an anchored query for ultra-fast cubic spline evaluation at a fixed point
           Used for `extrap=WrapExtrap()` mode. Distinct from `PeriodicBC` (boundary condition).
 
 # Returns
-`_CubicAnchoredQuery{Tg, Tq}` with precomputed geometry weights for value and derivatives.
+`_CubicAdjointAnchor{Tg, Tq}` with precomputed geometry weights for value and derivatives.
 
 # Example
 ```julia
-x = range(0.0, 1.0, 101)
-itp1 = cubic_interp(collect(x), sin.(2π .* x))
-itp2 = cubic_interp(collect(x), cos.(2π .* x))
-
-aq = _anchor_query(collect(x), 0.35, Val(:cubic))
-
-itp1(aq)              # Ultra-fast: skips interval search
-itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
+x = collect(range(0.0, 1.0, 101))
+aq = _anchor_query(x, 0.35, Val(:cubic))  # baked and stored by the cubic adjoint
 ```
-
-# Performance
-Anchored evaluation is 2-4x faster than `itp(xq)` for non-uniform grids,
-as it eliminates O(log n) binary search and geometry setup.
 
 # AD Support
 When `xq` is a ForwardDiff.Dual, the anchor preserves the Dual type
@@ -238,7 +226,7 @@ in `xq` and weight fields, enabling automatic differentiation.
 end
 
 """
-    _anchor_query(x::AbstractVector{T}, xq::AbstractVector, ::Val{:cubic}; wrap::Bool=false) -> Vector{_CubicAnchoredQuery{T,T}}
+    _anchor_query(x::AbstractVector{T}, xq::AbstractVector, ::Val{:cubic}; wrap::Bool=false) -> Vector{_CubicAdjointAnchor{T,T}}
 
 Create anchored queries for multiple query points.
 
@@ -255,13 +243,7 @@ the grid used for interpolant construction.
 # Example
 ```julia
 x = collect(range(0.0, 1.0, 101))
-aq_vec = _anchor_query(x, [0.15, 0.35, 0.75], Val(:cubic))
-
-itp1 = cubic_interp(x, sin.(2π .* x))
-itp2 = cubic_interp(x, cos.(2π .* x))
-
-vals1 = itp1(aq_vec)  # Batch evaluation
-vals2 = itp2(aq_vec)  # Reuse same anchors
+aq_vec = _anchor_query(x, [0.15, 0.35, 0.75], Val(:cubic))  # anchor per query for the adjoint pullback
 ```
 
 # Note
@@ -275,7 +257,7 @@ function _anchor_query(
         wrap::Bool = false,
         searcher::P = _to_searcher(LinearBinarySearch())
     ) where {T, S <: Real, P <: Searcher}
-    isempty(xq) && return _CubicAnchoredQuery{T, T, _interval_type(x)}[]
+    isempty(xq) && return _CubicAdjointAnchor{T, T, _interval_type(x)}[]
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     # First anchor determines concrete element type (Tq may widen for duck-typed grids)
     aq1 = _anchor_query_impl(x, _promote_coord(xq[1], T), wrap, searcher_resolved)
@@ -294,7 +276,7 @@ Fill a pre-allocated buffer with anchored queries for cubic spline evaluation.
 In-place version of `_anchor_query(x, xq, Val(:cubic))` for zero-allocation pooled usage.
 
 # Arguments
-- `buffer::AbstractVector{<:_CubicAnchoredQuery{Tg,Tq}}`: Pre-allocated buffer (length >= length(xq))
+- `buffer::AbstractVector{<:_CubicAdjointAnchor{Tg,Tq}}`: Pre-allocated buffer (length >= length(xq))
 - `x::AbstractVector{Tg}`: Grid points (must match interpolant's grid)
 - `xq::AbstractVector{Tq}`: Query points (must match buffer's query type)
 - `::Val{:cubic}`: Type tag for cubic interpolation
@@ -307,12 +289,12 @@ The same `buffer` object, filled with anchored queries.
 ```julia
 x = collect(range(0.0, 1.0, 101))
 xq = [0.15, 0.35, 0.75]
-buffer = Vector{_CubicAnchoredQuery{Float64,Float64,_ContiguousIndices{2}}}(undef, length(xq))
+buffer = Vector{_CubicAdjointAnchor{Float64,Float64,_ContiguousIndices{2}}}(undef, length(xq))
 _fill_anchors!(buffer, x, xq, Val(:cubic))
 ```
 """
 @inline function _fill_anchors!(
-        buffer::AbstractVector{<:_CubicAnchoredQuery{Tg, Tq}},
+        buffer::AbstractVector{<:_CubicAdjointAnchor{Tg, Tq}},
         x::AbstractVector{Tg},
         xq::AbstractVector{S},
         ::Val{:cubic},
@@ -329,7 +311,7 @@ _fill_anchors!(buffer, x, xq, Val(:cubic))
 end
 
 """
-    _anchor_query_impl(x, xq, wrap, policy) -> _CubicAnchoredQuery
+    _anchor_query_impl(x, xq, wrap, policy) -> _CubicAdjointAnchor
 
 Internal implementation of _anchor_query.
 
@@ -366,103 +348,5 @@ while preserving the full Dual value for weight computation.
     w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
     w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
 
-    return _CubicAnchoredQuery(loc.interval, loc.xq, loc.state, w0, w1, w2, w3, Tg)
-end
-
-# ========================================
-# Shared Raw-Vector Anchor Eval
-# ========================================
-# Canonical kernel + extrap dispatch that takes raw y, z vectors.
-# Used by both CubicInterpolant anchor dispatch AND cubic series one-shot.
-
-# ─── Kernel: dispatches on DerivOp, returns scalar ───────────────────────────
-
-# EvalValue: Full 4-term dot product. `aq.idxR` carries seam wrap (== 1 at the
-# periodic-exclusive seam, otherwise == idxL + 1) — kernels are oblivious.
-@inline function _cubic_eval_kernel(
-        y::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, ::EvalValue
-    )
-    wyL, wyR, wzL, wzR = aq.w0
-    idxL = aq.idxL
-    idxR = aq.idxR
-    @inbounds return muladd(
-        wyR, y[idxR], muladd(
-            wyL, y[idxL],
-            muladd(wzR, z[idxR], wzL * z[idxL])
-        )
-    )
-end
-
-# EvalDeriv1: Full 4-term with w1
-@inline function _cubic_eval_kernel(
-        y::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, ::EvalDeriv1
-    )
-    wyL, wyR, wzL, wzR = aq.w1
-    idxL = aq.idxL
-    idxR = aq.idxR
-    @inbounds return muladd(
-        wyR, y[idxR], muladd(
-            wyL, y[idxL],
-            muladd(wzR, z[idxR], wzL * z[idxL])
-        )
-    )
-end
-
-# EvalDeriv2: Optimized 2-term (z-only, no y-loads)
-@inline function _cubic_eval_kernel(
-        ::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, ::EvalDeriv2
-    )
-    wzL, wzR = aq.w2
-    @inbounds return muladd(wzR, z[aq.idxR], wzL * z[aq.idxL])
-end
-
-# EvalDeriv3: Optimized 2-term (z-only, no y-loads)
-@inline function _cubic_eval_kernel(
-        ::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, ::EvalDeriv3
-    )
-    wzL, wzR = aq.w3
-    @inbounds return muladd(wzR, z[aq.idxR], wzL * z[aq.idxL])
-end
-
-# DerivOp{N≥4}: zero (N-th derivative of cubic is zero for N ≥ 4)
-@inline function _cubic_eval_kernel(
-        y::AbstractVector, ::AbstractVector,
-        aq::_CubicAnchoredQuery, ::DerivOp{N}
-    ) where {N}
-    return 0 * (@inbounds y[aq.idxL])
-end
-
-# ─── Extrap dispatch: handles OOB logic ──────────────────────────────────────
-
-# Default (ExtendExtrap, WrapExtrap, InBounds): just kernel
-@inline function _cubic_eval_at_anchor(
-        y::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, op::AbstractEvalOp, ::AbstractExtrap
-    )
-    return _cubic_eval_kernel(y, z, aq, op)
-end
-
-# NoExtrap: throw if OOB
-@inline function _cubic_eval_at_anchor(
-        y::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, op::AbstractEvalOp, ::NoExtrap
-    )
-    aq.state != IN_DOMAIN && throw(DomainError(aq.xq, "query point outside domain"))
-    return _cubic_eval_kernel(y, z, aq, op)
-end
-
-# ClampExtrap / FillExtrap: boundary value if OOB
-@inline function _cubic_eval_at_anchor(
-        y::AbstractVector, z::AbstractVector,
-        aq::_CubicAnchoredQuery, op::AbstractEvalOp, extrap::_ClampOrFill
-    )
-    if aq.state != IN_DOMAIN
-        y_bnd = aq.state == OOB_LEFT ? first(y) : last(y)
-        return _eval_extrapolation(op, y_bnd, extrap, aq.xq)
-    end
-    return _cubic_eval_kernel(y, z, aq, op)
+    return _CubicAdjointAnchor(loc.interval, loc.xq, loc.state, w0, w1, w2, w3, Tg)
 end

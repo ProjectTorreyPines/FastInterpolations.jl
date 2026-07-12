@@ -232,3 +232,40 @@ end
     end
     return out
 end
+
+# Type-carrier twins of the three SIMD fills above, for lean stateful anchors
+# that store no `xq` (`one(Tq)` is value-independent). MUST stay formula-identical
+# to the `aq` forms — the OOB pins guard the shared contract. The shared-`Tv`
+# constraint on `out`/`y_point` is intentionally dropped: mixed-precision and
+# Dual OOB queries need `out` to carry a wider type than the stored `y_point`.
+@inline function _fill_constant_extrap_simd!(
+        out::AbstractVector, y_point::Matrix, side::UInt8, n_pts::Int, ::EvalValue, ::ClampExtrap, ::Type{Tq}
+    ) where {Tq <: Real}
+    idx = _boundary_point_index(side, n_pts)
+    xq_carrier = one(Tq)
+    @inbounds @simd for k in axes(out, 1)
+        out[k] = y_point[k, idx] * xq_carrier
+    end
+    return out
+end
+
+@inline function _fill_constant_extrap_simd!(
+        out::AbstractVector, ::Matrix, ::UInt8, ::Int, ::EvalValue, e::FillExtrap, ::Type{Tq}
+    ) where {Tq <: Real}
+    z = e.fill_value * one(Tq)
+    @inbounds @simd for k in axes(out, 1)
+        out[k] = z
+    end
+    return out
+end
+
+@inline function _fill_constant_extrap_simd!(
+        out::AbstractVector, y_point::Matrix, side::UInt8, n_pts::Int, ::AbstractEvalOp, ext::_ClampOrFill, ::Type{Tq}
+    ) where {Tq <: Real}
+    idx = _boundary_point_index(side, n_pts)
+    xq_carrier = one(Tq)
+    @inbounds @simd for k in axes(out, 1)
+        out[k] = 0 * _extrap_oob_data(ext, y_point[k, idx]) * xq_carrier
+    end
+    return out
+end

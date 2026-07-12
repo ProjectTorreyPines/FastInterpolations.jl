@@ -1,5 +1,5 @@
 # Unit tests for the cubic Series lean anchor layer: op/extrap-aware payload
-# selection, weight bit-identity vs the full `_CubicAnchoredQuery` (same
+# selection, weight bit-identity vs the full `_CubicAdjointAnchor` (same
 # `_compute_anchor_weights` must be reused verbatim), and the Series-owned
 # anchor build loop (wrap handling, OOB state classification, NoExtrap throw).
 # Design: docs/design/cubic_series_payload_anchor.md
@@ -8,7 +8,7 @@
     using FastInterpolations: _cubic_series_anchor_type, _AxisAnchor, _StatefulPayload,
         _ContiguousIndices, _CubicValuePayload1D, _CubicDeriv1Payload1D,
         _CubicDeriv2Payload1D, _CubicDeriv3Payload1D, _CubicZeroPayload1D,
-        EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3, InBounds
+        _payload_op, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3, InBounds
 
     x = collect(range(0.0, 1.0, 11))
     bare_extraps = (ExtendExtrap(), WrapExtrap(), NoExtrap(), InBounds())
@@ -32,12 +32,27 @@
             @test A === _AxisAnchor{_ContiguousIndices{2}, _StatefulPayload{P}}
             @test isbitstype(A)
         end
+        # the stateful wrapper forwards its OOB op to the inner payload's op
+        @test _payload_op(_StatefulPayload{P}) === _payload_op(P)
     end
 
     # Float32 all the way stays Float32
     x32 = collect(Float32, range(0.0f0, 1.0f0, 11))
     @test _cubic_series_anchor_type(EvalValue(), ExtendExtrap(), x32, Float32) ===
         _AxisAnchor{_ContiguousIndices{2}, _CubicValuePayload1D{Float32}}
+end
+
+@testitem "adjoint anchor property ergonomics (idx/idxL/idxR + propertynames)" begin
+    using FastInterpolations: _anchor_query
+
+    x = collect(range(0.0, 1.0, 11))
+    aq = _anchor_query(x, 0.35, Val(:cubic))   # interior (non-seam) cell
+
+    @test propertynames(aq) ==
+        (:interval, :idx, :idxL, :idxR, :xq, :state, :w0, :w1, :w2, :w3)
+    # virtual accessors: legacy `idx` == `idxL`, and `idxR == idxL + 1` off-seam
+    @test aq.idx == aq.idxL
+    @test aq.idxR == aq.idxL + 1
 end
 
 @testitem "lean anchor sizes match the design table" begin

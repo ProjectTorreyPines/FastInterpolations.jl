@@ -245,7 +245,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
     # the point-contiguous op-threaded kernel over the stored y/a/d coefficients.
     A = _quadratic_series_anchor_type(sitp.extrap, sitp.x, _coord_eltype(Tq, Tg))
     searcher = _resolve_search(sitp.x, xq, search, hint)
-    a = @_narrow_searcher searcher _build_series_anchor(
+    a = _build_series_anchor(
         QuadraticInterp(), A, sitp.x, xq_promoted, sitp.extrap, _should_wrap(sitp), searcher
     )
     y_point, a_point, d_point = _ensure_point_layout!(sitp)
@@ -276,7 +276,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
 
     A = _quadratic_series_anchor_type(sitp.extrap, sitp.x, _coord_eltype(Tq, Tg))
     searcher = _resolve_search(sitp.x, xq, search, hint)
-    a = @_narrow_searcher searcher _build_series_anchor(
+    a = _build_series_anchor(
         QuadraticInterp(), A, sitp.x, xq_promoted, sitp.extrap, _should_wrap(sitp), searcher
     )
     y_point, a_point, d_point = _ensure_point_layout!(sitp)
@@ -339,9 +339,8 @@ Pool handles both same-type and mixed-type cases efficiently.
     # query internally), then the series-contiguous kernel per (k, j).
     A = _quadratic_series_anchor_type(sitp.extrap, sitp.x, _coord_eltype(Tq, Tg))
     anchors = acquire!(pool, A, n_query)
-    searcher = _resolve_search(sitp.x, xq, search, hint)
-    @_narrow_searcher searcher _fill_series_anchors!(
-        QuadraticInterp(), anchors, sitp.x, xq, sitp.extrap, _should_wrap(sitp), searcher
+    _fill_series_anchors_resolved!(
+        QuadraticInterp(), anchors, sitp.x, xq, sitp.extrap, _should_wrap(sitp), search, hint
     )
 
     y = sitp.y

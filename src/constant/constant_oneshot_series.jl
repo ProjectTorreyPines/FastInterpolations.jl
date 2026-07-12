@@ -165,18 +165,14 @@ end
     end
 
     extrap_eff = _check_domain(x, xqs, extrap)
-    searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap_eff isa WrapExtrap
     m = ConstantInterp(side)
     A = _constant_series_anchor_type(op, extrap_eff, x, _coord_eltype(eltype(xqs), eltype(x)))
-    @inbounds for j in 1:NQ
-        a = _build_series_anchor(m, A, x, xqs[j], extrap_eff, wrap, searcher)
-        for k in 1:K
-            outputs[k][j] = _constant_series_eval(vecs[k], a, extrap_eff)
-        end
-    end
-    return outputs
+    return _series_qk_fill_resolved!(m, outputs, x, vecs, xqs, A, extrap_eff, wrap, search, nothing)
 end
+
+# Point eval for the shared QK loop (`_series_qk_fill!`).
+@inline _series_point_eval(::ConstantInterp, y, a, extrap) = _constant_series_eval(y, a, extrap)
 
 # K outer × Q inner with pool-acquired anchor vector — large-NQ fast path.
 # Inner loop streams a single `outputs[k]` Vector, which LLVM auto-SIMDs
@@ -216,12 +212,11 @@ end
     end
 
     extrap_eff = _check_domain(x, xqs, extrap)
-    searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap_eff isa WrapExtrap
     m = ConstantInterp(side)
     A = _constant_series_anchor_type(op, extrap_eff, x, _coord_eltype(Tq, eltype(x)))
     anchors = acquire!(pool, A, NQ)
-    _fill_series_anchors!(m, anchors, x, xqs, extrap_eff, wrap, searcher)
+    _fill_series_anchors_resolved!(m, anchors, x, xqs, extrap_eff, wrap, search, nothing)
     @inbounds for k in 1:K
         for j in 1:NQ
             outputs[k][j] = _constant_series_eval(vecs[k], anchors[j], extrap_eff)

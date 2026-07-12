@@ -446,7 +446,7 @@ function (sitp::CubicSeriesInterpolant{Tg, Tv})(
     # (same helpers as the batch path). NoExtrap throws OOB inside the build.
     A = _cubic_series_anchor_type(deriv, sitp.extrap, sitp.cache.x, _coord_eltype(Tq, Tg))
     searcher = _resolve_search(sitp.cache.x, xq, search, hint)
-    a = @_narrow_searcher searcher _build_series_anchor(
+    a = _build_series_anchor(
         CubicInterp(), A, sitp.cache.x, xq, sitp.extrap, _should_wrap(sitp), searcher
     )
 
@@ -545,9 +545,8 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
     Tq_w = _coord_eltype(Tq, Tg)
     A = _cubic_series_anchor_type(deriv, sitp.extrap, sitp.cache.x, Tq_w)
     anchors = acquire!(pool, A, n_query)
-    searcher = _resolve_search(sitp.cache.x, xq, search, hint)
-    @_narrow_searcher searcher _fill_series_anchors!(
-        CubicInterp(), anchors, sitp.cache.x, xq, sitp.extrap, _should_wrap(sitp), searcher
+    _fill_series_anchors_resolved!(
+        CubicInterp(), anchors, sitp.cache.x, xq, sitp.extrap, _should_wrap(sitp), search, hint
     )
 
     # Extract matrices for argument-passing pattern (series-contiguous layout)

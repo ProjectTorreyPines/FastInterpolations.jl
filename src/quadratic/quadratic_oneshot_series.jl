@@ -118,8 +118,7 @@ end
     # Pre-compute lean anchors once (search Q times, not K×Q; op-independent)
     A_lean = _quadratic_series_anchor_type(extrap_eff, x, _coord_eltype(Tq, Tg_actual))
     anchors = acquire!(pool, A_lean, length(xqs))
-    searcher = _resolve_search(x, xqs, search, nothing)
-    _fill_series_anchors!(QuadraticInterp(), anchors, x, xqs, extrap_eff, extrap_eff isa WrapExtrap, searcher)
+    _fill_series_anchors_resolved!(QuadraticInterp(), anchors, x, xqs, extrap_eff, extrap_eff isa WrapExtrap, search, nothing)
 
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)

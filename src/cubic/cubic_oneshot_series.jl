@@ -259,8 +259,7 @@ end
     Tq_w = _coord_eltype(Tq, eltype(cache.x))
     A = _cubic_series_anchor_type(deriv, extrap, cache.x, Tq_w)
     anchors = acquire!(pool, A, length(xqs))
-    searcher = _resolve_search(cache.x, xqs, search, nothing)
-    _fill_series_anchors!(CubicInterp(), anchors, cache.x, xqs, extrap, extrap isa WrapExtrap, searcher)
+    _fill_series_anchors_resolved!(CubicInterp(), anchors, cache.x, xqs, extrap, extrap isa WrapExtrap, search, nothing)
 
     Tz = _promote_eltype(_coeff_op, eltype(cache.x), _series_eltype(s))
     z = acquire!(pool, Tz, n)

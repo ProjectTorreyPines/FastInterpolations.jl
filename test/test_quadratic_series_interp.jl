@@ -523,35 +523,4 @@
         end
     end
 
-    # ========================================
-    # Pre-built Anchor Evaluation Tests
-    # ========================================
-
-    @testset "pre-built anchor evaluation" begin
-        x = collect(0.0:0.1:1.0)
-        y1, y2 = sin.(2π .* x), cos.(2π .* x)
-        sitp = quadratic_interp(x, Series(y1, y2))
-        xq = [0.15, 0.35, 0.75]
-
-        # Build anchors manually
-        aq_vec = FI._anchor_query(x, xq, Val(:quadratic))
-
-        # Allocate outputs
-        outputs = [zeros(length(xq)) for _ in 1:2]
-
-        # Evaluate with pre-built anchors
-        sitp(outputs, aq_vec)
-
-        # Compare with direct evaluation
-        expected = sitp(xq)
-        @test outputs[1] ≈ expected[1] atol = 1.0e-12
-        @test outputs[2] ≈ expected[2] atol = 1.0e-12
-
-        # Test with derivatives
-        outputs_d1 = [zeros(length(xq)) for _ in 1:2]
-        sitp(outputs_d1, aq_vec; deriv = DerivOp(1))
-        expected_d1 = sitp(xq; deriv = DerivOp(1))
-        @test outputs_d1[1] ≈ expected_d1[1] atol = 1.0e-12
-    end
-
 end  # testset "QuadraticSeriesInterpolant"

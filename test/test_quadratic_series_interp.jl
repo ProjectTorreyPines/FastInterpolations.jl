@@ -154,7 +154,7 @@
                 e
             end
             @test err isa DomainError
-            @test occursin("outside domain", string(err))
+            @test occursin("outside interpolation domain", string(err))
         end
 
         @testset "extrap=ClampExtrap() returns boundary" begin

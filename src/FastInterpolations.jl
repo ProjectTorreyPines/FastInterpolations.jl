@@ -34,6 +34,7 @@ include("gridded/gridded_dispatch.jl")  # unified itp(gq) callable on AbstractIn
 include("gridded/gridded_partials.jl")  # cubic/quadratic fused-anchor fast path
 include("linear/linear_series_payloads.jl")  # lean Series layer reusing gridded linear payloads
 include("constant/constant_series_payloads.jl")  # lean Series layer reusing gridded constant gather payload
+include("quadratic/quadratic_series_payloads.jl")  # lean Series layer baking dL, threading op through _quadratic_kernel
 
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")

@@ -43,16 +43,13 @@
     extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)   # PeriodicBC → WrapExtrap()
     xq_wrapped = _wrap_to_domain(xq, x_eff)
     idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
-    h = _get_h(x_eff, idxL)
-    dL = xq_wrapped - xL
-    # Promote xq to match dL type (Float64 query + Dual grid → dL is Dual).
-    xq_promoted = oftype(dL, xq_wrapped)
-    aq = _ConstantAnchoredQuery(_interval_indices(x_eff, idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
-
-    x_last = @inbounds Tg(last(x_eff))
-
+    # 2-arg cached geometry (`_get_h(x_eff, idxL)`), seam pair `(idxL, idxR)`, and
+    # domain-max at the ORIGINAL right endpoint (`last(x_eff)`) — see the periodic
+    # builder. Bare payload (periodic always wraps in-domain).
+    A = _constant_series_anchor_type(op, extrap_p, x_eff, _coord_eltype(typeof(xq), eltype(x_eff)))
+    a = _build_constant_periodic_series_anchor(A, x_eff, xq_wrapped, idxL, idxR, xL, ConstantInterp(side))
     @inbounds for k in 1:K
-        output[k] = _constant_eval_at_anchor(vecs[k], x_last, aq, op, side, extrap_p)
+        output[k] = _constant_series_eval(vecs[k], a, extrap_p)
     end
     return output
 end
@@ -88,11 +85,11 @@ end
     end
     _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
-    aq = _anchor_query(x, xq, Val(:constant), extrap isa WrapExtrap, searcher)
-    x_last = Tg(last(x))
+    A = _constant_series_anchor_type(deriv, extrap, x, _coord_eltype(Tq, eltype(x)))
+    a = _build_series_anchor(ConstantInterp(side), A, x, xq, extrap, extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     @inbounds for k in 1:K
-        output[k] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap)
+        output[k] = _constant_series_eval(vecs[k], a, extrap)
     end
     return output
 end
@@ -120,11 +117,11 @@ end
     end
     _check_domain(x, xq, extrap)
     searcher = _resolve_search(x, xq, search, hint)
-    aq = _anchor_query(x, xq, Val(:constant), extrap isa WrapExtrap, searcher)
-    x_last = Tg(last(x))
+    A = _constant_series_anchor_type(deriv, extrap, x, _coord_eltype(Tq, eltype(x)))
+    a = _build_series_anchor(ConstantInterp(side), A, x, xq, extrap, extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     @inbounds for k in eachindex(output)
-        output[k] = _constant_eval_at_anchor(vecs[k], x_last, aq, deriv, side, extrap)
+        output[k] = _constant_series_eval(vecs[k], a, extrap)
     end
     return output
 end
@@ -149,39 +146,33 @@ end
     )
     K = length(vecs)
     NQ = length(xqs)
-    Tg_actual = eltype(x)
 
     if _is_periodic_bc(bc)
         x_eff = _resolve_axis(x, bc)
         extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
         searcher = _resolve_search(x_eff, xqs, search, nothing)
-        x_last = @inbounds Tg_actual(last(x_eff))
+        m = ConstantInterp(side)
+        A = _constant_series_anchor_type(op, extrap_p, x_eff, _coord_eltype(eltype(xqs), eltype(x_eff)))
         @inbounds for j in 1:NQ
             xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
             idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
-            h = _get_h(x_eff, idxL)
-            dL = xq_wrapped - xL
-            xq_promoted = oftype(dL, xq_wrapped)
-            aq = _ConstantAnchoredQuery(_interval_indices(x_eff, idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
+            a = _build_constant_periodic_series_anchor(A, x_eff, xq_wrapped, idxL, idxR, xL, m)
             for k in 1:K
-                outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, op, side, extrap_p)
+                outputs[k][j] = _constant_series_eval(vecs[k], a, extrap_p)
             end
         end
         return outputs
     end
 
     extrap_eff = _check_domain(x, xqs, extrap)
-    searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap_eff isa WrapExtrap
-    x_last = @inbounds Tg_actual(last(x))
-    @inbounds for j in 1:NQ
-        aq = _anchor_query(x, xqs[j], Val(:constant), wrap, searcher)
-        for k in 1:K
-            outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq, op, side, extrap_eff)
-        end
-    end
-    return outputs
+    m = ConstantInterp(side)
+    A = _constant_series_anchor_type(op, extrap_eff, x, _coord_eltype(eltype(xqs), eltype(x)))
+    return _series_qk_fill_resolved!(m, outputs, x, vecs, xqs, A, extrap_eff, wrap, search, nothing)
 end
+
+# Point eval for the shared QK loop (`_series_qk_fill!`).
+@inline _series_point_eval(::ConstantInterp, y, a, extrap) = _constant_series_eval(y, a, extrap)
 
 # K outer × Q inner with pool-acquired anchor vector — large-NQ fast path.
 # Inner loop streams a single `outputs[k]` Vector, which LLVM auto-SIMDs
@@ -199,40 +190,36 @@ end
     ) where {Tg, Tq <: Real}
     K = length(vecs)
     NQ = length(xqs)
-    Tg_actual = eltype(x)
-    Tqp = promote_type(Tg_actual, Tq)
 
     if _is_periodic_bc(bc)
         x_eff = _resolve_axis(x, bc)
         extrap_p = _resolve_extrap(NoExtrap(), bc, x_eff)
         searcher = _resolve_search(x_eff, xqs, search, nothing)
-        x_last = @inbounds Tg_actual(last(x_eff))
-        aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg_actual, Tqp, _interval_type(x_eff)}, NQ)
+        m = ConstantInterp(side)
+        A = _constant_series_anchor_type(op, extrap_p, x_eff, _coord_eltype(Tq, eltype(x_eff)))
+        anchors = acquire!(pool, A, NQ)
         @inbounds for j in 1:NQ
             xq_wrapped = _wrap_to_domain(xqs[j], x_eff)
             idxL, idxR, xL, _ = search_interval(searcher, x_eff, xq_wrapped)
-            h = _get_h(x_eff, idxL)
-            dL = xq_wrapped - xL
-            xq_promoted = oftype(dL, xq_wrapped)
-            aq_vec[j] = _ConstantAnchoredQuery(_interval_indices(x_eff, idxL, idxR), xq_promoted, IN_DOMAIN, h, dL)
+            anchors[j] = _build_constant_periodic_series_anchor(A, x_eff, xq_wrapped, idxL, idxR, xL, m)
         end
         @inbounds for k in 1:K
             for j in 1:NQ
-                outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq_vec[j], op, side, extrap_p)
+                outputs[k][j] = _constant_series_eval(vecs[k], anchors[j], extrap_p)
             end
         end
         return outputs
     end
 
     extrap_eff = _check_domain(x, xqs, extrap)
-    searcher = _resolve_search(x, xqs, search, nothing)
     wrap = extrap_eff isa WrapExtrap
-    x_last = @inbounds Tg_actual(last(x))
-    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg_actual, Tqp, _interval_type(x)}, NQ)
-    _fill_anchors!(aq_vec, x, xqs, Val(:constant), wrap, searcher)
+    m = ConstantInterp(side)
+    A = _constant_series_anchor_type(op, extrap_eff, x, _coord_eltype(Tq, eltype(x)))
+    anchors = acquire!(pool, A, NQ)
+    _fill_series_anchors_resolved!(m, anchors, x, xqs, extrap_eff, wrap, search, nothing)
     @inbounds for k in 1:K
         for j in 1:NQ
-            outputs[k][j] = _constant_eval_at_anchor(vecs[k], x_last, aq_vec[j], op, side, extrap_eff)
+            outputs[k][j] = _constant_series_eval(vecs[k], anchors[j], extrap_eff)
         end
     end
     return outputs

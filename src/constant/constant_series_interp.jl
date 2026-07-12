@@ -117,35 +117,6 @@ end
 """Return the interpolation method kind for kernel dispatch."""
 @inline _method_kind(::Type{<:ConstantSeriesInterpolant}) = Val(:constant)
 
-"""
-    _make_anchor(sitp::ConstantSeriesInterpolant, xq::Tg, searcher) -> _ConstantAnchoredQuery{Tg}
-
-Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
-"""
-@inline function _make_anchor(sitp::ConstantSeriesInterpolant{Tg}, xq, searcher::P = DEFAULT_SEARCHER) where {Tg, P <: Searcher}
-    return _constant_anchor_query_impl(sitp.x, xq, _should_wrap(sitp), searcher)
-end
-
-"""
-    _eval_series_at_anchor!(output, sitp::ConstantSeriesInterpolant, aq, op)
-
-Evaluate all series at the given anchor point. Required trait for AbstractSeriesInterpolant.
-Uses point-contiguous layout for SIMD optimization.
-"""
-@inline function _eval_series_at_anchor!(
-        output::AbstractVector{Tv},
-        sitp::ConstantSeriesInterpolant{Tg, Tv},
-        aq::_ConstantAnchoredQuery{Tg},
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    y_point = _ensure_point_layout!(sitp)
-    n_pts = n_points(sitp)
-    x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
-
-    _eval_constant_series_point_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, sitp.side, op, aq.state)
-    return output
-end
-
 # ========================================
 # Lazy Point-Layout Management
 # ========================================
@@ -169,145 +140,6 @@ function precompute_transpose!(sitp::ConstantSeriesInterpolant)
     _ensure_point_layout!(sitp)
     return sitp
 end
-
-# ========================================
-# SIMD Scalar Evaluation Kernels
-# ========================================
-
-"""
-    _eval_constant_series_point!(output, sitp, aq, xq, op)
-
-Main entry point for scalar evaluation of multi-series constant interpolation.
-Uses anchor for index/side info, but computes dL from original `xq` for AD support.
-
-# AD Support
-Supports ForwardDiff.Dual input: anchor provides index/side from primal,
-while `xq` is used directly in arithmetic to preserve derivative information.
-
-# Arguments
-- `output`: Pre-allocated output vector (length = n_series)
-- `sitp`: ConstantSeriesInterpolant
-- `aq`: Anchor with precomputed index/side (from primal value)
-- `xq`: Original query point (any Real type, including ForwardDiff.Dual)
-- `op`: Evaluation operation (value, derivative)
-
-Note: Inside-domain evaluation uses this function directly.
-Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
-"""
-@inline function _eval_constant_series_point!(
-        output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
-        sitp::ConstantSeriesInterpolant{Tg, Tv},
-        aq::_ConstantAnchoredQuery{Tg},
-        xq,  # Original xq (any Real, including Dual)
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    # Outside domain: delegate to extrapolation handler (trait method)
-    if aq.state != IN_DOMAIN
-        return _eval_series_at_anchor!(output, sitp, aq, op)
-    end
-
-    # Inside domain: SIMD evaluation with point-contiguous layout
-    y_point = _ensure_point_layout!(sitp)
-    n_pts = n_points(sitp)
-
-    # Right boundary: yL == yR == y_point[k, n_pts]. `_constant_kernel(op, ...)`
-    # produces `y_at_max * one(dL)` for EvalValue, `0 * y_at_max * one(dL)` for
-    # deriv — cell-local NaN and Tq carrier propagate through both.
-    xq_primal = _extract_primal(xq)
-    if xq_primal == _extract_primal(last(sitp.x))
-        h = aq.h
-        dL = aq.dL
-        @inbounds @simd for k in axes(output, 1)
-            y_at_max = y_point[k, n_pts]
-            output[k] = _constant_kernel(op, y_at_max, y_at_max, h, dL, sitp.side)
-        end
-        return output
-    end
-
-    # Inside domain: use the anchor's (already wrap-aware, Dual-preserving) dL.
-    # Recomputing `dL = xq - xL` from the original `xq` breaks when the anchor
-    # wrapped `xq` into the domain (e.g. PeriodicBC oneshot query past the seam):
-    # the kernel would see the unwrapped distance and pick the wrong side/index.
-    # `aq.dL` is `loc.xq - loc.xL` where `loc.xq` is the wrapped query — Dual is
-    # preserved through `_wrap_to_domain`, so AD chains survive.
-    idxL = aq.idxL
-    idxR = aq.idxR
-    h = aq.h
-    dL = aq.dL
-
-    # SIMD loop over series
-    @inbounds @simd for k in axes(output, 1)
-        y_left = y_point[k, idxL]
-        y_right = y_point[k, idxR]
-        output[k] = _constant_kernel(op, y_left, y_right, h, dL, sitp.side)
-    end
-
-    return output
-end
-
-# NoExtrap - throw DomainError
-@inline function _eval_constant_series_point_extrap!(
-        ::AbstractVector{Tv},
-        ::Matrix{Tv},
-        ::AbstractVector{Tg},
-        ::Int,
-        x_min::Tg,
-        x_max::Tg,
-        aq::_ConstantAnchoredQuery{Tg},
-        ::NoExtrap,
-        ::AbstractSide,
-        ::AbstractEvalOp,
-        ::UInt8
-    ) where {Tg, Tv}
-    _throw_extrap_domain_error(aq.xq, x_min, x_max)
-end
-
-# ClampExtrap - clamp to boundary
-@inline function _eval_constant_series_point_extrap!(
-        out::AbstractVector{Tv},
-        y_point::Matrix{Tv},
-        ::AbstractVector{Tg},
-        n_pts::Int,
-        ::Tg,
-        ::Tg,
-        aq::_ConstantAnchoredQuery{Tg},
-        extrap::_ClampOrFill,
-        ::AbstractSide,
-        op::AbstractEvalOp,
-        side::UInt8
-    ) where {Tg, Tv}
-    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap, aq)
-end
-
-# ExtendExtrap - extend using same constant value at boundary interval
-@inline function _eval_constant_series_point_extrap!(
-        out::AbstractVector{Tv},
-        y_point::Matrix{Tv},
-        x::AbstractVector{Tg},
-        n_pts::Int,
-        ::Tg,
-        ::Tg,
-        aq::_ConstantAnchoredQuery{Tg},
-        ::ExtendExtrap,
-        side_val::AbstractSide,
-        op::AbstractEvalOp,
-        ::UInt8
-    ) where {Tg, Tv}
-    # Use boundary interval for extension (inline evaluation, no xq needed)
-    idxL = aq.idxL
-    idxR = aq.idxR
-    h = aq.h
-    dL = aq.dL
-
-    # SIMD loop over series
-    @inbounds @simd for k in axes(out, 1)
-        y_left = y_point[k, idxL]
-        y_right = y_point[k, idxR]
-        out[k] = _constant_kernel(op, y_left, y_right, h, dL, side_val)
-    end
-    return out
-end
-
 
 # ========================================
 # Constructors
@@ -420,16 +252,18 @@ function (sitp::ConstantSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    n_ser = n_series(sitp)
+    _validate_scalar_output(output, n_series(sitp))
 
-    # Validate output length
-    _validate_scalar_output(output, n_ser)
-
-    # Build anchor (search handles mixed types internally)
-    aq = _make_anchor(sitp, xq, _resolve_search(sitp.x, xq, search, hint))
-
-    # Dispatch on derivative order - pass original xq for AD support
-    _eval_constant_series_point!(output, sitp, aq, xq, deriv)
+    # One lean op/side/extrap-aware gather anchor (shared build; NoExtrap throws
+    # OOB inside), then the point-contiguous SIMD gather across the K series.
+    # `ConstantInterp(sitp.side)` threads the side into `select_right` at build.
+    A = _constant_series_anchor_type(deriv, sitp.extrap, sitp.x, _coord_eltype(Tq, Tg))
+    a = _build_series_anchor(
+        ConstantInterp(sitp.side), A, sitp.x, xq, sitp.extrap, _should_wrap(sitp),
+        _resolve_search(sitp.x, xq, search, hint)
+    )
+    y_point = _ensure_point_layout!(sitp)
+    _constant_series_eval!(output, y_point, a, sitp.extrap)
     return output
 end
 
@@ -504,18 +338,14 @@ end
     wrap = _should_wrap(sitp)
     y = sitp.y
     x_grid = sitp.x
-    n_pts = n_points(sitp)
     n_ser = n_series(sitp)
     extrap = sitp.extrap
-    side_val = sitp.side
-    x_min = Tg(first(sitp.x))
-    x_max = Tg(last(sitp.x))
+    m = ConstantInterp(sitp.side)
+    A = _constant_series_anchor_type(deriv, extrap, x_grid, _coord_eltype(eltype(xq_typed), Tg))
     @inbounds for j in eachindex(xq_typed)
-        aq = _anchor_query(x_grid, xq_typed[j], Val(:constant), wrap, searcher)
+        a = _build_series_anchor(m, A, x_grid, xq_typed[j], extrap, wrap, searcher)
         for k in 1:n_ser
-            outputs[k][j] = _eval_constant_series_with_extrap(
-                y, x_grid, n_pts, x_min, x_max, k, aq, extrap, side_val, deriv
-            )
+            outputs[k][j] = _constant_series_eval(y, k, a, extrap)
         end
     end
     return outputs
@@ -533,21 +363,15 @@ end
     wrap = _should_wrap(sitp)
     y = sitp.y
     x_grid = sitp.x
-    n_pts = n_points(sitp)
     n_ser = n_series(sitp)
     extrap = sitp.extrap
-    side_val = sitp.side
-    x_min = Tg(first(sitp.x))
-    x_max = Tg(last(sitp.x))
     NQ = length(xq_typed)
-    Tqp = promote_type(Tg, eltype(xq_typed))
-    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg, Tqp, _interval_type(x_grid)}, NQ)
-    _fill_anchors!(aq_vec, x_grid, xq_typed, Val(:constant), wrap, searcher)
+    A = _constant_series_anchor_type(deriv, extrap, x_grid, _coord_eltype(eltype(xq_typed), Tg))
+    anchors = acquire!(pool, A, NQ)
+    _fill_series_anchors!(ConstantInterp(sitp.side), anchors, x_grid, xq_typed, extrap, wrap, searcher)
     @inbounds for k in 1:n_ser
         for j in 1:NQ
-            outputs[k][j] = _eval_constant_series_with_extrap(
-                y, x_grid, n_pts, x_min, x_max, k, aq_vec[j], extrap, side_val, deriv
-            )
+            outputs[k][j] = _constant_series_eval(y, k, anchors[j], extrap)
         end
     end
     return outputs
@@ -568,61 +392,4 @@ end
     else
         return _constant_series_qk!(outputs, sitp, xq_typed, searcher, deriv)
     end
-end
-
-"""
-Internal: Evaluate single series at single query point with extrapolation handling.
-"""
-@inline function _eval_constant_series_with_extrap(
-        y::Matrix{Tv},
-        x::AbstractVector{Tg},
-        n_pts::Int,
-        x_min::Tg,
-        x_max::Tg,
-        k::Int,
-        aq::_ConstantAnchoredQuery{Tg},
-        extrap::AbstractExtrap,
-        side_val::AbstractSide,
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    # Right boundary: yL == yR == y[n_pts, k]. Kernel handles op-dispatch
-    # (value = y_at_max * one(dL), deriv = 0 * y_at_max * one(dL)) so the
-    # cell-local NaN and Tq carrier both propagate.
-    if aq.xq == x_max
-        @inbounds y_at_max = y[n_pts, k]
-        return _constant_kernel(op, y_at_max, y_at_max, aq.h, aq.dL, side_val)
-    end
-
-    # Inside domain: normal evaluation
-    if aq.state == IN_DOMAIN
-        return _eval_constant_series_anchored(y, k, aq, side_val, op)
-    end
-
-    # Outside domain: dispatch on extrap mode
-    if extrap isa ExtendExtrap || extrap isa WrapExtrap
-        return _eval_constant_series_anchored(y, k, aq, side_val, op)
-    elseif extrap isa _ClampOrFill
-        return _constant_extrap_boundary_value(y, aq.state, n_pts, k, op, extrap, aq)
-    else
-        _throw_extrap_domain_error(aq.xq, x_min, x_max)
-    end
-end
-
-"""
-Internal: Core constant evaluation for series k at anchored query point.
-Value and deriv share `_constant_kernel(op, ...)` — deriv returns
-`0 * y_left * one(dL)` so cell-local NaN and Tq carrier propagate.
-"""
-@inline function _eval_constant_series_anchored(
-        y::Matrix{Tv},
-        k::Int,
-        aq::_ConstantAnchoredQuery{Tg},
-        side_val::AbstractSide,
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    @inbounds begin
-        y_left = y[aq.idxL, k]
-        y_right = y[aq.idxR, k]
-    end
-    return _constant_kernel(op, y_left, y_right, aq.h, aq.dL, side_val)
 end

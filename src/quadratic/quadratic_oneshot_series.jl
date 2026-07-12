@@ -30,7 +30,8 @@
     K = n_series(s)
     vecs = _series_vectors(s)
     searcher = _resolve_search(x, xq, search, hint)
-    aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
+    A_lean = _quadratic_series_anchor_type(extrap, x, _coord_eltype(Tq, eltype(x)))
+    anchor = _build_series_anchor(QuadraticInterp(), A_lean, x, xq, extrap, extrap isa WrapExtrap, searcher)
     Tv_out = _value_type(_series_eltype(s), Tg)
     Tg_actual = eltype(x)
     Tcoeff = _promote_eltype(_coeff_op, Tg_actual, _series_eltype(s))
@@ -42,7 +43,7 @@
         copyto!(y_buf, 1, vecs[k], 1, nx)
         bc_promoted = _normalize_bc(bc, first(y_buf))
         _compute_quadratic_coeffs!(d, a, x, y_buf, bc_promoted)
-        output[k] = _quadratic_eval_at_anchor(y_buf, a, d, aq, deriv, extrap)
+        output[k] = _quadratic_series_eval(y_buf, a, d, anchor, deriv, extrap)
     end
     return output
 end
@@ -68,7 +69,8 @@ end
     nx = length(x)
     vecs = _series_vectors(s)
     searcher = _resolve_search(x, xq, search, hint)
-    aq = _anchor_query(x, xq, Val(:quadratic), extrap isa WrapExtrap, searcher)
+    A_lean = _quadratic_series_anchor_type(extrap, x, _coord_eltype(Tq, eltype(x)))
+    anchor = _build_series_anchor(QuadraticInterp(), A_lean, x, xq, extrap, extrap isa WrapExtrap, searcher)
     Tv_out = _value_type(_series_eltype(s), Tg)
     Tg_actual = eltype(x)
     Tcoeff = _promote_eltype(_coeff_op, Tg_actual, _series_eltype(s))
@@ -79,7 +81,7 @@ end
         copyto!(y_buf, 1, vecs[k], 1, nx)
         bc_promoted = _normalize_bc(bc, first(y_buf))
         _compute_quadratic_coeffs!(d, a, x, y_buf, bc_promoted)
-        output[k] = _quadratic_eval_at_anchor(y_buf, a, d, aq, deriv, extrap)
+        output[k] = _quadratic_series_eval(y_buf, a, d, anchor, deriv, extrap)
     end
     return output
 end
@@ -113,11 +115,10 @@ end
     Tg_actual = eltype(x)
     Tcoeff = _promote_eltype(_coeff_op, Tg_actual, _series_eltype(s))
 
-    # Pre-compute anchors once (search Q times, not K×Q)
-    Tq_w = _coord_eltype(Tq, Tg_actual)
-    aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg_actual, Tq_w}, length(xqs))
-    searcher = _resolve_search(x, xqs, search, nothing)
-    _fill_anchors!(aq_vec, x, xqs, Val(:quadratic), extrap_eff isa WrapExtrap, searcher)
+    # Pre-compute lean anchors once (search Q times, not K×Q; op-independent)
+    A_lean = _quadratic_series_anchor_type(extrap_eff, x, _coord_eltype(Tq, Tg_actual))
+    anchors = acquire!(pool, A_lean, length(xqs))
+    _fill_series_anchors_resolved!(QuadraticInterp(), anchors, x, xqs, extrap_eff, extrap_eff isa WrapExtrap, search, nothing)
 
     d = acquire!(pool, Tcoeff, nx)
     a = acquire!(pool, Tcoeff, nx - 1)
@@ -127,7 +128,7 @@ end
         bc_promoted = _normalize_bc(bc, first(y_buf))
         _compute_quadratic_coeffs!(d, a, x, y_buf, bc_promoted)
         for j in eachindex(xqs)
-            outputs[k][j] = _quadratic_eval_at_anchor(vecs[k], a, d, aq_vec[j], deriv, extrap_eff)
+            outputs[k][j] = _quadratic_series_eval(vecs[k], a, d, anchors[j], deriv, extrap_eff)
         end
     end
     return outputs

@@ -118,37 +118,6 @@ end
 """Return the interpolation method kind for kernel dispatch."""
 @inline _method_kind(::Type{<:LinearSeriesInterpolant}) = Val(:linear)
 
-"""
-    _make_anchor(sitp::LinearSeriesInterpolant, xq) -> _LinearAnchoredQuery
-
-Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
-Accepts any query type — `_linear_anchor_query_impl` + the outer constructor of
-`_LinearAnchoredQuery` handle primal extraction for search and type widening.
-"""
-@inline function _make_anchor(sitp::LinearSeriesInterpolant{Tg}, xq, searcher::P = DEFAULT_SEARCHER) where {Tg, P <: Searcher}
-    return _linear_anchor_query_impl(sitp.x, xq, _should_wrap(sitp), searcher)
-end
-
-"""
-    _eval_series_at_anchor!(output, sitp::LinearSeriesInterpolant, aq, op)
-
-Evaluate all series at the given anchor point. Required trait for AbstractSeriesInterpolant.
-Uses point-contiguous layout for SIMD optimization.
-"""
-@inline function _eval_series_at_anchor!(
-        output::AbstractVector{Tv},
-        sitp::LinearSeriesInterpolant{Tg, Tv},
-        aq::_LinearAnchoredQuery{Tg},
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    y_point = _ensure_point_layout!(sitp)
-    n_pts = n_points(sitp)
-    x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
-
-    _eval_linear_series_point_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, op, aq.state)
-    return output
-end
-
 # ========================================
 # Lazy Point-Layout Management
 # ========================================
@@ -171,124 +140,6 @@ Call before hot loops to avoid first-call latency.
 function precompute_transpose!(sitp::LinearSeriesInterpolant)
     _ensure_point_layout!(sitp)
     return sitp
-end
-
-# ========================================
-# SIMD Scalar Evaluation Kernels
-# ========================================
-
-# NoExtrap - throw DomainError
-@inline function _eval_linear_series_point_extrap!(
-        ::AbstractVector{Tv},
-        ::Matrix{Tv},
-        ::AbstractVector{Tg},
-        ::Int,
-        x_min::Tg,
-        x_max::Tg,
-        aq::_LinearAnchoredQuery{Tg},
-        ::NoExtrap,
-        ::AbstractEvalOp,
-        ::UInt8
-    ) where {Tg, Tv}
-    _throw_extrap_domain_error(aq.xq, x_min, x_max)
-end
-
-# ClampExtrap/FillExtrap - clamp to boundary or fill (value only, derivatives are zero)
-@inline function _eval_linear_series_point_extrap!(
-        out::AbstractVector{Tv},
-        y_point::Matrix{Tv},
-        ::AbstractVector{Tg},
-        n_pts::Int,
-        ::Tg,
-        ::Tg,
-        aq::_LinearAnchoredQuery{Tg},
-        extrap::_ClampOrFill,
-        op::AbstractEvalOp,
-        side::UInt8
-    ) where {Tg, Tv}
-    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap, aq)
-end
-
-# ExtendExtrap - extend linear polynomial using boundary interval.
-@inline function _eval_linear_series_point_extrap!(
-        out::AbstractVector{Tv},
-        y_point::Matrix{Tv},
-        x::AbstractVector{Tg},
-        n_pts::Int,
-        ::Tg,
-        ::Tg,
-        aq::_LinearAnchoredQuery{Tg},
-        ::ExtendExtrap,
-        op::AbstractEvalOp,
-        side::UInt8
-    ) where {Tg, Tv}
-    idx = side == OOB_LEFT ? 1 : (n_pts - 1)
-    idx1 = idx + 1
-    @inbounds begin
-        xL = x[idx]
-        xR = x[idx1]
-    end
-    inv_h = _get_inv_h(x, idx)
-    α = _alpha_of(aq.xq, xL, xR, x)
-    @inbounds @simd for k in axes(out, 1)
-        yL = y_point[k, idx]
-        yR = y_point[k, idx1]
-        out[k] = _linear_kernel(op, yL, yR, inv_h, α)
-    end
-    return out
-end
-
-# ========================================
-# Scalar Evaluation Core
-# ========================================
-
-"""
-    _eval_linear_series_point!(output, sitp, aq, op)
-
-Core scalar evaluation for all series at a single query point.
-Uses SIMD-optimized point-contiguous layout for vectorization across series.
-
-Anchor data (`aq.alpha`, `aq.inv_h`, `aq.idxL`, `aq.idxR`) is read directly
-— `α` is precomputed by the anchor constructor as `(xq - xL) * inv_h`,
-so the SIMD loop only does multiplies/muladds per series.
-
-# Arguments
-- `output`: Pre-allocated output vector (length = n_series)
-- `sitp`: LinearSeriesInterpolant
-- `aq`: Anchor with precomputed indices (`idxL`/`idxR`), `alpha`, `inv_h`
-- `op`: Evaluation operation (value, derivative)
-
-# AD Support
-Supports ForwardDiff.Dual input: the anchor's indices come from the primal
-value while `aq.alpha` carries the Dual payload (the outer
-`_LinearAnchoredQuery` constructor widens via `promote_type(Tq, Tg)`), so
-the SIMD loop preserves grid-side partials through `α`.
-"""
-@inline function _eval_linear_series_point!(
-        output::AbstractVector,
-        sitp::LinearSeriesInterpolant{Tg, Tv},
-        aq::_LinearAnchoredQuery{Tg},
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    # Outside domain: delegate to extrapolation handler
-    if aq.state != IN_DOMAIN
-        return _eval_series_at_anchor!(output, sitp, aq, op)
-    end
-
-    # Inside domain: SIMD evaluation with point-contiguous layout
-    y_point = _ensure_point_layout!(sitp)
-    idxL = aq.idxL
-    idxR = aq.idxR
-
-    inv_h = aq.inv_h
-    α = aq.alpha  # precomputed by anchor constructor
-
-    @inbounds @simd for k in axes(output, 1)
-        yL = y_point[k, idxL]
-        yR = y_point[k, idxR]
-        output[k] = _linear_kernel(op, yL, yR, inv_h, α)
-    end
-    return output
 end
 
 # ========================================
@@ -413,16 +264,17 @@ function (sitp::LinearSeriesInterpolant{Tg, Tv, P})(
         search::AbstractSearchPolicy = sitp.search_policy,
         hint::Union{Nothing, Base.RefValue{Int}} = nothing
     ) where {Tg, Tv, P, Tq <: Real}
-    n_ser = n_series(sitp)
+    _validate_scalar_output(output, n_series(sitp))
 
-    # Validate output length
-    _validate_scalar_output(output, n_ser)
-
-    # Build anchor — _anchor_loc inside handles primal extraction for search,
-    # outer constructor widens xq to match grid arithmetic type.
-    aq = _make_anchor(sitp, xq, _resolve_search(sitp.x, xq, search, hint))
-
-    _eval_linear_series_point!(output, sitp, aq, deriv)
+    # One lean op/extrap-aware anchor (shared build; NoExtrap throws OOB inside),
+    # then the point-contiguous SIMD eval streaming across the K series.
+    A = _linear_series_anchor_type(deriv, sitp.extrap, sitp.x, _coord_eltype(Tq, Tg))
+    a = _build_series_anchor(
+        LinearInterp(), A, sitp.x, xq, sitp.extrap, _should_wrap(sitp),
+        _resolve_search(sitp.x, xq, search, hint)
+    )
+    y_point = _ensure_point_layout!(sitp)
+    _linear_series_eval!(output, y_point, a, sitp.extrap)
     return output
 end
 
@@ -500,17 +352,13 @@ end
     wrap = _should_wrap(sitp)
     y = sitp.y
     x_grid = sitp.x
-    n_pts = n_points(sitp)
     n_ser = n_series(sitp)
     extrap = sitp.extrap
-    x_min = Tg(first(sitp.x))
-    x_max = Tg(last(sitp.x))
+    A = _linear_series_anchor_type(deriv, extrap, x_grid, _coord_eltype(eltype(xq), Tg))
     @inbounds for j in eachindex(xq)
-        aq = _anchor_query(x_grid, xq[j], Val(:linear), wrap, searcher)
+        a = _build_series_anchor(LinearInterp(), A, x_grid, xq[j], extrap, wrap, searcher)
         for k in 1:n_ser
-            outputs[k][j] = _eval_linear_series_with_extrap(
-                y, x_grid, n_pts, x_min, x_max, k, aq, extrap, deriv
-            )
+            outputs[k][j] = _linear_series_eval(y, k, a, extrap)
         end
     end
     return outputs
@@ -528,20 +376,15 @@ end
     wrap = _should_wrap(sitp)
     y = sitp.y
     x_grid = sitp.x
-    n_pts = n_points(sitp)
     n_ser = n_series(sitp)
     extrap = sitp.extrap
-    x_min = Tg(first(sitp.x))
-    x_max = Tg(last(sitp.x))
     NQ = length(xq)
-    Tqp = promote_type(Tg, eltype(xq))
-    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tqp, _interval_type(x_grid)}, NQ)
-    _fill_anchors!(aq_vec, x_grid, xq, Val(:linear), wrap, searcher)
+    A = _linear_series_anchor_type(deriv, extrap, x_grid, _coord_eltype(eltype(xq), Tg))
+    anchors = acquire!(pool, A, NQ)
+    _fill_series_anchors!(LinearInterp(), anchors, x_grid, xq, extrap, wrap, searcher)
     @inbounds for k in 1:n_ser
         for j in 1:NQ
-            outputs[k][j] = _eval_linear_series_with_extrap(
-                y, x_grid, n_pts, x_min, x_max, k, aq_vec[j], extrap, deriv
-            )
+            outputs[k][j] = _linear_series_eval(y, k, anchors[j], extrap)
         end
     end
     return outputs
@@ -570,57 +413,4 @@ end
     else
         return _linear_series_qk!(outputs, sitp, xq, searcher, deriv)
     end
-end
-
-"""
-Internal: Evaluate single series at single query point with extrapolation handling.
-
-# Precision Preservation
-Uses anchor's precomputed `alpha` for value evaluation (avoids division).
-Uses anchor's `xq` for domain error messages.
-"""
-@inline function _eval_linear_series_with_extrap(
-        y::Matrix{Tv},
-        x::AbstractVector{Tg},
-        n_pts::Int,
-        x_min::Tg,
-        x_max::Tg,
-        k::Int,
-        aq::_LinearAnchoredQuery{Tg},
-        extrap::AbstractExtrap,
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    # Inside domain: normal evaluation
-    if aq.state == IN_DOMAIN
-        return _eval_linear_series_anchored(y, x, k, aq, op)
-    end
-
-    # Outside domain: dispatch on extrap mode
-    if extrap isa ExtendExtrap || extrap isa WrapExtrap
-        return _eval_linear_series_anchored(y, x, k, aq, op)
-    elseif extrap isa _ClampOrFill
-        return _constant_extrap_boundary_value(y, aq.state, n_pts, k, op, extrap, aq)
-    else
-        _throw_extrap_domain_error(aq.xq, x_min, x_max)
-    end
-end
-
-"""
-Internal: Core linear evaluation for series k at anchored query point.
-
-Uses anchor's precomputed values via `_linear_kernel(op, yL, yR, aq)`.
-The kernel internally extracts alpha (for EvalValue) or inv_h (for derivatives).
-"""
-@inline function _eval_linear_series_anchored(
-        y::Matrix{Tv},
-        ::AbstractVector{Tg},
-        k::Int,
-        aq::_LinearAnchoredQuery{Tg},
-        op::AbstractEvalOp
-    ) where {Tg, Tv}
-    @inbounds begin
-        yL = y[aq.idxL, k]
-        yR = y[aq.idxR, k]
-    end
-    return _linear_kernel(op, yL, yR, aq)
 end

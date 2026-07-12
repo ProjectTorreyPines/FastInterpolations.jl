@@ -49,8 +49,9 @@ const _CubicWeightedPayload1D = Union{
 @inline _cubic_series_payload_type(::EvalDeriv3, ::Type{Tq}) where {Tq} = _CubicDeriv3Payload1D{Tq}
 @inline _cubic_series_payload_type(::DerivOp, ::Type{Tq}) where {Tq} = _CubicZeroPayload1D{Tq}
 
-@inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}) where {P} = _StatefulPayload{P}
-@inline _maybe_stateful_payload(::AbstractExtrap, ::Type{P}) where {P} = P
+# `_maybe_stateful_payload` + the `_resolve_series_anchor`/`_build_series_anchor`/
+# `_fill_series_anchors!` build loop are family-agnostic — they live in
+# `core/series_lean_anchors.jl` and dispatch on the interp method (here `CubicInterp()`).
 
 @inline function _cubic_series_anchor_type(
         op::AbstractEvalOp,
@@ -98,70 +99,6 @@ end
     return _AxisAnchor{I, _CubicZeroPayload1D{Tq}}(
         _interval_indices(grid, idxL, idxR), _CubicZeroPayload1D{Tq}()
     )
-end
-
-# Stateful variant needs `loc.state`, which the gridded backbone loop does not
-# thread — the Series-owned build loop below passes the whole `loc`.
-@inline function _resolve_series_anchor(
-        m::CubicInterp,
-        ::Type{_AxisAnchor{I, _StatefulPayload{P}}},
-        grid::AbstractVector,
-        loc,
-        extrap::AbstractExtrap
-    ) where {I <: _AbstractIndices{2}, P}
-    bare = _resolve_anchor(m, _AxisAnchor{I, P}, grid, loc.idxL, loc.idxR, loc.xq, loc.xL, loc.xR, extrap)
-    return _AxisAnchor{I, _StatefulPayload{P}}(
-        getfield(bare, :interval), _StatefulPayload(getfield(bare, :payload), loc.state)
-    )
-end
-
-@inline function _resolve_series_anchor(
-        m::CubicInterp,
-        ::Type{A},
-        grid::AbstractVector,
-        loc,
-        extrap::AbstractExtrap
-    ) where {A <: _AxisAnchor}
-    return _resolve_anchor(m, A, grid, loc.idxL, loc.idxR, loc.xq, loc.xL, loc.xR, extrap)
-end
-
-# ─── Series-owned build loop ─────────────────────────────────────────────────
-# Mirrors `_fill_anchors!` (search → optional wrap → resolve), with two
-# differences: the anchor type (hence op/extrap representation) comes from the
-# buffer eltype, and NoExtrap throws HERE — before any output is written — via
-# the untyped `_throw_domain_error` (mixed-precision-safe `DomainError`,
-# axis-agnostic `dim = 0` phrasing).
-
-# Single lean anchor for one query — the shared build body. Scalar surfaces call
-# this directly; the batch loop below calls it per query. NoExtrap throws HERE,
-# before any output is written, via the untyped `_throw_domain_error`.
-@inline function _build_series_anchor(
-        ::Type{A},
-        x::AbstractVector{Tg},
-        xq::Real,
-        extrap::AbstractExtrap,
-        wrap::Bool,
-        searcher::Searcher
-    ) where {A <: _AxisAnchor, Tg}
-    loc = _anchor_loc(x, _promote_coord(xq, Tg), wrap, searcher)
-    if extrap isa NoExtrap && loc.state != IN_DOMAIN
-        _throw_domain_error(xq, x)
-    end
-    return _resolve_series_anchor(CubicInterp(), A, x, loc, extrap)
-end
-
-@inline function _fill_series_anchors!(
-        buffer::AbstractVector{A},
-        x::AbstractVector,
-        xqs::AbstractVector{S},
-        extrap::AbstractExtrap,
-        wrap::Bool,
-        searcher::SR
-    ) where {A <: _AxisAnchor, S <: Real, SR <: Searcher}
-    @inbounds for j in eachindex(xqs)
-        buffer[j] = _build_series_anchor(A, x, xqs[j], extrap, wrap, searcher)
-    end
-    return buffer
 end
 
 # Periodic (seam-aware) lean anchor: mirrors `_build_periodic_cubic_anchor`

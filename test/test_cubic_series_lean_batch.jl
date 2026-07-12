@@ -30,7 +30,7 @@
         (aq.state == FI.IN_DOMAIN || extrap isa ExtendExtrap || extrap isa WrapExtrap) &&
             return _ref_anchored(y, z, k, aq, op)
         extrap isa FI._ClampOrFill &&
-            return FI._constant_extrap_boundary_value(y, aq.state, n_pts, k, op, extrap, aq)
+            return FI._constant_extrap_boundary_value(y, aq.state, n_pts, k, op, extrap, typeof(aq.xq))
         return FI._throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
     function persistent_oracle(sitp, xq::AbstractVector, op)

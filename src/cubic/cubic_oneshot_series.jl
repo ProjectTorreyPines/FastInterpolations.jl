@@ -30,7 +30,7 @@
     # One lean op/extrap-aware anchor, built from the statically-typed `extrap`
     # (same helpers as the vector one-shot path); raw-vector eval per series.
     A = _cubic_series_anchor_type(op, extrap, cache.x, _coord_eltype(typeof(xq), eltype(cache.x)))
-    a = _build_series_anchor(A, cache.x, xq, extrap, extrap isa WrapExtrap, searcher)
+    a = _build_series_anchor(CubicInterp(), A, cache.x, xq, extrap, extrap isa WrapExtrap, searcher)
     vecs = _series_vectors(s)
     Tv_out = _value_type(_series_eltype(s), Tg)
     Tz = _promote_eltype(_coeff_op, eltype(cache.x), _series_eltype(s))
@@ -259,8 +259,7 @@ end
     Tq_w = _coord_eltype(Tq, eltype(cache.x))
     A = _cubic_series_anchor_type(deriv, extrap, cache.x, Tq_w)
     anchors = acquire!(pool, A, length(xqs))
-    searcher = _resolve_search(cache.x, xqs, search, nothing)
-    _fill_series_anchors!(anchors, cache.x, xqs, extrap, extrap isa WrapExtrap, searcher)
+    _fill_series_anchors_resolved!(CubicInterp(), anchors, cache.x, xqs, extrap, extrap isa WrapExtrap, search, nothing)
 
     Tz = _promote_eltype(_coeff_op, eltype(cache.x), _series_eltype(s))
     z = acquire!(pool, Tz, n)

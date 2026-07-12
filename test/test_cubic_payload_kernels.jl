@@ -13,7 +13,7 @@
     extrap = ClampExtrap()
     A = _cubic_series_anchor_type(EvalValue(), extrap, x, Float64)
     anchors = Vector{A}(undef, 2)
-    _fill_series_anchors!(anchors, x, [0.5, -0.5], extrap, false, searcher)
+    _fill_series_anchors!(FastInterpolations.CubicInterp(), anchors, x, [0.5, -0.5], extrap, false, searcher)
 
     Y = rand(11, 2)
     Z = rand(11, 2)

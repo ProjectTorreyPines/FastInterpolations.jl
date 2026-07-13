@@ -9,25 +9,27 @@
 # granularity, matching how the runner ships files to shards).
 #
 # This is a MANUAL, on-demand refresh — CI never runs it. Weights drift slowly, so
-# regenerate only occasionally (e.g. after adding a heavy test file). Prefer the 1.x
-# COMBINED ubuntu(coverage)+windows shard logs: summing both x86 legs' per-file times into
-# one table balances BOTH to ~1.01 (≈ the per-OS ceiling). ubuntu-only leaves windows at
-# ~1.3 and vice-versa — the profiles differ per file 0.15-5.8x. The suite is sharded, so
-# pass ALL FOUR shard logs of a green run (2 ubuntu + 2 windows); they are merged (per-item
-# indices restart per shard, so each log is joined independently).
+# regenerate only occasionally. TWO per-OS tables (the runner picks by Sys.iswindows):
+#   test/shard_weights.toml          DEFAULT (ubuntu/macOS; low CI variance)
+#   test/shard_weights_windows.toml  windows (HIGH per-file variance ±50% + its own heavy
+#                                    files, so its OWN ranking must drive the split — a
+#                                    shared table leaves windows at ~1.6, its own ~1.1)
+# The suite is sharded, so pass BOTH shard logs of a run (per-item indices restart per
+# shard → each log joined independently); pass 2+ runs' logs to average out the noise.
 #
 #   R=ProjectTorreyPines/FastInterpolations.jl
+#   # windows shard logs of a green run (repeat with 'ubuntu' for the default table):
 #   for id in $(gh run view <RUN_ID> -R $R --json jobs \
-#       --jq '.jobs[] | select(.name|test("1.x - (ubuntu|windows).*\\[")) | .databaseId'); do
-#     gh api repos/$R/actions/jobs/$id/logs > x86_$id.log
-#   done
-#   julia scripts/gen_shard_weights.jl x86_*.log
+#       --jq '.jobs[]|select(.name|test("1.x - windows.*\\[")).databaseId'); do
+#     gh api repos/$R/actions/jobs/$id/logs > win_$id.log; done
+#   julia scripts/gen_shard_weights.jl --out test/shard_weights_windows.toml win_*.log
+#   # DEFAULT: same with ubuntu(+windows) logs and no --out.
 #
 # Find <RUN_ID> from a recent green run:  gh run list --workflow=CI.yml -R $R
 
 const ROOT = dirname(@__DIR__)
 const TESTDIR = joinpath(ROOT, "test")
-const OUT = joinpath(TESTDIR, "shard_weights.toml")
+const DEFAULT_OUT = joinpath(TESTDIR, "shard_weights.toml")
 
 const RE_ANSI = r"\e\[[0-9;]*m"
 const RE_START = r"START \(\s*(\d+)/\d+\).* at test/(\S+?\.jl):\d+"
@@ -65,7 +67,13 @@ weight = Dict{String, Float64}(
 
 # One or more logs. A SHARDED run splits the files across shards, so a full refresh must
 # pass BOTH shard logs of a run — they are merged here. "-"/none reads stdin.
-logs = isempty(ARGS) ? ["-"] : ARGS
+# optional `--out <path>` selects the output table (default = shard_weights.toml, the
+# ubuntu/macOS table; windows uses shard_weights_windows.toml). The rest are log files.
+_args = collect(String, ARGS)
+_oi = findfirst(==("--out"), _args)
+OUT = _oi === nothing ? DEFAULT_OUT : _args[_oi + 1]
+_oi === nothing || deleteat!(_args, _oi:(_oi + 1))
+logs = isempty(_args) ? ["-"] : _args
 started = matched = 0
 for logpath in logs
     io = logpath == "-" ? stdin : open(logpath)
@@ -81,10 +89,9 @@ started == 0 && error("no ReTestItems 'START (…) at test/….jl' lines found �
 
 open(OUT, "w") do io
     println(io, "# Per-file test wall-time weights (seconds), summed across a file's testitems.")
-    println(io, "# Source: ReTestItems 1.x CI logs — COMBINED ubuntu(coverage)+windows shard")
-    println(io, "# logs, summed per file. One split balances BOTH x86 legs to ~1.01 (≈ the")
-    println(io, "# per-OS ceiling); a single-platform table leaves the other at ~1.3. macOS")
-    println(io, "# rides the same table (arm64, not the binding job).")
+    println(io, "# Per-OS (runner picks by Sys.iswindows): shard_weights.toml = DEFAULT for")
+    println(io, "# ubuntu/macOS (low variance); shard_weights_windows.toml = windows (high per-")
+    println(io, "# file variance + its own heavy files → its own ranking must drive the split).")
     println(io, "# Used by test/runtests_parallel.jl RETESTITEMS_SHARD=i/N to LPT-balance shards.")
     println(io, "# Regenerate: julia scripts/gen_shard_weights.jl <shard1.log> <shard2.log>.")
     println(io)

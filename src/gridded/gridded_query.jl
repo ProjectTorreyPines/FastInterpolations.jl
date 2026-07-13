@@ -116,11 +116,11 @@ end
 
 # ---- AbstractArray interface -------------------------------------------------
 # `GriddedQuery` is an IndexCartesian `AbstractArray`, so `size` + the per-axis
-# scalar `getindex` below are the whole required surface. Everything else —
-# linear indexing `gq[k]`, slicing (`gq[1:2, 3:4]`, `gq[:, 2]`, `gq[3:7]`),
-# broadcasting, `collect`/`map`, `first`/`last`, `eachindex`/`keys`, bounds
-# checking, and the `HasShape`/`HasEltype` iterator traits — comes from Base's
-# generic machinery. No `setindex!` is defined → read-only (like a `Range`).
+# scalar `getindex` below are the whole required surface. Linear indexing
+# `gq[k]`, broadcasting, `collect`/`map`, `first`/`last`, `eachindex`/`keys`,
+# bounds checking, and the `HasShape`/`HasEltype` iterator traits come from
+# Base's generic machinery. Cartesian *slicing* is intercepted below to stay
+# lazy (a sub-`GriddedQuery`). No `setindex!` → read-only (like a `Range`).
 Base.IndexStyle(::Type{<:GriddedQuery}) = IndexCartesian()
 
 # Per-axis scalar accessor. The `@inbounds` are LEXICAL inside the ntuple closure:
@@ -131,6 +131,28 @@ Base.@propagate_inbounds function Base.getindex(gq::GriddedQuery{T, E, N}, I::Va
     @boundscheck checkbounds(gq, I...)
     return ntuple(d -> @inbounds(gq.axes[d][I[d]]), Val(N))
 end
+
+# Lazy Cartesian slicing: when EVERY index is a vector/range/colon (no scalar
+# drop, no linear span), return a sub-`GriddedQuery` over per-axis sub-selections
+# instead of materializing a `Matrix{E}` — the value-valued analogue of
+# `CartesianIndices[1:2, 3:4]` staying a `CartesianIndices`. It preserves eltype
+# and shape, re-enters the separable fast path, and copies NO coordinate data:
+# `view` is 0-copy for both range axes (stays a range) and vector axes
+# (`SubArray`); a `Colon` returns the parent axis object untouched. Mixed
+# scalar+vector (dim drop) and single-arg linear ranges keep Base's materializing
+# behavior (arity ≠ N ⇒ this method doesn't match).
+@inline _sub_axis(ax, I) = view(ax, I)
+@inline _sub_axis(ax, ::Colon) = ax
+Base.@propagate_inbounds function Base.getindex(
+        gq::GriddedQuery{T, E, N}, I::Vararg{Union{AbstractVector, Colon}, N}
+    ) where {T, E, N}
+    @boundscheck checkbounds(gq, I...)
+    return GriddedQuery(ntuple(d -> _sub_axis(gq.axes[d], I[d]), Val(N)))
+end
+
+# N=0 Aqua disambiguator: for a 0-D grid, `gq[]` matches both `Vararg{Int,0}` and
+# `Vararg{Union{AbstractVector,Colon},0}`; the explicit 0-arg accessor dominates.
+Base.getindex(gq::GriddedQuery{T, E, 0}) where {T, E} = _gridded_point(gq, 1)
 
 # Custom `iterate` (a specialization of the AbstractArray default): forwarding to
 # `Iterators.product(gq.axes...)` traverses in the same column-major order but is

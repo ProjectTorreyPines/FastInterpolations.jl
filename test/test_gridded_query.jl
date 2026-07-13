@@ -1029,33 +1029,64 @@ end
     @test IndexStyle(typeof(gq)) === IndexCartesian()
     @test axes(gq) == (Base.OneTo(3), Base.OneTo(2))
 
-    # Cartesian slicing → sub-block of points; range dims kept, scalar dims dropped.
-    @test gq[1:2, 2:2] == reshape([(10, 2.5), (20, 2.5)], 2, 1)
+    # Cartesian slicing (all indices vectors/colons) → a LAZY sub-GriddedQuery
+    # (the value-valued analogue of CartesianIndices slicing staying a
+    # CartesianIndices), preserving eltype/shape/elements — NOT a materialized Matrix.
+    s = gq[1:2, 2:2]
+    @test s isa GriddedQuery
+    @test s == reshape([(10, 2.5), (20, 2.5)], 2, 1)          # elementwise (AbstractArray ==)
     @test size(gq[1:2, 1:2]) == (2, 2)
-    @test gq[1:2, 2] == [(10, 2.5), (20, 2.5)]                  # scalar dim dropped → Vector
-    @test gq[2, :] == [(20, 1.5), (20, 2.5)]                    # row via colon
-    @test gq[:, :] == collect(gq)                              # whole
-    @test gq[end, end] === (30, 2.5)
+    @test gq[:, :] isa GriddedQuery && gq[:, :] == collect(gq)
+    @test gq[end, end] === (30, 2.5)                          # scalar stays a point
 
-    # Linear range + colon (linear order = column-major).
-    @test gq[2:4] == [gq[2], gq[3], gq[4]]
+    # Zero-copy: vector axes become views of the PARENT data (no copy); a Colon
+    # returns the parent axis object untouched.
+    @test gq[1:2, 1:2].axes[2] isa SubArray
+    @test parent(gq[1:2, 1:2].axes[2]) === gq.axes[2]
+    @test gq[:, 1:2].axes[1] === gq.axes[1]
+
+    # Mixed scalar+vector (dim drop) and single-arg linear ranges keep Base's
+    # materializing behavior (arity ≠ ndims / a scalar index ⇒ not intercepted).
+    @test gq[1:2, 2] == [(10, 2.5), (20, 2.5)] && !(gq[1:2, 2] isa GriddedQuery)
+    @test gq[2, :] == [(20, 1.5), (20, 2.5)]
+    @test gq[2:4] == [gq[2], gq[3], gq[4]] && gq[2:4] isa Vector
     @test gq[:] == vec(collect(gq))
 
-    # Broadcasting works (standard array broadcast), shape preserved.
+    # Broadcasting + collect/similar unaffected.
     firsts = first.(gq)
-    @test firsts == [gq[i, j][1] for i in 1:3, j in 1:2]
-    @test size(firsts) == (3, 2)
-
-    # `similar` materializes a mutable Array of the point type; `collect` too.
+    @test firsts == [gq[i, j][1] for i in 1:3, j in 1:2] && size(firsts) == (3, 2)
     @test similar(gq) isa Matrix{Tuple{Int, Float64}}
     @test collect(gq) isa Matrix{Tuple{Int, Float64}}
 
-    # Read-only: mutation throws (immutable lazy grid — like a Range, whose
-    # `setindex!` method exists but errors, so we assert the runtime throw).
+    # Read-only: mutation throws (immutable lazy grid — like a Range).
     @test_throws Exception (gq[1, 1] = (0, 0.0))
 
-    # Slicing inference stays concrete.
-    @test @inferred(gq[1:2, 1:2]) isa Matrix{Tuple{Int, Float64}}
+    # Slice inference is concrete (a GriddedQuery).
+    @test @inferred(gq[1:2, 1:2]) isa GriddedQuery
+end
+
+@testitem "GriddedQuery sub-grid slicing: range-preserving, 0-copy, fast-path re-entry" setup = [Basic] begin
+    # Range axes stay ranges under slicing (keeps the O(1)-locate fast path).
+    gr = GriddedQuery((2.0:1.0:20.0, 3.0:1.0:12.0))
+    @test gr[2:8, 1:5] isa GriddedQuery
+    @test gr[2:8, 1:5].axes[1] isa AbstractRange
+    @test gr[2:8, 1:5].axes[2] isa AbstractRange
+
+    # No coordinate-data copy for a large slice: view-backed, so allocation stays
+    # tiny (a wrapper + view headers), NOT O(number of sliced points).
+    big = GriddedQuery((collect(1.0:1000.0), collect(1.0:1000.0)))
+    slice_alloc(g) = (g[1:500, 1:500]; @allocated g[1:500, 1:500])
+    @test slice_alloc(big) <= 256                            # copy would be ≫ 500·500·16 B
+
+    # A sliced sub-grid re-enters the separable interpolation fast path and
+    # agrees with pointwise evaluation over the same sub-block.
+    grid = (1.0:12.0, 1.0:10.0)
+    A = rand(12, 10)
+    itp = linear_interp(grid, A; extrap = ClampExtrap())
+    gq = GriddedQuery((range(2.0, 11.0, 8), range(2.0, 9.0, 6)))
+    sub = gq[2:6, 1:4]
+    @test sub isa GriddedQuery && size(sub) == (5, 4)
+    @test itp(sub) ≈ [itp((x, y)) for x in gq.axes[1][2:6], y in gq.axes[2][1:4]]
 end
 
 @testitem "GriddedQuery N=1 is an AbstractVector (dispatch-collision guard)" setup = [Basic] begin

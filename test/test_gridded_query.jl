@@ -924,7 +924,8 @@ end
     # standard iterators compose off the same order. enumerate also inherits the
     # shape; its column-major flatten pairs each linear index with its point.
     @test vec(collect(enumerate(gq))) == collect(enumerate(linear))
-    @test eachindex(gq) == Base.OneTo(length(gq))
+    # As an IndexCartesian AbstractArray, both index lanes are Cartesian.
+    @test eachindex(gq) == CartesianIndices(size(gq))
     @test keys(gq) == CartesianIndices(size(gq))
     @test first(gq, 2) == linear[1:2]
     @test last(gq, 2) == linear[(end - 1):end]
@@ -1016,6 +1017,71 @@ end
     @test car_alloc(gq, 2, 1) == 0
     @test end_alloc(gq) == 0
     @test step_alloc(gq) == 0
+end
+
+@testitem "GriddedQuery is an AbstractArray: slicing + array generics" setup = [Basic] begin
+    gq = GriddedQuery(([10, 20, 30], [1.5, 2.5]))               # 3×2, Int × Float64
+
+    # It IS a read-only AbstractArray of coordinate points (à la CartesianIndices).
+    @test gq isa AbstractArray{Tuple{Int, Float64}, 2}
+    @test eltype(gq) === Tuple{Int, Float64}
+    @test ndims(gq) == 2
+    @test IndexStyle(typeof(gq)) === IndexCartesian()
+    @test axes(gq) == (Base.OneTo(3), Base.OneTo(2))
+
+    # Cartesian slicing → sub-block of points; range dims kept, scalar dims dropped.
+    @test gq[1:2, 2:2] == reshape([(10, 2.5), (20, 2.5)], 2, 1)
+    @test size(gq[1:2, 1:2]) == (2, 2)
+    @test gq[1:2, 2] == [(10, 2.5), (20, 2.5)]                  # scalar dim dropped → Vector
+    @test gq[2, :] == [(20, 1.5), (20, 2.5)]                    # row via colon
+    @test gq[:, :] == collect(gq)                              # whole
+    @test gq[end, end] === (30, 2.5)
+
+    # Linear range + colon (linear order = column-major).
+    @test gq[2:4] == [gq[2], gq[3], gq[4]]
+    @test gq[:] == vec(collect(gq))
+
+    # Broadcasting works (standard array broadcast), shape preserved.
+    firsts = first.(gq)
+    @test firsts == [gq[i, j][1] for i in 1:3, j in 1:2]
+    @test size(firsts) == (3, 2)
+
+    # `similar` materializes a mutable Array of the point type; `collect` too.
+    @test similar(gq) isa Matrix{Tuple{Int, Float64}}
+    @test collect(gq) isa Matrix{Tuple{Int, Float64}}
+
+    # Read-only: mutation throws (immutable lazy grid — like a Range, whose
+    # `setindex!` method exists but errors, so we assert the runtime throw).
+    @test_throws Exception (gq[1, 1] = (0, 0.0))
+
+    # Slicing inference stays concrete.
+    @test @inferred(gq[1:2, 1:2]) isa Matrix{Tuple{Int, Float64}}
+end
+
+@testitem "GriddedQuery N=1 is an AbstractVector (dispatch-collision guard)" setup = [Basic] begin
+    gq1 = GriddedQuery(([5, 6, 7],))
+    @test gq1 isa AbstractVector{Tuple{Int}}
+    @test length(gq1) == 3
+    @test gq1[2] == (6,)
+    @test gq1[2:3] == [(6,), (7,)]
+    @test collect(gq1) == [(5,), (6,), (7,)]
+
+    # The collision risk: a 1-axis GriddedQuery is now `<: AbstractVector`, so it
+    # could match AoS-batch `queries::AbstractVector` dispatch. It must still
+    # interpolate through the tensor-product gridded path and return a 1-D array.
+    # (The supported N=1 entry is the one-shot 3-arg form; the persistent-callable
+    # 1D `itp(gq1)` is a separate pre-existing gap, unaffected by this change.)
+    grid = (2.0:10.0,)
+    data = rand(9)
+    tx = [2.5, 5.5, 8.5]
+    gq1f = GriddedQuery((tx,))
+    itp = linear_interp(grid, data; extrap = ClampExtrap())
+    out = linear_interp(grid, data, gq1f; extrap = ClampExtrap())
+    @test out isa AbstractVector
+    @test size(out) == (3,)
+    for k in 1:3
+        @test out[k] ≈ itp((tx[k],))
+    end
 end
 
 @testitem "unified interp: GriddedQuery + linear uses separable fast path" setup = [Basic] begin

@@ -159,12 +159,13 @@ if Sys.iswindows()
 end
 
 # ── args (in a function so assignments aren't trapped in a hard local scope) ──
-# Returns (patterns, nworkers). Patterns: String = case-insensitive substring,
+# Returns (patterns, nworkers, shard). Patterns: String = case-insensitive substring,
 # Regex = as-is; matched against filenames AND @testitem names, OR-combined.
-# nworkers is `nothing` unless --nworkers was passed (mode default applied in main).
+# nworkers/shard are `nothing` unless --nworkers/--shard were passed (mode defaults in main).
 function parse_args(args)
     patterns = Union{String, Regex}[]
     nworkers = nothing
+    shard = nothing
     i = firstindex(args)
     while i <= lastindex(args)
         a = args[i]
@@ -177,6 +178,9 @@ function parse_args(args)
         elseif a in ("--nworkers", "-n")
             i < lastindex(args) || error("--nworkers needs a value")
             nworkers = parse(Int, args[i + 1]); i += 2
+        elseif a in ("--shard", "-s")
+            i < lastindex(args) || error("--shard needs a value (i/N)")
+            shard = String(args[i + 1]); i += 2   # parsed in main via _parse_shard
         elseif a == "."
             i += 1                       # cc-julia-test-runner habit: project-path arg
         elseif startswith(a, "re:")
@@ -184,12 +188,25 @@ function parse_args(args)
             # (its bash parser rejects unknown options), a `re:` prefix survives any wrapper
             push!(patterns, Regex(chopprefix(a, "re:"))); i += 1
         elseif startswith(a, "-")
-            error("unknown flag: $(repr(a))  (use PATTERN / re:REGEX / --keyword KW / --regex RX / --nworkers N)")
+            error("unknown flag: $(repr(a))  (use PATTERN / re:REGEX / --keyword KW / --regex RX / --nworkers N / --shard i/N)")
         else
             push!(patterns, String(a)); i += 1   # positional pattern
         end
     end
-    return patterns, nworkers
+    return patterns, nworkers, shard
+end
+
+# Parse a "i/N" shard spec (from --shard or RETESTITEMS_SHARD) → (i, n), or nothing when
+# blank. i is 1-based; both shard jobs compute the SAME partition and pick complementary
+# slices, so 1/2 and 2/2 together == the full suite.
+function _parse_shard(s)
+    s = strip(String(s))
+    isempty(s) && return nothing
+    m = match(r"^(\d+)\s*/\s*(\d+)$", s)
+    m === nothing && error("shard spec must be \"i/N\" (got $(repr(s)))")
+    i, n = parse(Int, m[1]), parse(Int, m[2])
+    (1 <= i <= n) || error("shard spec needs 1 <= i <= N (got $i/$n)")
+    return (i, n)
 end
 
 _matches(p::String, s) = occursin(lowercase(p), lowercase(s))
@@ -319,8 +336,43 @@ function run_rewriting(f)
     end
 end
 
+# Read test/shard_weights.toml (bare-filename keys → seconds) WITHOUT the TOML stdlib,
+# which the canonical Pkg.test path deliberately avoids (see the STANDALONE guard atop this
+# file). A tiny regex reader suffices for this flat `"name.jl" = number` table.
+function _load_shard_weights(path)
+    w = Dict{String, Float64}()
+    isfile(path) || return w
+    for line in eachline(path)
+        m = match(r"^\s*\"?([\w.]+\.jl)\"?\s*=\s*([0-9.eE+-]+)", line)
+        m === nothing && continue
+        w[m[1]] = parse(Float64, m[2])
+    end
+    return w
+end
+
+# Deterministic LPT (Longest-Processing-Time) bin-pack: heaviest file first (tie-break by
+# name so both shard jobs derive the SAME partition and take complementary halves), each
+# assigned to the currently-lightest shard. Files absent from the weight table (newly added
+# tests) get the median weight. Returns the filename Set for shard `i` of `n`.
+function _shard_files(files, i, n, weights)
+    if isempty(weights)
+        @warn "shard_weights.toml missing/empty — splitting by count only (not time-balanced). \
+               Regenerate with scripts/gen_shard_weights.jl."
+    end
+    med = isempty(weights) ? 1.0 : sort(collect(values(weights)))[cld(length(weights), 2)]
+    order = sort(files; by = f -> (-get(weights, f, med), f))
+    totals = zeros(Float64, n)
+    groups = [String[] for _ in 1:n]
+    for f in order
+        j = argmin(totals)
+        push!(groups[j], f)
+        totals[j] += get(weights, f, med)
+    end
+    return Set(groups[i])
+end
+
 # Populate `shadow`, then run the selected tests through ReTestItems.
-function build_and_run(shadow, patterns, nworkers)
+function build_and_run(shadow, patterns, nworkers, shard)
     # Scan every test/ file once: collect @testsnippet defs (→ @testsetup modules), per-file
     # blank ranges (non-@testitem/@testsetup top-level exprs), and @testitem names.
     scanned = Dict{String, Tuple{String, Vector{Tuple{Int, Int}}, Vector{String}}}()
@@ -335,6 +387,27 @@ function build_and_run(shadow, patterns, nworkers)
     end
     write(joinpath(shadow, "aa_wrapper_testsetup.jl"), join(snippet_defs, "\n\n"))
 
+    # ── Optional sharding (RETESTITEMS_SHARD=i/N or --shard) ──────────────────────
+    # Partition the pattern-matching files across N shards by measured wall-time (LPT) and
+    # keep only shard i. WHOLE files travel together — a file's items are never split across
+    # shards — so intra-file compile-sharing holds and each file's summed weight is faithful.
+    # shard === nothing → keep everything (the pre-existing full-suite path).
+    shard_keep = nothing
+    if shard !== nothing
+        cand = String[]
+        for f in sort(readdir(REALTEST))
+            (startswith(f, "test_") && endswith(f, ".jl")) || continue
+            _, _, names = scanned[joinpath(REALTEST, f)]
+            file_hit = isempty(patterns) || _matches_any(patterns, f)
+            hits = file_hit ? names : Base.filter(nm -> _matches_any(patterns, nm), names)
+            (file_hit || !isempty(hits)) && push!(cand, f)
+        end
+        shard_keep = _shard_files(
+            cand, shard[1], shard[2],
+            _load_shard_weights(joinpath(REALTEST, "shard_weights.toml"))
+        )
+    end
+
     # Select test_*.jl whose FILENAME or any @testitem NAME matches a pattern (parity with
     # runtests.jl's ARGS filter); shadow each as *_tests.jl. `allowed` collects the item
     # names to run: all of them for filename-matched files, the matching ones otherwise.
@@ -345,6 +418,7 @@ function build_and_run(shadow, patterns, nworkers)
     allowed = Set{String}()
     for f in sort(readdir(REALTEST))
         (startswith(f, "test_") && endswith(f, ".jl")) || continue
+        shard_keep === nothing || f in shard_keep || continue   # this shard's slice only
         real = joinpath(REALTEST, f)
         src, cuts, names = scanned[real]
         file_hit = isempty(patterns) || _matches_any(patterns, f)
@@ -378,7 +452,8 @@ function build_and_run(shadow, patterns, nworkers)
     setupfile = joinpath(shadow, "aa_wrapper_testsetup.jl")
 
     sel = isempty(patterns) ? "all" : join(repr.(patterns), ", ") * " → $(length(allowed)) item(s)"
-    println("── partest ─ files=$(length(selected))  nworkers=$nworkers  patterns: $sel ──")
+    shardstr = shard === nothing ? "" : "  shard=$(shard[1])/$(shard[2])"
+    println("── partest ─ files=$(length(selected))  nworkers=$nworkers$shardstr  patterns: $sel ──")
     flush(stdout)
     # Rewrite shadow paths → real test/ paths in ReTestItems' streamed output.
     t = run_rewriting() do
@@ -395,15 +470,17 @@ function build_and_run(shadow, patterns, nworkers)
 end
 
 function main()
-    patterns, nworkers_cli = parse_args(ARGS)
+    patterns, nworkers_cli, shard_cli = parse_args(ARGS)
     # --nworkers wins; otherwise canonical mode follows RETESTITEMS_NWORKERS (what
     # routed runtests.jl here) and standalone defaults to 2.
     nworkers = something(
         nworkers_cli,
         STANDALONE ? 2 : parse(Int, get(ENV, "RETESTITEMS_NWORKERS", "2"))
     )
+    # --shard i/N wins; else RETESTITEMS_SHARD env (CI path); else nothing = full suite.
+    shard = _parse_shard(something(shard_cli, get(ENV, "RETESTITEMS_SHARD", "")))
     return with_shadow(SHADOW) do shadow
-        build_and_run(shadow, patterns, nworkers)
+        build_and_run(shadow, patterns, nworkers, shard)
     end
 end
 

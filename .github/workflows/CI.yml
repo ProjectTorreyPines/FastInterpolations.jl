@@ -8,6 +8,10 @@ name: CI
 # sequential CI. Extensions are split into enzyme/rest chunk jobs
 # (EXT_TEST_CHUNK, see test/ext/runtests.jl) — the Enzyme testset alone
 # dominates the extension suite on Julia 1.12.
+#
+# Julia 1.x (1.12) is the slow-compile leg, so its @testitem suite is additionally split
+# into 2 time-balanced shards per OS via RETESTITEMS_SHARD=i/N (weights in
+# test/shard_weights.toml, regen with scripts/gen_shard_weights.jl). lts stays one job/OS.
 on:
   push:
     branches:
@@ -32,7 +36,7 @@ concurrency:
 
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}${{ matrix.version == '1.x' && format(' [{0}]', matrix.shard) || '' }}
     runs-on: ${{ matrix.os }}     # public repo: ubuntu/windows = 4 vCPUs, macos = 3
     timeout-minutes: 120
     strategy:
@@ -40,6 +44,14 @@ jobs:
       matrix:
         version: ["1.x", "lts"]
         os: [ubuntu-latest, macos-latest, windows-latest]
+        # 1.x (Julia 1.12) is the slow-compile leg — split it into 2 time-balanced shards
+        # per OS (RETESTITEMS_SHARD, see test/runtests_parallel.jl). lts stays one job/OS,
+        # so exclude its 2/2 (leaving lts on shard "1/2", which the runtest step maps to the
+        # full suite via the version guard on RETESTITEMS_SHARD below).
+        shard: ["1/2", "2/2"]
+        exclude:
+          - version: "lts"
+            shard: "2/2"
         include:
           # coverage: ubuntu only. The suite is OS-identical, so ubuntu's upload fully
           # covers codecov; skipping it elsewhere trims the scoped-coverage overhead
@@ -76,14 +88,20 @@ jobs:
         env:
           SKIP_EXTENSIONS: "true"
           RETESTITEMS_NWORKERS: ${{ github.event.inputs.nworkers || matrix.nworkers }}
+          # 1.x → "1/2"/"2/2" (shard the suite); lts → "" (runner runs the full suite).
+          RETESTITEMS_SHARD: ${{ matrix.version == '1.x' && matrix.shard || '' }}
           JULIA_NUM_PRECOMPILE_TASKS: ${{ matrix.precompile_tasks }}
 
-      # Thread-safety — multi-threaded in ONE process. RETESTITEMS_NWORKERS is
-      # unset here, so these take the sequential TestItemRunner path.
+      # Thread-safety — multi-threaded in ONE process. RETESTITEMS_NWORKERS is unset here,
+      # so these take the sequential TestItemRunner path. Run once per (OS, version): on the
+      # sharded 1.x legs that means shard 1/2 only (2/2 skips → kept off its critical path);
+      # lts has a single job/OS (shard 1/2), so it always runs here.
       - name: Thread Safety Tests (4 threads)
+        if: ${{ matrix.shard == '1/2' }}
         run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=${{ matrix.coverage }}, julia_args=["-t", "4"], test_args=["test_thread_safety.jl"])'
 
       - name: Thread Safety Tests (Oversubscribe with 16 threads)
+        if: ${{ matrix.shard == '1/2' }}
         run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=${{ matrix.coverage }}, julia_args=["-t", "16"], test_args=["test_thread_safety.jl"])'
 
       - uses: julia-actions/julia-processcoverage@v1

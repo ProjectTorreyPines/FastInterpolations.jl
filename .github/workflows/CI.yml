@@ -90,6 +90,9 @@ jobs:
           RETESTITEMS_NWORKERS: ${{ github.event.inputs.nworkers || matrix.nworkers }}
           # 1.x → "1/2"/"2/2" (shard the suite); lts → "" (runner runs the full suite).
           RETESTITEMS_SHARD: ${{ matrix.version == '1.x' && matrix.shard || '' }}
+          # windows/1.x only: rerun an item whose worker dies on the non-deterministic
+          # 1.12 LLVM MachineLICM codegen crash. Elsewhere 0 (fail-fast, don't mask flakes).
+          RETESTITEMS_RETRIES: ${{ (matrix.os == 'windows-latest' && matrix.version == '1.x') && '1' || '0' }}
           JULIA_NUM_PRECOMPILE_TASKS: ${{ matrix.precompile_tasks }}
 
       # Thread-safety — multi-threaded in ONE process. RETESTITEMS_NWORKERS is unset here,

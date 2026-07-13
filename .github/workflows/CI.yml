@@ -95,17 +95,8 @@ jobs:
           RETESTITEMS_RETRIES: ${{ (matrix.os == 'windows-latest' && matrix.version == '1.x') && '1' || '0' }}
           JULIA_NUM_PRECOMPILE_TASKS: ${{ matrix.precompile_tasks }}
 
-      # Thread-safety — multi-threaded in ONE process. RETESTITEMS_NWORKERS is unset here,
-      # so these take the sequential TestItemRunner path. Run once per (OS, version): on the
-      # sharded 1.x legs that means shard 1/2 only (2/2 skips → kept off its critical path);
-      # lts has a single job/OS (shard 1/2), so it always runs here.
-      - name: Thread Safety Tests (4 threads)
-        if: ${{ matrix.shard == '1/2' }}
-        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=${{ matrix.coverage }}, julia_args=["-t", "4"], test_args=["test_thread_safety.jl"])'
-
-      - name: Thread Safety Tests (Oversubscribe with 16 threads)
-        if: ${{ matrix.shard == '1/2' }}
-        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=${{ matrix.coverage }}, julia_args=["-t", "16"], test_args=["test_thread_safety.jl"])'
+      # NB: thread-safety tests moved to their own `thread-safety` job below, to keep them
+      # off the sharded test legs' critical path (on windows/1.12 both shards are ~38 min).
 
       - uses: julia-actions/julia-processcoverage@v1
         if: ${{ matrix.coverage }}
@@ -113,6 +104,56 @@ jobs:
           # src,ext: extension code exercised by the main @testitem suite
           # (e.g. the ColorVectorSpace ext) is covered HERE, not in the
           # test-extensions job (which only runs test/ext/runtests.jl).
+          directories: src,ext
+
+      - uses: codecov/codecov-action@v5
+        if: ${{ matrix.coverage }}
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  thread-safety:
+    # Thread-safety runs multi-threaded in ONE process (sequential TestItemRunner path —
+    # RETESTITEMS_NWORKERS unset). Split into its own job so it stays OFF the sharded test
+    # legs' critical path: on windows/1.12 both shards land ~38 min, so a ~4 min thread
+    # tail on either would set the wall time. Same (version, OS) coverage as the test job.
+    name: Thread Safety - Julia ${{ matrix.version }} - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["1.x", "lts"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            coverage: true    # coverage on ubuntu only, matching the test job
+          - os: macos-latest
+            coverage: false
+          - os: windows-latest
+            coverage: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+
+      - uses: julia-actions/cache@v2
+
+      - uses: julia-actions/julia-buildpkg@v1
+
+      - name: Thread Safety Tests (4 threads)
+        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=${{ matrix.coverage }}, julia_args=["-t", "4"], test_args=["test_thread_safety.jl"])'
+
+      - name: Thread Safety Tests (Oversubscribe with 16 threads)
+        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=${{ matrix.coverage }}, julia_args=["-t", "16"], test_args=["test_thread_safety.jl"])'
+
+      - uses: julia-actions/julia-processcoverage@v1
+        if: ${{ matrix.coverage }}
+        with:
           directories: src,ext
 
       - uses: codecov/codecov-action@v5

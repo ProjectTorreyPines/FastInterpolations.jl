@@ -10,13 +10,18 @@
 #
 # This is a MANUAL, on-demand refresh — CI never runs it. Weights drift slowly, so
 # regenerate only occasionally (e.g. after adding a heavy test file). Prefer the 1.x
-# windows log: it is the binding-constraint platform the split is tuned for.
+# COVERAGE (ubuntu) logs: that profile LPT-balances BOTH x86 legs (ubuntu ~1.00, windows
+# ~1.01), whereas windows-derived weights leave ubuntu at ~1.5. The suite is sharded, so
+# pass BOTH shard logs of the run — they are merged (per-item indices restart per shard).
 #
-#   gh run view --job <JOB_ID> --log -R ProjectTorreyPines/FastInterpolations.jl > run.log
-#   julia scripts/gen_shard_weights.jl run.log        # (or: … --log | julia scripts/gen_shard_weights.jl)
+#   R=ProjectTorreyPines/FastInterpolations.jl
+#   for id in $(gh run view <RUN_ID> -R $R --json jobs \
+#       --jq '.jobs[] | select(.name|test("1.x - ubuntu")) | .databaseId'); do
+#     gh api repos/$R/actions/jobs/$id/logs > ubuntu_$id.log
+#   done
+#   julia scripts/gen_shard_weights.jl ubuntu_*.log
 #
-# Pick <JOB_ID> from a recent green "Julia 1.x - windows-latest" job:
-#   gh run list --workflow=CI.yml -R ProjectTorreyPines/FastInterpolations.jl
+# Find <RUN_ID> from a recent green run:  gh run list --workflow=CI.yml -R $R
 
 const ROOT = dirname(@__DIR__)
 const TESTDIR = joinpath(ROOT, "test")
@@ -26,39 +31,59 @@ const RE_ANSI = r"\e\[[0-9;]*m"
 const RE_START = r"START \(\s*(\d+)/\d+\).* at test/(\S+?\.jl):\d+"
 const RE_DONE = r"DONE\s+\(\s*(\d+)/\d+\).*\"\s+<?([\d.]+) secs"   # <? : the '<0.1 secs' fast items
 
-# stream lines from ARGS[1] (a saved log) or stdin ("-"/none) so the gh output can pipe in
-lines() = (isempty(ARGS) || ARGS[1] == "-") ? eachline(stdin) : eachline(ARGS[1])
-
-idx_file = Dict{Int, String}()
-idx_secs = Dict{Int, Float64}()
-for raw in lines()
-    line = replace(raw, RE_ANSI => "")
-    if (m = match(RE_START, line)) !== nothing
-        idx_file[parse(Int, m[1])] = m[2]
-    elseif (m = match(RE_DONE, line)) !== nothing
-        idx_secs[parse(Int, m[1])] = parse(Float64, m[2])
+# Join one log's START (idx→file) and DONE (idx→secs) by item index, adding each file's
+# seconds into `weight`. Per-item indices restart per shard, so EACH log must be joined
+# independently (never cat shard logs). Returns (items_started, items_matched).
+function parse_log!(weight, io)
+    idx_file = Dict{Int, String}()
+    idx_secs = Dict{Int, Float64}()
+    for raw in eachline(io)
+        line = replace(raw, RE_ANSI => "")
+        if (m = match(RE_START, line)) !== nothing
+            idx_file[parse(Int, m[1])] = m[2]
+        elseif (m = match(RE_DONE, line)) !== nothing
+            idx_secs[parse(Int, m[1])] = parse(Float64, m[2])
+        end
     end
+    n = 0
+    for (idx, file) in idx_file
+        haskey(idx_secs, idx) || continue
+        weight[file] = get(weight, file, 0.0) + idx_secs[idx]
+        n += 1
+    end
+    return length(idx_file), n
 end
-isempty(idx_file) && error("no ReTestItems 'START (…) at test/….jl' lines found — is this a parallel (RETESTITEMS_NWORKERS>0) run log?")
 
-# sum seconds per file; every test_*.jl on disk gets an entry (0 if it had no items this
-# run, so the runner treats it as weightless rather than median-guessing a phantom weight).
+# every test_*.jl on disk gets an entry (0 if it had no items in these logs, so the runner
+# treats it as weightless rather than median-guessing a phantom weight).
 weight = Dict{String, Float64}(
     basename(p) => 0.0 for p in readdir(TESTDIR; join = true)
         if startswith(basename(p), "test_") && endswith(p, ".jl")
 )
-matched = 0
-for (idx, file) in idx_file
-    haskey(idx_secs, idx) || continue
-    weight[file] = get(weight, file, 0.0) + idx_secs[idx]
-    global matched += 1
+
+# One or more logs. A SHARDED run splits the files across shards, so a full refresh must
+# pass BOTH shard logs of a run — they are merged here. "-"/none reads stdin.
+logs = isempty(ARGS) ? ["-"] : ARGS
+started = matched = 0
+for logpath in logs
+    io = logpath == "-" ? stdin : open(logpath)
+    try
+        s, n = parse_log!(weight, io)
+        global started += s
+        global matched += n
+    finally
+        logpath == "-" || close(io)
+    end
 end
+started == 0 && error("no ReTestItems 'START (…) at test/….jl' lines found — is this a parallel (RETESTITEMS_NWORKERS>0) run log?")
 
 open(OUT, "w") do io
     println(io, "# Per-file test wall-time weights (seconds), summed across a file's testitems.")
-    println(io, "# Source: ReTestItems CI log, Julia 1.x windows-latest (binding-constraint platform).")
+    println(io, "# Source: ReTestItems 1.x CI logs, the COVERAGE (ubuntu) leg — its profile")
+    println(io, "# LPT-balances both x86 legs (ubuntu ~1.00, windows ~1.01); windows-derived")
+    println(io, "# weights leave ubuntu at ~1.5. macOS rides the same table (not the binding job).")
     println(io, "# Used by test/runtests_parallel.jl RETESTITEMS_SHARD=i/N to LPT-balance shards.")
-    println(io, "# Regenerate: julia scripts/gen_shard_weights.jl <log>  (see header for the gh one-liner).")
+    println(io, "# Regenerate: julia scripts/gen_shard_weights.jl <shard1.log> <shard2.log>.")
     println(io)
     println(io, "[weights]")
     for (fn, w) in sort(collect(weight); by = kv -> (-kv[2], kv[1]))
@@ -68,7 +93,7 @@ end
 
 total = sum(values(weight))
 measured = count(>(0), values(weight))
-println("parsed items: START=$(length(idx_file)) DONE=$(length(idx_secs)) joined=$matched")
+println("parsed: $started items started, $matched joined, across $(length(logs)) log(s)")
 println("files: $(length(weight)) on disk, $measured with measured time")
 println("total wall time: $(round(total; digits = 1))s = $(round(total / 60; digits = 1)) min (summed across workers)")
 println("wrote $OUT")

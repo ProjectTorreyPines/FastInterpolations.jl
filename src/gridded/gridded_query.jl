@@ -88,16 +88,20 @@ Base.ndims(::GriddedQuery{T}) where {T} = fieldcount(T)
 @inline _query_size(gq::GriddedQuery) = size(gq)
 @inline _query_eltype(gq::GriddedQuery) = promote_type(map(eltype, gq.axes)...)
 # Shared UNCHECKED logical-point core: unravel linear index `k` (column-major)
-# and gather one coordinate per axis. `@propagate_inbounds` lets the hot
-# `_query_extract` path elide every check (`@inbounds` below) while the Base
-# `getindex` surface keeps its checks (Phase 1). `Val(fieldcount(T))` keeps the
-# ntuple over the heterogeneous axes tuple type-stable (a runtime axis index
-# would box).
-Base.@propagate_inbounds function _gridded_point(gq::GriddedQuery{T}, k::Integer) where {T}
-    ci = CartesianIndices(size(gq))[k]
-    return ntuple(d -> gq.axes[d][ci[d]], Val(fieldcount(T)))
+# and gather one coordinate per axis. The `@inbounds` are written INSIDE the
+# `ntuple` closure on purpose — `@inbounds`/`@propagate_inbounds` do NOT
+# propagate across a closure boundary, so a caller-side `@inbounds` would leave
+# the per-axis `gq.axes[d][ci[d]]` checks in place. Keeping them lexical makes
+# this core codegen-identical to the pre-collection `_query_extract`.
+# `Val(fieldcount(T))` keeps the ntuple over the heterogeneous axes tuple
+# type-stable (a runtime axis index would box). Callers guarantee `k` is in
+# range: `_query_extract` by protocol contract, `getindex` by its own
+# `@boundscheck` (a valid linear `k` ⟹ every 1-based per-axis access is valid).
+@inline function _gridded_point(gq::GriddedQuery{T}, k) where {T}
+    ci = @inbounds CartesianIndices(size(gq))[k]
+    return ntuple(d -> @inbounds(gq.axes[d][ci[d]]), Val(fieldcount(T)))
 end
-@inline _query_extract(gq::GriddedQuery, k) = @inbounds _gridded_point(gq, k)
+@inline _query_extract(gq::GriddedQuery, k) = _gridded_point(gq, k)
 
 # ---- Base collection interface (Phase 1: indexing + endpoints) --------------
 # A GriddedQuery is a read-only, shaped collection of its ∏M_d Cartesian-product
@@ -111,7 +115,11 @@ end
 
 # Linear (single Int) access: k-th logical point in column-major order. More
 # specific than the Vararg method below, so `gq[k]` never means CartesianIndex.
-Base.@propagate_inbounds Base.getindex(gq::GriddedQuery, k::Integer) = _gridded_point(gq, k)
+# Bounds-check the linear index, then reuse the unchecked core.
+@inline function Base.getindex(gq::GriddedQuery, k::Integer)
+    @boundscheck (k in Base.OneTo(length(gq))) || throw(BoundsError(gq, k))
+    return _gridded_point(gq, k)
+end
 
 # Shaped (per-axis) access: `gq[i, j, ...]` and `gq[CartesianIndex(...)]` return
 # the point at that N-D output position. Arity must match ndims; the CartesianIndex

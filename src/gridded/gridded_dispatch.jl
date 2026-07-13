@@ -164,3 +164,47 @@ end
     _gridded_eval_itp_methods!(out, itp, gq, ops, extraps, _gridded_methods(itp)) && return out
     return _nd_batch_pointwise!(vec(out), itp, gq, ops, extraps, search, hint)
 end
+
+# ============================================================================
+# GriddedQuery on a 1-D interpolant
+# ============================================================================
+# The ND callable above requires the interpolant's dimension to match the
+# query's axis count. A 1-D interpolant (`AbstractInterpolant1D`, a separate
+# hierarchy) has no such method, so without these a `GriddedQuery` fell to the
+# `Any` scalar catch-all and died deep inside with a `_resolve_grididx`
+# MethodError. Mirror the ND contract at N = 1: a 1-AXIS GriddedQuery is just its
+# coordinate vector, so forward to the 1-D batch path over `gq.axes[1]` (same
+# result as `itp(gq.axes[1])` / the `itp((xv,))` SoA form). Any other arity is a
+# dimension mismatch → a clear ArgumentError, not a leaky internal error.
+@inline (itp::AbstractInterpolant1D)(gq::GriddedQuery{<:Any, <:Any, 1}; kwargs...) =
+    itp(gq.axes[1]; kwargs...)
+@inline (itp::AbstractInterpolant1D)(out::AbstractVector, gq::GriddedQuery{<:Any, <:Any, 1}; kwargs...) =
+    itp(out, gq.axes[1]; kwargs...)
+(itp::AbstractInterpolant1D)(gq::GriddedQuery; kwargs...) = _throw_gridded_ndim_on_1d(ndims(gq))
+(itp::AbstractInterpolant1D)(::AbstractArray, gq::GriddedQuery; kwargs...) = _throw_gridded_ndim_on_1d(ndims(gq))
+
+@noinline _throw_gridded_ndim_on_1d(nd) = throw(
+    ArgumentError(
+        "cannot evaluate a GriddedQuery with $(nd) axes on a 1-D interpolant; build an " *
+            "interpolant over $(nd) grids to evaluate it, or pass a 1-axis GriddedQuery / " *
+            "coordinate vector for 1-D evaluation"
+    )
+)
+
+# N=1 Aqua disambiguators. A 1-axis `GriddedQuery` is an `AbstractVector`, so the
+# method above (`AbstractInterpolant1D` × `GriddedQuery{,,1}`) is ambiguous with
+# each concrete interpolant's anchored-query batch callable
+# (`(itp::LinearInterpolant)(::AbstractVector{<:_LinearAnchoredQuery})`, etc):
+# neither dominates (one wins the interpolant arg, the other the query arg). The
+# ambiguity is latent (a GriddedQuery never holds anchored-query elements), so
+# these concrete forwards exist solely to satisfy `Aqua.test_ambiguities`. They
+# reuse the same axis-forwarding body. Add a pair here for any future concrete
+# 1-D interpolant type that gains an anchored-query batch callable.
+for IT in (:LinearInterpolant, :ConstantInterpolant, :QuadraticInterpolant)
+    @eval begin
+        @inline (itp::$IT)(gq::GriddedQuery{<:Any, <:Any, 1}; kwargs...) =
+            itp(gq.axes[1]; kwargs...)
+        @inline (itp::$IT)(out::AbstractVector, gq::GriddedQuery{<:Any, <:Any, 1}; kwargs...) =
+            itp(out, gq.axes[1]; kwargs...)
+    end
+end

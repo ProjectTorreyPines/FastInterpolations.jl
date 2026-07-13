@@ -1069,8 +1069,6 @@ end
     # The collision risk: a 1-axis GriddedQuery is now `<: AbstractVector`, so it
     # could match AoS-batch `queries::AbstractVector` dispatch. It must still
     # interpolate through the tensor-product gridded path and return a 1-D array.
-    # (The supported N=1 entry is the one-shot 3-arg form; the persistent-callable
-    # 1D `itp(gq1)` is a separate pre-existing gap, unaffected by this change.)
     grid = (2.0:10.0,)
     data = rand(9)
     tx = [2.5, 5.5, 8.5]
@@ -1082,6 +1080,45 @@ end
     for k in 1:3
         @test out[k] ≈ itp((tx[k],))
     end
+end
+
+@testitem "1D interpolant × GriddedQuery: N=1 evaluates, N>1 errors clearly" setup = [Basic] begin
+    x = 1.0:10.0
+    y = collect(range(0.0, 3.0, 10)) .^ 2
+    itp = linear_interp((x,), y; extrap = ClampExtrap())
+
+    # A 1-axis GriddedQuery on a 1D interpolant now evaluates by forwarding to the
+    # single axis (same as the 1D batch over that vector) — no more leaky error.
+    tx = [2.5, 5.5, 8.5]
+    gq1 = GriddedQuery((tx,))
+    out = itp(gq1)
+    @test out isa AbstractVector
+    @test size(out) == (3,)
+    @test out == itp(tx)                             # bit-identical: forwards to itp(axis)
+    @test out ≈ [itp((t,)) for t in tx]
+
+    # in-place form forwards too
+    o = similar(out)
+    @test itp(o, gq1) === o
+    @test o == out
+
+    # per-call kwargs forward (deriv here)
+    @test itp(gq1; deriv = EvalDeriv1()) == itp(tx; deriv = EvalDeriv1())
+
+    # An N≥2 GriddedQuery on a 1D interpolant is a CLEAR ArgumentError naming the
+    # dimensionality — NOT the old leaky `_resolve_grididx` MethodError.
+    gq2 = GriddedQuery((tx, [1.0, 2.0]))
+    err = try
+        itp(gq2)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test !(err isa MethodError)
+    @test occursin("2 axes", sprint(showerror, err))
+    # in-place N≥2 errors too
+    @test_throws ArgumentError itp(Matrix{Float64}(undef, 3, 2), gq2)
 end
 
 @testitem "unified interp: GriddedQuery + linear uses separable fast path" setup = [Basic] begin

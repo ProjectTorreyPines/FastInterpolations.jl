@@ -166,6 +166,22 @@ function constant_interp!(
     return interp!(out, grids, data, gq; method = _constant_gridded_methods(side, bc, Val(1)), extrap = extrap, deriv = deriv)
 end
 
+# N = 1 Aqua disambiguation (allocating): a 1-axis `GriddedQuery` is an
+# `AbstractVector`, so this gridded one-shot overlaps the 1-D batch one-shot
+# `constant_interp(grids::Tuple{AbstractVector}, data::AbstractVector,
+# q::AbstractVector{<:Real})`. Latent; pin the intersection to the gridded arm.
+function constant_interp(
+        grids::Tuple{AbstractVector},
+        data::AbstractVector,
+        gq::GriddedQuery{<:Tuple{Any}};
+        bc::Union{AbstractBC, Tuple{AbstractBC}} = NoBC(),
+        side::Union{AbstractSide, Tuple{AbstractSide}} = NearestSide(),
+        extrap::Union{AbstractExtrap, Tuple{AbstractExtrap}} = NoExtrap(),
+        deriv::Union{DerivOp, Tuple{DerivOp}} = EvalValue()
+    )
+    return interp(grids, data, gq; method = _constant_gridded_methods(side, bc, Val(1)), extrap = extrap, deriv = deriv)
+end
+
 @inline function _constant_gridded_methods(side, bc, ::Val{N}) where {N}
     bcs = _resolve_bcs_nd(bc, Val(N))
     sides = _resolve_side_nd(side, Val(N))

@@ -23,7 +23,7 @@
 
 # Op-independent payload: bakes the offset `dL` (== `loc.xq - loc.xL`, carrier
 # `_coord_eltype(Tq, Tg)`). `idx` rides in the interval.
-struct _QuadraticPayload{Tdl}
+struct _QuadraticPayload{Tdl} <: _AbstractAnchorPayload
     dL::Tdl
 end
 

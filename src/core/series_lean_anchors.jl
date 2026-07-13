@@ -15,8 +15,8 @@
 # Clamp/Fill wrap the bare payload so the OOB state branch stays eval-time; every
 # other extrap uses the bare payload with a branch-free kernel. Compile-time
 # (extrap is known at the Series entry), so the anchor type is fully concrete.
-@inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}) where {P} = _StatefulPayload{P}
-@inline _maybe_stateful_payload(::AbstractExtrap, ::Type{P}) where {P} = P
+@inline _maybe_stateful_payload(::_ClampOrFill, ::Type{P}) where {P <: _AbstractAnchorPayload} = _StatefulPayload{P}
+@inline _maybe_stateful_payload(::AbstractExtrap, ::Type{P}) where {P <: _AbstractAnchorPayload} = P
 
 # ─── Resolution (method-generic; family provides `_resolve_anchor(m, …)`) ─────
 # `m::M` (type parameter) forces specialization on the concrete interp singleton so

@@ -18,7 +18,7 @@
 # Constant: the physical interval is stored; `select_right` picks the node at
 # gather time. Carrier `one(Tq)` is reconstructed from the type param (op-agnostic
 # — the derivative `* 0` is a gather-kernel concern, not a payload one).
-struct _ConstantValuePayload{Tq}
+struct _ConstantValuePayload{Tq} <: _AbstractAnchorPayload
     select_right::Bool
 end
 @inline _carrier(::_ConstantValuePayload{Tq}) where {Tq} = one(Tq)

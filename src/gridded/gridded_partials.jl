@@ -10,7 +10,7 @@
 # Cubic/quadratic partials cell geometry: distinct named payloads (byte-equal
 # fields today, but the quadratic cell kernel does not consume `h`). One method
 # per method type so each carries its own payload identity.
-struct _CubicPartialsPayloadND{Tdl, Th, Tinv}
+struct _CubicPartialsPayloadND{Tdl, Th, Tinv} <: _AbstractAnchorPayload
     dL::Tdl
     h::Th
     inv_h::Tinv
@@ -18,7 +18,7 @@ end
 
 # Quadratic omits `h`: its cell kernel (`_quadratic_kernel_nd`) works in physical
 # coords and consumes only `inv_h`/`dL`.
-struct _QuadraticPartialsPayloadND{Tdl, Tinv}
+struct _QuadraticPartialsPayloadND{Tdl, Tinv} <: _AbstractAnchorPayload
     dL::Tdl
     inv_h::Tinv
 end

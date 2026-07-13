@@ -11,19 +11,19 @@
 # Weight formulas reuse `_compute_anchor_weights` verbatim → bit-identical to
 # the corresponding `_CubicAdjointAnchor` field (w0/w1/w2/w3) by construction.
 
-struct _CubicValuePayload1D{Tq}
+struct _CubicValuePayload1D{Tq} <: _AbstractAnchorPayload
     w::NTuple{4, Tq}
 end
-struct _CubicDeriv1Payload1D{Tq}
+struct _CubicDeriv1Payload1D{Tq} <: _AbstractAnchorPayload
     w::NTuple{4, Tq}
 end
-struct _CubicDeriv2Payload1D{Tq}
+struct _CubicDeriv2Payload1D{Tq} <: _AbstractAnchorPayload
     w::NTuple{2, Tq}
 end
-struct _CubicDeriv3Payload1D{Tq}
+struct _CubicDeriv3Payload1D{Tq} <: _AbstractAnchorPayload
     w::NTuple{2, Tq}
 end
-struct _CubicZeroPayload1D{Tq} end   # DerivOp{N≥4}: result is a carrier zero, no weights
+struct _CubicZeroPayload1D{Tq} <: _AbstractAnchorPayload end   # DerivOp{N≥4}: result is a carrier zero, no weights
 
 # Weighted payloads share one resolve arm; the zero payload has its own.
 const _CubicWeightedPayload1D = Union{

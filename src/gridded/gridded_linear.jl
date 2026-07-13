@@ -31,13 +31,13 @@
 # zero → a zero-size payload. The per-op payload type is chosen once in
 # `_axis_anchor_type`; `_resolve_anchor` and the fused/fullbuffer kernels then
 # dispatch on it.
-struct _LinearValuePayload{Talpha}
+struct _LinearValuePayload{Talpha} <: _AbstractAnchorPayload
     alpha::Talpha
 end
-struct _LinearDeriv1Payload{Talpha, Tinv}
+struct _LinearDeriv1Payload{Talpha, Tinv} <: _AbstractAnchorPayload
     inv_h::Tinv
 end
-struct _LinearZeroPayload{Talpha} end
+struct _LinearZeroPayload{Talpha} <: _AbstractAnchorPayload end
 
 @inline _linear_payload_type(::EvalValue, ::Type{Tα}, ::Type{Tinv}) where {Tα, Tinv} = _LinearValuePayload{Tα}
 @inline _linear_payload_type(::EvalDeriv1, ::Type{Tα}, ::Type{Tinv}) where {Tα, Tinv} = _LinearDeriv1Payload{Tα, Tinv}

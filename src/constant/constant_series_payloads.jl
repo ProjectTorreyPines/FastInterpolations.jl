@@ -24,7 +24,7 @@
 
 # Deriv gather payload: the node is `idxL` normally, `idxR` (== n) at domain-max
 # (matches the value payload there for NaN cell-locality). The kernel scales by 0.
-struct _ConstantZeroPayload{Tq}
+struct _ConstantZeroPayload{Tq} <: _AbstractAnchorPayload
     select_right::Bool
 end
 

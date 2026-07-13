@@ -11,10 +11,19 @@
 # `interval::I` is the physical search cell (shared `_AbstractIndices{2}` layer,
 # same as `_AnchorLoc`): ordinary axes store one index (`_ContiguousIndices{2}`,
 # right tap derived), exclusive-periodic axes store both (`_ExplicitIndices{2}`,
-# the seam wraps). `payload::P` is a concrete named type — its identity is the
-# method/op tag, so no phantom method parameter is needed.
+# the seam wraps). `payload::P` is a concrete named `_AbstractAnchorPayload`
+# subtype — its identity is the method/op tag, so no phantom method parameter is
+# needed.
+#
+# This file also owns `_AbstractAnchorPayload`: the internal nominal root every
+# payload occupying the `P` slot of `_AxisAnchor` subtypes. It is a marker only
+# (no shared behavior/trait fallback) and stays unexported. `P` remains a
+# concrete subtype at every instantiation, so the bound adds a type invariant
+# without dynamic dispatch or layout change.
 
-struct _AxisAnchor{I <: _AbstractIndices{2}, P}
+abstract type _AbstractAnchorPayload end
+
+struct _AxisAnchor{I <: _AbstractIndices{2}, P <: _AbstractAnchorPayload}
     interval::I
     payload::P
 end
@@ -40,7 +49,7 @@ end
 # classification. Selected at anchor-build time for the flat extraps
 # (Clamp/Fill) whose OOB handling needs an eval-time state branch; all other
 # extraps use the bare payload and a branch-free kernel.
-struct _StatefulPayload{P}
+struct _StatefulPayload{P <: _AbstractAnchorPayload} <: _AbstractAnchorPayload
     inner::P
     state::UInt8      # IN_DOMAIN / OOB_LEFT / OOB_RIGHT
 end

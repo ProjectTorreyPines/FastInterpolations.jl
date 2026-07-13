@@ -36,7 +36,7 @@
 # Geometry-only `(dL, h, inv_h)`; slopes are data-dependent and computed in-pass.
 # All fields are consumed by the Hermite basis for every op, so the payload is
 # not op-minimal (unlike Linear).
-struct _LocalHermitePayload{Tdl, Th, Tinv}
+struct _LocalHermitePayload{Tdl, Th, Tinv} <: _AbstractAnchorPayload
     dL::Tdl
     h::Th
     inv_h::Tinv

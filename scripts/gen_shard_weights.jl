@@ -10,16 +10,18 @@
 #
 # This is a MANUAL, on-demand refresh — CI never runs it. Weights drift slowly, so
 # regenerate only occasionally (e.g. after adding a heavy test file). Prefer the 1.x
-# COVERAGE (ubuntu) logs: that profile LPT-balances BOTH x86 legs (ubuntu ~1.00, windows
-# ~1.01), whereas windows-derived weights leave ubuntu at ~1.5. The suite is sharded, so
-# pass BOTH shard logs of the run — they are merged (per-item indices restart per shard).
+# COMBINED ubuntu(coverage)+windows shard logs: summing both x86 legs' per-file times into
+# one table balances BOTH to ~1.01 (≈ the per-OS ceiling). ubuntu-only leaves windows at
+# ~1.3 and vice-versa — the profiles differ per file 0.15-5.8x. The suite is sharded, so
+# pass ALL FOUR shard logs of a green run (2 ubuntu + 2 windows); they are merged (per-item
+# indices restart per shard, so each log is joined independently).
 #
 #   R=ProjectTorreyPines/FastInterpolations.jl
 #   for id in $(gh run view <RUN_ID> -R $R --json jobs \
-#       --jq '.jobs[] | select(.name|test("1.x - ubuntu")) | .databaseId'); do
-#     gh api repos/$R/actions/jobs/$id/logs > ubuntu_$id.log
+#       --jq '.jobs[] | select(.name|test("1.x - (ubuntu|windows).*\\[")) | .databaseId'); do
+#     gh api repos/$R/actions/jobs/$id/logs > x86_$id.log
 #   done
-#   julia scripts/gen_shard_weights.jl ubuntu_*.log
+#   julia scripts/gen_shard_weights.jl x86_*.log
 #
 # Find <RUN_ID> from a recent green run:  gh run list --workflow=CI.yml -R $R
 
@@ -79,9 +81,10 @@ started == 0 && error("no ReTestItems 'START (…) at test/….jl' lines found �
 
 open(OUT, "w") do io
     println(io, "# Per-file test wall-time weights (seconds), summed across a file's testitems.")
-    println(io, "# Source: ReTestItems 1.x CI logs, the COVERAGE (ubuntu) leg — its profile")
-    println(io, "# LPT-balances both x86 legs (ubuntu ~1.00, windows ~1.01); windows-derived")
-    println(io, "# weights leave ubuntu at ~1.5. macOS rides the same table (not the binding job).")
+    println(io, "# Source: ReTestItems 1.x CI logs — COMBINED ubuntu(coverage)+windows shard")
+    println(io, "# logs, summed per file. One split balances BOTH x86 legs to ~1.01 (≈ the")
+    println(io, "# per-OS ceiling); a single-platform table leaves the other at ~1.3. macOS")
+    println(io, "# rides the same table (arm64, not the binding job).")
     println(io, "# Used by test/runtests_parallel.jl RETESTITEMS_SHARD=i/N to LPT-balance shards.")
     println(io, "# Regenerate: julia scripts/gen_shard_weights.jl <shard1.log> <shard2.log>.")
     println(io)

@@ -461,6 +461,11 @@ function build_and_run(shadow, patterns, nworkers, shard)
             ti_filter, setupfile, selected...;
             nworkers = nworkers,
             nworker_threads = 1,
+            # Rerun an item whose worker DIES (not just failing tests) — covers the
+            # non-deterministic Windows-1.12 LLVM codegen crash. Env-driven (ReTestItems'
+            # own default), so local stays fail-fast at 0; CI sets RETESTITEMS_RETRIES=1
+            # for windows/1.x only.
+            retries = parse(Int, get(ENV, "RETESTITEMS_RETRIES", "0")),
             verbose_results = false,
             report = false,
             logs = :issues,

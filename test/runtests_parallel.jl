@@ -402,10 +402,12 @@ function build_and_run(shadow, patterns, nworkers, shard)
             hits = file_hit ? names : Base.filter(nm -> _matches_any(patterns, nm), names)
             (file_hit || !isempty(hits)) && push!(cand, f)
         end
-        shard_keep = _shard_files(
-            cand, shard[1], shard[2],
-            _load_shard_weights(joinpath(REALTEST, "shard_weights.toml"))
-        )
+        # Per-OS weights: windows CI has high per-file variance + its own heavy files, so it
+        # gets a dedicated table; ubuntu/macOS share the default (they balance on it). Fall
+        # back to the default if the per-OS file is absent.
+        wpath = joinpath(REALTEST, Sys.iswindows() ? "shard_weights_windows.toml" : "shard_weights.toml")
+        isfile(wpath) || (wpath = joinpath(REALTEST, "shard_weights.toml"))
+        shard_keep = _shard_files(cand, shard[1], shard[2], _load_shard_weights(wpath))
     end
 
     # Select test_*.jl whose FILENAME or any @testitem NAME matches a pattern (parity with

@@ -188,7 +188,7 @@ end
 # Query extraction dispatches via _query_extract on query container type.
 
 @inline function _interp_nd_batch!(
-        output::AbstractVector,
+        output::AbstractArray,
         itp::AbstractInterpolantND{Tg, Tv, N},
         queries,
         extraps_eff::Tuple{Vararg{AbstractExtrap, N}},
@@ -317,6 +317,21 @@ end
 # Protocol functions (_query_length, _query_extract, _query_eltype) dispatch
 # directly on query container type — no normalization needed.
 
+# Shaped in-place batch: `output` must match `_query_size(queries)` EXACTLY — a
+# length-only match would silently flatten a matrix query into a vector sink. The
+# `AbstractVector` peer keeps the established vector-batch dispatch stable; both route
+# through one shape-checking helper. (Column-major linear indexing fills the shape.)
+function (itp::AbstractInterpolantND{Tg, Tv, N})(
+        output::AbstractArray,
+        queries;
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        extrap::Union{Nothing, AbstractExtrap, Tuple} = nothing,
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    return _nd_batch_inplace!(itp, output, queries, deriv, extrap, search, hint)
+end
+
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
         output::AbstractVector,
         queries;
@@ -325,9 +340,14 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
+    return _nd_batch_inplace!(itp, output, queries, deriv, extrap, search, hint)
+end
+
+@inline function _nd_batch_inplace!(
+        itp::AbstractInterpolantND{Tg, Tv, N}, output, queries, deriv, extrap, search, hint
+    ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
-    nq = _query_length(queries)
-    length(output) == nq || _throw_query_output_mismatch(nq, length(output))
+    _check_query_output_size(output, queries)
     # `extrap` (nothing → stored; InBounds → fast-path; else errors) resolved per-axis.
     extraps0 = _resolve_extrap_override_nd(itp, extrap)
     return _nd_batch_pointwise!(output, itp, queries, ops, extraps0, search, hint)
@@ -339,7 +359,7 @@ end
 # already override-resolved; `ops` already per-axis. HeteroND rides this too —
 # it is an `AbstractInterpolantND`, so the resolver threads its stored state.
 @inline function _nd_batch_pointwise!(
-        output::AbstractVector,
+        output::AbstractArray,
         itp::AbstractInterpolantND{Tg, Tv, N},
         queries,
         ops::Tuple{Vararg{AbstractEvalOp, N}},
@@ -372,6 +392,6 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     Tq = _query_eltype(queries)
-    output = Vector{_promote_eltype(itp, Tq)}(undef, _query_length(queries))
+    output = _alloc_query_output(_promote_eltype(itp, Tq), queries)
     return itp(output, queries; deriv = deriv, extrap = extrap, search = search, hint = hint)
 end

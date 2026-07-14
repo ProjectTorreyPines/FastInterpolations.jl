@@ -149,9 +149,8 @@ end
 
 # Default (non-separable) arm: first ask the shared method dispatcher whether
 # this interpolant can use a separable GriddedQuery kernel. If not, use the
-# shared point-wise batch core writing through a flat, aliasing view of the N-D
-# output (GriddedQuery unravels column-major, so linear-index fills land at the
-# right N-D position).
+# shared point-wise batch core, writing directly into the N-D output (GriddedQuery
+# unravels column-major, so linear-index fills land at the right N-D position).
 @inline function _gridded_eval_itp!(
         out::AbstractArray{<:Any, N},
         itp::AbstractInterpolantND{Tg, Tv, N},
@@ -162,7 +161,7 @@ end
         hint
     ) where {Tg, Tv, N}
     _gridded_eval_itp_methods!(out, itp, gq, ops, extraps, _gridded_methods(itp)) && return out
-    return _nd_batch_pointwise!(vec(out), itp, gq, ops, extraps, search, hint)
+    return _nd_batch_pointwise!(out, itp, gq, ops, extraps, search, hint)
 end
 
 # ============================================================================

@@ -18,6 +18,8 @@
 # ── Protocol function 1: query count ──
 
 @inline _query_length(q::Tuple{Vararg{AbstractVector}}) = length(q[1])
+# Shaped SoA (tuple of same-size coordinate arrays): count from the first axis.
+@inline _query_length(q::Tuple{AbstractArray, Vararg{AbstractArray}}) = length(first(q))
 @inline _query_length(q) = length(q)
 
 # ── Optional: query output shape ──
@@ -29,6 +31,24 @@
 # is a flat 1-D output (a plain vector), so ordinary batch queries are unchanged.
 
 @inline _query_size(q) = (_query_length(q),)
+# An ordinary array query reports its own shape, so the allocating path returns an
+# `Array` of that shape and in-place callers pass a matching array (column-major
+# linear indexing lands each result at its N-D slot). SoA reports the shared axis size.
+@inline _query_size(q::AbstractArray) = size(q)
+@inline _query_size(q::Tuple{AbstractArray, Vararg{AbstractArray}}) = size(first(q))
+
+# ── Optional: shaped output allocation + exact-size validation ──
+# Single source of truth for batch output shape. Allocating builds a dense `Array`
+# of the query shape (never `similar(q)`: a query container may be read-only, lazy,
+# or point-valued). In-place requires an EXACT size match — equal length with a
+# different shape is rejected (a length-4 vector is not a valid sink for a 2×2 query).
+@inline _alloc_query_output(::Type{T}, q) where {T} = Array{T}(undef, _query_size(q))
+
+@inline function _check_query_output_size(output, q)
+    expected = _query_size(q)
+    size(output) == expected || _throw_query_output_size_mismatch(expected, size(output))
+    return nothing
+end
 
 # ── Protocol function 2: k-th query point extraction ──
 # User-facing: simple getindex-like interface. No Val{N} needed.
@@ -36,6 +56,9 @@
 # SoA returns NTuple directly (N known from tuple type parameter).
 
 @inline _query_extract(q::Tuple{Vararg{AbstractVector, N}}, k) where {N} =
+    ntuple(d -> @inbounds(q[d][k]), Val(N))
+# Shaped SoA: linear index k into each coordinate array (column-major pairwise).
+@inline _query_extract(q::Tuple{Vararg{AbstractArray, N}}, k) where {N} =
     ntuple(d -> @inbounds(q[d][k]), Val(N))
 @inline _query_extract(q, k) = @inbounds q[k]
 
@@ -54,6 +77,7 @@
 # e.g. Vector{NTuple{2,Float64}} → Float64, not NTuple{2,Float64}.
 
 @inline _query_eltype(q::Tuple{Vararg{AbstractVector}}) = promote_type(map(eltype, q)...)
+@inline _query_eltype(q::Tuple{AbstractArray, Vararg{AbstractArray}}) = promote_type(map(eltype, q)...)
 @inline _query_eltype(q) = _scalar_eltype(eltype(q))
 
 # Scalar type extraction helpers — dispatch on element type
@@ -84,6 +108,16 @@
     return nothing
 end
 
+# Shaped SoA: every coordinate array must share the SAME size, not merely length
+# (a 2×2 and a 4×1 have equal length but different shape and cannot align pairwise).
+@inline function _query_validate(q::Tuple{AbstractArray, Vararg{AbstractArray}})
+    sz = size(first(q))
+    for d in 2:length(q)
+        size(q[d]) == sz || _throw_query_axis_size_mismatch(sz, d, size(q[d]))
+    end
+    return nothing
+end
+
 # ── Dimensionality validation ──
 # SoA: ndims = tuple length (checked directly, no point extraction needed).
 # Generic (AoS, SVector, etc.): check the first point's length
@@ -92,6 +126,14 @@ end
 # SoA: ndims is the tuple length (number of axes), not a point property.
 # Avoids BoundsError from _query_extract when axes have inconsistent lengths.
 function _query_check_ndims(queries::Tuple{Vararg{AbstractVector}}, ::Val{N}) where {N}
+    length(queries) == N || _throw_query_ndims_mismatch(N, length(queries))
+    return nothing
+end
+
+# Shaped SoA: ndims = number of axes (tuple length). Mandatory peer — without it a
+# tuple-of-arrays falls to the generic method below, which reads the first WHOLE
+# array as "point 1" and throws a spurious ndims mismatch.
+function _query_check_ndims(queries::Tuple{AbstractArray, Vararg{AbstractArray}}, ::Val{N}) where {N}
     length(queries) == N || _throw_query_ndims_mismatch(N, length(queries))
     return nothing
 end
@@ -109,8 +151,12 @@ end
 
 @noinline _throw_query_output_mismatch(nq, no) =
     throw(DimensionMismatch("output length $no != query length $nq"))
+@noinline _throw_query_output_size_mismatch(expected, got) =
+    throw(DimensionMismatch("output size $got != query size $expected"))
 @noinline _throw_query_axis_mismatch(n1, d, nd) =
     throw(DimensionMismatch("query axis lengths differ: dim 1 has $n1, dim $d has $nd"))
+@noinline _throw_query_axis_size_mismatch(sz1, d, szd) =
+    throw(DimensionMismatch("query axis sizes differ: dim 1 has size $sz1, dim $d has size $szd"))
 @noinline _throw_query_ndims_mismatch(expected, got) =
     throw(DimensionMismatch("expected $expected-dimensional query points, got $got-dimensional"))
 

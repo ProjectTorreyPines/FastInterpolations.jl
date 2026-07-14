@@ -46,14 +46,45 @@ itp(out, gq)                   # writes into the shaped output array
 This is different from the usual ND batch query `(xqs, yqs)`, which evaluates
 pairwise points `(xqs[i], yqs[i])` and returns a vector. `GriddedQuery(xqs,
 yqs)` evaluates all combinations and returns a matrix.
+
+# Collection interface
+
+A `GriddedQuery` is a read-only, immutable `AbstractArray{E, N}` of its
+Cartesian-product coordinate points — the lazy, non-materialized grid of points,
+analogous to `CartesianIndices` but yielding coordinate tuples instead of index
+tuples. `E` is the point tuple type (`Tuple` of per-axis element types), `N` the
+number of axes. Its column-major order (axis 1 varies fastest) is exactly the
+interpolation output order, so `itp(gq)[k] == itp(gq[k])` (up to the method's
+normal floating-point contract). It has no `setindex!` — it is never mutated.
+
+```julia
+gq = GriddedQuery(([10, 20, 30], [1.5, 2.5]))   # 3×2 grid of points
+
+size(gq)            # (3, 2)
+eltype(gq)          # Tuple{Int, Float64}  — the coordinate point type
+gq[2]               # (20, 1.5)   — k-th point, column-major (linear index)
+gq[1, 2]            # (10, 2.5)   — shaped index (also gq[CartesianIndex(1, 2)])
+gq[1:2, 2]          # [(10, 2.5), (20, 2.5)]  — slicing (scalar dim dropped)
+gq[:, 1]            # [(10, 1.5), (20, 1.5), (30, 1.5)]  — a column of points
+first.(gq)          # 3×2 Matrix{Int} — broadcasting works
+collect(gq)         # 3×2 Matrix of point tuples
+map(itp, gq)        # 3×2 Matrix — the shaped point-wise reference for itp(gq)
+```
 """
-struct GriddedQuery{T <: Tuple}
+struct GriddedQuery{T <: Tuple, E, N} <: AbstractArray{E, N}
     axes::T
+end
+# `E` (point tuple type) and `N` (axis count) are derived from the axes tuple
+# type `T`, so callers only ever pass the axes.
+@inline _gq_point_eltype(::Type{T}) where {T <: Tuple} =
+    Tuple{ntuple(d -> eltype(fieldtype(T, d)), Val(fieldcount(T)))...}
+function GriddedQuery(axes::Tuple{Vararg{AbstractVector}})
+    T = typeof(axes)
+    return GriddedQuery{T, _gq_point_eltype(T), fieldcount(T)}(axes)
 end
 GriddedQuery(axes::AbstractVector...) = GriddedQuery(axes)
 
 Base.size(gq::GriddedQuery) = map(length, gq.axes)
-Base.ndims(::GriddedQuery{T}) where {T} = fieldcount(T)
 
 # ---- ND query protocol ------------------------------------------------------
 # A GriddedQuery is a batch of ∏M_d cartesian-product points in COLUMN-MAJOR
@@ -67,10 +98,68 @@ Base.ndims(::GriddedQuery{T}) where {T} = fieldcount(T)
 @inline _query_length(gq::GriddedQuery) = prod(size(gq))
 @inline _query_size(gq::GriddedQuery) = size(gq)
 @inline _query_eltype(gq::GriddedQuery) = promote_type(map(eltype, gq.axes)...)
-@inline function _query_extract(gq::GriddedQuery{T}, k) where {T}
+# Shared UNCHECKED logical-point core: unravel linear index `k` (column-major)
+# and gather one coordinate per axis. The `@inbounds` are written INSIDE the
+# `ntuple` closure on purpose — `@inbounds`/`@propagate_inbounds` do NOT
+# propagate across a closure boundary, so a caller-side `@inbounds` would leave
+# the per-axis `gq.axes[d][ci[d]]` checks in place. Keeping them lexical makes
+# this core codegen-identical to the pre-collection `_query_extract`.
+# `Val(fieldcount(T))` keeps the ntuple over the heterogeneous axes tuple
+# type-stable (a runtime axis index would box). Callers guarantee `k` is in
+# range: `_query_extract` by protocol contract, `getindex` by its own
+# `@boundscheck` (a valid linear `k` ⟹ every 1-based per-axis access is valid).
+@inline function _gridded_point(gq::GriddedQuery{T}, k) where {T}
     ci = @inbounds CartesianIndices(size(gq))[k]
     return ntuple(d -> @inbounds(gq.axes[d][ci[d]]), Val(fieldcount(T)))
 end
+@inline _query_extract(gq::GriddedQuery, k) = _gridded_point(gq, k)
+
+# ---- AbstractArray interface -------------------------------------------------
+# `GriddedQuery` is an IndexCartesian `AbstractArray`, so `size` + the per-axis
+# scalar `getindex` below are the whole required surface. Linear indexing
+# `gq[k]`, broadcasting, `collect`/`map`, `first`/`last`, `eachindex`/`keys`,
+# bounds checking, and the `HasShape`/`HasEltype` iterator traits come from
+# Base's generic machinery. Cartesian *slicing* is intercepted below to stay
+# lazy (a sub-`GriddedQuery`). No `setindex!` → read-only (like a `Range`).
+Base.IndexStyle(::Type{<:GriddedQuery}) = IndexCartesian()
+
+# Per-axis scalar accessor. The `@inbounds` are LEXICAL inside the ntuple closure:
+# `@inbounds` does not cross the closure boundary (same reason as `_gridded_point`),
+# so a caller-side `@inbounds gq[i, j]` still needs them here to elide the per-axis
+# checks. `checkbounds` (from AbstractArray) validates the indices against `size(gq)`.
+Base.@propagate_inbounds function Base.getindex(gq::GriddedQuery{T, E, N}, I::Vararg{Int, N}) where {T, E, N}
+    @boundscheck checkbounds(gq, I...)
+    return ntuple(d -> @inbounds(gq.axes[d][I[d]]), Val(N))
+end
+
+# Lazy Cartesian slicing: when EVERY index is a vector/range/colon (no scalar
+# drop, no linear span), return a sub-`GriddedQuery` over per-axis sub-selections
+# instead of materializing a `Matrix{E}` — the value-valued analogue of
+# `CartesianIndices[1:2, 3:4]` staying a `CartesianIndices`. It preserves eltype
+# and shape, re-enters the separable fast path, and copies NO coordinate data:
+# `view` is 0-copy for both range axes (stays a range) and vector axes
+# (`SubArray`); a `Colon` returns the parent axis object untouched. Mixed
+# scalar+vector (dim drop) and single-arg linear ranges keep Base's materializing
+# behavior (arity ≠ N ⇒ this method doesn't match).
+@inline _sub_axis(ax, I) = view(ax, I)
+@inline _sub_axis(ax, ::Colon) = ax
+Base.@propagate_inbounds function Base.getindex(
+        gq::GriddedQuery{T, E, N}, I::Vararg{Union{AbstractVector, Colon}, N}
+    ) where {T, E, N}
+    @boundscheck checkbounds(gq, I...)
+    return GriddedQuery(ntuple(d -> _sub_axis(gq.axes[d], I[d]), Val(N)))
+end
+
+# N=0 Aqua disambiguator: for a 0-D grid, `gq[]` matches both `Vararg{Int,0}` and
+# `Vararg{Union{AbstractVector,Colon},0}`; the explicit 0-arg accessor dominates.
+Base.getindex(gq::GriddedQuery{T, E, 0}) where {T, E} = _gridded_point(gq, 1)
+
+# Custom `iterate` (a specialization of the AbstractArray default): forwarding to
+# `Iterators.product(gq.axes...)` traverses in the same column-major order but is
+# measurably faster for a full sweep than the getindex-per-step default, and stays
+# 0-alloc. `collect`/`map`/`enumerate` still preserve `size(gq)` via `HasShape`.
+@inline Base.iterate(gq::GriddedQuery) = iterate(Iterators.product(gq.axes...))
+@inline Base.iterate(gq::GriddedQuery, state) = iterate(Iterators.product(gq.axes...), state)
 
 # ---- per-axis anchor resolution --------------------------------------------
 # Anchor-build searcher. Range grids resolve to the O(1) direct arm as usual.

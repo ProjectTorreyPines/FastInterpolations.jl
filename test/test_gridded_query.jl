@@ -806,6 +806,364 @@ end
     @test _query_extract(gq, 21) == (gq.axes[1][1], gq.axes[2][2])
 end
 
+@testitem "GriddedQuery collection: indexing + endpoints (Phase 1)" setup = [Basic] begin
+    # A GriddedQuery is a read-only, shaped collection of its Cartesian-product
+    # points, in the SAME column-major order as interpolation output (axis 1
+    # fastest). Phase 1 pins random access + endpoints; iteration is Phase 2.
+
+    # Heterogeneous axes (Int × Float64): a 3×2 grid of 6 logical points.
+    gq = GriddedQuery(([10, 20, 30], [1.5, 2.5]))
+    @test length(gq) == 6
+    @test firstindex(gq) == 1
+    @test lastindex(gq) == 6
+
+    # column-major linear order: axis 1 varies fastest
+    @test gq[1] == (10, 1.5)
+    @test gq[2] == (20, 1.5)
+    @test gq[3] == (30, 1.5)
+    @test gq[4] == (10, 2.5)
+    @test gq[5] == (20, 2.5)
+    @test gq[6] == (30, 2.5)
+
+    # Cartesian + CartesianIndex access lands at the same logical point as the
+    # matching linear index.
+    @test gq[2, 1] == gq[2]
+    @test gq[1, 2] == gq[4]
+    @test gq[3, 2] == gq[6]
+    @test gq[CartesianIndex(3, 2)] == gq[6]
+    @test gq[CartesianIndex(1, 1)] == gq[1]
+
+    # endpoints are O(1) logical points, not scalars
+    @test first(gq) == (10, 1.5)
+    @test last(gq) == (30, 2.5)
+    @test first(gq) === gq[begin]
+    @test last(gq) === gq[end]
+
+    # heterogeneous point type is inferred and preserved (Base.eltype semantics
+    # are pinned in Phase 2; here we only pin the concrete returned tuple type).
+    @test @inferred(gq[1]) === (10, 1.5)
+    @test typeof(gq[1]) === Tuple{Int, Float64}
+
+    # bounds errors at the linear extremes
+    @test_throws BoundsError gq[0]
+    @test_throws BoundsError gq[7]
+
+    # 1D query: shape (3,), points are 1-tuples
+    gq1 = GriddedQuery(([5, 6, 7],))
+    @test length(gq1) == 3
+    @test gq1[2] == (6,)
+    @test first(gq1) == (5,)
+    @test last(gq1) == (7,)
+
+    # 0D query: no axes → one logical point, the empty tuple (matches a 0-D
+    # interpolation result holding a single element).
+    gq0 = GriddedQuery()
+    @test length(gq0) == 1
+    @test gq0[1] == ()
+    @test first(gq0) == ()
+    @test last(gq0) == ()
+
+    # empty axis → zero-length collection; endpoint access errors cleanly.
+    gqe = GriddedQuery(([1.0, 2.0], Float64[]))
+    @test length(gqe) == 0
+    @test lastindex(gqe) == 0
+    @test_throws BoundsError first(gqe)
+    @test_throws BoundsError last(gqe)
+end
+
+@testitem "GriddedQuery collection: itp(gq) alignment (Phase 1)" setup = [Basic] begin
+    # Core invariant: the shaped interpolation output agrees with pointwise
+    # evaluation at each logical point, both linearly and Cartesian-indexed.
+    grids = (1.0:16.0, 1.0:12.0)
+    A = rand(16, 12)
+    gq = GriddedQuery((range(2.0, 15.0, 9), range(2.0, 11.0, 5)))
+    itp = linear_interp(grids, A; extrap = ClampExtrap())
+
+    out = itp(gq)
+    @test size(out) == size(gq) == (9, 5)
+
+    # linear alignment: itp(gq)[k] ≈ itp(gq[k]). `≈` not `==`: the separable
+    # gridded kernel and scalar pointwise eval share results only up to the
+    # method's normal FP contract (they differ in arithmetic order, ~1 ULP).
+    for k in 1:length(gq)
+        @test out[k] ≈ itp(gq[k])
+    end
+    # Cartesian alignment: itp(gq)[i,j] ≈ itp(gq[i,j])
+    for j in 1:5, i in 1:9
+        @test out[i, j] ≈ itp(gq[i, j])
+    end
+end
+
+@testitem "GriddedQuery collection: shaped iteration + Base interop (Phase 2)" setup = [Basic] begin
+    gq = GriddedQuery(([10, 20, 30], [1.5, 2.5]))                # 3×2, Int × Float64
+
+    # Iterator traits: a shaped, typed collection.
+    @test Base.IteratorSize(typeof(gq)) === Base.HasShape{2}()
+    @test Base.IteratorEltype(typeof(gq)) === Base.HasEltype()
+    @test eltype(gq) === Tuple{Int, Float64}
+    @test eltype(typeof(gq)) === Tuple{Int, Float64}
+
+    # iterate yields the SAME column-major order as linear indexing. Because gq
+    # is a HasShape iterator, a comprehension PRESERVES that shape; flattening
+    # (column-major) recovers the linear order.
+    linear = [gq[k] for k in 1:length(gq)]
+    @test collect(gq) == reshape(linear, size(gq))
+    @test [pt for pt in gq] == reshape(linear, size(gq))        # shaped by HasShape
+    @test vec([pt for pt in gq]) == linear                      # column-major order
+
+    # collect preserves shape and element type (HasShape + HasEltype).
+    C = collect(gq)
+    @test size(C) == size(gq) == (3, 2)
+    @test eltype(C) === Tuple{Int, Float64}
+
+    # map preserves shape and matches pointwise application.
+    firsts = map(pt -> pt[1], gq)
+    @test size(firsts) == (3, 2)
+    @test firsts == [gq[i, j][1] for i in 1:3, j in 1:2]
+
+    # standard iterators compose off the same order. enumerate also inherits the
+    # shape; its column-major flatten pairs each linear index with its point.
+    @test vec(collect(enumerate(gq))) == collect(enumerate(linear))
+    # As an IndexCartesian AbstractArray, both index lanes are Cartesian.
+    @test eachindex(gq) == CartesianIndices(size(gq))
+    @test keys(gq) == CartesianIndices(size(gq))
+    @test first(gq, 2) == linear[1:2]
+    @test last(gq, 2) == linear[(end - 1):end]
+
+    # 1D / 3D shape preservation.
+    gq1 = GriddedQuery(([5, 6, 7],))
+    @test size(collect(gq1)) == (3,)
+    gq3 = GriddedQuery(([1, 2], [10, 20], [100, 200, 300]))       # 2×2×3
+    C3 = collect(gq3)
+    @test size(C3) == (2, 2, 3)
+    @test C3[1] == (1, 10, 100)
+    @test C3[2] == (2, 10, 100)                                  # axis 1 fastest
+    @test C3[3] == (1, 20, 100)
+    @test C3[5] == (1, 10, 200)
+
+    # singleton axis.
+    gqs = GriddedQuery(([5], [1.0, 2.0, 3.0]))
+    @test size(collect(gqs)) == (1, 3)
+
+    # empty axis → zero-length, correctly shaped, empty collection.
+    gqe = GriddedQuery(([1.0, 2.0], Float64[]))
+    Ce = collect(gqe)
+    @test size(Ce) == (2, 0)
+    @test length(Ce) == 0
+    @test eltype(Ce) === Tuple{Float64, Float64}
+
+    # 0-D query → a 0-dim array holding the single empty-tuple point.
+    gq0 = GriddedQuery()
+    C0 = collect(gq0)
+    @test size(C0) == ()
+    @test C0[] == ()
+end
+
+@testitem "GriddedQuery collection: map(itp, gq) shape + itp(gq) agreement (Phase 2)" setup = [Basic] begin
+    grids = (1.0:16.0, 1.0:12.0)
+    A = rand(16, 12)
+    gq = GriddedQuery((range(2.0, 15.0, 9), range(2.0, 11.0, 5)))
+    itp = linear_interp(grids, A; extrap = ClampExtrap())
+
+    M = map(itp, gq)
+    @test size(M) == size(gq) == (9, 5)
+    # map(itp, gq) is the shaped point-wise reference operation (Non-goal: no
+    # custom broadcast). It agrees with the separable itp(gq) up to the method's
+    # normal FP contract.
+    @test M ≈ itp(gq)
+end
+
+@testitem "GriddedQuery collection: public eltype vs internal _query_eltype (Phase 2)" setup = [Basic] begin
+    using FastInterpolations: _query_eltype, _query_length, _query_size, _query_extract
+
+    gq = GriddedQuery(([10, 20, 30], [1.5, 2.5]))
+    # Base.eltype is the coordinate POINT tuple (iterator contract)...
+    @test eltype(gq) === Tuple{Int, Float64}
+    # ...while the INTERNAL protocol eltype is the promoted SCALAR arithmetic
+    # type used to allocate interpolation output. These must stay distinct.
+    @test _query_eltype(gq) === Float64
+    @test eltype(gq) !== _query_eltype(gq)
+
+    # the internal protocol still reports N-D shape (NOT a flat length), so the
+    # interpolation output stays shaped even though Base now sees a collection.
+    @test _query_size(gq) === (3, 2)
+    @test _query_length(gq) == 6
+    @test _query_extract(gq, 4) === gq[4]                       # same points, both lanes
+end
+
+@testitem "GriddedQuery collection: inference + warm zero-alloc (Phase 3)" setup = [Basic] begin
+    gq = GriddedQuery(([10, 20, 30], [1.5, 2.5]))               # Int × Float64
+
+    # inference: the mixed-axis point type is concrete on every access lane.
+    @test @inferred(gq[5]) === (20, 2.5)
+    @test @inferred(gq[2, 1]) === (20, 1.5)
+    @test @inferred(gq[CartesianIndex(2, 1)]) === (20, 1.5)
+    @test @inferred(first(gq)) === (10, 1.5)
+    @test @inferred(last(gq)) === (30, 2.5)
+    @test @inferred(length(gq)) == 6
+
+    # warm zero-heap-allocation: none of these lanes touch the array pool, so
+    # they are strictly non-allocating once compiled (no LTS pool allowance
+    # applies). `iterate`'s zero-alloc also stands in for its type-stability,
+    # which `@inferred` can't check directly (its return is a small Union).
+    idx_alloc(g, k) = (g[k]; @allocated g[k])
+    car_alloc(g, i, j) = (g[i, j]; @allocated g[i, j])
+    end_alloc(g) = (first(g); last(g); @allocated (first(g), last(g)))
+    function step_alloc(g)
+        iterate(g)                                             # warmup
+        return @allocated iterate(g)
+    end
+    @test idx_alloc(gq, 5) == 0
+    @test car_alloc(gq, 2, 1) == 0
+    @test end_alloc(gq) == 0
+    @test step_alloc(gq) == 0
+end
+
+@testitem "GriddedQuery is an AbstractArray: slicing + array generics" setup = [Basic] begin
+    gq = GriddedQuery(([10, 20, 30], [1.5, 2.5]))               # 3×2, Int × Float64
+
+    # It IS a read-only AbstractArray of coordinate points (à la CartesianIndices).
+    @test gq isa AbstractArray{Tuple{Int, Float64}, 2}
+    @test eltype(gq) === Tuple{Int, Float64}
+    @test ndims(gq) == 2
+    @test IndexStyle(typeof(gq)) === IndexCartesian()
+    @test axes(gq) == (Base.OneTo(3), Base.OneTo(2))
+
+    # Cartesian slicing (all indices vectors/colons) → a LAZY sub-GriddedQuery
+    # (the value-valued analogue of CartesianIndices slicing staying a
+    # CartesianIndices), preserving eltype/shape/elements — NOT a materialized Matrix.
+    s = gq[1:2, 2:2]
+    @test s isa GriddedQuery
+    @test s == reshape([(10, 2.5), (20, 2.5)], 2, 1)          # elementwise (AbstractArray ==)
+    @test size(gq[1:2, 1:2]) == (2, 2)
+    @test gq[:, :] isa GriddedQuery && gq[:, :] == collect(gq)
+    @test gq[end, end] === (30, 2.5)                          # scalar stays a point
+
+    # Zero-copy: vector axes become views of the PARENT data (no copy); a Colon
+    # returns the parent axis object untouched.
+    @test gq[1:2, 1:2].axes[2] isa SubArray
+    @test parent(gq[1:2, 1:2].axes[2]) === gq.axes[2]
+    @test gq[:, 1:2].axes[1] === gq.axes[1]
+
+    # Mixed scalar+vector (dim drop) and single-arg linear ranges keep Base's
+    # materializing behavior (arity ≠ ndims / a scalar index ⇒ not intercepted).
+    @test gq[1:2, 2] == [(10, 2.5), (20, 2.5)] && !(gq[1:2, 2] isa GriddedQuery)
+    @test gq[2, :] == [(20, 1.5), (20, 2.5)]
+    @test gq[2:4] == [gq[2], gq[3], gq[4]] && gq[2:4] isa Vector
+    @test gq[:] == vec(collect(gq))
+
+    # Broadcasting + collect/similar unaffected.
+    firsts = first.(gq)
+    @test firsts == [gq[i, j][1] for i in 1:3, j in 1:2] && size(firsts) == (3, 2)
+    @test similar(gq) isa Matrix{Tuple{Int, Float64}}
+    @test collect(gq) isa Matrix{Tuple{Int, Float64}}
+
+    # Read-only: mutation throws (immutable lazy grid — like a Range).
+    @test_throws Exception (gq[1, 1] = (0, 0.0))
+
+    # Slice inference is concrete (a GriddedQuery).
+    @test @inferred(gq[1:2, 1:2]) isa GriddedQuery
+end
+
+@testitem "GriddedQuery sub-grid slicing: range-preserving, 0-copy, fast-path re-entry" setup = [Basic] begin
+    # Range axes stay ranges under slicing (keeps the O(1)-locate fast path).
+    gr = GriddedQuery((2.0:1.0:20.0, 3.0:1.0:12.0))
+    @test gr[2:8, 1:5] isa GriddedQuery
+    @test gr[2:8, 1:5].axes[1] isa AbstractRange
+    @test gr[2:8, 1:5].axes[2] isa AbstractRange
+
+    # No coordinate-data copy for a large slice: view-backed, so allocation stays
+    # tiny (a wrapper + view headers), NOT O(number of sliced points).
+    big = GriddedQuery((collect(1.0:1000.0), collect(1.0:1000.0)))
+    slice_alloc(g) = (g[1:500, 1:500]; @allocated g[1:500, 1:500])
+    @test slice_alloc(big) <= 256                            # copy would be ≫ 500·500·16 B
+
+    # A sliced sub-grid re-enters the separable interpolation fast path and
+    # agrees with pointwise evaluation over the same sub-block.
+    grid = (1.0:12.0, 1.0:10.0)
+    A = rand(12, 10)
+    itp = linear_interp(grid, A; extrap = ClampExtrap())
+    gq = GriddedQuery((range(2.0, 11.0, 8), range(2.0, 9.0, 6)))
+    sub = gq[2:6, 1:4]
+    @test sub isa GriddedQuery && size(sub) == (5, 4)
+    @test itp(sub) ≈ [itp((x, y)) for x in gq.axes[1][2:6], y in gq.axes[2][1:4]]
+end
+
+@testitem "GriddedQuery N=1 is an AbstractVector (dispatch-collision guard)" setup = [Basic] begin
+    gq1 = GriddedQuery(([5, 6, 7],))
+    @test gq1 isa AbstractVector{Tuple{Int}}
+    @test length(gq1) == 3
+    @test gq1[2] == (6,)
+    @test gq1[2:3] == [(6,), (7,)]
+    @test collect(gq1) == [(5,), (6,), (7,)]
+
+    # The collision risk: a 1-axis GriddedQuery is now `<: AbstractVector`, so it
+    # could match AoS-batch `queries::AbstractVector` dispatch. It must still
+    # interpolate through the tensor-product gridded path and return a 1-D array.
+    grid = (2.0:10.0,)
+    data = rand(9)
+    tx = [2.5, 5.5, 8.5]
+    gq1f = GriddedQuery((tx,))
+    itp = linear_interp(grid, data; extrap = ClampExtrap())
+    out = linear_interp(grid, data, gq1f; extrap = ClampExtrap())
+    @test out isa AbstractVector
+    @test size(out) == (3,)
+    for k in 1:3
+        @test out[k] ≈ itp((tx[k],))
+    end
+end
+
+@testitem "1D interpolant × GriddedQuery: N=1 evaluates, N>1 errors clearly" setup = [Basic] begin
+    x = 1.0:10.0
+    y = collect(range(0.0, 3.0, 10)) .^ 2
+    itp = linear_interp((x,), y; extrap = ClampExtrap())
+
+    # A 1-axis GriddedQuery on a 1D interpolant now evaluates by forwarding to the
+    # single axis (same as the 1D batch over that vector) — no more leaky error.
+    tx = [2.5, 5.5, 8.5]
+    gq1 = GriddedQuery((tx,))
+    out = itp(gq1)
+    @test out isa AbstractVector
+    @test size(out) == (3,)
+    @test out == itp(tx)                             # bit-identical: forwards to itp(axis)
+    @test out ≈ [itp((t,)) for t in tx]
+
+    # in-place form forwards too
+    o = similar(out)
+    @test itp(o, gq1) === o
+    @test o == out
+
+    # per-call kwargs forward (deriv here)
+    @test itp(gq1; deriv = EvalDeriv1()) == itp(tx; deriv = EvalDeriv1())
+
+    # A 1D interpolant type OUTSIDE the Aqua Group-A set (Linear/Constant/
+    # Quadratic each carry a concrete forward that shadows the abstract one) hits
+    # the generic `(::AbstractInterpolant1D)(::GriddedQuery{,,1})` arm — Cubic is
+    # such a type. Exercises the abstract allocating + in-place forwards.
+    citp = cubic_interp(x, y; extrap = ClampExtrap())
+    cout = citp(gq1)
+    @test cout isa AbstractVector
+    @test cout == citp(tx)
+    co = similar(cout)
+    @test citp(co, gq1) === co
+    @test co == cout
+
+    # An N≥2 GriddedQuery on a 1D interpolant is a CLEAR ArgumentError naming the
+    # dimensionality — NOT the old leaky `_resolve_grididx` MethodError.
+    gq2 = GriddedQuery((tx, [1.0, 2.0]))
+    err = try
+        itp(gq2)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test !(err isa MethodError)
+    @test occursin("2 axes", sprint(showerror, err))
+    # in-place N≥2 errors too
+    @test_throws ArgumentError itp(Matrix{Float64}(undef, 3, 2), gq2)
+end
+
 @testitem "unified interp: GriddedQuery + linear uses separable fast path" setup = [Basic] begin
     grids = (1.0:64.0, 1.0:48.0)
     A = rand(64, 48)
@@ -1271,6 +1629,8 @@ end
     @test out == refc
     interp!(out, (x,), v, gq; method = ConstantInterp(), extrap = ClampExtrap())
     @test out == refc
+    # allocating N=1 disambiguator (tuple grid + 1-axis GriddedQuery) → gridded arm
+    @test constant_interp((x,), v, gq; extrap = ClampExtrap()) == refc
 
     H = interp((x,), v, gq; method = PchipInterp(), extrap = ClampExtrap())
     refh = [interp((x,), v, (q,); method = PchipInterp(), extrap = ClampExtrap()) for q in tq]

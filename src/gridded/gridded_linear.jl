@@ -597,6 +597,20 @@ function linear_interp!(
     return linear_interp!(out, only(grids), data, only(gq.axes); _unwrap_nd_kwargs(values(kwargs))...)
 end
 
+# N = 1 Aqua disambiguation (allocating): a 1-axis `GriddedQuery` is an
+# `AbstractVector`, so this gridded one-shot overlaps the 1-D batch one-shot
+# `linear_interp(grids::Tuple{AbstractVector}, data::AbstractVector,
+# q::AbstractVector{<:Real})`. Latent (a GriddedQuery never has Real elements);
+# pin the intersection to the 1-D arm over the single axis.
+function linear_interp(
+        grids::Tuple{AbstractVector},
+        data::AbstractVector,
+        gq::GriddedQuery{<:Tuple{Any}};
+        kwargs...
+    )
+    return linear_interp(only(grids), data, only(gq.axes); _unwrap_nd_kwargs(values(kwargs))...)
+end
+
 # `bc` (single or per-axis) → the per-axis `LinearInterp` method tuple `interp` wants.
 @inline _linear_gridded_methods(bc::AbstractBC, ::Val{N}) where {N} = ntuple(_ -> LinearInterp(bc), Val(N))
 @inline _linear_gridded_methods(bc::NTuple{N, AbstractBC}, ::Val{N}) where {N} = map(LinearInterp, bc)

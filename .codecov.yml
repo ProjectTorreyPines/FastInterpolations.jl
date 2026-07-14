@@ -1,3 +1,7 @@
+codecov:
+  notify:
+    after_n_builds: 6
+
 coverage:
   status:
     project:
@@ -15,3 +19,4 @@ comment:
   layout: "reach,diff,flags,files"
   behavior: default
   require_changes: true
+  after_n_builds: 6

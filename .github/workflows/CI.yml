@@ -8,6 +8,10 @@ name: CI
 # sequential CI. Extensions are split into enzyme/rest chunk jobs
 # (EXT_TEST_CHUNK, see test/ext/runtests.jl) — the Enzyme testset alone
 # dominates the extension suite on Julia 1.12.
+#
+# Julia 1.x (1.12) is the slow-compile leg, so its @testitem suite is additionally split
+# into 2 time-balanced shards per OS via RETESTITEMS_SHARD=i/N (weights in
+# test/shard_weights.toml, regen with scripts/gen_shard_weights.jl). lts stays one job/OS.
 on:
   push:
     branches:
@@ -32,7 +36,7 @@ concurrency:
 
 jobs:
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}${{ matrix.version == '1.x' && format(' [{0}]', matrix.shard) || '' }}
     runs-on: ${{ matrix.os }}     # public repo: ubuntu/windows = 4 vCPUs, macos = 3
     timeout-minutes: 120
     strategy:
@@ -40,11 +44,22 @@ jobs:
       matrix:
         version: ["1.x", "lts"]
         os: [ubuntu-latest, macos-latest, windows-latest]
+        # 1.x (Julia 1.12) is the slow-compile leg — split it into 2 time-balanced shards
+        # per OS (RETESTITEMS_SHARD, see test/runtests_parallel.jl). lts stays one job/OS,
+        # so exclude its 2/2 (leaving lts on shard "1/2", which the runtest step maps to the
+        # full suite via the version guard on RETESTITEMS_SHARD below).
+        shard: ["1/2", "2/2"]
+        exclude:
+          - version: "lts"
+            shard: "2/2"
         include:
-          # coverage: ubuntu only. The suite is OS-identical, so ubuntu's upload fully
-          # covers codecov; skipping it elsewhere trims the scoped-coverage overhead
-          # (package re-JIT with instrumentation + per-worker .cov writeout) on the
-          # slowest runners. Flip to true anywhere to re-measure.
+          # coverage: the lts-ubuntu leg ONLY (see the version guard on the coverage steps
+          # below). The suite is OS- and version-identical (one Sys.ARCH gate in src, no
+          # VERSION gates), so lts-ubuntu's FULL-suite upload covers codecov. The 1.x-ubuntu
+          # legs are SHARDED — their two PARTIAL uploads race codecov's merge and it
+          # undercounts (96%→56%); a single full upload is timing-robust. Skipping coverage
+          # there also drops the instrumentation overhead on the slow legs. `coverage: true`
+          # still marks the ubuntu overlay; the version guard narrows it to lts.
           - os: ubuntu-latest
             nworkers: 4
             precompile_tasks: 4
@@ -72,22 +87,23 @@ jobs:
       # RETESTITEMS_NWORKERS flips test/runtests.jl to the parallel path.
       - uses: julia-actions/julia-runtest@v1
         with:
-          coverage: ${{ matrix.coverage }}
+          # lts-ubuntu only: the sharded 1.x legs emit partial coverage that codecov undercounts.
+          coverage: ${{ matrix.coverage && matrix.version == 'lts' }}
         env:
           SKIP_EXTENSIONS: "true"
           RETESTITEMS_NWORKERS: ${{ github.event.inputs.nworkers || matrix.nworkers }}
+          # 1.x → "1/2"/"2/2" (shard the suite); lts → "" (runner runs the full suite).
+          RETESTITEMS_SHARD: ${{ matrix.version == '1.x' && matrix.shard || '' }}
+          # windows/1.x only: rerun an item whose worker dies on the non-deterministic
+          # 1.12 LLVM MachineLICM codegen crash. Elsewhere 0 (fail-fast, don't mask flakes).
+          RETESTITEMS_RETRIES: ${{ (matrix.os == 'windows-latest' && matrix.version == '1.x') && '1' || '0' }}
           JULIA_NUM_PRECOMPILE_TASKS: ${{ matrix.precompile_tasks }}
 
-      # Thread-safety — multi-threaded in ONE process. RETESTITEMS_NWORKERS is
-      # unset here, so these take the sequential TestItemRunner path.
-      - name: Thread Safety Tests (4 threads)
-        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=${{ matrix.coverage }}, julia_args=["-t", "4"], test_args=["test_thread_safety.jl"])'
-
-      - name: Thread Safety Tests (Oversubscribe with 16 threads)
-        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=${{ matrix.coverage }}, julia_args=["-t", "16"], test_args=["test_thread_safety.jl"])'
+      # NB: thread-safety tests moved to their own `thread-safety` job below, to keep them
+      # off the sharded test legs' critical path (on windows/1.12 both shards are ~38 min).
 
       - uses: julia-actions/julia-processcoverage@v1
-        if: ${{ matrix.coverage }}
+        if: ${{ matrix.coverage && matrix.version == 'lts' }}
         with:
           # src,ext: extension code exercised by the main @testitem suite
           # (e.g. the ColorVectorSpace ext) is covered HERE, not in the
@@ -95,7 +111,59 @@ jobs:
           directories: src,ext
 
       - uses: codecov/codecov-action@v5
-        if: ${{ matrix.coverage }}
+        if: ${{ matrix.coverage && matrix.version == 'lts' }}
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  thread-safety:
+    # Thread-safety runs multi-threaded in ONE process (sequential TestItemRunner path —
+    # RETESTITEMS_NWORKERS unset). Split into its own job so it stays OFF the sharded test
+    # legs' critical path: on windows/1.12 both shards land ~38 min, so a ~4 min thread
+    # tail on either would set the wall time. Same (version, OS) coverage as the test job.
+    name: Thread Safety - Julia ${{ matrix.version }} - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["1.x", "lts"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            coverage: true    # coverage on ubuntu only, matching the test job
+          - os: macos-latest
+            coverage: false
+          - os: windows-latest
+            coverage: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+
+      - uses: julia-actions/cache@v2
+
+      - uses: julia-actions/julia-buildpkg@v1
+
+      # Coverage on lts-ubuntu only (like the test job): one full upload codecov merges
+      # reliably; the sharded 1.x legs' partial uploads race the merge and undercount it.
+      - name: Thread Safety Tests (4 threads)
+        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=${{ matrix.coverage && matrix.version == 'lts' }}, julia_args=["-t", "4"], test_args=["test_thread_safety.jl"])'
+
+      - name: Thread Safety Tests (Oversubscribe with 16 threads)
+        run: julia --color=yes --project -e 'using Pkg; Pkg.test(; coverage=${{ matrix.coverage && matrix.version == 'lts' }}, julia_args=["-t", "16"], test_args=["test_thread_safety.jl"])'
+
+      - uses: julia-actions/julia-processcoverage@v1
+        if: ${{ matrix.coverage && matrix.version == 'lts' }}
+        with:
+          directories: src,ext
+
+      - uses: codecov/codecov-action@v5
+        if: ${{ matrix.coverage && matrix.version == 'lts' }}
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}

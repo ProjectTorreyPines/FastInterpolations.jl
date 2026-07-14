@@ -1136,6 +1136,18 @@ end
     # per-call kwargs forward (deriv here)
     @test itp(gq1; deriv = EvalDeriv1()) == itp(tx; deriv = EvalDeriv1())
 
+    # A 1D interpolant type OUTSIDE the Aqua Group-A set (Linear/Constant/
+    # Quadratic each carry a concrete forward that shadows the abstract one) hits
+    # the generic `(::AbstractInterpolant1D)(::GriddedQuery{,,1})` arm — Cubic is
+    # such a type. Exercises the abstract allocating + in-place forwards.
+    citp = cubic_interp(x, y; extrap = ClampExtrap())
+    cout = citp(gq1)
+    @test cout isa AbstractVector
+    @test cout == citp(tx)
+    co = similar(cout)
+    @test citp(co, gq1) === co
+    @test co == cout
+
     # An N≥2 GriddedQuery on a 1D interpolant is a CLEAR ArgumentError naming the
     # dimensionality — NOT the old leaky `_resolve_grididx` MethodError.
     gq2 = GriddedQuery((tx, [1.0, 2.0]))
@@ -1617,6 +1629,8 @@ end
     @test out == refc
     interp!(out, (x,), v, gq; method = ConstantInterp(), extrap = ClampExtrap())
     @test out == refc
+    # allocating N=1 disambiguator (tuple grid + 1-axis GriddedQuery) → gridded arm
+    @test constant_interp((x,), v, gq; extrap = ClampExtrap()) == refc
 
     H = interp((x,), v, gq; method = PchipInterp(), extrap = ClampExtrap())
     refh = [interp((x,), v, (q,); method = PchipInterp(), extrap = ClampExtrap()) for q in tq]
